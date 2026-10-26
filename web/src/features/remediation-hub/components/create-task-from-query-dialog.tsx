@@ -57,12 +57,15 @@ export function CreateTaskFromQueryDialog({
   open,
   onOpenChange,
   initialQuery,
+  initialTitle,
   ignoredFilters,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   /** A query to start from (the findings list's filters, as text). */
   initialQuery?: string
+  /** A title to start from (the page that opened the dialog names the work). */
+  initialTitle?: string
   /** List params that could not be carried into the query. */
   ignoredFilters?: string[]
 }) {
@@ -89,7 +92,7 @@ export function CreateTaskFromQueryDialog({
     setQuery(initialQuery?.trim() || DEFAULT_TASK_QUERY)
     setPreview(null)
     setPreviewedText('')
-    setTitle('')
+    setTitle(initialTitle?.trim() ?? '')
     setUser(NONE)
     setGroup(NONE)
     setDeadline('')

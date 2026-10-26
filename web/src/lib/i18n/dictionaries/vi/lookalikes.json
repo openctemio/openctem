@@ -45,6 +45,7 @@
   "lookalikes.state.active": "Cần xem xét",
   "lookalikes.state.falsePositive": "Không phải mối đe dọa",
   "lookalikes.state.resolved": "Đã gỡ bỏ",
+  "lookalikes.stateFilter": "Trạng thái",
   "lookalikes.tab": "Tên miền giả mạo",
   "lookalikes.tech.bitflip": "Lật bit",
   "lookalikes.tech.homoglyph": "Ký tự trông giống",

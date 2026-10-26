@@ -3,6 +3,8 @@ package handler
 import (
 	"encoding/json"
 	"testing"
+
+	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
 )
 
 // The dispatch report reaches the API both from a freshly built run context
@@ -47,5 +49,35 @@ func TestToRunDispatchResponse(t *testing.T) {
 	}
 	if got := toRunDispatchResponse(map[string]any{"scan_id": "x"}); got != nil {
 		t.Errorf("run without a dispatch report: %+v", got)
+	}
+	if got := toRunDispatchResponse(fresh); got.WillScan != nil || got.Skipped != nil {
+		t.Errorf("a run without skip groups reports will_scan %v skipped %v", got.WillScan, got.Skipped)
+	}
+}
+
+// Skip groups recorded by the trigger reach the Dispatch card with the
+// number of targets the run dispatched.
+func TestToRunDispatchResponse_SkipGroups(t *testing.T) {
+	fresh := map[string]any{
+		"resolved_target_count": 555,
+		"zone_routing":          map[string]any{"jobs": 13, "targets_per_job": 10, "unzoned_targets": 121, "uncovered_targets": 434},
+		scansvc.RunContextKeySkipped: []scansvc.SkipGroup{
+			{Reason: "unresolved", Tone: scansvc.SkipToneInfo, Count: 434, Targets: []string{"gone.example.com"}},
+			{Reason: "not_resolving", Tone: scansvc.SkipToneInfo, Count: 1, Targets: []string{"old.example.com"}},
+		},
+	}
+	raw, _ := json.Marshal(fresh)
+	var loaded map[string]any
+	_ = json.Unmarshal(raw, &loaded)
+	for name, ctx := range map[string]map[string]any{"fresh": fresh, "loaded": loaded} {
+		got := toRunDispatchResponse(ctx)
+		if got == nil || got.WillScan == nil || *got.WillScan != 121 || len(got.Skipped) != 2 ||
+			got.Skipped[0].Count != 434 || got.Skipped[0].Tone != scansvc.SkipToneInfo || got.Skipped[1].Targets[0] != "old.example.com" {
+			t.Errorf("%s: %+v", name, got)
+		}
+	}
+	none := map[string]any{"resolved_target_count": 3, scansvc.RunContextKeySkipped: []scansvc.SkipGroup{}}
+	if got := toRunDispatchResponse(none); got.WillScan == nil || *got.WillScan != 3 || len(got.Skipped) != 0 {
+		t.Errorf("nothing skipped: %+v", got)
 	}
 }
