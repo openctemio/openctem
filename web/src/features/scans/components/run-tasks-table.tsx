@@ -134,7 +134,7 @@ export function taskProgressNote(
       t('scans.tasks.budget', undefined, { budget: formatScanDuration(task.budget_seconds * 1000) })
     )
   }
-  return parts.length ? { kind: 'progress', text: parts.join(' · ') } : null
+  return parts.length ? { kind: 'progress', text: parts.join(', ') } : null
 }
 
 /** Skip reasons that have a translated label. */

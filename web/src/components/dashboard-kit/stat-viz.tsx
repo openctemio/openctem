@@ -53,7 +53,7 @@ function useParts(result: StatVizProps['result'], unit: MetricUnit): StatParts {
         previous: result.previous_median,
         delta: changeOf(result.median, result.previous_median),
         unit: 'hours',
-        detail: t('dashboardKit.stat.durationDetail', 'median · p90 {p90} · {n} fixed', {
+        detail: t('dashboardKit.stat.durationDetail', 'median, p90 {p90}, {n} fixed', {
           p90: formatMetric(result.p90, 'hours', locale),
           n: formatCount(result.n, locale),
         }),

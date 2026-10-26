@@ -320,7 +320,7 @@ describe('describeEdge', () => {
   const vt = { ...step('vt', 'nuclei'), name: 'Vulnerability templates' }
   it('labels a data connection with type ids and says it in words', () => {
     const d = describeEdge(table, http, vt, enTranslate)
-    expect(d?.label).toBe('url · ip')
+    expect(d?.label).toBe('url, ip')
     expect(d?.text).toBe('HTTP probe passes URL, IP address to Vulnerability templates')
   })
   it('names the state when nothing passes', () => {

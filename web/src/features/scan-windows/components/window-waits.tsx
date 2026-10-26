@@ -39,11 +39,11 @@ function TargetLines({ items, total }: { items: TargetWait[]; total: number }) {
           <span className="font-mono">{w.target}</span>
           <span className="text-muted-foreground">
             {w.never
-              ? ` · ${t('scanWindows.waits.neverOpens', 'never opens')}`
+              ? `, ${t('scanWindows.waits.neverOpens', 'never opens')}`
               : w.next_open_at
-                ? ` · ${t('scanWindows.waits.opens', 'opens {at}', { at: formatInZone(w.next_open_at) })}`
+                ? `, ${t('scanWindows.waits.opens', 'opens {at}', { at: formatInZone(w.next_open_at) })}`
                 : ''}
-            {(w.blocking?.length ?? 0) > 0 ? ` · ${blockingNames(w.blocking, t)}` : ''}
+            {(w.blocking?.length ?? 0) > 0 ? `, ${blockingNames(w.blocking, t)}` : ''}
           </span>
         </li>
       ))}

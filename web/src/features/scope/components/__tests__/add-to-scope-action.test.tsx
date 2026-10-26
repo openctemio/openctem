@@ -64,7 +64,7 @@ describe('AddToScopeAction', () => {
         { target_type: 'ip_address', pattern: '203.0.113.9' },
       ],
     })
-    expect(toast.success).toHaveBeenCalledWith('1 added · 1 already in scope')
+    expect(toast.success).toHaveBeenCalledWith('1 added, 1 already in scope')
   })
 
   it('a refused item is named in the toast', async () => {

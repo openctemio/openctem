@@ -251,7 +251,7 @@ export function SensorFirstReport({
                         caps: tool.capabilities.join(', '),
                       })}
                     >
-                      {tool.capabilities.join(' · ')}
+                      {tool.capabilities.join(', ')}
                     </span>
                   )}
                 </span>

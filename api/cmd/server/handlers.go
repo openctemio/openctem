@@ -262,7 +262,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	commandHandler := handler.NewCommandHandler(svc.Command, v, log)
 	sensorHandler := newSensorHandlerWithTemplates(svc.Sensor, cfg, v, log)
 	sensorHandler.SetContentPolicySource(svc.SensorContent)
-	sensorHandler.SetZoneLister(repos.ScanZone)
+	sensorHandler.SetPolicyPrefill(&handler.SensorPolicyPrefill{
+		Zones: repos.ScanZone, Targets: repos.ScopeTarget, Exclusions: repos.ScopeExcl, Log: log,
+	})
 	sensorHandler.SetGrantService(svc.SensorGrant)
 	if svc.JobSigner != nil {
 		sensorHandler.SetJobSigningRoot(svc.JobSigner.RootKeyID)
@@ -377,6 +379,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	}
 	vulnHandler.SetComponentService(svc.Component)
 	vulnHandler.SetSavedViews(svc.SavedView)
+	if svc.SLA != nil && repos.FindingSLARestart != nil {
+		vulnHandler.SetSLABasis(svc.SLA, repos.FindingSLARestart)
+	}
 	if svc.BulkGuard != nil {
 		vulnHandler.SetBulkGuard(svc.BulkGuard)
 	}
