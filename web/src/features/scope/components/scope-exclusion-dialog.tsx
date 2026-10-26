@@ -243,7 +243,7 @@ export function ScopeExclusionDialog({
                     <span aria-live="polite">
                       {pattern
                         ? detected
-                          ? `Detected: ${SCOPE_KIND_LABEL[detected]} · covers ${coversText({ pattern, target_type: detected })}`
+                          ? `Detected: ${SCOPE_KIND_LABEL[detected]}, covers ${coversText({ pattern, target_type: detected })}`
                           : 'Kind not recognised'
                         : 'A domain (*.x covers x and every name below it), IP address or range, URL or repository.'}
                     </span>

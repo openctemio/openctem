@@ -43,7 +43,7 @@
   "prioritization.businessImpact.crown.emptyDescription": "Đánh dấu tài sản là tài sản trọng yếu từ trang Tài sản trọng yếu.",
   "prioritization.businessImpact.crown.emptyTitle": "Chưa có tài sản trọng yếu",
   "prioritization.businessImpact.crown.findings": "{count} phát hiện",
-  "prioritization.businessImpact.crown.meta": "{type} · {count} phát hiện",
+  "prioritization.businessImpact.crown.meta": "{type}, {count} phát hiện",
   "prioritization.businessImpact.crown.title": "Tài sản trọng yếu",
   "prioritization.businessImpact.description": "Nơi lỗ hổng ảnh hưởng đến kinh doanh nặng nhất, theo mức độ quan trọng của tài sản, tài sản trọng yếu và đơn vị kinh doanh.",
   "prioritization.businessImpact.stat.assets": "Tài sản",

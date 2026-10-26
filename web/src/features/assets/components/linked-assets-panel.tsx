@@ -150,7 +150,7 @@ export function LinkedAssetsPanel({
                 </Link>
                 <p className="truncate text-xs text-muted-foreground">
                   <span className="capitalize">{item.type.replace(/_/g, ' ')}</span>
-                  {item.meta ? ` · ${item.meta}` : ''}
+                  {item.meta ? `, ${item.meta}` : ''}
                 </p>
               </div>
               {canEdit && (

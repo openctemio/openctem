@@ -887,7 +887,7 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate">{att.filename}</p>
                       <p className="text-xs text-muted-foreground">
-                        {att.content_type} · {(att.size / 1024).toFixed(1)} KB
+                        {att.content_type}, {(att.size / 1024).toFixed(1)} KB
                       </p>
                     </div>
                   </SafeExternalLink>

@@ -253,7 +253,7 @@ export default function SelectTenantPage() {
                 <div className="flex-1 text-start min-w-0">
                   <p className="font-medium truncate">{tenant.name}</p>
                   <p className="text-sm text-muted-foreground truncate">
-                    {tenant.slug} · {tenant.role}
+                    {tenant.slug}, {tenant.role}
                   </p>
                 </div>
 

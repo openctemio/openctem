@@ -51,7 +51,7 @@ describe('StatViz', () => {
       />
     )
     expect(screen.getByText('5.5 days')).toBeInTheDocument()
-    expect(screen.getByText('median · p90 17 days · 37 fixed')).toBeInTheDocument()
+    expect(screen.getByText('median, p90 17 days, 37 fixed')).toBeInTheDocument()
     expect(screen.getByText('−29 hr').closest('p')).toHaveAttribute('data-tone', 'better')
   })
 })
@@ -251,7 +251,7 @@ describe('grid visualizations', () => {
         drill={({ series, key }) => `/findings?severity=${series}&age_band=${key}`}
       />
     )
-    expect(screen.getByRole('link', { name: 'Critical · 0-30: 9' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Critical, 0-30: 9' })).toHaveAttribute(
       'href',
       '/findings?severity=critical&age_band=0-30'
     )

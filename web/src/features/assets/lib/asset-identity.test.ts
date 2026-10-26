@@ -101,7 +101,7 @@ describe('dedup reasons', () => {
     expect(describeEvidence({ kind: 'mac', value: '00:1a:2b:3c:4d:5e' })).toBe(
       'MAC address 00:1a:2b:3c:4d:5e'
     )
-    expect(describeEvidence({ ip: '10.0.0.5', tool: 'nessus' })).toBe('IP 10.0.0.5 · nessus')
+    expect(describeEvidence({ ip: '10.0.0.5', tool: 'nessus' })).toBe('IP 10.0.0.5, nessus')
     expect(describeEvidence({ old_name: 'x', new_name: 'y' })).toBe('x → y')
     expect(describeEvidence({ count: 2 })).toBe('count: 2')
     expect(describeEvidence({})).toBe('')
