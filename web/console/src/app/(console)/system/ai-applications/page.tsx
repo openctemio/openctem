@@ -93,7 +93,7 @@ export default function AiApplicationsPage() {
             )}
             description={t(
               'admin.systemAiApplicationsPage.applicationsAppearAfterTheirFirst',
-              'Applications appear after their first authorization request.'
+              'Applications appear after someone approves them for the first time.'
             )}
           />
         ) : (
@@ -107,7 +107,12 @@ export default function AiApplicationsPage() {
                   >
                     <div className="min-w-0 space-y-1">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-medium break-words">{c.name}</span>
+                        {/* Applications that name themselves (a metadata document or a
+                            dynamic registration) are identified by where they live: the
+                            name is whatever the application chose to say. */}
+                        <span className="font-medium break-all">
+                          {c.kind === 'organization' ? c.name : c.host || c.name}
+                        </span>
                         <Badge variant={c.kind === 'dynamic' ? 'outline' : 'secondary'}>
                           {t(KIND_KEY[c.kind])}
                         </Badge>
@@ -117,22 +122,58 @@ export default function AiApplicationsPage() {
                           </Badge>
                         )}
                       </div>
+                      {c.kind !== 'organization' && (
+                        <p className="text-muted-foreground text-xs break-words">
+                          {c.host
+                            ? t(
+                                'admin.systemAiApplicationsPage.declaresItselfAs',
+                                'Declares itself as {name}',
+                                { name: c.name }
+                              )
+                            : t(
+                                'admin.systemAiApplicationsPage.nameChosenByApplication',
+                                'Name chosen by the application'
+                              )}
+                        </p>
+                      )}
                       <p className="text-muted-foreground font-mono text-xs break-all">
-                        {c.host || c.client_id}
+                        {c.client_id}
                       </p>
-                      <p className="text-muted-foreground text-xs">
-                        {c.active_connections}{' '}
-                        {t('admin.systemAiApplicationsPage.activeConnection', 'active connection')}
-                        {c.active_connections === 1 ? '' : 's'}{' '}
-                        {t('admin.systemAiApplicationsPage.in', 'in')} {c.organizations}{' '}
-                        {t('admin.systemAiApplicationsPage.organization', 'organization')}
-                        {c.organizations === 1 ? '' : 's'}{' '}
-                        {t('admin.systemAiApplicationsPage.firstSeen', '· first seen')}{' '}
-                        {formatDateSafe(c.created_at)}{' '}
-                        {t('admin.systemAiApplicationsPage.lastUsed', '· last used')}{' '}
-                        {c.last_used_at
-                          ? formatRelative(c.last_used_at)
-                          : t('admin.systemAiApplicationsPage.never', 'never')}
+                      <p className="text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                        <span>
+                          {t(
+                            c.active_connections === 1
+                              ? 'admin.systemAiApplicationsPage.connectionsOne'
+                              : 'admin.systemAiApplicationsPage.connectionsMany',
+                            c.active_connections === 1
+                              ? '{count} active connection'
+                              : '{count} active connections',
+                            { count: c.active_connections }
+                          )}
+                        </span>
+                        <span>
+                          {t(
+                            c.organizations === 1
+                              ? 'admin.systemAiApplicationsPage.organizationsOne'
+                              : 'admin.systemAiApplicationsPage.organizationsMany',
+                            c.organizations === 1
+                              ? '{count} organization'
+                              : '{count} organizations',
+                            { count: c.organizations }
+                          )}
+                        </span>
+                        <span>
+                          {t('admin.systemAiApplicationsPage.firstSeen', 'First seen {date}', {
+                            date: formatDateSafe(c.created_at),
+                          })}
+                        </span>
+                        <span>
+                          {c.last_used_at
+                            ? t('admin.systemAiApplicationsPage.lastUsed', 'Last used {when}', {
+                                when: formatRelative(c.last_used_at),
+                              })
+                            : t('admin.systemAiApplicationsPage.neverUsed', 'Never used')}
+                        </span>
                       </p>
                     </div>
                     {canBlock && (

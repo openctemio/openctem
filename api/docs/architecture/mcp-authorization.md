@@ -99,7 +99,7 @@ Checked in this order (`mcpoauth.Service.StartAuthorization`):
   `client_id`, name the client, list 1..20 redirect URIs (`https`, or `http`
   on loopback) and be a public client (no secret, `token_endpoint_auth_method`
   absent or `none`). The name is cleaned of control and bidirectional
-  characters. The stored copy is in `mcp_oauth_clients`.
+  characters. The stored copy is in `mcp_oauth_clients`. A fetched document is stored there only when a signed-in person approves the consent (migration `mcp_oauth_pending_client`); until then it is kept on the authorization request (`pending_client`).
 - **Organization clients** (`octc_…`): an owner or administrator registers
   them under Settings, AI assistants (MCP), Applications: a name and exact redirect URIs
   (`https`, or loopback `http` any port). `GET/POST /api/v1/mcp-access/clients`,
