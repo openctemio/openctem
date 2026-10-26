@@ -2273,8 +2273,20 @@ and narrows dispatch:
 - **Install dialog.** `GET /sensors/{id}/config-templates` returns `policy`, a
   sensor-policy/v1 template (`configs/sensor-products/sensor/policy.tmpl`)
   prefilled with the ranges of the sensor's scan zones (none for a sensor in
-  the default zone, which scans public targets), tools from the sensor, and
-  custom templates and interactsh off. The docker, Compose and Kubernetes
+  the default zone, which scans public targets); a sensor in no zone gets the
+  organization's active scope instead (`sensorapp.PolicyFromScope`: CIDRs,
+  addresses and ranges as networks, domains and URL hosts as names, a
+  wildcard entry as both the name and `*.name`; entries the sensor would
+  refuse to load, such as loopback or metadata addresses, are left out and
+  counted). Active network and name exclusions become `targets.deny` in both
+  cases. The scope part is read only for a caller with
+  `attack_surface:scope:read` (`handler.SensorPolicyPrefill`); others get the
+  zones. Tools come from the sensor; custom templates and interactsh are off.
+  The prefill is text a person reviews: the host writes the file and the
+  platform cannot change it afterwards. A sensor without a policy shows the
+  same text in its drawer (Local policy, "Suggested local policy") as one
+  host command that writes `/etc/openctem/sensor-policy.yaml`, reloaded on
+  SIGHUP. The docker, Compose and Kubernetes
   snippets mount it read-only and require it (`SENSOR_LOCAL_POLICY`), set
   `SENSOR_ALLOW_PRIVATE_TARGETS=1` when a zone range is private, and run the
   sensor hardened (read-only root filesystem, all capabilities dropped, no

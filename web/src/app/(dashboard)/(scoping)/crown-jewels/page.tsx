@@ -421,7 +421,7 @@ export default function CrownJewelsPage() {
               <div className="truncate font-medium">{jewel.name}</div>
               <div className="text-xs text-muted-foreground">
                 {assetTypeLabel(jewel.assetType)}
-                {jewel.criticality ? ` · ${criticalityText(jewel.criticality)}` : ''}
+                {jewel.criticality ? `, ${criticalityText(jewel.criticality)}` : ''}
               </div>
             </div>
           </div>
