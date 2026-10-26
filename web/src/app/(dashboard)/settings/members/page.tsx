@@ -1374,7 +1374,8 @@ export default function UsersPage() {
                   {
                     label: t('org.membersPage.renewInvitation', 'Renew'),
                     icon: RotateCw,
-                    route: 'POST /api/v1/tenants/{tenant}/invitations/{invitationId}/renew',
+                    route:
+                      'POST /api/v1/tenants/{tenant}/invitations/{invitationId}/renew' as const,
                     onClick: () => reissueInviteLink(row.original, true),
                   },
                 ]
@@ -1382,7 +1383,7 @@ export default function UsersPage() {
                   {
                     label: t('org.membersPage.copyNewLink', 'Copy new link'),
                     icon: LinkIcon,
-                    route: 'POST /api/v1/tenants/{tenant}/invitations/{invitationId}/link',
+                    route: 'POST /api/v1/tenants/{tenant}/invitations/{invitationId}/link' as const,
                     onClick: () => reissueInviteLink(row.original, false),
                   },
                 ]),
@@ -1393,7 +1394,8 @@ export default function UsersPage() {
                   {
                     label: t('org.membersPage.resendEmail', 'Resend email'),
                     icon: Send,
-                    route: 'POST /api/v1/tenants/{tenant}/invitations/{invitationId}/resend',
+                    route:
+                      'POST /api/v1/tenants/{tenant}/invitations/{invitationId}/resend' as const,
                     onClick: () => resendInvite(row.original),
                   },
                 ]),
@@ -1402,7 +1404,7 @@ export default function UsersPage() {
               icon: Trash2,
               destructive: true,
               separatorBefore: true,
-              route: 'DELETE /api/v1/tenants/{tenant}/invitations/{invitationId}',
+              route: 'DELETE /api/v1/tenants/{tenant}/invitations/{invitationId}' as const,
               onClick: () => setPendingCancelInvite(row.original),
             },
           ]}
