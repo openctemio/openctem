@@ -330,8 +330,8 @@ paths:
                 failure:
                   type: object
                   description: >-
-                    What kind of failure it was (feature "failure_class",
-                    research/302). An infrastructure class moves routed work
+                    What kind of failure it was (feature "failure_class").
+                    An infrastructure class moves routed work
                     to another eligible sensor and excludes this one; a
                     target.* class never moves. The platform decides where
                     the work goes; evidence members are short tokens and
