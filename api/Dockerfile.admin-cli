@@ -13,7 +13,7 @@ FROM golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900
 WORKDIR /app
 
 # Install dependencies
-RUN apk add --no-cache git ca-certificates tzdata
+RUN apk add --no-cache git
 
 # openctemio modules are public: fetch them through the Go module proxy and
 # verify them against the checksum database like every other dependency.
@@ -54,9 +54,7 @@ LABEL org.opencontainers.image.licenses="GPL-3.0-only"
 # Copy binaries
 COPY --from=builder /out/bootstrap-admin /usr/local/bin/bootstrap-admin
 
-# Copy timezone data and CA certs
-COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+# The distroless static base already ships tzdata and the CA bundle.
 
 # Run as non-root user (65532 is the nonroot user in distroless)
 USER 65532:65532
