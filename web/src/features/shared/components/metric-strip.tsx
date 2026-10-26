@@ -18,7 +18,7 @@ export const METRIC_STRIP_MAX = 5
 export interface MetricStripItem {
   key: string
   label: string
-  value: number | string
+  value: number | string | React.ReactElement
   /** Small caption after the value. */
   hint?: string
   /**
@@ -67,7 +67,9 @@ const PHONE_SPAN_CLASS = { 2: 'col-span-2', 3: 'col-span-3', 6: 'col-span-6' } a
 
 /**
  * A page's headline numbers as one divided strip (no corner icons, no card per
- * number); the list below stays the focus.
+ * number); the list below stays the focus. Plain elements, not a definition
+ * list: a tile is often a link or a button, and a `<dl>` may hold only
+ * `<dt>`/`<dd>` groups (axe definition-list, dlitem).
  *
  * Phone (research/244 mobile decision M2): compact tiles on a six-track
  * grid, at most two rows: 2 and 4 tiles in halves, 3 in thirds, 5 as three
@@ -97,7 +99,7 @@ export function MetricStrip({
     )
   }
   return (
-    <dl
+    <div
       data-slot="metric-strip"
       className={cn(
         'grid grid-cols-6 overflow-hidden rounded-lg border bg-card',
@@ -119,10 +121,13 @@ export function MetricStrip({
         const warning = item.tone === 'warning' && positive
         const body = (
           <>
-            <dt className="line-clamp-2 text-xs text-muted-foreground sm:line-clamp-none sm:truncate">
+            <span
+              data-slot="metric-label"
+              className="line-clamp-2 block text-xs text-muted-foreground sm:line-clamp-none sm:truncate"
+            >
               {item.label}
-            </dt>
-            <dd className="mt-0.5">
+            </span>
+            <span data-slot="metric-value" className="mt-0.5 block">
               {loading ? (
                 <Skeleton className="h-6 w-12 sm:h-7 sm:w-14" />
               ) : error ? (
@@ -151,9 +156,14 @@ export function MetricStrip({
                   {item.hint}
                 </span>
               ) : null}
-            </dd>
+            </span>
             {item.detail && !loading && !error ? (
-              <dd className="mt-1 min-w-0 text-xs text-muted-foreground">{item.detail}</dd>
+              <span
+                data-slot="metric-detail"
+                className="mt-1 block min-w-0 text-xs text-muted-foreground"
+              >
+                {item.detail}
+              </span>
             ) : null}
           </>
         )
@@ -207,6 +217,6 @@ export function MetricStrip({
           </div>
         )
       })}
-    </dl>
+    </div>
   )
 }

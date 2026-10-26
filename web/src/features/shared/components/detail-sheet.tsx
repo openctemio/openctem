@@ -111,6 +111,8 @@ export interface DetailSectionProps {
   actions?: React.ReactNode
   children?: React.ReactNode
   className?: string
+  /** For a link or a "show me" button that scrolls to the section. */
+  id?: string
 }
 
 export function DetailSection({
@@ -120,11 +122,12 @@ export function DetailSection({
   actions,
   children,
   className,
+  id,
 }: DetailSectionProps) {
   // The section is a landmark named by its heading.
   const headingId = React.useId()
   return (
-    <section className={cn('min-w-0 space-y-3', className)} aria-labelledby={headingId}>
+    <section id={id} className={cn('min-w-0 space-y-3', className)} aria-labelledby={headingId}>
       <div className="flex min-h-7 items-center justify-between gap-2">
         <h3 id={headingId} className="flex min-w-0 items-center gap-2 text-sm font-semibold">
           {Icon && <Icon className="h-4 w-4 shrink-0" />}
