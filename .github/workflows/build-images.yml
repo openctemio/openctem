@@ -84,7 +84,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - id: p
         env:
-          WANT: ${{ inputs.images }}
+          REQUESTED: ${{ inputs.images }}
           EVENT: ${{ github.event_name }}
           REF: ${{ github.ref }}
           ACTOR: ${{ github.actor }}
@@ -104,18 +104,16 @@ jobs:
               else pr="$PR_NUMBER"; prefix="pr${PR_NUMBER}-"; fi ;;
             *) push=false ;;
           esac
-          echo "push=$push" >> "$GITHUB_OUTPUT"
-          echo "tag_prefix=$prefix" >> "$GITHUB_OUTPUT"
-          echo "pr=$pr" >> "$GITHUB_OUTPUT"
+          { echo "push=$push"; echo "tag_prefix=$prefix"; echo "pr=$pr"; } >> "$GITHUB_OUTPUT"
           if [ "$push" != true ]; then
-            echo "keys={}" >> "$GITHUB_OUTPUT"; echo 'matrix={"include":[]}' >> "$GITHUB_OUTPUT"; echo "allinone=false" >> "$GITHUB_OUTPUT"
+            { echo "keys={}"; echo 'matrix={"include":[]}'; echo "allinone=false"; } >> "$GITHUB_OUTPUT"
             echo "no registry push for $EVENT on $REF (fork, Dependabot or untrusted ref): callers build locally"
             exit 0
           fi
           # Expand the request: allinone is assembled FROM the three components.
-          want=" $WANT "
+          want=" $REQUESTED "
           case "$want" in *" allinone "*) want="$want api web console " ;; esac
-          keys='{}'; need=""; haveall=true
+          keys='{}'; need=""
           for i in api admin-cli web console allinone; do
             case "$want" in *" $i "*) ;; *) continue ;; esac
             k="$(bash .github/scripts/image-key.sh "$i")"
@@ -136,9 +134,8 @@ jobs:
           has web && webs="$(jq -c '. + ["web"]' <<<"$webs")"
           has console && webs="$(jq -c '. + ["console"]' <<<"$webs")"
           [ "$webs" != '[]' ] && add web "$webs" "$(jq -r '.web // .console' <<<"$keys")"
-          has allinone && echo "allinone=true" >> "$GITHUB_OUTPUT" || echo "allinone=false" >> "$GITHUB_OUTPUT"
-          echo "keys=$keys" >> "$GITHUB_OUTPUT"
-          echo "matrix={\"include\":$matrix}" >> "$GITHUB_OUTPUT"
+          allinone=false; has allinone && allinone=true
+          { echo "allinone=$allinone"; echo "keys=$keys"; echo "matrix={\"include\":$matrix}"; } >> "$GITHUB_OUTPUT"
 
   build:
     name: Build ${{ matrix.group }} image

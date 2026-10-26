@@ -148,10 +148,10 @@ jobs:
         run: |
           set -euo pipefail
           for pair in "$API_REF local/openctem-api:ci" "$WEB_REF local/openctem-web:ci" "$CONSOLE_REF local/openctem-console:ci" "$ALLINONE_REF local/openctem:ci"; do
-            set -- $pair
-            [ -n "$1" ] || { echo "::error::a shared image is missing"; exit 1; }
-            bash .github/scripts/retry.sh docker pull -q "$1"
-            docker tag "$1" "$2"
+            read -r ref tag <<<"$pair"
+            [ -n "$ref" ] || { echo "::error::a shared image is missing"; exit 1; }
+            bash .github/scripts/retry.sh docker pull -q "$ref"
+            docker tag "$ref" "$tag"
           done
       # No shared images (a fork pull request): build here, with the default
       # docker driver, so images built here are visible to the next build's FROM
