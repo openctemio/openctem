@@ -889,7 +889,7 @@ type SessionMFAChallengeRequest struct {
 // place. The completion signs the person in again with a session that proved
 // the factor.
 // @Summary      Start the second-factor step for a signed-in session
-// @Description  For a session refused with MFA_ENROLLMENT_REQUIRED: issues an enrollment challenge (no factor yet) or a verify challenge (factor enabled), with the names of the organizations that require it. Authenticated by the refresh token (body or cookie with the CSRF pair); the refresh token is not spent. Refused for sessions started through an identity provider.
+// @Description  For a session refused with MFA_ENROLLMENT_REQUIRED: issues an enrollment challenge (no factor yet) or a verify challenge (factor enabled), with the names of the organizations that require it. Authenticated by the refresh token (body or cookie with the CSRF pair); the refresh token is not spent. Enrollment challenges need a session signed in within the last 15 minutes (else 403 REAUTH_REQUIRED: sign in again with the password); verify challenges have no such limit. Refused for sessions started through an identity provider.
 // @Tags         Authentication
 // @Accept       json
 // @Produce      json
@@ -897,6 +897,7 @@ type SessionMFAChallengeRequest struct {
 // @Success      200  {object}  MFAChallengeResponse
 // @Failure      400  {object}  apierror.Error
 // @Failure      401  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
 // @Failure      429  {object}  apierror.Error
 // @Router       /auth/mfa/enroll/session [post]
 func (h *LocalAuthHandler) SessionMFAChallenge(w http.ResponseWriter, r *http.Request) {
@@ -1378,8 +1379,11 @@ func (h *LocalAuthHandler) handleAuthError(w http.ResponseWriter, err error) {
 	case errors.Is(err, auth.ErrMFAEnrollmentRequired):
 		apierror.New(http.StatusForbidden, apierror.CodeMFAEnrollmentRequired,
 			"This organization requires two-factor authentication. Sign in again to complete it.").WriteJSON(w)
+	case errors.Is(err, auth.ErrReauthRequired):
+		apierror.New(http.StatusForbidden, apierror.CodeReauthRequired,
+			"For your security, sign in again to set up two-factor authentication.").WriteJSON(w)
 	case errors.Is(err, auth.ErrMFAFederatedSession):
-		apierror.BadRequest(err.Error()).WriteJSON(w)
+		apierror.BadRequest("This session was started through an identity provider; sign in with your password to set up two-factor authentication").WriteJSON(w)
 	case errors.Is(err, auth.ErrMFANotSupported):
 		apierror.BadRequest("Two-factor authentication for this account is managed by your identity provider").WriteJSON(w)
 	case errors.Is(err, auth.ErrMFAAlreadyEnabled):

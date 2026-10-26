@@ -160,6 +160,8 @@ export interface SessionMfaStart {
   orgs?: string[]
   /** The session itself is gone (401): only a new sign-in helps. */
   sessionExpired?: boolean
+  /** Enrollment needs a recent password sign-in (403 REAUTH_REQUIRED). */
+  reauthRequired?: boolean
   error?: string
 }
 
@@ -651,9 +653,13 @@ export async function startSessionMfaAction(): Promise<SessionMfaStart> {
       .json()
       .catch(() => ({}))) as Partial<MfaChallengeBackendResponse> & {
       message?: string
+      code?: string
     }
     if (response.status === 401) {
       return { success: false, sessionExpired: true, error: body.message }
+    }
+    if (response.status === 403 && body.code === 'REAUTH_REQUIRED') {
+      return { success: false, reauthRequired: true, error: body.message }
     }
     if (!response.ok || !body.mfa_token || !body.mfa_purpose) {
       return { success: false, error: body.message || `HTTP ${response.status}` }

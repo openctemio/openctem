@@ -91,7 +91,20 @@ var (
 	// ErrMFAFederatedSession: a session from a social or identity-provider
 	// sign-in cannot start our own second-factor step from an invitation.
 	ErrMFAFederatedSession = errors.New("this session was started through an identity provider; sign in with your password to set up two-factor authentication")
+	// ErrReauthRequired: an enrollment challenge was asked for with a session
+	// that was not signed in recently. Binding a first authenticator is
+	// account takeover if a stolen refresh token alone could do it, so the
+	// person signs in again with the password (as EnableMFA requires).
+	ErrReauthRequired = errors.New("sign in again to set up two-factor authentication")
 )
+
+// sessionEnrollFreshness is how recently a session must have been signed in
+// for its refresh token alone to start an enrollment challenge
+// (SessionMFAChallenge). It covers sign-up or sign-in followed straight by
+// accepting an invitation; an older session has to repeat the password login,
+// like the self-service enable flow (current password plus a code). Verify
+// challenges need no such window: completing one takes the authenticator.
+const sessionEnrollFreshness = 15 * time.Minute
 
 // SecurityNotifier tells a user about security-relevant changes to their
 // account. Implementations must not block: calls happen after the change is
@@ -632,9 +645,12 @@ func (s *AuthService) tenantNeedsSecondFactor(ctx context.Context, t *tenantdom.
 		return true
 	}
 	m, merr := s.tenantRepo.GetMembership(ctx, userID, tid)
-	if merr != nil || m == nil {
+	if merr != nil && !errors.Is(merr, shared.ErrNotFound) {
 		s.logger.Warn("mfa policy: failed to load membership", "user_id", userID.String(), "tenant_id", tid.String(), "error", merr)
 		return true
+	}
+	if merr != nil || m == nil {
+		return false // no membership: the mint refuses it elsewhere, as for the personal and outside policies
 	}
 	if tenantdom.IsPersonalMember(m) && sec.PersonalAccounts.Effective() == tenantdom.PersonalAccountsAllowedWithMFA {
 		return true
@@ -676,7 +692,7 @@ func (s *AuthService) mfaRequiredInTenant(ctx context.Context, sec tenantdom.Sec
 // for example right after accepting an invitation or when a token refresh is
 // refused. The caller proves the session with its refresh token, exactly as
 // AcceptInvitationWithRefreshToken does; the token is not spent. A user without an enabled factor gets an enrollment challenge, a
-// user who has one gets a verify challenge. Federated sessions are refused:
+// user who has one gets a verify challenge. Enrollment needs a recent sign-in (sessionEnrollFreshness, else ErrReauthRequired); a verify challenge does not. Federated sessions are refused:
 // they cannot complete our second step here.
 func (s *AuthService) SessionMFAChallenge(ctx context.Context, refreshToken, ip, ua string) (*MFAChallengeInfo, error) {
 	if !s.mfaEnabled() {
@@ -730,6 +746,11 @@ func (s *AuthService) SessionMFAChallenge(ctx context.Context, refreshToken, ip,
 	}
 	if f != nil && f.Enabled {
 		return s.issueMFAChallenge(ctx, u.ID(), mfa.PurposeVerify, ip, ua)
+	}
+	// Enrollment from the session alone only right after the sign-in: a
+	// stolen refresh token must not bind an attacker's authenticator.
+	if time.Since(sess.CreatedAt()) > sessionEnrollFreshness {
+		return nil, ErrReauthRequired
 	}
 	return s.issueEnrollChallenge(ctx, u.ID(), s.mfaRequiringOrganizations(ctx, u.ID()), ip, ua)
 }

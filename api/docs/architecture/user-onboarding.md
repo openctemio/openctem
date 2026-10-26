@@ -293,7 +293,11 @@ appears in a URL a server or proxy records (RFC-041 §3.2 P4):
   verify challenge when a factor exists, with the names of the requiring
   organizations; `/auth/mfa/enroll/{start,confirm}` or `/auth/mfa/verify`
   complete it and sign the person in again with a session that proved the
-  factor. Sessions started through an identity provider get a clear refusal.
+  factor. An enrollment challenge needs a session signed in within the last 15
+  minutes (sign-up or sign-in, then accept); an older session gets 403
+  `REAUTH_REQUIRED` and the web sends the person to the password sign-in, so a
+  stolen refresh token alone cannot bind an authenticator. Verify challenges
+  have no such limit. Sessions started through an identity provider get a clear refusal.
   The same endpoint serves a refused token refresh (`/two-factor-setup`). The
   sign-in offers enrollment under the same three policies
   (`mfaRequiringOrganizations`), so it never loops.
