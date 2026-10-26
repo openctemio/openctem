@@ -23,9 +23,13 @@ of RFC-052 §4.3:
 | Nonce store | Redis `SET NX` per keyid and nonce, TTL = window + skew; per-replica fallback | — |
 | Signer on every request | — | `sensorsig.Transport` wrapping the API client's transport; removes any bearer header |
 
-Order on a request: parse the headers (anything outside the profile is `401`
-at once) → window → key by `keyid` (active key, active sensor) → signature →
-nonce → body against `Content-Digest`. The body is read only after the
+Order on a request: parse the headers (anything outside the profile, or a
+window longer than 5 minutes, is `401` at once) → key by `keyid` (active key,
+active sensor) → signature → clock window → nonce → body against
+`Content-Digest`. A signature that verifies but lies outside the 2-minute
+clock tolerance answers `401` with the `clock-skew` problem (`server_time`,
+`clock_offset_seconds`) and a WARN log with the offset; every other refusal
+stays the generic `401`. The nonce is not spent by a refused request. The body is read only after the
 signature verified, so an unauthenticated caller cannot make the API buffer
 it.
 
@@ -38,7 +42,7 @@ it.
 | Platform pairing key | HKDF-SHA256 of `APP_ENCRYPTION_KEY`, info `openctem/sensor-pairing/platform-key/v1` (Ed25519 seed) |
 | Code storage | HMAC-SHA256 with the sensor-key pepper (`SENSOR_KEY_PEPPER`), never in clear |
 | Repository | `internal/infra/postgres/sensor_pairing_repository.go` (`sensor_pairings`) |
-| Sensor-plane routes | `internal/infra/http/routes/sensor_pairing.go`: `/api/v2/sensor/pairing*`, own group, signed by the pairing key, rate-limited |
+| Sensor-plane routes | `internal/infra/http/routes/sensor_pairing.go`: `/api/v2/sensor/pairing*`, own group, signed by the pairing key, rate-limited: an entry budget per address for every start, then (only for a verified start) a budget per address for codeless starts or per code/token plus a wider per-address cap for starts with a code or token (`pairingStartBudget`; RFC-052 §4.4) |
 | User-plane routes | `/api/v1/sensor-pairings/*` (`sensors:pair`, `sensors:approve`) |
 | Step-up | `AuthService.VerifyStepUp` (`internal/app/auth/stepup.go`): TOTP if enrolled, else password, else a session younger than 10 minutes |
 | Sensor side | `sdk-go/pkg/sensorkit` (`Pair`, identity store, auto-pair), `sensor` (`openctemio-sensor pair`) |
