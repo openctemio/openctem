@@ -142,7 +142,7 @@ export function suppressionScopeSummary(rule: SuppressionRule, t: Translate = pl
   if (rule.rule_id) parts.push(rule.rule_id)
   if (rule.path_pattern) parts.push(rule.path_pattern)
   if (rule.asset_id) parts.push(t('exceptions.scope.assetScoped', 'asset-scoped'))
-  return parts.length ? parts.join(' · ') : t('exceptions.scope.any', 'Any finding')
+  return parts.length ? parts.join(', ') : t('exceptions.scope.any', 'Any finding')
 }
 
 export function suppressionTypeLabel(type: SuppressionType, t: Translate = plain): string {

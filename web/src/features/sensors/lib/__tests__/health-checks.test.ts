@@ -184,7 +184,7 @@ describe('sensorHealthChecks', () => {
       { id: 'z', name: 'prod-k8s', ranges: ['10.40.0.0/16'], sensor_ids: ['s1', 's2'] },
     ] as ScanZone[]
     const c = byKey(sensorHealthChecks(me, { ...ctx, zones, fleet: [me, other] }))
-    expect(c.zone.text).toBe('prod-k8s · 10.40.0.0/16 (1 of 2 online)')
+    expect(c.zone.text).toBe('prod-k8s, 10.40.0.0/16 (1 of 2 online)')
     const none = byKey(sensorHealthChecks(me, { ...ctx, zones: [{ ...zones[0], sensor_ids: [] }] }))
     expect(none.zone).toMatchObject({ status: 'info', action: 'zones' })
   })

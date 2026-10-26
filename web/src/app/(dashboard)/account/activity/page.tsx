@@ -129,7 +129,6 @@ export default function ActivityPage() {
                       )}
                       <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
                         {activity.actor_ip && <span>{activity.actor_ip}</span>}
-                        {activity.actor_ip && <span>•</span>}
                         <span title={formatDateSafe(activity.timestamp, 'PPpp')}>
                           {formatRelative(activity.timestamp)}
                         </span>

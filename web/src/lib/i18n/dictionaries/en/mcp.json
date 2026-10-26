@@ -183,7 +183,7 @@
   "mcp.requests.emptyTitle": "No waiting requests",
   "mcp.requests.failed": "Could not decide the request",
   "mcp.requests.formerMember": "a former member",
-  "mcp.requests.meta": "Requested by {name} · {count} request(s) · {when}",
+  "mcp.requests.meta": "Requested by {name}, {count} request(s), {when}",
   "mcp.requests.title": "Access requests",
   "mcp.scope.assets.short": "Assets",
   "mcp.scope.assets.title": "Read assets and attack paths",

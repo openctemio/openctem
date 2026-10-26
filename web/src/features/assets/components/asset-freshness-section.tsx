@@ -76,7 +76,7 @@ export function AssetFreshnessSection({ assetId }: { assetId: string }) {
                     ) : (
                       t('assetFreshness.neverObserved', 'Not observed yet')
                     )}
-                    {' · '}
+                    {', '}
                     {t(`assetFreshness.ttl.${ttl.key}`, `fresh for ${ttl.n}`, { n: ttl.n })}
                   </div>
                 </div>
@@ -98,7 +98,7 @@ export function AssetFreshnessSection({ assetId }: { assetId: string }) {
           />
           {enrichment.last_run_id && (
             <>
-              {' · '}
+              {', '}
               <Link
                 href={`/scans/runs?run=${encodeURIComponent(enrichment.last_run_id)}`}
                 className="underline"

@@ -215,7 +215,6 @@ function SummaryRow({
         {shown.map((it, i) => (
           <React.Fragment key={it.relationship_id}>
             <AssetName item={it} onNavigateToAsset={onNavigateToAsset} />
-            {i < shown.length - 1 && <span className="text-muted-foreground">·</span>}
           </React.Fragment>
         ))}
         {rest > 0 &&
@@ -561,9 +560,9 @@ function EdgeFacts({ item }: { item: RelatedAssetItem }) {
         >
           {t(`assets.related.source.${source}`, sourceFallback[source])}
           {item.confidence === 'low' && (
-            <> · {t('assets.related.lowConfidence', 'low confidence')}</>
+            <>, {t('assets.related.lowConfidence', 'low confidence')}</>
           )}
-          <> · {when}</>
+          <>, {when}</>
         </span>
       </TooltipTrigger>
       <TooltipContent side="top" className="max-w-xs text-xs">

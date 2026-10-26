@@ -395,10 +395,9 @@ export function SensorsSection({
           <span className="flex flex-wrap items-center gap-x-1.5">
             <span className="font-medium text-foreground">{g.label}</span>
             {g.zone && g.zone.ranges.length > 0 && (
-              <span className="font-mono">· {g.zone.ranges.slice(0, 2).join(', ')}</span>
+              <span className="font-mono">{g.zone.ranges.slice(0, 2).join(', ')}</span>
             )}
             <span>
-              ·{' '}
               {t(
                 rows.length === 1 ? 'sensors.list.count.one' : 'sensors.list.count.other',
                 undefined,
@@ -408,12 +407,12 @@ export function SensorsSection({
               )}
             </span>
             {zoneGap ? (
-              <span className="text-destructive">· {t('sensors.list.zoneGap')}</span>
+              <span className="text-destructive">{t('sensors.list.zoneGap')}</span>
             ) : (
-              <span>· {t('sensors.list.onlineCount', undefined, { count: online })}</span>
+              <span>{t('sensors.list.onlineCount', undefined, { count: online })}</span>
             )}
             {key === '__none__' && groupBy === 'zone' && (
-              <span>· {t('sensors.list.noZoneHint')}</span>
+              <span>{t('sensors.list.noZoneHint')}</span>
             )}
           </span>
         )

@@ -268,14 +268,12 @@ export function SensorGrantEditDialog({
                 </Select>
                 {selectedProfile && (
                   <p className="text-xs text-muted-foreground">
-                    {tierText(selectedProfile.tier_ceiling)} ·{' '}
+                    {tierText(selectedProfile.tier_ceiling)},{' '}
                     {networkText(selectedProfile.target_network)}
                     {selectedProfile.allow_credentials
-                      ? ` · ${t('sensors.grantEdit.credentialsTag')}`
+                      ? `, ${t('sensors.grantEdit.credentialsTag')}`
                       : ''}
-                    {selectedProfile.allow_push_ingest
-                      ? ` · ${t('sensors.grantEdit.pushTag')}`
-                      : ''}
+                    {selectedProfile.allow_push_ingest ? `, ${t('sensors.grantEdit.pushTag')}` : ''}
                     . {t('sensors.grantEdit.profileKeeps')}
                   </p>
                 )}

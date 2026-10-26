@@ -671,7 +671,7 @@
   "settings.search.label": "Tìm trong cài đặt",
   "settings.search.placeholder": "Tìm cài đặt: xác thực hai lớp, danh sách IP, Slack…",
   "settings.securityCard.allGood": "Hiện không có gì cần xử lý.",
-  "settings.securityCard.counts": "{risks} rủi ro · {warns} cảnh báo",
+  "settings.securityCard.counts": "{risks} rủi ro, {warns} cảnh báo",
   "settings.securityCard.open": "Mở tổng quan bảo mật",
   "settings.serviceAccounts.accountable": "Người chịu trách nhiệm",
   "settings.serviceAccounts.cardDescription": "Tài khoản dịch vụ không bao giờ đăng nhập và không thể là chủ sở hữu, quản trị viên hay xem được mọi tài sản. Nó chỉ có những gì vai trò và nhóm của nó cấp, và khóa của nó không mang thêm quyền nào.",
