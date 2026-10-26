@@ -8,6 +8,7 @@ import { RelativeTime } from '@/features/shared/components/relative-time'
 import type { Vulnerability } from '../../types'
 import type { CveExposure } from '../../types/exposure'
 import { cvssWords, exploitSignals, feedStale } from '../../lib/vuln-page'
+import { formatDateOnly } from '@/lib/date-only'
 
 /** The share of CVEs at or above a percentile, as the number before "%". */
 function topShare(percentile: number): string {
@@ -73,7 +74,7 @@ export function IntelStrip({
           {kev ? (
             <>
               {t('vulnPage.intel.kevAdded', 'Added {date}', {
-                date: new Date(kev.date_added).toLocaleDateString(locale),
+                date: formatDateOnly(kev.date_added, locale, { dateStyle: 'medium' }),
               })}
               <br />
               {kev.ransomware_use?.toLowerCase() === 'known'
