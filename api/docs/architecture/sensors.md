@@ -280,6 +280,77 @@ Code: `pkg/domain/sensor/outbox.go` (`OutboxStats`, `Clamp`, `Warning`),
 `internal/infra/postgres/sensor_repository.go` (`UpdateHeartbeat`),
 `internal/infra/http/handler/sensor_handler.go` (`SensorOutboxResponse`).
 
+## Local store on the heartbeat
+
+A sensor built on sdk-go with a local store (sealed outbox, journal,
+workspaces, content packs, logs) runs one cleanup janitor over that data and
+stops claiming new jobs when it fills up: storage over its quota, the disk
+under the data directory low, or the outbox full of results the platform has
+not acknowledged. Results it already holds still upload; new work waits until
+the store recovers. To a platform whose hello lists the protocol v2 feature
+`local_store`, the heartbeat carries the state of that store:
+
+```json
+"local_store": {
+  "level": "high", "stop_claiming": true,
+  "reason": "9 % of the volume free, below 10 %",
+  "bytes_by_class": {"outbox": 1048576, "workspace": 52428800},
+  "total_bytes": 53477376, "quota_bytes": 1073741824, "disk_level": "low",
+  "sweeps": 12, "last_sweep_at": "2026-10-25T08:00:00Z", "last_sweep_removed": 3,
+  "boot": 4, "boot_reset": false, "tampered": 0
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `level` | The store's watermark: `ok`, `high`, `critical`. |
+| `stop_claiming` | The sensor claims no new jobs until the store recovers. |
+| `reason` | Why, in the sensor's words. |
+| `bytes_by_class` | Bytes per class: `outbox`, `dead_letter`, `journal`, `workspace`, `content_pack`, `log`, `state`. |
+| `total_bytes`, `quota_bytes` | The store's size and its quota (0: none). |
+| `disk_level` | The data volume: `ok`, `low`, `critical`, `unknown`. |
+| `sweeps`, `last_sweep_at`, `last_sweep_removed` | Cleanup sweeps since start and the latest one. |
+| `boot_reset`, `tampered` | The store's boot record went back (an old copy may have been restored); records that failed authentication since start. |
+
+**Untrusted, read leniently.** A member of the wrong type is ignored, an
+enum outside its set is dropped, a class outside the list is dropped, sizes
+are clamped (negative to 0, at most 2^50 bytes), and the reason is reduced to
+one line of printable text of at most 240 characters (control, format and
+bidi characters become spaces). Display, health and placement explanations
+only: the platform never dispatches more or less because of it; the sensor
+itself decides to claim.
+
+**Stored.** `sensors.reported_local_store` (JSONB) and
+`sensors.local_store_reported_at`. A heartbeat without the member leaves them
+as they are. With the heartbeat soft state in Redis, a steady sensor's report
+reaches Postgres with the liveness checkpoint (every 10 minutes); a change of
+`stop_claiming`, `level` or `disk_level` is part of the heartbeat state digest
+and is written at once. A stored report counts as current while it is at most
+15 minutes (or three heartbeat intervals, when longer) older than the
+sensor's latest request; an older one was left behind by an SDK that no
+longer sends it and is ignored.
+
+**Shown.** `GET /api/v1/sensors` and `GET /api/v1/sensors/{id}` return the
+current report as `local_store` (with `reported_at`), `null` without one. A
+sensor that stopped claiming gets the critical health reason
+`stopped_claiming` (state `degraded` while it heartbeats), whose message says
+why and what to do. The response also carries `auth_kind` (`bearer` or
+`key_bound`), so the console can tell a key-bound sensor (no API key prefix)
+from a bearer key.
+
+**Placement.** `GET /api/v1/scan-runs/{id}/tasks/{task_id}/placement`
+gives such a sensor the reason `stopped_claiming` when every platform check
+would hand it the job, instead of counting it eligible: a queued task that
+waits only on sensors that stopped claiming says so. The per-sensor verdicts
+are shown only with `sensors:read`, as for every other reason.
+
+Code: `pkg/domain/sensor/local_store.go` (`ParseLocalStoreReport`,
+`CurrentLocalStore`, `StoppedClaiming`), `internal/infra/postgres/sensor_repository.go`
+(`UpdateHeartbeat`), `internal/infra/postgres/sensor_liveness_store.go`
+(`CheckpointLiveness`), `internal/app/command/placement.go`
+(`sensorPlacement`), `internal/infra/http/handler/sensor_handler.go`
+(`SensorLocalStoreResponse`); migration `sensor_local_store`.
+
 ## Fleet health (Sensors page)
 
 `GET /api/v1/sensors`, `GET /api/v1/sensors/{id}` and `GET /api/v1/sensors/stats`
