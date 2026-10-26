@@ -35,6 +35,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { resetPasswordSchema, type ResetPasswordInput } from '../schemas/auth.schema'
 import { authErrorText } from '../lib/auth-error-codes'
 import { translatingResolver } from '../lib/translating-resolver'
+import { RevokeApiKeysOption } from './revoke-api-keys-option'
 import { resetPasswordAction } from '../actions/local-auth-actions'
 import { usePasswordPolicy } from '../api/use-auth-providers'
 import { passwordPolicyIssue } from '../lib/password-policy'
@@ -62,7 +63,7 @@ export const PASSWORD_TOKEN_COPY: Record<PasswordTokenMode, ModeCopy> = {
     submit: 'Reset password',
     successTitle: 'Password reset',
     successDescription:
-      'Your password has been updated. You can now sign in with your new password.',
+      'Your password has been updated. Your sessions were signed out and connected apps were revoked. You can now sign in with your new password.',
     invalidTitle: 'Invalid reset link',
     invalidDescription:
       'This password reset link is invalid or missing a token. Request a new one.',
@@ -155,6 +156,7 @@ function TokenPasswordForm({ mode, token }: { mode: PasswordTokenMode; token: st
   const [isSuccess, setIsSuccess] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [errorCode, setErrorCode] = useState<string | null>(null)
+  const [revokeKeys, setRevokeKeys] = useState(true)
 
   const passwordPolicy = usePasswordPolicy()
   const form = useForm<ResetPasswordInput>({
@@ -171,7 +173,11 @@ function TokenPasswordForm({ mode, token }: { mode: PasswordTokenMode; token: st
       return
     }
     startTransition(async () => {
-      const result = await resetPasswordAction(data.token, data.password)
+      const result = await resetPasswordAction(
+        data.token,
+        data.password,
+        mode === 'reset' && revokeKeys
+      )
       if (result.success) {
         setIsSuccess(true)
         toast.success(copy.successDescription)
@@ -294,6 +300,15 @@ function TokenPasswordForm({ mode, token }: { mode: PasswordTokenMode; token: st
                 </FormItem>
               )}
             />
+
+            {mode === 'reset' && (
+              <RevokeApiKeysOption
+                id="reset-revoke-keys"
+                checked={revokeKeys}
+                onCheckedChange={setRevokeKeys}
+                disabled={isPending}
+              />
+            )}
 
             <Button className="mt-2" disabled={isPending} type="submit">
               {isPending ? (

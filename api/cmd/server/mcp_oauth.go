@@ -106,6 +106,15 @@ func newMCPOAuthService(d *routes.MCPDiscovery, deps *HandlerDeps, log *logger.L
 		log.Warn("MCP OAuth off", "error", err.Error())
 		return nil
 	}
+	// A password reset or change and a sign-out everywhere also end the
+	// person's connected applications in every organization: a connector
+	// approved with a stolen session must not outlive the credential. The
+	// hook gets one user id and touches only that user.
+	if svc.Auth != nil {
+		svc.Auth.AddSessionsRevokedHook(func(ctx context.Context, userID shared.ID) {
+			_, _ = s.RevokeUserGrants(ctx, userID) // logs its own failure
+		})
+	}
 	return s
 }
 

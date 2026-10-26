@@ -124,8 +124,7 @@ type Run struct {
 
 	// DeadlineAt is when the reaper settles the run if it is still open:
 	// started_at plus the policy cap (the scan's max duration, else the
-	// workflow's, else the platform's 24 h), fixed when the run starts
-	// (RFC-046 §6.3). Nil for runs started before migration 000674.
+	// workflow's, else the platform's 24 h), fixed when the run starts. Nil for runs started before migration 000674.
 	DeadlineAt *time.Time
 	// DeadlineReason is which policy set DeadlineAt (DeadlineReason*); ""
 	// when the run has none or started before the reason was recorded.

@@ -90,7 +90,7 @@ type Manifest struct {
 	Concurrency  *ManifestConcurrency `json:"concurrency,omitempty"`
 	Capabilities []string             `json:"capabilities,omitempty"`
 	Tools        []ManifestTool       `json:"tools"`
-	// LocalPolicy is the sensor-local policy report (RFC-040 §5.7), sent
+	// LocalPolicy is the sensor-local policy report, sent
 	// by SDKs that see "local_policy" on hello; sanitized when stored.
 	LocalPolicy *LocalPolicyReport `json:"local_policy,omitempty"`
 	// Posture is the sensor's platform TLS pin and tool sandbox (posture.go),

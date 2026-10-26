@@ -1000,6 +1000,10 @@ type SessionResult struct {
 
 // createSession creates a new session for the user.
 func (s *OAuthService) createSession(ctx context.Context, u *userdom.User) (*SessionResult, error) {
+	// A blocked or suspended account opens no session (it would only 401).
+	if !u.IsActive() {
+		return nil, ErrAccountSuspended
+	}
 	// Bind the token to its session: generate the session id first, embed it in
 	// the JWT, then persist the session under the SAME id — so an OAuth session
 	// is revocable (mirrors the password Login flow). Previously the token was
