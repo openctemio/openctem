@@ -669,6 +669,12 @@ func (s *RiskScoringSettings) Validate() error {
 			return fmt.Errorf("%w: weight '%s' must be 0-100, got %d", shared.ErrValidation, name, w)
 		}
 	}
+	// With CTEM points off the CTEM weight is shared out over the other three
+	// components; when they all weigh 0 there is nothing to share it with and
+	// every asset would score 0.
+	if !s.CTEMPoints.Enabled && s.Weights.Exposure+s.Weights.Criticality+s.Weights.Findings == 0 {
+		return fmt.Errorf("%w: enable CTEM points or give exposure, criticality or findings a weight", shared.ErrValidation)
+	}
 	for name, v := range map[string]int{
 		"public": s.ExposureScores.Public, "restricted": s.ExposureScores.Restricted,
 		"private": s.ExposureScores.Private, "isolated": s.ExposureScores.Isolated,

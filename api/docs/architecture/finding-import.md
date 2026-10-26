@@ -100,7 +100,11 @@ A preview ignores the key.
   restricted uploader only adds findings to existing assets in their scope
   and creates none. Coverage is **partial** unless the upload declares
   `coverage=full` for explicit assets: without that an import never closes
-  anything, whatever the file says.
+  anything, whatever the file says. Closing by absence is a verification of a
+  fix: it also needs `findings:verify` (without it the file is imported, the
+  receipt note is `needs_verify` and nothing closes); a critical or
+  known-exploited finding stays open; and only a finding whose latest sighting
+  was an upload closes, never one a platform sensor last saw.
 - The tenant comes from the authenticated request, never from the file.
 
 ## VEX documents

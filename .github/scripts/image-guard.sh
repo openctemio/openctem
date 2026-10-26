@@ -29,7 +29,7 @@ case "$comp" in
   openctem-gateway) budget=75 ;;   # 63 MB (runs as uid 1000)
   migrations)       budget=25 ;;   # 18 MB
   seed)             budget=25 ;;   # 17 MB
-  admin-cli)        budget=40 ;;   # 34 MB at v0.10.0 (WebAuthn + TOTP for console sign-in)
+  admin-cli)        budget=48 ;;   # 42 MB at v0.15.0 (Go 1.27.3 toolchain, console four-eyes and recovery actions)
   *) echo "image-guard: no budget for component '$comp'; add one" >&2; exit 2 ;;
 esac
 
@@ -64,11 +64,24 @@ else
   echo "image-guard $comp: no setuid/setgid files"
 fi
 
-if ! trivy image --quiet --scanners vuln --pkg-types os --ignore-unfixed \
+# Fetch the vulnerability DB first, with retries: a registry hiccup (a 404 on a
+# mirror layer) must fail as "DB unavailable", never be reported as advisories.
+db_ok=0
+for attempt in 1 2 3; do
+  if trivy image --quiet --download-db-only; then db_ok=1; break; fi
+  echo "image-guard $comp: vulnerability DB download failed (attempt $attempt), retrying"
+  sleep $((attempt * 15))
+done
+if [ "$db_ok" != 1 ]; then
+  echo "::error::image-guard $comp: could not download the vulnerability DB (registry outage), not an image problem"
+  exit 1
+fi
+
+if ! trivy image --quiet --skip-db-update --scanners vuln --pkg-types os --ignore-unfixed \
   --severity HIGH,CRITICAL --exit-code 1 --format table "$img"; then
   bad "OS packages with fixable HIGH/CRITICAL advisories (refresh the base image)"
 fi
-lib=$(trivy image --quiet --scanners vuln --pkg-types library --ignore-unfixed \
+lib=$(trivy image --quiet --skip-db-update --scanners vuln --pkg-types library --ignore-unfixed \
   --severity HIGH,CRITICAL --format json "$img" |
   jq -r '[.Results[]? | .Target as $t | .Vulnerabilities[]? | "\($t): \(.PkgName) \(.InstalledVersion) -> \(.FixedVersion) \(.VulnerabilityID)"] | unique | .[]')
 if [ -n "$lib" ]; then
