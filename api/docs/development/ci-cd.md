@@ -494,6 +494,29 @@ PR-only steps (Migration Safety, golangci-lint on new code) are skipped in the
 queue: they already ran on the PR. API Security and Web Security do not run in
 the queue (no required check; the PR and the push scan the change).
 
+### Flaky-test quarantine
+
+A flaky test blocks every PR in the merge queue, and a rerun until green hides
+the race. Instead, reproduce it (`go test -race -count=200 -run '^TestX$'`,
+`npx playwright test --repeat-each=20`), then either fix it in a small PR or
+quarantine it while the fix is made:
+
+- Add an entry to `.github/quarantine.yml`: the test
+  (`go:<import path>.<TestName>` or `pw:e2e/<spec>.spec.ts::<title>`), the
+  tracking issue, an owner, the date added and `fix_by`, at most 14 days later.
+- API CI passes the active Go entries to `go test -skip`; Web E2E adds the
+  active Playwright titles to `--grep-invert`. Nothing else changes.
+- The day after `fix_by` the entry stops applying and the test runs again, so
+  an unfixed race shows up again instead of staying hidden; Workflow Lint warns
+  about expired entries. Remove the entry in the PR that fixes the race.
+- `quarantine.py check` (Workflow Lint) refuses an entry without an issue or
+  owner, a fix date beyond 14 days, a Go name that exists in two packages
+  (`-skip` cannot tell them apart), and any test whose name says it guards
+  security (tenant isolation, authorization, scope, RLS, secrets, signatures):
+  those are fixed, never skipped.
+- The list is a security-sensitive path, so adding an entry needs the
+  maintainer's `security-ack`: a PR cannot silence the test it breaks.
+
 ### Toolchain versions
 
 - **Go:** every `actions/setup-go` step uses `go-version-file: api/go.mod`, which
