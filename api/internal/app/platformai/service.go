@@ -364,11 +364,12 @@ func (s *Service) plan(ctx context.Context, in Input) (plan, error) {
 	if next.Enabled && !next.usable() {
 		return plan{}, fmt.Errorf("%w: choose a provider and a model and set its key (an OpenAI-compatible server: its base URL) to turn platform AI on", ErrInvalid)
 	}
-	if next.KeyEncrypted == "" {
+	switch {
+	case next.KeyEncrypted == "":
 		next.KeyFP = ""
-	} else if keyChanged {
+	case keyChanged:
 		next.KeyFP = s.fingerprint(*in.APIKey)
-	} else if next.KeyFP == "" {
+	case next.KeyFP == "":
 		// Settings saved before fingerprints were kept: derive it once.
 		if plain, derr := s.encryptor.DecryptString(next.KeyEncrypted); derr == nil {
 			next.KeyFP = s.fingerprint(plain)
