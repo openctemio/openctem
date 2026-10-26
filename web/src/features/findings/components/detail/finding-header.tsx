@@ -7,7 +7,7 @@
  *
  *   [SCA] [CVE-2024-21538 ↗] [CWE-1333]
  *   cross-spawn ReDoS vulnerability
- *   [Re-verify] [AI triage] [⋯]
+ *   [Re-verify] [Add to task] [AI triage] [⋯]
  *
  * Verifying a fix is the Retest section's job (RFC-039): it re-runs the check
  * that found the issue. The old whole-asset "verification scan" is retired.
@@ -24,6 +24,7 @@ import {
   Link2,
   Loader2,
   MoreHorizontal,
+  ListPlus,
   ShieldCheck,
   Ticket,
 } from 'lucide-react'
@@ -42,6 +43,9 @@ import { copyToClipboard } from '@/lib/clipboard'
 import { safeHref } from '@/lib/safe-href'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { usePermissions } from '@/context/permission-provider'
+import { useCanMutate } from '@/lib/permissions'
+import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
+import { AddFindingsToTaskDialog } from '@/features/remediation-hub/components/add-findings-to-task-dialog'
 import { AITriageButton } from '@/features/ai-triage/components'
 import { isNoValidationSensorError, useRequestValidationApi } from '../../api/use-findings-api'
 import type { FindingDetail, FindingStatus } from '../../types'
@@ -66,6 +70,11 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
   // Re-verify dispatches the reachability check (POST /validate): findings:verify.
   const canVerify = hasPermission('findings:verify')
   const canCreateTicket = useCanCreateTicket()
+  // Adding to a task needs the task write permission and the remediation module.
+  const canCreateTask = useCanMutate('POST /api/v1/remediation/tasks')
+  const remediationEnabled = useModuleEnabled('remediation')
+  const canAddToTask = canCreateTask && remediationEnabled
+  const [taskOpen, setTaskOpen] = useState(false)
   const [ticketOpen, setTicketOpen] = useState(false)
   const [duplicateOpen, setDuplicateOpen] = useState(false)
   const [reverifyOpen, setReverifyOpen] = useState(false)
@@ -180,6 +189,12 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
             {t('findings.header.reverify', 'Re-verify')}
           </Button>
         )}
+        {canAddToTask && (
+          <Button variant="outline" size="sm" onClick={() => setTaskOpen(true)}>
+            <ListPlus className="h-3.5 w-3.5" aria-hidden />
+            {t('remediationClaim.add.addToTask', 'Add to task')}
+          </Button>
+        )}
         <AITriageButton
           findingId={finding.id}
           variant="ai"
@@ -245,6 +260,16 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
           open={duplicateOpen}
           onOpenChange={setDuplicateOpen}
           onMarked={(canonicalId) => router.push(`/findings/${encodeURIComponent(canonicalId)}`)}
+        />
+      )}
+
+      {canAddToTask && taskOpen && (
+        <AddFindingsToTaskDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setTaskOpen(false)
+          }}
+          findings={[{ id: finding.id, title: finding.title }]}
         />
       )}
 
