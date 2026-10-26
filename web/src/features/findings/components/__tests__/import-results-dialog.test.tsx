@@ -276,4 +276,55 @@ describe('ImportResultsDialog', () => {
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/apply_failed/))
     expect(onImported).not.toHaveBeenCalled()
   })
+
+  it('previews a recon directory: candidates, files skipped on purpose and unmapped files, nothing hidden', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        session_id: 's',
+        dry_run: true,
+        files: [
+          {
+            name: 'recon.zip',
+            format: 'reconftw',
+            layout: 'v4',
+            stats: {
+              records: 9,
+              assets: 7,
+              findings: 1,
+              components: 0,
+              statements: 0,
+              skipped: 0,
+              endpoints: 4,
+            },
+            candidates: 3,
+            skipped_by_policy: [{ path: 'osint/emails.txt', reason: 'people data' }],
+            skipped_by_policy_total: 2,
+            unmapped: ['new_tool/out.md'],
+            unmapped_total: 1,
+          },
+        ],
+      })
+    )
+    const user = userEvent.setup()
+    render(<ImportResultsDialog open onOpenChange={vi.fn()} />)
+    await user.click(screen.getByLabelText('Recon results (reconFTW directory)'))
+    expect(screen.getByTestId('recon-hint')).toBeInTheDocument()
+    expect(screen.queryByLabelText(/Qualys KnowledgeBase/)).toBeNull()
+    const input = screen.getByLabelText('File') as HTMLInputElement
+    expect(input.accept).toContain('.zip')
+    await userEvent.upload(input, new File(['PK'], 'recon.zip', { type: 'application/zip' }))
+    await user.click(screen.getByRole('button', { name: /Preview/ }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    // The server detects the layout: no format is forced.
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/findings/imports?dry_run=true')
+    const recon = await screen.findByTestId('recon-summary')
+    expect(recon).toHaveTextContent('Hosts outside your scope')
+    expect(screen.getByTestId('recon-candidates')).toHaveTextContent(
+      /3 hosts are outside your scope/
+    )
+    expect(recon).toHaveTextContent('2 files skipped on purpose')
+    expect(screen.getByText('1 files not recognized')).toBeInTheDocument()
+    await user.click(screen.getByText('2 files skipped on purpose'))
+    expect(screen.getByText('osint/emails.txt')).toBeInTheDocument()
+  })
 })

@@ -1,8 +1,7 @@
 /**
- * /attack-paths and /exposure-chains: a failed read says so (it used to render
- * "No relationship data yet"), the false "breaks the most attack paths" claim
- * is gone, the ranked list shows no invented Internet node, and a step outside
- * the viewer's scope renders as a placeholder.
+ * /exposure-chains: a failed read says so (it used to render "No relationship
+ * data yet"), and a step outside the viewer's scope renders as a placeholder.
+ * The /attack-paths view has its own tests (attack-path-view.test.tsx).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
@@ -15,91 +14,22 @@ globalThis.ResizeObserver ??= class {
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
-  usePathname: () => '/attack-paths',
+  usePathname: () => '/exposure-chains',
   useSearchParams: () => new URLSearchParams(),
 }))
 
-const scoring = vi.fn()
 const chains = vi.fn()
 vi.mock('@/features/attack-surface', async (orig) => ({
   ...(await orig<typeof import('@/features/attack-surface')>()),
-  useAttackPathScoring: () => scoring(),
   useExposureChains: () => chains(),
 }))
 
-import AttackPathsPage from '../attack-paths/page'
 import ExposureChainsPage from '../exposure-chains/page'
 
 const apiError = new Error('boom: upstream timeout')
 
 beforeEach(() => {
-  scoring.mockReset()
   chains.mockReset()
-})
-
-describe('/attack-paths', () => {
-  it('shows an error state, not the empty state, when the read fails', () => {
-    scoring.mockReturnValue({
-      scoring: undefined,
-      error: apiError,
-      isLoading: false,
-      mutate: vi.fn(),
-    })
-    render(<AttackPathsPage />)
-    expect(screen.getByText(/Failed to load attack paths/i)).toBeInTheDocument()
-    expect(screen.queryByText(/No relationship data yet/i)).not.toBeInTheDocument()
-  })
-
-  it('shows the empty state when the read succeeds with no relationships', () => {
-    scoring.mockReturnValue({
-      scoring: { summary: { hasRelationshipData: false }, topAssets: [] },
-      error: undefined,
-      isLoading: false,
-      mutate: vi.fn(),
-    })
-    render(<AttackPathsPage />)
-    expect(screen.getByText(/No relationship data yet/i)).toBeInTheDocument()
-  })
-
-  it('does not claim a fix breaks the most paths and shows no invented Internet node', () => {
-    scoring.mockReturnValue({
-      scoring: {
-        summary: {
-          hasRelationshipData: true,
-          totalPaths: 3,
-          entryPoints: 1,
-          reachableAssets: 1,
-          maxDepth: 1,
-          criticalReachable: 1,
-          crownJewelsAtRisk: 0,
-        },
-        topAssets: [
-          {
-            assetId: 'a1',
-            name: 'billing-db',
-            assetType: 'host',
-            exposure: 'private',
-            criticality: 'critical',
-            riskScore: 8,
-            isCrownJewel: false,
-            findingCount: 2,
-            reachableFrom: 3,
-            pathScore: 90,
-            isEntryPoint: false,
-            isProtected: false,
-          },
-        ],
-      },
-      error: undefined,
-      isLoading: false,
-      mutate: vi.fn(),
-    })
-    render(<AttackPathsPage />)
-    expect(screen.getByText('billing-db')).toBeInTheDocument()
-    expect(screen.queryByText(/breaks the most attack paths/i)).not.toBeInTheDocument()
-    expect(screen.queryByText('Internet-facing entry points')).not.toBeInTheDocument()
-    expect(screen.getByText(/does not tell you which single fix/i)).toBeInTheDocument()
-  })
 })
 
 describe('/exposure-chains', () => {
@@ -155,5 +85,10 @@ describe('/exposure-chains', () => {
     expect(screen.getByText('my-crown-jewel')).toBeInTheDocument()
     // Only the visible asset is a link.
     expect(screen.getAllByRole('link', { name: /my-crown-jewel/i })).toHaveLength(1)
+    // Each chain opens the attack-path view of its target.
+    expect(screen.getByTestId('chain-attack-paths-link')).toHaveAttribute(
+      'href',
+      '/attack-paths?target=t1'
+    )
   })
 })

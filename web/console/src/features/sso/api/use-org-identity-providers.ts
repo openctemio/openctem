@@ -30,16 +30,20 @@ const defaultConfig: SWRConfiguration = {
 
 const orgBase = (tenantId: string) => `/tenants/${tenantId}/sso/identity-providers`
 
-/** An organization's identity providers. */
+/**
+ * An organization's identity providers, plus the public address of the tenant
+ * app (appUrl) that the redirect URI to register at the provider is built from.
+ */
 export function useOrgIdentityProviders(tenantId: string | null, config?: SWRConfiguration) {
-  return useSWR<IdentityProvider[]>(
+  const swr = useSWR<{ providers: IdentityProvider[]; appUrl: string }>(
     tenantId ? orgBase(tenantId) : null,
     async (p: string) => {
-      const res = await adminFetch<{ providers?: IdentityProvider[] }>(p)
-      return res.providers ?? []
+      const res = await adminFetch<{ providers?: IdentityProvider[]; app_url?: string }>(p)
+      return { providers: res.providers ?? [], appUrl: res.app_url ?? '' }
     },
     { ...defaultConfig, ...config }
   )
+  return { ...swr, data: swr.data?.providers, appUrl: swr.data?.appUrl }
 }
 
 /**

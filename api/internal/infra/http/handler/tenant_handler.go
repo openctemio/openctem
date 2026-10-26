@@ -1182,7 +1182,7 @@ func (h *TenantHandler) SuspendMember(w http.ResponseWriter, r *http.Request) {
 
 // UpdateMemberAccess handles PATCH /api/v1/organization/members/{member_id}/access
 // @Summary Set when an external member's access ends
-// @Description For a member from outside the organization (RFC-058): sets the end date of their access (at most 365 days; required for someone no organization manages). A member suspended because their access ended is re-enabled. A change that widens access (a later end, no end, re-enabling) needs a recent re-authentication.
+// @Description For a member from outside the organization: sets the end date of their access (at most 365 days; required for someone no organization manages). A member suspended because their access ended is re-enabled. A change that widens access (a later end, no end, re-enabling) needs a recent re-authentication.
 // @Tags Tenants
 // @Accept json
 // @Produce json
@@ -1376,7 +1376,7 @@ type PreviewInvitationResponse struct {
 // PreviewInvitation handles POST /api/v1/organization/invitations/preview.
 //
 // @Summary      Preview an invitation
-// @Description  What inviting this address with these roles would do, before anything is sent: whether the organization's invitation policy allows it (reason code when not), whether the person is outside the organization or uses a personal address, whether the roles are above member for them (the inviter then re-authenticates and the member needs two-factor), whether an end of access is required, and whether they are already a member or invited. Says nothing about other organizations. Owner or administrator with members:invite, the same requirements as creating an invitation; the organization comes from the token (RFC-095).
+// @Description  What inviting this address with these roles would do, before anything is sent: whether the organization's invitation policy allows it (reason code when not), whether the person is outside the organization or uses a personal address, whether the roles are above member for them (the inviter then re-authenticates and the member needs two-factor), whether an end of access is required, and whether they are already a member or invited. Says nothing about other organizations. Owner or administrator with members:invite, the same requirements as creating an invitation; the organization comes from the token.
 // @Tags         Tenants
 // @Accept       json
 // @Produce      json
@@ -1810,7 +1810,7 @@ type InvitationLookupInvitation struct {
 	Pending     bool      `json:"pending"`
 	ExpiresAt   time.Time `json:"expires_at"`
 	InviterName string    `json:"inviter_name"`
-	// What accepting gives (RFC-095 §5): the roles with their risk, the
+	// What accepting gives: the roles with their risk, the
 	// teams, the end of access, outside-member status and whether two-factor
 	// authentication will be required.
 	// Present only while the invitation is pending.
@@ -2678,7 +2678,7 @@ func (h *TenantHandler) UpdateRiskScoringSettings(w http.ResponseWriter, r *http
 
 // GetRetestSettings handles GET /api/v1/organization/settings/retest.
 // @Summary      Get auto-retest settings
-// @Description  The tenant's auto-retest settings (RFC-039). auto_enabled is false until an admin turns it on; zero interval/cap mean the defaults (24 h, 200 per day).
+// @Description  The tenant's auto-retest settings. auto_enabled is false until an admin turns it on; zero interval/cap mean the defaults (24 h, 200 per day).
 // @Tags         Tenants
 // @Produce      json
 // @Success      200     {object}  tenant.RetestSettings
@@ -2743,7 +2743,7 @@ func (h *TenantHandler) UpdateRetestSettings(w http.ResponseWriter, r *http.Requ
 
 // GetVulnMatchingSettings handles GET /api/v1/organization/settings/vuln-matching.
 // @Summary      Get vulnerability matching settings
-// @Description  The organization's policy for findings created by matching its software inventory against published CVEs (RFC-066). Zero min_confidence and empty min_severity mean the defaults (65, high).
+// @Description  The organization's policy for findings created by matching its software inventory against published CVEs. Zero min_confidence and empty min_severity mean the defaults (65, high).
 // @Tags         Tenants
 // @Produce      json
 // @Success      200     {object}  tenant.VulnMatchingSettings
@@ -3634,7 +3634,7 @@ func memberKindFilter(v string) string {
 
 // GetEmergingThreatSettings handles GET /api/v1/organization/settings/emerging-threats.
 // @Summary      Get emerging-threat alert settings
-// @Description  The organization's emerging-threat alert policy with its defaults filled (RFC-117): thresholds, digest hour (organization time), quiet hours, whether possibly affected assets may page and whether external messages name assets.
+// @Description  The organization's emerging-threat alert policy with its defaults filled: thresholds, digest hour (organization time), quiet hours, whether possibly affected assets may page and whether external messages name assets.
 // @Tags         Tenants
 // @Produce      json
 // @Success      200     {object}  tenant.EmergingThreatSettings

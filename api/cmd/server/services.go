@@ -2319,6 +2319,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		stamper.SetScopeJoin(s.ScopeJoin)
 		stamper.SetProgramAssigner(programRepo)
 		s.Ingest.SetScanAttributionStamper(stamper)
+		s.Ingest.SetImportCandidateHolder(stamper)
 	}
 	// A nuclei takeover-template match from a tenant scan confirms an open
 	// dangling_cname as subdomain_takeover (RFC-036 P1).
