@@ -1053,8 +1053,12 @@ Authorization is enforced at the **route layer** in
 
 **Acting role.** With `ADMIN_ELEVATION=required` (default) every request acts
 as `readonly` unless the console session holds a live elevation
-(`POST /api/v1/admin/auth/elevate`, step-up, 15-60 minutes, a role no higher
-than the administrator's own; `DELETE` ends it). Role checks below use that
+(`POST /api/v1/admin/auth/elevate`, a **fresh** step-up, 15-60 minutes, a role
+no higher than the administrator's own; `DELETE` ends it). Elevation never
+rides a step-up window another action opened: it takes a fresh authenticator
+code or a security-key confirmation given within the last minute, and that
+proof then opens the five-minute step-up window for the protected actions that
+follow. Role checks below use that
 acting role, never the stored one.
 
 **Step-up on protected actions.** Every identity, privilege and platform-trust
