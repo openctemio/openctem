@@ -1001,10 +1001,10 @@ func (r *ScanRunRepository) AbortUnclaimedRunsReporting(ctx context.Context, sch
 			               -- a lease-lost requeue clears the timestamps but not the attempts
 			               OR c.dispatch_attempts > 0
 			               -- waiting for its scan window is not "no sensor picked it up";
-			               -- the run's deadline moved with the wait (RFC-067)
+			               -- the run's deadline moved with the wait
 			               OR c.window_hold IS NOT NULL
 			               -- nor is waiting while another task of the tenant scans
-			               -- its hosts (research/130): no sensor may take it yet
+			               -- its hosts: no sensor may take it yet
 			               OR (c.host_keys IS NOT NULL AND EXISTS (
 			                     SELECT 1 FROM commands WHERE commands.id = c.id AND NOT ` + hostFreePredicate + `))))
 		), unclaimed AS (
@@ -1087,10 +1087,10 @@ func (r *ScanRunRepository) ListPendingRetries(ctx context.Context, limit int) (
 			  AND pr.completed_at IS NOT NULL
 			  AND s.max_retries > 0
 			  -- A timeout (the sensor died, or never reported) is retried at
-			  -- most twice; other failures use the scan's own budget (D7).
+			  -- most twice; other failures use the scan's own budget.
 			  AND pr.retry_attempt < CASE WHEN pr.status = 'timeout' THEN LEAST(s.max_retries, 2) ELSE s.max_retries END
 			  -- A failure a retry cannot fix is never retried: no such scanner on
-			  -- the sensor, target refused, nothing to scan, no sensor (D7).
+			  -- the sensor, target refused, nothing to scan, no sensor.
 			  AND NOT EXISTS (
 			        SELECT 1 FROM scan_run_steps sr
 			        WHERE sr.scan_run_id = pr.id

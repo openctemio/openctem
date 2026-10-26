@@ -306,7 +306,7 @@ function Details({ config }: { config: ScanConfig }) {
                 </span>
                 {describeTargetOptions(targets, config.target_options, t).length > 0 && (
                   <span className="block text-xs text-muted-foreground">
-                    {describeTargetOptions(targets, config.target_options, t).join(' · ')}
+                    {describeTargetOptions(targets, config.target_options, t).join(', ')}
                   </span>
                 )}
               </DetailField>

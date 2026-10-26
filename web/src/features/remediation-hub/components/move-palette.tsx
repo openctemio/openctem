@@ -104,7 +104,7 @@ export function MovePalette({
       (task.assignee_group_id ?? '') !== (source.assignee_group_id ?? '')
     )
       out.push(t('remediationHub.move.differentOwner'))
-    return out.join(' · ')
+    return out.join(', ')
   }
 
   return (

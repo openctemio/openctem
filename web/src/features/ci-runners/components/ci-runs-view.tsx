@@ -117,7 +117,7 @@ export function RunAttempt({ attempt }: { attempt?: { attempt: number; of: numbe
   if (!attempt) return null
   return (
     <span className="font-sans text-muted-foreground" data-testid="ci-run-attempt">
-      {' · '}
+      {', '}
       {t('scans.ci.runAttempt', 'Attempt {attempt} of {of}', {
         attempt: attempt.attempt,
         of: attempt.of,
@@ -284,7 +284,7 @@ export function CIRunsView({ embedded = false, toolbarStart }: CIRunsViewProps) 
                         <span className="truncate font-medium">{run.repository}</span>
                         <span className="text-xs text-muted-foreground">
                           {PROVIDER_LABEL[run.provider ?? ''] ?? run.provider}
-                          {run.fork ? ` · ${t('scans.ci.fork', 'fork')}` : ''}
+                          {run.fork ? `, ${t('scans.ci.fork', 'fork')}` : ''}
                         </span>
                       </div>
                     </TableCell>
@@ -625,7 +625,7 @@ export function CIRunSheet({ id, onClose }: { id: string | null; onClose: () => 
                 <p className="font-medium" data-testid="ci-run-baseline-counts">
                   {t(
                     'scans.ci.runDetail.baselineCounts',
-                    '{baseline} baseline (not blocking) · {new} new',
+                    '{baseline} baseline (not blocking), {new} new',
                     {
                       baseline: counts.baseline,
                       new: counts.fresh,
@@ -633,7 +633,7 @@ export function CIRunSheet({ id, onClose }: { id: string | null; onClose: () => 
                   )}
                   {v?.baseline?.due_at && (
                     <span className="ms-1 font-normal text-muted-foreground">
-                      {t('scans.ci.runDetail.baselineDue', '· baseline blocks again from {date}', {
+                      {t('scans.ci.runDetail.baselineDue', ', baseline blocks again from {date}', {
                         date: new Date(v.baseline.due_at).toLocaleDateString(),
                       })}
                     </span>

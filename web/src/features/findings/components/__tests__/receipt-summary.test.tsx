@@ -110,7 +110,7 @@ describe('RecentImports', () => {
     wrap(<RecentImports />)
     await waitFor(() =>
       expect(screen.getByTestId('recent-imports')).toHaveTextContent(
-        /3 new · 5 still detected · 2 closed/
+        /3 new, 5 still detected, 2 closed/
       )
     )
     expect(getMock.mock.calls[0][0]).toBe('/api/v1/findings/imports?source_kind=upload&per_page=5')

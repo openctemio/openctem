@@ -88,7 +88,7 @@ describe('Finding overview: scanner facts and output', () => {
     expect(screen.getByText('AV:N/AC:L/Au:N/C:P/I:N/A:N')).toBeInTheDocument()
     expect(screen.getByText(/v3\.x/)).toBeInTheDocument()
     expect(screen.getByText('General')).toBeInTheDocument()
-    expect(screen.getByText('443/tcp · https')).toBeInTheDocument()
+    expect(screen.getByText('443/tcp, https')).toBeInTheDocument()
     expect(screen.getByText('Apr 7, 2014')).toBeInTheDocument()
   })
 

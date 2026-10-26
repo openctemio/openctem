@@ -102,7 +102,7 @@ export function GateTrend({ points }: { points: CIPipelineDetail['gate_trend'] }
         {list.map((p) => (
           <span
             key={p.run_id}
-            title={`${p.verdict} · ${shortSHA(p.commit_sha)} · ${p.evaluated_at ? new Date(p.evaluated_at).toLocaleString() : ''}`}
+            title={`${p.verdict}, ${shortSHA(p.commit_sha)}, ${p.evaluated_at ? new Date(p.evaluated_at).toLocaleString() : ''}`}
             className={cn(
               'size-3 rounded-sm',
               p.verdict === 'fail' ? 'bg-destructive' : 'bg-success'
@@ -192,7 +192,7 @@ function Overview({ p }: { p: CIPipelineDetail }) {
           <GateLabel gate={p.gate} />
           {p.pr_gate && p.pr_gate !== 'none' && (
             <span className="text-muted-foreground">
-              · {t('scans.ci.sheet.pullRequests', 'pull requests:')}{' '}
+              , {t('scans.ci.sheet.pullRequests', 'pull requests:')}{' '}
               <GateLabel gate={p.pr_gate} className="text-xs" />
             </span>
           )}
@@ -288,7 +288,7 @@ function Runs({ pipelineId }: { pipelineId: string }) {
           secondary={
             <span className="font-mono">
               {shortSHA(row.original.commit_sha)}
-              {row.original.fork ? ` · ${t('scans.ci.fork', 'fork')}` : ''}
+              {row.original.fork ? `, ${t('scans.ci.fork', 'fork')}` : ''}
               <RunAttempt attempt={attempts.get(row.original.id ?? '')} />
             </span>
           }

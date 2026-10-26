@@ -97,7 +97,7 @@ describe('sensorCapacity', () => {
       effective: { tools: [], capabilities: [], max_concurrent_jobs: 3 },
     })
     expect(sensorCapacity(s)).toEqual({ effective: 3, reported: 3, slots: null, limit: 5 })
-    expect(capacityLabel(s)).toBe('operator cap 3 · your limit 5')
+    expect(capacityLabel(s)).toBe('operator cap 3, your limit 5')
   })
 
   it('computes the smaller one without an effective block', () => {
@@ -126,7 +126,7 @@ describe('sensorCapacity', () => {
   it('never counts on more than the slots the sensor can run now', () => {
     const s = base({ reported: report(null, 64), load: load(4) })
     expect(sensorCapacity(s)).toEqual({ effective: 4, reported: 64, slots: 4, limit: 5 })
-    expect(capacityLabel(s)).toBe('Runs 4 at once now · operator cap 64 · your limit 5')
+    expect(capacityLabel(s)).toBe('Runs 4 at once now, operator cap 64, your limit 5')
   })
 
   it('takes the effective capacity from the API when it has one', () => {
@@ -136,7 +136,7 @@ describe('sensorCapacity', () => {
       effective: { tools: [], capabilities: [], max_concurrent_jobs: 4 },
     })
     expect(sensorCapacity(s).effective).toBe(4)
-    expect(capacityLabel(s)).toBe('Runs 4 at once now · your limit 5')
+    expect(capacityLabel(s)).toBe('Runs 4 at once now, your limit 5')
   })
 })
 

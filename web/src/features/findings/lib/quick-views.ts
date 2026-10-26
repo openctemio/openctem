@@ -43,7 +43,7 @@ export const QUICK_VIEW_LABELS: Record<QuickViewKey, string> = {
   my_queue: 'My queue',
   sla_breached: 'SLA breached',
   pending_approval: 'Pending approval',
-  accepted_expiring: 'Accepted · expiring',
+  accepted_expiring: 'Accepted, expiring soon',
   closed: 'Closed',
 }
 

@@ -46,7 +46,7 @@ type ScanGovernanceResponse struct {
 	// SelectableModes are the modes the owner may choose under the policy.
 	SelectableModes []string `json:"selectable_modes"`
 	// ScopeEntriesNeedApproval: in Strict, widening a scope entry needs
-	// approval (RFC-054 §7); in Off and On it does not.
+	// approval; in Off and On it does not.
 	ScopeEntriesNeedApproval bool           `json:"scope_entries_need_approval"`
 	Rules                    []scangov.Rule `json:"rules"`
 	PendingExpiryDays        int            `json:"pending_expiry_days"`
@@ -78,7 +78,7 @@ func (h *ScanGovernanceHandler) tenantID(w http.ResponseWriter, r *http.Request)
 
 // Get handles GET /api/v1/organization/settings/scan-governance.
 // @Summary      Scan approval settings
-// @Description  The organization's scan approval (RFC-073): the mode in force (off by default, on, strict) and who set it, the owner's own choice, the platform policy, the approval rules and the presets. Needs scans:read.
+// @Description  The organization's scan approval: the mode in force (off by default, on, strict) and who set it, the owner's own choice, the platform policy, the approval rules and the presets. Needs scans:read.
 // @Tags         Scans
 // @Produce      json
 // @Success      200  {object}  ScanGovernanceResponse

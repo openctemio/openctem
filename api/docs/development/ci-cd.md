@@ -390,8 +390,57 @@ tags and scheduled runs are never cancelled.
    (develop)` fills the Go cache when there is none for the current `go.sum`;
    Web E2E still builds its images, which writes the layer cache). Any doubt
    (no such run, an API error) runs the workflow in full. CodeQL, Web CI and
-   the security scans always run on push.
+   the security scans always run on push, unless the tree was verified (see
+   [Reusing a verified tree](#reusing-a-verified-tree)).
 6. A failure removes the PR from the queue; the groups behind it are rebuilt.
+
+### Reusing a verified tree
+
+A PR that was green runs its checks again in the queue, on the same bytes
+whenever the base did not move in between. In `merge_group` and on a push,
+`.github/scripts/tree-verified.sh` (a step of every workflow's change-detection
+job) asks whether the tree of the commit under test, `git rev-parse <sha>^{tree}`,
+already passed. If so the heavy jobs are skipped and every aggregator reports
+success with `tree <hash> already verified at <sha> (<run url>)`: `API CI OK`,
+`Web CI OK`, `All-in-one OK`, `E2E OK`, and `Secret Scanning` and `Workflow Lint`
+(skipped jobs, which a required check counts as success). `CodeQL OK` already
+analyses nothing in the queue, and a push always runs CodeQL on both languages,
+which keeps develop's baseline current. The `security-gate` workflow always
+runs; rulesets are unchanged.
+
+A candidate commit matches when all of these hold:
+
+- its tree equals ours. Candidates are the head of the PR named by the queue
+  branch `gh-readonly-queue/<base>/pr-<n>-<sha>`, and the last 30 first-parent
+  commits of `develop`, `main` and the queue's base whose own tree equals ours
+  (an earlier queue or push run);
+- every required check (`API CI OK`, `Web CI OK`, `CodeQL OK`, `E2E OK`,
+  `All-in-one OK`, `Secret Scanning`, `Workflow Lint`) has a check run of the
+  **github-actions app** on the candidate, and every latest run of that name
+  completed as success, skipped or neutral;
+- every run records the tree it checked out, and all records equal ours. Each
+  workflow prints an annotation `openctem-tested-tree <tree>` for the commit it
+  checked out; on a PR run that is GitHub's merge of the PR into its base
+  (`refs/pull/<n>/merge`), whose tree the checks are bound to. At least one
+  record must exist, so a run from before this change never matches.
+
+Any difference, a missing check, a failing or running check, an API error or an
+unparsable queue branch runs the normal tier. Only one PR can match a group: a
+group of two PRs has the tree of both, which equals a single PR's tested tree
+only when the other adds nothing.
+
+Threat model: identical tree means identical code, so a skipped test would have
+run on the same bytes that already passed. Only check runs and annotations of the
+github-actions app are read, so a status or check run posted by another
+integration or token cannot vouch for a commit. Fork PRs never enter the queue
+(they need a maintainer to queue a branch of this repository, and their own runs
+get no write token). A change to the script, the workflows or the pins is in
+`.github/` and goes through the security gate like any CI change; the merge ref
+of that PR runs the new code, so the PR that changes this script is itself
+tested with its own rules. The PR tier does not run the race detector or build
+the images, so a tree that was only green on the PR skips those in the queue:
+put `ci:full` on a PR when it should run the full tier on the PR itself, so
+the reuse covers the full set.
 
 ### Tiers
 
