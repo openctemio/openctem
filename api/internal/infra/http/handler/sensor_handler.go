@@ -226,8 +226,8 @@ type SensorResponse struct {
 	// applies). HeartbeatDueAt is when its next heartbeat is due.
 	HeartbeatIntervalSeconds *int    `json:"heartbeat_interval_seconds"`
 	HeartbeatDueAt           *string `json:"heartbeat_due_at"`
-	// HeartbeatState is where the sensor stands on the heartbeat ladder now
-	//: online until its deadline plus grace, then late (still
+	// HeartbeatState is where the sensor stands on the heartbeat ladder now:
+	// online until its deadline plus grace, then late (still
 	// takes work), stale (takes no new work), offline. "" when it never
 	// connected.
 	HeartbeatState string `json:"heartbeat_state" enums:",online,late,stale,offline"`

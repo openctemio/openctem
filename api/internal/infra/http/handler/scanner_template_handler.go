@@ -116,8 +116,8 @@ type ScannerTemplateResponse struct {
 	CreatedBy       *string        `json:"created_by,omitempty"`
 	CreatedAt       string         `json:"created_at"`
 	UpdatedAt       string         `json:"updated_at"`
-	// SensorApproval says whether the current version may reach sensors
-	//: approved by people and recorded by the job signer.
+	// SensorApproval says whether the current version may reach sensors:
+	// approved by people and recorded by the job signer.
 	SensorApproval TemplateSensorApproval `json:"sensor_approval"`
 }
 
