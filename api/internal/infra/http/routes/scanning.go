@@ -142,6 +142,9 @@ func registerSensorManagementRoutes(
 		// sensors:grant:widen (the service decides). Before /{id}.
 		r.GET("/grant-profiles", h.ListGrantProfiles, middleware.Require(permission.SensorsRead))
 		r.GET("/grant-summaries", h.ListGrantSummaries, middleware.Require(permission.SensorsRead))
+		// Install commands for a sensor that pairs (the "Add sensor" panel):
+		// no key; a pairing code, when given, travels in the body.
+		r.POST("/install-templates", h.InstallTemplates, middleware.Require(permission.SensorsPair))
 		r.GET("/{id}", h.Get, middleware.Require(permission.SensorsRead), own)
 		// Signing keys of key-bound sensors (RFC-052).
 		r.GET("/{id}/keys", h.ListSigningKeys, middleware.Require(permission.SensorsRead), own)
