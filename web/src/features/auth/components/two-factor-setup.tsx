@@ -37,7 +37,7 @@ export function TwoFactorSetup({ next }: { next?: string }) {
 
   const onSessionExpired = useCallback(() => {
     const params = new URLSearchParams({ reason: 'mfa_required' })
-    if (target !== '/') params.set('redirect', target)
+    if (target !== '/') params.set('returnTo', target)
     const login = `/login?${params.toString()}`
     // Drop the dead session cookies first: /login treats a cookie as signed in.
     localLogoutAction(login).catch(() => {
@@ -62,6 +62,7 @@ export function TwoFactorSetup({ next }: { next?: string }) {
         tenantId={currentTenantId()}
         onComplete={onComplete}
         onSessionExpired={onSessionExpired}
+        onReauthRequired={onSessionExpired}
       />
     </div>
   )

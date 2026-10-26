@@ -211,6 +211,12 @@ func (r *mfaInvMFARepo) CreateChallenge(_ context.Context, c *mfa.Challenge) err
 
 func challengeFixture(t *testing.T, federated bool, factor *mfa.Factor) (*AuthService, *mfaInvMFARepo, string) {
 	t.Helper()
+	return challengeFixtureAged(t, federated, factor, 0)
+}
+
+// challengeFixtureAged is challengeFixture with a session signed in `age` ago.
+func challengeFixtureAged(t *testing.T, federated bool, factor *mfa.Factor, age time.Duration) (*AuthService, *mfaInvMFARepo, string) {
+	t.Helper()
 	gen := jwt.NewGenerator(jwt.TokenConfig{Secret: "0123456789abcdef0123456789abcdef", Issuer: "t", AccessTokenDuration: time.Minute, RefreshTokenDuration: time.Hour})
 	u, err := userdom.New("new@gmail.com", "New")
 	if err != nil {
@@ -219,6 +225,11 @@ func challengeFixture(t *testing.T, federated bool, factor *mfa.Factor) (*AuthSe
 	sess, err := sessiondom.New(u.ID(), "access", "127.0.0.1", "ua", time.Hour)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if age > 0 {
+		then := time.Now().Add(-age)
+		sess = sessiondom.Reconstitute(sess.ID(), u.ID(), "access", "127.0.0.1", "ua", "", time.Now().Add(time.Hour),
+			then, sessiondom.StatusActive, sessiondom.AuthMethodPassword, "", "", "", then, then)
 	}
 	if federated {
 		sess.SetAuthMethod(sessiondom.AuthMethodSSO)
@@ -274,6 +285,29 @@ func TestSessionMFAChallenge(t *testing.T) {
 			t.Fatal("no challenge may be issued")
 		}
 	})
+	t.Run("an old session cannot start enrollment: reauth required, no challenge", func(t *testing.T) {
+		s, mr, rt := challengeFixtureAged(t, false, nil, sessionEnrollFreshness+time.Minute)
+		if _, err := s.SessionMFAChallenge(context.Background(), rt, "", ""); !errors.Is(err, ErrReauthRequired) {
+			t.Fatalf("err = %v", err)
+		}
+		if len(mr.challenges) != 0 {
+			t.Fatal("no challenge may be issued")
+		}
+	})
+	t.Run("a session just inside the window still enrolls", func(t *testing.T) {
+		s, _, rt := challengeFixtureAged(t, false, nil, sessionEnrollFreshness-time.Minute)
+		info, err := s.SessionMFAChallenge(context.Background(), rt, "", "")
+		if err != nil || info.Purpose != mfa.PurposeEnroll {
+			t.Fatalf("info=%+v err=%v", info, err)
+		}
+	})
+	t.Run("an old session may still get a verify challenge", func(t *testing.T) {
+		s, mr, rt := challengeFixtureAged(t, false, &mfa.Factor{Enabled: true}, 24*time.Hour)
+		info, err := s.SessionMFAChallenge(context.Background(), rt, "", "")
+		if err != nil || info.Purpose != mfa.PurposeVerify || len(mr.challenges) != 1 {
+			t.Fatalf("info=%+v err=%v", info, err)
+		}
+	})
 	t.Run("a bad refresh token is refused", func(t *testing.T) {
 		s, mr, _ := challengeFixture(t, false, nil)
 		if _, err := s.SessionMFAChallenge(context.Background(), "garbage", "", ""); err == nil {
@@ -296,3 +330,52 @@ type mfaInvEncryptor struct{}
 
 func (mfaInvEncryptor) EncryptString(p string) (string, error) { return p, nil }
 func (mfaInvEncryptor) DecryptString(e string) (string, error) { return e, nil }
+
+// --- RefreshToken: a policy refusal never spends the token or mints ---
+
+type mfaInvSpendRepo struct {
+	mfaInvRefreshRepo
+	spent   int
+	created int
+}
+
+func (r *mfaInvSpendRepo) MarkUsedIfUnused(context.Context, shared.ID) (bool, error) {
+	r.spent++
+	return true, nil
+}
+func (r *mfaInvSpendRepo) Create(context.Context, *sessiondom.RefreshToken) error {
+	r.created++
+	return nil
+}
+
+// A token refused by the 2FA policy is not spent and creates no new refresh
+// token, so it can never be replayed into a session without the policy
+// passing; the policy runs again on every presentation.
+func TestRefreshToken_PolicyRefusalSpendsNothing(t *testing.T) {
+	s, mr, rt := challengeFixture(t, false, nil)
+	_ = mr
+	tn, err := tenantdom.NewTenant("Acme", "acme", "creator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tn.UpdateSecuritySettings(tenantdom.SecuritySettings{MFARequired: true}); err != nil {
+		t.Fatal(err)
+	}
+	uid := s.userRepo.(*mfaInvUserRepo).u.ID()
+	m, err := tenantdom.NewMembership(uid, tn.ID(), tenantdom.RoleMember, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.tenantRepo = &mfaInvTenantRepo{tenant: tn, role: tenantdom.RoleMember, membership: m}
+	spend := &mfaInvSpendRepo{mfaInvRefreshRepo: *s.refreshTokenRepo.(*mfaInvRefreshRepo)}
+	s.refreshTokenRepo = spend
+	for i := 0; i < 2; i++ {
+		_, err = s.RefreshToken(context.Background(), RefreshTokenInput{RefreshToken: rt, TenantID: tn.ID().String()})
+		if !errors.Is(err, ErrMFAEnrollmentRequired) {
+			t.Fatalf("attempt %d: err = %v", i, err)
+		}
+	}
+	if spend.spent != 0 || spend.created != 0 {
+		t.Fatalf("spent=%d created=%d, want 0/0", spend.spent, spend.created)
+	}
+}

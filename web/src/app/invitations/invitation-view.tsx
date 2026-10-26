@@ -320,6 +320,11 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
               tenantId={invitation.tenant.id}
               onComplete={() => navigateWithFreshSession('/')}
               onSessionExpired={() => router.push(invitationLoginHref)}
+              onReauthRequired={() =>
+                router.push(
+                  `/login?reason=mfa_required&returnTo=${encodeURIComponent(invitationPath)}&email=${encodeURIComponent(invitation.invitation.email || '')}`
+                )
+              }
             />
           </CardContent>
         </Card>

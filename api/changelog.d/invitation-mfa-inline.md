@@ -7,3 +7,4 @@
 
 ### Added: `POST /api/v1/auth/mfa/enroll/session`
 - Issues the second-factor challenge for a signed-in session that an organization holds back (refresh-token cookie or body, same CSRF rules as `accept-with-refresh`). Not available to sessions started through an identity provider.
+- Starting two-factor enrollment from a session alone needs a sign-in within the last 15 minutes; an older session gets 403 `REAUTH_REQUIRED` and is sent to the password sign-in. A stolen refresh token can no longer bind an authenticator to an account without a second factor.

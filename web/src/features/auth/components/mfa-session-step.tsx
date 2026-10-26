@@ -33,15 +33,26 @@ interface MfaSessionStepProps {
   onComplete: () => void
   /** The session itself is gone (401): the caller sends the person to sign in. */
   onSessionExpired: () => void
+  /**
+   * The session is too old to start enrollment (403 REAUTH_REQUIRED): the
+   * caller sends the person to the password sign-in, which offers enrollment.
+   */
+  onReauthRequired: () => void
 }
 
 type Phase =
   | { kind: 'starting' }
   | { kind: 'step'; purpose: MfaPurpose; orgs?: string[] }
   | { kind: 'opening' }
+  | { kind: 'reauth' }
   | { kind: 'error'; message: string }
 
-export function MfaSessionStep({ tenantId, onComplete, onSessionExpired }: MfaSessionStepProps) {
+export function MfaSessionStep({
+  tenantId,
+  onComplete,
+  onSessionExpired,
+  onReauthRequired,
+}: MfaSessionStepProps) {
   const { t } = useTranslation()
   const [phase, setPhase] = useState<Phase>({ kind: 'starting' })
   const [attempt, setAttempt] = useState(0)
@@ -59,6 +70,10 @@ export function MfaSessionStep({ tenantId, onComplete, onSessionExpired }: MfaSe
     void startSessionMfaAction().then((res) => {
       if (res.sessionExpired) {
         expiredRef.current()
+        return
+      }
+      if (res.reauthRequired) {
+        setPhase({ kind: 'reauth' })
         return
       }
       if (res.success && res.purpose) {
@@ -120,6 +135,25 @@ export function MfaSessionStep({ tenantId, onComplete, onSessionExpired }: MfaSe
           ? t('auth.mfaSession.starting', 'Preparing two-factor setup')
           : t('auth.mfaSession.opening', 'Opening your organization')}
       </div>
+    )
+  }
+
+  if (phase.kind === 'reauth') {
+    return (
+      <Alert>
+        <AlertTitle>{t('auth.mfaSession.reauthTitle', 'Sign in again')}</AlertTitle>
+        <AlertDescription className="grid gap-3">
+          <span>
+            {t(
+              'auth.mfaSession.reauthBody',
+              'For your security, sign in again to set up two-factor authentication.'
+            )}
+          </span>
+          <Button type="button" size="sm" className="justify-self-start" onClick={onReauthRequired}>
+            {t('auth.mfaSession.reauthAction', 'Sign in')}
+          </Button>
+        </AlertDescription>
+      </Alert>
     )
   }
 
