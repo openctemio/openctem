@@ -2,6 +2,7 @@ package feedstatus
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/threatintel"
@@ -96,7 +97,9 @@ func Build(st *threatintel.SyncStatus, catalog int64, now time.Time) View {
 		v.Bundle = d
 		v.DataAsOf = d.BundleCreatedAt
 		if v.CatalogRecords == 0 {
-			v.CatalogRecords = int64(metaUint(meta["records"]))
+			if n := metaUint(meta["records"]); n <= math.MaxInt64 {
+				v.CatalogRecords = int64(n)
+			}
 		}
 		in.DataAsOf, in.HasAppliedData = d.BundleCreatedAt, d.AppliedSequence > 0
 	case SourceEPSS:
