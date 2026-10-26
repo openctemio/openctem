@@ -94,7 +94,7 @@ func (h *SensorHandler) ListGrantSummaries(w http.ResponseWriter, r *http.Reques
 
 // GetGrant godoc
 // @Summary      Get a sensor's grant
-// @Description  What the sensor may do (RFC-052 §5) and what applies now after its trust level (effective).
+// @Description  What the sensor may do and what applies now after its trust level (effective).
 // @Tags         Sensors
 // @Produce      json
 // @Param        id   path      string  true  "Sensor ID"

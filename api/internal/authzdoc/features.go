@@ -74,7 +74,7 @@ var Features = []Feature{
 	},
 	{
 		ID: "programs", Title: "Bug-bounty programs",
-		Description: "Programs the organization tests under their published rules: import with an attestation, re-import, pause, resume and end (RFC-065).",
+		Description: "Programs the organization tests under their published rules: import with an attestation, re-import, pause, resume and end.",
 		Stages:      []string{StageScoping},
 		Registers:   []string{"registerProgramRoutes"},
 	},

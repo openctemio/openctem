@@ -3,6 +3,7 @@ package apikey
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -53,7 +54,9 @@ func (c membershipChecker) IsActiveMember(ctx context.Context, tenantID, userID 
 	if err != nil {
 		return false, err
 	}
-	if m.Status() != tenantdom.MemberStatusActive {
+	if m.Status() != tenantdom.MemberStatusActive || m.IsExpired(time.Now()) {
+		// An expired end date counts at once; the sweeper that suspends the
+		// membership runs once a minute.
 		return false, nil
 	}
 	if c.users != nil {

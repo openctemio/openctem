@@ -25,7 +25,7 @@ type AssetTechnologyFacetsResponse struct {
 
 // ListTechnologyFacets handles GET /api/v1/assets/technologies.
 // @Summary      Technologies on the organization's assets
-// @Description  The technologies detected on the assets the caller may list (the same data scope as the asset list), most used first, with their category and asset count: the options of the asset list's technology filter (RFC-112).
+// @Description  The technologies detected on the assets the caller may list (the same data scope as the asset list), most used first, with their category and asset count: the options of the asset list's technology filter.
 // @Tags         Assets
 // @Produce      json
 // @Param        q         query  string  false  "Name contains (case-insensitive, at most 128 characters)"

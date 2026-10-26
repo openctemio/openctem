@@ -151,7 +151,7 @@ func manualRetestResponse(rt *pentest.Retest) FindingRetestResponse {
 
 // Request handles POST /api/v1/findings/{id}/retests.
 // @Summary      Retest a finding now
-// @Description  Re-runs the check that produced the finding against the origin of its matched-at URL (RFC-039, RFC-057). Applied asynchronously: confirmed_fixed (the re-run reached the finding's endpoint, got an answer that is not a block, an auth failure or a server error, and did not match) moves the finding to validated_fixed, or resolves it when the tenant enabled retest.auto_resolve; still_vulnerable keeps it (or reopens a resolved one); not_reproduced, still_exposed_elsewhere and inconclusive change nothing. The attempt's request and response are kept as finding evidence. Requires findings:verify; out-of-scope findings are 404.
+// @Description  Re-runs the check that produced the finding against the origin of its matched-at URL. Applied asynchronously: confirmed_fixed (the re-run reached the finding's endpoint, got an answer that is not a block, an auth failure or a server error, and did not match) moves the finding to validated_fixed, or resolves it when the tenant enabled retest.auto_resolve; still_vulnerable keeps it (or reopens a resolved one); not_reproduced, still_exposed_elsewhere and inconclusive change nothing. The attempt's request and response are kept as finding evidence. Requires findings:verify; out-of-scope findings are 404.
 // @Tags         Findings
 // @Produce      json
 // @Param        id   path      string  true  "Finding ID"
@@ -199,7 +199,7 @@ func (h *FindingRetestHandler) Request(w http.ResponseWriter, r *http.Request) {
 
 // List handles GET /api/v1/findings/{id}/retests.
 // @Summary      A finding's retests
-// @Description  The finding's retest history, newest first (RFC-039).
+// @Description  The finding's retest history, newest first.
 // @Tags         Findings
 // @Produce      json
 // @Param        id     path      string  true   "Finding ID"

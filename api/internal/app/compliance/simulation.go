@@ -44,7 +44,7 @@ type SimulationService struct {
 	simRepo     simulation.SimulationRepository
 	runRepo     simulation.RunRepository
 	controlRepo simulation.ControlTestRepository
-	safeCheck   SafeCheckDispatcher // optional (RFC-012 Phase 1b): real dispatch
+	safeCheck   SafeCheckDispatcher // optional: real dispatch
 	logger      *logger.Logger
 }
 
@@ -610,7 +610,7 @@ func (s *SimulationService) executeSimulationTechnique(sim *simulation.Simulatio
 	// this with a real sensor-dispatched safe-check (see RFC-012).
 	output["verified"] = false
 	output["execution_mode"] = "simulated"
-	output["disclaimer"] = "No live technique execution — this is a configuration-based simulation of the expected posture, not a validated control test (RFC-012 Phase 0)."
+	output["disclaimer"] = "No live technique execution — this is a configuration-based simulation of the expected posture, not a validated control test."
 
 	config := sim.Config()
 
