@@ -213,6 +213,7 @@ areas:
     - web/src/features/attack-surface/**
     - web/src/features/web-surface/**
     - web/src/app/(dashboard)/(scoping)/attack-surface/**
+    - web/src/app/(dashboard)/(prioritization)/attack-paths/**
     - web/src/lib/i18n/dictionaries/en/attackSurface.json
     - web/src/lib/i18n/dictionaries/en/easmReview.json
     - api/internal/app/easm*/**

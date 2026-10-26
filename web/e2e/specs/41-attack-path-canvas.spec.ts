@@ -107,7 +107,7 @@ async function deleteGraph(page: Page, g: Graph | null) {
     await api(page, 'DELETE', `/api/v1/assets/${id}`)
 }
 
-test.describe('attack path view', () => {
+test.describe('attack path view', { tag: ['@attack-surface'] }, () => {
   for (const scheme of ['light', 'dark'] as const) {
     test(`canvas at 1440px in ${scheme}: nodes, edges, keys, hover, axe`, async ({
       page,
