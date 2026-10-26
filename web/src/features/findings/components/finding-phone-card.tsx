@@ -11,10 +11,14 @@ import { FindingSubStatus } from '@/features/findings/components/lifecycle/findi
 import { ExploitSignals } from '@/features/findings/components/exploit-signals'
 import { PriorityClassBadge } from '@/features/findings/components/priority-class-badge'
 import { BranchOnlyBadge } from '@/features/findings/components/branch-only-badge'
+import { MetaLine } from '@/features/shared/components/text-layout'
 import { useTranslation } from '@/context/i18n-provider'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { middleEllipsis } from '@/lib/middle-ellipsis'
 import { cn } from '@/lib/utils'
+import { findingRowTone } from '@/features/findings/lib/row-tone'
+import { AssetMarkers } from '@/features/findings/components/cells/asset-markers'
+import { DuplicatesChip } from '@/features/findings/components/cells/duplicates-chip'
 
 interface FindingPhoneCardProps {
   finding: Finding
@@ -37,6 +41,7 @@ export function FindingPhoneCard({ finding: f, selection, onOpen, menu }: Findin
     <div
       data-testid="finding-phone-card"
       data-state={selection.selected ? 'selected' : undefined}
+      data-tone={findingRowTone(f)}
       className={cn(
         'flex w-full items-start gap-1 ps-3 pe-1 transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted'
       )}
@@ -64,15 +69,21 @@ export function FindingPhoneCard({ finding: f, selection, onOpen, menu }: Findin
             {title}
           </p>
           {(f.cve || f.scanner) && (
-            <p className="mt-0.5 truncate text-xs text-muted-foreground">
-              {f.cve && <span className="font-mono">{f.cve}</span>}
-              {f.cve && f.scanner && ' · '}
-              {f.scanner}
-            </p>
+            <MetaLine
+              className="mt-0.5"
+              items={[f.cve && <span className="font-mono">{f.cve}</span>, f.scanner]}
+            />
           )}
           {f.location?.asset && (
-            <p dir="auto" className="mt-0.5 truncate text-xs [unicode-bidi:isolate]">
-              {toDisplayText(f.location.asset, 500)}
+            <p className="mt-0.5 flex min-w-0 items-center gap-1 text-xs">
+              <span dir="auto" className="truncate [unicode-bidi:isolate]">
+                {toDisplayText(f.location.asset, 500)}
+              </span>
+              <AssetMarkers
+                interactive={false}
+                internetFacing={f.assets[0]?.isInternetAccessible}
+                crownJewel={f.assets[0]?.isCrownJewel}
+              />
             </p>
           )}
           {f.location?.detail && (
@@ -96,6 +107,7 @@ export function FindingPhoneCard({ finding: f, selection, onOpen, menu }: Findin
               kevRansomware={f.kevRansomware}
               epssScore={f.epssScore}
             />
+            <DuplicatesChip count={f.duplicatesMarked} interactive={false} />
           </div>
         </div>
         <ChevronRight

@@ -188,3 +188,77 @@ func TestStepUp_SlugRenameNeedsRecentAuth(t *testing.T) {
 		t.Fatalf("inside the window: %v", err)
 	}
 }
+
+// Opting back in to shared sensors lets the organization's scan jobs run on
+// platform-operated sensors: step-up. Opting out (the safer choice) does not ask.
+func TestStepUp_SharedSensorsOptInNeedsRecentAuth(t *testing.T) {
+	ctx := context.Background()
+	svc, _, tn, owner, gate := tenantWithOwner(t)
+	actx := audit.AuditContext{ActorID: owner.String(), TenantID: tn.ID().String()}
+	gate.err = nil
+
+	if _, err := svc.UpdateSharedSensorsSettings(ctx, tn.ID().String(), tenant.SharedSensorsSettings{OptOut: true}, actx); err != nil {
+		t.Fatalf("opt out: %v", err)
+	}
+	if len(gate.actors) != 0 {
+		t.Fatalf("opting out must not ask for step-up, asked for %v", gate.actors)
+	}
+
+	gate.err = middleware.ErrStepUpRequired
+	_, err := svc.UpdateSharedSensorsSettings(ctx, tn.ID().String(), tenant.SharedSensorsSettings{OptOut: false}, actx)
+	wantStepUp(t, "shared sensors opt-in", err)
+	if got, _ := svc.SharedSensorsOptedOut(ctx, tn.ID()); !got {
+		t.Fatal("the organization was opted back in without a recent authentication")
+	}
+
+	gate.err = nil
+	if _, err := svc.UpdateSharedSensorsSettings(ctx, tn.ID().String(), tenant.SharedSensorsSettings{OptOut: false}, actx); err != nil {
+		t.Fatalf("inside the window: %v", err)
+	}
+	if got, _ := svc.SharedSensorsOptedOut(ctx, tn.ID()); got {
+		t.Fatal("opt-in not saved")
+	}
+}
+
+// Loosening the pentest policy (more sensitive findings may reach trackers,
+// or campaigns start without an authorization) and turning on auto-resolve
+// need step-up; tightening and unrelated edits do not.
+func TestStepUp_PentestAndRetestLooseningNeedsRecentAuth(t *testing.T) {
+	ctx := context.Background()
+	svc, _, tn, owner, gate := tenantWithOwner(t)
+	actx := audit.AuditContext{ActorID: owner.String(), TenantID: tn.ID().String()}
+	id := tn.ID().String()
+	on, off := true, false
+	green, strict := "green", "amber_strict"
+
+	gate.err = nil
+	if _, err := svc.UpdatePentestSettings(ctx, id, app.UpdatePentestSettingsInput{RequireAuthorizationBeforeStart: &on, TicketMaxTLP: &green}, actx); err != nil {
+		t.Fatalf("tighten: %v", err)
+	}
+	if len(gate.actors) != 0 {
+		t.Fatalf("tightening asked for step-up: %v", gate.actors)
+	}
+
+	gate.err = middleware.ErrStepUpRequired
+	_, err := svc.UpdatePentestSettings(ctx, id, app.UpdatePentestSettingsInput{TicketMaxTLP: &strict}, actx)
+	wantStepUp(t, "raise the tracker TLP limit", err)
+	_, err = svc.UpdatePentestSettings(ctx, id, app.UpdatePentestSettingsInput{RequireAuthorizationBeforeStart: &off}, actx)
+	wantStepUp(t, "turn off authorization before start", err)
+	if _, err := svc.UpdatePentestSettings(ctx, id, app.UpdatePentestSettingsInput{TicketMaxTLP: &green}, actx); err != nil {
+		t.Fatalf("an unchanged limit needs no step-up: %v", err)
+	}
+
+	rs := tenant.RetestSettings{AutoEnabled: true, IntervalHours: 24, DailyCap: 100, AutoResolve: true}
+	_, err = svc.UpdateRetestSettings(ctx, id, rs, actx)
+	wantStepUp(t, "turn on auto-resolve", err)
+	rs.AutoResolve = false
+	if _, err := svc.UpdateRetestSettings(ctx, id, rs, actx); err != nil {
+		t.Fatalf("retest without auto-resolve needs no step-up: %v", err)
+	}
+
+	gate.err = nil
+	rs.AutoResolve = true
+	if _, err := svc.UpdateRetestSettings(ctx, id, rs, actx); err != nil {
+		t.Fatalf("inside the window: %v", err)
+	}
+}

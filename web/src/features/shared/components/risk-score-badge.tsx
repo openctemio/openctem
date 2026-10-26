@@ -28,9 +28,14 @@ export function riskScoreState(a: {
 
 interface RiskScoreBadgeProps {
   score: number
-  showScore?: boolean
   size?: 'sm' | 'md' | 'lg'
   className?: string
+  /**
+   * Name the dimension in the visible text ("Risk: 73"). Use it wherever no
+   * column header or field label already says "Risk": phone cards, headers,
+   * chip rows. The tooltip and the accessible name always carry it.
+   */
+  labelled?: boolean
   /**
    * Freshness of the score. A never-scored asset shows "Not yet scored" and a
    * queued first score "Calculating…", never a fake "0". A queued rescore of
@@ -46,22 +51,30 @@ const badgeSizeClasses = {
 }
 
 /**
- * A risk score: the glyph and text of its band (SeverityBadge score), never a
- * solid fill. Freshness states are machine states: a never-scored asset is
- * "unknown", a queued first score is "running", a queued rescore keeps the
- * score with a clock and a hint.
+ * A risk score: the glyph and colour of its band (SeverityBadge score) and the
+ * number, never a solid fill. The band word ("High") is in the tooltip and the
+ * accessible name, never next to the number: criticality uses the same words,
+ * and a row showing "High" twice reads as one dimension (research/271).
+ * Freshness states are machine states: a never-scored asset is "unknown", a
+ * queued first score is "running", a queued rescore keeps the score with a
+ * clock and a hint.
  */
 export function RiskScoreBadge({
   score,
-  showScore = true,
   size = 'md',
   className,
+  labelled = false,
   state = 'scored',
 }: RiskScoreBadgeProps) {
   const { t } = useTranslation()
   const thresholds = useRiskThresholds()
   const level = getRiskLevel(score, thresholds)
-  const label = t(`riskScore.level.${level.key}`, level.label)
+  const band = t(`riskScore.level.${level.key}`, level.label)
+  const value = !Number.isFinite(score)
+    ? '0'
+    : Number.isInteger(score)
+      ? String(score)
+      : score.toFixed(1)
 
   if (state === 'calculating') {
     return (
@@ -90,20 +103,37 @@ export function RiskScoreBadge({
     )
   }
 
-  const badge = showScore ? (
-    <SeverityBadge score={score} showBand className={cn(badgeSizeClasses[size], className)} />
-  ) : (
-    <SeverityBadge score={score} className={cn(badgeSizeClasses[size], className)}>
-      {label}
+  // A zero is no open risk, not a low score: say so instead of "0".
+  const none = level.key === 'none'
+  const text = none
+    ? band
+    : labelled
+      ? t('riskScore.labelled', 'Risk: {score}', { score: value })
+      : value
+  const scoreName = none
+    ? t('riskScore.nameNone', 'Risk: {band}', { band })
+    : t('riskScore.name', 'Risk {score} of 100, {band}', { score: value, band })
+  // A queued rescore keeps the score and adds a clock; the badge's own name
+  // says what the clock means, so hovering either part explains it.
+  const name =
+    state === 'pending'
+      ? t('riskScore.namePending', '{name}. Its inputs changed; the new score is being computed.', {
+          name: scoreName,
+        })
+      : scoreName
+  const badge = (
+    <SeverityBadge
+      score={score}
+      aria-label={name}
+      title={name}
+      className={cn(badgeSizeClasses[size], className)}
+    >
+      {text}
     </SeverityBadge>
   )
   if (state !== 'pending') return badge
   return (
-    <span
-      className="inline-flex items-center gap-1"
-      title={t('riskScore.calculatingHint', 'Its inputs changed; the new score is being computed.')}
-      data-state="pending"
-    >
+    <span className="inline-flex items-center gap-1" title={name} data-state="pending">
       {badge}
       <Clock className="size-3 text-muted-foreground" aria-hidden />
     </span>

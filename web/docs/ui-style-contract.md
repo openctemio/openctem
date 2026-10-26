@@ -157,6 +157,16 @@ tab icons, strip rules, chips, empty pagination, name column width).
   cannot sort set `enableSorting: false`.
 - The first column is the row's name; row actions are the last column with
   `id: 'actions'` (both are pinned automatically).
+- **Column priority**: a column that may drop on a narrow screen sets
+  `meta: { hideBelow: <table frame width in px> }`; `DataTable` hides it below
+  that width instead of scrolling the table sideways. Set it from measured
+  widths, as a running sum in the order columns should join (the asset list's
+  `COLUMN_ROOM`). A column the viewer turns on or off under Columns keeps
+  that choice.
+- **One-line chip rows fold, never cut**: chips in a row that must stay on
+  one line are whole or folded into a "+N" popover that lists them all.
+  Fold by measured width with `useFitCount` (`foldToFit` is the shared rule,
+  used by `FilterChipsRow` too); no chip shrinks or is clipped by its cell.
 - **Density** (D14): `compact` (32px rows) or `comfortable` (40px). Single-line
   lists (findings, scans, sensors, single-line asset lists) default to
   compact; lists with multi-line rows (service rows, grouped cards on phones)

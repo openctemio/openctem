@@ -387,3 +387,50 @@ func TestPlacement_SaysWhyTheSharedFleetWasNotUsed(t *testing.T) {
 		t.Fatalf("a task the organization can run: eligible %d, shared fleet %q", p.Eligible, p.SharedFleet)
 	}
 }
+
+// A sensor the platform would hand the job to, but which reports with its
+// latest heartbeats that it stopped claiming (its local store is full), is
+// named with stopped_claiming instead of counting as eligible; a report left
+// behind long ago changes nothing.
+func TestPlacement_NamesASensorThatStoppedClaiming(t *testing.T) {
+	f := newPlacementFixture(t)
+	stopped := `{"level":"high","stop_claiming":true,"reason":"9 % of the volume free, below 10 %","disk_level":"low","total_bytes":1}`
+	db := f.sensRep.db
+	setStore := func(reportedAgo string) {
+		t.Helper()
+		if _, err := db.ExecContext(f.ctx, `UPDATE sensors SET reported_local_store = $2::jsonb,
+			last_seen_at = NOW(), local_store_reported_at = NOW() - $3::interval WHERE id = $1`,
+			f.sensors[1].String(), stopped, reportedAgo); err != nil {
+			t.Fatal(err)
+		}
+	}
+	verdict := func() SensorPlacementView {
+		t.Helper()
+		p, err := f.svc.ExplainPlacement(f.ctx, f.tenant, f.cmds["unzoned"])
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, sp := range p.Sensors {
+			if sp.SensorID == f.sensors[1] {
+				return SensorPlacementView{Eligible: sp.Eligible, Reasons: sp.Reasons}
+			}
+		}
+		t.Fatal("b-nuclei not explained")
+		return SensorPlacementView{}
+	}
+
+	setStore("0 seconds")
+	if v := verdict(); v.Eligible || !slices.Equal(v.Reasons, []string{command.PlacementStoppedClaiming}) {
+		t.Fatalf("stopped sensor: %+v, want only stopped_claiming", v)
+	}
+	setStore("2 hours")
+	if v := verdict(); !v.Eligible || len(v.Reasons) != 0 {
+		t.Fatalf("a report left behind two hours ago: %+v, want eligible", v)
+	}
+}
+
+// SensorPlacementView is the part of a verdict the test compares.
+type SensorPlacementView struct {
+	Eligible bool
+	Reasons  []string
+}

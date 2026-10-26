@@ -359,13 +359,13 @@ export function SignalsSection({
         />
       )}
       <FacetOption
-        label={t('assets.facetPanel.hasFindings', 'Has findings')}
+        label={t('assets.facetPanel.hasFindings', 'Has open findings')}
         checked={filters.hasFindings === true}
         onCheckedChange={(on) => patch({ hasFindings: on ? true : undefined })}
       />
       {filters.hasFindings === false && (
         <FacetOption
-          label={t('assets.facetPanel.noFindings', 'No findings')}
+          label={t('assets.facetPanel.noFindings', 'No open findings')}
           checked
           onCheckedChange={() => patch({ hasFindings: undefined })}
         />
