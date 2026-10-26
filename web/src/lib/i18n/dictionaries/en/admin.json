@@ -1101,7 +1101,7 @@
   "admin.organizationAuditChainPanel.verifyPasses": "Verification now passes: {verified} of {total} entries, 0 breaks.",
   "admin.organizationAuditChainPanel.verifyStillBreaks": "Verification still reports {count} breaks. Re-check the chain.",
   "admin.organizationAuditChainPanel.why": "Why",
-  "admin.organizationUsersSection.everyOwnerOfThisOrganization": "Every owner of this organization is suspended. A suspended owner still owns the organization, so the console cannot create another one; a super admin can recover ownership (with a reason and an authenticator code; the new owner gets a set-password link by email only).",
+  "admin.organizationUsersSection.everyOwnerOfThisOrganization": "Every owner of this organization is suspended, blocked or erased. Such an owner still owns the organization, so the console cannot create another one; a super admin can recover ownership (with a reason and an authenticator code; the new owner gets a set-password link by email only).",
   "admin.organizationUsersSection.joined": "Joined",
   "admin.organizationUsersSection.noUsersYet": "No users yet",
   "admin.organizationUsersSection.peopleWithAnAccountIn": "People with an account in this organization. The organization's owner and administrators invite or create users; the platform console only creates an organization's first owner.",
