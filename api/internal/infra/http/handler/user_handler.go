@@ -58,7 +58,7 @@ type UserResponse struct {
 	CreatedAt     time.Time      `json:"created_at"`
 	UpdatedAt     time.Time      `json:"updated_at"`
 	// IsPlatformAdmin marks an account linked to an active platform
-	// administrator (RFC-022). The UI uses it to offer the admin console. Set
+	// administrator. The UI uses it to offer the admin console. Set
 	// on the /users/me response only, not in every toUserResponse.
 	IsPlatformAdmin bool `json:"is_platform_admin"`
 }
@@ -344,7 +344,7 @@ type TenantMembershipResponse struct {
 	Role        string    `json:"role"`
 	JoinedAt    time.Time `json:"joined_at"`
 	CreatedAt   time.Time `json:"created_at"`
-	// The user's own membership (RFC-058), for the organization switcher.
+	// The user's own membership, for the organization switcher.
 	// Kind is "internal" or "external"; AccessExpiresAt is when an external
 	// membership ends; BlockedReason, when set, says why the organization
 	// cannot be opened (suspended, expired, home_access_ended,

@@ -41,11 +41,16 @@ jobs:
   changes:
     name: Detect web changes
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read # the PR's commits and labels (changed.sh)
+      checks: read # green-base.sh and release-provenance.sh read a commit's check runs
     outputs:
-      web: ${{ steps.f.outputs.web }}
-      api: ${{ steps.f.outputs.api }}
-      build: ${{ steps.b.outputs.build }}
+      web: ${{ steps.f.outputs.web == 'true' && steps.tree.outputs.verified != 'true' }}
+      api: ${{ steps.f.outputs.api == 'true' && steps.tree.outputs.verified != 'true' }}
+      build: ${{ steps.b.outputs.build == 'true' && steps.tree.outputs.verified != 'true' }}
       full: ${{ steps.f.outputs.full }}
+      tree_note: ${{ steps.tree.outputs.note }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -69,6 +74,19 @@ jobs:
           EVENT: ${{ github.event_name }}
           BEFORE: ${{ github.event.before }}
         run: bash .github/scripts/web-build-needed.sh
+
+      # The exact tree of this commit already passed every required check on a
+      # pull request or an earlier queue run: skip the jobs below
+      # (.github/scripts/tree-verified.sh). Also records the tree this run tested.
+      - id: tree
+        working-directory: .
+        env:
+          EVENT: ${{ github.event_name }}
+          SHA: ${{ github.sha }}
+          HEAD_REF: ${{ github.event.merge_group.head_ref }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/tree-verified.sh
 
   # Generates the contract files for this commit (artifact `contract`) and, for
   # an API change, compares them with the base's.
@@ -391,7 +409,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          fetch-depth: ${{ github.event_name == 'pull_request' && 0 || 1 }} # the merge base, to pick the affected tests
+          fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '1' }} # the merge base, to pick the affected tests
 
       - name: Setup Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -567,8 +585,10 @@ jobs:
           WEB: ${{ needs.changes.outputs.web }}
           API: ${{ needs.changes.outputs.api }}
           CHANGED: ${{ needs.contract.outputs.changed }}
+          TREE_NOTE: ${{ needs.changes.outputs.tree_note }}
         run: |
           echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          if [ -n "$TREE_NOTE" ]; then echo "$TREE_NOTE"; fi
           if echo "$NEEDS" | jq -e 'to_entries | map(.value.result) | any(. == "failure" or . == "cancelled")' >/dev/null; then
             echo "::error::a job failed or was cancelled"; exit 1
           fi

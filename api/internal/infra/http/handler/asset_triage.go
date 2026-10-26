@@ -36,7 +36,7 @@ type AssetTriage struct {
 	ScanAllowed bool `json:"scan_allowed"`
 	// ScanBlockedBy is the gate's answer when it may not (discovered,
 	// unattributed, out_of_scope, rejected, ...), ScanRefusalCode its
-	// refusal code (RFC-054 §6.5).
+	// refusal code.
 	ScanBlockedBy   string `json:"scan_blocked_by,omitempty"`
 	ScanRefusalCode string `json:"scan_refusal_code,omitempty"`
 }
