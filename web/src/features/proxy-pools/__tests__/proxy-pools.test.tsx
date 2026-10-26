@@ -61,7 +61,11 @@ vi.mock('@/lib/permissions', async (importOriginal) => ({
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
 import { ProxyPoolsPanel } from '../components/proxy-pools-panel'
-import { SensorNetworkPathSection, pathRequest } from '../components/sensor-network-path-section'
+import {
+  SensorNetworkPathSection,
+  pathRequest,
+  pathWarning,
+} from '../components/sensor-network-path-section'
 
 const ALL = ['sensors:egress:read', 'sensors:egress:write', 'sensors:egress:delete']
 
@@ -422,7 +426,38 @@ describe('Sensor network path', () => {
       </TooltipProvider>
     )
     fireEvent.click(screen.getByRole('combobox'))
-    expect(await screen.findByRole('option', { name: 'Segment A (disabled)' })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('option', { name: 'Segment A (disabled, scans fail)' })
+    ).toBeInTheDocument()
+  })
+
+  it('says why a pooled sensor gets no jobs, from what it reported', () => {
+    const full = ['net.confined@1', 'egress.upstream@1', 'egress.validate@1']
+    const on = [{ id: 'd', enabled: true, is_default: true }]
+    const off = [{ id: 'p2', enabled: false, is_default: false }]
+    // Its own pool is disabled: scans fail closed, whatever it reports.
+    expect(pathWarning('pool:p2', off, full)).toBe('pool-disabled')
+    // A pool applies and the sensor never reported, or lacks confinement.
+    expect(pathWarning('inherit', on, null)).toBe('unsupported')
+    expect(pathWarning('inherit', on, ['egress.upstream@1'])).toBe('unsupported')
+    // Scans run through the pool; validation waits for a newer sensor.
+    expect(pathWarning('inherit', on, ['net.confined@1', 'egress.upstream@1'])).toBe(
+      'validate-waits'
+    )
+    expect(pathWarning('inherit', on, full)).toBeNull()
+    // No pool applies: Direct, or Inherit without an enabled default.
+    expect(pathWarning('direct', on, null)).toBeNull()
+    expect(pathWarning('inherit', [{ id: 'd', enabled: false, is_default: true }], null)).toBeNull()
+  })
+
+  it('shows the warning for a sensor without proxy support under the default pool', () => {
+    pools = [pool()]
+    render(
+      <TooltipProvider>
+        <SensorNetworkPathSection sensorId="s1" capabilities={['validate']} />
+      </TooltipProvider>
+    )
+    expect(screen.getByText('This sensor receives no scan jobs')).toBeInTheDocument()
   })
 
   it('renders nothing without read permission', () => {

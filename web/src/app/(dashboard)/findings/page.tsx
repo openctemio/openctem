@@ -47,6 +47,7 @@ import {
 } from '@/features/config/api/finding-source-api'
 import { useSearchQuery } from '@/hooks/use-search-query'
 import { toDisplayText } from '@/lib/untrusted-text'
+import { useOpenForm } from '@/hooks/use-open-form'
 import type { ColumnDef, SortingState, VisibilityState } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
 import {
@@ -61,7 +62,6 @@ import {
   FacetGroupLabel,
   BulkActionBar,
   FilterSheet,
-  TruncatedText,
   DrillDownBreadcrumb,
   ErrorState,
   type MobileRowSelection,
@@ -171,6 +171,9 @@ import {
 } from '@/features/findings'
 import { ExploitSignals } from '@/features/findings/components/exploit-signals'
 import { listQuery, writeListContext } from '@/features/findings/lib/list-context'
+import { FindingAssetCell } from '@/features/findings/components/cells/finding-asset-cell'
+import { DuplicatesChip } from '@/features/findings/components/cells/duplicates-chip'
+import { findingRowTone } from '@/features/findings/lib/row-tone'
 import { PriorityClassBadge } from '@/features/findings/components/priority-class-badge'
 import { BranchOnlyBadge } from '@/features/findings/components/branch-only-badge'
 import { SLA_STATUS_LABELS, type SLAStatus } from '@/features/repositories/types/repository.types'
@@ -738,6 +741,8 @@ function FindingsContent() {
     hasPermission('findings:write') &&
     hasPermission('assets:write') &&
     hasPermission('assets:import')
+  const openImportForm = useCallback(() => setImportDialogOpen(true), [])
+  useOpenForm('import', canImport, openImportForm)
   // Both are Phase-3 gated modules embedded in this (findings) page: the "Create
   // Jira Ticket" action hits the integrations module, and "Add to remediation"
   // hits the remediation module. Hide + skip-fetch when disabled (fail-open on
@@ -1524,6 +1529,7 @@ function FindingsContent() {
                 <p dir="auto" className="font-medium truncate [unicode-bidi:isolate]">
                   {toDisplayText(row.getValue('title'), 500)}
                 </p>
+                <DuplicatesChip count={row.original.duplicatesMarked} interactive={false} />
                 {row.original.branchOnly && <BranchOnlyBadge />}
                 {hasDataFlow && (
                   <Tooltip>
@@ -1540,6 +1546,7 @@ function FindingsContent() {
                 )}
               </div>
               <MetaLine
+                className="flex-nowrap overflow-hidden whitespace-nowrap"
                 items={[
                   row.original.cve && <CveLink id={row.original.cve} stopPropagation />,
                   row.original.scanner,
@@ -1586,6 +1593,7 @@ function FindingsContent() {
         header: () => t('findings.columns.exploitSignals', 'Exploit signals'),
         cell: ({ row }) => (
           <ExploitSignals
+            variant="cell"
             isInKev={row.original.isInKev}
             kevDueDate={row.original.kevDueDate}
             kevRansomware={row.original.kevRansomware}
@@ -1614,52 +1622,7 @@ function FindingsContent() {
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('findings.list.location')} />
         ),
-        cell: ({ row }) => {
-          const asset = row.original.assets[0]
-          const loc = row.original.location
-          if (loc && (loc.asset || loc.detail)) {
-            // Asset on top, the place on it below, cut from the middle so the
-            // part that differs between two findings (the end of a path or
-            // URL) stays visible; the full value is in the tooltip.
-            return (
-              <div className="flex min-w-0 max-w-[240px] flex-col">
-                {loc.asset && (
-                  <TruncatedText
-                    value={loc.asset}
-                    label={t('findings.list.asset')}
-                    className="text-sm"
-                  />
-                )}
-                {loc.detail && (
-                  <TruncatedText
-                    value={loc.detail}
-                    label={t('findings.list.location')}
-                    middle={30}
-                    className={cn(
-                      'font-mono text-muted-foreground',
-                      loc.asset ? 'text-xs' : 'text-sm'
-                    )}
-                  />
-                )}
-              </div>
-            )
-          }
-          // No asset name and no location: a plain "Unnamed asset" link to
-          // the asset (an id fragment meant nothing to people, and the
-          // external-link icon suggested another site).
-          if (asset?.id) {
-            return (
-              <Link
-                href={`/assets/${encodeURIComponent(asset.id)}`}
-                title={asset.id}
-                className="text-muted-foreground hover:text-foreground text-sm hover:underline"
-              >
-                {t('findings.list.unnamedAsset', 'Unnamed asset')}
-              </Link>
-            )
-          }
-          return <span className="text-muted-foreground text-sm">—</span>
-        },
+        cell: ({ row }) => <FindingAssetCell finding={row.original} />,
       },
       {
         accessorKey: 'slaStatus',
@@ -2661,6 +2624,7 @@ function FindingsContent() {
                       onSelectionChange={setSelectedFindings}
                       resetSelectionKey={`${selectionEpoch}|${selectionScope}`}
                       onRowClick={handleRowClick}
+                      rowTone={findingRowTone}
                       mobileRow={mobileRow}
                       columnVisibility={columnVisibility}
                       onColumnVisibilityChange={onColumnVisibilityChange}

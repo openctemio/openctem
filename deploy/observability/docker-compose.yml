@@ -20,7 +20,10 @@
 #   OBS_PUBLIC_URL              the public URL users open (default https://localhost)
 #   OBS_PUBLIC_PROBE_MODULE     http_2xx (public CA) or http_2xx_internal_ca (gateway internal CA)
 #   OBS_POSTGRES_HOST           default postgres:5432; OBS_POSTGRES_DB default openctem
-#   OBS_PG_MONITOR_PASSWORD     password of the openctem_monitor role (postgres/monitor-role.sql)
+#   OBS_PG_MONITOR_PASSWORD     password of the openctem_monitor role; the postgres-monitor-role
+#                               one-shot creates/updates the role on every `up` (postgres/monitor-role.sql)
+#   DB_SUPERUSER, DB_SUPERUSER_PASSWORD   the Postgres superuser that one-shot connects as
+#                               (default DB_USER / DB_PASSWORD, as in the stack's .env)
 #   REDIS_PASSWORD              the stack's Redis password (empty when none)
 #   OBS_REDIS_ADDR              default redis:6379
 #   OBS_TEXTFILE_DIR            host dir of *.prom files (backup status), default /var/lib/node_exporter/textfile
@@ -137,11 +140,54 @@ services:
     cpus: 0.3
     networks: [obs]
 
+  # One-shot, runs on every `up`: (re)applies postgres/monitor-role.sql as the
+  # Postgres superuser so the exporter's login always exists (a missing role
+  # made the exporter fail silently for weeks). Idempotent. A psql client
+  # only: no capabilities, the password reaches it from the environment and
+  # is never printed.
+  postgres-monitor-role:
+    profiles: [observability]
+    image: ${POSTGRES_IMAGE:-postgres}:${POSTGRES_VERSION:-17}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        if [ -z "$${OBS_PG_MONITOR_PASSWORD:-}" ]; then
+          echo "postgres-monitor-role: set OBS_PG_MONITOR_PASSWORD" >&2; exit 1
+        fi
+        hostport="$${OBS_POSTGRES_HOST:-postgres:5432}"
+        export PGHOST="$${hostport%:*}" PGPORT="$${hostport##*:}"
+        exec psql -X -v ON_ERROR_STOP=1 -v pw="$$OBS_PG_MONITOR_PASSWORD" \
+          -f /bootstrap/monitor-role.sql
+    environment:
+      PGDATABASE: ${OBS_POSTGRES_DB:-openctem}
+      PGSSLMODE: ${OBS_POSTGRES_SSLMODE:-disable}
+      PGUSER: ${DB_SUPERUSER:-${DB_USER:-openctem}}
+      PGPASSWORD: ${DB_SUPERUSER_PASSWORD:-${DB_PASSWORD:-}}
+      OBS_PG_MONITOR_PASSWORD: ${OBS_PG_MONITOR_PASSWORD:-}
+      OBS_POSTGRES_HOST: ${OBS_POSTGRES_HOST:-postgres:5432}
+    volumes:
+      - ./postgres:/bootstrap:ro
+    restart: "no"
+    user: "999:999"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    logging: *obs-logging
+    mem_limit: 64m
+    cpus: 0.1
+    networks: [app]
+
   # Connects as openctem_monitor (pg_monitor only, no table access):
-  # deploy/observability/postgres/monitor-role.sql.
+  # deploy/observability/postgres/monitor-role.sql, applied by
+  # postgres-monitor-role above.
   postgres-exporter:
     <<: *obs-hardening
     profiles: [observability]
+    depends_on:
+      postgres-monitor-role:
+        condition: service_completed_successfully
     image: quay.io/prometheuscommunity/postgres-exporter:v0.20.1
     command:
       - --collector.long_running_transactions

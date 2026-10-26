@@ -253,6 +253,7 @@ export interface AffectedAsset {
   /** public | restricted | private | isolated | unknown (detail page only). */
   exposure?: string
   isInternetAccessible?: boolean
+  isCrownJewel?: boolean
 }
 
 /** The package an SCA finding is about (detail page only). */
@@ -803,6 +804,8 @@ export interface Finding {
   workItemUris?: string[] // linked issues
   occurrenceCount?: number
   duplicateCount?: number
+  /** Findings marked as duplicates of this one that the viewer can read. */
+  duplicatesMarked?: number
   lastSeenAt?: string
   correlationId?: string // for grouping related findings
 
