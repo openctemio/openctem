@@ -27,7 +27,7 @@ func batchedFixture(state command.StepBatch) (*Service, *memStepRuns, *statusRun
 func TestBatchedStep_SomeBatchesFailed_StepAndRunPartial(t *testing.T) {
 	s, store, runs := batchedFixture(command.StepBatch{Total: 3, Failed: 1, Findings: 5, FirstError: "connection reset"})
 
-	if err := s.OnStepCompleted(context.Background(), runs.run.ID.String(), "a", 2, nil); err != nil {
+	if err := s.OnStepCompleted(context.Background(), runs.run.TenantID, runs.run.ID.String(), "a", 2, nil); err != nil {
 		t.Fatal(err)
 	}
 	a := store.rows["a"]
@@ -49,7 +49,7 @@ func TestBatchedStep_SomeBatchesFailed_StepAndRunPartial(t *testing.T) {
 func TestBatchedStep_LastBatchFails_StillPartial(t *testing.T) {
 	s, store, runs := batchedFixture(command.StepBatch{Total: 3, Failed: 1, Findings: 4})
 
-	if err := s.OnStepFailed(context.Background(), runs.run.ID.String(), "a", "boom", "COMMAND_FAILED"); err != nil {
+	if err := s.OnStepFailed(context.Background(), runs.run.TenantID, runs.run.ID.String(), "a", "boom", "COMMAND_FAILED"); err != nil {
 		t.Fatal(err)
 	}
 	if got := store.rows["a"].Status; got != scanrun.StepRunStatusPartial {
@@ -63,7 +63,7 @@ func TestBatchedStep_LastBatchFails_StillPartial(t *testing.T) {
 func TestBatchedStep_EveryBatchFailed_StepAndRunFailed(t *testing.T) {
 	s, store, runs := batchedFixture(command.StepBatch{Total: 3, Failed: 3, FirstError: "scanner not found: nuclei"})
 
-	if err := s.OnStepFailed(context.Background(), runs.run.ID.String(), "a", "boom", "COMMAND_FAILED"); err != nil {
+	if err := s.OnStepFailed(context.Background(), runs.run.TenantID, runs.run.ID.String(), "a", "boom", "COMMAND_FAILED"); err != nil {
 		t.Fatal(err)
 	}
 	if got := store.rows["a"].Status; got != scanrun.StepRunStatusFailed {
@@ -77,7 +77,7 @@ func TestBatchedStep_EveryBatchFailed_StepAndRunFailed(t *testing.T) {
 func TestBatchedStep_AllBatchesCompleted_RunCompleted(t *testing.T) {
 	s, store, runs := batchedFixture(command.StepBatch{Total: 3, Findings: 7})
 
-	if err := s.OnStepCompleted(context.Background(), runs.run.ID.String(), "a", 1, nil); err != nil {
+	if err := s.OnStepCompleted(context.Background(), runs.run.TenantID, runs.run.ID.String(), "a", 1, nil); err != nil {
 		t.Fatal(err)
 	}
 	if a := store.rows["a"]; a.Status != scanrun.StepRunStatusCompleted || a.FindingsCount != 7 {

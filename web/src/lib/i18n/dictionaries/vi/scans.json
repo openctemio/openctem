@@ -1631,6 +1631,8 @@
   "scans.result.no_result.text": "Công cụ đã chạy xong nhưng không gửi kết quả cho kiểm tra này.",
   "scans.result.no_verdict.fix": "Retest lại. Nếu lặp lại, kiểm tra sensor và nhật ký của lần chạy.",
   "scans.result.no_verdict.text": "Công cụ kết thúc mà không có kết luận cho phát hiện này.",
+  "scans.result.seen_after_check.fix": "Phát hiện không thay đổi. Hãy kiểm tra lại sau khi bản sửa đã được triển khai.",
+  "scans.result.seen_after_check.text": "Một lần quét đã phát hiện lại phát hiện này sau khi kiểm tra chạy, nên kết quả kiểm tra không phản ánh trạng thái hiện tại.",
   "scans.result.server_error.fix": "Phát hiện giữ nguyên. Retest lại khi ứng dụng hoạt động bình thường.",
   "scans.result.server_error.text": "Endpoint trả về lỗi máy chủ, nên kiểm tra không biết lỗi còn hay không.",
   "scans.result.template_changed.fix": "Phát hiện giữ nguyên. Hãy xác minh thủ công, hoặc gắn một kiểm tra khớp với kiểm tra gốc.",

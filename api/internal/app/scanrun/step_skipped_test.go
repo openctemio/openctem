@@ -19,7 +19,7 @@ import (
 func TestStepCompletedWithSkips_StepAndRunCompleted(t *testing.T) {
 	s, store, runs := batchedFixture(command.StepBatch{Total: 1})
 	summary := "Completed with 1 target(s) skipped by the sensor's local policy: api.example.com (unresolvable)"
-	if err := s.OnStepCompletedPartial(context.Background(), runs.run.ID.String(), "a", 3, nil, Partial{Skipped: 1, SkippedSummary: summary}); err != nil {
+	if err := s.OnStepCompletedPartial(context.Background(), runs.run.TenantID, runs.run.ID.String(), "a", 3, nil, Partial{Skipped: 1, SkippedSummary: summary}); err != nil {
 		t.Fatal(err)
 	}
 	a := store.rows["a"]
@@ -39,7 +39,7 @@ func TestStepCompletedWithSkips_StepAndRunCompleted(t *testing.T) {
 
 func TestStepCompletedWithoutSkips_StillCompleted(t *testing.T) {
 	s, store, runs := batchedFixture(command.StepBatch{Total: 1})
-	if err := s.OnStepCompletedPartial(context.Background(), runs.run.ID.String(), "a", 3, nil, Partial{}); err != nil {
+	if err := s.OnStepCompletedPartial(context.Background(), runs.run.TenantID, runs.run.ID.String(), "a", 3, nil, Partial{}); err != nil {
 		t.Fatal(err)
 	}
 	if got := store.rows["a"].Status; got != scanrun.StepRunStatusCompleted {
@@ -54,7 +54,7 @@ func TestStepCompletedWithoutSkips_StillCompleted(t *testing.T) {
 // the step completes.
 func TestBatchedStep_SkippedTargets_CompletedWithCount(t *testing.T) {
 	s, store, runs := batchedFixture(command.StepBatch{Total: 3, Findings: 6, Skipped: 2})
-	if err := s.OnStepCompleted(context.Background(), runs.run.ID.String(), "a", 1, nil); err != nil {
+	if err := s.OnStepCompleted(context.Background(), runs.run.TenantID, runs.run.ID.String(), "a", 1, nil); err != nil {
 		t.Fatal(err)
 	}
 	a := store.rows["a"]
@@ -81,7 +81,7 @@ func TestStepCompletedWithCoverageGaps_Partial(t *testing.T) {
 	s, store, runs := batchedFixture(command.StepBatch{Total: 1})
 	summary := "Completed with 1 host(s) not fully covered: a.example.com (breaker_open)"
 	gaps := []scanrun.CoverageGap{{Host: "a.example.com", Reason: scanrun.GapReasonBreakerOpen}}
-	if err := s.OnStepCompletedPartial(context.Background(), runs.run.ID.String(), "a", 2, nil, Partial{Gaps: 1, GapSummary: summary, GapList: gaps}); err != nil {
+	if err := s.OnStepCompletedPartial(context.Background(), runs.run.TenantID, runs.run.ID.String(), "a", 2, nil, Partial{Gaps: 1, GapSummary: summary, GapList: gaps}); err != nil {
 		t.Fatal(err)
 	}
 	a := store.rows["a"]
@@ -105,7 +105,7 @@ func TestStepCompletedWithCoverageGaps_Partial(t *testing.T) {
 // (with the gap's message and code); the skipped count is kept in the output.
 func TestStepCompletedWithSkipsAndGaps(t *testing.T) {
 	s, store, runs := batchedFixture(command.StepBatch{Total: 1})
-	if err := s.OnStepCompletedPartial(context.Background(), runs.run.ID.String(), "a", 0, nil,
+	if err := s.OnStepCompletedPartial(context.Background(), runs.run.TenantID, runs.run.ID.String(), "a", 0, nil,
 		Partial{Skipped: 1, SkippedSummary: "skipped one", Gaps: 1, GapSummary: "one gap"}); err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestStepCompletedWithSkipsAndGaps(t *testing.T) {
 // Batched step: the coverage gaps of every completed batch count.
 func TestBatchedStep_CoverageGaps_Partial(t *testing.T) {
 	s, store, runs := batchedFixture(command.StepBatch{Total: 2, Findings: 4, Gaps: 3})
-	if err := s.OnStepCompleted(context.Background(), runs.run.ID.String(), "a", 1, nil); err != nil {
+	if err := s.OnStepCompleted(context.Background(), runs.run.TenantID, runs.run.ID.String(), "a", 1, nil); err != nil {
 		t.Fatal(err)
 	}
 	a := store.rows["a"]

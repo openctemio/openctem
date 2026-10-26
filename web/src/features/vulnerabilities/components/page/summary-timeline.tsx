@@ -12,6 +12,7 @@ import {
 } from '@/features/findings/lib/finding-intel'
 import type { Vulnerability } from '../../types'
 import type { CveExposure } from '../../types/exposure'
+import { formatDateOnly } from '@/lib/date-only'
 
 const MAX_REFERENCES = 12
 
@@ -20,7 +21,7 @@ const MAX_REFERENCES = 12
  * (advisories first) and the aliases with where each link comes from.
  */
 export function SummaryCard({ vuln, exposure }: { vuln?: Vulnerability; exposure: CveExposure }) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const refs = useMemo(() => {
     const seen = new Set<string>()
     const out: { href: string; label: string }[] = []
@@ -43,7 +44,7 @@ export function SummaryCard({ vuln, exposure }: { vuln?: Vulnerability; exposure
           {vuln?.modified_at && (
             <span className="text-xs text-muted-foreground">
               {t('vulnPage.summary.updated', 'Feed record updated {date}', {
-                date: new Date(vuln.modified_at).toLocaleDateString(),
+                date: formatDateOnly(vuln.modified_at, locale, { dateStyle: 'medium' }),
               })}
             </span>
           )}
@@ -129,7 +130,7 @@ export function SummaryCard({ vuln, exposure }: { vuln?: Vulnerability; exposure
                       'from the signed {source} feed, synced {date}',
                       {
                         source: a.source.toUpperCase(),
-                        date: new Date(a.synced_at).toLocaleDateString(),
+                        date: formatDateOnly(a.synced_at, locale, { dateStyle: 'medium' }),
                       }
                     )}
                   </span>
@@ -159,7 +160,8 @@ export function ExposureTimeline({
 }) {
   const { t, locale } = useTranslation()
   const tl = exposure.timeline
-  const day = (iso?: string) => (iso ? new Date(iso).toLocaleDateString(locale) : undefined)
+  const day = (iso?: string) =>
+    iso ? formatDateOnly(iso, locale, { dateStyle: 'medium' }) : undefined
   const events: { key: string; label: string; date?: string; note?: string }[] = [
     {
       key: 'published',

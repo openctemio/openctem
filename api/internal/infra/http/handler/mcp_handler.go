@@ -176,6 +176,8 @@ type MCPHandler struct {
 	// public web origin their review links point to.
 	approvals mcpApprovalRequester
 	webBase   string
+	// drafter backs draft_pentest_finding (SetPentestDraftTool).
+	drafter mcpPentestDrafter
 	// modules answers whether a module is on for the organization (the
 	// route module gate). nil: every module counts as on (tests, stub builds).
 	modules mcpModuleChecker

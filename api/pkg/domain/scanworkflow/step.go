@@ -110,6 +110,10 @@ type Step struct {
 	MaxRetries        int
 	RetryDelaySeconds int
 
+	// RunPolicy is how the step runs at each depth, and whether it waits
+	// for a tool (run_policy.go).
+	RunPolicy RunPolicy
+
 	// Timestamps
 	CreatedAt time.Time
 }
@@ -292,6 +296,7 @@ func (s *Step) Clone() *Step {
 		Condition:         s.Condition,
 		MaxRetries:        s.MaxRetries,
 		RetryDelaySeconds: s.RetryDelaySeconds,
+		RunPolicy:         s.RunPolicy.Clone(),
 		CreatedAt:         time.Now(),
 	}
 
