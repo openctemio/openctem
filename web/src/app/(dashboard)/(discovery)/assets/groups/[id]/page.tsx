@@ -85,7 +85,7 @@ import {
 } from '@/features/asset-groups'
 import { groupMemberHref } from '@/features/asset-groups/lib/member-link'
 import { useCsvExport, type ExportFieldConfig } from '@/hooks/use-csv-export'
-import { IssuesChip } from '@/features/assets/components/service-cells'
+import { OpenFindingsCell } from '@/features/assets/components/service-cells'
 import { SEVERITY_LEVELS, normalizeSeverity, type SeverityLevel } from '@/lib/severity'
 import { useTranslation } from '@/context/i18n-provider'
 import { useAssetTypeRegistry } from '@/features/asset-types/api/use-asset-type-registry'
@@ -338,16 +338,12 @@ function AssetGroupDetailContent({ params }: PageProps) {
         header: ({ column }) => (
           <DataTableColumnHeader
             column={column}
-            title={t('assetGroups.detail.col.findings', 'Findings')}
+            title={t('assets.col.openFindings', 'Open findings')}
           />
         ),
-        // The shared "N issues found" chip, linking to the asset's findings.
-        cell: ({ row }) =>
-          row.original.findingCount > 0 ? (
-            <IssuesChip assetId={row.original.id} count={row.original.findingCount} />
-          ) : (
-            <span className="text-muted-foreground tabular-nums">0</span>
-          ),
+        cell: ({ row }) => (
+          <OpenFindingsCell assetId={row.original.id} count={row.original.findingCount} />
+        ),
       },
       {
         accessorKey: 'lastSeen',

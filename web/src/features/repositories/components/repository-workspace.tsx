@@ -837,7 +837,7 @@ function OverviewTab({
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center gap-2">
               <Activity className="h-4 w-4 text-muted-foreground" />
-              Risk Score
+              {t('assets.overview2.riskScore', 'Risk score')}
             </CardDescription>
           </CardHeader>
           <CardContent className="pt-0">

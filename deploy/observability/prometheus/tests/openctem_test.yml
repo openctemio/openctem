@@ -242,3 +242,98 @@ tests:
               summary: 'Sign-up burst: account_created from one ip_prefix'
               description: Many sign-ups from one network or email domain. Review Requests > Sign-ups in the platform console.
               runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#signupburst
+
+  # Exporters that are up but cannot log in: pg_up and redis_up are the signal.
+  - interval: 1m
+    input_series:
+      - series: 'pg_up{job="postgres",instance="postgres-exporter:9187"}'
+        values: '0x15'
+      - series: 'redis_up{job="redis",instance="redis-exporter:9121"}'
+        values: '0x15'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: PostgresExporterCannotConnect
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: PostgresExporterCannotConnect
+        exp_alerts:
+          - exp_labels: {severity: warning, component: platform, job: postgres, instance: 'postgres-exporter:9187'}
+            exp_annotations:
+              summary: The Postgres exporter cannot log in to Postgres
+              description: The exporter process is up (its scrape succeeds) but pg_up is 0, so every Postgres alert is blind. The usual cause is that the openctem_monitor role does not exist or its password differs from OBS_PG_MONITOR_PASSWORD. Apply deploy/observability/postgres/monitor-role.sql (the postgres-monitor-role service does it on every `up`).
+              runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#postgresexportercannotconnect
+      - eval_time: 9m
+        alertname: RedisExporterCannotConnect
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: RedisExporterCannotConnect
+        exp_alerts:
+          - exp_labels: {severity: warning, component: platform, job: redis, instance: 'redis-exporter:9121'}
+            exp_annotations:
+              summary: The Redis exporter cannot connect to Redis
+              description: The exporter process is up but redis_up is 0, so the Redis alerts are blind. Check REDIS_PASSWORD, OBS_REDIS_ADDR and, with the Compose overlay, the TLS CA of the datastore.
+              runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#redisexportercannotconnect
+
+  # Healthy exporters do not alert.
+  - interval: 1m
+    input_series:
+      - series: 'pg_up{job="postgres",instance="postgres-exporter:9187"}'
+        values: '1x15'
+      - series: 'redis_up{job="redis",instance="redis-exporter:9121"}'
+        values: '1x15'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: PostgresExporterCannotConnect
+        exp_alerts: []
+      - eval_time: 14m
+        alertname: RedisExporterCannotConnect
+        exp_alerts: []
+
+  # The host clock: unsynchronised for 10 minutes, or far off.
+  - interval: 1m
+    input_series:
+      - series: 'node_timex_sync_status{job="node",instance="node-exporter:9100"}'
+        values: '1x3 0x15'
+      - series: 'node_timex_offset_seconds{job="node",instance="node-exporter:9100"}'
+        values: '0.001x3 14400x15'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: HostClockUnsynchronised
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: HostClockUnsynchronised
+        exp_alerts: []
+      - eval_time: 14m
+        alertname: HostClockUnsynchronised
+        exp_alerts:
+          - exp_labels: {severity: warning, component: platform, job: node, instance: 'node-exporter:9100'}
+            exp_annotations:
+              summary: The host clock is not synchronised
+              description: The kernel reports the clock as unsynchronised. Sensor request signatures allow only 2 minutes of skew, so a drifting clock breaks sensor pairing and requests. Check `chronyc tracking`.
+              runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#hostclockunsynchronised
+      - eval_time: 10m
+        alertname: HostClockOffsetLarge
+        exp_alerts: []
+      - eval_time: 14m
+        alertname: HostClockOffsetLarge
+        exp_alerts:
+          - exp_labels: {severity: critical, component: platform, job: node, instance: 'node-exporter:9100'}
+            exp_annotations:
+              summary: The host clock is off by 4h 0m 0s
+              description: Sensor request signatures allow 2 minutes of skew, so sensors cannot pair or call the API while the clock is off. Fix now with `sudo chronyc makestep`, and set `makestep 1 -1` in chrony.conf so it can step at any time, not only at boot.
+              runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#hostclockoffsetlarge
+
+  # A synchronised clock with a small offset (either sign) stays quiet.
+  - interval: 1m
+    input_series:
+      - series: 'node_timex_sync_status{job="node",instance="node-exporter:9100"}'
+        values: '1x20'
+      - series: 'node_timex_offset_seconds{job="node",instance="node-exporter:9100"}'
+        values: '-0.2x20'
+    alert_rule_test:
+      - eval_time: 19m
+        alertname: HostClockUnsynchronised
+        exp_alerts: []
+      - eval_time: 19m
+        alertname: HostClockOffsetLarge
+        exp_alerts: []

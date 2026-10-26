@@ -29,3 +29,21 @@ func TestObserveAt(t *testing.T) {
 		t.Fatalf("after a newer observation: status %s, want active", a.Status())
 	}
 }
+
+// The ingest path revives a stale asset only: an inactive asset (a closed
+// port, a person's decision) stays inactive, as the store's upsert keeps it.
+func TestObserveAt_InactiveStaysInactive(t *testing.T) {
+	a, err := NewAsset("web02.example.com", AssetTypeHost, CriticalityLow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.Deactivate()
+	seen := time.Now().UTC()
+	a.ObserveAt(seen)
+	if a.Status() != StatusInactive {
+		t.Fatalf("status %s, want inactive", a.Status())
+	}
+	if !a.LastSeen().Equal(seen) {
+		t.Fatalf("last_seen %v, want %v", a.LastSeen(), seen)
+	}
+}

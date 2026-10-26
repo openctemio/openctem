@@ -22,6 +22,7 @@ organization's findings. The ingest service writes it; nothing else does.
 | Dispositions: suppressed (with rule and policy version), out of scope, rejected and quarantined items on the receipt (`ingest_receipt_items`, `GET /findings/imports/{id}/items`); versioned policy snapshot that fails the ingest when it cannot load; automations of new findings through a durable `side_effects` job (migration `003384_ingest_dispositions`, RFC-122 §6d). `filtered` and `held` are reserved for ingest filters and the review gate | shipped |
 | Nightly load harness (`TestIngestLoad`, workflow `api-ingest-load.yml`): concurrent uploads, the urgent lane behind bulk work, one repository from many runs (RFC-122 §6e) | shipped |
 | Full-coverage uploads (`coverage=full` with an explicit scope) | shipped |
+| List filters `origin` (source group), `tool` and `since`, and the `totals` of every receipt the filter keeps: the figures the dashboard intake shows for the same filter ([dashboards](dashboards.md), "Exposure flow and intake") | shipped |
 | Web: receipt and recent imports in the import dialog, "What this run did to findings" on the scan run page, "Last seen in" on the finding overview (en, vi) | shipped |
 
 ## Which receipt
@@ -175,7 +176,7 @@ member may write to but not see. When the request has read every part,
 
 | Route | Gate | Who sees what |
 |---|---|---|
-| `GET /api/v1/findings/imports` | `findings:read` | organization view (unrestricted data scope, or `dashboards:org:view`): every receipt; anyone else: only their own uploads. Filters `source_kind`, `source_ref`; unknown parameter 400 `INVALID_FILTER`; `per_page` ≤ 100 |
+| `GET /api/v1/findings/imports` | `findings:read` | organization view (unrestricted data scope, or `dashboards:org:view`): every receipt; anyone else: only their own uploads. Filters `source_kind`, `source_ref`, `origin` (sensor, import, connector, ci), `tool` (`unknown`: none named), `since` (RFC 3339, activity at or after); `totals` sum every receipt the filter keeps; unknown or malformed parameter 400 `INVALID_FILTER`; `per_page` ≤ 100 |
 | `GET /api/v1/findings/imports/{id}` | `findings:read` | as the list (else 404); `by_severity` counts the actions per action and severity over findings in the caller's scope |
 | `GET /api/v1/findings/imports/{id}/actions` | `findings:read` | as the list; rows only for findings in the caller's data scope and pentest visibility; filter `action` |
 | `GET /api/v1/findings/{id}/imports` | `findings:read` | the finding must be in scope (404); the newest 20 receipts that acted on it: id, kind, ref, tool, action, time (no counts) |

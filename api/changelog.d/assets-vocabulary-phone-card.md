@@ -1,0 +1,6 @@
+### Changed: assets keep criticality and risk apart, and count "open findings" everywhere
+
+- A risk score shows its number with the band as colour and shape ("73" with a triangle); the band word ("High") moved to the tooltip and the screen-reader name ("Risk 73 of 100, High"). Criticality uses the same words, so a row no longer shows "High" twice for two different things. Where no column header names it (phone cards, the asset page header, pickers), the score reads "Risk: 73" and criticality "Criticality: High".
+- The per-asset findings count reads "N open findings" (column "Open findings") on the inventory, the attack surface page and asset groups, in the asset page header, the relationship graph and the CSV export, instead of "N issues found", "Findings" or "Findings: N". Every link from that count opens the asset's open findings, so the list shows the same number. The "Has findings" filter is named "Has open findings".
+- The phone card of an asset is name, type and description, then one line: criticality, risk, open findings, and the scope or lifecycle state only when it needs attention. The findings link has a 44 px tall touch target.
+- The asset page's findings link and the drawer's "View N open findings" button open the open findings (they opened every status before). The CSV leaves the risk score empty for an asset that was never scored.

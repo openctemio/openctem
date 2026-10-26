@@ -150,8 +150,8 @@ export function inventoryChips(filters: InventoryFilters, ctx: ChipContext): Inv
     chips.push({
       key: 'hasFindings',
       text: filters.hasFindings
-        ? t('assets.facetPanel.hasFindings', 'Has findings')
-        : t('assets.facetPanel.noFindings', 'No findings'),
+        ? t('assets.facetPanel.hasFindings', 'Has open findings')
+        : t('assets.facetPanel.noFindings', 'No open findings'),
       clear: without('hasFindings'),
     })
   }
