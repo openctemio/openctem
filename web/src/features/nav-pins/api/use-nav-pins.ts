@@ -5,10 +5,11 @@ import useSWR from 'swr'
 import { toast } from 'sonner'
 import { get, put } from '@/lib/api/client'
 import { useCurrentTenantId } from '@/context/tenant-provider'
+import { useBootstrapPending } from '@/context/bootstrap-provider'
+import { NAV_PINS_URL } from '@/context/bootstrap-session'
 import { useTranslation } from '@/context/i18n-provider'
 
-/** The caller's sidebar pins in the current organization. */
-export const NAV_PINS_URL = '/api/v1/me/pins'
+export { NAV_PINS_URL }
 
 export type NavPinKind = 'page' | 'quick_view' | 'saved_view'
 
@@ -29,6 +30,14 @@ export interface NavPinsResponse {
   include_informational: boolean
 }
 
+/** No refetch of a seeded or loaded value on mount, focus or reconnect. */
+export const NAV_PINS_SWR_OPTIONS = {
+  dedupingInterval: 60_000,
+  revalidateOnFocus: false,
+  revalidateOnReconnect: false,
+  revalidateIfStale: false,
+} as const
+
 export const samePin = (a: Pick<NavPin, 'kind' | 'ref'>, b: Pick<NavPin, 'kind' | 'ref'>) =>
   a.kind === b.kind && a.ref === b.ref
 
@@ -44,18 +53,20 @@ export function togglePin(
 }
 
 /**
- * The pins, read once a minute at most (the sidebar shows them on every
- * page), and a toggle that writes the new list. The server checks every pin
- * again; a refused write keeps the old list and says why.
+ * The pins and a toggle that writes the new list. The session bootstrap
+ * carries the pins with their counts, so a page load sends no request for
+ * them: the hook waits for the bootstrap and reads the seeded value without
+ * revalidating it. Only when the bootstrap left them out (an older API, or a
+ * failed read) does it ask GET /me/pins, once. The server checks every pin
+ * again on write; a refused write keeps the old list and says why.
  */
 export function useNavPins() {
   const { t } = useTranslation()
   // Null outside an organization (and in tests without one): nothing to read.
-  const key = useCurrentTenantId() ? NAV_PINS_URL : null
-  const { data, mutate } = useSWR<NavPinsResponse>(key, get, {
-    dedupingInterval: 60_000,
-    revalidateOnFocus: false,
-  })
+  // Null while the bootstrap is loading, so its seed is read instead.
+  const bootstrapPending = useBootstrapPending()
+  const key = useCurrentTenantId() && !bootstrapPending ? NAV_PINS_URL : null
+  const { data, mutate } = useSWR<NavPinsResponse>(key, get, NAV_PINS_SWR_OPTIONS)
   const pins = useMemo(() => data?.data ?? [], [data])
   const max = data?.max ?? 12
 
