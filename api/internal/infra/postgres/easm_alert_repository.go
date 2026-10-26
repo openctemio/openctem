@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,6 +25,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/exposure"
 	"github.com/openctemio/openctem/api/pkg/domain/outbox"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
 
 const (
@@ -55,6 +57,25 @@ func NewEASMAlerter(db *DB) *EASMAlerter {
 func (a *EASMAlerter) WithHourlyBudget(n int) *EASMAlerter {
 	a.budget = max(n, 0)
 	return a
+}
+
+// reappearAfter is the tenant's alert fingerprint lifetime
+// (EASMSettings.ReappearAfterDays; default 30 days). The lookup is scoped to
+// the tenant; a missing or unreadable setting falls back to the default.
+func (a *EASMAlerter) reappearAfter(ctx context.Context, tx *sql.Tx, tenantID shared.ID) (time.Duration, error) {
+	var raw sql.NullString
+	err := tx.QueryRowContext(ctx, `SELECT settings->'easm'->>'reappear_after_days' FROM tenants WHERE id = $1`,
+		tenantID.String()).Scan(&raw)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return 0, fmt.Errorf("read easm reappear setting: %w", err)
+	}
+	var s tenant.EASMSettings
+	if raw.Valid {
+		if n, convErr := strconv.Atoi(raw.String); convErr == nil && n >= tenant.MinReappearAfterDays && n <= tenant.MaxReappearAfterDays {
+			s.ReappearAfterDays = n
+		}
+	}
+	return s.ReappearAfter(), nil
 }
 
 type easmAlertRow struct {
@@ -192,8 +213,11 @@ func (a *EASMAlerter) enqueueImmediate(ctx context.Context, tx *sql.Tx, tenantID
 		return fmt.Errorf("exposure id: %w", err)
 	}
 	verb := "New"
-	if reason == easmalert.ReasonReopened {
+	switch reason {
+	case easmalert.ReasonReopened:
 		verb = "Reopened"
+	case easmalert.ReasonReappeared:
+		verb = "Reappeared"
 	}
 	body := fmt.Sprintf("%s external exposure (%s) from %s.", verb, exposure.EventType(r.eventType).String(), sourceLabel(r.source))
 	if r.assetName != "" {
@@ -305,7 +329,7 @@ func (a *EASMAlerter) mergeDigest(ctx context.Context, tx *sql.Tx, tenantID shar
 	if err != nil {
 		return fmt.Errorf("encode easm digest: %w", err)
 	}
-	title := fmt.Sprintf("EASM daily digest: %d new or reopened external exposures", d.Count)
+	title := fmt.Sprintf("EASM daily digest: %d new, reopened or reappeared external exposures", d.Count)
 	body := digestBody(d)
 	if rowID != "" {
 		if _, err := tx.ExecContext(ctx, `

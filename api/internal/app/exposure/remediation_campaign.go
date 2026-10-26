@@ -54,7 +54,7 @@ type CampaignTasks interface {
 	// ClaimTaskFixed marks a task's open findings fixed (a fix claim each
 	// finding then verifies on its own), as the platform. Returns the
 	// refusals, one line per finding.
-	ClaimTaskFixed(ctx context.Context, tenantID, taskID shared.ID, note string) (refusals []string, err error)
+	ClaimTaskFixed(ctx context.Context, tenantID, taskID shared.ID, note, externalAccount string) (refusals []string, err error)
 }
 
 // CampaignModuleGuard reports the modules a tenant has off
@@ -1065,7 +1065,7 @@ func (s *RemediationCampaignService) HandleEpicStatusChange(ctx context.Context,
 	note := campaignEpicNote(issueKey, jiraStatus, jiraAccount)
 	var refusals []string
 	for _, id := range ids {
-		r, cerr := s.tasks.ClaimTaskFixed(ctx, tenantID, id, note)
+		r, cerr := s.tasks.ClaimTaskFixed(ctx, tenantID, id, note, jiraAccount)
 		if cerr != nil {
 			refusals = append(refusals, id.String()+": "+campaignEpicClaimFailed)
 			s.logger.Warn("mark campaign task fixed from epic failed", "task_id", id.String(), "error", logger.SanitizeError(cerr))

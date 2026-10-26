@@ -67,6 +67,7 @@ tests that cover the console's most user-visible flows.
 | `39-assets-list-states.spec.ts`             | Asset search keeps typed keys, toolbar on error, last page, empty default list          |
 | `40-filter-chips-row-phone.spec.ts`         | Filter chips row at 390/375px: locked chip and chips never overlap, search on its line  |
 | `41-assets-service-facts.spec.ts`           | Asset service facts: whole chips and +N at 1280/1440/1920, no table side-scroll, axe    |
+| `43-new-scan-review-coverage.spec.ts`       | New Scan review: skipped targets by reason, neutral, searchable, 1440/390px, axe        |
 
 Each spec is designed to:
 

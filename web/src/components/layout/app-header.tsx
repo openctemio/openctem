@@ -65,7 +65,7 @@ export function Header({
   return (
     <header
       className={cn(
-        'border-border z-50 h-16 border-b',
+        'border-border z-50 h-12 border-b',
         // Phones: an opaque bar, no backdrop blur. A blur is re-rasterised
         // whenever anything moves under or over it (a sheet sliding up, its
         // backdrop fading), which is where phone animations dropped frames.
@@ -76,7 +76,7 @@ export function Header({
     >
       <div
         className={cn(
-          'relative flex h-full items-center gap-3 px-4 sm:gap-4 sm:px-6',
+          'relative flex h-full items-center gap-3 px-4',
           offset > 10 &&
             fixed &&
             'after:absolute after:inset-0 after:-z-10 after:bg-background/40 md:after:backdrop-blur-md'
@@ -90,7 +90,7 @@ export function Header({
         )}
         {/* From lg: at tablet width the sidebar and header actions leave no room for
             a readable trail, and the page title already says where you are. */}
-        {showBreadcrumb && <BreadcrumbNav className="hidden lg:flex" />}
+        {showBreadcrumb && <BreadcrumbNav className="hidden min-w-0 shrink lg:flex" />}
         {children}
         {showHeaderActions && <HeaderActions />}
       </div>

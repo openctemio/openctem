@@ -2273,6 +2273,9 @@ type AssetDisplay struct {
 	Name   string
 	Type   string
 	WebURL string // repository assets only; empty otherwise
+	// CrownJewel and InternetFacing: the asset facts a findings row shows.
+	CrownJewel     bool
+	InternetFacing bool
 }
 
 // GetAssetDisplayInfo resolves the display label of many assets with two
@@ -2316,7 +2319,10 @@ func (s *AssetService) GetAssetDisplayInfo(ctx context.Context, tenantID string,
 
 	var repoIDs []shared.ID
 	for id, info := range infos {
-		result[id.String()] = AssetDisplay{ID: id.String(), Name: info.Name, Type: info.Type.String()}
+		result[id.String()] = AssetDisplay{
+			ID: id.String(), Name: info.Name, Type: info.Type.String(),
+			CrownJewel: info.CrownJewel, InternetFacing: info.InternetFacing,
+		}
 		if info.Type == assetdom.AssetTypeRepository {
 			repoIDs = append(repoIDs, id)
 		}
