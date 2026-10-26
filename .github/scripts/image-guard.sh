@@ -29,7 +29,7 @@ case "$comp" in
   openctem-gateway) budget=75 ;;   # 63 MB (runs as uid 1000)
   migrations)       budget=25 ;;   # 18 MB
   seed)             budget=25 ;;   # 17 MB
-  admin-cli)        budget=40 ;;   # 34 MB at v0.10.0 (WebAuthn + TOTP for console sign-in)
+  admin-cli)        budget=48 ;;   # 42 MB at v0.15.0 (Go 1.27.3 toolchain, console four-eyes and recovery actions)
   *) echo "image-guard: no budget for component '$comp'; add one" >&2; exit 2 ;;
 esac
 
