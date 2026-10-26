@@ -80,6 +80,7 @@ const INCONCLUSIVE_TEXT: Record<string, string> = {
   endpoint_mismatch: "the check did not request this finding's endpoint",
   no_endpoint_proof: "no proof the finding's endpoint was requested",
   template_changed: 'template changed',
+  seen_after_check: 'seen again after the check',
   no_result: 'no result',
   error: 'error',
   template_not_found: 'check not installed on the sensor',
@@ -92,6 +93,10 @@ const INCONCLUSIVE_TEXT: Record<string, string> = {
  * tool gives (ids; translated at render). The finding is unchanged in each.
  */
 const INCONCLUSIVE_HELP: Record<string, { text: string; fix: string }> = {
+  seen_after_check: {
+    text: 'A scan sighted the finding again after the check ran, so the check does not show the current state.',
+    fix: 'The finding stays open. Retest again once the fix is deployed.',
+  },
   endpoint_mismatch: {
     text: "The check ran but did not request this finding's own endpoint, so it proves nothing about it.",
     fix: 'The finding is unchanged. Add a retest check pinned to the exact URL of the finding.',

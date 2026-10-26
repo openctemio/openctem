@@ -7,6 +7,8 @@ import (
 	"unicode"
 
 	"github.com/openctemio/ctis/edgeprotect"
+
+	"github.com/openctemio/openctem/api/pkg/domain/evidence"
 )
 
 // RequestResult is what one request of a re-run saw, as the sensor reports it
@@ -92,7 +94,7 @@ func (r RequestResult) edge() edgeprotect.Verdict {
 //     rules for a non-match (a fix only when it answered and was not an
 //     edge block, an auth failure or a server error); a re-run that never
 //     requested it is inconclusive.
-func DecideByRequests(reqs []RequestResult, matchedAt string, cls ...Class) (Verdict, bool) {
+func DecideByRequests(reqs []RequestResult, matchedAt string, items []evidence.Item, cls ...Class) (Verdict, bool) {
 	want, wantOK := endpointKey(matchedAt)
 	if len(reqs) == 0 || !wantOK {
 		return Verdict{}, false
@@ -139,7 +141,23 @@ func DecideByRequests(reqs []RequestResult, matchedAt string, cls ...Class) (Ver
 	if answered {
 		a.Edge = r.edge()
 	}
+	// The recorded exchange at the endpoint is read by the platform too:
+	// request lines from sensors that do not name an edge state would
+	// otherwise hide a CDN or WAF block (a block is never a pass), and the
+	// lines carry no redirect target.
+	if ev := AnalyzeAttempt(items, matchedAt); ev.Found && ev.EndpointMatches && ev.Responded {
+		if blocksCheck(ev.Edge) && !blocksCheck(a.Edge) {
+			a = ev
+		} else if a.Location == "" && ev.Status == a.Status {
+			a.Location = ev.Location
+		}
+	}
 	return decideNotMatched(a, matchedAt, true, "", firstClass(cls)), true
+}
+
+// blocksCheck: the edge stopped or throttled the request.
+func blocksCheck(v edgeprotect.Verdict) bool {
+	return v.State.Stops() || v.State == edgeprotect.RateLimited
 }
 
 // answeredBest is the original endpoint's request that got an HTTP answer
