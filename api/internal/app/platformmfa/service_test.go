@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/consolesetting"
 	cst "github.com/openctemio/openctem/api/internal/app/consolesetting/consolesettingtest"
 	"github.com/openctemio/openctem/api/pkg/domain/platformsetting"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
 
@@ -91,7 +91,7 @@ func TestUpdateGuardsAndGraceStart(t *testing.T) {
 	if _, err := svc.Update(ctx, cst.SuperAdmin(t), "admins", &bad, nil, "r", 0, "", ""); !errors.Is(err, ErrInvalidGrace) {
 		t.Fatalf("bad grace: %v", err)
 	}
-	if _, err := svc.Update(ctx, cst.SuperAdmin(t), "admins", nil, nil, " ", 0, "", ""); !errors.Is(err, shared.ErrValidation) {
+	if _, err := svc.Update(ctx, cst.SuperAdmin(t), "admins", nil, nil, " ", 0, "", ""); !errors.Is(err, consolesetting.ErrReasonRequired) {
 		t.Fatalf("no reason: %v", err)
 	}
 

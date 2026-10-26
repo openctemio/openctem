@@ -211,7 +211,7 @@ func (s *Service) Update(ctx context.Context, actor *admin.AdminUser, floor stri
 	}
 	reason, err := consolesetting.CheckReason(reason)
 	if err != nil {
-		return Settings{}, fmt.Errorf("%w: %v", shared.ErrValidation, err)
+		return Settings{}, err
 	}
 	prev, err := s.Get(ctx)
 	if err != nil {
