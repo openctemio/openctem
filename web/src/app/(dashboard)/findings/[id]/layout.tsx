@@ -25,7 +25,7 @@ export default function FindingIdLayout({ children }: { children: ReactNode }) {
     <Main>
       <div className="flex h-[50vh] items-center justify-center">
         <div className="text-center">
-          <h1 className="text-2xl font-semibold">
+          <h1 className="text-xl font-semibold">
             {t('findings.detail.notFound.title', 'Finding not found')}
           </h1>
           <p className="mt-2 text-muted-foreground">
