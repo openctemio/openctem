@@ -38,16 +38,26 @@ export type SurfaceCell =
   | 'tls'
   /** Expiry of a certificate asset. */
   | 'cert'
+  /** The CDN or edge provider a web service is served through. */
+  | 'edge'
 
-const WEB: readonly SurfaceCell[] = ['status', 'ip', 'cname', 'tech', 'tls']
-const HTTP_SERVICE: readonly SurfaceCell[] = ['status', 'port', 'ip', 'cname', 'tech', 'tls']
+const WEB: readonly SurfaceCell[] = ['status', 'edge', 'ip', 'cname', 'tech', 'tls']
+const HTTP_SERVICE: readonly SurfaceCell[] = [
+  'status',
+  'port',
+  'edge',
+  'ip',
+  'cname',
+  'tech',
+  'tls',
+]
 const SERVICE: readonly SurfaceCell[] = ['port', 'product', 'status', 'ip', 'tech', 'tls']
 const OPEN_PORT: readonly SurfaceCell[] = ['port', 'product']
 const DISCOVERED_URL: readonly SurfaceCell[] = ['status']
 const DNS_NAME: readonly SurfaceCell[] = ['dns']
 const IP: readonly SurfaceCell[] = ['asn', 'ports']
 const CERTIFICATE: readonly SurfaceCell[] = ['cert']
-const API: readonly SurfaceCell[] = ['status', 'tech', 'tls']
+const API: readonly SurfaceCell[] = ['status', 'edge', 'tech', 'tls']
 
 /**
  * Keyed by `type:sub_type`, then by a bare name that is either a type or a
@@ -104,6 +114,7 @@ const SURFACE_CELL_KEYS: Readonly<Record<SurfaceCell, readonly AssetPropertyKey[
   tech: [],
   tls: ['has_tls', 'tls_version'],
   cert: ['not_after'],
+  edge: ['cdn'],
 }
 
 /** True when `columns` already show every fact of `cells`. */

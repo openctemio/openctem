@@ -176,6 +176,15 @@ Signature: sig1=:<base64 Ed25519 signature>:
   in this order, these parameters in this order, re-serialised and compared
   byte for byte) and refuses everything else.
 - `expires − created ≤ 5 min`; clocks may differ by 2 minutes.
+- A request whose signature verifies with the key it names but whose time
+  lies outside that tolerance answers `401` with the `clock-skew` problem
+  (`https://openctem.io/problems/sensor/clock-skew`), carrying `server_time`
+  and `clock_offset_seconds` (created minus the server's time), and the API
+  logs it at WARN with the offset. The window is checked only after the
+  signature verified, so an unknown key or a bad signature keeps the
+  generic `401`; the server's time is no secret (every response carries a
+  `Date` header). The sensor SDK prints the offset and tells the operator
+  to fix NTP on the host or the server.
 - The nonce is single-use per key within the window (Redis `SET NX`, a
   per-replica cache when Redis is unavailable).
 - The body is checked against `Content-Digest` after the signature verifies
@@ -191,13 +200,28 @@ Signature: sig1=:<base64 Ed25519 signature>:
 
 | Limit | Value |
 |---|---|
-| Start requests per source address | 10 per hour (burst 3) |
+| Start requests per source address, before any check | 60 per hour (burst 10) |
+| Verified starts without a code or token, per source address | 10 per hour (burst 3) |
+| Verified starts with a reverse-mode code or an enrollment token | 5 per hour (burst 3) per code or token, and 30 per hour (burst 10) per source address |
 | Start requests, whole platform | 600 per hour |
 | Open (unclaimed) requests, whole platform | 1000; a start beyond it answers `503` with `Retry-After` |
 | Reveal / poll / confirm per pairing | 1 per second (burst 5) |
 | Lookups per administrator | 10 per minute; 20 failed lookups per hour lock lookups for that user for an hour |
 | Expiry | 10 minutes from start; an approved pairing must be confirmed within 10 minutes of approval |
 | Code | single use; a used, denied or expired code is never valid again |
+
+A start spends the per-address entry budget first. Only a start whose
+signature verified with the key in its body reaches the budget of verified
+starts, so starts refused for a bad signature, a clock skew or a malformed
+body (a sensor restarting on an error, probes from the same network) do not
+lock out a correct requester behind the same address for an hour. A start
+carrying a code or a token is budgeted by that credential (kept as its
+SHA-256 in memory) under a wider per-address cap, so a site behind one
+address can pair several sensors with their own codes. Which budget applies
+depends only on what the request carries, never on whether the code is
+open, so the budget answer reveals nothing about a guessed code. A refused
+start answers `429` with a `Retry-After` of the time until the budget
+holds a token again (with jitter, at most 5 minutes).
 
 Uniformity:
 
