@@ -401,8 +401,8 @@ and a fork PR would run code on the host.
 
 | Tier | Events | API CI | Web CI | All-in-one CI | Web E2E | CodeQL |
 |------|--------|--------|--------|---------------|---------|--------|
-| Fast | `pull_request` | `API static checks` (gates + vet, staticcheck, golangci-lint) + `Tests (Postgres + Redis)`: the whole suite against Postgres and Redis in 6 shards **without** `-race`, so isolation tests fail on the PR (decision D-30). `Tests (least-privilege DB role)` and `Migrations (PostgreSQL 18)` only when `migrations` | `Web checks`, `Web tests` | build skipped | only with `run-e2e`, or when `web/e2e/` changed | changed language(s) |
-| Full | `merge_group`, push to `develop`/`main`, a PR with `ci:full` or a changed CI definition | the suite in 8 shards **with** `-race`, the least-privilege suite, PostgreSQL 18, `Release Binaries` (not on a PR); Docker build on `main` | `Web checks`, `Web tests`; `next build` on push | images built and smoke-tested | Playwright in 4 shards (`web/` or `api/` changed) | queue: none (the PR head was analysed); push: both |
+| Fast | `pull_request` | `API static checks` (gates + vet, staticcheck, golangci-lint) + `Tests (Postgres + Redis)`: the packages the change can affect (see "Affected tests") against Postgres and Redis in 1 to 6 shards **without** `-race`, so isolation tests fail on the PR (decision D-30). `Tests (least-privilege DB role)` and `Migrations (PostgreSQL 18)` only when `migrations` | `Web checks`, `Web tests` (the tests the change can affect) | build skipped | only with `run-e2e`, or when `web/e2e/` changed | changed language(s) |
+| Full | `merge_group`, push to `develop`/`main`, a PR with `ci:full` or a changed CI definition | the whole suite in 8 shards **with** `-race`, the least-privilege suite, PostgreSQL 18, `Release Binaries` (not on a PR); Docker build on `main` | `Web checks`, `Web tests`; `next build` on push | images built and smoke-tested | Playwright in 4 shards (`web/` or `api/` changed) | queue: none (the PR head was analysed); push: both |
 
 **Forcing the full tier on a PR:** add the `ci:full` label, then re-run all jobs
 of the workflow run (or push). Use it for a risky change to concurrency, SQL
@@ -431,7 +431,7 @@ succeeded. Nothing reaches `develop`/`main` on the fast tier alone.
 Caches: GitHub lets a run restore caches of its own ref, of the default branch
 and, for a pull request, of its base branch. A merge-queue ref is none of
 these for `develop`, so it restores nothing, and what it writes no other run can
-read. API CI therefore neither restores nor saves the Go cache in the queue,
+read. API CI therefore neither restores nor saves the Go cache in the queue (see "Affected tests and caches" for what a pull request reuses),
 and the Web E2E layer cache (`web/e2e/ci/docker-bake.hcl`) is written by pushes
 to `develop` only; pull requests read develop's. Before, queue and PR refs held
 about 7 of the 10 GB cache store and evicted develop's entries.
@@ -714,6 +714,67 @@ files stale, so run `make generate-docker` (or `scripts/generate-in-docker.sh
 
 All Go jobs run with `GOWORK=off` and `working-directory: api`.
 
+## Affected tests and caches
+
+Research 296 sets the target: a pull request's whole pipeline in 10 minutes at
+p50. A pull request does not need the whole suite to know whether it broke
+something, so it runs the tests the change can reach, and reuses the build
+output of develop. The merge queue and a push run everything, so nothing
+reaches `develop` on the narrowed set alone, and `API CI OK` / `Web CI OK`
+(the required checks) are unchanged.
+
+**API tests.** `.github/scripts/go-affected.sh` lists the packages a PR
+changes plus every package that imports one of them, tests included (the
+module's import graph from `go list`). A change it cannot place runs
+everything: `go.mod`, `go.sum`, `migrations/`, `configs/`, `deploy/`,
+`scripts/`, the `Makefile`, anything outside `api/` except documentation and
+`web/`, the generated-docs file that a test compares, and every `ci:full` or
+CI-definition change. Markdown, `api/docs/` and `api/changelog.d/` select
+nothing. The `spec` job plans the run once (`go-plan.sh`) and publishes the plan
+as the `go-plan` artifact so every shard reads the same one; the shard count
+follows the size of the selection (about ten packages per shard, 1 to 6). A
+shard with nothing to run exits at once. The race detector runs in the merge
+queue and on push only; a PR runs the same tests without it.
+
+**API shard balance.** The full runs record each package's run time
+(`go-durations-*` artifacts merged into `go-durations`, kept 14 days). The next
+plan downloads the newest and deals the whole packages out longest first to the
+least loaded shard (`go-shard.sh`, `GO_SHARD_DURATIONS`); without it the
+packages are split by a checksum of their name. Either way `go-shard.sh check`
+proves every selected package and every test of a split package lands on
+exactly one shard, so a stale or wrong durations file only unbalances shards.
+
+**Go caches.** `.github/actions/go-cache` restores the module cache (keyed by
+`go.sum`) and the build cache (keyed by `go.sum`, the Go version and the date,
+with fallbacks to older entries) in every API job. Pull requests only restore.
+The `Go cache (develop)` job saves them on a push to develop, at most one build
+cache a day. `go test` also reuses a cached result for a package whose inputs
+did not change, and a restored build cache means a PR compiles only the
+packages it touched. A merge-queue ref restores nothing (see Caches above).
+
+**Web tests.** On a pull request `web-select.sh` selects the Vitest files
+Vitest relates to the changed files through its module graph
+(`vitest list --changed`), plus every test that reads source files from disk
+(the repository's rule checks), which no import relates. It runs everything
+when the API contract changed, when the `ci:full` label is set, or when a
+changed file is not plain source under `web/src` or `web/console/src` (a
+config, the lockfile, `web/src/test/`, a script, `.github/`). A selected run
+skips coverage upload, since a partial run would read as a drop; develop's
+baseline comes from the full runs. Shards are balanced by the recorded run time
+of each test file (`web/vitest.sequencer.ts`; the `vitest-durations` artifact
+travels with the `contract` artifact), falling back to Vitest's own split.
+
+**Web checks.** The TypeScript incremental state (`tsconfig.tsbuildinfo`) and
+the ESLint cache (content strategy) are restored from develop's newest entry
+and saved by a push to develop, one entry a day. `next build` runs on push only
+(it never ran on a pull request) and is skipped when the push changed only
+tests, Playwright specs or documentation (`web-build-needed.sh`); its
+`.next/cache` was already cached by source hash.
+
+Trust: the durations artifacts only steer load balancing. They are named by the
+workflows of `merge_group` and `push` runs (pull requests never upload them),
+read as JSON objects of numbers, and cannot remove a test from the plan.
+
 ## Work done once per run
 
 Setup that every job of a run needs is done once and handed over:
@@ -729,7 +790,8 @@ Setup that every job of a run needs is done once and handed over:
   the web and console images together.
 
 Not shared on purpose: the Go and npm caches (a merge-queue ref can neither read
-nor share them, so a job there starts cold regardless), `go vet`/`staticcheck`
+nor share them, so a job there starts cold regardless; pull requests restore
+develop's, see the next section), `go vet`/`staticcheck`
 (static job) versus golangci-lint (`//nolint` handling differs), and the
 `tools/lint` guards that run both as named gates in `API static checks` and
 inside the test shards (removing them from the shards would make the shard
