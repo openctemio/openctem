@@ -22,7 +22,7 @@ on:
       - versions.yaml
       - .github/scripts/release/**
       - .github/scripts/pr-labels.py
-      - .github/workflows/pr-labels.yml
+      - .github/workflows/pr-hygiene.yml
       - .github/workflows/release-*.yml
       - api/scripts/changelog.py
       - api/.env.example
@@ -38,7 +38,7 @@ on:
       - versions.yaml
       - .github/scripts/release/**
       - .github/scripts/pr-labels.py
-      - .github/workflows/pr-labels.yml
+      - .github/workflows/pr-hygiene.yml
       - .github/workflows/release-*.yml
       - api/scripts/changelog.py
       - api/.env.example
