@@ -142,9 +142,7 @@ export function SectionTabs({ tabs, className, label = 'Sections', counts }: Sec
   const iconsAllowed = stripIconsAllowed(tabs)
 
   if (process.env.NODE_ENV !== 'production' && tabs.some((tab) => tab.icon) && !iconsAllowed) {
-    console.warn(
-      `SectionTabs "${label}": every tab needs its own distinct icon, or none has one; drawing no icons (research/244 D3).`
-    )
+    console.warn(`SectionTabs "${label}": every tab needs its own distinct icon, or none has one.`)
   }
 
   const matches = (tab: SectionTab) =>

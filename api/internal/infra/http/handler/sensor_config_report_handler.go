@@ -111,7 +111,7 @@ func toSensorConfigCheckResponse(c sensorapp.ConfigCheckView) SensorConfigCheckR
 
 // ConfigReport handles GET /api/v1/sensors/{id}/config-report
 // @Summary      Sensor setup checklist
-// @Description  The sensor's config report (research/26): the preflight checks it ran on itself, each explained from the platform catalog with fix snippets per install type, and the settings it declares (set or not and where from; never a value). For a sensor that sends no report the checks are derived from its heartbeat (state derived); none before it first connected. 404 for a sensor of another organization.
+// @Description  The sensor's config report: the preflight checks it ran on itself, each explained from the platform catalog with fix snippets per install type, and the settings it declares (set or not and where from; never a value). For a sensor that sends no report the checks are derived from its heartbeat (state derived); none before it first connected. 404 for a sensor of another organization.
 // @Tags         Sensors
 // @Produce      json
 // @Param        id   path      string  true  "Sensor ID"
