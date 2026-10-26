@@ -3,7 +3,12 @@ import { fireEvent, render, screen } from '@testing-library/react'
 
 const update = vi.fn()
 let canEdit = true
-const settings = {
+const settings: {
+  general: object
+  branding: object
+  security: Record<string, unknown>
+  etags: object
+} = {
   general: {},
   branding: {},
   security: {
@@ -52,6 +57,35 @@ describe('Security › Authentication', () => {
       '/settings/scanning/sensor-safety'
     )
     expect(screen.queryByText(/session/i)).toBeNull()
+  })
+
+  it('shows the platform two-factor floor and locks the switches below it', () => {
+    const base = { ...settings.security }
+    try {
+      settings.security = {
+        ...base,
+        mfa_required: false,
+        mfa_required_for_admins: true,
+        platform_mfa_floor: 'admins',
+      }
+      const { unmount } = render(<AuthenticationSettings />)
+      expect(screen.getByTestId('mfa-platform-floor')).toHaveTextContent(/privileged role/)
+      expect(screen.getByLabelText('Require for owners and administrators')).toBeDisabled()
+      expect(screen.getByLabelText('Require for everyone')).not.toBeDisabled()
+      unmount()
+
+      settings.security = {
+        ...base,
+        mfa_required: true,
+        mfa_required_for_admins: true,
+        platform_mfa_floor: 'everyone',
+      }
+      render(<AuthenticationSettings />)
+      expect(screen.getByTestId('mfa-platform-floor')).toHaveTextContent(/every member/)
+      expect(screen.getByLabelText('Require for everyone')).toBeDisabled()
+    } finally {
+      settings.security = base
+    }
   })
 
   it('renders the search anchors', () => {

@@ -26,6 +26,8 @@ var (
 const (
 	SourceConsole     = "console"
 	SourceEnvironment = "environment"
+	// SourceMigration marks a row seeded by a migration (an upgrade default).
+	SourceMigration = "migration"
 )
 
 // State is one stored setting.

@@ -103,6 +103,13 @@ export function TwoFactorCard({ email, onOtherSessionsSignedOut }: TwoFactorCard
                     {t('settings.twoFactor.required', 'Required by your organization')}
                   </Badge>
                 )}
+                {!status.enabled && !status.required_by_organization && status.grace_due_at && (
+                  <Badge variant="outline" className="border-warning/40 text-warning">
+                    {t('settings.twoFactor.dueBy', 'Required from {date}', {
+                      date: formatDateSafe(status.grace_due_at),
+                    })}
+                  </Badge>
+                )}
               </div>
               <p className="text-sm text-muted-foreground">
                 {status.enabled

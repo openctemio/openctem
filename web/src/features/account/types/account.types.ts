@@ -51,6 +51,11 @@ export interface TwoFactorStatus {
   recovery_codes_remaining: number
   /** an organization the user belongs to requires 2FA */
   required_by_organization: boolean
+  /**
+   * The platform's two-factor floor covers the user but their grace period
+   * has not ended: the date from which sign-in is gated. They can set up now.
+   */
+  grace_due_at?: string
 }
 
 /** POST /api/v1/users/me/2fa/setup — nothing changes until it is confirmed */

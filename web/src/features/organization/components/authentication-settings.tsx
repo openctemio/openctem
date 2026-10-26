@@ -184,6 +184,10 @@ export function AuthenticationSettings() {
     reset()
   }, [reset])
 
+  const platformFloor = settings?.security?.platform_mfa_floor ?? 'none'
+  const floorEveryone = platformFloor === 'everyone'
+  const floorAdmins = platformFloor === 'admins' || floorEveryone
+
   const dirty = normalized(form) !== normalized(saved)
   const patchForm = (p: Partial<SignInForm>) => setForm((f) => ({ ...f, ...p }))
 
@@ -283,6 +287,19 @@ export function AuthenticationSettings() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
+              {floorAdmins && (
+                <p className="text-sm text-muted-foreground" data-testid="mfa-platform-floor">
+                  {floorEveryone
+                    ? t(
+                        'org.auth.mfa.platformFloorEveryone',
+                        'The platform requires two-factor authentication for every member. You cannot turn it off for your organization.'
+                      )
+                    : t(
+                        'org.auth.mfa.platformFloorAdmins',
+                        'The platform requires two-factor authentication for owners, administrators and members with a privileged role. You can require it for everyone, not less.'
+                      )}
+                </p>
+              )}
               <ToggleRow
                 id="tenant-mfa-required"
                 label={t('org.auth.mfa.all', 'Require for everyone')}
@@ -292,7 +309,7 @@ export function AuthenticationSettings() {
                 )}
                 checked={form.mfa_required}
                 onChange={(v) => patchForm({ mfa_required: v })}
-                disabled={disabled}
+                disabled={disabled || floorEveryone}
               />
               <ToggleRow
                 id="tenant-mfa-admins"
@@ -303,7 +320,7 @@ export function AuthenticationSettings() {
                 )}
                 checked={form.mfa_required || form.mfa_required_for_admins}
                 onChange={(v) => patchForm({ mfa_required_for_admins: v })}
-                disabled={disabled || form.mfa_required}
+                disabled={disabled || form.mfa_required || floorAdmins}
               />
               <ToggleRow
                 id="tenant-sso-mfa-proof"
