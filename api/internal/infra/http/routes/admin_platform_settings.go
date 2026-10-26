@@ -23,6 +23,9 @@ import (
 //	/admin/settings/ai             any admin   PUT: super_admin + fresh step-up + reason
 //	                                           (critical audit, admins told);
 //	                                           test: super_admin
+//	/admin/settings/social-login   any admin   PUT /{provider}: super_admin + fresh step-up
+//	                                           + reason (critical audit, admins told);
+//	                                           test: super_admin
 //
 // Secrets are never returned by any of them.
 func registerAdminPlatformSettingsRoutes(router Router, h Handlers, adminMiddlewares []Middleware,
@@ -43,6 +46,7 @@ func registerAdminPlatformSettingsRoutes(router Router, h Handlers, adminMiddlew
 		}
 	}
 	captcha, region, quota, alerts, ai := ps.Captcha != nil, ps.Region != nil, ps.StorageQuota != nil, ps.Alerts != nil, ps.AI != nil
+	social := ps.SocialLogin != nil
 	router.Group("/api/v1/admin/settings/captcha", func(r Router) {
 		r.GET("/", on(captcha, ps.GetCaptcha))
 		r.PUT("/", on(captcha, ps.UpdateCaptcha), requireSuper, freshStepUp("settings.captcha"))
@@ -66,5 +70,10 @@ func registerAdminPlatformSettingsRoutes(router Router, h Handlers, adminMiddlew
 		r.PUT("/", on(ai, ps.UpdatePlatformAI), requireSuper, freshStepUp("settings.ai"))
 		r.POST("/test", on(ai, ps.TestPlatformAI), requireSuper)
 		r.PUT("/org-policy", on(ai, ps.UpdateOrgAIPolicy), requireSuper, freshStepUp("settings.ai_org_policy"))
+	}, adminMiddlewares...)
+	router.Group("/api/v1/admin/settings/social-login", func(r Router) {
+		r.GET("/", on(social, ps.GetSocialLogin))
+		r.PUT("/{provider}", on(social, ps.UpdateSocialLogin), requireSuper, freshStepUp("settings.social_login"))
+		r.POST("/{provider}/test", on(social, ps.CheckSocialLogin), requireSuper)
 	}, adminMiddlewares...)
 }

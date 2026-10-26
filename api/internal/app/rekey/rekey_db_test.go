@@ -106,6 +106,16 @@ func seedAll(t *testing.T, db *sql.DB, key string) map[string]string {
 		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
 		put("platform_settings.value.key_encrypted", "platform-llm-key"))
 
+	// The console's social login client secrets.
+	exec(`INSERT INTO platform_settings (key, value) VALUES ('auth.social_login',
+		jsonb_build_object('google', jsonb_build_object('enabled', true, 'client_id', 'g', 'secret_encrypted', $1::text),
+			'github', jsonb_build_object('secret_encrypted', $2::text),
+			'microsoft', jsonb_build_object('secret_encrypted', $3::text)))
+		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+		put("platform_settings.value.google.secret_encrypted", "social-google"),
+		put("platform_settings.value.github.secret_encrypted", "social-github"),
+		put("platform_settings.value.microsoft.secret_encrypted", "social-microsoft"))
+
 	// A finding evidence secret (bound plaintext, as the evidence service seals it).
 	assetID, findingID, evidenceID := "55555555-5555-7555-8555-555555555555", "66666666-6666-7666-8666-666666666666", "77777777-7777-7777-8777-777777777777"
 	exec(`INSERT INTO assets (id, tenant_id, name, asset_type, status) VALUES ($1, $2, 'rekey.example.com', 'domain', 'active')`, assetID, tenantID)
@@ -200,6 +210,9 @@ func readAll(t *testing.T, db *sql.DB, key string) map[string]string {
 		"settings.value_json.secret_key":                          `SELECT value_json->>'secret_key' FROM settings WHERE key = 'storage_config'`,
 		"platform_settings.value.password_encrypted":              `SELECT value->>'password_encrypted' FROM platform_settings WHERE key = 'email.smtp'`,
 		"platform_settings.value.key_encrypted":                   `SELECT value->>'key_encrypted' FROM platform_settings WHERE key = 'ai.platform'`,
+		"platform_settings.value.google.secret_encrypted":         `SELECT value->'google'->>'secret_encrypted' FROM platform_settings WHERE key = 'auth.social_login'`,
+		"platform_settings.value.github.secret_encrypted":         `SELECT value->'github'->>'secret_encrypted' FROM platform_settings WHERE key = 'auth.social_login'`,
+		"platform_settings.value.microsoft.secret_encrypted":      `SELECT value->'microsoft'->>'secret_encrypted' FROM platform_settings WHERE key = 'auth.social_login'`,
 		"exposure_events.details.secret_value_enc":                `SELECT details->>'secret_value_enc' FROM exposure_events`,
 	} {
 		out[loc] = dec(one(q))
