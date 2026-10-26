@@ -61,10 +61,12 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: read # the `ci:full` label (changed.sh reads it live)
+      pull-requests: read # the `ci:full` label and the PR's commits (changed.sh reads them live)
       actions: read # queue-verified.sh reads the merge queue's runs of this commit
+      checks: read # green-base.sh and release-provenance.sh read a commit's check runs
     outputs:
-      api: ${{ steps.f.outputs.api == 'true' && steps.queue.outputs.verified != 'true' }}
+      api: ${{ steps.f.outputs.api == 'true' && steps.queue.outputs.verified != 'true' && steps.tree.outputs.verified != 'true' }}
+      tree_note: ${{ steps.tree.outputs.note }}
       verified: ${{ steps.queue.outputs.verified }}
       full: ${{ steps.f.outputs.full }}
       migrations: ${{ steps.f.outputs.migrations }}
@@ -96,6 +98,19 @@ jobs:
           REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
         run: bash .github/scripts/queue-verified.sh
+
+      # The exact tree of this commit already passed every required check on a
+      # pull request or an earlier queue run: skip the jobs below
+      # (.github/scripts/tree-verified.sh). Also records the tree this run tested.
+      - id: tree
+        working-directory: .
+        env:
+          EVENT: ${{ github.event_name }}
+          SHA: ${{ github.sha }}
+          HEAD_REF: ${{ github.event.merge_group.head_ref }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/tree-verified.sh
 
       # The shards of `Tests (Postgres + Redis)` for this tier. Full: 8 shards
       # with -race. Fast: 6 shards without it (same tests, about half the
@@ -787,11 +802,13 @@ jobs:
         env:
           NEEDS: ${{ toJSON(needs) }}
           API: ${{ needs.changes.outputs.api }}
+          TREE_NOTE: ${{ needs.changes.outputs.tree_note }}
           FULL: ${{ needs.changes.outputs.full }}
           MIGRATIONS: ${{ needs.changes.outputs.migrations }}
           EVENT: ${{ github.event_name }}
         run: |
           echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          if [ -n "$TREE_NOTE" ]; then echo "$TREE_NOTE"; fi
           if echo "$NEEDS" | jq -e 'to_entries | map(.value.result) | any(. == "failure" or . == "cancelled")' >/dev/null; then
             echo "::error::a job failed or was cancelled"; exit 1
           fi
