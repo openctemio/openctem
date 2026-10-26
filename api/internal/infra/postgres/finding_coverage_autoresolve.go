@@ -206,7 +206,7 @@ func (r *FindingRepository) coverageStale(ctx context.Context, tenantID shared.I
 						AND ir.report_id::text = o.scan_id
 						-- The last sighting must be a report of this tool: a
 						-- finding another tool reported last (same profile, other
-						-- command) stays open (RFC-043 interim cross-tool guard).
+						-- command) stays open.
 						AND ir.tool_name = $3
 						AND COALESCE(ps.profile_id::text, '') = $5
 				)
