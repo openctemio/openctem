@@ -133,6 +133,18 @@ characters shown as escapes), never HTML. Masked values are chips; **Reveal**
 again after 60 seconds; copy and **Copy curl with secrets** go through the
 same audited reveal. **Copy curl** and **Download** are masked.
 
+One component (`FindingEvidenceItems`) renders evidence on the Evidence tab,
+in the finding drawer and in triage mode. A tool's own `curl` item is folded
+into the HTTP exchange of the same capture (records stored within 5 s, same
+origin and retest attempt): the exchange already offers **Copy curl**. A
+`curl` item with no exchange beside it is kept. The drawer shows one item in a
+compact layout: from the newest detection, the most telling kind (HTTP
+exchange first), headers folded except a matched one, panes 16 rem tall and
+scrolled to the first match, with **All evidence (N)** opening the Evidence
+tab. Before this, the drawer showed the first item of the list, which for
+nuclei was the curl item (stored after the exchange, so newer), and the
+response never appeared there.
+
 ## Threat model
 
 | Threat | Control |
