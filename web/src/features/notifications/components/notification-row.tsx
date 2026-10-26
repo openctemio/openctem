@@ -90,7 +90,7 @@ export function NotificationRow({
           </p>
         )}
         <p className="text-xs text-muted-foreground">
-          {typeLabel} · {formatRelativeTime(notification.created_at, locale)}
+          {typeLabel}, {formatRelativeTime(notification.created_at, locale)}
         </p>
       </div>
       {unread && (

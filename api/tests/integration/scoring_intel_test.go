@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	"database/sql"
 	"strings"
 	"testing"
 
@@ -195,5 +196,72 @@ func TestScoringIntel_StoredEPSSFeedsTheCIGate(t *testing.T) {
 	// A second run writes nothing.
 	if n, err := fx.scoring.RefreshFindingEPSS(ctx); err != nil || n != 0 {
 		t.Fatalf("second refresh wrote %d rows (%v), want 0", n, err)
+	}
+}
+
+// KEV membership follows the catalog in both directions: when a CVE leaves
+// the catalog the finding loses the flag and the KEV floor, and the next
+// intel refresh queues nothing (the queue compares the flag with the
+// catalog, so a flag that is never cleared requeues the asset forever).
+// The deadline set while the finding was KEV stays: deadlines only tighten.
+func TestScoringIntel_KEVRemovalClearsFlag(t *testing.T) {
+	fx := newScoringFixture(t)
+	ctx := context.Background()
+	tid := fx.newTenant(t)
+	sfx := strings.ToUpper(strings.ReplaceAll(uuid.NewString()[:8], "-", ""))
+	cve := "CVE-2097-" + sfx
+	t.Cleanup(func() { _, _ = fx.db.Exec(`DELETE FROM kev_catalog WHERE cve_id = $1`, cve) })
+
+	aid := fx.newAsset(t, tid, "github.com/acme/intel-kev-leaves")
+	fid := fx.newFinding(t, tid, aid, vulnerability.SeverityMedium, "intel-kev-leaves")
+	if _, err := fx.db.Exec(`INSERT INTO kev_catalog (cve_id, vulnerability_name, date_added) VALUES ($1, 'IT', CURRENT_DATE)`, cve); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fx.db.Exec(`UPDATE findings SET cve_id = $3 WHERE tenant_id = $1 AND id = $2`, tid.String(), fid.String(), cve); err != nil {
+		t.Fatal(err)
+	}
+	fx.drain(t, aid)
+	kev := func() bool {
+		t.Helper()
+		var in bool
+		var due sql.NullTime
+		if err := fx.db.QueryRow(`SELECT COALESCE(is_in_kev, false), kev_due_date FROM findings WHERE tenant_id = $1 AND id = $2`,
+			tid.String(), fid.String()).Scan(&in, &due); err != nil {
+			t.Fatal(err)
+		}
+		if !in && due.Valid {
+			t.Errorf("kev_due_date kept after the KEV flag was cleared")
+		}
+		return in
+	}
+	if !kev() {
+		t.Fatal("setup: finding not flagged KEV after the catalog row was added")
+	}
+	if c := fx.row(t, tid, fid).class; c != "P0" && c != "P1" {
+		t.Fatalf("setup: KEV finding class = %q, want P0 or P1 (exploitation floor)", c)
+	}
+
+	// The CVE leaves the catalog.
+	if _, err := fx.db.Exec(`DELETE FROM kev_catalog WHERE cve_id = $1`, cve); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fx.scoring.EnqueueIntelChanges(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if !fx.queued(t, aid) {
+		t.Fatal("leaving KEV did not queue the asset")
+	}
+	fx.drain(t, aid)
+	if kev() {
+		t.Fatal("is_in_kev still true after the CVE left the KEV catalog")
+	}
+	if c := fx.row(t, tid, fid).class; c == "P0" || c == "P1" {
+		t.Errorf("class = %q after leaving KEV, want the medium finding's own class", c)
+	}
+	if _, err := fx.scoring.EnqueueIntelChanges(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if fx.queued(t, aid) {
+		t.Error("asset queued again by an unchanged feed after leaving KEV")
 	}
 }

@@ -136,12 +136,12 @@ export const CapabilityCard = memo(function CapabilityCard({
                       : `${usageStats.tool_count} tool${usageStats.tool_count > 1 ? 's' : ''} using this capability`}
                   </p>
                   {usageStats.tool_names && usageStats.tool_names.length > 0 && (
-                    <ul className="mt-1 text-xs text-muted-foreground">
+                    <ul className="mt-1 list-disc ps-4 text-xs text-muted-foreground">
                       {usageStats.tool_names.slice(0, 5).map((name) => (
-                        <li key={name}>• {name}</li>
+                        <li key={name}>{name}</li>
                       ))}
                       {usageStats.tool_names.length > 5 && (
-                        <li>• +{usageStats.tool_names.length - 5} more</li>
+                        <li>+{usageStats.tool_names.length - 5} more</li>
                       )}
                     </ul>
                   )}
@@ -164,12 +164,12 @@ export const CapabilityCard = memo(function CapabilityCard({
                       : `${usageStats.sensor_count} sensor${usageStats.sensor_count > 1 ? 's' : ''} with this capability`}
                   </p>
                   {usageStats.sensor_names && usageStats.sensor_names.length > 0 && (
-                    <ul className="mt-1 text-xs text-muted-foreground">
+                    <ul className="mt-1 list-disc ps-4 text-xs text-muted-foreground">
                       {usageStats.sensor_names.slice(0, 5).map((name) => (
-                        <li key={name}>• {name}</li>
+                        <li key={name}>{name}</li>
                       ))}
                       {usageStats.sensor_names.length > 5 && (
-                        <li>• +{usageStats.sensor_names.length - 5} more</li>
+                        <li>+{usageStats.sensor_names.length - 5} more</li>
                       )}
                     </ul>
                   )}

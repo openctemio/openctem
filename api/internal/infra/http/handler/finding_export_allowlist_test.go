@@ -46,6 +46,7 @@ var findingExportExcluded = map[string]string{
 	"sla_kev_capped": "detail (SLA reason)", "acceptance_expires_at": "detail (My Work)", "kev_ransomware": "detail (KEV catalog lookup per list page)",
 	"first_detected_branch": "detail", "first_detected_commit": "detail", "last_seen_branch": "detail",
 	"last_seen_commit": "detail", "duplicate_count": "detail", "comments_count": "detail",
+	"sla_basis":         "detail (why this SLA date)",
 	"duplicates_marked": "list cell (counted per page, as the caller)",
 	"confidence":        "detail", "impact": "detail", "likelihood": "detail", "vulnerability_class": "detail",
 	"subcategory": "detail", "baseline_state": "detail", "kind": "detail", "rank": "detail",

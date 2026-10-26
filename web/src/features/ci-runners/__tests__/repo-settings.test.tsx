@@ -402,7 +402,7 @@ describe('CIRunSheet baseline and code host', () => {
     }
     render(<CIRunSheet id="r1" onClose={() => {}} />)
     expect(screen.getByTestId('ci-run-baseline-counts')).toHaveTextContent(
-      '7 baseline (not blocking) · 2 new'
+      '7 baseline (not blocking), 2 new'
     )
     expect(screen.getByTestId('ci-run-baseline-established')).toHaveTextContent(
       'First run: 7 existing findings recorded as the baseline'

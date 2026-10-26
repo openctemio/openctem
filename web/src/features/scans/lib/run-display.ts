@@ -241,7 +241,7 @@ export function runTargetNote(
   const skipped = run.skipped_target_count ?? 0
   if (unreachable > 0) parts.push(t('scans.outcome.unreachable', undefined, { count: unreachable }))
   if (skipped > 0) parts.push(t('scans.outcome.skipped', undefined, { count: skipped }))
-  return parts.length > 0 ? parts.join(' · ') : null
+  return parts.length > 0 ? parts.join(', ') : null
 }
 
 /** Reason codes of an inconclusive or exposed-elsewhere result with their own wording. */
@@ -254,6 +254,7 @@ const RESULT_CODES = new Set([
   'auth_changed',
   'server_error',
   'template_changed',
+  'seen_after_check',
   'no_result',
   'error',
   'template_not_found',

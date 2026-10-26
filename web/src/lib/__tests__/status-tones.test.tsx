@@ -6,10 +6,15 @@ import { StatusChip } from '@/features/shared/components/status-chip'
 import { STATUS_TONES, statusEntry } from '@/lib/status-tones'
 import enCampaigns from '@/lib/i18n/dictionaries/en/remediationCampaigns.json'
 import enHub from '@/lib/i18n/dictionaries/en/remediationHub.json'
+import enSensors from '@/lib/i18n/dictionaries/en/sensors.json'
 
 describe('status registry', () => {
   it('names every label key in the English catalog', () => {
-    const keys = new Set([...Object.keys(enCampaigns), ...Object.keys(enHub)])
+    const keys = new Set([
+      ...Object.keys(enCampaigns),
+      ...Object.keys(enHub),
+      ...Object.keys(enSensors),
+    ])
     for (const domain of Object.values(STATUS_TONES)) {
       for (const entry of Object.values(domain)) expect(keys.has(entry.labelKey)).toBe(true)
     }

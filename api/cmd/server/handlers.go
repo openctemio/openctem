@@ -263,7 +263,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	commandHandler := handler.NewCommandHandler(svc.Command, v, log)
 	sensorHandler := newSensorHandlerWithTemplates(svc.Sensor, cfg, v, log)
 	sensorHandler.SetContentPolicySource(svc.SensorContent)
-	sensorHandler.SetZoneLister(repos.ScanZone)
+	sensorHandler.SetPolicyPrefill(&handler.SensorPolicyPrefill{
+		Zones: repos.ScanZone, Targets: repos.ScopeTarget, Exclusions: repos.ScopeExcl, Log: log,
+	})
 	sensorHandler.SetGrantService(svc.SensorGrant)
 	if svc.JobSigner != nil {
 		sensorHandler.SetJobSigningRoot(svc.JobSigner.RootKeyID)
@@ -378,6 +380,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	}
 	vulnHandler.SetComponentService(svc.Component)
 	vulnHandler.SetSavedViews(svc.SavedView)
+	if svc.SLA != nil && repos.FindingSLARestart != nil {
+		vulnHandler.SetSLABasis(svc.SLA, repos.FindingSLARestart)
+	}
 	if svc.BulkGuard != nil {
 		vulnHandler.SetBulkGuard(svc.BulkGuard)
 	}
@@ -510,6 +515,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Proposal tools file requests another person decides; they need
 		// the person behind an OAuth connection.
 		mcpHandler.SetProposalTools(svc.Vulnerability, mcpDiscovery.Endpoints.Issuer)
+		if svc.Pentest != nil {
+			mcpHandler.SetPentestDraftTool(svc.Pentest, mcpDiscovery.Endpoints.Issuer)
+		}
 	}
 	if mcpAuth != nil && mcpPolicies != nil {
 		auth, gate := mcpAuth, middleware.MCPKeyPolicyGate(mcpPolicies, log)

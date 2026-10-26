@@ -835,7 +835,7 @@ export function CIRepositorySettingsTab({ repositoryAssetId }: { repositoryAsset
                 : t('scans.ci.repoSettings.noEnd', 'No end date')}
               {repo.updated_at && (
                 <>
-                  {' · '}
+                  {', '}
                   {t('scans.ci.repoSettings.updated', 'changed')}{' '}
                   <RelativeTime date={repo.updated_at} className="text-xs" />
                 </>

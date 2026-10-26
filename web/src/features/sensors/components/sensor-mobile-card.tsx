@@ -43,7 +43,7 @@ export function SensorMobileCard({
   const ob = sensor.outbox
   if (ob && ob.pending_count > 0) {
     facts.push({
-      text: `${t('sensors.mobile.resultsWaiting', undefined, { count: ob.pending_count.toLocaleString() })}${ob.oldest_age_seconds ? ` · ${formatDurationShort(ob.oldest_age_seconds)}` : ''}`,
+      text: `${t('sensors.mobile.resultsWaiting', undefined, { count: ob.pending_count.toLocaleString() })}${ob.oldest_age_seconds ? `, ${formatDurationShort(ob.oldest_age_seconds)}` : ''}`,
       tone: sensor.outbox_warning ? 'warning' : undefined,
     })
   }

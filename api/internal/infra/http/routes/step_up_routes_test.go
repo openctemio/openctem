@@ -174,6 +174,8 @@ var stepUpRoutes = []string{
 	// Approving an intrusive retest check of a finding.
 	"POST /api/v1/findings/{id}/retest-check/approve",
 	"POST /api/v1/sensors",
+	// An enrollment token is a pre-approval of every sensor that uses it.
+	"POST /api/v1/sensor-pairings/enrollment-tokens",
 	"POST /api/v1/sensors/{id}/regenerate-key",
 	"POST /api/v1/credentials/{id}/reveal",
 	// A published finding lifecycle decides which status moves need what
@@ -296,6 +298,7 @@ func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
 			registerVulnerabilityRoutes(router, vulnH, nil, nil, nil, auth, nil)
 			registerFindingRetestCheckRoutes(router, &handler.FindingRetestCheckHandler{}, auth, nil)
 			registerSensorManagementRoutes(router, &handler.SensorHandler{}, nil, nil, auth, nil)
+			registerSensorPairingRoutes(router, &handler.SensorPairingHandler{}, auth, nil, logger.NewNop())
 			registerCredentialRoutes(router, &handler.CredentialImportHandler{}, auth, nil, chain())
 			registerFindingLifecycleRoutes(router, &handler.FindingLifecycleHandler{}, auth, nil)
 			registerScanGovernanceRoutes(router, &handler.ScanGovernanceHandler{}, auth, nil)
