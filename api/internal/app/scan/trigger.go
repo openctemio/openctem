@@ -546,10 +546,6 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 	if err := s.refuseProgramRules(ctx, sc.TenantID, resolved.Targets); err != nil {
 		return nil, err
 	}
-	// Proof can be lost after the scan was saved: re-check at every run.
-	if err := s.refuseUnprovenIntrusive(ctx, sc.TenantID, sc.ScannerName, resolved.Targets); err != nil {
-		return nil, err
-	}
 	s.planRolloverFirst(ctx, sc, triggerType, resolved, runContext)
 
 	// A connector scan (RFC-047) is one command for the connector's sensor;

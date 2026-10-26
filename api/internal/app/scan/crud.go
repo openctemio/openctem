@@ -151,9 +151,6 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 			return nil, err
 		}
 	}
-	if err := s.refuseUnprovenIntrusive(ctx, tenantID, input.ScannerName, validatedTargets); err != nil {
-		return nil, err
-	}
 	if err := s.refuseTierExceeded(ctx, tenantID, input.ScannerName, validatedTargets); err != nil {
 		return nil, err
 	}
@@ -1289,11 +1286,8 @@ func (s *Service) CloneScan(ctx context.Context, tenantID, scanID, newName, acto
 		return nil, err
 	}
 
-	// The same probe gates as a create: intrusive proof and the scope tier
-	// ceiling of the targets, for the scan's scanner.
-	if err := s.refuseUnprovenIntrusive(ctx, sc.TenantID, sc.ScannerName, sc.Targets); err != nil {
-		return nil, err
-	}
+	// The same probe gate as a create: the scope tier ceiling of the
+	// targets, for the scan's scanner.
 	if err := s.refuseTierExceeded(ctx, sc.TenantID, sc.ScannerName, sc.Targets); err != nil {
 		return nil, err
 	}
