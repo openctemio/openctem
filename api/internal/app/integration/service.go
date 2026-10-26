@@ -1415,7 +1415,7 @@ func (s *IntegrationService) setEmailCredentials(intg *integrationdom.Integratio
 		return fmt.Errorf("%w: SMTP port is required", shared.ErrValidation)
 	}
 	if err := emailpkg.ValidateTenantRelay(emailCreds.SMTPPort, emailCreds.UseTLS, emailCreds.UseSTARTTLS, emailCreds.Username, emailCreds.Password); err != nil {
-		return fmt.Errorf("%w: %w", shared.ErrValidation, err)
+		return relayRuleError{err}
 	}
 	if emailCreds.FromEmail == "" {
 		return fmt.Errorf("%w: sender email is required", shared.ErrValidation)
@@ -1563,7 +1563,7 @@ func (s *IntegrationService) updateEmailCredentials(intg *integrationdom.Integra
 		}
 	}
 	if err := emailpkg.ValidateTenantRelay(smtpPort, getBoolFromMap(newMetadata, "use_tls"), getBoolFromMap(newMetadata, "use_starttls"), user, pass); err != nil {
-		return fmt.Errorf("%w: %w", shared.ErrValidation, err)
+		return relayRuleError{err}
 	}
 
 	// A new relay (host, port) or a weaker transport must not inherit the
