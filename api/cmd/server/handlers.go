@@ -1001,6 +1001,11 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.IdleReadOnly = svc.IdleWorkspaces
 		svc.IdleWorkspaces.SetNotifier(idleWorkspaceMailer{email: svc.Email, appName: cfg.Brand.DisplayName(), baseURL: cfg.SMTP.BaseURL, log: log})
 	}
+	// The entry requirements of the organization in the URL, on every
+	// /api/v1/tenants/{tenant}/... request.
+	if svc.Auth != nil {
+		handlers.EntryChecker = svc.Auth
+	}
 	// Suspended organizations: one gate for every credential path, and the
 	// console's suspend / block actions.
 	if svc.OrganizationGate != nil {
