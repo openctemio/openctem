@@ -122,7 +122,27 @@ type SensorTemplateData struct {
 	// Policy is what the sensor-local policy template (policy.tmpl) is
 	// prefilled with: PolicyFromZones, else PolicyFromScope.
 	Policy PolicyTemplateData
+
+	// Auth is how the installed sensor gets its identity: AuthKey (the
+	// default; an API key, APIKey or $OPENCTEM_API_KEY) or AuthPair (no
+	// key: the sensor makes its own and pairs, RFC-052). Templates that
+	// predate the field render AuthKey output whatever it says.
+	Auth string
+	// PairingCode (AuthPair only) is a code the console created ("create a
+	// pairing code first"), formatted XXXX-XXXX; the snippets pass it as
+	// SENSOR_PAIRING_CODE. Empty: the sensor prints a code.
+	PairingCode string
+	// JobSigningRoot (AuthPair only) is the id of the offline root that
+	// signs the job signer's key set; the snippets pass it as
+	// SENSOR_JOB_SIGNING_ROOT. Empty: none configured.
+	JobSigningRoot string
 }
+
+// How an installed sensor gets its identity (SensorTemplateData.Auth).
+const (
+	AuthKey  = "key"
+	AuthPair = "pair"
+)
 
 // PolicyTemplateData prefills the sensor-local policy the install commands
 // offer the network owner: the ranges of the sensor's scan zones, else the
@@ -276,6 +296,16 @@ func (s *SensorConfigTemplateService) Render(data SensorTemplateData) (*Rendered
 	}
 	if data.Sensor == nil {
 		return nil, fmt.Errorf("render sensor templates: no sensor")
+	}
+	switch data.Auth {
+	case "":
+		data.Auth = AuthKey
+	case AuthKey, AuthPair:
+	default:
+		return nil, fmt.Errorf("render sensor templates: unknown auth %q", data.Auth)
+	}
+	if data.Auth == AuthPair && data.APIKey != "" {
+		return nil, fmt.Errorf("render sensor templates: a pairing install carries no API key")
 	}
 	if data.SeccompURL == "" {
 		data.SeccompURL = strings.TrimRight(data.BaseURL, "/") + SeccompProfilePath
