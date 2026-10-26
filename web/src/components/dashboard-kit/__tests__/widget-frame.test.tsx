@@ -39,7 +39,7 @@ describe('WidgetFrame states', () => {
     const onRetry = vi.fn()
     frame('stale', { asOf: new Date(Date.now() - 2 * 3_600_000).toISOString(), onRetry })
     expect(screen.getByText('figures-here')).toBeInTheDocument()
-    expect(screen.getByText(/^Stale · 2 hr$/)).toBeInTheDocument()
+    expect(screen.getByText(/^Stale for 2 hr$/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Refresh' })).toBeNull()
   })
 

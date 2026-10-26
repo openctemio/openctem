@@ -11,7 +11,7 @@ import { ToolTrustBadge } from '../tool-availability'
 describe('ToolTrustBadge', () => {
   it('flags an unverified tool with its tier', () => {
     render(<ToolTrustBadge item={{ trust: 'unverified', tier: 'T2' }} />)
-    const pill = screen.getByText('Unverified · T2')
+    const pill = screen.getByText('Unverified, T2')
     expect(pill.closest('[data-state]')?.getAttribute('data-state')).toBe('unverified')
     expect(pill.closest('[title]')?.getAttribute('title')).toMatch(/runs only as tier T2/)
   })

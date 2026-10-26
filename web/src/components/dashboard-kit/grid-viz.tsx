@@ -84,7 +84,7 @@ export function HeatmapViz({ result, drill }: { result: MatrixResult; drill?: Dr
               const v = result.cells[i]?.[j] ?? null
               const step = v == null ? -1 : heatStep(v, max)
               const shade = step >= 0 ? sequentialStep(step) : null
-              const text = `${label(r)} · ${label(c)}: ${formatCount(v, locale)}`
+              const text = `${label(r)}, ${label(c)}: ${formatCount(v, locale)}`
               const cell = (
                 <span
                   className={cn(

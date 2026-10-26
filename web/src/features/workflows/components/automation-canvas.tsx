@@ -541,6 +541,7 @@ export function AutomationCanvas({
           }}
         >
           <ReactFlow
+            proOptions={{ hideAttribution: true }}
             nodes={nodes}
             edges={edges}
             onNodesChange={onNodesChange}

@@ -220,7 +220,7 @@ export function TenableCoveragePanel({
           mode: t(`tenableSc.dialog.rotationMode.${r.rotation}`, ROTATION_LABEL[r.rotation]),
         })}
         {r.nextBatchAt &&
-          ` · ${t('tenableSc.coverage.nextBatchAt', 'next batch from {at}', {
+          `, ${t('tenableSc.coverage.nextBatchAt', 'next batch from {at}', {
             at: formatDateSafe(r.nextBatchAt, 'PPp'),
           })}`}
         {r.waitReason && `: ${waitReasonText(t, r.waitReason)}`}

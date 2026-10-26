@@ -133,10 +133,10 @@ describe('manifest text', () => {
   it('words resources and concurrency', () => {
     expect(
       resourcesText({ ...next, resources: { cpu_cores: 4, mem_total_bytes: 8 * 1024 ** 3 } })
-    ).toMatch(/^4 CPU cores · .+ memory$/)
+    ).toMatch(/^4 CPU cores, .+ memory$/)
     expect(resourcesText(next)).toBeNull()
-    expect(concurrencyText(next)).toBe('operator cap 4 · slots sized from CPU and memory')
-    expect(concurrencyText(prev)).toBe('no operator cap · slots sized from CPU and memory')
+    expect(concurrencyText(next)).toBe('operator cap 4, slots sized from CPU and memory')
+    expect(concurrencyText(prev)).toBe('no operator cap, slots sized from CPU and memory')
   })
 
   it('translates through the catalog and keeps unknown values raw', () => {
@@ -144,7 +144,7 @@ describe('manifest text', () => {
     const t = (key: string, fallback?: string, vars?: TranslateVars) =>
       translate(vi, key, fallback, vars)
     expect(concurrencyText(next, t)).toBe(
-      'giới hạn của người vận hành 4 · số slot tính theo CPU và bộ nhớ'
+      'giới hạn của người vận hành 4, số slot tính theo CPU và bộ nhớ'
     )
     expect(manifestSourceLabel('heartbeat', t)).toBe('suy ra từ heartbeat')
     expect(ignoredReasonLabel('limit', t)).toBe('vượt quá giới hạn')
