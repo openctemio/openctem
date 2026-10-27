@@ -280,7 +280,7 @@ jobs:
     name: Build e2e images
     needs: [changes, plan]
     if: needs.changes.outputs.run == 'true' && needs.plan.result == 'success' && needs.plan.outputs.count != '0'
-    runs-on: ubuntu-latest
+    runs-on: ${{ ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_E2E_BUILD) || (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_HEAVY) || 'ubuntu-latest' }}
     timeout-minutes: 25
     env:
       API_IMAGE: local/openctem-api:e2e
@@ -334,6 +334,9 @@ jobs:
     name: Playwright e2e (${{ matrix.name }})
     needs: [changes, plan, build]
     if: needs.changes.outputs.shards == 'true' && needs.plan.result == 'success' && needs.plan.outputs.count != '0'
+    # Always GitHub-hosted: the stack publishes on 127.0.0.1 of the Docker host and
+    # the tests call http://localhost, which on the self-hosted runner (Docker via
+    # dind) is a different machine. Playwright's apt dependencies need sudo too.
     runs-on: ubuntu-latest
     # Stack start, install and a quarter of the tests; no image build here.
     timeout-minutes: 25
