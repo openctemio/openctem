@@ -677,6 +677,50 @@ GHCR, authenticated with the job's `GITHUB_TOKEN`:
   reference that pins the digest), merge; the push to `develop` mirrors it
   before the next CI run needs it.
 
+### Self-hosted runner (opt-in)
+
+A repository-level runner (labels `self-hosted, Linux, X64, openctem-ci`) can take
+the heavy jobs. It runs in Docker and gets its Docker daemon from a separate
+`docker:dind` container (`DOCKER_HOST=tcp://dind:2376`, TLS). Nothing changes until
+the owner sets repository variables (Settings > Secrets and variables > Actions >
+Variables):
+
+| Variable | Used for | Value |
+|---|---|---|
+| `CI_RUNNER_HEAVY` | the heavy jobs below, on `push` and on `pull_request` from this repository | the runner label, e.g. `openctem-ci` |
+| `CI_RUNNER_MERGE` | the same heavy jobs in `merge_group` | the runner label |
+
+Every selectable job uses one expression:
+
+```yaml
+runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_HEAVY) || 'ubuntu-latest' }}
+```
+
+- An empty variable means `ubuntu-latest`. To fall back, delete the variable
+  (or set it empty): no workflow edit and no re-run of old runs needed.
+- **Fork pull requests always run on `ubuntu-latest`.** The repository is public,
+  so untrusted code never reaches the self-hosted runner. `pull_request_target`
+  workflows, release, publish and signing jobs (`docker-publish`, `release*`,
+  anything with `id-token: write` or publishing secrets) are never selectable.
+- Light jobs (change detection, gates, every "... OK" aggregator, hygiene, CLA,
+  security gate, labels and notes) always stay on `ubuntu-latest`.
+
+Selectable jobs: `API CI` / `static`, `test` (Go shards), `least-privilege`
+(shards), `pg18`; `Web CI` / `quality`, `tests`, `build`; `Web E2E` / `build`
+(the e2e images); `CodeQL` / `analyze`. `Web E2E` / `e2e` stays on GitHub: its
+compose stack publishes on `127.0.0.1` of the Docker host and Playwright calls
+`http://localhost`, which is another machine behind dind; Playwright's system
+libraries also need `sudo`.
+
+**dind caveat.** Containers a job starts (`services:` and `docker run`) run on the
+dind host, not on the runner's `localhost`. The DB jobs therefore publish service
+ports on a random host port and read it from `job.services.<id>.ports` (or
+`docker port`), and use the host `dind` when `runner.environment == 'self-hosted'`,
+`localhost` otherwise. A new job that connects to a container it started must do
+the same, or stay on `ubuntu-latest`. Never mount the host `docker.sock`. The runner
+image must provide what `ubuntu-latest` gives these jobs: `git`, `jq`, `python3`,
+`psql`, `curl`, and the Docker CLI with compose and buildx.
+
 ### Workflow security
 
 - **Every action is pinned to a full commit SHA** with a `# vX.Y.Z` comment
