@@ -94,6 +94,8 @@ type Importer struct {
 	// vulnIDs applies the release's vulnerability id alias map (nil: not
 	// applied).
 	vulnIDs VulnIDAliasWriter
+	// intel applies the release's KEV and EPSS streams (nil: not applied).
+	intel IntelApplier
 }
 
 // NewImporter creates an importer. It refuses a base URL that is not a
