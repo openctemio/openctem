@@ -104,7 +104,7 @@ export function ScanStepper({
                       index > currentIndex && 'text-muted-foreground'
                     )}
                   >
-                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[11px]">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-xs">
                       {done ? <Check className="h-3 w-3" aria-hidden /> : index + 1}
                     </span>
                     {step.label}
@@ -142,7 +142,7 @@ export function ScanStepper({
                 ) : (
                   <span
                     className={cn(
-                      'flex h-4 w-4 items-center justify-center rounded-full text-[10px]',
+                      'flex h-5 w-5 items-center justify-center rounded-full text-xs',
                       isCurrent && 'bg-primary-foreground/20',
                       isPending && 'bg-muted-foreground/20'
                     )}

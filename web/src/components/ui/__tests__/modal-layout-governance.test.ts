@@ -31,10 +31,10 @@ const EXEMPT = new Set([
 ])
 
 /**
- * Components that render a surface's Body and Footer themselves (a form whose
+ * Components that render a surface's Body or Footer themselves (a form whose
  * steps scroll and whose actions are pinned), placed directly in a Content.
  */
-const RENDERS_BODY = new Set(['ScanWorkflowForm'])
+const RENDERS_BODY = new Set(['ScanWorkflowForm', 'WizardFooter'])
 
 /**
  * Files not migrated yet, moved onto the frame by area. The migrations leave
