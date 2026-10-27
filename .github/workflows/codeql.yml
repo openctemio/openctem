@@ -14,9 +14,18 @@ name: CodeQL
 #   merge_group    none: the PR head was already analysed and gated, so a
 #                  second analysis of the same code in the queue would cost a
 #                  runner for no gate. `CodeQL OK` passes with the matrix skipped.
-#   push, weekly   ALWAYS both: code scanning compares each PR against the
-#                  latest analysis of every category on the base branch, so
-#                  develop/main need a fresh baseline for both languages.
+#   push develop   only the side that changed, by the pull request rules.
+#                  Code scanning compares each PR against the latest analysis
+#                  of every category on the base branch; a language whose code
+#                  did not change keeps its last analysis, which still matches
+#                  that code. Query versions change only with the pinned action
+#                  or .github/codeql/ (CI files, which select both languages).
+#   push main      ALWAYS both (main moves only on releases).
+#   schedule       daily 03:00 UTC, ALWAYS both, on develop: GitHub runs the
+#                  default branch's (main's) copy of this file, so the analyze
+#                  job checks out develop and uploads for refs/heads/develop
+#                  (the action's ref/sha inputs). develop's baseline is then
+#                  never older than a day for either language.
 #
 # Gate: CodeQL never fails a run on findings, so on pull_request `CodeQL OK`
 # fails when the PR introduces open alerts of severity medium or higher that
@@ -33,7 +42,7 @@ on:
   merge_group:
     types: [checks_requested]
   schedule:
-    - cron: '0 0 * * 1'
+    - cron: '0 3 * * *'
 
 permissions:
   contents: read
@@ -74,16 +83,11 @@ jobs:
       - id: lang
         env:
           EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
           # Shipped code only: the e2e suite and the catalogs are not analysed again.
           API: ${{ steps.f.outputs.api == 'true' && (steps.scope.outputs.api_code == 'true' || steps.scope.outputs.ci_self == 'true') }}
           WEB: ${{ steps.f.outputs.web == 'true' && (steps.scope.outputs.web_app == 'true' || steps.scope.outputs.ci_self == 'true') }}
-        run: |
-          if [[ "$EVENT" == push || "$EVENT" == schedule ]]; then API=true WEB=true; fi
-          langs=()
-          [[ "$API" == true ]] && langs+=('"go"')
-          [[ "$WEB" == true ]] && langs+=('"javascript-typescript"')
-          languages="[$(IFS=,; echo "${langs[*]}")]"
-          echo "languages=$languages" | tee -a "$GITHUB_OUTPUT"
+        run: bash .github/scripts/codeql-languages.sh
 
   analyze:
     name: CodeQL (${{ matrix.language }})
@@ -102,6 +106,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # The daily schedule analyses develop (see the header).
+          ref: ${{ github.event_name == 'schedule' && 'develop' || '' }}
+      - id: target
+        if: github.event_name == 'schedule'
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - if: matrix.language == 'go'
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -138,6 +147,9 @@ jobs:
         uses: github/codeql-action/analyze@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         with:
           category: /language:${{ matrix.language }}
+          # Empty (every event but the schedule): the event's own ref and sha.
+          ref: ${{ github.event_name == 'schedule' && 'refs/heads/develop' || '' }}
+          sha: ${{ steps.target.outputs.sha }}
 
   codeql-ok:
     name: CodeQL OK
