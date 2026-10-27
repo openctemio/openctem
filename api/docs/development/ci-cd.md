@@ -814,7 +814,9 @@ Rules for anything a selectable job runs:
   `-U <user> -d <db>`; `psql` gets a URL with the user, or `-U`.
 - **Tools come from setup actions,** not the image: `setup-go`, `setup-node`
   (also before CodeQL's TypeScript extractor). The runner image provides `git`,
-  `jq`, `python3`, `psql`, `curl`, and the Docker CLI with compose and buildx.
+  `jq`, `python3`, `psql`, `curl`, and the Docker CLI with compose and buildx;
+  anything else (`yq` in the compose render check) is installed by the step
+  when missing, at a version pinned in `.github/tool-pins.tsv`.
 - **Environment:** the runner must not export `APP_*` variables (the base
   image's `APP_UID` once did): the API refuses unknown variables under its
   prefixes at start-up, and the config tests check that refusal.
