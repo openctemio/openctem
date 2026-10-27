@@ -7,6 +7,7 @@ import type {
   Paged,
   TargetMapping,
   TargetMappingStats,
+  TargetMappingTypes,
   UpdateTargetMappingInput,
 } from '../types'
 
@@ -47,6 +48,11 @@ export function useTargetMappingStats() {
   return useSWR<TargetMappingStats>(`${BASE}/stats`, adminFetcher)
 }
 
+/** The target types and asset types the API accepts (it is the one source). */
+export function useTargetMappingTypes() {
+  return useSWR<TargetMappingTypes>(`${BASE}/types`, adminFetcher)
+}
+
 /**
  * The existing mapping for a pair, if any: the pair is unique, so the create
  * dialog uses this to say so before submitting.
@@ -60,17 +66,17 @@ export function useExistingTargetMapping(targetType: string, assetType: string) 
   return data?.data[0]
 }
 
-/** ops_admin+. */
+/** super_admin, step-up, and a reason (kept in the audit row). */
 export function createTargetMapping(input: CreateTargetMappingInput) {
   return adminFetch<TargetMapping>(BASE, { method: 'POST', body: input })
 }
 
-/** ops_admin+. */
+/** super_admin, step-up, and a reason (kept in the audit row). */
 export function updateTargetMapping(id: string, input: UpdateTargetMappingInput) {
   return adminFetch<TargetMapping>(`${BASE}/${id}`, { method: 'PATCH', body: input })
 }
 
-/** super_admin only. */
-export function deleteTargetMapping(id: string) {
-  return adminFetch<void>(`${BASE}/${id}`, { method: 'DELETE' })
+/** super_admin, step-up, and a reason in the body (kept in the audit row). */
+export function deleteTargetMapping(id: string, reason: string) {
+  return adminFetch<void>(`${BASE}/${id}`, { method: 'DELETE', body: { reason } })
 }
