@@ -20,6 +20,7 @@
   "assetCoverage.reason.credentials_missing": "an API key it needs is not configured",
   "assetCoverage.reason.excluded": "excluded from scope",
   "assetCoverage.reason.no_eligible_sensor": "no sensor can take the work",
+  "assetCoverage.reason.no_named_twin": "the same address and port is served by a named web service, which is scanned instead",
   "assetCoverage.reason.no_scope": "the organization has no scope entry yet",
   "assetCoverage.reason.not_planned": "not planned yet",
   "assetCoverage.reason.policy_disabled": "an organization policy holds it (tool switched off, approval or scan window)",
