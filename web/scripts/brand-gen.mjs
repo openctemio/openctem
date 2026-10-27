@@ -56,7 +56,7 @@ const stacked = parts('lockup-stacked.svg')
 
 function component(name, doc, p, testId, defaults) {
   return `/** ${doc} */
-export function ${name}({ className, markerColor = MARKER, ...props }: LogoProps) {
+export function ${name}({ className, ${jsx(p.inner).includes('markerColor') ? 'markerColor = MARKER' : 'markerColor: _markerColor'}, ...props }: LogoProps) {
   return (
     <svg
       viewBox="${p.viewBox}"
