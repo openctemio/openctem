@@ -64,8 +64,8 @@ finish() {
 }
 
 # scenario DIR: a bare "origin" and a clone "work" shaped like this repository:
-#   main     v0.1.0 (with versions.yaml and its consumers, platform.release
-#            v0.1.0), then a SQUASHED release of develop (single parent), v0.2.0
+#   main     v0.1.0 (with versions.yaml and its consumers), then a SQUASHED
+#            release of develop (single parent) plus api/deploy/VERSION, v0.2.0
 #   develop  branched at v0.1.0; after the release it gains a fix, a feature
 #            and deletes gone.txt (which main still has)
 # Prints nothing; sets nothing. The clone is "$DIR/work", origin "$DIR/origin.git".
@@ -75,7 +75,6 @@ scenario() {
   new_repo "$w"
   git -C "$w" remote add origin "$d/origin.git"
   version_fixture "$w"
-  sed -i 's/v0.8.0/v0.1.0/g' "$w/versions.yaml" "$w/api/internal/versions/versions.yaml" "$w/api/deploy/.env.example" "$w/api/deploy/docker-compose.yml" "$w/api/deploy/docker-compose.job-signer.yml" "$w/api/deploy/docker-compose.sensor.yml"
   commit "$w" "chore: init" a.txt
   git -C "$w" tag -a v0.1.0 -m v0.1.0
   git -C "$w" switch -q -c develop
@@ -85,6 +84,8 @@ scenario() {
   # Squash-release develop into main: main gets develop's tree, one parent.
   git -C "$w" switch -q main
   git -C "$w" checkout -q develop -- .
+  printf 'v0.2.0\n' >"$w/api/deploy/VERSION"
+  git -C "$w" add api/deploy/VERSION
   git -C "$w" commit -q -m "Release v0.2.0 (#1)"
   git -C "$w" tag -a v0.2.0 -m v0.2.0
   git -C "$w" switch -q develop
@@ -101,8 +102,6 @@ version_fixture() {
   mkdir -p "$d/api/deploy" "$d/api/internal/versions" "$d/web/src/features/ci-runners/lib"
   cat >"$d/versions.yaml" <<'YAML'
 # A manifest.
-platform:
-  release: v0.8.0
 sensor:
   product: openctemio-sensor
   latest: v0.6.4
@@ -124,19 +123,17 @@ sdk:
 ci:
   latest: v0.2.0
   min: ""
-chart:
-  version: 0.4.1
 YAML
   cp "$d/versions.yaml" "$d/api/internal/versions/versions.yaml"
-  printf 'OPENCTEM_VERSION=v0.8.0\nOTHER=1\n' >"$d/api/deploy/.env.example"
+  printf 'OPENCTEM_VERSION=\nOTHER=1\n' >"$d/api/deploy/.env.example"
   cat >"$d/api/deploy/docker-compose.yml" <<'YAML'
-    image: x:${UI_VERSION:-${OPENCTEM_VERSION:-v0.8.0}}
+    image: x:${UI_VERSION:-${OPENCTEM_VERSION:?run setup.sh}}
 YAML
   cat >"$d/api/deploy/docker-compose.job-signer.yml" <<'YAML'
-    image: x:${API_VERSION:-${OPENCTEM_VERSION:-v0.8.0}}
+    image: x:${API_VERSION:-${OPENCTEM_VERSION:?run setup.sh}}
 YAML
   cat >"$d/api/deploy/docker-compose.sensor.yml" <<'YAML'
-    image: x:${API_VERSION:-${OPENCTEM_VERSION:-v0.8.0}}
+    image: x:${API_VERSION:-${OPENCTEM_VERSION:?run setup.sh}}
     image: ${SENSOR_IMAGE:-ghcr.io/openctemio/sensor}:${SENSOR_VERSION:-v0.6.4}
 YAML
   echo "export const CI_RELEASE = 'v0.2.0'" >"$d/web/src/features/ci-runners/lib/ci.ts"
