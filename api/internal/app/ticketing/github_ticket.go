@@ -90,6 +90,30 @@ type GitHubTicketService struct {
 
 	// egress is the outbound gate (egress.go); nil refuses pentest content.
 	egress *EgressGate
+
+	// assetNames names a finding's asset for the issue title's target;
+	// nil leaves the asset out of the title.
+	assetNames AssetNameReader
+}
+
+// AssetNameReader names an asset, read in the given tenant.
+type AssetNameReader interface {
+	AssetName(ctx context.Context, tenantID, assetID shared.ID) (string, error)
+}
+
+// SetAssetNames wires the asset name lookup used in issue titles.
+func (s *GitHubTicketService) SetAssetNames(r AssetNameReader) { s.assetNames = r }
+
+// findingAssetName is the name of f's asset in tenantID, or "".
+func (s *GitHubTicketService) findingAssetName(ctx context.Context, tenantID shared.ID, f *vulnerability.Finding) string {
+	if s.assetNames == nil || f.AssetID().IsZero() {
+		return ""
+	}
+	name, err := s.assetNames.AssetName(ctx, tenantID, f.AssetID())
+	if err != nil {
+		return ""
+	}
+	return name
 }
 
 // SetEgressGate wires the outbound gate.
@@ -191,7 +215,7 @@ func (s *GitHubTicketService) CreateTicketFromFinding(ctx context.Context, in Gi
 		return nil, err
 	}
 	if number == 0 {
-		title := issueTitle(finding)
+		title := issueTitle(finding, s.findingAssetName(ctx, tenantID, finding))
 		body := buildIssueBody(finding) + "\n\n" + bodyMarker + "\n"
 		labels := []string{"openctem", "security", string(finding.Severity())}
 		number, htmlURL, err = client.CreateIssue(ctx, owner, repo, title, body, labels)
@@ -360,9 +384,10 @@ func (s *GitHubTicketService) resolveCredential(ctx context.Context, tenantID sh
 }
 
 // issueTitle is the GitHub issue title (plain text, at most 256 characters):
-// secret-redacted, cleaned of control and bidi characters, one line, capped.
-func issueTitle(finding *vulnerability.Finding) string {
-	return safetext.SingleLine(safetext.RedactSecrets(fmt.Sprintf("[%s] %s", finding.Severity(), OutboundTitle(finding))), safetext.MaxTitleRunes)
+// the title with its target, secret-redacted, cleaned of control and bidi
+// characters, one line, capped.
+func issueTitle(finding *vulnerability.Finding, assetName string) string {
+	return safetext.SingleLine(safetext.RedactSecrets(fmt.Sprintf("[%s] %s", finding.Severity(), OutboundDisplayTitle(finding, assetName))), safetext.MaxTitleRunes)
 }
 
 // buildIssueBody renders the markdown body of the issue, mirroring the

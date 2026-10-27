@@ -897,6 +897,7 @@
   "findings.list.kevTitle": "Lỗ hổng bị khai thác đã biết của CISA",
   "findings.list.location": "Vị trí",
   "findings.list.openRow": "{title}, xem chi tiết",
+  "findings.list.openRowOn": "{title} trên {target}, xem chi tiết",
   "findings.list.pathChip": "Đường tấn công",
   "findings.list.refreshing": "Đang làm mới các phát hiện",
   "findings.list.selectAll": "Chọn tất cả các dòng trên trang này",

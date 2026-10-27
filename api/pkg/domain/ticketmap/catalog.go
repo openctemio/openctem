@@ -78,6 +78,7 @@ var catalog = []Attribute{
 	{Path: "finding.file_path", Kind: ObjectFinding, Type: TypeText, Tier: MinSummary, Inbound: InboundNever},
 	{Path: "finding.start_line", Kind: ObjectFinding, Type: TypeNumber, Tier: MinSummary, Inbound: InboundNever},
 	{Path: "finding.location", Kind: ObjectFinding, Type: TypeText, Tier: MinSummary, Inbound: InboundNever},
+	{Path: "finding.display_title", Kind: ObjectFinding, Type: TypeText, Tier: MinSummary, Inbound: InboundNever},
 	{Path: "finding.asset_name", Kind: ObjectFinding, Type: TypeText, Tier: MinSummary, Inbound: InboundNever},
 	{Path: "finding.asset_type", Kind: ObjectFinding, Type: TypeText, Tier: MinSummary, Inbound: InboundNever},
 	{Path: "finding.asset_criticality", Kind: ObjectFinding, Type: TypeEnum, Tier: MinSummary, Inbound: InboundNever,

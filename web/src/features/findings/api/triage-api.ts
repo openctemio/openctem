@@ -9,6 +9,7 @@
 import { get, patch, post } from '@/lib/api/client'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { ifMatchRowVersion } from '../lib/finding-conflict'
+import { findingLocation } from '../lib/finding-location'
 import { TRIAGE_WINDOW, triageQuery, type TriageItem } from '../lib/triage-session'
 import type { ApiFinding, ApiFindingListResponse } from './finding-api.types'
 import { findingTransitionsKey, type FindingTransitions } from './use-finding-transitions'
@@ -21,7 +22,7 @@ export function toTriageItem(f: ApiFinding): TriageItem {
     status: f.status,
     priorityClass: f.priority_class,
     rank: f.rank,
-    assetName: f.asset?.name ? toDisplayText(f.asset.name, 120) : undefined,
+    target: findingLocation(f).full || undefined,
     rowVersion: f.row_version,
   }
 }

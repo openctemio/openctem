@@ -22,8 +22,12 @@ export type OptionalColumn = (typeof OPTIONAL_COLUMNS)[number]
 /** Always shown: the finding and its priority. */
 export const LOCKED_COLUMNS = ['title', 'priorityClass'] as const
 
-/** What the list shows with no choice made: the scanner and first-seen date stay in the detail. */
-const BASE_VISIBLE: readonly OptionalColumn[] = ['severity', 'asset', 'status', 'slaStatus']
+/**
+ * What the list shows with no choice made: the scanner and first-seen date stay
+ * in the detail, and the target is the line under each title (FindingTitleCell),
+ * so the Location column is off unless someone turns it on.
+ */
+const BASE_VISIBLE: readonly OptionalColumn[] = ['severity', 'status', 'slaStatus']
 
 /**
  * The default columns. Severity is part of Priority, so the Active view leaves

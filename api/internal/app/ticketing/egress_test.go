@@ -262,7 +262,7 @@ func TestBuildIssueBody_DataExposureHasNoFreeText(t *testing.T) {
 	if err := f.SetDataExposureRisk(vulnerability.DataExposureRiskMedium); err != nil {
 		t.Fatal(err)
 	}
-	if body, title := buildIssueBody(f), issueTitle(f); strings.Contains(body+title, "jane@") {
+	if body, title := buildIssueBody(f), issueTitle(f, ""); strings.Contains(body+title, "jane@") {
 		t.Fatalf("data exposure issue carries free text:\n%s\n%s", title, body)
 	}
 }

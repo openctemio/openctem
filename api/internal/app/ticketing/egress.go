@@ -255,3 +255,22 @@ func OutboundTitle(f *vulnerability.Finding) string {
 	}
 	return f.Title()
 }
+
+// OutboundTarget is the target a tracker may receive for a finding on an
+// asset named assetName: the asset and port, or the URL the finding was seen
+// at for a finding whose full content may leave (a URL of a secret or
+// data-exposure finding can carry the value itself).
+func OutboundTarget(f *vulnerability.Finding, assetName string) string {
+	loc := ""
+	if FindingContent(f) == ContentFull {
+		loc = f.FilePath()
+	}
+	return vulnerability.FindingTarget(assetName, f.Network().Port, loc)
+}
+
+// OutboundDisplayTitle is OutboundTitle with the target: "<title> on
+// <target>", so two tickets for one issue on two assets read apart. The
+// renderer still redacts, encodes and caps it.
+func OutboundDisplayTitle(f *vulnerability.Finding, assetName string) string {
+	return vulnerability.DisplayTitle(OutboundTitle(f), OutboundTarget(f, assetName))
+}

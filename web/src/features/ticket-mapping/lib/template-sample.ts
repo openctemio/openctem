@@ -9,6 +9,7 @@ import type { CatalogAttribute } from '../types/ticket-mapping.types'
 
 const SAMPLE_BY_PATH: Record<string, string | string[]> = {
   'finding.title': 'SQL injection in /search',
+  'finding.display_title': 'SQL injection in /search on api-payments',
   'finding.severity': 'high',
   'finding.priority_class': 'P1',
   'finding.cve_ids': ['CVE-2026-1234'],

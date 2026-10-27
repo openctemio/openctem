@@ -52,7 +52,7 @@ func TestTicketDescription_ScannerTextCannotInjectWikiMarkup(t *testing.T) {
 func TestTicketSummary_PlainOneLineCapped(t *testing.T) {
 	f := hostileFinding(t)
 	f.SetTitle("multi\nline \u202Etitle " + strings.Repeat("a", 400))
-	got := ticketSummary(f)
+	got := ticketSummary(f, "")
 	if strings.ContainsAny(got, "\n\u202E") {
 		t.Fatalf("summary keeps newline or bidi control: %q", got)
 	}

@@ -1,5 +1,7 @@
 'use client'
 
+import { FindingTitleCell } from '@/features/findings/components/cells/finding-title-cell'
+import { findingLocation } from '@/features/findings/lib/finding-location'
 import * as React from 'react'
 import Link from '@/components/link'
 import {
@@ -89,6 +91,7 @@ function mapApiFinding(f: ApiFinding): TabFinding {
     description: f.description || f.message,
     assetId: f.asset_id,
     assetName: f.asset?.name || '',
+    place: findingLocation(f).detail,
     assetType: (f.asset?.type as AssetFinding['assetType']) || 'host',
     cveId: f.cve_id,
     cvssScore: f.cvss_score,
@@ -230,10 +233,14 @@ export function AssetFindings({
                   aria-label={t(`severity.${finding.severity}`, finding.severity)}
                 />
                 <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h4 className="text-sm font-medium break-words">{finding.title}</h4>
-                    <FindingStatusBadge status={finding.status} />
-                  </div>
+                  {/* The asset is this page: the target line is the place on it. */}
+                  <FindingTitleCell
+                    className="text-sm"
+                    titleLines={2}
+                    title={finding.title}
+                    target={finding.place}
+                    chips={<FindingStatusBadge status={finding.status} />}
+                  />
                   {finding.description && finding.description !== finding.title && (
                     <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
                       {finding.description}
