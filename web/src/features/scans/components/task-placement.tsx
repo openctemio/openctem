@@ -117,6 +117,23 @@ export function hostWaitLine(hw: HostWait, runId: string, t: Translate): string 
   return withCanStart(base, hw, t, 'scans.tasks.hostWaitWithFree')
 }
 
+type PlacementSensor = NonNullable<RunTaskPlacement['sensors']>[number]
+
+/**
+ * The sentence for a sensor an egress hold keeps the task from: which sensor,
+ * which proxies, and why. Null when no egress reason holds it. The pool is
+ * named only when the API sent it (a caller with sensors:read).
+ */
+export function egressSensorLine(s: PlacementSensor, t: Translate): string | null {
+  const reasons = s.reasons ?? []
+  const validate = reasons.includes('egress_validate_unsupported')
+  if (!validate && !reasons.includes('egress_unsupported')) return null
+  const sensor = toDisplayText(s.name)
+  const pool = s.egress_pool?.name ? toDisplayText(s.egress_pool.name) : ''
+  const base = validate ? 'scans.placement.egressValidateSensor' : 'scans.placement.egressSensor'
+  return pool ? t(`${base}Pool`, undefined, { sensor, pool }) : t(base, undefined, { sensor })
+}
+
 /** The "Why waiting?" toggle of a queued task. */
 export function WhyWaitingButton({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   const { t } = useTranslation()
@@ -202,14 +219,20 @@ export function TaskPlacementPanel({ runId, taskId }: { runId: string; taskId: s
               <ul className="mt-1 space-y-0.5">
                 {data.sensors?.map((s) => (
                   <li key={s.id} className="flex flex-wrap gap-x-2">
-                    <span className="font-medium">{toDisplayText(s.name)}</span>
-                    <span className="text-muted-foreground">
-                      {s.eligible
-                        ? s.busy
-                          ? t('scans.placement.sensorBusy')
-                          : t('scans.placement.sensorEligible')
-                        : (s.reasons ?? []).join(', ')}
-                    </span>
+                    {egressSensorLine(s, t) ? (
+                      <span className="text-muted-foreground">{egressSensorLine(s, t)}</span>
+                    ) : (
+                      <>
+                        <span className="font-medium">{toDisplayText(s.name)}</span>
+                        <span className="text-muted-foreground">
+                          {s.eligible
+                            ? s.busy
+                              ? t('scans.placement.sensorBusy')
+                              : t('scans.placement.sensorEligible')
+                            : (s.reasons ?? []).join(', ')}
+                        </span>
+                      </>
+                    )}
                   </li>
                 ))}
               </ul>

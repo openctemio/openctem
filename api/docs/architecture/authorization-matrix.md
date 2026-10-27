@@ -826,6 +826,16 @@ Owner and administrator only, on top of the permission: `PUT /api/v1/scan-profil
 | `GET /api/v1/dashboard-data/` | owner or administrator (`RequireAdmin`) |
 | `POST /api/v1/dashboard-data/rebuild` | owner or administrator (`RequireAdmin`); once per organization per hour, shared with the console route (`docs/architecture/dashboards.md`) |
 
+#### Sidebar pins (`/api/v1/me/pins`)
+
+A member's pins in one organization ([sidebar pins](sidebar-pins.md)). Self-scoped: the tenant and user come from
+the session and every statement filters on both.
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/me/pins` | self; a quick or saved view pin is returned only with `findings:read`, a saved view only while the caller can see it; counts are compiled as the caller (data scope, private programs, pentest membership) |
+| `PUT /api/v1/me/pins` | self; at most 12; a page pin must be an in-app path; quick and saved view pins need `findings:read`, and a saved view must be visible to the caller (404 otherwise) |
+
 #### Dashboards (`/api/v1/me/dashboards`, `/api/v1/organization/dashboards`)
 
 Two kinds ([dashboards](dashboards.md)). Personal dashboards are the caller's
@@ -1043,8 +1053,12 @@ Authorization is enforced at the **route layer** in
 
 **Acting role.** With `ADMIN_ELEVATION=required` (default) every request acts
 as `readonly` unless the console session holds a live elevation
-(`POST /api/v1/admin/auth/elevate`, step-up, 15-60 minutes, a role no higher
-than the administrator's own; `DELETE` ends it). Role checks below use that
+(`POST /api/v1/admin/auth/elevate`, a **fresh** step-up, 15-60 minutes, a role
+no higher than the administrator's own; `DELETE` ends it). Elevation never
+rides a step-up window another action opened: it takes a fresh authenticator
+code or a security-key confirmation given within the last minute, and that
+proof then opens the five-minute step-up window for the protected actions that
+follow. Role checks below use that
 acting role, never the stored one.
 
 **Step-up on protected actions.** Every identity, privilege and platform-trust

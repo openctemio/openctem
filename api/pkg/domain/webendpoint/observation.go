@@ -37,6 +37,8 @@ type Observation struct {
 	// CatalogKey is the sensitive-path catalog entry the template matches.
 	CatalogKey string
 	Params     []ParamObservation
+	// Labels are the labels the platform sets (ext:*, auth:login).
+	Labels []string
 	// OutOfScope: the endpoint lies under a scope exclusion. It is stored
 	// for visibility and never targeted or alerted on.
 	OutOfScope bool
@@ -125,6 +127,7 @@ func Observe(e ctis.Endpoint) (Observation, error) {
 		obs.StatusCode = e.StatusCode
 	}
 	obs.Params = observeParams(e.Params, u.Params)
+	obs.Labels = platformLabels(tmpl, obs.Params)
 	return obs, nil
 }
 
