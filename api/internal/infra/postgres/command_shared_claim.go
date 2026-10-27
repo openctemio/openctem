@@ -74,7 +74,7 @@ var sharedFleetHostLimitSQL = fmt.Sprintf(`(CASE WHEN commands.dispatch_gate->>'
 // the organization's own rule (hostFreePredicate) still applies too. The
 // GIN probe (&&) narrows the holders first. It reads only counts: a waiting
 // job learns nothing about who holds the host. The claim re-checks it under
-// lockSharedFleetHostKeys and counts its own batch (dropSharedFleetHosts).
+// lockSharedFleetHostKeysForPlatform and counts its own batch (dropSharedFleetHostsForPlatform).
 var sharedFleetHostFreePredicate = `(commands.host_keys IS NULL OR NOT EXISTS (
 			SELECT 1 FROM commands hk, unnest(hk.host_keys) AS hkk(k)
 			WHERE hk.is_platform_job = TRUE
@@ -195,7 +195,7 @@ func (r *CommandRepository) ClaimManyShared(ctx context.Context, sensorID shared
 	// The shared-fleet host locks first, for every candidate and in key
 	// order, before any organization's lock: every shared claim takes them
 	// in that one order, so two never deadlock.
-	if err := lockSharedFleetHostKeys(ctx, tx, want); err != nil {
+	if err := lockSharedFleetHostKeysForPlatform(ctx, tx, want); err != nil {
 		return nil, err
 	}
 	byTenant, tenants, err := sharedJobTenantsForPlatform(ctx, tx, want)
@@ -230,7 +230,7 @@ func (r *CommandRepository) ClaimManyShared(ctx context.Context, sensorID shared
 		}
 		keep = append(keep, mine...)
 	}
-	if keep, err = dropSharedFleetHosts(ctx, tx, want, keep); err != nil {
+	if keep, err = dropSharedFleetHostsForPlatform(ctx, tx, want, keep); err != nil {
 		return nil, err
 	}
 	if len(keep) == 0 {
@@ -259,13 +259,13 @@ func (r *CommandRepository) ClaimManyShared(ctx context.Context, sensorID shared
 	return out, nil
 }
 
-// lockSharedFleetHostKeys takes a transaction advisory lock on every host
+// lockSharedFleetHostKeysForPlatform takes a transaction advisory lock on every host
 // key of the shared jobs among ids, across organizations ("shost|" key), in
 // key order: two shared claims of one host run one after the other, so the
 // second sees the first one's claim in sharedFleetHostFreePredicate. A
 // bucket marker and a range key of the same bucket take one lock
 // (command.HostKeyLock).
-func lockSharedFleetHostKeys(ctx context.Context, tx *sql.Tx, ids []string) error {
+func lockSharedFleetHostKeysForPlatform(ctx context.Context, tx *sql.Tx, ids []string) error {
 	_, err := tx.ExecContext(ctx, `
 		SELECT count(pg_advisory_xact_lock(hashtextextended('shost|' || keys.k, 0)))
 		FROM (
@@ -282,12 +282,12 @@ func lockSharedFleetHostKeys(ctx context.Context, tx *sql.Tx, ids []string) erro
 	return nil
 }
 
-// dropSharedFleetHosts keeps, in the order of order, the ids of keep that
+// dropSharedFleetHostsForPlatform keeps, in the order of order, the ids of keep that
 // the shared-fleet host limit still allows once the shared jobs in flight
 // and the ids kept before them are counted
 // (command.SharedFleetHostsAllowed): one claim batch never puts more shared
 // jobs on one host than the limit, whatever their organizations.
-func dropSharedFleetHosts(ctx context.Context, tx *sql.Tx, order, keep []string) ([]string, error) {
+func dropSharedFleetHostsForPlatform(ctx context.Context, tx *sql.Tx, order, keep []string) ([]string, error) {
 	if len(keep) == 0 {
 		return keep, nil
 	}
