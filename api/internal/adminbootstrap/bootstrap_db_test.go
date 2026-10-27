@@ -266,7 +266,7 @@ func TestBootstrapAccountability_DB(t *testing.T) {
 // printed once, the audit row is critical and chained, nothing in the output
 // is a password, and the other administrators are told.
 func TestInvite_DB(t *testing.T) {
-	db := testdb.PrivateDatabase(t, "adminbootstrap-invite", "../../migrations")
+	db := testdb.PrivateDatabase(t, "adminbootstrap_invite", "../../migrations")
 	ctx := context.Background()
 	var out bytes.Buffer
 	if err := Run(ctx, db, Options{Email: "root@example.com", Role: "super_admin", NoBackup: true, Actor: Actor{OSUser: "ops", Hostname: "h1"}}, &out); err != nil {
