@@ -264,6 +264,14 @@ IdP their sole first factor and the console factor enrolled after it. Whoever
 can mint an IdP token carrying another administrator's e-mail therefore cannot
 sign in as them and approve their own requests.
 
+While "require IdP" is on, a password sign-in of an administrator who must use
+the IdP is answered exactly like a wrong password (401 "Wrong email or
+password"), so the response never tells a guesser that a password was right.
+The refusal is audited (`console.login_failed`, reason "identity provider
+sign-in required") and counts toward the account's lockout; the sign-in page
+learns that an identity provider exists from the public provider endpoint and
+shows its button after any refused password sign-in.
+
 API: `GET /api/v1/admin/approvals`, `POST /api/v1/admin/approvals`
 (step-up), `POST /api/v1/admin/approvals/{id}/approve` (fresh step-up),
 `/reject` (step-up), `/cancel` (requester); all super admin only. A protected
