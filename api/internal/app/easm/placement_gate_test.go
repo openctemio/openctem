@@ -2,6 +2,7 @@ package easm
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
@@ -169,6 +170,66 @@ func TestActiveGate_DenyListHoldsOnEveryPlacement(t *testing.T) {
 		}
 		if len(got) == 0 {
 			t.Errorf("placement %d: the denied address must stay refused", p)
+		}
+	}
+}
+
+// SECURITY: where ownership confirmation does not apply, the organization's
+// own choice still holds. Its "off" setting (or the Strict scan approval
+// mode, read as off) and an unreadable setting keep unclassified assets
+// passive; low_impact and full both mean fully authorized there.
+func TestActiveGate_OrganizationOffHoldsOnEveryPlacement(t *testing.T) {
+	placements := []struct {
+		name      string
+		managed   bool
+		placement attribution.Placement
+	}{
+		{"managed, tenant sensor", true, attribution.PlacementTenant},
+		{"self-hosted, platform sensor", false, attribution.PlacementPlatform},
+		{"self-hosted, sensor not known yet", false, attribution.PlacementUnknown},
+	}
+	modes := []struct {
+		name    string
+		policy  UnclassifiedPolicy
+		allowed bool
+	}{
+		{"off", func(context.Context, shared.ID) (string, error) { return unclassifiedOff, nil }, false},
+		{"unreadable", func(context.Context, shared.ID) (string, error) { return "", errors.New("down") }, false},
+		{"low_impact", func(context.Context, shared.ID) (string, error) { return unclassifiedLowImpact, nil }, true},
+		{"full", func(context.Context, shared.ID) (string, error) { return unclassifiedFull, nil }, true},
+	}
+	for _, p := range placements {
+		for _, m := range modes {
+			t.Run(p.name+"/"+m.name, func(t *testing.T) {
+				f := newGateFixture(t)
+				g := NewActiveGate(f, f, f, f)
+				g.SetManagedService(p.managed)
+				g.SetUnclassified(m.policy, f)
+				ctx := attribution.WithPlacement(context.Background(), p.placement)
+
+				discovered := f.add(t, "found.verified.com", asset.AssetTypeSubdomain)
+				f.record(discovered, attribution.StateDiscovered, false)
+				unrecorded := f.add(t, "new.verified.com", asset.AssetTypeSubdomain)
+				covered := f.add(t, "app.scoped.com", asset.AssetTypeSubdomain)
+				f.record(covered, attribution.StateDiscovered, false)
+
+				got, err := g.ActiveCheckBlocked(ctx, f.tenant, []string{discovered.ID().String(), unrecorded.ID().String(), covered.ID().String()})
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, a := range []*asset.Asset{discovered, unrecorded} {
+					if blocked := got[a.ID().String()] != ""; blocked == m.allowed {
+						t.Errorf("%s: state %q, allowed want %v", a.Name(), got[a.ID().String()], m.allowed)
+					}
+				}
+				if got[covered.ID().String()] != "" {
+					t.Errorf("a covered asset is allowed in every mode: %q", got[covered.ID().String()])
+				}
+				mode, _ := g.UnclassifiedMode(ctx, f.tenant)
+				if want := map[bool]string{true: unclassifiedFull, false: unclassifiedOff}[m.allowed]; mode != want {
+					t.Errorf("mode = %q, want %q", mode, want)
+				}
+			})
 		}
 	}
 }
