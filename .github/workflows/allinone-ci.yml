@@ -48,6 +48,7 @@ jobs:
   changes:
     name: Detect image changes
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
       pull-requests: read # the `ci:full` label (changed.sh reads it live)
@@ -116,6 +117,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.images == 'true' && needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     services:
       postgres:
         image: ghcr.io/openctemio/mirror/postgres:17-alpine
@@ -211,6 +213,7 @@ jobs:
     if: always()
     needs: [changes, images]
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: All jobs passed or were skipped; the build ran where it must
         env:
