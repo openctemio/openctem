@@ -24,6 +24,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/platformalert"
 	"github.com/openctemio/openctem/api/internal/app/platformcaptcha"
 	"github.com/openctemio/openctem/api/internal/app/storagequota"
+	"github.com/openctemio/openctem/api/internal/app/threatsource"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
@@ -55,8 +56,12 @@ type AdminPlatformSettingsHandler struct {
 	StorageQuota *storagequota.Service
 	Alerts       *platformalert.Service
 	AI           *platformai.Service
-	admins       AdminDirectory
-	logger       *logger.Logger
+	// ThreatSource is where KEV and EPSS come from; ThreatReadiness reports
+	// how the signed release is doing for them.
+	ThreatSource    *threatsource.Service
+	ThreatReadiness ThreatIntelReadiness
+	admins          AdminDirectory
+	logger          *logger.Logger
 }
 
 // NewAdminPlatformSettingsHandler creates the handler.

@@ -118,6 +118,7 @@ var adminWriteInventory = map[string]struct {
 	"POST /api/v1/admin/settings/captcha/verify":                    {routine, "asks Turnstile about a secret; changes nothing"},
 	"PUT /api/v1/admin/settings/region/":                            {stepUpRoute, "data residency of every new organization, once (fresh)"},
 	"PUT /api/v1/admin/settings/storage-quota/":                     {stepUpRoute, "default storage quota of organizations"},
+	"PUT /api/v1/admin/settings/threat-intel-source/":               {stepUpRoute, "where KEV and EPSS come from, and whether the platform may call CISA and FIRST"},
 	"PUT /api/v1/admin/settings/alerts/":                            {stepUpRoute, "where administrator alerts go (fresh)"},
 	"POST /api/v1/admin/settings/alerts/test":                       {routine, "sends a test alert to the stored webhook; changes nothing"},
 	"PUT /api/v1/admin/settings/ai/":                                {stepUpRoute, "platform AI provider and key: cost and subprocessor (fresh)"},

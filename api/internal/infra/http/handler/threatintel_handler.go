@@ -389,6 +389,11 @@ type SyncStatusResponse struct {
 	LastError      string  `json:"last_error,omitempty"`
 	RecordsSynced  int     `json:"records_synced"`
 	NextSyncAt     *string `json:"next_sync_at,omitempty"`
+	// DeliveredVia (KEV and EPSS): the path that stored the data held, the
+	// signed vulnerability release ("bundle") or the platform's own fetch
+	// ("direct"); DataAsOf is the data date of that data.
+	DeliveredVia string `json:"delivered_via,omitempty"`
+	DataAsOf     string `json:"data_as_of,omitempty"`
 }
 
 // SyncResultResponse is the response for a sync result.
@@ -458,6 +463,10 @@ func toSyncStatusResponse(status *threatintel.SyncStatus) SyncStatusResponse {
 		t := status.NextSyncAt().Format("2006-01-02T15:04:05Z")
 		resp.NextSyncAt = &t
 	}
+
+	meta := status.Metadata()
+	resp.DeliveredVia, _ = meta[threat.MetaDeliveredVia].(string)
+	resp.DataAsOf, _ = meta[threat.MetaIntelAsOf].(string)
 
 	return resp
 }

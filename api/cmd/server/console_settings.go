@@ -88,5 +88,9 @@ func newAdminPlatformSettingsHandler(repos *Repositories, svc *Services, log *lo
 	h := handler.NewAdminPlatformSettingsHandler(repos.Admin, log)
 	h.Captcha, h.Region, h.StorageQuota, h.Alerts, h.AI =
 		svc.PlatformCaptcha, svc.DeploymentRegion, svc.StorageQuota, svc.PlatformAlert, svc.PlatformAI
+	h.ThreatSource = svc.ThreatSource
+	if svc.ThreatIntel != nil {
+		h.ThreatReadiness = svc.ThreatIntel
+	}
 	return h
 }
