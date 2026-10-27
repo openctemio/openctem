@@ -11,7 +11,7 @@ name: Web Security
 
 on:
   push:
-    branches: [main, develop]
+    branches: [develop]
     paths:
       - 'web/**'
       - 'Makefile'
@@ -140,7 +140,6 @@ jobs:
     name: Docker Image Scan (web)
     if: >-
       github.event_name == 'schedule'
-      || (github.event_name == 'push' && github.ref == 'refs/heads/main')
       || (github.event_name == 'pull_request' && github.base_ref == 'main')
     permissions:
       contents: read

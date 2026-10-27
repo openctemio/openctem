@@ -12,7 +12,7 @@ name: API Security
 
 on:
   push:
-    branches: [main, develop]
+    branches: [develop]
     paths:
       - 'api/**'
       - 'Makefile'
@@ -166,13 +166,12 @@ jobs:
         with:
           args: --severity-threshold=high --file=api/go.mod
 
-  # Weekly sweep + main pushes + PRs into main (release candidates). Not on every
+  # Weekly sweep + PRs into main (release candidates). Not on every
   # PR: building the image costs minutes and the fs scan covers dependencies.
   docker-scan:
     name: Docker Image Scan (api)
     if: >-
       github.event_name == 'schedule'
-      || (github.event_name == 'push' && github.ref == 'refs/heads/main')
       || (github.event_name == 'pull_request' && github.base_ref == 'main')
     permissions:
       contents: read
