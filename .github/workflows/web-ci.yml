@@ -313,7 +313,7 @@ jobs:
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: web/.nvmrc
-          cache: 'npm'
+          cache: ${{ runner.environment == 'github-hosted' && 'npm' || '' }}
           cache-dependency-path: web/package-lock.json
 
       - name: Install dependencies
@@ -379,6 +379,14 @@ jobs:
         run: |
           base="$(bash ../.github/scripts/effective-base.sh web "origin/${GITHUB_BASE_REF}")"
           node scripts/check-copy.mjs "$base"
+
+      # Every e2e test carries an area tag that web/e2e/impact-map.yml knows,
+      # and the selector's own tests pass (research/295). Lists tests with
+      # Playwright; needs no browser or running stack.
+      - name: Check e2e tags and the impact selector
+        run: |
+          node --test e2e/ci/select.test.mjs
+          node e2e/ci/select.mjs check
       - name: Fail fast
         if: failure()
         uses: ./.github/actions/fail-fast
@@ -457,7 +465,7 @@ jobs:
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: web/.nvmrc
-          cache: 'npm'
+          cache: ${{ runner.environment == 'github-hosted' && 'npm' || '' }}
           cache-dependency-path: web/package-lock.json
 
       - name: Install dependencies
@@ -517,7 +525,7 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: web/.nvmrc
-          cache: 'npm'
+          cache: ${{ runner.environment == 'github-hosted' && 'npm' || '' }}
           cache-dependency-path: web/package-lock.json
       - name: Install dependencies
         run: npm ci
