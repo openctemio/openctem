@@ -126,7 +126,7 @@ jobs:
     name: API static checks
     needs: changes
     if: needs.changes.outputs.api == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_HEAVY) || 'ubuntu-latest' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -443,7 +443,7 @@ jobs:
     name: Tests (Postgres + Redis)
     needs: [changes, spec]
     if: needs.changes.outputs.api == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_HEAVY) || 'ubuntu-latest' }}
     # The suite is split into parallel shards (.github/scripts/go-shard.sh:
     # the few packages that hold most of the run time are split by test name
     # over every shard, the rest go whole to one shard each).
@@ -465,7 +465,9 @@ jobs:
           POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB: app_test
         ports:
-          - 5432:5432
+          # Random host port: no clash when several jobs share one Docker host;
+          # the steps read it from job.services.
+          - 5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -477,7 +479,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
         ports:
-          - 6379:6379
+          - 6379
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 10s
@@ -527,7 +529,7 @@ jobs:
       - name: Apply migrations to the test database
         run: migrate -path migrations -database "$DATABASE_URL" up
         env:
-          DATABASE_URL: postgres://openctem@localhost:5432/app_test?sslmode=disable
+          DATABASE_URL: postgres://openctem@${{ runner.environment == 'self-hosted' && 'dind' || 'localhost' }}:${{ job.services.postgres.ports['5432'] }}/app_test?sslmode=disable
 
       # Explicit -timeout: the default 10m per package binary is too tight for
       # the -race suite on a slow or busy runner (it takes ~5m normally).
@@ -542,14 +544,14 @@ jobs:
           SHARD: ${{ matrix.shard }}
           TOTAL: ${{ matrix.total }}
           WITH_RACE: ${{ matrix.race }}
-          DB_HOST: localhost
-          DB_PORT: 5432
+          DB_HOST: ${{ runner.environment == 'self-hosted' && 'dind' || 'localhost' }}
+          DB_PORT: ${{ job.services.postgres.ports['5432'] }}
           DB_USER: openctem
           DB_NAME: app_test
-          DATABASE_URL: postgres://openctem@localhost:5432/app_test?sslmode=disable
+          DATABASE_URL: postgres://openctem@${{ runner.environment == 'self-hosted' && 'dind' || 'localhost' }}:${{ job.services.postgres.ports['5432'] }}/app_test?sslmode=disable
           OPENCTEM_TEST_DB_REQUIRED: "1"
-          REDIS_HOST: localhost
-          REDIS_PORT: 6379
+          REDIS_HOST: ${{ runner.environment == 'self-hosted' && 'dind' || 'localhost' }}
+          REDIS_PORT: ${{ job.services.redis.ports['6379'] }}
         run: |
           flags=()
           if [ "$WITH_RACE" = true ]; then flags+=(-race); fi
@@ -636,7 +638,7 @@ jobs:
     name: Tests (least-privilege DB role)
     needs: [changes, spec]
     if: needs.changes.outputs.api == 'true' && (needs.changes.outputs.full == 'true' || needs.changes.outputs.migrations == 'true')
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_HEAVY) || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -656,7 +658,9 @@ jobs:
           POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB: lp_test
         ports:
-          - 5432:5432
+          # Random host port: no clash when several jobs share one Docker host;
+          # the steps read it from job.services.
+          - 5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -668,16 +672,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
         ports:
-          - 6379:6379
+          - 6379
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-    env:
-      SUPER_URL: postgres://postgres@localhost:5432/lp_test?sslmode=disable
-      MIGRATOR_URL: postgres://openctem_migrator@localhost:5432/lp_test?sslmode=disable
-      APP_ROLE_URL: postgres://openctem_app@localhost:5432/lp_test?sslmode=disable
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -711,6 +711,20 @@ jobs:
       - name: Install golang-migrate
         run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1
 
+      # The runner context is not available in job-level env, so the URLs are
+      # exported for the later steps from here.
+      - name: Point the tests at the service containers
+        shell: bash
+        env:
+          SVC_HOST: ${{ runner.environment == 'self-hosted' && 'dind' || 'localhost' }}
+          PG_PORT: ${{ job.services.postgres.ports['5432'] }}
+        run: |
+          {
+            echo "SUPER_URL=postgres://postgres@${SVC_HOST}:${PG_PORT}/lp_test?sslmode=disable"
+            echo "MIGRATOR_URL=postgres://openctem_migrator@${SVC_HOST}:${PG_PORT}/lp_test?sslmode=disable"
+            echo "APP_ROLE_URL=postgres://openctem_app@${SVC_HOST}:${PG_PORT}/lp_test?sslmode=disable"
+          } >> "$GITHUB_ENV"
+
       - name: Bootstrap the roles on a fresh database
         run: psql "$SUPER_URL" -X -v ON_ERROR_STOP=1 -f deploy/postgres/least-privilege-roles.sql
 
@@ -737,12 +751,12 @@ jobs:
           DATABASE_MIGRATE_URL: ${{ env.MIGRATOR_URL }}
           # testdb.PrivateDatabase only: CREATE DATABASE + migrations need a superuser.
           DATABASE_ADMIN_URL: ${{ env.SUPER_URL }}
-          DB_HOST: localhost
-          DB_PORT: 5432
+          DB_HOST: ${{ runner.environment == 'self-hosted' && 'dind' || 'localhost' }}
+          DB_PORT: ${{ job.services.postgres.ports['5432'] }}
           DB_USER: openctem_app
           DB_NAME: lp_test
-          REDIS_HOST: localhost
-          REDIS_PORT: 6379
+          REDIS_HOST: ${{ runner.environment == 'self-hosted' && 'dind' || 'localhost' }}
+          REDIS_PORT: ${{ job.services.redis.ports['6379'] }}
         run: |
           flags=()
           skip="$(python3 ../.github/scripts/quarantine.py go-skip)"
@@ -762,12 +776,11 @@ jobs:
     name: Migrations (PostgreSQL 18)
     needs: changes
     if: needs.changes.outputs.api == 'true' && (needs.changes.outputs.full == 'true' || needs.changes.outputs.migrations == 'true')
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_HEAVY) || 'ubuntu-latest' }}
     timeout-minutes: 20
     env:
       # postgres:18-alpine in .github/ci-images.txt (bump both together).
       PG18_DIGEST: sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
-      DATABASE_URL: postgres://openctem@localhost:5432/app_test?sslmode=disable
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -784,21 +797,28 @@ jobs:
       # has copied the image.
       - name: Start PostgreSQL 18
         working-directory: .
+        env:
+          SVC_HOST: ${{ runner.environment == 'self-hosted' && 'dind' || 'localhost' }}
         run: |
+          name="pg18-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
           img="ghcr.io/openctemio/mirror/postgres:18-alpine@$PG18_DIGEST"
           if ! docker pull -q "$img"; then
             img="public.ecr.aws/docker/library/postgres:18-alpine@$PG18_DIGEST"
             bash .github/scripts/retry.sh docker pull -q "$img"
           fi
-          docker run -d --name pg18 -p 5432:5432 -e POSTGRES_USER=openctem \
+          docker run -d --name "$name" -p 5432 -e POSTGRES_USER=openctem \
             -e POSTGRES_HOST_AUTH_METHOD=trust -e POSTGRES_DB=app_test "$img"
           # Over TCP: the entrypoint's init server listens on the socket only.
+          ready=
           for _ in $(seq 1 60); do
-            docker exec pg18 pg_isready -h 127.0.0.1 -U openctem -d app_test -q && exit 0
+            if docker exec "$name" pg_isready -h 127.0.0.1 -U openctem -d app_test -q; then ready=1; break; fi
             sleep 1
           done
-          docker logs pg18
-          exit 1
+          if [ -z "$ready" ]; then docker logs "$name"; exit 1; fi
+          # The published host port is random. The container runs on the Docker
+          # host: localhost on a GitHub runner, the dind container on ours.
+          port="$(docker port "$name" 5432/tcp | head -n1 | sed 's/.*://')"
+          echo "DATABASE_URL=postgres://openctem@${SVC_HOST}:${port}/app_test?sslmode=disable" >> "$GITHUB_ENV"
 
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -819,6 +839,10 @@ jobs:
         env:
           OPENCTEM_TEST_DB_REQUIRED: "1"
         run: go test -count=1 -run 'TestCheckSensorRename' ./internal/infra/postgres/
+
+      - name: Remove the PostgreSQL 18 container
+        if: ${{ always() }}
+        run: docker rm -f -v "pg18-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" || true
 
   # The only writer of the Go caches (module cache and compiled packages):
   # every push to develop, so pull requests (which restore them, read-only,
