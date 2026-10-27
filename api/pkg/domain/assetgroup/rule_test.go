@@ -20,7 +20,7 @@ func TestDomainMatches_LabelBoundary(t *testing.T) {
 		{"apex with subdomains", sub, "example.com", true},
 		{"subdomain", sub, "www.example.com", true},
 		{"deep subdomain", sub, "a.b.c.example.com", true},
-		{"upper case", sub, "WWW.PTI.COM.VN", true},
+		{"upper case", sub, "WWW.EXAMPLE.COM", true},
 		{"look-alike prefix is not a subdomain", sub, "evilexample.com", false},
 		{"look-alike prefix with dash", sub, "evil-example.com", false},
 		{"domain used as a label of another", sub, "example.com.evil.com", false},
@@ -43,7 +43,7 @@ func TestNormalizeDomain(t *testing.T) {
 		wildcard bool
 	}{
 		{"example.com", "example.com", false},
-		{"  PTI.com.VN.  ", "example.com", false},
+		{"  EXAMPLE.com.  ", "example.com", false},
 		{"*.example.com", "example.com", true},
 		{"bücher.de", "xn--bcher-kva.de", false},
 		{"*.BÜCHER.de", "xn--bcher-kva.de", true},
@@ -72,7 +72,7 @@ func TestNormalizeDomain(t *testing.T) {
 }
 
 func TestParseRule(t *testing.T) {
-	r, err := ParseRule([]byte(`{"v":1,"filter":{"types":["domain"],"tags":["prod"]},"domains":[{"name":"*.PTI.com.vn"},{"name":"example.com","subdomains":false}],"include_related":true}`))
+	r, err := ParseRule([]byte(`{"v":1,"filter":{"types":["domain"],"tags":["prod"]},"domains":[{"name":"*.EXAMPLE.com"},{"name":"example.com","subdomains":false}],"include_related":true}`))
 	if err != nil {
 		t.Fatal(err)
 	}

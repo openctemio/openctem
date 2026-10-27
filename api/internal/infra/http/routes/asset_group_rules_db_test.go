@@ -570,7 +570,7 @@ func TestSmartGroup_PasteMatchesValidatesAndCreatesThroughTheScopeCheck(t *testi
 
 	text := strings.Join([]string{
 		"# my list",
-		"WWW.PTI.COM.VN",           // existing
+		"WWW.EXAMPLE.COM",          // existing
 		"api.example.com.",         // existing, trailing dot
 		"new.example.com",          // missing, in scope
 		"stranger.example.net",     // missing, outside scope
