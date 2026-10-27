@@ -67,6 +67,7 @@ describe('loginErrorCodeFor', () => {
     expect(loginErrorCodeFor('USE_ADMIN_CONSOLE')).toBe('use_console')
     expect(loginErrorCodeFor('EMAIL_UNVERIFIED_AT_IDP')).toBe('email_unverified_at_idp')
     expect(loginErrorCodeFor('ORGANIZATION_SUSPENDED')).toBe('organization_unavailable')
+    expect(loginErrorCodeFor('OAUTH_ACCOUNT_EXISTS')).toBe('account_exists')
   })
 
   it.each([undefined, null, '', 'SSO_EXCHANGE_FAILED', 'constructor'])(

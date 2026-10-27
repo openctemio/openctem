@@ -49,8 +49,8 @@ func TestOAuthFindOrCreate_BlocksCrossFederatedTakeover(t *testing.T) {
 
 	got, err := s.findOrCreateUser(context.Background(),
 		&OAuthUserInfo{Email: "v@example.com", Name: "Attacker"}, OAuthProviderGitHub)
-	if err == nil {
-		t.Fatal("expected cross-provider (Google account ← GitHub login) to be BLOCKED, got nil error")
+	if !errors.Is(err, ErrOAuthAccountExists) {
+		t.Fatalf("expected cross-provider (Google account, GitHub login) to be refused with ErrOAuthAccountExists, got %v", err)
 	}
 	if got != nil {
 		t.Fatalf("blocked login must not return a user; got %v", got)
@@ -108,8 +108,8 @@ func TestOAuthFindOrCreate_BlocksPasswordLocal(t *testing.T) {
 	s, _ := newOAuthSvcWithUser(local)
 
 	if _, err := s.findOrCreateUser(context.Background(),
-		&OAuthUserInfo{Email: "local@example.com"}, OAuthProviderGoogle); err == nil {
-		t.Fatal("expected password-backed local account to block OAuth login")
+		&OAuthUserInfo{Email: "local@example.com"}, OAuthProviderGoogle); !errors.Is(err, ErrOAuthAccountExists) {
+		t.Fatalf("expected password-backed local account to refuse OAuth login with ErrOAuthAccountExists, got %v", err)
 	}
 }
 

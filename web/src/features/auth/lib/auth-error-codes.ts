@@ -71,6 +71,8 @@ export const AUTH_ERROR_CODES = [
   'OAUTH_INVALID_STATE',
   'OAUTH_EXCHANGE_FAILED',
   'OAUTH_USERINFO_FAILED',
+  'OAUTH_ACCOUNT_EXISTS',
+  'OAUTH_NO_EMAIL',
   'INVITATION_ALREADY_MEMBER',
   'INVITATION_MEMBERSHIP_SUSPENDED',
   'MEMBERSHIP_SUSPENDED_REACTIVATE',
@@ -137,6 +139,7 @@ const LOGIN_CODE_FOR_API_CODE: Readonly<Record<string, LoginErrorCode>> = {
   ORGANIZATION_SUSPENDED: 'organization_unavailable',
   ORGANIZATION_ACCESS_DENIED: 'not_member',
   EMAIL_NOT_VERIFIED: 'email_not_verified',
+  OAUTH_ACCOUNT_EXISTS: 'account_exists',
 }
 
 export function loginErrorCodeFor(code: string | undefined | null): LoginErrorCode {

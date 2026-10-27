@@ -27,6 +27,7 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { PasswordInput } from '@/components/password-input'
 import { IconGoogle, IconGithub, IconMicrosoft } from '@/assets/brand-icons'
 
@@ -162,9 +163,12 @@ export function LoginForm({
   const { t } = useTranslation()
   const loginError = errorParam ? loginErrorMessage(errorParam) : null
   const errorMessage = loginError ? t(loginError.key, loginError.fallback) : null
+  // A social sign-in found an account that signs in another way: the notice
+  // stays on the page with what to do, instead of a toast that fades.
+  const accountExists = errorParam === 'account_exists'
   useEffect(() => {
-    if (errorMessage) toast.error(errorMessage)
-  }, [errorMessage])
+    if (errorMessage && !accountExists) toast.error(errorMessage)
+  }, [errorMessage, accountExists])
 
   // Form setup with centralized schema
   const form = useForm<LoginInput>({
@@ -358,6 +362,18 @@ export function LoginForm({
         className={cn('grid gap-3', className)}
         {...props}
       >
+        {accountExists && (
+          <Alert role="alert" data-testid="login-account-exists">
+            <AlertTitle>{t('auth.accountExists.title')}</AlertTitle>
+            <AlertDescription>
+              <p>{errorMessage}</p>
+              <Link href="/forgot-password" className="font-medium underline underline-offset-4">
+                {t('auth.accountExists.resetPassword')}
+              </Link>
+            </AlertDescription>
+          </Alert>
+        )}
+
         {/* Email Field */}
         <FormField
           control={form.control}

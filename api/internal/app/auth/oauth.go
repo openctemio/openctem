@@ -38,6 +38,13 @@ var (
 	ErrInvalidState        = errors.New("invalid OAuth state")
 	ErrOAuthExchangeFailed = errors.New("failed to exchange OAuth code")
 	ErrOAuthUserInfoFailed = errors.New("failed to get user info from OAuth provider")
+	// ErrOAuthAccountExists: the provider's email names an account that signs
+	// in another way (a password, or another provider) and this provider
+	// identity is not linked to it. Nothing was written. The person signs in
+	// the usual way and links the provider from their account settings.
+	ErrOAuthAccountExists = errors.New("an account with this email already exists; sign in to it and link this provider")
+	// ErrOAuthNoEmail: the provider returned no email address.
+	ErrOAuthNoEmail = errors.New("the OAuth provider did not return an email address")
 )
 
 // OAuthProvider represents a supported OAuth provider.
@@ -329,7 +336,7 @@ func (s *OAuthService) HandleCallback(ctx context.Context, input CallbackInput) 
 
 	// SECURITY: Require email from OAuth provider
 	if userInfo.Email == "" {
-		return nil, fmt.Errorf("OAuth provider did not return an email address")
+		return nil, ErrOAuthNoEmail
 	}
 
 	// Find or create user
@@ -912,7 +919,7 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUser
 				return nil, ErrEmailNotAuthoritative
 			}
 			if claimableLocal && !s.claimVouched(ctx, existingUser, userInfo.Email) {
-				return nil, errors.New("this email is registered with a different login method")
+				return nil, ErrOAuthAccountExists
 			}
 			if !claimableLocal {
 				s.logger.Warn("OAuth login blocked: email registered with a different auth provider",
@@ -920,7 +927,7 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUser
 					"existing_provider", existingProvider,
 					"oauth_provider", expectedProvider,
 				)
-				return nil, errors.New("this email is registered with a different login method")
+				return nil, ErrOAuthAccountExists
 			}
 		}
 
@@ -946,10 +953,10 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUser
 			if sameIssuer || otherIssuer != nil {
 				s.logger.Warn("OAuth login blocked: federated identity mismatch for email",
 					"email", userInfo.Email, "oauth_provider", expectedProvider)
-				return nil, errors.New("this email is registered with a different login method")
+				return nil, ErrOAuthAccountExists
 			}
 			if berr := acc.bind(ctx, existingUser, key); berr != nil {
-				return nil, errors.New("this email is registered with a different login method")
+				return nil, ErrOAuthAccountExists
 			}
 		}
 
