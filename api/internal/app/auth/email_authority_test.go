@@ -138,23 +138,23 @@ func TestSocialLogin_BoundIdentitySignsInOnNonAuthoritativeEmail(t *testing.T) {
 // A same-provider account with no bound identity is bound only when the
 // provider is authoritative for the address (GitHub: sign-in only).
 func TestSocialLogin_LegacyAccountBinding(t *testing.T) {
-	run := func(provider OAuthProvider, ap userdom.AuthProvider, info OAuthUserInfo) (error, int) {
+	run := func(provider OAuthProvider, ap userdom.AuthProvider, info OAuthUserInfo) (int, error) {
 		u, _ := userdom.NewOAuthUser(info.Email, "U", "", ap)
 		ids := newMemIdentities()
 		s := &OAuthService{userRepo: &emailUsers{all: []*userdom.User{u}}, identities: ids, logger: logger.NewNop()}
 		_, err := s.findOrCreateUser(context.Background(), &info, provider)
-		return err, len(ids.keysOf(u.ID()))
+		return len(ids.keysOf(u.ID())), err
 	}
-	if err, n := run(OAuthProviderGoogle, userdom.AuthProviderGoogle, OAuthUserInfo{Email: "bob@corp.example", Issuer: googleIssuer, Subject: "g-1"}); !errors.Is(err, ErrEmailNotAuthoritative) || n != 0 {
+	if n, err := run(OAuthProviderGoogle, userdom.AuthProviderGoogle, OAuthUserInfo{Email: "bob@corp.example", Issuer: googleIssuer, Subject: "g-1"}); !errors.Is(err, ErrEmailNotAuthoritative) || n != 0 {
 		t.Fatalf("consumer Google on a company address must not bind a legacy account: err=%v bound=%d", err, n)
 	}
-	if err, n := run(OAuthProviderGoogle, userdom.AuthProviderGoogle, OAuthUserInfo{Email: "bob@corp.example", HD: "corp.example", Issuer: googleIssuer, Subject: "g-1"}); err != nil || n != 1 {
+	if n, err := run(OAuthProviderGoogle, userdom.AuthProviderGoogle, OAuthUserInfo{Email: "bob@corp.example", HD: "corp.example", Issuer: googleIssuer, Subject: "g-1"}); err != nil || n != 1 {
 		t.Fatalf("Workspace account binds: err=%v bound=%d", err, n)
 	}
-	if err, n := run(OAuthProviderGoogle, userdom.AuthProviderGoogle, OAuthUserInfo{Email: "bob@gmail.com", Issuer: googleIssuer, Subject: "g-1"}); err != nil || n != 1 {
+	if n, err := run(OAuthProviderGoogle, userdom.AuthProviderGoogle, OAuthUserInfo{Email: "bob@gmail.com", Issuer: googleIssuer, Subject: "g-1"}); err != nil || n != 1 {
 		t.Fatalf("gmail binds: err=%v bound=%d", err, n)
 	}
-	if err, n := run(OAuthProviderGitHub, userdom.AuthProviderGitHub, OAuthUserInfo{Email: "bob@corp.example", Issuer: githubIssuer, Subject: "42"}); err != nil || n != 1 {
+	if n, err := run(OAuthProviderGitHub, userdom.AuthProviderGitHub, OAuthUserInfo{Email: "bob@corp.example", Issuer: githubIssuer, Subject: "42"}); err != nil || n != 1 {
 		t.Fatalf("GitHub primary verified email binds an account of its own provider: err=%v bound=%d", err, n)
 	}
 }
