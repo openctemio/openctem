@@ -226,7 +226,7 @@ func TestCheckVerdicts(t *testing.T) {
 	s.check = &tester{client: srv.Client(), tokenURL: func(string) string { return srv.URL }}
 	ctx := context.Background()
 
-	if _, err := s.Check(ctx, Google, "", ""); !errors.Is(err, ErrNoSecret) {
+	if _, err := s.Check(ctx, cst.SuperAdmin(t), Google, "", "", "", ""); !errors.Is(err, ErrNoSecret) {
 		t.Fatalf("nothing to check: %v", err)
 	}
 	for _, c := range []struct {
@@ -246,7 +246,7 @@ func TestCheckVerdicts(t *testing.T) {
 		{200, `<html>`, ResultUnknown},
 	} {
 		status, answer = c.status, c.body
-		got, err := s.Check(ctx, Google, clientID, secret)
+		got, err := s.Check(ctx, cst.SuperAdmin(t), Google, clientID, secret, "", "")
 		if err != nil || got != c.want {
 			t.Errorf("%s: got %q %v, want %q", c.body, got, err, c.want)
 		}
@@ -259,14 +259,14 @@ func TestCheckVerdicts(t *testing.T) {
 	enable(t, s, Google, 0)
 	status, answer = 400, `{"error":"invalid_grant"}`
 	gotSecret = ""
-	if r, err := s.Check(ctx, Google, "", ""); err != nil || r != ResultValid || gotSecret != secret {
+	if r, err := s.Check(ctx, cst.SuperAdmin(t), Google, "", "", "", ""); err != nil || r != ResultValid || gotSecret != secret {
 		t.Fatalf("stored: %q %v %q", r, err, gotSecret)
 	}
 	gotSecret = ""
-	if r, _ := s.Check(ctx, Google, clientID, "bad secret with spaces"); r != ResultInvalid || gotSecret != "" {
+	if r, _ := s.Check(ctx, cst.SuperAdmin(t), Google, clientID, "bad secret with spaces", "", ""); r != ResultInvalid || gotSecret != "" {
 		t.Fatalf("a malformed secret must not be sent: %q", r)
 	}
-	if _, err := s.Check(ctx, "gitlab", clientID, secret); err == nil {
+	if _, err := s.Check(ctx, cst.SuperAdmin(t), "gitlab", clientID, secret, "", ""); err == nil {
 		t.Fatal("unknown provider")
 	}
 }
@@ -292,7 +292,7 @@ func TestRedirectURIIsPerProviderAndUsedByTheCheck(t *testing.T) {
 			t.Errorf("%s redirect = %q, want %q", p.Provider, p.RedirectURI, want)
 		}
 	}
-	if _, err := s.Check(context.Background(), Microsoft, clientID, secret); err != nil {
+	if _, err := s.Check(context.Background(), cst.SuperAdmin(t), Microsoft, clientID, secret, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if gotRedirect != "https://ctem.example.com/auth/callback/microsoft" {
@@ -322,5 +322,72 @@ func TestCredentialsIgnoreTheOfferSwitch(t *testing.T) {
 	}
 	if _, ok := s.Credentials(ctx, "gitlab"); ok {
 		t.Fatal("unknown provider")
+	}
+}
+
+// The stored secret belongs to the stored client ID: changing the ID without
+// entering a secret is refused, and the stored pair stays as it was.
+func TestNewClientIDNeedsANewSecret(t *testing.T) {
+	s, _, _, _ := newSvc(t, config.OAuthConfig{})
+	ctx := context.Background()
+	enable(t, s, Google, 0)
+	a := cst.SuperAdmin(t)
+
+	_, err := s.Update(ctx, a, Google, Input{Enabled: true, ClientID: "other-" + clientID, Reason: "swap the client"}, 1, "", "")
+	if !errors.Is(err, ErrInvalid) {
+		t.Fatalf("new client ID with the stored secret: %v", err)
+	}
+	if cfg := s.OAuthProvider(ctx, Google); cfg.ClientID != clientID || cfg.ClientSecret != secret {
+		t.Fatalf("the stored pair changed: %q", cfg.ClientID)
+	}
+	// The same ID keeps its secret; a new ID with a new secret is accepted.
+	if _, err := s.Update(ctx, a, Google, Input{Enabled: true, ClientID: clientID, Reason: "turn it on again"}, 1, "", ""); err != nil {
+		t.Fatalf("same client ID without a secret: %v", err)
+	}
+	if _, err := s.Update(ctx, a, Google, Input{Enabled: true, ClientID: "other-" + clientID, Secret: cst.Strp("another-" + secret), Reason: "swap the client"}, 2, "", ""); err != nil {
+		t.Fatalf("new client ID with a new secret: %v", err)
+	}
+}
+
+// A check never sends the stored secret with a client ID the caller chose, and
+// every check is audited without the secret.
+func TestCheckNeverPairsTheStoredSecretWithAnotherClientID(t *testing.T) {
+	var gotSecret, gotClient string
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		calls++
+		gotSecret, gotClient = r.Form.Get("client_secret"), r.Form.Get("client_id")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"invalid_grant"}`))
+	}))
+	defer srv.Close()
+	s, _, audit, _ := newSvc(t, config.OAuthConfig{})
+	s.check = &tester{client: srv.Client(), tokenURL: func(string) string { return srv.URL }}
+	enable(t, s, Google, 0)
+	ctx, a := context.Background(), cst.SuperAdmin(t)
+	before := len(audit.Entries)
+
+	if _, err := s.Check(ctx, a, Google, "other-"+clientID, "", "203.0.113.5", "test"); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("another client ID with the stored secret: %v", err)
+	}
+	if calls != 0 || gotSecret != "" {
+		t.Fatalf("the stored secret was sent for another client ID (%d calls)", calls)
+	}
+	// The stored pair, and a client ID with its own secret, are fine.
+	if _, err := s.Check(ctx, a, Google, clientID, "", "203.0.113.5", "test"); err != nil || gotSecret != secret {
+		t.Fatalf("stored pair: %v", err)
+	}
+	if _, err := s.Check(ctx, a, Google, "other-"+clientID, "candidate-"+secret, "203.0.113.5", "test"); err != nil || gotClient != "other-"+clientID {
+		t.Fatalf("candidate pair: %v", err)
+	}
+	if got := audit.Entries[before:]; len(got) != 2 || got[0].Action != ActionChecked {
+		t.Fatalf("audit rows = %d", len(got))
+	}
+	if strings.Contains(audit.JSON(t), secret) {
+		t.Fatal("a secret leaked into the audit log")
+	}
+	if _, err := s.Check(ctx, nil, Google, clientID, secret, "", ""); !errors.Is(err, ErrNoActor) {
+		t.Fatalf("no actor: %v", err)
 	}
 }

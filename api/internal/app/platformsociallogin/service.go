@@ -437,6 +437,12 @@ func (s *Service) Update(ctx context.Context, actor *admin.AdminUser, provider s
 		return Settings{}, err
 	}
 	np.ClientID = in.ClientID
+	// The stored secret belongs to the stored client ID: a new client ID needs
+	// its own secret, or the secret would be sent to an application it was not
+	// issued for.
+	if in.ClientID != old.ClientID && old.SecretEncrypted != "" && in.Secret == nil {
+		return Settings{}, fmt.Errorf("%w: enter the client secret that goes with the new client ID", ErrInvalid)
+	}
 	secretChanged := false
 	if in.Secret != nil {
 		secretChanged = true
@@ -476,11 +482,18 @@ func (s *Service) Update(ctx context.Context, actor *admin.AdminUser, provider s
 	return s.Get(ctx)
 }
 
-// Check asks the provider's token endpoint whether it accepts the client:
-// candidate secret when given (before saving it), otherwise the secret in
-// force. The address it asks is fixed; the secret is never stored, logged or
-// returned.
-func (s *Service) Check(ctx context.Context, provider, clientID, candidateSecret string) (Result, error) {
+// ActionChecked is the audit action of a client check.
+const ActionChecked = "platform.social_login_checked"
+
+// Check asks the provider's token endpoint whether it accepts the client.
+// The pair is either both given by the caller (before saving it) or the stored
+// pair: a caller-chosen client ID never rides with the stored secret, and the
+// check is audited. The address it asks is fixed; the secret is never stored,
+// logged or returned.
+func (s *Service) Check(ctx context.Context, actor *admin.AdminUser, provider, clientID, candidateSecret, ip, userAgent string) (Result, error) {
+	if actor == nil {
+		return "", ErrNoActor
+	}
 	if s.envOf(provider) == nil {
 		return "", ErrUnknownProvider
 	}
@@ -491,6 +504,7 @@ func (s *Service) Check(ctx context.Context, provider, clientID, candidateSecret
 	if secret != "" && !secretRE.MatchString(secret) {
 		return ResultInvalid, nil
 	}
+	usedStoredSecret := false
 	if clientID == "" || secret == "" {
 		var inForce resolved
 		if s.LockedByEnvironment(provider) {
@@ -502,11 +516,15 @@ func (s *Service) Check(ctx context.Context, provider, clientID, candidateSecret
 			}
 			inForce = s.resolve(st, provider)
 		}
+		if secret == "" && clientID != "" && clientID != inForce.cfg.ClientID {
+			return "", fmt.Errorf("%w: enter the client secret that goes with this client ID", ErrInvalid)
+		}
 		if clientID == "" {
 			clientID = inForce.cfg.ClientID
 		}
 		if secret == "" {
 			secret = inForce.cfg.ClientSecret
+			usedStoredSecret = true
 		}
 	}
 	if clientID == "" || secret == "" {
@@ -514,5 +532,14 @@ func (s *Service) Check(ctx context.Context, provider, clientID, candidateSecret
 	}
 	cctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	return s.check.check(cctx, provider, clientID, secret, s.RedirectURI(provider)), nil
+	res := s.check.check(cctx, provider, clientID, secret, s.RedirectURI(provider))
+	s.recorder.Record(ctx, actor, consolesetting.Change{
+		Action: ActionChecked, Key: SettingKey, Title: "Social login (" + provider + ")",
+		Method: "POST", Path: "/api/v1/admin/settings/social-login-providers/" + provider + "/test",
+		Details: map[string]any{
+			"provider": provider, "client_id": clientID, "result": string(res),
+			"used_stored_secret": usedStoredSecret,
+		},
+	}, ip, userAgent)
+	return res, nil
 }

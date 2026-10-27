@@ -218,6 +218,33 @@ func TestAdminSocialLoginSettings_Routes_DB(t *testing.T) {
 	}
 }
 
+// The client check never sends the stored secret with another client ID, and
+// it is bounded like a sign-in attempt.
+func TestAdminSocialLoginCheck_StoredSecretAndRateLimit_DB(t *testing.T) {
+	h := platformSettingsHarness(t, false)
+	const path = "/api/v1/admin/settings/social-login-providers"
+	super := h.newAdmin(admin.AdminRoleSuperAdmin)
+	super.verify()
+	super.autoStepUp = true
+	save := map[string]any{"enabled": true, "client_id": "1234-route.apps.googleusercontent.com", "secret": routeSocialSecret,
+		"reason": "offer Google sign-in", "version": 0}
+	if code, resp := super.do(http.MethodPut, path+"/google", save, true); code != http.StatusOK {
+		t.Fatalf("save: %d %s", code, resp)
+	}
+	other := map[string]any{"client_id": "9999-other.apps.googleusercontent.com"}
+	if code, resp := super.do(http.MethodPost, path+"/google/test", other, true); code != http.StatusBadRequest || strings.Contains(resp, routeSocialSecret) {
+		t.Fatalf("another client ID with the stored secret: %d %s", code, resp)
+	}
+	limited := false
+	for i := 0; i < 12 && !limited; i++ {
+		code, _ := super.do(http.MethodPost, path+"/google/test", other, true)
+		limited = code == http.StatusTooManyRequests
+	}
+	if !limited {
+		t.Fatal("the client check is not rate limited")
+	}
+}
+
 // The environment pins a provider: the console answers 409 for it and still
 // manages the others; the environment secret is never shown.
 func TestAdminSocialLoginSettings_LockedByEnvironment_DB(t *testing.T) {

@@ -156,7 +156,7 @@ func (h *AdminPlatformSettingsHandler) UpdateSocialLogin(w http.ResponseWriter, 
 
 // CheckSocialLogin asks the provider whether it accepts the client.
 // @Summary      Check a social login client
-// @Description  Asks the provider's token endpoint (a fixed address, through the SSRF-safe client) whether it accepts the client ID and secret given, or the ones in force, with a code that cannot be valid. Nothing is stored or logged and the secret is never returned. Super admin.
+// @Description  Asks the provider's token endpoint (a fixed address, through the SSRF-safe client) whether it accepts the client ID and secret given, or the ones in force, with a code that cannot be valid. A client ID other than the stored one needs its own secret. Nothing is stored or logged, the secret is never returned, and the check is audited. Super admin, rate limited.
 // @Tags         Admin System
 // @Accept       json
 // @Produce      json
@@ -167,11 +167,15 @@ func (h *AdminPlatformSettingsHandler) UpdateSocialLogin(w http.ResponseWriter, 
 // @Security     AdminAuth
 // @Router       /admin/settings/social-login-providers/{provider}/test [post]
 func (h *AdminPlatformSettingsHandler) CheckSocialLogin(w http.ResponseWriter, r *http.Request) {
+	actor := requireActor(w, r)
+	if actor == nil {
+		return
+	}
 	var req SocialLoginCheckRequest
 	if !decodeSetting(w, r, &req) {
 		return
 	}
-	res, err := h.SocialLogin.Check(r.Context(), r.PathValue("provider"), req.ClientID, req.Secret)
+	res, err := h.SocialLogin.Check(r.Context(), actor, r.PathValue("provider"), req.ClientID, req.Secret, middleware.ClientIP(r), r.UserAgent())
 	if errors.Is(err, platformsociallogin.ErrNoSecret) {
 		apierror.New(http.StatusConflict, CodeSettingNotConfigured, "No client ID and secret are set; enter them to check them").WriteJSON(w)
 		return
