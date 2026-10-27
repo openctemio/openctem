@@ -63,10 +63,12 @@ func registerMCPConnectionRoutes(router Router, h *handler.MCPConnectionsHandler
 	router.Group("/api/v1/mcp-access/my-connections", func(r Router) {
 		r.GET("/", h.ListMine)
 		r.DELETE("/{id}", h.RevokeMine)
+		r.POST("/{id}/scoped", h.ScopeMine)
 	}, tenantMiddlewares...)
 	router.Group("/api/v1/mcp-access/connections", func(r Router) {
 		r.GET("/", h.ListAll, middleware.RequireAdmin())
 		r.DELETE("/{id}", h.RevokeAny, middleware.RequireAdmin())
+		r.POST("/{id}/scoped", h.ScopeAny, middleware.RequireAdmin())
 	}, tenantMiddlewares...)
 	// Write-action confirmations (RFC-062 §10): the person the connection
 	// belongs to, in their browser session.

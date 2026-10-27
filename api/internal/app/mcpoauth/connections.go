@@ -30,6 +30,9 @@ type ConnectionView struct {
 	LastUsedAt *time.Time
 	LastUsedIP string
 	ExpiresAt  time.Time
+	// FullData: the connection may read all organization data (while its
+	// person keeps a full-data role).
+	FullData bool
 }
 
 // ErrConnectionsUnavailable means the service was built without the
@@ -61,6 +64,7 @@ func (s *Service) ListConnections(ctx context.Context, tenantID shared.ID, userI
 			ID: g.ID.String(), ClientName: g.Client.Name, ClientID: g.Client.ClientID, ClientKind: g.Client.Kind,
 			ClientHost: clientHost(g.Client), UserID: g.UserID.String(), UserName: c.UserName, UserEmail: c.UserEmail,
 			Scopes: g.Scopes, CreatedAt: g.CreatedAt, LastUsedAt: g.LastUsedAt, LastUsedIP: g.LastUsedIP, ExpiresAt: g.ExpiresAt,
+			FullData: g.FullData,
 		})
 	}
 	return out, nil
@@ -97,6 +101,50 @@ func (s *Service) RevokeConnection(ctx context.Context, tenantID, grantID, actor
 			WithResourceName(g.Client.Name).
 			WithMessage("MCP connection to "+g.Client.Name+" revoked").
 			WithMetadata("client_id", g.Client.ClientID).
+			WithMetadata("user_id", g.UserID.String()).
+			WithMetadata("reason", reason))
+	return nil
+}
+
+// ScopeConnection turns a connection that may read all organization data
+// back into one that reads only its person's own data scope; the tokens stay
+// valid. A person may change only their own (asAdmin false); an organization
+// administrator any in the organization. Another person's connection, or
+// another organization's, is not found. Narrowing needs no step-up.
+func (s *Service) ScopeConnection(ctx context.Context, tenantID, grantID, actorID shared.ID, asAdmin bool, actor Actor) error {
+	store, err := s.connectionStore()
+	if err != nil {
+		return err
+	}
+	g, err := store.GetGrant(ctx, tenantID, grantID)
+	if err != nil {
+		return err
+	}
+	if !asAdmin && g.UserID != actorID {
+		return mcpoauth.ErrNotFound
+	}
+	return s.downgradeGrant(ctx, g, actorID, "user", actor)
+}
+
+// downgradeGrant sets a full-data grant back to scoped and audits it. A grant
+// that is not full-data is left alone.
+func (s *Service) downgradeGrant(ctx context.Context, g *mcpoauth.Grant, actorID shared.ID, reason string, actor Actor) error {
+	if !g.FullData || g.RevokedAt != nil {
+		return nil
+	}
+	changed, err := s.repo.SetGrantScoped(ctx, g.TenantID, g.ID)
+	if err != nil {
+		return fmt.Errorf("scope connection: %w", err)
+	}
+	if !changed {
+		return nil
+	}
+	s.logAudit(ctx, g.TenantID.String(), actorID.String(), actor,
+		auditapp.NewSuccessEvent(auditdom.ActionMCPFullDataRemoved, auditdom.ResourceTypeMCPGrant, g.ID.String()).
+			WithResourceName(g.Client.Name).
+			WithMessage("MCP connection to "+g.Client.Name+" no longer reads all organization data").
+			WithMetadata("client_id", g.Client.ClientID).
+			WithMetadata("client_host", clientHost(g.Client)).
 			WithMetadata("user_id", g.UserID.String()).
 			WithMetadata("reason", reason))
 	return nil

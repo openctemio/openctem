@@ -347,7 +347,7 @@ func httpDataScopeCaller(ctx context.Context) datascope.Caller {
 		UserID:  middleware.GetUserID(ctx),
 		IsAdmin: middleware.IsAdmin(ctx),
 		IsOwner: middleware.IsOwner(ctx),
-		APIKey:  middleware.IsDelegatedCredential(ctx),
+		APIKey:  middleware.ReadsOnOwnScope(ctx),
 	}
 }
 
