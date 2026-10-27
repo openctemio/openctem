@@ -160,7 +160,7 @@ func (h *AdminConsoleHandler) clearCookie(w http.ResponseWriter, name, path stri
 // @Param request body AdminConsoleLoginRequest true "Email and password"
 // @Success 200 {object} AdminLoginResponse
 // @Failure 401 {object} apierror.Error "Wrong email or password, or not an active unlocked platform administrator (one answer)"
-// @Failure 403 {object} apierror.Error "CAPTCHA required, or the identity provider sign-in is required"
+// @Failure 403 {object} apierror.Error "CAPTCHA required"
 // @Router /admin/auth/login [post]
 func (h *AdminConsoleHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var req AdminConsoleLoginRequest
@@ -191,9 +191,6 @@ func (h *AdminConsoleHandler) Login(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			apierror.Unauthorized("Wrong email or password").WriteJSON(w)
-		case errors.Is(err, admin.ErrIdPSignInRequired):
-			apierror.New(http.StatusForbidden, codeIdPSignInRequired,
-				"Sign in to the admin console with the identity provider").WriteJSON(w)
 		default:
 			h.logger.Error("admin console sign-in", "error", err)
 			apierror.InternalError(err).WriteJSON(w)
