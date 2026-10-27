@@ -17,6 +17,7 @@ import {
   syncThreatIntel,
   useThreatIntelFeeds,
 } from '@console/features/admin-console/api/use-system'
+import { ThreatSourceCard } from '@console/features/admin-console/components/threat-source-card'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { adminCan, type ThreatIntelFeed } from '@console/features/admin-console/types'
 
@@ -158,6 +159,7 @@ export default function ThreatIntelFeedsPage() {
             ))}
           </div>
         )}
+        <ThreatSourceCard canEdit={adminCan(admin.role, 'super_admin')} />
       </PageStack>
     </Main>
   )

@@ -11,6 +11,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/platformai"
 	"github.com/openctemio/openctem/api/internal/app/platformcaptcha"
 	"github.com/openctemio/openctem/api/internal/app/storagequota"
+	"github.com/openctemio/openctem/api/internal/app/threatsource"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/crypto"
@@ -25,7 +26,7 @@ const (
 
 func platformSettingsHarness(t *testing.T, envCaptcha bool) *chainHarness {
 	t.Helper()
-	keys := []string{platformcaptcha.SettingKey, platformai.SettingKey, storagequota.SettingKey}
+	keys := []string{platformcaptcha.SettingKey, platformai.SettingKey, storagequota.SettingKey, threatsource.SettingKey}
 	h := newChainHarness(t, func(hs *Handlers, db *postgres.DB, _ *adminconsole.Service) {
 		cipher, err := crypto.NewCipher([]byte("0123456789abcdef0123456789abcdef"))
 		if err != nil {
@@ -41,6 +42,7 @@ func platformSettingsHarness(t *testing.T, envCaptcha bool) *chainHarness {
 		ps.Captcha = platformcaptcha.NewService(repo, cipher, rec, envSite, envSecret, nil)
 		ps.AI = platformai.NewService(repo, cipher, rec, false, "", "", nil)
 		ps.StorageQuota = storagequota.NewService(repo, nil, rec, 20480)
+		ps.ThreatSource = threatsource.NewService(repo, rec)
 		hs.AdminPlatformSettings = ps
 	})
 	clear := func() {
@@ -146,5 +148,36 @@ func TestAdminAIAndQuotaSettings_Routes_DB(t *testing.T) {
 	reader.autoStepUp = true
 	if code, _ := reader.do(http.MethodPut, "/api/v1/admin/settings/storage-quota", map[string]any{"default_mb": 0, "version": 1}, true); code != http.StatusForbidden {
 		t.Fatalf("a read-only administrator changed the quota: %d", code)
+	}
+}
+
+// Where KEV and EPSS come from: any administrator reads the defaults, only a
+// super admin with the step-up changes it, a stale form is refused, a bad
+// value is a 400.
+func TestAdminThreatSourceSetting_Routes_DB(t *testing.T) {
+	h := platformSettingsHarness(t, false)
+	const path = "/api/v1/admin/settings/threat-intel-source"
+	reader := h.newAdmin(admin.AdminRoleReadonly)
+	reader.verify()
+	code, resp := reader.do(http.MethodGet, path, nil, false)
+	if code != http.StatusOK || !strings.Contains(resp, `"source":"direct"`) || !strings.Contains(resp, `"direct_fetch":"auto"`) || !jsonHasBool(resp, "stored", false) {
+		t.Fatalf("defaults: %d %s", code, resp)
+	}
+	reader.autoStepUp = true
+	if code, _ := reader.do(http.MethodPut, path, map[string]any{"source": "bundle", "direct_fetch": "auto", "version": 0}, true); code != http.StatusForbidden {
+		t.Fatalf("a read-only administrator changed the source: %d", code)
+	}
+	super := h.newAdmin(admin.AdminRoleSuperAdmin)
+	super.verify()
+	super.autoStepUp = true
+	if code, _ := super.do(http.MethodPut, path, map[string]any{"source": "both", "direct_fetch": "auto", "version": 0}, true); code != http.StatusBadRequest {
+		t.Fatalf("a bad value: %d", code)
+	}
+	code, resp = super.do(http.MethodPut, path, map[string]any{"source": "bundle", "direct_fetch": "off", "version": 0}, true)
+	if code != http.StatusOK || !strings.Contains(resp, `"source":"bundle"`) || !strings.Contains(resp, `"direct_fetch":"off"`) {
+		t.Fatalf("change: %d %s", code, resp)
+	}
+	if code, _ = super.do(http.MethodPut, path, map[string]any{"source": "direct", "direct_fetch": "auto", "version": 0}, true); code != http.StatusConflict {
+		t.Fatalf("a stale form: %d", code)
 	}
 }

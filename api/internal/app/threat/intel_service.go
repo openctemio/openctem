@@ -104,6 +104,8 @@ type IntelService struct {
 	// afterBundle runs after KEV or EPSS was applied from a release (nil:
 	// nothing), see intel_bundle.go.
 	afterBundle func(ctx context.Context, source string)
+	// policy is the platform setting for the source of KEV and EPSS.
+	policy SourcePolicy
 }
 
 // NewIntelService creates a new IntelService.
@@ -223,7 +225,12 @@ type IntelSyncResult struct {
 	// NotModified: the source answered 304 to the conditional request, so
 	// nothing was rewritten.
 	NotModified bool
-	Error       error
+	// Skipped: the direct fetch did not run because the platform setting
+	// leaves the feed to the signed release (SkipReason is the code of
+	// FetchDecision).
+	Skipped    bool
+	SkipReason string
+	Error      error
 }
 
 // SyncAll syncs all enabled threat intel sources.
@@ -245,6 +252,11 @@ func (s *IntelService) SyncAll(ctx context.Context) []IntelSyncResult {
 func (s *IntelService) SyncEPSS(ctx context.Context) IntelSyncResult {
 	result := IntelSyncResult{Source: "epss"}
 	startTime := time.Now()
+
+	if !s.sourcePolicy(ctx).DirectAllowed {
+		result.Error = ErrDirectFetchOff
+		return result
+	}
 
 	// Get sync status
 	status, err := s.repo.SyncStatus().GetBySource(ctx, "epss")
@@ -329,6 +341,11 @@ func (s *IntelService) propagateToCatalog(ctx context.Context, source string) {
 func (s *IntelService) SyncKEV(ctx context.Context) IntelSyncResult {
 	result := IntelSyncResult{Source: "kev"}
 	startTime := time.Now()
+
+	if !s.sourcePolicy(ctx).DirectAllowed {
+		result.Error = ErrDirectFetchOff
+		return result
+	}
 
 	// Get sync status
 	status, err := s.repo.SyncStatus().GetBySource(ctx, "kev")

@@ -92,13 +92,19 @@ func (c *ThreatIntelRefreshController) Interval() time.Duration {
 // moved, reconciles KEV flags and reports material changes.
 func (c *ThreatIntelRefreshController) Reconcile(ctx context.Context) (int, error) {
 	var r threat.IntelSyncResult
-	if c.feed == intelFeedKEV {
+	// The signed release carries the feed too: the direct fetch is the
+	// supplier or a fallback depending on the platform setting.
+	if d := c.service.ShouldFetchDirect(ctx, c.feed); !d.Run {
+		r = threat.IntelSyncResult{Source: c.feed, Skipped: true, SkipReason: d.Reason}
+	} else if c.feed == intelFeedKEV {
 		r = c.service.SyncKEV(ctx)
 	} else {
 		r = c.service.SyncEPSS(ctx)
 	}
 	processed := 0
 	switch {
+	case r.Skipped:
+		c.logger.Debug("threat intel direct fetch not needed", "source", r.Source, "reason", r.SkipReason)
 	case r.Error != nil:
 		c.logger.Warn("threat intel sync failed", "source", r.Source, "error", r.Error)
 	case r.NotModified:
@@ -107,7 +113,7 @@ func (c *ThreatIntelRefreshController) Reconcile(ctx context.Context) (int, erro
 		processed += r.RecordsSynced
 		c.logger.Info("threat intel synced", "source", r.Source, "records", r.RecordsSynced, "duration_ms", r.DurationMs)
 	}
-	processed += c.sweeper.Run(ctx, c.feed, r.Error == nil && !r.NotModified, r.Error == nil)
+	processed += c.sweeper.Run(ctx, c.feed, r.Error == nil && !r.NotModified && !r.Skipped, r.Error == nil)
 
 	return processed, nil
 }
