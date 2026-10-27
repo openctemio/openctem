@@ -1868,7 +1868,7 @@
   "admin.targetType.port.label": "Cổng",
   "admin.targetType.repository.hint": "Các kho mã nguồn",
   "admin.targetType.repository.label": "Kho mã nguồn",
-  "admin.targetType.serverless.hint": "Lambda, Cloud Functions",
+  "admin.targetType.serverless.hint": "Lambda, cloud functions",
   "admin.targetType.serverless.label": "Serverless",
   "admin.targetType.service.hint": "Dịch vụ mạng",
   "admin.targetType.service.label": "Dịch vụ",

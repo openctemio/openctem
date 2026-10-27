@@ -1868,7 +1868,7 @@
   "admin.targetType.port.label": "Port",
   "admin.targetType.repository.hint": "Source code repositories",
   "admin.targetType.repository.label": "Repository",
-  "admin.targetType.serverless.hint": "Lambda, Cloud Functions",
+  "admin.targetType.serverless.hint": "Lambda, cloud functions",
   "admin.targetType.serverless.label": "Serverless",
   "admin.targetType.service.hint": "Network services",
   "admin.targetType.service.label": "Service",
