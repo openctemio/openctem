@@ -2,12 +2,15 @@
 
 import { Pin, PinOff } from 'lucide-react'
 import { SidebarMenuAction } from '@/components/ui/sidebar'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { useTranslation } from '@/context/i18n-provider'
 import { useNavPins, type NavPin } from '../api/use-nav-pins'
 
 /**
  * The pin button of a sidebar row: shown on hover or focus, it pins the row
- * to the top of the sidebar or unpins it.
+ * to the top of the sidebar or unpins it. Not in the phone drawer: there is no
+ * hover, so every row carried a pin glyph over its count; the drawer is for
+ * going somewhere, and pins are managed from a wider screen.
  */
 export function PinAction({
   pin,
@@ -21,6 +24,8 @@ export function PinAction({
 }) {
   const { t } = useTranslation()
   const { isPinned, toggle } = useNavPins()
+  const isMobile = useIsMobile()
+  if (isMobile) return null
   const pinned = isPinned(pin)
   const name = pinned
     ? t('nav.pins.unpin', 'Unpin {name}', { name: label })
