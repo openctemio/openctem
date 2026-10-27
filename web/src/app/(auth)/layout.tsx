@@ -21,11 +21,9 @@ export default function AuthLayout({ children }: AuthLayoutProps) {
     <div className="flex min-h-svh flex-col items-stretch sm:items-center sm:justify-center px-4 py-6 sm:py-12 pt-[max(1.5rem,env(safe-area-inset-top))]">
       <div className="mx-auto flex w-full max-w-md flex-col space-y-2 sm:w-[480px]">
         <div className="mb-4 sm:mb-8 flex items-center justify-center text-foreground">
-          {/* The C in `openctem` IS the mark: wordmark and brand letter
-              are one object. No separate <h1> tagline. The lockup's box
-              is tight around the ink, so h-9 (phone) and h-12 (sm+) give
-              about the same width as the card title above the form. */}
-          <BrandLogoFull className="h-9 sm:h-12 w-auto" />
+          {/* The lockup (6.5:1) is tight around the ink: h-8 on phones and h-10
+              from sm up give about the width of the card title below it. */}
+          <BrandLogoFull className="h-8 sm:h-10 w-auto" />
         </div>
         {children}
         <PoweredBy className="pt-4" />

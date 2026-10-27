@@ -43,6 +43,8 @@ const PUBLIC_PAGES = [
   '/auth/callback/google',
   '/auth/sso/callback/entra',
   '/icon',
+  '/opengraph-image',
+  '/apple-icon',
 ]
 
 const API_ROUTES = ['/api/health', '/api/v1/findings', '/api/auth/refresh']

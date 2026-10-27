@@ -1,0 +1,16 @@
+{
+  "source": "research/309-logo (Scope \"Caught\" + Sora 600)",
+  "files": {
+    "app-icon.svg": "445e7441d46c83a8f5c7b6bc0a6a23400f4aa4da7bb0df431e6f92654cac5a4f",
+    "favicon-16.svg": "7557ec89050fe288ca3113f9e01a662962b0ca687d60271f7295d018e7a80ebe",
+    "favicon-32.svg": "3fdd6991a3954aefa865650b8c379d3f6883c84c24accd640742be1d3c9d2db1",
+    "lockup-stacked.svg": "667bf898aca79015029b9b280e22fdf087d8e24ec02f9572978faa1a6e480949",
+    "lockup.svg": "b72f10af9df2c947742ca2c66fec00ae115bf65761a529e863220275e3b035c1",
+    "maskable-512.svg": "a893a42289de7ee45282bce8e83905fcc3435258d2d61614e91b88df38db5f02",
+    "og-image.svg": "9eb55ffa579ceb5dd894b0011c9d06510a311f11de325d09b98fe072d0045ff6",
+    "symbol-16.svg": "b417f21a78f7886cf0466702b6b8de0776776c4d2467ca9daf80994efb177c4c",
+    "symbol-32.svg": "c7d148ee165ff2555010c2e253e328e41ba45c8ada2616ad88084bcbee774654",
+    "symbol.svg": "2a200a05c1eabc8a88aa7401ed1d1cd201c42647f26f58b8cf0f7df07b563846",
+    "wordmark.svg": "fc871ddbda0585d776a68cc5e9ee75196c230d305882cef11cdfe08a138f6601"
+  }
+}
