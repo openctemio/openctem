@@ -1068,7 +1068,8 @@ fresh console authenticator code in the `X-Admin-Step-Up` header, or the
 five-minute step-up window of the same console session (one confirmation,
 recorded in `admin_sessions.step_up_at`, covers the protected actions that
 follow). Without either the API answers `401 ADMIN_STEP_UP_REQUIRED` and the
-console asks for a code and retries; an administrator with no console
+console asks for a code and retries (a refused code the form sent itself
+goes back to that form's code field instead); an administrator with no console
 authenticator gets `403 STEP_UP_UNAVAILABLE`. Each confirmation is audited
 (`console.step_up`, the purpose names the action), a wrong code counts toward
 the sign-in lockout. Every console write is classified in
