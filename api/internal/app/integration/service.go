@@ -1471,7 +1471,23 @@ func (s *IntegrationService) setEmailCredentials(intg *integrationdom.Integratio
 	return nil
 }
 
+// nextOrgMail is the stored org_mail value after an update: the request's
+// choice, else the stored one. Turning it on (it was off) needs an owner or
+// administrator; keeping it on, or turning it off, does not.
+func nextOrgMail(requested *bool, existing map[string]any, mayEnable bool) (bool, error) {
+	stored := getBoolFromMap(existing, integrationdom.MetaEmailOrgMail)
+	if requested == nil {
+		return stored, nil
+	}
+	if *requested && !stored && !mayEnable {
+		return false, errOrgMailNeedsAdmin
+	}
+	return *requested, nil
+}
+
 // updateEmailCredentials updates email credentials, merging with existing metadata if partial update.
+//
+//nolint:cyclop // field-by-field merge of a partial update
 func (s *IntegrationService) updateEmailCredentials(intg *integrationdom.Integration, credentialsJSON string, mayEnableOrgMail bool) error {
 	var emailCreds EmailCredentials
 	if err := json.Unmarshal([]byte(credentialsJSON), &emailCreds); err != nil {
@@ -1537,14 +1553,11 @@ func (s *IntegrationService) updateEmailCredentials(intg *integrationdom.Integra
 
 	// Organization mail through this relay: the request's choice, else the
 	// stored one (absent on an integration saved before the flag: off).
-	if emailCreds.OrgMail != nil {
-		if *emailCreds.OrgMail && !getBoolFromMap(existingMetadata, integrationdom.MetaEmailOrgMail) && !mayEnableOrgMail {
-			return errOrgMailNeedsAdmin
-		}
-		newMetadata[integrationdom.MetaEmailOrgMail] = *emailCreds.OrgMail
-	} else {
-		newMetadata[integrationdom.MetaEmailOrgMail] = getBoolFromMap(existingMetadata, integrationdom.MetaEmailOrgMail)
+	orgMail, err := nextOrgMail(emailCreds.OrgMail, existingMetadata, mayEnableOrgMail)
+	if err != nil {
+		return err
 	}
+	newMetadata[integrationdom.MetaEmailOrgMail] = orgMail
 
 	// Reply To
 	if emailCreds.ReplyTo != "" {
