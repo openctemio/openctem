@@ -3086,6 +3086,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// because it needs both the workflow dispatcher and the in-app
 	// notification service, which is only built above.
 	s.AssetDiscoveryNotifier = assetdiscovery.NewNotifier(s.Outbox, s.Notification, assetdiscovery.DefaultWindow, log)
+	s.AssetDiscoveryNotifier.SetRunResolver(stepRunResolver{steps: repos.StepRun, runs: repos.ScanRun})
 	// Automatic passive enrichment of every new asset, whatever created it
 	// (docs/architecture/asset-freshness.md): ingest, manual create, CSV import.
 	s.AssetEnricher = assetfreshnessapp.NewEnricher(repos.AssetEnrichmentRequests, repos.Asset, s.Tenant, s.Scan,

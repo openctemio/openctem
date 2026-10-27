@@ -218,7 +218,11 @@ type RunResponse struct {
 	ScanID    *string `json:"scan_id,omitempty"`
 	// ScanName names the run's scan (list rows only; empty when the scan was
 	// deleted).
-	ScanName        string  `json:"scan_name,omitempty"`
+	ScanName string `json:"scan_name,omitempty"`
+	// ManagedBy names the platform policy that owns the run's scan, so the
+	// run is read-only for people: coverage (continuous coverage), enrichment
+	// or web_verify. Absent for a scan a person owns (list rows only).
+	ManagedBy       string  `json:"managed_by,omitempty" enums:"coverage,enrichment,web_verify"`
 	ScanProfileID   *string `json:"scan_profile_id,omitempty"`
 	TriggerType     string  `json:"trigger_type"`
 	TriggeredBy     string  `json:"triggered_by,omitempty"`
@@ -1241,6 +1245,7 @@ func (h *ScanWorkflowHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 		ScanID:         r.URL.Query().Get("scan_id"),
 		Kinds:          parseQueryArray(r.URL.Query().Get("kind")),
 		IncludeSystem:  r.URL.Query().Get("include_system") == queryParamTrue,
+		Origin:         r.URL.Query().Get("origin"),
 		AssetID:        r.URL.Query().Get("asset_id"),
 		Status:         r.URL.Query().Get("status"),
 		Sort:           r.URL.Query().Get("sort"),
@@ -1269,6 +1274,12 @@ func (h *ScanWorkflowHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 		apierror.InternalServerError("failed to read the runs' scans").WriteJSON(w)
 		return
 	}
+	managers, err := h.service.RunScanManagers(r.Context(), tenantID, result.Data)
+	if err != nil {
+		h.logger.Error("failed to read the runs' managing policies", "error", err)
+		apierror.InternalServerError("failed to read the runs' scans").WriteJSON(w)
+		return
+	}
 	names := runTriggerNames(r.Context(), h.users, h.logger, result.Data...)
 	items := make([]*RunResponse, len(result.Data))
 	for i, run := range result.Data {
@@ -1278,6 +1289,7 @@ func (h *ScanWorkflowHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 		}
 		if run.ScanID != nil {
 			items[i].ScanName = scanNames[*run.ScanID]
+			items[i].ManagedBy = managers[*run.ScanID]
 		}
 	}
 

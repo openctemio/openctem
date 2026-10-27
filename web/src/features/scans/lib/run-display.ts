@@ -1,4 +1,5 @@
 import type { ScanRun } from '@/lib/api/scan-types'
+import type { ScanRunListFilters } from '@/lib/api/scan-workflow-types'
 import { formatScanDuration, scanSuccessRate } from './format'
 import { enTranslate, type Translate } from './translate'
 
@@ -206,7 +207,45 @@ export const RUN_KIND_FILTERS = [
   { value: 'scan' },
   { value: 'quick' },
   { value: 'retest' },
+  // Runs of the scans the platform manages (continuous coverage).
+  { value: 'coverage' },
 ] as const
+
+/**
+ * The list query a kind filter value stands for. "All kinds" lists every
+ * run, continuous coverage included; "Scans" leaves coverage runs out
+ * (they are scans too, owned by the platform), "Continuous coverage" shows
+ * only them.
+ */
+export function runKindQuery(value: string): Pick<ScanRunListFilters, 'kind' | 'origin'> {
+  switch (value) {
+    case 'coverage':
+      return { origin: 'system' }
+    case 'scan':
+      return { kind: 'scan', origin: 'user' }
+    case 'all':
+    case '':
+      return {}
+    default:
+      return { kind: value }
+  }
+}
+
+/** The platform policy that owns a run's scan, in words (null for a person's scan). */
+export function runManagedLabel(
+  managedBy: string | null | undefined,
+  t: Translate = enTranslate
+): string | null {
+  if (!managedBy) return null
+  switch (managedBy) {
+    case 'coverage':
+      return t('scans.runs.managedCoverage')
+    case 'enrichment':
+      return t('scans.runs.managedEnrichment')
+    default:
+      return t('scans.runs.managedPlatform')
+  }
+}
 
 const RUN_KINDS = new Set(['scan', 'quick', 'retest', 'validation', 'test', 'connector', 'system'])
 

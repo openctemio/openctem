@@ -10,6 +10,7 @@ import (
 
 	"github.com/openctemio/ctis"
 
+	"github.com/openctemio/openctem/api/internal/app/assetdiscovery"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/assetfreshness"
@@ -543,7 +544,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	scope.collector = collector
 
 	// Step 1: Process assets using batch operations
-	assetMap, err := s.assetProcessor.processBatch(ctx, tenantID, report, output, assetIdentityCfg, opts.RequireAssetForFindings, scope)
+	assetMap, err := s.assetProcessor.processBatch(assetdiscovery.WithStepRun(ctx, binding.StepRunID), tenantID, report, output, assetIdentityCfg, opts.RequireAssetForFindings, scope)
 	if err != nil {
 		s.logger.Error("failed to process assets batch", "error", logger.SanitizeError(err))
 		// Continue with partial results, but say so: the asset upsert is one
