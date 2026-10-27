@@ -125,7 +125,7 @@ type RunStats struct {
 	Pending   int64
 	Running   int64
 	Completed int64
-	// Partial: kept results but lost some work (RFC-046 D5).
+	// Partial: kept results but lost some work.
 	Partial  int64
 	Failed   int64
 	Canceled int64
@@ -236,8 +236,7 @@ type RolloverStore interface {
 
 // UnfinishedTargetRecorder records targets an open run will not scan, so
 // the run's unfinished list (and the next scheduled run's rollover) keeps
-// them: a step not dispatched because its run's deadline was too close
-// (research/122).
+// them: a step not dispatched because its run's deadline was too close.
 type UnfinishedTargetRecorder interface {
 	// AddUnfinishedTargets appends targets to runID's unfinished targets,
 	// deduplicated, in order, bounded like the reaper's list. Only an open

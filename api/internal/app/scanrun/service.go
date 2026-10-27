@@ -317,8 +317,7 @@ type TargetGate interface {
 	ResolveDispatchTargets(ctx context.Context, in scanapp.DispatchTargetsInput) (*scanapp.DispatchTargets, error)
 }
 
-// StepTargetFilter gates a run's typed targets for one step's tool
-// (RFC-042 §6.3.8 O6): a step is handed only the targets its tool can scan.
+// StepTargetFilter gates a run's typed targets for one step's tool: a step is handed only the targets its tool can scan.
 // A target gate that implements it (*scan.Service does) is used at every
 // step dispatch.
 type StepTargetFilter interface {

@@ -61,11 +61,9 @@ describe('SensorManifestTab', () => {
     manifests.value = { data: { items }, error: undefined, isLoading: false }
     render(<SensorManifestTab sensor={sensor} now={Date.now()} />)
 
-    expect(screen.getByText('registered by the sensor · current since 1h ago')).toBeInTheDocument()
-    expect(screen.getByText(/^4 CPU cores · .+ memory$/)).toBeInTheDocument()
-    expect(
-      screen.getByText('no operator cap · slots sized from CPU and memory')
-    ).toBeInTheDocument()
+    expect(screen.getByText('registered by the sensor, current since 1h ago')).toBeInTheDocument()
+    expect(screen.getByText(/^4 CPU cores, .+ memory$/)).toBeInTheDocument()
+    expect(screen.getByText('no operator cap, slots sized from CPU and memory')).toBeInTheDocument()
     const tools = screen.getByRole('list', { name: 'Manifest tools' })
     expect(within(tools).getByLabelText('nuclei capabilities')).toHaveTextContent(
       'dastvalidate:nuclei'
@@ -109,7 +107,7 @@ describe('SensorManifestTab', () => {
     render(<SensorManifestTab sensor={sensor} now={Date.now()} />)
 
     const block = screen.getByLabelText('nuclei tool contract')
-    expect(block).toHaveTextContent('target-scan · T1 · network: targets')
+    expect(block).toHaveTextContent('target-scan, T1, network: targets')
     expect(block).toHaveTextContent('v1.0.0')
     expect(block).toHaveTextContent('Consumesdomainhttp_service')
     expect(block).toHaveTextContent('Producesasset:http_serviceasset:certificate')

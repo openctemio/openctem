@@ -18,7 +18,7 @@ import (
 // @Description  optionally until testing_until (at most 90 days), after which it is blocked again. Only a path
 // @Description  exclusion has a testing mode. Needs attack_surface:scope:exclusions:approve and a recent sign-in
 // @Description  (step-up); audited, and the administrators are notified. It never widens scope: a target must still
-// @Description  be the organization's in-scope asset, and tier ceilings, guardrails and the deny list still apply (RFC-056).
+// @Description  be the organization's in-scope asset, and tier ceilings, guardrails and the deny list still apply.
 // @Tags         Scope
 // @Accept       json
 // @Produce      json

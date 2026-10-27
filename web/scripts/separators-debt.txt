@@ -1,0 +1,4 @@
+src/app/(dashboard)/findings/page.tsx
+src/features/findings/components/detail/finding-properties.tsx
+src/features/findings/lib/finding-detail.ts
+src/features/remediation-hub/components/tasks-view.tsx

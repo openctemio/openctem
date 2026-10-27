@@ -138,6 +138,7 @@ const (
 	RevokedCodeReuse      = "code_reuse"
 	RevokedMembershipGone = "membership"
 	RevokedByPolicy       = "policy"
+	RevokedCredentials    = "credentials"
 )
 
 // Errors of the repository and the service.
@@ -185,6 +186,12 @@ type Repository interface {
 	RotateRefresh(ctx context.Context, tenantID shared.ID, oldHash string, scopes []Scope, now time.Time, tokens ...Token) error
 	// RevokeGrant revokes the grant and deletes its tokens.
 	RevokeGrant(ctx context.Context, tenantID, grantID shared.ID, reason string, now time.Time) error
+	// RevokeGrantsByUser revokes every live grant of the user in EVERY
+	// organization, deletes their tokens and cancels the user's pending or
+	// approved authorization requests (an approved code must not be
+	// redeemed after a credential change). It touches only that user. It
+	// returns the number of grants revoked.
+	RevokeGrantsByUser(ctx context.Context, userID shared.ID, reason string, now time.Time) (int, error)
 	// TouchGrant records the last use of a grant.
 	TouchGrant(ctx context.Context, tenantID, grantID shared.ID, ip string, now time.Time) error
 }

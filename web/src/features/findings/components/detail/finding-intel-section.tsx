@@ -77,14 +77,11 @@ export function FindingIntelSection({ finding }: { finding: FindingDetail }) {
                     {typeof r.value === 'number' ? r.value.toFixed(1) : '—'}
                   </span>
                   {r.version && (
-                    <span className="text-muted-foreground">
-                      {' '}
-                      · v{r.version.replace(/^v/i, '')}
-                    </span>
+                    <span className="text-muted-foreground">, v{r.version.replace(/^v/i, '')}</span>
                   )}
                   {r.sources.length > 0 && (
                     <span className="text-muted-foreground">
-                      {' · '}
+                      {', '}
                       {t('findings.intel.bySource', 'by {sources}', {
                         sources: r.sources.join(', '),
                       })}
@@ -135,7 +132,7 @@ export function FindingIntelSection({ finding }: { finding: FindingDetail }) {
                       : null,
                   ]
                     .filter(Boolean)
-                    .join(' · ')}
+                    .join(', ')}
                 </span>
               </span>
             ) : (
@@ -161,7 +158,7 @@ export function FindingIntelSection({ finding }: { finding: FindingDetail }) {
                     : null,
                 ]
                   .filter(Boolean)
-                  .join(' · ')}
+                  .join(', ')}
               </span>
             </span>
           </DetailField>
@@ -175,7 +172,7 @@ export function FindingIntelSection({ finding }: { finding: FindingDetail }) {
                 : null,
             ]
               .filter(Boolean)
-              .join(' · ')}
+              .join(', ')}
           </DetailField>
         )}
         {v.aliases.length > 0 && (

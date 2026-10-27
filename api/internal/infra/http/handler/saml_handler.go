@@ -315,7 +315,7 @@ func toSAMLConfigView(p *samldom.SAMLProvider) samlConfigView {
 
 // GetConfig handles GET /api/v1/settings/saml (JWT admin).
 // @Summary Get an organization's SAML config
-// @Description Platform admin console (RFC-022): runs against the organization in the path.
+// @Description Platform admin console: runs against the organization in the path.
 // @Tags Admin Organization SSO
 // @Produce json
 // @Param tenantId path string true "Organization ID"
@@ -342,7 +342,7 @@ func (h *SAMLHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 
 // SetConfig handles PUT /api/v1/settings/saml (JWT admin).
 // @Summary Set an organization's SAML config
-// @Description Platform admin console (RFC-022): runs against the organization in the path. When the organization has an owner, the change is stored as pending (202, SSOChangeResponse) and takes effect only after an owner approves it; an organization without an owner yet gets it applied directly (200).
+// @Description Platform admin console: runs against the organization in the path. When the organization has an owner, the change is stored as pending (202, SSOChangeResponse) and takes effect only after an owner approves it; an organization without an owner yet gets it applied directly (200).
 // @Tags Admin Organization SSO
 // @Produce json
 // @Param tenantId path string true "Organization ID"
@@ -421,7 +421,7 @@ func (h *SAMLHandler) writeSetError(w http.ResponseWriter, err error) {
 
 // DeleteConfig handles DELETE /api/v1/settings/saml (JWT admin).
 // @Summary Delete an organization's SAML config
-// @Description Platform admin console (RFC-022): runs against the organization in the path.
+// @Description Platform admin console: runs against the organization in the path.
 // @Tags Admin Organization SSO
 // @Produce json
 // @Param tenantId path string true "Organization ID"
