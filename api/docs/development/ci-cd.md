@@ -412,7 +412,7 @@ tags and scheduled runs are never cancelled.
    aggregators run with `if: always()` and pass when their jobs were skipped;
    Secret Scanning and Workflow Lint are unconditional jobs. Nothing stays Pending.
 5. When all of them pass, the queue fast-forwards the base branch to the commit it
-   tested, and the `push` run (path-scoped, plus CodeQL on both languages)
+   tested, and the `push` run (path-scoped, plus CodeQL)
    refreshes the branch's baseline. On `develop`, API CI, Web CI, All-in-one CI
    and Web E2E first ask `.github/scripts/queue-verified.sh` whether the merge queue
    already passed this workflow on this exact commit (a `merge_group` run, same
