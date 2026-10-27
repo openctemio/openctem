@@ -224,19 +224,7 @@ func TestSharedClaim_PollFillsLaterRoundsFromDeepQueues(t *testing.T) {
 	// The deep organization's offered jobs are its oldest ones: rounds take
 	// each organization's jobs in class and age order, so 19 offered jobs are
 	// its first three rounds (15 oldest) and four of its fourth round.
-	var oldest []string
-	rows, err := db.QueryContext(ctx, `SELECT id::text FROM commands WHERE tenant_id = $1 ORDER BY created_at, id LIMIT 20`, orgs[0].String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			t.Fatal(err)
-		}
-		oldest = append(oldest, id)
-	}
-	_ = rows.Close()
+	oldest := oldestJobIDs(ctx, t, db, orgs[0], 20)
 	want := map[string]bool{}
 	for _, id := range oldest {
 		want[id] = true
@@ -266,6 +254,29 @@ func TestSharedClaim_PollFillsLaterRoundsFromDeepQueues(t *testing.T) {
 	if !sawSmall {
 		t.Fatal("the small organization's job was not offered")
 	}
+}
+
+// oldestJobIDs is the ids of the organization's n oldest commands.
+func oldestJobIDs(ctx context.Context, t *testing.T, db *sql.DB, tenant shared.ID, n int) []string {
+	t.Helper()
+	rows, err := db.QueryContext(ctx, `SELECT id::text FROM commands WHERE tenant_id = $1 ORDER BY created_at, id LIMIT $2`,
+		tenant.String(), n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, id)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return out
 }
 
 // Organizations whose pending shared work this sensor cannot run (another
