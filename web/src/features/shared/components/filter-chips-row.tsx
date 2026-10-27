@@ -8,6 +8,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
 import { foldToFit } from '@/lib/fit-row'
+import { safeInternalHref } from '@/lib/safe-href'
 
 /**
  * The active-filter row under a list toolbar (research/267, research/266 §5),
@@ -323,9 +324,10 @@ export function LockedChipAction({
 }) {
   const className =
     'inline-flex h-5 shrink-0 items-center rounded-full px-2 font-medium whitespace-nowrap text-foreground hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-50'
-  if (href) {
+  const safe = safeInternalHref(href)
+  if (safe) {
     return (
-      <Link href={href} className={className}>
+      <Link href={safe} className={className}>
         {children}
       </Link>
     )
