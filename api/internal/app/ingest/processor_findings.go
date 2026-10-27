@@ -2650,7 +2650,7 @@ func (p *FindingProcessor) afterCreate(
 	// created findings. A branch-only finding is not exposure yet: its
 	// workflows run when a counting branch sees it (promoteBranchOnly).
 	if p.findingCreatedCallback != nil || p.sideEffects != nil {
-		if counting := p.withoutBranchOnly(ctx, tenantID, withoutDecided(created)); len(counting) > 0 {
+		if counting := p.withoutReported(ctx, tenantID, p.withoutBranchOnly(ctx, tenantID, withoutDecided(created))); len(counting) > 0 {
 			switch {
 			case p.sideEffects != nil:
 				p.enqueueCreated(ctx, tenantID, counting)

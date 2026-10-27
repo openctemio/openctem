@@ -3271,7 +3271,8 @@ func (r *FindingRepository) KEVCriticalCountsByAsset(ctx context.Context, tenant
 			-- A version-based match below the likely threshold is a
 			-- potential vulnerability, not an attack-path hop.
 			AND NOT (tool_name = 'version-match' AND COALESCE(last_seen_tool, tool_name) = 'version-match'
-				AND COALESCE(confidence, 0) < 80)
+				AND COALESCE(confidence, 0) < 80
+				AND metadata->'version_match'->'confirmed_by' IS NULL)
 		GROUP BY asset_id
 		HAVING COUNT(*) FILTER (WHERE is_in_kev) > 0
 			OR COUNT(*) FILTER (WHERE severity = 'critical') > 0`

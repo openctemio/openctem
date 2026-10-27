@@ -146,6 +146,22 @@ func TestIssueLinks_GroupIsScopedAndUnlinkIsAudited(t *testing.T) {
 	}
 }
 
+// A technique link (the same CVE on one asset) follows the asset's data
+// scope like every other group: a caller with no scope on the asset gets 404,
+// a scoped member sees both findings.
+func TestIssueLinks_VulnAssetGroupFollowsTheAssetScope(t *testing.T) {
+	h := newDSHarness(t)
+	a2 := h.dupFinding(h.assetA, "secret", "new")
+	h.issueLink(h.findingA, a2, "vuln_asset")
+	path := "/api/v1/findings/" + h.findingA.String() + "/issue-links"
+	if status, body := h.issueCall(http.MethodGet, h.memberA, false, nil, path); status != http.StatusOK || len(groupIDs(t, body)) != 2 {
+		t.Fatalf("memberA sees %d %s, want both findings", status, body)
+	}
+	if status, _ := h.issueCall(http.MethodGet, h.memberFree, false, nil, path); status != http.StatusNotFound {
+		t.Fatalf("a caller with no scope on the asset got %d, want 404", status)
+	}
+}
+
 // A caller of tenant A who names real findings of tenant B (a linked pair)
 // gets 404 on both routes, and tenant B's links, findings, timelines and
 // audit log are untouched.

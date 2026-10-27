@@ -39,7 +39,7 @@ func (r *FindingRepository) AttackPathFindings(ctx context.Context, tenantID sha
 	query := `
 		WITH open_f AS (
 			SELECT id, asset_id, title, cve_id, severity, epss_score,
-				COALESCE(is_in_kev, false) AS is_in_kev, tool_name, last_seen_tool, confidence
+				COALESCE(is_in_kev, false) AS is_in_kev, tool_name, last_seen_tool, confidence, metadata
 			FROM findings
 			WHERE tenant_id = $1
 				AND asset_id = ANY($2::uuid[])
@@ -53,7 +53,8 @@ func (r *FindingRepository) AttackPathFindings(ctx context.Context, tenantID sha
 			FROM open_f
 			WHERE severity NOT IN ('info', 'none')
 				AND NOT (tool_name = 'version-match' AND COALESCE(last_seen_tool, tool_name) = 'version-match'
-					AND COALESCE(confidence, 0) < 80)
+					AND COALESCE(confidence, 0) < 80
+				AND metadata->'version_match'->'confirmed_by' IS NULL)
 			ORDER BY asset_id, ` + pathLeadWeightSQL + ` DESC, is_in_kev DESC, id
 		)
 		SELECT c.asset_id, c.open_count, c.kev_count,

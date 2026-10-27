@@ -610,6 +610,7 @@ weakening identity.
 | `sast_overlap` | same asset and repository path, different rule ids, overlapping line ranges, at least one shared normalised CWE | across assets; the same rule (those are occurrences); a different CWE on the same line; disjoint lines |
 | `secret_value` | the same per-tenant keyed hash of the raw secret, in another file or repository of the tenant | a secret known only by its mask (masks are shared by unrelated secrets); across tenants (the key is per tenant). A CI job's producer key is per repository, so secrets a CI job hashed link within one repository only |
 | `vuln_alias` | a re-key collision after an alias change (§17.2) | — |
+| `vuln_asset` | the same canonical CVE on the same asset through different techniques (§18) | across assets; a different port; two findings of one technique at one place |
 
 Candidates come only from server-computed keys stored in `finding_link_keys`
 (one indexed lookup per ingest batch, no scan of a tenant's findings). A key
@@ -662,4 +663,89 @@ a pair whose signal no longer holds (the code moved) is released.
 | Same-issue links (`sast_overlap`, `secret_value`), API, dashboard facts, finding page, `refingerprint -links` | implemented |
 | Identity explanation (recipe and field names, reporting tools, merged duplicates) | in progress (P0) |
 | Alias canonicalisation, multi-CVE SCA split, `vuln_alias` links, `refingerprint -vuln-aliases` | implemented on the platform; the alias map fills once the feed publishes it (collector change in the feed repository) |
-| CWE parent/child, SAST source-to-sink via data flow, code-to-image, host vs port, IaC policy equivalence, group severity/SLA/ticket offers, technique groups (§7.1) | planned |
+| Technique links `vuln_asset` on one asset (§18): link, confirmation, notification rule, `refingerprint -links` | implemented |
+| Manual link and unlink-by-reason, one finding-page panel for merged, linked and possible duplicates, group follows its primary into a remediation task, related-asset suggestions (§18.6) | planned |
+| CWE parent/child, SAST source-to-sink via data flow, code-to-image, IaC policy equivalence, group severity/SLA/ticket offers | planned |
+
+## 18. Technique links on one asset (amendment 2026-10-27)
+
+Two techniques that report one CVE on one asset do not share an identity key:
+a version match keys on the network recipe (asset, CVE, port or host), a
+template check on the DAST recipe (asset, rule, method, URL template), a
+package inventory on the SCA recipe. They stay two findings, each with the
+evidence and the fix of its own technique. They are one issue, so this
+amendment links them with the §17 model; it adds no table and no merge.
+
+### 18.1 Rule
+
+`vuln_asset`: the same tenant, the same asset and the same canonical CVE (§17.2:
+aliases only from the signed feed), from findings whose identity kinds differ
+(network, DAST, SCA), or from one kind at a host-level and a port-level place,
+and whose locators agree.
+
+- The locator is the network port (`443/tcp`), the effective port of the DAST
+  URL (the scheme's default when it has none), or `host` (an SCA finding, or a
+  network finding with no port). Two locators agree when they are equal or one
+  is `host`.
+- Never: a different port, a different CVE, another asset (the key includes the
+  asset), a pentest finding, a tombstone, two findings of one kind at one place
+  (two packages of one host that share a CVE), a title or CWE match.
+- The planner is the §17 planner: the earliest-created finding is the original
+  and is never demoted by a later or an older finding, a group is a star, caps
+  of 200 holders per key and 50 members per group, a pair a person unlinked is
+  never linked again, a link whose ports no longer agree is released.
+- Keys: `finding_link_keys` gains the kind `vuln_asset` (a hash of asset and
+  CVE) and a `locator` column; the key carries no CVE or asset in clear.
+  `finding_issue_links.rule` allows `vuln_asset`. A link writes
+  `detected_by_another_source` on the original's timeline (both findings are on
+  one asset), and `issue_linked` on the member.
+
+### 18.2 A link changes no status
+
+Linking changes no status, severity, SLA, ticket, task or approval, and the
+dashboard counts the group once per asset and state, as in §17.4.
+
+### 18.3 Confirmation
+
+An open active check in a group confirms an open version-match member of it:
+a template check or a network scanner report, never a package inventory and
+never a pentest finding. The version-match finding records
+`metadata.version_match.confirmed_by = {finding_id, tool, at}`. Confirmation
+is evidence about that finding, not a status change:
+
+- the P2 "potential" cap no longer applies to it: the priority is scored again
+  without the cap (the asset is queued for a priority pass) and the cap is
+  not applied when the matcher scores it;
+- the attack-path lead and counts treat it as a confirmed finding instead of a
+  potential one.
+
+### 18.4 Notifications
+
+A finding a batch inserts that ends up a member of a `vuln_asset` group whose
+original is open raises no "new finding" notification: the issue is already
+open and reported. A member more severe than every other finding of the group
+still notifies. The links of the created CVE findings are derived before the
+notification step; when links cannot be read, the notification is sent. The
+emerging-threat alert is per tenant and vulnerability and is unchanged.
+
+### 18.5 Threat model
+
+| Threat | Mitigation |
+|---|---|
+| A sensor forges a CVE or URL to pull a finding into a group or silence an alert | the key comes from the server-computed identity key; aliases only from the signed feed; the version-match tool name is reserved; only the member's own notification is suppressed, never the original's; a higher severity still notifies; caps per key and per group |
+| Confirmation forgery (a report raises a version match's priority) | only an open DAST or network finding of the same tenant, on the same asset and the same CVE, from a report that passed the ingest binding, confirms; an SCA finding never does; the confirming tool and finding are recorded; confirmation only lifts the cap to the CVE's own scored priority |
+| Cross-tenant link or confirmation | keys, holders, links and the confirmation query filter on the tenant; composite foreign keys to `findings (id, tenant_id)` |
+| Out-of-scope oracle | a link is always between two findings of one asset, so both are inside or both outside a caller's data scope; the existing read filter applies; the timeline names the other finding only on one asset |
+| Hiding a real issue behind a closed original | a link changes no status; an open member of a closed original still counts open; its notification is sent when the original is not open |
+
+### 18.6 Later phases
+
+Manual link with a required reason, make-primary, one "Duplicates" panel for
+merged, linked and possible duplicates, the group following its primary into a
+remediation task, related-asset suggestions and folding the DAST correlation
+into links are separate changes.
+
+### 18.7 Backfill
+
+`refingerprint -links [-tenant <id>] [-apply]` also derives `vuln_asset` keys
+and links, and records confirmations when applied; dry run by default.
