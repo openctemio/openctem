@@ -213,7 +213,7 @@ func (h *MCPConnectionsHandler) AdminListClients(w http.ResponseWriter, r *http.
 	case "true":
 		t := true
 		f.Blocked = &t
-	case "false":
+	case queryParamFalse:
 		t := false
 		f.Blocked = &t
 	default:
