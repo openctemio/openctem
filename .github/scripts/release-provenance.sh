@@ -16,8 +16,8 @@
 #     the push/merge-queue runs); hotfix: the base is the newest release tag, its
 #     tree is main's, and every pick has the same patch-id as a develop commit
 #     that is on develop and whose containing develop commit passed its checks;
-#   - V changes only the files the release train writes (versions.yaml and the
-#     defaults synced from it, the changelog), and sets platform.release to X.Y.Z.
+#   - V changes only the one file the release train writes (api/deploy/VERSION,
+#     see release/cut-release.sh) and sets it to X.Y.Z.
 # Anything else (an extra commit, a file outside the list, a red or unknown
 # commit, an API error) is "not verified" and the PR runs the full tier.
 #
@@ -31,13 +31,9 @@ source "$HERE/release/lib.sh"
 
 no() { echo "release-provenance: not verified: $*" >&2; exit 1; }
 
-# Version-train files: the version commit may touch these and nothing else.
+# Version-train file: the version commit may touch this and nothing else.
 allowed() {
-  case "$1" in
-    versions.yaml | api/internal/versions/versions.yaml | api/deploy/.env.example | api/CHANGELOG.md) return 0 ;;
-    api/deploy/docker-compose*.yml) return 0 ;;
-  esac
-  return 1
+  [[ "$1" == "$VERSION_FILE" ]]
 }
 
 [[ "${GITHUB_EVENT_NAME:-}" == pull_request ]] || exit 1
@@ -63,18 +59,15 @@ develop_green() {
   bash "$HERE/release/check-ci.sh" "$1" >/dev/null 2>&1 || { echo "$1 is not green" >&2; return 1; }
 }
 
-# version_commit_ok V PARENT: V sets platform.release, touching only train files.
+# version_commit_ok V PARENT: V sets api/deploy/VERSION, touching nothing else.
 version_commit_ok() {
-  local v="$1" parent="$2" f got tmp
+  local v="$1" parent="$2" f got
   while IFS= read -r f; do
     [[ -n "$f" ]] || continue
     allowed "$f" || no "the version commit changes $f"
   done < <(git diff --name-only --no-renames "$parent" "$v")
-  tmp="$(mktemp)"
-  git show "$v:versions.yaml" >"$tmp" 2>/dev/null || { rm -f "$tmp"; no "no versions.yaml in ${v:0:12}"; }
-  got="$(rel_yaml_get "$tmp" platform.release 2>/dev/null || true)"
-  rm -f "$tmp"
-  [[ "$got" == "$version" ]] || no "versions.yaml platform.release is '$got', not $version"
+  got="$(git show "$v:$VERSION_FILE" 2>/dev/null | tr -d '[:space:]')" || got=""
+  [[ "$got" == "$version" ]] || no "$VERSION_FILE is '$got', not $version"
 }
 
 read -r -a parents <<<"$(git rev-list --parents -n 1 "$head" | cut -d' ' -f2-)"

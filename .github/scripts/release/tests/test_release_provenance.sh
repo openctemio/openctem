@@ -94,8 +94,8 @@ echo "different" >"$w/forged.txt"; git -C "$w" add forged.txt
 git -C "$w" commit -q -m "fix: forged
 
 (cherry picked from commit $fix)"
-git -C "$w" checkout -q "$hf" -- versions.yaml api
-git -C "$w" commit -q -m "chore(release): versions.yaml platform.release = v0.2.1"
+git -C "$w" checkout -q "$hf" -- api/deploy/VERSION
+git -C "$w" commit -q -m "chore(release): api/deploy/VERSION = v0.2.1"
 forged="$(git -C "$w" rev-parse HEAD)"
 out="$(prov release/v0.2.1 "$forged")"; rc=$?
 assert_eq "hotfix: a pick that differs from its develop commit is not verified" 1 "$rc"
