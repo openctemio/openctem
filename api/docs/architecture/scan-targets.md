@@ -26,7 +26,7 @@ targets (the assets are named for the editor, as on create);
 `asset_group_ids` replaces the groups (`[]` = none). The new targets pass the
 checks a new scan's pass, as the editor: target validation (no internal or
 loopback address outside a scan zone), the editor's act scope, ownership for
-active scanning, intrusive proof and the scope tier ceiling; a group must be
+active scanning and the scope tier ceiling; a group must be
 the organization's (another organization's group is not found). A scan must
 keep a target or a group. Editing also needs the editor's act scope to cover
 the scan's current targets. The CIDR mode is kept (an edit never switches a
