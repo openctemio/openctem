@@ -228,16 +228,20 @@ type platformEmailRelay struct {
 	Host     string `json:"host"`
 	Port     int    `json:"port"`
 	Security string `json:"security"`
+	Username string `json:"username,omitempty"`
 }
 
 // PlatformEmailRelayTarget is the approval target of a platform e-mail relay:
-// the host (lower case), port and connection security.
-func PlatformEmailRelayTarget(host string, port int, startTLS bool) string {
+// the host (lower case), port, connection security and the SMTP login. The
+// login is part of it because an account on the relay is another mailbox
+// owner: signing in as a different one sends every set-password and reset link
+// through that account. The password is never part of it.
+func PlatformEmailRelayTarget(host string, port int, startTLS bool, username string) string {
 	sec := relaySecurityNone
 	if startTLS {
 		sec = relaySecurityStartTLS
 	}
-	return canonicalTarget(platformEmailRelay{Host: strings.ToLower(host), Port: port, Security: sec})
+	return canonicalTarget(platformEmailRelay{Host: strings.ToLower(host), Port: port, Security: sec, Username: strings.TrimSpace(username)})
 }
 
 // validPlatformEmailRelayTarget accepts only the exact output of
@@ -252,7 +256,7 @@ func validPlatformEmailRelayTarget(target string) bool {
 	if err := dec.Decode(&c); err != nil || c.Host == "" || c.Port < 1 || c.Port > 65535 || (c.Security != relaySecurityStartTLS && c.Security != relaySecurityNone) {
 		return false
 	}
-	return PlatformEmailRelayTarget(c.Host, c.Port, c.Security == relaySecurityStartTLS) == target
+	return PlatformEmailRelayTarget(c.Host, c.Port, c.Security == relaySecurityStartTLS, c.Username) == target
 }
 
 // PlatformEmailRelayLabel describes a relay target for the approver, e.g.
@@ -266,7 +270,22 @@ func PlatformEmailRelayLabel(target string) string {
 	if c.Security == relaySecurityStartTLS {
 		sec = "with STARTTLS"
 	}
-	return fmt.Sprintf("%s port %d %s", c.Host, c.Port, sec)
+	out := fmt.Sprintf("%s port %d %s", c.Host, c.Port, sec)
+	if c.Username != "" {
+		out += fmt.Sprintf(", signing in as %s", clipLabel(c.Username))
+	} else {
+		out += ", without a login"
+	}
+	return out
+}
+
+// clipLabel keeps a login short and on one line in an approver's label.
+func clipLabel(v string) string {
+	v = strings.NewReplacer("\r", " ", "\n", " ").Replace(v)
+	if r := []rune(v); len(r) > 64 {
+		return string(r[:64]) + "..."
+	}
+	return v
 }
 
 // PlatformAIDestinationLabel describes a platform AI destination target for

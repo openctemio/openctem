@@ -221,8 +221,8 @@ func TestSeed_OnlyWhenAbsent(t *testing.T) {
 }
 
 // The four-eyes rule: a save that is turned on and whose relay (host, port,
-// connection security) differs from the last one applied while on needs a
-// second super admin. Credentials on the same relay, the sender and turning
+// connection security, SMTP username) differs from the last one applied while on needs a
+// second super admin. A password on the same login, the sender and turning
 // e-mail off stay one-person.
 func TestApprovalNeededMatrix(t *testing.T) {
 	ctx := context.Background()
@@ -246,7 +246,8 @@ func TestApprovalNeededMatrix(t *testing.T) {
 		{"same relay, nothing else", mod(func(*Input) {}), false},
 		{"same relay in other case and with spaces", mod(func(i *Input) { i.Host = "  SMTP.Example.com " }), false},
 		{"password rotation on the same relay", validInput(strp("pw-two")), false},
-		{"username change on the same relay", mod(func(i *Input) { i.Username = "other" }), false},
+		{"username change on the same relay", mod(func(i *Input) { i.Username = "other" }), true},
+		{"username removed on the same relay", mod(func(i *Input) { i.Username = "" }), true},
 		{"sender address change", mod(func(i *Input) { i.From = "alerts@example.com" }), false},
 		{"sender name change", mod(func(i *Input) { i.FromName = "Security" }), false},
 		{"new host", mod(func(i *Input) { i.Host = "smtp.attacker.example" }), true},
