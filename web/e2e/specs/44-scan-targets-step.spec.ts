@@ -87,7 +87,8 @@ for (const width of [390, 1440]) {
 
     // The chip's remove button: a 44px tap area (32px plus the hit extension).
     const remove = field.getByRole('button', { name: /^remove /i }).first()
-    expect((await remove.boundingBox())!.height).toBeGreaterThanOrEqual(32)
+    // Polled: the dialog scales in on open, so an early box is a little under 32.
+    await expect.poll(async () => (await remove.boundingBox())!.height).toBeGreaterThanOrEqual(32)
 
     // Ranked fixes, the first primary.
     const fixes = dialog.getByTestId('refusal-remedies').getByRole('button')

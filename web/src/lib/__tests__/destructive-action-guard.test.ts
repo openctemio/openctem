@@ -91,6 +91,8 @@ const PROTECTIONS = [
  * a "Gap:" entry when its fix lands.
  */
 const REVIEWED: Record<string, string> = {
+  'src/features/scans/components/new-scan/targets-step.tsx':
+    'removeTyped drops a chip from the unsaved targets field of the new-scan form; the scan is created later.',
   'src/features/findings/components/triage/triage-mode.tsx':
     'cancelApproval runs only from Undo (u), which reverses the request the person just sent in this session; the request is cancelled, not deleted.',
   'src/app/(dashboard)/(discovery)/scans/workflows/page.tsx':
