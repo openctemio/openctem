@@ -138,3 +138,37 @@ func (s *VulnerabilityService) ListCVEExposureAssets(ctx context.Context, c Filt
 	}
 	return repo.ListCVEExposureAssets(ctx, q, search, pagination.New(page, perPage))
 }
+
+// cveListRepo is the part of the finding repository that answers the
+// vulnerabilities list. postgres.FindingRepository implements it.
+type cveListRepo interface {
+	ListCVEExposures(ctx context.Context, q vulnerability.CVEListQuery) (*vulnerability.CVEList, error)
+}
+
+// ListCVEExposures lists the vulnerabilities of the findings spec as the
+// caller: the findings list's compiled filter (tenant, data scope, member
+// visibility, branch default) grouped by CVE, then the options'
+// vulnerability-level filters, sort and page.
+func (s *VulnerabilityService) ListCVEExposures(ctx context.Context, c FilterCaller, spec *filterspec.Spec, opts vulnerability.CVEListOptions) (*vulnerability.CVEList, error) {
+	if err := opts.Validate(); err != nil {
+		return nil, err
+	}
+	repo, ok := s.findingRepo.(cveListRepo)
+	if !ok {
+		return nil, errNoCVEExposureRepo
+	}
+	actor, err := s.FilterActor(ctx, c)
+	if err != nil {
+		return nil, err
+	}
+	if spec == nil {
+		spec = &filterspec.Spec{}
+	}
+	where, err := filterspec.Compile(vulnerability.WithBranchOnlyDefault(spec), vulnerability.FindingFields, actor)
+	if err != nil {
+		return nil, err
+	}
+	return repo.ListCVEExposures(ctx, vulnerability.CVEListQuery{
+		Where: where, TenantID: actor.TenantID(), AssetScope: actor.AssetScopeSQL, Options: opts,
+	})
+}

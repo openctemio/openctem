@@ -324,6 +324,7 @@ func TestDataSurfaceLookup_LongestPrefixWins(t *testing.T) {
 		"GET /api/v1/vulnerabilities/active":                   classScoped,
 		"GET /api/v1/vulnerabilities/{id}/affected-assets":     classScoped,
 		"GET /api/v1/vulnerability-exposures/{vuln_id}/assets": classScoped,
+		"GET /api/v1/vulnerability-exposures/":                 classScoped,
 		"GET /api/v1/groups/{groupId}/assets":                  classScoped,
 		"POST /api/v1/groups/{groupId}/assets":                 classConfig,
 		"GET /api/v1/compliance/findings/{findingId}/controls": classScoped,
