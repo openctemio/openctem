@@ -49,6 +49,7 @@ jobs:
     # runner on detection; `CodeQL OK` passes with everything skipped.
     if: github.event_name != 'merge_group'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       languages: ${{ steps.lang.outputs.languages }}
     steps:
@@ -94,6 +95,7 @@ jobs:
       security-events: write
       actions: read
     runs-on: ${{ ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_CODEQL) || (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_HEAVY) || 'ubuntu-latest' }}
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
@@ -144,6 +146,7 @@ jobs:
     if: always()
     needs: [changes, analyze]
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
       security-events: read

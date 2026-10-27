@@ -67,6 +67,7 @@ jobs:
   changes:
     name: Detect web changes
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
       pull-requests: read # the `ci:full` label (changed.sh reads it live)
