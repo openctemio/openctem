@@ -773,8 +773,15 @@ function VulnerabilitiesListBody() {
               onSortingChange={onSortingChange}
               isLoading={isLoading}
               onRowClick={(r) => router.push(vulnerabilityHref(r.cve_id))}
-              initialColumnVisibility={{ findings: false, kev_due: false, first_seen: false }}
-              mobileRow={(r) => <MobileVulnRow item={r} />}
+              initialColumnVisibility={{
+                product: false,
+                findings: false,
+                kev_due: false,
+                first_seen: false,
+              }}
+              mobileRow={(r) => (
+                <MobileVulnRow item={r} onOpen={() => router.push(vulnerabilityHref(r.cve_id))} />
+              )}
               paginationNoun={t('vulnPage.list.noun', 'vulnerabilities')}
               emptyState={emptyState}
             />
@@ -796,7 +803,7 @@ function VulnCell({ item }: { item: VulnListItem }) {
   const { t } = useTranslation()
   const title = item.title && item.title !== item.cve_id ? toDisplayText(item.title, 200) : ''
   return (
-    <div className="min-w-[14rem] max-w-[24rem]">
+    <div className="min-w-[13rem] max-w-[18rem]">
       <CveLink id={item.cve_id} stopPropagation className="font-medium" />
       {title ? (
         <p className="truncate text-muted-foreground" title={title}>
@@ -829,6 +836,7 @@ function SignalsCell({ item }: { item: VulnListItem }) {
     chips.push(
       <KevBadge
         key="kev"
+        className="whitespace-nowrap"
         ransomware={item.kev_ransomware}
         pastDue={days !== undefined && days < 0}
       />
@@ -836,7 +844,7 @@ function SignalsCell({ item }: { item: VulnListItem }) {
   }
   if (item.emerging) {
     chips.push(
-      <SignalChip key="em" icon={Flame} tone="alert">
+      <SignalChip key="em" icon={Flame} tone="alert" className="whitespace-nowrap">
         <Link
           href={`/emerging-threats/${encodeURIComponent(item.emerging.id)}`}
           onClick={(e) => e.stopPropagation()}
@@ -850,7 +858,7 @@ function SignalsCell({ item }: { item: VulnListItem }) {
   if (item.exploit) {
     const maturity = item.exploit_maturity
     chips.push(
-      <SignalChip key="ex" icon={Bug}>
+      <SignalChip key="ex" icon={Bug} className="whitespace-nowrap">
         {maturity === 'weaponized'
           ? t('vulnPage.list.signal.weaponized', 'Weaponized')
           : maturity === 'functional'
@@ -863,7 +871,7 @@ function SignalsCell({ item }: { item: VulnListItem }) {
   }
   if (item.past_sla > 0) {
     chips.push(
-      <SignalChip key="sla" icon={Clock} tone="alert" alertText>
+      <SignalChip key="sla" icon={Clock} tone="alert" alertText className="whitespace-nowrap">
         {t('vulnPage.list.signal.pastSla', '{count} past SLA', { count: item.past_sla })}
       </SignalChip>
     )
@@ -995,12 +1003,19 @@ function RemediationCell({ item, params }: { item: VulnListItem; params: URLSear
 }
 
 /** The row as a card at phone width: id and priority, title, signals, reach and fix. */
-function MobileVulnRow({ item }: { item: VulnListItem }) {
+function MobileVulnRow({ item, onOpen }: { item: VulnListItem; onOpen: () => void }) {
   const { t } = useTranslation()
   const fix = headlineFixVersion(item)
   const title = item.title && item.title !== item.cve_id ? toDisplayText(item.title, 160) : ''
   return (
-    <div className="space-y-2" data-slot="vuln-card">
+    <div
+      className="cursor-pointer space-y-2 px-3 py-3 hover:bg-muted/50"
+      data-slot="vuln-card"
+      onClick={(e) => {
+        if ((e.target as HTMLElement).closest('button, a[href]')) return
+        onOpen()
+      }}
+    >
       <div className="flex items-start justify-between gap-2">
         <CveLink id={item.cve_id} stopPropagation className="font-medium" />
         <PriorityBadge priorityClass={item.worst_priority || null} />
