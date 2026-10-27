@@ -299,6 +299,9 @@ jobs:
       - name: Tool pin freshness self-test
         run: bash .github/scripts/tool-pins.test.sh
 
+      - name: Release builds use no shared cache
+        run: bash .github/scripts/check-release-no-cache.sh
+
   # New or upgraded dependencies a pull request brings in (Go modules, npm,
   # GitHub Actions) are checked against the GitHub Advisory Database. Fails on a
   # known high or critical vulnerability in what the pull request adds; existing
