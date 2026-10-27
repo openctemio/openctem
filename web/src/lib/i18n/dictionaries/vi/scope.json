@@ -152,7 +152,6 @@
   "scope.entry.permanent": "vĩnh viễn",
   "scope.entry.pickKind": "Chọn loại",
   "scope.entry.proofPlatform": "Sensor dùng chung còn cần chứng minh bạn kiểm soát {domain}; sensor của tổ chức chỉ cần mục này.",
-  "scope.entry.proofT2": "Quét xâm nhập (T2) còn cần chứng minh bạn kiểm soát {domain}.",
   "scope.entry.reason": "Lý do",
   "scope.entry.reasonOptional": "Lý do (không bắt buộc)",
   "scope.entry.reasonPlaceholder": "Vì sao được phép quét? Ví dụ: tên miền của chúng tôi, tài khoản nhà đăng ký 123; phiếu pentest OPS-12.",
