@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/url"
+	"strings"
 
 	"github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/internal/app/finding"
@@ -13,6 +15,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/filterspec"
 )
 
 // toolInputError is a tool argument-validation error whose message is safe to
@@ -152,8 +155,9 @@ func (h *MCPHandler) buildTools() []mcpTool {
 		},
 		{
 			Name: "list_active_cves",
-			Description: "List KEV/EPSS-prioritized CVEs active in this tenant. Filters: " +
-				"kev_only (CISA Known Exploited), min_epss (0..1 exploit-probability floor), severity." + mcpUntrustedHint,
+			Description: "List the CVEs of open findings you can see, one row per CVE, riskiest first " +
+				"(priority, KEV, emerging threat, EPSS, CVSS, assets). Filters: kev_only (CISA Known " +
+				"Exploited), min_epss (0..1 exploit-probability floor), severity (of the findings)." + mcpUntrustedHint,
 			InputSchema: json.RawMessage(`{"type":"object","properties":{` +
 				`"kev_only":{"type":"boolean"},` +
 				`"min_epss":{"type":"number","description":"0..1 EPSS floor"},` +
@@ -327,23 +331,42 @@ type activeCVEArgs struct {
 	Limit    int      `json:"limit"`
 }
 
+// toolListActiveCVEs is the vulnerabilities list (GET
+// /vulnerability-exposures) for the key's owner: open findings grouped by
+// CVE on the findings list's compiled filter, so the tenant, data scope and
+// member visibility apply exactly as on the page. The key never gets an
+// administrator's view.
 func (h *MCPHandler) toolListActiveCVEs(ctx context.Context, tenantID string, raw json.RawMessage) (any, error) {
 	var a activeCVEArgs
 	if err := parseToolArgs(raw, &a); err != nil {
 		return nil, err
 	}
-
-	in := finding.ListActiveCVEsInput{
-		TenantID: tenantID,
-		KEVOnly:  a.KEVOnly,
-		MinEPSS:  a.MinEPSS,
-		Page:     1,
-		PerPage:  clampLimit(a.Limit),
+	if a.MinEPSS != nil && (*a.MinEPSS < 0 || *a.MinEPSS > 1) {
+		return nil, toolInputError{"min_epss must be between 0 and 1"}
 	}
+	q := url.Values{"state": {"open"}}
 	if a.Severity != "" {
-		in.SeverityIn = []string{a.Severity}
+		q.Set("severity", strings.ToLower(strings.TrimSpace(a.Severity)))
 	}
-	res, err := h.findings.ListActiveCVEs(ctx, in)
+	spec, err := filterspec.ParseValues(q, vulnerability.FindingFields, filterspec.Options{Unknown: filterspec.UnknownStrict})
+	if err != nil {
+		return nil, toolInputError{"severity must be one of critical, high, medium, low, info, none"}
+	}
+	opts := vulnerability.CVEListOptions{EPSSGte: a.MinEPSS, Page: 1, PerPage: clampLimit(a.Limit),
+		Sort: vulnerability.CVEListSort{Key: vulnerability.CVEListSortRisk}}
+	if a.KEVOnly {
+		kev := true
+		opts.KEV = &kev
+	}
+	caller := finding.FilterCaller{
+		TenantID: tenantID,
+		UserID:   actingUser(ctx), // confine to the key owner's data scope
+		IsAdmin:  false,           // API keys never get the administrator bypass
+		// A delegated credential never inherits its holder's full-data role.
+		APIKey: middleware.IsDelegatedCredential(ctx),
+		Has:    func(p string) bool { return middleware.HasPermission(ctx, p) },
+	}
+	res, err := h.findings.ListCVEExposures(ctx, caller, spec, opts)
 	if err != nil {
 		return nil, err
 	}

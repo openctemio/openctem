@@ -247,7 +247,7 @@ func (r *FindingRepository) ListCVEExposures(ctx context.Context, q vulnerabilit
 			continue
 		}
 		it := vulnerability.CVEListItem{
-			CVEID: cve.String, InCatalog: inCatalog.Bool, Title: title.String, Aliases: []string{},
+			CVEID: cve.String, InCatalog: inCatalog.Bool, Title: title.String, Aliases: []string{}, EPSSTrend: []vulnerability.EPSSPoint{},
 			Severity: severity.String, CVSSVersion: cvssVersion.String,
 			KEV: kev.Bool, KEVDueDate: coverageTime(kevDue), KEVRansomware: ransomware.Bool,
 			Exploit: exploit.Bool, ExploitMaturity: maturity.String,
@@ -288,8 +288,8 @@ func cveListFloat(v sql.NullFloat64) *float64 {
 	return &f
 }
 
-// cveListDetails fills the aliases, affected products and fixed versions of
-// a page's rows: three statements whatever the page size. Products and
+// cveListDetails fills the aliases, EPSS trend, affected products and fixed
+// versions of a page's rows: four statements whatever the page size. Products and
 // fixes come from the same scoped findings as the counts.
 func (r *FindingRepository) cveListDetails(ctx context.Context, tx *sql.Tx, w *filterspec.Where, items []vulnerability.CVEListItem) error {
 	if len(items) == 0 {
@@ -322,6 +322,16 @@ func (r *FindingRepository) cveListDetails(ctx context.Context, tx *sql.Tx, w *f
 		return err
 	}
 	arows.Close()
+
+	// The page's rows are CVEs the caller has a finding of in scope, so
+	// their EPSS history may be shown.
+	trends, err := epssTrends(ctx, tx, cves)
+	if err != nil {
+		return err
+	}
+	for cve, pts := range trends {
+		items[idx[cve]].EPSSTrend = pts
+	}
 
 	cveArg := "$" + strconv.Itoa(w.NextArg)
 	args := append(append([]any{}, w.Args...), pq.Array(cves))
