@@ -353,6 +353,40 @@ How each workflow uses the outputs:
 | API Security | `on.paths`: `api/**` + shared files, minus `**/*.md` and `api/docs/**`. Does not start at all for a web-only or docs-only change |
 | Web Security | `on.paths`: `web/**` + shared files, minus `**/*.md`. Does not start at all for an API-only or docs-only change |
 
+#### Change scope (finer than api/web)
+
+[`.github/scripts/scope.sh`](../../../.github/scripts/scope.sh) runs next to
+`changed.sh` in the `changes` job of API CI, Web CI, Web E2E, All-in-one CI and
+CodeQL, over the same range (pull request **and** merge queue). It only narrows:
+a job runs when `changed.sh` selected its side **and** the part of that side it
+needs changed. When in doubt (schedule, dispatch, missing SHAs) every output is
+true.
+
+| Output | Part | Who needs it |
+|--------|------|--------------|
+| `api_code` | `api/**` except docs, plus the shared build files (`Makefile`, `go.work*`, `deploy/**`) | API CI, All-in-one image, CodeQL Go, Web E2E |
+| `web_app` | `web/**` except `web/e2e/**` and the catalogs; unit tests, config and the lockfile count | Web tests, Next build, All-in-one image, CodeQL JS/TS, Web E2E |
+| `web_e2e` | `web/e2e/**` (specs, fixtures, helpers) | Web checks (tsc and ESLint cover it), Web E2E |
+| `web_i18n` / `i18n_en` | `web/src/lib/i18n/dictionaries/<lang>/*.json` / an English one | Web checks; non-English only: `Web i18n tests` (the catalog tests in `src/lib/i18n` plus every test that reads a catalog by path, about 50 files, about a minute); English: the whole Web tests suite and Web E2E (unit tests and specs find elements by English text) |
+| `ci_self` | a file under `.github/` the calling workflow reaches: its own file, scripts, composite actions (`.github/actions/<name>`), called workflows (`./.github/workflows/<file>`) and data files (`quarantine.yml`), followed transitively by name | that workflow, in full |
+
+What a single-kind change runs (pull request and merge queue):
+
+| Change | Runs | Skips (aggregators pass) |
+|--------|------|--------------------------|
+| `web/e2e/**` only | Web checks, Web E2E | Web tests, Next build, All-in-one image, CodeQL, API CI |
+| non-English catalogs only | Web checks, Web i18n tests | Web tests (3 shards), Web E2E, All-in-one image, CodeQL |
+| English catalogs only | Web checks, Web tests, Web E2E | All-in-one image, CodeQL |
+| one workflow or script | the workflows that reach it, Workflow Lint and the script self-tests | every other workflow's jobs |
+| docs, changelog fragments | Docs check, changelog check, secret scan | everything else (unchanged) |
+
+Web E2E still builds its images for an e2e-only change until the images are
+shared by content key (then the develop-built images are reused).
+`vitest related` is not used for catalogs: `dictionaries/index.ts` imports
+every catalog, so the module graph relates nearly every UI test to any one
+catalog (measured: one `vi` catalog pulled in the bulk of the suite). Tests:
+`.github/scripts/scope.test.sh` (run by Workflow Lint).
+
 Workflows that carry a required check never use `on.<event>.paths`: a workflow
 skipped that way leaves its required checks *Pending* forever. They always start,
 and a job skipped by `if:` reports success to its aggregator. API Security and
@@ -391,6 +425,48 @@ tags and scheduled runs are never cancelled.
    the security scans always run on push, unless the tree was verified (see
    [Reusing a verified tree](#reusing-a-verified-tree)).
 6. A failure removes the PR from the queue; the groups behind it are rebuilt.
+   The failed job first cancels the group's other runs (see
+   [Fail fast](#fail-fast)).
+
+### Fail fast
+
+A failed job stops the work that can no longer change the outcome, so a doomed
+change does not hold runners from the shared pool.
+
+- Every job behind `API CI OK`, `Web CI OK`, `E2E OK` and `All-in-one OK` ends
+  with `.github/actions/fail-fast` under `if: failure()`. It runs
+  `.github/scripts/fail-fast.sh` after the job's own clean-up and report steps.
+- **Merge queue** (`merge_group`): one failed required job means the group will
+  be ejected, so the step cancels every unfinished `merge_group` run of the same
+  merge-group head commit (API CI, Web CI, Web E2E, All-in-one CI, CodeQL,
+  Repository Security, ...) and then its own run. Runs of any other commit or
+  event are never touched (the list is filtered by `head_sha` and `event`).
+- **Pull request**: only the rest of the same workflow run is cancelled. Other
+  workflows keep running, so a lint failure and a test failure still show
+  separately. A fork PR's token is read-only: the step prints a note and does
+  nothing.
+- **Push and schedule**: nothing is cancelled (a push is the branch's baseline).
+- The test matrices (`Tests (Postgres + Redis)`, `Tests (least-privilege DB
+  role)`, `Web tests`, the Playwright shards) use `strategy.fail-fast: true`:
+  the first failing shard cancels its siblings on every event. A cancelled
+  Playwright shard still uploads its blob report (`if: always()`).
+- `Build e2e images` failing skips the Playwright shards (they need it).
+- The `… OK` gates run with `if: always()`, so they still run after a cancel
+  and fail on any `failure` or `cancelled` result: the queue sees the failure
+  within a minute or two of the first failed job instead of after the slowest
+  shard.
+- The step never makes a job fail further: an API error (409 already cancelled,
+  403 read-only token) is a warning. The jobs that carry it hold
+  `actions: write` (cancel a run) next to their read permissions; every
+  checkout keeps `persist-credentials: false`, so the token is not written to
+  disk for the code under test.
+
+Saving: a failed queue group of an `api/` + `web/` change starts about 50 jobs
+(see [Tiers](#tiers)). Before, every one of them ran to its end (race shards
+10-15 minutes, Playwright 6-8 minutes after a 3-11 minute image build, the
+image smoke test). Now the rest stop about a minute after the first failure;
+a failure in static checks or an early shard frees most of those runner
+minutes, typically more than half of the group's total.
 
 ### Reusing a verified tree
 

@@ -29,8 +29,11 @@ name: Web E2E
 #   shards   Playwright runs as a matrix of 4 (`--shard i/4`) plus one job for
 #            the every-page request budget check (`request budget (part`, about
 #            5 minutes on its own, which the position-based sharding used to
-#            pile onto shard 1), each against its own stack, fail-fast off so
-#            every job reports; 25 minute cap each.
+#            pile onto shard 1), each against its own stack; 25 minute cap
+#            each. The first failing shard cancels the others (matrix
+#            fail-fast, plus .github/actions/fail-fast: the rest of this run
+#            on a PR, every run of the group in the merge queue); a cancelled
+#            shard still uploads its blob report.
 #   caches   npm (setup-node) and the Chromium download (keyed by the Playwright
 #            version).
 #   retries  1, in CI only (web/playwright.config.ts). A test that fails then
@@ -95,6 +98,15 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: bash .github/scripts/changed.sh
+      # Which part of the side changed (.github/scripts/scope.sh): only narrows
+      # what changed.sh selected, e.g. a change to web/e2e/ alone runs no web
+      # unit tests and builds no image, a CI file only the workflows that use it.
+      - id: scope
+        env:
+          EVENT_BEFORE: ${{ github.event.before }}
+          MG_BASE: ${{ github.event.merge_group.base_sha }}
+          MG_HEAD: ${{ github.event.merge_group.head_sha }}
+        run: bash .github/scripts/scope.sh
       # The API's HTTP layer (handlers, routes, middleware) is where the contract
       # the web compiles against comes from. Its generated files are not
       # committed, so a change there no longer shows up as a web change; count
@@ -135,8 +147,10 @@ jobs:
       - id: decide
         env:
           EVENT: ${{ github.event_name }}
-          WEB: ${{ steps.f.outputs.web }}
-          API: ${{ steps.f.outputs.api }}
+          # The suite needs app code, its own specs, English text (specs find
+          # elements by it) or this workflow's CI files; not a vi catalog.
+          WEB: ${{ steps.f.outputs.web == 'true' && (steps.scope.outputs.web_app == 'true' || steps.scope.outputs.ci_self == 'true' || steps.scope.outputs.web_e2e == 'true' || steps.scope.outputs.i18n_en == 'true') }}
+          API: ${{ steps.f.outputs.api == 'true' && (steps.scope.outputs.api_code == 'true' || steps.scope.outputs.ci_self == 'true') }}
           HTTP: ${{ steps.http.outputs.changed }}
           SUITE: ${{ steps.suite.outputs.changed }}
           FULL: ${{ steps.f.outputs.full }}
@@ -180,6 +194,11 @@ jobs:
 
   build:
     name: Build e2e images
+    # actions: write lets the fail-fast step cancel doomed runs (.github/actions/fail-fast).
+    permissions:
+      contents: read
+      packages: read
+      actions: write
     needs: changes
     if: needs.changes.outputs.run == 'true'
     runs-on: ${{ ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_E2E_BUILD) || (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_HEAVY) || 'ubuntu-latest' }}
@@ -231,9 +250,17 @@ jobs:
           path: e2e-images.tar.gz
           compression-level: 0
           retention-days: 1
+      - name: Fail fast
+        if: failure()
+        uses: ./.github/actions/fail-fast
 
   e2e:
     name: Playwright e2e (${{ matrix.shard == 0 && 'request budget' || format('shard {0}/4', matrix.shard) }})
+    # actions: write lets the fail-fast step cancel doomed runs (.github/actions/fail-fast).
+    permissions:
+      contents: read
+      packages: read
+      actions: write
     needs: [changes, build]
     if: needs.changes.outputs.shards == 'true'
     # Always GitHub-hosted: the stack publishes on 127.0.0.1 of the Docker host and
@@ -244,7 +271,7 @@ jobs:
     timeout-minutes: 25
     strategy:
       # Every shard reports, so one red shard does not hide another.
-      fail-fast: false
+      fail-fast: true
       matrix:
         # 0 = the request budget check alone; 1-4 = the rest of the suite.
         shard: [1, 2, 3, 4, 0]
@@ -354,6 +381,9 @@ jobs:
           include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
+      - name: Fail fast
+        if: failure()
+        uses: ./.github/actions/fail-fast
 
   report:
     name: Merge reports and list flaky tests

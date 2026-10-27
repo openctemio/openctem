@@ -65,7 +65,7 @@ jobs:
       actions: read # queue-verified.sh reads the merge queue's runs of this commit
       checks: read # green-base.sh and release-provenance.sh read a commit's check runs
     outputs:
-      api: ${{ steps.f.outputs.api == 'true' && steps.queue.outputs.verified != 'true' && steps.tree.outputs.verified != 'true' }}
+      api: ${{ steps.f.outputs.api == 'true' && (steps.scope.outputs.api_code == 'true' || steps.scope.outputs.ci_self == 'true') && steps.queue.outputs.verified != 'true' && steps.tree.outputs.verified != 'true' }}
       tree_note: ${{ steps.tree.outputs.note }}
       verified: ${{ steps.queue.outputs.verified }}
       full: ${{ steps.f.outputs.full }}
@@ -86,6 +86,16 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: bash .github/scripts/changed.sh
+      # Which part of the side changed (.github/scripts/scope.sh): only narrows
+      # what changed.sh selected, e.g. a change to web/e2e/ alone runs no web
+      # unit tests and builds no image, a CI file only the workflows that use it.
+      - id: scope
+        working-directory: .
+        env:
+          EVENT_BEFORE: ${{ github.event.before }}
+          MG_BASE: ${{ github.event.merge_group.base_sha }}
+          MG_HEAD: ${{ github.event.merge_group.head_sha }}
+        run: bash .github/scripts/scope.sh
       # A push to develop of a commit the merge queue already passed with this
       # workflow skips the jobs below (.github/scripts/queue-verified.sh).
       - id: queue
@@ -124,6 +134,11 @@ jobs:
   # name says which gate it was.
   static:
     name: API static checks
+    # actions: write lets the fail-fast step cancel doomed runs (.github/actions/fail-fast).
+    permissions:
+      contents: read
+      packages: read
+      actions: write
     needs: changes
     if: needs.changes.outputs.api == 'true'
     runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_HEAVY) || 'ubuntu-latest' }}
@@ -377,6 +392,9 @@ jobs:
         run: |
           base="$(bash ../.github/scripts/effective-base.sh api "origin/${GITHUB_BASE_REF}")"
           make lint-new BASE_REF="$base"
+      - name: Fail fast
+        if: failure()
+        uses: ./.github/actions/fail-fast
 
   # The OpenAPI spec, generated once and handed to the test and least-privilege
   # shards (14 shards on the full tier each generated it: ~27 runner-minutes per
@@ -384,13 +402,17 @@ jobs:
   # start their tests when the spec arrives instead of generating it.
   spec:
     name: OpenAPI spec
+    # actions: write lets the fail-fast step cancel doomed runs
+    # (.github/actions/fail-fast) and covers reading the latest recorded test
+    # durations (go-plan.sh).
+    permissions:
+      contents: read
+      packages: read
+      actions: write
     needs: changes
     if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    permissions:
-      contents: read
-      actions: read # the latest recorded test durations (go-plan.sh)
     outputs:
       test_matrix: ${{ steps.plan.outputs.test_matrix }}
     steps:
@@ -414,6 +436,9 @@ jobs:
           path: api/api/openapi/swagger.yaml
           if-no-files-found: error
           retention-days: 1
+      - name: Fail fast
+        if: failure()
+        uses: ./.github/actions/fail-fast
 
       # The test plan, made once so every shard reads the same one: which
       # packages a pull request affects (go-affected.sh), how many shards that
@@ -441,6 +466,11 @@ jobs:
   # (fast tier 6 shards without -race, full tier 8 with -race).
   test:
     name: Tests (Postgres + Redis)
+    # actions: write lets the fail-fast step cancel doomed runs (.github/actions/fail-fast).
+    permissions:
+      contents: read
+      packages: read
+      actions: write
     needs: [changes, spec]
     if: needs.changes.outputs.api == 'true'
     runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_HEAVY) || 'ubuntu-latest' }}
@@ -449,7 +479,7 @@ jobs:
     # over every shard, the rest go whole to one shard each).
     # `Static checks` proves the shards together cover every test once.
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         include: ${{ fromJSON(needs.spec.outputs.test_matrix) }}
     services:
@@ -579,6 +609,9 @@ jobs:
           flags: api
           name: api-${{ matrix.shard }}-of-${{ matrix.total }}
           fail_ci_if_error: false
+      - name: Fail fast
+        if: failure()
+        uses: ./.github/actions/fail-fast
 
       # Package run times of a full run (the merge queue, a push), for the
       # next plan to balance the shards by. Packages only: the slices of a
@@ -636,11 +669,16 @@ jobs:
   # Any runtime statement the app role may not run fails here with 42501.
   least-privilege:
     name: Tests (least-privilege DB role)
+    # actions: write lets the fail-fast step cancel doomed runs (.github/actions/fail-fast).
+    permissions:
+      contents: read
+      packages: read
+      actions: write
     needs: [changes, spec]
     if: needs.changes.outputs.api == 'true' && (needs.changes.outputs.full == 'true' || needs.changes.outputs.migrations == 'true')
     runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_HEAVY) || 'ubuntu-latest' }}
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         shard: [0, 1, 2, 3, 4, 5]
         total: [6]
@@ -766,6 +804,9 @@ jobs:
       - name: No DB-backed test was skipped
         if: ${{ !cancelled() }}
         run: bash ../.github/scripts/check-db-test-skips.sh lp-test.json
+      - name: Fail fast
+        if: failure()
+        uses: ./.github/actions/fail-fast
 
   # The next PostgreSQL major: every migration on a fresh PostgreSQL 18
   # database plus the schema probes that read the catalog (PostgreSQL 18
@@ -774,6 +815,11 @@ jobs:
   # the least-privilege job.
   pg18:
     name: Migrations (PostgreSQL 18)
+    # actions: write lets the fail-fast step cancel doomed runs (.github/actions/fail-fast).
+    permissions:
+      contents: read
+      packages: read
+      actions: write
     needs: changes
     if: needs.changes.outputs.api == 'true' && (needs.changes.outputs.full == 'true' || needs.changes.outputs.migrations == 'true')
     runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_HEAVY) || 'ubuntu-latest' }}
@@ -843,6 +889,9 @@ jobs:
       - name: Remove the PostgreSQL 18 container
         if: ${{ always() }}
         run: docker rm -f -v "pg18-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" || true
+      - name: Fail fast
+        if: failure()
+        uses: ./.github/actions/fail-fast
 
   # The only writer of the Go caches (module cache and compiled packages):
   # every push to develop, so pull requests (which restore them, read-only,
@@ -889,6 +938,11 @@ jobs:
   # separate `Build` job).
   binaries:
     name: Release Binaries
+    # actions: write lets the fail-fast step cancel doomed runs (.github/actions/fail-fast).
+    permissions:
+      contents: read
+      packages: read
+      actions: write
     needs: changes
     if: needs.changes.outputs.api == 'true' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
@@ -924,6 +978,9 @@ jobs:
         with:
           name: bootstrap-admin-linux-amd64
           path: api/dist/bootstrap-admin
+      - name: Fail fast
+        if: failure()
+        uses: ./.github/actions/fail-fast
 
   # The ONE required status check for the API. Runs even when everything above
   # was skipped (non-API change, or a tier that does not apply to this event),
