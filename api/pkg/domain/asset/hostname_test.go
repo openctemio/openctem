@@ -79,3 +79,21 @@ func TestEncodedRemnant(t *testing.T) {
 		}
 	}
 }
+
+func TestIsRegistrableDomain(t *testing.T) {
+	for name, want := range map[string]bool{
+		"example.com":     true,
+		"Example.COM.":    true,
+		"example.co.uk":   true,
+		"www.example.com": false,
+		"mb.balu88.com":   false,
+		"com":             false,
+		"*.example.com":   false,
+		"":                false,
+		"co.uk":           false,
+	} {
+		if got := IsRegistrableDomain(name); got != want {
+			t.Errorf("IsRegistrableDomain(%q) = %v, want %v", name, got, want)
+		}
+	}
+}
