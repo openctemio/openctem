@@ -66,15 +66,14 @@ export function pendingBlockers(opts: {
   return out
 }
 
-/** Whether a probe at `probeTier` through `sensorPreference` needs a verified domain. */
+/** Whether a probe through `sensorPreference` needs a verified domain. */
 export function proofNeededFor(
   mode: string | undefined,
-  probeTier: number | undefined,
   sensorPreference: string | undefined
 ): boolean {
-  // Proof is needed only when the platform requires it (RFC-054 §8.1).
+  // Proof is needed only when the platform requires it, and only for jobs on
+  // platform sensors (RFC-054 §8.1).
   if (mode !== 'platform_sensors') return false
-  if ((probeTier ?? 1) >= 2) return true
   return sensorPreference !== 'tenant'
 }
 
@@ -113,7 +112,7 @@ export function ScopePendingEntry({
   const root = isDomain
     ? extractRootDomain(wildcardApex(entry.pattern ?? '') || (entry.pattern ?? ''))
     : ''
-  const proofNeeded = !!root && proofNeededFor(settings?.active_proof, probeTier, sensorPreference)
+  const proofNeeded = !!root && proofNeededFor(settings?.active_proof, sensorPreference)
   const proofRow = root ? domainFor(root, domains) : undefined
   const blockers = pendingBlockers({
     entry,

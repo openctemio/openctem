@@ -125,8 +125,6 @@ checkouts should set `git config remote.origin.tagOpt --tags`.
 
 ```yaml
 # versions.yaml (repository root)
-platform:
-  release: v0.8.0   # newest released tag; on release/vX.Y.Z: vX.Y.Z (set by the cut)
 sensor:             # one section per sensor product (§11)
   product: openctemio-sensor
   latest: v0.6.4    # install snippets pin it; older sensors show "update available"
@@ -140,34 +138,33 @@ sdk:
 ci:
   latest: v0.3.0
   min: v0.3.0
-chart:
-  version: 0.4.1    # newest published chart whose appVersion is platform.release
 ```
+
+(No `platform` or `chart` section since §14: the platform version is the tag.)
 
 `.github/scripts/release/sync-versions.sh` copies it into its consumers: the
 API's embedded copy `api/internal/versions/versions.yaml` (whole file),
-`OPENCTEM_VERSION` in `api/deploy/.env.example` and the compose files, and the
-console's CI runner pin. The consumer table in the script is the only place a
+the bundled sensor's compose default, and the console's CI runner pin. The consumer table in the script is the only place a
 versioned default may live. With `--check` it is the **Version consistency**
 CI job, which also fails when `web/package.json` is not `0.0.0` or when
-`platform.release` names a tag that does not exist. The one exception is the
+`api/deploy/VERSION` names a tag that does not exist. The one exception is the
 release branch: on `release/vX.Y.Z` (and on `main` right after it merges, before
-the tag exists) the job runs with `--release vX.Y.Z`, and `platform.release`
-must be exactly `vX.Y.Z`. A tag's checkout therefore defaults to its own
-version: `api/deploy/.env.example` and `docker-compose.yml` on `v0.9.0` install
-`v0.9.0`, not the release before it.
+the tag exists) the job runs with `--release vX.Y.Z`, and `api/deploy/VERSION`
+must be exactly `vX.Y.Z`. A tag's checkout therefore installs its own version
+(§14): `setup.sh` on `v0.9.0` writes `OPENCTEM_VERSION=v0.9.0`, not the release
+before it.
 
 Who bumps what:
 
 | Field | Bumped by |
 |---|---|
-| `platform.release` | the platform release workflow: one commit on the release branch (`cut-release.sh`); `develop` gets it when `main` is merged back (a hotfix: the post-release PR sets it) |
+| `api/deploy/VERSION` | the platform release workflow: one commit on the release branch (`cut-release.sh`); it never reaches `develop` (§14) |
 | `sensor.latest` | the sensor release workflow, in a PR to `openctemio/openctem` after it tags |
 | `<product>.latest` of another product | its release workflow the same way, or a person (YAML only) |
 | `sdk.latest` | the sdk-go release workflow, same way |
 | `sdk.advisories` | a person, when an SDK security advisory is published |
 | `*.min` | a person, deliberately: raising a minimum degrades fleets |
-| `chart.version` | the platform release workflow, in the post-release PR to `develop`, together with the helm-charts PR it opens (the chart is published after the tag, so a tag names the previous chart) |
+| chart version | the helm-charts PR the platform release workflow opens (§14: not in `versions.yaml`) |
 
 The Helm chart repository keeps its own `values.yaml` defaults; its CI checks
 that `appVersion` names a published platform tag (§9, P4).
@@ -213,7 +210,7 @@ Release Train      plan   last tag → proposed version (or the override, valida
                           (or the given SHA, which must be green)
                           changelog preview → run summary
                    cut    release/vX.Y.Z = that SHA
-                          + version commit (versions.yaml platform.release = vX.Y.Z, synced)
+                          + version commit (api/deploy/VERSION = vX.Y.Z)
                           + `merge -s ours origin/main`
                           (tree == develop's + the version commit, main recorded as a parent)
                           PR release/vX.Y.Z → main, queued for merge (MERGE)
@@ -258,7 +255,7 @@ For a security or critical fix that cannot wait for the train:
   release branch do not exist yet.
 - The release branch's tree equals the chosen commit's tree plus the version
   commit (train), `main`'s tree after the merge equals the release branch's,
-  and its `versions.yaml` says `platform.release: vX.Y.Z`; otherwise no tag is
+  and its `api/deploy/VERSION` says `vX.Y.Z`; otherwise no tag is
   pushed.
 - Dry run (`dry_run: true`, the default) computes and reports everything and
   pushes nothing.
@@ -575,3 +572,36 @@ platform" (§11.2 removed the SDK floor).
 | Cross-organization read or write | the tenant comes from the token; every query carries `tenant_id`; a route test shows another organization's sensor of the same product name gets no verdict, its list is empty and its delete answers 404 |
 | Oversized or hostile input | token and version shapes in the domain and in CHECKs, 4 KiB body with unknown fields refused, 50 rows per organization |
 | Members change fleet settings | writes need `sensors:write` (owners and administrators); reads `sensors:read` |
+
+## 14. No version on develop (2026-10-26)
+
+Problem: every release produced a follow-up PR to `develop` that changed the
+platform version in `versions.yaml`, its embedded copy, `.env.example` and the
+compose files (and `chart.version`), only because those files repeated the tag.
+
+Decision: the tag is the single source of the platform version, and nothing
+about it is committed to `develop`.
+
+- Images and binaries take the version from the build (`-ldflags` from the tag,
+  `NEXT_PUBLIC_APP_VERSION`); a dev build reports `<highest tag>-dev+<sha8>`.
+  `versions.PlatformRelease()` is the `vX.Y.Z` core of the running build's
+  version, so content compatibility checks and the `content-bundle -platform`
+  default follow the build, not a file.
+- `versions.yaml` loses `platform` and `chart`. `sensor`, `sdk`, `ci` and the
+  other products stay: they are deliberate compatibility values with their own
+  release lines.
+- The compose files have no version default: `${OPENCTEM_VERSION:?...}`.
+  `setup.sh` writes `OPENCTEM_VERSION` into `.env` from `--version`, else
+  `api/deploy/VERSION`, else the exact release tag checked out, and refuses a
+  branch checkout without `--version`. A checkout of `vX.Y.Z` therefore installs
+  `vX.Y.Z` by default; air-gapped bundles keep filling `@VERSION@` and pinning
+  digests.
+- `api/deploy/VERSION` (one line, `vX.Y.Z`) is the only committed copy. `cut-release.sh`
+  writes it as the release branch's version commit; it lands on `main` and the
+  tag, and `cut-release.sh` / `post-release.sh` treat it as the one file `main`
+  may have that `develop` never does.
+- After a train, the follow-up merges `main` into `develop` with `-s ours`: the
+  tag becomes reachable (so `next-version.sh` and dev builds count commits from
+  it) and `develop`'s tree is unchanged. A hotfix needs no follow-up. The
+  chart version lives in `openctemio/helm-charts`, bumped by the PR the publish
+  workflow already opens there.
