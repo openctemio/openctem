@@ -38,6 +38,7 @@ const (
 	SkipExcluded         = "excluded"
 	SkipOutOfScope       = "out_of_scope"
 	SkipNotConfirmed     = "ownership_unconfirmed"
+	SkipWildcardOnly     = "wildcard_only"
 	SkipTierExceeded     = "tier_exceeded"
 	SkipInternalNoZone   = "internal_outside_zones"
 	SkipIncompatibleType = "incompatible_type"
@@ -208,6 +209,7 @@ func (s *Service) previewQuickTarget(ctx context.Context, tenantID shared.ID, in
 	skip(SkipExcluded, resolved.Excluded)
 	skip(SkipOutOfScope, resolved.OutOfScope)
 	skip(SkipNotConfirmed, resolved.Unconfirmed)
+	skip(SkipWildcardOnly, resolved.WildcardOnly)
 	skip(SkipTierExceeded, resolved.TierExceeded)
 	skip(SkipInternalNoZone, resolved.InternalOutsideZones)
 	skip(SkipIncompatibleType, resolved.Incompatible)

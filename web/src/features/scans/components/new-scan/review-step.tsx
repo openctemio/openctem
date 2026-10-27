@@ -246,7 +246,7 @@ export function ReviewStep({
               { count: review.targets.length.toLocaleString() }
             )}
           </span>
-          {parts.length > 0 && <span className="text-muted-foreground"> · {parts.join(', ')}</span>}
+          {parts.length > 0 && <span className="text-muted-foreground">, {parts.join(', ')}</span>}
           {review.scope.available && review.targets.length > 0 && (
             <span className="mt-1 flex items-center gap-1 text-xs">
               {review.scope.isLoading && results.length === 0 ? (
@@ -254,7 +254,7 @@ export function ReviewStep({
               ) : refused.length > 0 ? (
                 <>
                   <ShieldAlert className="h-3.5 w-3.5 text-warning" aria-hidden />
-                  {t('scans.summary.inScope', undefined, { count: allowed })} ·{' '}
+                  {t('scans.summary.inScope', undefined, { count: allowed })},{' '}
                   <span className="text-warning">
                     {t('scans.summary.mayNotScan', undefined, { count: refused.length })}
                   </span>
@@ -275,8 +275,7 @@ export function ReviewStep({
           <RoutingNote routing={review.scope.routing} />
           {data.scanZoneId && (
             <span className="text-muted-foreground">
-              {' '}
-              ·{' '}
+              ,{' '}
               {t('scans.review.zone', undefined, {
                 name: zones.find((z) => z.id === data.scanZoneId)?.name ?? data.scanZoneId,
               })}
@@ -288,8 +287,7 @@ export function ReviewStep({
             {t(`scans.rules.review.${data.ruleSources || 'inherit'}`)}
             {data.ruleSources !== 'platform' && data.customTemplateIds.length > 0 && (
               <span className="text-muted-foreground">
-                {' '}
-                ·{' '}
+                ,{' '}
                 {t('scans.rules.review.templates', undefined, {
                   count: data.customTemplateIds.length,
                 })}

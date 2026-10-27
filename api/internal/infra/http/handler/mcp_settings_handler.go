@@ -103,7 +103,7 @@ func (h *MCPSettingsHandler) response(s tenant.MCPSettings) MCPSettingsResponse 
 
 // Get serves GET /api/v1/mcp-access/settings.
 // @Summary      Read the organization policy for AI applications
-// @Description  Whether the MCP server is on for the organization, which applications may connect (verified only, or any), the organization's trusted client hosts and the platform's, the scopes members may grant, whether oct_ keys work on MCP, how long a connection lasts, and the highest TLP of a pentest campaign AI applications may read (RFC-062, RFC-016).
+// @Description  Whether the MCP server is on for the organization, which applications may connect (verified only, or any), the organization's trusted client hosts and the platform's, the scopes members may grant, whether oct_ keys work on MCP, how long a connection lasts, and the highest TLP of a pentest campaign AI applications may read.
 // @Tags         MCP
 // @Produce      json
 // @Security     BearerAuth

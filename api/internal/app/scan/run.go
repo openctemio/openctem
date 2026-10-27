@@ -202,9 +202,6 @@ func (s *Service) QuickScan(ctx context.Context, input QuickScanInput) (*QuickSc
 	if err := s.refuseOutOfActScope(ctx, tenantID, userIDPtr(input.CreatedBy), input.Targets); err != nil {
 		return nil, err
 	}
-	if err := s.refuseUnprovenIntrusive(ctx, tenantID, input.ScannerName, input.Targets); err != nil {
-		return nil, err
-	}
 	if err := s.refuseTierExceeded(ctx, tenantID, input.ScannerName, input.Targets); err != nil {
 		return nil, err
 	}

@@ -155,10 +155,19 @@ func build(args []string, now time.Time) error {
 	fs.Var(&o.images, "image", "product=sha256:<hex>:<size>:<SPDX> for each sensor product in versions.yaml (repeatable)")
 	fs.Var(&o.feeds, "feed", "name=path of a feed key set (program-feed, vulnerability-feed; repeatable)")
 	fs.StringVar(&o.revocations, "revocations", "", "JSON file: {\"sequence\": N, \"entries\": [...]} (default: an empty list at the index sequence)")
-	fs.StringVar(&o.platform, "platform", ">="+strings.TrimPrefix(versions.PlatformRelease(), "v"), "platform range of every package")
+	// The default is this tool's own build version (a release or the highest
+	// tag of a dev build); a build that names none must be told.
+	defPlatform := ""
+	if r := versions.PlatformRelease(); r != "" {
+		defPlatform = ">=" + strings.TrimPrefix(r, "v")
+	}
+	fs.StringVar(&o.platform, "platform", defPlatform, "platform range of every package (default: >= this tool's release)")
 	fs.StringVar(&o.out, "out", "openctem-content.tar", "output bundle")
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	if o.platform == "" {
+		return errors.New("-platform is required: this build names no release to default to")
 	}
 	return o.run(now)
 }

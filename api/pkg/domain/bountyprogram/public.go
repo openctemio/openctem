@@ -352,8 +352,7 @@ type CatalogRepository interface {
 	StaleSubscriptions(ctx context.Context, limit int) ([]ProgramRef, error)
 }
 
-// AssetFlags are the fields of an asset derived from its program links
-// (RFC-065 §16.5).
+// AssetFlags are the fields of an asset derived from its program links.
 type AssetFlags struct {
 	SystemTags  []string
 	ProgramOnly bool

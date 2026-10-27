@@ -165,3 +165,29 @@ func TestOAuthRedirectValidation_NoFrontendURL(t *testing.T) {
 		})
 	}
 }
+
+// The web app sends final_redirect as a path ("/" by default); only paths on
+// this site and allowed absolute URLs pass.
+func TestOAuthFinalRedirectValidation(t *testing.T) {
+	h := &OAuthHandler{oauthConfig: config.OAuthConfig{FrontendCallbackURL: "https://app.example.com/auth/callback"}}
+	tests := []struct {
+		url     string
+		allowed bool
+	}{
+		{"/", true},
+		{"/findings?severity=high", true},
+		{"/assets#top", true},
+		{"https://app.example.com/dashboard", true},
+		{"//evil.example", false},
+		{"/\\evil.example", false},
+		{"/\r\nSet-Cookie:x", false},
+		{"https://evil.example/", false},
+		{"javascript:alert(1)", false},
+		{"evil.example/path", false},
+	}
+	for _, tt := range tests {
+		if got := h.isFinalRedirectAllowed(tt.url); got != tt.allowed {
+			t.Errorf("isFinalRedirectAllowed(%q) = %v, want %v", tt.url, got, tt.allowed)
+		}
+	}
+}

@@ -6,11 +6,11 @@ name: Release Publish
 #              then push the annotated tag vX.Y.Z. Pushed with RELEASE_TOKEN the
 #              tag starts Docker Publish and Release by itself; pushed with
 #              GITHUB_TOKEN it does not, so both are started by dispatch.
-#   follow-ups the develop PR (a train: main merged back, which brings the
-#              release branch's platform.release commit; a hotfix: that bump
-#              made directly; both: chart.version), the helm-charts PR (appVersion
-#              + chart version; needs RELEASE_TOKEN, skipped with a message
-#              otherwise), and the train issue is closed.
+#   follow-ups the develop PR (a train only: main merged back with `-s ours`,
+#              so the tag becomes reachable from develop and develop's tree, which
+#              holds no version, is unchanged; a hotfix has none), the helm-charts
+#              PR (appVersion + chart version; needs RELEASE_TOKEN, skipped with a
+#              message otherwise), and the train issue is closed.
 #
 # Recovery: run it by hand with the merged release PR's number.
 
@@ -186,21 +186,19 @@ jobs:
             --body "OpenCTEM ${VERSION} is tagged and published. This points the chart's default images at it (appVersion) and releases chart ${chart}. Opened by Release Publish in openctemio/openctem.")"
           echo "helm-charts PR: $url" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: develop PR (merge main back, versions.yaml)
+      - name: develop PR (merge main back, no file change)
+        if: needs.tag.outputs.mode == 'train'
         env:
           HAS_RELEASE_TOKEN: ${{ steps.token.outputs.has_release_token }}
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
           VERSION: ${{ needs.tag.outputs.version }}
           MODE: ${{ needs.tag.outputs.mode }}
-          CHART: ${{ steps.helm.outputs.chart_version }}
           GIT_AUTHOR_NAME: github-actions[bot]
           GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
         run: |
-          args=(--version "$VERSION" --mode "$MODE" --push)
-          [ -n "$CHART" ] && args+=(--chart-version "$CHART")
-          bash "$RELEASE_SCRIPTS/post-release.sh" "${args[@]}"
+          bash "$RELEASE_SCRIPTS/post-release.sh" --version "$VERSION" --mode "$MODE" --push
           branch="chore/post-release-${VERSION}"
-          title="chore(release): after ${VERSION}: versions.yaml$([ "$MODE" = train ] && echo ', main merged back')"
+          title="chore(release): after ${VERSION}: main merged back"
           if [ "$HAS_RELEASE_TOKEN" != true ]; then
             url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/develop...${branch}?expand=1"
             echo "Open the develop follow-up PR (title \`${title}\`; merge with the queue, never squash): $url" >> "$GITHUB_STEP_SUMMARY"
@@ -208,7 +206,7 @@ jobs:
             exit 0
           fi
           url="$(gh pr create --base develop --head "$branch" --title "$title" \
-            --body "Follow-up of ${VERSION}: versions.yaml says ${VERSION}. For a train it merges main back into develop, which brings only the release branch's version commit (versions.yaml platform.release and its synced defaults), so the tag becomes reachable from develop. Merge with the queue (merge commit), never squash: a squash drops the second parent, which is the point.")"
+            --body "Follow-up of ${VERSION}: merges main back into develop with -s ours, so the tag becomes reachable from develop. It changes no file: develop holds no version (the install version, api/deploy/VERSION, lives on the release branch and main only). Merge with the queue (merge commit), never squash: a squash drops the second parent, which is the point.")"
           echo "develop PR: $url" >> "$GITHUB_STEP_SUMMARY"
           gh pr merge "$url" --merge --auto || echo "::notice::Press 'Merge when ready' on $url"
 

@@ -401,7 +401,7 @@ function RecordResultDialog({
           </DialogTitle>
           <DialogDescription>
             {ct.name}
-            {ct.control_id ? ` · ${ct.control_id}` : ''}
+            {ct.control_id ? `, ${ct.control_id}` : ''}
           </DialogDescription>
         </DialogHeader>
 

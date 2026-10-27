@@ -17,7 +17,15 @@ type oneKeyRepo struct {
 	key *apikeydom.APIKey
 }
 
-func (r oneKeyRepo) GetByHash(context.Context, string) (*apikeydom.APIKey, error)      { return r.key, nil }
+func (r oneKeyRepo) GetByHash(context.Context, string) (*apikeydom.APIKey, error) { return r.key, nil }
+func (r oneKeyRepo) RevokeByUser(context.Context, shared.ID, shared.ID, time.Time) (int, error) {
+	return 0, nil
+}
+
+func (r oneKeyRepo) CountActiveByUser(context.Context, shared.ID, time.Time) (int, error) {
+	return 0, nil
+}
+
 func (r oneKeyRepo) TouchLastUsed(context.Context, shared.ID, shared.ID, string) error { return nil }
 
 // A key with no user would read every asset of the tenant: it is refused at

@@ -267,7 +267,7 @@ function SortableStepCard(props: StepCardProps) {
                   <SelectItem key={c.key} value={c.key}>
                     <span>{c.name}</span>
                     <span className="ms-2 text-[10px] text-muted-foreground">
-                      {c.key} · {c.tier}
+                      {c.key}, {c.tier}
                     </span>
                   </SelectItem>
                 ))}
@@ -860,8 +860,8 @@ export function ScanWorkflowForm({
                         className="text-xs font-semibold text-muted-foreground"
                       >
                         Stage {i + 1}
-                        {stage.length > 1 && ` · ${stage.length} steps run in parallel`}
-                        {i > 0 && ` · waits for Stage ${i}`}
+                        {stage.length > 1 && `, ${stage.length} steps run in parallel`}
+                        {i > 0 && `, waits for Stage ${i}`}
                       </h4>
                       <div className={`grid gap-3 ${stage.length > 1 ? '@2xl:grid-cols-2' : ''}`}>
                         {stage.map(renderCard)}

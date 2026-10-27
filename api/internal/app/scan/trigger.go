@@ -369,7 +369,10 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	// Resolve the targets server-side (direct targets + asset-group members,
 	// minus scope exclusions) and carry them to the step commands; sensors do
 	// not resolve asset groups, so without this a group scan scans nothing.
-	resolved, err := s.resolveScanTargets(ctx, sc)
+	// The targets are seeds of every step and a step does not gate its
+	// seeds again, so a workflow whose every step is passive gets the
+	// passive gate here, as its steps' derived targets do (hop router).
+	resolved, err := s.resolveScanTargets(withPassiveRun(ctx, stepsPassiveOnly(steps)), sc)
 	if err != nil {
 		return nil, err
 	}
@@ -541,10 +544,6 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 	// Program rules (RFC-065 §12): conflicting programs, or outside a
 	// program's testing windows, refuse the run.
 	if err := s.refuseProgramRules(ctx, sc.TenantID, resolved.Targets); err != nil {
-		return nil, err
-	}
-	// Proof can be lost after the scan was saved: re-check at every run.
-	if err := s.refuseUnprovenIntrusive(ctx, sc.TenantID, sc.ScannerName, resolved.Targets); err != nil {
 		return nil, err
 	}
 	s.planRolloverFirst(ctx, sc, triggerType, resolved, runContext)
@@ -1451,6 +1450,9 @@ func recordResolvedTargets(sc *scan.Scan, r *resolvedTargets, runContext map[str
 	if r.Unconfirmed > 0 {
 		runContext["unconfirmed_target_count"] = r.Unconfirmed
 	}
+	if r.WildcardOnly > 0 {
+		runContext["wildcard_only_target_count"] = r.WildcardOnly
+	}
 	if r.Incompatible > 0 {
 		runContext["incompatible_target_count"] = r.Incompatible
 	}
@@ -1469,22 +1471,22 @@ func recordResolvedTargets(sc *scan.Scan, r *resolvedTargets, runContext map[str
 	if len(r.SelectorRoots) > 0 {
 		runContext[RunContextKeySelectorRoots] = r.SelectorRoots
 	}
-	if len(r.Targets) == 0 && r.Incompatible > 0 && r.Unconfirmed == 0 && r.Excluded == 0 {
+	if len(r.Targets) == 0 && r.Incompatible > 0 && r.Unconfirmed+r.WildcardOnly == 0 && r.Excluded == 0 {
 		return shared.NewDomainError(codeNoCompatibleTargets,
 			fmt.Sprintf("This scan has no target its scanner can scan: %s. Pick a scanner for these asset types or change the asset group.", r.IncompatibleReason),
 			shared.ErrValidation)
 	}
-	if len(r.Targets) == 0 && r.TierExceeded > 0 && r.Unconfirmed == 0 && r.Excluded == 0 {
+	if len(r.Targets) == 0 && r.TierExceeded > 0 && r.Unconfirmed+r.WildcardOnly == 0 && r.Excluded == 0 {
 		return shared.NewDomainError(codeTierExceeds,
 			"No target of this scan may be probed at this scanner's tier: the scope entries covering them allow less. Raise the entry's tier in Scoping > Scope, or use a less intrusive scanner.",
 			shared.ErrValidation)
 	}
-	if len(r.Targets) == 0 && r.Unconfirmed > 0 && r.Excluded == 0 {
+	if len(r.Targets) == 0 && r.Unconfirmed+r.WildcardOnly > 0 && r.Excluded == 0 {
 		return shared.NewDomainError("ALL_TARGETS_UNCONFIRMED",
 			"No target of this scan is authorized for active scanning; nothing to scan. Confirm their ownership on each asset's Ownership tab, or cover them with a scope target in Scoping > Scope.",
 			shared.ErrValidation)
 	}
-	if len(r.Targets) == 0 && r.InternalOutsideZones > 0 && r.Unconfirmed == 0 && r.Excluded == 0 {
+	if len(r.Targets) == 0 && r.InternalOutsideZones > 0 && r.Unconfirmed+r.WildcardOnly == 0 && r.Excluded == 0 {
 		return shared.NewDomainError("INTERNAL_TARGET_OUTSIDE_ZONES",
 			"This scan has only internal address targets outside every scan zone; nothing to scan. Add the ranges to a scan zone in Settings > Scan zones.",
 			shared.ErrValidation)

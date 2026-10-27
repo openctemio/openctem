@@ -141,3 +141,6 @@ origins, endpoints, the same path across origins, and the endpoint events. It
 reads the endpoints above, so it needs `assets:read` and the `assets` module
 (the route guard says so), not the attack surface module.
 
+
+Posture, labels, verification of sensitive paths and change alerts are in
+[web-content-pipeline.md](web-content-pipeline.md).

@@ -94,7 +94,7 @@ export function SeverityProvenance({ finding, canRescore, onRestore }: SeverityP
           <Tooltip>
             <TooltipTrigger asChild>
               <span className="cursor-help underline decoration-dotted underline-offset-2">
-                {t('findings.severityProvenance.analyst', 'Analyst · source: {source}', {
+                {t('findings.severityProvenance.analyst', 'Analyst, source: {source}', {
                   source: sevLabel(finding.sourceSeverity),
                 })}
               </span>

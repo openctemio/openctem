@@ -212,8 +212,8 @@ export function AssetIdentitySections({
                     {SOURCE_LABEL[r.source]
                       ? t(`assets.identity.source.${r.source}`, SOURCE_LABEL[r.source])
                       : r.source}{' '}
-                    · <RelativeTime date={r.changed_at} />
-                    {r.reason ? ` · ${r.reason}` : ''}
+                    , <RelativeTime date={r.changed_at} />
+                    {r.reason ? `, ${r.reason}` : ''}
                   </p>
                 </div>
               </li>

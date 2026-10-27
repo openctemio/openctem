@@ -202,7 +202,7 @@ export function ZoneCoverageCard({ coverage, zones }: ZoneCoverageCardProps) {
                     {z.assigned_sensors === 0
                       ? 'No sensors assigned'
                       : `0 of ${z.assigned_sensors} online`}
-                    {z.addresses > 0 ? ` · ${z.addresses.toLocaleString()} addresses wait` : ''}
+                    {z.addresses > 0 ? `, ${z.addresses.toLocaleString()} addresses wait` : ''}
                   </span>
                 </li>
               ))}

@@ -8,7 +8,7 @@ name: Release Train
 #         a check (-s ours precondition, tree equality); changelog preview in
 #         the run summary
 #   cut   (not in a dry run) push release/vX.Y.Z (with its version commit:
-#         versions.yaml platform.release = vX.Y.Z, synced), open the PR into
+#         api/deploy/VERSION = vX.Y.Z), open the PR into
 #         main and queue it. Release Publish tags it when the merge queue
 #         merges it.
 #
@@ -238,9 +238,9 @@ jobs:
           body="$RUNNER_TEMP/pr-body.md"
           {
             if [ "$MODE" = hotfix ]; then
-              echo "Hotfix release **${VERSION}**: the last release plus cherry-picked fixes, plus one commit that sets \`versions.yaml\` \`platform.release\` to ${VERSION} (synced into every default)."
+              echo "Hotfix release **${VERSION}**: the last release plus cherry-picked fixes, plus one commit that writes \`api/deploy/VERSION\` = ${VERSION}, so the tag's checkout installs ${VERSION}."
             else
-              echo "Release train **${VERSION}**: develop at a commit with every required check green, one commit that sets \`versions.yaml\` \`platform.release\` to ${VERSION} (synced into every default, so the tag's checkout installs ${VERSION}), and one \`merge -s ours\` commit that records main as a parent (the tree is develop's plus that commit, byte for byte)."
+              echo "Release train **${VERSION}**: develop at a commit with every required check green, one commit that writes \`api/deploy/VERSION\` = ${VERSION} (so the tag's checkout installs ${VERSION}; develop never gets it), and one \`merge -s ours\` commit that records main as a parent (the tree is develop's plus that commit, byte for byte)."
             fi
             echo
             echo "When the merge queue merges this PR, **Release Publish** tags ${VERSION} on the merge commit, which publishes the images and the GitHub Release and opens the follow-up PRs. Merge with the queue (merge commit), never squash."

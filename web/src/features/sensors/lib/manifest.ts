@@ -169,7 +169,7 @@ export function resourcesText(m: SensorManifestDocument, t: Translate = plain): 
       t('sensors.manifest.memory', '{size} memory', { size: formatBytes(r.mem_total_bytes) })
     )
   }
-  return parts.length ? parts.join(' · ') : null
+  return parts.length ? parts.join(', ') : null
 }
 
 /** "operator cap 8 · slots sized from CPU and memory". */
@@ -181,8 +181,8 @@ export function concurrencyText(m: SensorManifestDocument, t: Translate = plain)
       ? t('sensors.manifest.operatorCap', 'operator cap {n}', { n: c.ceiling })
       : t('sensors.manifest.noOperatorCap', 'no operator cap')
   if (c.model === 'dynamic')
-    return `${cap} · ${t('sensors.manifest.slotsDynamic', 'slots sized from CPU and memory')}`
-  if (c.model === 'fixed') return `${cap} · ${t('sensors.manifest.slotsFixed', 'fixed slots')}`
+    return `${cap}, ${t('sensors.manifest.slotsDynamic', 'slots sized from CPU and memory')}`
+  if (c.model === 'fixed') return `${cap}, ${t('sensors.manifest.slotsFixed', 'fixed slots')}`
   return cap
 }
 
@@ -222,5 +222,5 @@ export function contractSummary(c: SensorToolContract, t: Translate = plain): st
     c.network ? t('sensors.manifest.network', 'network: {network}', { network: c.network }) : null,
   ]
     .filter(Boolean)
-    .join(' · ')
+    .join(', ')
 }

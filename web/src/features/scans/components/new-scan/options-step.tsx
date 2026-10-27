@@ -120,7 +120,7 @@ export function OptionsStep({ data, onChange, showProfile = false }: OptionsStep
           </Select>
           <p className="text-muted-foreground text-xs">
             {chosenProfile
-              ? `${gateSummary(chosenProfile.quality_gate, t)}${chosenProfile.description ? ` · ${chosenProfile.description}` : ''}`
+              ? `${gateSummary(chosenProfile.quality_gate, t)}${chosenProfile.description ? `, ${chosenProfile.description}` : ''}`
               : t('scans.options.profileHelp')}
           </p>
         </div>

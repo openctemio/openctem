@@ -51,7 +51,7 @@ export function AddToScopeAction({ names, onDone }: AddToScopeActionProps) {
 
   const skipText = (Object.entries(skipped) as [ScopeSkipReason, number][])
     .map(([reason, count]) => t(`scope.bulk.skip.${reason}`, '{count} skipped', { count }))
-    .join(' · ')
+    .join(', ')
 
   const submit = async () => {
     setBusy(true)
@@ -143,7 +143,7 @@ export function reportBulkResult(t: TFn, res: ApiBulkScopeTargetsResponse) {
     const why = first?.message ? ` (${first.pattern}: ${first.message})` : ''
     parts.push(t('scope.bulk.refused', '{count} refused', { count: refused }) + why)
   }
-  const text = parts.join(' · ')
+  const text = parts.join(', ')
   if (refused > 0 && created === 0) toast.error(text)
   else if (refused > 0) toast.warning(text)
   else toast.success(text)
