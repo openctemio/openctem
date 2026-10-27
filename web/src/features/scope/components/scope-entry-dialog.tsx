@@ -591,17 +591,11 @@ export function ScopeEntryDialog({
                 {proofMissing && (
                   <div className="mt-2 flex flex-wrap items-center gap-2 border-t pt-2">
                     <p className="min-w-0 flex-1 text-xs text-muted-foreground">
-                      {tier === 't2'
-                        ? t(
-                            'scope.entry.proofT2',
-                            'Intrusive (T2) probes also need proof that you control {domain}.',
-                            { domain: proofRoot }
-                          )
-                        : t(
-                            'scope.entry.proofPlatform',
-                            "Shared sensors also need proof that you control {domain}; your organization's sensors need this entry only.",
-                            { domain: proofRoot }
-                          )}
+                      {t(
+                        'scope.entry.proofPlatform',
+                        "Shared sensors also need proof that you control {domain}; your organization's sensors need this entry only.",
+                        { domain: proofRoot }
+                      )}
                     </p>
                     {!isRequest && (
                       <Button
