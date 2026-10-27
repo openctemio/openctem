@@ -302,23 +302,6 @@ func (s *AuthService) enforceEmailVerificationPolicy(ctx context.Context, u *use
 	return nil
 }
 
-// getTenantVerificationMode reads a tenant's EmailVerificationMode setting.
-// Returns empty string if tenant lookup fails (caller treats as auto).
-func (s *AuthService) getTenantVerificationMode(ctx context.Context, tenantIDStr string) tenantdom.EmailVerificationMode {
-	if tenantIDStr == "" || s.tenantRepo == nil {
-		return ""
-	}
-	tid, err := shared.IDFromString(tenantIDStr)
-	if err != nil {
-		return ""
-	}
-	t, err := s.tenantRepo.GetByID(ctx, tid)
-	if err != nil || t == nil {
-		return ""
-	}
-	return t.TypedSettings().Security.EmailVerificationMode
-}
-
 // shouldRequireEmailVerification returns true if a newly registered user in
 // the given tenant should be required to verify their email before login.
 //
