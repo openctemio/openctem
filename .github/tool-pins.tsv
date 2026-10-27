@@ -29,3 +29,4 @@ caddy (all-in-one image)	caddyserver/caddy	releases	-	deploy/allinone/Dockerfile
 caddy (gateway image)	caddyserver/caddy	releases	-	api/deploy/gateway/Dockerfile	^ARG CADDY_VERSION=(v[0-9.]+)	
 caddy-l4	mholt/caddy-l4	releases	-	api/deploy/gateway/Dockerfile	^ARG CADDY_L4_VERSION=(v[0-9.]+)	
 yq	mikefarah/yq	releases	-	.github/workflows/api-ci.yml	yq/v4@(v[0-9.]+)	
+gh	cli/cli	releases	-	.github/actions/setup-gh/action.yml	GH_CLI_VERSION: ([0-9.]+)	checksum

@@ -814,8 +814,9 @@ Variables):
 |---|---|---|
 | `CI_RUNNER_HEAVY` | the heavy jobs below, on `push` and on `pull_request` from this repository | the runner label, e.g. `openctem-ci` |
 | `CI_RUNNER_MERGE` | the same heavy jobs in `merge_group` | the runner label |
+| `CI_RUNNER_LIGHT` | the light jobs listed below, on `push` and on `pull_request` from this repository (in `merge_group` they follow `CI_RUNNER_MERGE`) | the runner label |
 
-Every selectable job uses one expression:
+Every heavy selectable job uses one expression:
 
 ```yaml
 runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_HEAVY) || 'ubuntu-latest' }}
@@ -827,8 +828,29 @@ runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ub
   so untrusted code never reaches the self-hosted runner. `pull_request_target`
   workflows, release, publish and signing jobs (`docker-publish`, `release*`,
   anything with `id-token: write` or publishing secrets) are never selectable.
-- Light jobs (change detection, gates, every "... OK" aggregator, hygiene, CLA,
-  security gate, labels and notes) always stay on `ubuntu-latest`.
+- Light jobs use the same expression with `vars.CI_RUNNER_LIGHT` in place of
+  `vars.CI_RUNNER_HEAVY`. GitHub-hosted runners are limited to about 20 at a
+  time, so the short first-stage jobs could otherwise queue there while the
+  heavy jobs that need them wait and the self-hosted pool sits idle. Selectable
+  light jobs: `API CI` / `changes`, `spec`, `api-ok`; `Web CI` / `changes`,
+  `contract`, `i18n-tests`, `web-ok`; `Web E2E` / `changes`, `plan`, `report`,
+  `e2e-ok`; `All-in-one CI` / `changes`, `allinone-ok`; `CodeQL` / `changes`,
+  `codeql-ok`; `Repository Security` / `tree`, `secret-scan`, `actionlint`
+  (Workflow Lint), `dependency-review`; `PR hygiene` / `docs-check`,
+  `allinone-ok`. Check names do not change.
+- These stay on `ubuntu-latest`: `Go cache (develop)` (it fills the GitHub
+  cache that hosted pull request runs restore, which a self-hosted runner does
+  not write), `Release Binaries`, `API contract report` and `Release-note
+  labels` (write tokens; the labeler is checked out from the base commit), the
+  e2e regression issue, the Playwright shards, CLA, the security gate and its
+  label workflow, and every release, publish and signing job.
+- `.github/scripts/check-runners.sh` (Workflow Lint, with its self-test) fails
+  when a `runs-on` is anything but a GitHub-hosted label, a matrix of hosted
+  labels, or one of the approved selectors (`CI_RUNNER_LIGHT`, `CI_RUNNER_HEAVY`
+  with `CI_RUNNER_MERGE`, and the `CI_RUNNER_CODEQL` / `CI_RUNNER_E2E_BUILD`
+  overrides). It also evaluates each selector for every event and every set of
+  variables: a fork pull request must always get a hosted runner, and a merge
+  group never gets `CI_RUNNER_LIGHT` or `CI_RUNNER_HEAVY`.
 
 Selectable jobs: `API CI` / `static`, `test` (Go shards), `pg18`; `Web CI` / `quality`, `tests`, `build`; `Web E2E` / `build`
 (the e2e images); `CodeQL` / `analyze`. `Web E2E` / `e2e` stays on GitHub: its
@@ -861,7 +883,11 @@ Rules for anything a selectable job runs:
   `FATAL: role "root" does not exist`. Every `pg_isready` health check passes
   `-U <user> -d <db>`; `psql` gets a URL with the user, or `-U`.
 - **Tools come from setup actions,** not the image: `setup-go`, `setup-node`
-  (also before CodeQL's TypeScript extractor). The runner image provides `git`,
+  (also before CodeQL's TypeScript extractor and the e2e shard planner), and
+  `./.github/actions/setup-gh`, which installs the GitHub CLI (pinned version
+  and SHA-256 in the action, tracked in `.github/tool-pins.tsv`) only when the
+  runner has none. Every job that calls `gh`, and the fail-fast action, runs it
+  first. The runner image provides `git`,
   `jq`, `python3`, `psql`, `curl`, and the Docker CLI with compose and buildx;
   anything else (`yq` in the compose render check) is installed by the step
   when missing, at a version pinned in `.github/tool-pins.tsv`.
