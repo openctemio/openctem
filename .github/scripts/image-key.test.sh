@@ -5,8 +5,8 @@ here="$(cd "$(dirname "$0")" && pwd)"
 tmp="$(mktemp -d)"; trap 'find "$tmp" -delete' EXIT
 cd "$tmp"
 git init -q . && git config user.email t@example.invalid && git config user.name t
-mkdir -p api/deploy/gateway web deploy/allinone .github/actions/generate-contract docs
-for f in api/a.go api/deploy/gateway/g web/w.ts deploy/allinone/d .github/actions/generate-contract/action.yml docs/x.md; do echo 1 > "$f"; done
+mkdir -p api/deploy/gateway web deploy/allinone .github/actions/generate-contract .github/workflows .github/scripts docs
+for f in api/a.go api/deploy/gateway/g web/w.ts deploy/allinone/d .github/actions/generate-contract/action.yml docs/x.md .github/workflows/build-images.yml .github/scripts/image-key.sh; do echo 1 > "$f"; done
 git add -A && git commit -qm base
 K() { bash "$here/image-key.sh" "$1"; }
 declare -A base; for i in api admin-cli web console allinone; do base[$i]="$(K $i)"; done
@@ -35,6 +35,14 @@ for i in api admin-cli web console allinone; do base[$i]="$(K $i)"; done
 
 echo 2 > deploy/allinone/d; git commit -qam allinone
 chk "allinone change" api same; chk "allinone change" web same; chk "allinone change" allinone diff
+
+# Changing how images are built or keyed re-keys every image (no manual bump).
+echo 2 > .github/workflows/build-images.yml; git commit -qam workflow
+for i in api admin-cli web console allinone; do chk "build-images.yml change" $i diff; done
+for i in api admin-cli web console allinone; do base[$i]="$(K $i)"; done
+echo 2 > .github/scripts/image-key.sh; git commit -qam keyscript
+for i in api admin-cli web console allinone; do chk "image-key.sh change" $i diff; done
+for i in api admin-cli web console allinone; do base[$i]="$(K $i)"; done
 
 # An empty commit (same tree) keeps every key: the key is content, not history.
 for i in api admin-cli web console allinone; do base[$i]="$(K $i)"; done

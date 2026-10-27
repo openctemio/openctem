@@ -15,7 +15,7 @@ truth: this page describes them as of the merge-queue routing (#730, 2026-10-02)
 | Web E2E (`web-e2e.yml`) | PR (with `run-e2e`, a changed suite, or the full tier) / push to `develop`; merge queue | Takes the API, web and admin images from Build images (built once per content key for the whole pipeline), then runs the Playwright suite (`web/e2e`) in 4 shards, each against its own stack (Postgres, Redis, migrations, seeded tenant). The merge queue runs it whenever the queued PR changed `web/`, `api/` or a shared file, so a spec made stale by a layout change fails in the queue, not on `develop`. `Merge reports and list flaky tests` is for people and never fails the gate | **E2E OK** |
 | Web visual regression (`web-visual.yml`) | PR with the `run-visual` label; nightly on `develop`; on demand | Screenshots of the key pages (dashboard, findings, assets, scans, remediation tasks, My Work, settings) at 1440 light and dark and 390 light against `web/e2e/visual/__screenshots__` (`playwright.visual.config.ts`, 2% pixel tolerance, volatile values masked). A missing baseline is written, not failed; `workflow_dispatch` with `update` takes new baselines and uploads them as the `visual-baselines` artifact to commit. Diffs are uploaded on failure | none (not required) |
 | All-in-one CI (`allinone-ci.yml`) | Push to `develop`; merge queue; a PR only when it changes `.github/workflows|scripts|actions` (check "All-in-one (PR build)", not required; other PRs get `All-in-one OK` from `pr-hygiene.yml`) | Builds `openctem-api`, `openctem-web` and the all-in-one `openctem` image exactly as a release does, smoke-tests them (arch, ELF, executes) and runs the all-in-one in both gateway modes against Postgres + Redis. Nothing is pushed. Merge queue and pushes only (see [Tiers](#tiers)). | **All-in-one OK** |
-| Build images (`build-images.yml`) | Called by Web E2E and All-in-one CI (`workflow_call`) | Builds each CI image once per content key and returns it by digest, or reuses the one already in `ghcr.io/openctemio/ci-images` (see [Build images once](#build-images-once)) | — |
+| Build images (`build-images.yml`) | Called by Web E2E and All-in-one CI on push and merge-queue events (`workflow_call`); pull requests call Resolve images (`resolve-images.yml`, read-only) | Builds each CI image once per content key and returns it by digest, or reuses the one already in `ghcr.io/openctemio/ci-images` (see [Build images once](#build-images-once)) | — |
 | Prune CI images (`ci-images-prune.yml`) | Daily 03:37 UTC, manual | Deletes `ci-images` versions older than 14 days, except digests an open release names | — |
 | Repository Security (`repo-security.yml`) | PR / push; merge queue; weekly | Betterleaks (root `.betterleaks.toml`, `.gitleaksignore`): a PR or queued group scans only its own commits (`base..head`); a push to `develop`/`main` and the weekly run scan the full history. Customer identifiers: fixed strings from the `CUSTOMER_DENYLIST` repository secret (never committed; empty = skipped with a notice) and the live LAN range outside tests, over every tracked file, printing only file:line. Commit emails: a PR or queued group fails when one of its commits has an address from the `COMMIT_EMAIL_DENYLIST` repository secret (case-insensitive fixed strings such as a domain; never committed; empty = skipped with a notice) as author, committer or `Co-authored-by` trailer, printing only the commit and the field; outside contributors are covered by the CLA check. **Workflow Lint**: actionlint and zizmor (pinned; suppressions are per line with a reason, inline or in `.github/zizmor.yml`, never per file) over the workflows, action pins, and the self-tests of the CI scripts (change routing, CodeQL alert gate, security gate and its CODEOWNERS mirror), plus the check that `api/` and `web/` depend on no sensor module or SDK. **Dependency Review** (PR only) | **Secret Scanning**, **Workflow Lint** |
 | PR hygiene (`pr-hygiene.yml`): Docs check | PR / push to `main`, `develop`; merge queue | Also in this workflow: the release-note labels job (below) and, on a PR, the `All-in-one OK` report (the build itself runs in the merge queue). **Docs check** job: `scripts/docs_check.py` (Markdown is English, has no private addresses or internal host names, relative links and anchors resolve), the RFC index check, then `scripts/check_docs_links.py` checks every `docs.openctem.io` link in code (page and `#anchor`, against a checkout of `openctemio/docs` `main`) and every `github.com/openctemio/<repo>/blob\|tree/<ref>/<path>#anchor` link (this repository from the checkout, others fetched shallowly); tests are skipped, `docs-links: ignore` skips a line. Locally: `python3 scripts/check_docs_links.py --docs ../docs --fetch-other .` | **Docs check** |
@@ -845,24 +845,40 @@ hashes of what the image's Dockerfile copies (`api` for the API and admin CLI;
 `web`, `api` and the `generate-contract` action for the web app and the
 console, which compile against contract files generated from the Go source;
 `deploy/allinone`, the gateway and the three component keys for the all-in-one),
-plus the Dockerfile path, target, build arguments and a builder version. CI
+plus the Dockerfile path, target, build arguments, and the blobs of
+`build-images.yml` and `image-key.sh` themselves (a change to how images are
+built or keyed re-keys every image; there is no manual builder version). CI
 images take no commit-specific build argument, so the key is content, not
 history: a web-only PR has the same API key as `develop` and reuses its image;
 a docs-only change changes no key.
 
-**Flow**
+**Who calls what.** `build-images.yml` holds `packages: write`, so only push and
+merge-queue events call it (the caller job has
+`if: github.event_name != 'pull_request'`). A pull request calls
+`resolve-images.yml` instead: read-only (`packages: read`,
+`attestations: read`; no `packages: write`, no `id-token`), it resolves the
+images `develop` already built for the same keys and returns them only when ALL
+requested images resolve; otherwise the caller builds locally, as before. A
+pull request never pushes a tag. `.github/scripts/pr-no-package-write.sh`
+(self-test in Repo Security) fails when a `pull_request` workflow has a job that
+can hold `packages: write` without such a guard.
+
+**Flow** (push and merge queue)
 1. `plan` computes the keys and asks `.github/scripts/ci-image-resolve.sh`
-   for each: does `ghcr.io/openctemio/ci-images/<image>:<tag>` exist and does
-   its build provenance attestation verify (signer workflow = this repository's
-   `build-images.yml`, source ref trusted, see below)? If so, nothing is built.
-2. Missing images build in a matrix (api, admin-cli, and web + console in one
-   job, one contract generation). Inside a lock (job concurrency keyed by image
-   group and key) the job checks again, so two workflows racing on one key build
-   once; the second finds the image. The build uses buildx with the registry
-   cache `ci-images/<image>:buildcache`, written by pushes to `develop` and by
-   merge-queue runs only. Then `actions/attest-build-provenance` signs the digest.
-3. The all-in-one is built `FROM` the pulled component digests.
-4. `collect` verifies again and returns `api`, `admin-cli`, `web`, `console`,
+   for each: does an image exist whose build provenance attestation verifies
+   (signer workflow = this repository's `build-images.yml`, repository, source
+   ref, not a self-hosted runner; see below)? If so, nothing is built.
+2. `contract` (its own job, `contents: read` only) generates the contract files
+   the web images compile against and hands them over as an artifact.
+3. Missing images build in a matrix (api, admin-cli, and web + console in one
+   job). Inside a lock (job concurrency keyed by image group and key) the job
+   checks again, so two workflows racing on one key build once. The build uses
+   buildx with the registry cache `ci-images/<image>:buildcache`, written by
+   pushes to `develop` only (never by a merge-queue run), and kept in the
+   `ci-images` packages, apart from every release cache. Then
+   `actions/attest-build-provenance` signs the digest.
+4. The all-in-one is built `FROM` the pulled component digests.
+5. `collect` verifies again and returns `api`, `admin-cli`, `web`, `console`,
    `allinone` as `ghcr.io/openctemio/ci-images/<image>@sha256:...`, and `push`.
 
 **Callers** pull the digest and tag it as the old local name (`local/openctem-api:e2e`,
@@ -870,21 +886,28 @@ a docs-only change changes no key.
 `push` is `false` (below) they build locally exactly as before.
 
 **Trust**
-- Only a run whose token can write packages pushes: not a fork pull request, not
-  Dependabot, not a ref other than `develop`, `main`, a merge-queue ref or a
-  same-repository pull request. Those runs get empty outputs and build locally.
+- Only a push to `develop` or `main`, or a merge-queue run, pushes. Fork pull
+  requests, Dependabot and every other pull request never do: they build locally
+  when develop has no image for their keys.
 - Tags are hints, never trusted. A consumer uses the digest only after
-  `gh attestation verify` shows it was built by this repository's
-  `build-images.yml` and the attestation's source ref is `develop`, `main` or
-  `gh-readonly-queue/...` (tag `<key>`), or `refs/pull/<N>/merge` for the
-  pull request's own tag `pr<N>-<key>`. A pull request therefore cannot plant
-  an image that the merge queue, `develop` or another pull request will use: its
-  attestation names its own ref and is refused there. Overwriting a tag or
-  pushing an unattested image gains nothing; that image is ignored and rebuilt.
-- A pull request edits `build-images.yml` and `image-key.sh` as it likes, but
-  the result carries its own `refs/pull/<N>/merge` source ref.
+  `gh attestation verify --deny-self-hosted-runners` shows it was built by this
+  repository's `build-images.yml`, and the attestation's source ref is:
+  `refs/heads/develop` or `refs/heads/main` for the plain tag `<key>` (what every
+  consumer trusts); or, for the queue tag `q-<commit sha>-<key>`, the
+  consumer's OWN merge-queue ref (a consumer in a queue run only; another queue
+  entry's image is refused). A queue build can never satisfy the plain `<key>`.
+- Overwriting a tag or pushing an unattested image gains nothing; that image is
+  ignored and rebuilt.
+- No step that runs third-party code (npm, Go tooling) holds a registry
+  credential or a token with `packages: write`: the contract files come from the
+  separate `contract` job, `npm ci` there runs with `--ignore-scripts`, and
+  `GH_TOKEN` is set only on the steps that resolve images.
 - Every pushed image has a build provenance attestation (`id-token` and
   `attestations: write` on the build jobs only).
+- Owner setting, once: GHCR package settings, "Manage Actions access", for the
+  release packages and the `mirror/*` packages: keep this repository's workflow
+  access at read (or none), so no workflow, whatever its permissions, can
+  overwrite them. Only the `ci-images/*` packages need write access.
 
 **Retention** (`ci-images-prune.yml`): versions older than 14 days are deleted,
 except digests named in the body of a draft or pre-release release. The token

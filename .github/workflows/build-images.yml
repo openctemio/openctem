@@ -2,24 +2,31 @@ name: Build images
 
 # Reusable workflow: builds each CI image once per content key and hands every
 # caller the images by digest (api/docs/development/ci-cd.md, "Build images
-# once"). Callers: web-e2e.yml, allinone-ci.yml.
+# once"). Callers: web-e2e.yml, allinone-ci.yml, on push and merge_group events
+# only. A pull request never calls this workflow (it holds packages: write); it
+# calls resolve-images.yml, which is read-only.
 #
 #   key      .github/scripts/image-key.sh: the git tree hashes of what the
-#            Dockerfile copies + Dockerfile + target + build args.
+#            Dockerfile copies + Dockerfile + target + build args + this
+#            workflow + the key script.
 #   exists   ghcr.io/openctemio/ci-images/<image>:<tag> exists AND its build
 #            provenance attestation was made by THIS workflow on a trusted ref
 #            (.github/scripts/ci-image-resolve.sh). Then nothing is built.
-#   missing  buildx build with the registry cache (written by develop pushes and
-#            merge-queue runs only), push, attest.
-#            Two callers racing on one key take a lock (job concurrency keyed by
-#            image group + key); the second finds the image when its turn comes.
+#   missing  buildx build with the registry cache (written by develop pushes
+#            only), push, attest. Two callers racing on one key take a lock
+#            (job concurrency keyed by image group + key); the second finds the
+#            image when its turn comes.
 #
-# Trust. Only a run that can write packages pushes: not a fork pull request,
-# not Dependabot (read-only token). Those get empty outputs and the caller
-# builds locally, as before. Trusted refs (develop, main, merge queue) push
-# `<key>`; a pull request pushes `pr<N>-<key>`, which only that pull request's
-# later runs accept. A pushed image is never trusted by its tag: consumers
-# verify the digest's attestation (signer workflow, repository, source ref).
+# Trust. Tags: a push to develop or main writes `<key>`, the only tag every
+# consumer trusts. A merge-queue run writes `q-<commit sha>-<key>`, which only
+# a consumer in that same queue run accepts (its source ref must equal the
+# consumer's own ref). A pushed image is never trusted by its tag: consumers
+# verify the digest's attestation (signer workflow, repository, source ref, no
+# self-hosted runner).
+#
+# Token. No step that runs third-party code holds a registry credential or the
+# token: the contract files are generated in their own job (contents: read) and
+# handed over as an artifact; GH_TOKEN is set on the resolve steps only.
 
 on:
   workflow_call:
@@ -70,7 +77,7 @@ jobs:
     outputs:
       push: ${{ steps.p.outputs.push }}
       tag_prefix: ${{ steps.p.outputs.tag_prefix }}
-      pr: ${{ steps.p.outputs.pr }}
+      web: ${{ steps.p.outputs.web }}
       keys: ${{ steps.p.outputs.keys }}
       matrix: ${{ steps.p.outputs.matrix }}
       allinone: ${{ steps.p.outputs.allinone }}
@@ -87,38 +94,28 @@ jobs:
           REQUESTED: ${{ inputs.images }}
           EVENT: ${{ github.event_name }}
           REF: ${{ github.ref }}
-          ACTOR: ${{ github.actor }}
-          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
-          # Who may push, and under which tag.
-          push=true; prefix=""; pr=""
+          # Who may push, and under which tag. A pull request never pushes.
+          push=true; prefix=""
           case "$EVENT" in
             push) case "$REF" in refs/heads/develop|refs/heads/main) ;; *) push=false ;; esac ;;
-            merge_group) case "$REF" in refs/heads/gh-readonly-queue/*) ;; *) push=false ;; esac ;;
-            pull_request)
-              if [ "$HEAD_REPO" != "$GITHUB_REPOSITORY" ] || [ "$ACTOR" = "dependabot[bot]" ]; then push=false
-              else pr="$PR_NUMBER"; prefix="pr${PR_NUMBER}-"; fi ;;
+            merge_group) case "$REF" in refs/heads/gh-readonly-queue/*) prefix="q-${GITHUB_SHA}-" ;; *) push=false ;; esac ;;
             *) push=false ;;
           esac
-          { echo "push=$push"; echo "tag_prefix=$prefix"; echo "pr=$pr"; } >> "$GITHUB_OUTPUT"
+          { echo "push=$push"; echo "tag_prefix=$prefix"; } >> "$GITHUB_OUTPUT"
           if [ "$push" != true ]; then
-            { echo "keys={}"; echo 'matrix={"include":[]}'; echo "allinone=false"; } >> "$GITHUB_OUTPUT"
-            echo "no registry push for $EVENT on $REF (fork, Dependabot or untrusted ref): callers build locally"
+            { echo "keys={}"; echo 'matrix={"include":[]}'; echo "allinone=false"; echo "web=false"; } >> "$GITHUB_OUTPUT"
+            echo "no registry push for $EVENT on $REF: callers build locally"
             exit 0
           fi
-          # Expand the request: allinone is assembled FROM the three components.
-          want=" $REQUESTED "
-          case "$want" in *" allinone "*) want="$want api web console " ;; esac
-          keys='{}'; need=""
-          for i in api admin-cli web console allinone; do
-            case "$want" in *" $i "*) ;; *) continue ;; esac
-            k="$(bash .github/scripts/image-key.sh "$i")"
-            keys="$(jq -c --arg i "$i" --arg k "$k" '. + {($i): $k}' <<<"$keys")"
-            if ref="$(bash .github/scripts/ci-image-resolve.sh "$i" "$k" "$pr" 2>/dev/null)"; then
+          keys="$(bash .github/scripts/ci-images-keys.sh "$REQUESTED")"
+          need=""
+          for i in $(jq -r 'keys[]' <<<"$keys"); do
+            k="$(jq -r --arg i "$i" '.[$i]' <<<"$keys")"
+            if ref="$(bash .github/scripts/ci-image-resolve.sh "$i" "$k" 2>/dev/null)"; then
               echo "reuse $i $k: $ref"
             else
               echo "build $i $k"; need="$need $i"
@@ -135,12 +132,45 @@ jobs:
           has console && webs="$(jq -c '. + ["console"]' <<<"$webs")"
           [ "$webs" != '[]' ] && add web "$webs" "$(jq -r '.web // .console' <<<"$keys")"
           allinone=false; has allinone && allinone=true
-          { echo "allinone=$allinone"; echo "keys=$keys"; echo "matrix={\"include\":$matrix}"; } >> "$GITHUB_OUTPUT"
+          web=false; { has web || has console; } && web=true
+          { echo "web=$web"; echo "allinone=$allinone"; echo "keys=$keys"; echo "matrix={\"include\":$matrix}"; } >> "$GITHUB_OUTPUT"
+
+  # The web images compile against contract files that are not committed. They
+  # are generated here, in a job with contents: read only (no registry login,
+  # no GH_TOKEN, no packages: write), because generating them runs npm and Go
+  # tooling: a compromised dependency must not meet a token that can write
+  # packages. The build job receives the files as an artifact.
+  contract:
+    name: Generate the contract files
+    needs: plan
+    if: needs.plan.outputs.push == 'true' && needs.plan.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/generate-contract
+      - name: Pack the generated files
+        run: |
+          set -euo pipefail
+          tar -czf "$RUNNER_TEMP/contract.tgz" \
+            api/api/openapi/swagger.yaml api/api/openapi/routes.txt \
+            web/src/config/api-route-permissions.json web/src/config/authz-matrix.json \
+            web/src/lib/api/generated/api.types.ts
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ci-image-contract
+          path: ${{ runner.temp }}/contract.tgz
+          retention-days: 1
+          if-no-files-found: error
 
   build:
     name: Build ${{ matrix.group }} image
-    needs: plan
-    if: needs.plan.outputs.push == 'true' && toJSON(fromJSON(needs.plan.outputs.matrix).include) != '[]'
+    needs: [plan, contract]
+    if: ${{ !cancelled() && needs.plan.outputs.push == 'true' && (needs.contract.result == 'success' || needs.contract.result == 'skipped') && toJSON(fromJSON(needs.plan.outputs.matrix).include) != '[]' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -156,11 +186,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    # No job-level GH_TOKEN: only the steps that resolve images set it.
     env:
       KEYS: ${{ needs.plan.outputs.keys }}
       PREFIX: ${{ needs.plan.outputs.tag_prefix }}
-      PR: ${{ needs.plan.outputs.pr }}
-      GH_TOKEN: ${{ github.token }}
       GITHUB_REPOSITORY: ${{ github.repository }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -178,23 +207,39 @@ jobs:
         id: need
         env:
           IMAGES: ${{ toJSON(matrix.images) }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           for i in $(jq -r '.[]' <<<"$IMAGES"); do
             k="$(jq -r --arg i "$i" '.[$i]' <<<"$KEYS")"
-            if bash .github/scripts/ci-image-resolve.sh "$i" "$k" "$PR" >/dev/null 2>&1; then
+            if bash .github/scripts/ci-image-resolve.sh "$i" "$k" >/dev/null 2>&1; then
               echo "$i already built"; echo "${i//-/_}=false" >> "$GITHUB_OUTPUT"
             else
               echo "${i//-/_}=true" >> "$GITHUB_OUTPUT"
             fi
           done
-      # The web images compile against contract files that are not committed.
-      - name: Generate the contract files
+      # The web images compile against contract files that are not committed:
+      # generated by the `contract` job, unpacked here (only the five paths).
+      - name: Fetch the contract files
         if: (steps.need.outputs.web == 'true' || steps.need.outputs.console == 'true')
-        uses: ./.github/actions/generate-contract
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ci-image-contract
+          path: ${{ runner.temp }}/contract
+      - name: Unpack the contract files
+        if: (steps.need.outputs.web == 'true' || steps.need.outputs.console == 'true')
+        run: |
+          set -euo pipefail
+          want='api/api/openapi/swagger.yaml api/api/openapi/routes.txt web/src/config/api-route-permissions.json web/src/config/authz-matrix.json web/src/lib/api/generated/api.types.ts'
+          got="$(tar -tzf "$RUNNER_TEMP/contract/contract.tgz" | sort | tr '\n' ' ')"
+          [ "$got" = "$(printf '%s\n' $want | sort | tr '\n' ' ')" ] || { echo "::error::unexpected contract artifact contents: $got"; exit 1; }
+          tar -xzf "$RUNNER_TEMP/contract/contract.tgz"
       - id: meta
         env:
-          WRITE_CACHE: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/develop') || github.event_name == 'merge_group' }}
+          # Only a push to develop writes the registry cache: a merge-queue run
+          # (a commit about to merge) cannot plant layers later builds read.
+          # The cache lives in ci-images/*, never in a release package.
+          WRITE_CACHE: ${{ github.event_name == 'push' && github.ref == 'refs/heads/develop' }}
         run: |
           echo "cache_to=$([ "$WRITE_CACHE" = true ] && echo 'true' || echo 'false')" >> "$GITHUB_OUTPUT"
           for i in api admin-cli web console; do
@@ -304,11 +349,10 @@ jobs:
     concurrency:
       group: ${{ format('ci-image-allinone-{0}', fromJSON(needs.plan.outputs.keys).allinone) }}
       cancel-in-progress: false
+    # No job-level GH_TOKEN: only the steps that resolve images set it.
     env:
       KEYS: ${{ needs.plan.outputs.keys }}
       PREFIX: ${{ needs.plan.outputs.tag_prefix }}
-      PR: ${{ needs.plan.outputs.pr }}
-      GH_TOKEN: ${{ github.token }}
       GITHUB_REPOSITORY: ${{ github.repository }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -323,11 +367,13 @@ jobs:
           dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Component digests, and is it already built
         id: refs
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           res() { # <image>
             local k; k="$(jq -r --arg i "$1" '.[$i]' <<<"$KEYS")"
-            bash .github/scripts/ci-image-resolve.sh "$1" "$k" "$PR"
+            bash .github/scripts/ci-image-resolve.sh "$1" "$k"
           }
           for i in api web console; do echo "$i=$(res "$i")" >> "$GITHUB_OUTPUT"; done
           if res allinone >/dev/null 2>&1; then echo "built=true" >> "$GITHUB_OUTPUT"; else echo "built=false" >> "$GITHUB_OUTPUT"; fi
@@ -387,8 +433,6 @@ jobs:
         env:
           PUSH: ${{ needs.plan.outputs.push }}
           KEYS: ${{ needs.plan.outputs.keys }}
-          PREFIX: ${{ needs.plan.outputs.tag_prefix }}
-          PR: ${{ needs.plan.outputs.pr }}
           RESULTS: ${{ toJSON(needs.*.result) }}
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
@@ -400,7 +444,7 @@ jobs:
           fi
           for i in $(jq -r 'keys[]' <<<"$KEYS"); do
             k="$(jq -r --arg i "$i" '.[$i]' <<<"$KEYS")"
-            ref="$(bash .github/scripts/ci-image-resolve.sh "$i" "$k" "$PR")" \
+            ref="$(bash .github/scripts/ci-image-resolve.sh "$i" "$k")" \
               || { echo "::error::$i $k: no verified image"; exit 1; }
             echo "$i=$ref" >> "$GITHUB_OUTPUT"
             echo "$i $ref" >> "$GITHUB_STEP_SUMMARY"
