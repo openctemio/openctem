@@ -177,16 +177,11 @@ describe('Admin console sign-in (its own, no tenant session)', () => {
     expect(nav.assign).not.toHaveBeenCalled()
   })
 
-  it('points to the identity provider when it is required', async () => {
+  it('points to the identity provider after any refused password sign-in', async () => {
     stubLocation('')
     idpInfo.mockResolvedValueOnce({ enabled: true, display_name: 'Contoso SSO' })
-    signIn.mockRejectedValueOnce(
-      new AdminApiError(
-        'Sign in to the admin console with the identity provider',
-        403,
-        'IDP_SIGN_IN_REQUIRED'
-      )
-    )
+    // One answer for every refusal: the API does not say the password was right.
+    signIn.mockRejectedValueOnce(new AdminApiError('Wrong email or password', 401))
     await signInWith('ops@acme.io', 'Secret-pass-1')
     expect(
       await screen.findByText(/Administrators sign in with the identity provider/)

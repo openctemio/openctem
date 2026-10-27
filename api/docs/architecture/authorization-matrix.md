@@ -1067,7 +1067,8 @@ fresh console authenticator code in the `X-Admin-Step-Up` header, or the
 five-minute step-up window of the same console session (one confirmation,
 recorded in `admin_sessions.step_up_at`, covers the protected actions that
 follow). Without either the API answers `401 ADMIN_STEP_UP_REQUIRED` and the
-console asks for a code and retries; an administrator with no console
+console asks for a code and retries (a refused code the form sent itself
+goes back to that form's code field instead); an administrator with no console
 authenticator gets `403 STEP_UP_UNAVAILABLE`. Each confirmation is audited
 (`console.step_up`, the purpose names the action), a wrong code counts toward
 the sign-in lockout. Every console write is classified in
@@ -1137,7 +1138,7 @@ empty `owner_emails`. Every member-list view is audited
 | `GET /api/v1/admin/users/{id}` | **super_admin** |
 | `PATCH /api/v1/admin/users/{id}` | **super_admin** + **step-up** (audited) |
 | `DELETE /api/v1/admin/users/{id}` | **super_admin** + **step-up** (audited) |
-| `GET /api/v1/admin/audit-logs` (+ `/stats`, `/{id}`) | any admin (readonly ok) |
+| `GET /api/v1/admin/audit-logs` (+ `/stats`, `/{id}`) | any admin (readonly ok); the network address, user agent and request body of a row only for **ops_admin+** (by the administrator's own role), a read-only administrator reads action, actor, time and result |
 | `GET /api/v1/admin/audit-logs/chain` | any admin (readonly ok); the administrators' audit chain state: row positions and ids that do not verify, no row content |
 | `GET /api/v1/admin/target-mappings` (+ `/stats`, `/types`, `/{id}`) | any admin |
 | `POST/PATCH/DELETE /api/v1/admin/target-mappings` | **ops_admin+** (rate-limited, audited) |

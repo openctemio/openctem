@@ -1,0 +1,23 @@
+# Last step of every job behind an "... OK" gate:
+#
+#   - name: Fail fast
+#     if: failure()
+#     uses: ./.github/actions/fail-fast
+#
+# The job needs `actions: write` (cancel a workflow run). What it cancels and
+# when: .github/scripts/fail-fast.sh.
+name: Fail fast
+description: Cancel CI work that can no longer change the outcome after this job failed.
+runs:
+  using: composite
+  steps:
+    - name: Cancel doomed runs
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        REPO: ${{ github.repository }}
+        EVENT: ${{ github.event_name }}
+        RUN_ID: ${{ github.run_id }}
+        HEAD_SHA: ${{ github.event.merge_group.head_sha }}
+        HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+      run: bash "$GITHUB_ACTION_PATH/../../scripts/fail-fast.sh"
