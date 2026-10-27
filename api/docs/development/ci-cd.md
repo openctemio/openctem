@@ -1048,3 +1048,13 @@ The legacy `ui` GHCR package was created by `openctemio/ui`; this repository nee
 - **Image not found after a tag.** Check the Docker Publish run; the tag must match
   `v<major>.<minor>.<patch>[-suffix]`. Images for v0.8.0 and earlier exist only
   under the legacy `api` / `ui` names.
+
+### Per-job runner overrides
+
+Two long jobs that need no database can be moved on their own, so a small
+self-hosted pool takes real load without becoming the bottleneck for every
+heavy job: `CI_RUNNER_CODEQL` (CodeQL `analyze`) and `CI_RUNNER_E2E_BUILD`
+(Web E2E `build`, the e2e images). Set either to the runner label (for example
+`openctem-ci`); it applies to merge groups, pushes and pull requests from this
+repository, never to forks, and wins over `CI_RUNNER_MERGE`/`CI_RUNNER_HEAVY`.
+Delete the variable to send the job back to GitHub-hosted runners.
