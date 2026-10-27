@@ -232,6 +232,7 @@ jobs:
           set -euo pipefail
           want='api/api/openapi/swagger.yaml api/api/openapi/routes.txt web/src/config/api-route-permissions.json web/src/config/authz-matrix.json web/src/lib/api/generated/api.types.ts'
           got="$(tar -tzf "$RUNNER_TEMP/contract/contract.tgz" | sort | tr '\n' ' ')"
+          # shellcheck disable=SC2086 # $want is split into its file names on purpose
           [ "$got" = "$(printf '%s\n' $want | sort | tr '\n' ' ')" ] || { echo "::error::unexpected contract artifact contents: $got"; exit 1; }
           tar -xzf "$RUNNER_TEMP/contract/contract.tgz"
       - id: meta
