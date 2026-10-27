@@ -51,7 +51,7 @@ func toSensorManifestResponse(v sensor.ManifestVersion, current string) SensorMa
 
 // Manifest handles GET /api/v1/sensors/{id}/manifest
 // @Summary      Sensor manifest
-// @Description  The sensor's current manifest (RFC-033): build, platform, resources, concurrency ceiling, and its tools with their kind, version, capabilities and content, as the platform kept them, plus what it ignored. 404 when the sensor has none yet.
+// @Description  The sensor's current manifest: build, platform, resources, concurrency ceiling, and its tools with their kind, version, capabilities and content, as the platform kept them, plus what it ignored. 404 when the sensor has none yet.
 // @Tags         Sensors
 // @Produce      json
 // @Param        id   path      string  true  "Sensor ID"
@@ -78,7 +78,7 @@ func (h *SensorHandler) Manifest(w http.ResponseWriter, r *http.Request) {
 
 // Manifests handles GET /api/v1/sensors/{id}/manifests
 // @Summary      Sensor manifest history
-// @Description  The sensor's manifest versions, most recently current first (RFC-033). The newest 50 are kept, older ones for 90 days.
+// @Description  The sensor's manifest versions, most recently current first. The newest 50 are kept, older ones for 90 days.
 // @Tags         Sensors
 // @Produce      json
 // @Param        id     path      string  true   "Sensor ID"

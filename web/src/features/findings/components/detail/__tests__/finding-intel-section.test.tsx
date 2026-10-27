@@ -40,7 +40,7 @@ describe('FindingIntelSection', () => {
     const s = screen.getByRole('region', { name: 'Intelligence' })
     expect(s).toHaveTextContent('CISA KEVNot listed')
     expect(s).toHaveTextContent('19.3%')
-    expect(s).toHaveTextContent('97th percentile · as of Oct 15, 2026')
+    expect(s).toHaveTextContent('97th percentile, as of Oct 15, 2026')
     expect(s).toHaveTextContent('PublishedNov 5, 2025')
     const links = screen.getAllByRole('link')
     expect(links.every((a) => /^https:\/\//.test(a.getAttribute('href') ?? ''))).toBe(true)
@@ -58,7 +58,7 @@ describe('FindingIntelSection', () => {
       />
     )
     const s = screen.getByRole('region', { name: 'Intelligence' })
-    expect(s).toHaveTextContent('Known exploited since Jan 2, 2026 · due Jan 23, 2026')
+    expect(s).toHaveTextContent('Known exploited since Jan 2, 2026, due Jan 23, 2026')
     // The chip carries the ransomware use and the passed CISA due date.
     expect(within(s).getByLabelText('KEV, ransomware, past due')).toBeInTheDocument()
   })

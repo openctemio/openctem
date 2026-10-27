@@ -63,7 +63,7 @@ Every lookup error refuses (fail closed).
 | # | Decision |
 |---|---|
 | S1 | (a) `*.x` = `x` + all subdomains; exclusion `x` carves the apex out |
-| S2 | (a) proof for active probes is a platform setting (revised 2026-10-11, §8.1): default off; a public multi-tenant cloud turns it on, and then platform sensors and intrusive (T2) probes need proof |
+| S2 | (a) proof for active probes is a platform setting (revised 2026-10-11, §8.1): default off; a public multi-tenant cloud turns it on, and then platform sensors need proof; a job on the organization's own sensor needs none at any tier |
 | S3 | (a) widening approvals are a tenant setting 0/1/2, default `min(1, admins − 1)`, never 0 for T2 (amends RFC-040 Q2 (a)). Revised 2026-10-09 (§12): approvers are named and reminded; an owner with no other approver self-approves with a fresh authenticator code; a platform policy may make approvals tenant-controlled or off |
 | S4 | yes, refined 2026-10-07: an active, non-expiring scope entry or seed confirms the names it covers (`matches_scope_target`, no review); IPs only through IP entries; one-off entries never confirm; tombstones and exclusions win; removal keeps the asset and stops scanning; backfill of existing `needs_review` rows |
 | S5 | tenant knobs (§7); no global scope-off switch, ever |
@@ -517,9 +517,10 @@ the job runs on the organization's own sensor), `tenant_first`, `tenant_busy`,
 `internal_targets`, `no_tenant_sensor`, `platform_sensors`. `sensor` names
 only the organization's own sensor; a platform sensor is never named. With
 the proof setting on, auto refuses an unproven target (`proof_required`) only
-when no own sensor can take the job; intrusive probes need proof on any
-sensor, and their `proof_required` refusal does not offer "use your own
-sensor".
+when no own sensor can take the job, and the refusal says why (platform
+sensors need a verified domain; or no sensor of the organization can take
+the job). Intrusive probes on the organization's own sensor need no proof:
+the scope entry's tier ceiling and the scan's approval govern them.
 
 **Resolved address** (`resolved`). A `zone_none` refusal of a hostname that
 resolves to a private address lists those addresses (at most 8), so the
@@ -799,7 +800,7 @@ a hint (owner decision 2026-10-11, revising S2).
 | Setting | Rule |
 |---|---|
 | off (default) | no proof needed anywhere: assets come from many sources, and the organization's scope entry is the authorization. The scope gate, exclusions, the deny list (§8.2), scan zones for private addresses and tier ceilings stay in force |
-| on | a job routed to platform sensors needs every target at or under a verified domain of the tenant, and intrusive (T2) probes need one on any sensor |
+| on | a job routed to platform sensors needs every target at or under a verified domain of the tenant; a job on the organization's own sensor needs none at any tier, and a job with an unproven target never falls back to platform sensors (it waits for the own sensor) |
 
 A public multi-tenant cloud should turn it on: platform sensors send packets
 from the operator's addresses, and only ownership proof stops a tenant from
@@ -889,7 +890,7 @@ are gated by zones and are not capped.
 | Review by rule | §6.7 suggestions, preview, accept/reject as a rule |
 | Inventory | §4.4 one membership definition; `attribution_state` on recent changes; review counts by reason; `covered_by` on queue items |
 | Refusals | codes, fixes, `POST /check` dry run |
-| Tier ceilings | `max_tier` enforced at every dispatch (`tier_exceeds`, `raise_tier`); per-step proof for intrusive workflow steps |
+| Tier ceilings | `max_tier` enforced at every dispatch (`tier_exceeds`, `raise_tier`); per-step tier check for workflow steps |
 
 ## 12. Amendment 2026-10-09: approvers, long intrusive grants, platform policy
 
@@ -1147,7 +1148,14 @@ turns scope off.
 ```
 
 - 1 to 200 items (the dry run's limit, so a scan's refused targets fit in
-  one request); `reason` is recorded on every entry; `origin` may be
+  one request); `expires_in_days` (1 to 365) and `max_tier` (`t0`, `t1`,
+  `t2`) are optional and apply to every item exactly as on `POST
+  /scope/targets` (omitted: permanent, the organization's default tier; the
+  organization's expiry and tier rules are checked per item, so an item the
+  rules refuse answers its code). The Add to scope dialog uses them for a
+  pasted list: the web splits the text into values, detects each kind, and
+  sends batches of 200 in turn, so one step-up covers the list;
+  `reason` is recorded on every entry; `origin` may be
   `refusal_fix`, otherwise the entries are recorded as `import`.
 - A caller who adds entries directly (Off and On, or an approver in Strict)
   needs a recent re-authentication once: without it the request answers

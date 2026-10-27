@@ -318,7 +318,7 @@ export function MarkOutOfScopeAction({ selected, onDone }: ActionProps) {
                               {t('assets.triage.rule.covers', 'covers {count} selected', {
                                 count: r.covers,
                               })}
-                              {matchText(r.item) ? ` · ${matchText(r.item)}` : ''}
+                              {matchText(r.item) ? `, ${matchText(r.item)}` : ''}
                             </span>
                           </Label>
                         </li>

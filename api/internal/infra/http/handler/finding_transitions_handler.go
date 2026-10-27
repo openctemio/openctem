@@ -23,7 +23,7 @@ type EvaluateTransitionsRequest struct {
 	FindingIDs []string `json:"finding_ids" validate:"required,min=1,max=100,dive,uuid"`
 	To         string   `json:"to" validate:"required,max=32"`
 	// SubStatusID, when set, asks about moving to that organization
-	// sub-status of the target status (RFC-110).
+	// sub-status of the target status.
 	SubStatusID string `json:"sub_status_id,omitempty" validate:"omitempty,uuid"`
 }
 

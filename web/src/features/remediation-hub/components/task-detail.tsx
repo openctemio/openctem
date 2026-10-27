@@ -417,7 +417,7 @@ export function TaskDetail({ taskId }: { taskId: string }) {
   const owner =
     [owners.user(task.assignee_user_id), owners.group(task.assignee_group_id)]
       .filter(Boolean)
-      .join(' · ') || t('remediationHub.owner.unassigned')
+      .join(', ') || t('remediationHub.owner.unassigned')
   const steps = fixSteps(undefined, task.action_key)
   const targets = (siblings?.data ?? []).filter((x) => x.id !== task.id)
 
