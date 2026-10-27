@@ -18,10 +18,10 @@ import (
 // re-authentication dialog and retries the request once.
 const (
 	// CodeStepUpRequired: the session has not authenticated within the window.
-	CodeStepUpRequired apierror.Code = "STEP_UP_REQUIRED"
+	CodeStepUpRequired = apierror.CodeStepUpRequired
 	// CodeStepUpUnavailable: this credential cannot step up (no user session,
 	// e.g. an API key, or step-up is not wired).
-	CodeStepUpUnavailable apierror.Code = "STEP_UP_UNAVAILABLE"
+	CodeStepUpUnavailable = apierror.CodeStepUpUnavailable
 )
 
 // ErrNoRecentAuth is what a RecentAuthChecker returns when the session cannot
