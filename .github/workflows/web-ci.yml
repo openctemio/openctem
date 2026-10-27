@@ -82,6 +82,10 @@ jobs:
   # an API change, compares them with the base's.
   contract:
     name: API contract
+    # actions: write lets the fail-fast step cancel doomed runs (.github/actions/fail-fast).
+    permissions:
+      contents: read
+      actions: write
     needs: changes
     if: needs.changes.outputs.web == 'true' || needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
@@ -199,6 +203,9 @@ jobs:
           name: contract-report
           path: ${{ runner.temp }}/contract/report/
           retention-days: 5
+      - name: Fail fast
+        if: failure()
+        uses: ./.github/actions/fail-fast
 
   # Posts the report on the pull request (one comment, updated in place). The
   # only job with a write token: it runs no code from the pull request, it
@@ -254,6 +261,10 @@ jobs:
   # (All-in-one CI builds the web image in the merge queue).
   quality:
     name: Web checks
+    # actions: write lets the fail-fast step cancel doomed runs (.github/actions/fail-fast).
+    permissions:
+      contents: read
+      actions: write
     needs: [changes, contract]
     if: needs.changes.outputs.web == 'true' || needs.contract.outputs.changed == 'true'
     runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_HEAVY) || 'ubuntu-latest' }}
@@ -334,16 +345,23 @@ jobs:
         run: |
           base="$(bash ../.github/scripts/effective-base.sh web "origin/${GITHUB_BASE_REF}")"
           node scripts/check-copy.mjs "$base"
+      - name: Fail fast
+        if: failure()
+        uses: ./.github/actions/fail-fast
 
   # The Vitest suite, in three parallel shards (vitest --shard). Same setup as
   # `Web checks`; the endpoint check reads api/api/openapi/routes.txt.
   tests:
     name: Web tests
+    # actions: write lets the fail-fast step cancel doomed runs (.github/actions/fail-fast).
+    permissions:
+      contents: read
+      actions: write
     needs: [changes, contract]
     if: needs.changes.outputs.web == 'true' || needs.contract.outputs.changed == 'true'
     runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_HEAVY) || 'ubuntu-latest' }}
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         shard: [1, 2, 3]
     steps:
@@ -389,9 +407,16 @@ jobs:
           name: web-${{ matrix.shard }}
           fail_ci_if_error: false
         continue-on-error: true
+      - name: Fail fast
+        if: failure()
+        uses: ./.github/actions/fail-fast
 
   build:
     name: Build
+    # actions: write lets the fail-fast step cancel doomed runs (.github/actions/fail-fast).
+    permissions:
+      contents: read
+      actions: write
     needs: [changes, contract, quality]
     if: >-
       (needs.changes.outputs.web == 'true' || needs.contract.outputs.changed == 'true') &&
@@ -435,6 +460,9 @@ jobs:
         run: |
           sh scripts/check-tenant-bundle.test.sh
           sh scripts/check-tenant-bundle.sh .next/server
+      - name: Fail fast
+        if: failure()
+        uses: ./.github/actions/fail-fast
 
   web-ok:
     name: Web CI OK
