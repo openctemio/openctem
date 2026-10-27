@@ -497,8 +497,10 @@ func (h *IntegrationHandler) handleServiceError(w http.ResponseWriter, err error
 		apierror.Conflict("Integration already exists").WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
 		apierror.BadRequest(err.Error()).WriteJSON(w)
+	case errors.Is(err, integrationapp.ErrOrgMailNeedsAdmin):
+		apierror.Forbidden("Only an owner or administrator can send organization mail through this relay.").WriteJSON(w)
 	case errors.Is(err, shared.ErrForbidden):
-		apierror.Forbidden(err.Error()).WriteJSON(w)
+		apierror.Forbidden("").WriteJSON(w)
 	case errors.Is(err, scm.ErrAuthFailed):
 		h.logger.Warn("integration auth failed", "error", err)
 		apierror.New(http.StatusFailedDependency, apierror.Code("INTEGRATION_AUTH_FAILED"),

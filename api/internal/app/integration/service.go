@@ -1180,9 +1180,9 @@ type EmailCredentials struct {
 	OrgMail *bool `json:"org_mail,omitempty"`
 }
 
-// errOrgMailNeedsAdmin refuses a caller who may manage integrations but is
+// ErrOrgMailNeedsAdmin refuses a caller who may manage integrations but is
 // not an owner or administrator turning organization mail on for a relay.
-var errOrgMailNeedsAdmin = fmt.Errorf("%w: only an owner or administrator can send organization mail through this relay", shared.ErrForbidden)
+var ErrOrgMailNeedsAdmin = fmt.Errorf("%w: only an owner or administrator can send organization mail through this relay", shared.ErrForbidden)
 
 // errSMTPSkipVerify refuses a tenant request to turn off TLS verification.
 var errSMTPSkipVerify = fmt.Errorf("%w: skip_verify is not supported: the SMTP server certificate is always verified (use a certificate from a trusted CA)", shared.ErrValidation)
@@ -1421,7 +1421,7 @@ func (s *IntegrationService) setEmailCredentials(intg *integrationdom.Integratio
 	}
 	orgMail := emailCreds.OrgMail != nil && *emailCreds.OrgMail
 	if orgMail && !mayEnableOrgMail {
-		return errOrgMailNeedsAdmin
+		return ErrOrgMailNeedsAdmin
 	}
 
 	// Validate required fields
@@ -1480,7 +1480,7 @@ func nextOrgMail(requested *bool, existing map[string]any, mayEnable bool) (bool
 		return stored, nil
 	}
 	if *requested && !stored && !mayEnable {
-		return false, errOrgMailNeedsAdmin
+		return false, ErrOrgMailNeedsAdmin
 	}
 	return *requested, nil
 }
