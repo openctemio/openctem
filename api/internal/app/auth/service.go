@@ -120,6 +120,10 @@ type AuthService struct {
 	// domain (sso_required, joinable, block new organizations). Nil: none.
 	signupDomains signupdom.DomainPolicySource
 
+	// addressHolder tells whether the inviting organization holds the invitee
+	// address's domain; nil means no organization does.
+	addressHolder AddressHolder
+
 	userRepo         userdom.Repository
 	sessionRepo      sessiondom.Repository
 	refreshTokenRepo sessiondom.RefreshTokenRepository
@@ -458,8 +462,10 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 	if err := s.passwordHasher.Validate(input.Password); err != nil {
 		return nil, fmt.Errorf("password validation failed: %w", err)
 	}
-	requireVerification := false
-	if !invited {
+	var requireVerification bool
+	if invited {
+		requireVerification = s.invitedMustVerify(ctx, invitationTenantID, email)
+	} else {
 		requireVerification = s.selfRegistrationMustVerify(ctx, invitationTenantID)
 	}
 
@@ -500,11 +506,11 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
 
-	// Email verification: an invitation sent to this exact address already
-	// proves the address, so an invited registration is verified. Otherwise
-	// the rule is resolved from the invitation's tenant when a (non-matching)
-	// token was supplied, else the platform default (single-tenant heuristic /
-	// SMTP check / global env). The token is NOT consumed here; acceptance is a
+	// Email verification: an invitation token proves only that its holder may
+	// join the inviting organization. The inviter sees the raw token, so it is
+	// never proof of the mailbox: an invited registration is verified at once
+	// only when the inviting organization holds the address's domain (see
+	// invitedMustVerify). The token is NOT consumed here; acceptance is a
 	// separate POST /invitations/{token}/accept. requireVerification was
 	// decided above.
 
@@ -551,6 +557,39 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 		VerificationToken:    verificationToken,
 		RequiresVerification: requireVerification,
 	}, nil
+}
+
+// AddressHolder answers whether an organization has verified the domain of an
+// e-mail address (the rule that lets an organization create accounts directly).
+type AddressHolder interface {
+	HeldBy(ctx context.Context, tenantID shared.ID, email string) (bool, error)
+}
+
+// SetAddressHolder wires the domain-holder check used to decide whether an
+// invitation may vouch for the address it names.
+func (s *AuthService) SetAddressHolder(h AddressHolder) { s.addressHolder = h }
+
+// invitedMustVerify decides verification for an account registered with an
+// invitation token. The token is held by the inviter (the create response and
+// the organization's mail relay both carry it), so it never proves the
+// mailbox: another organization's pending invitation for the same address
+// would otherwise be offered to an account its inviter created. Only an
+// organization that verified the address's domain may vouch for the address;
+// every other invited registration is verified by a mail link sent by the
+// platform, whatever the inviting organization's own verification setting.
+// The one exception is a platform that cannot deliver mail at all.
+func (s *AuthService) invitedMustVerify(ctx context.Context, invitationTenantID, email string) bool {
+	if s.addressHolder != nil {
+		if tid, err := shared.IDFromString(invitationTenantID); err == nil {
+			if held, herr := s.addressHolder.HeldBy(ctx, tid, email); herr == nil && held {
+				return false
+			}
+		}
+	}
+	if mode, ok := s.lookupTenantVerificationMode(ctx, invitationTenantID); ok && mode == tenantdom.EmailVerificationAlways {
+		return true
+	}
+	return s.selfRegistrationMustVerify(ctx, "")
 }
 
 // pendingInvitationFor resolves an invitation token supplied at registration.
