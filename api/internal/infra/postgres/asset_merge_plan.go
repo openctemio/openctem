@@ -226,6 +226,7 @@ var assetMergeLeftAlone = map[string]string{
 	"ingest_receipt_items.asset_id":              "historical record of what one receipt did with an item; it names the asset as it was at ingest and is not part of the asset's live data",
 	"collector_assets.asset_id":                  "a collector source's authority covers only the asset it created: a merge never hands it the kept asset, so the merged asset's rows go with it",
 	"asset_technology_backfill_removed.asset_id": "audit record of a link the technology backfill deleted; it describes the asset as it was and is not part of the asset's live data",
+	"asset_resolution.asset_id":                  "a merged name's resolution state goes with it; the kept name keeps its own and the next resolution checks it again",
 	"asset_wildcard_dns.asset_id":                "a merged name's wildcard-only mark goes with it; the kept name keeps its own and the next filtered resolution marks it again",
 }
 

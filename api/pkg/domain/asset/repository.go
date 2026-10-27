@@ -300,6 +300,10 @@ type Filter struct {
 	// its TTL) or "never" (a passive class that applies was never observed);
 	// docs/architecture/asset-freshness.md. "" = no filter.
 	Freshness string
+	// Resolution keeps host-name assets by whether their name resolves
+	// ("not_resolving": the platform knows it does not; "resolving": it
+	// does). A name never checked matches neither. "" = no filter.
+	Resolution string
 	// Coverage keeps assets the coverage ledger tracks that had a
 	// successful run of any capability within CoverageWindow ("covered"),
 	// or none ("uncovered"). "" = no filter.
@@ -720,6 +724,7 @@ func (f Filter) IsEmpty() bool {
 		f.MaxRiskScore == nil &&
 		f.HasFindings == nil &&
 		f.Freshness == "" &&
+		f.Resolution == "" &&
 		f.Coverage == "" &&
 		len(f.Technologies) == 0 &&
 		len(f.TechnologyCategories) == 0 &&

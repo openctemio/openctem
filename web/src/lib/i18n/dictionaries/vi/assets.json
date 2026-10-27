@@ -285,6 +285,8 @@
   "assets.facetPanel.noneRecorded": "Chưa có ghi nhận nào.",
   "assets.facetPanel.noneYet": "Chưa có mục nào trong không gian làm việc này.",
   "assets.facetPanel.notCrown": "Không phải tài sản trọng yếu",
+  "assets.facetPanel.notResolving": "Phân giải: không phân giải được",
+  "assets.facetPanel.resolving": "Phân giải: đang phân giải",
   "assets.facetPanel.searchFacet": "Tìm {facet}…",
   "assets.facetPanel.searchFacetAria": "Tìm {facet}",
   "assets.facetPanel.seenRecently": "Thấy gần đây",

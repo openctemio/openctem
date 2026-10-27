@@ -5,6 +5,7 @@ package assetfreshness
 
 import (
 	"context"
+	"slices"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/metrics"
@@ -16,8 +17,39 @@ import (
 
 // Recorder turns the assets an ingest wrote into class observations.
 type Recorder struct {
-	repo   freshdom.Repository
-	logger *logger.Logger
+	repo freshdom.Repository
+	// resolution gets the names a resolve stage or a tool proved resolving
+	// (nil: none recorded).
+	resolution resolutionRecorder
+	logger     *logger.Logger
+}
+
+// resolutionRecorder marks names resolving (assetresolution.Store).
+type resolutionRecorder interface {
+	RecordResolved(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID, at time.Time) error
+}
+
+// SetResolution wires the resolution states: a name a resolver reported, or a
+// tool reached by name, is resolving again, so an active stage takes it.
+func (r *Recorder) SetResolution(st resolutionRecorder) { r.resolution = st }
+
+// resolvedNames are the host-name assets of the batch that the tool's
+// observations prove resolve (a resolver answered, or a tool reached them).
+func resolvedNames(obs []freshdom.Observation, assets []*assetdom.Asset) []shared.ID {
+	proof := map[shared.ID]bool{}
+	for _, o := range obs {
+		if slices.Contains(freshdom.ResolveEvidenceClasses, o.Class) {
+			proof[o.AssetID] = true
+		}
+	}
+	var ids []shared.ID
+	for _, a := range assets {
+		if a == nil || !proof[a.ID()] || (a.Type() != assetdom.AssetTypeDomain && a.Type() != assetdom.AssetTypeSubdomain) {
+			continue
+		}
+		ids = append(ids, a.ID())
+	}
+	return ids
 }
 
 // NewRecorder creates the recorder.
@@ -56,6 +88,14 @@ func (r *Recorder) AssetsObserved(ctx context.Context, tenantID shared.ID, tool 
 		r.logger.Warn("asset freshness not recorded", "tenant_id", tenantID.String(), "tool", tool,
 			"observations", len(obs), "error", logger.SanitizeError(err))
 		return
+	}
+	if r.resolution != nil {
+		if ids := resolvedNames(obs, assets); len(ids) > 0 {
+			if err := r.resolution.RecordResolved(ctx, tenantID, ids, observedAt); err != nil {
+				r.logger.Warn("resolution state not recorded", "tenant_id", tenantID.String(), "tool", tool,
+					"names", len(ids), "error", logger.SanitizeError(err))
+			}
+		}
 	}
 	for _, o := range obs {
 		metrics.AssetFreshnessObservationsTotal.WithLabelValues(string(o.Class)).Inc()

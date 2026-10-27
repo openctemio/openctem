@@ -233,14 +233,19 @@ export function runHref(runId: string): string {
  * They never change the run's status.
  */
 export function runTargetNote(
-  run: Pick<ScanRun, 'unreachable_target_count' | 'skipped_target_count'>,
+  run: Pick<
+    ScanRun,
+    'unreachable_target_count' | 'skipped_target_count' | 'no_longer_resolve_count'
+  >,
   t: Translate = enTranslate
 ): string | null {
   const parts: string[] = []
   const unreachable = run.unreachable_target_count ?? 0
-  const skipped = run.skipped_target_count ?? 0
+  const gone = Math.min(run.no_longer_resolve_count ?? 0, run.skipped_target_count ?? 0)
+  const skipped = (run.skipped_target_count ?? 0) - gone
   if (unreachable > 0) parts.push(t('scans.outcome.unreachable', undefined, { count: unreachable }))
   if (skipped > 0) parts.push(t('scans.outcome.skipped', undefined, { count: skipped }))
+  if (gone > 0) parts.push(t('scans.outcome.noLongerResolve', undefined, { count: gone }))
   return parts.length > 0 ? parts.join(', ') : null
 }
 

@@ -1134,6 +1134,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Which source decides an asset attribute (RFC-069).
 	s.Asset.SetAttributeSources(repos.AssetAttributeSources, repos.Tenant)
 	s.Asset.SetFreshness(repos.AssetFreshness)
+	s.Asset.SetResolution(repos.AssetResolution)
 	s.Asset.SetCoverage(repos.AssetCoverage)
 	s.AssetCoverage = coverageapp.NewService(repos.AssetCoverage, log)
 	s.Asset.SetChangeTimeline(repos.AssetChangeEvents)
@@ -2395,6 +2396,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// tenant's policy.
 	s.Ingest.SetCommandReader(repos.Command)
 	s.Ingest.SetWildcardDNS(repos.AssetWildcardDNS)
+	// A name the resolver left out is told apart (no DNS answer, or a probed
+	// wildcard record) by asking DNS through the scan-zone resolver.
+	s.Ingest.SetNameResolution(ingest.NewDNSNameProber(zoneResolver(cfg.Scope.ZoneResolver)), repos.AssetResolution)
 	s.Ingest.SetResultQuarantine(repos.SensorResult, sensorresult.DefaultLimits())
 	// RFC-052 §5.3: results without a job need push ingest in the sensor's
 	// effective grant (off by default, always off while New).
@@ -3106,6 +3110,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		staleRefresher = s.AssetEnricher
 	}
 	s.Scan.SetResolveEvidence(repos.AssetFreshness, staleRefresher)
+	s.Scan.SetResolutionStore(repos.AssetResolution)
 	s.AssetImport.SetCreatedAssetsHook(requestNew)
 	s.Asset.SetEnrichmentRequests(repos.AssetEnrichmentRequests)
 	s.Ingest.SetAssetsDiscoveredCallback(func(ctx context.Context, tenantID shared.ID, assets []*assetdom.Asset) {
@@ -3118,7 +3123,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetAssetsExposedCallback(s.AssetDiscoveryNotifier.AssetsExposed)
 	// Every asset an ingest wrote moves the freshness clock of the attribute
 	// classes the report's tool observes (docs/architecture/asset-freshness.md).
-	s.Ingest.SetAssetsObservedCallback(assetfreshnessapp.NewRecorder(repos.AssetFreshness, log).AssetsObserved)
+	freshnessRecorder := assetfreshnessapp.NewRecorder(repos.AssetFreshness, log)
+	freshnessRecorder.SetResolution(repos.AssetResolution)
+	s.Ingest.SetAssetsObservedCallback(freshnessRecorder.AssetsObserved)
 	// Network seeds (RFC-082): expanded from RIPEstat through the SSRF guard.
 	s.EASMNetworkSeeds = easmapp.NewNetworkSeedService(repos.EASMNetworkSeed, easmapp.NewRIPEstat(), s.ScopeGuardrails, log.With("service", "easm-network-seeds"))
 	s.EASMNetworkSeeds.SetSettings(s.Tenant) // per-organization opt-out of RIPEstat lookups
