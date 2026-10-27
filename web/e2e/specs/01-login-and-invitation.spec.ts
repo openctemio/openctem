@@ -15,80 +15,96 @@ import { loginAs } from '../helpers/auth'
  * email — see the TODO at the bottom of this file.
  */
 
-base('login form rejects invalid credentials', async ({ page }, testInfo) => {
-  // We don't need full env to test rejection — just need a base URL.
-  if (!process.env.E2E_BASE_URL && !process.env.E2E_USER_EMAIL) {
-    testInfo.skip(true, 'E2E_BASE_URL not set')
-    return
+base(
+  'login form rejects invalid credentials',
+  { tag: ['@auth', '@smoke'] },
+  async ({ page }, testInfo) => {
+    // We don't need full env to test rejection — just need a base URL.
+    if (!process.env.E2E_BASE_URL && !process.env.E2E_USER_EMAIL) {
+      testInfo.skip(true, 'E2E_BASE_URL not set')
+      return
+    }
+    await page.goto('/login')
+
+    await page.getByLabel('Email').fill('not-a-real-user@example.invalid')
+    await page.getByLabel('Password', { exact: true }).fill('definitely-wrong-password')
+    await page.getByRole('button', { name: 'Sign in' }).click()
+
+    // The page must NOT navigate away from /login on failure.
+    await expect(page).toHaveURL(/\/login/, { timeout: 10_000 })
+
+    // And surface an error to the user — we don't pin the exact text
+    // because copy may be localised, but expect SOMETHING with role=alert
+    // or a toast container.
+    const errorVisible = await Promise.race([
+      page
+        .getByRole('alert')
+        .first()
+        .waitFor({ state: 'visible', timeout: 5_000 })
+        .then(() => true)
+        .catch(() => false),
+      page
+        .locator('[data-sonner-toast]')
+        .first()
+        .waitFor({ state: 'visible', timeout: 5_000 })
+        .then(() => true)
+        .catch(() => false),
+    ])
+    expect(errorVisible, 'expected an error alert/toast on failed login').toBe(true)
   }
-  await page.goto('/login')
+)
 
-  await page.getByLabel('Email').fill('not-a-real-user@example.invalid')
-  await page.getByLabel('Password', { exact: true }).fill('definitely-wrong-password')
-  await page.getByRole('button', { name: 'Sign in' }).click()
+base(
+  'login flow lands on a tenant route',
+  { tag: ['@auth', '@smoke'] },
+  async ({ page }, testInfo) => {
+    const cfg = getE2EConfig()
+    if (!cfg.ok) {
+      testInfo.skip(true, `Skipping — missing env vars: ${cfg.missing.join(', ')}`)
+      return
+    }
 
-  // The page must NOT navigate away from /login on failure.
-  await expect(page).toHaveURL(/\/login/, { timeout: 10_000 })
-
-  // And surface an error to the user — we don't pin the exact text
-  // because copy may be localised, but expect SOMETHING with role=alert
-  // or a toast container.
-  const errorVisible = await Promise.race([
-    page
-      .getByRole('alert')
-      .first()
-      .waitFor({ state: 'visible', timeout: 5_000 })
-      .then(() => true)
-      .catch(() => false),
-    page
-      .locator('[data-sonner-toast]')
-      .first()
-      .waitFor({ state: 'visible', timeout: 5_000 })
-      .then(() => true)
-      .catch(() => false),
-  ])
-  expect(errorVisible, 'expected an error alert/toast on failed login').toBe(true)
-})
-
-base('login flow lands on a tenant route', async ({ page }, testInfo) => {
-  const cfg = getE2EConfig()
-  if (!cfg.ok) {
-    testInfo.skip(true, `Skipping — missing env vars: ${cfg.missing.join(', ')}`)
-    return
+    await loginAs(page, cfg.config)
+    await expect(page).not.toHaveURL(/\/login(\?|$)/)
+    await expect(page.locator('[data-sidebar="sidebar"]').first()).toBeVisible({ timeout: 15_000 })
   }
+)
 
-  await loginAs(page, cfg.config)
-  await expect(page).not.toHaveURL(/\/login(\?|$)/)
-  await expect(page.locator('[data-sidebar="sidebar"]').first()).toBeVisible({ timeout: 15_000 })
-})
+base(
+  'public invitation preview handles unknown token gracefully',
+  { tag: ['@auth', '@smoke'] },
+  async ({ page }) => {
+    // Public route — no auth required. Use a clearly fake token.
+    await page.goto('/invitations#token=this-token-definitely-does-not-exist-0123456789')
+    // Either a friendly 404 or an "invalid invitation" UI must render —
+    // never a hard crash. We assert the page rendered SOMETHING.
+    await expect(page.locator('body')).toBeVisible()
+    await expect(page.locator('body')).not.toBeEmpty()
+  }
+)
 
-base('public invitation preview handles unknown token gracefully', async ({ page }) => {
-  // Public route — no auth required. Use a clearly fake token.
-  await page.goto('/invitations#token=this-token-definitely-does-not-exist-0123456789')
-  // Either a friendly 404 or an "invalid invitation" UI must render —
-  // never a hard crash. We assert the page rendered SOMETHING.
-  await expect(page.locator('body')).toBeVisible()
-  await expect(page.locator('body')).not.toBeEmpty()
-})
+authedTest(
+  'admin can see pending invitations on the users page',
+  { tag: ['@auth'] },
+  async ({ page }) => {
+    await page.goto('/settings/members')
+    await page.waitForLoadState('networkidle')
 
-authedTest('admin can see pending invitations on the users page', async ({ page }) => {
-  await page.goto('/settings/members')
-  await page.waitForLoadState('networkidle')
+    // The users page surfaces pending invitations as a "Pending Invites" stat
+    // card (the status filter tabs are Active/Suspended, not Pending). Its
+    // presence proves the page loaded with the right permissions. We don't
+    // assert a specific count — empty pending lists are valid for fresh tenants.
+    const pendingInvites = page
+      .getByText(/pending invites/i)
+      .or(page.getByText(/pending invitations/i))
+    await expect(pendingInvites.first()).toBeVisible({ timeout: 15_000 })
 
-  // The users page surfaces pending invitations as a "Pending Invites" stat
-  // card (the status filter tabs are Active/Suspended, not Pending). Its
-  // presence proves the page loaded with the right permissions. We don't
-  // assert a specific count — empty pending lists are valid for fresh tenants.
-  const pendingInvites = page
-    .getByText(/pending invites/i)
-    .or(page.getByText(/pending invitations/i))
-  await expect(pendingInvites.first()).toBeVisible({ timeout: 15_000 })
-
-  // TODO: Once an API helper exists for seeding an invitation, this test
-  // should:
-  //   1. POST a fresh invitation via the API
-  //   2. Reload the page and find the row by email
-  //   3. Click "Resend"
-  //   4. Click "Delete" and confirm the row disappears
-  // Until then we just assert the tab is reachable.
-})
+    // TODO: Once an API helper exists for seeding an invitation, this test
+    // should:
+    //   1. POST a fresh invitation via the API
+    //   2. Reload the page and find the row by email
+    //   3. Click "Resend"
+    //   4. Click "Delete" and confirm the row disappears
+    // Until then we just assert the tab is reachable.
+  }
+)

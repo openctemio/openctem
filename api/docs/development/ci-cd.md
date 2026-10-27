@@ -12,7 +12,7 @@ truth: this page describes them as of the merge-queue routing (#730, 2026-10-02)
 | API CI (`api-ci.yml`) | PR / push to `develop`; merge queue | `API static checks` (one job: migration safety, SQL schema drift, security gates, OpenAPI contract, gateway routing, go vet, staticcheck, golangci-lint), tests against Postgres + Redis, least-privilege suite, PostgreSQL 18 migrations, release binaries, Docker build; see [Tiers](#tiers) | **API CI OK** |
 | Web CI (`web-ci.yml`) | PR / push to `develop`; merge queue | `API contract` (generates the contract files; for an API change compares them with the base and reports the difference), `API contract report` (the pull request comment), `Web checks` (type-check against the generated contract, ESLint, Prettier, palette drift, separators, and the copy linter `web/scripts/check-copy.mjs` on added or changed English strings: no marketing words, "successfully", exclamation marks, em dash asides or Title Case labels; `node scripts/check-copy.mjs --all` lists the existing strings to clean up) and `Web tests` (Vitest in three parallel shards); `next build` (push only) | **Web CI OK** |
 | CodeQL (`codeql.yml`) | PR / push; merge queue; weekly (Mon 00:00 UTC) | One matrix over the languages: Go (built inside `api/`) and JavaScript/TypeScript (`web/`), one category per language. Go runs `security-and-quality` with `go/log-injection` replaced by `.github/codeql/go-queries/LogInjectionUnstructured.ql` (`openctem/go/log-injection`): the same sources, sinks and sanitizers, minus the key-value attributes of `log/slog` calls, which slog's text and JSON handlers escape (pinned by `api/pkg/logger/forging_test.go`); the message argument and every other logger stay checked, and `logger.SanitizeValue`, `SanitizeText` and `SanitizeError` are recognised sanitizers. PR and merge queue: only the changed language(s). Push to `develop`/`main` and weekly: both, so each branch keeps a fresh baseline per category | **CodeQL OK** |
-| Web E2E (`web-e2e.yml`) | PR (with `run-e2e`, a changed suite, or the full tier) / push to `develop`; merge queue | Takes the API, web and admin images from Build images (built once per content key for the whole pipeline), then runs the Playwright suite (`web/e2e`) in 4 shards, each against its own stack (Postgres, Redis, migrations, seeded tenant). The merge queue runs it whenever the queued PR changed `web/`, `api/` or a shared file, so a spec made stale by a layout change fails in the queue, not on `develop`. `Merge reports and list flaky tests` is for people and never fails the gate | **E2E OK** |
+| Web E2E (`web-e2e.yml`) | PR (with `run-e2e`, a changed suite, or the full tier) / push to `develop`; merge queue | Takes the API, web and admin images from Build images (built once per content key for the whole pipeline), then runs the Playwright suite (`web/e2e`) in 1 to 4 shards, each against its own stack (Postgres, Redis, migrations, seeded tenant). The pull request and the merge queue run only the specs the change needs (see [E2E impact selection](#e2e-impact-selection)); a push to `develop` and the nightly run (02:41 UTC) run all of them, and a failure there opens or updates the issue labelled `e2e-regression`. The merge queue runs it whenever the queued PR changed `web/`, `api/` or a shared file, so a spec made stale by a layout change fails in the queue, not on `develop`. `Merge reports and list flaky tests` is for people and never fails the gate | **E2E OK** |
 | Web visual regression (`web-visual.yml`) | PR with the `run-visual` label; nightly on `develop`; on demand | Screenshots of the key pages (dashboard, findings, assets, scans, remediation tasks, My Work, settings) at 1440 light and dark and 390 light against `web/e2e/visual/__screenshots__` (`playwright.visual.config.ts`, 2% pixel tolerance, volatile values masked). A missing baseline is written, not failed; `workflow_dispatch` with `update` takes new baselines and uploads them as the `visual-baselines` artifact to commit. Diffs are uploaded on failure | none (not required) |
 | All-in-one CI (`allinone-ci.yml`) | Push to `develop`; merge queue; a PR only when it changes `.github/workflows|scripts|actions` (check "All-in-one (PR build)", not required; other PRs get `All-in-one OK` from `pr-hygiene.yml`) | Builds `openctem-api`, `openctem-web` and the all-in-one `openctem` image exactly as a release does, smoke-tests them (arch, ELF, executes) and runs the all-in-one in both gateway modes against Postgres + Redis. Nothing is pushed. Merge queue and pushes only (see [Tiers](#tiers)). | **All-in-one OK** |
 | Build images (`build-images.yml`) | Called by Web E2E and All-in-one CI on push and merge-queue events (`workflow_call`); pull requests call Resolve images (`resolve-images.yml`, read-only) | Builds each CI image once per content key and returns it by digest, or reuses the one already in `ghcr.io/openctemio/ci-images` (see [Build images once](#build-images-once)) | — |
@@ -355,6 +355,40 @@ How each workflow uses the outputs:
 | API Security | `on.paths`: `api/**` + shared files, minus `**/*.md` and `api/docs/**`. Does not start at all for a web-only or docs-only change |
 | Web Security | `on.paths`: `web/**` + shared files, minus `**/*.md`. Does not start at all for an API-only or docs-only change |
 
+#### Change scope (finer than api/web)
+
+[`.github/scripts/scope.sh`](../../../.github/scripts/scope.sh) runs next to
+`changed.sh` in the `changes` job of API CI, Web CI, Web E2E, All-in-one CI and
+CodeQL, over the same range (pull request **and** merge queue). It only narrows:
+a job runs when `changed.sh` selected its side **and** the part of that side it
+needs changed. When in doubt (schedule, dispatch, missing SHAs) every output is
+true.
+
+| Output | Part | Who needs it |
+|--------|------|--------------|
+| `api_code` | `api/**` except docs, plus the shared build files (`Makefile`, `go.work*`, `deploy/**`) | API CI, All-in-one image, CodeQL Go, Web E2E |
+| `web_app` | `web/**` except `web/e2e/**` and the catalogs; unit tests, config and the lockfile count | Web tests, Next build, All-in-one image, CodeQL JS/TS, Web E2E |
+| `web_e2e` | `web/e2e/**` (specs, fixtures, helpers) | Web checks (tsc and ESLint cover it), Web E2E |
+| `web_i18n` / `i18n_en` | `web/src/lib/i18n/dictionaries/<lang>/*.json` / an English one | Web checks; non-English only: `Web i18n tests` (the catalog tests in `src/lib/i18n` plus every test that reads a catalog by path, about 50 files, about a minute); English: the whole Web tests suite and Web E2E (unit tests and specs find elements by English text) |
+| `ci_self` | a file under `.github/` the calling workflow reaches: its own file, scripts, composite actions (`.github/actions/<name>`), called workflows (`./.github/workflows/<file>`) and data files (`quarantine.yml`), followed transitively by name | that workflow, in full |
+
+What a single-kind change runs (pull request and merge queue):
+
+| Change | Runs | Skips (aggregators pass) |
+|--------|------|--------------------------|
+| `web/e2e/**` only | Web checks, Web E2E | Web tests, Next build, All-in-one image, CodeQL, API CI |
+| non-English catalogs only | Web checks, Web i18n tests | Web tests (3 shards), Web E2E, All-in-one image, CodeQL |
+| English catalogs only | Web checks, Web tests, Web E2E | All-in-one image, CodeQL |
+| one workflow or script | the workflows that reach it, Workflow Lint and the script self-tests | every other workflow's jobs |
+| docs, changelog fragments | Docs check, changelog check, secret scan | everything else (unchanged) |
+
+Web E2E still builds its images for an e2e-only change until the images are
+shared by content key (then the develop-built images are reused).
+`vitest related` is not used for catalogs: `dictionaries/index.ts` imports
+every catalog, so the module graph relates nearly every UI test to any one
+catalog (measured: one `vi` catalog pulled in the bulk of the suite). Tests:
+`.github/scripts/scope.test.sh` (run by Workflow Lint).
+
 Workflows that carry a required check never use `on.<event>.paths`: a workflow
 skipped that way leaves its required checks *Pending* forever. They always start,
 and a job skipped by `if:` reports success to its aggregator. API Security and
@@ -495,12 +529,61 @@ and a fork PR would run code on the host.
 | Tier | Events | API CI | Web CI | All-in-one CI | Web E2E | CodeQL |
 |------|--------|--------|--------|---------------|---------|--------|
 | Fast | `pull_request` | `API static checks` (gates + vet, staticcheck, golangci-lint) + `Tests (Postgres + Redis)`: the whole suite against Postgres and Redis in 6 shards **without** `-race`, so isolation tests fail on the PR (decision D-30). `Tests (least-privilege DB role)` and `Migrations (PostgreSQL 18)` only when `migrations` | `Web checks`, `Web tests` | build skipped | only with `run-e2e`, or when `web/e2e/` changed | changed language(s) |
-| Full | `merge_group`, push to `develop`, a PR with `ci:full` or a changed CI definition | the suite in 8 shards **with** `-race`, the least-privilege suite, PostgreSQL 18, `Release Binaries` (not on a PR); Docker build on `main` | `Web checks`, `Web tests`; `next build` on push | images built and smoke-tested | Playwright in 4 shards (`web/` or `api/` changed) | queue: none (the PR head was analysed); push: both |
+| Full | `merge_group`, push to `develop`, a PR with `ci:full` or a changed CI definition | the suite in 8 shards **with** `-race`, the least-privilege suite, PostgreSQL 18, `Release Binaries` (not on a PR); Docker build on `main` | `Web checks`, `Web tests`; `next build` on push | images built and smoke-tested | Playwright: the impacted specs plus the smoke set in 1 to 4 shards (`web/` or `api/` changed); push to `develop`: all specs | queue: none (the PR head was analysed); push: both |
 
 **Forcing the full tier on a PR:** add the `ci:full` label, then re-run all jobs
 of the workflow run (or push). Use it for a risky change to concurrency, SQL
 grants or the images before it reaches the queue. A PR that changes a workflow
 or a CI script always runs the full tier.
+
+### E2E impact selection
+
+Running the whole Playwright suite on every change cost about 24 minutes and
+8 jobs. `web-e2e.yml` now runs what the change needs and leaves the rest to the
+post-merge run.
+
+- **Tags.** Every test carries an area tag through Playwright's tag option
+  (`test('...', { tag: ['@findings'] }, ...)`, or on the enclosing
+  `test.describe`). Optional `@smoke` marks the always-run set (eight specs:
+  sign-in and route protection, an asset list, a finding page, settings,
+  remediation, a scan lifecycle, the dashboard), `@serial` marks a spec that
+  must not share a worker, `@budget` the every-page request budget check.
+- **Map.** `web/e2e/impact-map.yml` maps path globs to tags. A changed path
+  is looked up in this order: `all` (shared web code, auth, middleware, the
+  route registry, migrations, e2e infrastructure, dependency files, the e2e
+  workflow and actions) runs everything; `areas` adds that area's tags;
+  `ignore` (docs, unit tests, other workflows, the Vietnamese catalogs) needs
+  no spec; **anything else runs everything**. A change whose paths are all
+  ignored selects nothing (`E2E OK` passes without starting a stack). Otherwise
+  the specs run are the `@smoke` ones, those with a selected tag, and any
+  spec file the change touches. A pull request with `ci:full` or a changed CI
+  definition, a push to `develop`, the nightly run and a manual run always run
+  every spec; so does any error in the selector.
+- **Plan job.** `plan` (`web/e2e/ci/select.mjs plan`) takes the changed files
+  of the pull request or of the queue group (`merge_group.base_sha..head_sha`)
+  and the per-spec durations of the newest green `develop` run (artifact
+  `e2e-timings`, written by the `report` job of every full run; a spec without a
+  recorded duration costs the median, 60 s when none exist). It sets the shard
+  count to `ceil(total / 240 s)` clamped to 1 to 4, assigns specs longest first
+  to the lightest shard, and emits the matrix the shard jobs read with
+  `fromJSON`. The request budget job exists only when a `@budget` spec is
+  selected (any change to a feature's `hooks/` or `api/`, a page, or
+  `web/e2e/request-budget.json`). The selection and the shard plan are in the
+  run summary.
+- **Gate.** `Web checks` (Web CI) runs `node web/e2e/ci/select.mjs check`: it
+  lists the tests with Playwright and fails when one has no area tag, a tag
+  is missing from the `tags` list of the map, a listed tag is used by no
+  spec, or an area names an unknown tag. The selector's unit tests
+  (`web/e2e/ci/select.test.mjs`) run in the same step.
+- **Safety net.** The queue tests a narrower set than the old rule, so every
+  push to `develop` runs all specs. A red push run opens (or adds a comment
+  to) one issue labelled `e2e-regression`, with the run link; it is not part
+  of `E2E OK`. The required check keeps its meaning: it fails on a failed or
+  cancelled job and passes when the planned jobs passed or the plan was empty by
+  design.
+
+Adding an area: add the tag to `tags` and its paths to `areas` in
+`impact-map.yml`, and tag the specs.
 
 What runs per pull request (jobs started, including the ~10 s `changes` and
 `… OK` jobs; the merge queue still runs the full set):
