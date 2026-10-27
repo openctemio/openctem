@@ -57,14 +57,6 @@ export function signupImpactKey(accounts: SocialLoginSettings['signup_accounts']
   return `admin.socialLogin.impact.${accounts}`
 }
 
-const IMPACT_FALLBACK: Record<SocialLoginSettings['signup_accounts'], string> = {
-  closed:
-    'Public sign-up is closed. Social sign-in lets in people who already have an account or a pending invitation; it does not create new accounts.',
-  domain:
-    'Public sign-up is limited to verified organization domains. Social sign-in lets in existing accounts, invited people and people whose e-mail is on such a domain.',
-  open: 'Public sign-up is open. Anyone with a verified e-mail at this provider can create an account.',
-}
-
 interface CardProps {
   settings: SocialLoginSettings
   provider: SocialProvider
@@ -189,10 +181,7 @@ function ProviderCard({ settings, provider: p, canEdit, onSaved }: CardProps) {
     }
   }
 
-  const impact = t(
-    signupImpactKey(settings.signup_accounts),
-    IMPACT_FALLBACK[settings.signup_accounts]
-  )
+  const impact = t(signupImpactKey(settings.signup_accounts))
 
   return (
     <>
@@ -202,9 +191,7 @@ function ProviderCard({ settings, provider: p, canEdit, onSaved }: CardProps) {
             <CardTitle>{name}</CardTitle>
             <TonePill tone={pill.tone} label={pill.label} />
           </div>
-          <CardDescription>
-            {t(`admin.socialLogin.note.${p.provider}`, NOTES[p.provider])}
-          </CardDescription>
+          <CardDescription>{t(`admin.socialLogin.note.${p.provider}`)}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
           {locked && <LockedByEnvironment envVar={p.env_var} />}
@@ -333,14 +320,6 @@ function ProviderCard({ settings, provider: p, canEdit, onSaved }: CardProps) {
       />
     </>
   )
-}
-
-const NOTES: Record<SocialProvider['provider'], string> = {
-  google:
-    'Create an OAuth client of type Web application. The consent screen type decides who can sign in: External lets any Google account try, Internal limits it to your Workspace.',
-  github: 'Create an OAuth App (not a GitHub App). Only the callback URL is registered.',
-  microsoft:
-    'Register the app as multi-tenant (any Entra directory) and add a Web redirect URI. People whose directory does not verify their e-mail domain (xms_edov) are refused at sign-in.',
 }
 
 export interface SocialLoginSettingsFormProps {

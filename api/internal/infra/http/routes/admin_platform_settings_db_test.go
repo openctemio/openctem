@@ -164,7 +164,7 @@ const routeSocialSecret = "GOCSPX-route-test-secret-value"
 // the change is a critical audit row.
 func TestAdminSocialLoginSettings_Routes_DB(t *testing.T) {
 	h := platformSettingsHarness(t, false)
-	const path = "/api/v1/admin/settings/social-login"
+	const path = "/api/v1/admin/settings/social-login-providers"
 	body := map[string]any{"enabled": true, "client_id": "1234-route.apps.googleusercontent.com", "secret": routeSocialSecret,
 		"reason": "offer Google sign-in", "version": 0}
 
@@ -225,7 +225,7 @@ func TestAdminSocialLoginSettings_LockedByEnvironment_DB(t *testing.T) {
 	super := h.newAdmin(admin.AdminRoleSuperAdmin)
 	super.verify()
 	super.autoStepUp = true
-	const path = "/api/v1/admin/settings/social-login"
+	const path = "/api/v1/admin/settings/social-login-providers"
 	code, resp := super.do(http.MethodPut, path+"/github", map[string]any{"enabled": false, "reason": "off", "version": 0}, true)
 	if code != http.StatusConflict || !strings.Contains(resp, string(handler.CodeSettingLockedByEnvironment)) {
 		t.Fatalf("locked: %d %s", code, resp)

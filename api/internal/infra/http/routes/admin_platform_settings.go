@@ -23,7 +23,7 @@ import (
 //	/admin/settings/ai             any admin   PUT: super_admin + fresh step-up + reason
 //	                                           (critical audit, admins told);
 //	                                           test: super_admin
-//	/admin/settings/social-login   any admin   PUT /{provider}: super_admin + fresh step-up
+//	/admin/settings/social-login-providers   any admin   PUT /{provider}: super_admin + fresh step-up
 //	                                           + reason (critical audit, admins told);
 //	                                           test: super_admin
 //
@@ -71,7 +71,7 @@ func registerAdminPlatformSettingsRoutes(router Router, h Handlers, adminMiddlew
 		r.POST("/test", on(ai, ps.TestPlatformAI), requireSuper)
 		r.PUT("/org-policy", on(ai, ps.UpdateOrgAIPolicy), requireSuper, freshStepUp("settings.ai_org_policy"))
 	}, adminMiddlewares...)
-	router.Group("/api/v1/admin/settings/social-login", func(r Router) {
+	router.Group("/api/v1/admin/settings/social-login-providers", func(r Router) {
 		r.GET("/", on(social, ps.GetSocialLogin))
 		r.PUT("/{provider}", on(social, ps.UpdateSocialLogin), requireSuper, freshStepUp("settings.social_login"))
 		r.POST("/{provider}/test", on(social, ps.CheckSocialLogin), requireSuper)
