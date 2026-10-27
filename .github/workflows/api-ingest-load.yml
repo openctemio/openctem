@@ -63,10 +63,12 @@ jobs:
           go-version-file: api/go.mod
           cache: true
           cache-dependency-path: api/go.sum
-      - name: Install golang-migrate
-        run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1
+      - name: Build the migration runner
+        run: |
+          go build -o "$RUNNER_TEMP/bin/openctem-migrate" ./cmd/openctem-migrate
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - name: Migrate a fresh database
-        run: migrate -path migrations -database "$DATABASE_URL" up
+        run: openctem-migrate -path migrations -database "$DATABASE_URL" up
         env:
           DATABASE_URL: postgres://openctem@localhost:5432/load_test?sslmode=disable
       - name: Run the load harness

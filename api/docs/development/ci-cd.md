@@ -189,13 +189,12 @@ through the API; nothing depends on a run started by the label.
   - the push log cannot name the commit (see above): the gate cannot tell
     which commit was acknowledged.
 - Migration renumbering keeps the ack: a migration counts in the digest by its
-  name without the version number, in version order, so the merge queue moving
-  a pull request's migrations above `develop` (same names, same order, same
-  content) changes nothing, while editing or reordering them does. The gate
-  does **not** check where the renumbered migrations now run relative to the
-  ones `develop` added meanwhile: a migration that depends on (or conflicts
-  with) a newer `develop` migration keeps the ack. That ordering is the
-  migration lint's and the reviewer's job.
+  name without the version number, in version order, so giving a pull
+  request's migrations new versions (same names, same order, same content)
+  changes nothing, while editing or reordering them does. Versions only have
+  to be unique (RFC-130), and whether a migration depends on one `develop`
+  added meanwhile is proved by the migration order check of
+  `Migrations (PostgreSQL 18)`, not by the gate.
 - Renaming a security-sensitive file after the ack always needs a new ack,
   even when its content is unchanged: the digest is computed from git without
   rename detection, so a rename reads as one file removed and another added.
@@ -569,17 +568,20 @@ job runs `.github/scripts/tool-pins.test.sh`. Run it by hand with
 `api-upgrade-test.yml` runs `.github/scripts/upgrade-test.sh`, which does what an operator does on upgrade day,
 on a scratch PostgreSQL 17 database:
 
-0. before any database work, refuses a migration of this tree numbered at or below the previous release's highest
-   version that the release does not have: `migrate up` applies only versions above the current one, so an upgraded
-   install would skip it silently (`--check-order` runs only this step, without a database);
+0. before any database work, refuses a legacy-numbered migration of this tree at or below the previous release's
+   highest version that the release does not have: when `openctem-migrate` takes over an install of that release it
+   records every legacy-numbered file up to that version as applied, so such a file would never run there; timestamp
+   versions are exempt (`--check-order` runs only this step, without a database);
 1. bootstraps the roles and applies the **previous release's** migrations (read from its git tag with `git archive`)
-   as the non-superuser migrator, then checks `schema_migrations` says that release's highest version and not dirty;
+   with that release's own tool (its `openctem-migrate` built from the tag, or golang-migrate for a release before
+   it) as the non-superuser migrator, then checks the result is clean;
 2. loads representative rows, `api/scripts/upgrade-test/seed.sql`: three tenants with members and a role grant,
    75 assets, 240 findings in several statuses, sources and severities, a sensor per tenant and 150 audit rows;
-3. applies **this tree's** migrations as the migrator and re-runs the roles script, as the `db-roles` and `migrate`
-   services of the Compose stack do;
-4. asserts that the version is this tree's highest migration and not dirty, that `schema_migrations` has one row,
-   that no key table (`tenants`, `users`, `tenant_members`, `user_roles`, `assets`, `findings`, `sensors`,
+3. applies **this tree's** migrations with this tree's `openctem-migrate` as the migrator (the takeover of a database
+   the earlier tool migrated) and re-runs the roles script, as the `db-roles` and `migrate` services of the Compose
+   stack do;
+4. asserts that nothing is pending, that `schema_migrations` holds the runner's fence and is not dirty, that the
+   upgraded schema equals a fresh install of this tree (`schema-fingerprint.sql`), that no key table (`tenants`, `users`, `tenant_members`, `user_roles`, `assets`, `findings`, `sensors`,
    `audit_logs`, `roles`, `permissions`) lost a row, that the app role still reads the data, and that the API built
    from this tree starts against the upgraded database as the app role and answers `/health` and `/ready` with 200.
 
@@ -814,8 +816,8 @@ files stale, so run `make generate-docker` (or `scripts/generate-in-docker.sh
 |-----|-------|
 | *All of the rows down to Test shards are steps of one job, `API static checks`.* | |
 | Migration Safety | PRs only. Flags destructive migrations against the base. |
-| Migration Versions | `.github/scripts/check-migration-versions.sh` (tests: `check-migration-versions.test.sh`). Fails if two migrations share a version, and, on a PR or in the merge queue, if a migration the change adds is not above the base's highest version (golang-migrate silently skips lower versions on databases already past them). In the queue the base is `merge_group.base_sha`, so two queued PRs that picked the same number cannot both land: the second is told to renumber to max+1. A migration baseline (`NNNNNN_baseline`, RFC-053) may sit at or below the base's highest version when it is the lowest version left in the tree. On a PR, a version below the base's highest, or one a base migration also uses, is only a warning: the PR's migrations are renumbered when it is queued. Two migrations of the same PR with one version still fail. |
-| Renumber this PR's clashing migrations | PR only, in `API static checks` and every DB test shard: `.github/scripts/pr-migration-renumber.sh` (tests: `pr-migration-renumber.test.sh`). CI tests the PR merged into its base; when develop has taken one of the PR's migration numbers since, the runner's copy of the PR's added migrations is renumbered above the base (in order, same width, references to the old file stems rewritten), and a byte-identical copy of a base migration (a stacked PR's inherited file) is ignored. Nothing is committed; each change is a warning annotation. The PR stays green, and the real renumber happens when the PR is queued. The merge queue and pushes never renumber: there, a clash fails `Migration Versions`. |
+| Migration Versions | `.github/scripts/check-migration-versions.sh` (tests: `check-migration-versions.test.sh`). `openctem-migrate` applies every migration a database lacks (RFC-130), so a version only has to be unique. Fails if two migrations share a version; with a base (the PR's base, `merge_group.base_sha` in the queue, develop before a push), also if a merged up file is changed, removed or renamed (a fix is a new migration; a baseline replacing the chain is the exception), and if an added version is neither a valid UTC timestamp `YYYYMMDDHHMMSS` nor a legacy six-digit number above the base's highest legacy one (a legacy number above it is a warning). On a PR a version the base also uses, and a legacy number at or below the base's, are only warnings: the step below moves them for the run, and `make -C api migration-renumber` for good. Two migrations of the same PR with one version still fail. |
+| Renumber this PR's clashing migrations | PR only, in `API static checks` and every DB test shard: `.github/scripts/pr-migration-renumber.sh` (tests: `pr-migration-renumber.test.sh`). CI tests the PR merged into its base; when a PR migration's version is also the base's (or another's of the PR), or is a legacy number at or below the base's highest legacy one, the runner's copy of it and of the PR's later migrations gets new UTC timestamp versions (in order, references to the old file stems rewritten), and a byte-identical copy of a base migration (a stacked PR's inherited file) is ignored. Nothing is committed; each change is a warning annotation. The merge queue and pushes never renumber: there, a clash fails `Migration Versions`. |
 | SQL Schema Drift | `api/scripts/check-sql-schema.sh`: prepares every SQL statement against a migrations-only database. |
 | Security Gates | `api/scripts/security-lint.sh` (checks out `sensor` and `sdk-go` alongside), tenant-scope analyzer, sensor vocabulary guard. |
 | OpenAPI Contract | See above. |
@@ -824,7 +826,7 @@ files stale, so run `make generate-docker` (or `scripts/generate-in-docker.sh
 | Lint (steps of `API static checks`; the golangci-lint cache and the staticcheck binary are cached) | `go vet`, staticcheck, and golangci-lint v1.64.8 on **new** code only (PRs: `make lint-new` with `--new-from-rev` against `.github/scripts/effective-base.sh`). `make -C api lint-ci` runs the same locally. |
 | Tests (Postgres + Redis) | PRs (when `api/` or shared files change), merge queue and pushes. `go test -timeout 20m` against Postgres 17 + Redis 7 service containers. Full tier: `-race`, eight parallel shards; fast tier (PR): no `-race`, six. The four packages that hold most of the run time and run their tests one after another (`tests/unit`, `tests/integration`, `internal/infra/http/routes`, `internal/infra/postgres`) are split by top-level test name over every shard, each slice in its own `go test` process so it keeps the database to itself; every other package goes whole to one shard (`.github/scripts/go-shard.sh`, run by `go-shard-run.sh`). Before, `tests/integration` alone held one shard for about 16 minutes while the others finished in 7 to 14. Both splits run the same tests, each with `OPENCTEM_TEST_DB_REQUIRED=1` so `internal/testdb` fails instead of skipping, then `.github/scripts/check-db-test-skips.sh` fails the job if any test skipped itself for a missing or unreachable database. |
 | Tests (least-privilege DB role) | Sharded the same way (3 + 3 shards). Full tier, and on a PR that changes `api/migrations/` or `api/deploy/postgres/` (when `api/` or shared files change). Bootstraps a fresh database with `api/deploy/postgres/least-privilege-roles.sql`, applies every migration as `openctem_migrator`, then runs the DB-backed suite as `openctem_app` (DML only). It fails if a migration needs a superuser or the API needs more than DML. See `api/docs/deployment/database-roles.md`. |
-| Migrations (PostgreSQL 18) | Same tiers as the least-privilege suite. Applies every migration to a fresh PostgreSQL 18 database (the next major; the suites above run on 17), then runs the schema probes that read the catalog (`TestCheckSensorRename`). PostgreSQL 18 records each column's NOT NULL as a `pg_constraint` row (`contype = 'n'`), so a migration or probe that reads `pg_constraint` must filter on `contype`. The image comes from the CI mirror, or its upstream with the same digest until the mirror has it. |
+| Migrations (PostgreSQL 18) | Same tiers as the least-privilege suite. Applies every migration to a fresh PostgreSQL 18 database (the next major; the suites above run on 17), then runs the schema probes that read the catalog (`TestCheckSensorRename`), then the migration order check (`.github/scripts/migration-order-check.sh HEAD^1`): one database gets the base commit's migrations and then this tree's (what every running install sees, a migration merged after a higher version running last), another only this tree's in version order, and their schema fingerprints (`schema-fingerprint.sql`) must be equal. PostgreSQL 18 records each column's NOT NULL as a `pg_constraint` row (`contype = 'n'`), so a migration or probe that reads `pg_constraint` must filter on `contype`. The image comes from the CI mirror, or its upstream with the same digest until the mirror has it. |
 | Release Binaries | Merge queue and pushes to `develop`. Builds and uploads static linux/amd64 `cmd/server` and `cmd/bootstrap-admin` binaries. |
 
 **Pushes to `main`** run no heavy suite: `main` receives only release and hotfix PRs that the merge queue and the PR-into-`main` scans already gated, and the tag build (`docker-publish.yml`) has its own image guard. A push to `main` runs CodeQL (baseline of the default branch), Repository Security, PR hygiene, Release Tooling, the CLA and observability checks (path-filtered), and the release workflows; API CI, Web CI, All-in-one CI, Web E2E and the `paths:`-filtered API/Web Security scans run on `develop` pushes only. The image scans of API/Web Security still run weekly and on a PR into `main`.
@@ -959,8 +961,8 @@ dry-runs) for:
 
 Go builds are static (CGO off), `-trimpath`, with the commit time as build
 time and as every archive entry's time: the same tag gives byte-identical
-archives. golang-migrate, Caddy (with layer4) and swag are built at the
-versions their Dockerfiles pin. Release then writes an SPDX SBOM per archive
+archives. `openctem-migrate` is built from the tree; Caddy (with layer4) and
+swag are built at the versions their Dockerfiles pin. Release then writes an SPDX SBOM per archive
 (syft), `checksums-sha256.txt` over archives and SBOMs, signs it keyless
 (`checksums-sha256.txt.sigstore.json`, identity
 `.github/workflows/release.yml@refs/tags/vX.Y.Z`) and attests SLSA build

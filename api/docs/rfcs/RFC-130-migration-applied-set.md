@@ -1,0 +1,137 @@
+# RFC-130: Migration applied set (versions only have to be unique)
+
+| | |
+|---|---|
+| Status | Implemented |
+| Scope | api (`cmd/openctem-migrate`, `internal/migrate`, `cmd/server` startup check, `internal/infra/postgres` ops snapshot, `deploy/postgres/least-privilege-roles.sql`, `scripts/migration-number.sh`, `scripts/migrate.sh`, `scripts/squash-migrations.sh`), CI (`check-migration-versions.sh`, `pr-migration-renumber.sh`, `migration-order-check.sh`, `schema-fingerprint.sql`, `upgrade-test.sh`), images (migrations, API, all-in-one, binary and air-gap archives) |
+| Guide | [development/migrations.md](../development/migrations.md), [deployment/safe-deploy-and-migrations.md](../deployment/safe-deploy-and-migrations.md#the-migration-runner-openctem-migrate) |
+| Architecture | [architecture/overview.md](../architecture/overview.md#database-migrations) |
+| Related | RFC-053 (migration baseline) |
+
+## 1. Summary
+
+The earlier migration tool kept one number per database, the highest applied
+version, and applied only files above it. A migration merged after a
+higher-numbered one was skipped on every database already past it, without an
+error. To keep that from happening, every migration had to be numbered above
+the highest on `develop` at the moment it merged: with about fifteen open pull
+requests carrying migrations and a merge queue that takes hours, numbers
+collided all the time, queue entries failed on "not above the base", branches
+were renumbered and pushed again (which also dropped their security acks), and
+a reservation file was kept by hand.
+
+`openctem-migrate` replaces the tool. It records every applied version and
+applies every shipped migration a database has not applied, lowest version
+first. A version only has to be unique, so new migrations take a UTC timestamp
+version (`YYYYMMDDHHMMSS`) when they are written, and two pull requests never
+need to agree on a number.
+
+## 2. Design
+
+### 2.1 State
+
+Two tables in the connection's current schema:
+
+| Table | Content |
+|---|---|
+| `schema_migrations_applied (version, name, applied_at)` | one row per applied migration: the truth |
+| `schema_migrations (version, dirty)` | one row: `(9223372036854775807, false)` while clean (the *fence*), `(V, true)` while migration V failed midway |
+
+The fence has no migration file, so an older migrations image (the earlier
+tool) refuses the database ("no migration found for version ...") instead of
+migrating it by its old rule, which would skip again. The dirty row keeps the
+earlier tool, the startup check and the `SchemaDirty` alert refusing a
+half-applied migration.
+
+### 2.2 `up`
+
+1. Take the migration lock: a session advisory lock with the earlier tool's
+   key (so the two never run at once during an upgrade), polled with
+   `pg_try_advisory_lock` from an idle session. A blocked `pg_advisory_lock`
+   keeps a snapshot open, and `CREATE INDEX CONCURRENTLY` in the holder's
+   migration would wait for it forever.
+2. Create the two tables when missing (the roles script creates them ahead,
+   owned by the migrator).
+3. Refuse, changing nothing, on: a dirty database; a database a newer release
+   migrated (an applied version above every shipped one); a database older
+   than the migration baseline; a tracker another tool rewrote after the
+   takeover; an undecidable takeover (2.3).
+4. For each pending migration, lowest version first: mark it dirty, run the
+   file as one simple-protocol batch (one implicit transaction unless the file
+   manages its own, exactly as before), then in one transaction record it and
+   put the fence back.
+
+`down N` rolls back the N most recently applied migrations (by when they were
+applied, then by version). `force V` clears the dirty flag and records V
+without running it; `force -1` only clears the flag, so `up` retries the failed
+migration. `status` lists what is pending.
+
+### 2.3 Takeover of a database the earlier tool migrated
+
+Such a database has only `schema_migrations`, at its highest version V. The
+earlier tool applied every file above the version it was at, and the legacy
+sequential numbers only ever grew (CI refused a lower one), so every
+legacy-numbered file up to V was applied: they are recorded on the first run.
+A timestamp version up to V cannot be decided (the earlier tool may have
+skipped it), so the runner refuses and lists them; an operator records the
+applied ones with `force` and `up` applies the rest. Only a database that the
+earlier tool migrated past a timestamp version can hit this: our own live
+environment, if it keeps the earlier tool after timestamp migrations merge.
+
+To keep the takeover rule true, a legacy number must still be above the base's
+highest legacy number when it merges (CI, and the upgrade test against the last
+release), until no open pull request carries one.
+
+### 2.4 Order independence
+
+A migration merged after a higher version runs after it on running installs
+and before it on a fresh install. CI proves both end with the same schema:
+`migration-order-check.sh` migrates one database with the base commit's
+migrations and then the tree's, another with the tree's only, and compares
+their fingerprints (`schema-fingerprint.sql`: tables, columns, constraints,
+indexes, views, functions, triggers, enums, domains, sequences, partitions,
+policies; not data, owners, grants or physical column order). The upgrade test
+compares the previous release upgraded to the tree with a fresh install the
+same way.
+
+### 2.5 CI gate
+
+`check-migration-versions.sh`: versions are unique; an added migration has a
+valid timestamp version (a legacy number is a warning, and an error at or below
+the base's highest legacy number); no merged up file is changed, removed or
+renamed (a fix is a new migration; a baseline that replaces the chain is the
+one exception). Pull request CI gives a clashing migration a new timestamp in
+its runner only; `make -C api migration-renumber` does it for the branch.
+
+## 3. Threat model
+
+| Threat | Control |
+|---|---|
+| A compromised API process rewrites the tracking tables so the next run skips a security migration, or re-runs a destructive one | The app role has SELECT only on both tables (`least-privilege-roles.sql` creates them ahead, owned by the migrator, and revokes INSERT, UPDATE, DELETE; its verification and `least_privilege_test.go` fail otherwise) |
+| An older migrations image migrates a taken-over database and skips silently | The fence: the earlier tool refuses a version that has no file |
+| Two runners (replicas, a retried job, an old image) migrate at once | One advisory lock key shared with the earlier tool; concurrent-runner test |
+| A half-applied migration is built on | Dirty state refuses every command but `force`; the server refuses to start |
+| The database URL leaks the password | Deployments pass it in `PGPASSWORD`; the runner never prints the URL (tested) |
+| A merged migration is edited after databases applied it | CI refuses a changed, removed or renamed merged up file |
+
+No tenant data is read or written: the runner touches only its two tables and
+whatever the migration files do. No new route, permission or tenant-scoped
+query.
+
+## 4. Upgrade
+
+Nothing to do. The first `up` of a release with this runner takes the database
+over (2.3) and puts the fence in place. After that an older migrations image
+refuses the database, as it already refused a database a newer release had
+migrated. The deployment kit, compose files, the binary install's
+`openctem-migrate.service` and the all-in-one image call `openctem-migrate`
+with the same arguments as before.
+
+## 5. Implementation
+
+- Runner: `api/internal/migrate`, command `api/cmd/openctem-migrate`.
+- Unit and database tests: `internal/migrate/state_test.go`,
+  `internal/migrate/runner_test.go` (missing in the middle, idempotence, dirty
+  refusal and force, concurrent runners and the lock timeout, takeover from the
+  earlier tool's state, undecidable takeover, down order, refusals),
+  `cmd/openctem-migrate/main_test.go`.

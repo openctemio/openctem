@@ -26,11 +26,12 @@ The prod entrypoint is just `./server` (`Dockerfile` `production` target,
 `ENTRYPOINT ["./server"]`). It does **not** apply migrations. Instead,
 `cmd/server/main.go` calls `verifySchemaUpToDate` (`cmd/server/schema_check.go`):
 
-- If `schema_migrations.version` is **behind** the highest `migrations/*.up.sql`
-  shipped in the binary → the server logs an actionable error and **exits
-  non-zero** ("refusing to start").
-- If `schema_migrations.dirty = true` (a migration failed midway) → it refuses to
-  start until you resolve it.
+- If any `migrations/*.up.sql` shipped in the binary is **not applied** (missing
+  from `schema_migrations_applied`, whatever its version) → the server logs an
+  actionable error naming them and **exits non-zero** ("refusing to start").
+- If a migration failed midway (the database is dirty) or the database is
+  older than the migration baseline → it refuses to start until you resolve it.
+- A database **ahead** of the binary (a rollback) is fine.
 
 This converts the *silent, total outage* — every request 500-ing on a
 not-yet-created column — into an **obvious, safe refusal**. The cost: if you
@@ -62,11 +63,11 @@ guarantee ordering (below), and keep the schema check on as the backstop.
 3. **Apply migrations and wait for completion.**
 
    ```bash
-   # Local / VM (needs golang-migrate):
-   migrate -path migrations -database "$DATABASE_URL" up
+   # Local / VM (this tree's runner; the password in PGPASSWORD):
+   go run ./cmd/openctem-migrate -path migrations -database "$DATABASE_URL" up
 
    # …or the migrations image directly:
-   docker run --rm ghcr.io/openctemio/migrations:<VERSION> \
+   docker run --rm -e PGPASSWORD ghcr.io/openctemio/migrations:<VERSION> \
      -path=/migrations -database "$DATABASE_URL" up
    ```
 
@@ -79,11 +80,11 @@ guarantee ordering (below), and keep the schema check on as the backstop.
      `deploy/docker-compose.yml` runs first; the `api` service waits on
      `condition: service_completed_successfully`.
 
-4. **Verify the DB version** matches the shipped binary before serving:
+4. **Verify nothing is pending** before serving:
 
    ```bash
-   docker run --rm ghcr.io/openctemio/migrations:<VERSION> \
-     -path=/migrations -database "$DATABASE_URL" version
+   docker run --rm -e PGPASSWORD ghcr.io/openctemio/migrations:<VERSION> \
+     -path=/migrations -database "$DATABASE_URL" status    # "pending: 0"
    ```
 
 5. **Roll the app.** The schema check now passes and the pods serve. If a pod
@@ -200,42 +201,73 @@ end of it. Either add the drop migration in the same change, or add the table to
 date passes the test fails again until the drop migration exists. Temporary
 tables (`CREATE TEMP TABLE`) are not counted.
 
+## The migration runner: openctem-migrate
+
+[RFC-130](../rfcs/RFC-130-migration-applied-set.md). The migrations image, the
+all-in-one image, the binary install's `openctem-migrate.service` and the
+deployment kit all run `openctem-migrate` with the arguments they always
+passed (`-path … -database … up`).
+
+- It records every applied migration in `schema_migrations_applied` and applies
+  every shipped migration a database lacks, lowest version first. A migration
+  merged after a higher-numbered one is applied, not skipped.
+- **First run after the upgrade (takeover):** a database the earlier tool
+  (golang-migrate) migrated has only `schema_migrations` at version V. The
+  runner records every legacy-numbered migration up to V as applied (that tool
+  applied all of them) and continues. Nothing to do. If that tool had migrated
+  the database past a timestamp version (only possible on a development build
+  after this change), the runner refuses and lists those versions, because
+  the earlier tool may have skipped some: check each in the schema, record the
+  applied ones with `force <version>`, then run `up`.
+- From then on `schema_migrations` holds a fence version that no file has, so
+  an **older migrations image refuses the database** ("no migration found for
+  version 9223372036854775807") instead of migrating it. That is the same as
+  before: an older migration job always refused a database a newer release had
+  migrated. Roll back the app, not the migration job (see Rollback).
+- Two runners never migrate at once: a shared advisory lock (also the earlier
+  tool's), polled without blocking inside PostgreSQL.
+- The app role can read but never write either table
+  (`least-privilege-roles.sql`).
+
 ## Dirty-migration recovery
 
-`golang-migrate` runs each migration in a transaction. If a step fails midway,
-that step rolls back but `schema_migrations.dirty` is left **true**, and both the
-migrator and the app's schema check will refuse to proceed.
+A migration file runs in one implicit transaction (unless it manages its own,
+for example `CREATE INDEX CONCURRENTLY`). If it fails, the file rolls back, but
+the database is marked **dirty** at its version, and both the runner and the
+app's schema check refuse to proceed.
 
 Recover:
 
 1. **Find the failed version and inspect** what partially happened:
 
    ```bash
-   docker run --rm ghcr.io/openctemio/migrations:<VERSION> \
-     -path=/migrations -database "$DATABASE_URL" version   # prints "<N> (dirty)"
+   docker run --rm -e PGPASSWORD ghcr.io/openctemio/migrations:<VERSION> \
+     -path=/migrations -database "$DATABASE_URL" version   # prints "<V> (dirty)"
    ```
 
 2. **Fix the root cause.** Usually a **data violation** the migration's new
    constraint/FK/unique-index rejects. Find the offending rows with the
-   migration's own condition and clean the data.
+   migration's own condition and clean the data. If the file *partially*
+   applied DDL outside a transaction, undo those objects by hand.
 
-3. **Force the tracker to the last cleanly-applied version, then re-run:**
+3. **Clear the flag, then re-run:**
 
    ```bash
-   # If version N failed and applied nothing, force to N-1 and re-migrate:
-   docker run --rm ghcr.io/openctemio/migrations:<VERSION> \
-     -path=/migrations -database "$DATABASE_URL" force <N-1>
+   # V applied nothing (or you undid it): clear the flag, up runs V again
+   docker run --rm -e PGPASSWORD ghcr.io/openctemio/migrations:<VERSION> \
+     -path=/migrations -database "$DATABASE_URL" force -1
+   # V is in fact complete (you finished it by hand): record it instead
+   #   … force <V>
 
-   docker run --rm ghcr.io/openctemio/migrations:<VERSION> \
+   docker run --rm -e PGPASSWORD ghcr.io/openctemio/migrations:<VERSION> \
      -path=/migrations -database "$DATABASE_URL" up
    ```
 
-   > `force` only rewrites the version marker — it does **not** run SQL. Point it
-   > at a version whose schema actually matches the DB, or you'll desync the
-   > tracker from reality. If the failed step *partially* applied DDL outside a
-   > transaction, undo those objects by hand first.
+   > `force` never runs SQL: it clears the dirty flag and, for `force <V>`,
+   > records V as applied. Record a migration only when its changes are really
+   > in the database.
 
-`scripts/migrate.sh force <N>` wraps the same command for a local `.env` setup.
+`scripts/migrate.sh force <V>` wraps the same command for a local `.env` setup.
 
 ---
 
@@ -271,15 +303,14 @@ produced, and a fresh database applies it and then the migrations above it.
   last release before the baseline) never runs the baseline and upgrades as
   usual.
 - A database **older than the baseline** is refused, and nothing is changed:
-  golang-migrate cannot find the file of its version, the migrations image and
-  the all-in-one image print what to do, and the API refuses to start with the
+  `openctem-migrate` prints what to do, and the API refuses to start with the
   same message. Upgrade in two steps: back up, deploy the last release before
   the baseline (git tag `pre-baseline-NNNNNN`, which still ships every
   migration up to the baseline) and run its migrations, then deploy the new
   release.
-- `migrate down` cannot go below the baseline: its down migration refuses and
-  drops nothing (golang-migrate then shows the tracker dirty at -1; `migrate
-  force NNNNNN` restores it). Restore a backup instead.
+- `down` cannot go below the baseline: its down migration refuses and drops
+  nothing (the database is then dirty at the baseline's version; `force
+  NNNNNN` records it again). Restore a backup instead.
 
 Coming from v0.8.0 (migration 000224): follow
 [Upgrading from v0.8.0 to v0.9.0](../operations/upgrade-v0.8-to-v0.9.md#4-database-migration-path),
@@ -302,6 +333,7 @@ the asset tenant foreign keys of 000920-000922 and the assignee scrub of
 ## How CI checks an upgrade
 
 Every night and on every release branch, CI restores the previous release's schema with representative rows, applies
-the migrations of the commit about to ship and checks the version, the row counts of the key tables and that the API
-starts ([Upgrade test](../development/ci-cd.md#upgrade-test)). It does not replace your own rehearsal on a copy of
+the migrations of the commit about to ship and checks that nothing is pending or dirty, the row counts of the key
+tables, that the schema equals a fresh install's and that the API starts
+([Upgrade test](../development/ci-cd.md#upgrade-test)). It does not replace your own rehearsal on a copy of
 your data: your database has shapes the seed does not.

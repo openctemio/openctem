@@ -155,7 +155,7 @@ groups:
         labels: {severity: critical, component: api}
         annotations:
           summary: The last database migration failed half way (dirty)
-          description: golang-migrate marked the newest migration dirty; no further migration runs until it is fixed.
+          description: openctem-migrate marked a migration dirty (it failed midway); no further migration runs until it is fixed.
           runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#schemadirty
 
       - alert: OpsMetricsFailing

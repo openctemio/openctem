@@ -1,10 +1,14 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/openctemio/openctem/api/internal/migrate"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 func TestLatestMigrationVersion(t *testing.T) {
@@ -68,56 +72,24 @@ func TestLatestMigrationVersion_RealDir(t *testing.T) {
 	}
 }
 
-func TestBaselineMigrationVersion(t *testing.T) {
-	dir := t.TempDir()
-	for _, name := range []string{"001120_baseline.up.sql", "001120_baseline.down.sql", "001121_next.up.sql"} {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte("-- noop"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if got := baselineMigrationVersion(dir); got != 1120 {
-		t.Fatalf("baselineMigrationVersion = %d, want 1120", got)
-	}
-	if got := baselineMigrationVersion(t.TempDir()); got != 0 {
-		t.Fatalf("no baseline file should yield 0, got %d", got)
-	}
-	if got := baselineMigrationVersion("/no/such/dir/xyz"); got != 0 {
-		t.Fatalf("missing dir should yield 0, got %d", got)
-	}
-}
-
-// The shipped migrations start from one baseline (RFC-053).
-func TestBaselineMigrationVersion_RealDir(t *testing.T) {
-	dir := filepath.Join("..", "..", "migrations")
-	if _, err := os.Stat(dir); err != nil {
-		t.Skipf("migrations dir not present: %v", err)
-	}
-	if got := baselineMigrationVersion(dir); got == 0 {
-		t.Fatal("the migrations directory has no NNNNNN_baseline.up.sql")
-	}
-}
-
-func TestSchemaVersionProblem(t *testing.T) {
-	const latest, baseline = 1125, 1120
+func TestSchemaProblem(t *testing.T) {
+	m := func(v int64) migrate.Migration { return migrate.Migration{Version: v, Name: "x", UpPath: "x.up.sql"} }
 	cases := []struct {
-		name     string
-		version  int64
-		dirty    bool
-		baseline int64
-		want     string // substring of the error; "" = no error
+		name string
+		rep  migrate.Report
+		err  error
+		want string // substring of the error; "" = no error
 	}{
-		{"up to date", latest, false, baseline, ""},
-		{"ahead of this binary (rolling deploy)", latest + 1, false, baseline, ""},
-		{"behind, above the baseline", baseline, false, baseline, "schema is behind"},
-		{"fresh database", 0, false, baseline, "schema is behind"},
-		{"older than the baseline", 1010, false, baseline, "older than the migration baseline 1120"},
-		{"older than the baseline and dirty", 1010, true, baseline, "pre-baseline-001120"},
-		{"dirty above the baseline", 1122, true, baseline, "DIRTY"},
-		{"no baseline in the directory", 1010, false, 0, "schema is behind"},
+		{"up to date", migrate.Report{Version: 1125, Applied: 10}, nil, ""},
+		{"ahead of this binary (rollback, rolling deploy)", migrate.Report{}, migrate.ErrNewerDatabase{Applied: 1130, Shipped: 1125}, ""},
+		{"missing in the middle", migrate.Report{Version: 1125, Pending: []migrate.Migration{m(1122)}}, nil, "1 migrations shipped with this binary are not applied"},
+		{"older than the baseline", migrate.Report{}, migrate.ErrOlderThanBaseline{Version: 1010, Baseline: 1120}, "pre-baseline-001120"},
+		{"dirty", migrate.Report{}, migrate.ErrDirty{Version: 1122}, "dirty"},
+		{"unreadable state: fail open", migrate.Report{}, errors.New("permission denied"), ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := schemaVersionProblem(tc.version, tc.dirty, latest, tc.baseline)
+			err := schemaProblem(tc.rep, tc.err, logger.NewNop())
 			switch {
 			case tc.want == "" && err != nil:
 				t.Fatalf("unexpected error: %v", err)

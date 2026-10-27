@@ -37,6 +37,16 @@ import (
 // and used through it; otherwise through DATABASE_URL as before.
 func PrivateDatabase(t testing.TB, prefix, migrationsDir string) *sql.DB {
 	t.Helper()
+	db := EmptyDatabase(t, prefix)
+	Migrate(t, db, migrationsDir, 0, math.MaxInt, false)
+	return db
+}
+
+// EmptyDatabase is PrivateDatabase without the migrations: a new, empty
+// database for this test alone, dropped when the test ends. Same guards and
+// skips as PrivateDatabase.
+func EmptyDatabase(t testing.TB, prefix string) *sql.DB {
+	t.Helper()
 	base := AdminURL()
 	if base == "" {
 		t.Skip("DATABASE_URL not set; skipping DB-backed test")
@@ -70,14 +80,13 @@ func PrivateDatabase(t testing.TB, prefix, migrationsDir string) *sql.DB {
 		t.Fatalf("testdb: open private database: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-
-	Migrate(t, db, migrationsDir, 0, math.MaxInt, false)
 	return db
 }
 
-// Migrate applies, one file per statement batch as golang-migrate does, the
-// migrations of migrationsDir whose version lies in [from, to]: the up files
-// in ascending order, or with down the down files in descending order.
+// Migrate applies, one file per statement batch as openctem-migrate does,
+// the migrations of migrationsDir whose version lies in [from, to]: the up
+// files in ascending version order, or with down the down files in
+// descending order.
 func Migrate(t testing.TB, db *sql.DB, migrationsDir string, from, to int, down bool) {
 	t.Helper()
 	suffix := ".up.sql"
@@ -88,7 +97,8 @@ func Migrate(t testing.TB, db *sql.DB, migrationsDir string, from, to int, down 
 	if err != nil || len(files) == 0 {
 		t.Fatalf("testdb: no migrations in %s: %v", migrationsDir, err)
 	}
-	sort.Strings(files)
+	// By version, not by name: versions have different widths.
+	sort.Slice(files, func(i, j int) bool { return fileVersion(files[i]) < fileVersion(files[j]) })
 	if down {
 		slices.Reverse(files)
 	}
@@ -132,4 +142,16 @@ func MigrationVersion(t testing.TB, migrationsDir, name string) int {
 		t.Fatalf("testdb: migration %s has no numeric version: %v", base, err)
 	}
 	return version
+}
+
+// fileVersion is the numeric version of a migration file name (0 when it has
+// none; Migrate reports that file).
+func fileVersion(path string) int64 {
+	name := filepath.Base(path)
+	i := strings.IndexByte(name, '_')
+	if i <= 0 {
+		return 0
+	}
+	v, _ := strconv.ParseInt(name[:i], 10, 64)
+	return v
 }

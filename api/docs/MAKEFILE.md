@@ -89,14 +89,12 @@ make dev
 
 | Command | Description |
 |---------|-------------|
-| `make migrate-up` | Run migrations (local) |
-| `make migrate-down` | Rollback last migration (local) |
-| `make migrate-create name=<name>` | Create new migration |
-| `make migrate-status` | Show migration status |
-| `make docker-migrate-up` | Run migrations in Docker |
-| `make docker-migrate-down` | Rollback in Docker |
-| `make docker-migrate-version` | Show migration version |
-| `make docker-migrate-force version=<n>` | Force the recorded migration version (dirty-migration recovery only) |
+| `make migrate-up` | Apply every migration the database has not applied (`openctem-migrate`, from this tree) |
+| `make migrate-down` | Roll back the most recently applied migration |
+| `make migration-new name=<name>` | Create a migration pair with a UTC timestamp version |
+| `make migration-renumber` | Give this branch's clashing or sequential migrations new timestamp versions, staged |
+| `make migrate-status` | Highest applied version and the pending migrations |
+| `make migrate-force version=<v>` | Clear the dirty flag and record `v` as applied (`-1`: only clear it; dirty-migration recovery only) |
 
 ### Database Setup
 
@@ -254,8 +252,8 @@ If `make pre-commit-install` fails while installing tools:
 # Check migration status
 make migrate-status
 
-# Force migration to specific version
-make docker-migrate-force version=X
+# After a failed migration: record it (V) or only clear the flag (-1)
+make migrate-force version=V
 ```
 
 ### Docker issues

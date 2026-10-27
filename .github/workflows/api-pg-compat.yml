@@ -139,14 +139,16 @@ jobs:
       - name: Generate the OpenAPI spec
         run: make swagger
 
-      - name: Install golang-migrate
-        run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1
+      - name: Build the migration runner
+        run: |
+          go build -o "$RUNNER_TEMP/bin/openctem-migrate" ./cmd/openctem-migrate
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
       - name: Bootstrap the roles on a fresh database
         run: psql "$SUPER_URL" -X -v ON_ERROR_STOP=1 -f deploy/postgres/least-privilege-roles.sql
 
       - name: Apply every migration as the migrator (not a superuser)
-        run: migrate -path migrations -database "$MIGRATOR_URL" up
+        run: openctem-migrate -path migrations -database "$MIGRATOR_URL" up
 
       - name: Re-run the bootstrap (idempotent; verifies grants on the migrated schema)
         run: psql "$SUPER_URL" -X -v ON_ERROR_STOP=1 -f deploy/postgres/least-privilege-roles.sql

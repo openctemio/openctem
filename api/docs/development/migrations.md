@@ -2,21 +2,20 @@
 
 ## Overview
 
-OpenCTEM uses [golang-migrate](https://github.com/golang-migrate/migrate) for database migrations. Migration files are stored in the `migrations/` directory.
+Migration files live in `migrations/` and are applied by `openctem-migrate`
+(`cmd/openctem-migrate`, [RFC-130](../rfcs/RFC-130-migration-applied-set.md)).
+It records every applied version and applies every migration a database has
+not applied yet, lowest version first. A version only has to be unique: a
+migration merged after a higher-numbered one is applied on the next run, not
+skipped.
 
 ## Prerequisites
 
-Install the migrate CLI (or use the Docker-based commands):
+Nothing to install: `make migrate-up` (and `scripts/migrate.sh`) run this
+tree's runner with `go run`. To build it once:
 
 ```bash
-# Option 1: Install locally
-go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
-
-# Option 2: Use make install-tools (installs all dev tools)
-make install-tools
-
-# Verify installation
-migrate -version
+GOWORK=off go build -o bin/openctem-migrate ./cmd/openctem-migrate
 ```
 
 ## File Structure
@@ -25,52 +24,60 @@ migrate -version
 migrations/
 ├── NNNNNN_baseline.up.sql     # the schema + built-in rows of every migration up to NNNNNN
 ├── NNNNNN_baseline.down.sql   # refuses: the baseline is not reverted
-├── (NNNNNN+1)_*.up.sql / .down.sql  # every later change, one numbered pair each
+├── NNNNNN_*.up.sql / .down.sql          # legacy sequential versions (no new ones)
+├── YYYYMMDDHHMMSS_*.up.sql / .down.sql  # every new change: a UTC timestamp version
 └── seed/                      # optional data (seed_required.sql, seed_test.sql, ...)
 ```
 
-A fresh database applies the baseline and then each migration above it. Every
-schema change is a new pair numbered above the highest on `develop` and in open
-PRs (the merge queue renumbers when another PR took the number). Migrations
-are expand-contract safe (`scripts/check-migrations.sh`) and have a working
-down migration.
+A fresh database applies the baseline and then every migration above it, in
+version order. Migrations are expand-contract safe
+(`scripts/check-migrations.sh`) and have a working down migration.
 
-### Numbers only go up
+### Versions only have to be unique
 
-golang-migrate applies only versions above a database's current one. A
-migration merged with a number below one already applied on some database is
-skipped there without an error. So a migration's number must be above the
-highest on `develop` when it merges (the merge-queue check "Migration
-Versions" enforces it), and a database that did run a higher number from an
-unmerged branch will miss any lower one. When a migration was skipped, do not
-renumber it after the fact: add a repair migration above the head that
-re-applies it idempotently (`CREATE ... IF NOT EXISTS`, `ADD COLUMN IF NOT
-EXISTS`, constraints guarded by a `pg_constraint` lookup, `ON CONFLICT DO
-NOTHING`), with a no-op down. `002894_repair_skipped_migrations` is the
-reference.
+`schema_migrations_applied` holds one row per applied migration, and `up`
+runs every shipped migration missing from it. So:
 
-### Picking a number
+- a migration written on Monday and merged on Friday, after migrations written
+  on Tuesday, is applied on every database the next time it migrates: after
+  them on a running install, before them on a fresh one. CI proves that both
+  orders give the same schema (`.github/scripts/migration-order-check.sh` in
+  "Migrations (PostgreSQL 18)"); when they do not, the later-merged migration
+  depends on the others and needs a version above them
+  (`make -C api migration-renumber` while it is not merged);
+- **a merged migration never changes.** Databases that applied it never run
+  it again: an edit, a removal or a rename would only reach fresh installs.
+  Fix a merged migration with a new one. The "Migration Versions" check
+  refuses a changed, removed or renamed merged up file (down files may be
+  fixed; a baseline that replaces the chain is the exception).
+- `schema_migrations` keeps one row: a *fence* version that no file has while
+  clean, or the failed migration's version while dirty. An older migrations
+  image refuses the fence, so it can never skip a migration on a database this
+  runner migrated.
 
-Numbers stay sequential; nobody picks one by hand.
+### Picking a version
 
-- `make -C api migration-new name=<snake_name>` creates the up/down pair one
-  above the highest version on `develop`, in this branch and in every open
-  pull request against `develop` (read with `gh`; without it only `develop`
-  and the branch count).
-- `make -C api migration-renumber` moves the branch's own new migrations above
-  all of those, in their order, rewriting references to the old file names
-  outside `api/migrations/`, and stages the renames.
-- Pull request CI renumbers its runner copy on a clash
-  (`.github/scripts/pr-migration-renumber.sh`), so a stale number never fails
-  a pull request's tests; the merge queue's "Migration Versions" check fails a
-  number at or below `develop`'s highest, and the queue tooling renumbers the
-  branch before it enqueues it. Tests find migrations by name
-  (`testdb.MigrationVersion`), so renumbering never touches a test.
+Nobody picks a version by hand.
 
-Timestamp versions were considered and not adopted: golang-migrate skips any
-version below a database's current one, so a timestamp from an older branch
-that merges after a newer one would be skipped exactly like a low sequential
-number, and the queue would still have to renumber it.
+- `make -C api migration-new name=<snake_name>` creates
+  `migrations/<UTC now>_<snake_name>.{up,down}.sql` (one second later while
+  that version exists). It needs no network: timestamps of parallel branches
+  do not collide.
+- `make -C api migration-renumber` gives this branch's added migrations new
+  timestamp versions when one is also used by `develop` or an open pull
+  request, or still has a legacy sequential number; the migrations after it
+  move too, in order. It rewrites references to the old file names outside
+  `api/migrations/` and stages the renames.
+- Pull request CI gives a clashing migration a new version in its runner only
+  (`.github/scripts/pr-migration-renumber.sh`), so a duplicate never fails a
+  pull request's tests; in the merge queue a duplicate fails. Tests find
+  migrations by name (`testdb.MigrationVersion`), so a new version never
+  touches a test.
+- Legacy sequential numbers (six digits) are still accepted, with a warning,
+  while older pull requests land, but only above the base's highest legacy
+  number: when the runner first takes over a database the earlier tool
+  (golang-migrate) migrated, it records every legacy-numbered file up to that
+  tool's version as applied.
 
 ### Indexes
 
@@ -102,15 +109,15 @@ grants: objects belong to the migrator that applies it, and
 `deploy/postgres/least-privilege-roles.sql` grants the app role as before.
 
 - **Do not edit the baseline.** Change the schema with a new migration above it.
-- **Fresh database**: golang-migrate applies the baseline, then the rest. The
+- **Fresh database**: the runner applies the baseline, then the rest. The
   baseline refuses to run on a database that already has the schema.
-- **Database at the baseline version or later**: never runs the baseline.
-- **Database older than the baseline**: golang-migrate refuses it ("no
-  migration found for version N", nothing changed). The migrations image, the
-  all-in-one image and the API's startup check say what to do: back up, deploy
-  the last release before the baseline (git tag `pre-baseline-NNNNNN`, which
-  still has every old migration), run its migrations, then deploy the new
-  release.
+- **Database that has the baseline applied** (or, migrated by the earlier
+  tool, is at its version or later): never runs the baseline.
+- **Database older than the baseline**: `openctem-migrate` refuses it,
+  changing nothing, and says what to do (so does the API's startup check):
+  back up, deploy the last release before the baseline (git tag
+  `pre-baseline-NNNNNN`, which still has every old migration), run its
+  migrations, then deploy the new release.
 - **History**: the old migration files, their tests and their runbooks are in
   the tree at tag `pre-baseline-NNNNNN` (`git show pre-baseline-NNNNNN:api/migrations/<file>`).
 
@@ -120,7 +127,7 @@ When the chain has grown long again, squash at a release boundary:
 
 ```bash
 # from a branch off develop; REF is the commit whose migrations are squashed
-MIGRATE=$(command -v migrate) scripts/squash-migrations.sh origin/develop
+scripts/squash-migrations.sh origin/develop   # builds openctem-migrate, or MIGRATE=/path/to/it
 ```
 
 The script applies REF's chain to a throwaway PostgreSQL 17, writes the new
@@ -155,30 +162,22 @@ make db-fresh
 
 # Or step by step:
 make docker-reset-db      # Reset database
-make docker-migrate-up    # Apply schema
+make migrate-up           # Apply schema
 make docker-seed-test     # Add test data
 ```
 
 ### Migration Commands
 
 ```bash
-# Apply all migrations (Docker)
-make docker-migrate-up
-
-# Apply migrations (local - requires migrate CLI)
-make migrate-up
-
-# Rollback last migration
-make docker-migrate-down  # Docker
-make migrate-down         # Local
-
-# Check current version
-make docker-migrate-version  # Docker
-make migrate-status          # Local
-
-# Force version (use with caution!)
-make docker-migrate-force version=1
+make migrate-up                 # apply every migration the database has not applied
+make migrate-down               # roll back the most recently applied migration
+make migrate-status             # highest applied version and the pending migrations
+make migrate-force version=V    # clear the dirty flag and record V as applied (-1: only clear the flag)
 ```
+
+The same commands against any database: `openctem-migrate -path migrations
+-database "postgres://user@host:5432/db?sslmode=..." up|down N|force V|version|status`,
+with the password in `PGPASSWORD`.
 
 ### Seed Commands
 
@@ -209,12 +208,12 @@ make db-fresh
 ### Create New Migration
 
 ```bash
-make migrate-create name=add_new_feature
+make migration-new name=add_new_feature
 ```
 
-This creates two files:
-- `migrations/000002_add_new_feature.up.sql`
-- `migrations/000002_add_new_feature.down.sql`
+This creates two files with the current UTC time as the version:
+- `migrations/20261027101500_add_new_feature.up.sql`
+- `migrations/20261027101500_add_new_feature.down.sql`
 
 ## Schema Overview
 
@@ -289,9 +288,9 @@ DROP INDEX IF EXISTS idx_users_email;
 
 3. **Test rollbacks**
 ```bash
-make docker-migrate-up
-make docker-migrate-down
-make docker-migrate-up  # Should work again
+make migrate-up
+make migrate-down
+make migrate-up    # Should work again
 ```
 
 4. **Never modify existing migrations after deployment**
@@ -340,22 +339,36 @@ Configure via `.env` file or environment:
 
 ### Dirty Database State
 
-If a migration fails partially:
+When a migration fails, its file is rolled back (one implicit transaction
+unless the file manages its own) and the database is marked dirty at its
+version: every command but `force` refuses, and so does the API.
 
 ```bash
-# Check current version
-make docker-migrate-version
-# Output: 1 (dirty)
+make migrate-status
+# Output: 20261027101500 (dirty) ...
 
-# Fix the issue manually, then force version
-make docker-migrate-force version=0  # Go back to before the failed migration
+# The migration completed, or you finished it by hand: record it
+make migrate-force version=20261027101500
 
-# Or force to current version if already fixed
-make docker-migrate-force version=1
+# Or undo its partial changes, then only clear the flag so up retries it
+make migrate-force version=-1
 
-# Re-run migrations
-make docker-migrate-up
+make migrate-up
 ```
+
+### Other refusals
+
+`openctem-migrate` changes nothing and says what to do when:
+
+- the database is older than the migration baseline (see above);
+- a newer release migrated it (an applied version above every shipped one):
+  run the newer release's migrations, or restore the pre-upgrade backup;
+- another migration tool rewrote `schema_migrations` after the runner took the
+  database over: check what that tool applied, record each applied migration
+  with `force`, then `up`;
+- the earlier tool (golang-migrate) migrated the database past a timestamp
+  version: it may have skipped some, so check each listed version in the
+  schema, record the applied ones with `force`, then `up` applies the rest.
 
 ### Complete Reset (Development)
 
@@ -369,7 +382,8 @@ make db-fresh
 ```bash
 make docker-psql
 # Then in psql:
-SELECT * FROM schema_migrations;
+SELECT version, name, applied_at FROM schema_migrations_applied ORDER BY applied_at DESC LIMIT 20;
+SELECT * FROM schema_migrations;   -- the fence (9223372036854775807, f), or (version, t) while dirty
 ```
 
 ### Test User Accounts
@@ -395,18 +409,17 @@ Never commit password hashes to docs or seeds, even for test accounts.
 
 ### GitHub Actions
 
-```yaml
-- name: Run migrations
-  run: make docker-migrate-up
-  env:
-    DATABASE_URL: ${{ secrets.DATABASE_URL }}
-```
+CI builds the runner and applies every migration
+(`openctem-migrate -path migrations -database "$DATABASE_URL" up`), and on a
+change to `api/migrations` proves order independence
+(`.github/scripts/migration-order-check.sh`). See
+[ci-cd.md](ci-cd.md).
 
 ### Production Deployment
 
 ```bash
-# 1. Apply migrations
-make docker-migrate-up
+# 1. Apply migrations (the migrations image, or)
+make migrate-up
 
 # 2. (Optional) Seed required data
 make docker-seed-required

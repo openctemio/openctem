@@ -15,9 +15,9 @@ RUN apk add --no-cache git ca-certificates tzdata curl postgresql-client
 
 # Install dev tools (pinned versions for reproducibility)
 # hadolint ignore=DL3059
+# (The entrypoint migrates with this tree's own runner: go run ./cmd/openctem-migrate.)
 RUN go install github.com/air-verse/air@v1.64.0 && \
-    go install github.com/go-delve/delve/cmd/dlv@v1.24.2 && \
-    go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1
+    go install github.com/go-delve/delve/cmd/dlv@v1.24.2
 
 # Copy entrypoint script
 COPY scripts/dev-entrypoint.sh /usr/local/bin/dev-entrypoint.sh
@@ -120,6 +120,8 @@ ARG BUILD_TIME=""
 #                    from this image, see deploy/docker-compose.job-signer.yml.
 #                    A binary of its own: it holds the signing key and links
 #                    none of the API.
+#   openctem-migrate the migration runner (cmd/openctem-migrate), for the
+#                    all-in-one image and for operators (status, force).
 RUN --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 \
     GOOS=${TARGETOS:-linux} \
@@ -128,7 +130,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
       -X github.com/openctemio/openctem/api/pkg/version.Version=${VERSION} \
       -X github.com/openctemio/openctem/api/pkg/version.Commit=${COMMIT} \
       -X github.com/openctemio/openctem/api/pkg/version.BuildTime=${BUILD_TIME}" \
-    -o /app/bin/ ./cmd/server ./cmd/signer \
+    -o /app/bin/ ./cmd/server ./cmd/signer ./cmd/openctem-migrate \
  && mv /app/bin/signer /app/bin/openctem-signer
 
 
@@ -168,7 +170,7 @@ COPY --from=runtime-fs /out/etc/passwd /out/etc/group /etc/
 
 # Everything below is owned by root and read-only to the runtime users: the API
 # cannot rewrite its own binaries, spec, migrations or configs.
-COPY --from=builder /app/bin/server /app/bin/openctem-signer ./
+COPY --from=builder /app/bin/server /app/bin/openctem-signer /app/bin/openctem-migrate ./
 # The operator commands: /app/<command> -> server (see the builder stage).
 COPY --from=runtime-fs /out/tool-links/ ./
 
@@ -177,9 +179,6 @@ COPY --from=runtime-fs /out/tool-links/ ./
 COPY --from=openapi /app/api/openapi/swagger.yaml ./api/openapi/swagger.yaml
 
 COPY --from=builder /app/migrations ./migrations
-# The migrate wrapper of the migrations image, for the all-in-one image (a
-# file here; this image never runs it).
-COPY --from=builder /app/scripts/migrate-entrypoint.sh ./migrate-entrypoint.sh
 
 # Copy sensor config templates (editable without rebuild — operators can
 # mount a configmap/host volume on /app/configs to override)
