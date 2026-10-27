@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-10-27); P0-F5 (bounded shared claim) in review, the rest designed |
+| Status | Accepted (2026-10-27); P0-F5 (bounded shared claim, #3202) and P0-F3 (cross-organization politeness, #3203) in review, the rest designed |
 | Scope | api (admission, shared claim, politeness, limits, usage records, metrics, console settings), web (usage card, console settings, wait reasons), sdk-go (per-host rate from the signed limits, exists), sensor (proxy egress, exists), docs |
 | Architecture | [sensors.md](../architecture/sensors.md#the-shared-claim-path), [job-dispatch.md](../architecture/job-dispatch.md), [limits.md](../architecture/limits.md), [sensor-proxies.md](../architecture/sensor-proxies.md) |
 | Amends | RFC-100 §8 (shared claim order) and §10 (limits), RFC-030 §5 (signed limits carry a per-host rate share), RFC-090 (claim of shared items) |
@@ -251,4 +251,5 @@ except P0, which removes known scale bugs.
 
 | Change | Pull request | State |
 |---|---|---|
-| F5 bounded shared claim, migrations `003447_commands_shared_inflight_index`, `003448_commands_shared_pending_index` | this RFC's first pull request | in review |
+| F5 bounded shared claim, migrations `003447_commands_shared_inflight_index`, `003448_commands_shared_pending_index` | #3202 | in review |
+| F3 cross-organization politeness on the shared fleet (limit 2, intrusive 1, as constants; the console setting follows) | #3203 | in review |
