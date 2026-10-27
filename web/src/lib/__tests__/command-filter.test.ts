@@ -4,7 +4,7 @@ import { commandFilter } from '../command-filter'
 describe('commandFilter', () => {
   it('requires every query word', () => {
     expect(commandFilter('API keys (Access)', 'api keys')).toBeGreaterThan(0)
-    expect(commandFilter('Business Impact', 'siem')).toBe(0)
+    expect(commandFilter('Business impact', 'siem')).toBe(0)
     expect(commandFilter('Preferences (My account)', 'audit', ['theme', 'dark mode'])).toBe(0)
   })
 

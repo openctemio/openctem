@@ -1,5 +1,5 @@
 {
- "version": "2026-10-07",
+ "version": "2026-10-26",
  "entries": [
   {
    "key": "vcs.git",
@@ -10,7 +10,13 @@
    "tags": [
     "exposure",
     "git"
-   ]
+   ],
+   "verify": {
+    "templates": [
+     "git-config"
+    ],
+    "expect": "hit"
+   }
   },
   {
    "key": "vcs.svn",
@@ -21,7 +27,13 @@
    "tags": [
     "exposure",
     "svn"
-   ]
+   ],
+   "verify": {
+    "templates": [
+     "exposed-svn"
+    ],
+    "expect": "hit"
+   }
   },
   {
    "key": "vcs.hg",
@@ -31,7 +43,13 @@
    "title": "Mercurial metadata",
    "tags": [
     "exposure"
-   ]
+   ],
+   "verify": {
+    "templates": [
+     "exposed-hg"
+    ],
+    "expect": "hit"
+   }
   },
   {
    "key": "vcs.bzr",
@@ -84,7 +102,13 @@
     "exposure",
     "config",
     "env"
-   ]
+   ],
+   "verify": {
+    "templates": [
+     "dotenv-file"
+    ],
+    "expect": "hit"
+   }
   },
   {
    "key": "config.env_local",
@@ -119,7 +143,13 @@
    "tags": [
     "exposure",
     "aws"
-   ]
+   ],
+   "verify": {
+    "templates": [
+     "aws-credentials"
+    ],
+    "expect": "hit"
+   }
   },
   {
    "key": "config.npmrc",
@@ -184,7 +214,13 @@
    "tags": [
     "exposure",
     "wordpress"
-   ]
+   ],
+   "verify": {
+    "templates": [
+     "wp-config-backup"
+    ],
+    "expect": "hit"
+   }
   },
   {
    "key": "config.web_config",
@@ -272,7 +308,13 @@
    "tags": [
     "exposure",
     "terraform"
-   ]
+   ],
+   "verify": {
+    "templates": [
+     "terraform-state"
+    ],
+    "expect": "hit"
+   }
   },
   {
    "key": "config.composer",
@@ -346,7 +388,13 @@
    "tags": [
     "exposure",
     "backup"
-   ]
+   ],
+   "verify": {
+    "templates": [
+     "sql-dump"
+    ],
+    "expect": "hit"
+   }
   },
   {
    "key": "backup.dump",
@@ -357,7 +405,13 @@
    "tags": [
     "exposure",
     "backup"
-   ]
+   ],
+   "verify": {
+    "templates": [
+     "sql-dump"
+    ],
+    "expect": "hit"
+   }
   },
   {
    "key": "backup.db",
@@ -368,7 +422,13 @@
    "tags": [
     "exposure",
     "backup"
-   ]
+   ],
+   "verify": {
+    "templates": [
+     "sql-dump"
+    ],
+    "expect": "hit"
+   }
   },
   {
    "key": "backup.dir",
@@ -445,7 +505,13 @@
    "tags": [
     "springboot",
     "actuator"
-   ]
+   ],
+   "verify": {
+    "templates": [
+     "springboot-env"
+    ],
+    "expect": "hit"
+   }
   },
   {
    "key": "spring.actuator.heapdump",
@@ -456,7 +522,13 @@
    "tags": [
     "springboot",
     "actuator"
-   ]
+   ],
+   "verify": {
+    "templates": [
+     "springboot-heapdump"
+    ],
+    "expect": "hit"
+   }
   },
   {
    "key": "spring.actuator.threaddump",
@@ -522,7 +594,13 @@
    "tags": [
     "springboot",
     "jolokia"
-   ]
+   ],
+   "verify": {
+    "templates": [
+     "springboot-jolokia"
+    ],
+    "expect": "hit"
+   }
   },
   {
    "key": "spring.actuator.gateway",
@@ -533,7 +611,13 @@
    "tags": [
     "springboot",
     "actuator"
-   ]
+   ],
+   "verify": {
+    "templates": [
+     "springboot-gateway"
+    ],
+    "expect": "hit"
+   }
   },
   {
    "key": "spring.env",
@@ -553,7 +637,13 @@
    "title": "Legacy JVM heap dump",
    "tags": [
     "springboot"
-   ]
+   ],
+   "verify": {
+    "templates": [
+     "springboot-heapdump"
+    ],
+    "expect": "hit"
+   }
   },
   {
    "key": "jolokia",
@@ -563,7 +653,13 @@
    "title": "JMX over HTTP",
    "tags": [
     "jolokia"
-   ]
+   ],
+   "verify": {
+    "templates": [
+     "jolokia-detect"
+    ],
+    "expect": "hit"
+   }
   },
   {
    "key": "debug.debug",
@@ -614,7 +710,13 @@
    "title": "Interactive console",
    "tags": [
     "debug"
-   ]
+   ],
+   "verify": {
+    "templates": [
+     "werkzeug-debugger-detect"
+    ],
+    "expect": "hit"
+   }
   },
   {
    "key": "debug.werkzeug",
@@ -624,7 +726,13 @@
    "title": "Werkzeug debugger",
    "tags": [
     "werkzeug"
-   ]
+   ],
+   "verify": {
+    "templates": [
+     "werkzeug-debugger-detect"
+    ],
+    "expect": "hit"
+   }
   },
   {
    "key": "debug.django_debug",
@@ -841,7 +949,13 @@
    "tags": [
     "phpmyadmin",
     "panel"
-   ]
+   ],
+   "verify": {
+    "templates": [
+     "phpmyadmin-panel"
+    ],
+    "expect": "hit"
+   }
   },
   {
    "key": "admin.adminer",
@@ -1054,7 +1168,13 @@
    "title": "Docker Engine API",
    "tags": [
     "docker"
-   ]
+   ],
+   "verify": {
+    "templates": [
+     "docker-api"
+    ],
+    "expect": "hit"
+   }
   },
   {
    "key": "docker.version",

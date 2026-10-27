@@ -103,7 +103,7 @@ func parseLetterTime(v string) (time.Time, error) {
 
 // Upload handles POST /api/v1/scope/letters
 // @Summary      Upload authorization letter
-// @Description  Store a letter of authorization (multipart: file as PDF, PNG or JPEG up to 10 MB; title; issuer; reference; valid_from; valid_until, at most 2 years after valid_from). The file's SHA-256 is recorded. A letter authorizes nothing by itself: scope entries with authorization_source authorization_letter name it, go through the organization's approval policy and authorize only while it is valid (RFC-065). Audited.
+// @Description  Store a letter of authorization (multipart: file as PDF, PNG or JPEG up to 10 MB; title; issuer; reference; valid_from; valid_until, at most 2 years after valid_from). The file's SHA-256 is recorded. A letter authorizes nothing by itself: scope entries with authorization_source authorization_letter name it, go through the organization's approval policy and authorize only while it is valid. Audited.
 // @Tags         Scope
 // @Accept       multipart/form-data
 // @Produce      json

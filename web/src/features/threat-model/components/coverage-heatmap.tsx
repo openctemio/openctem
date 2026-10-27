@@ -126,9 +126,9 @@ function CoverageToolbar({
     <div className="flex items-center justify-between gap-3">
       <p className="text-muted-foreground text-sm">
         {t('threatModel.heatmap.open', 'Open')}{' '}
-        <span className="text-destructive font-medium">{coverage.totals.open}</span> ·{' '}
+        <span className="text-destructive font-medium">{coverage.totals.open}</span>,{' '}
         {t('threatModel.status.theoretical', 'Theoretical')}{' '}
-        <span className="font-medium">{coverage.totals.theoretical}</span> ·{' '}
+        <span className="font-medium">{coverage.totals.theoretical}</span>,{' '}
         {t('threatModel.heatmap.coveredMitigated', 'Covered/Mitigated')}{' '}
         <span className="text-success font-medium">
           {coverage.totals.covered + coverage.totals.mitigated}
@@ -203,7 +203,7 @@ function TechniqueCell({ tech }: { tech: CoverageTechnique }) {
           <div className="space-y-1 text-sm">
             <p className="font-semibold">{tech.technique_name}</p>
             <p className="text-muted-foreground font-mono text-xs">
-              {tech.technique_id} · {t(style.labelKey, tech.status)} ·{' '}
+              {tech.technique_id}, {t(style.labelKey, tech.status)},{' '}
               {t('threatModel.heatmap.maxScore', 'max {score}', { score: tech.max_score })}
             </p>
             <div className="text-muted-foreground text-xs">

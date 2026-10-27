@@ -185,7 +185,7 @@ describe('Findings list with quick views', () => {
     expect(lastListFilters().state).toBe('closed')
   })
 
-  it('runs the Pending approval and Accepted · expiring params', () => {
+  it('runs the Pending approval and Accepted, expiring params', () => {
     openAt('?pending_approval=true&state=all')
     const { unmount } = render(<FindingsPage />)
     expect(lastListFilters().pending_approval).toBe(true)

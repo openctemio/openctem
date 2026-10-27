@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
@@ -119,7 +120,7 @@ func TestControlPlaneProvisioningAndSource(t *testing.T) {
 	slugC := "cp-c-" + uuid.NewString()[:8]
 	t.Cleanup(func() { _, _ = pg.Exec(`DELETE FROM tenants WHERE slug = $1`, slugC) })
 	if _, err := creator.Create(ctx, tenantapp.CreateOrganizationInput{
-		Name: "Existing owner", Slug: slugC, OwnerEmail: slugA + "@example.com", NewOwnerOnly: true,
+		Name: "Existing owner", Slug: slugC, OwnerEmail: slugA + "@example.com",
 		Provisioned: &tenantapp.ProvisionedEntitlements{Reason: "x"},
 	}, auditapp.AuditContext{ActorEmail: entitlement.ControlPlaneActor}); !errors.Is(err, tenantapp.ErrOwnerAccountExists) {
 		t.Fatalf("existing account must be refused: %v", err)
@@ -136,5 +137,46 @@ func TestControlPlaneProvisioningAndSource(t *testing.T) {
 	var n int
 	if err := pg.QueryRow(`SELECT count(*) FROM tenants WHERE slug = $1`, slugA).Scan(&n); err != nil || n != 1 {
 		t.Fatalf("duplicate created: %d %v", n, err)
+	}
+}
+
+// The creator's default refuses an owner email that already has an account;
+// only a caller that sets AllowExistingOwner (the operator CLI, a confirmed
+// access request) may attach one.
+func TestOrganizationCreatorExistingOwnerNeedsConsent(t *testing.T) {
+	pg := openConsoleDB(t)
+	ctx := context.Background()
+	log := logger.NewNop()
+	tenantRepo := postgres.NewTenantRepository(pg)
+	users := postgres.NewUserRepository(pg)
+	roles := accesscontrol.NewRoleService(postgres.NewRoleRepository(pg), postgres.NewPermissionRepository(pg), log,
+		accesscontrol.WithRoleMembershipReader(tenantRepo))
+	prov := tenantapp.NewUserProvisioningService(tenantRepo, users, roles, nil, nil, log)
+	creator := tenantapp.NewOrganizationCreator(tenantapp.NewTenantService(tenantRepo, log), prov, users, log)
+
+	slugA, slugB, slugC := "oc-a-"+uuid.NewString()[:8], "oc-b-"+uuid.NewString()[:8], "oc-c-"+uuid.NewString()[:8]
+	email := slugA + "@example.com"
+	t.Cleanup(func() {
+		_, _ = pg.Exec(`DELETE FROM tenants WHERE slug = ANY($1)`, pq.Array([]string{slugA, slugB, slugC}))
+		_, _ = pg.Exec(`DELETE FROM users WHERE email = $1`, email)
+	})
+	actx := auditapp.AuditContext{ActorEmail: "ops@example.com"}
+
+	// New email: account created, organization created (the console path).
+	if _, err := creator.Create(ctx, tenantapp.CreateOrganizationInput{Name: "A", Slug: slugA, OwnerEmail: email}, actx); err != nil {
+		t.Fatalf("new owner: %v", err)
+	}
+	// The same email again, no flag: refused, nothing created.
+	if _, err := creator.Create(ctx, tenantapp.CreateOrganizationInput{Name: "B", Slug: slugB, OwnerEmail: email}, actx); !errors.Is(err, tenantapp.ErrOwnerAccountExists) {
+		t.Fatalf("the default must refuse an existing account: %v", err)
+	}
+	var n int
+	if err := pg.QueryRow(`SELECT count(*) FROM tenants WHERE slug = $1`, slugB).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("nothing is created: %d %v", n, err)
+	}
+	// With consent (operator CLI, confirmed request) it attaches.
+	got, err := creator.Create(ctx, tenantapp.CreateOrganizationInput{Name: "C", Slug: slugC, OwnerEmail: email, AllowExistingOwner: true}, actx)
+	if err != nil || got.OwnerCreated {
+		t.Fatalf("existing owner with consent: %+v %v", got, err)
 	}
 }

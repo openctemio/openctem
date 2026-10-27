@@ -126,7 +126,7 @@ type AcceptQuarantinedResultResponse struct {
 
 // GetPolicy handles GET /api/v1/sensors/result-policy
 // @Summary      Get the policy for sensor results without a command
-// @Description  What happens to a report that names no command (RFC-040 §5.3). Collector and CI runner sensors may always push results on their own; they are applied with limits (no change to existing assets, no reopening of findings a person resolved). For every other role the mode decides: warn applies them with the same limits and audits them, quarantine holds them for review. Tenants created before this policy existed are on warn; new tenants default to quarantine.
+// @Description  What happens to a report that names no command. Collector and CI runner sensors may always push results on their own; they are applied with limits (no change to existing assets, no reopening of findings a person resolved). For every other role the mode decides: warn applies them with the same limits and audits them, quarantine holds them for review. Tenants created before this policy existed are on warn; new tenants default to quarantine.
 // @Tags         Sensors
 // @Produce      json
 // @Success      200  {object}  SensorResultPolicyResponse

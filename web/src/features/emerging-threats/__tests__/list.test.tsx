@@ -81,7 +81,7 @@ describe('EmergingThreatsList', () => {
     expect(screen.getAllByText('Ransomware').length).toBeGreaterThan(0)
     expect(screen.getAllByText('EPSS 50.0%').length).toBeGreaterThan(0)
     expect(
-      screen.getAllByText(/3 confirmed · 2 possible · 1 internet-facing/).length
+      screen.getAllByText(/3 confirmed, 2 possible, 1 internet-facing/).length
     ).toBeGreaterThan(0)
     expect(api.get).toHaveBeenCalledWith('/api/v1/emerging-threats?state=open&page=1&per_page=25')
   })

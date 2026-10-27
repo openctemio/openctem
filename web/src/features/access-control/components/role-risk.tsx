@@ -129,7 +129,7 @@ export function RoleSummaryLine({
     )
   }
   if (parts.length === 0) return null
-  const line = parts.join(' · ')
+  const line = parts.join(', ')
   return (
     <p id={id} className={cn('text-xs text-muted-foreground', className)}>
       {line.charAt(0).toUpperCase() + line.slice(1)}

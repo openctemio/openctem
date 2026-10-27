@@ -25,7 +25,7 @@
   "remediationClaim.add.title.other": "Add {count} findings to remediation",
   "remediationClaim.conflict.description": "Each finding is worked in one open task. Skip these findings, or move the ones you may change into this task.",
   "remediationClaim.conflict.hiddenTask": "In a task you cannot see",
-  "remediationClaim.conflict.inTask": "In {task} · {owner}",
+  "remediationClaim.conflict.inTask": "In {task}, {owner}",
   "remediationClaim.conflict.intro.one": "1 finding is already in another open task.",
   "remediationClaim.conflict.intro.other": "{count} findings are already in other open tasks.",
   "remediationClaim.conflict.list": "Findings already in a task",

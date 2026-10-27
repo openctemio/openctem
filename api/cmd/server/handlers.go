@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 
+	navpinapp "github.com/openctemio/openctem/api/internal/app/navpin"
 	queryapp "github.com/openctemio/openctem/api/internal/app/query"
 
 	"context"
@@ -219,7 +220,13 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	adminConsoleSvc.SetFactorChangeNotifier(adminFactorMailer{email: svc.Email, appName: cfg.Brand.DisplayName(), log: log})
 	// A password reset or change, or a two-step reset, of the linked account
 	// also ends the administrator's console sessions.
-	svc.Auth.SetSessionsRevokedHook(adminConsoleSvc.EndSessionsForAccount)
+	svc.Auth.AddSessionsRevokedHook(adminConsoleSvc.EndSessionsForAccount)
+	// Sign-out everywhere runs the same hooks, and API keys go too when the
+	// request asks for it.
+	svc.Session.SetSessionsRevokedHooks(svc.Auth.SessionsRevoked())
+	if svc.APIKey != nil {
+		svc.Auth.SetAPIKeyRevoker(svc.APIKey)
+	}
 	adminConsoleSvc.SetRosterChangeNotifier(rosterChangeMailer{email: svc.Email, appName: cfg.Brand.DisplayName(), log: log})
 	// Console security keys (RFC-078): the relying party is the console origin.
 	if cfg.AdminPublicURL != "" && repos.AdminFactor != nil && repos.PlatformSetting != nil {
@@ -262,7 +269,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	commandHandler := handler.NewCommandHandler(svc.Command, v, log)
 	sensorHandler := newSensorHandlerWithTemplates(svc.Sensor, cfg, v, log)
 	sensorHandler.SetContentPolicySource(svc.SensorContent)
-	sensorHandler.SetZoneLister(repos.ScanZone)
+	sensorHandler.SetPolicyPrefill(&handler.SensorPolicyPrefill{
+		Zones: repos.ScanZone, Targets: repos.ScopeTarget, Exclusions: repos.ScopeExcl, Log: log,
+	})
 	sensorHandler.SetGrantService(svc.SensorGrant)
 	if svc.JobSigner != nil {
 		sensorHandler.SetJobSigningRoot(svc.JobSigner.RootKeyID)
@@ -377,6 +386,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	}
 	vulnHandler.SetComponentService(svc.Component)
 	vulnHandler.SetSavedViews(svc.SavedView)
+	if svc.SLA != nil && repos.FindingSLARestart != nil {
+		vulnHandler.SetSLABasis(svc.SLA, repos.FindingSLARestart)
+	}
 	if svc.BulkGuard != nil {
 		vulnHandler.SetBulkGuard(svc.BulkGuard)
 	}
@@ -583,6 +595,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		ReportSchedule:         newReportScheduleHandler(repos, svc, log),
 		UserDashboard:          handler.NewUserDashboardHandler(svc.UserDashboard, log).SetWidgetData(svc.DashboardWidgets),
 		SavedView:              handler.NewSavedViewHandler(svc.SavedView, log),
+		NavPin: handler.NewNavPinHandler(
+			navpinapp.NewService(repos.NavPin, svc.SavedView, svc.Vulnerability, log),
+			svc.Vulnerability, log),
 
 		// Vulnerabilities & Exposures
 		Vulnerability:    vulnHandler,
@@ -891,6 +906,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.SSO.SetAuditService(svc.Audit)
 		// Admin-console identity-provider creates/updates wait for an owner.
 		handlers.SSO.SetChangeApproval(svc.SSOChange)
+		handlers.SSO.SetAppURL(cfg.SMTP.BaseURL)
 	}
 	if svc.SSOChange != nil {
 		handlers.SSOChange = handler.NewSSOChangeHandler(svc.SSOChange, svc.Audit, log)
@@ -1656,6 +1672,11 @@ func newFindingImportService(cfg *config.Config, repos *Repositories, svc *Servi
 			imp.SetRights(repos.APIKey, svc.Role)
 		}
 	}
+	if svc.ActiveGate != nil {
+		// Recon directories: the organization's scope decides which hosts
+		// are its own; the rest wait for review.
+		imp.SetScopeCover(svc.ActiveGate)
+	}
 	if svc.ImportMapping != nil {
 		imp.SetMappingResolver(svc.ImportMapping)
 	}
@@ -1817,7 +1838,7 @@ func newSensorPairingHandler(svc *Services, log *logger.Logger) *handler.SensorP
 
 // bootstrapSession wires the session parts of GET /me/bootstrap to the same
 // code that serves /users/me, /users/me/tenants, /notifications/unread-count,
-// /easm/candidates, the pending count of /approvals and the organization
+// /easm/candidates, the pending count of /approvals, /me/pins and the organization
 // policy of /auth/providers.
 func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) handler.BootstrapSession {
 	s := handler.BootstrapSession{}
@@ -1836,6 +1857,9 @@ func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) hand
 	}
 	if svc.Entitlement != nil {
 		s.LimitsApply = svc.Entitlement.Applies
+	}
+	if h.NavPin != nil {
+		s.Pins = h.NavPin.Response
 	}
 	if svc.Vulnerability != nil {
 		vulns := svc.Vulnerability

@@ -135,13 +135,11 @@ export function WorkflowStages({
             ? ` ${t('workflowStages.summaryLimit', '(limit {limit})', { limit: maxParallel })}`
             : ''}
         </span>
-        <span aria-hidden>·</span>
         <span>
           {t('workflowStages.summaryPath', 'Longest chain: {n} steps', {
             n: plan.criticalPath.length,
           })}
         </span>
-        <span aria-hidden>·</span>
         <span>
           {t('workflowStages.summaryDuration', 'Up to {d} by step timeouts', {
             d: formatDuration(plan.estimatedSeconds),

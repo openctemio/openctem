@@ -35,6 +35,10 @@ vi.mock('@/components/ui/sidebar', () => ({
     isActive?: boolean
   }) => <div data-active={isActive}>{children}</div>,
   useSidebarActions: () => ({ setOpenMobile: vi.fn() }),
+  SidebarMenuAction: (p: React.ComponentProps<'button'>) => <button type="button" {...p} />,
+}))
+vi.mock('@/features/nav-pins/api/use-nav-pins', () => ({
+  useNavPins: () => ({ isPinned: () => false, toggle: vi.fn() }),
 }))
 
 import { FindingsQuickViews } from '../findings-quick-views'

@@ -90,7 +90,7 @@ export function SuppressionApprovePreview({ ruleId }: { ruleId: string | undefin
               <li key={f.id} className="px-3 py-2">
                 <div className="truncate font-medium">{f.title}</div>
                 <div className="text-muted-foreground truncate text-xs">
-                  {[f.severity, f.asset_name, f.file_path].filter(Boolean).join(' · ')}
+                  {[f.severity, f.asset_name, f.file_path].filter(Boolean).join(', ')}
                 </div>
               </li>
             ))}

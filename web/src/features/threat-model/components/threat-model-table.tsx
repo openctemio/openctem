@@ -64,7 +64,7 @@ export function ThreatModelTable({
       const techName = th.technique_name ?? getMitreTechnique(th.technique_id)?.name
       techniqueSet.set(
         th.technique_id,
-        techName ? `${th.technique_id} · ${techName}` : th.technique_id
+        techName ? `${th.technique_id}, ${techName}` : th.technique_id
       )
     }
     return {

@@ -7,10 +7,11 @@ name: Release Tooling
 #   Version consistency   every versioned default agrees with versions.yaml
 #                         (the API embeds a copy of it: no Go file holds a
 #                         version),
-#                         web/package.json stays 0.0.0, and platform.release
-#                         names an existing tag; on release/vX.Y.Z (and on
-#                         main right after it merges, before the tag exists)
-#                         it must name exactly vX.Y.Z
+#                         web/package.json stays 0.0.0, and api/deploy/VERSION
+#                         (the tag checkout's install version, written on
+#                         release branches only) names an existing tag; on
+#                         release/vX.Y.Z (and on main right after it merges,
+#                         before the tag exists) it must name exactly vX.Y.Z
 #
 # Neither check is required (yet), so `paths:` is safe here: a skipped workflow
 # leaves no required check pending. Make "Version consistency" required once it
@@ -27,6 +28,7 @@ on:
       - api/scripts/changelog.py
       - api/.env.example
       - api/deploy/.env.example
+      - api/deploy/VERSION
       - api/deploy/docker-compose.yml
       - api/deploy/docker-compose.job-signer.yml
       - api/internal/versions/**
@@ -43,6 +45,7 @@ on:
       - api/scripts/changelog.py
       - api/.env.example
       - api/deploy/.env.example
+      - api/deploy/VERSION
       - api/deploy/docker-compose.yml
       - api/deploy/docker-compose.job-signer.yml
       - api/internal/versions/**
