@@ -111,7 +111,7 @@ async function deleteGraph(page: Page, g: Graph | null) {
 // re-measure and fail merge groups of unrelated PRs (lit/dim attribute and
 // focus count after ArrowRight), even after the toPass retries. Re-enable
 // once the canvas exposes a "layout settled" signal the spec can await.
-test.describe.fixme('attack path view', () => {
+test.describe.fixme('attack path view', { tag: ['@attack-surface'] }, () => {
   for (const scheme of ['light', 'dark'] as const) {
     test(`canvas at 1440px in ${scheme}: nodes, edges, keys, hover, axe`, async ({
       page,

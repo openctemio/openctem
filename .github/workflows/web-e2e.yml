@@ -16,24 +16,36 @@ name: Web E2E
 #                 web/, api/ or anything shared (.github/, deploy/, root
 #                 Makefile, go.work): .github/scripts/changed.sh, the same
 #                 rules as the other workflows. Docs-only changes skip.
-#   develop       on every push, under the same rule
+#   develop       on every push, the WHOLE suite: the queue ran only the specs
+#                 the change needed, so this is the net under that selection.
+#                 A failure opens or updates one issue labelled
+#                 `e2e-regression`.
+#   nightly       the whole suite on develop (02:41 UTC), and on demand.
 #   pull request  only with the `run-e2e` label, or when the suite itself
 #                 (web/e2e/, this workflow) changed, and the web or the API's
 #                 HTTP layer (api/internal/infra/http/) changed. With the
 #                 `ci:full` label or a changed CI definition (.github/workflows/,
-#                 .github/scripts/, .github/actions/): the merge-queue rule.
+#                 .github/scripts/, .github/actions/): the whole suite.
+#
+# Which specs (pull request, merge queue): the `plan` job maps the changed
+# files to area tags with web/e2e/impact-map.yml (web/e2e/ci/select.mjs). The
+# @smoke specs always run; a shared or unmapped path runs everything; only
+# docs and unit tests select nothing. The specs are split into 1 to 4 shards
+# by their recorded durations (artifact `e2e-timings` of the last green
+# develop run, the median for a spec without one), longest first, and the
+# every-page request budget check runs only when the @budget specs are
+# selected. Details: api/docs/development/ci-cd.md.
 #
 # How it stays fast
 #   build    the three images are built once per run (bake, GitHub Actions layer
 #            cache) and handed to the shards as one artifact, so no shard builds.
-#   shards   Playwright runs as a matrix of 4 (`--shard i/4`) plus one job for
-#            the every-page request budget check (`request budget (part`, about
-#            5 minutes on its own, which the position-based sharding used to
-#            pile onto shard 1), each against its own stack; 25 minute cap
-#            each. The first failing shard cancels the others (matrix
-#            fail-fast, plus .github/actions/fail-fast: the rest of this run
-#            on a PR, every run of the group in the merge queue); a cancelled
-#            shard still uploads its blob report.
+#   shards   Playwright runs the specs `plan` assigned to each shard (1 to 4)
+#            plus, when selected, one job for the every-page request budget
+#            check, each against its own stack; 25 minute cap each. The first
+#            failing shard cancels the others (matrix fail-fast, plus
+#            .github/actions/fail-fast: the rest of this run on a PR, every run
+#            of the group in the merge queue); a cancelled shard still uploads
+#            its blob report.
 #   caches   npm (setup-node) and the Chromium download (keyed by the Playwright
 #            version).
 #   retries  1, in CI only (web/playwright.config.ts). A test that fails then
@@ -44,6 +56,9 @@ name: Web E2E
 # parallel (stack start, install, a quarter of the tests), merge about 1 min.
 
 on:
+  schedule:
+    - cron: '41 2 * * *'
+  workflow_dispatch:
   pull_request:
     branches: [main, develop]
     # labeled: adding `run-e2e` to a pull request starts the suite.
@@ -77,18 +92,21 @@ jobs:
       api: ${{ steps.f.outputs.api }}
       suite: ${{ steps.suite.outputs.changed }}
       http: ${{ steps.http.outputs.changed }}
-      run: ${{ steps.decide.outputs.run == 'true' && steps.tree.outputs.verified != 'true' }}
+      run: ${{ steps.decide.outputs.run == 'true' && (github.event_name == 'push' || steps.tree.outputs.verified != 'true') }}
+      full: ${{ steps.f.outputs.full }}
       tree_note: ${{ steps.tree.outputs.note }}
-      # The shards run unless this is a push to develop of a commit the merge
-      # queue already passed with this workflow; that push still builds the
-      # images, to keep develop's layer cache current for pull requests.
-      shards: ${{ steps.decide.outputs.run == 'true' && steps.queue.outputs.verified != 'true' && steps.tree.outputs.verified != 'true' }}
+      # The shards run on a push to develop even when the merge queue or an
+      # earlier run passed that commit: the queue ran only the specs the change
+      # needed, the push runs them all.
+      shards: ${{ steps.decide.outputs.run == 'true' && (github.event_name == 'push' || (steps.queue.outputs.verified != 'true' && steps.tree.outputs.verified != 'true')) }}
       verified: ${{ steps.queue.outputs.verified }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
+          # The nightly run starts from the default branch's workflow file.
+          ref: ${{ github.event_name == 'schedule' && 'develop' || '' }}
       - id: f
         env:
           EVENT_BEFORE: ${{ github.event.before }}
@@ -192,6 +210,92 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: bash .github/scripts/tree-verified.sh
 
+  # Which specs this change needs, and how to split them (research/295).
+  # Pull request and merge queue: the changed files through
+  # web/e2e/impact-map.yml; every other event runs everything. Any doubt (a
+  # path nobody mapped, a failed diff, a broken map) gives "all". The job runs
+  # the PR's own selector, as it runs the PR's own workflow.
+  plan:
+    name: Select specs and plan shards
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # actions: read for the timings artifact of the last green develop run;
+    # write also lets the fail-fast step cancel doomed runs
+    # (.github/actions/fail-fast).
+    permissions:
+      contents: read
+      actions: write
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      count: ${{ steps.plan.outputs.count }}
+      mode: ${{ steps.plan.outputs.mode }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'schedule' && 'develop' || '' }}
+
+      # The files this run's change touches. An empty file (diff failed) makes
+      # the selector run everything.
+      - name: Changed files
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          MG_BASE: ${{ github.event.merge_group.base_sha }}
+          MG_HEAD: ${{ github.event.merge_group.head_sha }}
+        run: |
+          : > "$RUNNER_TEMP/changed.txt"
+          case "$EVENT" in
+            merge_group)
+              git cat-file -e "${MG_BASE}^{commit}" 2>/dev/null || git fetch --no-tags --quiet origin "$MG_BASE" || true
+              git diff --name-only "${MG_BASE}..${MG_HEAD}" > "$RUNNER_TEMP/changed.txt" || : > "$RUNNER_TEMP/changed.txt" ;;
+            pull_request)
+              git fetch --no-tags --quiet origin "$BASE_REF" || true
+              git diff --name-only "origin/${BASE_REF}...HEAD" > "$RUNNER_TEMP/changed.txt" || : > "$RUNNER_TEMP/changed.txt" ;;
+          esac
+          wc -l < "$RUNNER_TEMP/changed.txt"
+
+      # Per-spec durations recorded by the newest green develop run. None found
+      # (first run, expired artifact): every spec costs the same.
+      - name: Recorded durations
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/timings"
+          for id in $(gh run list -R "$REPO" --workflow web-e2e.yml --branch develop --status success --limit 10 --json databaseId --jq '.[].databaseId' 2>/dev/null); do
+            if gh run download "$id" -R "$REPO" -n e2e-timings -D "$RUNNER_TEMP/timings" >/dev/null 2>&1; then
+              echo "timings from run $id"; break
+            fi
+          done
+          ls "$RUNNER_TEMP/timings" || true
+
+      - id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          # The full tier asked for: the ci:full label or a changed CI
+          # definition. Only on a pull request; the merge queue always reports
+          # it and selects by files.
+          FULL: ${{ github.event_name == 'pull_request' && needs.changes.outputs.full == 'true' }}
+        run: |
+          args=(plan --changed "$RUNNER_TEMP/changed.txt" --event "$EVENT")
+          if [ "$FULL" = true ]; then args+=(--full); fi
+          if [ -f "$RUNNER_TEMP/timings/e2e-timings.json" ]; then args+=(--timings "$RUNNER_TEMP/timings/e2e-timings.json"); fi
+          node web/e2e/ci/select.mjs "${args[@]}" > "$RUNNER_TEMP/plan.json"
+          jq -c '.matrix' "$RUNNER_TEMP/plan.json" | sed 's/^/matrix=/' >> "$GITHUB_OUTPUT"
+          jq -r '"count=\(.count)\nmode=\(.mode)"' "$RUNNER_TEMP/plan.json" >> "$GITHUB_OUTPUT"
+          {
+            echo "### E2E selection"
+            jq -r '"- mode: **\(.mode)** (\(.reason))\n- specs: \(.specs), shards: \(.shards), request budget job: \(.budget)"' "$RUNNER_TEMP/plan.json"
+            jq -r '.matrix.include[] | "- \(.name): \(.files | split(" ") | length) specs, about \(.seconds) s"' "$RUNNER_TEMP/plan.json"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Fail fast
+        if: failure()
+        uses: ./.github/actions/fail-fast
+
   build:
     name: Build e2e images
     # actions: write lets the fail-fast step cancel doomed runs (.github/actions/fail-fast).
@@ -199,8 +303,8 @@ jobs:
       contents: read
       packages: read
       actions: write
-    needs: changes
-    if: needs.changes.outputs.run == 'true'
+    needs: [changes, plan]
+    if: needs.changes.outputs.run == 'true' && needs.plan.result == 'success' && needs.plan.outputs.count != '0'
     runs-on: ${{ ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_E2E_BUILD) || (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_HEAVY) || 'ubuntu-latest' }}
     timeout-minutes: 25
     env:
@@ -255,14 +359,14 @@ jobs:
         uses: ./.github/actions/fail-fast
 
   e2e:
-    name: Playwright e2e (${{ matrix.shard == 0 && 'request budget' || format('shard {0}/4', matrix.shard) }})
+    name: Playwright e2e (${{ matrix.name }})
     # actions: write lets the fail-fast step cancel doomed runs (.github/actions/fail-fast).
     permissions:
       contents: read
       packages: read
       actions: write
-    needs: [changes, build]
-    if: needs.changes.outputs.shards == 'true'
+    needs: [changes, plan, build]
+    if: needs.changes.outputs.shards == 'true' && needs.plan.result == 'success' && needs.plan.outputs.count != '0'
     # Always GitHub-hosted: the stack publishes on 127.0.0.1 of the Docker host and
     # the tests call http://localhost, which on the self-hosted runner (Docker via
     # dind) is a different machine. Playwright's apt dependencies need sudo too.
@@ -270,11 +374,11 @@ jobs:
     # Stack start, install and a quarter of the tests; no image build here.
     timeout-minutes: 25
     strategy:
-      # Every shard reports, so one red shard does not hide another.
+      # The first red shard cancels the rest: the gate fails either way.
       fail-fast: true
-      matrix:
-        # 0 = the request budget check alone; 1-4 = the rest of the suite.
-        shard: [1, 2, 3, 4, 0]
+      # From `plan`: one entry per shard (id 1..4, `files` = its specs) and,
+      # when @budget is selected, id 0 = the request budget check alone.
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     env:
       API_IMAGE: local/openctem-api:e2e
       WEB_IMAGE: local/openctem-web:e2e
@@ -283,6 +387,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ github.event_name == 'schedule' && 'develop' || '' }}
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -352,16 +457,15 @@ jobs:
           CI: 'true'
           E2E_BASE_URL: http://localhost:3000
           E2E_API_BASE_URL: http://localhost:8080
-          SHARD: ${{ matrix.shard }}
+          # Spec paths from `plan`: names from the repository's own specs
+          # directory (the tag gate refuses anything but [A-Za-z0-9._/-]).
+          SPECS: ${{ matrix.files }}
         run: |
+          read -r -a spec_files <<< "$SPECS"
           # Quarantined flaky tests (.github/quarantine.yml) are skipped until their fix date.
           q="$(python3 ../.github/scripts/quarantine.py pw-grep-invert)"
           if [ -n "$q" ]; then echo "quarantined: $q"; fi
-          if [ "$SHARD" = 0 ]; then
-            npx playwright test --grep 'request budget \(part' ${q:+--grep-invert "$q"}
-          else
-            npx playwright test --shard "$SHARD/4" --grep-invert "request budget \\(part${q:+|$q}"
-          fi
+          npx playwright test "${spec_files[@]}" ${q:+--grep-invert "$q"}
 
       - name: Stack logs
         if: failure()
@@ -373,7 +477,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: blob-report-${{ matrix.shard }}
+          name: blob-report-${{ matrix.id }}
           path: |
             web/blob-report/
             web/test-results/
@@ -389,6 +493,8 @@ jobs:
     name: Merge reports and list flaky tests
     needs: [changes, e2e]
     if: always() && needs.changes.outputs.run == 'true' && needs.e2e.result != 'skipped'
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -430,6 +536,22 @@ jobs:
             { echo "### Flaky e2e tests (passed on retry)"; echo; while IFS= read -r t; do echo "- $t"; done <<< "$flaky"; } >> "$GITHUB_STEP_SUMMARY"
             echo "::warning::flaky e2e tests: $(echo "$flaky" | wc -l) (see the run summary)"
           fi
+      # develop and the nightly run execute every spec, so their durations
+      # are the ones `plan` balances the next shards with.
+      - name: Record per-spec durations
+        if: needs.e2e.result == 'success' && (github.event_name == 'push' || github.event_name == 'schedule')
+        working-directory: web
+        run: |
+          [ -f report.json ] || exit 0
+          node e2e/ci/select.mjs timings report.json > e2e-timings.json
+      - name: Upload the durations
+        if: needs.e2e.result == 'success' && (github.event_name == 'push' || github.event_name == 'schedule')
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-timings
+          path: web/e2e-timings.json
+          if-no-files-found: ignore
+          retention-days: 30
       - name: Upload the merged HTML report
         if: needs.e2e.result != 'success'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -446,7 +568,7 @@ jobs:
   e2e-ok:
     name: E2E OK
     if: always()
-    needs: [changes, build, e2e]
+    needs: [changes, plan, build, e2e]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -455,6 +577,9 @@ jobs:
           NEEDS: ${{ toJSON(needs) }}
           RUN: ${{ needs.changes.outputs.run }}
           VERIFIED: ${{ needs.changes.outputs.verified }}
+          SHARDS: ${{ needs.changes.outputs.shards }}
+          COUNT: ${{ needs.plan.outputs.count }}
+          MODE: ${{ needs.plan.outputs.mode }}
           TREE_NOTE: ${{ needs.changes.outputs.tree_note }}
         run: |
           echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
@@ -465,13 +590,52 @@ jobs:
           if [ "$(echo "$NEEDS" | jq -r '.changes.result')" != success ]; then
             echo "::error::the change detection did not succeed"; exit 1
           fi
-          if [ "$RUN" = true ] && [ "$VERIFIED" = true ]; then
+          if [ "$RUN" = true ] && [ "$SHARDS" != true ]; then
             echo "the merge queue already passed this commit; the images were built for the layer cache"
+          elif [ "$RUN" = true ] && [ "$COUNT" = 0 ]; then
+            echo "no spec needed for this change (selection: $MODE)"
           elif [ "$RUN" = true ]; then
-            for j in build e2e; do
+            for j in plan build e2e; do
               r="$(echo "$NEEDS" | jq -r --arg j "$j" '.[$j].result')"
               if [ "$r" != success ]; then echo "::error::$j must run and pass, got: $r"; exit 1; fi
             done
           else
             echo "suite not needed for this change"
+          fi
+
+  # A failure on develop (every push and the nightly run execute the whole
+  # suite) opens one issue, or adds a comment to the open one, so a regression
+  # the queue's narrower selection let through is seen and fixed. Not part of
+  # `E2E OK`.
+  regression:
+    name: Report an e2e regression
+    needs: [changes, plan, build, e2e]
+    if: >-
+      always() && (github.event_name == 'push' || github.event_name == 'schedule')
+      && (needs.plan.result == 'failure' || needs.build.result == 'failure' || needs.e2e.result == 'failure')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Open or update the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          label=e2e-regression
+          gh label create "$label" -R "$REPO" --color D93F0B --description "The full e2e suite failed on develop" 2>/dev/null || true
+          body="The full e2e suite failed on develop (${EVENT}) at ${SHA}. Run: ${RUN_URL}"
+          n="$(gh issue list -R "$REPO" --label "$label" --state open --limit 1 --json number --jq '.[0].number // empty')"
+          if [ -n "$n" ]; then
+            gh issue comment "$n" -R "$REPO" --body "$body"
+          else
+            gh issue create -R "$REPO" --label "$label" --title "e2e regression on develop" \
+              --body "$body
+
+          Fix the spec or the change that broke it. This issue stays open until the suite is green again; a later failure adds a comment here."
           fi
