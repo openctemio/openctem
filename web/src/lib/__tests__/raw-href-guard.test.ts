@@ -123,6 +123,10 @@ const REVIEWED = new Set([
   'features/assets/components/linked-assets-panel.tsx|Link|href={viewAllHref}',
   'features/attack-surface/components/path-graph.tsx|Link|href={node.href}',
   'features/auth/components/password-token-form.tsx|Link|href={copy.newLink.href}',
+  // dataUri() wraps our own generated brand SVG constants (src/assets/brand-data.generated.ts) as a
+  // base64 image/svg+xml data URI for the icon routes; no request data reaches it.
+  'lib/brand-icons.tsx|img|src={dataUri(svg)}',
+  'lib/brand-icons.tsx|img|src={dataUri(OG_IMAGE_SVG)}',
   // Prop passthroughs: every caller passes a literal or route builder.
   'features/shared/components/link-card.tsx|Link|href={href}',
   'features/dashboard/components/activity-item.tsx|Link|href={href}',
