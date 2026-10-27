@@ -309,3 +309,51 @@ func TestIngestReceipt_ActionsIndexedForFindingCascade_DB(t *testing.T) {
 		t.Fatal("no index on finding_ingest_actions leads with finding_id: the ON DELETE CASCADE from findings scans the table")
 	}
 }
+
+// A running scan run shows the findings its receipt holds as each report
+// lands (the sensor's own findings_count is 0 for ingest-reported tools), and
+// the step bookkeeping that follows never lowers that figure.
+func TestIngestReceipt_RunTotalFindingsLive_DB(t *testing.T) {
+	f := newReceiptFixture(t)
+	run, step, cmd := shared.NewID(), shared.NewID(), shared.NewID()
+	if _, err := f.db.ExecContext(f.ctx, `INSERT INTO scan_runs (id, tenant_id, trigger_type, status, kind) VALUES ($1, $2, 'manual', 'running', 'system')`,
+		run.String(), f.tenant.String()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.ExecContext(f.ctx, `INSERT INTO scan_run_steps (id, scan_run_id, step_key, step_order, status) VALUES ($1, $2, 's', 1, 'running')`,
+		step.String(), run.String()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.ExecContext(f.ctx, `INSERT INTO commands (id, tenant_id, type, status, payload, scan_run_step_id)
+			VALUES ($1, $2, 'scan', 'running', '{}', $3)`, cmd.String(), f.tenant.String(), step.String()); err != nil {
+		t.Fatal(err)
+	}
+	total := func() int {
+		return f.count(`SELECT total_findings FROM scan_runs WHERE id = $1`, run)
+	}
+	a := f.finding(f.tenant, f.asset, "fp-a", "new")
+	f.finding(f.tenant, f.asset, "fp-b", "confirmed")
+	src := ingestreceipt.Source{Kind: ingestreceipt.SourceCommand, CommandID: &cmd}
+	f.record(&ingestreceipt.Delta{TenantID: f.tenant, Source: src, Tool: "nuclei", Reports: 1, Received: 2,
+		Created: []shared.ID{a}, StillDetected: []string{"fp-b"}})
+	if got := total(); got != 2 {
+		t.Fatalf("total_findings after one report = %d, want 2", got)
+	}
+	// The step settles with the sensor's own count (0): the run keeps its figure.
+	if err := NewScanRunRepository(&DB{DB: f.db}).UpdateStats(f.ctx, run, 1, 0, 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	if got := total(); got != 2 {
+		t.Fatalf("total_findings after UpdateStats(0) = %d, want 2", got)
+	}
+	// Another tenant's run id is never touched by a receipt of this tenant.
+	other := seedTestTenant(f.ctx, t, f.db)
+	otherRun := shared.NewID()
+	if _, err := f.db.ExecContext(f.ctx, `INSERT INTO scan_runs (id, tenant_id, trigger_type, status, kind) VALUES ($1, $2, 'manual', 'running', 'system')`,
+		otherRun.String(), other.String()); err != nil {
+		t.Fatal(err)
+	}
+	if n := f.count(`SELECT total_findings FROM scan_runs WHERE id = $1`, otherRun); n != 0 {
+		t.Fatalf("other tenant's run total_findings = %d", n)
+	}
+}
