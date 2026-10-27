@@ -36,6 +36,7 @@ var registry = map[Code]Spec{
 	CodeRateLimitExceeded:     {http.StatusTooManyRequests, "Too many requests. Wait a moment and try again."},
 	CodeUpstreamError:         {http.StatusBadGateway, "A service this depends on did not answer correctly. Try again later."},
 	CodeMFAEnrollmentRequired: {http.StatusForbidden, "Your organization requires two-factor authentication. Sign in again to set it up."},
+	CodeReauthRequired:        {http.StatusForbidden, "For your security, sign in again to set up two-factor authentication."},
 	CodeApprovalRequired:      {http.StatusForbidden, "This change needs an approver. Submit a request instead."},
 	CodeInvalidFilter:         {http.StatusBadRequest, "The filter is not valid. Check the fields and values."},
 	CodeInvalidInclude:        {http.StatusBadRequest, "The include parameter is not valid."},
