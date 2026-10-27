@@ -129,10 +129,11 @@ export function RoleSummaryLine({
     )
   }
   if (parts.length === 0) return null
-  const line = parts.join(' · ')
+  // Sentences, not a dotted list: each part starts a new sentence.
+  const line = parts.map((p) => `${p.charAt(0).toUpperCase()}${p.slice(1)}.`).join(' ')
   return (
     <p id={id} className={cn('text-xs text-muted-foreground', className)}>
-      {line.charAt(0).toUpperCase() + line.slice(1)}
+      {line}
     </p>
   )
 }
