@@ -13,7 +13,11 @@ import (
 
 // AuditActionWriteStarted is the write-ahead row of a super administrator's
 // write: written before the handler runs, so the attempt is on record even if
-// the outcome row (written after the response) is lost.
+// the outcome row (written after the response) is lost. Every state-changing
+// request of an authenticated administrator gets one, whatever role the
+// session acts as: an unelevated super administrator acts as read-only, and
+// their elevation, factor and password writes are exactly the ones that must
+// be on record first.
 const AuditActionWriteStarted = "admin.write_started"
 
 // CodeAuditUnavailable is the refusal when the write-ahead row cannot be stored.
@@ -23,12 +27,10 @@ const CodeAuditUnavailable apierror.Code = "AUDIT_UNAVAILABLE"
 const writeAheadBodyLimit = 1024 * 1024
 
 // WriteAhead returns middleware for the console's authenticated chain, after
-// Authenticate. For a state-changing request whose acting role is super_admin
-// it writes one audit row synchronously (request context, auditWriteTimeout)
+// Authenticate. For a state-changing request it writes one audit row synchronously (request context, auditWriteTimeout)
 // before the handler runs; when the row cannot be written the request is
-// refused with 503 AUDIT_UNAVAILABLE and the handler is not called. Reads and
-// the writes of other roles pass unchanged (their outcome rows stay
-// best-effort).
+// refused with 503 AUDIT_UNAVAILABLE and the handler is not called. Reads
+// pass unchanged.
 func (m *AuditMiddleware) WriteAhead() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -68,5 +70,6 @@ func writeAheadApplies(r *http.Request) bool {
 	case http.MethodGet, http.MethodHead, http.MethodOptions:
 		return false
 	}
-	return GetAdminRole(r.Context()) == string(admin.AdminRoleSuperAdmin)
+	// Keyed on the account, not on the role the session currently acts as.
+	return GetAdminUser(r.Context()) != nil || GetAdminRole(r.Context()) != ""
 }
