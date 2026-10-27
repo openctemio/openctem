@@ -54,7 +54,8 @@ jobs:
       actions: read # queue-verified.sh reads the merge queue's runs of this commit
       checks: read # green-base.sh and release-provenance.sh read a commit's check runs
     outputs:
-      images: ${{ (steps.f.outputs.api == 'true' || steps.f.outputs.web == 'true') && steps.queue.outputs.verified != 'true' && steps.tree.outputs.verified != 'true' }}
+      # The images hold the API and the web app, not the e2e suite or docs.
+      images: ${{ ((steps.f.outputs.api == 'true' && (steps.scope.outputs.api_code == 'true' || steps.scope.outputs.ci_self == 'true')) || (steps.f.outputs.web == 'true' && (steps.scope.outputs.web_app == 'true' || steps.scope.outputs.ci_self == 'true'))) && steps.queue.outputs.verified != 'true' && steps.tree.outputs.verified != 'true' }}
       tree_note: ${{ steps.tree.outputs.note }}
       verified: ${{ steps.queue.outputs.verified }}
       full: ${{ steps.f.outputs.full }}
@@ -72,6 +73,15 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: bash .github/scripts/changed.sh
+      # Which part of the side changed (.github/scripts/scope.sh): only narrows
+      # what changed.sh selected, e.g. a change to web/e2e/ alone runs no web
+      # unit tests and builds no image, a CI file only the workflows that use it.
+      - id: scope
+        env:
+          EVENT_BEFORE: ${{ github.event.before }}
+          MG_BASE: ${{ github.event.merge_group.base_sha }}
+          MG_HEAD: ${{ github.event.merge_group.head_sha }}
+        run: bash .github/scripts/scope.sh
       # A push to develop of a commit the merge queue already passed with this
       # workflow skips the jobs below (.github/scripts/queue-verified.sh).
       - id: queue
@@ -120,7 +130,7 @@ jobs:
           POSTGRES_DB: app_smoke
         ports: ["5432:5432"]
         options: >-
-          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+          --health-cmd "pg_isready -U openctem -d app_smoke" --health-interval 5s --health-timeout 5s --health-retries 10
       redis:
         image: ghcr.io/openctemio/mirror/redis:7-alpine
         credentials:
