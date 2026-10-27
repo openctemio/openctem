@@ -40,6 +40,16 @@ describe('runDeadline', () => {
     expect(d?.reason).toMatch(/when the run started/)
   })
 
+  it('says a claim moved the deadline to the time the work needs', () => {
+    const d = runDeadline(
+      { status: 'running', deadline_at: '2026-10-13T14:45:00Z', deadline_reason: 'work_estimate' },
+      undefined,
+      now
+    )
+    expect(d?.relative).toBe('deadline in 1h 45m')
+    expect(d?.reason).toMatch(/queue does not count/)
+  })
+
   it('is null without a deadline or with a bad one', () => {
     expect(runDeadline({ status: 'running' }, undefined, now)).toBeNull()
     expect(runDeadline({ status: 'running', deadline_at: 'nope' }, undefined, now)).toBeNull()
