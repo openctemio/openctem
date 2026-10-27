@@ -100,7 +100,7 @@ export function Logo({ className, markerColor = MARKER, size = 24, ...props }: L
 }
 
 /** The outlined "OpenCTEM" wordmark alone. */
-export function LogoWordmark({ className, markerColor = MARKER, ...props }: LogoProps) {
+export function LogoWordmark({ className, markerColor: _markerColor, ...props }: LogoProps) {
   return (
     <svg
       viewBox="6.44 -102.88 768.70 130.27"
