@@ -41,6 +41,9 @@ func (r *FindingRepository) ListFindingGroups(
 		return r.groupByField(ctx, tenantID, "finding_type", filter, page)
 	case "family":
 		return r.groupByField(ctx, tenantID, "family", filter, page)
+	case "title":
+		// Group by issue: one row per stored title, with its asset count.
+		return r.groupByField(ctx, tenantID, "title", filter, page)
 	default:
 		return pagination.Result[*vulnerability.FindingGroup]{}, fmt.Errorf("unsupported group_by: %s", groupBy)
 	}
@@ -708,13 +711,14 @@ func (r *FindingRepository) groupByComponent(
 	return pagination.NewResult(groups, total, page), nil
 }
 
-// groupByField handles simple GROUP BY on a single column (severity, source, finding_type).
+// groupByField handles simple GROUP BY on a single column (severity, source,
+// finding_type, family, title).
 func (r *FindingRepository) groupByField(
 	ctx context.Context, tenantID shared.ID,
 	field string, filter vulnerability.FindingFilter, page pagination.Pagination,
 ) (pagination.Result[*vulnerability.FindingGroup], error) {
 	// Whitelist field names to prevent SQL injection
-	allowedFields := map[string]bool{"severity": true, "source": true, "finding_type": true, "family": true}
+	allowedFields := map[string]bool{"severity": true, "source": true, "finding_type": true, "family": true, "title": true}
 	if !allowedFields[field] {
 		return pagination.Result[*vulnerability.FindingGroup]{}, fmt.Errorf("invalid group field: %s", field)
 	}
@@ -727,6 +731,10 @@ func (r *FindingRepository) groupByField(
 	if field == "family" {
 		// Findings without a family form no group (like rule_id and cve_id).
 		extraWhere += " AND f.family IS NOT NULL AND f.family <> ''"
+	}
+	if field == "title" {
+		// Untitled findings form no group: their rows cannot be selected by title.
+		extraWhere += " AND f.title IS NOT NULL AND f.title <> ''"
 	}
 
 	countQuery := fmt.Sprintf(`
