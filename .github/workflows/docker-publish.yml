@@ -160,7 +160,6 @@ jobs:
             BUILD_TIME=${{ needs.prepare.outputs.build_time }}
           load: true
           tags: smoke/${{ matrix.image.name }}:${{ matrix.platform.arch }}
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ matrix.image.name }}:buildcache-${{ matrix.platform.arch }}
           provenance: false
           sbom: false
       - name: Smoke test on the native arch
@@ -173,7 +172,11 @@ jobs:
         env:
           TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db:2,mirror.gcr.io/aquasec/trivy-db:2
         run: bash .github/scripts/image-guard.sh ${{ matrix.image.name }} smoke/${{ matrix.image.name }}:${{ matrix.platform.arch }}
-      - name: Push by digest (same build, from cache)
+      # No registry cache (cache-from/cache-to) anywhere in this workflow: any
+      # job with a packages:write token could overwrite such a tag and get its
+      # layers signed into a release. The smoke build above fills this job's own
+      # builder cache, so this step reuses those layers without a shared store.
+      - name: Push by digest (same build, from this job's builder cache)
         id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -198,8 +201,6 @@ jobs:
             COMMIT=${{ github.sha }}
             BUILD_TIME=${{ needs.prepare.outputs.build_time }}
           outputs: type=image,name=${{ env.REGISTRY }}/${{ matrix.image.name }},push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ matrix.image.name }}:buildcache-${{ matrix.platform.arch }}
-          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ matrix.image.name }}:buildcache-${{ matrix.platform.arch }},mode=max
           provenance: false
           sbom: false
       - name: Export digest
@@ -304,7 +305,7 @@ jobs:
     timeout-minutes: 45
     services:
       postgres:
-        image: ghcr.io/openctemio/mirror/postgres:17-alpine
+        image: ghcr.io/openctemio/mirror/postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
         credentials:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
@@ -316,9 +317,9 @@ jobs:
           POSTGRES_DB: app_smoke
         ports: ["5432:5432"]
         options: >-
-          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+          --health-cmd "pg_isready -U openctem -d app_smoke" --health-interval 5s --health-timeout 5s --health-retries 10
       redis:
-        image: ghcr.io/openctemio/mirror/redis:7-alpine
+        image: ghcr.io/openctemio/mirror/redis:7-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
         credentials:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
