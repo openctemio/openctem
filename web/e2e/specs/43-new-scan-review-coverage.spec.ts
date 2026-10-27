@@ -81,56 +81,58 @@ async function openReview(page: Page): Promise<Locator> {
 }
 
 for (const width of [1440, 390]) {
-  test(`New Scan review shows skipped targets by reason, never red (${width}px)`, async ({
-    page,
-  }, info) => {
-    await page.setViewportSize({ width, height: width < 768 ? 844 : 900 })
-    const dialog = await openReview(page)
-    const section = dialog.getByTestId('new-scan-routing')
-    test.skip(
-      (await section.count()) === 0,
-      'the signed-in user cannot read scan zones, so the preview is hidden'
-    )
-    await expect(section.getByTestId('outcome-will-scan')).toHaveText('121', { timeout: 15_000 })
-    await expect(section.getByTestId('outcome-skipped')).toHaveText('435')
-    expect(await section.locator('.text-destructive').count(), 'red inside the block').toBe(0)
-    // No zones: no zone wording at all.
-    await expect(section.getByText(/zone/i)).toHaveCount(0)
-
-    const group = section.locator('li[data-reason="not_resolving"]')
-    await expect(group).toHaveAttribute('data-tone', 'info')
-    const trigger = group.getByRole('button', { expanded: false })
-    await trigger.focus()
-    await page.keyboard.press('Enter')
-    await expect(group.getByRole('button', { expanded: true })).toBeVisible()
-    await expect(group.getByTestId('skip-names').getByRole('listitem')).toHaveCount(30)
-    await expect(group.getByText(/and 404 more not listed/)).toBeVisible()
-    await group.getByRole('searchbox').fill('old2')
-    // old2, old20..old29
-    await expect(group.getByTestId('skip-names').getByRole('listitem')).toHaveCount(11)
-
-    const body = dialog.locator('[data-slot="dialog-body"]')
-    const box = await body.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }))
-    expect(box.scroll, 'review body scrolls sideways').toBeLessThanOrEqual(box.client + 1)
-
-    await page.addScriptTag({ path: AXE })
-    const result = (await page.evaluate(async () => {
-      const w = window as unknown as {
-        axe: { run: (ctx: unknown, opts: unknown) => Promise<AxeResult> }
-      }
-      return w.axe.run(
-        { include: [['[data-testid="new-scan-routing"]']] },
-        { resultTypes: ['violations'] }
+  test(
+    `New Scan review shows skipped targets by reason, never red (${width}px)`,
+    { tag: ['@scans'] },
+    async ({ page }, info) => {
+      await page.setViewportSize({ width, height: width < 768 ? 844 : 900 })
+      const dialog = await openReview(page)
+      const section = dialog.getByTestId('new-scan-routing')
+      test.skip(
+        (await section.count()) === 0,
+        'the signed-in user cannot read scan zones, so the preview is hidden'
       )
-    })) as AxeResult
-    const serious = result.violations
-      .filter((v) => v.impact === 'serious' || v.impact === 'critical')
-      .map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)
-    expect(serious).toEqual([])
+      await expect(section.getByTestId('outcome-will-scan')).toHaveText('121', { timeout: 15_000 })
+      await expect(section.getByTestId('outcome-skipped')).toHaveText('435')
+      expect(await section.locator('.text-destructive').count(), 'red inside the block').toBe(0)
+      // No zones: no zone wording at all.
+      await expect(section.getByText(/zone/i)).toHaveCount(0)
 
-    await info.attach(`review-coverage-${width}.png`, {
-      body: await section.screenshot(),
-      contentType: 'image/png',
-    })
-  })
+      const group = section.locator('li[data-reason="not_resolving"]')
+      await expect(group).toHaveAttribute('data-tone', 'info')
+      const trigger = group.getByRole('button', { expanded: false })
+      await trigger.focus()
+      await page.keyboard.press('Enter')
+      await expect(group.getByRole('button', { expanded: true })).toBeVisible()
+      await expect(group.getByTestId('skip-names').getByRole('listitem')).toHaveCount(30)
+      await expect(group.getByText(/and 404 more not listed/)).toBeVisible()
+      await group.getByRole('searchbox').fill('old2')
+      // old2, old20..old29
+      await expect(group.getByTestId('skip-names').getByRole('listitem')).toHaveCount(11)
+
+      const body = dialog.locator('[data-slot="dialog-body"]')
+      const box = await body.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }))
+      expect(box.scroll, 'review body scrolls sideways').toBeLessThanOrEqual(box.client + 1)
+
+      await page.addScriptTag({ path: AXE })
+      const result = (await page.evaluate(async () => {
+        const w = window as unknown as {
+          axe: { run: (ctx: unknown, opts: unknown) => Promise<AxeResult> }
+        }
+        return w.axe.run(
+          { include: [['[data-testid="new-scan-routing"]']] },
+          { resultTypes: ['violations'] }
+        )
+      })) as AxeResult
+      const serious = result.violations
+        .filter((v) => v.impact === 'serious' || v.impact === 'critical')
+        .map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)
+      expect(serious).toEqual([])
+
+      await info.attach(`review-coverage-${width}.png`, {
+        body: await section.screenshot(),
+        contentType: 'image/png',
+      })
+    }
+  )
 }
