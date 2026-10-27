@@ -138,6 +138,11 @@ jobs:
   # name says which gate it was.
   static:
     name: API static checks
+    # actions: write lets the fail-fast step cancel doomed runs (.github/actions/fail-fast).
+    permissions:
+      contents: read
+      packages: read
+      actions: write
     needs: changes
     if: needs.changes.outputs.api == 'true'
     runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_HEAVY) || 'ubuntu-latest' }}
@@ -389,6 +394,9 @@ jobs:
         run: |
           base="$(bash ../.github/scripts/effective-base.sh api "origin/${GITHUB_BASE_REF}")"
           make lint-new BASE_REF="$base"
+      - name: Fail fast
+        if: failure()
+        uses: ./.github/actions/fail-fast
 
   # The OpenAPI spec, generated once and handed to the test and least-privilege
   # shards (14 shards on the full tier each generated it: ~27 runner-minutes per
@@ -396,6 +404,11 @@ jobs:
   # start their tests when the spec arrives instead of generating it.
   spec:
     name: OpenAPI spec
+    # actions: write lets the fail-fast step cancel doomed runs (.github/actions/fail-fast).
+    permissions:
+      contents: read
+      packages: read
+      actions: write
     needs: changes
     if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
@@ -420,12 +433,20 @@ jobs:
           path: api/api/openapi/swagger.yaml
           if-no-files-found: error
           retention-days: 1
+      - name: Fail fast
+        if: failure()
+        uses: ./.github/actions/fail-fast
 
   # Every event (PRs included): the whole suite against real Postgres and
   # Redis, so the DB-backed tests run too. The shard list comes from `changes`
   # (fast tier 6 shards without -race, full tier 8 with -race).
   test:
     name: Tests (Postgres + Redis)
+    # actions: write lets the fail-fast step cancel doomed runs (.github/actions/fail-fast).
+    permissions:
+      contents: read
+      packages: read
+      actions: write
     needs: [changes, spec]
     if: needs.changes.outputs.api == 'true'
     runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_HEAVY) || 'ubuntu-latest' }}
@@ -434,7 +455,7 @@ jobs:
     # over every shard, the rest go whole to one shard each).
     # `Static checks` proves the shards together cover every test once.
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         include: ${{ fromJSON(needs.changes.outputs.test_matrix) }}
     services:
@@ -551,6 +572,9 @@ jobs:
           flags: api
           name: api-${{ matrix.shard }}-of-${{ matrix.total }}
           fail_ci_if_error: false
+      - name: Fail fast
+        if: failure()
+        uses: ./.github/actions/fail-fast
 
   # D-6: the API connects as a least-privilege role (docs/deployment/database-roles.md).
   # Full tier, and on a PR that changes a migration or the role script (where a
@@ -561,11 +585,16 @@ jobs:
   # Any runtime statement the app role may not run fails here with 42501.
   least-privilege:
     name: Tests (least-privilege DB role)
+    # actions: write lets the fail-fast step cancel doomed runs (.github/actions/fail-fast).
+    permissions:
+      contents: read
+      packages: read
+      actions: write
     needs: [changes, spec]
     if: needs.changes.outputs.api == 'true' && (needs.changes.outputs.full == 'true' || needs.changes.outputs.migrations == 'true')
     runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_HEAVY) || 'ubuntu-latest' }}
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         shard: [0, 1, 2, 3, 4, 5]
         total: [6]
@@ -691,6 +720,9 @@ jobs:
       - name: No DB-backed test was skipped
         if: ${{ !cancelled() }}
         run: bash ../.github/scripts/check-db-test-skips.sh lp-test.json
+      - name: Fail fast
+        if: failure()
+        uses: ./.github/actions/fail-fast
 
   # The next PostgreSQL major: every migration on a fresh PostgreSQL 18
   # database plus the schema probes that read the catalog (PostgreSQL 18
@@ -699,6 +731,11 @@ jobs:
   # the least-privilege job.
   pg18:
     name: Migrations (PostgreSQL 18)
+    # actions: write lets the fail-fast step cancel doomed runs (.github/actions/fail-fast).
+    permissions:
+      contents: read
+      packages: read
+      actions: write
     needs: changes
     if: needs.changes.outputs.api == 'true' && (needs.changes.outputs.full == 'true' || needs.changes.outputs.migrations == 'true')
     runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_HEAVY) || 'ubuntu-latest' }}
@@ -768,6 +805,9 @@ jobs:
       - name: Remove the PostgreSQL 18 container
         if: ${{ always() }}
         run: docker rm -f -v "pg18-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" || true
+      - name: Fail fast
+        if: failure()
+        uses: ./.github/actions/fail-fast
 
   # A push to develop whose jobs were skipped (the merge queue passed this
   # commit) still keeps develop's Go cache current: pull requests restore it,
@@ -798,6 +838,11 @@ jobs:
   # separate `Build` job).
   binaries:
     name: Release Binaries
+    # actions: write lets the fail-fast step cancel doomed runs (.github/actions/fail-fast).
+    permissions:
+      contents: read
+      packages: read
+      actions: write
     needs: changes
     if: needs.changes.outputs.api == 'true' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
@@ -833,6 +878,9 @@ jobs:
         with:
           name: bootstrap-admin-linux-amd64
           path: api/dist/bootstrap-admin
+      - name: Fail fast
+        if: failure()
+        uses: ./.github/actions/fail-fast
 
   # The ONE required status check for the API. Runs even when everything above
   # was skipped (non-API change, or a tier that does not apply to this event),

@@ -253,6 +253,9 @@ jobs:
       # Which develop pushes skip the jobs the merge queue already ran.
       - name: Merge-queue reuse self-test
         run: bash .github/scripts/queue-verified.test.sh
+      # Which runs a failed job cancels (merge queue: the group; PR: its own run).
+      - name: Fail-fast self-test
+        run: bash .github/scripts/fail-fast.test.sh
       # Which merge-queue groups reuse a tree that already passed.
       - name: Tree reuse self-test
         run: bash .github/scripts/tree-verified.test.sh
