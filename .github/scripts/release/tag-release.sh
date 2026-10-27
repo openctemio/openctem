@@ -11,8 +11,8 @@
 # Refuses unless: the version is vX.Y.Z and greater than every existing
 # release tag, the tag does not exist (locally or on the remote), the commit
 # is on main, the commit's tree is exactly the release branch's tree (what
-# CI tested is what gets the tag), and its versions.yaml says platform.release
-# = vX.Y.Z (the tag's checkout defaults to its own version). Then creates an annotated tag and, with
+# CI tested is what gets the tag), and its api/deploy/VERSION says vX.Y.Z (the
+# tag's checkout installs its own version). Then creates an annotated tag and, with
 # --push, pushes only that tag.
 set -euo pipefail
 
@@ -60,12 +60,9 @@ fi
 g merge-base --is-ancestor "$COMMIT" "refs/remotes/$REMOTE/$MAIN" || die "$COMMIT is not on $MAIN"
 [[ "$(g rev-parse "$COMMIT^{tree}")" == "$(g rev-parse "$HEAD_SHA^{tree}")" ]] ||
   die "$MAIN's tree at $COMMIT differs from the release branch ($HEAD_SHA); not tagging what CI did not test"
-manifest="$(mktemp)"
-trap 'rm -f "$manifest"' EXIT
-g show "$COMMIT:versions.yaml" >"$manifest" 2>/dev/null || die "no versions.yaml at $COMMIT"
-said="$(rel_yaml_get "$manifest" platform.release || true)"
+said="$(g show "$COMMIT:$VERSION_FILE" 2>/dev/null | tr -d '[:space:]' || true)"
 [[ "$said" == "$VERSION" ]] ||
-  die "versions.yaml at $COMMIT says platform.release '$said', not $VERSION; the tag's checkout would install another version (cut-release.sh writes it)"
+  die "$VERSION_FILE at $COMMIT says '$said', not $VERSION; the tag's checkout would install another version (cut-release.sh writes it)"
 
 g -c user.name="${GIT_AUTHOR_NAME:-openctem-release}" -c user.email="${GIT_AUTHOR_EMAIL:-release@openctem.invalid}" \
   tag -a "$VERSION" "$COMMIT" -m "OpenCTEM $VERSION"
