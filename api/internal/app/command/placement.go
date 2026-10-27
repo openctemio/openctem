@@ -42,6 +42,16 @@ type SensorPlacement struct {
 	// Reasons are the checks that keep the command from this sensor, in
 	// the order the claim applies them (commanddom.Placement*).
 	Reasons []string
+	// Egress names the proxy pool whose use holds the command from this
+	// sensor (an egress_* reason); nil otherwise.
+	Egress *EgressWait
+}
+
+// EgressWait is the proxy pool a sensor's jobs go through when that holds
+// a command from it. PoolName is "" when the pool could not be read.
+type EgressWait struct {
+	PoolID   string
+	PoolName string
 }
 
 // ReasonCount is how many sensors one reason keeps the command from.
@@ -319,6 +329,17 @@ func (s *Service) sensorPlacement(ctx context.Context, tenantID shared.ID, cmd *
 		sp.Reasons = append(sp.Reasons, gateReason(r))
 		return sp, nil
 	}
+	// The sensor's jobs use a proxy pool it cannot honor: delivery keeps
+	// them from it, and the command waits for one that can.
+	d, err := s.egressFor(ctx, tenantID, c.SensorID.String(), []*commanddom.Command{cmd})
+	if err != nil {
+		return sp, err
+	}
+	if r := d.holdReason(cmd.Type); r != "" {
+		sp.Reasons = append(sp.Reasons, r)
+		sp.Egress = s.egressWait(ctx, tenantID, d)
+		return sp, nil
+	}
 	// The platform would hand it out, but the sensor said it claims nothing
 	// new until its local store recovers: that is why the command waits.
 	if sn != nil && sn.StoppedClaiming() {
@@ -331,6 +352,19 @@ func (s *Service) sensorPlacement(ctx context.Context, tenantID shared.ID, cmd *
 		sp.Busy = freeScanSlots(sn.EffectiveMaxConcurrentJobs(), c.HeldScans, &free) == 0
 	}
 	return sp, nil
+}
+
+// egressWait names the pool of decision d (the pool name only when the
+// source can say it).
+func (s *Service) egressWait(ctx context.Context, tenantID shared.ID, d egressDecision) *EgressWait {
+	if d.egress == nil {
+		return nil
+	}
+	w := &EgressWait{PoolID: d.egress.PoolID}
+	if n, ok := s.egress.(PoolNamer); ok {
+		w.PoolName = n.PoolName(ctx, tenantID, d.egress.PoolID)
+	}
+	return w
 }
 
 // sensorReachable: the sensor checks in (online, or a little late).
