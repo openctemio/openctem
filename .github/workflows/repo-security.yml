@@ -250,6 +250,9 @@ jobs:
       # Which jobs a change runs (api/web/docs routing shared by every workflow).
       - name: Change routing self-test
         run: bash .github/scripts/changed.test.sh
+      # Which part of a side a change touches (e2e-only, catalogs, CI files).
+      - name: Change scope self-test
+        run: bash .github/scripts/scope.test.sh
       # Which develop pushes skip the jobs the merge queue already ran.
       - name: Merge-queue reuse self-test
         run: bash .github/scripts/queue-verified.test.sh

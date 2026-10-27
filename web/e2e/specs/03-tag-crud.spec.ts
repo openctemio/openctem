@@ -13,7 +13,7 @@ import { openFirstAssetSheet } from '../helpers/assets'
  * concurrent runs.
  */
 
-test.describe('Asset tag CRUD', () => {
+test.describe('Asset tag CRUD', { tag: ['@assets'] }, () => {
   test('asset detail sheet exposes a tag input', async ({ page }) => {
     const sheet = await openFirstAssetSheet(page)
     test.skip(!sheet, 'No assets in tenant — seed at least one asset')

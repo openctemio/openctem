@@ -22,67 +22,75 @@ const VIEWPORTS = [
 
 for (const vp of VIEWPORTS) {
   for (const scheme of ['light', 'dark'] as const) {
-    test(`dashboard home at ${vp.name} width in ${scheme}`, async ({ page }, testInfo) => {
-      await page.setViewportSize({ width: vp.width, height: vp.height })
-      await page.emulateMedia({ colorScheme: scheme })
-      await page.goto('/')
-      // The freshness line appears once a stored dashboard (or the first-visit
-      // copy of the CTEM template) is shown.
-      await expect(page.getByTestId('dashboard-freshness')).toBeVisible({ timeout: 45_000 })
-      await expect(page.locator('[data-widget-index]').first()).toBeVisible()
-      await page.waitForLoadState('networkidle')
+    test(
+      `dashboard home at ${vp.name} width in ${scheme}`,
+      { tag: ['@dashboard', '@smoke'] },
+      async ({ page }, testInfo) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height })
+        await page.emulateMedia({ colorScheme: scheme })
+        await page.goto('/')
+        // The freshness line appears once a stored dashboard (or the first-visit
+        // copy of the CTEM template) is shown.
+        await expect(page.getByTestId('dashboard-freshness')).toBeVisible({ timeout: 45_000 })
+        await expect(page.locator('[data-widget-index]').first()).toBeVisible()
+        await page.waitForLoadState('networkidle')
 
-      if (vp.width < 768) {
-        const overflow = await page.evaluate(
-          () => document.documentElement.scrollWidth - document.documentElement.clientWidth
-        )
-        expect(overflow, 'horizontal page scroll on a phone').toBeLessThanOrEqual(0)
-      }
-
-      await page.addScriptTag({ path: AXE })
-      const result = (await page.evaluate(async () => {
-        const w = window as unknown as {
-          axe: { run: (ctx: unknown, opts: unknown) => Promise<AxeResult> }
+        if (vp.width < 768) {
+          const overflow = await page.evaluate(
+            () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+          )
+          expect(overflow, 'horizontal page scroll on a phone').toBeLessThanOrEqual(0)
         }
-        return w.axe.run(
-          { include: [['main#content']], exclude: [['.recharts-wrapper']] },
-          { resultTypes: ['violations'] }
-        )
-      })) as AxeResult
-      const serious = result.violations
-        .filter((v) => v.impact === 'serious' || v.impact === 'critical')
-        .map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)
-      expect(serious).toEqual([])
 
-      await testInfo.attach(`dashboard-${vp.name}-${scheme}.png`, {
-        body: await page.screenshot({ fullPage: true }),
-        contentType: 'image/png',
-      })
-    })
+        await page.addScriptTag({ path: AXE })
+        const result = (await page.evaluate(async () => {
+          const w = window as unknown as {
+            axe: { run: (ctx: unknown, opts: unknown) => Promise<AxeResult> }
+          }
+          return w.axe.run(
+            { include: [['main#content']], exclude: [['.recharts-wrapper']] },
+            { resultTypes: ['violations'] }
+          )
+        })) as AxeResult
+        const serious = result.violations
+          .filter((v) => v.impact === 'serious' || v.impact === 'critical')
+          .map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)
+        expect(serious).toEqual([])
+
+        await testInfo.attach(`dashboard-${vp.name}-${scheme}.png`, {
+          body: await page.screenshot({ fullPage: true }),
+          contentType: 'image/png',
+        })
+      }
+    )
   }
 }
 
-test('the dashboard editor is usable with the keyboard', async ({ page }) => {
-  await page.goto('/')
-  await expect(page.getByTestId('dashboard-freshness')).toBeVisible({ timeout: 45_000 })
-  const customize = page.getByRole('button', { name: 'Customize' })
-  test.skip(
-    (await customize.count()) === 0,
-    'the landing dashboard is not editable by the seed user'
-  )
-  await customize.click()
-  const first = page.getByTestId('editor-card').first()
-  await first.focus()
-  const name = await first.getAttribute('aria-label')
-  await page.keyboard.press('ArrowRight')
-  await expect(page.getByTestId('editor-announcer')).toContainText('position 2')
-  await page.keyboard.press('Control+z')
-  await expect(page.getByTestId('editor-card').first()).toHaveAttribute('aria-label', name ?? '')
-  await page.getByRole('button', { name: 'Cancel' }).first().click()
-  await expect(page.getByTestId('dashboard-freshness')).toBeVisible()
-})
+test(
+  'the dashboard editor is usable with the keyboard',
+  { tag: ['@dashboard', '@smoke'] },
+  async ({ page }) => {
+    await page.goto('/')
+    await expect(page.getByTestId('dashboard-freshness')).toBeVisible({ timeout: 45_000 })
+    const customize = page.getByRole('button', { name: 'Customize' })
+    test.skip(
+      (await customize.count()) === 0,
+      'the landing dashboard is not editable by the seed user'
+    )
+    await customize.click()
+    const first = page.getByTestId('editor-card').first()
+    await first.focus()
+    const name = await first.getAttribute('aria-label')
+    await page.keyboard.press('ArrowRight')
+    await expect(page.getByTestId('editor-announcer')).toContainText('position 2')
+    await page.keyboard.press('Control+z')
+    await expect(page.getByTestId('editor-card').first()).toHaveAttribute('aria-label', name ?? '')
+    await page.getByRole('button', { name: 'Cancel' }).first().click()
+    await expect(page.getByTestId('dashboard-freshness')).toBeVisible()
+  }
+)
 
-test('a new user lands on the CTEM loop', async ({ page }) => {
+test('a new user lands on the CTEM loop', { tag: ['@dashboard', '@smoke'] }, async ({ page }) => {
   test.setTimeout(240_000)
   // The e2e seed gives the user no dashboard: the first visit stores a
   // personal copy of the CTEM template, computed in their own scope.
