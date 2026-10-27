@@ -65,7 +65,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	path := fs.String("path", "", "directory of the migration files")
 	source := fs.String("source", "", "file://DIR, the same as -path")
 	dbURL := fs.String("database", "", "postgres://user@host:port/db?sslmode=...")
-	lockTimeout := fs.Uint("lock-timeout", 15, "seconds to wait for another run's migration lock")
+	lockTimeout := fs.Int("lock-timeout", 15, "seconds to wait for another run's migration lock")
 	fs.Bool("verbose", false, "accepted for compatibility; progress is always printed")
 	showVersion := fs.Bool("version", false, "print the version of this tool")
 	if err := fs.Parse(args); err != nil {
@@ -87,7 +87,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if dir == "" && *source != "" {
 		dir = strings.TrimPrefix(*source, "file://")
 	}
-	if dir == "" || *dbURL == "" || fs.NArg() == 0 {
+	if dir == "" || *dbURL == "" || fs.NArg() == 0 || *lockTimeout < 0 {
 		fs.Usage()
 		return 2
 	}
@@ -115,7 +115,13 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		LockTimeout: time.Duration(*lockTimeout) * time.Second,
 		Logf:        func(f string, a ...any) { _, _ = fmt.Fprintf(stdout, f+"\n", a...) },
 	}
-	cmd, rest := fs.Arg(0), fs.Args()[1:]
+	return command(ctx, r, fs.Arg(0), fs.Args()[1:], stdout, errf)
+}
+
+// command runs one command of the runner; the exit code is run's.
+func command(ctx context.Context, r *migrate.Runner, cmd string, rest []string, stdout io.Writer,
+	errf func(string, ...any) int,
+) int {
 	switch cmd {
 	case "up":
 		if _, err := r.Up(ctx); err != nil {
@@ -144,29 +150,35 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 			return errf("%v", err)
 		}
 	case "version", "status":
-		rep, err := migrate.Inspect(ctx, db, migs)
-		if err != nil && !migrate.IsRefusal(err) {
-			return errf("%v", err)
-		}
-		v := strconv.FormatInt(rep.Version, 10)
-		if rep.Dirty {
-			v += " (dirty)"
-		}
-		_, _ = fmt.Fprintln(stdout, v)
-		if cmd == "status" {
-			_, _ = fmt.Fprintf(stdout, "applied: %d\npending: %d\n", rep.Applied, len(rep.Pending))
-			for _, m := range rep.Pending {
-				_, _ = fmt.Fprintf(stdout, "  %s\n", m.Stem())
-			}
-			for _, u := range rep.Unknown {
-				_, _ = fmt.Fprintf(stdout, "applied, not shipped here: %d\n", u)
-			}
-		}
-		if err != nil {
-			return errf("%v", err)
-		}
+		return report(ctx, r, cmd == "status", stdout, errf)
 	default:
 		return errf("unknown command %q", cmd)
+	}
+	return 0
+}
+
+// report prints the version (and with status, the pending migrations).
+func report(ctx context.Context, r *migrate.Runner, status bool, stdout io.Writer, errf func(string, ...any) int) int {
+	rep, err := migrate.Inspect(ctx, r.DB, r.Migrations)
+	if err != nil && !migrate.IsRefusal(err) {
+		return errf("%v", err)
+	}
+	v := strconv.FormatInt(rep.Version, 10)
+	if rep.Dirty {
+		v += " (dirty)"
+	}
+	_, _ = fmt.Fprintln(stdout, v)
+	if status {
+		_, _ = fmt.Fprintf(stdout, "applied: %d\npending: %d\n", rep.Applied, len(rep.Pending))
+		for _, m := range rep.Pending {
+			_, _ = fmt.Fprintf(stdout, "  %s\n", m.Stem())
+		}
+		for _, u := range rep.Unknown {
+			_, _ = fmt.Fprintf(stdout, "applied, not shipped here: %d\n", u)
+		}
+	}
+	if err != nil {
+		return errf("%v", err)
 	}
 	return 0
 }
