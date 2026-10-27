@@ -39,6 +39,16 @@ func TestRunArguments(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	badList := filepath.Join(t.TempDir(), "applied.txt")
+	if err := os.WriteFile(badList, []byte("000001\n000002\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	badReleased := t.TempDir()
+	for f, body := range map[string]string{"000001_a.up.sql": "SELECT 1;", "released.json": "{not json"} {
+		if err := os.WriteFile(filepath.Join(badReleased, f), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	db := "postgres://u:hunter2@127.0.0.1:1/db?sslmode=disable"
 	cases := []struct {
 		name string
@@ -55,6 +65,9 @@ func TestRunArguments(t *testing.T) {
 		{"force with a bad version", []string{"-path", dir, "-database", db, "force", "0"}, 1, "not a migration version"},
 		{"duplicate versions refused before connecting", []string{"-path", dup, "-database", db, "up"}, 1, "used twice"},
 		{"source flag", []string{"-source", "file://" + dup, "-database", db, "up"}, 1, "used twice"},
+		{"assumed-applied list with an unshipped version", []string{"-path", dir, "-database", db, "-assume-applied", badList, "up"}, 1, "no migration with version 2"},
+		{"missing assumed-applied list", []string{"-path", dir, "-database", db, "-assume-applied", badList + ".none", "up"}, 1, "open the assumed-applied list"},
+		{"unreadable released.json", []string{"-path", badReleased, "-database", db, "up"}, 1, "parse released.json"},
 		{"bad scheme", []string{"-path", dir, "-database", "mysql://u:hunter2@h/db", "up"}, 1, "postgres://"},
 	}
 	for _, tc := range cases {

@@ -2,10 +2,13 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/internal/migrate"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -85,7 +88,12 @@ func TestSchemaProblem(t *testing.T) {
 		{"missing in the middle", migrate.Report{Version: 1125, Pending: []migrate.Migration{m(1122)}}, nil, "1 migrations shipped with this binary are not applied"},
 		{"older than the baseline", migrate.Report{}, migrate.ErrOlderThanBaseline{Version: 1010, Baseline: 1120}, "pre-baseline-001120"},
 		{"dirty", migrate.Report{}, migrate.ErrDirty{Version: 1122}, "dirty"},
-		{"unreadable state: fail open", migrate.Report{}, errors.New("permission denied"), ""},
+		{"unreadable state: fail open", migrate.Report{}, errors.New("unexpected tracker format"), ""},
+		{"ahead of this binary but a shipped migration missing", migrate.Report{Pending: []migrate.Migration{m(1122)}},
+			migrate.ErrNewerDatabase{Applied: 1130, Shipped: 1125}, "1 migrations shipped with this binary are not applied"},
+		{"role may not read the tracker: refuse", migrate.Report{},
+			fmt.Errorf("read schema_migrations: %w", &pq.Error{Code: "42501", Message: "permission denied for table schema_migrations"}),
+			"may not read the migration state"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

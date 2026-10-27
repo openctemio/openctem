@@ -16,12 +16,15 @@
 #      - an added migration has a UTC timestamp version YYYYMMDDHHMMSS
 #        (`make -C api migration-new`). A legacy sequential number (up to six
 #        digits) is still accepted with a warning while older pull requests
-#        land, but only above the base's highest legacy number: when the
-#        runner takes over a database the earlier tool migrated, it records
-#        every legacy-numbered file up to that tool's version as applied, so
-#        a lower one would never run there (on pull_request this is a warning
-#        too: PR CI and `make -C api migration-renumber` move it to a
-#        timestamp). Any other form fails;
+#        land, but only above the base's highest legacy number and only while
+#        the base has no timestamp version: when the runner takes over a
+#        database the earlier tool migrated, it records every legacy-numbered
+#        file up to that tool's version as applied, so a lower one would
+#        never run there (on pull_request this case is a warning too: PR CI
+#        and `make -C api migration-renumber` move it to a timestamp), and
+#        once a timestamp version has merged that tool's version may be a
+#        timestamp, above every legacy number (always an error). Any other
+#        form fails;
 #      - no up file of the base is changed, removed or renamed: databases
 #        that applied it would never see the change (or would re-run it under
 #        a new version). A fix is a new migration. One exception: a migration
@@ -67,10 +70,12 @@ lowest="$(awk 'NR == 1 {print $1}' <<<"$current")"
 
 added=""
 base_legacy_max=0
+base_has_stamp=0
 if [[ -n "$base" ]]; then
   # --no-renames: a renamed migration shows as removed + added.
   added="$(git diff --no-renames --name-only --diff-filter=A "$base" HEAD -- "$dir/" | versions)"
   base_legacy_max="$(git ls-tree --name-only "$base" -- "$dir/" | versions | awk 'length($3) < 14 {m = $1} END {print m + 0}')"
+  if git ls-tree --name-only "$base" -- "$dir/" | versions | awk 'length($3) >= 14 {f = 1} END {exit !f}'; then base_has_stamp=1; fi
 fi
 
 # 1. One name per version (the .up/.down pair share it).
@@ -92,7 +97,9 @@ if [[ -n "$base" ]]; then
     [[ -n "$v" ]] || continue
     if [[ "$name" == baseline ]] && (( v == lowest )); then continue; fi
     if (( ${#raw} == 14 )) && valid_stamp "$raw"; then continue; fi
-    if (( ${#raw} <= 6 )) && (( v <= base_legacy_max )); then
+    if (( ${#raw} <= 6 )) && (( base_has_stamp )); then
+      err "$dir/${raw}_${name} has the sequential version $v, but the base already has timestamp versions: a database the earlier tool migrated to a timestamp version would record it as applied without running it. Renumber with make -C api migration-renumber, then commit."
+    elif (( ${#raw} <= 6 )) && (( v <= base_legacy_max )); then
       msg="$dir/${raw}_${name} has the sequential version $v, at or below the base's highest ($base_legacy_max): a database the earlier tool migrated past it would record it as applied without running it. Give it a timestamp version: make -C api migration-renumber, then commit."
       if [[ "$dup_mode" == warning ]]; then warn "$msg"; else err "$msg"; fi
     elif (( ${#raw} <= 6 )); then

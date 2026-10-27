@@ -568,10 +568,11 @@ job runs `.github/scripts/tool-pins.test.sh`. Run it by hand with
 `api-upgrade-test.yml` runs `.github/scripts/upgrade-test.sh`, which does what an operator does on upgrade day,
 on a scratch PostgreSQL 17 database:
 
-0. before any database work, refuses a legacy-numbered migration of this tree at or below the previous release's
-   highest version that the release does not have: when `openctem-migrate` takes over an install of that release it
-   records every legacy-numbered file up to that version as applied, so such a file would never run there; timestamp
-   versions are exempt (`--check-order` runs only this step, without a database);
+0. before any database work, when the previous release still shipped golang-migrate, checks that
+   `api/migrations/released.json` lists it with exactly the migrations it shipped: `openctem-migrate` takes over an
+   install of that release by recording those files and running every other one (`--check-order` runs only this
+   step, without a database). The static checks also run `api/scripts/released-migrations.sh --check` against all
+   release tags;
 1. bootstraps the roles and applies the **previous release's** migrations (read from its git tag with `git archive`)
    with that release's own tool (its `openctem-migrate` built from the tag, or golang-migrate for a release before
    it) as the non-superuser migrator, then checks the result is clean;

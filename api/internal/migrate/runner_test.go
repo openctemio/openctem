@@ -3,6 +3,7 @@ package migrate
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -41,13 +42,36 @@ func (f *fixture) logged(v int64) {
 		fmt.Sprintf(`INSERT INTO run_log (v) VALUES (-%d);`, v))
 }
 
+// released writes released.json with one release that shipped versions.
+func (f *fixture) released(versions ...int64) {
+	body, err := json.Marshal(map[string]any{"releases": []Release{{Tags: []string{"v0.0.1"}, Versions: versions}}})
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	write(f.t, f.dir, ReleasedFile, string(body))
+}
+
 func (f *fixture) runner(db *sql.DB) *Runner {
 	f.t.Helper()
 	ms, err := Load(f.dir)
 	if err != nil {
 		f.t.Fatal(err)
 	}
-	return &Runner{DB: db, Migrations: ms, LockTimeout: 5 * time.Second, Logf: f.t.Logf}
+	rels, err := LoadReleases(f.dir)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return &Runner{DB: db, Migrations: ms, Takeover: Takeover{Releases: rels}, LockTimeout: 5 * time.Second, Logf: f.t.Logf}
+}
+
+// assuming is f.runner with an operator's list of applied versions.
+func (f *fixture) assuming(db *sql.DB, versions ...int64) *Runner {
+	r := f.runner(db)
+	r.Takeover.AssumeApplied = map[int64]bool{}
+	for _, v := range versions {
+		r.Takeover.AssumeApplied[v] = true
+	}
+	return r
 }
 
 func runLog(t *testing.T, db *sql.DB) []int64 {
@@ -151,7 +175,7 @@ func TestUpAppliesMissingInMiddle(t *testing.T) {
 	f.logged(2)
 	f.logged(4)
 	f.logged(6)
-	rep, err := Inspect(ctx, db, f.runner(db).Migrations)
+	rep, err := Inspect(ctx, db, f.runner(db).Migrations, Takeover{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -283,7 +307,7 @@ func TestLockTimeout(t *testing.T) {
 	if _, err := r.Up(ctx); !errors.Is(err, ErrLockTimeout) {
 		t.Fatalf("up under a held lock: %v, want ErrLockTimeout", err)
 	}
-	if ok, _ := tableExists(ctx, db, appliedTable); ok {
+	if ok, _ := tableExists(ctx, db, "public", appliedTable); ok {
 		t.Fatal("a run without the lock touched the database")
 	}
 }
@@ -296,6 +320,7 @@ func TestBackfillFromEarlierToolState(t *testing.T) {
 	f.logged(2)
 	f.logged(3)
 	f.logged(4)
+	f.released(1, 2, 3)
 	ctx := context.Background()
 	for _, q := range []string{
 		`CREATE TABLE schema_migrations (version bigint NOT NULL PRIMARY KEY, dirty boolean NOT NULL)`,
@@ -307,7 +332,7 @@ func TestBackfillFromEarlierToolState(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	rep, err := Inspect(ctx, db, f.runner(db).Migrations)
+	rep, err := Inspect(ctx, db, f.runner(db).Migrations, f.runner(db).Takeover)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -348,16 +373,17 @@ func TestBackfillFromEarlierToolState(t *testing.T) {
 	eq(t, "run log", runLog(t, db), []int64{2, 3, 4, 5, 6})
 }
 
-// The earlier tool migrated past timestamp versions (it skips one merged
-// after a higher one): the runner cannot tell which it applied and refuses;
-// forcing the applied ones settles it.
-func TestTakeoverPastTimestampVersionsRefuses(t *testing.T) {
+// The earlier tool migrated a development database past timestamp versions
+// (it skips one merged after a higher one): no release ends at its version,
+// so the runner refuses until an operator lists what is applied.
+func TestTakeoverWithoutAMatchingReleaseRefuses(t *testing.T) {
 	db := testdb.EmptyDatabase(t, "migrate_undecided")
 	f := newFixture(t)
 	f.logged(2)
 	f.logged(20261027000001)
 	f.logged(20261027000003)
 	f.logged(20261027000002) // merged last, skipped by the earlier tool
+	f.released(1, 2)
 	ctx := context.Background()
 	for _, q := range []string{
 		`CREATE TABLE schema_migrations (version bigint NOT NULL PRIMARY KEY, dirty boolean NOT NULL)`,
@@ -370,23 +396,58 @@ func TestTakeoverPastTimestampVersionsRefuses(t *testing.T) {
 		}
 	}
 	var u ErrUndecidedTakeover
-	if _, err := f.runner(db).Up(ctx); !errors.As(err, &u) {
+	if _, err := f.runner(db).Up(ctx); !errors.As(err, &u) || u.Tracker != 20261027000003 {
 		t.Fatalf("up: %v, want ErrUndecidedTakeover", err)
 	}
-	eq(t, "undecided", u.Versions, []int64{20261027000001, 20261027000002, 20261027000003})
-	eq(t, "run log after the refusal", runLog(t, db), []int64{2, 20261027000001, 20261027000003})
+	if err := f.runner(db).Force(ctx, -1); !errors.As(err, &u) {
+		t.Fatalf("force -1 without a list: %v, want ErrUndecidedTakeover", err)
+	}
+	eq(t, "run log after the refusals", runLog(t, db), []int64{2, 20261027000001, 20261027000003})
+	eq(t, "applied set after the refusals", applied(t, db), []int64{})
 
-	for _, v := range []int64{20261027000001, 20261027000003} {
-		if err := f.runner(db).Force(ctx, v); err != nil {
+	res, err := f.assuming(db, 1, 2, 20261027000001, 20261027000003).Up(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eq(t, "recorded", versionsOf(res.Recorded), []int64{1, 2, 20261027000001, 20261027000003})
+	eq(t, "applied now", versionsOf(res.Applied), []int64{20261027000002})
+	eq(t, "applied set", applied(t, db), []int64{1, 2, 20261027000001, 20261027000002, 20261027000003})
+}
+
+// A database a release migrated (v0.15.4: up to 003428) lacks a migration
+// merged to develop afterwards with a lower number (003420). The takeover
+// records only that release's files; 003420 stays pending and up runs it.
+func TestTakeoverLeavesALateLowerMigrationPending(t *testing.T) {
+	db := testdb.EmptyDatabase(t, "migrate_late")
+	f := newFixture(t)
+	f.logged(3419)
+	f.logged(3420) // merged after the release, below its last migration
+	f.logged(3428)
+	f.logged(20261027000001)
+	f.released(1, 3419, 3428)
+	ctx := context.Background()
+	for _, q := range []string{
+		`CREATE TABLE schema_migrations (version bigint NOT NULL PRIMARY KEY, dirty boolean NOT NULL)`,
+		`CREATE TABLE run_log (id bigserial PRIMARY KEY, v bigint NOT NULL)`,
+		`INSERT INTO run_log (v) VALUES (3419), (3428)`,
+		`INSERT INTO schema_migrations VALUES (3428, false)`,
+	} {
+		if _, err := db.Exec(q); err != nil {
 			t.Fatal(err)
 		}
 	}
+	rep, err := Inspect(ctx, db, f.runner(db).Migrations, f.runner(db).Takeover)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eq(t, "pending before", versionsOf(rep.Pending), []int64{3420, 20261027000001})
 	res, err := f.runner(db).Up(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	eq(t, "applied now", versionsOf(res.Applied), []int64{20261027000002})
-	eq(t, "applied set", applied(t, db), []int64{1, 2, 20261027000001, 20261027000002, 20261027000003})
+	eq(t, "recorded", versionsOf(res.Recorded), []int64{1, 3419, 3428})
+	eq(t, "applied now", versionsOf(res.Applied), []int64{3420, 20261027000001})
+	eq(t, "run log", runLog(t, db), []int64{3419, 3428, 3420, 20261027000001})
 }
 
 func TestBackfillOfDirtyEarlierToolStateRefuses(t *testing.T) {
@@ -394,6 +455,7 @@ func TestBackfillOfDirtyEarlierToolStateRefuses(t *testing.T) {
 	f := newFixture(t)
 	f.logged(2)
 	f.logged(3)
+	f.released(1, 2, 3)
 	ctx := context.Background()
 	for _, q := range []string{
 		`CREATE TABLE schema_migrations (version bigint NOT NULL PRIMARY KEY, dirty boolean NOT NULL)`,
@@ -405,11 +467,15 @@ func TestBackfillOfDirtyEarlierToolStateRefuses(t *testing.T) {
 		}
 	}
 	var d ErrDirty
-	if _, err := f.runner(db).Up(ctx); !errors.As(err, &d) || d.Version != 2 {
-		t.Fatalf("up: %v, want ErrDirty{2}", err)
+	if _, err := f.runner(db).Up(ctx); !errors.As(err, &d) || d.Version != 2 || !d.EarlierTool {
+		t.Fatalf("up: %v, want ErrDirty{2, earlier tool}", err)
 	}
-	// force -1: 1 (below the failed 2) is recorded, 2 stays pending.
-	if err := f.runner(db).Force(ctx, -1); err != nil {
+	// Which migrations below 2 ran is unknown: force needs the list.
+	var u ErrUndecidedTakeover
+	if err := f.runner(db).Force(ctx, -1); !errors.As(err, &u) || !u.Dirty {
+		t.Fatalf("force -1 without a list: %v, want ErrUndecidedTakeover (dirty)", err)
+	}
+	if err := f.assuming(db, 1).Force(ctx, -1); err != nil {
 		t.Fatal(err)
 	}
 	eq(t, "applied set after force", applied(t, db), []int64{1})
@@ -449,7 +515,7 @@ func TestDownRollsBackMostRecentlyApplied(t *testing.T) {
 	if _, err := f.runner(db).Down(ctx, 4); err != nil {
 		t.Fatal(err)
 	}
-	if ok, _ := tableExists(ctx, db, "run_log"); ok {
+	if ok, _ := tableExists(ctx, db, "public", "run_log"); ok {
 		t.Fatal("down of everything left run_log")
 	}
 	if _, err := f.runner(db).Up(ctx); err != nil {
@@ -509,8 +575,158 @@ func TestRefusalsChangeNothing(t *testing.T) {
 		if _, err := f.runner(db).Up(ctx); !errors.As(err, &b) || b.Version != 50 || b.Baseline != 100 {
 			t.Fatalf("up: %v, want ErrOlderThanBaseline{50, 100}", err)
 		}
-		if ok, _ := tableExists(ctx, db, "run_log"); ok {
+		if ok, _ := tableExists(ctx, db, "public", "run_log"); ok {
 			t.Fatal("the baseline ran on a database older than it")
 		}
 	})
+}
+
+// The earlier tool failed at T2 after applying T1 (dirty T2, T1 applied, no
+// recorded versions). force -1 used to record only the legacy files and
+// clear the flag, so the next up ran T1 again. Without the operator's list
+// force refuses (-1 and T2 alike); with it, up runs only T2.
+func TestForceOnDirtyEarlierToolStateNeedsTheAppliedList(t *testing.T) {
+	db := testdb.EmptyDatabase(t, "migrate_dirtyundecided")
+	f := newFixture(t)
+	f.logged(2)
+	const t1, t2 = 20261027000001, 20261027000002
+	// T1 creates a table without IF NOT EXISTS: running it twice fails.
+	f.add(t1, "create_once", `CREATE TABLE once_only (id int); INSERT INTO run_log (v) VALUES (20261027000001);`, `DROP TABLE once_only;`)
+	f.logged(t2)
+	f.released(1, 2)
+	ctx := context.Background()
+	for _, q := range []string{
+		`CREATE TABLE schema_migrations (version bigint NOT NULL PRIMARY KEY, dirty boolean NOT NULL)`,
+		`CREATE TABLE run_log (id bigserial PRIMARY KEY, v bigint NOT NULL)`,
+		`CREATE TABLE once_only (id int)`,
+		`INSERT INTO run_log (v) VALUES (2), (20261027000001)`,
+		`INSERT INTO schema_migrations VALUES (20261027000002, true)`,
+	} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var d ErrDirty
+	if _, err := f.runner(db).Up(ctx); !errors.As(err, &d) || !d.EarlierTool {
+		t.Fatalf("up: %v, want ErrDirty from the earlier tool", err)
+	}
+	for _, v := range []int64{-1, t1, t2} {
+		var u ErrUndecidedTakeover
+		if err := f.runner(db).Force(ctx, v); !errors.As(err, &u) || !u.Dirty {
+			t.Fatalf("force %d: %v, want ErrUndecidedTakeover (dirty)", v, err)
+		}
+		eq(t, "applied set after the refused force", applied(t, db), []int64{})
+		if tv, dirty := tracker(t, db); tv != t2 || !dirty {
+			t.Fatalf("tracker after the refused force = (%d, %v), want (%d, true)", tv, dirty, t2)
+		}
+	}
+
+	if err := f.assuming(db, 1, 2, t1).Force(ctx, -1); err != nil {
+		t.Fatal(err)
+	}
+	res, err := f.runner(db).Up(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eq(t, "applied now", versionsOf(res.Applied), []int64{t2})
+	eq(t, "run log", runLog(t, db), []int64{2, t1, t2})
+	eq(t, "applied set", applied(t, db), []int64{1, 2, t1, t2})
+}
+
+// A migration that changes search_path for the session must not redirect
+// the records: they go to the schema the run locked.
+func TestRecordsStayInTheLockedSchema(t *testing.T) {
+	db := testdb.EmptyDatabase(t, "migrate_searchpath")
+	f := newFixture(t)
+	f.add(2, "elsewhere", `CREATE SCHEMA elsewhere; SET search_path TO elsewhere;`, `DROP SCHEMA elsewhere;`)
+	f.add(3, "after", `INSERT INTO public.run_log (v) VALUES (3);`, ``)
+	ctx := context.Background()
+	// One connection, so the run's session is the one checked (no other
+	// pooled connection with the default search_path).
+	db.SetMaxOpenConns(1)
+	if _, err := f.runner(db).Up(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	var v int64
+	var dirty bool
+	if err := db.QueryRow(`SELECT count(*) FROM public.schema_migrations_applied`).Scan(&n); err != nil || n != 3 {
+		t.Fatalf("recorded in public: %d (%v), want 3", n, err)
+	}
+	if err := db.QueryRow(`SELECT version, dirty FROM public.schema_migrations`).Scan(&v, &dirty); err != nil || v != Fence || dirty {
+		t.Fatalf("tracker = (%d, %v, %v), want the fence", v, dirty, err)
+	}
+	var stray bool
+	if err := db.QueryRow(`SELECT to_regclass('elsewhere.schema_migrations_applied') IS NOT NULL`).Scan(&stray); err != nil {
+		t.Fatal(err)
+	}
+	if stray {
+		t.Fatal("a tracking table was created in the schema a migration switched to")
+	}
+}
+
+// An install whose roles script ran before the runner created its tables:
+// the migrator's default privileges hand the app role (and here PUBLIC)
+// full DML on them. The run must take every write back, keeping SELECT.
+func TestTrackingTablesWritableOnlyByOwner(t *testing.T) {
+	admin, err := sql.Open("postgres", testdb.AdminURL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = admin.Close() }()
+	role := fmt.Sprintf("migrate_app_%d", time.Now().UnixNano())
+	if _, err := admin.Exec(`CREATE ROLE ` + role + ` NOLOGIN`); err != nil {
+		t.Skipf("cannot create a role: %v", err)
+	}
+	// Runs after the private database is dropped (cleanups run last-in first-out).
+	t.Cleanup(func() {
+		a, err := sql.Open("postgres", testdb.AdminURL())
+		if err == nil {
+			_, _ = a.Exec(`DROP ROLE IF EXISTS ` + role)
+			_ = a.Close()
+		}
+	})
+	db := testdb.EmptyDatabase(t, "migrate_owneronly")
+	if _, err := db.Exec(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON TABLES TO ` + role + `, PUBLIC`); err != nil {
+		t.Fatal(err)
+	}
+	f := newFixture(t)
+	f.logged(2)
+	if _, err := f.runner(db).Up(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for _, table := range []string{"schema_migrations", "schema_migrations_applied"} {
+		for _, priv := range []string{"INSERT", "UPDATE", "DELETE", "TRUNCATE"} {
+			var can bool
+			if err := db.QueryRow(`SELECT has_table_privilege($1, $2, $3)`, role, table, priv).Scan(&can); err != nil {
+				t.Fatal(err)
+			}
+			if can {
+				t.Errorf("%s may %s %s", role, priv, table)
+			}
+			var public int
+			if err := db.QueryRow(`SELECT count(*) FROM aclexplode((SELECT relacl FROM pg_class WHERE oid = $1::regclass)) a
+				WHERE a.grantee = 0 AND a.privilege_type = $2`, table, priv).Scan(&public); err != nil {
+				t.Fatal(err)
+			}
+			if public > 0 {
+				t.Errorf("PUBLIC may %s %s", priv, table)
+			}
+		}
+		var read bool
+		if err := db.QueryRow(`SELECT has_table_privilege($1, $2, 'SELECT')`, role, table).Scan(&read); err != nil {
+			t.Fatal(err)
+		}
+		if !read {
+			t.Errorf("%s lost SELECT on %s", role, table)
+		}
+	}
+	// An application table created by a migration keeps its default grants.
+	var can bool
+	if err := db.QueryRow(`SELECT has_table_privilege($1, 'run_log', 'INSERT')`, role).Scan(&can); err != nil {
+		t.Fatal(err)
+	}
+	if !can {
+		t.Error("the revoke reached an application table")
+	}
 }

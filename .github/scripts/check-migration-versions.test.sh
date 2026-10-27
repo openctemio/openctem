@@ -53,13 +53,22 @@ expect "added version below the base max passes" 0 "$d" base
 # 4a. A legacy sequential number above the base's passes with a warning; one
 # at or below it fails (a takeover would record it as applied), and only
 # warns on a pull request (PR CI gives it a timestamp).
-d="$(repo)"; mig "$d" 000001 a; mig "$d" 000005 b; mig "$d" "$T2" t; commit "$d" base
+d="$(repo)"; mig "$d" 000001 a; mig "$d" 000005 b; commit "$d" base
 git -C "$d" branch base
 mig "$d" 000006 up; commit "$d" pr
 expect "added legacy number above the base's only warns" 0 "$d" base "::warning::api/migrations/000006_up has a sequential version"
 mig "$d" 000003 c; commit "$d" pr2
 expect "added legacy number below the base's fails" 1 "$d" base "has the sequential version 3, at or below the base's highest (5)"
 MODE=warning expect "pull_request: added legacy number below the base's only warns" 0 "$d" base "::warning::api/migrations/000003_c has the sequential version 3"
+
+# 4a'. Once the base has a timestamp version, any added legacy number fails,
+# in both modes: a database the earlier tool migrated to a timestamp version
+# is past every legacy number, so a takeover would record it without running it.
+d="$(repo)"; mig "$d" 000001 a; mig "$d" 000005 b; mig "$d" "$T2" t; commit "$d" base
+git -C "$d" branch base
+mig "$d" 000006 up; commit "$d" pr
+expect "added legacy number after a timestamp version fails" 1 "$d" base "base already has timestamp versions"
+MODE=warning expect "pull_request: added legacy number after a timestamp version fails" 1 "$d" base "Renumber with make -C api migration-renumber"
 d="$(repo)"; mig "$d" 000001 a; mig "$d" 000005 b; commit "$d" base
 git -C "$d" branch base
 

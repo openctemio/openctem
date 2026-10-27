@@ -59,6 +59,20 @@ merge "$d"; out="$(run "$d")"
 ok=0; [[ -e "$d/api/migrations/${T}_first.up.sql" ]] || ok=1
 check "a legacy number below the base's legacy max gets a timestamp" $ok "$out"
 
+# 3b. Once the base has a timestamp version, a legacy number above the base's
+# legacy max still gets a timestamp (a takeover from a timestamp version
+# would record it as applied without running it).
+d="$(repo)"; mig "$d" 000001 a; commit "$d" base; pr "$d"; mig "$d" 000009 late; commit "$d" pr
+git -C "$d" checkout -q base; mig "$d" 000005 theirs; mig "$d" 20261026080000 stamp; commit "$d" "develop moved"
+merge "$d"; out="$(run "$d")"
+ok=0; [[ -e "$d/api/migrations/${T}_late.up.sql" && ! -e "$d/api/migrations/000009_late.up.sql" ]] || ok=1
+check "a legacy number after the base has a timestamp version gets a timestamp" $ok "$out"
+d="$(repo)"; mig "$d" 000001 a; commit "$d" base; pr "$d"; mig "$d" 000009 late; commit "$d" pr
+git -C "$d" checkout -q base; mig "$d" 000005 theirs; commit "$d" "develop moved"
+merge "$d"; out="$(run "$d")"
+ok=0; [[ -e "$d/api/migrations/000009_late.up.sql" && "$out" == *"no clash"* ]] || ok=1
+check "a legacy number above a legacy-only base is left alone" $ok "$out"
+
 # 4. A stacked PR's byte-identical copy of a merged migration is dropped.
 d="$(repo)"; mig "$d" 000001 a; commit "$d" base; pr "$d"; mig "$d" 000002 parent "create table p();"; mig "$d" 000003 child; commit "$d" pr
 git -C "$d" checkout -q base; mig "$d" 000005 parent "create table p();"; commit "$d" "parent merged renumbered"

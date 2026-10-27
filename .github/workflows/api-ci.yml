@@ -222,6 +222,8 @@ jobs:
         run: |
           bash .github/scripts/check-migration-versions.test.sh >/dev/null
           bash .github/scripts/pr-migration-renumber.test.sh >/dev/null
+          bash api/scripts/released-migrations.test.sh >/dev/null
+          bash api/scripts/released-migrations.sh --check
           bash api/scripts/dev-tools.test.sh >/dev/null
           bash api/deploy/backup.test.sh >/dev/null
           bash api/deploy/backup/overlay.test.sh >/dev/null

@@ -1,4 +1,4 @@
-.PHONY: all build run test test-db budgets-update lint clean docker-build docker-dev docker-prod docker-down migrate generate seed help seed-required docker-seed docker-seed-required db-setup db-setup-dev swagger contract swagger-check swagger-install env-docs authz-matrix migration-new migration-renumber migrate-up migrate-down migrate-status migrate-force
+.PHONY: all build run test test-db budgets-update lint clean docker-build docker-dev docker-prod docker-down migrate generate seed help seed-required docker-seed docker-seed-required db-setup db-setup-dev swagger contract swagger-check swagger-install env-docs authz-matrix migration-new migration-renumber migrations-released migrate-up migrate-down migrate-status migrate-force
 
 # Variables
 APP_NAME := openctem
@@ -292,6 +292,10 @@ migration-new:
 ## migration-renumber: Give this branch's clashing or sequential migrations new timestamp versions, staged
 migration-renumber:
 	@bash scripts/migration-number.sh renumber
+
+## migrations-released: Regenerate migrations/released.json (each release's migrations, for the takeover) from the git tags
+migrations-released:
+	@bash scripts/released-migrations.sh
 
 ## migrate-status: Show the applied version and the pending migrations
 migrate-status:
