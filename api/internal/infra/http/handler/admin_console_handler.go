@@ -411,6 +411,7 @@ type AdminElevateResponse struct {
 // @Param request body AdminElevateRequest true "Elevation"
 // @Success 200 {object} AdminElevateResponse
 // @Failure 400 {object} apierror.Error "Bad role, duration or reason"
+// @Failure 503 {object} apierror.Error "AUDIT_UNAVAILABLE: the elevation audit row could not be written, so nothing was granted"
 // @Router /admin/auth/elevate [post]
 func (h *AdminConsoleHandler) Elevate(w http.ResponseWriter, r *http.Request) {
 	actor := middleware.MustGetAdminUser(r.Context())
@@ -427,6 +428,9 @@ func (h *AdminConsoleHandler) Elevate(w http.ResponseWriter, r *http.Request) {
 			apierror.BadRequest(strings.TrimPrefix(err.Error(), "validation error: ")).WriteJSON(w)
 		case errors.Is(err, admin.ErrSessionNotFound):
 			apierror.Unauthorized("console session required").WriteJSON(w)
+		case errors.Is(err, adminconsole.ErrAuditUnavailable):
+			apierror.New(http.StatusServiceUnavailable, middleware.CodeAuditUnavailable,
+				"The administrators' audit log cannot be written; the elevation was not granted.").WriteJSON(w)
 		default:
 			h.logger.Error("admin console elevate", "error", err)
 			apierror.InternalError(err).WriteJSON(w)
