@@ -111,6 +111,8 @@ func ensureOrganization(ctx context.Context, db *sql.DB, o Options, out io.Write
 		Create(ctx, tenantapp.CreateOrganizationInput{
 			Name: o.OrgName, Slug: o.OrgSlug,
 			OwnerEmail: o.OrgOwnerEmail, OwnerName: o.OrgOwnerName,
+			// The operator runs this on the host: naming an existing account is deliberate.
+			AllowExistingOwner: true,
 		}, auditapp.AuditContext{ActorEmail: AuditActor})
 	if err != nil {
 		if errors.Is(err, tenantdom.ErrPlatformAdminMembership) {

@@ -4,7 +4,7 @@
  * days, with a reason. The server's codes come back as sentences.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SWRConfig } from 'swr'
 import type { ReactNode } from 'react'
@@ -402,5 +402,95 @@ describe('ScopeEntryDialog: a member outside Strict adds directly', () => {
       )
     )
     expect(toast.success).toHaveBeenCalledWith('*.acme.io is in scope')
+  })
+})
+
+describe('ScopeEntryDialog: a pasted list', () => {
+  const bulkOk = (input: { items: { pattern: string }[] }) => ({
+    results: input.items.map((i) => ({
+      pattern: i.pattern,
+      target_type: 'domain',
+      result: 'created',
+      status: 'active',
+    })),
+    created: input.items.length,
+    existing: 0,
+    refused: 0,
+  })
+
+  const paste = async (text: string) => {
+    const user = userEvent.setup()
+    wrap(<ScopeEntryDialog open onOpenChange={() => {}} />)
+    await user.click(await screen.findByLabelText('What'))
+    await user.paste(text)
+    return user
+  }
+
+  it('shows a preview with the kind of each value, once each, and marks invalid ones', async () => {
+    await paste('acme.io, ACME.io\n203.0.113.7\nfoo_bar')
+    const preview = await screen.findByTestId('scope-list-preview')
+    expect(within(preview).getAllByRole('listitem')).toHaveLength(3)
+    expect(within(preview).getByText('*.acme.io')).toBeInTheDocument()
+    expect(within(preview).getByText('203.0.113.7')).toBeInTheDocument()
+    expect(within(preview).getByText(/Not a domain, IP address/)).toBeInTheDocument()
+    expect(preview).toHaveTextContent('1 repeated, counted once')
+    // An invalid value blocks the send until it is removed.
+    await userEvent.click(screen.getByRole('button', { name: 'Add 2 to scope' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Remove the values that are not')
+    expect(api.post).not.toHaveBeenCalled()
+  })
+
+  it('removing the invalid line sends the rest through the bulk endpoint with Covers and duration', async () => {
+    api.post.mockImplementation(async (_u: string, body: { items: { pattern: string }[] }) =>
+      bulkOk(body)
+    )
+    const user = await paste('acme.io\nshop.acme.io\nfoo_bar')
+    await user.click(await screen.findByRole('button', { name: 'Remove the lines not recognised' }))
+    await user.click(screen.getByText('Each domain only'))
+    await user.type(screen.getByLabelText('Reason (optional)'), 'ticket 9')
+    await user.click(screen.getByRole('button', { name: 'Add 2 to scope' }))
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith('/api/v1/scope/targets/bulk', {
+        items: [
+          { target_type: 'domain', pattern: 'acme.io' },
+          { target_type: 'domain', pattern: 'shop.acme.io' },
+        ],
+        reason: 'ticket 9',
+        max_tier: 't1',
+      })
+    )
+    expect(await screen.findByTestId('scope-bulk-counts')).toHaveTextContent('2 added')
+    expect(api.post).toHaveBeenCalledTimes(1)
+  })
+
+  it('sends 450 values in three requests and reports each value', async () => {
+    api.post.mockImplementation(async (_u: string, body: { items: { pattern: string }[] }) =>
+      bulkOk(body)
+    )
+    const user = await paste(Array.from({ length: 450 }, (_, i) => `h${i}.acme.io`).join('\n'))
+    await user.click(await screen.findByRole('button', { name: 'Add 450 to scope' }))
+    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(3))
+    expect(api.post.mock.calls.map((c) => c[1].items.length)).toEqual([200, 200, 50])
+    expect(await screen.findByTestId('scope-bulk-counts')).toHaveTextContent('450 added')
+  })
+
+  it('refuses more than 1,000 values with a clear message', async () => {
+    await paste(Array.from({ length: 1001 }, (_, i) => `h${i}.acme.io`).join('\n'))
+    expect(await screen.findByTestId('scope-list-too-many')).toHaveTextContent(
+      'at most 1000 values and this one has 1001'
+    )
+  })
+
+  it('one value keeps the single path', async () => {
+    api.post.mockResolvedValue({ pattern: '*.acme.io', status: 'active' })
+    const user = await paste('acme.io')
+    expect(screen.queryByTestId('scope-list-preview')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Add to scope' }))
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith(
+        '/api/v1/scope/targets',
+        expect.objectContaining({ pattern: '*.acme.io' })
+      )
+    )
   })
 })
