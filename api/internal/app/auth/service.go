@@ -46,6 +46,11 @@ var (
 	// ErrSignupSSORequired: the address is on a domain whose organization
 	// requires its SSO; nothing was written and the person signs in there.
 	ErrSignupSSORequired = errors.New("sign-up for this address goes through the organization's single sign-on")
+	// ErrEmailNotAuthoritative: a social sign-in presented an e-mail address the
+	// provider does not vouch for (a personal Google account on a company
+	// address, a GitHub address) and the account is not bound to that provider
+	// identity yet. Nothing was written.
+	ErrEmailNotAuthoritative = errors.New("EMAIL_NOT_AUTHORITATIVE: this provider cannot prove ownership of this email address; sign in with your password (or ask an administrator) and link the provider afterwards")
 	// ErrTeamURLNotAvailable: the organization URL (slug) cannot be used,
 	// whether another organization has it or it is reserved.
 	ErrTeamURLNotAvailable = fmt.Errorf("%w: this team URL is not available; choose another", shared.ErrValidation)
