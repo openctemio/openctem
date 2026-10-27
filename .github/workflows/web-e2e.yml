@@ -426,7 +426,10 @@ jobs:
           SPECS: ${{ matrix.files }}
         run: |
           read -r -a spec_files <<< "$SPECS"
-          npx playwright test "${spec_files[@]}"
+          # Quarantined flaky tests (.github/quarantine.yml) are skipped until their fix date.
+          q="$(python3 ../.github/scripts/quarantine.py pw-grep-invert)"
+          if [ -n "$q" ]; then echo "quarantined: $q"; fi
+          npx playwright test "${spec_files[@]}" ${q:+--grep-invert "$q"}
 
       - name: Stack logs
         if: failure()
