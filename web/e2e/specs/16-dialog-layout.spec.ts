@@ -39,34 +39,36 @@ async function shot(page: Page, info: TestInfo, name: string) {
 }
 
 for (const size of SIZES) {
-  test(`Add finding keeps its header and actions in view (${size.name})`, async ({
-    page,
-  }, info) => {
-    await page.setViewportSize({ width: size.width, height: size.height })
-    const dialog = await openAddFinding(page)
-    await expect(dialog).toHaveAttribute('data-layout', 'sections')
+  test(
+    `Add finding keeps its header and actions in view (${size.name})`,
+    { tag: ['@findings', '@shell'] },
+    async ({ page }, info) => {
+      await page.setViewportSize({ width: size.width, height: size.height })
+      const dialog = await openAddFinding(page)
+      await expect(dialog).toHaveAttribute('data-layout', 'sections')
 
-    const body = dialog.locator('[data-slot="dialog-body"]')
-    const title = dialog.getByRole('heading', { name: /add finding/i })
-    const close = dialog.getByRole('button', { name: 'Close' })
-    const create = dialog.getByRole('button', { name: /create finding/i })
+      const body = dialog.locator('[data-slot="dialog-body"]')
+      const title = dialog.getByRole('heading', { name: /add finding/i })
+      const close = dialog.getByRole('button', { name: 'Close' })
+      const create = dialog.getByRole('button', { name: /create finding/i })
 
-    const titleTop = (await title.boundingBox())!.y
-    await shot(page, info, `${size.name}-top`)
+      const titleTop = (await title.boundingBox())!.y
+      await shot(page, info, `${size.name}-top`)
 
-    await body.evaluate((el) => {
-      el.scrollTop = el.scrollHeight
-    })
-    await shot(page, info, `${size.name}-scrolled`)
+      await body.evaluate((el) => {
+        el.scrollTop = el.scrollHeight
+      })
+      await shot(page, info, `${size.name}-scrolled`)
 
-    expect((await title.boundingBox())!.y).toBe(titleTop)
-    await expect(close).toBeInViewport({ ratio: 1 })
-    await expect(create).toBeInViewport({ ratio: 1 })
-    // Only the body scrolls: the dialog itself has nothing to scroll.
-    const dialogScrolls = await dialog.evaluate((el) => el.scrollHeight > el.clientHeight + 1)
-    expect(dialogScrolls).toBe(false)
+      expect((await title.boundingBox())!.y).toBe(titleTop)
+      await expect(close).toBeInViewport({ ratio: 1 })
+      await expect(create).toBeInViewport({ ratio: 1 })
+      // Only the body scrolls: the dialog itself has nothing to scroll.
+      const dialogScrolls = await dialog.evaluate((el) => el.scrollHeight > el.clientHeight + 1)
+      expect(dialogScrolls).toBe(false)
 
-    await page.keyboard.press('Escape')
-    await expect(dialog).toBeHidden()
-  })
+      await page.keyboard.press('Escape')
+      await expect(dialog).toBeHidden()
+    }
+  )
 }
