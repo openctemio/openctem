@@ -1451,6 +1451,7 @@
   "scans.placement.sensorBusy": "có thể nhận, đang bận",
   "scans.placement.sensorCount": "cảm biến: {count}",
   "scans.placement.sensorEligible": "có thể nhận",
+  "scans.placement.sensorYields": "có thể nhận, nhường cho cảm biến đang rảnh hơn trong vài giây",
   "scans.placement.sensor_hosts_busy.fix": "Tác vụ chạy khi máy chủ đó rảnh trên cảm biến này, hoặc trên một cảm biến khác.",
   "scans.placement.sensor_hosts_busy.text": "Cảm biến đã nhận tác vụ vẫn đang quét một máy chủ của nó nên đã trả lại tác vụ.",
   "scans.placement.sharedNotAllowed": "Tổ chức này không được dùng cảm biến dùng chung, nên việc này chờ một cảm biến của chính tổ chức.",
