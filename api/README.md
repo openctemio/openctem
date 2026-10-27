@@ -131,7 +131,7 @@ Redis are never published.
 
 ```bash
 cd deploy
-./setup.sh ctem.example.com   # writes .env: host name + generated secrets (--acme you@example.com for Let's Encrypt)
+./setup.sh ctem.example.com   # writes .env: release of this checkout (a vX.Y.Z tag; --version vX.Y.Z from a branch), host name, generated secrets (--acme you@example.com for Let's Encrypt)
 docker compose run --rm --no-deps api -check-config   # validate the settings, start nothing
 docker compose up -d
 ```
@@ -314,8 +314,9 @@ See `/docs` endpoint for complete OpenAPI documentation.
 # 1. Go to the production stack (api/deploy/ in the openctem repository)
 cd deploy
 
-# 2. Create the environment file: OPENCTEM_VERSION, OPENCTEM_HOSTNAME,
-#    OPENCTEM_PUBLIC_URL, OPENCTEM_TLS_MODE and every secret marked required
+# 2. Create the environment file: OPENCTEM_VERSION (required, no default),
+#    OPENCTEM_HOSTNAME, OPENCTEM_PUBLIC_URL, OPENCTEM_TLS_MODE and every
+#    secret marked required
 cp .env.example .env
 
 # 3. Start the gateway (443), web, API, Postgres and Redis

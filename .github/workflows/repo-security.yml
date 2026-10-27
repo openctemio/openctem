@@ -275,6 +275,12 @@ jobs:
       # Moved here from their own jobs (one runner each for a few seconds).
       # The security gate's tests run pull request code, which the gate job
       # itself never does (security-gate.yml).
+      # The flaky-test quarantine list: schema, owner, issue, fix SLA, no security tests.
+      - name: Flaky-test quarantine
+        run: |
+          python3 .github/scripts/quarantine_test.py
+          python3 .github/scripts/quarantine.py check
+
       - name: Security gate unit tests
         run: python3 .github/scripts/security_gate_test.py
 
