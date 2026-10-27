@@ -274,6 +274,33 @@ func registerUserRoutes(
 	}, middlewares...)
 }
 
+// registerIdentityLinkRoutes mounts Account > Security "Connected sign-in
+// methods" (auth/identity_link.go). Self-scoped: the account is the session's.
+// Linking and unlinking change how the account can be signed into, so both
+// need a fresh step-up and the CSRF check. The link callback is the second
+// half of a link already stepped up: its state is bound to this account and
+// this session, single use, and it is called by the web server with the
+// session token.
+func registerIdentityLinkRoutes(router Router, h *handler.OAuthHandler, authMiddleware, userSyncMiddleware Middleware) {
+	middlewares := []Middleware{authMiddleware}
+	if userSyncMiddleware != nil {
+		middlewares = append(middlewares, userSyncMiddleware)
+	}
+	linkRL := newAuthRateLimiter("account-identities").PasswordMiddleware()
+	withCSRF := func(mws ...Middleware) []Middleware {
+		if csrfProtectionMiddleware != nil {
+			return append([]Middleware{csrfProtectionMiddleware}, mws...)
+		}
+		return mws
+	}
+	router.Group("/api/v1/users/me/identities", func(r Router) {
+		r.GET("/", h.ListSignInMethods)
+		r.POST("/{provider}/link", h.StartLink, withCSRF(linkRL, requireStepUp())...)
+		r.POST("/{provider}/link/callback", h.CompleteLink, linkRL)
+		r.DELETE("/{id}", h.Unlink, withCSRF(linkRL, requireStepUp())...)
+	}, middlewares...)
+}
+
 // tenantCreationModeOf is the organization policy reported when the console
 // sign-up policy is not wired: self_service only under SIGNUP_MODE=open.
 func tenantCreationModeOf(c config.AuthConfig) string {

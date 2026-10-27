@@ -185,6 +185,13 @@ func (h *OAuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A linked password account with a second factor: no session yet, the
+	// same challenge a password sign-in returns.
+	if result.MFAChallenge != nil {
+		writeMFAChallenge(w, result.MFAChallenge)
+		return
+	}
+
 	resp := CallbackResponse{
 		AccessToken:  result.AccessToken,
 		RefreshToken: result.RefreshToken,

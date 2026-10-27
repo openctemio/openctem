@@ -115,6 +115,52 @@ func (r *UserIdentityRepository) MarkUsed(ctx context.Context, id shared.ID, at 
 	return nil
 }
 
+// DeleteForUser removes one identity of one account. The account row is
+// locked first, so concurrent unlinks of the same account run one after the
+// other and the keepOne count is exact.
+func (r *UserIdentityRepository) DeleteForUser(ctx context.Context, userID, id shared.ID, keepOne bool) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin delete user identity: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	var locked string
+	if err := tx.QueryRowContext(ctx, `SELECT id FROM users WHERE id = $1 FOR UPDATE`, userID.String()).Scan(&locked); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return useridentity.ErrNotFound
+		}
+		return fmt.Errorf("lock account: %w", err)
+	}
+	if keepOne {
+		var n int
+		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM user_identities WHERE user_id = $1`, userID.String()).Scan(&n); err != nil {
+			return fmt.Errorf("count user identities: %w", err)
+		}
+		if n <= 1 {
+			var mine bool
+			if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM user_identities WHERE id = $1 AND user_id = $2)`,
+				id.String(), userID.String()).Scan(&mine); err != nil {
+				return fmt.Errorf("find user identity: %w", err)
+			}
+			if !mine {
+				return useridentity.ErrNotFound
+			}
+			return useridentity.ErrLastIdentity
+		}
+	}
+	res, err := tx.ExecContext(ctx, `DELETE FROM user_identities WHERE id = $1 AND user_id = $2`, id.String(), userID.String())
+	if err != nil {
+		return fmt.Errorf("delete user identity: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return useridentity.ErrNotFound
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit delete user identity: %w", err)
+	}
+	return nil
+}
+
 func scanUserIdentity(s interface{ Scan(dest ...any) error }) (*useridentity.Identity, error) {
 	var (
 		id, userID      string

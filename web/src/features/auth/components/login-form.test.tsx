@@ -341,6 +341,24 @@ describe('LoginForm ?error= message', () => {
     )
     expect(toast.error).not.toHaveBeenCalled()
   })
+
+  // Google sign-in to a password account linked to it: the callback sends the
+  // browser here with ?mfa=verify and the code is asked like after a password.
+  it('asks for the second factor after a social sign-in to a linked password account', async () => {
+    withParams('mfa=verify')
+    verifyMfaAction.mockResolvedValueOnce({ success: false, error: 'x', code: 'MFA_CODE_INVALID' })
+    const user = userEvent.setup()
+    render(<LoginForm />)
+    await user.type(await screen.findByLabelText('Authentication code'), '123456')
+    await waitFor(() => expect(verifyMfaAction).toHaveBeenCalledWith({ code: '123456' }))
+  })
+
+  it('ignores an unknown second step in the address', () => {
+    withParams('mfa=skip')
+    render(<LoginForm />)
+    expect(screen.getByLabelText('Password')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Authentication code')).not.toBeInTheDocument()
+  })
 })
 
 describe('LoginForm email-first sign-in', () => {

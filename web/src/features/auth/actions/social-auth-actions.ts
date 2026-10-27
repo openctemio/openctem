@@ -22,7 +22,12 @@ import { loginErrorHref } from '@/features/auth/lib/login-error'
 import { env } from '@/lib/env'
 import { browserContextHeaders } from '@/lib/api/browser-context-headers'
 import { setServerCookie } from '@/lib/cookies-server'
-import { authEndpoints } from '@/lib/api/endpoints'
+import { authEndpoints, userEndpoints } from '@/lib/api/endpoints'
+import {
+  MFA_CHALLENGE_COOKIE,
+  MFA_PURPOSES,
+  OAUTH_LINK_INTENT_COOKIE,
+} from '@/features/auth/lib/oauth-cookies'
 import { validateRedirectUrl } from '@/lib/redirect'
 import { isAllowedValue, sanitizeLogValue } from '@/lib/log-sanitize'
 
@@ -65,6 +70,24 @@ export interface OAuthCallbackResult {
   expires_in: number
   token_type: string
   user: OAuthUser
+}
+
+/**
+ * The callback's answer for a password account reached through a linked
+ * provider that needs its second factor: no session yet.
+ */
+interface OAuthMfaChallenge {
+  mfa_required: true
+  mfa_token: string
+  mfa_purpose: (typeof MFA_PURPOSES)[number]
+  expires_in: number
+}
+
+/** A sign-in that waits for its second factor (the sign-in page asks for it). */
+export interface OAuthMfaPending {
+  success: true
+  mfaRequired: true
+  mfaPurpose: (typeof MFA_PURPOSES)[number]
 }
 
 // ============================================
@@ -133,6 +156,8 @@ export async function getOAuthAuthorizationUrl(
 
     // Store state in cookie for CSRF protection verification
     const cookieStore = await cookies()
+    // A sign-in, not a link: drop a link intent left by an abandoned link.
+    cookieStore.delete(OAUTH_LINK_INTENT_COOKIE)
     cookieStore.set('oauth_state', data.state, {
       httpOnly: true,
       secure: process.env.SECURE_COOKIES !== 'false',
@@ -180,7 +205,7 @@ export async function handleOAuthCallback(
   provider: SocialProvider,
   code: string,
   state: string
-): Promise<AuthSuccessResponse<OAuthUser> | AuthErrorResponse> {
+): Promise<AuthSuccessResponse<OAuthUser> | OAuthMfaPending | AuthErrorResponse> {
   if (!isAllowedValue(SOCIAL_PROVIDERS, provider)) return UNSUPPORTED_PROVIDER
 
   try {
@@ -203,14 +228,35 @@ export async function handleOAuthCallback(
     cookieStore.delete('oauth_redirect')
 
     // Exchange authorization code for tokens via backend
-    const data = await backendFetch<OAuthCallbackResult>(authEndpoints.oauthCallback(provider), {
-      method: 'POST',
-      body: JSON.stringify({
-        code,
-        state,
-        redirect_uri: `${env.app.url}/auth/callback/${provider}`,
-      }),
-    })
+    const answer = await backendFetch<OAuthCallbackResult | OAuthMfaChallenge>(
+      authEndpoints.oauthCallback(provider),
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          code,
+          state,
+          redirect_uri: `${env.app.url}/auth/callback/${provider}`,
+        }),
+      }
+    )
+
+    // A password account reached through a linked provider: the same second
+    // step as its password sign-in. The challenge stays in an httpOnly cookie
+    // and the sign-in page asks for the code.
+    if ('mfa_required' in answer && answer.mfa_required) {
+      if (!isAllowedValue(MFA_PURPOSES, answer.mfa_purpose)) {
+        return { success: false, error: 'Unexpected sign-in step' }
+      }
+      await setServerCookie(MFA_CHALLENGE_COOKIE, answer.mfa_token, {
+        httpOnly: true,
+        secure: process.env.SECURE_COOKIES !== 'false',
+        sameSite: 'strict',
+        maxAge: Math.max(1, answer.expires_in || 300),
+        path: '/',
+      })
+      return { success: true, mfaRequired: true, mfaPurpose: answer.mfa_purpose }
+    }
+    const data = answer as OAuthCallbackResult
 
     // Store tokens in HttpOnly cookies
     await setServerCookie(env.auth.cookieName, data.access_token, {
@@ -304,5 +350,75 @@ export async function getAvailableProviders(): Promise<
         { id: 'microsoft', name: 'Microsoft', enabled: true },
       ],
     }
+  }
+}
+
+// ============================================
+// LINK A PROVIDER TO THE SIGNED-IN ACCOUNT
+// ============================================
+
+/**
+ * Keep the state of a link the browser started (Account > Security) for the
+ * callback: the same state cookie a sign-in uses, plus the link intent. The
+ * state came from POST /users/me/identities/{provider}/link, which already
+ * required a fresh step-up, and the API accepts it only for this account and
+ * this session.
+ */
+export async function rememberLinkState(
+  provider: SocialProvider,
+  state: string
+): Promise<{ success: boolean }> {
+  if (!isAllowedValue(SOCIAL_PROVIDERS, provider)) return { success: false }
+  if (typeof state !== 'string' || state.length === 0 || state.length > 4096) {
+    return { success: false }
+  }
+  const cookieStore = await cookies()
+  const opts = {
+    httpOnly: true,
+    secure: process.env.SECURE_COOKIES !== 'false',
+    sameSite: 'lax' as const,
+    maxAge: 600,
+    path: '/',
+  }
+  cookieStore.set('oauth_state', state, opts)
+  cookieStore.set(OAUTH_LINK_INTENT_COOKIE, provider, opts)
+  cookieStore.delete('oauth_redirect')
+  return { success: true }
+}
+
+/** The result of a link callback: the API code on a refusal. */
+export type LinkCallbackResult = { success: true } | { success: false; code?: string }
+
+/**
+ * Finish a link after the provider's redirect: check the state cookie, then
+ * let the API bind the identity to the account of the session cookie.
+ */
+export async function completeLinkCallback(
+  provider: SocialProvider,
+  code: string,
+  state: string
+): Promise<LinkCallbackResult> {
+  if (!isAllowedValue(SOCIAL_PROVIDERS, provider)) return { success: false }
+  const cookieStore = await cookies()
+  const storedState = cookieStore.get('oauth_state')?.value
+  cookieStore.delete('oauth_state')
+  cookieStore.delete(OAUTH_LINK_INTENT_COOKIE)
+  if (!storedState || storedState !== state) return { success: false, code: 'OAUTH_INVALID_STATE' }
+  const accessToken = cookieStore.get(env.auth.cookieName)?.value
+  if (!accessToken) return { success: false, code: 'SESSION_EXPIRED' }
+  try {
+    await backendFetch<unknown>(userEndpoints.identityLinkCallback(provider), {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({
+        code,
+        state,
+        redirect_uri: `${env.app.url}/auth/callback/${provider}`,
+      }),
+    })
+    return { success: true }
+  } catch (error) {
+    console.error('OAuth link callback error:', sanitizeLogValue(provider), error)
+    return { success: false, code: error instanceof BackendError ? error.code : undefined }
   }
 }

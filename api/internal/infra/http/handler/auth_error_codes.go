@@ -89,6 +89,11 @@ const (
 	codeOAuthUserInfoFailed     apierror.Code = "OAUTH_USERINFO_FAILED"
 	codeOAuthAccountExists      apierror.Code = "OAUTH_ACCOUNT_EXISTS"
 	codeOAuthNoEmail            apierror.Code = "OAUTH_NO_EMAIL"
+	codeIdentityLinkedElsewhere apierror.Code = "IDENTITY_LINKED_ELSEWHERE"
+	codeProviderAlreadyLinked   apierror.Code = "PROVIDER_ALREADY_LINKED"
+	codeLastSignInMethod        apierror.Code = "LAST_SIGN_IN_METHOD"
+	codeIdentityByOrganization  apierror.Code = "IDENTITY_MANAGED_BY_ORGANIZATION"
+	codeIdentityNotFound        apierror.Code = "IDENTITY_NOT_FOUND"
 	codeInvitationAlreadyMember apierror.Code = "INVITATION_ALREADY_MEMBER"
 	codeInvitationSuspended     apierror.Code = "INVITATION_MEMBERSHIP_SUSPENDED"
 	codeMembershipReactivate    apierror.Code = "MEMBERSHIP_SUSPENDED_REACTIVATE"
@@ -192,6 +197,15 @@ var authErrorTable = []authErrorEntry{
 	// address, so saying the account exists tells the person nothing they
 	// could not learn by signing in with it.
 	{e(auth.ErrOAuthAccountExists), http.StatusConflict, codeOAuthAccountExists, "An account with this email already exists. Sign in with your password or the method you used before, then link this provider in Account > Security.", "account_exists"},
+
+	// Linked sign-in methods (Account > Security). The caller owns the
+	// provider account, so saying it is linked elsewhere tells them nothing
+	// they could not learn by signing in with it.
+	{e(auth.ErrIdentityLinkedElsewhere), http.StatusConflict, codeIdentityLinkedElsewhere, "This provider account is already linked to another account.", ""},
+	{e(auth.ErrProviderAlreadyLinked), http.StatusConflict, codeProviderAlreadyLinked, "Another account of this provider is already linked. Unlink it first.", ""},
+	{e(auth.ErrLastSignInMethod), http.StatusConflict, codeLastSignInMethod, "This is your only way to sign in, so it cannot be removed.", ""},
+	{e(auth.ErrIdentityNotUnlinkable), http.StatusConflict, codeIdentityByOrganization, "This sign-in method is managed by your organization.", ""},
+	{e(auth.ErrIdentityNotFound), http.StatusNotFound, codeIdentityNotFound, "Sign-in method not found.", ""},
 
 	// Invitations.
 	{e(tenantapp.ErrInvitationAlreadyMember), http.StatusBadRequest, codeInvitationAlreadyMember, "This person is already a member of this organization.", ""},
