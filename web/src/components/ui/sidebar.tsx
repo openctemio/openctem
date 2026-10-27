@@ -212,7 +212,8 @@ function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
-          className="bg-sidebar text-sidebar-foreground w-(--sidebar-width) p-0 [&>button]:hidden"
+          // overflow-hidden: the inner column is the drawer's only scroller (see below).
+          className="bg-sidebar text-sidebar-foreground w-(--sidebar-width) gap-0 overflow-hidden p-0 data-[state=open]:duration-300 data-[state=closed]:duration-200 [&>button]:hidden"
           style={
             {
               '--sidebar-width': SIDEBAR_WIDTH_MOBILE,
@@ -224,7 +225,18 @@ function Sidebar({
             <SheetTitle>Sidebar</SheetTitle>
             <SheetDescription>Displays the mobile sidebar.</SheetDescription>
           </SheetHeader>
-          <div className="flex h-full w-full flex-col">{children}</div>
+          {/* One scroller for the whole drawer: header, nav and footer scroll
+              together. With a scroller inside a scroller (the sheet and the nav)
+              iOS Safari rubber-bands the outer one and the rows shake, and on a
+              short screen (a phone on its side) the pinned header and footer left
+              the nav a sliver. min-h-full keeps the footer at the bottom when the
+              nav is short; SidebarContent stops scrolling on its own here. */}
+          <div
+            data-slot="sidebar-mobile-scroller"
+            className="no-scrollbar flex h-full w-full flex-col overflow-y-auto overscroll-contain"
+          >
+            {children}
+          </div>
         </SheetContent>
       </Sheet>
     )
@@ -406,6 +418,9 @@ function SidebarContent({ className, ...props }: React.ComponentProps<'div'>) {
         // width, so the stable-gutter workaround is no longer needed.
         'no-scrollbar overscroll-contain',
         'group-data-[collapsible=icon]:overflow-y-auto',
+        // In the phone drawer the drawer column scrolls instead (one scroller):
+        // full content height, still growing to push the footer down.
+        'in-data-[mobile=true]:min-h-auto in-data-[mobile=true]:flex-none in-data-[mobile=true]:grow in-data-[mobile=true]:overflow-visible',
         className
       )}
       {...props}
@@ -501,8 +516,15 @@ function SidebarMenuItem({ className, ...props }: React.ComponentProps<'li'>) {
   )
 }
 
+/**
+ * One filled row per sidebar: the current page. A row whose own sub-list holds
+ * the current page (Findings with its quick views) keeps its label weight but
+ * drops its fill, so a parent and its child never both read as "you are here".
+ * `data-current` is the unfilled form of the same state (section headers, pins
+ * that mirror a row of the tree).
+ */
 const sidebarMenuButtonVariants = cva(
-  'peer/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-start text-sm outline-hidden ring-sidebar-ring transition-[width,height,padding] duration-250 ease-sidebar motion-reduce:transition-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 group-has-data-[sidebar=menu-action]/menu-item:pe-8 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium data-[active=true]:text-sidebar-accent-foreground data-[state=open]:hover:bg-sidebar-accent data-[state=open]:hover:text-sidebar-accent-foreground group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-2! [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0',
+  'peer/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-start text-sm outline-hidden ring-sidebar-ring transition-[width,height,padding] duration-250 ease-sidebar motion-reduce:transition-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 group-has-data-[sidebar=menu-action]/menu-item:pe-8 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium data-[active=true]:text-sidebar-accent-foreground data-[current=true]:font-medium data-[current=true]:text-sidebar-foreground group-has-[[data-sidebar=menu-sub-button][data-active=true]]/menu-item:data-[active=true]:bg-transparent data-[state=open]:hover:bg-sidebar-accent data-[state=open]:hover:text-sidebar-accent-foreground group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-2! [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0',
   {
     variants: {
       variant: {
