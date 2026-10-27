@@ -53,7 +53,7 @@ vars:
     component: api
     group: "Application"
     type: string
-    description: "Default of the console setting email.tenant_relay until a super admin stores a value: whether an organization's own mail relay (its e-mail notification channel with \"organization mail\" ticked) carries its invitations, account setup mail and scheduled reports. `off`, `verified_sender` (the sender address must be on a verified domain of the organization) or `on`. Unset: `verified_sender` with `MANAGED_SERVICE=true`, else `on`. Account security mail (verification, password reset, MFA and sign-in notices) never uses an organization relay."
+    description: "Default of the console setting email.tenant_relay until a super admin stores a value: whether an organization's own mail relay (its e-mail notification channel with \"organization mail\" ticked) carries its invitation notices and scheduled reports. `off`, `verified_sender` (the sender address must be on a verified domain of the organization) or `on`. Unset: `verified_sender` with `MANAGED_SERVICE=true`, else `on`. Account security mail (set-password links, verification, password reset, MFA and sign-in notices) never uses an organization relay."
   - name: DEPLOYMENT_REGION
     component: api
     group: "Application"

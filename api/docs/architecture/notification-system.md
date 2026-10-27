@@ -362,10 +362,17 @@ the transport rules and the stop-and-notify. Designed, not shipped: sender-domai
 
 ### Organization mail relay
 
-An organization can send its own mail (invitations, account setup mail, member suspended or reactivated
-notices, scheduled reports) through its e-mail notification channel's mail server. Tick "Also send my
-organization's own mail through this server" on the channel (`org_mail` in its metadata; on for a new
-channel, off for a channel saved before the flag, so no existing sender changes by itself).
+An organization can send its business mail (invitation notices, member suspended or reactivated notices,
+notifications, scheduled reports) through its e-mail notification channel's mail server. Tick "Also send my
+organization's business mail through this server" on the channel (`org_mail` in its metadata; off for every
+channel until ticked, new or saved before the flag). Turning it on needs an owner or administrator of the
+organization: the right to manage integrations is not enough (403), and a request that keeps an already-on
+flag, or turns it off, is open to anyone who may manage integrations.
+
+Mail that carries a credential or proves control of an account never takes an organization relay: account
+setup and set-password links, password reset, owner recovery, the first owner's link, e-mail verification and
+two-factor mail use the platform relay only, whatever the organization has configured, and an organization relay
+never decides whether such a link can be mailed (owner decision of 2026-10-27, research 308 D12 amendment).
 
 The platform setting `email.tenant_relay` (console, `/admin/settings/email-relay`, env default
 `ORG_EMAIL_RELAY_MODE`) decides whether that is allowed:
@@ -385,8 +392,8 @@ Mail classes:
 
 | Class | Mail | Relay | When the organization relay cannot be used |
 |---|---|---|---|
-| Account security | verification, password reset, password changed, welcome, MFA turned off, recovery code used, sign-in and security notices, domain managed, SSO change pending, SAML certificate expiry, support access, ownership transfer, notice that an e-mail channel was stopped | platform relay only, always (a test lists every mail method and pins its class) | not applicable |
-| Organization, no exposure data | invitation, account setup, member suspended or reactivated | organization relay when active | falls back to the platform relay |
+| Account security | account setup and set-password links (account setup, first owner, owner recovery), verification, password reset, password changed, welcome, MFA turned off, recovery code used, sign-in and security notices, domain managed, SSO change pending, SAML certificate expiry, support access, ownership transfer, notice that an e-mail channel was stopped | platform relay only, always (a test lists every mail method and pins its class) | not applicable |
+| Organization, no credential and no exposure data | invitation notice, member suspended or reactivated | organization relay when active | falls back to the platform relay |
 | Organization content | scheduled reports | organization relay when active | does not fall back: the error is returned (the organization may have chosen its relay for data-handling reasons) |
 
 Because verification mail is account security mail, an organization relay never counts as "e-mail is

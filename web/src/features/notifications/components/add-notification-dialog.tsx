@@ -265,7 +265,7 @@ export function AddNotificationDialog({
       to_emails: '',
       use_tls: false,
       use_starttls: true,
-      org_mail: true,
+      org_mail: false,
     },
   })
 

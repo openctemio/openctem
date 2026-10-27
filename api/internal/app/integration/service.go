@@ -1169,12 +1169,20 @@ type EmailCredentials struct {
 	// (RFC-049 F-5). It is never stored or used.
 	SkipVerify bool   `json:"skip_verify"`
 	ReplyTo    string `json:"reply_to,omitempty"`
-	// OrgMail also sends the organization's own mail (invitations, account
-	// setup, reports) through this relay, when the platform allows it
-	// (email.tenant_relay). Absent: on for a new integration, unchanged on
-	// an update.
+	// OrgMail also sends the organization's business mail (invitation
+	// notices, notifications, reports) through this relay, when the platform
+	// allows it (email.tenant_relay). Never account security mail: set-password
+	// links, password reset, recovery, verification and sign-in notices always
+	// use the platform relay. Absent: off for a new integration, unchanged on
+	// an update. Turning it on needs an owner or administrator of the
+	// organization (the request's CanEnableOrgMail), not only the right to
+	// manage integrations.
 	OrgMail *bool `json:"org_mail,omitempty"`
 }
+
+// errOrgMailNeedsAdmin refuses a caller who may manage integrations but is
+// not an owner or administrator turning organization mail on for a relay.
+var errOrgMailNeedsAdmin = fmt.Errorf("%w: only an owner or administrator can send organization mail through this relay", shared.ErrForbidden)
 
 // errSMTPSkipVerify refuses a tenant request to turn off TLS verification.
 var errSMTPSkipVerify = fmt.Errorf("%w: skip_verify is not supported: the SMTP server certificate is always verified (use a certificate from a trusted CA)", shared.ErrValidation)
@@ -1403,13 +1411,17 @@ func getBoolFromMap(m map[string]any, key string) bool {
 // setEmailCredentials parses email credentials JSON and splits into metadata and encrypted credentials.
 // Non-sensitive config (smtp_host, port, from_email, etc.) goes to metadata.
 // Sensitive data (username, password) goes to encrypted credentials.
-func (s *IntegrationService) setEmailCredentials(intg *integrationdom.Integration, credentialsJSON string) error {
+func (s *IntegrationService) setEmailCredentials(intg *integrationdom.Integration, credentialsJSON string, mayEnableOrgMail bool) error {
 	var emailCreds EmailCredentials
 	if err := json.Unmarshal([]byte(credentialsJSON), &emailCreds); err != nil {
 		return fmt.Errorf("parse email credentials: %w", err)
 	}
 	if emailCreds.SkipVerify {
 		return errSMTPSkipVerify
+	}
+	orgMail := emailCreds.OrgMail != nil && *emailCreds.OrgMail
+	if orgMail && !mayEnableOrgMail {
+		return errOrgMailNeedsAdmin
 	}
 
 	// Validate required fields
@@ -1442,7 +1454,7 @@ func (s *IntegrationService) setEmailCredentials(intg *integrationdom.Integratio
 		"use_tls":                       metadata.UseTLS,
 		"use_starttls":                  metadata.UseSTARTTLS,
 		"reply_to":                      metadata.ReplyTo,
-		integrationdom.MetaEmailOrgMail: emailCreds.OrgMail == nil || *emailCreds.OrgMail,
+		integrationdom.MetaEmailOrgMail: orgMail,
 	})
 
 	// Encrypt and store sensitive credentials
@@ -1460,7 +1472,7 @@ func (s *IntegrationService) setEmailCredentials(intg *integrationdom.Integratio
 }
 
 // updateEmailCredentials updates email credentials, merging with existing metadata if partial update.
-func (s *IntegrationService) updateEmailCredentials(intg *integrationdom.Integration, credentialsJSON string) error {
+func (s *IntegrationService) updateEmailCredentials(intg *integrationdom.Integration, credentialsJSON string, mayEnableOrgMail bool) error {
 	var emailCreds EmailCredentials
 	if err := json.Unmarshal([]byte(credentialsJSON), &emailCreds); err != nil {
 		return fmt.Errorf("parse email credentials: %w", err)
@@ -1526,6 +1538,9 @@ func (s *IntegrationService) updateEmailCredentials(intg *integrationdom.Integra
 	// Organization mail through this relay: the request's choice, else the
 	// stored one (absent on an integration saved before the flag: off).
 	if emailCreds.OrgMail != nil {
+		if *emailCreds.OrgMail && !getBoolFromMap(existingMetadata, integrationdom.MetaEmailOrgMail) && !mayEnableOrgMail {
+			return errOrgMailNeedsAdmin
+		}
 		newMetadata[integrationdom.MetaEmailOrgMail] = *emailCreds.OrgMail
 	} else {
 		newMetadata[integrationdom.MetaEmailOrgMail] = getBoolFromMap(existingMetadata, integrationdom.MetaEmailOrgMail)
@@ -2091,6 +2106,10 @@ type CreateNotificationIntegrationInput struct {
 	// Metadata holds non-sensitive provider config (e.g. Splunk HEC
 	// hec_url/index/sourcetype). Merged onto any provider-set metadata.
 	Metadata map[string]any
+
+	// CanEnableOrgMail is set by the caller's layer when the actor is an
+	// owner or administrator of the organization.
+	CanEnableOrgMail bool
 }
 
 // CreateNotificationIntegration creates a new notification integration.
@@ -2149,7 +2168,7 @@ func (s *IntegrationService) CreateNotificationIntegration(ctx context.Context, 
 	case integrationdom.ProviderEmail:
 		// For email: split into metadata (non-sensitive) and credentials (sensitive)
 		if input.Credentials != "" {
-			if err := s.setEmailCredentials(intg, input.Credentials); err != nil {
+			if err := s.setEmailCredentials(intg, input.Credentials, input.CanEnableOrgMail); err != nil {
 				return nil, err
 			}
 		}
@@ -2271,6 +2290,10 @@ type UpdateNotificationIntegrationInput struct {
 	// Metadata, when non-nil, is merged onto the integration's non-sensitive
 	// provider config (e.g. Splunk HEC hec_url/index/sourcetype).
 	Metadata map[string]any
+
+	// CanEnableOrgMail is set by the caller's layer when the actor is an
+	// owner or administrator of the organization.
+	CanEnableOrgMail bool
 }
 
 // applyNotificationExtensionUpdates applies updates to a notification extension.
@@ -2343,7 +2366,7 @@ func (s *IntegrationService) UpdateNotificationIntegration(ctx context.Context, 
 	case integrationdom.ProviderEmail:
 		// For email: split into metadata (non-sensitive) and credentials (sensitive)
 		if input.Credentials != nil && *input.Credentials != "" {
-			if err := s.updateEmailCredentials(intg, *input.Credentials); err != nil {
+			if err := s.updateEmailCredentials(intg, *input.Credentials, input.CanEnableOrgMail); err != nil {
 				return nil, err
 			}
 		}

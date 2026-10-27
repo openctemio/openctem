@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -60,9 +61,13 @@ func TestOrgRelayResolver_ReadsStoredShape(t *testing.T) {
 	mk := func(t *testing.T, tail string) *integrationdom.Integration {
 		t.Helper()
 		seq++
+		if !strings.Contains(tail, "org_mail") {
+			// A new channel has organization mail off; these cases need it on.
+			tail += `,"org_mail":true`
+		}
 		res, err := svc.CreateNotificationIntegration(ctx, integrationapp.CreateNotificationIntegrationInput{
 			TenantID: tenant.String(), Name: fmt.Sprintf("mail-%d", seq), Provider: "email", AuthType: "basic",
-			Credentials: creds + tail + `}`,
+			Credentials: creds + tail + `}`, CanEnableOrgMail: true,
 		})
 		if err != nil {
 			t.Fatal(err)
