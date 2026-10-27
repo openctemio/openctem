@@ -205,8 +205,8 @@ func (s *Service) FilterStepTargets(ctx context.Context, tenantID shared.ID, too
 			}
 		}
 	}
-	// The step's own tier: its tool's ceiling against the scope entries,
-	// and proof for an intrusive tool (RFC-054 §4.2 step 6, §8.1).
+	// The step's own tier: its tool's ceiling against the scope entries
+	// (RFC-054 §4.2 step 6).
 	kept, refused, reason, err := s.stepScopeFilter(ctx, tenantID, toolName, out.Targets)
 	if err != nil {
 		return nil, err
@@ -228,7 +228,7 @@ func (s *Service) FilterStepTargets(ctx context.Context, tenantID shared.ID, too
 }
 
 // CodeStepTargetsRefused: a workflow step whose every target the tier
-// ceiling or the proof requirement refused.
+// ceiling refused.
 const CodeStepTargetsRefused = "STEP_TARGETS_REFUSED"
 
 // filterStepTypes leaves out the typed targets the step's tool cannot scan.

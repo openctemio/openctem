@@ -22,7 +22,7 @@ name: All-in-one CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [develop]
   # A pull request runs this workflow only when it changes a CI definition (the
   # build then gives early feedback as "All-in-one (PR build)", not required).
   # Any other PR gets the required `All-in-one OK` from pr-hygiene.yml.
