@@ -442,6 +442,9 @@ func (s *Service) ConfirmProtected(ctx context.Context, a *admin.AdminUser, sess
 				return err
 			}
 			if ok {
+				if admin.FreshStepUpOpensWindow(ctx) {
+					s.openStepUpWindow(ctx, sess, now)
+				}
 				return nil
 			}
 			return admin.ErrStepUpRequired
@@ -455,14 +458,24 @@ func (s *Service) ConfirmProtected(ctx context.Context, a *admin.AdminUser, sess
 		return err
 	}
 	if fresh {
-		return nil // a code is fresh by itself; it opens no window
+		// A code is fresh by itself and opens no window, except for the
+		// action that is the gateway to the others (elevation).
+		if admin.FreshStepUpOpensWindow(ctx) {
+			s.openStepUpWindow(ctx, sess, now)
+		}
+		return nil
 	}
+	s.openStepUpWindow(ctx, sess, now)
+	return nil
+}
+
+// openStepUpWindow restarts the session's step-up window. A failure is not
+// fatal: the code was valid and is spent, this action goes ahead and the next
+// one asks again.
+func (s *Service) openStepUpWindow(ctx context.Context, sess *admin.Session, now time.Time) {
 	if err := s.console.MarkSessionStepUp(ctx, sess.ID, now); err != nil {
-		// The code was valid and is spent: this action goes ahead, the next
-		// one asks again.
 		s.log.Warn("record console step-up window", "error", err)
 	}
-	return nil
 }
 
 // openVerifiedSession issues a verified console session and records the

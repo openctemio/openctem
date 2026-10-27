@@ -368,24 +368,39 @@ func (s *Service) plan(ctx context.Context, in Input) (plan, error) {
 	case next.KeyEncrypted == "":
 		next.KeyFP = ""
 	case keyChanged:
-		next.KeyFP = s.fingerprint(*in.APIKey)
+		fp, ferr := s.fingerprint(*in.APIKey)
+		if ferr != nil {
+			return plan{}, ferr
+		}
+		next.KeyFP = fp
 	case next.KeyFP == "":
 		// Settings saved before fingerprints were kept: derive it once.
 		if plain, derr := s.encryptor.DecryptString(next.KeyEncrypted); derr == nil {
-			next.KeyFP = s.fingerprint(plain)
+			fp, ferr := s.fingerprint(plain)
+			if ferr != nil {
+				return plan{}, ferr
+			}
+			next.KeyFP = fp
 		}
 	}
 	return plan{prev: prev, next: next, keyChanged: keyChanged,
 		target: admin.PlatformAIDestinationTarget(next.Provider, next.BaseURL, next.AllowPrivate, next.KeyFP)}, nil
 }
 
+// ErrNoFingerprint is returned when the encryption backend cannot produce a
+// keyed fingerprint. The destination approval binds the key through that
+// fingerprint, so without it a key swap could not be told from no change: the
+// save is refused rather than approved against a constant.
+var ErrNoFingerprint = errors.New("platformai: the encryption backend cannot fingerprint the API key")
+
 // fingerprint is the keyed fingerprint of an API key (a plain hash of a key
 // is never stored or shown).
-func (s *Service) fingerprint(key string) string {
-	if f, ok := s.encryptor.(crypto.Fingerprinter); ok {
-		return f.Fingerprint("platform-ai-key", strings.TrimSpace(key))
+func (s *Service) fingerprint(key string) (string, error) {
+	f, ok := s.encryptor.(crypto.Fingerprinter)
+	if !ok {
+		return "", ErrNoFingerprint
 	}
-	return "unkeyed"
+	return f.SecretFingerprint("platform-ai-key", strings.TrimSpace(key)), nil
 }
 
 // appliedTarget is the destination last applied while turned on. Settings
@@ -404,8 +419,12 @@ func (s *Service) prevFP(prev stored) string {
 	if prev.KeyFP != "" || prev.KeyEncrypted == "" {
 		return prev.KeyFP
 	}
+	// A key that cannot be fingerprinted counts as no fingerprint: the applied
+	// destination then matches nothing and the next turn-on asks for approval.
 	if plain, err := s.encryptor.DecryptString(prev.KeyEncrypted); err == nil {
-		return s.fingerprint(plain)
+		if fp, ferr := s.fingerprint(plain); ferr == nil {
+			return fp
+		}
 	}
 	return ""
 }
@@ -413,8 +432,9 @@ func (s *Service) prevFP(prev stored) string {
 // ApprovalNeeded reports whether saving in needs a second super admin, and
 // the approval target. It does when the result is turned on and its
 // destination (provider, base URL, private-network switch, API key) differs
-// from the last one applied while on. Model, allowed models, turning off,
-// removing the key and any change while staying off need none. An invalid
+// from the last one applied while on. Model, allowed models, turning off and
+// any change while staying off need none; removing the key of a platform that
+// stays on changes its destination and asks. An invalid
 // input needs none here: saving refuses it.
 func (s *Service) ApprovalNeeded(ctx context.Context, in Input) (string, bool) {
 	if s.envLocked {

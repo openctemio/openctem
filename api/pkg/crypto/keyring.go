@@ -76,9 +76,9 @@ func (k *KeyRing) EncryptString(plaintext string) (string, error) {
 	return k.current.EncryptString(plaintext)
 }
 
-// Fingerprint fingerprints with the current key.
-func (k *KeyRing) Fingerprint(purpose, value string) string {
-	return k.current.Fingerprint(purpose, value)
+// SecretFingerprint fingerprints with the current key.
+func (k *KeyRing) SecretFingerprint(purpose, value string) string {
+	return k.current.SecretFingerprint(purpose, value)
 }
 
 // DecryptString decrypts with the current key, then each previous key.
