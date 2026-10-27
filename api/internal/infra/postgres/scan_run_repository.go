@@ -186,7 +186,8 @@ func (r *ScanRunRepository) Update(ctx context.Context, run *scanrun.Run) error 
 	query := `
 		UPDATE scan_runs
 		SET status = $2, context = $3,
-		    total_steps = $4, completed_steps = $5, failed_steps = $6, skipped_steps = $7, total_findings = $8,
+		    total_steps = $4, completed_steps = $5, failed_steps = $6, skipped_steps = $7,
+		    total_findings = GREATEST($8::int, COALESCE(` + runSightedSQL + `, 0)),
 		    started_at = $9, completed_at = $10, error_message = $11,
 		    scan_profile_id = $12, quality_gate_result = $13, retry_attempt = $14,
 		    deadline_at = COALESCE(deadline_at, ` + runDeadlineSQL("$9::timestamptz", "scan_runs.scan_id", "scan_runs.scan_workflow_id") + `),
@@ -362,7 +363,8 @@ func (r *ScanRunRepository) CountActiveByScanID(ctx context.Context, scanID shar
 func (r *ScanRunRepository) UpdateStats(ctx context.Context, id shared.ID, completed, failed, skipped, findings int) error {
 	query := `
 		UPDATE scan_runs
-		SET completed_steps = $2, failed_steps = $3, skipped_steps = $4, total_findings = $5
+		SET completed_steps = $2, failed_steps = $3, skipped_steps = $4,
+		    total_findings = GREATEST($5::int, COALESCE(` + runSightedSQL + `, 0))
 		WHERE id = $1
 	`
 	_, err := r.db.ExecContext(ctx, query, id.String(), completed, failed, skipped, findings)

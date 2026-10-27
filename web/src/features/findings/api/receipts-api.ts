@@ -48,11 +48,17 @@ export function findingReceiptsUrl(findingId: string): string {
 
 const swrConfig = { revalidateOnFocus: false, shouldRetryOnError: false }
 
-/** Lists receipts; pass enabled=false to skip the request. */
-export function useReceipts(filters: ReceiptListFilters, enabled = true) {
+/**
+ * Lists receipts; pass enabled=false to skip the request, and refreshMs to
+ * poll while the thing they describe (a running scan) is still reporting.
+ */
+export function useReceipts(filters: ReceiptListFilters, enabled = true, refreshMs = 0) {
   const tenantId = useCurrentTenantId()
   const key = tenantId && enabled ? receiptListUrl(filters) : null
-  return useSWR<ReceiptListResponse>(key, (url: string) => get<ReceiptListResponse>(url), swrConfig)
+  return useSWR<ReceiptListResponse>(key, (url: string) => get<ReceiptListResponse>(url), {
+    ...swrConfig,
+    refreshInterval: refreshMs,
+  })
 }
 
 /** The receipts that acted on one finding, newest first. */

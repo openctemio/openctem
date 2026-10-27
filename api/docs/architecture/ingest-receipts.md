@@ -75,6 +75,17 @@ output says so (`Output.ReceiptFailed`). A segment of a command's run is
 retried instead (`IngestV2Segment`), because that run's receipt decides absence
 (below), and re-ingesting a segment is idempotent.
 
+## The run's findings figure
+
+`scan_runs.total_findings` is the number of findings the run's receipt holds
+(created, still detected and reopened). `IngestReceiptRepository.Record`
+raises it in the same transaction as each report of a run, and `UpdateStats`
+and the run save never lower it below the receipt, so a running run shows its
+findings live. The sensor's `findings_count` on a command result is 0 for
+tools that report through ingest and is only a floor. The run page refreshes
+the receipt while the run is running and shows `untouched` as counted when the
+run finishes.
+
 ## Absence
 
 A covered run closes the open findings of its scope that it did not report.

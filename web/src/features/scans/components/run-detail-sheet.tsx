@@ -268,7 +268,16 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
             </DetailStatGrid>
 
             <DetailSections>
-              <RunReceiptSection runId={run.id} />
+              <RunReceiptSection
+                runId={run.id}
+                runState={
+                  isRunInProgress(run)
+                    ? 'running'
+                    : run.status === 'completed'
+                      ? 'settled'
+                      : 'incomplete'
+                }
+              />
               {(run.scan_run_steps?.length ?? 0) > 0 && (
                 <DetailSection title={t('scans.runDetail.runMap')}>
                   <RunMap
