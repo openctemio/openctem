@@ -17,11 +17,13 @@ package easm
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/internal/app/scopeauth"
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -139,6 +141,7 @@ type ReviewService struct {
 	orgName   OrgNamer
 	seeded    SeededNetworks
 	confirm   *ConfirmScope
+	assets    ReviewAssets
 }
 
 // SetDecisionEffects runs reclassification and rejection hygiene after each
@@ -149,6 +152,15 @@ func (s *ReviewService) SetDecisionEffects(e *DecisionEffects) { s.effects = e }
 func NewReviewService(store ReviewStore, scope *datascope.Enforcer) *ReviewService {
 	return &ReviewService{store: store, dataScope: scope}
 }
+
+// ReviewAssets finds the tenant's assets by name (*postgres.AssetRepository).
+type ReviewAssets interface {
+	GetByNames(ctx context.Context, tenantID shared.ID, names []string) (map[string]*asset.Asset, error)
+}
+
+// SetAssets lets a decision name assets by their name (DecideNamesAs): the
+// skipped-targets list of a scan shows names. Nil: names are refused.
+func (s *ReviewService) SetAssets(a ReviewAssets) { s.assets = a }
 
 // DecidableStates are the states a person may set.
 var DecidableStates = []attribution.State{
@@ -255,6 +267,56 @@ func (s *ReviewService) Decide(ctx context.Context, tenantID shared.ID, assetIDs
 // decision is saved, so a missing re-authentication changes nothing.
 func (s *ReviewService) DecideAs(ctx context.Context, tenantID shared.ID, assetIDs []string, state attribution.State, actor ScopeActor) (*DecisionResult, error) {
 	return s.decide(ctx, tenantID, assetIDs, state, actor, state == attribution.StateConfirmed)
+}
+
+// DecideNamesAs is DecideAs for assets named by their name as well as by
+// id: the skipped-targets list of a scan lists names. A name is looked up
+// among the tenant's own live assets only, so a name that is another
+// organization's, deleted or unknown is reported in not_found like an
+// asset outside the caller's data scope, and the caller's data scope
+// applies to the rest. Together with the ids, at most MaxDecisionBatch.
+func (s *ReviewService) DecideNamesAs(ctx context.Context, tenantID shared.ID, assetIDs, names []string, state attribution.State, actor ScopeActor) (*DecisionResult, error) {
+	if len(names) == 0 {
+		return s.DecideAs(ctx, tenantID, assetIDs, state, actor)
+	}
+	if !decidable(state) {
+		return nil, fmt.Errorf("%w: state must be confirmed, rejected, dependency, monitor_only, needs_review or automatic", shared.ErrValidation)
+	}
+	if s.assets == nil {
+		return nil, fmt.Errorf("%w: asset names are not supported here", shared.ErrValidation)
+	}
+	if len(assetIDs)+len(names) > MaxDecisionBatch {
+		return nil, fmt.Errorf("%w: at most %d assets per decision", shared.ErrValidation, MaxDecisionBatch)
+	}
+	wanted := make([]string, 0, len(names))
+	for _, n := range names {
+		if n = strings.ToLower(strings.TrimSpace(n)); n != "" {
+			wanted = append(wanted, n)
+		}
+	}
+	found, err := s.assets.GetByNames(ctx, tenantID, wanted)
+	if err != nil {
+		return nil, fmt.Errorf("look up asset names: %w", err)
+	}
+	ids := append([]string(nil), assetIDs...)
+	var unknown []string
+	for _, n := range wanted {
+		a := found[n]
+		if a == nil || !a.TenantID().Equals(tenantID) {
+			unknown = append(unknown, n)
+			continue
+		}
+		ids = append(ids, a.ID().String())
+	}
+	if len(ids) == 0 {
+		return &DecisionResult{Decided: []Decision{}, NotFound: unknown}, nil
+	}
+	res, err := s.DecideAs(ctx, tenantID, ids, state, actor)
+	if err != nil {
+		return nil, err
+	}
+	res.NotFound = append(res.NotFound, unknown...)
+	return res, nil
 }
 
 func (s *ReviewService) decide(ctx context.Context, tenantID shared.ID, assetIDs []string, state attribution.State, actor ScopeActor, addScope bool) (*DecisionResult, error) {

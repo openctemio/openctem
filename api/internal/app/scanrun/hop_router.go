@@ -462,6 +462,9 @@ func (s *Service) gateCandidates(ctx context.Context, run *scanrun.Run, st stage
 		c.reason = scanrun.ReasonRefused
 		if r.Reason == scanapp.ReasonOwnershipNotConfirmed {
 			c.reason = scanrun.ReasonUnconfirmed
+			if r.Code == scopedom.RefusalWildcardOnly {
+				c.reason = scanrun.ReasonWildcardOnly
+			}
 		}
 		refused = append(refused, c)
 	}

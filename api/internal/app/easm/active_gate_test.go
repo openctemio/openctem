@@ -204,6 +204,7 @@ func newGateFixture(t *testing.T) *gateFixture {
 func TestActiveGate_Assets(t *testing.T) {
 	f := newGateFixture(t)
 	g := NewActiveGate(f, f, f, f)
+	g.SetManagedService(true)
 	cases := []struct {
 		name  string
 		setup func() *asset.Asset
@@ -461,6 +462,7 @@ func TestActiveGate_Assets(t *testing.T) {
 func TestActiveGate_BlockedTargets(t *testing.T) {
 	f := newGateFixture(t)
 	g := NewActiveGate(f, f, f, f)
+	g.SetManagedService(true)
 	rej := f.add(t, "www.scoped.com", asset.AssetTypeSubdomain)
 	f.record(rej, attribution.StateRejected, true)
 	rev := f.add(t, "dev.scoped.com", asset.AssetTypeSubdomain)
@@ -549,6 +551,7 @@ func TestActiveGate_FailsClosed(t *testing.T) {
 	}
 	f.err = errors.New("db down")
 	g := NewActiveGate(f, f, f, f)
+	g.SetManagedService(true)
 	if _, err := g.ActiveCheckBlocked(context.Background(), f.tenant, []string{a.ID().String()}); err == nil {
 		t.Fatal("a lookup error must fail the check")
 	}
@@ -574,6 +577,8 @@ func TestActiveGate_PlatformPolicy(t *testing.T) {
 	gr, _ := scopedom.NewGuardrails(0, 0, []string{"198.51.100.200/32"})
 
 	g := NewActiveGate(f, f, f, f).WithPlatformPolicy(gr)
+
+	g.SetManagedService(true)
 	confirmedGov := f.add(t, "portal.agency.gov.vn", asset.AssetTypeSubdomain)
 	f.record(confirmedGov, attribution.StateConfirmed, true)
 	platformIP := f.add(t, "198.51.100.200", asset.AssetTypeIPAddress)
@@ -609,6 +614,7 @@ func TestActiveGate_PlatformPolicy(t *testing.T) {
 	}
 	f.targets = append(f.targets, vt)
 	all := NewActiveGate(f, f, f, f).WithPlatformPolicy(gr)
+	all.SetManagedService(true)
 	un, err := all.UnverifiedTargets(context.Background(), f.tenant, []string{"app.scoped.com", "www.verified.com", "10.0.0.1", "198.51.100.7"})
 	if err != nil || len(un) != 2 {
 		t.Fatalf("unverified = %v (%v), want app.scoped.com and the address", un, err)
@@ -625,6 +631,7 @@ func TestActiveGate_PlatformPolicy(t *testing.T) {
 func TestActiveGate_ScopeOfAsset(t *testing.T) {
 	f := newGateFixture(t)
 	g := NewActiveGate(f, f, f, f)
+	g.SetManagedService(true)
 	in := f.add(t, "app.scoped.com", asset.AssetTypeSubdomain)
 	out := f.add(t, "elsewhere.example.net", asset.AssetTypeDomain)
 	priv := f.add(t, "10.1.2.3", asset.AssetTypeIPAddress)
@@ -659,6 +666,7 @@ func TestActiveGate_ScopeOfAsset_Repository(t *testing.T) {
 	}
 	f.targets = append(f.targets, ns)
 	g := NewActiveGate(f, f, f, f)
+	g.SetManagedService(true)
 	ctx := context.Background()
 	in := f.add(t, "gitlab.example.com/acme/sub/app", asset.AssetTypeRepository)
 	lookalike := f.add(t, "gitlab.example.com/acme-evil/app", asset.AssetTypeRepository)
@@ -692,6 +700,7 @@ func TestActiveGate_ScopeOfAsset_SharedCodeHost(t *testing.T) {
 		f.targets = append(f.targets, e)
 	}
 	g := NewActiveGate(f, f, f, f)
+	g.SetManagedService(true)
 	ctx := context.Background()
 	cases := map[string]string{
 		"github.com/other/app":     ScopeStatusOutOfScope,
@@ -720,6 +729,7 @@ func TestActiveGate_TierExceeded(t *testing.T) {
 	low.SetMaxTier(scopedom.TierPassive, time.Now())
 	f.targets = append(f.targets, low)
 	g := NewActiveGate(f, f, f, f)
+	g.SetManagedService(true)
 	ctx := context.Background()
 	targets := []string{"app.low.example", "app.scoped.com", "www.seeded.com", "www.verified.com", "nothing.example", "10.0.0.5"}
 
@@ -766,6 +776,7 @@ func TestActiveGate_TierExceeded(t *testing.T) {
 func TestActiveGate_AssetTargets(t *testing.T) {
 	f := newGateFixture(t)
 	g := NewActiveGate(f, f, f, f)
+	g.SetManagedService(true)
 	a := f.add(t, "app.scoped.com", asset.AssetTypeSubdomain)
 	a.SetTenantID(f.tenant)
 	ip := f.add(t, "198.51.100.7", asset.AssetTypeIPAddress)
@@ -801,6 +812,7 @@ func TestActiveGate_AssetTargets(t *testing.T) {
 func TestActiveGate_UncoveredTargets(t *testing.T) {
 	f := newGateFixture(t)
 	g := NewActiveGate(f, f, f, f)
+	g.SetManagedService(true)
 	ctx := context.Background()
 	targets := []string{"app.scoped.com", "198.51.100.7", "victim.example.org", "10.0.0.5", "203.0.113.9"}
 
@@ -842,6 +854,7 @@ func TestActiveGate_TierCeilingsFollowTheMode(t *testing.T) {
 	low.SetMaxTier(scopedom.TierPassive, time.Now())
 	f.targets = append(f.targets, low)
 	g := NewActiveGate(f, f, f, f)
+	g.SetManagedService(true)
 	ctx := context.Background()
 	targets := []string{"app.low.example", "app.scoped.com"}
 
@@ -884,6 +897,7 @@ func TestActiveGate_ConstraintRefused(t *testing.T) {
 	// them is not narrowed to the web ports.
 	f.resolves = map[string][]string{"app.scoped.com": {"198.51.100.7"}, "api.limited.example": {"198.51.100.8"}}
 	g := NewActiveGate(f, f, f, f)
+	g.SetManagedService(true)
 	g.SetUnclassified(nil, f)
 	ctx := context.Background()
 	targets := []string{"api.limited.example:8443", "https://shop.limited.example/api/v1", "app.scoped.com", "10.0.0.5"}
@@ -937,6 +951,7 @@ func TestActiveGate_StatementLimits(t *testing.T) {
 	}
 	f.targets = append(f.targets, svc, path)
 	g := NewActiveGate(f, f, f, f)
+	g.SetManagedService(true)
 	ctx := context.Background()
 	targets := []string{"api.limited.example:8443", "https://shop.limited.example/api/v1", "app.scoped.com"}
 
@@ -977,6 +992,7 @@ func TestActiveGate_StatementLimits(t *testing.T) {
 func TestActiveGate_PendingNeedsAnEntryInEffect(t *testing.T) {
 	f := newGateFixture(t)
 	g := NewActiveGate(f, f, f, f)
+	g.SetManagedService(true)
 	now := time.Now()
 	oneOff, err := scopedom.NewTarget(f.tenant, scopedom.TargetTypeDomain, "once.example.net", "", "")
 	if err != nil {
@@ -1025,6 +1041,7 @@ func TestActiveGate_PendingNeedsAnEntryInEffect(t *testing.T) {
 	// Another tenant's entry never lifts this tenant's pending record.
 	f2 := newGateFixture(t)
 	g2 := NewActiveGate(f2, f2, f2, f2)
+	g2.SetManagedService(true)
 	foreign, err := scopedom.NewTarget(shared.NewID(), scopedom.TargetTypeDomain, "*.theirs.example", "", "")
 	if err != nil {
 		t.Fatal(err)

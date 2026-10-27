@@ -11,6 +11,8 @@ import { DetailStat, DetailStatGrid } from '@/features/shared/components/detail-
 import { ListSearch } from '@/features/shared/components/list-search'
 import { cn } from '@/lib/utils'
 
+import { ConfirmOwnershipAction } from './confirm-ownership-action'
+
 import {
   needsAttention,
   skippedTotal,
@@ -129,6 +131,11 @@ function SkipGroupRow({
   }, [group.targets, query])
   const more = group.count - group.targets.length
   const typed = onRemove && removable ? group.targets.filter(removable) : []
+  // Names a person can confirm as the organization's in one step.
+  const confirmable =
+    group.reason === 'ownership_unconfirmed' || group.reason === 'wildcard_only'
+      ? group.targets
+      : []
 
   return (
     <li data-reason={group.reason} data-tone={group.tone}>
@@ -193,6 +200,7 @@ function SkipGroupRow({
                 )}
               </>
             ))}
+          {confirmable.length > 0 && <ConfirmOwnershipAction names={confirmable} />}
           {typed.length > 0 && onRemove && (
             <Button type="button" variant="outline" size="sm" onClick={() => onRemove(typed)}>
               {t('scans.targetOutcome.removeTyped', undefined, { count: typed.length })}

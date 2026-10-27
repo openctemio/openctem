@@ -26,7 +26,7 @@ targets (the assets are named for the editor, as on create);
 `asset_group_ids` replaces the groups (`[]` = none). The new targets pass the
 checks a new scan's pass, as the editor: target validation (no internal or
 loopback address outside a scan zone), the editor's act scope, ownership for
-active scanning, intrusive proof and the scope tier ceiling; a group must be
+active scanning and the scope tier ceiling; a group must be
 the organization's (another organization's group is not found). A scan must
 keep a target or a group. Editing also needs the editor's act scope to cover
 the scan's current targets. The CIDR mode is kept (an edit never switches a
@@ -173,7 +173,71 @@ that it resolves (RFC-088 A5; `scan.Service.DropStaleNames`):
   filtered resolution reports it, and the scope join never confirms it. A
   run with the filter off proves nothing and changes no mark. A name that
   stopped resolving at all is marked too; it has nothing to probe, and the
-  mark clears when it resolves again.
+  mark clears when it resolves again. A registrable domain (`example.com`)
+  is never marked, and a mark it has is cleared and ignored by the gate: a
+  wildcard record never answers for the name it sits under (RFC 4592), so
+  an apex the filter left out either has no address or shares one with its
+  own wildcard.
+- **Passive runs.** A run whose every probe is passive (the scan's
+  intensity is passive, its single scanner is passive, or every workflow
+  step is passive) puts its targets through the passive gate at run start
+  (`runsPassiveOnly`, `stepsPassiveOnly`, `PassiveOnly`): names nobody
+  confirmed yet and wildcard-only names are looked up; rejected names,
+  scope exclusions, the deny list and names outside the organization's
+  scope are still refused. The targets are the seeds of every step and a
+  step does not gate its seeds again, so an active gate here dropped names
+  a passive workflow was allowed to resolve.
+
+## Where ownership confirmation applies
+
+Ownership confirmation of discovered assets and the wildcard-only
+restriction apply **only when `MANAGED_SERVICE` is true and the job runs
+on platform (shared) sensors**: platform sensors send packets from the
+platform's own addresses, so what they probe must be the tenant's. On the
+tenant's own sensors (any install) and on a self-hosted install (any
+sensor) the tenant's scope entries are the authority: a discovered or
+unclassified asset is fully authorized (like `unclassified_scans: full`,
+never `low_impact`) and a wildcard-only name an active scope entry covers
+is scanned. A wildcard-only name no entry covers stays passive everywhere.
+The organization's own choice still holds there: `unclassified_scans: off`,
+or the Strict scan approval mode, keeps every unclassified asset passive on
+every placement. Everywhere: a rejected asset ("not ours"), a scope exclusion, the platform
+deny list and the guardrails (RFC-054 §16.2) still refuse.
+
+The decision is per job, made where the job is checked, as an
+`attribution.Placement` carried in the context to the ownership gate
+(`easm.ActiveGate`, which knows `MANAGED_SERVICE`). A check that does not
+know the placement is judged as a platform job on the hosted service (fail
+closed):
+
+| Path | Placement |
+|---|---|
+| scan create, update, clone, import, quick scan, scope-wait start | predicted from the scan (`placementFor`): tenant preference, run on tenant runner and asset groups are tenant; `platform` is platform; `auto` is tenant while a tenant sensor of the tool is available or busy, or the tenant may not use shared sensors, else platform |
+| run start (`resolveScanTargets`), workflow scans | the same prediction (a workflow: platform when any step's tool has no tenant sensor) |
+| `POST /scan-workflows/runs` | any step that would go to platform sensors |
+| hop router (derived targets of a follow-on stage) | the run's recorded routing, else the step's routing |
+| dry run, `POST /scope/check`, quick preview | the request's sensor preference, as above |
+| coverage orchestrator and web-verify scans | `auto`, as above |
+| `POST /commands`, validate and retest commands, Tenable connector scans and coverage | tenant (they run on the organization's own sensors) |
+| claim-time re-check | the sensor: a job queued for platform sensors, or claimed by a shared sensor, is a platform job |
+
+A prediction that sends a job to a tenant sensor which later runs on a
+platform sensor is corrected at the claim, where the platform sensor's
+re-check applies confirmation and narrows the job.
+
+On the hosted service a person confirms the names of a skipped group in one
+step: **Confirm ownership** in the group sends
+`POST /easm/candidates/decisions` with `state: confirmed` and
+`asset_names` (the listed names; assets of the caller's own organization
+only, inside the caller's data scope, at most 200 with `asset_ids`). It is
+the same decision as confirming one asset: same permission (`assets:write`),
+same scope-entry rule, one audit event per asset
+(`asset.attribution_decided`), and a name that is not the organization's or
+is outside the data scope is reported in `not_found`.
+
+A derived name the hop router keeps passive because it resolves only
+through a wildcard record is skipped with its own lane reason,
+`wildcard_only` (the run's stage lanes), not `unconfirmed`.
 
 ## Skipped targets
 
@@ -192,6 +256,7 @@ run record):
 | `excluded` | info | a scope exclusion rule |
 | `archived`, `incompatible_type` | info | asset-group members (count only) |
 | `out_of_scope` | warning | the caller's act scope, or no scope entry |
+| `wildcard_only` | info | the target gate: the name resolves only through a wildcard record (active runs only) |
 | `ownership_unconfirmed`, `tier_exceeded`, `internal_outside_zones` | warning | the target gate |
 | `outside_zones`, `partly_covered`, `outside_selected_zone`, `deny_list`, `zone_no_sensor`, `sensor_policy` | warning | zone routing and planning |
 | `invalid` | warning | scan creation's target validation |
