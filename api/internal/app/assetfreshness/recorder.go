@@ -42,7 +42,7 @@ func resolvedNames(obs []freshdom.Observation, assets []*assetdom.Asset) []share
 			proof[o.AssetID] = true
 		}
 	}
-	var ids []shared.ID
+	ids := make([]shared.ID, 0, len(assets))
 	for _, a := range assets {
 		if a == nil || !proof[a.ID()] || (a.Type() != assetdom.AssetTypeDomain && a.Type() != assetdom.AssetTypeSubdomain) {
 			continue
