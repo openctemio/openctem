@@ -93,6 +93,7 @@ make dev
 | `make migrate-down` | Roll back the most recently applied migration |
 | `make migration-new name=<name>` | Create a migration pair with a UTC timestamp version |
 | `make migration-renumber` | Give this branch's clashing or sequential migrations new timestamp versions, staged |
+| `make migrations-released` | Regenerate `migrations/released.json` (the migrations of each release that shipped golang-migrate, for the takeover) from the git tags |
 | `make migrate-status` | Highest applied version and the pending migrations |
 | `make migrate-force version=<v>` | Clear the dirty flag and record `v` as applied (`-1`: only clear it; dirty-migration recovery only) |
 

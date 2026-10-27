@@ -75,9 +75,14 @@ Nobody picks a version by hand.
   touches a test.
 - Legacy sequential numbers (six digits) are still accepted, with a warning,
   while older pull requests land, but only above the base's highest legacy
-  number: when the runner first takes over a database the earlier tool
-  (golang-migrate) migrated, it records every legacy-numbered file up to that
-  tool's version as applied.
+  number and only until the first timestamp version merges. After that, CI
+  fails any added six-digit version: renumber with `make -C api
+  migration-renumber`.
+- `migrations/released.json` lists the migrations of every release that still
+  shipped golang-migrate; the runner's first run on such a database records
+  exactly the matching release's files and runs the rest. Regenerate it with
+  `make -C api migrations-released` after tagging such a release (CI checks it
+  against the tags); never edit it by hand.
 
 ### Indexes
 
@@ -366,9 +371,11 @@ make migrate-up
 - another migration tool rewrote `schema_migrations` after the runner took the
   database over: check what that tool applied, record each applied migration
   with `force`, then `up`;
-- the earlier tool (golang-migrate) migrated the database past a timestamp
-  version: it may have skipped some, so check each listed version in the
-  schema, record the applied ones with `force`, then `up` applies the rest.
+- the earlier tool (golang-migrate) migrated the database and no release in
+  `released.json` ends at its version (a development build), or it left the
+  database dirty: it may have skipped migrations, so list every applied
+  version (checked in the schema) one per line in a file and pass it with
+  `-assume-applied FILE` to `up` or `force`; every other file runs.
 
 ### Complete Reset (Development)
 

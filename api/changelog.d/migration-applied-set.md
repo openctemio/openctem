@@ -20,3 +20,15 @@
 - `deploy/postgres/least-privilege-roles.sql` creates `schema_migrations_applied` ahead of the first migration and
   gives the app role read-only access, like `schema_migrations`: a compromised API cannot make the next migration run
   skip or repeat a migration. Re-run the roles script on upgrade, as the compose stack and the deployment kit do.
+- Installs that never re-run the roles script (binary, all-in-one) are covered too: every migration run revokes
+  INSERT, UPDATE, DELETE and TRUNCATE on both tracking tables from every role but their owner, and warns when its role
+  cannot. Re-running the roles script remains the documented step on upgrade.
+- The runner names the tracking tables with the schema it locked, so a migration that changes `search_path` cannot
+  redirect its records, and warns when an applied migration was recorded under another name than the shipped file.
+- The first run on a database golang-migrate migrated records exactly the migrations of the release it was at
+  (`api/migrations/released.json`, generated from the release tags and checked in CI) and runs every other one, so a
+  migration merged with a lower number after that release was cut (003420 after v0.15.4) runs instead of being marked
+  applied. A database no release matches (a development build, or one golang-migrate left dirty) is refused until an
+  operator lists the applied versions with `-assume-applied FILE`; `force -1` no longer clears such a database.
+- The API refuses to start when a newer release's database lacks a migration this binary ships, and when its role
+  may not read the migration state (it no longer skips the check).

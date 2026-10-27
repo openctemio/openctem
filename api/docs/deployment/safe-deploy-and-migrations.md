@@ -213,12 +213,13 @@ passed (`-path … -database … up`).
   merged after a higher-numbered one is applied, not skipped.
 - **First run after the upgrade (takeover):** a database the earlier tool
   (golang-migrate) migrated has only `schema_migrations` at version V. The
-  runner records every legacy-numbered migration up to V as applied (that tool
-  applied all of them) and continues. Nothing to do. If that tool had migrated
-  the database past a timestamp version (only possible on a development build
-  after this change), the runner refuses and lists those versions, because
-  the earlier tool may have skipped some: check each in the schema, record the
-  applied ones with `force <version>`, then run `up`.
+  runner records as applied exactly the migrations of the release whose last
+  migration is V (`migrations/released.json`, shipped next to the files) and
+  runs every other one, including a migration merged later with a number
+  below V. Nothing to do on a release install. A database no release matches
+  (one a development build migrated, or one left dirty) is refused: check the
+  schema, list every applied version one per line in a file, and run
+  `openctem-migrate -assume-applied FILE … up`.
 - From then on `schema_migrations` holds a fence version that no file has, so
   an **older migrations image refuses the database** ("no migration found for
   version 9223372036854775807") instead of migrating it. That is the same as
@@ -266,6 +267,12 @@ Recover:
    > `force` never runs SQL: it clears the dirty flag and, for `force <V>`,
    > records V as applied. Record a migration only when its changes are really
    > in the database.
+   >
+   > If golang-migrate (an older release) left the database dirty, which
+   > migrations below V it applied is unknown: `force` refuses until you list
+   > them. Check the schema, write every applied version one per line to a
+   > file (add V if it is complete) and run
+   > `openctem-migrate -assume-applied FILE … force -1`.
 
 `scripts/migrate.sh force <V>` wraps the same command for a local `.env` setup.
 

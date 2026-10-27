@@ -7,7 +7,9 @@
 // applied version is. So a migration merged after a higher-numbered one is
 // applied on the next run instead of being skipped.
 //
-// Two tables hold the state, in the connection's current schema:
+// Two tables hold the state, in the connection's current schema when a run
+// takes its lock (every statement of the run names that schema, so a
+// migration that changes search_path cannot redirect the records):
 //
 //   - schema_migrations_applied (version, name, applied_at): one row per
 //     applied migration. The truth.
@@ -17,22 +19,34 @@
 //     image refuses both, so it can never again skip a migration here.
 //
 // A database the earlier tool migrated has only schema_migrations, at its
-// highest version V. On the first run ("takeover") every legacy-numbered
-// file up to V is recorded as applied: that tool applied every version above
-// the current one, and the legacy numbers only grew. A timestamp version up
-// to V is undecidable (it skips one merged after a higher one) and is
-// refused for an operator to settle with `force`.
+// highest version V. On the first run ("takeover") the files of the release
+// whose highest version is V (released.json) are recorded as applied; every
+// other file, one merged below V after that release was cut included, stays
+// pending and runs. A database no release matches (a development build, or
+// one left dirty) is refused until an operator lists what is applied
+// (-assume-applied).
+//
+// Only the tables' owner may write them: each run revokes INSERT, UPDATE,
+// DELETE and TRUNCATE on both from every other role (PUBLIC included), so a
+// role that inherited write access through default privileges (an install
+// whose roles script ran before these tables existed) cannot make a later
+// run skip or repeat a migration.
 package migrate
 
 import (
+	"bufio"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/lib/pq"
 )
 
 // Migration is one versioned migration of a directory.
@@ -106,10 +120,23 @@ func Load(dir string) ([]Migration, error) {
 }
 
 // ErrDirty: a migration failed midway; an operator has to look at the
-// database and run `force` before anything else runs.
-type ErrDirty struct{ Version int64 }
+// database and run `force` before anything else runs. EarlierTool: the
+// earlier tool left it dirty, so which migrations below the failed one it
+// applied is unknown and force needs the operator's list (-assume-applied).
+type ErrDirty struct {
+	Version     int64
+	EarlierTool bool
+}
 
 func (e ErrDirty) Error() string {
+	if e.EarlierTool {
+		return fmt.Sprintf("migration %d failed midway under the earlier migration tool (golang-migrate) and the "+
+			"database is marked dirty; that tool records only its highest version, so which migrations below %d "+
+			"it applied cannot be known. Check the schema, list every applied version (one per line) in a file, "+
+			"and run `openctem-migrate -assume-applied FILE force -1` (add %d to the list if it is complete; "+
+			"otherwise undo its partial changes so up runs it again). Nothing was changed",
+			e.Version, e.Version, e.Version)
+	}
 	return fmt.Sprintf("migration %d failed midway and the database is marked dirty: check what it changed, "+
 		"then run `openctem-migrate force %d` if it is complete, or undo its partial changes and run "+
 		"`openctem-migrate force -1` to retry it; nothing was changed", e.Version, e.Version)
@@ -150,19 +177,103 @@ func (e ErrTrackerMismatch) Error() string {
 		"`openctem-migrate force VERSION` (force -1 if none), then run up; nothing was changed", e.Tracker)
 }
 
-// ErrUndecidedTakeover: the earlier tool migrated this database past
-// timestamp versions, and it skips a version merged after a higher one
-// without a trace, so which of them it applied cannot be known.
+// ErrUndecidedTakeover: the earlier tool migrated this database and which
+// migrations it applied cannot be known: its version is not the highest of
+// exactly one release in released.json (a development build, or releases
+// that end at one version with different files), or it left the database
+// dirty. It records only its highest version and skips a migration merged
+// below it, so recording "everything up to it" could mark a migration
+// applied that never ran.
 type ErrUndecidedTakeover struct {
-	Tracker  int64
-	Versions []int64
+	Tracker   int64
+	Dirty     bool
+	Ambiguous []string // release tags that end at Tracker with different files
 }
 
 func (e ErrUndecidedTakeover) Error() string {
-	return fmt.Sprintf("the earlier migration tool migrated this database to %d, past %d timestamp-versioned "+
-		"migrations it may have skipped (%v): check each in the schema and record the applied ones with "+
-		"`openctem-migrate force VERSION`; up then applies the rest. Nothing was changed",
-		e.Tracker, len(e.Versions), e.Versions)
+	why := fmt.Sprintf("version %d is not the last migration of any release that shipped that tool (%s)", e.Tracker, ReleasedFile)
+	switch {
+	case e.Dirty:
+		why = fmt.Sprintf("it left the database dirty at %d", e.Tracker)
+	case len(e.Ambiguous) > 0:
+		why = fmt.Sprintf("releases with different migrations end at version %d (%s)", e.Tracker, strings.Join(e.Ambiguous, ", "))
+	}
+	return fmt.Sprintf("the earlier migration tool (golang-migrate) migrated this database, and which migrations it "+
+		"applied cannot be known: %s. That tool records only its highest version and skips a migration merged "+
+		"below it. Check the schema, list every applied version (one per line) in a file, and pass it with "+
+		"`openctem-migrate -assume-applied FILE up` (or force); every other shipped migration then runs. "+
+		"Nothing was changed", why)
+}
+
+// ReleasedFile is the file in the migrations directory that lists the
+// migration versions of every release that shipped the earlier tool
+// (generated by scripts/released-migrations.sh).
+const ReleasedFile = "released.json"
+
+// LoadReleases reads dir/released.json. A missing file reads as no
+// releases: a database the earlier tool migrated is then taken over only
+// with an operator's list.
+func LoadReleases(dir string) ([]Release, error) {
+	body, err := os.ReadFile(filepath.Join(dir, ReleasedFile))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", ReleasedFile, err)
+	}
+	var doc struct {
+		Releases []Release `json:"releases"`
+	}
+	if err := json.Unmarshal(body, &doc); err != nil {
+		return nil, fmt.Errorf("parse %s: %w", ReleasedFile, err)
+	}
+	return doc.Releases, nil
+}
+
+// ParseAssumeApplied reads an operator's list of applied versions (one per
+// line; blank lines and # comments ignored; a file name like
+// 003420_x.up.sql counts as its version). Every version must be shipped in
+// migs: a typo must not silently leave a migration to run again.
+func ParseAssumeApplied(r io.Reader, migs []Migration) (map[int64]bool, error) {
+	shipped := make(map[int64]bool, len(migs))
+	for _, m := range migs {
+		shipped[m.Version] = true
+	}
+	out := map[int64]bool{}
+	sc := bufio.NewScanner(r)
+	for n := 1; sc.Scan(); n++ {
+		line := strings.TrimSpace(sc.Text())
+		if i := strings.IndexByte(line, '#'); i >= 0 {
+			line = strings.TrimSpace(line[:i])
+		}
+		if line == "" {
+			continue
+		}
+		digits := line
+		if i := strings.IndexByte(line, '_'); i > 0 {
+			digits = line[:i]
+		}
+		v, err := strconv.ParseInt(digits, 10, 64)
+		if err != nil || v <= 0 {
+			return nil, fmt.Errorf("assumed-applied list, line %d: %q is not a migration version", n, line)
+		}
+		if !shipped[v] {
+			return nil, fmt.Errorf("assumed-applied list, line %d: no migration with version %d in this directory", n, v)
+		}
+		out[v] = true
+	}
+	if err := sc.Err(); err != nil {
+		return nil, fmt.Errorf("read the assumed-applied list: %w", err)
+	}
+	return out, nil
+}
+
+// IsPermissionDenied reports whether err is PostgreSQL's
+// insufficient_privilege (42501): the connecting role may not read or write
+// what it needs, which is a misconfiguration, never a reason to skip a check.
+func IsPermissionDenied(err error) bool {
+	var pqErr *pq.Error
+	return errors.As(err, &pqErr) && pqErr.Code == "42501"
 }
 
 // IsRefusal reports whether err is one of the refusals above (the database

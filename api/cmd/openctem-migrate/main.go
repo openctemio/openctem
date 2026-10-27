@@ -52,6 +52,12 @@ Commands:
   version     print the highest applied version (and "dirty" after a failed migration)
   status      print the applied count and every pending migration
 
+A database the earlier tool (golang-migrate) migrated is taken over on the first
+up: the migrations of the release whose last migration is its version
+(released.json in DIR) are recorded as applied, and every other one runs. When
+no release matches (a development build, or a database left dirty), list the
+applied versions one per line in a file and pass it with -assume-applied.
+
 Flags:
 `
 
@@ -66,6 +72,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	source := fs.String("source", "", "file://DIR, the same as -path")
 	dbURL := fs.String("database", "", "postgres://user@host:port/db?sslmode=...")
 	lockTimeout := fs.Int("lock-timeout", 15, "seconds to wait for another run's migration lock")
+	assumeFile := fs.String("assume-applied", "", "file listing the versions the earlier tool applied (one per line), "+
+		"to take over a database no release in released.json matches")
 	fs.Bool("verbose", false, "accepted for compatibility; progress is always printed")
 	showVersion := fs.Bool("version", false, "print the version of this tool")
 	if err := fs.Parse(args); err != nil {
@@ -98,6 +106,21 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if len(migs) == 0 {
 		return errf("no migrations in %s", dir)
 	}
+	tk := migrate.Takeover{}
+	if tk.Releases, err = migrate.LoadReleases(dir); err != nil {
+		return errf("%v", err)
+	}
+	if *assumeFile != "" {
+		f, err := os.Open(*assumeFile)
+		if err != nil {
+			return errf("open the assumed-applied list: %v", err)
+		}
+		tk.AssumeApplied, err = migrate.ParseAssumeApplied(f, migs)
+		_ = f.Close()
+		if err != nil {
+			return errf("%v", err)
+		}
+	}
 	dsn, err := cleanURL(*dbURL)
 	if err != nil {
 		return errf("%v", err)
@@ -112,6 +135,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	r := &migrate.Runner{
 		DB:          db,
 		Migrations:  migs,
+		Takeover:    tk,
 		LockTimeout: time.Duration(*lockTimeout) * time.Second,
 		Logf:        func(f string, a ...any) { _, _ = fmt.Fprintf(stdout, f+"\n", a...) },
 	}
@@ -159,7 +183,7 @@ func command(ctx context.Context, r *migrate.Runner, cmd string, rest []string, 
 
 // report prints the version (and with status, the pending migrations).
 func report(ctx context.Context, r *migrate.Runner, status bool, stdout io.Writer, errf func(string, ...any) int) int {
-	rep, err := migrate.Inspect(ctx, r.DB, r.Migrations)
+	rep, err := migrate.Inspect(ctx, r.DB, r.Migrations, r.Takeover)
 	if err != nil && !migrate.IsRefusal(err) {
 		return errf("%v", err)
 	}

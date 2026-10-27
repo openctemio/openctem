@@ -12,12 +12,11 @@
 #   2. load representative rows (api/scripts/upgrade-test/seed.sql);
 #   3. apply THIS tree's migrations with this tree's openctem-migrate, re-run
 #      the roles script;
-#   0. (before any database work) refuse a legacy-numbered migration of this
-#      tree at or below the previous release's highest that the release does
-#      not have: when openctem-migrate takes over a database the earlier tool
-#      migrated, it records every legacy-numbered file up to that tool's
-#      version as applied (docs/rfcs/RFC-130-migration-applied-set.md), so
-#      such a file would never run. Timestamp versions are exempt;
+#   0. (before any database work) check that api/migrations/released.json
+#      lists the previous release with exactly the migrations it shipped,
+#      when that release still used the earlier tool: openctem-migrate's
+#      takeover records those files as applied and runs every other one
+#      (docs/rfcs/RFC-130-migration-applied-set.md);
 #   4. assert: nothing is pending, schema_migrations holds the runner's fence
 #      and is not dirty, no key table lost a row, the upgraded schema equals a
 #      fresh install of this tree (.github/scripts/schema-fingerprint.sql),
@@ -108,23 +107,18 @@ new_max="$(max_version api/migrations)"
 echo "   its migrations end at $prev_max; this tree's end at $new_max"
 [ "$new_max" -ge "$prev_max" ] || fail "this tree's highest migration ($new_max) is below $PREV's ($prev_max)"
 
-# 0. Legacy migration order. Every legacy-numbered (up to 13 digits) version
-# of this tree at or below the previous release's highest must be one that
-# release already has; anything else would be recorded as applied, never run,
-# when openctem-migrate takes over an install of that release. Compared by
-# version, not file name: a renamed released migration never runs again anyway.
-versions() { find "$1" -maxdepth 1 -name '*.up.sql' -printf '%f\n' | sed 's/_.*//; s/^0*//; s/^$/0/' | awk 'length($0) < 14' | sort -n -u; }
-versions "$prev_migrations" >"$work/prev-versions"
-skipped=""
-while IFS= read -r v; do
-  if [ "$v" -le "$prev_max" ] && ! grep -qxF "$v" "$work/prev-versions"; then
-    skipped="$skipped $(find api/migrations -maxdepth 1 -name "*.up.sql" -printf '%f\n' | awk -F_ -v v="$v" '$1 + 0 == v' | head -n 1)"
-  fi
-done < <(versions api/migrations)
-if [ -n "$skipped" ]; then
-  fail "legacy-numbered at or below $PREV's highest migration ($prev_max) but not in $PREV, so an upgrade would record them as applied without running them:$skipped (give them timestamp versions: make -C api migration-renumber)"
+# 0. Takeover data. A release that still shipped the earlier tool
+# (golang-migrate) keeps only its highest version; openctem-migrate records
+# as applied exactly the files api/migrations/released.json lists for the
+# release ending there, and runs every other one (a legacy-numbered file
+# merged below that version after the release was cut included). So the
+# previous release must be listed, with exactly the versions it shipped.
+if ! git cat-file -e "$PREV:api/cmd/openctem-migrate" 2>/dev/null; then
+  want="$(find "$prev_migrations" -maxdepth 1 -name '*.up.sql' -printf '%f\n' | sed -n 's/^\([0-9]\{1,13\}\)_.*/\1/p' | sed 's/^0*//' | sort -n | paste -sd, -)"
+  grep -F "\"$PREV\"" api/migrations/released.json | grep -qF "\"versions\": [$want]" \
+    || fail "api/migrations/released.json does not list $PREV with the migrations it shipped: regenerate it (make -C api migrations-released)"
+  echo "   released.json lists $PREV's migrations for the takeover"
 fi
-echo "   no legacy-numbered migration of this tree would be skipped on upgrade"
 if [ "$CHECK_ORDER_ONLY" = true ]; then exit 0; fi
 
 if [ "$(psql_super -At -c "SELECT to_regclass('public.schema_migrations') IS NOT NULL")" = t ]; then

@@ -51,11 +51,18 @@ half-applied migration.
    keeps a snapshot open, and `CREATE INDEX CONCURRENTLY` in the holder's
    migration would wait for it forever.
 2. Create the two tables when missing (the roles script creates them ahead,
-   owned by the migrator).
+   owned by the migrator), in the schema current when the lock was taken;
+   every statement of the run names that schema, so a migration that changes
+   `search_path` cannot redirect the records. Then revoke INSERT, UPDATE,
+   DELETE and TRUNCATE on both from every role but their owner (PUBLIC
+   included): an install that never re-ran the roles script after the tables
+   appeared would otherwise have given the app role full DML through the
+   migrator's default privileges.
 3. Refuse, changing nothing, on: a dirty database; a database a newer release
    migrated (an applied version above every shipped one); a database older
    than the migration baseline; a tracker another tool rewrote after the
-   takeover; an undecidable takeover (2.3).
+   takeover; an undecidable takeover (2.3). An applied migration recorded
+   under another name than the shipped file is reported as a warning.
 4. For each pending migration, lowest version first: mark it dirty, run the
    file as one simple-protocol batch (one implicit transaction unless the file
    manages its own, exactly as before), then in one transaction record it and
@@ -64,23 +71,44 @@ half-applied migration.
 `down N` rolls back the N most recently applied migrations (by when they were
 applied, then by version). `force V` clears the dirty flag and records V
 without running it; `force -1` only clears the flag, so `up` retries the failed
-migration. `status` lists what is pending.
+migration. On a database the earlier tool migrated, `force` first takes it
+over as `up` would (2.3); on one that tool left dirty no release matches, so
+`force` refuses without the operator's list (`-assume-applied`): clearing the
+flag must neither forget nor invent which migrations below the failed one ran.
+`status` lists what is pending.
 
 ### 2.3 Takeover of a database the earlier tool migrated
 
-Such a database has only `schema_migrations`, at its highest version V. The
-earlier tool applied every file above the version it was at, and the legacy
-sequential numbers only ever grew (CI refused a lower one), so every
-legacy-numbered file up to V was applied: they are recorded on the first run.
-A timestamp version up to V cannot be decided (the earlier tool may have
-skipped it), so the runner refuses and lists them; an operator records the
-applied ones with `force` and `up` applies the rest. Only a database that the
-earlier tool migrated past a timestamp version can hit this: our own live
-environment, if it keeps the earlier tool after timestamp migrations merge.
+Such a database has only `schema_migrations`, at its highest version V. "Every
+file up to V" is not what it applied: a release branch can carry a migration
+numbered above one merged to develop later (v0.15.4 ships 003428; 003420
+merged to develop afterwards), and the earlier tool skips the lower one
+silently. So the runner ships `api/migrations/released.json`: for every
+release tag that still shipped the earlier tool, exactly the migration
+versions it contained (tags with the same set grouped), generated from the
+tags by `scripts/released-migrations.sh` and checked in CI
+(`released-migrations.sh --check`; the upgrade test also checks the previous
+release is listed with its own files).
 
-To keep the takeover rule true, a legacy number must still be above the base's
-highest legacy number when it merges (CI, and the upgrade test against the last
-release), until no open pull request carries one.
+On the first run the runner records the files of the one release whose highest
+version is V; every other shipped file, 003420 included, stays pending and
+runs. It refuses, changing nothing, when no release ends at V (a database a
+development build migrated: our own live environment), when releases with
+different files end at V, or when the earlier tool left the database dirty.
+The operator then lists the applied versions, checked against the schema, one
+per line in a file, and passes it with `-assume-applied FILE` to `up` or
+`force`; every listed version must be shipped (a typo is refused), and every
+other file runs. At V equal to the migration baseline, the baseline alone is
+recorded.
+
+A release with the runner keeps the fence, never a bare version, so new tags
+are not listed. A release tagged while it still ships the earlier tool (a
+hotfix of an older line) makes the check fail until `make -C api
+migrations-released` is committed.
+
+Legacy numbers still added must be above the base's highest legacy number, and
+none may be added once the base has a timestamp version (CI): six-digit
+numbers are kept only for pull requests opened before this change.
 
 ### 2.4 Order independence
 
@@ -98,9 +126,9 @@ same way.
 
 `check-migration-versions.sh`: versions are unique; an added migration has a
 valid timestamp version (a legacy number is a warning, and an error at or below
-the base's highest legacy number); no merged up file is changed, removed or
+the base's highest legacy number or once the base has a timestamp version); no merged up file is changed, removed or
 renamed (a fix is a new migration; a baseline that replaces the chain is the
-one exception). Pull request CI gives a clashing migration a new timestamp in
+one exception); `released.json` matches the release tags. Pull request CI gives a clashing migration a new timestamp in
 its runner only; `make -C api migration-renumber` does it for the branch.
 
 ## 3. Threat model
@@ -108,9 +136,13 @@ its runner only; `make -C api migration-renumber` does it for the branch.
 | Threat | Control |
 |---|---|
 | A compromised API process rewrites the tracking tables so the next run skips a security migration, or re-runs a destructive one | The app role has SELECT only on both tables (`least-privilege-roles.sql` creates them ahead, owned by the migrator, and revokes INSERT, UPDATE, DELETE; its verification and `least_privilege_test.go` fail otherwise) |
+| The takeover marks a migration applied that never ran (one merged below a release's last migration after the release) | The takeover records only the files of the release that ends at the database's version (`released.json`, CI-checked against the tags); no match, an ambiguous match or a dirty database is refused until an operator lists the applied versions (DB tests) |
 | An older migrations image migrates a taken-over database and skips silently | The fence: the earlier tool refuses a version that has no file |
 | Two runners (replicas, a retried job, an old image) migrate at once | One advisory lock key shared with the earlier tool; concurrent-runner test |
 | A half-applied migration is built on | Dirty state refuses every command but `force`; the server refuses to start |
+| An install that never re-ran the roles script gives the app role write access to the tracking tables through default privileges | Every run revokes INSERT, UPDATE, DELETE and TRUNCATE on both tables from every role but the owner (DB test); it warns when its role cannot |
+| A migration changes `search_path` and the run records into another schema's tables | Every statement names the schema captured with the lock (DB test) |
+| The API starts on a newer release's database that lacks a migration this binary ships, or with a role that cannot read the tracker | The startup check computes the pending list even on a newer database and refuses on any pending migration and on a permission error |
 | The database URL leaks the password | Deployments pass it in `PGPASSWORD`; the runner never prints the URL (tested) |
 | A merged migration is edited after databases applied it | CI refuses a changed, removed or renamed merged up file |
 
@@ -133,5 +165,7 @@ with the same arguments as before.
 - Unit and database tests: `internal/migrate/state_test.go`,
   `internal/migrate/runner_test.go` (missing in the middle, idempotence, dirty
   refusal and force, concurrent runners and the lock timeout, takeover from the
-  earlier tool's state, undecidable takeover, down order, refusals),
+  earlier tool's state by release, a migration merged below the release's
+  last one left pending, takeover without a matching release and with an
+  operator's list, down order, refusals),
   `cmd/openctem-migrate/main_test.go`.

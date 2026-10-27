@@ -16,7 +16,9 @@
 #   - a version another open pull request adds (MIGRATION_TAKEN="3402 ...");
 #   - a legacy sequential number at or below the base's highest legacy one
 #     (a takeover of a database the earlier tool migrated would record it as
-#     applied without running it).
+#     applied without running it);
+#   - any legacy sequential number once the base has a timestamp version
+#     (that tool's version may then be a timestamp, above every legacy one).
 # MIGRATION_RENUMBER_LEGACY=1 also moves added migrations that still carry a
 # legacy sequential number (fewer than 14 digits) to a timestamp version.
 #
@@ -78,11 +80,12 @@ done <<<"$added"
 # share, one another open pull request takes, or (legacy mode) a legacy
 # sequential number.
 lowest="$(find "$dir" -maxdepth 1 -type f -name '*.sql' | versions | awk 'NR == 1 {print $1}')"
-used=" " legacy_max=0
+used=" " legacy_max=0 base_has_stamp=0
 while read -r v _ raw; do
   [[ -n "$v" ]] || continue
   used+="$v "
   (( ${#raw} < 14 && v > legacy_max )) && legacy_max=$v
+  (( ${#raw} >= 14 )) && base_has_stamp=1
 done <<<"$base_list"
 taken=" "
 for t in ${MIGRATION_TAKEN:-}; do taken+="$((10#$t)) "; done
@@ -91,7 +94,7 @@ for e in "${own[@]}"; do
   read -r v name raw <<<"$e"
   if ! [[ "$name" == baseline && "$v" == "$lowest" ]] && (( first < 0 )); then
     if [[ "$used" == *" $v "* || "$seen" == *" $v "* || "$taken" == *" $v "* ]] \
-      || { (( ${#raw} < 14 )) && [[ "${MIGRATION_RENUMBER_LEGACY:-}" == 1 ]] || (( ${#raw} < 14 && v <= legacy_max )); }; then
+      || { (( ${#raw} < 14 )) && { [[ "${MIGRATION_RENUMBER_LEGACY:-}" == 1 ]] || (( base_has_stamp || v <= legacy_max )); }; }; then
       first=$i
     fi
   fi
