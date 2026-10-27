@@ -1736,16 +1736,13 @@ func (h *ScopeHandler) CheckScope(w http.ResponseWriter, r *http.Request) {
 		if code == scopedom.RefusalTierExceeds {
 			ref = scopedom.NewTierRefusal(res.Target, rule, scopedom.Tier(min(max(tier, 0), int(scopedom.TierIntrusive))), explain.OneOffDays())
 		}
-		if ref.Message == "" {
+		if ref.Message == "" || (code == scopedom.RefusalProofRequired && res.Reason != "") {
+			// The dry run says why this proof is needed (platform sensors
+			// only, or no sensor of the organization can take the job).
 			ref.Message = res.Reason
 		}
 		item.Code, item.Message, item.Rule, item.Resolved = ref.Code, ref.Message, ref.Rule, res.Resolved
 		item.Fixes = scopedom.FilterFixes(ref.Fixes, has)
-		if code == scopedom.RefusalProofRequired && tier >= int(scopedom.TierIntrusive) {
-			// Intrusive probes need proof on the organization's own sensors
-			// too: "use your own sensor" would not help.
-			item.Fixes = withoutFix(item.Fixes, scopedom.FixUseTenantSensor)
-		}
 		out.Results = append(out.Results, item)
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -1864,14 +1861,4 @@ func (h *ScopeHandler) bulkDeleteItems(
 		FailedIDs:     failedIDs,
 		Errors:        errs,
 	}
-}
-
-func withoutFix(fixes []scopedom.Fix, action string) []scopedom.Fix {
-	out := fixes[:0:0]
-	for _, f := range fixes {
-		if f.Action != action {
-			out = append(out, f)
-		}
-	}
-	return out
 }
