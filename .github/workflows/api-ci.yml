@@ -506,7 +506,7 @@ jobs:
           # the steps read it from job.services.
           - 5432
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U postgres -d app_test"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5

@@ -521,8 +521,8 @@ the reuse covers the full set.
 Every PR is tested twice (on the PR, then in the queue) on a shared pool of
 hosted runners (about 60 concurrent jobs for the organization), and many PRs are
 open at once, so a PR runs only what catches most breakage early and the queue
-runs everything. Self-hosted runners are not used: this is a public repository,
-and a fork PR would run code on the host.
+runs everything. Heavy jobs can move to opt-in self-hosted runners
+("Self-hosted runner (opt-in)" below); fork PRs never run there.
 
 | Tier | Events | API CI | Web CI | All-in-one CI | Web E2E | CodeQL |
 |------|--------|--------|--------|---------------|---------|--------|
@@ -841,9 +841,37 @@ dind host, not on the runner's `localhost`. The DB jobs therefore publish servic
 ports on a random host port and read it from `job.services.<id>.ports` (or
 `docker port`), and use the host `dind` when `runner.environment == 'self-hosted'`,
 `localhost` otherwise. A new job that connects to a container it started must do
-the same, or stay on `ubuntu-latest`. Never mount the host `docker.sock`. The runner
-image must provide what `ubuntu-latest` gives these jobs: `git`, `jq`, `python3`,
-`psql`, `curl`, and the Docker CLI with compose and buildx.
+the same, or stay on `ubuntu-latest`. Never mount the host `docker.sock`.
+
+Rules for anything a selectable job runs:
+
+- **Published ports:** connect to `${{ runner.environment == 'self-hosted' && 'dind' || 'localhost' }}`,
+  never a literal `localhost`/`127.0.0.1`. A port published as `127.0.0.1:PORT`
+  is not reachable from the runner at all; publish on all interfaces of the dind
+  host (it is private to its runner). Talking container to container over a
+  `docker network` (the gateway smoke test) needs no host name.
+- **No bind mounts from the checkout:** `docker run -v "$PWD/x:/y"` mounts a
+  path of the dind container, which does not have the checkout, and the
+  container sees an empty directory. Copy files in instead: a named volume
+  filled with `docker cp` (`api/deploy/gateway/smoke-test.sh`), or a `docker build`
+  (the build context is sent to the daemon). `docker compose config` and builds
+  are fine.
+- **Name the database user:** jobs run as user `runner`, a command inside a
+  container as `root`, so a client without a user logs
+  `FATAL: role "root" does not exist`. Every `pg_isready` health check passes
+  `-U <user> -d <db>`; `psql` gets a URL with the user, or `-U`.
+- **Tools come from setup actions,** not the image: `setup-go`, `setup-node`
+  (also before CodeQL's TypeScript extractor). The runner image provides `git`,
+  `jq`, `python3`, `psql`, `curl`, and the Docker CLI with compose and buildx;
+  anything else (`yq` in the compose render check) is installed by the step
+  when missing, at a version pinned in `.github/tool-pins.tsv`.
+- **Environment:** the runner must not export `APP_*` variables (the base
+  image's `APP_UID` once did): the API refuses unknown variables under its
+  prefixes at start-up, and the config tests check that refusal.
+
+`Web E2E` / `build` (`CI_RUNNER_E2E_BUILD`, else `CI_RUNNER_HEAVY`) only builds
+and saves the images, so it needs nothing from the dind host. The Playwright
+shards stay on GitHub-hosted runners (see above).
 
 ### Workflow security
 
