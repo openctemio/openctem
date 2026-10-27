@@ -241,7 +241,7 @@ describe('Findings columns', () => {
     render(<FindingsPage />)
     await userEvent.click(screen.getByRole('button', { name: /^display: density/i }))
     await userEvent.click(await screen.findByRole('menuitemcheckbox', { name: 'Severity' }))
-    expect(params().get('columns')).toBe('asset,status,slaStatus')
+    expect(params().get('columns')).toBe('status,slaStatus')
     await userEvent.click(screen.getByRole('button', { name: /^display: density/i }))
     await userEvent.click(await screen.findByRole('menuitemcheckbox', { name: 'Severity' }))
     expect(params().has('columns')).toBe(false)
