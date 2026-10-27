@@ -221,6 +221,8 @@ func registerVulnerabilityRoutes(
 	// heavy-read limiter like the findings stats.
 	router.Group("/api/v1/vulnerability-exposures", func(r Router) {
 		pageMW := []Middleware{middleware.RequireAll(permission.VulnerabilitiesRead, permission.FindingsRead), heavyReads.Middleware()}
+		// The list: one row per CVE over the same compiled filter.
+		r.GET("/", h.ListCVEExposures, pageMW...)
 		r.GET("/{vuln_id}", h.GetCVEExposure, pageMW...)
 		r.GET("/{vuln_id}/assets", h.ListCVEExposureAssets, pageMW...)
 	}, tenantMiddlewares...)

@@ -40,7 +40,9 @@ func scopedFindingsCTE(w *filterspec.Where, extra string) string {
 		SELECT findings.id, findings.tenant_id, findings.asset_id, findings.status, findings.priority_class,
 			findings.severity, findings.source, findings.tool_name, findings.component_id, findings.metadata,
 			findings.first_detected_at, findings.last_seen_at, findings.resolved_at,
-			COALESCE(findings.reopen_count, 0) AS reopen_count, findings.last_reopened_at
+			COALESCE(findings.reopen_count, 0) AS reopen_count, findings.last_reopened_at,
+			findings.cve_id, findings.cvss_score, findings.epss_score, findings.is_in_kev, findings.exploit_available,
+			findings.sla_status, findings.sla_deadline, findings.network_port, findings.network_transport, findings.file_path
 		FROM findings WHERE ` + cond + `
 	)`
 }
@@ -437,6 +439,13 @@ func (r *FindingRepository) ListCVEExposureAssets(ctx context.Context, q vulnera
 		COALESCE((ARRAY['P0','P1','P2','P3']::text[])[agg.prio_rank + 1], ''),
 		COALESCE((ARRAY['critical','high','medium','low','info','none']::text[])[agg.sev_rank], ''),
 		agg.last_seen_at,
+		COALESCE(ARRAY(
+			SELECT t FROM (
+				SELECT DISTINCT CASE WHEN s2.network_port IS NOT NULL
+					THEN s2.network_port::text || '/' || COALESCE(s2.network_transport, 'tcp')
+					ELSE NULLIF(LEFT(BTRIM(COALESCE(s2.file_path, '')), 200), '') END AS t
+				FROM scoped s2 WHERE s2.asset_id = agg.asset_id
+			) tt WHERE t IS NOT NULL ORDER BY t LIMIT ` + strconv.Itoa(vulnerability.MaxExposureTargets+1) + `), '{}'),
 		COUNT(*) OVER ()
 	FROM agg
 	JOIN assets a ON a.tenant_id = $` + strconv.Itoa(tenantArg) + ` AND a.id = agg.asset_id
@@ -460,11 +469,16 @@ func (r *FindingRepository) ListCVEExposureAssets(ctx context.Context, q vulnera
 	for rows.Next() {
 		var a vulnerability.CVEExposureAsset
 		var last sql.NullTime
+		var targets pq.StringArray
 		if err := rows.Scan(&a.AssetID, &a.Name, &a.AssetType, &a.Criticality, &a.CrownJewel, &a.InternetFacing,
-			&a.Owner, &a.OpenFindings, &a.TotalFindings, &a.WorstPriority, &a.WorstSeverity, &last, &total); err != nil {
+			&a.Owner, &a.OpenFindings, &a.TotalFindings, &a.WorstPriority, &a.WorstSeverity, &last, &targets, &total); err != nil {
 			return empty, fmt.Errorf("scan cve exposure asset: %w", err)
 		}
 		a.LastSeenAt = coverageTime(last)
+		a.Targets, a.TargetsMore = []string(targets), false
+		if len(a.Targets) > vulnerability.MaxExposureTargets {
+			a.Targets, a.TargetsMore = a.Targets[:vulnerability.MaxExposureTargets], true
+		}
 		list = append(list, a)
 	}
 	if err := rows.Err(); err != nil {

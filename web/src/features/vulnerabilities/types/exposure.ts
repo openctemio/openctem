@@ -107,6 +107,9 @@ export interface CveExposureAsset {
   worst_priority: '' | 'P0' | 'P1' | 'P2' | 'P3'
   worst_severity: string
   last_seen_at?: string
+  /** Where on the asset the findings point: "443/tcp", a URL path or a file (producer text). */
+  targets?: string[]
+  targets_more?: boolean
 }
 
 export interface CveExposureAssetsResponse {
