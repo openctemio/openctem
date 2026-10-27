@@ -75,6 +75,24 @@ describe('SensorInstallSnippets', () => {
     expect(screen.getByText(/the platform cannot change it/)).toBeInTheDocument()
   })
 
+  it('explains the named data volume and links the Run the sensor guide on the docker and Compose tabs', async () => {
+    mockFetch(templates)
+    const user = userEvent.setup()
+    render(<SensorInstallSnippets sensorId="11111111-1111-4111-8111-111111111111" />)
+    await screen.findByText(/docker run -d --name dmz/)
+    expect(screen.getByText(/chown -R 999:999/)).toBeInTheDocument()
+    const guide = screen.getByRole('link', { name: /Run the sensor guide/ })
+    expect(guide).toHaveAttribute('href', 'https://docs.openctem.io/sensors/run-the-sensor/')
+    expect(guide).toHaveAttribute('rel', 'noopener noreferrer')
+
+    await user.click(screen.getByRole('tab', { name: 'Compose' }))
+    expect(await screen.findByRole('link', { name: /Run the sensor guide/ })).toBeInTheDocument()
+
+    // Not on the tabs where a volume plays no part.
+    await user.click(screen.getByRole('tab', { name: 'Local policy' }))
+    expect(screen.queryByRole('link', { name: /Run the sensor guide/ })).toBeNull()
+  })
+
   it('sends a just-issued key in a header (never the URL) and renders the commands', async () => {
     const fetchFn = mockFetch(templates)
     render(
