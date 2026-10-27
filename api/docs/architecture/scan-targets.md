@@ -173,7 +173,20 @@ that it resolves (RFC-088 A5; `scan.Service.DropStaleNames`):
   filtered resolution reports it, and the scope join never confirms it. A
   run with the filter off proves nothing and changes no mark. A name that
   stopped resolving at all is marked too; it has nothing to probe, and the
-  mark clears when it resolves again.
+  mark clears when it resolves again. A registrable domain (`example.com`)
+  is never marked, and a mark it has is cleared and ignored by the gate: a
+  wildcard record never answers for the name it sits under (RFC 4592), so
+  an apex the filter left out either has no address or shares one with its
+  own wildcard.
+- **Passive runs.** A run whose every probe is passive (the scan's
+  intensity is passive, its single scanner is passive, or every workflow
+  step is passive) puts its targets through the passive gate at run start
+  (`runsPassiveOnly`, `stepsPassiveOnly`, `PassiveOnly`): names nobody
+  confirmed yet and wildcard-only names are looked up; rejected names,
+  scope exclusions, the deny list and names outside the organization's
+  scope are still refused. The targets are the seeds of every step and a
+  step does not gate its seeds again, so an active gate here dropped names
+  a passive workflow was allowed to resolve.
 
 ## Skipped targets
 
@@ -192,6 +205,7 @@ run record):
 | `excluded` | info | a scope exclusion rule |
 | `archived`, `incompatible_type` | info | asset-group members (count only) |
 | `out_of_scope` | warning | the caller's act scope, or no scope entry |
+| `wildcard_only` | info | the target gate: the name resolves only through a wildcard record (active runs only) |
 | `ownership_unconfirmed`, `tier_exceeded`, `internal_outside_zones` | warning | the target gate |
 | `outside_zones`, `partly_covered`, `outside_selected_zone`, `deny_list`, `zone_no_sensor`, `sensor_policy` | warning | zone routing and planning |
 | `invalid` | warning | scan creation's target validation |
