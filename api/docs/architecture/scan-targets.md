@@ -199,7 +199,9 @@ sensor) the tenant's scope entries are the authority: a discovered or
 unclassified asset is fully authorized (like `unclassified_scans: full`,
 never `low_impact`) and a wildcard-only name an active scope entry covers
 is scanned. A wildcard-only name no entry covers stays passive everywhere.
-Everywhere: a rejected asset ("not ours"), a scope exclusion, the platform
+The organization's own choice still holds there: `unclassified_scans: off`,
+or the Strict scan approval mode, keeps every unclassified asset passive on
+every placement. Everywhere: a rejected asset ("not ours"), a scope exclusion, the platform
 deny list and the guardrails (RFC-054 §16.2) still refuse.
 
 The decision is per job, made where the job is checked, as an
