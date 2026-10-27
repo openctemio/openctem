@@ -6,8 +6,11 @@ package scan
 // decides whether a target must sit at or under a verified domain of the
 // tenant. Default off: the tenant's scope entry is the authorization. On:
 // platform sensors send packets from the platform's own addresses, so a job
-// goes to them only when every target is proven, and intrusive (T2) scans
-// need proof on any sensor. No tenant setting changes this.
+// goes to them only when every target is proven. A job on the tenant's own
+// sensor needs no proof at any tier: an intrusive (T2) probe there is
+// governed by the scope entry's tier ceiling and the scan's approval. A job
+// whose targets are unproven never falls back to platform sensors; it waits
+// for the tenant's sensor. No tenant setting changes this.
 
 import (
 	"context"
@@ -16,7 +19,6 @@ import (
 	"strings"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/stage"
 )
 
 // ProofVerifier lists the targets that are not at or under a verified
@@ -62,40 +64,10 @@ func (s *Service) unverified(ctx context.Context, tenantID shared.ID, targets []
 	return pv.UnverifiedTargets(ctx, tenantID, targets)
 }
 
-// platformNeedsProof reports whether the platform requires proof: for jobs
-// on platform sensors, and for intrusive probes on any sensor.
+// platformNeedsProof reports whether the platform requires proof for jobs on
+// platform sensors.
 func (s *Service) platformNeedsProof(ctx context.Context) bool {
 	return s.proofPolicy != nil && s.proofPolicy.PlatformProofRequired(ctx)
-}
-
-// isIntrusiveTool reports whether every stage the scanner implements is
-// intrusive (T2). An unknown tool is not judged here (the sensor grant's
-// tier ceiling and the stage catalog decide elsewhere).
-func isIntrusiveTool(tool string) bool {
-	stages := stage.ForTool(tool)
-	if len(stages) == 0 {
-		return false
-	}
-	for _, st := range stages {
-		if st.Tier < stage.TierIntrusive {
-			return false
-		}
-	}
-	return true
-}
-
-// refuseUnprovenIntrusive refuses an intrusive (T2) scan when the platform
-// requires proof and any target is not at or under a verified domain
-// (RFC-054 §8.1).
-func (s *Service) refuseUnprovenIntrusive(ctx context.Context, tenantID shared.ID, scanner string, targets []string) error {
-	if !isIntrusiveTool(scanner) || len(targets) == 0 || !s.platformNeedsProof(ctx) {
-		return nil
-	}
-	missing, err := s.unverified(ctx, tenantID, targets)
-	if err != nil {
-		return fmt.Errorf("proof check failed, nothing dispatched: %w", err)
-	}
-	return proofError(fmt.Sprintf("%s runs intrusive checks; intrusive probes need a verified domain", scanner), missing)
 }
 
 // proofError lists the unproven targets (bounded, sorted); nil for none.

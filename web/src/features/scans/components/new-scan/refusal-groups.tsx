@@ -123,19 +123,14 @@ function useGroupTitle(g: RefusalGroup): string {
   }
 }
 
-function useGroupHint(g: RefusalGroup, probeTier?: number): string {
+function useGroupHint(g: RefusalGroup): string {
   const { t } = useTranslation()
   switch (g.kind) {
     case 'proof':
-      return (probeTier ?? 1) >= 2
-        ? t(
-            'scans.groups.proofIntrusiveHint',
-            'Intrusive checks need a verified domain of your organization on every sensor. Verify the domain, or remove these targets.'
-          )
-        : t(
-            'scans.groups.proofHint',
-            "The platform's shared sensors scan only domains your organization verified. Run the scan on your own sensor, verify the domain, or remove these targets."
-          )
+      return t(
+        'scans.groups.proofHint',
+        "The platform's shared sensors scan only domains your organization verified. Run the scan on your own sensor, verify the domain, or remove these targets."
+      )
     case 'platform':
       return t(
         'scans.groups.platformHint',
@@ -192,11 +187,10 @@ function GroupCard({
   const [open, setOpen] = useState(true)
   const [all, setAll] = useState(false)
   const title = useGroupTitle(group)
-  const hint = useGroupHint(group, probeTier)
+  const hint = useGroupHint(group)
   const shown = all ? group.results : group.results.slice(0, GROUP_EXAMPLES)
   const targets = group.results.map((r) => r.target ?? '').filter(Boolean)
   const bodyId = `refusal-group-${group.key.replace(/[^a-z0-9]/gi, '-')}`
-  const intrusive = (probeTier ?? 1) >= 2
   const verifyFixes = canVerify(group)
     ? group.domains.map((domain) => ({ action: 'verify_domain', domain }))
     : []
@@ -247,7 +241,7 @@ function GroupCard({
             </Button>
           )}
           <div className="flex flex-wrap items-center gap-2">
-            {onUseOwnSensors && ownSensorHelps(group) && !intrusive && (
+            {onUseOwnSensors && ownSensorHelps(group) && (
               <Button type="button" size="sm" className="h-8" onClick={onUseOwnSensors}>
                 <ServerCog className="me-1.5 h-3.5 w-3.5" aria-hidden />
                 {t('scans.groups.useOwnSensor', 'Run on your own sensor')}
