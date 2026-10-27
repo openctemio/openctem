@@ -270,11 +270,16 @@ type fakeAudit struct {
 	mu      sync.Mutex
 	actions []string
 	entries []*admin.AuditLog
+	// fail makes every write return an error (an unavailable audit table).
+	fail bool
 }
 
 func (f *fakeAudit) Create(_ context.Context, l *admin.AuditLog) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.fail {
+		return errors.New("audit table unavailable")
+	}
 	f.actions = append(f.actions, l.Action)
 	f.entries = append(f.entries, l)
 	return nil

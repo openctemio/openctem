@@ -41,8 +41,11 @@ name: Web E2E
 #            cache) and handed to the shards as one artifact, so no shard builds.
 #   shards   Playwright runs the specs `plan` assigned to each shard (1 to 4)
 #            plus, when selected, one job for the every-page request budget
-#            check, each against its own stack, fail-fast off so every job
-#            reports; 25 minute cap each.
+#            check, each against its own stack; 25 minute cap each. The first
+#            failing shard cancels the others (matrix fail-fast, plus
+#            .github/actions/fail-fast: the rest of this run on a PR, every run
+#            of the group in the merge queue); a cancelled shard still uploads
+#            its blob report.
 #   caches   npm (setup-node) and the Chromium download (keyed by the Playwright
 #            version).
 #   retries  1, in CI only (web/playwright.config.ts). A test that fails then
@@ -207,9 +210,12 @@ jobs:
     if: needs.changes.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # actions: read for the timings artifact of the last green develop run;
+    # write also lets the fail-fast step cancel doomed runs
+    # (.github/actions/fail-fast).
     permissions:
       contents: read
-      actions: read # the timings artifact of the last green develop run
+      actions: write
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
       count: ${{ steps.plan.outputs.count }}
@@ -275,9 +281,17 @@ jobs:
             jq -r '"- mode: **\(.mode)** (\(.reason))\n- specs: \(.specs), shards: \(.shards), request budget job: \(.budget)"' "$RUNNER_TEMP/plan.json"
             jq -r '.matrix.include[] | "- \(.name): \(.files | split(" ") | length) specs, about \(.seconds) s"' "$RUNNER_TEMP/plan.json"
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: Fail fast
+        if: failure()
+        uses: ./.github/actions/fail-fast
 
   build:
     name: Build e2e images
+    # actions: write lets the fail-fast step cancel doomed runs (.github/actions/fail-fast).
+    permissions:
+      contents: read
+      packages: read
+      actions: write
     needs: [changes, plan]
     if: needs.changes.outputs.run == 'true' && needs.plan.result == 'success' && needs.plan.outputs.count != '0'
     runs-on: ${{ ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_E2E_BUILD) || (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_HEAVY) || 'ubuntu-latest' }}
@@ -329,9 +343,17 @@ jobs:
           path: e2e-images.tar.gz
           compression-level: 0
           retention-days: 1
+      - name: Fail fast
+        if: failure()
+        uses: ./.github/actions/fail-fast
 
   e2e:
     name: Playwright e2e (${{ matrix.name }})
+    # actions: write lets the fail-fast step cancel doomed runs (.github/actions/fail-fast).
+    permissions:
+      contents: read
+      packages: read
+      actions: write
     needs: [changes, plan, build]
     if: needs.changes.outputs.shards == 'true' && needs.plan.result == 'success' && needs.plan.outputs.count != '0'
     # Always GitHub-hosted: the stack publishes on 127.0.0.1 of the Docker host and
@@ -341,8 +363,8 @@ jobs:
     # Stack start, install and a quarter of the tests; no image build here.
     timeout-minutes: 25
     strategy:
-      # Every shard reports, so one red shard does not hide another.
-      fail-fast: false
+      # The first red shard cancels the rest: the gate fails either way.
+      fail-fast: true
       # From `plan`: one entry per shard (id 1..4, `files` = its specs) and,
       # when @budget is selected, id 0 = the request budget check alone.
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
@@ -452,6 +474,9 @@ jobs:
           include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
+      - name: Fail fast
+        if: failure()
+        uses: ./.github/actions/fail-fast
 
   report:
     name: Merge reports and list flaky tests
