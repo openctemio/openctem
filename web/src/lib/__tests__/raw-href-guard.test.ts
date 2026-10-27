@@ -123,6 +123,8 @@ const REVIEWED = new Set([
   'features/assets/components/linked-assets-panel.tsx|Link|href={viewAllHref}',
   'features/attack-surface/components/path-graph.tsx|Link|href={node.href}',
   'features/auth/components/password-token-form.tsx|Link|href={copy.newLink.href}',
+  // COVERAGE_SETTINGS_HREF is the string constant '/settings/scope' exported by managed-scan-banner.tsx.
+  'features/scans/components/managed-scans-section.tsx|Link|href={COVERAGE_SETTINGS_HREF}',
   // Prop passthroughs: every caller passes a literal or route builder.
   'features/shared/components/link-card.tsx|Link|href={href}',
   'features/dashboard/components/activity-item.tsx|Link|href={href}',
