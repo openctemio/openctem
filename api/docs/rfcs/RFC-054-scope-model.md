@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (decisions S1–S6, 2026-10-07; S3 and S6 revised by A1–A5, 2026-10-09, §12; approvals limited to Strict scan governance by RFC-073, 2026-10-10, §13; flexible scope amendment 2026-10-11, §14: bulk add implemented; attack-surface decisions 2026-10-13, §14.5: R3 and R4 adopted and implemented, connector assets in scope by default, children follow their host; R5 awaiting owner decision; inventory first, scope later 2026-10-13, §15: state `discovered` and the review-gate setting implemented, triage and metrics toggle in progress; unclassified assets get low-impact checks behind platform guardrails 2026-10-14, §16: implemented; repository entries and CI trusts 2026-10-15, §17: implemented); P0 implemented |
+| Status | Accepted (decisions S1–S6, 2026-10-07; S3 and S6 revised by A1–A5, 2026-10-09, §12; approvals limited to Strict scan governance by RFC-073, 2026-10-10, §13; flexible scope amendment 2026-10-11, §14: bulk add implemented; attack-surface decisions 2026-10-13, §14.5: R3 and R4 adopted and implemented, connector assets in scope by default, children follow their host; R5 awaiting owner decision; inventory first, scope later 2026-10-13, §15: state `discovered` and the review-gate setting implemented, triage and metrics toggle in progress; unclassified assets get low-impact checks behind platform guardrails 2026-10-14, §16: implemented; repository entries and CI trusts 2026-10-15, §17: implemented; ownership confirmation only on managed platform sensors 2026-10-26, §20: implemented); P0 implemented |
 | Scope | api (`pkg/domain/scope`, `internal/app/scope`, `internal/app/actscope`, `internal/app/easm`, `internal/app/scan`, `internal/app/certmonitor`, handlers, migrations), web (Scoping, scan dialog), sensor-local policy (follow-up) |
 | Architecture | [active-probe-gate.md](../architecture/active-probe-gate.md) |
 | Related | RFC-023 (zones), RFC-036 §6.3/§6.4 (ownership gate, attribution), RFC-040 §5.6 (widening approvals, amended here), RFC-042 §6.13 (wildcard semantics, superseded here), RFC-050 (data scope) |
@@ -63,7 +63,7 @@ Every lookup error refuses (fail closed).
 | # | Decision |
 |---|---|
 | S1 | (a) `*.x` = `x` + all subdomains; exclusion `x` carves the apex out |
-| S2 | (a) proof for active probes is a platform setting (revised 2026-10-11, §8.1): default off; a public multi-tenant cloud turns it on, and then platform sensors and intrusive (T2) probes need proof |
+| S2 | (a) proof for active probes is a platform setting (revised 2026-10-11, §8.1): default off; a public multi-tenant cloud turns it on, and then platform sensors need proof; a job on the organization's own sensor needs none at any tier |
 | S3 | (a) widening approvals are a tenant setting 0/1/2, default `min(1, admins − 1)`, never 0 for T2 (amends RFC-040 Q2 (a)). Revised 2026-10-09 (§12): approvers are named and reminded; an owner with no other approver self-approves with a fresh authenticator code; a platform policy may make approvals tenant-controlled or off |
 | S4 | yes, refined 2026-10-07: an active, non-expiring scope entry or seed confirms the names it covers (`matches_scope_target`, no review); IPs only through IP entries; one-off entries never confirm; tombstones and exclusions win; removal keeps the asset and stops scanning; backfill of existing `needs_review` rows |
 | S5 | tenant knobs (§7); no global scope-off switch, ever |
@@ -517,9 +517,10 @@ the job runs on the organization's own sensor), `tenant_first`, `tenant_busy`,
 `internal_targets`, `no_tenant_sensor`, `platform_sensors`. `sensor` names
 only the organization's own sensor; a platform sensor is never named. With
 the proof setting on, auto refuses an unproven target (`proof_required`) only
-when no own sensor can take the job; intrusive probes need proof on any
-sensor, and their `proof_required` refusal does not offer "use your own
-sensor".
+when no own sensor can take the job, and the refusal says why (platform
+sensors need a verified domain; or no sensor of the organization can take
+the job). Intrusive probes on the organization's own sensor need no proof:
+the scope entry's tier ceiling and the scan's approval govern them.
 
 **Resolved address** (`resolved`). A `zone_none` refusal of a hostname that
 resolves to a private address lists those addresses (at most 8), so the
@@ -799,7 +800,7 @@ a hint (owner decision 2026-10-11, revising S2).
 | Setting | Rule |
 |---|---|
 | off (default) | no proof needed anywhere: assets come from many sources, and the organization's scope entry is the authorization. The scope gate, exclusions, the deny list (§8.2), scan zones for private addresses and tier ceilings stay in force |
-| on | a job routed to platform sensors needs every target at or under a verified domain of the tenant, and intrusive (T2) probes need one on any sensor |
+| on | a job routed to platform sensors needs every target at or under a verified domain of the tenant; a job on the organization's own sensor needs none at any tier, and a job with an unproven target never falls back to platform sensors (it waits for the own sensor) |
 
 A public multi-tenant cloud should turn it on: platform sensors send packets
 from the operator's addresses, and only ownership proof stops a tenant from
@@ -889,7 +890,7 @@ are gated by zones and are not capped.
 | Review by rule | §6.7 suggestions, preview, accept/reject as a rule |
 | Inventory | §4.4 one membership definition; `attribution_state` on recent changes; review counts by reason; `covered_by` on queue items |
 | Refusals | codes, fixes, `POST /check` dry run |
-| Tier ceilings | `max_tier` enforced at every dispatch (`tier_exceeds`, `raise_tier`); per-step proof for intrusive workflow steps |
+| Tier ceilings | `max_tier` enforced at every dispatch (`tier_exceeds`, `raise_tier`); per-step tier check for workflow steps |
 
 ## 12. Amendment 2026-10-09: approvers, long intrusive grants, platform policy
 
@@ -1596,3 +1597,49 @@ with the matching name and entry. Endpoints outside the caller's data scope are 
 | Another tenant's names or verified domains count | The authority and every lookup are loaded per tenant; the relationship read filters both ends by tenant |
 | A certificate hides an endpoint refusal | The strongest refusal among its endpoints is the certificate's; the deny list is evaluated per endpoint |
 | An endpoint outside the caller's data scope is revealed | The response names only endpoints the caller may read |
+
+## 20. Amendment 2026-10-26: confirmation only on managed platform sensors
+
+### 20.1 Decision
+
+Ownership confirmation of discovered assets (§15) and the wildcard-only
+restriction (§15.3) apply **only when `MANAGED_SERVICE` is true and the job
+runs on platform (shared) sensors**. On the tenant's own sensors (any
+install) and on a self-hosted install (any sensor), a discovered or
+unclassified asset is fully authorized, like `unclassified_scans: full`
+(§16), and a wildcard-only name covered by an active scope entry is scanned.
+A wildcard-only name no entry covers stays passive. The setting
+`unclassified_scans` therefore decides only jobs on platform sensors of the
+hosted service.
+
+### 20.2 What does not change
+
+A rejected asset ("not ours", §15.4), a scope exclusion, the platform deny
+list (§8.2) and the guardrails (§16.2) refuse on every placement, as do the
+tier ceilings, the act scope and scan zones. The gate fails closed: a check
+that does not know where its job runs is judged as a platform job on the
+hosted service.
+
+### 20.3 Per job, at placement time
+
+Placement is decided where each path checks the job (see
+[scan-targets.md](../architecture/scan-targets.md#where-ownership-confirmation-applies)):
+auto placement that picks a tenant sensor is not refused, one that picks a
+platform sensor is checked, and the claim-time re-check judges the sensor
+that really takes the job.
+
+### 20.4 Threat model
+
+| Threat | Control |
+|---|---|
+| A tenant on the hosted service points platform sensors at assets nobody confirmed | Confirmation still applies to every job on platform sensors, and a job whose placement is unknown |
+| A job predicted for a tenant sensor ends on a platform sensor | The claim-time re-check judges the claiming sensor and narrows the job |
+| A tenant's own sensor scans a third party's asset | Guardrails (shared, CDN, cloud networks, names outside the organization's domains), the deny list, exclusions and rejections still refuse; the tenant owns the traffic of its own sensors |
+| Bulk confirmation reaches another organization's assets | Names are looked up among the caller's tenant only, the data scope filters the rest, one audit event per asset |
+
+### 20.5 UI
+
+A skipped-targets group of unconfirmed or wildcard-only names offers
+**Confirm ownership** (`assets:write`) and says that confirmation is
+"Required on platform sensors of the hosted service"; the Scope policy page
+notes that `unclassified_scans` applies there.
