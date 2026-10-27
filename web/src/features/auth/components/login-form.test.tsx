@@ -324,6 +324,23 @@ describe('LoginForm ?error= message', () => {
     expect(toast.error).toHaveBeenCalledTimes(1)
     expect(toast.error).toHaveBeenCalledWith('Sign-in failed. Try again.')
   })
+
+  // Google sign-in for an address that already has a password account (prod
+  // v0.15.3 answered a 500): the page says what to do and keeps saying it.
+  it('keeps the account-exists notice on the page with a password reset action', () => {
+    withParams('error=account_exists')
+    render(<LoginForm />)
+    const notice = screen.getByTestId('login-account-exists')
+    expect(notice).toHaveTextContent('You already have an account')
+    expect(notice).toHaveTextContent(
+      'An account with this email already exists. Sign in with your password, then link this provider in Account > Security.'
+    )
+    expect(screen.getByRole('link', { name: 'Forgot your password? Reset it' })).toHaveAttribute(
+      'href',
+      '/forgot-password'
+    )
+    expect(toast.error).not.toHaveBeenCalled()
+  })
 })
 
 describe('LoginForm email-first sign-in', () => {

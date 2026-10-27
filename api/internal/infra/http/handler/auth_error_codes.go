@@ -87,6 +87,8 @@ const (
 	codeOAuthInvalidState       apierror.Code = "OAUTH_INVALID_STATE"
 	codeOAuthExchangeFailed     apierror.Code = "OAUTH_EXCHANGE_FAILED"
 	codeOAuthUserInfoFailed     apierror.Code = "OAUTH_USERINFO_FAILED"
+	codeOAuthAccountExists      apierror.Code = "OAUTH_ACCOUNT_EXISTS"
+	codeOAuthNoEmail            apierror.Code = "OAUTH_NO_EMAIL"
 	codeInvitationAlreadyMember apierror.Code = "INVITATION_ALREADY_MEMBER"
 	codeInvitationSuspended     apierror.Code = "INVITATION_MEMBERSHIP_SUSPENDED"
 	codeMembershipReactivate    apierror.Code = "MEMBERSHIP_SUSPENDED_REACTIVATE"
@@ -184,6 +186,12 @@ var authErrorTable = []authErrorEntry{
 	{e(auth.ErrInvalidState), http.StatusBadRequest, codeOAuthInvalidState, "Invalid or expired state token.", ""},
 	{e(auth.ErrOAuthExchangeFailed), http.StatusBadRequest, codeOAuthExchangeFailed, "Failed to exchange authorization code.", ""},
 	{e(auth.ErrOAuthUserInfoFailed), http.StatusBadRequest, codeOAuthUserInfoFailed, "Failed to get user information from the provider.", ""},
+	{e(auth.ErrOAuthNoEmail), http.StatusBadRequest, codeOAuthNoEmail, "The provider did not return an email address.", ""},
+	// The address names an account that signs in another way and this
+	// provider identity is not linked to it. The provider verified the
+	// address, so saying the account exists tells the person nothing they
+	// could not learn by signing in with it.
+	{e(auth.ErrOAuthAccountExists), http.StatusConflict, codeOAuthAccountExists, "An account with this email already exists. Sign in with your password or the method you used before, then link this provider in Account > Security.", "account_exists"},
 
 	// Invitations.
 	{e(tenantapp.ErrInvitationAlreadyMember), http.StatusBadRequest, codeInvitationAlreadyMember, "This person is already a member of this organization.", ""},
