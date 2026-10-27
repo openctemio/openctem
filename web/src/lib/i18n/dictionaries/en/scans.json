@@ -1451,6 +1451,7 @@
   "scans.placement.sensorBusy": "can take it, busy",
   "scans.placement.sensorCount": "sensors: {count}",
   "scans.placement.sensorEligible": "can take it",
+  "scans.placement.sensorYields": "can take it, leaves it to a less-loaded sensor for a few seconds",
   "scans.placement.sensor_hosts_busy.fix": "It runs when that host is free on that sensor, or on another sensor.",
   "scans.placement.sensor_hosts_busy.text": "The sensor that took it is still scanning one of its hosts, so it handed the task back.",
   "scans.placement.sharedNotAllowed": "The shared sensors are not available to this organization, so it waits for a sensor of its own.",
