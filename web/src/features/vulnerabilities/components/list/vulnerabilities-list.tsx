@@ -11,16 +11,30 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { ColumnDef, SortingState } from '@tanstack/react-table'
-import { Bug, Clock, Flame, RefreshCw, ShieldCheck } from 'lucide-react'
+import {
+  Bug,
+  Clock,
+  Download,
+  Flame,
+  ListPlus,
+  RefreshCw,
+  RotateCcw,
+  ShieldCheck,
+  ShieldOff,
+} from 'lucide-react'
 import Link from '@/components/link'
 import { Main } from '@/components/layout'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { KevBadge } from '@/components/ui/kev-badge'
 import { PriorityBadge } from '@/components/ui/priority-badge'
 import { SignalChip } from '@/components/ui/signal-chip'
 import { useTranslation } from '@/context/i18n-provider'
 import { useAssetGroupsApi } from '@/features/asset-groups/api/use-asset-groups-api'
+import { BulkActionBar } from '@/features/shared/components/bulk-action-bar'
 import { DataTable } from '@/features/shared/components/data-table'
+import { SavedViewsMenu } from '@/features/saved-views/components/saved-views-menu'
+import { type SavedView } from '@/features/saved-views/api/use-saved-views'
 import { EmptyState } from '@/features/shared/components/empty-state'
 import { ErrorState } from '@/features/shared/components/error-state'
 import {
@@ -51,6 +65,7 @@ import { cn } from '@/lib/utils'
 import { useCanReadVulnList, useVulnerabilityList } from '../../api/use-vulnerability-list'
 import { vulnerabilityHref } from '../../api/use-cve-exposure'
 import { CveLink } from '../cve-link'
+import { useVulnActions } from '../actions/use-vuln-actions'
 import { FilterLayout, useFilterPanelOpen } from '../vulnerability-filters'
 import {
   activeFilterCount,
@@ -62,6 +77,8 @@ import {
   readList,
   readPage,
   readSearch,
+  readViewId,
+  vulnActionParams,
   readSort,
   readState,
   remediationState,
@@ -138,6 +155,8 @@ function VulnerabilitiesListBody() {
   const priorities = readList(params, 'priority_class')
   const sources = readList(params, 'source')
   const groupIds = readList(params, 'asset_group_id')
+  const cveSel = readList(params, 'cve_id')
+  const viewId = readViewId(params)
   const epss = readEpss(params)
   const flag = (f: VulnListFlag) => readFlag(params, f)
   const filterCount = activeFilterCount(params)
@@ -169,7 +188,37 @@ function VulnerabilitiesListBody() {
       past_sla: null,
       has_fix: null,
       epss_gte: null,
+      cve_id: null,
     })
+  }, [])
+
+  // Bulk actions on the selected rows: the open findings of their CVEs that
+  // the current filters select, resolved by the API as the signed-in person.
+  const [selected, setSelected] = useState<VulnListItem[]>([])
+  const [selectionKey, setSelectionKey] = useState(0)
+  const clearSelection = useCallback(() => {
+    setSelected([])
+    setSelectionKey((k) => k + 1)
+  }, [setSelected, setSelectionKey])
+  const actions = useVulnActions(() => {
+    clearSelection()
+    void mutate()
+  })
+  const actionParams = useMemo(() => vulnActionParams(params), [params])
+  const selection = useMemo(
+    () => ({ cveIds: selected.map((r) => r.cve_id), params: actionParams.toString() }),
+    [selected, actionParams]
+  )
+  const canSelect =
+    actions.abilities.task ||
+    actions.abilities.exception ||
+    actions.abilities.retest ||
+    actions.abilities.export
+
+  // A saved view lives in the URL as view=<id>; the API applies its filters
+  // and params as the viewer, the URL's params on top.
+  const openSavedView = useCallback((view: SavedView | null) => {
+    replaceUrlSearch(view ? new URLSearchParams({ view: view.id }) : new URLSearchParams())
   }, [])
 
   const rows = useMemo(() => data?.data ?? [], [data])
@@ -297,6 +346,7 @@ function VulnerabilitiesListBody() {
   )
   listChip('priority_class', t('vulnPage.list.facet.priority', 'Priority'), priorities, (v) => v)
   listChip('source', t('vulnPage.list.facet.source', 'Source'), sources, sourceLabel)
+  listChip('cve_id', t('vulnPage.list.chip.cve', 'CVE'), cveSel, (v) => v)
   listChip('asset_group_id', t('vulnPage.list.facet.assetGroup', 'Asset group'), groupIds, (id) =>
     toDisplayText(groupName(id) ?? t('vulnPage.list.chip.oneGroup', 'a group'), 60)
   )
@@ -477,6 +527,38 @@ function VulnerabilitiesListBody() {
 
   const columns = useMemo<ColumnDef<VulnListItem>[]>(
     () => [
+      ...(canSelect
+        ? [
+            {
+              id: 'select',
+              header: ({ table }) => (
+                <Checkbox
+                  checked={
+                    table.getIsAllPageRowsSelected() ||
+                    (table.getIsSomePageRowsSelected() && 'indeterminate')
+                  }
+                  onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
+                  aria-label={t(
+                    'vulnPage.list.selectPage',
+                    'Select every vulnerability on this page'
+                  )}
+                />
+              ),
+              cell: ({ row }) => (
+                <Checkbox
+                  checked={row.getIsSelected()}
+                  onCheckedChange={(value) => row.toggleSelected(!!value)}
+                  onClick={(e) => e.stopPropagation()}
+                  aria-label={t('vulnPage.list.selectRow', 'Select {cve}', {
+                    cve: row.original.cve_id,
+                  })}
+                />
+              ),
+              enableSorting: false,
+              enableHiding: false,
+            } satisfies ColumnDef<VulnListItem>,
+          ]
+        : []),
       {
         id: 'cve',
         header: t('vulnPage.list.col.vulnerability', 'Vulnerability'),
@@ -599,7 +681,7 @@ function VulnerabilitiesListBody() {
         ),
       },
     ],
-    [t, params, dateLocale]
+    [t, params, dateLocale, canSelect]
   )
 
   const sorting = useMemo(() => sortToSorting(sort), [sort])
@@ -661,20 +743,32 @@ function VulnerabilitiesListBody() {
   )
 
   const toolbarEnd = (
-    <Button
-      variant="outline"
-      size="icon"
-      className="h-9 w-9"
-      onClick={() => void mutate()}
-      disabled={isValidating}
-      aria-label={t('vulnPage.list.refresh', 'Refresh')}
-      title={t('vulnPage.list.refresh', 'Refresh')}
-    >
-      <RefreshCw
-        className={cn('h-4 w-4', isValidating && 'animate-spin motion-reduce:animate-none')}
-        aria-hidden
+    <>
+      <SavedViewsMenu
+        page="vulnerabilities"
+        activeId={viewId}
+        modified={
+          !!viewId &&
+          Array.from(params.keys()).some((k) => !['view', 'page', 'per_page'].includes(k))
+        }
+        onSelect={openSavedView}
+        onDiscard={() => replaceUrlSearch(new URLSearchParams(viewId ? { view: viewId } : {}))}
       />
-    </Button>
+      <Button
+        variant="outline"
+        size="icon"
+        className="h-9 w-9"
+        onClick={() => void mutate()}
+        disabled={isValidating}
+        aria-label={t('vulnPage.list.refresh', 'Refresh')}
+        title={t('vulnPage.list.refresh', 'Refresh')}
+      >
+        <RefreshCw
+          className={cn('h-4 w-4', isValidating && 'animate-spin motion-reduce:animate-none')}
+          aria-hidden
+        />
+      </Button>
+    </>
   )
 
   const searching = readSearch(params) !== ''
@@ -722,7 +816,23 @@ function VulnerabilitiesListBody() {
             'vulnPage.list.description',
             'One row per vulnerability across the assets you can see, sorted by risk: priority, known exploitation, emerging threats, EPSS, CVSS and reach.'
           )}
-        />
+        >
+          {actions.abilities.export && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={actions.busy || total === 0}
+              onClick={() => void actions.exportCsv(actionParams)}
+              title={t(
+                'vulnPage.list.exportHint',
+                'The findings behind the rows under the current filters, one per line with its asset'
+              )}
+            >
+              <Download className="me-1.5 h-4 w-4" aria-hidden />
+              {t('vulnPage.list.export', 'Export CSV')}
+            </Button>
+          )}
+        </PageHeader>
         <MetricStrip items={strip} loading={!data && !error} />
         <FilterLayout
           panelId={PANEL_ID}
@@ -763,6 +873,8 @@ function VulnerabilitiesListBody() {
               toolbarEnd={toolbarEnd}
               toolbarBelow={chipsRow}
               getRowId={(r) => r.cve_id}
+              onSelectionChange={setSelected}
+              resetSelectionKey={`${actionParams.toString()}#${selectionKey}`}
               manualPagination
               rowCount={total}
               pageCount={Math.max(1, data?.total_pages ?? 1)}
@@ -787,6 +899,55 @@ function VulnerabilitiesListBody() {
             />
           )}
         </FilterLayout>
+        <BulkActionBar
+          count={selected.length}
+          onClear={clearSelection}
+          noun={t('vulnPage.list.bulk.selected', 'selected')}
+        >
+          {actions.abilities.task && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() =>
+                void actions.createTask(
+                  selection,
+                  selected.length === 1
+                    ? t('vulnPage.task.title', 'Fix {cve}', { cve: selected[0].cve_id })
+                    : t('vulnPage.list.bulk.taskTitle', 'Fix {count} vulnerabilities', {
+                        count: selected.length,
+                      })
+                )
+              }
+            >
+              <ListPlus className="me-1.5 h-4 w-4" aria-hidden />
+              {t('vulnPage.list.bulk.task', 'Create task')}
+            </Button>
+          )}
+          {actions.abilities.exception && (
+            <Button size="sm" variant="ghost" onClick={() => actions.requestException(selection)}>
+              <ShieldOff className="me-1.5 h-4 w-4" aria-hidden />
+              {t('vulnPage.list.bulk.exception', 'Accept risk')}
+            </Button>
+          )}
+          {actions.abilities.retest && (
+            <Button size="sm" variant="ghost" onClick={() => actions.retest(selection)}>
+              <RotateCcw className="me-1.5 h-4 w-4" aria-hidden />
+              {t('vulnPage.list.bulk.retest', 'Retest')}
+            </Button>
+          )}
+          {actions.abilities.export && (
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={actions.busy}
+              onClick={() => void actions.exportCsv(actionParams, selection.cveIds)}
+            >
+              <Download className="me-1.5 h-4 w-4" aria-hidden />
+              {t('vulnPage.list.bulk.export', 'Export')}
+            </Button>
+          )}
+        </BulkActionBar>
+        {actions.dialogs}
         <p className="text-xs text-muted-foreground">
           {t(
             'vulnPage.list.scopeNote',
