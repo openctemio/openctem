@@ -6,6 +6,7 @@
  */
 
 import { redirect } from 'next/navigation'
+import { loginErrorCodeFor } from '@/features/auth/lib/auth-error-codes'
 import { loginErrorHref } from '@/features/auth/lib/login-error'
 import { cookies } from 'next/headers'
 
@@ -73,7 +74,9 @@ export default async function SSOCallbackPage({ params, searchParams }: SSOCallb
   const result = await handleSSOCallback(provider, code, state)
 
   if (!result.success) {
-    redirect(loginErrorHref('callback_failed', org))
+    // The person is told what they can do about it (waiting for approval, not
+    // a member, no seat, ...): the API's code picks the message, never its text.
+    redirect(loginErrorHref(loginErrorCodeFor(result.code), org))
   }
 
   // Redirect to stored destination (read before callback deleted the cookie)

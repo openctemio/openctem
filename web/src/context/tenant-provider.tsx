@@ -190,8 +190,14 @@ export function TenantProvider({ children }: TenantProviderProps) {
         })
 
         if (!response.ok) {
-          const error = await response.json()
-          throw new Error(error.message || 'Failed to switch team')
+          const body = (await response.json().catch(() => ({}))) as {
+            error?: { code?: unknown }
+          }
+          const failure = new Error('Failed to switch organization')
+          if (typeof body.error?.code === 'string') {
+            ;(failure as Error & { code?: string }).code = body.error.code
+          }
+          throw failure
         }
 
         const data = await response.json()

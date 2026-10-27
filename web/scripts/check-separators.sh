@@ -76,11 +76,6 @@ added="$(git diff -U0 "$merge_base"...HEAD -- 'src/*.tsx' 'src/*.ts' 'src/lib/i1
   | awk '/^\+\+\+ b\//{f=substr($0,7); next} /^-[^-]/{rm[f SUBSEP substr($0,2)]=1; next} /^\+/{n++; af[n]=f; at[n]=substr($0,2)} END{for(i=1;i<=n;i++) if(!((af[i] SUBSEP at[i]) in rm)) print af[i] ":" at[i]}' \
   | grep -v 'separator-ok:' | grep -v '/__tests__/' | grep -Ev '\.test\.tsx?:' || true)"
 
-if [[ -z "$added" ]]; then
-  echo "check-separators: no added source lines."
-  exit 0
-fi
-
 fail=0
 report() { # <title> <lines> <advice>
   fail=1
@@ -98,6 +93,29 @@ scan() { # <ERE> [skip]
       if (skip == 1 && u ~ /^[[:space:]]*(\/\/|\/\*|\*|\{\/\*)/) next
       if (u ~ re) print f ":" t }'
 }
+
+# The sign-in dictionaries are checked whole, not only on added lines: every
+# sentence a person meets while signing in follows the text rules (owner,
+# research/290). The API's error strings are checked on added lines: a Go string
+# literal in an apierror, errors.New or fmt.Errorf call, or a Message field.
+auth_dicts="$(for f in src/lib/i18n/dictionaries/en/auth.json src/lib/i18n/dictionaries/vi/auth.json; do
+  if [[ -f "$f" ]]; then awk -v f="$f" '/ — |·|•|∙|⋅/{print f ":" $0}' "$f"; fi
+done)"
+[[ -n "$auth_dicts" ]] && report "A sign-in dictionary has a separator glyph or a spaced em dash:" "$auth_dicts" \
+  "Use a colon, a comma or a full stop, or split into two keys."
+
+go_added="$(git diff -U0 "$merge_base"...HEAD -- ':(top)api/*.go' \
+  | awk '/^\+\+\+ b\//{f=substr($0,7); next} /^\+/{print f ":" substr($0,2)}' \
+  | grep -Ev '_test\.go:' | grep -v 'separator-ok:' \
+  | grep -E '(apierror\.[A-Za-z]+\(|errors\.New\(|fmt\.Errorf\(|Message:)' \
+  | grep -E ' — | · ' || true)"
+[[ -n "$go_added" ]] && report "This branch adds a spaced em dash or middle dot to an API error string:" "$go_added" \
+  "Write the sentence with a colon, a comma or a full stop. The web console shows its own text for the error code."
+
+if [[ -z "$added" ]]; then
+  [[ $fail = 0 ]] && echo "check-separators: no added source lines."
+  exit "$fail"
+fi
 
 hits="$(scan "·|•|∙|⋅" 1)"
 [[ -n "$hits" ]] && report "This branch adds a separator glyph to UI text:" "$hits" \

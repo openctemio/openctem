@@ -180,6 +180,12 @@ type SSOCallbackRequest struct {
 
 // Callback handles the SSO OAuth callback.
 // POST /api/v1/auth/sso/{provider}/callback
+//
+// A refusal carries a stable `code` from the auth error table
+// (auth_error_codes.go): SSO_AWAITING_APPROVAL, SSO_NOT_A_MEMBER, LIMIT_REACHED,
+// SSO_DOMAIN_NOT_ALLOWED, ACCOUNT_LINK_REQUIRED, SSO_DIFFERENT_METHOD,
+// EMAIL_UNVERIFIED_AT_IDP, USE_ADMIN_CONSOLE and the others. They are 4xx, not
+// server errors.
 func (h *SSOHandler) Callback(w http.ResponseWriter, r *http.Request) {
 	provider := r.PathValue("provider")
 	if provider == "" {
@@ -268,35 +274,7 @@ func (h *SSOHandler) handlePublicError(w http.ResponseWriter, err error) {
 		// Just-in-time sign-up into an organization with no free seat. No
 		// usage numbers: the person is not a member yet.
 		apierror.New(http.StatusForbidden, codeLimitReached, "This organization has no free seat for you. Contact your administrator.").WriteJSON(w)
-	// Anti-enumeration: an unknown organization answers exactly like an
-	// organization without that provider.
-	case errors.Is(err, auth.ErrSSOTenantNotFound),
-		errors.Is(err, auth.ErrSSONoActiveProviders),
-		errors.Is(err, auth.ErrSSOProviderNotFound):
-		apierror.NotFound("SSO provider not configured").WriteJSON(w)
-	case errors.Is(err, auth.ErrSSOProviderInactive):
-		apierror.BadRequest("SSO provider is not active").WriteJSON(w)
-	case errors.Is(err, auth.ErrSSOInvalidState):
-		apierror.BadRequest("Invalid or expired state token").WriteJSON(w)
-	case errors.Is(err, auth.ErrSSOInvalidRedirectURI):
-		apierror.BadRequest("Invalid redirect URI").WriteJSON(w)
-	case errors.Is(err, auth.ErrSSOExchangeFailed):
-		apierror.BadRequest("Failed to complete SSO authentication").WriteJSON(w)
-	case errors.Is(err, auth.ErrSSOUserInfoFailed):
-		apierror.BadRequest("Failed to retrieve user information").WriteJSON(w)
-	case errors.Is(err, auth.ErrSSODomainNotAllowed):
-		apierror.Forbidden("Your email domain is not allowed for this organization").WriteJSON(w)
-	case errors.Is(err, auth.ErrSSOAwaitingApproval):
-		apierror.Forbidden("Your access to this organization is waiting for an administrator's approval.").WriteJSON(w)
-	case errors.Is(err, auth.ErrSSONotAMember):
-		// Not admitted by the organization's SSO (not a member and not eligible
-		// for just-in-time provisioning). Generic: says nothing about why.
-		apierror.Forbidden("You do not have access to this organization. Contact your administrator.").WriteJSON(w)
-	case errors.Is(err, auth.ErrAccountLinkRequiresVerification):
-		// Proof-before-link: an account with this email already exists and was not
-		// proven to belong to this federated login. Tell the user to sign in with
-		// their existing credentials first, then link the identity provider.
-		apierror.Forbidden("An account with this email already exists. Sign in with your existing credentials first, then link this identity provider.").WriteJSON(w)
+	case writeAuthTableError(w, err):
 	default:
 		h.logger.Error("SSO error", "error", err)
 		apierror.InternalError(err).WriteJSON(w)
@@ -647,7 +625,7 @@ func (h *SSOHandler) handleAdminError(w http.ResponseWriter, err error) {
 		h.logger.Warn("invalid provider configuration", "error", err)
 		apierror.BadRequest("Invalid identity provider configuration. Please verify all required fields.").WriteJSON(w)
 	case errors.Is(err, auth.ErrSSOInvalidDefaultRole):
-		apierror.BadRequest("Invalid default role. Must be admin, member, or viewer").WriteJSON(w)
+		apierror.BadRequest("Invalid default role. Must be member or viewer").WriteJSON(w)
 	default:
 		h.logger.Error("identity provider error", "error", err)
 		apierror.InternalServerError("An internal error occurred").WriteJSON(w)
