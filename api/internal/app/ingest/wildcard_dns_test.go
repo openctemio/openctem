@@ -185,6 +185,26 @@ func TestEvaluateWildcardDNS(t *testing.T) {
 		}
 	})
 
+	t.Run("an apex the resolver left out is cleared, never marked", func(t *testing.T) {
+		apex := wcAsset(t, "example.com")
+		withApex := wcAssets{tenant: tenant, byName: map[string]*asset.Asset{"example.com": apex, "guess.example.com": guess}}
+		payload := map[string]any{"scanner": "dnsx", "targets": []string{"example.com", "guess.example.com"},
+			"config": map[string]any{"wildcard_filter": true}}
+		cmd := wcCommand(t, tenant, payload)
+		st := &wcStore{}
+		s := &Service{commands: wcCommands{tenant: tenant, cmd: cmd}, assetRepo: withApex, wildcardDNS: st, logger: logger.NewNop(),
+			nameProber: wcProber{"guess.example.com": NameWildcardOnly}, resolutionStore: &wcResolution{}}
+		cov := &ingestreport.CommandCoverage{CommandStatus: string(command.CommandStatusCompleted),
+			Reports: []ingestreport.CoverageReport{{State: protov2.StateCompleted}}}
+		s.evaluateWildcardDNS(context.Background(), tenant, cmd.ID, cov)
+		if len(st.marked) != 1 || st.marked[0] != guess.ID() {
+			t.Fatalf("marked = %v, want only the subdomain guess", st.marked)
+		}
+		if len(st.cleared) != 1 || st.cleared[0] != apex.ID() {
+			t.Fatalf("cleared = %v, want the apex", st.cleared)
+		}
+	})
+
 	for name, tc := range map[string]struct {
 		payload map[string]any
 		cov     func() *ingestreport.CommandCoverage

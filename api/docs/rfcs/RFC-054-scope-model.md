@@ -1148,7 +1148,14 @@ turns scope off.
 ```
 
 - 1 to 200 items (the dry run's limit, so a scan's refused targets fit in
-  one request); `reason` is recorded on every entry; `origin` may be
+  one request); `expires_in_days` (1 to 365) and `max_tier` (`t0`, `t1`,
+  `t2`) are optional and apply to every item exactly as on `POST
+  /scope/targets` (omitted: permanent, the organization's default tier; the
+  organization's expiry and tier rules are checked per item, so an item the
+  rules refuse answers its code). The Add to scope dialog uses them for a
+  pasted list: the web splits the text into values, detects each kind, and
+  sends batches of 200 in turn, so one step-up covers the list;
+  `reason` is recorded on every entry; `origin` may be
   `refusal_fix`, otherwise the entries are recorded as `import`.
 - A caller who adds entries directly (Off and On, or an approver in Strict)
   needs a recent re-authentication once: without it the request answers

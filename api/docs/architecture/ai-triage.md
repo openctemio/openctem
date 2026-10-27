@@ -117,6 +117,10 @@ so a campaign whose TLP was raised after the request is still kept back. A
 refused request answers `403 AI_POLICY_RESTRICTED`; a refused queued job
 fails with `ai_policy_restricted`; auto-triage simply does not queue it.
 
+## What an AI reviewer may see
+
+Any AI that reviews or approves something (triage today, a draft reviewer or a check of an outside agent's proposal later) receives the object under review and input a person wrote, and nothing else. It never receives the requesting agent's transcript or free-text justification as instructions. A justification an agent supplies is shown to the person who decides, fenced as untrusted text, and is never offered to the reviewing model as authority. Content that came from scanners, tested systems or outside agents sits inside a per-request fence the model is told to treat as data, and a model verdict stays advisory: it can add a warning or a proposal, and a person decides.
+
 ## Errors
 
 The API answers a refused request with a distinct code, never with "no

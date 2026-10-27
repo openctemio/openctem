@@ -112,7 +112,11 @@ func resolverInputNames(cmd *command.Command) []string {
 }
 
 // splitWildcardOnly divides the input assets into the ones the run reported
-// (clear) and the ones it did not (mark).
+// (clear) and the ones it did not (mark). A registrable domain is never
+// marked, and any mark it has is cleared: a wildcard record never answers
+// for the name it sits under, so an apex the resolver left out has no
+// address, or shares its address with its own wildcard (which the
+// resolver's filter cannot tell apart); neither makes it wildcard-only.
 func splitWildcardOnly(inputs map[string]*asset.Asset, c *ingestreport.CommandCoverage) (mark, clear []shared.ID) {
 	reported := map[shared.ID]bool{}
 	for _, r := range c.Reports {
@@ -126,7 +130,7 @@ func splitWildcardOnly(inputs map[string]*asset.Asset, c *ingestreport.CommandCo
 			continue
 		}
 		seen[a.ID()] = true
-		if reported[a.ID()] {
+		if reported[a.ID()] || asset.IsRegistrableDomain(a.Name()) {
 			clear = append(clear, a.ID())
 		} else {
 			mark = append(mark, a.ID())
