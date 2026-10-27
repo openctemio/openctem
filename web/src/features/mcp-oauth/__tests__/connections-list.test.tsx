@@ -61,6 +61,27 @@ describe('ConnectionsList', () => {
     expect(screen.getByText('Unverified')).toBeInTheDocument()
   })
 
+  it('badges a connection that reads all organization data and can limit it', async () => {
+    const onScope = vi.fn(async () => {})
+    render(
+      <ConnectionsList
+        connections={[
+          { ...conn, full_data: true },
+          { ...conn, id: 'g2', full_data: false },
+        ]}
+        isLoading={false}
+        onRevoke={vi.fn()}
+        onScope={onScope}
+        emptyTitle="none"
+        emptyDescription="none"
+      />
+    )
+    // One badge and one button: the scoped connection has neither.
+    expect(screen.getAllByText('All organization data')).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Limit to own data' }))
+    await waitFor(() => expect(onScope).toHaveBeenCalledWith('g1'))
+  })
+
   it('shows the empty state', () => {
     render(
       <ConnectionsList

@@ -16,6 +16,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Card,
   CardContent,
@@ -73,6 +74,7 @@ export function ConsentView({ requestId }: ConsentViewProps) {
   const [confirmAllow, setConfirmAllow] = useState(false)
   const [allowing, setAllowing] = useState(false)
   const [reload, setReload] = useState(0)
+  const [fullData, setFullData] = useState(false)
 
   const tenantId = currentTenant?.id ?? null
   const validId = isRequestId(requestId)
@@ -92,6 +94,8 @@ export function ConsentView({ requestId }: ConsentViewProps) {
     let cancelled = false
     setLoading(true)
     setError(null)
+    // The choice never carries over to another organization or request.
+    setFullData(false)
     fetchConsentRequest(requestId)
       .then((r) => {
         if (!cancelled) setRequest(r)
@@ -114,7 +118,9 @@ export function ConsentView({ requestId }: ConsentViewProps) {
       setError(null)
       try {
         const to =
-          decision === 'approve' ? await approveConsent(requestId) : await denyConsent(requestId)
+          decision === 'approve'
+            ? await approveConsent(requestId, fullData)
+            : await denyConsent(requestId)
         window.location.assign(to)
       } catch (e: unknown) {
         setError(
@@ -125,7 +131,7 @@ export function ConsentView({ requestId }: ConsentViewProps) {
         setDeciding(null)
       }
     },
-    [requestId, validId, t]
+    [requestId, validId, fullData, t]
   )
 
   const ask = async () => {
@@ -298,6 +304,36 @@ export function ConsentView({ requestId }: ConsentViewProps) {
             )}
           </p>
         </section>
+
+        {request.full_data_available && (
+          <section aria-labelledby="consent-full-data" className="space-y-2">
+            <div className="flex items-start gap-3 rounded-md border p-3">
+              <Checkbox
+                id="consent-full-data-option"
+                checked={fullData}
+                onCheckedChange={(v) => setFullData(v === true)}
+                disabled={deciding !== null}
+                className="mt-0.5"
+                aria-describedby="consent-full-data-desc"
+              />
+              <div className="space-y-1">
+                <label
+                  id="consent-full-data"
+                  htmlFor="consent-full-data-option"
+                  className="text-sm font-medium"
+                >
+                  {t('mcp.consent.fullData', 'Allow access to all organization data')}
+                </label>
+                <p id="consent-full-data-desc" className="text-xs text-muted-foreground">
+                  {t(
+                    'mcp.consent.fullDataDesc',
+                    'Without this, it sees only the assets your own groups give you. With it, it sees every asset and finding in this organization, as an administrator does. You will be asked to confirm your identity. It stops seeing everything as soon as your role loses this access, and the connection ends sooner than usual (7 days).'
+                  )}
+                </p>
+              </div>
+            </div>
+          </section>
+        )}
 
         <section aria-labelledby="consent-return" className="space-y-1">
           <h2 id="consent-return" className="text-sm font-medium">

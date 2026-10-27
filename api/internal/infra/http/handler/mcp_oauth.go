@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"io"
 	"mime"
 	"net/http"
 	"net/url"
@@ -33,6 +34,10 @@ type MCPOAuthHandler struct {
 func NewMCPOAuthHandler(svc *mcpoauthapp.Service, log *logger.Logger) *MCPOAuthHandler {
 	return &MCPOAuthHandler{svc: svc, log: log.With("handler", "mcp-oauth")}
 }
+
+// SetStepUpGate sets the re-authentication check that approving access to
+// all organization data needs.
+func (h *MCPOAuthHandler) SetStepUpGate(g shared.RecentAuthGate) { h.svc.SetStepUpGate(g) }
 
 // Paths of the authorization server, relative to the issuer.
 const (
@@ -253,7 +258,17 @@ type consentRequestResponse struct {
 	// AccessRequested: a request for this publisher is already waiting.
 	AccessRequested bool                   `json:"access_requested"`
 	Scopes          []consentScopeResponse `json:"scopes"`
-	ExpiresAt       time.Time              `json:"expires_at"`
+	// FullDataAvailable: the person's role has full organization data
+	// access, so the page offers "Allow access to all organization data".
+	FullDataAvailable bool      `json:"full_data_available"`
+	ExpiresAt         time.Time `json:"expires_at"`
+}
+
+// approveConsentRequest is the body of POST .../approve (optional).
+type approveConsentRequest struct {
+	// FullData allows the connection to read all organization data. Needs a
+	// full-data role and a fresh step-up. Default false.
+	FullData bool `json:"full_data"`
 }
 
 type consentDecisionResponse struct {
@@ -301,6 +316,7 @@ func (h *MCPOAuthHandler) GetConsentRequest(w http.ResponseWriter, r *http.Reque
 		ClientHost: view.ClientHost, RedirectHost: view.RedirectHost, RedirectURI: view.RedirectURI,
 		LoopbackOnly: view.LoopbackOnly, ExpiresAt: view.ExpiresAt, Verified: view.Verified, Blocked: view.Blocked,
 		Requestable: view.Requestable, CanAllow: view.CanAllow, AccessRequested: view.AccessRequested,
+		FullDataAvailable: view.FullDataAvailable,
 	}
 	for _, s := range view.Scopes {
 		out.Scopes = append(out.Scopes, consentScopeResponse{Scope: string(s.Scope), Title: s.Title, Write: s.Write, Granted: s.Granted, NotAllowed: s.NotAllowed})
@@ -310,7 +326,7 @@ func (h *MCPOAuthHandler) GetConsentRequest(w http.ResponseWriter, r *http.Reque
 
 // ApproveConsent serves POST /api/v1/oauth/requests/{id}/approve.
 // @Summary      Allow an AI application to connect
-// @Description  Records the signed-in user's approval in the session's organization and returns the address the browser goes to: the application's registered redirect URI with a single-use authorization code, the state and the issuer. Scopes the user holds nothing for are not granted. Audited.
+// @Description  Records the signed-in user's approval in the session's organization and returns the address the browser goes to: the application's registered redirect URI with a single-use authorization code, the state and the issuer. Scopes the user holds nothing for are not granted. The optional body field full_data allows the connection to read all organization data: it needs a role with full data access and a fresh step-up, and the connection then lives shorter. Audited.
 // @Tags         MCP
 // @Produce      json
 // @Security     BearerAuth
@@ -325,7 +341,16 @@ func (h *MCPOAuthHandler) ApproveConsent(w http.ResponseWriter, r *http.Request)
 		apierror.NotFound("Authorization request").WriteJSON(w)
 		return
 	}
-	to, err := h.svc.Approve(r.Context(), requestID, userID, tenantID, oauthActor(r))
+	var body approveConsentRequest
+	// The body is optional (the older page sends none); a body that is
+	// present must be valid JSON.
+	if r.ContentLength != 0 {
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+			apierror.BadRequest("Invalid request body").WriteJSON(w)
+			return
+		}
+	}
+	to, err := h.svc.ApproveAccess(r.Context(), requestID, userID, tenantID, body.FullData, oauthActor(r))
 	if err != nil {
 		h.consentError(w, err)
 		return
@@ -407,7 +432,14 @@ func (h *MCPOAuthHandler) AllowPublisher(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *MCPOAuthHandler) consentError(w http.ResponseWriter, err error) {
+	if writeStepUpError(w, err) {
+		return
+	}
 	switch {
+	case errors.Is(err, mcpoauthapp.ErrFullDataStepUp):
+		writeStepUpError(w, middleware.ErrStepUpUnavailable)
+	case errors.Is(err, mcpoauthapp.ErrFullDataNotAllowed):
+		apierror.Forbidden("Your role does not have access to all organization data").WriteJSON(w)
 	case errors.Is(err, mcpoauthapp.ErrAccessRequestLimit):
 		apierror.TooManyRequests("Too many access requests; try again later or ask an administrator directly").WriteJSON(w)
 	case errors.Is(err, mcpoauthapp.ErrAccessRequestNotPossible):

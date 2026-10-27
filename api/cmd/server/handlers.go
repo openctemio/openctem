@@ -1270,6 +1270,10 @@ func wireStepUpGate(handlers *routes.Handlers, svc *Services) {
 	if handlers.CIAdmin != nil {
 		handlers.CIAdmin.SetStepUpGate(gate)
 	}
+	if handlers.MCPOAuth != nil {
+		// Allowing an AI application to read all organization data.
+		handlers.MCPOAuth.SetStepUpGate(gate)
+	}
 }
 
 // newSensorHandlerWithTemplates creates a SensorHandler wired with the

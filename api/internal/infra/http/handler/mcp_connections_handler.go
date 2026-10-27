@@ -43,6 +43,9 @@ type MCPConnection struct {
 	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
 	LastUsedIP string     `json:"last_used_ip,omitempty"`
 	ExpiresAt  time.Time  `json:"expires_at"`
+	// FullData: the connection may read all organization data while its
+	// person keeps a full-data role.
+	FullData bool `json:"full_data"`
 }
 
 // MCPConnectionList is a list of connections.
@@ -61,6 +64,7 @@ func toMCPConnections(list []mcpoauthapp.ConnectionView, withUser bool) MCPConne
 			ID: c.ID, ClientName: c.ClientName, ClientID: c.ClientID, ClientKind: string(c.ClientKind),
 			ClientHost: c.ClientHost, UserID: c.UserID, Scopes: scopes, CreatedAt: c.CreatedAt,
 			LastUsedAt: c.LastUsedAt, LastUsedIP: c.LastUsedIP, ExpiresAt: c.ExpiresAt,
+			FullData: c.FullData,
 		}
 		if withUser {
 			m.UserName, m.UserEmail = c.UserName, c.UserEmail
@@ -139,6 +143,55 @@ func (h *MCPConnectionsHandler) ListMine(w http.ResponseWriter, r *http.Request)
 // @Router       /mcp-access/my-connections/{id} [delete]
 func (h *MCPConnectionsHandler) RevokeMine(w http.ResponseWriter, r *http.Request) {
 	h.revoke(w, r, false)
+}
+
+func (h *MCPConnectionsHandler) scope(w http.ResponseWriter, r *http.Request, asAdmin bool) {
+	tenantID, userID, ok := h.caller(r)
+	if !ok {
+		apierror.Unauthorized("Invalid credentials").WriteJSON(w)
+		return
+	}
+	grantID, err := shared.IDFromString(chi.URLParam(r, "id"))
+	if err != nil {
+		apierror.NotFound("Connection").WriteJSON(w)
+		return
+	}
+	err = h.svc.ScopeConnection(r.Context(), tenantID, grantID, userID, asAdmin, oauthActor(r))
+	switch {
+	case err == nil:
+		w.WriteHeader(http.StatusNoContent)
+	case errors.Is(err, mcpoauth.ErrNotFound):
+		apierror.NotFound("Connection").WriteJSON(w)
+	default:
+		h.log.Error("scope mcp connection", "error", logger.SanitizeError(err))
+		apierror.InternalServerError("failed to change the connection").WriteJSON(w)
+	}
+}
+
+// ScopeMine serves POST /api/v1/mcp-access/my-connections/{id}/scoped.
+// @Summary      Limit one of my AI applications to my own data scope
+// @Description  Turns a connection that may read all organization data back into one that reads only what the caller's own groups and scope rules allow. Its tokens stay valid. Someone else's connection is not found. Audited.
+// @Tags         MCP
+// @Security     BearerAuth
+// @Param        id   path  string  true  "Connection id"
+// @Success      204
+// @Failure      404  {object}  apierror.Error
+// @Router       /mcp-access/my-connections/{id}/scoped [post]
+func (h *MCPConnectionsHandler) ScopeMine(w http.ResponseWriter, r *http.Request) {
+	h.scope(w, r, false)
+}
+
+// ScopeAny serves POST /api/v1/mcp-access/connections/{id}/scoped.
+// @Summary      Limit an AI application in the organization to its person's data scope
+// @Description  Turns any connection of the organization that may read all organization data back into one that reads only its person's own data scope. Owners and administrators. Audited.
+// @Tags         MCP
+// @Security     BearerAuth
+// @Param        id   path  string  true  "Connection id"
+// @Success      204
+// @Failure      404  {object}  apierror.Error
+// @Router       /mcp-access/connections/{id}/scoped [post]
+func (h *MCPConnectionsHandler) ScopeAny(w http.ResponseWriter, r *http.Request) {
+	h.scope(w, r, true)
 }
 
 // ListAll serves GET /api/v1/mcp-access/connections.
