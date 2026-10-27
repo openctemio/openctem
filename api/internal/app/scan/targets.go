@@ -319,7 +319,7 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 			shared.ErrValidation, len(out.Targets), maxResolvedTargets)
 	}
 	// A single-scanner run of a one-target scanner dispatches one command
-	// per target (perTargetPlan, or the zone batches); refuse up front what
+	// per target (unzonedJobPlan, or the zone batches); refuse up front what
 	// would exceed the per-run job cap. A workflow (no scanner name) plans
 	// its targets per step and never had the one-target caveat: it used to
 	// be warned that only the first target would be scanned.

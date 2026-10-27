@@ -173,11 +173,16 @@ recommended production setup. Details: [Docker deployment](../deployment/docker.
   unattended tab signs out after the idle timeout. A password reset or
   change, or a two-step reset, of the administrator's account ends its
   console sessions.
-- Write-ahead audit: before a super administrator's write runs (any
-  non-read request whose acting role is super_admin), the API writes one
-  `admin.write_started` row (method, path, redacted body) in the request. If
-  that row cannot be written the request is refused with 503
-  `AUDIT_UNAVAILABLE` and nothing changes; the per-route outcome rows are
+- Write-ahead audit: before any console write runs (any non-read request of
+  an authenticated administrator, whatever role the session currently acts
+  as: an unelevated super administrator acts as read-only, and their
+  elevation, factor and password writes are the ones that matter most), the
+  API writes one `admin.write_started` row (method, path, redacted body) in
+  the request. If that row cannot be written the request is refused with 503
+  `AUDIT_UNAVAILABLE` and nothing changes. Elevating a session writes its
+  `console.elevated` row first and grants the elevation only after the row is
+  stored; with the audit log unavailable the elevation is refused with the
+  same 503 and the session stays read-only; the per-route outcome rows are
   written as before. With `MANAGED_SERVICE=true` in production the API does
   not start without the off-box audit sink (`ADMIN_AUDIT_SINK`). Request
   bodies are redacted by key: any key ending in `secret`, `password`, `_key`
@@ -259,6 +264,14 @@ password path first. Only while "require IdP" closes the password path is the
 IdP their sole first factor and the console factor enrolled after it. Whoever
 can mint an IdP token carrying another administrator's e-mail therefore cannot
 sign in as them and approve their own requests.
+
+While "require IdP" is on, a password sign-in of an administrator who must use
+the IdP is answered exactly like a wrong password (401 "Wrong email or
+password"), so the response never tells a guesser that a password was right.
+The refusal is audited (`console.login_failed`, reason "identity provider
+sign-in required") and counts toward the account's lockout; the sign-in page
+learns that an identity provider exists from the public provider endpoint and
+shows its button after any refused password sign-in.
 
 API: `GET /api/v1/admin/approvals`, `POST /api/v1/admin/approvals`
 (step-up), `POST /api/v1/admin/approvals/{id}/approve` (fresh step-up),
