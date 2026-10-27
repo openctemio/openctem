@@ -170,13 +170,15 @@ jobs:
           go-version-file: api/go.mod
           # A merge-queue ref can neither read develop's cache nor share what
           # it writes, so it neither restores nor saves one.
-          cache: ${{ github.event_name != 'merge_group' }}
+          cache: ${{ github.event_name != 'merge_group' && runner.environment == 'github-hosted' }}
           cache-dependency-path: api/go.sum
 
       # The analysis caches of golangci-lint, and the installed staticcheck
       # binary (its version is in the key), so a run only re-analyses what
       # changed. A cache is a speed-up only: a miss runs the same checks.
       - name: Cache lint tools
+        # A self-hosted runner keeps these on its own disk between jobs.
+        if: runner.environment == 'github-hosted'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -410,7 +412,7 @@ jobs:
         with:
           go-version-file: api/go.mod
           # Same rule as the shards: a merge-queue ref neither restores nor saves.
-          cache: ${{ github.event_name != 'merge_group' }}
+          cache: ${{ github.event_name != 'merge_group' && runner.environment == 'github-hosted' }}
           cache-dependency-path: api/go.sum
       - name: Generate the OpenAPI spec
         run: make swagger
@@ -488,7 +490,7 @@ jobs:
           go-version-file: api/go.mod
           # A merge-queue ref can neither read develop's cache nor share what
           # it writes, so it neither restores nor saves one.
-          cache: ${{ github.event_name != 'merge_group' }}
+          cache: ${{ github.event_name != 'merge_group' && runner.environment == 'github-hosted' }}
           cache-dependency-path: api/go.sum
 
       # The spec is generated, not committed; the contract tests read it. The
@@ -621,7 +623,7 @@ jobs:
           go-version-file: api/go.mod
           # A merge-queue ref can neither read develop's cache nor share what
           # it writes, so it neither restores nor saves one.
-          cache: ${{ github.event_name != 'merge_group' }}
+          cache: ${{ github.event_name != 'merge_group' && runner.environment == 'github-hosted' }}
           cache-dependency-path: api/go.sum
 
       # The spec is generated, not committed; the contract tests read it. The
@@ -751,7 +753,7 @@ jobs:
           go-version-file: api/go.mod
           # A merge-queue ref can neither read develop's cache nor share what
           # it writes, so it neither restores nor saves one.
-          cache: ${{ github.event_name != 'merge_group' }}
+          cache: ${{ github.event_name != 'merge_group' && runner.environment == 'github-hosted' }}
           cache-dependency-path: api/go.sum
 
       - name: Install golang-migrate
@@ -788,7 +790,7 @@ jobs:
           go-version-file: api/go.mod
           # A merge-queue ref can neither read develop's cache nor share what
           # it writes, so it neither restores nor saves one.
-          cache: ${{ github.event_name != 'merge_group' }}
+          cache: ${{ github.event_name != 'merge_group' && runner.environment == 'github-hosted' }}
           cache-dependency-path: api/go.sum
       - name: Fill the cache (only when there was none for this go.sum)
         if: steps.go.outputs.cache-hit != 'true'
@@ -813,7 +815,7 @@ jobs:
           go-version-file: api/go.mod
           # A merge-queue ref can neither read develop's cache nor share what
           # it writes, so it neither restores nor saves one.
-          cache: ${{ github.event_name != 'merge_group' }}
+          cache: ${{ github.event_name != 'merge_group' && runner.environment == 'github-hosted' }}
           cache-dependency-path: api/go.sum
 
       - name: Build release binaries (linux/amd64, static)
