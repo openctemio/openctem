@@ -178,6 +178,8 @@ jobs:
       # binary (its version is in the key), so a run only re-analyses what
       # changed. A cache is a speed-up only: a miss runs the same checks.
       - name: Cache lint tools
+        # A self-hosted runner keeps these on its own disk between jobs.
+        if: runner.environment == 'github-hosted'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |

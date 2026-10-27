@@ -4,7 +4,9 @@ description: >-
   of develop saved, so a pull request only compiles what it changed. Restore
   only: pull requests never write a cache (the `warm-cache` job of api-ci.yml
   saves them from develop), and a merge-queue ref cannot read develop's cache
-  so it restores nothing. A miss runs the same build, only slower.
+  so it restores nothing. A self-hosted runner keeps both caches on its own
+  disk between jobs and restores nothing either. A miss runs the same build,
+  only slower.
   Call after actions/setup-go (with `cache: false`).
 
 outputs:
@@ -50,14 +52,14 @@ runs:
         echo "gomodcache=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
 
     - id: mod
-      if: github.event_name != 'merge_group'
+      if: github.event_name != 'merge_group' && runner.environment == 'github-hosted'
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ${{ steps.keys.outputs.gomodcache }}
         key: ${{ steps.keys.outputs.mod }}
 
     - id: build
-      if: github.event_name != 'merge_group'
+      if: github.event_name != 'merge_group' && runner.environment == 'github-hosted'
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ${{ steps.keys.outputs.gocache }}
