@@ -40,6 +40,7 @@ import type { AddMatchingResult } from '../types'
 import { AssetGroupSelect } from './asset-group-select'
 import { ImpactNotice } from './members/impact-notice'
 import { RulePreview } from './members/rule-preview'
+import { RATED_CRITICALITY_LEVELS } from '@/lib/criticality'
 
 interface FilterGroupActionsProps {
   /** The Assets list query parameters of the filter on screen. */
@@ -49,7 +50,7 @@ interface FilterGroupActionsProps {
 }
 
 const ENVIRONMENTS = ['production', 'staging', 'development', 'testing'] as const
-const CRITICALITIES = ['critical', 'high', 'medium', 'low'] as const
+const CRITICALITIES = RATED_CRITICALITY_LEVELS
 
 export function FilterGroupActions({ params, total }: FilterGroupActionsProps) {
   const { t } = useTranslation()

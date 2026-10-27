@@ -99,9 +99,9 @@ func newSGHarness(t *testing.T) *sgHarness {
 	h.exec(`INSERT INTO tenant_members (user_id, tenant_id, role) VALUES ($1, $2, 'member')`, h.scoped.String(), h.tenantA.String())
 	h.exec(`INSERT INTO tenant_members (user_id, tenant_id, role) VALUES ($1, $2, 'admin')`, h.outsider.String(), h.tenantB.String())
 
-	h.visible1 = h.newAsset(h.tenantA, "www.pti.com.vn")
-	h.visible2 = h.newAsset(h.tenantA, "api.pti.com.vn")
-	h.hidden = h.newAsset(h.tenantA, "vault.pti.com.vn")
+	h.visible1 = h.newAsset(h.tenantA, "www.example.com")
+	h.visible2 = h.newAsset(h.tenantA, "api.example.com")
+	h.hidden = h.newAsset(h.tenantA, "vault.example.com")
 	for _, a := range []shared.ID{h.visible1, h.visible2} {
 		h.exec(`INSERT INTO user_accessible_assets (user_id, tenant_id, asset_id, ownership_type) VALUES ($1, $2, $3, 'secondary')`,
 			h.scoped.String(), h.tenantA.String(), a.String())
@@ -130,7 +130,7 @@ func newSGHarness(t *testing.T) *sgHarness {
 
 func (h *sgHarness) rule(doc string) []byte { return []byte(doc) }
 
-const ptiRule = `{"v":1,"domains":[{"name":"*.pti.com.vn"}]}`
+const ptiRule = `{"v":1,"domains":[{"name":"*.example.com"}]}`
 
 func (h *sgHarness) memberIDs(group shared.ID) []shared.ID {
 	h.t.Helper()
@@ -190,7 +190,7 @@ func TestSmartGroup_RuleStaysInsideTheEditorsDataScope(t *testing.T) {
 	if got := h.memberIDs(h.groupA); !sameIDs(got, h.visible1, h.visible2) {
 		t.Fatalf("members of a scoped editor's group: %v", got)
 	}
-	newHidden := h.newAsset(h.tenantA, "new-hidden.pti.com.vn")
+	newHidden := h.newAsset(h.tenantA, "new-hidden.example.com")
 	if _, err := h.svc.EvaluateGroup(context.Background(), h.tenantA, h.groupA); err != nil {
 		t.Fatal(err)
 	}
@@ -211,8 +211,8 @@ func TestSmartGroup_RuleStaysInsideTheEditorsDataScope(t *testing.T) {
 
 func TestSmartGroup_RuleDoesNotCrossTenants(t *testing.T) {
 	h := newSGHarness(t)
-	foreign := h.newAsset(h.tenantB, "www.pti.com.vn.b.example") // not matching, but in B
-	foreignMatch := h.newAsset(h.tenantB, "mail.pti.com.vn")     // matches the rule text, belongs to B
+	foreign := h.newAsset(h.tenantB, "www.example.com.b.example") // not matching, but in B
+	foreignMatch := h.newAsset(h.tenantB, "mail.example.com")     // matches the rule text, belongs to B
 	_ = foreign
 	admin := sgCaller{id: h.admin, admin: true}
 
@@ -234,7 +234,7 @@ func TestSmartGroup_RuleDoesNotCrossTenants(t *testing.T) {
 	if _, err := h.svc.PreviewGroupRule(h.as(out), h.tenantB.String(), &h.groupA, h.rule(ptiRule)); !errors.Is(err, shared.ErrNotFound) {
 		t.Errorf("PreviewGroupRule across tenants: %v", err)
 	}
-	if _, err := h.svc.PasteToGroup(h.as(out), h.tenantB.String(), h.groupA, "www.pti.com.vn\n", asset.PasteOptions{}); !errors.Is(err, shared.ErrNotFound) {
+	if _, err := h.svc.PasteToGroup(h.as(out), h.tenantB.String(), h.groupA, "www.example.com\n", asset.PasteOptions{}); !errors.Is(err, shared.ErrNotFound) {
 		t.Errorf("PasteToGroup across tenants: %v", err)
 	}
 	if _, _, _, err := h.svc.AddMatchingToGroup(h.as(out), h.tenantB.String(), h.groupA, h.rule(ptiRule)); !errors.Is(err, shared.ErrNotFound) {
@@ -247,7 +247,7 @@ func TestSmartGroup_RuleDoesNotCrossTenants(t *testing.T) {
 		t.Error("ListAssetGroupHistory read the history of another tenant's asset")
 	}
 	// A paste in tenant B naming A's asset matches nothing there.
-	res, err := h.svc.PasteToGroup(h.as(out), h.tenantB.String(), h.groupB, "www.pti.com.vn\n", asset.PasteOptions{})
+	res, err := h.svc.PasteToGroup(h.as(out), h.tenantB.String(), h.groupB, "www.example.com\n", asset.PasteOptions{})
 	if err != nil || res.Matched != 0 || res.Added != 0 || res.NotFound != 1 {
 		t.Fatalf("paste of another tenant's name: %+v %v", res, err)
 	}
@@ -260,7 +260,7 @@ func TestSmartGroup_NewAssetJoinsAfterTheDebounce(t *testing.T) {
 		t.Fatal(err)
 	}
 	sched := asset.NewGroupRuleScheduler(h.svc, 20*time.Millisecond, logger.NewNop())
-	added := h.newAsset(h.tenantA, "new.pti.com.vn")
+	added := h.newAsset(h.tenantA, "new.example.com")
 	h.newAsset(h.tenantA, "unrelated.example.org")
 	// A burst of notifications is one run.
 	for i := 0; i < 20; i++ {
@@ -307,7 +307,7 @@ func TestSmartGroup_ExcludesWinAndManualMembersStay(t *testing.T) {
 		t.Fatalf("preview of an up-to-date group: %+v %v", p, err)
 	}
 	// A rule change that stops matching removes the rule members and keeps the manual one.
-	if _, err := h.svc.ChangeGroupRule(h.as(admin), h.tenantA.String(), h.groupA, h.rule(`{"v":1,"domains":[{"name":"www.pti.com.vn"}]}`)); err != nil {
+	if _, err := h.svc.ChangeGroupRule(h.as(admin), h.tenantA.String(), h.groupA, h.rule(`{"v":1,"domains":[{"name":"www.example.com"}]}`)); err != nil {
 		t.Fatal(err)
 	}
 	if got := h.memberIDs(h.groupA); !sameIDs(got, h.visible1, manual) {
@@ -373,7 +373,7 @@ func TestSmartGroup_EditorWhoLeftPausesTheRule(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.exec(`UPDATE tenant_members SET status = 'offboarded' WHERE user_id = $1 AND tenant_id = $2`, h.scoped.String(), h.tenantA.String())
-	h.newAsset(h.tenantA, "later.pti.com.vn")
+	h.newAsset(h.tenantA, "later.example.com")
 	if _, err := h.svc.EvaluateGroup(context.Background(), h.tenantA, h.groupA); err != nil {
 		t.Fatal(err)
 	}
@@ -415,14 +415,14 @@ func TestSmartGroup_RuleIsValidatedLikeTheAssetsList(t *testing.T) {
 func TestSmartGroup_IncludeRelatedStaysInScope(t *testing.T) {
 	h := newSGHarness(t)
 	svcA := shared.NewID()
-	h.exec(`INSERT INTO assets (id, tenant_id, name, asset_type, parent_id) VALUES ($1, $2, 'www.pti.com.vn:443', 'service', $3)`,
+	h.exec(`INSERT INTO assets (id, tenant_id, name, asset_type, parent_id) VALUES ($1, $2, 'www.example.com:443', 'service', $3)`,
 		svcA.String(), h.tenantA.String(), h.visible1.String())
 	svcHidden := shared.NewID()
-	h.exec(`INSERT INTO assets (id, tenant_id, name, asset_type, parent_id) VALUES ($1, $2, 'api.pti.com.vn:8443', 'service', $3)`,
+	h.exec(`INSERT INTO assets (id, tenant_id, name, asset_type, parent_id) VALUES ($1, $2, 'api.example.com:8443', 'service', $3)`,
 		svcHidden.String(), h.tenantA.String(), h.visible2.String())
 	h.exec(`INSERT INTO user_accessible_assets (user_id, tenant_id, asset_id, ownership_type) VALUES ($1, $2, $3, 'secondary')`,
 		h.scoped.String(), h.tenantA.String(), svcA.String())
-	doc := `{"v":1,"domains":[{"name":"pti.com.vn","subdomains":true}],"include_related":true}`
+	doc := `{"v":1,"domains":[{"name":"example.com","subdomains":true}],"include_related":true}`
 
 	ps, err := h.svc.PreviewGroupRule(h.as(sgCaller{id: h.scoped}), h.tenantA.String(), nil, h.rule(doc))
 	if err != nil || ps.Count != 3 { // two hosts and the one service they may see
@@ -486,7 +486,7 @@ func TestSmartGroup_ImpactAndPrivilegedTeams(t *testing.T) {
 	// A privileged team: every change goes through the owner and step-up check.
 	guard.privileged = true
 	guard.stepUp = errors.New("owner only")
-	if _, err := h.svc.ChangeGroupRule(h.as(admin), h.tenantA.String(), h.groupA, h.rule(`{"v":1,"domains":[{"name":"www.pti.com.vn"}]}`)); err == nil || err.Error() != "owner only" {
+	if _, err := h.svc.ChangeGroupRule(h.as(admin), h.tenantA.String(), h.groupA, h.rule(`{"v":1,"domains":[{"name":"www.example.com"}]}`)); err == nil || err.Error() != "owner only" {
 		t.Fatalf("rule change of a privileged team's group: %v", err)
 	}
 	if err := h.svc.AddAssetsToGroup(h.as(admin), h.tenantA.String(), h.groupA, []string{h.newAsset(h.tenantA, "x.example.org").String()}); err == nil {
@@ -495,19 +495,19 @@ func TestSmartGroup_ImpactAndPrivilegedTeams(t *testing.T) {
 	if err := h.svc.RemoveAssetsFromGroup(h.as(admin), h.tenantA.String(), h.groupA, []string{h.visible1.String()}); err == nil {
 		t.Fatal("members of a privileged team's group removed without the owner check")
 	}
-	if _, err := h.svc.PasteToGroup(h.as(admin), h.tenantA.String(), h.groupA, "www.pti.com.vn\n", asset.PasteOptions{}); err == nil {
+	if _, err := h.svc.PasteToGroup(h.as(admin), h.tenantA.String(), h.groupA, "www.example.com\n", asset.PasteOptions{}); err == nil {
 		t.Fatal("paste into a privileged team's group without the owner check")
 	}
 	if got := h.memberIDs(h.groupA); len(got) != 3 {
 		t.Fatalf("a refused change altered the members: %v", got)
 	}
 	// A dry-run paste changes nothing and needs no step-up.
-	if _, err := h.svc.PasteToGroup(h.as(admin), h.tenantA.String(), h.groupA, "www.pti.com.vn\n", asset.PasteOptions{DryRun: true}); err != nil {
+	if _, err := h.svc.PasteToGroup(h.as(admin), h.tenantA.String(), h.groupA, "www.example.com\n", asset.PasteOptions{DryRun: true}); err != nil {
 		t.Fatalf("dry run: %v", err)
 	}
 	// With the check passing, the change goes through and says the team is privileged.
 	guard.stepUp = nil
-	ch, err = h.svc.ChangeGroupRule(h.as(admin), h.tenantA.String(), h.groupA, h.rule(`{"v":1,"domains":[{"name":"www.pti.com.vn"}]}`))
+	ch, err = h.svc.ChangeGroupRule(h.as(admin), h.tenantA.String(), h.groupA, h.rule(`{"v":1,"domains":[{"name":"www.example.com"}]}`))
 	if err != nil || ch.Impact.Privilege != true {
 		t.Fatalf("owner change: %+v %v", ch, err)
 	}
@@ -543,7 +543,7 @@ func (w *sgPasteWorld) paste() asset.PasteAssets {
 		Covered: func(_ context.Context, _ shared.ID, names []string) (map[string]bool, error) {
 			out := map[string]bool{}
 			for _, n := range names {
-				if strings.HasSuffix(n, ".pti.com.vn") {
+				if strings.HasSuffix(n, ".example.com") {
 					out[n] = true
 				}
 			}
@@ -570,16 +570,16 @@ func TestSmartGroup_PasteMatchesValidatesAndCreatesThroughTheScopeCheck(t *testi
 
 	text := strings.Join([]string{
 		"# my list",
-		"WWW.PTI.COM.VN",          // existing
-		"api.pti.com.vn.",         // existing, trailing dot
-		"new.pti.com.vn",          // missing, in scope
-		"stranger.example.net",    // missing, outside scope
-		"10.0.0.7",                // existing address
-		"javascript:alert(1)",     // rejected
-		"ftp://files.pti.com.vn",  // rejected
-		"www.pti.com.vn\rEvil: 1", // rejected (control character)
-		"10.0.0.0/7",              // rejected (too broad)
-		"192.0.2.0/24",            // range without assets: not found, never created
+		"WWW.PTI.COM.VN",           // existing
+		"api.example.com.",         // existing, trailing dot
+		"new.example.com",          // missing, in scope
+		"stranger.example.net",     // missing, outside scope
+		"10.0.0.7",                 // existing address
+		"javascript:alert(1)",      // rejected
+		"ftp://files.example.com",  // rejected
+		"www.example.com\rEvil: 1", // rejected (control character)
+		"10.0.0.0/7",               // rejected (too broad)
+		"192.0.2.0/24",             // range without assets: not found, never created
 	}, "\n")
 
 	// A dry run reports and changes nothing.
@@ -609,7 +609,7 @@ func TestSmartGroup_PasteMatchesValidatesAndCreatesThroughTheScopeCheck(t *testi
 		t.Fatal(err)
 	}
 	slices.Sort(world.created)
-	if !slices.Equal(world.created, []string{"new.pti.com.vn", "stranger.example.net"}) ||
+	if !slices.Equal(world.created, []string{"new.example.com", "stranger.example.net"}) ||
 		!slices.Equal(world.held, []string{"stranger.example.net"}) || res.Created != 2 || res.Outside != 1 {
 		t.Fatalf("created=%v held=%v res=%+v", world.created, world.held, res)
 	}
@@ -621,19 +621,19 @@ func TestSmartGroup_PasteMatchesValidatesAndCreatesThroughTheScopeCheck(t *testi
 	// it counts as missing, and creating it is skipped as a duplicate.
 	world2 := &sgPasteWorld{h: h}
 	h.svc.SetPasteAssets(world2.paste())
-	sres, err := h.svc.PasteToGroup(h.as(sgCaller{id: h.scoped}), h.tenantA.String(), h.groupA, "vault.pti.com.vn\nwww.pti.com.vn\n", asset.PasteOptions{CreateMissing: true})
+	sres, err := h.svc.PasteToGroup(h.as(sgCaller{id: h.scoped}), h.tenantA.String(), h.groupA, "vault.example.com\nwww.example.com\n", asset.PasteOptions{CreateMissing: true})
 	if err != nil || sres.Matched != 1 || sres.Skipped != 1 || sres.Created != 0 || len(world2.created) != 0 {
 		t.Fatalf("scoped paste: %+v %v", sres, err)
 	}
 
 	// Size and shape limits.
-	big := strings.Repeat("a.pti.com.vn\n", assetgroup.MaxPasteLines+1)
+	big := strings.Repeat("a.example.com\n", assetgroup.MaxPasteLines+1)
 	if _, err := h.svc.PasteToGroup(h.as(admin), h.tenantA.String(), h.groupA, big, asset.PasteOptions{}); err == nil || !errors.Is(err, shared.ErrValidation) {
 		t.Fatalf("an oversized paste was accepted: %v", err)
 	}
 	var many strings.Builder
 	for i := 0; i < assetgroup.MaxPasteCreate+1; i++ {
-		many.WriteString("m" + strings.Repeat("x", i%5) + string(rune('a'+i%26)) + string(rune('a'+i/26%26)) + string(rune('a'+i/676)) + ".pti.com.vn\n")
+		many.WriteString("m" + strings.Repeat("x", i%5) + string(rune('a'+i%26)) + string(rune('a'+i/26%26)) + string(rune('a'+i/676)) + ".example.com\n")
 	}
 	if _, err := h.svc.PasteToGroup(h.as(admin), h.tenantA.String(), h.groupA, many.String(), asset.PasteOptions{CreateMissing: true}); err == nil || !errors.Is(err, shared.ErrValidation) {
 		t.Fatalf("creating more than the limit was accepted: %v", err)

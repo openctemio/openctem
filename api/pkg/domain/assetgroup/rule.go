@@ -62,8 +62,8 @@ const (
 )
 
 // DomainCondition keeps the assets named after a domain: the name itself,
-// and with Subdomains every name below it (label boundary: pti.com.vn never
-// matches evilpti.com.vn).
+// and with Subdomains every name below it (label boundary: example.com never
+// matches evilexample.com).
 type DomainCondition struct {
 	Name       string `json:"name"`
 	Subdomains bool   `json:"subdomains"`

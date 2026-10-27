@@ -30,7 +30,7 @@ A versioned JSON document in `asset_groups.rule`:
 {
   "v": 1,
   "filter": { "types": ["domain"], "tags": ["prod"], "internet_facing": true },
-  "domains": [{ "name": "pti.com.vn", "subdomains": true }],
+  "domains": [{ "name": "example.com", "subdomains": true }],
   "covered_by": ["<scope entry id>"],
   "include_related": true
 }
@@ -41,7 +41,7 @@ A versioned JSON document in `asset_groups.rule`:
   `technology`, `scope_status`, `attribution`, and so on). It is validated by the same input rules and compiled by
   the same filter compiler (`asset.BuildAssetFilter`), so what the Assets page shows is what the rule matches.
 - `domains` match the name itself and, with `subdomains`, every name below it on a label boundary:
-  `pti.com.vn` never matches `evilpti.com.vn` or `pti.com.vn.evil.com`. Names are lowercased and converted to
+  `example.com` never matches `evilexample.com` or `example.com.evil.com`. Names are lowercased and converted to
   punycode; a leading `*.` is accepted and means the domain and everything below it. A URL, port, path, address or
   any other wildcard is refused.
 - `covered_by` keeps the assets a scope entry confirmed (any of the listed entries).

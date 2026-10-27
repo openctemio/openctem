@@ -220,7 +220,7 @@ func (h *AssetGroupHandler) handleServiceError(w http.ResponseWriter, err error)
 	}
 	switch {
 	case errors.Is(err, shared.ErrForbidden):
-		apierror.Forbidden(err.Error()).WriteJSON(w)
+		apierror.SafeForbidden(err).WriteJSON(w)
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("Asset group").WriteJSON(w)
 	case errors.Is(err, shared.ErrAlreadyExists):

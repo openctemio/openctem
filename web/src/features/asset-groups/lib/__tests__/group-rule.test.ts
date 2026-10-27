@@ -55,7 +55,7 @@ describe('rule draft and document', () => {
   it('builds the document the API takes and reads it back', () => {
     const doc = draftToDocument({
       ...EMPTY_RULE_DRAFT,
-      domainsText: 'pti.com.vn\n*.vndirect.com.vn',
+      domainsText: 'example.com\n*.example.net',
       subdomains: true,
       types: ['domain'],
       tags: ['prod'],
@@ -68,14 +68,14 @@ describe('rule draft and document', () => {
       v: 1,
       filter: { types: ['domain'], tags: ['prod'], internet_facing: true, search: 'www' },
       domains: [
-        { name: 'pti.com.vn', subdomains: true },
-        { name: '*.vndirect.com.vn', subdomains: true },
+        { name: 'example.com', subdomains: true },
+        { name: '*.example.net', subdomains: true },
       ],
       covered_by: ['11111111-1111-1111-1111-111111111111'],
       include_related: true,
     })
     const draft = documentToDraft(doc)
-    expect(draft.domainsText).toBe('pti.com.vn\n*.vndirect.com.vn')
+    expect(draft.domainsText).toBe('example.com\n*.example.net')
     expect(draftToDocument(draft)).toEqual(doc)
   })
 
@@ -92,10 +92,10 @@ describe('rule draft and document', () => {
   it('no subdomains: a plain domain stays exact', () => {
     const doc = draftToDocument({
       ...EMPTY_RULE_DRAFT,
-      domainsText: 'pti.com.vn',
+      domainsText: 'example.com',
       subdomains: false,
     })
-    expect(doc.domains).toEqual([{ name: 'pti.com.vn', subdomains: false }])
+    expect(doc.domains).toEqual([{ name: 'example.com', subdomains: false }])
   })
 })
 
