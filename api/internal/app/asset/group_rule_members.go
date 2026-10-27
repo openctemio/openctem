@@ -64,22 +64,23 @@ type PasteOptions struct {
 
 const maxMissingSample = 50
 
-func pasteAssetType(kind string) string {
+func pasteAssetType(kind string) (assetType, subType string) {
 	switch kind {
 	case assetgroupdom.PasteIP:
-		return string(assetdom.AssetTypeIPAddress)
+		return string(assetdom.AssetTypeIPAddress), ""
 	case assetgroupdom.PasteURL:
-		return string(assetdom.AssetTypeWebsite)
+		return string(assetdom.AssetTypeApplication), "website"
 	default:
-		return string(assetdom.AssetTypeDomain)
+		return string(assetdom.AssetTypeDomain), ""
 	}
 }
 
 // pasteNames returns the stored names an item can match.
 func pasteNames(it assetgroupdom.PasteItem) []string {
 	names := []string{it.Value}
-	if t, err := assetdom.ParseAssetType(pasteAssetType(it.Kind)); err == nil {
-		if n := assetdom.NormalizeName(it.Value, t, ""); n != "" && n != it.Value {
+	typ, sub := pasteAssetType(it.Kind)
+	if t, err := assetdom.ParseAssetType(typ); err == nil {
+		if n := assetdom.NormalizeName(it.Value, t, sub); n != "" && n != it.Value {
 			names = append(names, n)
 		}
 	}
@@ -287,8 +288,9 @@ func (s *AssetGroupService) createMissing(ctx context.Context, tenantID shared.I
 	created := make([]CreatedPasteAsset, 0, len(todo))
 	var outside []CreatedPasteAsset
 	for _, it := range todo {
+		typ, sub := pasteAssetType(it.Kind)
 		a, err := s.paste.Create(ctx, CreateAssetInput{
-			TenantID: tenantID.String(), Name: it.Value, Type: pasteAssetType(it.Kind),
+			TenantID: tenantID.String(), Name: it.Value, Type: typ, SubType: sub,
 			Criticality: "medium", ActorID: idString(editor),
 		})
 		if err != nil {

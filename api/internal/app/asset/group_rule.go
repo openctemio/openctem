@@ -193,7 +193,7 @@ func (s *AssetGroupService) buildRuleFilter(tenantID shared.ID, rule *assetgroup
 		in.Technologies = assettech.ParseFilterValues(strings.Join(f.Technology, ","))
 	}
 	if err := ruleInputValidator().Validate(in); err != nil {
-		return assetdom.Filter{}, fmt.Errorf("%w: %s", assetgroupdom.ErrInvalidRule, err.Error())
+		return assetdom.Filter{}, fmt.Errorf("%w: %s", assetgroupdom.ErrInvalidRule, invalidFieldList(err))
 	}
 	filter, err := BuildAssetFilter(in)
 	if err != nil {
@@ -726,4 +726,18 @@ func (s *AssetGroupService) EvaluateTenant(ctx context.Context, tenantID shared.
 		}
 	}
 	return changed, errors.Join(errs...)
+}
+
+// invalidFieldList names the rule fields the validator refused, so the editor
+// sees which condition to fix without the validator's own text.
+func invalidFieldList(err error) string {
+	var ves validator.ValidationErrors
+	if !errors.As(err, &ves) || len(ves) == 0 {
+		return "a rule condition is not valid"
+	}
+	names := make([]string, 0, len(ves))
+	for _, ve := range ves {
+		names = append(names, ve.Field)
+	}
+	return "not valid: " + strings.Join(names, ", ")
 }

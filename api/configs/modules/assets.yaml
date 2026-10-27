@@ -12,6 +12,7 @@
   mcp:
     - list_assets
   jobs:
+    - AssetGroupRulesController
     - AssetIdentityBackfillController
     - AssetTechnologyBackfillController
     - AssetChangeTimelineController

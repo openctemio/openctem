@@ -9,25 +9,25 @@ import (
 )
 
 func TestDomainMatches_LabelBoundary(t *testing.T) {
-	sub := DomainCondition{Name: "pti.com.vn", Subdomains: true}
-	exact := DomainCondition{Name: "pti.com.vn"}
+	sub := DomainCondition{Name: "example.com", Subdomains: true}
+	exact := DomainCondition{Name: "example.com"}
 	cases := []struct {
 		name     string
 		cond     DomainCondition
 		asset    string
 		expected bool
 	}{
-		{"apex with subdomains", sub, "pti.com.vn", true},
-		{"subdomain", sub, "www.pti.com.vn", true},
-		{"deep subdomain", sub, "a.b.c.pti.com.vn", true},
+		{"apex with subdomains", sub, "example.com", true},
+		{"subdomain", sub, "www.example.com", true},
+		{"deep subdomain", sub, "a.b.c.example.com", true},
 		{"upper case", sub, "WWW.PTI.COM.VN", true},
-		{"look-alike prefix is not a subdomain", sub, "evilpti.com.vn", false},
-		{"look-alike prefix with dash", sub, "evil-pti.com.vn", false},
-		{"domain used as a label of another", sub, "pti.com.vn.evil.com", false},
+		{"look-alike prefix is not a subdomain", sub, "evilexample.com", false},
+		{"look-alike prefix with dash", sub, "evil-example.com", false},
+		{"domain used as a label of another", sub, "example.com.evil.com", false},
 		{"parent is not below", sub, "com.vn", false},
 		{"sibling", sub, "other.com.vn", false},
-		{"exact apex", exact, "pti.com.vn", true},
-		{"exact does not take subdomains", exact, "www.pti.com.vn", false},
+		{"exact apex", exact, "example.com", true},
+		{"exact does not take subdomains", exact, "www.example.com", false},
 		{"idn matches its punycode form", DomainCondition{Name: "xn--bcher-kva.de", Subdomains: true}, "www.bücher.de", true},
 	}
 	for _, c := range cases {
@@ -42,9 +42,9 @@ func TestNormalizeDomain(t *testing.T) {
 		in, name string
 		wildcard bool
 	}{
-		{"pti.com.vn", "pti.com.vn", false},
-		{"  PTI.com.VN.  ", "pti.com.vn", false},
-		{"*.pti.com.vn", "pti.com.vn", true},
+		{"example.com", "example.com", false},
+		{"  PTI.com.VN.  ", "example.com", false},
+		{"*.example.com", "example.com", true},
 		{"bücher.de", "xn--bcher-kva.de", false},
 		{"*.BÜCHER.de", "xn--bcher-kva.de", true},
 		{"_dmarc.example.com", "_dmarc.example.com", false},
@@ -72,11 +72,11 @@ func TestNormalizeDomain(t *testing.T) {
 }
 
 func TestParseRule(t *testing.T) {
-	r, err := ParseRule([]byte(`{"v":1,"filter":{"types":["domain"],"tags":["prod"]},"domains":[{"name":"*.PTI.com.vn"},{"name":"pti.com.vn","subdomains":false}],"include_related":true}`))
+	r, err := ParseRule([]byte(`{"v":1,"filter":{"types":["domain"],"tags":["prod"]},"domains":[{"name":"*.PTI.com.vn"},{"name":"example.com","subdomains":false}],"include_related":true}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Version != RuleVersion || len(r.Domains) != 1 || r.Domains[0].Name != "pti.com.vn" || !r.Domains[0].Subdomains {
+	if r.Version != RuleVersion || len(r.Domains) != 1 || r.Domains[0].Name != "example.com" || !r.Domains[0].Subdomains {
 		t.Fatalf("domains not normalised and merged: %+v", r.Domains)
 	}
 	b, err := r.JSON()

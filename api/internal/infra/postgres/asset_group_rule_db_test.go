@@ -92,16 +92,16 @@ func (f *ruleFixture) tenantFilter(extra func(*asset.Filter)) asset.Filter {
 
 func TestDomainNamesFilter_LabelBoundary_DB(t *testing.T) {
 	f := newRuleFixture(t)
-	apex := f.newAsset(f.tenant, "pti.com.vn")
-	sub := f.newAsset(f.tenant, "www.pti.com.vn")
-	deep := f.newAsset(f.tenant, "a.b.pti.com.vn")
-	lookalike := f.newAsset(f.tenant, "evilpti.com.vn")
-	dashed := f.newAsset(f.tenant, "evil-pti.com.vn")
-	suffixed := f.newAsset(f.tenant, "pti.com.vn.evil.com")
+	apex := f.newAsset(f.tenant, "example.com")
+	sub := f.newAsset(f.tenant, "www.example.com")
+	deep := f.newAsset(f.tenant, "a.b.example.com")
+	lookalike := f.newAsset(f.tenant, "evilexample.com")
+	dashed := f.newAsset(f.tenant, "evil-example.com")
+	suffixed := f.newAsset(f.tenant, "example.com.evil.com")
 	other := f.newAsset(f.tenant, "other.com.vn")
 	// A wildcard character in a stored name must not widen the match.
-	percent := f.newAsset(f.tenant, "x%.pti.com.vn")
-	foreign := f.newAsset(seedTestTenant(f.ctx, t, f.db), "foreign.pti.com.vn")
+	percent := f.newAsset(f.tenant, "x%.example.com")
+	foreign := f.newAsset(seedTestTenant(f.ctx, t, f.db), "foreign.example.com")
 
 	ids := func(conds ...asset.DomainName) []shared.ID {
 		t.Helper()
@@ -122,19 +122,19 @@ func TestDomainNamesFilter_LabelBoundary_DB(t *testing.T) {
 		}
 		return true
 	}
-	if got := ids(asset.DomainName{Name: "pti.com.vn", Subdomains: true}); !has(got, apex, sub, deep, percent) {
+	if got := ids(asset.DomainName{Name: "example.com", Subdomains: true}); !has(got, apex, sub, deep, percent) {
 		t.Errorf("with subdomains matched %v, want the apex and the names below it only", got)
 	}
-	if got := ids(asset.DomainName{Name: "pti.com.vn"}); !has(got, apex) {
+	if got := ids(asset.DomainName{Name: "example.com"}); !has(got, apex) {
 		t.Errorf("exact matched %v, want the apex only", got)
 	}
 	for _, bad := range []shared.ID{lookalike, dashed, suffixed, other, foreign} {
-		if slices.Contains(ids(asset.DomainName{Name: "pti.com.vn", Subdomains: true}), bad) {
+		if slices.Contains(ids(asset.DomainName{Name: "example.com", Subdomains: true}), bad) {
 			t.Errorf("asset %s matched outside the label boundary or the tenant", bad)
 		}
 	}
 	// Two conditions are an OR.
-	if got := ids(asset.DomainName{Name: "pti.com.vn"}, asset.DomainName{Name: "other.com.vn"}); !has(got, apex, other) {
+	if got := ids(asset.DomainName{Name: "example.com"}, asset.DomainName{Name: "other.com.vn"}); !has(got, apex, other) {
 		t.Errorf("or of two conditions matched %v", got)
 	}
 	// A LIKE metacharacter in the condition matches nothing extra.

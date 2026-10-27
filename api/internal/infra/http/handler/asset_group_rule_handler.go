@@ -421,7 +421,7 @@ func (h *AssetGroupHandler) GetHistory(w http.ResponseWriter, r *http.Request) {
 	writeHistory(w, res)
 }
 
-// GetAssetGroupHistory handles GET /api/v1/asset-groups/by-asset/{id}/history
+// GetAssetGroupHistory handles GET /api/v1/asset-groups/assets/{id}/history
 // @Summary      Group history of an asset
 // @Description  The asset groups an asset joined and left, and why, newest first.
 // @Tags         Asset Groups
@@ -432,7 +432,7 @@ func (h *AssetGroupHandler) GetHistory(w http.ResponseWriter, r *http.Request) {
 // @Success      200  {object}  ListResponse[GroupHistoryEntry]
 // @Failure      404  {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /asset-groups/by-asset/{id}/history [get]
+// @Router       /asset-groups/assets/{id}/history [get]
 func (h *AssetGroupHandler) GetAssetGroupHistory(w http.ResponseWriter, r *http.Request) {
 	id, err := shared.IDFromString(chi.URLParam(r, "id"))
 	if err != nil {

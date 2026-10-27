@@ -208,7 +208,7 @@ func registerAssetGroupRoutes(
 		// Rule groups: preview a rule, an asset's group history (static
 		// paths, before /{id})
 		r.POST("/rule/preview", h.PreviewRule, middleware.Require(permission.AssetGroupsWrite))
-		r.GET("/by-asset/{id}/history", h.GetAssetGroupHistory, middleware.Require(permission.AssetGroupsRead))
+		r.GET("/assets/{id}/history", h.GetAssetGroupHistory, middleware.Require(permission.AssetGroupsRead))
 
 		// Bulk operations
 		r.PATCH("/bulk", h.BulkUpdate, middleware.Require(permission.AssetGroupsWrite))

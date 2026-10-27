@@ -19,8 +19,9 @@ import { useAssetTypeRegistry } from '@/features/asset-types/api/use-asset-type-
 import { useScopeTargetsApi } from '@/features/scope/api/use-scope-api'
 import { draftToDocument, invalidDomains, isDraftEmpty, type RuleDraft } from '../../lib/group-rule'
 import { RulePreview } from './rule-preview'
+import { RATED_CRITICALITY_LEVELS } from '@/lib/criticality'
 
-const CRITICALITIES = ['critical', 'high', 'medium', 'low']
+const CRITICALITIES = RATED_CRITICALITY_LEVELS
 const ENVIRONMENTS = ['production', 'staging', 'development', 'testing', 'dr']
 
 interface RuleEditorProps {

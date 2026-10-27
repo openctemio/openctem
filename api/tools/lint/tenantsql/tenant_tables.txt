@@ -16,6 +16,7 @@ asset_coverage
 asset_coverage_alerts
 asset_dedup_review
 asset_enrichment_requests
+asset_group_member_history
 asset_groups
 asset_identifiers
 asset_identity_backfill
