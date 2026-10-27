@@ -7,6 +7,7 @@ import {
   targetMappingListPath,
   updateTargetMapping,
   useExistingTargetMapping,
+  useRegistryTargetPairs,
   useTargetMappingStats,
   useTargetMappings,
 } from '../api/use-target-mappings'
@@ -25,6 +26,7 @@ vi.mock('../api/use-target-mappings', async (importOriginal) => {
     updateTargetMapping: vi.fn(),
     deleteTargetMapping: vi.fn(),
     useExistingTargetMapping: vi.fn(),
+    useRegistryTargetPairs: vi.fn(),
     useTargetMappings: vi.fn(),
     useTargetMappingStats: vi.fn(),
   }
@@ -188,6 +190,10 @@ describe('TargetMappingsPage', () => {
       isLoading: false,
       mutate: vi.fn(),
     } as unknown as ReturnType<typeof useTargetMappingStats>)
+    vi.mocked(useRegistryTargetPairs).mockReturnValue({
+      data: { data: [{ target_type: 'url', asset_type: 'website' }] },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useRegistryTargetPairs>)
     listOf([MAPPING])
   })
 
@@ -225,11 +231,13 @@ describe('TargetMappingsPage', () => {
     expect(screen.getByRole('menuitem', { name: 'Delete' })).toBeInTheDocument()
   })
 
-  it('explains what an empty installation means', () => {
+  it('explains that an empty list only lacks custom mappings', () => {
     asRole('super_admin')
     listOf([])
     render(<TargetMappingsPage />)
-    expect(screen.getByText('No target mappings')).toBeInTheDocument()
-    expect(screen.getByText(/scans skip every asset/i)).toBeInTheDocument()
+    expect(screen.getByText('No custom mappings')).toBeInTheDocument()
+    expect(
+      screen.getByText(/built-in pairs already cover the standard asset types/i)
+    ).toBeInTheDocument()
   })
 })
