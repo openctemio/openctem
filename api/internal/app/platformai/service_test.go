@@ -3,6 +3,7 @@ package platformai
 import (
 	"context"
 	"errors"
+	"github.com/openctemio/openctem/api/pkg/crypto"
 	"strings"
 	"testing"
 
@@ -321,5 +322,50 @@ func TestApprovalTargetBindsKey(t *testing.T) {
 	b, _ := svc.ApprovalNeeded(ctx, Input{Enabled: true, Provider: "claude", Model: "m", APIKey: cst.Strp("sk-ant-other-key-0123456789")})
 	if a == "" || a != a2 || a == b {
 		t.Fatalf("targets: %q %q %q", a, a2, b)
+	}
+}
+
+// noFingerprint is an encryptor that cannot fingerprint (it hides the
+// optional crypto.Fingerprinter of the real cipher).
+type noFingerprint struct{ crypto.Encryptor }
+
+// Without a keyed fingerprint a key swap cannot be bound to the approval, so a
+// save that carries a key is refused instead of approved against a constant.
+func TestSaveRefusedWhenTheKeyCannotBeFingerprinted(t *testing.T) {
+	ctx := context.Background()
+	repo, audit, n := cst.NewRepo(), &cst.Audit{}, &cst.Notifier{}
+	svc := NewService(repo, noFingerprint{cst.Cipher(t)}, cst.Recorder(audit, n), false, "claude", "env-model", nil)
+	in := Input{Enabled: true, Provider: "claude", Model: "claude-sonnet-4", APIKey: cst.Strp(apiKey), Reason: "on"}
+
+	if _, err := svc.Update(ctx, cst.SuperAdmin(t), in, 0, "", ""); !errors.Is(err, ErrNoFingerprint) {
+		t.Fatalf("Update = %v, want ErrNoFingerprint", err)
+	}
+	if target, needed := svc.ApprovalNeeded(ctx, in); needed || target != "" {
+		t.Fatalf("an unplannable save must not produce an approval target: %q", target)
+	}
+	if len(audit.Entries) != 0 || repo.Raw(SettingKey) != "" {
+		t.Fatal("a refused save stored or audited something")
+	}
+}
+
+// Removing the key of a platform that stays on is a destination change (the
+// server is then called without the credential): it asks for a second
+// administrator. Removing it while turning off does not.
+func TestRemovingTheKeyWhileOnAsksForApproval(t *testing.T) {
+	ctx := context.Background()
+	svc, _, _, _ := newSvc(t, false)
+	on := Input{Enabled: true, Provider: "openai_compatible", Model: "llama3", BaseURL: "http://10.0.0.5:11434/v1",
+		AllowPrivate: true, APIKey: cst.Strp(apiKey), Reason: "self-hosted model"}
+	if _, err := svc.Update(ctx, cst.SuperAdmin(t), on, 0, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	remove := on
+	remove.APIKey = cst.Strp("")
+	if _, needed := svc.ApprovalNeeded(ctx, remove); !needed {
+		t.Fatal("removing the key while staying on must ask")
+	}
+	remove.Enabled = false
+	if _, needed := svc.ApprovalNeeded(ctx, remove); needed {
+		t.Fatal("removing the key while turning off must not ask")
 	}
 }

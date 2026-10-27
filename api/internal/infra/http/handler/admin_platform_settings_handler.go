@@ -585,7 +585,7 @@ func (h *AdminPlatformSettingsHandler) GetPlatformAI(w http.ResponseWriter, r *h
 
 // UpdatePlatformAI changes the platform AI provider.
 // @Summary      Change the platform AI provider
-// @Description  Super admin with a fresh confirmation and a reason. Off by default; turning it on needs a provider, a model and a key (an OpenAI-compatible server: its base URL, the key optional). allow_private lets the OpenAI-compatible server sit on a private network; it is audited with the rest. The key is encrypted at rest and never returned. Refused (409 SETTING_LOCKED_BY_ENVIRONMENT) while an AI key is set on the server. Turning it on with another destination (provider, base_url, allow_private or API key) than the last one applied needs another super admin first (428 SECOND_APPROVAL_REQUIRED); model changes, turning it off and removing the key do not. Audited critical, every administrator is told.
+// @Description  Super admin with a fresh confirmation and a reason. Off by default; turning it on needs a provider, a model and a key (an OpenAI-compatible server: its base URL, the key optional). allow_private lets the OpenAI-compatible server sit on a private network; it is audited with the rest. The key is encrypted at rest and never returned. Refused (409 SETTING_LOCKED_BY_ENVIRONMENT) while an AI key is set on the server. Turning it on with another destination (provider, base_url, allow_private or API key) than the last one applied needs another super admin first (428 SECOND_APPROVAL_REQUIRED); model changes and turning it off do not; removing the key while it stays on does. Audited critical, every administrator is told.
 // @Tags         Admin System
 // @Accept       json
 // @Produce      json

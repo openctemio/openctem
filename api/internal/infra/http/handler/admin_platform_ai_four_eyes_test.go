@@ -81,7 +81,7 @@ func TestUpdatePlatformAIDestinationNeedsSecondApproval(t *testing.T) {
 		if rec := aiPut(t, h, on("m2", key2, 2)); rec.Code != http.StatusPreconditionRequired || len(gate.calls) != 2 {
 			t.Fatalf("key swap %d calls %v", rec.Code, gate.calls)
 		}
-		// Turning off and removing the key never ask, even while the gate refuses.
+		// Turning off (the key removed with it) never asks, even while the gate refuses.
 		off := `{"enabled":false,"provider":"claude","model":"m2","reason":"incident","api_key":"","version":2}`
 		if rec := aiPut(t, h, off); rec.Code != http.StatusOK || len(gate.calls) != 2 {
 			t.Fatalf("turn off %d calls %v", rec.Code, gate.calls)
