@@ -138,7 +138,8 @@ import (
 // "step-up" is the route-level gate (middleware.RequireAdminStepUp): a fresh
 // authenticator code in X-Admin-Step-Up, or the five-minute step-up window of
 // the same console session. "fresh step-up" (RequireAdminFreshStepUp) never
-// uses the window. "fresh code in the body" is the older check in the handler
+// uses the window; elevating the session is a fresh step-up that then opens
+// the window. "fresh code in the body" is the older check in the handler
 // (confirmAdminStepUp: a code in the request body, every time), which many
 // routes keep on top of the route-level step-up.
 //
@@ -206,6 +207,13 @@ func registerAdminRoutes(
 		return middleware.RequireAdminFreshStepUp(h.AdminStepUp, purpose)
 	}
 
+	// freshStepUpOpensWindow is freshStepUp for elevating the session, the
+	// gateway to every other protected action: it never rides a window another
+	// action opened, and its own fresh proof opens the window.
+	freshStepUpOpensWindow := func(purpose string) Middleware {
+		return middleware.RequireAdminFreshStepUpOpensWindow(h.AdminStepUp, purpose)
+	}
+
 	// Auth: one group (chi cannot mount the same prefix twice), so the guard is
 	// per route. /validate needs a verified console session. The console signs
 	// in on its own: /login checks the account's email and password and opens
@@ -242,7 +250,7 @@ func registerAdminRoutes(
 				r.POST("/step-up/webauthn", h.AdminConsole.WebAuthnStepUp, consoleRL.LoginMiddleware(), authed)
 				// Time-boxed elevation: read-only until the session elevates
 				// (a fresh confirmation); ending it is always allowed.
-				r.POST("/elevate", h.AdminConsole.Elevate, authed, stepUp("console.elevate"))
+				r.POST("/elevate", h.AdminConsole.Elevate, authed, freshStepUpOpensWindow("console.elevate"))
 				r.DELETE("/elevate", h.AdminConsole.EndElevation, authed)
 				// Platform identity provider sign-in (RFC-022 revision 4). Not a
 				// credential-guessing surface (the IdP authenticates, the state is
