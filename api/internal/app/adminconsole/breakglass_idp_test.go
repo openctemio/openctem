@@ -576,15 +576,25 @@ func TestRequireIdPRefusesLocalPathExceptBreakGlass(t *testing.T) {
 		t.Fatal("turning on require-IdP must end non-break-glass password sessions")
 	}
 	resetsBefore := b.accounts.resets
-	if _, err := b.svc.Start(context.Background(), refresh, password, client); !errors.Is(err, admin.ErrIdPSignInRequired) {
-		t.Fatalf("local path must be refused, got %v", err)
+	if _, err := b.svc.Start(context.Background(), refresh, password, client); !errors.Is(err, admin.ErrInvalidCredentials) {
+		t.Fatalf("local path must be refused with the one credentials answer, got %v", err)
+	}
+	// A wrong password for the same account must be indistinguishable from the
+	// refusal above (no sign-in oracle for a correct password).
+	_, rightErr := b.svc.Start(context.Background(), refresh, password, client)
+	_, wrongErr := b.svc.Start(context.Background(), refresh, password+"-wrong", client)
+	if rightErr != wrongErr {
+		t.Fatalf("right and wrong password must give the identical error, got %v and %v", rightErr, wrongErr)
+	}
+	if errors.Is(rightErr, admin.ErrIdPSignInRequired) {
+		t.Fatal("the IdP-required refusal must not reach the caller")
 	}
 	if !b.audit.has(ActionLoginFailed) {
 		t.Fatal("the refusal is audited")
 	}
 	// The refusal counts as a failure and never clears the lockout counter.
-	if b.accounts.resets != resetsBefore || b.accounts.failures != 1 {
-		t.Fatalf("idp_required refusal: resets %d -> %d, failures=%d, want no reset and 1 failure", resetsBefore, b.accounts.resets, b.accounts.failures)
+	if b.accounts.resets != resetsBefore || b.accounts.failures != 2 {
+		t.Fatalf("idp_required refusal: resets %d -> %d, failures=%d, want no reset and 2 failures", resetsBefore, b.accounts.resets, b.accounts.failures)
 	}
 	if _, err := b.signIn(t, bgRefresh); err != nil {
 		t.Fatalf("break-glass must still sign in locally: %v", err)

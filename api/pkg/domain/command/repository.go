@@ -230,6 +230,15 @@ type ExhaustedFailer interface {
 	FailExhaustedCommandsReturning(ctx context.Context, maxRetries int) ([]*Command, error)
 }
 
+// RunDeadlineExtender moves the deadline of the scan runs whose tasks a
+// sensor just claimed, so the run gets the time those tasks need from the
+// claim on and time spent waiting in the queue does not count
+// (docs/architecture/scan-lifecycle.md, "Deadline"). Optional extension of Repository,
+// asserted by the command service; tenant-scoped.
+type RunDeadlineExtender interface {
+	ExtendRunDeadlinesAtClaim(ctx context.Context, tenantID, sensorID shared.ID, ids []shared.ID) error
+}
+
 // BatchClaimer claims several commands for one sensor in one statement
 // (claim-N, RFC-046 §11, RFC-030 §5.3). Optional extension of Repository,
 // asserted by the command service.

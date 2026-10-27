@@ -272,7 +272,7 @@ export type ScanRunKind =
 
 /** Which policy set a run's deadline (scan_runs.deadline_reason). */
 export type RunDeadlineReason =
-  'scan_max_duration' | 'workflow_max_duration' | 'platform_cap' | 'legacy'
+  'scan_max_duration' | 'workflow_max_duration' | 'platform_cap' | 'work_estimate' | 'legacy'
 
 export interface ScanRun {
   id: string

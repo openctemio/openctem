@@ -83,65 +83,69 @@ async function openScans(page: Page): Promise<boolean> {
   return (body.data?.length ?? 0) > 0
 }
 
-test('scan cards at 390px: no overlapping text, name and state on one line', async ({
-  page,
-}, testInfo) => {
-  await page.setViewportSize({ width: 390, height: 844 })
-  test.skip(!(await openScans(page)), 'Needs at least one scan')
+test(
+  'scan cards at 390px: no overlapping text, name and state on one line',
+  { tag: ['@scans'] },
+  async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    test.skip(!(await openScans(page)), 'Needs at least one scan')
 
-  const cards = page.locator('[data-slot="scan-card"]')
-  await expect(cards.first()).toBeVisible({ timeout: 45_000 })
-  const n = await cards.count()
-  for (let i = 0; i < n; i++) {
-    const card = cards.nth(i)
-    await card.scrollIntoViewIfNeeded()
-    const boxes = await textBoxes(card)
-    expect(overlaps(boxes), `card ${i}`).toEqual([])
-    expect(await outside(card, boxes), `card ${i}`).toEqual([])
+    const cards = page.locator('[data-slot="scan-card"]')
+    await expect(cards.first()).toBeVisible({ timeout: 45_000 })
+    const n = await cards.count()
+    for (let i = 0; i < n; i++) {
+      const card = cards.nth(i)
+      await card.scrollIntoViewIfNeeded()
+      const boxes = await textBoxes(card)
+      expect(overlaps(boxes), `card ${i}`).toEqual([])
+      expect(await outside(card, boxes), `card ${i}`).toEqual([])
 
-    // The name and the state chip start on the same line.
-    const title = await card.locator('[data-slot="scan-card-title"]').boundingBox()
-    const status = card.locator('[data-slot="scan-card-status"]')
-    if ((await status.count()) > 0 && title) {
-      const s = await status.boundingBox()
-      expect(s && Math.abs(s.y - title.y), `card ${i} state on the title line`).toBeLessThan(12)
+      // The name and the state chip start on the same line.
+      const title = await card.locator('[data-slot="scan-card-title"]').boundingBox()
+      const status = card.locator('[data-slot="scan-card-status"]')
+      if ((await status.count()) > 0 && title) {
+        const s = await status.boundingBox()
+        expect(s && Math.abs(s.y - title.y), `card ${i} state on the title line`).toBeLessThan(12)
+      }
     }
-  }
 
-  // A blocked last run explains itself on the card.
-  const blocked = cards.filter({ has: page.locator('[data-state="blocked"]') })
-  if ((await blocked.count()) > 0) {
-    await expect(blocked.first().locator('[data-slot="blocked-run-hint"]')).toBeVisible()
-  }
-
-  await testInfo.attach('scans-390.png', {
-    body: await page.screenshot({ fullPage: true }),
-    contentType: 'image/png',
-  })
-})
-
-test('scan table at 1440px: no overlapping text, nothing outside its cell', async ({
-  page,
-}, testInfo) => {
-  await page.setViewportSize({ width: 1440, height: 900 })
-  test.skip(!(await openScans(page)), 'Needs at least one scan')
-
-  const rows = page.locator('table tbody tr')
-  await expect(rows.first()).toBeVisible({ timeout: 45_000 })
-  const n = await rows.count()
-  for (let i = 0; i < n; i++) {
-    const row = rows.nth(i)
-    expect(overlaps(await textBoxes(row)), `row ${i}`).toEqual([])
-    const cells = row.locator('td')
-    const m = await cells.count()
-    for (let j = 0; j < m; j++) {
-      const cell = cells.nth(j)
-      expect(await outside(cell, await textBoxes(cell)), `row ${i} cell ${j}`).toEqual([])
+    // A blocked last run explains itself on the card.
+    const blocked = cards.filter({ has: page.locator('[data-state="blocked"]') })
+    if ((await blocked.count()) > 0) {
+      await expect(blocked.first().locator('[data-slot="blocked-run-hint"]')).toBeVisible()
     }
-  }
 
-  await testInfo.attach('scans-1440.png', {
-    body: await page.screenshot({ fullPage: true }),
-    contentType: 'image/png',
-  })
-})
+    await testInfo.attach('scans-390.png', {
+      body: await page.screenshot({ fullPage: true }),
+      contentType: 'image/png',
+    })
+  }
+)
+
+test(
+  'scan table at 1440px: no overlapping text, nothing outside its cell',
+  { tag: ['@scans'] },
+  async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    test.skip(!(await openScans(page)), 'Needs at least one scan')
+
+    const rows = page.locator('table tbody tr')
+    await expect(rows.first()).toBeVisible({ timeout: 45_000 })
+    const n = await rows.count()
+    for (let i = 0; i < n; i++) {
+      const row = rows.nth(i)
+      expect(overlaps(await textBoxes(row)), `row ${i}`).toEqual([])
+      const cells = row.locator('td')
+      const m = await cells.count()
+      for (let j = 0; j < m; j++) {
+        const cell = cells.nth(j)
+        expect(await outside(cell, await textBoxes(cell)), `row ${i} cell ${j}`).toEqual([])
+      }
+    }
+
+    await testInfo.attach('scans-1440.png', {
+      body: await page.screenshot({ fullPage: true }),
+      contentType: 'image/png',
+    })
+  }
+)
