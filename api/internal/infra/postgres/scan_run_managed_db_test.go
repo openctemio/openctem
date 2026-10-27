@@ -1,7 +1,7 @@
 package postgres
 
 // Continuous coverage runs (system-triggered, on a scan the platform manages)
-// are listed, counted and labelled like any other run of the tenant, and the
+// are listed, counted and labeled like any other run of the tenant, and the
 // origin filter can leave them out or show only them. A tenant never sees or
 // names another tenant's managed scans.
 
