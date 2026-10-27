@@ -53,9 +53,6 @@ func (s *Service) applyTargetEdit(ctx context.Context, sc *scan.Scan, in UpdateS
 		if err := s.refuseUnownedTargets(ctx, tenantID, "scan_update", validated, IsTakeoverOnlyProbe(sc.ScannerName, sc.ScannerConfig)); err != nil {
 			return err
 		}
-		if err := s.refuseUnprovenIntrusive(ctx, tenantID, sc.ScannerName, validated); err != nil {
-			return err
-		}
 		if err := s.refuseTierExceeded(ctx, tenantID, sc.ScannerName, validated); err != nil {
 			return err
 		}

@@ -355,7 +355,7 @@ permission) is uploaded once and named by the entries it authorizes.
 - The entry authorizes only while its letter is valid (`valid_from` ≤ now <
   `valid_until`, not revoked): the read of in-effect entries joins the
   letter, so expiry and revocation stop scanning at once without a sweep.
-- Intrusive (T2) probes still need proof (RFC-054 §8.1); a platform-reviewed
+- Platform sensors still need proof (RFC-054 §8.1); a platform-reviewed
   letter as a proof kind is RFC-054 P1 and not part of this RFC.
 
 ## 14. Program sync (P1)
