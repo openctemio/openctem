@@ -1199,6 +1199,8 @@
   "sensors.snippets.loadFailed": "Không tải được lệnh cài đặt (HTTP {status})",
   "sensors.snippets.policyNote": "Chủ sở hữu mạng mà sensor này quét sẽ xem xét chính sách này và cài đặt ở chế độ chỉ đọc trên máy chủ sensor (các lệnh cài đặt sẽ gắn nó vào). Sensor từ chối mọi job nằm ngoài chính sách; nền tảng không thể thay đổi nó. Cần bản sensor mới hơn v0.8.0: v0.8.0 trở xuống bỏ qua chính sách và quét mà không có nó.",
   "sensors.snippets.product": "Sản phẩm",
+  "sensors.snippets.runGuide": "Hướng dẫn chạy sensor",
+  "sensors.snippets.volumeNote": "Hãy giữ dữ liệu của sensor trong volume có tên của đoạn lệnh này: volume đó chứa danh tính của sensor. Nếu gắn một thư mục trên máy chủ thay vào, thư mục phải thuộc về người dùng của sensor (chown -R 999:999), nếu không sensor sẽ dừng khi khởi động và báo lỗi.",
   "sensors.sparkline.dashed": "nét đứt: chu kỳ {interval}",
   "sensors.sparkline.gapPer": "Khoảng cách lớn nhất mỗi {minutes} phút",
   "sensors.sparkline.hoursAgo": "{hours} giờ trước",

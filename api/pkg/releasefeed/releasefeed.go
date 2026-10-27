@@ -64,10 +64,12 @@ var Severities = []string{"low", "medium", "high", "critical"}
 
 // PinnedKeys are the Ed25519 public keys (hex, 64 characters) this release
 // trusts to sign the release feed: the online key, plus the next one while a
-// rotation overlaps (at most MaxPinnedKeys). Empty: nothing verifies and the
-// version check stays inert. Changed only by a reviewed commit, never by
-// configuration.
-var PinnedKeys = []string{}
+// rotation overlaps (at most MaxPinnedKeys). Changed only by a reviewed
+// commit, never by configuration; TestPinnedKeysShipped keeps it non-empty.
+var PinnedKeys = []string{
+	// Online key, added 2026-10-26.
+	"2caf362457a357643b6745fe0605d6c88853c538a2fea178a0f0a493599ec170",
+}
 
 // Errors a caller tells apart.
 var (
