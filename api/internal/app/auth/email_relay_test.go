@@ -105,6 +105,47 @@ func TestAccountSecurityMail_NeverUsesOrganizationRelay(t *testing.T) {
 	}
 }
 
+// A set-password link (account setup, first owner, owner recovery) goes
+// through the platform relay only: an active organization relay is never
+// looked up, never used, and does not decide whether the link can be mailed.
+func TestAccountSetupLink_NeverUsesOrganizationRelay(t *testing.T) {
+	ctx := context.Background()
+	tenant := "11111111-1111-4111-8111-111111111111"
+	platform := &recSender{}
+	relay := &relayStub{cfg: &emaildom.Config{Host: "smtp.org.example", Port: 587, From: "a@org.example"}}
+	s := newRelayTestService(platform, relay)
+
+	if !s.CanDeliverTo(ctx, tenant) {
+		t.Fatal("the platform relay is configured: the link can be mailed")
+	}
+	if err := s.SendAccountSetupEmail(ctx, tenant, "owner@example.com", "Owner", "Org", "tok", time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	if platform.count() != 1 || relay.lookups() != 0 {
+		t.Fatalf("setup link: platform sends = %d, organization relay lookups = %d (want 1, 0)", platform.count(), relay.lookups())
+	}
+
+	// An organization relay that is broken, or the only one configured, changes nothing.
+	relay.err = errors.New("relay unusable")
+	if err := s.SendAccountSetupEmail(ctx, tenant, "owner@example.com", "Owner", "Org", "tok", time.Hour); err != nil || platform.count() != 2 {
+		t.Fatalf("a broken organization relay must not affect the setup link: %v, sends = %d", err, platform.count())
+	}
+
+	// No platform relay: the link is not mailed through the organization relay either.
+	orgOnly := &recSender{}
+	noPlatform := NewEmailService(nil, config.SMTPConfig{BaseURL: "https://app.example.com"}, "App", logger.NewNop())
+	noPlatform.SetTenantSMTPResolver(&relayStub{cfg: &emaildom.Config{Host: "smtp.org.example", Port: 587, From: "a@org.example"}})
+	if noPlatform.CanDeliverTo(ctx, tenant) {
+		t.Fatal("an organization relay must not make a setup link deliverable")
+	}
+	if err := noPlatform.SendAccountSetupEmail(ctx, tenant, "owner@example.com", "Owner", "Org", "tok", time.Hour); err == nil {
+		t.Fatal("no platform relay: the setup link must not be sent")
+	}
+	if orgOnly.count() != 0 {
+		t.Fatal("unreachable")
+	}
+}
+
 // Every Send* and Notify* method of the service is classified here: a new
 // one fails this test until its class is chosen on purpose (account mail
 // must not take an organization relay).
@@ -114,9 +155,11 @@ func TestEmailService_EveryMailMethodIsClassified(t *testing.T) {
 		"NotifyRecoveryCodeUsed", "NotifySAMLCertificateExpiry", "NotifySSOChangePending", "NotifySupportAccess",
 		"SendDomainManagedEmail", "SendPasswordChangedEmail", "SendPasswordResetEmail", "SendVerificationEmail",
 		"SendWelcomeEmail",
+		// A set-password link is a credential: platform relay only.
+		"SendAccountSetupEmail",
 	}
 	organizationMail := []string{
-		"SendAccountSetupEmail", "SendMemberReactivatedEmail", "SendMemberSuspendedEmail", "SendReport",
+		"SendMemberReactivatedEmail", "SendMemberSuspendedEmail", "SendReport",
 		"SendTeamInvitationEmail",
 	}
 	var got []string

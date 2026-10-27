@@ -98,10 +98,14 @@ func (s *EmailService) contentSender(ctx context.Context, tenantID string) (emai
 	return emaildom.NewSMTPSender(*cfg), nil
 }
 
-// getSenderForTenant is the sender of organization transactional mail with
-// no exposure data (invitation, account setup, member suspended or
+// getSenderForTenant is the sender of organization business mail with no
+// credentials and no exposure data (invitation notice, member suspended or
 // reactivated): the organization relay when active, else the platform relay,
-// including when the organization's relay cannot be used now.
+// including when the organization's relay cannot be used now. It is never used
+// for mail that carries a credential or proves control of an account (account
+// setup and set-password links, password reset, owner recovery, first owner,
+// e-mail verification, two-factor): that mail uses the platform relay only
+// (platformSender).
 func (s *EmailService) getSenderForTenant(ctx context.Context, tenantID string) emaildom.Sender {
 	if s.tenantSMTP == nil || tenantID == "" {
 		return s.sender
@@ -356,10 +360,19 @@ func (s *EmailService) SendMemberReactivatedEmail(
 	return nil
 }
 
-// CanDeliverTo reports whether an email can be sent on behalf of tenantID
-// (the tenant's own SMTP integration, else the system SMTP).
-func (s *EmailService) CanDeliverTo(ctx context.Context, tenantID string) bool {
-	sender := s.getSenderForTenant(ctx, tenantID)
+// platformSender is the sender of account security mail: the platform relay,
+// whatever organization the mail is about. An organization relay is
+// organization-controlled infrastructure; it never sees a set-password link,
+// a reset link or a verification code.
+func (s *EmailService) platformSender() emaildom.Sender {
+	return s.sender
+}
+
+// CanDeliverTo reports whether account security mail (set-password links) can
+// be sent for tenantID: only the platform relay carries it, so this is true
+// when the platform relay is configured, whatever the organization's own relay.
+func (s *EmailService) CanDeliverTo(_ context.Context, _ string) bool {
+	sender := s.platformSender()
 	return sender != nil && sender.IsConfigured()
 }
 
@@ -371,9 +384,11 @@ func (s *EmailService) AccountSetupURL(token string) string {
 // SendAccountSetupEmail sends the one-time set-password link for an account an
 // administrator created. Unlike the best-effort notifications it returns an
 // error when no sender is configured, so the caller can fall back to showing
-// the link to the administrator instead of silently dropping it.
+// the link to the administrator instead of silently dropping it. The link is
+// a credential: it goes through the platform relay only, never an
+// organization relay (tenantID is only for the log line).
 func (s *EmailService) SendAccountSetupEmail(ctx context.Context, tenantID, recipientEmail, recipientName, teamName, token string, expiresIn time.Duration) error {
-	sender := s.getSenderForTenant(ctx, tenantID)
+	sender := s.platformSender()
 	if sender == nil || !sender.IsConfigured() {
 		return fmt.Errorf("email: no SMTP sender configured")
 	}

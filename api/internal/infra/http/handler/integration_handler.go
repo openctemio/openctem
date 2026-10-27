@@ -25,6 +25,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/integration"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 	"github.com/openctemio/openctem/api/pkg/validator"
@@ -496,6 +497,8 @@ func (h *IntegrationHandler) handleServiceError(w http.ResponseWriter, err error
 		apierror.Conflict("Integration already exists").WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
 		apierror.BadRequest(err.Error()).WriteJSON(w)
+	case errors.Is(err, shared.ErrForbidden):
+		apierror.Forbidden(err.Error()).WriteJSON(w)
 	case errors.Is(err, scm.ErrAuthFailed):
 		h.logger.Warn("integration auth failed", "error", err)
 		apierror.New(http.StatusFailedDependency, apierror.Code("INTEGRATION_AUTH_FAILED"),
@@ -1378,6 +1381,13 @@ type CreateNotificationIntegrationRequest struct {
 	Metadata map[string]any `json:"metadata"`
 }
 
+// canEnableOrgMail reports whether the caller is an owner or administrator of
+// the organization: only they may send organization mail through a relay.
+func canEnableOrgMail(r *http.Request) bool {
+	role := tenantdom.Role(middleware.GetTenantRole(r.Context()))
+	return role == tenantdom.RoleOwner || role == tenantdom.RoleAdmin
+}
+
 // CreateNotification handles POST /api/v1/integrations/notifications
 // @Summary      Create notification integration
 // @Description  Creates a new notification integration (Slack, Teams, Telegram, Webhook)
@@ -1432,6 +1442,7 @@ func (h *IntegrationHandler) CreateNotification(w http.ResponseWriter, r *http.R
 		IncludeDetails:     includeDetails,
 		MinIntervalMinutes: minInterval,
 		Metadata:           req.Metadata,
+		CanEnableOrgMail:   canEnableOrgMail(r),
 	}
 
 	intg, err := h.service.CreateNotificationIntegration(r.Context(), input)
@@ -1517,6 +1528,7 @@ func (h *IntegrationHandler) UpdateNotification(w http.ResponseWriter, r *http.R
 		IncludeDetails:     req.IncludeDetails,
 		MinIntervalMinutes: req.MinIntervalMinutes,
 		Metadata:           req.Metadata,
+		CanEnableOrgMail:   canEnableOrgMail(r),
 	}
 
 	var beforeNotif any

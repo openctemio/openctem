@@ -322,7 +322,7 @@ func run() int {
 	}
 
 	// An organization's own mail relay (its e-mail notification channel with
-	// "organization mail" ticked) carries its invitations, account setup mail
+	// "organization mail" ticked) carries its invitation notices
 	// and reports when the platform mode email.tenant_relay allows it. Account
 	// security mail never uses it. Without the mode setting the relay stays
 	// off.
