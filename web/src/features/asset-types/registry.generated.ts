@@ -9,7 +9,7 @@
  * and labels for compile-time checks and for rendering before it loads.
  */
 
-export const ASSET_REGISTRY_VERSION = 'c0e25afcc6d5292c'
+export const ASSET_REGISTRY_VERSION = '07237494bba54291'
 
 export type AssetLens =
   | 'external_surface'

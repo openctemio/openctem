@@ -82,64 +82,64 @@ const CASES: Array<{ width: number; sidebarOpen: boolean }> = [
 ]
 
 for (const { width, sidebarOpen } of CASES) {
-  test(`service facts at ${width}px, sidebar ${sidebarOpen ? 'open' : 'collapsed'}: whole chips, +N, no sideways scroll`, async ({
-    page,
-    context,
-    baseURL,
-  }, testInfo) => {
-    const { row, seeded } = await openAssets(page, context, baseURL, width, sidebarOpen)
-    test.skip(!seeded, 'no seeded HTTP service')
+  test(
+    `service facts at ${width}px, sidebar ${sidebarOpen ? 'open' : 'collapsed'}: whole chips, +N, no sideways scroll`,
+    { tag: ['@assets'] },
+    async ({ page, context, baseURL }, testInfo) => {
+      const { row, seeded } = await openAssets(page, context, baseURL, width, sidebarOpen)
+      test.skip(!seeded, 'no seeded HTTP service')
 
-    // No chip runs out of its line or its cell, none is squeezed.
-    expect(await clippedChips(page)).toEqual([])
+      // No chip runs out of its line or its cell, none is squeezed.
+      expect(await clippedChips(page)).toEqual([])
 
-    // Status first as its code, then the port, then "+N" with the rest.
-    const line = row.getByTestId('surface-facts-line')
-    await expect(line.locator('[data-slot="fact-chip"]').first()).toHaveAttribute(
-      'data-status',
-      '301'
-    )
-    await expect(line.getByText('443/https')).toBeVisible()
-    const more = line.locator('[data-slot="facts-more"]')
-    await expect(more).toBeVisible()
+      // Status first as its code, then the port, then "+N" with the rest.
+      const line = row.getByTestId('surface-facts-line')
+      await expect(line.locator('[data-slot="fact-chip"]').first()).toHaveAttribute(
+        'data-status',
+        '301'
+      )
+      await expect(line.getByText('443/https')).toBeVisible()
+      const more = line.locator('[data-slot="facts-more"]')
+      await expect(more).toBeVisible()
 
-    // The table fits its frame: lower-priority columns hide first, the row
-    // keeps name, risk, scope and service facts.
-    const overflow = await page
-      .locator('main [data-slot="table-container"]')
-      .evaluate((el) => el.scrollWidth - el.clientWidth)
-    expect(overflow, 'table scrolls sideways').toBeLessThanOrEqual(1)
-    for (const name of [/^Name/, /^Risk/, /^Scope/, /^Service facts/]) {
-      await expect(page.getByRole('columnheader', { name })).toBeVisible()
+      // The table fits its frame: lower-priority columns hide first, the row
+      // keeps name, risk, scope and service facts.
+      const overflow = await page
+        .locator('main [data-slot="table-container"]')
+        .evaluate((el) => el.scrollWidth - el.clientWidth)
+      expect(overflow, 'table scrolls sideways').toBeLessThanOrEqual(1)
+      for (const name of [/^Name/, /^Risk/, /^Scope/, /^Service facts/]) {
+        await expect(page.getByRole('columnheader', { name })).toBeVisible()
+      }
+
+      await testInfo.attach(`assets-facts-${width}-${sidebarOpen ? 'open' : 'closed'}.png`, {
+        body: await page.screenshot(),
+        contentType: 'image/png',
+      })
     }
-
-    await testInfo.attach(`assets-facts-${width}-${sidebarOpen ? 'open' : 'closed'}.png`, {
-      body: await page.screenshot(),
-      contentType: 'image/png',
-    })
-  })
+  )
 }
 
-test('the +N popover lists every fact; axe finds nothing serious', async ({
-  page,
-  context,
-  baseURL,
-}) => {
-  const { row, seeded } = await openAssets(page, context, baseURL, 1440, true)
-  test.skip(!seeded, 'no seeded HTTP service')
-  expect(await seriousViolations(page)).toEqual([])
+test(
+  'the +N popover lists every fact; axe finds nothing serious',
+  { tag: ['@assets'] },
+  async ({ page, context, baseURL }) => {
+    const { row, seeded } = await openAssets(page, context, baseURL, 1440, true)
+    test.skip(!seeded, 'no seeded HTTP service')
+    expect(await seriousViolations(page)).toEqual([])
 
-  await row.locator('[data-slot="facts-more"]').click()
-  const popover = page.locator('[data-slot="popover-content"]')
-  await expect(popover).toBeVisible()
-  await expect(popover.getByText('Moved Permanently')).toBeVisible()
-  await expect(popover.getByText('Behind Cloudflare')).toBeVisible()
-  await expect(popover.getByText('162.159.140.229')).toBeVisible()
-  await expect(popover.getByText('172.66.0.227')).toBeVisible()
-  await expect(popover.getByText('nginx', { exact: false })).toBeVisible()
-  // Opening the popover does not open the row's drawer.
-  await expect(page.locator('[data-slot="sheet-content"]')).toHaveCount(0)
-  expect(await seriousViolations(page, ['main#content', '[data-slot="popover-content"]'])).toEqual(
-    []
-  )
-})
+    await row.locator('[data-slot="facts-more"]').click()
+    const popover = page.locator('[data-slot="popover-content"]')
+    await expect(popover).toBeVisible()
+    await expect(popover.getByText('Moved Permanently')).toBeVisible()
+    await expect(popover.getByText('Behind Cloudflare')).toBeVisible()
+    await expect(popover.getByText('162.159.140.229')).toBeVisible()
+    await expect(popover.getByText('172.66.0.227')).toBeVisible()
+    await expect(popover.getByText('nginx', { exact: false })).toBeVisible()
+    // Opening the popover does not open the row's drawer.
+    await expect(page.locator('[data-slot="sheet-content"]')).toHaveCount(0)
+    expect(
+      await seriousViolations(page, ['main#content', '[data-slot="popover-content"]'])
+    ).toEqual([])
+  }
+)
