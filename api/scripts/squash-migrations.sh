@@ -28,7 +28,8 @@
 #      (now() timestamps, random/time-based UUIDs) are masked. The masking is
 #      shown to be complete by also comparing two independent chain runs.
 #
-# Requires: docker, git, golang-migrate (`migrate` on PATH or MIGRATE=path).
+# Requires: docker, git, openctem-migrate (on PATH or MIGRATE=path; built from
+# this tree when go is installed and neither is set).
 # Exit: 0 = baseline written and identical, 1 = difference, 2 = environment.
 # =============================================================================
 set -euo pipefail
@@ -36,7 +37,14 @@ set -euo pipefail
 API="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO="$(git -C "$API" rev-parse --show-toplevel)"
 REF="${1:-origin/develop}"
-MIGRATE="${MIGRATE:-migrate}"
+if [ -z "${MIGRATE:-}" ]; then
+  if command -v openctem-migrate >/dev/null; then
+    MIGRATE=openctem-migrate
+  elif command -v go >/dev/null; then
+    MIGRATE="$(mktemp -d)/openctem-migrate"
+    (cd "$(dirname "${BASH_SOURCE[0]}")/.." && GOWORK=off go build -o "$MIGRATE" ./cmd/openctem-migrate)
+  fi
+fi
 PG_IMAGE="${PG_IMAGE:-postgres:17-alpine}"
 EXCLUDE_TABLES="${EXCLUDE_TABLES:-priority_rule_safety_report role_permissions_admin_only_stripped}"
 CONTAINER="openctem-squash-$$"
@@ -49,7 +57,7 @@ trap cleanup EXIT
 die() { echo "squash-migrations: $*" >&2; exit 2; }
 
 command -v docker >/dev/null || die "docker is required"
-command -v "$MIGRATE" >/dev/null || die "golang-migrate is required (set MIGRATE=/path/to/migrate)"
+command -v "${MIGRATE:-}" >/dev/null || die "openctem-migrate is required (set MIGRATE=/path/to/openctem-migrate)"
 git -C "$REPO" rev-parse -q --verify "$REF^{commit}" >/dev/null || die "unknown ref $REF"
 SHA="$(git -C "$REPO" rev-parse "$REF")"
 
@@ -94,7 +102,8 @@ if [ "${VERIFY_ONLY:-0}" != 1 ]; then
   excl=()
   for t in $EXCLUDE_TABLES; do excl+=("--exclude-table=public.$t"); done
   pgdump gen --no-owner --no-privileges --column-inserts --no-tablespaces --no-security-labels \
-    --no-publications --no-subscriptions --exclude-table=public.schema_migrations "${excl[@]}" >"$WORK/gen.sql"
+    --no-publications --no-subscriptions --exclude-table=public.schema_migrations \
+    --exclude-table=public.schema_migrations_applied "${excl[@]}" >"$WORK/gen.sql"
 
   {
     cat <<EOF
@@ -104,7 +113,7 @@ if [ "${VERIFY_ONLY:-0}" != 1 ]; then
 -- A schema change is a new migration numbered above this one.
 --
 -- A database already at version $VV or later never runs this file. One older
--- than $VV is refused by golang-migrate (its version has no file here): upgrade
+-- than $VV is refused by openctem-migrate (it lacks the baseline): upgrade
 -- it with a release from before the baseline (git tag pre-baseline-$VV) first.
 --
 -- No owners and no grants: objects belong to the role that runs this file (the
@@ -123,7 +132,7 @@ END
 
 EOF
     # The dump's header (everything before its first object) holds psql
-    # session settings, which golang-migrate would leave on its pooled
+    # session settings, which the migration runner would leave on its
     # connection: dropped. So is "SET default_table_access_method = heap;"
     # (the default). COMMENT ON EXTENSION needs the extension's owner and
     # repeats the comment CREATE EXTENSION sets: dropped with its "--" /
@@ -221,7 +230,9 @@ for mode in super lp; do
     fi
     pgdump "$db" --schema-only >"$OUT/$db.schema.raw.sql"
     canon <"$OUT/$db.schema.raw.sql" >"$OUT/$db.schema.sql"
-    pgdump "$db" --data-only --column-inserts | mask >"$OUT/$db.data.sql"
+    # Which migrations were applied differs by design (the chain's files vs
+    # the baseline); the schema of the tracking tables is still compared.
+    pgdump "$db" --data-only --column-inserts --exclude-table-data=public.schema_migrations_applied | mask >"$OUT/$db.data.sql"
   done
   echo "squash-migrations: $mode — chain vs baseline"
   for side in a b; do

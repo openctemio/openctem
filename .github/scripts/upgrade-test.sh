@@ -10,15 +10,20 @@
 #      migrator (the schema owner, not a superuser): the database an install of
 #      that release has;
 #   2. load representative rows (api/scripts/upgrade-test/seed.sql);
-#   3. apply THIS tree's migrations, re-run the roles script;
-#   0. (before any database work) refuse a migration of this tree numbered at
-#      or below the previous release's highest that the release does not have:
-#      golang-migrate `up` only applies versions above the current one, so an
-#      install of that release would skip it silently;
-#   4. assert: the version is this tree's highest migration and not dirty, the
-#      schema_migrations row is single, no key table lost a row, and, when
-#      --server-bin is given, the API built from this tree starts against the
-#      upgraded database as the app role and answers /health and /ready.
+#   3. apply THIS tree's migrations with this tree's openctem-migrate, re-run
+#      the roles script;
+#   0. (before any database work) refuse a legacy-numbered migration of this
+#      tree at or below the previous release's highest that the release does
+#      not have: when openctem-migrate takes over a database the earlier tool
+#      migrated, it records every legacy-numbered file up to that tool's
+#      version as applied (docs/rfcs/RFC-130-migration-applied-set.md), so
+#      such a file would never run. Timestamp versions are exempt;
+#   4. assert: nothing is pending, schema_migrations holds the runner's fence
+#      and is not dirty, no key table lost a row, the upgraded schema equals a
+#      fresh install of this tree (.github/scripts/schema-fingerprint.sql),
+#      and, when --server-bin is given, the API built from this tree starts
+#      against the upgraded database as the app role and answers /health and
+#      /ready.
 #
 # Environment (the CI job sets them; defaults suit a local scratch server):
 #   SUPER_URL      superuser connection to the scratch database
@@ -27,9 +32,10 @@
 #   REDIS_HOST, REDIS_PORT   for the API boot (default localhost:6379)
 #   API_PORT       port for the API boot (default 18080)
 #
-# Run from the repository root with `migrate` (golang-migrate) and `psql` on
-# the PATH. The database must be empty: the script refuses to touch one that
-# already has a schema_migrations table.
+# Run from the repository root with `openctem-migrate` (this tree's) and
+# `psql` on the PATH, and `migrate` (golang-migrate) when the previous release
+# predates openctem-migrate. The database must be empty: the script refuses to
+# touch one that already has a schema_migrations table.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -102,11 +108,12 @@ new_max="$(max_version api/migrations)"
 echo "   its migrations end at $prev_max; this tree's end at $new_max"
 [ "$new_max" -ge "$prev_max" ] || fail "this tree's highest migration ($new_max) is below $PREV's ($prev_max)"
 
-# 0. Migration order. Every migration version of this tree at or below the
-# previous release's highest must be one that release already has; anything
-# else would be skipped by `migrate up` on an upgraded install. Compared by
+# 0. Legacy migration order. Every legacy-numbered (up to 13 digits) version
+# of this tree at or below the previous release's highest must be one that
+# release already has; anything else would be recorded as applied, never run,
+# when openctem-migrate takes over an install of that release. Compared by
 # version, not file name: a renamed released migration never runs again anyway.
-versions() { find "$1" -maxdepth 1 -name '*.up.sql' -printf '%f\n' | sed 's/_.*//; s/^0*//; s/^$/0/' | sort -n -u; }
+versions() { find "$1" -maxdepth 1 -name '*.up.sql' -printf '%f\n' | sed 's/_.*//; s/^0*//; s/^$/0/' | awk 'length($0) < 14' | sort -n -u; }
 versions "$prev_migrations" >"$work/prev-versions"
 skipped=""
 while IFS= read -r v; do
@@ -115,22 +122,35 @@ while IFS= read -r v; do
   fi
 done < <(versions api/migrations)
 if [ -n "$skipped" ]; then
-  fail "numbered at or below $PREV's highest migration ($prev_max) but not in $PREV, so an upgrade would skip them:$skipped (renumber above $prev_max)"
+  fail "legacy-numbered at or below $PREV's highest migration ($prev_max) but not in $PREV, so an upgrade would record them as applied without running them:$skipped (give them timestamp versions: make -C api migration-renumber)"
 fi
-echo "   no migration of this tree would be skipped on upgrade"
+echo "   no legacy-numbered migration of this tree would be skipped on upgrade"
 if [ "$CHECK_ORDER_ONLY" = true ]; then exit 0; fi
 
 if [ "$(psql_super -At -c "SELECT to_regclass('public.schema_migrations') IS NOT NULL")" = t ]; then
   fail "the database already has a schema; it must be empty"
 fi
 
+# The previous release's own migration tool: its openctem-migrate, built from
+# the tag, or golang-migrate for a release before it.
+prev_migrate=migrate
+if git cat-file -e "$PREV:api/cmd/openctem-migrate/main.go" 2>/dev/null; then
+  mkdir -p "$work/prev-src"
+  git archive "$PREV" api | tar -x -C "$work/prev-src"
+  (cd "$work/prev-src/api" && GOWORK=off go build -o "$work/prev-migrate" ./cmd/openctem-migrate)
+  prev_migrate="$work/prev-migrate"
+fi
+
 echo "== 1. The previous release's database"
 psql_super -q -f "$prev_roles"
-migrate -path "$prev_migrations" -database "$MIGRATOR_URL" up
+"$prev_migrate" -path "$prev_migrations" -database "$MIGRATOR_URL" up
 psql_super -q -f "$prev_roles"
 state="$(psql_super -At -F ' ' -c "SELECT version, dirty FROM schema_migrations")"
-[ "$state" = "$prev_max f" ] || fail "after $PREV's migrations schema_migrations says '$state', want '$prev_max f'"
-echo "   version $prev_max, not dirty"
+case "$state" in
+  "$prev_max f" | "9223372036854775807 f") ;;
+  *) fail "after $PREV's migrations schema_migrations says '$state', want '$prev_max f' (or the fence)" ;;
+esac
+echo "   migrated to $prev_max, not dirty"
 
 echo "== 2. Representative rows"
 psql_super -q -f api/scripts/upgrade-test/seed.sql
@@ -149,16 +169,18 @@ awk '$1 == "findings" && $2 < 200 { bad = 1 } END { exit bad }' "$work/before.tx
 
 echo "== 3. This tree's migrations"
 start=$(date +%s)
-migrate -path api/migrations -database "$MIGRATOR_URL" up
+openctem-migrate -path api/migrations -database "$MIGRATOR_URL" up | tail -n 5
 echo "   applied in $(( $(date +%s) - start )) s"
 psql_super -q -f api/deploy/postgres/least-privilege-roles.sql
 
 echo "== 4. Assertions"
+pending="$(openctem-migrate -path api/migrations -database "$MIGRATOR_URL" status | sed -n 's/^pending: //p')"
+[ "$pending" = 0 ] || fail "after the upgrade $pending migrations are still pending"
 state="$(psql_super -At -F ' ' -c "SELECT version, dirty FROM schema_migrations")"
-[ "$state" = "$new_max f" ] || fail "after the upgrade schema_migrations says '$state', want '$new_max f'"
-echo "   version $new_max, not dirty"
-rows="$(psql_super -At -c "SELECT count(*) FROM schema_migrations")"
-[ "$rows" = 1 ] || fail "schema_migrations has $rows rows, want 1"
+[ "$state" = "9223372036854775807 f" ] || fail "after the upgrade schema_migrations says '$state', want the runner's fence, not dirty"
+applied="$(psql_super -At -c "SELECT max(version) FROM schema_migrations_applied")"
+[ "$applied" = "$new_max" ] || fail "the highest applied migration is '$applied', want $new_max"
+echo "   nothing pending, highest applied $new_max, not dirty"
 
 key_counts >"$work/after.txt"
 lost=0
@@ -172,6 +194,22 @@ while read -r table before; do
   fi
 done <"$work/before.txt"
 [ "$lost" = 0 ] || exit 1
+
+# The upgraded schema is a fresh install's: a database of its own, the roles
+# script, this tree's migrations as the migrator, then the fingerprints.
+url_db() { local u="${1%%\?*}" q=""; [[ "$1" == *\?* ]] && q="?${1#*\?}"; echo "${u%/*}/$2$q"; }
+fresh_db="upgrade_fresh_$$"
+psql_super -q -c "CREATE DATABASE ${fresh_db}"
+psql "$(url_db "$SUPER_URL" "$fresh_db")" -X -q -v ON_ERROR_STOP=1 -f api/deploy/postgres/least-privilege-roles.sql
+openctem-migrate -path api/migrations -database "$(url_db "$MIGRATOR_URL" "$fresh_db")" up | tail -n 1
+psql_super -At -v ON_ERROR_STOP=1 -f .github/scripts/schema-fingerprint.sql >"$work/upgraded.fp"
+psql "$(url_db "$SUPER_URL" "$fresh_db")" -X -At -v ON_ERROR_STOP=1 -f .github/scripts/schema-fingerprint.sql >"$work/fresh.fp"
+psql_super -q -c "DROP DATABASE ${fresh_db} WITH (FORCE)"
+if ! diff -u "$work/fresh.fp" "$work/upgraded.fp" >"$work/fp.diff"; then
+  head -n 80 "$work/fp.diff"
+  fail "the upgraded schema differs from a fresh install of this tree (- fresh, + upgraded)"
+fi
+echo "   the upgraded schema equals a fresh install ($(wc -l <"$work/fresh.fp") objects)"
 
 # The app role must still reach the data the migrations just rewrote.
 psql "$APP_ROLE_URL" -X -v ON_ERROR_STOP=1 -At -c "SELECT count(*) FROM findings" >/dev/null \

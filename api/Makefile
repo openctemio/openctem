@@ -1,4 +1,4 @@
-.PHONY: all build run test test-db budgets-update lint clean docker-build docker-dev docker-prod docker-down migrate generate seed help seed-required docker-seed docker-seed-required db-setup db-setup-dev swagger contract swagger-check swagger-install env-docs authz-matrix migration-new migration-renumber
+.PHONY: all build run test test-db budgets-update lint clean docker-build docker-dev docker-prod docker-down migrate generate seed help seed-required docker-seed docker-seed-required db-setup db-setup-dev swagger contract swagger-check swagger-install env-docs authz-matrix migration-new migration-renumber migrate-up migrate-down migrate-status migrate-force
 
 # Variables
 APP_NAME := openctem
@@ -264,77 +264,46 @@ docker-clean:
 	@echo "Cleaning Docker resources..."
 	docker compose -f $(COMPOSE_BASE) -f $(COMPOSE_DEV) down -v --rmi local 2>/dev/null || true
 
-## migrate-up: Run database migrations (local)
+# The migration runner of this tree (cmd/openctem-migrate).
+MIGRATE := GOWORK=off go run ./cmd/openctem-migrate -path migrations -database "$(DATABASE_URL)"
+
+## migrate-up: Apply every migration the local database has not applied
 migrate-up:
 	@echo "Running migrations..."
 	@if [ -z "$(DB_USER)" ] || [ -z "$(DB_PASSWORD)" ]; then \
 		echo "Error: DB_USER and DB_PASSWORD required. Set in .env or environment"; \
 		exit 1; \
 	fi
-	@if command -v migrate >/dev/null 2>&1; then \
-		migrate -path migrations -database "$(DATABASE_URL)" up; \
-	else \
-		echo "migrate not installed. Run: make install-tools"; \
-		exit 1; \
-	fi
+	$(MIGRATE) up
 
-## migrate-down: Rollback database migrations (local)
+## migrate-down: Roll back the most recently applied migration (local)
 migrate-down:
 	@echo "Rolling back migrations..."
 	@if [ -z "$(DB_USER)" ] || [ -z "$(DB_PASSWORD)" ]; then \
 		echo "Error: DB_USER and DB_PASSWORD required. Set in .env or environment"; \
 		exit 1; \
 	fi
-	migrate -path migrations -database "$(DATABASE_URL)" down 1
+	$(MIGRATE) down 1
 
-## migrate-create: Create a new migration (usage: make migrate-create name=migration_name)
-migrate-create:
-	@if [ -z "$(name)" ]; then \
-		echo "Usage: make migrate-create name=migration_name"; \
-		exit 1; \
-	fi
-	@echo "Creating migration $(name)..."
-	migrate create -ext sql -dir migrations -seq $(name)
-
-## migration-new: Create a migration numbered above develop and every open PR (usage: make migration-new name=x)
+## migration-new: Create a migration with a UTC timestamp version (usage: make migration-new name=x)
 migration-new:
 	@bash scripts/migration-number.sh new "$(name)"
 
-## migration-renumber: Move this branch's new migrations above develop and every open PR, staged
+## migration-renumber: Give this branch's clashing or sequential migrations new timestamp versions, staged
 migration-renumber:
 	@bash scripts/migration-number.sh renumber
 
-## migrate-status: Show migration status
+## migrate-status: Show the applied version and the pending migrations
 migrate-status:
-	@echo "Migration status..."
-	migrate -path migrations -database "$(DATABASE_URL)" version
+	@$(MIGRATE) status
 
-## docker-migrate-up: Run migrations using migrate docker image
-docker-migrate-up:
-	@echo "Running migrations..."
-	docker run --rm -v $(PWD)/migrations:/migrations --network host \
-		migrate/migrate -path=/migrations -database "$(DATABASE_URL)" up
-	@echo "Migrations complete"
-
-## docker-migrate-down: Rollback last migration using migrate docker image
-docker-migrate-down:
-	@echo "Rolling back last migration..."
-	docker run --rm -v $(PWD)/migrations:/migrations --network host \
-		migrate/migrate -path=/migrations -database "$(DATABASE_URL)" down 1
-
-## docker-migrate-version: Show current migration version
-docker-migrate-version:
-	@docker run --rm -v $(PWD)/migrations:/migrations --network host \
-		migrate/migrate -path=/migrations -database "$(DATABASE_URL)" version
-
-## docker-migrate-force: Force set migration version (usage: make docker-migrate-force version=X)
-docker-migrate-force:
+## migrate-force: Clear the dirty flag and record a migration as applied (usage: make migrate-force version=X, -1 = only clear)
+migrate-force:
 	@if [ -z "$(version)" ]; then \
-		echo "Usage: make docker-migrate-force version=X"; \
+		echo "Usage: make migrate-force version=X"; \
 		exit 1; \
 	fi
-	docker run --rm -v $(PWD)/migrations:/migrations --network host \
-		migrate/migrate -path=/migrations -database "$(DATABASE_URL)" force $(version)
+	$(MIGRATE) force $(version)
 
 ## seed-required: Seed database with required data only (local)
 seed-required:
@@ -364,14 +333,14 @@ docker-psql:
 docker-reset-db:
 	@echo "Resetting database..."
 	docker compose -f $(COMPOSE_BASE) exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
-	@echo "Database reset. Run 'make docker-migrate-up' to apply migrations"
+	@echo "Database reset. Run 'make migrate-up' to apply migrations"
 
 ## db-setup: Setup database with schema only (migrate) in docker
-db-setup: docker-migrate-up docker-seed-required
+db-setup: migrate-up docker-seed-required
 	@echo "Database setup complete (schema + required data)"
 
 ## db-setup-dev: Setup database with test data for development
-db-setup-dev: docker-migrate-up docker-seed
+db-setup-dev: migrate-up docker-seed
 	@echo "Development database setup complete (schema + all seed data)"
 
 ## db-fresh: Reset database and setup from scratch (for development)
@@ -462,7 +431,6 @@ install-tools:
 	go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 	go install honnef.co/go/tools/cmd/staticcheck@latest
 	go install github.com/air-verse/air@latest
-	go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
 	go install go.uber.org/mock/mockgen@latest
 	@echo "Tools installed"
 

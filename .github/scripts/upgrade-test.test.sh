@@ -82,8 +82,9 @@ set -e
 check "missing database settings fail" "1" "$rc"
 case "$out" in *"SUPER_URL is required"*) echo "ok: message names the variable";; *) echo "FAIL: message: $out"; fails=$((fails + 1));; esac
 
-# A migration numbered at or below the previous release's highest that the
-# release does not have would be skipped by `migrate up`: refused.
+# A legacy-numbered migration at or below the previous release's highest that
+# the release does not have would be recorded as applied when openctem-migrate
+# takes an install of that release over: refused. Timestamp versions pass.
 mig="$tmp/mig"
 mkdir -p "$mig/.github/scripts" "$mig/api/migrations"
 cp "$here/upgrade-test.sh" "$mig/.github/scripts/"
@@ -108,6 +109,13 @@ out="$(bash "$mig/.github/scripts/upgrade-test.sh" --check-order 2>&1)"; rc=$?
 set -e
 check "a migration below the release's highest that it lacks fails" "1" "$rc"
 case "$out" in *"000003_late.up.sql"*) echo "ok: message names the file";; *) echo "FAIL: message: $out"; fails=$((fails + 1));; esac
+git -C "$mig" rm -q api/migrations/000003_late.up.sql
+: >"$mig/api/migrations/20261027101500_ts.up.sql"
+git -C "$mig" add -A; git -C "$mig" commit -q -m timestamp
+set +e
+out="$(bash "$mig/.github/scripts/upgrade-test.sh" --check-order 2>&1)"; rc=$?
+set -e
+check "a timestamp-versioned migration passes" "0" "$rc"
 
 [ "$fails" -eq 0 ] || { echo "$fails failure(s)"; exit 1; }
 echo "upgrade-test self-test passed"

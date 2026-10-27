@@ -4,7 +4,7 @@
 # Smoke test of the linux/amd64 release archives built by build-dist.sh (the
 # Release archives workflow runs it on every pull request that touches them;
 # run it locally the same way). It checks that:
-#   - the server, signer, golang-migrate and the operator command links run and
+#   - the server, signer, openctem-migrate and the operator command links run and
 #     report the version;
 #   - the server accepts the shipped example settings (-check-config, with
 #     generated secrets);
@@ -61,7 +61,7 @@ unpack "bootstrap-admin-${version}-linux-${arch}.tar.gz" "$work/bootstrap-admin"
 s="$opt/server"
 prints "openctem-server ${version} " "$s/bin/openctem-server" -version || fail "openctem-server -version"
 prints "openctem-signer ${version} " "$s/bin/openctem-signer" version || fail "openctem-signer version"
-prints '^v4\.' "$s/bin/migrate" -version || fail "migrate -version"
+prints "^${version}\$" "$s/bin/openctem-migrate" -version || fail "openctem-migrate -version"
 prints 'Usage of bootstrap-admin' "$s/bin/bootstrap-admin" -h || fail "bootstrap-admin link does not run the command"
 prints 'Usage of bootstrap-admin' "$work/bootstrap-admin/bootstrap-admin" -h || fail "standalone bootstrap-admin"
 [ -s "$s/api/openapi/swagger.yaml" ] || fail "OpenAPI spec missing"
