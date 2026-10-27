@@ -267,7 +267,8 @@ type RunResponse struct {
 	// DeadlineAt is when the run is settled if it is still open.
 	DeadlineAt *string `json:"deadline_at,omitempty"`
 	// DeadlineReason is which policy set DeadlineAt: scan_max_duration,
-	// workflow_max_duration, platform_cap, or legacy (set before reasons
+	// workflow_max_duration, platform_cap, work_estimate (moved at a claim to
+	// the time the claimed work needs), or legacy (set before reasons
 	// were recorded).
 	DeadlineReason string `json:"deadline_reason,omitempty"`
 	// UnfinishedTargetCount is how many targets were still open when the run
