@@ -1,0 +1,33 @@
+# Smoke test for the opt-in self-hosted runner (label openctem-ci): checks the
+# tools the selectable heavy jobs need and that Docker (dind) works. Runs only
+# for changes to this file from this repository, never for forks.
+name: Self-hosted runner smoke
+on:
+  pull_request:
+    paths: [.github/workflows/self-hosted-smoke.yml]
+permissions:
+  contents: read
+jobs:
+  smoke:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, openctem-ci]
+    timeout-minutes: 15
+    steps:
+      - name: Tools
+        run: |
+          set +e
+          for t in git curl jq python3 psql docker make gcc tar unzip; do
+            if command -v "$t" >/dev/null; then echo "OK   $t $($t --version 2>&1 | head -1)"; else echo "MISS $t"; fi
+          done
+          docker compose version || echo "MISS docker compose"
+          docker buildx version || echo "MISS docker buildx"
+          nproc; free -g; df -h .
+      - name: Docker (dind) and a service-style container
+        run: |
+          docker info --format '{{.ServerVersion}} {{.OperatingSystem}}'
+          cid=$(docker run -d -P -e POSTGRES_PASSWORD=x postgres:17-alpine)
+          port=$(docker port "$cid" 5432/tcp | head -1 | sed 's/.*://')
+          echo "postgres published on dind:$port"
+          for i in $(seq 1 30); do docker exec "$cid" pg_isready -U postgres && break; sleep 1; done
+          (command -v psql && PGPASSWORD=x psql -h dind -p "$port" -U postgres -c 'select 1') || echo "psql from runner to dind not available"
+          docker rm -f "$cid"
