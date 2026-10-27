@@ -22,12 +22,12 @@
 #   console    the platform console (web Dockerfile, target console): as web
 #   allinone   deploy/allinone + the gateway, and the keys of api, web, console
 #
-# Bump BUILDER when the way images are built here changes in a way no input
-# shows (build-images.yml's buildx flags), so older images stop matching.
+# Every key also covers the blobs of .github/workflows/build-images.yml and of
+# this script: a change to how images are built or keyed gives every image a new
+# key, so an image made by an older workflow is never reused (no manual bump).
 set -euo pipefail
 image="${1:?usage: image-key.sh <image> [<git-rev>]}"
 rev="${2:-HEAD}"
-BUILDER=1
 
 tree() { git rev-parse --verify --quiet "${rev}:$1" || { echo "image-key: $1 does not exist at $rev" >&2; exit 2; }; }
 h() { sha256sum | cut -c1-40; }
@@ -45,4 +45,4 @@ case "$image" in
            "file:deploy/allinone/Dockerfile" "args:") ;;
   *) echo "image-key: unknown image '$image'" >&2; exit 2 ;;
 esac
-{ echo "builder:$BUILDER"; echo "image:$image"; printf '%s\n' "${parts[@]}"; } | h
+{ echo "workflow:$(tree .github/workflows/build-images.yml)"; echo "keyscript:$(tree .github/scripts/image-key.sh)"; echo "image:$image"; printf '%s\n' "${parts[@]}"; } | h

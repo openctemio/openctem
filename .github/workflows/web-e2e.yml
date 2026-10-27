@@ -183,12 +183,12 @@ jobs:
 
   # The images come from build-images.yml: built once per content key and shared
   # with every other workflow of this commit (a web-only change reuses the API
-  # image built for an earlier commit). A fork pull request gets none and
-  # `build` builds them here, as before.
+  # image built for an earlier commit). Only push and merge-queue runs call it:
+  # it holds packages: write, which a pull request never gets.
   images:
     name: CI images
     needs: changes
-    if: needs.changes.outputs.shards == 'true'
+    if: needs.changes.outputs.shards == 'true' && github.event_name != 'pull_request'
     permissions:
       contents: read
       packages: write
@@ -201,17 +201,32 @@ jobs:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
 
+  # A pull request only reads: it reuses the images develop built for the same
+  # content keys (verified digests) when all exist, and otherwise `build` builds
+  # them here. No packages: write, no id-token, no attestations: write.
+  images-pr:
+    name: CI images (PR, read-only)
+    needs: changes
+    if: needs.changes.outputs.shards == 'true' && github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      packages: read
+      attestations: read
+    uses: ./.github/workflows/resolve-images.yml
+    with:
+      images: api admin-cli web
+
   build:
     name: Build e2e images
-    needs: [changes, images]
-    if: needs.changes.outputs.shards == 'true'
+    needs: [changes, images, images-pr]
+    if: ${{ !cancelled() && needs.changes.outputs.shards == 'true' && (needs.images.result == 'success' || needs.images-pr.result == 'success') }}
     runs-on: ${{ ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_E2E_BUILD) || (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_HEAVY) || 'ubuntu-latest' }}
     timeout-minutes: 25
     env:
       API_IMAGE: local/openctem-api:e2e
       WEB_IMAGE: local/openctem-web:e2e
       ADMIN_IMAGE: local/admin-cli:e2e
-      SHARED: ${{ needs.images.outputs.push }}
+      SHARED: ${{ needs.images.outputs.push == 'true' || needs.images-pr.outputs.push == 'true' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -229,9 +244,9 @@ jobs:
       - name: Pull the shared images
         if: env.SHARED == 'true'
         env:
-          API_REF: ${{ needs.images.outputs.api }}
-          WEB_REF: ${{ needs.images.outputs.web }}
-          ADMIN_REF: ${{ needs.images.outputs.admin-cli }}
+          API_REF: ${{ needs.images.outputs.api || needs.images-pr.outputs.api }}
+          WEB_REF: ${{ needs.images.outputs.web || needs.images-pr.outputs.web }}
+          ADMIN_REF: ${{ needs.images.outputs.admin-cli || needs.images-pr.outputs.admin-cli }}
         run: |
           set -euo pipefail
           for pair in "$API_REF $API_IMAGE" "$WEB_REF $WEB_IMAGE" "$ADMIN_REF $ADMIN_IMAGE"; do
@@ -461,7 +476,7 @@ jobs:
   e2e-ok:
     name: E2E OK
     if: always()
-    needs: [changes, images, build, e2e]
+    needs: [changes, images, images-pr, build, e2e]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -483,7 +498,11 @@ jobs:
           if [ "$RUN" = true ] && [ "$VERIFIED" = true ]; then
             echo "the merge queue already passed this commit; the images were built for the layer cache"
           elif [ "$RUN" = true ]; then
-            for j in images build e2e; do
+            # the images come from `images` (push, merge queue) or `images-pr` (pull request)
+            if ! echo "$NEEDS" | jq -e '.images.result == "success" or .["images-pr"].result == "success"' >/dev/null; then
+              echo "::error::the CI images job must run and pass"; exit 1
+            fi
+            for j in build e2e; do
               r="$(echo "$NEEDS" | jq -r --arg j "$j" '.[$j].result')"
               if [ "$r" != success ]; then echo "::error::$j must run and pass, got: $r"; exit 1; fi
             done
