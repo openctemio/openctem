@@ -564,10 +564,8 @@ content. `release-provenance.sh` (called from `changed.sh`) checks:
 - **train** (head is the `merge -s ours` of main over the version commit): the
   merge commit has the version commit's tree; the version commit has one parent,
   a commit **on `develop` for which every required check passed** (`check-ci.sh`,
-  the push and merge-queue runs), and changes only the files the train writes:
-  `versions.yaml`, `api/internal/versions/versions.yaml`,
-  `api/deploy/.env.example`, `api/deploy/docker-compose*.yml`, `api/CHANGELOG.md`,
-  and sets `platform.release` to the branch's version;
+  the push and merge-queue runs), and changes only the one file the train writes,
+  `api/deploy/VERSION`, and sets it to the branch's version;
 - **hotfix** (the last tag, `cherry-pick -x` commits, the version commit): the
   tag is the newest and `main` has its tree, every pick has the **same patch-id**
   as the `develop` commit it names, that commit is on `develop` and the
