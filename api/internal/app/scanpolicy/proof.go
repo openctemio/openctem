@@ -7,7 +7,9 @@ package scanpolicy
 // Default on when MANAGED_SERVICE is set (a hosted multi-tenant service,
 // docs/rfcs/RFC-100-shared-sensors.md §6): platform sensors send packets from
 // the operator's addresses, so a tenant must prove it owns a domain before
-// they probe it, and intrusive (T2) probes need that proof on any sensor.
+// they probe it. A job on the organization's own sensor needs no proof at
+// any tier (intrusive probes there are governed by the scope entry's tier
+// ceiling and the scan's approval).
 // MANAGED_SERVICE changes the default only: a value stored in the console
 // always wins.
 //
@@ -85,8 +87,8 @@ func (s *Service) ProofSetting(ctx context.Context) (bool, int, error) {
 	return v, ver, nil
 }
 
-// PlatformProofRequired reports whether platform sensors (and intrusive
-// probes) need a verified domain now. An unreadable setting answers true.
+// PlatformProofRequired reports whether platform sensors need a verified
+// domain now. An unreadable setting answers true.
 func (s *Service) PlatformProofRequired(ctx context.Context) bool {
 	v, _, err := s.ProofSetting(ctx)
 	if err != nil {

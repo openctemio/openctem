@@ -72,7 +72,7 @@ func TestParseKinds(t *testing.T) {
 	if _, err := ParseKinds([]string{"host_added", "nope"}); !errors.Is(err, ErrInvalidQuery) {
 		t.Fatalf("unknown kind accepted: %v", err)
 	}
-	if len(AllKinds()) != 10 {
+	if len(AllKinds()) != 13 {
 		t.Fatal("a kind was added without updating AllKinds")
 	}
 }
