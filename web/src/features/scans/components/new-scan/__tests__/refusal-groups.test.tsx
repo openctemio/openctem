@@ -92,7 +92,7 @@ describe('RefusalGroups', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('does not offer the own sensor for intrusive checks or when already on own sensors', () => {
+  it('offers the own sensor for intrusive checks too, but not when already on own sensors', () => {
     const { rerender } = render(
       <RefusalGroups
         results={results}
@@ -102,7 +102,7 @@ describe('RefusalGroups', () => {
         onRecheck={vi.fn()}
       />
     )
-    expect(screen.queryByRole('button', { name: 'Run on your own sensor' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Run on your own sensor' })).toBeInTheDocument()
     rerender(
       <RefusalGroups
         results={results}

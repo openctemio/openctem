@@ -11,11 +11,10 @@ trap 'rm -rf "$tmp"' EXIT
 scenario "$tmp"
 w="$tmp/work"
 
-# develop carries versions.yaml and its consumers (platform.release v0.2.0).
+# develop carries versions.yaml and its consumers (no platform version in them).
 version_fixture "$w"
-sed -i 's/v0.8.0/v0.2.0/g' "$w/versions.yaml" "$w/api/internal/versions/versions.yaml" "$w/api/deploy/.env.example" "$w/api/deploy/docker-compose.yml" "$w/api/deploy/docker-compose.job-signer.yml" "$w/api/deploy/docker-compose.sensor.yml"
 git -C "$w" add -A
-git -C "$w" commit -q -m "chore: versions.yaml"
+git -C "$w" commit -q -m "chore: versions.yaml" >/dev/null 2>&1 || true
 git -C "$w" push -q origin develop
 dev="$(git -C "$w" rev-parse develop)"
 
@@ -38,7 +37,7 @@ commit "$w" "chore: side" side.txt
 side="$(git -C "$w" rev-parse HEAD)"
 git -C "$w" switch -q develop
 assert_rc "commit not on main refused" 1 bash "$TAG" --repo "$w" --version v0.3.0 --commit "$side" --release-head "$side"
-assert_rc "versions.yaml names another release: refused" 1 bash "$TAG" --repo "$w" --version v0.4.0 --commit "$merge" --release-head "$head"
+assert_rc "api/deploy/VERSION names another release: refused" 1 bash "$TAG" --repo "$w" --version v0.4.0 --commit "$merge" --release-head "$head"
 out="$(bash "$TAG" --repo "$w" --version v0.3.0 --commit "$merge" --release-head "$head" --push 2>&1)"; rc=$?
 assert_eq "tag: exit 0 ($out)" 0 "$rc"
 assert_eq "tag: annotated" tag "$(git -C "$w" cat-file -t v0.3.0)"
@@ -51,41 +50,35 @@ assert_rc "tag: twice refused" 1 bash "$TAG" --repo "$w" --version v0.3.0 --comm
 commit "$w" "fix: after the cut" later.txt
 git -C "$w" push -q origin develop
 POST="$RELEASE_DIR/post-release.sh"
-out="$(bash "$POST" --repo "$w" --version v0.3.0 --chart-version 0.5.0 --push 2>"$tmp/err")"; rc=$?
+out="$(bash "$POST" --repo "$w" --version v0.3.0 --push 2>"$tmp/err")"; rc=$?
 assert_eq "post: exit 0 ($(cat "$tmp/err"))" 0 "$rc"
 ph="$(sed -n 's/^HEAD=//p' <<<"$out")"
 assert_rc "post: the tag is an ancestor of the follow-up" 0 git -C "$w" merge-base --is-ancestor v0.3.0 "$ph"
 assert_rc "post: develop's later commit kept" 0 git -C "$w" cat-file -e "$ph:later.txt"
-assert_contains "post: versions.yaml bumped" "release: v0.3.0" "$(git -C "$w" show "$ph:versions.yaml")"
-assert_contains "post: chart bumped" "version: 0.5.0" "$(git -C "$w" show "$ph:versions.yaml")"
-assert_contains "post: consumers synced" "OPENCTEM_VERSION=v0.3.0" "$(git -C "$w" show "$ph:api/deploy/.env.example")"
-assert_eq "post: only versions files differ from develop" \
-  "$(printf 'api/deploy/.env.example\napi/deploy/docker-compose.job-signer.yml\napi/deploy/docker-compose.sensor.yml\napi/deploy/docker-compose.yml\napi/internal/versions/versions.yaml\nversions.yaml')" \
-  "$(git -C "$w" diff --name-only origin/develop "$ph")"
+assert_eq "post: no file differs from develop (no version lands on develop)" "" "$(git -C "$w" diff --name-only origin/develop "$ph")"
+assert_eq "post: no VERSION file on the follow-up" "" "$(git -C "$w" ls-tree --name-only "$ph" api/deploy/VERSION)"
 assert_contains "post: pushed" "refs/heads/chore/post-release-v0.3.0" "$(git -C "$w" ls-remote --heads origin)"
 assert_rc "post: branch exists -> refused" 1 bash "$POST" --repo "$w" --version v0.3.0
 assert_rc "post: untagged version refused" 1 bash "$POST" --repo "$w" --version v0.9.9
 
-# Hotfix mode does not merge main back.
+# A hotfix needs no develop follow-up: no branch, exit 0.
 git -C "$w" push -q origin :refs/heads/chore/post-release-v0.3.0
 git -C "$w" branch -q -D chore/post-release-v0.3.0
-out="$(bash "$POST" --repo "$w" --version v0.3.0 --mode hotfix 2>/dev/null)"
-ph="$(sed -n 's/^HEAD=//p' <<<"$out")"
-assert_rc "post hotfix: no merge-back" 1 git -C "$w" merge-base --is-ancestor v0.3.0 "$ph"
-assert_contains "post hotfix: still bumps versions.yaml" "release: v0.3.0" "$(git -C "$w" show "$ph:versions.yaml")"
-git -C "$w" branch -q -D chore/post-release-v0.3.0
+out="$(bash "$POST" --repo "$w" --version v0.3.0 --mode hotfix --push 2>/dev/null)"; rc=$?
+assert_eq "post hotfix: exit 0" 0 "$rc"
+assert_eq "post hotfix: prints no branch" "" "$out"
+assert_eq "post hotfix: pushes nothing" "" "$(git -C "$w" ls-remote --heads origin 'chore/post-release-*')"
+git -C "$w" branch -q -D chore/post-release-v0.3.0 2>/dev/null || true
 
-# A train whose main carries more than the version commit is refused.
+# A train whose main carries a file develop never had is refused.
 git -C "$w" switch -q main
 commit "$w" "fix: made on main only" onlymain.txt
-sed -i 's/v0.3.0/v0.3.1/g' "$w/versions.yaml" "$w/api/internal/versions/versions.yaml" "$w/api/deploy/.env.example" "$w/api/deploy/docker-compose.yml" "$w/api/deploy/docker-compose.job-signer.yml" "$w/api/deploy/docker-compose.sensor.yml"
-git -C "$w" commit -qam "chore: v0.3.1"
 git -C "$w" tag -a v0.3.1 -m v0.3.1
 git -C "$w" push -q origin main --tags
 git -C "$w" switch -q develop
 out="$(bash "$POST" --repo "$w" --version v0.3.1 2>&1)"; rc=$?
 assert_eq "post: main-only change refused" 1 "$rc"
-assert_contains "post: main-only change explained" "beyond versions.yaml and its consumers" "$out"
+assert_contains "post: main-only change explained" "onlymain.txt" "$out"
 
 # --- helm-bump.sh ------------------------------------------------------------------
 HB="$RELEASE_DIR/helm-bump.sh"

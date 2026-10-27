@@ -2,7 +2,7 @@ name: Build images
 
 # Reusable workflow: builds each CI image once per content key and hands every
 # caller the images by digest (api/docs/development/ci-cd.md, "Build images
-# once"). Callers: web-e2e.yml, allinone-ci.yml, api-ci.yml.
+# once"). Callers: web-e2e.yml, allinone-ci.yml.
 #
 #   key      .github/scripts/image-key.sh: the git tree hashes of what the
 #            Dockerfile copies + Dockerfile + target + build args.
