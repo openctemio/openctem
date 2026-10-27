@@ -65,6 +65,9 @@ func runLog(t *testing.T, db *sql.DB) []int64 {
 		}
 		out = append(out, v)
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
 	return out
 }
 
@@ -82,6 +85,9 @@ func applied(t *testing.T, db *sql.DB) []int64 {
 			t.Fatal(err)
 		}
 		out = append(out, v)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
 	}
 	return out
 }

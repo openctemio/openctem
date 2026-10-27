@@ -115,7 +115,7 @@ func (r *Runner) withLock(ctx context.Context, fn func(*sql.Conn) error) error {
 		}
 	}
 	defer func() {
-		// Not the run's context: the lock must go even when it was cancelled.
+		// Not the run's context: the lock must go even when it was canceled.
 		uctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_, _ = conn.ExecContext(uctx, `SELECT pg_advisory_unlock($1)`, key)
@@ -340,22 +340,8 @@ func (r *Runner) Down(ctx context.Context, n int) ([]Migration, error) {
 		if _, err := r.prepare(ctx, conn); err != nil {
 			return err
 		}
-		rows, err := conn.QueryContext(ctx,
-			`SELECT version FROM schema_migrations_applied ORDER BY applied_at DESC, version DESC LIMIT $1`, n)
+		versions, err := recentlyApplied(ctx, conn, n)
 		if err != nil {
-			return fmt.Errorf("read schema_migrations_applied: %w", err)
-		}
-		var versions []int64
-		for rows.Next() {
-			var v int64
-			if err := rows.Scan(&v); err != nil {
-				_ = rows.Close()
-				return err
-			}
-			versions = append(versions, v)
-		}
-		_ = rows.Close()
-		if err := rows.Err(); err != nil {
 			return err
 		}
 		for _, v := range versions {
@@ -387,6 +373,25 @@ func (r *Runner) Down(ctx context.Context, n int) ([]Migration, error) {
 		return nil
 	})
 	return done, err
+}
+
+// recentlyApplied lists the n most recently applied versions, newest first.
+func recentlyApplied(ctx context.Context, q queryer, n int) ([]int64, error) {
+	rows, err := q.QueryContext(ctx,
+		`SELECT version FROM schema_migrations_applied ORDER BY applied_at DESC, version DESC LIMIT $1`, n)
+	if err != nil {
+		return nil, fmt.Errorf("read schema_migrations_applied: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var versions []int64
+	for rows.Next() {
+		var v int64
+		if err := rows.Scan(&v); err != nil {
+			return nil, err
+		}
+		versions = append(versions, v)
+	}
+	return versions, rows.Err()
 }
 
 // Force clears the dirty flag and records version as applied without
