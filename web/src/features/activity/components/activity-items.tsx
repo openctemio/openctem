@@ -311,7 +311,7 @@ export function CommentCard({
             className="text-xs text-muted-foreground"
             title={`Edited ${new Date(item.editedAt).toLocaleString()}`}
           >
-            · edited
+            , edited
           </span>
         )}
         {item.visibility === 'client' && (

@@ -35,7 +35,7 @@ var Features = []Feature{
 		Registers: []string{
 			"registerVulnerabilityRoutes", "registerFindingActivityRoutes", "registerFindingEvidenceItemRoutes",
 			"registerFindingImportRoutes", "registerImportMappingRoutes", "registerFindingRetestRoutes", "registerFindingRetestCheckRoutes", "registerFindingSourceRoutes", "registerFindingLifecycleRoutes", "registerVerificationChecklistRoutes",
-			"registerAITriageRoutes", "registerAttachmentRoutes", "registerSavedViewRoutes", "registerQueryRoutes",
+			"registerAITriageRoutes", "registerAttachmentRoutes", "registerSavedViewRoutes", "registerNavPinRoutes", "registerQueryRoutes",
 		},
 		Prefixes: []string{"/api/v1/verification-checklists"},
 	},
@@ -74,7 +74,7 @@ var Features = []Feature{
 	},
 	{
 		ID: "programs", Title: "Bug-bounty programs",
-		Description: "Programs the organization tests under their published rules: import with an attestation, re-import, pause, resume and end (RFC-065).",
+		Description: "Programs the organization tests under their published rules: import with an attestation, re-import, pause, resume and end.",
 		Stages:      []string{StageScoping},
 		Registers:   []string{"registerProgramRoutes"},
 	},

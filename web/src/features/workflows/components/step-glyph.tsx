@@ -1,30 +1,30 @@
+import { GitBranch, Play, Send, Zap, type LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { WorkflowNodeType } from '@/lib/api/workflow-types'
 
-// Step kinds are told apart by a small labelled neutral glyph (its shape and
-// letter), never by colour: circle trigger, diamond condition, square action,
-// tab-shaped notification (it leaves the platform).
-const GLYPH: Record<WorkflowNodeType, { letter: string; shape: string }> = {
-  trigger: { letter: 'T', shape: 'rounded-full' },
-  condition: { letter: '?', shape: 'rotate-45 scale-[0.82] rounded-[2px]' },
-  action: { letter: 'A', shape: 'rounded-[3px]' },
-  notification: { letter: 'N', shape: 'rounded-s-[3px] rounded-e-lg' },
+// Step kinds are told apart by an icon (its shape), never by colour or a bare
+// letter: a bolt for the trigger, a fork for the condition, a play mark for
+// the action, a paper plane for the notification (it leaves the platform).
+const GLYPH: Record<WorkflowNodeType, LucideIcon> = {
+  trigger: Zap,
+  condition: GitBranch,
+  action: Play,
+  notification: Send,
 }
 
 /** The glyph of a step kind; decorative, the kind name is always next to it. */
 export function StepGlyph({ kind, className }: { kind: string; className?: string }) {
-  const g = GLYPH[kind as WorkflowNodeType] ?? GLYPH.action
+  const Icon = GLYPH[kind as WorkflowNodeType] ?? GLYPH.action
   return (
     <span
       aria-hidden
       data-glyph={kind}
       className={cn(
-        'inline-grid size-5 shrink-0 place-items-center border border-foreground/40 text-xs leading-none font-semibold text-muted-foreground',
-        g.shape,
+        'inline-grid size-5 shrink-0 place-items-center text-muted-foreground',
         className
       )}
     >
-      <span className={cn(kind === 'condition' && '-rotate-45')}>{g.letter}</span>
+      <Icon className="size-4" />
     </span>
   )
 }

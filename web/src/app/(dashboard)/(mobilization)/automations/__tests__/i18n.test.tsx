@@ -103,7 +103,7 @@ describe('Automations page i18n', () => {
     )
     expect(screen.getByText('Phát hiện được tạo')).toBeInTheDocument()
     expect(container.textContent).toContain('thành công 50%')
-    expect(container.textContent).not.toContain('Finding Created')
+    expect(container.textContent).not.toContain('Finding created')
     expect(container.textContent).not.toContain('success)')
   })
 

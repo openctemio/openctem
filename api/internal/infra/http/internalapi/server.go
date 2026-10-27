@@ -406,7 +406,7 @@ func (h *Handler) provision(w http.ResponseWriter, r *http.Request) {
 	call := h.call(r, req.Reason)
 	created, err := h.d.Provisioner.Create(r.Context(), tenantapp.CreateOrganizationInput{
 		Name: strings.TrimSpace(req.Name), Slug: strings.ToLower(strings.TrimSpace(req.Slug)),
-		OwnerEmail: req.OwnerEmail, OwnerName: req.OwnerName, NewOwnerOnly: true,
+		OwnerEmail: req.OwnerEmail, OwnerName: req.OwnerName,
 		SignupSource: signupevent.SourceControlPlane,
 		Provisioned: &tenantapp.ProvisionedEntitlements{
 			Limits: lims, DeniedFeatures: req.DeniedFeatures, IdlePolicy: req.IdlePolicy, Reason: strings.TrimSpace(req.Reason),

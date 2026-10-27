@@ -74,7 +74,7 @@ function durationCaption(
   emptyFallback: string
 ): string {
   if (formatDurationHours(d?.mean_hours) !== null) {
-    const base = t(`${K}.caption.median`, 'Median {median} · {sample}', {
+    const base = t(`${K}.caption.median`, 'Median {median}, {sample}', {
       median: formatDurationHours(d?.median_hours) ?? NOT_MEASURED,
       sample: counted(t, noun, d?.sample_size),
     })
@@ -142,7 +142,7 @@ export function ProgramMetricsSection({
   )
   const mttrCaption =
     mttrDisplay !== null
-      ? t(`${K}.caption.median`, 'Median {median} · {sample}', {
+      ? t(`${K}.caption.median`, 'Median {median}, {sample}', {
           median: formatDurationHours(mttr?.median_hours) ?? NOT_MEASURED,
           sample: counted(t, 'finding', mttr?.sample_size),
         })
@@ -156,7 +156,7 @@ export function ProgramMetricsSection({
           decided: counted(t, 'assignment', decided),
         }) +
         (oa?.pending
-          ? ` · ${t(`${K}.acceptance.pending`, '{count} pending', { count: oa.pending })}`
+          ? `, ${t(`${K}.acceptance.pending`, '{count} pending', { count: oa.pending })}`
           : '')
       : oa?.pending
         ? t(`${K}.acceptance.allPending`, '{items} still inside the SLA window', {
@@ -166,14 +166,14 @@ export function ProgramMetricsSection({
 
   const ccCaption =
     ccDisplay !== null
-      ? t(`${K}.cycles.caption`, '{onTime} of {due} on time · {late} late · {open} open', {
+      ? t(`${K}.cycles.caption`, '{onTime} of {due} on time, {late} late, {open} open', {
           onTime: (cc?.closed_on_time ?? 0).toLocaleString(),
           due: counted(t, 'cycle', cc?.due),
           late: (cc?.closed_late ?? 0).toLocaleString(),
           open: (cc?.open ?? 0).toLocaleString(),
         }) +
         (formatRatePct(cc?.mean_charter_completion_pct) !== null
-          ? ` · ${t(`${K}.cycles.charter`, 'criteria met {pct}', {
+          ? `, ${t(`${K}.cycles.charter`, 'criteria met {pct}', {
               pct: formatRatePct(cc?.mean_charter_completion_pct) ?? NOT_MEASURED,
             })}`
           : '')
@@ -342,7 +342,7 @@ export function ProgramMetricsSection({
                         display !== null
                           ? t(
                               `${K}.controls.caption`,
-                              '{lacking} lacking · {unknown} not recorded · of {total}',
+                              '{lacking} lacking, {unknown} not recorded, of {total}',
                               {
                                 lacking: row.lacking.toLocaleString(),
                                 unknown: row.unknown.toLocaleString(),

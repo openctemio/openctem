@@ -48,7 +48,7 @@ export function CharterAttackerProfilesField({
         {chosen.map((p) => (
           <li key={p.id}>
             <span className="font-medium">{p.name}</span>
-            <span className="text-muted-foreground"> · {profileTypeLabel(p.profile_type, t)}</span>
+            <span className="text-muted-foreground">, {profileTypeLabel(p.profile_type, t)}</span>
           </li>
         ))}
       </ul>
@@ -87,7 +87,7 @@ export function CharterAttackerProfilesField({
               </span>
               <span className="text-xs font-normal text-muted-foreground">
                 {profileTypeLabel(p.profile_type, t)}
-                {p.description ? ` · ${p.description}` : ''}
+                {p.description ? `, ${p.description}` : ''}
               </span>
             </Label>
           </div>

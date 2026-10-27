@@ -33,7 +33,7 @@ export interface SensorTemplates {
   compose?: string
   kubernetes?: string
   helm?: string
-  /** The sensor-local policy template (api RFC-040 §5.7), prefilled with the zones' ranges. */
+  /** The sensor-local policy template, prefilled with the zones' ranges, else the organization's scope. */
   policy?: string
   image?: string
   /** The sensor product the snippets install ("" for a collector). */
@@ -178,6 +178,8 @@ export function Snippet({ text, label, file }: { text: string; label: string; fi
         tabIndex={0}
         className="max-h-96 overflow-auto rounded-lg p-4 pe-28 font-mono text-xs leading-relaxed whitespace-pre focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         data-format={label}
+        role="region"
+        aria-label={label}
       >
         {text}
       </pre>
@@ -309,6 +311,23 @@ export function SensorInstallSnippets({
               <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
                 <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
                 <span>{t('sensors.snippets.policyNote')}</span>
+              </p>
+            )}
+            {(f.key === 'docker' || f.key === 'compose') && (
+              <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                <span>
+                  {t('sensors.snippets.volumeNote')}{' '}
+                  <a
+                    href={docsHref(DOCS.sensors.run)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-primary underline-offset-4 hover:underline"
+                  >
+                    {t('sensors.snippets.runGuide')}
+                    <ExternalLink className="h-3 w-3" aria-hidden />
+                  </a>
+                </span>
               </p>
             )}
             <Snippet text={data[f.key] ?? ''} label={formatLabel(f)} file={f.file} />

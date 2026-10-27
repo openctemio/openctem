@@ -271,7 +271,7 @@ type ScopeEntryPreviewResponse struct {
 
 // PreviewTarget handles POST /api/v1/scope/targets/preview
 // @Summary      Preview a scope entry
-// @Description  What adding a permanent scope entry would do: the discovered names waiting for review it would confirm (RFC-054 §4.3), counted over the caller's data scope. Exclusions, tombstones, rejected names and a person's decision still win. Nothing is written.
+// @Description  What adding a permanent scope entry would do: the discovered names waiting for review it would confirm, counted over the caller's data scope. Exclusions, tombstones, rejected names and a person's decision still win. Nothing is written.
 // @Tags         Scope
 // @Accept       json
 // @Produce      json
@@ -385,7 +385,7 @@ type ScopeTargetResponse struct {
 	// the trust (409 CI_TRUST_MANAGED here).
 	ManagedBy []ScopeManagedByResponse `json:"managed_by,omitempty"`
 	// AuthorizationSource: ownership, program, authorization_letter or
-	// self_attestation (RFC-065). ProgramID is set for a program entry.
+	// self_attestation. ProgramID is set for a program entry.
 	AuthorizationSource string  `json:"authorization_source"`
 	ProgramID           *string `json:"program_id,omitempty"`
 	LetterID            *string `json:"letter_id,omitempty"`
@@ -401,8 +401,7 @@ type ScopeTargetResponse struct {
 	// Approval is set on a pending entry: how many approvals it still
 	// needs and who can give them.
 	Approval *ScopeApprovalStatusResponse `json:"approval,omitempty"`
-	// Attestation is set on an active t2 entry that is attested
-	// (RFC-054 §12.5).
+	// Attestation is set on an active t2 entry that is attested.
 	Attestation *ScopeAttestationResponse `json:"attestation,omitempty"`
 }
 
@@ -438,7 +437,7 @@ type ScopeExclusionResponse struct {
 	Origin    string    `json:"origin"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
-	// Path exclusions only (RFC-056): the path prefix, the methods blocked
+	// Path exclusions only: the path prefix, the methods blocked
 	// (empty: all), the testing mode set and the one in force now.
 	HostPattern      string     `json:"host_pattern,omitempty"`
 	PathPrefix       string     `json:"path_prefix,omitempty"`
@@ -507,7 +506,7 @@ type CreateScopeTargetRequest struct {
 	// (default) or self_attestation. Program entries come from Programs
 	// (400 PROGRAM_ENTRY_VIA_PROGRAMS).
 	AuthorizationSource string `json:"authorization_source" validate:"omitempty,max=40"`
-	// LetterID names the letter of an authorization_letter entry (RFC-065 §13).
+	// LetterID names the letter of an authorization_letter entry.
 	LetterID string `json:"letter_id" validate:"omitempty,uuid"`
 }
 
@@ -532,7 +531,7 @@ type CreateScopeExclusionRequest struct {
 	Pattern       string     `json:"pattern" validate:"required,max=500"`
 	Reason        string     `json:"reason" validate:"required,max=1000"`
 	ExpiresAt     *time.Time `json:"expires_at"`
-	// PathPrefix and Methods: a `path` exclusion's web rule (RFC-056). The
+	// PathPrefix and Methods: a `path` exclusion's web rule. The
 	// pattern is then a host pattern ("*", "*.example.com", a host or an
 	// origin URL); methods empty blocks every method.
 	PathPrefix *string  `json:"path_prefix,omitempty" validate:"omitempty,max=500"`
@@ -839,7 +838,7 @@ func (h *ScopeHandler) ListTargets(w http.ResponseWriter, r *http.Request) {
 
 // CreateTarget handles POST /api/v1/scope/targets
 // @Summary      Create scope target
-// @Description  Create a scope entry (RFC-054, RFC-073 §6). Under the Off and On scan approval modes any caller with attack_surface:scope:write needs a recent re-authentication (403 STEP_UP_REQUIRED) and the entry is active at once. Under Strict, with attack_surface:scope:approve it needs a recent re-authentication and is active at once or pending the organization's approvals; without it, it is a pending request for a one-off entry of one name or address, with a reason
+// @Description  Create a scope entry. Under the Off and On scan approval modes any caller with attack_surface:scope:write needs a recent re-authentication (403 STEP_UP_REQUIRED) and the entry is active at once. Under Strict, with attack_surface:scope:approve it needs a recent re-authentication and is active at once or pending the organization's approvals; without it, it is a pending request for a one-off entry of one name or address, with a reason
 // @Tags         Scope
 // @Accept       json
 // @Produce      json
@@ -953,7 +952,7 @@ func (h *ScopeHandler) GetTarget(w http.ResponseWriter, r *http.Request) {
 
 // UpdateTarget handles PUT /api/v1/scope/targets/{id}
 // @Summary      Update scope target
-// @Description  Update a scope entry. A later or removed expiry, or a higher tier, widens it: that needs a recent re-authentication (403 STEP_UP_REQUIRED), and under Strict attack_surface:scope:approve; it sends the entry back to pending when the organization requires approvals (RFC-054, RFC-073 §6)
+// @Description  Update a scope entry. A later or removed expiry, or a higher tier, widens it: that needs a recent re-authentication (403 STEP_UP_REQUIRED), and under Strict attack_surface:scope:approve; it sends the entry back to pending when the organization requires approvals
 // @Tags         Scope
 // @Accept       json
 // @Produce      json
@@ -1623,7 +1622,7 @@ type CheckScopeResponse struct {
 
 // CheckScope handles POST /api/v1/scope/check
 // @Summary      Dry run of the active-probe gate
-// @Description  For each target and inventory asset, what a scan by the caller would do now (RFC-054 §6.4), at the given tier or the tier of scanner_name (default safe active): allowed with what authorizes it, or refused with a code, the caller's own rule that refused it and the fixes the caller may take. Runs the act scope, the target validator, exclusions, ownership and scope authority, the platform guardrails, zones and the proof requirement; dispatches, logs and audits nothing. An asset is checked by its name; one outside the caller's data scope, or not the organization's, answers out_of_data_scope with its id only. At most 200 targets and assets together.
+// @Description  For each target and inventory asset, what a scan by the caller would do now, at the given tier or the tier of scanner_name (default safe active): allowed with what authorizes it, or refused with a code, the caller's own rule that refused it and the fixes the caller may take. Runs the act scope, the target validator, exclusions, ownership and scope authority, the platform guardrails, zones and the proof requirement; dispatches, logs and audits nothing. An asset is checked by its name; one outside the caller's data scope, or not the organization's, answers out_of_data_scope with its id only. At most 200 targets and assets together.
 // @Tags         Scope
 // @Accept       json
 // @Produce      json
@@ -1737,16 +1736,13 @@ func (h *ScopeHandler) CheckScope(w http.ResponseWriter, r *http.Request) {
 		if code == scopedom.RefusalTierExceeds {
 			ref = scopedom.NewTierRefusal(res.Target, rule, scopedom.Tier(min(max(tier, 0), int(scopedom.TierIntrusive))), explain.OneOffDays())
 		}
-		if ref.Message == "" {
+		if ref.Message == "" || (code == scopedom.RefusalProofRequired && res.Reason != "") {
+			// The dry run says why this proof is needed (platform sensors
+			// only, or no sensor of the organization can take the job).
 			ref.Message = res.Reason
 		}
 		item.Code, item.Message, item.Rule, item.Resolved = ref.Code, ref.Message, ref.Rule, res.Resolved
 		item.Fixes = scopedom.FilterFixes(ref.Fixes, has)
-		if code == scopedom.RefusalProofRequired && tier >= int(scopedom.TierIntrusive) {
-			// Intrusive probes need proof on the organization's own sensors
-			// too: "use your own sensor" would not help.
-			item.Fixes = withoutFix(item.Fixes, scopedom.FixUseTenantSensor)
-		}
 		out.Results = append(out.Results, item)
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -1865,14 +1861,4 @@ func (h *ScopeHandler) bulkDeleteItems(
 		FailedIDs:     failedIDs,
 		Errors:        errs,
 	}
-}
-
-func withoutFix(fixes []scopedom.Fix, action string) []scopedom.Fix {
-	out := fixes[:0:0]
-	for _, f := range fixes {
-		if f.Action != action {
-			out = append(out, f)
-		}
-	}
-	return out
 }

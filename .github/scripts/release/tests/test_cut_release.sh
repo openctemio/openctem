@@ -20,12 +20,9 @@ assert_contains "train: deliberate deletion noted" "gone.txt is on main, deleted
 head="$(sed -n 's/^HEAD=//p' <<<"$out")"
 assert_eq "train: head is the -s ours merge (two parents)" 3 "$(git -C "$w" rev-list --parents -n 1 "$head" | wc -w)"
 assert_eq "train: version commit sits on develop's commit" "$dev" "$(git -C "$w" rev-parse "$head^1^1")"
-assert_eq "train: tree is develop's plus the version commit" \
-  "$(printf 'api/deploy/.env.example\napi/deploy/docker-compose.job-signer.yml\napi/deploy/docker-compose.sensor.yml\napi/deploy/docker-compose.yml\napi/internal/versions/versions.yaml\nversions.yaml')" \
-  "$(git -C "$w" diff --name-only "$dev" "$head")"
-assert_contains "train: versions.yaml names the release" "release: v0.3.0" "$(git -C "$w" show "$head:versions.yaml")"
-assert_contains "train: the checkout defaults to the release" "OPENCTEM_VERSION=v0.3.0" "$(git -C "$w" show "$head:api/deploy/.env.example")"
-assert_contains "train: compose defaults to the release" "OPENCTEM_VERSION:-v0.3.0}" "$(git -C "$w" show "$head:api/deploy/docker-compose.yml")"
+assert_eq "train: tree is develop's plus api/deploy/VERSION only" "api/deploy/VERSION" "$(git -C "$w" diff --name-only "$dev" "$head")"
+assert_eq "train: the checkout installs the release" "v0.3.0" "$(git -C "$w" show "$head:api/deploy/VERSION")"
+assert_eq "train: versions.yaml is untouched" "$(git -C "$w" show "$dev:versions.yaml")" "$(git -C "$w" show "$head:versions.yaml")"
 assert_rc "train: main is an ancestor" 0 git -C "$w" merge-base --is-ancestor origin/main "$head"
 assert_eq "train: pushed" "$head" "$(git -C "$w" ls-remote origin refs/heads/release/v0.3.0 | cut -f1)"
 # The PR merges into main without conflicts and yields the release branch's tree.
@@ -81,8 +78,7 @@ head="$(sed -n 's/^HEAD=//p' <<<"$out")"
 assert_eq "hotfix: built on the tag" "$(git -C "$w" rev-parse 'v0.2.0^{commit}')" "$(git -C "$w" rev-parse "$head~2")"
 assert_contains "hotfix: cherry-picked with -x" "cherry picked from commit $fix" "$(git -C "$w" log -1 --format=%B "$head~1")"
 assert_eq "hotfix: head has one parent" 2 "$(git -C "$w" rev-list --parents -n 1 "$head" | wc -w)"
-assert_contains "hotfix: versions.yaml names the hotfix" "release: v0.2.1" "$(git -C "$w" show "$head:versions.yaml")"
-assert_contains "hotfix: the checkout defaults to the hotfix" "OPENCTEM_VERSION=v0.2.1" "$(git -C "$w" show "$head:api/deploy/.env.example")"
+assert_eq "hotfix: the checkout installs the hotfix" "v0.2.1" "$(git -C "$w" show "$head:api/deploy/VERSION")"
 assert_rc "hotfix: still has gone.txt (no develop changes leak in)" 0 git -C "$w" cat-file -e "$head:gone.txt"
 assert_rc "hotfix: wrong version refused" 1 bash "$CUT" --repo "$w" --version v0.3.0 --mode hotfix --picks "$fix"
 assert_rc "hotfix: needs picks" 2 bash "$CUT" --repo "$w" --version v0.2.2 --mode hotfix

@@ -185,7 +185,7 @@ export function ActorChip({ actor, at, className, compact }: ActorChipProps) {
     label = t('actor.former', 'Former member')
   }
 
-  const title = at ? `${label} · ${new Date(at).toLocaleString()}` : label
+  const title = at ? `${label}, ${new Date(at).toLocaleString()}` : label
   return (
     <span
       className={cn('inline-flex min-w-0 items-center gap-1.5 text-sm', className)}

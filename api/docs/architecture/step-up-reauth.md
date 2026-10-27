@@ -136,6 +136,7 @@ offboarding without step-up and is removed.
 | `DELETE /api/v1/sensors/{id}` | Removes the sensor and its history; it cannot be undone. Revoking (`POST …/{id}/revoke`) cuts a sensor off at once without step-up, so an incident never waits on it. |
 | `DELETE /api/v1/service-accounts/{id}` | Ends every API key the service account holds, as deleting one of its keys (`DELETE …/{id}/api-keys/{key_id}`) does. |
 | `GET /api/v1/audit-logs/export` | The file holds every member's email and IP address for the filtered period. Reading the log in the app stays a plain read. |
+| `POST /api/v1/oauth/requests/{id}/approve` | Connects an application (MCP) for 90 days with the caller's permissions. A stolen session must not be able to mint it. Deny and the other consent steps stay one click. |
 | `POST /api/v1/scan-approvals/{id}/approve` | Lets a held scan send traffic to its targets, the same weight as approving a scope target. Reject and withdraw stay one click. |
 | `POST /api/v1/pentest/campaigns/{id}/secrets/{secret_id}/reveal`, `DELETE …/secrets/{secret_id}` | Shows a campaign test credential in clear text; deletes one for good (the same reason as the secret store and leaked credentials). |
 | `POST /api/v1/priority-rules`, `PUT`/`DELETE /api/v1/priority-rules/{id}` | A rule re-classes findings across the organization, down to the platform floors ([priority explainability](priority-explainability.md)). |

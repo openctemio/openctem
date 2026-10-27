@@ -84,7 +84,7 @@ export function HeatmapViz({ result, drill }: { result: MatrixResult; drill?: Dr
               const v = result.cells[i]?.[j] ?? null
               const step = v == null ? -1 : heatStep(v, max)
               const shade = step >= 0 ? sequentialStep(step) : null
-              const text = `${label(r)} · ${label(c)}: ${formatCount(v, locale)}`
+              const text = `${label(r)}, ${label(c)}: ${formatCount(v, locale)}`
               const cell = (
                 <span
                   className={cn(
@@ -155,21 +155,27 @@ export function ItemsViz({
         {rows.map((r) => {
           const due = r.due_at ? formatRelativeTime(r.due_at, locale) : null
           const overdue = isPast(r.due_at)
-          const sev = r.severity && isSeverity(r.severity) ? r.severity : null
+          // A finding with no severity or the stored "none" still gets a dot
+          // slot, so the priority badge and title line up with every other row.
+          const rawSev = r.severity === 'none' ? 'info' : r.severity
+          const sev = rawSev && isSeverity(rawSev) ? rawSev : null
+          const sevLabel = sev ? t(`severity.${sev}`, sev) : t('severity.unknown', 'Unknown')
           const body = (
             <div className="flex items-center gap-2 py-1.5 text-sm">
-              {sev && (
+              <span
+                className="inline-flex size-2 shrink-0 items-center"
+                title={sevLabel}
+                data-testid="items-severity-dot"
+              >
                 <span
-                  className="inline-flex shrink-0 items-center"
-                  title={t(`severity.${sev}`, sev)}
-                >
-                  <span
-                    className={cn('size-2 rounded-full', SEVERITY_DOT_COLORS[sev])}
-                    aria-hidden
-                  />
-                  <span className="sr-only">{t(`severity.${sev}`, sev)}</span>
-                </span>
-              )}
+                  className={cn(
+                    'size-2 rounded-full',
+                    sev ? SEVERITY_DOT_COLORS[sev] : 'bg-muted-foreground/40'
+                  )}
+                  aria-hidden
+                />
+                <span className="sr-only">{sevLabel}</span>
+              </span>
               {r.priority &&
                 (isPriorityClass(r.priority) ? (
                   <PriorityBadge priorityClass={r.priority} />
@@ -191,8 +197,8 @@ export function ItemsViz({
                   {r.asset}
                 </span>
               )}
-              {due &&
-                (overdue ? (
+              {due ? (
+                overdue ? (
                   <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-destructive">
                     <CircleAlert className="size-3.5" aria-hidden />
                     {t('dashboardKit.items.overdue', 'Overdue {time}', { time: due })}
@@ -201,7 +207,12 @@ export function ItemsViz({
                   <span className="shrink-0 text-xs text-muted-foreground">
                     {t('dashboardKit.items.due', 'due {time}', { time: due })}
                   </span>
-                ))}
+                )
+              ) : (
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {t('dashboardKit.items.noDue', 'No due date')}
+                </span>
+              )}
             </div>
           )
           return (

@@ -40,7 +40,7 @@ export function SensorContentCell({
   const title = (sensor.content ?? [])
     .map((c) => {
       const age = contentAgeText(c, now, t)
-      return `${contentLabel(c.name)}: ${contentStateLabel(contentState(c), t)}${c.version ? ` · ${c.version}` : ''}${age ? ` · ${age}` : ''}`
+      return `${contentLabel(c.name)}: ${contentStateLabel(contentState(c), t)}${c.version ? `, ${c.version}` : ''}${age ? `, ${age}` : ''}`
     })
     .join('\n')
   return (

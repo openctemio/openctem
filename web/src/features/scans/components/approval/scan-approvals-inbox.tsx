@@ -89,7 +89,7 @@ function RequestDetails({ req }: { req: ScanApprovalRequest }) {
           {req.definition.scanner_name ||
             (req.definition.workflow_steps ?? []).join(', ') ||
             req.definition.scan_type}
-          {' · '}
+          {', '}
           {t('scans.approval.schedule', 'schedule: {value}', {
             value: req.definition.schedule_type ?? '—',
           })}
@@ -291,12 +291,12 @@ export function ScanApprovalsInbox() {
                           name: req.requested_by?.name ?? '—',
                           when: formatRelative(req.requested_at),
                         })}
-                        {' · '}
+                        {', '}
                         {(req.evaluation.matched ?? []).map((r) => r.name).join(', ')}
                       </p>
                       {pending && (
                         <p className="text-xs text-muted-foreground">
-                          {t('scans.approval.remaining', '{count} approval(s) left · {who}', {
+                          {t('scans.approval.remaining', '{count} approval(s) left, {who}', {
                             count: req.remaining,
                             who: approversText(t, req.evaluation),
                           })}

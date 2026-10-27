@@ -385,7 +385,7 @@ describe('SensorDetailSheet', () => {
     expect(within(tools).getByText('not installed')).toBeInTheDocument()
     expect(screen.getByText('linux/amd64')).toBeInTheDocument()
     expect(screen.getByText('3 at once')).toBeInTheDocument()
-    expect(screen.getByText('operator cap 3 · your limit 8')).toBeInTheDocument()
+    expect(screen.getByText('operator cap 3, your limit 8')).toBeInTheDocument()
   })
 
   it('a sensor that has not reported its tools: the health callout says so', () => {
@@ -459,12 +459,12 @@ describe('SensorDetailSheet', () => {
     })
     const tools = screen.getByRole('list', { name: 'Tools' })
     expect(within(tools).getByLabelText('Serves dast, validate:nuclei')).toHaveTextContent(
-      'dast · validate:nuclei'
+      'dast, validate:nuclei'
     )
     expect(within(tools).queryByLabelText(/^Serves .*sast/)).toBeNull()
     expect(screen.getByText('4 at once')).toBeInTheDocument()
     expect(
-      screen.getByText('Runs 4 at once now · operator cap 64 · your limit 5')
+      screen.getByText('Runs 4 at once now, operator cap 64, your limit 5')
     ).toBeInTheDocument()
   })
 
@@ -480,7 +480,7 @@ describe('SensorDetailSheet', () => {
     open()
     expect(screen.getByText('Upgrade to v0.5.0 before 2027-04-01')).toBeInTheDocument()
     expect(screen.getByLabelText('Protocol v1, openctem-sdk-go/0.6.0')).toBeInTheDocument()
-    expect(screen.getAllByText('v1 · deprecated').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('v1, deprecated').length).toBeGreaterThanOrEqual(1)
   })
 
   it('shows the transport of the last heartbeat and why it is not gRPC', () => {

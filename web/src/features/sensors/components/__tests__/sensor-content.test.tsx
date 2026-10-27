@@ -83,7 +83,7 @@ describe('SensorContentSection', () => {
       ['semgrep-rules', 'unmanaged'],
     ])
     expect(screen.getByText('Trivy vulnerability DB')).toBeInTheDocument()
-    expect(screen.getByText('3d old · limit 2d')).toBeInTheDocument()
+    expect(screen.getByText('3d old, limit 2d')).toBeInTheDocument()
     expect(screen.getByText('sha256:3b169afdc4a0')).toBeInTheDocument()
     expect(screen.getByText('mirror.gcr.io/aquasec/trivy-db:2')).toBeInTheDocument()
     expect(screen.getByText(/not controlled/)).toBeInTheDocument()

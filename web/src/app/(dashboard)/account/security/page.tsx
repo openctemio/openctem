@@ -16,16 +16,22 @@ import { PageStack } from '@/features/shared'
  */
 export default function SecurityPage() {
   const { profile } = useProfile()
-  const { sessions, isLoading, mutate: mutateSessions } = useSessions()
+  const { sessions, activeApiKeys, isLoading, mutate: mutateSessions } = useSessions()
 
   return (
     <PageStack>
       <PasswordCard
         isLocalAccount={profile ? profile.auth_provider === 'local' : true}
         onChanged={() => mutateSessions()}
+        activeApiKeys={activeApiKeys}
       />
       <TwoFactorCard email={profile?.email} onOtherSessionsSignedOut={() => mutateSessions()} />
-      <SessionsCard sessions={sessions} isLoading={isLoading} onChanged={() => mutateSessions()} />
+      <SessionsCard
+        sessions={sessions}
+        isLoading={isLoading}
+        onChanged={() => mutateSessions()}
+        activeApiKeys={activeApiKeys}
+      />
       <DeleteAccountCard email={profile?.email} />
     </PageStack>
   )
