@@ -66,7 +66,7 @@ var (
 // Cipher provides AES-256-GCM encryption and decryption.
 type Cipher struct {
 	aead cipher.AEAD
-	// fpKey keys Fingerprint; derived from the encryption key, never stored.
+	// fpKey keys SecretFingerprint; derived from the encryption key, never stored.
 	fpKey [32]byte
 }
 
@@ -74,12 +74,12 @@ type Cipher struct {
 // values can be compared (or bound into an approval) without storing a plain
 // hash of the secret. The fingerprint changes when the encryption key does.
 type Fingerprinter interface {
-	Fingerprint(purpose, value string) string
+	SecretFingerprint(purpose, value string) string
 }
 
-// Fingerprint returns 16 hex characters of HMAC-SHA256(key derived from the
+// SecretFingerprint returns 16 hex characters of HMAC-SHA256(key derived from the
 // encryption key and purpose, value).
-func (c *Cipher) Fingerprint(purpose, value string) string {
+func (c *Cipher) SecretFingerprint(purpose, value string) string {
 	mac := hmac.New(sha256.New, c.fpKey[:])
 	mac.Write([]byte(purpose))
 	mac.Write([]byte{0})

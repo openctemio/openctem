@@ -383,7 +383,7 @@ func (s *Service) plan(ctx context.Context, in Input) (plan, error) {
 // is never stored or shown).
 func (s *Service) fingerprint(key string) string {
 	if f, ok := s.encryptor.(crypto.Fingerprinter); ok {
-		return f.Fingerprint("platform-ai-key", strings.TrimSpace(key))
+		return f.SecretFingerprint("platform-ai-key", strings.TrimSpace(key))
 	}
 	return "unkeyed"
 }
