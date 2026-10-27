@@ -59,3 +59,29 @@ func TestOAuthCallback_NoEmailIs400(t *testing.T) {
 		t.Fatalf("code %q, want OAUTH_NO_EMAIL", body.Code)
 	}
 }
+
+// The linking refusals of Account > Security are coded 4xx answers.
+func TestIdentityLinkErrorsAreCoded(t *testing.T) {
+	h := &OAuthHandler{logger: logger.NewNop()}
+	for err, want := range map[error]struct {
+		status int
+		code   string
+	}{
+		auth.ErrIdentityLinkedElsewhere: {http.StatusConflict, "IDENTITY_LINKED_ELSEWHERE"},
+		auth.ErrProviderAlreadyLinked:   {http.StatusConflict, "PROVIDER_ALREADY_LINKED"},
+		auth.ErrLastSignInMethod:        {http.StatusConflict, "LAST_SIGN_IN_METHOD"},
+		auth.ErrIdentityNotUnlinkable:   {http.StatusConflict, "IDENTITY_MANAGED_BY_ORGANIZATION"},
+		auth.ErrIdentityNotFound:        {http.StatusNotFound, "IDENTITY_NOT_FOUND"},
+		auth.ErrInvalidState:            {http.StatusBadRequest, "OAUTH_INVALID_STATE"},
+	} {
+		rec := httptest.NewRecorder()
+		h.handleOAuthError(rec, fmt.Errorf("wrapped: %w", err))
+		var body struct {
+			Code string `json:"code"`
+		}
+		_ = json.Unmarshal(rec.Body.Bytes(), &body)
+		if rec.Code != want.status || body.Code != want.code {
+			t.Errorf("%v: got %d %q, want %d %q", err, rec.Code, body.Code, want.status, want.code)
+		}
+	}
+}

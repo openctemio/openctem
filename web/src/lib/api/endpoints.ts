@@ -236,6 +236,17 @@ export const userEndpoints = {
   twoFactorDisable: () => `${API_BASE.USERS}/me/2fa/disable`,
   twoFactorRecoveryCodes: () => `${API_BASE.USERS}/me/2fa/recovery-codes`,
 
+  /**
+   * Linked sign-in methods (Account > Security). Link start and unlink need
+   * step-up; the link callback is called by the OAuth callback route.
+   */
+  identities: () => `${API_BASE.USERS}/me/identities`,
+  identityLink: (provider: string) =>
+    `${API_BASE.USERS}/me/identities/${encodeURIComponent(provider)}/link`,
+  identityLinkCallback: (provider: string) =>
+    `${API_BASE.USERS}/me/identities/${encodeURIComponent(provider)}/link/callback`,
+  identity: (id: string) => `${API_BASE.USERS}/me/identities/${encodeURIComponent(id)}`,
+
   // ============================================
   // USER MANAGEMENT (Admin)
   // ============================================

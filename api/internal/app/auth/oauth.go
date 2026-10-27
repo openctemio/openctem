@@ -117,6 +117,12 @@ type OAuthService struct {
 	// social sign-in adopts it (oauth_claim_guard.go). Unset: never adopted.
 	claimMembers ClaimMembershipSource
 	claimDomains DomainVerifier
+	// secondFactor, sessions and identityNotifier serve linked identities
+	// (identity_link.go): the second step of a linked password account, the
+	// session revocation of an automatic link, and the link e-mails.
+	secondFactor     SecondFactorGate
+	sessions         SessionRevoker
+	identityNotifier IdentityNotifier
 }
 
 // InvitationLookup answers whether any organization has a pending invitation
@@ -249,7 +255,7 @@ func (s *OAuthService) GetAuthorizationURL(ctx context.Context, input Authorizat
 	}
 
 	// Generate state token with PKCE for CSRF + code interception protection
-	state, codeVerifier, err := s.generateState(input.Provider, input.FinalRedirect)
+	state, codeVerifier, err := s.generateState(input.Provider, input.FinalRedirect, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate state: %w", err)
 	}
@@ -284,6 +290,11 @@ type CallbackResult struct {
 	ExpiresIn    int64         `json:"expires_in"`
 	TokenType    string        `json:"token_type"`
 	User         *userdom.User `json:"user"`
+	// MFAChallenge is set when the account is a password account with a
+	// second factor (or an organization requires one): no session was
+	// issued, and the challenge opens the same second step a password
+	// sign-in takes (POST /auth/mfa/verify or the enrollment steps).
+	MFAChallenge *MFAChallengeInfo `json:"-"`
 }
 
 // HandleCallback handles the OAuth callback.
@@ -303,10 +314,15 @@ func (s *OAuthService) HandleCallback(ctx context.Context, input CallbackInput) 
 
 	// Validate state, then claim its PKCE verifier. Taking it is single use:
 	// a replayed state finds nothing and is refused before any code exchange.
-	finalRedirect, err := s.validateState(input.State, input.Provider)
+	claims, err := s.validateState(input.State, input.Provider)
 	if err != nil {
 		return nil, ErrInvalidState
 	}
+	// A link state signs nobody in: it belongs to CompleteLink.
+	if claims.Purpose != "" {
+		return nil, ErrInvalidState
+	}
+	finalRedirect := claims.FinalRedirect
 	codeVerifier, found, err := s.pkceStore.GetDel(ctx, pkceStoreKey(input.State))
 	if err != nil {
 		s.logger.Error("failed to read PKCE verifier", "provider", input.Provider, "error", err)
@@ -339,8 +355,14 @@ func (s *OAuthService) HandleCallback(ctx context.Context, input CallbackInput) 
 		return nil, ErrOAuthNoEmail
 	}
 
-	// Find or create user
-	u, err := s.findOrCreateUser(ctx, userInfo, input.Provider)
+	return s.signIn(ctx, userInfo, input.Provider, finalRedirect)
+}
+
+// signIn finishes a social sign-in for a provider-verified identity: the
+// account, the platform-administrator refusal, the second step of a linked
+// password account, then the session.
+func (s *OAuthService) signIn(ctx context.Context, userInfo *OAuthUserInfo, provider OAuthProvider, finalRedirect string) (*CallbackResult, error) {
+	u, err := s.findOrCreateUser(ctx, userInfo, provider)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find or create user: %w", err)
 	}
@@ -349,6 +371,20 @@ func (s *OAuthService) HandleCallback(ctx context.Context, input CallbackInput) 
 	// is the generic provider failure.
 	if refusePlatformAdmin(ctx, s.platformAdmins, s.logger, u, "oauth") {
 		return nil, ErrUseAdminConsole
+	}
+
+	// A password account reached through a linked provider takes the same
+	// second step as its password sign-in (identity_link.go).
+	if isPasswordAccount(u) {
+		challenge, cerr := s.linkedAccountChallenge(ctx, u)
+		if cerr != nil {
+			return nil, cerr
+		}
+		if challenge != nil {
+			s.logger.Info("OAuth sign-in to a linked password account waits for its second factor",
+				"user_id", u.ID().String(), "provider", provider)
+			return &CallbackResult{User: u, MFAChallenge: challenge}, nil
+		}
 	}
 
 	// Create session
@@ -360,7 +396,7 @@ func (s *OAuthService) HandleCallback(ctx context.Context, input CallbackInput) 
 	s.logger.Info("OAuth login successful",
 		"user_id", u.ID().String(),
 		"email", u.Email(),
-		"provider", input.Provider,
+		"provider", provider,
 		"final_redirect", finalRedirect,
 	)
 
@@ -427,7 +463,10 @@ func (s *OAuthService) stateTTL() time.Duration {
 // generateState generates a signed state token and a fresh PKCE verifier.
 // The verifier is returned to the caller to store server-side; it is not
 // part of the state.
-func (s *OAuthService) generateState(provider OAuthProvider, finalRedirect string) (state string, codeVerifier string, err error) {
+//
+// link, when set, makes it a link state: it carries the signed-in account and
+// session that started the link, and only CompleteLink accepts it.
+func (s *OAuthService) generateState(provider OAuthProvider, finalRedirect string, link *linkBinding) (state string, codeVerifier string, err error) {
 	// Generate random bytes
 	randomBytes := make([]byte, 16)
 	if _, err := rand.Read(randomBytes); err != nil {
@@ -446,6 +485,11 @@ func (s *OAuthService) generateState(provider OAuthProvider, finalRedirect strin
 		"final_redirect": finalRedirect,
 		"random":         base64.URLEncoding.EncodeToString(randomBytes),
 		"exp":            time.Now().Add(s.stateTTL()).Unix(),
+	}
+	if link != nil {
+		stateData["purpose"] = statePurposeLink
+		stateData["uid"] = link.UserID
+		stateData["sid"] = link.SessionID
 	}
 
 	// Encode state data
@@ -472,11 +516,29 @@ func (s *OAuthService) signState(data string) string {
 	return base64.URLEncoding.EncodeToString(h.Sum(nil))
 }
 
-// validateState validates and decodes the state token. Returns finalRedirect.
-func (s *OAuthService) validateState(state string, expectedProvider OAuthProvider) (string, error) {
+// stateClaims are the signed contents of a state token.
+type stateClaims struct {
+	FinalRedirect string
+	// Purpose is empty for a sign-in and statePurposeLink for a link.
+	Purpose   string
+	UserID    string
+	SessionID string
+}
+
+// statePurposeLink marks a state minted by StartLink.
+const statePurposeLink = "link"
+
+// linkBinding is the signed-in account and session a link state belongs to.
+type linkBinding struct {
+	UserID    string
+	SessionID string
+}
+
+// validateState validates and decodes the state token.
+func (s *OAuthService) validateState(state string, expectedProvider OAuthProvider) (*stateClaims, error) {
 	parts := strings.SplitN(state, ".", 2)
 	if len(parts) != 2 {
-		return "", errors.New("invalid state format")
+		return nil, errors.New("invalid state format")
 	}
 
 	stateData, signature := parts[0], parts[1]
@@ -484,37 +546,41 @@ func (s *OAuthService) validateState(state string, expectedProvider OAuthProvide
 	// Verify signature
 	expectedSig := s.signState(stateData)
 	if !hmac.Equal([]byte(signature), []byte(expectedSig)) {
-		return "", errors.New("invalid state signature")
+		return nil, errors.New("invalid state signature")
 	}
 
 	// Decode state data
 	stateJSON, err := base64.URLEncoding.DecodeString(stateData)
 	if err != nil {
-		return "", errors.New("invalid state encoding")
+		return nil, errors.New("invalid state encoding")
 	}
 
 	var data map[string]interface{}
 	if err := json.Unmarshal(stateJSON, &data); err != nil {
-		return "", errors.New("invalid state JSON")
+		return nil, errors.New("invalid state JSON")
 	}
 
 	// Check expiration
 	expFloat, ok := data["exp"].(float64)
 	if !ok {
-		return "", errors.New("invalid state expiration")
+		return nil, errors.New("invalid state expiration")
 	}
 	if time.Now().Unix() > int64(expFloat) {
-		return "", errors.New("state expired")
+		return nil, errors.New("state expired")
 	}
 
 	// Check provider
 	provider, ok := data["provider"].(string)
 	if !ok || provider != string(expectedProvider) {
-		return "", errors.New("provider mismatch")
+		return nil, errors.New("provider mismatch")
 	}
 
-	finalRedirect, _ := data["final_redirect"].(string)
-	return finalRedirect, nil
+	c := &stateClaims{}
+	c.FinalRedirect, _ = data["final_redirect"].(string)
+	c.Purpose, _ = data["purpose"].(string)
+	c.UserID, _ = data["uid"].(string)
+	c.SessionID, _ = data["sid"].(string)
+	return c, nil
 }
 
 // OAuth token response.
@@ -886,7 +952,14 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUser
 			return nil, fmt.Errorf("resolve federated identity: %w", err)
 		}
 		if u != nil {
-			prev, changed := acc.adoptProviderEmail(ctx, u, userInfo.Email, nil)
+			// The provider's address moves the account only when the account
+			// belongs to that provider. A provider linked to an account of
+			// another kind (a password account) never changes its address.
+			var prev string
+			var changed bool
+			if u.AuthProvider() == provider.ToAuthProvider() {
+				prev, changed = acc.adoptProviderEmail(ctx, u, userInfo.Email, nil)
+			}
 			u.UpdateLastLogin()
 			acc.saveLogin(ctx, u, prev, changed)
 			acc.markUsed(ctx, ident)
@@ -920,6 +993,16 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUser
 			}
 			if claimableLocal && !s.claimVouched(ctx, existingUser, userInfo.Email) {
 				return nil, ErrOAuthAccountExists
+			}
+			if !claimableLocal && key.Valid() && s.autoLinkAllowed(ctx, existingUser, userInfo, provider) {
+				if lerr := s.autoLink(ctx, existingUser, key, provider); lerr != nil {
+					return nil, lerr
+				}
+				existingUser.UpdateLastLogin()
+				if uerr := s.userRepo.Update(ctx, existingUser); uerr != nil {
+					s.logger.Warn("failed to update last login", "error", uerr)
+				}
+				return existingUser, nil
 			}
 			if !claimableLocal {
 				s.logger.Warn("OAuth login blocked: email registered with a different auth provider",

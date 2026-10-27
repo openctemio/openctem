@@ -160,6 +160,12 @@ export function LoginForm({
   // Only a known code's message is shown, never the raw parameter: a crafted
   // link must not put arbitrary text on the sign-in page.
   const errorParam = searchParams.get('error')
+  // A social sign-in to a linked password account comes back here for its
+  // second factor (the challenge is in an httpOnly cookie).
+  const mfaParam = searchParams.get('mfa')
+  useEffect(() => {
+    if (mfaParam === 'verify' || mfaParam === 'enroll') setMfaPurpose(mfaParam)
+  }, [mfaParam])
   const { t } = useTranslation()
   const loginError = errorParam ? loginErrorMessage(errorParam) : null
   const errorMessage = loginError ? t(loginError.key, loginError.fallback) : null

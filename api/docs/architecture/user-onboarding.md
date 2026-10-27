@@ -187,6 +187,13 @@ Otherwise (for example a personal Google account created on a company address):
 - a new account is created only where sign-up is open, **unverified**, with no domain
   join and no invitation claim; under `domain` sign-up and `admin_only` nothing is written.
 
+A sign-in whose verified address belongs to a password account answers
+`409 OAUTH_ACCOUNT_EXISTS` unless it may link itself to that account
+automatically (authoritative provider, verified account address, platform
+setting on; the account's second factor is still asked). The person can always
+link the provider from Account > Security after signing in:
+[linking Google, GitHub and Microsoft sign-in](social-login-linking.md).
+
 ### Domain sign-up policy (Settings > Domains, owner only)
 
 An organization that holds a domain **verified for SSO** (exclusive

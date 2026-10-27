@@ -11,6 +11,7 @@
 'use server'
 
 import { cookies } from 'next/headers'
+import { MFA_CHALLENGE_COOKIE } from '@/features/auth/lib/oauth-cookies'
 import { redirect } from 'next/navigation'
 
 import { env } from '@/lib/env'
@@ -567,8 +568,6 @@ async function completeLoginTenants(
 // ============================================
 // TWO-FACTOR LOGIN STEP
 // ============================================
-
-const MFA_CHALLENGE_COOKIE = 'mfa_challenge'
 
 async function readMfaChallenge(): Promise<string | undefined> {
   const cookieStore = await cookies()
