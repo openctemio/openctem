@@ -98,6 +98,11 @@ jobs:
 
   images:
     name: Build and smoke-test images (amd64)
+    # actions: write lets the fail-fast step cancel doomed runs (.github/actions/fail-fast).
+    permissions:
+      contents: read
+      packages: read
+      actions: write
     needs: changes
     if: needs.changes.outputs.images == 'true' && needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
@@ -196,6 +201,9 @@ jobs:
           path: ${{ runner.temp }}/image-guard-report.ndjson
           if-no-files-found: ignore
           retention-days: 30
+      - name: Fail fast
+        if: failure()
+        uses: ./.github/actions/fail-fast
 
   allinone-ok:
     # `All-in-one OK` is required on develop/main and the merge queue. On a pull
