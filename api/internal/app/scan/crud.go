@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -132,9 +133,10 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 
 	// Saved to start when its scope is approved: the targets refused only
 	// because a pending entry covers them (nil = not eligible).
+	place := s.placementFor(ctx, tenantID, scan.SensorPreference(input.SensorPreference), input.TenantRunner, hasAssetGroup, scannerTools(input.ScannerName)...)
 	var awaiting map[string]bool
 	if input.StartWhenScopeApproved {
-		awaiting = s.awaitingScopeTargets(ctx, tenantID, validatedTargets)
+		awaiting = s.awaitingScopeTargets(attribution.WithPlacement(ctx, place), tenantID, validatedTargets)
 	}
 	waitForScope := awaiting != nil
 	// The creator may scan only targets in their act scope (D9).
@@ -145,7 +147,7 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 	// unless the caller saves it to start when the pending entries that
 	// cover the refused targets are approved.
 	if !waitForScope {
-		if err := s.refuseUnownedTargets(ctx, tenantID, "scan_create", validatedTargets, IsTakeoverOnlyProbe(input.ScannerName, input.ScannerConfig)); err != nil {
+		if err := s.refuseUnownedTargets(attribution.WithPlacement(ctx, place), tenantID, "scan_create", validatedTargets, IsTakeoverOnlyProbe(input.ScannerName, input.ScannerConfig)); err != nil {
 			return nil, err
 		}
 	}
@@ -1280,7 +1282,7 @@ func (s *Service) CloneScan(ctx context.Context, tenantID, scanID, newName, acto
 
 	// A clone is a new scan of the same targets: the same ownership check
 	// as a create (RFC-036).
-	if err := s.refuseUnownedTargets(ctx, sc.TenantID, "scan_clone", sc.Targets, IsTakeoverOnlyProbe(sc.ScannerName, sc.ScannerConfig)); err != nil {
+	if err := s.refuseUnownedTargets(s.withScanPlacement(ctx, sc), sc.TenantID, "scan_clone", sc.Targets, IsTakeoverOnlyProbe(sc.ScannerName, sc.ScannerConfig)); err != nil {
 		return nil, err
 	}
 

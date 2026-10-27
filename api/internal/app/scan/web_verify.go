@@ -92,6 +92,7 @@ func (s *Service) StartWebVerification(ctx context.Context, in WebVerifyInput) (
 		Targets:         in.Targets,
 		Assets:          assets,
 		SystemPolicy:    string(scan.ManagedByWebVerify),
+		Placement:       s.placementFor(ctx, in.TenantID, scan.SensorPreferenceAuto, false, false, tool),
 		Tier:            &tier,
 		SkipZoneRouting: false,
 		MaxTargets:      maxWebVerifyTargets,

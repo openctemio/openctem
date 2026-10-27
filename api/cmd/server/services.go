@@ -2474,6 +2474,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		WithTakeoverEvidence(repos.EASMDNS).
 		WithPlatformPolicy(s.ScopeGuardrails)
 	s.ActiveGate.SetWildcardDNS(repos.AssetWildcardDNS)
+	// Ownership confirmation applies only to jobs on platform sensors of the
+	// hosted service (MANAGED_SERVICE).
+	s.ActiveGate.SetManagedService(deps.Config.App.ManagedService)
 	s.ActiveGate.SetCertificates(repos.AssetRelationship)
 	// RFC-065 §16.8: signed jobs for sensors that enforce scope limits carry
 	// the limits of port- and path-limited targets.

@@ -11,6 +11,7 @@ import (
 
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
@@ -54,7 +55,9 @@ func CheckTarget(ctx context.Context, gate TargetGate, tenantID shared.ID, t Tar
 	if stage.IsRepositoryType(asset.TypeRef{Type: asset.AssetType(t.Type)}) || stage.ClassifyTarget(address) == stage.KindPath {
 		return nil, fmt.Errorf("%w: %s", ErrTargetRefused, stage.ReasonPathTarget)
 	}
-	in := scanapp.DispatchTargetsInput{TenantID: tenantID, Targets: []string{address}}
+	// Validation and retest commands are queued for the organization's own
+	// sensors only.
+	in := scanapp.DispatchTargetsInput{TenantID: tenantID, Targets: []string{address}, Placement: attribution.PlacementTenant}
 	if !t.AssetID.IsZero() {
 		in.Assets = map[string]scanapp.DispatchAsset{address: {IDs: []string{t.AssetID.String()}, AlsoMatch: []string{t.AssetName}}}
 	}

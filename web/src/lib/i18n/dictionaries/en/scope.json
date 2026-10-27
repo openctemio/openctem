@@ -473,6 +473,7 @@
   "scope.settings.unclassifiedMode.full": "Full",
   "scope.settings.unclassifiedMode.low_impact": "Low-impact (default)",
   "scope.settings.unclassifiedMode.off": "Off (passive only)",
+  "scope.settings.unclassifiedPlatformOnly": "Applies to platform sensors of the hosted service. Your own sensors scan unclassified assets in full.",
   "scope.settings.unclassifiedStrict": "Strict scan approval is in force, so this is Off for now.",
   "scope.show.label": "Show",
   "scope.strip.entriesInEffect": "Entries in effect",
