@@ -43,57 +43,65 @@ async function shot(page: Page, info: TestInfo, name: string) {
 }
 
 for (const width of WIDTHS) {
-  test(`New Scan never scrolls sideways (${width}px)`, async ({ page }, info) => {
-    await page.setViewportSize({ width, height: 900 })
-    let dialog = await openNewScan(page)
-    // Typing the name stores the draft; its key carries the organization.
-    await dialog
-      .getByLabel(/scan name/i)
-      .first()
-      .fill('Layout check')
-    const key = await page.waitForFunction(
-      (prefix) => Object.keys(sessionStorage).find((k) => k.startsWith(prefix)) ?? null,
-      DRAFT_PREFIX
-    )
-    const draftKey = (await key.jsonValue()) as string
-    expect(draftKey).toBeTruthy()
+  test(
+    `New Scan never scrolls sideways (${width}px)`,
+    { tag: ['@scans'] },
+    async ({ page }, info) => {
+      await page.setViewportSize({ width, height: 900 })
+      let dialog = await openNewScan(page)
+      // Typing the name stores the draft; its key carries the organization.
+      await dialog
+        .getByLabel(/scan name/i)
+        .first()
+        .fill('Layout check')
+      const key = await page.waitForFunction(
+        (prefix) => Object.keys(sessionStorage).find((k) => k.startsWith(prefix)) ?? null,
+        DRAFT_PREFIX
+      )
+      const draftKey = (await key.jsonValue()) as string
+      expect(draftKey).toBeTruthy()
 
-    for (const step of STEPS) {
-      await page.evaluate(
-        ({ k, s, targets }) => {
-          const draft = JSON.parse(sessionStorage.getItem(k) ?? '{}')
-          draft.step = s
-          draft.form = {
-            ...draft.form,
-            name: 'Layout check',
-            scannerName: draft.form?.scannerName || 'nuclei',
-            targets: {
-              ...(draft.form?.targets ?? {}),
-              customTargets: targets,
-              coverage: 'subdomains',
-            },
-          }
-          sessionStorage.setItem(k, JSON.stringify(draft))
-        },
-        { k: draftKey, s: step, targets: LONG_TARGETS }
-      )
-      await page.reload()
-      dialog = await openNewScan(page)
-      const body = dialog.locator('[data-slot="dialog-body"]')
-      await expect(body).toBeVisible()
-      await page.waitForLoadState('networkidle')
-      await shot(page, info, `${width}-${step}`)
-      const box = await body.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }))
-      expect(box.scroll, `${step} body scrolls sideways at ${width}px`).toBeLessThanOrEqual(
-        box.client + 1
-      )
-      const dialogBox = await dialog.evaluate((el) => ({
-        scroll: el.scrollWidth,
-        client: el.clientWidth,
-      }))
-      expect(dialogBox.scroll, `${step} dialog scrolls sideways at ${width}px`).toBeLessThanOrEqual(
-        dialogBox.client + 1
-      )
+      for (const step of STEPS) {
+        await page.evaluate(
+          ({ k, s, targets }) => {
+            const draft = JSON.parse(sessionStorage.getItem(k) ?? '{}')
+            draft.step = s
+            draft.form = {
+              ...draft.form,
+              name: 'Layout check',
+              scannerName: draft.form?.scannerName || 'nuclei',
+              targets: {
+                ...(draft.form?.targets ?? {}),
+                customTargets: targets,
+                coverage: 'subdomains',
+              },
+            }
+            sessionStorage.setItem(k, JSON.stringify(draft))
+          },
+          { k: draftKey, s: step, targets: LONG_TARGETS }
+        )
+        await page.reload()
+        dialog = await openNewScan(page)
+        const body = dialog.locator('[data-slot="dialog-body"]')
+        await expect(body).toBeVisible()
+        await page.waitForLoadState('networkidle')
+        await shot(page, info, `${width}-${step}`)
+        const box = await body.evaluate((el) => ({
+          scroll: el.scrollWidth,
+          client: el.clientWidth,
+        }))
+        expect(box.scroll, `${step} body scrolls sideways at ${width}px`).toBeLessThanOrEqual(
+          box.client + 1
+        )
+        const dialogBox = await dialog.evaluate((el) => ({
+          scroll: el.scrollWidth,
+          client: el.clientWidth,
+        }))
+        expect(
+          dialogBox.scroll,
+          `${step} dialog scrolls sideways at ${width}px`
+        ).toBeLessThanOrEqual(dialogBox.client + 1)
+      }
     }
-  })
+  )
 }

@@ -1866,6 +1866,7 @@
   "scans.runDetail.deadlineReason.legacy": "Được đặt khi lần chạy bắt đầu, theo thời gian chờ của lần quét lúc đó.",
   "scans.runDetail.deadlineReason.platform_cap": "Chưa đặt thời lượng tối đa: áp dụng giới hạn 24 giờ của nền tảng, chỉ để chặn các lần chạy không bao giờ kết thúc.",
   "scans.runDetail.deadlineReason.scan_max_duration": "Do thời lượng tối đa của lần quét này đặt. Công việc chậm nhưng vẫn chạy không bị cắt trước mốc này.",
+  "scans.runDetail.deadlineReason.work_estimate": "Được dời khi một sensor nhận việc: đủ thời gian các mục tiêu cần theo tốc độ đo được của sensor đó, nên thời gian chờ trong hàng đợi không bị tính (không vượt giới hạn 24 giờ của nền tảng).",
   "scans.runDetail.deadlineReason.workflow_max_duration": "Do cài đặt thời gian chờ của quy trình đặt.",
   "scans.runDetail.dispatch": "Phân phối",
   "scans.runDetail.duration": "Thời lượng",
