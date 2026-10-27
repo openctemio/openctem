@@ -61,7 +61,7 @@ func (h *FindingActionsHandler) SetSavedViews(svc *savedviewapp.Service) {
 // let status and type through to a 500.
 var findingGroupByDimensions = map[string]bool{
 	"cve_id": true, "rule_id": true, "asset_id": true, "owner_id": true, "component_id": true,
-	"severity": true, "source": true, "finding_type": true, "family": true,
+	"severity": true, "source": true, "finding_type": true, "family": true, "title": true,
 }
 
 // findingGroupsRoute is GET /findings/groups on the list query contract:
@@ -84,7 +84,7 @@ func (h *FindingActionsHandler) findingGroupsRoute() filterquery.Route {
 // @Tags         Findings
 // @Produce      json
 // @Security     BearerAuth
-// @Param        group_by  query  string  false  "cve_id (default), rule_id, asset_id, owner_id, component_id, severity, source, finding_type, family"
+// @Param        group_by  query  string  false  "cve_id (default), rule_id, asset_id, owner_id, component_id, severity, source, finding_type, family, title"
 // filterspec-params: findings GET /findings/groups
 // @Param  id  query  []string  false  "id: any of (comma list)"  collectionFormat(csv)
 // @Param  id_not  query  []string  false  "id: none of (comma list)"  collectionFormat(csv)
@@ -132,6 +132,7 @@ func (h *FindingActionsHandler) findingGroupsRoute() filterquery.Route {
 // @Param  tool_name_not  query  []string  false  "tool name: none of (comma list)"  collectionFormat(csv)
 // @Param  rule_id  query  []string  false  "rule id: any of (comma list)"  collectionFormat(csv)
 // @Param  rule_id_not  query  []string  false  "rule id: none of (comma list)"  collectionFormat(csv)
+// @Param  title  query  string  false  "title equals"
 // @Param  scan_id  query  []string  false  "scan id: any of (comma list)"  collectionFormat(csv)
 // @Param  scan_id_not  query  []string  false  "scan id: none of (comma list)"  collectionFormat(csv)
 // @Param  file_path  query  string  false  "file path contains"
@@ -303,6 +304,7 @@ func (h *FindingActionsHandler) ListFindingGroups(w http.ResponseWriter, r *http
 // @Param  tool_name_not  query  []string  false  "tool name: none of (comma list)"  collectionFormat(csv)
 // @Param  rule_id  query  []string  false  "rule id: any of (comma list)"  collectionFormat(csv)
 // @Param  rule_id_not  query  []string  false  "rule id: none of (comma list)"  collectionFormat(csv)
+// @Param  title  query  string  false  "title equals"
 // @Param  scan_id  query  []string  false  "scan id: any of (comma list)"  collectionFormat(csv)
 // @Param  scan_id_not  query  []string  false  "scan id: none of (comma list)"  collectionFormat(csv)
 // @Param  file_path  query  string  false  "file path contains"

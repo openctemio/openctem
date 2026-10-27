@@ -211,6 +211,10 @@ func (h *gsHarness) seedGroups() {
 	h.exec(`INSERT INTO findings (id, tenant_id, asset_id, source, tool_name, message, severity, fingerprint, status, cve_id, component_id, finding_type)
 		VALUES ($1::uuid, $2, $3, 'sast', 'ds-tool', 'dsB-SECRET second finding', 'high', $1::text, 'confirmed', $4, $5, 'vulnerability')`,
 		h.findingB2.String(), t, h.assetB.String(), h.cveB2, h.componentA.String())
+	// Titles (group by issue): FB2 shares A's title on out-of-scope B, so a
+	// shared issue group must count only FA for memberA; FB's title is B's only.
+	h.exec(`UPDATE findings SET title = $2 WHERE id IN ($1, $3)`, h.findingA.String(), gsTitleA, h.findingB2.String())
+	h.exec(`UPDATE findings SET title = $2 WHERE id = $1`, h.findingB.String(), gsMarkerTitleB)
 	// FP: a pentest finding on in-scope A1, in a campaign memberA is not on.
 	h.exec(`INSERT INTO pentest_campaigns (id, tenant_id, name) VALUES ($1, $2, 'ds-campaign')`, h.camp.String(), t)
 	h.exec(`INSERT INTO findings (id, tenant_id, asset_id, source, tool_name, message, severity, fingerprint, status, cve_id, finding_type, pentest_campaign_id)
@@ -272,8 +276,16 @@ func (h *gsHarness) dimensions() []gsDimension {
 		{"severity", "high", sorted("critical", "high"), nil},
 		{"source", "sast", sorted("dast", "sast"), nil},
 		{"finding_type", "vulnerability", sorted("secret", "vulnerability"), nil},
+		{"title", gsTitleA, sorted(gsTitleA, gsMarkerTitleB), []string{gsMarkerTitleB}},
 	}
 }
+
+// Issue titles for the title dimension; the B one appears only through
+// out-of-scope rows.
+const (
+	gsTitleA       = "gs CVE-2019-9516 in nginx 1.15.5"
+	gsMarkerTitleB = "gsB-SECRET issue title"
+)
 
 func sorted(s ...string) []string {
 	sort.Strings(s)

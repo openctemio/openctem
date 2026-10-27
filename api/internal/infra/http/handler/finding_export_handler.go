@@ -252,6 +252,7 @@ func (h *VulnerabilityHandler) ExportFindingsDocument(w http.ResponseWriter, r *
 // @Param  tool_name_not  query  []string  false  "tool name: none of (comma list)"  collectionFormat(csv)
 // @Param  rule_id  query  []string  false  "rule id: any of (comma list)"  collectionFormat(csv)
 // @Param  rule_id_not  query  []string  false  "rule id: none of (comma list)"  collectionFormat(csv)
+// @Param  title  query  string  false  "title equals"
 // @Param  scan_id  query  []string  false  "scan id: any of (comma list)"  collectionFormat(csv)
 // @Param  scan_id_not  query  []string  false  "scan id: none of (comma list)"  collectionFormat(csv)
 // @Param  file_path  query  string  false  "file path contains"
