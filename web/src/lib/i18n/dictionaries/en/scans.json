@@ -1865,6 +1865,7 @@
   "scans.runDetail.deadlineReason.legacy": "Set when the run started, by the scan's timeout at that time.",
   "scans.runDetail.deadlineReason.platform_cap": "No max duration is set: the platform's 24 h cap applies, only as a backstop against runs that never end.",
   "scans.runDetail.deadlineReason.scan_max_duration": "Set by this scan's max duration. Slow but active work is not cut before it.",
+  "scans.runDetail.deadlineReason.work_estimate": "Moved when a sensor took the work: the time its targets need at that sensor's measured speed, so waiting in the queue does not count (never past the platform's 24 h cap).",
   "scans.runDetail.deadlineReason.workflow_max_duration": "Set by the workflow's timeout setting.",
   "scans.runDetail.dispatch": "Dispatch",
   "scans.runDetail.duration": "Duration",

@@ -55,7 +55,7 @@ async function expectStatus(page: Page, name: string, disabled: boolean) {
   else await expect(badge).toHaveCount(0, { timeout: 15_000 })
 }
 
-test.describe('Sensor row actions', () => {
+test.describe('Sensor row actions', { tag: ['@sensors'] }, () => {
   test('Disable from the row menu acts on that row, not the last viewed sensor', async ({
     page,
   }) => {
