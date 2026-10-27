@@ -29,6 +29,9 @@ type MFAChallengeResponse struct {
 	MFAToken    string `json:"mfa_token"`
 	MFAPurpose  string `json:"mfa_purpose"`
 	ExpiresIn   int64  `json:"expires_in"`
+	// MFAOrgs names the organizations that require the second factor
+	// (enroll challenges), so the screen can say why.
+	MFAOrgs []string `json:"mfa_orgs,omitempty"`
 }
 
 func writeMFAChallenge(w http.ResponseWriter, c *auth.MFAChallengeInfo) {
@@ -44,6 +47,7 @@ func writeMFAChallenge(w http.ResponseWriter, c *auth.MFAChallengeInfo) {
 		MFAToken:    c.Token,
 		MFAPurpose:  string(c.Purpose),
 		ExpiresIn:   expires,
+		MFAOrgs:     c.Organizations,
 	})
 }
 
