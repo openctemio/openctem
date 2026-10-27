@@ -19,6 +19,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"sort"
 	"strings"
 	"sync/atomic"
@@ -36,9 +37,12 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/infra/storage"
 	"github.com/openctemio/openctem/api/internal/testdb"
+	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/contentpack"
+	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/sensorkey"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
 
@@ -48,7 +52,10 @@ type contentHarness struct {
 	srv     *httptest.Server
 	sensors *sensor.SensorService
 	packs   *contentpackapp.Service
-	bytes   atomic.Int64 // response body bytes served on content routes
+	// platform holds the platform's packs and channels; repo the sensors.
+	platform *contentpackapp.PlatformService
+	repo     *postgres.SensorRepository
+	bytes    atomic.Int64 // response body bytes served on content routes
 }
 
 func newContentHarness(t *testing.T) *contentHarness {
@@ -79,13 +86,14 @@ func newContentHarness(t *testing.T) *contentHarness {
 	ctl := handler.NewSensorControlV2Handler(ih, nil, nil, nil, log)
 	signer, _ := contentpack.NewSigner(bytes.Repeat([]byte{7}, 32))
 	packs := contentpackapp.NewService(postgres.NewContentPackRepository(db), storage.NewLocalStorage(t.TempDir()), signer, nil, log)
-	ctl.SetContent(handler.NewSensorContentV2Handler(contentpackapp.NewDelivery(packs, nil), log))
+	platform := contentpackapp.NewPlatformService(postgres.NewPlatformContentPackRepository(db), storage.NewLocalStorage(t.TempDir()), signer, log)
+	ctl.SetContent(handler.NewSensorContentV2Handler(contentpackapp.NewDelivery(packs, platform), log))
 	receiver := ingest.NewV2Receiver(postgres.NewIngestReportRepository(db), postgres.NewIngestJobRepository(db),
 		postgres.NewIngestJobRepository(db), postgres.NewCommandRepository(db), protov2.DefaultLimits(), 100, log)
 	results := handler.NewSensorResultsV2Handler(receiver, sensorSvc, log)
 	router := infrahttp.NewChiRouter()
 	registerSensorV2Routes(router, results, ctl, nil, log)
-	h := &contentHarness{t: t, db: sqldb, sensors: sensorSvc, packs: packs}
+	h := &contentHarness{t: t, db: sqldb, sensors: sensorSvc, packs: packs, platform: platform, repo: sensorRepo}
 	inner := router.(interface{ Handler() http.Handler }).Handler()
 	h.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cw := &countingWriter{ResponseWriter: w}
@@ -279,7 +287,8 @@ func TestSensorContentV2_Revocation(t *testing.T) {
 			t.Fatal("revoked pack still desired")
 		}
 	}
-	if len(doc.Revoked) == 0 || doc.Revoked[0] != p.Digest {
+	// The platform's revoked packs (other tests' too) are in the list as well.
+	if !slices.Contains(doc.Revoked, p.Digest) {
 		t.Fatalf("revoked list %v", doc.Revoked)
 	}
 	if resp, _ := h.get(key, "/packs/"+p.Digest); resp.StatusCode != http.StatusNotFound {
@@ -371,5 +380,92 @@ func TestSensorContentV2_TrafficThreeSensorsTwoRuns(t *testing.T) {
 		v1.SizeBytes, v2.SizeBytes, before, after, run1, run2, 100*(1-float64(after)/float64(before)), 100*(1-float64(run2)/float64(3*v2.SizeBytes)))
 	if run2 >= 3*v2.SizeBytes/4 {
 		t.Fatalf("the new version cost %d B, close to %d B of full downloads", run2, 3*v2.SizeBytes)
+	}
+}
+
+// sharedSensorKey creates a shared sensor (scope instance, no tenant).
+func (h *contentHarness) sharedSensorKey() string {
+	h.t.Helper()
+	key, err := sensorkey.New(sensorkey.PrefixSensorKey)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	s, err := sensordom.NewSensor(shared.NewID(), "shared-"+shared.NewID().String()[:8], sensordom.SensorTypeWorker, "", nil, sensordom.ExecutionModeDaemon)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	s.Scope, s.TenantID = sensordom.ScopeInstance, nil
+	s.SetAPIKey(crypto.HashTokenPeppered(key, ""), sensorkey.DisplayPrefix(key))
+	if err := h.repo.Create(context.Background(), s); err != nil {
+		h.t.Fatalf("create shared sensor: %v", err)
+	}
+	h.t.Cleanup(func() {
+		_, _ = h.db.ExecContext(context.Background(), `DELETE FROM sensors WHERE id = $1`, s.ID.String())
+	})
+	return key
+}
+
+// A shared sensor reads the platform's stable packs, one copy for every
+// organization, and nothing else: an organization's pack is
+// content-not-found for it by digest, in the index and by file, and is not in
+// its desired set. The platform pack is the same bytes for it and for an
+// organization's sensor.
+func TestSensorContentV2_SharedSensorReadsPlatformPacksOnly(t *testing.T) {
+	h := newContentHarness(t)
+	a := h.tenant()
+	keyA, keyShared := h.sensorKey(a), h.sharedSensorKey()
+	own := h.upload(a, "1.0.0", words(3, nil))
+	ctx := context.Background()
+	plat, err := h.platform.Upload(ctx, contentpackapp.PlatformInput{Name: "wordlists-" + shared.NewID().String()[:8], Version: "1", Kind: "wordlist"},
+		bytes.NewReader(wordlist(words(4, nil))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.platform.MoveChannel(ctx, plat.ID.String(), contentpack.ChannelStable); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = h.db.ExecContext(context.Background(), `DELETE FROM platform_content_channels WHERE pack_id = $1`, plat.ID.String())
+		_, _ = h.db.ExecContext(context.Background(), `DELETE FROM platform_content_packs WHERE id = $1`, plat.ID.String())
+		_, _ = h.db.ExecContext(context.Background(), `DELETE FROM platform_content_pack_blobs WHERE digest = $1`, plat.Digest)
+	})
+
+	resp, raw := h.get(keyShared, "/desired")
+	if resp.StatusCode != 200 {
+		t.Fatalf("desired %d %s", resp.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), plat.Digest) || strings.Contains(string(raw), own.Digest) {
+		t.Fatalf("shared sensor's desired set: %s", raw)
+	}
+	var doc contentpackapp.Desired
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range doc.Packs {
+		if p.Scope != "platform" {
+			t.Errorf("a %s pack in a shared sensor's desired set", p.Scope)
+		}
+	}
+	// The organization's own sensor still gets both.
+	_, rawA := h.get(keyA, "/desired")
+	if !strings.Contains(string(rawA), plat.Digest) || !strings.Contains(string(rawA), own.Digest) {
+		t.Fatalf("organization sensor's desired set: %s", rawA)
+	}
+	// Platform pack: served to both, the same bytes.
+	r1, b1 := h.get(keyShared, "/packs/"+plat.Digest)
+	r2, b2 := h.get(keyA, "/packs/"+plat.Digest)
+	if r1.StatusCode != 200 || r2.StatusCode != 200 || !bytes.Equal(b1, b2) {
+		t.Fatalf("platform pack: shared %d, organization %d", r1.StatusCode, r2.StatusCode)
+	}
+	_, rawIdx := h.get(keyA, "/packs/"+own.Digest+"/index")
+	var idx []contentpackapp.IndexEntry
+	if err := json.Unmarshal(rawIdx, &idx); err != nil || len(idx) == 0 {
+		t.Fatalf("index %s %v", rawIdx, err)
+	}
+	// SECURITY: an organization's pack is not served to a shared sensor.
+	for _, path := range []string{"/packs/" + own.Digest, "/packs/" + own.Digest + "/index", "/packs/" + own.Digest + "/files/" + idx[0].SHA256} {
+		if resp, raw := h.get(keyShared, path); resp.StatusCode != http.StatusNotFound || !strings.Contains(string(raw), "content-not-found") {
+			t.Errorf("%s for a shared sensor: %d %s", path, resp.StatusCode, raw)
+		}
 	}
 }
