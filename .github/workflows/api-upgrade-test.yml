@@ -90,6 +90,9 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
           persist-credentials: false
+          # A schedule runs the default branch's (main's) copy of this file:
+          # test develop, where changes land first.
+          ref: ${{ github.event_name == 'schedule' && 'develop' || '' }}
 
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
