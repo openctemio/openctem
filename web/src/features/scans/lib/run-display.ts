@@ -164,9 +164,7 @@ export function runDeadline(
   }
   const key = (
     ['scan_max_duration', 'workflow_max_duration', 'platform_cap', 'work_estimate'] as const
-  ).find(
-    (k) => k === run.deadline_reason
-  )
+  ).find((k) => k === run.deadline_reason)
   const reason = t(`scans.runDetail.deadlineReason.${key ?? 'legacy'}`)
   return { relative, reason, at: run.deadline_at }
 }
