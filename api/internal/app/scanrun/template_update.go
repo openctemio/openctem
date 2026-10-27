@@ -76,6 +76,30 @@ func (s *Service) templateUpdate(ctx context.Context, tenantID shared.ID, copyWF
 	}, tpl, nil
 }
 
+// RetiredSource returns the retired system workflow the tenant's copy was made
+// from, nil when the copy has no lineage or its source is still in use.
+func (s *Service) RetiredSource(ctx context.Context, tenantID string, copyWF *scanworkflow.Workflow) (*scanworkflow.Workflow, error) {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil || s.lineage == nil || copyWF.IsSystemTemplate || copyWF.TenantID != tid {
+		return nil, nil
+	}
+	l, err := s.lineage.GetLineage(ctx, tid, copyWF.ID)
+	if err != nil || l == nil {
+		return nil, err
+	}
+	src, err := s.templateRepo.GetSystemTemplateByID(ctx, l.SourceTemplateID)
+	if errors.Is(err, shared.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !src.IsRetiredSystem() {
+		return nil, nil
+	}
+	return src, nil
+}
+
 // ownCopy loads the tenant's own workflow with its steps; another tenant's
 // workflow is not found.
 func (s *Service) ownCopy(ctx context.Context, tenantID, workflowID string) (*scanworkflow.Workflow, shared.ID, error) {
