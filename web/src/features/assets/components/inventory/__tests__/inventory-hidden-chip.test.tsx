@@ -4,38 +4,43 @@ import userEvent from '@testing-library/user-event'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { InventoryHiddenChip } from '../inventory-hidden-chip'
 
+const renderChip = (count: number | undefined, onShowAll = () => {}) =>
+  render(
+    <TooltipProvider>
+      <InventoryHiddenChip count={count} onShowAll={onShowAll} />
+    </TooltipProvider>
+  )
+
 describe('InventoryHiddenChip', () => {
-  it('says what the default list hides and offers one action, Show', async () => {
-    const onShowAll = vi.fn()
-    render(
-      <TooltipProvider>
-        <InventoryHiddenChip onShowAll={onShowAll} />
-      </TooltipProvider>
-    )
-    expect(screen.getByTestId('inventory-hidden-chip')).toHaveTextContent(
-      'Hiding names awaiting review and not ours'
-    )
-    // Not dismissible: the only button shows everything.
-    const buttons = screen.getAllByRole('button')
-    expect(buttons).toHaveLength(1)
-    await userEvent.click(screen.getByRole('button', { name: 'Show' }))
-    expect(onShowAll).toHaveBeenCalledTimes(1)
+  it('renders nothing when nothing is hidden', () => {
+    renderChip(0)
+    expect(screen.queryByTestId('inventory-hidden-chip')).toBeNull()
   })
 
-  it('names how many it hides when the view has no other filter', () => {
-    const { rerender } = render(
-      <TooltipProvider>
-        <InventoryHiddenChip count={80} onShowAll={() => {}} />
-      </TooltipProvider>
-    )
+  it('renders nothing, and no claim, when the count is unknown', () => {
+    renderChip(undefined)
+    expect(screen.queryByTestId('inventory-hidden-chip')).toBeNull()
+    expect(screen.queryByText(/hiding/i)).toBeNull()
+  })
+
+  it('names the count and offers Show and a Review link', async () => {
+    const onShowAll = vi.fn()
+    renderChip(80, onShowAll)
     expect(screen.getByTestId('inventory-hidden-chip')).toHaveTextContent(
       'Hiding 80 names awaiting review or not ours'
     )
-    rerender(
-      <TooltipProvider>
-        <InventoryHiddenChip count={1} onShowAll={() => {}} />
-      </TooltipProvider>
+    // Not dismissible: the only button shows everything.
+    expect(screen.getAllByRole('button')).toHaveLength(1)
+    await userEvent.click(screen.getByRole('button', { name: 'Show' }))
+    expect(onShowAll).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('link', { name: 'Review' })).toHaveAttribute(
+      'href',
+      '/attack-surface/review'
     )
+  })
+
+  it('uses the singular for one name', () => {
+    renderChip(1)
     expect(screen.getByTestId('inventory-hidden-chip')).toHaveTextContent(
       'Hiding 1 name awaiting review or not ours'
     )
