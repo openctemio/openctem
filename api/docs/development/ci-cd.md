@@ -1040,6 +1040,18 @@ gh workflow run docker-publish.yml -f version=v0.9.0 -f environment=staging
 
 ### Images
 
+**Release builds read nothing from shared mutable state.** `docker-publish.yml`
+uses no registry layer cache (`cache-from`/`cache-to`): any job in this
+repository holding a `packages: write` token (a merge-queue run of a same-repo
+PR, for example) could overwrite a `buildcache-<arch>` tag in the release
+packages, and the release build would then take its layers from there and sign
+them. Every layer now comes from the tag's sources and the digest-pinned base
+images; the smoke build and the push-by-digest build of one job share that job's
+own builder cache, so the image is still compiled once per architecture. The
+service containers of the all-in-one smoke test are pinned by digest as well.
+Legacy `buildcache-amd64`/`buildcache-arm64` tags in the release packages are no
+longer read and can be deleted.
+
 All images go to GHCR, are multi-arch (linux/amd64 + linux/arm64), are built on a
 **native** runner per architecture and smoke-tested there (config arch, ELF
 `e_machine`, the binary executes) before anything is pushed, then merged into one
