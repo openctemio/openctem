@@ -74,6 +74,37 @@ func changesURL(count, exposed int) string {
 	}
 }
 
+// runURL deep-links the Runs page with one run open.
+func runURL(runID shared.ID) string { return "/scans/runs?run=" + runID.String() }
+
+type stepRunKey struct{}
+
+// WithStepRun marks ctx as an ingest of a report from a scan task: the
+// assets it creates were found by that step run's scan run. The ingest sets
+// it from the bound command, never from the report body.
+func WithStepRun(ctx context.Context, stepRunID *shared.ID) context.Context {
+	if stepRunID == nil || stepRunID.IsZero() {
+		return ctx
+	}
+	return context.WithValue(ctx, stepRunKey{}, *stepRunID)
+}
+
+func stepRunFrom(ctx context.Context) (shared.ID, bool) {
+	id, ok := ctx.Value(stepRunKey{}).(shared.ID)
+	return id, ok
+}
+
+// RunResolver finds the scan run a step run belongs to, inside the tenant:
+// false for a step run or run of another tenant, or an unknown one.
+type RunResolver interface {
+	RunOfStepRun(ctx context.Context, tenantID, stepRunID shared.ID) (shared.ID, bool)
+}
+
+// SetRunResolver wires the lookup that lets a notification link to the run
+// that found its assets. Without it the notification links to the changes
+// view. Call before the notifier receives assets.
+func (n *Notifier) SetRunResolver(r RunResolver) { n.runs = r }
+
 // Enqueuer is the slice of outbox.Service the notifier needs.
 type Enqueuer interface {
 	Enqueue(ctx context.Context, params outbox.EnqueueParams) error
@@ -94,6 +125,8 @@ type assetRef struct {
 	exposure string
 	// becameExposed: an existing asset turned internet-facing (vs. new).
 	becameExposed bool
+	// runID is the scan run that found the asset (zero when unknown).
+	runID shared.ID
 }
 
 type tenantState struct {
@@ -102,6 +135,8 @@ type tenantState struct {
 	seen    map[shared.ID]struct{} // dedup set for this window
 	count   int                    // all buffered assets (listed or not)
 	exposed int                    // of count: existing assets that became internet-facing
+	runs    map[shared.ID]struct{} // distinct runs that found the buffered assets (capped at 2)
+	noRun   bool                   // some buffered asset has no known run
 	t       timer
 }
 
@@ -111,6 +146,7 @@ type Notifier struct {
 	inApp  InAppNotifier
 	window time.Duration
 	logger *logger.Logger
+	runs   RunResolver
 
 	// afterFunc schedules the end of a window (time.AfterFunc in production).
 	afterFunc func(d time.Duration, f func()) timer
@@ -160,8 +196,16 @@ func (n *Notifier) AssetsExposed(ctx context.Context, tenantID shared.ID, assets
 }
 
 // publish never blocks on I/O while holding the lock.
-func (n *Notifier) publish(_ context.Context, tenantID shared.ID, assets []*asset.Asset, becameExposed bool) {
+func (n *Notifier) publish(ctx context.Context, tenantID shared.ID, assets []*asset.Asset, becameExposed bool) {
 	refs := make([]assetRef, 0, len(assets))
+	var runID shared.ID
+	if n.runs != nil {
+		if step, ok := stepRunFrom(ctx); ok {
+			if id, found := n.runs.RunOfStepRun(ctx, tenantID, step); found {
+				runID = id
+			}
+		}
+	}
 	for _, a := range assets {
 		if a == nil || !IsInternetFacing(a) {
 			continue
@@ -174,7 +218,7 @@ func (n *Notifier) publish(_ context.Context, tenantID shared.ID, assets []*asse
 		}
 		refs = append(refs, assetRef{
 			id: a.ID(), name: a.Name(), typ: string(a.Type()), exposure: string(a.Exposure()),
-			becameExposed: becameExposed,
+			becameExposed: becameExposed, runID: runID,
 		})
 	}
 	if len(refs) == 0 {
@@ -208,7 +252,39 @@ func (n *Notifier) publish(_ context.Context, tenantID shared.ID, assets []*asse
 			exposed++
 		}
 	}
-	n.send(tenantID, unique, len(unique), exposed)
+	var runs map[shared.ID]struct{}
+	noRun := false
+	for _, r := range unique {
+		runs, noRun = noteRun(runs, noRun, r.runID)
+	}
+	n.send(tenantID, unique, len(unique), exposed, singleRun(runs, noRun))
+}
+
+// noteRun adds one asset's run to the window's set, keeping at most two ids
+// (more than one run is all the summary needs to know).
+func noteRun(runs map[shared.ID]struct{}, noRun bool, id shared.ID) (map[shared.ID]struct{}, bool) {
+	if id.IsZero() {
+		return runs, true
+	}
+	if runs == nil {
+		runs = make(map[shared.ID]struct{}, 2)
+	}
+	if len(runs) < 2 {
+		runs[id] = struct{}{}
+	}
+	return runs, noRun
+}
+
+// singleRun is the run every asset of a summary came from, or nil when they
+// came from several runs or any has no known run.
+func singleRun(runs map[shared.ID]struct{}, noRun bool) *shared.ID {
+	if noRun || len(runs) != 1 {
+		return nil
+	}
+	for id := range runs {
+		return &id
+	}
+	return nil
 }
 
 func (st *tenantState) add(refs []assetRef) {
@@ -226,6 +302,7 @@ func (st *tenantState) add(refs []assetRef) {
 		if r.becameExposed {
 			st.exposed++
 		}
+		st.runs, st.noRun = noteRun(st.runs, st.noRun, r.runID)
 		if len(st.pending) < maxListed {
 			st.pending = append(st.pending, r)
 		}
@@ -260,11 +337,12 @@ func (n *Notifier) windowClosed(tenantID shared.ID) {
 		return
 	}
 	listed, count, exposed := st.pending, st.count, st.exposed
-	st.pending, st.seen, st.count, st.exposed = nil, nil, 0, 0
+	run := singleRun(st.runs, st.noRun)
+	st.pending, st.seen, st.count, st.exposed, st.runs, st.noRun = nil, nil, 0, 0, nil, false
 	st.t = n.afterFunc(n.window, func() { n.windowClosed(tenantID) })
 	n.mu.Unlock()
 
-	n.send(tenantID, listed, count, exposed)
+	n.send(tenantID, listed, count, exposed, run)
 }
 
 // Stop cancels open windows and flushes every buffered summary. Call it on
@@ -275,6 +353,7 @@ func (n *Notifier) Stop() {
 		listed  []assetRef
 		count   int
 		exposed int
+		run     *shared.ID
 	}
 	n.mu.Lock()
 	n.stopped = true
@@ -284,20 +363,22 @@ func (n *Notifier) Stop() {
 			st.t.Stop()
 		}
 		if st.count > 0 {
-			flushes = append(flushes, flush{id, st.pending, st.count, st.exposed})
+			flushes = append(flushes, flush{id, st.pending, st.count, st.exposed, singleRun(st.runs, st.noRun)})
 		}
 	}
 	n.tenants = make(map[shared.ID]*tenantState)
 	n.mu.Unlock()
 
 	for _, f := range flushes {
-		n.send(f.tenant, f.listed, f.count, f.exposed)
+		n.send(f.tenant, f.listed, f.count, f.exposed, f.run)
 	}
 }
 
 // send delivers one notification describing `count` assets (`exposed` of them
-// existing assets that became internet-facing), naming `listed`.
-func (n *Notifier) send(tenantID shared.ID, listed []assetRef, count, exposed int) {
+// existing assets that became internet-facing), naming `listed`. runID is the
+// one scan run that found them all, when known: a summary of several assets
+// then links to that run instead of the changes view.
+func (n *Notifier) send(tenantID shared.ID, listed []assetRef, count, exposed int, runID *shared.ID) {
 	if count == 0 || len(listed) == 0 {
 		return
 	}
@@ -308,6 +389,10 @@ func (n *Notifier) send(tenantID shared.ID, listed []assetRef, count, exposed in
 	defer cancel()
 
 	title, body := describe(listed, count, exposed)
+	link := changesURL(count, exposed)
+	if runID != nil && count > 1 {
+		link = runURL(*runID)
+	}
 
 	if n.outbox != nil {
 		params := outbox.EnqueueParams{
@@ -321,8 +406,8 @@ func (n *Notifier) send(tenantID shared.ID, listed []assetRef, count, exposed in
 			// the per-integration severity filter (SeverityFilterApplies), so
 			// the event-type switch alone decides delivery.
 			Severity: "medium",
-			URL:      changesURL(count, exposed),
-			Metadata: metadata(listed, count, exposed),
+			URL:      link,
+			Metadata: metadata(listed, count, exposed, runID),
 		}
 		if count == 1 {
 			if id, err := uuid.Parse(listed[0].id.String()); err == nil {
@@ -344,7 +429,7 @@ func (n *Notifier) send(tenantID shared.ID, listed []assetRef, count, exposed in
 			Title:            title,
 			Body:             body,
 			ResourceType:     "asset",
-			URL:              changesURL(count, exposed),
+			URL:              link,
 		}
 		if count == 1 {
 			id := listed[0].id
@@ -400,7 +485,7 @@ func humanType(t string) string {
 	return strings.ReplaceAll(t, "_", " ")
 }
 
-func metadata(listed []assetRef, count, exposed int) map[string]any {
+func metadata(listed []assetRef, count, exposed int, runID *shared.ID) map[string]any {
 	items := make([]map[string]any, 0, len(listed))
 	for _, a := range listed {
 		items = append(items, map[string]any{
@@ -411,7 +496,7 @@ func metadata(listed []assetRef, count, exposed int) map[string]any {
 			"became_exposed": a.becameExposed,
 		})
 	}
-	return map[string]any{
+	md := map[string]any{
 		"asset_count":         count,
 		"new_asset_count":     count - exposed,
 		"newly_exposed_count": exposed,
@@ -419,4 +504,8 @@ func metadata(listed []assetRef, count, exposed int) map[string]any {
 		"internet_facing":     true,
 		"truncated":           count > len(listed),
 	}
+	if runID != nil {
+		md["run_id"] = runID.String()
+	}
+	return md
 }

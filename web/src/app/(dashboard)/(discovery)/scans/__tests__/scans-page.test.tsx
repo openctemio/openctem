@@ -35,6 +35,9 @@ vi.mock('@/features/scans/components', () => ({
   EditScanDialog: () => null,
   QuickScanDialog: () => null,
 }))
+vi.mock('@/features/scans/components/managed-scans-section', () => ({
+  ManagedScansSection: () => null,
+}))
 vi.mock('@/features/scans/components/scan-config-detail-sheet', () => ({
   ScanConfigDetailSheet: () => null,
 }))

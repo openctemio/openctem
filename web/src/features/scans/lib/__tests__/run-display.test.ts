@@ -51,3 +51,21 @@ describe('runTargetNote', () => {
     )
   })
 })
+
+describe('continuous coverage runs', () => {
+  it('maps each kind filter to the list query', async () => {
+    const { runKindQuery } = await import('../run-display')
+    expect(runKindQuery('all')).toEqual({})
+    expect(runKindQuery('coverage')).toEqual({ origin: 'system' })
+    expect(runKindQuery('scan')).toEqual({ kind: 'scan', origin: 'user' })
+    expect(runKindQuery('retest')).toEqual({ kind: 'retest' })
+  })
+
+  it('words the platform policy that owns the scan', async () => {
+    const { runManagedLabel } = await import('../run-display')
+    expect(runManagedLabel('coverage')).toBe('Continuous coverage')
+    expect(runManagedLabel('enrichment')).toBe('Automatic enrichment')
+    expect(runManagedLabel('web_verify')).toBe('Managed by the platform')
+    expect(runManagedLabel(undefined)).toBeNull()
+  })
+})

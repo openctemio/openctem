@@ -1250,6 +1250,38 @@ func (r *ScanRunRepository) ScanNames(ctx context.Context, tenantID shared.ID, s
 	return out, rows.Err()
 }
 
+// ScanManagers names the platform policy that owns each of the scans
+// (managed_by); a scan a person owns, or another tenant's, has no entry.
+func (r *ScanRunRepository) ScanManagers(ctx context.Context, tenantID shared.ID, scanIDs []shared.ID) (map[shared.ID]string, error) {
+	out := make(map[shared.ID]string)
+	if len(scanIDs) == 0 {
+		return out, nil
+	}
+	ids := make([]string, len(scanIDs))
+	for i, id := range scanIDs {
+		ids[i] = id.String()
+	}
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id, managed_by FROM scans WHERE tenant_id = $1 AND id = ANY($2::uuid[]) AND managed_by IS NOT NULL`,
+		tenantID.String(), pq.Array(ids))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read run scan managers: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, by string
+		if err := rows.Scan(&id, &by); err != nil {
+			return nil, fmt.Errorf("failed to scan run scan manager: %w", err)
+		}
+		if sid, err := shared.IDFromString(id); err == nil {
+			out[sid] = by
+		}
+	}
+	return out, rows.Err()
+}
+
+var _ scanrun.RunScanManagerReader = (*ScanRunRepository)(nil)
+
 func (r *ScanRunRepository) buildWhereClause(filter scanrun.RunFilter) (string, []any) {
 	var conditions []string
 	var args []any
@@ -1286,6 +1318,14 @@ func (r *ScanRunRepository) buildWhereClause(filter scanrun.RunFilter) (string, 
 		}
 		args = append(args, pq.Array(kinds))
 		conditions = append(conditions, fmt.Sprintf("NOT (kind = ANY($%d::text[]))", len(args)))
+	}
+
+	const managedScan = `EXISTS (SELECT 1 FROM scans ms WHERE ms.id = scan_runs.scan_id AND ms.tenant_id = scan_runs.tenant_id AND ms.managed_by IS NOT NULL)`
+	switch filter.Origin {
+	case scanrun.RunOriginSystem:
+		conditions = append(conditions, managedScan)
+	case scanrun.RunOriginUser:
+		conditions = append(conditions, "NOT "+managedScan)
 	}
 
 	if filter.AssetID != nil {

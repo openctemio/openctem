@@ -31,6 +31,25 @@ Creating a managed scan is audited as `scan_config.managed_created`.
 (they are ad hoc, so the default list hides them); `user` lists scans that no
 policy owns. Without `origin` nothing changes.
 
+The Scans page lists the managed scans in their own read-only section ("Managed
+by continuous coverage") under the scans people own, with links to the coverage
+settings and to their runs.
+
+## Runs
+
+A managed scan's runs are runs like any other: `GET /api/v1/scan-runs` lists
+them (same `scans:read` permission, same tenant), the overview counters count
+them, and each list row of such a run carries `managed_by` (`coverage`,
+`enrichment`, `web_verify`) so the console can label it. The list takes
+`origin=user|system` like the scans list: `system` shows only runs of managed
+scans, `user` leaves them out; without `origin` both are listed. Another
+tenant's managed scan is never named or listed.
+
+The "new internet-facing assets discovered" notification of a batch that one
+scan run found links to that run (`/scans/runs?run=<id>`); a batch that came
+from several runs, or from no scan run, keeps linking to the "What changed"
+view. The run is resolved from the bound command's step run inside the tenant.
+
 ## Migration
 
 `scans.managed_by` / `managed_key` are nullable columns without a default (no
