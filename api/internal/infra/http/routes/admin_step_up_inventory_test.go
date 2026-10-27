@@ -251,6 +251,7 @@ func TestFactorRoutesDemandFreshStepUp(t *testing.T) {
 	for _, c := range []struct{ method, path, purpose string }{
 		{"POST", "/api/v1/admin/auth/webauthn/credentials/options", "webauthn.register"},
 		{"POST", "/api/v1/admin/auth/recovery-codes", "recovery_codes.generate"},
+		{"POST", "/api/v1/admin/auth/elevate", "console.elevate"},
 		{"PUT", "/api/v1/admin/settings/console-mfa/", "settings.console_mfa"},
 		// Settings whose loosening is a security decision (RFC-079).
 		{"PUT", "/api/v1/admin/settings/captcha/", "settings.captcha"},
