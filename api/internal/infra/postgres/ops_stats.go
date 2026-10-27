@@ -188,7 +188,8 @@ func ReadOpsSnapshot(ctx context.Context, db opsQuerier) (OpsSnapshot, error) {
 // readOpsQueue counts pending, unexpired commands by stage, tool, priority
 // and wait reason. The wait reason uses the claim's own predicates: not
 // due (scheduledDuePredicate) is "scheduled", a held host
-// (hostFreePredicate) is "host_busy".
+// (hostFreePredicate, and for a shared job sharedFleetHostFreePredicate) is
+// "host_busy".
 func readOpsQueue(ctx context.Context, db opsQuerier) ([]OpsQueueDepth, error) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT COALESCE(commands.payload->>'capability', ''),
@@ -199,6 +200,7 @@ func readOpsQueue(ctx context.Context, db opsQuerier) ([]OpsQueueDepth, error) {
 		       COALESCE(commands.priority, ''),
 		       CASE WHEN NOT `+scheduledDuePredicate+` THEN '`+QueueWaitScheduled+`'
 		            WHEN NOT `+hostFreePredicate+` THEN '`+QueueWaitHostBusy+`'
+		            WHEN commands.is_platform_job AND NOT `+sharedFleetHostFreePredicate+` THEN '`+QueueWaitHostBusy+`'
 		            ELSE '`+QueueWaitReady+`' END,
 		       count(*)
 		FROM commands
