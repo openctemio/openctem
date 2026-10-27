@@ -45,7 +45,8 @@ func (p *ProofOfFix) ValidateFinding(ctx context.Context, tenantID, findingID sh
 			// Blocked by policy (excluded, out of zone, ownership not
 			// confirmed): no other probe of the same target may run.
 			return shared.ID{}, err
-		case errors.Is(err, retestdom.ErrNotEligible), errors.Is(err, retestdom.ErrNoSensor):
+		case errors.Is(err, retestdom.ErrNotEligible), errors.Is(err, retestdom.ErrNoSensor),
+			errors.Is(err, retestdom.ErrNoTemplateSensor):
 			// No deterministic re-check for this finding, or no sensor that
 			// can run one: fall back to the plain re-check below.
 		default:

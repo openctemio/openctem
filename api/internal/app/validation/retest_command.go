@@ -138,6 +138,10 @@ type ToolRetestJob struct {
 	// ScanRunID / ScanRunStepID tag the command with the retest's run.
 	ScanRunID     shared.ID
 	ScanRunStepID shared.ID
+	// SensorID addresses the command to one sensor of the tenant (one known
+	// to have the rule's template); nil lets any capable sensor claim it.
+	// The caller picks it among the tenant's own online sensors.
+	SensorID *shared.ID
 }
 
 // RetestTemplate is a nuclei template a retest sends with its command.
@@ -227,6 +231,9 @@ func (d *CommandDispatcher) DispatchToolRetest(ctx context.Context, job ToolRete
 	}
 	if !job.ScanRunStepID.IsZero() {
 		cmd.SetStepRunID(job.ScanRunStepID)
+	}
+	if job.SensorID != nil {
+		cmd.SetSensorID(*job.SensorID)
 	}
 	if err := d.commands.Create(ctx, cmd); err != nil {
 		return shared.ID{}, fmt.Errorf("enqueue retest command: %w", err)

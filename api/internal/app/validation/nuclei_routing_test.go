@@ -166,3 +166,56 @@ func TestRunService_ValidateFinding_SafeCheckWhenNoSignature(t *testing.T) {
 		t.Errorf("executor kind = %q, want safe-check", disp.got.ExecutorKind)
 	}
 }
+
+type fakeTemplateEvidence struct{ seen map[string]bool }
+
+func (f fakeTemplateEvidence) TemplateSightingSensors(_ context.Context, _ shared.ID, tool, ruleID string, _ int) ([]shared.ID, error) {
+	if tool == ReverifyTool && f.seen[ruleID] {
+		return []shared.ID{shared.NewID()}, nil
+	}
+	return nil, nil
+}
+
+// A version-match finding (CVE-2023-44487, no template for it) gets the
+// reachability check, not a nuclei job naming its CVE that the sensor can
+// only answer "not installed". The CVE template runs only when a sensor of
+// the tenant reported it before.
+func TestRunService_ValidateFinding_CVETemplateOnlyWhenKnownInstalled(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		evidence TemplateEvidence
+		cve      string
+		want     ExecutorKind
+	}{
+		{"no evidence wired", nil, "CVE-2023-44487", KindSafeCheck},
+		{"template never seen", fakeTemplateEvidence{seen: map[string]bool{}}, "CVE-2023-44487", KindSafeCheck},
+		{"template ran before", fakeTemplateEvidence{seen: map[string]bool{"CVE-2021-41773": true}}, "CVE-2021-41773", KindNuclei},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assetID := shared.NewID()
+			f, err := vulnerability.NewFinding(shared.NewID(), assetID, vulnerability.FindingSourceVA, "version-match", vulnerability.SeverityHigh, "m")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := f.SetClassification(tc.cve, nil, "", nil, nil); err != nil {
+				t.Fatal(err)
+			}
+			disp := &fakeJobDispatcher{id: shared.NewID()}
+			svc := NewRunService(fakeFindingLookup{f: f}, fakeAssetLookup{a: newTestAsset(t, "example.com")}, disp,
+				DefaultSelector{}, []ExecutorKind{KindSafeCheck}, logger.NewNop())
+			svc.SetNucleiAvailability(fakeNucleiAvailability{has: true})
+			if tc.evidence != nil {
+				svc.SetTemplateEvidence(tc.evidence)
+			}
+			if _, err := svc.ValidateFinding(context.Background(), shared.NewID(), f.ID()); err != nil {
+				t.Fatalf("ValidateFinding: %v", err)
+			}
+			if disp.got.ExecutorKind != tc.want {
+				t.Fatalf("executor %q, want %q", disp.got.ExecutorKind, tc.want)
+			}
+			if tc.want == KindSafeCheck && disp.got.CVEID != "" {
+				t.Fatalf("safe-check job carries cve %q", disp.got.CVEID)
+			}
+		})
+	}
+}

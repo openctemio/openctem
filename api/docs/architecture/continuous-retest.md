@@ -5,7 +5,10 @@
 > [RFC-039](../rfcs/RFC-039-continuous-retest.md). Related:
 > [validation engine](validation-engine.md) (the `validate` command transport a
 > retest reuses), [finding retest checks](finding-retest-checks.md) (a custom
-> check a person attaches to a finding, run by its retest).
+> check a person attaches to a finding, run by its retest),
+> [retest strategy by provenance](finding-retest-strategy.md) (how a finding is
+> re-checked follows from what raised it: a version-based finding re-runs its
+> fingerprint instead of a template).
 
 ## What a retest is
 

@@ -111,8 +111,11 @@ type RunService struct {
 	nucleiAvailability NucleiAvailability
 	// runs records each finding validation as a run of kind validation
 	// (research/62 P0-3): its task and logs are in Runs. Nil: no run.
-	runs   RunRecorder
-	logger *logger.Logger
+	runs RunRecorder
+	// templates answers whether a template named after a cross-scanner
+	// finding's CVE ran on a sensor of the tenant. Nil: never guess one.
+	templates TemplateEvidence
+	logger    *logger.Logger
 }
 
 // RunRecorder records a finding validation as a run (scanrun.Service).
@@ -123,6 +126,39 @@ type RunRecorder interface {
 
 // SetRunRecorder records every finding validation as a run.
 func (s *RunService) SetRunRecorder(r RunRecorder) { s.runs = r }
+
+// TemplateEvidence answers which sensors of a tenant reported a finding of a
+// rule with a tool (*postgres.FindingRepository).
+type TemplateEvidence interface {
+	TemplateSightingSensors(ctx context.Context, tenantID shared.ID, tool, ruleID string, limit int) ([]shared.ID, error)
+}
+
+// SetTemplateEvidence lets a cross-scanner finding re-run the template named
+// after its CVE, but only when such a template ran on a sensor of the tenant
+// before (so it is installed). Unset, a cross-scanner finding gets the
+// reachability check only.
+func (s *RunService) SetTemplateEvidence(e TemplateEvidence) { s.templates = e }
+
+// signatureInstalled reports whether a finding's re-verify signature is a
+// template known to be installed: the finding's own nuclei template is (it
+// matched); a CVE candidate of a cross-scanner finding only when a sensor of
+// the tenant reported that template before. Without that evidence the job
+// would only come back "template not installed" (a version-match finding's
+// CVE usually has no template at all).
+func (s *RunService) signatureInstalled(ctx context.Context, tenantID shared.ID, templateID, cveID string) bool {
+	if templateID != "" {
+		return true
+	}
+	if s.templates == nil || cveID == "" {
+		return false
+	}
+	seen, err := s.templates.TemplateSightingSensors(ctx, tenantID, ReverifyTool, cveID, 1)
+	if err != nil {
+		s.logger.Warn("template sightings lookup failed; reachability check only", "tenant_id", tenantID.String(), "error", err)
+		return false
+	}
+	return len(seen) > 0
+}
 
 type requesterKey struct{}
 
@@ -260,7 +296,7 @@ func (s *RunService) ValidateFinding(ctx context.Context, tenantID, findingID sh
 	technique := safeCheckTechnique
 	available := s.available
 	templateID, cveID := "", ""
-	if tmpl, cve, ok := nucleiSignature(f); ok && s.nucleiSensorOnline(ctx, tenantID) {
+	if tmpl, cve, ok := nucleiSignature(f); ok && s.signatureInstalled(ctx, tenantID, tmpl, cve) && s.nucleiSensorOnline(ctx, tenantID) {
 		technique = nucleiTechnique
 		templateID, cveID = tmpl, cve
 		// Offer both kinds to the selector; under nucleiTechnique it deterministically

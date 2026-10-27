@@ -206,3 +206,39 @@ type Store interface {
 	// returns the row ids.
 	EnsureDefinitions(ctx context.Context, cves []CVEInfo) (map[string]shared.ID, error)
 }
+
+// FindingLink is the software link a matcher finding was built on: the
+// asset, product, version and location recorded on the finding, with the
+// source and port of the link when it still exists. A version re-check
+// (docs/architecture/finding-retest-strategy.md) re-runs the fingerprint of
+// that source and compares what it reads with this version.
+type FindingLink struct {
+	AssetID   shared.ID
+	ProductID shared.ID
+	VersionID shared.ID
+	Location  string
+	Product   string
+	Version   string
+	// Source is asset_software.source (technology, service, open_port, os,
+	// package); "" when the link no longer exists.
+	Source string
+	Port   int
+	// LastSeenTool is the tool of the finding's latest sighting: another
+	// tool than ToolName when a scanner has reported the finding since (it
+	// then re-runs its own rule instead).
+	LastSeenTool string
+}
+
+// ObservedVersion is a version of a product a link reports at a location.
+type ObservedVersion struct {
+	VersionID shared.ID
+	Raw       string
+	Scheme    vulnmatch.Scheme
+	Edition   string
+	// Comparable: the version parsed (software_versions.normalized is set);
+	// an unparsed version is never compared with a range.
+	Comparable bool
+	LastSeenAt time.Time
+	// Superseded: a newer version of the product was seen at the location.
+	Superseded bool
+}

@@ -110,6 +110,16 @@ const (
 	// version of the check never matched the finding, so the no-match does
 	// not prove a fix (docs/architecture/finding-retest-checks.md).
 	ReasonCheckUncalibrated ReasonCode = "check_uncalibrated"
+	// ReasonVersionNotObserved: the fingerprint ran but did not report the
+	// product at the finding's location, so nothing is known about its
+	// version (a hidden version is not a fixed one).
+	ReasonVersionNotObserved ReasonCode = "version_not_observed"
+	// ReasonVersionStillAffected: the version seen is still in the CVE's
+	// affected range (the same version, or another one also affected).
+	ReasonVersionStillAffected ReasonCode = "version_still_affected"
+	// ReasonVersionNotAffected: the version seen is outside every affected
+	// range of the CVE.
+	ReasonVersionNotAffected ReasonCode = "version_not_affected"
 )
 
 // ToolUnable reports whether the code says the tool could not run the check
@@ -167,6 +177,10 @@ var (
 	// ErrNoCheckSensor: the finding has a custom retest check, and no online
 	// sensor of the tenant can run delivered templates in a retest.
 	ErrNoCheckSensor = fmt.Errorf("%w: no online sensor of this organization can run custom retest checks (a sensor update adds it)", shared.ErrValidation)
+	// ErrNoTemplateSensor: sensors that can retest are online, but every one
+	// reports an older template release than the one the finding was found
+	// with, so the template may not be installed on any of them.
+	ErrNoTemplateSensor = fmt.Errorf("%w: no online sensor of this organization has the template release this finding was found with (update the sensor's templates)", shared.ErrValidation)
 )
 
 // Retest is one retest attempt of one finding.
@@ -187,8 +201,9 @@ type Retest struct {
 	// finding's rule id for a tool retest.
 	TemplateID string
 	Target     string
-	// Method is how the retest re-checks (MethodTool, MethodValidate). Not
-	// stored: it follows from the check command's type.
+	// Method is how the retest re-checks (MethodTool, MethodValidate,
+	// MethodVersion). Stored since migration 003450; older rows leave it
+	// empty and it follows from the check command's type.
 	Method         string
 	CheckCommandID *shared.ID
 	ReachCommandID *shared.ID

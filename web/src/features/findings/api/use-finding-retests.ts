@@ -30,6 +30,40 @@ export type FindingRetestWithCheck = FindingRetest & {
   check_digest?: string
 }
 
+/** How a finding is re-checked (strategy on the retest list). */
+export type RetestStrategyKind = 'template' | 'custom_check' | 'version_recheck' | 'none'
+
+export interface RetestStrategy {
+  kind: RetestStrategyKind
+  /** The template or rule re-run, or the CVE a version re-check evaluates. */
+  rule?: string
+  /** The tool that re-checks (the fingerprint tool for version_recheck). */
+  tool?: string
+  product?: string
+  version?: string
+}
+
+/** An installed template that can run as an optional active check. */
+export interface RetestActiveCheck {
+  template: string
+  available: boolean
+  reason?: string
+}
+
+/**
+ * The retest list with what the server says about re-checking the finding:
+ * the strategy, why a retest would be refused (reason) and the optional
+ * active check. Declared here until the generated contract includes them.
+ */
+export type FindingRetestList = FindingRetestListResponse & {
+  reason?: string
+  strategy?: RetestStrategy
+  active_check?: RetestActiveCheck
+}
+
+/** Request modes: the finding's strategy, or the active check. */
+export type RetestMode = 'active_check'
+
 /** Poll every 5 s while a retest is running. */
 export const RETEST_POLL_MS = 5000
 
@@ -74,26 +108,23 @@ function retestsEndpoint(findingId: string): string {
 export function useFindingRetests(findingId: string | null) {
   const { currentTenant } = useTenant()
   const key = currentTenant && findingId ? retestsEndpoint(findingId) : null
-  return useSWR<FindingRetestListResponse>(
-    key,
-    (url: string) => get<FindingRetestListResponse>(url),
-    {
-      revalidateOnFocus: false,
-      refreshInterval: (latest) => (latest?.data?.[0]?.status === 'pending' ? RETEST_POLL_MS : 0),
-    }
-  )
+  return useSWR<FindingRetestList>(key, (url: string) => get<FindingRetestList>(url), {
+    revalidateOnFocus: false,
+    refreshInterval: (latest) => (latest?.data?.[0]?.status === 'pending' ? RETEST_POLL_MS : 0),
+  })
 }
 
 /**
- * "Retest now". On success the retest list is revalidated, so the pending
- * retest shows (and polling starts) at once.
+ * "Retest now" (or, with mode active_check, the optional active check of a
+ * version-based finding). On success the retest list is revalidated, so the
+ * pending retest shows (and polling starts) at once.
  */
 export function useRequestRetest(findingId: string) {
   const { currentTenant } = useTenant()
   const { mutate } = useSWRConfig()
   const key = currentTenant && findingId ? retestsEndpoint(findingId) : null
-  return useSWRMutation(key, async (url: string) => {
-    const created = await post<FindingRetestResponse>(url, {})
+  return useSWRMutation(key, async (url: string, { arg }: { arg?: RetestMode }) => {
+    const created = await post<FindingRetestResponse>(url, arg ? { mode: arg } : {})
     await mutate(url)
     return created
   })

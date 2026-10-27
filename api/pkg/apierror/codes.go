@@ -66,7 +66,22 @@ var registry = map[Code]Spec{
 	CodeTicketBelowThreshold:      {http.StatusConflict, "This finding is below the ticketing threshold."},
 	CodeRotationNotStalled:        {http.StatusConflict, "The rotation is not stalled."},
 	CodeReleaseFeedTooLarge:       {http.StatusRequestEntityTooLarge, "The file is larger than the release feed limit."},
+
+	// Retest of a finding (docs/architecture/finding-retest-strategy.md);
+	// details.reason carries the retest reason code.
+	CodeRetestNotAvailable:     {http.StatusUnprocessableEntity, "This finding cannot be retested automatically. The retest panel says why."},
+	CodeRetestNoSensor:         {http.StatusUnprocessableEntity, "No online sensor of your organization can re-check this finding."},
+	CodeRetestNoCheckSensor:    {http.StatusUnprocessableEntity, "No online sensor of your organization can run custom retest checks. Update a sensor, then retest."},
+	CodeRetestNoTemplateSensor: {http.StatusUnprocessableEntity, "No online sensor has the template release this finding was found with. Update the sensor's templates, then retest."},
 }
+
+// Retest codes, registered above.
+const (
+	CodeRetestNotAvailable     Code = "RETEST_NOT_AVAILABLE"
+	CodeRetestNoSensor         Code = "RETEST_NO_SENSOR"
+	CodeRetestNoCheckSensor    Code = "RETEST_NO_CHECK_SENSOR"
+	CodeRetestNoTemplateSensor Code = "RETEST_NO_TEMPLATE_SENSOR"
+)
 
 // Integration and ad hoc codes, registered above.
 const (
