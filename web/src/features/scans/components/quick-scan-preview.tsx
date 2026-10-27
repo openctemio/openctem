@@ -70,6 +70,7 @@ const SKIP_KEYS: Record<string, string> = {
   excluded: 'scans.quickPreview.skip.excluded',
   out_of_scope: 'scans.quickPreview.skip.out_of_scope',
   ownership_unconfirmed: 'scans.quickPreview.skip.ownership_unconfirmed',
+  wildcard_only: 'scans.quickPreview.skip.wildcard_only',
   tier_exceeded: 'scans.quickPreview.skip.tier_exceeded',
   internal_outside_zones: 'scans.quickPreview.skip.internal_outside_zones',
   incompatible_type: 'scans.quickPreview.skip.incompatible_type',

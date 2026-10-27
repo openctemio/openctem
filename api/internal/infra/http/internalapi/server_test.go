@@ -129,7 +129,7 @@ type fakeProvisioner struct {
 
 func (f *fakeProvisioner) Create(_ context.Context, in tenantapp.CreateOrganizationInput) (*tenantapp.CreatedOrganization, error) {
 	f.got = in
-	if in.NewOwnerOnly && in.OwnerEmail == f.existing {
+	if !in.AllowExistingOwner && in.OwnerEmail == f.existing {
 		return nil, tenantapp.ErrOwnerAccountExists
 	}
 	t, err := tenantdom.NewTenant(in.Name, in.Slug, shared.NewID().String())
@@ -304,7 +304,7 @@ func TestInternalAPIWrites(t *testing.T) {
 	if code != http.StatusCreated || strings.Contains(body, "secret-setup-token") || !strings.Contains(body, `"owner_account":"created"`) {
 		t.Fatalf("provision: %d %s", code, body)
 	}
-	if p := h.prov.got.Provisioned; p == nil || p.Limits[limits.Seats] != 5 || !p.IdlePolicy || len(p.DeniedFeatures) != 1 || !h.prov.got.NewOwnerOnly {
+	if p := h.prov.got.Provisioned; p == nil || p.Limits[limits.Seats] != 5 || !p.IdlePolicy || len(p.DeniedFeatures) != 1 || h.prov.got.AllowExistingOwner {
 		t.Fatalf("provisioned entitlements: %+v", h.prov.got)
 	}
 	// An existing account is never made owner by the control plane.
