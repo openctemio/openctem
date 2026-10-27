@@ -299,8 +299,14 @@ func (s *AuthService) enforceEmailVerificationPolicy(ctx context.Context, u *use
 	if u.EmailVerified() {
 		return nil
 	}
+	if s.tenantRepo == nil {
+		return nil
+	}
+	// Fail closed: an unverified account whose organization cannot be read
+	// (bad id, lookup error) gets no token, rather than being let in because
+	// the "always" requirement could not be seen.
 	mode, ok := s.lookupTenantVerificationMode(ctx, tenantID)
-	if ok && mode == tenantdom.EmailVerificationAlways {
+	if !ok || mode == tenantdom.EmailVerificationAlways {
 		return ErrEmailNotVerified
 	}
 	return nil
@@ -2336,6 +2342,12 @@ func (s *AuthService) AcceptInvitationWithRefreshToken(ctx context.Context, inpu
 	// a privileged outside member. When one refuses, the person has joined but
 	// gets no token yet; they meet the requirement (for example set up 2FA)
 	// and sign in to the organization.
+	// An invitation token is not mailbox proof (its holder can be anyone who
+	// saw the link), so an organization that requires verified e-mail still
+	// refuses the token until the address is verified.
+	if err := s.enforceEmailVerificationPolicy(ctx, u, t.ID().String()); err != nil {
+		return nil, err
+	}
 	if err := s.enforceSSOPolicy(ctx, sess, t.ID().String(), membership.Role().String()); err != nil {
 		return nil, err
 	}
