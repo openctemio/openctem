@@ -24,7 +24,7 @@ const REGION = '/settings/region'
 const QUOTA = '/settings/storage-quota'
 const ALERTS = '/settings/alerts'
 const AI = '/settings/ai'
-const SOCIAL = '/settings/social-login'
+const SOCIAL = '/settings/social-login-providers'
 
 export const useCaptchaSettings = () => useSWR<CaptchaSettings>(CAPTCHA, adminFetcher)
 export const useRegionSettings = () => useSWR<RegionSettings>(REGION, adminFetcher)

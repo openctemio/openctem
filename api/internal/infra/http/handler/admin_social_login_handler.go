@@ -112,7 +112,7 @@ func (h *AdminPlatformSettingsHandler) socialLoginResponse(r *http.Request, s pl
 // @Produce      json
 // @Success      200  {object}  SocialLoginSettingsResponse
 // @Security     AdminAuth
-// @Router       /admin/settings/social-login [get]
+// @Router       /admin/settings/social-login-providers [get]
 func (h *AdminPlatformSettingsHandler) GetSocialLogin(w http.ResponseWriter, r *http.Request) {
 	s, err := h.SocialLogin.Get(r.Context())
 	if err != nil {
@@ -134,7 +134,7 @@ func (h *AdminPlatformSettingsHandler) GetSocialLogin(w http.ResponseWriter, r *
 // @Failure      400  {object}  apierror.Error
 // @Failure      409  {object}  apierror.Error
 // @Security     AdminAuth
-// @Router       /admin/settings/social-login/{provider} [put]
+// @Router       /admin/settings/social-login-providers/{provider} [put]
 func (h *AdminPlatformSettingsHandler) UpdateSocialLogin(w http.ResponseWriter, r *http.Request) {
 	actor := requireActor(w, r)
 	if actor == nil {
@@ -165,7 +165,7 @@ func (h *AdminPlatformSettingsHandler) UpdateSocialLogin(w http.ResponseWriter, 
 // @Success      200  {object}  SocialLoginCheckResponse
 // @Failure      409  {object}  apierror.Error
 // @Security     AdminAuth
-// @Router       /admin/settings/social-login/{provider}/test [post]
+// @Router       /admin/settings/social-login-providers/{provider}/test [post]
 func (h *AdminPlatformSettingsHandler) CheckSocialLogin(w http.ResponseWriter, r *http.Request) {
 	var req SocialLoginCheckRequest
 	if !decodeSetting(w, r, &req) {

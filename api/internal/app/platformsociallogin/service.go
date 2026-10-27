@@ -460,7 +460,7 @@ func (s *Service) Update(ctx context.Context, actor *admin.AdminUser, provider s
 	}
 	s.recorder.Record(ctx, actor, consolesetting.Change{
 		Action: ActionChanged, Key: SettingKey, Title: "Social login (" + provider + ")",
-		Method: "PUT", Path: "/api/v1/admin/settings/social-login/" + provider, Reason: reason,
+		Method: "PUT", Path: "/api/v1/admin/settings/social-login-providers/" + provider, Reason: reason,
 		Details: map[string]any{
 			"provider":           provider,
 			"previous_enabled":   old.Enabled,
