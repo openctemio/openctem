@@ -170,6 +170,7 @@ import {
   findingStatusesInCategory,
 } from '@/features/findings'
 import { ExploitSignals } from '@/features/findings/components/exploit-signals'
+import { listQuery, writeListContext } from '@/features/findings/lib/list-context'
 import { FindingAssetCell } from '@/features/findings/components/cells/finding-asset-cell'
 import { DuplicatesChip } from '@/features/findings/components/cells/duplicates-chip'
 import { findingRowTone } from '@/features/findings/lib/row-tone'
@@ -1900,6 +1901,22 @@ function FindingsContent() {
         ? t('findings.view.all', 'All findings')
         : t('findings.view.custom', 'Custom view')
   const awaitingVerification = findingStats?.awaiting_verification ?? 0
+  // The finding page's list context (breadcrumb with this view, prev/next):
+  // the query and the ids of the page shown, kept in the tab.
+  const contextLabel = openView?.name ?? viewTitle
+  useEffect(() => {
+    if (!findingsResponse?.data?.length) return
+    const perPage = findingsResponse.per_page || pagination.pageSize
+    writeListContext({
+      query: listQuery(buildFindingsEndpoint(apiFilters)),
+      label: contextLabel,
+      returnPath: `${window.location.pathname}${window.location.search}`,
+      ids: findingsResponse.data.map((f) => f.id),
+      offset: Math.max(0, ((findingsResponse.page || 1) - 1) * perPage),
+      perPage,
+      total: findingsResponse.total ?? findingsResponse.data.length,
+    })
+  }, [findingsResponse, apiFilters, contextLabel, pagination.pageSize])
 
   // Triage: the findings still to be decided (status new), in triage mode
   // (/findings/triage, research/234 §5.2). The session remembers this list,

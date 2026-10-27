@@ -90,29 +90,26 @@ func TestShouldUsePlatformSensor_ProofRequired(t *testing.T) {
 	}
 }
 
-// With the setting on, intrusive (T2) scans need a verified domain on any
-// sensor; off, they need none.
-func TestRefuseUnprovenIntrusive(t *testing.T) {
+// Proof is for jobs on platform sensors. An intrusive (T2) scan of an
+// unverified target is not refused for lack of proof: in auto mode it never
+// goes to platform sensors (it waits for the organization's own sensor), and
+// an explicit platform preference is refused.
+func TestIntrusiveUnverified_NeverReachesPlatformSensors(t *testing.T) {
 	ctx := context.Background()
-	off := &Service{logger: logger.NewNop(), proofPolicy: StaticProofPolicy(false), attributionGate: proofGate{}}
-	if err := off.refuseUnprovenIntrusive(ctx, shared.NewID(), "zap", []string{"https://bigbank.example/"}); err != nil {
-		t.Fatalf("setting off: intrusive scan refused: %v", err)
+	svc := &Service{sensorSelector: stubSelector{false, true}, logger: logger.NewNop(), zoneResolver: publicResolver{}, sharedLimits: noLimits{}, proofPolicy: StaticProofPolicy(true), attributionGate: proofGate{}}
+	sc := testScan("zap")
+	sc.SensorPreference = scan.SensorPreferenceAuto
+	if onPlatform, err := svc.shouldUsePlatformSensor(ctx, sc, []string{"bigbank.example"}); err != nil || onPlatform {
+		t.Fatalf("auto, intrusive, unverified: platform=%v err=%v, want the job to wait for the own sensor", onPlatform, err)
 	}
-	unwired := &Service{logger: logger.NewNop(), attributionGate: proofGate{}}
-	if err := unwired.refuseUnprovenIntrusive(ctx, shared.NewID(), "zap", []string{"https://bigbank.example/"}); err != nil {
-		t.Fatalf("no policy (default off): intrusive scan refused: %v", err)
-	}
-	svc := &Service{logger: logger.NewNop(), proofPolicy: StaticProofPolicy(true), attributionGate: proofGate{}}
-	tenant := shared.NewID()
+	sc.SensorPreference = scan.SensorPreferencePlatform
 	var de *shared.DomainError
-	if err := svc.refuseUnprovenIntrusive(ctx, tenant, "zap", []string{"https://bigbank.example/"}); !errors.As(err, &de) || de.Code != codeProofRequired {
-		t.Fatalf("intrusive scan of an unverified target: %v", err)
+	if _, err := svc.shouldUsePlatformSensor(ctx, sc, []string{"bigbank.example"}); !errors.As(err, &de) || de.Code != codeProofRequired {
+		t.Fatalf("platform, intrusive, unverified: %v, want %s", err, codeProofRequired)
 	}
-	if err := svc.refuseUnprovenIntrusive(ctx, tenant, "zap", []string{"https://app.verified.example/"}); err != nil {
-		t.Fatalf("intrusive scan of a verified target: %v", err)
-	}
-	if err := svc.refuseUnprovenIntrusive(ctx, tenant, "nuclei", []string{"bigbank.example"}); err != nil {
-		t.Fatalf("a safe-active scan needs no proof on tenant sensors: %v", err)
+	sc.SensorPreference = scan.SensorPreferenceTenant
+	if onPlatform, err := svc.shouldUsePlatformSensor(ctx, sc, []string{"bigbank.example"}); err != nil || onPlatform {
+		t.Fatalf("tenant, intrusive, unverified: platform=%v err=%v", onPlatform, err)
 	}
 }
 

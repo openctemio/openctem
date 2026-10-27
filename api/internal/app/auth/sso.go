@@ -1737,6 +1737,10 @@ func (s *SSOService) createSession(ctx context.Context, u *userdom.User, authMet
 	if refusePlatformAdmin(ctx, s.platformAdmins, s.logger, u, "sso") {
 		return nil, ErrSSOExchangeFailed
 	}
+	// A blocked or suspended account opens no session (it would only 401).
+	if !u.IsActive() {
+		return nil, ErrAccountSuspended
+	}
 	// Bind the token to its session: generate the session id first, embed it in
 	// the JWT, then persist the session under the SAME id — so an SSO session is
 	// revocable (mirrors the password Login flow). Previously the token was

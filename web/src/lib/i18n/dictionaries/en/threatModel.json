@@ -25,7 +25,7 @@
   "threatModel.filter.byTactic": "Filter by tactic",
   "threatModel.filter.byTechnique": "Filter by technique",
   "threatModel.filter.clear": "Clear filters",
-  "threatModel.generatedWithVersion": "Generated {date} · {version}",
+  "threatModel.generatedWithVersion": "Generated {date}, {version}",
   "threatModel.heatmap.coveredMitigated": "Covered/Mitigated",
   "threatModel.heatmap.description": "Columns are kill-chain tactics. Each cell is a technique colored by its worst-case threat status. {techniques, plural, one {# technique} other {# techniques}}, {pct}% coverage.",
   "threatModel.heatmap.download": "Download Navigator layer",

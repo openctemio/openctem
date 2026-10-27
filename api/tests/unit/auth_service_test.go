@@ -1327,7 +1327,7 @@ func TestAuthService_Register(t *testing.T) {
 		}
 	})
 
-	t.Run("invitation token resolves to inviting tenant rule", func(t *testing.T) {
+	t.Run("invitation token never lowers verification (inviting tenant rule never is ignored)", func(t *testing.T) {
 		// User registers via an invitation link → backend should resolve
 		// the invitation, find its tenant, and apply that tenant's
 		// EmailVerificationMode (here: "never") even though the global
@@ -1367,8 +1367,8 @@ func TestAuthService_Register(t *testing.T) {
 		if err != nil {
 			t.Fatalf("register: %v", err)
 		}
-		if result.RequiresVerification {
-			t.Error("expected RequiresVerification=false (invitation tenant rule = never)")
+		if !result.RequiresVerification || result.User.EmailVerified() {
+			t.Error("an invitation token is not mailbox proof: the inviting organization's \"never\" must not verify the address")
 		}
 	})
 
@@ -2896,9 +2896,9 @@ func TestAuthService_Register_RegistrationOff_InvitedEmailMayRegister(t *testing
 	if result.User == nil || deps.userRepo.createCalls != 1 {
 		t.Fatal("expected the account to be created")
 	}
-	// The invitation was delivered to this address, so it is already proven.
-	if result.RequiresVerification || !result.User.EmailVerified() {
-		t.Fatal("an invited registration is email-verified")
+	// The inviter holds the raw token, so the token does not prove the mailbox.
+	if !result.RequiresVerification || result.User.EmailVerified() {
+		t.Fatal("an invited registration is verified by a mailbox link, not by the token")
 	}
 }
 
@@ -3067,4 +3067,43 @@ func TestAuthService_VerifyConsolePassword(t *testing.T) {
 			t.Fatalf("locked, wrong password: %v", err)
 		}
 	})
+}
+
+// holderStub says which organization holds which address.
+type holderStub struct{ held map[string]bool }
+
+func (h holderStub) HeldBy(_ context.Context, tenantID shared.ID, email string) (bool, error) {
+	return h.held[tenantID.String()+"|"+email], nil
+}
+
+// X-01: the inviting organization (A) holds the raw invitation token, so
+// registering with it must not make the address verified. The account must
+// not receive organization B's pending invitation for the same address.
+func TestAuthService_Register_InvitationIsNotMailboxProof(t *testing.T) {
+	svc, _, inv := registrationOffWithInvitation(t, "cfo@acme.test")
+	result, err := svc.Register(context.Background(), auth.RegisterInput{
+		Email: "cfo@acme.test", Password: "Password123!", Name: "X", InvitationToken: inv.Token(),
+	})
+	if err != nil || result.User == nil {
+		t.Fatalf("register: %v", err)
+	}
+	if result.User.EmailVerified() || !result.RequiresVerification || result.VerificationToken == "" {
+		t.Fatal("an invitation token held by the inviter must leave the account unverified with a mailbox link")
+	}
+}
+
+// The inviting organization verified the address's domain: it may vouch for
+// the address (the same rule as creating the account directly).
+func TestAuthService_Register_InvitationFromDomainHolderStillVerifies(t *testing.T) {
+	svc, _, inv := registrationOffWithInvitation(t, "cfo@acme.test")
+	svc.SetAddressHolder(holderStub{held: map[string]bool{inv.TenantID().String() + "|cfo@acme.test": true}})
+	result, err := svc.Register(context.Background(), auth.RegisterInput{
+		Email: "cfo@acme.test", Password: "Password123!", Name: "X", InvitationToken: inv.Token(),
+	})
+	if err != nil || result.User == nil {
+		t.Fatalf("register: %v", err)
+	}
+	if result.RequiresVerification || !result.User.EmailVerified() {
+		t.Fatal("an organization that holds the domain may vouch for the address")
+	}
 }

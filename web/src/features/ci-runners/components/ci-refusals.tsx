@@ -63,7 +63,7 @@ export function RefusalDetail({ refusal }: { refusal: CITokenRefusal }) {
       </div>
       {(refusal.ref || refusal.event) && (
         <div className="break-all text-muted-foreground">
-          {[refusal.event, refusal.ref].filter(Boolean).join(' · ')}
+          {[refusal.event, refusal.ref].filter(Boolean).join(', ')}
         </div>
       )}
       <RefusalReasons reasons={refusal.reasons} />

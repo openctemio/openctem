@@ -449,9 +449,11 @@ SSO instead of a local password — without ever locking its administrators out.
 
 ### Setting
 
-`Settings.Security.SSOEnforced` (bool), toggled via
-`PATCH /api/v1/tenants/{tenant}/settings/security` (`{"sso_enforced": true}`),
-same admin/owner gate as the other tenant-settings toggles.
+`Settings.Security.SSOEnforced` (bool). The organization owner sees it in
+`GET /tenants/{tenant}/settings` but cannot change it (the tenant PATCH returns
+403); a platform administrator toggles it in the admin console, organization,
+Single sign-on tab, via `PUT /api/v1/admin/tenants/{tenantId}/sso/enforcement`
+(super admin, step-up, audited).
 
 **Can't-enable guard:** enabling `sso_enforced` is refused (400, `ErrValidation`)
 unless the tenant has a *usable* SSO path — an active per-tenant identity

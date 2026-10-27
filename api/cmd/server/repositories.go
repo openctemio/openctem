@@ -356,6 +356,7 @@ type Repositories struct {
 	FindingRetestCheck      *postgres.FindingRetestCheckRepository
 	FindingEvidence         *postgres.FindingEvidenceRepository
 	FindingSLARestart       *postgres.FindingSLARestartRepository
+	NavPin                  *postgres.NavPinRepository
 	FindingAcceptanceExpiry *postgres.FindingAcceptanceExpiryRepository
 	// FindingMaterialChange: standing decisions for the material-change
 	// controller (RFC-111).
@@ -676,6 +677,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		FindingRetestCheck:      postgres.NewFindingRetestCheckRepository(db),
 		FindingEvidence:         postgres.NewFindingEvidenceRepository(db),
 		FindingSLARestart:       postgres.NewFindingSLARestartRepository(db),
+		NavPin:                  postgres.NewNavPinRepository(db),
 		FindingAcceptanceExpiry: postgres.NewFindingAcceptanceExpiryRepository(db),
 		FindingMaterialChange:   postgres.NewFindingMaterialChangeRepository(db),
 

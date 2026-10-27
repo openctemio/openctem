@@ -350,7 +350,7 @@ func TestScopeCheck_RoutingResolvedAndProofFixes_DB(t *testing.T) {
 		t.Fatalf("safe-active proof fixes: %+v", out.Results[1].Fixes)
 	}
 	intrusive := call(2)
-	if hasFix(intrusive.Results[1], scopedom.FixUseTenantSensor) || !hasFix(intrusive.Results[1], scopedom.FixVerifyDomain) {
+	if !hasFix(intrusive.Results[1], scopedom.FixUseTenantSensor) || !hasFix(intrusive.Results[1], scopedom.FixVerifyDomain) {
 		t.Fatalf("intrusive proof fixes: %+v", intrusive.Results[1].Fixes)
 	}
 }

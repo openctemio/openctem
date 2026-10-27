@@ -255,7 +255,7 @@ export function SensorTable({
               ? t('sensors.table.roleCollector')
               : t('sensors.table.roleScanner')}
             <span className="text-muted-foreground">
-              {' · '}
+              {', '}
               {t(`sensors.table.type.${row.original.type}`, row.original.type)}
             </span>
           </span>

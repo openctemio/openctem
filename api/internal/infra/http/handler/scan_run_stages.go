@@ -41,7 +41,7 @@ type RunStageResponse struct {
 	MaxHop    int    `json:"max_hop"`
 	PlannedAt string `json:"planned_at"`
 	// Chunks counts the stage's commands by state; Sensors is how they are
-	// spread over the sensors that took them (research/49 §3.12). Both are
+	// spread over the sensors that took them. Both are
 	// empty before the stage is queued.
 	Chunks  RunStageChunks   `json:"chunks"`
 	Sensors []RunStageSensor `json:"sensors"`

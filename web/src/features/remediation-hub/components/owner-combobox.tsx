@@ -118,7 +118,7 @@ export function OwnerCombobox({
   const userName = value.userId ? users.find((u) => u.id === value.userId)?.name : undefined
   const groupName = value.groupId ? groups.find((g) => g.id === value.groupId)?.name : undefined
   const current =
-    [userName, groupName].filter(Boolean).join(' · ') ||
+    [userName, groupName].filter(Boolean).join(', ') ||
     (value.userId || value.groupId ? t('remediationHub.ownerPicker.unknown') : '')
   const isSuggested = (v: OwnerValue) =>
     !!suggested &&
@@ -235,7 +235,7 @@ export function OwnerCombobox({
                       suggested.groupId ? groups.find((g) => g.id === suggested.groupId)?.name : '',
                     ]
                       .filter(Boolean)
-                      .join(' · ') || t('remediationHub.ownerPicker.unknown')}
+                      .join(', ') || t('remediationHub.ownerPicker.unknown')}
                     <span className="text-muted-foreground ms-auto text-xs">{mark}</span>
                   </CommandItem>
                 </CommandGroup>
