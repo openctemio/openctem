@@ -127,7 +127,7 @@ func (h *AdminEmailHandler) Update(w http.ResponseWriter, r *http.Request) {
 		From: req.From, FromName: req.FromName, StartTLS: req.StartTLS,
 	}
 	// SECURITY: the relay receives every set-password, reset and invitation
-	// link, so a new host, port or weaker connection security is set by one
+	// link, so a new host, port, login or weaker connection security is set by one
 	// administrator and approved by another. A password rotation on the same
 	// relay, the sender and turning e-mail off stay one-person.
 	var grant *adminapproval.Grant
