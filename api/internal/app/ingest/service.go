@@ -13,6 +13,7 @@ import (
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/assetfreshness"
+	"github.com/openctemio/openctem/api/pkg/domain/assetresolution"
 	"github.com/openctemio/openctem/api/pkg/domain/assettech"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/branch"
@@ -123,7 +124,11 @@ type Service struct {
 	commands commandReader
 	// wildcardDNS keeps the names a filtered resolution did not report.
 	wildcardDNS assetfreshness.WildcardDNSStore
-	results     sensorresult.Repository
+	// nameProber and resolutionStore: names that do not resolve
+	// (name_probe.go).
+	nameProber      NameProber
+	resolutionStore assetresolution.Store
+	results         sensorresult.Repository
 	// policyVersions and policies: the versioned policy snapshots.
 	policyVersions PolicyVersionReader
 	policies       policyCache

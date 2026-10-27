@@ -49,5 +49,12 @@ describe('runTargetNote', () => {
     expect(runTargetNote({ unreachable_target_count: 3, skipped_target_count: 2 })).toBe(
       '3 unreachable, 2 skipped'
     )
+    // Names that no longer resolve are worded as such, apart from other skips.
+    expect(runTargetNote({ skipped_target_count: 157, no_longer_resolve_count: 157 })).toBe(
+      '157 names no longer resolve'
+    )
+    expect(runTargetNote({ skipped_target_count: 5, no_longer_resolve_count: 3 })).toBe(
+      '2 skipped, 3 names no longer resolve'
+    )
   })
 })

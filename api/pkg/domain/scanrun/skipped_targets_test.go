@@ -20,7 +20,7 @@ func TestParseSkippedTargets(t *testing.T) {
 	if len(got) != 4 {
 		t.Fatalf("got %d entries: %+v", len(got), got)
 	}
-	if got[0] != (SkippedTarget{Target: "api.example.com", Reason: SkipReasonUnresolvable, Rule: "targets", Detail: "cannot resolve api.example.com"}) {
+	if got[0] != (SkippedTarget{Target: "api.example.com", Reason: SkipReasonTargetUnresolvable, Rule: "targets", Detail: "cannot resolve api.example.com"}) {
 		t.Errorf("first %+v", got[0])
 	}
 	if got[1].Reason != SkipReasonWildcard || got[2].Reason != SkipReasonRefused {
@@ -61,8 +61,8 @@ func TestSkippedSummary(t *testing.T) {
 	if SkippedSummary(nil, 0) != "" {
 		t.Fatal("no skips, no summary")
 	}
-	list := []SkippedTarget{{Target: "api.example.com", Reason: SkipReasonUnresolvable}}
-	if got := SkippedSummary(list, 1); got != "Completed with 1 target(s) skipped by the sensor's local policy: api.example.com (unresolvable)" {
+	list := []SkippedTarget{{Target: "api.example.com", Reason: SkipReasonWildcard}}
+	if got := SkippedSummary(list, 1); got != "Completed with 1 target(s) skipped by the sensor's local policy: api.example.com (wildcard_pattern)" {
 		t.Errorf("summary %q", got)
 	}
 	var many []SkippedTarget

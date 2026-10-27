@@ -97,7 +97,7 @@ func TestListRunTasks_SkippedTargets(t *testing.T) {
 	}
 	p := byID[partial]
 	if p.SkippedTotal != 2 || len(p.Skipped) != 2 || p.Skipped[0].Target != "api.example.com" ||
-		p.Skipped[0].Reason != scanrun.SkipReasonUnresolvable || p.Skipped[1].Reason != scanrun.SkipReasonWildcard {
+		p.Skipped[0].Reason != scanrun.SkipReasonTargetUnresolvable || p.Skipped[1].Reason != scanrun.SkipReasonWildcard {
 		t.Fatalf("partial task skipped = %+v (total %d)", p.Skipped, p.SkippedTotal)
 	}
 	if byID[plain].SkippedTotal != 0 || byID[plain].Skipped != nil {

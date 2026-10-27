@@ -158,13 +158,15 @@ type CommandStats struct {
 // zone-routed scan (RFC-023) dispatches one command per zone batch under a
 // single step run, so the step may only finish when the last batch does.
 type StepBatch struct {
-	Total      int    // commands linked to the step run
-	Active     int    // still pending, acknowledged or running
-	Failed     int    // failed, expired or canceled
-	Findings   int    // sum of the batches' reported findings_count
-	Skipped    int    // sum of the completed batches' refused_targets_total
-	Gaps       int    // sum of the completed batches' coverage_gaps_total
-	FirstError string // first failure message, in completion order
+	Total    int // commands linked to the step run
+	Active   int // still pending, acknowledged or running
+	Failed   int // failed, expired or canceled
+	Findings int // sum of the batches' reported findings_count
+	Skipped  int // sum of the completed batches' refused_targets_total
+	// Unresolvable is how many of Skipped are names that no longer resolve.
+	Unresolvable int
+	Gaps         int    // sum of the completed batches' coverage_gaps_total
+	FirstError   string // first failure message, in completion order
 	// Reach of the completed batches (sensor-reported, each bounded):
 	// batches with a reach summary, and the sums of its targets, reached
 	// and unreached counts.

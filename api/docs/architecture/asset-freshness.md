@@ -120,3 +120,15 @@ tenant. Tests: `TestFreshnessRepository_TenantIsolation`,
 `asset_enrichment_dispatched_total{profile}`,
 `asset_enrichment_skipped_total{reason}`,
 `asset_freshness_record_errors_total`.
+
+## Resolution state
+
+Besides the class observations, a host-name asset has a resolution state
+(`asset_resolution`: `resolving` or `not_resolving`, last resolved time,
+failed checks in a row). Observations of the `dns`, `http`, `tls` and `ports`
+classes on a name mark it resolving; a resolve stage that left it out with no
+DNS answer, or a sensor refusing it as unresolvable, counts a failure (two in
+a row make it `not_resolving`). Active stages leave `not_resolving` names
+out; passive stages keep taking them, so the name comes back when it resolves
+again. `GET /assets/{id}/freshness` returns it as `resolution`. See
+[scan-targets](scan-targets.md#names-that-do-not-resolve).

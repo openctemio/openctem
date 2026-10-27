@@ -332,6 +332,7 @@ export function SignalsSection({
   const patch = (p: Partial<InventoryFilters>) => onChange({ ...filters, ...p, page: 1 })
   const selectedCount =
     (filters.freshness ? 1 : 0) +
+    (filters.resolution ? 1 : 0) +
     (filters.coverage ? 1 : 0) +
     (filters.isCrownJewel !== undefined ? 1 : 0) +
     (filters.hasFindings !== undefined ? 1 : 0) +
@@ -403,6 +404,11 @@ export function SignalsSection({
         label={t('assetFreshness.filter.never', 'Never enriched')}
         checked={filters.freshness === 'never'}
         onCheckedChange={(on) => patch({ freshness: on ? 'never' : undefined })}
+      />
+      <FacetOption
+        label={t('assets.facetPanel.notResolving', 'Resolution: not resolving')}
+        checked={filters.resolution === 'not_resolving'}
+        onCheckedChange={(on) => patch({ resolution: on ? 'not_resolving' : undefined })}
       />
     </FacetSection>
   )

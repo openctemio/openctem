@@ -89,3 +89,21 @@ func TestToRunResponse_UnreachableAndSkippedCounts(t *testing.T) {
 		t.Fatalf("no context: %d / %d", g.UnreachableTargetCount, g.SkippedTargetCount)
 	}
 }
+
+// Names that no longer resolve show on the run as an informational skip
+// group and a count, never as an error.
+func TestToRunResponse_NoLongerResolve(t *testing.T) {
+	r := scanrun.Run{TenantID: shared.NewID(), Context: map[string]any{
+		"skipped_target_count": float64(157), "no_longer_resolve_count": float64(157),
+	}}
+	got := toRunResponse(&r)
+	if got.NoLongerResolveCount != 157 || got.Dispatch == nil || len(got.Dispatch.Skipped) != 1 {
+		t.Fatalf("response = %+v", got)
+	}
+	if g := got.Dispatch.Skipped[0]; g.Reason != "target_unresolvable" || g.Tone != "info" || g.Count != 157 {
+		t.Fatalf("group = %+v", g)
+	}
+	if g := toRunResponse(&scanrun.Run{TenantID: shared.NewID()}); g.NoLongerResolveCount != 0 || g.Dispatch != nil {
+		t.Fatalf("no context: %+v", g)
+	}
+}

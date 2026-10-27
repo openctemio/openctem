@@ -314,6 +314,8 @@ export interface ScanRun {
   unreachable_target_count?: number
   /** Targets the sensor's local policy skipped; the run still completes. */
   skipped_target_count?: number
+  /** Of the skipped targets, the names that no longer resolve (informational, never an error). */
+  no_longer_resolve_count?: number
   /** The run's step runs (GET /scan-runs/{id} only). */
   scan_run_steps?: StepRun[]
   error_message?: string
