@@ -116,6 +116,9 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 	// rejected name, a scope exclusion, the deny list and a name outside the
 	// organization's scope are still refused.
 	passive := runsPassiveOnly(sc) || passiveRun(ctx)
+	// Where the run's jobs go decides whether ownership confirmation applies
+	// (placement.go); a caller that knows better (a workflow's steps) set it.
+	ctx = s.withScanPlacement(ctx, sc)
 
 	seen := make(map[string]int) // lower-cased target -> index in names
 	var names []string

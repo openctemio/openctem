@@ -86,8 +86,14 @@ func (g *ActiveGate) UnclassifiedMode(ctx context.Context, tenantID shared.ID) (
 	return g.unclassifiedMode(ctx, tenantID), nil
 }
 
-// unclassifiedMode is the tenant's mode; anything unreadable is off.
+// unclassifiedMode is the tenant's mode; anything unreadable is off. Where
+// ownership confirmation does not apply (confirmationRequired) every
+// unclassified asset is fully authorized, like the full mode: the scope
+// entries are the authority, and the guardrails still apply.
 func (g *ActiveGate) unclassifiedMode(ctx context.Context, tenantID shared.ID) string {
+	if !g.confirmationRequired(ctx) {
+		return unclassifiedFull
+	}
 	if g.unclassified == nil {
 		return unclassifiedOff
 	}

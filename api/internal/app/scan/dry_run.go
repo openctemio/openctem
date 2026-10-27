@@ -245,7 +245,9 @@ func (s *Service) dryRunResults(ctx context.Context, in DryRunInput, routing *Dr
 	// 3. The dispatch gate: validator, exclusions, ownership and authority,
 	// zones.
 	tier := scopedom.Tier(min(max(in.Tier, 0), int(scopedom.TierIntrusive)))
-	res, err := s.ResolveDispatchTargets(ctx, DispatchTargetsInput{TenantID: in.TenantID, Targets: remaining, Assets: dispatchAssets, DryRun: true, Tier: &tier})
+	// Where the job would run decides whether ownership confirmation applies.
+	place := s.placementFor(ctx, in.TenantID, scan.SensorPreference(dryRunPreference(in.SensorPreference)), false, false, scannerTools(in.Tool)...)
+	res, err := s.ResolveDispatchTargets(ctx, DispatchTargetsInput{TenantID: in.TenantID, Targets: remaining, Assets: dispatchAssets, DryRun: true, Tier: &tier, Placement: place})
 	if err != nil {
 		return nil, err
 	}
