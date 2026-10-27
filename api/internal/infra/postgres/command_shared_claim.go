@@ -11,7 +11,6 @@ import (
 	"database/sql"
 	"fmt"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/lib/pq"
@@ -292,10 +291,7 @@ func dropSharedFleetHosts(ctx context.Context, tx *sql.Tx, order, keep []string)
 	if len(keep) == 0 {
 		return keep, nil
 	}
-	rows, err := tx.QueryContext(ctx, `
-		SELECT c.id::text, c.host_keys, `+strings.ReplaceAll(sharedFleetHostLimitSQL, "commands.", "c.")+`
-		FROM commands c
-		WHERE c.id = ANY($1::uuid[]) AND c.host_keys IS NOT NULL`, pq.Array(keep))
+	rows, err := tx.QueryContext(ctx, sharedFleetJobHostsSQL, pq.Array(keep))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read shared job hosts: %w", err)
 	}
@@ -337,6 +333,13 @@ func dropSharedFleetHosts(ctx context.Context, tx *sql.Tx, order, keep []string)
 	}
 	return command.SharedFleetHostsAllowed(held, jobs), nil
 }
+
+// sharedFleetJobHostsSQL reads the host keys and the shared-fleet host limit
+// of the commands among $1 that hold hosts.
+var sharedFleetJobHostsSQL = `
+		SELECT commands.id::text, commands.host_keys, ` + sharedFleetHostLimitSQL + `
+		FROM commands
+		WHERE commands.id = ANY($1::uuid[]) AND commands.host_keys IS NOT NULL`
 
 // sharedFleetHeldKeys counts, per key among keys, the shared jobs in flight
 // (of any organization) that hold it unsettled.
