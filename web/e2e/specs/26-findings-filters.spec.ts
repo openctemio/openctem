@@ -7,7 +7,7 @@ import { test, expect } from '../fixtures/authenticated-page'
  * itself still reaches the API. Needs no particular data.
  */
 
-test.describe('Findings filters', () => {
+test.describe('Findings filters', { tag: ['@findings'] }, () => {
   test('Add filter lists the contract fields, searches them and adds a chip and a URL param', async ({
     page,
   }) => {

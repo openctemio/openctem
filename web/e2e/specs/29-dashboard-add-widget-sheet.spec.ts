@@ -57,58 +57,60 @@ for (const vp of [
   { width: 390, height: 844 },
 ] as const) {
   for (const scheme of ['light', 'dark'] as const) {
-    test(`add-widget sheet stays inside itself at ${vp.width}px in ${scheme}`, async ({
-      page,
-    }, info) => {
-      await page.setViewportSize(vp)
-      await page.emulateMedia({ colorScheme: scheme })
-      await openEditor(page)
-      await page
-        .getByRole('button', { name: /Add (a )?widget/i })
-        .first()
-        .click()
-      const sheet = page.getByTestId('widget-gallery-sheet')
-      await expect(sheet).toBeVisible()
-      await expect(sheet.locator('[data-testid^="gallery-card-"]').first()).toBeVisible()
+    test(
+      `add-widget sheet stays inside itself at ${vp.width}px in ${scheme}`,
+      { tag: ['@dashboard'] },
+      async ({ page }, info) => {
+        await page.setViewportSize(vp)
+        await page.emulateMedia({ colorScheme: scheme })
+        await openEditor(page)
+        await page
+          .getByRole('button', { name: /Add (a )?widget/i })
+          .first()
+          .click()
+        const sheet = page.getByTestId('widget-gallery-sheet')
+        await expect(sheet).toBeVisible()
+        await expect(sheet.locator('[data-testid^="gallery-card-"]').first()).toBeVisible()
 
-      const box = await sheet.boundingBox()
-      expect(box && box.width).toBeLessThanOrEqual(Math.min(34 * 16, vp.width) + 0.5)
-      // Full screen on a phone (a scroll-lock scrollbar gutter may take a few pixels).
-      if (vp.width < 640) expect(box && box.width).toBeGreaterThanOrEqual(vp.width - 24)
+        const box = await sheet.boundingBox()
+        expect(box && box.width).toBeLessThanOrEqual(Math.min(34 * 16, vp.width) + 0.5)
+        // Full screen on a phone (a scroll-lock scrollbar gutter may take a few pixels).
+        if (vp.width < 640) expect(box && box.width).toBeGreaterThanOrEqual(vp.width - 24)
 
-      // Let the lazy previews load and scroll through them: a wide one would
-      // stretch the whole list.
-      const body = sheet.locator('[data-slot="sheet-body"]')
-      for (let i = 0; i < 4; i++) {
-        await body.evaluate((el) => el.scrollBy(0, 600))
-        await page.waitForTimeout(400)
-      }
-      await body.evaluate((el) => el.scrollTo(0, 0))
-      expect(await outside(page)).toEqual([])
-      const sideways = await body.evaluate((el) => el.scrollWidth - el.clientWidth)
-      expect(sideways).toBeLessThanOrEqual(1)
-      expect(
-        await page.evaluate(
-          () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+        // Let the lazy previews load and scroll through them: a wide one would
+        // stretch the whole list.
+        const body = sheet.locator('[data-slot="sheet-body"]')
+        for (let i = 0; i < 4; i++) {
+          await body.evaluate((el) => el.scrollBy(0, 600))
+          await page.waitForTimeout(400)
+        }
+        await body.evaluate((el) => el.scrollTo(0, 0))
+        expect(await outside(page)).toEqual([])
+        const sideways = await body.evaluate((el) => el.scrollWidth - el.clientWidth)
+        expect(sideways).toBeLessThanOrEqual(1)
+        expect(
+          await page.evaluate(
+            () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+          )
+        ).toBeLessThanOrEqual(0)
+
+        // The tablist is a single row with a roving tabindex: at most one tab stop among the tabs.
+        const tabs = sheet.getByRole('tab')
+        expect(await tabs.count()).toBeGreaterThanOrEqual(5)
+        const stops = await tabs.evaluateAll((all) => all.filter((t) => t.tabIndex === 0).length)
+        expect(stops).toBeLessThanOrEqual(1)
+        const tops = await tabs.evaluateAll(
+          (all) => new Set(all.map((t) => Math.round(t.getBoundingClientRect().top))).size
         )
-      ).toBeLessThanOrEqual(0)
+        expect(tops, 'tabs wrapped onto a second line').toBe(1)
 
-      // The tablist is a single row with a roving tabindex: at most one tab stop among the tabs.
-      const tabs = sheet.getByRole('tab')
-      expect(await tabs.count()).toBeGreaterThanOrEqual(5)
-      const stops = await tabs.evaluateAll((all) => all.filter((t) => t.tabIndex === 0).length)
-      expect(stops).toBeLessThanOrEqual(1)
-      const tops = await tabs.evaluateAll(
-        (all) => new Set(all.map((t) => Math.round(t.getBoundingClientRect().top))).size
-      )
-      expect(tops, 'tabs wrapped onto a second line').toBe(1)
-
-      await info.attach(`add-widget-${vp.width}-${scheme}.png`, {
-        body: await page.screenshot(),
-        contentType: 'image/png',
-      })
-      await page.keyboard.press('Escape')
-      await expect(sheet).toBeHidden()
-    })
+        await info.attach(`add-widget-${vp.width}-${scheme}.png`, {
+          body: await page.screenshot(),
+          contentType: 'image/png',
+        })
+        await page.keyboard.press('Escape')
+        await expect(sheet).toBeHidden()
+      }
+    )
   }
 }
