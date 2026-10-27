@@ -3,12 +3,12 @@ package platformai
 import (
 	"context"
 	"errors"
-	"github.com/openctemio/openctem/api/pkg/crypto"
 	"strings"
 	"testing"
 
 	"github.com/openctemio/openctem/api/internal/app/consolesetting"
 	cst "github.com/openctemio/openctem/api/internal/app/consolesetting/consolesettingtest"
+	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
 )
 
