@@ -69,34 +69,47 @@ BEGIN
 END;
 $$;
 
+-- Each trigger collects the finding ids and the tenant ids in ONE aggregate
+-- pass so the two arrays are paired by construction; two separate array_agg
+-- subqueries carry no guarantee of the same row order.
 CREATE OR REPLACE FUNCTION trg_finding_evidence_bump_insert() RETURNS trigger
 LANGUAGE plpgsql AS $$
+DECLARE
+    v_findings uuid[];
+    v_tenants uuid[];
 BEGIN
-    PERFORM finding_evidence_bump_version(
-        (SELECT coalesce(array_agg(finding_id), '{}') FROM new_rows),
-        (SELECT coalesce(array_agg(tenant_id), '{}') FROM new_rows));
+    SELECT coalesce(array_agg(finding_id), '{}'), coalesce(array_agg(tenant_id), '{}')
+      INTO v_findings, v_tenants
+      FROM new_rows;
+    PERFORM finding_evidence_bump_version(v_findings, v_tenants);
     RETURN NULL;
 END $$;
 
 CREATE OR REPLACE FUNCTION trg_finding_evidence_bump_delete() RETURNS trigger
 LANGUAGE plpgsql AS $$
+DECLARE
+    v_findings uuid[];
+    v_tenants uuid[];
 BEGIN
-    PERFORM finding_evidence_bump_version(
-        (SELECT coalesce(array_agg(finding_id), '{}') FROM old_rows),
-        (SELECT coalesce(array_agg(tenant_id), '{}') FROM old_rows));
+    SELECT coalesce(array_agg(finding_id), '{}'), coalesce(array_agg(tenant_id), '{}')
+      INTO v_findings, v_tenants
+      FROM old_rows;
+    PERFORM finding_evidence_bump_version(v_findings, v_tenants);
     RETURN NULL;
 END $$;
 
 CREATE OR REPLACE FUNCTION trg_finding_evidence_bump_update() RETURNS trigger
 LANGUAGE plpgsql AS $$
+DECLARE
+    v_findings uuid[];
+    v_tenants uuid[];
 BEGIN
-    PERFORM finding_evidence_bump_version(
-        (SELECT coalesce(array_agg(n.finding_id), '{}') FROM new_rows n JOIN old_rows o ON o.id = n.id
-          WHERE n.role IS DISTINCT FROM o.role OR n."position" IS DISTINCT FROM o."position"
-             OR n.content_sha256 IS DISTINCT FROM o.content_sha256),
-        (SELECT coalesce(array_agg(n.tenant_id), '{}') FROM new_rows n JOIN old_rows o ON o.id = n.id
-          WHERE n.role IS DISTINCT FROM o.role OR n."position" IS DISTINCT FROM o."position"
-             OR n.content_sha256 IS DISTINCT FROM o.content_sha256));
+    SELECT coalesce(array_agg(n.finding_id), '{}'), coalesce(array_agg(n.tenant_id), '{}')
+      INTO v_findings, v_tenants
+      FROM new_rows n JOIN old_rows o ON o.id = n.id
+     WHERE n.role IS DISTINCT FROM o.role OR n."position" IS DISTINCT FROM o."position"
+        OR n.content_sha256 IS DISTINCT FROM o.content_sha256;
+    PERFORM finding_evidence_bump_version(v_findings, v_tenants);
     RETURN NULL;
 END $$;
 
