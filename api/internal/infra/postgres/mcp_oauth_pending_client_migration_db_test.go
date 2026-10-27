@@ -51,6 +51,9 @@ func TestMCPPendingClientMigrationCleansUnapprovedClients(t *testing.T) {
 		}
 		got = append(got, n)
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
 	want := []string{"dyn", "https://blocked.example/c.json", "https://granted.example/c.json", "https://recent.example/c.json"}
 	if len(got) != len(want) {
 		t.Fatalf("clients after cleanup %v, want %v", got, want)
