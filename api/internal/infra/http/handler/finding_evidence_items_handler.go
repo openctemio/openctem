@@ -254,9 +254,14 @@ func (h *FindingEvidenceItemsHandler) authorizeChange(w http.ResponseWriter, r *
 		switch {
 		case errors.Is(err, shared.ErrNotFound), errors.Is(err, pentest.ErrNotCampaignMember):
 			apierror.NotFound("Evidence").WriteJSON(w)
-		case errors.Is(err, shared.ErrForbidden), errors.Is(err, pentest.ErrCampaignLocked),
-			errors.Is(err, pentest.ErrInsufficientCampaignRole), errors.Is(err, pentest.ErrFindingNotOwned):
-			apierror.Forbidden(err.Error()).WriteJSON(w)
+		case errors.Is(err, pentest.ErrCampaignLocked):
+			apierror.Forbidden("The campaign is locked").WriteJSON(w)
+		case errors.Is(err, pentest.ErrInsufficientCampaignRole):
+			apierror.Forbidden("Your campaign role cannot change this evidence").WriteJSON(w)
+		case errors.Is(err, pentest.ErrFindingNotOwned):
+			apierror.Forbidden("This finding is not assigned to you").WriteJSON(w)
+		case errors.Is(err, shared.ErrForbidden):
+			apierror.Forbidden("Access denied").WriteJSON(w)
 		default:
 			h.logger.Error("pentest evidence gate failed", "error", logger.SanitizeError(err))
 			apierror.InternalServerError("Evidence request failed").WriteJSON(w)
