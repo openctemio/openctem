@@ -116,6 +116,15 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: bash .github/scripts/changed.sh
+      # Which part of the side changed (.github/scripts/scope.sh): only narrows
+      # what changed.sh selected, e.g. a change to web/e2e/ alone runs no web
+      # unit tests and builds no image, a CI file only the workflows that use it.
+      - id: scope
+        env:
+          EVENT_BEFORE: ${{ github.event.before }}
+          MG_BASE: ${{ github.event.merge_group.base_sha }}
+          MG_HEAD: ${{ github.event.merge_group.head_sha }}
+        run: bash .github/scripts/scope.sh
       # The API's HTTP layer (handlers, routes, middleware) is where the contract
       # the web compiles against comes from. Its generated files are not
       # committed, so a change there no longer shows up as a web change; count
@@ -156,8 +165,10 @@ jobs:
       - id: decide
         env:
           EVENT: ${{ github.event_name }}
-          WEB: ${{ steps.f.outputs.web }}
-          API: ${{ steps.f.outputs.api }}
+          # The suite needs app code, its own specs, English text (specs find
+          # elements by it) or this workflow's CI files; not a vi catalog.
+          WEB: ${{ steps.f.outputs.web == 'true' && (steps.scope.outputs.web_app == 'true' || steps.scope.outputs.ci_self == 'true' || steps.scope.outputs.web_e2e == 'true' || steps.scope.outputs.i18n_en == 'true') }}
+          API: ${{ steps.f.outputs.api == 'true' && (steps.scope.outputs.api_code == 'true' || steps.scope.outputs.ci_self == 'true') }}
           HTTP: ${{ steps.http.outputs.changed }}
           SUITE: ${{ steps.suite.outputs.changed }}
           FULL: ${{ steps.f.outputs.full }}
