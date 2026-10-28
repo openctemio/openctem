@@ -224,6 +224,9 @@ type AuthorizationURLInput struct {
 type AuthorizationURLResult struct {
 	AuthorizationURL string `json:"authorization_url"`
 	State            string `json:"state"`
+	// BrowserBinding is a one-time secret for the browser that started the
+	// flow, returned with the callback to prove the state is its own.
+	BrowserBinding string `json:"browser_binding"`
 }
 
 // GetAuthorizationURL returns the OAuth authorization URL for the specified provider.
@@ -246,7 +249,11 @@ func (s *OAuthService) GetAuthorizationURL(ctx context.Context, input Authorizat
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate state: %w", err)
 	}
-	if err := s.pkceStore.Set(ctx, pkceStoreKey(state), codeVerifier, s.stateTTL()); err != nil {
+	binding, err := newBrowserBinding()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create browser binding: %w", err)
+	}
+	if err := s.pkceStore.Set(ctx, pkceStoreKey(state), hashBinding(binding)+":"+codeVerifier, s.stateTTL()); err != nil {
 		return nil, fmt.Errorf("failed to store PKCE verifier: %w", err)
 	}
 
@@ -259,6 +266,7 @@ func (s *OAuthService) GetAuthorizationURL(ctx context.Context, input Authorizat
 	return &AuthorizationURLResult{
 		AuthorizationURL: authURL,
 		State:            state,
+		BrowserBinding:   binding,
 	}, nil
 }
 
@@ -268,6 +276,8 @@ type CallbackInput struct {
 	Code        string
 	State       string
 	RedirectURI string
+	// BrowserBinding is the secret the authorize call returned to this browser.
+	BrowserBinding string
 }
 
 // CallbackResult represents the OAuth callback result.
@@ -300,12 +310,14 @@ func (s *OAuthService) HandleCallback(ctx context.Context, input CallbackInput) 
 	if err != nil {
 		return nil, ErrInvalidState
 	}
-	codeVerifier, found, err := s.pkceStore.GetDel(ctx, pkceStoreKey(input.State))
+	stored, found, err := s.pkceStore.GetDel(ctx, pkceStoreKey(input.State))
 	if err != nil {
 		s.logger.Error("failed to read PKCE verifier", "provider", input.Provider, "error", err)
 		return nil, ErrInvalidState
 	}
-	if !found || codeVerifier == "" {
+	// The record is spent now; a wrong browser cannot retry it.
+	bindHash, codeVerifier, split := strings.Cut(stored, ":")
+	if !found || !split || codeVerifier == "" || !bindingMatches(input.BrowserBinding, bindHash) {
 		return nil, ErrInvalidState
 	}
 
