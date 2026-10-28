@@ -98,7 +98,13 @@ func newDeliveryFixture(t *testing.T) *deliveryFixture {
 
 func (f *deliveryFixture) platformPack(t *testing.T, name, version string, files map[string]string, promote bool) *dom.PlatformPack {
 	t.Helper()
-	p, err := f.platform.Upload(context.Background(), PlatformInput{Name: name, Version: version, Kind: dom.KindWordlist}, bytes.NewReader(tarBytes(t, files)))
+	// A platform wordlist pack must pass the manifest lint: the list is the one
+	// the caller gave under dns/labels.txt, wrapped with its manifest and NOTICE.
+	packFiles := map[string]string{}
+	for path, content := range manifestPack(files["dns/labels.txt"], func(m *WordlistManifest) { m.Pack = name; m.Release = version }) {
+		packFiles[path] = string(content)
+	}
+	p, err := f.platform.Upload(context.Background(), PlatformInput{Name: name, Version: version, Kind: dom.KindWordlist}, bytes.NewReader(tarBytes(t, packFiles)))
 	if err != nil {
 		t.Fatal(err)
 	}
