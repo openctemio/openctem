@@ -78,6 +78,7 @@ func TestEnforceNeedsVerifiedDomain(t *testing.T) {
 		svc.SetSSOPathChecker(&mockSSOPathChecker{usable: true})
 		tn := seedTenant(repo, "Team", "verified")
 		svc.SetSSODomainChecker(fixedSSODomain{ok: true, only: tn.ID()})
+		svc.SetSSOEnforcementStore(readySSOStore())
 		got, err := svc.UpdateSecuritySettings(context.Background(), tn.ID().String(), enable, audit.AuditContext{})
 		if err != nil || !got.Security.SSOEnforced {
 			t.Fatalf("got %v, enforced=%v", err, got != nil && got.Security.SSOEnforced)
