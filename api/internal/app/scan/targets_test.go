@@ -156,7 +156,7 @@ func TestRecordResolvedTargets_AllExcludedRefused(t *testing.T) {
 	}
 }
 
-// A single-target scanner now gets one command per target (perTargetPlan),
+// A single-target scanner now gets one command per target (unzonedJobPlan),
 // so the old "only the first target is scanned" warning is gone; the per-run
 // job cap is enforced here instead.
 func TestResolveScanTargets_SingleTargetScanner(t *testing.T) {
