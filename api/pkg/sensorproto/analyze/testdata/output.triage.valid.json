@@ -1,0 +1,6 @@
+{"suggestions":[
+ {"kind":"verdict","payload":{"verdict":"likely_false_positive","reason":"The response is the default page."},"confidence":0.82,"evidence":[{"ref":"bundle:evidence.redacted","quote":"default page"}]},
+ {"kind":"severity","payload":{"severity":"low","reason":"Not reachable from the internet."},"confidence":0.6,"evidence":[{"ref":"bundle:asset.exposure"}]},
+ {"kind":"remediation_steps","payload":{"steps":[{"step":1,"description":"Upgrade the package.","effort":"low"}]},"confidence":0.9,"evidence":[{"ref":"bundle:finding.cve"}]},
+ {"kind":"summary","payload":{"text":"A known issue in an internal service."},"confidence":0.9,"evidence":[{"ref":"bundle:finding.title"}]}
+]}

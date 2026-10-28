@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openctem.io/schemas/analyze/output/triage/v1.json",
+  "title": "openctem.ai.triage/v1",
+  "description": "Output of kind triage.v1: at most one suggestion of each kind (verdict, severity, remediation steps, summary).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["suggestions"],
+  "properties": {
+    "suggestions": {
+      "type": "array",
+      "maxItems": 4,
+      "items": {
+        "oneOf": [
+          {"$ref": "https://openctem.io/schemas/analyze/suggestion/v1.json#/$defs/verdict"},
+          {"$ref": "https://openctem.io/schemas/analyze/suggestion/v1.json#/$defs/severity"},
+          {"$ref": "https://openctem.io/schemas/analyze/suggestion/v1.json#/$defs/remediation_steps"},
+          {"$ref": "https://openctem.io/schemas/analyze/suggestion/v1.json#/$defs/summary"}
+        ]
+      }
+    }
+  }
+}
