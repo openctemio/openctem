@@ -327,6 +327,15 @@ jobs:
       - name: Tool pin freshness self-test
         run: bash .github/scripts/tool-pins.test.sh
 
+      # Incremental pull request CI and the release fast path.
+      - name: Incremental CI base (last green commit) self-test
+        run: bash .github/scripts/green-base.test.sh
+      - name: Release provenance self-test
+        run: bash .github/scripts/release/tests/test_release_provenance.sh
+      - name: Release preflight self-test
+        run: bash .github/scripts/release/tests/test_release_preflight.sh
+      - name: Early warning self-test
+        run: bash .github/scripts/early-warning.test.sh
       - name: Release builds use no shared cache
         run: bash .github/scripts/check-release-no-cache.sh
 
