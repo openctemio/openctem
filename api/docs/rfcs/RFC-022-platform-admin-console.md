@@ -718,7 +718,12 @@ do. Every protected action takes a route-level step-up
 same console session (`admin_sessions.step_up_at`, migration 002472); another
 session, another administrator or a pending session never rides it. Without
 a code or window the API answers `401 ADMIN_STEP_UP_REQUIRED`; the console's
-one step-up dialog asks for the code and retries the same request. A wrong
+one step-up dialog asks for the code and retries the same request. A form
+that asks for its own code (`totp_code`) sends it in the header too; when the
+route refuses that code (wrong or already used) the refusal goes back to the
+form, which shows it under its field, and the step-up dialog stays closed. It
+asks again only for a code it asked for itself, so it never opens over the
+form's own dialog. A wrong
 code counts toward the sign-in lockout; each confirmation is audited
 (`console.step_up`, with the action as its purpose).
 

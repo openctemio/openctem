@@ -612,17 +612,23 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			}
 			return h
 		}(),
-		FindingRetestCheck:   handler.NewFindingRetestCheckHandler(svc.RetestCheck, log),
-		FindingEvidenceItems: handler.NewFindingEvidenceItemsHandler(svc.Evidence, log),
-		JiraWebhook:          jiraWebhookHandler,
-		TicketMapping:        ticketMappingHandler,
-		ImportMapping:        newImportMappingHandler(svc, log),
-		GitHubWebhook:        githubWebhookHandler,
-		Exposure:             handler.NewExposureHandler(svc.Exposure, svc.User, v, log),
-		ThreatIntel:          handler.NewThreatIntelHandler(svc.ThreatIntel, v, log).SetDataScope(svc.DataScope),
-		EmergingThreat:       emergingThreatHandler(svc, log),
-		CTEMID:               handler.NewCTEMIDHandler(svc.CTEMID, log),
-		CredentialImport:     handler.NewCredentialImportHandler(svc.CredentialImport, v, log),
+		FindingRetestCheck: handler.NewFindingRetestCheckHandler(svc.RetestCheck, log),
+		FindingEvidenceItems: func() *handler.FindingEvidenceItemsHandler {
+			h := handler.NewFindingEvidenceItemsHandler(svc.Evidence, log)
+			if svc.Pentest != nil {
+				h.SetPentestGate(svc.Pentest) // a pentest finding's evidence follows its campaign's rules
+			}
+			return h
+		}(),
+		JiraWebhook:      jiraWebhookHandler,
+		TicketMapping:    ticketMappingHandler,
+		ImportMapping:    newImportMappingHandler(svc, log),
+		GitHubWebhook:    githubWebhookHandler,
+		Exposure:         handler.NewExposureHandler(svc.Exposure, svc.User, v, log),
+		ThreatIntel:      handler.NewThreatIntelHandler(svc.ThreatIntel, v, log).SetDataScope(svc.DataScope),
+		EmergingThreat:   emergingThreatHandler(svc, log),
+		CTEMID:           handler.NewCTEMIDHandler(svc.CTEMID, log),
+		CredentialImport: handler.NewCredentialImportHandler(svc.CredentialImport, v, log),
 
 		// Dashboard & Branch
 		Dashboard: handler.NewDashboardHandler(svc.Dashboard, log),
@@ -685,7 +691,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AdminVersionCheck:   handler.NewAdminVersionCheckHandler(svc.VersionCheck, repos.AdminAuditLog, log),
 		AdminConfiguration: handler.NewAdminConfigurationHandler(
 			configoverview.NewBuilder(cfg, platformSettings(repos), repos.Admin, os.LookupEnv), log),
-		AdminPlatformSettings: newAdminPlatformSettingsHandler(repos, svc, log),
+		AdminPlatformSettings: newAdminPlatformSettingsHandler(repos, svc, adminApprovals, log),
 
 		SecretStore:  handler.NewSecretStoreHandler(svc.SecretStore, v, log),
 		Tool:         handler.NewToolHandler(svc.Tool, v, log),
