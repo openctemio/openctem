@@ -33,7 +33,7 @@ linked providers and the organization SSO identities (read only).
 |---|---|
 | `GET /api/v1/users/me/identities` | signed in |
 | `POST /api/v1/users/me/identities/{provider}/link` | step-up, CSRF, rate limit |
-| `POST /api/v1/users/me/identities/{provider}/link/callback` | signed in, rate limit; state bound to account and session |
+| `POST /api/v1/users/me/identities/{provider}/link/callback` | signed in, rate limit; state bound to account, session and browser, single use, expires |
 | `DELETE /api/v1/users/me/identities/{id}` | step-up, CSRF, rate limit |
 
 Link flow:
@@ -42,15 +42,23 @@ Link flow:
    not re-authenticated in the step-up window gets `403 STEP_UP_REQUIRED` and
    the dialog asks for the authenticator code or password first.
 2. The API returns the provider's authorization URL. Its signed state carries
-   `purpose=link`, the account id and the session id; the PKCE verifier is kept
-   server side under the state, single use.
-3. A server action keeps the state (and a link-intent cookie naming the
-   provider) in httpOnly cookies; the browser goes to the provider.
+   `purpose=link`, the account id, the session id and an expiry; the PKCE
+   verifier is kept server side under the state, single use, for the state's
+   lifetime, together with the hash of a one-time browser-binding secret
+   returned as `browser_binding`. This is the same record a sign-in keeps
+   (`storeBoundVerifier` in `auth/oauth.go`).
+3. A server action keeps the state, the browser binding (the same
+   `__Host-oauth_binding` cookie a sign-in uses) and a link-intent cookie naming the
+   provider in httpOnly cookies; the browser goes to the provider.
 4. The provider redirects to `/auth/callback/{provider}`, the redirect URI
    already registered for sign-in. The route sees the link intent, checks the
-   state cookie, and calls the link callback with the session cookie's token.
+   state cookie, takes the binding cookie (single use), and calls the link
+   callback with the session cookie's token and `browser_binding`.
 5. The API accepts the state only when its purpose is `link` and its account
-   and session are the caller's, exchanges the code, reads the verified
+   and session are the caller's and it has not expired, then takes its PKCE
+   record (deleted on read, so a replay finds nothing) and refuses it unless
+   `browser_binding` hashes to the stored binding. Every refusal is the same
+   `400 OAUTH_INVALID_STATE`, before the code exchange. It then exchanges the code, reads the verified
    identity and binds it. It refuses an identity linked to another account
    (`409 IDENTITY_LINKED_ELSEWHERE`) and a second identity of the same
    provider (`409 PROVIDER_ALREADY_LINKED`).
@@ -125,7 +133,9 @@ Organization policies apply to the session exactly as before:
 | Unverified provider address | Google and Microsoft sign-in already refuse an unverified address; GitHub reads only its primary verified address |
 | Pre-hijacking: an attacker registers the victim's Gmail address with a password before the victim arrives through Google | Automatic linking needs the account's address verified (the attacker cannot click the link sent to the victim's mailbox); on a link every session is revoked and a pending reset link cancelled, and the mailbox (the victim) is told. Residual: an address marked verified without mailbox proof (an administrator-provisioned account with a temporary password, or a deployment that ran without mail delivery); the administrator turns automatic linking off for such deployments |
 | Second-factor bypass through a provider | The linked password account gets the same second step as its password sign-in |
-| Link CSRF (an attacker's provider account linked to the victim's session) | The link start needs step-up and the CSRF token; the state is signed, single use, and bound to the account and session that started it; the callback also checks the state cookie of the browser |
+| Link CSRF (an attacker's provider account linked to the victim's session) | The link start needs step-up and the CSRF token; the state is signed, single use, expires, and bound to the account and session that started it; the callback also checks the state cookie of the browser |
+| Cross-browser completion (the attacker's code and state, or the victim's leaked callback URL, finished in another browser) | The PKCE verifier is released only with the browser-binding secret held in an HttpOnly cookie of the browser that started the link; a wrong or missing secret spends the record, so the starting browser cannot be raced either |
+| State replay (a used state and code from a log or Referer) | The PKCE record is deleted on first read; a replay is refused before any code exchange |
 | Using a link state to sign in, or a sign-in state to link | The sign-in callback refuses a state with a purpose; the link callback accepts only `purpose=link` |
 | Removing someone else's identity | Unlink deletes by (identity id, account id of the session); another account's identity is not found |
 | Locking oneself out | The last sign-in method stays; checked under a row lock |

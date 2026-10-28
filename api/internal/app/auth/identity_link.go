@@ -8,7 +8,11 @@ package auth
 //   - Explicit: a signed-in person links a provider from Account > Security.
 //     The start needs a fresh step-up (route gate). The state token carries
 //     the account and the session that started the link, signed, and is
-//     accepted only by CompleteLink for that same account and session. The
+//     accepted only by CompleteLink for that same account and session, once,
+//     before it expires, and only from the browser that started the link: its
+//     PKCE verifier is stored with the hash of a one-time browser-binding
+//     secret (storeBoundVerifier, shared with sign-in) that the browser holds
+//     in an HttpOnly cookie and presents at completion. The
 //     provider's address does not have to match the account's: the person
 //     proved both.
 //   - Automatic, on a social sign-in whose address belongs to a password
@@ -352,14 +356,15 @@ func (s *OAuthService) StartLink(ctx context.Context, in LinkStartInput) (*Autho
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate state: %w", err)
 	}
-	if err := s.pkceStore.Set(ctx, pkceStoreKey(state), verifier, s.stateTTL()); err != nil {
-		return nil, fmt.Errorf("failed to store PKCE verifier: %w", err)
+	binding, err := s.storeBoundVerifier(ctx, state, verifier)
+	if err != nil {
+		return nil, err
 	}
 	authURL, err := s.buildAuthorizationURL(in.Provider, cfg, in.RedirectURI, state, verifier)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build authorization URL: %w", err)
 	}
-	return &AuthorizationURLResult{AuthorizationURL: authURL, State: state}, nil
+	return &AuthorizationURLResult{AuthorizationURL: authURL, State: state, BrowserBinding: binding}, nil
 }
 
 // LinkCompleteInput finishes a link started by StartLink.
@@ -370,6 +375,8 @@ type LinkCompleteInput struct {
 	Code        string
 	State       string
 	RedirectURI string
+	// BrowserBinding is the secret StartLink returned to this browser.
+	BrowserBinding string
 }
 
 // CompleteLink binds the provider identity to the signed-in account. The
@@ -385,8 +392,8 @@ func (s *OAuthService) CompleteLink(ctx context.Context, in LinkCompleteInput) (
 		claims.SessionID == "" || claims.SessionID != in.SessionID {
 		return nil, ErrInvalidState
 	}
-	verifier, found, err := s.pkceStore.GetDel(ctx, pkceStoreKey(in.State))
-	if err != nil || !found || verifier == "" {
+	verifier, ok := s.claimBoundVerifier(ctx, in.State, in.BrowserBinding, in.Provider)
+	if !ok {
 		return nil, ErrInvalidState
 	}
 	tokens, err := s.exchangeCode(ctx, in.Provider, cfg, in.Code, in.RedirectURI, verifier)
