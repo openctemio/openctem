@@ -1,11 +1,2965 @@
 # Changelog
 
-Notable changes to the OpenCTEM API. Release notes for each version are
-published at https://docs.openctem.io (operations/release-notes-*).
+Notable changes to OpenCTEM (API and web console). Each version's release notes,
+with images, checksums and upgrade commands, are on
+[GitHub Releases](https://github.com/openctemio/openctem/releases).
 
 ## Unreleased
 
 Unreleased changes are kept one file per change in [`changelog.d/`](changelog.d/README.md) and folded in here at release.
+
+## v0.15.5 (2026-10-27)
+
+### Behaviour change: ownership confirmation applies only to platform sensors of the hosted service
+
+- Ownership confirmation of discovered assets and the wildcard-only restriction now apply only when `MANAGED_SERVICE` is true and the job runs on platform (shared) sensors. On the tenant's own sensors, and on self-hosted installs on any sensor, discovered and unclassified assets are treated as fully authorized (like `unclassified_scans: full`), and a wildcard-only name covered by an active scope entry is scanned. Rejected assets, scope exclusions, the deny list and the guardrails still refuse everywhere.
+- The decision is made per job: scan create, update, clone, import and quick scan, run start, workflow runs, follow-on stages, the dry run, coverage scans and the claim-time re-check all judge the placement of the job (a job that auto placement sends to a tenant sensor is not refused; one sent to a platform sensor is checked).
+- A derived name that resolves only through a wildcard record now has its own reason in a run's stage lanes (`wildcard_only`), instead of `unconfirmed`.
+
+### Behaviour change: domain proof applies only to jobs on platform sensors
+- With "Require a verified domain before platform sensors scan a target" on (the default on a managed service), a scan that runs on your own sensor needs no verified domain at any tier. Intrusive (T2) probes on your own sensor are governed by the scope entry's tier ceiling and the scan's approval, as before.
+- A job whose targets are not proven never falls back to platform sensors: in auto mode it waits for your own sensor, and an explicit platform preference is refused.
+- The scope check and the New Scan targets step say why a target is refused: platform sensors need a verified domain, or no sensor of yours can take the job.
+- The "Use my own sensors" fix is offered for intrusive scans too.
+
+### Added: confirm ownership of a skipped group in one step
+
+- `POST /easm/candidates/decisions` accepts `asset_names`: the organization's own assets named by name, alongside `asset_ids` (200 together). Same `assets:write` permission, data scope and audit as confirming one asset.
+- A skipped-targets group of unconfirmed or wildcard-only names offers **Confirm ownership** and says when confirmation is required.
+
+### Fixed: passive scans no longer skip discovered names as "ownership not confirmed"
+
+- A scan run whose every probe is passive (passive intensity, a passive scanner, or a workflow of passive steps) now gates its targets with the passive gate at run start. Names a scan discovered and nobody confirmed yet, and names that resolve only through a wildcard DNS record, are looked up again; rejected names, scope exclusions, the deny list and names outside the organization's scope are still refused.
+- A target refused because its name resolves only through a wildcard DNS record is reported as its own skip reason (`wildcard_only`, informational) instead of "Ownership not confirmed".
+- A registrable domain (`example.com`) is never marked wildcard-only, and an existing mark on one is ignored: a wildcard record never answers for the domain it sits under.
+- The "Ownership not confirmed" group now reads "Discovered, not confirmed as yours" and says how to fix it.
+
+### Fixed: the organization's "off" setting for unclassified assets holds on every placement
+
+- With ownership confirmation limited to platform sensors of the hosted service, a job on the tenant's own sensors (or any job on a self-hosted install) treated unclassified assets as fully authorized even when the organization had set `unclassified_scans: off` or chose the Strict scan approval mode. Those choices now keep unclassified assets passive on every placement; `low_impact` and `full` still mean fully authorized where confirmation does not apply.
+
+## v0.15.4 (2026-10-27)
+
+### Added: `POST /api/v1/auth/mfa/enroll/session`
+- Issues the second-factor challenge for a signed-in session that an organization holds back (refresh-token cookie or body, same CSRF rules as `accept-with-refresh`). Not available to sessions started through an identity provider.
+- Starting two-factor enrollment from a session alone needs a sign-in within the last 15 minutes; an older session gets 403 `REAUTH_REQUIRED` and is sent to the password sign-in. A stolen refresh token can no longer bind an authenticator to an account without a second factor.
+
+### Fixed: invitation to first open no longer dead-ends on two-factor authentication
+- Accepting an invitation to an organization that needs a second factor now says "You have joined {org}" and sets up two-factor authentication in place, then opens the organization. It no longer reports "Cannot accept the invitation" after the membership exists.
+- The sign-in offers two-factor setup whenever any organization would refuse the session: 2FA by role, `allowed_with_mfa` for personal addresses, and privileged outside members. It used to offer it only for the first, so those people looped on "sign in again". The setup screen names the organization that requires it.
+- "2FA required for administrators" now follows effective privilege (an administrator or other privileged RBAC role held by a base-role member counts), at the token mint and at sign-in.
+- A token refresh refused for 2FA keeps the person signed in and opens a full-page setup screen instead of sending them to the sign-in page. The refused refresh no longer spends the refresh token.
+- The role summary on the invitation card is written as sentences instead of a dotted list.
+
+## v0.15.3 (2026-10-27)
+
+### Fixed: social login always ended on "Sign-in could not be completed"
+
+- After choosing an account at Google, GitHub or Microsoft, the web app's callback ran as a page, and Next.js refuses cookie writes during a page render, so storing the session failed every time. The callback is now a route handler; the page to return to after sign-in is also honoured again (it was cleared before being read).
+
+## v0.15.2 (2026-10-26)
+
+### Changed: the release feed key is pinned
+
+- Builds now trust the release feed's online signing key, so an install checks for new versions and security advisories, the Software updates page can import a feed file, and sensor install snippets pick up the published image digests. Before, no key was pinned and every feed was refused.
+- A test refuses a build with no pinned key, at most two keys (rotation overlap) and only well-formed Ed25519 public keys.
+
+### Fixed: social login refused every sign-in with "Invalid redirect URI"
+
+- Sign in with Google, GitHub or Microsoft failed with "Could not sign in with Google. Try again." because the API checked the page to return to after sign-in (`final_redirect`, `/` by default) as if it were a full URL and refused the plain path. A path on the same site is now accepted; protocol-relative (`//host`), backslash and control-character forms are still refused, and absolute URLs must still match the sign-in callback's origin.
+
+## v0.15.1 (2026-10-26)
+
+No notable changes.
+
+## v0.15.0 (2026-10-26)
+
+### Security: database asset names never keep part of a password
+
+- A database connection string whose password contains `@` (`postgres://admin:S3cr@t!@db.example.com/app`) kept the end of the password in the asset name, visible to every reader and in exports. Credentials now end at the last `@`, after the query and fragment are cut, so an `@` in a query parameter (`?user=svc@corp.example`) no longer merges two databases into one asset named after the parameter.
+
+### Security: creating a support grant, API key or stored credential fails closed when it cannot be audited
+- A support access grant whose audit write fails is revoked at once; an API key is revoked (deleted if that fails) before its plaintext is returned; a stored credential is deleted. Each returns 503 instead of succeeding without an audit row.
+- Failure logs of the support access audit writes are sanitized.
+- The audit discard guard also flags bare, `go` and `defer` calls of audit writes (including `tenantEvent` and `adminEvent`); the module preset audit no longer drops its error.
+
+### Security: audit-log write failures are no longer silently dropped
+- 32 call sites discarded the error of an audit write (`_ = svc.LogEvent(...)`); they now go through `audit.RecordOrWarn`, which logs a WARN with the action, resource and a sanitized error. API key create/revoke/delete, credential create, failed login and logout log the same way.
+- Deleting a suppression rule now writes its audit row first and refuses to delete when the row cannot be written.
+- A guard test (`TestNoDiscardedAuditWrite`) fails the build when production code discards the error of `LogEvent`, a typed `Log*` audit helper or `RecordAudit`.
+
+### Security: going live with an automation is gated by what it can do
+
+- The new permissions are `automations:read`, `automations:write` and `automations:publish`. Write covers drafts, preview, validate and manual runs. Publish covers going live, approving another person's version, rolling back, changing the mode, switching an automation on or off, and deleting it.
+- Publishing a low-risk automation (tags only) needs `automations:publish`. An elevated one (status, assignment, tickets, notifications, AI triage) also needs a recent re-authentication. A high-risk one (scans, request actions, automation chaining, a raised change cap) waits until a second person with `automations:publish` approves the exact version they reviewed (`POST /api/v1/workflows/{id}/versions/{versionId}/approve`). The publisher cannot approve their own version, and a newer publish request voids an older pending one. A draft with blocking validate problems cannot be published.
+- The catalog entries and versions carry `risk_class`. Versions show the publisher's and approver's names.
+
+### Security: automations only request false positives and risk acceptances
+
+- New actions `request_false_positive` and `request_risk_acceptance` create a request on behalf of the automation's owner. A person always decides it. The approval policy never lets one person decide a request an automation made, even when the organization's approval level is `off`.
+- `update_status` may move a finding only to `confirmed` or `in_progress`. Other targets are refused on save (400 `AUTOMATION_STATUS_NOT_ALLOWED`) and at run time. Migration 003404 (`automation_guardrails`) switches off, and back to simulate, every automation whose draft or published version set another status (`disabled_reason = status_not_allowed`). No automation is deleted.
+
+### Security: automation runs follow the reader's data scope
+
+- A run about a finding or asset outside the caller's data scope is no longer listed, and reading it answers 404. Trace counts include only runs the caller may see. Runs now always record the subject their trigger names.
+
+### Security: no font CDN in the console's content security policy
+
+- The console's policy no longer allows `fonts.googleapis.com` or `fonts.gstatic.com`; fonts and styles load from the console's own origin only.
+
+### Security: Branch runs no longer reopen resolved findings; retiring a CI source keeps secrets open
+- A scan or CI run on a branch other than the repository's default branch records a branch occurrence but no longer reopens a finding that was resolved on the default branch. A default-branch run still reopens it.
+- Retiring a CI pipeline closes its other sole-source findings as before, but leaves leaked-secret findings open until they are rotated.
+
+### Security: review by rule never suggests a range rule for CDN edge addresses
+
+- An address inside a published CDN edge range (for example Cloudflare's) whose network had not been recorded yet was grouped under a suggested /24 rule; accepting it would have put shared provider space in scope. Such addresses are now listed one by one as shared, like the address cards and review rows already do.
+
+### Security: error responses never carry ids or internal error text
+
+- Every error message the API writes is cleaned when it is written: SQL and driver errors, dial and DNS errors, file paths, Go runtime text and upstream bodies are replaced by the code's default message (the original is logged with the request id), and entity ids are cut out. Codes and request ids are unchanged.
+- New `pkg/apierror` code registry with default messages, `FromCode` and `WithParams` (safe values only, under `details.params`), so clients choose their own words from the code.
+- New CI gate `tools/lint/errleak` (shrink-only baseline) stops new code from putting `err.Error()`, a lower error's text or an id into a response message, a stored status or an audit message.
+
+### Security: tool-reported secrets in exposure details are masked on the server
+
+- Exposure reads (list, detail, credential list) now replace the value of every details key that looks like a secret (`password`, `api_key`, `token`, `access_token`, `refresh_token`, `private_key`, `secret`, `secret_*`, `client_secret`, `credential`, and keys ending in `_password`, `_token`, `_secret`) with `********`, recursively through nested objects and arrays. `secret_masked` and `secret_fingerprint` stay readable.
+- The exposure detail view no longer has a "Reveal secrets" toggle, because the browser no longer receives the value. A leaked credential is still revealed through the audited reveal endpoint.
+- Detail copy buttons now have an accessible name.
+
+### Security: import mappings cannot set reserved fields or collapse identities
+
+- A mapping sets only allow-listed members. The organization, asset ownership and criticality, statuses, provenance, fingerprints, KEV and EPSS flags, branch and commit are reserved. Finding types are limited to vulnerability and misconfiguration.
+- A mapping that makes findings declares its identity members. A constant or near-constant identity (a member with a default, or a map with one output) is refused. A new version that changes the identity, including how any member the server keys findings on is mapped, needs explicit confirmation and is marked `identity_changed`. A finding type is checked for every value its spec can produce.
+- A mapping of another organization is unknown by name and by id.
+- XML samples and uploads are read without any document type declaration, so no entities and no external resources. CSV cells are kept as text, and CSV exports keep neutralising formula cells.
+- The ctis module is pinned to the commit that adds CSV and XML mapping inputs (ctis PR #76, merged on ctis main) until the next ctis release.
+
+### Security: a failed connection test no longer shows ids or the upstream error
+
+- A failed connection test (ticketing, SCM, notification channels) stores a code (`status_code`, one of the `INTEGRATION_*` codes) and a safe sentence instead of the raw error, which could name the integration by id, carry an internal address from a dial error or an upstream response body. The cause is logged with the integration's ids. Migration `003413` adds `integrations.status_code` (empty for existing rows); reads clean older stored texts the same way as error responses.
+- `POST /api/v1/integrations/test-credentials` answers with `code` on failure.
+
+### Security: sign-in id_tokens accept only RS256, PS256 or ES256, and Google sign-in requires a verified id_token
+
+- Every sign-in id_token (organization SSO, platform Microsoft and Google sign-in, the console identity provider) and every OIDC back-channel logout token must be signed with RS256, PS256 or ES256. RS384, RS512, PS384, PS512, HMAC and `none` are refused. CI workload tokens are unchanged.
+- "Sign in with Google" now takes the account's subject and verified email from the signature-verified id_token (Google's keys, our client id, Google's issuer) instead of the userinfo API, which now only supplies the name and picture and must describe the same account.
+- **Upgrade note:** an identity provider that signs id_tokens with RS384 or RS512 must be switched to RS256, PS256 or ES256. If `OAUTH_GOOGLE_SCOPES` was overridden, it must include `openid`.
+
+### Security: opengrep rule regexes are checked for catastrophic backtracking
+
+- Opengrep evaluates rule regexes with a backtracking engine, and the rule validator never looked at them, so a pattern such as `(a+)+$` in a custom rule could pin a sensor core. The validator (and the content-pack lint, which uses it) now checks every `pattern-regex`, `pattern-not-regex`, `metavariable-regex` and `fix-regex` field and rejects nested quantifiers that can match the same text, overlapping alternatives under a repeat, backreferences, and patterns over 1000 characters. The error names the field path and the line.
+
+### Security: outbound connection guard hardened
+
+- The outbound guard also refuses the IPv4-compatible IPv6 range (`::/96`).
+- A refused or unresolvable destination no longer names the resolved address or the server's resolver in the error an organization sees (connection tests, rule-source status).
+- Guarded HTTP clients refuse a redirect from https to http and stop after 5 redirects.
+- Rule-source fetches have no ssh, `git://` or `file://` transport registered at all; only the guarded https transport exists.
+- New architecture page: `docs/architecture/outbound-requests.md`.
+
+### Security: private egress ranges cannot be opened on an instance with open sign-up
+
+- `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` opens the named private ranges to every organization's integrations. With `SIGNUP_MODE=open` anyone can create an organization, so the API now refuses to start when both are set.
+- **Upgrade note:** an instance that sets both must unset the ranges, or use `SIGNUP_MODE=disabled` or `domain`.
+
+### Security: proxy pools never send validation probes or a disabled pool's sensors direct
+
+- Validate jobs (stage 4 re-checks) probe their target. A sensor whose jobs use a proxy pool now gets them only when it reports `egress.validate@1` (its validate executor sends the probes through the pool) next to `egress.upstream@1` and `net.confined@1`, and the job then carries the pool like a scan job. Before, such a sensor ran them from its own address, around the pool. Until a sensor version reports the capability, validate jobs wait for a sensor without a pool or one set to Direct.
+- A disabled pool that a sensor is assigned to no longer sends that sensor's scans direct: its jobs carry the pool with no endpoint, the sensor fails them closed, and no credential is handed out. A disabled organization default still turns proxies off for the sensors that inherit it.
+- The sensor drawer's network path now says when a pooled sensor receives no scan jobs (no proxy support reported), when its chosen pool is disabled (scans fail), and when its validation jobs wait.
+
+### Security: risk acceptance approval level per organization (all, high_and_above, off)
+
+- New setting `accept_approval` in the finding approval settings, next to the false-positive level `fp_approval`, with the same values: `all` (default; every accepted risk needs a second person, as before), `high_and_above` (a second person only for a material finding: critical or high, KEV, P0/P1, EPSS at or above the threshold, a validated exploit, a crown-jewel or internet-exposed asset) and `off` (one person).
+- When the level lets one person decide, a person's own accepted-risk request (`POST /api/v1/findings/{id}/approvals`, with `findings:approve`, the finding in scope, not the asset's owner) applies at once: marked `single_person`, audited `finding_approval.single_person_decided`, on the timeline with its level and end, still with a reason code, a note and an end within the organization's cap. Suppression rules, group exceptions, bulk status moves (by id or by filter), imports and automation (AI triage, VEX, ticket integrations) never accept a risk alone, whatever the level.
+- Lowering the level waits 24 hours (`pending_accept_approval_at`), raising is immediate; changes need an owner or administrator with `settings:write` and a recent re-authentication, are audited at high severity and the approvers are told (one notice names every lowering in the change).
+- Raising the false-positive or risk acceptance level puts the standing decisions one person made that the new level gives to a second person under review (`material_change_single_person`, change `level_raised`, with a timeline entry); the decisions stand until an approver looks again.
+- An API key or MCP access token never decides a false positive or accepted risk alone, even with `findings:approve`. The sole member's own approval is checked again (only active person, owner, risk acceptance level) in the transaction that writes it, and the only member of an organization never accepts a risk through the single-person path: the request waits for their self-approval (authenticator code, reason, end cut to 7, 45 or 90 days).
+- New `PATCH /api/v1/organization/settings/finding-approvals` (partial update; it replaces `PUT`, see the removal entry). `GET /api/v1/findings/{id}/approvals/policy` returns `accept_approval`, and `can_decide_alone` now also answers for `status=accepted`.
+- The daily approvals digest now lists the decisions one person made in the last day (false positives and accepted risks, including the sole member's own approvals) to every other approver who can see the finding.
+- A single-person acceptance gets the `material_change_single_person` review flag on a severity rise, a KEV listing or new evidence; the material-change controller ends it when the finding now needs a second person under the level in force.
+- **Migration** `003349_single_person_acceptance_review`: replaces the single-person review trigger functions so they cover accepted risks, and adds a partial index for the digest. Short locks only; nothing is rewritten.
+
+### Security: automation runs and personal dashboards follow the reader's permissions
+
+- A run that lists several discovered assets, and a run for a finished scan, no longer show a reader limited
+  to their data scope any asset outside it: the asset list is cut to the assets the reader may see and step
+  inputs, outputs and delivery payloads of such a run are removed. Readers who may see every listed asset get
+  the run unchanged. Applies to run detail, the run list and deliveries.
+- `GET /api/v1/me/dashboards/{id}/data`, `POST /api/v1/me/dashboards/{id}/refresh` and
+  `POST /api/v1/me/dashboards/widget-preview` now need `dashboard:read`, and a widget needs the permission of
+  what it counts (`findings:read` for finding metrics, `assets:read` for asset metrics). A widget the role may not
+  read is returned as unsupported with reason `forbidden` and no figure.
+- CI: a push to `develop` that adds a migration numbered at or below develop's highest before the push fails the
+  migration version check, as the merge queue already does.
+
+### Security: the routing preview no longer counts names outside the caller's data scope
+
+- The preview resolved dynamic selectors without hiding the inventory names the caller may not act on, so its "skipped: outside the data scope" warning revealed how many such names exist. It now drops them before counting, as the Quick Scan preview does.
+
+### Security: a command settles only its own organization's scan steps
+
+- A command result settles the scan run step its payload names. The run is now loaded for the command's tenant, so a command of one organization can no longer complete, fail or advance a step of another organization's run, whatever run id its payload carries. Expired and exhausted commands are bound the same way.
+- `POST /api/v1/commands` refuses a payload that sets `scan_run_id`, `scan_run_step_id` or `step_key` (400): only the platform sets them when it plans a run.
+
+### Security: approval requests mask scanner config secrets for readers
+
+- The scan approvals inbox masks credential-looking `scanner_config` values in a request's definition and in its before/after changes for callers without `scans:write`, as the scan read already does.
+
+### Security: a domain scope entry authorizes host names only
+
+- A domain entry such as `*.example.com` matched the raw text of a URL whose path, query or fragment ended in `.example.com` (for example `http://other.test/?q=.example.com`), so a target on any host passed the scope check, the claim-time recheck and the job signer. Domain entries now match host names only; a URL or host:port target is authorized through its host.
+- A network counts as internal (no scope entry needed) only when all of it lies inside an internal block: `0.0.0.0/0`, `10.0.0.0/1` and `::/0` now need a scope entry.
+- A host written as a decimal or hex number (`2852039166`, `0xa9fea9fe`) needs a scope entry, which no entry grants.
+- An IP address entry matches the same address in any spelling (`2001:DB8::1`, `::ffff:10.0.0.5`).
+
+### Security: only network scope entries authorize active probes
+
+- A scope entry of a type with no matcher (certificate, container, database, mobile app, cloud resource, network) was compared as wildcard text, so the pattern `*` covered every host and address for active probes, past the public-suffix and CIDR-size guardrails. A URL, API or website entry could carry a wildcard host and do the same. Only domain, address, range, CIDR, host, URL (with a concrete host) and repository entries authorize probes now, and every other type covers nothing. The deny list, exclusions and guardrails are unchanged and still run first.
+- The API refuses `*` in every entry type that has no wildcard matcher (`SCOPE_WILDCARD_NOT_ALLOWED`) and refuses new entries of the types that name no network location (`SCOPE_TARGET_TYPE_RETIRED`). URL entries need `http://`, `https://` or `*://` and a concrete host (a scheme-less entry with no `*` keeps working). A host entry is a name, `*.name` or one address (a CIDR or range as a host entry covers nothing; use a CIDR or range entry), with the public-suffix, deny-list and size checks. Stored entries the platform guardrails refuse (a public suffix, the deny list, an oversized range) cover nothing, and a deactivated legacy entry cannot be activated again.
+- Upgrade note: migration `scope_wildcard_entries` takes existing wildcard entries of those types out of effect (active becomes inactive, pending becomes rejected) and writes one `scope_target.deactivated` audit event per entry in its own tenant. There is no in-app notice: tell tenants whose scope used such entries (read the audit events, filter metadata trigger `scope_wildcard_entries`). Probes that relied on such an entry stop being authorized until a domain, address or network entry covers them. The migration changes data only; the previous API keeps working.
+- A URL entry written `*://host` covers that host under any scheme only; the value's own scheme replaces the `*`, so a URL that carries the entry text in its path or query no longer matches another host. Host rows written `**.example.com` are retired: use `*.example.com`.
+
+### Security: stored secrets no longer follow a changed destination
+
+- Notification channels: moving an email channel to another SMTP host or port (or weakening its TLS mode), or a Splunk channel to another collector host, now requires entering the credentials again; the old ones are never sent to the new destination, including by the test delivery after an update.
+- Console identity providers: changing the issuer (or the Entra directory) requires the client secret to be entered again. Tenant evidence storage: changing the provider, endpoint, bucket or region requires new access keys.
+- `integrations:manage` and `integrations:scm:write` are privileged permissions: giving them to a custom role needs a recent sign-in, binding a role that carries them to a team is for the owner, and an outside member holding them counts as above the member role. Built-in owner and admin roles are unchanged.
+- Lowering a finding false-positive or risk-acceptance approval level or the second-look share, relaxing the approval policy (including turning two-person approval off), and changing the approval backup contact email now require the organization owner; administrators can still raise levels. Lowering the scope widening approvals (`PUT /scope/settings`) is owner-only too; raising stays with approvers. Administrators and approvers are notified as before.
+- `PATCH /organization/members/{id}/access` needs a recent sign-in when it widens access (later end date, no end date, or re-enabling a member).
+- When the revoked-session lookup is unavailable, write requests are refused with 503 and read requests continue for two minutes, then are refused until the lookup recovers (previously every request continued until the token expired).
+
+### Security: the security gate works with its workflow pinned by a ruleset
+
+- The commit a `security-ack` label covers now comes from the head branch's push log (GitHub's own timestamps), not from a gate run started by the label: a ruleset-pinned gate workflow never starts on labels, so every acked pull request was blocked. Commit dates, workflow runs and check suites are never read; a push 60 seconds or less before the label, a missing log entry or an API error fails closed.
+- New `security-gate-label.yml` re-runs the head's gate run when `security-ack` is added or removed or the pull request is retargeted. It decides nothing; fork pull requests are re-run by hand.
+- The gate job no longer needs `actions: read`.
+- **Upgrade note:** after this is on `develop`, set the "Security gate from develop" organization ruleset back to active (see the guide); a pull request can then no longer change its own gate.
+
+### Security: loosening the pentest tracker limit or turning on auto-resolve needs a recent sign-in
+
+- `PATCH /api/v1/tenants/{tenant}/settings/pentest`: raising `ticket_max_tlp` (more sensitive campaign findings may reach Jira or GitHub Issues) or turning off `require_authorization_before_start` now needs step-up re-authentication (403 `STEP_UP_REQUIRED`), is audited at high severity and sends every owner and administrator an in-app notice. Tightening and other edits are unchanged.
+- `PUT /api/v1/organization/settings/retest`: turning `auto_resolve` on (auto-retest closes findings without a person) gets the same step-up, high audit and notice.
+- The web console's pentest page already uses the shared client, so it asks for the sign-in and retries.
+
+### Security: members can no longer change organization-wide scan configuration through the profile routes
+
+- `PUT /api/v1/scan-profiles/{id}` refused nothing about the pass/fail rule (quality gate), so a member could switch off the rule that blocks a merge, although the dedicated `PUT /api/v1/scan-profiles/{id}/quality-gate` route is owner or admin only. A member is now refused (403) when the request changes the rule or edits the organization's default profile. Sending the rule back unchanged, as the edit dialog does, still works.
+- `POST /api/v1/scan-profiles` with `is_default: true` made a member's new profile the organization's default, bypassing the owner or admin only `set-default` route. It is now refused for a member.
+- Opting the organization back in to shared sensors (`PUT /api/v1/organization/settings/shared-sensors` with `opt_out: false` after an opt-out) needs step-up re-authentication; opting out does not.
+- One rule for organization settings writes: the owner or administrator role on top of `settings:write`. The application access (MCP) policy, clients and access requests, the publisher approval, the discovery (EASM) settings and the license policy accepted `settings:write` alone, so a custom role could change them but no other section. A unit test now keeps every settings write route on this rule.
+- The web console hides the pass/fail rule editor, the default switch and the default profile's Edit action from members, and the MCP, discovery and license policy controls from custom roles without the admin role.
+
+### Security: requiring SSO needs a verified domain, and a lapsed domain alerts without lifting enforcement
+
+- Turning SSO enforcement on for an organization (platform console) is refused unless the organization has at least one domain verified for SSO by DNS. The check fails closed. An organization that already enforces SSO is not affected, and turning enforcement off is never blocked.
+- When a domain verified for SSO fails its periodic DNS re-check, the owners and administrators get an in-app alert (High). SSO enforcement deliberately stays on: lifting it would reopen password sign-in to whoever removed the DNS record.
+
+### Security: step-up on sensor and service-account deletes, audit-log export, scan approval and test-credential reveal
+
+- Deleting a sensor, deleting a service account, exporting the audit log, approving a held scan, and revealing or deleting a pentest campaign test credential now need a recent sign-in (`403 STEP_UP_REQUIRED`, then the verification dialog and one retry).
+- Revoking a sensor, an API key or a SCIM token stays one click: it only narrows access and is the incident path.
+- The web audit-log export asks for verification when the API requires it and retries once.
+- Behaviour change: these routes now refuse API-key callers (`403 STEP_UP_UNAVAILABLE`), as every step-up route does; scripts that deleted sensors or service accounts, approved scans or exported the audit log with an API key must use a signed-in session.
+
+### Security: step-up on secret-store and module writes
+
+- Creating, updating, rotating and deleting a stored secret (`/api/v1/secret-store`) and turning modules on or off (`PATCH /api/v1/tenants/{tenant}/settings/modules`, `POST .../settings/modules/reset`, `POST .../settings/modules/presets/{presetId}/apply`) now need a recent re-authentication (step-up), like the IP allowlist and the other security settings already did. The web console asks for it in place. Validate and preview stay without step-up.
+
+### Security: SCIM tokens expire and can be rotated
+
+- A new SCIM token needs `expires_in_days` (1 to 365); an expired token is refused with 401. `POST /api/v1/scim-tokens/{id}/rotate` (owner, step-up, audited) mints a replacement, shown once, and the old token keeps working for 24 hours so the identity provider can switch. The token list shows each token's expiry and an `expired` status. Migration 003300 adds `scim_tokens.expires_at`.
+- **Upgrade note:** existing SCIM tokens expire 90 days after the migration runs. Rotate them in Settings > Directory sync (SCIM) before then and paste the new token into the identity provider. A client that creates tokens through the API must now send `expires_in_days`.
+
+### Security: the audit row of a deleted suppression rule is no longer erased with the rule
+- `suppression_rule_audit.suppression_rule_id` was `ON DELETE CASCADE`, so the "deleted" row that records who deleted a rule was removed by the delete itself. The column is now nullable with `ON DELETE SET NULL` (migration 003379), and the row is written inside the delete's transaction (no row, no delete) with the rule id kept in its details.
+- A rule deletion is also recorded in the tenant audit log as `suppression_rule.deleted`.
+
+### Security: an organization's SMTP relay is bounded in time and limited to mail ports
+
+- The email notification channel bounds a whole SMTP session (connect, TLS, greeting, authentication, delivery) to 2 minutes, or the caller's deadline when earlier. A relay that accepts the connection and never answers no longer holds a delivery worker or a connection test.
+- An organization's SMTP relay must use port 25, 465, 587 or 2525. Create and update refuse other ports; a relay stored on another port is not dialed (notifications fail with a clear error, and transactional mail uses the platform relay instead).
+- The platform relay set in the console is not restricted.
+
+### Security: discarding a ticket mapping draft is audited
+
+- `DELETE /api/v1/integrations/ticket-mappings/{mapping_id}/draft` now writes a `ticket_mapping.updated` audit row (actor, the discarded draft as "before", the published version as "after"), like saving the draft does. Discarding when there is no draft changes nothing and writes no row.
+
+### Security: notification channels never follow redirects
+
+- Slack, Teams, Telegram, Splunk HEC and generic webhook deliveries refuse a redirect (a 3xx answer is a failed delivery) instead of following up to 10 hops, so the event body never reaches a host the channel was not configured with. The SSRF guard on every dial is unchanged.
+
+### Security: generic webhooks are signed (Standard Webhooks)
+
+- Every generic webhook delivery carries `webhook-id` (the idempotency key, stable across retries), `webhook-timestamp` and `webhook-signature: v1,<base64 HMAC-SHA256 over id.timestamp.body>`. A receiver can prove the delivery came from this instance, was not altered and is not a replay.
+- Each webhook integration has its own `whsec_` secret, generated by the platform with `POST /api/v1/integrations/{id}/signing-secret/rotate` (integrations:manage plus step-up, audited). It is shown once, stored encrypted, never returned by a read and re-encrypted by `cmd/rekey`. A rotation keeps the replaced secret signing for 24 hours (two signatures). `GET /api/v1/integrations/{id}/signing-secret` gives the status, never the secret.
+- A stored secret that cannot be decrypted fails the delivery instead of sending it unsigned. Test deliveries are signed too.
+- **Upgrade note:** existing webhook integrations send unsigned deliveries until their secret is first rotated; rotate it and configure the receiver to verify (verification snippets in the user docs).
+
+### Behaviour change: an asset without an open finding scores 0 in every risk model
+
+- The weighted risk models (`multiply`, `amplify_headroom`, used by the legacy and industry presets and by custom settings) no longer score an asset that has no open, non-informational finding. Exposure, criticality and data context scale the risk of findings; on their own they are not risk. Such an asset now reads "No open risk", as in the default likelihood-impact model. With open findings the weighted formula is unchanged.
+- `risk_score_pending` (the clock next to a score) is true only when a real input change is queued. The daily and start-up reconcile no longer shows every asset as pending for ten minutes.
+- The asset page labels `risk_scored_at` "Score last changed": it moves only when the score changes.
+
+### Behaviour change: an asset goes stale on its last sighting only
+
+- The lifecycle worker's clock is the asset's last sighting. It also read `updated_at`, which the table's trigger moves on every write, including risk rescores, the scoring version stamp and program links, so assets with open findings never went stale and a scoring version publish restarted the countdown for the whole organization. Expect a one-time batch of stale transitions on the first run after the upgrade (at most 50,000 per organization per run, as before). Reactivating an asset by hand still holds it active for the grace period, and a manual status still wins.
+
+### Behaviour change: automation permissions renamed
+
+- Migration 003388 (`automations_permissions`) renames `findings:workflows:read` and `findings:workflows:write` to `automations:read` and `automations:write` in roles, role-template snapshots and API key scopes, with no aliases. It grants `automations:publish` to every role and API key that held write. The security-analyst and vulnerability-manager role templates move to version 3, whose only change is the rename.
+- **Upgrade note:** stop the old API before migrating, because it checks the old ids. API clients that request scopes by id must use the new ids.
+
+### Behaviour change: automations have versions and start in simulate
+
+- Publishing an automation (`POST /api/v1/workflows/{id}/publish`) stores its draft as an immutable version and makes it live. Live runs execute the published version, pinned when the run is created, so editing the draft never changes a live automation or a run already created. New automations start in `simulate`: their runs execute the draft and record what each action or notification would do, without doing it. `PUT /api/v1/workflows/{id}/mode {"mode":"simulate"}` switches back. `GET /api/v1/workflows/{id}/versions` lists the versions, and `.../versions/{version_id}/rollback` publishes an older version again as a new one.
+- Editing an automation's draft no longer makes the editor its owner. Publishing or switching it on does, and live runs act as that person.
+- `GET /api/v1/workflows/{id}` adds `mode`, `risk_class`, `draft_changed`, `published_version` and `pending_version`. Runs add `mode` and `version_id`.
+- Migration 003374 (`automation_versions`) makes every automation that is switched on version 1, published by its owner, live, so it keeps acting. Automations that are off stay in simulate. Run steps no longer reference the draft's nodes, so replacing a draft keeps earlier runs' step history.
+- Publishing, rolling back, switching a live automation on and starting a manual run of it need the permissions of the steps that actually run (the published version). Publishing checks the definition it stores and is one transaction; a rollback validates the graph. Migration 003374 adds the mode checks `NOT VALID` (validated by 003375) and an index on `automation_runs.version_id`; the API stores the canonical digest of the version-1 rows at startup.
+
+### Behaviour change: a finding seen again after a fix reopens by what it was
+
+- A finding closed as fixed that a scan reports again reopens on the same record as `new` when no one had triaged it, and as `confirmed` when someone had (it was always `confirmed` before).
+- A fix a retest or a review verified that is seen again is a "verified fix regressed": the timeline and the announcement say so.
+- A finding the platform closed on its own (no person, nothing verified) and a scan reports again within 7 days is "seen again": it reopens, but it is not counted as a regression, gets no new SLA clock and is not announced. Findings that flap between found and not found no longer inflate the regression count.
+- A regression is now also told in the app to the finding's assignee and to its watchers who can read the finding.
+- A scan that reports a duplicate again now counts as a sighting of the finding it was folded into: that finding is no longer auto-resolved while its duplicate is still reported, and it reopens if it was closed.
+
+### Behaviour change: Findings search matches title, file path, rule id, CVE id and asset name
+
+- `q` on `GET /findings` (and its stats, groups and export) matches the title, file path and rule id
+  (contains), the CVE id (exact, any of the finding's CVEs) and the asset name. It no longer matches the
+  description: use the new opt-in filter `description_contains=…`.
+- `GET /meta/filters/findings` lists the searched fields in `contract.search_fields`.
+- The findings count, stats and SLA breakdown now have the 5 s statement timeout the list already had; a
+  read that runs out of time answers `503 QUERY_TIMEOUT` instead of holding a connection. `GET /findings`
+  is under the heavy-read rate limiter like its stats and groups.
+- Migrations `003319`–`003322` add trigram (GIN `gin_trgm_ops`) indexes on `findings.title`,
+  `findings.file_path`, `findings.rule_id` and `assets.name`. Each is built `CONCURRENTLY` (no write lock);
+  on a large database the deploy's migrate step takes as long as the builds.
+
+### Behaviour change: the findings work views leave informational findings out by default
+
+- The quick views Active, My queue and SLA breached now add `informational=false` unless the member's preference (`findings_informational` in `PUT /api/v1/users/me/preferences`) or the organization's default (`PATCH /api/v1/organization/settings/finding-views`, owner or administrator, audited) includes them. Needs triage always leaves them out. All findings, Closed and API calls without the filter are unchanged.
+- New list filter `informational=true|false`. `GET /findings/quick-views` returns the resolved choice as `include_informational`, and `informational_hidden` (how many it leaves out) on each view that hides them.
+
+### Behaviour change: CI results and file imports answer 202 and are applied by the ingest worker
+
+- `POST /api/v1/ci/runs/{id}/results` and a committed `POST /api/v1/findings/imports` no longer apply the report inside the request. They store it (sealed per tenant with a key derived from `APP_ENCRYPTION_KEY`, deleted once applied) and answer **202**: a CI upload with `upload_id` and `Location: /api/v1/ci/runs/{id}/results/{report_id}`, an import with its receipt (`status: queued`) and `Location: /api/v1/findings/imports/{id}`. The ingest worker applies them from the existing `ingest_jobs` queue. Large reports no longer hit the request timeout, and many concurrent uploads no longer compete for the API's database connections.
+- New reads: `GET /api/v1/ci/runs/{id}/results/{report_id}?wait=10` (run token) and `GET /api/v1/findings/imports/{id}/result?wait=10` (`findings:read`, visible as the receipt) answer `queued`, `processing`, `applied` (with the counts, the CI job's `known` list, or an import's per-file results) or `failed` with a fixed `error_code`.
+- The CI gate waits for the run's uploads: `POST /api/v1/ci/runs/{id}/evaluate` waits up to 10 s, then answers `503 INGEST_PENDING` with `Retry-After` while an upload is still being applied; a verdict is never saved while one is pending. An upload that could not be applied fails the run (`upload_not_applied`).
+- The same body uploaded to a CI run again is the same upload; the same files from the same caller within 10 minutes, without an `Idempotency-Key`, are the same import. The CI upload's `Idempotency-Key` now uses the durable store (24 hours; 503 when the store is unavailable) instead of the cache.
+- A preview (`dry_run=true`) still answers 200 in the request.
+- The worker re-reads the uploader's membership before importing a queued file: a member removed or suspended while the upload waited is refused (`uploader_not_permitted`), a demoted administrator imports with the member's data scope.
+- Migration `003362_ingest_async_uploads`: `ingest_jobs.kind`, `source_ref`, `submitted_by`, `public_error`; table `ingest_payloads`; receipt status `queued`.
+- **Upgrade note:** API clients that read the counts from the `201` body of these two endpoints must read the `Location` (or the new result reads) instead. `openctem-ci` keeps working with one command: its verdict request retries on `503 INGEST_PENDING`; until it is updated, the decided results it hides from its own output (`known`) are empty, so a job shows all its results (the verdict is unaffected). Deploy the API and its workers together with the migration; uploads accepted by an old API process during the deploy window finish as before.
+
+### Behaviour change: An enabled proxy pool must hold a proxy
+
+- The API refuses to create an enabled pool with no proxy, to enable a pool that has none, and to empty the list of an enabled pool (error code `PROXY_POOL_NEEDS_ENDPOINT`, HTTP 400). A sensor on such a pool received no scan jobs, because scans never fall back to a direct connection. Disable the pool first to empty its list. Pools that are already enabled and empty can still be renamed.
+- The pool dialog blocks Save in that state with the same message as the default-pool card.
+- The sensor's Network path shows an error with Retry (never a false "Inherit") when its data fails to load, a skeleton while loading, asks before going Direct while the organization default is on, and marks disabled pools.
+- Delete is disabled with a reason while sensors use a pool; "1 sensor assigned" is singular; on-screen changes no longer toast; the pool strategy and network path use the shared select.
+
+### Behaviour change: active scans of a wildcard or asset group take only names known to resolve
+
+- A single-scanner active scan (nuclei, httpx, port scans) of `*.example.com` or of an asset group now leaves out the names the platform has never seen resolving, as it already did for names whose last DNS answer is over a week old. They are listed as skipped (`not_resolving`), not as failures; the asset's DNS coverage keeps checking them. Typed names and passive tools are unchanged.
+- The scan's target options gain `include_unresolved` to hand those names to the sensor anyway.
+
+### Behaviour change: email notification channels on a non-mail port stop delivering
+
+- **Upgrade note:** an organization whose email channel uses a port other than 25, 465, 587 or 2525 must change it to one of these.
+
+### Behaviour change: generic webhooks carry the real event type
+
+- `event_type` in a generic webhook body is the event's catalogue type (`new_finding`, `sensor.offline`, ...) instead of always `notification`; a test delivery is `test`. New fields: `event_version` (payload version of the type, 1 today), `idempotency_key` (same value as the `Idempotency-Key` header, stable across retries) and `occurred_at`.
+- The Splunk HEC event's `event_type` is the catalog type as well.
+- **Upgrade note:** a receiver that matched `event_type == "notification"` must match the catalogue types instead.
+
+### Removed: automation types that never ran
+
+- The `schedule`, `finding_age`, `finding_updated` and `webhook` triggers, the `assign_team`, `update_priority`, `run_script`, `http_request` and `trigger_pipeline` actions and the `pagerduty` notification are no longer types. Nothing fired these triggers, and every run of these actions failed or was refused. A node that names one is refused with 400 `UNSUPPORTED_WORKFLOW_FEATURE`.
+- Migration 003361 (`automations_removed_types`) switches off every automation that still holds such a node and records why (`automations.disabled_reason = uses_removed_type`, shown on `GET /api/v1/workflows/{id}`). No automation is deleted. Saving a graph of known types clears the reason, and the automation can then be switched on again. The stored headers of `http_request` nodes are dropped, because they often held credentials in plain config.
+- The unused `configs/workflow-templates/auto-remediation.json` template is removed.
+
+### Removed: template sources, lazy sync at scan trigger and synced template rows
+
+- `/api/v1/template-sources` is gone, and a scan no longer syncs sources when it starts. s3 and http sources, ssh git URLs and the `credential_id` binding to the secret store are removed.
+- **Upgrade note:** the migration carries existing https git sources over (nuclei and semgrep kinds) and drops the others, including git sources of the secret-scanning kinds (gitleaks and betterleaks rules): list them before upgrading if you use any (`SELECT id, tenant_id, name, git_config->>'url' AS url FROM template_sources WHERE source_type = 'git' AND template_type IN ('gitleaks', 'betterleaks')`) their already synced templates stay in the library, but the repositories are no longer synced; enter each carried-over source's credential again with `PUT /api/v1/content-sources/{id}/credential`. Templates a sync wrote stay in the template library as uploaded templates. The migration renames and drops tables: stop the API during the upgrade. Scans do not use snapshots yet; the console page follows.
+
+### Removed: PUT on the finding approval settings
+
+- `PUT /api/v1/organization/settings/finding-approvals` is removed: the settings are a partial update and use `PATCH` (same body, same gate: owner or administrator, `settings:write`, recent re-authentication). The web console's Settings > Finding approvals page now saves with `PATCH`.
+- **Upgrade note:** an API client that changed these settings with `PUT` sends the same body with `PATCH`.
+
+### Removed: unused web server actions
+
+- Removed the unused `refreshTokenAction`, `logoutAction`, `handleOAuthCallback`, `getCurrentUser` and `isAuthenticated` server actions and the unused `useAuth` hook; sign-in, refresh and sign-out go through the existing route handlers and local-auth actions.
+
+### Added: Assets › Needs attention
+
+- A new Assets tab, Needs attention, gathers the inventory's data-quality work: assets with no owner, with no criticality set, or with no successful scan in 30 days, each listed under that filter with the inventory's bulk actions (set owner, set criticality, tags) and a link to the same filter in the inventory.
+- Relationship suggestions (`/assets/suggestions`) and possible duplicates (`/assets/duplicates`) are reasons of Needs attention; their addresses are unchanged. The Suggestions tab is gone from the Assets tabs, and the duplicates page can now be reached from them.
+
+### Added: attack paths to one asset
+
+- `GET /api/v1/attack-surface/attack-paths/{id}` returns the routes from internet-facing entry points to an asset, the finding that enables each step with its weight and basis (EPSS, KEV, severity or assumed), the likelihood of each route as the product of its step weights, and the choke points ranked by the number of routes they cut.
+- Gated by `assets:read` and the attack surface module. An asset outside the caller's data scope or tenant answers 404; steps outside the scope are hidden, their findings are not read and the likelihood of a route through them is withheld.
+
+### Added: nightly authorization matrix suite
+
+- `api/tests/authzmatrix` sends every API route as every kind of principal (owner, admin, member, viewer, custom roles, a data-scoped member, a suspended member, API keys, a sensor, no credential) in two seeded organizations, with its own and with the other organization's ids, and compares the answer with the route's gate. It also runs scenario tests of the role-management API. Runs nightly (`api-authz-matrix.yml`) and locally with `make -C api authz-matrix`.
+
+### Added: the automation builder shows simulate and live, preview, validate and the run trace
+
+- The Automations canvas builds its palette and type pickers from `GET /api/v1/workflows/catalog` only; a step the viewer lacks the permission for is listed with that permission, and a stored step of a removed type shows as "Removed type".
+- The builder header shows the mode, the published version and unpublished changes, switches to simulate in one click and goes live through a "Before going live" check (risk class, step-up, a second publisher for high-risk rules). Another publisher approves a pending version; versions can be rolled back.
+- Preview puts per-step counts on the canvas and lists what would be sent; Validate lists problems and selects the step each one names.
+- A run opens its trace: per-step counts with skipped reasons, deliveries ("Never sent: simulate"), retention, and Continue or Cancel for a run paused at the change cap.
+- Run status is spelled `canceled`.
+
+### Added: preview and validate an automation draft
+
+- `POST /api/v1/workflows/{id}/preview` runs a draft (from the body, or the saved one) against the latest 1 to 100 subjects that the caller may read. It uses the read-only simulate evaluator and returns per-step counts and what the draft would send. Nothing is stored or sent. Limited to one call per 10 seconds per user.
+- `POST /api/v1/workflows/{id}/verify` returns blocking problems (unsupported type, graph error, invalid condition or trigger options, missing setting, missing integration, a permission the caller lacks) and warnings (unknown condition field, not simulated since the last edit). Limited to 10 calls per 10 seconds per user.
+
+### Added: automation catalog
+
+- `GET /api/v1/workflows/catalog` (`findings:workflows:read`) lists the trigger, action and notification types the engine runs, with the permission each needs and whether the caller holds it. The console builds its palette from it.
+
+### Added: change cap per automation run
+
+- A live run makes at most `max_changes_per_run` changes: 250 by default, at most 1,000, set on the automation and pinned by each version. A cap above 250 makes the automation high risk. At the cap the run pauses (`status: paused`, `pause_reason: blast_radius`) until a publisher lets it continue (`POST /api/v1/workflow-runs/{id}/approve`, which answers with the run, redacted to the approver's data scope like `GET`).
+
+### Added: automation simulate engine, run trace and delivery log
+
+- A simulate run evaluates each action and notification step with a read-only evaluator that has no outbound client. It works out what the step would do (tags it would add, the status it would set, the ticket or message it would send) and changes nothing. A test proves that a fake outside server receives no request from a simulate run.
+- Each run step records `in_count`, `out_count` and per-reason `skipped` counts. Each notification and ticket step records a delivery: what it sent in a live run, or would have sent in a simulate run, which is never sent. The payload keeps an allow-list of fields only, never a body, headers or a secret. `GET /api/v1/workflow-runs/{id}` returns them with `retained_until`, and `GET /api/v1/workflows/{id}/trace` sums them over a window.
+- Simulate runs are kept 30 days and live runs 180 days. The new `automation-run-retention` controller deletes older ones. Migration 003351 (`automation_run_trace`) adds the columns and the `automation_deliveries` table.
+
+### Added: duplicate candidates with "known since" for triage
+
+- `GET /api/v1/findings/{id}/duplicate-candidates` (`findings:triage`) suggests up to 20 findings that may describe the same issue: same asset or same host, sharing a CWE, a CVE or the vulnerable path, any source and status. Each carries its first detection; for a bug-bounty report the answer says whether the issue was known before the report was submitted (RFC-121).
+- Candidates come only from the caller's data scope (and the pentest member rule); the finding itself must be in scope, and another tenant's id is 404. Nothing is merged automatically.
+
+### Added: find a package by pasting its package URL
+
+- The Components search accepts a package URL such as `pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1`. It matches that package exactly (not every package whose name contains the text), spelled the way the inventory stores it, and a version in it narrows the counts to the assets running that version. Plain text still searches names and namespaces. Counts stay limited to the assets you can see.
+
+### Added: rule sources the platform syncs, with snapshots, promotion and rollback
+
+- Template sources become rule sources (`/api/v1/content-sources`, migration `003403_content_sources`). The platform is the only fetcher: a git repository over https (branch, tag or commit) is synced on a schedule (default hourly, floor 5 minutes), on Sync now, or from a webhook (`POST /hooks/content-sources/{id}`, secret per source), into an immutable, signed snapshot with its commit, file index, rule ids and a diff against the current snapshot.
+- New snapshots are candidates. Under the `auto` policy they are promoted when every check passes (no tier escalation, no license change, no mass removal, no duplicate rule ids); a candidate that raises the tier always needs review, and under review no member who changed the configuration the snapshot was synced from can promote it (four-eyes, new permission `scans:sources:approve`, owner and admin; the same permission is needed to switch review off). Sensors receive a snapshot only while it is its source's current one. Each source keeps a current and a previous snapshot; rollback swaps them.
+- Test fetches, lints and counts a configuration without saving. The fetch credential is write-only, encrypted and bound to the source and its host (a new host clears it); the git username is configurable and defaults by token type, so GitLab deploy tokens work. A CA bundle can be set per source.
+- Platform sources (no organization) are offered to organizations as a read-only projection without URL, credential, CA, schedule or error text.
+- The platform fetches at most 3 repositories at once per server process (Test and sync share them), refuses a fetch when the temporary directory is low on disk, claims due sources one at a time fairly across organizations, and decides access to private network hosts per organization at connection time.
+- New limit keys `content_sources`, `content_storage_mb`, `content_sync_floor_minutes`, `content_snapshot_max_mb` and features `content_sources.webhook`, `content_sources.review_policy`, `content_sources.private_git` (none applies by default; they are valid self-service starting limits). Rule source snapshot bytes count inside the 2 GiB content pack quota.
+
+### Added: copy linter and a visual regression check for the key pages
+
+- Web CI refuses added or changed English strings that use marketing words, "successfully", an exclamation mark, "not just", an em dash aside, a middle-dot separator or a Title Case label (`web/scripts/check-copy.mjs`, also in `make precheck`). `node scripts/check-copy.mjs --all` lists the existing strings to clean up.
+- A new workflow takes screenshots of the key pages at desktop and phone width, light and dark, and compares them with committed baselines within 2% (`web-visual.yml`). It runs on the `run-visual` label, nightly on develop and on demand, so pull request CI stays as fast as before.
+
+### Added: exposure flow and intake dashboard metrics
+
+- `exposure.flow`: one figure set for a window: actionable findings by priority class, open findings by severity, past SLA, in progress, fixed, accepted and false positive in the window, the five CTEM stages and, for an organization read, the intake. Every figure carries the list it counts and equals it for the same viewer.
+- `ingest.intake`: what each source (source group and tool) sent in the window from its receipts, its latest receipt, its usual interval and health (failed, stale, ok), the noise split (new or reopened, merged, suppressed, not stored, summing to received) and the false positives of the window. Receipts are organization figures: a personal read with a data scope gets no intake (`organization_only`), never organization volumes.
+- `GET /api/v1/findings/imports` takes `origin`, `tool` and `since`, and returns the `totals` of every receipt the filter keeps, so a dashboard source figure equals the receipt list it opens.
+
+### Added: richer Overview and CTEM dashboards, discovery coverage metric
+
+- New catalog metric `coverage.discovery`: the share of ledger-tracked assets in the reader's scope with a successful discovery run in the coverage window. Blocked or failed runs never count, and with nothing tracked it shows as not measured, never 0 %. The figure opens the uncovered assets.
+- The Overview and CTEM templates now carry the figure row (open P0-P1, KEV open, within SLA, time to fix median and p90), discovery coverage, priority over time, new vs fixed, the age heatmap, fix next, the CTEM loop and attack paths to crown jewels.
+- People whose dashboard is an older copy of either template see a one-time offer naming the new widgets. They can add them to that dashboard, or switch to a fresh copy under a new name; nothing changes until they choose. This replaces the earlier CTEM loop offer.
+
+### Added: capability steps offer the organization's declared tools
+
+- A workflow step that names a capability (for example `vuln.templates`) now also considers the tools the organization's own sensors declare with a valid tool contract and that implement that capability's major version, after the catalog's implementations (so existing workflows keep their tool), or in the order a step's `prefer_tools` lists them. Before, such a tool ran only when a step pinned it by name, and then without its capability.
+- The step's standard params reach the tool under its own config keys, read from its descriptor (`implements[].params`, kept on the catalog row as `metadata.params`); a tool that does not take a param the step sets is skipped with the reason. Its command names the capability, so the sensor checks the tool implements it and checks its output against it, and the step chains like a catalog step. A pinned declared tool runs its step's capability the same way.
+- Nothing is granted by being picked: an operator-installed tool still runs as T2, and only the step's own organization's tools are read. Rows projected before this change pick up their param mapping on the sensor's next manifest.
+
+### Added: exposures that disappear and return alert again as "reappeared"
+
+- An active EASM exposure that is not seen for longer than the organization's alert fingerprint lifetime and is then seen again is announced again, with `reason` `reappeared`. The lifetime is `reappear_after_days` in `/easm/settings` (7 to 365, default 30; 0 restores the default). Each organization has its own lifetime and its own history; resolved and accepted exposures stay quiet.
+
+### Added: EASM recon workflows with a depth that changes what runs
+
+- New system workflows Subdomains, Standard recon, Web and Deep recon, and Passive discovery joins the set. Discover, Discover + Vuln and Web app are superseded and deactivated (scans made from them keep working).
+- A workflow scan has a depth: Passive runs only steps that send nothing to the targets, Standard is the default, Deep adds steps and raises params and caps. A step's run policy sets the depth it starts at, its standard params and target cap per depth, and whether it waits for a tool.
+- Steps whose tool is not installed yet (screenshots, service detection, takeover check) are skipped with the reason instead of failing the run.
+- Workflow setting `continue_on_failed_dependency`: dependents of a failed step still run on what exists.
+- The workflow preview takes the depth and shows skipped steps and the params each step runs with.
+- Migration `easm_workflow_depth_templates` adds `scans.depth` (default `standard`) and `scan_workflow_steps.run_policy` (default `{}`); existing scans and workflows behave as before.
+
+### Added: why a finding is one finding
+
+- `GET /api/v1/findings/{id}/identity` (`findings:read`) explains a finding's identity: the recipe of its key (`v2/sca`, `v1/ingest`, `manual/v1`, `pentest/v1`, …), the names of the fields the key was built from, the tools that reported it, and the duplicates merged into it. The finding must be in the caller's data scope (404 otherwise); merged duplicates on assets outside the caller's scope are not listed or counted. Field names only: no key, fingerprint or field value is returned.
+- The finding detail (overview tab and drawer) shows it as "Why this is one finding", in English and Vietnamese.
+- Migration `003351_findings_identity_explain` adds the nullable columns `findings.identity_algo` and `findings.identity_fields` (no table rewrite, no backfill). Every keying now records them; rows keyed earlier are explained from the stored identity tuple, or shown as a legacy key.
+
+### Added: decide a finding's pending request on the finding page
+
+- An approver approves (with the sign-in confirmation) or rejects (with a reason) a pending false-positive or risk-acceptance request directly on the finding page and in the drawer, with the same dialogs and buttons as My Work. The requester still cannot decide their own request.
+- The finding page shows what changed since the request ("now in CISA KEV") in the danger colour: `GET /findings/{id}/approvals` carries `changed_since_request` for pending requests, with the same rule as the review queue.
+
+### Added: same-issue links between findings of different tools
+
+- Two SAST engines that flag the same lines of a file with the same weakness (CWE), and one secret value found in several files or repositories, are now linked as the same issue: the finding page shows the group ("Same issue in other tools") and the dashboard facts count it once per asset and state. Each finding keeps its own status, severity, SLA, ticket, task and approvals; nothing is merged.
+- `GET /api/v1/findings/{id}/issue-links` (`findings:read`) lists the group members the caller may see; `DELETE /api/v1/findings/{id}/issue-links/{other}` (`findings:triage`) takes a finding out of a group, records it on both timelines and in the audit log (`finding.issue_unlinked`), and the pair is never linked again automatically.
+- Migration `003366_finding_issue_links`: tables `finding_link_keys` and `finding_issue_links`, the timeline entry types `issue_linked` and `issue_unlinked`, and the dashboard fact builder counting a group once.
+- **Upgrade note:** to link findings stored before this release, run `refingerprint -links` (dry run) and then `refingerprint -links -apply` in the API container. New scans link on their own.
+
+### Added: Bulk change of every finding a filter selects
+
+- `POST /findings/bulk/by-filter/status` and `POST /findings/bulk/by-filter/assignee` apply a change to every finding the
+  list's filter selects, recompiled on the server in the caller's data scope. `expected_count` must match (409
+  `SELECTION_CHANGED` with the new count otherwise). The cap is 10,000 findings. Up to 1,000 run in the request; more
+  run in the background as an operation.
+- False positive, accepted risk and duplicate are never set by filter. A closing status needs step-up and a note.
+- Each organization may change 20,000 findings by filter per hour (checked under a per-tenant lock, so concurrent
+  requests cannot overrun it). Each person may have one operation running.
+- Every run writes summary audit rows, and every changed finding gets its own row.
+- `GET /operations/{id}` reads an operation (creator only). New table `operations`, migration `003324_operations`
+  (new and empty; no change to existing tables).
+
+### Added: Add filter and filter chips on the findings list
+
+- Every active filter on the Findings list is a chip, including the ones set in the filter panel. A chip's x removes only that filter.
+- Add filter (or press `f`) opens a searchable list of every filter field the API offers, grouped as Exploitation, Finding, Asset and Work, and an editor for the field: choices, an operator with a number, quick date ranges, yes or no, empty, or a member picker. Fields the API adds later appear without a console update.
+- Filters from the open saved view show first with a lock and cannot be removed from the list.
+- A filter in a shared link that no field knows is shown by name with a remove button instead of being ignored; a link the API refuses explains which filter and offers to remove it.
+- Asset-derived filters (asset tag, criticality, group, owner) are only offered to people who can read assets.
+
+### Added: findings list row cells for exploitation, asset facts and duplicates
+
+- The Exploit signals column shows EPSS as a short bar with its percentage on every row (a dash when there is no score), then the KEV and Ransomware chips.
+- The Asset cell marks internet-facing assets with a globe and crown jewels with a crown (icons with a tooltip and an accessible name). `GET /findings` rows now carry `asset.is_internet_accessible` (exposure public or reachable from the internet, the product's one rule) and `asset.is_crown_jewel`; the single finding uses the same internet-facing rule.
+- A "+2 dup" chip beside the title counts the findings marked as duplicates of this one. `GET /findings` rows carry `duplicates_marked`, compiled as the caller: a duplicate on an asset outside the caller's data scope, in a private program or a pentest campaign they are not in is neither shown nor counted.
+- P3 and closed (fixed, false positive, accepted, duplicate) rows and phone cards are dimmed by colour (`--fg-dim`, 4.5:1), never by opacity.
+
+### Added: triage mode add to task, retest, undo, receipt and AI suggestion
+
+- Triage mode gains add to task (`m`, with the move offer when the finding is already in an active task), retest (`r`) and undo (`u`, up to 10 decisions). Undo uses the inverse request with its own permission check: a sent false-positive or acceptance request is canceled (kept on record), an assignment returns to the previous assignee, and a decision the lifecycle cannot reverse (such as a confirm) says so.
+- Exit after decisions shows the session's receipt first.
+- With the AI triage module, the finding's latest AI triage shows as an advisory card. "Apply suggestion" only fills the false-positive request form; a person sends it.
+
+### Added: findings triage mode
+
+- The findings list's Triage button (and the `t` key) opens triage mode at `/findings/triage`: the Needs triage queue in priority order, one finding at a time, with its position ("3 of 110"), previous and next (`k` / `j`), and Exit (`Esc`) back to the list with its filters. It replaces opening the first finding of the current page in the drawer, which lost the list's filters and stopped at the end of the page.
+- One key per decision, each also a visible button: confirm (`c`), request false positive (`f`), request risk acceptance (`a`), assign (`o`), skip (`s`), evidence (`e`), full page (`Enter`), all keys (`?`). A decision moves on by itself.
+- The queue is read through the findings list API, so the caller's data scope applies to every window. Decisions use the finding page's endpoints with the shown version: a finding someone else changed is reloaded (412) or passed over with a note, never overwritten. False positive and risk acceptance stay approval requests.
+
+### Added: import mappings turn any CSV, JSON or XML export into findings
+
+- An organization can save import mappings: documents in the CTIS mapping language (`openctem.io/mapping/v1`) that convert a CSV, JSON, JSON Lines or XML file into CTIS with no code. They live under `/api/v1/import-mappings`, with immutable versions, verify (validate a document), a preview on a sample of at most 5 MiB that stores nothing, and three built-in templates (generic findings CSV, generic findings JSON, JUnit-style XML). RFC-126, migration `003360_import_mappings`.
+- An upload names a mapping with `format=mapping:<name or id>[@<version>]` on `POST /api/v1/findings/imports` and on the CI upload `POST /api/v1/ci/runs/{id}/results`. The import is always partial coverage: it closes nothing, and `coverage=full` is refused with it. It is recorded as tool and source `mapped:<name>`, and the receipt format is `mapping:<name>@<n>`.
+- Reading mappings needs `integrations:read` or `assets:import`. Writing, validating and previewing need `integrations:manage`, and deleting also needs step-up. Every write is audited (`import_mapping.created`, `.version_created`, `.updated`, `.deleted`). Preview is rate-limited per organization.
+
+### Added: import mappings editor in the web console
+
+- Settings › Integrations › Import mappings lists the organization's import mappings and opens an editor with three panes: a sample file and how it is read (input type, CSV delimiter and lines before the header, the record path for JSON and XML), a table of CTIS fields with their source column, constant or template, transforms and identity checkbox (or the raw JSON document, kept in step with the table), and a live preview of the findings and assets the draft makes from the sample with their identity keys, identity collisions, problems and unused columns. Nothing is stored by the preview.
+- A new mapping starts from a template or a blank CSV mapping. Saving an existing one adds a version with a note; when the version identifies findings differently, the editor explains that findings imported with earlier versions will not match new ones (an operator can re-key them with the refingerprint tool) and saves only after confirmation. Every version can be viewed and loaded back into the editor.
+- Findings › Import results offers the saved mappings as formats (`format=mapping:<name>`) to people who may list them (`integrations:read` or `assets:import`); a mapped import hides the Qualys KnowledgeBase field.
+- Reading needs `integrations:read`; creating, saving versions, renaming, deleting, checking and previewing need `integrations:manage` and are hidden without it. The API remains the authority on every permission.
+
+### Added: every reported item has a disposition on its receipt, with the policy and version that decided it
+
+- Receipts record each reported item: `created`, `still_detected`, `reopened`, `closed` and now `suppressed` (with the suppression rule and the policy version) as finding actions, and the items that did not become findings as `out_of_scope` (scope exclusion, uploader's scope), `rejected` (no target asset) or `quarantined` (sensor quarantine), with a fixed reason code. `filtered` and `held` are reserved for ingest filters and the review gate.
+- New read `GET /api/v1/findings/imports/{id}/items` (`findings:read`; items on assets outside the caller's scope are hidden, items without an asset are shown only to unrestricted callers); the receipt detail counts items per disposition; the actions list carries `policy`, `policy_id` and `policy_version`. No evidence is kept for an item.
+- A suppressed new finding is counted as suppressed on its receipt, no longer also as created.
+
+### Added: a nightly load test of the ingest pipeline
+
+- The `Ingest load` workflow (nightly and manual) migrates a fresh Postgres and runs `TestIngestLoad`: 50 concurrent CI uploads of 1,000 findings each through the real accept path, queue and workers; an urgent report behind 500 bulk jobs (applied within 15 s); 20 uploads of the same findings to one repository (no failed upload, no lost sighting). A missed target fails the job; the results are in the run summary.
+
+### Added: receipts API, `POST /findings/imports` and a durable `Idempotency-Key`
+
+- `POST /api/v1/findings/imports` replaces `POST /api/v1/findings/import` (the old route is removed; only the web console called it). A committed upload answers **201** with `Location: /api/v1/findings/imports/{id}` and the upload's `receipt`; a preview still answers 200.
+- `GET /api/v1/findings/imports`, `/{id}` and `/{id}/actions` list and show the receipts of uploads and sensor runs, and `GET /api/v1/findings/{id}/imports` lists the receipts that acted on one finding (`findings:read`). Receipt counts are organization-wide, so only a caller with the organization view (unrestricted data scope, or `dashboards:org:view`) reads other people's receipts; everyone else reads only their own uploads. Per-finding rows are always limited to the caller's data scope. Unknown query parameters are refused with 400 `INVALID_FILTER` and `per_page` is capped at 100.
+- `Idempotency-Key` on the upload is stored in Postgres (migration `003325_idempotency_keys`, kept 24 hours): a retry of the same files replays the first answer and receipt, the same key with other files is 422, a key still in use is 409, and when the key store cannot be reached the upload is refused with 503 before anything is imported.
+- **Upgrade note:** scripts that posted to `/api/v1/findings/import` must use `/api/v1/findings/imports` and accept 201.
+
+### Added: an upload can declare full coverage of explicit assets
+
+- `POST /api/v1/findings/imports?coverage=full&asset_id=<id>` (1 to 100 assets) declares the upload a complete scan of those assets by each file's tool. Then the open findings of that tool on those assets that the upload did not report are closed (verification `covered_scan`), with the guards of a covered scan: never a pentest, manual, bug-bounty or red-team finding, never a leaked secret, never a branch occurrence, and the blinding guard holds a mass close. The receipt shows `coverage: full`, the closed count and what was left untouched.
+- Declaring full coverage is a bulk close: it needs `findings:status` and `findings:bulk_update` and a recent sign-in (step-up, as for `POST /findings/bulk/status` closing findings), and every asset must be an asset of the organization visible to the uploader (inside their data scope, and not a private program asset hidden from them). `min_severity` cannot be combined with it. A failed file, a finding that could not be stored, a record the parser skipped, a request cut short, or an asset that left the uploader's scope before the close closes nothing. Without `coverage=full` an upload still never closes anything.
+- "Did not report" is decided from the upload's receipt: a finding with an action row on the receipt was reported, whatever its `scan_id` (a concurrent upload of the same tool overwrites it). An upload whose receipt is past its 50,000-action cap, or whose receipt write failed for a file, closes nothing.
+
+### Added: a receipt for every upload and sensor run
+
+- Every upload and every sensor run (a scan run, a command outside a run, a CI run, a connector sync, a report a sensor pushed on its own) now gets a receipt of what it did to the organization's findings: created, still detected, reopened, closed, untouched, skipped and failed, with a per-finding action log (`finding_ingest_actions`, at most 50,000 rows per receipt, kept 90 days) and a daily ingest-outcome fact for the dashboards (`dash_ingest_day`, kept 13 months). Migration `003308_ingest_receipts`. Design: RFC-122.
+- A receipt never decides anything: findings are still closed only by the coverage rules of a covered sensor run and by a source's own mitigation statement; an upload's coverage stays partial and closes nothing.
+- One upload request now has one receipt for all its files (it was one record per file); `files[].import_id` is that receipt for every file and the response adds `receipt_id`.
+- **Upgrade note:** the migration renames `finding_imports` to `ingest_receipts`. Replace the API together with the migration; an import made by an old API process after the migration ran fails and can be repeated.
+
+### Added: receipts in the web console
+
+- The import dialog shows the upload's receipt after an import (new, still detected, reopened, closed, untouched, skipped, failed, and whether its coverage could close anything) and lists the recent imports before a file is chosen.
+- A scan run's page shows "What this run did to findings", and a finding's overview shows "Last seen in" with the newest upload or run that acted on it (linked to the run). English and Vietnamese.
+
+### Added: one label system for every label in the console, first part
+
+- New label primitives in the web console: a machine-health label (icon and plain text), a supporting-fact chip (with a due-date preset), a neutral tag (plain, scoped, colour dot, level), a counter and a feature marker. Severity gains a risk-score form, and the workflow lozenge gains a "waiting" tone.
+- Known-exploited and EPSS chips are now presets of the supporting-fact chip; they look and behave as before, and their extra words (past due, ransomware) are separate elements instead of a dotted string.
+- User tag colours come from a fixed palette of ten (no teal) and show as a dot beside ink text, so contrast never depends on the chosen colour. Contrast of every new token is tested in light and dark.
+- The palette-drift check now refuses, on added lines, colour classes on a badge, text under 12 px on a label, uppercase or mono on a badge, spinning status icons and new ad hoc colour maps.
+
+### Added: AI applications connected over MCP can propose a false positive or an accepted risk
+
+- New MCP tool `propose_finding_status` with the write scope `mcp:findings.propose` (permission `findings:write`). Like every write scope it is only granted through an `insufficient_scope` challenge and only when the organization's AI assistants policy lists it (off by default). `oct_` API keys cannot use it.
+- The tool files the normal approval request in the name of the person who connected the application, marked with the application's name (`requested_via`, new column on `finding_status_approvals`). The request always waits for another person, whatever the organization's approval level, and the person it was filed for cannot approve it, the solo self-approval included. The finding is read with the person's data scope and the AI egress (TLP) policy first; pentest findings are refused.
+- The approval inbox marks such a request "Proposed by AI application" with the application's name.
+
+### Added: My Work persona queues
+
+- My Work now has one tab per job: Assigned to me (nearest SLA first, with a "due in 72 hours" chip), My team, Awaiting my review, Requested by me, Acceptances expiring and My tasks. Each tab's count is the total of the list it opens.
+- Awaiting my review decides false positive and risk acceptance requests in place (Approve asks for a recent sign-in; Reject asks for a reason) and shows what changed since the request, such as a finding that became known exploited. Requested by me can remind the approvers or withdraw a request.
+- An empty queue offers the next step. The header opens triage mode.
+- The findings list and My Work share one SLA cell: the time left or past due (in hours under two days) and a marker when the KEV cap set the deadline.
+
+### Added: My Work queues in the findings and approvals APIs
+
+- `GET /api/v1/approvals?queue=review` lists the pending finding status requests the caller may still decide (not their own, not signed by them, not on an asset they own; empty without `findings:approve`); `queue=requested` lists the caller's own requests. Both add `queue_counts`, and each row the finding's facts now and `changed_since_request` (for example `kev` when the finding became known exploited after the request).
+- The findings filter `related_to` accepts `my_team`: findings assigned to anyone who shares an active group with the caller, or to that group. The data scope still applies.
+- Finding responses carry `acceptance_expires_at` (when an accepted risk ends).
+- `GET /api/v1/findings/quick-views` adds `my_team`, `my_due_soon` (SLA due within 72 hours) and `my_accepted_expiring`.
+
+### Added: alerts for a drifting host clock and for exporters that cannot connect
+
+- Monitoring alerts `HostClockUnsynchronised` and `HostClockOffsetLarge` (sensor request signatures allow only 2 minutes of skew), and `PostgresExporterCannotConnect` and `RedisExporterCannotConnect` (an exporter that is up but cannot log in), with promtool tests and runbooks.
+- The observability stack applies `postgres/monitor-role.sql` on every `up` through the `postgres-monitor-role` one-shot service, so the exporter's database role can no longer be missing.
+
+### Added: page anatomy and type scale primitives for the web console
+
+- `PageStack` owns the vertical rhythm of a page: 16px from the page header to its tabs, 20px between every other block. A block that renders nothing no longer leaves the next one flush against the tabs.
+- `MetricStrip` tiles can link to their list (`href`); on a phone the strip is two columns with no sideways scroll; a zero is a muted 0; the strip keeps its place with a dash per value when the numbers fail to load.
+- `ListToolbar` is the one toolbar row above a list (the table toolbar uses it): filters and search first, views, export and the View menu last.
+- Type scale tokens (`text-title`, `text-section`, `text-body`, `text-meta`, `text-data`, `text-kpi`) and text layout primitives: `MetaLine` (one size per metadata line), `KeyValueList`, `ListItem` and `TokenText` (middle-truncated hashes and URLs with the full value in a tooltip). Relative times take the size of the line they sit in.
+- A web CI gate refuses added `StatsCard` tiles, hand-built metric tiles, arbitrary text sizes, two text sizes on one line and margins on route tab strips.
+
+### Added: the first-party content catalog root is pinned
+
+- Releases now trust the first-party catalog root `SHA256:1b0082d7…0ebd`, so signed first-party content bundles import without setting `CONTENT_TRUST_ROOT_KEY_IDS`.
+
+### Added: `make precheck` and a pre-push hook
+
+- `make precheck` brings a branch up to date with the branch its pull request targets (merge when it is already pushed, rebase when not; message catalogs merge key by key), stops on a conflict so it is resolved locally, warns about other open pull requests that change the same files, then runs the lint and static checks CI gates on for the components the branch changes (API: gofmt, go vet, staticcheck, golangci-lint on new code; web: prettier, eslint, tsc, the separator gate and sorted catalogs).
+- The pre-push hook (enabled by `make hooks`) refuses a branch that is behind its base and runs the same checks, without changing the branch.
+
+### Added: a retest the tool could not run says why, with what to do next
+
+- A sensor's retest can now tell the platform why an item has no verdict: its check is not in the sensor's template set (`template_not_found`), the sensor's safety policy never runs it (`excluded_by_policy`), or the tool ended without judging it (`no_verdict`). The finding card shows what each means and a suggested action, in English and Vietnamese. A sensor that cannot connect to the target or is refused by its network confinement now reads as `unreachable` or `blocked`. Older sensors keep reading as `error`.
+- Migration 003406 adds the three reason codes to the retest history's allowed values.
+
+### Added: skipped targets grouped by reason in the routing preview and the run
+
+- `POST /scan-zones/preview` returns `will_scan`, `skipped_total` and `skipped` (one group per reason with a count, a tone and up to 200 names) and a `kind` on each skipped target. It accepts `target_options`, applies the resolve-before-active rule like the trigger, and runs in the caller's act scope.
+- A run records the same groups in its context (`skipped_targets`, up to 25 names per reason); `GET /scan-runs/{id}` returns them in `dispatch.skipped` with `dispatch.will_scan`.
+
+### Added: sensors report a full local store, and a waiting scan says so
+
+- Protocol v2 feature `local_store`: the heartbeat of a sensor built on sdk-go with a local store carries the store's watermark, whether it stopped claiming new jobs and why, bytes per class, the disk level and the cleanup sweeps. It is read leniently, clamped and sanitized, and stored in `sensors.reported_local_store` (migration `sensor_local_store`, two nullable columns, no rewrite).
+- `GET /api/v1/sensors` and `GET /api/v1/sensors/{id}` return it as `local_store`. A sensor that stopped claiming gets the critical health reason `stopped_claiming` with what to do. Before, a sensor that stopped claiming because its disk was low looked idle and its scans only said "Waiting for a sensor".
+- The run task placement explanation names such a sensor with `stopped_claiming` instead of counting it eligible.
+- The sensor response also carries `auth_kind` (`bearer` or `key_bound`).
+- Display, health and explanations only: dispatch does not change.
+
+### Added: Add sensor panel with the exact install command
+
+- Sensors has one place to add a sensor: **Add sensor** in the page header, and the same panel inline while the organization has no sensor. Pick Docker, Docker Compose, Kubernetes or a Linux service and how the sensor joins: **Create a pairing code first** (the command carries `SENSOR_PAIRING_CODE`; the panel waits live for the sensor, shows the fingerprint to compare and approve, then the sensor online) or **Pair a sensor that shows a code**. The commands are the hardened install (read-only root filesystem, no capabilities, the checked seccomp profile, the local policy, this instance's URL, the current release) and contain no key. A troubleshooting section lists what the sensor log shows for the common failures and the fix.
+- New route `POST /api/v1/sensors/install-templates` (`sensors:pair`): the install commands for a sensor that pairs; the pairing code goes in the body. The sensor templates gain `.Auth` (`key`, the default, or `pair`), `.PairingCode` and `.JobSigningRoot`; custom templates that do not use them render as before.
+- The separate "Pair a sensor" dialog is replaced by the panel; "Install with an API key" moves into it where the organization still allows API-key sensors.
+
+### Added: a known exploited (KEV) deadline cap in the SLA policy
+
+- Each SLA policy has a "Known exploited (KEV) deadline cap" (`kev_cap_days`, default 14 days, 0 = off). A finding whose CVE is in CISA KEV is due at most that many days after the platform first sees it as known exploited, whatever its priority class or severity. The cap only tightens: a KEV flag that arrives later moves the deadline to now + cap, and nothing moves it later afterwards. Informational findings without an info SLA still get no deadline.
+- A deadline the cap set is marked (`sla_kev_capped` on the finding), and the SLA timeline entry gives the reason `kev_cap`. Changes to the cap are audited; a longer cap or turning it off is High severity.
+- Migration `sla_kev_deadline_cap`: two columns with constant defaults (no table rewrite) and two trigger functions replaced.
+
+### Added: kev_ransomware on the findings list
+
+- The findings list returns `kev_ransomware` for KEV findings whose CISA entry is marked as used in known ransomware campaigns (one KEV catalog query per page, only when the page has KEV findings), and the list accepts the filter `kev_ransomware=true|false`.
+
+### Added: deniable features for SSO connections, SSO enforcement, SCIM and group links
+
+- New named features `sso.connections`, `sso.enforcement`, `scim`, `sso.group_links` and `ldap` (reserved). Like every feature, they are allowed unless the instance operator or the hosted control plane denies them, so self-managed installations keep everything they have. Security controls (two-factor, session policy, audit, break-glass) are never features.
+- When a feature is denied: creating or changing a SAML/OIDC connection, turning SSO enforcement on, minting a SCIM token and changing SCIM group mappings answer `403 FEATURE_NOT_INCLUDED` (`503` when the organization's limits cannot be read). The SCIM API keeps working during the 30-day read-only grace, then answers 403.
+- A downgrade never locks members out. Sign-in through configured connections keeps working. SSO enforcement stays during the grace, then the hourly `sso-enforcement-entitlement` job turns it off and tells the owners and administrators, so members sign in with a password (and two-factor where required).
+- Upgrade note: a migration drops the foreign key from `tenant_module_grace.module_id` to `modules`, so a denied named feature gets its 30-day grace (before, only modules did). Additive for the running API.
+
+### Added: one finding per vulnerability across tools that name it differently
+
+- A finding that names only an advisory id (GHSA, or an OSV id such as PYSEC- or GO-) is now keyed on the CVE the signed vulnerability feed ties it to, so a tool reporting `GHSA-…` and one reporting the CVE for the same package on the same asset give one finding. An advisory that leads to two CVEs fuses nothing, and a report's own ids never change another finding's key.
+- A network or SCA finding that names several CVEs (for example a vendor advisory listing two) is one finding per CVE; the copy for the CVE it was keyed on keeps its key and triage.
+- A finding stored under an advisory key takes the CVE key on its next sighting with its triage, tickets and history; when another finding already holds the CVE key, the two are linked as the same issue (rule `vuln_alias`), never merged.
+- Migration `003385_vuln_id_aliases` (platform table filled by the bundle importer from the optional signed `vulnids.manifest.dsse.json`). The feed status shows `vulnids_version`, `vulnids_entries` and `vulnids_error`.
+- **Upgrade note:** after the feed publishes its first alias map, run `refingerprint -vuln-aliases` (dry run) and `refingerprint -vuln-aliases -apply` in the API container to move findings that no scan reports again.
+
+### Added: "are we affected" answer for one CVE
+
+- `GET /api/v1/vulnerability-exposures/{id}` answers the vulnerability page for one CVE inside the caller's
+  data scope: a verdict (confirmed, possible, not affected, no evidence), finding counts by status and priority,
+  findings already in a remediation task, impacted assets (crown jewels, internet-facing), software-inventory
+  buckets, installed package versions with their fix and one upgrade per product, the tools that reported it,
+  the organization's timeline, aliases with provenance, weaknesses, feed freshness and the emerging-threat alert.
+- `GET /api/v1/vulnerability-exposures/{id}/assets` lists the assets with a finding of the CVE (search by
+  name, paged) with crown jewel, internet-facing, owner, open findings and worst priority.
+- Both need `vulnerabilities:read` and `findings:read`; the id may be a CVE or an advisory id the signed feed
+  aliases to one CVE. Finding counts use the findings list's own filter, so they equal the list filtered by the
+  CVE. No migration.
+
+### Added: vulnerability page
+
+- `/vulnerabilities/{CVE}` answers "are we affected" inside your data scope: the CVE header with aliases and their
+  provenance, KEV, EPSS, CVSS in words, exploit signals and the fix, feed freshness, the verdict with confirmed,
+  possible and not-affected assets, active findings, impacted assets, crown jewels, worst priority, findings already
+  in a task, the status of every finding, the affected assets (searchable, paged), the installed versions with the
+  upgrade path, the tools that found it, the description, references and your timeline.
+- "Create remediation task" (for the CVE or one upgrade) takes only findings that are not in another active task.
+- Every CVE mention (finding header and overview, findings list, Active CVEs, the catalog, the vulnerability drawer)
+  now opens this page.
+
+### Added: one Approval policy card for false positives and risk acceptance
+
+- Settings > Finding approvals shows one **Approval policy** card with two selectors, **False positive** and **Risk acceptance** (Always, Only for serious findings, Never), each with its own waiting-change notice and **Cancel the change** button, and the second-look share. The tier table below is titled **Approval tiers and approvers**.
+- The request dialog for **Risk accepted** says when the organization's level lets the caller accept the risk alone (**Accept the risk**, applied at once with its end date) or when someone with approval permission could; English and Vietnamese.
+
+### Added: the KEV deadline cap in the console, its reason on findings, and a Ransomware chip
+
+- SLA policies: the policy dialog sets the "Known exploited (KEV) deadline cap" (days, 0 = off) and the policy list shows it next to the P0 to P3 windows.
+- Findings: a deadline the cap shortened says "Shortened because it is in CISA KEV" (tooltip on the list's Due / SLA cell, a line under the SLA due date in the detail).
+- Findings list: a separate "Ransomware" chip after KEV for vulnerabilities CISA marks as used in known ransomware campaigns (phone rows keep one chip, KEV first, with the ransomware use in its tooltip), and a "Used in ransomware (KEV)" filter in the exploitation group.
+
+### Added: send a notification delivery again
+
+- `POST /api/v1/integrations/{id}/deliveries/{delivery_id}/redeliver` (integrations:manage, 30 a minute per organization, audited as `integration.delivery_redelivered`) queues an archived event again for that integration only, signed with the current secret and keeping the original `webhook-id`. Another organization's event, or an event that never went to that integration, answers 404.
+
+### Changed: Assets › Activity replaces What changed and Timeline
+
+- The Assets tabs What changed and Timeline are one tab, Activity, at `/assets/changes` (the address the change digest already links to). The kinds of change are one control with their counts: Appeared, Disappeared, Newly exposed, Exposure changes, Shadow IT, and Values (the changes of asset values and of the sources that decide them, `?view=values`).
+- The metric cards above the change list are replaced by those counts.
+- `/assets/timeline` is removed; open `/assets/changes?view=values` instead.
+- The page's labels are translated (English and Vietnamese).
+
+### Changed: compact asset rows with readable long names
+
+- Asset list rows are one line by default (compact density). The description moved to the asset drawer.
+- A long asset name is cut in the middle so both ends stay readable, and a copy button next to it copies the full name.
+- A certificate row shows the certificate's subject name, with its stored name (often a fingerprint) below in mono, and its other names, issuer and expiry in the tooltip, so a certificate can be recognised by the site it serves.
+- The Type column is one line with the registry's name for the type (for example "HTTP Service"); the Labels column is off by default and can be turned on under Columns.
+
+### Changed: asset filters are chips with Add filter instead of a side panel
+
+- Every active filter on the asset list is a chip ("Criticality is Critical, High") with a remove button, in one row under the toolbar, with the result count at its end. Filters that are not facets (crown jewels, risk score, coverage, tags, date windows) have chips too.
+- Add filter (or the `f` key) lists the filters by group with a search box; a picked filter opens its editor and applies as you tick.
+- The side filter panel is gone from wide screens; phones and narrow windows open the same filters in a sheet.
+- The filter labels and values are translated (English and Vietnamese).
+- A cold load of the asset list no longer asks for the tag list and the business units; they load when a filter shows them.
+
+### Changed: asset list labels in one colour language, one-line rows
+
+- Exposure, scope standing and HTTP status share one set of attention tones (danger, caution, ok,
+  info, neutral, quiet), each with its own icon and the word always shown; Public exposure,
+  Not in scope and Guardrail hold now stand out instead of reading as grey pills.
+- Criticality and CIA impact badges step by weight in brand ink: Critical is solid, High a tint,
+  Medium an outline, Low muted text, so levels differ at a glance.
+- Every row of the asset list has one height: the service facts show on one line (status, port,
+  top technology, then "+N" opening every fact), the type moves under the name, the Type column is
+  off by default, and Risk follows the name.
+- The "Last seen" column shows when the asset was last seen, with its state only when it is not
+  active; an asset with no owner reads "No owner".
+
+### Changed: asset lenses in the sidebar replace the lens pills, the type pills and the metric strip
+
+- While the asset inventory is open, the sidebar lists All assets, every lens that holds one of your assets (External surface, Applications, Cloud & infrastructure, ...) and Other under Assets, each with its count. Each opens the list with `?lens=`, so existing links keep working, and the count is the total that list shows.
+- The two rows of lens and type pills and the six metric cards are removed from the list. Its first line names the open view, its total and what the lens holds.
+- The asset type is a filter: the filter panel has a Type facet with the types of the open lens and their counts.
+- The paragraph about hidden names is now one chip, "Hiding names awaiting review and not ours", with Show to list every name.
+
+### Changed: assets keep criticality and risk apart, and count "open findings" everywhere
+
+- A risk score shows its number with the band as colour and shape ("73" with a triangle); the band word ("High") moved to the tooltip and the screen-reader name ("Risk 73 of 100, High"). Criticality uses the same words, so a row no longer shows "High" twice for two different things. Where no column header names it (phone cards, the asset page header, pickers), the score reads "Risk: 73" and criticality "Criticality: High".
+- The per-asset findings count reads "N open findings" (column "Open findings") on the inventory, the attack surface page and asset groups, in the asset page header, the relationship graph and the CSV export, instead of "N issues found", "Findings" or "Findings: N". Every link from that count opens the asset's open findings, so the list shows the same number. The "Has findings" filter is named "Has open findings".
+- The phone card of an asset is name, type and description, then one line: criticality, risk, open findings, and the scope or lifecycle state only when it needs attention. The findings link has a 44 px tall touch target.
+- The asset page's findings link and the drawer's "View N open findings" button open the open findings (they opened every status before). The CSV leaves the risk score empty for an asset that was never scored.
+
+### Changed: console colours, type and radius follow the brand
+
+- Light mode uses the paper ground and ink text; dark mode uses the ink ground with surfaces derived from the ink hue. Teal marks only the place to act (focus ring, a page's primary call to action, links). Corners are smaller (4, 6 and 8 px by role).
+- The console ships its own fonts: Inter for text and JetBrains Mono for identifiers, with Vietnamese subsets, served from the console itself.
+- Chart colours keep out of the teal accent band; one categorical colour changed from green-teal to violet, and the dark heatmap ramp starts lighter so empty and low cells stay visible on the new dark cards.
+- Severity colours come from shared tokens, with text that meets WCAG AA in both themes.
+
+### Changed: a certificate page says why it is in scope or held
+
+- The ownership and scope card of a certificate shows one line: "In scope because {endpoint} serves it and the scope entry {pattern} covers that endpoint", or "Held because {endpoint} is {reason}", with a link to the endpoint, and says whether the certificate is yours or a third party's. It no longer offers "Add to scope" prefilled with the certificate's fingerprint.
+
+### Changed: a certificate is in scope through the endpoints that served it
+
+- A certificate was judged by its fingerprint, which no scope entry can match, so every certificate showed "Held by a platform guardrail" even when it was served by an endpoint in scope. The active-probe gate now judges a certificate by the endpoints that served it, each through the full gate (deny list, rejections, exclusions, scope entries, guardrails). If any endpoint passes, so does the certificate; if none does, it shows the strongest refusal among them; with no known endpoint nothing is dispatched.
+- Ownership is a separate signal: a name in the certificate (CN or SAN) under one of your domains or a verified domain marks it as yours, and a certificate on your endpoint with only foreign names is a third-party certificate. Ownership never authorizes a probe, and a certificate never brings its endpoint or address into scope.
+- `GET /assets/{id}/attribution` returns `certificate` for a certificate asset (standing, serving endpoints, ownership). Endpoints outside the caller's data scope are not named. `covered_by.kind` can be `served_by`.
+
+### Changed: API test shards split the slow packages by test
+
+- `Tests (Postgres + Redis)` and `Tests (least-privilege DB role)` split `tests/unit`, `tests/integration`, `internal/infra/http/routes` and `internal/infra/postgres` by top-level test name over every shard; the other packages go whole to one shard. Full tier 8 shards (was 4 + 4), fast tier 6 (was 2 + 2), least-privilege 6 (was 3 + 3). The slowest shard was `tests/integration` alone at about 20 minutes.
+
+### Changed: develop pushes reuse the merge queue's result; caches written from develop only
+
+- API CI, All-in-one CI and Web E2E skip their test jobs on a push to `develop` when the merge queue already passed the same workflow on the same commit (`.github/scripts/queue-verified.sh`; any doubt runs everything). 360 of 365 develop pushes in the week measured re-tested a commit the queue had just passed.
+- The Go cache is neither restored nor saved in the merge queue (a queue ref can do neither usefully), and the Web E2E layer cache is written by develop pushes only, so pull request and queue refs stop evicting develop's caches.
+
+### Changed: weekly check of the inline tool pins
+
+- A weekly workflow compares the tool versions pinned inline in workflows, Makefiles and Dockerfiles (`.github/tool-pins.tsv`) with their newest stable releases and keeps one issue, "Tool pins to bump", up to date. It needs only `issues: write` and opens no pull request, so a person or an agent makes the bump and CI runs on it.
+- No operator action.
+- The development image installs golang-migrate v4.18.1, the version CI, the migrations image and the all-in-one image use; the freshness manifest now covers all four pins.
+
+### Changed: CI upgrades the previous release's database to every release candidate
+
+- A nightly workflow, and every release branch and release PR, builds the database of the last release tag (its own migrations, as the non-superuser migrator), loads representative rows, applies the new migrations and checks the version and dirty flag, the row counts of the key tables, and that the API starts against the result. It first refuses a new migration numbered at or below the last release's highest, which an upgrade would skip silently.
+- No operator action. Keep rehearsing an upgrade on a copy of your own data (`docs/deployment/safe-deploy-and-migrations.md`).
+
+### Changed: workflow lint runs zizmor
+
+- The Workflow Lint job now runs zizmor (pinned, checksum-verified) next to actionlint. The first run's findings are fixed: checkouts that push nothing no longer persist credentials, `github.base_ref`, `github.ref_name` and matrix values reach scripts through the environment instead of being expanded into the script text, and Dependabot waits seven days after a release before proposing it (security updates are not delayed).
+- Findings that cannot be fixed are suppressed on their exact line with a reason (inline, or `file:line` in `.github/zizmor.yml`), never per file, so a new occurrence in the same file still fails. The release jobs that push set `persist-credentials: true` explicitly.
+- No operator action.
+
+### Changed: CodeQL log-injection no longer flags escaped slog attributes
+
+- Go code scanning replaces `go/log-injection` with `openctem/go/log-injection` (`.github/codeql/codeql-config-go.yml`, `.github/codeql/go-queries`): the same sources, sinks and sanitizers, minus the key-value attributes of `log/slog` calls, which slog's text and JSON handlers escape. The standard query flagged those even next to a CR/LF strip; 1,082 such alerts had been dismissed by hand. A slog message argument and every other logger are still checked. `pkg/logger/forging_test.go` pins that an attribute value with CR/LF stays on one line in both formats.
+- `.github/codeql/**` is a security-sensitive path.
+- Two remaining flows are sanitised: the e-mail sender's failure log (its logger is an interface) and the refused trust names printed by `ci-trust-scope-plan`.
+
+### Changed: Platform console asks before dangerous actions
+
+- Turning off "Require single sign-on" for an organization and switching "require" off on the administrators' identity provider now ask first and say what gets weaker.
+- Unblocking an AI application asks first; block and unblock buttons name the action.
+- Removing the administrators' identity provider, an organization's identity provider or SAML configuration, retiring a shared sensor, revoking a content pack and deleting an instance scan zone need the name typed. The scan zone delete has its own confirmation instead of sitting beside Save.
+- The reason dialogs for alerts, CAPTCHA, AI and region settings and the security-key policy confirm with the action's name instead of "Confirm". Setting the deployment region asks for the region typed.
+- Destructive buttons (Remove, Retire, Unbind, Reset two-step verification, Block) use the destructive style and sit apart from Save and the routine actions.
+- Em dashes removed from console copy, and the remaining hard-coded English in these dialogs moved to the translation catalogs (English and Vietnamese).
+
+### Changed: Findings, exposures, exceptions and remediation ask before acting
+
+- Bulk status moves, bulk assignment and bulk resolve on the Findings page now ask first, with the count in the title and button and a sample of the finding titles. Assignment names the assignee.
+- Deleting a finding, a suppression rule, an evidence note or a comment asks you to type its name (or a short id when the name is long or empty).
+- Retest now, Re-verify, Check reachability and approving a retest check say that traffic is sent to the target, and wait for a confirmation.
+- Verify group Approve and Reject, auto-assign to asset owners, approving or rejecting an exposure disposition, approving a group exception, cancelling or reminding an approval request, archiving a sub-status, accepting remediation suggestions (button, bulk and the `a` key), resuming auto include and dropping a board card on or off hold are confirmed in the shared dialog.
+- Accept risk and false positive on exposures now state what happens and list the selected exposures in bulk. The exposure action dialogs are translated.
+- Removed em dashes and middle-dot separators from the copy of the dialogs touched.
+
+### Changed: clearer confirmations for asset groups, repository scans and relationship suggestions
+- Deleting an asset group (one or many) now asks you to type its name or the count, lists the groups it touches and names the count on the button.
+- Changing the criticality or environment of several asset groups, and removing assets from a group, now ask first and show which items are affected.
+- Starting a scan on repositories (row menu, bulk bar, repository page) now asks first and names the target.
+- Approving relationship suggestions (all or the selection) uses the standard dialog, shows the count and no longer says the links cannot be removed.
+- Merging duplicate assets asks you to type how many assets will be merged.
+- Bulk Delete in the asset inventory is styled as destructive and separated from the other actions; owner Edit and Remove moved into a menu; the relationship Remove item is separated from Edit.
+- The repository danger zone now describes what delete really does (findings are kept) and is translated.
+
+### Changed: clearer confirmations for scope approvals, programs, EASM and business context
+- Approving scope changes (one, several, or from a scan check, duplicate notice or pending entry) now asks first and names the entry or the count; the approvals page is translated.
+- Deleting a business unit, business service, attacker profile, VEX statement or proxy pool, stopping a lookalike watch, revoking a scope letter and ending a program now ask you to type the name.
+- EASM Run now and turning on enrichment, screenshots, lookalike certificate checks or network lookups ask first and say what is sent; turning them off stays one click.
+- Program Sync now asks first; confirming suggested targets and detaching a channel say what they act on.
+- Exporting leaked credentials asks first and says the file holds personal data.
+
+### Changed: Undo toasts last 10 seconds; typed confirmations ignore phone capitalisation; console purge asks for the name
+
+- Reversible changes (finding status and assignee, archiving and marking assets not ours, EASM decisions) offer Undo for 10 seconds through one shared helper, which sends the inverse command once.
+- The typed-confirmation field turns off autocapitalise, so a phone keyboard no longer breaks the exact match, and Enter in it never fires the action.
+- The platform console's "Delete now" for an organization also asks for the organization's name.
+- A web test fails when a component calls a destructive endpoint (delete, revoke, purge, reset, rotate, disable and similar) without a confirmation dialog or Undo, unless the file is listed with a reason.
+
+### Changed: starting scans, automations and report emails now asks first, and scan deletes ask for the name
+
+- Run now, Trigger scan and Run workflow open a confirmation that names what starts and says it sends traffic or acts now. Turning on a scan schedule, resuming a scan, enabling a disabled scan, switching a workflow on, switching a priority rule on and resuming a report schedule ask first; turning any of them off stays one click. The "run in progress" question keeps working: it replaces the new one when a run is already active.
+- Bulk Activate and Bulk Pause on scans open a confirmation with the count in the title and button and the first names selected. Bulk Disable and Bulk Delete also list the names and show the count on the button. Bulk Delete always asks you to type the count (it asked only from ten scans), and its button uses the destructive style.
+- Deleting a scan (list row, drawer and scan page), a workflow or a priority rule now asks you to type its name.
+- The scan list row menu, bulk bar and their messages are translated.
+- A confirmation that asks for typed text forgets what was typed after it closes, so the next one starts empty.
+
+### Changed: weakening a security setting, rotating a secret and deleting integrations now ask first
+
+- Allowing sensor API keys again, ending approval of sensor keys, opting back in to shared sensors, accepting CI sensor keys again and switching content approval off open a confirmation that says what gets weaker. Making the setting stricter stays one click.
+- Generating or entering a new Jira webhook secret, rotating a stored credential's secret, and approving a scanner template for sensors ask first and say what happens. Rotating a sensor's API key asks you to type the sensor's name.
+- Turning off dry run on a ticket mapping, Sync now on a ticketing connection, Scan now with a Tenable.sc connector and Take ownership of a scan ask first.
+- Deleting a scan zone, scan window policy, template source, CI trust, gate policy, notification channel, SIEM integration, SCM connection, ticketing connection, Tenable.sc connector, scanner import, import mapping, ticket mapping, proxy pool or capability asks you to type its name. Bulk delete of sensors lists the names and counts them on the button.
+- Delete buttons that sat beside Edit are set apart and use the destructive colour; the capability delete dialog keeps its list of affected tools and sensors.
+- Menus and messages of scan zones, template sources and scanner templates are translated.
+
+### Changed: settings actions that widen access or cannot be undone now ask first
+
+- Erase personal data: the member row menu of an offboarded person now has the action (the confirmation existed but nothing opened it). It asks for the member's email before it calls the API.
+- The audit log export asks first and says the file holds members' emails and IP addresses.
+- Giving a member a higher role or more custom roles, widening a role (more permissions or full data access), applying a role template update, adding members to a role in bulk, binding a role to a team and approving a request to join each name what is gained before saving.
+- Turning modules off lists the modules that disappear for every member and says their data is kept. The dependency dialog and the risk score recalculation dialog use the shared confirmation, with the consequence spelled out.
+- Loosening the domain sign-up rules, the trust with another organization, the MCP policy, or approving a new MCP publisher asks first and lists what becomes weaker.
+- Deleting a role, a team, a scope rule, a report template, an MCP application, or leaving the organization, ending a trust, rotating a SCIM token now asks for the item's name. Bulk deleting pentest templates always asks for the name or the count and lists a sample.
+- Offboarding a member asks for their name, re-enabling a member and approving a join request ask first, and the account deletion dialog says what happens. API key actions sit in a row menu with delete last.
+- Strings in the offboarding, setup link, end-of-access, team roles, team members and scope rules dialogs are translated (en and vi).
+
+### Changed: pentest, validation, threat intelligence and dashboards ask before acting
+
+- Deleting an evidence file, a campaign credential, a pentest finding, a report, a checklist or a compensating control asks you to type its name (or a short id). Deleting several reports always asks for the count and lists them.
+- Closing a campaign asks for its name, and every campaign status dialog names the campaign. Activating or closing a CTEM cycle asks for the cycle name.
+- Running an attack simulation says that it sends live safe-check traffic, and waits for a confirmation. Marking a report delivered, turning on a threat feed sync and making a dashboard the organization default are confirmed. Bulk retest requests show the count on the button and the findings.
+- Downloading a flagged file and discarding a started campaign use the shared dialog instead of the browser's own. Deleting a compensating control moved into the row menu, away from Test.
+- Deactivating an indicator is labelled as such. Hard-coded English in the report actions, the pentest finding sheet and the indicator dialog is translated, and em dashes were removed from the touched copy.
+
+### Changed: coverage alerts are sent on change, with the action to take
+
+- Coverage alerts (gap, no output, keeps failing) are no longer re-sent every 20 hours while a condition holds. Each one is sent when its condition appears, or when its count doubles or halves. A condition that clears and comes back within a day stays quiet. Several changes at once go out as one digest, at most one per organization per day.
+- New alert: a capability paused because it cannot run (no scope entry, no sensor, tool missing or not allowed, sensor offline or outdated, a policy) is reported once per reason, with what to do and a link to the scope, sensors or tools page.
+- "Keeps failing" is no longer raised for the platform's own DNS checks on single assets; the asset page shows them.
+- Migration `003418_asset_coverage_alerts` adds the alert state table. The 20-hour claim keys in `controller_leases` expire on their own.
+
+### Changed: continuous coverage rechecks hosts that do not answer on a widening schedule
+
+- A coverage pair whose target did not answer (`unreachable`, `timeout`) is no longer a failure retried every few hours for ever. It is paused with the outcome as its reason and rechecked after 1 day, 3 days, then weekly. Any success makes it covered again. It no longer raises "keeps failing" alerts. Sensor, tool and platform failures keep the 1 h to 1 day back-off.
+- The HTTP probe of a subdomain now needs a reason to run: a web port open on an address it resolves to, a web origin of the name already seen, or ports not yet known (no port scan has finished on it or its addresses). A mail or DNS server whose port scan found no web port is no longer probed every 3 days. It becomes `not_applicable` (`web_port_or_unscanned`) and is probed again once a web port appears.
+
+### Changed: dashboard charts read better, on a phone too
+
+- Single-figure tiles show their trend as a labelled sparkline (first and last value and date) and the change with its base ("+15 vs 41 previous period").
+- Every chart has a one-sentence accessible name (range and latest values, net flow, largest rows or peak cell) next to its table view.
+- The age heatmap has a Fewer-More scale with the maximum, severity dots on its rows and wrapping column headers.
+- On a phone, single-figure tiles sit two abreast, plots are shorter and widget titles wrap. The per-widget "Updated" line shows only when that widget is stale.
+
+### Changed: dashboard header fits a phone
+
+- On a phone the dashboard header is one row: the dashboard switcher across the width, an icon-only Refresh now and the More menu. Customize and the refresh schedule are in More; scope, last refresh and next refresh share one muted line. From 640px the controls sit in one toolbar row.
+
+### Changed: the e2e spec table merges without conflicts
+
+- `web/e2e/README.md` uses git's union merge, so pull requests that each add a spec row no longer conflict. Spec number prefixes only order the files and need not be unique; don't renumber a spec to avoid a clash.
+
+### Changed: attack surface Review and Lookalikes filter by state instead of a second tab row
+
+- Review: the item list's "Awaiting a decision" and "Not ours" are a State filter at the start of the list toolbar, with counts; `?tab=rejected` links keep working, and choosing a state no longer closes a list opened from a link. Lookalikes: the review states are a State filter kept in the URL (`?state=`).
+- The Review page's breadcrumb says Review (it said Suggestions), its description is one short sentence pair, and middle-dot separators on the Overview, Lookalikes and Web surface tabs are separate elements.
+
+### Changed: one address classifier for CDN, hosting and cloud-shared addresses
+
+- New `pkg/domain/edgeaddr`: one versioned dataset (published edge ranges, provider network names, provider host suffixes) sorts an address or host into `edge`, `saas_hosting`, `cloud_shared` or `dedicated`. The attack surface suggestions, review by rule, the review queue's network hints, network seeds and the unclassified-scans guardrail all read it instead of two hard-coded CDN range lists and a provider-name substring list. Network names match on word starts, so a holder such as "Dawson Hosting" is no longer read as AWS.
+- `GET /api/v1/easm/suggestions`: each address's `network.class`, and on the addresses card `provider_count` and `providers` (provider, class, addresses). Shared addresses no longer carry `ports`: the open ports of an edge or hosting address are the provider's.
+- Review tab: the quiet line names the provider ("9 addresses your names resolve to belong to Cloudflare and need no decision"), and addresses shared with other organizations are counted apart.
+
+### Changed: the KEV chip no longer carries "Past due"
+
+- In the findings list the KEV chip read "KEV | Past due" in red whenever CISA's remediation date had passed. That date is the deadline of US federal agencies, it has passed for almost every KEV entry, and the red "Past due" read as this organization's own deadline. The chip now says only "KEV"; CISA's date is in its tooltip ("CISA deadline for US federal agencies"). The organization's deadline stays in the SLA column.
+- An EPSS of 99.5% or more shows as "99%+" instead of "100%".
+
+### Changed: the finding drawer and triage mode show the code location
+
+- The finding drawer gains a Code location band for file findings without a data flow (IaC, SAST without a trace, any finding with a file and snippet): file and lines, branch, commit, the snippet with the finding's line highlighted, copy, and a link to the file at the commit. Secrets, web findings and traced findings keep their own panels.
+- Triage mode shows the same band instead of a plain snippet block. One component now renders a finding's code location on the drawer, the Overview tab and triage mode; the link goes through the safe external link check.
+
+### Changed: findings, my work, exposures, assets and vulnerabilities use the new labels
+
+- The findings list leads with Priority (with the class name on desktop), then Finding, Severity, Status and a new Exploit signals column that carries the KEV and EPSS chips. On a phone the priority box takes the left slot and a row shows at most one exploit chip (KEV, else EPSS from 10%).
+- The finding detail shows "P0 · Immediate" style priority names and the KEV and EPSS facts as the shared chips; My work shows priority with its name and the status lozenge.
+- Exposure state, vulnerability and software-match rows, the asset risk explanation, asset-group findings and grouped finding rows use the shared KEV chip, EPSS chip and status lozenge instead of their own badges.
+- The 10 px copies of these labels on the phone card are gone.
+
+### Changed: finding labels use one calmer, clearer system
+
+- Priority (P0 to P3) is the only filled label in a row: a box with a three-bar icon on its own violet range, in sans type, with the class name ("P0 · Immediate") where there is room. P3 is neutral on purpose.
+- Severity is a distinct shape plus coloured text (a pill remains for counts), status is a lozenge tinted by workflow category with a static progression icon (no spinner), and KEV and EPSS are neutral chips where only the KEV bolt is red.
+- Status labels are sentence case in English ("In progress", "Fix applied", "False positive", "Risk accepted", "In review"). The KEV tooltip and the EPSS labels are translated (English and Vietnamese).
+- The status badge of the pentest workspace is now the shared finding status badge.
+
+### Changed: the findings page says when informational findings are hidden
+
+- While the open list leaves informational findings out (the work views do by default), the filter bar shows "Informational hidden (N)" with Show. Show applies to the current view and offers Always show, which saves the member's preference. The "Hide informational" switch follows the same state and is no longer saved per browser.
+- Account, Preferences has a Findings section to choose Show, Hide or the organization's default for the work views.
+
+### Changed: findings quick views in the sidebar replace the metric strip and the state tabs
+
+- The sidebar lists seven built-in views under Findings with live counts: Active, Needs triage, My queue, SLA breached, Pending approval, Accepted · expiring and Closed. Each opens the findings list with the view's own filter, and the count is the total that list shows.
+- The seven metric cards and the Open / Fixed / Dispositioned / All tabs are removed from the list. The first row names the current view and its total; Awaiting verification is a button there while fixes wait for a verifier.
+- The list accepts `state=closed`, `pending_approval=true` and `acceptance_expires_at_lte` in the page URL.
+- A cold load of the findings page stays within 5 API requests: the source catalog now loads when the Source filter is opened, and Refresh sends each request once instead of twice.
+
+### Changed: findings views keep columns and density, show unsaved changes; Triage is the primary action
+
+- A saved findings view now stores its columns and row density with its filters, sort and grouping. A view whose list has changed shows a dot on the view button, and its menu offers Save changes, Save as new view and Discard changes.
+- Finding and Priority are always columns, including when no finding has a priority yet. The View menu lists columns by name, and the choice is kept in the page URL. Severity starts hidden in the Active view (Priority already includes it) and shown in other views.
+- Triage is the primary button on the Findings page, with the count of findings to triage; `t` opens it. Until the focused triage mode ships, it opens the Needs triage view and the first finding. Add finding and Import results moved into an Add menu.
+
+### Changed: findings list empty and error states, and a translated list
+
+- The Findings list tells three empty states apart: no findings yet (with Import results, Set up a scan and Integrations), no match (what the filters and search hide, with Clear filters and Search all statuses) and no access.
+- A failed list shows as an inline alert in the table area, with Retry and a Copy request ID button; the page header, search and filters stay and no toast is added. API errors now carry the server's request id.
+- Every string on the findings list, the shared table (pagination, density, columns, sort menu), facet panel, bulk action bar, filter button, saved-views menu and SLA badge is translated into English and Vietnamese. The column chooser lists column names instead of internal ids.
+- Findings export runs on the server only: without the export permission there is no Export button (the copy of the current page is gone). The export keeps the list's sort, a refusal says which permission is missing, a second export at once says one is still running, and when more findings match than one export holds the message says how many were exported.
+
+### Changed: flat app shell without the floating content frame
+- The area right of the sidebar is flush with the viewport: no outer margin, border, radius or shadow, on the page background. The sidebar and the top bar are each separated by a single 1px border, and the top bar no longer gains a shadow on scroll.
+- Page padding is 16px on a phone and 24px from tablet width up.
+
+### Changed: Business units, business services and crown jewels pages are translated
+- Titles, columns, filters, forms, toasts, empty states and detail sheets of the three pages now come from the English and Vietnamese catalogs (new `businessContext` namespace, extended `crownJewels`).
+- Criticality and risk tolerance labels use keys instead of raw enum values, and risk tolerance badges use neutral badge variants instead of palette colours.
+- The Export button keeps an accessible name below the md breakpoint.
+- Toasts report what happened ("Business unit created.") instead of "...successfully".
+- A business unit with no owner shows "Unassigned" without storing the word in the row, so editing it no longer fills the owner field with it.
+
+### Changed: scoping overview and cycle pages follow the console language
+
+- The scoping overview, the cycles list, the cycle detail page and its tabs, the charter sheet and the lifecycle actions now read from the en and vi catalogs (new `scoping` namespace). The readiness rows, cycle statuses, attacker-profile types and criteria summaries are translated, with plurals.
+- Cycle dates use the console locale and read as "{start} to {end}" instead of an en-dash range; date-only values no longer shift a day in negative-offset timezones.
+- Toasts read as plain past-tense facts ("Cycle created.") and the lessons callout uses the muted card tone instead of an amber accent.
+
+### Changed: Translate the threat model, attacker profile and scope pages
+
+- The threat model, attacker profiles and scope pages (tables, filters, toasts, onboarding steps, status labels and hints) now read in the console language, with Vietnamese added.
+- Threat model times follow the console locale.
+- Attacker profile type badges are neutral and the create form stacks on a phone.
+
+### Changed: the ingest queue is fair across organizations, ordered by urgency and serialised per asset scope
+
+- Ingest jobs (CI uploads, imports, sensor report segments) have a lane: urgent (a CI report with a critical finding or a KEV CVE, decided by the server), interactive (a person's import, a CI upload a gate waits on) and bulk (sensor reports). Urgent work is claimed first; within a lane, organizations take turns.
+- At most one job per asset scope runs at a time (a CI run's repository, an organization's imports, one sensor report), enforced by a unique index, so concurrent jobs of one repository no longer write the same rows together. An organization has at most `INGEST_MAX_RUNNING_PER_TENANT` (default 2) jobs running, and within a lane the organization with fewer running jobs is served first; an organization's urgent lane goes ahead of others for one job at a time.
+- Each server runs `INGEST_WORKERS` (default 4) workers; ingest writes use their own database pool, `DB_INGEST_MAX_CONNS` (default 8), apart from the API's.
+- Past `INGEST_MAX_PENDING_PER_TENANT` unfinished jobs an upload gets `429` (`INGEST_QUEUE_FULL`) with a `Retry-After` from the organization's drain rate. When the queue depth cannot be read, the upload is refused with `503` (it was accepted before, for sensor segments).
+- A job whose lease expires on its last attempt is dead (`apply_failed`) instead of being retried for ever; a job with no attempts left is never claimed.
+- Migration `003378_ingest_lanes_scope`: `ingest_jobs.lane`, `ingest_jobs.scope_key`, two partial indexes.
+- **Upgrade note:** the API opens a second database pool of `DB_INGEST_MAX_CONNS` connections; check that PostgreSQL's `max_connections` covers both pools on every server.
+
+### Changed: queued uploads through an import mapping apply the version pinned at accept
+
+- A queued upload through an import mapping (`format=mapping:<name>[@<version>]`, on findings imports and on CI run results) is applied with the exact mapping version resolved when the upload was accepted, even if a newer version is published meanwhile. A mapping that does not resolve at accept is still a 400 `unknown_mapping`. If the pinned version is deleted or renamed before the worker applies the upload, the upload fails with the fixed code `mapping_unavailable`; it is never applied with another version or another organization's mapping.
+
+### Changed: ingest SQL statement budget in CI
+
+- A test imports a fixed CTIS report and re-imports it three times (unchanged, one finding gone, one new), counts the SQL statements of each phase and fails when a phase exceeds the checked-in budget (`api/tests/integration/testdata/ingest_budget.json`), so an N+1 on the import path is caught in review. `make budgets-update` rewrites the budget from a measured run.
+- No operator action; no runtime change.
+
+### Changed: priority and status colours are easier to tell apart in charts
+
+- Priority P0 to P3 is one violet ramp stepped by lightness (at least 0.10 OKLCH between classes, apart under every colour-vision deficiency, 3:1 on every surface); P2 and P3 no longer share a lightness. The priority badge uses the same steps as the charts.
+- "Not prioritised" and other "no value" series are drawn as a hatch instead of a borrowed category colour; SLA states in charts use the health colours (breached red, warning amber, on track green).
+- Asset criticality charts use a neutral level ramp instead of the severity hues.
+- Health icons: ok, warning and down sit apart in lightness, and down and warning no longer match severity Critical and High.
+- Part-to-whole dashboard widgets draw one stacked bar with card-coloured separators; stacked areas are solid.
+- The contrast test and the palette validator assert lightness steps, colour-vision separation and cross-family distance; the palette gate refuses state text on its own tint and hand-picked hex colours.
+
+### Changed: shared status components use the one label system
+
+- Computed states (sensor, CI pipeline, scope, proxy, scan window and others), run statuses and the asset lifecycle badge now read as an icon plus plain text. Their text is no longer coloured on a faint tint, which failed contrast for the green and amber states in the light theme. Run statuses are translated (English and Vietnamese), "Timeout" now reads "Timed out", and a running run is a static half circle instead of a spinner.
+- Remediation task and campaign statuses are lozenges tinted by workflow category; "On hold" is the waiting tone with a clock, and a cancelled or archived item is quiet instead of coloured.
+- Sensor tags, the service-cell chips and "Pending setup" use the same tones, and the 11 px sensor tag text is gone.
+- Fixed: the repository workspace passed an object where a class name was expected, so the branch scan status and the finding triage status showed no colour at all. They now show a health icon and a lozenge, with translated labels.
+
+### Changed: asset and classification labels use the shared label primitives
+- Criticality and CIA impact ratings render as bar levels (no severity hues; low is no longer green), risk scores as a severity glyph with the score, asset lifecycle as a health state, and asset type, ownership, repository provider, technologies and labels as neutral tags.
+- Capability colours fold onto the ten tag swatch names through one map (teal is no longer offered); finding sub-status colours fold the same way. Stored values are unchanged.
+
+### Changed: Integration, notification and access labels use the shared label components
+- Every integration connection status (hub, source control, notifications, ticketing, scanners, SIEM) renders through one shared map and the health component, replacing six separate colour maps.
+- The notification outbox and delivery events use the health and severity components; queue banners are neutral and no longer join counts with a separator.
+- API key status uses the health component, support access grants use the status lozenge, and provider tiles are neutral.
+
+### Changed: Operations labels use the shared label components
+- Sensor jobs, sensor posture and local policy, run-flow steps, shared-sensor availability and asset compatibility render through the shared health component, in light and dark mode.
+- Workflow nodes and the node palette show the tool category as a neutral tile with a palette dot; tool categories are neutral; workflow draft, unsaved and system template markers use the shared status and tag components.
+- Removed the unused compatibility colour map and the per-component pill colour maps.
+
+### Changed: pentest and exception labels use the shared label components
+
+- A pentest campaign status is the workflow lozenge (planning open, in progress and reporting in progress, remediation done, on hold waiting, canceled and closed ended). TLP is a tag with the TLP colour as its dot. The environment is a scoped tag. Finding deadlines use the shared due chip: only an overdue deadline is red. Retest, checklist and letter results use the machine-state indicator.
+- An exception rule's approval state is the workflow lozenge (pending waiting, approved done, rejected and expired closed). The exception type is a plain tag with an icon, so accepted risk is no longer violet (violet is only for priority).
+- The raw colour maps these replace are removed, and so are the unused SLA wording keys.
+
+### Changed: workflow labels use the shared label components
+
+- Approval requests (finding and scan) and scope entries are the workflow lozenge (pending waiting, approved or active done, rejected, canceled, expired and inactive closed). The "self-approved" and "single person" flags are plain tags.
+- Threat status, CTEM cycle status, emerging-vulnerability alert state and compliance control status are the workflow lozenge. The emerging alert level is a signal chip (only immediate is in the alert tone). Compliance control priority and AI exploitability and effort are level tags, not colours.
+- AI triage job status, charter criterion outcome, validation re-check outcome and detection verdict are the machine-state indicator.
+- The repository summary cards, severity counts and provider tag no longer use raw palette colours.
+
+### Changed: one tab row per page; a list's status or kind is a filter in its toolbar
+
+- Approvals, Assets › Activity, Remediation tasks and campaigns, Attack surface › Web surface and Scope no longer show a second row of tabs or a segmented control under the page tabs. The status or kind of the rows is a filter token at the start of the list toolbar ("Status: Pending"), with a count per value in its menu and its value in the URL, so a filtered list can be linked.
+- CI/CD shows one tab row: Pipelines, Runs, Coverage, Trust and gate.
+- Exposures and Exposures › Vulnerabilities switch between the list and the analytics or summary with a view switch in the page header. On Vulnerabilities, a "CVEs" filter picks the CVEs affecting your assets or the whole catalog.
+- Scope › Domain proof and Scope › Networks are their own tabs of the Scope section (`/scope/domain-proof`, `/scope/networks`), with the same permission and module as before.
+- Components drops the preset row that repeated its strip tiles; the Packages tile clears the presets. The Exposures strip drops its mean-time tile, which opened no list.
+- The Activity period moved from the page header into the list toolbar. The Activity, Web surface and Approvals toolbars stay in place while their list loads or fails.
+- Assets › Inventory follows the shared page spacing.
+
+### Changed: Assets > Needs attention opens a list of reasons and keeps one tab row
+
+- `/assets/attention` is now a list of the reasons an asset needs attention, in two groups (Fix on the asset: No owner, Criticality not set, Not scanned in 30 days; Review: Relationships, Possible duplicates). Each row shows a count, with its unit, and one line on why. The counts come from the same lists the queues show, so they only cover assets the reader may open. Relationships is listed only while that module is on.
+- Each reason page has a back link, the reason as a heading that opens a menu to switch reason (with counts), the why line and "Open in the inventory". The second row of tabs and the explanation card are gone.
+- The No owner queue moved from `/assets/attention` to `/assets/attention/no-owner`. The other queues keep their addresses.
+
+### Changed: threat alert reasons are separated by commas
+
+- The "why now" line of an emerging-threat notification (Slack, email, webhook text) now reads "in the CISA KEV catalog, EPSS 0.97, severity critical" instead of joining the facts with a middle dot.
+- The web console gains a CI check that refuses new separator glyphs in UI text, a dot-free `MetaLine`, a `formatList` helper and a `LabelSegments` primitive. No page is migrated yet.
+
+### Changed: every list has the same toolbar
+
+- The search box is now the first control of every list toolbar, at the same place and size on every page: 36px high, the search icon at its start, a placeholder that names what it matches ("Search name, host, IP, version or tool…"), a clear button while there is text, and Escape to clear it.
+- On lists with a filter panel, the filter button is joined to the start of the search box on every page (it sat 8px away on some lists and flush on others), keeps the same filter icon when the panel is open, and looks pressed instead.
+- Status and kind selects follow the search; group, export, refresh and the table menu stay at the far end, the table menu last. That menu (row density and columns) is now called "Display", so it is no longer confused with saved "Views".
+- Active filter chips sit in one line under the toolbar that never wraps: chips that do not fit fold into "+N more", which lists them (each still removable). Add filter and Clear filters follow the visible chips, and the result count stays pinned at the end. What a list always hides (on Assets: names awaiting review and not ours) is a quiet locked chip first in that row, with a "Show" button.
+- New list shortcuts, listed under Help > Keyboard shortcuts: `/` focuses the list's search box, and `F` opens the filters on lists without "Add filter" (where "Add filter" exists, `F` still opens it).
+- Search fields in drawer lists (team assets, members and scope rules, role permissions and members, campaign checklists) use the same search box.
+- On a phone, Add filter (findings, assets) opens as a bottom sheet instead of a popover: the search field is focused and pinned under the title, the list scrolls inside the sheet, and the sheet shrinks with the on-screen keyboard so neither the field nor the list is hidden. Closing it returns focus to Add filter; on larger screens it is the same popover as before.
+- Search fields in toolbars and pickers show the phone's search keyboard and use 16px text on phones, so iOS no longer zooms the page when they get focus.
+
+### Changed: an uploaded SBOM or dependency report is matched within minutes
+
+- Uploading an SBOM, or a sensor or CI report with dependencies, now queues the organization for vulnerability matching when it links, removes or supersedes packages. Before, packages were matched only at the daily sweep; technology observations were already queued.
+
+### Changed: every page is checked for the page layout rules, and CI/CD trust sections are one filter
+
+- The web checks refuse a page that renders a page header without the shared page stack (product console and platform console), and a server page or layout that calls client hooks without `'use client'` (such a page crashed on every visit).
+- The page rhythm browser check now visits every page of the console, read from the app directory, at 1440px and 390px: block gaps, one tab row, tab icons, metric strip rules, chips on one line, no pagination on an empty list, a readable name column, no sideways scroll, and no error page or page error.
+- CI/CD › Trust and gate shows its sections (Trust, Gate policy, Break-glass, Pull request feedback) as a Section filter in a toolbar instead of a second row of tabs; the `?section=` links keep working.
+
+### Changed: platform console pages share one page rhythm
+- Every platform console page now spaces its header, tabs, notices, tables and cards with the same gaps as the main app, instead of per-page margins.
+- The overview's metric strip keeps three tiles that open the list they count (organizations, platform sensors, refused admin actions); the database schema tile is gone, the attention queue already flags a schema problem.
+- The target mappings strip keeps the three tiles that filter the list (all, active, inactive); the two inventory tiles are gone.
+
+### Changed: discovery pages share one page rhythm
+
+- Asset groups, group details, asset details, suggestions, duplicates, categories, credential leaks, findings, sensors, scan details and the attack surface pages now keep the same spacing between header, tabs, summary strip and list.
+- Code weaknesses, secrets and misconfigurations no longer show a row of four summary cards; the charts and the findings link stay.
+- Summary strips on these pages link to or filter the list they count: asset groups drop the average risk and asset totals, the attack surface overview links each tile to its asset list, scan details link to the filtered runs and show the next run and success rate in the header, and the sensor fleet strip drops its inert jobs tile.
+
+### Changed: insights, reports, prioritization and mobilization pages share one page rhythm
+
+- The executive summary, program health, data quality, CTEM maturity, reports, SLA, exceptions, business impact, attack paths, exposure chains, priority rules and emerging threat pages now space their blocks evenly, and an error or empty state sits at the same distance under the header as the content does.
+- Metric tiles open the list they count (the executive summary, reports, business impact, attack paths and exposure chains); the emerging threats tiles all filter the list (five tiles instead of six); tiles that counted nothing a list could show are gone.
+- The executive summary's process health figures are now a short list instead of a second row of tiles, and the by-severity MTTR card lists every severity.
+
+### Changed: Scoping, business context, cycles, programs, threat model and My work share one page rhythm
+
+- Headers, tabs, summaries and lists on these pages are spaced the same way as the rest of the console, with no tight or loose gaps between blocks.
+- Business units, Crown jewels and Compliance drop summary tiles that did not open or filter a list (average risk, assets, critical findings, average compliance, overdue).
+- Each compliance framework card shows its control counts on one plain line.
+- Compliance summary tiles open the Frameworks and Controls tabs.
+
+### Changed: validation, pentest, controls and threat intelligence pages share one page rhythm
+
+- Validation overview, retest queue, ATT&CK coverage, attack simulation, control testing, compensating controls, pentest campaigns (list and detail), detections and indicators of compromise now space their blocks evenly.
+- Validation overview tiles open the list they count; pentest campaigns keep five status filters; attack simulation tiles filter the list (all, active, detected or prevented, bypassed, also reachable as `?show=`); control testing tiles filter by status (`?status=`); ATT&CK coverage tiles open findings or simulations.
+- ATT&CK coverage text is no smaller than 12px, and its coverage figure moved into the matrix description.
+
+### Changed: page tabs never cut a label, metric strips fit two rows on a phone
+
+- Route tabs that do not fit drop their icons first, then move the last tabs into a More menu at the end of the strip. The current tab always stays in view and no label is cut at the edge ("Approv…"); the strip no longer scrolls sideways.
+- Tab icons follow one rule: every tab of a strip has its own icon or none does, drawn at 16px in the tab's text colour. Exposures, Attack surface and Business context tabs got distinct icons where two tabs shared one.
+- A metric strip on a phone uses compact tiles in at most two rows (five tiles: three over two) instead of three rows of two.
+- An empty list no longer shows "Showing 0 - 0 of 0" and "Page 1 of 0" under its empty state.
+- New shared filter token for a list's state ("Status: Pending", counts per value in its menu, value in the URL), replacing segmented controls used as row filters.
+
+### Changed: the pentest campaign page follows the page anatomy
+
+- The campaign header keeps the next phase step and one other phase step; Export findings, Import findings and further phase steps move into a More menu.
+- The Overview numbers are one metric strip whose tiles open the campaign's Findings tab already filtered (all findings, critical and high, resolved); the severity breakdown uses the shared severity strip and shows the average and highest CVSS under its title.
+- The created, updated and author line shows on the Overview only, with dates in the console language.
+- Section titles and campaign types are in sentence case, and the remaining English-only texts on the page (team dialog, deadline tile, dates "Not set") are translated.
+
+### Changed: the finding-library template editor matches the pentest finding editor
+
+- New, duplicate and edit template pages are one editor with the same layout as the pentest finding editor: the standard page header, the same section cards and pickers, a summary rail from 1280px and the sticky save bar at the bottom with Ctrl+S.
+- Editing a template now stays on the page after a save and asks before leaving with unsaved changes (it used to leave at once and drop the changes on Cancel).
+- Severities in the template summary, preview and template picker use the shared severity badge; the coloured side bar in the preview is gone.
+- Section titles in the pentest editors are in sentence case ("Steps to reproduce", "Proof of concept", "Impact and remediation").
+
+### Changed: the asset list and asset groups count only their own rows' findings
+
+- The repository details on the asset list and the asset group list and members counted findings with a subquery grouping the findings of every organization, so each call read the whole findings index (the busiest statement under load: 30% of database time in a mixed read benchmark at 560k findings). Each read now counts the findings of the rows it returns only.
+- A new database test (`TestReadQueryBudget`) holds the console's hot reads (findings, assets, asset groups, stats, dashboard, unread notifications) to a fixed number of SQL statements, for an administrator and a scoped member, whatever the data size.
+
+### Changed: search boxes use their indexes on large tenants
+
+- The findings search (`q`) runs as one bitmap scan over its trigram, CVE and asset-name indexes. Its asset-name arm was a subquery the planner could not combine with the others, so every search read all of the organization's findings: 0.75-1 s at 500,000 findings, now 7-40 ms.
+- The asset list search gets a trigram index on `assets.description` (migration 003400), so its name, description and alias match no longer reads every asset of the organization (75 ms to 0.3 ms at 100,000 assets).
+- The audit log search gets a text-search index on the expression it matches (migration 003401): 0.8-2.5 s to under 1 ms at 300,000 audit rows.
+- **Upgrade note:** both indexes are built `CONCURRENTLY` (no write lock). The audit index takes about 5 s per 300,000 audit rows to build and about 60 bytes per row.
+
+### Changed: PostgreSQL 16, 17 and 18 are supported; 17 is recommended
+
+- A nightly workflow (and a push to `develop` that changes a migration, the role script or the PostgreSQL repositories) applies every migration as the non-superuser migrator and runs the DB-backed packages as the app role on PostgreSQL 16 and 18. PostgreSQL 17 stays the version the whole suite runs on for every pull request.
+- The install and requirements documentation and the Helm chart values state the supported range.
+- No operator action. Do not change the major version of an existing data directory except by the database's own dump/restore or `pg_upgrade`.
+
+### Changed: `make precheck` merges the base into a pushed branch only on a conflict
+
+- A pushed branch that merges cleanly with its base is left as it is (the merge queue tests it on top of the newest develop); a conflict is still merged and resolved locally before the push. A branch not pushed yet is still rebased. 89 of 164 "merge develop" commits on 2026-10-23..25 had no conflict and each re-ran the whole CI.
+- The web checks run only when a file they read changed (`web/src`, `web/e2e`, `web/scripts`, package and config files), so a change to, say, `web/e2e/ci/docker-bake.hcl` no longer needs `node_modules`.
+
+### Changed: release notes group migrations, identity and contract changes under operator headings
+
+- Pull requests are labelled automatically by the files they change: `notes:migration`, `notes:destructive-migration` (a migration that drops, renames or truncates), `notes:identity` (finding fingerprint or identity code, or the CTIS module version) and `notes:api-contract` (HTTP handlers, routes, the sensor protocol).
+- The release train's changelog preview, and `changelog.py release --labels`, print an **Upgrade notes** block that lists the fragments of those pull requests under these headings, ahead of the categories.
+- No operator action.
+
+### Changed: a retest tells a CDN or WAF block from the server refusing the request
+
+- A retest answered by a CDN or WAF challenge or block page is now inconclusive with the reason `edge_blocked`, naming the vendor and pointing to allowing the scanner at the edge. It never counts as a fix.
+- A 401 or 403 from the server itself on an exposure-class check (exposed page, panel, API docs, config or backup file, debug endpoint, listing) now confirms the fix with "access now denied by the server", once it is seen twice, on two consecutive retests at least an hour apart, both answered by the server (an edge answer in between resets the count), the earlier refusal at most 14 days old and not followed by a sighting or reopening of the finding. Only results of commands the platform dispatched can set the class; an API, CTIS or CI upload never does. The class comes from the template's tags recorded by the scanner, never from the finding's editable tags. Any other class of check stays inconclusive with "access denied: cannot confirm the fix".
+- The retest history on the finding is a short list, one line per attempt, instead of one long sentence.
+- Migration 003408 adds `edge_blocked` and `access_denied` to the retest history's allowed reason codes, and a nullable `findings.template_exposure` column.
+
+### Changed: scan commands carry the run's deadline, and a command closed at the deadline says what is known
+
+- Every scan command (single scans and workflow steps) now carries `deadline`, the time its run is settled if still open. Sensors with sdk-go that reads it end the job's time budget a margin before it (a tenth of the time left, 1 to 10 minutes), so a run stopped there still reports the targets it settled instead of being failed with nothing. Older sensors ignore the field.
+- A command still open when its run reaches the deadline is now failed with one of: "scan run reached its deadline before a sensor picked up this command", "the tool finished scanning every target, but its result did not arrive before the scan run reached its deadline" (the sensor's progress showed every target done), or the previous "scan run reached its deadline before this command reported a result".
+- The scan run repository returns the deadline the database fixed (`deadline_at`) to the run on create and on the update that starts it.
+
+### Changed: scan list shows recent runs, a fair success rate and why a run was blocked
+
+- `GET /scans` items carry `recent_runs`: the scan's latest ten runs (id, status, refusal code, created time), newest first, read in one tenant-scoped query per page.
+- The success rate counts a partial run (finished with coverage gaps) as a success and only failed or timed-out runs against it; blocked, canceled and live runs are not counted, and there is no rate below three counted runs. The list shows it over the latest ten runs next to their status glyphs, with the breakdown in the tooltip; the scan page and drawer use the same rule on the lifetime counters.
+- A blocked latest run says why on the list, with a link to fix it (scope, exclusions, sensors, scan windows, scanners). A blocked run is drawn as a pause ring instead of the failure glyph: nothing ran.
+- On a phone each scan is a compact card with no overlapping text; the intensity chip could previously overflow onto the next column. Intensity uses the neutral label system (plain tag, or a signal chip for intrusive) instead of coloured badges. The list's column titles and empty states are translated (en, vi).
+
+### Changed: label-boundary tests for the scope gate
+
+- The domain matcher, the API scope gate, the exclusion filter used by the claim-time recheck and the job signer now share one table of boundary vectors: `example.com` never covers `notexample.com` or `example.com.evil.test`, an exclusion of `dev.example.com` never removes `devops.example.com`, and trailing dots, case, punycode, `host:port` and URL forms all resolve to the same answer. Another tenant's entry covers nothing at each gate.
+
+### Changed: search boxes send one request when typing settles
+
+- Every search box, picker and filter-as-you-type input in the web console and the platform console now sends its search through one shared hook (`useSearchQuery`): it waits for a 300 ms pause, ignores terms shorter than two characters (one for exact lookups), normalises the term (trimmed, spaces collapsed, Unicode NFC) so equal terms share one cached answer, sends nothing while an input-method composition (Vietnamese Telex, CJK) is open, holds a term that settles in a hidden tab until the tab is visible, and waits out a `429` answer's `Retry-After` before sending the next term.
+- Inputs that sent one request per keystroke now send one per settled term: remediation tasks, suggestions and campaigns, the task move palette, the add-findings and add-tasks dialogs, repository sync, duplicate pickers, finding and task watchers, pentest member and asset pickers, SSO exception member search, scanner templates, CI coverage and the web surface (three requests per keystroke before).
+- List pages that keep their search in the URL (`useListParams`) debounce `q` before it reaches the request.
+- A request can be cancelled by the caller's `AbortSignal`; the inventory asset picker of the asset sources preview cancels the older request when a newer term is sent.
+- A test fails when a new input puts typed text into a request without the hook.
+
+### Changed: 48 px top bar and a command palette that searches
+
+- The top bar is 48 px high, with the search (the command palette, Ctrl+K or Cmd+K) in its middle, labelled "Search or go to". People who may approve findings get an approvals button with the number of pending approval requests in their scope (the count the session already loads, no extra request); it opens the approvals inbox, which lists exactly them.
+- The palette searches findings, assets and remediation tasks from two characters on, through each type's own list API, so results follow the caller's tenant and data scope. A type the caller may not read is not searched. A CVE id opens its findings. It also lists the findings quick views with counts and the saved views.
+- Typing `>` lists commands only. The commands open a form (New scan, Import results, Create remediation task), each offered only with its permission. The palette never changes data: every write stays on its page, with that page's confirmation and step-up. Pages open the form from `?new=scan|import|task` only when the caller has the page's own permission.
+- Palette text is translated (English and Vietnamese).
+
+### Changed: sidebar counts share one quiet style
+
+- Menu item counts (for example the Attack surface review queue and pending approvals) were a filled black pill that stood out from every other count in the sidebar. They now use the same plain number as the Findings quick views: teal and semibold for a queue that waits for you, red for a problem, muted for a plain total.
+
+### Changed: SRV records are pinned as data-only in the DNS records contract
+
+- Tests pin that an SRV record on a domain or subdomain is accepted, kept and listed in `dns_record_types`, and that its target never becomes the asset's `cname_target` or `ip_addresses`.
+
+### Changed: priority classes, severity, KEV and SLA pills use one set of colours everywhere
+- Priority classes P0 to P3 are a filled class box on the brand ink ramp (P0 strongest), no longer the severity hues, so P1 can no longer be read as "High". Severity stays a soft pill with a dot. Teal is used for neither.
+- One `PriorityBadge`, one `SeverityBadge` and one `KevBadge` replace the ad-hoc renderings; charts, legends, finding status pills, SLA state pills, risk bands and criticality read the same tokens in light and dark (all at AA contrast).
+- The palette-drift gate now refuses a hand-written priority or severity colour outside the shared modules.
+
+### Changed: vulnerability bundles import with no setup
+
+- The platform pins the root key id of the official vulnerability bundles (first key ceremony of openctemio/vulnfeed, 2026-10-25), and the `vulnfeed` source is now on by default. Inventory matching and emerging-vulnerability alerts start working after the next sync, with no environment variable and no admin step. `VULNFEED_ROOT_KEY_ID` still overrides the root for a private collector; a platform admin can still switch the source off.
+
+### Changed: watchers are managed in one sheet, with undo
+
+- The People section of a finding and of a remediation task no longer lists every watcher with a
+  remove button next to each name, which removed a person on one tap. It shows one row (up to three
+  avatars and "N watching") and your own Watch / Watching toggle. Tapping the row opens the manage
+  sheet: watchers with why each one watches, a labelled Remove per row (for those allowed to remove
+  others), Stop watching on your own row, and the add search. Removing and the toggle show an undo
+  toast for 10 seconds; Undo adds the person back or flips your toggle back.
+- Removing yourself is now always the stop (it sticks), never a delete that a later comment would undo.
+- `GET .../participants` returns `added_by_name` per watcher (only while the adder is an active member
+  of the organization) and `me.user_id` (the caller). Strings in English and Vietnamese.
+
+### Changed: the New Scan review and the run's Dispatch card show skipped targets by reason
+
+- The review's block is now "What this scan covers": how many targets the scan takes, then every skipped target grouped by reason with the fix. Each group opens to a searchable list. Typed targets can be removed from the scan in one click. An expected reason (names with no DNS answer, scope exclusions) is neutral, a reason that needs a fix is amber, and nothing is red.
+- The block shows for teams without scan zones too. The zone picker, zone table and zone wording appear only when the team has zones and targets go to them.
+- The run's Dispatch card uses the same block and the same zone table.
+- Targets, dynamic options: "Include names that do not resolve" (`target_options.include_unresolved`).
+- Every string in the routing preview and the Dispatch card is translated (en, vi).
+
+### Changed: Web surface moves to Attack surface, and Suggestions there is named Review
+
+- Web surface (origins, endpoints, the same path across origins and their changes) is now a tab of Discovery › Attack surface at `/attack-surface/web`. Its rows are web endpoints, not assets, so it no longer sits among the Assets tabs. It still needs `assets:read`.
+- `/assets/web` is removed; open `/attack-surface/web` instead.
+- The Attack surface tab that lists the decisions waiting for a person is named Review, so "Suggestions" no longer names two different queues.
+
+### Fixed: a covered scan no longer closes findings it reported
+
+- A covered scan (a clean, full-coverage sensor run) closes the open findings of its scope that it did not report. "Not reported" was decided from `findings.scan_id`, the report that wrote the finding last. A concurrent run of the same tool and profile overwrote it with its own id, and a sighting write that lost a deadlock left the old one. Either way the scan closed a finding it had just reported. Absence is now decided from the run's receipt: a finding with an action row on the receipt was reported. A run whose receipt is missing or past its 50,000-action cap closes nothing (reason `receipt_incomplete`).
+- A segment of a command's run whose receipt could not be written is now retried, instead of being applied without its receipt.
+
+### Fixed: asset drawer and asset page show honest states
+- The asset drawer closes after the asset is deleted from it and shows the edited asset once the list refreshes.
+- The Findings tab lists open findings only, so the tab badge, the list and the footer count agree; severity chips come from the asset's own counts, finding statuses use the shared status badge (a duplicate is no longer "Resolved"), and a failed load offers retry.
+- The Owners tab and the scope and scanning section show an error with retry instead of an empty answer.
+- `/assets/[id]` shows a skeleton while the team loads, a no-access message without `assets:read`, an error with retry for server errors, "Not yet scored" instead of "0/100", readable type labels, and its text is translated (en, vi).
+
+### Fixed: the asset drawer reads the certificate a service serves
+
+- A service whose TLS certificate was collected showed "Not collected yet: TLS certificate" in the asset drawer, because the drawer read the certificate keys only from the service itself while the probe records the certificate as its own asset, linked by the service's "serves certificate" relationship. The drawer now reads the linked certificate (issuer, expiry, names) through the same relationship and asset reads it already makes, so a certificate outside the caller's data scope or a disabled relationships module simply stays "not collected". The service's own keys still win, and the list cells are unchanged.
+
+### Fixed: a person's criticality, exposure or owner edit appears in the asset Timeline
+
+- Editing an asset's criticality, exposure or owner reference records a Timeline entry and an asset history row with the person and the value before the edit. Before, the first edit of a value no source had decided, and repeated edits by the same person, left no entry, and the entry that was written showed the new value as the old one.
+- Bulk "Set criticality" says how many lowered values are waiting for approval instead of reporting them as set.
+
+### Fixed: asset groups list and detail are complete and honest
+- `/assets/groups` loads every group (up to 1000, with a "Showing the first N of M" line) instead of the first 20, sends the search to the server, shows an error with retry when the load fails, and finishes bulk actions (refresh, dialog closed) even when the call fails. The Export button keeps an accessible name on narrow screens.
+- The "Add assets" dialog searches the whole inventory on the server and leaves out the assets already in the group; the create dialog searches the server too.
+- `/assets/groups/[id]` loads up to 100 members and findings, says "Based on the first N of M" where figures come from a partial set (Assets tab, breakdowns, JSON export), and shows an error with retry instead of "Group not found" when the request fails.
+- Text on both pages is translated (en, vi) and sync success toasts are gone.
+
+### Fixed: asset identity history lists only that asset's merges
+- `GET /api/v1/assets/dedup/merge-log` accepts an optional `asset_id` (a UUID, otherwise 400) and returns only the events that kept or absorbed that asset, inside the caller's tenant and data scope. The asset drawer showed the tenant's latest merges and renames on every asset.
+- `total` is now the number of matching events, not the number of rows returned.
+
+### Fixed: one asset name for repository, IPv6 host and URL spellings
+
+- `github.com/org/repo.git/` and `ssh://git@host:2222/org/repo.git` normalise to `host/org/repo` in one pass, like the other spellings.
+- A bracketed IPv6 host (`[2001:DB8::1]:443`) normalises to `2001:db8::1`.
+- A URL with the DNS root dot (`https://example.com./`) or a non-canonical IPv6 host names the same origin as its canonical spelling.
+- Existing asset names are not rewritten; a duplicate created under an old spelling shows in the duplicate review.
+
+### Fixed: an inactive asset found again is not recorded as recovered
+
+- Ingest revives a stale asset only. An inactive asset (a closed port, a person's decision) stays inactive; it used to get a "recovered" history entry while the stored row stayed inactive.
+
+### Fixed: asset stats count open findings only
+
+- `GET /api/v1/assets/stats` returned `with_findings` and `findings_total` over every finding status, so resolved, false-positive and accepted findings raised "assets with findings" and the findings total above what the asset list, its "Has open findings" filter and each row's count show. Both now count the open set (new, confirmed, in progress, fix applied), branch-only findings left out, like the rest of the inventory.
+
+### Fixed: Assets Needs attention no longer lists groups on every load
+
+- The bulk action bar asked for the group list as soon as an asset list rendered, although the group picker only opens with the owner dialog. The list is now requested when that dialog opens, so the Needs attention pages (and the inventory) send one request fewer on a hard load.
+
+### Fixed: the assets list keeps typed search, its toolbar on errors, and explains an empty default list
+
+- The search box no longer drops keys typed with short pauses ("repo-1" typed with pauses ended as "reo1"): the box keeps what is typed while its own debounced write comes back from the URL.
+- A failed list read shows the error in place of the rows; the search, filters and views stay, so a bad search or filter from a shared link can be changed. Retry is in the error.
+- A page number past the end (an old link, a list that shrank) shows the last page instead of an empty table.
+- When the default list (which leaves out names awaiting review and names marked not yours) is empty, it says so and offers "Show all assets", instead of "No domains yet" over domains that exist or a plain "No assets match".
+- With no other filter, the locked chip names how many it hides ("Hiding 80 names awaiting review or not ours"), so the heading count, the chip and the result count add up.
+
+### Fixed: asset list service facts always fit their cell, columns drop by priority
+
+- The Service facts cell shows whole chips only: the HTTP status as its code ("301", coloured by
+  class, the reason phrase in its tooltip), the port, then as many facts as the cell holds, and
+  "+N" for the rest. No chip is cut at the cell's edge and the "+N" opener is always visible; it
+  lists every fact, now including the CDN or edge a service is served through ("Behind Cloudflare").
+- The asset list drops lower-priority columns (last seen, owner, exposure, criticality, open
+  findings, in that order) when the table is too narrow, instead of scrolling sideways: at 1440px
+  with the sidebar open it shows name, risk, scope, service facts and open findings. A column
+  turned on under Columns stays on.
+- A risk score with a queued rescore names the clock beside it in its tooltip and accessible name.
+- The service facts popover has an accessible name.
+
+### Fixed: asset lists sort criticality and exposure by level
+
+- Sorting assets by criticality put Low above Medium and sorting by exposure put Isolated above
+  Public, because both columns were sorted by spelling. They now sort by level (Critical, High,
+  Medium, Low, None; Public, Restricted, Private, Isolated, Unknown).
+
+### Fixed: the assets list/category switcher stays top-right on every width
+- The view switcher now has its own slot at the right of the page title row, so it no longer jumps beside the action buttons when switching views on a phone; on a phone the actions wrap to their own row under the title.
+- The switcher's labels are translated (English and Vietnamese).
+
+### Fixed: the external attack surface page
+
+- The Expiring certificates tile needs both findings and exposures read permission (the list endpoint requires both), shows a dash instead of 0 when the count cannot be read, and opens the exposures list.
+- Adding or editing an external asset has a busy state, so a double click no longer creates a duplicate. Clearing the address, port, parent domain or notes of an asset now clears them.
+- The add and edit dialogs fit a phone, and the Type label is bound to its control.
+- Every text of the external page, the overview and the monitoring card is translated (English and Vietnamese); relative times follow the language.
+
+### Fixed: the attack surface overview counts one population
+
+- The overview tiles (total, internet-facing, critical internet-facing) now open `/assets` with the same attribution the stats count, so a tile and its list show the same number. "View all" of the exposed assets opens the external page with the same internet-facing definition and attribution.
+- The asset breakdown and the average risk score count only the attributed assets, like the total, so the breakdown sums to the total and the average ignores names marked not yours or still in review.
+- Recent changes no longer list a rejected or needs-review name, as an addition or as a history change.
+- Exposed-asset and recent-change rows link to the asset; the info button is no longer inside the tile link; long host names truncate on a phone; a failed Undo of "Not ours" says so; the compact decide panel shows one line when only name rules wait and renders nothing while loading.
+
+### Fixed: the attack surface Suggestions, Lookalikes and Changes pages
+
+- Suggestions: "Hide items" closes the list opened by a deep link; the Undo of an added scope entry is offered only with scope delete permission; a failing suggested-rules read shows an error with a retry; names-only copy no longer talks about CDN addresses; the queue shows skeleton rows while loading and keeps its search in the URL.
+- Lookalikes: the list shows "{shown} of {total}" with Load more; severity uses the shared badge; skeleton rows while loading; reopening a watch's settings starts from its saved values; the candidate limit is validated (10 to 1000).
+- Changes: an unknown change kind is shown neutrally instead of as a new exposure; exposure titles link to the exposures list; severity uses the shared badge; a selected kind chip no longer uses the primary button style; the duplicate description is removed.
+
+### Fixed: large uploads to a repository branch are no longer quadratic
+
+- The open-finding counters of a repository branch were recounted over the whole branch five times for every inserted finding. A 5,000-finding report spent most of its time in that recount, and it held the branch row locked across the upload, which serialised every upload of the repository. Migration `003345_branch_finding_counts_per_statement` replaces the per-row trigger with statement triggers that recount each touched branch once per statement. The counts stay exact, and no data is rewritten.
+
+### Fixed: CI pipelines tiles, search and GitHub App callback
+
+- The Inactive tile and switch change the list while a status tile is on (turning Inactive on clears the status filter). The Fresh tile filters and the CI pipelines tile clears the filters.
+- The pipeline search waits 300 ms after typing before it asks the server, and the table columns are no longer rebuilt on every refresh.
+- After the GitHub App installation is checked, the callback page removes the single-use code and state from the address bar and history, and names the product from the instance brand.
+- Dates in the CI trust cards use the console language, and the old-audience sentence no longer says "until" twice.
+
+### Fixed: Component pages show errors and empty states, and keep their filters honest
+
+- Choosing a version or toggling "Include closed findings" returns the table to page 1.
+- The Versions, Where used, Vulnerabilities and dependency path tables and the graph dialog show an error with Retry when a request fails, and an empty state when there is nothing to list.
+- A vulnerability row links to the findings list by vulnerability id; a row with nothing to link shows plain text.
+- The list tiles count the whole inventory, and a tile opens exactly what it counts. Tiles with no data (Outdated, Latest version) are hidden.
+- The Where used version is kept in the URL. "Include closed findings" and the page size use the shared Checkbox and Select.
+
+### Fixed: deleting an evidence file no longer reports success when the server refused it
+
+- The evidence attachment delete showed "deleted" and removed the file from the list even when the request failed. It now checks the answer and reports the failure.
+
+### Fixed: the platform console uses the product typeface
+
+- The platform console image now ships the self-hosted fonts the shared stylesheet loads (`/fonts/*.woff2`). They answered 404 on the console site, so it rendered in a system fallback font while the tenant console used Inter.
+
+### Fixed: coverage figures never count a failed check as covered
+
+- The dashboard Discovery figure and the asset list filter `coverage=covered|uncovered` count an asset as covered only when every capability that applies to it succeeded in the coverage window. One working HTTP probe used to make an asset covered while its vulnerability check failed, timed out, was paused or never ran. Scope-blocked rows and the platform's DNS checks are not part of the requirement.
+- The connector coverage summary (`GET /api/v1/scans/coverage`, the Tenable panel) counts a host as scanned only once its batch settled it as scanned; it counted the dispatch, so an unreachable or failed host showed as covered.
+- Coverage health counts a pair paused because the host stopped answering as applicable, and as a gap once it has had no success for twice the cadence, so a host that went dark raises the gap alert instead of dropping out of every count.
+
+### Fixed: DNS re-checks of coverage run for names that stopped resolving
+
+- In an organization with scan zones, passive coverage (DNS resolution, registration and network owner lookups, passive subdomain discovery) routed every name through the zones. A name that no longer resolved was refused `unresolved` or `zone_none`, so its DNS re-check never ran and the name was never confirmed gone. Public names (registrable under a public suffix, with no private answer) now skip zone routing for passive capabilities: these send no traffic to the target. Internal names and addresses keep zone routing. Organizations without zones and active capabilities are unchanged.
+
+### Fixed: continuous coverage no longer creates runs that can never run
+
+- Before a coverage batch becomes a run, the planner checks whether the capability could run for the organization at all: a scope entry exists, the tool is switched on, a sensor of the organization has it and may run it, a sensor is online and up to date. When it could not, no run and no blocked run is created; the capability's due pairs are paused with one reason (`policy_disabled`, `no_scope`, `tool_missing`, `tool_not_allowed`, `sensor_offline`, `sensor_outdated`, `no_eligible_sensor`; `credentials_missing` and `quota_exhausted` are reserved) and resume by themselves on the first pass where it is ready.
+- Before, an organization with no sensor, a sensor briefly offline, or no zone that could place the run got one blocked run per batch per pass, and every pair of the batch stayed blocked. A trigger refusal of a whole coverage batch that means the capability cannot run now is no longer recorded as a blocked run; it pauses the capability and retries after 30 minutes.
+- The asset coverage section shows the readiness reasons in English and Vietnamese.
+
+### Fixed: continuous coverage runs again after each cadence and rechecks blocked pairs
+
+- The coverage planner only picked `due` and `failed` pairs, so a pair that was covered once was never planned again and a pair the scope gate refused was never rechecked. It now also picks `covered` pairs whose cadence has elapsed and `blocked` pairs whose 6 h recheck time has passed. A scope entry added later, a sensor installed later or a guardrail lifted later now takes effect without a person.
+- Due times carry a fixed 0 to 10 % jitter per asset and capability, so cadence waves spread out and a restart does not start everything in the same minute. A batch also takes pairs due within a tenth of the cadence (at most an hour) when one pair is due now.
+- A blocked pair whose precondition stops holding becomes `not_applicable`.
+- Migration `003413_asset_coverage_plannable_index` replaces the planner's partial index. Upgrade note: after the upgrade the planner catches up once on pairs past their cadence (on a typical installation a few hundred), within the daily coverage budget.
+
+### Fixed: Credential leaks list pages on the server and shows real data
+
+- The list now pages, sorts and filters on the server (page, page size, sort, source and severity are in the URL), so leaks past the first 100 can be reached. Export writes every leak that matches the filters.
+- The invented Classification column is gone; a Severity column shows the severity the API returns, and the drawer shows it unchanged.
+- "Leak date" uses the breach date when the import gave one, and the first-seen date is labelled "Discovered". The "Recent" badge follows the breach date.
+- The Source filter uses the API source types, and the Critical and High tiles filter the list. The "Pending" status option, which listed every active leak, is removed.
+- A failed list or related-leaks request shows an error with Retry, and the Related tab shows an empty state.
+- The page, the secret field and the credential type names are translated (English and Vietnamese).
+
+### Fixed: Crown jewels page shows and keeps real data
+- Editing a crown jewel opens with its stored business impact notes, and the notes show in the detail sheet.
+- The mock Dependencies tab is removed.
+- The table shows a loading state and an error with retry instead of "No crown jewels yet".
+- CSV export lists only fields the API returns, and the owner column is empty instead of "Unassigned".
+- The designate asset picker loads only while the dialog is open and waits 300 ms after typing.
+- Readers keep "View details" in the row menu, and the row icon follows the asset type.
+
+### Fixed: dashboard edit mode fits narrow widgets and phones
+
+- In Customize, a widget's header now holds only the drag handle, the title, Configure and a More menu (move, resize, duplicate, remove). Narrow widgets no longer overflow, with titles cut to one letter and buttons spilling into the next widget. Wide widgets also show Duplicate and Remove inline. The keyboard model is unchanged.
+- On a phone the editor is a single-column list of widgets with 44px controls.
+- CTEM loop stage cards share one layout (label, value, detail lines, then status at the bottom), so cards in a row line up.
+
+### Fixed: Dashboard editor and dashboards list
+
+- Cancel in the dashboard editor asks before discarding unsaved changes, and leaving the page while there are changes asks the browser to confirm.
+- Undo in the "widget removed" message now puts back exactly the removed widget, even after other changes.
+- The widget configuration panel no longer requests a preview for figures it already has, and Apply never stores a preview that belongs to an earlier draft.
+- A widget target shows its unit, is limited to 100 for percentages, and an empty value disables Apply instead of becoming 0. Section headings are in sentence case, and the "Del" shortcut is translated.
+- Dashboards list: using a template twice creates a numbered copy instead of failing, the edit form is addressed by `?edit=<id>` so Back works, each dashboard has a Customize action, and the page follows the style rules (one default button, no cards in the form, no toasts for visible changes).
+
+### Fixed: Dashboard home numbers open lists that match them
+
+- "View all" on fix-next and SLA lists no longer shows the number of rows returned as if it were the list total; heatmap cells and chart marks no longer open a list with a different total; the validate and mobilize percentages no longer link to a list.
+- The figures refresh on the dashboard's schedule without a reload, and relative times keep ticking. Stale widgets no longer repeat a dead Refresh button, and Refresh now works even after a failed read.
+- An organization manager can Customize an organization dashboard; "Edit details" is hidden from viewers. Setting a default now takes effect immediately, and the personal delete confirmation no longer claims the dashboard is deleted for everyone.
+- Items rows show severity and mark overdue deadlines with an icon and word; the CTEM loop is one divided row; the crown jewel prompt is an outline button; plural forms are correct in English.
+- Removed the legacy `/dashboard` redirect page and unused legacy dashboard components.
+
+### Fixed: junk names from passive sources no longer become assets
+
+- Domain and subdomain names are percent-decoded and lose what cannot start or end a host name (a leading "/" or quote from the URL they were cut from) when normalised: `%2Fwww.example.com` becomes `www.example.com`.
+- At ingest, a domain or subdomain that is still not a host name after IDNA is not created, and a name that is the remnant of a percent-encoded delimiter (`2fwww.example.com`) is not created when the name behind it is in the same report or already in the organization's inventory. Each is reported in the ingest errors by its report id.
+
+### Fixed: drawers use one text size per line and never break words letter by letter
+
+- In the asset, finding, scan run and sensor drawers, label and value now share one size (the label is muted, not smaller), a metadata line is one size from start to end, and no text is smaller than 12px.
+- The asset change history and the run timeline put the time, source and task on one metadata line under the event, and the sensor job list does the same, so no name is squeezed beside a fixed-width time column.
+- Buttons in the sensor health callout all use the same small size.
+
+### Fixed: certificate transparency promotes every name of a large domain
+
+- A domain with more than 500 subdomain names in certificate transparency had the same alphabetical tail cut on every run before promotion, so those hosts never reached inventory. The cap now bounds the subdomain exposure list only; every name is promoted, at most 500 new names per run, and the run logs when the exposure list was capped.
+
+### Fixed: the attack surface Review badge counts only what waits for a decision
+
+- The Review tab and sidebar badge counted a suggested name rule for every discovered name (names that are already in the inventory and need no decision), up to 50, plus an addresses card that offered nothing. It now counts the name rules over the names that need review (`needs_review`, `candidate`), the same names the Review tab lists, and a card only when it offers something. `GET /api/v1/easm/suggestions` gains `name_rules`.
+- Addresses that the organization's unclassified-scans mode already checks (a known network that is not shared) are decided by the server and returned in `checked_addresses` / `checked_count`; they are no longer counted as waiting.
+- Shared, CDN and hosting addresses are one quiet line on the Review tab ("need no decision") and never show open ports, which are the provider's. A card that offers nothing no longer hides the "Nothing to decide" state.
+
+### Fixed: the Exposures type pages cover the right findings and say when they fail
+
+- The Vulnerabilities page now counts every finding source except SAST, IaC, secret and cloud posture, so network and host scans, containers, external attack surface and imports are no longer missing. Misconfigurations counts IaC and cloud posture findings. The web `FindingSource` type matches the API enum.
+- "View N findings" opens the Findings list with the same sources and all states, so the list total equals N.
+- A failed statistics request shows an error with retry on all four pages instead of "No data yet".
+- Removed tiles and cards that were not about the page's findings (repositories with findings, assets by type on Code, asset coverage and priority fixes on Misconfigurations, repositories affected and remediation priority on Secrets). The misconfigurations chart has no outer labels and loads on demand.
+- The four pages' text is translated (en, vi).
+
+### Fixed: the Exposures overview matches its lists and reports bulk results honestly
+
+- The "Resolved" tile is now "Closed" and counts resolved, accepted and false positive exposures, the same states as the view it opens.
+- Bulk accept and bulk false positive no longer show a success toast for exposures that went to a second approver. The result is reported once: applied, waiting for approval, and "x of N failed".
+- Bulk actions run at most 5 requests at a time, keep going after a failure and always refresh the list, so rows that changed are not left stale.
+- A failed statistics request shows an error with a retry button in the metrics strip and the Analytics tab instead of zeros.
+- Copy changes: the export and page description no longer use dashes as asides.
+
+### Fixed: the filter chips row no longer draws the locked chip under the next chip on a phone
+
+- The chips row under every list toolbar measured its own content instead of the width it has, and squeezed the locked chip ("Informational hidden", "Show") under its content, so the next chip was drawn over it. The row now fills its width, nothing in it shrinks under its content, and when the locked chip, Add filter, the count and "+N more" do not fit on one line the locked chip takes a line of its own above the rest.
+- On a phone the list search box takes the toolbar's first line, with saved views and group under it, so its placeholder is no longer cut short.
+- The informational chip on findings is drawn with the shared locked chip, like the one on assets.
+- Findings header: the Triage button keeps its label on a phone and names its count ("Triage, 75 findings to triage"); the phone card's CVE and scanner are separate items instead of a dot-separated string.
+
+### Fixed: the finding page sends two fewer requests
+- The asset's SLA policy is read from its canonical path; the old path with a trailing slash was answered with a redirect first, on every finding and asset page.
+- The Tenable.sc rescan panel reads the connector list only for a Tenable.sc finding.
+
+### Fixed: finding page small fixes and remote images in descriptions
+
+- Copy link reports a failed copy instead of "Link copied".
+- The assignee picker is disabled without the assign permission.
+- A verification plan that fails to load shows an error row with Retry instead of nothing.
+- Dates on the finding page follow the app language; EPSS below 0.01% shows `<0.01%`.
+- Strings and link hints that were not translated now go through the dictionaries; unknown tab keys are no longer shown raw.
+- Raw palette colours, sub-12px text and uppercase labels on the finding tabs use design tokens; Sparkles is kept for AI content only; legacy remediation steps are read-only status rows; the Related tab drops its unlinked count tiles.
+- Security: markdown from people (finding descriptions, notes) no longer loads remote images automatically. An image on another origin is shown as a link to its URL, so a tracking pixel cannot reveal the viewer's address or timing. The link, like every link in that markdown to another origin, sends no referrer (`rel="noopener noreferrer nofollow"`, `referrerpolicy="no-referrer"`). Relative and same-origin images, including attachments, still render.
+
+### Fixed: the finding drawer shows the HTTP response of web findings
+
+- The drawer showed only the first evidence item, which for nuclei findings was the tool's curl command (stored after the HTTP exchange), so the request and response never appeared. It now shows the HTTP exchange of the newest detection in a compact layout (headers folded unless matched, the body scrolled to the matched part) with a link to all evidence.
+- Everywhere evidence is shown (drawer, Evidence tab, triage mode), a tool's curl item is folded into the HTTP exchange of the same capture, which already offers Copy curl. Evidence kind names are translated.
+
+### Fixed: finding assignee shows its name in the list and the drawer
+- The findings list now returns `assigned_to_user` (id, name, email) for each row, resolved in one tenant-scoped lookup per page. Only active members of the caller's organization resolve; any other assignee id keeps `assigned_to` and carries no profile.
+- The finding drawer no longer reads "Unassigned" (or shows a raw id) for an assigned finding whose name has not loaded: it shows the name once the record arrives, "Assigned" until then.
+
+### Fixed: approval requests show the finding and keep a reason that failed to send
+- The approve and reject dialogs show the finding being decided (title, priority, severity, CVE, asset), the whole justification and a link that opens the finding in a new tab, so a four-eyes decision is never made blind.
+- Approve and Reject are buttons on each pending row; your own requests say "Your request" instead of offering disabled actions.
+- A reject that fails keeps the dialog open with the reason as typed and says why under the field.
+- Column headers no longer offer a sort that only ordered the 20 rows on screen.
+- A failed load shows the error inside the list, keeping the page header and tabs; Refresh spins while it reloads and no longer shows a toast.
+- Dates read in the app's language; status badges use the theme's status colours; titles and justifications render as isolated plain text.
+
+### Fixed: the findings page no longer loads the source catalog on every visit
+
+- The Add finding dialog, which stays mounted on the findings page, loaded the finding source catalog on every page load. It now loads it when the dialog opens, so the page stays within its request budget again (the develop E2E request-budget spec was red since the quick-views change).
+- No operator action.
+
+### Fixed: a severity filter for Informational also matches findings stored as none
+
+- Findings stored with severity `none` (CVSS 0.0, and scanner templates that only detect a technology, a WAF or an API description) were counted as Informational but left out when filtering by `severity=info`. The filter now matches both values on the findings list, stats, groups, export, quick views, bulk actions by filter, saved views, the query language, MCP tools and the vulnerability catalog.
+
+### Fixed: the findings list clears its selection when the rows change
+
+- Changing the page, page size, sort, search, filter, view or grouping on the Findings list now clears the selection, so a bulk action only reaches rows that are on screen.
+- On a phone, each finding card has the selection checkbox and the action menu a table row has.
+- Bulk assign asks for re-authentication when the server requires it, and shows the server's error message when it fails.
+- A click anywhere on a finding row opens it; `j` and `k` (next and previous finding) are listed under Help, Keyboard shortcuts.
+
+### Fixed: findings list speaks the app language and stops claiming a copy that failed
+- Bulk assign and status results are translated with proper plurals ("Assigned 1 finding").
+- Copy ID and Copy link report a refused clipboard instead of "copied", in the list and the finding drawer.
+- The findings drawer no longer captures Ctrl/Cmd+C; the activity panel's `C` key opens the comment box.
+- Created and KEV due dates use the app locale; source categories in the filter panel are translated.
+- KEV, EPSS and attack-path chips use theme tokens at a readable size, and the path chip says "Path" instead of relying on colour.
+- Phone cards lead with the priority class; a finding with no asset name shows "Unnamed asset" instead of an id fragment.
+- Refresh no longer toasts; the filter panel is a flat bordered panel.
+- On a phone the Awaiting verification button uses a short label, so the view title stays readable.
+
+### Fixed: audit log and account pages speak Vietnamese
+- The audit log page and the account pages (profile, security, activity, preferences, notifications) now show every label, toast and filter in the chosen language; the filter selects have accessible names.
+- The profile page keeps the user ID, now labelled "User ID" and shown in a monospace font.
+
+### Fixed: sign-in, registration and password pages speak Vietnamese
+
+- The sign-in, registration, forgot and reset password pages, the sign-in error page and the validation messages follow the user's language.
+- The card title on these pages is the page heading, and the password show/hide button names its action and shows the right icon.
+
+### Fixed: priority rules and business impact speak Vietnamese
+- The Priority rules page (table, create and edit dialog, conditions editor, dry run, toasts) and the Business impact page now render in the chosen language instead of English.
+- The empty state of Priority rules reads "Create a rule to override the calculated priority.", and the rules table search field has a translated placeholder.
+- Condition fields, operators and values in the rule editor now carry accessible labels.
+
+### Fixed: the Fix next dashboard widget works for findings without a title
+
+- Fix next and the other ranked finding lists failed with a read error as soon as one ranked finding had no title. Such a finding now shows its rule id, CVE id or the start of its message instead.
+
+### Fixed: members, roles and teams settings speak Vietnamese
+- The Members, Roles and Teams settings pages, their role, team and assignment-rule sheets, and the Add user dialog now show Vietnamese for a Vietnamese reader (headings, table headers, menus, toasts, empty states and form labels).
+- The Members table footer counts "thành viên" instead of "users", and the members filter selects have translated accessible names.
+
+### Fixed: modules, asset lifecycle, vulnerability matching and scope policy settings speak Vietnamese
+
+- The Modules, Asset lifecycle, Vulnerability matching and Scope policy settings pages, their dialogs, toasts and validation messages now follow the interface language instead of always showing English.
+- The Muted products field on Vulnerability matching has a label, and the module toggle switches have names that read well to a screen reader.
+- Toast and heading copy drops "successfully" and em-dash asides.
+
+### Fixed: API keys, service accounts, SCIM and trusted organizations speak Vietnamese
+- The API keys, service accounts, directory sync (SCIM), trusted organizations and SSO approvals settings pages, and their dialogs, toasts and empty states, now show Vietnamese for a Vietnamese reader.
+- "Generate API Key" and "API Key Management" now use sentence case.
+- Icon-only copy buttons and the scopes group have accessible names.
+
+### Fixed: validation tools speak Vietnamese and pentest forms label every field
+- Compensating controls, control testing, attack simulation and ATT&CK coverage render in the selected language, with locale-aware dates.
+- Control testing shows a dash instead of 0% when nothing has been tested.
+- The pentest finding form and the pentest methodology settings label every input for screen readers.
+
+### Fixed: concurrent re-runs of one repository no longer deadlock or lose sightings
+
+- When many uploads reported the same findings at once (CI re-runs, matrix jobs), the batched writes locked rows in an unpredictable order and deadlocked. The sighting-only fallback then deadlocked too, and sightings were lost: in a 20-way load test every upload ended with errors and one round recorded 3,000 of 10,000 sightings. Every batched write now locks its rows in one order (assets by name, findings by fingerprint). Enrichment reads and writes the stored rows under that lock in one transaction. A deadlock or serialization failure that still happens is retried with bounded, jittered back-off, and the per-row fallback is no longer used for it. A finding whose enrichment already landed is no longer counted a second time by the fallback.
+
+### Fixed: ingest no longer runs without its suppression rules, and the automations of new findings survive a restart
+
+- Ingest applies the tenant's suppression rules from a snapshot versioned by every write to suppression rules and scope exclusions; when the snapshot cannot load, the ingest fails and is retried. A failed lookup used to turn suppression off for the batch silently.
+- The automations a new finding starts run from a durable `side_effects` ingest job after the batch is committed, batched, instead of a goroutine a restart lost.
+- Migration `003384_ingest_dispositions`.
+
+### Fixed: concurrent uploads no longer deadlock on findings rows
+
+- Every batched write of findings rows now locks its rows in one order (fingerprint, byte order). The upsert of new findings locked by fingerprint while enrichment, the sighting update and the finding-priority stamp locked by id, and the interop, scanner output, snippet, branch backfill, auto-reopen and bulk status writes locked in report or plan order. Concurrent uploads of the same findings, and an upload next to a priority pass or a bulk status change, deadlocked (`40P01`).
+- The best-effort writers (interop data, scanner output, snippets, branch backfill, priority stamp) dropped their rows on a deadlock with only a warning. They now queue, and a conflict that still happens runs the statement again.
+- A failed write of branch occurrences is now reported in the upload's errors, and that scan's occurrence sweep is skipped, so the findings it saw are no longer marked as gone from the branch.
+
+### Fixed: a long import completes, and a queued upload is re-checked when it is applied
+
+- The ingest worker renews a running job's five-minute lease, so an import that takes longer than the lease succeeds instead of being cancelled on every attempt. `INGEST_MAX_JOB_DURATION` (default `30m`) is the hard cap on one job. Completing or failing a job now only writes for the attempt the worker claimed: a worker that lost its lease stops and writes nothing.
+- Security: a queued file import is checked again when it is applied. An upload sent with an API key that was revoked, expired or deleted meanwhile fails with `uploader_not_permitted`, and `findings:approve` (which lets a VEX statement request a false positive) is kept only while the uploader or the key still holds it. Rights are never widened.
+- An unkeyed upload whose duplicate lookup fails answers `503` (not `500`). `GET /findings/imports/{id}/result` no longer answers `applied` for an upload that has no job unless its receipt finished; otherwise it answers `404`.
+- A retried CI tool export gives back the report slots its failed attempt took, so a run's report cap is not used twice.
+
+### Fixed: the ingest queue no longer grows for ever, and an accepted quarantined report is always applied
+
+- A new hourly job, `ingest-queue-retention`, deletes stored upload parts once nobody will open them (applied, expired 7 days after a failure, or staged by an upload that never got a job), and finished ingest jobs and protocol v2 reports after 30 days, in short batches. Finished rows used to stay for ever.
+- Accepting a quarantined sensor report marks it accepted only once it was applied: a failed apply used to leave an item accepted and never applied. The item is claimed while it applies; a second accept or a discard meanwhile answers 409, and a failed apply leaves it pending to be accepted again.
+- Migration `003381_quarantine_apply_claim`: `sensor_result_quarantine.applying_at`.
+
+### Fixed: concurrent uploads to a new repository no longer drop findings
+
+- When several uploads (CI matrix jobs, parallel pipelines) created the same new repository at the same time, the uploads that lost the race on the asset row wrote the repository details under an asset id that was never stored. The foreign key failed and every asset and finding of those uploads was dropped (in a load test, 2 to 7 of 20 uploads). The repository details now use the id the database kept, so every upload attaches its findings to the one stored repository.
+
+### Fixed: Insights and Reports share one period and number format
+- Program health sends its period to the executive summary, so every card follows the selector.
+- The executive summary, Program health and Reports use one set of periods (30 days, 90 days, 1 year) and one percent and risk format.
+- A failed read on these pages shows an error with Retry instead of "No data yet" or dashes.
+- Owner coverage has one definition and target (95%) on Program health and Data quality.
+- The Program health chart plots the same series as the figure, with locale dates and a screen-reader table.
+- Download CSV on Reports is shown only to people who can read the dashboard.
+- The internal "From:" and "Source:" lines are gone from the scorecards.
+- The Insights pages are translated (English and Vietnamese).
+- Removed the redirect-only `/insights/reports/compliance` and `/insights/reports/scheduled` routes.
+
+### Fixed: Reports and CTEM maturity are translated
+- The Reports page, schedule list, new-schedule dialog and cadence wording are in English and Vietnamese; weekday names follow the app language.
+- CTEM maturity cards are translated, use the success and warning colours, and show a dash instead of raw values when only one cycle was analysed.
+
+### Fixed: the vulnerability page's intel strip uses the shared stat cells
+
+- The intel strip drew its own label and value list, which the shared key-value guard refuses, so develop's web tests failed. It now uses `DetailStatGrid` and `DetailStat`; `DetailStat` gains `wrapCaption` so a longer caption (date added to KEV, ransomware use) wraps instead of being cut.
+
+### Fixed: logs no longer hide ordinary fields that contain "iv"
+
+- The log redactor matched short sensitive keys ("iv", "pwd", "dob", "jwt", "ssn", "dsn") anywhere inside an attribute key, so fields such as `diverged`, `active`, `archived` or `live` were logged as `[REDACTED]`. A sensitive key of three letters or fewer now matches only as a whole segment of the key (`aes_iv`, `user.dob`); longer keys still match anywhere.
+- The scope-ledger sync warning says what the job signer does with jobs for scope its ledger does not hold: in audit mode they are signed and logged (nothing is refused yet); in enforce mode they are refused. The warning carries `ledger_mode`, and the number of diverged entries is readable again.
+
+### Fixed: the openCtem logo sits on its baseline and is centred
+
+- The C of the full logo (sign-in, legal pages) is now drawn as a capital of the
+  wordmark: it stands on the baseline and reaches cap height, with the same
+  stroke weight as the letters, instead of a scaled mark that hung below the
+  baseline. The spacing around the C is even and the logo's box is tight
+  around the ink, so it is centred where it is placed.
+
+### Fixed: DNS resolution runs on names that stopped resolving
+
+- A job that only looks names up (`resolve.dns` with dnsx, passive subdomain enumeration) is no longer refused a hostname for having no DNS answer, at dispatch or when a sensor claims it. Finding out whether the name resolves is the job: coverage runs that re-check names that stopped resolving failed at claim with `SCOPE_CHANGED`, every name refused as `unresolved`. Zone routing places such a name as a public target; every other check (scope entries, exclusions, rejected names, the deny list, private addresses, domain proof, the tier) still applies, and the sensor's egress guard still checks every address before connecting. Any other tool is refused as before.
+- A coverage run dispatched without zone routing (a passive batch of public names) records it, so the claim re-check does not route it either.
+- A job whose every target is refused at claim only because its names stopped resolving ends as `NO_RESOLVING_TARGETS` (new failure class `target`, not retried), not `SCOPE_CHANGED`. `SCOPE_CHANGED` stays for a real scope change.
+
+### Fixed: version matches on packages are one finding with the scanner's
+
+- A version match on a package (from an SBOM or a dependency report) is now keyed like a dependency scanner's report of the same package and CVE: asset, package URL without version, CVE. Before, it was keyed like a network finding, so a scanner report and a version match of the same issue stayed two findings, and a scanner finding a person had closed as a false positive or accepted came back as a new matched finding.
+- Matched findings now carry the matched package version: they count on the package in Components, and the organization's VEX statements apply to them when they are created.
+- Matched findings on packages stored under the earlier key move to the new key on the next matching pass and keep their status and history. When a scanner finding already has the new key, the matched finding keeps its old key; the two are never merged automatically.
+
+### Fixed: the members list applies `user_ids` without `include=user` too
+- `GET /api/v1/tenants/current/members?user_ids=...` returned the whole page when `include=user` was missing; the filter now applies on both paths.
+
+### Fixed: migration numbers account for stacked pull requests
+
+- `make -C api migration-new` read only pull requests that target develop, so a number already taken by a stacked pull request (one that targets its parent branch) was handed out again. It now reads every open pull request.
+
+### Fixed: My work figures match the lists they open
+
+- The Critical / high, Overdue and Open figures now open Findings with the filter that counted them, so each number equals the list total (severity critical and high, SLA overdue and exceeded, Open state, pentest drafts left out).
+- A failed load shows an error with Retry, and figures show a dash instead of 0 while loading or failed.
+- Finding titles are links, a Priority column leads the queue, and relative times and counts follow the app language.
+- "Open · assigned to me" is now "Open · mine".
+
+### Fixed: a scan with nothing to scan says why, per target
+
+- A scan whose targets all fall out of zone routing was refused with "No target of scan "Quick Scan - ..." can be scanned: N target(s) are outside every scan zone or in a zone without sensors", even when the only reason was a name that does not resolve in DNS. The refusal now names each real reason with its targets and the next step (does not resolve in DNS, private address outside every scan zone, outside the selected zone, zone with no sensor, refused by sensor policy, deny list), and lists every target with its refusal code in `details.refused`, so the console shows them in the dialog. Every target unresolvable: code `NO_RESOLVING_TARGETS` and no zone wording. Zones are mentioned only for the targets they are the reason for.
+- Trigger refusals no longer quote the scan's name (an ad-hoc quick scan's name carries a time and a random suffix): "This scan ..." instead.
+- Uncovered targets in the run context and the routing preview carry a `kind`.
+
+### Fixed: Notifications page and bell
+
+- An unread notification with a link opens on the first click; it is marked read in the background.
+- Notification links only open same-origin paths. A target from an integration or webhook that points off-site (absolute, protocol-relative or `javascript:` URL) shows as a row without a link.
+- The bell shows an error with Retry instead of "all caught up" when the list fails to load, rows without a link can be opened from the keyboard, and the bell button names the unread count.
+- Failed mark-as-read actions show an error toast on the page and in the bell.
+- Every string is translated (English and Vietnamese), times follow the app language, and severity uses the shared badge. The three summary tiles are replaced by an unread count next to "Mark all as read".
+
+### Fixed: the notifications page opens again
+
+- `/notifications` showed "Something went wrong" on every visit since the page was last changed; it renders again.
+
+### Fixed: asset drawer Technologies rows no longer break names letter by letter
+
+- Each technology shows its name on its own line and one metadata line under it (confidence, source, first seen, last seen) in one size.
+- The lifecycle snooze menu is translated (English and Vietnamese).
+
+### Fixed: remediation, programs, scope, threat intel and automations share the page rhythm
+
+- Remediation (Fix plan, Tasks, Suggestions, Campaigns), Programs, Scope, Scope letters, Threat intelligence and Automations place their blocks 16px under the header and 20px apart; Campaigns no longer leaves 36px under its tabs, and the Programs and Letters content no longer touches the tab underline.
+- The Fix plan tiles each open the matching task or suggestion list; the overdue tile is gone because no list view matches it.
+- The Threat intelligence tiles for your open findings are links to the findings list they count (open in a new tab, show the URL) instead of buttons that navigate.
+- Automations has no metric strip; the workflows list carries the same information.
+
+### Fixed: The notifications page opens again
+
+- The Notifications page showed "Something went wrong" instead of the inbox. It loads normally now.
+
+### Fixed: organization, access, security and account pages share the page rhythm
+
+- Settings pages for the organization, members, roles, teams, directory sync, service accounts, API keys, security, audit log and My account place their blocks 20px apart under the header; the 24px to 36px gaps and the cards that touched the tab underline are gone.
+- General settings tab icons are sized by the tab strip and each tab has its own icon.
+- The audit log tiles are now two filters: Failed and Denied (last 7 days) narrow the log below. The Events and Successful totals are gone.
+- Modules, directory sync and Teams no longer show a strip of totals; the list already shows the counts.
+- My account shows the user ID, sign-in method and dates as a plain list instead of a grid of boxes.
+
+### Fixed: scanning, integrations, content and pentest settings share the page rhythm
+
+- Scanning, integrations, content catalog, AI assistants (MCP) and pentest settings place their blocks 20px apart under the header; the AI assistants page no longer leaves 57px between its header and tabs, and the Content catalog no longer leaves 82px.
+- Integrations, Notification channels, Source control and Ticketing tiles filter the list below (Connected, Needs attention or Errors, Pending); the total tiles are gone.
+- Scanner tools shows five filter tiles instead of six. Scanner templates and the notification event history no longer show inert strips.
+- The notification queue status is one plain alert instead of a coloured banner.
+
+### Fixed: the pentest finding editor's assignment, SLA, tags and save bar work like the rest of the console
+
+- Assignee uses the shared people picker of the Findings page (search, avatars, unassign), listing only the campaign's working members (lead, tester, reviewer); observers and clients were never assignable and are no longer offered.
+- The typed "Deadline" with its "SLA (n d)" shortcut is gone: as for every finding, the organization's SLA policy sets the deadline when the finding is published (priority class and the known-exploited cap included). Before publishing the field says so with the policy window; after it shows the deadline read-only, with the KEV note when the cap applied. A deadline typed earlier is kept as stored.
+- Tags use the shared tag input (chips, Enter or comma to add, suggestions from the campaign's findings); references take a full http(s) link on Enter and refuse anything else inline.
+- Save changes is disabled while nothing changed; the bar reads "Unsaved changes", "Saving…", "Saved <time>" or "Not saved: <reason>". On a phone the arrow next to Save opens Submit for review and Publish.
+- After a save the editor kept showing the values from before the save (the page reloaded its data by clearing it, which remounted the editor with the first load). It now keeps the saved values.
+- The section chips scroll sideways with an edge fade and keep the current section in view; the tracking fields render once (rail from 1280px, a card below), so their labels and ids are unique.
+- Evidence is a card like the other sections; its upload rows can be copied and deleted from the keyboard, and the upload hints are translated.
+- The template editor got the same tag, reference and save-bar behaviour.
+
+### Fixed: the pentest finding editor keeps its fields inside their cards
+
+- On the edit page of a finding with a CWE, an OWASP category or a MITRE technique, the clear button of each picker sat past the edge of its card (and the MITRE field overflowed on a phone). The three pickers are now one shared picker whose field shrinks with its column.
+- The new and edit pages use the standard page header: the campaign and the finding's status lozenge replace the "campaign · status" line, and the back arrow gives way to the breadcrumb and Cancel.
+- The summary rail starts at 1280px, so with the sidebar open the form keeps a usable width at 1024-1279px; below that the severity and CVSS show in the save bar as the shared severity badge.
+- The affected-targets field no longer announces a suggestion list that is not on the page.
+
+### Fixed: the people chip no longer calls real members "Former member" in large organizations
+
+- The chip that names who created or approved something looked the user up in the first 100 members only, so in an organization with more members everyone past the first page read "Former member". It now asks for exactly the ids on screen (one batched request per screen) and says "Former member" only when the id is not a member of the organization.
+- Added: the members list (`GET /api/v1/tenants/{tenant}/members`, `members:read`) accepts `user_ids`, a comma-separated list of at most 100 user ids. Only members of the listed organization are returned; a malformed id is a 400.
+
+### Fixed: API exits when its listener fails; write timeout above request timeout; single-run controllers hold a lease
+- The API process now exits with a non-zero status when the HTTP listener cannot start (port in use, bad TLS material), so the orchestrator restarts it. Before, it stayed alive running background controllers with nothing listening.
+- `SERVER_WRITE_TIMEOUT` now defaults to `SERVER_REQUEST_TIMEOUT + 5s` (35s) instead of 15s: a handler running between 15s and 30s used to finish while the client saw a closed connection instead of the `503` timeout answer. The API logs a warning at startup when an explicit write timeout is not above the request timeout.
+- The task-ticket push, DefectDojo sync, SCM sync, SAML certificate expiry notice and pending-scope settle controllers run on one API replica at a time (controller lease), so several replicas no longer open duplicate tracker issues, send duplicate notices or repeat remote syncs.
+- The scheduled SCM sync reads every integration in pages instead of only the first 1000.
+- CI trust configuration `last_used_at` is written at most once a minute, so a burst of pipeline token exchanges no longer updates one row per exchange.
+- Ingest job leases (claim, renew, stale release) use the database clock, as controller leases do, so replica clock skew cannot shorten a lease.
+
+### Fixed: deleting a proxy pool that a sensor still uses answers 409 on PostgreSQL 18
+
+- PostgreSQL 18 reports a RESTRICT foreign key that refuses a delete as SQLSTATE 23001 instead of 23503. The foreign-key check now accepts both, so deleting an in-use proxy pool again answers "pool in use" (409) instead of an internal error on PostgreSQL 18. Found by the new PostgreSQL 16/18 CI job.
+
+### Fixed: one spelling for a package across the inventory and its findings
+
+- The software inventory now lower-cases the namespace and name of `alpm`, `apk`, `deb` and `hex` package URLs, as finding identity already did. A report spelling `pkg:deb/Debian/OpenSSL` no longer creates a package apart from `pkg:deb/debian/openssl`, which its findings were keyed on. Packages already stored with upper-case letters stay as they are; the next report links the lower-case package.
+
+### Fixed: Remediation tasks after a finding delete, dashboard open drill, bulk status notices, epic claim audit
+
+- Deleting a finding or all findings of an asset now re-derives the remediation tasks that held them at once, and the background reconcile also picks a task whose stored member counts differ from its live members, so a task no longer keeps a stale state, count and past deadline.
+- The dashboard open-findings figure counts informational findings, so its links (the summary tile and widget drill-downs without a severity filter) now ask the findings list for them and the list total equals the figure.
+- A bulk status change (bulk by id or filter, remediation mark fixed, epic claims) now sends each person one summary notice for the batch instead of one notice per finding; a single move still notifies per finding and timeline and audit entries are unchanged.
+- A fix claim made by a campaign's Jira epic now records `source=jira_epic` and the Jira account on its audit event.
+
+### Fixed: a retest of a multi-path check is judged on the finding's own endpoint
+
+- A template that probes many paths (for example swagger) kept the exchange of one path as evidence, so a retest read "another endpoint was checked" although the finding's endpoint had been requested. Sensors that report each request (sensor release after this one) let the platform decide on the finding's own endpoint: matched is still vulnerable, answered and not matched follows the usual fix rules, and a check that matches only at another path is the new outcome `still_exposed_elsewhere` (the finding stays as it is and the paths are named). Older sensors behave as before.
+- A retest run whose tool completed but whose verdict is inconclusive is now a completed run with a result ("Completed, inconclusive") instead of Failed. Failed stays for a sensor that returned nothing or a target that did not answer.
+- Migration 003412 widens `finding_retests.outcome` to varchar(32) and the outcome and reason-code checks (`still_exposed_elsewhere`, `matched_elsewhere`).
+- Console: a completed retest run with a result reads "Completed, inconclusive" or "Completed, exposed at another path" in amber, its step explains the reason and what to do in plain words, and the finding's Retest check card offers to add an HTTP assertion pinned to the finding's own URL after an endpoint mismatch.
+
+### Fixed: scan detail page and the New scan dialog
+
+- The scan page refreshes its counters and status when a live run finishes, loads the first page of runs once, keeps the run history page and size in the URL, tells a missing scan from a failed load (with Retry), and no longer repeats the breadcrumb as a back link. Its text is translated (en, vi).
+- The New scan dialog turns off "Run immediately" for a user without `scans:execute` and saves the scan without running it, and "View scan" opens the scan without a full page reload.
+
+### Fixed: Scan assets and Quick scan do not start a scan with nothing to scan
+
+- When the live scope check says none of the selected targets can be scanned, Start Scan is disabled and the dialog says why in place. A name that does not resolve in DNS reads "Nothing to scan: go.example.com does not resolve in DNS." with what to do and a "Check DNS again" button that re-runs the platform's resolution; other reasons are listed with their fixes. When only some targets can be scanned, the dialog says the scan runs on those and leaves out the rest.
+- The selection summary shows its counts as separate elements instead of joining them with a middle dot, and says "1 does not resolve in DNS" in the singular.
+- The refusal panel heading is translated (it was English only).
+
+### Fixed: a scan step that did not cover every host says why in words
+
+- A step that completed with hosts its sensor could not fully cover ends with code `COVERAGE_GAPS` (class `partial`), which the run page now explains instead of "this console does not describe it yet".
+- The run map's step carries a structured `outcome` (hosts with their reason, and the unfinished, unreachable and skipped counts); the step panel lists each host with a translated reason and why (stopped answering, kept pushing back at the lowest rate, blocked) instead of the English summary string. The summary stays in `error_message` for API clients.
+- Every coverage-gap reason, skipped-target reason, unreached reach class and failure class has en and vi text, checked by a test against the API's lists.
+
+### Fixed: scheduled scans run once per period across daylight-saving changes
+
+- A daily, weekly or monthly scan whose time does not exist on the day the clock goes forward (for example 02:30 in a zone that jumps from 02:00 to 03:00) runs right after the jump (03:30) instead of an hour early, and the following day runs once at its time instead of twice.
+- A cron schedule whose time happens twice on the night the clock goes back runs once.
+
+### Fixed: editing a scan checks its scanner config like creating one
+
+- An edit that changes `scanner_config`, the tags or the cron expression passes the same checks as a new scan. A config sent back unchanged is not checked again, so older scans stay editable.
+
+### Fixed: the Scans tabs share one page rhythm
+
+- Scans, Runs, Workflows and Approvals place their blocks 16px under the header and 20px apart; the Runs metric strip no longer touches the tab underline when there are no scan windows to announce.
+- Runs shows five status tiles, each a filter of the list (Runs, Running, Pending, Completed, Partial); failed, timed-out, canceled and blocked runs are in the Status filter. A failed list read shows an inline error with Retry and keeps the filters.
+- Workflows has no metric strip; the owner filter sits at the start of the toolbar.
+- Strip labels, search and filter names on the Scans tab are translated (English and Vietnamese).
+
+### Fixed: scoping registers load every row, not the first page
+- Business services, business units, crown jewels, attacker profiles and cycles now load every page of their list (up to 1000 rows), so the strip figures equal the list. Business services showed only the first 20.
+- When a register has more rows than the cap, the page says "Showing the first N of M".
+- The parent-unit, threat-model crown jewel, charter service and cycle attacker-profile pickers use the same complete lists.
+
+### Fixed: scoping pages show failures, honour permissions and guard busy actions
+- Cycles, business units, business services, attacker profiles and the threat model show the shared error state with Retry when a read fails, instead of an empty list or a skeleton that never ends.
+- Start a cycle, New cycle and Import program are shown only to users who hold the matching write permission; the programs list says when the user has no access.
+- Creating a cycle or an attacker profile cannot be submitted twice, shows the API's message on failure, and a cycle's end date cannot precede its start date.
+- Cycle dates written as a plain date show the right day in every timezone.
+- The exclusions list has a status filter, the Scope strip no longer flashes 0 while loading, and clicking an active strip tile clears its filter.
+- The program page and its form have loading states, a back link and a Cancel link; the letters page now has Vietnamese text and downloads keep their file extension.
+- Saving a cycle's attacker profiles refreshes the list even when the save fails midway.
+
+### Fixed: sensor requests refused for clock skew say so, and refused pairing starts no longer lock out an address
+
+- A signed sensor request (pairing included) whose signature verifies but whose time is more than 2 minutes off the server's clock now answers `401` with the `clock-skew` problem, carrying `server_time` and `clock_offset_seconds`, and the API logs it at WARN with the offset. Before, it was the generic "Invalid credentials", which hid a wrong host or server clock. An unknown key or a bad signature keeps the generic answer.
+- Pairing start budgets: every start spends a per-address entry budget (60 per hour, burst 10); only a start whose signature verified reaches the budget that opens requests. A codeless start keeps 10 per hour (burst 3) per address; a start with a pairing code or an enrollment token is budgeted by that code or token (5 per hour, burst 3) under a wider per-address cap (30 per hour, burst 10), so several sensors behind one office address can pair with their own codes. The budget never depends on whether a code is open. A refused start's `Retry-After` is the time until the budget refills (was a fixed 60 s).
+- **Upgrade note:** keep the API host's clock synchronised (chrony with `makestep 1 -1`); the sensor SDK prints the offset when it gets the new problem.
+
+### Fixed: the sensor drawer no longer draws a long SDK version over the next field
+
+- The Version field shows the sensor release and its update status; the SDK moves to More details, where a pseudo-version (a build of an unreleased commit) reads "v0.37.1 pre-release" with the full string under it. A long value stays inside its column everywhere the version cell is used.
+- The drawer header's subline lists its parts without a separator glyph and wraps on a phone instead of cutting off the address. The same holds for every drawer header, the activity summary card, the setup check counts and the job list.
+- "Unhardened" in the header is a button: its tooltip names each gap and it scrolls to the security posture section, which now links to the sensor hardening guide.
+- The grant's remote actions read in words ("Pause and drain: always allowed", "Also allowed: key rotation") instead of protocol identifiers. Tier names read "T1: active, non-intrusive".
+- The API key field shows when the key was last used and, for administrators, a Rotate key button; a sensor without a key prefix no longer shows a bare ellipsis. Key material is never shown.
+- The network path section keeps its explanation behind "How network paths work".
+- Drawer tabs: each tab's `aria-controls` names the drawer body, and the "More" menu button sits beside the tab list instead of inside it.
+- Label and value lists in the sensor drawer use the shared components; a test now refuses new hand-written `<dt>` lists outside the shared components, and the drawer end-to-end spec fails when two pieces of text are drawn over each other.
+
+### Fixed: Sensor menus offer only the actions the API allows
+
+- Enable is offered only for a disabled sensor, and a revoked sensor offers only View and Delete in the row menu, the detail drawer and the edit dialog.
+- Revoke follows the API gate (`sensors:write` or `sensors:revoke`), not `sensors:delete`.
+- The zones health action needs `sensors:zones:read`, the selection column needs `sensors:delete`, and the Disable confirm shows a loading state.
+- The one-time API key dialogs (rotate key, install with a key) ignore outside clicks and ask "Did you copy the key?" before closing.
+
+### Fixed: Sensors page refresh keeps the list on screen
+
+- Refreshing, enabling, disabling, revoking or deleting a sensor revalidates the list without clearing it first: no skeleton flash and one fleet fetch instead of two. The proxy pools list behaves the same.
+- A failed 15-second poll no longer raises an error toast; the page shows its error state.
+- The "Sensors refreshed" toast is gone.
+- The Protocol v1 tile counts every v1 sensor, matching the list its filter shows.
+- Refresh content has its own icon, the content source URL hides its query string, and the Role column sorts by type.
+
+### Fixed: an expected pairing code can be cancelled, and pairing requests expire again
+
+- Cancelling a pairing code made with "Expect a sensor" before any sensor used it returned an error.
+- When such a code expired unused, the periodic pairing sweep failed and rolled back, so from then on no pairing request expired, no unconfirmed key was revoked and old requests were never purged (the API logged `sensor pairing sweep failed`). Reads already checked each expiry, so no expired code could be used.
+- Migration `003423_sensor_pairings_key_check_closed_states` lets a cancelled or expired request have no sensor key; open and approved requests keep their key rule. Safe on populated tables (the new check is weaker than the old one).
+
+### Fixed: the organization time zone can be set, and settings controls that did nothing are gone
+
+- Settings > General has a time zone picker. The organization time zone already set emerging-threat quiet hours, the digest hour and scan approval hours, but no page set it, so every organization ran on UTC. Any IANA zone is accepted now; the old allow-list of 15 zones is gone (the zone database is embedded in the API binary).
+- Account > Preferences no longer shows a time zone, date format and time format: they were saved in the browser and no date formatter read them. Dates use the browser's zone and locale until one shared formatter honours a personal choice.
+- Settings > AI is shown only to owners and administrators (the API was already admin-only; members and viewers saw the page with an error). The pentest report templates page now has its permission and module guard.
+- Changing a member's role from the role sheet goes through the shared client, so a change that needs a recent sign-in asks for it instead of failing with "HTTP 403".
+
+### Fixed: the Vietnamese sidebar no longer shows English item names
+- My work, Assets, Data quality, Program health, Exceptions, Detections and Indicators (IOCs) have Vietnamese labels.
+- A test keeps every sidebar item labelled in both languages.
+
+### Fixed: table headers and the workspace error screen are named and translated
+- A table column with no visible header (row actions) names itself to screen readers, and the rows-per-page select says what it sets.
+- When the workspace cannot load, the screen is translated; a rate-limited server (429) reads as busy instead of unreachable and is retried once after a short pause.
+- Removed an unused pagination component with untranslated text.
+
+### Fixed: previewing a task from a query no longer fails on a finding without a title
+
+- Previewing or creating a remediation task from a query returned "internal error" when a matching finding had no title (`findings.title` is nullable). The preview sample, the task member list, the claim-conflict and primary-holder reads and the suggestion reads now show the finding's title, then its rule name or rule id, and an empty title in the console shows "Untitled finding". A finding's message is no longer a title fallback in these lists, because a secret finding's message can quote the secret.
+- The create-from-query dialog shows its translated message when the API reports a server error, instead of the raw "internal error".
+
+### Fixed: saving threat-alert organization state no longer fails when the organization is deleted at the same moment
+
+- The state row is now written under a key-share lock on the organization, so a concurrent delete waits instead of raising a foreign-key error.
+
+### Fixed: a result cut short never counts as coverage
+
+- A completed scan task whose result says `truncated: true` (in its metadata or at the top level: cut short by a deadline, the sensor's disk or an output cap) no longer marks its targets covered, no longer lets the findings auto-resolve close findings it did not report, and ends its run step partial with the targets recorded as unfinished. Done outcomes inside a truncated result are withheld; unreached targets and skips keep their own verdicts, and a later complete task still decides a target. The same applies to Tenable.sc coverage batches.
+
+### Fixed: Awaiting verification count and its view now list the same findings
+- The verification queue on the Findings page left out claimed fixes that have no CVE (rule-only SAST, secret, misconfiguration and DAST findings), so a count of 1 opened an empty view. The queue now lists them in a "Without a CVE" section, each with its own Approve and Reject.
+- The count and the view use one scope (the page's context filters) and both leave out pentest findings, which are verified in their own module.
+- The findings list, stats and groups accept `cve_id_null=true` for findings with no CVE.
+
+### Fixed: metric strips are valid markup
+
+- The metric strip no longer nests links and buttons in a definition list (axe definition-list and dlitem).
+
+### Fixed: remediation, emerging-threat and ticket-mapping detail pages name themselves in the breadcrumb
+
+- A remediation task, a remediation campaign, an emerging-threat alert and a ticket mapping now show their name in the breadcrumb instead of "Details" or "Campaign".
+- A remediation task whose fix action has the same text as its title no longer prints it twice under the heading.
+
+### Fixed: load errors explain rate limits and lost connections, and fit on a phone
+
+- When a page section fails to load because of the per-user request limit, it now says "Too many requests in a short time. Wait a few seconds, then retry." (English and Vietnamese) instead of the server's English "Rate limit exceeded"; a lost connection gets its own message too. Other errors keep the server's message.
+- On a phone the request id is no longer printed inside the error box, where it ran past the right edge; the "Copy request ID" button still copies it. Wider screens show it as before.
+
+### Fixed: Exposure chains, Attack paths and Emerging threats layout details
+
+- Exposure chains and Attack paths: a load error or the "No relationship data yet" state now keeps the page's gap below the header instead of touching it.
+- The "How chains are built" and "How paths are scored" notes use "Term: explanation" instead of dash asides.
+- Emerging threats: the State filter grows to fit its option, so "Open (not closed)" is no longer cut off.
+
+### Fixed: Retest queue rows read plainly
+
+- Asset counts read "1 asset" / "2 assets" instead of "1 asset(s)".
+- "Last updated" and "Last retest" dates use the app's date format ("Oct 1, 2026") instead of the browser's numeric format ("10/1/2026").
+- Each row's Retest button is an outline button, so a long queue no longer shows a column of primary buttons.
+
+### Fixed: Risk scoring settings show the default likelihood × impact model
+
+- Every organization's default risk model is likelihood × impact, but Settings > Risk scoring could not show it: the Score composition select was blank and the page offered component weights, exposure multipliers, finding impact and CTEM points that this model ignores.
+- The select now lists "Likelihood × impact (default)". While it is selected the page says how risk is computed, hides the weighted-only controls and explains the formula under "How scoring works"; choosing Standard or Amplify within headroom shows them again.
+
+### Fixed: the breadcrumb and header controls speak the reader's language, and the phone search button has a name
+
+- The breadcrumb trail now uses the same translated names as the sidebar and the settings rail, so a Vietnamese reader no longer sees English page names above every page. Section names and record kinds ("Campaign", "Scan") are translated too.
+- The header search, full screen, theme menu, notifications popover and the skip link are translated. The skip link reads "Skip to main content".
+- On a phone the header search button showed only an icon and had no accessible name; screen readers now announce it as "Search".
+
+### Fixed: Threat intelligence no longer mixes your findings with the global catalogs
+
+- The Threat landscape tab labelled the organization's open findings with EPSS 50% or more as "EPSS above 30%", divided the organization's high-EPSS findings by the size of the global EPSS catalog ("High-risk rate 0.00%"), showed the catalog size minus your findings as "Low (below 10%)", and showed the KEV catalog size minus your past-due findings as KEV "On track".
+- The tab now shows one strip of your open findings (EPSS 50% or more, EPSS 10% or more, in CISA KEV with ransomware and 30-day counts, KEV past due), each opening the findings list it counts, and a separate "Catalogs" line with the EPSS and KEV catalog sizes.
+
+### Fixed: a failed notification channel is retried even when another one got the event
+
+- Every channel an event goes to now has its own delivery state, attempts and backoff (1 min, 5 min, 30 min, 2 h, 6 h, 12 h, 24 h; 8 attempts, then the channel is dead). Before, one channel's success marked the event done and the failed channels were never retried; a channel that got the event is never sent it again. Migration 003326 adds `notification_outbox.deliveries`.
+- A refused delivery (a non-2xx answer or a transport error) is a failure and is retried. Before, the HTTP clients reported it in a way the outbox counted as a success.
+- The delivery history (`GET /api/v1/integrations/{id}/notification-events`) lists each channel's attempts.
+
+### Fixed: Add a widget gallery keeps loaded previews and drops the nested card
+
+- Previews loaded in one opening of the gallery are kept when you switch tabs, so a card that comes back does not request its figures again or use up another preview slot.
+- The single-card "Advanced" tab is gone; the Note card sits at the top of All.
+- Each preview is drawn directly inside its card instead of in a second bordered frame.
+
+### Fixed: the Add a widget panel no longer overflows
+
+- In Customize, the Add a widget side panel kept its content inside its own width. A wide preview used to stretch the list, so the search field, category names and widget cards were cut off at the left edge.
+- The category names are now one scrollable row with fade edges (arrow keys move between them), the panel is full screen on a phone, and previews shrink to the panel width.
+
+### Fixed: workflow builder and scan approvals inbox
+
+- The workflow builder offers Clone for a system template, labels its back button and canvas inputs, shows a retryable error (and "not found" only for a 404) when the workflow or its draft fails to load, no longer toasts when a step is deleted, and its text is translated (en, vi).
+- The scan approvals inbox shows "Showing N of total" with Load more instead of silently stopping at the first 100 requests, and the filter buttons expose their pressed state.
+
+## v0.14.0 (2026-10-23)
+
+### Security: unbounded reads and bulk inputs are now capped
+
+- Four collection reads under one parent (attachments of an object, owners of an asset, role bindings of a team and role-to-team bindings, assets of a business service) return at most 1,000 rows in a stable order, so one runaway parent can no longer load an unbounded set into memory. The software list of an asset and the program list were already capped.
+- `PATCH /api/v1/asset-groups/bulk` and `DELETE /api/v1/asset-groups/bulk` refuse more than 1,000 `group_ids` with a validation error.
+- `POST /api/v1/credentials/import/csv` refuses a CSV of more than 10,000 records (header included) with 400 before any dedup work starts; the 10 MiB body limit bounded bytes only.
+
+### Security: bug-bounty findings are never AI-triaged automatically
+
+- Reporter text is untrusted: findings with source `bug_bounty` are no longer queued for automatic AI triage when they are created; a person can still ask for it.
+- The rule holds on every AI triage entry path: auto-triage, workflow `trigger_ai_triage` actions and requests without a user are refused (403 `AI_POLICY_RESTRICTED`, bulk item `ai_policy_restricted`), the worker fails such a queued row before the model call, and a person's requested verdict on a `bug_bounty` finding creates no false-positive proposal and dispatches no workflow event.
+
+### Security: a repeated claim hands out the same job as the first delivery
+- The claim by id (and a repeat of a claim the sensor already holds) signed the stored command, which lacks the organization's HTTP policy, the program rules, the sensor's `settings_layers` and the template signatures. A signing sensor then ran the job without them. The claim now builds the delivered payload the same way as the poll and claim-N paths, and the job signature covers it.
+
+### Security: dashboard snapshots and trends hardened
+
+- A pentest finding without a campaign no longer counts in the new-versus-fixed and time-to-fix trends
+  of a personal dashboard for people outside every campaign (it already stayed out of current counts and
+  lists). Migration `003273_dashboard_facts_pentest_no_campaign` replaces the fact builder and requests
+  a full rebuild of every organization's dashboard facts, which the facts maintainer runs in short
+  batches.
+- Only one refresh of a dashboard runs at a time: a second Refresh now answers 429 without using the
+  budget, and the scheduled refresher skips a dashboard that is being refreshed.
+- A Refresh now that found no read slot free gives its budget back (a computation that started and failed keeps it).
+- Widget previews are limited per person (a burst of 24, then one every 2 seconds; 429 with
+  `Retry-After`).
+- A member's personal dashboard snapshots are deleted as soon as the membership is removed, suspended
+  or offboarded (migration `003274_dashboard_snapshots_member_removal`; existing snapshots of former
+  members are deleted on upgrade).
+
+### Security: finding comments are append-only, and ticket unlink needs the same permission as link
+
+- Editing a finding comment keeps the original and appends a revision entry with the previous text; deleting one leaves a "deleted a comment" placeholder and keeps the original entries, whose text the activity feed then withholds. Both are audited (`finding.comment_edited`, `finding.comment_deleted`) before the change is made.
+- A comment written by the requester, approver or rejecter of an approval request while it was open (or up to its decision) can no longer be edited or deleted (403), also after an accepted risk's period has ended.
+- An edit or delete with no resolvable actor is refused (403) instead of skipping the author check.
+- `DELETE /api/v1/findings/{id}/ticket-links/{link_id}` now needs `findings:fix_apply` in addition to `findings:write`, as linking does.
+- **Behaviour change:** the activities endpoint no longer drops the entry of a deleted comment; it returns `comment_deleted` entries and marks the comment's earlier entries `deleted: true` without text.
+
+### Security: finding decisions that close risk need a fresh sign-in
+
+- Approving a false-positive or accepted-risk request (`POST /api/v1/approvals/{id}/approve`), approving a group exception (`POST /api/v1/approvals/batches/{id}/approve`), approving a severity change, deleting a finding (`DELETE /api/v1/findings/{id}`) and a bulk move to a closed status (`POST /api/v1/findings/bulk/status`) now answer 403 `STEP_UP_REQUIRED` unless the session signed in or stepped up within the step-up window. Reject and cancel are unchanged. The web console asks for the re-authentication and retries.
+- The bulk gate reads the target status the way the service does (any case, surrounding spaces, the first JSON value of the body), so no spelling of a closing status skips it; a body without a valid open status is gated.
+- **Upgrade note:** API keys and automation that approve, delete or bulk-close findings now get 403 `STEP_UP_UNAVAILABLE`; those decisions need a signed-in user session. Automation keeps two paths: closing one finding at a time (`PATCH /api/v1/findings/{id}/status`, with the permissions it already needs) and bulk moves between open states; findings a re-scan no longer sees still close on their own.
+
+### Security: every finding status move and assignment is in the audit log
+
+- Each applied status move writes a `finding.status_changed` audit row (old and new status, closure reason and verification for a close, actor or system), whatever route made it: the status change, bulk status, fix claim, verify, reject, approvals, ticket webhooks and VEX. A bulk move adds one `finding.bulk_updated` summary row. Closing a critical, P0 or KEV finding is audited at high severity.
+- Assigning and unassigning (single and bulk) write `finding.assigned` / `finding.unassigned` with the previous and new assignee.
+- The end of a risk acceptance writes its audit row in the same transaction.
+- Before, these moves were only on the finding timeline, which is deleted with the finding.
+
+### Security: pentest engagement membership now covers every finding sub-route
+
+- A member who is not on a pentest campaign could read the AI analysis of a pentest finding's proof of concept, its approval reasons, its ticket links and holds and its priority explanation, or send its content to the AI model, because only the finding itself checked campaign membership. The shared finding guard now applies the campaign rule to every `/findings/{id}/**` route (and `/compliance/findings/{id}/**`, `/verification-checklists/{id}/**`), including routes added later: non-members, clients on unpublished findings and non-admins on a campaign-less pentest finding get 404. Bulk AI triage skips such findings as "finding not found".
+- The approvals list (`GET /approvals`, rows and counts) no longer shows a pentest finding's approvals to members outside its campaign, and approving, rejecting, cancelling, reminding or self-approving such an approval by its id, or deciding a group exception that holds one, needs the same campaign access as opening the finding (404 otherwise).
+
+### Security: Findings export carries an allowlist of fields, follows the list's sort and is capped
+
+- `GET|POST /findings/export` rows (CSV and NDJSON alike) carry only the 40 allowlisted columns. NDJSON used to
+  carry the whole finding; evidence (snippets, scanner output, stack traces, attachments, data flow), fix code,
+  descriptions, free-form metadata and secret details are no longer exported.
+- The export follows the list's `sort` (it used to be id order) and reads one database snapshot.
+- Unknown filter params are `400 INVALID_FILTER` instead of being ignored.
+- At most 10,000 rows per export (was 100,000); `X-Export-Max-Rows` says so and the `X-Export-Truncated`
+  trailer reports a cut. Narrow the filter for larger sets; background exports come later.
+- One export per user across all API replicas (a database lock; was per process). The audit row now records the
+  sort and the cap.
+- **Upgrade note:** scripts that read NDJSON fields outside the allowlist, or exported more than 10,000 rows in
+  one request, must adapt.
+
+### Security: asset groups, business units and business services follow the reader's data scope
+
+- A member restricted to some assets used to list every asset group, business unit and business service of the organization, with its name, description and owner (including the owner email), and the business service total counted the whole organization. Now a restricted member sees a group only when one of its assets is in their scope or a scope rule of their team names it, a unit only when it or a unit below it holds such an asset, and a service only when it links one. Lists, search, stats and totals (including the service and unit totals of the Scoping overview) count only those; any other id answers 404, as do a group's members and findings and a service's assets.
+- Writes follow the same rule (404), except on a container with no asset yet (for a unit: no asset and no unit below it), so a member can still fill a group, unit or service they just created. A business unit cannot be placed under a parent the caller cannot see.
+- The owner email of a group, unit or service is shown only to owners, administrators and full-data readers; a restricted member's edit keeps the stored value.
+- Owners, administrators and full-data roles see every group, unit and service as before. A member with no scope sees none.
+
+### Security: SAML sign-in accepts each assertion once, requires a signed assertion and refuses SHA-1
+
+- Each SAML assertion ID is recorded in Redis until the assertion can no longer be accepted; a second use is refused. If Redis is unreachable the sign-in is refused (fail-closed). Without a Redis client the IDs are kept in process (single replica only).
+- The response must hold exactly one assertion, and that assertion must carry its own valid signature even when the whole response is signed. Encrypted assertions and the artifact binding are refused.
+- Any SHA-1 signature or digest method is refused. **Upgrade note:** an IdP still signing with RSA-SHA1 must be switched to SHA-256 before upgrading, or its SAML sign-ins fail.
+
+### Security: credentials in scanner output are masked at ingest and on read
+
+- Scanner output (plugin output, DAST responses) is passed through the shared secret redactor before it is stored: Authorization and bearer tokens, `Cookie` and `Set-Cookie` header values, key=value secrets, provider token shapes and private keys become a placeholder. No raw copy is kept.
+- `GET /findings/{id}` masks rows stored before this change when it serves them, so existing data is covered without a migration.
+- The shared redactor now also masks `Cookie` / `Set-Cookie` header values (also in a verbose client transcript and as JSON members), quoted JSON keys (`"password": "..."`), `access_token` / `refresh_token` / `id_token` / `auth_token` values, and Negotiate / NTLM authorization tokens; masking twice changes nothing (affects ticket text and other callers).
+- A secret finding's description is redacted before it is sent to the AI model.
+
+### Security: service-account keys follow their minter's access and the full-data ceiling holds for existing roles
+- Demoting an administrator now revokes the service-account keys they minted in the same transaction as the role change; if the revoke fails the demotion is refused instead of leaving the keys live.
+- Suspending a member, and removing a custom role that gave a member `service_accounts:manage`, revoke the service-account keys they minted too.
+- A role held by a service account (directly or through a team) can no longer be switched to full data access; the roles API and a new database trigger both refuse it.
+
+### Security: a service-account key stops working as soon as the person who minted it loses service_accounts:manage
+
+- Every request with a service-account key now checks the person who created it: they must still be an active member of the organization and hold `service_accounts:manage` (as owner or administrator, through a direct role, or through a role bound to an active team with an unexpired membership). Role removal, role edits, team changes, a team switched off, an ended team membership, demotion, suspension and offboarding all stop the key at once, not only the paths that revoke it. A lookup error or a key with no creator refuses the key; the log gives a distinct reason.
+- A sweep (`service-key-creator`) marks such keys revoked so the member access report lists them.
+- Migration `service_account_grant_triggers_lock_role`: the triggers that refuse full data access for a service account lock the role row, closing the race between enabling full data on a role and granting that role to a service account.
+
+### Security: organizations can require their identity provider to prove two-factor
+
+- New organization setting `sso_require_mfa_evidence` ("SSO must prove two-factor", Settings > Security > Authentication). When it is on, a member who must use two-factor authentication and signs in through the organization's own SAML or OIDC provider gets a token only if that sign-in carried the provider's signed proof of a second factor (`amr` containing `mfa`, or a multi-factor SAML authentication context). Before, a sign-in through the organization's own provider always passed the two-factor requirement.
+- Token exchange and refresh refuse such a session with `403 MFA_ENROLLMENT_REQUIRED`. Off by default; changing it needs the owner with step-up, and turning it off is audited as High. Saving a change that would refuse the saving owner's own sign-in (through the identity provider without proof) is refused with 400, so the owner cannot lock themselves out.
+
+### Behaviour change: naming a user or group of another organization as an asset owner answers 404
+
+- `POST /api/v1/assets/{id}/owners` answered 403 "user_id/group_id does not belong to this tenant" for a user or group that is not in the caller's organization. It now answers 404 `NOT_FOUND` ("User not found" / "Group not found"), the same response as an unknown id, an inactive member or a group that does not exist, so the answer no longer hints that an id exists in another organization.
+
+### Behaviour change: Unknown filters on the findings list are rejected
+
+- `GET /findings`, `GET /findings/stats`, `GET /findings/groups` and `GET /findings/export` answer an
+  unknown query param with `400 INVALID_FILTER`; `details[].param` names it and `details[].reason` is
+  `"unknown filter"`. They used to ignore it with a `Warning: 299` header and return every finding, so a
+  typo silently widened the list, its counts and exports.
+- Old param names (`severities`, `statuses`, `search`, ...) still work with `Deprecation` and `Sunset`
+  headers. `GET /meta/filters/findings` lists every accepted name.
+- Integrations that send extra params to these endpoints must drop them.
+- `assigned_to_me` accepts only `true` (assigned to or owned by me) and `false` (no filter); any other
+  value is `400 INVALID_FILTER` instead of silently returning every finding.
+
+### Behaviour change: a finding closed as mitigated is not reopened by detection
+
+- A scan that sees again a finding resolved as `mitigated` (a compensating control) leaves it resolved: no reopen, no regression flag, no restarted deadline, no new notification. Validation re-checks the control.
+- Re-detection now reopens a resolved finding by its status and closure reason only. A resolve note that happens to read "duplicate", "suppressed" or similar no longer blocks a real regression.
+
+### Behaviour change: a sensor whose jobs use a proxy pool needs proxy support
+
+- While a pool applies to a sensor (its own, or the organization default), the sensor gets scan and retest jobs only if it reports proxy support and network confinement (a sensor release with the proxy feature, running tools under network confinement, the daemon default). Older sensors keep their other jobs; set their network path to Direct to scan without the pool.
+
+### Behaviour change: creating an SLA policy no longer makes it the default
+
+- A new SLA policy is not the tenant default unless it is the tenant's first; replacing the default is an explicit "Make default" action with a confirmation, done in one transaction (console and `PUT /sla-policies/{id}` with `is_default: true`). The default policy can no longer be deactivated, un-defaulted or deleted (409 `SLA_DEFAULT_POLICY_PROTECTED`).
+- The SLA policy dialog moves all its text to the en and vi dictionaries.
+
+### Behaviour change: another organization's template source answers 404
+
+- `GET`, `PUT` and `DELETE /api/v1/template-sources/{id}` (and enable, disable and sync) answered 403 "source belongs to another tenant" for another organization's template source and 404 for an unknown id, so a caller could tell that an id exists elsewhere. The source is now loaded within the caller's organization, and both cases answer the same 404.
+
+### Behaviour change: the reachability check needs findings:verify
+
+- `POST /api/v1/findings/{id}/validate` now requires `findings:verify` (was `findings:write`), the permission of a retest: the check is an active probe whose outcome is applied to the finding, so a role that may only write findings (for example the remediation owner) can no longer run it on its own fix. Roles and API keys that should keep it need `findings:verify`.
+
+### Removed: built-in CTEM and Classic dashboard views
+
+- `/` shows only stored dashboards. The built-in CTEM and Classic views, the analyst charts and the
+  legacy widget tiles are removed, with their untranslated text.
+- A person with no dashboard at all gets a personal copy of the new Overview template on their first
+  visit, computed for their own access.
+- Templates (Overview, Executive, Vulnerability program, Triage) are typed widget configs; the
+  dashboards page copies them, and every template widget is checked against the server's validation.
+- The dashboards page is translated (English and Vietnamese). Changing a dashboard's column count
+  now keeps each widget's share of the row instead of resetting every widget to one column.
+
+### Removed: unused SLA service code
+
+- Removed `CheckSLACompliance`, `CalculateSLADeadline` and the unscoped `ExistsByAsset` (no callers).
+
+### Added: bug-bounty report fields on findings
+
+- `POST /api/v1/findings` accepts a `bounty_report` object for `bug_bounty` findings, and `PUT /api/v1/findings/{id}/bounty-report` replaces it (`findings:write`). Finding reads return it as `bounty_report` (RFC-121).
+- Setting or changing a report's reward or disclosure also needs `findings:triage` (403 `TRIAGE_PERMISSION_REQUIRED`); every change writes the audit action `finding.bounty_report_changed` with the old and new value of each changed field.
+- A second finding for the same intake and report id is refused with 409.
+
+### Added: one finding per bug-bounty report
+
+- Findings with source `bug_bounty` can carry a typed report object (`metadata.bounty_report`: intake, report id, researcher handle, submitted time, reported severity, channel state, CWE, endpoint path and parameter, an https back-link, reward and disclosure as data), validated with length caps, an https-only link in printable ASCII without user info (an internationalised host in its xn-- form), ISO 4217 currencies and no control or invisible formatting characters (bidirectional controls, zero-width characters) in single-line fields; a stored object that no longer validates is never returned to a reader (RFC-121).
+- Migration `003275_findings_bounty_report_ref_unique` adds a partial unique index so a tenant holds at most one `bug_bounty` finding per (intake, report id); a second one is a conflict.
+- **Upgrade note:** the index is built with `CREATE INDEX CONCURRENTLY` (no write lock on `findings`); no existing finding carries a report object, so the build cannot fail on duplicates.
+
+### Added: CTEM loop, crown jewels exposed and attack paths to crown jewels as dashboard widgets
+
+- Three catalog metrics for typed dashboard widgets: `ctem.loop` (the five CTEM stages: crown jewels designated, coverage-ledger assets with a successful scan in the last 30 days, open P0 and KEV findings, open findings with validation evidence and retests run, share within SLA and breached), `crown_jewels.exposed` (crown jewels with an open P0/P1 finding) and `attack_paths.to_crown_jewels` (reachable crown jewels and the top ones by path score), with the `loop` and `paths` visualizations.
+- Every figure is counted for the dashboard's scope (the viewer's data scope on a personal dashboard, the pentest campaign rule applied), leaves out program-only and deleted assets, opens the list it counts, and shows "not measured" instead of 0 when there is nothing to measure (crown jewels exposed and attack paths too, when no crown jewel is designated in scope or no asset relationships are known). Attack paths show only crown jewels in scope, never entry points or hops.
+- The asset list takes `coverage=covered|uncovered` and the findings list `asset_crown_jewel=true`, the lists these figures open.
+
+### Added: widget gallery, config panel and keyboard grid editing
+
+- Customize opens an editor on the dashboard itself. Add widget shows a gallery grouped by goal, with
+  search and a live preview of each widget from your own data; a Note widget adds text.
+- Each widget has a config panel: metric, filters, group-by, time range and comparison, a
+  visualization that fits the result, a target for single figures, and its title, with a live preview.
+- Widgets move and resize by drag or by keyboard (arrow keys, Shift and arrow keys, Enter, D, Delete),
+  with undo and redo, and every change is announced to screen readers.
+- Organization dashboards can be customized by people with organization dashboard management.
+
+### Added: dashboard home renders stored dashboards
+
+- `/` now shows your stored dashboards with one renderer: every widget is drawn from the dashboard's
+  stored snapshot, with its own error state, so one bad widget never blanks the page.
+- One switcher lists Organization dashboards (only with organization dashboard access) and your own,
+  with search when there are many.
+- A badge says whether the figures are organization-wide or for your own scope; a freshness line shows
+  when they were computed and the next refresh, with Refresh now and, for owners and organization
+  dashboard managers, the refresh schedule.
+- Duplicate an organization dashboard to your own, set defaults and delete from the dashboard menu.
+- A person with no stored dashboard still sees the built-in overview.
+
+### Added: dashboard widget kit with every widget state and colour-blind-safe chart palettes
+
+- Web console: one widget frame (`web/src/components/dashboard-kit/`) that renders every state a dashboard widget can be in: loading, ready, stale (with Refresh), no data yet (with the next step), no results (with Clear filters), not measured ("—" and the reason, never 0 and never green), no access (names the missing permission, no Retry), module off, error (Retry for that widget only), partial and access changed. Each widget is its own error boundary, so one malformed payload no longer blanks a dashboard.
+- Visualizations over the widget result shapes: Stat (value, change against the previous period coloured by whether lower or higher is better, sparkline, target chip with icon and words), Progress against a target, bars and stacked bars, columns, area and line, diverging opened-versus-fixed bars with the net in words, heatmap with every value printed, CTEM stage strip and item lists. Every chart has a table view, clickable marks open the matching list (same-origin paths only), and charts do not animate when reduced motion is requested.
+- Validated chart palettes (`web/src/lib/chart-palette.json`, `--viz-*` theme tokens for light and dark): severity, eight fixed categorical slots with "Other", opened/fixed and a sequential ramp. `npm run check:palette` checks colour-vision-deficiency separation, normal-vision separation, contrast and lightness, and that the theme tokens match; a unit test runs the same check. The previously shipped severity chart colours failed this check.
+- Locale-aware number, percentage, duration and relative-time formatting for dashboard figures (`web/src/lib/format-metric.ts`); all kit text is translated (English and Vietnamese).
+- No page uses the kit yet; the dashboard pages move to it in follow-up changes.
+
+### Added: stored dashboard snapshots, scheduled refresh and Refresh now
+
+- Opening a dashboard now reads its stored snapshot instead of computing. A snapshot is computed on
+  open only when there is none, when the layout changed, or, for a personal dashboard, when your access
+  changed since it was computed (a snapshot of another scope is never shown).
+- The `dashboard-snapshots` background job recomputes snapshots on each dashboard's refresh schedule
+  (or the organization default); a failed refresh keeps the last good figures and marks them stale.
+- `POST /api/v1/me/dashboards/{id}/refresh` and `POST /api/v1/organization/dashboards/{id}/refresh`
+  ("Refresh now"): once a minute per person and dashboard, 30 an hour per organization (429 with
+  `Retry-After`).
+- Widget data responses carry `computed_at`, `refresh_schedule`, `next_refresh_at`, `stale` and
+  `last_refresh_error`.
+- Migration `003260_dashboard_snapshots` adds the tables `dash_snapshots` and `dash_refresh_requests`
+  (new and empty; no upgrade step).
+
+### Added: dashboard widget results from the fact tables
+
+- `GET /api/v1/me/dashboards/{id}/data` computes every widget of your own dashboard for your data scope;
+  `GET /api/v1/organization/dashboards/{id}/data` computes an organization dashboard for the whole
+  organization (needs `dashboards:org:view`, 404 outside the dashboard's audience);
+  `POST /api/v1/me/dashboards/widget-preview` computes one widget spec for your scope.
+- Results come from the dashboard fact tables, not from the findings table: open counts with the
+  previous period and a sparkline, the share within SLA, time to fix (median and p90 from hour buckets),
+  open findings by priority over time, new vs fixed, and the fix-next and SLA-due lists. Each result
+  says when a figure is not measured and links to the findings list counted with the same filter.
+- Pentest findings count only for campaign members on personal dashboards; organization dashboards
+  count them, but list titles still follow the viewer's campaign membership.
+- Reads are limited per user, organization and API process (429 with `Retry-After`).
+
+### Added: typed dashboard widgets and the widget metric catalog
+
+- A dashboard widget can now be a typed widget (`widget_type` `metric` or `note`) whose config names
+  a metric from the catalog, a filter and group-by on fact dimensions, a time window, a comparison, a
+  visualization and an optional target. The server validates every typed widget strictly on create,
+  update and copy (unknown fields, metrics, dimensions, values and visualizations that do not fit the
+  result shape are refused with 400) and stores the normalized config.
+- `GET /api/v1/me/dashboards/widget-catalog` lists the metrics (open findings, priority exposure, KEV
+  exposure, age bands, within SLA, open by priority over time, new vs fixed, time to fix, fix next, SLA
+  at risk), their dimensions, result shapes and fitting visualizations.
+- Existing dashboards are unchanged: legacy widget ids keep working. No migration.
+
+### Added: a finding shows the approval request that is waiting on someone
+
+- The finding page and the drawer show a banner while a false-positive or accepted-risk request is pending: the status asked for, who requested it, when and why. The requester can cancel it from there; approvers are linked to the approvals inbox. The drawer now loads approvals whatever the finding's status is (it used to wait until the status had already changed).
+
+### Added: how a finding can be verified, from the server
+
+- `GET /api/v1/findings/{id}/verification` (`findings:read`, data scope applies) returns the finding's risk tier, what a person's resolve needs at that tier, each verification method (retest, covered scan, safe-check, rotation proof, evidence review) with whether it is available and a reason code when not, and the proof recorded so far (latest retest, checklist state and who completed it, whether it is fresh).
+- The retest service reports why a retest would be refused (for example `secret_needs_rotation`, `asset_not_network_addressable`, `no_sensor`) instead of only yes or no.
+
+### Added: Quick-view counts for the findings list
+
+- `GET /api/v1/findings/quick-views` (needs `findings:read`) returns the list's built-in views with the
+  caller's count of each: active, needs triage, my queue, SLA breached, pending approval, accepted and
+  expiring within 30 days, closed. Each view carries the `GET /findings` query string that opens it, and
+  its count equals that list's total for the same caller (tenant, data scope and pentest membership
+  applied). One statement with a 5 s limit; 503 when it runs out.
+- New findings filters: `pending_approval=true|false`, `acceptance_expires_at_{gte,gt,lte,lt}` and
+  `state=closed` (fixed and dispositioned together).
+- Relative times in filters may now point ahead: `P30D` or `+P30D` is thirty days from now; `-P30D` is
+  still thirty days ago.
+
+### Added: rate-limit headers on the API-key and MCP 429s, and RateLimit-* names on every rate limiter
+
+- A request refused by the per-key hourly limit of an `oct_` API key, or by the per-connection limit of the MCP endpoint, now carries `Retry-After`, `RateLimit-Limit`, `RateLimit-Remaining` and `RateLimit-Reset` (and the `X-RateLimit-*` names). Before, those two 429s had no headers, so a client could not tell how long to back off.
+- Every other rate-limit middleware now also sends the `RateLimit-*` names next to `X-RateLimit-*`. `RateLimit-Reset` is the number of seconds until the allowance is full; `X-RateLimit-Reset` stays a Unix timestamp. The `X-RateLimit-*` names are kept for one deprecation window and will then be dropped.
+- Handler-level 429s that are cool-downs or one-at-a-time guards (a running export, a dashboard rebuild, a preview budget) are unchanged: they carry the error body only.
+
+### Added: design for bug-bounty and disclosure reports as findings
+
+- RFC-121 records how reports from an organisation's bug-bounty program or disclosure program enter OpenCTEM: each report is a finding with source `bug_bounty` and a typed report object (channel and report id, researcher handle, reported severity, channel state, reward and disclosure as data), one finding per report, duplicate candidates suggested from the caller's data scope and never merged automatically, file import first, and no automatic AI triage of reporter text.
+- New architecture page `docs/architecture/bounty-reports.md`. No behaviour change in this step.
+
+### Added: SAML identity provider certificate expiry alerts
+
+- Owners are alerted in-app and by email 30, 7 and 1 day(s) before the organization's SAML IdP certificate expires, and when it has expired. Saving an expired certificate is refused, and the admin SAML view shows `certificate_not_after`.
+- Migration `003295_saml_cert_expiry_notice` adds the nullable `saml_providers.cert_expiry_notice_days`.
+- **Upgrade note:** SAML IdPs that encrypt assertions are now refused; configure the IdP to send signed, unencrypted assertions.
+
+### Added: Settings, Scanning, Proxies page and a per-sensor Network path
+- Paste a list of proxies (`scheme://user:pass@host:port#label`) to send the scan traffic of your own sensors through them; credentials are write-only and show as `••••` after saving.
+- Each proxy shows its state (healthy, probation, quarantined), score, last error and last success; disable a proxy or reset its health from the table.
+- More pools for network segments, and a Network path select on the sensor page: inherit the organization default, go direct, or use a pool.
+- New permissions `sensors:egress:read`, `sensors:egress:write` and `sensors:egress:delete` gate the page.
+
+### Added: proxy pools for sensor scan traffic
+
+- Organization proxy pools (`/api/v1/proxy-pools`): paste a list of `http`, `https`, `socks5` or `socks5h` proxies, one per line, set an organization default (public targets only) or give a sensor its own pool or Direct (all targets). Migration `sensor_proxy_pools` adds the tables and the `sensors:egress:read|write|delete` permissions (owner and admin; write and delete are admin-only).
+- Proxy credentials are stored encrypted and never returned; a pasted line keeps stored credentials with `••••`. Endpoints on loopback, link-local, metadata, multicast or reserved addresses are refused.
+- Every scan and retest job carries the claiming sensor's pool (no credentials) inside the signed payload; the leasing sensor fetches the credentials per job and reports per-endpoint health. The platform scores endpoints, quarantines dead ones and re-admits them after a back-off.
+
+### Added: Verification panel on the finding drawer and page
+
+- A Verification panel shows how the finding can be verified (from the server's verification plan): its risk tier and what resolving needs, each method (retest, covered scan, reachability check, rotation proof, evidence review) with why an unavailable one cannot be used, and the proof recorded so far.
+- The verification checklist can now be filled in from the console (with a secret variant for rotation proof). Completing it records who completed it, so another person can resolve a critical finding; the completer is told so.
+- The status menu shows why a move is blocked under the move itself, with a lock icon, instead of only on hover.
+- "Validate now" is renamed "Check reachability", needs `findings:verify` and is offered only where the check can run (an active network asset, not a secret). The panel hides when there is nothing to show.
+- Dates in finding properties follow the user's language.
+
+### Changed: API conventions and RFC-041 amended after the public API review
+
+- `api/docs/architecture/api-conventions.md` and RFC-041 (new section 11) record the decisions of the public API review: one error envelope with specific codes and an always-present `request_id`, `data` list envelope with capped exact totals, signed keyset cursors, `412 RESOURCE_CHANGED` for stale `If-Match`, idempotency keys, an operations resource for long-running work, write scopes only on service-account keys, signed outbound webhooks, two generated specs, and the `{id}` leaf path parameter. Rules not built yet are marked Planned.
+- The deprecation window for external routes is now 90 days (it was six months); routes only the web app calls are removed with no window. RFC-041 D9 and D10 and RFC-048 D9 point to the amendment.
+
+### Changed: the dashboard opens on the CTEM template
+
+- A person without any dashboard now gets a personal copy of the new CTEM template (active exposure, the CTEM loop, fix next, attack paths to crown jewels, priority over time); the Overview template also shows the CTEM loop.
+- An existing copy of the Overview template is never changed on its own: a one-time hint offers "Add the CTEM loop" or "Switch to the CTEM template".
+
+### Changed: cards no longer carry coloured left-border stripes
+
+- The repository "never scanned" banner, the scan run-flow step cards and the CI repository override rows drop the coloured left stripe; the step state is already shown by the icon and the state pill. A CI check now refuses new coloured left or top border stripes on cards (`stripe-ok:` allows an exception).
+
+### Fixed: the AI budget variable says an own provider is counted
+
+- The description of AI_TRIAGE_BUDGET_ENABLED said organizations with their own key were not counted; the monthly cap counts an organization's tokens whichever key pays for them. Documentation only.
+
+### Fixed: the false-positive dialog says whether it is a request or a decision
+
+- When the organization's false-positive level lets the caller decide alone, the dialog is titled "Mark as false positive" and no longer says the change "requires approval"; otherwise it says the change needs approval, in one sentence (the Vietnamese text no longer splits it around the status).
+
+### Fixed: dashboard figures count your organization, and every tile opens the list it counts
+
+- The "Threat intel" widget showed the size of the global KEV catalog (about 1,700 entries, the same
+  for every organization). It now shows your open findings in the KEV catalog, how many are past the
+  KEV due date, and your open findings with EPSS of at least 50 %; the KEV figure opens that list.
+- The CTEM view's threat intel card showed catalog-wide "Ransomware KEV" and "KEV new · 30d" counts.
+  `GET /api/v1/threat-intel/stats` now also returns `kev.tenant_ransomware_open_count` and
+  `kev.tenant_new_kev_matches_30d` (your open KEV findings with known ransomware use, and those whose
+  CVE entered the catalog in the last 30 days), counted in your data scope with the pentest visibility
+  rule; the card shows only tenant figures. The catalog fields keep their names and meaning.
+- "Mine · open" opened every state; it now opens the open list it counts. "Open findings" opens the
+  open list, and each row of "Open findings by severity" opens that severity.
+- A figure that is not measured (no open finding has an SLA, a failed read) is neutral grey on the
+  CTEM loop, never green or amber. "Average asset risk" shows "—" instead of 0 when there is no figure.
+- A tenant with no open finding sees "No open findings" with a link to scans instead of a big "0 P0".
+- "New findings per month" is drawn as columns (a flow) with the legend in severity order.
+- One dashboard card that fails to render shows its own error with Retry; the rest of the page renders.
+- Dashboard card titles, stage names and empty states are translated (English and Vietnamese).
+
+### Fixed: dashboard widget gallery groups are announced correctly
+
+- The widget gallery's group filter is a set of toggle buttons instead of tabs without panels, so
+  screen readers announce it correctly.
+- Dashboard surfaces are checked for complete English and Vietnamese text and for accessibility on
+  every change (no user-visible change beyond the fix above).
+- Dashboard widgets are visible on a phone: the column span of a wide widget is applied only once
+  the grid has that many columns, instead of collapsing the widget to zero width on a one-column
+  grid.
+
+### Fixed: two tests left red by concurrent merges
+
+- The findings export decides the new `bounty_report` field (left out: researcher free text leaves the platform only through the UI), and the CTEM dashboard parity test drops the page-only `group` parameter before calling the findings list, which now refuses unknown parameters. Tests only; no behaviour change.
+
+### Fixed: every API error body carries the request id, and audit rows only get validated ids
+
+- Error responses now include `request_id`, equal to the `X-Request-ID` response header, so a failed call can be matched to its log lines and audit rows.
+- Audit rows no longer record the raw inbound `X-Request-ID` header: 57 handlers read it unvalidated, so a client could write arbitrary strings into audit entries. They now use the id validated (or minted) by the request-id middleware. A test fails on any new raw read.
+
+### Fixed: AI triage on the finding page respects permissions, opt-in and its own endpoint
+
+- The AI triage button now shows only to users with the permission to run it (`ai_triage:trigger`) in an organization that turned AI triage on. The explanatory "not available" popover is gone: where it is turned on is described in Settings > AI.
+- Users without `ai_triage:read` no longer send the AI triage configuration and result requests, so the finding page no longer shows a 403 error toast for them.
+- The "AI analysis" section of the Overview tab is read from the finding's AI triage endpoint instead of the first page of the activity feed, so it no longer disappears once more than 20 newer activities exist.
+- No API change.
+
+### Fixed: the finding drawer locks what the page locks, and Undo works and asks for its note
+
+- The finding drawer now locks status, severity and assignee for pentest, bug bounty, red team and manual findings, the same rule as the finding page (one shared helper). Before, the drawer let you change them and the API refused after an optimistic update.
+- Undo after a status change now reverts to the previous status (the toast kept a stale copy of the status and treated the undo as already done). When the previous status needs a note (fix applied, resolved), Undo opens the note dialog instead of sending no note.
+
+### Fixed: the finding Evidence tab shows re-verify results and counts every source
+
+- Re-verify and validation results and the compliance controls card are now shown on the Evidence tab even when the finding has no other evidence; "No evidence" appears only when every source is empty.
+- The number on the Evidence tab counts tool evidence, re-verify and validation results, notes and uploaded files as well as code and attachments.
+- Uploaded files of pentest and manual findings load through the API client; a failed load shows an error row with Retry instead of an empty section, and users without pentest finding read access no longer send the request.
+- No API change.
+
+### Fixed: the finding page tells "not found" from "could not load"
+
+- A server or network error on the finding page now shows "Could not load this finding" with a Retry button; only a missing or refused finding shows "Finding not found" (same copy for both, so it reveals nothing about what exists).
+- A bad link costs one request instead of three and no longer pops a raw error toast.
+- The remediation task band, ticket links and retest check show an error row with Retry when their read fails, instead of looking empty.
+
+### Fixed: finding page shows scanner code safely and drops empty facades
+
+- Code snippets, stack frames, data-flow steps and file paths on the finding page show bidi and control characters as visible escapes, and a very large snippet is cut with a "Show more".
+- The Related tab lists only groups that have findings; the Remediation tab no longer shows an always-empty progress header.
+- Removed unused finding-page code (the standalone priority card, the pentest hero panel and the unused source-panel layout option).
+
+### Fixed: the findings bulk bar follows permissions, SLA sort, safer bulk writes
+
+- The findings list offers row selection and the bulk bar only when the user can run a bulk action: assigning needs `findings:bulk_update` and `findings:assign`, status changes need `findings:bulk_update` and `findings:status` (the API already required both); analysts without them no longer get 403s from the bar.
+- The Due / SLA column sorts by deadline (most overdue first).
+- A bulk write cannot be sent twice by a double click, and a failed bulk resolve keeps its note and dialog open.
+- The drawer's assignee control is disabled without `findings:assign`.
+
+### Fixed: SLA breaches are announced whoever sets the status, once per SLA clock
+
+- A breach is now announced when the deadline passes on an open finding even if another path set `overdue` first (a reopen after the deadline, an un-suppression, a status change past the deadline). Before, only breaches the 15-minute job flipped itself were notified; the others were silent.
+- Each breach and each at-risk warning writes one `sla_breach` / `sla_warning` timeline entry, and notifications name the finding by its title instead of its id (a pentest finding, visible only to its campaign, keeps its id).
+- The at-risk warning is measured from the start of the current SLA clock (new column `sla_started_at`), so a finding whose clock starts again (end of a risk acceptance, withdrawn false positive, branch promotion) no longer warns at once. A regression restart extends the clock once per reopen.
+- The escalation job works in batches of 1,000 per transaction on an index of unannounced deadlines; two replicas announce each finding once.
+- **Upgrade note:** migration `finding_sla_episode` backfills `sla_started_at` on open findings with a deadline (one UPDATE inside the migration's transaction, which holds the `findings` table lock until it commits); findings already `warning` or `overdue` count as announced, so the deploy sends no notification burst. `findings_sla_breach_due_index` and `drop_findings_sla_overdue_index` create and drop indexes concurrently.
+
+### Fixed: SLA default policy races and inactive default
+
+- Two concurrent make-default calls could leave two defaults, and an inactive default still governed findings without an asset. Create now applies the same window validation as update.
+- Migration `sla_policies_default_safety`: unsets duplicate or inactive tenant defaults (keeps the oldest active one), clamps any severity window outside 1..365 (info 0..365) into that range so the constraint can be validated, then adds a unique index on the tenant default and CHECK constraints on the default and the severity windows (1..365, info 0..365).
+- **Upgrade note:** a tenant that had several defaults or an inactive default keeps only its oldest active default after this migration; the down migration removes the constraints but does not restore the unset flags.
+
+### Fixed: list pages no longer repeat or skip rows that tie on the sort key
+
+- The shared sort helper now ends every ORDER BY with an `id` tie-breaker (in the direction of the last sort key), and the default sorts of the asset, finding, exposure, catalog vulnerability and repository lists end in `id`. Paging through rows that share a `created_at` or severity could previously return a row twice or never.
+
+### Fixed: the automatic ticket path and the hold release job can no longer file the same finding twice
+- Creating an issue for a finding now takes a per-finding lock shared by the workflow action, a person's Create ticket and the hold release job; a second create waits and reuses the first issue.
+- The hold release job gets a 10-minute run budget (a batch of tracker calls outlasts the 2-minute default) and a covering index for its due-holds query.
+- At most 8 such creates run at once per API process (2 per tenant), so a burst of workflow creates cannot take every database connection.
+
+### Fixed: a ticket mapping is no longer picked at random when the issue type is unknown
+- When a caller names no issue type and a project has several published mappings, the built-in safe mapping is used instead of whichever mapping the list returned first. An explicit type still selects its own mapping (id first, then name, deterministically).
+
+### Fixed: the home page request budget matches the stored-dashboard home
+
+- The home page now reads the viewer's and the organization's dashboard lists in addition to the session, so a viewer with no stored dashboard makes 5 API requests (session, support access, two dashboard lists, built-in overview). The end-to-end request budget for `/` is 5; no request repeats.
+
+## v0.13.0 (2026-10-21)
+
+### Security: a sole member approves their own accepted risk only when the organization's level allows it
+
+- The sole-member self-approval (`POST /api/v1/approvals/{id}/self-approve`, authenticator code and reason) applies to false positives, and to accepted risks only when the organization's risk acceptance approval level is `high_and_above` or `off` (see `risk-acceptance-approval-level.md`). Under the default level `all` a risk-acceptance request is refused with 403 `SELF_APPROVAL_FALSE_POSITIVE_ONLY` and stays pending until a second member approves it. The refusal is audited and does not spend the authenticator code.
+- **Upgrade note:** a one-person organization that wants to accept risks alone sets the risk acceptance approval level to `high_and_above` or `off` (it takes effect 24 hours later); a self-approved acceptance ends at the self-approval limit (7 days for P0 or KEV, 45 for P1, 90 otherwise).
+
+### Security: lowering an asset's exposure, criticality or crown-jewel flag needs approval when it would drop an open P0/P1 finding
+
+- Anyone with `assets:write`, including a member and the asset's owner, could mark an internet-facing asset isolated, lower its criticality or remove its crown-jewel flag, which dropped the priority class of every finding on it with no approval and no preview. Raising risk stays free. A lowering that drops no open P0/P1 finding applies as before.
+- `POST /assets/{id}/risk-impact` previews the change: how many open findings would move to a lower class (and how many from P0/P1), the class moves, and how the change would be decided for the caller.
+- `PUT /assets/{id}` (`risk_change_reason`), `PATCH /assets/{id}/crown-jewel` and the exposure/criticality attribute lock (`reason`) now require a reason when an open P0/P1 would drop, then follow the organization's approval policy and level (the same evaluator, approver pool, step-up and sign-offs as a false positive): a person the policy lets decide alone is applied and audited at High severity; otherwise the lowered fields are held (202, `pending_risk_request`) while the rest of the edit applies. The requester and the asset's owners never approve. New routes: `GET /assets/{id}/risk-requests/pending`, `POST .../{request_id}/approve|reject` (`findings:approve`), `/cancel`.
+- Web: the asset edit dialog shows the impact, the "waiting for approval" state and asks for the reason (en and vi).
+- **Behaviour change:** bulk criticality edits in the inventory go through the same decision per asset; an asset that needs a reason or approval is reported as failed.
+- Migration `asset_risk_requests` (new table, new `approval_signoffs` subject type).
+- Not yet: fresh external scan evidence overriding a manual isolated value, an approve/reject banner on the asset page, and a notice to the asset's primary owner when someone decides alone (see `docs/architecture/asset-risk-governance.md`).
+
+### Security: a scan an automation starts acts as the automation's owner
+
+- A `trigger_scan` step started the scan with `triggered_by = workflow:<id>`, which is no user, so the run's act scope (chained stages, the claim-time re-check) fell back to the scan's own owner. A member with `findings:workflows:write` and `scans:write` could therefore fire an administrator's wide scan on an event with the administrator's scope. The step now starts the scan as the person it was authorized as (the automation's owner); the automation cause stays on the run, so it is still labelled "Automation". A step with no person to act as starts no scan.
+
+### Security: bulk status and bulk assign now need the single-item permission too
+
+- `POST /api/v1/findings/bulk/status` requires `findings:status` and `POST /api/v1/findings/bulk/assign` requires `findings:assign`, in addition to `findings:bulk_update`. Before, a custom role with `findings:bulk_update` alone could change statuses and assignees in bulk although the single-finding routes refused it.
+- **Upgrade note:** built-in roles hold all three permissions and are unaffected. A custom role that relied on `findings:bulk_update` alone must be granted `findings:status` and `findings:assign`.
+
+### Security: bulk status change never overwrites a finding that changed after it was read
+
+- `POST /api/v1/findings/bulk/status` now writes each finding only while it is still in the status the request read it in. Before, a finding turned into an approved false positive (or moved by a retest or another person) between the read and the write could be moved back, and the timeline recorded the stale old status.
+- Such rows are not changed and are reported: the response now carries `skipped` and `rows` (finding id, outcome `skipped`, `failed` or `conflict`, reason); a conflict also counts in `failed`, so existing clients keep showing "N not changed".
+
+### Security: removing a task from a campaign also needs access to the task
+
+- `DELETE /api/v1/remediation/campaigns/{id}/tasks/{task_id}` only checked that the caller may change the campaign. Adding a task already required access to the task, and the route's own comment said removal did too. Removal now needs the same: a task the caller cannot see is `404`, and a task with a finding outside their data scope (a private program's asset, a pentest finding they are not a member for) is `403`. Without this, a campaign editor who was not restricted at campaign level could detach such a task and silently drop the campaign's deadline cap from it.
+
+### Security: `PATCH /findings/{id}/classify` is limited by finding type, needs approval to lower a risk tier, and is recorded
+
+- A CVE can now be set only on a `vulnerability` finding. A secret, misconfiguration, compliance, web3 or license finding refuses one with `422 CLASSIFY_CVE_NOT_APPLICABLE` (it used to accept any CVE, which could make a secret a KEV/P0/critical finding).
+- A change of the CVE that lowers the finding's risk tier (clearing the CVE of a KEV finding, or swapping it for one that is not in KEV, or dropping the P0 derived from it) now also needs `findings:approve`; `findings:severity` alone gets `403 CLASSIFY_LOWERS_RISK`. This closes a way around the evidence gate and the SLA that a severity downgrade does not allow.
+- Every change writes a timeline entry (`metadata_updated`, `field: classification`, old and new values) and the audit action `finding.classified`. A request that changes nothing writes neither.
+- **Behaviour change:** clients that sent a CVE for a non-vulnerability finding, or cleared the CVE of a KEV finding without `findings:approve`, now get an error.
+
+### Security: the ownership check for active probes follows the name, not the asset type
+
+- A `host` asset named by a public DNS name or public IP address was never held for scope coverage, so a member could create `victim.example` as a host and have active probes dispatched with only the deny list (and the tenant's unclassified-scans mode) in the way. Any asset whose name is exactly a public DNS name or public address is now checked like a domain or an address: outside every active scope entry it is `unattributed`, or passes the guardrails when the tenant allows unclassified scans. Private addresses, internal names, short names and names with ports or paths are unchanged.
+- **Behaviour change:** hosts with public names that come from a vulnerability scanner or agent inventory and are not covered by a scope entry are no longer probed actively while unclassified scans are off. Add the names or ranges to the scope to keep probing them.
+- The asset attribution response (`scope_status`) reports `in_scope`/`out_of_scope` for such hosts instead of `not_applicable`.
+
+### Security: false-positive approval treats every public asset as internet-exposed
+
+- The checks that decide whether one person may mark a finding a false positive (the `high_and_above` and `off` levels), the approval policy evaluation and suppression rules read only the `is_internet_accessible` flag of the asset, which is unset on most public assets. A finding on an asset whose exposure is `public` could therefore be closed by one person although the level asks for a second approver. They now use the product's single internet-facing definition (exposure is `public`, or the flag is set).
+- No data change is needed; findings already closed stay closed.
+
+### Security: GitHub inbound webhooks are verified per integration and closed issues follow the shared ticket rules
+
+- Each GitHub integration has its own inbound webhook URL, `POST /hooks/github-integrations/{integration_id}`, verified with that integration's own secret (`X-Hub-Signature-256`). The sender no longer chooses the organization, and one integration's secret no longer authenticates events for another.
+- A replay is refused by the body hash as well as by `X-GitHub-Delivery` (a captured body with a new delivery id is ignored). Without the replay store every delivery is refused (503). A failed delivery releases its keys and answers 500, so a redelivery from GitHub is processed.
+- A `push` or `issues` event must name its repository; when the integration is bound to a GitHub organization, a repository outside it is refused (403).
+- Issue events go through the same finding rules as Jira status changes for every linked finding: closed as completed is a fix claim (proof of fix requested, never a close), closed as not planned opens a pending risk-acceptance request instead of claiming a fix, closed as duplicate changes nothing, reopened is in progress. Pentest and closed findings are not moved; the GitHub sender is recorded in the timeline.
+- Rotating an inbound webhook secret (Jira or GitHub) or entering a Jira one is now a Critical audit entry; the secret is never recorded.
+
+### Security: Go toolchain 1.26.10
+
+- Build and CI toolchain moves from Go 1.26.9 to 1.26.10, which fixes GO-2026-6809 in the Go standard library.
+
+### Security: a Jira change moves only the links of the integration that sent it
+
+- An organization with two Jira integrations (two sites, or Cloud and Data Center) could have a change to `SEC-1` on one site move the findings linked to `SEC-1` on the other. An inbound delivery now acts only within the integration named in its URL and signed with its secret: links are matched by the issue's id, then by key within that integration; the browse URL is built from that integration's site, not from the payload; the mapping, allowed projects, profile, campaign epic and refusal comment all come from that integration.
+- A moved issue (new key) is still matched by its id.
+- Pushes and comments on an existing link go to the link's own integration (before: the organization's first connected Jira). A finding's ticket URL on another site is never pushed through the default integration.
+- Create ticket, create task issue and link issue accept an optional `integration_id`; without it the default integration is used, as before.
+- An inbound delivery no longer skips the project check when the integration's client cannot be built.
+
+### Security: the priority-rule dry run only covers findings the caller may see
+
+- `POST /api/v1/priority-rules/dry-run` listed every open finding of the organization, so a role with `priority_rules:read` but a restricted data scope got finding ids and titles outside its scope in the sample. It now applies the caller's data scope and the pentest-campaign membership rule of the findings list; counts, distribution and sample cover only what the caller can see, and the run fails closed when the data scope is unavailable.
+
+### Security: reopening an approved false positive or accepted risk needs findings:approve
+
+- Moving a finding out of an approved false positive or an accepted risk (status route and bulk status) now needs `findings:approve`, the permission that made the decision, in addition to `findings:status`. The allowed-moves list reports the missing permission.
+- Workflow actions and ticket webhooks can no longer move a finding out of a decided status (false positive, accepted risk, duplicate; for workflows also resolved).
+- **Upgrade note:** the built-in Owner and Admin roles hold `findings:approve`. A custom role that reopens decided findings must be granted it; reopening a resolved finding by a person is unchanged.
+
+### Security: editing a custom role is held to the editor's own permissions on both sides
+
+- A delegated role manager can no longer strip a permission from a custom role (or drop its full data access) that they do not hold themselves; `PUT /api/v1/roles/{id}` now checks what the role carries today as well as what it will carry, as deleting a role already did.
+- Making a role gain an approval permission (any `*:approve`) or another privileged permission, and giving a user a custom role that carries one, needs the actor's recent re-authentication. Before, only a role turning from plain to privileged did.
+
+### Security: members can no longer reshape or hijack the platform's coverage scans
+
+- Any member with `scans:write` could change the settings every coverage batch inherits (tags, profile, windows), pause a capability for good, or (administrators) take ownership so later coverage runs acted as them. All of these are now refused.
+
+### Security: unrelated secrets no longer share a rotation group or merge into one finding
+
+- A secret's rotation group (`rotate:secret:<fingerprint>`) is now derived only from the keyed hash of its raw value (the producer's `secretHMAC/v1`, or the server's own hash of a raw value in the report). It used to be derived from the mask, so every short secret of a tenant (`REDACTED`) and every AWS key (`AKIA********`) landed in one rotation suggestion, and one rotation proof could close unrelated live credentials. A secret reported only as a mask now gets no rotation group.
+- Marker words such as `REDACTED` or `[hidden]` count as zero visible characters when deciding whether a mask tells two secrets apart, so two different short passwords of one rule in one file stay two findings.
+- **Upgrade note:** findings stored before this change keep their mask-derived fingerprint until the secret-fingerprint reset command (separate change) is run.
+
+### Security: code lines of secret findings no longer go to the AI provider or into exports
+
+- AI triage prompts and finding exports (NDJSON) leave out the snippet and context lines of a secret finding. File, line and preview are still sent.
+
+### Security: the producer's keyed secret hash is no longer stored or returned on a finding
+
+- The keyed hash of a raw secret that a CI job sends as `secretHMAC/v1` identifies the finding at ingest and is then dropped: it is not saved in `partial_fingerprints`, and `GET /api/v1/findings/{id}` never returns it (also for findings saved earlier). Before, anyone who could read a finding and run a CI job on the repository could use it, with the job's key, to confirm a short secret offline.
+- The finding keeps its tenant-keyed fingerprint (`secret_fingerprint`), which cannot be checked without the server secret.
+
+### Security: a leaked secret is no longer resolved because a scan stopped reporting it
+
+- A full default-branch scan, and a covered scan of other assets, used to close a secret finding as `fixed` / `covered_scan` when the secret was no longer reported. Removing a secret from the branch does not revoke it, so neither path closes secrets now (finding type or source `secret`); the resolve statements refuse them as well.
+- Instead the finding stays open, is marked stale (not observed) and gets a timeline entry. A new sighting makes it present again; a person with `findings:verify` closes it once the credential is rotated.
+- A retest is no longer offered for a secret finding, so a retest with `retest.auto_resolve` cannot close one either.
+- **Behaviour change:** secret findings that used to disappear after a clean default-branch scan stay open until a person resolves them. Fix-rate figures no longer count them as fixed by a scan.
+
+### Security: a service account's key list is for owners and administrators only
+
+- `GET /api/v1/service-accounts/{id}/api-keys` now answers 403 to anyone who is not an owner or administrator. It used to answer to every member and viewer, who could read the prefixes, scopes, creators and last-used IPs of the organization's integration keys (the key lists are admin-only by decision, 2026-10-02).
+- The last-used IP of a key is no longer returned to non-administrators on any API key route. The Keys button on the service accounts page is shown to administrators only.
+
+### Security: service accounts get their own permission, keep the full-data ceiling through teams, and their keys no longer outlive the administrator who minted them
+
+- New permission `service_accounts:manage` (migration `service_accounts_manage_permission`): creating and deleting a service account and minting or deleting its API keys no longer need only `team:members:write`. Owners and administrators hold it; a custom role can carry it.
+- **Upgrade note:** a custom role that created service accounts with `team:members:write` must be given `service_accounts:manage`.
+- A service account cannot get full data access through a team either way round: the service already refused it, and triggers on `group_role_bindings` and `group_members` (migration `service_account_team_ceiling`) now refuse it for any other writer.
+- When a member is offboarded or leaves, or an administrator or owner is demoted to member or viewer, the active service-account keys they minted are revoked and audited. The member access report lists them first (`service_account_keys`) and the offboarding result and the audit events carry `revoked_service_account_keys`; the console shows both.
+- API keys are read-only, so minting a key with a write scope (anything but `*:read` or `*:view`) is refused with 400 and the key dialog offers read scopes only.
+
+### Security: a missing actor is never the unrestricted system
+
+- Platform policies (continuous coverage, automatic enrichment) now dispatch with an explicit system authority (`SystemPolicy`): the tenant's scope entries and the capability's tier apply, a member's act scope does not. An act-scope check with no user, no fallback user and no policy is refused instead of read as unrestricted, at dispatch and at the claim re-check.
+- A caller's `actor_user_id` and `system_policy` in a run context are dropped on every scan trigger and on `POST /scan-workflows/runs`; who a run acts as is decided by the platform.
+
+### Security: the task list's finding filter and the task write check respect the caller's data scope
+
+- `GET /api/v1/remediation/tasks?finding_id=` no longer tells a caller with a restricted data scope which of their visible tasks hold a finding on an asset outside their scope: for such a finding the list is empty.
+- A task with an active related member outside the caller's data scope is now read-only for that caller (changes answer 403 like a task with hidden primary members). Before, only hidden primary members blocked a change. The displayed `hidden_members` number still counts primary members only.
+
+### Security: remediation task members and counters follow the pentest member rule
+
+- A task's member list, counters, hidden-member count and the task list applied only the caller's asset scope. A pentest finding that was a member of a task could therefore show its title and severity to a user outside its pentest campaign (and a draft or in-review one to the campaign's client role), including a user with full data access. They now use the same rule as the findings list: a pentest finding is a visible member only for members of its campaign, never a draft one for the client role; administrators see all. A task whose only visible-to-others members are such findings answers `404` to everyone else, and a task with a hidden member is read-only for that caller.
+- A pentest finding can no longer be the primary member of a task (create task, add members): it is fixed through its pentest campaign. The request is refused with a validation error.
+
+### Security: the owner of a remediation task sees exactly the task's findings, and only the fix workflow
+
+- The owner of a live task (the user, or an active member of the owner team) can open the task's findings and a minimal asset card even when the findings' assets are outside their data scope, and the task is no longer a 404 or read-only for them. They never see the asset's other findings, a finding on a hidden private-program asset, or a pentest finding outside their campaigns. The relation is computed on each request, so it ends when the owner changes, a finding leaves the task, the task closes, or the team membership ends, expires or is suspended.
+- On those findings they can comment, start work, go back to confirmed, claim the fix, add a manual evidence note and request a proof-of-fix or retest. False positive, accepted risk, resolve, severity, classification, assign, approvals, tickets and delete still need the finding in their own scope; the status menu shows them blocked (`not_in_scope`). API keys never get the relation.
+- Each status move made only through the relation is audited as `remediation_task.owner_moved_finding`.
+
+### Security: a task's timeline no longer shows other tasks the reader cannot open
+
+- `GET /api/v1/remediation/tasks/{id}/timeline` hid nothing about the other task of a move, split or regression: its id, its title and the free-text move reason were shown even when none of that task's findings were in the reader's data scope. For a reader with a restricted data scope those fields are now removed from the entry (counts stay) and the entry carries `other_task_hidden: true`. Readers without a data scope are unaffected.
+
+### Security: one outbound gate for tracker content; linking an issue needs findings:fix_apply
+
+- Every path that sends content to Jira or GitHub Issues (create ticket, workflow `create_ticket`/`update_ticket`, task issues, campaign tickets, status pushes) asks one gate. Pentest findings leave only through their campaign's ticket action (campaign lead); the generic route, workflows and task issues answer 403 `TICKET_EGRESS_REFUSED`.
+- TLP:RED campaign content is never sent. A campaign above the organization's tracker limit (new pentest setting `ticket_max_tlp`, default `amber`; `red` is refused) is refused, and status pushes for it stop.
+- Secret findings no longer send the masked preview to trackers (location only). Findings with a data exposure risk above `none` send severity, status and location only, with the title "Data exposure finding".
+- `POST /api/v1/findings/{id}/ticket-links` (link an existing issue) now also needs `findings:fix_apply`: Done on a linked issue is a fix claim.
+- **Upgrade note:** roles with `findings:write` but without `findings:fix_apply` can no longer link existing issues; workflows that ticketed pentest findings now fail that step.
+
+### Security: the verification checklist now records who completed it, and is tenant, data-scope and audit controlled
+
+- `PUT /api/v1/verification-checklists/{findingId}` never recorded `completed_by` / `completed_at`, so the second-person evidence rule for critical, P0 and KEV findings (and the checklist rule for high findings) could not be met by anyone. The edit that leaves every required item ticked now records the caller as the completer; unticking a required item clears the record.
+- The route now applies the caller's data scope (an out-of-scope finding is a 404, like another tenant's), accepts edits only on open findings (new to `fix_applied`; 400 otherwise) and caps the notes at 4000 characters.
+- Every edit writes the audit action `finding.verification_checklist_updated` (changed items, completion state; not the notes text).
+- `GET /api/v1/verification-checklists/{findingId}` no longer creates a row: it is read-only and returns an empty, incomplete checklist when none exists.
+
+### Behaviour change: audit retention is on by default and archives through the storage provider
+
+- Organization audit entries older than `AUDIT_RETENTION_DAYS` (365, the minimum) are now archived and pruned from the oldest end of each hash chain without any setting. Before, nothing was pruned unless `AUDIT_ARCHIVE_DIR` was set, so `audit_logs` and the chain tables grew without bound.
+- The archives (gzip JSONL, SHA-256 recorded in the chain anchor) are written through the server storage provider (`STORAGE_PROVIDER`: local filesystem or an S3-compatible bucket), namespace `audit-archive`, not a separate directory. **Upgrade note:** `AUDIT_ARCHIVE_DIR` is removed. Back up the storage provider like the database: the archive is the only copy of pruned entries. Nothing is deleted when the archive cannot be written.
+- `AUDIT_RETENTION_ENABLED=false` holds all audit history. The chain of a suspended organization (how a legal hold is applied) or one pending deletion is skipped until it is active again.
+
+### Behaviour change: a finding can only be assigned to a member who can read it
+
+- Assigning a finding (single, bulk, workflows) now needs an active member whose data scope covers the finding's asset, or who is on the pentest campaign. Before, any active member was accepted, and their assignment notice was then hidden by the inbox scope filter. A refused target gets one generic answer (`this person cannot be assigned this finding`); bulk assignment reports it per finding.
+- New `GET /api/v1/findings/{id}/assignable?q=&limit=` (needs `findings:assign`, and the caller must be able to read the finding) lists only the members who can be assigned, with name, avatar and role (no emails). The finding assignee picker uses it.
+
+### Behaviour change: the single ticketing issue type is replaced
+
+- Migration `ticketing_issue_types` moves `config.ticketing.issue_type` into `issue_types.finding` and `issue_types.task` and removes the key. An integration that never set a type now files remediation tasks as `Task` (was `Bug`); findings stay `Bug`, campaign epics `Epic`.
+- **Upgrade note:** API code from before this release reads the new shape with the stock types; stop the old API before the migration runs, as for any release.
+
+### Behaviour change: unreachable and skipped targets no longer make a run partial
+
+- A target that did not answer (timeout, no route, DNS) or that the sensor's local policy skipped is a fact about the target, not lost work: the step and the run complete, and the counts are recorded (`unreachable_target_count`, `skipped_target_count` in the run context and the step output). `partial` stays for unfinished work: coverage gaps, targets a result left unfinished, targets no zone or sensor could place, failed batches.
+- A step that tried more than one target and reached none of them still fails as `TARGET_UNREACHABLE`; a single target that did not answer completes with one unreachable.
+- Success rates (completed over finished runs) stop counting dead hosts as failures. The coverage ledger is unchanged: an unreachable target is still not settled as covered, now also for tasks that report no per-target outcomes.
+- The run API (`GET /scan-runs`, `GET /scan-runs/{id}`) adds `unreachable_target_count` and `skipped_target_count`.
+
+### Behaviour change: scans the platform manages are read-only
+
+- Continuous coverage and automatic enrichment scans can no longer be edited, scheduled, paused, deleted, saved, run by hand or taken over through the scan API: every such call returns `409 SCAN_MANAGED_BY_POLICY`. Cloning is allowed; the copy is an ordinary scan you own.
+- `GET /scans/{id}` reports `managed_by` and `owner_state: "managed"` for these scans, so a client no longer shows them as orphaned scans.
+
+### Behaviour change: every task write names the task version and is checked inside the transaction
+
+- Splitting a task, requesting an exception on it, re-running its query and pausing or resuming auto include now require the `version` the caller read (`400` when missing, `409` when stale). Split used to accept no version and skip the check; the others never took one, so a concurrent edit silently won.
+- Mark fixed and the exception request read the task's open findings under a lock on the task row together with the version check, so the findings they act on are the ones at the version the caller saw. Query re-run and pause/resume check it under the same lock.
+- **Upgrade note:** `POST /api/v1/remediation/tasks/{id}/query/run` now needs a JSON body `{"version": <int>}`; `.../query/auto` and `.../exception` take `version` in their existing bodies; `.../splits` already documented it. The web console sends it.
+
+### Behaviour change: automatic Jira issues skip low and informational findings by default
+
+- Without a stored policy an integration uses the defaults: Medium or above, or priority P2 or above, or in KEV, at most 200 automatic creates per day. Workflows that filed issues for Low or Info findings now hold them; set **Severity at least** to Info and the daily limit to 0 to keep the previous behaviour. Manual creates, campaign tickets and task issues are not limited.
+
+### Removed: the `azure_openai` provider and the `agent` AI mode
+
+- Neither was ever usable (Azure returned "not yet implemented", the agent mode had no runtime). Use `openai_compatible` with the Azure OpenAI v1 endpoint instead.
+
+### Removed: `reachable_from_entry_points` on exposure chains
+
+- The exposure-chain response no longer includes `reachable_from_entry_points`, and the page no longer shows the "entry points" counter on a chain. The count measured the size of the external footprint, not risk. Each chain still names its entry point.
+
+### Removed: the per-organization GitHub webhook URL and secret routes
+
+- `POST /api/v1/webhooks/incoming/github?tenant=…`, `GET /api/v1/integrations/github/webhook-secret` and `POST /api/v1/integrations/github/webhook-secret/rotate` are removed. Use `GET /api/v1/integrations/{id}/github-webhook` (URL, whether a secret is set) and `POST /api/v1/integrations/{id}/github-webhook/secret/rotate` (shown once; needs `integrations:manage`, `integrations:scm:write` and step-up).
+- **Upgrade note:** in each GitHub repository or organization webhook, replace the URL with the integration's new URL. A secret already generated for the organization's first GitHub integration keeps working on that integration's URL; other GitHub integrations need a secret generated.
+
+### Added: AI triage works with any OpenAI-compatible model server
+
+- A new `openai_compatible` provider speaks the OpenAI chat-completions API at a base URL and model you set, so Azure OpenAI, vLLM, Ollama, LM Studio, LiteLLM, OpenRouter and cloud gateways work without a separate adapter. The API key is optional for it.
+- Console, System > AI provider: choose the provider, base URL and model; a toggle "allow private addresses" lets a self-hosted server sit on a private network (RFC1918 and ULA ranges, plain http), and a model allow-list limits the platform model. The toggle is part of the existing super-admin, fresh-step-up, critical-audit change and is recorded in the audit row.
+- Security: every provider call uses the SSRF-safe client (resolve once, dial the vetted address, no redirects). Loopback, link-local and cloud-metadata addresses, carrier-grade NAT and `localhost` are refused even with the toggle. An organization's own base URL is always public-only (https).
+
+### Added: organizations can use their own AI provider (Settings > AI, Source)
+
+- Settings > AI gets a **Source**: Platform AI, Own provider or Off. Own provider takes a kind (Claude, OpenAI, Gemini or an OpenAI-compatible server with a base URL), a model and a write-only API key (shown only as set, its last four characters, and when and by whom it was set), with a **Test connection** button (a server-side call with one tiny prompt and no finding data; it answers ok or a fixed error code). `PUT /api/v1/organization/settings/ai` is a partial change; `POST /api/v1/organization/settings/ai/test` is new.
+- Security: saving needs owner or administrator, `settings:write`, a recent sign-in, and is audited as critical (never the key). The key is encrypted with `APP_ENCRYPTION_KEY`, in the rekey registry. A stored key is only ever sent to the endpoint it was entered for (changing the provider or base URL drops it). An organization's base URL is public https only and checked at save time and at every connection; the platform's private-address toggle never applies to it. Consent, the AI data-egress policy, the monthly cap and the per-organization rate limit apply the same way to an own provider; each result records the provider and the model.
+- Console, System > AI provider: a new policy "allow organizations to use their own provider" (on by default; super admin, fresh step-up, reason, critical audit). Turning it off stops every own provider at its next call (`AI_OWN_PROVIDER_NOT_ALLOWED`); it never falls back to the platform key.
+
+### Added: install from release archives, private registries and air-gapped sites
+- Every release attaches archives that run OpenCTEM without containers: `openctem-server` (API, job signer, golang-migrate with the migrations), `openctem-gateway` (Caddy with layer4 and the gateway configuration), `openctem-web` and `openctem-console` (Next.js standalone bundles, Node.js from `web/.nvmrc`), linux amd64/arm64, each with hardened systemd units and example settings; `bootstrap-admin` for linux, macOS and Windows as before. Builds are reproducible; `checksums-sha256.txt` covers every archive and its SPDX SBOM and is signed keyless (`checksums-sha256.txt.sigstore.json`); every archive has SLSA build provenance. Guide: `api/docs/deployment/binary-install.md`.
+- Production releases also attach an offline image bundle: each image as an OCI archive that keeps its digest, cosign signature and attestations, listed in the signed `openctem-images-<version>.txt`.
+- `openctem-image-kit-<version>.tar.gz` (`deploy/airgap`): `mirror-images.sh` copies the images into a private registry with their signatures, verifying before and after (from ghcr.io, a Nexus proxy, a staging project or the offline bundle); Nexus and Harbor setup, GitLab CI templates for a scheduled mirror job and for building the images from the archives without source code, Compose/Helm/Ansible settings, a Kyverno signature policy and egress allowlists. Guide: `api/docs/deployment/air-gapped.md`.
+- `openctem-server -version` and `openctem-signer version` print the version, commit and build time.
+- Docker Compose: `POSTGRES_IMAGE` and `REDIS_IMAGE` choose the repository of the bundled datastores (defaults unchanged), for a private registry.
+
+### Added: retest checks on a finding in the console
+
+- The finding drawer and the finding page have a "Retest check" section: attach an HTTP assertion (request and matchers, no code) or a nuclei template (pasted, uploaded or picked from the template library) to a finding that has no automatic retest, validate it (errors per field, tier, the template that would run), save, remove, and approve an intrusive check as a second person with scope approval rights.
+- The saved check shows its digest, tier, calibration, approval state and last verdict; "Retest now" is offered for a finding with a check, and retest history names the custom check and its digest.
+- Adding, editing and removing a check need the new permission `findings:retest_checks:write`.
+
+### Added: retest checks — a custom check a finding's retest runs
+
+- A person with the new permission `findings:retest_checks:write` can attach a retest check to a finding that has no check of its own (manual, pentest-style, bug-bounty or DAST findings): a nuclei template, a library template, or a declarative HTTP assertion (request + matchers) that the platform compiles to a nuclei template. API: `GET|PUT|DELETE /api/v1/findings/{id}/retest-check`, `POST /api/v1/findings/{id}/retest-check/test`, `POST /api/v1/findings/{id}/retest-check/approve` (`scope:approve`, recent sign-in).
+- Checks are validated with the template library's validator plus target-bound rules (HTTP only, paths on `{{BaseURL}}`/`{{RootURL}}`, raw requests to `{{Hostname}}`, no redirects to other hosts, no out-of-band callbacks, no credentials). Intrusive (T2) checks run only after a second person approved the exact version.
+- Retest sends the check with the retest command (`custom_templates`, item `template`) to an organization sensor reporting `retest-templates:nuclei`; the job statement lists its digest. A no-match proves a fix only after the same version matched the finding once (new reason code `check_uncalibrated`); a run of other content is inconclusive. Retest history entries carry `retest_check_id` and `check_digest`.
+- A template used by a retest check can no longer be deleted from the template library (`409 TEMPLATE_IN_USE`).
+- Role templates Security analyst, Vulnerability manager, AppSec engineer and Validation engineer move to version 2 (they gain `findings:retest_checks:write`); roles created from version 1 show "update available".
+
+### Added: Jira issue type per kind of issue, custom types included
+
+- A Jira integration chooses the issue type of findings, remediation tasks and campaign epics separately (Settings → Integrations → Ticketing → Configure → Issue types), from the live list of its default project, stored by id and name (`config.ticketing.issue_types`). A suggestion picks a type named like "Security Finding" or "Remediation Task".
+- Remediation task issues are created from the published task field mapping of their type and move along its workflow; every status change, inbound and outbound, uses the mapping of the issue's own issue type and kind, so two types with different workflows in one project are no longer mixed.
+- Saving an issue type is checked with Jira: the type must exist in the default project, must not be a sub-task type, and every required field must be filled (built-in or by a published field mapping); the save is refused otherwise, or when Jira cannot be reached.
+- A create Jira refuses for named fields marks the field mapping drifted, or records the refusal on the integration for that kind (shown on the Configure dialog, cleared by the next success); the error names the field ids.
+
+### Added: optional off-host backups and point-in-time recovery for the Compose stack
+
+- New overlay `deploy/docker-compose.backup.yml` (off by default; nothing changes without it) adds WAL archiving through pgBackRest and a `backup` service taking weekly full and daily differential backups, encrypted with AES-256 on the host before upload, with retention and a verify after each full backup.
+- `BACKUP_TARGET` selects S3-compatible storage (AWS S3, Cloudflare R2, MinIO), an SFTP host or a local path. Credentials and the encryption key are files under `backup-secrets/`, never environment variables.
+- Documented in `docs/deployment/backup-and-restore.md`: per-provider setup, RPO and RTO, full restore, point-in-time restore and a restore drill; `deploy/backup/drill.sh` runs the drill on throwaway containers.
+- Enabling archiving restarts PostgreSQL once.
+
+### Added: People section and watch bell on findings and remediation tasks
+
+- A finding's side panel (page and drawer) has a People section: the assignee, the watchers with why each one watches (commented, added, was assigned, ...), the owners of the asset as context, an Add control for people who may assign, and a bell to watch or stop watching it. A remediation task's detail page has the same: its owner, the watchers and the bell.
+- The person picker lists only the members the API says can read the finding; names appear only for people who can see the member list, others see the count, and viewers and pentest clients can still use the bell.
+- Notification settings gain "Watch what I take part in" (on by default).
+- English and Vietnamese.
+
+### Added: background changes to remediation tasks are in the audit log
+
+- The audit log now records, with the system as the actor, what the platform changed on a remediation task without a person: a task's state changed by the background reconcile (`remediation_task.state_changed`, `trigger: reconcile`), the new task opened when a finding of a closed task reopens (new action `remediation_task.regressed`, with `regression_of` and the finding count) and findings joining a task under an action's auto-join rule (`remediation_task.members_added`, `trigger: auto_join`). The task timeline already showed them; the audit log did not.
+
+### Added: `refingerprint -reset-mask-secret-fingerprints` clears secret fingerprints that were derived from a mask
+
+- One-off operator command for deployments that ingested secret findings before the rotation-group fix: it clears the secret fingerprints created before `-before` (the deploy time of the fix), removes stored `RE…ED` previews, and re-derives the remediation keys of the changed findings, so unrelated secrets leave the shared rotation group. A dry run (the default) and the output are counts per tenant only, including the rotation tasks that group several affected findings, for review.
+- See "Secret fingerprints derived from a mask" in the encryption key rotation guide.
+
+### Added: change a finding's status and read it without leaving its task
+
+- On a task's page each finding row has a status menu built from the moves the server allows that person (blocked moves are shown disabled with the reason). A choice runs the same dialogs as the finding drawer: a fix claim or resolve asks for its note or evidence, a false positive or accepted risk becomes an approval request. Writes send the finding's version, so a finding someone else changed is reloaded instead of overwritten.
+- Clicking a finding opens it in the finding drawer inside the task, with a shareable `?finding=` link, "n of N" and previous/next, `j`/`k` to move through the list, and an option (on by default) to jump to the next finding that still needs work after an action. The full finding page opened from there shows "Remediation tasks > task" above it and links back to the task.
+
+### Added: the task owner picker says who cannot see the task's findings
+
+- New `GET /api/v1/remediation/tasks/{task_id}/owner-candidates` (and `GET /api/v1/remediation/tasks/owner-candidates?finding_ids=` for a task not created yet) lists people and teams with how many open findings and assets each cannot see. Counts only, never finding titles.
+- The Split dialog shows "Needs access to N findings on M assets" per candidate. Without `findings:assign` those candidates cannot be picked and "Request access" leaves an internal comment on a finding (it grants nothing); with it a consent line must be ticked.
+- Naming an owner who cannot see some of the open findings (create, owner change, adding primary findings, split) now answers `422` unless the caller holds `findings:assign` and sends `confirm_owner_access: true`. An accepted case is audited as `remediation_task.owner_access_extended` with the counts.
+- **Behaviour change:** API clients that set a task owner who lacks access to its findings must send `confirm_owner_access` and need `findings:assign`.
+
+### Added: choose which findings become Jira issues automatically
+
+- Each Jira integration has a create policy (Settings → Integrations → Ticketing → **When to create issues**): severity at least, or priority class at least, always for KEV findings, and a daily limit. A workflow's create ticket action holds a finding the policy does not pass (the step reports `held`), and the finding shows "Not sent to Jira" with **Create anyway**. Held findings are created later when they rise above the policy (severity, priority class, KEV), when the policy is loosened, or on the next day for the daily limit, at most the daily limit per day. **Preview** counts what a policy lets through before saving. Migration `ticket_create_policy` adds three empty tables.
+- New routes: `GET`/`PUT /api/v1/integrations/{id}/ticket-create-policy`, `POST …/ticket-create-policy/preview` (`integrations:manage`, policy changes audited) and `GET /api/v1/findings/{id}/ticket-holds` (`findings:read`, data scope).
+- `POST /api/v1/findings/{id}/create-ticket` answers 409 `TICKET_BELOW_THRESHOLD` for a finding below the policy unless the request sets `confirm_below_threshold: true`; such a create is audited (`ticket.created_below_threshold`).
+
+### Added: the Jira assignee of a linked issue is shown on the ticket link
+
+- Every Jira delivery (a status change or not) records the issue's assignee (Jira account id and display name), its status category and the change time on the issue's links of the integration that sent it. The ticket link API (`GET /findings/{id}/ticket-links`, `GET /remediation/tasks/{task_id}/ticket-links`) returns `external_assignee`, `external_status_category` and `external_updated_at`.
+- The assignee is a label: it is never a platform assignee and grants no access. The display name is sanitized (no HTML, control or bidi characters, at most 255 characters); unlinking clears it.
+- Migration `003226_ticket_links_external_assignee` adds four columns to `ticket_links` with defaults (no table rewrite).
+
+### Added: watchers on findings and remediation tasks (API)
+
+- New table `work_item_subscriptions` (migration `work_item_subscriptions`): who watches a finding or a remediation task, with composite tenant foreign keys, an explicit subscribed or unsubscribed state and a reason. Watching grants no access.
+- New endpoints, for findings under `/api/v1/findings/{id}` and for tasks under `/api/v1/remediation/tasks/{task_id}`: `GET participants`, `PUT subscription` (the caller's own bell), `POST watchers` (add up to 10 people, all or none; needs `findings:assign` or `remediation:write`) and `DELETE watchers/{user_id}` (yourself with read access, others with the write permission; audited). A person who cannot be added gets one generic answer. 50 watchers per item at most.
+- The list names watchers only to callers with `team:members:read` who are not pentest clients, never with emails; watchers who left or lost data scope are hidden.
+- Offboarding deletes the member's watched items in its transaction (`removed_watches`); erasing personal data deletes any row left.
+- Adding or removing another person is audited as `work_item.watcher_added` and `work_item.watcher_removed`.
+
+### Added: scan workflow connections say what they carry
+
+- In the scan workflow builder, every connection between two steps is labelled with the data types that pass along it (for example `url · ip`, or `url · service +2` when more types pass), worked out by the same rule the save check applies. A connection that only orders two steps reads "order only", and one that cannot pass data reads "no matching type" or "not fed: intrusive", drawn in the error colour.
+- Each connection's accessible name is a full sentence ("HTTP probe passes URL, IP address to Vulnerability templates"), shown as a tooltip too; labels hide below half zoom. The read-only graph of a workflow shows the same labels.
+- Connections are no longer animated, and the builder's line colours follow the light and dark theme.
+
+### Changed: organization AI settings move to their own table
+
+- The `tenant_ai_settings` migration moves `tenants.settings.ai` into the new `tenant_ai_settings` table and removes the JSON. An organization on its own key keeps it (the ciphertext moves as it is); a key stored without encryption, an `azure_openai` provider or the removed `agent` mode is turned off instead of falling back to the platform key. Rekey now covers `tenant_ai_settings.key_enc`.
+- Behaviour change: the monthly AI token cap now counts an organization's tokens whichever key pays for them (it counted only the platform key). An organization on its own provider is therefore still stopped at the cap (`budget_exhausted`), so an administrator can use it as a spend limit; the cap is set by the platform administrator (AI_TRIAGE_BUDGET_ENABLED, AI_TRIAGE_BUDGET_DEFAULT_TOKENS).
+- Saving the AI settings now fails with 409 when another change was saved between the read and the write, instead of overwriting it.
+
+### Changed: deleting an asset asks for its name
+
+- Deleting an asset now asks the user to type its name: the delete detaches it from its groups, owners, relationships and scope, and the console has no way to bring it back. A bulk delete asks for the count (or the name when one asset is selected) at any size, names the action on its button ("Delete 3 assets") and lists the first assets it touches.
+- When the asset is known to have findings, the dialog offers Archive (reversible) instead of a delete the API would refuse.
+- Typed confirmations ignore surrounding spaces and Unicode composition, so a name typed with a Vietnamese input method or pasted still matches.
+- The delete and archive notices are translated (English and Vietnamese).
+
+### Changed: repository branch counters are recounted only when a finding's branch, severity or status changes
+
+- The database trigger that maintains `repository_branches.findings_*` ran five counts and an update for every finding write that named severity or status, which includes every re-seen finding on a rescan. It now fires only when one of `branch_id`, `severity` or `status` really changed. The counts themselves are unchanged.
+
+### Changed: large values compress with lz4, and the API's database role has a statement and an idle-in-transaction timeout
+
+- The bundled Postgres starts with `default_toast_compression=lz4` (`PG_TOAST_COMPRESSION` overrides it), and the new migration sets lz4 on eleven large columns (finding description, scanner output and source extra, command payload, result and logs, ingest report headers and job payloads, sensor manifests, finding evidence, AI triage raw responses). Existing values are not rewritten; a server without lz4 is left alone.
+- `least-privilege-roles.sql` sets `statement_timeout = 60s` and `idle_in_transaction_session_timeout = 60s` on the app role (variables `app_statement_timeout` and `app_idle_in_transaction_timeout`, `0` turns one off). The migrator has no limit.
+- **Upgrade note:** re-run the roles script (the compose `db-roles` job does it on every `up`) and restart the API for the limits to apply. A query that ran longer than 60 s is now cancelled with SQLSTATE 57014; the jobs known to run longer (feed syncs, retention, dashboard runs, merges, large ingest batches) already raise their own bounded limit with `SET LOCAL statement_timeout`; if another legitimate one appears, give it the same or raise `app_statement_timeout`.
+- Every controller now declares how its SQL stays bounded (`light`, `batched`, `long`); a test fails for a controller without a declaration.
+
+### Changed: six duplicate database indexes are dropped, so findings, integrations and change events write less
+
+- `findings` no longer maintains `idx_findings_tenant_id_pk` and `uq_findings_tenant_id_id`, `integrations` no longer maintains `idx_integrations_tenant_id_pk`, `groups` and `remediation_campaigns` drop their repeated `(tenant_id, id)` unique constraint, and `asset_change_events` drops `idx_asset_change_events_tenant` (the primary key serves the same reads backwards). Every one repeated an index that stays.
+- The foreign keys that were bound to a dropped unique index are re-created unchanged and validated, bound to the surviving index. No rows change.
+- **Upgrade note:** the migration takes a short exclusive lock on `findings`, `groups` and `remediation_campaigns` (5 s lock timeout) while the dependent keys are re-added; run it outside a bulk ingest.
+
+### Changed: the EPSS and KEV syncs write only what changed; the EPSS percentile moves to a curve table
+
+- The daily EPSS sync rewrote every row of `epss_scores` (percentile and feed date change for nearly every CVE each day) and the KEV sync rewrote every KEV row. Both now filter against the stored rows before the upsert, so an unchanged feed writes nothing and a normal day writes the ~1 % of scores that moved. Measured on a 390 000-row sample feed with 1 % of scores moved: WAL per sync 272 MB -> 39 MB, row versions 390 330 -> 4 135, unchanged feed 0 bytes.
+- The percentile is no longer a column of `epss_scores`: the new table `epss_percentile_curve` holds one row per distinct score and a CVE's percentile is read from it. The feed date moves to `threat_intel_sync_status.data_date`. Migration `epss_percentile_curve` backfills both and drops `epss_scores.percentile`, `epss_scores.score_date` and their indexes; the down migration restores them.
+- **Upgrade note:** run the migration with the API stopped; the previous API version reads the dropped columns.
+
+### Changed: the daily EPSS refresh rewrites a finding only when its score moved
+
+- The refresh of open findings from the EPSS catalog compared and copied the percentile too, which changes for nearly every CVE on every feed, so almost every open finding with a CVE was rewritten each day. It now compares and writes the score only.
+- A finding's `epss_percentile` is the rank in force when its score last moved or when it was scored; the current rank of a CVE is the one in the threat intelligence catalog.
+
+### Changed: a finished report no longer rewrites every asset it touched
+
+- Report commit used to run a bulk `UPDATE assets SET updated_at = NOW()` over the touched assets "to refresh finding counts". Asset finding counts are computed when read, so nothing stored changed; the write only created a new row version (and index entries) per asset per report. It is removed. The asset upsert still stamps `updated_at` when an asset is seen.
+
+### Changed: the console shows the platform's scans as system scans
+
+- Continuous coverage and enrichment scans (managed by the platform) get a "Managed by the platform · Continuous coverage" banner, a System badge, "Automatic coverage" as their trigger, and no Edit, Run now, schedule, Take ownership or Delete; Clone reads "Clone as my scan". The scans list has an Origin filter (People, System).
+- A run's status shows how many targets were unreachable or skipped ("Completed · 3 unreachable") without changing the status.
+- The success-rate labels are translated (en, vi).
+
+### Changed: a re-seen finding is written once per ingest; unchanged scanner output and template provenance write nothing
+
+- Storing a sighting's scanner output, CVSS vectors and template provenance now skips findings whose stored values already match, instead of stamping `scanner_output_at` / `template_seen_at` and rewriting the row each time. A rescan that changes nothing leaves one row version per re-seen finding (the sighting update) instead of up to three.
+- `scanner_output_at` now means "the output last changed" and `template_seen_at` "the template provenance last changed".
+
+### Changed: coverage and enrichment runs are attributed to their policy and queue low
+
+- Coverage and enrichment runs are stored as `system` runs triggered by `policy:coverage` / `policy:enrichment` (previously recorded as `manual` with no trigger). The runs API reports `trigger.type = "policy"`.
+- Command queue class follows the source: a person's own start is `high`, schedules, automations and retries `normal`, platform policies `low`; the claim's existing ageing keeps low work from starving.
+- **Upgrade note:** coverage and enrichment commands queued before the upgrade are withheld at the claim (no recorded policy); the next planner pass queues new ones.
+
+### Changed: the platform console uses the shared verification-code field and step-up dialog
+
+- The console's sign-in code and recovery code, its step-up prompt (security key or passkey first, authenticator code as the fallback) and every settings confirmation that carries a code use the same field and dialog as the web app: one input drawn as cells, one-time-code autofill, paste with spaces or dashes, submit on completion in the sign-in and step-up steps.
+- No API change.
+
+### Changed: one verification-code field and one step-up dialog in the web app
+
+- Every web screen that asks for an authenticator code, a recovery code or the password before a sensitive action now uses the same field and dialog: sign-in second step, two-factor set-up, turning two-factor off, new recovery codes, the step-up prompt, self-approvals (exceptions, exposures, scope entries, finding requests, scans), the scan window override and sensor pairing.
+- The field is one input drawn as six cells: one-time-code autofill, numeric keypad, paste of the whole code with spaces or dashes, IME-safe, one accessible label with the error announced. A complete code submits on its own where the code is the last thing asked for.
+- Turning two-factor off offers "Use a recovery code instead" rather than one field for both kinds of code. The account two-factor card and the step-up prompt are translated (English and Vietnamese).
+- No API change: the server still checks every code, its one-time use, the lockout and the step-up window.
+
+### Changed: watchers hear about comments, status changes, fix claims and assignments; people who take part start watching
+
+- A comment, a status change by a person (a fix claim included) and an assignment now reach the finding's watchers as well as its assignee. The recipient list is decided in one place and re-checked at send time: only active members who can read the finding now are told, never the actor, never someone who stopped watching, and a team-only comment on a pentest finding never reaches a campaign client. Changes made by a scanner, the system, an integration or an AI still reach the assignee only.
+- The author of a comment, the person who changes the status of one finding or claims a fix (a bulk change subscribes nobody), the new assignee, and the requester of an approval become watchers; watchers get "Finding assigned" rather than the assignee's "You have been assigned". A new notification preference `auto_watch` (default on, `PUT /api/v1/notifications/preferences`) turns that off; a stop on one item always wins.
+- Notifications carry a `reason` (`assigned` or `watching`) and fold into the unread notification of the same type about the same finding when they come within 10 minutes (`coalesced_count`).
+- The comment notification title is now "New comment on a finding" (it also goes to watchers).
+- Migration `notification_reason_and_auto_watch`: `notifications.reason`, `notifications.coalesced_count`, `notification_preferences.auto_watch` (metadata-only adds with constant defaults).
+- A status-change notice on a pentest finding is team-only (its title names the old status, which the activity feed already hides from campaign clients), so a client who watches such a finding is not sent it. The list of who stopped watching an item is never truncated, and a fan-out reads the finding once instead of once per recipient.
+
+### Fixed: exposure chains compute in linear time
+
+- The exposure-chain builder ran one search per public asset on every request: about 4 s at 5,000 assets, 70 s at 20,000 and 156 s at 50,000. It now makes a single pass from all public assets (about 33 ms at 50,000 assets), so large tenants can open the page.
+- Chains skip relationships that point at deleted assets.
+
+### Fixed: priority classification and threat models see every exposure chain
+
+- Priority classification (the reachability oracle) and threat-model generation read only the 100 best-ranked exposure chains, so assets further down lost the "reachable" boost and a crown-jewel threat model could come out empty. They now read the full result.
+- The exposure-chain computation is cached per tenant for 5 minutes and concurrent readers share one run. The page, the MCP tool, the oracle and threat models use the same cache. The 100-row cap applies only to what the API and MCP return, after the caller's data scope. `total_chains` in the response counts all chains the caller may see.
+- Priority classification and exposure enrichment share one reachability oracle.
+
+### Fixed: attack path scoring marks the protected asset, not the security control
+
+- For `protected_by` relationships (for example a website protected by a WAF) the asset flagged as protected was the control instead of the protected asset. The flag now lands on the website. `monitors` is unchanged: the monitored asset is flagged.
+
+### Fixed: the Attack paths page no longer claims what it cannot know, and reports load errors
+
+- Removed the claim that "patching or isolating the top-ranked asset breaks the most attack paths". The ranking shows how widely each asset is exposed; it does not identify a choke point.
+- Each row on Attack paths is now the ranked asset itself. It used to be drawn as a two-node "Internet-facing entry points → asset" path that the page never computed; real routes are on Exposure chains.
+- When the API fails, Attack paths and Exposure chains show a load error with Retry instead of "No relationship data yet".
+- A step on an exposure chain that the viewer may not see is shown as "Outside your access".
+- The remaining hard-coded English on both pages and on the path graph is moved to the translation files (en and vi).
+
+### Fixed: restricted members see the attack paths to their own assets
+
+- Attack-path scores and exposure chains were cut to the tenant-wide top 50 / 100 before the viewer's data scope was applied, so a member whose assets ranked lower saw an empty list. The scope is now applied first, then the cap.
+- An exposure chain to an asset in the member's scope is now shown even when it crosses assets outside their scope. Those steps are returned as hidden steps (`"hidden": true`, no id, name, type or exposure) in the `/attack-surface/exposure-chains` response and the MCP `exposure_chains` tool. Before, the whole chain was hidden.
+
+### Fixed: attack-path scores are cached, skip deleted assets and count open findings only
+
+- Attack-path scores are computed once per tenant per 5 minutes (concurrent requests share one run, under a 30 second deadline) instead of on every request.
+- A relationship to a deleted asset no longer connects two assets in the scores, and no longer marks an asset as protected.
+- The per-asset finding count that raises an asset's path score counts open findings only; resolved, closed and dispositioned findings no longer inflate it.
+
+### Fixed: the compose bundled sensor reaches the platform over https through the gateway
+
+- `docker-compose.sensor.yml` pointed the bundled sensor at `http://api:8080`. Sensor releases built on sdk-go v0.35.0 and later refuse plain http to a host that is not loopback, so the sensor crash-looped as soon as `SENSOR_VERSION` was raised. The sensor now uses `https://${OPENCTEM_HOSTNAME}` and trusts the gateway's internal CA from `./ca` (`SENSOR_CA_CERT_FILE`; set it empty when the gateway uses a publicly trusted certificate).
+- The gateway, not the API, is now the second member of `sensor-net` (under the name `OPENCTEM_HOSTNAME`). The sensor can no longer resolve the API service; the API is no longer attached to `sensor-net`.
+- **Upgrade note:** `OPENCTEM_HOSTNAME` must be a DNS name for the sensor to find the gateway on `sensor-net`; run `docker compose -f docker-compose.yml -f docker-compose.sensor.yml up -d` again. The sensor keeps its identity in `sensor-data`.
+
+### Fixed: a command that keeps returning to the queue is delayed and finally failed
+
+- Every path that puts a command back to `pending` (unclaim while the job signer is down, voluntary release, refusal re-route, lease expiry, stall, withdrawn sensor, scan window deferral) now counts the return in `commands.requeue_count`. After the first return the next offer is delayed (5 s doubling to 5 min; a refusal re-route is counted but not delayed, other sensors may take it at once), and after 50 returns the sweep fails the command with the reason "max re-queues exceeded". Before, a command could cycle indefinitely (one live command was requeued 150 times in 2.5 hours) with `dispatch_attempts` unchanged, writing the row on every loop.
+- Dispatch attempts keep their meaning (work a sensor took and lost); a hand-back or a window deferral still never counts as an attempt.
+- Migration `003208` adds `commands.requeue_count` (constant default, no rewrite) and `command_requeue_backoff_secs()`.
+
+### Fixed: dashboard facts no longer try to build the platform's system row
+
+- The dashboard facts maintainer listed the all-zero system tenant (shared templates) as an organization needing an initial build and logged "tenant id is required" every few minutes. It now skips that row.
+
+### Fixed: the dashboard facts system-row fix now ships its code
+
+- The earlier entry "dashboard facts no longer try to build the platform's system row" landed without its query change, so the error kept appearing every minute. The pending-runs query now skips the all-zero system tenant, with a database test.
+
+### Fixed: the Findings search box no longer drops under the filter button
+
+- The Findings list toolbar is now two fixed rows. Row 1 holds the state lens (Open, Fixed, Dispositioned, All) and the page actions (refresh, Export, Task from filters); row 2 holds the filter button joined to the search field, then saved views, Group and the table's View menu. At about 1000 to 1600 px wide the search box used to wrap onto its own line under a lone filter button, or the end controls overflowed the page edge.
+- Toolbar labels switch to icons by the width of the list itself (an open filter panel counts), and on a narrow list Export and Task from filters fold into a "More actions" menu. Every icon-only control keeps its accessible name.
+- Shared table toolbar: the start group (filters, search) keeps at least 12rem; when the end controls do not fit beside it they move to their own line as one group instead of squeezing the search box. The state lens now has the same 36 px height as the other toolbar controls.
+
+### Fixed: accessible name for two-factor code inputs
+
+- The sign-in two-factor code field is now named "Authentication code" (recovery mode: "Recovery code") for screen readers and automated tests; every verification-code field must now be given a label.
+
+### Fixed: offboarding a member reassigns their open remediation tasks and campaigns
+
+- Offboarding used to leave the member's open remediation tasks and campaigns owned by the person who left. They now go, in the same transaction, to the offboarding plan's findings target (`findings_to`); when the findings are put back in the queue (`unassign_findings`) they become unowned. Finished tasks and campaigns, and tasks owned by a team, are not touched.
+- Each reassigned task gets a version bump and a timeline entry (`member_offboarded`). The access report gains `owned_tasks` and `owned_campaigns`, the offboard result `reassigned_tasks` and `reassigned_campaigns`, and the `member.offboarded` audit entry carries both counts. The member access report in the console shows them.
+
+### Fixed: the priority audit log no longer keeps rows with no information or rows of deleted organizations
+
+- Entries whose class did not move are refused by the insert itself (every writer is covered), and the daily retention controller removes the residue of earlier versions (no-op rows) and the rows of organizations that no longer exist.
+- Deleting an organization now erases its `priority_class_audit_log` rows in the same transaction (the table has no foreign key to organizations).
+- Retention deletes in batches of 5,000 instead of one statement, so a large backlog no longer holds a long transaction.
+
+### Fixed: the asset relationship graph's full-screen button now works
+- The expand button only reset the zoom; it now opens the graph in full screen (browser Fullscreen API, with a full-viewport fallback when blocked), Esc exits, and the graph re-fits to the new size.
+- The graph card no longer overflows its frame (double border behind the legend).
+
+### Fixed: the requester of a false-positive, accepted-risk or severity request is told how it ended
+
+- When a request is approved or rejected, its requester now gets an in-app notice with the outcome and the finding title (a group exception: the number of findings). The justification and the rejection reason are never in the notice. Nothing is sent for the requester's own withdrawal, to a requester who left, or to one who can no longer read the finding.
+- Removed the "Mentions" notification preference from the settings page: nothing sends that notification yet, so the toggle changed nothing.
+
+### Fixed: a retest the tool could not run is no longer reported as an unreachable target
+
+- A sensor verdict of "unverifiable" (the tool could not run the check) was recorded as the reason `unreachable`, and the retest's run ended red as failed with code UNREACHABLE, which the console could not describe. It is now recorded as the reason `error` ("the tool could not run the check"), the run is shown as blocked with the code `RETEST_UNAVAILABLE` (its step skipped), and the finding stays as it is.
+- The console describes the retest reason codes (UNREACHABLE, BLOCKED, AUTH_CHANGED, SERVER_ERROR, ENDPOINT_MISMATCH, NO_ENDPOINT_PROOF, TEMPLATE_CHANGED, NO_RESULT, ERROR, RETEST_UNAVAILABLE) in English and Vietnamese.
+
+### Fixed: saving risk scoring settings merges partial bodies and refuses unsafe score maps
+
+- `PATCH /settings/risk-scoring` replaced the whole section with the decoded body, so a body that left out `exposure_scores` or `criticality_scores` stored every factor as 0 and every asset scored 0. The body is now merged into the stored settings (omitted fields and blocks keep their stored value), inside the settings write. The score preview reads the body the same way.
+- The save refuses all-zero, below-minimum (under 10) and inverted exposure and criticality score maps and returns 400 with the reason; `unknown` exposure and `none` criticality stay outside the ordering. The shipped presets and defaults pass.
+- **Upgrade note:** clients that send a full body are unaffected. An organization that already stores an all-zero or inverted map keeps working, and must send valid maps with its next risk-scoring save.
+
+### Fixed: continuous coverage finds its scans by key, never by name
+
+- Coverage and automatic enrichment scans carry `managed_by` and `managed_key` (migration 003201, unique per tenant and key). A member's scan that has the same name as a coverage scan is no longer adopted and rewritten by the planner; coverage creates its own scan under another name.
+- The migration marks only ownerless coverage and enrichment scans as managed; scans a person created or took over are left as they were.
+- `GET /api/v1/scans` accepts `origin=user|system`.
+
+### Fixed: a secret finding keeps its masked code line and the producer's preview
+
+- The value of a secret finding no longer reads `RE…ED`: a preview made by the producer (for example `AKIA…MPLE`) is kept as sent, and a value that hides everything (`REDACTED`, only mask characters) has no preview. A later scan replaces an empty or `RE…ED` preview.
+- The stored snippet is the producer's masked source line instead of the preview. A snippet that still holds a secret-looking word is replaced by `[redacted secret]` and its context lines are dropped.
+
+### Fixed: rolling back the severity override keeps the activity-type constraint validated
+
+- The down of the analyst severity override migration re-added `finding_activities.chk_activity_type` as `NOT VALID`, so after a rollback to the previous release the constraint was not validated. It now validates it in the same step (only rows of the kept types remain at that point).
+
+### Fixed: the new owner of a remediation task is told, and task notices respect the data scope
+
+- Giving a remediation task an owner (when it is created or changed) now sends the owner user, or the members of the owner team, an in-app notice. A person who assigns the task to themself gets none.
+- When findings move between tasks (move, split, merge, or a task claiming findings from another), the owners of both tasks get a notice with the counts and task titles only.
+- A remediation task notice is shown in the inbox, the unread count and the live push only to members who can read at least one of the task's findings (the rule that decides who can open the task). Before, task notices skipped the data-scope check.
+
+### Fixed: "Mark fixed" on a task no longer refuses every finding that is not assigned to the clicker
+
+- The task owner is now a fix owner of the task's findings (with `findings:fix_apply` and a note), next to the finding's assignee, an assigned team member and the asset owner. The claim used to be refused as `not_fix_owner` for each unassigned finding.
+- Two partial indexes on live remediation tasks (by user owner and by team owner) back the lookup.
+
+### Fixed: technology backfill no longer stops when a tenant is deleted mid-run
+- Marking a tenant as backfilled after it was deleted is now a no-op instead of an error that aborted the run for every remaining tenant.
+
+### Fixed: a retried ticket create no longer opens a second issue
+
+- Jira finding and task issues carry a marker in the create request (issue property `openctem` with the object, its kind and the integration, plus the label `openctem-ref-<object id>`); GitHub issues end with a hidden marker. Before creating, the platform looks the marker up and adopts the issue it finds, so a create whose response was lost, or whose link was not recorded, is recovered by the next attempt instead of creating a duplicate.
+- Only a marker naming the same object, kind and integration (Jira) or the same finding and organization (GitHub) is adopted; if the lookup fails, the create is refused rather than risk a duplicate.
+- New Jira issues created by the platform get one more label, `openctem-ref-<object id>`.
 
 ## v0.12.0 (2026-10-20)
 

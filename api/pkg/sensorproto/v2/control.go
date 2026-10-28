@@ -146,6 +146,11 @@ type HeartbeatResponse struct {
 	NextHeartbeatSeconds int      `json:"next_heartbeat_seconds"`
 	Actions              []string `json:"actions"`
 	ConfigVersion        string   `json:"config_version"`
+	// ContentVersion is the version (the ETag) of the content the platform
+	// wants this sensor to hold: it differs from the last one seen when a
+	// pack was promoted, revoked or added, and the sensor then refreshes its
+	// content at once. Absent when the platform serves no content.
+	ContentVersion string `json:"content_version,omitempty"`
 	// CancelCommandIDs are commands the sensor listed as running that it
 	// must stop: canceled, closed by the platform (a run timeout), re-queued
 	// after the lease ran out, or held by another sensor. Stop and release

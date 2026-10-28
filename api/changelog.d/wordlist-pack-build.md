@@ -1,0 +1,4 @@
+### Added: first-party wordlist packs S and M, built from pinned upstream files
+
+- `go run ./cmd/wordlists-build` builds the platform wordlist packs `wordlists-s` and `wordlists-m` reproducibly: each upstream file is pinned by commit and sha256, only files whose own license is on the allow-list are used (MIT, Apache-2.0, BSD, ISC, CC0, Unlicense, WTFPL, CC-BY-4.0), lines are normalised per purpose, ranked, de-duplicated and capped, and every pack carries `wordlists.yaml` and a `NOTICE` with each source, commit and license plus the files left out. The lists are release assets (workflow `Wordlists Release`), imported as platform packs through the existing import route.
+- The wordlist linter now checks `wordlists.yaml` when a pack has one (a platform wordlist pack must): line counts, sha256, valid and unique entries, licenses, pinned sources and `NOTICE`. A false manifest refuses the pack.

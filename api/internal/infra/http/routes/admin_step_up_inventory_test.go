@@ -158,9 +158,9 @@ var adminWriteInventory = map[string]struct {
 	"PATCH /api/v1/admin/threat-intel/sync/{source}":                {stepUpRoute, "turning a feed off changes every organization's prioritization"},
 	"POST /api/v1/admin/mcp-clients/{id}/block":                     {stepUpRoute, "cuts every organization off an AI client"},
 	"POST /api/v1/admin/mcp-clients/{id}/unblock":                   {stepUpRoute, "readmits an AI client that was cut off"},
-	"POST /api/v1/admin/target-mappings/":                           {routine, "scanner target mapping; rate-limited, audited"},
-	"PATCH /api/v1/admin/target-mappings/{id}":                      {routine, "scanner target mapping; rate-limited, audited"},
-	"DELETE /api/v1/admin/target-mappings/{id}":                     {routine, "scanner target mapping; rate-limited, audited"},
+	"POST /api/v1/admin/target-mappings/":                           {stepUpRoute, "scanner target mapping: changes which assets every organization's scans take; super_admin, reason, audited"},
+	"PATCH /api/v1/admin/target-mappings/{id}":                      {stepUpRoute, "scanner target mapping: changes which assets every organization's scans take; super_admin, reason, audited"},
+	"DELETE /api/v1/admin/target-mappings/{id}":                     {stepUpRoute, "scanner target mapping: changes which assets every organization's scans take; super_admin, reason, audited"},
 
 	// Account support actions: they change a person's sign-in state, so
 	// step-up as well as reason, rate limit and audit.
@@ -211,9 +211,16 @@ func inventoryRouterFresh(t *testing.T) (infrahttp.Router, *[]string, map[string
 // handlers, reporting the purposes asked and whether each asked fresh.
 func inventoryRouterFull(t *testing.T, adjust func(*Handlers)) (infrahttp.Router, *[]string, map[string]bool) {
 	t.Helper()
+	return inventoryRouterRole(t, admin.AdminRoleSuperAdmin, adjust)
+}
+
+// inventoryRouterRole is inventoryRouterFull with every request authenticated
+// as an administrator of the given role.
+func inventoryRouterRole(t *testing.T, role admin.AdminRole, adjust func(*Handlers)) (infrahttp.Router, *[]string, map[string]bool) {
+	t.Helper()
 	fresh := map[string]bool{}
 	now := time.Now()
-	a := admin.Reconstitute(shared.NewID(), "root@example.com", "Root", admin.AdminRoleSuperAdmin, true,
+	a := admin.Reconstitute(shared.NewID(), "root@example.com", "Root", role, true,
 		nil, nil, "", 0, nil, nil, "", now, nil, now)
 	var h Handlers
 	hv := reflect.ValueOf(&h).Elem()
@@ -404,5 +411,42 @@ func TestAdminRoutesRefuseOutsideNetworks(t *testing.T) {
 	})
 	if n < 60 {
 		t.Fatalf("only %d console routes walked", n)
+	}
+}
+
+// Target mapping writes change which assets every organization's scans take:
+// operations and read-only administrators are refused before the step-up, and
+// a super admin must confirm with a step-up (purpose target_mapping.change).
+func TestTargetMappingWritesAreSuperAdminWithStepUp(t *testing.T) {
+	id := shared.NewID().String()
+	writes := [][2]string{
+		{http.MethodPost, "/api/v1/admin/target-mappings/"},
+		{http.MethodPatch, "/api/v1/admin/target-mappings/" + id},
+		{http.MethodDelete, "/api/v1/admin/target-mappings/" + id},
+	}
+	do := func(role admin.AdminRole, method, path string) (*httptest.ResponseRecorder, *[]string) {
+		router, purposes, _ := inventoryRouterRole(t, role, nil)
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(method, path, strings.NewReader(`{}`))
+		req.AddCookie(&http.Cookie{Name: middleware.AdminSessionCookie, Value: "s"})
+		req.AddCookie(&http.Cookie{Name: middleware.AdminCSRFCookie, Value: "c"})
+		req.Header.Set(middleware.CSRFHeaderName, middleware.AdminCSRFToken("s"))
+		func() {
+			defer func() { _ = recover() }()
+			router.Handler().ServeHTTP(rec, req)
+		}()
+		return rec, purposes
+	}
+	for _, w := range writes {
+		for _, role := range []admin.AdminRole{admin.AdminRoleReadonly, admin.AdminRoleOpsAdmin} {
+			rec, purposes := do(role, w[0], w[1])
+			if rec.Code != http.StatusForbidden || len(*purposes) != 0 {
+				t.Errorf("%s %s as %s: %d (step-up asked %v), want 403 before any step-up", w[0], w[1], role, rec.Code, *purposes)
+			}
+		}
+		rec, purposes := do(admin.AdminRoleSuperAdmin, w[0], w[1])
+		if rec.Code != http.StatusUnauthorized || len(*purposes) != 1 || (*purposes)[0] != "target_mapping.change" {
+			t.Errorf("%s %s as super admin without a code: %d purposes %v, want 401 asking target_mapping.change", w[0], w[1], rec.Code, *purposes)
+		}
 	}
 }

@@ -27,6 +27,8 @@ func (g *refusingGate) Require(_ context.Context, _ *admin.AdminUser, a admin.Ap
 	return nil, &admin.ApprovalRequiredError{Action: a, Target: target}
 }
 
+func (g *refusingGate) Active(context.Context, *admin.AdminUser) (bool, error) { return true, nil }
+
 func (g *refusingGate) Release(context.Context, *admin.AdminUser, *adminapproval.Grant, adminconsole.ClientInfo) {
 }
 
