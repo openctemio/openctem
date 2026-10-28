@@ -268,3 +268,34 @@ func TestSensorLoad_SelectionUsesReportedFreeSlots(t *testing.T) {
 		t.Fatalf("a busy fleet refused the trigger: %+v", avail)
 	}
 }
+
+// A heartbeat's host pressure is clamped and stored, and an overloaded
+// report takes the free slots away; a hostile level or reason is dropped.
+func TestSensorLoad_HostPressureIsStoredClampedAndNarrows(t *testing.T) {
+	h := newCtlHarness(t)
+	s := h.newVerifiedSensor(h.tenantID, "pressured", []string{"semgrep"}, nil, 4)
+	h.heartbeatV2(s, map[string]any{
+		"status": "running",
+		"resources": map[string]any{"cpu_cores": 2, "pressure": map[string]any{
+			"level": "overloaded", "reasons": []string{"cpu", "<img src=x>", "io"}, "level_seconds": 120, "psi": true,
+			"cpu_some_avg10": 250, "io_some_avg10": 3.1, "load_per_cpu": 0.8, "noisy_neighbor": true}},
+		"capacity": map[string]any{"slots_total": 4, "slots_free": 4, "launches_held": 2, "tools_running": 1,
+			"transient": map[string]any{"slow_starts": 1, "retried": 1, "recovered": 1}},
+	})
+	got := h.load(s)
+	p := got.Load.Resources.Pressure
+	if p == nil || p.Level != "overloaded" || p.CPUSomeAvg10 != 100 || !p.Noisy || len(p.Reasons) != 2 {
+		t.Fatalf("pressure not stored clamped: %+v", p)
+	}
+	if c := got.Load.Capacity; c.LaunchesHeld != 2 || c.Transient == nil || c.Transient.Recovered != 1 {
+		t.Fatalf("capacity members not stored: %+v", c)
+	}
+	if n := got.FreeSlots(time.Now()); n != 1 {
+		t.Fatalf("idle overloaded sensor free slots = %d, want 1", n)
+	}
+	h.heartbeatV2(s, map[string]any{"status": "running",
+		"resources": map[string]any{"pressure": map[string]any{"level": "catastrophic"}}})
+	if n := h.load(s).FreeSlots(time.Now()); n != 4 {
+		t.Fatalf("unknown level narrowed the sensor to %d, want 4 (treated as ok)", n)
+	}
+}

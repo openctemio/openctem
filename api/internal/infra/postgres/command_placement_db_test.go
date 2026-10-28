@@ -434,3 +434,63 @@ type SensorPlacementView struct {
 	Eligible bool
 	Reasons  []string
 }
+
+// A sensor that is free by the server's count but reports host pressure is
+// busy, and the explainer says sensor_overloaded instead of leaving it as
+// plain busy; a stale report changes nothing.
+func TestPlacement_NamesAnOverloadedSensor(t *testing.T) {
+	f := newPlacementFixture(t)
+	db := f.sensRep.db
+	set := func(level, reportedAgo string) {
+		t.Helper()
+		if _, err := db.ExecContext(f.ctx, `UPDATE sensors SET last_seen_at = NOW(),
+			reported_resources = jsonb_build_object('pressure', jsonb_build_object('level', $2::text)),
+			reported_capacity = '{"slots_total": 4, "slots_free": 4}'::jsonb,
+			load_reported_at = NOW() - $3::interval WHERE id = $1`,
+			f.sensors[1].String(), level, reportedAgo); err != nil {
+			t.Fatal(err)
+		}
+	}
+	verdict := func() SensorPlacementViewBusy {
+		t.Helper()
+		p, err := f.svc.ExplainPlacement(f.ctx, f.tenant, f.cmds["unzoned"])
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, sp := range p.Sensors {
+			if sp.SensorID == f.sensors[1] {
+				return SensorPlacementViewBusy{Eligible: sp.Eligible, Busy: sp.Busy, Reasons: sp.Reasons}
+			}
+		}
+		t.Fatal("b-nuclei not explained")
+		return SensorPlacementViewBusy{}
+	}
+	if _, err := db.ExecContext(f.ctx, `UPDATE sensors SET max_concurrent_jobs = 4 WHERE id = $1`, f.sensors[1].String()); err != nil {
+		t.Fatal(err)
+	}
+	// Overloaded and holding a command: busy because of pressure.
+	if _, err := db.ExecContext(f.ctx, `INSERT INTO commands (id, tenant_id, sensor_id, type, status, payload, acknowledged_at)
+		VALUES ($1, $2, $3, 'scan', 'running', '{}', NOW())`,
+		shared.NewID().String(), f.tenant.String(), f.sensors[1].String()); err != nil {
+		t.Fatal(err)
+	}
+	set("overloaded", "0 seconds")
+	if v := verdict(); !v.Eligible || !v.Busy || !slices.Equal(v.Reasons, []string{command.PlacementSensorOverloaded}) {
+		t.Fatalf("overloaded sensor: %+v, want eligible, busy, sensor_overloaded", v)
+	}
+	set("ok", "0 seconds")
+	if v := verdict(); !v.Eligible || v.Busy || len(v.Reasons) != 0 {
+		t.Fatalf("sensor without pressure: %+v, want free", v)
+	}
+	set("overloaded", "2 hours")
+	if v := verdict(); !v.Eligible || v.Busy || len(v.Reasons) != 0 {
+		t.Fatalf("stale pressure: %+v, want free", v)
+	}
+}
+
+// SensorPlacementViewBusy is the part of a verdict the busy test compares.
+type SensorPlacementViewBusy struct {
+	Eligible bool
+	Busy     bool
+	Reasons  []string
+}

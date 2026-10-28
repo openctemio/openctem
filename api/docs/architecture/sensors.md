@@ -1972,6 +1972,18 @@ offers more scan commands than that; selection skips sensors with no free
 slot and prefers the most free slots, then the highest reported throughput
 for the tool. `sensors.current_jobs` (never written) is no longer read.
 
+**Host pressure** (optional `resources.pressure`, plus `capacity.launches_held`,
+`tools_running` and `transient` counters): the sensor says how stalled its host
+is (kernel CPU, memory and I/O stall averages, load per CPU, descriptor use,
+CPU taken by other programs, `noisy_neighbor`) and a `level` of `ok`,
+`elevated` or `overloaded`. While the report is fresh, `overloaded` gives the
+sensor no free slot when it holds a command (one when idle) and `elevated` at
+most one, in `FreeSlots` and the same SQL rule; selection adds 25 or 100 to its
+load score; the placement explainer says `sensor_overloaded` instead of a plain
+busy. Values are clamped, `level` and `reasons` are closed sets, and an old
+sensor that sends none behaves as before. The sensor page shows a Host
+pressure section and, for `noisy_neighbor`, a warning.
+
 The poll orders commands fairly (RFC-046 §11): by priority class, a command
 moving up one class per 30 minutes waited (never into `critical`), then
 round-robin across runs (the first pending command of every run before the

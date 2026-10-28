@@ -48,6 +48,16 @@ function hasKey(d: unknown, key: string): boolean {
   return typeof (d as Record<string, unknown>)[key] === 'string'
 }
 
+describe('host pressure placement help', () => {
+  it('explains sensor_overloaded in both languages', () => {
+    const h = placementHelp('sensor_overloaded')
+    expect(h.text).toContain("sensor's host is overloaded")
+    expect(h.href).toBe('/sensors')
+    const viT = (k: string) => (vi as Record<string, string>)[k] ?? k
+    expect(placementHelp('sensor_overloaded', viT).text).toContain('quá tải')
+  })
+})
+
 describe('every code the API sends has help', () => {
   it('step failure codes', () => {
     const codes = failureCodes()
