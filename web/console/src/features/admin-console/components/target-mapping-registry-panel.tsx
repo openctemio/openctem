@@ -8,7 +8,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { useTranslation } from '@/context/i18n-provider'
 import { getAssetTypeLabel } from '@/features/assets/lib/asset-type-icon'
 import { useRegistryTargetPairs } from '../api/use-target-mappings'
-import { targetTypeLabel } from '../lib/target-mappings'
+import { useTargetTypeText } from '../lib/target-mappings'
 
 /**
  * The built-in target type to asset type pairs, read-only. They come from the
@@ -17,6 +17,7 @@ import { targetTypeLabel } from '../lib/target-mappings'
  */
 export function TargetMappingRegistryPanel() {
   const { t } = useTranslation()
+  const text = useTargetTypeText()
   const [open, setOpen] = useState(false)
   const { data, isLoading } = useRegistryTargetPairs()
 
@@ -30,13 +31,13 @@ export function TargetMappingRegistryPanel() {
     return [...byTarget.entries()]
       .map(([target, types]) => ({
         target,
-        label: targetTypeLabel(target),
+        label: text.label(target),
         types: [...new Set(types)]
           .map((v) => getAssetTypeLabel(v))
           .sort((a, b) => a.localeCompare(b)),
       }))
       .sort((a, b) => a.label.localeCompare(b.label))
-  }, [data])
+  }, [data, text])
 
   const total = data?.data.length ?? 0
 
