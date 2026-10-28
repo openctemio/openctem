@@ -4,7 +4,6 @@ import (
 	"net/http"
 
 	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/admin"
 )
 
 // registerAdminPlatformSettingsRoutes mounts the settings that moved from
@@ -31,7 +30,6 @@ func registerAdminPlatformSettingsRoutes(router Router, h Handlers, adminMiddlew
 	if ps == nil {
 		return
 	}
-	requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
 	// A setting whose service is not wired answers 503 (the routes always
 	// exist, so the route inventories see them).
 	on := func(wired bool, f http.HandlerFunc) http.HandlerFunc {
@@ -45,26 +43,26 @@ func registerAdminPlatformSettingsRoutes(router Router, h Handlers, adminMiddlew
 	captcha, region, quota, alerts, ai := ps.Captcha != nil, ps.Region != nil, ps.StorageQuota != nil, ps.Alerts != nil, ps.AI != nil
 	router.Group("/api/v1/admin/settings/captcha", func(r Router) {
 		r.GET("/", on(captcha, ps.GetCaptcha))
-		r.PUT("/", on(captcha, ps.UpdateCaptcha), requireSuper, freshStepUp("settings.captcha"))
-		r.POST("/verify", on(captcha, ps.VerifyCaptcha), requireSuper)
+		r.PUT("/", on(captcha, ps.UpdateCaptcha), freshStepUp("settings.captcha"))
+		r.POST("/verify", on(captcha, ps.VerifyCaptcha))
 	}, adminMiddlewares...)
 	router.Group("/api/v1/admin/settings/region", func(r Router) {
 		r.GET("/", on(region, ps.GetRegion))
-		r.PUT("/", on(region, ps.SetRegion), requireSuper, freshStepUp("settings.region"))
+		r.PUT("/", on(region, ps.SetRegion), freshStepUp("settings.region"))
 	}, adminMiddlewares...)
 	router.Group("/api/v1/admin/settings/storage-quota", func(r Router) {
 		r.GET("/", on(quota, ps.GetStorageQuota))
-		r.PUT("/", on(quota, ps.UpdateStorageQuota), requireSuper, stepUp("settings.storage_quota"))
+		r.PUT("/", on(quota, ps.UpdateStorageQuota), stepUp("settings.storage_quota"))
 	}, adminMiddlewares...)
 	router.Group("/api/v1/admin/settings/alerts", func(r Router) {
 		r.GET("/", on(alerts, ps.GetAlertWebhook))
-		r.PUT("/", on(alerts, ps.UpdateAlertWebhook), requireSuper, freshStepUp("settings.alerts"))
-		r.POST("/test", on(alerts, ps.TestAlertWebhook), requireSuper)
+		r.PUT("/", on(alerts, ps.UpdateAlertWebhook), freshStepUp("settings.alerts"))
+		r.POST("/test", on(alerts, ps.TestAlertWebhook))
 	}, adminMiddlewares...)
 	router.Group("/api/v1/admin/settings/ai", func(r Router) {
 		r.GET("/", on(ai, ps.GetPlatformAI))
-		r.PUT("/", on(ai, ps.UpdatePlatformAI), requireSuper, freshStepUp("settings.ai"))
-		r.POST("/test", on(ai, ps.TestPlatformAI), requireSuper)
-		r.PUT("/org-policy", on(ai, ps.UpdateOrgAIPolicy), requireSuper, freshStepUp("settings.ai_org_policy"))
+		r.PUT("/", on(ai, ps.UpdatePlatformAI), freshStepUp("settings.ai"))
+		r.POST("/test", on(ai, ps.TestPlatformAI))
+		r.PUT("/org-policy", on(ai, ps.UpdateOrgAIPolicy), freshStepUp("settings.ai_org_policy"))
 	}, adminMiddlewares...)
 }

@@ -13,7 +13,7 @@ This guide splits the database into three roles.
 | superuser (`DB_SUPERUSER`, e.g. `postgres`) | `initdb`, and the bootstrap script below | everything; the API never holds its password |
 | `openctem_migrator` (`DB_MIGRATE_USER`) | the migrations (`migrate` job, all-in-one start-up) | own the application schemas: create, alter and drop tables, indexes (including `CREATE INDEX CONCURRENTLY`), functions, triggers, policies |
 | `openctem_app` (`DB_USER`) | the API server and its workers | `SELECT`/`INSERT`/`UPDATE`/`DELETE` on the application tables; nothing else |
-| `openctem_console` (`DB_ADMIN_USER`, optional) | the API's second, small pool for the platform console's identity tables | full DML on `admin_users`, `admin_credentials`, `admin_sessions`, `platform_identity_provider`, `admin_idp_login_states` and `admin_approvals` (alone), insert and read on `admin_audit_logs`, read on `admin_audit_chain_anchors` and `tenant_members`, read and update on `users`; nothing else |
+| `openctem_console` (`DB_ADMIN_USER`, optional) | the API's second, small pool for the platform console's identity tables | full DML on `admin_users`, `admin_credentials`, `admin_sessions`, `platform_identity_provider`, `admin_idp_login_states`, `admin_approvals` and the platform role tables `platform_roles`, `platform_role_permissions`, `platform_role_assignments` (alone), insert and read on `admin_audit_logs`, read on `admin_audit_chain_anchors` and `tenant_members`, read and update on `users`; nothing else |
 
 Neither role is `SUPERUSER`, `CREATEDB`, `CREATEROLE`, `REPLICATION` or
 `BYPASSRLS`. Neither belongs to `pg_read_server_files`, `pg_write_server_files`
@@ -90,8 +90,10 @@ moves the platform console's identity tables to it:
 
 - the app role loses `INSERT`/`UPDATE`/`DELETE`/`TRUNCATE` on `admin_users`,
   `admin_credentials`, `admin_sessions`, `platform_identity_provider`,
-  `admin_idp_login_states` and `admin_approvals` (four-eyes approvals), and
-  `SELECT` on all of them but `admin_users`
+  `admin_idp_login_states`, `admin_approvals` (four-eyes approvals) and the
+  platform role tables (`platform_roles`, `platform_role_permissions`,
+  `platform_role_assignments`, RFC-134), and `SELECT` on all of them but
+  `admin_users`
   (the trigger that keeps platform administrators out of organizations and the
   "is this account an administrator" checks read it);
 - the console role gets no other table privilege than the ones listed in the
@@ -266,6 +268,15 @@ The live order is:
   - with `admin_user`: asserts the app reads `admin_users` and nothing more of
     the console's tables, and the console role writes them but cannot alter the
     admin audit log or the schema.
+
+## Platform role tables
+
+Migration 003525 adds `platform_roles`, `platform_role_permissions` and
+`platform_role_assignments` (the console's roles, RFC-134). An installation
+that uses `DB_ADMIN_USER` re-runs the grant script after migrating, or every
+console request answers 503 (the console cannot read the administrator's
+roles); the shipped Compose stack does this itself through `db-grants`. The app
+role gets no privilege on them.
 
 ## Upgrading to v0.11.0
 

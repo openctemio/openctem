@@ -804,7 +804,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AdminConsole:              handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, log).WithApprovals(adminApprovals),
 		AdminApproval:             handler.NewAdminApprovalHandler(adminApprovals, log),
 		AdminAuditChain:           handler.NewAdminAuditChainHandler(svc.Audit, adminConsoleSvc, repos.AdminAuditLog, repos.AdminOrg, log).WithApprovals(adminApprovals),
-		AdminAuthMiddleware:       middleware.NewAdminAuthMiddleware(adminConsoleSvc, log).WithElevation(cfg.AdminElevationRequired),
+		AdminAuthMiddleware: middleware.NewAdminAuthMiddleware(adminConsoleSvc, log).WithElevation(cfg.AdminElevationRequired).
+			WithPlatformRoles(postgres.NewPlatformRoleRepository(adminDBOf(repos, deps.DB))),
 		AdminStepUp: middleware.AdminStepUpFunc(func(ctx context.Context, a *admin.AdminUser, sess *admin.Session, code, purpose string, c middleware.AdminStepUpClient) error {
 			err := adminConsoleSvc.ConfirmProtected(ctx, a, sess, code, purpose, adminconsole.ClientInfo{IP: c.IP, UserAgent: c.UserAgent})
 			if err != nil && !errors.Is(err, admin.ErrStepUpRequired) && !errors.Is(err, admin.ErrStepUpUnavailable) && !errors.Is(err, admin.ErrInvalidMFACode) {
