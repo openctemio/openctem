@@ -245,6 +245,9 @@ jobs:
           echo "${ZIZMOR_SHA256}  zizmor.tgz" | sha256sum -c -
           tar -xzf zizmor.tgz zizmor
           ./zizmor --no-progress --format github .github
+      # Which languages CodeQL analyses for an event (develop pushes: the changed side).
+      - name: CodeQL languages self-test
+        run: bash .github/scripts/codeql-languages.test.sh
       - name: Actions are pinned to commit SHAs
         run: bash .github/scripts/check-action-pins.sh
       # Which jobs a change runs (api/web/docs routing shared by every workflow).

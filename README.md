@@ -11,8 +11,8 @@ the two parts that ship together:
 | Directory | What | Image |
 |---|---|---|
 | [`api/`](api/) | Go API server, migrations, admin CLI (module `github.com/openctemio/openctem/api`) | `ghcr.io/openctemio/openctem-api` |
-| [`web/`](web/) | Next.js web console | `ghcr.io/openctemio/openctem-web` |
-| [`deploy/allinone/`](deploy/allinone/) | API + web + gateway in one container (Postgres/Redis external) | `ghcr.io/openctemio/openctem` |
+| [`web/`](web/) | Next.js web console, and the platform console for platform administrators (same source, `console` build target) | `ghcr.io/openctemio/openctem-web`, `ghcr.io/openctemio/openctem-console` |
+| [`deploy/allinone/`](deploy/allinone/) | API + web + platform console + gateway in one container (Postgres/Redis external) | `ghcr.io/openctemio/openctem` |
 
 Released separately, in their own repositories:
 [sensor](https://github.com/openctemio/sensor) (runs scans in your networks),
@@ -21,6 +21,7 @@ Released separately, in their own repositories:
 [ci](https://github.com/openctemio/ci) (CI/CD runner and pipeline integrations),
 [sast-rules](https://github.com/openctemio/sast-rules) (the signed SAST rules pack for opengrep),
 [helm-charts](https://github.com/openctemio/helm-charts),
+[openctem-ansible](https://github.com/openctemio/openctem-ansible) (hardened VM install kit),
 [docs](https://github.com/openctemio/docs) (public documentation, published at
 [docs.openctem.io](https://docs.openctem.io)).
 
@@ -58,8 +59,9 @@ make check     # what CI runs, both components
 ## Deploying
 
 - **Compose, one HTTPS port:** [`api/deploy/docker-compose.yml`](api/deploy/docker-compose.yml)
-  runs the gateway ([`api/deploy/gateway`](api/deploy/gateway), Caddy), web, API,
-  Postgres and Redis; only the gateway is published.
+  runs the gateway ([`api/deploy/gateway`](api/deploy/gateway), Caddy), web, the
+  platform console, API, the job signer, Postgres and Redis, plus one-shot
+  migration and bootstrap containers; only the gateway is published.
 - **All-in-one image:** `ghcr.io/openctemio/openctem` embeds the same gateway.
   ```bash
   docker run -d -p 443:443 -v openctem-data:/data \
@@ -95,9 +97,10 @@ Installation, configuration and operations are documented at
 ## Releases
 
 One tag, `vX.Y.Z`, releases every image from the same commit: `openctem-api`,
-`openctem-web`, `openctem` (all-in-one), `openctem-gateway`, `migrations`, `seed`, `admin-cli`, all
+`openctem-web`, `openctem-console`, `openctem` (all-in-one), `openctem-gateway`, `migrations`, `seed`, `admin-cli`, all
 multi-arch (amd64, arm64), signed with cosign, with a signed SPDX SBOM
-attestation per image (also attached to the release). The release notes carry
+attestation (also attached to the release) and a signed SLSA build provenance
+per image. The release notes carry
 the `cosign verify` and `cosign verify-attestation --type spdxjson` commands for
 the tag. The pre-monorepo names `ghcr.io/openctemio/api` and `ghcr.io/openctemio/ui` receive
 best-effort copies during a transition window (v0.9.0 has no `ui` copy); use the

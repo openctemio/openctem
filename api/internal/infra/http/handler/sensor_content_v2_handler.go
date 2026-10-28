@@ -9,7 +9,10 @@ package handler
 //
 // A sensor reads only what its organization's sensors may hold (its
 // organization's active packs, the platform's stable packs); anything else
-// is content-not-found. Packs are signed by the platform and verified by
+// is content-not-found. A shared sensor (it serves several organizations)
+// reads the platform's stable packs only, one copy for all of them: an
+// organization's pack is content-not-found for it whatever job it holds
+// (RFC-061 §3.7). Packs are signed by the platform and verified by
 // the sensor, which also checks every archive against its digest.
 
 import (
@@ -24,6 +27,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	contentpackapp "github.com/openctemio/openctem/api/internal/app/contentpack"
+	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
@@ -32,6 +36,7 @@ import (
 // ContentDelivery is what the content routes need (contentpackapp.Delivery).
 type ContentDelivery interface {
 	Desired(ctx context.Context, tenantID string) (*contentpackapp.Desired, string, error)
+	Version(ctx context.Context, tenantID string) (string, error)
 	Archive(ctx context.Context, tenantID, digest string) ([]byte, error)
 	Index(ctx context.Context, tenantID, digest string) ([]contentpackapp.IndexEntry, error)
 	File(ctx context.Context, tenantID, digest, sha string) ([]byte, error)
@@ -48,6 +53,36 @@ func NewSensorContentV2Handler(d ContentDelivery, log *logger.Logger) *SensorCon
 	return &SensorContentV2Handler{delivery: d, logger: log}
 }
 
+// contentScope is the scope whose packs the authenticated sensor may read: an
+// organization sensor's own tenant, or contentpackapp.InstanceScope for a
+// shared sensor. It writes 401 / 403 and returns false for anything else.
+func contentScope(w http.ResponseWriter, r *http.Request) (string, bool) {
+	s := controlSensorForV2(w, r)
+	if s == nil {
+		return "", false
+	}
+	return contentScopeOf(s), true
+}
+
+func contentScopeOf(s *sensor.Sensor) string {
+	if s.IsShared() {
+		return contentpackapp.InstanceScope
+	}
+	return s.TenantID.String()
+}
+
+// Version is the content version a heartbeat answer carries for sensor s:
+// the ETag of its desired set, so the sensor refreshes its content when it
+// changes. "" when it cannot be computed (the heartbeat never fails for it).
+func (h *SensorContentV2Handler) Version(ctx context.Context, s *sensor.Sensor) string {
+	v, err := h.delivery.Version(ctx, contentScopeOf(s))
+	if err != nil {
+		h.logger.Warn("content version not computed for a heartbeat answer", "sensor_id", s.ID.String(), "error", sanitizeLogField(err.Error()))
+		return ""
+	}
+	return v
+}
+
 var sha256HexRE = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 func (h *SensorContentV2Handler) fail(w http.ResponseWriter, route string, err error) {
@@ -62,11 +97,11 @@ func (h *SensorContentV2Handler) fail(w http.ResponseWriter, route string, err e
 // Desired serves the organization's desired document; If-None-Match with
 // the current ETag answers 304 with no body.
 func (h *SensorContentV2Handler) Desired(w http.ResponseWriter, r *http.Request) {
-	s := sensorForV2(w, r)
-	if s == nil {
+	scope, ok := contentScope(w, r)
+	if !ok {
 		return
 	}
-	doc, etag, err := h.delivery.Desired(r.Context(), s.TenantID.String())
+	doc, etag, err := h.delivery.Desired(r.Context(), scope)
 	if err != nil {
 		h.fail(w, "content_desired", err)
 		return
@@ -92,12 +127,12 @@ func immutable(w http.ResponseWriter, r *http.Request, etag, contentType string,
 
 // Pack serves a pack's canonical archive (Range supported, for resumes).
 func (h *SensorContentV2Handler) Pack(w http.ResponseWriter, r *http.Request) {
-	s := sensorForV2(w, r)
-	if s == nil {
+	scope, ok := contentScope(w, r)
+	if !ok {
 		return
 	}
 	digest := chi.URLParam(r, "digest")
-	b, err := h.delivery.Archive(r.Context(), s.TenantID.String(), digest)
+	b, err := h.delivery.Archive(r.Context(), scope, digest)
 	if err != nil {
 		h.fail(w, "content_pack", err)
 		return
@@ -107,12 +142,12 @@ func (h *SensorContentV2Handler) Pack(w http.ResponseWriter, r *http.Request) {
 
 // Index serves a pack's file index.
 func (h *SensorContentV2Handler) Index(w http.ResponseWriter, r *http.Request) {
-	s := sensorForV2(w, r)
-	if s == nil {
+	scope, ok := contentScope(w, r)
+	if !ok {
 		return
 	}
 	digest := chi.URLParam(r, "digest")
-	idx, err := h.delivery.Index(r.Context(), s.TenantID.String(), digest)
+	idx, err := h.delivery.Index(r.Context(), scope, digest)
 	if err != nil {
 		h.fail(w, "content_index", err)
 		return
@@ -127,8 +162,8 @@ func (h *SensorContentV2Handler) Index(w http.ResponseWriter, r *http.Request) {
 
 // File serves one file of a pack by its sha256.
 func (h *SensorContentV2Handler) File(w http.ResponseWriter, r *http.Request) {
-	s := sensorForV2(w, r)
-	if s == nil {
+	scope, ok := contentScope(w, r)
+	if !ok {
 		return
 	}
 	sha := chi.URLParam(r, "sha256")
@@ -136,7 +171,7 @@ func (h *SensorContentV2Handler) File(w http.ResponseWriter, r *http.Request) {
 		protov2.NewProblem(protov2.ProblemContentNotFound).Write(w)
 		return
 	}
-	b, err := h.delivery.File(r.Context(), s.TenantID.String(), chi.URLParam(r, "digest"), sha)
+	b, err := h.delivery.File(r.Context(), scope, chi.URLParam(r, "digest"), sha)
 	if err != nil {
 		h.fail(w, "content_file", err)
 		return
