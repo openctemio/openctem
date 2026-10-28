@@ -137,6 +137,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-126](RFC-126-import-mappings.md) | Import mappings | Accepted (2026-10-23). |
 | [RFC-129](RFC-129-shared-fleet-scheduling.md) | Shared fleet scheduling | Accepted (2026-10-27); P0-F5 (bounded shared claim, #3202) and P0-F3 (cross-organization politeness, #3203) in review, the rest designed |
 | [RFC-130](RFC-130-migration-applied-set.md) | Migration applied set (versions only have to be unique) | Implemented |
+| [RFC-131](RFC-131-ai-analysis.md) | AI analysis (governed suggestions, the analyze contract, the AI analyst) | Accepted (2026-10-28). |
 <!-- END RFC INDEX -->
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.
