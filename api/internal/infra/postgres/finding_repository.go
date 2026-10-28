@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/aianalysis"
+
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/pkg/domain/limits"
@@ -105,6 +107,10 @@ func getRecommendationFromRemediation(r *vulnerability.FindingRemediation) strin
 
 // Create persists a new finding.
 func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.Finding) error {
+	// Read-only AI assistance never writes (docs/architecture/ai-analysis.md).
+	if err := aianalysis.RefuseAssist(ctx); err != nil {
+		return err
+	}
 	// Merge sourceMetadata INTO metadata for persistence, mirroring Update().
 	// The pentest module stores its fields (steps_to_reproduce, poc_code,
 	// business_impact, owasp_category, mitre_technique_id, cvss_version, etc.)
@@ -150,6 +156,10 @@ func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.F
 
 // CreateInTx persists a new finding within an existing transaction.
 func (r *FindingRepository) CreateInTx(ctx context.Context, tx *sql.Tx, finding *vulnerability.Finding) error {
+	// Read-only AI assistance never writes (docs/architecture/ai-analysis.md).
+	if err := aianalysis.RefuseAssist(ctx); err != nil {
+		return err
+	}
 	if err := r.checkLimit(ctx, finding.TenantID(), limits.Findings, 1); err != nil {
 		return err
 	}
@@ -1123,6 +1133,10 @@ func (r *FindingRepository) GetByIDs(ctx context.Context, tenantID shared.ID, id
 // Update updates an existing finding.
 // Security: Uses finding.TenantID() to ensure tenant isolation in SQL WHERE clause.
 func (r *FindingRepository) Update(ctx context.Context, finding *vulnerability.Finding) error {
+	// Read-only AI assistance never writes (docs/architecture/ai-analysis.md).
+	if err := aianalysis.RefuseAssist(ctx); err != nil {
+		return err
+	}
 	// Merge sourceMetadata INTO metadata for persistence. The pentest module
 	// stores steps_to_reproduce, poc_code, business_impact, etc. in
 	// sourceMetadata, but the DB has a single `metadata` JSONB column. Both
@@ -2214,6 +2228,10 @@ func (r *FindingRepository) FingerprintsOpenOnBranch(ctx context.Context, tenant
 // closure reason (its default when empty), and an open status clears both,
 // so a reopened or dispositioned finding never keeps a stale "fixed" claim.
 func (r *FindingRepository) UpdateStatusBatch(ctx context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID, closure vulnerability.Closure) error {
+	// Read-only AI assistance never writes (docs/architecture/ai-analysis.md).
+	if err := aianalysis.RefuseAssist(ctx); err != nil {
+		return err
+	}
 	_, err := r.updateStatusBatch(ctx, tenantID, ids, status, resolution, resolvedBy, closure, nil, nil)
 	return err
 }
@@ -2225,6 +2243,10 @@ var _ vulnerability.FixClaimBatchWriter = (*FindingRepository)(nil)
 // a finding that moved to another status since the caller read it, for
 // example to an approved false positive, is left alone.
 func (r *FindingRepository) UpdateStatusBatchFrom(ctx context.Context, tenantID shared.ID, ids []shared.ID, from []vulnerability.FindingStatus, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID, closure vulnerability.Closure) error {
+	// Read-only AI assistance never writes (docs/architecture/ai-analysis.md).
+	if err := aianalysis.RefuseAssist(ctx); err != nil {
+		return err
+	}
 	allowed := vulnerability.UserFromStatuses(status)
 	for _, f := range from {
 		if !slices.Contains(allowed, f) {

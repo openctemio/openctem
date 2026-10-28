@@ -76,6 +76,10 @@ func (p *Principal) Provenance(run *aidom.Run) aidom.Provenance {
 // applied. A failed check pauses the analyst (audited) and returns a
 // PausedError.
 func (s *Service) Principal(ctx context.Context, tenantID, analystID shared.ID) (*Principal, error) {
+	// Read-only assistance runs under the viewer and never becomes an analyst.
+	if err := aidom.RefuseAssist(ctx); err != nil {
+		return nil, err
+	}
 	if s.consent != nil {
 		ok, err := s.consent.AIConsented(ctx, tenantID)
 		if err != nil {
@@ -178,6 +182,9 @@ type StartRunInput struct {
 // this hour and tokens this month. The accountable owners are snapshotted on
 // the run.
 func (s *Service) StartRun(ctx context.Context, in StartRunInput) (*aidom.Run, error) {
+	if err := aidom.RefuseAssist(ctx); err != nil {
+		return nil, err
+	}
 	a := in.Principal.Analyst
 	now := s.now().UTC()
 	runs, _, err := s.runs.Usage(ctx, a.TenantID, a.ID, now.Add(-time.Hour))

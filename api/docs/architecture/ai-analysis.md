@@ -54,6 +54,22 @@ evaluates the request at the strictest false-positive and acceptance level and t
 as unable to approve, whatever the organization's settings (`VulnerabilityService.isAIAnalyst` in
 `finding/approval_policy.go`), so a person always decides.
 
+## Read-only assistance
+
+Help that changes nothing (explain a finding, summarize a timeline, translate, answer a question) runs
+under the viewer's own permissions and has no analyst principal. It runs in an assistance context
+(`aianalysis.WithAssist`), set only in process (no token or header sets it). In that context:
+
+- every finding write path refuses with `ErrAssistReadOnly` (`aianalysis.RefuseAssist`: finding
+  create and update, status batches, severity decisions, comments, approval and severity requests,
+  retest requests, timeline rows);
+- `postgres.DB` refuses `ExecContext`, a non-read-only `BeginTx` and any writing statement through
+  `QueryContext`/`QueryRowContext`;
+- `Service.Principal` and `Service.StartRun` refuse, so assistance can never act as an analyst.
+
+A comment drafted with AI is posted by the viewer, as themselves, outside the assistance context.
+Every change to state is made by an analyst.
+
 ## Accountable owners
 
 `ai_analyst_owners` holds people and teams (at least one). The **accountable people** are the person
@@ -148,5 +164,7 @@ false-positive request but changes nothing; a triage analyst confirms and raises
 downgrade becomes a request; unsafe output only comments; scope, cross-tenant and owner-left refusals
 record no run; a concurrent change is never overwritten. `internal/app/retest/analyst_scope_db_test.go`:
 an analyst's retest of an out-of-scope target is refused before any job exists.
+`TestAIAssist_CannotWrite_DB`: in an assistance context comment, status, severity and approval
+request are refused and nothing is written; no principal is resolved.
 `pkg/domain/aianalysis/analyst_test.go`: deny list, ceiling, presets, health, provenance stamping,
 analyst requests always need a person.
