@@ -289,8 +289,11 @@ type Handlers struct {
 	Announcement      *handler.AnnouncementHandler
 	// AdminSupportRateLimiter caps console support actions per administrator.
 	AdminSupportRateLimiter *middleware.AdminMappingRateLimiter
-	AdminConsole            *handler.AdminConsoleHandler
-	AdminAuditChain         *handler.AdminAuditChainHandler
+	// AdminDirectoryReadLimiter caps reads of the cross-organization user
+	// directory per administrator (bulk harvesting of accounts).
+	AdminDirectoryReadLimiter *middleware.AdminMappingRateLimiter
+	AdminConsole              *handler.AdminConsoleHandler
+	AdminAuditChain           *handler.AdminAuditChainHandler
 	// AccessRequest: the request-access queue (public form + console).
 	AccessRequest *handler.AccessRequestHandler
 	// Limits: per-organization limits and feature denies (console
@@ -304,6 +307,9 @@ type Handlers struct {
 	// IdleReadOnly refuses changes to an idle Free organization (read-only
 	// after 90 days without a sign-in).
 	IdleReadOnly middleware.IdleReadOnlyChecker
+	// EntryChecker applies the URL organization's entry requirements on
+	// /api/v1/tenants/{tenant}/... routes (AuthService.CheckEntry).
+	EntryChecker middleware.EntryChecker
 	// OrganizationGate refuses every credential of a suspended organization
 	// (docs/architecture/organization-suspension.md).
 	OrganizationGate tenant.AccessGate
@@ -541,6 +547,13 @@ func Register(
 		ssoEnforcementMiddleware = middleware.NewSSOEnforcementGate(
 			tenantSSOEnforcedAdapter{repo: tenantRepo}, 60*time.Second, log,
 		).Enforce
+	}
+
+	// Entry requirements of the organization in the URL of
+	// /api/v1/tenants/{tenant}/... routes. Reset on every Register.
+	entryGateMiddleware = nil
+	if h.EntryChecker != nil {
+		entryGateMiddleware = middleware.NewEntryGate(h.EntryChecker, 15*time.Second, log).Enforce
 	}
 
 	// Suspended organizations (docs/architecture/organization-suspension.md):
@@ -1297,6 +1310,9 @@ var dataScopeGuardMiddleware Middleware //nolint:gochecknoglobals // set once du
 // the tenant turns enforcement on. Set once during Register once tenantRepo is
 // available; nil leaves only the mint-time gate.
 var ssoEnforcementMiddleware Middleware //nolint:gochecknoglobals // set once during init
+
+// entryGateMiddleware is the entry check of the /api/v1/tenants/{tenant} chain.
+var entryGateMiddleware Middleware //nolint:gochecknoglobals // set once during init
 
 // idleReadOnlyMiddleware refuses changes to an idle Free organization.
 var idleReadOnlyMiddleware Middleware //nolint:gochecknoglobals // set once during init
