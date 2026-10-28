@@ -88,6 +88,7 @@ func TestLeastPrivilegeRoles(t *testing.T) {
 	exec1(ctx, t, mig, `CREATE INDEX CONCURRENTLY findings_tenant ON findings(tenant_id)`)
 	exec1(ctx, t, mig, `CREATE TABLE epss_scores (cve_id text PRIMARY KEY)`)
 	exec1(ctx, t, mig, `INSERT INTO schema_migrations VALUES (1, false)`)
+	exec1(ctx, t, mig, `INSERT INTO schema_migrations_applied (version, name) VALUES (1, 'first')`)
 	exec1(ctx, t, mig, `CREATE TABLE admin_audit_logs (id bigserial PRIMARY KEY, action text)`)
 	exec1(ctx, t, mig, `CREATE TABLE admin_audit_chain_anchors (id bigserial PRIMARY KEY)`)
 	// Idempotent, and it grants the special cases (TRUNCATE on the feeds).
@@ -130,6 +131,7 @@ func TestLeastPrivilegeRoles(t *testing.T) {
 	if err := app.QueryRowContext(ctx, `SELECT version FROM schema_migrations`).Scan(&version); err != nil {
 		t.Fatalf("read schema_migrations: %v", err)
 	}
+	exec1(ctx, t, app, `SELECT count(*) FROM schema_migrations_applied`)
 	tx, err := app.BeginTx(ctx, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -148,6 +150,9 @@ func TestLeastPrivilegeRoles(t *testing.T) {
 		`TRUNCATE findings`,
 		`UPDATE schema_migrations SET dirty = true`,
 		`DELETE FROM schema_migrations`,
+		`INSERT INTO schema_migrations_applied (version, name) VALUES (2, 'forged')`,
+		`UPDATE schema_migrations_applied SET name = 'forged'`,
+		`DELETE FROM schema_migrations_applied`,
 		`UPDATE admin_audit_logs SET action = 'forged'`,
 		`DELETE FROM admin_audit_logs`,
 		`TRUNCATE admin_audit_logs`,
@@ -239,6 +244,7 @@ func TestLeastPrivilegeRoles(t *testing.T) {
 		`UPDATE findings SET tenant_id = tenant_id`,
 		`INSERT INTO findings (tenant_id) VALUES (NULL)`,
 		`SELECT count(*) FROM schema_migrations`,
+		`SELECT count(*) FROM schema_migrations_applied`,
 		`INSERT INTO users (name) VALUES ('x')`,
 		`DELETE FROM users`,
 		`INSERT INTO tenant_members (user_id) VALUES (NULL)`,
