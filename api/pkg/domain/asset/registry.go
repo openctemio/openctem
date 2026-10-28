@@ -131,7 +131,8 @@ type CoverageRule struct {
 	// open port in the web port set), "web_port_or_unscanned" (a web port
 	// or web origin was seen on the name, or no port scan has finished on
 	// it or its addresses yet), "scope_entry" (an active scope entry covers
-	// the asset).
+	// the asset), "no_named_twin" (a web service reached by IP is not also
+	// served, same address and port, by a service reached by a host name).
 	Requires []string `json:"requires,omitempty"`
 	// Expects names the type a successful run must produce for the asset
 	// ("" = no output is expected): the output check of the coverage gap

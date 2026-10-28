@@ -1,5 +1,0 @@
-### Security: a service-account key stops working as soon as the person who minted it loses service_accounts:manage
-
-- Every request with a service-account key now checks the person who created it: they must still be an active member of the organization and hold `service_accounts:manage` (as owner or administrator, through a direct role, or through a role bound to an active team with an unexpired membership). Role removal, role edits, team changes, a team switched off, an ended team membership, demotion, suspension and offboarding all stop the key at once, not only the paths that revoke it. A lookup error or a key with no creator refuses the key; the log gives a distinct reason.
-- A sweep (`service-key-creator`) marks such keys revoked so the member access report lists them.
-- Migration `service_account_grant_triggers_lock_role`: the triggers that refuse full data access for a service account lock the role row, closing the race between enabling full data on a role and granting that role to a service account.

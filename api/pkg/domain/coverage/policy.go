@@ -26,6 +26,13 @@ const (
 	RequiresWebPortOrUnscanned = "web_port_or_unscanned"
 	// RequiresScopeEntry: an active scope entry covers the name.
 	RequiresScopeEntry = "scope_entry"
+	// RequiresNoNamedTwin: a web service is not only the address form of a
+	// named one: its URL host is an IP address, and no active web service
+	// reached by a host name serves that address on the same port. A named
+	// virtual host or a CDN-fronted application answers its bare address
+	// with a default page, so template checks run on the named service and
+	// the address twin would only repeat them on the wrong page.
+	RequiresNoNamedTwin = "no_named_twin"
 )
 
 // WebPorts are the ports an HTTP probe takes from an open port. A web

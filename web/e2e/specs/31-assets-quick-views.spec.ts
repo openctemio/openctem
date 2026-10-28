@@ -7,7 +7,7 @@ import { test, expect } from '../fixtures/authenticated-page'
  * pills, type pills and metric strip are gone.
  */
 
-test.describe('Asset quick views', () => {
+test.describe('Asset quick views', { tag: ['@assets'] }, () => {
   test('the sidebar lists the views under Assets, and a view is a link to the list', async ({
     page,
   }) => {
