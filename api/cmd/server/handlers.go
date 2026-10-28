@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/aianalysis"
 	dashfactsapp "github.com/openctemio/openctem/api/internal/app/dashboard/facts"
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	scmappsvc "github.com/openctemio/openctem/api/internal/app/scmapp"
@@ -757,7 +758,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		APIKey: handler.NewAPIKeyHandler(svc.APIKey, v, log),
 
 		// AI Triage (always initialized - handler returns 503 if service is nil)
-		AITriage: handler.NewAITriageHandler(svc.AITriage, log),
+		AITriage:   handler.NewAITriageHandler(svc.AITriage, log),
+		AIAnalysis: aiAnalysisHandler(svc.AIAnalysis, log),
 
 		// Suppressions
 		Suppression: newSuppressionHandler(svc, log),
@@ -2089,6 +2091,14 @@ func emergingThreatHandler(svc *Services, log *logger.Logger) *handler.EmergingT
 		return nil
 	}
 	return handler.NewEmergingThreatHandler(svc.ThreatAlerts, svc.DataScope, log)
+}
+
+// aiAnalysisHandler is nil when the AI agent service is not built.
+func aiAnalysisHandler(svc *aianalysis.Service, log *logger.Logger) *handler.AIAnalysisHandler {
+	if svc == nil {
+		return nil
+	}
+	return handler.NewAIAnalysisHandler(svc, log)
 }
 
 // newThreatIntelHandler builds the threat-intelligence handler; when the

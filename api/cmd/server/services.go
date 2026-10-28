@@ -29,6 +29,7 @@ import (
 	webevidenceapp "github.com/openctemio/openctem/api/internal/app/webevidence"
 
 	"github.com/openctemio/openctem/api/internal/app/activity"
+	"github.com/openctemio/openctem/api/internal/app/aianalysis"
 	"github.com/openctemio/openctem/api/internal/app/aipolicy"
 	"github.com/openctemio/openctem/api/internal/app/aitriage"
 	"github.com/openctemio/openctem/api/internal/app/asset"
@@ -924,6 +925,9 @@ type Services struct {
 
 	// AI Triage
 	AITriage *aitriage.AITriageService
+	// AIAnalysis manages AI agents (service accounts that triage like a
+	// person, with accountable owners) and their runs.
+	AIAnalysis *aianalysis.Service
 
 	// WebSocket
 	WebSocketHub *websocket.Hub
@@ -1360,6 +1364,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Vulnerability.SetDataFlowRepository(repos.DataFlow)        // Wire data flow loading
 	s.Vulnerability.SetIssueLinkStore(repos.FindingIssueLinks)   // same-issue groups
 	s.Vulnerability.SetApprovalRepository(repos.FindingApproval) // Wire approval workflow
+	// An AI agent never lowers risk alone, whatever the organization's levels.
+	s.Vulnerability.SetAIAgentChecker(repos.AIAnalysis)
 	s.Vulnerability.SetSeverityRequestRepository(repos.SeverityRequest)
 	s.Vulnerability.SetAccessControlRepository(repos.AccessControl)
 	s.Vulnerability.SetAssigneeProfileReader(repos.AccessControl) // list rows carry the assignee name
@@ -3053,6 +3059,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.ServiceKeyGate = apikey.NewServiceKeyGate(repos.ServiceAccount, gateMembers, gateHolder)
 		s.APIKey.SetServiceKeyGate(s.ServiceKeyGate)
 	}
+
+	// AI agents: service accounts that triage like a person. What they may
+	// do is read from the role tables (no cache) at every run start, bounded
+	// by what their accountable owners hold.
+	s.AIAnalysis = aianalysis.New(repos.AIAnalysis, repos.AIAnalysis,
+		apikey.NewHolderPermissions(repos.Tenant, rolePermissionSource{repos.Role}), s.DataScope,
+		aianalysis.SettingsConsent{Repo: repos.TenantAISettings}, s.Audit, log)
 
 	// Wire permission services to tenant service
 	s.Tenant.SetPermissionServices(s.PermCache, s.PermVersion)

@@ -115,7 +115,7 @@ Details in [scan-naming.md](architecture/scan-naming.md).
 
 | Term | Meaning | Console (en) | Console (vi) | API | Database | Code | Still differs | Retired names |
 |---|---|---|---|---|---|---|---|---|
-| AI agent | An AI principal that works on an organization's data under its own identity, with accountable owners and a role: analyst, remediator, reporter, hunter or router. Always "AI agent", never a bare "agent". | AI agent | AI agent | `ai_agent` | `actor_kind = ai_agent` | `aiagent`, `AIAgent` | Open work in progress names the table and routes after "analyst"; it follows this row before it merges. | AI analyst (as the principal's name), agent |
+| AI agent | An AI principal that works on an organization's data under its own identity, with accountable owners and a role: analyst, remediator, reporter, hunter or router. Always "AI agent", never a bare "agent". | AI agent | AI agent | `ai_agent` | `actor_kind = ai_agent` | `aiagent`, `AIAgent` | Table `ai_agents` (`ai_agent_owners`, column `role`), routes `/api/v1/ai/agents`. The Go package keeps the feature name `aianalysis`. | AI analyst (as the principal's name), agent |
 | Playbook | A procedure an AI agent follows (`openctem.io/playbook/v1`), built and tested with `openctem playbook init` and `openctem playbook test`. | Playbook | Playbook | | | sdk-go `pkg/harness/playbook` | | |
 | AI worker | The sensor role, and the `openctemio/ai-worker` program, that runs AI agents. | AI worker | AI worker | | | `ai-worker` | | analyst (as the worker or role name) |
 | Harness | The sdk-go library that runs an AI agent's tool loop. Code only. | | | | | sdk-go `pkg/harness` | | `pkg/analyst` |

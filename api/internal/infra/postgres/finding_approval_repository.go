@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 
+	"github.com/openctemio/openctem/api/pkg/domain/aianalysis"
+
 	"fmt"
 	"time"
 
@@ -31,6 +33,10 @@ func NewFindingApprovalRepository(db *DB) *FindingApprovalRepository {
 
 // Create persists a new approval request.
 func (r *FindingApprovalRepository) Create(ctx context.Context, a *vulnerability.Approval) error {
+	// Read-only AI assistance never writes (docs/architecture/ai-analysis.md).
+	if err := aianalysis.RefuseAssist(ctx); err != nil {
+		return err
+	}
 	query := `
 		INSERT INTO finding_status_approvals (
 			id, tenant_id, finding_id, requested_status, requested_by,
@@ -457,6 +463,10 @@ func (r *FindingApprovalRepository) ApproveAndApply(ctx context.Context, a *vuln
 // timeline entry. The one-pending-request index still applies to pending
 // rows only, so an earlier pending request of another person is left as is.
 func (r *FindingApprovalRepository) CreateApplied(ctx context.Context, a *vulnerability.Approval, entry *vulnerability.FindingActivity) error {
+	// Read-only AI assistance never writes (docs/architecture/ai-analysis.md).
+	if err := aianalysis.RefuseAssist(ctx); err != nil {
+		return err
+	}
 	if a == nil || a.Status != vulnerability.ApprovalStatusApproved || a.ApprovedBy == nil || !a.SinglePerson {
 		return fmt.Errorf("%w: only a single-person decision is created applied", shared.ErrValidation)
 	}
