@@ -97,6 +97,6 @@ describe('InventoryTagsFacet', () => {
   it('says so when the workspace has no tags', () => {
     tagsHook.mockReturnValue({ tags: [], systemTags: [], isLoading: false })
     setup({})
-    expect(screen.getByText('No tags in this workspace yet.')).toBeInTheDocument()
+    expect(screen.getByText('No tags in this organization yet.')).toBeInTheDocument()
   })
 })

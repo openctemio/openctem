@@ -213,8 +213,8 @@ wrap-err internal/app/aitriage/service.go:AITriageService.checkEgress 1
 wrap-err internal/app/apispec/service.go:Service.Upload 1
 wrap-err internal/app/asset/service.go:AssetService.CreateAsset 3
 wrap-err internal/app/asset/service.go:AssetService.CreateRepositoryAssetWithOutcome 3
-wrap-err internal/app/asset/service.go:AssetService.ListAssets 1
 wrap-err internal/app/asset/service.go:AssetService.updateAsset 6
+wrap-err internal/app/asset/service.go:withInventoryFilters 1
 wrap-err internal/app/auth/sso.go:SSOService.adoptExistingUser 2
 wrap-err internal/app/auth/sso.go:SSOService.findOrCreateUser 1
 wrap-err internal/app/cirun/preview.go:errPreviewWrap 1

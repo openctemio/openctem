@@ -3,7 +3,7 @@
   "common.bootstrap.busyTitle": "The server is busy",
   "common.bootstrap.retry": "Retry",
   "common.bootstrap.retrying": "Retrying…",
-  "common.bootstrap.unreachableBody": "We couldn’t load your workspace. This is usually a temporary connection or server problem. Your account is fine.",
+  "common.bootstrap.unreachableBody": "We couldn’t load your organization. This is usually a temporary connection or server problem. Your account is fine.",
   "common.bootstrap.unreachableTitle": "Can’t reach the server",
   "common.bulkBar.clear": "Clear selection",
   "common.bulkBar.clearHint": "Clear selection (Esc)",
