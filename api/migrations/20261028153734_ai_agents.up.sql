@@ -102,7 +102,7 @@ CREATE TABLE ai_agent_owners (
     added_by   uuid        REFERENCES users(id) ON DELETE SET NULL,
     added_at   timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT pk_ai_agent_owners PRIMARY KEY (id),
-    CONSTRAINT fk_ai_agent_owners_agent FOREIGN KEY (ai_agent_id, tenant_id)
+    CONSTRAINT fk_ai_agent_owners_ai_agent FOREIGN KEY (ai_agent_id, tenant_id)
         REFERENCES ai_agents (user_id, tenant_id) ON DELETE CASCADE,
     CONSTRAINT chk_ai_agent_owners_one CHECK ((user_id IS NULL) <> (group_id IS NULL))
 );
@@ -187,9 +187,9 @@ CREATE TABLE ai_runs (
     updated_at             timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT pk_ai_runs PRIMARY KEY (id),
     CONSTRAINT uq_ai_runs_id_tenant UNIQUE (id, tenant_id),
-    CONSTRAINT fk_ai_runs_agent FOREIGN KEY (ai_agent_id, tenant_id)
+    CONSTRAINT fk_ai_runs_ai_agent FOREIGN KEY (ai_agent_id, tenant_id)
         REFERENCES ai_agents (user_id, tenant_id) ON DELETE SET NULL (ai_agent_id),
-    CONSTRAINT chk_ai_runs_agent CHECK (ai_agent_id IS NOT NULL OR kind ~ '\.legacy$' OR status IN ('completed', 'failed', 'canceled', 'refused')),
+    CONSTRAINT chk_ai_runs_ai_agent CHECK (ai_agent_id IS NOT NULL OR kind ~ '\.legacy$' OR status IN ('completed', 'failed', 'canceled', 'refused')),
     CONSTRAINT chk_ai_runs_use_case CHECK (use_case IN ('triage', 'remediation', 'summary')),
     CONSTRAINT chk_ai_runs_kind CHECK (kind ~ '^[a-z_]{1,32}\.(v[0-9]{1,3}|legacy)$'),
     CONSTRAINT chk_ai_runs_subject_type CHECK (subject_type IN ('finding', 'asset', 'cve', 'attack_path', 'bounty_report')),
@@ -215,7 +215,7 @@ CREATE TABLE ai_runs (
 );
 CREATE INDEX idx_ai_runs_subject ON ai_runs (tenant_id, subject_type, subject_id, created_at DESC);
 CREATE INDEX idx_ai_runs_tenant_created ON ai_runs (tenant_id, created_at DESC);
-CREATE INDEX idx_ai_runs_agent_created ON ai_runs (ai_agent_id, created_at DESC) WHERE ai_agent_id IS NOT NULL;
+CREATE INDEX idx_ai_runs_ai_agent_created ON ai_runs (ai_agent_id, created_at DESC) WHERE ai_agent_id IS NOT NULL;
 CREATE INDEX idx_ai_runs_triggered_by ON ai_runs (triggered_by) WHERE triggered_by IS NOT NULL;
 CREATE UNIQUE INDEX uq_ai_runs_in_flight ON ai_runs (tenant_id, use_case, subject_id)
     WHERE status IN ('queued', 'running', 'waiting_tool', 'waiting_approval') AND NOT shadow;
