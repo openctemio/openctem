@@ -20,6 +20,12 @@ const (
 	// ActionMCPGrantRevoked records a grant revoked by the client
 	// (revocation endpoint), the person or an administrator.
 	ActionMCPGrantRevoked Action = "mcp_grant.revoked"
+	// ActionMCPFullDataAllowed records a person allowing a connection to read
+	// all organization data (grant created with full_data).
+	ActionMCPFullDataAllowed Action = "mcp_grant.full_data_allowed"
+	// ActionMCPFullDataRemoved records a connection turned back to the
+	// person's own data scope.
+	ActionMCPFullDataRemoved Action = "mcp_grant.full_data_removed"
 	// ActionMCPSettingsUpdated records a change of the organization's MCP
 	// policy (RFC-062 §8).
 	ActionMCPSettingsUpdated Action = "mcp_settings.updated"
@@ -61,6 +67,8 @@ var _ = registerActions("mcp", map[Action]Severity{
 	ActionMCPCodeReused:       SeverityHigh,
 	ActionMCPRefreshReused:    SeverityHigh,
 	ActionMCPGrantRevoked:     SeverityMedium,
+	ActionMCPFullDataAllowed:  SeverityHigh,
+	ActionMCPFullDataRemoved:  SeverityMedium,
 	ActionMCPSettingsUpdated:  SeverityHigh,
 	ActionMCPClientRegistered: SeverityMedium,
 	ActionMCPClientDeleted:    SeverityMedium,

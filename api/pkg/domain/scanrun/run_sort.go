@@ -80,3 +80,23 @@ func (s RunListSort) OrderBy() string {
 type RunScanNamer interface {
 	ScanNames(ctx context.Context, tenantID shared.ID, scanIDs []shared.ID) (map[shared.ID]string, error)
 }
+
+// RunScanManagerReader names the platform policy that owns each scan runs
+// belong to ("coverage", "enrichment", "web_verify"); a scan a person owns has
+// no entry. Every read is scoped to tenantID.
+type RunScanManagerReader interface {
+	ScanManagers(ctx context.Context, tenantID shared.ID, scanIDs []shared.ID) (map[shared.ID]string, error)
+}
+
+// RunOrigin is who owns the scan of a run: a person or a platform policy
+// (continuous coverage, enrichment, web verification).
+type RunOrigin string
+
+// Run origins; the zero value applies no origin filter.
+const (
+	RunOriginUser   RunOrigin = "user"
+	RunOriginSystem RunOrigin = "system"
+)
+
+// Valid reports whether o is a known origin or empty.
+func (o RunOrigin) Valid() bool { return o == "" || o == RunOriginUser || o == RunOriginSystem }
