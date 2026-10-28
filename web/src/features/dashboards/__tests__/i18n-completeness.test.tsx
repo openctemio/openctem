@@ -61,7 +61,8 @@ const EN = { ...en, ...enKit } as Record<string, string>
 const VI = { ...vi_, ...viKit } as Record<string, string>
 
 // Values that read the same in both languages.
-const SAME_IN_BOTH = new Set(['P0', 'P1', 'P2', 'P3', 'widget', 'KEV'])
+// Glossary terms kept in English in Vietnamese text (api/docs/glossary.md).
+const SAME_IN_BOTH = new Set(['P0', 'P1', 'P2', 'P3', 'widget', 'KEV', 'Sensor'])
 
 const VIZZES: VizType[] = [
   'stat',
