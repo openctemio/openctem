@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/adminapproval"
 	"github.com/openctemio/openctem/api/internal/app/consolesetting"
 	"github.com/openctemio/openctem/api/internal/app/deploymentregion"
 	"github.com/openctemio/openctem/api/internal/app/platformai"
@@ -61,7 +62,14 @@ type AdminPlatformSettingsHandler struct {
 	ThreatSource    *threatsource.Service
 	ThreatReadiness ThreatIntelReadiness
 	admins          AdminDirectory
+	approvals       approvalGate
 	logger          *logger.Logger
+}
+
+// WithApprovals wires the four-eyes gate of the platform AI destination.
+func (h *AdminPlatformSettingsHandler) WithApprovals(g approvalGate) *AdminPlatformSettingsHandler {
+	h.approvals = g
+	return h
 }
 
 // NewAdminPlatformSettingsHandler creates the handler.
@@ -582,7 +590,7 @@ func (h *AdminPlatformSettingsHandler) GetPlatformAI(w http.ResponseWriter, r *h
 
 // UpdatePlatformAI changes the platform AI provider.
 // @Summary      Change the platform AI provider
-// @Description  Super admin with a fresh confirmation and a reason. Off by default; turning it on needs a provider, a model and a key (an OpenAI-compatible server: its base URL, the key optional). allow_private lets the OpenAI-compatible server sit on a private network; it is audited with the rest. The key is encrypted at rest and never returned. Refused (409 SETTING_LOCKED_BY_ENVIRONMENT) while an AI key is set on the server. Audited critical, every administrator is told.
+// @Description  Super admin with a fresh confirmation and a reason. Off by default; turning it on needs a provider, a model and a key (an OpenAI-compatible server: its base URL, the key optional). allow_private lets the OpenAI-compatible server sit on a private network; it is audited with the rest. The key is encrypted at rest and never returned. Refused (409 SETTING_LOCKED_BY_ENVIRONMENT) while an AI key is set on the server. Turning it on with another destination (provider, base_url, allow_private or API key) than the last one applied needs another super admin first (428 SECOND_APPROVAL_REQUIRED); model changes and turning it off do not; removing the key while it stays on does. Audited critical, every administrator is told.
 // @Tags         Admin System
 // @Accept       json
 // @Produce      json
@@ -590,6 +598,7 @@ func (h *AdminPlatformSettingsHandler) GetPlatformAI(w http.ResponseWriter, r *h
 // @Success      200  {object}  PlatformAIResponse
 // @Failure      400  {object}  apierror.Error
 // @Failure      409  {object}  apierror.Error
+// @Failure      428  {object}  apierror.Error  "SECOND_APPROVAL_REQUIRED"
 // @Security     AdminAuth
 // @Router       /admin/settings/ai [put]
 func (h *AdminPlatformSettingsHandler) UpdatePlatformAI(w http.ResponseWriter, r *http.Request) {
@@ -601,9 +610,23 @@ func (h *AdminPlatformSettingsHandler) UpdatePlatformAI(w http.ResponseWriter, r
 	if !decodeSetting(w, r, &req) {
 		return
 	}
-	s, err := h.AI.Update(r.Context(), actor, platformai.Input{Enabled: req.Enabled, Provider: req.Provider, Model: req.Model,
-		APIKey: req.APIKey, Reason: req.Reason, BaseURL: req.BaseURL, AllowPrivate: req.AllowPrivate, AllowedModels: req.AllowedModels}, req.Version, middleware.ClientIP(r), r.UserAgent())
+	in := platformai.Input{Enabled: req.Enabled, Provider: req.Provider, Model: req.Model,
+		APIKey: req.APIKey, Reason: req.Reason, BaseURL: req.BaseURL, AllowPrivate: req.AllowPrivate, AllowedModels: req.AllowedModels}
+	// SECURITY: a destination that receives every organization's findings
+	// (provider, server address, private-network switch or API key) is set by
+	// one administrator and approved by another. Turning off, removing the
+	// key and model changes stay one-person.
+	var grant *adminapproval.Grant
+	if target, needed := h.AI.ApprovalNeeded(r.Context(), in); needed {
+		g, ok := requireSecondApproval(w, r, h.approvals, actor, admin.ApprovalPlatformAIDestination, target, h.logger)
+		if !ok {
+			return
+		}
+		grant = g
+	}
+	s, err := h.AI.Update(r.Context(), actor, in, req.Version, middleware.ClientIP(r), r.UserAgent())
 	if err != nil {
+		releaseSecondApproval(r, h.approvals, actor, grant)
 		h.writeSettingError(w, "AI provider", err)
 		return
 	}

@@ -170,8 +170,12 @@ type AdminOrgUserListResponse struct {
 	Data  []AdminOrgUserResponse `json:"data"`
 	Total int                    `json:"total"`
 	// ByRole counts the members by role.
-	ByRole   map[string]int `json:"by_role"`
-	Redacted bool           `json:"redacted,omitempty"`
+	ByRole map[string]int `json:"by_role"`
+	// ActiveOwnerCount counts the owners who can act (active membership,
+	// account active and not erased). Zero with owners present means the
+	// organization needs an owner recovery. Every role sees it.
+	ActiveOwnerCount int  `json:"active_owner_count"`
+	Redacted         bool `json:"redacted,omitempty"`
 }
 
 // adminSeesPersonalData reports whether the console caller may see people's
@@ -408,8 +412,14 @@ func (h *AdminOrganizationHandler) ListUsers(w http.ResponseWriter, r *http.Requ
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
+	usable, err := h.orgs.CountUsableOwners(r.Context(), id)
+	if err != nil {
+		h.logger.Error("count usable owners", "error", sanitizeLogField(err.Error()))
+		apierror.InternalError(err).WriteJSON(w)
+		return
+	}
 	personal := adminSeesPersonalData(r)
-	resp := AdminOrgUserListResponse{Data: make([]AdminOrgUserResponse, 0, len(members)), ByRole: map[string]int{},
+	resp := AdminOrgUserListResponse{ActiveOwnerCount: usable, Data: make([]AdminOrgUserResponse, 0, len(members)), ByRole: map[string]int{},
 		Total: len(members), Redacted: !personal}
 	for _, m := range members {
 		resp.ByRole[m.Role.String()]++
