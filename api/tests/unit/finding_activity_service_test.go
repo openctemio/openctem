@@ -117,6 +117,10 @@ func (m *findingActUserRepo) GetByEmailVerificationToken(_ context.Context, _ st
 func (m *findingActUserRepo) GetByPasswordResetToken(_ context.Context, _ string) (*user.User, error) {
 	return nil, nil
 }
+
+func (m *findingActUserRepo) ConsumePasswordResetToken(_ context.Context, _ shared.ID, _ string) (bool, error) {
+	return true, nil
+}
 func (m *findingActUserRepo) GetByID(ctx context.Context, id shared.ID) (*user.User, error) {
 	if m.GetByIDFunc != nil {
 		return m.GetByIDFunc(ctx, id)

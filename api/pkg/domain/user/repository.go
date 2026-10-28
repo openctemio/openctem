@@ -65,6 +65,12 @@ type Repository interface {
 	// GetByPasswordResetToken retrieves a user by password reset token.
 	GetByPasswordResetToken(ctx context.Context, token string) (*User, error)
 
+	// ConsumePasswordResetToken clears the reset token of user id when the
+	// stored (hashed) token is still tokenHash and not expired, in one
+	// conditional UPDATE, and reports whether it did. Of two requests that
+	// present the same link at once, exactly one gets true.
+	ConsumePasswordResetToken(ctx context.Context, id shared.ID, tokenHash string) (bool, error)
+
 	// Credential fields are written by these targeted, atomic updates only;
 	// Update never writes them. A whole-row Update from an older snapshot
 	// could otherwise lose concurrent failed-attempt increments or put back
