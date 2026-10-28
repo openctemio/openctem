@@ -45,7 +45,7 @@ const CodeOrganizationSuspended = "ORGANIZATION_SUSPENDED"
 
 // MessageOrganizationSuspended is the text members see. It says nothing about
 // why: the reason is for platform administrators only.
-const MessageOrganizationSuspended = "This organization is suspended — contact support"
+const MessageOrganizationSuspended = "This organization is suspended; contact support"
 
 // ErrOrganizationSuspended is returned when a credential tries to reach a
 // suspended organization.
