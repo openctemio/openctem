@@ -193,11 +193,17 @@ func adminSeesPersonalData(r *http.Request) bool {
 // AdminSSOEnforcementRequest turns SSO enforcement on or off for an organization.
 type AdminSSOEnforcementRequest struct {
 	Enforced *bool `json:"enforced" validate:"required"`
+	// RevokeCredentials, when turning enforcement on, revokes the user API
+	// keys and connector grants that exist at that moment. Omitted means true.
+	RevokeCredentials *bool `json:"revoke_credentials"`
 }
 
 // AdminSSOEnforcementResponse reports an organization's SSO enforcement.
 type AdminSSOEnforcementResponse struct {
 	Enforced bool `json:"enforced"`
+	// Readiness is set on GET: the preconditions of turning enforcement on and
+	// the credentials that revoking at enable would end.
+	Readiness *tenantapp.SSOEnforcementReadiness `json:"readiness,omitempty"`
 }
 
 // ownerDomains returns the distinct, sorted domains of the owners' addresses.
@@ -543,6 +549,7 @@ func (h *AdminOrganizationHandler) CreateUser(w http.ResponseWriter, r *http.Req
 
 // GetSSOEnforcement handles GET /api/v1/admin/tenants/{tenantId}/sso/enforcement.
 // @Summary Get an organization's SSO enforcement
+// @Description Includes the preconditions of turning it on and the number of user API keys and connector grants that turning it on would revoke.
 // @Tags Admin Organizations
 // @Produce json
 // @Param tenantId path string true "Organization ID"
@@ -564,7 +571,16 @@ func (h *AdminOrganizationHandler) GetSSOEnforcement(w http.ResponseWriter, r *h
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
-	writeJSON(w, http.StatusOK, AdminSSOEnforcementResponse{Enforced: o.SSOEnforced})
+	resp := AdminSSOEnforcementResponse{Enforced: o.SSOEnforced}
+	rd, rerr := h.tenants.SSOEnforcementReadiness(r.Context(), id)
+	if rerr != nil {
+		h.logger.Error("sso enforcement readiness", "error", sanitizeLogField(rerr.Error()))
+		apierror.InternalError(rerr).WriteJSON(w)
+		return
+	}
+	resp.Readiness = rd
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // SetSSOEnforcement handles PUT /api/v1/admin/tenants/{tenantId}/sso/enforcement.
@@ -572,7 +588,7 @@ func (h *AdminOrganizationHandler) GetSSOEnforcement(w http.ResponseWriter, r *h
 // env fallback), the same guard the tenant settings used to apply; the owner
 // break-glass at login still applies.
 // @Summary Set an organization's SSO enforcement
-// @Description Requires members to sign in via SSO (the owner is exempt as break-glass). Refused with 400 when the organization has no usable SSO path.
+// @Description Requires members to sign in via SSO. An owner can still enter with a password and their second factor (break-glass, audited). Turning it on is refused with 400 when the organization has no usable SSO path, no verified domain, no owner or admin has signed in through the identity provider yet, or no owner has two-factor authentication. By default it revokes the user API keys and connector grants that exist at that moment (revoke_credentials=false keeps them).
 // @Tags Admin Organizations
 // @Accept json
 // @Produce json
@@ -594,7 +610,7 @@ func (h *AdminOrganizationHandler) SetSSOEnforcement(w http.ResponseWriter, r *h
 		return
 	}
 	settings, err := h.tenants.UpdateSecuritySettings(r.Context(), id.String(),
-		tenantapp.UpdateSecuritySettingsInput{SSOEnforced: req.Enforced}, adminAuditContext(r, id.String()))
+		tenantapp.UpdateSecuritySettingsInput{SSOEnforced: req.Enforced, RevokeCredentialsOnSSOEnforce: req.RevokeCredentials}, adminAuditContext(r, id.String()))
 	if err != nil {
 		if WriteFeatureDenied(w, err) {
 			return
