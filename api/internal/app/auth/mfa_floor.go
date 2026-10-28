@@ -117,8 +117,13 @@ func (s *AuthService) mfaFloorPolicy(ctx context.Context) (platformmfa.Policy, e
 // hasPrivilegedGrant reports whether the member holds a privileged role
 // through any grant in the organization.
 func (s *AuthService) hasPrivilegedGrant(ctx context.Context, tid, userID shared.ID) (bool, error) {
-	if s.privilege == nil {
-		return false, nil
+	// Effective grants in the role service (direct roles and team bindings).
+	above, err := s.holdsAboveMember(ctx, tid, userID)
+	if err != nil {
+		return false, fmt.Errorf("failed to load grants for 2FA policy: %w", err)
+	}
+	if above || s.privilege == nil {
+		return above, nil
 	}
 	perms, err := s.privilege.GetUserPermissions(ctx, tid.String(), userID.String())
 	if err != nil {

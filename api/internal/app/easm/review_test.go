@@ -8,6 +8,8 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/scopeauth"
 
 	"github.com/openctemio/openctem/api/internal/app/datascope"
+	"github.com/openctemio/openctem/api/internal/app/scope"
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -302,4 +304,101 @@ func TestDecide_ResetAutomatic(t *testing.T) {
 	if len(res.NotFound) != 1 || res.NotFound[0] != outOfScope.String() {
 		t.Fatalf("not found = %v", res.NotFound)
 	}
+}
+
+// namedAssets is one tenant's assets by name; any other tenant finds none.
+type namedAssets struct {
+	tenant shared.ID
+	byName map[string]*asset.Asset
+	err    error
+}
+
+func (n *namedAssets) GetByNames(_ context.Context, t shared.ID, names []string) (map[string]*asset.Asset, error) {
+	out := map[string]*asset.Asset{}
+	if n.err != nil || !t.Equals(n.tenant) {
+		return out, n.err
+	}
+	for _, name := range names {
+		if a, ok := n.byName[name]; ok {
+			out[name] = a
+		}
+	}
+	return out, nil
+}
+
+func namedAsset(t *testing.T, tenant shared.ID, name string) *asset.Asset {
+	t.Helper()
+	a, err := asset.NewAssetWithTenant(tenant, name, asset.AssetTypeSubdomain, asset.CriticalityMedium)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return a
+}
+
+// A bulk "confirm ownership" names assets (the skipped targets of a scan list
+// names). Names are looked up among the caller's own organization's assets,
+// the member's data scope still applies, and another organization's asset
+// answers like an unknown name.
+func TestDecideNamesAs(t *testing.T) {
+	tenant := shared.NewID()
+	mine := namedAsset(t, tenant, "found.example.com")
+	hidden := namedAsset(t, tenant, "hidden.example.com")
+	assets := &namedAssets{tenant: tenant, byName: map[string]*asset.Asset{"found.example.com": mine, "hidden.example.com": hidden}}
+	actor := ScopeActor{Actor: scope.Actor{UserID: shared.NewID().String()}}
+
+	t.Run("confirms the named assets in the data scope", func(t *testing.T) {
+		store := &fakeReviewStore{prev: map[string]attribution.State{mine.ID().String(): attribution.StateDiscovered}}
+		svc := NewReviewService(store, memberEnforcer(&scopeRepo{in: map[shared.ID]bool{mine.ID(): true}}, shared.NewID()))
+		svc.SetAssets(assets)
+		res, err := svc.DecideNamesAs(context.Background(), tenant, nil,
+			[]string{" Found.Example.com ", "hidden.example.com", "nobody.example.com"}, attribution.StateConfirmed, actor)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(store.saved) != 1 || store.saved[0] != mine.ID().String() {
+			t.Fatalf("saved %v: only the asset in the data scope may be decided", store.saved)
+		}
+		if len(res.Decided) != 1 || res.Decided[0].To != "confirmed" {
+			t.Errorf("decided = %+v", res.Decided)
+		}
+		if len(res.NotFound) != 2 {
+			t.Errorf("not found = %v, want the hidden and the unknown name", res.NotFound)
+		}
+	})
+
+	t.Run("another organization finds nothing", func(t *testing.T) {
+		store := &fakeReviewStore{}
+		svc := NewReviewService(store, nil)
+		svc.SetAssets(assets)
+		res, err := svc.DecideNamesAs(context.Background(), shared.NewID(), nil, []string{"found.example.com"}, attribution.StateConfirmed, actor)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(store.saved) != 0 || len(res.Decided) != 0 || len(res.NotFound) != 1 {
+			t.Fatalf("cross-tenant: saved=%v decided=%v not_found=%v", store.saved, res.Decided, res.NotFound)
+		}
+	})
+
+	t.Run("refuses what it cannot decide", func(t *testing.T) {
+		svc := NewReviewService(&fakeReviewStore{}, nil)
+		if _, err := svc.DecideNamesAs(context.Background(), tenant, nil, []string{"a.example.com"}, attribution.StateConfirmed, actor); !errors.Is(err, shared.ErrValidation) {
+			t.Errorf("no resolver: %v", err)
+		}
+		svc.SetAssets(assets)
+		if _, err := svc.DecideNamesAs(context.Background(), tenant, nil, []string{"a.example.com"}, "bogus", actor); !errors.Is(err, shared.ErrValidation) {
+			t.Errorf("bogus state: %v", err)
+		}
+		many := make([]string, MaxDecisionBatch+1)
+		for i := range many {
+			many[i] = "a.example.com"
+		}
+		if _, err := svc.DecideNamesAs(context.Background(), tenant, nil, many, attribution.StateConfirmed, actor); !errors.Is(err, shared.ErrValidation) {
+			t.Errorf("over the batch cap: %v", err)
+		}
+		assets.err = errors.New("db down")
+		if _, err := svc.DecideNamesAs(context.Background(), tenant, nil, []string{"a.example.com"}, attribution.StateConfirmed, actor); err == nil {
+			t.Error("a failed lookup must refuse")
+		}
+		assets.err = nil
+	})
 }

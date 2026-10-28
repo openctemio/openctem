@@ -99,8 +99,10 @@ func (s *Service) StartCoverage(ctx context.Context, in CoverageInput) (*Coverag
 		// The policy's explicit system authority: scope entries and the
 		// tier, never a member's act scope (and never "no actor").
 		SystemPolicy: string(scan.ManagedByCoverage),
-		PassiveOnly:  passive,
-		Tier:         &tier,
+		// Coverage scans route automatically.
+		Placement:   s.placementFor(ctx, in.TenantID, scan.SensorPreferenceAuto, false, false, tool),
+		PassiveOnly: passive,
+		Tier:        &tier,
 		// Zone routing here: a target no zone can place is refused on its
 		// own (zone_none, zone_no_sensor), so the rest of the batch runs.
 		// A passive batch of public names skips it (coverageZoneGroup).

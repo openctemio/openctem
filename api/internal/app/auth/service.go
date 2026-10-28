@@ -3,7 +3,6 @@ package auth
 
 import (
 	"context"
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"strings"
@@ -149,7 +148,11 @@ type AuthService struct {
 	platformAdmins PlatformAdminGate
 	auditService   *auditapp.AuditService
 	roleService    *accesscontrol.RoleService // Optional: for database-driven role permissions
-	smtpChecker    SMTPAvailabilityCheck      // Optional: enables smart email verification
+	// grants overrides roleService for the effective-privilege checks (tests).
+	grants interface {
+		HoldsAboveMember(ctx context.Context, tenantID, userID string) (bool, error)
+	}
+	smtpChecker SMTPAvailabilityCheck // Optional: enables smart email verification
 	// permVersionSvc, when set, stamps issued tenant-scoped access tokens with
 	// the user's current permission version so the permission-sync middleware
 	// can reject stale tokens after a role revocation/demotion (AUTHZ-3).
@@ -1039,47 +1042,53 @@ func (s *AuthService) enforceSSOPolicy(ctx context.Context, sess *sessiondom.Ses
 	return nil
 }
 
-// ProvisionedAccount is a user account prepared for a platform administrator.
-type ProvisionedAccount struct {
+// InvitedAccount is a user account prepared for a platform administrator who
+// has not chosen a password yet.
+type InvitedAccount struct {
 	User *userdom.User
-	// TemporaryPassword is set only when the account was created here; it is
-	// shown once to the administrator who created it.
-	TemporaryPassword string
+	// SetupToken is the raw single-use set-password token; only its hash is
+	// stored. The caller delivers it to the new administrator's mailbox.
+	SetupToken string
+	// ExpiresAt is when the token stops working.
+	ExpiresAt time.Time
 }
 
-// CreateLocalAccount creates a verified local account with a temporary
-// password for a new platform administrator (RFC-022). It refuses an email
-// that already has an account (ErrEmailAlreadyExists): with self-registration
-// an attacker can pre-register an administrator's email, so linking an
-// existing account would hand them the administrator.
-func (s *AuthService) CreateLocalAccount(ctx context.Context, email, name string) (*ProvisionedAccount, error) {
+// CreateInvitedAccount creates a verified local account with no password for a
+// new platform administrator (RFC-022) and a single-use set-password token
+// valid for ttl. Nobody learns a password for the account: the administrator
+// chooses one with the emailed link. It refuses an email that already has an
+// account (ErrEmailAlreadyExists): with self-registration an attacker can
+// pre-register an administrator's email, so linking an existing account would
+// hand them the administrator.
+func (s *AuthService) CreateInvitedAccount(ctx context.Context, email, name string, ttl time.Duration) (*InvitedAccount, error) {
 	email = strings.TrimSpace(strings.ToLower(email))
 	if _, err := s.userRepo.GetByEmail(ctx, email); err == nil {
 		return nil, ErrEmailAlreadyExists
 	} else if !shared.IsNotFound(err) {
 		return nil, fmt.Errorf("look up user: %w", err)
 	}
-
-	temp, err := temporaryPassword()
-	if err != nil {
-		return nil, err
-	}
-	hash, err := s.passwordHasher.Hash(temp)
-	if err != nil {
-		return nil, fmt.Errorf("hash temporary password: %w", err)
-	}
 	if strings.TrimSpace(name) == "" {
 		name = email
 	}
-	u, err := userdom.NewLocalUser(email, name, hash)
+	u, err := userdom.NewProvisionedLocalUser(email, name)
 	if err != nil {
 		return nil, err
 	}
-	u.VerifyEmail()
+	token, err := password.GenerateResetToken()
+	if err != nil {
+		return nil, fmt.Errorf("generate setup token: %w", err)
+	}
+	expiresAt := time.Now().Add(ttl)
+	// Only the hash is stored; the raw token is emailed.
+	u.SetPasswordResetToken(crypto.HashToken(token), expiresAt)
 	if err := s.userRepo.Create(ctx, u); err != nil {
 		return nil, fmt.Errorf("create user: %w", err)
 	}
-	return &ProvisionedAccount{User: u, TemporaryPassword: temp}, nil
+	// Create may not persist the token columns: store it explicitly.
+	if err := s.userRepo.Update(ctx, u); err != nil {
+		return nil, fmt.Errorf("store setup token: %w", err)
+	}
+	return &InvitedAccount{User: u, SetupToken: token, ExpiresAt: expiresAt}, nil
 }
 
 // AccountActive reports whether the user can still sign in (active and not
@@ -1093,21 +1102,6 @@ func (s *AuthService) AccountActive(ctx context.Context, userID shared.ID) (bool
 		return false, err
 	}
 	return u.CanLogin(), nil
-}
-
-// temporaryPassword returns 20 random characters that satisfy any password
-// policy the platform supports (upper, lower, digit and a symbol).
-func temporaryPassword() (string, error) {
-	const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
-	buf := make([]byte, 16)
-	if _, err := rand.Read(buf); err != nil {
-		return "", fmt.Errorf("generate temporary password: %w", err)
-	}
-	out := make([]byte, len(buf))
-	for i, b := range buf {
-		out[i] = alphabet[int(b)%len(alphabet)]
-	}
-	return "Oc" + string(out) + "7!", nil
 }
 
 // RefreshSessionIdentity is the signed-in user behind a refresh token and how
@@ -1559,11 +1553,6 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 		return nil, err
 	}
 
-	// Mark old token as used (token rotation)
-	if err := s.spendRefreshToken(ctx, storedToken); err != nil {
-		return nil, err
-	}
-
 	// Verify user has access to the requested tenant
 	memberships, err := s.tenantRepo.GetUserMemberships(ctx, u.ID())
 	if err != nil {
@@ -1601,6 +1590,13 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 		return nil, err
 	}
 	if err := s.enforceOutsidePrivilegePolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
+		return nil, err
+	}
+
+	// Mark old token as used (token rotation). Every refusal above happens
+	// first, so a person held back by a policy (for example 2FA they still
+	// have to set up) keeps a usable session to meet it.
+	if err := s.spendRefreshToken(ctx, storedToken); err != nil {
 		return nil, err
 	}
 
