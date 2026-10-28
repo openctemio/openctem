@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/openctemio/openctem/api/internal/app/contentpack/contentpacktest"
+
 	"github.com/go-chi/chi/v5"
 
 	contentpackapp "github.com/openctemio/openctem/api/internal/app/contentpack"
@@ -66,7 +68,7 @@ func TestPlatformContentPackAPI(t *testing.T) {
 	name := "words-" + strings.ReplaceAll(shared.NewID().String()[24:], "-", "")
 	upload := func(version, words string) PlatformContentPackResponse {
 		body, ct := contentPackUpload(t, map[string]string{"name": name, "version": version, "kind": "wordlist", "reason": "upstream release", "totp_code": "123456"},
-			contentPackTar(t, map[string]string{"common.txt": name + "\n" + words}))
+			contentPackTar(t, wordlistPackFiles(name+"\n"+words)))
 		rec := do(http.MethodPost, "/admin/content-packs", body, ct)
 		if rec.Code != http.StatusCreated {
 			t.Fatalf("upload %s: %d %s", version, rec.Code, rec.Body)
@@ -151,4 +153,13 @@ func TestPlatformContentPackWritesNeedStepUp(t *testing.T) {
 	if rec := run(none.Revoke, bytes.NewBufferString(`{"reason":"r","totp_code":"123456"}`), "application/json"); rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("no verifier: %d (an unconfirmed write must never run)", rec.Code)
 	}
+}
+
+// wordlistPackFiles is a platform wordlist pack that passes the manifest lint.
+func wordlistPackFiles(list string) map[string]string {
+	out := map[string]string{}
+	for p, b := range contentpacktest.WordlistPack(list) {
+		out[p] = string(b)
+	}
+	return out
 }
