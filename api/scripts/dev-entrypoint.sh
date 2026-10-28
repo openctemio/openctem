@@ -54,17 +54,14 @@ urlenc() (
 run_migrations() {
     echo "Running database migrations..."
 
-    # Build database URL
-    DB_URL="postgres://$(urlenc "${DB_USER:-openctem}"):$(urlenc "${DB_PASSWORD:-secret}")@${DB_HOST:-postgres}:${DB_PORT:-5432}/$(urlenc "${DB_NAME:-openctem}")?sslmode=${DB_SSLMODE:-disable}"
+    # Database URL without the password (the runner's driver reads PGPASSWORD).
+    DB_URL="postgres://$(urlenc "${DB_USER:-openctem}")@${DB_HOST:-postgres}:${DB_PORT:-5432}/$(urlenc "${DB_NAME:-openctem}")?sslmode=${DB_SSLMODE:-disable}"
 
-    # Check if migrate command exists
-    if command -v migrate > /dev/null 2>&1; then
-        migrate -path /app/migrations -database "$DB_URL" up || {
-            echo "Warning: Migration failed or no new migrations"
-        }
+    # This tree's own runner (cmd/openctem-migrate), from the mounted source.
+    if PGPASSWORD="${DB_PASSWORD:-secret}" go run ./cmd/openctem-migrate -path /app/migrations -database "$DB_URL" up; then
         echo "Migrations complete!"
     else
-        echo "Warning: migrate not installed, skipping migrations"
+        echo "Warning: migrations failed; the API refuses to start on a schema that is behind or dirty"
     fi
 }
 
