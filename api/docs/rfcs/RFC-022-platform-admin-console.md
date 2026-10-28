@@ -1145,7 +1145,7 @@ revisions 2 and 23 that kept an administrator's account out of every
 organization and off the main site:
 
 - The `tenant_members` trigger that refused any administrator's membership is
-  dropped (migration `003524`). An administrator's account is an ordinary
+  dropped (migration `003539`). An administrator's account is an ordinary
   member of the organizations that invite it, signs in on the main site and
   acts there with its tenant role only; the main site never reads the platform
   role, and `/users/me` no longer reports it.

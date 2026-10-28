@@ -11,7 +11,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/testdb"
 )
 
-// Migration 003524: the two break-glass triggers share one lock per account,
+// Migration 003539: the two break-glass triggers share one lock per account,
 // so a membership insert and a break-glass flag change on the same account
 // cannot both commit. Runs up, down, up on a private database, then holds an
 // uncommitted membership insert open and shows the flag change waits for it

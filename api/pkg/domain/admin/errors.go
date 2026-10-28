@@ -15,7 +15,7 @@ var (
 
 	// ErrBreakGlassHasMemberships: a break-glass administrator stays
 	// console-only, so an account that belongs to an organization cannot be
-	// one (migration 003524).
+	// one (migration 003539).
 	ErrBreakGlassHasMemberships = fmt.Errorf("%w: a break-glass administrator must belong to no organization, and this account is a member of one", shared.ErrConflict)
 
 	// ErrUserAlreadyAdmin: the user account is already an administrator.
