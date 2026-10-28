@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openctem.io/schemas/analyze/result/v1.json",
+  "title": "openctem.analyze.result/v1",
+  "description": "The result of an analyze job. The platform checks it against this schema and the job's output schema, resolves every evidence reference, recomputes the direction of each suggestion and keeps only suggestions about the job's subject.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "job_id", "status", "suggestions", "usage", "template"],
+  "properties": {
+    "contract": {"const": "openctem.analyze.result/v1"},
+    "job_id": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+    "status": {"enum": ["completed", "incomplete", "failed", "refused"]},
+    "error_code": {"type": "string", "pattern": "^[a-z0-9_]{1,64}$"},
+    "suggestions": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {"$ref": "https://openctem.io/schemas/analyze/suggestion/v1.json"}
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "model", "tokens_in", "tokens_out"],
+      "properties": {
+        "provider": {"type": "string", "maxLength": 50},
+        "model": {"type": "string", "maxLength": 128},
+        "tokens_in": {"type": "integer", "minimum": 0},
+        "tokens_out": {"type": "integer", "minimum": 0},
+        "steps": {"type": "integer", "minimum": 0, "maximum": 64},
+        "tool_calls": {"type": "integer", "minimum": 0, "maximum": 64}
+      }
+    },
+    "template": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "digest"],
+      "properties": {
+        "id": {"type": "string", "maxLength": 64},
+        "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "external": {"type": "boolean"}
+      }
+    },
+    "run_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["digest"],
+      "properties": {
+        "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "upload_ref": {"type": "string", "maxLength": 256}
+      }
+    }
+  }
+}
