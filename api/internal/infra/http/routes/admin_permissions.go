@@ -236,13 +236,6 @@ func newConsolePermRouter(r Router, guard func(platformauthz.Permission) Middlew
 	return &consolePermRouter{Router: r, guard: guard}
 }
 
-// adminRoutePermission is the permission of a console route; ok is false for
-// a route that is not classified.
-func adminRoutePermission(method, pattern string) (platformauthz.Permission, bool) {
-	p, ok := adminRoutePermissions[method+" "+pattern]
-	return p, ok
-}
-
 func (r *consolePermRouter) chain(method, path string, mws []Middleware) []Middleware {
 	key := method + " " + r.prefix + path
 	p, ok := adminRoutePermissions[key]
