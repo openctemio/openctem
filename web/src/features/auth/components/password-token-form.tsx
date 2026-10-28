@@ -33,6 +33,7 @@ import { PasswordInput } from '@/components/password-input'
 import { useTranslation } from '@/context/i18n-provider'
 
 import { resetPasswordSchema, type ResetPasswordInput } from '../schemas/auth.schema'
+import { authErrorText } from '../lib/auth-error-codes'
 import { translatingResolver } from '../lib/translating-resolver'
 import { RevokeApiKeysOption } from './revoke-api-keys-option'
 import { resetPasswordAction } from '../actions/local-auth-actions'
@@ -102,9 +103,15 @@ function useModeCopy(mode: PasswordTokenMode): ModeCopy {
   }
 }
 
-function isStaleLinkError(message: string) {
-  const m = message.toLowerCase()
-  return m.includes('expired') || m.includes('invalid')
+/** The API's codes for a link that is expired, used or not valid. */
+const STALE_LINK_CODES: ReadonlySet<string> = new Set([
+  'INVALID_RESET_TOKEN',
+  'INVALID_VERIFICATION_TOKEN',
+  'TOKEN_INVALID',
+])
+
+function isStaleLinkError(code: string | null) {
+  return code !== null && STALE_LINK_CODES.has(code)
 }
 
 export function PasswordTokenForm({ mode, token }: { mode: PasswordTokenMode; token: string }) {
@@ -148,6 +155,7 @@ function TokenPasswordForm({ mode, token }: { mode: PasswordTokenMode; token: st
   const [isPending, startTransition] = useTransition()
   const [isSuccess, setIsSuccess] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [errorCode, setErrorCode] = useState<string | null>(null)
   const [revokeKeys, setRevokeKeys] = useState(true)
 
   const passwordPolicy = usePasswordPolicy()
@@ -158,6 +166,7 @@ function TokenPasswordForm({ mode, token }: { mode: PasswordTokenMode; token: st
 
   function onSubmit(data: ResetPasswordInput) {
     setError(null)
+    setErrorCode(null)
     const issue = passwordPolicy && passwordPolicyIssue(data.password, passwordPolicy)
     if (issue) {
       form.setError('password', { message: issue })
@@ -173,11 +182,15 @@ function TokenPasswordForm({ mode, token }: { mode: PasswordTokenMode; token: st
         setIsSuccess(true)
         toast.success(copy.successDescription)
       } else {
-        const errorMessage =
-          'error' in result
-            ? result.error
-            : t(`auth.passwordToken.${mode}.failed`, `${PASSWORD_TOKEN_COPY[mode].submit} failed`)
+        // The words come from the API's code; the server's sentence is never shown.
+        const code = 'code' in result && typeof result.code === 'string' ? result.code : null
+        const errorMessage = authErrorText(
+          code,
+          t,
+          t(`auth.passwordToken.${mode}.failed`, `${PASSWORD_TOKEN_COPY[mode].submit} failed`)
+        )
         setError(errorMessage)
+        setErrorCode(code)
         toast.error(errorMessage)
       }
     })
@@ -224,7 +237,7 @@ function TokenPasswordForm({ mode, token }: { mode: PasswordTokenMode; token: st
               <Alert variant="destructive">
                 <AlertDescription>
                   <p>{error}</p>
-                  {isStaleLinkError(error) &&
+                  {isStaleLinkError(errorCode) &&
                     (copy.newLink ? (
                       <Link
                         href={copy.newLink.href}
