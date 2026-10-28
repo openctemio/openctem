@@ -3,6 +3,12 @@
  * see (GET /api/v1/vulnerability-exposures, api/docs/architecture/vulnerability-page.md).
  */
 
+/** One feed day of a CVE's EPSS history (score 0..1). */
+export interface EpssPoint {
+  date: string
+  score: number
+}
+
 export interface VulnListEmerging {
   id: string
   level: 'immediate' | 'digest' | 'listed' | string
@@ -45,6 +51,8 @@ export interface VulnListItem {
   in_task: number
   first_seen_at?: string
   last_seen_at?: string
+  /** Daily EPSS over the last 30 feed days, oldest first. */
+  epss_trend?: EpssPoint[]
 }
 
 export interface VulnListSummary {

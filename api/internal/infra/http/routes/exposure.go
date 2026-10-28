@@ -193,16 +193,12 @@ func registerVulnerabilityRoutes(
 		r.GET("/{id}", h.GetVulnerability, middleware.Require(permission.VulnerabilitiesRead))
 		r.GET("/cve/{cveId}", h.GetVulnerabilityByCVE, middleware.Require(permission.VulnerabilitiesRead))
 
-		// Blast-radius reverse lookups + Active CVEs (tenant-scoped). Use
+		// Blast-radius reverse lookups (tenant-scoped). Use
 		// tenantOverlayMiddlewares() to apply RequireTenant + active-membership
 		// + CSRF + rate-limit per-route, since chi forbids mounting a second
 		// Group on the same path. See routes.go.
 		tenantScopedMW := append(tenantOverlayMiddlewares(),
 			middleware.Require(permission.VulnerabilitiesRead))
-		// IMPORTANT: register /active/stats BEFORE /active and /{id} so the
-		// most-specific literal path wins.
-		r.GET("/active/stats", h.GetActiveCVEStats, tenantScopedMW...)
-		r.GET("/active", h.ListActiveCVEs, tenantScopedMW...)
 		r.GET("/{id}/affected-assets", h.ListAffectedAssets, tenantScopedMW...)
 		r.GET("/cve/{cveId}/affected-assets", h.ListAffectedAssetsByCVE, tenantScopedMW...)
 
