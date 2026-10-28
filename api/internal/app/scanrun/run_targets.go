@@ -11,7 +11,9 @@ import (
 	"maps"
 	"strings"
 
+	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -154,4 +156,19 @@ func runContextTargets(rc map[string]any) ([]string, error) {
 		return nil, fmt.Errorf("%w: context.targets must be a list of strings", shared.ErrValidation)
 	}
 	return targets, nil
+}
+
+// runStartPlacement predicts where the steps of a run started directly
+// (no scan trigger decided the routing) go: platform sensors when any step
+// would, else the tenant's own. It decides whether ownership confirmation
+// applies to the run's targets (placement of jobs, scan.placementFor); a
+// hop re-checks per step, and the claim knows the sensor.
+func (s *Service) runStartPlacement(ctx context.Context, tenantID shared.ID, template *scanworkflow.Workflow) attribution.Placement {
+	pref := template.Settings.SensorPreference
+	for _, step := range template.Steps {
+		if s.routeToPlatform(ctx, tenantID, step.Tool, pref) {
+			return attribution.PlacementPlatform
+		}
+	}
+	return attribution.PlacementTenant
 }

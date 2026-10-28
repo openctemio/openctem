@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 
@@ -208,7 +209,9 @@ func (s *Service) QuickScan(ctx context.Context, input QuickScanInput) (*QuickSc
 	if err := s.refuseTierExceeded(ctx, tenantID, input.ScannerName, input.Targets); err != nil {
 		return nil, err
 	}
-	if err := s.refuseUnownedTargets(ctx, tenantID, "quick_scan", input.Targets, IsTakeoverOnlyProbe(input.ScannerName, input.Config)); err != nil {
+	// A quick scan routes automatically.
+	place := s.placementFor(ctx, tenantID, scan.SensorPreferenceAuto, false, false, scannerTools(input.ScannerName)...)
+	if err := s.refuseUnownedTargets(attribution.WithPlacement(ctx, place), tenantID, "quick_scan", input.Targets, IsTakeoverOnlyProbe(input.ScannerName, input.Config)); err != nil {
 		return nil, err
 	}
 

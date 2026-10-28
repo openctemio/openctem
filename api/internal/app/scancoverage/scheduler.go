@@ -8,6 +8,7 @@ import (
 	"time"
 
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
+	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -432,6 +433,8 @@ func (s *Scheduler) gateBatch(ctx context.Context, cfg CoverageConfig, batch []C
 		Targets:  targets,
 		SensorID: cfg.SensorID,
 		Assets:   assets,
+		// Tenable coverage runs on the organization's own connector sensor.
+		Placement: attribution.PlacementTenant,
 	})
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("target gate: %w", err)
