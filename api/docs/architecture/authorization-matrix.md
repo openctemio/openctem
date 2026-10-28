@@ -1115,7 +1115,7 @@ empty `owner_emails`. Every member-list view is audited
 | `POST /api/v1/admin/auth/password` | any admin (the only write allowed while `password_change_required`) |
 | `GET /api/v1/admin/auth/idp` | public (enabled + display name of the platform IdP, nothing else) |
 | `POST /api/v1/admin/auth/idp/start`, `/idp/callback` | public (token-exchange rate limit, 20/min; state bound to the `admin_idp` cookie, single use) |
-| `POST /api/v1/admin/administrators` | **super_admin** + **step-up** (audited; `break_glass` audited high) |
+| `POST /api/v1/admin/administrators` | **super_admin** + **step-up** (audited; `break_glass` audited high). Invitation by e-mail, no password returned; a new super admin also needs a second super admin's approval and, while approvals are on, working platform e-mail |
 | `POST /api/v1/admin/users/{id}/reset-credentials` | **super_admin** + **step-up** (audited; not self) |
 | `POST /api/v1/admin/users/{id}/break-glass-test` | **super_admin** + **step-up** (audited; not the break-glass account itself) |
 | `DELETE /api/v1/admin/users/{id}/idp-binding` | **super_admin** + **step-up** (audited high) |
@@ -1183,8 +1183,9 @@ password) and `POST /api/v1/admin/auth/mfa` open a console session. Rules:
 - Provisioning is `POST /api/v1/admin/administrators` (super admin), or
   `bootstrap-admin` for the first one and its break-glass backup. Rows without
   a `user_id` (former API-key identities) were deactivated by migration 000227.
-- **Temporary password gate.** A provisioned account has
-  `password_change_required`; a password-authenticated console session can then
+- **Temporary password gate.** An account made by `bootstrap-admin` has
+  `password_change_required` (an invited administrator chooses their own
+  password and has no temporary one); a password-authenticated console session can then
   call only `GET /auth/validate` and `POST /auth/password` (403
   `PASSWORD_CHANGE_REQUIRED` otherwise).
 

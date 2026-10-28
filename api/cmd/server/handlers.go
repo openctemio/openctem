@@ -225,6 +225,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.APIKey != nil {
 		svc.Auth.SetAPIKeyRevoker(svc.APIKey)
 	}
+	adminConsoleSvc.SetInvitationMailer(adminInvitationMailer{email: svc.Email})
 	adminConsoleSvc.SetRosterChangeNotifier(rosterChangeMailer{email: svc.Email, appName: cfg.Brand.DisplayName(), log: log})
 	// Console security keys (RFC-078): the relying party is the console origin.
 	if cfg.AdminPublicURL != "" && repos.AdminFactor != nil && repos.PlatformSetting != nil {
