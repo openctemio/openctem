@@ -669,7 +669,7 @@ types:
     card: service
     scannable_by: [url, service, port]
     coverage:
-      - { capability: vuln.templates, every: 7d }
+      - { capability: vuln.templates, every: 7d, requires: [no_named_twin] }
     sections: [overview, attributes, technologies, certificate, findings, relationships, owners, sources, history]
 
   - type: open_port
