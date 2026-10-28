@@ -58,7 +58,7 @@ defaults:
 jobs:
   changes:
     name: Detect API changes
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
     permissions:
       contents: read
       pull-requests: read # the `ci:full` label and the PR's commits (changed.sh reads them live)
@@ -76,6 +76,7 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+      - uses: ./.github/actions/setup-gh
       - id: f
         working-directory: .
         env:
@@ -224,16 +225,16 @@ jobs:
           export BASE_REF
           bash scripts/check-migrations.sh
 
-      # Parallel PRs pick the same "next" number (#767 and #773 both took
-      # 000261). Fails on a duplicate version, and on a PR or queued group
-      # that adds a version not above the base's highest: golang-migrate
-      # silently skips it on databases that are already past it. In the merge
-      # queue the base is merge_group.base_sha, i.e. including the groups
-      # ahead, so two queued PRs with the same number cannot both land.
-      # On pull_request "below the base max" is only a warning: the merge
-      # queue renumbers a PR's migrations when it enqueues it. merge_group and
-      # push keep it an error; duplicates fail everywhere. A push to develop is
-      # compared with develop before the push (see the push branch below).
+      # openctem-migrate applies every migration a database lacks, so a version
+      # only has to be unique (RFC-130). Fails on a duplicate version, on a
+      # changed, removed or renamed merged up file, and on an added version
+      # that is neither a UTC timestamp nor (a warning while older PRs land) a
+      # legacy sequential number. In the merge queue the base is
+      # merge_group.base_sha, i.e. including the groups ahead, so two queued
+      # PRs with one version cannot both land. On pull_request a version the
+      # base also uses is only a warning: the step below gives this run's
+      # copy a new version. A push to develop is compared with develop before
+      # the push (see the push branch below).
       - name: Migration Versions
         working-directory: .
         env:
@@ -245,18 +246,17 @@ jobs:
         run: |
           bash .github/scripts/check-migration-versions.test.sh >/dev/null
           bash .github/scripts/pr-migration-renumber.test.sh >/dev/null
+          bash api/scripts/released-migrations.test.sh >/dev/null
+          bash api/scripts/released-migrations.sh --check
           bash api/scripts/dev-tools.test.sh >/dev/null
           bash api/deploy/backup.test.sh >/dev/null
           bash api/deploy/backup/overlay.test.sh >/dev/null
           case "$EVENT" in
-            pull_request) MIGRATION_BELOW_BASE=warning bash .github/scripts/check-migration-versions.sh "origin/${BASE_REF}" ;;
+            pull_request) MIGRATION_DUPLICATE=warning bash .github/scripts/check-migration-versions.sh "origin/${BASE_REF}" ;;
             merge_group)  bash .github/scripts/check-migration-versions.sh "$MG_BASE" ;;
             *)
               # A push to develop that skipped the queue (a direct or admin
-              # merge) is checked against develop as it was before the push,
-              # so a migration numbered at or below develop's highest turns
-              # develop red at once instead of being skipped silently on
-              # databases that are already past it.
+              # merge) is checked against develop as it was before the push.
               base=""
               if [ "$PUSH_REF" = "refs/heads/develop" ] && git cat-file -e "${PUSH_BEFORE}^{commit}" 2>/dev/null; then
                 base="$PUSH_BEFORE"
@@ -264,10 +264,10 @@ jobs:
               bash .github/scripts/check-migration-versions.sh ${base:+"$base"} ;;
           esac
 
-      # PR only: a migration whose number develop has taken since is
-      # renumbered in this runner (never committed) so the checks and tests
-      # below see the tree the merge queue will merge. merge_group and push
-      # keep the hard error above.
+      # PR only: a migration whose version develop has taken since gets a new
+      # version in this runner (never committed) so the checks and tests
+      # below see a tree the runner accepts. merge_group and push keep the
+      # hard error above.
       - name: Renumber this PR's clashing migrations (this run only)
         if: github.event_name == 'pull_request'
         working-directory: .
@@ -441,7 +441,7 @@ jobs:
       actions: write
     needs: changes
     if: needs.changes.outputs.api == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
     timeout-minutes: 15
     steps:
       - name: Checkout code
@@ -570,8 +570,10 @@ jobs:
           name: openapi-spec
           path: api/api/openapi
 
-      - name: Install golang-migrate
-        run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1
+      - name: Build the migration runner
+        run: |
+          go build -o "$RUNNER_TEMP/bin/openctem-migrate" ./cmd/openctem-migrate
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
       # The runner context is not available in job-level env, so the URLs are
       # exported for the later steps from here.
@@ -591,7 +593,7 @@ jobs:
         run: psql "$SUPER_URL" -X -v ON_ERROR_STOP=1 -f deploy/postgres/least-privilege-roles.sql
 
       - name: Apply every migration as the migrator (not a superuser)
-        run: migrate -path migrations -database "$MIGRATOR_URL" up
+        run: openctem-migrate -path migrations -database "$MIGRATOR_URL" up
 
       - name: Re-run the bootstrap (idempotent; verifies grants on the migrated schema)
         run: psql "$SUPER_URL" -X -v ON_ERROR_STOP=1 -f deploy/postgres/least-privilege-roles.sql
@@ -717,16 +719,28 @@ jobs:
           cache: ${{ github.event_name != 'merge_group' && runner.environment == 'github-hosted' }}
           cache-dependency-path: api/go.sum
 
-      - name: Install golang-migrate
-        run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1
+      - name: Build the migration runner
+        run: |
+          go build -o "$RUNNER_TEMP/bin/openctem-migrate" ./cmd/openctem-migrate
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
       - name: Apply every migration
-        run: migrate -path migrations -database "$DATABASE_URL" up
+        run: openctem-migrate -path migrations -database "$DATABASE_URL" up
 
       - name: Schema probes on the migrated database
         env:
           OPENCTEM_TEST_DB_REQUIRED: "1"
         run: go test -count=1 -run 'TestCheckSensorRename' ./internal/infra/postgres/
+
+      # openctem-migrate applies every migration a database lacks, so one merged
+      # after a higher version runs last on a running install but in version
+      # order on a fresh one: both must give the same schema. The base is the
+      # commit before this change (the test merge's or queue entry's parent).
+      - name: Migration order (fresh install = upgraded database)
+        working-directory: .
+        env:
+          SUPER_URL: ${{ env.DATABASE_URL }}
+        run: bash .github/scripts/migration-order-check.sh HEAD^1
 
       - name: Remove the PostgreSQL 18 container
         if: ${{ always() }}
@@ -815,7 +829,7 @@ jobs:
     name: API CI OK
     if: always()
     needs: [changes, static, test, pg18, binaries]
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
     steps:
       - name: All API jobs passed or were skipped; the event's tier actually ran
         working-directory: .
