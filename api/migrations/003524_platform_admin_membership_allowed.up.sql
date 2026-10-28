@@ -22,6 +22,10 @@ CREATE FUNCTION forbid_break_glass_membership() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
+    -- Same lock as forbid_break_glass_with_membership(): a concurrent
+    -- membership insert and break-glass flag change on one account serialise,
+    -- so the second one sees the first one's committed row.
+    PERFORM pg_advisory_xact_lock(hashtext('break_glass_console_only:' || NEW.user_id::text));
     IF EXISTS (SELECT 1 FROM admin_users WHERE user_id = NEW.user_id AND is_break_glass) THEN
         RAISE EXCEPTION 'a break-glass administrator account cannot be a member of an organization'
             USING ERRCODE = 'check_violation', CONSTRAINT = 'break_glass_console_only';
@@ -38,6 +42,9 @@ CREATE FUNCTION forbid_break_glass_with_membership() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
+    IF NEW.is_break_glass AND NEW.user_id IS NOT NULL THEN
+        PERFORM pg_advisory_xact_lock(hashtext('break_glass_console_only:' || NEW.user_id::text));
+    END IF;
     IF NEW.is_break_glass AND NEW.user_id IS NOT NULL
        AND EXISTS (SELECT 1 FROM tenant_members WHERE user_id = NEW.user_id) THEN
         RAISE EXCEPTION 'an account that belongs to an organization cannot be a break-glass administrator'
