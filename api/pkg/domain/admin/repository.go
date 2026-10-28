@@ -61,9 +61,8 @@ type Repository interface {
 	GetByUserID(ctx context.Context, userID shared.ID) (*AdminUser, error)
 
 	// LinkUser links an administrator to a users row. Returns
-	// ErrUserHasMemberships when the user belongs to an organization (a
-	// platform administrator belongs to none) and ErrUserAlreadyAdmin when the
-	// user is already linked to another administrator.
+	// ErrUserAlreadyAdmin when the user is already linked to another
+	// administrator. The account may belong to organizations (RFC-133).
 	LinkUser(ctx context.Context, adminID, userID shared.ID) error
 
 	// ==========================================================================

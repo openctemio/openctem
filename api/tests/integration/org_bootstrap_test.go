@@ -230,7 +230,8 @@ func TestBootstrapAdminPrintsOwnerLinkWhenEmailFails(t *testing.T) {
 }
 
 // An owner email that already has an account makes that account the owner (no
-// new account, no link). A platform administrator's account is refused and
+// new account, no link); that includes an administrator's account (RFC-133).
+// A break-glass administrator's account stays console-only: it is refused and
 // nothing is left behind.
 func TestBootstrapAdminOrganizationOwners(t *testing.T) {
 	db := openConsoleDB(t)
@@ -257,7 +258,29 @@ func TestBootstrapAdminOrganizationOwners(t *testing.T) {
 		}
 	})
 
-	t.Run("platform administrator refused", func(t *testing.T) {
+	t.Run("named administrator owns it", func(t *testing.T) {
+		first := orgBootOptions(t, db)
+		first.OrgName, first.OrgSlug, first.OrgOwnerEmail, first.OrgOwnerName = "", "", "", ""
+		if err := adminbootstrap.Run(ctx, db.DB, first, &bytes.Buffer{}); err != nil {
+			t.Fatal(err)
+		}
+		// The installer names its own administrator as the first owner: one
+		// account for the console and the organization (RFC-133).
+		o := orgBootOptions(t, db)
+		o.OrgOwnerEmail = first.Email
+		var out bytes.Buffer
+		if err := adminbootstrap.Run(ctx, db.DB, o, &out); err != nil {
+			t.Fatalf("run: %v\n%s", err, out.String())
+		}
+		var role string
+		if err := db.QueryRow(`SELECT tm.role FROM tenant_members tm JOIN tenants t ON t.id = tm.tenant_id
+			JOIN users u ON u.id = tm.user_id JOIN admin_users a ON a.user_id = u.id
+			WHERE t.slug = $1 AND u.email = $2`, o.OrgSlug, first.Email).Scan(&role); err != nil || role != "owner" {
+			t.Fatalf("the administrator's account is not the owner: %q %v", role, err)
+		}
+	})
+
+	t.Run("break-glass administrator refused", func(t *testing.T) {
 		first := orgBootOptions(t, db)
 		first.OrgName, first.OrgSlug, first.OrgOwnerEmail, first.OrgOwnerName = "", "", "", ""
 		if err := adminbootstrap.Run(ctx, db.DB, first, &bytes.Buffer{}); err != nil {
@@ -268,8 +291,8 @@ func TestBootstrapAdminOrganizationOwners(t *testing.T) {
 		o.OrgOwnerEmail = first.BackupEmail
 		var out bytes.Buffer
 		err := adminbootstrap.Run(ctx, db.DB, o, &out)
-		if err == nil || !strings.Contains(err.Error(), "platform administrator") {
-			t.Fatalf("want a platform-administrator refusal, got %v\n%s", err, out.String())
+		if err == nil || !strings.Contains(err.Error(), "break-glass") {
+			t.Fatalf("want a break-glass refusal, got %v\n%s", err, out.String())
 		}
 		var n int
 		if err := db.QueryRow(`SELECT COUNT(*) FROM tenants WHERE slug = $1`, o.OrgSlug).Scan(&n); err != nil || n != 0 {

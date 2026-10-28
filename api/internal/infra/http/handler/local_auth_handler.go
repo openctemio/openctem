@@ -1320,8 +1320,8 @@ func (h *LocalAuthHandler) handleAuthError(w http.ResponseWriter, err error) {
 		writeSignupSSORequired(w)
 	case errors.Is(err, auth.ErrTenantCreationDisabled):
 		apierror.Forbidden("Organizations are created by the application administrator").WriteJSON(w)
-	case errors.Is(err, tenantdom.ErrPlatformAdminMembership):
-		apierror.Conflict("Platform administrators cannot belong to an organization. Use the admin console, or a separate account.").WriteJSON(w)
+	case errors.Is(err, tenantdom.ErrBreakGlassMembership):
+		apierror.Conflict("This account cannot be a member of an organization.").WriteJSON(w)
 	case errors.Is(err, auth.ErrEmailAlreadyExists):
 		apierror.Conflict("Email already exists").WriteJSON(w)
 	case errors.Is(err, auth.ErrInvalidResetToken):

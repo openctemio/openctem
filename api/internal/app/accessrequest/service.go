@@ -239,6 +239,9 @@ func (s *Service) Approve(ctx context.Context, actor *admin.AdminUser, id shared
 	if req.Status != ardom.StatusPending {
 		return nil, nil, ardom.ErrNotDecidable
 	}
+	if actor != nil && strings.EqualFold(strings.TrimSpace(req.Email), strings.TrimSpace(actor.Email())) {
+		return nil, nil, ardom.ErrSelfApproval
+	}
 	name := strings.TrimSpace(in.Name)
 	if name == "" {
 		name = req.Company

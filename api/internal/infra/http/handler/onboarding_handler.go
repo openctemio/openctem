@@ -245,7 +245,7 @@ func (h *TenantHandler) decideJoinRequest(w http.ResponseWriter, r *http.Request
 		apierror.Conflict("This person's email domain no longer lets them join; invite them instead").WriteJSON(w)
 	case errors.Is(err, joinrequest.ErrInvalidRole):
 		apierror.BadRequest("role must be viewer or member").WriteJSON(w)
-	case errors.Is(err, tenantdom.ErrPlatformAdminMembership), errors.Is(err, shared.ErrValidation):
+	case errors.Is(err, tenantdom.ErrBreakGlassMembership), errors.Is(err, shared.ErrValidation):
 		apierror.Conflict("The person cannot be added to this organization").WriteJSON(w)
 	default:
 		h.logger.Error("decide join request", "error", err)

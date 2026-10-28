@@ -115,6 +115,18 @@ func isCheckViolation(err error) bool {
 	return false
 }
 
+// breakGlassConsoleOnly is the rule (raised by the tenant_members and
+// admin_users triggers of migration 003524) that a break-glass administrator's
+// account belongs to no organization.
+const breakGlassConsoleOnly = "break_glass_console_only"
+
+// isConstraintViolation reports a check violation of the named constraint (or
+// trigger rule raised with that constraint name).
+func isConstraintViolation(err error, name string) bool {
+	var pqErr *pq.Error
+	return errors.As(err, &pqErr) && pqErr.Code == "23514" && pqErr.Constraint == name
+}
+
 // isForeignKeyViolation checks if the error is a PostgreSQL foreign-key violation
 // (SQLSTATE 23503) — e.g. referencing an asset/row that does not exist — or the
 // restrict violation (23001) that PostgreSQL 18 reports when a RESTRICT foreign

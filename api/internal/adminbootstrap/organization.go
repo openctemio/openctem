@@ -2,8 +2,8 @@ package adminbootstrap
 
 // The first organization (bootstrap-admin -org-name/-org-owner-email).
 //
-// A platform administrator belongs to no organization, so a fresh installation
-// has no one who can use the product until an organization exists. The
+// A fresh installation has no organization, so no one can use the product
+// until one exists. The
 // installer can create it in the same step. It goes through the same application services as the admin
 // console's Organizations -> Create (tenantapp.OrganizationCreator): the
 // organization and the owner's membership and role are written atomically,
@@ -52,9 +52,9 @@ func (o *Options) normalizeOrg() error {
 		return errors.New("-org-owner-email is required with -org-name: the organization needs an owner (or set ORG_OWNER_EMAIL)")
 	case !strings.Contains(o.OrgOwnerEmail, "@"):
 		return errors.New("invalid organization owner email")
-	case o.OrgOwnerEmail == o.Email || o.OrgOwnerEmail == o.BackupEmail:
-		// A platform administrator belongs to no organization (RFC-022 rev.2).
-		return errors.New("a platform administrator cannot own an organization: use a different -org-owner-email")
+	case o.OrgOwnerEmail == o.BackupEmail:
+		// The break-glass account is for emergencies on the console only.
+		return errors.New("the break-glass administrator cannot own an organization: use a different -org-owner-email")
 	}
 	if n := utf8.RuneCountInString(o.OrgName); n < 2 || n > 100 {
 		return errors.New("-org-name must be 2 to 100 characters")
@@ -115,8 +115,8 @@ func ensureOrganization(ctx context.Context, db *sql.DB, o Options, out io.Write
 			AllowExistingOwner: true,
 		}, auditapp.AuditContext{ActorEmail: AuditActor})
 	if err != nil {
-		if errors.Is(err, tenantdom.ErrPlatformAdminMembership) {
-			return fmt.Errorf("%s is a platform administrator, and a platform administrator cannot own an organization: use a different -org-owner-email", o.OrgOwnerEmail)
+		if errors.Is(err, tenantdom.ErrBreakGlassMembership) {
+			return fmt.Errorf("%s is a break-glass administrator, which stays console-only and cannot own an organization: use a different -org-owner-email", o.OrgOwnerEmail)
 		}
 		return fmt.Errorf("creating organization: %w", err)
 	}

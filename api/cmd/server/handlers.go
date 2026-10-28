@@ -2046,7 +2046,7 @@ func byIDGuardAsserter(svc *Services) middleware.DataScopeAsserter {
 
 // newUserHandler builds the user handler with self-service account deletion.
 func newUserHandler(svc *Services, repos *Repositories, v *validator.Validator, log *logger.Logger) *handler.UserHandler {
-	h := handler.NewUserHandler(svc.User, svc.Tenant, platformAdminChecker{admins: repos.Admin}, v, log)
+	h := handler.NewUserHandler(svc.User, svc.Tenant, v, log)
 	if svc.AccountDeletion != nil {
 		h.SetAccountDeletion(svc.AccountDeletion)
 	}

@@ -65,6 +65,9 @@ func (r *AdminRepository) GuardedUpdate(ctx context.Context, a *admin.AdminUser)
 			WHERE id = $1`,
 			a.ID().String(), a.Name(), string(a.Role()), a.IsActive(), a.IsBreakGlass())
 		if err != nil {
+			if isConstraintViolation(err, breakGlassConsoleOnly) {
+				return admin.ErrBreakGlassHasMemberships
+			}
 			if isCheckViolation(err) {
 				return admin.ErrBreakGlassBound
 			}

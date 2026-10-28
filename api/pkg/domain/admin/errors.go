@@ -13,8 +13,10 @@ var (
 	// Admin User Errors
 	// ==========================================================================
 
-	// ErrUserHasMemberships: a platform administrator belongs to no organization.
-	ErrUserHasMemberships = fmt.Errorf("%w: this account belongs to an organization; platform administrators cannot", shared.ErrConflict)
+	// ErrBreakGlassHasMemberships: a break-glass administrator stays
+	// console-only, so an account that belongs to an organization cannot be
+	// one (migration 003524).
+	ErrBreakGlassHasMemberships = fmt.Errorf("%w: a break-glass administrator must belong to no organization, and this account is a member of one", shared.ErrConflict)
 
 	// ErrUserAlreadyAdmin: the user account is already an administrator.
 	ErrUserAlreadyAdmin = fmt.Errorf("%w: this account is already a platform administrator", shared.ErrConflict)

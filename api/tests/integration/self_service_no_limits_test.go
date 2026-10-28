@@ -153,7 +153,7 @@ func TestSelfServiceDefaultsApplyWhenSet(t *testing.T) {
 	}
 
 	// No plan anywhere in the organization payloads.
-	users := handler.NewUserHandler(nil, tenantSvc, nil, validator.New(), log)
+	users := handler.NewUserHandler(nil, tenantSvc, validator.New(), log)
 	list, err := users.MyTenantsResponse(ctx, u.ID())
 	if err != nil || len(list) != 1 {
 		t.Fatalf("membership list: %+v %v", list, err)
