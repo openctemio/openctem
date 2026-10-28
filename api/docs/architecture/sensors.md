@@ -18,11 +18,12 @@
 |---|---|
 | **Sensor** | Software on the customer side that authenticates *to* the platform with its own key and heartbeat. The umbrella term; every row of the `sensors` table. |
 | **Scanner** (role) | A sensor that assesses other hosts; routed by scan zone. What every existing sensor is today. |
-| **Agent** (role) | A sensor installed on an endpoint that reports only about its own host. Since RFC-023 the word *agent* means this role only. |
+| **Endpoint** (role, planned) | A sensor installed on an endpoint that reports only about its own host. RFC-023 called this role *agent*; the word is retired for sensors (see the [glossary](../glossary.md)). |
+| **AI worker** (role) | A sensor that runs AI agents (`openctemio/ai-worker`, sdk-go `pkg/harness`). |
 | **Collector** (role) | A sensor that pushes data from systems inside the customer network. |
 | **Integration** | An external system the *platform* calls (Jira, Slack, Splunk out, …); no software of ours runs for it. |
 | `type` | The legacy v1 classification (`worker`, `scanner`, `sensor`, `collector`, `runner`). Kept as input and storage until role + deployment replace it (RFC-023 §9.1). |
-| AI agent | The `ai_triage.agent` module (an LLM agent, unrelated to sensors); the `agent` AI mode is removed. |
+| AI agent | An AI principal with a role (analyst, remediator, reporter, hunter, router) that works under its own identity; data `ai_agent`, code `aiagent`. Unrelated to sensors; never a bare "agent". |
 
 Until 2026-10 the code, database and API called sensors "agents". The rename
 is complete in the API: packages, types, tables, columns, permissions
@@ -1873,6 +1874,22 @@ whose `preferred_region` (payload) is empty or the sensor's `region`. Its
 hosts must be free in its organization: the same host keys, advisory locks
 and settled-host rule as the organization's own sensors, so a shared job and
 an organization sensor's job never take one host at once.
+
+**Hosts across organizations** ([RFC-129](../rfcs/RFC-129-shared-fleet-scheduling.md) §5).
+A shared job's traffic leaves through the platform's egress, whichever
+organization asked, so on the shared fleet a target is also protected across
+organizations: a shared job starts only while fewer than its limit of shared
+jobs, of any organizations, hold a key it conflicts with unsettled (the same
+host keys and bucket rule). The limit is 2, and 1 for a job queued at the
+intrusive tier or intensity (`command.SharedFleetHostLimitFor`). The claim
+takes a `shost|<key>` advisory lock on every candidate's keys, in key order
+and before any organization's lock, re-checks the rule, and counts its own
+batch, so one claim never puts more shared jobs on a host than the limit. A
+waiting organization sees only that its job waits for its hosts: the host
+wait names only its own tasks, never who else scans the host. Organization
+sensors keep per-organization keys: other organizations' shared jobs never
+hold an organization's own job, and its own jobs never count toward the
+shared fleet's limit.
 
 **Order.** Rounds of five jobs per organization (each organization's own
 jobs in class and age order), so one organization's deep or old queue never

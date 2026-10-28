@@ -47,11 +47,13 @@ import {
   liveRunIds,
   runListRefreshInterval,
   runKindLabel,
+  runKindQuery,
   runSubjectFindingId,
   runTargetNote,
   runTriggeredByLabel,
   runTaskProgress,
 } from '@/features/scans/lib/run-display'
+import { RunManagedBadge } from '@/features/scans/components/run-managed-badge'
 import { replaceUrlSearch, useUrlParam } from '@/hooks/use-url-param'
 import { useRunChannels } from '@/hooks/use-websocket'
 import {
@@ -170,7 +172,7 @@ function ScanRunsTable() {
   const filters: ScanRunListFilters = {
     status: statusFilter === 'all' ? undefined : statusFilter,
     scan_id: scanFilter || undefined,
-    kind: kindFilter === 'all' ? undefined : kindFilter,
+    ...runKindQuery(kindFilter),
     sort: list.sort,
     page: list.page,
     per_page: perPage,
@@ -204,6 +206,7 @@ function ScanRunsTable() {
             return (
               <div className="space-y-0.5">
                 <span className="font-medium">{runKindLabel(run.kind, t)}</span>
+                <RunManagedBadge managedBy={run.managed_by} />
                 {findingId && (
                   <Link
                     href={`/findings/${encodeURIComponent(findingId)}`}
@@ -225,13 +228,16 @@ function ScanRunsTable() {
             return <span className="text-muted-foreground">{t('scans.runs.deletedScan')}</span>
           }
           return (
-            <Link
-              href={`/scans/${encodeURIComponent(run.scan_id)}`}
-              className="font-medium hover:underline"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {run.scan_name}
-            </Link>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Link
+                href={`/scans/${encodeURIComponent(run.scan_id)}`}
+                className="font-medium hover:underline"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {run.scan_name}
+              </Link>
+              <RunManagedBadge managedBy={run.managed_by} />
+            </div>
           )
         },
       },
@@ -444,6 +450,11 @@ function ScanRunsTable() {
   )
 
   const filtered = statusFilter !== 'all' || kindFilter !== 'all'
+  // The counters count every run the tenant has; a list that is empty while
+  // they are not (a filter held back by the URL, a page past the end) must
+  // not claim that no run ever started.
+  const hasRuns = (counts?.total ?? 0) > 0
+  const emptyIsFiltered = filtered || hasRuns
 
   // Exports the list as filtered and sorted, through the same endpoint.
   const exportRuns = async () => {
@@ -457,6 +468,7 @@ function ScanRunsTable() {
         status: filters.status,
         scan_id: filters.scan_id,
         kind: filters.kind,
+        origin: filters.origin,
         sort: filters.sort,
       })
       if (exportToCsv(all, RUN_EXPORT_FIELDS, 'scan-runs') && capped) {
@@ -523,8 +535,8 @@ function ScanRunsTable() {
         sorting={sorting}
         onSortingChange={list.setSorting}
         paginationNoun={t('scans.runs.noun')}
-        emptyMessage={filtered ? t('scans.runs.emptyFiltered') : t('scans.runs.empty')}
-        emptyDescription={filtered ? t('scans.runs.tryOther') : t('scans.runs.emptyHint')}
+        emptyMessage={emptyIsFiltered ? t('scans.runs.emptyFiltered') : t('scans.runs.empty')}
+        emptyDescription={emptyIsFiltered ? t('scans.runs.tryOther') : t('scans.runs.emptyHint')}
       />
       <RunDetailSheet runId={openRunId} onOpenChange={(o) => !o && closeRun()} />
     </>
