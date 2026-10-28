@@ -13,7 +13,7 @@ import (
 )
 
 // The role store writes the audit entry in the change's transaction, and a
-// break-glass account holds its base role only (migration 003525).
+// break-glass account holds its base role only (migration break_glass_base_role_only).
 func TestPlatformRoleStore_AuditAtomicAndBreakGlassBaseOnly(t *testing.T) {
 	db := openConsoleDB(t)
 	admins := postgres.NewAdminRepository(db)
