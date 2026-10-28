@@ -10,7 +10,7 @@ import { firstDataRow } from '../helpers/table'
  * form. Locators use roles and accessible names, not layout or classes.
  */
 
-test.describe('Asset relationship multi-select', () => {
+test.describe('Asset relationship multi-select', { tag: ['@assets', '@smoke'] }, () => {
   test('asset list page loads', async ({ page }) => {
     await page.goto('/assets')
     // The table renders, with rows or its empty state. Generous timeout:

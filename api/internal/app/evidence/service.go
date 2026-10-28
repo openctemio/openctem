@@ -243,6 +243,123 @@ func (s *Service) List(ctx context.Context, tenantID, findingID shared.ID, retes
 	return s.repo.List(ctx, tenantID, findingID, retestID, evidencedom.MaxListItems)
 }
 
+// State returns the finding's evidence version and proof count. A finding
+// outside the tenant is ErrNotFound.
+func (s *Service) State(ctx context.Context, tenantID, findingID shared.ID) (evidencedom.State, error) {
+	return s.repo.State(ctx, tenantID, findingID)
+}
+
+// IsPentestFinding reports whether the finding is a pentest finding, whose
+// evidence changes follow the campaign's rules. A finding outside the tenant
+// is ErrNotFound.
+func (s *Service) IsPentestFinding(ctx context.Context, tenantID, findingID shared.ID) (bool, error) {
+	src, err := s.repo.FindingSource(ctx, tenantID, findingID)
+	if err != nil {
+		return false, err
+	}
+	return src == "pentest", nil
+}
+
+// UpdateInput changes how one evidence item is shown: its role, its
+// position, or both.
+type UpdateInput struct {
+	TenantID   shared.ID
+	FindingID  shared.ID
+	EvidenceID shared.ID
+	Role       *string
+	Position   *int
+	ActorID    *shared.ID
+	Audit      auditapp.AuditContext
+}
+
+// Update sets the role and/or position of one item of a finding, audits it
+// and returns the item. The caller has passed the permission and data-scope
+// gates (and, for a pentest finding, the campaign gate).
+func (s *Service) Update(ctx context.Context, in UpdateInput) (*evidencedom.Record, error) {
+	if in.Role == nil && in.Position == nil {
+		return nil, fmt.Errorf("%w: role or position is required", shared.ErrValidation)
+	}
+	var role *evidencedom.Role
+	if in.Role != nil {
+		r, err := evidencedom.ParseRole(*in.Role)
+		if err != nil {
+			return nil, err
+		}
+		role = &r
+	}
+	if in.Position != nil && (*in.Position < 0 || *in.Position > evidencedom.MaxPosition) {
+		return nil, fmt.Errorf("%w: position must be between 0 and %d", shared.ErrValidation, evidencedom.MaxPosition)
+	}
+	if err := s.findingInTenant(ctx, in.TenantID, in.FindingID); err != nil {
+		return nil, err
+	}
+	rec, err := s.repo.Update(ctx, in.TenantID, in.FindingID, in.EvidenceID, role, in.Position)
+	if err != nil {
+		return nil, err
+	}
+	s.recordChange(ctx, in.TenantID, in.FindingID, in.ActorID, in.Audit, map[string]any{
+		"evidence_id": rec.ID.String(), "role": string(rec.Role), "position": rec.Position,
+	})
+	return rec, nil
+}
+
+// Reorder puts the listed items first, in that order. Every id must be an
+// item of the finding.
+func (s *Service) Reorder(ctx context.Context, tenantID, findingID shared.ID, ids []shared.ID, actor *shared.ID, actx auditapp.AuditContext) error {
+	if len(ids) == 0 || len(ids) > evidencedom.MaxListItems {
+		return fmt.Errorf("%w: item_ids needs 1 to %d ids", shared.ErrValidation, evidencedom.MaxListItems)
+	}
+	seen := make(map[shared.ID]bool, len(ids))
+	for _, id := range ids {
+		if seen[id] {
+			return fmt.Errorf("%w: item_ids has a repeated id", shared.ErrValidation)
+		}
+		seen[id] = true
+	}
+	if err := s.findingInTenant(ctx, tenantID, findingID); err != nil {
+		return err
+	}
+	if err := s.repo.SetOrder(ctx, tenantID, findingID, ids); err != nil {
+		return err
+	}
+	strs := make([]string, len(ids))
+	for i, id := range ids {
+		strs[i] = id.String()
+	}
+	s.recordChange(ctx, tenantID, findingID, actor, actx, map[string]any{"order": strs})
+	return nil
+}
+
+// recordChange audits a role or order change and adds a timeline entry. Both
+// are best-effort: the change is already made and holds no secret.
+func (s *Service) recordChange(ctx context.Context, tenantID, findingID shared.ID, actor *shared.ID, actx auditapp.AuditContext, changes map[string]any) {
+	if s.audit != nil {
+		actx.TenantID = tenantID.String()
+		ev := auditapp.NewSuccessEvent(auditdom.ActionFindingEvidenceUpdated, auditdom.ResourceTypeFinding, findingID.String()).
+			WithResourceName(findingID.String()).
+			WithMessage("Finding evidence role or order changed").
+			WithSeverity(auditdom.SeverityLow)
+		for k, v := range changes {
+			ev = ev.WithMetadata(k, v)
+		}
+		if err := s.audit.LogEvent(ctx, actx, ev); err != nil {
+			s.log.Warn("evidence change: audit not recorded", "error", logger.SanitizeError(err))
+		}
+	}
+	if s.activity == nil {
+		return
+	}
+	changes["updated_fields"] = "evidence"
+	a, err := vulnerability.NewFindingActivity(tenantID, findingID, vulnerability.ActivityMetadataUpdated,
+		actor, vulnerability.ActorTypeUser, changes, vulnerability.SourceAPI, nil)
+	if err == nil {
+		err = s.activity.Create(ctx, a)
+	}
+	if err != nil {
+		s.log.Warn("evidence change: timeline entry not written", "error", logger.SanitizeError(err))
+	}
+}
+
 func (s *Service) findingInTenant(ctx context.Context, tenantID, findingID shared.ID) error {
 	ok, err := s.repo.FindingExists(ctx, tenantID, findingID)
 	if err != nil {
