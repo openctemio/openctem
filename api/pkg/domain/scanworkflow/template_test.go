@@ -1,6 +1,8 @@
 package scanworkflow_test
 
 import (
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
@@ -181,4 +183,32 @@ func createStep(t *testing.T, scanWorkflowID shared.ID, stepKey string, capabili
 	step, err := scanworkflow.NewStep(scanWorkflowID, stepKey, stepKey, 1, capabilities)
 	require.NoError(t, err)
 	return step
+}
+
+func TestRetiredUseError(t *testing.T) {
+	sup := shared.NewID()
+	cases := []struct {
+		name    string
+		wf      scanworkflow.Workflow
+		wantErr string
+	}{
+		{"active system", scanworkflow.Workflow{Name: "Subdomains", IsSystemTemplate: true, IsActive: true}, ""},
+		{"inactive tenant copy", scanworkflow.Workflow{Name: "mine", IsActive: false}, ""},
+		{"retired with replacement", scanworkflow.Workflow{Name: "Discover", IsSystemTemplate: true, SupersededBy: &sup, SupersededByName: "Subdomains"}, `replaced by "Subdomains"`},
+		{"retired without replacement", scanworkflow.Workflow{Name: "API Security Testing", IsSystemTemplate: true}, "no direct replacement"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			err := scanworkflow.RetiredUseError(&c.wf)
+			if c.wantErr == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			if err == nil || !errors.Is(err, shared.ErrValidation) || !strings.Contains(err.Error(), c.wantErr) {
+				t.Fatalf("error = %v, want validation error containing %q", err, c.wantErr)
+			}
+		})
+	}
 }

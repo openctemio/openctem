@@ -389,17 +389,76 @@ func (s *SyncStatus) MarkSyncSuccess(recordsSynced int, durationMs int) {
 	s.syncDurationMs = durationMs
 	s.lastSyncError = ""
 
+	s.clearFailure()
+	s.setMeta(MetaLastSuccessAt, now.Format(time.RFC3339))
+
 	// Calculate next sync time
 	nextSync := now.Add(time.Duration(s.syncIntervalHours) * time.Hour)
 	s.nextSyncAt = &nextSync
 	s.updatedAt = now
 }
 
-// MarkSyncFailed marks the sync as failed.
-func (s *SyncStatus) MarkSyncFailed(err string) {
+// MarkSyncUnchanged marks a run that found the source unchanged (HTTP 304).
+// The stored record count stays: the run wrote nothing, so it must not
+// report zero. storedCount is the size of the stored catalog; it only fills
+// a count an earlier run left at zero.
+func (s *SyncStatus) MarkSyncUnchanged(durationMs int, storedCount int) {
 	now := time.Now().UTC()
+	s.lastSyncStatus = SyncStateSuccess
+	s.syncDurationMs = durationMs
+	s.lastSyncError = ""
+	if s.recordsSynced == 0 && storedCount > 0 {
+		s.recordsSynced = storedCount
+	}
+	s.lastSyncAt = &now
+	s.clearFailure()
+	s.setMeta(MetaLastSuccessAt, now.Format(time.RFC3339))
+	nextSync := now.Add(time.Duration(s.syncIntervalHours) * time.Hour)
+	s.nextSyncAt = &nextSync
+	s.updatedAt = now
+}
+
+// Metadata keys the status model keeps in the row (no schema change).
+const (
+	MetaLastSuccessAt = "last_success_at"
+	MetaFailingSince  = "failing_since"
+	MetaErrorCode     = "error_code"
+	MetaErrorParams   = "error_params"
+)
+
+func (s *SyncStatus) setMeta(k string, v any) {
+	if s.metadata == nil {
+		s.metadata = make(map[string]any)
+	}
+	s.metadata[k] = v
+}
+
+func (s *SyncStatus) clearFailure() {
+	delete(s.metadata, MetaFailingSince)
+	delete(s.metadata, MetaErrorCode)
+	delete(s.metadata, MetaErrorParams)
+}
+
+// MarkSyncFailed marks the sync as failed without a classification.
+func (s *SyncStatus) MarkSyncFailed(err string) { s.MarkSyncFailedWith(err, "", nil) }
+
+// MarkSyncFailedWith marks the sync as failed. code and params classify the
+// failure for display (the raw text stays in lastSyncError); the attempt time
+// is now, and the start of an unbroken run of failures is kept.
+func (s *SyncStatus) MarkSyncFailedWith(err, code string, params map[string]string) {
+	now := time.Now().UTC()
+	s.lastSyncAt = &now
 	s.lastSyncStatus = SyncStateFailed
 	s.lastSyncError = err
+	if _, ok := s.metadata[MetaFailingSince]; !ok {
+		s.setMeta(MetaFailingSince, now.Format(time.RFC3339))
+	}
+	s.setMeta(MetaErrorCode, code)
+	if len(params) > 0 {
+		s.setMeta(MetaErrorParams, params)
+	} else {
+		delete(s.metadata, MetaErrorParams)
+	}
 
 	// Retry in 1 hour on failure
 	nextSync := now.Add(1 * time.Hour)

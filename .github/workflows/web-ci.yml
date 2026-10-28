@@ -40,7 +40,7 @@ defaults:
 jobs:
   changes:
     name: Detect web changes
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
     permissions:
       contents: read
       pull-requests: read # the PR's commits and labels (changed.sh)
@@ -60,6 +60,7 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+      - uses: ./.github/actions/setup-gh
       - id: f
         working-directory: .
         env:
@@ -101,7 +102,7 @@ jobs:
       actions: write
     needs: changes
     if: needs.changes.outputs.lint == 'true' || needs.changes.outputs.api == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
     outputs:
       changed: ${{ steps.diff.outputs.changed }}
     defaults:
@@ -311,7 +312,11 @@ jobs:
           cp "$RUNNER_TEMP/contract/api-route-permissions.json" "$RUNNER_TEMP/contract/authz-matrix.json" web/src/config/
           (cd web && npm run generate:api-types)
 
+      # tsc needs more than the default heap: Node sizes it from the machine's
+      # memory, and on a self-hosted runner that default (about 2 GB) runs out.
       - name: Run type check
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
         run: npm run type-check
 
       - name: Run ESLint
@@ -380,7 +385,7 @@ jobs:
     name: Web i18n tests
     needs: [changes, contract]
     if: needs.changes.outputs.i18n == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
     timeout-minutes: 20
     steps:
       - name: Checkout code
@@ -392,7 +397,8 @@ jobs:
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: web/.nvmrc
-          cache: 'npm'
+          # The self-hosted runner keeps its own npm cache (ci-cd.md).
+          cache: ${{ runner.environment == 'github-hosted' && 'npm' || '' }}
           cache-dependency-path: web/package-lock.json
 
       - name: Install dependencies
@@ -537,7 +543,7 @@ jobs:
     name: Web CI OK
     if: always()
     needs: [changes, contract, quality, tests, i18n-tests, build]
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
     steps:
       - name: All web jobs passed or were skipped; the checks ran where they must
         working-directory: .

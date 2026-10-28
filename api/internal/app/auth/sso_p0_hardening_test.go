@@ -363,7 +363,7 @@ func TestFix4_OAuth_RegistrationDisabled_BindsExisting(t *testing.T) {
 	svc.SetClaimGuard(claimMembers{ms: &tenantdom.UserMembershipsByStatus{}}, claimDomains{})
 
 	got, err := svc.findOrCreateUser(context.Background(),
-		&OAuthUserInfo{Email: "invited@corp.com"}, OAuthProviderGoogle)
+		&OAuthUserInfo{Email: "invited@corp.com", HD: "corp.com"}, OAuthProviderGoogle)
 	if err != nil {
 		t.Fatalf("binding a pre-invited account must work with registration disabled, got %v", err)
 	}

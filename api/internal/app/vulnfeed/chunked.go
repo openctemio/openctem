@@ -332,6 +332,7 @@ func (im *Importer) runV2(ctx context.Context, cur state) (Result, error) {
 	if out.UpToDate {
 		im.syncAliases(ctx, f, out.Sequence, cur.KeySetVersion)
 		im.syncVulnIDs(ctx, f, out.Sequence, cur.KeySetVersion)
+		im.syncIntel(ctx, f, out.Sequence, cur.KeySetVersion)
 		return res, nil
 	}
 	res.Ran, res.Kind, res.CVEs, res.Ranges = true, out.Kind, a.cves, a.ranges
@@ -343,6 +344,7 @@ func (im *Importer) runV2(ctx context.Context, cur state) (Result, error) {
 	}
 	im.syncAliases(ctx, f, out.Sequence, a.keySetVersion)
 	im.syncVulnIDs(ctx, f, out.Sequence, a.keySetVersion)
+	im.syncIntel(ctx, f, out.Sequence, a.keySetVersion)
 	return res, nil
 }
 

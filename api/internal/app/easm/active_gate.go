@@ -98,6 +98,9 @@ type ActiveGate struct {
 	unclassified UnclassifiedPolicy
 	// resolving reads the names behind addresses (shared hosting).
 	resolving GuardrailNames
+	// managed is MANAGED_SERVICE: only then does a job on platform sensors
+	// need the ownership of what it probes confirmed (placement.go).
+	managed bool
 	// certs reads the endpoints that served a certificate; a certificate
 	// is judged by them (cert_standing.go). Nil: none is known.
 	certs ActiveGateCertificates
@@ -106,6 +109,26 @@ type ActiveGate struct {
 // SetWildcardDNS makes names that resolve only through a wildcard record
 // (and their services and URLs) passive only.
 func (g *ActiveGate) SetWildcardDNS(r assetfreshness.WildcardDNSReader) { g.wildcard = r }
+
+// SetManagedService sets MANAGED_SERVICE (read at start-up).
+func (g *ActiveGate) SetManagedService(managed bool) { g.managed = managed }
+
+// confirmationRequired reports whether the job being checked needs the
+// ownership of its discovered assets confirmed, and keeps a wildcard-only
+// name passive: only on the hosted service (MANAGED_SERVICE), and only for a
+// job on platform sensors (or one whose sensor is not known yet). On the
+// tenant's own sensors, and on a self-hosted install whatever the sensor,
+// discovered and unclassified assets are fully authorized and a wildcard-only
+// name an active scope entry covers is scanned. A rejection, an exclusion,
+// the deny list and the guardrails apply everywhere.
+func (g *ActiveGate) confirmationRequired(ctx context.Context) bool {
+	return g.managed && attribution.PlacementOf(ctx) != attribution.PlacementTenant
+}
+
+// OwnershipConfirmationManaged reports whether ownership confirmation can
+// apply at all on this deployment (MANAGED_SERVICE): callers skip working out
+// where a job runs when it cannot.
+func (g *ActiveGate) OwnershipConfirmationManaged() bool { return g.managed }
 
 // wildcardOnly reports which of the given assets are marked; a read error
 // refuses (the caller dispatches nothing).
@@ -886,8 +909,21 @@ func (g *ActiveGate) decide(ctx context.Context, tenantID shared.ID, ids []strin
 		// resolves through a wildcard of its own zone (RFC 4592): a mark on
 		// one is stale and ignored.
 		if wildcard[id] && !humanConfirmed && !asset.IsRegistrableDomain(a.Name()) {
-			out[id] = attribution.StateWildcardOnly
-			continue
+			// Where confirmation does not apply, an active scope entry that
+			// covers the name is the authority and lets probes reach it.
+			covered := false
+			if !g.confirmationRequired(ctx) {
+				if auth == nil {
+					if auth, err = scopeauth.Load(ctx, tenantID, g.scope, g.roots); err != nil {
+						return nil, err
+					}
+				}
+				_, covered = auth.Covers(a.Name())
+			}
+			if !covered {
+				out[id] = attribution.StateWildcardOnly
+				continue
+			}
 		}
 		if recorded && rec.State != attribution.StateConfirmed {
 			if !automaticPending(rec) {
@@ -1008,6 +1044,7 @@ func (g *ActiveGate) hostRefusals(ctx context.Context, tenantID shared.ID, ids [
 	if err != nil {
 		return nil, err
 	}
+	var auth *scopeauth.Authority
 	for id, h := range hostName {
 		hid, ok := idOfHost[h]
 		if !ok {
@@ -1016,8 +1053,19 @@ func (g *ActiveGate) hostRefusals(ctx context.Context, tenantID shared.ID, ids [
 		rec, ok := recs[hid]
 		hostConfirmedByPerson := ok && rec.State == attribution.StateConfirmed && rec.HumanDecided
 		if wildcardHost[hid] && !hostConfirmedByPerson && !asset.IsRegistrableDomain(h) {
-			out[id] = attribution.StateWildcardOnly
-			continue
+			covered := false
+			if !g.confirmationRequired(ctx) {
+				if auth == nil {
+					if auth, err = scopeauth.Load(ctx, tenantID, g.scope, g.roots); err != nil {
+						return nil, err
+					}
+				}
+				_, covered = auth.Covers(assets[id].Name())
+			}
+			if !covered {
+				out[id] = attribution.StateWildcardOnly
+				continue
+			}
 		}
 		if !ok || rec.State == attribution.StateConfirmed || automaticPending(rec) {
 			continue
