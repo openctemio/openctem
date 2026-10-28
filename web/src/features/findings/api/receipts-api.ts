@@ -17,11 +17,34 @@ export type ReceiptCounts = S['internal_infra_http_handler.ReceiptCounts']
 export type FindingReceipt = S['internal_infra_http_handler.FindingReceiptResponse']
 export type FindingReceiptsResponse = S['internal_infra_http_handler.FindingReceiptsResponse']
 
+/** Sums over every receipt the filter keeps (not only the page). */
+export interface ReceiptTotals {
+  receipts: number
+  received: number
+  created: number
+  updated: number
+  reactivated: number
+  closed: number
+  skipped: number
+  failed: number
+  suppressed: number
+}
+
 export interface ReceiptListResponse {
   data?: ReceiptResponse[]
   total?: number
   page?: number
   per_page?: number
+  total_pages?: number
+  totals?: ReceiptTotals
+}
+
+/** The source groups the dashboards count by (a receipt kind's group). */
+export const RECEIPT_ORIGINS = ['sensor', 'import', 'connector', 'ci'] as const
+export type ReceiptOrigin = (typeof RECEIPT_ORIGINS)[number]
+
+export function isReceiptOrigin(v: unknown): v is ReceiptOrigin {
+  return typeof v === 'string' && (RECEIPT_ORIGINS as readonly string[]).includes(v)
 }
 
 export type ReceiptSourceKind =
@@ -30,6 +53,13 @@ export type ReceiptSourceKind =
 export interface ReceiptListFilters {
   sourceKind?: ReceiptSourceKind
   sourceRef?: string
+  /** Source group (the dashboards' grouping). */
+  origin?: ReceiptOrigin
+  /** Tool name; "unknown" keeps the receipts that named none. */
+  tool?: string
+  /** RFC 3339: receipts with activity at or after it. */
+  since?: string
+  page?: number
   perPage?: number
 }
 
@@ -37,6 +67,10 @@ export function receiptListUrl(f: ReceiptListFilters = {}): string {
   const q = new URLSearchParams()
   if (f.sourceKind) q.set('source_kind', f.sourceKind)
   if (f.sourceRef) q.set('source_ref', f.sourceRef)
+  if (f.origin) q.set('origin', f.origin)
+  if (f.tool) q.set('tool', f.tool)
+  if (f.since) q.set('since', f.since)
+  if (f.page && f.page > 1) q.set('page', String(f.page))
   if (f.perPage) q.set('per_page', String(f.perPage))
   const qs = q.toString()
   return `/api/v1/findings/imports${qs ? `?${qs}` : ''}`

@@ -5,6 +5,25 @@
     "widgets": [
       {
         "widget_type": "metric",
+        "w": 12,
+        "h": 4,
+        "config": {
+          "v": 2,
+          "id": "w_ct20",
+          "data": {
+            "kind": "metric",
+            "metric": "exposure.flow",
+            "filter": {},
+            "time": {}
+          },
+          "viz": {
+            "type": "flow",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
         "w": 3,
         "h": 1,
         "config": {
@@ -95,25 +114,6 @@
           "target": {
             "op": "<=",
             "value": 168
-          }
-        }
-      },
-      {
-        "widget_type": "metric",
-        "w": 12,
-        "h": 2,
-        "config": {
-          "v": 2,
-          "id": "w_ct5",
-          "data": {
-            "kind": "metric",
-            "metric": "ctem.loop",
-            "filter": {},
-            "time": {}
-          },
-          "viz": {
-            "type": "loop",
-            "options": {}
           }
         }
       },
@@ -240,6 +240,25 @@
             "options": {}
           }
         }
+      },
+      {
+        "widget_type": "metric",
+        "w": 12,
+        "h": 4,
+        "config": {
+          "v": 2,
+          "id": "w_ct21",
+          "data": {
+            "kind": "metric",
+            "metric": "ingest.intake",
+            "filter": {},
+            "time": {}
+          },
+          "viz": {
+            "type": "intake",
+            "options": {}
+          }
+        }
       }
     ]
   },
@@ -247,6 +266,25 @@
     "key": "overview",
     "columns": 4,
     "widgets": [
+      {
+        "widget_type": "metric",
+        "w": 12,
+        "h": 4,
+        "config": {
+          "v": 2,
+          "id": "w_ov20",
+          "data": {
+            "kind": "metric",
+            "metric": "exposure.flow",
+            "filter": {},
+            "time": {}
+          },
+          "viz": {
+            "type": "flow",
+            "options": {}
+          }
+        }
+      },
       {
         "widget_type": "metric",
         "w": 3,
@@ -382,25 +420,6 @@
           },
           "viz": {
             "type": "area",
-            "options": {}
-          }
-        }
-      },
-      {
-        "widget_type": "metric",
-        "w": 12,
-        "h": 2,
-        "config": {
-          "v": 2,
-          "id": "w_ov10",
-          "data": {
-            "kind": "metric",
-            "metric": "ctem.loop",
-            "filter": {},
-            "time": {}
-          },
-          "viz": {
-            "type": "loop",
             "options": {}
           }
         }

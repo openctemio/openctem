@@ -71,6 +71,7 @@ func TestSSOEnforcementFeatureDeniedRefusesEnable(t *testing.T) {
 	svc, repo := newTestTenantService()
 	svc.SetSSOPathChecker(&mockSSOPathChecker{usable: true})
 	svc.SetSSODomainChecker(fixedSSODomain{ok: true})
+	svc.SetSSOEnforcementStore(readySSOStore())
 	tn := seedTenant(repo, "Team", "free-plan")
 	svc.SetSSOFeatureGate(entGate{}, nil)
 	_, err := svc.UpdateSecuritySettings(context.Background(), tn.ID().String(),

@@ -160,6 +160,8 @@ type AuthService struct {
 	mfaIssuer        string
 	recoveryHasher   *password.Hasher
 	securityNotifier SecurityNotifier
+	// breakGlass is told when an owner uses break-glass (nil: audit only).
+	breakGlass BreakGlassNotifier
 	// revocations records revoked session ids so their access tokens stop
 	// working immediately (nil = they expire naturally).
 	revocations SessionRevocationStore
@@ -1008,9 +1010,9 @@ type ExchangeTokenResult struct {
 // pass (break-glass); any other non-owner session — password, social OAuth, or
 // another organization's IdP — is refused when the tenant enforces SSO.
 func (s *AuthService) enforceSSOPolicy(ctx context.Context, sess *sessiondom.Session, tenantID, role string) error {
-	// Cheap exits: this tenant's own SSO sessions and owners never trip
-	// enforcement, so skip the tenant lookup entirely for them.
-	if sess.FederatedFor(tenantID) || role == string(tenantdom.RoleOwner) {
+	// Cheap exit: this tenant's own SSO sessions never trip enforcement, so
+	// skip the tenant lookup entirely for them.
+	if sess.FederatedFor(tenantID) {
 		return nil
 	}
 	tid, err := shared.IDFromString(tenantID)
@@ -1026,8 +1028,14 @@ func (s *AuthService) enforceSSOPolicy(ctx context.Context, sess *sessiondom.Ses
 		// Fail closed: an unreadable security section never admits a session.
 		return fmt.Errorf("failed to read SSO enforcement policy: %w", err)
 	}
-	if ssoEnforcementDenied(s.authMethodAt(ctx, sess, sess.UserID(), tenantID), role, sec.SSOEnforced) &&
-		!s.ssoExceptionAllows(ctx, sess, sec) {
+	method := s.authMethodAt(ctx, sess, sess.UserID(), tenantID)
+	if !sec.SSOEnforced || method.IsFederated() {
+		return nil
+	}
+	if role == string(tenantdom.RoleOwner) {
+		return s.admitBreakGlassOwner(ctx, sess, t)
+	}
+	if ssoEnforcementDenied(method, role, sec.SSOEnforced) && !s.ssoExceptionAllows(ctx, sess, sec) {
 		// Log the parsed tenant id (a CodeQL-recognized barrier) + the parsed
 		// user id; omit the raw role string to keep no user-derived value in the
 		// log entry (CWE-117). The blocked event is fully identified by tenant+user.
@@ -1036,6 +1044,62 @@ func (s *AuthService) enforceSSOPolicy(ctx context.Context, sess *sessiondom.Ses
 		return ErrSSORequired
 	}
 	return nil
+}
+
+// ErrSSOBreakGlassNeedsMFA: the owner's password is not enough to enter an
+// organization that requires SSO; the owner's second factor must have been
+// verified at sign-in too.
+var ErrSSOBreakGlassNeedsMFA = fmt.Errorf("%w: owner break-glass needs the owner's second factor", ErrSSORequired)
+
+// BreakGlassNotifier tells an organization's administrators about an owner
+// break-glass sign-in (TenantService.NotifyAdmins).
+type BreakGlassNotifier interface {
+	NotifyAdmins(ctx context.Context, tenantID shared.ID, title, body, severity string)
+}
+
+// SetBreakGlassNotifier wires the notice sent when an owner uses break-glass.
+func (s *AuthService) SetBreakGlassNotifier(n BreakGlassNotifier) { s.breakGlass = n }
+
+// admitBreakGlassOwner admits an owner's non-SSO session to an organization
+// that requires SSO, only when the session proved the owner's second factor
+// (password AND factor), and records it: an audit entry and a notice to the
+// organization's administrators. An owner without a factor is refused: a
+// phished password alone must not open an organization whose point is "IdP
+// only". Enabling Require SSO needs an owner with a factor, so a correctly
+// configured organization always has a way in.
+func (s *AuthService) admitBreakGlassOwner(ctx context.Context, sess *sessiondom.Session, t *tenantdom.Tenant) error {
+	proven, err := s.secondFactorProven(ctx, sess, sess.UserID())
+	if err != nil {
+		return fmt.Errorf("failed to verify owner second factor: %w", err)
+	}
+	if !proven {
+		s.logger.Warn("refused owner break-glass without a second factor",
+			"tenant_id", t.ID().String(), "user_id", sess.UserID().String())
+		return ErrSSOBreakGlassNeedsMFA
+	}
+	s.recordBreakGlass(ctx, sess, t)
+	return nil
+}
+
+func (s *AuthService) recordBreakGlass(ctx context.Context, sess *sessiondom.Session, t *tenantdom.Tenant) {
+	ci := clientInfoFrom(ctx)
+	if s.auditService != nil {
+		ev := auditapp.NewSuccessEvent(auditdom.ActionSSOBreakGlassUsed, auditdom.ResourceTypeUser, sess.UserID().String()).
+			WithMessage("Owner signed in with password and second factor to an organization that requires SSO").
+			WithSeverity(auditdom.SeverityHigh)
+		actx := auditapp.AuditContext{
+			TenantID: t.ID().String(), ActorID: sess.UserID().String(),
+			ActorIP: ci.IP, UserAgent: ci.UserAgent, SessionID: sess.ID().String(),
+		}
+		if err := s.auditService.LogEvent(ctx, actx, ev); err != nil {
+			s.logger.Warn("audit event was not recorded", "action", "sso.break_glass_used", "error", logger.SanitizeError(err))
+		}
+	}
+	if s.breakGlass != nil {
+		s.breakGlass.NotifyAdmins(ctx, t.ID(), "Owner break-glass sign-in",
+			"An owner signed in with a password and second factor although this organization requires SSO. If this was not expected, review the audit log and the owners' credentials.",
+			"high")
+	}
 }
 
 // InvitedAccount is a user account prepared for a platform administrator who
@@ -1807,6 +1871,19 @@ func (s *AuthService) ResetPassword(ctx context.Context, input ResetPasswordInpu
 	// Security: Clear reset token FIRST to prevent race condition reuse (CWE-640).
 	// If two concurrent requests use the same token, the first clears it and
 	// the second will fail at GetByPasswordResetToken (token no longer exists).
+	// The clear is one conditional UPDATE on the stored hash: of two
+	// concurrent submits of the same link exactly one proceeds.
+	storedHash := ""
+	if t := u.PasswordResetToken(); t != nil {
+		storedHash = *t
+	}
+	consumed, err := s.userRepo.ConsumePasswordResetToken(ctx, u.ID(), storedHash)
+	if err != nil {
+		return fmt.Errorf("failed to clear reset token: %w", err)
+	}
+	if !consumed {
+		return ErrInvalidResetToken
+	}
 	u.ClearPasswordResetToken()
 	// The link reached this mailbox, which proves the address: an account
 	// still waiting for its verification email is verified by it.

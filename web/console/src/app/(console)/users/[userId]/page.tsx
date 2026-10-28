@@ -59,7 +59,11 @@ export default function AdminUserPage({ params }: { params: Promise<{ userId: st
             </PageHeader>
 
             {adminCan(admin.role, 'ops_admin') && (
-              <PlatformUserActions user={user} onDone={refresh} />
+              <PlatformUserActions
+                user={user}
+                onDone={refresh}
+                isSuperAdmin={adminCan(admin.role, 'super_admin')}
+              />
             )}
 
             <Card>
