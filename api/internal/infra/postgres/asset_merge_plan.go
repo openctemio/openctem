@@ -130,6 +130,13 @@ var assetMergeRefs = []mergeRef{
 		keys: []mergeKey{{cols: []string{"business_unit_id"}}}},
 	{table: "asset_group_members", column: "asset_id", idCol: "ctid",
 		keys: []mergeKey{{cols: []string{"asset_group_id"}}}},
+	// A merged asset's exclusion from a group stays an exclusion for the kept
+	// asset; the kept asset's own exclusion of the group wins.
+	{table: "asset_group_exclusions", column: "asset_id", idCol: "ctid",
+		keys: []mergeKey{{cols: []string{"asset_group_id"}}}},
+	// Membership history is an append-only record: the rows follow the kept
+	// asset, no key can conflict.
+	{table: "asset_group_member_history", column: "asset_id", tenantCol: "tenant_id"},
 	{table: "asset_owners", column: "asset_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"user_id"}}, {cols: []string{"group_id"}}}},
 	{table: "user_accessible_assets", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
