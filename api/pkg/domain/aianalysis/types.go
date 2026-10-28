@@ -1,4 +1,4 @@
-// Package aianalysis is the model of AI analysts: service accounts that take
+// Package aianalysis is the model of AI agents: service accounts that take
 // part in triage like a person (same commands, permissions, approvals and
 // audit), each with accountable owners, plus the ledger of their runs.
 // Design: docs/architecture/ai-analysis.md.
@@ -38,11 +38,11 @@ type Executor string
 const (
 	// ExecutorBuiltin: a single model call in the API process.
 	ExecutorBuiltin Executor = "builtin"
-	// ExecutorPlatformWorker: an analyst sensor the platform operator runs.
+	// ExecutorPlatformWorker: an AI agent sensor the platform operator runs.
 	ExecutorPlatformWorker Executor = "platform_worker"
-	// ExecutorTenantWorker: an analyst sensor the organization runs.
+	// ExecutorTenantWorker: an AI agent sensor the organization runs.
 	ExecutorTenantWorker Executor = "tenant_worker"
-	// ExecutorExternal: an outside program acting with the analyst's
+	// ExecutorExternal: an outside program acting with the AI agent's
 	// service-account key.
 	ExecutorExternal Executor = "external"
 )
@@ -118,7 +118,7 @@ const (
 )
 
 // Kind is the type of one item of model output (an intended action the
-// executor turns into a command of the analyst).
+// executor turns into a command of the AI agent).
 type Kind string
 
 const (

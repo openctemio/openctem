@@ -11,31 +11,58 @@ import (
 )
 
 // AttestationPeriod is how long an owner's attestation lasts: past it the
-// analyst pauses until an owner attests again.
+// AI agent pauses until an owner attests again.
 const AttestationPeriod = 90 * 24 * time.Hour
 
 // Errors.
 var (
-	ErrAnalystNotFound = fmt.Errorf("%w: AI analyst not found", shared.ErrNotFound)
-	ErrRunNotFound     = fmt.Errorf("%w: AI run not found", shared.ErrNotFound)
+	ErrAgentNotFound = fmt.Errorf("%w: AI agent not found", shared.ErrNotFound)
+	ErrRunNotFound   = fmt.Errorf("%w: AI run not found", shared.ErrNotFound)
 	// ErrRunInFlight: a run of this use case for this subject is live.
 	ErrRunInFlight = fmt.Errorf("%w: an AI run for this subject is already in progress", shared.ErrConflict)
-	// ErrOwnerRequired: an analyst keeps at least one accountable owner.
-	ErrOwnerRequired = fmt.Errorf("%w: an AI analyst needs at least one accountable owner", shared.ErrValidation)
-	// ErrNotAllowed: the analyst's effective permissions do not allow the
+	// ErrOwnerRequired: an AI agent keeps at least one accountable owner.
+	ErrOwnerRequired = fmt.Errorf("%w: an AI agent needs at least one accountable owner", shared.ErrValidation)
+	// ErrNotAllowed: the AI agent's effective permissions do not allow the
 	// action, or the subject is outside its scope.
-	ErrNotAllowed = fmt.Errorf("%w: the AI analyst may not do this", shared.ErrForbidden)
+	ErrNotAllowed = fmt.Errorf("%w: the AI agent may not do this", shared.ErrForbidden)
 )
 
-// PausedError says why an analyst does not run now.
+// PausedError says why an AI agent does not run now.
 type PausedError struct{ Reason PauseReason }
 
-func (e *PausedError) Error() string { return "the AI analyst is paused: " + string(e.Reason) }
+func (e *PausedError) Error() string { return "the AI agent is paused: " + string(e.Reason) }
 
-// Is matches shared.ErrConflict (the request is fine, the analyst's state is not).
+// Is matches shared.ErrConflict (the request is fine, the AI agent's state is not).
 func (e *PausedError) Is(target error) bool { return target == shared.ErrConflict }
 
-// Preset names the managed role an analyst holds.
+// Role is what an AI agent is for. It names the work, not the permissions
+// (the preset and the owners' ceiling set those).
+type Role string
+
+const (
+	RoleAnalyst    Role = "analyst"
+	RoleRemediator Role = "remediator"
+	RoleReporter   Role = "reporter"
+	RoleHunter     Role = "hunter"
+	RoleRouter     Role = "router"
+)
+
+// DefaultRole is the role of an AI agent created without one.
+const DefaultRole = RoleAnalyst
+
+// ParseRole validates a role; an empty value is the default role.
+func ParseRole(s string) (Role, error) {
+	if s == "" {
+		return DefaultRole, nil
+	}
+	switch Role(s) {
+	case RoleAnalyst, RoleRemediator, RoleReporter, RoleHunter, RoleRouter:
+		return Role(s), nil
+	}
+	return "", fmt.Errorf("%w: unknown AI agent role", shared.ErrValidation)
+}
+
+// Preset names the managed permission set an AI agent holds.
 type Preset string
 
 const (
@@ -53,12 +80,12 @@ func ParsePreset(s string) (Preset, error) {
 	case PresetSuggest, PresetTriage:
 		return Preset(s), nil
 	}
-	return "", fmt.Errorf("%w: unknown AI analyst preset", shared.ErrValidation)
+	return "", fmt.Errorf("%w: unknown AI agent preset", shared.ErrValidation)
 }
 
 // presetPermissions are what each preset may do before the owners' ceiling
 // and the deny list. They live in code, not in an editable role: nobody can
-// widen an analyst by editing a role, and an analyst holds no database role
+// widen an AI agent by editing a role, and an AI agent holds no database role
 // at all (a trigger refuses one).
 var presetPermissions = map[Preset][]string{
 	PresetSuggest: {
@@ -80,7 +107,7 @@ func (p Preset) Permissions() []string {
 	return append([]string(nil), presetPermissions[p]...)
 }
 
-// Status is whether an analyst runs.
+// Status is whether an AI agent runs.
 type Status string
 
 const (
@@ -89,7 +116,7 @@ const (
 	StatusDisabled Status = "disabled"
 )
 
-// PauseReason says why an analyst is paused or disabled.
+// PauseReason says why an AI agent is paused or disabled.
 type PauseReason string
 
 const (
@@ -115,12 +142,13 @@ type OwnerRef struct {
 	Name string    `json:"name"`
 }
 
-// Analyst is the AI profile of a service account.
-type Analyst struct {
+// AI agent is the AI profile of a service account.
+type Agent struct {
 	ID               shared.ID // the service account's user id
 	TenantID         shared.ID
 	Name             string
 	Description      string
+	Role             Role
 	Preset           Preset
 	Status           Status
 	PauseReason      PauseReason
@@ -138,15 +166,15 @@ type Analyst struct {
 	UpdatedAt        time.Time
 }
 
-// Defaults for a new analyst.
+// Defaults for a new AI agent.
 const (
 	DefaultRunsPerHour    = 60
 	DefaultActionsPerHour = 200
 )
 
-// HealthReason is why an active analyst must pause now ("" when it may run).
+// HealthReason is why an active AI agent must pause now ("" when it may run).
 // activeOwners is the number of accountable owners that are active now.
-func (a *Analyst) HealthReason(now time.Time, activeOwners int) PauseReason {
+func (a *Agent) HealthReason(now time.Time, activeOwners int) PauseReason {
 	switch {
 	case activeOwners == 0:
 		return PauseNoActiveOwner
@@ -165,7 +193,7 @@ func AccountableText(owners []OwnerRef) string {
 	return strings.Join(names, ", ")
 }
 
-// The deny list: never effective for an analyst, whatever its role says.
+// The deny list: never effective for an AI agent, whatever its role says.
 // Approving, resolving, deleting, exporting, revealing secrets, bulk changes
 // and administering the organization stay with people.
 var deniedExact = map[string]bool{
@@ -185,7 +213,7 @@ var deniedPrefixes = []string{
 
 var deniedSuffixes = []string{":approve", ":delete", ":export", ":reveal"}
 
-// Denied reports a permission an analyst never holds.
+// Denied reports a permission an AI agent never holds.
 func Denied(p string) bool {
 	if deniedExact[p] {
 		return true
@@ -206,7 +234,7 @@ func Denied(p string) bool {
 	return false
 }
 
-// Effective is what an analyst may do: its role's permissions, kept only
+// Effective is what an AI agent may do: its role's permissions, kept only
 // where at least one accountable person holds them too (ceilingAll: one of
 // them is an owner or administrator and holds everything), minus the deny
 // list. Sorted.

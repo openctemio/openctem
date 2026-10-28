@@ -239,13 +239,13 @@ func (s *VulnerabilityService) evaluateFindingRequest(ctx context.Context, f *vu
 	if err != nil {
 		return policyEvaluation{}, err
 	}
-	// An AI analyst never lowers risk alone, whatever the organization's
+	// An AI agent never lowers risk alone, whatever the organization's
 	// false-positive and acceptance levels (docs/architecture/ai-analysis.md):
 	// its requests are evaluated at the strictest level, and it can never
 	// approve them itself.
-	if analyst, err := s.isAIAnalyst(ctx, f.TenantID(), requester); err != nil {
+	if agent, err := s.isAIAgent(ctx, f.TenantID(), requester); err != nil {
 		return policyEvaluation{}, err
-	} else if analyst {
+	} else if agent {
 		op.fpLevel, op.acceptLevel = approvalpolicy.FPLevelAll, approvalpolicy.FPLevelAll
 		requesterCanApprove = false
 	}
@@ -565,20 +565,20 @@ func (s *VulnerabilityService) NotifyMaterialChange(ctx context.Context, d vulne
 	}
 }
 
-// AIAnalystChecker answers whether a user is one of the organization's AI
-// analysts (postgres.AIAnalysisRepository).
-type AIAnalystChecker interface {
-	IsAnalyst(ctx context.Context, tenantID, userID shared.ID) (bool, error)
+// AIAgentChecker answers whether a user is one of the organization's AI
+// AI agents (postgres.AIAnalysisRepository).
+type AIAgentChecker interface {
+	IsAgent(ctx context.Context, tenantID, userID shared.ID) (bool, error)
 }
 
-// SetAIAnalystChecker wires the AI analyst check of the approval policy.
-func (s *VulnerabilityService) SetAIAnalystChecker(c AIAnalystChecker) { s.aiAnalysts = c }
+// SetAIAgentChecker wires the AI agent check of the approval policy.
+func (s *VulnerabilityService) SetAIAgentChecker(c AIAgentChecker) { s.aiAgents = c }
 
-// isAIAnalyst reports whether requester is an AI analyst of the tenant. A
+// isAIAgent reports whether requester is an AI agent of the tenant. A
 // lookup failure is an error (fail closed: the request is not decided).
-func (s *VulnerabilityService) isAIAnalyst(ctx context.Context, tenantID, requester shared.ID) (bool, error) {
-	if s.aiAnalysts == nil || requester.IsZero() {
+func (s *VulnerabilityService) isAIAgent(ctx context.Context, tenantID, requester shared.ID) (bool, error) {
+	if s.aiAgents == nil || requester.IsZero() {
 		return false, nil
 	}
-	return s.aiAnalysts.IsAnalyst(ctx, tenantID, requester)
+	return s.aiAgents.IsAgent(ctx, tenantID, requester)
 }

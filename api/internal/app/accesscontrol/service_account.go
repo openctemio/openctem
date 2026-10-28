@@ -97,8 +97,8 @@ func (s *ServiceAccountService) Delete(ctx context.Context, id string, actx audi
 	if err != nil {
 		return err
 	}
-	if a.AIAnalyst {
-		return serviceaccount.ErrAIAnalyst
+	if a.AIAgent {
+		return serviceaccount.ErrAIAgent
 	}
 	if err := s.repo.Delete(ctx, tid, aid); err != nil {
 		return err

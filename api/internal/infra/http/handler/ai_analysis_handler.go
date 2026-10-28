@@ -16,7 +16,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
-// AIAnalysisHandler serves AI analysts (service accounts that triage like a
+// AIAnalysisHandler serves AI agents (service accounts that triage like a
 // person, with accountable owners) and their runs
 // (docs/architecture/ai-analysis.md).
 type AIAnalysisHandler struct {
@@ -30,8 +30,8 @@ func NewAIAnalysisHandler(svc *aianalysis.Service, log *logger.Logger) *AIAnalys
 }
 
 const (
-	aiErrPausedCode apierror.Code = "AI_ANALYST_PAUSED"
-	aiErrBudgetCode apierror.Code = "AI_ANALYST_LIMIT"
+	aiErrPausedCode apierror.Code = "AI_AGENT_PAUSED"
+	aiErrBudgetCode apierror.Code = "AI_AGENT_LIMIT"
 )
 
 // AIOwnerResponse is one accountable owner.
@@ -41,11 +41,12 @@ type AIOwnerResponse struct {
 	Name string `json:"name"`
 }
 
-// AIAnalystResponse is one AI analyst.
-type AIAnalystResponse struct {
+// AIAgentResponse is one AI agent.
+type AIAgentResponse struct {
 	ID               string            `json:"id"`
 	Name             string            `json:"name"`
 	Description      string            `json:"description"`
+	Role             string            `json:"role"`
 	Preset           string            `json:"preset"`
 	Status           string            `json:"status"`
 	PauseReason      string            `json:"pause_reason,omitempty"`
@@ -60,15 +61,15 @@ type AIAnalystResponse struct {
 	CreatedAt        time.Time         `json:"created_at"`
 }
 
-// AIAnalystListResponse lists AI analysts.
-type AIAnalystListResponse struct {
-	Data []AIAnalystResponse `json:"data"`
+// AIAgentListResponse lists AI agents.
+type AIAgentListResponse struct {
+	Data []AIAgentResponse `json:"data"`
 }
 
 // AIRunResponse is one run with its provenance.
 type AIRunResponse struct {
 	ID                   string            `json:"id"`
-	AnalystID            string            `json:"analyst_id,omitempty"`
+	AgentID              string            `json:"ai_agent_id,omitempty"`
 	UseCase              string            `json:"use_case"`
 	Kind                 string            `json:"kind"`
 	SubjectType          string            `json:"subject_type"`
@@ -103,13 +104,13 @@ type AIRunListResponse struct {
 	Data []AIRunResponse `json:"data"`
 }
 
-// SetAIAnalystOwnersRequest replaces the accountable owners.
-type SetAIAnalystOwnersRequest struct {
+// SetAIAgentOwnersRequest replaces the accountable owners.
+type SetAIAgentOwnersRequest struct {
 	Owners []aianalysis.OwnerInput `json:"owners" validate:"required,min=1,max=20,dive"`
 }
 
-// SetAIAnalystPresetRequest moves an analyst to another preset role.
-type SetAIAnalystPresetRequest struct {
+// SetAIAgentPresetRequest moves an AI agent to another preset.
+type SetAIAgentPresetRequest struct {
 	Preset string `json:"preset" validate:"required,oneof=suggest triage"`
 }
 
@@ -121,9 +122,9 @@ func toAIOwners(o []aidom.OwnerRef) []AIOwnerResponse {
 	return out
 }
 
-func toAIAnalyst(a *aidom.Analyst) AIAnalystResponse {
-	return AIAnalystResponse{
-		ID: a.ID.String(), Name: a.Name, Description: a.Description, Preset: string(a.Preset), Status: string(a.Status),
+func toAIAgent(a *aidom.Agent) AIAgentResponse {
+	return AIAgentResponse{
+		ID: a.ID.String(), Name: a.Name, Description: a.Description, Role: string(a.Role), Preset: string(a.Preset), Status: string(a.Status),
 		PauseReason: string(a.PauseReason), DataClassCeiling: string(a.DataClassCeiling), Executor: string(a.Executor),
 		RunsPerHour: a.RunsPerHour, ActionsPerHour: a.ActionsPerHour, TokensMonth: a.TokensMonth,
 		AttestedAt: a.AttestedAt, AttestDueAt: a.AttestDueAt, Owners: toAIOwners(a.Owners), CreatedAt: a.CreatedAt,
@@ -139,7 +140,7 @@ func idStr(id *shared.ID) string {
 
 func toAIRun(run *aidom.Run) AIRunResponse {
 	return AIRunResponse{
-		ID: run.ID.String(), AnalystID: idStr(run.AnalystID), UseCase: string(run.UseCase), Kind: run.Kind,
+		ID: run.ID.String(), AgentID: idStr(run.AgentID), UseCase: string(run.UseCase), Kind: run.Kind,
 		SubjectType: string(run.SubjectType), SubjectID: run.SubjectID.String(), Executor: string(run.Executor),
 		Status: string(run.Status), DataClass: string(run.DataClass), FieldsSent: nonNilStrings(run.FieldsSent),
 		FieldsWithheld: nonNilStrings(run.FieldsWithheld), BundleDigest: run.BundleDigest,
@@ -168,15 +169,15 @@ func (h *AIAnalysisHandler) fail(w http.ResponseWriter, err error) {
 	var paused *aidom.PausedError
 	switch {
 	case errors.As(err, &paused):
-		apierror.New(http.StatusConflict, aiErrPausedCode, "The AI analyst is paused: "+string(paused.Reason)+".").WriteJSON(w)
+		apierror.New(http.StatusConflict, aiErrPausedCode, "The AI agent is paused: "+string(paused.Reason)+".").WriteJSON(w)
 	case errors.Is(err, aianalysis.ErrBudget):
-		apierror.New(http.StatusTooManyRequests, aiErrBudgetCode, "The AI analyst reached its limit for now.").WriteJSON(w)
+		apierror.New(http.StatusTooManyRequests, aiErrBudgetCode, "The AI agent reached its limit for now.").WriteJSON(w)
 	case errors.Is(err, shared.ErrNotFound):
-		apierror.NotFound("AI analyst").WriteJSON(w)
+		apierror.NotFound("AI agent").WriteJSON(w)
 	case errors.Is(err, shared.ErrForbidden):
-		apierror.Forbidden("You may not do this to this AI analyst.").WriteJSON(w)
+		apierror.Forbidden("You may not do this to this AI agent.").WriteJSON(w)
 	case errors.Is(err, shared.ErrConflict):
-		apierror.Conflict("The AI analyst changed; reload and try again.").WriteJSON(w)
+		apierror.Conflict("The AI agent changed; reload and try again.").WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
 		apierror.BadRequest(easmValidationMessage(err)).WriteJSON(w)
 	default:
@@ -226,16 +227,16 @@ func decodeAIBody(w http.ResponseWriter, r *http.Request, v any) bool {
 	return true
 }
 
-// ListAnalysts handles GET /api/v1/ai/analysts.
+// ListAgents handles GET /api/v1/ai/agents.
 //
-// @Summary      List AI analysts
-// @Description  The organization's AI analysts: service accounts that triage like a person, with their preset role, status, accountable owners and attestation.
+// @Summary      List AI agents
+// @Description  The organization's AI agents: service accounts that triage like a person, with their preset, status, accountable owners and attestation.
 // @Tags         AI
 // @Produce      json
-// @Success      200  {object}  AIAnalystListResponse
+// @Success      200  {object}  AIAgentListResponse
 // @Security     BearerAuth
-// @Router       /ai/analysts [get]
-func (h *AIAnalysisHandler) ListAnalysts(w http.ResponseWriter, r *http.Request) {
+// @Router       /ai/agents [get]
+func (h *AIAnalysisHandler) ListAgents(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := aiTenantOf(w, r)
 	if !ok {
 		return
@@ -245,23 +246,23 @@ func (h *AIAnalysisHandler) ListAnalysts(w http.ResponseWriter, r *http.Request)
 		h.fail(w, err)
 		return
 	}
-	out := AIAnalystListResponse{Data: make([]AIAnalystResponse, 0, len(list))}
+	out := AIAgentListResponse{Data: make([]AIAgentResponse, 0, len(list))}
 	for _, a := range list {
-		out.Data = append(out.Data, toAIAnalyst(a))
+		out.Data = append(out.Data, toAIAgent(a))
 	}
 	writeAIJSON(w, http.StatusOK, out)
 }
 
-// GetAnalyst handles GET /api/v1/ai/analysts/{id}.
+// GetAgent handles GET /api/v1/ai/agents/{id}.
 //
-// @Summary      Get an AI analyst
+// @Summary      Get an AI agent
 // @Tags         AI
 // @Produce      json
-// @Param        id path string true "Analyst ID"
-// @Success      200  {object}  AIAnalystResponse
+// @Param        id path string true "AI agent ID"
+// @Success      200  {object}  AIAgentResponse
 // @Security     BearerAuth
-// @Router       /ai/analysts/{id} [get]
-func (h *AIAnalysisHandler) GetAnalyst(w http.ResponseWriter, r *http.Request) {
+// @Router       /ai/agents/{id} [get]
+func (h *AIAnalysisHandler) GetAgent(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := aiTenantOf(w, r)
 	if !ok {
 		return
@@ -275,22 +276,22 @@ func (h *AIAnalysisHandler) GetAnalyst(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, err)
 		return
 	}
-	writeAIJSON(w, http.StatusOK, toAIAnalyst(a))
+	writeAIJSON(w, http.StatusOK, toAIAgent(a))
 }
 
-// CreateAnalyst handles POST /api/v1/ai/analysts.
+// CreateAgent handles POST /api/v1/ai/agents.
 //
-// @Summary      Create an AI analyst
-// @Description  Creates a service account with the preset role (suggest or triage) and its accountable owners (people or teams, at least one). The preset's permissions must be held by an accountable person and grantable by the caller. Needs a recent sign-in.
+// @Summary      Create an AI agent
+// @Description  Creates a service account with the preset (suggest or triage) and its accountable owners (people or teams, at least one). The preset's permissions must be held by an accountable person and grantable by the caller. Needs a recent sign-in.
 // @Tags         AI
 // @Accept       json
 // @Produce      json
-// @Param        request body aianalysis.CreateInput true "Analyst"
-// @Success      201  {object}  AIAnalystResponse
+// @Param        request body aianalysis.CreateInput true "AI agent"
+// @Success      201  {object}  AIAgentResponse
 // @Failure      400  {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /ai/analysts [post]
-func (h *AIAnalysisHandler) CreateAnalyst(w http.ResponseWriter, r *http.Request) {
+// @Router       /ai/agents [post]
+func (h *AIAnalysisHandler) CreateAgent(w http.ResponseWriter, r *http.Request) {
 	var in aianalysis.CreateInput
 	if !decodeAIBody(w, r, &in) {
 		return
@@ -300,27 +301,27 @@ func (h *AIAnalysisHandler) CreateAnalyst(w http.ResponseWriter, r *http.Request
 		h.fail(w, err)
 		return
 	}
-	writeAIJSON(w, http.StatusCreated, toAIAnalyst(a))
+	writeAIJSON(w, http.StatusCreated, toAIAgent(a))
 }
 
-// SetOwners handles PUT /api/v1/ai/analysts/{id}/owners.
+// SetOwners handles PUT /api/v1/ai/agents/{id}/owners.
 //
-// @Summary      Replace an AI analyst's accountable owners
-// @Description  People or teams, at least one; the analyst's role must stay within what they hold. Needs a recent sign-in.
+// @Summary      Replace an AI agent's accountable owners
+// @Description  People or teams, at least one; the AI agent's role must stay within what they hold. Needs a recent sign-in.
 // @Tags         AI
 // @Accept       json
 // @Produce      json
-// @Param        id path string true "Analyst ID"
-// @Param        request body SetAIAnalystOwnersRequest true "Owners"
-// @Success      200  {object}  AIAnalystResponse
+// @Param        id path string true "AI agent ID"
+// @Param        request body SetAIAgentOwnersRequest true "Owners"
+// @Success      200  {object}  AIAgentResponse
 // @Security     BearerAuth
-// @Router       /ai/analysts/{id}/owners [put]
+// @Router       /ai/agents/{id}/owners [put]
 func (h *AIAnalysisHandler) SetOwners(w http.ResponseWriter, r *http.Request) {
 	id, ok := aiPathID(w, r, "id")
 	if !ok {
 		return
 	}
-	var in SetAIAnalystOwnersRequest
+	var in SetAIAgentOwnersRequest
 	if !decodeAIBody(w, r, &in) {
 		return
 	}
@@ -329,27 +330,27 @@ func (h *AIAnalysisHandler) SetOwners(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, err)
 		return
 	}
-	writeAIJSON(w, http.StatusOK, toAIAnalyst(a))
+	writeAIJSON(w, http.StatusOK, toAIAgent(a))
 }
 
-// SetPreset handles PUT /api/v1/ai/analysts/{id}/preset.
+// SetPreset handles PUT /api/v1/ai/agents/{id}/preset.
 //
-// @Summary      Move an AI analyst to another preset role
+// @Summary      Move an AI agent to another preset
 // @Description  suggest (comments and approval requests only) or triage (also status, severity raise, duplicates, assignment). Needs a recent sign-in.
 // @Tags         AI
 // @Accept       json
 // @Produce      json
-// @Param        id path string true "Analyst ID"
-// @Param        request body SetAIAnalystPresetRequest true "Preset"
-// @Success      200  {object}  AIAnalystResponse
+// @Param        id path string true "AI agent ID"
+// @Param        request body SetAIAgentPresetRequest true "Preset"
+// @Success      200  {object}  AIAgentResponse
 // @Security     BearerAuth
-// @Router       /ai/analysts/{id}/preset [put]
+// @Router       /ai/agents/{id}/preset [put]
 func (h *AIAnalysisHandler) SetPreset(w http.ResponseWriter, r *http.Request) {
 	id, ok := aiPathID(w, r, "id")
 	if !ok {
 		return
 	}
-	var in SetAIAnalystPresetRequest
+	var in SetAIAgentPresetRequest
 	if !decodeAIBody(w, r, &in) {
 		return
 	}
@@ -358,19 +359,19 @@ func (h *AIAnalysisHandler) SetPreset(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, err)
 		return
 	}
-	writeAIJSON(w, http.StatusOK, toAIAnalyst(a))
+	writeAIJSON(w, http.StatusOK, toAIAgent(a))
 }
 
-// Attest handles POST /api/v1/ai/analysts/{id}/attest.
+// Attest handles POST /api/v1/ai/agents/{id}/attest.
 //
-// @Summary      Attest an AI analyst
-// @Description  An accountable owner (or an administrator) confirms the analyst's role, scope and behavior for another 90 days.
+// @Summary      Attest an AI agent
+// @Description  An accountable owner (or an administrator) confirms the AI agent's role, scope and behavior for another 90 days.
 // @Tags         AI
 // @Produce      json
-// @Param        id path string true "Analyst ID"
-// @Success      200  {object}  AIAnalystResponse
+// @Param        id path string true "AI agent ID"
+// @Success      200  {object}  AIAgentResponse
 // @Security     BearerAuth
-// @Router       /ai/analysts/{id}/attest [post]
+// @Router       /ai/agents/{id}/attest [post]
 func (h *AIAnalysisHandler) Attest(w http.ResponseWriter, r *http.Request) {
 	id, ok := aiPathID(w, r, "id")
 	if !ok {
@@ -381,19 +382,19 @@ func (h *AIAnalysisHandler) Attest(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, err)
 		return
 	}
-	writeAIJSON(w, http.StatusOK, toAIAnalyst(a))
+	writeAIJSON(w, http.StatusOK, toAIAgent(a))
 }
 
-// Pause handles POST /api/v1/ai/analysts/{id}/pause.
+// Pause handles POST /api/v1/ai/agents/{id}/pause.
 //
-// @Summary      Pause an AI analyst
-// @Description  An accountable owner or a holder of service_accounts:manage stops the analyst until it is resumed.
+// @Summary      Pause an AI agent
+// @Description  An accountable owner or a holder of service_accounts:manage stops the AI agent until it is resumed.
 // @Tags         AI
 // @Produce      json
-// @Param        id path string true "Analyst ID"
-// @Success      200  {object}  AIAnalystResponse
+// @Param        id path string true "AI agent ID"
+// @Success      200  {object}  AIAgentResponse
 // @Security     BearerAuth
-// @Router       /ai/analysts/{id}/pause [post]
+// @Router       /ai/agents/{id}/pause [post]
 func (h *AIAnalysisHandler) Pause(w http.ResponseWriter, r *http.Request) {
 	id, ok := aiPathID(w, r, "id")
 	if !ok {
@@ -405,19 +406,19 @@ func (h *AIAnalysisHandler) Pause(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, err)
 		return
 	}
-	writeAIJSON(w, http.StatusOK, toAIAnalyst(a))
+	writeAIJSON(w, http.StatusOK, toAIAgent(a))
 }
 
-// Resume handles POST /api/v1/ai/analysts/{id}/resume.
+// Resume handles POST /api/v1/ai/agents/{id}/resume.
 //
-// @Summary      Resume an AI analyst
-// @Description  Runs a paused or disabled analyst again once it has an active owner and a fresh attestation. Needs a recent sign-in.
+// @Summary      Resume an AI agent
+// @Description  Runs a paused or disabled AI agent again once it has an active owner and a fresh attestation. Needs a recent sign-in.
 // @Tags         AI
 // @Produce      json
-// @Param        id path string true "Analyst ID"
-// @Success      200  {object}  AIAnalystResponse
+// @Param        id path string true "AI agent ID"
+// @Success      200  {object}  AIAgentResponse
 // @Security     BearerAuth
-// @Router       /ai/analysts/{id}/resume [post]
+// @Router       /ai/agents/{id}/resume [post]
 func (h *AIAnalysisHandler) Resume(w http.ResponseWriter, r *http.Request) {
 	id, ok := aiPathID(w, r, "id")
 	if !ok {
@@ -428,18 +429,18 @@ func (h *AIAnalysisHandler) Resume(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, err)
 		return
 	}
-	writeAIJSON(w, http.StatusOK, toAIAnalyst(a))
+	writeAIJSON(w, http.StatusOK, toAIAgent(a))
 }
 
-// Disable handles POST /api/v1/ai/analysts/{id}/disable.
+// Disable handles POST /api/v1/ai/agents/{id}/disable.
 //
-// @Summary      Disable an AI analyst (kill switch)
+// @Summary      Disable an AI agent (kill switch)
 // @Tags         AI
 // @Produce      json
-// @Param        id path string true "Analyst ID"
-// @Success      200  {object}  AIAnalystResponse
+// @Param        id path string true "AI agent ID"
+// @Success      200  {object}  AIAgentResponse
 // @Security     BearerAuth
-// @Router       /ai/analysts/{id}/disable [post]
+// @Router       /ai/agents/{id}/disable [post]
 func (h *AIAnalysisHandler) Disable(w http.ResponseWriter, r *http.Request) {
 	id, ok := aiPathID(w, r, "id")
 	if !ok {
@@ -450,19 +451,19 @@ func (h *AIAnalysisHandler) Disable(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, err)
 		return
 	}
-	writeAIJSON(w, http.StatusOK, toAIAnalyst(a))
+	writeAIJSON(w, http.StatusOK, toAIAgent(a))
 }
 
-// DeleteAnalyst handles DELETE /api/v1/ai/analysts/{id}.
+// DeleteAgent handles DELETE /api/v1/ai/agents/{id}.
 //
-// @Summary      Delete an AI analyst
-// @Description  Removes the analyst and its service account; its runs and changes stay in the history. Needs a recent sign-in.
+// @Summary      Delete an AI agent
+// @Description  Removes the AI agent and its service account; its runs and changes stay in the history. Needs a recent sign-in.
 // @Tags         AI
-// @Param        id path string true "Analyst ID"
+// @Param        id path string true "AI agent ID"
 // @Success      204
 // @Security     BearerAuth
-// @Router       /ai/analysts/{id} [delete]
-func (h *AIAnalysisHandler) DeleteAnalyst(w http.ResponseWriter, r *http.Request) {
+// @Router       /ai/agents/{id} [delete]
+func (h *AIAnalysisHandler) DeleteAgent(w http.ResponseWriter, r *http.Request) {
 	id, ok := aiPathID(w, r, "id")
 	if !ok {
 		return
@@ -477,7 +478,7 @@ func (h *AIAnalysisHandler) DeleteAnalyst(w http.ResponseWriter, r *http.Request
 // GetRun handles GET /api/v1/ai/runs/{id}.
 //
 // @Summary      Get an AI run
-// @Description  A run's provenance: analyst, accountable owners at that moment, model, prompt template and digest, fields sent and withheld, usage. Only for a caller who can see the run's subject.
+// @Description  A run's provenance: AI agent, accountable owners at that moment, model, prompt template and digest, fields sent and withheld, usage. Only for a caller who can see the run's subject.
 // @Tags         AI
 // @Produce      json
 // @Param        id path string true "Run ID"

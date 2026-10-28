@@ -662,11 +662,11 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			svc.ServiceKeyGate, repos.MemberLifecycle, 5*time.Minute, log.With("controller", "service-key-creator")))
 	}
 
-	// AI analysts without an active accountable owner or a fresh attestation
+	// AI agents without an active accountable owner or a fresh attestation
 	// pause (every run start checks the same, fail closed).
 	if svc.AIAnalysis != nil {
-		w.ControllerManager.Register(controller.NewAIAnalystSweepController(svc.AIAnalysis, time.Hour,
-			log.With("controller", "ai-analyst-sweep")))
+		w.ControllerManager.Register(controller.NewAIAgentSweepController(svc.AIAnalysis, time.Hour,
+			log.With("controller", "ai-agent-sweep")))
 	}
 
 	registerPurgeControllers(w.ControllerManager, cfg, repos, svc, log)

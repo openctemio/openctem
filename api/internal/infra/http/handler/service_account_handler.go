@@ -73,8 +73,8 @@ func (h *ServiceAccountHandler) writeError(w http.ResponseWriter, err error) {
 		apierror.Forbidden(err.Error()).WriteJSON(w)
 	case errors.Is(err, shared.ErrAlreadyExists):
 		apierror.Conflict("An API key with this name already exists").WriteJSON(w)
-	case errors.Is(err, serviceaccount.ErrAIAnalyst):
-		apierror.Conflict("This service account is an AI analyst: it has no API keys and is managed under AI analysts").WriteJSON(w)
+	case errors.Is(err, serviceaccount.ErrAIAgent):
+		apierror.Conflict("This service account is an AI agent: it has no API keys and is managed under AI agents").WriteJSON(w)
 	case WriteLimitError(w, err):
 	default:
 		// Sanitized: the error can carry request text (a name), and log lines must
