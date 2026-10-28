@@ -444,6 +444,18 @@ organization. A scope entry covering the repository does not change this.
 | Validation and retest | `validation/gate.go` `CheckTarget` | A probe of a repository (by asset type or by form) is refused before the gate is asked; the retest service also refuses assets that are not network addressable. |
 | Re-check at claim | `scan/path_target_gate.go` `refusePathTargets` | A job whose tool or capability the catalog places on a network stage loses every path target (`invalid_target`). A job the catalog cannot place was decided when it was built. |
 
+## Where ownership confirmation applies
+
+Confirmation of discovered assets and the wildcard-only restriction apply
+only to a job on platform sensors of the hosted service
+(`MANAGED_SERVICE`); on a tenant's own sensors and on self-hosted installs
+the scope entries are the authority and unclassified assets are treated as
+`full`. The placement reaches `ActiveGate` through the context
+(`attribution.WithPlacement`); see
+[scan-targets.md](scan-targets.md#where-ownership-confirmation-applies) for
+how each path decides it. Rejections, exclusions, the deny list and the
+guardrails apply on every placement.
+
 ## Re-check at claim
 
 A probing job (scan, validate, retest, connector scan) can wait in the

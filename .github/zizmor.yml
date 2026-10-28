@@ -29,3 +29,10 @@ rules:
       # exact-version dev tool (the SARIF formatter for the eslint upload) on
       # the code-scanning job, which holds no secrets.
       - web-security.yml:106
+  github-env:
+    ignore:
+      # .github/actions/setup-gh: puts its own download directory
+      # ($RUNNER_TEMP/gh-cli, a constant) on PATH after the release tarball
+      # passed its SHA-256 check. Nothing from the event, a pull request or
+      # the checkout reaches the value written to GITHUB_PATH.
+      - action.yml:21

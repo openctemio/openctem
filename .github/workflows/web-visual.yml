@@ -46,6 +46,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # A schedule runs the default branch's (main's) copy of this file:
+          # test develop, where changes land first.
+          ref: ${{ github.event_name == 'schedule' && 'develop' || '' }}
 
       - name: Generate the contract files
         uses: ./.github/actions/generate-contract
@@ -72,7 +75,7 @@ jobs:
         run: bash web/e2e/ci/make-env.sh
 
       - name: Pull the stack's third-party images
-        run: bash .github/scripts/retry.sh docker compose -f web/e2e/ci/compose.yml pull --quiet postgres redis migrate
+        run: bash .github/scripts/retry.sh docker compose -f web/e2e/ci/compose.yml pull --quiet postgres redis
 
       - name: Start the stack
         run: docker compose -f web/e2e/ci/compose.yml up -d --wait --wait-timeout 180

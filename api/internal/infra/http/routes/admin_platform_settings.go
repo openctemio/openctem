@@ -20,8 +20,13 @@ import (
 //	/admin/settings/alerts         any admin   PUT: super_admin + fresh step-up + reason
 //	                                           (critical audit, admins told);
 //	                                           test: super_admin
+//	/admin/settings/email-relay    any admin   PUT: super_admin + fresh step-up + reason
+//	                                           (critical audit, admins told)
 //	/admin/settings/ai             any admin   PUT: super_admin + fresh step-up + reason
 //	                                           (critical audit, admins told);
+//	                                           test: super_admin
+//	/admin/settings/social-login-providers   any admin   PUT /{provider}: super_admin + fresh step-up
+//	                                           + reason (critical audit, admins told);
 //	                                           test: super_admin
 //
 // Secrets are never returned by any of them.
@@ -43,6 +48,10 @@ func registerAdminPlatformSettingsRoutes(router Router, h Handlers, adminMiddlew
 		}
 	}
 	captcha, region, quota, alerts, ai := ps.Captcha != nil, ps.Region != nil, ps.StorageQuota != nil, ps.Alerts != nil, ps.AI != nil
+	social := ps.SocialLogin != nil
+	// The client check asks a provider with a secret: bounded like a sign-in
+	// attempt, in its own bucket.
+	checkRL := newAuthRateLimiter("console-settings-check").LoginMiddleware()
 	router.Group("/api/v1/admin/settings/captcha", func(r Router) {
 		r.GET("/", on(captcha, ps.GetCaptcha))
 		r.PUT("/", on(captcha, ps.UpdateCaptcha), requireSuper, freshStepUp("settings.captcha"))
@@ -56,6 +65,11 @@ func registerAdminPlatformSettingsRoutes(router Router, h Handlers, adminMiddlew
 		r.GET("/", on(quota, ps.GetStorageQuota))
 		r.PUT("/", on(quota, ps.UpdateStorageQuota), requireSuper, stepUp("settings.storage_quota"))
 	}, adminMiddlewares...)
+	emailRelay := ps.EmailRelay != nil
+	router.Group("/api/v1/admin/settings/email-relay", func(r Router) {
+		r.GET("/", on(emailRelay, ps.GetEmailRelay))
+		r.PUT("/", on(emailRelay, ps.UpdateEmailRelay), requireSuper, freshStepUp("settings.email_relay"))
+	}, adminMiddlewares...)
 	router.Group("/api/v1/admin/settings/alerts", func(r Router) {
 		r.GET("/", on(alerts, ps.GetAlertWebhook))
 		r.PUT("/", on(alerts, ps.UpdateAlertWebhook), requireSuper, freshStepUp("settings.alerts"))
@@ -66,5 +80,10 @@ func registerAdminPlatformSettingsRoutes(router Router, h Handlers, adminMiddlew
 		r.PUT("/", on(ai, ps.UpdatePlatformAI), requireSuper, freshStepUp("settings.ai"))
 		r.POST("/test", on(ai, ps.TestPlatformAI), requireSuper)
 		r.PUT("/org-policy", on(ai, ps.UpdateOrgAIPolicy), requireSuper, freshStepUp("settings.ai_org_policy"))
+	}, adminMiddlewares...)
+	router.Group("/api/v1/admin/settings/social-login-providers", func(r Router) {
+		r.GET("/", on(social, ps.GetSocialLogin))
+		r.PUT("/{provider}", on(social, ps.UpdateSocialLogin), requireSuper, freshStepUp("settings.social_login"))
+		r.POST("/{provider}/test", on(social, ps.CheckSocialLogin), requireSuper, checkRL)
 	}, adminMiddlewares...)
 }

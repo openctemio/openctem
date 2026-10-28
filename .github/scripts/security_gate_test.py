@@ -329,7 +329,7 @@ class GateTest(unittest.TestCase):
     SYNC = {"action": "synchronize", "before": "a", "after": "h", "pull_request": {"number": 7}}
 
     def run_carried(self, covers, files=None, pushes=None, events=None, comments=None,
-                    event_name="pull_request", event=None, rules=None):
+                    event_name="pull_request", event=None, rules=None, merges_only=False):
         """An ack given on commit a...a, the head is now d...d."""
         pr = self.pr(labels=("security-sensitive", "security-ack"))
         pr["base"]["sha"] = "b" * 40
@@ -346,7 +346,8 @@ class GateTest(unittest.TestCase):
             asked.append((acked, base_sha, head_sha))
             return covers
         with mock.patch.object(sg, "fetch_pr_commits", lambda *a: None), \
-                mock.patch.object(sg, "ack_still_covers", still_covers):
+                mock.patch.object(sg, "ack_still_covers", still_covers), \
+                mock.patch.object(sg, "only_base_merges", lambda *a, **k: merges_only):
             code, fake = self.run_gate(event_name, event or self.SYNC, routes)
         return code, fake, asked
 
@@ -488,6 +489,16 @@ class GateTest(unittest.TestCase):
             # Acked on exactly this head, the same pull request passes.
             code, _, _ = self.run_carried(True, files=files, pushes=self.at_label("d" * 40))
             self.assertEqual(code, 0, name)
+
+    def test_pr_touching_workflows_keeps_the_ack_over_clean_base_merges_only(self):
+        files = self.SENSITIVE + [{"filename": ".github/workflows/api-ci.yml", "status": "modified",
+                                   "deletions": 0, "patch": patch("x")}]
+        code, fake, asked = self.run_carried(False, files=files, merges_only=True)
+        self.assertEqual((code, asked), (0, []))  # the sensitive-digest path is not used
+        self.assertNotIn(self.DROPPED, fake.writes)
+        code, fake, _ = self.run_carried(True, files=files, merges_only=False)
+        self.assertEqual(code, 1)
+        self.assertIn(self.DROPPED, fake.writes)
 
     def test_touches_gate_sees_both_names_of_a_rename(self):
         moved = sg.ChangedFile("docs/x.yml", "renamed", 0, "", ".github/workflows/security-gate.yml")
@@ -952,6 +963,71 @@ class CoveredByMergesTest(unittest.TestCase):
 
     def test_unknown_acked_commit_counts_as_not_covered(self):
         self.assertFalse(sg.covered_by_merges(self.d, "f" * 40, self.base, self.merge_and_renumber(), self.NAMES))
+
+
+class OnlyBaseMergesTest(unittest.TestCase):
+    """only_base_merges on a real repository: a pull request that changes a
+    workflow keeps its ack only while its head is exactly the acknowledged
+    commit plus clean merges of the base branch."""
+
+    git = LargePullRequestTest.git
+    write = CoveredByMergesTest.write
+    commit = CoveredByMergesTest.commit
+    WORKFLOW = ".github/workflows/api-ci.yml"
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        d = self.d = self.tmp.name
+        self.git(d, "init", "-q", "-b", "develop")
+        self.write(d, self.WORKFLOW, "name: API CI\non: pull_request\n")
+        self.write(d, "api/x.go", "package x\n")
+        self.commit(d, "base")
+        self.git(d, "checkout", "-q", "-b", "feature")
+        self.write(d, self.WORKFLOW, "name: API CI\non: pull_request\nenv: {A: 1}\n")
+        self.acked = self.commit(d, "pr edits the workflow")
+        self.git(d, "checkout", "-q", "develop")
+        self.write(d, "api/y.go", "package x // develop\n")
+        self.base = self.commit(d, "develop moves")
+        self.git(d, "checkout", "-q", "feature")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def ok(self, head):
+        return sg.only_base_merges(self.d, self.acked, self.base, head)
+
+    def test_the_acked_head_itself(self):
+        self.assertTrue(self.ok(self.acked))
+
+    def test_clean_merge_of_the_base_keeps_it(self):
+        self.git(self.d, "merge", "-q", "--no-edit", "develop")
+        self.assertTrue(self.ok(self.git(self.d, "rev-parse", "HEAD")))
+
+    def test_workflow_edit_hidden_in_the_merge_drops_it(self):
+        self.git(self.d, "merge", "-q", "--no-commit", "develop")
+        self.write(self.d, self.WORKFLOW, "name: API CI\non: pull_request\nenv: {A: 2}\n")
+        self.assertFalse(self.ok(self.commit(self.d, "evil merge")))
+
+    def test_any_commit_after_the_merge_drops_it(self):
+        self.git(self.d, "merge", "-q", "--no-edit", "develop")
+        self.write(self.d, "api/x.go", "package x // later\n")
+        self.assertFalse(self.ok(self.commit(self.d, "non-workflow change")))
+
+    def test_conflict_resolved_by_hand_drops_it(self):
+        self.git(self.d, "checkout", "-q", "develop")
+        self.write(self.d, self.WORKFLOW, "name: API CI\non: pull_request\nenv: {B: 1}\n")
+        self.base = self.commit(self.d, "develop edits the same line")
+        self.git(self.d, "checkout", "-q", "feature")
+        subprocess.run(["git", "-C", self.d, "merge", "-q", "--no-edit", "develop"], capture_output=True)
+        self.write(self.d, self.WORKFLOW, "name: API CI\non: pull_request\nenv: {A: 1, B: 1}\n")
+        self.assertFalse(self.ok(self.commit(self.d, "resolved")))
+
+    def test_rebase_drops_it(self):
+        self.git(self.d, "rebase", "-q", "develop")
+        self.assertFalse(self.ok(self.git(self.d, "rev-parse", "HEAD")))
+
+    def test_unknown_acked_commit_does_not_cover(self):
+        self.assertFalse(sg.only_base_merges(self.d, "f" * 40, self.base, self.acked))
 
 
 if __name__ == "__main__":
