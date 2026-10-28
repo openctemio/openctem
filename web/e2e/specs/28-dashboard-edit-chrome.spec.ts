@@ -54,52 +54,54 @@ for (const vp of [
   { name: 'phone', width: 390, height: 844 },
 ] as const) {
   for (const scheme of ['light', 'dark'] as const) {
-    test(`edit mode chrome fits every widget at ${vp.width}px in ${scheme}`, async ({
-      page,
-    }, info) => {
-      await page.setViewportSize({ width: vp.width, height: vp.height })
-      await page.emulateMedia({ colorScheme: scheme })
-      await openEditor(page)
+    test(
+      `edit mode chrome fits every widget at ${vp.width}px in ${scheme}`,
+      { tag: ['@dashboard'] },
+      async ({ page }, info) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height })
+        await page.emulateMedia({ colorScheme: scheme })
+        await openEditor(page)
 
-      expect(await overflowing(page)).toEqual([])
-      const titles = page.getByTestId('editor-chrome').locator('span[title]')
-      for (const title of await titles.all()) {
-        const box = await title.boundingBox()
-        expect(box && box.width, 'title squeezed out').toBeGreaterThan(40)
-      }
-
-      if (vp.width < 640) {
-        // One column: every card starts at the same x and spans the list.
-        const xs = await page
-          .getByTestId('editor-card')
-          .evaluateAll((cards) => cards.map((c) => Math.round(c.getBoundingClientRect().left)))
-        expect(new Set(xs).size).toBe(1)
-        const buttons = page.getByTestId('editor-chrome').first().locator('button:visible')
-        for (const b of await buttons.all()) {
-          const box = await b.boundingBox()
-          if (box) expect(box.height).toBeGreaterThanOrEqual(43.5)
+        expect(await overflowing(page)).toEqual([])
+        const titles = page.getByTestId('editor-chrome').locator('span[title]')
+        for (const title of await titles.all()) {
+          const box = await title.boundingBox()
+          expect(box && box.width, 'title squeezed out').toBeGreaterThan(40)
         }
-        const overflow = await page.evaluate(
-          () => document.documentElement.scrollWidth - document.documentElement.clientWidth
-        )
-        expect(overflow).toBeLessThanOrEqual(0)
-      }
 
-      await info.attach(`edit-${vp.width}-${scheme}.png`, {
-        body: await page.screenshot(),
-        contentType: 'image/png',
-      })
-      // The More menu holds the move, resize, duplicate and remove actions.
-      await page
-        .getByTestId('editor-chrome')
-        .first()
-        .getByRole('button', { name: /^More actions for / })
-        .click()
-      await expect(page.getByRole('menuitem', { name: /Remove/ })).toBeVisible()
-      await info.attach(`edit-${vp.width}-${scheme}-menu.png`, {
-        body: await page.screenshot(),
-        contentType: 'image/png',
-      })
-    })
+        if (vp.width < 640) {
+          // One column: every card starts at the same x and spans the list.
+          const xs = await page
+            .getByTestId('editor-card')
+            .evaluateAll((cards) => cards.map((c) => Math.round(c.getBoundingClientRect().left)))
+          expect(new Set(xs).size).toBe(1)
+          const buttons = page.getByTestId('editor-chrome').first().locator('button:visible')
+          for (const b of await buttons.all()) {
+            const box = await b.boundingBox()
+            if (box) expect(box.height).toBeGreaterThanOrEqual(43.5)
+          }
+          const overflow = await page.evaluate(
+            () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+          )
+          expect(overflow).toBeLessThanOrEqual(0)
+        }
+
+        await info.attach(`edit-${vp.width}-${scheme}.png`, {
+          body: await page.screenshot(),
+          contentType: 'image/png',
+        })
+        // The More menu holds the move, resize, duplicate and remove actions.
+        await page
+          .getByTestId('editor-chrome')
+          .first()
+          .getByRole('button', { name: /^More actions for / })
+          .click()
+        await expect(page.getByRole('menuitem', { name: /Remove/ })).toBeVisible()
+        await info.attach(`edit-${vp.width}-${scheme}-menu.png`, {
+          body: await page.screenshot(),
+          contentType: 'image/png',
+        })
+      }
+    )
   }
 }

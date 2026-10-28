@@ -67,6 +67,14 @@ func registerTenantRoutes(
 	tenantMiddlewares = append(tenantMiddlewares,
 		middleware.TenantContext(tenantRepo),
 		middleware.RequireMembership(membershipReader))
+	// The one entry check of every route that names its organization in the
+	// URL: a tenantless token is refused, and the URL organization's SSO,
+	// two-factor and personal-account requirements apply to the token's
+	// session on every request, whichever organization the token was minted
+	// for (research/310 X-02).
+	if entryGateMiddleware != nil {
+		tenantMiddlewares = append(tenantMiddlewares, entryGateMiddleware)
+	}
 	// A suspended organization in the URL is refused to its members (the
 	// membership check above runs first, so only members learn the status).
 	if organizationGate != nil {

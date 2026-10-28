@@ -46,8 +46,14 @@ jobs:
       pull-requests: read # the PR's commits and labels (changed.sh)
       checks: read # green-base.sh and release-provenance.sh read a commit's check runs
     outputs:
-      web: ${{ steps.f.outputs.web == 'true' && steps.tree.outputs.verified != 'true' }}
-      api: ${{ steps.f.outputs.api == 'true' && steps.tree.outputs.verified != 'true' }}
+      # web: application code or an English catalog (unit tests assert English
+      # text; Next build). lint: anything Web checks covers (app, e2e specs,
+      # catalogs). i18n: only non-English catalogs changed.
+      web: ${{ steps.f.outputs.web == 'true' && (steps.scope.outputs.web_app == 'true' || steps.scope.outputs.ci_self == 'true' || steps.scope.outputs.i18n_en == 'true') && steps.tree.outputs.verified != 'true' }}
+      lint: ${{ steps.f.outputs.web == 'true' && (steps.scope.outputs.web_app == 'true' || steps.scope.outputs.ci_self == 'true' || steps.scope.outputs.web_e2e == 'true' || steps.scope.outputs.web_i18n == 'true') && steps.tree.outputs.verified != 'true' }}
+      i18n: ${{ steps.f.outputs.web == 'true' && steps.scope.outputs.web_i18n == 'true' && steps.scope.outputs.i18n_en != 'true' && !(steps.scope.outputs.web_app == 'true' || steps.scope.outputs.ci_self == 'true') && steps.tree.outputs.verified != 'true' }}
+      i18n_files: ${{ steps.scope.outputs.i18n_files }}
+      api: ${{ steps.f.outputs.api == 'true' && (steps.scope.outputs.api_code == 'true' || steps.scope.outputs.ci_self == 'true') && steps.tree.outputs.verified != 'true' }}
       tree_note: ${{ steps.tree.outputs.note }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -61,6 +67,16 @@ jobs:
           MG_BASE: ${{ github.event.merge_group.base_sha }}
           MG_HEAD: ${{ github.event.merge_group.head_sha }}
         run: bash .github/scripts/changed.sh
+      # Which part of the side changed (.github/scripts/scope.sh): only narrows
+      # what changed.sh selected, e.g. a change to web/e2e/ alone runs no web
+      # unit tests and builds no image, a CI file only the workflows that use it.
+      - id: scope
+        working-directory: .
+        env:
+          EVENT_BEFORE: ${{ github.event.before }}
+          MG_BASE: ${{ github.event.merge_group.base_sha }}
+          MG_HEAD: ${{ github.event.merge_group.head_sha }}
+        run: bash .github/scripts/scope.sh
 
       # The exact tree of this commit already passed every required check on a
       # pull request or an earlier queue run: skip the jobs below
@@ -79,8 +95,12 @@ jobs:
   # an API change, compares them with the base's.
   contract:
     name: API contract
+    # actions: write lets the fail-fast step cancel doomed runs (.github/actions/fail-fast).
+    permissions:
+      contents: read
+      actions: write
     needs: changes
-    if: needs.changes.outputs.web == 'true' || needs.changes.outputs.api == 'true'
+    if: needs.changes.outputs.lint == 'true' || needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     outputs:
       changed: ${{ steps.diff.outputs.changed }}
@@ -196,6 +216,9 @@ jobs:
           name: contract-report
           path: ${{ runner.temp }}/contract/report/
           retention-days: 5
+      - name: Fail fast
+        if: failure()
+        uses: ./.github/actions/fail-fast
 
   # Posts the report on the pull request (one comment, updated in place). The
   # only job with a write token: it runs no code from the pull request, it
@@ -251,8 +274,12 @@ jobs:
   # (All-in-one CI builds the web image in the merge queue).
   quality:
     name: Web checks
+    # actions: write lets the fail-fast step cancel doomed runs (.github/actions/fail-fast).
+    permissions:
+      contents: read
+      actions: write
     needs: [changes, contract]
-    if: needs.changes.outputs.web == 'true' || needs.contract.outputs.changed == 'true'
+    if: needs.changes.outputs.lint == 'true' || needs.contract.outputs.changed == 'true'
     runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_HEAVY) || 'ubuntu-latest' }}
     steps:
       - name: Checkout code
@@ -265,7 +292,7 @@ jobs:
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: web/.nvmrc
-          cache: 'npm'
+          cache: ${{ runner.environment == 'github-hosted' && 'npm' || '' }}
           cache-dependency-path: web/package-lock.json
 
       - name: Install dependencies
@@ -284,7 +311,11 @@ jobs:
           cp "$RUNNER_TEMP/contract/api-route-permissions.json" "$RUNNER_TEMP/contract/authz-matrix.json" web/src/config/
           (cd web && npm run generate:api-types)
 
+      # tsc needs more than the default heap: Node sizes it from the machine's
+      # memory, and on a self-hosted runner that default (about 2 GB) runs out.
       - name: Run type check
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
         run: npm run type-check
 
       - name: Run ESLint
@@ -332,15 +363,78 @@ jobs:
           base="$(bash ../.github/scripts/effective-base.sh web "origin/${GITHUB_BASE_REF}")"
           node scripts/check-copy.mjs "$base"
 
+      # Every e2e test carries an area tag that web/e2e/impact-map.yml knows,
+      # and the selector's own tests pass (research/295). Lists tests with
+      # Playwright; needs no browser or running stack.
+      - name: Check e2e tags and the impact selector
+        run: |
+          node --test e2e/ci/select.test.mjs
+          node e2e/ci/select.mjs check
+      - name: Fail fast
+        if: failure()
+        uses: ./.github/actions/fail-fast
+
+  # Only non-English catalogs changed (no app code, no English text): the
+  # catalog tests (src/lib/i18n: key parity, placeholders, sort order) and every
+  # test that reads a catalog by path, instead of the whole suite in three
+  # shards. `vitest related` is no help here: dictionaries/index.ts imports
+  # every catalog, so the module graph links nearly every UI test to any one.
+  # Web checks still runs (format, sort order, tsc).
+  i18n-tests:
+    name: Web i18n tests
+    needs: [changes, contract]
+    if: needs.changes.outputs.i18n == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: web/.nvmrc
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: contract
+          path: ${{ runner.temp }}/contract
+
+      - name: Place the generated contract files
+        working-directory: .
+        run: |
+          cp "$RUNNER_TEMP/contract/swagger.yaml" "$RUNNER_TEMP/contract/routes.txt" api/api/openapi/
+          cp "$RUNNER_TEMP/contract/api-route-permissions.json" "$RUNNER_TEMP/contract/authz-matrix.json" web/src/config/
+          (cd web && npm run generate:api-types)
+
+      - name: Run the catalog tests and the tests that read a catalog
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: |
+          mapfile -t files < <(grep -rlE 'dictionaries|lib/i18n/' src --include='*.test.ts' --include='*.test.tsx' | sort)
+          echo "${#files[@]} test files read a catalog"
+          npx vitest run --passWithNoTests src/lib/i18n "${files[@]}"
+
   # The Vitest suite, in three parallel shards (vitest --shard). Same setup as
   # `Web checks`; the endpoint check reads api/api/openapi/routes.txt.
   tests:
     name: Web tests
+    # actions: write lets the fail-fast step cancel doomed runs (.github/actions/fail-fast).
+    permissions:
+      contents: read
+      actions: write
     needs: [changes, contract]
     if: needs.changes.outputs.web == 'true' || needs.contract.outputs.changed == 'true'
     runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_HEAVY) || 'ubuntu-latest' }}
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         shard: [1, 2, 3]
     steps:
@@ -353,7 +447,7 @@ jobs:
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: web/.nvmrc
-          cache: 'npm'
+          cache: ${{ runner.environment == 'github-hosted' && 'npm' || '' }}
           cache-dependency-path: web/package-lock.json
 
       - name: Install dependencies
@@ -386,9 +480,16 @@ jobs:
           name: web-${{ matrix.shard }}
           fail_ci_if_error: false
         continue-on-error: true
+      - name: Fail fast
+        if: failure()
+        uses: ./.github/actions/fail-fast
 
   build:
     name: Build
+    # actions: write lets the fail-fast step cancel doomed runs (.github/actions/fail-fast).
+    permissions:
+      contents: read
+      actions: write
     needs: [changes, contract, quality]
     if: >-
       (needs.changes.outputs.web == 'true' || needs.contract.outputs.changed == 'true') &&
@@ -401,7 +502,7 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: web/.nvmrc
-          cache: 'npm'
+          cache: ${{ runner.environment == 'github-hosted' && 'npm' || '' }}
           cache-dependency-path: web/package-lock.json
       - name: Install dependencies
         run: npm ci
@@ -432,11 +533,14 @@ jobs:
         run: |
           sh scripts/check-tenant-bundle.test.sh
           sh scripts/check-tenant-bundle.sh .next/server
+      - name: Fail fast
+        if: failure()
+        uses: ./.github/actions/fail-fast
 
   web-ok:
     name: Web CI OK
     if: always()
-    needs: [changes, contract, quality, tests, build]
+    needs: [changes, contract, quality, tests, i18n-tests, build]
     runs-on: ubuntu-latest
     steps:
       - name: All web jobs passed or were skipped; the checks ran where they must
@@ -444,6 +548,8 @@ jobs:
         env:
           NEEDS: ${{ toJSON(needs) }}
           WEB: ${{ needs.changes.outputs.web }}
+          LINT: ${{ needs.changes.outputs.lint }}
+          I18N: ${{ needs.changes.outputs.i18n }}
           API: ${{ needs.changes.outputs.api }}
           CHANGED: ${{ needs.contract.outputs.changed }}
           TREE_NOTE: ${{ needs.changes.outputs.tree_note }}
@@ -454,8 +560,12 @@ jobs:
             echo "::error::a job failed or was cancelled"; exit 1
           fi
           required="changes"
-          if [ "$WEB" = true ] || [ "$API" = true ]; then required="$required contract"; fi
-          if [ "$WEB" = true ] || [ "$CHANGED" = true ]; then required="$required quality tests"; fi
+          # WEB: app code (checks + unit tests). LINT: app, e2e specs or
+          # catalogs (checks). I18N: catalogs only (related tests).
+          if [ "$LINT" = true ] || [ "$API" = true ]; then required="$required contract"; fi
+          if [ "$LINT" = true ] || [ "$CHANGED" = true ]; then required="$required quality"; fi
+          if [ "$WEB" = true ] || [ "$CHANGED" = true ]; then required="$required tests"; fi
+          if [ "$I18N" = true ]; then required="$required i18n-tests"; fi
           for j in $required; do
             r="$(echo "$NEEDS" | jq -r --arg j "$j" '.[$j].result')"
             if [ "$r" != success ]; then echo "::error::$j must run and pass, got: $r"; exit 1; fi

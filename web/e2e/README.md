@@ -231,6 +231,27 @@ test('my new flow', async ({ page, e2eConfig }) => {
 For tests that exercise unauthenticated flows (login, register, public
 invitation preview) import `test` from `@playwright/test` directly.
 
+### Tag every test
+
+CI runs only the specs a change needs. Each test (or its enclosing
+`test.describe`) declares an area tag with Playwright's tag option:
+
+```ts
+test.describe('Findings list', { tag: ['@findings'] }, () => { ... })
+test('sign in', { tag: ['@auth', '@smoke'] }, async ({ page }) => { ... })
+```
+
+- Area tags are the ones under `tags` in `impact-map.yml` (`@findings`,
+  `@assets`, `@scans`, ...). A spec that crosses areas lists several.
+- `@smoke` joins the set that runs with every change (keep it to about eight
+  specs that prove the app works), `@serial` marks a spec that cannot share a
+  worker, `@budget` the every-page request budget check.
+- A new feature area also needs its paths under `areas` in
+  `web/e2e/impact-map.yml`; a path nobody mapped makes CI run every spec.
+- `node e2e/ci/select.mjs check` (from `web/`) is the gate Web CI runs: it
+  fails on an untagged test. `node --test e2e/ci/select.test.mjs` runs the
+  selector's tests. Locally, `npx playwright test --grep @findings` runs one area.
+
 ### Selector guidelines
 
 - **Prefer roles and accessible names** (`getByRole`, `getByLabel`).
@@ -281,8 +302,10 @@ giving teams with seed data the full coverage.
 
 `.github/workflows/web-e2e.yml` runs the suite on pull requests and in the
 merge queue when `web/` (or a shared file) changed — the routing is
-`.github/scripts/changed.sh`, so an API-only change does not start it. It is
-not a required check yet.
+`.github/scripts/changed.sh`, so an API-only change does not start it. A pull
+request or queue group runs the specs its changed files map to (plus the
+`@smoke` set), split into 1 to 4 shards; a push to `develop` and the nightly run
+run all of them. See [E2E impact selection](../../api/docs/development/ci-cd.md#e2e-impact-selection).
 
 The job builds the production images (API, web, admin-cli) with the Actions
 layer cache, generates the stack's secrets (`e2e/ci/make-env.sh`), starts `e2e/ci/compose.yml` (Postgres, Redis, migrations, API
