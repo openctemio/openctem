@@ -18,15 +18,26 @@ export interface AdminMcpClient {
   last_used_at?: string
 }
 
-interface AdminMcpClientList {
+export interface AdminMcpClientList {
   data: AdminMcpClient[]
+  total: number
+  page: number
+  per_page: number
+  total_pages: number
 }
 
 const KEY = '/mcp-clients'
 
-/** Every MCP client with usage counts (any administrator; no tenant data). */
-export function useMcpClients() {
-  return useSWR<AdminMcpClientList>(KEY, adminFetcher)
+/**
+ * One page of MCP clients with usage counts (any administrator; no tenant
+ * data), newest first. q matches part of the client_id (its host) or the
+ * declared name; blocked narrows to blocked or unblocked clients.
+ */
+export function useMcpClients(q: string, blocked: boolean | null, page = 1, perPage = 25) {
+  const params = new URLSearchParams({ page: String(page), per_page: String(perPage) })
+  if (q.trim()) params.set('q', q.trim())
+  if (blocked !== null) params.set('blocked', String(blocked))
+  return useSWR<AdminMcpClientList>(`${KEY}?${params}`, adminFetcher, { keepPreviousData: true })
 }
 
 /** Blocks or unblocks a client everywhere (ops_admin or super_admin). */

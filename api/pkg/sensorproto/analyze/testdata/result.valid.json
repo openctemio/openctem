@@ -1,0 +1,5 @@
+{"contract":"openctem.analyze.result/v1","job_id":"01a18087-4972-7af5-8ce4-36833fe53fc4","status":"completed",
+ "suggestions":[{"kind":"summary","payload":{"text":"s"},"confidence":0.5,"evidence":[{"ref":"tool:2","quote":"q"}]}],
+ "usage":{"provider":"claude","model":"m","tokens_in":10,"tokens_out":5,"steps":3,"tool_calls":1},
+ "template":{"id":"triage.v1","digest":"sha256:0000000000000000000000000000000000000000000000000000000000000000"},
+ "run_record":{"digest":"sha256:1111111111111111111111111111111111111111111111111111111111111111"}}
