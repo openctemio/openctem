@@ -47,6 +47,8 @@ import {
 } from '@/features/shared/components/detail-sheet'
 import { UntrustedTextBlock } from '@/features/shared/components/untrusted-text-block'
 import { useTriageResult } from '@/features/ai-triage/api'
+import { AISuggestionsPanel } from '@/features/ai-suggestions/components/ai-suggestions-panel'
+import { AIBadge } from '@/features/shared/components/ai-badge'
 import { useRelatedCVEs } from '../../api/use-finding-groups'
 import { formatEpssPercentile } from '@/lib/epss'
 import { EpssChip } from '@/components/ui/epss-chip'
@@ -125,6 +127,7 @@ export function OverviewTab({ finding }: OverviewTabProps) {
   return (
     <DetailSections>
       {triage && <AITriageSummary data={triage} />}
+      <AISuggestionsPanel findingId={finding.id} />
 
       <DetailSection title={t('findings.overviewTab.description', 'Description')} icon={FileText}>
         {desc.text ? (
@@ -560,7 +563,8 @@ function AITriageSummary({ data }: { data: AITriageSummaryData }) {
       title={t('findings.overviewTab.aiAnalysis', 'AI analysis')}
       icon={Bot}
       actions={
-        <span className="text-xs text-muted-foreground">
+        <span className="flex items-center gap-2 text-xs text-muted-foreground">
+          <AIBadge source="ai_builtin" />
           {new Date(data.createdAt).toLocaleDateString(locale, {
             month: 'short',
             day: 'numeric',
