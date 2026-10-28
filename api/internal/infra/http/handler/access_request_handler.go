@@ -125,6 +125,20 @@ type AccessRequestListResponse struct {
 	Page       int                     `json:"page"`
 	PerPage    int                     `json:"per_page"`
 	TotalPages int                     `json:"total_pages"`
+	// Redacted: a read-only administrator sees each requester's address
+	// masked and no note (personal data); the rest of the row is intact.
+	Redacted bool `json:"redacted,omitempty"`
+}
+
+// maskEmail hides the local part of an address except its first character
+// ("a***@acme.com"); the domain is already a separate column.
+func maskEmail(email string) string {
+	local, domain, ok := strings.Cut(email, "@")
+	if !ok || local == "" {
+		return "***"
+	}
+	r := []rune(local)
+	return string(r[0]) + "***@" + domain
 }
 
 func toAccessRequestResponse(a *ardom.Request) AccessRequestResponse {
@@ -139,7 +153,7 @@ func toAccessRequestResponse(a *ardom.Request) AccessRequestResponse {
 	return resp
 }
 
-// List lists requests (any admin).
+// List lists requests (any admin; a read-only administrator gets masked addresses and no notes).
 // @Summary      List access requests
 // @Description  Open requests (pending and unconfirmed) by default; status=pending|unconfirmed|approved|rejected filters.
 // @Tags         Admin Organizations
@@ -170,8 +184,14 @@ func (h *AccessRequestHandler) List(w http.ResponseWriter, r *http.Request) {
 		Data:  make([]AccessRequestResponse, 0, len(items)),
 		Total: result.Total, Page: result.Page, PerPage: result.PerPage, TotalPages: result.TotalPages,
 	}
+	personal := adminSeesPersonalData(r)
+	resp.Redacted = !personal
 	for _, a := range items {
-		resp.Data = append(resp.Data, toAccessRequestResponse(a))
+		item := toAccessRequestResponse(a)
+		if !personal {
+			item.Email, item.Note = maskEmail(item.Email), ""
+		}
+		resp.Data = append(resp.Data, item)
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
