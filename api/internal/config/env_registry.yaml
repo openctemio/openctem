@@ -48,7 +48,12 @@ vars:
     group: "Application"
     type: bool
     default: "false"
-    description: "Set to true only on a hosted, multi-tenant service run by an operator for organizations it does not control. It changes defaults only, never features: until an administrator stores a value in the console, platform sensors need a verified domain before they scan a target (Console > Scanning > Platform scanning). A value saved in the console always wins. Read at start-up; never tenant data."
+    description: "Set to true only on a hosted, multi-tenant service run by an operator for organizations it does not control. It changes defaults only, never features: until an administrator stores a value in the console, platform sensors need a verified domain before they scan a target (Console > Scanning > Platform scanning). A value saved in the console always wins. It also holds an organization's own mail server (the e-mail notification channel) to submission ports 465, 587 and 2525 with a username, a password and TLS or STARTTLS; port 25 is refused. Read at start-up; never tenant data."
+  - name: ORG_EMAIL_RELAY_MODE
+    component: api
+    group: "Application"
+    type: string
+    description: "Default of the console setting email.tenant_relay until a super admin stores a value: whether an organization's own mail relay (its e-mail notification channel with \"organization mail\" ticked) carries its invitation notices and scheduled reports. `off`, `verified_sender` (the sender address must be on a verified domain of the organization) or `on`. Unset: `verified_sender` with `MANAGED_SERVICE=true`, else `on`. Account security mail (set-password links, verification, password reset, MFA and sign-in notices) never uses an organization relay."
   - name: DEPLOYMENT_REGION
     component: api
     group: "Application"
