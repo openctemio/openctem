@@ -52,6 +52,7 @@ const (
 	codeMFAChallengeInvalid     apierror.Code = "MFA_CHALLENGE_INVALID"
 	codeMFACodeInvalid          apierror.Code = "MFA_CODE_INVALID"
 	codeMFANotSupported         apierror.Code = "MFA_NOT_SUPPORTED"
+	codeMFAFederatedSession     apierror.Code = "MFA_FEDERATED_SESSION"
 	codeMFAAlreadyEnabled       apierror.Code = "MFA_ALREADY_ENABLED"
 	codeMFANotEnabled           apierror.Code = "MFA_NOT_ENABLED"
 	codeMFANoPendingSetup       apierror.Code = "MFA_NO_PENDING_SETUP"
@@ -138,6 +139,8 @@ var authErrorTable = []authErrorEntry{
 	{e(auth.ErrSSOMFAEvidenceRequired), http.StatusForbidden, codeMFAIDPEvidenceRequired, "This organization requires your identity provider to confirm a second factor. Sign in again through your identity provider with multi-factor authentication.", ""},
 	{e(auth.ErrMFAEnrollmentRequired), http.StatusForbidden, apierror.CodeMFAEnrollmentRequired, "This organization requires two-factor authentication. Sign in again to complete it.", ""},
 	{e(auth.ErrMFANotSupported), http.StatusBadRequest, codeMFANotSupported, "Two-factor authentication for this account is managed by your identity provider.", ""},
+	{e(auth.ErrReauthRequired), http.StatusForbidden, apierror.CodeReauthRequired, "For your security, sign in again to set up two-factor authentication.", ""},
+	{e(auth.ErrMFAFederatedSession), http.StatusBadRequest, codeMFAFederatedSession, "This session was started through an identity provider; sign in with your password to set up two-factor authentication.", ""},
 	{e(auth.ErrMFAAlreadyEnabled), http.StatusConflict, codeMFAAlreadyEnabled, "Two-factor authentication is already enabled.", ""},
 	{e(auth.ErrMFANotEnabled), http.StatusBadRequest, codeMFANotEnabled, "Two-factor authentication is not enabled.", ""},
 	{e(auth.ErrMFANoPendingSetup), http.StatusBadRequest, codeMFANoPendingSetup, "Start two-factor setup first.", ""},

@@ -42,18 +42,13 @@ func (r *TenantToolConfigRepository) Create(ctx context.Context, c *tool.TenantT
 		return fmt.Errorf("failed to marshal custom_patterns: %w", err)
 	}
 
-	customWordlists, err := json.Marshal(c.CustomWordlists)
-	if err != nil {
-		return fmt.Errorf("failed to marshal custom_wordlists: %w", err)
-	}
-
 	query := `
 		INSERT INTO tenant_tool_configs (
 			id, tenant_id, tool_id, config,
-			custom_templates, custom_patterns, custom_wordlists,
+			custom_templates, custom_patterns,
 			is_enabled, updated_by, created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 	`
 
 	var updatedBy sql.NullString
@@ -68,7 +63,6 @@ func (r *TenantToolConfigRepository) Create(ctx context.Context, c *tool.TenantT
 		config,
 		customTemplates,
 		customPatterns,
-		customWordlists,
 		c.IsEnabled,
 		updatedBy,
 		c.CreatedAt,
@@ -161,11 +155,6 @@ func (r *TenantToolConfigRepository) Update(ctx context.Context, c *tool.TenantT
 		return fmt.Errorf("failed to marshal custom_patterns: %w", err)
 	}
 
-	customWordlists, err := json.Marshal(c.CustomWordlists)
-	if err != nil {
-		return fmt.Errorf("failed to marshal custom_wordlists: %w", err)
-	}
-
 	var updatedBy sql.NullString
 	if c.UpdatedBy != nil {
 		updatedBy = sql.NullString{String: c.UpdatedBy.String(), Valid: true}
@@ -174,7 +163,7 @@ func (r *TenantToolConfigRepository) Update(ctx context.Context, c *tool.TenantT
 	query := `
 		UPDATE tenant_tool_configs
 		SET config = $2, custom_templates = $3, custom_patterns = $4,
-		    custom_wordlists = $5, is_enabled = $6, updated_by = $7, updated_at = $8
+		    is_enabled = $5, updated_by = $6, updated_at = $7
 		WHERE id = $1
 	`
 
@@ -183,7 +172,6 @@ func (r *TenantToolConfigRepository) Update(ctx context.Context, c *tool.TenantT
 		config,
 		customTemplates,
 		customPatterns,
-		customWordlists,
 		c.IsEnabled,
 		updatedBy,
 		c.UpdatedAt,
@@ -234,11 +222,6 @@ func (r *TenantToolConfigRepository) Upsert(ctx context.Context, c *tool.TenantT
 		return fmt.Errorf("failed to marshal custom_patterns: %w", err)
 	}
 
-	customWordlists, err := json.Marshal(c.CustomWordlists)
-	if err != nil {
-		return fmt.Errorf("failed to marshal custom_wordlists: %w", err)
-	}
-
 	var updatedBy sql.NullString
 	if c.UpdatedBy != nil {
 		updatedBy = sql.NullString{String: c.UpdatedBy.String(), Valid: true}
@@ -247,15 +230,14 @@ func (r *TenantToolConfigRepository) Upsert(ctx context.Context, c *tool.TenantT
 	query := `
 		INSERT INTO tenant_tool_configs (
 			id, tenant_id, tool_id, config,
-			custom_templates, custom_patterns, custom_wordlists,
+			custom_templates, custom_patterns,
 			is_enabled, updated_by, created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT (tenant_id, tool_id) DO UPDATE SET
 			config = EXCLUDED.config,
 			custom_templates = EXCLUDED.custom_templates,
 			custom_patterns = EXCLUDED.custom_patterns,
-			custom_wordlists = EXCLUDED.custom_wordlists,
 			is_enabled = EXCLUDED.is_enabled,
 			updated_by = EXCLUDED.updated_by,
 			updated_at = EXCLUDED.updated_at
@@ -268,7 +250,6 @@ func (r *TenantToolConfigRepository) Upsert(ctx context.Context, c *tool.TenantT
 		config,
 		customTemplates,
 		customPatterns,
-		customWordlists,
 		c.IsEnabled,
 		updatedBy,
 		c.CreatedAt,
@@ -465,7 +446,7 @@ func (r *TenantToolConfigRepository) ListToolsWithConfig(
 			t.docs_url, t.github_url, t.is_active, t.is_builtin, t.tags, t.metadata,
 			t.created_by, t.created_at, t.updated_at, t.min_version,
 			tc.id as config_id, tc.config as tenant_config, tc.is_enabled,
-			tc.custom_templates, tc.custom_patterns, tc.custom_wordlists,
+			tc.custom_templates, tc.custom_patterns,
 			tc.updated_by, tc.created_at as config_created_at, tc.updated_at as config_updated_at,
 			cat.id as cat_id, cat.name as cat_name, cat.display_name as cat_display_name,
 			cat.icon as cat_icon, cat.color as cat_color
@@ -532,7 +513,6 @@ func (r *TenantToolConfigRepository) scanToolWithConfig(rows *sql.Rows) (*tool.T
 		isEnabled       sql.NullBool
 		customTemplates []byte
 		customPatterns  []byte
-		customWordlists []byte
 		configUpdatedBy sql.NullString
 		configCreatedAt sql.NullTime
 		configUpdatedAt sql.NullTime
@@ -554,7 +534,7 @@ func (r *TenantToolConfigRepository) scanToolWithConfig(rows *sql.Rows) (*tool.T
 		&docsURL, &githubURL, &t.IsActive, &t.IsBuiltin, &tags, &metadata,
 		&createdBy, &t.CreatedAt, &t.UpdatedAt, &minVersion,
 		&configID, &tenantConfig, &isEnabled,
-		&customTemplates, &customPatterns, &customWordlists,
+		&customTemplates, &customPatterns,
 		&configUpdatedBy, &configCreatedAt, &configUpdatedAt,
 		&catID, &catName, &catDisplayName, &catIcon, &catColor,
 	)
@@ -642,9 +622,6 @@ func (r *TenantToolConfigRepository) scanToolWithConfig(rows *sql.Rows) (*tool.T
 		if len(customPatterns) > 0 {
 			_ = json.Unmarshal(customPatterns, &tc.CustomPatterns)
 		}
-		if len(customWordlists) > 0 {
-			_ = json.Unmarshal(customWordlists, &tc.CustomWordlists)
-		}
 		if configUpdatedBy.Valid {
 			updatedByID, _ := shared.IDFromString(configUpdatedBy.String)
 			tc.UpdatedBy = &updatedByID
@@ -676,7 +653,7 @@ func (r *TenantToolConfigRepository) scanToolWithConfig(rows *sql.Rows) (*tool.T
 func (r *TenantToolConfigRepository) selectQuery() string {
 	return `
 		SELECT id, tenant_id, tool_id, config,
-		       custom_templates, custom_patterns, custom_wordlists,
+		       custom_templates, custom_patterns,
 		       is_enabled, updated_by, created_at, updated_at
 		FROM tenant_tool_configs
 	`
@@ -717,7 +694,6 @@ func (r *TenantToolConfigRepository) scanConfig(row *sql.Row) (*tool.TenantToolC
 		config          []byte
 		customTemplates []byte
 		customPatterns  []byte
-		customWordlists []byte
 		updatedBy       sql.NullString
 	)
 
@@ -728,7 +704,6 @@ func (r *TenantToolConfigRepository) scanConfig(row *sql.Row) (*tool.TenantToolC
 		&config,
 		&customTemplates,
 		&customPatterns,
-		&customWordlists,
 		&c.IsEnabled,
 		&updatedBy,
 		&c.CreatedAt,
@@ -765,10 +740,6 @@ func (r *TenantToolConfigRepository) scanConfig(row *sql.Row) (*tool.TenantToolC
 		_ = json.Unmarshal(customPatterns, &c.CustomPatterns)
 	}
 
-	if len(customWordlists) > 0 {
-		_ = json.Unmarshal(customWordlists, &c.CustomWordlists)
-	}
-
 	return c, nil
 }
 
@@ -782,7 +753,6 @@ func (r *TenantToolConfigRepository) scanConfigFromRows(rows *sql.Rows) (*tool.T
 		config          []byte
 		customTemplates []byte
 		customPatterns  []byte
-		customWordlists []byte
 		updatedBy       sql.NullString
 	)
 
@@ -793,7 +763,6 @@ func (r *TenantToolConfigRepository) scanConfigFromRows(rows *sql.Rows) (*tool.T
 		&config,
 		&customTemplates,
 		&customPatterns,
-		&customWordlists,
 		&c.IsEnabled,
 		&updatedBy,
 		&c.CreatedAt,
@@ -825,10 +794,6 @@ func (r *TenantToolConfigRepository) scanConfigFromRows(rows *sql.Rows) (*tool.T
 
 	if len(customPatterns) > 0 {
 		_ = json.Unmarshal(customPatterns, &c.CustomPatterns)
-	}
-
-	if len(customWordlists) > 0 {
-		_ = json.Unmarshal(customWordlists, &c.CustomWordlists)
 	}
 
 	return c, nil

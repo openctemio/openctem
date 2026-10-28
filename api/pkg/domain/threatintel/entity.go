@@ -395,6 +395,23 @@ func (s *SyncStatus) MarkSyncSuccess(recordsSynced int, durationMs int) {
 	s.updatedAt = now
 }
 
+// MarkSyncUnchanged marks a run that found the source unchanged (HTTP 304).
+// The stored record count stays: the run wrote nothing, so it must not
+// report zero. storedCount is the size of the stored catalog; it only fills
+// a count an earlier run left at zero.
+func (s *SyncStatus) MarkSyncUnchanged(durationMs int, storedCount int) {
+	now := time.Now().UTC()
+	s.lastSyncStatus = SyncStateSuccess
+	s.syncDurationMs = durationMs
+	s.lastSyncError = ""
+	if s.recordsSynced == 0 && storedCount > 0 {
+		s.recordsSynced = storedCount
+	}
+	nextSync := now.Add(time.Duration(s.syncIntervalHours) * time.Hour)
+	s.nextSyncAt = &nextSync
+	s.updatedAt = now
+}
+
 // MarkSyncFailed marks the sync as failed.
 func (s *SyncStatus) MarkSyncFailed(err string) {
 	now := time.Now().UTC()
