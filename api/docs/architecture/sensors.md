@@ -1174,7 +1174,12 @@ replaces bearer keys.
   `high_entropy`) for values that look like credentials
   (`pkg/domain/scan/config_secrets.go`). The config travels to the sensor in
   clear inside every command; the warning never blocks a save and never
-  echoes the value.
+  echoes the value. Host names, addresses and ranges are never
+  `high_entropy`, and a `target`/`targets` list is checked for credential
+  formats only (a URL with a user and password): the same detector decides
+  whether a job carries credentials for the sensor grant, and a long host
+  name in a quick scan's target list must not keep the job from every
+  sensor.
   Callers without `scans:write` (viewers, custom read-only roles) get exactly
   the warned values replaced by `********` (`scan.RedactConfigSecrets`,
   `pkg/domain/scan/config_redact.go`) in every user-facing response that
