@@ -41,6 +41,8 @@ export interface BootstrapSessionData {
   user?: UserProfile
   tenants?: TenantMembership[]
   tenant_creation_mode?: string
+  /** Whether this server can send email, as GET /auth/providers reports it. */
+  email_delivery?: boolean
   badges?: BootstrapBadges
   announcements?: PlatformAnnouncement[]
   /** A limit or module deny applies to the organization (owners and admins). */
