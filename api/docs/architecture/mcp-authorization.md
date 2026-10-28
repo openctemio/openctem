@@ -161,8 +161,10 @@ resource is this endpoint, the user still an active member with an active
 account. The request then carries the grant's tenant and user, permissions
 `scope permissions ∩ what the user holds now` (owners and administrators hold
 everything), never the owner/admin bypass, auth provider `mcp_oauth`, and
-keeps the user's own data scope including full data access (unlike `oct_`
-keys). Each grant has a budget of 3600 requests per hour. Last use (time,
+reads only what the user's scope rows allow, never the full-data access of an
+owner, administrator or full-data role (the same rule as `oct_` keys; an
+owner who is in no group sees no assets through MCP, and every empty asset or
+finding result then carries a `scope_notice` saying so). Each grant has a budget of 3600 requests per hour. Last use (time,
 IP) is recorded at most once a minute.
 
 A call the user could make with a scope the token lacks answers `403` with

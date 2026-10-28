@@ -94,6 +94,48 @@ checkpoint) and the key-set version. Origins: the release
 (`VULNFEED_BASE_URL` + `/latest/download`), then `VULNFEED_MIRRORS`; with
 `VULNFEED_BUNDLE_DIR` only that directory is read.
 
+### KEV and EPSS (signed side manifest)
+
+The collector publishes the CISA KEV catalog and the EPSS scores next to
+each release as a signed side manifest, `intel.manifest.dsse.json`
+(`pkg/vulnbundle/intel.go`; format in the collector's README, "KEV and EPSS
+side manifest"). The corpus format is untouched, so an older platform ignores
+the files. After the corpus, in the same run (also when the corpus is
+already up to date), `internal/app/vulnfeed/intel.go`:
+
+1. verifies the manifest against the pinned root's key set and the applied
+   sequence (an old manifest cannot be replayed with a new release), then
+   each stream: a safe name, its own entries file, a data date not in the
+   future, a fetch time inside the release's window;
+2. skips (and lists in the status row's `intel_skipped`) a stream name it
+   does not know: the manifest is signed, so skipping is safe and later
+   signals add streams without a lockstep release;
+3. per known stream, asks the intel service whether the stream is **newer
+   than the data held**. If not, nothing is downloaded: only the stream's
+   freshness (`bundle_fetched_at`, when the collector last read the source)
+   is recorded. If so, the entries file is checked against the signed size
+   and SHA-256 and every line is parsed strictly (ids ascending and unique,
+   scores between 0 and 1, the record count as the manifest states);
+4. applies it through `threat.IntelService.ApplyBundleKEV` /
+   `ApplyBundleEPSS`: the data date must be newer than the date of the data
+   held **from either path** (KEV by time, EPSS by day), so a replayed,
+   resent or carried-forward older copy never rolls the catalog back and a
+   bundle copy never overwrites a newer direct fetch; a snapshot under 90 %
+   of the stored record count is refused as truncated; KEV removals stay
+   behind the 25 entries / 2 % prune guard shared with the direct sync.
+
+Then the same post-sync work as after a direct sync runs through one
+function, `controller.IntelSweeper.Run` (queue the open findings whose intel
+moved, refresh stored EPSS, reconcile KEV flags, report material changes to
+the vulnerability event log). A refused stream is recorded as
+`bundle_error` in that source's status row and never undoes the corpus
+import; the other stream and the next run are unaffected.
+
+Per source, the sync status row's metadata says which path supplied the data
+held and how current the bundle's copy is: `delivered_via` (`bundle` or
+`direct`), `intel_as_of` (data date), `bundle_fetched_at`,
+`bundle_sequence`, `bundle_error`.
+
 ## Push: segments and the outbox
 
 Sensors and collectors send results with protocol v2 (RFC-026): segments
