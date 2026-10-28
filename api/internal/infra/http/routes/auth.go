@@ -289,8 +289,9 @@ func registerUserRoutes(
 // Linking and unlinking change how the account can be signed into, so both
 // need a fresh step-up and the CSRF check. The link callback is the second
 // half of a link already stepped up: its state is bound to this account and
-// this session, single use, and it is called by the web server with the
-// session token.
+// this session, single use, expires, and is accepted only with the browser
+// binding secret the link start gave the starting browser (an HttpOnly
+// cookie); it is called by the web server with the session token.
 func registerIdentityLinkRoutes(router Router, h *handler.OAuthHandler, authMiddleware, userSyncMiddleware Middleware) {
 	middlewares := []Middleware{authMiddleware}
 	if userSyncMiddleware != nil {

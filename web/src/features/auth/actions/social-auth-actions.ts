@@ -377,17 +377,25 @@ export async function getAvailableProviders(): Promise<
 
 /**
  * Keep the state of a link the browser started (Account > Security) for the
- * callback: the same state cookie a sign-in uses, plus the link intent. The
- * state came from POST /users/me/identities/{provider}/link, which already
- * required a fresh step-up, and the API accepts it only for this account and
- * this session.
+ * callback: the same state and browser-binding cookies a sign-in uses, plus
+ * the link intent. The state came from POST /users/me/identities/{provider}/link,
+ * which already required a fresh step-up; the API accepts it only for this
+ * account and this session, once, and only with this browser's binding.
  */
 export async function rememberLinkState(
   provider: SocialProvider,
-  state: string
+  state: string,
+  browserBinding: string
 ): Promise<{ success: boolean }> {
   if (!isAllowedValue(SOCIAL_PROVIDERS, provider)) return { success: false }
   if (typeof state !== 'string' || state.length === 0 || state.length > 4096) {
+    return { success: false }
+  }
+  if (
+    typeof browserBinding !== 'string' ||
+    browserBinding.length === 0 ||
+    browserBinding.length > 256
+  ) {
     return { success: false }
   }
   const cookieStore = await cookies()
@@ -400,6 +408,8 @@ export async function rememberLinkState(
   }
   cookieStore.set('oauth_state', state, opts)
   cookieStore.set(OAUTH_LINK_INTENT_COOKIE, provider, opts)
+  // Browser binding: the API refuses the link callback without this secret.
+  cookieStore.set(bindingCookieName('oauth'), browserBinding, bindingCookieOptions())
   cookieStore.delete('oauth_redirect')
   return { success: true }
 }
@@ -408,8 +418,9 @@ export async function rememberLinkState(
 export type LinkCallbackResult = { success: true } | { success: false; code?: string }
 
 /**
- * Finish a link after the provider's redirect: check the state cookie, then
- * let the API bind the identity to the account of the session cookie.
+ * Finish a link after the provider's redirect: check the state cookie, take
+ * the single-use browser binding, then let the API bind the identity to the
+ * account of the session cookie.
  */
 export async function completeLinkCallback(
   provider: SocialProvider,
@@ -421,7 +432,13 @@ export async function completeLinkCallback(
   const storedState = cookieStore.get('oauth_state')?.value
   cookieStore.delete('oauth_state')
   cookieStore.delete(OAUTH_LINK_INTENT_COOKIE)
-  if (!storedState || storedState !== state) return { success: false, code: 'OAUTH_INVALID_STATE' }
+  // The binding is single use; a missing one is refused by the API too.
+  const bindingName = bindingCookieName('oauth')
+  const browserBinding = cookieStore.get(bindingName)?.value
+  cookieStore.delete(bindingName)
+  if (!storedState || storedState !== state || !browserBinding) {
+    return { success: false, code: 'OAUTH_INVALID_STATE' }
+  }
   const accessToken = cookieStore.get(env.auth.cookieName)?.value
   if (!accessToken) return { success: false, code: 'SESSION_EXPIRED' }
   try {
@@ -432,6 +449,7 @@ export async function completeLinkCallback(
         code,
         state,
         redirect_uri: `${env.app.url}/auth/callback/${provider}`,
+        browser_binding: browserBinding,
       }),
     })
     return { success: true }

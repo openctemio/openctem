@@ -263,12 +263,9 @@ func (s *OAuthService) GetAuthorizationURL(ctx context.Context, input Authorizat
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate state: %w", err)
 	}
-	binding, err := newBrowserBinding()
+	binding, err := s.storeBoundVerifier(ctx, state, codeVerifier)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create browser binding: %w", err)
-	}
-	if err := s.pkceStore.Set(ctx, pkceStoreKey(state), hashBinding(binding)+":"+codeVerifier, s.stateTTL()); err != nil {
-		return nil, fmt.Errorf("failed to store PKCE verifier: %w", err)
+		return nil, err
 	}
 
 	// Build authorization URL with PKCE challenge
@@ -334,14 +331,8 @@ func (s *OAuthService) HandleCallback(ctx context.Context, input CallbackInput) 
 		return nil, ErrInvalidState
 	}
 	finalRedirect := claims.FinalRedirect
-	stored, found, err := s.pkceStore.GetDel(ctx, pkceStoreKey(input.State))
-	if err != nil {
-		s.logger.Error("failed to read PKCE verifier", "provider", input.Provider, "error", err)
-		return nil, ErrInvalidState
-	}
-	// The record is spent now; a wrong browser cannot retry it.
-	bindHash, codeVerifier, split := strings.Cut(stored, ":")
-	if !found || !split || codeVerifier == "" || !bindingMatches(input.BrowserBinding, bindHash) {
+	codeVerifier, ok := s.claimBoundVerifier(ctx, input.State, input.BrowserBinding, input.Provider)
+	if !ok {
 		return nil, ErrInvalidState
 	}
 
@@ -487,6 +478,41 @@ func generatePKCE() (verifier, challenge string, err error) {
 	hash := sha256.Sum256([]byte(verifier))
 	challenge = base64.RawURLEncoding.EncodeToString(hash[:])
 	return verifier, challenge, nil
+}
+
+// storeBoundVerifier keeps a flow's PKCE verifier server-side under its state,
+// bound to the browser that started the flow: it mints a one-time browser
+// binding secret, stores only its hash next to the verifier, and returns the
+// secret for the caller to hand to that browser (an HttpOnly cookie). The
+// record expires with the state. Sign-in and account linking both use it.
+func (s *OAuthService) storeBoundVerifier(ctx context.Context, state, codeVerifier string) (string, error) {
+	binding, err := newBrowserBinding()
+	if err != nil {
+		return "", fmt.Errorf("failed to create browser binding: %w", err)
+	}
+	if err := s.pkceStore.Set(ctx, pkceStoreKey(state), hashBinding(binding)+":"+codeVerifier, s.stateTTL()); err != nil {
+		return "", fmt.Errorf("failed to store PKCE verifier: %w", err)
+	}
+	return binding, nil
+}
+
+// claimBoundVerifier takes the PKCE verifier stored for state. Taking it is
+// single use: the record is deleted before the binding is checked, so a
+// replayed state finds nothing and a wrong browser cannot retry. It reports
+// false (the caller answers ErrInvalidState) when the record is missing or
+// expired, malformed, or presented without the binding secret of the browser
+// that started the flow.
+func (s *OAuthService) claimBoundVerifier(ctx context.Context, state, browserBinding string, provider OAuthProvider) (string, bool) {
+	stored, found, err := s.pkceStore.GetDel(ctx, pkceStoreKey(state))
+	if err != nil {
+		s.logger.Error("failed to read PKCE verifier", "provider", provider, "error", err)
+		return "", false
+	}
+	bindHash, codeVerifier, split := strings.Cut(stored, ":")
+	if !found || !split || codeVerifier == "" || !bindingMatches(browserBinding, bindHash) {
+		return "", false
+	}
+	return codeVerifier, true
 }
 
 // stateTTL is how long a state (and its stored PKCE verifier) is valid.

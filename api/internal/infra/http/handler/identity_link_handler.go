@@ -24,6 +24,8 @@ type LinkCallbackRequest struct {
 	Code        string `json:"code"`
 	State       string `json:"state"`
 	RedirectURI string `json:"redirect_uri"`
+	// BrowserBinding is the secret the link start gave this browser.
+	BrowserBinding string `json:"browser_binding"`
 }
 
 // ListSignInMethods returns the caller's sign-in methods.
@@ -50,7 +52,7 @@ func (h *OAuthHandler) ListSignInMethods(w http.ResponseWriter, r *http.Request)
 // StartLink returns the provider's authorization URL for linking it to the
 // signed-in account. Needs a fresh step-up (route gate).
 // @Summary      Start linking a sign-in provider
-// @Description  Returns the authorization URL of the provider. The state is bound to this account and this session and is accepted only by the link callback. Requires a recent re-authentication (STEP_UP_REQUIRED).
+// @Description  Returns the authorization URL of the provider. The state is bound to this account and this session and is accepted only by the link callback, once, within the state lifetime. browser_binding is a one-time secret for the browser that started the link: keep it in an HttpOnly cookie and send it back with the link callback. Requires a recent re-authentication (STEP_UP_REQUIRED).
 // @Tags         Account
 // @Accept       json
 // @Produce      json
@@ -85,17 +87,17 @@ func (h *OAuthHandler) StartLink(w http.ResponseWriter, r *http.Request) {
 		h.handleOAuthError(w, err)
 		return
 	}
-	writeIdentityJSON(w, http.StatusOK, AuthorizeResponse{AuthorizationURL: res.AuthorizationURL, State: res.State})
+	writeIdentityJSON(w, http.StatusOK, AuthorizeResponse{AuthorizationURL: res.AuthorizationURL, State: res.State, BrowserBinding: res.BrowserBinding})
 }
 
 // CompleteLink binds the provider identity to the signed-in account.
 // @Summary      Finish linking a sign-in provider
-// @Description  Exchanges the provider's code and links the identity to the signed-in account. The state must have been issued by the link start for this account and this session. 409 IDENTITY_LINKED_ELSEWHERE or PROVIDER_ALREADY_LINKED when it cannot be linked.
+// @Description  Exchanges the provider's code and links the identity to the signed-in account. The state must have been issued by the link start for this account and this session, is single use and expires, and browser_binding must be the secret the link start gave this browser; otherwise 400 OAUTH_INVALID_STATE. 409 IDENTITY_LINKED_ELSEWHERE or PROVIDER_ALREADY_LINKED when it cannot be linked.
 // @Tags         Account
 // @Accept       json
 // @Produce      json
 // @Param        provider  path  string               true  "google, github or microsoft"
-// @Param        request   body  LinkCallbackRequest  true  "Code and state"
+// @Param        request   body  LinkCallbackRequest  true  "Code, state and browser binding"
 // @Success      200  {object}  auth.SignInMethod
 // @Router       /users/me/identities/{provider}/link/callback [post]
 func (h *OAuthHandler) CompleteLink(w http.ResponseWriter, r *http.Request) {
@@ -125,6 +127,7 @@ func (h *OAuthHandler) CompleteLink(w http.ResponseWriter, r *http.Request) {
 		UserID: userID, SessionID: sessionID,
 		Provider: auth.OAuthProvider(r.PathValue("provider")),
 		Code:     req.Code, State: req.State, RedirectURI: req.RedirectURI,
+		BrowserBinding: req.BrowserBinding,
 	})
 	if err != nil {
 		h.handleOAuthError(w, err)
