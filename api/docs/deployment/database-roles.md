@@ -240,9 +240,8 @@ The live order is:
 
 ## How it is tested
 
-- CI job **Tests (least-privilege DB role)** (`api-ci.yml`; in the merge queue,
-  on pushes, and on a pull request that changes `api/migrations/` or this
-  script, or has the `ci:full` label):
+- CI job **Tests (Postgres + Redis)** (`api-ci.yml`; every pull request that
+  changes the API, the merge queue and pushes; each shard does all of this):
   1. bootstraps a fresh database with the script;
   2. applies every migration **as the migrator**, which proves no migration
      needs a superuser;

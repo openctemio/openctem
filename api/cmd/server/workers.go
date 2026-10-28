@@ -39,6 +39,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/reclassify"
 	"github.com/openctemio/openctem/api/internal/app/scancoverage"
 	"github.com/openctemio/openctem/api/internal/app/sla"
+	webverifyapp "github.com/openctemio/openctem/api/internal/app/webverify"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/auditsink"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
@@ -762,6 +763,20 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			// (docs/architecture/feed-transfer.md); v1 stays the fallback.
 			im.WithChunks(repos.CVECorpus, vulnfeed.Transfer{Mirrors: cfg.Worker.VulnFeedMirrors, CacheDir: cfg.Scope.FeedCacheDir,
 				Client: httpsec.SafeHTTPClient(0), Registerer: prometheus.DefaultRegisterer})
+			// KEV and EPSS ride the same release as a signed side manifest:
+			// applied when newer than what the platform holds, then the same
+			// findings sweep and event log as after a direct sync.
+			if svc.ThreatIntel != nil {
+				im.WithIntel(svc.ThreatIntel)
+				svc.ThreatIntel.SetAfterBundleApply(func(ctx context.Context, source string) {
+					switch source {
+					case "kev":
+						kevRefresh.Sweeper().Run(ctx, "kev", true, true)
+					case "epss":
+						epssRefresh.Sweeper().Run(ctx, "epss", true, true)
+					}
+				})
+			}
 			importCtl := controller.NewVulnFeedImportController(im, log.With("controller", "vuln-feed-import"))
 			if vulnEvents != nil {
 				importCtl.SetEventEmitter(vulnEvents)
@@ -1183,6 +1198,14 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	if repos.WebEndpoint != nil {
 		w.ControllerManager.Register(controller.NewWebSurfaceRetentionController(
 			repos.WebEndpoint, log.With("controller", "web-surface-retention")))
+	}
+
+	// Verification of sensitive web paths: new or changed catalog endpoints
+	// get the mapped signed templates, budgeted per tenant.
+	if repos.WebEndpoint != nil && svc.Scan != nil && svc.Scope != nil {
+		w.ControllerManager.Register(controller.NewWebVerifyController(
+			webverifyapp.NewPlanner(postgres.NewWebVerifyRepository(&postgres.DB{DB: deps.DB}), svc.Scan, webverifyapp.ScopeRules{Svc: svc.Scope},
+				webverifyapp.Config{}, log.With("controller", "web-verify")), 15*time.Minute))
 	}
 
 	// Per-task sensor logs (RFC-029 §4.4.1): kept 14 days.

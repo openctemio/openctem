@@ -1382,6 +1382,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	easmAlerts := postgres.NewEASMAlerter(easmDB)
 	easmExposures := postgres.NewEASMExposureWriter(easmDB, easmAlerts)
 	repos.EASMDNS.WithAlerts(easmAlerts)
+	// Immediate alerts of web endpoint changes share the exposure alerts'
+	// outbox, hourly budget and attribution rules.
+	repos.WebEndpoint.SetAlerter(postgres.NewWebAlerter(easmAlerts))
 	s.CertMonitor = certmonitorapp.NewService(repos.Asset, easmExposures, cfg.Worker.CertMonitorFeedBaseURL, log)
 	s.CertMonitor.SetDomainSources(repos.VerifiedDomain, repos.ScopeTarget)
 	// Stored CT exposures follow their host to its own asset (research/22 P0-9).
@@ -3304,6 +3307,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// Per-domain sign-up policy (RFC-104): sso_required, join by domain and
 	// blocking new organizations for accounts on a claimed domain.
 	s.Auth.SetSignupDomainPolicy(s.DomainVerify)
+	// An invitation vouches for its address only when the inviting
+	// organization holds the address's domain.
+	s.Auth.SetAddressHolder(s.AddressClassifier)
 	s.Onboarding = onboardingapp.NewService(repos.Tenant, repos.Tenant, onboardingTenants{s.Tenant}, s.DomainVerify,
 		s.Signup, repos.JoinRequest, s.Audit, deriveKey(cfg.Auth.JWTSecret, "openctem/onboarding-offer/v1"), log)
 	sso := s.SSO

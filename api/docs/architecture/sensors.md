@@ -1884,6 +1884,21 @@ minutes waited, never into critical), then queue priority and age. One job
 per organization and round may jump the fair-share order: its first job of
 the round when it is a verification (critical) job.
 
+**Cost of a poll** ([RFC-129](../rfcs/RFC-129-shared-fleet-scheduling.md)).
+A poll's work is bounded by the organizations with pending shared work, not
+by their queues or by finished shared jobs. It lists those organizations by a
+skip scan of `idx_commands_shared_pending` (pending shared jobs by
+organization, priority and age), orders them (a pending verification job
+first, then fewest shared jobs in flight, counted through
+`idx_commands_shared_inflight`, which holds no finished job), and keeps the
+first 200 that have a job this sensor may claim now (organizations whose
+work it cannot run do not count). From each it reads its first round (five
+jobs) in class and age order straight from the index, the gates running only
+on the rows read; an organization with a full first round reads further whole
+rounds only when the poll still has room after the first round. The order is
+the same as ranking every job. The read runs with JIT off: its estimated cost
+passes the JIT threshold while it reads a few thousand index rows at most.
+
 **Withheld candidates.** The checks after the query (grant, local policy,
 scope re-check, scan windows, program rules, tool settings, the
 organization's shared access) record nothing, so withheld jobs come back
