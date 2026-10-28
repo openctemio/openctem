@@ -24,6 +24,7 @@ import (
 type mockProvider struct {
 	mu         sync.Mutex
 	challenge  string
+	binding    string
 	tokenCalls int
 	verifiers  []string
 	srv        *httptest.Server
@@ -94,6 +95,7 @@ func authorize(t *testing.T, s *OAuthService, m *mockProvider) (state string) {
 	}
 	m.mu.Lock()
 	m.challenge = u.Query().Get("code_challenge")
+	m.binding = res.BrowserBinding
 	m.mu.Unlock()
 	if m.challenge == "" || u.Query().Get("code_challenge_method") != "S256" {
 		t.Fatalf("authorize URL lacks an S256 challenge: %s", res.AuthorizationURL)
@@ -142,7 +144,7 @@ func TestOAuthCallback_PKCEVerifierRoundTrip(t *testing.T) {
 	state := authorize(t, s, m)
 
 	_, err := s.HandleCallback(context.Background(), CallbackInput{
-		Provider: OAuthProviderGitHub, Code: "code-1", State: state, RedirectURI: "https://app.example/auth/callback",
+		Provider: OAuthProviderGitHub, Code: "code-1", State: state, BrowserBinding: m.binding, RedirectURI: "https://app.example/auth/callback",
 	})
 	// The mock has no userinfo endpoint, so the flow stops right after a
 	// successful code exchange.
@@ -161,7 +163,7 @@ func TestOAuthCallback_StateIsSingleUse(t *testing.T) {
 	s := newPKCETestService(t, m)
 	state := authorize(t, s, m)
 
-	in := CallbackInput{Provider: OAuthProviderGitHub, Code: "code-1", State: state, RedirectURI: "https://app.example/auth/callback"}
+	in := CallbackInput{Provider: OAuthProviderGitHub, Code: "code-1", State: state, BrowserBinding: m.binding, RedirectURI: "https://app.example/auth/callback"}
 	_, _ = s.HandleCallback(context.Background(), in)
 	in.Code = "intercepted-code"
 	_, err := s.HandleCallback(context.Background(), in)
@@ -189,5 +191,23 @@ func TestMemoryPKCEStore_ExpiresAndIsSingleUse(t *testing.T) {
 	time.Sleep(30 * time.Millisecond)
 	if _, ok, _ := st.GetDel(ctx, "k2"); ok {
 		t.Fatal("expired entry must miss")
+	}
+}
+
+// TestOAuthCallback_OtherBrowserRefused: the callback URL alone (code + state)
+// is not enough; the browser binding issued at authorize must come with it.
+func TestOAuthCallback_OtherBrowserRefused(t *testing.T) {
+	m := newMockProvider(t)
+	s := newPKCETestService(t, m)
+	state := authorize(t, s, m)
+
+	_, err := s.HandleCallback(context.Background(), CallbackInput{
+		Provider: OAuthProviderGitHub, Code: "code-1", State: state, BrowserBinding: "someone-else", RedirectURI: "https://app.example/auth/callback",
+	})
+	if !errors.Is(err, ErrInvalidState) {
+		t.Fatalf("want ErrInvalidState, got %v", err)
+	}
+	if m.tokenCalls != 0 {
+		t.Fatalf("a foreign browser reached the token endpoint (%d calls)", m.tokenCalls)
 	}
 }

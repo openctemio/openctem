@@ -4,13 +4,14 @@ import userEvent from '@testing-library/user-event'
 import { SSOEnforcementCard } from '../components/sso-enforcement-card'
 import { PlatformIdPForm } from '../components/platform-idp-form'
 import { TypedAdminConfirmDialog } from '../components/type-to-confirm-field'
-import { setSSOEnforcement } from '../api/use-admin-organizations'
+import { setSSOEnforcement, useSSOEnforcement } from '../api/use-admin-organizations'
 import { deletePlatformIdP, savePlatformIdP } from '../api/use-platform-idp'
 import type { AdminOrganization, PlatformIdP } from '../types'
 
 vi.mock('../api/use-admin-organizations', async (orig) => ({
   ...(await orig<typeof import('../api/use-admin-organizations')>()),
   setSSOEnforcement: vi.fn().mockResolvedValue(undefined),
+  useSSOEnforcement: vi.fn(),
 }))
 vi.mock('../api/use-platform-idp', async (orig) => ({
   ...(await orig<typeof import('../api/use-platform-idp')>()),
@@ -25,7 +26,23 @@ globalThis.ResizeObserver ??= class {
   disconnect() {}
 }
 
-beforeEach(() => vi.clearAllMocks())
+const readiness = (over: Partial<Record<string, number | boolean>> = {}) => ({
+  admin_sso_signin: true,
+  owner_second_factor: true,
+  api_keys: 3,
+  connector_grants: 2,
+  ...over,
+})
+const mockReadiness = (r: ReturnType<typeof readiness>) =>
+  vi.mocked(useSSOEnforcement).mockReturnValue({
+    data: { enforced: false, readiness: r },
+    mutate: vi.fn(),
+  } as unknown as ReturnType<typeof useSSOEnforcement>)
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  mockReadiness(readiness())
+})
 
 const org = (enforced: boolean) =>
   ({
@@ -47,11 +64,29 @@ describe('SSO enforcement switch', () => {
     await waitFor(() => expect(setSSOEnforcement).toHaveBeenCalledWith('o1', false))
   })
 
-  it('turning enforcement on stays one click', async () => {
+  it('turning enforcement on revokes existing keys and connections by default', async () => {
     const user = userEvent.setup()
     render(<SSOEnforcementCard org={org(false)} canManage onChanged={vi.fn()} />)
+    expect(screen.getByText(/Revoke the 3 API keys and 2 AI connections/)).toBeInTheDocument()
     await user.click(screen.getByRole('switch'))
-    await waitFor(() => expect(setSSOEnforcement).toHaveBeenCalledWith('o1', true))
+    await waitFor(() => expect(setSSOEnforcement).toHaveBeenCalledWith('o1', true, true))
+  })
+
+  it('unticking the box keeps them', async () => {
+    const user = userEvent.setup()
+    render(<SSOEnforcementCard org={org(false)} canManage onChanged={vi.fn()} />)
+    await user.click(screen.getByRole('checkbox'))
+    await user.click(screen.getByRole('switch'))
+    await waitFor(() => expect(setSSOEnforcement).toHaveBeenCalledWith('o1', true, false))
+  })
+
+  it.each([
+    ['no administrator has signed in through the identity provider', { admin_sso_signin: false }],
+    ['no owner has two-factor authentication', { owner_second_factor: false }],
+  ])('the switch stays off while %s', async (_n, over) => {
+    mockReadiness(readiness(over))
+    render(<SSOEnforcementCard org={org(false)} canManage onChanged={vi.fn()} />)
+    expect(screen.getByRole('switch')).toBeDisabled()
   })
 })
 

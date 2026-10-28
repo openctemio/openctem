@@ -487,6 +487,9 @@ const (
 	ActionSSOVerifiedDomainAdded     Action = "sso.verified_domain_added"
 	ActionSSOVerifiedDomainVerified  Action = "sso.verified_domain_verified"
 	ActionSSOVerifiedDomainDeleted   Action = "sso.verified_domain_deleted"
+	// ActionSSOBreakGlassUsed: an owner signed in with a password and their
+	// second factor to an organization that requires SSO.
+	ActionSSOBreakGlassUsed Action = "sso.break_glass_used"
 	// ActionSSOVerifiedDomainJITChanged: a domain's just-in-time provisioning
 	// (on/off, role) changed (RFC-058).
 	ActionSSOVerifiedDomainJITChanged Action = "sso.verified_domain_jit_changed"
@@ -877,6 +880,7 @@ func (a Action) IsValid() bool {
 		ActionSSOSAMLConfigUpdated, ActionSSOSAMLConfigDeleted,
 		ActionSSOIdentityProviderCreated, ActionSSOIdentityProviderUpdated, ActionSSOIdentityProviderDeleted,
 		ActionSSOVerifiedDomainAdded, ActionSSOVerifiedDomainVerified, ActionSSOVerifiedDomainDeleted,
+		ActionSSOBreakGlassUsed,
 		ActionSSOVerifiedDomainJITChanged, ActionSSOVerifiedDomainSignupPolicyChanged,
 		ActionMemberJoinedByDomain, ActionJoinRequestCreated, ActionJoinRequestApproved, ActionJoinRequestRejected,
 		ActionSSOChangeRequested, ActionSSOChangeApproved, ActionSSOChangeRejected,
@@ -1074,7 +1078,7 @@ func (a Action) Category() string {
 	case ActionSSOSAMLConfigUpdated, ActionSSOSAMLConfigDeleted,
 		ActionSSOIdentityProviderCreated, ActionSSOIdentityProviderUpdated, ActionSSOIdentityProviderDeleted,
 		ActionSSOVerifiedDomainAdded, ActionSSOVerifiedDomainVerified, ActionSSOVerifiedDomainDeleted,
-		ActionSSOVerifiedDomainJITChanged,
+		ActionSSOVerifiedDomainJITChanged, ActionSSOBreakGlassUsed,
 		ActionSSOChangeRequested, ActionSSOChangeApproved, ActionSSOChangeRejected,
 		ActionSSOTrustRequested, ActionSSOTrustAccepted, ActionSSOTrustUpdated, ActionSSOTrustRevoked,
 		ActionSCIMGroupMappingsUpdated:
