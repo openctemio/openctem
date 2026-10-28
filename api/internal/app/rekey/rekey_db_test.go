@@ -105,6 +105,16 @@ func seedAll(t *testing.T, db *sql.DB, key string) map[string]string {
 		jsonb_build_object('enabled', true, 'provider', 'claude', 'key_encrypted', $1::text))
 		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
 		put("platform_settings.value.key_encrypted", "platform-llm-key"))
+	// The console's CAPTCHA secret and alert webhook address and secret.
+	exec(`INSERT INTO platform_settings (key, value) VALUES ('captcha.turnstile',
+		jsonb_build_object('site_key', '0x4AAAAAAAexample', 'secret_encrypted', $1::text))
+		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+		put("platform_settings.value.secret_encrypted@captcha.turnstile", "captcha-secret"))
+	exec(`INSERT INTO platform_settings (key, value) VALUES ('alerts.webhook',
+		jsonb_build_object('enabled', true, 'url_encrypted', $1::text, 'secret_encrypted', $2::text))
+		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+		put("platform_settings.value.url_encrypted@alerts.webhook", "https://hooks.example.com/x"),
+		put("platform_settings.value.secret_encrypted@alerts.webhook", "alert-signing-secret"))
 
 	// The console's social login client secrets.
 	exec(`INSERT INTO platform_settings (key, value) VALUES ('auth.social_login',
@@ -191,29 +201,32 @@ func readAll(t *testing.T, db *sql.DB, key string) map[string]string {
 	}
 	out := map[string]string{}
 	for loc, q := range map[string]string{
-		"tenant_ai_settings.key_enc":                              `SELECT key_enc FROM tenant_ai_settings`,
-		"integrations.credentials_encrypted":                      `SELECT credentials_encrypted FROM integrations`,
-		"integrations.metadata.webhook_secret_encrypted":          `SELECT metadata->>'webhook_secret_encrypted' FROM integrations`,
-		"integrations.metadata.signing_secret_encrypted":          `SELECT metadata->>'signing_secret_encrypted' FROM integrations`,
-		"integrations.metadata.signing_secret_previous_encrypted": `SELECT metadata->>'signing_secret_previous_encrypted' FROM integrations`,
-		"integration_scm_extensions.webhook_secret_encrypted":     `SELECT convert_from(webhook_secret_encrypted, 'UTF8') FROM integration_scm_extensions`,
-		"tenant_identity_providers.client_secret_encrypted":       `SELECT client_secret_encrypted FROM tenant_identity_providers`,
-		"platform_identity_provider.client_secret_encrypted":      `SELECT client_secret_encrypted FROM platform_identity_provider`,
-		"admin_idp_login_states.code_verifier_encrypted":          `SELECT code_verifier_encrypted FROM admin_idp_login_states`,
-		"admin_credentials.mfa_secret_encrypted":                  `SELECT mfa_secret_encrypted FROM admin_credentials`,
-		"user_mfa.secret_encrypted":                               `SELECT secret_encrypted FROM user_mfa`,
-		"user_mfa.pending_secret_encrypted":                       `SELECT pending_secret_encrypted FROM user_mfa`,
-		"finding_evidence_secrets.ciphertext":                     `SELECT ciphertext FROM finding_evidence_secrets`,
-		"pentest_campaign_secrets.ciphertext":                     `SELECT ciphertext FROM pentest_campaign_secrets`,
-		"scm_gitlab_connections.token_encrypted":                  `SELECT token_encrypted FROM scm_gitlab_connections`,
-		"settings.value_json.access_key":                          `SELECT value_json->>'access_key' FROM settings WHERE key = 'storage_config'`,
-		"settings.value_json.secret_key":                          `SELECT value_json->>'secret_key' FROM settings WHERE key = 'storage_config'`,
-		"platform_settings.value.password_encrypted":              `SELECT value->>'password_encrypted' FROM platform_settings WHERE key = 'email.smtp'`,
-		"platform_settings.value.key_encrypted":                   `SELECT value->>'key_encrypted' FROM platform_settings WHERE key = 'ai.platform'`,
-		"platform_settings.value.google.secret_encrypted":         `SELECT value->'google'->>'secret_encrypted' FROM platform_settings WHERE key = 'auth.social_login'`,
-		"platform_settings.value.github.secret_encrypted":         `SELECT value->'github'->>'secret_encrypted' FROM platform_settings WHERE key = 'auth.social_login'`,
-		"platform_settings.value.microsoft.secret_encrypted":      `SELECT value->'microsoft'->>'secret_encrypted' FROM platform_settings WHERE key = 'auth.social_login'`,
-		"exposure_events.details.secret_value_enc":                `SELECT details->>'secret_value_enc' FROM exposure_events`,
+		"tenant_ai_settings.key_enc":                                 `SELECT key_enc FROM tenant_ai_settings`,
+		"integrations.credentials_encrypted":                         `SELECT credentials_encrypted FROM integrations`,
+		"integrations.metadata.webhook_secret_encrypted":             `SELECT metadata->>'webhook_secret_encrypted' FROM integrations`,
+		"integrations.metadata.signing_secret_encrypted":             `SELECT metadata->>'signing_secret_encrypted' FROM integrations`,
+		"integrations.metadata.signing_secret_previous_encrypted":    `SELECT metadata->>'signing_secret_previous_encrypted' FROM integrations`,
+		"integration_scm_extensions.webhook_secret_encrypted":        `SELECT convert_from(webhook_secret_encrypted, 'UTF8') FROM integration_scm_extensions`,
+		"tenant_identity_providers.client_secret_encrypted":          `SELECT client_secret_encrypted FROM tenant_identity_providers`,
+		"platform_identity_provider.client_secret_encrypted":         `SELECT client_secret_encrypted FROM platform_identity_provider`,
+		"admin_idp_login_states.code_verifier_encrypted":             `SELECT code_verifier_encrypted FROM admin_idp_login_states`,
+		"admin_credentials.mfa_secret_encrypted":                     `SELECT mfa_secret_encrypted FROM admin_credentials`,
+		"user_mfa.secret_encrypted":                                  `SELECT secret_encrypted FROM user_mfa`,
+		"user_mfa.pending_secret_encrypted":                          `SELECT pending_secret_encrypted FROM user_mfa`,
+		"finding_evidence_secrets.ciphertext":                        `SELECT ciphertext FROM finding_evidence_secrets`,
+		"pentest_campaign_secrets.ciphertext":                        `SELECT ciphertext FROM pentest_campaign_secrets`,
+		"scm_gitlab_connections.token_encrypted":                     `SELECT token_encrypted FROM scm_gitlab_connections`,
+		"settings.value_json.access_key":                             `SELECT value_json->>'access_key' FROM settings WHERE key = 'storage_config'`,
+		"settings.value_json.secret_key":                             `SELECT value_json->>'secret_key' FROM settings WHERE key = 'storage_config'`,
+		"platform_settings.value.password_encrypted":                 `SELECT value->>'password_encrypted' FROM platform_settings WHERE key = 'email.smtp'`,
+		"platform_settings.value.key_encrypted":                      `SELECT value->>'key_encrypted' FROM platform_settings WHERE key = 'ai.platform'`,
+		"platform_settings.value.secret_encrypted@captcha.turnstile": `SELECT value->>'secret_encrypted' FROM platform_settings WHERE key = 'captcha.turnstile'`,
+		"platform_settings.value.url_encrypted@alerts.webhook":       `SELECT value->>'url_encrypted' FROM platform_settings WHERE key = 'alerts.webhook'`,
+		"platform_settings.value.secret_encrypted@alerts.webhook":    `SELECT value->>'secret_encrypted' FROM platform_settings WHERE key = 'alerts.webhook'`,
+		"platform_settings.value.google.secret_encrypted":            `SELECT value->'google'->>'secret_encrypted' FROM platform_settings WHERE key = 'auth.social_login'`,
+		"platform_settings.value.github.secret_encrypted":            `SELECT value->'github'->>'secret_encrypted' FROM platform_settings WHERE key = 'auth.social_login'`,
+		"platform_settings.value.microsoft.secret_encrypted":         `SELECT value->'microsoft'->>'secret_encrypted' FROM platform_settings WHERE key = 'auth.social_login'`,
+		"exposure_events.details.secret_value_enc":                   `SELECT details->>'secret_value_enc' FROM exposure_events`,
 	} {
 		out[loc] = dec(one(q))
 	}
