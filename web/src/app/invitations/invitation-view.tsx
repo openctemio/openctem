@@ -20,6 +20,7 @@ import {
 } from '@/features/auth/lib/invitation-token'
 import { registerHref } from '@/features/auth/lib/self-register'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { authErrorText } from '@/features/auth/lib/auth-error-codes'
 import { MfaSessionStep } from '@/features/auth/components/mfa-session-step'
 import { useTranslation } from '@/context/i18n-provider'
 import {
@@ -64,9 +65,17 @@ function postToken(url: string, token: string): Promise<Response> {
   })
 }
 
-async function errorMessage(response: Response, fallback: string): Promise<string> {
-  const data = (await response.json().catch(() => ({}))) as { message?: string }
-  return data.message || fallback
+/** A refused decline: its message is already the console's own text. */
+class DeclineRefused extends Error {}
+
+/** The words for a refused request, from the API's code; never the server's sentence. */
+async function errorMessage(
+  response: Response,
+  fallback: string,
+  t: Parameters<typeof authErrorText>[1]
+): Promise<string> {
+  const data = (await response.json().catch(() => ({}))) as { code?: string }
+  return authErrorText(data.code, t, fallback)
 }
 
 /** The API refused a token only because the organization requires 2FA. */
@@ -118,7 +127,7 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
             clearInvitationToken()
             setError(t('org.acceptInvite.notFound'))
           } else {
-            setError(await errorMessage(response, t('org.acceptInvite.loadFailed')))
+            setError(await errorMessage(response, t('org.acceptInvite.loadFailed'), t))
           }
           return
         }
@@ -181,17 +190,21 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
             return
           }
 
-          const errorMsg = await errorMessage(refreshResponse, t('org.acceptInvite.acceptFailed'))
+          const errorMsg = await errorMessage(
+            refreshResponse,
+            t('org.acceptInvite.acceptFailed'),
+            t
+          )
           setAcceptError(errorMsg)
           toast.error(errorMsg)
           return
         }
 
-        const errorMsg = await errorMessage(response, t('org.acceptInvite.acceptFailed'))
+        const errorMsg = await errorMessage(response, t('org.acceptInvite.acceptFailed'), t)
         setAcceptError(errorMsg)
         toast.error(errorMsg)
-      } catch (err) {
-        const message = err instanceof Error ? err.message : t('org.acceptInvite.acceptFailed')
+      } catch {
+        const message = t('org.acceptInvite.acceptFailed')
         setAcceptError(message)
         toast.error(message)
       }
@@ -206,13 +219,17 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
       try {
         const response = await postToken(endpoints.invitations.decline(), token)
         if (!response.ok) {
-          throw new Error(await errorMessage(response, t('org.acceptInvite.declineFailed')))
+          throw new DeclineRefused(
+            await errorMessage(response, t('org.acceptInvite.declineFailed'), t)
+          )
         }
         clearInvitationToken()
         setDeclined(true)
         toast.success(t('org.acceptInvite.declinedToast'))
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : t('org.acceptInvite.declineFailed'))
+        toast.error(
+          err instanceof DeclineRefused ? err.message : t('org.acceptInvite.declineFailed')
+        )
       } finally {
         setConfirmDecline(false)
       }
