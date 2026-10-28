@@ -25,6 +25,11 @@ const (
 	MethodTool = "tool"
 	// MethodValidate: the nuclei template re-run plus the reachability probe.
 	MethodValidate = "validate"
+	// MethodVersion: a version-match finding re-checked by re-running the
+	// fingerprint that read the software version on the asset, then
+	// evaluating the version seen against the CVE's affected ranges
+	// (docs/architecture/finding-retest-strategy.md).
+	MethodVersion = "version"
 )
 
 // maxVerdictDetail caps the tool's detail kept in the retest reason.
