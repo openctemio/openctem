@@ -13,6 +13,8 @@
   "errors.INTEGRATION_AUTH_FAILED.action": "Update API token",
   "errors.INTEGRATION_CREDENTIALS_UNREADABLE": "The saved API token of this connection cannot be read. Enter it again.",
   "errors.INTEGRATION_CREDENTIALS_UNREADABLE.action": "Enter API token",
+  "errors.INTEGRATION_EMAIL_RELAY_POLICY": "This mail server does not meet the service rules: use port 465, 587 or 2525 with a username, a password and TLS. Sending is stopped until you edit it and test again.",
+  "errors.INTEGRATION_EMAIL_RELAY_POLICY.action": "Edit connection",
   "errors.INTEGRATION_FORBIDDEN": "The token works but lacks a permission this needs. Grant it on the service and test again.",
   "errors.INTEGRATION_FORBIDDEN.action": "Edit connection",
   "errors.INTEGRATION_NOT_FOUND": "The service did not find what this connection points at. Check the address and project.",

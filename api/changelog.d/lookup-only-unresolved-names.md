@@ -1,5 +1,0 @@
-### Fixed: DNS resolution runs on names that stopped resolving
-
-- A job that only looks names up (`resolve.dns` with dnsx, passive subdomain enumeration) is no longer refused a hostname for having no DNS answer, at dispatch or when a sensor claims it. Finding out whether the name resolves is the job: coverage runs that re-check names that stopped resolving failed at claim with `SCOPE_CHANGED`, every name refused as `unresolved`. Zone routing places such a name as a public target; every other check (scope entries, exclusions, rejected names, the deny list, private addresses, domain proof, the tier) still applies, and the sensor's egress guard still checks every address before connecting. Any other tool is refused as before.
-- A coverage run dispatched without zone routing (a passive batch of public names) records it, so the claim re-check does not route it either.
-- A job whose every target is refused at claim only because its names stopped resolving ends as `NO_RESOLVING_TARGETS` (new failure class `target`, not retried), not `SCOPE_CHANGED`. `SCOPE_CHANGED` stays for a real scope change.
