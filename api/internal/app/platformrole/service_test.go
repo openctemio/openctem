@@ -12,16 +12,35 @@ import (
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
+// memStore stands in for the transactional store: the audit entry is written
+// with the change or both fail, and a held role changes nothing.
 type memStore struct {
-	held map[string][]platformauthz.RoleKey
+	held      map[string][]platformauthz.RoleKey
+	rows      []*admin.AuditLog
+	auditDown bool
 }
 
 func (m *memStore) ListAssignments(context.Context) ([]Assignment, error) { return nil, nil }
-func (m *memStore) Assign(_ context.Context, id shared.ID, r platformauthz.RoleKey, _ shared.ID) error {
-	m.held[id.String()] = append(m.held[id.String()], r)
+func (m *memStore) audit(e *admin.AuditLog) error {
+	if e == nil || m.auditDown {
+		return ErrAuditUnavailable
+	}
+	m.rows = append(m.rows, e)
 	return nil
 }
-func (m *memStore) Revoke(_ context.Context, id shared.ID, r platformauthz.RoleKey) (bool, error) {
+func (m *memStore) Assign(_ context.Context, id shared.ID, r platformauthz.RoleKey, _ shared.ID, e *admin.AuditLog) (bool, error) {
+	for _, k := range m.held[id.String()] {
+		if k == r {
+			return false, nil
+		}
+	}
+	if err := m.audit(e); err != nil {
+		return false, err
+	}
+	m.held[id.String()] = append(m.held[id.String()], r)
+	return true, nil
+}
+func (m *memStore) Revoke(_ context.Context, id shared.ID, r platformauthz.RoleKey, e *admin.AuditLog) (bool, error) {
 	out, found := []platformauthz.RoleKey{}, false
 	for _, k := range m.held[id.String()] {
 		if k == r {
@@ -30,8 +49,14 @@ func (m *memStore) Revoke(_ context.Context, id shared.ID, r platformauthz.RoleK
 		}
 		out = append(out, k)
 	}
+	if !found {
+		return false, nil
+	}
+	if err := m.audit(e); err != nil {
+		return false, err
+	}
 	m.held[id.String()] = out
-	return found, nil
+	return true, nil
 }
 
 type memAdmins map[string]*admin.AdminUser
@@ -41,20 +66,6 @@ func (m memAdmins) GetByID(_ context.Context, id shared.ID) (*admin.AdminUser, e
 		return a, nil
 	}
 	return nil, admin.ErrAdminNotFound
-}
-
-type memAudit struct {
-	admin.AuditLogRepository
-	rows []*admin.AuditLog
-	fail bool
-}
-
-func (a *memAudit) Create(_ context.Context, l *admin.AuditLog) error {
-	if a.fail {
-		return errors.New("down")
-	}
-	a.rows = append(a.rows, l)
-	return nil
 }
 
 type memRoster struct{ n int }
@@ -77,8 +88,8 @@ func TestAssignRules(t *testing.T) {
 	owner := mk(t, admin.AdminRoleSuperAdmin, platformauthz.RoleOwner)
 	staff := mk(t, admin.AdminRoleReadonly)
 	support := mk(t, admin.AdminRoleReadonly, platformauthz.RoleViewer, platformauthz.RoleSupport)
-	store, audit, roster := &memStore{held: map[string][]platformauthz.RoleKey{}}, &memAudit{}, &memRoster{}
-	svc := NewService(store, memAdmins{staff.ID().String(): staff, owner.ID().String(): owner}, audit, roster, logger.NewNop())
+	store, roster := &memStore{held: map[string][]platformauthz.RoleKey{}}, &memRoster{}
+	svc := NewService(store, memAdmins{staff.ID().String(): staff, owner.ID().String(): owner}, roster, logger.NewNop())
 	ctx := context.Background()
 	reason := "New support engineer, ticket 42"
 
@@ -101,27 +112,27 @@ func TestAssignRules(t *testing.T) {
 			t.Errorf("%s: %v, want %v", name, err, c.want)
 		}
 	}
-	if len(store.held) != 0 || len(audit.rows) != 0 || roster.n != 0 {
+	if len(store.held) != 0 || len(store.rows) != 0 || roster.n != 0 {
 		t.Fatal("a refused change stores, audits or announces nothing")
 	}
 
-	audit.fail = true
+	store.auditDown = true
 	if err := svc.Assign(ctx, owner, staff.ID(), platformauthz.RoleSupport, reason, Client{}); !errors.Is(err, ErrAuditUnavailable) {
 		t.Fatalf("audit down: %v", err)
 	}
 	if len(store.held) != 0 {
 		t.Fatal("no audit row, no change")
 	}
-	audit.fail = false
+	store.auditDown = false
 
 	if err := svc.Assign(ctx, owner, staff.ID(), platformauthz.RoleSupport, reason, Client{IP: "203.0.113.9"}); err != nil {
 		t.Fatal(err)
 	}
-	if got := store.held[staff.ID().String()]; len(got) != 1 || got[0] != platformauthz.RoleSupport || len(audit.rows) != 1 || roster.n != 1 {
-		t.Fatalf("assign: held %v, audit %d, roster %d", got, len(audit.rows), roster.n)
+	if got := store.held[staff.ID().String()]; len(got) != 1 || got[0] != platformauthz.RoleSupport || len(store.rows) != 1 || roster.n != 1 {
+		t.Fatalf("assign: held %v, audit %d, roster %d", got, len(store.rows), roster.n)
 	}
-	if audit.rows[0].Action != ActionAssigned {
-		t.Fatalf("audit action %s", audit.rows[0].Action)
+	if store.rows[0].Action != ActionAssigned {
+		t.Fatalf("audit action %s", store.rows[0].Action)
 	}
 	if err := svc.Revoke(ctx, owner, staff.ID(), platformauthz.RoleSupport, reason, Client{}); err != nil {
 		t.Fatal(err)
@@ -140,5 +151,34 @@ func TestOwners(t *testing.T) {
 	}
 	if n := Owners(as); n != 1 {
 		t.Fatalf("named owners %d, want 1 (break-glass and inactive do not count)", n)
+	}
+}
+
+// Giving a role already held changes nothing: no audit row, no roster notice.
+// A break-glass account takes no extra role (it may still lose one).
+func TestAssign_HeldAndBreakGlass(t *testing.T) {
+	owner := mk(t, admin.AdminRoleSuperAdmin, platformauthz.RoleOwner)
+	staff := mk(t, admin.AdminRoleReadonly)
+	glass := mk(t, admin.AdminRoleSuperAdmin)
+	if err := glass.SetBreakGlass(true); err != nil {
+		t.Fatal(err)
+	}
+	store, roster := &memStore{held: map[string][]platformauthz.RoleKey{}}, &memRoster{}
+	svc := NewService(store, memAdmins{staff.ID().String(): staff, glass.ID().String(): glass}, roster, logger.NewNop())
+	ctx, reason := context.Background(), "New support engineer, ticket 42"
+
+	for i := 0; i < 2; i++ {
+		if err := svc.Assign(ctx, owner, staff.ID(), platformauthz.RoleSupport, reason, Client{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(store.rows) != 1 || roster.n != 1 {
+		t.Fatalf("a repeated grant must audit and announce once: audit %d, roster %d", len(store.rows), roster.n)
+	}
+	if err := svc.Assign(ctx, owner, glass.ID(), platformauthz.RoleSupport, reason, Client{}); !errors.Is(err, admin.ErrBreakGlassHasRoles) {
+		t.Fatalf("break-glass target: %v", err)
+	}
+	if len(store.held[glass.ID().String()]) != 0 || len(store.rows) != 1 {
+		t.Fatal("a refused break-glass grant stores and audits nothing")
 	}
 }

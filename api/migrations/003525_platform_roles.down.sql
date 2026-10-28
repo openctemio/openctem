@@ -1,5 +1,9 @@
 ALTER TABLE role_permissions DROP CONSTRAINT IF EXISTS role_permissions_not_platform_namespace;
 ALTER TABLE permissions DROP CONSTRAINT IF EXISTS permissions_not_platform_namespace;
+DROP TRIGGER IF EXISTS trg_forbid_extra_role_for_break_glass ON admin_users;
+DROP FUNCTION IF EXISTS forbid_extra_role_for_break_glass();
+DROP TRIGGER IF EXISTS trg_forbid_break_glass_extra_role ON platform_role_assignments;
+DROP FUNCTION IF EXISTS forbid_break_glass_extra_role();
 DROP TRIGGER IF EXISTS trg_sync_platform_base_role ON admin_users;
 DROP FUNCTION IF EXISTS sync_platform_base_role();
 DROP TABLE IF EXISTS platform_role_assignments;

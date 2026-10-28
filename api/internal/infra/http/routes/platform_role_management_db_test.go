@@ -36,7 +36,7 @@ func newRoleManagementHarness(t *testing.T) *chainHarness {
 		roles := postgres.NewPlatformRoleRepository(db)
 		hs.AdminAuthMiddleware = middleware.NewAdminAuthMiddleware(console, log).WithPlatformRoles(roles)
 		hs.AdminPlatformRole = handler.NewAdminPlatformRoleHandler(
-			platformrole.NewService(roles, postgres.NewAdminRepository(db), postgres.NewAuditLogRepository(db), nil, log), log)
+			platformrole.NewService(roles, postgres.NewAdminRepository(db), nil, log), log)
 		hs.User = handler.NewUserHandler(tenant.NewUserService(postgres.NewUserRepository(db), log), nil, validator.New(), log)
 		hs.AdminUser = handler.NewAdminUserHandler(postgres.NewAdminRepository(db), log)
 	})
@@ -98,11 +98,13 @@ func TestPlatformRoleManagement_DB(t *testing.T) {
 	// members of an organization; nothing there reveals their platform roles.
 	tenantID := h.organization(1)
 	for _, c := range []*consoleAdmin{owner, staff} {
-		tok := h.memberToken(c.userID.String(), c.a.Email(), tenantID, "member")
+		// An authorized tenant user (the organization's owner), so every
+		// route answers for real: a 403 body would pass the scan vacuously.
+		tok := h.memberToken(c.userID.String(), c.a.Email(), tenantID, "owner")
 		for _, path := range []string{"/api/v1/users/me", "/api/v1/tenants/" + tenantID + "/members", "/api/v1/audit-logs"} {
 			code, body := h.send(http.MethodGet, path, map[string]string{"Authorization": "Bearer " + tok})
-			if code >= 500 {
-				t.Fatalf("%s: %d %s", path, code, body)
+			if code != http.StatusOK {
+				t.Fatalf("%s as the organization's owner: %d %s (want 200)", path, code, body)
 			}
 			for _, leak := range []string{"platform_owner", "platform_viewer", `"support"`, "super_admin", "readonly", "platform.", "is_platform_admin", "platform_role"} {
 				if strings.Contains(body, leak) {

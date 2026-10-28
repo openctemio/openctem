@@ -805,7 +805,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AdminConsole:              handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, log).WithApprovals(adminApprovals),
 		AdminApproval:             handler.NewAdminApprovalHandler(adminApprovals, log),
 		AdminPlatformRole: handler.NewAdminPlatformRoleHandler(platformrole.NewService(
-			postgres.NewPlatformRoleRepository(adminDBOf(repos, deps.DB)), repos.Admin, repos.AdminAuditLog,
+			postgres.NewPlatformRoleRepository(adminDBOf(repos, deps.DB)), repos.Admin,
 			platformRoleRoster{adminConsoleSvc}, log), log),
 		AdminAuditChain: handler.NewAdminAuditChainHandler(svc.Audit, adminConsoleSvc, repos.AdminAuditLog, repos.AdminOrg, log).WithApprovals(adminApprovals),
 		AdminAuthMiddleware: middleware.NewAdminAuthMiddleware(adminConsoleSvc, log).WithElevation(cfg.AdminElevationRequired).

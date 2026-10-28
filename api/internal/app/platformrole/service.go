@@ -51,10 +51,15 @@ type Assignment struct {
 // Store persists the assignments.
 type Store interface {
 	ListAssignments(ctx context.Context) ([]Assignment, error)
-	// Assign gives an additional (non-base) role; giving a held role is a no-op.
-	Assign(ctx context.Context, adminID shared.ID, role platformauthz.RoleKey, by shared.ID) error
-	// Revoke takes an additional role; reports whether it was held.
-	Revoke(ctx context.Context, adminID shared.ID, role platformauthz.RoleKey) (bool, error)
+	// Assign gives an additional (non-base) role and reports whether it was
+	// new (giving a held role changes nothing and writes no audit row). The
+	// audit entry is written in the same transaction as the change, so the
+	// two commit or fail together; a nil entry is refused with
+	// ErrAuditUnavailable.
+	Assign(ctx context.Context, adminID shared.ID, role platformauthz.RoleKey, by shared.ID, entry *admin.AuditLog) (bool, error)
+	// Revoke takes an additional role and reports whether it was held, with
+	// the same audit contract as Assign.
+	Revoke(ctx context.Context, adminID shared.ID, role platformauthz.RoleKey, entry *admin.AuditLog) (bool, error)
 }
 
 // Admins reads administrators.
@@ -71,14 +76,15 @@ type RosterNotifier interface {
 type Service struct {
 	store  Store
 	admins Admins
-	audit  admin.AuditLogRepository
 	roster RosterNotifier
 	log    *logger.Logger
 }
 
-// NewService creates the service.
-func NewService(store Store, admins Admins, audit admin.AuditLogRepository, roster RosterNotifier, log *logger.Logger) *Service {
-	return &Service{store: store, admins: admins, audit: audit, roster: roster, log: log.With("service", "platform_role")}
+// NewService creates the service. The audit log is part of the store's
+// contract (it writes the entry in the change's transaction), so there is no
+// unaudited path: a change never happens without its audit row.
+func NewService(store Store, admins Admins, roster RosterNotifier, log *logger.Logger) *Service {
+	return &Service{store: store, admins: admins, roster: roster, log: log.With("service", "platform_role")}
 }
 
 // Client is where a change came from.
@@ -114,11 +120,15 @@ func (s *Service) Assign(ctx context.Context, actor *admin.AdminUser, targetID s
 	if err != nil {
 		return err
 	}
-	if err := s.record(ctx, actor, target, ActionAssigned, role, reason, c); err != nil {
-		return err
+	if target.IsBreakGlass() {
+		return admin.ErrBreakGlassHasRoles
 	}
-	if err := s.store.Assign(ctx, target.ID(), role, actor.ID()); err != nil {
-		return err
+	changed, err := s.store.Assign(ctx, target.ID(), role, actor.ID(), s.entry(actor, target, ActionAssigned, role, reason, c))
+	if err != nil {
+		return s.storeErr(err)
+	}
+	if !changed {
+		return nil
 	}
 	s.announce(ctx, actor, fmt.Sprintf("%s was given the platform role %s. Reason: %s", target.Email(), roleName(role), reason), c)
 	return nil
@@ -130,12 +140,9 @@ func (s *Service) Revoke(ctx context.Context, actor *admin.AdminUser, targetID s
 	if err != nil && !errors.Is(err, ErrInactive) {
 		return err
 	}
-	if err := s.record(ctx, actor, target, ActionRevoked, role, reason, c); err != nil {
-		return err
-	}
-	held, err := s.store.Revoke(ctx, target.ID(), role)
+	held, err := s.store.Revoke(ctx, target.ID(), role, s.entry(actor, target, ActionRevoked, role, reason, c))
 	if err != nil {
-		return err
+		return s.storeErr(err)
 	}
 	if held {
 		s.announce(ctx, actor, fmt.Sprintf("The platform role %s was taken from %s. Reason: %s", roleName(role), target.Email(), reason), c)
@@ -171,23 +178,23 @@ func (s *Service) check(ctx context.Context, actor *admin.AdminUser, targetID sh
 	return target, reason, nil
 }
 
-// record writes the audit row before the change; no row, no change.
-func (s *Service) record(ctx context.Context, actor, target *admin.AdminUser, action string, role platformauthz.RoleKey, reason string, c Client) error {
-	if s.audit == nil {
-		return nil
-	}
+// entry builds the audit entry the store writes with the change.
+func (s *Service) entry(actor, target *admin.AdminUser, action string, role platformauthz.RoleKey, reason string, c Client) *admin.AuditLog {
 	id := target.ID()
-	entry := admin.NewAuditLogBuilder(actor, action).
+	return admin.NewAuditLogBuilder(actor, action).
 		Resource("admin_user", &id, target.Email()).
 		Context(c.IP, c.UserAgent).
 		Request("", "", map[string]any{"role": string(role), "reason": reason, "at": time.Now().UTC().Format(time.RFC3339)}).
 		High().
 		Build()
-	if err := s.audit.Create(ctx, entry); err != nil {
+}
+
+// storeErr logs an unaudited-change refusal; every other error passes through.
+func (s *Service) storeErr(err error) error {
+	if errors.Is(err, ErrAuditUnavailable) {
 		s.log.Error("audit platform role change; change refused", "error", err)
-		return ErrAuditUnavailable
 	}
-	return nil
+	return err
 }
 
 func (s *Service) announce(ctx context.Context, actor *admin.AdminUser, summary string, c Client) {

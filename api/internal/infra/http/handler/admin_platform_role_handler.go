@@ -212,6 +212,8 @@ func (h *AdminPlatformRoleHandler) change(w http.ResponseWriter, r *http.Request
 		apierror.BadRequest("Unknown platform role.").WriteJSON(w)
 	case errors.Is(err, platformrole.ErrReason):
 		apierror.BadRequest("Give a reason of 10 to 500 characters; it is kept in the audit log.").WriteJSON(w)
+	case errors.Is(err, admin.ErrBreakGlassHasRoles):
+		apierror.Conflict("A break-glass account holds its base platform role only.").WriteJSON(w)
 	case errors.Is(err, platformrole.ErrInactive):
 		apierror.Conflict("The administrator is not active.").WriteJSON(w)
 	case admin.IsAdminNotFound(err):
