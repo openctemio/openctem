@@ -15,7 +15,7 @@ API process. The API keeps only the single-shot executor (one model call, no too
 | Harness loop, provider interface, replay provider, tool registry, grant policy, hooks, budgets, fenced untrusted text, closed output schema with evidence checks, run record, result rendering, model tiers | shipped in sdk-go (in review) | `sdk-go/pkg/analyst` |
 | Copies of the analyze/v1 schemas, pinned by sha256 | shipped in sdk-go (in review) | `sdk-go/pkg/analyst/contract` (source: `api/pkg/sensorproto/analyze/schemas`) |
 | Playbook format `openctem.io/playbook/v1` + sample | shipped in sdk-go (in review) | `sdk-go/pkg/analyst/playbook`, `sdk-go/examples/playbooks/web-vuln-triage` |
-| Eval harness and `openctem agent init\|test` | shipped in sdk-go (in review) | `sdk-go/pkg/analyst/eval`, `sdk-go/internal/agentcli` |
+| Eval harness and `openctem playbook init\|test` | shipped in sdk-go (in review) | `sdk-go/pkg/analyst/eval`, `sdk-go/internal/playbookcli` |
 | Provider adapters with tool use; sensorkit analyst role; hostile-model conformance | planned | sdk-go |
 | `analyze` command type, analyst grant profile, grant builder, interactive lane + affinity, shared host keys, AI limit keys, provider token bucket | planned | api |
 | Platform analyst pool deployment, agent manifest, routing, shadow/canary/rollback, playbook catalog content, editor | planned | api, web, deploy |
@@ -58,8 +58,8 @@ API process. The API keeps only the single-shot executor (one model call, no too
 ## Playbooks and evals
 
 ```bash
-openctem agent init --kind triage.v1 ./my-triage   # playbook.yaml + golden/01-example.json
-openctem agent test ./my-triage                    # validate, run the golden set offline, apply the gate
+openctem playbook init --kind triage.v1 ./my-triage   # playbook.yaml + golden/01-example.json
+openctem playbook test ./my-triage                    # validate, run the golden set offline, apply the gate
 ```
 
 - **Gate:** every injection case passes, agreement is at least 0.9, and risk-lowering precision is 1.
