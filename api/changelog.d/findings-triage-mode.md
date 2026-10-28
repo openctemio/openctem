@@ -1,5 +1,0 @@
-### Added: findings triage mode
-
-- The findings list's Triage button (and the `t` key) opens triage mode at `/findings/triage`: the Needs triage queue in priority order, one finding at a time, with its position ("3 of 110"), previous and next (`k` / `j`), and Exit (`Esc`) back to the list with its filters. It replaces opening the first finding of the current page in the drawer, which lost the list's filters and stopped at the end of the page.
-- One key per decision, each also a visible button: confirm (`c`), request false positive (`f`), request risk acceptance (`a`), assign (`o`), skip (`s`), evidence (`e`), full page (`Enter`), all keys (`?`). A decision moves on by itself.
-- The queue is read through the findings list API, so the caller's data scope applies to every window. Decisions use the finding page's endpoints with the shown version: a finding someone else changed is reloaded (412) or passed over with a note, never overwritten. False positive and risk acceptance stay approval requests.
