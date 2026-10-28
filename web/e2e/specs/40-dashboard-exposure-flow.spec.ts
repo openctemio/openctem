@@ -73,13 +73,17 @@ for (const vp of VIEWPORTS) {
   }
 }
 
-test('the receipt list opens with the totals of its filter', async ({ page }) => {
-  await page.goto('/findings/imports?origin=sensor')
-  await expect(page.getByRole('heading', { name: 'Import and run receipts' })).toBeVisible({
-    timeout: 45_000,
-  })
-  await expect(page.getByTestId('receipt-totals')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Remove filter Sensor' })).toBeVisible()
-  await page.getByRole('button', { name: 'Remove filter Sensor' }).click()
-  await expect(page).toHaveURL(/\/findings\/imports$/)
-})
+test(
+  'the receipt list opens with the totals of its filter',
+  { tag: ['@dashboard'] },
+  async ({ page }) => {
+    await page.goto('/findings/imports?origin=sensor')
+    await expect(page.getByRole('heading', { name: 'Import and run receipts' })).toBeVisible({
+      timeout: 45_000,
+    })
+    await expect(page.getByTestId('receipt-totals')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Remove filter Sensor' })).toBeVisible()
+    await page.getByRole('button', { name: 'Remove filter Sensor' }).click()
+    await expect(page).toHaveURL(/\/findings\/imports$/)
+  }
+)
