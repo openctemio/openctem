@@ -75,6 +75,10 @@ type Service struct {
 	egress     EgressSource
 	// toolSettings is the per-sensor tool settings layer (WithToolSettings).
 	toolSettings ToolSettingsSource
+	// balanceWindow is how long a fresh job is left to less-loaded sensors
+	// (claim_balance.go); balanceSet: WithClaimBalanceWindow was given.
+	balanceWindow time.Duration
+	balanceSet    bool
 }
 
 // TemplateSigner signs the custom templates embedded in a command payload
@@ -416,6 +420,9 @@ func (s *Service) Claim(ctx context.Context, input ClaimInput) ([]*commanddom.Co
 		return nil, err
 	}
 	cands = eg.withoutEgressJobs(cands)
+	// Leave the fresh jobs a less-loaded sensor of the organization should
+	// take to it (claim_balance.go).
+	cands = s.balanceClaim(ctx, tenantID, sensorID, input.Capabilities, cands, slots, input.MaxJobs)
 	if len(cands) == 0 {
 		return nil, nil
 	}

@@ -43,9 +43,8 @@ name: Web E2E
 #            plus, when selected, one job for the every-page request budget
 #            check, each against its own stack; 25 minute cap each. The first
 #            failing shard cancels the others (matrix fail-fast, plus
-#            .github/actions/fail-fast: the rest of this run on a PR, every run
-#            of the group in the merge queue); a cancelled shard still uploads
-#            its blob report.
+#            .github/actions/fail-fast: the other runs of the group in the
+#            merge queue); a cancelled shard still uploads its blob report.
 #   caches   npm (setup-node) and the Chromium download (keyed by the Playwright
 #            version).
 #   retries  1, in CI only (web/playwright.config.ts). A test that fails then

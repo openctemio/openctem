@@ -3,6 +3,8 @@
  *
  *   GET  /api/v1/findings/{id}/evidence-items[?retest_id=]   masked items, newest first
  *   POST /api/v1/findings/{id}/evidence-items/{item}/reveal  plaintext of placeholders
+ *   PATCH /api/v1/findings/{id}/evidence-items/{item}        role of one item
+ *   PUT  /api/v1/findings/{id}/evidence-items/order          reader order
  *
  * Items are untrusted tool output, masked server-side: secret values are
  * «secret:kind#n» placeholders. A reveal needs findings:evidence:reveal and a
@@ -15,7 +17,7 @@
 'use client'
 
 import useSWR from 'swr'
-import { get, post } from '@/lib/api/client'
+import { get, patch, post, put } from '@/lib/api/client'
 import { useTenant } from '@/context/tenant-provider'
 import type {
   FindingEvidenceItemListResponse,
@@ -57,4 +59,23 @@ export async function revealEvidence(
     { placeholders, purpose }
   )
   return res?.values ?? {}
+}
+
+/** Set what an item shows (findings:write; audited). */
+export async function updateEvidenceRole(
+  findingId: string,
+  itemId: string,
+  role: string
+): Promise<FindingEvidenceItemResponse> {
+  return patch<FindingEvidenceItemResponse>(
+    `/api/v1/findings/${encodeURIComponent(findingId)}/evidence-items/${encodeURIComponent(itemId)}`,
+    { role }
+  )
+}
+
+/** Put the listed items first, in that order (findings:write; audited). */
+export async function reorderEvidenceItems(findingId: string, itemIds: string[]): Promise<void> {
+  await put(`/api/v1/findings/${encodeURIComponent(findingId)}/evidence-items/order`, {
+    item_ids: itemIds,
+  })
 }

@@ -219,6 +219,9 @@ func (h *OAuthHandler) handleOAuthError(w http.ResponseWriter, err error) {
 		writeSignupNotAvailable(w)
 	case errors.Is(err, auth.ErrSignupSSORequired):
 		writeSignupSSORequired(w)
+	case errors.Is(err, auth.ErrEmailNotAuthoritative):
+		apierror.New(http.StatusForbidden, "EMAIL_NOT_AUTHORITATIVE",
+			"This provider cannot prove that you own this email address. Sign in with your password, or ask an administrator, and link the provider afterwards.").WriteJSON(w)
 	case errors.Is(err, auth.ErrOAuthUserInfoFailed):
 		apierror.BadRequest("Failed to get user information from provider").WriteJSON(w)
 	default:
