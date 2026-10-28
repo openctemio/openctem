@@ -614,6 +614,11 @@ const (
 	ActionAssetAccessGranted Action = "asset.access_granted"
 	ActionAssetAccessRevoked Action = "asset.access_revoked"
 
+	// Asset groups that fill themselves: a rule is set or changed, and a
+	// change that brings more assets into a group that teams or scans use.
+	ActionAssetGroupRuleChanged Action = "asset_group.rule_changed"
+	ActionAssetGroupRuleWidened Action = "asset_group.rule_widened"
+
 	// Permission Set actions
 	// Permission sets were removed (permissions come only from roles). The
 	// actions stay so historical audit rows still render.
@@ -904,6 +909,7 @@ func (a Action) IsValid() bool {
 		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted, ActionScannerTemplateApproved,
 		ActionAssetAssigned, ActionAssetUnassigned, ActionAssetOwnershipUpdated,
 		ActionAssetAccessGranted, ActionAssetAccessRevoked,
+		ActionAssetGroupRuleChanged, ActionAssetGroupRuleWidened,
 		ActionPermissionSetCreated, ActionPermissionSetUpdated, ActionPermissionSetDeleted,
 		ActionPermissionSetAssigned, ActionPermissionSetUnassigned,
 		ActionPermissionGranted, ActionPermissionRevoked,
@@ -1112,6 +1118,7 @@ const (
 	ResourceTypeSavedView      ResourceType = "saved_view"
 	ResourceTypeScan           ResourceType = "scan"
 	ResourceTypeAsset          ResourceType = "asset"
+	ResourceTypeAssetGroup     ResourceType = "asset_group"
 	ResourceTypeSettings       ResourceType = "settings"
 	ResourceTypeToken          ResourceType = "token"
 	ResourceTypeSensor         ResourceType = "sensor"
@@ -1181,7 +1188,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeInvitation, ResourceTypeRepository, ResourceTypeBranch,
 		ResourceTypeComponent, ResourceTypeVulnerability, ResourceTypeFinding,
 		ResourceTypeFindingComment, ResourceTypeSLAPolicy, ResourceTypeSavedView, ResourceTypeScan,
-		ResourceTypeAsset, ResourceTypeSettings, ResourceTypeToken, ResourceTypeSensor, ResourceTypeScanZone, ResourceTypeProxyPool,
+		ResourceTypeAsset, ResourceTypeAssetGroup, ResourceTypeSettings, ResourceTypeToken, ResourceTypeSensor, ResourceTypeScanZone, ResourceTypeProxyPool,
 		ResourceTypeGroup, ResourceTypePermissionSet, ResourceTypeRole,
 		ResourceTypeScanWorkflow, ResourceTypeScanWorkflowStep, ResourceTypeScanRun, ResourceTypeScanConfig,
 		ResourceTypeScanProfile, ResourceTypeCommand,
