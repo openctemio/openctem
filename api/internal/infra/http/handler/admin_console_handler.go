@@ -428,7 +428,7 @@ func (h *AdminConsoleHandler) Logout(w http.ResponseWriter, r *http.Request) {
 
 // AdminElevateRequest elevates the console session for a while.
 type AdminElevateRequest struct {
-	// Role is a platform role key (RFC-134), or ops_admin / super_admin; never
+	// Role is a platform role key, or ops_admin / super_admin; never
 	// above what the administrator holds.
 	Role string `json:"role"`
 	// Minutes is 15 to 60.

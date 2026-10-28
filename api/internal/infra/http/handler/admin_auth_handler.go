@@ -47,7 +47,7 @@ type ValidateResponse struct {
 	// ElevatedAs is the platform role the session acts as (absent: not
 	// elevated).
 	ElevatedAs string `json:"elevated_as,omitempty"`
-	// Roles are the platform roles the administrator holds (RFC-134).
+	// Roles are the platform roles the administrator holds.
 	Roles []string `json:"roles"`
 	// Permissions is what the session acts with now; MaxPermissions what the
 	// roles grant (the most an elevation reaches). The console hides what
