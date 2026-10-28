@@ -1,9 +1,9 @@
 {
   "components.aiBadge.accountable": "Accountable: {owners}",
-  "components.aiBadge.analyst": "AI analyst",
-  "components.aiBadge.analystNamed": "AI analyst {name}",
-  "components.aiBadge.proposedAnalyst": "Proposed by AI analyst",
-  "components.aiBadge.proposedAnalystNamed": "Proposed by AI analyst {name}",
+  "components.aiBadge.agent": "AI agent",
+  "components.aiBadge.agentNamed": "AI agent {name}",
+  "components.aiBadge.proposedAgent": "Proposed by AI agent",
+  "components.aiBadge.proposedAgentNamed": "Proposed by AI agent {name}",
   "components.aiBadge.suggestedApplication": "Suggested by AI application: {client}",
   "components.aiBadge.suggestedBuiltin": "Suggested by AI triage",
   "components.asset.list": "Assets",

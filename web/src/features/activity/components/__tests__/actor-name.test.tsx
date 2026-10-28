@@ -4,7 +4,7 @@ import { render, screen } from '@testing-library/react'
 import { ActorName } from '../activity-items'
 
 describe('ActorName', () => {
-  it('renders an AI analyst as the shared AI badge with its accountable owners', () => {
+  it('renders an AI agent as the shared AI badge with its accountable owners', () => {
     render(
       <ActorName
         actor={{
@@ -14,7 +14,7 @@ describe('ActorName', () => {
         }}
       />
     )
-    expect(screen.getByTestId('ai-badge')).toHaveTextContent('AI analyst Triage bot')
+    expect(screen.getByTestId('ai-badge')).toHaveTextContent('AI agent Triage bot')
     expect(screen.getByTestId('ai-badge-accountable')).toHaveTextContent(
       'Accountable: Jamie, AppSec'
     )

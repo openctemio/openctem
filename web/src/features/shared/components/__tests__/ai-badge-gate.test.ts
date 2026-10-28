@@ -5,7 +5,7 @@
  * - Every component that renders an AI actor (the activity feed rows, the
  *   approval proposal badge, the legacy triage result) renders the shared
  *   `AIBadge`.
- * - No second AI badge: the shared component is the only place the "AI analyst",
+ * - No second AI badge: the shared component is the only place the "AI agent",
  *   "Suggested by AI" and "Proposed by AI" labels are written.
  */
 import { describe, it, expect } from 'vitest'
