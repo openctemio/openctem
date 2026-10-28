@@ -1,0 +1,7 @@
+### Security: sign-in state is single use and browser bound; Require SSO cannot lock an organization out or be bypassed with a password alone
+
+- Social and per-organization OIDC sign-in: the state is now an opaque handle to a server-side record (nonce, PKCE verifier, browser-binding hash) that the first callback consumes atomically. A replayed callback, a callback from another browser, or a forged state is refused, and the PKCE verifier no longer travels in the state. The authorize response returns a one-time `browser_binding` secret that the web app keeps in an HttpOnly `__Host-` cookie and sends back with the callback (`POST /auth/sso/{provider}/callback` and `POST /auth/oauth/{provider}/callback` now require `browser_binding`). The state signature uses a key derived from the JWT secret for this purpose only.
+- Require SSO can be turned on only after an owner or admin has signed in through the organization's identity provider once and an owner has two-factor authentication on. Turning it on revokes the user API keys and AI connections that exist at that moment unless `revoke_credentials=false`; the console shows both preconditions and the counts.
+- Owner break-glass in an organization that requires SSO needs the password and the owner's second factor. It is written to the audit log as `sso.break_glass_used` and announced to the other owners and admins.
+- SAML sign-in now sets the refresh cookie lifetime from `AUTH_REFRESH_TOKEN_DURATION` instead of a fixed 30 days.
+- Migration: `tenant_members.last_sso_signin_at`.
