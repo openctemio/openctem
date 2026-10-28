@@ -270,6 +270,29 @@ describe the same `sub`. A Google login without an `id_token` (the `openid` scop
 was removed from `OAUTH_GOOGLE_SCOPES`) is refused. GitHub has no `id_token`;
 its identity comes from its API as before.
 
+**Where the providers are configured.** The console is the primary place:
+Settings > Social login (`auth.social_login`) holds, per provider, the client
+ID, the client secret (encrypted at rest with `APP_ENCRYPTION_KEY`, write-only,
+shown only as set or not set), the scopes and the switch "Offer on the sign-in
+page". The page shows the exact redirect URI to register
+(`<APP_URL>/auth/callback/<provider>`, the address the web app sends) and, for
+Google, the authorized JavaScript origin, and "Test configuration" asks the
+provider's fixed token endpoint (through the SSRF-safe client) whether it
+accepts the client, with a code that cannot be valid. A change needs a super
+admin, a fresh confirmation and a reason, is audited critical without the
+secret and is told to every administrator. The OAuth service reads the
+provider in force on every authorize and callback, so a change applies without
+a restart; other replicas see it within the console setting cache time (15 s).
+The environment is an override: while `OAUTH_<PROVIDER>_CLIENT_SECRET` is set
+(a variable or the kit's secret file), that provider uses the environment
+values and the console shows "Set by the server environment", read-only.
+`OAUTH_ENABLED=false` stays a server-side kill switch for all providers.
+`OAUTH_STATE_SECRET` stays a bootstrap secret: unset, the server derives it from
+its session secret, so a console change cannot weaken the CSRF binding of a
+login. Internal code that needs the stored client (for example organization
+connections pinned to the platform client) reads it through
+`platformsociallogin.Service.Credentials`, never through an API.
+
 ### Google Workspace: the `hd` claim
 
 A Google Workspace login must come from an account of the organization's

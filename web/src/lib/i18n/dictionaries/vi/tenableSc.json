@@ -139,7 +139,7 @@
   "tenableSc.scanNow.pickConnector": "Quét bằng bộ kết nối",
   "tenableSc.scanNow.started": "Đã bắt đầu quét bằng Tenable.sc",
   "tenableSc.scanNow.startedDesc": "Đang quét bằng {name}. Kết quả sẽ có khi Tenable.sc quét xong và bộ kết nối nhập kết quả về.",
-  "tenableSc.scanNow.viewRun": "Xem lượt chạy",
+  "tenableSc.scanNow.viewRun": "Xem lần chạy",
   "tenableSc.view.connect": "Kết nối Tenable.sc",
   "tenableSc.view.connectors": "Bộ kết nối",
   "tenableSc.view.coverage": "Phủ quét",
