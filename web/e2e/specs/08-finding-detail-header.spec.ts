@@ -33,7 +33,7 @@ async function listFindings(page: import('@playwright/test').Page): Promise<List
   return body.data ?? []
 }
 
-test.describe('Finding detail header', () => {
+test.describe('Finding detail header', { tag: ['@findings', '@smoke'] }, () => {
   test('names the primary asset by its type', async ({ page }) => {
     const findings = await listFindings(page)
     const f = findings.find(
@@ -87,7 +87,7 @@ test.describe('Finding detail header', () => {
   })
 })
 
-test.describe('Findings list', () => {
+test.describe('Findings list', { tag: ['@findings', '@smoke'] }, () => {
   test("each title button's accessible name includes the finding title", async ({ page }) => {
     const findings = await listFindings(page)
     test.skip(findings.length === 0, 'Needs a finding')
