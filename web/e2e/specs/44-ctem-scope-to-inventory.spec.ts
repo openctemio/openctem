@@ -54,89 +54,97 @@ async function inScope(page: Page, targets: string[]): Promise<Record<string, Pr
   return Object.fromEntries(out.targets.map((t) => [t.target, t]))
 }
 
-test('scope a domain, inventory names under it, see what a scan would touch', async ({ page }) => {
-  test.setTimeout(120_000)
-  const stamp = Date.now().toString(36)
-  const root = `ctem-${stamp}.example.com`
-  const app = `app.${root}`
-  const admin = `admin.${root}`
+test(
+  'scope a domain, inventory names under it, see what a scan would touch',
+  { tag: ['@assets'] },
+  async ({ page }) => {
+    test.setTimeout(120_000)
+    const stamp = Date.now().toString(36)
+    const root = `ctem-${stamp}.example.com`
+    const app = `app.${root}`
+    const admin = `admin.${root}`
 
-  await page.goto('/assets')
-  await apiOk(page, 'POST', '/api/v1/scope/targets', {
-    target_type: 'domain',
-    pattern: `*.${root}`,
-    description: 'e2e CTEM scope to inventory',
-  })
+    await page.goto('/assets')
+    await apiOk(page, 'POST', '/api/v1/scope/targets', {
+      target_type: 'domain',
+      pattern: `*.${root}`,
+      description: 'e2e CTEM scope to inventory',
+    })
 
-  // 2. One asset per name, whatever its spelling.
-  const created = await apiOk<{ id: string }>(page, 'POST', '/api/v1/assets', {
-    name: app,
-    type: 'domain',
-    criticality: 'medium',
-  })
-  const again = await api(page, 'POST', '/api/v1/assets', {
-    name: `${app.toUpperCase()}.`,
-    type: 'domain',
-    criticality: 'medium',
-  })
-  expect(
-    again.status,
-    `second spelling created another asset: ${again.body}`
-  ).toBeGreaterThanOrEqual(400)
-  const listed = await apiOk<{ data?: { name: string }[]; total?: number }>(
-    page,
-    'GET',
-    `/api/v1/assets?search=${encodeURIComponent(root)}&per_page=50`
-  )
-  expect((listed.data ?? []).filter((a) => a.name === app)).toHaveLength(1)
-
-  await page.goto(`/assets/${created.id}`)
-  await expect(page.getByText(app).first()).toBeVisible({ timeout: 30_000 })
-
-  // 1. A URL on another host with the scoped name in its query is the
-  // other host, not a scoped name.
-  const bypass = `http://other-${stamp}.test/?q=.${root}`
-  const other = `other-${stamp}.test`
-  const before = await inScope(page, [app, bypass, other])
-  expect(
-    before[app]?.refused_code ?? '',
-    `scoped name refused: ${JSON.stringify(before[app])}`
-  ).toBe('')
-  expect(before[app]?.in_scope).toBeGreaterThanOrEqual(1)
-  expect(before[bypass]?.in_scope, 'the scoped name in a query authorized another host').toBe(
-    before[other]?.in_scope
-  )
-
-  // 3. An exclusion that can never match is refused.
-  for (const bad of [
-    { exclusion_type: 'ip_range', pattern: '10.0.0.9-10.0.0.1' },
-    { exclusion_type: 'cidr', pattern: '10.0.0.0/33' },
-    { exclusion_type: 'domain', pattern: `https://${admin}` },
-  ]) {
-    const res = await api(page, 'POST', '/api/v1/scope/exclusions', { ...bad, reason: 'e2e' })
+    // 2. One asset per name, whatever its spelling.
+    const created = await apiOk<{ id: string }>(page, 'POST', '/api/v1/assets', {
+      name: app,
+      type: 'domain',
+      criticality: 'medium',
+    })
+    const again = await api(page, 'POST', '/api/v1/assets', {
+      name: `${app.toUpperCase()}.`,
+      type: 'domain',
+      criticality: 'medium',
+    })
     expect(
-      res.status,
-      `${bad.exclusion_type} ${bad.pattern} accepted: ${res.body}`
+      again.status,
+      `second spelling created another asset: ${again.body}`
     ).toBeGreaterThanOrEqual(400)
-    expect(res.status).toBeLessThan(500)
+    const listed = await apiOk<{ data?: { name: string }[]; total?: number }>(
+      page,
+      'GET',
+      `/api/v1/assets?search=${encodeURIComponent(root)}&per_page=50`
+    )
+    expect((listed.data ?? []).filter((a) => a.name === app)).toHaveLength(1)
+
+    await page.goto(`/assets/${created.id}`)
+    await expect(page.getByText(app).first()).toBeVisible({ timeout: 30_000 })
+
+    // 1. A URL on another host with the scoped name in its query is the
+    // other host, not a scoped name.
+    const bypass = `http://other-${stamp}.test/?q=.${root}`
+    const other = `other-${stamp}.test`
+    const before = await inScope(page, [app, bypass, other])
+    expect(
+      before[app]?.refused_code ?? '',
+      `scoped name refused: ${JSON.stringify(before[app])}`
+    ).toBe('')
+    expect(before[app]?.in_scope).toBeGreaterThanOrEqual(1)
+    expect(before[bypass]?.in_scope, 'the scoped name in a query authorized another host').toBe(
+      before[other]?.in_scope
+    )
+
+    // 3. An exclusion that can never match is refused.
+    for (const bad of [
+      { exclusion_type: 'ip_range', pattern: '10.0.0.9-10.0.0.1' },
+      { exclusion_type: 'cidr', pattern: '10.0.0.0/33' },
+      { exclusion_type: 'domain', pattern: `https://${admin}` },
+    ]) {
+      const res = await api(page, 'POST', '/api/v1/scope/exclusions', { ...bad, reason: 'e2e' })
+      expect(
+        res.status,
+        `${bad.exclusion_type} ${bad.pattern} accepted: ${res.body}`
+      ).toBeGreaterThanOrEqual(400)
+      expect(res.status).toBeLessThan(500)
+    }
+
+    // 4. An excluded host is never in what a scan would touch.
+    await apiOk(page, 'POST', '/api/v1/scope/exclusions', {
+      exclusion_type: 'domain',
+      pattern: admin,
+      reason: 'e2e fragile host',
+    })
+    const after = await inScope(page, [admin, app])
+    expect(
+      after[admin]?.in_scope ?? 0,
+      `excluded host would be scanned: ${JSON.stringify(after[admin])}`
+    ).toBe(0)
+    expect(after[app]?.in_scope).toBeGreaterThanOrEqual(1)
   }
+)
 
-  // 4. An excluded host is never in what a scan would touch.
-  await apiOk(page, 'POST', '/api/v1/scope/exclusions', {
-    exclusion_type: 'domain',
-    pattern: admin,
-    reason: 'e2e fragile host',
-  })
-  const after = await inScope(page, [admin, app])
-  expect(
-    after[admin]?.in_scope ?? 0,
-    `excluded host would be scanned: ${JSON.stringify(after[admin])}`
-  ).toBe(0)
-  expect(after[app]?.in_scope).toBeGreaterThanOrEqual(1)
-})
-
-test('the uncovered assets list opens with its gaps, never an error', async ({ page }) => {
-  await page.goto('/assets?coverage=uncovered&program_assets=exclude')
-  await expect(page.getByRole('main')).toBeVisible({ timeout: 30_000 })
-  await expect(page.getByRole('alert').filter({ hasText: /error|failed/i })).toHaveCount(0)
-})
+test(
+  'the uncovered assets list opens with its gaps, never an error',
+  { tag: ['@assets'] },
+  async ({ page }) => {
+    await page.goto('/assets?coverage=uncovered&program_assets=exclude')
+    await expect(page.getByRole('main')).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByRole('alert').filter({ hasText: /error|failed/i })).toHaveCount(0)
+  }
+)
