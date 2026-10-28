@@ -120,5 +120,6 @@ seams.
 | SAML replay cache, signed assertion, no SHA-1, certificate expiry alerts | #2785 | in review |
 | "SSO must prove two-factor" | #2788 | in review |
 | Requiring SSO needs a verified domain; DNS loss keeps enforcement | #2793 | in review |
+| Requiring SSO needs one administrator SSO sign-in and an owner with two-factor; owner break-glass needs password and second factor, audited and announced; sign-in state single use and browser bound | this change | in review |
 | id_token algorithm allow-list; Google sign-in requires a verified id_token | #2794 | in review |
 | Plan features for SSO, SCIM and group links | #2797 | in review |

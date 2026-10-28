@@ -587,12 +587,7 @@ func (h *TenantHandler) handleServiceError(w http.ResponseWriter, err error) {
 		apierror.InternalServerError("These settings could not be read. Contact your platform administrator.").WriteJSON(w)
 		return
 	}
-	if code, status, ok := invitationErrorCode(err); ok {
-		msg := err.Error()
-		if idx := strings.Index(msg, ": "); idx != -1 {
-			msg = msg[idx+2:]
-		}
-		apierror.New(status, apierror.Code(code), msg).WriteJSON(w)
+	if writeAuthTableError(w, err) {
 		return
 	}
 	if errors.Is(err, tenantapp.ErrStoredFilesNotErased) {
@@ -625,26 +620,6 @@ func (h *TenantHandler) handleServiceError(w http.ResponseWriter, err error) {
 		h.logger.Error("service error", "error", logger.SanitizeError(err))
 		apierror.InternalError(err).WriteJSON(w)
 	}
-}
-
-// invitationErrorCode gives the invitation refusals a stable code the console
-// translates (RFC-095 §6).
-func invitationErrorCode(err error) (string, int, bool) {
-	switch {
-	case errors.Is(err, tenantapp.ErrInviteeNotOnVerifiedDomain):
-		return "INVITEE_NOT_ON_VERIFIED_DOMAIN", http.StatusForbidden, true
-	case errors.Is(err, tenantapp.ErrEmailDomainNotAllowed):
-		return "INVITEE_DOMAIN_NOT_ALLOWED", http.StatusBadRequest, true
-	case errors.Is(err, tenantapp.ErrInvitationNoLongerValid):
-		return "INVITATION_NO_LONGER_VALID", http.StatusForbidden, true
-	case errors.Is(err, tenantapp.ErrPersonalAccountsBlocked):
-		return "PERSONAL_ACCOUNTS_BLOCKED", http.StatusForbidden, true
-	case errors.Is(err, tenant.ErrInvitationResendTooSoon):
-		return "INVITATION_RESEND_TOO_SOON", http.StatusTooManyRequests, true
-	case errors.Is(err, tenant.ErrInvitationRateLimited):
-		return "INVITATIONS_RATE_LIMITED", http.StatusTooManyRequests, true
-	}
-	return "", 0, false
 }
 
 // writeToggleErrorJSON serialises a module.ToggleError as the 400
@@ -2137,7 +2112,7 @@ func toSettingsResponse(s *tenant.Settings) SettingsResponse {
 			MFARequiredForAdmins:  s.Security.MFARequiredForAdmins,
 			IPWhitelist:           s.Security.IPWhitelist,
 			AllowedDomains:        s.Security.AllowedDomains,
-			EmailVerificationMode: string(s.Security.EmailVerificationMode),
+			EmailVerificationMode: readEmailVerificationMode(s.Security.EmailVerificationMode),
 			RequireSensorLocalPolicyForPrivateTargets: s.Security.RequireSensorLocalPolicyForPrivateTargets,
 			AllowSensorInteractsh:                     s.Security.AllowSensorInteractsh,
 			AllowSensorCustomTemplates:                s.Security.AllowSensorCustomTemplates,
@@ -2261,7 +2236,7 @@ type UpdateSecuritySettingsRequest struct {
 	MFARequiredForAdmins  *bool    `json:"mfa_required_for_admins"`
 	IPWhitelist           []string `json:"ip_whitelist"`
 	AllowedDomains        []string `json:"allowed_domains"`
-	EmailVerificationMode *string  `json:"email_verification_mode" validate:"omitempty,oneof=auto always never"`
+	EmailVerificationMode *string  `json:"email_verification_mode" validate:"omitempty,oneof=auto always"`
 	// RequireSensorLocalPolicyForPrivateTargets: see SecuritySettingsResponse.
 	RequireSensorLocalPolicyForPrivateTargets *bool `json:"require_sensor_local_policy_for_private_targets"`
 	// AllowSensorInteractsh / AllowSensorCustomTemplates: see
@@ -3695,4 +3670,13 @@ func (h *TenantHandler) UpdateEmergingThreatSettings(w http.ResponseWriter, r *h
 	h.writeSectionETag(w, r, tenantID, tenant.SectionEmergingThreats)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(es)
+}
+
+// readEmailVerificationMode reports the stored mode; the retired "never" reads
+// as "auto" (no organization setting skips verification any more).
+func readEmailVerificationMode(m tenant.EmailVerificationMode) string {
+	if m == tenant.EmailVerificationNever {
+		return string(tenant.EmailVerificationAuto)
+	}
+	return string(m)
 }

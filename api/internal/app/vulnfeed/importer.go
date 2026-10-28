@@ -22,6 +22,7 @@ import (
 	"github.com/openctemio/ctis/transfer"
 	"github.com/openctemio/ctis/transfer/bundle"
 
+	"github.com/openctemio/openctem/api/internal/app/feedstatus"
 	"github.com/openctemio/openctem/api/pkg/domain/cvecorpus"
 	"github.com/openctemio/openctem/api/pkg/domain/software"
 	"github.com/openctemio/openctem/api/pkg/domain/threatintel"
@@ -33,8 +34,9 @@ import (
 // SourceName is the threat_intel_sync_status row of the importer.
 const SourceName = "vulnfeed"
 
-// DefaultBaseURL is where the collector publishes.
-const DefaultBaseURL = "https://github.com/openctemio/vulnfeed/releases"
+// DefaultBaseURL is where the feed is published: the releases of
+// openctemio/vulnfeed-bundles (the collector code is openctemio/vulnfeed).
+const DefaultBaseURL = "https://github.com/openctemio/vulnfeed-bundles/releases"
 
 // Import tuning.
 const (
@@ -94,6 +96,8 @@ type Importer struct {
 	// vulnIDs applies the release's vulnerability id alias map (nil: not
 	// applied).
 	vulnIDs VulnIDAliasWriter
+	// intel applies the release's KEV and EPSS streams (nil: not applied).
+	intel IntelApplier
 }
 
 // NewImporter creates an importer. It refuses a base URL that is not a
@@ -155,6 +159,26 @@ func toUint(v any) uint64 {
 	return 0
 }
 
+// ErrNotConfigured: no pinned root key, so the importer does nothing.
+var ErrNotConfigured = feedstatus.ErrNotConfigured
+
+// Sync is Run for an operator's request: a feed that would do nothing
+// (not configured, switched off) is reported as such instead of as a run
+// that succeeded.
+func (im *Importer) Sync(ctx context.Context) (Result, error) {
+	if im.cfg.RootKeyID == "" {
+		return Result{}, ErrNotConfigured
+	}
+	st, err := im.status.GetBySource(ctx, SourceName)
+	if err != nil {
+		return Result{}, fmt.Errorf("vulnfeed status: %w", err)
+	}
+	if !st.IsEnabled() {
+		return Result{}, threatintel.ErrSyncDisabled
+	}
+	return im.Run(ctx)
+}
+
 // Run imports the newest bundle when there is one.
 func (im *Importer) Run(ctx context.Context) (Result, error) {
 	var res Result
@@ -186,7 +210,7 @@ func (im *Importer) Run(ctx context.Context) (Result, error) {
 
 	dir, kind, cleanup, err := im.stage(ctx, opt)
 	if errors.Is(err, vulnbundle.ErrNotNewer) {
-		return res, nil
+		return res, im.checked(ctx)
 	}
 	if err != nil {
 		return res, im.fail(ctx, err)
@@ -196,7 +220,7 @@ func (im *Importer) Run(ctx context.Context) (Result, error) {
 	// delta when it starts at the applied sequence, the snapshot otherwise.
 	v, err := vulnbundle.VerifyOne(dir, opt, kind)
 	if err != nil {
-		return res, im.fail(ctx, err)
+		return res, im.fail(ctx, feedstatus.TagVerify(err))
 	}
 	res.Ran, res.Sequence, res.Kind = true, v.Latest.Sequence, kind
 	if err := im.markStarted(ctx); err != nil {
@@ -262,7 +286,8 @@ func (im *Importer) apply(ctx context.Context, cves []cvecorpus.CVE, replaceAll 
 			return err
 		}
 		if emptied+e > limit {
-			return fmt.Errorf("refused: the bundle would remove %d affected ranges, over the limit of %d", emptied+e, limit)
+			return &feedstatus.GuardError{Base: feedstatus.ErrFeedShrunk, Kind: feedstatus.GuardRemoval, N: int64(emptied + e), Limit: int64(limit),
+				Msg: fmt.Sprintf("refused: the bundle would remove %d affected ranges, over the limit of %d", emptied+e, limit)}
 		}
 		pr, err := im.corpus.ApplyPage(ctx, page)
 		if err != nil {
@@ -286,7 +311,7 @@ func (im *Importer) stage(ctx context.Context, opt vulnbundle.Options) (string, 
 	if im.cfg.BundleDir != "" {
 		v, err := vulnbundle.VerifyPointer(im.cfg.BundleDir, opt)
 		if err != nil {
-			return "", "", nil, err
+			return "", "", nil, tagPointer(err)
 		}
 		return im.cfg.BundleDir, partOf(v, opt), func() {}, nil
 	}
@@ -302,12 +327,12 @@ func (im *Importer) stage(ctx context.Context, opt vulnbundle.Options) (string, 
 	latestURL := im.cfg.BaseURL + "/latest/download/"
 	for _, name := range []string{vulnbundle.KeySetFile, vulnbundle.LatestFile} {
 		if err := im.download(ctx, latestURL+name, filepath.Join(dir, name), vulnbundle.MaxManifestBytes); err != nil {
-			return fail(err)
+			return fail(publisherEmpty(err))
 		}
 	}
 	v, err := vulnbundle.VerifyPointer(dir, opt)
 	if err != nil {
-		return fail(err)
+		return fail(tagPointer(err))
 	}
 	kind := partOf(v, opt)
 	tagURL := im.cfg.BaseURL + "/download/" + url.PathEscape(v.Latest.Tag) + "/"
@@ -335,6 +360,25 @@ func partOf(v *vulnbundle.Verified, opt vulnbundle.Options) string {
 	return vulnbundle.KindSnapshot
 }
 
+// publisherEmpty: a 404 on the key set or the pointer means the collector has
+// published nothing yet.
+func publisherEmpty(err error) error {
+	var he *feedstatus.HTTPError
+	if errors.As(err, &he) && he.Status == http.StatusNotFound {
+		return feedstatus.Tag(feedstatus.CodePublisherEmpty, map[string]string{"host": he.Host}, err)
+	}
+	return err
+}
+
+// tagPointer classifies a pointer verification failure ("nothing newer" is
+// not a failure).
+func tagPointer(err error) error {
+	if errors.Is(err, vulnbundle.ErrNotNewer) {
+		return err
+	}
+	return feedstatus.TagVerify(err)
+}
+
 func (im *Importer) download(ctx context.Context, rawURL, path string, max int64) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
@@ -347,7 +391,7 @@ func (im *Importer) download(ctx context.Context, rawURL, path string, max int64
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("vulnfeed fetch %s: status %d", filepath.Base(path), resp.StatusCode)
+		return &feedstatus.HTTPError{Op: "vulnfeed fetch", File: filepath.Base(path), Host: req.URL.Host, Status: resp.StatusCode}
 	}
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
@@ -389,6 +433,7 @@ func (im *Importer) finish(ctx context.Context, b summary, res Result) error {
 	meta["keyset_version"] = max(b.KeySetVersion, toUint(meta["keyset_version"]))
 	meta["bundle_created_at"] = b.CreatedAt.UTC().Format(time.RFC3339)
 	meta["kind"] = b.Kind
+	meta["root_key_id"] = im.cfg.RootKeyID
 	meta["records"], meta["ranges"] = records, ranges
 	srcs := make([]map[string]any, 0, len(b.Sources))
 	for _, s := range b.Sources {
@@ -409,13 +454,25 @@ func (im *Importer) finish(ctx context.Context, b summary, res Result) error {
 func (im *Importer) fail(ctx context.Context, cause error) error {
 	st, err := im.status.GetBySource(ctx, SourceName)
 	if err == nil {
-		st.MarkSyncFailed(cause.Error())
+		c := feedstatus.Classify(cause)
+		st.MarkSyncFailedWith(cause.Error(), c.Code, c.Params)
 		err = im.status.Update(ctx, st)
 	}
 	if err != nil {
 		im.logger.Warn("vulnfeed status not updated", "error", err)
 	}
 	return cause
+}
+
+// checked records a run that found nothing newer: the platform is current as
+// of now, and an earlier failure no longer stands.
+func (im *Importer) checked(ctx context.Context) error {
+	st, err := im.status.GetBySource(ctx, SourceName)
+	if err != nil {
+		return err
+	}
+	st.MarkSyncUnchanged(0, 0)
+	return im.status.Update(ctx, st)
 }
 
 // CheckStale reports a corpus whose newest bundle is older than three days

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Bot, Loader2, ShieldQuestion, Unplug } from 'lucide-react'
+import { Bot, Database, Loader2, ShieldQuestion, Unplug } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
@@ -22,6 +22,8 @@ interface ConnectionsListProps {
   /** Show whose connection each row is (organization view). */
   showUser?: boolean
   onRevoke: (id: string) => Promise<void>
+  /** Sets a connection that reads all organization data back to its person's scope. */
+  onScope?: (id: string) => Promise<void>
   emptyTitle: string
   emptyDescription: string
 }
@@ -37,6 +39,7 @@ export function ConnectionsList({
   isLoading,
   showUser = false,
   onRevoke,
+  onScope,
   emptyTitle,
   emptyDescription,
 }: ConnectionsListProps) {
@@ -44,6 +47,7 @@ export function ConnectionsList({
   const { scopeShort } = useMcpLabels()
   const [pending, setPending] = useState<McpConnection | null>(null)
   const [busy, setBusy] = useState(false)
+  const [scoping, setScoping] = useState<string | null>(null)
 
   if (isLoading) {
     return (
@@ -78,6 +82,25 @@ export function ConnectionsList({
     }
   }
 
+  const limit = async (c: McpConnection) => {
+    if (!onScope) return
+    setScoping(c.id)
+    try {
+      await onScope(c.id)
+      toast.success(
+        t('mcp.connections.limited', '{name} now reads only the data scope of its person', {
+          name: c.client_name,
+        })
+      )
+    } catch (err) {
+      toast.error(
+        getErrorMessage(err, t('mcp.connections.limitFailed', 'Could not limit the application'))
+      )
+    } finally {
+      setScoping(null)
+    }
+  }
+
   return (
     <>
       <ul className="divide-y rounded-md border">
@@ -102,6 +125,12 @@ export function ConnectionsList({
                   <span className="text-muted-foreground text-xs">
                     {t('mcp.client.registeredByOrg', 'Registered by your organization')}
                   </span>
+                )}
+                {c.full_data && (
+                  <Badge variant="outline" className="gap-1">
+                    <Database className="h-3 w-3" aria-hidden />
+                    {t('mcp.connections.fullData', 'All organization data')}
+                  </Badge>
                 )}
               </div>
               {showUser && (
@@ -137,10 +166,25 @@ export function ConnectionsList({
                 ].join(', ')}
               </p>
             </div>
-            <Button variant="outline" size="sm" className="shrink-0" onClick={() => setPending(c)}>
-              <Unplug className="mr-2 h-4 w-4" aria-hidden />
-              {t('mcp.connections.disconnect', 'Disconnect')}
-            </Button>
+            <div className="flex shrink-0 flex-wrap gap-2">
+              {c.full_data && onScope && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void limit(c)}
+                  disabled={scoping === c.id}
+                >
+                  {scoping === c.id && (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />
+                  )}
+                  {t('mcp.connections.limit', 'Limit to own data')}
+                </Button>
+              )}
+              <Button variant="outline" size="sm" onClick={() => setPending(c)}>
+                <Unplug className="mr-2 h-4 w-4" aria-hidden />
+                {t('mcp.connections.disconnect', 'Disconnect')}
+              </Button>
+            </div>
           </li>
         ))}
       </ul>

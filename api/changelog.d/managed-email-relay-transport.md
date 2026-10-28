@@ -1,0 +1,4 @@
+### Security: an organization's mail server must use a submission port, a login and TLS on a hosted service
+
+- With `MANAGED_SERVICE=true`, the e-mail notification channel refuses port 25 and any relay without a username and password or without TLS or STARTTLS, when it is saved, tested and before every send. One shared rule (`pkg/email` `ValidateTenantRelay`) covers the integration service and the notifier, so the platform's egress no longer delivers mail directly to any public host with a sender the organization chose. Self-managed installs are unchanged.
+- **Upgrade note:** on a hosted service, an existing e-mail channel that does not meet the rule stops sending at its next delivery. The integration shows `INTEGRATION_EMAIL_RELAY_POLICY` with the reason, and each organization owner gets an in-app notice and an e-mail from the platform. Editing the channel to port 465, 587 or 2525 with a login and TLS, then testing it, resumes delivery. No migration.

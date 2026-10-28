@@ -1,0 +1,3 @@
+### Security: read-only administrators no longer read audit log addresses and request bodies
+
+- `GET /admin/audit-logs` (and `/stats`, `/{id}`) returned every administrator's network address, user agent and request body to any administrator role. The bodies include reasons typed for support actions on customer accounts and the e-mail of a new administrator, data the administrator roster already hides from read-only accounts. A read-only administrator now reads the action, the actor, the time and the result; the address, user agent and request body are returned only to operations administrators and super administrators.

@@ -60,7 +60,7 @@ export function AdminApprovalPrompt() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Hourglass className="size-5" />
-              {t('admin.approvals.prompt.waitingTitle', 'Waiting for approval')}
+              {t('admin.approvals.prompt.waitingTitle', 'Waiting for a second administrator')}
             </DialogTitle>
             <DialogDescription asChild>
               <div className="space-y-2 text-sm text-muted-foreground">

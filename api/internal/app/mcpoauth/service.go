@@ -39,6 +39,14 @@ type HolderPermissions interface {
 	HeldPermissions(ctx context.Context, tenantID, userID shared.ID) (all bool, perms []string, err error)
 }
 
+// FullDataChecker reports whether a user holds, in a tenant, a role with full
+// organization data access: the system Owner and Administrator roles and any
+// role with has_full_data_access (postgres.DataScopeRepository). Without it
+// no connection can be given, or keep, full data access.
+type FullDataChecker interface {
+	HasFullDataRole(ctx context.Context, tenantID, userID shared.ID) (bool, error)
+}
+
 // AuditLogger is the slice of the audit service the authorization server
 // writes to.
 type AuditLogger interface {
@@ -54,6 +62,8 @@ type Service struct {
 	fetcher       MetadataFetcher
 	members       MembershipChecker
 	permissions   HolderPermissions
+	fullData      FullDataChecker
+	stepUp        shared.RecentAuthGate
 	policies      PolicyReader
 	connections   mcpoauth.ConnectionRepository
 	clients       mcpoauth.ClientRepository
@@ -80,6 +90,10 @@ type Config struct {
 	Fetcher     MetadataFetcher
 	Members     MembershipChecker
 	Permissions HolderPermissions
+	// FullData lets a person with a full-data role allow a connection to
+	// read all organization data (RFC-062 MA25); nil keeps every connection
+	// scoped.
+	FullData FullDataChecker
 	// Connections lists and manages connections (RFC-062 §12); optional.
 	Connections mcpoauth.ConnectionRepository
 	// Clients manages registered clients and the purge (RFC-062 §5).
@@ -118,7 +132,7 @@ func NewService(c Config) (*Service, error) {
 	}
 	return &Service{
 		repo: c.Repository, endpoints: c.Endpoints, pepper: c.Pepper, oldPeppers: c.OldPeppers,
-		fetcher: c.Fetcher, members: c.Members, permissions: c.Permissions, audit: c.Audit,
+		fetcher: c.Fetcher, members: c.Members, permissions: c.Permissions, fullData: c.FullData, audit: c.Audit,
 		policies: c.Policies, trustedHosts: NormalizeTrustedHosts(c.TrustedClientHosts), connections: c.Connections,
 		clients: c.Clients, dcrEnabled: c.DynamicRegistration, replay: c.Replay,
 		confirmations:  c.Confirmations,
@@ -126,6 +140,10 @@ func NewService(c Config) (*Service, error) {
 		log: c.Logger.With("service", "mcp-oauth"), now: time.Now,
 	}, nil
 }
+
+// SetStepUpGate sets the step-up check an approval with full data access
+// needs. Without a gate such an approval is refused (fail closed).
+func (s *Service) SetStepUpGate(g shared.RecentAuthGate) { s.stepUp = g }
 
 // Endpoints returns the public identifiers.
 func (s *Service) Endpoints() mcpoauth.Endpoints { return s.endpoints }
@@ -177,7 +195,7 @@ func (s *Service) StartAuthorization(ctx context.Context, q url.Values) (shared.
 		}
 	}
 	clientID := q.Get("client_id")
-	client, err := s.resolveClient(ctx, clientID)
+	client, pending, err := s.resolveClient(ctx, clientID)
 	if err != nil {
 		return shared.ID{}, &AuthorizeError{OAuthError: *oauthErr("invalid_client", "unknown or unusable client")}
 	}
@@ -218,6 +236,7 @@ func (s *Service) StartAuthorization(ctx context.Context, q url.Values) (shared.
 	req := &mcpoauth.AuthRequest{
 		ID:            shared.NewID(),
 		Client:        *client,
+		ClientPending: pending,
 		RedirectURI:   redirectURI,
 		State:         state,
 		CodeChallenge: q.Get("code_challenge"),
@@ -295,7 +314,10 @@ type ConsentView struct {
 	// AccessRequested: a request for the publisher is already waiting.
 	AccessRequested bool
 	Scopes          []ScopeView
-	ExpiresAt       time.Time
+	// FullDataAvailable: the person's role has full organization data
+	// access, so the page may offer "Allow access to all organization data".
+	FullDataAvailable bool
+	ExpiresAt         time.Time
 }
 
 // ErrConsentUnavailable is any consent request that cannot be acted on:
@@ -339,6 +361,7 @@ func (s *Service) ConsentRequest(ctx context.Context, requestID, userID, tenantI
 		Blocked:      s.blockedReason(pol, req.Client, tenantID),
 	}
 	s.consentPublisherState(ctx, view, pol, req.Client, tenantID, all, held)
+	view.FullDataAvailable = s.holdsFullData(ctx, tenantID, userID, all)
 	for _, sc := range req.Scopes {
 		allowed := allowsScope(pol, sc)
 		view.Scopes = append(view.Scopes, ScopeView{
@@ -367,6 +390,49 @@ func clientHost(c mcpoauth.Client) string {
 // works in and returns the URL the browser goes to (the client's redirect
 // URI with the code).
 func (s *Service) Approve(ctx context.Context, requestID, userID, tenantID shared.ID, actor Actor) (string, error) {
+	return s.ApproveAccess(ctx, requestID, userID, tenantID, false, actor)
+}
+
+// ErrFullDataNotAllowed means the person asked to allow access to all
+// organization data without holding a full-data role in the organization.
+var ErrFullDataNotAllowed = fmt.Errorf("%w: your role does not have access to all organization data", shared.ErrForbidden)
+
+// ErrFullDataStepUp means full data access cannot be approved because no
+// step-up check is wired (fail closed).
+var ErrFullDataStepUp = errors.New("full data access needs step-up re-authentication, which is unavailable")
+
+// holdsFullData reports whether the user holds a full-data role in the
+// tenant now (owner, administrator, or has_full_data_access). A lookup
+// error, or an unwired checker, is false.
+func (s *Service) holdsFullData(ctx context.Context, tenantID, userID shared.ID, all bool) bool {
+	if s.fullData == nil {
+		return false
+	}
+	if all {
+		return true
+	}
+	ok, err := s.fullData.HasFullDataRole(ctx, tenantID, userID)
+	if err != nil {
+		s.log.Debug("mcp oauth: full data role lookup", "error", err.Error())
+		return false
+	}
+	return ok
+}
+
+// holdsFullDataNow is holdsFullData for a caller that has not read the
+// user's permissions yet.
+func (s *Service) holdsFullDataNow(ctx context.Context, tenantID, userID shared.ID) bool {
+	all, _, err := s.permissions.HeldPermissions(ctx, tenantID, userID)
+	if err != nil {
+		return false
+	}
+	return s.holdsFullData(ctx, tenantID, userID, all)
+}
+
+// ApproveAccess is Approve with the person's choice to let the connection
+// read all organization data. That choice needs a full-data role now and a
+// fresh step-up, and is audited; the grant then has shorter lifetimes.
+func (s *Service) ApproveAccess(ctx context.Context, requestID, userID, tenantID shared.ID, fullData bool, actor Actor) (string, error) {
 	now := s.now()
 	req, err := s.repo.ClaimRequest(ctx, requestID, userID, now)
 	if err != nil || req.Client.BlockedAt != nil {
@@ -396,11 +462,34 @@ func (s *Service) Approve(ctx context.Context, requestID, userID, tenantID share
 	if len(granted) == 0 {
 		return "", ErrNothingToGrant
 	}
+	if fullData {
+		if !s.holdsFullData(ctx, tenantID, userID, all) {
+			return "", ErrFullDataNotAllowed
+		}
+		if s.stepUp == nil {
+			return "", ErrFullDataStepUp
+		}
+		if err := s.stepUp.RequireRecentAuth(ctx, userID.String()); err != nil {
+			return "", err
+		}
+	}
+	if req.ClientPending {
+		// First approval of this document: this is where the client enters
+		// the registry. A client blocked since the request started is refused.
+		stored, uerr := s.repo.UpsertClient(ctx, &req.Client)
+		if uerr != nil {
+			return "", fmt.Errorf("store mcp client: %w", uerr)
+		}
+		if stored.BlockedAt != nil {
+			return "", ErrConsentUnavailable
+		}
+		req.Client = *stored
+	}
 	code, err := randomToken("")
 	if err != nil {
 		return "", err
 	}
-	if err := s.repo.ApproveRequest(ctx, req.ID, userID, tenantID, granted, s.hash(code), now.Add(mcpoauth.CodeTTL), now); err != nil {
+	if err := s.repo.ApproveRequest(ctx, req.ID, userID, tenantID, req.Client.ID, granted, fullData, s.hash(code), now.Add(mcpoauth.CodeTTL), now); err != nil {
 		return "", ErrConsentUnavailable
 	}
 	s.logAudit(ctx, tenantID.String(), userID.String(), actor,
@@ -410,7 +499,18 @@ func (s *Service) Approve(ctx context.Context, requestID, userID, tenantID share
 			WithMetadata("client_id", req.Client.ClientID).
 			WithMetadata("client_kind", string(req.Client.Kind)).
 			WithMetadata("redirect_host", mcpoauth.RedirectHost(req.RedirectURI)).
-			WithMetadata("scopes", mcpoauth.Join(granted)))
+			WithMetadata("scopes", mcpoauth.Join(granted)).
+			WithMetadata("full_data", fullData))
+	if fullData {
+		s.logAudit(ctx, tenantID.String(), userID.String(), actor,
+			auditapp.NewSuccessEvent(auditdom.ActionMCPFullDataAllowed, auditdom.ResourceTypeMCPGrant, req.ID.String()).
+				WithResourceName(req.Client.Name).
+				WithMessage("Access to all organization data allowed for "+req.Client.Name).
+				WithMetadata("client_id", req.Client.ClientID).
+				WithMetadata("client_host", clientHost(req.Client)).
+				WithMetadata("redirect_host", mcpoauth.RedirectHost(req.RedirectURI)).
+				WithMetadata("full_data", true))
+	}
 	return withQuery(req.RedirectURI, map[string]string{"code": code, "state": req.State, "iss": s.endpoints.Issuer}), nil
 }
 
@@ -518,6 +618,9 @@ func (s *Service) exchangeCode(ctx context.Context, form url.Values, dpopProof s
 	if pol.RequireDPoP && jkt == "" {
 		return nil, oauthErr("invalid_dpop_proof", "this organization requires DPoP-bound tokens")
 	}
+	// The choice was checked at consent; the role may have changed in the
+	// 60 seconds since, so check again (a lookup failure makes it scoped).
+	fullData := req.FullData && s.holdsFullDataNow(ctx, *req.TenantID, *req.UserID)
 	grant := &mcpoauth.Grant{
 		ID:        shared.NewID(),
 		TenantID:  *req.TenantID,
@@ -526,8 +629,9 @@ func (s *Service) exchangeCode(ctx context.Context, form url.Values, dpopProof s
 		Resource:  req.Resource,
 		Scopes:    scopes,
 		CreatedAt: now,
-		ExpiresAt: now.Add(min(mcpoauth.GrantMaxTTL, grantLifetime(pol))),
+		ExpiresAt: now.Add(min(mcpoauth.MaxLifetime(fullData), grantLifetime(pol))),
 		DPoPJKT:   jkt,
+		FullData:  fullData,
 	}
 	resp, tokens, err := s.newTokens(grant, now)
 	if err != nil {
@@ -542,7 +646,8 @@ func (s *Service) exchangeCode(ctx context.Context, form url.Values, dpopProof s
 			WithResourceName(grant.Client.Name).
 			WithMessage("MCP access granted to "+grant.Client.Name).
 			WithMetadata("client_id", grant.Client.ClientID).
-			WithMetadata("scopes", mcpoauth.Join(grant.Scopes)))
+			WithMetadata("scopes", mcpoauth.Join(grant.Scopes)).
+			WithMetadata("full_data", grant.FullData))
 	return resp, nil
 }
 
@@ -577,6 +682,13 @@ func (s *Service) refresh(ctx context.Context, form url.Values, dpopProof string
 	pol, err := s.policy(ctx, grant.TenantID)
 	if err != nil {
 		return nil, oauthErr("server_error", "try again")
+	}
+	// A person who lost the full-data role keeps a connection that reads
+	// only their own data scope; record it and drop the short lifetimes.
+	if grant.FullData && !s.holdsFullDataNow(ctx, grant.TenantID, grant.UserID) {
+		if err := s.downgradeGrant(ctx, grant, grant.UserID, "role_lost", actor); err == nil {
+			grant.FullData = false
+		}
 	}
 	// A bound grant refreshes only with a proof of its key (RFC 9449 §5);
 	// a bearer grant is refused once the organization requires DPoP.
@@ -635,12 +747,12 @@ func (s *Service) newTokens(g *mcpoauth.Grant, now time.Time) (*TokenResponse, [
 	if err != nil {
 		return nil, nil, err
 	}
-	refreshExp := now.Add(mcpoauth.RefreshIdleTTL)
+	refreshExp := now.Add(g.RefreshIdleTTL())
 	if refreshExp.After(g.ExpiresAt) {
 		refreshExp = g.ExpiresAt
 	}
 	tokens := []mcpoauth.Token{
-		{Hash: s.hash(access), GrantID: g.ID, Kind: mcpoauth.TokenAccess, ExpiresAt: now.Add(mcpoauth.AccessTokenTTL)},
+		{Hash: s.hash(access), GrantID: g.ID, Kind: mcpoauth.TokenAccess, ExpiresAt: now.Add(g.AccessTTL())},
 		{Hash: s.hash(refresh), GrantID: g.ID, Kind: mcpoauth.TokenRefresh, ExpiresAt: refreshExp},
 	}
 	tokenType := "Bearer"
@@ -650,7 +762,7 @@ func (s *Service) newTokens(g *mcpoauth.Grant, now time.Time) (*TokenResponse, [
 	return &TokenResponse{
 		AccessToken:  access,
 		TokenType:    tokenType,
-		ExpiresIn:    int(mcpoauth.AccessTokenTTL.Seconds()),
+		ExpiresIn:    int(g.AccessTTL().Seconds()),
 		RefreshToken: refresh,
 		Scope:        mcpoauth.Join(g.Scopes),
 	}, tokens, nil
@@ -706,6 +818,10 @@ type Principal struct {
 	// endpoint uses them to tell "ask for another scope" from "not allowed".
 	HeldAll bool
 	Held    []string
+	// FullData: the grant allows reading all organization data AND its
+	// user holds a full-data role right now. False otherwise: the request
+	// reads only what the user's scope rows allow.
+	FullData bool
 }
 
 // ErrInvalidToken is every access-token failure (unknown, expired, revoked,
@@ -758,6 +874,9 @@ func (s *Service) AuthenticateAccessToken(ctx context.Context, raw, ip string, d
 	if !all {
 		effective = intersect(scopePerms, held)
 	}
+	// A full-data grant reads all organization data only while its user
+	// still holds a full-data role; losing it is scoped on this request.
+	fullData := grant.FullData && s.holdsFullData(ctx, grant.TenantID, grant.UserID, all)
 	if err := s.repo.TouchGrant(ctx, grant.TenantID, grant.ID, ip, now); err != nil {
 		s.log.Debug("mcp oauth: touch grant", "error", err.Error())
 	}
@@ -771,6 +890,7 @@ func (s *Service) AuthenticateAccessToken(ctx context.Context, raw, ip string, d
 		Permissions: effective,
 		HeldAll:     all,
 		Held:        held,
+		FullData:    fullData,
 	}, nil
 }
 
