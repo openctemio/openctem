@@ -41,8 +41,11 @@ name: Web E2E
 # selected. Details: api/docs/development/ci-cd.md.
 #
 # How it stays fast
-#   build    the three images are built once per run (bake, GitHub Actions layer
-#            cache) and handed to the shards as one artifact, so no shard builds.
+#   images   the three images come from build-images.yml: built once per content
+#            key for the whole pipeline (every workflow of the commit, and later
+#            commits with the same inputs), by digest. `build` pulls them once
+#            and hands the shards one artifact, so no shard builds. A fork pull
+#            request builds them in `build` (bake, GitHub Actions layer cache).
 #   shards   Playwright runs the specs `plan` assigned to each shard (1 to 4)
 #            plus, when selected, one job for the every-page request budget
 #            check, each against its own stack; 25 minute cap each. The first
@@ -227,6 +230,41 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: bash .github/scripts/tree-verified.sh
 
+  # The images come from build-images.yml: built once per content key and shared
+  # with every other workflow of this commit (a web-only change reuses the API
+  # image built for an earlier commit). Only push and merge-queue runs call it:
+  # it holds packages: write, which a pull request never gets.
+  images:
+    name: CI images
+    needs: changes
+    if: needs.changes.outputs.shards == 'true' && github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/build-images.yml
+    with:
+      images: api admin-cli web
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+
+  # A pull request only reads: it reuses the images develop built for the same
+  # content keys (verified digests) when all exist, and otherwise `build` builds
+  # them here. No packages: write, no id-token, no attestations: write.
+  images-pr:
+    name: CI images (PR, read-only)
+    needs: changes
+    if: needs.changes.outputs.shards == 'true' && github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      packages: read
+      attestations: read
+    uses: ./.github/workflows/resolve-images.yml
+    with:
+      images: api admin-cli web
+
   # Which specs this change needs, and how to split them (research/295).
   # Pull request and merge queue: the changed files through
   # web/e2e/impact-map.yml; every other event runs everything. Any doubt (a
@@ -330,25 +368,19 @@ jobs:
       contents: read
       packages: read
       actions: write
-    needs: [changes, plan]
-    if: needs.changes.outputs.run == 'true' && needs.plan.result == 'success' && needs.plan.outputs.count != '0'
+    needs: [changes, plan, images, images-pr]
+    if: ${{ !cancelled() && needs.changes.outputs.shards == 'true' && needs.plan.result == 'success' && needs.plan.outputs.count != '0' && (needs.images.result == 'success' || needs.images-pr.result == 'success') }}
     runs-on: ${{ ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_E2E_BUILD) || (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || needs.changes.outputs.pool || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (vars.CI_RUNNER_HEAVY || needs.changes.outputs.pool)) || 'ubuntu-latest' }}
     timeout-minutes: 25
     env:
       API_IMAGE: local/openctem-api:e2e
       WEB_IMAGE: local/openctem-web:e2e
       ADMIN_IMAGE: local/admin-cli:e2e
+      SHARED: ${{ needs.images.outputs.push == 'true' || needs.images-pr.outputs.push == 'true' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      # The web image compiles against the generated contract files, which are
-      # not committed (api/docs/development/ci-cd.md).
-      - name: Generate the contract files
-        uses: ./.github/actions/generate-contract
-
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Registry login (GHCR mirror; Docker Hub when configured)
         uses: ./.github/actions/registry-login
@@ -357,12 +389,40 @@ jobs:
           dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
           dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      # Shared images: pull the digests and tag them under the names the compose
+      # file expects.
+      - name: Pull the shared images
+        if: env.SHARED == 'true'
+        env:
+          API_REF: ${{ needs.images.outputs.api || needs.images-pr.outputs.api }}
+          WEB_REF: ${{ needs.images.outputs.web || needs.images-pr.outputs.web }}
+          ADMIN_REF: ${{ needs.images.outputs.admin-cli || needs.images-pr.outputs.admin-cli }}
+        run: |
+          set -euo pipefail
+          for pair in "$API_REF $API_IMAGE" "$WEB_REF $WEB_IMAGE" "$ADMIN_REF $ADMIN_IMAGE"; do
+            read -r ref tag <<<"$pair"
+            [ -n "$ref" ] || { echo "::error::a shared image is missing"; exit 1; }
+            bash .github/scripts/retry.sh docker pull -q "$ref"
+            docker tag "$ref" "$tag"
+          done
+
+      # No shared images (a fork pull request): build here. The web image
+      # compiles against the generated contract files, which are not committed
+      # (api/docs/development/ci-cd.md).
+      - name: Generate the contract files
+        if: env.SHARED != 'true'
+        uses: ./.github/actions/generate-contract
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        if: env.SHARED != 'true'
+
       # The three images build in parallel (web/e2e/ci/docker-bake.hcl) with
       # the GitHub Actions layer cache. Only a push to develop writes the
       # cache: pull requests read develop's, while a cache written from a pull
       # request or a merge-queue ref is readable by that ref alone and only
       # pushed develop's caches out of the 10 GB store.
       - name: Build images
+        if: env.SHARED != 'true'
         uses: docker/bake-action@59cb1203cd42bcefd40a1b6d73b589e48c86040e # v7.5.0
         env:
           CACHE_WRITE: ${{ github.event_name == 'push' && github.ref == 'refs/heads/develop' }}
@@ -393,7 +453,10 @@ jobs:
       packages: read
       actions: write
     needs: [changes, plan, build]
-    if: needs.changes.outputs.shards == 'true' && needs.plan.result == 'success' && needs.plan.outputs.count != '0'
+    # !cancelled() and the explicit build result: the implicit success() would also
+    # require every ancestor job (images, images-pr) to have succeeded, and one of
+    # the two is always skipped.
+    if: ${{ !cancelled() && needs.changes.outputs.shards == 'true' && needs.plan.result == 'success' && needs.plan.outputs.count != '0' && needs.build.result == 'success' }}
     # Always GitHub-hosted: the stack publishes on 127.0.0.1 of the Docker host and
     # the tests call http://localhost, which on the self-hosted runner (Docker via
     # dind) is a different machine. Playwright's apt dependencies need sudo too.
@@ -596,7 +659,7 @@ jobs:
   e2e-ok:
     name: E2E OK
     if: always()
-    needs: [changes, plan, build, e2e]
+    needs: [changes, plan, images, images-pr, build, e2e]
     runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
     timeout-minutes: 5
     steps:
@@ -623,6 +686,10 @@ jobs:
           elif [ "$RUN" = true ] && [ "$COUNT" = 0 ]; then
             echo "no spec needed for this change (selection: $MODE)"
           elif [ "$RUN" = true ]; then
+            # the images come from `images` (push, merge queue) or `images-pr` (pull request)
+            if ! echo "$NEEDS" | jq -e '.images.result == "success" or .["images-pr"].result == "success"' >/dev/null; then
+              echo "::error::the CI images job must run and pass"; exit 1
+            fi
             for j in plan build e2e; do
               r="$(echo "$NEEDS" | jq -r --arg j "$j" '.[$j].result')"
               if [ "$r" != success ]; then echo "::error::$j must run and pass, got: $r"; exit 1; fi
