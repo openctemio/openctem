@@ -170,8 +170,12 @@ type AdminOrgUserListResponse struct {
 	Data  []AdminOrgUserResponse `json:"data"`
 	Total int                    `json:"total"`
 	// ByRole counts the members by role.
-	ByRole   map[string]int `json:"by_role"`
-	Redacted bool           `json:"redacted,omitempty"`
+	ByRole map[string]int `json:"by_role"`
+	// ActiveOwnerCount counts the owners who can act (active membership,
+	// account active and not erased). Zero with owners present means the
+	// organization needs an owner recovery. Every role sees it.
+	ActiveOwnerCount int  `json:"active_owner_count"`
+	Redacted         bool `json:"redacted,omitempty"`
 }
 
 // adminSeesPersonalData reports whether the console caller may see people's
@@ -319,16 +323,19 @@ func (h *AdminOrganizationHandler) Get(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toAdminOrganizationResponse(o, adminSeesPersonalData(r)))
 }
 
-// Create handles POST /api/v1/admin/tenants. The owner must be an existing
-// user; the organization is created under every SIGNUP_MODE.
+// Create handles POST /api/v1/admin/tenants. The owner email must not belong
+// to an existing account (409 otherwise): a new password-less account is
+// created and its owner sets a password through an emailed link. The
+// organization is created under every SIGNUP_MODE.
 // @Summary Create an organization (platform admin)
-// @Description Creates an organization with an existing user as its owner. Works under every SIGNUP_MODE and sign-up policy.
+// @Description Creates an organization and a new owner account (the owner sets a password through an emailed link). An email that already has an account is refused with 409, because nobody becomes an owner without their consent. Works under every SIGNUP_MODE and sign-up policy.
 // @Tags Admin Organizations
 // @Accept json
 // @Produce json
 // @Param request body AdminCreateOrganizationRequest true "Organization"
 // @Success 201 {object} AdminOrganizationResponse
 // @Failure 400 {object} apierror.Error "Bad Request"
+// @Failure 409 {object} apierror.Error "Owner email already has an account"
 // @Security BearerAuth
 // @Router /admin/tenants [post]
 func (h *AdminOrganizationHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -352,6 +359,8 @@ func (h *AdminOrganizationHandler) Create(w http.ResponseWriter, r *http.Request
 		switch {
 		case errors.Is(err, tenant.ErrPlatformAdminMembership):
 			apierror.Conflict("Platform administrators cannot belong to an organization. Use another owner email.").WriteJSON(w)
+		case errors.Is(err, tenantapp.ErrOwnerAccountExists):
+			apierror.Conflict("This person already has an account; they can create the organization after signing in.").WriteJSON(w)
 		case errors.Is(err, tenantapp.ErrAccountExists):
 			apierror.Conflict("An account with this email was just created. Try again.").WriteJSON(w)
 		case shared.IsValidation(err):
@@ -403,8 +412,14 @@ func (h *AdminOrganizationHandler) ListUsers(w http.ResponseWriter, r *http.Requ
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
+	usable, err := h.orgs.CountUsableOwners(r.Context(), id)
+	if err != nil {
+		h.logger.Error("count usable owners", "error", sanitizeLogField(err.Error()))
+		apierror.InternalError(err).WriteJSON(w)
+		return
+	}
 	personal := adminSeesPersonalData(r)
-	resp := AdminOrgUserListResponse{Data: make([]AdminOrgUserResponse, 0, len(members)), ByRole: map[string]int{},
+	resp := AdminOrgUserListResponse{ActiveOwnerCount: usable, Data: make([]AdminOrgUserResponse, 0, len(members)), ByRole: map[string]int{},
 		Total: len(members), Redacted: !personal}
 	for _, m := range members {
 		resp.ByRole[m.Role.String()]++

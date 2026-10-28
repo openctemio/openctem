@@ -15,6 +15,7 @@ import { usePathname } from 'next/navigation'
 import { isSettingsShellPath } from '@/config/settings-nav'
 import { SettingsSidebarNav, useRememberAppPath } from './settings-sidebar-nav'
 import { SidebarFooterLinks } from './sidebar-footer-links'
+import { NavPinned } from './nav-pinned'
 
 export function AppSidebar() {
   const { collapsible, variant } = useLayout()
@@ -69,6 +70,7 @@ export function AppSidebar() {
           // (so rail icons line up with the expanded ones) and an even gap
           // between sections, which are separate <ul>s.
           <div className={NAV_COLUMN_CLASS}>
+            <NavPinned groups={groups} />
             {quickLinks.map((group) => (
               <NavGroup key={group.title || 'quick'} {...group} />
             ))}

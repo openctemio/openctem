@@ -224,7 +224,7 @@ func pruneEvidence(ctx context.Context, tx *sql.Tx, tenantID shared.ID, findingI
 
 const evidenceColumns = `id, tenant_id, finding_id, retest_id, origin, kind, COALESCE(tool_name, ''), COALESCE(rule_id, ''),
 	COALESCE(template_digest, ''), content, content_sha256, size_bytes, truncated, masked_count, placeholders,
-	secrets_expire_at, captured_at, created_at`
+	secrets_expire_at, captured_at, created_at, role, position`
 
 // List returns a finding's records, newest first.
 func (r *FindingEvidenceRepository) List(ctx context.Context, tenantID, findingID shared.ID, retestID *shared.ID, limit int) ([]*evidencedom.Record, error) {
@@ -237,7 +237,7 @@ func (r *FindingEvidenceRepository) List(ctx context.Context, tenantID, findingI
 		q += ` AND retest_id = $3`
 		args = append(args, retestID.String())
 	}
-	q += fmt.Sprintf(` ORDER BY created_at DESC, id DESC LIMIT %d`, limit)
+	q += fmt.Sprintf(` ORDER BY position ASC, created_at DESC, id DESC LIMIT %d`, limit)
 	rows, err := r.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list evidence: %w", err)
@@ -278,10 +278,11 @@ func scanEvidence(s evidenceScanner) (*evidencedom.Record, error) {
 		content             []byte
 		placeholders        pq.StringArray
 		expires             sql.NullTime
+		role                string
 	)
 	if err := s.Scan(&id, &tenant, &finding, &retest, &origin, &rec.Kind, &rec.ToolName, &rec.RuleID,
 		&rec.TemplateDigest, &content, &rec.ContentSHA256, &rec.SizeBytes, &rec.Truncated, &rec.MaskedCount,
-		&placeholders, &expires, &rec.CapturedAt, &rec.CreatedAt); err != nil {
+		&placeholders, &expires, &rec.CapturedAt, &rec.CreatedAt, &role, &rec.Position); err != nil {
 		return nil, err
 	}
 	rec.ID, _ = shared.IDFromString(id)
@@ -294,6 +295,7 @@ func scanEvidence(s evidenceScanner) (*evidencedom.Record, error) {
 		}
 	}
 	rec.Origin = evidencedom.Origin(origin)
+	rec.Role = evidencedom.Role(role)
 	if err := json.Unmarshal(content, &rec.Item); err != nil {
 		return nil, fmt.Errorf("decode evidence: %w", err)
 	}
@@ -362,4 +364,82 @@ func (r *FindingEvidenceRepository) DeleteExpired(ctx context.Context, now time.
 		return nil
 	})
 	return secrets, records, err
+}
+
+// Update sets the role and/or position of one record of a finding.
+func (r *FindingEvidenceRepository) Update(ctx context.Context, tenantID, findingID, id shared.ID, role *evidencedom.Role, position *int) (*evidencedom.Record, error) {
+	var roleArg, posArg any
+	if role != nil {
+		roleArg = string(*role)
+	}
+	if position != nil {
+		posArg = *position
+	}
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE finding_evidence SET role = COALESCE($4, role), position = COALESCE($5, position)
+		WHERE tenant_id = $1 AND finding_id = $2 AND id = $3`,
+		tenantID.String(), findingID.String(), id.String(), roleArg, posArg)
+	if err != nil {
+		return nil, fmt.Errorf("update evidence: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return nil, evidencedom.ErrNotFound
+	}
+	return r.Get(ctx, tenantID, findingID, id)
+}
+
+// SetOrder numbers the listed records 0..n-1 and the finding's others n.
+func (r *FindingEvidenceRepository) SetOrder(ctx context.Context, tenantID, findingID shared.ID, ids []shared.ID) error {
+	strs := make([]string, len(ids))
+	for i, id := range ids {
+		strs[i] = id.String()
+	}
+	return r.db.Transaction(ctx, func(tx *sql.Tx) error {
+		var found int
+		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM finding_evidence
+			WHERE tenant_id = $1 AND finding_id = $2 AND id = ANY($3::uuid[])`,
+			tenantID.String(), findingID.String(), pq.Array(strs)).Scan(&found); err != nil {
+			return err
+		}
+		if found != len(ids) {
+			return evidencedom.ErrNotFound
+		}
+		// Rows already in place are not rewritten: no needless version bump.
+		_, err := tx.ExecContext(ctx, `
+			UPDATE finding_evidence e SET position = COALESCE(
+				(SELECT o.ord - 1 FROM unnest($3::uuid[]) WITH ORDINALITY AS o(id, ord) WHERE o.id = e.id), $4)
+			WHERE e.tenant_id = $1 AND e.finding_id = $2
+			  AND e.position IS DISTINCT FROM COALESCE(
+				(SELECT o.ord - 1 FROM unnest($3::uuid[]) WITH ORDINALITY AS o(id, ord) WHERE o.id = e.id), $4)`,
+			tenantID.String(), findingID.String(), pq.Array(strs), len(ids))
+		if err != nil {
+			return fmt.Errorf("order evidence: %w", err)
+		}
+		return nil
+	})
+}
+
+// State returns the finding's evidence version and proof count.
+func (r *FindingEvidenceRepository) State(ctx context.Context, tenantID, findingID shared.ID) (evidencedom.State, error) {
+	var st evidencedom.State
+	err := r.db.QueryRowContext(ctx, `
+		SELECT f.evidence_version,
+			(SELECT count(*) FROM finding_evidence e WHERE e.tenant_id = f.tenant_id AND e.finding_id = f.id AND e.role = 'proof')
+		FROM findings f WHERE f.tenant_id = $1 AND f.id = $2`,
+		tenantID.String(), findingID.String()).Scan(&st.Version, &st.ProofCount)
+	if errors.Is(err, sql.ErrNoRows) {
+		return st, evidencedom.ErrNotFound
+	}
+	return st, err
+}
+
+// FindingSource returns the finding's source.
+func (r *FindingEvidenceRepository) FindingSource(ctx context.Context, tenantID, findingID shared.ID) (string, error) {
+	var src string
+	err := r.db.QueryRowContext(ctx, `SELECT source FROM findings WHERE tenant_id = $1 AND id = $2`,
+		tenantID.String(), findingID.String()).Scan(&src)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", evidencedom.ErrNotFound
+	}
+	return src, err
 }

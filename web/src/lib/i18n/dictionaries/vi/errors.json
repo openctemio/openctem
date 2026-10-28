@@ -53,6 +53,7 @@
   "errors.auth.ACCOUNT_SUSPENDED": "Tài khoản này đã bị tạm ngưng. Hãy liên hệ quản trị viên.",
   "errors.auth.CAPTCHA_REQUIRED": "Hãy hoàn tất bước kiểm tra bảo mật rồi thử lại.",
   "errors.auth.EMAIL_ALREADY_EXISTS": "Đã có tài khoản với email này.",
+  "errors.auth.EMAIL_NOT_AUTHORITATIVE": "Nhà cung cấp này không thể chứng minh bạn sở hữu địa chỉ email này. Hãy đăng nhập bằng mật khẩu hoặc nhờ quản trị viên, rồi liên kết nhà cung cấp sau.",
   "errors.auth.EMAIL_NOT_VERIFIED": "Hãy xác minh địa chỉ email trước khi đăng nhập. Kiểm tra hộp thư để tìm liên kết xác minh.",
   "errors.auth.EMAIL_UNVERIFIED_AT_IDP": "Nhà cung cấp danh tính chưa xác minh địa chỉ email của bạn. Hãy xác minh ở đó rồi thử lại.",
   "errors.auth.INVALID_CREDENTIALS": "Email hoặc mật khẩu không đúng.",

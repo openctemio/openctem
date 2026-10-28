@@ -36,6 +36,9 @@ func (s *Service) usableWorkflow(ctx context.Context, tenantID, workflowID share
 	if wf.RetiredAt != nil {
 		return nil, scanworkflow.ErrScanWorkflowRetired
 	}
+	if err := scanworkflow.RetiredUseError(wf); err != nil {
+		return nil, err
+	}
 	if !wf.IsActive {
 		return nil, fmt.Errorf("%w: scan workflow %q is disabled; enable it or pick another workflow",
 			shared.ErrValidation, wf.Name)
@@ -200,9 +203,6 @@ func (s *Service) QuickScan(ctx context.Context, input QuickScanInput) (*QuickSc
 	}
 	input.Targets = validatedTargets
 	if err := s.refuseOutOfActScope(ctx, tenantID, userIDPtr(input.CreatedBy), input.Targets); err != nil {
-		return nil, err
-	}
-	if err := s.refuseUnprovenIntrusive(ctx, tenantID, input.ScannerName, input.Targets); err != nil {
 		return nil, err
 	}
 	if err := s.refuseTierExceeded(ctx, tenantID, input.ScannerName, input.Targets); err != nil {

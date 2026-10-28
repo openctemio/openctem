@@ -16,6 +16,7 @@ export const AUTH_ERROR_CODES = [
   'ACCOUNT_LOCKED',
   'ACCOUNT_SUSPENDED',
   'EMAIL_NOT_VERIFIED',
+  'EMAIL_NOT_AUTHORITATIVE',
   'SIGNUP_NOT_AVAILABLE',
   'SSO_REQUIRED',
   'ORGANIZATION_CREATION_DISABLED',
@@ -137,6 +138,7 @@ const LOGIN_CODE_FOR_API_CODE: Readonly<Record<string, LoginErrorCode>> = {
   ORGANIZATION_SUSPENDED: 'organization_unavailable',
   ORGANIZATION_ACCESS_DENIED: 'not_member',
   EMAIL_NOT_VERIFIED: 'email_not_verified',
+  EMAIL_NOT_AUTHORITATIVE: 'link_required',
 }
 
 export function loginErrorCodeFor(code: string | undefined | null): LoginErrorCode {

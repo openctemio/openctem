@@ -82,6 +82,37 @@ describe('session bootstrap cache', () => {
     expect(get).not.toHaveBeenCalled()
   })
 
+  it('seeded sidebar pins are read from the cache without a request', async () => {
+    vi.doMock('@/context/tenant-provider', () => ({ useCurrentTenantId: () => 't1' }))
+    const { useNavPins } = await import('@/features/nav-pins/api/use-nav-pins')
+    let pins: unknown
+    function Probe() {
+      pins = useNavPins().pins
+      return null
+    }
+    function Seeded({ children }: { children: React.ReactNode }) {
+      const [ready, setReady] = React.useState(false)
+      React.useEffect(() => {
+        void seedSessionCache({
+          pins: {
+            data: [{ kind: 'quick_view', ref: 'sla_breached', params: 'sla=breached', count: 3 }],
+            max: 12,
+            include_informational: false,
+          },
+        }).then(() => setReady(true))
+      }, [])
+      return ready ? <>{children}</> : null
+    }
+    render(
+      <Seeded>
+        <Probe />
+      </Seeded>
+    )
+    await waitFor(() => expect(pins).toMatchObject([{ ref: 'sla_breached', count: 3 }]))
+    expect(get).not.toHaveBeenCalled()
+    vi.doUnmock('@/context/tenant-provider')
+  })
+
   it('without a seed the profile is fetched as before', async () => {
     const { useProfile } = await import('@/features/account/api/use-profile')
     get.mockResolvedValue({ id: 'u2', email: 'b@example.test', name: 'B' })
