@@ -278,6 +278,9 @@ jobs:
       # The automatic split of heavy jobs between the pools (run_id modulo 100).
       - name: Runner pool split self-test
         run: bash .github/scripts/ci-pool.test.sh
+      # The pre-push hook of a linked worktree lints only the branch's changes.
+      - name: Pre-push hook worktree self-test
+        run: bash .github/scripts/pre-push-worktree.test.sh
       # Which jobs a change runs (api/web/docs routing shared by every workflow).
       - name: Change routing self-test
         run: bash .github/scripts/changed.test.sh

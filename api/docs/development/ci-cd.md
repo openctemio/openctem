@@ -1294,6 +1294,11 @@ make web-<s>     # any web npm script, e.g. make web-format
 The git hooks in [`.githooks/`](../../../.githooks/) run on commit: `pre-commit`
 type-checks and lint-stages `web/` when web files are staged and runs `gofmt` on
 staged Go files; `commit-msg` rejects AI attribution lines.
+`pre-push` runs `scripts/precheck.sh --verify`. It works in a linked git worktree
+too: the hook unsets the `GIT_DIR` git exports there, so `golangci-lint
+--new-from-rev` diffs against the base and lints only new code. `make lint-new`
+gives each run its own `TMPDIR`, so parallel lint runs do not share a lock file
+(`.github/scripts/pre-push-worktree.test.sh` is the self-test).
 
 ## Branch strategy
 
