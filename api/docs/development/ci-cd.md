@@ -175,7 +175,11 @@ through the API; nothing depends on a run started by the label.
     `.github/security-paths.yml` or `.github/scripts/security_gate.py` (on
     `pull_request` events GitHub runs the pull request's own workflow files,
     which could act on the pull request): the ack covers only the exact commit
-    it was added on, so every push needs a new ack. Its own workflows cannot
+    it was added on, and a head that is that commit plus clean merges of the
+    base branch and nothing else (`only_base_merges`: the acknowledged commit
+    is an ancestor, merging the newest base into it has no conflict, and the
+    head's whole tree equals that merge's tree). Any other push, a conflict
+    resolved by hand, a rebase or a force-push needs a new ack. Its own workflows cannot
     move the acknowledged commit: they decide which runs exist, but the push
     log, not a run, names that commit. Until a ruleset requires the gate
     workflow (below; read from GitHub's rules API for the base branch) the
