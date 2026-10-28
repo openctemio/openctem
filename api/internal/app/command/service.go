@@ -84,6 +84,9 @@ type Service struct {
 	// (claim_balance.go); balanceSet: WithClaimBalanceWindow was given.
 	balanceWindow time.Duration
 	balanceSet    bool
+	// withheld rate-limits the record and log of dispatch-gate refusals
+	// (withheld.go).
+	withheld withheldNotes
 }
 
 // TemplateSigner signs the custom templates embedded in a command payload
@@ -333,7 +336,9 @@ func (s *Service) Poll(ctx context.Context, input PollInput) ([]*commanddom.Comm
 	// one with private targets when the tenant requires a local policy for
 	// them (RFC-040 §5.7, research/25 §3.6): those stay pending for a
 	// sensor that accepts them.
-	cmds = s.gateFor(ctx, tenantID, sensorID, cmds).accepted(cmds)
+	if sensorID != nil {
+		cmds = s.keepAccepted(ctx, tenantID, *sensorID, s.gateFor(ctx, tenantID, sensorID, cmds), cmds)
+	}
 	if len(cmds) > limit {
 		cmds = cmds[:limit]
 	}
@@ -620,6 +625,9 @@ func (s *Service) Acknowledge(ctx context.Context, tenantID, sensorID, commandID
 		cmds := []*commanddom.Command{cmd}
 		gate := s.gateFor(ctx, cmd.TenantID, &sid, cmds)
 		if err := gate.claimError(cmd); err != nil {
+			if r := gate.refusal(cmd); r != nil {
+				s.noteWithheld(ctx, cmd.TenantID, sid, map[shared.ID]string{cmd.ID: gateReason(r)})
+			}
 			if errors.Is(err, ErrOutOfGrant) && s.grantRefusals != nil {
 				s.grantRefusals.ObserveGrantRefusal(ctx, cmd.TenantID, sid, cmd.ID.String(), gate.grantRefusal(cmd))
 			}
@@ -1086,7 +1094,7 @@ func (s *Service) claimCandidates(ctx context.Context, tenantID, sensorID shared
 // candidates for an organization sensor, in claim order.
 func (s *Service) holdForSensor(ctx context.Context, tenantID, sensorID shared.ID, cands []*commanddom.Command) ([]*commanddom.Command, map[shared.ID]*bp.JobRules, map[shared.ID]settingsLayers) {
 	n := len(cands)
-	cands = s.gateFor(ctx, tenantID, &sensorID, cands).accepted(cands)
+	cands = s.keepAccepted(ctx, tenantID, sensorID, s.gateFor(ctx, tenantID, &sensorID, cands), cands)
 	claimSkipped(skipLocalPolicy, n, len(cands))
 	// The scope may have changed since the jobs were queued: their targets
 	// pass the dispatch gate again before the claim (scope_recheck.go).

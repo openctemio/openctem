@@ -419,6 +419,11 @@ type RunTaskResponse struct {
 	// may finish no target before it is re-queued as stalled. 0: none.
 	BudgetSeconds int `json:"budget_seconds,omitempty"`
 	StallSeconds  int `json:"stall_seconds,omitempty"`
+	// WithheldReason is, for a task no sensor took (queued, or failed
+	// without a claim), the placement code of the last time a sensor's
+	// dispatch gate withheld it (grant_credentials, intensity, ...). The
+	// sensor is never named.
+	WithheldReason string `json:"withheld_reason,omitempty"`
 }
 
 // RunTaskCoverageGap is one host a sensor could not fully cover, and why:
@@ -466,7 +471,7 @@ func toRunTaskResponses(tasks []scanrundom.Task) []RunTaskResponse {
 			CreatedAt: t.CreatedAt.Format(time.RFC3339), ErrorMessage: platformText(t.Platform, t.ErrorMessage),
 			SkippedTargetsTotal: t.SkippedTotal, WindowHold: t.WindowHold, CoverageGapsTotal: t.CoverageGapsTotal,
 			WaitingOnHosts: t.WaitingOnHosts, EgressRefusedTargets: t.EgressRefusedTargets,
-			GuardRefusedTargets: t.GuardRefusedTargets,
+			GuardRefusedTargets: t.GuardRefusedTargets, WithheldReason: t.WithheldReason,
 		}
 		for _, sk := range t.Skipped {
 			r.SkippedTargets = append(r.SkippedTargets, RunTaskSkippedTarget(sk))

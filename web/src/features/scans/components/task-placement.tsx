@@ -189,6 +189,12 @@ export function TaskPlacementPanel({ runId, taskId }: { runId: string; taskId: s
           {sharedFleetNote(data, t) && (
             <p className="text-muted-foreground">{sharedFleetNote(data, t)}</p>
           )}
+          {data.withheld && !reasons.some((r) => r.code === data.withheld) && (
+            <div className="space-y-1" data-slot="placement-withheld">
+              <p className="text-muted-foreground">{t('scans.placement.withheldBy')}</p>
+              <CodeHelpLine help={placementHelp(data.withheld, t)} />
+            </div>
+          )}
           {(data.host_wait?.holders ?? [])
             .filter((h) => h.run_id && h.run_id !== runId)
             .slice(0, 1)

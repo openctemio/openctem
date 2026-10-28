@@ -130,7 +130,10 @@ func (r *CommandRepository) queryRunTasks(ctx context.Context, where string, arg
 		       `+egressRefusedTargetsSQL+`,
 		       `+guardRefusedTargetsSQL+`,
 		       CASE WHEN jsonb_typeof(commands.result->'metadata'->'refused_targets') = 'array'
-		            THEN jsonb_array_length(commands.result->'metadata'->'refused_targets') ELSE 0 END
+		            THEN jsonb_array_length(commands.result->'metadata'->'refused_targets') ELSE 0 END,
+		       CASE WHEN commands.status IN ('pending', 'failed') AND commands.acknowledged_at IS NULL
+		                 AND commands.started_at IS NULL
+		            THEN COALESCE(commands.withheld_reason, '') ELSE '' END
 		FROM commands
 		LEFT JOIN scan_run_steps sr ON sr.id = commands.scan_run_step_id
 		LEFT JOIN sensors s ON s.id = commands.sensor_id AND s.tenant_id = commands.tenant_id AND s.scope = 'organization'
@@ -162,7 +165,7 @@ func (r *CommandRepository) queryRunTasks(ctx context.Context, where string, arg
 			&t.Platform, &t.Targets, &t.Attempts, &t.CreatedAt, &startedAt, &completeAt, &t.ErrorMessage,
 			&skipped, &skippedTotal, &hold, &gaps, &gapsTotal,
 			&progDone, &progTotal, &progressAt, &taskSecs, &stallSecs, &t.WaitingOnHosts, &t.EgressRefusedTargets,
-			&guardListed, &listed); err != nil {
+			&guardListed, &listed, &t.WithheldReason); err != nil {
 			return nil, fmt.Errorf("failed to scan run task: %w", err)
 		}
 		// Sensor-supplied: parsed defensively, bounded and cleaned.

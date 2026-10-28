@@ -119,6 +119,19 @@ describe('taskStatusNote', () => {
     })
   })
 
+  it('names the dispatch-gate refusal of a task no sensor took', () => {
+    expect(
+      taskStatusNote({ status: 'failed', withheld_reason: 'grant_credentials', error_message: 'x' })
+    ).toEqual({
+      kind: 'error',
+      text: "Withheld: The sensor's grant does not allow it (credentials).",
+      full: true,
+    })
+    expect(taskStatusNote({ status: 'queued', withheld_reason: 'intensity' })?.kind).toBe('waiting')
+    // A task that ran is described by its own outcome.
+    expect(taskStatusNote({ status: 'completed', withheld_reason: 'intensity' })).toBeNull()
+  })
+
   it('says a task waits for its hosts, and names the sensor-side hosts-busy hand-back', () => {
     expect(taskStatusNote({ status: 'queued', waiting_on_hosts: true })).toEqual({
       kind: 'waiting',

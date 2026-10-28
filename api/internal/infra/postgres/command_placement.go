@@ -32,11 +32,13 @@ func (r *CommandRepository) PlacementPredicates(ctx context.Context, tenantID, c
 		       COALESCE(commands.expires_at IS NULL OR commands.expires_at > NOW(), FALSE),
 		       COALESCE(`+scheduledDuePredicate+`, FALSE),
 		       COALESCE(`+hostFreePredicate+`, FALSE),
-		       COALESCE(commands.error_message = $3, FALSE)
+		       COALESCE(commands.error_message = $3, FALSE),
+		       COALESCE(commands.withheld_reason, ''), commands.withheld_at
 		FROM commands
 		WHERE commands.tenant_id = $1 AND commands.id = $2`,
 		tenantID.String(), commandID.String(), command.ReleasedBySensorPrefix+command.ReleaseReasonHostsBusy).
-		Scan(&status, &job.IsPlatformJob, &job.NotExpired, &job.Due, &job.HostFree, &job.SensorHostsBusy)
+		Scan(&status, &job.IsPlatformJob, &job.NotExpired, &job.Due, &job.HostFree, &job.SensorHostsBusy,
+			&job.WithheldReason, &job.WithheldAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return job, nil, fmt.Errorf("%w: command not found", shared.ErrNotFound)
 	}
@@ -87,6 +89,38 @@ func (r *CommandRepository) PlacementPredicates(ctx context.Context, tenantID, c
 		out = append(out, c)
 	}
 	return job, out, rows.Err()
+}
+
+var _ command.WithheldRecorder = (*CommandRepository)(nil)
+
+// RecordWithheld records the dispatch gate's refusal code on pending
+// commands of the tenant (docs/architecture/placement.md). A command of
+// another tenant, or one no longer pending, is not written; nor is a code
+// recorded within command.WithheldRefresh (the poll path calls this often).
+func (r *CommandRepository) RecordWithheld(ctx context.Context, tenantID shared.ID, reasons map[shared.ID]string) error {
+	if len(reasons) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(reasons))
+	codes := make([]string, 0, len(reasons))
+	for id, code := range reasons {
+		if len(code) > 64 {
+			code = code[:64]
+		}
+		ids = append(ids, id.String())
+		codes = append(codes, code)
+	}
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE commands c SET withheld_reason = w.code, withheld_at = NOW()
+		FROM unnest($2::uuid[], $3::text[]) AS w(id, code)
+		WHERE c.tenant_id = $1 AND c.id = w.id AND c.status = 'pending'
+		  AND (c.withheld_reason IS DISTINCT FROM w.code
+		       OR c.withheld_at IS NULL OR c.withheld_at < NOW() - make_interval(secs => $4))`,
+		tenantID.String(), pq.Array(ids), pq.Array(codes), command.WithheldRefresh.Seconds())
+	if err != nil {
+		return fmt.Errorf("record withheld commands: %w", err)
+	}
+	return nil
 }
 
 var _ command.HostHoldersReader = (*CommandRepository)(nil)
