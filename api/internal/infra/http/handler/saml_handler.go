@@ -146,7 +146,10 @@ func isSafeIdPRedirect(u string) bool {
 
 // ACS handles POST /api/v1/auth/saml/{org}/acs — the IdP posts the SAML
 // response here. On success it establishes the session cookies and redirects
-// the browser to the frontend.
+// the browser to the frontend. A refusal redirects to /login?error=<code>
+// with a code from a fixed list (awaiting_approval, not_member, no_seat,
+// domain_not_allowed, link_required, different_method, use_console,
+// saml_failed, ...); the specific SAML failure stays in the log.
 func (h *SAMLHandler) ACS(w http.ResponseWriter, r *http.Request) {
 	org := chi.URLParam(r, "org")
 
@@ -180,10 +183,11 @@ func (h *SAMLHandler) ACS(w http.ResponseWriter, r *http.Request) {
 }
 
 // redirectWithError sends the browser back to the frontend login page with a
-// generic error flag (never leaks the specific SAML failure).
+// login error code (auth_error_codes.go). The code is one of a fixed list the
+// web translates; the specific SAML failure stays in the log.
 func (h *SAMLHandler) redirectWithError(w http.ResponseWriter, r *http.Request, err error) {
 	h.logger.Warn("saml login failed", "error", err)
-	dest := strings.TrimSuffix(h.frontendURL, "/") + "/login?error=saml"
+	dest := strings.TrimSuffix(h.frontendURL, "/") + "/login?error=" + samlLoginErrorCode(err)
 	http.Redirect(w, r, dest, http.StatusFound)
 }
 
