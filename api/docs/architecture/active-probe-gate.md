@@ -510,8 +510,10 @@ before it connects. A job of any other tool, an unknown tool, or a caller
 that names neither is refused `unresolved` as before (fail closed).
 
 **Outcome.** Refused targets are taken out of the job before it is handed
-out: out of `targets`, `target` and `context.targets`, in the response and in
-the stored payload (a conditional write on the pending command), so result
+out: out of `targets`, `target` and `context.targets`, and out of the target
+lists of the tool settings (`config`, `scanner_config` and
+`context.scanner_config`, where a quick scan carries its targets too), in
+the response and in the stored payload (a conditional write on the pending command), so result
 binding narrows too. A job left with no target is not handed out: it is
 failed with `SCOPE_CHANGED: <target> (<code>); ...` (a conditional write on
 the pending command, so a second or concurrent claim records nothing), or,
