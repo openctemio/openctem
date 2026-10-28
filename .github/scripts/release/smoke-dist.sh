@@ -153,7 +153,7 @@ for c in api migrations seed admin-cli gateway web console; do
 done
 prints "openctem-server ${version} " docker run --rm "$tag-api" -version || fail "kit api image"
 prints "${version}" docker run --rm --entrypoint /app/openctem-signer "$tag-api" version || fail "kit api image: signer"
-prints '^v4\.' docker run --rm "$tag-migrations" -version || fail "kit migrations image"
+prints "^${version}\$" docker run --rm "$tag-migrations" -version || fail "kit migrations image"
 prints 'Usage of bootstrap-admin' docker run --rm "$tag-admin-cli" -h || fail "kit admin-cli image"
 prints '^layer4$' docker run --rm "$tag-gateway" caddy list-modules || fail "kit gateway image"
 prints 'Available seed files' docker run --rm "$tag-seed" || fail "kit seed image"
