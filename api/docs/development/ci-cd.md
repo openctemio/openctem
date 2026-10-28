@@ -439,15 +439,19 @@ change does not hold runners from the shared pool.
   with `.github/actions/fail-fast` under `if: failure()`. It runs
   `.github/scripts/fail-fast.sh` after the job's own clean-up and report steps.
 - **Merge queue** (`merge_group`): one failed required job means the group will
-  be ejected, so the step cancels every unfinished `merge_group` run of the same
-  merge-group head commit (API CI, Web CI, Web E2E, All-in-one CI, CodeQL,
-  Repository Security, ...) and then its own run. Runs of any other commit or
-  event are never touched (the list is filtered by `head_sha` and `event`).
-- **Pull request**: only the rest of the same workflow run is cancelled. Other
-  workflows keep running, so a lint failure and a test failure still show
-  separately. A fork PR's token is read-only: the step prints a note and does
-  nothing.
-- **Push and schedule**: nothing is cancelled (a push is the branch's baseline).
+  be ejected, so the step cancels every OTHER unfinished `merge_group` run of the
+  same merge-group head commit (API CI, Web CI, Web E2E, All-in-one CI, CodeQL,
+  Repository Security, ...). Runs of any other commit or event are never touched
+  (the list is filtered by `head_sha` and `event`).
+- **Its own run is never cancelled**, on any event: the failing job is still
+  running the step, and cancelling the run would turn its conclusion from
+  `failure` into `cancelled`. The failure would then show only in annotations,
+  and the queue tooling, which tells a real failure from a lost runner by the
+  failed job, would re-queue a broken group. The other runs' gates fail right
+  after their cancel, so the queue still ejects the group quickly.
+- **Pull request, push and schedule**: nothing is cancelled. On a pull request
+  every workflow runs to the end, so a lint failure and a test failure show
+  separately and the failed job keeps its `failure` conclusion.
 - The test matrices (`Tests (Postgres + Redis)`, `Web tests`, the Playwright
   shards) use `strategy.fail-fast: true`:
   the first failing shard cancels its siblings on every event. A cancelled
