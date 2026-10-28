@@ -545,6 +545,34 @@ def covered_by_merges(gitdir: str, acked: str, base_sha: str, head_sha: str, nam
         return False
 
 
+def only_base_merges(gitdir: str, acked: str, base_sha: str, head_sha: str,
+                     env: dict[str, str] | None = None) -> bool:
+    """For a pull request that changes the gate or a workflow: is `head`
+    exactly `acked` brought up to date with the base branch, and nothing else?
+
+    True when `acked` is an ancestor of `head`, merging the newest base commit
+    `head` contains into `acked` has no conflict, and `head`'s whole tree is
+    that merge's tree. Not one byte beyond what the base branch brought in: a
+    workflow, action or script edit, a conflict resolved by hand, or any other
+    change in a merge or a later commit gives a different tree, and a rebase or
+    force-push loses the ancestry. Every git error counts as not covered."""
+    try:
+        anc = _git(gitdir, "merge-base", "--is-ancestor", acked, head_sha, env=env)
+        anc.communicate()
+        if anc.returncode != 0:
+            return False
+        newest_base = _git_out(gitdir, "merge-base", head_sha, base_sha, env=env).decode().split()[0]
+        p = _git(gitdir, "merge-tree", "--write-tree", "--no-messages", acked, newest_base, env=env)
+        out, _ = p.communicate()
+        if p.returncode != 0:  # a conflict needs a hand-made resolution: the maintainer looks again
+            return False
+        merged_tree = out.decode().split()[0]
+        head_tree = _git_out(gitdir, "rev-parse", f"{head_sha}^{{tree}}", env=env).decode().split()[0]
+        return head_tree == merged_tree
+    except (RuntimeError, IndexError, OSError):
+        return False
+
+
 def git_changed_files(gitdir: str, base_sha: str, head_sha: str, config: dict[str, list[str]],
                       env: dict[str, str] | None = None) -> list[ChangedFile]:
     """The changed-file list of base...head from git, shaped like the API's:
@@ -711,7 +739,7 @@ def touches_gate(files: list[ChangedFile]) -> list[str]:
 
 
 def carry_reason(event_name: str, event: dict, pr: dict, files: list[ChangedFile], ack_event: dict,
-                 find_head, still_covers) -> tuple[str, str | None]:
+                 find_head, still_covers, base_merges_only=None) -> tuple[str, str | None]:
     """Why a valid `security-ack` no longer covers this head ("" = it does),
     and the commit the ack was given on (None when unknown).
 
@@ -723,7 +751,9 @@ def carry_reason(event_name: str, event: dict, pr: dict, files: list[ChangedFile
       branch push log) is unknown: not covered.
     - It is the head: covered.
     - A pull request that changes workflows, actions, the path list or the
-      gate script: the ack covers only the exact commit it was added on.
+      gate script: the ack covers the exact commit it was added on, and a head
+      that only merged the base branch into it with no conflict and no other
+      byte changed (`base_merges_only(acked)`: only_base_merges).
     - Otherwise `still_covers(acked)` (ack_still_covers, digests recomputed
       from git) decides.
     """
@@ -743,8 +773,11 @@ def carry_reason(event_name: str, event: dict, pr: dict, files: list[ChangedFile
     if acked == head:
         return "", acked
     if pinned:
+        if base_merges_only is not None and base_merges_only(acked):
+            return "", acked
         return (f"this pull request changes the gate or a workflow ({', '.join(f'`{f}`' for f in pinned[:3])}), "
-                f"so `{ACK_LABEL}` covers only the exact commit it was added on; a maintainer adds it again"), acked
+                f"so `{ACK_LABEL}` covers only the exact commit it was added on and clean merges of the base branch into it; "
+                f"a maintainer adds it again"), acked
     if not still_covers(acked):
         return (f"the security-sensitive lines changed after `{ACK_LABEL}` was added; "
                 "a maintainer adds it again"), acked
@@ -996,8 +1029,18 @@ def cmd_gate() -> int:
                     return False
                 return ack_still_covers(gitdir, pr["base"]["sha"], acked, pr["head"]["sha"], config,
                                         git_auth_env(server, token))
+            def base_merges_only(acked: str) -> bool:
+                gitdir = os.environ.get("GATE_DIR", "base")
+                try:
+                    fetch_pr_commits(gitdir, repo, server, token, pr["base"]["sha"], pr["head"]["sha"], acked)
+                except RuntimeError as e:
+                    print(f"::warning::security-gate: cannot fetch the acknowledged head {acked}: {e}")
+                    return False
+                return only_base_merges(gitdir, acked, pr["base"]["sha"], pr["head"]["sha"],
+                                        git_auth_env(server, token))
             reason, r.ack_commit = carry_reason(event_name, event, pr, files, ack_event,
-                                                lambda: acked_head(gh, pr, ack_event), still_covers)
+                                                lambda: acked_head(gh, pr, ack_event), still_covers,
+                                                base_merges_only)
             if reason:
                 if can_write:
                     gh.request("DELETE", f"issues/{number}/labels/{ACK_LABEL}", ok404=True)
