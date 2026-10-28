@@ -44,14 +44,14 @@ all="$(runs "$(r 100 $sha merge_group in_progress)" "$(r 101 $sha merge_group in
   "$(r 104 $other merge_group in_progress)" "$(r 105 $sha pull_request in_progress)" \
   "$(r 106 $sha push in_progress)")"
 
-run "101 102 100" "merge_group: unfinished runs of the same head, own run last" "$all"
-run "101 102 100" "merge_group: a failed cancel does not stop the others" "$all" FAKE_CANCEL_FAIL=101
-run "100" "merge_group: no other runs" "$(runs "$(r 100 $sha merge_group in_progress)")"
-run "100" "merge_group: list error still cancels this run" "$all" FAKE_LIST_FAIL=1
+run "101 102" "merge_group: other unfinished runs of the same head, never this run" "$all"
+run "101 102" "merge_group: a failed cancel does not stop the others" "$all" FAKE_CANCEL_FAIL=101
+run "" "merge_group: no other runs, this run keeps its failed job" "$(runs "$(r 100 $sha merge_group in_progress)")"
+run "" "merge_group: list error cancels nothing" "$all" FAKE_LIST_FAIL=1
 run "" "merge_group: missing head sha" "$all" HEAD_SHA=
 run "" "merge_group: malformed head sha" "$all" HEAD_SHA="$sha;x"
 run "" "malformed run id" "$all" RUN_ID='1;x'
-run "100" "pull_request: this run only" "$all" EVENT=pull_request HEAD_REPO=o/r
+run "" "pull_request: this run keeps its failed job" "$all" EVENT=pull_request HEAD_REPO=o/r
 run "" "pull_request from a fork: nothing" "$all" EVENT=pull_request HEAD_REPO=fork/r
 run "" "push: nothing" "$all" EVENT=push
 run "" "schedule: nothing" "$all" EVENT=schedule
