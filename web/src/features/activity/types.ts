@@ -17,6 +17,11 @@ export interface ActivityActor {
   id?: string
   name: string
   kind: ActivityActorKind
+  /**
+   * An AI analyst's identity, from the activity's provenance: its name and the
+   * people and teams accountable for it. Rendered through the shared AIBadge.
+   */
+  ai?: { name: string; accountable: string[] }
 }
 
 export type ActivityTone = 'muted' | 'info' | 'success' | 'warning' | 'destructive'

@@ -36,9 +36,8 @@ vi.mock('@/features/ai-triage/api/use-ai-masking', async (orig) => ({
   ...(await orig<typeof import('@/features/ai-triage/api/use-ai-masking')>()),
   useAIMasking: () => ({ data: null, mutate: vi.fn() }),
 }))
-vi.mock('@/features/ai-suggestions/api/ai-governance-api', async (orig) => ({
-  ...(await orig<typeof import('@/features/ai-suggestions/api/ai-governance-api')>()),
-  useAIUseCases: () => ({ data: null, mutate: vi.fn() }),
+vi.mock('@/features/ai-triage/components/ai-analysts-section', () => ({
+  AIAnalystsSection: () => null,
 }))
 vi.mock('@/features/ai-triage/api/use-ai-triage-api', () => ({
   useAIConfig: () => ({

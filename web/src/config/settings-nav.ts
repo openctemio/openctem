@@ -358,9 +358,9 @@ export const settingsNav: SettingsNavGroup[] = [
         anchors: [
           { id: 'ai-triage', title: 'AI triage', keywords: ['turn on', 'enable'] },
           {
-            id: 'ai-use-cases',
-            title: 'AI use cases',
-            keywords: ['auto-apply', 'suggest', 'confidence', 'data class'],
+            id: 'ai-analysts',
+            title: 'AI analysts',
+            keywords: ['service account', 'owner', 'attest', 'pause', 'preset', 'triage'],
           },
           {
             id: 'ai-masking',

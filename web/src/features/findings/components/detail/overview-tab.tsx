@@ -47,7 +47,6 @@ import {
 } from '@/features/shared/components/detail-sheet'
 import { UntrustedTextBlock } from '@/features/shared/components/untrusted-text-block'
 import { useTriageResult } from '@/features/ai-triage/api'
-import { AISuggestionsPanel } from '@/features/ai-suggestions/components/ai-suggestions-panel'
 import { AIBadge } from '@/features/shared/components/ai-badge'
 import { useRelatedCVEs } from '../../api/use-finding-groups'
 import { formatEpssPercentile } from '@/lib/epss'
@@ -127,7 +126,6 @@ export function OverviewTab({ finding }: OverviewTabProps) {
   return (
     <DetailSections>
       {triage && <AITriageSummary data={triage} />}
-      <AISuggestionsPanel findingId={finding.id} />
 
       <DetailSection title={t('findings.overviewTab.description', 'Description')} icon={FileText}>
         {desc.text ? (

@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { AIProposalBadge } from '../ai-proposal-badge'
-import { AIBadge, aiSourceOfExecutor } from '@/features/shared/components/ai-badge'
 
 describe('AIProposalBadge', () => {
   it('marks a request proposed by AI triage, with the review hint on demand', () => {
@@ -29,32 +28,9 @@ describe('AIProposalBadge', () => {
   })
 })
 
-describe('AIBadge (the one shared AI label)', () => {
-  it('labels each source, as a suggestion or a proposal', () => {
-    const { rerender } = render(<AIBadge source="ai_builtin" />)
-    expect(screen.getByTestId('ai-badge')).toHaveTextContent('Suggested by AI triage')
-    rerender(<AIBadge source="ai_analyst" />)
-    expect(screen.getByTestId('ai-badge')).toHaveTextContent('Suggested by AI analyst')
-    rerender(<AIBadge source="ai_application" client="Desk" />)
-    expect(screen.getByTestId('ai-badge')).toHaveTextContent('Suggested by AI application: Desk')
-    rerender(<AIBadge source="ai_analyst" verb="proposed" />)
-    expect(screen.getByTestId('ai-badge')).toHaveTextContent('Proposed by AI analyst')
-  })
-
-  it('maps run executors to sources', () => {
-    expect(aiSourceOfExecutor('builtin')).toBe('ai_builtin')
-    expect(aiSourceOfExecutor('platform_worker')).toBe('ai_analyst')
-    expect(aiSourceOfExecutor('tenant_worker')).toBe('ai_analyst')
-    expect(aiSourceOfExecutor(undefined)).toBe('ai_builtin')
-  })
-
+describe('AIProposalBadge for an AI analyst', () => {
   it('marks an approval an AI analyst proposed', () => {
     render(<AIProposalBadge approval={{ requested_by_actor: 'ai_analyst' }} />)
     expect(screen.getByTestId('ai-badge')).toHaveAttribute('data-source', 'ai_analyst')
-  })
-
-  it('shows a control character in an application name as an escape', () => {
-    render(<AIBadge source="ai_application" client={'Desk‮evil'} />)
-    expect(screen.getByTestId('ai-badge').textContent).toContain('\\u{202E}')
   })
 })

@@ -50,6 +50,7 @@ import { collapsedLabel, dayLabel } from '../lib/activity-feed'
 import { QUICK_REACTIONS, type ReactionViewer } from '../lib/reactions'
 import { ReactionPicker, ReactionPills } from './comment-reactions'
 import { useTranslation } from '@/context/i18n-provider'
+import { AIBadge } from '@/features/shared/components/ai-badge'
 import { confirmName } from '@/lib/confirm-name'
 
 const TONE: Record<ActivityTone, string> = {
@@ -82,6 +83,19 @@ export function actorInitials(actor: ActivityActor): string {
   const letters =
     parts.length > 1 ? parts[0][0] + parts[parts.length - 1][0] : actor.name.slice(0, 2)
   return letters.toUpperCase()
+}
+
+/**
+ * The actor's name. An AI analyst renders as the shared AIBadge with its
+ * accountable owners; an AI row without provenance reads "AI assistant".
+ */
+export function ActorName({ actor }: { actor: ActivityActor }) {
+  const { t } = useTranslation()
+  if (actor.ai) {
+    return <AIBadge source="ai_analyst" name={actor.ai.name} accountable={actor.ai.accountable} />
+  }
+  if (actor.kind === 'ai') return <>{t('activity.aiAssistant', 'AI assistant')}</>
+  return <>{actor.name}</>
 }
 
 /** Relative time ("2 hours ago"), the absolute time on hover. */
@@ -153,7 +167,9 @@ export function EventRow({ item }: { item: ActivityEventItem }) {
       <div className="min-w-0 flex-1 text-sm">
         <p className="break-words text-muted-foreground">
           {item.actor.name && (
-            <span className="font-medium text-foreground">{item.actor.name} </span>
+            <span className="font-medium text-foreground">
+              <ActorName actor={item.actor} />{' '}
+            </span>
           )}
           {item.summary} <ActivityTime at={item.at} className="ms-2" />
         </p>
@@ -304,7 +320,9 @@ export function CommentCard({
             {actorInitials(item.actor)}
           </AvatarFallback>
         </Avatar>
-        <span className="truncate text-sm font-medium">{item.actor.name}</span>
+        <span className="truncate text-sm font-medium">
+          <ActorName actor={item.actor} />
+        </span>
         <ActivityTime at={item.at} />
         {item.editedAt && !isPending && (
           <span
