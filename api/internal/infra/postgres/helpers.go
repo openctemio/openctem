@@ -116,7 +116,7 @@ func isCheckViolation(err error) bool {
 }
 
 // breakGlassConsoleOnly is the rule (raised by the tenant_members and
-// admin_users triggers of migration 003524) that a break-glass administrator's
+// admin_users triggers of migration 003539) that a break-glass administrator's
 // account belongs to no organization.
 const breakGlassConsoleOnly = "break_glass_console_only"
 

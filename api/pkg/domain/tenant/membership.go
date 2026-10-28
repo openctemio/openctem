@@ -10,7 +10,7 @@ import (
 // ErrBreakGlassMembership is returned when a break-glass administrator's
 // account would join an organization. Any other administrator's account may be
 // an ordinary member (RFC-134); a break-glass account stays console-only, and
-// the database enforces it (migration 003524). The text does not say why, so
+// the database enforces it (migration 003539). The text does not say why, so
 // an inviter learns nothing about the platform's administrators.
 var ErrBreakGlassMembership = fmt.Errorf("%w: this account cannot be a member of an organization", shared.ErrConflict)
 
