@@ -44,7 +44,8 @@ routing) run on the same loop. The analyst is the first role, not the name of th
 | Role | what the agent does: `analyst` first; `remediator`, `reporter` and `hunter` later |
 | Harness | the loop in sdk-go `pkg/harness` (with `contract`, `playbook`, `eval`) |
 | AI worker | a sensor in the `ai-worker` role that runs the harness; the repository is `openctemio/ai-worker` |
-| CLI | `openctem playbook init\|test` builds and tests a playbook (the artifact, like `openctem tool`); `openctem agent run\|build\|sign\|publish` builds an own agent (L2). When that command lands, sdk-go's vocabulary check bans only the legacy sensor forms (`AGENT_*`, `agent_id`, `X-Agent-*`) instead of every use of the word "agent" |
+| CLI | `openctem playbook init\|test` builds and tests a playbook (the artifact, like `openctem tool`); `openctem agent run\|build\|sign\|publish` builds an own agent (L2) |
+| Naming convention | UI and docs say "AI agent" (two words, always with "AI", so it never reads as the retired sensor name). Data, API and audit use `ai_agent` (`actor_kind = ai_agent`). Code identifiers use `aiagent` / `AIAgent`. sdk-go's vocabulary check keeps banning a bare "agent" and the legacy sensor forms (`AGENT_*`, `agent_id`, `X-Agent-*`), allows the `ai` prefixed forms, and allows the one CLI word `agent` |
 | Playbook | the instructions and checks of one kind of job; the sample `web-vuln-triage` is an analyst playbook |
 
 Platform code and tables keep their current names (`ai_analysts` and friends) for now. Generalising the principal
