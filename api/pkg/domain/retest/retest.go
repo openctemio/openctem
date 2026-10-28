@@ -202,7 +202,7 @@ type Retest struct {
 	TemplateID string
 	Target     string
 	// Method is how the retest re-checks (MethodTool, MethodValidate,
-	// MethodVersion). Stored since migration 003486; older rows leave it
+	// MethodVersion). Stored since migration 003511; older rows leave it
 	// empty and it follows from the check command's type.
 	Method         string
 	CheckCommandID *shared.ID

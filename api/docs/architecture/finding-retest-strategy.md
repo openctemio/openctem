@@ -4,7 +4,7 @@
 > depends on what raised it. Builds on [continuous retest](continuous-retest.md)
 > (RFC-039), [finding retest checks](finding-retest-checks.md) and
 > [vulnerability matching](vulnerability-matching.md) (RFC-066). Status:
-> shipped (migration 003486).
+> shipped (migration 003511).
 
 ## Why
 
@@ -149,7 +149,7 @@ tester retests). Strings are in `findings.retestPanel.*`,
 `finding_retest_repository.go`; `internal/app/validation/run.go`
 (`signatureInstalled`), `retest_command.go` (`SensorID`);
 `cmd/server/services.go` (`retestFingerprinter`, sensor candidates);
-migration `003486_retest_version_recheck`. Tests: `internal/app/retest/strategy_test.go`,
+migration `003511_retest_version_recheck`. Tests: `internal/app/retest/strategy_test.go`,
 `provenance_test.go`, `internal/infra/postgres/retest_version_evidence_db_test.go`,
 `internal/infra/http/handler/finding_retest_errors_test.go`,
 `internal/app/validation/nuclei_routing_test.go`, web
