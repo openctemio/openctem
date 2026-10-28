@@ -39,3 +39,15 @@ func TestValidateTenantRelay(t *testing.T) {
 		})
 	}
 }
+
+func TestParseRelayModeAndDefaults(t *testing.T) {
+	if m, ok := ParseRelayMode(" ON "); !ok || m != RelayModeOn {
+		t.Fatalf("got %q %v", m, ok)
+	}
+	if _, ok := ParseRelayMode("maybe"); ok {
+		t.Fatal("an unknown mode was accepted")
+	}
+	if DefaultRelayMode(true) != RelayModeVerifiedSender || DefaultRelayMode(false) != RelayModeOn {
+		t.Fatal("defaults: managed verified_sender, self-managed on")
+	}
+}

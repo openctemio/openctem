@@ -44,16 +44,9 @@ FROM ${API_IMAGE} AS api
 FROM ${WEB_IMAGE} AS web
 FROM ${CONSOLE_IMAGE} AS console
 
-# golang-migrate, same version as CI (api-ci.yml). Built in the target
-# platform's own stage, so no arch-specific download URL to get wrong.
-FROM golang:1.27.3-alpine@sha256:b8c9b82affbbb82a020bbcf998dad2ba9516944ac7e883524642a481a9505e9c AS migrate
-RUN CGO_ENABLED=0 go install -trimpath -ldflags="-s -w" -tags postgres \
-      github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1 \
- && cp "$(go env GOPATH)/bin/migrate" /usr/local/bin/migrate
-
 # Caddy, the same release as the gateway image (api/deploy/gateway/Dockerfile
 # CADDY_VERSION) with the standard modules, compiled here with the pinned Go
-# above rather than copied from the caddy image: the published binary carries
+# below rather than copied from the caddy image: the published binary carries
 # the Go standard library it was released with, and every standard-library
 # advisory since then with it. CADDY_DEPS raises dependencies that have
 # security fixes newer than the Caddy release; drop an entry once a Caddy
@@ -78,7 +71,7 @@ RUN printf '%s\n' 'package main' \
 
 # Final image: plain Alpine with the tools the scripts below need (bash and
 # psql for the supervisor's migration lock, wget for the healthcheck, tini as
-# PID 1) and node from the web image. The API, migrate and Caddy are static
+# PID 1) and node from the web image. The API, openctem-migrate and Caddy are static
 # binaries. Every file is copied in with its final owner: no `cp -a` or
 # `chown -R` afterwards, which stored the whole web and API a second (and
 # third) time in new layers.
@@ -117,8 +110,8 @@ COPY --from=api --chown=0:0 /app/migrations /opt/openctem/api/migrations
 COPY --from=api --chown=0:0 /app/configs /opt/openctem/api/configs
 # The OpenAPI spec the API serves at /openapi.yaml (relative to its working dir).
 COPY --from=api --chown=0:0 /app/api/openapi/swagger.yaml /opt/openctem/api/api/openapi/swagger.yaml
-COPY --from=migrate /usr/local/bin/migrate /usr/local/bin/migrate
-COPY --from=api --chown=0:0 --chmod=0755 /app/migrate-entrypoint.sh /usr/local/bin/openctem-migrate
+# The migration runner (api/cmd/openctem-migrate), run by supervise.sh.
+COPY --from=api --chown=0:0 /app/openctem-migrate /usr/local/bin/openctem-migrate
 # Bind :443 (and the optional :80 redirect) as non-root, on Kubernetes too:
 # the file capability is set in the caddy stage and COPY keeps it (setting it
 # here would store the binary a second time in a new layer).
