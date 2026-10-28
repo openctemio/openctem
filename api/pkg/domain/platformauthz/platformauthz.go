@@ -106,7 +106,7 @@ var catalog = []Definition{
 	{ApprovalsDecide, false, "Request, approve, reject or withdraw a four-eyes approval"},
 	{IdentityManage, false, "The administrators' identity provider and the console security-key policy"},
 	{SettingsRead, true, "Read every platform setting, announcements, content packs, catalog, target mappings, feeds and AI clients"},
-	{SettingsSignupWrite, false, "Sign-up policy and sign-up alert thresholds"},
+	{SettingsSignupWrite, false, "Sign-up policy, sign-up alert thresholds and the social-login providers"},
 	{SettingsEmailWrite, false, "Platform e-mail relay and its test message"},
 	{SettingsLegalWrite, false, "Legal pages"},
 	{SettingsLimitsWrite, false, "Default limits of self-service organizations"},
