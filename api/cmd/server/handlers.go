@@ -689,7 +689,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AdminVersionCheck:   handler.NewAdminVersionCheckHandler(svc.VersionCheck, repos.AdminAuditLog, log),
 		AdminConfiguration: handler.NewAdminConfigurationHandler(
 			configoverview.NewBuilder(cfg, platformSettings(repos), repos.Admin, os.LookupEnv), log),
-		AdminPlatformSettings: newAdminPlatformSettingsHandler(repos, svc, log),
+		AdminPlatformSettings: newAdminPlatformSettingsHandler(repos, svc, adminApprovals, log),
 
 		SecretStore:  handler.NewSecretStoreHandler(svc.SecretStore, v, log),
 		Tool:         handler.NewToolHandler(svc.Tool, v, log),
