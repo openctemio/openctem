@@ -314,6 +314,8 @@ export interface CreateTargetMappingInput {
   priority?: number
   is_active?: boolean
   description?: string
+  /** Why the mapping is added (10 to 500 characters); kept in the audit row. */
+  reason: string
 }
 
 /** The pair (target type, asset type) cannot change after creation. */
@@ -321,6 +323,14 @@ export interface UpdateTargetMappingInput {
   priority?: number
   is_active?: boolean
   description?: string
+  /** Why the mapping changes (10 to 500 characters); kept in the audit row. */
+  reason: string
+}
+
+/** GET /admin/target-mappings/types: the values the API accepts. */
+export interface TargetMappingTypes {
+  target_types: string[]
+  asset_types: string[]
 }
 
 /** GET /admin/overview: the console's attention counts (any admin role). */
