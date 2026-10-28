@@ -1,0 +1,5 @@
+# Labels of the opt-in self-hosted runner (see self-hosted-smoke.yml), so
+# actionlint accepts `runs-on: [self-hosted, openctem-ci]`.
+self-hosted-runner:
+  labels:
+    - openctem-ci
