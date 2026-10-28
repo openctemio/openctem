@@ -1182,7 +1182,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeScanWorkflow, ResourceTypeScanWorkflowStep, ResourceTypeScanRun, ResourceTypeScanConfig,
 		ResourceTypeScanProfile, ResourceTypeCommand,
 		ResourceTypeWorkflow, ResourceTypeWorkflowRun, ResourceTypeCapability, ResourceTypeTool,
-		ResourceTypeRuleSource, ResourceTypeRuleOverride, ResourceTypeIngest, ResourceTypeAITriage,
+		ResourceTypeRuleSource, ResourceTypeRuleOverride, ResourceTypeIngest, ResourceTypeAITriage, ResourceTypeAIAnalysis,
 		ResourceTypeCampaign, ResourceTypeMCPTool, ResourceTypeMCPPrompt, ResourceTypeAPIKey,
 		ResourceTypeSAMLConfig, ResourceTypeIdentityProvider, ResourceTypeVerifiedDomain, ResourceTypeEASMNetworkSeed, ResourceTypeEASMLookalikeWatch, ResourceTypeSSOChange,
 		ResourceTypeSCIMGroupMapping, ResourceTypeOrgTrust,

@@ -29,6 +29,7 @@ import (
 	webevidenceapp "github.com/openctemio/openctem/api/internal/app/webevidence"
 
 	"github.com/openctemio/openctem/api/internal/app/activity"
+	"github.com/openctemio/openctem/api/internal/app/aianalysis"
 	"github.com/openctemio/openctem/api/internal/app/aipolicy"
 	"github.com/openctemio/openctem/api/internal/app/aitriage"
 	"github.com/openctemio/openctem/api/internal/app/asset"
@@ -876,6 +877,8 @@ type Services struct {
 
 	// AI Triage
 	AITriage *aitriage.AITriageService
+	// AIAnalysis governs AI results: suggestions, use-case policy, apply and undo.
+	AIAnalysis *aianalysis.Service
 
 	// WebSocket
 	WebSocketHub *websocket.Hub
@@ -1875,6 +1878,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// recorded as a pending approval for a person; never applied.
 		s.AITriage.SetFalsePositiveProposer(s.Vulnerability)
 
+		// AI governance: every AI result is a suggestion; risk-lowering
+		// changes always go through the approval paths of the finding service.
+		s.AIAnalysis = aianalysis.New(repos.AIAnalysis, aianalysis.SettingsConsent{Repo: repos.TenantAISettings},
+			repos.Finding, finding.AIActions{S: s.Vulnerability}, log)
+		s.AIAnalysis.SetDataScope(s.DataScope)
+		s.AIAnalysis.SetAuditService(s.Audit)
+		s.AIAnalysis.SetActivityService(s.FindingActivity)
+
 		// RFC-008: per-tenant LLM token budget. Always constructed so
 		// Status() works for dashboards even before enforcement.
 		// Check()/Record() short-circuit when BudgetEnabled=false —
@@ -2039,6 +2050,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Wire outbox notification to vulnerability and exposure services
 	s.Vulnerability.SetOutboxService(deps.DB, s.Outbox)
 	s.Exposure.SetOutboxService(deps.DB, s.Outbox)
+	if s.AIAnalysis != nil {
+		s.AIAnalysis.SetDowngradeNotifier(aianalysis.OutboxDowngradeNotifier{Outbox: s.Outbox, Logger: log})
+	}
 
 	// Priority-change publisher. PriorityClassificationService emits a
 	// PriorityChangeEvent on every class transition and nil-guards the

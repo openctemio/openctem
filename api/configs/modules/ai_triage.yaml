@@ -13,6 +13,8 @@
   routes:
     - "/api/v1/findings/{}/ai-triage"
     - "/api/v1/findings/ai-triage"
+    - "/api/v1/findings/{}/ai"
+    - "/api/v1/ai"
 - id: ai_triage.bulk
   const: ModuleAITriageBulk
   slug: ai_triage_bulk

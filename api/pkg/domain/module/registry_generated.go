@@ -337,7 +337,7 @@ var Registry = []Definition{
 			{ModuleID: ModuleFindings, Type: DependencyHard, Reason: "triage operates on findings"},
 			{ModuleID: ModuleThreatIntel, Type: DependencySoft, Reason: "triage uses KEV/EPSS context when scoring"},
 		},
-		Routes: []string{"/api/v1/findings/{}/ai-triage", "/api/v1/findings/ai-triage"},
+		Routes: []string{"/api/v1/findings/{}/ai-triage", "/api/v1/findings/ai-triage", "/api/v1/findings/{}/ai", "/api/v1/ai"},
 	},
 	{
 		ID: ModuleAITriageBulk, Slug: "ai_triage_bulk", Name: "Bulk Triage",
