@@ -88,3 +88,18 @@ func (d adminAccountDirectory) AccountActive(ctx context.Context, userID shared.
 func (d adminAccountDirectory) ChangePassword(ctx context.Context, userID shared.ID, current, next string) error {
 	return d.auth.ChangePassword(ctx, userID.String(), authapp.ChangePasswordInput{CurrentPassword: current, NewPassword: next})
 }
+
+// breakGlassChecker tells the main-site sign-in paths whether an account is
+// linked to a break-glass administrator (console only). A lookup failure other
+// than "no administrator" refuses: the gate fails closed.
+type breakGlassChecker struct {
+	admins admin.Repository
+}
+
+func (c breakGlassChecker) IsBreakGlass(ctx context.Context, userID shared.ID) bool {
+	a, err := c.admins.GetByUserID(ctx, userID)
+	if err != nil {
+		return !errors.Is(err, admin.ErrAdminNotFound)
+	}
+	return a.IsBreakGlass()
+}
