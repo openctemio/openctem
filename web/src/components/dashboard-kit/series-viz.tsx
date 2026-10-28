@@ -27,18 +27,15 @@ import { useTranslation } from '@/context/i18n-provider'
 import { NONE_VAR, seriesFill, seriesVar } from '@/lib/chart-palette'
 import { formatBucket, formatCount, formatMetric, type MetricUnit } from '@/lib/format-metric'
 import { safeInternalHref } from '@/lib/safe-href'
+import { SeriesTooltip, type SeriesTooltipMode } from './series-tooltip'
 import { TimeSeriesTable } from './table-viz'
 import { ChartOrTable, Legend, useLabel, usePrefersReducedMotion } from './viz-parts'
 import type { DrillFn, TimeSeriesResult } from './types'
 
 const AXIS_TICK = { fill: 'var(--muted-foreground)', fontSize: 12 }
-const TOOLTIP_STYLE = {
-  background: 'var(--popover)',
-  color: 'var(--popover-foreground)',
-  border: '1px solid var(--border)',
-  borderRadius: 8,
-  fontSize: 12,
-}
+/** Column charts shade the hovered bucket; line and area charts draw a rule. */
+const BAR_CURSOR = { fill: 'var(--muted)', opacity: 0.5 }
+const LINE_CURSOR = { stroke: 'var(--border)', strokeWidth: 1 }
 export const CHART_HEIGHT = 220
 /** Plot height: shorter on a phone so a chart and its legend fit one screen. */
 const PLOT_CLASS = 'h-[180px] sm:h-[220px]'
@@ -75,6 +72,37 @@ function useSeriesMeta(result: TimeSeriesResult) {
       swatch: seriesFill(s.key, i),
       fill: s.key === 'none' ? `url(#${hatchId})` : seriesVar(s.key, i),
     })),
+  }
+}
+
+/**
+ * The chart Tooltip's props: the shared SeriesTooltip over the chart's own
+ * rows, no slide animation (it trailed the pointer), and above the plot.
+ */
+function tooltipProps(
+  rows: Row[],
+  meta: ReturnType<typeof useSeriesMeta>['meta'],
+  mode: SeriesTooltipMode,
+  bucket: TimeSeriesResult['bucket'],
+  unit: MetricUnit,
+  cursor: object
+) {
+  const swatches = meta.map((m) => ({ key: m.key, label: m.label, swatch: m.swatch }))
+  return {
+    cursor,
+    isAnimationActive: false,
+    wrapperStyle: { outline: 'none', zIndex: 10 },
+    content: ({ active, label }: { active?: boolean; label?: string | number }) => (
+      <SeriesTooltip
+        active={active}
+        label={label}
+        rows={rows}
+        meta={swatches}
+        mode={mode}
+        bucket={bucket}
+        unit={unit}
+      />
+    ),
   }
 }
 
@@ -167,10 +195,14 @@ export function ColumnViz({
                   tickFormatter={(v: number) => formatCount(v, locale)}
                 />
                 <Tooltip
-                  contentStyle={TOOLTIP_STYLE}
-                  cursor={{ fill: 'var(--muted)', opacity: 0.5 }}
-                  labelFormatter={(v) => formatBucket(String(v), result.bucket, locale)}
-                  formatter={(v) => formatMetric(Number(v), unit, locale)}
+                  {...tooltipProps(
+                    rows,
+                    meta,
+                    stacked ? 'stack' : 'lines',
+                    result.bucket,
+                    unit,
+                    BAR_CURSOR
+                  )}
                 />
                 {meta.map((m, i) => (
                   <Bar
@@ -238,9 +270,14 @@ export function AreaLineViz({
         tickFormatter={(v: number) => formatMetric(v, unit, locale)}
       />
       <Tooltip
-        contentStyle={TOOLTIP_STYLE}
-        labelFormatter={(v) => formatBucket(String(v), result.bucket, locale)}
-        formatter={(v) => formatMetric(Number(v), unit, locale)}
+        {...tooltipProps(
+          rows,
+          meta,
+          mode === 'area' ? 'stack' : 'lines',
+          result.bucket,
+          unit,
+          LINE_CURSOR
+        )}
       />
       {(result.markers ?? []).map((mk) => (
         <ReferenceLine
@@ -373,10 +410,7 @@ export function DivergingViz({ result, drill }: { result: TimeSeriesResult; dril
                 />
                 <ReferenceLine y={0} stroke="var(--border)" />
                 <Tooltip
-                  contentStyle={TOOLTIP_STYLE}
-                  cursor={{ fill: 'var(--muted)', opacity: 0.5 }}
-                  labelFormatter={(v) => formatBucket(String(v), result.bucket, locale)}
-                  formatter={(v) => formatCount(Math.abs(Number(v)), locale)}
+                  {...tooltipProps(rows, meta, 'flow', result.bucket, 'count', BAR_CURSOR)}
                 />
                 {meta.map((m) => (
                   <Bar
