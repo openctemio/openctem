@@ -65,6 +65,28 @@ describe('AssetCoverageSection', () => {
     expect(screen.getByText(/the name does not resolve/)).toBeInTheDocument()
   })
 
+  it('says a silent target is unreachable from your sensors, naming your own zone when sent', async () => {
+    api.get.mockResolvedValue({
+      asset_id: 'a1',
+      gaps: 0,
+      entries: [
+        { capability: 'resolve.dns', state: 'paused', gap: false, reason: 'unreachable' },
+        {
+          capability: 'probe.http',
+          state: 'paused',
+          gap: false,
+          reason: 'timeout',
+          unreached_from: 'dmz-1',
+        },
+      ],
+    })
+    wrap(<AssetCoverageSection assetId="a1" />)
+    expect(
+      await screen.findByText(/unreachable from your sensors: the target did not answer/)
+    ).toBeInTheDocument()
+    expect(screen.getByText(/unreachable from dmz-1: the target timed out/)).toBeInTheDocument()
+  })
+
   it('says when nothing is scanned automatically', async () => {
     api.get.mockResolvedValue({ asset_id: 'a1', gaps: 0, entries: [] })
     wrap(<AssetCoverageSection assetId="a1" />)

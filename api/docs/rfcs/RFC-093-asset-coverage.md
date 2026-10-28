@@ -118,6 +118,7 @@ each of 1 000 tenants 12 ms, one asset's explanation 0.05 ms.
 | P0-11 | Target-side outcomes (`unreachable`, `timeout`) pause a pair with a 1 d / 3 d / 7 d / weekly recheck instead of the failure back-off; HTTP probe on a name only when a web port or origin was seen or its ports are unknown ([asset coverage](../architecture/asset-coverage.md)) | PR |
 | P0-12 | Passive capabilities skip zone routing for public names, so a name that stopped resolving gets its DNS re-check; internal names keep zone routing ([asset coverage](../architecture/asset-coverage.md)) | PR |
 | P0-13 | Coverage alerts on change: keyed by (capability, kind, reason), sent when a condition appears or its count doubles or halves, one digest per day, with the action and its link; readiness alerts; no 20-hour repeat ([asset coverage](../architecture/asset-coverage.md)) | PR |
+| P0-14 | Unreachable targets are keyed by the scan zone or sensor that saw them (`unreached_from`): the recheck streak widens only for the same observer and restarts for another; they count as unreachable, not as gaps, and raise an `unreachable` alert ("unreachable from your sensors") ([asset coverage](../architecture/asset-coverage.md)) | PR |
 | P1 | Tenant and plan policy, priority, budgets, windows, outcome classes for throttling, coverage KPI | designed |
 | P2 | Information-gathering sources, vantage rows, authenticated web coverage, targeted re-checks, ledger history | designed |
 | P3 | Planner emits work-pool items; workflows plan from the ledger | designed |

@@ -76,6 +76,8 @@ func Conditions(health []CapabilityHealth) []AlertCondition {
 					continue
 				}
 				c.Count = h.Failing
+			case AlertUnreachable:
+				c.Count = h.Unreachable
 			}
 			out = append(out, c)
 		}
@@ -149,6 +151,9 @@ type AlertAction struct {
 // ActionFor returns the action of an alert condition. Server-generated
 // English: it reaches integrations verbatim.
 func ActionFor(c AlertCondition) AlertAction {
+	if c.Kind == AlertUnreachable {
+		return AlertAction{Text: "Check that a sensor in the targets' network can reach them, or retire assets that are gone.", URL: "/assets"}
+	}
 	if c.Kind != AlertReadiness {
 		return AlertAction{Text: "Open the assets to see which ones and why.", URL: "/assets"}
 	}
