@@ -7,10 +7,7 @@ golangci-lint	golangci/golangci-lint	releases	1	api/Makefile	^GOLANGCI_LINT_VERS
 govulncheck	golang/vuln	tags	-	.github/workflows/api-security.yml	govulncheck@(v[0-9.]+)	
 go-licenses	google/go-licenses	releases	-	.github/workflows/api-security.yml	go-licenses@(v[0-9.]+)	
 staticcheck	dominikh/go-tools	tags	-	.github/workflows/api-ci.yml	STATICCHECK_VERSION=(v[0-9.]+)	
-migrate (CI)	golang-migrate/migrate	releases	-	.github/workflows/api-ci.yml	migrate/v4/cmd/migrate@(v[0-9.]+)	
-migrate (dev image)	golang-migrate/migrate	releases	-	api/Dockerfile	migrate/v4/cmd/migrate@(v[0-9.]+)	
-migrate (migrations image)	golang-migrate/migrate	releases	-	api/Dockerfile.migrations	migrate/v4/cmd/migrate@(v[0-9.]+)	
-migrate (all-in-one image)	golang-migrate/migrate	releases	-	deploy/allinone/Dockerfile	migrate/v4/cmd/migrate@(v[0-9.]+)	
+migrate (upgrade test: releases before openctem-migrate)	golang-migrate/migrate	releases	-	.github/workflows/api-upgrade-test.yml	migrate/v4/cmd/migrate@(v[0-9.]+)	
 swag (Makefile)	swaggo/swag	releases	-	api/Makefile	^SWAG_VERSION \?= (v[0-9.]+)	
 swag (image)	swaggo/swag	releases	-	api/Dockerfile	^ARG SWAG_VERSION=(v[0-9.]+)	
 air	air-verse/air	releases	-	api/Dockerfile	air@(v[0-9.]+)	
@@ -28,3 +25,5 @@ oras (air-gap tools image)	oras-project/oras	releases	-	deploy/airgap/gitlab/Doc
 caddy (all-in-one image)	caddyserver/caddy	releases	-	deploy/allinone/Dockerfile	^ARG CADDY_VERSION=(v[0-9.]+)	
 caddy (gateway image)	caddyserver/caddy	releases	-	api/deploy/gateway/Dockerfile	^ARG CADDY_VERSION=(v[0-9.]+)	
 caddy-l4	mholt/caddy-l4	releases	-	api/deploy/gateway/Dockerfile	^ARG CADDY_L4_VERSION=(v[0-9.]+)	
+yq	mikefarah/yq	releases	-	.github/workflows/api-ci.yml	yq/v4@(v[0-9.]+)	
+gh	cli/cli	releases	-	.github/actions/setup-gh/action.yml	GH_CLI_VERSION: ([0-9.]+)	checksum

@@ -72,15 +72,19 @@ export default function AdminSignInPage() {
         setCaptchaRequired(true)
         setError(t('admin.login.captchaRequired', 'Complete the security check and try again.'))
       } else if (err instanceof AdminApiError && err.status === 401) {
-        setError(t('admin.login.wrongCredentials', 'Wrong email or password.'))
-      } else if (err instanceof AdminApiError && err.code === 'IDP_SIGN_IN_REQUIRED') {
-        setIdpRequired(true)
-        setError(
-          t(
-            'admin.login.idpRequired',
-            'Administrators sign in with the identity provider. Password sign-in is for break-glass accounts only.'
+        // The API gives one answer for every failed password sign-in. When an
+        // identity provider is offered, the page adds the hint itself.
+        if (idp) {
+          setIdpRequired(true)
+          setError(
+            t(
+              'admin.login.wrongCredentialsIdp',
+              'Wrong email or password. Administrators sign in with the identity provider; password sign-in is for emergency accounts only.'
+            )
           )
-        )
+        } else {
+          setError(t('admin.login.wrongCredentials', 'Wrong email or password.'))
+        }
       } else {
         setError(
           adminErrorMessage(

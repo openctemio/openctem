@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -68,9 +69,12 @@ type AdminOrganizationResponse struct {
 	Description   string    `json:"description,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
 	ActiveMembers int       `json:"active_members"`
-	// OwnerEmails is empty for a read-only administrator (personal data);
+	// OwnerEmails is on the organization's own page only (GET one), for
+	// ops_admin and above, and that view is audited; the list never carries
+	// it. OwnerDomains (the list's owner column) is for ops_admin and above.
 	// OwnerCount is always there.
 	OwnerEmails             []string `json:"owner_emails"`
+	OwnerDomains            []string `json:"owner_domains"`
 	OwnerCount              int      `json:"owner_count"`
 	SAMLEnabled             bool     `json:"saml_enabled"`
 	ActiveIdentityProviders int      `json:"active_identity_providers"`
@@ -79,7 +83,8 @@ type AdminOrganizationResponse struct {
 	// LimitsApply: at least one limit or feature deny is set.
 	LimitsApply bool `json:"limits_apply"`
 	// Status is the platform status: active or suspended. The suspension
-	// reason is for administrators only.
+	// reason is free text written by an administrator: ops_admin and above
+	// only.
 	Status          string     `json:"status"`
 	SuspendedAt     *time.Time `json:"suspended_at,omitempty"`
 	SuspendedReason string     `json:"suspended_reason,omitempty"`
@@ -170,8 +175,12 @@ type AdminOrgUserListResponse struct {
 	Data  []AdminOrgUserResponse `json:"data"`
 	Total int                    `json:"total"`
 	// ByRole counts the members by role.
-	ByRole   map[string]int `json:"by_role"`
-	Redacted bool           `json:"redacted,omitempty"`
+	ByRole map[string]int `json:"by_role"`
+	// ActiveOwnerCount counts the owners who can act (active membership,
+	// account active and not erased). Zero with owners present means the
+	// organization needs an owner recovery. Every role sees it.
+	ActiveOwnerCount int  `json:"active_owner_count"`
+	Redacted         bool `json:"redacted,omitempty"`
 }
 
 // adminSeesPersonalData reports whether the console caller may see people's
@@ -184,25 +193,56 @@ func adminSeesPersonalData(r *http.Request) bool {
 // AdminSSOEnforcementRequest turns SSO enforcement on or off for an organization.
 type AdminSSOEnforcementRequest struct {
 	Enforced *bool `json:"enforced" validate:"required"`
+	// RevokeCredentials, when turning enforcement on, revokes the user API
+	// keys and connector grants that exist at that moment. Omitted means true.
+	RevokeCredentials *bool `json:"revoke_credentials"`
 }
 
 // AdminSSOEnforcementResponse reports an organization's SSO enforcement.
 type AdminSSOEnforcementResponse struct {
 	Enforced bool `json:"enforced"`
+	// Readiness is set on GET: the preconditions of turning enforcement on and
+	// the credentials that revoking at enable would end.
+	Readiness *tenantapp.SSOEnforcementReadiness `json:"readiness,omitempty"`
 }
 
-func toAdminOrganizationResponse(o *admin.Organization, personalData bool) AdminOrganizationResponse {
-	owners := o.OwnerEmails
-	count := len(owners)
-	if owners == nil || !personalData {
-		owners = []string{}
+// ownerDomains returns the distinct, sorted domains of the owners' addresses.
+func ownerDomains(emails []string) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, e := range emails {
+		if _, d, ok := strings.Cut(strings.ToLower(e), "@"); ok && d != "" && !seen[d] {
+			seen[d] = true
+			out = append(out, d)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+// toAdminOrganizationResponse builds one organization. personalData is the
+// caller's role (not read-only); withOwnerEmails is true only for the single
+// organization view, never for the list: the owners' addresses of every
+// organization are not one request away.
+func toAdminOrganizationResponse(o *admin.Organization, personalData, withOwnerEmails bool) AdminOrganizationResponse {
+	count := len(o.OwnerEmails)
+	owners, domains := []string{}, []string{}
+	if personalData {
+		domains = ownerDomains(o.OwnerEmails)
+		if withOwnerEmails {
+			owners = append(owners, o.OwnerEmails...)
+		}
+	}
+	reason := o.SuspendedReason
+	if !personalData {
+		reason = ""
 	}
 	return AdminOrganizationResponse{
 		ID: o.ID.String(), Name: o.Name, Slug: o.Slug, Description: o.Description,
-		CreatedAt: o.CreatedAt, ActiveMembers: o.ActiveMembers, OwnerEmails: owners, OwnerCount: count,
+		CreatedAt: o.CreatedAt, ActiveMembers: o.ActiveMembers, OwnerEmails: owners, OwnerDomains: domains, OwnerCount: count,
 		SAMLEnabled: o.SAMLEnabled, ActiveIdentityProviders: o.ActiveIdentityProviders,
 		VerifiedDomains: o.VerifiedDomains, SSOEnforced: o.SSOEnforced, LimitsApply: o.LimitsApply,
-		Status: o.Status, SuspendedAt: o.SuspendedAt, SuspendedReason: o.SuspendedReason, DeletionDueAt: o.DeletionDueAt,
+		Status: o.Status, SuspendedAt: o.SuspendedAt, SuspendedReason: reason, DeletionDueAt: o.DeletionDueAt,
 	}
 }
 
@@ -287,7 +327,7 @@ func (h *AdminOrganizationHandler) List(w http.ResponseWriter, r *http.Request) 
 		TotalPages: (total + perPage - 1) / perPage,
 	}
 	for _, o := range orgs {
-		resp.Data = append(resp.Data, toAdminOrganizationResponse(o, adminSeesPersonalData(r)))
+		resp.Data = append(resp.Data, toAdminOrganizationResponse(o, adminSeesPersonalData(r), false))
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -316,19 +356,22 @@ func (h *AdminOrganizationHandler) Get(w http.ResponseWriter, r *http.Request) {
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
-	writeJSON(w, http.StatusOK, toAdminOrganizationResponse(o, adminSeesPersonalData(r)))
+	writeJSON(w, http.StatusOK, toAdminOrganizationResponse(o, adminSeesPersonalData(r), true))
 }
 
-// Create handles POST /api/v1/admin/tenants. The owner must be an existing
-// user; the organization is created under every SIGNUP_MODE.
+// Create handles POST /api/v1/admin/tenants. The owner email must not belong
+// to an existing account (409 otherwise): a new password-less account is
+// created and its owner sets a password through an emailed link. The
+// organization is created under every SIGNUP_MODE.
 // @Summary Create an organization (platform admin)
-// @Description Creates an organization with an existing user as its owner. Works under every SIGNUP_MODE and sign-up policy.
+// @Description Creates an organization and a new owner account (the owner sets a password through an emailed link). An email that already has an account is refused with 409, because nobody becomes an owner without their consent. Works under every SIGNUP_MODE and sign-up policy.
 // @Tags Admin Organizations
 // @Accept json
 // @Produce json
 // @Param request body AdminCreateOrganizationRequest true "Organization"
 // @Success 201 {object} AdminOrganizationResponse
 // @Failure 400 {object} apierror.Error "Bad Request"
+// @Failure 409 {object} apierror.Error "Owner email already has an account"
 // @Security BearerAuth
 // @Router /admin/tenants [post]
 func (h *AdminOrganizationHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -352,6 +395,8 @@ func (h *AdminOrganizationHandler) Create(w http.ResponseWriter, r *http.Request
 		switch {
 		case errors.Is(err, tenant.ErrPlatformAdminMembership):
 			apierror.Conflict("Platform administrators cannot belong to an organization. Use another owner email.").WriteJSON(w)
+		case errors.Is(err, tenantapp.ErrOwnerAccountExists):
+			apierror.Conflict("This person already has an account; they can create the organization after signing in.").WriteJSON(w)
 		case errors.Is(err, tenantapp.ErrAccountExists):
 			apierror.Conflict("An account with this email was just created. Try again.").WriteJSON(w)
 		case shared.IsValidation(err):
@@ -377,7 +422,7 @@ func (h *AdminOrganizationHandler) Create(w http.ResponseWriter, r *http.Request
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
-	resp.AdminOrganizationResponse = toAdminOrganizationResponse(o, true)
+	resp.AdminOrganizationResponse = toAdminOrganizationResponse(o, true, true)
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusCreated, resp)
 }
@@ -403,8 +448,14 @@ func (h *AdminOrganizationHandler) ListUsers(w http.ResponseWriter, r *http.Requ
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
+	usable, err := h.orgs.CountUsableOwners(r.Context(), id)
+	if err != nil {
+		h.logger.Error("count usable owners", "error", sanitizeLogField(err.Error()))
+		apierror.InternalError(err).WriteJSON(w)
+		return
+	}
 	personal := adminSeesPersonalData(r)
-	resp := AdminOrgUserListResponse{Data: make([]AdminOrgUserResponse, 0, len(members)), ByRole: map[string]int{},
+	resp := AdminOrgUserListResponse{ActiveOwnerCount: usable, Data: make([]AdminOrgUserResponse, 0, len(members)), ByRole: map[string]int{},
 		Total: len(members), Redacted: !personal}
 	for _, m := range members {
 		resp.ByRole[m.Role.String()]++
@@ -500,6 +551,7 @@ func (h *AdminOrganizationHandler) CreateUser(w http.ResponseWriter, r *http.Req
 
 // GetSSOEnforcement handles GET /api/v1/admin/tenants/{tenantId}/sso/enforcement.
 // @Summary Get an organization's SSO enforcement
+// @Description Includes the preconditions of turning it on and the number of user API keys and connector grants that turning it on would revoke.
 // @Tags Admin Organizations
 // @Produce json
 // @Param tenantId path string true "Organization ID"
@@ -521,7 +573,16 @@ func (h *AdminOrganizationHandler) GetSSOEnforcement(w http.ResponseWriter, r *h
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
-	writeJSON(w, http.StatusOK, AdminSSOEnforcementResponse{Enforced: o.SSOEnforced})
+	resp := AdminSSOEnforcementResponse{Enforced: o.SSOEnforced}
+	rd, rerr := h.tenants.SSOEnforcementReadiness(r.Context(), id)
+	if rerr != nil {
+		h.logger.Error("sso enforcement readiness", "error", sanitizeLogField(rerr.Error()))
+		apierror.InternalError(rerr).WriteJSON(w)
+		return
+	}
+	resp.Readiness = rd
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // SetSSOEnforcement handles PUT /api/v1/admin/tenants/{tenantId}/sso/enforcement.
@@ -529,7 +590,7 @@ func (h *AdminOrganizationHandler) GetSSOEnforcement(w http.ResponseWriter, r *h
 // env fallback), the same guard the tenant settings used to apply; the owner
 // break-glass at login still applies.
 // @Summary Set an organization's SSO enforcement
-// @Description Requires members to sign in via SSO (the owner is exempt as break-glass). Refused with 400 when the organization has no usable SSO path.
+// @Description Requires members to sign in via SSO. An owner can still enter with a password and their second factor (break-glass, audited). Turning it on is refused with 400 when the organization has no usable SSO path, no verified domain, no owner or admin has signed in through the identity provider yet, or no owner has two-factor authentication. By default it revokes the user API keys and connector grants that exist at that moment (revoke_credentials=false keeps them).
 // @Tags Admin Organizations
 // @Accept json
 // @Produce json
@@ -551,7 +612,7 @@ func (h *AdminOrganizationHandler) SetSSOEnforcement(w http.ResponseWriter, r *h
 		return
 	}
 	settings, err := h.tenants.UpdateSecuritySettings(r.Context(), id.String(),
-		tenantapp.UpdateSecuritySettingsInput{SSOEnforced: req.Enforced}, adminAuditContext(r, id.String()))
+		tenantapp.UpdateSecuritySettingsInput{SSOEnforced: req.Enforced, RevokeCredentialsOnSSOEnforce: req.RevokeCredentials}, adminAuditContext(r, id.String()))
 	if err != nil {
 		if WriteFeatureDenied(w, err) {
 			return

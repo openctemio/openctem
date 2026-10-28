@@ -22,6 +22,7 @@ import { loginErrorHref } from '@/features/auth/lib/login-error'
 
 import { env } from '@/lib/env'
 import { browserContextHeaders } from '@/lib/api/browser-context-headers'
+import { bindingCookieName, bindingCookieOptions } from '@/features/auth/lib/browser-binding'
 import { setServerCookie } from '@/lib/cookies-server'
 import { validateRedirectUrl } from '@/lib/redirect'
 import { isAllowedValue, sanitizeLogValue } from '@/lib/log-sanitize'
@@ -55,7 +56,9 @@ async function backendFetch<T>(endpoint: string, options: RequestInit = {}): Pro
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({ message: response.statusText }))
-    throw new Error(errorData.message || errorData.error || `HTTP ${response.status}`)
+    const err = new Error(errorData.message || errorData.error || `HTTP ${response.status}`)
+    if (typeof errorData.code === 'string') (err as Error & { code?: string }).code = errorData.code
+    throw err
   }
 
   return response.json()
@@ -106,6 +109,9 @@ export async function getSSOAuthorizeUrl(
       maxAge: 600, // 10 minutes
       path: '/',
     })
+
+    // Browser binding: the API refuses the callback without this secret.
+    cookieStore.set(bindingCookieName('sso'), data.browser_binding, bindingCookieOptions())
 
     // Store org slug for callback
     cookieStore.set('sso_org', orgSlug, {
@@ -174,6 +180,17 @@ export async function handleSSOCallback(
     // Clear state cookie
     cookieStore.delete('sso_state')
 
+    // The binding is single use; a missing one is refused by the API too.
+    const bindingName = bindingCookieName('sso')
+    const browserBinding = cookieStore.get(bindingName)?.value
+    cookieStore.delete(bindingName)
+    if (!browserBinding) {
+      return {
+        success: false,
+        error: 'Invalid SSO state. Please try again.',
+      }
+    }
+
     // Get stored redirect
     const _redirectTo = cookieStore.get('sso_redirect')?.value || '/'
     cookieStore.delete('sso_redirect')
@@ -187,6 +204,7 @@ export async function handleSSOCallback(
         code,
         state,
         redirect_uri: frontendCallbackUrl,
+        browser_binding: browserBinding,
       }),
     })
 
@@ -230,6 +248,7 @@ export async function handleSSOCallback(
     return {
       success: false,
       error: error instanceof Error ? error.message : 'SSO authentication failed',
+      code: (error as { code?: unknown } | null)?.code as string | undefined,
     }
   }
 }

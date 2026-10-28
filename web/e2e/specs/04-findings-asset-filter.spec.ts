@@ -16,7 +16,7 @@ import { test, expect } from '../fixtures/authenticated-page'
  *      filter parameter is honoured.
  */
 
-test.describe('Findings asset-id filter', () => {
+test.describe('Findings asset-id filter', { tag: ['@findings'] }, () => {
   test('findings page renders with no filter', async ({ page }) => {
     await page.goto('/findings')
     await page.waitForLoadState('networkidle')
