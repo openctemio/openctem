@@ -168,14 +168,15 @@ func (s *Service) RevokeUserGrants(ctx context.Context, userID shared.ID) (int, 
 	return n, nil
 }
 
-// ListAllClients lists every client with usage counts. Platform admin
-// console only (console session); no tenant data.
-func (s *Service) ListAllClients(ctx context.Context) ([]mcpoauth.ClientUsage, error) {
+// ListAllClients lists one page of clients with usage counts, and the total
+// matching the filter. Platform admin console only (console session); no
+// tenant data.
+func (s *Service) ListAllClients(ctx context.Context, f mcpoauth.ClientFilter, limit, offset int) ([]mcpoauth.ClientUsage, int, error) {
 	store, err := s.connectionStore()
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	return store.ListClientsForPlatform(ctx, s.now())
+	return store.ListClientsForPlatform(ctx, f, limit, offset, s.now())
 }
 
 // SetClientBlocked blocks or unblocks a client everywhere. The

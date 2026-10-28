@@ -93,22 +93,35 @@ func scanMCPGrantRow(row rowScanner, extra1, extra2 *string) (*mcpoauth.Grant, e
 	return &g, nil
 }
 
-// ListClientsForPlatform implements mcpoauth.ConnectionRepository: every
-// client with how many active connections it has and in how many
-// organizations. Counts only, no tenant data (platform admin console).
-func (r *MCPOAuthRepository) ListClientsForPlatform(ctx context.Context, now time.Time) ([]mcpoauth.ClientUsage, error) {
+// ListClientsForPlatform implements mcpoauth.ConnectionRepository: one page
+// of clients, newest first, with how many active connections each has and in
+// how many organizations, and the total matching f. Counts only, no tenant
+// data (platform admin console).
+func (r *MCPOAuthRepository) ListClientsForPlatform(ctx context.Context, f mcpoauth.ClientFilter, limit, offset int, now time.Time) ([]mcpoauth.ClientUsage, int, error) {
+	where := `WHERE ($1 = '' OR c.client_id ILIKE '%' || $1 || '%' OR c.name ILIKE '%' || $1 || '%')
+		AND ($2::boolean IS NULL OR (c.blocked_at IS NOT NULL) = $2)`
+	var blocked any
+	if f.Blocked != nil {
+		blocked = *f.Blocked
+	}
+	var total int
+	if err := r.db.QueryRowContext(ctx, `SELECT count(*) FROM mcp_oauth_clients c `+where,
+		escapeLikePattern(f.Q), blocked).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count mcp clients: %w", err)
+	}
 	q := `SELECT ` + mcpClientColumns + `,
-			COUNT(g.id) FILTER (WHERE g.revoked_at IS NULL AND g.expires_at > $1),
-			COUNT(DISTINCT g.tenant_id) FILTER (WHERE g.revoked_at IS NULL AND g.expires_at > $1),
+			COUNT(g.id) FILTER (WHERE g.revoked_at IS NULL AND g.expires_at > $3),
+			COUNT(DISTINCT g.tenant_id) FILTER (WHERE g.revoked_at IS NULL AND g.expires_at > $3),
 			MAX(g.last_used_at)
 		FROM mcp_oauth_clients c
 		LEFT JOIN mcp_oauth_grants g ON g.client_ref = c.id
+		` + where + `
 		GROUP BY c.id
-		ORDER BY c.created_at DESC
-		LIMIT 1000`
-	rows, err := r.db.QueryContext(ctx, q, now)
+		ORDER BY c.created_at DESC, c.id
+		LIMIT $4 OFFSET $5`
+	rows, err := r.db.QueryContext(ctx, q, escapeLikePattern(f.Q), blocked, now, limit, offset)
 	if err != nil {
-		return nil, fmt.Errorf("list mcp clients: %w", err)
+		return nil, 0, fmt.Errorf("list mcp clients: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 	out := []mcpoauth.ClientUsage{}
@@ -121,7 +134,7 @@ func (r *MCPOAuthRepository) ListClientsForPlatform(ctx context.Context, now tim
 		)
 		if err := rows.Scan(&id, &u.Client.ClientID, &kind, &tenantID, &u.Client.Name, pq.Array(&u.Client.RedirectURIs),
 			&fetched, &expires, &blocked, &u.Client.CreatedAt, &u.ActiveConnections, &u.Organizations, &lu); err != nil {
-			return nil, fmt.Errorf("scan mcp client: %w", err)
+			return nil, 0, fmt.Errorf("scan mcp client: %w", err)
 		}
 		u.Client.ID = shared.MustIDFromString(id.String)
 		u.Client.Kind = mcpoauth.ClientKind(kind)
@@ -132,7 +145,7 @@ func (r *MCPOAuthRepository) ListClientsForPlatform(ctx context.Context, now tim
 		u.LastUsedAt = timePtr(lu)
 		out = append(out, u)
 	}
-	return out, rows.Err()
+	return out, total, rows.Err()
 }
 
 // SetClientBlockedForPlatform implements mcpoauth.ConnectionRepository. A
