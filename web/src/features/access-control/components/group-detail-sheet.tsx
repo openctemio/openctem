@@ -52,6 +52,7 @@ import {
   AddAssetDialog,
   BulkAddAssetsDialog,
   RolesTab,
+  AccessTab,
   MembershipEndDialog,
   membershipEndISO,
   DEFAULT_EXTERNAL_MEMBERSHIP_DAYS,
@@ -61,7 +62,7 @@ import { dateInputDaysFromNow } from '@/features/organization/lib/external-acces
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
 
-type GroupTab = 'overview' | 'members' | 'roles' | 'assets' | 'scope-rules'
+type GroupTab = 'overview' | 'members' | 'access' | 'roles' | 'assets' | 'scope-rules'
 
 const EMPTY_NEW_MEMBER: NewGroupMember = { userId: '', role: 'member', endsOn: '', reason: '' }
 
@@ -123,6 +124,7 @@ export function GroupDetailSheet({ groupId, open, onOpenChange, onUpdate }: Grou
   const canSetMemberEnd = useCanMutate('PATCH /api/v1/groups/{groupId}/members/{userId}')
   const canBindRole = useCanMutate('POST /api/v1/groups/{groupId}/roles')
   const canUnbindRole = useCanMutate('DELETE /api/v1/groups/{groupId}/roles/{roleId}')
+  const canSetAccess = useCanMutate('PUT /api/v1/groups/{groupId}/access')
   const { canAll } = usePermissions()
   const canViewRoles = canAll(Permission.GroupsRead, Permission.RolesRead)
   const [memberEnd, setMemberEnd] = useState<{
@@ -319,7 +321,10 @@ export function GroupDetailSheet({ groupId, open, onOpenChange, onUpdate }: Grou
       ),
     },
     ...(canViewRoles
-      ? [{ value: 'roles' as const, label: t('org.teamSheet.roles', 'Roles') }]
+      ? [
+          { value: 'access' as const, label: t('org.teamSheet.access', 'Access') },
+          { value: 'roles' as const, label: t('org.teamSheet.roles', 'Roles') },
+        ]
       : []),
     { value: 'scope-rules', label: t('org.teamSheet.scopeRules', 'Scope rules') },
   ]
@@ -515,6 +520,15 @@ export function GroupDetailSheet({ groupId, open, onOpenChange, onUpdate }: Grou
                 onRemoveAsset={
                   canRemoveAsset ? (id, name) => setAssetToRemove({ id, name }) : undefined
                 }
+              />
+            )}
+
+            {activeTab === 'access' && groupId && (
+              <AccessTab
+                groupId={groupId}
+                canEdit={canSetAccess}
+                memberCount={memberCount}
+                onChanged={onUpdate}
               />
             )}
 

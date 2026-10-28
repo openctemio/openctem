@@ -1,7 +1,7 @@
 {
   "threatIntel.actors.active": "Active",
   "threatIntel.actors.add": "Add actor",
-  "threatIntel.actors.addDescription": "Track a new adversary group for this tenant.",
+  "threatIntel.actors.addDescription": "Track a new adversary group for this organization.",
   "threatIntel.actors.addFailed": "Failed to add threat actor",
   "threatIntel.actors.addTitle": "Add threat actor",
   "threatIntel.actors.added": "Threat actor \"{name}\" added",
