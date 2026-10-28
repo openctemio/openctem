@@ -21,6 +21,8 @@ import (
 //	/admin/settings/alerts         any admin   PUT: super_admin + fresh step-up + reason
 //	                                           (critical audit, admins told);
 //	                                           test: super_admin
+//	/admin/settings/email-relay    any admin   PUT: super_admin + fresh step-up + reason
+//	                                           (critical audit, admins told)
 //	/admin/settings/ai             any admin   PUT: super_admin + fresh step-up + reason
 //	                                           (critical audit, admins told);
 //	                                           test: super_admin
@@ -61,6 +63,11 @@ func registerAdminPlatformSettingsRoutes(router Router, h Handlers, adminMiddlew
 	router.Group("/api/v1/admin/settings/threat-intel-source", func(r Router) {
 		r.GET("/", on(threatSource, ps.GetThreatSource))
 		r.PUT("/", on(threatSource, ps.UpdateThreatSource), requireSuper, stepUp("settings.threat_intel_source"))
+	}, adminMiddlewares...)
+	emailRelay := ps.EmailRelay != nil
+	router.Group("/api/v1/admin/settings/email-relay", func(r Router) {
+		r.GET("/", on(emailRelay, ps.GetEmailRelay))
+		r.PUT("/", on(emailRelay, ps.UpdateEmailRelay), requireSuper, freshStepUp("settings.email_relay"))
 	}, adminMiddlewares...)
 	router.Group("/api/v1/admin/settings/alerts", func(r Router) {
 		r.GET("/", on(alerts, ps.GetAlertWebhook))

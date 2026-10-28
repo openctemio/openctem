@@ -315,9 +315,6 @@ type TenantToolConfig struct {
 	// Custom patterns (e.g., GF patterns, regex patterns)
 	CustomPatterns []CustomPattern
 
-	// Custom wordlists
-	CustomWordlists []CustomWordlist
-
 	// Status
 	IsEnabled bool
 
@@ -338,12 +335,6 @@ type CustomTemplate struct {
 type CustomPattern struct {
 	Name    string `json:"name"`
 	Pattern string `json:"pattern"`
-}
-
-// CustomWordlist represents a custom wordlist reference.
-type CustomWordlist struct {
-	Name string `json:"name"`
-	Path string `json:"path"`
 }
 
 // NewTenantToolConfig creates a new tenant tool configuration.
@@ -373,7 +364,6 @@ func NewTenantToolConfig(
 		Config:          config,
 		CustomTemplates: []CustomTemplate{},
 		CustomPatterns:  []CustomPattern{},
-		CustomWordlists: []CustomWordlist{},
 		IsEnabled:       true,
 		UpdatedBy:       updatedBy,
 		CreatedAt:       now,
