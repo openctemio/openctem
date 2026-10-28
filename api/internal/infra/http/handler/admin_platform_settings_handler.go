@@ -25,6 +25,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/platformai"
 	"github.com/openctemio/openctem/api/internal/app/platformalert"
 	"github.com/openctemio/openctem/api/internal/app/platformcaptcha"
+	"github.com/openctemio/openctem/api/internal/app/platformsociallogin"
 	"github.com/openctemio/openctem/api/internal/app/storagequota"
 	"github.com/openctemio/openctem/api/internal/app/threatsource"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -32,6 +33,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	"github.com/openctemio/openctem/api/pkg/domain/platformsetting"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -62,10 +64,14 @@ type AdminPlatformSettingsHandler struct {
 	// how the signed release is doing for them.
 	ThreatSource    *threatsource.Service
 	ThreatReadiness ThreatIntelReadiness
-	admins          AdminDirectory
-	approvals       approvalGate
-	logger          *logger.Logger
-	EmailRelay      *orgrelay.Service
+	SocialLogin     *platformsociallogin.Service
+	// Signup answers the sign-up policy the social login page states the
+	// impact of a provider against (optional).
+	Signup     signupdom.PolicySource
+	admins     AdminDirectory
+	approvals  approvalGate
+	logger     *logger.Logger
+	EmailRelay *orgrelay.Service
 }
 
 // WithApprovals wires the four-eyes gate of the platform AI destination.
@@ -120,7 +126,7 @@ func (h *AdminPlatformSettingsHandler) writeSettingError(w http.ResponseWriter, 
 	case errors.Is(err, platformsetting.ErrVersionConflict):
 		apierror.Conflict("The " + what + " was changed by someone else; reload and try again").WriteJSON(w)
 	case errors.Is(err, platformcaptcha.ErrLockedByEnvironment), errors.Is(err, deploymentregion.ErrLockedByEnvironment),
-		errors.Is(err, platformai.ErrLockedByEnvironment):
+		errors.Is(err, platformai.ErrLockedByEnvironment), errors.Is(err, platformsociallogin.ErrLockedByEnvironment):
 		apierror.New(http.StatusConflict, CodeSettingLockedByEnvironment, err.Error()).WriteJSON(w)
 	case errors.Is(err, deploymentregion.ErrAlreadySet):
 		apierror.New(http.StatusConflict, CodeRegionAlreadySet, err.Error()).WriteJSON(w)
