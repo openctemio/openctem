@@ -44,6 +44,7 @@ routing) run on the same loop. The analyst is the first role, not the name of th
 | Role | what the agent does: `analyst` first; `remediator`, `reporter` and `hunter` later |
 | Harness | the loop in sdk-go `pkg/harness` (with `contract`, `playbook`, `eval`) |
 | AI worker | a sensor in the `ai-worker` role that runs the harness; the repository is `openctemio/ai-worker` |
+| CLI | `openctem playbook init\|test` builds and tests a playbook (the artifact, like `openctem tool`); `openctem agent run\|build\|sign\|publish` builds an own agent (L2). When that command lands, sdk-go's vocabulary check bans only the legacy sensor forms (`AGENT_*`, `agent_id`, `X-Agent-*`) instead of every use of the word "agent" |
 | Playbook | the instructions and checks of one kind of job; the sample `web-vuln-triage` is an analyst playbook |
 
 Platform code and tables keep their current names (`ai_analysts` and friends) for now. Generalising the principal
@@ -275,7 +276,7 @@ provenance. The AI worker is an ai-worker-role sensor built on that runtime, so 
 |---|---|---|
 | L0 | console settings: preset, owners, instructions, thresholds, tool allowlist, approval rules, data class | our harness |
 | L1 | playbooks authored in the console with a "try on these findings" preview and a diff, or locally with `openctem playbook init\|test` | our harness |
-| L2 | an own agent in any language on `openctem.analyze/vN`: Go SDK first, Python and TypeScript later, framework templates whose tools call back into the worker's policy, `openctem ai-worker run\|build\|sign\|publish`, conformance kit, CI templates | the organization's worker |
+| L2 | an own agent in any language on `openctem.analyze/vN`: Go SDK first, Python and TypeScript later, framework templates whose tools call back into the worker's policy, `openctem agent run\|build\|sign\|publish`, conformance kit, CI templates | the organization's worker |
 | L3 | an external agent through a thin adapter that is itself an ai-worker sensor (MCP, A2A, vendor API) | adapter |
 
 The same rules hold at every level:
