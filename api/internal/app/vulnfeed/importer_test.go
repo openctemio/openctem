@@ -3,6 +3,7 @@ package vulnfeed
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -169,6 +170,26 @@ func TestImport_DisabledOrUnconfigured(t *testing.T) {
 	_ = fs
 }
 
+// An operator's sync of a feed that would do nothing says so.
+func TestSync_ReportsUnconfiguredAndDisabled(t *testing.T) {
+	root, now := goldenRoot(t)
+	corpus := &fakeCorpus{}
+	im, _ := newTestImporter(t, Config{BundleDir: goldenDir}, corpus, nil)
+	if _, err := im.Sync(context.Background()); !errors.Is(err, ErrNotConfigured) {
+		t.Fatalf("unconfigured: %v", err)
+	}
+	im2, fs2 := newTestImporter(t, Config{RootKeyID: root, BundleDir: goldenDir}, corpus, nil)
+	fs2.st.SetEnabled(false)
+	im2.now = func() time.Time { return now }
+	if _, err := im2.Sync(context.Background()); !errors.Is(err, threatintel.ErrSyncDisabled) {
+		t.Fatalf("disabled: %v", err)
+	}
+	fs2.st.SetEnabled(true)
+	if res, err := im2.Sync(context.Background()); err != nil || !res.Ran {
+		t.Fatalf("enabled: %+v %v", res, err)
+	}
+}
+
 func TestImport_SnapshotOverCorpusWithdrawsAndGuards(t *testing.T) {
 	root, now := goldenRoot(t)
 	// Applied 1 but not as the delta's base: applied 1 is the delta base, so
@@ -241,5 +262,11 @@ func TestNewImporterRefusesBadBaseURL(t *testing.T) {
 		if _, err := NewImporter(Config{RootKeyID: "x", BaseURL: u}, &fakeCorpus{}, &fakeStatus{}, fakeCatalog{}, logger.NewNop()); err == nil {
 			t.Errorf("%s accepted", u)
 		}
+	}
+}
+
+func TestDefaultBaseURLIsTheBundlesRepo(t *testing.T) {
+	if DefaultBaseURL != "https://github.com/openctemio/vulnfeed-bundles/releases" {
+		t.Fatalf("DefaultBaseURL = %q", DefaultBaseURL)
 	}
 }

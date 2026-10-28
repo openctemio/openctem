@@ -11,7 +11,7 @@ access policies (allowed email domains, IP allowlist). Design and rationale:
 | Organization admin creates the user | `POST /api/v1/tenants/{tenant}/users` | owner/admin of the organization |
 | New set-password link for a pending account | `POST /api/v1/tenants/{tenant}/users/{userId}/setup-link` | owner/admin; account unused and in this organization only |
 | Platform admin creates the **first owner** of an organization with no owner | `POST /api/v1/admin/tenants/{tenantId}/users` | console session, ops_admin+ (audited); 409 once the organization has an owner, active or suspended — see [First owner](#first-owner-platform-administrator) |
-| Platform admin recovers an organization whose owners are all suspended | `POST /api/v1/admin/tenants/{tenantId}/users` with `"recovery": true` | console session, **super_admin** (403 otherwise); link emailed only; audited as `organization.owner_recovery` and at critical severity in the organization |
+| Platform admin recovers an organization whose owners are all suspended, blocked or erased | `POST /api/v1/admin/tenants/{tenantId}/users` with `"recovery": true` | console session, **super_admin** (403 otherwise); link emailed only; audited as `organization.owner_recovery` and at critical severity in the organization |
 | Platform admin creates an organization with a new owner | `POST /api/v1/admin/tenants` (`owner_email` without an account; an email that already has an account is refused with 409) | console session, ops_admin+ (audited) |
 | First organization at install | `bootstrap-admin -org-name … -org-owner-email …` (CLI, same service as the console path) | database credentials; audited with actor `bootstrap-admin` |
 | Invitation | `POST /api/v1/tenants/{tenant}/invitations`, then register with `invitation_token` (if no account) and `POST /api/v1/invitations/accept` with `{"token"}` in the body | owner/admin to invite; the token + matching email to accept |
@@ -72,16 +72,22 @@ way for a new and an existing address, so it does not enumerate.
   that has verified the address's domain (the same rule that lets it create
   the account directly): that organization may vouch for the address. The
   token still lets its holder accept that one invitation, which grants only
-  that organization's seat. An organization's `security.email_verification_mode`
-  of `never` does not lower this; `always` still applies. If the real holder
+  that organization's seat. If the real holder
   registers the address later, the existing-unverified path mails a
   set-password link that replaces the first registrant's password. A platform
   that can send no mail at all (no SMTP anywhere) cannot verify and keeps the
   old behaviour.
-- An organization's `security.email_verification_mode` otherwise governs
-  nothing about public sign-up: there is no "the only organization is the
-  default" rule, and an invitation token for another address does not make its
-  organization's setting apply.
+- Whether an address is verified belongs to the account, not to one organization.
+  `security.email_verification_mode` is `auto` (the default: the platform rule,
+  verify when the platform can send e-mail) or `always` (members must have a
+  verified address to **enter that organization**: the token exchange for it is
+  refused until the address is verified, other organizations the account belongs
+  to are not affected). The former `never` is retired: it is refused on write and
+  a stored `never` reads as `auto`, because skipping verification for one
+  organization let an unverified account into every other one. It never decides
+  public sign-up: there is no "the only organization is the default" rule, and
+  an invitation token for another address does not make its organization's
+  setting apply.
 - Missing SMTP never skips verification there. Start-up refuses `domain`/`open`
   without the platform e-mail, and sign-up closes at run time without it.
 - Under `disabled` only invited and administrator-created accounts exist; the
@@ -163,6 +169,29 @@ exists signs in as before: a mode change never locks anyone out.
 
 `AUTH_ALLOW_REGISTRATION` and `TENANT_CREATION_MODE` are retired: start-up
 refuses to run while either is set and names `SIGNUP_MODE` instead.
+
+### Social sign-in and the e-mail it can prove
+
+A social provider vouches for an address only where it runs the mailbox. The sign-in
+treats the address as proved (and so lets it create an account on a claimed domain, join
+by domain policy, claim an invitation or claim a provisioned seat) in these cases only:
+
+| Provider | The address is proved when |
+|---|---|
+| Google | it is on `gmail.com` or `googlemail.com`, or the id_token's hosted-domain (`hd`) claim equals the address's domain |
+| GitHub | never (only the primary address GitHub verified is read, and it is used for sign-in only) |
+| Microsoft | the domain-owner-verified claim is present (always required) |
+
+Otherwise (for example a personal Google account created on a company address):
+
+- an account already bound to that provider identity signs in as before;
+- an existing account of the same provider that was never bound is bound only for
+  GitHub or an address proved as above; otherwise the sign-in is refused with
+  `EMAIL_NOT_AUTHORITATIVE` and the person signs in with their password (or asks an
+  administrator) and links the provider afterwards;
+- a passwordless account provisioned by an organization is not claimed;
+- a new account is created only where sign-up is open, **unverified**, with no domain
+  join and no invitation claim; under `domain` sign-up and `admin_only` nothing is written.
 
 ### Domain sign-up policy (Settings > Domains, owner only)
 
@@ -299,6 +328,24 @@ appears in a URL a server or proxy records (RFC-041 §3.2 P4):
   history with `history.replaceState`.
 - The API takes the token in the JSON body: `POST /api/v1/invitations/lookup`,
   `/accept`, `/accept-with-refresh` and `/decline`.
+- When the organization needs a second factor from the person (2FA by role
+  with effective privilege, `allowed_with_mfa` for a personal address, or a
+  privileged outside member), `/accept-with-refresh` accepts the invitation and
+  answers 403 `MFA_ENROLLMENT_REQUIRED`. The page then shows "You have joined
+  {org}" and runs the sign-in's second-factor step in place:
+  `POST /api/v1/auth/mfa/enroll/session` (authenticated by the refresh-token
+  session, refresh token not spent) returns an enrollment challenge, or a
+  verify challenge when a factor exists, with the names of the requiring
+  organizations; `/auth/mfa/enroll/{start,confirm}` or `/auth/mfa/verify`
+  complete it and sign the person in again with a session that proved the
+  factor. An enrollment challenge needs a session signed in within the last 15
+  minutes (sign-up or sign-in, then accept); an older session gets 403
+  `REAUTH_REQUIRED` and the web sends the person to the password sign-in, so a
+  stolen refresh token alone cannot bind an authenticator. Verify challenges
+  have no such limit. Sessions started through an identity provider get a clear refusal.
+  The same endpoint serves a refused token refresh (`/two-factor-setup`). The
+  sign-in offers enrollment under the same three policies
+  (`mfaRequiringOrganizations`), so it never loops.
 - Links sent before this change (`/invitations/{token}`) still work: the web
   page redirects them to the fragment form. The API aliases
   `/api/v1/invitations/{token}/...` answer with `Deprecation`/`Sunset`
@@ -338,7 +385,16 @@ link is a secret. Whoever runs the command holds the database credentials and
 could set any password anyway, and otherwise the new owner would have no link
 until mail works. The link is never written to a log.
 
-**Owner recovery.** When every owner of an organization is suspended, a
+**Usable owner.** Owner recovery, the Organizations list (owner filter), the
+Overview's "without owner" item and the Users tab all use one definition of
+an owner who can act: an active membership of an account that is active and
+not erased. Blocking an account (Users > Block) or erasing it therefore makes
+its organizations count as "without owner" and opens recovery, even though the
+membership row still says active. The users response carries
+`active_owner_count` for every console role, so a read-only administrator
+(who gets no rows) sees the right notice.
+
+**Owner recovery.** When every owner of an organization is suspended, blocked or erased, a
 super admin can send `{"email": "...", "name": "...", "recovery": true}` to the
 same endpoint to create a new owner (RFC-022 revision 7). It is refused with
 403 for any other console role, with 409 while any owner is active, and with

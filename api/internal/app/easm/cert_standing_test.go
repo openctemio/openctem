@@ -46,6 +46,7 @@ func (f *gateFixture) cert(t *testing.T, fp string, names []string, endpoints ..
 
 func certGate(f *gateFixture) *ActiveGate {
 	g := NewActiveGate(f, f, f, f)
+	g.SetManagedService(true)
 	g.SetCertificates(f)
 	return g
 }

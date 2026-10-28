@@ -17,6 +17,8 @@ type Filter struct {
 	Tags                  []string
 	Search                string
 	IncludeSystemTemplate bool // Include system templates in results (for tenant views)
+	// IncludeRetired also lists retired system workflows (hidden by default).
+	IncludeRetired bool
 }
 
 // Repository defines the interface for scan workflow persistence.

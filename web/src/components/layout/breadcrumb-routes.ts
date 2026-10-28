@@ -31,7 +31,6 @@ export function isIdSegment(segment: string): boolean {
  */
 export const PATHS_WITHOUT_PAGE: ReadonlySet<string> = new Set([
   '/auth',
-  '/auth/callback',
   '/auth/sso',
   '/auth/sso/callback',
   '/ci-cd/github-app',

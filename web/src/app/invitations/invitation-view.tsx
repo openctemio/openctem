@@ -20,6 +20,8 @@ import {
 } from '@/features/auth/lib/invitation-token'
 import { registerHref } from '@/features/auth/lib/self-register'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { authErrorText } from '@/features/auth/lib/auth-error-codes'
+import { MfaSessionStep } from '@/features/auth/components/mfa-session-step'
 import { useTranslation } from '@/context/i18n-provider'
 import {
   InvitationGrantsNotice,
@@ -63,9 +65,27 @@ function postToken(url: string, token: string): Promise<Response> {
   })
 }
 
-async function errorMessage(response: Response, fallback: string): Promise<string> {
-  const data = (await response.json().catch(() => ({}))) as { message?: string }
-  return data.message || fallback
+/** A refused decline: its message is already the console's own text. */
+class DeclineRefused extends Error {}
+
+/** The words for a refused request, from the API's code; never the server's sentence. */
+async function errorMessage(
+  response: Response,
+  fallback: string,
+  t: Parameters<typeof authErrorText>[1]
+): Promise<string> {
+  const data = (await response.json().catch(() => ({}))) as { code?: string }
+  return authErrorText(data.code, t, fallback)
+}
+
+/** The API refused a token only because the organization requires 2FA. */
+async function isMfaEnrollmentRequired(response: Response): Promise<boolean> {
+  if (response.status !== 403) return false
+  const data = (await response
+    .clone()
+    .json()
+    .catch(() => ({}))) as { code?: string }
+  return data.code === 'MFA_ENROLLMENT_REQUIRED'
 }
 
 export function InvitationView({ hasSession }: InvitationViewProps) {
@@ -80,6 +100,9 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
   const [invitation, setInvitation] = useState<InvitationData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [acceptError, setAcceptError] = useState<string | null>(null)
+  // The invitation is accepted but the organization needs a second factor:
+  // the page walks the person through it instead of showing an error.
+  const [joinedNeedsMfa, setJoinedNeedsMfa] = useState(false)
 
   // The token never goes back into a URL: sign-in and sign-up return to the
   // bare invitation page, which finds the token kept for this tab.
@@ -104,7 +127,7 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
             clearInvitationToken()
             setError(t('org.acceptInvite.notFound'))
           } else {
-            setError(await errorMessage(response, t('org.acceptInvite.loadFailed')))
+            setError(await errorMessage(response, t('org.acceptInvite.loadFailed'), t))
           }
           return
         }
@@ -160,17 +183,28 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
             return
           }
 
-          const errorMsg = await errorMessage(refreshResponse, t('org.acceptInvite.acceptFailed'))
+          if (await isMfaEnrollmentRequired(refreshResponse)) {
+            // Joined; the organization requires two-factor authentication.
+            // Not an error: set it up here, then open the organization.
+            setJoinedNeedsMfa(true)
+            return
+          }
+
+          const errorMsg = await errorMessage(
+            refreshResponse,
+            t('org.acceptInvite.acceptFailed'),
+            t
+          )
           setAcceptError(errorMsg)
           toast.error(errorMsg)
           return
         }
 
-        const errorMsg = await errorMessage(response, t('org.acceptInvite.acceptFailed'))
+        const errorMsg = await errorMessage(response, t('org.acceptInvite.acceptFailed'), t)
         setAcceptError(errorMsg)
         toast.error(errorMsg)
-      } catch (err) {
-        const message = err instanceof Error ? err.message : t('org.acceptInvite.acceptFailed')
+      } catch {
+        const message = t('org.acceptInvite.acceptFailed')
         setAcceptError(message)
         toast.error(message)
       }
@@ -185,13 +219,17 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
       try {
         const response = await postToken(endpoints.invitations.decline(), token)
         if (!response.ok) {
-          throw new Error(await errorMessage(response, t('org.acceptInvite.declineFailed')))
+          throw new DeclineRefused(
+            await errorMessage(response, t('org.acceptInvite.declineFailed'), t)
+          )
         }
         clearInvitationToken()
         setDeclined(true)
         toast.success(t('org.acceptInvite.declinedToast'))
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : t('org.acceptInvite.declineFailed'))
+        toast.error(
+          err instanceof DeclineRefused ? err.message : t('org.acceptInvite.declineFailed')
+        )
       } finally {
         setConfirmDecline(false)
       }
@@ -273,6 +311,38 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
             <Button variant="outline" className="w-full" onClick={() => router.push('/')}>
               {t('org.acceptInvite.goHome')}
             </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  // Joined, but the organization requires two-factor authentication: set it up
+  // here (the same step the sign-in page uses), then open the organization.
+  if (joinedNeedsMfa && invitation) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4 bg-muted/30">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+              <Check className="h-6 w-6 text-primary" />
+            </div>
+            <CardTitle className="text-xl">
+              {t('org.acceptInvite.joinedMfaTitle', undefined, { org: invitation.tenant.name })}
+            </CardTitle>
+            <CardDescription>{t('org.acceptInvite.joinedMfaBody')}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <MfaSessionStep
+              tenantId={invitation.tenant.id}
+              onComplete={() => navigateWithFreshSession('/')}
+              onSessionExpired={() => router.push(invitationLoginHref)}
+              onReauthRequired={() =>
+                router.push(
+                  `/login?reason=mfa_required&returnTo=${encodeURIComponent(invitationPath)}&email=${encodeURIComponent(invitation.invitation.email || '')}`
+                )
+              }
+            />
           </CardContent>
         </Card>
       </div>
