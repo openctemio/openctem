@@ -50,7 +50,9 @@ unfinished "F-9 follow-up". Phase 1 completes it.
 - **Tools** (each reuses an existing tenant-scoped read service): `list_findings`,
   `get_finding`, `finding_stats`, `list_active_cves` (KEV/EPSS), `explain_finding_
   priority`, `get_exposure_chains`, `list_remediation_groups`, `list_assets`,
-  `compliance_posture`.
+  `compliance_posture`. `check_scope` (scope `mcp:scope.read`) answers whether a target may be
+  tested at an intensity, from the same authority a scan asks; it only reads and fails closed
+  (RFC-062 §10b).
 
 ## Security properties (hardened after an adversarial review)
 

@@ -1,7 +1,0 @@
-### Security: members can no longer change organization-wide scan configuration through the profile routes
-
-- `PUT /api/v1/scan-profiles/{id}` refused nothing about the pass/fail rule (quality gate), so a member could switch off the rule that blocks a merge, although the dedicated `PUT /api/v1/scan-profiles/{id}/quality-gate` route is owner or admin only. A member is now refused (403) when the request changes the rule or edits the organization's default profile. Sending the rule back unchanged, as the edit dialog does, still works.
-- `POST /api/v1/scan-profiles` with `is_default: true` made a member's new profile the organization's default, bypassing the owner or admin only `set-default` route. It is now refused for a member.
-- Opting the organization back in to shared sensors (`PUT /api/v1/organization/settings/shared-sensors` with `opt_out: false` after an opt-out) needs step-up re-authentication; opting out does not.
-- One rule for organization settings writes: the owner or administrator role on top of `settings:write`. The application access (MCP) policy, clients and access requests, the publisher approval, the discovery (EASM) settings and the license policy accepted `settings:write` alone, so a custom role could change them but no other section. A unit test now keeps every settings write route on this rule.
-- The web console hides the pass/fail rule editor, the default switch and the default profile's Edit action from members, and the MCP, discovery and license policy controls from custom roles without the admin role.
