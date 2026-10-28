@@ -271,7 +271,7 @@ The live order is:
 
 ## Platform role tables
 
-Migration 003525 adds `platform_roles`, `platform_role_permissions` and
+Migration 20261028144535 adds `platform_roles`, `platform_role_permissions` and
 `platform_role_assignments` (the console's roles, RFC-134). An installation
 that uses `DB_ADMIN_USER` re-runs the grant script after migrating, or every
 console request answers 503 (the console cannot read the administrator's
