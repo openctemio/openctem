@@ -14,7 +14,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ConfirmDialog } from '@/components/confirm-dialog'
 import {
   DataTable,
   DataTableRowActions,
@@ -30,31 +29,22 @@ import {
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
 import { AssetTypeIcon, getAssetTypeLabel } from '@/features/assets/lib/asset-type-icon'
-import { AdminApiError } from '@console/lib/admin-api/client'
 import {
   deleteTargetMapping,
   updateTargetMapping,
   useTargetMappingStats,
+  useTargetMappingTypes,
   useTargetMappings,
 } from '@console/features/admin-console/api/use-target-mappings'
+import { AdminConfirmDialog } from '@console/features/admin-console/components/admin-confirm-dialog'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { TargetMappingDialog } from '@console/features/admin-console/components/target-mapping-dialog'
-import {
-  MAPPABLE_ASSET_TYPES,
-  TARGET_TYPE_OPTIONS,
-  targetTypeHint,
-  targetTypeLabel,
-} from '@console/features/admin-console/lib/target-mappings'
+import { useTargetTypeText } from '@console/features/admin-console/lib/target-mappings'
 import { adminCan, type TargetMapping } from '@console/features/admin-console/types'
 import { useTranslation } from '@/context/i18n-provider'
 
 const ALL = 'all'
 const PAGE_SIZES = [20, 50, 100]
-
-const ASSET_FILTER_OPTIONS = MAPPABLE_ASSET_TYPES.map((v) => ({
-  value: v,
-  label: getAssetTypeLabel(v),
-})).sort((a, b) => a.label.localeCompare(b.label))
 
 function withStoredValues(
   options: { value: string; label: string }[],
@@ -70,16 +60,16 @@ function withStoredValues(
 type Pending =
   { kind: 'toggle'; mapping: TargetMapping } | { kind: 'delete'; mapping: TargetMapping }
 
-const pairLabel = (m: TargetMapping) =>
-  `${targetTypeLabel(m.target_type)} → ${getAssetTypeLabel(m.asset_type)}`
-
 export default function TargetMappingsPage() {
   const { t } = useTranslation()
   const me = useAdmin()
-  // The API is the authority (ops_admin+ writes, super_admin deletes); these
-  // only decide which controls to show.
-  const canWrite = adminCan(me.role, 'ops_admin')
-  const canDelete = adminCan(me.role, 'super_admin')
+  const text = useTargetTypeText()
+  const types = useTargetMappingTypes().data
+  const pairLabel = (m: TargetMapping) =>
+    `${text.label(m.target_type)} → ${getAssetTypeLabel(m.asset_type)}`
+  // The API is the authority (every change needs a super admin, a step-up and
+  // a reason); this only decides which controls to show.
+  const canWrite = adminCan(me.role, 'super_admin')
 
   const [targetType, setTargetType] = useUrlFilter('target_type', '')
   const [assetType, setAssetType] = useUrlFilter('asset_type', '')
@@ -93,7 +83,6 @@ export default function TargetMappingsPage() {
 
   const [dialog, setDialog] = useState<{ mapping: TargetMapping | null } | null>(null)
   const [pending, setPending] = useState<Pending | null>(null)
-  const [busy, setBusy] = useState(false)
 
   const refresh = useCallback(() => {
     void list.mutate()
@@ -106,52 +95,45 @@ export default function TargetMappingsPage() {
     resetPage()
   }
 
-  const confirm = async () => {
+  // The dialog shows a refusal (a rejected code, a missing reason) and stays
+  // open, so this only throws.
+  const confirm = async (reason: string) => {
     if (!pending) return
-    setBusy(true)
-    try {
-      if (pending.kind === 'delete') {
-        await deleteTargetMapping(pending.mapping.id)
-        toast.success(
-          t('admin.scanningTargetMappingsPage.deleted', '{pair} deleted', {
-            pair: pairLabel(pending.mapping),
-          })
-        )
-      } else {
-        await updateTargetMapping(pending.mapping.id, { is_active: !pending.mapping.is_active })
-        toast.success(
-          pending.mapping.is_active
-            ? t('admin.scanningTargetMappingsPage.deactivated', '{pair} deactivated', {
-                pair: pairLabel(pending.mapping),
-              })
-            : t('admin.scanningTargetMappingsPage.activated', '{pair} activated', {
-                pair: pairLabel(pending.mapping),
-              })
-        )
-      }
-      refresh()
-      setPending(null)
-    } catch (e) {
-      toast.error(
-        e instanceof AdminApiError
-          ? e.message
-          : t('admin.scanningTargetMappingsPage.theChangeFailed', 'The change failed')
+    if (pending.kind === 'delete') {
+      await deleteTargetMapping(pending.mapping.id, reason)
+      toast.success(
+        t('admin.scanningTargetMappingsPage.deleted', '{pair} deleted', {
+          pair: pairLabel(pending.mapping),
+        })
       )
-    } finally {
-      setBusy(false)
+    } else {
+      await updateTargetMapping(pending.mapping.id, {
+        is_active: !pending.mapping.is_active,
+        reason,
+      })
+      toast.success(
+        pending.mapping.is_active
+          ? t('admin.scanningTargetMappingsPage.deactivated', '{pair} deactivated', {
+              pair: pairLabel(pending.mapping),
+            })
+          : t('admin.scanningTargetMappingsPage.activated', '{pair} activated', {
+              pair: pairLabel(pending.mapping),
+            })
+      )
     }
+    refresh()
   }
 
   const s = stats.data
   // Filter choices: every accepted value plus any older value still stored, so
   // every row stays reachable through the filters.
   const targetFilterOptions = withStoredValues(
-    TARGET_TYPE_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
+    (types?.target_types ?? []).map((v) => ({ value: v, label: text.label(v) })),
     s?.by_target_type,
-    targetTypeLabel
+    text.label
   )
   const assetFilterOptions = withStoredValues(
-    ASSET_FILTER_OPTIONS,
+    (types?.asset_types ?? []).map((v) => ({ value: v, label: getAssetTypeLabel(v) })),
     s?.by_asset_type,
     getAssetTypeLabel
   )
@@ -194,8 +176,8 @@ export default function TargetMappingsPage() {
         enableSorting: false,
         cell: ({ row }) => (
           <StackedCell
-            primary={targetTypeLabel(row.original.target_type)}
-            secondary={targetTypeHint(row.original.target_type)}
+            primary={text.label(row.original.target_type)}
+            secondary={text.hint(row.original.target_type) || undefined}
           />
         ),
       },
@@ -280,16 +262,12 @@ export default function TargetMappingsPage() {
                     : t('admin.scanningTargetMappingsPage.activate', 'Activate'),
                   onClick: () => setPending({ kind: 'toggle', mapping: m }),
                 },
-                ...(canDelete
-                  ? [
-                      {
-                        label: t('admin.scanningTargetMappingsPage.delete', 'Delete'),
-                        onClick: () => setPending({ kind: 'delete', mapping: m }),
-                        destructive: true,
-                        separatorBefore: true,
-                      },
-                    ]
-                  : []),
+                {
+                  label: t('admin.scanningTargetMappingsPage.delete', 'Delete'),
+                  onClick: () => setPending({ kind: 'delete', mapping: m }),
+                  destructive: true,
+                  separatorBefore: true,
+                },
               ]}
             />
           )
@@ -297,7 +275,7 @@ export default function TargetMappingsPage() {
       })
     }
     return cols
-  }, [canWrite, canDelete, t])
+  }, [canWrite, t, text])
 
   const newButton = canWrite ? (
     <Button size="sm" onClick={() => setDialog({ mapping: null })}>
@@ -444,54 +422,56 @@ export default function TargetMappingsPage() {
           />
         )}
 
-        <ConfirmDialog
-          open={pending !== null}
-          onOpenChange={(open) => !open && setPending(null)}
-          title={
-            pending?.kind === 'delete'
-              ? t('confirm.targetMapping.deleteTitle', 'Delete the target mapping {pair}?', {
-                  pair: pairLabel(pending.mapping),
-                })
-              : pending?.mapping.is_active
-                ? t(
-                    'confirm.targetMapping.deactivateTitle',
-                    'Deactivate the target mapping {pair}?',
-                    {
-                      pair: pairLabel(pending.mapping),
-                    }
-                  )
-                : t('confirm.targetMapping.activateTitle', 'Activate the target mapping {pair}?', {
-                    pair: pending ? pairLabel(pending.mapping) : '',
+        {pending && (
+          <AdminConfirmDialog
+            key={`${pending.kind}-${pending.mapping.id}`}
+            open
+            onOpenChange={(open) => !open && setPending(null)}
+            title={
+              pending.kind === 'delete'
+                ? t('confirm.targetMapping.deleteTitle', 'Delete the target mapping {pair}?', {
+                    pair: pairLabel(pending.mapping),
                   })
-          }
-          desc={
-            pending?.kind === 'delete'
-              ? t(
-                  'confirm.targetMapping.deleteDesc',
-                  'Scanners that only reach {type} assets through it will skip them. To pause it instead, deactivate it.',
-                  { type: getAssetTypeLabel(pending.mapping.asset_type) }
-                )
-              : pending?.mapping.is_active
+                : pending.mapping.is_active
+                  ? t(
+                      'confirm.targetMapping.deactivateTitle',
+                      'Deactivate the target mapping {pair}?',
+                      { pair: pairLabel(pending.mapping) }
+                    )
+                  : t(
+                      'confirm.targetMapping.activateTitle',
+                      'Activate the target mapping {pair}?',
+                      { pair: pairLabel(pending.mapping) }
+                    )
+            }
+            description={
+              pending.kind === 'delete'
                 ? t(
-                    'confirm.targetMapping.deactivateDesc',
-                    'It is kept but ignored: scanners that only reach these assets through it will skip them.'
+                    'confirm.targetMapping.deleteDesc',
+                    'Scanners that only reach {type} assets through it will skip them, in every organization. To pause it instead, deactivate it.',
+                    { type: getAssetTypeLabel(pending.mapping.asset_type) }
                   )
-                : t(
-                    'confirm.targetMapping.activateDesc',
-                    'It is used again when scans are filtered.'
-                  )
-          }
-          confirmText={
-            pending?.kind === 'delete'
-              ? t('confirm.delete', 'Delete')
-              : pending?.mapping.is_active
-                ? t('confirm.targetMapping.deactivate', 'Deactivate')
-                : t('confirm.targetMapping.activate', 'Activate')
-          }
-          destructive={pending?.kind === 'delete' || !!pending?.mapping.is_active}
-          isLoading={busy}
-          handleConfirm={() => void confirm()}
-        />
+                : pending.mapping.is_active
+                  ? t(
+                      'confirm.targetMapping.deactivateDesc',
+                      'It is kept but ignored: scanners that only reach these assets through it will skip them, in every organization.'
+                    )
+                  : t(
+                      'confirm.targetMapping.activateDesc',
+                      'It is used again when scans are filtered, in every organization.'
+                    )
+            }
+            confirmLabel={
+              pending.kind === 'delete'
+                ? t('confirm.delete', 'Delete')
+                : pending.mapping.is_active
+                  ? t('confirm.targetMapping.deactivate', 'Deactivate')
+                  : t('confirm.targetMapping.activate', 'Activate')
+            }
+            destructive={pending.kind === 'delete' || pending.mapping.is_active}
+            onConfirm={({ reason }) => confirm(reason)}
+          />
+        )}
       </PageStack>
     </Main>
   )

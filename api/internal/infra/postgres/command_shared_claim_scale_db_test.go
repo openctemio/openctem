@@ -134,8 +134,16 @@ func analyzeCommands(ctx context.Context, t testing.TB, db *sql.DB) {
 // reads a few jobs per organization through the pending and in-flight
 // indexes. Before, the poll ranked every eligible pending shared job and
 // counted in-flight jobs through an index that also held every finished one.
+//
+// It counts the rows the poll reads from the whole commands table, so it runs
+// in a database of its own: `go test ./...` runs every package at once against
+// the one test database, and another package's jobs (pending shared jobs in
+// other organizations, tens of thousands of rows in the ingest and load tests)
+// change the rows a poll reads and the planner's statistics between the two
+// measurements. On the shared database it failed at random on unrelated
+// branches (a poll reading 1.2 million rows after the seed).
 func TestSharedClaim_PollWorkBoundedByOrganizations(t *testing.T) {
-	db := openPlatformJobDB(t)
+	db := testdb.PrivateDatabase(t, "shared_claim_scale", "../../../migrations")
 	ctx := context.Background()
 	repo := NewCommandRepository(&DB{DB: db})
 	tool := uniqueTool()
