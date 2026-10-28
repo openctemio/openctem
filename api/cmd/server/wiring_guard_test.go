@@ -315,6 +315,7 @@ var optionalServiceSetters = map[string]string{
 	"Branch.SetDefaultBranch":           "request operation, called by the branch handler",
 	"PermVersion.Set":                   "cache operation, not a seam",
 	"Role.SetUserRoles":                 "request operation, called by the role handler",
+	"Group.SetTeamAccess":               "request operation (sets the access a team carries), called by the group access handler",
 	"Participation.SetSelf":             "request operation (the caller sets their own watch state), called by the participation handler",
 	"RemediationTask.SetQueryAutoState": "request operation, called by the task query handler",
 	"SCIMGroups.SetRoleMappings":        "request operation, called by the SCIM token handler",
