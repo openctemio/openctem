@@ -82,6 +82,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/consolesetting"
 	catalogapp "github.com/openctemio/openctem/api/internal/app/contentcatalog"
 	contentpackapp "github.com/openctemio/openctem/api/internal/app/contentpack"
+	"github.com/openctemio/openctem/api/internal/app/contentpin"
 	contentsourceapp "github.com/openctemio/openctem/api/internal/app/contentsource"
 	coverageapp "github.com/openctemio/openctem/api/internal/app/coverage"
 	ctemidapp "github.com/openctemio/openctem/api/internal/app/ctemid"
@@ -744,6 +745,9 @@ type Services struct {
 	ContentPacks *contentpackapp.Service
 	// PlatformContentPacks are the platform's packs and channels (RFC-061).
 	PlatformContentPacks *contentpackapp.PlatformService
+	// ContentDelivery serves packs to sensors and answers which digests an
+	// organization's jobs may pin (RFC-061 §3.7).
+	ContentDelivery *contentpackapp.Delivery
 	// ContentCatalog is the content catalog (RFC-099).
 	ContentCatalog *catalogapp.Service
 
@@ -2180,6 +2184,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Platform packs: their own storage namespace (not a tenant id, so an
 	// organization's erasure never reaches it) and the platform content key.
 	s.PlatformContentPacks = contentpackapp.NewPlatformService(repos.PlatformContentPack, fileStorage, contentSigner, log)
+	if contentSigner != nil && s.SensorPairing != nil {
+		// A sensor pins the content keys at pairing (RFC-061 §3.7).
+		s.SensorPairing.SetContentKeys(contentSigner)
+	}
+	s.ContentDelivery = contentpackapp.NewDelivery(s.ContentPacks, s.PlatformContentPacks)
 	s.ContentCatalog = initContentCatalog(cfg, repos.ContentCatalog, s.Audit, repos.AdminAuditLog, log)
 	s.ContentCatalog.SetPublishing(contentPublishing(s.ContentPacks, s.PlatformContentPacks, contentSigner,
 		func(ctx context.Context, id shared.ID) (string, error) {
@@ -2192,9 +2201,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Proxy pools for scan traffic: credentials encrypted with the
 	// credentials key, never stored in clear.
 	s.ProxyPool = proxypoolapp.NewService(repos.ProxyPool, s.Encryptor, s.Audit, log)
+	contentPlanner := contentpin.New(s.ContentDelivery, postgres.NewKnownNamesRepository(&postgres.DB{DB: deps.DB}), nil)
 	cmdOpts := []command.Option{command.WithSensorLookup(repos.Sensor),
 		// Each scan and retest job carries the claiming sensor's proxy pool.
 		command.WithEgress(s.ProxyPool),
+		// RFC-061 §3.7: each scan job pins the content it reads by digest;
+		// the planner also checks every digest before the signer is asked.
+		command.WithContent(contentPlanner, contentPlanner),
 		// RFC-040 §5.7: jobs a sensor refused under its local policy reach its
 		// timeline and the audit log (A11); a tenant can keep private targets
 		// from sensors without a policy.
