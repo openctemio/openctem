@@ -9,6 +9,7 @@ import { ScanRunsTab } from '../scan-runs-tab'
 const workflowRunsCalls: Array<Record<string, unknown> | undefined> = []
 let runsResponse: unknown
 let canReadScanRuns = true
+let statsTotal = 40
 
 vi.mock('@/lib/api/scan-workflow-hooks', () => ({
   useScanRuns: (filters?: Record<string, unknown>) => {
@@ -18,7 +19,7 @@ vi.mock('@/lib/api/scan-workflow-hooks', () => ({
   useScanManagementStats: () => ({
     data: {
       scan_runs: {
-        total: 40,
+        total: statsTotal,
         running: 1,
         pending: 0,
         completed: 4,
@@ -94,6 +95,7 @@ describe('ScanRunsTab', () => {
   beforeEach(() => {
     workflowRunsCalls.length = 0
     canReadScanRuns = true
+    statsTotal = 40
     resetUrl()
     runsResponse = {
       data: [
@@ -241,6 +243,58 @@ describe('ScanRunsTab', () => {
     urlState.kind = 'retest'
     render(<ScanRunsTab />)
     expect(workflowRunsCalls.at(-1)).toMatchObject({ kind: 'retest', page: 1 })
+  })
+
+  it('lists continuous coverage runs with a badge and filters them in or out', () => {
+    runsResponse = {
+      data: [
+        run({
+          id: 'c1',
+          scan_id: 'cov1',
+          scan_name: 'Continuous coverage: resolve.dns',
+          trigger_type: 'system',
+          managed_by: 'coverage',
+          status: 'completed',
+          error_message: undefined,
+        }),
+        run({ id: 'u1' }),
+      ],
+      total: 2,
+      page: 1,
+      per_page: 25,
+      total_pages: 1,
+    }
+    render(<ScanRunsTab />)
+    const badges = screen.getAllByTestId('run-managed-badge')
+    expect(badges).toHaveLength(1)
+    expect(badges[0]).toHaveTextContent('Continuous coverage')
+    // "All kinds" asks for no kind and no origin: coverage runs are included.
+    expect(workflowRunsCalls.at(-1)?.kind).toBeUndefined()
+    expect(workflowRunsCalls.at(-1)?.origin).toBeUndefined()
+  })
+
+  it('asks only for coverage runs, or for none, from the kind filter', () => {
+    urlState.kind = 'coverage'
+    const { unmount } = render(<ScanRunsTab />)
+    expect(workflowRunsCalls.at(-1)).toMatchObject({ origin: 'system' })
+    expect(workflowRunsCalls.at(-1)?.kind).toBeUndefined()
+    unmount()
+    resetUrl()
+    urlState.kind = 'scan'
+    render(<ScanRunsTab />)
+    expect(workflowRunsCalls.at(-1)).toMatchObject({ kind: 'scan', origin: 'user' })
+  })
+
+  it('does not say no runs started while the counters show runs', () => {
+    runsResponse = { data: [], total: 0, page: 1, per_page: 25, total_pages: 0 }
+    statsTotal = 3
+    const { unmount } = render(<ScanRunsTab />)
+    expect(screen.queryByText('No scan runs yet')).toBeNull()
+    expect(screen.getByText('No runs match these filters')).toBeInTheDocument()
+    unmount()
+    statsTotal = 0
+    render(<ScanRunsTab />)
+    expect(screen.getByText('No scan runs yet')).toBeInTheDocument()
   })
 
   it('ignores an unknown kind in a link', () => {

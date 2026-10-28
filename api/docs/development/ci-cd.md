@@ -1149,8 +1149,9 @@ how to run a release is [Versioning and releases](../architecture/versioning-and
   which `setup.sh` reads into `.env` (`OPENCTEM_VERSION`); the compose files
   have no default (`${OPENCTEM_VERSION:?...}`) and `versions.yaml` has no
   platform version. The API and web report the version they are built with
-  (ldflags from the tag). `main` is merged back into `develop` with `-s ours`
-  after a train, only so the tag is reachable; it changes no file.
+  (ldflags from the tag). `main` is merged back into `develop` after every
+  release (a real merge): the tag becomes reachable, and a hotfix fix that
+  never reached `develop` lands there instead of being dropped.
 - `ui/vX.Y.Z` tags are the old `openctemio/ui` tags, imported with its history.
   They release nothing: the `v*` glob does not match across `/`. Never create one.
 - `vX.Y.Z-staging` (or a manual dispatch with `environment: staging`) publishes
