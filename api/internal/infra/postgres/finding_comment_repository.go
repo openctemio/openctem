@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/aianalysis"
+
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
@@ -23,6 +25,10 @@ func NewFindingCommentRepository(db *DB) *FindingCommentRepository {
 
 // Create persists a new finding comment.
 func (r *FindingCommentRepository) Create(ctx context.Context, comment *vulnerability.FindingComment) error {
+	// Read-only AI assistance never writes (docs/architecture/ai-analysis.md).
+	if err := aianalysis.RefuseAssist(ctx); err != nil {
+		return err
+	}
 	query := `
 		INSERT INTO finding_comments (
 			id, tenant_id, finding_id, author_id, content,
