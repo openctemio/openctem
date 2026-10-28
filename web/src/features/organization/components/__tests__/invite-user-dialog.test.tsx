@@ -270,7 +270,7 @@ describe('InviteUserDialog roles', () => {
     } as unknown as ReturnType<typeof useRoles>)
     render(<InviteUserDialog tenantSlug="acme" open onOpenChange={vi.fn()} />)
     expect(screen.getByTestId('role-risk-low')).toHaveTextContent('Low risk')
-    expect(screen.getByText('Views Findings')).toBeInTheDocument()
+    expect(screen.getByText('Views Findings.')).toBeInTheDocument()
     expect(screen.queryByText(/permissions$/)).toBeNull()
   })
 })

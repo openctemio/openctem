@@ -84,6 +84,9 @@ type DispatchTargetsInput struct {
 	// without a scope entry: every other
 	// path leaves this off and gets the full active-scan gate.
 	PassiveOnly bool
+	// Placement is where the job the targets go to runs (placement.go).
+	// Unknown is judged as a platform job on the hosted service.
+	Placement attribution.Placement
 	// DryRun answers POST /scope/check: nothing is logged as refused.
 	DryRun bool
 	// Tier is the probe's tier (RFC-054 §4.2 step 6): a target the scope
@@ -269,6 +272,7 @@ func (s *Service) ResolveDispatchTargets(ctx context.Context, in DispatchTargets
 	if s.scopeExclusions == nil {
 		return nil, ErrDispatchGateUnavailable
 	}
+	ctx = attribution.WithPlacement(ctx, in.Placement)
 	targets := dedupeTargets(in.Targets)
 	out := &DispatchTargets{}
 	if len(targets) == 0 {

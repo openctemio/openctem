@@ -61,13 +61,22 @@ func (s *AuthService) outsideMemberPrivileged(ctx context.Context, m *tenantdom.
 	if m.Role() == tenantdom.RoleOwner || m.Role() == tenantdom.RoleAdmin {
 		return true, nil
 	}
-	if s.roleService == nil {
-		return false, nil
-	}
 	// Effective grants: direct roles and team role bindings alike.
-	above, err := s.roleService.HoldsAboveMember(ctx, tid.String(), userID.String())
+	above, err := s.holdsAboveMember(ctx, tid, userID)
 	if err != nil {
 		return false, fmt.Errorf("failed to load grants for the outside member policy: %w", err)
 	}
 	return above, nil
+}
+
+// holdsAboveMember reports whether the user's effective grants in the tenant
+// are above the member role; false when no role service is configured.
+func (s *AuthService) holdsAboveMember(ctx context.Context, tid, userID shared.ID) (bool, error) {
+	if s.grants != nil {
+		return s.grants.HoldsAboveMember(ctx, tid.String(), userID.String())
+	}
+	if s.roleService == nil {
+		return false, nil
+	}
+	return s.roleService.HoldsAboveMember(ctx, tid.String(), userID.String())
 }

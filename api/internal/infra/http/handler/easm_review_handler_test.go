@@ -22,6 +22,8 @@ type fakeReviewer struct {
 	res    *easmapp.DecisionResult
 	err    error
 	actor  easmapp.ScopeActor
+	ids    []string
+	names  []string
 }
 
 func (f *fakeReviewer) Queue(_ context.Context, tenantID shared.ID, q easmapp.ReviewQuery) (*easmapp.ReviewPage, error) {
@@ -32,6 +34,32 @@ func (f *fakeReviewer) Queue(_ context.Context, tenantID shared.ID, q easmapp.Re
 func (f *fakeReviewer) DecideAs(_ context.Context, tenantID shared.ID, _ []string, _ attribution.State, actor easmapp.ScopeActor) (*easmapp.DecisionResult, error) {
 	f.tenant, f.actor = tenantID, actor
 	return f.res, f.err
+}
+
+func (f *fakeReviewer) DecideNamesAs(_ context.Context, tenantID shared.ID, ids, names []string, _ attribution.State, actor easmapp.ScopeActor) (*easmapp.DecisionResult, error) {
+	f.tenant, f.actor, f.ids, f.names = tenantID, actor, ids, names
+	return f.res, f.err
+}
+
+// A decision names assets by name (the skipped targets of a scan): the
+// handler takes the tenant from the session, never from the body, and passes
+// the names on.
+func TestEASMHandler_DecideByNames(t *testing.T) {
+	tenant := shared.NewID()
+	rv := &fakeReviewer{res: &easmapp.DecisionResult{Decided: []easmapp.Decision{}, NotFound: []string{"x.example.com"}}}
+	h := NewEASMHandler(nil, logger.NewNop()).SetReview(rv, nil)
+	rec := httptest.NewRecorder()
+	h.Decide(rec, easmRequest(http.MethodPost, "/api/v1/easm/candidates/decisions",
+		`{"asset_names":["a.example.com","x.example.com"],"state":"confirmed","tenant_id":"`+shared.NewID().String()+`"}`, tenant))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	if rv.tenant != tenant {
+		t.Fatal("the decision must run in the session's tenant")
+	}
+	if len(rv.names) != 2 || rv.names[0] != "a.example.com" {
+		t.Fatalf("names = %v", rv.names)
+	}
 }
 
 func easmRequest(method, target, body string, tenant shared.ID) *http.Request {

@@ -37,6 +37,7 @@ func (w *wildcardMarks) WildcardOnly(_ context.Context, t shared.ID, ids []share
 func TestActiveGate_WildcardOnly(t *testing.T) {
 	f := newGateFixture(t)
 	g := NewActiveGate(f, f, f, f)
+	g.SetManagedService(true)
 	marks := &wildcardMarks{tenant: f.tenant, marked: map[shared.ID]bool{}}
 	g.SetWildcardDNS(marks)
 
@@ -100,6 +101,7 @@ func TestActiveGate_WildcardOnly(t *testing.T) {
 func TestActiveGate_WildcardOnly_ApexMarkIgnored(t *testing.T) {
 	f := newGateFixture(t)
 	g := NewActiveGate(f, f, f, f)
+	g.SetManagedService(true)
 	marks := &wildcardMarks{tenant: f.tenant, marked: map[shared.ID]bool{}}
 	g.SetWildcardDNS(marks)
 
