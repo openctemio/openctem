@@ -166,7 +166,14 @@ func ValidPlatformUserState(s string) bool {
 type PlatformUserFilter struct {
 	Q     string
 	State string
+	// HideAdminLinked leaves out the accounts linked to a platform
+	// administrator, from the rows and from every state count. The platform
+	// roster is for super admins; every other role sets this.
+	HideAdminLinked bool
 }
+
+// notAdminLinked is the condition HideAdminLinked adds.
+const notAdminLinked = `NOT EXISTS (SELECT 1 FROM admin_users ha WHERE ha.user_id = u.id)`
 
 // List returns one page of accounts matching the filter, newest first, the
 // total for the filter, and the count of each state under the search (the
@@ -182,6 +189,9 @@ func (d *PlatformUserDirectory) List(ctx context.Context, f PlatformUserFilter, 
 		search, args = `u.id = $1`, []any{id.String()}
 	default:
 		search, args = `(u.email ILIKE $1 OR u.name ILIKE $1)`, []any{"%" + escapeLikePattern(q) + "%"}
+	}
+	if f.HideAdminLinked {
+		search = `(` + search + ` AND ` + notAdminLinked + `)`
 	}
 	state := f.State
 	if state == "" {
