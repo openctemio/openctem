@@ -33,8 +33,10 @@ working reference.
 | Helm chart | `appVersion` in `openctemio/helm-charts`, bumped by the Release Publish follow-up |
 
 So a release is: one commit on the release branch (the `VERSION` file), the
-tag, and (trains only) a merge of `main` back into `develop` with `-s ours`
-that makes the tag reachable and changes no file. Nothing about the version is
+tag, and a merge of `main` back into `develop` (every release) that makes the
+tag reachable. For a train it changes no file; for a hotfix it brings any fix
+that never reached `develop` (picked from an open PR, or adapted while
+backporting) instead of dropping it. Nothing about the version is
 committed to `develop`, so no per-release "bump" PR exists.
 
 ## versions.yaml
@@ -105,9 +107,13 @@ the last tag (nor from `ui/<last tag>`, the imported web history):
    publishes the images (Docker Publish) and the GitHub Release (notes with
    `@mentions` escaped and emails dropped).
 5. Merge the follow-up PRs it opens:
-   - `develop` (trains only): `main` merged back with `-s ours` (the tag
-     becomes reachable; no file changes, and a file `main` has that `develop`
-     never had is refused). Merge it with the queue, never squash;
+   - `develop` (every release): `main` merged back with a real merge (the
+     tag becomes reachable; `api/deploy/VERSION` and changelog fragments
+     `develop` already folded are not carried). It auto-merges when it changes
+     no file; one that brings fixes to `develop` waits for a review. When the
+     merge conflicts, an issue lists the files and the `main` commits `develop`
+     lacks, and the back-merge is done by hand. Merge it with the queue, never
+     squash;
    - `helm-charts`: `appVersion` and the chart version.
 6. If the release needs release notes or an upgrade page, write it in
    `openctemio/docs`.
@@ -132,7 +138,7 @@ scripts).
 | `check-ci.sh` | required checks of a commit; newest green commit of a branch |
 | `cut-release.sh` | builds `release/vX.Y.Z` (train or hotfix) with its `api/deploy/VERSION` commit, with the `-s ours` precondition per file |
 | `tag-release.sh` | annotated tag after the tree and `api/deploy/VERSION` checks |
-| `post-release.sh` | the develop follow-up branch (train: `main` merged back with `-s ours`; hotfix: none) |
+| `post-release.sh` | the develop follow-up branch: `main` merged back with a real merge, train or hotfix (exit 3 and the conflicting files when it conflicts) |
 | `helm-bump.sh` | chart `appVersion` + version bump |
 | `sync-versions.sh` | `versions.yaml` → consumers; `--check` for CI; `--release vX.Y.Z` on a release branch (checks `api/deploy/VERSION`) |
 | `sanitize-notes.py` | escape `@mentions`, drop emails |
