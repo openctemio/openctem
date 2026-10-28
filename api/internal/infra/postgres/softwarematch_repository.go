@@ -614,3 +614,78 @@ func (r *SoftwareMatchRepository) EnsureDefinitions(ctx context.Context, cves []
 	}
 	return out, rows.Err()
 }
+
+// FindingLink returns the software link a version-match finding of the
+// tenant was built on (nil when the finding is not one, or records no
+// product and version). The link's source and port come from asset_software
+// when the link still exists; LastSeenTool says whether a scanner has
+// reported the finding since.
+func (r *SoftwareMatchRepository) FindingLink(ctx context.Context, tenantID, findingID shared.ID) (*softwarematch.FindingLink, error) {
+	var asset, pid, vid, loc, product, version, source, lastTool sql.NullString
+	var port sql.NullInt64
+	err := r.db.QueryRowContext(ctx, `
+		SELECT f.asset_id, f.metadata->'version_match'->>'product_id', f.metadata->'version_match'->>'version_id',
+			COALESCE(f.metadata->'version_match'->>'location', ''), COALESCE(f.metadata->'version_match'->>'product', ''),
+			COALESCE(f.metadata->'version_match'->>'version', ''), s.source, s.port,
+			COALESCE(f.last_seen_tool, f.tool_name)
+		FROM findings f
+		LEFT JOIN asset_software s ON s.tenant_id = f.tenant_id AND s.asset_id = f.asset_id
+			AND s.product_id::text = f.metadata->'version_match'->>'product_id'
+			AND s.software_version_id::text = f.metadata->'version_match'->>'version_id'
+			AND s.location = COALESCE(f.metadata->'version_match'->>'location', '')
+		WHERE f.tenant_id = $1 AND f.id = $2 AND f.tool_name = '`+softwarematch.ToolName+`' AND f.asset_id IS NOT NULL
+		LIMIT 1`, tenantID.String(), findingID.String()).
+		Scan(&asset, &pid, &vid, &loc, &product, &version, &source, &port, &lastTool)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("finding software link: %w", err)
+	}
+	link := &softwarematch.FindingLink{LastSeenTool: lastTool.String}
+	a, aok := parseOptionalID(asset.String)
+	p, pok := parseOptionalID(pid.String)
+	v, vok := parseOptionalID(vid.String)
+	if !aok || !pok || !vok {
+		// No usable software link; the latest sighting still tells whether
+		// a scanner reported the finding since.
+		return link, nil
+	}
+	link.AssetID, link.ProductID, link.VersionID = a, p, v
+	link.Location, link.Product, link.Version = loc.String, product.String, version.String
+	link.Source, link.Port = source.String, int(port.Int64)
+	return link, nil
+}
+
+// parseOptionalID parses an id stored as text; ok is false when it is not one.
+func parseOptionalID(s string) (shared.ID, bool) {
+	id, err := shared.IDFromString(s)
+	return id, err == nil
+}
+
+// ObservedSince returns the versions of a product the tenant's asset was
+// seen running at a location since the given time, the current one first.
+func (r *SoftwareMatchRepository) ObservedSince(ctx context.Context, tenantID, assetID, productID shared.ID, location string, since time.Time) ([]softwarematch.ObservedVersion, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT s.software_version_id, v.raw, v.scheme, v.edition, v.normalized IS NOT NULL, s.last_seen_at, s.superseded_at IS NOT NULL
+		FROM asset_software s
+		JOIN software_versions v ON v.id = s.software_version_id AND (v.tenant_id IS NULL OR v.tenant_id = s.tenant_id)
+		WHERE s.tenant_id = $1 AND s.asset_id = $2 AND s.product_id = $3 AND s.location = $4 AND s.last_seen_at >= $5
+		ORDER BY (s.superseded_at IS NULL) DESC, s.last_seen_at DESC
+		LIMIT 5`, tenantID.String(), assetID.String(), productID.String(), location, since)
+	if err != nil {
+		return nil, fmt.Errorf("observed versions: %w", err)
+	}
+	defer rows.Close()
+	var out []softwarematch.ObservedVersion
+	for rows.Next() {
+		var o softwarematch.ObservedVersion
+		var id, scheme string
+		if err := rows.Scan(&id, &o.Raw, &scheme, &o.Edition, &o.Comparable, &o.LastSeenAt, &o.Superseded); err != nil {
+			return nil, fmt.Errorf("observed versions: %w", err)
+		}
+		o.VersionID, o.Scheme = shared.MustIDFromString(id), vulnmatch.Scheme(scheme)
+		out = append(out, o)
+	}
+	return out, rows.Err()
+}

@@ -23,6 +23,13 @@ const (
 	// GrantMaxTTL is the absolute life of a grant; refresh tokens never
 	// outlive it.
 	GrantMaxTTL = 90 * 24 * time.Hour
+
+	// A grant that may read all organization data (Grant.FullData) lives
+	// shorter than a scoped one: a leaked token is worth more, so every
+	// window is smaller.
+	FullDataAccessTokenTTL = 5 * time.Minute
+	FullDataRefreshIdleTTL = 24 * time.Hour
+	FullDataGrantMaxTTL    = 7 * 24 * time.Hour
 )
 
 // Token prefixes. The prefix tells the MCP endpoint which authenticator a
@@ -88,8 +95,11 @@ type AuthRequest struct {
 	GrantedScopes []Scope
 	CodeExpiresAt *time.Time
 	GrantID       *shared.ID
-	CreatedAt     time.Time
-	ExpiresAt     time.Time
+	// FullData: the person chose, at consent, to let the connection read
+	// all organization data (needs a full-data role and a fresh step-up).
+	FullData  bool
+	CreatedAt time.Time
+	ExpiresAt time.Time
 }
 
 // Grant is what one person allowed one client to do in one organization.
@@ -109,6 +119,34 @@ type Grant struct {
 	// DPoPJKT is the thumbprint of the client key the grant is bound to
 	// (RFC 9449), or "" for a bearer grant.
 	DPoPJKT string
+	// FullData: the connection may read all organization data while its
+	// user still holds a full-data role (re-checked on every request).
+	FullData bool
+}
+
+// AccessTTL is the life of an access token of the grant: shorter when the
+// grant may read all organization data.
+func (g *Grant) AccessTTL() time.Duration {
+	if g.FullData {
+		return FullDataAccessTokenTTL
+	}
+	return AccessTokenTTL
+}
+
+// RefreshIdleTTL is how long an unused refresh token of the grant stays valid.
+func (g *Grant) RefreshIdleTTL() time.Duration {
+	if g.FullData {
+		return FullDataRefreshIdleTTL
+	}
+	return RefreshIdleTTL
+}
+
+// MaxLifetime is the longest a new grant may last.
+func MaxLifetime(fullData bool) time.Duration {
+	if fullData {
+		return FullDataGrantMaxTTL
+	}
+	return GrantMaxTTL
 }
 
 // Active reports whether the grant can still be used at now.
@@ -170,7 +208,9 @@ type Repository interface {
 	// ApproveRequest moves a pending request claimed by userID to approved
 	// and stores the code hash. clientRef is the stored client the request
 	// now points to (a pending metadata-document client is stored first).
-	ApproveRequest(ctx context.Context, id, userID, tenantID, clientRef shared.ID, granted []Scope, codeHash string, codeExpiresAt, now time.Time) error
+	// fullData records the person's choice to let the grant read all
+	// organization data.
+	ApproveRequest(ctx context.Context, id, userID, tenantID, clientRef shared.ID, granted []Scope, fullData bool, codeHash string, codeExpiresAt, now time.Time) error
 	// DenyRequest moves a pending request claimed by userID to denied.
 	DenyRequest(ctx context.Context, id, userID shared.ID, now time.Time) error
 	// RedeemCode atomically moves the approved request holding codeHash to
@@ -196,6 +236,9 @@ type Repository interface {
 	// redeemed after a credential change). It touches only that user. It
 	// returns the number of grants revoked.
 	RevokeGrantsByUser(ctx context.Context, userID shared.ID, reason string, now time.Time) (int, error)
+	// SetGrantScoped turns a live grant that may read all organization
+	// data back into a scoped one and reports whether a grant changed.
+	SetGrantScoped(ctx context.Context, tenantID, grantID shared.ID) (bool, error)
 	// TouchGrant records the last use of a grant.
 	TouchGrant(ctx context.Context, tenantID, grantID shared.ID, ip string, now time.Time) error
 }
