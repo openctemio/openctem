@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-10-28). Shipped in sdk-go (in review): the harness core (`pkg/analyst`), pinned copies of the `openctem.analyze/v1` schemas, the playbook format `openctem.io/playbook/v1` with a sample, the eval harness and `openctem agent init\|test`. Designed: provider adapters, the sensorkit analyst role, the platform analyst pool, the agent manifest and routing, safe rollout, the AI's own tool sandbox, memory and knowledge retrieval, inbound channels |
-| Scope | sdk-go (harness, contract copies, playbooks, evals, CLI, analyst role), api (analyze command, grant builder, lanes and affinity, limits, routing, rollout, playbook content), sensor (analyst image), web (playbook editor, agent comparison), docs |
+| Status | Accepted (2026-10-28). Shipped in sdk-go (in review): the harness core (`pkg/analyst`), pinned copies of the `openctem.analyze/v1` schemas, the playbook format `openctem.io/playbook/v1` with a sample, the eval harness and `openctem analyst init\|test`. The worker lives in the private repository `openctemio/analyst` (scaffold: configuration, playbooks with their golden sets, the eval gate in CI, a signed image). Designed: provider adapters, the sensorkit analyst role, the platform analyst pool, the agent manifest and routing, safe rollout, the AI's own tool sandbox, memory and knowledge retrieval, inbound channels |
+| Scope | sdk-go (harness, contract copies, playbooks, evals, CLI, analyst role), api (analyze command, grant builder, lanes and affinity, limits, routing, rollout, playbook content), `openctemio/analyst` (the analyst worker image) and sensor, web (playbook editor, agent comparison), docs |
 | Architecture | [ai-analyst-harness.md](../architecture/ai-analyst-harness.md), [ai-analyze-contract.md](../architecture/ai-analyze-contract.md) |
 | Related | RFC-131 (AI analysis, analyze contract), RFC-132 (the AI analyst as a service account with accountable owners), RFC-030 (scan work distribution), RFC-129 (shared fleet scheduling), RFC-040 (mutual distrust, signed jobs), RFC-094 (the platform depends on contracts only), RFC-099 (signed content catalog) |
 
@@ -117,7 +117,7 @@ flowchart LR
     expected); injection cases, which pass only when no risk-lowering output comes out and no tool outside the
     grant ran.
   - Gate: injection cases 100 % (not configurable), agreement at least 0.9, risk-lowering precision 1.
-- **CLI.** `openctem agent init [--kind] <dir>` scaffolds a playbook and a golden case. `openctem agent test [dir]`
+- **CLI.** `openctem analyst init [--kind] <dir>` scaffolds a playbook and a golden case. `openctem analyst test [dir]`
   runs the gate and exits 1 on failure (CI step).
 
 ## 6. Executors and the analyst pool
@@ -247,7 +247,7 @@ provenance. The analyst worker is an analyst-role sensor built on that runtime, 
 | Level | What | Runs on |
 |---|---|---|
 | L0 | console settings: preset, owners, instructions, thresholds, tool allowlist, approval rules, data class | our harness |
-| L1 | playbooks authored in the console with a "try on these findings" preview and a diff, or locally with `openctem agent init\|test` | our harness |
+| L1 | playbooks authored in the console with a "try on these findings" preview and a diff, or locally with `openctem analyst init\|test` | our harness |
 | L2 | an own agent in any language on `openctem.analyze/vN`: Go SDK first, Python and TypeScript later, framework templates whose tools call back into the worker's policy, `openctem agent run\|build\|sign\|publish`, conformance kit, CI templates | the organization's worker |
 | L3 | an external agent through a thin adapter that is itself an analyst sensor (MCP, A2A, vendor API) | adapter |
 
@@ -319,7 +319,8 @@ The full list D1-D36 is in research/327 §14. These are the ones that bind imple
 
 - **Shipped (sdk-go, in review):**
   - harness core, contract copies, playbook format and sample;
-  - eval harness and `openctem agent init|test` with a golden set.
+  - eval harness and `openctem analyst init|test` with a golden set.
+- **Scaffolded:** `openctemio/analyst` (private): `cmd/analyst` wires configuration and playbook pin checks and marks where the claim and lease, the signed grant and the result plug in; `playbooks/` with golden sets and the CI eval gate; distroless non-root multi-arch image, signed (cosign keyless) with SBOM; security gate and release pipeline as in sensor.
 - **Next:**
   1. provider adapters with tool use;
   2. the sensorkit analyst role (claim, digests, sealed bundle, job-token read tools, tool tasks, signed results,
