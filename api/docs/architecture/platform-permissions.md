@@ -206,6 +206,8 @@ session, no permission). `public`: a sign-in step before a session exists.
 | `POST /api/v1/admin/settings/captcha/verify` | `platform.settings.general.write` |
 | `GET /api/v1/admin/settings/console-mfa/` | `platform.settings.read` |
 | `PUT /api/v1/admin/settings/console-mfa/` | `platform.identity.manage` |
+| `GET /api/v1/admin/settings/email-relay/` | `platform.settings.read` |
+| `PUT /api/v1/admin/settings/email-relay/` | `platform.settings.email.write` |
 | `GET /api/v1/admin/settings/email/` | `platform.settings.read` |
 | `PUT /api/v1/admin/settings/email/` | `platform.settings.email.write` |
 | `POST /api/v1/admin/settings/email/test` | `platform.settings.email.write` |
