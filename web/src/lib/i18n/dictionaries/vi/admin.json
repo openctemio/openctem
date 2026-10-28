@@ -1105,7 +1105,7 @@
   "admin.organizationAuditChainPanel.verifyPasses": "Xác minh đã đạt: {verified} trên {total} mục, 0 chỗ đứt.",
   "admin.organizationAuditChainPanel.verifyStillBreaks": "Xác minh vẫn báo {count} chỗ đứt. Hãy kiểm tra lại chuỗi.",
   "admin.organizationAuditChainPanel.why": "Lý do",
-  "admin.organizationUsersSection.everyOwnerOfThisOrganization": "Mọi chủ sở hữu của tổ chức này đều đang bị tạm ngưng. Chủ sở hữu bị tạm ngưng vẫn sở hữu tổ chức, nên console không thể tạo thêm chủ sở hữu khác; super admin có thể khôi phục quyền sở hữu (kèm lý do và mã xác thực; chủ sở hữu mới chỉ nhận liên kết đặt mật khẩu qua email).",
+  "admin.organizationUsersSection.everyOwnerOfThisOrganization": "Mọi chủ sở hữu của tổ chức này đều đang bị tạm ngưng, bị chặn hoặc đã bị xóa. Chủ sở hữu như vậy vẫn sở hữu tổ chức, nên console không thể tạo thêm chủ sở hữu khác; super admin có thể khôi phục quyền sở hữu (kèm lý do và mã xác thực; chủ sở hữu mới chỉ nhận liên kết đặt mật khẩu qua email).",
   "admin.organizationUsersSection.joined": "Tham gia",
   "admin.organizationUsersSection.noUsersYet": "Chưa có người dùng nào",
   "admin.organizationUsersSection.peopleWithAnAccountIn": "Những người có tài khoản trong tổ chức này. Chủ sở hữu và quản trị viên của tổ chức mời hoặc tạo người dùng; console nền tảng chỉ tạo chủ sở hữu đầu tiên của tổ chức.",
