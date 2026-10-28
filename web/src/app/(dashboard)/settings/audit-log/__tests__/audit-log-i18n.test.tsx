@@ -47,8 +47,8 @@ describe('audit log page in Vietnamese', () => {
         <AuditLogPage />
       </I18nProvider>
     )
-    expect(screen.getByRole('heading', { name: 'Nhật ký kiểm tra' })).toBeInTheDocument()
-    expect(screen.getByLabelText('Tìm trong nhật ký kiểm tra')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Nhật ký kiểm toán' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Tìm trong nhật ký kiểm toán')).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: 'Kết quả' })).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: 'Mức độ nghiêm trọng' })).toBeInTheDocument()
     expect(screen.getAllByText('7 ngày qua')).toHaveLength(2)
