@@ -12,11 +12,12 @@
 
 The AI runtime has generic names, because later AI roles (remediation and fix pull requests, reports, threat hunting,
 ticket routing) do other work on the same loop. The platform principal this RFC describes is an **AI agent** with a
-role; the AI agent is the first role (`remediator`, `reporter` and `hunter` follow). The harness is sdk-go `pkg/harness`
-(RFC-133), the worker repository is `openctemio/ai-worker`, and the sensor role is `ai-worker`. This RFC keeps the word
-"AI agent" where it means the triage role and where it names code and tables that exist today (`ai_agents` and
-friends); renaming those is not part of this change. Generalising the principal (a role or persona column, the UI
-label "AI agents") is P1 of research/326.
+**role** (`analyst`, `remediator`, `reporter`, `hunter`, `router`; column `ai_agents.role`, default `analyst`). The
+analyst is the first role built; the others are accepted values for later work. The role says what the AI agent is for;
+the **preset** (`suggest`, `triage`) says what it may do. The harness is sdk-go `pkg/harness` (RFC-133), the worker
+repository is `openctemio/ai-worker`, and the sensor role is `ai-worker`. Names: table `ai_agents`
+(`ai_agent_owners`), routes `/api/v1/ai/agents`, stored value `ai_agent`, Go `AIAgent` (the package keeps the feature's
+name, `aianalysis`), UI "AI agent".
 
 ## 1. Summary
 
@@ -24,12 +25,12 @@ An AI agent takes part in triage **exactly like a person**: same steps, same com
 permissions, approvals, data scope, SLA, rate limits, audit and notifications. The only difference
 is the AI label and the provenance on what it does.
 
-- **Identity.** An AI agent is its own **service account** (`users.kind = 'service'`), with a role and
+- **Identity.** An AI agent is its own **service account** (`users.kind = 'service'`), with a role (what it is for), a preset and
   a data scope an administrator sets. It is not delegated from the person who clicked. It never signs
   in, never approves, never holds full data access and is not a seat.
 - **Accountability.** Every AI agent has **accountable owners**: people or teams who answer for its
   results. Without an active owner, or with an attestation older than 90 days, it pauses.
-- **Bounded power.** What it may do = its role ∩ what its accountable people hold − a fixed deny list
+- **Bounded power.** What it may do = its preset ∩ what its accountable people hold − a fixed deny list
   (approve, verify, delete, export, reveal, bulk, administration). Risk-lowering changes always become
   approval requests decided by a person.
 - **Placement.** Identity and governance always live in the platform. The reasoning loop runs in the
@@ -72,7 +73,7 @@ flowchart LR
   admin -->|names| owners["Accountable owners<br/>people or teams"]
   owners -->|hold| ownerPerms["What owners hold"]
   preset["Preset<br/>suggest or triage"] --> eff
-  ownerPerms --> eff["Effective permissions<br/>role ∩ owners − deny list"]
+  ownerPerms --> eff["Effective permissions<br/>preset ∩ owners − deny list"]
   deny["Deny list<br/>approve, verify, delete,<br/>export, reveal, admin"] --> eff
   sa --> eff
   eff --> tools["Tool catalogue<br/>effective ∩ tool tier ∩ use-case config"]
@@ -83,7 +84,7 @@ flowchart LR
 - The presets live in code, not in an editable role; the person who sets a preset must hold its
   permissions. An AI agent holds no database role, API key or MCP grant (the schema refuses them), so
   nothing outside the platform's executor can act as it.
-- The ceiling is checked when the role or the owners change (refused, naming the permission) and again
+- The ceiling is checked when the preset or the owners change (refused, naming the permission) and again
   at every run start (the AI agent loses what its owners lost).
 - The service-account triggers keep their guarantees: one organization, never owner or administrator,
   never full data access, never a sign-in identity.
@@ -161,7 +162,7 @@ flowchart TB
   cmds -->|approval request| owner
 ```
 
-1. **Identity and governance always live in the platform**: principal, role, owners, commands,
+1. **Identity and governance always live in the platform**: principal, preset, owners, commands,
    approvals, audit.
 2. **The brain has two placements behind one contract** (`openctem.analyze/v1`, RFC-131): the
    platform executor pool (default, SaaS and self-hosted; model calls through masking, platform data
@@ -292,7 +293,7 @@ the queue is worked down.
 | D7 | The person who triggered a run cannot approve that run's requests |
 | D8 | Risk-lowering changes are always requests: an AI agent's request is evaluated at the strictest level whatever the organization's settings |
 | D9 | Owners are people or teams in `ai_agent_owners` |
-| D10 | Ceiling = role ∩ union of what the accountable people hold − deny list, at assignment and at run start |
+| D10 | Ceiling = preset ∩ union of what the accountable people hold − deny list, at assignment and at run start |
 | D11 | Missing request forms: structured comment now, typed proposal with Apply as the person next, a `duplicate` request kind |
 | D12 | New `findings:retest` permission to request a retest, separate from `findings:verify` (resolve) |
 | D13 | Provenance stamped by the timeline writer and the audit logger; no suggestion store |
@@ -313,10 +314,10 @@ the queue is worked down.
 
 | Asset | Threat | Control | Test |
 |---|---|---|---|
-| Finding state | AI agent exceeds its role | effective permissions checked before every command | AI agent with the suggest preset holds no status permission |
+| Finding state | AI agent exceeds its preset | effective permissions checked before every command | AI agent with the suggest preset holds no status permission |
 | Four-eyes | AI agent approves or decides alone | people-only approver directory; deny list strips approve; requester cannot approve | AI agent absent from the approver directory; AI agent requests always need a person |
 | Four-eyes | a person launders a self-approval through the AI | the triggering person is excluded from that run's requests | planned |
-| Privileges | escalation by proxy | ceiling at assignment and at run start | role above the owners refused; owner loses a permission, AI agent loses it |
+| Privileges | escalation by proxy | ceiling at assignment and at run start | preset above the owners refused; owner loses a permission, AI agent loses it |
 | Governance | orphaned AI | pause without an active owner (run start, sweep) | offboarded owner pauses the AI agent; emptied team pauses it |
 | Governance | stale configuration | 90-day attestation | expired attestation pauses; a non-owner cannot attest |
 | Isolation | cross-organization use | service-account triggers, owner trigger, tenant-checked services | foreign owner and team refused; foreign finding not found |

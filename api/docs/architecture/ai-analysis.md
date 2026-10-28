@@ -18,7 +18,10 @@ differences are the AI label and the provenance on everything it does.
 - It is **never an approver**: the approver directory lists people only
   (`ScopeActorRepository.FindingApprovers`), and an AI agent never holds an approve permission
   (deny list below).
-- It has **no credential and no role of its own**: triggers refuse an API key, an MCP grant or a
+- It has a **role** (`ai_agents.role`: `analyst` by default, `remediator`, `reporter`, `hunter`, `router`) that
+  says what it is for. The role grants nothing; the preset below sets what it may do. Only the analyst role
+  has a built-in executor today.
+- It has **no credential and no database role of its own**: triggers refuse an API key, an MCP grant or a
   `user_roles` row for an AI agent, and a service account that has any of those cannot become one.
   The service-account screens refuse to mint its keys or delete it. It acts only through the
   platform's executor, which resolves it at every run (owners, attestation, preset, deny list).
