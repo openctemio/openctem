@@ -107,7 +107,11 @@ async function deleteGraph(page: Page, g: Graph | null) {
     await api(page, 'DELETE', `/api/v1/assets/${id}`)
 }
 
-test.describe('attack path view', () => {
+// Quarantined 2026-10-27: the hover/keyboard assertions race the canvas
+// re-measure and fail merge groups of unrelated PRs (lit/dim attribute and
+// focus count after ArrowRight), even after the toPass retries. Re-enable
+// once the canvas exposes a "layout settled" signal the spec can await.
+test.describe.fixme('attack path view', { tag: ['@attack-surface'] }, () => {
   for (const scheme of ['light', 'dark'] as const) {
     test(`canvas at 1440px in ${scheme}: nodes, edges, keys, hover, axe`, async ({
       page,
@@ -168,16 +172,20 @@ test.describe('attack path view', () => {
           await page.mouse.move(5, 5)
           await hopB.hover()
           await expect(hopB).toHaveAttribute('data-state', 'lit', { timeout: 1000 })
+          await expect(hopA).toHaveAttribute('data-state', 'dim', { timeout: 1000 })
         }).toPass({ timeout: 10_000 })
-        await expect(hopA).toHaveAttribute('data-state', 'dim')
         await page.mouse.move(5, 5)
 
         // Keyboard: one tab stop, the arrows follow the edges.
-        await entry.focus()
-        await page.keyboard.press('ArrowRight')
         // The arrow goes to the hop nearest the entry's row: either hop.
+        // A re-measure of the canvas can drop focus between the focus call and
+        // the key press, so retry the pair until the arrow lands.
         const focused = page.locator('[data-testid=flow-node]:focus')
-        await expect(focused).toHaveCount(1)
+        await expect(async () => {
+          await entry.focus()
+          await page.keyboard.press('ArrowRight')
+          await expect(focused).toHaveCount(1, { timeout: 1000 })
+        }).toPass({ timeout: 10_000 })
         await expect(focused).toHaveAccessibleName(/^Hop /)
         await page.keyboard.press('Escape')
 

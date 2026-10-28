@@ -1198,7 +1198,7 @@ type SensorConfig struct {
 
 	// Vulnerability bundles (RFC-066 §5.5): the pinned root key id
 	// (VULNFEED_ROOT_KEY_ID; defaults to VulnFeedOfficialRootKeyID, the root
-	// of the official openctemio/vulnfeed releases), the release base URL
+	// of the official openctemio/vulnfeed-bundles releases), the release base URL
 	// (VULNFEED_BASE_URL) and, for air-gapped platforms, a local directory
 	// holding a release's files (VULNFEED_BUNDLE_DIR). VulnFeedMirrors
 	// (VULNFEED_MIRRORS, comma separated, https) are tried after the
@@ -1781,7 +1781,7 @@ func Load() (*Config, error) {
 			SCMSyncInterval:                   getEnvDuration("SCM_SYNC_INTERVAL", 0),
 			CTEMIDFeedURL:                     getEnv("CTEM_ID_FEED_URL", "https://ctem.org/source.json"),
 			VulnFeedRootKeyID:                 getEnv("VULNFEED_ROOT_KEY_ID", VulnFeedOfficialRootKeyID),
-			VulnFeedBaseURL:                   getEnv("VULNFEED_BASE_URL", "https://github.com/openctemio/vulnfeed/releases"),
+			VulnFeedBaseURL:                   getEnv("VULNFEED_BASE_URL", "https://github.com/openctemio/vulnfeed-bundles/releases"),
 			VulnFeedBundleDir:                 getEnv("VULNFEED_BUNDLE_DIR", ""),
 			VulnFeedMirrors:                   feedURLs("", getEnv("VULNFEED_MIRRORS", "")),
 			VersionCheckEnabled:               getEnvBool("VERSION_CHECK_ENABLED", true),

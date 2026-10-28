@@ -18,7 +18,7 @@ import { LEGACY_SETTINGS_ROUTE_REDIRECTS } from '../../src/config/legacy-routes'
 
 const rail = '[data-sidebar="content"] nav'
 
-test('every settings rail entry opens', async ({ page }) => {
+test('every settings rail entry opens', { tag: ['@settings', '@smoke'] }, async ({ page }) => {
   await page.goto('/settings')
   await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible({
     timeout: 30_000,
@@ -43,51 +43,55 @@ test('every settings rail entry opens', async ({ page }) => {
 })
 
 for (const collapsed of [false, true]) {
-  test(`Back to app returns to the last app page (sidebar ${collapsed ? 'collapsed' : 'expanded'})`, async ({
-    page,
-    context,
-    e2eConfig,
-  }) => {
-    // The sidebar reads its state from this cookie on the server.
-    await context.addCookies([
-      { name: 'sidebar_state', value: String(!collapsed), url: e2eConfig.baseURL },
-    ])
-    await page.goto('/findings')
-    await expect(page.locator('h1')).toHaveCount(1, { timeout: 30_000 })
-    await page.goto('/settings/members')
-    await expect(page.locator(rail)).toBeVisible({ timeout: 30_000 })
-    const back = page.locator(rail).getByRole('link', { name: 'Back to app' })
-    if (collapsed) {
-      // Collapsed: icon only, with its label as a tooltip.
-      await back.hover()
-      await expect(page.getByRole('tooltip', { name: 'Back to app' })).toBeVisible()
+  test(
+    `Back to app returns to the last app page (sidebar ${collapsed ? 'collapsed' : 'expanded'})`,
+    { tag: ['@settings', '@smoke'] },
+    async ({ page, context, e2eConfig }) => {
+      // The sidebar reads its state from this cookie on the server.
+      await context.addCookies([
+        { name: 'sidebar_state', value: String(!collapsed), url: e2eConfig.baseURL },
+      ])
+      await page.goto('/findings')
+      await expect(page.locator('h1')).toHaveCount(1, { timeout: 30_000 })
+      await page.goto('/settings/members')
+      await expect(page.locator(rail)).toBeVisible({ timeout: 30_000 })
+      const back = page.locator(rail).getByRole('link', { name: 'Back to app' })
+      if (collapsed) {
+        // Collapsed: icon only, with its label as a tooltip.
+        await back.hover()
+        await expect(page.getByRole('tooltip', { name: 'Back to app' })).toBeVisible()
+      }
+      await back.click()
+      await expect(page).toHaveURL(/\/findings$/)
+      // Keyboard: focus it and press Enter.
+      await page.goto('/settings/members')
+      await page.locator(rail).getByRole('link', { name: 'Back to app' }).focus()
+      await page.keyboard.press('Enter')
+      await expect(page).toHaveURL(/\/findings$/)
     }
-    await back.click()
-    await expect(page).toHaveURL(/\/findings$/)
-    // Keyboard: focus it and press Enter.
-    await page.goto('/settings/members')
-    await page.locator(rail).getByRole('link', { name: 'Back to app' }).focus()
-    await page.keyboard.press('Enter')
-    await expect(page).toHaveURL(/\/findings$/)
-  })
+  )
 }
 
-test('moved settings URLs answer 308 with the query kept', async ({ e2eConfig }) => {
-  const ctx = await request.newContext({ baseURL: e2eConfig.baseURL })
-  for (const r of LEGACY_SETTINGS_ROUTE_REDIRECTS) {
-    const from = r.source.replace('/:path*', '')
-    const q = new URLSearchParams({ e2e: '1' })
-    for (const h of r.has ?? []) q.set(h.key, h.value ?? 'x')
-    const res = await ctx.get(`${from}?${q}`, { maxRedirects: 0 })
-    expect(res.status(), from).toBe(308)
-    const location = res.headers()['location'] ?? ''
-    expect(location, from).toContain('e2e=1')
-    expect(location.split('?')[0], from).toBe(r.destination.replace('/:path*', '').split('?')[0])
+test(
+  'moved settings URLs answer 308 with the query kept',
+  { tag: ['@settings', '@smoke'] },
+  async ({ e2eConfig }) => {
+    const ctx = await request.newContext({ baseURL: e2eConfig.baseURL })
+    for (const r of LEGACY_SETTINGS_ROUTE_REDIRECTS) {
+      const from = r.source.replace('/:path*', '')
+      const q = new URLSearchParams({ e2e: '1' })
+      for (const h of r.has ?? []) q.set(h.key, h.value ?? 'x')
+      const res = await ctx.get(`${from}?${q}`, { maxRedirects: 0 })
+      expect(res.status(), from).toBe(308)
+      const location = res.headers()['location'] ?? ''
+      expect(location, from).toContain('e2e=1')
+      expect(location.split('?')[0], from).toBe(r.destination.replace('/:path*', '').split('?')[0])
+    }
+    await ctx.dispose()
   }
-  await ctx.dispose()
-})
+)
 
-test('Cmd+K finds settings pages', async ({ page }) => {
+test('Cmd+K finds settings pages', { tag: ['@settings', '@smoke'] }, async ({ page }) => {
   await page.goto('/')
   // The shortcut listener is attached after hydration: wait until the header's
   // search button is interactive, and retry the key press until the palette
@@ -120,25 +124,29 @@ async function openUserMenuItem(page: Page, name: string) {
   }).toPass({ timeout: 20_000 })
 }
 
-base('a member opens their own settings and sees no admin entries', async ({ page }) => {
-  const cfg = getE2EConfig()
-  const email = process.env.E2E_LIMITED_EMAIL
-  const password = process.env.E2E_LIMITED_PASSWORD
-  base.skip(!cfg.ok || !email || !password, 'Set E2E_LIMITED_EMAIL / E2E_LIMITED_PASSWORD')
-  if (!cfg.ok) return
+base(
+  'a member opens their own settings and sees no admin entries',
+  { tag: ['@settings', '@smoke'] },
+  async ({ page }) => {
+    const cfg = getE2EConfig()
+    const email = process.env.E2E_LIMITED_EMAIL
+    const password = process.env.E2E_LIMITED_PASSWORD
+    base.skip(!cfg.ok || !email || !password, 'Set E2E_LIMITED_EMAIL / E2E_LIMITED_PASSWORD')
+    if (!cfg.ok) return
 
-  await loginAs(page, { ...cfg.config, userEmail: email!, userPassword: password! })
+    await loginAs(page, { ...cfg.config, userEmail: email!, userPassword: password! })
 
-  await openUserMenuItem(page, 'Notifications')
-  await expect(page).toHaveURL(/\/account\/notifications/)
-  await expect(page.getByRole('heading', { level: 1, name: 'Notifications' })).toBeVisible()
-  await expect(page.getByText('Access Denied')).toHaveCount(0)
+    await openUserMenuItem(page, 'Notifications')
+    await expect(page).toHaveURL(/\/account\/notifications/)
+    await expect(page.getByRole('heading', { level: 1, name: 'Notifications' })).toBeVisible()
+    await expect(page.getByText('Access Denied')).toHaveCount(0)
 
-  await openUserMenuItem(page, 'All settings')
-  await expect(page).toHaveURL(/\/settings$/)
-  await expect(page.getByText('Access Denied')).toHaveCount(0)
-  // Owner/admin-only entries are hidden, not shown and refused.
-  for (const adminOnly of ['/settings/general', '/settings/modules']) {
-    await expect(page.locator(`${rail} a[href="${adminOnly}"]`), adminOnly).toHaveCount(0)
+    await openUserMenuItem(page, 'All settings')
+    await expect(page).toHaveURL(/\/settings$/)
+    await expect(page.getByText('Access Denied')).toHaveCount(0)
+    // Owner/admin-only entries are hidden, not shown and refused.
+    for (const adminOnly of ['/settings/general', '/settings/modules']) {
+      await expect(page.locator(`${rail} a[href="${adminOnly}"]`), adminOnly).toHaveCount(0)
+    }
   }
-})
+)

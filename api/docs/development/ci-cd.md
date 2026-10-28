@@ -9,16 +9,16 @@ truth: this page describes them as of the merge-queue routing (#730, 2026-10-02)
 
 | Workflow (file) | Triggers | What it does | Gate check |
 |-----------------|----------|--------------|------------|
-| API CI (`api-ci.yml`) | PR / push to `main`, `develop`; merge queue | `API static checks` (one job: migration safety, SQL schema drift, security gates, OpenAPI contract, gateway routing, go vet, staticcheck, golangci-lint), tests against Postgres + Redis, least-privilege suite, PostgreSQL 18 migrations, release binaries, Docker build; see [Tiers](#tiers) | **API CI OK** |
-| Web CI (`web-ci.yml`) | PR / push to `main`, `develop`; merge queue | `API contract` (generates the contract files; for an API change compares them with the base and reports the difference), `API contract report` (the pull request comment), `Web checks` (type-check against the generated contract, ESLint, Prettier, palette drift, separators, and the copy linter `web/scripts/check-copy.mjs` on added or changed English strings: no marketing words, "successfully", exclamation marks, em dash asides or Title Case labels; `node scripts/check-copy.mjs --all` lists the existing strings to clean up) and `Web tests` (Vitest in three parallel shards); `next build` (push only) | **Web CI OK** |
+| API CI (`api-ci.yml`) | PR / push to `develop`; merge queue | `API static checks` (one job: migration safety, SQL schema drift, security gates, OpenAPI contract, gateway routing, go vet, staticcheck, golangci-lint), tests against Postgres + Redis as the least-privilege app role, PostgreSQL 18 migrations, release binaries; see [Tiers](#tiers) | **API CI OK** |
+| Web CI (`web-ci.yml`) | PR / push to `develop`; merge queue | `API contract` (generates the contract files; for an API change compares them with the base and reports the difference), `API contract report` (the pull request comment), `Web checks` (type-check against the generated contract, ESLint, Prettier, palette drift, separators, and the copy linter `web/scripts/check-copy.mjs` on added or changed English strings: no marketing words, "successfully", exclamation marks, em dash asides or Title Case labels; `node scripts/check-copy.mjs --all` lists the existing strings to clean up) and `Web tests` (Vitest in three parallel shards); `next build` (push only) | **Web CI OK** |
 | CodeQL (`codeql.yml`) | PR / push; merge queue; weekly (Mon 00:00 UTC) | One matrix over the languages: Go (built inside `api/`) and JavaScript/TypeScript (`web/`), one category per language. Go runs `security-and-quality` with `go/log-injection` replaced by `.github/codeql/go-queries/LogInjectionUnstructured.ql` (`openctem/go/log-injection`): the same sources, sinks and sanitizers, minus the key-value attributes of `log/slog` calls, which slog's text and JSON handlers escape (pinned by `api/pkg/logger/forging_test.go`); the message argument and every other logger stay checked, and `logger.SanitizeValue`, `SanitizeText` and `SanitizeError` are recognised sanitizers. PR and merge queue: only the changed language(s). Push to `develop`/`main` and weekly: both, so each branch keeps a fresh baseline per category | **CodeQL OK** |
-| Web E2E (`web-e2e.yml`) | PR (with `run-e2e`, a changed suite, or the full tier) / push to `develop`; merge queue | Builds the API, web and admin images once, then runs the Playwright suite (`web/e2e`) in 4 shards, each against its own stack (Postgres, Redis, migrations, seeded tenant). The merge queue runs it whenever the queued PR changed `web/`, `api/` or a shared file, so a spec made stale by a layout change fails in the queue, not on `develop`. `Merge reports and list flaky tests` is for people and never fails the gate | **E2E OK** |
+| Web E2E (`web-e2e.yml`) | PR (with `run-e2e`, a changed suite, or the full tier) / push to `develop`; merge queue | Builds the API, web and admin images once, then runs the Playwright suite (`web/e2e`) in 1 to 4 shards, each against its own stack (Postgres, Redis, migrations, seeded tenant). The pull request and the merge queue run only the specs the change needs (see [E2E impact selection](#e2e-impact-selection)); a push to `develop` and the nightly run (02:41 UTC) run all of them, and a failure there opens or updates the issue labelled `e2e-regression`. The merge queue runs it whenever the queued PR changed `web/`, `api/` or a shared file, so a spec made stale by a layout change fails in the queue, not on `develop`. `Merge reports and list flaky tests` is for people and never fails the gate | **E2E OK** |
 | Web visual regression (`web-visual.yml`) | PR with the `run-visual` label; nightly on `develop`; on demand | Screenshots of the key pages (dashboard, findings, assets, scans, remediation tasks, My Work, settings) at 1440 light and dark and 390 light against `web/e2e/visual/__screenshots__` (`playwright.visual.config.ts`, 2% pixel tolerance, volatile values masked). A missing baseline is written, not failed; `workflow_dispatch` with `update` takes new baselines and uploads them as the `visual-baselines` artifact to commit. Diffs are uploaded on failure | none (not required) |
-| All-in-one CI (`allinone-ci.yml`) | Push to `main`, `develop`; merge queue; a PR only when it changes `.github/workflows|scripts|actions` (check "All-in-one (PR build)", not required; other PRs get `All-in-one OK` from `pr-hygiene.yml`) | Builds `openctem-api`, `openctem-web` and the all-in-one `openctem` image exactly as a release does, smoke-tests them (arch, ELF, executes) and runs the all-in-one in both gateway modes against Postgres + Redis. Nothing is pushed. Merge queue and pushes only (see [Tiers](#tiers)). | **All-in-one OK** |
+| All-in-one CI (`allinone-ci.yml`) | Push to `develop`; merge queue; a PR only when it changes `.github/workflows|scripts|actions` (check "All-in-one (PR build)", not required; other PRs get `All-in-one OK` from `pr-hygiene.yml`) | Builds `openctem-api`, `openctem-web` and the all-in-one `openctem` image exactly as a release does, smoke-tests them (arch, ELF, executes) and runs the all-in-one in both gateway modes against Postgres + Redis. Nothing is pushed. Merge queue and pushes only (see [Tiers](#tiers)). | **All-in-one OK** |
 | Repository Security (`repo-security.yml`) | PR / push; merge queue; weekly | Betterleaks (root `.betterleaks.toml`, `.gitleaksignore`): a PR or queued group scans only its own commits (`base..head`); a push to `develop`/`main` and the weekly run scan the full history. Customer identifiers: fixed strings from the `CUSTOMER_DENYLIST` repository secret (never committed; empty = skipped with a notice) and the live LAN range outside tests, over every tracked file, printing only file:line. Commit emails: a PR or queued group fails when one of its commits has an address from the `COMMIT_EMAIL_DENYLIST` repository secret (case-insensitive fixed strings such as a domain; never committed; empty = skipped with a notice) as author, committer or `Co-authored-by` trailer, printing only the commit and the field; outside contributors are covered by the CLA check. **Workflow Lint**: actionlint and zizmor (pinned; suppressions are per line with a reason, inline or in `.github/zizmor.yml`, never per file) over the workflows, action pins, and the self-tests of the CI scripts (change routing, CodeQL alert gate, security gate and its CODEOWNERS mirror), plus the check that `api/` and `web/` depend on no sensor module or SDK. **Dependency Review** (PR only) | **Secret Scanning**, **Workflow Lint** |
 | PR hygiene (`pr-hygiene.yml`): Docs check | PR / push to `main`, `develop`; merge queue | Also in this workflow: the release-note labels job (below) and, on a PR, the `All-in-one OK` report (the build itself runs in the merge queue). **Docs check** job: `scripts/docs_check.py` (Markdown is English, has no private addresses or internal host names, relative links and anchors resolve), the RFC index check, then `scripts/check_docs_links.py` checks every `docs.openctem.io` link in code (page and `#anchor`, against a checkout of `openctemio/docs` `main`) and every `github.com/openctemio/<repo>/blob\|tree/<ref>/<path>#anchor` link (this repository from the checkout, others fetched shallowly); tests are skipped, `docs-links: ignore` skips a line. Locally: `python3 scripts/check_docs_links.py --docs ../docs --fetch-other .` | **Docs check** |
-| API Security (`api-security.yml`) | PR / push (`paths:` api side, see below); weekly | One job for govulncheck + Trivy (fs) + license check; Semgrep; Snyk (only if `vars.ENABLE_SNYK == 'true'`), license check, image scan (only for `main` / weekly) | — |
-| Web Security (`web-security.yml`) | PR / push (`paths:` web side, see below); weekly | One job for npm audit + Trivy (fs) + ESLint security rules; Snyk (opt-in as above), image scan (only for `main` / weekly) | — |
+| API Security (`api-security.yml`) | PR / push (`paths:` api side, see below); weekly | One job for govulncheck + Trivy (fs) + license check; Semgrep; Snyk (only if `vars.ENABLE_SNYK == 'true'`), license check, image scan (only for a PR into `main` / weekly) | — |
+| Web Security (`web-security.yml`) | PR / push (`paths:` web side, see below); weekly | One job for npm audit + Trivy (fs) + ESLint security rules; Snyk (opt-in as above), image scan (only for a PR into `main` / weekly) | — |
 | API Fuzz (`api-fuzz.yml`) | Nightly (03:17 UTC), manual | 10 minutes of `FuzzStrictCTIS` (the protocol-v2 results decoder); uploads a crasher artifact on failure | — |
 | API Authorization Matrix (`api-authz-matrix.yml`) | Nightly (02:11 UTC), manual | `make -C api authz-matrix`: a scratch stack (Postgres, Redis, migrations, the API from this commit), two seeded organizations, every route as every principal with own and other-organization ids, plus the role-management scenarios ([Authorization matrix suite](../architecture/authorization-matrix.md#authorization-matrix-suite)); the JSON report is an artifact (7 days) | — |
 | Ingest load (`api-ingest-load.yml`) | Nightly (02:41 UTC), manual | Fresh Postgres 17, all migrations, then `TestIngestLoad` (`INGEST_LOAD=1`): 50 concurrent CI uploads × 1,000 findings through the real accept path, queue and 4 workers; an urgent report behind 500 bulk jobs; 20 uploads of the same findings to one repository. A missed target fails the job; the results table is the run summary (RFC-122 §6e) | — |
@@ -353,6 +353,40 @@ How each workflow uses the outputs:
 | API Security | `on.paths`: `api/**` + shared files, minus `**/*.md` and `api/docs/**`. Does not start at all for a web-only or docs-only change |
 | Web Security | `on.paths`: `web/**` + shared files, minus `**/*.md`. Does not start at all for an API-only or docs-only change |
 
+#### Change scope (finer than api/web)
+
+[`.github/scripts/scope.sh`](../../../.github/scripts/scope.sh) runs next to
+`changed.sh` in the `changes` job of API CI, Web CI, Web E2E, All-in-one CI and
+CodeQL, over the same range (pull request **and** merge queue). It only narrows:
+a job runs when `changed.sh` selected its side **and** the part of that side it
+needs changed. When in doubt (schedule, dispatch, missing SHAs) every output is
+true.
+
+| Output | Part | Who needs it |
+|--------|------|--------------|
+| `api_code` | `api/**` except docs, plus the shared build files (`Makefile`, `go.work*`, `deploy/**`) | API CI, All-in-one image, CodeQL Go, Web E2E |
+| `web_app` | `web/**` except `web/e2e/**` and the catalogs; unit tests, config and the lockfile count | Web tests, Next build, All-in-one image, CodeQL JS/TS, Web E2E |
+| `web_e2e` | `web/e2e/**` (specs, fixtures, helpers) | Web checks (tsc and ESLint cover it), Web E2E |
+| `web_i18n` / `i18n_en` | `web/src/lib/i18n/dictionaries/<lang>/*.json` / an English one | Web checks; non-English only: `Web i18n tests` (the catalog tests in `src/lib/i18n` plus every test that reads a catalog by path, about 50 files, about a minute); English: the whole Web tests suite and Web E2E (unit tests and specs find elements by English text) |
+| `ci_self` | a file under `.github/` the calling workflow reaches: its own file, scripts, composite actions (`.github/actions/<name>`), called workflows (`./.github/workflows/<file>`) and data files (`quarantine.yml`), followed transitively by name | that workflow, in full |
+
+What a single-kind change runs (pull request and merge queue):
+
+| Change | Runs | Skips (aggregators pass) |
+|--------|------|--------------------------|
+| `web/e2e/**` only | Web checks, Web E2E | Web tests, Next build, All-in-one image, CodeQL, API CI |
+| non-English catalogs only | Web checks, Web i18n tests | Web tests (3 shards), Web E2E, All-in-one image, CodeQL |
+| English catalogs only | Web checks, Web tests, Web E2E | All-in-one image, CodeQL |
+| one workflow or script | the workflows that reach it, Workflow Lint and the script self-tests | every other workflow's jobs |
+| docs, changelog fragments | Docs check, changelog check, secret scan | everything else (unchanged) |
+
+Web E2E still builds its images for an e2e-only change until the images are
+shared by content key (then the develop-built images are reused).
+`vitest related` is not used for catalogs: `dictionaries/index.ts` imports
+every catalog, so the module graph relates nearly every UI test to any one
+catalog (measured: one `vi` catalog pulled in the bulk of the suite). Tests:
+`.github/scripts/scope.test.sh` (run by Workflow Lint).
+
 Workflows that carry a required check never use `on.<event>.paths`: a workflow
 skipped that way leaves its required checks *Pending* forever. They always start,
 and a job skipped by `if:` reports success to its aggregator. API Security and
@@ -391,6 +425,48 @@ tags and scheduled runs are never cancelled.
    the security scans always run on push, unless the tree was verified (see
    [Reusing a verified tree](#reusing-a-verified-tree)).
 6. A failure removes the PR from the queue; the groups behind it are rebuilt.
+   The failed job first cancels the group's other runs (see
+   [Fail fast](#fail-fast)).
+
+### Fail fast
+
+A failed job stops the work that can no longer change the outcome, so a doomed
+change does not hold runners from the shared pool.
+
+- Every job behind `API CI OK`, `Web CI OK`, `E2E OK` and `All-in-one OK` ends
+  with `.github/actions/fail-fast` under `if: failure()`. It runs
+  `.github/scripts/fail-fast.sh` after the job's own clean-up and report steps.
+- **Merge queue** (`merge_group`): one failed required job means the group will
+  be ejected, so the step cancels every unfinished `merge_group` run of the same
+  merge-group head commit (API CI, Web CI, Web E2E, All-in-one CI, CodeQL,
+  Repository Security, ...) and then its own run. Runs of any other commit or
+  event are never touched (the list is filtered by `head_sha` and `event`).
+- **Pull request**: only the rest of the same workflow run is cancelled. Other
+  workflows keep running, so a lint failure and a test failure still show
+  separately. A fork PR's token is read-only: the step prints a note and does
+  nothing.
+- **Push and schedule**: nothing is cancelled (a push is the branch's baseline).
+- The test matrices (`Tests (Postgres + Redis)`, `Web tests`, the Playwright
+  shards) use `strategy.fail-fast: true`:
+  the first failing shard cancels its siblings on every event. A cancelled
+  Playwright shard still uploads its blob report (`if: always()`).
+- `Build e2e images` failing skips the Playwright shards (they need it).
+- The `… OK` gates run with `if: always()`, so they still run after a cancel
+  and fail on any `failure` or `cancelled` result: the queue sees the failure
+  within a minute or two of the first failed job instead of after the slowest
+  shard.
+- The step never makes a job fail further: an API error (409 already cancelled,
+  403 read-only token) is a warning. The jobs that carry it hold
+  `actions: write` (cancel a run) next to their read permissions; every
+  checkout keeps `persist-credentials: false`, so the token is not written to
+  disk for the code under test.
+
+Saving: a failed queue group of an `api/` + `web/` change starts about 50 jobs
+(see [Tiers](#tiers)). Before, every one of them ran to its end (race shards
+10-15 minutes, Playwright 6-8 minutes after a 3-11 minute image build, the
+image smoke test). Now the rest stop about a minute after the first failure;
+a failure in static checks or an early shard frees most of those runner
+minutes, typically more than half of the group's total.
 
 ### Reusing a verified tree
 
@@ -445,18 +521,67 @@ the reuse covers the full set.
 Every PR is tested twice (on the PR, then in the queue) on a shared pool of
 hosted runners (about 60 concurrent jobs for the organization), and many PRs are
 open at once, so a PR runs only what catches most breakage early and the queue
-runs everything. Self-hosted runners are not used: this is a public repository,
-and a fork PR would run code on the host.
+runs everything. Heavy jobs can move to opt-in self-hosted runners
+("Self-hosted runner (opt-in)" below); fork PRs never run there.
 
 | Tier | Events | API CI | Web CI | All-in-one CI | Web E2E | CodeQL |
 |------|--------|--------|--------|---------------|---------|--------|
-| Fast | `pull_request` | `API static checks` (gates + vet, staticcheck, golangci-lint) + `Tests (Postgres + Redis)`: the whole suite against Postgres and Redis in 6 shards **without** `-race`, so isolation tests fail on the PR (decision D-30). `Tests (least-privilege DB role)` and `Migrations (PostgreSQL 18)` only when `migrations` | `Web checks`, `Web tests` | build skipped | only with `run-e2e`, or when `web/e2e/` changed | changed language(s) |
-| Full | `merge_group`, push to `develop`/`main`, a PR with `ci:full` or a changed CI definition | the suite in 8 shards **with** `-race`, the least-privilege suite, PostgreSQL 18, `Release Binaries` (not on a PR); Docker build on `main` | `Web checks`, `Web tests`; `next build` on push | images built and smoke-tested | Playwright in 4 shards (`web/` or `api/` changed) | queue: none (the PR head was analysed); push: both |
+| Fast | `pull_request` | `API static checks` (gates + vet, staticcheck, golangci-lint) + `Tests (Postgres + Redis)`: the whole suite against Postgres and Redis in 6 shards **without** `-race`, so isolation tests fail on the PR (decision D-30). the suite connects as the least-privilege app role; `Migrations (PostgreSQL 18)` only when `migrations` | `Web checks`, `Web tests` | build skipped | only with `run-e2e`, or when `web/e2e/` changed | changed language(s) |
+| Full | `merge_group`, push to `develop`, a PR with `ci:full` or a changed CI definition | the suite in 8 shards **with** `-race` (as the app role), PostgreSQL 18, `Release Binaries` (not on a PR); Docker build on `main` | `Web checks`, `Web tests`; `next build` on push | images built and smoke-tested | Playwright: the impacted specs plus the smoke set in 1 to 4 shards (`web/` or `api/` changed); push to `develop`: all specs | queue: none (the PR head was analysed); push: both |
 
 **Forcing the full tier on a PR:** add the `ci:full` label, then re-run all jobs
 of the workflow run (or push). Use it for a risky change to concurrency, SQL
 grants or the images before it reaches the queue. A PR that changes a workflow
 or a CI script always runs the full tier.
+
+### E2E impact selection
+
+Running the whole Playwright suite on every change cost about 24 minutes and
+8 jobs. `web-e2e.yml` now runs what the change needs and leaves the rest to the
+post-merge run.
+
+- **Tags.** Every test carries an area tag through Playwright's tag option
+  (`test('...', { tag: ['@findings'] }, ...)`, or on the enclosing
+  `test.describe`). Optional `@smoke` marks the always-run set (eight specs:
+  sign-in and route protection, an asset list, a finding page, settings,
+  remediation, a scan lifecycle, the dashboard), `@serial` marks a spec that
+  must not share a worker, `@budget` the every-page request budget check.
+- **Map.** `web/e2e/impact-map.yml` maps path globs to tags. A changed path
+  is looked up in this order: `all` (shared web code, auth, middleware, the
+  route registry, migrations, e2e infrastructure, dependency files, the e2e
+  workflow and actions) runs everything; `areas` adds that area's tags;
+  `ignore` (docs, unit tests, other workflows, the Vietnamese catalogs) needs
+  no spec; **anything else runs everything**. A change whose paths are all
+  ignored selects nothing (`E2E OK` passes without starting a stack). Otherwise
+  the specs run are the `@smoke` ones, those with a selected tag, and any
+  spec file the change touches. A pull request with `ci:full` or a changed CI
+  definition, a push to `develop`, the nightly run and a manual run always run
+  every spec; so does any error in the selector.
+- **Plan job.** `plan` (`web/e2e/ci/select.mjs plan`) takes the changed files
+  of the pull request or of the queue group (`merge_group.base_sha..head_sha`)
+  and the per-spec durations of the newest green `develop` run (artifact
+  `e2e-timings`, written by the `report` job of every full run; a spec without a
+  recorded duration costs the median, 60 s when none exist). It sets the shard
+  count to `ceil(total / 240 s)` clamped to 1 to 4, assigns specs longest first
+  to the lightest shard, and emits the matrix the shard jobs read with
+  `fromJSON`. The request budget job exists only when a `@budget` spec is
+  selected (any change to a feature's `hooks/` or `api/`, a page, or
+  `web/e2e/request-budget.json`). The selection and the shard plan are in the
+  run summary.
+- **Gate.** `Web checks` (Web CI) runs `node web/e2e/ci/select.mjs check`: it
+  lists the tests with Playwright and fails when one has no area tag, a tag
+  is missing from the `tags` list of the map, a listed tag is used by no
+  spec, or an area names an unknown tag. The selector's unit tests
+  (`web/e2e/ci/select.test.mjs`) run in the same step.
+- **Safety net.** The queue tests a narrower set than the old rule, so every
+  push to `develop` runs all specs. A red push run opens (or adds a comment
+  to) one issue labelled `e2e-regression`, with the run link; it is not part
+  of `E2E OK`. The required check keeps its meaning: it fails on a failed or
+  cancelled job and passes when the planned jobs passed or the plan was empty by
+  design.
+
+Adding an area: add the tag to `tags` and its paths to `areas` in
+`impact-map.yml`, and tag the specs.
 
 What runs per pull request (jobs started, including the ~10 s `changes` and
 `… OK` jobs; the merge queue still runs the full set):
@@ -473,7 +598,7 @@ The `… OK` aggregators pass when a job was skipped because its area did not
 change, but when the area did change they also require that **this event's
 tier ran and passed**. `API CI OK` and `All-in-one OK` fail any `merge_group`
 or push run that did not compute the full tier; in the queue `API CI OK` fails
-unless the race-enabled suite, the least-privilege suite, PostgreSQL 18 and the
+unless the race-enabled suite, PostgreSQL 18 and the
 release binaries succeeded, and `All-in-one OK` fails unless the image build
 succeeded. Nothing reaches `develop`/`main` on the fast tier alone.
 
@@ -494,6 +619,29 @@ PR-only steps (Migration Safety, golangci-lint on new code) are skipped in the
 queue: they already ran on the PR. API Security and Web Security do not run in
 the queue (no required check; the PR and the push scan the change).
 
+### Flaky-test quarantine
+
+A flaky test blocks every PR in the merge queue, and a rerun until green hides
+the race. Instead, reproduce it (`go test -race -count=200 -run '^TestX$'`,
+`npx playwright test --repeat-each=20`), then either fix it in a small PR or
+quarantine it while the fix is made:
+
+- Add an entry to `.github/quarantine.yml`: the test
+  (`go:<import path>.<TestName>` or `pw:e2e/<spec>.spec.ts::<title>`), the
+  tracking issue, an owner, the date added and `fix_by`, at most 14 days later.
+- API CI passes the active Go entries to `go test -skip`; Web E2E adds the
+  active Playwright titles to `--grep-invert`. Nothing else changes.
+- The day after `fix_by` the entry stops applying and the test runs again, so
+  an unfixed race shows up again instead of staying hidden; Workflow Lint warns
+  about expired entries. Remove the entry in the PR that fixes the race.
+- `quarantine.py check` (Workflow Lint) refuses an entry without an issue or
+  owner, a fix date beyond 14 days, a Go name that exists in two packages
+  (`-skip` cannot tell them apart), and any test whose name says it guards
+  security (tenant isolation, authorization, scope, RLS, secrets, signatures):
+  those are fixed, never skipped.
+- The list is a security-sensitive path, so adding an entry needs the
+  maintainer's `security-ack`: a PR cannot silence the test it breaks.
+
 ### Toolchain versions
 
 - **Go:** every `actions/setup-go` step uses `go-version-file: api/go.mod`, which
@@ -511,7 +659,7 @@ the queue (no required check; the PR and the push scan the change).
 
 | Version | What CI runs | When |
 |---|---|---|
-| 17 | The whole suite (shards, `-race` in the queue), the least-privilege suite | every pull request and merge group |
+| 17 | The whole suite as the least-privilege app role (shards, `-race` in the queue) | every pull request and merge group |
 | 18 | Every migration plus the schema probes (`Migrations (PostgreSQL 18)` in API CI), and the DB-backed packages as the app role (`api-pg-compat.yml`) | full tier of API CI; nightly and on a push to `develop` that changes migrations |
 | 16 | The DB-backed packages as the app role (`api-pg-compat.yml`) | nightly and on a push to `develop` that changes migrations |
 
@@ -654,6 +802,77 @@ GHCR, authenticated with the job's `GITHUB_TOKEN`:
   reference that pins the digest), merge; the push to `develop` mirrors it
   before the next CI run needs it.
 
+### Self-hosted runner (opt-in)
+
+A repository-level runner (labels `self-hosted, Linux, X64, openctem-ci`) can take
+the heavy jobs. It runs in Docker and gets its Docker daemon from a separate
+`docker:dind` container (`DOCKER_HOST=tcp://dind:2376`, TLS). Nothing changes until
+the owner sets repository variables (Settings > Secrets and variables > Actions >
+Variables):
+
+| Variable | Used for | Value |
+|---|---|---|
+| `CI_RUNNER_HEAVY` | the heavy jobs below, on `push` and on `pull_request` from this repository | the runner label, e.g. `openctem-ci` |
+| `CI_RUNNER_MERGE` | the same heavy jobs in `merge_group` | the runner label |
+
+Every selectable job uses one expression:
+
+```yaml
+runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_HEAVY) || 'ubuntu-latest' }}
+```
+
+- An empty variable means `ubuntu-latest`. To fall back, delete the variable
+  (or set it empty): no workflow edit and no re-run of old runs needed.
+- **Fork pull requests always run on `ubuntu-latest`.** The repository is public,
+  so untrusted code never reaches the self-hosted runner. `pull_request_target`
+  workflows, release, publish and signing jobs (`docker-publish`, `release*`,
+  anything with `id-token: write` or publishing secrets) are never selectable.
+- Light jobs (change detection, gates, every "... OK" aggregator, hygiene, CLA,
+  security gate, labels and notes) always stay on `ubuntu-latest`.
+
+Selectable jobs: `API CI` / `static`, `test` (Go shards), `pg18`; `Web CI` / `quality`, `tests`, `build`; `Web E2E` / `build`
+(the e2e images); `CodeQL` / `analyze`. `Web E2E` / `e2e` stays on GitHub: its
+compose stack publishes on `127.0.0.1` of the Docker host and Playwright calls
+`http://localhost`, which is another machine behind dind; Playwright's system
+libraries also need `sudo`.
+
+**dind caveat.** Containers a job starts (`services:` and `docker run`) run on the
+dind host, not on the runner's `localhost`. The DB jobs therefore publish service
+ports on a random host port and read it from `job.services.<id>.ports` (or
+`docker port`), and use the host `dind` when `runner.environment == 'self-hosted'`,
+`localhost` otherwise. A new job that connects to a container it started must do
+the same, or stay on `ubuntu-latest`. Never mount the host `docker.sock`.
+
+Rules for anything a selectable job runs:
+
+- **Published ports:** connect to `${{ runner.environment == 'self-hosted' && 'dind' || 'localhost' }}`,
+  never a literal `localhost`/`127.0.0.1`. A port published as `127.0.0.1:PORT`
+  is not reachable from the runner at all; publish on all interfaces of the dind
+  host (it is private to its runner). Talking container to container over a
+  `docker network` (the gateway smoke test) needs no host name.
+- **No bind mounts from the checkout:** `docker run -v "$PWD/x:/y"` mounts a
+  path of the dind container, which does not have the checkout, and the
+  container sees an empty directory. Copy files in instead: a named volume
+  filled with `docker cp` (`api/deploy/gateway/smoke-test.sh`), or a `docker build`
+  (the build context is sent to the daemon). `docker compose config` and builds
+  are fine.
+- **Name the database user:** jobs run as user `runner`, a command inside a
+  container as `root`, so a client without a user logs
+  `FATAL: role "root" does not exist`. Every `pg_isready` health check passes
+  `-U <user> -d <db>`; `psql` gets a URL with the user, or `-U`.
+- **Tools come from setup actions,** not the image: `setup-go`, `setup-node`
+  (also before CodeQL's TypeScript extractor). The runner image provides `git`,
+  `jq`, `python3`, `psql`, `curl`, and the Docker CLI with compose and buildx;
+  anything else (`yq` in the compose render check) is installed by the step
+  when missing, at a version pinned in `.github/tool-pins.tsv`.
+- **Environment:** the runner must not export `APP_*` variables (the base
+  image's `APP_UID` once did): the API refuses unknown variables under its
+  prefixes at start-up, and the config tests check that refusal.
+
+`Web E2E` / `build` (`CI_RUNNER_E2E_BUILD`, else `CI_RUNNER_HEAVY`) only builds
+and saves the images, so it needs nothing from the dind host. The Playwright
+shards stay on GitHub-hosted runners (see above).
+
 ### Workflow security
 
 - **Every action is pinned to a full commit SHA** with a `# vX.Y.Z` comment
@@ -756,10 +975,11 @@ files stale, so run `make generate-docker` (or `scripts/generate-in-docker.sh
 | Test shards | `.github/scripts/go-shard.sh check` proves the test shards below (8, 6 and 3) cover every package and every top-level test of a split package exactly once. |
 | Lint (steps of `API static checks`; the golangci-lint cache and the staticcheck binary are cached) | `go vet`, staticcheck, and golangci-lint v1.64.8 on **new** code only (PRs: `make lint-new` with `--new-from-rev` against `.github/scripts/effective-base.sh`). `make -C api lint-ci` runs the same locally. |
 | Tests (Postgres + Redis) | PRs (when `api/` or shared files change), merge queue and pushes. `go test -timeout 20m` against Postgres 17 + Redis 7 service containers. Full tier: `-race`, eight parallel shards; fast tier (PR): no `-race`, six. The four packages that hold most of the run time and run their tests one after another (`tests/unit`, `tests/integration`, `internal/infra/http/routes`, `internal/infra/postgres`) are split by top-level test name over every shard, each slice in its own `go test` process so it keeps the database to itself; every other package goes whole to one shard (`.github/scripts/go-shard.sh`, run by `go-shard-run.sh`). Before, `tests/integration` alone held one shard for about 16 minutes while the others finished in 7 to 14. Both splits run the same tests, each with `OPENCTEM_TEST_DB_REQUIRED=1` so `internal/testdb` fails instead of skipping, then `.github/scripts/check-db-test-skips.sh` fails the job if any test skipped itself for a missing or unreachable database. |
-| Tests (least-privilege DB role) | Sharded the same way (3 + 3 shards). Full tier, and on a PR that changes `api/migrations/` or `api/deploy/postgres/` (when `api/` or shared files change). Bootstraps a fresh database with `api/deploy/postgres/least-privilege-roles.sql`, applies every migration as `openctem_migrator`, then runs the DB-backed suite as `openctem_app` (DML only). It fails if a migration needs a superuser or the API needs more than DML. See `api/docs/deployment/database-roles.md`. |
-| Migrations (PostgreSQL 18) | Same tiers as the least-privilege suite. Applies every migration to a fresh PostgreSQL 18 database (the next major; the suites above run on 17), then runs the schema probes that read the catalog (`TestCheckSensorRename`). PostgreSQL 18 records each column's NOT NULL as a `pg_constraint` row (`contype = 'n'`), so a migration or probe that reads `pg_constraint` must filter on `contype`. The image comes from the CI mirror, or its upstream with the same digest until the mirror has it. |
-| Release Binaries | Merge queue and pushes. Builds and uploads static linux/amd64 `cmd/server` and `cmd/bootstrap-admin` binaries. |
-| Docker Build | Pushes to `main` only; builds the image, does not push it. |
+| (least-privilege role) | Part of `Tests (Postgres + Redis)` on every event: each shard bootstraps a fresh database with `api/deploy/postgres/least-privilege-roles.sql`, applies every migration as `openctem_migrator`, re-runs the script, then runs the suite as `openctem_app` (DML only), with `DATABASE_MIGRATE_URL` for tests that replay a migration and a superuser `DATABASE_ADMIN_URL` only for `testdb.PrivateDatabase` and `TestLeastPrivilegeRoles`. It fails if a migration needs a superuser or the API needs more than DML. Until 2026-10 this was a second job that ran the whole suite again (6 shards); with row-level security not enabled on any table, the app role's run also proves the owner's, so the duplicate was removed. When RLS is enabled (the owner bypasses it), add an owner-role run back. See `api/docs/deployment/database-roles.md`. |
+| Migrations (PostgreSQL 18) | Full tier, and on a PR that changes `api/migrations/` or `api/deploy/postgres/`. Applies every migration to a fresh PostgreSQL 18 database (the next major; the suites above run on 17), then runs the schema probes that read the catalog (`TestCheckSensorRename`). PostgreSQL 18 records each column's NOT NULL as a `pg_constraint` row (`contype = 'n'`), so a migration or probe that reads `pg_constraint` must filter on `contype`. The image comes from the CI mirror, or its upstream with the same digest until the mirror has it. |
+| Release Binaries | Merge queue and pushes to `develop`. Builds and uploads static linux/amd64 `cmd/server` and `cmd/bootstrap-admin` binaries. |
+
+**Pushes to `main`** run no heavy suite: `main` receives only release and hotfix PRs that the merge queue and the PR-into-`main` scans already gated, and the tag build (`docker-publish.yml`) has its own image guard. A push to `main` runs CodeQL (baseline of the default branch), Repository Security, PR hygiene, Release Tooling, the CLA and observability checks (path-filtered), and the release workflows; API CI, Web CI, All-in-one CI, Web E2E and the `paths:`-filtered API/Web Security scans run on `develop` pushes only. The image scans of API/Web Security still run weekly and on a PR into `main`.
 
 All Go jobs run with `GOWORK=off` and `working-directory: api`.
 
@@ -768,7 +988,7 @@ All Go jobs run with `GOWORK=off` and `working-directory: api`.
 Setup that every job of a run needs is done once and handed over:
 
 - **OpenAPI spec** (`api-ci.yml`, job `spec`): `make swagger` takes 1.5-2
-  minutes and every test and least-privilege shard ran it (14 shards on the
+  minutes and every test shard ran it (8 shards on the
   full tier; in the merge queue nothing is cached). One job generates it and
   uploads `openapi-spec`; the shards download it.
 - **Images** are built once per content key across workflows
@@ -818,6 +1038,18 @@ gh workflow run docker-publish.yml -f version=v0.9.0 -f environment=staging
 ```
 
 ### Images
+
+**Release builds read nothing from shared mutable state.** `docker-publish.yml`
+uses no registry layer cache (`cache-from`/`cache-to`): any job in this
+repository holding a `packages: write` token (a merge-queue run of a same-repo
+PR, for example) could overwrite a `buildcache-<arch>` tag in the release
+packages, and the release build would then take its layers from there and sign
+them. Every layer now comes from the tag's sources and the digest-pinned base
+images; the smoke build and the push-by-digest build of one job share that job's
+own builder cache, so the image is still compiled once per architecture. The
+service containers of the all-in-one smoke test are pinned by digest as well.
+Legacy `buildcache-amd64`/`buildcache-arm64` tags in the release packages are no
+longer read and can be deleted.
 
 All images go to GHCR, are multi-arch (linux/amd64 + linux/arm64), are built on a
 **native** runner per architecture and smoke-tested there (config arch, ELF
@@ -980,3 +1212,13 @@ The legacy `ui` GHCR package was created by `openctemio/ui`; this repository nee
 - **Image not found after a tag.** Check the Docker Publish run; the tag must match
   `v<major>.<minor>.<patch>[-suffix]`. Images for v0.8.0 and earlier exist only
   under the legacy `api` / `ui` names.
+
+### Per-job runner overrides
+
+Two long jobs that need no database can be moved on their own, so a small
+self-hosted pool takes real load without becoming the bottleneck for every
+heavy job: `CI_RUNNER_CODEQL` (CodeQL `analyze`) and `CI_RUNNER_E2E_BUILD`
+(Web E2E `build`, the e2e images). Set either to the runner label (for example
+`openctem-ci`); it applies to merge groups, pushes and pull requests from this
+repository, never to forks, and wins over `CI_RUNNER_MERGE`/`CI_RUNNER_HEAVY`.
+Delete the variable to send the job back to GitHub-hosted runners.

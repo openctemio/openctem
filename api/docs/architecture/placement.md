@@ -41,6 +41,53 @@ The claim SQL lives in `internal/infra/postgres/command_repository.go`
 (`pendingForSensorWhere`); the dispatch gate in
 `internal/app/command/local_policy.go`.
 
+## Spreading work across sensors
+
+Every eligible sensor of the organization is woken when a task is queued,
+and the first claim wins. Left at that, the sensor that answers fastest (the
+lowest round trip, or the one that just finished the previous stage and
+polls again at once) takes every task up to its free slots while an equally
+able peer stays idle. The claim therefore balances
+(`internal/app/command/claim_balance.go`):
+
+1. The claiming sensor reads the fresh tasks it shares with its peers
+   (`ClaimContest`): unassigned scan tasks that became claimable (queued,
+   re-queued or released by their scan window) less than **10 seconds** ago,
+   that pass its own claim SQL, and that at least one other organization
+   sensor (active, online or late, with a free slot) passes too. Shared
+   sensors and other organizations' sensors never count.
+2. It walks them in queue order and gives each to the least-loaded sensor
+   that may take it: the largest share of free slots for its size first,
+   then the fewest claims in the last 15 minutes, then itself on a tie.
+3. It claims every task it does not share, and as many shared tasks as the
+   walk gave it. The rest stay pending for the peers, which were woken too.
+
+A task is shared only for the window: a peer that does not claim it (it
+stopped, or refuses for a reason the claim SQL cannot see, such as its local
+policy) delays it by about 10 seconds at most, and then any eligible sensor
+takes it. A sensor without the tool, outside the zone, offline, disabled or
+full is never a peer, and a task addressed to one sensor is never shared.
+
+The explainer flags the sensors that would leave a fresh task to a
+less-loaded one (`yields: true`, "can take it, leaves it to a less-loaded
+sensor for a few seconds").
+
+### Slots are capped inside the claim
+
+The service counts a sensor's free slots before it claims, but two claims of
+the same sensor can run at once (a poll and a stream wake, two API
+replicas). The claim statement therefore takes a per-sensor transaction
+advisory lock, recounts the scan tasks the sensor holds and claims no more
+scans than its effective job limit minus that count (`capToFreeSlots`).
+Heartbeats writing the sensor row are not blocked by it.
+
+The job count the console shows ("Jobs 5/5") is the same count: scan tasks
+acknowledged or running. A command that takes no scan slot (a content
+refresh) is not a job, so a sensor running five scans and a content refresh
+shows 5 of 5, not 6 of 5. A task whose sensor disappears keeps its slot only
+until its lease runs out; the lease reaper then puts it back in the queue
+(`RequeueExpiredLeases`).
+
 ## The shared fleet
 
 When no sensor of the organization may take a task, the answer says
@@ -124,7 +171,7 @@ as defence in depth.
   "evaluated": 3, "truncated": false,
   "eligible": 1, "busy": 1,
   "blocking": [{"code": "tool_missing", "count": 2}],
-  "sensors": [{"id": "…", "name": "dmz-1", "eligible": true, "busy": true, "reasons": []}]
+  "sensors": [{"id": "…", "name": "dmz-1", "eligible": true, "busy": true, "yields": false, "reasons": []}]
 }
 ```
 
@@ -188,6 +235,8 @@ as defence in depth.
 - `pkg/domain/command/placement.go`: reason codes and the repository port.
 - `internal/infra/postgres/command_placement.go`: the predicates read back.
 - `internal/app/command/placement.go`: the explainer.
+- `internal/app/command/claim_balance.go`, `internal/infra/postgres/command_claim_balance.go`:
+  spreading work across sensors and the in-claim slot cap.
 - `internal/infra/http/handler/scan_run_task_placement_handler.go`: the endpoint.
 
 ## Proxy pool holds name their pool
