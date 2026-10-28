@@ -1,7 +1,7 @@
-// Package aianalysis is the governance model for AI results: every result is
-// a typed suggestion with provenance, the platform computes whether it adds
-// information, raises risk or lowers risk, and the organization's mode per use
-// case decides what happens to it. Design: docs/architecture/ai-analysis.md.
+// Package aianalysis is the model of AI analysts: service accounts that take
+// part in triage like a person (same commands, permissions, approvals and
+// audit), each with accountable owners, plus the ledger of their runs.
+// Design: docs/architecture/ai-analysis.md.
 package aianalysis
 
 import (
@@ -32,29 +32,6 @@ func ParseUseCase(s string) (UseCase, error) {
 	return "", fmt.Errorf("%w: unknown AI use case", shared.ErrValidation)
 }
 
-// Mode is what happens to a use case's suggestions.
-type Mode string
-
-const (
-	// ModeOff: the use case never runs.
-	ModeOff Mode = "off"
-	// ModeSuggest: suggestions wait for a person.
-	ModeSuggest Mode = "suggest"
-	// ModeAutoApply: additive and risk-raising suggestions are applied at
-	// once (undo available); risk-lowering ones still become approval
-	// requests.
-	ModeAutoApply Mode = "auto_apply"
-)
-
-// ParseMode validates a mode.
-func ParseMode(s string) (Mode, error) {
-	switch Mode(s) {
-	case ModeOff, ModeSuggest, ModeAutoApply:
-		return Mode(s), nil
-	}
-	return "", fmt.Errorf("%w: unknown AI mode", shared.ErrValidation)
-}
-
 // Executor is where a run executes.
 type Executor string
 
@@ -65,12 +42,15 @@ const (
 	ExecutorPlatformWorker Executor = "platform_worker"
 	// ExecutorTenantWorker: an analyst sensor the organization runs.
 	ExecutorTenantWorker Executor = "tenant_worker"
+	// ExecutorExternal: an outside program acting with the analyst's
+	// service-account key.
+	ExecutorExternal Executor = "external"
 )
 
 // ParseExecutor validates an executor.
 func ParseExecutor(s string) (Executor, error) {
 	switch Executor(s) {
-	case ExecutorBuiltin, ExecutorPlatformWorker, ExecutorTenantWorker:
+	case ExecutorBuiltin, ExecutorPlatformWorker, ExecutorTenantWorker, ExecutorExternal:
 		return Executor(s), nil
 	}
 	return "", fmt.Errorf("%w: unknown AI executor", shared.ErrValidation)
@@ -118,12 +98,13 @@ const (
 	TriggerOnIngest Trigger = "on_ingest"
 	TriggerWorkflow Trigger = "workflow"
 	TriggerSchedule Trigger = "schedule"
+	TriggerMention  Trigger = "mention"
 )
 
 // ParseTrigger validates a trigger.
 func ParseTrigger(s string) (Trigger, error) {
 	switch Trigger(s) {
-	case TriggerOnDemand, TriggerOnIngest, TriggerWorkflow, TriggerSchedule:
+	case TriggerOnDemand, TriggerOnIngest, TriggerWorkflow, TriggerSchedule, TriggerMention:
 		return Trigger(s), nil
 	}
 	return "", fmt.Errorf("%w: unknown AI trigger", shared.ErrValidation)
@@ -136,7 +117,8 @@ const (
 	SubjectFinding SubjectType = "finding"
 )
 
-// Kind is the type of a suggestion.
+// Kind is the type of one item of model output (an intended action the
+// executor turns into a command of the analyst).
 type Kind string
 
 const (
@@ -146,70 +128,40 @@ const (
 	KindSummary          Kind = "summary"
 )
 
-// ParseKind validates a suggestion kind the platform can store and apply.
+// ParseKind validates an output item kind.
 func ParseKind(s string) (Kind, error) {
 	switch Kind(s) {
 	case KindVerdict, KindSeverity, KindRemediationSteps, KindSummary:
 		return Kind(s), nil
 	}
-	return "", fmt.Errorf("%w: unknown AI suggestion kind", shared.ErrValidation)
+	return "", fmt.Errorf("%w: unknown AI output kind", shared.ErrValidation)
 }
-
-// Direction is what applying a suggestion does to risk. Computed by the
-// platform from the finding's facts, never taken from the model.
-type Direction string
-
-const (
-	DirectionAdditive   Direction = "additive"
-	DirectionRaisesRisk Direction = "raises_risk"
-	DirectionLowersRisk Direction = "lowers_risk"
-)
-
-// State is where a suggestion is in its life.
-type State string
-
-const (
-	StateOpen            State = "open"
-	StateApplied         State = "applied"
-	StateAutoApplied     State = "auto_applied"
-	StatePendingApproval State = "pending_approval"
-	StateDismissed       State = "dismissed"
-	StateSuperseded      State = "superseded"
-	StateUndone          State = "undone"
-	StateNeedsReview     State = "needs_review"
-	StateShadow          State = "shadow"
-)
-
-// IsApplied reports a state whose change is in effect (undo possible).
-func (s State) IsApplied() bool { return s == StateApplied || s == StateAutoApplied }
-
-// IsActionable reports a state a person may still apply or dismiss.
-func (s State) IsActionable() bool { return s == StateOpen || s == StateNeedsReview }
 
 // RunStatus is the status of a run.
 type RunStatus string
 
 const (
-	RunPending    RunStatus = "pending"
-	RunRunning    RunStatus = "running"
-	RunCompleted  RunStatus = "completed"
-	RunIncomplete RunStatus = "incomplete"
-	RunFailed     RunStatus = "failed"
-	RunRefused    RunStatus = "refused"
+	RunQueued          RunStatus = "queued"
+	RunRunning         RunStatus = "running"
+	RunWaitingTool     RunStatus = "waiting_tool"
+	RunWaitingApproval RunStatus = "waiting_approval"
+	RunCompleted       RunStatus = "completed"
+	RunFailed          RunStatus = "failed"
+	RunCanceled        RunStatus = "canceled"
+	RunRefused         RunStatus = "refused"
 )
 
-// ApprovalKind names the approval store a pending suggestion waits in.
-type ApprovalKind string
+// IsLive reports a status that still holds the subject's in-flight slot.
+func (s RunStatus) IsLive() bool {
+	switch s {
+	case RunQueued, RunRunning, RunWaitingTool, RunWaitingApproval:
+		return true
+	}
+	return false
+}
 
-const (
-	// ApprovalKindStatus: a finding status request (false positive).
-	ApprovalKindStatus ApprovalKind = "status"
-	// ApprovalKindSeverity: a severity change request.
-	ApprovalKindSeverity ApprovalKind = "severity"
-)
-
-// Review reasons recorded on a suggestion that must not be applied
-// automatically.
+// Review reasons recorded on output the executor did not act on (it is
+// written as a comment for a person instead).
 const (
 	ReviewUnresolvedEvidence = "unresolved_evidence"
 	ReviewNoEvidence         = "no_evidence"

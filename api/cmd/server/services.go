@@ -877,7 +877,8 @@ type Services struct {
 
 	// AI Triage
 	AITriage *aitriage.AITriageService
-	// AIAnalysis governs AI results: suggestions, use-case policy, apply and undo.
+	// AIAnalysis manages AI analysts (service accounts that triage like a
+	// person, with accountable owners) and their runs.
 	AIAnalysis *aianalysis.Service
 
 	// WebSocket
@@ -1878,14 +1879,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// recorded as a pending approval for a person; never applied.
 		s.AITriage.SetFalsePositiveProposer(s.Vulnerability)
 
-		// AI governance: every AI result is a suggestion; risk-lowering
-		// changes always go through the approval paths of the finding service.
-		s.AIAnalysis = aianalysis.New(repos.AIAnalysis, aianalysis.SettingsConsent{Repo: repos.TenantAISettings},
-			repos.Finding, finding.AIActions{S: s.Vulnerability}, log)
-		s.AIAnalysis.SetDataScope(s.DataScope)
-		s.AIAnalysis.SetAuditService(s.Audit)
-		s.AIAnalysis.SetActivityService(s.FindingActivity)
-
 		// RFC-008: per-tenant LLM token budget. Always constructed so
 		// Status() works for dashboards even before enforcement.
 		// Check()/Record() short-circuit when BudgetEnabled=false —
@@ -2050,9 +2043,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Wire outbox notification to vulnerability and exposure services
 	s.Vulnerability.SetOutboxService(deps.DB, s.Outbox)
 	s.Exposure.SetOutboxService(deps.DB, s.Outbox)
-	if s.AIAnalysis != nil {
-		s.AIAnalysis.SetDowngradeNotifier(aianalysis.OutboxDowngradeNotifier{Outbox: s.Outbox, Logger: log})
-	}
 
 	// Priority-change publisher. PriorityClassificationService emits a
 	// PriorityChangeEvent on every class transition and nil-guards the
@@ -2974,6 +2964,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.ServiceKeyGate = apikey.NewServiceKeyGate(repos.ServiceAccount, gateMembers, gateHolder)
 		s.APIKey.SetServiceKeyGate(s.ServiceKeyGate)
 	}
+
+	// AI analysts: service accounts that triage like a person. What they may
+	// do is read from the role tables (no cache) at every run start, bounded
+	// by what their accountable owners hold.
+	s.AIAnalysis = aianalysis.New(repos.AIAnalysis, repos.AIAnalysis,
+		apikey.NewHolderPermissions(repos.Tenant, rolePermissionSource{repos.Role}),
+		accesscontrol.AIAnalystRoles{Roles: s.Role}, s.DataScope,
+		aianalysis.SettingsConsent{Repo: repos.TenantAISettings}, s.Audit, log)
 
 	// Wire permission services to tenant service
 	s.Tenant.SetPermissionServices(s.PermCache, s.PermVersion)

@@ -1,507 +1,29 @@
-// Package aianalysis governs AI results: it stores every result as a typed
-// suggestion with its run's provenance, computes the direction from the
-// finding's facts, applies the organization's mode per use case (risk-lowering
-// changes always become approval requests), and lets a person apply, dismiss
-// or undo. Design: docs/architecture/ai-analysis.md.
+// Package aianalysis manages AI analysts: service accounts that take part in
+// triage like a person (same commands, permissions, approvals and audit; the
+// only difference is the AI label and provenance), each with accountable
+// owners who answer for its results, and the ledger of their runs.
+// Design: docs/architecture/ai-analysis.md.
 package aianalysis
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
+	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/activity"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/internal/app/datascope"
 	aidom "github.com/openctemio/openctem/api/pkg/domain/aianalysis"
-	"github.com/openctemio/openctem/api/pkg/domain/approvalpolicy"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/api/pkg/domain/serviceaccount"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // ConsentReader answers whether the organization consented to AI.
 type ConsentReader interface {
 	AIConsented(ctx context.Context, tenantID shared.ID) (bool, error)
-}
-
-// FindingReader reads a finding of the tenant.
-type FindingReader interface {
-	GetByID(ctx context.Context, tenantID, id shared.ID) (*vulnerability.Finding, error)
-}
-
-// SeverityChange is the outcome of a person's severity change: applied now,
-// or waiting in a request.
-type SeverityChange struct {
-	Applied   bool
-	RequestID *shared.ID
-}
-
-// FindingActions are the existing finding paths the apply engine goes
-// through, so every rule of a change made by hand applies to a change a
-// person makes from a suggestion (implemented by the finding service).
-type FindingActions interface {
-	// ChangeSeverityAsPerson changes the effective severity as the person:
-	// at once for an upgrade or a downgrade they may decide alone, else as a
-	// pending request.
-	ChangeSeverityAsPerson(ctx context.Context, tenantID, findingID, actorID shared.ID, severity string, restore bool, reason string, canApprove bool) (SeverityChange, error)
-	// RequestFalsePositiveAsPerson asks for the false-positive status as the
-	// person (the organization's approval levels apply).
-	RequestFalsePositiveAsPerson(ctx context.Context, tenantID, findingID, actorID shared.ID, closureReason, justification string, canApprove bool) (shared.ID, error)
-	// ProposeFalsePositiveAsAI opens a pending false-positive request whose
-	// requester is the AI actor, not a person; nil when none was created
-	// (critical or high finding, one already pending, or rejected before).
-	ProposeFalsePositiveAsAI(ctx context.Context, tenantID, findingID shared.ID, likelihood float64, rationale string) (*shared.ID, error)
-}
-
-// DowngradeNotifier tells an organization's administrators that a use case
-// fell back to suggest.
-type DowngradeNotifier interface {
-	NotifyAIDowngrade(ctx context.Context, tenantID shared.ID, useCase aidom.UseCase, d aidom.Decisions)
-}
-
-// Service is the AI governance service.
-type Service struct {
-	repo      aidom.Repository
-	consent   ConsentReader
-	findings  FindingReader
-	actions   FindingActions
-	dataScope *datascope.Enforcer
-	audit     *auditapp.AuditService
-	activity  *activity.FindingActivityService
-	notifier  DowngradeNotifier
-	logger    *logger.Logger
-	now       func() time.Time
-}
-
-// New builds the service.
-func New(repo aidom.Repository, consent ConsentReader, findings FindingReader, actions FindingActions, log *logger.Logger) *Service {
-	return &Service{repo: repo, consent: consent, findings: findings, actions: actions,
-		logger: log.With("service", "ai_analysis"), now: time.Now}
-}
-
-// SetDataScope wires the Layer 2 data scope (nil = unrestricted, internal callers).
-func (s *Service) SetDataScope(e *datascope.Enforcer) { s.dataScope = e }
-
-// SetAuditService wires audit logging.
-func (s *Service) SetAuditService(a *auditapp.AuditService) { s.audit = a }
-
-// SetActivityService wires the finding timeline.
-func (s *Service) SetActivityService(a *activity.FindingActivityService) { s.activity = a }
-
-// SetDowngradeNotifier wires the downgrade notice.
-func (s *Service) SetDowngradeNotifier(n DowngradeNotifier) { s.notifier = n }
-
-// ---------------------------------------------------------------------------
-// Use-case policy
-// ---------------------------------------------------------------------------
-
-// PolicyView is one use case as the console shows it.
-type PolicyView struct {
-	aidom.UseCasePolicy
-	// EffectiveMode is off while the organization has not consented.
-	EffectiveMode aidom.Mode
-	Consented     bool
-}
-
-// Policy returns the policy of one use case (stored, or the platform default).
-func (s *Service) Policy(ctx context.Context, tenantID shared.ID, u aidom.UseCase) (PolicyView, error) {
-	all, err := s.ListPolicies(ctx, tenantID)
-	if err != nil {
-		return PolicyView{}, err
-	}
-	for _, p := range all {
-		if p.UseCase == u {
-			return p, nil
-		}
-	}
-	return PolicyView{}, fmt.Errorf("%w: unknown AI use case", shared.ErrValidation)
-}
-
-// ListPolicies returns every use case's policy.
-func (s *Service) ListPolicies(ctx context.Context, tenantID shared.ID) ([]PolicyView, error) {
-	consented, err := s.consent.AIConsented(ctx, tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("read AI consent: %w", err)
-	}
-	stored, err := s.repo.ListPolicies(ctx, tenantID)
-	if err != nil {
-		return nil, err
-	}
-	byCase := map[aidom.UseCase]aidom.UseCasePolicy{}
-	for _, p := range stored {
-		byCase[p.UseCase] = p
-	}
-	out := make([]PolicyView, 0, len(aidom.UseCases()))
-	for _, u := range aidom.UseCases() {
-		p, ok := byCase[u]
-		if !ok {
-			p = aidom.DefaultPolicy(tenantID, u, consented)
-		}
-		out = append(out, PolicyView{UseCasePolicy: p, EffectiveMode: p.Effective(consented), Consented: consented})
-	}
-	return out, nil
-}
-
-// UpdatePolicyInput is an administrator's change of one use case. Nil fields
-// keep the current value.
-type UpdatePolicyInput struct {
-	TenantID         shared.ID
-	ActorID          shared.ID
-	UseCase          string
-	Mode             *string
-	DataClassCeiling *string
-	MinConfidence    *float64
-	Triggers         []string
-	BudgetShare      *int
-	Audit            auditapp.AuditContext
-}
-
-// ErrConsentRequired: a use case cannot be turned on before the organization
-// consented to AI.
-var ErrConsentRequired = fmt.Errorf("%w: turn AI on for the organization first", shared.ErrValidation)
-
-// UpdatePolicy validates and stores a use case policy; the change is a
-// critical audit row. The route requires a fresh sign-in when the body turns
-// auto-apply on or raises the data class above internal.
-func (s *Service) UpdatePolicy(ctx context.Context, in UpdatePolicyInput) (PolicyView, error) {
-	u, err := aidom.ParseUseCase(in.UseCase)
-	if err != nil {
-		return PolicyView{}, err
-	}
-	cur, err := s.Policy(ctx, in.TenantID, u)
-	if err != nil {
-		return PolicyView{}, err
-	}
-	next := cur.UseCasePolicy
-	if in.Mode != nil {
-		if next.Mode, err = aidom.ParseMode(*in.Mode); err != nil {
-			return PolicyView{}, err
-		}
-	}
-	if in.DataClassCeiling != nil {
-		if next.DataClassCeiling, err = aidom.ParseDataClass(*in.DataClassCeiling); err != nil {
-			return PolicyView{}, err
-		}
-	}
-	if in.MinConfidence != nil {
-		next.MinConfidence = *in.MinConfidence
-	}
-	if in.Triggers != nil {
-		next.Triggers = next.Triggers[:0:0]
-		for _, t := range in.Triggers {
-			next.Triggers = append(next.Triggers, aidom.Trigger(t))
-		}
-	}
-	if in.BudgetShare != nil {
-		next.BudgetShare = *in.BudgetShare
-	}
-	if err := next.Validate(); err != nil {
-		return PolicyView{}, err
-	}
-	if next.Mode != aidom.ModeOff && !cur.Consented {
-		return PolicyView{}, ErrConsentRequired
-	}
-	actor := in.ActorID
-	next.UpdatedBy = &actor
-	if err := s.repo.UpsertPolicy(ctx, next); err != nil {
-		return PolicyView{}, err
-	}
-	s.auditEvent(ctx, in.Audit, audit.ActionAIUseCaseUpdated, string(u), audit.SeverityCritical, map[string]any{
-		"use_case":           string(u),
-		"mode_from":          string(cur.Mode),
-		"mode_to":            string(next.Mode),
-		"data_class_from":    string(cur.DataClassCeiling),
-		"data_class_to":      string(next.DataClassCeiling),
-		"min_confidence":     next.MinConfidence,
-		"loosened":           next.LoosensFrom(cur.UseCasePolicy),
-		"cleared_downgrade":  cur.DowngradedAt != nil && next.Mode == aidom.ModeAutoApply,
-		"budget_share":       next.BudgetShare,
-		"triggers_requested": in.Triggers,
-	})
-	return s.Policy(ctx, in.TenantID, u)
-}
-
-// ---------------------------------------------------------------------------
-// Recording results
-// ---------------------------------------------------------------------------
-
-// Proposal is one raw suggestion from an executor, before validation.
-type Proposal struct {
-	Kind       string
-	Payload    json.RawMessage
-	Confidence *float64
-	Evidence   []aidom.Evidence
-	// ReviewReasons the executor already knows (unknown placeholder, coerced
-	// output).
-	ReviewReasons []string
-}
-
-// RecordInput is a finished run and its proposals.
-type RecordInput struct {
-	Run       *aidom.Run
-	Proposals []Proposal
-	// KnownRefs are the evidence references that exist for this run
-	// ("bundle:<field>" for each field sent, "tool:<n>" for each tool
-	// output).
-	KnownRefs map[string]bool
-	// RunReviewReasons apply to every proposal (prompt-injection markers in
-	// the input).
-	RunReviewReasons []string
-	// SchemaVersion of the output the proposals were validated against.
-	SchemaVersion string
-}
-
-// RecordResult reports what was stored.
-type RecordResult struct {
-	Suggestions []*aidom.Suggestion
-	// Rejected counts proposals refused by validation (never stored).
-	Rejected int
-}
-
-// Record validates a run's proposals, computes their direction from the
-// finding's facts, stores them and applies the organization's mode. Only
-// proposals about the run's own subject are possible: the subject comes from
-// the run, never from the proposal.
-func (s *Service) Record(ctx context.Context, in RecordInput) (*RecordResult, error) {
-	run := in.Run
-	if run == nil || run.SubjectType != aidom.SubjectFinding {
-		return nil, fmt.Errorf("%w: unsupported AI run subject", shared.ErrValidation)
-	}
-	finding, err := s.findings.GetByID(ctx, run.TenantID, run.SubjectID)
-	if err != nil {
-		return nil, err
-	}
-	facts := FactsOf(finding)
-	res := &RecordResult{}
-	items := make([]*aidom.Suggestion, 0, len(in.Proposals))
-	for _, p := range in.Proposals {
-		kind, err := aidom.ParseKind(p.Kind)
-		if err != nil {
-			res.Rejected++
-			continue
-		}
-		payload, err := aidom.NormalizePayload(kind, p.Payload)
-		if err != nil {
-			res.Rejected++
-			continue
-		}
-		var conf *float64
-		if p.Confidence != nil && *p.Confidence >= 0 && *p.Confidence <= 1 {
-			c := *p.Confidence
-			conf = &c
-		}
-		evidence, reasons := aidom.CheckEvidence(p.Evidence, in.KnownRefs)
-		reasons = appendUnique(reasons, in.RunReviewReasons...)
-		reasons = appendUnique(reasons, p.ReviewReasons...)
-		state := aidom.StateOpen
-		if len(reasons) > 0 {
-			state = aidom.StateNeedsReview
-		}
-		items = append(items, &aidom.Suggestion{
-			TenantID:      run.TenantID,
-			RunID:         run.ID,
-			UseCase:       run.UseCase,
-			SubjectType:   run.SubjectType,
-			SubjectID:     run.SubjectID,
-			Kind:          kind,
-			Payload:       payload,
-			SchemaVersion: in.SchemaVersion,
-			Direction:     aidom.ComputeDirection(kind, payload, facts),
-			Confidence:    conf,
-			Evidence:      evidence,
-			State:         state,
-			ReviewReasons: reasons,
-		})
-	}
-	if err := s.repo.CreateSuggestions(ctx, run.TenantID, items); err != nil {
-		return nil, err
-	}
-	res.Suggestions = items
-
-	policy, err := s.Policy(ctx, run.TenantID, run.UseCase)
-	if err != nil {
-		return res, err
-	}
-	for i, sg := range items {
-		switch aidom.DecideAuto(policy.EffectiveMode, policy.MinConfidence, sg) {
-		case aidom.AutoApply:
-			if out, err := s.autoApply(ctx, run, sg); err != nil {
-				s.logger.Warn("AI auto-apply failed", "suggestion_id", sg.ID.String(), "error", err)
-			} else {
-				items[i] = out
-			}
-		case aidom.AutoRequestApproval:
-			if out, err := s.autoRequestApproval(ctx, run, sg); err != nil {
-				s.logger.Warn("AI approval request failed", "suggestion_id", sg.ID.String(), "error", err)
-			} else if out != nil {
-				items[i] = out
-			}
-		case aidom.AutoKeepOpen:
-		}
-	}
-	return res, nil
-}
-
-func appendUnique(dst []string, add ...string) []string {
-	for _, a := range add {
-		found := false
-		for _, d := range dst {
-			if d == a {
-				found = true
-				break
-			}
-		}
-		if !found && a != "" {
-			dst = append(dst, a)
-		}
-	}
-	return dst
-}
-
-// FactsOf reads the finding facts the direction is computed from.
-func FactsOf(f *vulnerability.Finding) approvalpolicy.Facts {
-	facts := approvalpolicy.Facts{
-		Severity: string(f.Severity()),
-		KEV:      f.IsInKEV(),
-		EPSS:     f.EPSSScore(),
-	}
-	if pc := f.PriorityClass(); pc != nil {
-		facts.PriorityClass = string(*pc)
-	}
-	return facts
-}
-
-// autoApply applies an additive suggestion as the system. Additive kinds
-// change no finding field: applying makes the plan or summary part of the
-// finding's record, shown with the AI badge.
-func (s *Service) autoApply(ctx context.Context, run *aidom.Run, sg *aidom.Suggestion) (*aidom.Suggestion, error) {
-	if sg.Direction != aidom.DirectionAdditive || sg.Kind == aidom.KindSeverity {
-		return nil, fmt.Errorf("%w: only additive suggestions are applied automatically", shared.ErrValidation)
-	}
-	out, err := s.repo.Transition(ctx, sg.TenantID, sg.ID, aidom.Transition{
-		From: []aidom.State{aidom.StateOpen}, To: aidom.StateAutoApplied, At: s.now(), Applied: true,
-	})
-	if err != nil {
-		return nil, err
-	}
-	s.recordActivity(ctx, out, vulnerability.ActivityType("ai_suggestion_applied"), nil, map[string]any{
-		"auto_applied": true, "run_id": run.ID.String(), "model": run.Model, "prompt_template": run.PromptTemplateID,
-	})
-	s.auditEvent(ctx, auditapp.AuditContext{TenantID: sg.TenantID.String()}, audit.ActionAISuggestionAutoApplied,
-		sg.ID.String(), audit.SeverityMedium, map[string]any{"run_id": run.ID.String(), "kind": string(sg.Kind), "finding_id": sg.SubjectID.String()})
-	return out, nil
-}
-
-// autoRequestApproval turns a risk-lowering verdict into a pending approval
-// requested by the AI actor. The finding does not change.
-func (s *Service) autoRequestApproval(ctx context.Context, run *aidom.Run, sg *aidom.Suggestion) (*aidom.Suggestion, error) {
-	if sg.Kind != aidom.KindVerdict || sg.Confidence == nil {
-		return nil, nil
-	}
-	var p aidom.VerdictPayload
-	if err := json.Unmarshal(sg.Payload, &p); err != nil || p.Verdict != aidom.VerdictLikelyFalsePositive {
-		return nil, nil //nolint:nilerr // not a false-positive verdict: nothing to request
-	}
-	approvalID, err := s.actions.ProposeFalsePositiveAsAI(ctx, sg.TenantID, sg.SubjectID, *sg.Confidence, p.Reason)
-	if err != nil || approvalID == nil {
-		return nil, err
-	}
-	out, err := s.repo.Transition(ctx, sg.TenantID, sg.ID, aidom.Transition{
-		From: []aidom.State{aidom.StateOpen}, To: aidom.StatePendingApproval, At: s.now(),
-		ApprovalKind: aidom.ApprovalKindStatus, ApprovalID: approvalID,
-	})
-	if err != nil {
-		return nil, err
-	}
-	s.auditEvent(ctx, auditapp.AuditContext{TenantID: sg.TenantID.String()}, audit.ActionAISuggestionApprovalRequested,
-		sg.ID.String(), audit.SeverityMedium, map[string]any{"run_id": run.ID.String(), "approval_id": approvalID.String(),
-			"finding_id": sg.SubjectID.String(), "requested_by": "system:ai"})
-	return out, nil
-}
-
-// ---------------------------------------------------------------------------
-// Reads
-// ---------------------------------------------------------------------------
-
-// assertSubject applies the caller's data scope and pentest membership to
-// the suggestion's subject (out of scope answers not found).
-func (s *Service) assertSubject(ctx context.Context, tenantID shared.ID, subjectType aidom.SubjectType, subjectID shared.ID) error {
-	if subjectType != aidom.SubjectFinding {
-		return aidom.ErrSuggestionNotFound
-	}
-	if err := s.dataScope.AssertFinding(ctx, tenantID, subjectID); err != nil {
-		return err
-	}
-	return s.dataScope.AssertFindingCampaign(ctx, tenantID, subjectID)
-}
-
-// ListForFinding lists a finding's suggestions, newest first, with the runs
-// they came from (provenance for the card).
-func (s *Service) ListForFinding(ctx context.Context, tenantID, findingID shared.ID) ([]*aidom.Suggestion, map[shared.ID]*aidom.Run, error) {
-	if err := s.assertSubject(ctx, tenantID, aidom.SubjectFinding, findingID); err != nil {
-		return nil, nil, err
-	}
-	items, err := s.repo.ListSuggestionsBySubject(ctx, tenantID, aidom.SubjectFinding, findingID, 100)
-	if err != nil {
-		return nil, nil, err
-	}
-	runs := map[shared.ID]*aidom.Run{}
-	for _, it := range items {
-		if _, ok := runs[it.RunID]; ok {
-			continue
-		}
-		run, err := s.repo.GetRun(ctx, tenantID, it.RunID)
-		if err != nil {
-			return nil, nil, err
-		}
-		runs[it.RunID] = run
-	}
-	return items, runs, nil
-}
-
-// RunDetail is a run with its suggestions (the "why" view).
-type RunDetail struct {
-	Run         *aidom.Run
-	Suggestions []*aidom.Suggestion
-}
-
-// GetRun returns a run and its suggestions.
-func (s *Service) GetRun(ctx context.Context, tenantID, runID shared.ID) (*RunDetail, error) {
-	run, err := s.repo.GetRun(ctx, tenantID, runID)
-	if err != nil {
-		return nil, err
-	}
-	if err := s.assertSubject(ctx, tenantID, run.SubjectType, run.SubjectID); err != nil {
-		if errors.Is(err, shared.ErrNotFound) || errors.Is(err, shared.ErrForbidden) {
-			return nil, aidom.ErrRunNotFound
-		}
-		return nil, err
-	}
-	items, err := s.repo.ListSuggestionsByRun(ctx, tenantID, runID)
-	if err != nil {
-		return nil, err
-	}
-	return &RunDetail{Run: run, Suggestions: items}, nil
-}
-
-// load reads a suggestion and applies the caller's scope to its subject.
-func (s *Service) load(ctx context.Context, tenantID, id shared.ID) (*aidom.Suggestion, error) {
-	sg, err := s.repo.GetSuggestion(ctx, tenantID, id)
-	if err != nil {
-		return nil, err
-	}
-	if err := s.assertSubject(ctx, tenantID, sg.SubjectType, sg.SubjectID); err != nil {
-		if errors.Is(err, shared.ErrNotFound) || errors.Is(err, shared.ErrForbidden) {
-			return nil, aidom.ErrSuggestionNotFound
-		}
-		return nil, err
-	}
-	return sg, nil
 }
 
 // SettingsConsent reads consent from the organization's AI settings: AI is
@@ -518,4 +40,538 @@ func (c SettingsConsent) AIConsented(ctx context.Context, tenantID shared.ID) (b
 		return false, err
 	}
 	return a.EffectiveMode() != tenant.AIModeDisabled, nil
+}
+
+// PermissionHolder answers what a member holds now; all is true for an owner
+// or administrator, who holds every permission (apikey.HolderPermissions).
+type PermissionHolder interface {
+	HeldPermissions(ctx context.Context, tenantID, userID shared.ID) (all bool, perms []string, err error)
+}
+
+// RoleGranter gives an analyst the role of its preset through the role
+// service, as the acting person, so the role grant ceiling applies.
+type RoleGranter interface {
+	// EnsurePresetRole returns the organization's role for a preset template,
+	// creating it from the template first if needed.
+	EnsurePresetRole(ctx context.Context, tenantID shared.ID, templateID string, actx auditapp.AuditContext) (shared.ID, error)
+	// SetRoles replaces the analyst's custom roles.
+	SetRoles(ctx context.Context, tenantID, userID shared.ID, roleIDs []shared.ID, actx auditapp.AuditContext) error
+}
+
+// FindingScope answers whether a person (or service account) may see a
+// finding (datascope.Enforcer.AssertFindingForUser); out of scope is a not
+// found error.
+type FindingScope interface {
+	AssertFindingForUser(ctx context.Context, tenantID, userID, findingID shared.ID) error
+}
+
+// Service manages analysts and their runs.
+type Service struct {
+	analysts aidom.AnalystRepository
+	runs     aidom.RunRepository
+	holder   PermissionHolder
+	roles    RoleGranter
+	scope    FindingScope
+	consent  ConsentReader
+	audit    *auditapp.AuditService
+	now      func() time.Time
+	logger   *logger.Logger
+}
+
+// New wires the service.
+func New(analysts aidom.AnalystRepository, runs aidom.RunRepository, holder PermissionHolder, roles RoleGranter,
+	scope FindingScope, consent ConsentReader, audit *auditapp.AuditService, log *logger.Logger,
+) *Service {
+	return &Service{
+		analysts: analysts, runs: runs, holder: holder, roles: roles, scope: scope, consent: consent,
+		audit: audit, now: time.Now, logger: log.With("service", "ai_analysis"),
+	}
+}
+
+// SetClock replaces the clock (tests).
+func (s *Service) SetClock(now func() time.Time) { s.now = now }
+
+func (s *Service) log(ctx context.Context, actx auditapp.AuditContext, action audit.Action, a *aidom.Analyst, msg string, meta map[string]any) {
+	if s.audit == nil {
+		return
+	}
+	ev := auditapp.NewSuccessEvent(action, audit.ResourceTypeAIAnalysis, a.ID.String()).
+		WithResourceName(a.Name).WithMessage(msg)
+	for k, v := range meta {
+		ev = ev.WithMetadata(k, v)
+	}
+	if err := s.audit.LogEvent(ctx, actx, ev); err != nil {
+		s.logger.Error("failed to log audit event", "action", string(action), "error", err)
+	}
+}
+
+func tenantOf(actx auditapp.AuditContext) (shared.ID, error) {
+	tid, err := shared.IDFromString(actx.TenantID)
+	if err != nil {
+		return shared.ID{}, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	return tid, nil
+}
+
+func actorOf(actx auditapp.AuditContext) (shared.ID, error) {
+	uid, err := shared.IDFromString(actx.ActorID)
+	if err != nil {
+		return shared.ID{}, fmt.Errorf("%w: a person must make this change", shared.ErrValidation)
+	}
+	return uid, nil
+}
+
+// OwnerInput names one owner.
+type OwnerInput struct {
+	Kind string `json:"kind" validate:"required,oneof=user team"`
+	ID   string `json:"id" validate:"required,uuid"`
+}
+
+const maxOwners = 20
+
+func parseOwners(in []OwnerInput) ([]aidom.OwnerRef, error) {
+	if len(in) == 0 {
+		return nil, aidom.ErrOwnerRequired
+	}
+	if len(in) > maxOwners {
+		return nil, fmt.Errorf("%w: at most %d owners", shared.ErrValidation, maxOwners)
+	}
+	out := make([]aidom.OwnerRef, 0, len(in))
+	for _, o := range in {
+		id, err := shared.IDFromString(o.ID)
+		if err != nil {
+			return nil, fmt.Errorf("%w: invalid owner id", shared.ErrValidation)
+		}
+		switch aidom.OwnerKind(o.Kind) {
+		case aidom.OwnerUser, aidom.OwnerTeam:
+		default:
+			return nil, fmt.Errorf("%w: an owner is a user or a team", shared.ErrValidation)
+		}
+		out = append(out, aidom.OwnerRef{Kind: aidom.OwnerKind(o.Kind), ID: id})
+	}
+	return out, nil
+}
+
+// ceiling is the union of what the people hold.
+func (s *Service) ceiling(ctx context.Context, tenantID shared.ID, people []shared.ID) (bool, []string, error) {
+	seen := map[string]bool{}
+	var out []string
+	for _, p := range people {
+		all, perms, err := s.holder.HeldPermissions(ctx, tenantID, p)
+		if err != nil {
+			return false, nil, err
+		}
+		if all {
+			return true, nil, nil
+		}
+		for _, x := range perms {
+			if !seen[x] {
+				seen[x] = true
+				out = append(out, x)
+			}
+		}
+	}
+	return false, out, nil
+}
+
+// checkCeiling refuses a role no accountable person could hold.
+func (s *Service) checkCeiling(ctx context.Context, tenantID shared.ID, owners []aidom.OwnerRef, role []string) error {
+	people, err := s.analysts.PeopleOf(ctx, tenantID, owners, s.now())
+	if err != nil {
+		return err
+	}
+	if len(people) == 0 {
+		return fmt.Errorf("%w: no owner is an active person or a team with active members", shared.ErrValidation)
+	}
+	all, ceil, err := s.ceiling(ctx, tenantID, people)
+	if err != nil {
+		return err
+	}
+	if above := aidom.AboveCeiling(role, all, ceil); len(above) > 0 {
+		return fmt.Errorf("%w: no accountable owner holds %s", shared.ErrValidation, strings.Join(above, ", "))
+	}
+	return nil
+}
+
+func templatePermissions(p aidom.Preset) ([]string, error) {
+	tpl, ok := permission.RoleTemplateByID(p.TemplateID())
+	if !ok {
+		return nil, fmt.Errorf("%w: unknown AI analyst preset", shared.ErrValidation)
+	}
+	out := make([]string, 0, len(tpl.Permissions))
+	for _, x := range tpl.Permissions {
+		out = append(out, string(x))
+	}
+	return out, nil
+}
+
+// CreateInput creates an analyst.
+type CreateInput struct {
+	Name        string       `json:"name" validate:"required,max=100"`
+	Description string       `json:"description" validate:"max=500"`
+	Preset      string       `json:"preset" validate:"required,oneof=suggest triage"`
+	Owners      []OwnerInput `json:"owners" validate:"required,min=1,max=20,dive"`
+}
+
+// Create makes a service account with the preset's role and the given
+// accountable owners. The preset's permissions must be held by at least one
+// accountable person, and the acting person must be allowed to grant them.
+func (s *Service) Create(ctx context.Context, in CreateInput, actx auditapp.AuditContext) (*aidom.Analyst, error) {
+	tid, err := tenantOf(actx)
+	if err != nil {
+		return nil, err
+	}
+	actor, err := actorOf(actx)
+	if err != nil {
+		return nil, err
+	}
+	name, err := serviceaccount.ValidateName(in.Name)
+	if err != nil {
+		return nil, err
+	}
+	if len(in.Description) > 500 {
+		return nil, fmt.Errorf("%w: the description is too long", shared.ErrValidation)
+	}
+	preset, err := aidom.ParsePreset(in.Preset)
+	if err != nil {
+		return nil, err
+	}
+	owners, err := parseOwners(in.Owners)
+	if err != nil {
+		return nil, err
+	}
+	perms, err := templatePermissions(preset)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.checkCeiling(ctx, tid, owners, perms); err != nil {
+		return nil, err
+	}
+	now := s.now().UTC()
+	a := &aidom.Analyst{
+		ID: shared.NewID(), TenantID: tid, Name: name, Description: in.Description, Preset: preset,
+		Status: aidom.StatusActive, DataClassCeiling: aidom.DataClassInternal, Executor: aidom.ExecutorBuiltin,
+		RunsPerHour: aidom.DefaultRunsPerHour, ActionsPerHour: aidom.DefaultActionsPerHour,
+		AttestedAt: now, AttestDueAt: now.Add(aidom.AttestationPeriod), CreatedBy: &actor,
+	}
+	if err := s.analysts.Create(ctx, aidom.NewAnalyst{Analyst: a, Owners: owners}); err != nil {
+		return nil, err
+	}
+	if err := s.grantPreset(ctx, tid, a.ID, preset, actx); err != nil {
+		// No analyst without its role: take the account back.
+		if derr := s.analysts.Delete(ctx, tid, a.ID); derr != nil {
+			s.logger.Error("failed to remove an AI analyst whose role was refused", "error", derr)
+		}
+		return nil, err
+	}
+	out, err := s.analysts.Get(ctx, tid, a.ID)
+	if err != nil {
+		return nil, err
+	}
+	s.log(ctx, actx, audit.ActionAIAnalystCreated, out, fmt.Sprintf("AI analyst %q created", out.Name),
+		map[string]any{"preset": string(preset), "owners": ownerIDs(out.Owners)})
+	return out, nil
+}
+
+func ownerIDs(o []aidom.OwnerRef) []string {
+	out := make([]string, 0, len(o))
+	for _, x := range o {
+		out = append(out, string(x.Kind)+":"+x.ID.String())
+	}
+	return out
+}
+
+func (s *Service) grantPreset(ctx context.Context, tid, analystID shared.ID, p aidom.Preset, actx auditapp.AuditContext) error {
+	roleID, err := s.roles.EnsurePresetRole(ctx, tid, p.TemplateID(), actx)
+	if err != nil {
+		return err
+	}
+	return s.roles.SetRoles(ctx, tid, analystID, []shared.ID{roleID}, actx)
+}
+
+// Get returns one analyst of the organization.
+func (s *Service) Get(ctx context.Context, tenantID, id shared.ID) (*aidom.Analyst, error) {
+	return s.analysts.Get(ctx, tenantID, id)
+}
+
+// List returns the organization's analysts.
+func (s *Service) List(ctx context.Context, tenantID shared.ID) ([]*aidom.Analyst, error) {
+	return s.analysts.List(ctx, tenantID)
+}
+
+// ReplaceOwners replaces an analyst's owners. The analyst's current role must stay
+// within what the new owners hold. An analyst paused for want of an owner
+// runs again.
+func (s *Service) ReplaceOwners(ctx context.Context, id shared.ID, in []OwnerInput, actx auditapp.AuditContext) (*aidom.Analyst, error) {
+	tid, err := tenantOf(actx)
+	if err != nil {
+		return nil, err
+	}
+	actor, err := actorOf(actx)
+	if err != nil {
+		return nil, err
+	}
+	a, err := s.analysts.Get(ctx, tid, id)
+	if err != nil {
+		return nil, err
+	}
+	owners, err := parseOwners(in)
+	if err != nil {
+		return nil, err
+	}
+	_, role, err := s.holder.HeldPermissions(ctx, tid, id)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.checkCeiling(ctx, tid, owners, role); err != nil {
+		return nil, err
+	}
+	if err := s.analysts.SetOwners(ctx, tid, id, owners, actor); err != nil {
+		return nil, err
+	}
+	if a.Status == aidom.StatusPaused && a.PauseReason == aidom.PauseNoActiveOwner {
+		if _, err := s.analysts.SetStatus(ctx, tid, id, []aidom.Status{aidom.StatusPaused}, aidom.StatusActive, ""); err != nil {
+			return nil, err
+		}
+	}
+	out, err := s.analysts.Get(ctx, tid, id)
+	if err != nil {
+		return nil, err
+	}
+	s.log(ctx, actx, audit.ActionAIAnalystOwnersChanged, out, fmt.Sprintf("Accountable owners of AI analyst %q changed", out.Name),
+		map[string]any{"from": ownerIDs(a.Owners), "to": ownerIDs(out.Owners)})
+	return out, nil
+}
+
+// ChangePreset moves an analyst to another preset role.
+func (s *Service) ChangePreset(ctx context.Context, id shared.ID, presetName string, actx auditapp.AuditContext) (*aidom.Analyst, error) {
+	tid, err := tenantOf(actx)
+	if err != nil {
+		return nil, err
+	}
+	a, err := s.analysts.Get(ctx, tid, id)
+	if err != nil {
+		return nil, err
+	}
+	preset, err := aidom.ParsePreset(presetName)
+	if err != nil {
+		return nil, err
+	}
+	perms, err := templatePermissions(preset)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.checkCeiling(ctx, tid, a.Owners, perms); err != nil {
+		return nil, err
+	}
+	if err := s.grantPreset(ctx, tid, id, preset, actx); err != nil {
+		return nil, err
+	}
+	if err := s.analysts.SetPreset(ctx, tid, id, preset); err != nil {
+		return nil, err
+	}
+	out, err := s.analysts.Get(ctx, tid, id)
+	if err != nil {
+		return nil, err
+	}
+	s.log(ctx, actx, audit.ActionAIAnalystRoleChanged, out, fmt.Sprintf("AI analyst %q moved to preset %s", out.Name, preset),
+		map[string]any{"from": string(a.Preset), "to": string(preset)})
+	return out, nil
+}
+
+// Attest records that the actor, an accountable person (or an
+// administrator, actorIsAdmin), confirms the analyst's role, scope and
+// behavior for another period. An analyst paused because its attestation
+// ran out runs again.
+func (s *Service) Attest(ctx context.Context, id shared.ID, actorIsAdmin bool, actx auditapp.AuditContext) (*aidom.Analyst, error) {
+	tid, err := tenantOf(actx)
+	if err != nil {
+		return nil, err
+	}
+	actor, err := actorOf(actx)
+	if err != nil {
+		return nil, err
+	}
+	a, err := s.analysts.Get(ctx, tid, id)
+	if err != nil {
+		return nil, err
+	}
+	if !actorIsAdmin {
+		if err := s.requireAccountable(ctx, id, actx); err != nil {
+			return nil, err
+		}
+	}
+	now := s.now().UTC()
+	if err := s.analysts.Attest(ctx, tid, id, actor, now, now.Add(aidom.AttestationPeriod)); err != nil {
+		return nil, err
+	}
+	if a.Status == aidom.StatusPaused && a.PauseReason == aidom.PauseAttestationExpired {
+		if _, err := s.analysts.SetStatus(ctx, tid, id, []aidom.Status{aidom.StatusPaused}, aidom.StatusActive, ""); err != nil {
+			return nil, err
+		}
+	}
+	out, err := s.analysts.Get(ctx, tid, id)
+	if err != nil {
+		return nil, err
+	}
+	s.log(ctx, actx, audit.ActionAIAnalystAttested, out, fmt.Sprintf("AI analyst %q attested", out.Name),
+		map[string]any{"attest_due_at": out.AttestDueAt.Format(time.RFC3339)})
+	return out, nil
+}
+
+// requireAccountable refuses an actor who is not an accountable person of
+// the analyst now.
+func (s *Service) requireAccountable(ctx context.Context, id shared.ID, actx auditapp.AuditContext) error {
+	tid, err := tenantOf(actx)
+	if err != nil {
+		return err
+	}
+	actor, err := actorOf(actx)
+	if err != nil {
+		return err
+	}
+	a, err := s.analysts.Get(ctx, tid, id)
+	if err != nil {
+		return err
+	}
+	people, err := s.analysts.PeopleOf(ctx, tid, a.Owners, s.now())
+	if err != nil {
+		return err
+	}
+	if !containsID(people, actor) {
+		return fmt.Errorf("%w: only an accountable owner or an administrator may do this", shared.ErrForbidden)
+	}
+	return nil
+}
+
+func containsID(ids []shared.ID, id shared.ID) bool {
+	for _, x := range ids {
+		if x == id {
+			return true
+		}
+	}
+	return false
+}
+
+// Pause stops an analyst until someone resumes it. An accountable person
+// may pause their analyst; anyone else needs canManage.
+func (s *Service) Pause(ctx context.Context, id shared.ID, canManage bool, actx auditapp.AuditContext) (*aidom.Analyst, error) {
+	if !canManage {
+		if err := s.requireAccountable(ctx, id, actx); err != nil {
+			return nil, err
+		}
+	}
+	return s.setStatus(ctx, id, []aidom.Status{aidom.StatusActive}, aidom.StatusPaused, aidom.PauseAdmin,
+		audit.ActionAIAnalystPaused, actx)
+}
+
+// Disable is the analyst's kill switch: nothing runs until an administrator
+// enables it again with a fresh step-up.
+func (s *Service) Disable(ctx context.Context, id shared.ID, actx auditapp.AuditContext) (*aidom.Analyst, error) {
+	return s.setStatus(ctx, id, []aidom.Status{aidom.StatusActive, aidom.StatusPaused}, aidom.StatusDisabled, aidom.PauseAdmin,
+		audit.ActionAIAnalystDisabled, actx)
+}
+
+// Resume runs a paused or disabled analyst again, once nothing keeps it
+// paused (an active owner, a fresh attestation).
+func (s *Service) Resume(ctx context.Context, id shared.ID, actx auditapp.AuditContext) (*aidom.Analyst, error) {
+	tid, err := tenantOf(actx)
+	if err != nil {
+		return nil, err
+	}
+	a, err := s.analysts.Get(ctx, tid, id)
+	if err != nil {
+		return nil, err
+	}
+	people, err := s.analysts.PeopleOf(ctx, tid, a.Owners, s.now())
+	if err != nil {
+		return nil, err
+	}
+	if r := a.HealthReason(s.now(), len(people)); r != "" {
+		return nil, &aidom.PausedError{Reason: r}
+	}
+	return s.setStatus(ctx, id, []aidom.Status{aidom.StatusPaused, aidom.StatusDisabled}, aidom.StatusActive, "",
+		audit.ActionAIAnalystResumed, actx)
+}
+
+func (s *Service) setStatus(ctx context.Context, id shared.ID, from []aidom.Status, to aidom.Status, reason aidom.PauseReason,
+	action audit.Action, actx auditapp.AuditContext,
+) (*aidom.Analyst, error) {
+	tid, err := tenantOf(actx)
+	if err != nil {
+		return nil, err
+	}
+	moved, err := s.analysts.SetStatus(ctx, tid, id, from, to, reason)
+	if err != nil {
+		return nil, err
+	}
+	out, err := s.analysts.Get(ctx, tid, id)
+	if err != nil {
+		return nil, err
+	}
+	if !moved {
+		return out, nil
+	}
+	s.log(ctx, actx, action, out, fmt.Sprintf("AI analyst %q is %s", out.Name, to), map[string]any{"reason": string(reason)})
+	return out, nil
+}
+
+// Delete removes an analyst and its service account; its runs and every
+// change it made stay in the history.
+func (s *Service) Delete(ctx context.Context, id shared.ID, actx auditapp.AuditContext) error {
+	tid, err := tenantOf(actx)
+	if err != nil {
+		return err
+	}
+	a, err := s.analysts.Get(ctx, tid, id)
+	if err != nil {
+		return err
+	}
+	if err := s.analysts.Delete(ctx, tid, id); err != nil {
+		return err
+	}
+	s.log(ctx, actx, audit.ActionAIAnalystDeleted, a, fmt.Sprintf("AI analyst %q deleted", a.Name), nil)
+	return nil
+}
+
+// pauseFor pauses an active analyst for a platform reason and audits it as
+// a system action.
+func (s *Service) pauseFor(ctx context.Context, a *aidom.Analyst, reason aidom.PauseReason) error {
+	moved, err := s.analysts.SetStatus(ctx, a.TenantID, a.ID, []aidom.Status{aidom.StatusActive}, aidom.StatusPaused, reason)
+	if err != nil {
+		return err
+	}
+	if moved {
+		a.Status, a.PauseReason = aidom.StatusPaused, reason
+		s.log(ctx, auditapp.AuditContext{TenantID: a.TenantID.String(), ActorEmail: "system:ai-analyst"},
+			audit.ActionAIAnalystPaused, a, fmt.Sprintf("AI analyst %q paused: %s", a.Name, reason),
+			map[string]any{"reason": string(reason)})
+	}
+	return nil
+}
+
+// Sweep pauses every active analyst that has no active owner left or whose
+// attestation ran out (a system job; the run-start check does the same per
+// run, fail closed). It returns how many it paused.
+func (s *Service) Sweep(ctx context.Context) (int, error) {
+	list, err := s.analysts.ListActive(ctx, 0)
+	if err != nil {
+		return 0, err
+	}
+	paused := 0
+	for _, a := range list {
+		people, err := s.analysts.PeopleOf(ctx, a.TenantID, a.Owners, s.now())
+		if err != nil {
+			s.logger.Error("AI analyst sweep: owners lookup failed", "analyst_id", a.ID.String(), "error", err)
+			continue
+		}
+		if r := a.HealthReason(s.now(), len(people)); r != "" {
+			if err := s.pauseFor(ctx, a, r); err != nil {
+				s.logger.Error("AI analyst sweep: pause failed", "analyst_id", a.ID.String(), "error", err)
+				continue
+			}
+			paused++
+		}
+	}
+	return paused, nil
 }

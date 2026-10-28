@@ -32,7 +32,15 @@ func (r *ServiceAccountRepository) Create(ctx context.Context, a *serviceaccount
 		return fmt.Errorf("begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := createServiceAccountTx(ctx, tx, a); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
 
+// createServiceAccountTx stores a service account and its membership (no
+// role) inside the caller's transaction.
+func createServiceAccountTx(ctx context.Context, tx *sql.Tx, a *serviceaccount.ServiceAccount) error {
 	var owner sql.NullString
 	if a.OwnerID != nil {
 		owner = sql.NullString{String: a.OwnerID.String(), Valid: true}
@@ -55,7 +63,7 @@ func (r *ServiceAccountRepository) Create(ctx context.Context, a *serviceaccount
 		a.ID.String(), a.TenantID.String()); err != nil {
 		return fmt.Errorf("clear service account roles: %w", err)
 	}
-	return tx.Commit()
+	return nil
 }
 
 const serviceAccountSelect = `

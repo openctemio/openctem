@@ -2063,7 +2063,7 @@ func emergingThreatHandler(svc *Services, log *logger.Logger) *handler.EmergingT
 	return handler.NewEmergingThreatHandler(svc.ThreatAlerts, svc.DataScope, log)
 }
 
-// aiAnalysisHandler is nil when the AI governance service is not built.
+// aiAnalysisHandler is nil when the AI analyst service is not built.
 func aiAnalysisHandler(svc *aianalysis.Service, log *logger.Logger) *handler.AIAnalysisHandler {
 	if svc == nil {
 		return nil

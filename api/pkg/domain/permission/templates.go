@@ -326,12 +326,62 @@ func RoleTemplates() []RoleTemplate {
 	return out
 }
 
-// RoleTemplateByID returns one template.
+// RoleTemplateByID returns one template (people templates and the AI analyst
+// presets).
 func RoleTemplateByID(id string) (RoleTemplate, bool) {
-	for _, t := range RoleTemplates() {
+	for _, t := range append(RoleTemplates(), AIAnalystTemplates()...) {
 		if t.ID == id {
 			return t, true
 		}
 	}
 	return RoleTemplate{}, false
+}
+
+// AI analyst presets (docs/architecture/ai-analysis.md). They are the roles of
+// AI analysts, which are service accounts, so they are not offered in the role
+// catalog for people. An analyst never holds an approve, verify, delete,
+// export or reveal permission whatever its role says; these templates keep
+// to what a triager does.
+const (
+	TemplateAIAnalystSuggest = "ai-analyst-suggest"
+	TemplateAIAnalystTriage  = "ai-analyst-triage"
+)
+
+var aiAnalystSuggest = []Permission{
+	FindingsRead, FindingsComment, FindingsWrite, RemediationRead,
+	AssetsRead, VulnerabilitiesRead, ExposuresRead, AITriageRead,
+}
+
+var aiAnalystTemplates = []RoleTemplate{
+	{
+		ID:      TemplateAIAnalystSuggest,
+		Version: 1,
+		Name:    "AI analyst: suggest",
+		Description: "For an AI analyst that proposes and never changes: reads findings in its scope, " +
+			"writes comments and opens approval requests.",
+		Personas:    []string{"AI analyst"},
+		Permissions: aiAnalystSuggest,
+	},
+	{
+		ID:      TemplateAIAnalystTriage,
+		Version: 1,
+		Name:    "AI analyst: triage",
+		Description: "For an AI analyst that triages: also confirms, moves status, re-scores severity, " +
+			"links duplicates and assigns. Changes that lower risk still become approval requests.",
+		Personas: []string{"AI analyst"},
+		Permissions: join(aiAnalystSuggest, []Permission{
+			FindingsStatus, FindingsTriage, FindingsSeverity, FindingsAssign,
+		}),
+	},
+}
+
+// AIAnalystTemplates returns the AI analyst presets (a fresh copy).
+func AIAnalystTemplates() []RoleTemplate {
+	out := make([]RoleTemplate, len(aiAnalystTemplates))
+	for i, t := range aiAnalystTemplates {
+		t.Permissions = append([]Permission(nil), t.Permissions...)
+		t.Personas = append([]string(nil), t.Personas...)
+		out[i] = t
+	}
+	return out
 }

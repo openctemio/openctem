@@ -299,6 +299,7 @@ func TestServices_EachServiceConstructedOnce(t *testing.T) {
 var optionalServiceSetters = map[string]string{
 	"RemediationTask.SetMoveNotifier":       "tracker comments on moves: wired by the task ticket integration once tasks carry an issue; until then a move writes the task timeline only",
 	"VEX.SetClock":                          "test seam: replaces the clock; production uses time.Now",
+	"AIAnalysis.SetClock":                   "test seam: replaces the clock; production uses time.Now",
 	"WebEvidence.SetClock":                  "test seam: replaces the clock; production uses time.Now",
 	"RetestCheck.SetClock":                  "test seam: replaces the clock; production uses time.Now",
 	"OrgDeletion.SetClock":                  "test seam: replaces the clock; production uses time.Now",
