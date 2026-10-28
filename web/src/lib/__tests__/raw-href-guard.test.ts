@@ -127,6 +127,8 @@ const REVIEWED = new Set([
   // base64 image/svg+xml data URI for the icon routes; no request data reaches it.
   'lib/brand-icons.tsx|img|src={dataUri(svg)}',
   'lib/brand-icons.tsx|img|src={dataUri(OG_IMAGE_SVG)}',
+  // COVERAGE_SETTINGS_HREF is the string constant '/settings/scope' exported by managed-scan-banner.tsx.
+  'features/scans/components/managed-scans-section.tsx|Link|href={COVERAGE_SETTINGS_HREF}',
   // Prop passthroughs: every caller passes a literal or route builder.
   'features/shared/components/link-card.tsx|Link|href={href}',
   'features/dashboard/components/activity-item.tsx|Link|href={href}',
