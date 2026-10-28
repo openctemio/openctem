@@ -167,7 +167,9 @@ func (h *SSOHandler) Authorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The result carries the browser-binding secret: never cache it.
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
 	json.NewEncoder(w).Encode(result)
 }
 
@@ -176,6 +178,9 @@ type SSOCallbackRequest struct {
 	Code        string `json:"code" validate:"required"`
 	State       string `json:"state" validate:"required"`
 	RedirectURI string `json:"redirect_uri" validate:"required"`
+	// BrowserBinding is the secret the authorize response gave the browser
+	// that started the flow; without it the state is refused.
+	BrowserBinding string `json:"browser_binding" validate:"required"`
 }
 
 // Callback handles the SSO OAuth callback.
@@ -194,8 +199,8 @@ func (h *SSOHandler) Callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Code == "" || req.State == "" {
-		apierror.BadRequest("code and state are required").WriteJSON(w)
+	if req.Code == "" || req.State == "" || req.BrowserBinding == "" {
+		apierror.BadRequest("code, state and browser_binding are required").WriteJSON(w)
 		return
 	}
 
@@ -204,6 +209,8 @@ func (h *SSOHandler) Callback(w http.ResponseWriter, r *http.Request) {
 		Code:        req.Code,
 		State:       req.State,
 		RedirectURI: req.RedirectURI,
+
+		BrowserBinding: req.BrowserBinding,
 	})
 	if err != nil {
 		h.handlePublicError(w, err)
