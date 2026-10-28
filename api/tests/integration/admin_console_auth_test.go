@@ -295,7 +295,7 @@ func TestAdminConsoleLoginEndToEnd(t *testing.T) {
 }
 
 // TestPlatformAdminAccountMayJoinOrganization checks the single-identity model
-// (RFC-133): the platform role is an attribute of the one users account,
+// (RFC-134): the platform role is an attribute of the one users account,
 // effective only on the console plane, so an administrator's account may be an
 // ordinary member of an organization and a member may be linked as an
 // administrator. One account still backs at most one administrator.

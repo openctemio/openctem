@@ -1,6 +1,6 @@
 package routes
 
-// One identity for a platform administrator and an application user (RFC-133),
+// One identity for a platform administrator and an application user (RFC-134),
 // over the real route registration:
 //
 //   - the administrator's account is an ordinary member of an organization:

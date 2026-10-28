@@ -1,4 +1,4 @@
-# RFC-133: Platform administration (one identity, platform roles, staff governance)
+# RFC-134: Platform administration (one identity, platform roles, staff governance)
 
 | | |
 |---|---|

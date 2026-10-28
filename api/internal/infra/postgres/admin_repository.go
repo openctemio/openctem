@@ -958,7 +958,7 @@ func (r *AdminRepository) GetByUserID(ctx context.Context, userID shared.ID) (*a
 
 // LinkUser links an administrator to a users row. The account may belong to
 // organizations: the platform role is effective only on the console plane
-// (RFC-133), and the account is an ordinary member in the tenant app. A
+// (RFC-134), and the account is an ordinary member in the tenant app. A
 // break-glass administrator is the exception (ErrBreakGlassHasMemberships).
 func (r *AdminRepository) LinkUser(ctx context.Context, adminID, userID shared.ID) error {
 	res, err := r.db.ExecContext(ctx, `

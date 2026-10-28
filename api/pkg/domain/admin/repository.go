@@ -62,7 +62,7 @@ type Repository interface {
 
 	// LinkUser links an administrator to a users row. Returns
 	// ErrUserAlreadyAdmin when the user is already linked to another
-	// administrator. The account may belong to organizations (RFC-133).
+	// administrator. The account may belong to organizations (RFC-134).
 	LinkUser(ctx context.Context, adminID, userID shared.ID) error
 
 	// ==========================================================================

@@ -1162,7 +1162,7 @@ and the `PLATFORM_ADMIN_EMAILS` flag that guarded them were removed; no tenant
 role, however high, can reach SSO setup. The SSO **login** flow
 (`/api/v1/auth/sso/*`, `/api/v1/auth/saml/{org}/*`) is public and unchanged.
 
-### Platform administrator identity (RFC-022, RFC-133)
+### Platform administrator identity (RFC-022, RFC-134)
 
 A platform administrator is a `users` account linked to an `admin_users` row
 (`admin_users.user_id`) that holds the role (`super_admin` > `ops_admin` >
@@ -1318,7 +1318,7 @@ organization is never named.
 
 **First-owner bootstrap** (owner decision 2026-10-02, RFC-022 revision 5).
 The platform administrator cannot put a person of its choosing into an
-organization (its own account included, RFC-133): `POST /admin/tenants/{tenantId}/users` creates only
+organization (its own account included, RFC-134): `POST /admin/tenants/{tenantId}/users` creates only
 the first owner of an organization that has no owner, active or suspended (checked and
 inserted in one transaction under a per-organization advisory lock, so two
 requests cannot create two owners), and answers 409 once an owner exists — the

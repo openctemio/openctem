@@ -60,7 +60,7 @@
 > an ordinary member of organizations and signs in to the app; the platform
 > role counts only on the console; break-glass accounts stay console-only;
 > platform roles replace the three tiers (see
-> [Revision 25](#revision-25-one-identity-and-platform-roles) and RFC-133).
+> [Revision 25](#revision-25-one-identity-and-platform-roles) and RFC-134).
 
 > Scope: api + ui. Separates *application (platform) administration* from
 > *organization (tenant) administration*: the system administrator is an account
@@ -1140,7 +1140,7 @@ Key files: `api/internal/app/adminapproval/service.go`,
 
 ## Revision 25: one identity and platform roles
 
-Owner decision 2026-10-28, designed in RFC-133. It supersedes the parts of
+Owner decision 2026-10-28, designed in RFC-134. It supersedes the parts of
 revisions 2 and 23 that kept an administrator's account out of every
 organization and off the main site:
 
@@ -1162,7 +1162,7 @@ organization and off the main site:
   first organization's owner (host access is full trust); not the break-glass
   account.
 - Platform roles and permissions replacing the three tiers, and staff
-  governance for the hosted service, are specified in RFC-133.
+  governance for the hosted service, are specified in RFC-134.
 
 ## Later phases
 

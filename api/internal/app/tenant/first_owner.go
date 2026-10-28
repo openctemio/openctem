@@ -6,7 +6,7 @@ package tenant
 // The platform administrator must not be able to put a person of its choosing
 // into an organization: that would let it read the organization's data through
 // an account it controls (its own included: an administrator's account may be
-// an ordinary member elsewhere, RFC-133, so the owner is always a new account). So the console may
+// an ordinary member elsewhere, RFC-134, so the owner is always a new account). So the console may
 // create exactly one kind of organization user: the FIRST owner of an
 // organization that has no owner. An owner who is suspended still counts: the
 // organization and its data are theirs. After that, the owner and its

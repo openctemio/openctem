@@ -60,7 +60,7 @@ var (
 	ErrNotDecidable = fmt.Errorf("%w: the access request is not pending", shared.ErrConflict)
 	// ErrSelfApproval: an administrator approved a request made with their own
 	// e-mail. An administrator's account may be an ordinary member of
-	// organizations (RFC-133), so approving it would let one person mint an
+	// organizations (RFC-134), so approving it would let one person mint an
 	// organization for themselves with platform power; another administrator
 	// decides it.
 	ErrSelfApproval  = fmt.Errorf("%w: an administrator cannot approve an access request made with their own e-mail", shared.ErrForbidden)
