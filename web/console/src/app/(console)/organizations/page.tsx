@@ -62,10 +62,11 @@ export default function AdminOrganizationsPage() {
         ),
       },
       {
-        accessorKey: 'owner_emails',
+        accessorKey: 'owner_domains',
         header: t('admin.org.col.owner', 'Owner'),
         cell: ({ row }) => {
-          const owners = row.original.owner_emails
+          // The list carries the owners' domains, never their addresses.
+          const owners = row.original.owner_domains
           if (owners.length === 0 && row.original.owner_count > 0)
             return (
               <span className="text-sm text-muted-foreground">
