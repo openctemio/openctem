@@ -257,6 +257,46 @@ func (v validationSensorAvailability) HasRetestTemplatesSensor(ctx context.Conte
 	return len(sensors) > 0, nil
 }
 
+// RetestSensors lists the tenant's online sensors, with capacity, that have
+// every capability, with the template release each reports: a template
+// retest is addressed to one that has the finding's template.
+func (v validationSensorAvailability) RetestSensors(ctx context.Context, tenantID shared.ID, capabilities []string) ([]retestapp.SensorCandidate, error) {
+	sensors, err := v.sensors.FindAvailableWithCapacity(ctx, tenantID, capabilities, "")
+	if err != nil {
+		return nil, err
+	}
+	return retestapp.CandidatesOf(sensors), nil
+}
+
+// HasToolSensor reports whether an online sensor of the tenant, with
+// capacity, runs the tool (the fingerprint tool of a version re-check).
+func (v validationSensorAvailability) HasToolSensor(ctx context.Context, tenantID shared.ID, tool string) (bool, error) {
+	sensors, err := v.sensors.FindAvailableWithCapacity(ctx, tenantID, nil, tool)
+	if err != nil {
+		return false, err
+	}
+	return len(sensors) > 0, nil
+}
+
+// retestFingerprinter starts the fingerprint scan of a version re-check as an
+// ad-hoc quick scan of one target with one tool, so every scan target gate
+// (validation, act scope, tier, ownership) applies.
+type retestFingerprinter struct {
+	scans *scan.Service
+}
+
+func (f retestFingerprinter) StartFingerprint(ctx context.Context, tenantID shared.ID, tool, target string, requestedBy *shared.ID) (shared.ID, error) {
+	in := scan.QuickScanInput{TenantID: tenantID.String(), Targets: []string{target}, ScannerName: tool, Tags: []string{"retest"}}
+	if requestedBy != nil {
+		in.CreatedBy = requestedBy.String()
+	}
+	res, err := f.scans.QuickScan(ctx, in)
+	if err != nil {
+		return shared.ID{}, err
+	}
+	return shared.IDFromString(res.ScanRunID)
+}
+
 // RetestTools lists the tools whose findings an online sensor of the tenant,
 // with capacity, can re-check now (validation.RetestToolsOf over their
 // capabilities).
@@ -1761,6 +1801,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// sensor this gate returns false and routing is byte-for-byte Phase 2a
 	// (safe-check only). Reuses the same sensor-registry capability query.
 	s.ValidationRun.SetNucleiAvailability(validationSensorAvailability{sensors: repos.Sensor})
+	// A cross-scanner finding re-runs the template named after its CVE only
+	// when that template ran on one of the tenant's sensors before.
+	s.ValidationRun.SetTemplateEvidence(repos.Finding)
 	// RFC-012 Phase 1b: real safe-check dispatch. An eligible simulation
 	// (network-addressable target + safe-checkable technique) runs for real via
 	// the validation dispatcher; the command-completion hook finalizes the run.
@@ -2709,6 +2752,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Every retest is a scan run (kind retest): Runs lists it with its tasks and logs.
 	if s.Retest != nil {
 		s.Retest.SetRunRecorder(s.ScanRun)
+		// Retest by provenance: a version-match finding is re-checked by
+		// re-running its fingerprint (a quick scan) and evaluating the
+		// version seen; template sightings pick the sensor that has a template.
+		s.Retest.SetVersionRecheck(repos.SoftwareMatch, retestFingerprinter{scans: s.Scan}, repos.ScanRun)
+		s.Retest.SetTemplateEvidence(repos.Finding)
 	}
 	// Every finding validation is a run too (kind validation).
 	if s.ValidationRun != nil {
