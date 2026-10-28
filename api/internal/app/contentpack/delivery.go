@@ -26,6 +26,12 @@ const (
 	ScopePlatform = "platform"
 )
 
+// InstanceScope is the content scope of a shared (instance) sensor in place
+// of an organization id: its desired set holds the platform's stable packs
+// only, never an organization's pack (RFC-061 §3.7). It is not a UUID, so
+// it can never be mistaken for an organization.
+const InstanceScope = "instance"
+
 // maxDesiredPacks bounds each part of the desired document.
 const maxDesiredPacks = 500
 
@@ -71,6 +77,7 @@ type desiredMemo struct {
 	at      time.Time
 	set     map[string]located
 	revoked []string
+	etag    string
 }
 
 // NewDelivery builds the sensor delivery over the tenant and platform pack
@@ -83,6 +90,8 @@ type located struct {
 	pack  DeliveredPack
 	id    string
 	scope string
+	name  string
+	kind  string
 }
 
 // desired lists what the organization's sensors may hold, keyed by digest
@@ -102,7 +111,7 @@ func (d *Delivery) desired(ctx context.Context, tenantID string) (map[string]loc
 	if len(d.sets) > 10000 {
 		d.sets = map[string]desiredMemo{}
 	}
-	d.sets[tenantID] = desiredMemo{at: d.now(), set: set, revoked: revoked}
+	d.sets[tenantID] = desiredMemo{at: d.now(), set: set, revoked: revoked, etag: etagOf(set, revoked)}
 	d.mu.Unlock()
 	return set, revoked, nil
 }
@@ -110,13 +119,13 @@ func (d *Delivery) desired(ctx context.Context, tenantID string) (map[string]loc
 func (d *Delivery) compute(ctx context.Context, tenantID string) (map[string]located, []string, error) {
 	out := map[string]located{}
 	var revoked []string
-	if d.tenant != nil {
+	if d.tenant != nil && tenantID != InstanceScope {
 		active, _, err := d.tenant.List(ctx, ListInput{TenantID: tenantID, Status: string(dom.StatusActive), Deliverable: true, Limit: maxDesiredPacks})
 		if err != nil {
 			return nil, nil, err
 		}
 		for _, p := range active {
-			out[p.Digest] = located{DeliveredPack{p.Digest, ScopeTenant, p.SizeBytes, p.Signature}, p.ID.String(), ScopeTenant}
+			out[p.Digest] = located{DeliveredPack{p.Digest, ScopeTenant, p.SizeBytes, p.Signature}, p.ID.String(), ScopeTenant, p.Name, p.Kind}
 		}
 		gone, _, err := d.tenant.List(ctx, ListInput{TenantID: tenantID, Status: string(dom.StatusRevoked), Limit: maxDesiredPacks})
 		if err != nil {
@@ -144,7 +153,7 @@ func (d *Delivery) compute(ctx context.Context, tenantID string) (map[string]loc
 			if err != nil || p.Status != dom.StatusActive {
 				continue
 			}
-			out[p.Digest] = located{DeliveredPack{p.Digest, ScopePlatform, p.SizeBytes, p.Signature}, p.ID.String(), ScopePlatform}
+			out[p.Digest] = located{DeliveredPack{p.Digest, ScopePlatform, p.SizeBytes, p.Signature}, p.ID.String(), ScopePlatform, p.Name, p.Kind}
 		}
 		gone, _, err := d.platform.List(ctx, dom.Filter{Status: dom.StatusRevoked}, maxDesiredPacks, 0)
 		if err != nil {
@@ -162,25 +171,113 @@ func (d *Delivery) compute(ctx context.Context, tenantID string) (map[string]loc
 
 // Desired is the organization's desired document and its ETag (the hash
 // of the document: unchanged content, unchanged ETag).
+//
+// tenantID is an organization id, or InstanceScope for a shared sensor,
+// whose set holds platform packs only.
 func (d *Delivery) Desired(ctx context.Context, tenantID string) (*Desired, string, error) {
-	if _, err := parseTenant(tenantID); err != nil {
+	if err := checkScope(tenantID); err != nil {
 		return nil, "", err
 	}
 	set, revoked, err := d.desired(ctx, tenantID)
 	if err != nil {
 		return nil, "", err
 	}
-	doc := &Desired{Packs: make([]DeliveredPack, 0, len(set)), Revoked: revoked}
-	for _, l := range set {
-		doc.Packs = append(doc.Packs, l.pack)
-	}
-	sort.Slice(doc.Packs, func(i, j int) bool { return doc.Packs[i].Digest < doc.Packs[j].Digest })
+	doc := desiredDoc(set, revoked)
 	b, err := json.Marshal(doc)
 	if err != nil {
 		return nil, "", err
 	}
 	sum := sha256.Sum256(b)
 	return doc, `"` + hex.EncodeToString(sum[:16]) + `"`, nil
+}
+
+func checkScope(tenantID string) error {
+	if tenantID == InstanceScope {
+		return nil
+	}
+	_, err := parseTenant(tenantID)
+	return err
+}
+
+func desiredDoc(set map[string]located, revoked []string) *Desired {
+	doc := &Desired{Packs: make([]DeliveredPack, 0, len(set)), Revoked: revoked}
+	for _, l := range set {
+		doc.Packs = append(doc.Packs, l.pack)
+	}
+	sort.Slice(doc.Packs, func(i, j int) bool { return doc.Packs[i].Digest < doc.Packs[j].Digest })
+	return doc
+}
+
+// etagOf is the ETag of a desired document: the hash of its encoding, so
+// unchanged content keeps its ETag.
+func etagOf(set map[string]located, revoked []string) string {
+	b, err := json.Marshal(desiredDoc(set, revoked))
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(b)
+	return `"` + hex.EncodeToString(sum[:16]) + `"`
+}
+
+// Version is the ETag of the scope's desired document (the sensor's
+// content_version on the heartbeat answer): it changes when a pack is
+// promoted, revoked or added to what the scope may hold, and only then.
+// Computed at most once per desiredTTL per scope, so a heartbeat costs a
+// map lookup.
+func (d *Delivery) Version(ctx context.Context, tenantID string) (string, error) {
+	if err := checkScope(tenantID); err != nil {
+		return "", err
+	}
+	set, revoked, err := d.desired(ctx, tenantID)
+	if err != nil {
+		return "", err
+	}
+	d.mu.Lock()
+	m, ok := d.sets[tenantID]
+	d.mu.Unlock()
+	if ok && m.etag != "" {
+		return m.etag, nil
+	}
+	return etagOf(set, revoked), nil
+}
+
+// Pinnable is a pack a job may pin: what the job's content member carries.
+type Pinnable struct {
+	DeliveredPack
+	Name string
+	Kind string
+}
+
+// Deliverable reports whether digest is one the scope's sensors may hold: a
+// platform stable pack, or, for an organization, one of its own active
+// packs. It is the check a job signature depends on: another organization's
+// digest, a revoked one and an unknown one are all not deliverable, and a
+// shared sensor's scope holds platform packs only.
+func (d *Delivery) Deliverable(ctx context.Context, tenantID, digest string) (bool, error) {
+	if err := checkScope(tenantID); err != nil {
+		return false, err
+	}
+	set, _, err := d.desired(ctx, tenantID)
+	if err != nil {
+		return false, err
+	}
+	_, ok := set[digest]
+	return ok, nil
+}
+
+// PlatformStable is the platform pack named name on the stable channel (the
+// one every sensor may hold): ErrNotFound when the name has none.
+func (d *Delivery) PlatformStable(ctx context.Context, name string) (*Pinnable, error) {
+	set, _, err := d.desired(ctx, InstanceScope)
+	if err != nil {
+		return nil, err
+	}
+	for _, l := range set {
+		if l.name == name && l.scope == ScopePlatform {
+			return &Pinnable{DeliveredPack: l.pack, Name: l.name, Kind: l.kind}, nil
+		}
+	}
+	return nil, shared.ErrNotFound
 }
 
 // archive returns the canonical archive of a digest the organization's

@@ -52,11 +52,21 @@ export const MAX_DECISION_BATCH = 200
  */
 export function useDecideReviewBatch() {
   const [saving, setSaving] = useState(false)
-  const decide = async (assetIds: string[], state: AttributionDecision, note?: string) => {
+  const decide = async (
+    assetIds: string[],
+    state: AttributionDecision,
+    note?: string,
+    /** Assets named by name (the skipped targets of a scan list names). */
+    assetNames: string[] = []
+  ) => {
     setSaving(true)
     try {
+      const ids = assetIds.slice(0, MAX_DECISION_BATCH)
       const result = await post<EASMDecisionResult>('/api/v1/easm/candidates/decisions', {
-        asset_ids: assetIds.slice(0, MAX_DECISION_BATCH),
+        asset_ids: ids,
+        ...(assetNames.length > 0
+          ? { asset_names: assetNames.slice(0, MAX_DECISION_BATCH - ids.length) }
+          : {}),
         state,
         ...(note ? { note } : {}),
       })
