@@ -11,6 +11,7 @@ import (
 	"database/sql"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/lib/pq"
@@ -76,6 +77,65 @@ func (r *CommandRepository) GetSharedPendingForSensor(ctx context.Context, senso
 	return r.GetSharedPendingForSensorExcluding(ctx, sensorID, capabilities, limit, nil)
 }
 
+// sharedTenantWindow bounds the organizations one shared poll ranks: the
+// first this many, in the order of sharedOrgOrder, that have a job the sensor
+// may claim now. With sharedTenantBurst jobs per organization per round it
+// fills the same fairCandidateWindow as before.
+const sharedTenantWindow = fairCandidateWindow / sharedTenantBurst
+
+// sharedPriorities are the values of commands.priority (chk_command_priority)
+// plus NULL. A poll reads each organization's oldest pending shared jobs per
+// value through idx_commands_shared_pending: within one value, an older job
+// never has a later class (aging only lifts), so the first n jobs of the
+// organization in class and age order are among the first n of each value.
+var sharedPriorities = []string{"critical", "high", "normal", "low", ""}
+
+// sharedInFlightSQL counts the shared jobs in flight (acknowledged or
+// running) of the organization in col, through idx_commands_shared_inflight,
+// which holds no finished job.
+func sharedInFlightSQL(col string) string {
+	return `(SELECT count(*) FROM commands l
+			WHERE l.tenant_id = ` + col + ` AND l.is_platform_job = TRUE AND l.status IN ('acknowledged', 'running'))`
+}
+
+// perRowGateSQL is the predicate where as one opaque check per row. The
+// planner sees through a plain predicate: it turns the gates' EXISTS into
+// joins and, from their low estimated selectivity, reads every pending job
+// of the organization and sorts them instead of walking the index in order
+// and stopping at the limit. A CASE keeps the gates as a per-row filter with
+// a neutral estimate.
+func perRowGateSQL(where string) string {
+	return "(CASE WHEN " + where + " THEN TRUE ELSE FALSE END)"
+}
+
+// sharedOrgFirstJobsSQL is the first limitSQL jobs matching where of the
+// organization in col, in class and age order, as (c_id, c_at, c_cls): the
+// oldest of each priority value, then ordered. Each value's jobs are read in
+// idx_commands_shared_pending order and the gates run on that stream, so a
+// deep queue costs only the rows up to the first limitSQL that pass
+// (perRowGateSQL).
+func sharedOrgFirstJobsSQL(col, where, limitSQL string) string {
+	parts := make([]string, 0, len(sharedPriorities))
+	for _, p := range sharedPriorities {
+		prio := "commands.priority IS NULL"
+		if p != "" {
+			prio = "commands.priority = '" + p + "'"
+		}
+		parts = append(parts, `(SELECT commands.id AS c_id, commands.created_at AS c_at, `+claimClassSQL+` AS c_cls
+				FROM commands
+				WHERE commands.tenant_id = `+col+` AND `+prio+`
+				  AND commands.is_platform_job = TRUE AND commands.status = 'pending'
+				  AND `+perRowGateSQL(where)+`
+				ORDER BY commands.created_at, commands.id
+				LIMIT `+limitSQL+`)`)
+	}
+	return `SELECT b.c_id, b.c_at, b.c_cls FROM (
+				` + strings.Join(parts, "\n				UNION ALL\n				") + `
+			) b
+			ORDER BY b.c_cls, b.c_at, b.c_id
+			LIMIT ` + limitSQL
+}
+
 // GetSharedPendingForSensorExcluding is GetSharedPendingForSensor without
 // the jobs in exclude (the next page of a shared claim whose first
 // candidates were withheld after the query).
@@ -86,6 +146,13 @@ func (r *CommandRepository) GetSharedPendingForSensor(ctx context.Context, senso
 // organization's fresh job whatever the load. One job may jump that order:
 // an organization's first job of the round when it is a verification
 // (critical class) job.
+//
+// The work of one poll is bounded by the organizations with pending shared
+// jobs, not by the jobs: it lists those organizations by a skip scan of
+// idx_commands_shared_pending, orders them (a pending verification job
+// first, then fewest in flight), keeps the first sharedTenantWindow that have
+// a job this sensor may claim, and reads at most limit jobs of each through
+// the same index. Gates run only on the rows it reads.
 func (r *CommandRepository) GetSharedPendingForSensorExcluding(ctx context.Context, sensorID shared.ID, capabilities []string, limit int, exclude []shared.ID) ([]*command.Command, error) {
 	if limit <= 0 {
 		limit = 1
@@ -96,35 +163,18 @@ func (r *CommandRepository) GetSharedPendingForSensorExcluding(ctx context.Conte
 		where += " AND commands.id <> ALL($4::uuid[])"
 		args = append(args, pq.Array(commandIDStrings(exclude)))
 	}
-	query := `
-		WITH elig AS (
-			SELECT commands.id AS c_id, commands.tenant_id AS c_tenant, commands.created_at AS c_at,
-			       ` + claimClassSQL + ` AS c_cls
-			FROM commands
-			WHERE ` + where + `
-		), ranked AS (
-			SELECT c_id, c_cls, c_at,
-			       ROW_NUMBER() OVER (PARTITION BY c_tenant ORDER BY c_cls, c_at, c_id) - 1 AS c_rn
-			FROM elig
-		), cand AS (
-			SELECT c_id, c_cls, c_rn / ` + fmt.Sprint(sharedTenantBurst) + ` AS c_round,
-			       (c_cls = 1 AND c_rn % ` + fmt.Sprint(sharedTenantBurst) + ` = 0) AS c_jump
-			FROM ranked
-			ORDER BY c_round, c_cls, c_at, c_id
-			LIMIT ` + fmt.Sprint(fairCandidateWindow) + `
-		), load AS (
-			SELECT l.tenant_id AS l_tenant, count(*) AS l_n
-			FROM commands l
-			WHERE l.is_platform_job = TRUE AND l.status IN ('acknowledged', 'running')
-			GROUP BY l.tenant_id
-		)
-		` + r.selectQuery() + `
-		JOIN cand ON cand.c_id = commands.id
-		LEFT JOIN load ON load.l_tenant = commands.tenant_id
-		ORDER BY cand.c_round, cand.c_jump DESC, COALESCE(load.l_n, 0), cand.c_cls, commands.queue_priority DESC,
-		         COALESCE(commands.queued_at, commands.created_at), commands.id
-		LIMIT $3`
-	rows, err := r.db.QueryContext(ctx, query, args...)
+	// A poll reads a few hundred rows at most, but its estimated cost (many
+	// correlated gates) passes the JIT threshold, and compiling it costs far
+	// more than running it: JIT is off for this one read-only transaction.
+	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get shared jobs: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `SET LOCAL jit = off`); err != nil {
+		return nil, fmt.Errorf("failed to get shared jobs: %w", err)
+	}
+	rows, err := tx.QueryContext(ctx, sharedPendingQuery(r.selectQuery(), where), args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get shared jobs: %w", err)
 	}
@@ -137,7 +187,85 @@ func (r *CommandRepository) GetSharedPendingForSensorExcluding(ctx context.Conte
 		}
 		out = append(out, c)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to get shared jobs: %w", err)
+	}
+	return out, nil
+}
+
+// sharedPendingQuery is the shared poll over the jobs matching where ($1
+// sensor, $2 capabilities, $3 limit), in the shared dispatch order
+// (GetSharedPendingForSensorExcluding). selectSQL is the repository's column
+// list FROM commands.
+func sharedPendingQuery(selectSQL, where string) string {
+	// An organization with a full first round reads whole rounds up to the
+	// rows the poll still lacks after the first round (more.extra), so the
+	// last round it offers is complete and the order inside a round holds.
+	burst := fmt.Sprint(sharedTenantBurst)
+	deepLimit := "(" + burst + " * ((" + burst + " + (SELECT extra FROM more) + " + burst + " - 1) / " + burst + "))"
+	return `
+		WITH RECURSIVE orgs AS (
+			(SELECT p.tenant_id FROM commands p
+			 WHERE p.is_platform_job = TRUE AND p.status = 'pending'
+			 ORDER BY p.tenant_id LIMIT 1)
+			UNION ALL
+			SELECT (SELECT p.tenant_id FROM commands p
+			        WHERE p.is_platform_job = TRUE AND p.status = 'pending' AND p.tenant_id > orgs.tenant_id
+			        ORDER BY p.tenant_id LIMIT 1)
+			FROM orgs WHERE orgs.tenant_id IS NOT NULL
+		), ordered AS (
+			SELECT o.o_tenant, o.o_load FROM (
+				SELECT orgs.tenant_id AS o_tenant, ` + sharedInFlightSQL("orgs.tenant_id") + ` AS o_load,
+				       EXISTS (SELECT 1 FROM commands p
+				               WHERE p.tenant_id = orgs.tenant_id AND p.is_platform_job = TRUE
+				                 AND p.status = 'pending' AND p.priority = 'critical') AS o_crit
+				FROM orgs WHERE orgs.tenant_id IS NOT NULL
+			) o
+			ORDER BY o.o_crit DESC, o.o_load, o.o_tenant
+			OFFSET 0
+		), picked AS (
+			SELECT ordered.o_tenant, ordered.o_load FROM ordered
+			WHERE EXISTS (SELECT 1 FROM commands
+			              WHERE commands.tenant_id = ordered.o_tenant
+			                AND commands.is_platform_job = TRUE AND commands.status = 'pending'
+			                AND ` + perRowGateSQL(where) + `)
+			LIMIT ` + fmt.Sprint(sharedTenantWindow) + `
+		), first AS MATERIALIZED (
+			SELECT picked.o_tenant AS c_tenant, picked.o_load AS c_load, j.c_id, j.c_at, j.c_cls
+			FROM picked CROSS JOIN LATERAL (
+				` + sharedOrgFirstJobsSQL("picked.o_tenant", where, fmt.Sprint(sharedTenantBurst)) + `
+			) j
+		), more AS (
+			SELECT GREATEST(0, $3 - count(*)) AS extra FROM first
+		), deep AS (
+			SELECT c_tenant, c_load FROM first
+			WHERE (SELECT extra FROM more) > 0
+			GROUP BY c_tenant, c_load
+			HAVING count(*) = ` + fmt.Sprint(sharedTenantBurst) + `
+		), elig AS (
+			SELECT c_tenant, c_load, c_id, c_at, c_cls FROM first
+			WHERE c_tenant NOT IN (SELECT c_tenant FROM deep)
+			UNION ALL
+			SELECT deep.c_tenant, deep.c_load, j.c_id, j.c_at, j.c_cls
+			FROM deep CROSS JOIN LATERAL (
+				` + sharedOrgFirstJobsSQL("deep.c_tenant", where, deepLimit) + `
+			) j
+		), ranked AS (
+			SELECT c_id, c_cls, c_at, c_load,
+			       ROW_NUMBER() OVER (PARTITION BY c_tenant ORDER BY c_cls, c_at, c_id) - 1 AS c_rn
+			FROM elig
+		), cand AS (
+			SELECT c_id, c_cls, c_load, c_rn / ` + fmt.Sprint(sharedTenantBurst) + ` AS c_round,
+			       (c_cls = 1 AND c_rn % ` + fmt.Sprint(sharedTenantBurst) + ` = 0) AS c_jump
+			FROM ranked
+			ORDER BY c_round, c_cls, c_at, c_id
+			LIMIT ` + fmt.Sprint(fairCandidateWindow) + `
+		)
+		` + selectSQL + `
+		JOIN cand ON cand.c_id = commands.id
+		ORDER BY cand.c_round, cand.c_jump DESC, cand.c_load, cand.c_cls, commands.queue_priority DESC,
+		         COALESCE(commands.queued_at, commands.created_at), commands.id
+		LIMIT $3`
 }
 
 // ClaimManyShared acknowledges for the shared sensor those of ids that it
@@ -177,9 +305,7 @@ func (r *CommandRepository) ClaimManyShared(ctx context.Context, sensorID shared
 		}
 		if limit, ok := limits[tenant]; ok && limit >= 0 {
 			var inFlight int
-			if err := tx.QueryRowContext(ctx, `
-				SELECT count(*) FROM commands
-				WHERE tenant_id = $1 AND is_platform_job = TRUE AND status IN ('acknowledged', 'running')`,
+			if err := tx.QueryRowContext(ctx, `SELECT `+sharedInFlightSQL("$1::uuid"),
 				tenant.String()).Scan(&inFlight); err != nil {
 				return nil, fmt.Errorf("failed to count the organization's shared jobs: %w", err)
 			}

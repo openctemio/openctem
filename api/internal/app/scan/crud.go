@@ -149,9 +149,6 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 			return nil, err
 		}
 	}
-	if err := s.refuseUnprovenIntrusive(ctx, tenantID, input.ScannerName, validatedTargets); err != nil {
-		return nil, err
-	}
 	if err := s.refuseTierExceeded(ctx, tenantID, input.ScannerName, validatedTargets); err != nil {
 		return nil, err
 	}
@@ -924,8 +921,12 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 			return nil, fmt.Errorf("%w: invalid scan_workflow_id", shared.ErrValidation)
 		}
 		tenantID, _ := shared.IDFromString(input.TenantID)
-		if _, err := s.usableWorkflow(ctx, tenantID, scanWorkflowID); err != nil {
-			return nil, err
+		// A scan already on a workflow keeps it even when that one was retired
+		// since; only a different workflow must be usable.
+		if sc.ScanWorkflowID == nil || *sc.ScanWorkflowID != scanWorkflowID {
+			if _, err := s.usableWorkflow(ctx, tenantID, scanWorkflowID); err != nil {
+				return nil, err
+			}
 		}
 		if err := sc.SetWorkflow(scanWorkflowID); err != nil {
 			return nil, err
@@ -1287,11 +1288,8 @@ func (s *Service) CloneScan(ctx context.Context, tenantID, scanID, newName, acto
 		return nil, err
 	}
 
-	// The same probe gates as a create: intrusive proof and the scope tier
-	// ceiling of the targets, for the scan's scanner.
-	if err := s.refuseUnprovenIntrusive(ctx, sc.TenantID, sc.ScannerName, sc.Targets); err != nil {
-		return nil, err
-	}
+	// The same probe gate as a create: the scope tier ceiling of the
+	// targets, for the scan's scanner.
 	if err := s.refuseTierExceeded(ctx, sc.TenantID, sc.ScannerName, sc.Targets); err != nil {
 		return nil, err
 	}

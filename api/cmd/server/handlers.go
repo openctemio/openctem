@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 
+	navpinapp "github.com/openctemio/openctem/api/internal/app/navpin"
 	queryapp "github.com/openctemio/openctem/api/internal/app/query"
 
 	"context"
@@ -594,6 +595,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		ReportSchedule:         newReportScheduleHandler(repos, svc, log),
 		UserDashboard:          handler.NewUserDashboardHandler(svc.UserDashboard, log).SetWidgetData(svc.DashboardWidgets),
 		SavedView:              handler.NewSavedViewHandler(svc.SavedView, log),
+		NavPin: handler.NewNavPinHandler(
+			navpinapp.NewService(repos.NavPin, svc.SavedView, svc.Vulnerability, log),
+			svc.Vulnerability, log),
 
 		// Vulnerabilities & Exposures
 		Vulnerability:    vulnHandler,
@@ -607,17 +611,23 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			}
 			return h
 		}(),
-		FindingRetestCheck:   handler.NewFindingRetestCheckHandler(svc.RetestCheck, log),
-		FindingEvidenceItems: handler.NewFindingEvidenceItemsHandler(svc.Evidence, log),
-		JiraWebhook:          jiraWebhookHandler,
-		TicketMapping:        ticketMappingHandler,
-		ImportMapping:        newImportMappingHandler(svc, log),
-		GitHubWebhook:        githubWebhookHandler,
-		Exposure:             handler.NewExposureHandler(svc.Exposure, svc.User, v, log),
-		ThreatIntel:          handler.NewThreatIntelHandler(svc.ThreatIntel, v, log).SetDataScope(svc.DataScope),
-		EmergingThreat:       emergingThreatHandler(svc, log),
-		CTEMID:               handler.NewCTEMIDHandler(svc.CTEMID, log),
-		CredentialImport:     handler.NewCredentialImportHandler(svc.CredentialImport, v, log),
+		FindingRetestCheck: handler.NewFindingRetestCheckHandler(svc.RetestCheck, log),
+		FindingEvidenceItems: func() *handler.FindingEvidenceItemsHandler {
+			h := handler.NewFindingEvidenceItemsHandler(svc.Evidence, log)
+			if svc.Pentest != nil {
+				h.SetPentestGate(svc.Pentest) // a pentest finding's evidence follows its campaign's rules
+			}
+			return h
+		}(),
+		JiraWebhook:      jiraWebhookHandler,
+		TicketMapping:    ticketMappingHandler,
+		ImportMapping:    newImportMappingHandler(svc, log),
+		GitHubWebhook:    githubWebhookHandler,
+		Exposure:         handler.NewExposureHandler(svc.Exposure, svc.User, v, log),
+		ThreatIntel:      handler.NewThreatIntelHandler(svc.ThreatIntel, v, log).SetDataScope(svc.DataScope),
+		EmergingThreat:   emergingThreatHandler(svc, log),
+		CTEMID:           handler.NewCTEMIDHandler(svc.CTEMID, log),
+		CredentialImport: handler.NewCredentialImportHandler(svc.CredentialImport, v, log),
 
 		// Dashboard & Branch
 		Dashboard: handler.NewDashboardHandler(svc.Dashboard, log),
@@ -680,7 +690,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AdminVersionCheck:   handler.NewAdminVersionCheckHandler(svc.VersionCheck, repos.AdminAuditLog, log),
 		AdminConfiguration: handler.NewAdminConfigurationHandler(
 			configoverview.NewBuilder(cfg, platformSettings(repos), repos.Admin, os.LookupEnv), log),
-		AdminPlatformSettings: newAdminPlatformSettingsHandler(repos, svc, log),
+		AdminPlatformSettings: newAdminPlatformSettingsHandler(repos, svc, adminApprovals, log),
 
 		SecretStore:  handler.NewSecretStoreHandler(svc.SecretStore, v, log),
 		Tool:         handler.NewToolHandler(svc.Tool, v, log),
@@ -1834,7 +1844,7 @@ func newSensorPairingHandler(svc *Services, log *logger.Logger) *handler.SensorP
 
 // bootstrapSession wires the session parts of GET /me/bootstrap to the same
 // code that serves /users/me, /users/me/tenants, /notifications/unread-count,
-// /easm/candidates, the pending count of /approvals and the organization
+// /easm/candidates, the pending count of /approvals, /me/pins and the organization
 // policy of /auth/providers.
 func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) handler.BootstrapSession {
 	s := handler.BootstrapSession{}
@@ -1853,6 +1863,9 @@ func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) hand
 	}
 	if svc.Entitlement != nil {
 		s.LimitsApply = svc.Entitlement.Applies
+	}
+	if h.NavPin != nil {
+		s.Pins = h.NavPin.Response
 	}
 	if svc.Vulnerability != nil {
 		vulns := svc.Vulnerability

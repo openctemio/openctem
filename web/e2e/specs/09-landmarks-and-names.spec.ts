@@ -19,7 +19,7 @@ import { getE2EConfig } from '../helpers/env'
  * viewer): set E2E_LIMITED_EMAIL / E2E_LIMITED_PASSWORD, or it is skipped.
  */
 
-test.describe('Landmarks', () => {
+test.describe('Landmarks', { tag: ['@shell'] }, () => {
   test('dashboard pages have exactly one main landmark, and it is #content', async ({ page }) => {
     for (const path of ['/', '/findings', '/sensors', '/settings/general']) {
       await page.goto(path)
@@ -29,7 +29,7 @@ test.describe('Landmarks', () => {
   })
 })
 
-base.describe('Access denied view', () => {
+base.describe('Access denied view', { tag: ['@shell'] }, () => {
   base('is the main landmark and the skip link target', async ({ page }) => {
     const cfg = getE2EConfig()
     const email = process.env.E2E_LIMITED_EMAIL
@@ -50,7 +50,7 @@ base.describe('Access denied view', () => {
   })
 })
 
-test.describe('Organization authentication settings', () => {
+test.describe('Organization authentication settings', { tag: ['@shell'] }, () => {
   test('each two-factor switch has its own accessible name', async ({ page }) => {
     await page.goto('/settings/authentication')
     // Everyone, and owners and administrators only (#1413): two switches, two names
