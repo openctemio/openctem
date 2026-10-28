@@ -6,7 +6,7 @@ import { test, expect } from '../fixtures/authenticated-page'
  * a view with changes shows the unsaved-changes dot. Needs no particular data.
  */
 
-test.describe('Findings triage and view state', () => {
+test.describe('Findings triage and view state', { tag: ['@findings'] }, () => {
   test('Triage is the one primary button and opens triage mode; Esc comes back', async ({
     page,
   }) => {

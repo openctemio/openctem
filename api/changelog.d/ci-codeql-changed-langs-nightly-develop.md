@@ -1,0 +1,5 @@
+### Changed: CodeQL on develop pushes analyses only the changed languages; nightly runs test develop; no PostgreSQL compatibility run on push
+
+- A push to develop runs CodeQL only for the side that changed (Go for `api/`, JavaScript/TypeScript for `web/`, both for shared or CI files), as on a pull request. A new daily run (03:00 UTC) analyses both languages on develop, so develop's baseline is never older than a day; a push to main still analyses both.
+- The scheduled test workflows (fuzz, authorization matrix, ingest load, PostgreSQL compatibility, upgrade test, visual regression) and the daily CodeQL run check out develop: the default branch is main, and a schedule runs main's copy of the workflow on main's code. Takes effect once this reaches main.
+- API PostgreSQL Compatibility no longer runs on develop pushes (6 shards of about 15 minutes each): API CI applies every migration on PostgreSQL 18 in the merge queue, and the nightly run covers PostgreSQL 16 and 18 within a day. It still runs on a pull request that changes the workflow or the role script.

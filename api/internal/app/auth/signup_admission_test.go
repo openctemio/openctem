@@ -60,7 +60,7 @@ func TestOAuthSignupAdmission(t *testing.T) {
 				email = c.email
 			}
 			u, err := svc.findOrCreateUser(context.Background(),
-				&OAuthUserInfo{Email: email, Name: "New"}, OAuthProviderGoogle)
+				&OAuthUserInfo{Email: email, Name: "New", HD: emailDomain(email)}, OAuthProviderGoogle)
 			if c.wantCreated {
 				if err != nil || u == nil || repo.created == nil {
 					t.Fatalf("expected the account to be created, got user=%v err=%v", u, err)

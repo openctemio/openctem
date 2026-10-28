@@ -229,7 +229,7 @@ type TenantWithRoleResponse struct {
 	TenantResponse
 	Role     string    `json:"role"`
 	JoinedAt time.Time `json:"joined_at"`
-	// The caller's own membership (RFC-058). Kind is "internal" or
+	// The caller's own membership. Kind is "internal" or
 	// "external"; AccessExpiresAt is when an external membership ends.
 	// BlockedReason, when set, says why the organization cannot be opened:
 	// suspended, expired, home_access_ended, home_domain_lapsed,
@@ -270,7 +270,7 @@ type MemberWithUserResponse struct {
 	PendingSetup bool `json:"pending_setup"`
 	// RBAC roles (included when ?include=roles)
 	RBACRoles []MemberRBACRoleResponse `json:"rbac_roles,omitempty"`
-	// External members (RFC-058). Kind is "internal" or "external".
+	// External members. Kind is "internal" or "external".
 	// HomeOrganization names the organization that manages an external
 	// member's address (empty when none does). AccessExpiresAt and
 	// SuspendedReason ("expired") are included only for owners and admins.
@@ -314,17 +314,17 @@ type InvitationResponse struct {
 	ExpiresAt   time.Time `json:"expires_at"`
 	CreatedAt   time.Time `json:"created_at"`
 	Pending     bool      `json:"pending"`
-	// AccessExpiresAt is when an external invitee's access will end (RFC-058).
+	// AccessExpiresAt is when an external invitee's access will end.
 	AccessExpiresAt *time.Time `json:"access_expires_at,omitempty"`
 	// LookalikeOf lists members whose address reaches the same mailbox once
 	// dots and +tags are ignored: a warning, never a merge (create only).
 	LookalikeOf []string `json:"lookalike_of,omitempty"`
 	// MemberKind is internal or external, as classified at creation;
 	// Privileged: the roles are above member for an outside invitee, so the
-	// member will need two-factor (RFC-095).
+	// member will need two-factor.
 	MemberKind string `json:"member_kind"`
 	Privileged bool   `json:"privileged"`
-	// LastSentAt and ResendCount: resends are limited (RFC-095 §5).
+	// LastSentAt and ResendCount: resends are limited.
 	LastSentAt  time.Time `json:"last_sent_at"`
 	ResendCount int       `json:"resend_count"`
 	// GroupIDs: the teams the invitee joins at acceptance.
@@ -366,8 +366,8 @@ type UpdateMemberRoleRequest struct {
 type CreateInvitationRequest struct {
 	Email   string   `json:"email" validate:"required,email,max=254"`
 	RoleIDs []string `json:"role_ids" validate:"required,min=1,max=10"` // RBAC roles to assign (required, max 10)
-	// AccessExpiresAt ends the access of an invitee outside the organization
-	// (RFC-058). Required for someone no organization manages; defaults to
+	// AccessExpiresAt ends the access of an invitee outside the organization.
+	// Required for someone no organization manages; defaults to
 	// 90 days when omitted; at most 365 days. Ignored for an internal invitee.
 	AccessExpiresAt *time.Time `json:"access_expires_at,omitempty"`
 	// AccessReason says why the external invitee gets access (shown to admins).
@@ -587,12 +587,7 @@ func (h *TenantHandler) handleServiceError(w http.ResponseWriter, err error) {
 		apierror.InternalServerError("These settings could not be read. Contact your platform administrator.").WriteJSON(w)
 		return
 	}
-	if code, status, ok := invitationErrorCode(err); ok {
-		msg := err.Error()
-		if idx := strings.Index(msg, ": "); idx != -1 {
-			msg = msg[idx+2:]
-		}
-		apierror.New(status, apierror.Code(code), msg).WriteJSON(w)
+	if writeAuthTableError(w, err) {
 		return
 	}
 	if errors.Is(err, tenantapp.ErrStoredFilesNotErased) {
@@ -625,26 +620,6 @@ func (h *TenantHandler) handleServiceError(w http.ResponseWriter, err error) {
 		h.logger.Error("service error", "error", logger.SanitizeError(err))
 		apierror.InternalError(err).WriteJSON(w)
 	}
-}
-
-// invitationErrorCode gives the invitation refusals a stable code the console
-// translates (RFC-095 §6).
-func invitationErrorCode(err error) (string, int, bool) {
-	switch {
-	case errors.Is(err, tenantapp.ErrInviteeNotOnVerifiedDomain):
-		return "INVITEE_NOT_ON_VERIFIED_DOMAIN", http.StatusForbidden, true
-	case errors.Is(err, tenantapp.ErrEmailDomainNotAllowed):
-		return "INVITEE_DOMAIN_NOT_ALLOWED", http.StatusBadRequest, true
-	case errors.Is(err, tenantapp.ErrInvitationNoLongerValid):
-		return "INVITATION_NO_LONGER_VALID", http.StatusForbidden, true
-	case errors.Is(err, tenantapp.ErrPersonalAccountsBlocked):
-		return "PERSONAL_ACCOUNTS_BLOCKED", http.StatusForbidden, true
-	case errors.Is(err, tenant.ErrInvitationResendTooSoon):
-		return "INVITATION_RESEND_TOO_SOON", http.StatusTooManyRequests, true
-	case errors.Is(err, tenant.ErrInvitationRateLimited):
-		return "INVITATIONS_RATE_LIMITED", http.StatusTooManyRequests, true
-	}
-	return "", 0, false
 }
 
 // writeToggleErrorJSON serialises a module.ToggleError as the 400
@@ -1695,6 +1670,88 @@ func (h *TenantHandler) ResendInvitation(w http.ResponseWriter, r *http.Request)
 	})
 }
 
+// InvitationLinkResponse is a new invitation link, shown once.
+type InvitationLinkResponse struct {
+	// Invitation is the refreshed invitation (token field carries the new
+	// raw token, the only time it is visible).
+	Invitation InvitationResponse `json:"invitation"`
+	// Token is the new raw invitation token; build the link from it.
+	Token string `json:"token"`
+}
+
+// RegenerateInvitationLink handles POST /api/v1/tenants/{tenant}/invitations/{invitationId}/link
+//
+// @Summary      Copy a new invitation link
+// @Description  Rotates the token of a pending invitation and returns the new one without sending any email, for servers that cannot send mail or invitees who lost the link. The previous link stops working and expiry is unchanged; the token is shown once and never logged. A privileged invitation (a role above member for someone outside the organization) needs the caller's recent re-authentication. 400 if the invitation was accepted or has expired (use renew). Owner or administrator with members:invite; another organization's invitation is a 404.
+// @Tags         Tenants
+// @Produce      json
+// @Param        tenant        path  string  true  "Tenant ID or slug"
+// @Param        invitationId  path  string  true  "Invitation ID"
+// @Success      200  {object}  InvitationLinkResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /tenants/{tenant}/invitations/{invitationId}/link [post]
+func (h *TenantHandler) RegenerateInvitationLink(w http.ResponseWriter, r *http.Request) {
+	h.reissueInvitationLink(w, r, false)
+}
+
+// RenewInvitation handles POST /api/v1/tenants/{tenant}/invitations/{invitationId}/renew
+//
+// @Summary      Renew an expired invitation
+// @Description  Gives an expired invitation a new seven-day lifetime and a new token, returned once, without sending email. 400 if the invitation is still pending (copy its link) or was accepted. Same permissions and step-up as copying a link.
+// @Tags         Tenants
+// @Produce      json
+// @Param        tenant        path  string  true  "Tenant ID or slug"
+// @Param        invitationId  path  string  true  "Invitation ID"
+// @Success      200  {object}  InvitationLinkResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /tenants/{tenant}/invitations/{invitationId}/renew [post]
+func (h *TenantHandler) RenewInvitation(w http.ResponseWriter, r *http.Request) {
+	h.reissueInvitationLink(w, r, true)
+}
+
+func (h *TenantHandler) reissueInvitationLink(w http.ResponseWriter, r *http.Request, renew bool) {
+	// Tenant from the URL path, the one RequireTeamAdmin authorized (see
+	// DeleteInvitation).
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+	invitationID := r.PathValue("invitationId")
+	if invitationID == "" {
+		apierror.BadRequest("Invitation ID is required").WriteJSON(w)
+		return
+	}
+	actx := h.buildAuditContext(r)
+	var (
+		link *tenantapp.InvitationLink
+		err  error
+	)
+	if renew {
+		link, err = h.service.RenewInvitation(r.Context(), tenantID.String(), invitationID, actx)
+	} else {
+		link, err = h.service.RegenerateInvitationLink(r.Context(), tenantID.String(), invitationID, actx)
+	}
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	// A bearer credential: never cached.
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(InvitationLinkResponse{
+		Invitation: toInvitationResponse(link.Invitation, true),
+		Token:      link.Token,
+	})
+}
+
 // The invitation token is a bearer credential: whoever holds it can see the
 // invitation, decline it, or (signed in as the invited email) accept it. The
 // body routes below carry it in the request body (RFC-041, docs/rfcs/RFC-041-api-path-design.md):
@@ -1975,6 +2032,14 @@ func (h *TenantHandler) declineInvitation(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Only a pending invitation can be declined: an accepted one is a
+	// membership now, and declining it must not delete its row or audit a
+	// decline that did not happen.
+	if !invitation.IsPending() {
+		apierror.Conflict("This invitation is no longer pending").WriteJSON(w)
+		return
+	}
+
 	// Delete the invitation (public decline: the token authorizes it; pass the
 	// invitation's own tenant so the scoping check is satisfied).
 	if err := h.service.DeleteInvitation(r.Context(), invitation.TenantID().String(), invitation.ID().String(), auditsvc.AuditContext{
@@ -2095,12 +2160,12 @@ type SecuritySettingsResponse struct {
 	// tools that skip TLS verification.
 	ToolHTTPUserAgent     string `json:"tool_http_user_agent"`
 	ForbidToolInsecureTLS bool   `json:"forbid_tool_insecure_tls"`
-	// PersonalAccounts: allowed, allowed_with_mfa or blocked (RFC-058).
+	// PersonalAccounts: allowed, allowed_with_mfa or blocked.
 	PersonalAccounts string `json:"personal_accounts"`
-	// Invitees: who may be invited: any, verified_domains or allow_list (RFC-095).
+	// Invitees: who may be invited: any, verified_domains or allow_list.
 	Invitees string `json:"invitees"`
 	// ExternalAccessEndRequired: outside people no organization manages must
-	// have an end of access (RFC-095).
+	// have an end of access.
 	ExternalAccessEndRequired bool `json:"external_access_end_required"`
 	// SSOExceptions: members who may sign in without SSO while it is enforced.
 	SSOExceptions []tenant.SSOException `json:"sso_exceptions"`
@@ -2137,7 +2202,7 @@ func toSettingsResponse(s *tenant.Settings) SettingsResponse {
 			MFARequiredForAdmins:  s.Security.MFARequiredForAdmins,
 			IPWhitelist:           s.Security.IPWhitelist,
 			AllowedDomains:        s.Security.AllowedDomains,
-			EmailVerificationMode: string(s.Security.EmailVerificationMode),
+			EmailVerificationMode: readEmailVerificationMode(s.Security.EmailVerificationMode),
 			RequireSensorLocalPolicyForPrivateTargets: s.Security.RequireSensorLocalPolicyForPrivateTargets,
 			AllowSensorInteractsh:                     s.Security.AllowSensorInteractsh,
 			AllowSensorCustomTemplates:                s.Security.AllowSensorCustomTemplates,
@@ -2261,7 +2326,7 @@ type UpdateSecuritySettingsRequest struct {
 	MFARequiredForAdmins  *bool    `json:"mfa_required_for_admins"`
 	IPWhitelist           []string `json:"ip_whitelist"`
 	AllowedDomains        []string `json:"allowed_domains"`
-	EmailVerificationMode *string  `json:"email_verification_mode" validate:"omitempty,oneof=auto always never"`
+	EmailVerificationMode *string  `json:"email_verification_mode" validate:"omitempty,oneof=auto always"`
 	// RequireSensorLocalPolicyForPrivateTargets: see SecuritySettingsResponse.
 	RequireSensorLocalPolicyForPrivateTargets *bool `json:"require_sensor_local_policy_for_private_targets"`
 	// AllowSensorInteractsh / AllowSensorCustomTemplates: see
@@ -2273,9 +2338,9 @@ type UpdateSecuritySettingsRequest struct {
 	// Allowing insecure TLS again is audited at high severity.
 	ToolHTTPUserAgent     *string `json:"tool_http_user_agent" validate:"omitempty,max=256"`
 	ForbidToolInsecureTLS *bool   `json:"forbid_tool_insecure_tls"`
-	// PersonalAccounts: allowed, allowed_with_mfa or blocked (RFC-058).
+	// PersonalAccounts: allowed, allowed_with_mfa or blocked.
 	PersonalAccounts *string `json:"personal_accounts" validate:"omitempty,oneof=allowed allowed_with_mfa blocked"`
-	// Invitees: any, verified_domains or allow_list (RFC-095 §4.1).
+	// Invitees: any, verified_domains or allow_list.
 	Invitees *string `json:"invitees" validate:"omitempty,oneof=any verified_domains allow_list"`
 	// ExternalAccessEndRequired: see SecuritySettingsResponse.
 	ExternalAccessEndRequired *bool `json:"external_access_end_required"`
@@ -2283,7 +2348,7 @@ type UpdateSecuritySettingsRequest struct {
 	// (with a second factor) while it is enforced.
 	SSOExceptions *[]tenant.SSOException `json:"sso_exceptions" validate:"omitempty,max=100"`
 	// JITRequiresApproval holds SSO newcomers until an administrator
-	// approves them (RFC-058).
+	// approves them.
 	JITRequiresApproval *bool `json:"jit_requires_approval"`
 	// SSORequireMFAEvidence: see SecuritySettingsResponse.
 	SSORequireMFAEvidence *bool `json:"sso_require_mfa_evidence"`
@@ -3695,4 +3760,13 @@ func (h *TenantHandler) UpdateEmergingThreatSettings(w http.ResponseWriter, r *h
 	h.writeSectionETag(w, r, tenantID, tenant.SectionEmergingThreats)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(es)
+}
+
+// readEmailVerificationMode reports the stored mode; the retired "never" reads
+// as "auto" (no organization setting skips verification any more).
+func readEmailVerificationMode(m tenant.EmailVerificationMode) string {
+	if m == tenant.EmailVerificationNever {
+		return string(tenant.EmailVerificationAuto)
+	}
+	return string(m)
 }

@@ -66,6 +66,10 @@
 //	# linked) to a sign-in account, keeping its role and authenticator
 //	./bootstrap-admin -email=admin@example.com -link
 //
+//	# Invite an administrator from the host (no e-mail needed): prints the
+//	# single-use set-password link once. No password is created or shown.
+//	./bootstrap-admin invite -email=bob@example.com -role=super_admin
+//
 //	# A single-use enrollment token for the bundled shared sensor (sensor_token.go)
 //	./bootstrap-admin sensor-token -from-env SENSOR_INSTANCE_ENROLLMENT_TOKEN
 //
@@ -119,6 +123,11 @@ func Main() {
 	// the install's bundled shared sensor (sensor_token.go).
 	if len(os.Args) > 1 && os.Args[1] == "sensor-token" {
 		os.Exit(runSensorToken(os.Args[2:]))
+	}
+	// `bootstrap-admin invite -email=... -role=...`: invite an administrator
+	// from the host and print the set-password link once (invite.go).
+	if len(os.Args) > 1 && os.Args[1] == "invite" {
+		os.Exit(runInvite(os.Args[2:], os.Getenv, os.Stdout, os.Stderr))
 	}
 	// `bootstrap-admin verify-audit`: check the administrators' audit chain
 	// (verify_audit.go).

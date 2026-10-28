@@ -253,6 +253,12 @@ var registry = []location{
 	textCol{table: "tenant_ai_settings", pk: "tenant_id", col: "key_enc"},
 	jsonField{table: "platform_settings", pk: "key", col: "value", path: []string{"password_encrypted"}, where: "key = 'email.smtp'"},
 	jsonField{table: "platform_settings", pk: "key", col: "value", path: []string{"key_encrypted"}, where: "key = 'ai.platform'"},
+	jsonField{table: "platform_settings", pk: "key", col: "value", path: []string{"google", "secret_encrypted"}, where: "key = 'auth.social_login'"},
+	jsonField{table: "platform_settings", pk: "key", col: "value", path: []string{"github", "secret_encrypted"}, where: "key = 'auth.social_login'"},
+	jsonField{table: "platform_settings", pk: "key", col: "value", path: []string{"microsoft", "secret_encrypted"}, where: "key = 'auth.social_login'"},
+	jsonField{table: "platform_settings", pk: "key", col: "value", path: []string{"secret_encrypted"}, where: "key = 'captcha.turnstile'", label: "captcha.turnstile"},
+	jsonField{table: "platform_settings", pk: "key", col: "value", path: []string{"url_encrypted"}, where: "key = 'alerts.webhook'", label: "alerts.webhook"},
+	jsonField{table: "platform_settings", pk: "key", col: "value", path: []string{"secret_encrypted"}, where: "key = 'alerts.webhook'", label: "alerts.webhook"},
 	leakedSecret{},
 	secretStore{},
 	templateSignature{},
@@ -359,9 +365,16 @@ type jsonField struct {
 	path           []string
 	where          string // extra fixed predicate from the registry
 	prefix         string // value prefix kept around the ciphertext
+	label          string // distinguishes fields of the same name in different rows
 }
 
-func (j jsonField) name() string { return j.table + "." + j.col + "." + strings.Join(j.path, ".") }
+func (j jsonField) name() string {
+	n := j.table + "." + j.col + "." + strings.Join(j.path, ".")
+	if j.label != "" {
+		n += "@" + j.label
+	}
+	return n
+}
 
 func (j jsonField) run(ctx context.Context, tx *sql.Tx, ks *keyset) (Count, []Failure, error) {
 	cnt := Count{Location: j.name()}

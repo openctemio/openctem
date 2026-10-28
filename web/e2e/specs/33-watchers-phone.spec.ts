@@ -27,76 +27,78 @@ async function firstFinding(page: import('@playwright/test').Page): Promise<stri
   return body.data?.[0]?.id
 }
 
-test('watchers at 390px: no one-tap removal, manage sheet with undo', async ({
-  page,
-}, testInfo) => {
-  await page.setViewportSize({ width: 390, height: 844 })
-  const id = await firstFinding(page)
-  test.skip(!id, 'Needs a finding')
+test(
+  'watchers at 390px: no one-tap removal, manage sheet with undo',
+  { tag: ['@findings'] },
+  async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    const id = await firstFinding(page)
+    test.skip(!id, 'Needs a finding')
 
-  await page.goto(`/findings/${id}`)
-  const people = page.getByRole('group', { name: 'People' })
-  await expect(people).toBeVisible({ timeout: 45_000 })
-  const summary = people.getByTestId('watchers-summary')
-  await expect(summary).toBeVisible({ timeout: 30_000 })
-  await summary.scrollIntoViewIfNeeded()
+    await page.goto(`/findings/${id}`)
+    const people = page.getByRole('group', { name: 'People' })
+    await expect(people).toBeVisible({ timeout: 45_000 })
+    const summary = people.getByTestId('watchers-summary')
+    await expect(summary).toBeVisible({ timeout: 30_000 })
+    await summary.scrollIntoViewIfNeeded()
 
-  // 4. Sentence case heading.
-  const transform = await people
-    .getByText('People', { exact: true })
-    .evaluate((el) => getComputedStyle(el).textTransform)
-  expect(transform).toBe('none')
+    // 4. Sentence case heading.
+    const transform = await people
+      .getByText('People', { exact: true })
+      .evaluate((el) => getComputedStyle(el).textTransform)
+    expect(transform).toBe('none')
 
-  // 1. Nothing in the rail removes anyone; the two controls are touch-sized.
-  await expect(people.getByRole('button', { name: /^Remove/ })).toHaveCount(0)
-  const toggle = people.getByTestId('watch-toggle')
-  for (const l of [summary, toggle]) {
-    const box = await l.boundingBox()
-    expect(box && box.height, 'touch target').toBeGreaterThanOrEqual(TOUCH)
-  }
-  await testInfo.attach('watchers-rail-390.png', {
-    body: await people.screenshot(),
-    contentType: 'image/png',
-  })
-
-  // Make sure we are watching, so our own row is in the sheet.
-  if ((await toggle.textContent())?.trim() === 'Watch') {
-    await toggle.click()
-    await expect(toggle).toHaveText('Watching')
-  }
-
-  // 2 and 3. The sheet.
-  await summary.click()
-  const sheet = page.getByRole('dialog', { name: /^Watchers/ })
-  await expect(sheet).toBeVisible()
-  await expect(sheet.getByRole('button', { name: 'Stop watching' })).toBeVisible()
-
-  const removes = sheet.getByRole('button', { name: /^Remove / })
-  const n = await removes.count()
-  if (n > 0) {
-    const first = removes.first()
-    const box = await first.boundingBox()
-    expect(box && box.height, 'Remove touch target').toBeGreaterThanOrEqual(TOUCH)
-    const name = ((await first.getAttribute('aria-label')) ?? '').replace(/^Remove /, '')
-    await testInfo.attach('watchers-sheet-390.png', {
-      body: await page.screenshot(),
+    // 1. Nothing in the rail removes anyone; the two controls are touch-sized.
+    await expect(people.getByRole('button', { name: /^Remove/ })).toHaveCount(0)
+    const toggle = people.getByTestId('watch-toggle')
+    for (const l of [summary, toggle]) {
+      const box = await l.boundingBox()
+      expect(box && box.height, 'touch target').toBeGreaterThanOrEqual(TOUCH)
+    }
+    await testInfo.attach('watchers-rail-390.png', {
+      body: await people.screenshot(),
       contentType: 'image/png',
     })
 
-    await first.click()
-    await expect(sheet.getByRole('button', { name: `Remove ${name}` })).toHaveCount(0)
-    const toast = page.locator('[data-sonner-toast]').filter({ hasText: name })
-    await expect(toast).toBeVisible()
-    await testInfo.attach('watchers-undo-390.png', {
-      body: await page.screenshot(),
-      contentType: 'image/png',
-    })
-    // Undo stays clickable over the open sheet and puts the person back.
-    await toast.getByRole('button', { name: 'Undo' }).click()
-    await expect(sheet.getByRole('button', { name: `Remove ${name}` })).toBeVisible()
-  }
+    // Make sure we are watching, so our own row is in the sheet.
+    if ((await toggle.textContent())?.trim() === 'Watch') {
+      await toggle.click()
+      await expect(toggle).toHaveText('Watching')
+    }
 
-  await sheet.getByRole('button', { name: 'Done' }).click()
-  await expect(sheet).toBeHidden()
-  await expect(summary).toBeFocused()
-})
+    // 2 and 3. The sheet.
+    await summary.click()
+    const sheet = page.getByRole('dialog', { name: /^Watchers/ })
+    await expect(sheet).toBeVisible()
+    await expect(sheet.getByRole('button', { name: 'Stop watching' })).toBeVisible()
+
+    const removes = sheet.getByRole('button', { name: /^Remove / })
+    const n = await removes.count()
+    if (n > 0) {
+      const first = removes.first()
+      const box = await first.boundingBox()
+      expect(box && box.height, 'Remove touch target').toBeGreaterThanOrEqual(TOUCH)
+      const name = ((await first.getAttribute('aria-label')) ?? '').replace(/^Remove /, '')
+      await testInfo.attach('watchers-sheet-390.png', {
+        body: await page.screenshot(),
+        contentType: 'image/png',
+      })
+
+      await first.click()
+      await expect(sheet.getByRole('button', { name: `Remove ${name}` })).toHaveCount(0)
+      const toast = page.locator('[data-sonner-toast]').filter({ hasText: name })
+      await expect(toast).toBeVisible()
+      await testInfo.attach('watchers-undo-390.png', {
+        body: await page.screenshot(),
+        contentType: 'image/png',
+      })
+      // Undo stays clickable over the open sheet and puts the person back.
+      await toast.getByRole('button', { name: 'Undo' }).click()
+      await expect(sheet.getByRole('button', { name: `Remove ${name}` })).toBeVisible()
+    }
+
+    await sheet.getByRole('button', { name: 'Done' }).click()
+    await expect(sheet).toBeHidden()
+    await expect(summary).toBeFocused()
+  }
+)

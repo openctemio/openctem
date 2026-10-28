@@ -264,6 +264,20 @@ each for a stated reason.
   private programs and their findings stay hidden (support is no program
   member).
 
+**Session lifecycle.** A support session ends when the console session that
+opened it ends, not only through End, a newer session or a revoke:
+
+- Signing out of the console ends its support sessions at once.
+- A sweeper (`support-session-sweep`, every minute) ends the open sessions
+  whose console session is gone (expired, or idle past the console's 15
+  minutes), whose grant was revoked or expired, or that were not used for 30
+  minutes (`end_reason` `console_session_ended`, `grant_expired`, `idle`).
+- Each ended session writes `support.session_ended` to the organization's audit
+  log and the admin audit log and emails the owners with the cause.
+- The tenant's `open_session` signal (the "support is viewing now" banner) is
+  true only while a session is open **and** its console session is alive and
+  not idle, so it drops at once even before the sweeper runs.
+
 ### 11.2 Differences from the proposal
 
 | Proposal | Built | Reason |

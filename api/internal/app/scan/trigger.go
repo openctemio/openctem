@@ -372,7 +372,7 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	// The targets are seeds of every step and a step does not gate its
 	// seeds again, so a workflow whose every step is passive gets the
 	// passive gate here, as its steps' derived targets do (hop router).
-	resolved, err := s.resolveScanTargets(withPassiveRun(ctx, stepsPassiveOnly(steps)), sc)
+	resolved, err := s.resolveScanTargets(s.withScanPlacement(withPassiveRun(ctx, stepsPassiveOnly(steps)), sc, workflowTools(steps)...), sc)
 	if err != nil {
 		return nil, err
 	}
@@ -596,13 +596,14 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 	}
 
 	// Outside zones too, a scanner that reads one target per job gets one
-	// command per target, not one command that scans only the first.
+	// command per target, not one command that scans only the first; a
+	// list scanner gets commands of the scan's targets_per_job.
 	if plan == nil {
-		if plan, err = perTargetPlan(sc, resolved.Targets); err != nil {
+		if plan, err = unzonedJobPlan(sc, resolved.Targets); err != nil {
 			return nil, err
 		}
 		if plan != nil {
-			recordPerTargetPlan(plan, runContext)
+			recordUnzonedJobPlan(plan, runContext)
 		}
 	}
 
@@ -827,6 +828,7 @@ func (s *Service) createScannerCommand(ctx context.Context, sc *scan.Scan, run *
 		return err
 	}
 	cmd.DispatchGate = scanDispatchGate(ctx, sc, run)
+	holdNoHostsWhenPassive(cmd, sc)
 	if stepRun != nil {
 		// The step settles with the last command carrying its id (a
 		// follow-up of unfinished targets included).

@@ -22,6 +22,10 @@ func (r *recordingOrgReader) GetOrganization(context.Context, shared.ID) (*admin
 	return nil, shared.ErrNotFound
 }
 
+func (r *recordingOrgReader) CountUsableOwners(context.Context, shared.ID) (int, error) {
+	return 0, nil
+}
+
 // The organization list passes the owner filter through, and refuses values
 // it does not know (no free-form SQL input reaches the query).
 func TestAdminOrganizationListFilterParams(t *testing.T) {
