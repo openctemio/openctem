@@ -179,11 +179,11 @@ describe('blocker rules', () => {
   })
 
   it('proof: only when the platform requires it; then intrusive always, platform sensors unless the scan uses our own', () => {
-    expect(proofNeededFor('off', 2, 'tenant')).toBe(false)
-    expect(proofNeededFor('off', 1, 'platform')).toBe(false)
-    expect(proofNeededFor(undefined, 2, 'platform')).toBe(false)
-    expect(proofNeededFor('platform_sensors', 2, 'tenant')).toBe(true)
-    expect(proofNeededFor('platform_sensors', 1, 'tenant')).toBe(false)
-    expect(proofNeededFor('platform_sensors', 1, 'auto')).toBe(true)
+    expect(proofNeededFor('off', 'tenant')).toBe(false)
+    expect(proofNeededFor('off', 'platform')).toBe(false)
+    expect(proofNeededFor(undefined, 'platform')).toBe(false)
+    expect(proofNeededFor('platform_sensors', 'tenant')).toBe(false)
+    expect(proofNeededFor('platform_sensors', 'tenant')).toBe(false)
+    expect(proofNeededFor('platform_sensors', 'auto')).toBe(true)
   })
 })

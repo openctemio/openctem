@@ -270,11 +270,16 @@ type fakeAudit struct {
 	mu      sync.Mutex
 	actions []string
 	entries []*admin.AuditLog
+	// fail makes every write return an error (an unavailable audit table).
+	fail bool
 }
 
 func (f *fakeAudit) Create(_ context.Context, l *admin.AuditLog) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.fail {
+		return errors.New("audit table unavailable")
+	}
 	f.actions = append(f.actions, l.Action)
 	f.entries = append(f.entries, l)
 	return nil
@@ -762,6 +767,35 @@ func TestLogoutEndsSession(t *testing.T) {
 	}
 	if h.console.sessionCount() != 0 {
 		t.Fatalf("sessions left: %d", h.console.sessionCount())
+	}
+}
+
+type recordingEnder struct{ ended []shared.ID }
+
+func (r *recordingEnder) EndForConsoleSession(_ context.Context, id shared.ID) {
+	r.ended = append(r.ended, id)
+}
+
+// Signing out ends the support sessions the console session opened; an unknown
+// token ends nothing.
+func TestLogoutEndsSupportSessions(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	rec := &recordingEnder{}
+	h.svc.SetSupportSessionEnder(rec)
+	_, token := h.enroll(t)
+	_, sess, err := h.svc.AuthenticateSession(ctx, token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.svc.Logout(ctx, "not-a-token", client); err != nil || len(rec.ended) != 0 {
+		t.Fatalf("unknown token: %v ended=%v", err, rec.ended)
+	}
+	if err := h.svc.Logout(ctx, token, client); err != nil {
+		t.Fatal(err)
+	}
+	if len(rec.ended) != 1 || rec.ended[0] != sess.ID {
+		t.Fatalf("ended = %v, want the signed-out console session %v", rec.ended, sess.ID)
 	}
 }
 

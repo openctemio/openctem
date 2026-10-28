@@ -53,6 +53,7 @@
   "errors.auth.ACCOUNT_SUSPENDED": "This account is suspended. Contact your administrator.",
   "errors.auth.CAPTCHA_REQUIRED": "Complete the security check and try again.",
   "errors.auth.EMAIL_ALREADY_EXISTS": "An account with this email already exists.",
+  "errors.auth.EMAIL_NOT_AUTHORITATIVE": "This provider cannot prove that you own this email address. Sign in with your password, or ask an administrator, and link the provider afterwards.",
   "errors.auth.EMAIL_NOT_VERIFIED": "Verify your email address before signing in. Check your inbox for the verification link.",
   "errors.auth.EMAIL_UNVERIFIED_AT_IDP": "Your identity provider has not verified your email address. Verify it there, then try again.",
   "errors.auth.INVALID_CREDENTIALS": "Invalid email or password.",

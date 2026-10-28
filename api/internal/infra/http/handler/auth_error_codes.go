@@ -45,6 +45,7 @@ const (
 	codeInvalidVerifyToken      apierror.Code = "INVALID_VERIFICATION_TOKEN"
 	codePasswordMismatch        apierror.Code = "PASSWORD_MISMATCH"
 	codeSessionLimitReached     apierror.Code = "SESSION_LIMIT_REACHED"
+	codeEmailNotAuthoritative   apierror.Code = "EMAIL_NOT_AUTHORITATIVE"
 	codeAccessDenied            apierror.Code = "ORGANIZATION_ACCESS_DENIED"
 	codeTenantRequired          apierror.Code = "ORGANIZATION_REQUIRED"
 	codeMFAIDPEvidenceRequired  apierror.Code = "MFA_IDP_EVIDENCE_REQUIRED"
@@ -175,6 +176,7 @@ var authErrorTable = []authErrorEntry{
 	{e(auth.ErrSSODomainNotAllowed, auth.ErrSSOFederatedDomainUnverified), http.StatusForbidden, codeSSODomainNotAllowed, "Your email domain is not allowed for this organization.", "domain_not_allowed"},
 	{e(auth.ErrSSOAwaitingApproval), http.StatusForbidden, codeSSOAwaitingApproval, "Your access to this organization is waiting for an administrator's approval.", "awaiting_approval"},
 	{e(auth.ErrSSONotAMember, auth.ErrSSOFederatedNotMember), http.StatusForbidden, codeSSONotAMember, "You do not have access to this organization. Contact your administrator.", "not_member"},
+	{e(auth.ErrEmailNotAuthoritative), http.StatusForbidden, codeEmailNotAuthoritative, "This provider cannot prove that you own this email address. Sign in with your password, or ask an administrator, and link the provider afterwards.", "link_required"},
 	{e(auth.ErrAccountLinkRequiresVerification, auth.ErrSSOFederatedTakeover), http.StatusForbidden, codeAccountLinkRequired, "An account with this email already exists. Sign in with your existing credentials first, then link this identity provider.", "link_required"},
 
 	// Social sign-in.

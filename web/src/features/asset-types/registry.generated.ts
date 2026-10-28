@@ -9,7 +9,7 @@
  * and labels for compile-time checks and for rendering before it loads.
  */
 
-export const ASSET_REGISTRY_VERSION = 'b1c264ec58c8ee2c'
+export const ASSET_REGISTRY_VERSION = '07237494bba54291'
 
 export type AssetLens =
   | 'external_surface'
@@ -467,6 +467,7 @@ export type AssetPropertyKey =
   | 'has_waf'
   | 'host'
   | 'hostname'
+  | 'http_posture'
   | 'hypervisor'
   | 'identity_hints'
   | 'image'
@@ -729,6 +730,7 @@ export const ASSET_PROPERTIES: Readonly<Record<AssetPropertyKey, AssetPropertyDe
   has_waf: { label: 'Behind a WAF', labelVi: 'Có WAF' },
   host: { label: 'Host', labelVi: 'Máy chủ' },
   hostname: { label: 'Hostname', labelVi: 'Tên máy' },
+  http_posture: { label: 'Response header posture', labelVi: 'Tư thế header phản hồi' },
   hypervisor: { label: 'Hypervisor', labelVi: 'Hypervisor' },
   identity_hints: { label: 'Identity hints', labelVi: 'Gợi ý định danh' },
   image: { label: 'Image', labelVi: 'Image' },
@@ -1043,6 +1045,7 @@ export const ASSET_TYPE_PROPERTIES: Readonly<Record<RegistryAssetType, readonly 
     'response_time_ms',
     'redirect_url',
     'chain_status_codes',
+    'http_posture',
   ],
   open_port: [
     'ip_addresses',
