@@ -140,6 +140,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-130](RFC-130-migration-applied-set.md) | Migration applied set (versions only have to be unique) | Implemented |
 | [RFC-131](RFC-131-ai-analysis.md) | AI analysis (governed suggestions, the analyze contract, the AI analyst) | Accepted (2026-10-28). |
 | [RFC-133](RFC-133-ai-analyst-harness.md) | The AI analyst harness (own loop, agent pool, scale on the job system, own tool sandbox) | Accepted (2026-10-28). |
+| [RFC-135](RFC-135-custom-ai-agents.md) | AI agents that organizations build (revisions, lifecycle, registry, console) | Accepted (2026-10-28). |
 <!-- END RFC INDEX -->
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.
