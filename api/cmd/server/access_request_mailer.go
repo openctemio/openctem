@@ -56,8 +56,16 @@ func (m accessRequestMailer) SendConfirmation(_ context.Context, to, company, co
 }
 
 func (m accessRequestMailer) SendDecision(_ context.Context, to string, approved bool) error {
-	if !m.Configured() || approved {
-		// An approval sends the owner's set-up link (OrganizationCreator).
+	if !m.Configured() {
+		return nil
+	}
+	if approved {
+		// A new account already got its set-up link (OrganizationCreator);
+		// this is the notice for an account that existed.
+		subject := fmt.Sprintf("[%s] Your access request was approved", m.name())
+		body := fmt.Sprintf(`<p>Your request for an organization on %s was approved. You are its owner.</p>
+<p>Sign in with your existing account to open it.</p>`, html.EscapeString(m.name()))
+		m.send(to, subject, body)
 		return nil
 	}
 	subject := fmt.Sprintf("[%s] Your access request", m.name())

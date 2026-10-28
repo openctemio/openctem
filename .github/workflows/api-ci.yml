@@ -12,14 +12,14 @@ name: API CI
 #                   whole suite against real Postgres and Redis in 6 shards
 #                   without the race detector, so the tenant-isolation and other
 #                   DB-backed tests fail on the PR, not first in the merge queue
-#                   (owner decision D-30). `Tests (least-privilege DB role)` and
-#                   `Migrations (PostgreSQL 18)` run on a PR only when it changes
-#                   a migration or the role script. PR runs are cancelled by a
-#                   newer push to the same PR (concurrency below).
+#                   (owner decision D-30). The suite always connects as the
+#                   least-privilege app role (D-6), so a missing grant fails on
+#                   the PR too. `Migrations (PostgreSQL 18)` runs on a PR only
+#                   when it changes a migration or the role script. PR runs are
+#                   cancelled by a newer push to the same PR (concurrency below).
 #   full            merge_group, push, and a PR with the `ci:full` label or a
 #                   changed CI definition. The suite in 8 shards with -race,
-#                   the least-privilege suite (D-6), PostgreSQL 18, plus
-#                   `Release Binaries` (not on a PR), and on main the Docker build.
+#                   PostgreSQL 18, plus `Release Binaries` (not on a PR).
 # `API CI OK` refuses a merge_group or push run that was not the full tier, so
 # nothing reaches develop/main without it.
 # Job bodies are carried over from openctemio/api's ci.yml; see git log for the
@@ -58,14 +58,14 @@ defaults:
 jobs:
   changes:
     name: Detect API changes
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
     permissions:
       contents: read
       pull-requests: read # the `ci:full` label and the PR's commits (changed.sh reads them live)
       actions: read # queue-verified.sh reads the merge queue's runs of this commit
       checks: read # green-base.sh and release-provenance.sh read a commit's check runs
     outputs:
-      api: ${{ steps.f.outputs.api == 'true' && steps.queue.outputs.verified != 'true' && steps.tree.outputs.verified != 'true' }}
+      api: ${{ steps.f.outputs.api == 'true' && (steps.scope.outputs.api_code == 'true' || steps.scope.outputs.ci_self == 'true') && steps.queue.outputs.verified != 'true' && steps.tree.outputs.verified != 'true' }}
       tree_note: ${{ steps.tree.outputs.note }}
       verified: ${{ steps.queue.outputs.verified }}
       full: ${{ steps.f.outputs.full }}
@@ -76,6 +76,7 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+      - uses: ./.github/actions/setup-gh
       - id: f
         working-directory: .
         env:
@@ -86,6 +87,16 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: bash .github/scripts/changed.sh
+      # Which part of the side changed (.github/scripts/scope.sh): only narrows
+      # what changed.sh selected, e.g. a change to web/e2e/ alone runs no web
+      # unit tests and builds no image, a CI file only the workflows that use it.
+      - id: scope
+        working-directory: .
+        env:
+          EVENT_BEFORE: ${{ github.event.before }}
+          MG_BASE: ${{ github.event.merge_group.base_sha }}
+          MG_HEAD: ${{ github.event.merge_group.head_sha }}
+        run: bash .github/scripts/scope.sh
       # A push to develop of a commit the merge queue already passed with this
       # workflow skips the jobs below (.github/scripts/queue-verified.sh).
       - id: queue
@@ -138,9 +149,14 @@ jobs:
   # name says which gate it was.
   static:
     name: API static checks
+    # actions: write lets the fail-fast step cancel doomed runs (.github/actions/fail-fast).
+    permissions:
+      contents: read
+      packages: read
+      actions: write
     needs: changes
     if: needs.changes.outputs.api == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_HEAVY) || 'ubuntu-latest' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -170,13 +186,15 @@ jobs:
           go-version-file: api/go.mod
           # A merge-queue ref can neither read develop's cache nor share what
           # it writes, so it neither restores nor saves one.
-          cache: ${{ github.event_name != 'merge_group' }}
+          cache: ${{ github.event_name != 'merge_group' && runner.environment == 'github-hosted' }}
           cache-dependency-path: api/go.sum
 
       # The analysis caches of golangci-lint, and the installed staticcheck
       # binary (its version is in the key), so a run only re-analyses what
       # changed. A cache is a speed-up only: a miss runs the same checks.
       - name: Cache lint tools
+        # A self-hosted runner keeps these on its own disk between jobs.
+        if: runner.environment == 'github-hosted'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -201,16 +219,16 @@ jobs:
           export BASE_REF
           bash scripts/check-migrations.sh
 
-      # Parallel PRs pick the same "next" number (#767 and #773 both took
-      # 000261). Fails on a duplicate version, and on a PR or queued group
-      # that adds a version not above the base's highest: golang-migrate
-      # silently skips it on databases that are already past it. In the merge
-      # queue the base is merge_group.base_sha, i.e. including the groups
-      # ahead, so two queued PRs with the same number cannot both land.
-      # On pull_request "below the base max" is only a warning: the merge
-      # queue renumbers a PR's migrations when it enqueues it. merge_group and
-      # push keep it an error; duplicates fail everywhere. A push to develop is
-      # compared with develop before the push (see the push branch below).
+      # openctem-migrate applies every migration a database lacks, so a version
+      # only has to be unique (RFC-130). Fails on a duplicate version, on a
+      # changed, removed or renamed merged up file, and on an added version
+      # that is neither a UTC timestamp nor (a warning while older PRs land) a
+      # legacy sequential number. In the merge queue the base is
+      # merge_group.base_sha, i.e. including the groups ahead, so two queued
+      # PRs with one version cannot both land. On pull_request a version the
+      # base also uses is only a warning: the step below gives this run's
+      # copy a new version. A push to develop is compared with develop before
+      # the push (see the push branch below).
       - name: Migration Versions
         working-directory: .
         env:
@@ -222,18 +240,17 @@ jobs:
         run: |
           bash .github/scripts/check-migration-versions.test.sh >/dev/null
           bash .github/scripts/pr-migration-renumber.test.sh >/dev/null
+          bash api/scripts/released-migrations.test.sh >/dev/null
+          bash api/scripts/released-migrations.sh --check
           bash api/scripts/dev-tools.test.sh >/dev/null
           bash api/deploy/backup.test.sh >/dev/null
           bash api/deploy/backup/overlay.test.sh >/dev/null
           case "$EVENT" in
-            pull_request) MIGRATION_BELOW_BASE=warning bash .github/scripts/check-migration-versions.sh "origin/${BASE_REF}" ;;
+            pull_request) MIGRATION_DUPLICATE=warning bash .github/scripts/check-migration-versions.sh "origin/${BASE_REF}" ;;
             merge_group)  bash .github/scripts/check-migration-versions.sh "$MG_BASE" ;;
             *)
               # A push to develop that skipped the queue (a direct or admin
-              # merge) is checked against develop as it was before the push,
-              # so a migration numbered at or below develop's highest turns
-              # develop red at once instead of being skipped silently on
-              # databases that are already past it.
+              # merge) is checked against develop as it was before the push.
               base=""
               if [ "$PUSH_REF" = "refs/heads/develop" ] && git cat-file -e "${PUSH_BEFORE}^{commit}" 2>/dev/null; then
                 base="$PUSH_BEFORE"
@@ -241,10 +258,10 @@ jobs:
               bash .github/scripts/check-migration-versions.sh ${base:+"$base"} ;;
           esac
 
-      # PR only: a migration whose number develop has taken since is
-      # renumbered in this runner (never committed) so the checks and tests
-      # below see the tree the merge queue will merge. merge_group and push
-      # keep the hard error above.
+      # PR only: a migration whose version develop has taken since gets a new
+      # version in this runner (never committed) so the checks and tests
+      # below see a tree the runner accepts. merge_group and push keep the
+      # hard error above.
       - name: Renumber this PR's clashing migrations (this run only)
         if: github.event_name == 'pull_request'
         working-directory: .
@@ -353,7 +370,10 @@ jobs:
           test "$published" = "gateway"
           # Every image the stack pulls by default is one a release publishes
           # (docker-publish.yml), under its current name.
-          published_names="$(yq -r '.jobs.merge.strategy.matrix.image[].name' ../../.github/workflows/docker-publish.yml)"
+          # yq: GitHub-hosted images ship it, the self-hosted runner image does not.
+          yq=yq
+          command -v yq >/dev/null || { GOWORK=off go install github.com/mikefarah/yq/v4@v4.44.3 && yq="$(go env GOPATH)/bin/yq"; }
+          published_names="$("$yq" -r '.jobs.merge.strategy.matrix.image[].name' ../../.github/workflows/docker-publish.yml)"
           for img in $(docker compose -f docker-compose.yml -f docker-compose.job-signer.yml config --images | sort -u); do
             case "$img" in
               ghcr.io/openctemio/*)
@@ -365,7 +385,7 @@ jobs:
 
       # The shards of the DB-backed jobs cover every package and every
       # top-level test of a split package exactly once. 8: full tier,
-      # 6: fast tier and least-privilege, 3: api-pg-compat.yml.
+      # 6: fast tier, 3: api-pg-compat.yml.
       - name: Test shards cover every test
         run: |
           bash ../.github/scripts/go-shard.sh check 8 6 3
@@ -386,19 +406,36 @@ jobs:
 
       - name: Lint (golangci-lint on new code)
         if: github.event_name == 'pull_request'
+        env:
+          # golangci-lint v1.64.8 is built with a Go that ignores cgroup CPU
+          # limits: in a 4-CPU runner container it sees every host CPU and
+          # starts that many type-check workers, which blows the container's
+          # memory limit (12 GiB) and gets it killed ("signal: killed").
+          # GOMAXPROCS matches the container's CPUs (hosted runners have 4
+          # too); GOMEMLIMIT makes GC tighten before the limit is reached.
+          GOMAXPROCS: "4"
+          GOMEMLIMIT: 8GiB
         run: |
           base="$(bash ../.github/scripts/effective-base.sh api "origin/${GITHUB_BASE_REF}")"
           make lint-new BASE_REF="$base"
+      - name: Fail fast
+        if: failure()
+        uses: ./.github/actions/fail-fast
 
-  # The OpenAPI spec, generated once and handed to the test and least-privilege
-  # shards (14 shards on the full tier each generated it: ~27 runner-minutes per
-  # merge group, and in the queue nothing is cached). Same wall time: the shards
+  # The OpenAPI spec, generated once and handed to the test shards (each shard
+  # generated it: ~2 runner-minutes per shard, and in the queue nothing is
+  # cached). Same wall time: the shards
   # start their tests when the spec arrives instead of generating it.
   spec:
     name: OpenAPI spec
+    # actions: write lets the fail-fast step cancel doomed runs (.github/actions/fail-fast).
+    permissions:
+      contents: read
+      packages: read
+      actions: write
     needs: changes
     if: needs.changes.outputs.api == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
     timeout-minutes: 15
     steps:
       - name: Checkout code
@@ -410,7 +447,7 @@ jobs:
         with:
           go-version-file: api/go.mod
           # Same rule as the shards: a merge-queue ref neither restores nor saves.
-          cache: ${{ github.event_name != 'merge_group' }}
+          cache: ${{ github.event_name != 'merge_group' && runner.environment == 'github-hosted' }}
           cache-dependency-path: api/go.sum
       - name: Generate the OpenAPI spec
         run: make swagger
@@ -420,21 +457,47 @@ jobs:
           path: api/api/openapi/swagger.yaml
           if-no-files-found: error
           retention-days: 1
+      - name: Fail fast
+        if: failure()
+        uses: ./.github/actions/fail-fast
 
   # Every event (PRs included): the whole suite against real Postgres and
-  # Redis, so the DB-backed tests run too. The shard list comes from `changes`
+  # Redis, AS THE LEAST-PRIVILEGE APP ROLE the API runs as in production (D-6,
+  # docs/deployment/database-roles.md). The shard list comes from `changes`
   # (fast tier 6 shards without -race, full tier 8 with -race).
+  #
+  # One run proves both things the suite used to need two jobs for:
+  #   - the behaviour: every DB-backed test passes;
+  #   - the grants: a fresh database is bootstrapped with
+  #     deploy/postgres/least-privilege-roles.sql, every migration is applied
+  #     AS THE MIGRATOR (no migration may need a superuser), the script is
+  #     re-run (idempotent), and the tests connect AS THE APP ROLE, so any
+  #     runtime statement the app role may not run fails with 42501.
+  # Running the same tests a second time as the owner role proved nothing more:
+  # the app role's rights are a subset of the owner's and row-level security is
+  # not enabled on any table (migration 000157 creates the policies in shadow
+  # mode), so a test that passes as the app role passes as the owner. When RLS
+  # is switched on, the owner (which bypasses it) needs its own run again.
+  # Tests that replay a migration use DATABASE_MIGRATE_URL (testdb.MigratorURL);
+  # testdb.PrivateDatabase and TestLeastPrivilegeRoles use DATABASE_ADMIN_URL
+  # (CREATE DATABASE needs a superuser).
   test:
     name: Tests (Postgres + Redis)
+    # actions: write lets the fail-fast step cancel doomed runs (.github/actions/fail-fast).
+    permissions:
+      contents: read
+      packages: read
+      actions: write
     needs: [changes, spec]
     if: needs.changes.outputs.api == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_HEAVY) || 'ubuntu-latest' }}
+    timeout-minutes: 40
     # The suite is split into parallel shards (.github/scripts/go-shard.sh:
     # the few packages that hold most of the run time are split by test name
     # over every shard, the rest go whole to one shard each).
     # `Static checks` proves the shards together cover every test once.
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         include: ${{ fromJSON(needs.changes.outputs.test_matrix) }}
     services:
@@ -444,15 +507,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
         env:
-          POSTGRES_USER: openctem
-          # Job-scoped throwaway database: no password at all (trust auth on
-          # the service network), so no credential literal lives in the repo.
+          POSTGRES_USER: postgres
+          # Job-scoped throwaway database, trust auth on the service network:
+          # no credential literal in the repo. Role separation is what is
+          # under test, not passwords.
           POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB: app_test
         ports:
-          - 5432:5432
+          # Random host port: no clash when several jobs share one Docker host;
+          # the steps read it from job.services.
+          - 5432
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U postgres -d app_test"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -462,7 +528,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
         ports:
-          - 6379:6379
+          - 6379
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 10s
@@ -486,7 +552,7 @@ jobs:
           go-version-file: api/go.mod
           # A merge-queue ref can neither read develop's cache nor share what
           # it writes, so it neither restores nor saves one.
-          cache: ${{ github.event_name != 'merge_group' }}
+          cache: ${{ github.event_name != 'merge_group' && runner.environment == 'github-hosted' }}
           cache-dependency-path: api/go.sum
 
       # The spec is generated, not committed; the contract tests read it. The
@@ -498,20 +564,43 @@ jobs:
           name: openapi-spec
           path: api/api/openapi
 
-      - name: Install golang-migrate
-        run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1
+      - name: Build the migration runner
+        run: |
+          go build -o "$RUNNER_TEMP/bin/openctem-migrate" ./cmd/openctem-migrate
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
-      - name: Apply migrations to the test database
-        run: migrate -path migrations -database "$DATABASE_URL" up
+      # The runner context is not available in job-level env, so the URLs are
+      # exported for the later steps from here.
+      - name: Point the tests at the service containers
+        shell: bash
         env:
-          DATABASE_URL: postgres://openctem@localhost:5432/app_test?sslmode=disable
+          SVC_HOST: ${{ runner.environment == 'self-hosted' && 'dind' || 'localhost' }}
+          PG_PORT: ${{ job.services.postgres.ports['5432'] }}
+        run: |
+          {
+            echo "SUPER_URL=postgres://postgres@${SVC_HOST}:${PG_PORT}/app_test?sslmode=disable"
+            echo "MIGRATOR_URL=postgres://openctem_migrator@${SVC_HOST}:${PG_PORT}/app_test?sslmode=disable"
+            echo "APP_ROLE_URL=postgres://openctem_app@${SVC_HOST}:${PG_PORT}/app_test?sslmode=disable"
+          } >> "$GITHUB_ENV"
+
+      - name: Bootstrap the roles on a fresh database
+        run: psql "$SUPER_URL" -X -v ON_ERROR_STOP=1 -f deploy/postgres/least-privilege-roles.sql
+
+      - name: Apply every migration as the migrator (not a superuser)
+        run: openctem-migrate -path migrations -database "$MIGRATOR_URL" up
+
+      - name: Re-run the bootstrap (idempotent; verifies grants on the migrated schema)
+        run: psql "$SUPER_URL" -X -v ON_ERROR_STOP=1 -f deploy/postgres/least-privilege-roles.sql
+
+      - name: The app role can reach the database (so a skip cannot pass silently)
+        run: psql "$APP_ROLE_URL" -X -v ON_ERROR_STOP=1 -c 'SELECT count(*) FROM tenants'
 
       # Explicit -timeout: the default 10m per package binary is too tight for
       # the -race suite on a slow or busy runner (it takes ~5m normally).
       # OPENCTEM_TEST_DB_REQUIRED: testdb fails instead of skipping when the
       # database is missing or unreachable. -json feeds the skip check below;
       # the jq filter prints the same log that -v would.
-      - name: Run tests (shard ${{ matrix.shard }}/${{ matrix.total }})
+      - name: Run tests as the app role (shard ${{ matrix.shard }}/${{ matrix.total }})
         # shell: bash means -o pipefail. Without it a failing go test is hidden
         # by the pipe into tee/jq and the step goes green.
         shell: bash
@@ -519,14 +608,18 @@ jobs:
           SHARD: ${{ matrix.shard }}
           TOTAL: ${{ matrix.total }}
           WITH_RACE: ${{ matrix.race }}
-          DB_HOST: localhost
-          DB_PORT: 5432
-          DB_USER: openctem
-          DB_NAME: app_test
-          DATABASE_URL: postgres://openctem@localhost:5432/app_test?sslmode=disable
           OPENCTEM_TEST_DB_REQUIRED: "1"
-          REDIS_HOST: localhost
-          REDIS_PORT: 6379
+          DATABASE_URL: ${{ env.APP_ROLE_URL }}
+          DATABASE_MIGRATE_URL: ${{ env.MIGRATOR_URL }}
+          # testdb.PrivateDatabase and TestLeastPrivilegeRoles only: CREATE
+          # DATABASE and CREATE ROLE need a superuser.
+          DATABASE_ADMIN_URL: ${{ env.SUPER_URL }}
+          DB_HOST: ${{ runner.environment == 'self-hosted' && 'dind' || 'localhost' }}
+          DB_PORT: ${{ job.services.postgres.ports['5432'] }}
+          DB_USER: openctem_app
+          DB_NAME: app_test
+          REDIS_HOST: ${{ runner.environment == 'self-hosted' && 'dind' || 'localhost' }}
+          REDIS_PORT: ${{ job.services.redis.ports['6379'] }}
         run: |
           flags=()
           if [ "$WITH_RACE" = true ]; then flags+=(-race); fi
@@ -534,7 +627,7 @@ jobs:
           skip="$(python3 ../.github/scripts/quarantine.py go-skip)"
           if [ -n "$skip" ]; then flags+=(-skip "$skip"); echo "quarantined: $skip"; fi
           bash ../.github/scripts/go-shard-run.sh "$SHARD" "$TOTAL" test.json \
-            "${flags[@]}" -timeout 20m -coverprofile=coverage.out -covermode=atomic
+            "${flags[@]}" -timeout 30m -coverprofile=coverage.out -covermode=atomic
 
       # A test that skips itself on a failed ping (t.Skipf) would otherwise let
       # this job go green without running its DB checks.
@@ -549,150 +642,29 @@ jobs:
           flags: api
           name: api-${{ matrix.shard }}-of-${{ matrix.total }}
           fail_ci_if_error: false
-
-  # D-6: the API connects as a least-privilege role (docs/deployment/database-roles.md).
-  # Full tier, and on a PR that changes a migration or the role script (where a
-  # missing grant comes from): bootstrap a fresh database with deploy/postgres/least-privilege-roles.sql,
-  # apply every migration AS THE MIGRATOR (no migration may need a superuser),
-  # re-run the script (idempotent), then run the DB-backed suite AS THE APP ROLE.
-  # Tests that replay a migration use DATABASE_MIGRATE_URL (testdb.MigratorURL).
-  # Any runtime statement the app role may not run fails here with 42501.
-  least-privilege:
-    name: Tests (least-privilege DB role)
-    needs: [changes, spec]
-    if: needs.changes.outputs.api == 'true' && (needs.changes.outputs.full == 'true' || needs.changes.outputs.migrations == 'true')
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [0, 1, 2, 3, 4, 5]
-        total: [6]
-    services:
-      postgres:
-        image: ghcr.io/openctemio/mirror/postgres:17-alpine
-        credentials:
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-        env:
-          POSTGRES_USER: postgres
-          # Job-scoped throwaway database, trust auth on the service network:
-          # no credential literal in the repo. Role separation is what is
-          # under test, not passwords.
-          POSTGRES_HOST_AUTH_METHOD: trust
-          POSTGRES_DB: lp_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-      redis:
-        image: ghcr.io/openctemio/mirror/redis:7-alpine
-        credentials:
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    env:
-      SUPER_URL: postgres://postgres@localhost:5432/lp_test?sslmode=disable
-      MIGRATOR_URL: postgres://openctem_migrator@localhost:5432/lp_test?sslmode=disable
-      APP_ROLE_URL: postgres://openctem_app@localhost:5432/lp_test?sslmode=disable
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          fetch-depth: 2 # the test merge's base parent, for the renumber below
-
-      - name: Renumber this PR's clashing migrations (this run only)
-        if: github.event_name == 'pull_request'
-        working-directory: .
-        run: bash .github/scripts/pr-migration-renumber.sh
-
-      - name: Setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: api/go.mod
-          # A merge-queue ref can neither read develop's cache nor share what
-          # it writes, so it neither restores nor saves one.
-          cache: ${{ github.event_name != 'merge_group' }}
-          cache-dependency-path: api/go.sum
-
-      # The spec is generated, not committed; the contract tests read it. The
-      # `spec` job generated it once for every shard (a shard used to spend
-      # 1.5-2 minutes on it).
-      - name: Download the OpenAPI spec
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: openapi-spec
-          path: api/api/openapi
-
-      - name: Install golang-migrate
-        run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1
-
-      - name: Bootstrap the roles on a fresh database
-        run: psql "$SUPER_URL" -X -v ON_ERROR_STOP=1 -f deploy/postgres/least-privilege-roles.sql
-
-      - name: Apply every migration as the migrator (not a superuser)
-        run: migrate -path migrations -database "$MIGRATOR_URL" up
-
-      - name: Re-run the bootstrap (idempotent; verifies grants on the migrated schema)
-        run: psql "$SUPER_URL" -X -v ON_ERROR_STOP=1 -f deploy/postgres/least-privilege-roles.sql
-
-      - name: The app role can reach the database (so a skip cannot pass silently)
-        run: psql "$APP_ROLE_URL" -X -v ON_ERROR_STOP=1 -c 'SELECT count(*) FROM tenants'
-
-      # OPENCTEM_TEST_DB_REQUIRED + the skip check: a DB test that skipped for a
-      # missing database fails the job instead of passing silently. The two
-      # tests that need CREATEDB (a superuser) skip here by design and run in
-      # Tests (Postgres + Redis).
-      - name: Run the DB-backed suite as the app role (shard ${{ matrix.shard }}/${{ matrix.total }})
-        shell: bash # -o pipefail: the pipe into tee/jq must not hide a failure
-        env:
-          SHARD: ${{ matrix.shard }}
-          TOTAL: ${{ matrix.total }}
-          OPENCTEM_TEST_DB_REQUIRED: "1"
-          DATABASE_URL: ${{ env.APP_ROLE_URL }}
-          DATABASE_MIGRATE_URL: ${{ env.MIGRATOR_URL }}
-          # testdb.PrivateDatabase only: CREATE DATABASE + migrations need a superuser.
-          DATABASE_ADMIN_URL: ${{ env.SUPER_URL }}
-          DB_HOST: localhost
-          DB_PORT: 5432
-          DB_USER: openctem_app
-          DB_NAME: lp_test
-          REDIS_HOST: localhost
-          REDIS_PORT: 6379
-        run: |
-          flags=()
-          skip="$(python3 ../.github/scripts/quarantine.py go-skip)"
-          if [ -n "$skip" ]; then flags+=(-skip "$skip"); echo "quarantined: $skip"; fi
-          bash ../.github/scripts/go-shard-run.sh "$SHARD" "$TOTAL" lp-test.json "${flags[@]}" -timeout 30m
-
-      - name: No DB-backed test was skipped
-        if: ${{ !cancelled() }}
-        run: bash ../.github/scripts/check-db-test-skips.sh lp-test.json
+      - name: Fail fast
+        if: failure()
+        uses: ./.github/actions/fail-fast
 
   # The next PostgreSQL major: every migration on a fresh PostgreSQL 18
   # database plus the schema probes that read the catalog (PostgreSQL 18
   # records NOT NULL constraints in pg_constraint, which a catalog query must
-  # allow for). The full suite runs on the supported 17 above. Same tiers as
-  # the least-privilege job.
+  # allow for). The full suite runs on the supported 17 above. Full tier, and
+  # on a PR that changes a migration or the role script.
   pg18:
     name: Migrations (PostgreSQL 18)
+    # actions: write lets the fail-fast step cancel doomed runs (.github/actions/fail-fast).
+    permissions:
+      contents: read
+      packages: read
+      actions: write
     needs: changes
     if: needs.changes.outputs.api == 'true' && (needs.changes.outputs.full == 'true' || needs.changes.outputs.migrations == 'true')
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_HEAVY) || 'ubuntu-latest' }}
     timeout-minutes: 20
     env:
       # postgres:18-alpine in .github/ci-images.txt (bump both together).
       PG18_DIGEST: sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
-      DATABASE_URL: postgres://openctem@localhost:5432/app_test?sslmode=disable
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -709,21 +681,28 @@ jobs:
       # has copied the image.
       - name: Start PostgreSQL 18
         working-directory: .
+        env:
+          SVC_HOST: ${{ runner.environment == 'self-hosted' && 'dind' || 'localhost' }}
         run: |
+          name="pg18-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
           img="ghcr.io/openctemio/mirror/postgres:18-alpine@$PG18_DIGEST"
           if ! docker pull -q "$img"; then
             img="public.ecr.aws/docker/library/postgres:18-alpine@$PG18_DIGEST"
             bash .github/scripts/retry.sh docker pull -q "$img"
           fi
-          docker run -d --name pg18 -p 5432:5432 -e POSTGRES_USER=openctem \
+          docker run -d --name "$name" -p 5432 -e POSTGRES_USER=openctem \
             -e POSTGRES_HOST_AUTH_METHOD=trust -e POSTGRES_DB=app_test "$img"
           # Over TCP: the entrypoint's init server listens on the socket only.
+          ready=
           for _ in $(seq 1 60); do
-            docker exec pg18 pg_isready -h 127.0.0.1 -U openctem -d app_test -q && exit 0
+            if docker exec "$name" pg_isready -h 127.0.0.1 -U openctem -d app_test -q; then ready=1; break; fi
             sleep 1
           done
-          docker logs pg18
-          exit 1
+          if [ -z "$ready" ]; then docker logs "$name"; exit 1; fi
+          # The published host port is random. The container runs on the Docker
+          # host: localhost on a GitHub runner, the dind container on ours.
+          port="$(docker port "$name" 5432/tcp | head -n1 | sed 's/.*://')"
+          echo "DATABASE_URL=postgres://openctem@${SVC_HOST}:${port}/app_test?sslmode=disable" >> "$GITHUB_ENV"
 
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -731,19 +710,38 @@ jobs:
           go-version-file: api/go.mod
           # A merge-queue ref can neither read develop's cache nor share what
           # it writes, so it neither restores nor saves one.
-          cache: ${{ github.event_name != 'merge_group' }}
+          cache: ${{ github.event_name != 'merge_group' && runner.environment == 'github-hosted' }}
           cache-dependency-path: api/go.sum
 
-      - name: Install golang-migrate
-        run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1
+      - name: Build the migration runner
+        run: |
+          go build -o "$RUNNER_TEMP/bin/openctem-migrate" ./cmd/openctem-migrate
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
       - name: Apply every migration
-        run: migrate -path migrations -database "$DATABASE_URL" up
+        run: openctem-migrate -path migrations -database "$DATABASE_URL" up
 
       - name: Schema probes on the migrated database
         env:
           OPENCTEM_TEST_DB_REQUIRED: "1"
         run: go test -count=1 -run 'TestCheckSensorRename' ./internal/infra/postgres/
+
+      # openctem-migrate applies every migration a database lacks, so one merged
+      # after a higher version runs last on a running install but in version
+      # order on a fresh one: both must give the same schema. The base is the
+      # commit before this change (the test merge's or queue entry's parent).
+      - name: Migration order (fresh install = upgraded database)
+        working-directory: .
+        env:
+          SUPER_URL: ${{ env.DATABASE_URL }}
+        run: bash .github/scripts/migration-order-check.sh HEAD^1
+
+      - name: Remove the PostgreSQL 18 container
+        if: ${{ always() }}
+        run: docker rm -f -v "pg18-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" || true
+      - name: Fail fast
+        if: failure()
+        uses: ./.github/actions/fail-fast
 
   # A push to develop whose jobs were skipped (the merge queue passed this
   # commit) still keeps develop's Go cache current: pull requests restore it,
@@ -764,7 +762,7 @@ jobs:
           go-version-file: api/go.mod
           # A merge-queue ref can neither read develop's cache nor share what
           # it writes, so it neither restores nor saves one.
-          cache: ${{ github.event_name != 'merge_group' }}
+          cache: ${{ github.event_name != 'merge_group' && runner.environment == 'github-hosted' }}
           cache-dependency-path: api/go.sum
       - name: Fill the cache (only when there was none for this go.sum)
         if: steps.go.outputs.cache-hit != 'true'
@@ -774,6 +772,11 @@ jobs:
   # separate `Build` job).
   binaries:
     name: Release Binaries
+    # actions: write lets the fail-fast step cancel doomed runs (.github/actions/fail-fast).
+    permissions:
+      contents: read
+      packages: read
+      actions: write
     needs: changes
     if: needs.changes.outputs.api == 'true' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
@@ -789,7 +792,7 @@ jobs:
           go-version-file: api/go.mod
           # A merge-queue ref can neither read develop's cache nor share what
           # it writes, so it neither restores nor saves one.
-          cache: ${{ github.event_name != 'merge_group' }}
+          cache: ${{ github.event_name != 'merge_group' && runner.environment == 'github-hosted' }}
           cache-dependency-path: api/go.sum
 
       - name: Build release binaries (linux/amd64, static)
@@ -809,6 +812,9 @@ jobs:
         with:
           name: bootstrap-admin-linux-amd64
           path: api/dist/bootstrap-admin
+      - name: Fail fast
+        if: failure()
+        uses: ./.github/actions/fail-fast
 
   # The ONE required status check for the API. Runs even when everything above
   # was skipped (non-API change, or a tier that does not apply to this event),
@@ -816,8 +822,8 @@ jobs:
   api-ok:
     name: API CI OK
     if: always()
-    needs: [changes, static, test, least-privilege, pg18, binaries]
-    runs-on: ubuntu-latest
+    needs: [changes, static, test, pg18, binaries]
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
     steps:
       - name: All API jobs passed or were skipped; the event's tier actually ran
         working-directory: .
@@ -846,7 +852,7 @@ jobs:
           fi
           if [ "$API" = true ]; then
             required="changes static test"
-            if [ "$FULL" = true ] || [ "$MIGRATIONS" = true ]; then required="$required least-privilege pg18"; fi
+            if [ "$FULL" = true ] || [ "$MIGRATIONS" = true ]; then required="$required pg18"; fi
             if [ "$EVENT" != pull_request ]; then required="$required binaries"; fi
             for j in $required; do
               r="$(echo "$NEEDS" | jq -r --arg j "$j" '.[$j].result')"

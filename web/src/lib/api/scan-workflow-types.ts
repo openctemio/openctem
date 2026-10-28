@@ -205,6 +205,16 @@ export interface ScanWorkflow {
   created_at: string
   updated_at: string
   created_by?: string
+  /** A system workflow retired on purpose: no new scans or copies; superseded_by names its replacement. */
+  is_retired?: boolean
+  superseded_by?: WorkflowRef
+  /** On a copy made from a retired system workflow (detail response only). */
+  based_on_retired?: { id: string; name: string; superseded_by?: WorkflowRef }
+}
+
+export interface WorkflowRef {
+  id: string
+  name: string
 }
 
 // ============================================
@@ -272,7 +282,7 @@ export type ScanRunKind =
 
 /** Which policy set a run's deadline (scan_runs.deadline_reason). */
 export type RunDeadlineReason =
-  'scan_max_duration' | 'workflow_max_duration' | 'platform_cap' | 'legacy'
+  'scan_max_duration' | 'workflow_max_duration' | 'platform_cap' | 'work_estimate' | 'legacy'
 
 export interface ScanRun {
   id: string
@@ -288,6 +298,11 @@ export interface ScanRun {
   scan_id?: string
   /** The run's scan, named by the server on list rows (empty when deleted). */
   scan_name?: string
+  /**
+   * The platform policy that owns the run's scan (list rows only): the run
+   * is read-only for people. Absent for a scan a person owns.
+   */
+  managed_by?: 'coverage' | 'enrichment' | 'web_verify'
   /** The probe ceiling the run started with (RFC-071); absent without one. */
   intensity?: 'passive' | 'active' | 'intrusive'
   trigger_type: ScanWorkflowTriggerType
@@ -422,6 +437,8 @@ export interface ScanWorkflowListFilters {
   include?: string
   search?: string
   is_active?: boolean
+  /** Also list retired system workflows (hidden by default). */
+  include_retired?: boolean
   tags?: string
   page?: number
   per_page?: number
@@ -434,6 +451,8 @@ export interface ScanRunListFilters {
   scan_id?: string
   /** Run kinds, comma-separated; system runs are hidden unless named. */
   kind?: string
+  /** `system` lists only runs of platform-managed scans (continuous coverage), `user` leaves them out. */
+  origin?: 'user' | 'system'
   status?: ScanRunStatus
   trigger_type?: ScanWorkflowTriggerType
   /** One sort key, `-` for descending (created_at, started_at, completed_at, total_findings). */

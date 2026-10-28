@@ -254,3 +254,39 @@ func TestEvidenceRoles_PentestFindingFollowsCampaignGate(t *testing.T) {
 	}
 	var _ handler.PentestEvidenceGate = fakePentestGate{}
 }
+
+// One statement that changes evidence of findings in two tenants bumps each
+// finding once and no other: the trigger pairs finding and tenant ids from a
+// single aggregate, never from two separately ordered ones.
+func TestEvidenceRoles_OneStatementTwoTenantsPairsFindingAndTenant(t *testing.T) {
+	h := newEvidenceAuthzHarness(t)
+	h.storeAt(h.tenantA, h.findingA1, "/a1")
+	h.storeAt(h.tenantA, h.findingA2, "/a2")
+	h.storeAt(h.tenantB, h.findingB, "/b")
+	a1, _ := h.versions(h.findingA1)
+	a2, _ := h.versions(h.findingA2)
+	b, _ := h.versions(h.findingB)
+
+	h.exec(`UPDATE finding_evidence SET role = 'proof' WHERE finding_id IN ($1, $2)`, h.findingA1.String(), h.findingB.String())
+
+	if v, _ := h.versions(h.findingA1); v != a1+1 {
+		t.Errorf("tenant A finding evidence_version %d -> %d, want +1", a1, v)
+	}
+	if v, _ := h.versions(h.findingB); v != b+1 {
+		t.Errorf("tenant B finding evidence_version %d -> %d, want +1", b, v)
+	}
+	if v, _ := h.versions(h.findingA2); v != a2 {
+		t.Errorf("untouched finding evidence_version %d -> %d", a2, v)
+	}
+
+	// The trigger functions build both arrays in one aggregate pass.
+	for _, fn := range []string{"trg_finding_evidence_bump_insert", "trg_finding_evidence_bump_update", "trg_finding_evidence_bump_delete"} {
+		var def string
+		if err := h.db.QueryRow(`SELECT pg_get_functiondef(to_regproc($1))`, fn).Scan(&def); err != nil {
+			t.Fatal(err)
+		}
+		if n := strings.Count(def, "array_agg("); n != 2 || strings.Count(def, "SELECT") != 1 {
+			t.Errorf("%s: want both arrays from one SELECT, got %d array_agg over %d SELECTs", fn, n, strings.Count(def, "SELECT"))
+		}
+	}
+}

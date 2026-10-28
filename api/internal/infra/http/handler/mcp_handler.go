@@ -14,6 +14,7 @@ import (
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	appcompliance "github.com/openctemio/openctem/api/internal/app/compliance"
 	"github.com/openctemio/openctem/api/internal/app/finding"
+	"github.com/openctemio/openctem/api/internal/app/scopeauth"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/brand"
@@ -184,6 +185,11 @@ type MCPHandler struct {
 	// aiPolicy is the organization's AI egress policy (SetAIPolicy). nil:
 	// the default limit (amber).
 	aiPolicy *aipolicy.Egress
+	// check_scope (SetScopeCheck).
+	scopeTargets  scopeauth.Targets
+	scopeRoots    scopeauth.Roots
+	scopePrograms mcpProgramMembers
+	scopeLimiter  *tenantRateLimiter
 }
 
 // mcpModuleChecker is the route module gate (*middleware.ModuleGate).
@@ -376,7 +382,7 @@ func (h *MCPHandler) handleToolsCall(w http.ResponseWriter, r *http.Request, req
 			return
 		}
 		h.writeResult(w, req.ID, toolErrorResult(mcpError{Code: mcpErrPermissionDenied,
-			Message: "this connection lacks the permission this tool needs (" + tool.RequiredPerm + "); reconnect with that access or ask an administrator"}))
+			Message: "this connection lacks the permission this tool needs (" + tool.RequiredPerm + "); reconnect with that access or ask an administrator." + mcpPolicyDecision()}))
 		return
 	}
 
@@ -385,7 +391,7 @@ func (h *MCPHandler) handleToolsCall(w http.ResponseWriter, r *http.Request, req
 	if tool.Propose && !proposeToolsUsable(ctx) {
 		h.auditToolCall(r, tenantID, tool.Name, p.Arguments, auditdom.ResultDenied, true, 0)
 		h.writeResult(w, req.ID, toolErrorResult(mcpError{Code: mcpErrPermissionDenied,
-			Message: "this tool needs a connection a person approved; API keys cannot propose changes"}))
+			Message: "this tool needs a connection a person approved; API keys cannot propose changes." + mcpPolicyDecision()}))
 		return
 	}
 
@@ -518,7 +524,12 @@ var mcpAuditSafeArgs = map[string]bool{
 	"campaign_id": true, "finding_id": true, "section": true, "category": true,
 	// write tools: the confirmation the call presents.
 	"confirmation_id": true,
+	// check_scope: the intensity and program are enum/ids; the target is hashed.
+	"intensity": true, "program_id": true,
 }
+
+// mcpAuditHashedArgs are keys recorded as a digest of their value.
+var mcpAuditHashedArgs = map[string]bool{"target": true}
 
 // sanitizeMCPArgs reduces raw tool arguments to an audit-safe summary: every
 // key present, with the value only for allowlisted non-sensitive scalars.
@@ -532,6 +543,13 @@ func sanitizeMCPArgs(raw json.RawMessage) map[string]any {
 	}
 	out := make(map[string]any, len(m))
 	for k, v := range m {
+		if mcpAuditHashedArgs[k] {
+			var val string
+			if err := json.Unmarshal(v, &val); err == nil {
+				out[k] = hashAuditTarget(val)
+				continue
+			}
+		}
 		if mcpAuditSafeArgs[k] {
 			var val any
 			if err := json.Unmarshal(v, &val); err == nil {
