@@ -565,7 +565,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Assets & Components
 		Component:        handler.NewComponentHandler(svc.Component, svc.SBOMImport, v, log),
 		VEXStatement:     handler.NewVEXStatementHandler(svc.VEX, log),
-		AssetGroup:       handler.NewAssetGroupHandler(svc.AssetGroup, v, log),
+		AssetGroup:       handler.NewAssetGroupHandler(svc.AssetGroup, v, log).SetAuditService(svc.Audit),
 		AssetType:        handler.NewAssetTypeHandler(svc.AssetType, v, log),
 		Scope:            handler.NewScopeHandler(svc.Scope, v, log),
 		BountyProgram:    handler.NewBountyProgramHandler(svc.BountyProgram, svc.Audit, log),
