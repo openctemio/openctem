@@ -46,7 +46,7 @@ describe('TeamOnboarding (onboarding fork)', () => {
     })
     render(<TeamOnboarding hasOtherTeams={false} />)
     expect(await screen.findByRole('form', { name: /create team form/i })).toBeInTheDocument()
-    expect(screen.getByText('Set up your first team')).toBeInTheDocument()
+    expect(screen.getByText('Set up your first organization')).toBeInTheDocument()
   })
 
   it('tells an account with nothing offered to ask its administrator', async () => {
