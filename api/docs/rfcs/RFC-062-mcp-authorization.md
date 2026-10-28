@@ -109,6 +109,19 @@ API; the consent page stays in the web app.
 A client of any kind is a public client: no client secrets are issued or
 accepted. The platform operator can block any client.
 
+**When a metadata-document client is stored.** `GET /oauth/authorize` is
+unauthenticated, so it never writes the client registry: the fetched document
+(name, redirect URIs, fetch times) is kept on the authorization request
+(`mcp_oauth_requests.pending_client`) and the redirect URI is checked against
+it. The client row in `mcp_oauth_clients` is created, or refreshed, only when
+a signed-in person approves the consent, in the same step that issues the code.
+A denied, abandoned or expired request leaves no client behind; expired
+requests are purged by the platform janitor a day after they end. The token
+endpoint and refresh read the stored client of the grant. A client blocked
+between authorize and approval is refused at approval. The name in a metadata
+document or a dynamic registration is whatever the application declared, so
+the console shows the host first and the name as "declares itself as".
+
 ## 6. Authorization flow
 
 1. The client calls `GET /oauth/authorize` with `response_type=code`,
@@ -168,10 +181,10 @@ effective = permissions(granted scopes) ∩ permissions the user holds now
 
 An owner or administrator holds every permission, so their token has exactly
 the permissions of its scopes. The owner/administrator bypass is never set for
-an MCP token. The token keeps the user's data scope: a role with full data
-access sees what it sees in the web console, any other member sees the assets
-their scope rows allow. (`oct_` keys keep their stricter rule: no full data
-access.)
+an MCP token. The token reads only the assets the user's scope rows allow, whatever the
+user's role: the full-data role is never applied to an MCP token (amended
+2026-10-19, same rule as `oct_` keys). An empty asset or finding result for a
+caller whose scope covers no asset carries a `scope_notice` explaining it.
 
 `tools/list` lists only the tools the token can run. A tool whose permission the
 user holds but whose scope was not granted answers `403` with
@@ -355,7 +368,7 @@ file a request that a different person reads, marked as written by an AI.
 | MA22 | Origin check; no session-based authorization; protocol upgrade separate. |
 | MA23 | Connected applications for users, organization administrators and platform administrators. |
 | MA24 | Tables for clients, authorization requests, grants and tokens; cascades and purge. |
-| MA25 | An MCP token keeps the user's data scope, including full data access; `oct_` keys do not. |
+| MA25 | An MCP token reads only what the user's scope rows allow (amended 2026-10-19: no full data access, as `oct_` keys); an empty result for an empty scope carries a `scope_notice`. |
 | MA26 | Proposal tools (§10a): requests filed in the person's name, decided by another person; never decided by the person or their agent; no per-call confirmation. |
 
 ## 14. Implementation

@@ -46,6 +46,11 @@ var (
 	// ErrSignupSSORequired: the address is on a domain whose organization
 	// requires its SSO; nothing was written and the person signs in there.
 	ErrSignupSSORequired = errors.New("sign-up for this address goes through the organization's single sign-on")
+	// ErrEmailNotAuthoritative: a social sign-in presented an e-mail address the
+	// provider does not vouch for (a personal Google account on a company
+	// address, a GitHub address) and the account is not bound to that provider
+	// identity yet. Nothing was written.
+	ErrEmailNotAuthoritative = errors.New("EMAIL_NOT_AUTHORITATIVE: this provider cannot prove ownership of this email address; sign in with your password (or ask an administrator) and link the provider afterwards")
 	// ErrTeamURLNotAvailable: the organization URL (slug) cannot be used,
 	// whether another organization has it or it is reserved.
 	ErrTeamURLNotAvailable = fmt.Errorf("%w: this team URL is not available; choose another", shared.ErrValidation)
@@ -119,6 +124,10 @@ type AuthService struct {
 	// signupDomains answers the sign-up policy of an address's claimed
 	// domain (sso_required, joinable, block new organizations). Nil: none.
 	signupDomains signupdom.DomainPolicySource
+
+	// addressHolder tells whether the inviting organization holds the invitee
+	// address's domain; nil means no organization does.
+	addressHolder AddressHolder
 
 	userRepo         userdom.Repository
 	sessionRepo      sessiondom.Repository
@@ -267,15 +276,13 @@ func (s *AuthService) SetSMTPChecker(checker SMTPAvailabilityCheck) {
 	s.smtpChecker = checker
 }
 
-// shouldRequireEmailVerificationForUser is the login-time variant. It looks
-// at ALL tenants the user belongs to and applies the strictest setting:
-//
-//   - "always" anywhere → require verification (deny login if unverified)
-//   - "never" anywhere (without "always") → skip verification (allow login)
-//   - "auto" everywhere → fall back to SMTP availability check
-//
-// If the user has no memberships at all (e.g., self-registered, not yet
-// invited), fall back to global SMTP detection.
+// shouldRequireEmailVerificationForUser is the login-time variant. Whether an
+// address is verified is a property of the account, not of one organization,
+// so the answer here is the platform rule alone: an organization setting can
+// neither lower it (an unverified account would walk into every other
+// organization it belongs to) nor raise it for the other organizations the
+// account belongs to. An organization that wants verified members enforces it
+// at its own entry (enforceEmailVerificationPolicy).
 func (s *AuthService) shouldRequireEmailVerificationForUser(ctx context.Context, userID shared.ID) bool {
 	if s.tenantRepo == nil {
 		return s.shouldRequireEmailVerification(ctx, "")
@@ -284,42 +291,30 @@ func (s *AuthService) shouldRequireEmailVerificationForUser(ctx context.Context,
 	if err != nil || len(memberships) == 0 {
 		return s.shouldRequireEmailVerification(ctx, "")
 	}
-	hasAlways := false
-	hasNever := false
-	for _, m := range memberships {
-		mode := s.getTenantVerificationMode(ctx, m.TenantID)
-		switch mode {
-		case tenantdom.EmailVerificationAlways:
-			hasAlways = true
-		case tenantdom.EmailVerificationNever:
-			hasNever = true
-		}
-	}
-	if hasAlways {
-		return true
-	}
-	if hasNever {
-		return false
-	}
-	// All tenants are "auto" → fall back to SMTP check using the first tenant
-	return s.shouldRequireEmailVerification(ctx, memberships[0].TenantID)
+	// SMTP availability may depend on the organization (its own mail relay),
+	// so the first membership still decides that part; its verification
+	// mode is not read.
+	return s.shouldRequireEmailVerificationPlatform(ctx, memberships[0].TenantID)
 }
 
-// getTenantVerificationMode reads a tenant's EmailVerificationMode setting.
-// Returns empty string if tenant lookup fails (caller treats as auto).
-func (s *AuthService) getTenantVerificationMode(ctx context.Context, tenantIDStr string) tenantdom.EmailVerificationMode {
-	if tenantIDStr == "" || s.tenantRepo == nil {
-		return ""
+// enforceEmailVerificationPolicy refuses to mint a token for an organization
+// that requires verified email ("always") while the account's address is not
+// verified. The requirement applies to entering that organization only.
+func (s *AuthService) enforceEmailVerificationPolicy(ctx context.Context, u *userdom.User, tenantID string) error {
+	if u.EmailVerified() {
+		return nil
 	}
-	tid, err := shared.IDFromString(tenantIDStr)
-	if err != nil {
-		return ""
+	if s.tenantRepo == nil {
+		return nil
 	}
-	t, err := s.tenantRepo.GetByID(ctx, tid)
-	if err != nil || t == nil {
-		return ""
+	// Fail closed: an unverified account whose organization cannot be read
+	// (bad id, lookup error) gets no token, rather than being let in because
+	// the "always" requirement could not be seen.
+	mode, ok := s.lookupTenantVerificationMode(ctx, tenantID)
+	if !ok || mode == tenantdom.EmailVerificationAlways {
+		return ErrEmailNotVerified
 	}
-	return t.TypedSettings().Security.EmailVerificationMode
+	return nil
 }
 
 // shouldRequireEmailVerification returns true if a newly registered user in
@@ -340,16 +335,20 @@ func (s *AuthService) shouldRequireEmailVerification(ctx context.Context, tenant
 	// 1. Per-tenant override (highest priority)
 	if tenantID != "" && s.tenantRepo != nil {
 		if mode, ok := s.lookupTenantVerificationMode(ctx, tenantID); ok {
-			switch mode {
-			case tenantdom.EmailVerificationAlways:
+			if mode == tenantdom.EmailVerificationAlways {
 				return true
-			case tenantdom.EmailVerificationNever:
-				return false
 			}
-			// EmailVerificationAuto / empty → fall through to SMTP check
+			// Auto, empty and the retired "never" fall through to the SMTP
+			// check: no organization setting skips verification.
 		}
 	}
 
+	return s.shouldRequireEmailVerificationPlatform(ctx, tenantID)
+}
+
+// shouldRequireEmailVerificationPlatform is the platform rule alone (the
+// organization's own mail relay counts, its verification mode does not).
+func (s *AuthService) shouldRequireEmailVerificationPlatform(ctx context.Context, tenantID string) bool {
 	// 2. A deployment that allows public sign-up (SIGNUP_MODE=domain or open)
 	// verifies every account that is not tied to an organization: missing
 	// SMTP never skips it there (start-up refuses that configuration, and
@@ -474,8 +473,10 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 	if err := s.passwordHasher.Validate(input.Password); err != nil {
 		return nil, fmt.Errorf("password validation failed: %w", err)
 	}
-	requireVerification := false
-	if !invited {
+	var requireVerification bool
+	if invited {
+		requireVerification = s.invitedMustVerify(ctx, invitationTenantID, email)
+	} else {
 		requireVerification = s.selfRegistrationMustVerify(ctx, invitationTenantID)
 	}
 
@@ -516,11 +517,11 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
 
-	// Email verification: an invitation sent to this exact address already
-	// proves the address, so an invited registration is verified. Otherwise
-	// the rule is resolved from the invitation's tenant when a (non-matching)
-	// token was supplied, else the platform default (single-tenant heuristic /
-	// SMTP check / global env). The token is NOT consumed here; acceptance is a
+	// Email verification: an invitation token proves only that its holder may
+	// join the inviting organization. The inviter sees the raw token, so it is
+	// never proof of the mailbox: an invited registration is verified at once
+	// only when the inviting organization holds the address's domain (see
+	// invitedMustVerify). The token is NOT consumed here; acceptance is a
 	// separate POST /invitations/{token}/accept. requireVerification was
 	// decided above.
 
@@ -567,6 +568,39 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 		VerificationToken:    verificationToken,
 		RequiresVerification: requireVerification,
 	}, nil
+}
+
+// AddressHolder answers whether an organization has verified the domain of an
+// e-mail address (the rule that lets an organization create accounts directly).
+type AddressHolder interface {
+	HeldBy(ctx context.Context, tenantID shared.ID, email string) (bool, error)
+}
+
+// SetAddressHolder wires the domain-holder check used to decide whether an
+// invitation may vouch for the address it names.
+func (s *AuthService) SetAddressHolder(h AddressHolder) { s.addressHolder = h }
+
+// invitedMustVerify decides verification for an account registered with an
+// invitation token. The token is held by the inviter (the create response and
+// the organization's mail relay both carry it), so it never proves the
+// mailbox: another organization's pending invitation for the same address
+// would otherwise be offered to an account its inviter created. Only an
+// organization that verified the address's domain may vouch for the address;
+// every other invited registration is verified by a mail link sent by the
+// platform, whatever the inviting organization's own verification setting.
+// The one exception is a platform that cannot deliver mail at all.
+func (s *AuthService) invitedMustVerify(ctx context.Context, invitationTenantID, email string) bool {
+	if s.addressHolder != nil {
+		if tid, err := shared.IDFromString(invitationTenantID); err == nil {
+			if held, herr := s.addressHolder.HeldBy(ctx, tid, email); herr == nil && held {
+				return false
+			}
+		}
+	}
+	if mode, ok := s.lookupTenantVerificationMode(ctx, invitationTenantID); ok && mode == tenantdom.EmailVerificationAlways {
+		return true
+	}
+	return s.selfRegistrationMustVerify(ctx, "")
 }
 
 // pendingInvitationFor resolves an invitation token supplied at registration.
@@ -1218,6 +1252,9 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 	if err := s.enforceMFAPolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
 		return nil, err
 	}
+	if err := s.enforceEmailVerificationPolicy(ctx, u, input.TenantID); err != nil {
+		return nil, err
+	}
 	if err := s.enforcePersonalPolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
 		return nil, err
 	}
@@ -1551,6 +1588,9 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 	// Per-tenant 2FA requirement: a password session whose user has not
 	// enrolled cannot mint a token for a tenant that requires 2FA.
 	if err := s.enforceMFAPolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
+		return nil, err
+	}
+	if err := s.enforceEmailVerificationPolicy(ctx, u, input.TenantID); err != nil {
 		return nil, err
 	}
 	if err := s.enforcePersonalPolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
@@ -2307,6 +2347,12 @@ func (s *AuthService) AcceptInvitationWithRefreshToken(ctx context.Context, inpu
 	// a privileged outside member. When one refuses, the person has joined but
 	// gets no token yet; they meet the requirement (for example set up 2FA)
 	// and sign in to the organization.
+	// An invitation token is not mailbox proof (its holder can be anyone who
+	// saw the link), so an organization that requires verified e-mail still
+	// refuses the token until the address is verified.
+	if err := s.enforceEmailVerificationPolicy(ctx, u, t.ID().String()); err != nil {
+		return nil, err
+	}
 	if err := s.enforceSSOPolicy(ctx, sess, t.ID().String(), membership.Role().String()); err != nil {
 		return nil, err
 	}

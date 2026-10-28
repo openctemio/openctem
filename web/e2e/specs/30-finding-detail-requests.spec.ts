@@ -14,7 +14,7 @@ import { test, expect } from '../fixtures/authenticated-page'
 
 type ListedFinding = { id: string; tool_name?: string; source?: string }
 
-test.describe('Finding detail requests', () => {
+test.describe('Finding detail requests', { tag: ['@findings'] }, () => {
   test('one read per resource, and no connector list for other tools', async ({ page }) => {
     const listed = page.waitForResponse((r) => /\/api\/v1\/findings\?/.test(r.url()) && r.ok(), {
       timeout: 60_000,
