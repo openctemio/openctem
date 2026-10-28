@@ -376,7 +376,7 @@ func (h *MCPHandler) handleToolsCall(w http.ResponseWriter, r *http.Request, req
 			return
 		}
 		h.writeResult(w, req.ID, toolErrorResult(mcpError{Code: mcpErrPermissionDenied,
-			Message: "this connection lacks the permission this tool needs (" + tool.RequiredPerm + "); reconnect with that access or ask an administrator"}))
+			Message: "this connection lacks the permission this tool needs (" + tool.RequiredPerm + "); reconnect with that access or ask an administrator." + mcpPolicyDecision()}))
 		return
 	}
 
@@ -385,7 +385,7 @@ func (h *MCPHandler) handleToolsCall(w http.ResponseWriter, r *http.Request, req
 	if tool.Propose && !proposeToolsUsable(ctx) {
 		h.auditToolCall(r, tenantID, tool.Name, p.Arguments, auditdom.ResultDenied, true, 0)
 		h.writeResult(w, req.ID, toolErrorResult(mcpError{Code: mcpErrPermissionDenied,
-			Message: "this tool needs a connection a person approved; API keys cannot propose changes"}))
+			Message: "this tool needs a connection a person approved; API keys cannot propose changes." + mcpPolicyDecision()}))
 		return
 	}
 

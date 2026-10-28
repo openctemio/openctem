@@ -178,5 +178,11 @@
   "dashboardKit.target.met": "đạt mục tiêu",
   "dashboardKit.target.missed": "chưa đạt mục tiêu",
   "dashboardKit.target.near": "gần đạt mục tiêu",
-  "dashboardKit.target.unmeasured": "chưa đo"
+  "dashboardKit.target.unmeasured": "chưa đo",
+  "dashboardKit.tooltip.allZero": "Tất cả bằng 0",
+  "dashboardKit.tooltip.moreAtZero": "{n} mục khác bằng 0",
+  "dashboardKit.tooltip.net": "Thay đổi ròng",
+  "dashboardKit.tooltip.total": "Tổng",
+  "dashboardKit.tooltip.vsPrevious": "so với kỳ trước",
+  "dashboardKit.tooltip.week": "Tuần {range}"
 }
