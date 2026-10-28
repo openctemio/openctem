@@ -55,6 +55,13 @@ const CapabilityValidate = "validate"
 // retest). It is kept only for a known tool.
 const CapabilityRetest = "retest"
 
+// CapabilityRetestTemplates prefixes the capability of a tool whose retest
+// handler also runs the templates delivered with a retest command:
+// "retest-templates:<tool>" (a finding's custom retest check). Kept only for a
+// known tool, like "retest:<tool>"; a retest with a custom check requires it,
+// so dropping it from the report left such a retest without a sensor.
+const CapabilityRetestTemplates = "retest-templates"
+
 // CapabilityScopeLimits is the capability of a sensor that enforces the
 // port and path limits of a signed job's targets (jobsign.Limit) in its
 // task sandbox; only such a sensor gets crawlers, template scanners and
@@ -362,6 +369,9 @@ func (in CapabilityReportInput) CatalogCandidates() (tools, capabilities []strin
 		if t, ok := strings.CutPrefix(c, CapabilityRetest+":"); ok {
 			addTool(t)
 		}
+		if t, ok := strings.CutPrefix(c, CapabilityRetestTemplates+":"); ok {
+			addTool(t)
+		}
 	}
 	for i, c := range in.Capabilities {
 		if i >= MaxReportedCapabilities {
@@ -501,6 +511,9 @@ func knownCapability(c string, knownTools, knownCaps map[string]bool) bool {
 		return knownTools[t]
 	}
 	if t, ok := strings.CutPrefix(c, CapabilityRetest+":"); ok {
+		return knownTools[t]
+	}
+	if t, ok := strings.CutPrefix(c, CapabilityRetestTemplates+":"); ok {
 		return knownTools[t]
 	}
 	return false

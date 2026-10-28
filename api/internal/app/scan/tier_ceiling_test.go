@@ -183,10 +183,9 @@ func TestResolveDispatchTargets_TierCeiling(t *testing.T) {
 	}
 }
 
-// Each workflow step is checked at its own tool's tier, and with the
-// platform's proof setting on an intrusive step needs proof per step
-// (RFC-054 §8.1): the run's other steps are not affected.
-func TestFilterStepTargets_TierAndProof(t *testing.T) {
+// Each workflow step is checked at its own tool's tier: the run's other steps
+// are not affected.
+func TestFilterStepTargets_Tier(t *testing.T) {
 	gate := &tierGate{stubGate{ceiling: map[string]scopedom.Tier{
 		"passive-only.verified.example": scopedom.TierPassive,
 		"safe.verified.example":         scopedom.TierActive,
@@ -211,30 +210,22 @@ func TestFilterStepTargets_TierAndProof(t *testing.T) {
 		!strings.Contains(st.Reason, "below t1") {
 		t.Fatalf("nuclei: %+v", st)
 	}
-	// Intrusive step: t2 entries only, and proven names only.
+	// Intrusive step: the entries below t2 are left out; proof is not asked
+	// here (it applies to jobs on platform sensors, checked when a step is
+	// queued for them), so an unproven name stays.
 	st, err = svc.FilterStepTargets(ctx, tenant, "zap", rc)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(st.Targets, []string{"t2.verified.example"}) || st.Refused != 3 ||
-		!strings.Contains(st.Reason, "verified domain") || !strings.Contains(st.Reason, "below t2") {
+	if !reflect.DeepEqual(st.Targets, []string{"t2.verified.example", "unproven.example.com"}) || st.Refused != 2 ||
+		strings.Contains(st.Reason, "verified domain") || !strings.Contains(st.Reason, "below t2") {
 		t.Fatalf("zap: %+v", st)
 	}
 	// Nothing left for the intrusive step: it fails, before any sensor.
-	_, err = svc.FilterStepTargets(ctx, tenant, "zap", map[string]any{"targets": []string{"unproven.example.com"}})
+	_, err = svc.FilterStepTargets(ctx, tenant, "zap", map[string]any{"targets": []string{"safe.verified.example"}})
 	var de *shared.DomainError
 	if !errors.As(err, &de) || de.Code != CodeStepTargetsRefused || !errors.Is(err, shared.ErrValidation) {
 		t.Fatalf("err = %v, want %s", err, CodeStepTargetsRefused)
-	}
-	// Without a proof verifier an intrusive step proves nothing (fail closed).
-	plain := &Service{attributionGate: &stubGate{}, logger: logger.NewNop(), proofPolicy: StaticProofPolicy(true)}
-	if _, err := plain.FilterStepTargets(ctx, tenant, "zap", map[string]any{"targets": []string{"t2.verified.example"}}); !errors.As(err, &de) || de.Code != CodeStepTargetsRefused {
-		t.Fatalf("no verifier: err = %v", err)
-	}
-	// Setting off: an intrusive step needs no proof.
-	off := &Service{attributionGate: gate, logger: logger.NewNop(), proofPolicy: StaticProofPolicy(false)}
-	if st, err := off.FilterStepTargets(ctx, tenant, "zap", map[string]any{"targets": []string{"unproven.example.com"}}); err != nil || len(st.Targets) != 1 {
-		t.Fatalf("proof off: %+v %v", st, err)
 	}
 	// A failed tier check fails the step.
 	failing := &Service{attributionGate: &stubGate{err: errors.New("db down")}, logger: logger.NewNop()}
