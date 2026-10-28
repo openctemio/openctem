@@ -62,8 +62,8 @@ While running, public sign-up also closes whenever the platform e-mail stops wor
 ## 4. Verification
 
 Under `domain` and `open`, every self-registered account verifies its address before it can sign
-in. The organization setting `email_verification_mode` governs accounts invited into that
-organization only. One organization's setting never decides platform-wide sign-up, and missing
+in. The organization setting `email_verification_mode` (`auto` or `always`; the retired `never` reads as `auto`)
+can only add a requirement at that organization's own entry. One organization's setting never decides platform-wide sign-up, and missing
 SMTP never skips verification of a self-registered account.
 
 ## 5. Planned steps
