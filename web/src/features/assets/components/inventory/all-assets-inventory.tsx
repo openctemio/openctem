@@ -57,7 +57,13 @@ import { useTranslation } from '@/context/i18n-provider'
 import { useTenant } from '@/context/tenant-provider'
 import { useLastVisit } from '../../hooks/use-last-visit'
 import { useCommittedSearch } from '../../hooks/use-committed-search'
-import { useAssets, useAssetStats, type AssetSearchFilters } from '../../hooks/use-assets'
+import {
+  buildAssetQueryParams,
+  useAssets,
+  useAssetStats,
+  type AssetSearchFilters,
+} from '../../hooks/use-assets'
+import { FilterGroupActions } from '@/features/asset-groups/components/filter-group-actions'
 import type { Asset } from '../../types/asset.types'
 import { useBusinessUnits } from '@/features/business-units/api/use-business-units'
 import {
@@ -238,6 +244,8 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
 
   // Data. The headline numbers come from the tenant-wide stats endpoint.
   const searchFilters = useMemo(() => toSearchFilters(filters), [filters])
+  // The filter on screen as list parameters, for "Save filter as group" and "Add all matching".
+  const filterParams = useMemo(() => buildAssetQueryParams(searchFilters), [searchFilters])
   const { assets, total, isFirstLoad, isLoading, isError, error, mutate } =
     useAssetsKeepingPrevious(searchFilters)
   const { stats, isLoading: statsLoading, mutate: statsMutate } = useAssetStats()
@@ -584,6 +592,9 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
                       onToggle={togglePreset}
                       extraPresets={extraPresets}
                     />
+                    {!isInventoryFilterEmpty(filters) && (
+                      <FilterGroupActions params={filterParams} total={total} />
+                    )}
                     {refreshButton}
                   </>
                 }
