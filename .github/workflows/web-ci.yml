@@ -93,8 +93,15 @@ jobs:
           EVENT: ${{ github.event_name }}
           SHA: ${{ github.sha }}
           HEAD_REF: ${{ github.event.merge_group.head_ref }}
+          MG_BASE: ${{ github.event.merge_group.base_sha }}
           REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
+          # Area reuse: web/ and the shared files, plus api/ (the contract this
+          # workflow generates and the image it builds come from it).
+          TREE_AREA: Web CI
+          TREE_PATHS: web api Makefile go.work go.work.sum .github deploy
+          TREE_CHECKS: Web CI OK
+          TREE_FULL: ${{ steps.f.outputs.full }}
         run: bash .github/scripts/tree-verified.sh
 
   # Generates the contract files for this commit (artifact `contract`) and, for
