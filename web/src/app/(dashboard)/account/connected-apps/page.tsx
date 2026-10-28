@@ -2,7 +2,11 @@
 
 import { useTranslation } from '@/context/i18n-provider'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { revokeMyConnection, useMyConnections } from '@/features/mcp-oauth/api/connections'
+import {
+  revokeMyConnection,
+  scopeMyConnection,
+  useMyConnections,
+} from '@/features/mcp-oauth/api/connections'
 import { ConnectionsList } from '@/features/mcp-oauth/components/connections-list'
 
 /**
@@ -29,6 +33,7 @@ export default function ConnectedAppsPage() {
           connections={data?.data}
           isLoading={isLoading}
           onRevoke={revokeMyConnection}
+          onScope={scopeMyConnection}
           emptyTitle={t('mcp.connections.emptyTitle', 'No connected applications')}
           emptyDescription={t(
             'mcp.myConnections.empty',
