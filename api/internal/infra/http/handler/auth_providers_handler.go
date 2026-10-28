@@ -29,6 +29,10 @@ type AuthProvidersHandler struct {
 	// makes the login page render a button that dead-ends. Callers MUST pass
 	// the same condition the router uses to gate those routes.
 	oauthRoutesLive bool
+	// socialOffered, when wired, answers whether a provider is offered right
+	// now (the console's social login setting, so a change shows without a
+	// restart); otherwise the start-up configuration decides.
+	socialOffered func(ctx context.Context, provider string) bool
 	// tenantCreationMode tells onboarding whether a new user may create an
 	// organization or must wait for the platform administrator.
 	tenantCreationMode string
@@ -80,6 +84,23 @@ func PasswordPolicyFromConfig(cfg config.AuthConfig) PasswordPolicyInfo {
 		RequireSpecial:        cfg.PasswordRequireSpecial,
 		ResetLinkValidMinutes: int(cfg.PasswordResetDuration.Minutes()),
 	}
+}
+
+// WithSocialSource makes the social buttons follow the console setting.
+func (h *AuthProvidersHandler) WithSocialSource(f func(ctx context.Context, provider string) bool) *AuthProvidersHandler {
+	h.socialOffered = f
+	return h
+}
+
+// social reports whether a provider's button is shown.
+func (h *AuthProvidersHandler) social(ctx context.Context, provider string, static config.OAuthProviderConfig) bool {
+	if !h.oauthRoutesLive {
+		return false
+	}
+	if h.socialOffered != nil {
+		return h.socialOffered(ctx, provider)
+	}
+	return static.IsConfigured()
 }
 
 // WithRegistrationEnabled sets the value reported as registration_enabled.
@@ -200,9 +221,9 @@ type AuthProvidersResponse struct {
 func (h *AuthProvidersHandler) GetProviders(w http.ResponseWriter, r *http.Request) {
 	resp := AuthProvidersResponse{
 		Social: SocialProviders{
-			Microsoft: h.oauthRoutesLive && h.oauthConfig.Microsoft.IsConfigured(),
-			Google:    h.oauthRoutesLive && h.oauthConfig.Google.IsConfigured(),
-			GitHub:    h.oauthRoutesLive && h.oauthConfig.GitHub.IsConfigured(),
+			Microsoft: h.social(r.Context(), "microsoft", h.oauthConfig.Microsoft),
+			Google:    h.social(r.Context(), "google", h.oauthConfig.Google),
+			GitHub:    h.social(r.Context(), "github", h.oauthConfig.GitHub),
 		},
 		SSOEnvEntraEnabled:  h.entraSSO.IsConfigured(),
 		TenantCreationMode:  h.tenantCreationMode,

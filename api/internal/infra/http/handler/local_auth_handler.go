@@ -16,12 +16,9 @@ import (
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/session"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
-	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
-	"github.com/openctemio/openctem/api/pkg/jwt"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/password"
 	"github.com/openctemio/openctem/api/pkg/validator"
@@ -91,11 +88,6 @@ func writeSignupNotAvailable(w http.ResponseWriter) {
 // address's domain requires its organization's SSO. The answer names no
 // organization; the web sends the person through email-first discovery.
 const CodeSignupSSORequired apierror.Code = "SSO_REQUIRED"
-
-func writeSignupSSORequired(w http.ResponseWriter) {
-	apierror.New(http.StatusForbidden, CodeSignupSSORequired,
-		"Your organization requires single sign-on for this address. Sign in with your organization's SSO.").WriteJSON(w)
-}
 
 // NewLocalAuthHandler creates a new LocalAuthHandler.
 func NewLocalAuthHandler(
@@ -875,6 +867,52 @@ func (h *LocalAuthHandler) AcceptInvitationWithRefresh(w http.ResponseWriter, r 
 	h.acceptInvitationWithRefresh(w, r, invitationToken, body.RefreshToken)
 }
 
+// SessionMFAChallengeRequest is the body of POST /api/v1/auth/mfa/enroll/session.
+// refresh_token may be omitted when the browser sends the refresh_token cookie
+// (with the CSRF pair).
+type SessionMFAChallengeRequest struct {
+	RefreshToken string `json:"refresh_token,omitempty"`
+}
+
+// SessionMFAChallenge handles POST /api/v1/auth/mfa/enroll/session: a signed-in
+// session that an organization's 2FA policy holds back (accept-with-refresh,
+// token exchange or refresh answered 403 MFA_ENROLLMENT_REQUIRED) asks for the
+// challenge that /auth/mfa/enroll/start|confirm or /auth/mfa/verify complete in
+// place. The completion signs the person in again with a session that proved
+// the factor.
+// @Summary      Start the second-factor step for a signed-in session
+// @Description  For a session refused with MFA_ENROLLMENT_REQUIRED: issues an enrollment challenge (no factor yet) or a verify challenge (factor enabled), with the names of the organizations that require it. Authenticated by the refresh token (body or cookie with the CSRF pair); the refresh token is not spent. Enrollment challenges need a session signed in within the last 15 minutes (else 403 REAUTH_REQUIRED: sign in again with the password); verify challenges have no such limit. Refused for sessions started through an identity provider.
+// @Tags         Authentication
+// @Accept       json
+// @Produce      json
+// @Param        request  body      SessionMFAChallengeRequest  false  "Optional refresh token"
+// @Success      200  {object}  MFAChallengeResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      401  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
+// @Failure      429  {object}  apierror.Error
+// @Router       /auth/mfa/enroll/session [post]
+func (h *LocalAuthHandler) SessionMFAChallenge(w http.ResponseWriter, r *http.Request) {
+	var body SessionMFAChallengeRequest
+	if r.Body != nil {
+		_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body)
+	}
+	refreshToken, ok := h.refreshTokenFrom(w, r, body.RefreshToken)
+	if !ok {
+		return
+	}
+	if refreshToken == "" {
+		apierror.Unauthorized("refresh_token is required (in body or cookie)").WriteJSON(w)
+		return
+	}
+	info, err := h.authService.SessionMFAChallenge(r.Context(), refreshToken, getClientIP(r), r.UserAgent())
+	if err != nil {
+		h.handleAuthError(w, err)
+		return
+	}
+	writeMFAChallenge(w, info)
+}
+
 func (h *LocalAuthHandler) acceptInvitationWithRefresh(w http.ResponseWriter, r *http.Request, invitationToken, bodyRefreshToken string) {
 	refreshToken, ok := h.refreshTokenFrom(w, r, bodyRefreshToken)
 	if !ok {
@@ -1045,10 +1083,6 @@ func (h *LocalAuthHandler) sendResetLinkAsync(r *http.Request, email string) {
 		}
 	}()
 }
-
-// CodeEmailNotVerified is the error code of a sign-in refused because the
-// address is not verified yet (the form then offers "send the link again").
-const CodeEmailNotVerified apierror.Code = "EMAIL_NOT_VERIFIED"
 
 // EmailDeliveryAvailable reports whether this server can send email. When it
 // cannot, forgot-password and resend-verification do nothing and the UI says
@@ -1337,9 +1371,8 @@ func (h *LocalAuthHandler) RevokeAllSessions(w http.ResponseWriter, r *http.Requ
 
 // AuthInfoResponse is the response body for auth info.
 type AuthInfoResponse struct {
-	Provider             string `json:"provider"`
-	RegistrationEnabled  bool   `json:"registration_enabled"`
-	EmailVerificationReq bool   `json:"email_verification_required"`
+	Provider            string `json:"provider"`
+	RegistrationEnabled bool   `json:"registration_enabled"`
 }
 
 // Info returns authentication provider information.
@@ -1351,9 +1384,8 @@ type AuthInfoResponse struct {
 // @Router       /auth/info [get]
 func (h *LocalAuthHandler) Info(w http.ResponseWriter, r *http.Request) {
 	resp := AuthInfoResponse{
-		Provider:             string(h.authConfig.Provider),
-		RegistrationEnabled:  h.registrationEnabled(r),
-		EmailVerificationReq: h.authConfig.RequireEmailVerification,
+		Provider:            string(h.authConfig.Provider),
+		RegistrationEnabled: h.registrationEnabled(r),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1371,105 +1403,27 @@ func (h *LocalAuthHandler) minPasswordLength() int {
 
 // handleAuthError handles authentication errors and returns appropriate HTTP responses.
 func (h *LocalAuthHandler) handleAuthError(w http.ResponseWriter, err error) {
+	// Limit answers carry the numbers; the coded table covers every other
+	// refusal (auth_error_codes.go).
+	if WriteLimitError(w, err) || writeAuthTableError(w, err) {
+		return
+	}
 	switch {
-	case errors.Is(err, auth.ErrInvalidCredentials):
-		apierror.Unauthorized("Invalid email or password").WriteJSON(w)
-	case errors.Is(err, auth.ErrAccountLocked):
-		apierror.Forbidden("Account is locked due to too many failed attempts").WriteJSON(w)
-	case errors.Is(err, auth.ErrAccountSuspended):
-		apierror.Forbidden("Account is suspended").WriteJSON(w)
-	case errors.Is(err, auth.ErrEmailNotVerified):
-		// A stable code: the sign-in form offers to send the link again.
-		apierror.New(http.StatusForbidden, CodeEmailNotVerified, "Email is not verified").WriteJSON(w)
-	case WriteLimitError(w, err):
-	case errors.Is(err, auth.ErrRegistrationDisabled), errors.Is(err, auth.ErrSignupNotAvailable):
-		writeSignupNotAvailable(w)
-	case errors.Is(err, auth.ErrSignupSSORequired):
-		writeSignupSSORequired(w)
-	case errors.Is(err, auth.ErrTenantCreationDisabled):
-		apierror.Forbidden("Organizations are created by the application administrator").WriteJSON(w)
-	case errors.Is(err, tenantdom.ErrPlatformAdminMembership):
-		apierror.Conflict("Platform administrators cannot belong to an organization. Use the admin console, or a separate account.").WriteJSON(w)
-	case errors.Is(err, auth.ErrEmailAlreadyExists):
-		apierror.Conflict("Email already exists").WriteJSON(w)
-	case errors.Is(err, auth.ErrInvalidResetToken):
-		apierror.BadRequest("Invalid or expired reset token").WriteJSON(w)
-	case errors.Is(err, auth.ErrInvalidVerificationToken):
-		apierror.BadRequest("Invalid or expired verification token").WriteJSON(w)
-	case errors.Is(err, auth.ErrPasswordMismatch):
-		// 400, not 401: the caller IS authenticated. Clients treat a 401 as an
-		// expired session and sign the user out, which is wrong for a typo.
-		apierror.BadRequest("Current password is incorrect").WriteJSON(w)
-	case errors.Is(err, auth.ErrSessionLimitReached):
-		apierror.Forbidden("Maximum number of active sessions reached").WriteJSON(w)
-	case errors.Is(err, tenantdom.ErrOrganizationSuspended):
-		middleware.WriteOrganizationSuspended(w)
-	case errors.Is(err, auth.ErrTenantAccessDenied):
-		apierror.Forbidden("User does not have access to this tenant").WriteJSON(w)
-	case errors.Is(err, auth.ErrSSORequired):
-		apierror.Forbidden("This organization requires SSO sign-in. Please sign in through your identity provider.").WriteJSON(w)
-	case errors.Is(err, auth.ErrTenantRequired):
-		apierror.BadRequest("tenant_id is required").WriteJSON(w)
-	// Two-factor authentication
-	case errors.Is(err, auth.ErrMFAChallengeInvalid):
-		apierror.Unauthorized("Your sign-in verification expired or is no longer valid. Please sign in again.").WriteJSON(w)
-	case errors.Is(err, auth.ErrMFACodeInvalid):
-		apierror.Unauthorized("Invalid verification code").WriteJSON(w)
-	case errors.Is(err, auth.ErrSSOMFAEvidenceRequired):
-		apierror.New(http.StatusForbidden, apierror.CodeMFAEnrollmentRequired,
-			"This organization requires your identity provider to confirm a second factor. Sign in again through your identity provider with multi-factor authentication.").WriteJSON(w)
-	case errors.Is(err, auth.ErrMFAEnrollmentRequired):
-		apierror.New(http.StatusForbidden, apierror.CodeMFAEnrollmentRequired,
-			"This organization requires two-factor authentication. Sign in again to complete it.").WriteJSON(w)
-	case errors.Is(err, auth.ErrMFANotSupported):
-		apierror.BadRequest("Two-factor authentication for this account is managed by your identity provider").WriteJSON(w)
-	case errors.Is(err, auth.ErrMFAAlreadyEnabled):
-		apierror.Conflict("Two-factor authentication is already enabled").WriteJSON(w)
-	case errors.Is(err, auth.ErrMFANotEnabled):
-		apierror.BadRequest("Two-factor authentication is not enabled").WriteJSON(w)
-	case errors.Is(err, auth.ErrMFANoPendingSetup):
-		apierror.BadRequest("Start two-factor setup first").WriteJSON(w)
-	case errors.Is(err, auth.ErrMFAUnavailable):
-		apierror.ServiceUnavailable("Two-factor authentication is not available on this server").WriteJSON(w)
-	// Session/Token errors. A malformed, forged or expired refresh JWT (or
-	// anything else presented as one, e.g. a 2FA challenge token) is a 401,
-	// not a server error.
-	case errors.Is(err, jwt.ErrInvalidToken), errors.Is(err, jwt.ErrExpiredToken),
-		errors.Is(err, jwt.ErrInvalidTokenType):
-		apierror.Unauthorized("Invalid or expired refresh token").WriteJSON(w)
-	case errors.Is(err, session.ErrRefreshTokenNotFound):
-		apierror.Unauthorized("Invalid or expired refresh token").WriteJSON(w)
-	case errors.Is(err, session.ErrRefreshTokenExpired):
-		apierror.Unauthorized("Refresh token has expired").WriteJSON(w)
-	case errors.Is(err, session.ErrRefreshTokenUsed):
-		apierror.Unauthorized("Refresh token has already been used (possible security breach)").WriteJSON(w)
-	case errors.Is(err, session.ErrRefreshTokenRevoked):
-		apierror.Unauthorized("Refresh token has been revoked").WriteJSON(w)
-	case errors.Is(err, session.ErrSessionExpired):
-		apierror.Unauthorized("Session has expired, please login again").WriteJSON(w)
-	case errors.Is(err, session.ErrSessionRevoked):
-		apierror.Unauthorized("Session has been revoked").WriteJSON(w)
-	case errors.Is(err, session.ErrSessionNotFound):
-		// Unknown session id, or one that belongs to another user. 404 (not
-		// 500), and identical for both so a caller can't probe others' ids.
-		apierror.NotFound("Session").WriteJSON(w)
-	case errors.Is(err, session.ErrTokenFamilyMismatch):
-		apierror.Unauthorized("Invalid token (possible replay attack detected)").WriteJSON(w)
 	// Password validation errors
 	case errors.Is(err, password.ErrPasswordTooShort):
-		apierror.BadRequest(fmt.Sprintf("Password is too short (minimum %d characters)", h.minPasswordLength())).WriteJSON(w)
+		apierror.New(http.StatusBadRequest, "PASSWORD_TOO_SHORT", fmt.Sprintf("Password is too short (minimum %d characters)", h.minPasswordLength())).WriteJSON(w)
 	case errors.Is(err, password.ErrPasswordTooLong):
-		apierror.BadRequest(fmt.Sprintf("Password is too long (maximum %d bytes; a letter with an accent counts as 2 or more)", password.MaxBytes)).WriteJSON(w)
+		apierror.New(http.StatusBadRequest, "PASSWORD_TOO_LONG", fmt.Sprintf("Password is too long (maximum %d bytes; a letter with an accent counts as 2 or more)", password.MaxBytes)).WriteJSON(w)
 	case errors.Is(err, password.ErrPasswordCommon):
-		apierror.BadRequest("This password appears in lists of breached passwords. Choose another one.").WriteJSON(w)
+		apierror.New(http.StatusBadRequest, "PASSWORD_BREACHED", "This password appears in lists of breached passwords. Choose another one.").WriteJSON(w)
 	case errors.Is(err, password.ErrPasswordNoUppercase):
-		apierror.BadRequest("Password must contain at least one uppercase letter").WriteJSON(w)
+		apierror.New(http.StatusBadRequest, "PASSWORD_NO_UPPERCASE", "Password must contain at least one uppercase letter").WriteJSON(w)
 	case errors.Is(err, password.ErrPasswordNoLowercase):
-		apierror.BadRequest("Password must contain at least one lowercase letter").WriteJSON(w)
+		apierror.New(http.StatusBadRequest, "PASSWORD_NO_LOWERCASE", "Password must contain at least one lowercase letter").WriteJSON(w)
 	case errors.Is(err, password.ErrPasswordNoNumber):
-		apierror.BadRequest("Password must contain at least one number").WriteJSON(w)
+		apierror.New(http.StatusBadRequest, "PASSWORD_NO_NUMBER", "Password must contain at least one number").WriteJSON(w)
 	case errors.Is(err, password.ErrPasswordNoSpecial):
-		apierror.BadRequest("Password must contain at least one special character").WriteJSON(w)
+		apierror.New(http.StatusBadRequest, "PASSWORD_NO_SPECIAL", "Password must contain at least one special character").WriteJSON(w)
 	// Generic validation and conflict errors
 	// Use safe error messages to prevent information leakage
 	case errors.Is(err, shared.ErrConflict):

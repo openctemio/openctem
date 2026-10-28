@@ -139,6 +139,12 @@ export const authEndpoints = {
    */
   mfaEnrollConfirm: () => `${API_BASE.AUTH}/mfa/enroll/confirm`,
 
+  /**
+   * Second-factor challenge for a signed-in session an organization's 2FA
+   * policy holds back (after accepting an invitation, or a refused refresh).
+   */
+  mfaEnrollSession: () => `${API_BASE.AUTH}/mfa/enroll/session`,
+
   // ============================================
   // SOCIAL/OAUTH AUTH
   // ============================================

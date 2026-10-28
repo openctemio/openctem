@@ -7,6 +7,32 @@ const push = vi.fn()
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push, refresh: vi.fn() }) }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
+const startSessionMfaAction = vi.fn()
+const selectTenantAction = vi.fn()
+vi.mock('@/features/auth/actions/local-auth-actions', () => ({
+  startSessionMfaAction: (...a: unknown[]) => startSessionMfaAction(...a),
+  selectTenantAction: (...a: unknown[]) => selectTenantAction(...a),
+}))
+// The real step is covered by its own tests; here only its wiring matters.
+vi.mock('@/features/auth/components/mfa-step', () => ({
+  MfaStep: ({
+    purpose,
+    orgs,
+    onDone,
+  }: {
+    purpose: string
+    orgs?: string[]
+    onDone: (r: { success: boolean; requiresTenantSelection?: boolean }) => void
+  }) => (
+    <div>
+      <span>{`step:${purpose}:${(orgs ?? []).join(',')}`}</span>
+      <button onClick={() => onDone({ success: true, requiresTenantSelection: true })}>
+        finish step
+      </button>
+    </div>
+  ),
+}))
+
 const TOKEN = 'GWEu-eZWS_bitGWEu-eZWS_bitGWEu-eZWS_bit0123'
 
 const preview = {
@@ -208,4 +234,92 @@ describe('InvitationView', () => {
       expect(await screen.findByText('A team member')).toBeInTheDocument()
     }
   )
+
+  it('shows the console text for a refusal code, never the server sentence', async () => {
+    fetchFn.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/lookup')) return new Response(JSON.stringify(preview), { status: 200 })
+      return new Response(
+        JSON.stringify({
+          code: 'INVITATION_MEMBERSHIP_SUSPENDED',
+          message: 'SERVER SENTENCE about the team',
+        }),
+        { status: 400 }
+      )
+    })
+    render(<InvitationView hasSession />)
+    fireEvent.click(await screen.findByRole('button', { name: /accept/i }))
+
+    expect(
+      await screen.findByText(/Your access to this organization is suspended/)
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/SERVER SENTENCE/)).not.toBeInTheDocument()
+  })
+
+  describe('organization requires two-factor authentication after joining', () => {
+    function mfaRefused() {
+      fetchFn = vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.endsWith('/lookup')) return new Response(JSON.stringify(preview), { status: 200 })
+        if (url.endsWith('/accept-with-refresh')) {
+          return new Response(
+            JSON.stringify({ code: 'MFA_ENROLLMENT_REQUIRED', message: 'requires 2FA' }),
+            { status: 403 }
+          )
+        }
+        return new Response(JSON.stringify({ message: 'no session' }), { status: 401 })
+      })
+      vi.stubGlobal('fetch', fetchFn)
+    }
+
+    beforeEach(() => {
+      startSessionMfaAction.mockReset()
+      selectTenantAction.mockReset()
+    })
+
+    it('shows the joined card and the second-factor step instead of an error, then opens the org', async () => {
+      mfaRefused()
+      startSessionMfaAction.mockResolvedValue({ success: true, purpose: 'enroll', orgs: ['Acme'] })
+      selectTenantAction.mockResolvedValue({ success: true })
+      render(<InvitationView hasSession />)
+      fireEvent.click(await screen.findByRole('button', { name: /accept invitation/i }))
+
+      expect(await screen.findByText('You have joined Acme')).toBeInTheDocument()
+      expect(screen.getByText('Set up two-factor authentication to open it.')).toBeInTheDocument()
+      expect(await screen.findByText('step:enroll:Acme')).toBeInTheDocument()
+      expect(screen.queryByText(/cannot accept/i)).toBeNull()
+      expect(screen.queryByText(/sign in again/i)).toBeNull()
+      expect(push).not.toHaveBeenCalled()
+
+      fireEvent.click(screen.getByRole('button', { name: 'finish step' }))
+      await waitFor(() => expect(push).toHaveBeenCalledWith('/'))
+      // Several organizations: the invited one is selected explicitly.
+      expect(selectTenantAction).toHaveBeenCalledWith('t1')
+      expect(window.sessionStorage.length).toBe(0)
+    })
+
+    it('says precisely what failed and retries; it does not send the person to sign in', async () => {
+      mfaRefused()
+      startSessionMfaAction
+        .mockResolvedValueOnce({ success: false, error: 'Two-factor is not available here.' })
+        .mockResolvedValueOnce({ success: true, purpose: 'verify' })
+      render(<InvitationView hasSession />)
+      fireEvent.click(await screen.findByRole('button', { name: /accept invitation/i }))
+
+      expect(await screen.findByText('Two-factor is not available here.')).toBeInTheDocument()
+      expect(push).not.toHaveBeenCalled()
+      fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+      expect(await screen.findByText('step:verify:')).toBeInTheDocument()
+      expect(startSessionMfaAction).toHaveBeenCalledTimes(2)
+    })
+
+    it('goes to sign-in only when the session really expired', async () => {
+      mfaRefused()
+      startSessionMfaAction.mockResolvedValue({ success: false, sessionExpired: true })
+      render(<InvitationView hasSession />)
+      fireEvent.click(await screen.findByRole('button', { name: /accept invitation/i }))
+      await waitFor(() => expect(push).toHaveBeenCalledTimes(1))
+      expect(String(push.mock.calls[0][0])).toContain('/login?returnTo=')
+    })
+  })
 })

@@ -1,4 +1,0 @@
-### Security: a sole member approves their own accepted risk only when the organization's level allows it
-
-- The sole-member self-approval (`POST /api/v1/approvals/{id}/self-approve`, authenticator code and reason) applies to false positives, and to accepted risks only when the organization's risk acceptance approval level is `high_and_above` or `off` (see `risk-acceptance-approval-level.md`). Under the default level `all` a risk-acceptance request is refused with 403 `SELF_APPROVAL_FALSE_POSITIVE_ONLY` and stays pending until a second member approves it. The refusal is audited and does not spend the authenticator code.
-- **Upgrade note:** a one-person organization that wants to accept risks alone sets the risk acceptance approval level to `high_and_above` or `off` (it takes effect 24 hours later); a self-approved acceptance ends at the self-approval limit (7 days for P0 or KEV, 45 for P1, 90 otherwise).

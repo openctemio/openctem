@@ -30,6 +30,11 @@ const (
 	platformUserReasonMax = 500
 )
 
+// adminIsSuper reports whether the console caller is a super admin.
+func adminIsSuper(r *http.Request) bool {
+	return middleware.GetAdminRole(r.Context()) == string(admin.AdminRoleSuperAdmin)
+}
+
 // PlatformUserDirectoryReader reads the cross-organization user directory.
 type PlatformUserDirectoryReader interface {
 	List(ctx context.Context, f postgres.PlatformUserFilter, limit, offset int) ([]postgres.PlatformUserSummary, int, map[string]int, error)
@@ -238,7 +243,7 @@ func (h *AdminPlatformUserHandler) List(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	rows, total, counts, err := h.dir.List(r.Context(), postgres.PlatformUserFilter{Q: q, State: state},
+	rows, total, counts, err := h.dir.List(r.Context(), postgres.PlatformUserFilter{Q: q, State: state, HideAdminLinked: !adminIsSuper(r)},
 		paging.PerPage, (paging.Page-1)*paging.PerPage)
 	if err != nil {
 		h.logger.Error("list platform users", "error", err)
@@ -288,7 +293,7 @@ func platformUserID(w http.ResponseWriter, r *http.Request) (shared.ID, bool) {
 // Get handles GET /api/v1/admin/platform-users/{user_id}.
 //
 // @Summary      One account across organizations (platform admin)
-// @Description  The account, the organizations it belongs to, its federated identities and its active sessions. Any admin role; audited.
+// @Description  The account, the organizations it belongs to, its federated identities and its active sessions. ops_admin and above; audited. An account linked to a platform administrator is 404 below super_admin.
 // @Tags         Admin
 // @Produce      json
 // @Param        user_id path  string  true  "User ID"
@@ -308,6 +313,12 @@ func (h *AdminPlatformUserHandler) Get(w http.ResponseWriter, r *http.Request) {
 		}
 		h.logger.Error("get platform user", "error", err)
 		apierror.InternalServerError("could not read the account").WriteJSON(w)
+		return
+	}
+	// An account linked to a platform administrator is on the super admins'
+	// roster, not in this directory: below super admin it does not exist.
+	if d.IsPlatformAdmin && !adminIsSuper(r) {
+		apierror.NotFound("user").WriteJSON(w)
 		return
 	}
 	resp := AdminPlatformUserDetailResponse{
