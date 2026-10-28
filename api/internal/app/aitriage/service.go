@@ -3,8 +3,6 @@ package aitriage
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"slices"
@@ -66,21 +64,6 @@ func (s *AITriageService) proposeFalsePositive(ctx context.Context, tenantID, fi
 	}
 }
 
-// TriageRunRecorder writes a completed triage result into the AI governance
-// tables (ai_runs, ai_suggestions) as well (aianalysis.Service).
-type TriageRunRecorder interface {
-	RecordTriageRun(ctx context.Context, result *aitriagedom.TriageResult, analysis *aitriagedom.TriageAnalysis, promptDigest string) error
-}
-
-// SetTriageRunRecorder wires the governance record of triage results. nil = none.
-func (s *AITriageService) SetTriageRunRecorder(r TriageRunRecorder) { s.runRecorder = r }
-
-// triagePromptDigest is the digest of the system prompt, recorded on the run.
-func triagePromptDigest() string {
-	sum := sha256.Sum256([]byte(triageSystemPrompt))
-	return "sha256:" + hex.EncodeToString(sum[:])
-}
-
 // TriageBroadcaster broadcasts triage events for real-time WebSocket updates.
 type TriageBroadcaster interface {
 	// BroadcastTriage sends a triage event to subscribers.
@@ -104,7 +87,6 @@ type AITriageService struct {
 	workflowDispatcher WorkflowEventDispatcherInterface
 	triageBroadcaster  TriageBroadcaster     // For real-time WebSocket updates
 	fpProposer         FalsePositiveProposer // records confident false-positive verdicts as pending approvals
-	runRecorder        TriageRunRecorder     // writes results into ai_runs / ai_suggestions too
 	platformCfg        config.AITriageConfig
 	logger             *logger.Logger
 	outputValidator    *TriageOutputValidator
@@ -738,11 +720,6 @@ func (s *AITriageService) ProcessTriage(ctx context.Context, resultID, tenantID,
 		// it is stuck there with tokens already spent.
 		s.logger.Error("AI triage: failed to save the result", "error", err, "result_id", resultID.String())
 		return s.failTriage(ctx, result, FailInternal)
-	}
-	if s.runRecorder != nil {
-		if rerr := s.runRecorder.RecordTriageRun(ctx, result, analysis, triagePromptDigest()); rerr != nil {
-			s.logger.Warn("AI triage: failed to record the governance run", "result_id", resultID.String(), "error", logger.SanitizeError(rerr))
-		}
 	}
 
 	// SECURITY: when the validator couldn't fit the LLM output into

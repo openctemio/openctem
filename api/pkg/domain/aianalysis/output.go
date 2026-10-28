@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -63,66 +62,6 @@ type SummaryPayload struct {
 type Evidence struct {
 	Ref   string `json:"ref"`
 	Quote string `json:"quote,omitempty"`
-}
-
-// Run is one execution of a use case, with its provenance.
-type Run struct {
-	ID                   shared.ID
-	TenantID             shared.ID
-	UseCase              UseCase
-	Kind                 string
-	SubjectType          SubjectType
-	SubjectID            shared.ID
-	Executor             Executor
-	Status               RunStatus
-	DataClass            DataClass
-	FieldsSent           []string
-	FieldsWithheld       []string
-	BundleDigest         string
-	PromptTemplateID     string
-	PromptTemplateDigest string
-	OutputSchema         string
-	Provider             string
-	Model                string
-	TokensIn             int
-	TokensOut            int
-	CostMicroUSD         int64
-	DurationMS           *int
-	ErrorCode            string
-	RequestedBy          *shared.ID
-	Trigger              Trigger
-	StartedAt            *time.Time
-	CompletedAt          *time.Time
-	CreatedAt            time.Time
-}
-
-// Suggestion is one typed AI result.
-type Suggestion struct {
-	ID            shared.ID
-	TenantID      shared.ID
-	RunID         shared.ID
-	UseCase       UseCase
-	SubjectType   SubjectType
-	SubjectID     shared.ID
-	Kind          Kind
-	Payload       json.RawMessage
-	SchemaVersion string
-	Direction     Direction
-	Confidence    *float64
-	Evidence      []Evidence
-	State         State
-	ReviewReasons []string
-	PreviousValue json.RawMessage
-	AppliedBy     *shared.ID
-	AppliedAt     *time.Time
-	ApprovalKind  ApprovalKind
-	ApprovalID    *shared.ID
-	UndoneBy      *shared.ID
-	UndoneAt      *time.Time
-	DecidedBy     *shared.ID
-	DecidedAt     *time.Time
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
 }
 
 // cleanText drops control characters except newlines and tabs, trims, and

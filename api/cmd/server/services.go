@@ -879,7 +879,8 @@ type Services struct {
 
 	// AI Triage
 	AITriage *aitriage.AITriageService
-	// AIAnalysis governs AI results: suggestions, use-case policy, apply and undo.
+	// AIAnalysis manages AI analysts (service accounts that triage like a
+	// person, with accountable owners) and their runs.
 	AIAnalysis *aianalysis.Service
 	// AIExecutor runs single-shot AI kinds in the API process.
 	AIExecutor *aianalysis.BuiltinExecutor
@@ -1309,6 +1310,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Vulnerability.SetDataFlowRepository(repos.DataFlow)        // Wire data flow loading
 	s.Vulnerability.SetIssueLinkStore(repos.FindingIssueLinks)   // same-issue groups
 	s.Vulnerability.SetApprovalRepository(repos.FindingApproval) // Wire approval workflow
+	// An AI analyst never lowers risk alone, whatever the organization's levels.
+	s.Vulnerability.SetAIAnalystChecker(repos.AIAnalysis)
 	s.Vulnerability.SetSeverityRequestRepository(repos.SeverityRequest)
 	s.Vulnerability.SetAccessControlRepository(repos.AccessControl)
 	s.Vulnerability.SetAssigneeProfileReader(repos.AccessControl) // list rows carry the assignee name
@@ -1893,15 +1896,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// recorded as a pending approval for a person; never applied.
 		s.AITriage.SetFalsePositiveProposer(s.Vulnerability)
 
-		// AI governance: every AI result is a suggestion; risk-lowering
-		// changes always go through the approval paths of the finding service.
-		s.AIAnalysis = aianalysis.New(repos.AIAnalysis, aianalysis.SettingsConsent{Repo: repos.TenantAISettings},
-			repos.Finding, finding.AIActions{S: s.Vulnerability}, log)
-		s.AIAnalysis.SetDataScope(s.DataScope)
-		s.AIAnalysis.SetAuditService(s.Audit)
-		s.AIAnalysis.SetActivityService(s.FindingActivity)
-		s.AITriage.SetTriageRunRecorder(s.AIAnalysis)
-
 		// RFC-008: per-tenant LLM token budget. Always constructed so
 		// Status() works for dashboards even before enforcement.
 		// Check()/Record() short-circuit when BudgetEnabled=false —
@@ -1917,8 +1911,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.AITriage.SetBudgetService(budgetSvc)
 
 		// The built-in executor: single-shot kinds in the API process,
-		// through the analyze contract, masking and the governance path.
-		s.AIExecutor = aianalysis.NewBuiltinExecutor(s.AIAnalysis, repos.TenantAISettings, llmFactory, s.AIMasking,
+		// through the analyze contract and masking, acting as an AI analyst
+		// through the finding commands.
+		s.AIExecutor = aianalysis.NewBuiltinExecutor(repos.Finding, finding.AIAnalystCommands{Findings: s.Vulnerability},
+			repos.TenantAISettings, llmFactory, s.AIMasking,
 			aibundle.NewBuilder(aiEgress), s.AIMaskMaps, aianalysis.ExecutorConfig{
 				MaxTokens: cfg.AITriage.MaxTokens, Temperature: cfg.AITriage.Temperature,
 			}, log)
@@ -2077,9 +2073,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Wire outbox notification to vulnerability and exposure services
 	s.Vulnerability.SetOutboxService(deps.DB, s.Outbox)
 	s.Exposure.SetOutboxService(deps.DB, s.Outbox)
-	if s.AIAnalysis != nil {
-		s.AIAnalysis.SetDowngradeNotifier(aianalysis.OutboxDowngradeNotifier{Outbox: s.Outbox, Logger: log})
-	}
 
 	// Priority-change publisher. PriorityClassificationService emits a
 	// PriorityChangeEvent on every class transition and nil-guards the
@@ -3000,6 +2993,16 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		gateHolder := apikey.NewHolderPermissions(repos.Tenant, rolePermissionSource{repos.Role})
 		s.ServiceKeyGate = apikey.NewServiceKeyGate(repos.ServiceAccount, gateMembers, gateHolder)
 		s.APIKey.SetServiceKeyGate(s.ServiceKeyGate)
+	}
+
+	// AI analysts: service accounts that triage like a person. What they may
+	// do is read from the role tables (no cache) at every run start, bounded
+	// by what their accountable owners hold.
+	s.AIAnalysis = aianalysis.New(repos.AIAnalysis, repos.AIAnalysis,
+		apikey.NewHolderPermissions(repos.Tenant, rolePermissionSource{repos.Role}), s.DataScope,
+		aianalysis.SettingsConsent{Repo: repos.TenantAISettings}, s.Audit, log)
+	if s.AIExecutor != nil {
+		s.AIExecutor.SetAnalysts(s.AIAnalysis)
 	}
 
 	// Wire permission services to tenant service
