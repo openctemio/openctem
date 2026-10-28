@@ -47,7 +47,8 @@ import (
 //	                                            step-up; reject: step-up;
 //	                                            cancel: requester (critical audit)
 //	/admin/audit-logs         any admin         —
-//	/admin/target-mappings    any admin         ops_admin+ (+ audited)
+//	/admin/target-mappings    any admin         super_admin + step-up + reason
+//	                                            (audited)
 //	/admin/threat-intel       any admin         sync: ops_admin+ (audited);
 //	                                            turn a feed on or off: ops_admin+ +
 //	                                            step-up (audited)
@@ -898,9 +899,14 @@ func registerAdminRoutes(
 			r.GET("/", h.AdminTargetMapping.List)
 			r.GET("/{id}", h.AdminTargetMapping.Get)
 
-			// Write operations — ops_admin+, rate-limited, and (when wired) audited.
+			// Write operations: a mapping decides which assets every
+			// organization's scans skip or take, so changing one is a
+			// platform-wide decision. super_admin, a step-up, a reason in the
+			// body (kept in the audit row), rate-limited and audited.
 			var writeMiddlewares []Middleware
-			writeMiddlewares = append(writeMiddlewares, h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin))
+			writeMiddlewares = append(writeMiddlewares,
+				h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin),
+				stepUp("target_mapping.change"))
 			if h.AdminMappingRateLimiter != nil {
 				writeMiddlewares = append(writeMiddlewares, h.AdminMappingRateLimiter.WriteMiddleware())
 			}
