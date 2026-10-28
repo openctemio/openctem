@@ -31,6 +31,17 @@ func StepIntensityTier(step *scanworkflow.Step) int {
 	return int(stage.IntensityTier(step.Tool, step.Capabilities, step.Config))
 }
 
+// stepsPassiveOnly reports whether every step of a workflow probes at the
+// passive tier (no step: false).
+func stepsPassiveOnly(steps []*scanworkflow.Step) bool {
+	for _, st := range steps {
+		if StepIntensityTier(st) != int(stage.TierPassive) {
+			return false
+		}
+	}
+	return len(steps) > 0
+}
+
 // probeCeiling is the highest tier the scan's tool or workflow steps probe
 // at, and what reaches it (for the refusal message).
 func (s *Service) probeCeiling(ctx context.Context, sc *scan.Scan) (int, string, error) {

@@ -649,6 +649,10 @@ const MaxUnfinishedTargets = 10000
 //     'timeout' otherwise;
 //   - afterwards, each scan's run summary is recomputed from its runs.
 //
+// A run whose open commands all wait in the queue (for a busy sensor of the
+// tenant, or for their hosts; runWaitsInQueueSQL) is not settled: queue wait
+// does not count, and the claim moves its deadline (ExtendRunDeadlinesAtClaim).
+//
 // Returns the number of runs settled.
 func (r *ScanRunRepository) MarkTimedOutRuns(ctx context.Context) (int64, error) {
 	reaped, err := r.MarkTimedOutRunsReporting(ctx)
@@ -676,6 +680,9 @@ func (r *ScanRunRepository) MarkTimedOutRunsReporting(ctx context.Context) ([]sc
 			WHERE pr.status IN ('pending', 'running')
 			  AND pr.started_at IS NOT NULL
 			  AND NOW() > COALESCE(pr.deadline_at, ` + runDeadlineSQL("pr.started_at", "pr.scan_id", "pr.scan_workflow_id") + `)
+			  -- queue wait does not count (scan_run_deadline_work.go): a
+			  -- claim gives the run the time its work needs
+			  AND NOT ` + runWaitsInQueueSQL() + `
 			FOR UPDATE OF pr SKIP LOCKED
 		), open_targets AS (
 			SELECT d.id,
@@ -967,7 +974,8 @@ func (r *ScanRunRepository) CloseCanceledRun(ctx context.Context, tenantID, runI
 // run is older than its threshold (4h scheduled / 1h interactive by default,
 // or the scan's own timeout when shorter). A run whose command waits for its
 // scan window, or while another task of the tenant scans its hosts, is not
-// unclaimed: no sensor may take that work yet. Such a run used to wait for the
+// unclaimed: no sensor may take that work yet; nor is a run whose command waits
+// for a busy sensor of the tenant that could take it (queueWaitSQL). Such a run used to wait for the
 // generic run timeout and end as "timeout" with no hint that nobody claimed
 // the work; it was then even retried. Here the run fails with the reason, its
 // open steps fail with NO_SENSOR (a code the retry controller never retries),
@@ -981,7 +989,7 @@ func (r *ScanRunRepository) AbortUnclaimedRuns(ctx context.Context, scheduledAft
 // AbortUnclaimedRunsReporting is AbortUnclaimedRuns, reporting the runs it
 // ended (scanrun.ReapedRunReporter).
 func (r *ScanRunRepository) AbortUnclaimedRunsReporting(ctx context.Context, scheduledAfter, interactiveAfter time.Duration) ([]scanrun.ReapedRun, error) {
-	const query = `
+	query := `
 		WITH candidates AS (
 			SELECT pr.id,
 			       LEAST(
@@ -1006,7 +1014,11 @@ func (r *ScanRunRepository) AbortUnclaimedRunsReporting(ctx context.Context, sch
 			               -- nor is waiting while another task of the tenant scans
 			               -- its hosts: no sensor may take it yet
 			               OR (c.host_keys IS NOT NULL AND EXISTS (
-			                     SELECT 1 FROM commands WHERE commands.id = c.id AND NOT ` + hostFreePredicate + `))))
+			                     SELECT 1 FROM commands WHERE commands.id = c.id AND NOT ` + hostFreePredicate + `))
+			               -- nor is waiting for a busy sensor of the tenant that
+			               -- could take it: the work queues behind other runs
+			               OR EXISTS (
+			                     SELECT 1 FROM commands WHERE commands.id = c.id AND ` + queueWaitSQL(false) + `)))
 		), unclaimed AS (
 			UPDATE scan_runs pr
 			SET status = 'failed',

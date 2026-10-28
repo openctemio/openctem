@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Bookmark, Copy, Trash2, Users } from 'lucide-react'
+import { Bookmark, Copy, Pin, PinOff, Trash2, Users } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -34,6 +34,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useMyGroups } from '@/features/access-control/api/use-groups'
+import { useNavPins } from '@/features/nav-pins/api/use-nav-pins'
 import type { ViewChange } from '../lib/view-changes'
 
 import {
@@ -120,6 +121,9 @@ export function SavedViewsMenu({
   // is the button's label) — not with every page load.
   const [wanted, setWanted] = useState(false)
   const { views, mutate } = useSavedViews(page, wanted || !!activeId)
+  // Findings views can be pinned to the top of the sidebar.
+  const navPins = useNavPins()
+  const pinnable = page === 'findings'
   const [saveOpen, setSaveOpen] = useState(false)
   // Only the save dialog's "share with" picker needs the caller's groups.
   const { groups } = useMyGroups(saveOpen)
@@ -240,6 +244,29 @@ export function SavedViewsMenu({
             group: view.group_name,
           })}
         />
+      )}
+      {pinnable && (
+        <button
+          type="button"
+          className="rounded-sm p-0.5 hover:bg-muted"
+          aria-pressed={navPins.isPinned({ kind: 'saved_view', ref: view.id })}
+          aria-label={
+            navPins.isPinned({ kind: 'saved_view', ref: view.id })
+              ? t('nav.pins.unpin', 'Unpin {name}', { name: view.name })
+              : t('nav.pins.pin', 'Pin {name} to the top', { name: view.name })
+          }
+          onClick={(e) => {
+            e.stopPropagation()
+            e.preventDefault()
+            void navPins.toggle({ kind: 'saved_view', ref: view.id })
+          }}
+        >
+          {navPins.isPinned({ kind: 'saved_view', ref: view.id }) ? (
+            <PinOff className="h-3 w-3" aria-hidden />
+          ) : (
+            <Pin className="h-3 w-3" aria-hidden />
+          )}
+        </button>
       )}
       {view.is_owner ? (
         <button

@@ -313,6 +313,23 @@ export function SensorInstallSnippets({
                 <span>{t('sensors.snippets.policyNote')}</span>
               </p>
             )}
+            {(f.key === 'docker' || f.key === 'compose') && (
+              <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                <span>
+                  {t('sensors.snippets.volumeNote')}{' '}
+                  <a
+                    href={docsHref(DOCS.sensors.run)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-primary underline-offset-4 hover:underline"
+                  >
+                    {t('sensors.snippets.runGuide')}
+                    <ExternalLink className="h-3 w-3" aria-hidden />
+                  </a>
+                </span>
+              </p>
+            )}
             <Snippet text={data[f.key] ?? ''} label={formatLabel(f)} file={f.file} />
           </TabsContent>
         ))}

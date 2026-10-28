@@ -654,7 +654,7 @@ func (s *Service) refuseOverTier(ctx context.Context, in DispatchTargetsInput, k
 // SystemPolicies are the platform policies that may dispatch work as the
 // system (DispatchTargetsInput.SystemPolicy, command.DispatchGate): the
 // managed_by values of the scans they carry their runs on.
-var SystemPolicies = []string{string(scan.ManagedByCoverage), string(scan.ManagedByEnrichment)}
+var SystemPolicies = []string{string(scan.ManagedByCoverage), string(scan.ManagedByEnrichment), string(scan.ManagedByWebVerify)}
 
 // ValidSystemPolicy reports whether p names a platform policy.
 func ValidSystemPolicy(p string) bool { return slices.Contains(SystemPolicies, p) }

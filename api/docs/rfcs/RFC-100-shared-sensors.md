@@ -238,7 +238,7 @@ sensor must not trust any tenant's key set. Design:
 
 - Always on: deny list, scope gate, exclusions, tier ceilings, per-host
   politeness, admin audit.
-- Hosted defaults: proof on, intrusive probes need proof everywhere, a T1-safe
+- Hosted defaults: proof on for platform sensors (the organization's own sensors need none), a T1-safe
   profile for unclassified assets, per-organization limits, an
   acceptable-use clause and an abuse contact, an identifying User-Agent,
   reverse DNS and an information page on the scanner addresses, a

@@ -713,6 +713,12 @@ func (r *CommandRepository) ClaimManyForSensor(ctx context.Context, tenantID, se
 	if want, err = dropSharedHosts(ctx, tx, tenantID, want); err != nil {
 		return nil, err
 	}
+	if want, err = capToFreeSlots(ctx, tx, tenantID, sensorID, want); err != nil {
+		return nil, err
+	}
+	if len(want) == 0 {
+		return nil, nil
+	}
 	where, args := pendingForSensorWhere(tenantID, &sensorID, capabilities)
 	args = append(args, pq.Array(want), r.leaseSeconds())
 	idsParam, leaseParam := fmt.Sprintf("$%d", len(args)-1), fmt.Sprintf("$%d", len(args))

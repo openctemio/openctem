@@ -16,7 +16,7 @@
 #   sync-versions.sh --root DIR operate on another checkout (tests)
 #   sync-versions.sh --release vX.Y.Z
 #                               the checkout is the release branch of vX.Y.Z
-#                               (or main right after it merged): platform.release
+#                               (or main right after it merged): api/deploy/VERSION
 #                               must be exactly vX.Y.Z, which may be newer than
 #                               the newest tag because the tag comes after
 #
@@ -27,9 +27,13 @@
 # It also checks the invariants that have no value to copy:
 #   - versions.yaml values are versions (vX.Y.Z) or "" where "" is allowed,
 #     and every sensor product section (any section other than platform,
-#     sdk, ci and chart) has its keys (the API's tests check the rest);
-#   - platform.release is not newer than the newest tag (when tags are present),
-#     except on the release branch that is about to create that tag (--release);
+#     sdk and ci) has its keys (the API's tests check the rest);
+#   - api/deploy/VERSION (the tag checkout's install version, written only on
+#     a release branch) is not newer than the newest tag (when tags are
+#     present), except on the release branch that is about to create that tag
+#     (--release), where it must name exactly that version;
+#   - versions.yaml has no platform or chart section: the platform version is
+#     the git tag, never a committed value on develop;
 #   - web/package.json carries the placeholder version 0.0.0, never a release.
 set -euo pipefail
 
@@ -63,16 +67,12 @@ EMBEDDED="api/internal/versions/versions.yaml"
 # value's closing delimiter (closer: '"', '}' or nothing), which is put back.
 # Never a Go file: Go reads the embedded copy.
 CONSUMERS=(
-  'platform.release|api/deploy/.env.example||^(OPENCTEM_VERSION=)([^#]*)$'
-  'platform.release|api/deploy/docker-compose.yml|}|(OPENCTEM_VERSION:-)([^}]*)\}'
-  'platform.release|api/deploy/docker-compose.job-signer.yml|}|(OPENCTEM_VERSION:-)([^}]*)\}'
-  'platform.release|api/deploy/docker-compose.sensor.yml|}|(OPENCTEM_VERSION:-)([^}]*)\}'
   'sensor.latest|api/deploy/docker-compose.sensor.yml|}|(SENSOR_VERSION:-)([^}]*)\}'
   'ci.latest|web/src/features/ci-runners/lib/ci.ts|'"'"'|^(export const CI_RELEASE = '"'"')([^'"'"']*)'"'"''
 )
 
 # The sections that are not sensor products.
-FIXED_SECTIONS=" platform sdk ci chart "
+FIXED_SECTIONS=" sdk ci "
 
 problems=0
 problem() { echo "::error::$*"; problems=$((problems + 1)); }
@@ -83,8 +83,8 @@ mapfile -t PRODUCTS < <(awk '/^[^[:space:]#][^:]*:[[:space:]]*(#.*)?$/ { s = $0;
 [[ " ${PRODUCTS[*]} " == *" sensor "* ]] || problem "versions.yaml: the scanning sensor section (sensor:) is missing"
 
 # key | kind: version, version? (may be ""), versions (space-separated, may be
-# ""), chart (X.Y.Z), text (set), text? (may be "").
-CHECKS=(platform.release:version sdk.latest:version sdk.min:version? sdk.advisories:versions ci.latest:version ci.min:version? chart.version:chart)
+# ""), text (set), text? (may be "").
+CHECKS=(sdk.latest:version sdk.min:version? sdk.advisories:versions ci.latest:version ci.min:version?)
 for prod in "${PRODUCTS[@]}"; do
   CHECKS+=("$prod.product:text" "$prod.latest:version" "$prod.min:version?" "$prod.image:text" "$prod.install:text" "$prod.release_identity:text")
 done
@@ -98,7 +98,6 @@ for check in "${CHECKS[@]}"; do
   fi
   VALUE[$key]="$v"
   case "$kind" in
-    chart) [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || problem "versions.yaml: $key '$v' is not X.Y.Z" ;;
     text) [[ -n "$v" ]] || problem "versions.yaml: $key must be set" ;;
     versions)
       for a in $v; do rel_is_version "$a" || problem "versions.yaml: $key '$a' is not vX.Y.Z"; done ;;
@@ -111,15 +110,28 @@ for check in "${CHECKS[@]}"; do
   esac
 done
 
-# platform.release names the newest release. Only a release branch (--release)
-# may name the version it is about to tag, and it must name exactly that.
+# The platform version is the git tag. The only committed copy is
+# api/deploy/VERSION, which a tag's checkout installs by default; cut-release.sh
+# writes it on the release branch and it never reaches develop. Only a release
+# branch (--release) may name the version it is about to tag, and it must name
+# exactly that.
+for section in platform chart; do
+  if grep -qE "^${section}:" "$MANIFEST"; then
+    problem "versions.yaml: the '$section' section is gone: the platform version is the git tag (api/deploy/VERSION on a release branch), the chart version lives in openctemio/helm-charts"
+  fi
+done
 latest_tag="$(rel_latest_tag "$ROOT" 2>/dev/null || true)"
+version_file="$ROOT/$VERSION_FILE"
+have_version=""
+[[ ! -f "$version_file" ]] || have_version="$(tr -d '[:space:]' <"$version_file")"
 if [[ -n "$RELEASE" ]]; then
-  [[ "${VALUE[platform.release]:-}" == "$RELEASE" ]] ||
-    problem "versions.yaml: platform.release is '${VALUE[platform.release]:-}', but this is the release branch of $RELEASE: its checkout must default to $RELEASE (cut-release.sh writes it)"
-elif [[ -n "$latest_tag" && -n "${VALUE[platform.release]:-}" ]] &&
-  rel_version_gt "${VALUE[platform.release]}" "$latest_tag"; then
-  problem "versions.yaml: platform.release ${VALUE[platform.release]} is newer than the newest tag $latest_tag (only release/${VALUE[platform.release]} may say that, checked with --release)"
+  [[ "$have_version" == "$RELEASE" ]] ||
+    problem "$VERSION_FILE is '${have_version:-missing}', but this is the release branch of $RELEASE: its checkout must install $RELEASE (cut-release.sh writes it)"
+elif [[ -n "$have_version" ]]; then
+  rel_is_version "$have_version" || problem "$VERSION_FILE: '$have_version' is not vX.Y.Z"
+  if [[ -n "$latest_tag" ]] && rel_version_gt "$have_version" "$latest_tag"; then
+    problem "$VERSION_FILE: $have_version is newer than the newest tag $latest_tag (only release/$have_version may say that, checked with --release)"
+  fi
 fi
 
 pkg="$ROOT/web/package.json"

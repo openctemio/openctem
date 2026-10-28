@@ -7,7 +7,7 @@ package asset
 
 // RegistryVersion identifies this registry. It changes whenever the
 // registry content changes.
-const RegistryVersion = "b1c264ec58c8ee2c"
+const RegistryVersion = "07237494bba54291"
 
 // Lenses.
 const (
@@ -371,6 +371,7 @@ var registryTypes = []TypeDefinition{
 			{Name: "response_time_ms", Kind: "int"},
 			{Name: "redirect_url", Kind: "string"},
 			{Name: "chain_status_codes", Kind: "list"},
+			{Name: "http_posture", Kind: "object"},
 		},
 		Facets:   []string{"http_service.port", "http_service.scheme", "http_service.status_code", "http_service.content_type", "http_service.server", "http_service.cdn", "http_service.cdn_type", "http_service.waf", "http_service.tls_version"},
 		GroupBy:  []string{"http_service.host", "http_service.port", "http_service.status_code", "http_service.title", "http_service.server", "http_service.cdn", "http_service.favicon_mmh3"},
@@ -383,7 +384,7 @@ var registryTypes = []TypeDefinition{
 		},
 		ScannableBy: []string{"url", "service", "port"},
 		Coverage: []CoverageRule{
-			{Capability: "vuln.templates", EverySeconds: 604800},
+			{Capability: "vuln.templates", EverySeconds: 604800, Requires: []string{"no_named_twin"}},
 		},
 	},
 	{
@@ -1659,6 +1660,7 @@ var registryProperties = []PropertyDefinition{
 	{Key: "has_waf", Label: "Behind a WAF", LabelVI: "Có WAF"},
 	{Key: "host", Label: "Host", LabelVI: "Máy chủ"},
 	{Key: "hostname", Label: "Hostname", LabelVI: "Tên máy"},
+	{Key: "http_posture", Label: "Response header posture", LabelVI: "Tư thế header phản hồi"},
 	{Key: "hypervisor", Label: "Hypervisor", LabelVI: "Hypervisor"},
 	{Key: "identity_hints", Label: "Identity hints", LabelVI: "Gợi ý định danh"},
 	{Key: "image", Label: "Image", LabelVI: "Image"},
