@@ -7,7 +7,7 @@ import { test, expect } from '../fixtures/authenticated-page'
  * checks they reach the page and that a view is a plain link.
  */
 
-test.describe('Findings quick views', () => {
+test.describe('Findings quick views', { tag: ['@findings'] }, () => {
   test('the sidebar lists the views under Findings, and a view is a link to the list', async ({
     page,
   }) => {
