@@ -118,3 +118,43 @@ func TestEmailSend_DialsVettedAddress(t *testing.T) {
 		t.Fatalf("dialed %v, want exactly 192.0.2.25:2525", *dialed)
 	}
 }
+
+// On a managed service the platform never speaks unauthenticated or
+// clear-text SMTP, and never port 25, to a relay an organization chose: the
+// relay is refused at construction and before the dial of a stored
+// configuration; self-managed installs keep their relays.
+func TestEmailSend_ManagedServiceTransportRules(t *testing.T) {
+	dialed := routeSMTP(t, tarpit(t))
+	emailpkg.SetManagedTenantRelay(true)
+	t.Cleanup(func() { emailpkg.SetManagedTenantRelay(false) })
+
+	cases := []struct {
+		name string
+		edit func(*EmailConfig)
+		want error
+	}{
+		{"port 25", func(c *EmailConfig) { c.SMTPPort = 25; c.UseSTARTTLS = true; c.Username, c.Password = "u", "p" }, emailpkg.ErrTenantRelayPort25},
+		{"no AUTH", func(c *EmailConfig) { c.SMTPPort = 587; c.UseSTARTTLS = true }, emailpkg.ErrTenantRelayNeedsAuth},
+		{"no TLS", func(c *EmailConfig) { c.SMTPPort = 587; c.Username, c.Password = "u", "p" }, emailpkg.ErrTenantRelayNeedsTLS},
+	}
+	for _, tc := range cases {
+		cfg := tenantEmailClient(587).config
+		tc.edit(&cfg)
+		if _, err := NewEmailClient(Config{Email: &cfg}); !errors.Is(err, tc.want) {
+			t.Errorf("%s: NewEmailClient err = %v, want %v", tc.name, err, tc.want)
+		}
+		stored := &EmailClient{product: "test", config: cfg}
+		if err := stored.sendSMTP(context.Background(), []byte("x")); !errors.Is(err, tc.want) {
+			t.Errorf("%s: sendSMTP err = %v, want %v", tc.name, err, tc.want)
+		}
+	}
+	if len(*dialed) != 0 {
+		t.Fatalf("dialed %v for a refused relay", *dialed)
+	}
+
+	emailpkg.SetManagedTenantRelay(false)
+	cfg := tenantEmailClient(25).config
+	if _, err := NewEmailClient(Config{Email: &cfg}); err != nil {
+		t.Fatalf("a self-managed install keeps port 25 without AUTH: %v", err)
+	}
+}

@@ -11,6 +11,8 @@ description: Cancel CI work that can no longer change the outcome after this job
 runs:
   using: composite
   steps:
+    # The script calls `gh`, which a self-hosted runner image may lack.
+    - uses: ./.github/actions/setup-gh
     - name: Cancel doomed runs
       shell: bash
       env:

@@ -1,13 +1,16 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/threat"
+	"github.com/openctemio/openctem/api/internal/app/vulnfeed"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 
 	"github.com/go-chi/chi/v5"
@@ -24,6 +27,20 @@ type ThreatIntelHandler struct {
 	validator *validator.Validator
 	logger    *logger.Logger
 	dataScope *datascope.Enforcer
+	bundles   BundleSyncer
+}
+
+// BundleSyncer runs the vulnerability bundle import on request
+// (*vulnfeed.Importer).
+type BundleSyncer interface {
+	Sync(ctx context.Context) (vulnfeed.Result, error)
+}
+
+// SetBundleSyncer wires the vulnerability bundle importer so the admin sync
+// endpoint can run the "vulnfeed" source (nil: the source is not accepted).
+func (h *ThreatIntelHandler) SetBundleSyncer(b BundleSyncer) *ThreatIntelHandler {
+	h.bundles = b
+	return h
 }
 
 // SetDataScope wires the enforcer that narrows the tenant exposure counts
@@ -56,6 +73,10 @@ func NewThreatIntelHandler(
 // @Security     BearerAuth
 // @Router       /admin/threat-intel/sync [get]
 func (h *ThreatIntelHandler) GetSyncStatuses(w http.ResponseWriter, r *http.Request) {
+	h.getSyncStatuses(w, r, true)
+}
+
+func (h *ThreatIntelHandler) getSyncStatuses(w http.ResponseWriter, r *http.Request, admin bool) {
 	ctx := r.Context()
 
 	statuses, err := h.service.GetSyncStatuses(ctx)
@@ -66,15 +87,32 @@ func (h *ThreatIntelHandler) GetSyncStatuses(w http.ResponseWriter, r *http.Requ
 
 	response := make([]SyncStatusResponse, 0, len(statuses))
 	for _, status := range statuses {
-		response = append(response, toSyncStatusResponse(status))
+		response = append(response, toSyncStatusResponse(status, admin))
 	}
 
 	writeJSONResponse(w, http.StatusOK, response)
 }
 
-// GetSyncStatus returns sync status for a specific source.
+// GetSyncStatusesTenant is the tenant-facing list: state and freshness only,
+// never the raw error text of a failed fetch (it can name hosts and paths).
+// GET /api/v1/threat-intel/sync
+func (h *ThreatIntelHandler) GetSyncStatusesTenant(w http.ResponseWriter, r *http.Request) {
+	h.getSyncStatuses(w, r, false)
+}
+
+// GetSyncStatusTenant is GetSyncStatus without the raw error text.
 // GET /api/v1/threat-intel/sync/{source}
+func (h *ThreatIntelHandler) GetSyncStatusTenant(w http.ResponseWriter, r *http.Request) {
+	h.getSyncStatus(w, r, false)
+}
+
+// GetSyncStatus returns sync status for a specific source (admin route).
+// GET /api/v1/admin/threat-intel/sync/{source}
 func (h *ThreatIntelHandler) GetSyncStatus(w http.ResponseWriter, r *http.Request) {
+	h.getSyncStatus(w, r, true)
+}
+
+func (h *ThreatIntelHandler) getSyncStatus(w http.ResponseWriter, r *http.Request, admin bool) {
 	ctx := r.Context()
 	source := chi.URLParam(r, "source")
 
@@ -88,7 +126,7 @@ func (h *ThreatIntelHandler) GetSyncStatus(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	writeJSONResponse(w, http.StatusOK, toSyncStatusResponse(status))
+	writeJSONResponse(w, http.StatusOK, toSyncStatusResponse(status, admin))
 }
 
 // TriggerSync triggers a sync for a specific source or all sources.
@@ -98,7 +136,7 @@ func (h *ThreatIntelHandler) GetSyncStatus(w http.ResponseWriter, r *http.Reques
 // @Tags         Admin Threat Intelligence
 // @Accept       json
 // @Produce      json
-// @Param        request  body      TriggerSyncRequest  false  "Feed (epss, kev, all); empty = all"
+// @Param        request  body      TriggerSyncRequest  false  "Feed (epss, kev, vulnfeed, all); empty = all"
 // @Success      200  {object}  map[string]any
 // @Failure      400  {object}  apierror.Error
 // @Security     BearerAuth
@@ -121,22 +159,28 @@ func (h *ThreatIntelHandler) TriggerSync(w http.ResponseWriter, r *http.Request)
 	h.logger.Info("triggering threat intel sync", "source", req.Source)
 
 	var results []threat.IntelSyncResult
-	if req.Source == "" || req.Source == "all" {
+	switch req.Source {
+	case "", "all":
 		results = h.service.SyncAll(ctx)
-	} else {
-		switch req.Source {
-		case "epss":
-			results = []threat.IntelSyncResult{h.service.SyncEPSS(ctx)}
-		case "kev":
-			results = []threat.IntelSyncResult{h.service.SyncKEV(ctx)}
-		default:
+		if h.bundles != nil {
+			results = append(results, h.syncBundles(ctx))
+		}
+	case "epss":
+		results = []threat.IntelSyncResult{h.service.SyncEPSS(ctx)}
+	case "kev":
+		results = []threat.IntelSyncResult{h.service.SyncKEV(ctx)}
+	case vulnfeed.SourceName:
+		if h.bundles == nil {
 			apierror.BadRequest("invalid source: " + req.Source).WriteJSON(w)
 			return
 		}
+		results = []threat.IntelSyncResult{h.syncBundles(ctx)}
+	default:
+		apierror.BadRequest("invalid source: " + req.Source).WriteJSON(w)
+		return
 	}
 
 	response := make([]SyncResultResponse, 0, len(results))
-	hasError := false
 	for _, result := range results {
 		resp := SyncResultResponse{
 			Source:        result.Source,
@@ -146,19 +190,28 @@ func (h *ThreatIntelHandler) TriggerSync(w http.ResponseWriter, r *http.Request)
 		}
 		if result.Error != nil {
 			resp.Error = result.Error.Error()
-			hasError = true
 		}
 		response = append(response, resp)
 	}
 
-	status := http.StatusOK
-	if hasError {
-		status = http.StatusPartialContent
-	}
-
-	writeJSONResponse(w, status, map[string]any{
+	// Always 200: the outcome of each feed is in results[].success, so a
+	// client that treats any 2xx as success cannot miss a failure by status.
+	writeJSONResponse(w, http.StatusOK, map[string]any{
 		"results": response,
 	})
+}
+
+// syncBundles runs the vulnerability bundle import as a sync result.
+func (h *ThreatIntelHandler) syncBundles(ctx context.Context) threat.IntelSyncResult {
+	start := time.Now()
+	res, err := h.bundles.Sync(ctx)
+	return threat.IntelSyncResult{
+		Source:        vulnfeed.SourceName,
+		RecordsSynced: res.CVEs,
+		DurationMs:    time.Since(start).Milliseconds(),
+		NotModified:   err == nil && !res.Ran,
+		Error:         err,
+	}
 }
 
 // SetSyncEnabled enables or disables sync for a source.
@@ -202,7 +255,7 @@ func (h *ThreatIntelHandler) SetSyncEnabled(w http.ResponseWriter, r *http.Reque
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
-	writeJSONResponse(w, http.StatusOK, toSyncStatusResponse(status))
+	writeJSONResponse(w, http.StatusOK, toSyncStatusResponse(status, true))
 }
 
 // EnrichCVE enriches a single CVE with threat intel data.
@@ -445,13 +498,16 @@ type KEVEntryResponse struct {
 
 // Helper functions
 
-func toSyncStatusResponse(status *threatintel.SyncStatus) SyncStatusResponse {
+func toSyncStatusResponse(status *threatintel.SyncStatus, includeError bool) SyncStatusResponse {
 	resp := SyncStatusResponse{
 		Source:         status.SourceName(),
 		Enabled:        status.IsEnabled(),
 		LastSyncStatus: status.LastSyncStatus().String(),
-		LastError:      status.LastSyncError(),
 		RecordsSynced:  status.RecordsSynced(),
+	}
+
+	if includeError {
+		resp.LastError = status.LastSyncError()
 	}
 
 	if status.LastSyncAt() != nil {

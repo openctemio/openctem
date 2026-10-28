@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/adminconsole"
 	authapp "github.com/openctemio/openctem/api/internal/app/auth"
@@ -44,15 +45,41 @@ func (d adminAccountDirectory) RecordPasswordFailure(ctx context.Context, userID
 	d.auth.RecordConsolePasswordFailure(ctx, userID)
 }
 
-func (d adminAccountDirectory) CreateAccount(ctx context.Context, email, name string) (shared.ID, string, error) {
-	acc, err := d.auth.CreateLocalAccount(ctx, email, name)
+func (d adminAccountDirectory) CreateInvitedAccount(ctx context.Context, email, name string, ttl time.Duration) (shared.ID, adminconsole.Invitation, error) {
+	acc, err := d.auth.CreateInvitedAccount(ctx, email, name, ttl)
 	if err != nil {
 		if errors.Is(err, authapp.ErrEmailAlreadyExists) {
-			return shared.ID{}, "", admin.ErrEmailHasAccount
+			return shared.ID{}, adminconsole.Invitation{}, admin.ErrEmailHasAccount
 		}
-		return shared.ID{}, "", err
+		return shared.ID{}, adminconsole.Invitation{}, err
 	}
-	return acc.User.ID(), acc.TemporaryPassword, nil
+	return acc.User.ID(), adminconsole.Invitation{Token: acc.SetupToken, ExpiresAt: acc.ExpiresAt}, nil
+}
+
+// adminInvitationMailer delivers a new administrator's set-password link
+// through the platform's system SMTP.
+type adminInvitationMailer struct {
+	email *authapp.EmailService
+}
+
+var _ adminconsole.InvitationMailer = adminInvitationMailer{}
+
+func (m adminInvitationMailer) CanDeliver(context.Context) bool {
+	return m.email != nil && m.email.CanDeliverSystem()
+}
+
+func (m adminInvitationMailer) SetupURL(token string) string {
+	if m.email == nil {
+		return ""
+	}
+	return m.email.AccountSetupURL(token)
+}
+
+func (m adminInvitationMailer) SendAdminInvitation(ctx context.Context, email, name, token string, expiresIn time.Duration) error {
+	if m.email == nil {
+		return errors.New("platform e-mail is not available")
+	}
+	return m.email.SendAdminInvitationEmail(ctx, email, name, token, expiresIn)
 }
 
 func (d adminAccountDirectory) AccountActive(ctx context.Context, userID shared.ID) (bool, error) {

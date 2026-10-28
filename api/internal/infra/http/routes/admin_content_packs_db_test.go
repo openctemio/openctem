@@ -15,6 +15,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/adminconsole"
 	contentpackapp "github.com/openctemio/openctem/api/internal/app/contentpack"
+	"github.com/openctemio/openctem/api/internal/app/contentpack/contentpacktest"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/infra/storage"
@@ -41,9 +42,10 @@ func contentPackHarness(t *testing.T) (*chainHarness, *contentpackapp.PlatformSe
 	name := "words-" + strings.ReplaceAll(shared.NewID().String()[24:], "-", "")
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
-	data := name + "\nadmin\n"
-	_ = tw.WriteHeader(&tar.Header{Name: "w.txt", Typeflag: tar.TypeReg, Mode: 0o644, Size: int64(len(data))})
-	_, _ = tw.Write([]byte(data))
+	for path, data := range contentpacktest.WordlistPack(name + "\nadmin\n") {
+		_ = tw.WriteHeader(&tar.Header{Name: path, Typeflag: tar.TypeReg, Mode: 0o644, Size: int64(len(data))})
+		_, _ = tw.Write(data)
+	}
 	_ = tw.Close()
 	p, err := svc.Upload(context.Background(), contentpackapp.PlatformInput{Name: name, Version: "1", Kind: contentpack.KindWordlist}, &buf)
 	if err != nil {

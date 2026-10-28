@@ -29,6 +29,7 @@ import (
 	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/jobsign"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/sensorproto/pairing"
 	"github.com/openctemio/openctem/api/pkg/sensorsig"
@@ -125,6 +126,9 @@ type Service struct {
 	log      *logger.Logger
 	// jobRoot reads the job-signing root the views carry (nil: none).
 	jobRoot func(ctx context.Context) string
+	// contentKeys are the content-signing keys an approved identity
+	// carries (nil: none).
+	contentKeys ContentKeySource
 
 	adminAudit AdminAuditWriter
 	// tokens stores organization enrollment tokens (nil: none).
@@ -396,6 +400,7 @@ func (s *Service) Status(ctx context.Context, id shared.ID, thumbprint string) (
 		if p.IsInstance() {
 			ident.Scope = pairing.ScopeInstance
 		}
+		ident.ContentSigning = s.contentSigning(p)
 		if p.ApprovedAt != nil {
 			ident.ApprovedAt = *p.ApprovedAt
 		}
@@ -496,6 +501,45 @@ type View struct {
 	// SENSOR_JOB_SIGNING_ROOT, so the sensor checks the key set the
 	// platform serves against a root it got from the administrator.
 	JobSigningRoot string `json:"job_signing_root,omitempty"`
+}
+
+// ContentKeySource gives the content-signing public keys the platform signs
+// packs with (contentpack.Signer).
+type ContentKeySource interface {
+	PlatformPublicKey() (ed25519.PublicKey, string, error)
+	PublicKey(tenantID string) (ed25519.PublicKey, string, error)
+}
+
+// SetContentKeys makes an approved identity carry the content-signing keys
+// the sensor pins: the platform key, and for an organization sensor its
+// organization's key. A shared sensor never gets a tenant key.
+func (s *Service) SetContentKeys(k ContentKeySource) { s.contentKeys = k }
+
+// contentSigning is the keys an identity carries, nil without a source or on
+// a key error (the sensor then pins none and fetches no content).
+func (s *Service) contentSigning(p *sensordom.Pairing) *pairing.ContentSigning {
+	if s.contentKeys == nil {
+		return nil
+	}
+	conv := func(pub ed25519.PublicKey) pairing.ContentKey {
+		k := jobsign.NewPublicKey(pub)
+		return pairing.ContentKey{KeyID: k.KeyID, Algorithm: k.Algorithm, PublicKey: k.PublicKey}
+	}
+	pub, _, err := s.contentKeys.PlatformPublicKey()
+	if err != nil {
+		s.log.Warn("content signing key not available for a pairing identity", "error", err)
+		return nil
+	}
+	out := &pairing.ContentSigning{Platform: []pairing.ContentKey{conv(pub)}}
+	if p.TenantID != nil && !p.IsInstance() {
+		tpub, _, err := s.contentKeys.PublicKey(p.TenantID.String())
+		if err != nil {
+			s.log.Warn("tenant content signing key not available for a pairing identity", "error", err)
+			return nil
+		}
+		out.Tenant = []pairing.ContentKey{conv(tpub)}
+	}
+	return out
 }
 
 // SetJobSigningRoot sets where the views read the job-signing root from

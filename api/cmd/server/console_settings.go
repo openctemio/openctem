@@ -93,5 +93,6 @@ func newAdminPlatformSettingsHandler(repos *Repositories, svc *Services, approva
 	if svc.ThreatIntel != nil {
 		h.ThreatReadiness = svc.ThreatIntel
 	}
+	h.EmailRelay = svc.OrgRelay
 	return h
 }
