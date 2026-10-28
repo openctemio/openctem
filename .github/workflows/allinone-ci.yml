@@ -107,6 +107,41 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: bash .github/scripts/tree-verified.sh
 
+  # The four images come from build-images.yml: built once per content key for
+  # the whole pipeline, by digest (the all-in-one is assembled FROM the three
+  # components). Only push and merge-queue runs call it: it holds packages:
+  # write, which a pull request never gets.
+  shared:
+    name: CI images
+    needs: changes
+    if: needs.changes.outputs.images == 'true' && needs.changes.outputs.full == 'true' && github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/build-images.yml
+    with:
+      images: allinone
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+
+  # A pull request only reads: it reuses the images develop built for the same
+  # content keys (verified digests) when all four exist, and otherwise `images`
+  # builds them locally. No packages: write, no id-token, no attestations: write.
+  shared-pr:
+    name: CI images (PR, read-only)
+    needs: changes
+    if: needs.changes.outputs.images == 'true' && needs.changes.outputs.full == 'true' && github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      packages: read
+      attestations: read
+    uses: ./.github/workflows/resolve-images.yml
+    with:
+      images: allinone
+
   images:
     name: Build and smoke-test images (amd64)
     # actions: write lets the fail-fast step cancel doomed runs (.github/actions/fail-fast).
@@ -114,9 +149,11 @@ jobs:
       contents: read
       packages: read
       actions: write
-    needs: changes
-    if: needs.changes.outputs.images == 'true' && needs.changes.outputs.full == 'true'
+    needs: [changes, shared, shared-pr]
+    if: ${{ !cancelled() && needs.changes.outputs.images == 'true' && needs.changes.outputs.full == 'true' && (needs.shared.result == 'success' || needs.shared-pr.result == 'success') }}
     runs-on: ubuntu-latest
+    env:
+      SHARED: ${{ needs.shared.outputs.push == 'true' || needs.shared-pr.outputs.push == 'true' }}
     services:
       postgres:
         image: ghcr.io/openctemio/mirror/postgres:17-alpine
@@ -148,19 +185,41 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
           dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
-      # The default docker driver: images built here are visible to the next
-      # build's FROM without a registry.
+      # Shared images: pull the digests, tag them as the steps below expect.
+      - name: Pull the shared images
+        if: env.SHARED == 'true'
+        env:
+          API_REF: ${{ needs.shared.outputs.api || needs.shared-pr.outputs.api }}
+          WEB_REF: ${{ needs.shared.outputs.web || needs.shared-pr.outputs.web }}
+          CONSOLE_REF: ${{ needs.shared.outputs.console || needs.shared-pr.outputs.console }}
+          ALLINONE_REF: ${{ needs.shared.outputs.allinone || needs.shared-pr.outputs.allinone }}
+        run: |
+          set -euo pipefail
+          for pair in "$API_REF local/openctem-api:ci" "$WEB_REF local/openctem-web:ci" "$CONSOLE_REF local/openctem-console:ci" "$ALLINONE_REF local/openctem:ci"; do
+            read -r ref tag <<<"$pair"
+            [ -n "$ref" ] || { echo "::error::a shared image is missing"; exit 1; }
+            bash .github/scripts/retry.sh docker pull -q "$ref"
+            docker tag "$ref" "$tag"
+          done
+      # No shared images (a fork pull request): build here, with the default
+      # docker driver, so images built here are visible to the next build's FROM
+      # without a registry.
       - name: Build openctem-api
+        if: env.SHARED != 'true'
         run: bash .github/scripts/retry.sh docker build -t local/openctem-api:ci --target production api
       # The web image compiles against the generated contract files, which are
       # not committed (api/docs/development/ci-cd.md).
       - name: Generate the contract files
+        if: env.SHARED != 'true'
         uses: ./.github/actions/generate-contract
       - name: Build openctem-web
+        if: env.SHARED != 'true'
         run: bash .github/scripts/retry.sh docker build -t local/openctem-web:ci web
       - name: Build openctem-console
+        if: env.SHARED != 'true'
         run: bash .github/scripts/retry.sh docker build -t local/openctem-console:ci --target console web
       - name: Build openctem (all-in-one)
+        if: env.SHARED != 'true'
         run: >-
           bash .github/scripts/retry.sh
           docker buildx build --load -t local/openctem:ci
@@ -221,7 +280,7 @@ jobs:
     # request pr-hygiene.yml reports that name, so this one must not.
     name: ${{ github.event_name == 'pull_request' && 'All-in-one (PR build)' || 'All-in-one OK' }}
     if: always()
-    needs: [changes, images]
+    needs: [changes, shared, shared-pr, images]
     runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
     steps:
       - name: All jobs passed or were skipped; the build ran where it must

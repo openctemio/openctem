@@ -296,6 +296,14 @@ jobs:
       # Which base images the CI image mirror copies for the other repositories.
       - name: CI image mirror base list self-test
         run: bash .github/scripts/ci-image-bases.test.sh
+      # Content keys of the CI images, their attestation check, retention, and the
+      # rule that no pull_request path can hold packages: write.
+      - name: CI image build-once self-tests
+        run: |
+          bash .github/scripts/image-key.test.sh
+          bash .github/scripts/ci-image-resolve.test.sh
+          bash .github/scripts/ci-images-prune.test.sh
+          bash .github/scripts/pr-no-package-write.test.sh
       # Which release the upgrade test starts from, and its refusals.
       - name: Upgrade test self-test
         run: bash .github/scripts/upgrade-test.test.sh

@@ -11,10 +11,14 @@ truth: this page describes them as of the merge-queue routing (#730, 2026-10-02)
 |-----------------|----------|--------------|------------|
 | API CI (`api-ci.yml`) | PR / push to `develop`; merge queue | `API static checks` (one job: migration safety, SQL schema drift, security gates, OpenAPI contract, gateway routing, go vet, staticcheck, golangci-lint), tests against Postgres + Redis as the least-privilege app role, PostgreSQL 18 migrations, release binaries; see [Tiers](#tiers) | **API CI OK** |
 | Web CI (`web-ci.yml`) | PR / push to `develop`; merge queue | `API contract` (generates the contract files; for an API change compares them with the base and reports the difference), `API contract report` (the pull request comment), `Web checks` (type-check against the generated contract, ESLint, Prettier, palette drift, separators, and the copy linter `web/scripts/check-copy.mjs` on added or changed English strings: no marketing words, "successfully", exclamation marks, em dash asides or Title Case labels; `node scripts/check-copy.mjs --all` lists the existing strings to clean up) and `Web tests` (Vitest in three parallel shards); `next build` (push only) | **Web CI OK** |
+| CodeQL (`codeql.yml`) | PR / push; merge queue; weekly (Mon 00:00 UTC) | One matrix over the languages: Go (built inside `api/`) and JavaScript/TypeScript (`web/`), one category per language. Go runs `security-and-quality` with `go/log-injection` replaced by `.github/codeql/go-queries/LogInjectionUnstructured.ql` (`openctem/go/log-injection`): the same sources, sinks and sanitizers, minus the key-value attributes of `log/slog` calls, which slog's text and JSON handlers escape (pinned by `api/pkg/logger/forging_test.go`); the message argument and every other logger stay checked, and `logger.SanitizeValue`, `SanitizeText` and `SanitizeError` are recognised sanitizers. PR and merge queue: only the changed language(s). Push to `develop`/`main` and weekly: both, so each branch keeps a fresh baseline per category | **CodeQL OK** |
+| Web E2E (`web-e2e.yml`) | PR (with `run-e2e`, a changed suite, or the full tier) / push to `develop`; merge queue | Takes the API, web and admin images from Build images (built once per content key for the whole pipeline), then runs the Playwright suite (`web/e2e`) in 1 to 4 shards, each against its own stack (Postgres, Redis, migrations, seeded tenant). The pull request and the merge queue run only the specs the change needs (see [E2E impact selection](#e2e-impact-selection)); a push to `develop` and the nightly run (02:41 UTC) run all of them, and a failure there opens or updates the issue labelled `e2e-regression`. The merge queue runs it whenever the queued PR changed `web/`, `api/` or a shared file, so a spec made stale by a layout change fails in the queue, not on `develop`. `Merge reports and list flaky tests` is for people and never fails the gate | **E2E OK** |
 | CodeQL (`codeql.yml`) | PR / push; merge queue; daily (03:00 UTC, on `develop`) | One matrix over the languages: Go (built inside `api/`) and JavaScript/TypeScript (`web/`), one category per language. Go runs `security-and-quality` with `go/log-injection` replaced by `.github/codeql/go-queries/LogInjectionUnstructured.ql` (`openctem/go/log-injection`): the same sources, sinks and sanitizers, minus the key-value attributes of `log/slog` calls, which slog's text and JSON handlers escape (pinned by `api/pkg/logger/forging_test.go`); the message argument and every other logger stay checked, and `logger.SanitizeValue`, `SanitizeText` and `SanitizeError` are recognised sanitizers. PR and push to `develop`: only the changed language(s) (`.github/scripts/codeql-languages.sh`); a language whose code did not change keeps its last analysis, which still matches that code, and query versions change only with the pinned action or `.github/codeql/` (a CI change, which selects both). Merge queue: none. Push to `main` and the daily run: both; the daily run checks out `develop` and uploads for `refs/heads/develop`, so develop's baseline is never older than a day for either language | **CodeQL OK** |
 | Web E2E (`web-e2e.yml`) | PR (smoke set; more with `run-e2e` or a changed suite; all with the full tier) / push to `develop`; merge queue | Builds the API, web and admin images once, then runs the Playwright suite (`web/e2e`) in 1 to 4 shards, each against its own stack (Postgres, Redis, migrations, seeded tenant). A pull request runs the smoke set (see [E2E tiers](#e2e-tiers)); the merge queue, a push to `develop` and the nightly run (02:41 UTC) run all of them, and a failure there opens or updates the issue labelled `e2e-regression`. The merge queue runs it whenever the queued PR changed `web/`, `api/` or a shared file, so a spec made stale by a layout change fails in the queue, not on `develop`. `Merge reports and list flaky tests` is for people and never fails the gate | **E2E OK** |
 | Web visual regression (`web-visual.yml`) | PR with the `run-visual` label; nightly on `develop`; on demand | Screenshots of the key pages (dashboard, findings, assets, scans, remediation tasks, My Work, settings) at 1440 light and dark and 390 light against `web/e2e/visual/__screenshots__` (`playwright.visual.config.ts`, 2% pixel tolerance, volatile values masked). A missing baseline is written, not failed; `workflow_dispatch` with `update` takes new baselines and uploads them as the `visual-baselines` artifact to commit. Diffs are uploaded on failure | none (not required) |
 | All-in-one CI (`allinone-ci.yml`) | Push to `develop`; merge queue; a PR only when it changes `.github/workflows|scripts|actions` (check "All-in-one (PR build)", not required; other PRs get `All-in-one OK` from `pr-hygiene.yml`) | Builds `openctem-api`, `openctem-web` and the all-in-one `openctem` image exactly as a release does, smoke-tests them (arch, ELF, executes) and runs the all-in-one in both gateway modes against Postgres + Redis. Nothing is pushed. Merge queue and pushes only (see [Tiers](#tiers)). | **All-in-one OK** |
+| Build images (`build-images.yml`) | Called by Web E2E and All-in-one CI on push and merge-queue events (`workflow_call`); pull requests call Resolve images (`resolve-images.yml`, read-only) | Builds each CI image once per content key and returns it by digest, or reuses the one already in `ghcr.io/openctemio/ci-images` (see [Build images once](#build-images-once)) | — |
+| Prune CI images (`ci-images-prune.yml`) | Daily 03:37 UTC, manual | Deletes `ci-images` versions older than 14 days, except digests an open release names | — |
 | Repository Security (`repo-security.yml`) | PR / push; merge queue; weekly | Betterleaks (root `.betterleaks.toml`, `.gitleaksignore`): a PR or queued group scans only its own commits (`base..head`); a push to `develop`/`main` and the weekly run scan the full history. Customer identifiers: fixed strings from the `CUSTOMER_DENYLIST` repository secret (never committed; empty = skipped with a notice) and the live LAN range outside tests, over every tracked file, printing only file:line. Commit emails: a PR or queued group fails when one of its commits has an address from the `COMMIT_EMAIL_DENYLIST` repository secret (case-insensitive fixed strings such as a domain; never committed; empty = skipped with a notice) as author, committer or `Co-authored-by` trailer, printing only the commit and the field; outside contributors are covered by the CLA check. **Workflow Lint**: actionlint and zizmor (pinned; suppressions are per line with a reason, inline or in `.github/zizmor.yml`, never per file) over the workflows, action pins, and the self-tests of the CI scripts (change routing, CodeQL alert gate, security gate and its CODEOWNERS mirror), plus the check that `api/` and `web/` depend on no sensor module or SDK. **Dependency Review** (PR only) | **Secret Scanning**, **Workflow Lint** |
 | PR hygiene (`pr-hygiene.yml`): Docs check | PR / push to `main`, `develop`; merge queue | Also in this workflow: the release-note labels job (below) and, on a PR, the `All-in-one OK` report (the build itself runs in the merge queue). **Docs check** job: `scripts/docs_check.py` (Markdown is English, has no private addresses or internal host names, relative links and anchors resolve), the RFC index check, then `scripts/check_docs_links.py` checks every `docs.openctem.io` link in code (page and `#anchor`, against a checkout of `openctemio/docs` `main`) and every `github.com/openctemio/<repo>/blob\|tree/<ref>/<path>#anchor` link (this repository from the checkout, others fetched shallowly); tests are skipped, `docs-links: ignore` skips a line. Locally: `python3 scripts/check_docs_links.py --docs ../docs --fetch-other .` | **Docs check** |
 | API Security (`api-security.yml`) | PR / push (`paths:` api side, see below); weekly | One job for govulncheck + Trivy (fs) + license check; Semgrep; Snyk (only if `vars.ENABLE_SNYK == 'true'`), license check, image scan (only for a PR into `main` / weekly) | — |
@@ -1243,6 +1247,94 @@ files stale, so run `make generate-docker` (or `scripts/generate-in-docker.sh
 **Pushes to `main`** run no heavy suite: `main` receives only release and hotfix PRs that the merge queue and the PR-into-`main` scans already gated, and the tag build (`docker-publish.yml`) has its own image guard. A push to `main` runs CodeQL (baseline of the default branch), Repository Security, PR hygiene, Release Tooling, the CLA and observability checks (path-filtered), and the release workflows; API CI, Web CI, All-in-one CI, Web E2E and the `paths:`-filtered API/Web Security scans run on `develop` pushes only. The image scans of API/Web Security still run weekly and on a PR into `main`.
 
 All Go jobs run with `GOWORK=off` and `working-directory: api`.
+
+## Build images once
+
+Before this, every workflow of a commit rebuilt the same images: All-in-one CI
+(plain `docker build`, no cache), Web E2E (bake) and, at a release, Docker
+Publish. `build-images.yml` is a reusable workflow that builds
+each CI image **once per content key**; every caller gets it by digest.
+
+**Key** (`.github/scripts/image-key.sh <image>`): a sha256 over the git tree
+hashes of what the image's Dockerfile copies (`api` for the API and admin CLI;
+`web`, `api` and the `generate-contract` action for the web app and the
+console, which compile against contract files generated from the Go source;
+`deploy/allinone`, the gateway and the three component keys for the all-in-one),
+plus the Dockerfile path, target, build arguments, and the blobs of
+`build-images.yml` and `image-key.sh` themselves (a change to how images are
+built or keyed re-keys every image; there is no manual builder version). CI
+images take no commit-specific build argument, so the key is content, not
+history: a web-only PR has the same API key as `develop` and reuses its image;
+a docs-only change changes no key.
+
+**Who calls what.** `build-images.yml` holds `packages: write`, so only push and
+merge-queue events call it (the caller job has
+`if: github.event_name != 'pull_request'`). A pull request calls
+`resolve-images.yml` instead: read-only (`packages: read`,
+`attestations: read`; no `packages: write`, no `id-token`), it resolves the
+images `develop` already built for the same keys and returns them only when ALL
+requested images resolve; otherwise the caller builds locally, as before. A
+pull request never pushes a tag. `.github/scripts/pr-no-package-write.sh`
+(self-test in Repo Security) fails when a `pull_request` workflow has a job that
+can hold `packages: write` without such a guard.
+
+**Flow** (push and merge queue)
+1. `plan` computes the keys and asks `.github/scripts/ci-image-resolve.sh`
+   for each: does an image exist whose build provenance attestation verifies
+   (signer workflow = this repository's `build-images.yml`, repository, source
+   ref, not a self-hosted runner; see below)? If so, nothing is built.
+2. `contract` (its own job, `contents: read` only) generates the contract files
+   the web images compile against and hands them over as an artifact.
+3. Missing images build in a matrix (api, admin-cli, and web + console in one
+   job). Inside a lock (job concurrency keyed by image group and key) the job
+   checks again, so two workflows racing on one key build once. The build uses
+   buildx with the registry cache `ci-images/<image>:buildcache`, written by
+   pushes to `develop` only (never by a merge-queue run), and kept in the
+   `ci-images` packages, apart from every release cache. Then
+   `actions/attest-build-provenance` signs the digest.
+4. The all-in-one is built `FROM` the pulled component digests.
+5. `collect` verifies again and returns `api`, `admin-cli`, `web`, `console`,
+   `allinone` as `ghcr.io/openctemio/ci-images/<image>@sha256:...`, and `push`.
+
+**Callers** pull the digest and tag it as the old local name (`local/openctem-api:e2e`,
+`local/openctem:ci`, ...), so everything after the build is unchanged. When
+`push` is `false` (below) they build locally exactly as before.
+
+**Trust**
+- Only a push to `develop` or `main`, or a merge-queue run, pushes. Fork pull
+  requests, Dependabot and every other pull request never do: they build locally
+  when develop has no image for their keys.
+- Tags are hints, never trusted. A consumer uses the digest only after
+  `gh attestation verify --deny-self-hosted-runners` shows it was built by this
+  repository's `build-images.yml`, and the attestation's source ref is:
+  `refs/heads/develop` or `refs/heads/main` for the plain tag `<key>` (what every
+  consumer trusts); or, for the queue tag `q-<commit sha>-<key>`, the
+  consumer's OWN merge-queue ref (a consumer in a queue run only; another queue
+  entry's image is refused). A queue build can never satisfy the plain `<key>`.
+- Overwriting a tag or pushing an unattested image gains nothing; that image is
+  ignored and rebuilt.
+- No step that runs third-party code (npm, Go tooling) holds a registry
+  credential or a token with `packages: write`: the contract files come from the
+  separate `contract` job, `npm ci` there runs with `--ignore-scripts`, and
+  `GH_TOKEN` is set only on the steps that resolve images.
+- Every pushed image has a build provenance attestation (`id-token` and
+  `attestations: write` on the build jobs only).
+- Owner setting, once: GHCR package settings, "Manage Actions access", for the
+  release packages and the `mirror/*` packages: keep this repository's workflow
+  access at read (or none), so no workflow, whatever its permissions, can
+  overwrite them. Only the `ci-images/*` packages need write access.
+
+**Retention** (`ci-images-prune.yml`): versions older than 14 days are deleted,
+except digests named in the body of a draft or pre-release release. The token
+needs package admin rights (package settings, "Manage Actions access").
+
+**Release images are not CI images.** Docker Publish bakes `VERSION`, `COMMIT`,
+`BUILD_TIME` and the OCI version labels into each image (the API's `GET
+/api/v1/version`, web Help > About), and builds linux/amd64 and linux/arm64.
+A CI image has none of those, so promoting it (retag, sign, SBOM) would ship a
+binary that reports no version. Promotion needs the version to come from a
+runtime file or label that is not part of the image content; until then the
+release builds its own images, from the registry cache.
 
 ## Work done once per run
 
