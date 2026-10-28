@@ -1137,7 +1137,7 @@ func (p Partial) withNotes(output map[string]any) map[string]any {
 	if p.Skipped == 0 && p.Unreached == 0 && p.Gaps == 0 && len(p.Unfinished) == 0 {
 		return output
 	}
-	out := make(map[string]any, len(output)+8)
+	out := make(map[string]any)
 	maps.Copy(out, output)
 	if p.Unreached > 0 {
 		out[StepOutputUnreachable] = p.Unreached
