@@ -600,8 +600,12 @@ about it is committed to `develop`.
   writes it as the release branch's version commit; it lands on `main` and the
   tag, and `cut-release.sh` / `post-release.sh` treat it as the one file `main`
   may have that `develop` never does.
-- After a train, the follow-up merges `main` into `develop` with `-s ours`: the
-  tag becomes reachable (so `next-version.sh` and dev builds count commits from
-  it) and `develop`'s tree is unchanged. A hotfix needs no follow-up. The
+- After every release, train or hotfix, the follow-up merges `main` into
+  `develop` with a real merge: the tag becomes reachable (so `next-version.sh`
+  and dev builds count commits from it). A train changes no file. A hotfix
+  whose picks never reached `develop` (picked from an open PR, or adapted while
+  backporting) brings them there; v0.15.4 and v0.15.5 showed that "a hotfix
+  needs no follow-up" drops such fixes. A conflicting merge opens an issue
+  instead of a PR (amendment 2026-10-28). The
   chart version lives in `openctemio/helm-charts`, bumped by the PR the publish
   workflow already opens there.
