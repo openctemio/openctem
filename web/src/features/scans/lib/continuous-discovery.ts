@@ -54,3 +54,42 @@ export function probeNewAssetsRequest(
     target_options: { ...(passive.target_options ?? {}), new_since_last_run: true },
   }
 }
+
+/** What happened to the probing scan of a pair. */
+export type ProbeOutcome =
+  { kind: 'saved' } | { kind: 'waiting' } | { kind: 'failed'; error: string }
+
+/**
+ * The probing scan was saved: it waits when no sensor with its tools is
+ * online yet (the workflow's readiness says so), and runs on its own then.
+ */
+export function savedProbeOutcome(readinessState: string | undefined): ProbeOutcome {
+  return readinessState === 'waiting' ? { kind: 'waiting' } : { kind: 'saved' }
+}
+
+export interface ProbeNote {
+  /** A failed probe turns the one toast into a warning, never a second red toast. */
+  variant: 'success' | 'warning'
+  description?: string
+  /** Where to add or check sensors, when the probe waits for one. */
+  sensorsHref?: string
+}
+
+/** The note that joins the discovery scan's single result toast. */
+export function probeNote(
+  outcome: ProbeOutcome | null,
+  t: (key: string, fallback?: string, params?: Record<string, string | number>) => string
+): ProbeNote {
+  if (!outcome || outcome.kind === 'saved') return { variant: 'success' }
+  if (outcome.kind === 'waiting') {
+    return {
+      variant: 'success',
+      description: t('scans.new.continuousProbeWaiting'),
+      sensorsHref: '/sensors',
+    }
+  }
+  return {
+    variant: 'warning',
+    description: t('scans.new.continuousSecondFailed', undefined, { error: outcome.error }),
+  }
+}
