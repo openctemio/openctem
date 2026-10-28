@@ -11,14 +11,14 @@ const base: Activity = {
 }
 
 describe('findingActor for AI rows', () => {
-  it('names the AI analyst and its accountable owners from the provenance', () => {
+  it('names the AI agent and its accountable owners from the provenance', () => {
     const actor = findingActor({
       ...base,
       metadata: {
         actorType: 'ai',
         ai: {
-          analyst_id: 'an1',
-          analyst_name: 'Triage bot',
+          ai_agent_id: 'an1',
+          ai_agent_name: 'Triage bot',
           run_id: 'r1',
           accountable: [
             { kind: 'user', id: 'u1', name: 'Jamie' },

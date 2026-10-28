@@ -3,16 +3,16 @@
 import { useMemo, useState } from 'react'
 
 import { Checkbox } from '@/components/ui/checkbox'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
 import { useGroups } from '@/features/access-control/api/use-groups'
 import { useMembers } from '@/features/organization/api/use-members'
+import { ListSearch } from '@/features/shared/components/list-search'
 import { TeamPicker } from '@/features/organization/components/team-picker'
 import { toDisplayText } from '@/lib/untrusted-text'
 
-import type { AIOwnerInput } from '../api/use-ai-analysts'
+import type { AIOwnerInput } from '../api/use-ai-agents'
 
 /** The API's cap on accountable owners. */
 export const MAX_AI_OWNERS = 20
@@ -20,11 +20,11 @@ export const MAX_AI_OWNERS = 20
 const keyOf = (o: AIOwnerInput) => `${o.kind}:${o.id}`
 
 /**
- * Accountable owners of an AI analyst: active members (people) and teams.
+ * Accountable owners of an AI agent: active members (people) and teams.
  * The API decides whether the chosen people may hold the preset's permissions
  * and explains a refusal.
  */
-export function AIAnalystOwnerPicker({
+export function AIAgentOwnerPicker({
   tenant,
   value,
   onChange,
@@ -65,22 +65,20 @@ export function AIAnalystOwnerPicker({
   return (
     <div className="space-y-4">
       <div className="space-y-2">
-        <Label>{t('settings.ai.analysts.owners.people', 'People')}</Label>
+        <Label>{t('settings.ai.agents.owners.people', 'People')}</Label>
         {membersLoading ? (
           <Skeleton className="h-9 w-full" />
         ) : (
           <>
-            <Input
-              type="search"
+            <ListSearch
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={t('settings.ai.analysts.owners.search', 'Search people')}
-              aria-label={t('settings.ai.analysts.owners.search', 'Search people')}
-              disabled={disabled}
+              onChange={setQuery}
+              placeholder={t('settings.ai.agents.owners.search', 'Search people')}
+              inputProps={{ disabled }}
             />
             <ul
               className="max-h-40 space-y-1 overflow-y-auto"
-              aria-label={t('settings.ai.analysts.owners.people', 'People')}
+              aria-label={t('settings.ai.agents.owners.people', 'People')}
             >
               {people.map((m) => {
                 const on = selected.has(`user:${m.user_id}`)
@@ -101,7 +99,7 @@ export function AIAnalystOwnerPicker({
               })}
               {people.length === 0 && (
                 <li className="text-sm text-muted-foreground">
-                  {t('settings.ai.analysts.owners.noPeople', 'No matching people.')}
+                  {t('settings.ai.agents.owners.noPeople', 'No matching people.')}
                 </li>
               )}
             </ul>
@@ -109,7 +107,7 @@ export function AIAnalystOwnerPicker({
         )}
       </div>
       <div className="space-y-2">
-        <Label id="ai-owner-teams">{t('settings.ai.analysts.owners.teams', 'Teams')}</Label>
+        <Label id="ai-owner-teams">{t('settings.ai.agents.owners.teams', 'Teams')}</Label>
         <TeamPicker
           teams={groups}
           selected={teamIds}

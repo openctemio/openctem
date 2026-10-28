@@ -4,7 +4,7 @@ import { AIBadge } from '@/features/shared/components/ai-badge'
 import type { ApiApproval } from '../types'
 
 /**
- * Marks an approval request an AI proposed: AI triage or an AI analyst
+ * Marks an approval request an AI proposed: AI triage or an AI agent
  * (`requested_by_actor`), or an AI application the requester connected over
  * MCP (`requested_via`), whose requester can never approve it. A person still
  * decides it; the justification is model output (untrusted, rendered as text
@@ -22,10 +22,10 @@ export function AIProposalBadge({
     return <AIBadge source="ai_application" client={via} verb="proposed" withHint={withHint} />
   }
   const actor = approval.requested_by_actor
-  if (actor !== 'ai_triage' && actor !== 'ai_analyst') return null
+  if (actor !== 'ai_triage' && actor !== 'ai_agent') return null
   return (
     <AIBadge
-      source={actor === 'ai_analyst' ? 'ai_analyst' : 'ai_builtin'}
+      source={actor === 'ai_agent' ? 'ai_agent' : 'ai_builtin'}
       verb="proposed"
       withHint={withHint}
     />

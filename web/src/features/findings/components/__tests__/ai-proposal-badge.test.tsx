@@ -28,9 +28,9 @@ describe('AIProposalBadge', () => {
   })
 })
 
-describe('AIProposalBadge for an AI analyst', () => {
-  it('marks an approval an AI analyst proposed', () => {
-    render(<AIProposalBadge approval={{ requested_by_actor: 'ai_analyst' }} />)
-    expect(screen.getByTestId('ai-badge')).toHaveAttribute('data-source', 'ai_analyst')
+describe('AIProposalBadge for an AI agent', () => {
+  it('marks an approval an AI agent proposed', () => {
+    render(<AIProposalBadge approval={{ requested_by_actor: 'ai_agent' }} />)
+    expect(screen.getByTestId('ai-badge')).toHaveAttribute('data-source', 'ai_agent')
   })
 })

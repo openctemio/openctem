@@ -26,6 +26,12 @@
       "reason": "The glossary guard names the term to use for the retired 'AI analyst': an AI agent (with the analyst role), not a sensor."
     },
     {
+      "id": "ai-agent-principal",
+      "files": "^src/",
+      "pattern": "[Aa][Ii][-_ ./]?(?:[Aa]gents?|AGENTS?)|(?:proposed|new|Proposed)Agent(?:Named)?|agentNamed|aiBadge\\.agent\\b|(?:ai\\.|ai/)agents?\\b",
+      "reason": "The AI agent: an AI principal with a role (analyst, remediator, ...) that works under its own service account (RFC-132). Not a sensor; always written 'AI agent'."
+    },
+    {
       "id": "endpoint-agent-role",
       "files": ".*",
       "pattern": "endpoint[- ]agents?",

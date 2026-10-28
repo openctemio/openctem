@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils'
  * fails when a component that renders an AI actor does not.
  *
  * Sources:
- * - `ai_analyst`: an AI analyst, a service account that takes part in triage
+ * - `ai_agent`: an AI agent, a service account that takes part in triage
  *   like a person (`name` names it). `accountable` lists the people and teams
  *   answerable for it; it shows as a muted second line;
  * - `ai_application`: an AI application a person connected over MCP (`client`
@@ -24,16 +24,16 @@ import { cn } from '@/lib/utils'
  * `verb` picks the wording on an approval request: "Proposed by" instead of the
  * plain label.
  */
-export type AIBadgeSource = 'ai_builtin' | 'ai_analyst' | 'ai_application'
+export type AIBadgeSource = 'ai_builtin' | 'ai_agent' | 'ai_application'
 export type AIBadgeVerb = 'suggested' | 'proposed'
 
 export interface AIBadgeProps {
   source: AIBadgeSource
   /** The AI application's name, for `ai_application`. */
   client?: string
-  /** The AI analyst's name, for `ai_analyst`. */
+  /** The AI agent's name, for `ai_agent`. */
   name?: string
-  /** Names of the people and teams accountable for the AI analyst. */
+  /** Names of the people and teams accountable for the AI agent. */
   accountable?: string[]
   verb?: AIBadgeVerb
   /** A muted line under the badge telling the reader to check before acting. */
@@ -67,7 +67,7 @@ export function AIBadge({
         <Sparkles className="h-3 w-3" aria-hidden />
         {label}
       </Badge>
-      {source === 'ai_analyst' && owners && (
+      {source === 'ai_agent' && owners && (
         <span className="text-xs text-muted-foreground" data-testid="ai-badge-accountable">
           {t('components.aiBadge.accountable', 'Accountable: {owners}', { owners })}
         </span>
@@ -96,9 +96,9 @@ function badgeLabel(
   source: AIBadgeSource,
   verb: AIBadgeVerb,
   client: string,
-  analyst?: string
+  aiAgent?: string
 ): string {
-  const who = toDisplayText(analyst ?? '', 80)
+  const who = toDisplayText(aiAgent ?? '', 80)
   switch (source) {
     case 'ai_application':
       return verb === 'proposed'
@@ -106,17 +106,17 @@ function badgeLabel(
         : t('components.aiBadge.suggestedApplication', 'Suggested by AI application: {client}', {
             client,
           })
-    case 'ai_analyst':
+    case 'ai_agent':
       if (verb === 'proposed') {
         return who
-          ? t('components.aiBadge.proposedAnalystNamed', 'Proposed by AI analyst {name}', {
+          ? t('components.aiBadge.proposedAgentNamed', 'Proposed by AI agent {name}', {
               name: who,
             })
-          : t('components.aiBadge.proposedAnalyst', 'Proposed by AI analyst')
+          : t('components.aiBadge.proposedAgent', 'Proposed by AI agent')
       }
       return who
-        ? t('components.aiBadge.analystNamed', 'AI analyst {name}', { name: who })
-        : t('components.aiBadge.analyst', 'AI analyst')
+        ? t('components.aiBadge.agentNamed', 'AI agent {name}', { name: who })
+        : t('components.aiBadge.agent', 'AI agent')
     default:
       return verb === 'proposed'
         ? t('findings.aiProposal.badge', 'Proposed by AI triage')

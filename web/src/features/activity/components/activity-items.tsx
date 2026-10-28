@@ -86,13 +86,13 @@ export function actorInitials(actor: ActivityActor): string {
 }
 
 /**
- * The actor's name. An AI analyst renders as the shared AIBadge with its
+ * The actor's name. An AI agent renders as the shared AIBadge with its
  * accountable owners; an AI row without provenance reads "AI assistant".
  */
 export function ActorName({ actor }: { actor: ActivityActor }) {
   const { t } = useTranslation()
   if (actor.ai) {
-    return <AIBadge source="ai_analyst" name={actor.ai.name} accountable={actor.ai.accountable} />
+    return <AIBadge source="ai_agent" name={actor.ai.name} accountable={actor.ai.accountable} />
   }
   if (actor.kind === 'ai') return <>{t('activity.aiAssistant', 'AI assistant')}</>
   return <>{actor.name}</>
