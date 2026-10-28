@@ -1,7 +1,9 @@
 {
-  "components.aiBadge.hint": "Đây là gợi ý của AI, không phải quyết định. Hãy kiểm tra phát hiện trước khi áp dụng.",
+  "components.aiBadge.accountable": "Chịu trách nhiệm: {owners}",
+  "components.aiBadge.analyst": "Trợ lý phân tích AI",
+  "components.aiBadge.analystNamed": "Trợ lý phân tích AI {name}",
   "components.aiBadge.proposedAnalyst": "Do trợ lý phân tích AI đề xuất",
-  "components.aiBadge.suggestedAnalyst": "Gợi ý từ trợ lý phân tích AI",
+  "components.aiBadge.proposedAnalystNamed": "Do trợ lý phân tích AI {name} đề xuất",
   "components.aiBadge.suggestedApplication": "Gợi ý từ ứng dụng AI: {client}",
   "components.aiBadge.suggestedBuiltin": "Gợi ý từ AI phân loại",
   "components.asset.list": "Tài sản",
