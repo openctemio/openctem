@@ -334,9 +334,9 @@ const (
 	// If SMTP is not configured, registered users will be unable to verify and
 	// thus unable to log in — operator must configure SMTP first.
 	EmailVerificationAlways EmailVerificationMode = "always"
-	// EmailVerificationNever skips verification for all users in this tenant.
-	// Use only for closed/internal deployments. Opens the door to account
-	// hijacking via email spoofing.
+	// EmailVerificationNever is retired and no longer accepted on write.
+	// Verification belongs to the account, so one organization cannot skip it
+	// for the others the account belongs to; a stored "never" is read as auto.
 	EmailVerificationNever EmailVerificationMode = "never"
 )
 

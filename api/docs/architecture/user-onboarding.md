@@ -72,16 +72,22 @@ way for a new and an existing address, so it does not enumerate.
   that has verified the address's domain (the same rule that lets it create
   the account directly): that organization may vouch for the address. The
   token still lets its holder accept that one invitation, which grants only
-  that organization's seat. An organization's `security.email_verification_mode`
-  of `never` does not lower this; `always` still applies. If the real holder
+  that organization's seat. If the real holder
   registers the address later, the existing-unverified path mails a
   set-password link that replaces the first registrant's password. A platform
   that can send no mail at all (no SMTP anywhere) cannot verify and keeps the
   old behaviour.
-- An organization's `security.email_verification_mode` otherwise governs
-  nothing about public sign-up: there is no "the only organization is the
-  default" rule, and an invitation token for another address does not make its
-  organization's setting apply.
+- Whether an address is verified belongs to the account, not to one organization.
+  `security.email_verification_mode` is `auto` (the default: the platform rule,
+  verify when the platform can send e-mail) or `always` (members must have a
+  verified address to **enter that organization**: the token exchange for it is
+  refused until the address is verified, other organizations the account belongs
+  to are not affected). The former `never` is retired: it is refused on write and
+  a stored `never` reads as `auto`, because skipping verification for one
+  organization let an unverified account into every other one. It never decides
+  public sign-up: there is no "the only organization is the default" rule, and
+  an invitation token for another address does not make its organization's
+  setting apply.
 - Missing SMTP never skips verification there. Start-up refuses `domain`/`open`
   without the platform e-mail, and sign-up closes at run time without it.
 - Under `disabled` only invited and administrator-created accounts exist; the
