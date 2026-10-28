@@ -95,9 +95,8 @@ func (r *TenantRepository) CreateFirstOwnerMembership(ctx context.Context, m *te
 		VALUES ($1, $2, $3, $4, $5, $6)`,
 		m.ID().String(), m.UserID().String(), tenantID, m.Role().String(), invitedBy, m.JoinedAt(),
 	); err != nil {
-		if isCheckViolation(err) {
-			err = tenant.ErrPlatformAdminMembership
-			return err
+		if isConstraintViolation(err, breakGlassConsoleOnly) {
+			return tenant.ErrBreakGlassMembership
 		}
 		return fmt.Errorf("failed to create membership: %w", err)
 	}

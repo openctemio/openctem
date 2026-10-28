@@ -190,12 +190,14 @@ recommended production setup. Details: [Docker deployment](../deployment/docker.
   `recovery_codes`. An address (a key `url`, ending in `url`, or naming a
   webhook) keeps only its scheme and host: a webhook path or query works as
   a bearer secret.
-- Administrator accounts stay off the main site: the account an administrator
-  signs in with is refused on the tenant site (password, second-factor
-  completion, refresh-token exchange, social and organization SSO sign-in).
-  The answer is the wrong-password one, with no session and no cookie, and a
-  WARN line with `alert=platform_admin_main_site_sign_in` is logged. The
-  console's own password check is a separate path and is unaffected.
+- One identity (RFC-134): the account an administrator signs in with may also
+  sign in on the main site and be an ordinary member of organizations, where
+  it acts with its tenant role only. The main site never reads the platform
+  role (`/users/me` does not report it). The console keeps its own sign-in,
+  second factor and opaque session: the tenant JWT never authenticates a
+  console route and the console token never authenticates a tenant route. A
+  break-glass administrator stays console-only (database rule
+  `break_glass_console_only`, migration 003524).
 - Roster notices: every change to the administrators (added, role or state
   changed, removed, sign-in reset, identity-provider binding removed), the
   administrators' identity provider or the security-key policy is emailed to
@@ -286,9 +288,13 @@ action, the target and the caller's open request. Table `admin_approvals`
   cross-imports.
 - `web/console/src/__tests__/console-csrf-cookie.test.ts`: the console sets
   `console_csrf` and never `csrf_token`.
-- `api/tests/unit/auth_platform_admin_main_site_test.go`: an administrator
-  with the right password gets the wrong-password answer and no cookie on the
-  main site; the console password check still works.
+- `api/tests/unit/auth_platform_admin_single_identity_test.go`: an
+  administrator's account signs in on the main site with no platform role in
+  the answer; the console password check still works.
+- `api/internal/infra/http/routes/platform_admin_single_identity_db_test.go`:
+  the account is an ordinary member (403 on a member-administration route as
+  a `member`), the console refuses the app token, the tenant API refuses the
+  console token, and the console needs its second factor.
 - `api/internal/infra/http/middleware/admin_audit_test.go`: the write-ahead row
   is written first, and a failing audit write refuses the request.
 - `web/console/src/__tests__/console-origin.test.ts`: a write from the tenant

@@ -7,7 +7,6 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/adminconsole"
 	authapp "github.com/openctemio/openctem/api/internal/app/auth"
-	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -88,17 +87,4 @@ func (d adminAccountDirectory) AccountActive(ctx context.Context, userID shared.
 
 func (d adminAccountDirectory) ChangePassword(ctx context.Context, userID shared.ID, current, next string) error {
 	return d.auth.ChangePassword(ctx, userID.String(), authapp.ChangePasswordInput{CurrentPassword: current, NewPassword: next})
-}
-
-// platformAdminChecker tells login and /users/me whether an account is linked
-// to an active platform administrator, so the UI can route it to the console.
-type platformAdminChecker struct {
-	admins admin.Repository
-}
-
-var _ handler.PlatformAdminChecker = platformAdminChecker{}
-
-func (c platformAdminChecker) IsPlatformAdmin(ctx context.Context, userID shared.ID) bool {
-	a, err := c.admins.GetByUserID(ctx, userID)
-	return err == nil && a.IsActive()
 }
