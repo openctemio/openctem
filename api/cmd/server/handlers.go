@@ -226,6 +226,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.APIKey != nil {
 		svc.Auth.SetAPIKeyRevoker(svc.APIKey)
 	}
+	adminConsoleSvc.SetInvitationMailer(adminInvitationMailer{email: svc.Email})
 	adminConsoleSvc.SetRosterChangeNotifier(rosterChangeMailer{email: svc.Email, appName: cfg.Brand.DisplayName(), log: log})
 	// Console security keys (RFC-078): the relying party is the console origin.
 	if cfg.AdminPublicURL != "" && repos.AdminFactor != nil && repos.PlatformSetting != nil {
@@ -504,6 +505,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			// applications never reach an AI client.
 			mcpHandler.SetAIPolicy(mcpPolicies)
 		}
+	}
+	if mcpHandler != nil && svc.Scope != nil {
+		// check_scope answers from the same scope authority a scan asks.
+		mcpHandler.SetScopeCheck(svc.Scope, postgres.NewVerifiedDomainNameRepository(deps.DB), postgres.NewBountyProgramRepository(deps.DB))
 	}
 	mcpDiscovery := newMCPDiscovery(cfg, log)
 	// OAuth for MCP clients (RFC-062): with an authorization server the MCP
