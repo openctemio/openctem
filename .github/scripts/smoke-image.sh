@@ -31,11 +31,11 @@ elf_of() { local f; f=$(img_file "$1") && od -An -t x1 -j 18 -N 2 "$f" | tr -d '
 
 case "$comp" in
   openctem-api) bin=/app/server;            run=(/app/bootstrap-admin -h) ;;
-  migrations)   bin=/usr/local/bin/migrate; run=(migrate -version) ;;
+  migrations)   bin=/usr/local/bin/openctem-migrate; run=(openctem-migrate -version) ;;
   seed)         bin=""; run=(sh -c 'true') ;;
   openctem-web) bin=/usr/local/bin/node;    run=(node -e 'process.exit(0)') ;;
   openctem-console) bin=/usr/local/bin/node; run=(node -e "require('fs').accessSync('/app/console/server.js')") ;;
-  openctem)     bin=/opt/openctem/api/server; run=(migrate -version) ;;
+  openctem)     bin=/opt/openctem/api/server; run=(openctem-migrate -version) ;;
   openctem-gateway) bin=/usr/bin/caddy;   run=(caddy version) ;;
   *) echo "unknown component $comp" >&2; exit 2 ;;
 esac

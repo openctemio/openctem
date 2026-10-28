@@ -11,7 +11,7 @@ api/
 ├── cmd/                    # Entry points
 ├── internal/               # Application code (not importable from outside the module)
 ├── pkg/                    # Domain model and shared packages
-├── migrations/             # SQL migrations (golang-migrate) and seed SQL
+├── migrations/             # SQL migrations (openctem-migrate, RFC-130) and seed SQL
 ├── configs/                # Asset and relationship type registries, sensor and scan workflow templates
 ├── deploy/                 # Production compose stack, gateway, Postgres role bootstrap, backup.sh
 ├── tests/                  # Cross-cutting unit and integration tests
@@ -33,6 +33,7 @@ api/
 |---|---|
 | `server` | The API server (HTTP, controllers, ingest workers) |
 | `bootstrap-admin` | Create the first platform administrator and organization |
+| `openctem-migrate` | Apply, roll back and record database migrations ([RFC-130](../rfcs/RFC-130-migration-applied-set.md)) |
 | `seed` | Load seed data |
 | `rekey` | Re-encrypt stored credentials after rotating `APP_ENCRYPTION_KEY` ([runbook](../deployment/encryption-key-rotation.md)) |
 | `encrypt-credentials` | Encrypt credentials stored before encryption was enabled |
