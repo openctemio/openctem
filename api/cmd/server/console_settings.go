@@ -95,5 +95,6 @@ func newAdminPlatformSettingsHandler(repos *Repositories, svc *Services, approva
 	if svc.Signup != nil {
 		h.Signup = svc.Signup
 	}
+	h.EmailRelay = svc.OrgRelay
 	return h
 }

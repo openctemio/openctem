@@ -28,15 +28,17 @@ var (
 
 // Config holds SMTP configuration.
 type Config struct {
-	Host       string
-	Port       int
-	User       string
-	Password   string
-	From       string
-	FromName   string
-	TLS        bool
-	SkipVerify bool
-	Timeout    time.Duration
+	Host     string
+	Port     int
+	User     string
+	Password string
+	From     string
+	FromName string
+	TLS      bool // STARTTLS after the greeting
+	// ImplicitTLS wraps the connection in TLS before the greeting (port 465).
+	ImplicitTLS bool
+	SkipVerify  bool
+	Timeout     time.Duration
 }
 
 // Message represents an email message.
@@ -230,6 +232,15 @@ func (s *SMTPSender) sendSMTP(ctx context.Context, to []string, content []byte) 
 	}
 	if err := conn.SetDeadline(deadline); err != nil {
 		return fmt.Errorf("failed to set deadline: %w", err)
+	}
+
+	// Implicit TLS (port 465): the handshake comes before the greeting.
+	if s.config.ImplicitTLS {
+		tc := tls.Client(conn, TLSConfig(s.config.Host, s.config.SkipVerify))
+		if err := tc.HandshakeContext(ctx); err != nil {
+			return fmt.Errorf("failed to complete TLS handshake: %w", err)
+		}
+		conn = tc
 	}
 
 	// Create SMTP client
