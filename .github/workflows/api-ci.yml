@@ -370,7 +370,10 @@ jobs:
           test "$published" = "gateway"
           # Every image the stack pulls by default is one a release publishes
           # (docker-publish.yml), under its current name.
-          published_names="$(yq -r '.jobs.merge.strategy.matrix.image[].name' ../../.github/workflows/docker-publish.yml)"
+          # yq: GitHub-hosted images ship it, the self-hosted runner image does not.
+          yq=yq
+          command -v yq >/dev/null || { GOWORK=off go install github.com/mikefarah/yq/v4@v4.44.3 && yq="$(go env GOPATH)/bin/yq"; }
+          published_names="$("$yq" -r '.jobs.merge.strategy.matrix.image[].name' ../../.github/workflows/docker-publish.yml)"
           for img in $(docker compose -f docker-compose.yml -f docker-compose.job-signer.yml config --images | sort -u); do
             case "$img" in
               ghcr.io/openctemio/*)
