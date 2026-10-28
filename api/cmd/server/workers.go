@@ -193,6 +193,18 @@ func registerPurgeControllers(m *controller.Manager, cfg *config.Config, repos *
 			func(ctx context.Context) (int64, error) { return console.DeleteExpiredSessions(ctx, time.Now()) },
 			log.With("controller", "admin-session-purge")))
 	}
+	if supportSvc := newSupportAccessService(repos, svc, log); supportSvc != nil {
+		// Support sessions end with the console session that opened them
+		// (expiry, idle), when their grant ends, or after 30 minutes unused;
+		// sign-out ends them at once (adminconsole). Both audit rows and the
+		// owners' email follow each ended session.
+		m.Register(controller.NewPurgeController("support-session-sweep", time.Minute,
+			func(ctx context.Context) (int64, error) {
+				n, err := supportSvc.EndStaleSessions(ctx)
+				return int64(n), err
+			},
+			log.With("controller", "support-session-sweep")))
+	}
 	if repos.MCPOAuth != nil {
 		// Ended MCP OAuth requests, tokens, grants and unused clients (RFC-062).
 		mcp := repos.MCPOAuth
