@@ -62,10 +62,12 @@ func (r *recentAuth) RecentAuthAt(_ context.Context, userID, _ string) (time.Tim
 }
 
 type evHarness struct {
-	t   *testing.T
-	db  *sql.DB
-	srv *httptest.Server
-	svc *evidenceapp.Service
+	t         *testing.T
+	db        *sql.DB
+	srv       *httptest.Server
+	svc       *evidenceapp.Service
+	evHandler *handler.FindingEvidenceItemsHandler
+	asAdmin   bool // requests carry the administrator flag (a pentest finding needs it or a campaign)
 
 	tenantA, tenantB                  shared.ID
 	revealer, reader, scoped, limited shared.ID
@@ -110,7 +112,8 @@ func newEvidenceAuthzHarness(t *testing.T) *evHarness {
 		postgres.NewFindingActivityRepository(pg), auditapp.NewAuditService(postgres.NewAuditRepository(pg), log), log)
 
 	router := infrahttp.NewChiRouter()
-	registerFindingEvidenceItemRoutes(router, handler.NewFindingEvidenceItemsHandler(h.svc, log), Middleware(h.auth), nil, log)
+	h.evHandler = handler.NewFindingEvidenceItemsHandler(h.svc, log)
+	registerFindingEvidenceItemRoutes(router, h.evHandler, Middleware(h.auth), nil, log)
 	h.srv = httptest.NewServer(router.(interface{ Handler() http.Handler }).Handler())
 	t.Cleanup(h.srv.Close)
 	return h
@@ -123,6 +126,9 @@ func (h *evHarness) auth(next http.Handler) http.Handler {
 		ctx = context.WithValue(ctx, middleware.TenantIDKey, h.tenantA.String())
 		ctx = context.WithValue(ctx, middleware.SessionIDKey, "session-"+r.Header.Get("X-Test-User"))
 		ctx = context.WithValue(ctx, middleware.PermissionsKey, strings.Split(r.Header.Get("X-Test-Perms"), ","))
+		if h.asAdmin {
+			ctx = context.WithValue(ctx, middleware.IsAdminKey, true)
+		}
 		if r.Header.Get("X-Test-APIKey") == "1" {
 			ctx = context.WithValue(ctx, middleware.APIKeyIDKey, "key-1")
 		}

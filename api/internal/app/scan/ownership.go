@@ -23,6 +23,10 @@ import (
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
+// ReasonWildcardOnly is the run-record text for a target the gate refused
+// because its name resolves only through a wildcard DNS record.
+const ReasonWildcardOnly = "its name resolves only through a wildcard DNS record, so it may not exist; active checks reach it once a person confirms the asset on its Ownership tab"
+
 // ReasonOwnershipNotConfirmed is the reason shown for any target the
 // ownership gate refuses.
 const ReasonOwnershipNotConfirmed = "it is not authorized for active scanning: its ownership is not confirmed, or no scope entry covers it; check the asset's Ownership tab and Scoping > Scope"
