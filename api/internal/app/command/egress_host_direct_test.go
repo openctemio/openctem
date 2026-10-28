@@ -43,7 +43,7 @@ func egressSensor(caps ...string) *sensordom.Sensor {
 	return sn
 }
 
-func scanCmd() []*commanddom.Command {
+func egressScanCmds() []*commanddom.Command {
 	c, _ := commanddom.NewCommand(shared.NewID(), commanddom.CommandTypeScan, commanddom.CommandPriorityNormal, []byte(`{"scanner":"x"}`))
 	v, _ := commanddom.NewCommand(shared.NewID(), commanddom.CommandTypeValidate, commanddom.CommandPriorityNormal, []byte(`{}`))
 	return []*commanddom.Command{c, v}
@@ -55,14 +55,14 @@ func scanCmd() []*commanddom.Command {
 func TestHostDirectSensorInheritingTheDefaultPoolRunsDirect(t *testing.T) {
 	sn := egressSensor(sensordom.CapabilityNetConfined, sensordom.CapabilityEgressHostDirect)
 	svc := egressService(sn, proxypool.AppliesPublic, nil)
-	d, err := svc.egressFor(context.Background(), shared.NewID(), sn.ID.String(), scanCmd())
+	d, err := svc.egressFor(context.Background(), shared.NewID(), sn.ID.String(), egressScanCmds())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if d.egress != nil || d.blocked || d.validateBlocked {
 		t.Fatalf("decision %+v", d)
 	}
-	cmds, err := d.stamp(scanCmd())
+	cmds, err := d.stamp(egressScanCmds())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func TestWithoutTheMarkerAnOldSensorIsStillHeld(t *testing.T) {
 		"marker and upstream": egressSensor(sensordom.CapabilityNetConfined, sensordom.CapabilityEgressUpstream, sensordom.CapabilityEgressHostDirect),
 	} {
 		svc := egressService(sn, proxypool.AppliesPublic, nil)
-		d, err := svc.egressFor(context.Background(), shared.NewID(), sn.ID.String(), scanCmd())
+		d, err := svc.egressFor(context.Background(), shared.NewID(), sn.ID.String(), egressScanCmds())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -116,20 +116,20 @@ func TestHostDirectSensorIsHeldWhenAPoolIsNamedOrAProxyIsRequired(t *testing.T) 
 		"pool assigned to the sensor": egressService(sn, proxypool.AppliesAll, nil),
 		"proxy required":              egressService(sn, proxypool.AppliesPublic, fakeRequirement{on: true}),
 	} {
-		d, err := svc.egressFor(context.Background(), shared.NewID(), sn.ID.String(), scanCmd())
+		d, err := svc.egressFor(context.Background(), shared.NewID(), sn.ID.String(), egressScanCmds())
 		if err != nil {
 			t.Fatal(err)
 		}
 		if !d.blocked || !d.validateBlocked || !d.hostDirect {
 			t.Errorf("%s: decision %+v", name, d)
 		}
-		kept := d.withoutEgressJobs(scanCmd())
+		kept := d.withoutEgressJobs(egressScanCmds())
 		if len(kept) != 0 {
 			t.Errorf("%s: %d job(s) delivered", name, len(kept))
 		}
 	}
 	// Proxy required switched off again: direct.
-	d, err := egressService(sn, proxypool.AppliesPublic, fakeRequirement{on: false}).egressFor(context.Background(), shared.NewID(), sn.ID.String(), scanCmd())
+	d, err := egressService(sn, proxypool.AppliesPublic, fakeRequirement{on: false}).egressFor(context.Background(), shared.NewID(), sn.ID.String(), egressScanCmds())
 	if err != nil || d.blocked || d.egress != nil {
 		t.Fatalf("not required: %+v %v", d, err)
 	}
@@ -140,7 +140,7 @@ func TestHostDirectSensorIsHeldWhenAPoolIsNamedOrAProxyIsRequired(t *testing.T) 
 func TestProxyRequirementErrorFailsDelivery(t *testing.T) {
 	sn := egressSensor(sensordom.CapabilityEgressHostDirect)
 	svc := egressService(sn, proxypool.AppliesPublic, fakeRequirement{err: errors.New("db down")})
-	if _, err := svc.egressFor(context.Background(), shared.NewID(), sn.ID.String(), scanCmd()); err == nil {
+	if _, err := svc.egressFor(context.Background(), shared.NewID(), sn.ID.String(), egressScanCmds()); err == nil {
 		t.Fatal("expected an error")
 	}
 }
