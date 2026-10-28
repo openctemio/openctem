@@ -17,12 +17,16 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
 	"github.com/openctemio/openctem/api/internal/app/aianalysis"
 	"github.com/openctemio/openctem/api/internal/app/apikey"
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
+	"github.com/openctemio/openctem/api/internal/app/finding"
+	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
+	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	aidom "github.com/openctemio/openctem/api/pkg/domain/aianalysis"
 	"github.com/openctemio/openctem/api/pkg/domain/limits"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	roledom "github.com/openctemio/openctem/api/pkg/domain/role"
+	"github.com/openctemio/openctem/api/pkg/domain/serviceaccount"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -66,11 +70,10 @@ func newAIHarness(t *testing.T) *aiHarness {
 		return m.IsOwner() || m.IsAdmin(), nil
 	})
 	h.svc = aianalysis.New(h.repo, h.repo, apikey.NewHolderPermissions(tenants, aiRolePerms{h.roles}),
-		accesscontrol.AIAnalystRoles{Roles: h.roleSvc}, enforcer, nil, nil, logger.NewNop())
+		enforcer, nil, nil, logger.NewNop())
 	h.svc.SetClock(func() time.Time { return h.clock })
 
-	triage, _ := permission.RoleTemplateByID(permission.TemplateAIAnalystTriage)
-	perms := append(permission.ToStrings(triage.Permissions), "team:roles:assign", "team:roles:write")
+	perms := aidom.PresetTriage.Permissions()
 	h.triager = h.user(h.tenant, "internal", "")
 	h.exec(`INSERT INTO user_roles (user_id, tenant_id, role_id) VALUES ($1, $2, $3)`,
 		h.triager.String(), h.tenant.String(), h.customRole(h.tenant, "ai-test-triager", false, perms...).String())
@@ -139,22 +142,26 @@ func TestAIAnalyst_IsAServiceAccountWithinItsRole(t *testing.T) {
 		t.Fatalf("suggest analyst may change triage state: %v", p.Permissions())
 	}
 
-	// An administrator bolts approve and verify onto the analyst's role by
-	// hand: they still never become effective.
+	// Nobody can widen an analyst through a role: it holds none, and the
+	// schema refuses one (approve and verify would be denied anyway).
 	extra := h.customRole(h.tenant, "ai-test-extra", false, "findings:approve", "findings:verify", "findings:status")
-	h.exec(`INSERT INTO user_roles (user_id, tenant_id, role_id) VALUES ($1, $2, $3)`, a.ID.String(), h.tenant.String(), extra.String())
+	if _, err := h.db.Exec(`INSERT INTO user_roles (user_id, tenant_id, role_id) VALUES ($1, $2, $3)`,
+		a.ID.String(), h.tenant.String(), extra.String()); err == nil {
+		t.Fatal("a role was attached to an AI analyst")
+	}
+	if err := p.Require("findings:approve"); !errors.Is(err, aidom.ErrNotAllowed) {
+		t.Fatalf("Require(approve) = %v, want ErrNotAllowed", err)
+	}
+	// The triage preset holds status while an owner holds it.
+	if _, err := h.svc.ChangePreset(ctx, a.ID, "triage", h.actx(h.owner)); err != nil {
+		t.Fatal(err)
+	}
 	p, err = h.svc.Principal(ctx, h.tenant, a.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.Can("findings:approve") || p.Can("findings:verify") {
-		t.Fatalf("approve or verify became effective: %v", p.Permissions())
-	}
 	if !p.Can("findings:status") {
-		t.Fatalf("status (held by the triager owner) should be effective once in the role: %v", p.Permissions())
-	}
-	if err := p.Require("findings:approve"); !errors.Is(err, aidom.ErrNotAllowed) {
-		t.Fatalf("Require(approve) = %v, want ErrNotAllowed", err)
+		t.Fatalf("triage analyst lacks status held by its owner: %v", p.Permissions())
 	}
 
 	// The owner loses status: the analyst loses it too at the next run start.
@@ -187,8 +194,8 @@ func TestAIAnalyst_RoleCannotExceedOwners(t *testing.T) {
 	// The creator must be able to grant the preset (role grant ceiling).
 	if _, err := h.svc.Create(context.Background(), aianalysis.CreateInput{
 		Name: "AI by reader", Preset: "suggest", Owners: []aianalysis.OwnerInput{userOwner(h.triager)},
-	}, h.actx(h.viewer)); err == nil {
-		t.Fatal("a reader created an analyst with a role they could not grant")
+	}, h.actx(h.viewer)); !errors.Is(err, shared.ErrForbidden) {
+		t.Fatalf("a reader created an analyst with permissions they do not hold: %v", err)
 	}
 	var leftover int
 	if err := h.db.QueryRow(`SELECT count(*) FROM users WHERE service_tenant_id = $1 AND kind = 'service'`, h.tenant.String()).Scan(&leftover); err != nil {
@@ -202,9 +209,6 @@ func TestAIAnalyst_RoleCannotExceedOwners(t *testing.T) {
 func TestAIAnalyst_NeverAnApprover(t *testing.T) {
 	h := newAIHarness(t)
 	a := h.create(t, "triage", h.owner, userOwner(h.triager))
-	// Even with findings:approve written straight into its role.
-	approve := h.customRole(h.tenant, "ai-test-approve", false, "findings:approve")
-	h.exec(`INSERT INTO user_roles (user_id, tenant_id, role_id) VALUES ($1, $2, $3)`, a.ID.String(), h.tenant.String(), approve.String())
 	approvers, err := postgres.NewScopeActorRepository(&postgres.DB{DB: h.db}).FindingApprovers(context.Background(), h.tenant)
 	if err != nil {
 		t.Fatal(err)
@@ -213,6 +217,79 @@ func TestAIAnalyst_NeverAnApprover(t *testing.T) {
 		if ap.UserID == a.ID.String() {
 			t.Fatal("an AI analyst is in the approver directory")
 		}
+	}
+	// A team that grants findings:approve does not make it one either.
+	approve := h.customRole(h.tenant, "ai-test-approve", false, "findings:read", "findings:approve")
+	h.exec(`INSERT INTO group_role_bindings (tenant_id, group_id, role_id) VALUES ($1, $2, $3)`, h.tenant.String(), h.team.String(), approve.String())
+	h.exec(`INSERT INTO group_members (group_id, user_id, role) VALUES ($1, $2, 'member')`, h.team.String(), a.ID.String())
+	approvers, err = postgres.NewScopeActorRepository(&postgres.DB{DB: h.db}).FindingApprovers(context.Background(), h.tenant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ap := range approvers {
+		if ap.UserID == a.ID.String() {
+			t.Fatal("an AI analyst in an approving team is in the approver directory")
+		}
+	}
+	p, err := h.svc.Principal(context.Background(), h.tenant, a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Can("findings:approve") {
+		t.Fatal("a team role gave the analyst findings:approve")
+	}
+}
+
+// An analyst acts only through the platform: no API key, MCP grant, role,
+// sign-in identity or password, whatever path tries to give it one.
+func TestAIAnalyst_HasNoCredentialOfItsOwn(t *testing.T) {
+	h := newAIHarness(t)
+	ctx := context.Background()
+	a := h.create(t, "suggest", h.owner, userOwner(h.triager))
+	if _, err := h.db.Exec(`INSERT INTO api_keys (id, tenant_id, user_id, name, key_hash, key_prefix, status) VALUES ($1, $2, $3, 'k', $4, 'oct_test', 'active')`,
+		shared.NewID().String(), h.tenant.String(), a.ID.String(), "h-"+shared.NewID().String()); err == nil {
+		t.Error("an API key was stored for an AI analyst")
+	}
+	client := shared.NewID()
+	h.exec(`INSERT INTO mcp_oauth_clients (id, client_id, kind, tenant_id, name, redirect_uris) VALUES ($1, $2, 'organization', $3, 'c', ARRAY['https://c.example/cb'])`,
+		client.String(), "client-"+client.String(), h.tenant.String())
+	if _, err := h.db.Exec(`INSERT INTO mcp_oauth_grants (tenant_id, user_id, client_ref, resource, scopes, expires_at) VALUES ($1, $2, $3, 'https://api.example', ARRAY['findings:read'], now() + interval '1 day')`,
+		h.tenant.String(), a.ID.String(), client.String()); err == nil {
+		t.Error("an MCP grant was stored for an AI analyst")
+	}
+	if _, err := h.db.Exec(`INSERT INTO user_identities (user_id, issuer, subject) VALUES ($1, 'https://idp.example', 'sub-ai')`, a.ID.String()); err == nil {
+		t.Error("a sign-in identity was stored for an AI analyst")
+	}
+	var hasPassword bool
+	if err := h.db.QueryRow(`SELECT password_hash IS NOT NULL FROM users WHERE id = $1`, a.ID.String()).Scan(&hasPassword); err != nil {
+		t.Fatal(err)
+	}
+	if hasPassword {
+		t.Error("an AI analyst has a password")
+	}
+	// The service-account screens neither mint its keys nor delete it.
+	db := &postgres.DB{DB: h.db}
+	sa := accesscontrol.NewServiceAccountService(postgres.NewServiceAccountRepository(db), nil, logger.NewNop())
+	got, err := sa.Get(ctx, h.tenant.String(), a.ID.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.AIAnalyst {
+		t.Error("the service-account view does not mark the analyst")
+	}
+	if err := sa.Delete(ctx, a.ID.String(), h.actx(h.owner)); !errors.Is(err, serviceaccount.ErrAIAnalyst) {
+		t.Errorf("service-account delete of an analyst: %v", err)
+	}
+	// A plain service account with a key never becomes an analyst.
+	plain, err := sa.Create(ctx, accesscontrol.CreateServiceAccountInput{Name: "bridge"}, h.actx(h.owner))
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.exec(`INSERT INTO api_keys (id, tenant_id, user_id, name, key_hash, key_prefix, status) VALUES ($1, $2, $3, 'k', $4, 'oct_test', 'active')`,
+		shared.NewID().String(), h.tenant.String(), plain.ID.String(), "h-"+shared.NewID().String())
+	if _, err := h.db.Exec(`INSERT INTO ai_analysts (user_id, tenant_id, attest_due_at) VALUES ($1, $2, now() + interval '1 day')`,
+		plain.ID.String(), h.tenant.String()); err == nil {
+		t.Error("a service account with an API key became an AI analyst")
 	}
 }
 
@@ -473,5 +550,61 @@ func TestAIAnalyst_IsNotASeat(t *testing.T) {
 	h.create(t, "suggest", h.owner, userOwner(h.triager))
 	if after := usage(); after != before {
 		t.Fatalf("seats %d -> %d: an AI analyst took a seat", before, after)
+	}
+}
+
+// An AI analyst never lowers risk alone: with the organization's
+// false-positive and acceptance levels off (a person decides alone), an
+// analyst's false positive and severity downgrade still wait for a person,
+// even if a caller claimed it could approve.
+func TestAIAnalyst_RiskLoweringNeedsAPersonWithApprovalOff_DB(t *testing.T) {
+	h := newFindingApprovalHarness(t, func(svc *finding.VulnerabilityService, vh *handler.VulnerabilityHandler, db *postgres.DB) {
+		log := logger.NewNop()
+		ts := tenantapp.NewTenantService(postgres.NewTenantRepository(db), log,
+			tenantapp.WithTenantAuditService(auditapp.NewAuditService(postgres.NewAuditRepository(db), log)))
+		actors := postgres.NewScopeActorRepository(db)
+		svc.SetSoloApproval(actors, nil, ts)
+		svc.SetApprovalNotifier(actors, nil, nil, "")
+		vh.SetFindingApprovalSettings(ts)
+		svc.SetAIAnalystChecker(postgres.NewAIAnalysisRepository(db))
+		svc.SetSeverityRequestRepository(postgres.NewSeverityRequestRepository(db))
+	})
+	ctx := context.Background()
+	org := h.tenantWithFindings()
+	setFPLevel(h, org, `{"fp_approval":"off","accept_approval":"off"}`)
+	person := h.member(org, "admin")
+
+	analyst := shared.NewID().String()
+	h.exec(`INSERT INTO users (id, email, name, kind, service_tenant_id) VALUES ($1, $2, 'AI', 'service', $3)`,
+		analyst, "svc-"+analyst+"@service-accounts.invalid", org)
+	t.Cleanup(func() { _, _ = h.db.ExecContext(ctx, `DELETE FROM users WHERE id = $1`, analyst) })
+	h.exec(`INSERT INTO tenant_members (user_id, tenant_id, role) VALUES ($1, $2, 'viewer')`, analyst, org)
+	h.exec(`DELETE FROM user_roles WHERE user_id = $1`, analyst)
+	h.exec(`INSERT INTO ai_analysts (user_id, tenant_id, preset, attest_due_at) VALUES ($1, $2, 'triage', now() + interval '90 days')`, analyst, org)
+
+	// A person under level off decides alone (control).
+	if status, single, _ := requestFP(h, person, h.newFinding(org, "low")); status != "approved" || !single {
+		t.Fatalf("control: a person under level off: %s %v", status, single)
+	}
+	ap, err := h.svc.RequestApproval(ctx, finding.RequestApprovalInput{
+		TenantID: org, FindingID: h.newFinding(org, "low"), RequestedStatus: "false_positive",
+		Justification: "the AI thinks this is test code", RequestedBy: analyst, ClosureReason: "test_or_example_code",
+		CanApprove: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ap.Status != vulnerability.ApprovalStatusPending {
+		t.Fatalf("an AI analyst's false positive under level off is %s, want pending", ap.Status)
+	}
+	res, err := h.svc.ChangeFindingSeverity(ctx, finding.ChangeSeverityInput{
+		TenantID: org, FindingID: h.newFinding(org, "high"), ActorID: analyst, Severity: "low",
+		Reason: "the AI thinks the impact is low", CanApprove: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Applied || res.Request == nil {
+		t.Fatal("an AI analyst lowered a severity without a person")
 	}
 }

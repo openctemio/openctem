@@ -21,9 +21,16 @@
 -- finding_activities rows written by an analyst are labeled actor_type 'ai'
 -- by a trigger, whatever code path wrote them.
 --
--- Live impact: three new tables and one trigger on finding_activities (an
--- indexed EXISTS per insert). The seat count stops counting analysts (code).
--- No backfill, no lock on an existing table.
+-- An analyst has no API key, MCP grant or database role of its own (triggers
+-- on api_keys, mcp_oauth_grants and user_roles): it acts only through the
+-- platform, which checks its owners, attestation, preset and deny list at
+-- every run.
+--
+-- Live impact: three new tables; triggers on finding_activities, api_keys,
+-- mcp_oauth_grants and user_roles (one indexed EXISTS per insert). The seat
+-- count stops counting analysts (code). No backfill, no lock on an existing
+-- table. The index on finding_activities is built concurrently by the next
+-- migration.
 
 CREATE TABLE ai_analysts (
     user_id            uuid         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -44,7 +51,7 @@ CREATE TABLE ai_analysts (
     updated_at         timestamptz  NOT NULL DEFAULT now(),
     CONSTRAINT pk_ai_analysts PRIMARY KEY (user_id),
     CONSTRAINT uq_ai_analysts_user_tenant UNIQUE (user_id, tenant_id),
-    CONSTRAINT chk_ai_analysts_preset CHECK (preset IN ('suggest', 'triage', 'custom')),
+    CONSTRAINT chk_ai_analysts_preset CHECK (preset IN ('suggest', 'triage')),
     CONSTRAINT chk_ai_analysts_status CHECK (status IN ('active', 'paused', 'disabled')),
     CONSTRAINT chk_ai_analysts_pause CHECK ((status = 'active') = (pause_reason IS NULL)
         AND (pause_reason IS NULL OR pause_reason ~ '^[a-z_]{1,48}$')),
@@ -235,5 +242,48 @@ CREATE TRIGGER trigger_label_ai_analyst_activity
     BEFORE INSERT ON finding_activities
     FOR EACH ROW EXECUTE FUNCTION label_ai_analyst_activity();
 
-CREATE INDEX idx_finding_activities_ai_run ON finding_activities (tenant_id, ((source_metadata->'ai'->>'run_id')))
-    WHERE actor_type = 'ai';
+-- An analyst acts only through the platform's executor, as a principal the
+-- platform resolves at every run (owners, attestation, preset, deny list).
+-- It has no credential of its own and no database role: an API key, an MCP
+-- grant or a role row for it would bypass those checks, so the schema
+-- refuses them whatever code path writes them.
+CREATE FUNCTION refuse_ai_analyst_credential() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF NEW.user_id IS NOT NULL AND EXISTS (SELECT 1 FROM ai_analysts a WHERE a.user_id = NEW.user_id) THEN
+        RAISE EXCEPTION 'an AI analyst has no API key, MCP grant or role of its own'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trigger_refuse_ai_analyst_api_key
+    BEFORE INSERT OR UPDATE OF user_id ON api_keys
+    FOR EACH ROW EXECUTE FUNCTION refuse_ai_analyst_credential();
+CREATE TRIGGER trigger_refuse_ai_analyst_mcp_grant
+    BEFORE INSERT OR UPDATE OF user_id ON mcp_oauth_grants
+    FOR EACH ROW EXECUTE FUNCTION refuse_ai_analyst_credential();
+CREATE TRIGGER trigger_refuse_ai_analyst_role
+    BEFORE INSERT OR UPDATE OF user_id ON user_roles
+    FOR EACH ROW EXECUTE FUNCTION refuse_ai_analyst_credential();
+
+-- A service account becomes an analyst only while it holds none of those.
+CREATE FUNCTION refuse_ai_analyst_with_credentials() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM api_keys k WHERE k.user_id = NEW.user_id AND k.status = 'active')
+       OR EXISTS (SELECT 1 FROM mcp_oauth_grants g WHERE g.user_id = NEW.user_id AND g.revoked_at IS NULL)
+       OR EXISTS (SELECT 1 FROM user_roles r WHERE r.user_id = NEW.user_id) THEN
+        RAISE EXCEPTION 'an AI analyst cannot be made from a service account that has keys, grants or roles'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trigger_refuse_ai_analyst_with_credentials
+    BEFORE INSERT ON ai_analysts
+    FOR EACH ROW EXECUTE FUNCTION refuse_ai_analyst_with_credentials();

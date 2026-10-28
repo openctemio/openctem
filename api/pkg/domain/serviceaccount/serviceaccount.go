@@ -26,6 +26,9 @@ const MaxNameLength = 100
 var (
 	ErrNotFound = fmt.Errorf("%w: service account not found", shared.ErrNotFound)
 	ErrInvalid  = fmt.Errorf("%w: invalid service account", shared.ErrValidation)
+	// ErrAIAnalyst: the account is an AI analyst; it has no API keys and is
+	// managed (and deleted) as an analyst.
+	ErrAIAnalyst = fmt.Errorf("%w: this service account is an AI analyst; manage it under AI analysts", shared.ErrConflict)
 )
 
 // ServiceAccount is one organization-owned identity.
@@ -38,7 +41,8 @@ type ServiceAccount struct {
 	OwnerName   string
 	Status      string // the membership status: active or suspended
 	CreatedAt   time.Time
-	APIKeys     int // active keys
+	APIKeys     int  // active keys
+	AIAnalyst   bool // the account is an AI analyst (no keys; managed as an analyst)
 }
 
 // Email returns the synthetic, undeliverable address of an account id.

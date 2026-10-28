@@ -239,6 +239,16 @@ func (s *VulnerabilityService) evaluateFindingRequest(ctx context.Context, f *vu
 	if err != nil {
 		return policyEvaluation{}, err
 	}
+	// An AI analyst never lowers risk alone, whatever the organization's
+	// false-positive and acceptance levels (docs/architecture/ai-analysis.md):
+	// its requests are evaluated at the strictest level, and it can never
+	// approve them itself.
+	if analyst, err := s.isAIAnalyst(ctx, f.TenantID(), requester); err != nil {
+		return policyEvaluation{}, err
+	} else if analyst {
+		op.fpLevel, op.acceptLevel = approvalpolicy.FPLevelAll, approvalpolicy.FPLevelAll
+		requesterCanApprove = false
+	}
 	pf, err := s.findingPolicyFacts(ctx, f)
 	if err != nil {
 		return policyEvaluation{}, err
@@ -553,4 +563,22 @@ func (s *VulnerabilityService) NotifyMaterialChange(ctx context.Context, d vulne
 			s.logger.Warn("material change: in-app notification", "error", logger.SanitizeError(err))
 		}
 	}
+}
+
+// AIAnalystChecker answers whether a user is one of the organization's AI
+// analysts (postgres.AIAnalysisRepository).
+type AIAnalystChecker interface {
+	IsAnalyst(ctx context.Context, tenantID, userID shared.ID) (bool, error)
+}
+
+// SetAIAnalystChecker wires the AI analyst check of the approval policy.
+func (s *VulnerabilityService) SetAIAnalystChecker(c AIAnalystChecker) { s.aiAnalysts = c }
+
+// isAIAnalyst reports whether requester is an AI analyst of the tenant. A
+// lookup failure is an error (fail closed: the request is not decided).
+func (s *VulnerabilityService) isAIAnalyst(ctx context.Context, tenantID, requester shared.ID) (bool, error) {
+	if s.aiAnalysts == nil || requester.IsZero() {
+		return false, nil
+	}
+	return s.aiAnalysts.IsAnalyst(ctx, tenantID, requester)
 }

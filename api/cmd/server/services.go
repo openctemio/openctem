@@ -1302,6 +1302,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Vulnerability.SetDataFlowRepository(repos.DataFlow)        // Wire data flow loading
 	s.Vulnerability.SetIssueLinkStore(repos.FindingIssueLinks)   // same-issue groups
 	s.Vulnerability.SetApprovalRepository(repos.FindingApproval) // Wire approval workflow
+	// An AI analyst never lowers risk alone, whatever the organization's levels.
+	s.Vulnerability.SetAIAnalystChecker(repos.AIAnalysis)
 	s.Vulnerability.SetSeverityRequestRepository(repos.SeverityRequest)
 	s.Vulnerability.SetAccessControlRepository(repos.AccessControl)
 	s.Vulnerability.SetAssigneeProfileReader(repos.AccessControl) // list rows carry the assignee name
@@ -2969,8 +2971,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// do is read from the role tables (no cache) at every run start, bounded
 	// by what their accountable owners hold.
 	s.AIAnalysis = aianalysis.New(repos.AIAnalysis, repos.AIAnalysis,
-		apikey.NewHolderPermissions(repos.Tenant, rolePermissionSource{repos.Role}),
-		accesscontrol.AIAnalystRoles{Roles: s.Role}, s.DataScope,
+		apikey.NewHolderPermissions(repos.Tenant, rolePermissionSource{repos.Role}), s.DataScope,
 		aianalysis.SettingsConsent{Repo: repos.TenantAISettings}, s.Audit, log)
 
 	// Wire permission services to tenant service

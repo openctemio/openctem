@@ -71,7 +71,7 @@ func (p *Principal) Provenance(run *aidom.Run) aidom.Provenance {
 
 // Principal resolves an analyst for a run, fail closed: the organization
 // consented to AI, the analyst is active, at least one accountable owner is
-// active, the attestation is fresh, and something is left of its role once
+// active, the attestation is fresh, and something is left of its preset once
 // the ceiling (what the accountable people hold) and the deny list are
 // applied. A failed check pauses the analyst (audited) and returns a
 // PausedError.
@@ -103,15 +103,14 @@ func (s *Service) Principal(ctx context.Context, tenantID, analystID shared.ID) 
 		}
 		return nil, &aidom.PausedError{Reason: r}
 	}
-	_, role, err := s.holder.HeldPermissions(ctx, tenantID, analystID)
-	if err != nil {
-		return nil, err
-	}
+	// The analyst's permissions come from its preset in code; it holds no
+	// database role (a trigger refuses one), so nothing outside this service
+	// can widen it.
 	all, ceil, err := s.ceiling(ctx, tenantID, people)
 	if err != nil {
 		return nil, err
 	}
-	eff := aidom.Effective(role, all, ceil)
+	eff := aidom.Effective(a.Preset.Permissions(), all, ceil)
 	if len(eff) == 0 {
 		if err := s.pauseFor(ctx, a, aidom.PauseNoPermissions); err != nil {
 			return nil, err
@@ -226,10 +225,13 @@ func (s *Service) GetRun(ctx context.Context, tenantID, viewerID, runID shared.I
 	if err != nil {
 		return nil, err
 	}
-	if run.SubjectType == aidom.SubjectFinding && s.scope != nil {
-		if err := s.scope.AssertFindingForUser(ctx, tenantID, viewerID, run.SubjectID); err != nil {
-			return nil, aidom.ErrRunNotFound
-		}
+	// Only subjects with a scope check are readable; any other subject type
+	// answers not found until it has one.
+	if run.SubjectType != aidom.SubjectFinding || s.scope == nil {
+		return nil, aidom.ErrRunNotFound
+	}
+	if err := s.scope.AssertFindingForUser(ctx, tenantID, viewerID, run.SubjectID); err != nil {
+		return nil, aidom.ErrRunNotFound
 	}
 	return run, nil
 }

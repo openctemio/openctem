@@ -35,7 +35,7 @@ flowchart LR
   admin["Administrator<br/>service_accounts:manage + step-up"] -->|creates, sets preset| sa["AI analyst<br/>(service account)"]
   admin -->|names| owners["Accountable owners<br/>people or teams"]
   owners -->|hold| ownerPerms["What owners hold"]
-  preset["Preset role<br/>suggest or triage"] --> eff
+  preset["Preset<br/>suggest or triage"] --> eff
   ownerPerms --> eff["Effective permissions<br/>role ∩ owners − deny list"]
   deny["Deny list<br/>approve, verify, delete,<br/>export, reveal, admin"] --> eff
   sa --> eff
@@ -44,9 +44,9 @@ flowchart LR
   sa --> scope
 ```
 
-- The preset roles are created per organization from role templates (`ai-analyst-suggest`,
-  `ai-analyst-triage`) and assigned through the role service, so the role grant ceiling applies to the
-  person who assigns them.
+- The presets live in code, not in an editable role; the person who sets a preset must hold its
+  permissions. An analyst holds no database role, API key or MCP grant (the schema refuses them), so
+  nothing outside the platform's executor can act as it.
 - The ceiling is checked when the role or the owners change (refused, naming the permission) and again
   at every run start (the analyst loses what its owners lost).
 - The service-account triggers keep their guarantees: one organization, never owner or administrator,
@@ -250,11 +250,11 @@ the queue is worked down.
 | D1 | The analyst is an existing service account plus an `ai_analysts` profile; no new user kind |
 | D2 | Code name `analyst`; "AI analyst" in the console |
 | D3 | Several analysts per organization; one suggested when AI is turned on |
-| D4 | Presets `suggest` (default) and `triage`; a custom role is bounded by the same ceiling and deny list |
+| D4 | Presets `suggest` (default) and `triage`, defined in code; custom presets later, bounded by the same ceiling and deny list |
 | D5 | Analysts are not seats |
 | D6 | Analysts never approve |
 | D7 | The person who triggered a run cannot approve that run's requests |
-| D8 | Risk-lowering changes are always requests (the analyst can never approve) |
+| D8 | Risk-lowering changes are always requests: an analyst's request is evaluated at the strictest level whatever the organization's settings |
 | D9 | Owners are people or teams in `ai_analyst_owners` |
 | D10 | Ceiling = role ∩ union of what the accountable people hold − deny list, at assignment and at run start |
 | D11 | Missing request forms: structured comment now, typed proposal with Apply as the person next, a `duplicate` request kind |
@@ -268,7 +268,7 @@ the queue is worked down.
 | D19 | Brain in the executor pool or an analyst worker, both analyst sensors |
 | D20 | Hands are scan sensors through platform commands; the analyst never names a target |
 | D21 | Intrusive tools always need a person |
-| D22 | An outside AI program uses an analyst profile and a service-account key with the same checks |
+| D22 | An outside AI program later gets its own credential path that runs the same principal checks; until then an analyst has no key, grant or role of its own |
 | D23 | Runs are `analyze` jobs on the existing distribution (leases, fair share, chunking, placement) |
 | D24 | Flood control: batch decisions, digest, per-owner request cap, comment-only above a pending-request threshold |
 

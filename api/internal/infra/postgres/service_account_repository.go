@@ -69,7 +69,8 @@ func createServiceAccountTx(ctx context.Context, tx *sql.Tx, a *serviceaccount.S
 const serviceAccountSelect = `
 	SELECT u.id, u.service_tenant_id, u.name, COALESCE(u.preferences->>'description', ''),
 	       u.service_owner_id, COALESCE(o.name, o.email, ''), COALESCE(tm.status, 'active'), u.created_at,
-	       (SELECT COUNT(*) FROM api_keys k WHERE k.user_id = u.id AND k.tenant_id = u.service_tenant_id AND k.status = 'active')
+	       (SELECT COUNT(*) FROM api_keys k WHERE k.user_id = u.id AND k.tenant_id = u.service_tenant_id AND k.status = 'active'),
+	       EXISTS (SELECT 1 FROM ai_analysts a WHERE a.user_id = u.id)
 	FROM users u
 	LEFT JOIN users o ON o.id = u.service_owner_id
 	LEFT JOIN tenant_members tm ON tm.user_id = u.id AND tm.tenant_id = u.service_tenant_id
@@ -80,7 +81,7 @@ func scanServiceAccount(row interface{ Scan(...any) error }) (*serviceaccount.Se
 	var owner sql.NullString
 	var at time.Time
 	a := &serviceaccount.ServiceAccount{}
-	if err := row.Scan(&id, &tid, &a.Name, &a.Description, &owner, &a.OwnerName, &a.Status, &at, &a.APIKeys); err != nil {
+	if err := row.Scan(&id, &tid, &a.Name, &a.Description, &owner, &a.OwnerName, &a.Status, &at, &a.APIKeys, &a.AIAnalyst); err != nil {
 		return nil, err
 	}
 	a.ID, _ = shared.IDFromString(id)
