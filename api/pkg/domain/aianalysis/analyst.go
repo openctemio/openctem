@@ -45,9 +45,6 @@ const (
 	// PresetTriage: also confirms, moves status, raises severity and assigns.
 	// Changes that lower risk still always become approval requests.
 	PresetTriage Preset = "triage"
-	// PresetCustom: an administrator gave the analyst another custom role;
-	// the ceiling and the deny list still apply.
-	PresetCustom Preset = "custom"
 )
 
 // ParsePreset validates a preset an administrator may pick.
@@ -59,22 +56,28 @@ func ParsePreset(s string) (Preset, error) {
 	return "", fmt.Errorf("%w: unknown AI analyst preset", shared.ErrValidation)
 }
 
-// Role templates of the presets (permission.AIAnalystTemplates; a test keeps
-// the two in step).
-const (
-	templateSuggest = "ai-analyst-suggest"
-	templateTriage  = "ai-analyst-triage"
-)
+// presetPermissions are what each preset may do before the owners' ceiling
+// and the deny list. They live in code, not in an editable role: nobody can
+// widen an analyst by editing a role, and an analyst holds no database role
+// at all (a trigger refuses one).
+var presetPermissions = map[Preset][]string{
+	PresetSuggest: {
+		string(permission.FindingsRead), string(permission.FindingsComment), string(permission.FindingsWrite),
+		string(permission.RemediationRead), string(permission.AssetsRead), string(permission.VulnerabilitiesRead),
+		string(permission.ExposuresRead), string(permission.AITriageRead),
+	},
+}
 
-// TemplateID is the role template behind a preset.
-func (p Preset) TemplateID() string {
-	switch p {
-	case PresetSuggest:
-		return templateSuggest
-	case PresetTriage:
-		return templateTriage
-	}
-	return ""
+func init() {
+	presetPermissions[PresetTriage] = append(append([]string{}, presetPermissions[PresetSuggest]...),
+		string(permission.FindingsStatus), string(permission.FindingsTriage), string(permission.FindingsSeverity),
+		string(permission.FindingsAssign))
+}
+
+// Permissions lists the preset's permissions (a fresh copy; nil for an
+// unknown preset).
+func (p Preset) Permissions() []string {
+	return append([]string(nil), presetPermissions[p]...)
 }
 
 // Status is whether an analyst runs.

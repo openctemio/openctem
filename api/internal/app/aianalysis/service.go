@@ -14,7 +14,6 @@ import (
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	aidom "github.com/openctemio/openctem/api/pkg/domain/aianalysis"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/serviceaccount"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -48,16 +47,6 @@ type PermissionHolder interface {
 	HeldPermissions(ctx context.Context, tenantID, userID shared.ID) (all bool, perms []string, err error)
 }
 
-// RoleGranter gives an analyst the role of its preset through the role
-// service, as the acting person, so the role grant ceiling applies.
-type RoleGranter interface {
-	// EnsurePresetRole returns the organization's role for a preset template,
-	// creating it from the template first if needed.
-	EnsurePresetRole(ctx context.Context, tenantID shared.ID, templateID string, actx auditapp.AuditContext) (shared.ID, error)
-	// SetRoles replaces the analyst's custom roles.
-	SetRoles(ctx context.Context, tenantID, userID shared.ID, roleIDs []shared.ID, actx auditapp.AuditContext) error
-}
-
 // FindingScope answers whether a person (or service account) may see a
 // finding (datascope.Enforcer.AssertFindingForUser); out of scope is a not
 // found error.
@@ -70,7 +59,6 @@ type Service struct {
 	analysts aidom.AnalystRepository
 	runs     aidom.RunRepository
 	holder   PermissionHolder
-	roles    RoleGranter
 	scope    FindingScope
 	consent  ConsentReader
 	audit    *auditapp.AuditService
@@ -79,11 +67,11 @@ type Service struct {
 }
 
 // New wires the service.
-func New(analysts aidom.AnalystRepository, runs aidom.RunRepository, holder PermissionHolder, roles RoleGranter,
+func New(analysts aidom.AnalystRepository, runs aidom.RunRepository, holder PermissionHolder,
 	scope FindingScope, consent ConsentReader, audit *auditapp.AuditService, log *logger.Logger,
 ) *Service {
 	return &Service{
-		analysts: analysts, runs: runs, holder: holder, roles: roles, scope: scope, consent: consent,
+		analysts: analysts, runs: runs, holder: holder, scope: scope, consent: consent,
 		audit: audit, now: time.Now, logger: log.With("service", "ai_analysis"),
 	}
 }
@@ -193,16 +181,17 @@ func (s *Service) checkCeiling(ctx context.Context, tenantID shared.ID, owners [
 	return nil
 }
 
-func templatePermissions(p aidom.Preset) ([]string, error) {
-	tpl, ok := permission.RoleTemplateByID(p.TemplateID())
-	if !ok {
-		return nil, fmt.Errorf("%w: unknown AI analyst preset", shared.ErrValidation)
+// checkGrantor refuses a preset whose permissions the acting person does not
+// hold: nobody gives an analyst more than they could do themselves.
+func (s *Service) checkGrantor(ctx context.Context, tenantID, actor shared.ID, perms []string) error {
+	all, held, err := s.holder.HeldPermissions(ctx, tenantID, actor)
+	if err != nil {
+		return err
 	}
-	out := make([]string, 0, len(tpl.Permissions))
-	for _, x := range tpl.Permissions {
-		out = append(out, string(x))
+	if missing := aidom.AboveCeiling(perms, all, held); len(missing) > 0 {
+		return fmt.Errorf("%w: you do not hold %s", shared.ErrForbidden, strings.Join(missing, ", "))
 	}
-	return out, nil
+	return nil
 }
 
 // CreateInput creates an analyst.
@@ -213,9 +202,9 @@ type CreateInput struct {
 	Owners      []OwnerInput `json:"owners" validate:"required,min=1,max=20,dive"`
 }
 
-// Create makes a service account with the preset's role and the given
-// accountable owners. The preset's permissions must be held by at least one
-// accountable person, and the acting person must be allowed to grant them.
+// Create makes a service account with the given preset and accountable
+// owners. The preset's permissions must be held by the acting person and by
+// at least one accountable person.
 func (s *Service) Create(ctx context.Context, in CreateInput, actx auditapp.AuditContext) (*aidom.Analyst, error) {
 	tid, err := tenantOf(actx)
 	if err != nil {
@@ -240,8 +229,8 @@ func (s *Service) Create(ctx context.Context, in CreateInput, actx auditapp.Audi
 	if err != nil {
 		return nil, err
 	}
-	perms, err := templatePermissions(preset)
-	if err != nil {
+	perms := preset.Permissions()
+	if err := s.checkGrantor(ctx, tid, actor, perms); err != nil {
 		return nil, err
 	}
 	if err := s.checkCeiling(ctx, tid, owners, perms); err != nil {
@@ -255,13 +244,6 @@ func (s *Service) Create(ctx context.Context, in CreateInput, actx auditapp.Audi
 		AttestedAt: now, AttestDueAt: now.Add(aidom.AttestationPeriod), CreatedBy: &actor,
 	}
 	if err := s.analysts.Create(ctx, aidom.NewAnalyst{Analyst: a, Owners: owners}); err != nil {
-		return nil, err
-	}
-	if err := s.grantPreset(ctx, tid, a.ID, preset, actx); err != nil {
-		// No analyst without its role: take the account back.
-		if derr := s.analysts.Delete(ctx, tid, a.ID); derr != nil {
-			s.logger.Error("failed to remove an AI analyst whose role was refused", "error", derr)
-		}
 		return nil, err
 	}
 	out, err := s.analysts.Get(ctx, tid, a.ID)
@@ -279,14 +261,6 @@ func ownerIDs(o []aidom.OwnerRef) []string {
 		out = append(out, string(x.Kind)+":"+x.ID.String())
 	}
 	return out
-}
-
-func (s *Service) grantPreset(ctx context.Context, tid, analystID shared.ID, p aidom.Preset, actx auditapp.AuditContext) error {
-	roleID, err := s.roles.EnsurePresetRole(ctx, tid, p.TemplateID(), actx)
-	if err != nil {
-		return err
-	}
-	return s.roles.SetRoles(ctx, tid, analystID, []shared.ID{roleID}, actx)
 }
 
 // Get returns one analyst of the organization.
@@ -319,11 +293,7 @@ func (s *Service) ReplaceOwners(ctx context.Context, id shared.ID, in []OwnerInp
 	if err != nil {
 		return nil, err
 	}
-	_, role, err := s.holder.HeldPermissions(ctx, tid, id)
-	if err != nil {
-		return nil, err
-	}
-	if err := s.checkCeiling(ctx, tid, owners, role); err != nil {
+	if err := s.checkCeiling(ctx, tid, owners, a.Preset.Permissions()); err != nil {
 		return nil, err
 	}
 	if err := s.analysts.SetOwners(ctx, tid, id, owners, actor); err != nil {
@@ -343,7 +313,7 @@ func (s *Service) ReplaceOwners(ctx context.Context, id shared.ID, in []OwnerInp
 	return out, nil
 }
 
-// ChangePreset moves an analyst to another preset role.
+// ChangePreset moves an analyst to another preset.
 func (s *Service) ChangePreset(ctx context.Context, id shared.ID, presetName string, actx auditapp.AuditContext) (*aidom.Analyst, error) {
 	tid, err := tenantOf(actx)
 	if err != nil {
@@ -357,14 +327,15 @@ func (s *Service) ChangePreset(ctx context.Context, id shared.ID, presetName str
 	if err != nil {
 		return nil, err
 	}
-	perms, err := templatePermissions(preset)
+	actor, err := actorOf(actx)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.checkCeiling(ctx, tid, a.Owners, perms); err != nil {
+	perms := preset.Permissions()
+	if err := s.checkGrantor(ctx, tid, actor, perms); err != nil {
 		return nil, err
 	}
-	if err := s.grantPreset(ctx, tid, id, preset, actx); err != nil {
+	if err := s.checkCeiling(ctx, tid, a.Owners, perms); err != nil {
 		return nil, err
 	}
 	if err := s.analysts.SetPreset(ctx, tid, id, preset); err != nil {

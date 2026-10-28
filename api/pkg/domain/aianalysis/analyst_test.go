@@ -59,25 +59,30 @@ func TestAboveCeiling_ListsWhatNoOwnerHolds(t *testing.T) {
 	}
 }
 
-func TestPresetTemplates_NeverCarryDeniedPermissions(t *testing.T) {
+func TestPresets_NeverCarryDeniedPermissions(t *testing.T) {
 	for _, p := range []Preset{PresetSuggest, PresetTriage} {
-		tpl, ok := permission.RoleTemplateByID(p.TemplateID())
-		if !ok {
-			t.Fatalf("preset %s has no role template", p)
+		perms := p.Permissions()
+		if len(perms) == 0 {
+			t.Fatalf("preset %s has no permissions", p)
 		}
-		for _, x := range tpl.Permissions {
-			if Denied(string(x)) {
+		known := map[string]bool{}
+		for _, x := range permission.AllPermissions() {
+			known[string(x)] = true
+		}
+		for _, x := range perms {
+			if Denied(x) {
 				t.Errorf("preset %s carries denied permission %s", p, x)
 			}
-		}
-		if tpl.HasFullDataAccess {
-			t.Errorf("preset %s must not see every asset", p)
+			if !known[x] {
+				t.Errorf("preset %s carries unknown permission %s", p, x)
+			}
 		}
 	}
-	for _, tpl := range permission.RoleTemplates() {
-		if tpl.ID == permission.TemplateAIAnalystSuggest || tpl.ID == permission.TemplateAIAnalystTriage {
-			t.Fatal("AI analyst presets are not offered in the role catalog for people")
-		}
+	if len(PresetTriage.Permissions()) <= len(PresetSuggest.Permissions()) {
+		t.Fatal("triage must extend suggest")
+	}
+	if Preset("custom").Permissions() != nil {
+		t.Fatal("an unknown preset has no permissions")
 	}
 }
 

@@ -16,7 +16,7 @@ import (
 //     account); the role grant ceiling and the owners' ceiling apply in the
 //     service;
 //   - disabling (the kill switch): service_accounts:manage;
-//   - pausing and attesting: ai_triage:read on the route, and in the service
+//   - pausing, and attesting (with a recent sign-in): ai_triage:read on the route, and in the service
 //     an accountable owner, or service_accounts:manage (pause) or an
 //     administrator (attest);
 //   - runs: findings:read and ai_triage:read, and the caller's data scope on
@@ -38,7 +38,7 @@ func registerAIAnalysisRoutes(router Router, h *handler.AIAnalysisHandler, authM
 		r.POST("/{id}/resume", h.Resume, manage, requireStepUp())
 		r.POST("/{id}/disable", h.Disable, manage)
 		r.POST("/{id}/pause", h.Pause, middleware.Require(permission.AITriageRead))
-		r.POST("/{id}/attest", h.Attest, middleware.Require(permission.AITriageRead))
+		r.POST("/{id}/attest", h.Attest, middleware.Require(permission.AITriageRead), requireStepUp())
 	}, gated...)
 	router.Group("/api/v1/ai/runs", func(r Router) {
 		r.GET("/{id}", h.GetRun, middleware.RequireAll(permission.FindingsRead, permission.AITriageRead))
