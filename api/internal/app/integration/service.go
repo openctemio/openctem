@@ -95,6 +95,12 @@ type IntegrationService struct {
 	// (RFC-047). nil: Tenable integrations cannot be created.
 	tenableConnector TenableConnectorValidator
 
+	// Owner notices when an e-mail channel is stopped by the managed service
+	// rules (SetRelayPolicyNotices).
+	relayOwners RelayOwners
+	relayInApp  RelayInAppNotifier
+	relayMailer RelayMailer
+
 	// Rate limiting for test notifications
 	testRateLimitMu  sync.RWMutex
 	testRateLimitMap map[string]time.Time // integration ID -> last test time
@@ -1239,8 +1245,8 @@ func (s *IntegrationService) parseEmailCredentials(credentials string) (*notifie
 	if emailCreds.SMTPPort == 0 {
 		return nil, fmt.Errorf("SMTP port is required")
 	}
-	if !emailpkg.TenantPortAllowed(emailCreds.SMTPPort) {
-		return nil, emailpkg.ErrTenantPortNotAllowed
+	if err := emailpkg.ValidateTenantRelay(emailCreds.SMTPPort, emailCreds.UseTLS, emailCreds.UseSTARTTLS, emailCreds.Username, emailCreds.Password); err != nil {
+		return nil, err
 	}
 	if emailCreds.FromEmail == "" {
 		return nil, fmt.Errorf("sender email is required")
@@ -1408,8 +1414,8 @@ func (s *IntegrationService) setEmailCredentials(intg *integrationdom.Integratio
 	if emailCreds.SMTPPort == 0 {
 		return fmt.Errorf("%w: SMTP port is required", shared.ErrValidation)
 	}
-	if !emailpkg.TenantPortAllowed(emailCreds.SMTPPort) {
-		return fmt.Errorf("%w: %w", shared.ErrValidation, emailpkg.ErrTenantPortNotAllowed)
+	if err := emailpkg.ValidateTenantRelay(emailCreds.SMTPPort, emailCreds.UseTLS, emailCreds.UseSTARTTLS, emailCreds.Username, emailCreds.Password); err != nil {
+		return relayRuleError{err}
 	}
 	if emailCreds.FromEmail == "" {
 		return fmt.Errorf("%w: sender email is required", shared.ErrValidation)
@@ -1545,6 +1551,21 @@ func (s *IntegrationService) updateEmailCredentials(intg *integrationdom.Integra
 		return fmt.Errorf("%w: at least one recipient email is required", shared.ErrValidation)
 	}
 
+	// The merged relay must meet the transport rule (on a managed service:
+	// submission port, AUTH, TLS), with the stored login counted when the
+	// request does not replace it.
+	// A request that sends a username or a password replaces the stored login
+	// as given; otherwise the stored login stays.
+	user, pass := emailCreds.Username, emailCreds.Password
+	if user == "" && pass == "" {
+		if stored := s.storedEmailLogin(intg); stored != nil {
+			user, pass = stored.Username, stored.Password
+		}
+	}
+	if err := emailpkg.ValidateTenantRelay(smtpPort, getBoolFromMap(newMetadata, "use_tls"), getBoolFromMap(newMetadata, "use_starttls"), user, pass); err != nil {
+		return relayRuleError{err}
+	}
+
 	// A new relay (host, port) or a weaker transport must not inherit the
 	// stored username/password: the next delivery would present them to it.
 	if err := requireCredentialsForDestinationChange(intg,
@@ -1573,6 +1594,24 @@ func (s *IntegrationService) updateEmailCredentials(intg *integrationdom.Integra
 	}
 
 	return nil
+}
+
+// storedEmailLogin is the username and password saved with an e-mail
+// integration (nil when none or unreadable).
+func (s *IntegrationService) storedEmailLogin(intg *integrationdom.Integration) *EmailSensitiveCredentials {
+	enc := intg.CredentialsEncrypted()
+	if enc == "" {
+		return nil
+	}
+	plain, err := s.encryptor.DecryptString(enc)
+	if err != nil {
+		return nil
+	}
+	var c EmailSensitiveCredentials
+	if err := json.Unmarshal([]byte(plain), &c); err != nil {
+		return nil
+	}
+	return &c
 }
 
 // emailDestinationChanged reports whether the SMTP relay moved (host or port)
@@ -2578,6 +2617,9 @@ func (s *IntegrationService) SendNotification(ctx context.Context, input SendNot
 	// Create notification client
 	client, err := s.notificationFactory.CreateClient(config)
 	if err != nil {
+		if errors.Is(err, emailpkg.ErrTenantRelayPolicy) {
+			s.EmailRelayRefused(ctx, intg.TenantID(), intg.ID(), err)
+		}
 		return &SendNotificationResult{
 			Success: false,
 			Error:   fmt.Sprintf("failed to create client: %v", err),

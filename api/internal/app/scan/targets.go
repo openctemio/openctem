@@ -52,6 +52,11 @@ type resolvedTargets struct {
 	// not confirmed (needs review, candidate, dependency, monitor only,
 	// rejected).
 	Unconfirmed int
+	// WildcardOnly counts targets left out because their name resolves
+	// only through a wildcard DNS record (passive only until a person
+	// confirms the asset; RFC-088 A4). Not an ownership question: the
+	// name may not exist at all.
+	WildcardOnly int
 	// Archived counts group members left out because the asset is archived.
 	Archived int
 	// Incompatible counts group members left out because the run's scanner
@@ -105,6 +110,13 @@ type resolvedTargets struct {
 // Archived members are not scanned. Zone routing is planned by the trigger
 // itself (planZoneDispatch).
 func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resolvedTargets, error) {
+	// A run whose every probe is passive gets the passive gate
+	// (DispatchTargetsInput.PassiveOnly): a name nobody confirmed yet, or
+	// one that resolves only through a wildcard record, may be looked up; a
+	// rejected name, a scope exclusion, the deny list and a name outside the
+	// organization's scope are still refused.
+	passive := runsPassiveOnly(sc) || passiveRun(ctx)
+
 	seen := make(map[string]int) // lower-cased target -> index in names
 	var names []string
 	assets := make(map[string]DispatchAsset)
@@ -232,6 +244,7 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 		FallbackUser:           actorOf(sc),
 		SystemPolicy:           systemPolicyOf(sc),
 		Tier:                   &tier,
+		PassiveOnly:            passive,
 		AllowNonNetworkTargets: true,
 		SkipZoneRouting:        true,
 		TakeoverOnly:           IsTakeoverOnlyProbe(sc.ScannerName, sc.ScannerConfig),
@@ -288,6 +301,10 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 		out.Warnings = append(out.Warnings, fmt.Sprintf(
 			"%d target(s) were skipped: %s", out.Unconfirmed, ReasonOwnershipNotConfirmed))
 	}
+	if out.WildcardOnly > 0 {
+		out.Warnings = append(out.Warnings, fmt.Sprintf(
+			"%d target(s) were skipped: %s", out.WildcardOnly, ReasonWildcardOnly))
+	}
 	if out.InternalOutsideZones > 0 {
 		out.Warnings = append(out.Warnings, fmt.Sprintf(
 			"%d internal address target(s) were skipped: %s", out.InternalOutsideZones, ReasonInternalOutsideZones))
@@ -302,7 +319,7 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 			shared.ErrValidation, len(out.Targets), maxResolvedTargets)
 	}
 	// A single-scanner run of a one-target scanner dispatches one command
-	// per target (perTargetPlan, or the zone batches); refuse up front what
+	// per target (unzonedJobPlan, or the zone batches); refuse up front what
 	// would exceed the per-run job cap. A workflow (no scanner name) plans
 	// its targets per step and never had the one-target caveat: it used to
 	// be warned that only the first target would be scanned.
@@ -319,6 +336,9 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 func countRefusals(out *resolvedTargets, refused []RefusedTarget) error {
 	for _, r := range refused {
 		switch {
+		case r.Reason == ReasonOwnershipNotConfirmed && r.Code == scopedom.RefusalWildcardOnly:
+			out.WildcardOnly++
+			out.skipped(SkipWildcardOnly, r.Target)
 		case r.Reason == ReasonOwnershipNotConfirmed:
 			out.Unconfirmed++
 			out.skipped(SkipNotConfirmed, r.Target)
@@ -485,6 +505,36 @@ func (s *Service) dropOutOfDataScopeMembers(ctx context.Context, sc *scan.Scan, 
 	}
 	exp.Members = kept
 	return nil
+}
+
+// runsPassiveOnly reports whether every probe a run of the scan sends is
+// passive (RFC-071): its intensity is passive, or its single scanner
+// probes at the passive tier. A step or tool above the intensity is never
+// dispatched (scanrun skips it, the claim refuses it), so such a run only
+// looks names up and its targets get the passive gate.
+func runsPassiveOnly(sc *scan.Scan) bool {
+	if sc.EffectiveIntensity().MaxTier() == int(stage.TierPassive) {
+		return true
+	}
+	return sc.ScanType != scan.ScanTypeWorkflow && sc.ScannerName != "" &&
+		stage.IntensityTier(sc.ScannerName, nil, sc.ScannerConfig) == stage.TierPassive
+}
+
+// passiveRunKey marks a context whose scan run probes passively only, as
+// the caller decided (a workflow whose every step is passive).
+type passiveRunKey struct{}
+
+// withPassiveRun marks ctx when passive is true.
+func withPassiveRun(ctx context.Context, passive bool) context.Context {
+	if !passive {
+		return ctx
+	}
+	return context.WithValue(ctx, passiveRunKey{}, true)
+}
+
+func passiveRun(ctx context.Context) bool {
+	v, _ := ctx.Value(passiveRunKey{}).(bool)
+	return v
 }
 
 // hideOutOfDataScopeKey marks a context whose resolution must drop the

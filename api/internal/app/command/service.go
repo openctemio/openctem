@@ -29,6 +29,11 @@ type Service struct {
 	// jobs signs every claimed command (job_signing.go); nil: claims
 	// carry no signed job.
 	jobs JobSigner
+	// content plans the packs and generated lists a job pins and
+	// contentCheck says which digests an organization's job may pin
+	// (content_pin.go); nil: jobs carry no content.
+	content      ContentSource
+	contentCheck ContentChecker
 	// durations learns each completed scan command's time per target
 	// (duration_learning.go); nil: nothing is learned.
 	durations toolbudget.StatsStore
@@ -75,6 +80,10 @@ type Service struct {
 	egress     EgressSource
 	// toolSettings is the per-sensor tool settings layer (WithToolSettings).
 	toolSettings ToolSettingsSource
+	// balanceWindow is how long a fresh job is left to less-loaded sensors
+	// (claim_balance.go); balanceSet: WithClaimBalanceWindow was given.
+	balanceWindow time.Duration
+	balanceSet    bool
 }
 
 // TemplateSigner signs the custom templates embedded in a command payload
@@ -416,6 +425,9 @@ func (s *Service) Claim(ctx context.Context, input ClaimInput) ([]*commanddom.Co
 		return nil, err
 	}
 	cands = eg.withoutEgressJobs(cands)
+	// Leave the fresh jobs a less-loaded sensor of the organization should
+	// take to it (claim_balance.go).
+	cands = s.balanceClaim(ctx, tenantID, sensorID, input.Capabilities, cands, slots, input.MaxJobs)
 	if len(cands) == 0 {
 		return nil, nil
 	}
@@ -430,6 +442,7 @@ func (s *Service) Claim(ctx context.Context, input ClaimInput) ([]*commanddom.Co
 	if err != nil {
 		return nil, err
 	}
+	s.extendRunDeadlines(ctx, tenantID, sensorID, claimed)
 	won := make(map[shared.ID]bool, len(claimed))
 	for _, id := range claimed {
 		won[id] = true
@@ -458,6 +471,21 @@ func (s *Service) Claim(ctx context.Context, input ClaimInput) ([]*commanddom.Co
 		return nil, err
 	}
 	return s.signClaimed(ctx, tenantID, input.SensorID, delivered, pinned), nil
+}
+
+// extendRunDeadlines gives the runs of the tasks a sensor just claimed the
+// time those tasks need (commanddom.RunDeadlineExtender), before the tasks
+// are read back and signed, so their payload carries the new deadline. A
+// failure keeps the old deadline and never fails the claim.
+func (s *Service) extendRunDeadlines(ctx context.Context, tenantID, sensorID shared.ID, ids []shared.ID) {
+	ext, ok := s.repo.(commanddom.RunDeadlineExtender)
+	if !ok || len(ids) == 0 {
+		return
+	}
+	if err := ext.ExtendRunDeadlinesAtClaim(ctx, tenantID, sensorID, ids); err != nil {
+		s.logger.Warn("run deadlines not extended at claim", "tenant_id", tenantID.String(),
+			"sensor_id", sensorID.String(), "error", err)
+	}
 }
 
 // freeScanSlots is how many more scans a sensor may take: its job limit
@@ -629,6 +657,9 @@ func (s *Service) Acknowledge(ctx context.Context, tenantID, sensorID, commandID
 	}
 	if !claimed {
 		return nil, shared.NewDomainError("CONFLICT", "command already claimed by another sensor", shared.ErrConflict)
+	}
+	if sid, err := shared.IDFromString(sensorID); err == nil {
+		s.extendRunDeadlines(ctx, cmd.TenantID, sid, []shared.ID{cmd.ID})
 	}
 	observeClaimed(claimModeByID, []*commanddom.Command{cmd}, time.Now())
 

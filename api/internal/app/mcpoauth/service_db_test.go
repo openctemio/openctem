@@ -543,3 +543,81 @@ func TestOnlyAccessTokensAuthenticate(t *testing.T) {
 		}
 	}
 }
+
+func (h *harness) clientRows() int {
+	h.t.Helper()
+	var n int
+	if err := h.db.QueryRow(`SELECT count(*) FROM mcp_oauth_clients WHERE client_id IN ($1, $2)`, clientID, otherCIMD).Scan(&n); err != nil {
+		h.t.Fatal(err)
+	}
+	return n
+}
+
+// An unauthenticated authorize must not write the client registry: anyone on
+// the internet can start one for any https client_id.
+func TestAuthorizeDoesNotStoreMetadataClient(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	id, aerr := h.svc.StartAuthorization(ctx, authorizeQuery(nil))
+	if aerr != nil {
+		t.Fatal(aerr)
+	}
+	if n := h.clientRows(); n != 0 {
+		t.Fatalf("authorize stored %d client rows", n)
+	}
+	// Denying keeps the registry clean too.
+	user := h.member(h.tenant, "owner")
+	if _, err := h.svc.ConsentRequest(ctx, id, user, shared.MustIDFromString(h.tenant)); err != nil {
+		t.Fatalf("consent view of a pending client: %v", err)
+	}
+	if _, err := h.svc.Deny(ctx, id, user, shared.MustIDFromString(h.tenant), mcpoauth.Actor{}); err != nil {
+		t.Fatal(err)
+	}
+	if n := h.clientRows(); n != 0 {
+		t.Fatalf("deny stored %d client rows", n)
+	}
+}
+
+// Approval is where the client enters the registry; the token endpoint and
+// refresh then work from the stored client.
+func TestApprovalStoresMetadataClientAndRefreshWorks(t *testing.T) {
+	h := newHarness(t)
+	user := h.member(h.tenant, "owner")
+	code := h.approve(user, h.tenant, authorizeQuery(nil))
+	if n := h.clientRows(); n != 1 {
+		t.Fatalf("approval stored %d client rows, want 1", n)
+	}
+	var name string
+	if err := h.db.QueryRow(`SELECT name FROM mcp_oauth_clients WHERE client_id = $1`, clientID).Scan(&name); err != nil || name != "Desk Assistant" {
+		t.Fatalf("stored name %q %v", name, err)
+	}
+	tok, oerr := h.exchange(code, verifier, nil)
+	if oerr != nil {
+		t.Fatalf("exchange: %v", oerr)
+	}
+	if _, oerr := h.refresh(tok.RefreshToken, nil); oerr != nil {
+		t.Fatalf("refresh: %v", oerr)
+	}
+}
+
+// A client blocked between authorize and approval is refused at approval and
+// is not stored again.
+func TestClientBlockedAfterAuthorizeIsRefusedAtApproval(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	user := h.member(h.tenant, "owner")
+	id, aerr := h.svc.StartAuthorization(ctx, authorizeQuery(nil))
+	if aerr != nil {
+		t.Fatal(aerr)
+	}
+	h.exec(`INSERT INTO mcp_oauth_clients (client_id, kind, name, redirect_uris, blocked_at)
+		VALUES ($1, 'metadata_document', 'Blocked', ARRAY[$2], now())`, clientID, redirect)
+	if _, err := h.svc.Approve(ctx, id, user, shared.MustIDFromString(h.tenant), mcpoauth.Actor{}); err == nil {
+		t.Fatal("blocked client approved")
+	}
+	var granted int
+	_ = h.db.QueryRow(`SELECT count(*) FROM mcp_oauth_requests WHERE id = $1 AND status = 'approved'`, id.String()).Scan(&granted)
+	if granted != 0 {
+		t.Fatal("request approved for a blocked client")
+	}
+}
