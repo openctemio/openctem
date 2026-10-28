@@ -90,7 +90,7 @@ func TestOAuthFindOrCreate_AllowsClaimableLocal(t *testing.T) {
 	s.SetClaimGuard(claimMembers{ms: &tenantdom.UserMembershipsByStatus{}}, claimDomains{})
 
 	got, err := s.findOrCreateUser(context.Background(),
-		&OAuthUserInfo{Email: "invited@example.com"}, OAuthProviderGoogle)
+		&OAuthUserInfo{Email: "invited@example.com", HD: "example.com"}, OAuthProviderGoogle)
 	if err != nil {
 		t.Fatalf("claimable local account should be adoptable via OAuth: %v", err)
 	}
@@ -191,7 +191,7 @@ func TestOAuthFindOrCreate_ClaimIntoVerifiedOrg(t *testing.T) {
 		claimMembers{ms: &tenantdom.UserMembershipsByStatus{Active: []tenantdom.UserMembership{{TenantID: org}}}},
 		claimDomains{org + "|corp.example": true})
 	if got, err := s.findOrCreateUser(context.Background(),
-		&OAuthUserInfo{Email: "staff@corp.example"}, OAuthProviderGoogle); err != nil || got == nil {
+		&OAuthUserInfo{Email: "staff@corp.example", HD: "corp.example"}, OAuthProviderGoogle); err != nil || got == nil {
 		t.Fatalf("claim on a verified domain should succeed: user=%v err=%v", got, err)
 	}
 }

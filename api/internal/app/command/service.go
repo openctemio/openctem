@@ -29,6 +29,11 @@ type Service struct {
 	// jobs signs every claimed command (job_signing.go); nil: claims
 	// carry no signed job.
 	jobs JobSigner
+	// content plans the packs and generated lists a job pins and
+	// contentCheck says which digests an organization's job may pin
+	// (content_pin.go); nil: jobs carry no content.
+	content      ContentSource
+	contentCheck ContentChecker
 	// durations learns each completed scan command's time per target
 	// (duration_learning.go); nil: nothing is learned.
 	durations toolbudget.StatsStore
