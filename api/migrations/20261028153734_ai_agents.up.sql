@@ -1,0 +1,291 @@
+-- AI agents (docs/architecture/ai-analysis.md, RFC-132).
+--
+-- An AI agent is a service account (users.kind = 'service', migration
+-- 001586) plus one profile row. It takes part in triage like a person: it
+-- calls the same commands with its own role and data scope, its changes go
+-- through the same approvals, and it can never approve (service accounts are
+-- not in the approver directory). Every AI agent has accountable owners
+-- (people or teams); without an active owner or a fresh attestation it pauses.
+--
+--   ai_agents        the AI profile of a service account: status, preset,
+--                      attestation, budgets, data class ceiling, executor.
+--   ai_agent_owners  the people and teams accountable for an AI agent.
+--   ai_runs            one row per execution with its provenance (model,
+--                      prompt template id and digest, bundle digest, fields
+--                      sent and withheld, usage), the AI agent that acted and
+--                      the accountable owners at that moment. Its status is the
+--                      run's logical state; liveness belongs to the job that
+--                      executes it (the command lease), and a live run past
+--                      its deadline no longer holds the subject's slot.
+--
+-- finding_activities rows written by an AI agent are labeled actor_type 'ai'
+-- by a trigger, whatever code path wrote them.
+--
+-- An AI agent has no API key, MCP grant or database role of its own (triggers
+-- on api_keys, mcp_oauth_grants and user_roles): it acts only through the
+-- platform, which checks its owners, attestation, preset and deny list at
+-- every run.
+--
+-- Live impact: three new tables; triggers on finding_activities, api_keys,
+-- mcp_oauth_grants and user_roles (one indexed EXISTS per insert). The seat
+-- count stops counting AI agents (code). No backfill, no lock on an existing
+-- table. The index on finding_activities is built concurrently by the next
+-- migration.
+
+CREATE TABLE ai_agents (
+    user_id            uuid         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    tenant_id          uuid         NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    role               varchar(16)  NOT NULL DEFAULT 'analyst',
+    preset             varchar(16)  NOT NULL DEFAULT 'suggest',
+    status             varchar(16)  NOT NULL DEFAULT 'active',
+    pause_reason       varchar(48),
+    data_class_ceiling varchar(16)  NOT NULL DEFAULT 'internal',
+    executor           varchar(16)  NOT NULL DEFAULT 'builtin',
+    runs_per_hour      integer      NOT NULL DEFAULT 60,
+    actions_per_hour   integer      NOT NULL DEFAULT 200,
+    tokens_month       integer      NOT NULL DEFAULT 0,
+    attested_at        timestamptz  NOT NULL DEFAULT now(),
+    attested_by        uuid         REFERENCES users(id) ON DELETE SET NULL,
+    attest_due_at      timestamptz  NOT NULL,
+    created_by         uuid         REFERENCES users(id) ON DELETE SET NULL,
+    created_at         timestamptz  NOT NULL DEFAULT now(),
+    updated_at         timestamptz  NOT NULL DEFAULT now(),
+    CONSTRAINT pk_ai_agents PRIMARY KEY (user_id),
+    CONSTRAINT uq_ai_agents_user_tenant UNIQUE (user_id, tenant_id),
+    CONSTRAINT chk_ai_agents_role CHECK (role IN ('analyst', 'remediator', 'reporter', 'hunter', 'router')),
+    CONSTRAINT chk_ai_agents_preset CHECK (preset IN ('suggest', 'triage')),
+    CONSTRAINT chk_ai_agents_status CHECK (status IN ('active', 'paused', 'disabled')),
+    CONSTRAINT chk_ai_agents_pause CHECK ((status = 'active') = (pause_reason IS NULL)
+        AND (pause_reason IS NULL OR pause_reason ~ '^[a-z_]{1,48}$')),
+    CONSTRAINT chk_ai_agents_class CHECK (data_class_ceiling IN ('public', 'internal', 'restricted', 'tenant_only')),
+    CONSTRAINT chk_ai_agents_executor CHECK (executor IN ('builtin', 'platform_worker', 'tenant_worker', 'external')),
+    CONSTRAINT chk_ai_agents_budgets CHECK (runs_per_hour BETWEEN 1 AND 10000
+        AND actions_per_hour BETWEEN 1 AND 100000 AND tokens_month >= 0),
+    CONSTRAINT chk_ai_agents_attest CHECK (attest_due_at > attested_at)
+);
+CREATE INDEX idx_ai_agents_tenant ON ai_agents (tenant_id);
+CREATE INDEX idx_ai_agents_attest_due ON ai_agents (attest_due_at) WHERE status = 'active';
+CREATE INDEX idx_ai_agents_attested_by ON ai_agents (attested_by) WHERE attested_by IS NOT NULL;
+CREATE INDEX idx_ai_agents_created_by ON ai_agents (created_by) WHERE created_by IS NOT NULL;
+COMMENT ON TABLE ai_agents IS
+    'The AI profile of a service account: it acts like a person through the same commands, with its own role and data scope, never approves, and pauses without an active accountable owner or a fresh attestation.';
+COMMENT ON COLUMN ai_agents.pause_reason IS
+    'Why a paused or disabled agent does not run: no_active_owner, attestation_expired, admin, ...';
+
+CREATE FUNCTION refuse_ai_agent_non_service() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM users u
+                   WHERE u.id = NEW.user_id AND u.kind = 'service' AND u.service_tenant_id = NEW.tenant_id) THEN
+        RAISE EXCEPTION 'an AI agent must be a service account of the same organization'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trigger_refuse_ai_agent_non_service
+    BEFORE INSERT OR UPDATE OF user_id, tenant_id ON ai_agents
+    FOR EACH ROW EXECUTE FUNCTION refuse_ai_agent_non_service();
+
+CREATE POLICY ai_agents_tenant_isolation ON ai_agents
+    USING (((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)
+        OR (current_setting('app.is_platform_admin'::text, true) = 'true'::text)));
+
+CREATE TABLE ai_agent_owners (
+    id         uuid        NOT NULL DEFAULT uuid_generate_v7(),
+    tenant_id  uuid        NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    ai_agent_id uuid        NOT NULL,
+    user_id    uuid        REFERENCES users(id) ON DELETE CASCADE,
+    group_id   uuid        REFERENCES groups(id) ON DELETE CASCADE,
+    added_by   uuid        REFERENCES users(id) ON DELETE SET NULL,
+    added_at   timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT pk_ai_agent_owners PRIMARY KEY (id),
+    CONSTRAINT fk_ai_agent_owners_ai_agent FOREIGN KEY (ai_agent_id, tenant_id)
+        REFERENCES ai_agents (user_id, tenant_id) ON DELETE CASCADE,
+    CONSTRAINT chk_ai_agent_owners_one CHECK ((user_id IS NULL) <> (group_id IS NULL))
+);
+CREATE UNIQUE INDEX uq_ai_agent_owners_user ON ai_agent_owners (ai_agent_id, user_id) WHERE user_id IS NOT NULL;
+CREATE UNIQUE INDEX uq_ai_agent_owners_group ON ai_agent_owners (ai_agent_id, group_id) WHERE group_id IS NOT NULL;
+CREATE INDEX idx_ai_agent_owners_tenant ON ai_agent_owners (tenant_id, ai_agent_id);
+CREATE INDEX idx_ai_agent_owners_user ON ai_agent_owners (user_id) WHERE user_id IS NOT NULL;
+CREATE INDEX idx_ai_agent_owners_group ON ai_agent_owners (group_id) WHERE group_id IS NOT NULL;
+CREATE INDEX idx_ai_agent_owners_added_by ON ai_agent_owners (added_by) WHERE added_by IS NOT NULL;
+COMMENT ON TABLE ai_agent_owners IS
+    'People and teams accountable for an AI agent. A person owner is a person (never a service account) and a member of the organization; a team owner is a team of the organization.';
+
+CREATE FUNCTION refuse_foreign_ai_agent_owner() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF NEW.user_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM users u JOIN tenant_members m ON m.user_id = u.id AND m.tenant_id = NEW.tenant_id
+        WHERE u.id = NEW.user_id AND u.kind = 'person') THEN
+        RAISE EXCEPTION 'an AI agent owner must be a person in the same organization'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    IF NEW.group_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM groups g WHERE g.id = NEW.group_id AND g.tenant_id = NEW.tenant_id) THEN
+        RAISE EXCEPTION 'an AI agent owner team must belong to the same organization'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trigger_refuse_foreign_ai_agent_owner
+    BEFORE INSERT OR UPDATE ON ai_agent_owners
+    FOR EACH ROW EXECUTE FUNCTION refuse_foreign_ai_agent_owner();
+
+CREATE POLICY ai_agent_owners_tenant_isolation ON ai_agent_owners
+    USING (((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)
+        OR (current_setting('app.is_platform_admin'::text, true) = 'true'::text)));
+
+CREATE TABLE ai_runs (
+    id                     uuid        NOT NULL DEFAULT uuid_generate_v7(),
+    tenant_id              uuid        NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    ai_agent_id             uuid,
+    use_case               varchar(32) NOT NULL,
+    kind                   varchar(48) NOT NULL,
+    subject_type           varchar(16) NOT NULL,
+    subject_id             uuid        NOT NULL,
+    executor               varchar(16) NOT NULL DEFAULT 'builtin',
+    sensor_id              uuid,
+    command_id             uuid,
+    status                 varchar(20) NOT NULL DEFAULT 'queued',
+    data_class             varchar(16) NOT NULL DEFAULT 'internal',
+    fields_sent            text[]      NOT NULL DEFAULT '{}',
+    fields_withheld        text[]      NOT NULL DEFAULT '{}',
+    bundle_digest          varchar(71),
+    grant_digest           varchar(71),
+    prompt_template_id     varchar(64),
+    prompt_template_digest varchar(71),
+    output_schema          varchar(64),
+    provider               varchar(50),
+    model                  varchar(128),
+    model_params           jsonb       NOT NULL DEFAULT '{}',
+    steps                  integer     NOT NULL DEFAULT 0,
+    tool_calls             integer     NOT NULL DEFAULT 0,
+    actions                integer     NOT NULL DEFAULT 0,
+    tokens_in              integer     NOT NULL DEFAULT 0,
+    tokens_out             integer     NOT NULL DEFAULT 0,
+    cost_micro_usd         bigint      NOT NULL DEFAULT 0,
+    duration_ms            integer,
+    run_record_ref         text,
+    run_record_digest      varchar(71),
+    error_code             varchar(64),
+    shadow                 boolean     NOT NULL DEFAULT false,
+    triggered_by           uuid        REFERENCES users(id) ON DELETE SET NULL,
+    trigger                varchar(16) NOT NULL DEFAULT 'on_demand',
+    accountable            jsonb       NOT NULL DEFAULT '[]',
+    legacy_output          jsonb,
+    deadline_at            timestamptz,
+    started_at             timestamptz,
+    completed_at           timestamptz,
+    created_at             timestamptz NOT NULL DEFAULT now(),
+    updated_at             timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT pk_ai_runs PRIMARY KEY (id),
+    CONSTRAINT uq_ai_runs_id_tenant UNIQUE (id, tenant_id),
+    CONSTRAINT fk_ai_runs_ai_agent FOREIGN KEY (ai_agent_id, tenant_id)
+        REFERENCES ai_agents (user_id, tenant_id) ON DELETE SET NULL (ai_agent_id),
+    CONSTRAINT chk_ai_runs_ai_agent CHECK (ai_agent_id IS NOT NULL OR kind ~ '\.legacy$' OR status IN ('completed', 'failed', 'canceled', 'refused')),
+    CONSTRAINT chk_ai_runs_use_case CHECK (use_case IN ('triage', 'remediation', 'summary')),
+    CONSTRAINT chk_ai_runs_kind CHECK (kind ~ '^[a-z_]{1,32}\.(v[0-9]{1,3}|legacy)$'),
+    CONSTRAINT chk_ai_runs_subject_type CHECK (subject_type IN ('finding', 'asset', 'cve', 'attack_path', 'bounty_report')),
+    CONSTRAINT chk_ai_runs_executor CHECK (executor IN ('builtin', 'platform_worker', 'tenant_worker', 'external')),
+    CONSTRAINT chk_ai_runs_worker CHECK ((executor IN ('platform_worker', 'tenant_worker')) = (sensor_id IS NOT NULL)),
+    CONSTRAINT chk_ai_runs_status CHECK (status IN ('queued', 'running', 'waiting_tool', 'waiting_approval',
+        'completed', 'failed', 'canceled', 'refused')),
+    CONSTRAINT chk_ai_runs_data_class CHECK (data_class IN ('public', 'internal', 'restricted', 'tenant_only')),
+    CONSTRAINT chk_ai_runs_fields CHECK (cardinality(fields_sent) <= 128 AND cardinality(fields_withheld) <= 128),
+    CONSTRAINT chk_ai_runs_digests CHECK (
+        (bundle_digest IS NULL OR bundle_digest ~ '^sha256:[0-9a-f]{64}$')
+        AND (grant_digest IS NULL OR grant_digest ~ '^sha256:[0-9a-f]{64}$')
+        AND (prompt_template_digest IS NULL OR prompt_template_digest ~ '^sha256:[0-9a-f]{64}$')
+        AND (run_record_digest IS NULL OR run_record_digest ~ '^sha256:[0-9a-f]{64}$')),
+    CONSTRAINT chk_ai_runs_model_params CHECK (octet_length(model_params::text) <= 2048),
+    CONSTRAINT chk_ai_runs_usage CHECK (steps >= 0 AND tool_calls >= 0 AND actions >= 0 AND tokens_in >= 0
+        AND tokens_out >= 0 AND cost_micro_usd >= 0 AND (duration_ms IS NULL OR duration_ms >= 0)),
+    CONSTRAINT chk_ai_runs_error_code CHECK (error_code IS NULL OR error_code ~ '^[a-z0-9_]{1,64}$'),
+    CONSTRAINT chk_ai_runs_trigger CHECK (trigger IN ('on_demand', 'on_ingest', 'workflow', 'schedule', 'mention')),
+    CONSTRAINT chk_ai_runs_accountable CHECK (jsonb_typeof(accountable) = 'array' AND octet_length(accountable::text) <= 4096),
+    CONSTRAINT chk_ai_runs_legacy CHECK (legacy_output IS NULL OR (jsonb_typeof(legacy_output) = 'object'
+        AND octet_length(legacy_output::text) <= 65536))
+);
+CREATE INDEX idx_ai_runs_subject ON ai_runs (tenant_id, subject_type, subject_id, created_at DESC);
+CREATE INDEX idx_ai_runs_tenant_created ON ai_runs (tenant_id, created_at DESC);
+CREATE INDEX idx_ai_runs_ai_agent_created ON ai_runs (ai_agent_id, created_at DESC) WHERE ai_agent_id IS NOT NULL;
+CREATE INDEX idx_ai_runs_triggered_by ON ai_runs (triggered_by) WHERE triggered_by IS NOT NULL;
+CREATE UNIQUE INDEX uq_ai_runs_in_flight ON ai_runs (tenant_id, use_case, subject_id)
+    WHERE status IN ('queued', 'running', 'waiting_tool', 'waiting_approval') AND NOT shadow;
+COMMENT ON TABLE ai_runs IS
+    'One execution of an AI use case with its provenance, the agent that acted and the accountable owners at that moment. Tenant-scoped; deleted with the organization.';
+COMMENT ON COLUMN ai_runs.error_code IS 'Fixed failure code only; never provider or model text.';
+COMMENT ON COLUMN ai_runs.accountable IS 'The agent''s accountable owners when the run started: [{kind, id, name}].';
+
+CREATE POLICY ai_runs_tenant_isolation ON ai_runs
+    USING (((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)
+        OR (current_setting('app.is_platform_admin'::text, true) = 'true'::text)));
+
+CREATE FUNCTION label_ai_agent_activity() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF NEW.actor_id IS NOT NULL AND NEW.actor_type <> 'ai'
+       AND EXISTS (SELECT 1 FROM ai_agents a WHERE a.user_id = NEW.actor_id AND a.tenant_id = NEW.tenant_id) THEN
+        NEW.actor_type := 'ai';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trigger_label_ai_agent_activity
+    BEFORE INSERT ON finding_activities
+    FOR EACH ROW EXECUTE FUNCTION label_ai_agent_activity();
+
+-- An AI agent acts only through the platform's executor, as a principal the
+-- platform resolves at every run (owners, attestation, preset, deny list).
+-- It has no credential of its own and no database role: an API key, an MCP
+-- grant or a role row for it would bypass those checks, so the schema
+-- refuses them whatever code path writes them.
+CREATE FUNCTION refuse_ai_agent_credential() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF NEW.user_id IS NOT NULL AND EXISTS (SELECT 1 FROM ai_agents a WHERE a.user_id = NEW.user_id) THEN
+        RAISE EXCEPTION 'an AI agent has no API key, MCP grant or role of its own'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trigger_refuse_ai_agent_api_key
+    BEFORE INSERT OR UPDATE OF user_id ON api_keys
+    FOR EACH ROW EXECUTE FUNCTION refuse_ai_agent_credential();
+CREATE TRIGGER trigger_refuse_ai_agent_mcp_grant
+    BEFORE INSERT OR UPDATE OF user_id ON mcp_oauth_grants
+    FOR EACH ROW EXECUTE FUNCTION refuse_ai_agent_credential();
+CREATE TRIGGER trigger_refuse_ai_agent_role
+    BEFORE INSERT OR UPDATE OF user_id ON user_roles
+    FOR EACH ROW EXECUTE FUNCTION refuse_ai_agent_credential();
+
+-- A service account becomes an AI agent only while it holds none of those.
+CREATE FUNCTION refuse_ai_agent_with_credentials() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM api_keys k WHERE k.user_id = NEW.user_id AND k.status = 'active')
+       OR EXISTS (SELECT 1 FROM mcp_oauth_grants g WHERE g.user_id = NEW.user_id AND g.revoked_at IS NULL)
+       OR EXISTS (SELECT 1 FROM user_roles r WHERE r.user_id = NEW.user_id) THEN
+        RAISE EXCEPTION 'an AI agent cannot be made from a service account that has keys, grants or roles'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trigger_refuse_ai_agent_with_credentials
+    BEFORE INSERT ON ai_agents
+    FOR EACH ROW EXECUTE FUNCTION refuse_ai_agent_with_credentials();

@@ -1115,7 +1115,7 @@ empty `owner_emails`. Every member-list view is audited
 | `POST /api/v1/admin/auth/password` | any admin (the only write allowed while `password_change_required`) |
 | `GET /api/v1/admin/auth/idp` | public (enabled + display name of the platform IdP, nothing else) |
 | `POST /api/v1/admin/auth/idp/start`, `/idp/callback` | public (token-exchange rate limit, 20/min; state bound to the `admin_idp` cookie, single use) |
-| `POST /api/v1/admin/administrators` | **super_admin** + **step-up** (audited; `break_glass` audited high) |
+| `POST /api/v1/admin/administrators` | **super_admin** + **step-up** (audited; `break_glass` audited high). Invitation by e-mail, no password returned; a new super admin also needs a second super admin's approval and, while approvals are on, working platform e-mail |
 | `POST /api/v1/admin/users/{id}/reset-credentials` | **super_admin** + **step-up** (audited; not self) |
 | `POST /api/v1/admin/users/{id}/break-glass-test` | **super_admin** + **step-up** (audited; not the break-glass account itself) |
 | `DELETE /api/v1/admin/users/{id}/idp-binding` | **super_admin** + **step-up** (audited high) |
@@ -1183,8 +1183,9 @@ password) and `POST /api/v1/admin/auth/mfa` open a console session. Rules:
 - Provisioning is `POST /api/v1/admin/administrators` (super admin), or
   `bootstrap-admin` for the first one and its break-glass backup. Rows without
   a `user_id` (former API-key identities) were deactivated by migration 000227.
-- **Temporary password gate.** A provisioned account has
-  `password_change_required`; a password-authenticated console session can then
+- **Temporary password gate.** An account made by `bootstrap-admin` has
+  `password_change_required` (an invited administrator chooses their own
+  password and has no temporary one); a password-authenticated console session can then
   call only `GET /auth/validate` and `POST /auth/password` (403
   `PASSWORD_CHANGE_REQUIRED` otherwise).
 
@@ -2785,6 +2786,28 @@ report all read it.
 
 Team roles, the administrator bypass and the owner invariants are unchanged:
 they read the built-in roles only, and those never bind.
+
+### Team access presets (RFC-127)
+
+A team carries access without anyone managing roles. `PUT /api/v1/groups/{groupId}/access`
+sets the team's **presets** (role templates) and **scope mode** (`specific`, or
+`all_assets`). Each preset is a **managed role**: a custom role with
+`roles.managed_group_id` set, bound to its team. "All assets" is a managed role
+with full data access and no permissions, so the data-scope engine, notification
+audiences and the full-data guards read it exactly like `has_full_data_access`.
+`v_user_role_grants` is unchanged; `GET /api/v1/users/{userId}/team-access` lists
+what a person inherits and from which team.
+
+| Rule | Enforcement |
+|---|---|
+| A managed role is changed only through the team's access | `ErrManagedRole` on update, delete, assign, invitation roles, bind and unbind; triggers refuse a `user_roles` row and a binding to another team; deleting the team deletes its managed roles |
+| Hidden from the Roles list | `RoleRepository.ListForTenant` excludes managed roles; the team lists them (`managed: true`) |
+| Setting access is a grant | `team:roles:assign` and `team:groups:write`; the actor holds every permission of a preset they add or remove, and without full data access every asset of the team; a non-owner member does not add roles to their own team |
+| Privileged teams are the owner's | a team is privileged when a role of it is (all assets, or a privileged permission): only an owner sets its access or changes the team (rename, deactivate), with step-up; audited at critical severity |
+| Membership of a privileged managed team | needs `team:members:write` on top of `team:groups:members` and the grant ceiling; a team lead without it is refused (`ErrPrivilegedTeamNeedsMembersManage`). Teams that carry a privileged role bound by hand stay owner-only |
+| Outside members and service accounts | never join, and never receive, an all-assets team (`ErrExternalTeamFullData`); an outside invitee to a team with elevated access counts as above member for the outside-member two-factor rules |
+| Owner and admin | never granted through a team (only custom roles bind) |
+| Versioning | the managed role records the template version; `POST .../access/upgrade` applies the current permissions when the editor confirms the version they reviewed (409 otherwise); full data access is never changed by an update |
 
 ## Service accounts
 

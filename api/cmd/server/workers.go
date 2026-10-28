@@ -662,6 +662,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			svc.ServiceKeyGate, repos.MemberLifecycle, 5*time.Minute, log.With("controller", "service-key-creator")))
 	}
 
+	// AI agents without an active accountable owner or a fresh attestation
+	// pause (every run start checks the same, fail closed).
+	if svc.AIAnalysis != nil {
+		w.ControllerManager.Register(controller.NewAIAgentSweepController(svc.AIAnalysis, time.Hour,
+			log.With("controller", "ai-agent-sweep")))
+	}
+
 	registerPurgeControllers(w.ControllerManager, cfg, repos, svc, log)
 	registerSignerLedgerSync(w.ControllerManager, svc, log)
 
@@ -764,17 +771,10 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// CVE corpus; nothing happens until VULNFEED_ROOT_KEY_ID is set and a
 	// platform admin enables the "vulnfeed" source.
 	if repos.ThreatIntel != nil && repos.CVECorpus != nil && repos.Software != nil {
-		im, err := vulnfeed.NewImporter(vulnfeed.Config{
-			RootKeyID: cfg.Worker.VulnFeedRootKeyID, BaseURL: cfg.Worker.VulnFeedBaseURL, BundleDir: cfg.Worker.VulnFeedBundleDir,
-		}, repos.CVECorpus, repos.ThreatIntel.SyncStatus(), repos.Software, log.With("component", "vulnfeed"))
+		im, err := newVulnFeedImporter(cfg, repos, log.With("component", "vulnfeed"))
 		if err != nil {
 			log.Error("vulnerability bundle import disabled", "error", err)
 		} else {
-			// Chunked (v2) bundles are fetched with retries, resume and mirror
-			// fall-back and applied chunk by chunk with a durable checkpoint
-			// (docs/architecture/feed-transfer.md); v1 stays the fallback.
-			im.WithChunks(repos.CVECorpus, vulnfeed.Transfer{Mirrors: cfg.Worker.VulnFeedMirrors, CacheDir: cfg.Scope.FeedCacheDir,
-				Client: httpsec.SafeHTTPClient(0), Registerer: prometheus.DefaultRegisterer})
 			// KEV and EPSS ride the same release as a signed side manifest:
 			// applied when newer than what the platform holds, then the same
 			// findings sweep and event log as after a direct sync.
@@ -859,6 +859,11 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// tenant owns domain assets; disable with CERT_MONITOR_ENABLED=false.
 	// Names a permanent scope target or seed covers are confirmed: once at
 	// start-up (the backfill) and every 6 h (RFC-054 §4.3).
+	// Groups that fill themselves by a rule are evaluated again every hour
+	// (asset changes trigger their own debounced evaluation).
+	if svc.AssetGroup != nil {
+		w.ControllerManager.Register(controller.NewAssetGroupRulesController(svc.AssetGroup, 0))
+	}
 	if svc.ScopeJoin != nil {
 		if svc.Module != nil {
 			svc.ScopeJoin.SetModuleGuard(svc.Module) // skip tenants with attack_surface off
@@ -1633,4 +1638,21 @@ func redactSinkURL(raw string) string {
 		return "(invalid)"
 	}
 	return fmt.Sprintf("%s://%s", u.Scheme, u.Host)
+}
+
+// newVulnFeedImporter builds the vulnerability bundle importer. The import
+// controller and the admin "Sync now" endpoint each use one: chunked (v2)
+// bundles are fetched with retries, resume and mirror fall-back and applied
+// chunk by chunk with a durable checkpoint (docs/architecture/feed-transfer.md);
+// v1 stays the fallback.
+func newVulnFeedImporter(cfg *config.Config, repos *Repositories, log *logger.Logger) (*vulnfeed.Importer, error) {
+	im, err := vulnfeed.NewImporter(vulnfeed.Config{
+		RootKeyID: cfg.Worker.VulnFeedRootKeyID, BaseURL: cfg.Worker.VulnFeedBaseURL, BundleDir: cfg.Worker.VulnFeedBundleDir,
+	}, repos.CVECorpus, repos.ThreatIntel.SyncStatus(), repos.Software, log)
+	if err != nil {
+		return nil, err
+	}
+	im.WithChunks(repos.CVECorpus, vulnfeed.Transfer{Mirrors: cfg.Worker.VulnFeedMirrors, CacheDir: cfg.Scope.FeedCacheDir,
+		Client: httpsec.SafeHTTPClient(0), Registerer: prometheus.DefaultRegisterer})
+	return im, nil
 }

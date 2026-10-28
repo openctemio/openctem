@@ -77,6 +77,7 @@ var sqlProfiles = map[string]SQLProfile{
 	"ProgramSyncController":               SQLBatched,
 	"ScopeReconciliationController":       SQLBatched,
 	"ScopeJoinController":                 SQLBatched,
+	"AssetGroupRulesController":           SQLBatched, // id pages of 1000 per statement; one transaction per group result
 	"ScopePendingController":              SQLBatched,
 	"ScopeAttestationController":          SQLBatched,
 	"ReportFileMigrationController":       SQLBatched,
@@ -115,6 +116,7 @@ var sqlProfiles = map[string]SQLProfile{
 	"EASMDNSController":                   SQLLight,
 	"EASMWeeklyDigestController":          SQLLight,
 	"IdleWorkspaceController":             SQLLight,
+	"AIAgentSweepController":              SQLLight,
 	"JobRecoveryController":               SQLLight,
 	"MemberAccessExpiryController":        SQLLight,
 	"ReportScheduler":                     SQLLight,
