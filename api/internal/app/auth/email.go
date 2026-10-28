@@ -52,15 +52,22 @@ func (s *EmailService) SetTenantSMTPResolver(resolver TenantSMTPResolver) {
 	s.tenantSMTP = resolver
 }
 
-// SendReport emails an already-rendered HTML report to explicit recipients,
-// using the tenant's SMTP if configured (else the system default). Used by the
-// scheduled-report controller. No-op (returns nil) when there are no recipients;
-// errors if no SMTP sender is configured.
+// SendReport emails an already-rendered HTML report (organization content)
+// to explicit recipients. With a tenantID it goes through the organization's
+// own relay when one is active; if the organization chose a relay that cannot
+// be used now, the report is NOT sent through the platform relay (the
+// organization may have chosen its relay for data-handling reasons): the
+// error is returned. Without an organization relay (mode off, none set) and
+// with an empty tenantID it uses the platform relay. No-op (returns nil) when
+// there are no recipients; errors if no SMTP sender is configured.
 func (s *EmailService) SendReport(ctx context.Context, tenantID string, to []string, subject, htmlBody string) error {
 	if len(to) == 0 {
 		return nil
 	}
-	sender := s.getSenderForTenant(ctx, tenantID)
+	sender, err := s.contentSender(ctx, tenantID)
+	if err != nil {
+		return err
+	}
 	if sender == nil || !sender.IsConfigured() {
 		return fmt.Errorf("email: no SMTP sender configured")
 	}
@@ -72,7 +79,33 @@ func (s *EmailService) SendReport(ctx context.Context, tenantID string, to []str
 	})
 }
 
-// getSenderForTenant returns a per-tenant SMTP sender if configured, or the default sender.
+// contentSender is the sender of organization content mail (reports): the
+// organization relay when active, the platform relay when the organization
+// has none, and an error (never the platform relay) when its relay is
+// active but unusable.
+func (s *EmailService) contentSender(ctx context.Context, tenantID string) (emaildom.Sender, error) {
+	if s.tenantSMTP == nil || tenantID == "" {
+		return s.sender, nil
+	}
+	cfg, err := s.tenantSMTP.GetTenantSMTPConfig(ctx, tenantID)
+	if err != nil {
+		s.logger.Warn("organization mail relay unusable; content mail not sent", "tenant_id", logSafe(tenantID), "error", err)
+		return nil, err
+	}
+	if cfg == nil {
+		return s.sender, nil
+	}
+	return emaildom.NewSMTPSender(*cfg), nil
+}
+
+// getSenderForTenant is the sender of organization business mail with no
+// credentials and no exposure data (invitation notice, member suspended or
+// reactivated): the organization relay when active, else the platform relay,
+// including when the organization's relay cannot be used now. It is never used
+// for mail that carries a credential or proves control of an account (account
+// setup and set-password links, password reset, owner recovery, first owner,
+// e-mail verification, two-factor): that mail uses the platform relay only
+// (platformSender).
 func (s *EmailService) getSenderForTenant(ctx context.Context, tenantID string) emaildom.Sender {
 	if s.tenantSMTP == nil || tenantID == "" {
 		return s.sender
@@ -80,7 +113,7 @@ func (s *EmailService) getSenderForTenant(ctx context.Context, tenantID string) 
 
 	cfg, err := s.tenantSMTP.GetTenantSMTPConfig(ctx, tenantID)
 	if err != nil {
-		s.logger.Debug("no tenant SMTP config, using system default", "tenant_id", logSafe(tenantID))
+		s.logger.Warn("organization mail relay unusable; using the platform relay", "tenant_id", logSafe(tenantID), "error", err)
 		return s.sender
 	}
 	if cfg == nil {
@@ -101,18 +134,14 @@ func (s *EmailService) HasSystemSMTP() bool {
 	return s.IsConfigured()
 }
 
-// HasTenantSMTP implements SMTPAvailabilityCheck.
-// Returns true if the given tenant has a custom SMTP integration configured.
-// tenantID may be empty for self-registration without tenant context.
-func (s *EmailService) HasTenantSMTP(ctx context.Context, tenantID string) bool {
-	if s.tenantSMTP == nil || tenantID == "" {
-		return false
-	}
-	cfg, err := s.tenantSMTP.GetTenantSMTPConfig(ctx, tenantID)
-	if err != nil || cfg == nil {
-		return false
-	}
-	return cfg.Host != ""
+// HasTenantSMTP implements SMTPAvailabilityCheck. It is always false:
+// verification, password reset and the other account security mail are
+// sent through the platform relay only (an organization's relay is
+// organization-controlled infrastructure and must never carry another
+// organization's member's account mail), so an organization relay does not
+// make account verification possible.
+func (s *EmailService) HasTenantSMTP(_ context.Context, _ string) bool {
+	return false
 }
 
 // SendVerificationEmail sends an email verification link to a user.
@@ -331,10 +360,19 @@ func (s *EmailService) SendMemberReactivatedEmail(
 	return nil
 }
 
-// CanDeliverTo reports whether an email can be sent on behalf of tenantID
-// (the tenant's own SMTP integration, else the system SMTP).
-func (s *EmailService) CanDeliverTo(ctx context.Context, tenantID string) bool {
-	sender := s.getSenderForTenant(ctx, tenantID)
+// platformSender is the sender of account security mail: the platform relay,
+// whatever organization the mail is about. An organization relay is
+// organization-controlled infrastructure; it never sees a set-password link,
+// a reset link or a verification code.
+func (s *EmailService) platformSender() emaildom.Sender {
+	return s.sender
+}
+
+// CanDeliverTo reports whether account security mail (set-password links) can
+// be sent for tenantID: only the platform relay carries it, so this is true
+// when the platform relay is configured, whatever the organization's own relay.
+func (s *EmailService) CanDeliverTo(_ context.Context, _ string) bool {
+	sender := s.platformSender()
 	return sender != nil && sender.IsConfigured()
 }
 
@@ -346,9 +384,11 @@ func (s *EmailService) AccountSetupURL(token string) string {
 // SendAccountSetupEmail sends the one-time set-password link for an account an
 // administrator created. Unlike the best-effort notifications it returns an
 // error when no sender is configured, so the caller can fall back to showing
-// the link to the administrator instead of silently dropping it.
+// the link to the administrator instead of silently dropping it. The link is
+// a credential: it goes through the platform relay only, never an
+// organization relay (tenantID is only for the log line).
 func (s *EmailService) SendAccountSetupEmail(ctx context.Context, tenantID, recipientEmail, recipientName, teamName, token string, expiresIn time.Duration) error {
-	sender := s.getSenderForTenant(ctx, tenantID)
+	sender := s.platformSender()
 	if sender == nil || !sender.IsConfigured() {
 		return fmt.Errorf("email: no SMTP sender configured")
 	}
@@ -368,6 +408,37 @@ func (s *EmailService) SendAccountSetupEmail(ctx context.Context, tenantID, reci
 		return fmt.Errorf("failed to send account setup email: %w", err)
 	}
 	s.logger.Info("account setup email sent", "tenant_id", logTenant)
+	return nil
+}
+
+// adminInvitationScope names what a platform administrator's invitation is for
+// ("Your OpenCTEM account for platform administration is ready").
+const adminInvitationScope = "platform administration"
+
+// CanDeliverSystem reports whether the system SMTP sender can send mail.
+func (s *EmailService) CanDeliverSystem() bool { return s.IsConfigured() }
+
+// SendAdminInvitationEmail sends a new platform administrator the one-time
+// link where they choose their password. It uses the system sender only and
+// returns an error when none is configured or the send fails, so the caller
+// never reports an invitation that was not sent.
+func (s *EmailService) SendAdminInvitationEmail(ctx context.Context, recipientEmail, recipientName, token string, expiresIn time.Duration) error {
+	if !s.IsConfigured() {
+		return fmt.Errorf("email: no SMTP sender configured")
+	}
+	data := emaildom.AccountSetupData{
+		UserName:  recipientName,
+		TeamName:  adminInvitationScope,
+		SetupURL:  s.AccountSetupURL(token),
+		ExpiresIn: formatDuration(expiresIn),
+		AppName:   s.appName,
+		Branding:  s.branding,
+	}
+	if err := s.sender.SendTemplate(ctx, recipientEmail, emaildom.TemplateAccountSetup, data); err != nil {
+		s.logger.Error("failed to send administrator invitation email")
+		return fmt.Errorf("failed to send administrator invitation email: %w", err)
+	}
+	s.logger.Info("administrator invitation email sent")
 	return nil
 }
 

@@ -35,7 +35,6 @@ const REVIEWED = new Set<string>([
   // The mapper itself.
   'src/lib/api/error-message.ts:toast of a raw error or result text',
   // Success sentences the server or a server action writes (counts, no ids).
-  'src/app/(auth)/forgot-password/page.tsx:toast of a raw error or result text',
   'src/app/(dashboard)/(discovery)/scans/page.tsx:toast of a raw error or result text',
   // A summary the page builds from the bulk result (translated).
   'src/app/(dashboard)/findings/page.tsx:toast of a raw error or result text',

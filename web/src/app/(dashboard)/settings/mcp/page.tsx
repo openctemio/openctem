@@ -13,6 +13,7 @@ import { useTenant } from '@/context/tenant-provider'
 import { useAccessRequests } from '@/features/mcp-oauth/api/access-requests'
 import {
   revokeOrgConnection,
+  scopeOrgConnection,
   useMcpPolicy,
   useOrgConnections,
 } from '@/features/mcp-oauth/api/connections'
@@ -158,6 +159,7 @@ export default function MCPSettingsPage() {
                       isLoading={orgConnections.isLoading}
                       showUser
                       onRevoke={revokeOrgConnection}
+                      onScope={scopeOrgConnection}
                       emptyTitle={t('mcp.connections.emptyTitle', 'No connected applications')}
                       emptyDescription={t(
                         'mcp.connections.orgEmpty',

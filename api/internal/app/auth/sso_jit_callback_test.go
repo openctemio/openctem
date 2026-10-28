@@ -186,6 +186,9 @@ func mockOkta(t *testing.T, email string, mode idTokenMode) *mockOktaIdP {
 	return idp
 }
 
+// cbSignInRecorder, when set by a test, is wired into the callback fixture.
+var cbSignInRecorder SSOSignInRecorder
+
 func runOktaCallback(t *testing.T, email string, verified map[string]bool, autoProvision bool) (*SSOCallbackResult, *cbUserRepo, *cbMembers, error) {
 	t.Helper()
 	return runOktaCallbackRecording(t, email, verified, autoProvision, nil)
@@ -227,6 +230,9 @@ func runOktaCallbackWith(t *testing.T, email string, verified map[string]bool, a
 	svc.SetTenantMemberRepo(members)
 	svc.SetIdentityRepo(newMemIdentities())
 	svc.SetDomainVerifier(&fakeDomainVerifier{verified: verified})
+	if cbSignInRecorder != nil {
+		svc.SetSSOSignInRecorder(cbSignInRecorder)
+	}
 
 	auth, err := svc.GenerateAuthorizeURL(context.Background(), SSOAuthorizeInput{
 		OrgSlug: "acme", Provider: string(identityproviderdom.ProviderOkta), RedirectURI: "https://app.example.com/auth/sso/callback",
@@ -243,7 +249,7 @@ func runOktaCallbackWith(t *testing.T, email string, verified map[string]bool, a
 	}
 	idp.nonce = u.Query().Get("nonce")
 	res, err := svc.HandleCallback(context.Background(), SSOCallbackInput{
-		Provider: string(identityproviderdom.ProviderOkta), Code: "the-code", State: auth.State,
+		Provider: string(identityproviderdom.ProviderOkta), Code: "the-code", State: auth.State, BrowserBinding: auth.BrowserBinding,
 		RedirectURI: "https://app.example.com/auth/sso/callback",
 	})
 	return res, users, members, err
