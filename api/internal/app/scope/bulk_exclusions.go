@@ -16,6 +16,7 @@ package scope
 import (
 	"context"
 	"fmt"
+	"time"
 
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -45,6 +46,10 @@ type BulkExclusionsInput struct {
 	Items     []BulkExclusionItem
 	Reason    string
 	CreatedBy string
+	// Kind is why the items are out of scope (empty: do_not_scan) and
+	// ExpiresAt their end date (nil: until re-included).
+	Kind      string
+	ExpiresAt *time.Time
 }
 
 // BulkExclusionOutcome is what happened to one item: Exclusion is the one it
@@ -115,6 +120,7 @@ func (s *Service) CreateExclusions(ctx context.Context, in BulkExclusionsInput) 
 		o.Exclusion, o.Err = s.CreateExclusion(ctx, CreateExclusionInput{
 			TenantID: in.TenantID, ExclusionType: it.ExclusionType, Pattern: it.Pattern,
 			Reason: reason, CreatedBy: in.CreatedBy, Origin: scopedom.OriginImport,
+			Kind: in.Kind, ExpiresAt: in.ExpiresAt,
 		})
 		out = append(out, o)
 	}
@@ -125,7 +131,10 @@ func (s *Service) CreateExclusions(ctx context.Context, in BulkExclusionsInput) 
 // pattern matches, with up to ten of their names.
 type ExclusionMatch struct {
 	Matched int
-	Sample  []string
+	// OpenFindings is how many open findings those assets have: what a
+	// permanent not_ours or retired exclusion would close.
+	OpenFindings int
+	Sample       []string
 }
 
 // ExclusionMatchCounter counts the matches of patterns in the database

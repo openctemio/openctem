@@ -1564,7 +1564,13 @@ func easmDecisionEffects(repos *Repositories, svc *Services, log *logger.Logger)
 			pub.PublishAssetReclassify(ctx, tenantID, ids, controller.ReasonAssetChange, "attribution decided")
 		}
 	}
-	return easmapp.NewDecisionEffects(repos.Exposure, reclassify, log)
+	effects := easmapp.NewDecisionEffects(repos.Exposure, reclassify, log)
+	// "Not ours" closes the asset's findings as out of scope; undoing it
+	// reopens them (research/320).
+	if svc.ScopeEffects != nil {
+		effects.SetScopeEffects(svc.ScopeEffects.Kick)
+	}
+	return effects
 }
 
 // newEASMSettingsHandler builds the EASM settings and run-now handler
