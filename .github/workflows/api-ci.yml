@@ -370,7 +370,10 @@ jobs:
           test "$published" = "gateway"
           # Every image the stack pulls by default is one a release publishes
           # (docker-publish.yml), under its current name.
-          published_names="$(yq -r '.jobs.merge.strategy.matrix.image[].name' ../../.github/workflows/docker-publish.yml)"
+          # yq: GitHub-hosted images ship it, the self-hosted runner image does not.
+          yq=yq
+          command -v yq >/dev/null || { GOWORK=off go install github.com/mikefarah/yq/v4@v4.44.3 && yq="$(go env GOPATH)/bin/yq"; }
+          published_names="$("$yq" -r '.jobs.merge.strategy.matrix.image[].name' ../../.github/workflows/docker-publish.yml)"
           for img in $(docker compose -f docker-compose.yml -f docker-compose.job-signer.yml config --images | sort -u); do
             case "$img" in
               ghcr.io/openctemio/*)
@@ -403,6 +406,15 @@ jobs:
 
       - name: Lint (golangci-lint on new code)
         if: github.event_name == 'pull_request'
+        env:
+          # golangci-lint v1.64.8 is built with a Go that ignores cgroup CPU
+          # limits: in a 4-CPU runner container it sees every host CPU and
+          # starts that many type-check workers, which blows the container's
+          # memory limit (12 GiB) and gets it killed ("signal: killed").
+          # GOMAXPROCS matches the container's CPUs (hosted runners have 4
+          # too); GOMEMLIMIT makes GC tighten before the limit is reached.
+          GOMAXPROCS: "4"
+          GOMEMLIMIT: 8GiB
         run: |
           base="$(bash ../.github/scripts/effective-base.sh api "origin/${GITHUB_BASE_REF}")"
           make lint-new BASE_REF="$base"
