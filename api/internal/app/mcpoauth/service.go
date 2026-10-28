@@ -177,7 +177,7 @@ func (s *Service) StartAuthorization(ctx context.Context, q url.Values) (shared.
 		}
 	}
 	clientID := q.Get("client_id")
-	client, err := s.resolveClient(ctx, clientID)
+	client, pending, err := s.resolveClient(ctx, clientID)
 	if err != nil {
 		return shared.ID{}, &AuthorizeError{OAuthError: *oauthErr("invalid_client", "unknown or unusable client")}
 	}
@@ -218,6 +218,7 @@ func (s *Service) StartAuthorization(ctx context.Context, q url.Values) (shared.
 	req := &mcpoauth.AuthRequest{
 		ID:            shared.NewID(),
 		Client:        *client,
+		ClientPending: pending,
 		RedirectURI:   redirectURI,
 		State:         state,
 		CodeChallenge: q.Get("code_challenge"),
@@ -396,11 +397,23 @@ func (s *Service) Approve(ctx context.Context, requestID, userID, tenantID share
 	if len(granted) == 0 {
 		return "", ErrNothingToGrant
 	}
+	if req.ClientPending {
+		// First approval of this document: this is where the client enters
+		// the registry. A client blocked since the request started is refused.
+		stored, uerr := s.repo.UpsertClient(ctx, &req.Client)
+		if uerr != nil {
+			return "", fmt.Errorf("store mcp client: %w", uerr)
+		}
+		if stored.BlockedAt != nil {
+			return "", ErrConsentUnavailable
+		}
+		req.Client = *stored
+	}
 	code, err := randomToken("")
 	if err != nil {
 		return "", err
 	}
-	if err := s.repo.ApproveRequest(ctx, req.ID, userID, tenantID, granted, s.hash(code), now.Add(mcpoauth.CodeTTL), now); err != nil {
+	if err := s.repo.ApproveRequest(ctx, req.ID, userID, tenantID, req.Client.ID, granted, s.hash(code), now.Add(mcpoauth.CodeTTL), now); err != nil {
 		return "", ErrConsentUnavailable
 	}
 	s.logAudit(ctx, tenantID.String(), userID.String(), actor,

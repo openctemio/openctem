@@ -135,6 +135,13 @@ func eligible(a *admin.AdminUser) bool {
 	return a != nil && a.IsActive() && a.Role() == admin.AdminRoleSuperAdmin && !a.IsBreakGlass()
 }
 
+// Active reports whether four-eyes approvals are in force for actor (another
+// super admin can approve). It consumes nothing.
+func (s *Service) Active(ctx context.Context, actor *admin.AdminUser) (bool, error) {
+	st, err := s.Status(ctx, actor)
+	return st.Active, err
+}
+
 // Status returns the four-eyes state for actor.
 func (s *Service) Status(ctx context.Context, actor *admin.AdminUser) (Status, error) {
 	active, err := s.admins.ListActive(ctx)
