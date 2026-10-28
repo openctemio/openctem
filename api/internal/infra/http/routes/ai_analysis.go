@@ -24,7 +24,7 @@ import (
 //     the caller's data scope on the subject in the service, and the
 //     permission of the change itself (findings:severity or findings:write)
 //     checked per suggestion.
-func registerAIAnalysisRoutes(router Router, h *handler.AIAnalysisHandler, authMiddleware, userSyncMiddleware, moduleGate Middleware) {
+func registerAIAnalysisRoutes(router Router, h *handler.AIAnalysisHandler, authMiddleware, userSyncMiddleware, moduleGate Middleware, rateLimiter *middleware.AITriageRateLimiter) {
 	if h == nil {
 		return
 	}
@@ -39,6 +39,15 @@ func registerAIAnalysisRoutes(router Router, h *handler.AIAnalysisHandler, authM
 	router.Group("/api/v1/findings/{id}/ai", func(r Router) {
 		r.GET("/suggestions", h.ListFindingSuggestions, middleware.RequireAll(permission.FindingsRead, permission.AITriageRead))
 	}, gated...)
+	// Running an analysis spends model tokens: findings:write and
+	// ai_triage:trigger, rate-limited like AI triage.
+	analyze := append([]Middleware{}, gated...)
+	if rateLimiter != nil {
+		analyze = append(analyze, rateLimiter.RequestMiddleware())
+	}
+	router.Group("/api/v1/findings/{id}/ai", func(r Router) {
+		r.POST("/analyze", h.AnalyzeFinding, middleware.RequireAll(permission.FindingsWrite, permission.AITriageTrigger))
+	}, analyze...)
 	router.Group("/api/v1/ai", func(r Router) {
 		r.GET("/runs/{id}", h.GetRun, middleware.RequireAll(permission.FindingsRead, permission.AITriageRead))
 		r.POST("/runs/{id}/undo", h.UndoRun, middleware.RequireAll(permission.FindingsRead, permission.AITriageRead))

@@ -881,6 +881,8 @@ type Services struct {
 	AITriage *aitriage.AITriageService
 	// AIAnalysis governs AI results: suggestions, use-case policy, apply and undo.
 	AIAnalysis *aianalysis.Service
+	// AIExecutor runs single-shot AI kinds in the API process.
+	AIExecutor *aianalysis.BuiltinExecutor
 
 	// WebSocket
 	WebSocketHub *websocket.Hub
@@ -1898,6 +1900,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.AIAnalysis.SetDataScope(s.DataScope)
 		s.AIAnalysis.SetAuditService(s.Audit)
 		s.AIAnalysis.SetActivityService(s.FindingActivity)
+		s.AITriage.SetTriageRunRecorder(s.AIAnalysis)
 
 		// RFC-008: per-tenant LLM token budget. Always constructed so
 		// Status() works for dashboards even before enforcement.
@@ -1912,6 +1915,17 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 			}, log,
 		)
 		s.AITriage.SetBudgetService(budgetSvc)
+
+		// The built-in executor: single-shot kinds in the API process,
+		// through the analyze contract, masking and the governance path.
+		s.AIExecutor = aianalysis.NewBuiltinExecutor(s.AIAnalysis, repos.TenantAISettings, llmFactory, s.AIMasking,
+			aibundle.NewBuilder(aiEgress), s.AIMaskMaps, aianalysis.ExecutorConfig{
+				MaxTokens: cfg.AITriage.MaxTokens, Temperature: cfg.AITriage.Temperature,
+			}, log)
+		s.AIExecutor.SetBudget(budgetSvc)
+		if s.PlatformAI != nil {
+			s.AIExecutor.SetOwnProviderPolicy(s.PlatformAI.OrgProviderAllowed)
+		}
 		log.Info("AI triage service initialized",
 			"budget_enabled", cfg.AITriage.BudgetEnabled,
 			"budget_strict", cfg.AITriage.BudgetStrict,

@@ -7,10 +7,9 @@ is ever applied without a person. This page covers the governance core: the
 tables, the apply rules, undo, the quality signal and the API. The AI triage
 executor and its prompt are in [AI triage](ai-triage.md).
 
-Status: shipped (governance core). Planned: the `openctem.analyze/v1` job and
-result contract with the built-in executor writing runs through it, reversible
-masking of every context bundle, the AI analyst worker (an analyst sensor role),
-the Settings > AI use-case table and the AI suggestion card in the web console.
+Status: shipped (governance core, the built-in executor for `triage.v1`,
+`remediation.v1` and `summary.v1`, legacy AI triage results recorded as runs).
+Planned: the AI analyst worker (an analyst sensor role) for multi-step kinds.
 
 ## Model
 
@@ -59,6 +58,37 @@ false-positive verdict opens a status request (`closure_reason` required), a
 plan or summary becomes part of the finding's record. The person needs the
 permission of the change (`findings:severity` for a severity, `findings:write`
 otherwise).
+
+## The built-in executor
+
+`POST /api/v1/findings/{id}/ai/analyze {"kind": "triage.v1" | "remediation.v1" | "summary.v1"}`
+(`findings:write` + `ai_triage:trigger`, rate-limited, the caller's data scope on
+the finding) runs one model call in the API process:
+
+1. the use case must not be `off`, the organization must have consented, and an
+   own provider must be allowed by the platform;
+2. the finding is read first (another organization's id is not found and leaves
+   no run);
+3. the context bundle holds only the fields the use case's data class ceiling
+   allows; the AI egress policy refuses pentest findings above the TLP limit or
+   of a campaign with AI off (run `refused`, `policy_restricted`, nothing sent);
+4. sensitive values are masked with a key made for the run
+   ([AI context masking](ai-context-masking.md)); the mapping is stored
+   encrypted on the platform;
+5. the prompt is the built-in template of the kind
+   (`internal/app/aianalysis/prompts/`), whose id and digest are recorded;
+6. the output must satisfy the kind's schema (`pkg/sensorproto/analyze`);
+   anything else fails the run (`invalid_output`) and stores nothing;
+7. placeholders are mapped back through the stored mapping; a placeholder the
+   run did not issue stays as text and marks the suggestion `needs_review`;
+   secrets are never mapped back;
+8. the suggestions are recorded under the use case's mode as above.
+
+Multi-step kinds never run in the API process. Legacy AI triage
+(`POST /api/v1/findings/{id}/ai-triage`) keeps working; each completed result is
+also recorded as a run of kind `triage.legacy` (same id) with suggestions marked
+`needs_review` (its prompt asks for no evidence), until `ai_triage_results` is
+dropped.
 
 ## Undo
 
@@ -112,6 +142,8 @@ auto-applied entry has the AI as actor.
 | Turning on auto-apply or sending more data by mistake or with a stolen session | owner or admin only, a recent sign-in, a critical audit row |
 
 ## Key files
+
+- `internal/app/aianalysis/builtin.go`, `prompts/`, `templates.go` (built-in executor), `legacy.go` (legacy triage record)
 
 - `pkg/domain/aianalysis/` (types, policy, payload validation, direction, apply rule)
 - `internal/app/aianalysis/` (service: record, apply, dismiss, undo, downgrade)

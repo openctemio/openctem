@@ -755,7 +755,7 @@ func Register(
 	registerAITriageRoutes(router, h.AITriage, authMiddleware, userSync, aiTriageRateLimiter,
 		h.ModuleGate.RequireModule(moduledom.ModuleAITriage))
 	registerAIAnalysisRoutes(router, h.AIAnalysis, authMiddleware, userSync,
-		h.ModuleGate.RequireModule(moduledom.ModuleAITriage))
+		h.ModuleGate.RequireModule(moduledom.ModuleAITriage), aiTriageRateLimiter)
 
 	// Dashboard routes (global and tenant from JWT token)
 	if h.Dashboard != nil {
