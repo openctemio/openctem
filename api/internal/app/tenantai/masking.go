@@ -229,18 +229,7 @@ func (s *MaskingService) PreviewMasking(ctx context.Context, in PreviewInput, ac
 	if _, err := rand.Read(key); err != nil {
 		return MaskingPreview{}, fmt.Errorf("masking key: %w", err)
 	}
-	bin := aibundle.Input{TenantID: tid, Finding: f, Ceiling: ceiling, Policy: policy.MaskerPolicy(), RunKey: key}
-	if s.tenants != nil {
-		if t, err := s.tenants.GetByID(ctx, tid); err == nil && t != nil {
-			bin.OrgNames = []string{t.Name()}
-		}
-	}
-	if s.assets != nil && !f.AssetID().IsZero() {
-		if a, err := s.assets.GetByID(ctx, tid, f.AssetID()); err == nil && a != nil {
-			bin.Asset = &aibundle.Asset{Name: a.Name(), Type: string(a.Type()), Criticality: string(a.Criticality()),
-				Exposure: string(a.Exposure()), Identifiers: []string{a.Name()}}
-		}
-	}
+	bin := s.bundleInput(ctx, tid, f, ceiling, policy, key)
 	b, err := s.bundles.Build(ctx, bin)
 	if err != nil {
 		return MaskingPreview{}, err
@@ -267,4 +256,32 @@ func (s *MaskingService) logAudit(ctx context.Context, actx auditapp.AuditContex
 	if err := s.audit.LogEvent(ctx, actx, event); err != nil {
 		s.log.Error("failed to log audit event", "error", err, "action", event.Action)
 	}
+}
+
+// BundleInput assembles the bundle builder's input for a finding under the
+// organization's masking policy: its asset and the organization's name as
+// seeded identifiers. The preview and the built-in executor use the same
+// input, so the preview shows exactly what a run sends.
+func (s *MaskingService) BundleInput(ctx context.Context, tenantID shared.ID, f *vulnerability.Finding, ceiling aipolicy.Class, runKey []byte) (aibundle.Input, error) {
+	policy, err := s.repo.GetMasking(ctx, tenantID)
+	if err != nil {
+		return aibundle.Input{}, err
+	}
+	return s.bundleInput(ctx, tenantID, f, ceiling, policy, runKey), nil
+}
+
+func (s *MaskingService) bundleInput(ctx context.Context, tid shared.ID, f *vulnerability.Finding, ceiling aipolicy.Class, policy tenant.AIMaskingPolicy, key []byte) aibundle.Input {
+	bin := aibundle.Input{TenantID: tid, Finding: f, Ceiling: ceiling, Policy: policy.MaskerPolicy(), RunKey: key}
+	if s.tenants != nil {
+		if t, err := s.tenants.GetByID(ctx, tid); err == nil && t != nil {
+			bin.OrgNames = []string{t.Name()}
+		}
+	}
+	if s.assets != nil && !f.AssetID().IsZero() {
+		if a, err := s.assets.GetByID(ctx, tid, f.AssetID()); err == nil && a != nil {
+			bin.Asset = &aibundle.Asset{Name: a.Name(), Type: string(a.Type()), Criticality: string(a.Criticality()),
+				Exposure: string(a.Exposure()), Identifiers: []string{a.Name()}}
+		}
+	}
+	return bin
 }

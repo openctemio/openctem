@@ -20,9 +20,13 @@ import (
 // AIAnalysisHandler serves the AI use-case policy and the AI suggestions
 // (docs/architecture/ai-analysis.md).
 type AIAnalysisHandler struct {
-	svc    *aianalysis.Service
-	logger *logger.Logger
+	svc      *aianalysis.Service
+	executor *aianalysis.BuiltinExecutor
+	logger   *logger.Logger
 }
+
+// SetExecutor wires the built-in executor (nil: analyze answers 503).
+func (h *AIAnalysisHandler) SetExecutor(e *aianalysis.BuiltinExecutor) { h.executor = e }
 
 // NewAIAnalysisHandler creates the handler.
 func NewAIAnalysisHandler(svc *aianalysis.Service, log *logger.Logger) *AIAnalysisHandler {
@@ -33,6 +37,8 @@ const (
 	aiErrConsentRequiredCode apierror.Code = "AI_CONSENT_REQUIRED"
 	aiErrUndoConflictCode    apierror.Code = "AI_UNDO_CONFLICT"
 	aiErrDecidedCode         apierror.Code = "AI_SUGGESTION_DECIDED"
+	aiErrUseCaseOffCode      apierror.Code = "AI_USE_CASE_OFF"
+	aiErrRunInFlightCode     apierror.Code = "AI_RUN_IN_FLIGHT"
 )
 
 // AIUseCaseResponse is one AI use case's policy.
@@ -384,21 +390,7 @@ func (h *AIAnalysisHandler) GetRun(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, err)
 		return
 	}
-	run := d.Run
-	out := AIRunResponse{
-		ID: run.ID.String(), UseCase: string(run.UseCase), Kind: run.Kind, SubjectType: string(run.SubjectType),
-		SubjectID: run.SubjectID.String(), Executor: string(run.Executor), Status: string(run.Status),
-		DataClass: string(run.DataClass), FieldsSent: nonNilStrings(run.FieldsSent), FieldsWithheld: nonNilStrings(run.FieldsWithheld),
-		BundleDigest: run.BundleDigest, PromptTemplateID: run.PromptTemplateID, PromptTemplateDigest: run.PromptTemplateDigest,
-		OutputSchema: run.OutputSchema, Provider: run.Provider, Model: run.Model, TokensIn: run.TokensIn,
-		TokensOut: run.TokensOut, CostMicroUSD: run.CostMicroUSD, DurationMS: run.DurationMS, ErrorCode: run.ErrorCode,
-		Trigger: string(run.Trigger), RequestedBy: idStr(run.RequestedBy), CreatedAt: run.CreatedAt,
-		CompletedAt: run.CompletedAt, Suggestions: make([]AISuggestionResponse, 0, len(d.Suggestions)),
-	}
-	for _, s := range d.Suggestions {
-		out.Suggestions = append(out.Suggestions, toAISuggestion(s, nil))
-	}
-	writeAIJSON(w, http.StatusOK, out)
+	writeAIJSON(w, http.StatusOK, toAIRunResponse(d))
 }
 
 func (h *AIAnalysisHandler) decide(w http.ResponseWriter, r *http.Request) (aianalysis.DecideInput, bool) {
@@ -524,4 +516,89 @@ func (h *AIAnalysisHandler) UndoRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeAIJSON(w, http.StatusOK, AIUndoRunResponse{Undone: res.Undone, Conflicts: res.Conflicts, Pending: res.Pending})
+}
+
+func toAIRunResponse(d *aianalysis.RunDetail) AIRunResponse {
+	run := d.Run
+	out := AIRunResponse{
+		ID: run.ID.String(), UseCase: string(run.UseCase), Kind: run.Kind, SubjectType: string(run.SubjectType),
+		SubjectID: run.SubjectID.String(), Executor: string(run.Executor), Status: string(run.Status),
+		DataClass: string(run.DataClass), FieldsSent: nonNilStrings(run.FieldsSent), FieldsWithheld: nonNilStrings(run.FieldsWithheld),
+		BundleDigest: run.BundleDigest, PromptTemplateID: run.PromptTemplateID, PromptTemplateDigest: run.PromptTemplateDigest,
+		OutputSchema: run.OutputSchema, Provider: run.Provider, Model: run.Model, TokensIn: run.TokensIn,
+		TokensOut: run.TokensOut, CostMicroUSD: run.CostMicroUSD, DurationMS: run.DurationMS, ErrorCode: run.ErrorCode,
+		Trigger: string(run.Trigger), RequestedBy: idStr(run.RequestedBy), CreatedAt: run.CreatedAt,
+		CompletedAt: run.CompletedAt, Suggestions: make([]AISuggestionResponse, 0, len(d.Suggestions)),
+	}
+	for _, s := range d.Suggestions {
+		out.Suggestions = append(out.Suggestions, toAISuggestion(s, nil))
+	}
+	return out
+}
+
+// AnalyzeFindingRequest asks for one AI analysis of a finding.
+type AnalyzeFindingRequest struct {
+	// Kind is triage.v1, remediation.v1 or summary.v1.
+	Kind string `json:"kind"`
+}
+
+// AnalyzeFinding handles POST /api/v1/findings/{id}/ai/analyze.
+//
+// @Summary      Run an AI analysis of a finding
+// @Description  Runs one single-shot kind (triage.v1, remediation.v1, summary.v1) on the built-in executor: the context bundle holds only the fields the use case's data class ceiling allows, sensitive values are masked and the mapping stays on the platform, the output is validated against the kind's schema, and the results are stored as AI suggestions under the organization's mode for the use case. Refused while the use case is off. The run is returned with its provenance; a refused or failed run is returned with its fixed error code. Rate-limited.
+// @Tags         Findings
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Finding ID"
+// @Param        body body AnalyzeFindingRequest true "Kind"
+// @Success      200  {object}  AIRunResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      409  {object}  apierror.Error
+// @Router       /findings/{id}/ai/analyze [post]
+func (h *AIAnalysisHandler) AnalyzeFinding(w http.ResponseWriter, r *http.Request) {
+	if h.executor == nil {
+		apierror.ServiceUnavailable("AI analysis is not available").WriteJSON(w)
+		return
+	}
+	tenantID, ok := aiTenantOf(w, r)
+	if !ok {
+		return
+	}
+	findingID, ok := aiPathID(w, r, "id")
+	if !ok {
+		return
+	}
+	actor, err := shared.IDFromString(middleware.GetUserID(r.Context()))
+	if err != nil {
+		apierror.Unauthorized("A person must request this analysis").WriteJSON(w)
+		return
+	}
+	var req AnalyzeFindingRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<10)).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	if err := h.svc.AssertFinding(r.Context(), tenantID, findingID); err != nil {
+		h.fail(w, err)
+		return
+	}
+	d, err := h.executor.Analyze(r.Context(), aianalysis.AnalyzeRequest{
+		TenantID: tenantID, FindingID: findingID, Kind: req.Kind, RequestedBy: &actor, Trigger: aidom.TriggerOnDemand,
+	})
+	switch {
+	case errors.Is(err, aianalysis.ErrUseCaseOff):
+		apierror.New(http.StatusBadRequest, aiErrUseCaseOffCode, "This AI use case is off for the organization.").WriteJSON(w)
+		return
+	case errors.Is(err, aidom.ErrRunInFlight):
+		apierror.New(http.StatusConflict, aiErrRunInFlightCode, "An AI analysis of this finding is already running.").WriteJSON(w)
+		return
+	case errors.Is(err, aianalysis.ErrRunRefused) && d != nil:
+		writeAIJSON(w, http.StatusOK, toAIRunResponse(d))
+		return
+	case err != nil:
+		h.fail(w, err)
+		return
+	}
+	writeAIJSON(w, http.StatusOK, toAIRunResponse(d))
 }

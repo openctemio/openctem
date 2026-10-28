@@ -440,6 +440,12 @@ func (s *Service) assertSubject(ctx context.Context, tenantID shared.ID, subject
 	return s.dataScope.AssertFindingCampaign(ctx, tenantID, subjectID)
 }
 
+// AssertFinding applies the caller's data scope and pentest membership to a
+// finding (out of scope answers not found).
+func (s *Service) AssertFinding(ctx context.Context, tenantID, findingID shared.ID) error {
+	return s.assertSubject(ctx, tenantID, aidom.SubjectFinding, findingID)
+}
+
 // ListForFinding lists a finding's suggestions, newest first, with the runs
 // they came from (provenance for the card).
 func (s *Service) ListForFinding(ctx context.Context, tenantID, findingID shared.ID) ([]*aidom.Suggestion, map[shared.ID]*aidom.Run, error) {
