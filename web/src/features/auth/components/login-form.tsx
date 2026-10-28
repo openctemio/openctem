@@ -128,6 +128,7 @@ export function LoginForm({
   const [loadingSSOProvider, setLoadingSSOProvider] = useState<SSOProviderType | null>(null)
   // Set when the password was right but a second factor is needed.
   const [mfaPurpose, setMfaPurpose] = useState<MfaPurpose | null>(null)
+  const [mfaOrgs, setMfaOrgs] = useState<string[] | undefined>(undefined)
   // An owner of an organization scheduled for deletion is offered to cancel
   // before the sign-in goes on.
   const [pendingDeletion, setPendingDeletion] = useState<{
@@ -165,6 +166,22 @@ export function LoginForm({
     if (errorMessage) toast.error(errorMessage)
   }, [errorMessage])
 
+  // Sent when a session ended because an organization requires two-factor
+  // authentication and the session could not set it up. Only the known value
+  // shows a message.
+  const mfaRequiredReason = searchParams.get('reason') === 'mfa_required'
+  useEffect(() => {
+    if (mfaRequiredReason) {
+      toast.info(
+        t(
+          'auth.login.mfaRequiredReason',
+          'An organization you belong to requires two-factor authentication. Sign in to set it up.'
+        )
+      )
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mfaRequiredReason])
+
   // Form setup with centralized schema
   const form = useForm<LoginInput>({
     resolver: translatingResolver(zodResolver(loginSchema), t),
@@ -197,6 +214,7 @@ export function LoginForm({
 
       if (result.success && result.mfaRequired && result.mfaPurpose) {
         form.resetField('password')
+        setMfaOrgs(result.mfaOrgs)
         setMfaPurpose(result.mfaPurpose)
         return
       }
@@ -337,6 +355,7 @@ export function LoginForm({
         {pendingDeletionDialog}
         <MfaStep
           purpose={mfaPurpose}
+          orgs={mfaOrgs}
           onDone={handleLoginResult}
           onCancel={(message) => {
             setMfaPurpose(null)

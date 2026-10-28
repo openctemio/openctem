@@ -413,14 +413,15 @@ async function attemptTokenRefresh(): Promise<void> {
       devLog.log('[Auth] Token refreshed successfully')
       refreshRetryCount = 0
       useAuthStore.getState().updateToken(data.data.access_token)
-    } else if (
-      response.status === 401 ||
-      data.error?.code === 'MFA_ENROLLMENT_REQUIRED' ||
-      data.error?.code === 'ORGANIZATION_SUSPENDED'
-    ) {
+    } else if (data.error?.code === 'MFA_ENROLLMENT_REQUIRED') {
+      // The organization now requires two-factor authentication and this
+      // person has not set it up. They stay signed in: a full-page setup
+      // screen enrolls them, re-mints the tenant token and returns here.
+      devLog.warn('[Auth] Two-factor setup required, opening the setup page')
+      authPermanentlyFailed = true
+      redirectToTwoFactorSetup()
+    } else if (response.status === 401 || data.error?.code === 'ORGANIZATION_SUSPENDED') {
       // 401 = refresh token itself is invalid — no point retrying.
-      // MFA_ENROLLMENT_REQUIRED = the organization now requires two-factor
-      // authentication; signing in again leads to the enrollment step.
       // ORGANIZATION_SUSPENDED = the platform operator suspended the
       // organization; signing in again says so.
       devLog.warn('[Auth] Refresh token invalid (401), redirecting to login')
@@ -467,6 +468,16 @@ function safeRedirectToLogin(): void {
   }
   lastRedirectTime = now
   redirectToLogin()
+}
+
+const TWO_FACTOR_SETUP_PATH = '/two-factor-setup'
+
+/** Send a signed-in person whose refresh was refused for 2FA to the setup page. */
+function redirectToTwoFactorSetup(): void {
+  if (typeof window === 'undefined') return
+  if (window.location.pathname.startsWith(TWO_FACTOR_SETUP_PATH)) return
+  const back = `${window.location.pathname}${window.location.search}`
+  window.location.assign(`${TWO_FACTOR_SETUP_PATH}?next=${encodeURIComponent(back)}`)
 }
 
 export function resetAuthFailureFlag(): void {
