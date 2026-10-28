@@ -18,17 +18,21 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/adminapproval"
 	"github.com/openctemio/openctem/api/internal/app/consolesetting"
 	"github.com/openctemio/openctem/api/internal/app/deploymentregion"
+	"github.com/openctemio/openctem/api/internal/app/orgrelay"
 	"github.com/openctemio/openctem/api/internal/app/platformai"
 	"github.com/openctemio/openctem/api/internal/app/platformalert"
 	"github.com/openctemio/openctem/api/internal/app/platformcaptcha"
+	"github.com/openctemio/openctem/api/internal/app/platformsociallogin"
 	"github.com/openctemio/openctem/api/internal/app/storagequota"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	"github.com/openctemio/openctem/api/pkg/domain/platformsetting"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -55,8 +59,20 @@ type AdminPlatformSettingsHandler struct {
 	StorageQuota *storagequota.Service
 	Alerts       *platformalert.Service
 	AI           *platformai.Service
-	admins       AdminDirectory
-	logger       *logger.Logger
+	SocialLogin  *platformsociallogin.Service
+	// Signup answers the sign-up policy the social login page states the
+	// impact of a provider against (optional).
+	Signup     signupdom.PolicySource
+	admins     AdminDirectory
+	approvals  approvalGate
+	logger     *logger.Logger
+	EmailRelay *orgrelay.Service
+}
+
+// WithApprovals wires the four-eyes gate of the platform AI destination.
+func (h *AdminPlatformSettingsHandler) WithApprovals(g approvalGate) *AdminPlatformSettingsHandler {
+	h.approvals = g
+	return h
 }
 
 // NewAdminPlatformSettingsHandler creates the handler.
@@ -105,7 +121,7 @@ func (h *AdminPlatformSettingsHandler) writeSettingError(w http.ResponseWriter, 
 	case errors.Is(err, platformsetting.ErrVersionConflict):
 		apierror.Conflict("The " + what + " was changed by someone else; reload and try again").WriteJSON(w)
 	case errors.Is(err, platformcaptcha.ErrLockedByEnvironment), errors.Is(err, deploymentregion.ErrLockedByEnvironment),
-		errors.Is(err, platformai.ErrLockedByEnvironment):
+		errors.Is(err, platformai.ErrLockedByEnvironment), errors.Is(err, platformsociallogin.ErrLockedByEnvironment):
 		apierror.New(http.StatusConflict, CodeSettingLockedByEnvironment, err.Error()).WriteJSON(w)
 	case errors.Is(err, deploymentregion.ErrAlreadySet):
 		apierror.New(http.StatusConflict, CodeRegionAlreadySet, err.Error()).WriteJSON(w)
@@ -387,6 +403,79 @@ func (h *AdminPlatformSettingsHandler) UpdateStorageQuota(w http.ResponseWriter,
 	writeJSON(w, http.StatusOK, h.quotaResponse(r.Context(), s))
 }
 
+// ---- Organization mail relay -------------------------------------------------
+
+// EmailRelayResponse is the organization mail relay mode.
+type EmailRelayResponse struct {
+	// Mode: off, verified_sender or on.
+	Mode string `json:"mode"`
+	// Source: console or default.
+	Source string `json:"source"`
+	// Default is the mode while nothing is stored.
+	Default string `json:"default"`
+	EnvVar  string `json:"env_var"`
+	Version int    `json:"version"`
+	SettingChange
+}
+
+// UpdateEmailRelayRequest changes the mode.
+type UpdateEmailRelayRequest struct {
+	Mode    string `json:"mode"`
+	Reason  string `json:"reason"`
+	Version int    `json:"version"`
+}
+
+func (h *AdminPlatformSettingsHandler) emailRelayResponse(ctx context.Context, s orgrelay.Settings) EmailRelayResponse {
+	return EmailRelayResponse{Mode: string(s.Mode), Source: s.Source, Default: string(s.Default), EnvVar: orgrelay.EnvVar,
+		Version: s.Version, SettingChange: h.change(ctx, s.UpdatedAt, s.UpdatedBy)}
+}
+
+// GetEmailRelay returns the organization mail relay mode.
+// @Summary      Get the organization mail relay mode
+// @Description  Whether an organization's own mail relay carries its organization mail (off, verified_sender or on), and where the value comes from. Account security mail never uses an organization relay. Any administrator.
+// @Tags         Admin System
+// @Produce      json
+// @Success      200  {object}  EmailRelayResponse
+// @Security     AdminAuth
+// @Router       /admin/settings/email-relay [get]
+func (h *AdminPlatformSettingsHandler) GetEmailRelay(w http.ResponseWriter, r *http.Request) {
+	s, err := h.EmailRelay.Get(r.Context())
+	if err != nil {
+		h.writeSettingError(w, "organization mail relay mode", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, h.emailRelayResponse(r.Context(), s))
+}
+
+// UpdateEmailRelay changes the organization mail relay mode.
+// @Summary      Change the organization mail relay mode
+// @Description  Super admin with a fresh step-up and a reason. Applies without a restart; audited critical, every administrator is told.
+// @Tags         Admin System
+// @Accept       json
+// @Produce      json
+// @Param        request  body      UpdateEmailRelayRequest  true  "Mode"
+// @Success      200  {object}  EmailRelayResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      409  {object}  apierror.Error
+// @Security     AdminAuth
+// @Router       /admin/settings/email-relay [put]
+func (h *AdminPlatformSettingsHandler) UpdateEmailRelay(w http.ResponseWriter, r *http.Request) {
+	actor := requireActor(w, r)
+	if actor == nil {
+		return
+	}
+	var req UpdateEmailRelayRequest
+	if !decodeSetting(w, r, &req) {
+		return
+	}
+	s, err := h.EmailRelay.Update(r.Context(), actor, req.Mode, req.Reason, req.Version, middleware.ClientIP(r), r.UserAgent())
+	if err != nil {
+		h.writeSettingError(w, "organization mail relay mode", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, h.emailRelayResponse(r.Context(), s))
+}
+
 // ---- Alert webhook ---------------------------------------------------------
 
 // AlertWebhookResponse is the alert webhook without its address or secret.
@@ -577,7 +666,7 @@ func (h *AdminPlatformSettingsHandler) GetPlatformAI(w http.ResponseWriter, r *h
 
 // UpdatePlatformAI changes the platform AI provider.
 // @Summary      Change the platform AI provider
-// @Description  Super admin with a fresh confirmation and a reason. Off by default; turning it on needs a provider, a model and a key (an OpenAI-compatible server: its base URL, the key optional). allow_private lets the OpenAI-compatible server sit on a private network; it is audited with the rest. The key is encrypted at rest and never returned. Refused (409 SETTING_LOCKED_BY_ENVIRONMENT) while an AI key is set on the server. Audited critical, every administrator is told.
+// @Description  Super admin with a fresh confirmation and a reason. Off by default; turning it on needs a provider, a model and a key (an OpenAI-compatible server: its base URL, the key optional). allow_private lets the OpenAI-compatible server sit on a private network; it is audited with the rest. The key is encrypted at rest and never returned. Refused (409 SETTING_LOCKED_BY_ENVIRONMENT) while an AI key is set on the server. Turning it on with another destination (provider, base_url, allow_private or API key) than the last one applied needs another super admin first (428 SECOND_APPROVAL_REQUIRED); model changes and turning it off do not; removing the key while it stays on does. Audited critical, every administrator is told.
 // @Tags         Admin System
 // @Accept       json
 // @Produce      json
@@ -585,6 +674,7 @@ func (h *AdminPlatformSettingsHandler) GetPlatformAI(w http.ResponseWriter, r *h
 // @Success      200  {object}  PlatformAIResponse
 // @Failure      400  {object}  apierror.Error
 // @Failure      409  {object}  apierror.Error
+// @Failure      428  {object}  apierror.Error  "SECOND_APPROVAL_REQUIRED"
 // @Security     AdminAuth
 // @Router       /admin/settings/ai [put]
 func (h *AdminPlatformSettingsHandler) UpdatePlatformAI(w http.ResponseWriter, r *http.Request) {
@@ -596,9 +686,23 @@ func (h *AdminPlatformSettingsHandler) UpdatePlatformAI(w http.ResponseWriter, r
 	if !decodeSetting(w, r, &req) {
 		return
 	}
-	s, err := h.AI.Update(r.Context(), actor, platformai.Input{Enabled: req.Enabled, Provider: req.Provider, Model: req.Model,
-		APIKey: req.APIKey, Reason: req.Reason, BaseURL: req.BaseURL, AllowPrivate: req.AllowPrivate, AllowedModels: req.AllowedModels}, req.Version, middleware.ClientIP(r), r.UserAgent())
+	in := platformai.Input{Enabled: req.Enabled, Provider: req.Provider, Model: req.Model,
+		APIKey: req.APIKey, Reason: req.Reason, BaseURL: req.BaseURL, AllowPrivate: req.AllowPrivate, AllowedModels: req.AllowedModels}
+	// SECURITY: a destination that receives every organization's findings
+	// (provider, server address, private-network switch or API key) is set by
+	// one administrator and approved by another. Turning off, removing the
+	// key and model changes stay one-person.
+	var grant *adminapproval.Grant
+	if target, needed := h.AI.ApprovalNeeded(r.Context(), in); needed {
+		g, ok := requireSecondApproval(w, r, h.approvals, actor, admin.ApprovalPlatformAIDestination, target, h.logger)
+		if !ok {
+			return
+		}
+		grant = g
+	}
+	s, err := h.AI.Update(r.Context(), actor, in, req.Version, middleware.ClientIP(r), r.UserAgent())
 	if err != nil {
+		releaseSecondApproval(r, h.approvals, actor, grant)
 		h.writeSettingError(w, "AI provider", err)
 		return
 	}

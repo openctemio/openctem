@@ -32,6 +32,9 @@ test('every settings rail entry opens', { tag: ['@settings', '@smoke'] }, async 
         .map((a) => a.getAttribute('href') ?? '')
     )
   expect(hrefs.length).toBeGreaterThan(20)
+  // One page load per rail entry: the budget grows with the rail instead of
+  // the default 60 s, which a cold server exceeds once the rail passes ~25 entries.
+  test.setTimeout(60_000 + hrefs.length * 10_000)
 
   for (const href of hrefs) {
     await page.goto(href)

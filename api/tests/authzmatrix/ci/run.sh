@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Runs the authorization matrix against a scratch stack:
-#   1. Postgres + Redis (ci/compose.yml, 127.0.0.1 only, tmpfs) and migrations
+#   1. Postgres + Redis (ci/compose.yml, 127.0.0.1 only, tmpfs) and this
+#      tree's migrations (openctem-migrate)
 #   2. the API built from this tree, listening on 127.0.0.1
 #   3. go test -tags authzmatrix ./tests/authzmatrix/
 #   4. tears everything down (always)
@@ -42,12 +43,14 @@ trap cleanup EXIT
 # string sits in the tree (secret scanners flag that shape even when the
 # password is a per-run random variable).
 db_scheme=postgres
-export MATRIX_MIGRATE_URL="${db_scheme}://openctem:${MATRIX_DB_PASSWORD}@postgres:5432/openctem?sslmode=disable"
 export DATABASE_URL="${db_scheme}://openctem:${MATRIX_DB_PASSWORD}@127.0.0.1:${MATRIX_DB_PORT}/openctem?sslmode=disable"
 "${COMPOSE[@]}" up -d --wait postgres redis
-"${COMPOSE[@]}" run --rm migrate >/dev/null 2>&1 || { "${COMPOSE[@]}" run --rm migrate; exit 1; }
 
-(cd "$API_DIR" && GOWORK=off go build -o "$WORK/server" ./cmd/server)
+(cd "$API_DIR" && GOWORK=off go build -o "$WORK/" ./cmd/server ./cmd/openctem-migrate)
+# This tree's migration runner; the password in PGPASSWORD, not the URL.
+PGPASSWORD="$MATRIX_DB_PASSWORD" "$WORK/openctem-migrate" -path "$API_DIR/migrations" \
+  -database "${db_scheme}://openctem@127.0.0.1:${MATRIX_DB_PORT}/openctem?sslmode=disable" up >"$WORK/migrate.log" 2>&1 \
+  || { tail -20 "$WORK/migrate.log" >&2; exit 1; }
 
 (
   export APP_ENV=staging APP_URL=http://localhost:3999 CORS_ALLOWED_ORIGINS=http://localhost:3999 AUTH_COOKIE_SECURE=false

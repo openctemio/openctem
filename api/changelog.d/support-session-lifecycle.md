@@ -1,0 +1,3 @@
+### Fixed: a support session now ends with the console session that opened it
+
+- Signing out of the console, a console session expiring, or going idle left the support session open until the grant expired (up to 72 hours), so every member of the organization kept seeing "support is viewing now" and the owners never learned it had ended. Sign-out now ends the administrator's support sessions at once; a sweeper (`support-session-sweep`, every minute) ends sessions whose console session is gone, whose grant ended, or that were unused for 30 minutes. Each ended session writes `support.session_ended` to both audit logs and emails the owners with the cause. The organization's open-session signal also requires a live console session, so it drops immediately.

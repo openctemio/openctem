@@ -34,12 +34,14 @@ jobs:
       GOWORK: 'off'
       PG_IMAGE: ghcr.io/openctemio/mirror/postgres:17-alpine
       REDIS_IMAGE: ghcr.io/openctemio/mirror/redis:7-alpine
-      MIGRATE_IMAGE: ghcr.io/openctemio/mirror/migrate:v4.18.1
       MATRIX_REPORT: ${{ github.workspace }}/authz-matrix/report.json
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # A schedule runs the default branch's (main's) copy of this file:
+          # test develop, where changes land first.
+          ref: ${{ github.event_name == 'schedule' && 'develop' || '' }}
       - name: Registry login (GHCR mirror)
         uses: ./.github/actions/registry-login
         with:

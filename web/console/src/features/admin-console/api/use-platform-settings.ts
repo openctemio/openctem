@@ -7,6 +7,8 @@ import type {
   CaptchaSettings,
   PlatformAISettings,
   RegionSettings,
+  SocialCheckResult,
+  SocialLoginSettings,
   StorageQuotaSettings,
 } from '../types'
 
@@ -22,11 +24,13 @@ const REGION = '/settings/region'
 const QUOTA = '/settings/storage-quota'
 const ALERTS = '/settings/alerts'
 const AI = '/settings/ai'
+const SOCIAL = '/settings/social-login-providers'
 
 export const useCaptchaSettings = () => useSWR<CaptchaSettings>(CAPTCHA, adminFetcher)
 export const useRegionSettings = () => useSWR<RegionSettings>(REGION, adminFetcher)
 export const useStorageQuota = () => useSWR<StorageQuotaSettings>(QUOTA, adminFetcher)
 export const useAlertWebhook = () => useSWR<AlertWebhookSettings>(ALERTS, adminFetcher)
+export const useSocialLoginSettings = () => useSWR<SocialLoginSettings>(SOCIAL, adminFetcher)
 export const usePlatformAI = () => useSWR<PlatformAISettings>(AI, adminFetcher)
 
 /** Omit `secret` to keep the stored one; "" removes it. */
@@ -99,4 +103,30 @@ export function saveOrgAIPolicy(input: {
 
 export function testPlatformAI() {
   return adminFetch<void>(`${AI}/test`, { method: 'POST' })
+}
+
+/** Omit `secret` to keep the stored one; "" removes it. Empty `scopes` use the defaults. */
+export function saveSocialProvider(
+  provider: string,
+  input: {
+    enabled: boolean
+    client_id: string
+    secret?: string
+    scopes: string[]
+    reason: string
+    version: number
+  }
+) {
+  return adminFetch<SocialLoginSettings>(`${SOCIAL}/${provider}`, { method: 'PUT', body: input })
+}
+
+/** Asks the provider whether it accepts a client (the one in force when empty). */
+export function testSocialProvider(
+  provider: string,
+  input: { client_id?: string; secret?: string }
+) {
+  return adminFetch<{ result: SocialCheckResult }>(`${SOCIAL}/${provider}/test`, {
+    method: 'POST',
+    body: input,
+  })
 }
