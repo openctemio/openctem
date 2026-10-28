@@ -10,7 +10,7 @@ organization at once from the console.
 |---|---|---|
 | Route | `DELETE /api/v1/tenants/{tenant}` (owner, `team:delete`, recent sign-in) answers 202 with `deletion_due_at` | `POST /api/v1/admin/tenants/{tenantId}/purge` (super_admin, fresh authenticator code, reason) |
 | Effect | `tenants.status = 'pending_deletion'`, `deletion_due_at = now + 14 days`; refused to every credential at once (the organization access gate, see `organization-suspension.md`); live connections close | deleted at once, whatever its status |
-| Audit | critical entry in the organization's log (`tenant.deletion_scheduled`); the deletion itself on the platform chain (`tenant.deleted`) | critical admin audit row `organization.purged` with the reason, plus `tenant.deleted` |
+| Audit | critical entry in the organization's log (`tenant.deletion_scheduled`); the deletion itself on the platform chain (`tenant.deleted`) | critical admin audit rows with the reason: `organization.purge_requested` before anything is deleted, `organization.purged` with the outcome, plus `tenant.deleted` |
 | Undo | `POST /api/v1/auth/organization-deletion/cancel` by any active owner until the due time (`tenant.deletion_canceled`) | none |
 
 The purge worker (`organization-delete`, every `WORKER_INVITATION_PURGE_INTERVAL`)
@@ -46,6 +46,12 @@ gets the same 403 whether or not the organization exists.
 - **The console deletes the wrong organization.** super_admin only, a fresh
   authenticator code (not the step-up window), a reason, a critical audit
   row; the platform's system organization is refused.
+- **The audit row comes first.** A console purge cannot be undone, so the
+  `organization.purge_requested` row is written before the first file or row
+  goes. When it cannot be written (audit store down) the purge answers 503,
+  nothing is deleted, the organization is not locked out and the second
+  approval is handed back. The outcome row `organization.purged` follows the
+  deletion; if only that write fails it is logged and the intent row remains.
 - **A purge that fails half way.** Stored files are erased before the rows
   and the deletion is refused when they cannot be; the status cache is
   forgotten so the organization's real status applies again.

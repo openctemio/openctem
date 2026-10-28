@@ -228,7 +228,9 @@ export function TaskPlacementPanel({ runId, taskId }: { runId: string; taskId: s
                           {s.eligible
                             ? s.busy
                               ? t('scans.placement.sensorBusy')
-                              : t('scans.placement.sensorEligible')
+                              : s.yields
+                                ? t('scans.placement.sensorYields')
+                                : t('scans.placement.sensorEligible')
                             : (s.reasons ?? []).join(', ')}
                         </span>
                       </>

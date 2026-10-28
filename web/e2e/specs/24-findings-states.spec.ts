@@ -18,7 +18,7 @@ async function stubList(page: Page, status: number, body: unknown) {
   )
 }
 
-test.describe('Findings states', () => {
+test.describe('Findings states', { tag: ['@findings'] }, () => {
   test('a failed list is an inline error with Retry, and no toast', async ({ page }) => {
     await stubList(page, 500, {
       error: { code: 'INTERNAL_ERROR', message: 'database is down', request_id: 'req-e2e-1' },

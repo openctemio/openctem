@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from '@/components/link'
-import { AlertCircle, ShieldHalf } from 'lucide-react'
+import { ShieldHalf } from 'lucide-react'
 import { toast } from 'sonner'
 import { Main } from '@/components/layout'
 import { ConfirmDialog } from '@/components/confirm-dialog'
@@ -36,7 +36,7 @@ import { LastChanged } from './last-changed'
 import { PersonalAccountsCard } from './personal-accounts-card'
 import { SettingsLoadError, SettingsLoading } from './settings-load-state'
 
-type EmailVerificationMode = 'auto' | 'always' | 'never'
+type EmailVerificationMode = 'auto' | 'always'
 
 /** The sign-in part of the security section: what this page edits. */
 export interface SignInForm {
@@ -75,7 +75,7 @@ export function signInFormFrom(settings: TenantSettings | undefined): SignInForm
     mfa_required_for_admins: s?.mfa_required_for_admins ?? false,
     ip_whitelist: (s?.ip_whitelist ?? []).join('\n'),
     allowed_domains: (s?.allowed_domains ?? []).join('\n'),
-    email_verification_mode: (s?.email_verification_mode as EmailVerificationMode) || 'auto',
+    email_verification_mode: s?.email_verification_mode === 'always' ? 'always' : 'auto',
     personal_accounts: s?.personal_accounts ?? 'allowed',
     invitees: s?.invitees ?? 'any',
     external_access_end_required: s?.external_access_end_required ?? false,
@@ -123,9 +123,6 @@ export function looseningsOf(saved: SignInForm, next: SignInForm): string[] {
   if (dBefore.length > 0 && (dAfter.length === 0 || dAfter.some((x) => !dBefore.includes(x)))) {
     out.push('domainsWidened')
   }
-  if (saved.email_verification_mode !== 'never' && next.email_verification_mode === 'never') {
-    out.push('emailNever')
-  }
   if (PERSONAL_ORDER[next.personal_accounts] > PERSONAL_ORDER[saved.personal_accounts]) {
     out.push('personalLooser')
   }
@@ -147,7 +144,6 @@ const LOOSENING_TEXT: Record<string, string> = {
   ipEmptied: 'The IP allowlist is emptied: every network may connect.',
   ipWidened: 'The IP allowlist allows more networks.',
   domainsWidened: 'More email domains may join.',
-  emailNever: 'Email addresses are no longer verified.',
   personalLooser: 'Personal accounts get more access.',
   jitOff: 'New SSO members get access without approval.',
   ssoMfaProofOff: 'Your identity provider no longer has to confirm a second factor.',
@@ -245,14 +241,6 @@ export function AuthenticationSettings() {
       hint: t(
         'org.auth.email.alwaysHint',
         'Require verification (the platform must be able to send email)'
-      ),
-    },
-    {
-      value: 'never',
-      label: t('org.auth.email.never', 'Never require'),
-      hint: t(
-        'org.auth.email.neverHint',
-        'Accounts count as verified at registration: closed deployments only'
       ),
     },
   ]
@@ -379,17 +367,6 @@ export function AuthenticationSettings() {
                     ))}
                   </SelectContent>
                 </Select>
-                {form.email_verification_mode === 'never' && (
-                  <p className="mt-2 flex items-start gap-2 text-sm text-destructive" role="alert">
-                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-                    <span>
-                      {t(
-                        'org.auth.email.neverWarning',
-                        'Anyone can register with any email address, which allows account takeover through spoofed addresses. Use it only where registration is restricted by other means.'
-                      )}
-                    </span>
-                  </p>
-                )}
               </div>
             </CardContent>
           </Card>

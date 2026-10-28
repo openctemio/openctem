@@ -47,8 +47,8 @@ const (
 
 	runContextKeyZoneRouting = "zone_routing"
 	runContextKeyUncovered   = "uncovered_targets"
-	// runContextKeyPerTarget records an unzoned run fanned out one command
-	// per target (perTargetPlan).
+	// runContextKeyPerTarget records an unzoned run fanned out into several
+	// commands (unzonedJobPlan).
 	runContextKeyPerTarget = "per_target_dispatch"
 )
 
@@ -69,6 +69,9 @@ type zonePlan struct {
 	// PolicyRefused explains, per zone, the targets no zone sensor's local
 	// policy accepts (research/25 §3.6); they are in Uncovered too.
 	PolicyRefused []string
+	// perJob is the targets per command of an unzoned fan-out
+	// (unzonedJobPlan).
+	perJob int
 }
 
 // zoneRouted reports the zone routing for this run's tenant: the zones, or
@@ -263,33 +266,49 @@ func tooManyJobsError(sc *scan.Scan, jobs int) error {
 		jobs, maxZoneJobsPerRun, advice), shared.ErrValidation)
 }
 
-// perTargetPlan is the dispatch plan of an unzoned run of a scanner that
-// reads one target per job (trivy, semgrep, betterleaks, ...): one unzoned
-// batch per target, created like zone batches (createZoneCommands) so the
-// step completes with the last one (checkStepBatches). nil when the run is a
-// single command: one target, or a scanner that reads the whole list.
+// unzonedJobPlan is the dispatch plan of an unzoned single-scanner run that
+// needs more than one command, created like zone batches
+// (createZoneCommands) so the step completes with the last one
+// (checkStepBatches):
 //
-// Before this, such a run sent every target in one command and the sensor
-// scanned only the first (RFC-030 B4).
-func perTargetPlan(sc *scan.Scan, targets []string) (*zonePlan, error) {
-	if len(targets) < 2 || scannerAcceptsTargetList(sc.ScannerName) {
+//   - a scanner that reads one target per job (trivy, semgrep, betterleaks,
+//     ...) gets one batch per target; before, such a run sent every target
+//     in one command and the sensor scanned only the first (RFC-030 B4);
+//   - a scanner that reads a target list gets batches of the scan's
+//     targets_per_job when that is 2 or more, so every eligible sensor slot
+//     takes a share instead of one slot running the whole list while the
+//     others idle (a continuous coverage run of 50 template-scan targets
+//     was one command that ran past its deadline). targets_per_job 1 (the
+//     default of a new scan) keeps one command with every target.
+//
+// nil when the run is a single command.
+func unzonedJobPlan(sc *scan.Scan, targets []string) (*zonePlan, error) {
+	if len(targets) < 2 {
 		return nil, nil
 	}
-	if len(targets) > maxZoneJobsPerRun {
-		return nil, tooManyJobsError(sc, len(targets))
+	size := 1
+	if scannerAcceptsTargetList(sc.ScannerName) {
+		if sc.TargetsPerJob < 2 || len(targets) <= sc.TargetsPerJob {
+			return nil, nil
+		}
+		size = sc.TargetsPerJob
 	}
-	plan := &zonePlan{Batches: make([]zoneBatch, 0, len(targets))}
-	for _, chunk := range chunkTargets(targets, 1) {
+	chunks := chunkTargets(targets, size)
+	if len(chunks) > maxZoneJobsPerRun {
+		return nil, tooManyJobsError(sc, len(chunks))
+	}
+	plan := &zonePlan{Batches: make([]zoneBatch, 0, len(chunks)), perJob: size}
+	for _, chunk := range chunks {
 		plan.Batches = append(plan.Batches, zoneBatch{Targets: chunk})
 	}
 	return plan, nil
 }
 
-// recordPerTargetPlan writes a per-target fan-out into the run context.
-func recordPerTargetPlan(plan *zonePlan, runContext map[string]any) {
+// recordUnzonedJobPlan writes an unzoned fan-out into the run context.
+func recordUnzonedJobPlan(plan *zonePlan, runContext map[string]any) {
 	runContext[runContextKeyPerTarget] = map[string]any{
 		"jobs":            len(plan.Batches),
-		"targets_per_job": 1,
+		"targets_per_job": plan.perJob,
 	}
 }
 
@@ -384,6 +403,7 @@ func (s *Service) createZoneCommands(ctx context.Context, sc *scan.Scan, run *sc
 			cmd.SetStepRunID(stepRun.ID) // the step finishes with its last batch
 		}
 		cmd.DispatchGate = scanDispatchGate(ctx, sc, run)
+		holdNoHostsWhenPassive(cmd, sc)
 		if b.Zone != nil {
 			cmd.SetScanZone(b.Zone.ID)
 			if b.SensorID != nil {

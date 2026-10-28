@@ -41,11 +41,15 @@ type RunTaskPlacementReason struct {
 // RunTaskPlacementSensor is one of the organization's sensors and why it
 // can or cannot take the task.
 type RunTaskPlacementSensor struct {
-	ID       string   `json:"id"`
-	Name     string   `json:"name"`
-	Eligible bool     `json:"eligible"`
-	Busy     bool     `json:"busy"`
-	Reasons  []string `json:"reasons"`
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Eligible bool   `json:"eligible"`
+	Busy     bool   `json:"busy"`
+	// Yields: eligible and free, but a less-loaded sensor of the
+	// organization goes first while the task is fresh; this one takes it
+	// if that sensor has not within a few seconds.
+	Yields  bool     `json:"yields"`
+	Reasons []string `json:"reasons"`
 	// EgressPool names the proxy pool whose use holds the task from this
 	// sensor (an egress_* reason); absent otherwise.
 	EgressPool *RunTaskEgressPool `json:"egress_pool,omitempty"`
@@ -182,7 +186,7 @@ func placementResponse(p *commandapp.Placement, withSensors bool) RunTaskPlaceme
 				reasons = []string{}
 			}
 			rs := RunTaskPlacementSensor{ID: s.SensorID.String(), Name: s.Name,
-				Eligible: s.Eligible, Busy: s.Busy, Reasons: reasons}
+				Eligible: s.Eligible, Busy: s.Busy, Yields: s.Yields, Reasons: reasons}
 			if s.Egress != nil {
 				rs.EgressPool = &RunTaskEgressPool{ID: s.Egress.PoolID, Name: s.Egress.PoolName}
 			}
