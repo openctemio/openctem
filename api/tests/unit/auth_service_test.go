@@ -187,6 +187,15 @@ func (m *mockAuthUserRepo) GetByPasswordResetToken(_ context.Context, token stri
 	return nil, shared.ErrNotFound
 }
 
+func (m *mockAuthUserRepo) ConsumePasswordResetToken(_ context.Context, id shared.ID, tokenHash string) (bool, error) {
+	u, ok := m.users[id.String()]
+	if !ok || u.PasswordResetToken() == nil || *u.PasswordResetToken() != tokenHash {
+		return false, nil
+	}
+	u.ClearPasswordResetToken()
+	return true, nil
+}
+
 // =============================================================================
 // Mock Tenant Repository for Auth Tests
 // =============================================================================
