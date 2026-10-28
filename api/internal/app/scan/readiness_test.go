@@ -55,11 +55,11 @@ func TestWorkflowReadiness_States(t *testing.T) {
 	}{
 		{"capability with an online tool", rwf("", rstep("dns", "", "resolve.dns")), ReadinessReady, ""},
 		{"only offline sensors", rwf("", rstep("ports", "", "scan.ports")), ReadinessWaiting, "Start a sensor"},
-		{"no sensor offers it", rwf("", rstep("subs", "", "discover.subdomains")), ReadinessBlocked, "Add a sensor with subfinder"},
+		{"no sensor has connected yet", rwf("", rstep("subs", "", "discover.subdomains")), ReadinessWaiting, "Add a sensor with subfinder"},
 		{"tool switched off", rwf("", rstep("http", "", "probe.http")), ReadinessBlocked, "Enable httpx"},
 		{"pinned tool not installed", rwf("", rstep("shots", "gowitness", "scan")), ReadinessBlocked, "Any tool"},
 		{"code analysis runs in CI", rwf("", rstep("sast", "", "sast.code")), ReadinessCIOnly, "CI pipeline"},
-		{"the worst step decides", rwf("", rstep("dns", "", "resolve.dns"), rstep("ports", "", "scan.ports"), rstep("subs", "", "discover.subdomains")), ReadinessBlocked, ""},
+		{"the worst step decides", rwf("", rstep("dns", "", "resolve.dns"), rstep("ports", "", "scan.ports"), rstep("http", "", "probe.http")), ReadinessBlocked, ""},
 		{"no steps", rwf(""), ReadinessBlocked, ""},
 	}
 	for _, tc := range cases {
@@ -91,11 +91,11 @@ func TestWorkflowReadiness_PlatformScanning(t *testing.T) {
 	if r := readinessOf(t, readinessService(statuses, true, false, []string{"subfinder"}), w("")); r.State != ReadinessWaiting {
 		t.Fatalf("platform offline: %s", r.State)
 	}
-	if r := readinessOf(t, readinessService(statuses, true, true, []string{"subfinder"}), w(scanworkflow.SensorPreferenceTenant)); r.State != ReadinessBlocked {
-		t.Fatalf("own sensors only: %s", r.State)
+	if r := readinessOf(t, readinessService(statuses, true, true, []string{"subfinder"}), w(scanworkflow.SensorPreferenceTenant)); r.State != ReadinessWaiting {
+		t.Fatalf("own sensors only, none connected yet: %s", r.State)
 	}
-	if r := readinessOf(t, readinessService(statuses, false, true, []string{"subfinder"}), w("")); r.State != ReadinessBlocked {
-		t.Fatalf("platform not offered: %s", r.State)
+	if r := readinessOf(t, readinessService(statuses, false, true, []string{"subfinder"}), w("")); r.State != ReadinessWaiting {
+		t.Fatalf("platform not offered, no sensor yet: %s", r.State)
 	}
 	// A platform-only workflow does not count the tenant's sensors.
 	own := map[string]sensordom.ToolStatus{"subfinder": sensordom.ToolReady}
@@ -133,7 +133,7 @@ func TestWorkflowReadiness_TenantIsolatedCache(t *testing.T) {
 			if tenant == a {
 				return map[string]sensordom.ToolStatus{"dnsx": sensordom.ToolReady}, nil
 			}
-			return map[string]sensordom.ToolStatus{"dnsx": sensordom.ToolNoSensor}, nil
+			return map[string]sensordom.ToolStatus{"dnsx": sensordom.ToolDisabled}, nil
 		}, nil)(s)
 	w := rwf("", rstep("dns", "", "resolve.dns"))
 	ra, _ := s.WorkflowReadiness(context.Background(), a, []*scanworkflow.Workflow{w})
@@ -141,5 +141,33 @@ func TestWorkflowReadiness_TenantIsolatedCache(t *testing.T) {
 	ra2, _ := s.WorkflowReadiness(context.Background(), a, []*scanworkflow.Workflow{w})
 	if ra[w.ID].State != ReadinessReady || rb[w.ID].State != ReadinessBlocked || ra2[w.ID].State != ReadinessReady {
 		t.Fatalf("cross-tenant readiness: a=%s b=%s a again=%s", ra[w.ID].State, rb[w.ID].State, ra2[w.ID].State)
+	}
+}
+
+// A new organization has no sensor yet: the probing scan of continuous
+// discovery (port scan, HTTP probe) is saved waiting, becomes ready when a
+// sensor with the tools registers, and is still refused when a tool is off.
+func TestRequireWorkflowRunnable_NoSensorYetThenReady(t *testing.T) {
+	ctx := context.Background()
+	tenant := shared.NewID()
+	probe := func() *scanworkflow.Workflow {
+		return rwf("", rstep("ports", "", "scan.ports"), rstep("http", "", "probe.http"))
+	}
+	empty := map[string]sensordom.ToolStatus{"naabu": sensordom.ToolNoSensor, "httpx": sensordom.ToolNoSensor}
+	s := readinessService(empty, false, false, nil)
+	if err := s.requireWorkflowRunnable(ctx, tenant, probe()); err != nil {
+		t.Fatalf("no sensor yet must be saved: %v", err)
+	}
+	r := readinessOf(t, s, probe())
+	if r.State != ReadinessWaiting || !strings.Contains(r.Steps[0].Reason, "Waits for a sensor with") {
+		t.Fatalf("want waiting: %+v", r)
+	}
+	online := readinessService(map[string]sensordom.ToolStatus{"naabu": sensordom.ToolReady, "httpx": sensordom.ToolReady}, false, false, nil)
+	if r := readinessOf(t, online, probe()); r.State != ReadinessReady {
+		t.Fatalf("sensor registered: %s", r.State)
+	}
+	off := readinessService(map[string]sensordom.ToolStatus{"naabu": sensordom.ToolNoSensor, "httpx": sensordom.ToolDisabled}, false, false, nil)
+	if err := off.requireWorkflowRunnable(ctx, tenant, probe()); err == nil {
+		t.Fatal("a disabled tool must still be refused")
 	}
 }
