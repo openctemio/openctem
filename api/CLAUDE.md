@@ -905,14 +905,13 @@ no counts that go stale:
   one file per change; never edit `CHANGELOG.md` directly), `CHANGELOG.md`, and the RFC index
   (`docs/rfcs/README.md`, generated from each RFC's H1 and Status by
   `python3 scripts/rfc_index.py`; implementation PRs are listed in each RFC).
-- **Migrations:** the numbers are not contiguous (renumbering leaves gaps), so
-  do not count them. The newest is
-  `ls migrations/*.up.sql | sort | tail -1`. Never pick a number by hand:
-  `make migration-new name=<snake_case>` creates the pair above the highest
-  number on `develop` and in every open PR, and `make migration-renumber`
-  moves a branch's migrations up again when someone took the number. Tests look a migration up by
-  name (`testdb.MigrationVersion`), never by number, so the merge queue can
-  renumber it.
+- **Migrations:** `openctem-migrate` applies every migration a database has
+  not applied, so versions only have to be unique (RFC-130). New migrations
+  take a UTC timestamp version: `make migration-new name=<snake_case>`; never
+  pick or change a version by hand. `make migration-renumber` moves a branch's
+  migration when its version clashes (or is a legacy sequential number). A
+  merged migration never changes: fix it with a new one. Tests look a
+  migration up by name (`testdb.MigrationVersion`), never by version.
 
 ## Local builds: `GOWORK=off`
 

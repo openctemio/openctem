@@ -39,6 +39,7 @@
   "errors.OPERATION_RUNNING": "Bạn đang có một thao tác chạy. Đợi thao tác đó hoàn tất.",
   "errors.QUERY_TIMEOUT": "Truy vấn mất quá nhiều thời gian. Thu hẹp bộ lọc hoặc từ khóa rồi thử lại.",
   "errors.RATE_LIMIT_EXCEEDED": "Quá nhiều yêu cầu. Đợi một lát rồi thử lại.",
+  "errors.REAUTH_REQUIRED": "Vì lý do bảo mật, hãy đăng nhập lại để thiết lập xác thực hai lớp.",
   "errors.RELEASE_FEED_TOO_LARGE": "Tệp lớn hơn giới hạn của nguồn phát hành.",
   "errors.ROTATION_NOT_STALLED": "Quá trình xoay vòng không bị kẹt.",
   "errors.SELECTION_CHANGED": "Lựa chọn đã thay đổi kể từ khi bạn xác nhận. Xem lại số lượng mới rồi xác nhận lại.",

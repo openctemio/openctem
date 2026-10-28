@@ -185,6 +185,22 @@ func (h *contentHarness) get(key, path string, hdr ...string) (*http.Response, [
 	return resp, b
 }
 
+// platformList is the entries of a platform wordlist pack, which must pass
+// the manifest lint (one list, unique valid entries): n blocks of words.
+func platformList(n int) []string {
+	files := words(n, nil)
+	names := make([]string, 0, len(files))
+	for name := range files {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	out := make([]string, 0, len(names))
+	for _, name := range names {
+		out = append(out, files[name])
+	}
+	return out
+}
+
 func words(n int, changed map[int]bool) map[string]string {
 	out := map[string]string{}
 	for i := 0; i < n; i++ {
@@ -417,7 +433,7 @@ func TestSensorContentV2_SharedSensorReadsPlatformPacksOnly(t *testing.T) {
 	own := h.upload(a, "1.0.0", words(3, nil))
 	ctx := context.Background()
 	plat, err := h.platform.Upload(ctx, contentpackapp.PlatformInput{Name: "wordlists-" + shared.NewID().String()[:8], Version: "1", Kind: "wordlist"},
-		bytes.NewReader(wordlist(words(4, nil))))
+		bytes.NewReader(wordlistArchive(t, strings.Join(platformList(4), ""))))
 	if err != nil {
 		t.Fatal(err)
 	}

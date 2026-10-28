@@ -372,7 +372,7 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	// The targets are seeds of every step and a step does not gate its
 	// seeds again, so a workflow whose every step is passive gets the
 	// passive gate here, as its steps' derived targets do (hop router).
-	resolved, err := s.resolveScanTargets(withPassiveRun(ctx, stepsPassiveOnly(steps)), sc)
+	resolved, err := s.resolveScanTargets(s.withScanPlacement(withPassiveRun(ctx, stepsPassiveOnly(steps)), sc, workflowTools(steps)...), sc)
 	if err != nil {
 		return nil, err
 	}

@@ -122,8 +122,8 @@ func (s stubSignIn) RecordPasswordSuccess(context.Context, shared.ID) {}
 
 func (s stubSignIn) RecordPasswordFailure(context.Context, shared.ID) {}
 
-func (s stubSignIn) CreateAccount(context.Context, string, string) (shared.ID, string, error) {
-	return shared.ID{}, "", errors.New("not used")
+func (s stubSignIn) CreateInvitedAccount(context.Context, string, string, time.Duration) (shared.ID, adminconsole.Invitation, error) {
+	return shared.ID{}, adminconsole.Invitation{}, errors.New("not used")
 }
 
 func (s stubSignIn) AccountActive(_ context.Context, userID shared.ID) (bool, error) {
