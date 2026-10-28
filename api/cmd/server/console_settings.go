@@ -9,6 +9,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/platformai"
 	"github.com/openctemio/openctem/api/internal/app/platformalert"
 	"github.com/openctemio/openctem/api/internal/app/platformcaptcha"
+	"github.com/openctemio/openctem/api/internal/app/platformsociallogin"
 	"github.com/openctemio/openctem/api/internal/app/systemstatus"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -26,6 +27,7 @@ func (s *Services) initConsoleSettings(cfg *config.Config, repos *Repositories, 
 	}
 	s.PlatformCaptcha = platformcaptcha.NewService(repos.PlatformSetting, s.Encryptor, s.SettingRecorder,
 		cfg.Auth.CaptchaTurnstileSiteKey, cfg.Auth.CaptchaTurnstileSecret, log)
+	s.PlatformSocialLogin = platformsociallogin.NewService(repos.PlatformSetting, s.Encryptor, s.SettingRecorder, cfg.OAuth, log)
 	s.DeploymentRegion = deploymentregion.NewService(repos.PlatformSetting, repos.Tenant, s.SettingRecorder, cfg.App.Region, log)
 	s.PlatformAlert = platformalert.NewService(repos.PlatformSetting, s.Encryptor, s.SettingRecorder, log)
 	s.PlatformAI = platformai.NewService(repos.PlatformSetting, s.Encryptor, s.SettingRecorder,
@@ -92,6 +94,10 @@ func newAdminPlatformSettingsHandler(repos *Repositories, svc *Services, approva
 	h.ThreatSource = svc.ThreatSource
 	if svc.ThreatIntel != nil {
 		h.ThreatReadiness = svc.ThreatIntel
+	}
+	h.SocialLogin = svc.PlatformSocialLogin
+	if svc.Signup != nil {
+		h.Signup = svc.Signup
 	}
 	h.EmailRelay = svc.OrgRelay
 	return h

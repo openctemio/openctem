@@ -57,7 +57,7 @@ type UpdateThreatSourceRequest struct {
 	Version     int    `json:"version"`
 }
 
-func fmtTime(t time.Time) string {
+func fmtFeedTime(t time.Time) string {
 	if t.IsZero() {
 		return ""
 	}
@@ -69,8 +69,8 @@ func (h *AdminPlatformSettingsHandler) threatSourceResponse(ctx context.Context,
 		Feeds: []ThreatSourceFeed{}, SettingChange: h.change(ctx, s.UpdatedAt, s.UpdatedBy)}
 	if h.ThreatReadiness != nil {
 		for _, r := range h.ThreatReadiness.BundleReadiness(ctx) {
-			out.Feeds = append(out.Feeds, ThreatSourceFeed{Source: r.Source, DeliveredVia: r.DeliveredVia, DataAsOf: fmtTime(r.DataAsOf),
-				BundleFetchedAt: fmtTime(r.BundleFetchedAt), BundleFresh: r.Fresh, BundleError: r.BundleError})
+			out.Feeds = append(out.Feeds, ThreatSourceFeed{Source: r.Source, DeliveredVia: r.DeliveredVia, DataAsOf: fmtFeedTime(r.DataAsOf),
+				BundleFetchedAt: fmtFeedTime(r.BundleFetchedAt), BundleFresh: r.Fresh, BundleError: r.BundleError})
 		}
 	}
 	return out

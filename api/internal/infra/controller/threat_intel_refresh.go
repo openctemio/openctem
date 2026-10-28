@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/feedstatus"
 	"github.com/openctemio/openctem/api/internal/app/threat"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -83,9 +84,9 @@ func (c *ThreatIntelRefreshController) Name() string {
 // Interval: hourly for KEV, daily for EPSS.
 func (c *ThreatIntelRefreshController) Interval() time.Duration {
 	if c.feed == intelFeedKEV {
-		return time.Hour
+		return feedstatus.IntervalKEV
 	}
-	return 24 * time.Hour
+	return feedstatus.IntervalEPSS
 }
 
 // Reconcile fetches and persists the feed, queues the findings whose intel
