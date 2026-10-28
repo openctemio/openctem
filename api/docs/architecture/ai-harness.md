@@ -1,33 +1,33 @@
-# AI analyst harness
+# AI harness
 
-Design: [RFC-133](../rfcs/RFC-133-ai-analyst-harness.md). Contract: [ai-analyze-contract.md](ai-analyze-contract.md)
+Design: [RFC-133](../rfcs/RFC-133-ai-harness.md). Contract: [ai-analyze-contract.md](ai-analyze-contract.md)
 (RFC-131). Principal and governance: RFC-132.
 
-The harness is the loop that does an AI analyst's work for one `openctem.analyze/v1` job. It lives in the sensor SDK
-(`github.com/openctemio/sdk-go/pkg/analyst`) and runs inside an **analyst worker**: a sensor in the analyst role,
-run by the platform operator (the platform analyst pool) or by an organization. Multi-step runs never execute in the
+The harness is the loop that does an AI agent's work for one `openctem.analyze/v1` job. It lives in the sensor SDK
+(`github.com/openctemio/sdk-go/pkg/harness`) and runs inside an **AI worker**: a sensor in the ai-worker role,
+run by the platform operator (the platform AI worker pool) or by an organization. Multi-step runs never execute in the
 API process. The API keeps only the single-shot executor (one model call, no tools).
 
 ## Shipped vs planned
 
 | Part | State | Where |
 |---|---|---|
-| Harness loop, provider interface, replay provider, tool registry, grant policy, hooks, budgets, fenced untrusted text, closed output schema with evidence checks, run record, result rendering, model tiers | shipped in sdk-go (in review) | `sdk-go/pkg/analyst` |
-| Copies of the analyze/v1 schemas, pinned by sha256 | shipped in sdk-go (in review) | `sdk-go/pkg/analyst/contract` (source: `api/pkg/sensorproto/analyze/schemas`) |
-| Playbook format `openctem.io/playbook/v1` + sample | shipped in sdk-go (in review) | `sdk-go/pkg/analyst/playbook`, `sdk-go/examples/playbooks/web-vuln-triage` |
-| Eval harness and `openctem playbook init\|test` | shipped in sdk-go (in review) | `sdk-go/pkg/analyst/eval`, `sdk-go/internal/playbookcli` |
-| Provider adapters with tool use; sensorkit analyst role; hostile-model conformance | planned | sdk-go |
-| `analyze` command type, analyst grant profile, grant builder, interactive lane + affinity, shared host keys, AI limit keys, provider token bucket | planned | api |
-| Platform analyst pool deployment, agent manifest, routing, shadow/canary/rollback, playbook catalog content, editor | planned | api, web, deploy |
+| Harness loop, provider interface, replay provider, tool registry, grant policy, hooks, budgets, fenced untrusted text, closed output schema with evidence checks, run record, result rendering, model tiers | shipped in sdk-go (in review) | `sdk-go/pkg/harness` |
+| Copies of the analyze/v1 schemas, pinned by sha256 | shipped in sdk-go (in review) | `sdk-go/pkg/harness/contract` (source: `api/pkg/sensorproto/analyze/schemas`) |
+| Playbook format `openctem.io/playbook/v1` + sample | shipped in sdk-go (in review) | `sdk-go/pkg/harness/playbook`, `sdk-go/examples/playbooks/web-vuln-triage` |
+| Eval harness and `openctem playbook init\|test` | shipped in sdk-go (in review) | `sdk-go/pkg/harness/eval`, `sdk-go/internal/playbookcli` |
+| Provider adapters with tool use; sensorkit ai-worker role; hostile-model conformance | planned | sdk-go |
+| `analyze` command type, analyst-role grant profile, grant builder, interactive lane + affinity, shared host keys, AI limit keys, provider token bucket | planned | api |
+| Platform AI worker pool deployment, agent manifest, routing, shadow/canary/rollback, playbook catalog content, editor | planned | api, web, deploy |
 | Institutional memory, knowledge retrieval, inbound channels | planned | api, web |
 
 ## How a run works
 
-1. **The platform builds the job.** It checks admission (the analyst is active, it has owners and a fresh
+1. **The platform builds the job.** It checks admission (the AI agent is active, it has owners and a fresh
    attestation, budgets, data class, quotas). It then builds the masked bundle, the grant (role ∩ tool tier ∩ use case
    ∩ asset scope ∩ out-of-scope rules) and the playbook reference with its digest. It signs the statement and enqueues
    an `analyze` command whose synthetic host key `ai:<use_case>:<subject>` keeps one run per subject.
-2. **An analyst worker claims it** through the normal sensor distribution (lease, heartbeat, requeue on crash), then
+2. **An AI worker claims it** through the normal sensor distribution (lease, heartbeat, requeue on crash), then
    verifies the signature and digests and opens the sealed bundle.
 3. **The loop runs.** Each turn:
    - The model is called with the platform rules, the output schemas, the playbook, the fenced bundle fields and
@@ -42,7 +42,7 @@ API process. The API keeps only the single-shot executor (one model call, no too
    required evidence must be cited. One repair turn is allowed. After a budget stop the run gets exactly one final
    call without tools.
 5. **The result goes back.** The worker returns `openctem.analyze.result/v1` with the run record digest. The
-   platform validates it again, turns placeholders back into values, and applies the suggestions as the AI analyst's
+   platform validates it again, turns placeholders back into values, and applies the suggestions as the AI agent's
    normal commands. Risk-lowering changes become requests that a person decides.
 
 ## Tools
@@ -69,7 +69,7 @@ openctem playbook test ./my-triage                    # validate, run the golden
 
 - A fully steered model can only call granted tools on bound targets within budgets, and its answer must fit a
   closed schema with resolvable evidence.
-- Writes happen only through the analyst's commands and approvals (RFC-132).
+- Writes happen only through the AI agent's commands and approvals (RFC-132).
 - Nothing crosses tenants. There is one run per sandbox. Prompt-cache keys are derived from the tenant. Mask keys
   are per run. Memory is never shared.
 - Provider and tool text never reaches a result's error code.
@@ -77,7 +77,7 @@ openctem playbook test ./my-triage                    # validate, run the golden
 
 ## Key files
 
-- `sdk-go/pkg/analyst/run.go` (loop), `policy.go`, `tool.go`, `budget.go`, `fence.go`, `record.go`, `result.go`,
+- `sdk-go/pkg/harness/run.go` (loop), `policy.go`, `tool.go`, `budget.go`, `fence.go`, `record.go`, `result.go`,
   `provider.go`, `router.go`
-- `sdk-go/pkg/analyst/contract/contract.go`, `sdk-go/pkg/analyst/playbook/playbook.go`, `sdk-go/pkg/analyst/eval/eval.go`
+- `sdk-go/pkg/harness/contract/contract.go`, `sdk-go/pkg/harness/playbook/playbook.go`, `sdk-go/pkg/harness/eval/eval.go`
 - `api/pkg/sensorproto/analyze/` (contract source), `api/internal/app/aianalysis/` (single-shot executor, RFC-132)
