@@ -232,6 +232,8 @@ func (h *AccessRequestHandler) Approve(w http.ResponseWriter, r *http.Request) {
 			apierror.Conflict("Only a confirmed request that is still pending can be approved").WriteJSON(w)
 		case errors.Is(err, tenant.ErrPlatformAdminMembership):
 			apierror.Conflict("The requester is a platform administrator and cannot own an organization.").WriteJSON(w)
+		case errors.Is(err, tenantapp.ErrOwnerAccountExists):
+			apierror.Conflict("This email already has an account and the requester has not confirmed the address, so the organization was not created. Ask them to create it after signing in.").WriteJSON(w)
 		case errors.Is(err, tenantapp.ErrAccountExists):
 			apierror.Conflict("An account with this email was just created. Try again.").WriteJSON(w)
 		case shared.IsValidation(err):

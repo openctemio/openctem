@@ -93,12 +93,16 @@ export interface BulkScopeTargetItemInput {
   pattern: string
 }
 
-/** Input of POST /scope/targets/bulk: 1..200 permanent entries. */
+/** Input of POST /scope/targets/bulk: 1..200 entries, permanent unless expires_in_days is set. */
 export interface BulkCreateScopeTargetsInput {
   items: BulkScopeTargetItemInput[]
   reason?: string
   /** refusal_fix when the entries fix the targets a scan refused. */
   origin?: 'refusal_fix'
+  /** Every entry of the batch expires after this many days (omitted: permanent). */
+  expires_in_days?: number
+  /** The deepest probe every entry allows (omitted: the organization's default). */
+  max_tier?: 't0' | 't1' | 't2'
 }
 
 /** Probe tiers (RFC-036): t0 passive, t1 safe active, t2 intrusive. */
