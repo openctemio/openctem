@@ -88,6 +88,9 @@ export interface CreateAssetGroupApiInput {
   // Assets to add during creation
   existing_asset_ids?: string[]
   new_assets?: CreateAssetInGroupApiInput[]
+
+  // A rule that fills the group
+  rule?: import('../types/group-rule.types').GroupRuleDocument
 }
 
 /**
