@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
-import { runPlatformUserAction } from '../api/use-platform-users'
+import { issuePlatformUserResetLink, runPlatformUserAction } from '../api/use-platform-users'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import { PlatformUserActions } from '../components/platform-user-actions'
 import { PlatformUserBadges } from '../components/platform-user-badges'
@@ -11,6 +11,7 @@ import type { PlatformUserDetail } from '../types'
 vi.mock('../api/use-platform-users', async (orig) => ({
   ...(await orig<typeof import('../api/use-platform-users')>()),
   runPlatformUserAction: vi.fn(),
+  issuePlatformUserResetLink: vi.fn(),
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
@@ -167,5 +168,64 @@ describe('PlatformUserBadges', () => {
     expect(screen.getByText('Locked')).toBeInTheDocument()
     expect(screen.getByText('Email not verified')).toBeInTheDocument()
     expect(screen.getByText('MFA')).toBeInTheDocument()
+  })
+})
+
+describe('PlatformUserActions on a server that cannot send email', () => {
+  beforeEach(() => vi.clearAllMocks())
+  const noEmail = (patch: Partial<PlatformUserDetail> = {}) =>
+    account({ email_delivery: false, email_verified: false, mfa_enabled: true, ...patch })
+
+  it('swaps the email actions for the recovery actions, for a super admin only', () => {
+    const { rerender } = render(
+      <PlatformUserActions user={noEmail()} onDone={vi.fn()} isSuperAdmin />
+    )
+    expect(names()).toEqual([
+      'Sign out everywhere',
+      'Copy reset link',
+      'Mark email verified',
+      'Reset two-factor',
+      'Block account',
+    ])
+    rerender(<PlatformUserActions user={noEmail()} onDone={vi.fn()} />)
+    expect(names()).toEqual(['Sign out everywhere', 'Block account'])
+  })
+
+  it('shows the reset link once, in its own dialog', async () => {
+    const user = userEvent.setup()
+    vi.mocked(issuePlatformUserResetLink).mockResolvedValue({
+      link: 'https://app.example.test/reset-password#token=tok-9',
+      expires_at: '2099-01-01T00:00:00Z',
+    })
+    render(<PlatformUserActions user={noEmail()} onDone={vi.fn()} isSuperAdmin />)
+    await user.click(screen.getByRole('button', { name: 'Copy reset link' }))
+    await user.type(screen.getByLabelText(/^reason$/i), 'Support case 5120: lost password')
+    const buttons = screen.getAllByRole('button', { name: 'Copy reset link' })
+    await user.click(buttons[buttons.length - 1])
+    expect(await screen.findByTestId('one-time-link')).toHaveTextContent('#token=tok-9')
+    expect(issuePlatformUserResetLink).toHaveBeenCalledWith(
+      'u1',
+      'Support case 5120: lost password'
+    )
+    expect(screen.getByText('Shown once')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Done' }))
+    await waitFor(() => expect(screen.queryByTestId('one-time-link')).toBeNull())
+  })
+
+  it('sends the two-factor reset through the action route', async () => {
+    const user = userEvent.setup()
+    vi.mocked(runPlatformUserAction).mockResolvedValue({ status: 'mfa_reset' })
+    render(<PlatformUserActions user={noEmail()} onDone={vi.fn()} isSuperAdmin />)
+    await user.click(screen.getByRole('button', { name: 'Reset two-factor' }))
+    await user.type(screen.getByLabelText(/^reason$/i), 'Owner lost phone and codes, ticket 8')
+    const buttons = screen.getAllByRole('button', { name: 'Reset two-factor' })
+    await user.click(buttons[buttons.length - 1])
+    await waitFor(() =>
+      expect(runPlatformUserAction).toHaveBeenCalledWith(
+        'u1',
+        'mfa/reset',
+        'Owner lost phone and codes, ticket 8'
+      )
+    )
   })
 })
