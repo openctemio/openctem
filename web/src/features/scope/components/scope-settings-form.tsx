@@ -441,7 +441,7 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
                   unclassifiedEffective(saved) === 'off' && form.unclassified_scans !== 'off'
                     ? ` ${t('scope.settings.unclassifiedStrict', 'Strict scan approval is in force, so this is Off for now.')}`
                     : ''
-                }`}
+                } ${t('scope.settings.unclassifiedPlatformOnly', 'Applies to platform sensors of the hosted service. Your own sensors scan unclassified assets in full.')}`}
               >
                 <Select
                   value={form.unclassified_scans}

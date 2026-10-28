@@ -53,6 +53,7 @@ const (
 	codeMFACodeInvalid          apierror.Code = "MFA_CODE_INVALID"
 	codeMFANotSupported         apierror.Code = "MFA_NOT_SUPPORTED"
 	codeMFAFederatedSession     apierror.Code = "MFA_FEDERATED_SESSION"
+	codeSSOBreakGlassNeedsMFA   apierror.Code = "SSO_BREAK_GLASS_NEEDS_MFA"
 	codeMFAAlreadyEnabled       apierror.Code = "MFA_ALREADY_ENABLED"
 	codeMFANotEnabled           apierror.Code = "MFA_NOT_ENABLED"
 	codeMFANoPendingSetup       apierror.Code = "MFA_NO_PENDING_SETUP"
@@ -117,6 +118,7 @@ var authErrorTable = []authErrorEntry{
 	{e(auth.ErrRegistrationDisabled, auth.ErrSignupNotAvailable), http.StatusForbidden, CodeSignupNotAvailable, "Your organization isn't set up yet. Ask your administrator to invite you.", ""},
 	// Sign-up with a claimed address and sign-in to an SSO-enforced
 	// organization are one answer: use the organization's single sign-on.
+	{e(auth.ErrSSOBreakGlassNeedsMFA), http.StatusForbidden, codeSSOBreakGlassNeedsMFA, "This organization requires SSO sign-in. Owner access with a password needs two-factor authentication: turn it on for your account and sign in again, or sign in through your identity provider.", ""},
 	{e(auth.ErrSignupSSORequired, auth.ErrSSORequired), http.StatusForbidden, CodeSignupSSORequired, "Your organization requires single sign-on. Sign in through your identity provider.", "sso_required"},
 	{e(auth.ErrTenantCreationDisabled), http.StatusForbidden, codeTenantCreationDisabled, "Organizations are created by the application administrator.", ""},
 	{e(tenantdom.ErrPlatformAdminMembership), http.StatusConflict, codePlatformAdminMember, "Platform administrators cannot belong to an organization. Use the admin console, or a separate account.", ""},

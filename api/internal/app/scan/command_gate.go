@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/openctemio/openctem/api/internal/app/scope"
+	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -89,7 +90,9 @@ func (s *Service) GateCommandPayload(ctx context.Context, tenantID shared.ID, se
 	if err := s.refuseOutOfActScope(ctx, tenantID, nil, checked); err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrCommandTargetRefused, err)
 	}
-	if err := s.refuseUnownedTargets(ctx, tenantID, "command", checked, false); err != nil {
+	// A command goes to a sensor of the tenant (the claim re-check judges the
+	// sensor that takes it).
+	if err := s.refuseUnownedTargets(attribution.WithPlacement(ctx, attribution.PlacementTenant), tenantID, "command", checked, false); err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrCommandTargetRefused, err)
 	}
 
