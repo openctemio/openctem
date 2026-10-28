@@ -7,18 +7,25 @@
 #                   [--push] [--remote origin] [--develop develop] [--main main]
 #                   [--repo DIR]
 #
-# A train: builds chore/post-release-vX.Y.Z from develop with main (the tag)
-# merged in using `-s ours`. The merge makes the tag an ancestor of develop, so
-# `git pull` fetches it, dev builds see it (RFC-037 §3.3) and the next cut needs
-# no -s ours; and it changes no file: develop's tree stays byte for byte, so no
-# version ever lands on develop (the install version, api/deploy/VERSION, lives
-# on the release branch and main only). Refused when main has a file develop
-# lacks (a fix made on main alone would be silently dropped).
+# Builds chore/post-release-vX.Y.Z from develop with main (the tag) merged in
+# by a real merge, for a train and a hotfix alike. The merge makes the tag an
+# ancestor of develop, so `git pull` fetches it, dev builds see it (RFC-037
+# §3.3) and the next cut has nothing on main to drop.
 #
-# A hotfix: nothing to do. Its commits are already on develop as the originals
-# and it changes no version file; the script says so and exits 0 without a branch.
+# What lands on develop is main's side minus what never belongs there:
+#   - api/deploy/VERSION (the install version lives on the release branch and
+#     main only; develop's state of the file is kept);
+#   - a changelog fragment that develop already folded into api/CHANGELOG.md
+#     (its heading is there), so a released entry is not listed twice.
+# A train normally changes no file (its tree is develop's plus the version
+# file). A hotfix whose picks are on develop already changes no file either;
+# one that carries a fix develop lacks (picked from an open PR, or adapted
+# while backporting) brings it to develop here instead of dropping it.
 #
-# Prints KEY=VALUE lines: BRANCH, HEAD (none for a hotfix).
+# Prints KEY=VALUE lines: BRANCH, HEAD, CHANGED (files that differ from
+# develop). Exit 3 when the merge conflicts: nothing is pushed, CONFLICTS
+# lists the files and MAIN_ONLY the main commits develop has no equivalent of,
+# so the caller can ask for a hand-made back-merge.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -70,36 +77,52 @@ g branch -f "$BRANCH" "$dev_ref" >/dev/null
 g worktree add --quiet "$worktree" "$BRANCH"
 w() { git -C "$worktree" -c user.name="${GIT_AUTHOR_NAME:-openctem-release}" -c user.email="${GIT_AUTHOR_EMAIL:-release@openctem.invalid}" "$@"; }
 
-if [[ "$MODE" == hotfix ]]; then
-  echo "note: a hotfix needs no develop follow-up (its commits are on $DEVELOP already; no version file changes)" >&2
-  exit 0
-fi
-
 if g merge-base --is-ancestor "refs/tags/$VERSION" "$dev_ref"; then
   echo "note: $VERSION is already an ancestor of $DEVELOP; nothing to merge" >&2
   exit 0
 fi
 
-# A file the tag has and develop never did would be dropped by -s ours.
-# api/deploy/VERSION is the one allowed (it is written on the release branch
-# only); a file develop deleted on purpose is fine.
-refused=()
-while IFS= read -r path; do
-  [[ -n "$path" && "$path" != "$VERSION_FILE" ]] || continue
-  [[ -n "$(g log -m -1 --format=%H --diff-filter=D "$dev_ref" -- "$path")" ]] || refused+=("$path")
-done < <(g diff --no-renames --name-only --diff-filter=A "$dev_ref" "refs/tags/$VERSION")
-if [[ ${#refused[@]} -gt 0 ]]; then
-  die "$MAIN has ${#refused[@]} file(s) $DEVELOP never had (${refused[*]}); -s ours would drop them. Bring them to $DEVELOP first"
+if ! w merge --no-ff --no-commit "refs/tags/$VERSION" >/dev/null 2>&1; then
+  conflicts="$(w diff --name-only --diff-filter=U | paste -sd' ' -)"
+  w merge --abort >/dev/null 2>&1 || true
+  [[ -n "$conflicts" ]] || die "merging $VERSION into $DEVELOP failed"
+  # Main commits with no patch-equivalent on develop: what the hand-made
+  # back-merge must keep.
+  main_only="$(g cherry "$dev_ref" "refs/tags/$VERSION" | sed -n 's/^+ //p' | cut -c1-12 | paste -sd' ' -)"
+  echo "REFUSING: merging $VERSION into $DEVELOP conflicts; merge $MAIN back by hand (a merge commit, never a squash)" >&2
+  echo "CONFLICTS=$conflicts"
+  echo "MAIN_ONLY=$main_only"
+  exit 3
 fi
 
-w merge -s ours --no-ff --no-edit "refs/tags/$VERSION" -m "chore(release): merge $VERSION back into $DEVELOP
+# The install version never lands on develop: keep develop's state of it.
+if g cat-file -e "$dev_ref:$VERSION_FILE" 2>/dev/null; then
+  w checkout "$dev_ref" -- "$VERSION_FILE"
+else
+  w rm --quiet --cached --ignore-unmatch -- "$VERSION_FILE" >/dev/null
+  rm -f "$worktree/$VERSION_FILE"
+fi
+# A fragment develop already folded into the changelog is released: drop it.
+changelog="api/CHANGELOG.md"
+while IFS= read -r path; do
+  [[ "$path" == api/changelog.d/*.md ]] || continue
+  heading="$(head -n 1 "$worktree/$path")"
+  [[ "$heading" == "### "* ]] || continue
+  if g show "$dev_ref:$changelog" 2>/dev/null | grep -qxF -- "$heading"; then
+    w rm --quiet -f -- "$path"
+    echo "note: $path is already in $changelog; not re-added" >&2
+  fi
+done < <(w diff --cached --no-renames --name-only --diff-filter=A "$dev_ref")
+
+w commit --quiet --no-edit -m "chore(release): merge $VERSION back into $DEVELOP
 
 Makes the release tag an ancestor of $DEVELOP (it lives on $MAIN), so a pull
-fetches it and the next release branch needs no -s ours. -s ours keeps
-$DEVELOP's tree byte for byte: no file changes, no version is committed to
-$DEVELOP." >/dev/null || die "merging $VERSION into $DEVELOP failed"
-[[ "$(w rev-parse 'HEAD^{tree}')" == "$(g rev-parse "$dev_ref^{tree}")" ]] ||
-  die "the merge changed $DEVELOP's tree; refusing"
+fetches it and the next release branch has nothing on $MAIN to drop. A real
+merge: a fix made for the release and missing on $DEVELOP lands here. The
+install version ($VERSION_FILE) and changelog fragments $DEVELOP already
+folded are not carried." || die "committing the merge of $VERSION failed"
+w merge-base --is-ancestor "refs/tags/$VERSION" HEAD || die "$VERSION is not an ancestor after the merge"
+CHANGED="$(w diff --name-only "$dev_ref" HEAD | paste -sd' ' -)"
 
 HEAD_SHA="$(w rev-parse HEAD)"
 if [[ $PUSH -eq 1 ]]; then
@@ -108,3 +131,4 @@ if [[ $PUSH -eq 1 ]]; then
 fi
 echo "BRANCH=$BRANCH"
 echo "HEAD=$HEAD_SHA"
+echo "CHANGED=$CHANGED"
