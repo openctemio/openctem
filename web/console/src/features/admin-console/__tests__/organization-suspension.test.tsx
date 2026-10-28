@@ -32,6 +32,7 @@ function org(patch: Partial<AdminOrganization> = {}): AdminOrganization {
     created_at: '2026-10-01T00:00:00Z',
     active_members: 3,
     owner_emails: [],
+    owner_domains: [],
     owner_count: 1,
     saml_enabled: false,
     active_identity_providers: 0,

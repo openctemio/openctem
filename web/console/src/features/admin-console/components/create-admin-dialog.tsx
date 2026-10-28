@@ -54,9 +54,10 @@ export const ADMIN_ROLE_OPTIONS: {
 ]
 
 /**
- * Make someone a platform administrator. They sign in on the normal sign-in
- * page with their account; when the API had to create the account, its
- * temporary password is shown here once.
+ * Invite someone as a platform administrator. They are e-mailed a single-use
+ * link to choose their own password; no password is ever shown. Without
+ * platform e-mail the link is shown here once (the API decides when that is
+ * allowed).
  */
 export function CreateAdminDialog({ onCreated }: { onCreated: () => void }) {
   const { t } = useTranslation()
@@ -68,7 +69,12 @@ export function CreateAdminDialog({ onCreated }: { onCreated: () => void }) {
   const [breakGlass, setBreakGlass] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [created, setCreated] = useState<{ email: string; password?: string } | null>(null)
+  const [created, setCreated] = useState<{
+    email: string
+    link?: string
+    emailed: boolean
+    failed: boolean
+  } | null>(null)
   const [copied, setCopied] = useState(false)
 
   const close = () => {
@@ -94,7 +100,12 @@ export function CreateAdminDialog({ onCreated }: { onCreated: () => void }) {
         role: breakGlass ? 'super_admin' : role,
         break_glass: breakGlass,
       })
-      setCreated({ email: res.admin.email, password: res.temporary_password })
+      setCreated({
+        email: res.admin.email,
+        link: res.invitation_url,
+        emailed: res.invitation_emailed,
+        failed: !!res.invitation_failed,
+      })
       onCreated()
     } catch (err) {
       setError(err instanceof AdminApiError ? err.message : 'Could not create the administrator')
@@ -119,15 +130,20 @@ export function CreateAdminDialog({ onCreated }: { onCreated: () => void }) {
                 {t('admin.createAdminDialog.administratorAdded', 'Administrator added')}
               </DialogTitle>
               <DialogDescription>
-                {created.password
+                {created.emailed
                   ? t(
-                      'admin.createAdminDialog.aSignInAccountWas',
-                      'A sign-in account was created. Send these details to them securely; the password is shown only once. They sign in on the normal sign-in page, change the password, and set up two-step verification when they open the console.'
+                      'admin.createAdminDialog.invitationSent',
+                      'An invitation was sent to this address. The link works once and expires in 24 hours. They choose their own password, then set up two-step verification when they open the console.'
                     )
-                  : t(
-                      'admin.createAdminDialog.theirExistingAccountIsNow',
-                      'Their existing account is now an administrator. They sign in on the normal sign-in page with their own password and set up two-step verification when they open the console.'
-                    )}
+                  : created.link
+                    ? t(
+                        'admin.createAdminDialog.invitationLinkShownOnce',
+                        'This platform cannot send e-mail. Give this link only to the new administrator. It is shown once, works once and expires in 24 hours.'
+                      )
+                    : t(
+                        'admin.createAdminDialog.invitationNotSent',
+                        'The administrator was added, but the invitation e-mail could not be sent. They can use Forgot password on the sign-in page.'
+                      )}
               </DialogDescription>
             </DialogHeader>
             <DialogBody>
@@ -136,25 +152,25 @@ export function CreateAdminDialog({ onCreated }: { onCreated: () => void }) {
                   {t('admin.createAdminDialog.email', 'Email')}
                 </dt>
                 <dd className="min-w-0 break-all">{created.email}</dd>
-                {created.password && (
+                {created.link && (
                   <>
                     <dt className="text-muted-foreground">
-                      {t('admin.createAdminDialog.temporaryCredential', 'Temporary password')}
+                      {t('admin.createAdminDialog.invitationLink', 'Invitation link')}
                     </dt>
                     <dd className="flex min-w-0 items-center gap-2">
                       <code className="min-w-0 flex-1 rounded bg-muted px-2 py-1.5 text-xs break-all select-all">
-                        {created.password}
+                        {created.link}
                       </code>
                       <Button
                         type="button"
                         size="icon"
                         variant="outline"
                         aria-label={t(
-                          'admin.createAdminDialog.copyTemporaryCredential',
-                          'Copy temporary password'
+                          'admin.createAdminDialog.copyInvitationLink',
+                          'Copy invitation link'
                         )}
                         onClick={async () => {
-                          if (created.password && (await copyToClipboard(created.password))) {
+                          if (created.link && (await copyToClipboard(created.link))) {
                             setCopied(true)
                           }
                         }}
@@ -179,7 +195,7 @@ export function CreateAdminDialog({ onCreated }: { onCreated: () => void }) {
               <DialogDescription>
                 {t(
                   'admin.createAdminDialog.anAdministratorSignsInOn',
-                  'An administrator signs in on the normal sign-in page but belongs to no organization. Use an email that is not a member of any organization.'
+                  'The new administrator is e-mailed a link to choose their own password. They belong to no organization: use an email that has no account yet.'
                 )}
               </DialogDescription>
             </DialogHeader>
@@ -264,7 +280,7 @@ export function CreateAdminDialog({ onCreated }: { onCreated: () => void }) {
               </Button>
               <Button type="submit" disabled={busy}>
                 {busy && <Loader2 className="me-2 size-4 animate-spin" />}
-                {t('admin.createAdminDialog.createAdministrator', 'Create administrator')}
+                {t('admin.createAdminDialog.createAdministrator', 'Send invitation')}
               </Button>
             </DialogFooter>
           </DialogForm>
