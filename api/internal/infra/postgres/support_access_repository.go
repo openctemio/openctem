@@ -5,10 +5,12 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/lib/pq"
 
+	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/supportaccess"
 )
@@ -27,13 +29,23 @@ func NewSupportAccessRepository(db *DB) *SupportAccessRepository {
 
 var _ supportaccess.Repository = (*SupportAccessRepository)(nil)
 
-const supportGrantColumns = `
+// consoleIdleSeconds is the console's idle timeout in seconds: a support
+// session whose console session is idle longer is no longer open.
+var consoleIdleSeconds = strconv.Itoa(int(admin.SessionIdleTimeout / time.Second))
+
+// supportGrantColumns: open_session is true only while a support session is
+// open AND the console session that opened it is still alive, so a sign-out,
+// an expiry or an idle console never leaves the organization's banner on.
+var supportGrantColumns = `
 	g.id, g.tenant_id, g.admin_id, g.admin_email, g.admin_name, g.access_level, g.scopes,
 	g.reason, COALESCE(g.case_ref, ''), COALESCE(g.granted_by::text, ''), g.starts_at, g.expires_at,
 	g.revoked_at, g.revoked_by, g.created_at,
 	(SELECT count(*) FROM support_sessions s WHERE s.tenant_id = g.tenant_id AND s.grant_id = g.id),
 	(SELECT max(COALESCE(s.last_access_at, s.started_at)) FROM support_sessions s WHERE s.tenant_id = g.tenant_id AND s.grant_id = g.id),
-	EXISTS (SELECT 1 FROM support_sessions s WHERE s.tenant_id = g.tenant_id AND s.grant_id = g.id AND s.ended_at IS NULL)`
+	EXISTS (SELECT 1 FROM support_sessions s
+	         JOIN admin_sessions c ON c.id = s.console_session_id
+	        WHERE s.tenant_id = g.tenant_id AND s.grant_id = g.id AND s.ended_at IS NULL
+	          AND c.expires_at > now() AND c.last_seen_at > now() - make_interval(secs => ` + consoleIdleSeconds + `))`
 
 func scanSupportGrant(row interface{ Scan(...any) error }) (*supportaccess.Grant, error) {
 	var (
@@ -334,4 +346,109 @@ func (r *SupportAccessRepository) EndSessionForPlatform(ctx context.Context, id,
 		return nil, err
 	}
 	return &s, nil
+}
+
+// endedSessionColumns are what an ending UPDATE returns for the audit rows
+// and the owner emails.
+const endedSessionColumns = `s.id, s.tenant_id, s.grant_id, s.admin_id, s.console_session_id, s.reason, s.started_at, s.last_access_at, s.ended_at, s.end_reason`
+
+func scanEndedSessions(rows *sql.Rows) ([]*supportaccess.Session, error) {
+	defer func() { _ = rows.Close() }()
+	var out []*supportaccess.Session
+	for rows.Next() {
+		var (
+			s                                       supportaccess.Session
+			id, tenantID, grantID, adminID, console string
+			last, ended                             sql.NullTime
+			reason                                  sql.NullString
+		)
+		if err := rows.Scan(&id, &tenantID, &grantID, &adminID, &console, &s.Reason, &s.StartedAt, &last, &ended, &reason); err != nil {
+			return nil, fmt.Errorf("scan ended support session: %w", err)
+		}
+		var err error
+		if s.ID, err = shared.IDFromString(id); err != nil {
+			return nil, err
+		}
+		if s.TenantID, err = shared.IDFromString(tenantID); err != nil {
+			return nil, err
+		}
+		if s.GrantID, err = shared.IDFromString(grantID); err != nil {
+			return nil, err
+		}
+		if s.AdminID, err = shared.IDFromString(adminID); err != nil {
+			return nil, err
+		}
+		if s.ConsoleSessionID, err = shared.IDFromString(console); err != nil {
+			return nil, err
+		}
+		if last.Valid {
+			t := last.Time
+			s.LastAccessAt = &t
+		}
+		if ended.Valid {
+			t := ended.Time
+			s.EndedAt = &t
+		}
+		s.EndReason = reason.String
+		out = append(out, &s)
+	}
+	return out, rows.Err()
+}
+
+// EndStaleSessions ends the open sessions that should no longer be open:
+//   - console_session_ended: the console session that opened it is gone
+//     (signed out, expired, or idle for consoleIdle);
+//   - grant_expired: the grant was revoked or its window ended;
+//   - idle: not used for idle.
+//
+// The first matching reason wins. Rows other workers lock are skipped and
+// picked up on the next run.
+func (r *SupportAccessRepository) EndStaleSessions(ctx context.Context, now time.Time, idle, consoleIdle time.Duration) ([]*supportaccess.Session, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		WITH stale AS (
+		    SELECT s.id,
+		           CASE
+		             WHEN NOT EXISTS (SELECT 1 FROM admin_sessions c
+		                    WHERE c.id = s.console_session_id AND c.expires_at > $1
+		                      AND c.last_seen_at > $1::timestamptz - make_interval(secs => $3))
+		               THEN $4::text
+		             WHEN NOT EXISTS (SELECT 1 FROM support_grants g
+		                    WHERE g.tenant_id = s.tenant_id AND g.id = s.grant_id
+		                      AND g.revoked_at IS NULL AND g.expires_at > $1)
+		               THEN $5::text
+		             ELSE $6::text
+		           END AS why
+		      FROM support_sessions s
+		     WHERE s.ended_at IS NULL
+		       AND (NOT EXISTS (SELECT 1 FROM admin_sessions c
+		                    WHERE c.id = s.console_session_id AND c.expires_at > $1
+		                      AND c.last_seen_at > $1::timestamptz - make_interval(secs => $3))
+		            OR NOT EXISTS (SELECT 1 FROM support_grants g
+		                    WHERE g.tenant_id = s.tenant_id AND g.id = s.grant_id
+		                      AND g.revoked_at IS NULL AND g.expires_at > $1)
+		            OR COALESCE(s.last_access_at, s.started_at) < $1::timestamptz - make_interval(secs => $2))
+		     FOR UPDATE OF s SKIP LOCKED
+		)
+		UPDATE support_sessions s SET ended_at = $1, end_reason = stale.why
+		  FROM stale WHERE s.id = stale.id
+		RETURNING `+endedSessionColumns,
+		now, idle.Seconds(), consoleIdle.Seconds(),
+		supportaccess.EndReasonConsoleSessionGone, supportaccess.EndReasonGrantExpired, supportaccess.EndReasonIdle)
+	if err != nil {
+		return nil, fmt.Errorf("end stale support sessions: %w", err)
+	}
+	return scanEndedSessions(rows)
+}
+
+// EndSessionsForConsoleSession ends the open sessions bound to one console
+// session (its sign-out).
+func (r *SupportAccessRepository) EndSessionsForConsoleSession(ctx context.Context, consoleSessionID shared.ID, reason string, now time.Time) ([]*supportaccess.Session, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		UPDATE support_sessions s SET ended_at = $2, end_reason = $3
+		 WHERE s.console_session_id = $1 AND s.ended_at IS NULL
+		RETURNING `+endedSessionColumns, consoleSessionID.String(), now, reason)
+	if err != nil {
+		return nil, fmt.Errorf("end support sessions of a console session: %w", err)
+	}
+	return scanEndedSessions(rows)
 }

@@ -30,10 +30,11 @@ export interface UpdateGeneralSettingsInput {
  * Email verification mode controls whether new users in this tenant must
  * verify their email address before login.
  *   - "auto"   = require verification iff SMTP is configured (default)
- *   - "always" = always require verification (operator must configure SMTP)
- *   - "never"  = never require verification (closed/internal deployments)
+ *   - "always" = members must have a verified address to enter this organization
+ *     (the operator must configure SMTP)
+ * Verification belongs to the account, so no organization setting can skip it.
  */
-export type EmailVerificationMode = 'auto' | 'always' | 'never'
+export type EmailVerificationMode = 'auto' | 'always'
 
 export interface SecuritySettings {
   mfa_required: boolean
