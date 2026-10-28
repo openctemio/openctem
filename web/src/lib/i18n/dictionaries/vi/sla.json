@@ -9,7 +9,7 @@
   "sla.col.detected": "Phát hiện lúc",
   "sla.col.finding": "Phát hiện",
   "sla.col.pastDueBy": "Quá hạn",
-  "sla.col.severity": "Mức độ",
+  "sla.col.severity": "Mức độ nghiêm trọng",
   "sla.days": "{n, plural, other {# ngày}}",
   "sla.description": "Các phát hiện đang mở được theo dõi theo hạn khắc phục.",
   "sla.list.description": "{n, plural, other {# phát hiện}} đã quá hạn SLA, hạn cũ nhất xếp trước.",
