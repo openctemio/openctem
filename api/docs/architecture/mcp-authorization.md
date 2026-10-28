@@ -54,6 +54,7 @@ and is neither the public origin nor one of `CORS_ALLOWED_ORIGINS`
 | `mcp:assets.read` | `assets:read` |
 | `mcp:compliance.read` | `compliance:frameworks:read` |
 | `mcp:pentest.read` | `pentest:campaigns:read`, `pentest:findings:read`, `pentest:retests:read`, `pentest:templates:read` |
+| `mcp:scope.read` | `attack_surface:scope:read` |
 | `mcp:findings.comment` (write) | `findings:comment`; never offered up front, only through an `insufficient_scope` challenge, only when the organization policy lists it, and every call is confirmed by the person (below) |
 | `mcp:findings.propose` (write) | `findings:write`; obtained like the comment scope; its tools file requests another person decides (below) |
 | `mcp:pentest.draft` (write) | `pentest:findings:write`; obtained like the comment scope; saves pentest drafts another campaign member confirms (below) |

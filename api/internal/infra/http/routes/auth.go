@@ -106,6 +106,13 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 			mfaEnrollConfirmHandler := ChainFunc(h.LocalAuth.ConfirmMFAEnrollment, crossSite, mfaRL)
 			r.POST("/mfa/enroll/confirm", mfaEnrollConfirmHandler.ServeHTTP)
 
+			// Second-factor challenge for a signed-in session that an
+			// organization's 2FA policy holds back (after accepting an
+			// invitation, or when a token refresh is refused). Authenticated
+			// by the refresh-token session, like accept-with-refresh.
+			mfaSessionHandler := ChainFunc(h.LocalAuth.SessionMFAChallenge, crossSite, mfaRL)
+			r.POST("/mfa/enroll/session", mfaSessionHandler.ServeHTTP)
+
 			// Token operations - separate rate limit (20/min)
 			// Token exchange requires valid refresh token, not brute-forceable
 			// Used for tenant switching which may happen frequently.
