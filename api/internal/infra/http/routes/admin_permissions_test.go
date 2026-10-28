@@ -232,11 +232,9 @@ func TestAdminRoutePermissionsComplete(t *testing.T) {
 		}
 	}
 	// Every permission guards a route, except the ones a handler checks for
-	// part of a response or request (member e-mails, owner recovery) and the
-	// role management routes that the next change adds.
+	// part of a response or request (member e-mails, owner recovery).
 	reserved := map[platformauthz.Permission]bool{
 		platformauthz.TenantsMembersRead: true, platformauthz.TenantsOwnerRecovery: true,
-		platformauthz.RolesAssign: true, platformauthz.RolesRead: true,
 	}
 	for _, d := range platformauthz.Catalog() {
 		if !used[d.Key] && !reserved[d.Key] {

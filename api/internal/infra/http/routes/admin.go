@@ -827,6 +827,21 @@ func registerAdminRoutes(
 				r.POST("/{id}/break-glass-test", h.AdminConsole.ConfirmBreakGlassTest, stepUp("admin.break_glass_test"))
 				r.DELETE("/{id}/idp-binding", h.AdminConsole.UnbindIdP, stepUp("admin.idp_unbind"))
 			}
+			if h.AdminPlatformRole != nil {
+				// Additional platform roles (RFC-134): owner-held permission,
+				// step-up, a reason, audited first, announced.
+				r.POST("/{id}/platform-roles", h.AdminPlatformRole.Assign, stepUp("platform_role.assign"))
+				r.DELETE("/{id}/platform-roles/{role}", h.AdminPlatformRole.Revoke, stepUp("platform_role.revoke"))
+			}
+		}, adminMiddlewares...)
+	}
+
+	// Platform roles (RFC-134): the catalog and built-in roles (any role
+	// reads them), and who holds what (the administrator roster).
+	if h.AdminPlatformRole != nil {
+		router.Group("/api/v1/admin/platform-roles", func(r Router) {
+			r.GET("/", h.AdminPlatformRole.Roles)
+			r.GET("/assignments", h.AdminPlatformRole.Assignments)
 		}, adminMiddlewares...)
 	}
 
