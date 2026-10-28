@@ -2,11 +2,21 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-10-28). In review: the analyst principal, accountable owners, provenance and the run ledger. Designed: runs as `analyze` jobs on analyst sensors, the tool loop through sensor commands, owner digests and alerts, override-rate downgrade |
-| Scope | api (analysts, owners, ledger, provenance, executor), web (Settings > AI > AI analysts, one AI badge), sdk-go and sensor (analyst role, later), docs |
+| Status | Accepted (2026-10-28). In review: the analyst principal, accountable owners, provenance and the run ledger. Designed: runs as `analyze` jobs on ai-worker sensors, the tool loop through sensor commands, owner digests and alerts, override-rate downgrade |
+| Scope | api (analysts, owners, ledger, provenance, executor), web (Settings > AI > AI analysts, one AI badge), sdk-go and sensor (ai-worker role, later), docs |
 | Architecture | [ai-analysis.md](../architecture/ai-analysis.md), [ai-triage.md](../architecture/ai-triage.md), [job-dispatch.md](../architecture/job-dispatch.md) |
 | Amends | RFC-131 (AI results are no longer stored as suggestions: the analyst acts through the normal commands) |
 | Related | RFC-030 (work distribution), RFC-040 (mutual distrust, signed jobs), RFC-050 (asset access model), RFC-100 (shared sensors), RFC-129 (shared fleet scheduling), RFC-131 (AI analysis, analyze contract, masking) |
+
+## Terminology note (2026-10-28)
+
+The AI runtime has generic names, because later AI roles (remediation and fix pull requests, reports, threat hunting,
+ticket routing) do other work on the same loop. The platform principal this RFC describes is an **AI agent** with a
+role; the analyst is the first role (`remediator`, `reporter` and `hunter` follow). The harness is sdk-go `pkg/harness`
+(RFC-133), the worker repository is `openctemio/ai-worker`, and the sensor role is `ai-worker`. This RFC keeps the word
+"analyst" where it means the triage role and where it names code and tables that exist today (`ai_analysts` and
+friends); renaming those is not part of this change. Generalising the principal (a role or persona column, the UI
+label "AI agents") is P1 of research/326.
 
 ## 1. Summary
 
@@ -23,7 +33,7 @@ is the AI label and the provenance on what it does.
   (approve, verify, delete, export, reveal, bulk, administration). Risk-lowering changes always become
   approval requests decided by a person.
 - **Placement.** Identity and governance always live in the platform. The reasoning loop runs in the
-  platform executor pool or an analyst worker; both are **analyst sensors** that pull and claim
+  platform executor pool or an AI worker; both are **ai-worker sensors** that pull and claim
   `analyze` jobs through the same distribution as scan jobs. Network actions are never taken by the
   AI: it calls a platform command (for example "retest this finding") and a scan sensor runs the
   signed job under the scope gate.
@@ -133,8 +143,8 @@ flowchart TB
     audit["Audit and timeline"]
     mask["Masking boundary"]
   end
-  pool["Platform executor pool<br/>(analyst sensors)"]
-  worker["Analyst worker<br/>(org-run, sandboxed)"]
+  pool["Platform executor pool<br/>(ai-worker sensors)"]
+  worker["AI worker<br/>(org-run, sandboxed)"]
   llm["Model endpoint<br/>cloud or local"]
   scan["Scan sensors<br/>with tool packs"]
   owner["Accountable owner"]
@@ -155,8 +165,8 @@ flowchart TB
    approvals, audit.
 2. **The brain has two placements behind one contract** (`openctem.analyze/v1`, RFC-131): the
    platform executor pool (default, SaaS and self-hosted; model calls through masking, platform data
-   only) and the analyst worker (an organization's own or local model, data that must not leave its
-   network, or sandboxed parsing of evidence). Both are analyst sensors.
+   only) and the AI worker (an organization's own or local model, data that must not leave its
+   network, or sandboxed parsing of evidence). Both are ai-worker sensors.
 3. **The hands are always the scan sensors.** The analyst never runs a network tool and never names a
    target. It calls the platform command as itself ("retest finding Y"); the platform derives the
    target from the finding, runs the active-probe gate (scope exclusions, private ranges, attribution,
@@ -173,7 +183,7 @@ sequenceDiagram
   autonumber
   participant T as Trigger (person or ingest)
   participant P as Platform
-  participant A as Analyst sensor
+  participant A as AI worker sensor
   participant M as Model
   participant S as Scan sensor
   participant O as Accountable owner
@@ -226,32 +236,32 @@ the subject's slot when the next run starts.
 
 | Deployment | Brain | Model | Hands | Notes |
 |---|---|---|---|---|
-| SaaS | platform executor pool; analyst workers in sandboxed pods for code execution | platform provider or the organization's key | platform or organization scan sensors | masking on; data class ceiling `internal` by default |
+| SaaS | platform executor pool; AI workers in sandboxed pods for code execution | platform provider or the organization's key | platform or organization scan sensors | masking on; data class ceiling `internal` by default |
 | Self-hosted, cloud model | platform executor pool | the organization's provider key | organization scan sensors | masking on |
-| Self-hosted, local model | executor pool with an `openai_compatible` endpoint on a private address (console only), or an analyst worker next to the model | local | organization scan sensors | masking per class |
-| Air-gapped | analyst worker or executor pool with a local model; no outbound traffic | local | organization scan sensors | content delivered offline |
+| Self-hosted, local model | executor pool with an `openai_compatible` endpoint on a private address (console only), or an AI worker next to the model | local | organization scan sensors | masking per class |
+| Air-gapped | AI worker or executor pool with a local model; no outbound traffic | local | organization scan sensors | content delivered offline |
 
 ## 5. Scale: many analysts at once
 
 The principal is the identity and the accountability; any number of stateless workers execute runs
-under it. Runs are platform jobs of type `analyze`, and analyst sensors pull and claim them through
+under it. Runs are platform jobs of type `analyze`, and ai-worker sensors pull and claim them through
 the same mechanism as scan sensors. No new queue or lock.
 
 | Need | Mechanism | State |
 |---|---|---|
 | Many workers, one identity | an `analyze` command carries the analyst id; any analyst sensor runs it; audit and metrics stay per analyst | new command type (one constant in `pkg/domain/command`) |
 | Pull and claim | organization claim (`ClaimManyForSensor`, `FOR UPDATE SKIP LOCKED`) and the shared claim for platform-owned sensors (`ClaimManyShared`, RFC-100) | exists |
-| Gating to analyst sensors | the tool and feature gates (`toolClaimPredicate`, `featureClaimPredicate`): the job names the analyst tool and requires the analyst feature | exists; no new sensor type needed |
+| Gating to ai-worker sensors | the tool and feature gates (`toolClaimPredicate`, `featureClaimPredicate`): the job names the analyst tool and requires the analyst feature | exists; no new sensor type needed |
 | Fair share and priority | priority classes with aging, round-robin by run, per-organization burst on the shared claim | exists; the run key is the scan run id today, `analyze` jobs need an equivalent grouping key |
 | Queue expiry | `MaxQueueMinutes` on platform jobs | exists |
 | Crash recovery | leases renewed on heartbeat, expired leases requeued with backoff, late writes fenced by lease epoch | exists; the offline-sensor release requeues only routed scan work today and must include `analyze` |
 | One live run per finding and use case | a synthetic host key `ai:<use case>:<finding>` blocks a second claim, plus the ledger's partial unique index at enqueue | host keys exist; an enqueue-time idempotency key is a gap |
 | Concurrent edits by people and other analysts | every command checks the finding's row version; on conflict the run re-reads and re-plans, never overwrites | exists (`ExpectedRowVersion`) |
 | Analyse an issue once, apply per asset | one `analyze` job per issue group (same-issue grouping), one command per finding | claim-time chunking (RFC-030 phase 2) is not built: group at enqueue until it is |
-| Placement | analyst sensors report capabilities and load (`LoadReport`, `reported_capabilities`) | exists |
+| Placement | ai-worker sensors report capabilities and load (`LoadReport`, `reported_capabilities`) | exists |
 | Results | `CompleteCommand` / `FailCommand` with the result JSON; the run ledger links `command_id` | exists |
 | Quotas | per analyst: runs per hour, tokens per month (built); per organization: AI token budget; limit keys such as AI runs per day checked at enqueue | per-organization AI limit keys are a gap (RFC-129 compute units are designed only) |
-| Built-in pool | platform-owned analyst sensors (`scope = 'instance'`) in the same tables, so dispatch, metrics and fair share are identical | design |
+| Built-in pool | platform-owned ai-worker sensors (`scope = 'instance'`) in the same tables, so dispatch, metrics and fair share are identical | design |
 
 **Flood control for owners.** Batch approve and reject, a daily digest, a per-owner cap on new requests
 per hour, and when an analyst's pending requests exceed a threshold it drops to comments only until
@@ -291,7 +301,7 @@ the queue is worked down.
 | D16 | `ai_triage_results` is folded into `ai_runs` as read-only history and dropped when the built-in executor replaces the in-process triage |
 | D17 | Override-rate downgrade from history: 20 % over the last 50 decided actions |
 | D18 | Attestation every 90 days; pause on expiry |
-| D19 | Brain in the executor pool or an analyst worker, both analyst sensors |
+| D19 | Brain in the executor pool or an AI worker, both ai-worker sensors |
 | D20 | Hands are scan sensors through platform commands; the analyst never names a target |
 | D21 | Intrusive tools always need a person |
 | D22 | An outside AI program later gets its own credential path that runs the same principal checks; until then an analyst has no key, grant or role of its own |
@@ -325,4 +335,4 @@ the queue is worked down.
 | Analyst principal, owners, provenance, ledger, sweep, API | in review (openctem #3239) |
 | Built-in executor acting as the analyst through the commands | in review (openctem #3249) |
 | Settings > AI > AI analysts and the AI badge | in review (openctem #3242) |
-| `analyze` jobs on analyst sensors, tool loop, owner digest and alerts, override downgrade, proposals with Apply, `findings:retest`, triggerer exclusion | designed |
+| `analyze` jobs on ai-worker sensors, tool loop, owner digest and alerts, override downgrade, proposals with Apply, `findings:retest`, triggerer exclusion | designed |
