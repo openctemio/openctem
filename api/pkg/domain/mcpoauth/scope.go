@@ -24,6 +24,9 @@ const (
 	ScopeAssetsRead     Scope = "mcp:assets.read"
 	ScopeComplianceRead Scope = "mcp:compliance.read"
 	ScopePentestRead    Scope = "mcp:pentest.read"
+	// ScopeScopeRead lets the check_scope tool ask whether a target may be
+	// tested. It reads the answer only; nothing here widens a scope.
+	ScopeScopeRead Scope = "mcp:scope.read"
 	// ScopeFindingsComment lets a write tool add comments to findings
 	// (findings:comment, never findings:severity or findings:write). Every
 	// call still needs the person's confirmation in the web UI (RFC-062 §10).
@@ -80,6 +83,10 @@ var catalog = map[Scope]scopeInfo{ //nolint:gochecknoglobals // fixed scope tabl
 		perms: []permission.Permission{permission.PentestFindingsWrite},
 		title: "Save pentest findings as drafts, each confirmed by another campaign member",
 		write: true,
+	},
+	ScopeScopeRead: {
+		perms: []permission.Permission{permission.ScopeRead},
+		title: "Check whether a target is inside your authorized testing scope, read only",
 	},
 	ScopePentestRead: {
 		perms: []permission.Permission{

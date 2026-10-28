@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
@@ -70,7 +71,7 @@ type AdminAuditLogListResponse struct {
 
 // List lists audit logs with filtering and pagination.
 // @Summary List admin audit logs
-// @Description Returns a paginated list of audit logs. Requires Admin API Key.
+// @Description Returns a paginated list of audit logs. Any administrator role; the network address, user agent and request body are returned only to operations administrators and above.
 // @Tags Admin Audit Logs
 // @Accept json
 // @Produce json
@@ -150,9 +151,10 @@ func (h *AdminAuditHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build response
+	detail := canSeeAuditDetail(r)
 	logs := make([]AdminAuditLogResponse, 0, len(result.Data))
 	for _, log := range result.Data {
-		logs = append(logs, toAdminAuditLogResponse(log))
+		logs = append(logs, toAdminAuditLogResponse(log, detail))
 	}
 
 	response := AdminAuditLogListResponse{
@@ -201,7 +203,7 @@ func (h *AdminAuditHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(toAdminAuditLogResponse(log))
+	_ = json.NewEncoder(w).Encode(toAdminAuditLogResponse(log, canSeeAuditDetail(r)))
 }
 
 // GetStats returns audit log statistics.
@@ -248,9 +250,10 @@ func (h *AdminAuditHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	detail := canSeeAuditDetail(r)
 	recent := make([]AdminAuditLogResponse, 0, len(recentActions))
 	for _, log := range recentActions {
-		recent = append(recent, toAdminAuditLogResponse(log))
+		recent = append(recent, toAdminAuditLogResponse(log, detail))
 	}
 
 	response := map[string]interface{}{
@@ -290,7 +293,19 @@ func (h *AdminAuditHandler) VerifyChain(w http.ResponseWriter, r *http.Request) 
 // Helpers
 // =============================================================================
 
-func toAdminAuditLogResponse(log *admin.AuditLog) AdminAuditLogResponse {
+// canSeeAuditDetail reports whether the caller may read the network address,
+// user agent and request body of audit rows. Those carry administrators'
+// addresses and the reasons typed for actions on customer accounts, so only an
+// operations administrator or above gets them; a read-only administrator sees
+// the action, the actor, the time and the result. It keys on the
+// administrator's own role: an operations administrator who has not elevated
+// still reads them, a read-only account never does.
+func canSeeAuditDetail(r *http.Request) bool {
+	a := middleware.GetAdminUser(r.Context())
+	return a != nil && admin.RoleAtMost(admin.AdminRoleOpsAdmin, a.MaxRole())
+}
+
+func toAdminAuditLogResponse(log *admin.AuditLog, detail bool) AdminAuditLogResponse {
 	resp := AdminAuditLogResponse{
 		ID:             log.ID.String(),
 		AdminEmail:     log.AdminEmail,
@@ -306,6 +321,12 @@ func toAdminAuditLogResponse(log *admin.AuditLog) AdminAuditLogResponse {
 		Success:        log.Success,
 		ErrorMessage:   log.ErrorMessage,
 		CreatedAt:      log.CreatedAt.Format(time.RFC3339),
+	}
+
+	if !detail {
+		resp.RequestBody = nil
+		resp.IPAddress = ""
+		resp.UserAgent = ""
 	}
 
 	if log.AdminID != nil {

@@ -46,6 +46,9 @@ type AuthorizeRequest struct {
 type AuthorizeResponse struct {
 	AuthorizationURL string `json:"authorization_url"`
 	State            string `json:"state"`
+	// BrowserBinding must be kept in an HttpOnly cookie and sent back with
+	// the callback.
+	BrowserBinding string `json:"browser_binding"`
 }
 
 // Authorize returns the OAuth authorization URL for a provider.
@@ -88,7 +91,7 @@ func (h *OAuthHandler) Authorize(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Security: Validate final_redirect against allowed origins (CWE-601)
-	if finalRedirect != "" && !h.isRedirectAllowed(finalRedirect) {
+	if finalRedirect != "" && !h.isFinalRedirectAllowed(finalRedirect) {
 		apierror.BadRequest("Invalid redirect URI").WriteJSON(w)
 		return
 	}
@@ -106,9 +109,11 @@ func (h *OAuthHandler) Authorize(w http.ResponseWriter, r *http.Request) {
 	resp := AuthorizeResponse{
 		AuthorizationURL: result.AuthorizationURL,
 		State:            result.State,
+		BrowserBinding:   result.BrowserBinding,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(resp)
 }
@@ -118,6 +123,8 @@ type CallbackRequest struct {
 	Code        string `json:"code"`
 	State       string `json:"state"`
 	RedirectURI string `json:"redirect_uri"`
+	// BrowserBinding is the secret the authorize response gave this browser.
+	BrowserBinding string `json:"browser_binding"`
 }
 
 // CallbackResponse is the response body for OAuth callback.
@@ -179,6 +186,8 @@ func (h *OAuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 		Code:        req.Code,
 		State:       req.State,
 		RedirectURI: req.RedirectURI,
+
+		BrowserBinding: req.BrowserBinding,
 	})
 	if err != nil {
 		h.handleOAuthError(w, err)
@@ -219,12 +228,31 @@ func (h *OAuthHandler) handleOAuthError(w http.ResponseWriter, err error) {
 		writeSignupNotAvailable(w)
 	case errors.Is(err, auth.ErrSignupSSORequired):
 		writeSignupSSORequired(w)
+	case errors.Is(err, auth.ErrEmailNotAuthoritative):
+		apierror.New(http.StatusForbidden, "EMAIL_NOT_AUTHORITATIVE",
+			"This provider cannot prove that you own this email address. Sign in with your password, or ask an administrator, and link the provider afterwards.").WriteJSON(w)
 	case errors.Is(err, auth.ErrOAuthUserInfoFailed):
 		apierror.BadRequest("Failed to get user information from provider").WriteJSON(w)
 	default:
 		h.logger.Error("oauth error", "error", err)
 		apierror.InternalError(err).WriteJSON(w)
 	}
+}
+
+// isFinalRedirectAllowed checks where the web app sends the person after a
+// successful sign-in: a path on this site ("/", "/findings?x=1") or an
+// absolute URL that isRedirectAllowed accepts. Protocol-relative ("//host")
+// and backslash forms ("/\\host"), which browsers treat as another host, and
+// control characters are refused.
+func (h *OAuthHandler) isFinalRedirectAllowed(raw string) bool {
+	if strings.HasPrefix(raw, "/") {
+		if strings.HasPrefix(raw, "//") || strings.ContainsAny(raw, "\\\r\n\t") {
+			return false
+		}
+		u, err := url.Parse(raw)
+		return err == nil && u.Scheme == "" && u.Host == ""
+	}
+	return h.isRedirectAllowed(raw)
 }
 
 // isRedirectAllowed validates that a redirect URL is safe (CWE-601 protection).

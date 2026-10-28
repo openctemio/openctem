@@ -49,10 +49,13 @@ type SkipGroup struct {
 
 // infoReasons are expected outcomes: nothing is wrong with the scan.
 var infoReasons = map[string]bool{
-	SkipExcluded:            true,
-	SkipArchived:            true,
-	SkipIncompatibleType:    true,
-	SkipNotResolving:        true,
+	SkipExcluded:         true,
+	SkipArchived:         true,
+	SkipIncompatibleType: true,
+	SkipNotResolving:     true,
+	// A name only a wildcard record answers may not exist: expected, and
+	// passive runs still take it.
+	SkipWildcardOnly:        true,
 	scanzone.KindUnresolved: true,
 }
 
@@ -135,6 +138,7 @@ func skipGroups(limit int, rejected []rejectedTarget, r *resolvedTargets, notRes
 		c.count(SkipExcluded, r.Excluded, r.ExcludedNames)
 		c.count(SkipOutOfScope, r.OutOfScope, r.SkippedNames[SkipOutOfScope])
 		c.count(SkipNotConfirmed, r.Unconfirmed, r.SkippedNames[SkipNotConfirmed])
+		c.count(SkipWildcardOnly, r.WildcardOnly, r.SkippedNames[SkipWildcardOnly])
 		c.count(SkipTierExceeded, r.TierExceeded, r.SkippedNames[SkipTierExceeded])
 		c.count(SkipInternalNoZone, r.InternalOutsideZones, r.SkippedNames[SkipInternalNoZone])
 		c.count(SkipArchived, r.Archived, nil)

@@ -135,12 +135,26 @@ func TestWriteAheadRecordsRedactedBodyThenRunsHandler(t *testing.T) {
 	}
 }
 
-func TestWriteAheadLeavesOtherRolesAndReadsAlone(t *testing.T) {
+func TestWriteAheadCoversEveryRoleAndLeavesReadsAlone(t *testing.T) {
+	// Every state-changing request is written ahead, whatever role the
+	// session acts as (an unelevated super administrator acts as readonly).
+	for _, role := range []string{"super_admin", "ops_admin", "readonly"} {
+		repo := newFakeAuditRepo()
+		rec, called := writeAheadRequest(t, repo, role, http.MethodPost, `{"a":1}`)
+		if !called || rec.Code != http.StatusNoContent {
+			t.Fatalf("%s write must run: %d called=%v", role, rec.Code, called)
+		}
+		if log := waitForAudit(t, repo.created); log.Action != middleware.AuditActionWriteStarted {
+			t.Errorf("%s: write-ahead row missing, got %q", role, log.Action)
+		}
+		rec, called = writeAheadRequest(t, failingAuditRepo{newFakeAuditRepo()}, role, http.MethodPost, `{"a":1}`)
+		if called || rec.Code != http.StatusServiceUnavailable {
+			t.Errorf("%s write must be refused when the audit row fails: %d called=%v", role, rec.Code, called)
+		}
+	}
 	for _, c := range []struct{ role, method string }{
-		{"ops_admin", http.MethodPost},
-		{"readonly", http.MethodDelete},
 		{"super_admin", http.MethodGet},
-		{"super_admin", http.MethodHead},
+		{"readonly", http.MethodHead},
 	} {
 		rec, called := writeAheadRequest(t, failingAuditRepo{newFakeAuditRepo()}, c.role, c.method, "")
 		if !called || rec.Code != http.StatusNoContent {

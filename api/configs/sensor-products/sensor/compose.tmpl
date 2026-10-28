@@ -95,6 +95,9 @@ services:
 {{- end}}
     volumes:
       # One data volume: state/, outbox/ and content/ (see below).
+      # Keep it a named volume: Docker creates it with the sensor's owner. A host
+      # directory here must first be given to the sensor's user (sudo chown -R
+      # 999:999 <dir>). Guide: https://docs.openctem.io/sensors/run-the-sensor/
       - data:/var/lib/openctem
 {{- if isDaemon .Sensor}}
       # The sensor-local policy and the kill switch, read-only.

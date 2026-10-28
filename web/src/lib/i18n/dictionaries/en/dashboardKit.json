@@ -74,5 +74,11 @@
   "dashboardKit.target.met": "on target",
   "dashboardKit.target.missed": "off target",
   "dashboardKit.target.near": "close to target",
-  "dashboardKit.target.unmeasured": "not measured"
+  "dashboardKit.target.unmeasured": "not measured",
+  "dashboardKit.tooltip.allZero": "All at 0",
+  "dashboardKit.tooltip.moreAtZero": "{n} more at 0",
+  "dashboardKit.tooltip.net": "Net change",
+  "dashboardKit.tooltip.total": "Total",
+  "dashboardKit.tooltip.vsPrevious": "vs previous",
+  "dashboardKit.tooltip.week": "Week of {range}"
 }

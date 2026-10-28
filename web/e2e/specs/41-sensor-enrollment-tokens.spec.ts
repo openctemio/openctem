@@ -36,23 +36,27 @@ async function seriousAxeIn(page: Page, selector: string) {
 }
 
 for (const width of [1440, 390]) {
-  test(`enrollment tokens tab and create form at ${width}px`, async ({ page }) => {
-    await page.setViewportSize({ width, height: 900 })
-    await page.goto('/sensors?tab=tokens')
-    const panel = page.getByTestId('enrollment-tokens')
-    await expect(panel).toBeVisible({ timeout: 30_000 })
-    await expect(panel.getByText('Enrollment tokens').first()).toBeVisible()
-    // The panel itself (the page's tab strip is shared by every tab).
-    expect(await seriousAxeIn(page, '[data-testid=enrollment-tokens]')).toEqual([])
+  test(
+    `enrollment tokens tab and create form at ${width}px`,
+    { tag: ['@sensors'] },
+    async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 })
+      await page.goto('/sensors?tab=tokens')
+      const panel = page.getByTestId('enrollment-tokens')
+      await expect(panel).toBeVisible({ timeout: 30_000 })
+      await expect(panel.getByText('Enrollment tokens').first()).toBeVisible()
+      // The panel itself (the page's tab strip is shared by every tab).
+      expect(await seriousAxeIn(page, '[data-testid=enrollment-tokens]')).toEqual([])
 
-    await panel.getByRole('button', { name: 'Create token' }).click()
-    const dialog = page.getByRole('dialog')
-    await expect(dialog.getByLabel('Name')).toBeVisible()
-    await expect(dialog.getByRole('button', { name: 'Create token' })).toBeDisabled()
-    const sideways = await page.evaluate(
-      () => document.documentElement.scrollWidth - document.documentElement.clientWidth
-    )
-    expect(sideways).toBeLessThanOrEqual(0)
-    expect(await seriousAxeIn(page, '[role=dialog]')).toEqual([])
-  })
+      await panel.getByRole('button', { name: 'Create token' }).click()
+      const dialog = page.getByRole('dialog')
+      await expect(dialog.getByLabel('Name')).toBeVisible()
+      await expect(dialog.getByRole('button', { name: 'Create token' })).toBeDisabled()
+      const sideways = await page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+      )
+      expect(sideways).toBeLessThanOrEqual(0)
+      expect(await seriousAxeIn(page, '[role=dialog]')).toEqual([])
+    }
+  )
 }

@@ -36,6 +36,7 @@ var registry = map[Code]Spec{
 	CodeRateLimitExceeded:     {http.StatusTooManyRequests, "Too many requests. Wait a moment and try again."},
 	CodeUpstreamError:         {http.StatusBadGateway, "A service this depends on did not answer correctly. Try again later."},
 	CodeMFAEnrollmentRequired: {http.StatusForbidden, "Your organization requires two-factor authentication. Sign in again to set it up."},
+	CodeReauthRequired:        {http.StatusForbidden, "For your security, sign in again to set up two-factor authentication."},
 	CodeApprovalRequired:      {http.StatusForbidden, "This change needs an approver. Submit a request instead."},
 	CodeInvalidFilter:         {http.StatusBadRequest, "The filter is not valid. Check the fields and values."},
 	CodeInvalidInclude:        {http.StatusBadRequest, "The include parameter is not valid."},
@@ -57,6 +58,7 @@ var registry = map[Code]Spec{
 	CodeIntegrationRateLimited:           {http.StatusTooManyRequests, "The service is limiting requests. Wait a minute and test again."},
 	CodeIntegrationUpstreamError:         {http.StatusBadGateway, "The service answered with an error. Try again later."},
 	CodeIntegrationTestFailed:            {http.StatusFailedDependency, "The connection test failed. Check the settings and test again."},
+	CodeIntegrationEmailRelayPolicy:      {http.StatusUnprocessableEntity, "This mail server does not meet the service rules: use port 465, 587 or 2525 with a username, a password and TLS. Sending is stopped until you edit it and test again."},
 
 	// Codes call sites already send (ad hoc before the registry).
 	CodeContentSigningUnavailable: {http.StatusServiceUnavailable, "Content signing is not available right now."},
@@ -73,7 +75,21 @@ var registry = map[Code]Spec{
 	CodeTeamPrivilegedOwnerOnly: {http.StatusForbidden, "Only the organization owner can change the members of a team that carries a privileged role."},
 	CodeTeamExternalFullData:    {http.StatusForbidden, "Someone outside your organization gets full data access only through a role given to them directly, never through a team."},
 	CodeTeamSelfJoin:            {http.StatusForbidden, "You cannot add yourself to a team that carries roles. Ask the organization owner."},
+	// Retest of a finding (docs/architecture/finding-retest-strategy.md);
+	// details.reason carries the retest reason code.
+	CodeRetestNotAvailable:     {http.StatusUnprocessableEntity, "This finding cannot be retested automatically. The retest panel says why."},
+	CodeRetestNoSensor:         {http.StatusUnprocessableEntity, "No online sensor of your organization can re-check this finding."},
+	CodeRetestNoCheckSensor:    {http.StatusUnprocessableEntity, "No online sensor of your organization can run custom retest checks. Update a sensor, then retest."},
+	CodeRetestNoTemplateSensor: {http.StatusUnprocessableEntity, "No online sensor has the template release this finding was found with. Update the sensor's templates, then retest."},
 }
+
+// Retest codes, registered above.
+const (
+	CodeRetestNotAvailable     Code = "RETEST_NOT_AVAILABLE"
+	CodeRetestNoSensor         Code = "RETEST_NO_SENSOR"
+	CodeRetestNoCheckSensor    Code = "RETEST_NO_CHECK_SENSOR"
+	CodeRetestNoTemplateSensor Code = "RETEST_NO_TEMPLATE_SENSOR"
+)
 
 // Integration and ad hoc codes, registered above.
 const (
@@ -87,6 +103,7 @@ const (
 	CodeIntegrationRateLimited           Code = "INTEGRATION_RATE_LIMITED"
 	CodeIntegrationUpstreamError         Code = "INTEGRATION_UPSTREAM_ERROR"
 	CodeIntegrationTestFailed            Code = "INTEGRATION_TEST_FAILED"
+	CodeIntegrationEmailRelayPolicy      Code = "INTEGRATION_EMAIL_RELAY_POLICY"
 
 	CodeContentSigningUnavailable Code = "CONTENT_SIGNING_UNAVAILABLE"
 	CodeContentRefused            Code = "CONTENT_REFUSED"

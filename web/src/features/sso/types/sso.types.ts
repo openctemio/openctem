@@ -103,6 +103,8 @@ export interface UpdateIdentityProviderRequest {
 export interface SSOAuthorizeResponse {
   authorization_url: string
   state: string
+  /** One-time secret kept in an HttpOnly cookie and sent back with the callback. */
+  browser_binding: string
 }
 
 export interface SSOCallbackResponse {

@@ -69,6 +69,26 @@ func IsDelegatedCredential(ctx context.Context) bool {
 	return IsAPIKeyAuthenticated(ctx)
 }
 
+// ReadsOnOwnScope reports whether a request's data reads are confined to the
+// user's scope rows even if the user holds a full-data role: every delegated
+// credential, except an MCP connection its person allowed to read all
+// organization data (RFC-062 MA25) while that person still holds a full-data
+// role (the authorization server decides that on every request, so a role
+// lost since consent is scoped at once). It is only for data-scope paths
+// (datascope.Caller.APIKey); an approval or any other decision that must be a
+// person's own keeps asking IsDelegatedCredential.
+func ReadsOnOwnScope(ctx context.Context) bool {
+	if !IsDelegatedCredential(ctx) {
+		return false
+	}
+	if GetAuthProvider(ctx) == AuthProviderMCPOAuth {
+		if p := GetMCPPrincipal(ctx); p != nil && p.FullData {
+			return false
+		}
+	}
+	return true
+}
+
 // APIKeyAuthenticator is the slice of the apikey service the middleware needs.
 // Declared here (not imported from the app package) so the middleware depends
 // only on the domain type. Satisfied by *apikey.Service.

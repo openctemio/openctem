@@ -39,6 +39,10 @@ type SensorPlacement struct {
 	Eligible bool
 	// Busy: eligible, but it has no free scan slot now.
 	Busy bool
+	// Yields: eligible and free, but a less-loaded eligible sensor goes
+	// first while the command is fresh (claim_balance.go); it takes the
+	// command if that sensor has not claimed it once the window is over.
+	Yields bool
 	// Reasons are the checks that keep the command from this sensor, in
 	// the order the claim applies them (commanddom.Placement*).
 	Reasons []string
@@ -151,6 +155,9 @@ func (s *Service) ExplainPlacement(ctx context.Context, tenantID, commandID shar
 			return nil, err
 		}
 		out.Sensors = append(out.Sensors, sp)
+	}
+	if err := s.markYields(ctx, tenantID, cmd, out.Sensors, now); err != nil {
+		return nil, err
 	}
 	out.summarize()
 	if out.Eligible == 0 {
@@ -484,4 +491,52 @@ func (p *Placement) summarize() {
 		}
 		return 0
 	})
+}
+
+// markYields flags the eligible, free sensors that leave a fresh unassigned
+// scan command to a less-loaded one (claim_balance.go): the same loads and
+// order the claim uses, so the explanation says why the busier sensor did
+// not take it.
+func (s *Service) markYields(ctx context.Context, tenantID shared.ID, cmd *commanddom.Command, sensors []SensorPlacement, now time.Time) error {
+	window := s.claimBalanceWindow()
+	contester, ok := s.repo.(commanddom.ClaimContester)
+	if !ok || window <= 0 || cmd.SensorID != nil || cmd.Type != commanddom.CommandTypeScan {
+		return nil
+	}
+	since := cmd.CreatedAt
+	if cmd.ScheduledAt != nil && cmd.ScheduledAt.After(since) {
+		since = *cmd.ScheduledAt
+	}
+	if now.Sub(since) >= window {
+		return nil
+	}
+	var ids []shared.ID
+	for _, sp := range sensors {
+		if sp.Eligible && !sp.Busy {
+			ids = append(ids, sp.SensorID)
+		}
+	}
+	if len(ids) < 2 {
+		return nil
+	}
+	loads, err := contester.SensorLoads(ctx, tenantID, ids)
+	if err != nil {
+		return fmt.Errorf("read sensor loads: %w", err)
+	}
+	var best *commanddom.SensorLoad
+	for _, id := range ids {
+		if l, ok := loads[id]; ok && l.Free > 0 && (best == nil || l.LessLoaded(*best)) {
+			best = &l
+		}
+	}
+	if best == nil {
+		return nil
+	}
+	for i := range sensors {
+		sp := &sensors[i]
+		if l, ok := loads[sp.SensorID]; ok && sp.Eligible && !sp.Busy && best.LessLoaded(l) {
+			sp.Yields = true
+		}
+	}
+	return nil
 }

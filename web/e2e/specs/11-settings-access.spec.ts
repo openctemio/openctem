@@ -20,15 +20,19 @@ import { getE2EConfig } from '../helpers/env'
  * E2E_LIMITED_PASSWORD, or it is skipped.
  */
 
-test('SSO settings explain that the platform administrator configures SSO', async ({ page }) => {
-  await page.goto('/settings/integrations/saml')
-  await expect(page.getByText(/SSO is configured by your platform administrator/)).toBeVisible({
-    timeout: 30_000,
-  })
-  expect(new URL(page.url()).pathname).toBe('/settings/authentication')
-})
+test(
+  'SSO settings explain that the platform administrator configures SSO',
+  { tag: ['@settings'] },
+  async ({ page }) => {
+    await page.goto('/settings/integrations/saml')
+    await expect(page.getByText(/SSO is configured by your platform administrator/)).toBeVisible({
+      timeout: 30_000,
+    })
+    expect(new URL(page.url()).pathname).toBe('/settings/authentication')
+  }
+)
 
-test('domain proof opens in Scoping > Scope', async ({ page }) => {
+test('domain proof opens in Scoping > Scope', { tag: ['@settings'] }, async ({ page }) => {
   // Domain verification for attack-surface management: the Domain proof route tab.
   await page.goto('/scope/domain-proof')
   await expect(page.getByRole('heading', { name: 'Domain proof' })).toBeVisible({
@@ -43,18 +47,22 @@ test('domain proof opens in Scoping > Scope', async ({ page }) => {
   expect(new URL(page.url()).pathname).toBe('/scope/domain-proof')
 })
 
-base('SCIM tokens: no Generate token for a member or viewer', async ({ page }) => {
-  const cfg = getE2EConfig()
-  const email = process.env.E2E_LIMITED_EMAIL
-  const password = process.env.E2E_LIMITED_PASSWORD
-  base.skip(!cfg.ok || !email || !password, 'Set E2E_LIMITED_EMAIL / E2E_LIMITED_PASSWORD')
-  if (!cfg.ok) return
+base(
+  'SCIM tokens: no Generate token for a member or viewer',
+  { tag: ['@settings'] },
+  async ({ page }) => {
+    const cfg = getE2EConfig()
+    const email = process.env.E2E_LIMITED_EMAIL
+    const password = process.env.E2E_LIMITED_PASSWORD
+    base.skip(!cfg.ok || !email || !password, 'Set E2E_LIMITED_EMAIL / E2E_LIMITED_PASSWORD')
+    if (!cfg.ok) return
 
-  await loginAs(page, { ...cfg.config, userEmail: email!, userPassword: password! })
-  await page.goto('/settings/scim')
-  await expect(page.getByRole('heading', { name: 'Directory sync (SCIM)' })).toBeVisible({
-    timeout: 30_000,
-  })
-  await expect(page.getByText("Managed by your team's owners and admins")).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Generate token' })).toHaveCount(0)
-})
+    await loginAs(page, { ...cfg.config, userEmail: email!, userPassword: password! })
+    await page.goto('/settings/scim')
+    await expect(page.getByRole('heading', { name: 'Directory sync (SCIM)' })).toBeVisible({
+      timeout: 30_000,
+    })
+    await expect(page.getByText("Managed by your team's owners and admins")).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Generate token' })).toHaveCount(0)
+  }
+)

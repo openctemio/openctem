@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"golang.org/x/net/idna"
+	"golang.org/x/net/publicsuffix"
 )
 
 // Discovered host names (docs/architecture/asset-identity-resolution.md,
@@ -90,4 +91,18 @@ func EncodedRemnant(name string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// IsRegistrableDomain reports whether name (a host name, any case, one
+// trailing dot allowed) is a registrable domain: the public suffix plus one
+// label ("example.com", "example.co.uk"). A DNS wildcard record never
+// answers for the name it sits under (RFC 4592), so such a name can never
+// resolve only through a wildcard of its own zone.
+func IsRegistrableDomain(name string) bool {
+	h := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(name)), ".")
+	if h == "" || strings.Contains(h, "*") {
+		return false
+	}
+	reg, err := publicsuffix.EffectiveTLDPlusOne(h)
+	return err == nil && reg == h
 }
