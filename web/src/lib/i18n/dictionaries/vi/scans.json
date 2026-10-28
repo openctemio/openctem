@@ -2079,6 +2079,7 @@
   "scans.stage.listLabel": "Các giai đoạn của lần chạy này",
   "scans.stage.loadFailed": "Không tải được các giai đoạn của lần chạy này.",
   "scans.stage.none": "Lần chạy này chưa có giai đoạn nào được lên kế hoạch.",
+  "scans.stage.noneSettled": "Không có kế hoạch giai đoạn nào được ghi cho lần chạy này.",
   "scans.stage.planned": "dự kiến",
   "scans.stage.platform": "Sensor dùng chung",
   "scans.stage.queued": "{count} đang chờ",
