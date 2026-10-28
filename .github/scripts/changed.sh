@@ -21,7 +21,6 @@
 #                    is enough; PR_LABELS (the event's label names as a JSON
 #                    array) is the fallback.
 #
-<<<<<<< HEAD
 #   range=<git range>  the range api/web/docs/migrations were computed from.
 #   incremental=true|false, since=<sha>  (pull request only) the answers above are
 #                    measured against the PR's last commit whose required checks
@@ -39,15 +38,8 @@
 # content release-provenance.sh verifies skip the heavy suites. merge_group and
 # pushes never use any of this: they run the full tier of what they changed.
 #
-# Documentation never counts as code for api/web: Markdown anywhere, all of
-# api/docs/, and the agent notes under .claude/. A docs-only PR therefore runs
-||||||| 8667988729
-# Documentation never counts as code for api/web: Markdown anywhere, all of
-# api/docs/, and the agent notes under .claude/. A docs-only PR therefore runs
-=======
 # Documentation never counts as code for api/web: Markdown anywhere (which
 # includes the changelog fragments in api/changelog.d/), all of api/docs/ and docs/, and the agent notes under .claude/. A docs-only PR therefore runs
->>>>>>> origin/develop
 # none of the Go or web suites (Docs check, the changelog check in API CI's
 # `changes` job and the secret scan still run). Exception: Markdown that a
 # test generates and compares (api/docs/configuration/environment-variables.md,
