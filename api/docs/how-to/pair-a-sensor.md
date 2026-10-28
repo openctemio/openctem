@@ -27,6 +27,13 @@ Keep the sensor's data directory on a persistent volume (one volume at
 directory must be `0700` and the files `0600`, owned by the sensor's user;
 the sensor refuses to start otherwise and prints the command that fixes it.
 
+Use a named volume (`-v openctem-sensor-data:/var/lib/openctem`, as the install
+commands do): Docker creates it with the sensor's owner. A host directory
+mounted instead must first be given to the sensor's user (`sudo chown -R
+999:999 <dir>`; 1001 on the per-tool images, 65532 on the slim image), or the
+sensor stops at start with the path, the owner and this fix. The complete
+guide is [Run the sensor](https://docs.openctem.io/sensors/run-the-sensor/).
+
 ## 2a. Default: the sensor shows a code
 
 Start the sensor (or run `openctemio-sensor pair`). It prints:

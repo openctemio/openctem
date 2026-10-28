@@ -18,7 +18,6 @@ import (
 	dashfactsapp "github.com/openctemio/openctem/api/internal/app/dashboard/facts"
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	scmappsvc "github.com/openctemio/openctem/api/internal/app/scmapp"
-	"github.com/openctemio/openctem/api/internal/app/supportaccess"
 	"github.com/openctemio/openctem/api/internal/infra/scm/githubapp"
 
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
@@ -611,17 +610,23 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			}
 			return h
 		}(),
-		FindingRetestCheck:   handler.NewFindingRetestCheckHandler(svc.RetestCheck, log),
-		FindingEvidenceItems: handler.NewFindingEvidenceItemsHandler(svc.Evidence, log),
-		JiraWebhook:          jiraWebhookHandler,
-		TicketMapping:        ticketMappingHandler,
-		ImportMapping:        newImportMappingHandler(svc, log),
-		GitHubWebhook:        githubWebhookHandler,
-		Exposure:             handler.NewExposureHandler(svc.Exposure, svc.User, v, log),
-		ThreatIntel:          newThreatIntelHandler(deps, v, log),
-		EmergingThreat:       emergingThreatHandler(svc, log),
-		CTEMID:               handler.NewCTEMIDHandler(svc.CTEMID, log),
-		CredentialImport:     handler.NewCredentialImportHandler(svc.CredentialImport, v, log),
+		FindingRetestCheck: handler.NewFindingRetestCheckHandler(svc.RetestCheck, log),
+		FindingEvidenceItems: func() *handler.FindingEvidenceItemsHandler {
+			h := handler.NewFindingEvidenceItemsHandler(svc.Evidence, log)
+			if svc.Pentest != nil {
+				h.SetPentestGate(svc.Pentest) // a pentest finding's evidence follows its campaign's rules
+			}
+			return h
+		}(),
+		JiraWebhook:      jiraWebhookHandler,
+		TicketMapping:    ticketMappingHandler,
+		ImportMapping:    newImportMappingHandler(svc, log),
+		GitHubWebhook:    githubWebhookHandler,
+		Exposure:         handler.NewExposureHandler(svc.Exposure, svc.User, v, log),
+		ThreatIntel:      newThreatIntelHandler(deps, v, log),
+		EmergingThreat:   emergingThreatHandler(svc, log),
+		CTEMID:           handler.NewCTEMIDHandler(svc.CTEMID, log),
+		CredentialImport: handler.NewCredentialImportHandler(svc.CredentialImport, v, log),
 
 		// Dashboard & Branch
 		Dashboard: handler.NewDashboardHandler(svc.Dashboard, log),
@@ -684,7 +689,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AdminVersionCheck:   handler.NewAdminVersionCheckHandler(svc.VersionCheck, repos.AdminAuditLog, log),
 		AdminConfiguration: handler.NewAdminConfigurationHandler(
 			configoverview.NewBuilder(cfg, platformSettings(repos), repos.Admin, os.LookupEnv), log),
-		AdminPlatformSettings: newAdminPlatformSettingsHandler(repos, svc, log),
+		AdminPlatformSettings: newAdminPlatformSettingsHandler(repos, svc, adminApprovals, log),
 
 		SecretStore:  handler.NewSecretStoreHandler(svc.SecretStore, v, log),
 		Tool:         handler.NewToolHandler(svc.Tool, v, log),
@@ -914,15 +919,11 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 	// Support access (RFC-063): owners grant, the named administrator reads
 	// through a live support session; both audit logs, owner emails.
-	if repos.SupportAccess != nil && repos.SupportRead != nil && svc.Audit != nil {
-		var mailer supportaccess.Mailer
-		if svc.Email != nil {
-			mailer = svc.Email
-		}
-		supportSvc := supportaccess.NewService(repos.SupportAccess, repos.SupportRead, repos.Admin, svc.Audit,
-			repos.AdminAuditLog, repos.Tenant, tenantNames{repo: repos.Tenant}, mailer, log)
+	if supportSvc := newSupportAccessService(repos, svc, log); supportSvc != nil {
 		handlers.SupportAccess = handler.NewSupportAccessHandler(supportSvc, log)
 		handlers.AdminSupport = handler.NewAdminSupportHandler(supportSvc, log)
+		// Signing out of the console ends the support sessions it opened.
+		adminConsoleSvc.SetSupportSessionEnder(supportSvc)
 	}
 
 	// Social OAuth handler (Google / GitHub / Microsoft). svc.OAuth is non-nil

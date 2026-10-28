@@ -31,54 +31,58 @@ async function seriousViolations(page: import('@playwright/test').Page) {
 for (const scheme of ['light', 'dark'] as const) {
   // 1920px: at narrower widths Last seen is one of the columns the table
   // drops to fit (column priority, 41-assets-service-facts).
-  test(`asset rows at 1920px in ${scheme}: one height, type under the name, a time`, async ({
-    page,
-  }, testInfo) => {
-    await page.setViewportSize({ width: 1920, height: 900 })
-    await page.emulateMedia({ colorScheme: scheme })
+  test(
+    `asset rows at 1920px in ${scheme}: one height, type under the name, a time`,
+    { tag: ['@assets'] },
+    async ({ page }, testInfo) => {
+      await page.setViewportSize({ width: 1920, height: 900 })
+      await page.emulateMedia({ colorScheme: scheme })
+      await page.goto('/assets')
+      const cells = page.getByTestId('asset-name-cell')
+      const seeded = await cells
+        .first()
+        .waitFor({ state: 'visible', timeout: 30_000 })
+        .then(() => true)
+        .catch(() => false)
+      test.skip(!seeded, 'no seeded assets')
+      await page.waitForLoadState('networkidle')
+
+      const heights = await page
+        .locator('main tbody tr')
+        .evaluateAll((rows) => rows.map((r) => Math.round(r.getBoundingClientRect().height)))
+      expect(new Set(heights).size, `row heights ${heights.join(',')}`).toBe(1)
+
+      await expect(page.getByRole('columnheader', { name: /^Type/ })).toHaveCount(0)
+      await expect(cells.first().locator('[data-slot="asset-type-line"]')).toBeVisible()
+      // Last seen is a time ("3 hours ago"), never the bare word "Active".
+      const lastSeen = page.locator('main tbody tr time').first()
+      await expect(lastSeen).toHaveText(/ago|now/)
+
+      expect(await seriousViolations(page)).toEqual([])
+      await testInfo.attach(`assets-1920-${scheme}.png`, {
+        body: await page.screenshot({ fullPage: true }),
+        contentType: 'image/png',
+      })
+    }
+  )
+}
+
+test(
+  'asset cards at 375px: no horizontal page scroll, no serious a11y violation',
+  { tag: ['@assets'] },
+  async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 375, height: 812 })
     await page.goto('/assets')
-    const cells = page.getByTestId('asset-name-cell')
-    const seeded = await cells
-      .first()
-      .waitFor({ state: 'visible', timeout: 30_000 })
-      .then(() => true)
-      .catch(() => false)
-    test.skip(!seeded, 'no seeded assets')
+    await expect(page.getByTestId('inventory-view-title')).toBeVisible({ timeout: 30_000 })
     await page.waitForLoadState('networkidle')
-
-    const heights = await page
-      .locator('main tbody tr')
-      .evaluateAll((rows) => rows.map((r) => Math.round(r.getBoundingClientRect().height)))
-    expect(new Set(heights).size, `row heights ${heights.join(',')}`).toBe(1)
-
-    await expect(page.getByRole('columnheader', { name: /^Type/ })).toHaveCount(0)
-    await expect(cells.first().locator('[data-slot="asset-type-line"]')).toBeVisible()
-    // Last seen is a time ("3 hours ago"), never the bare word "Active".
-    const lastSeen = page.locator('main tbody tr time').first()
-    await expect(lastSeen).toHaveText(/ago|now/)
-
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+    )
+    expect(overflow, 'horizontal page scroll on a phone').toBeLessThanOrEqual(0)
     expect(await seriousViolations(page)).toEqual([])
-    await testInfo.attach(`assets-1920-${scheme}.png`, {
+    await testInfo.attach('assets-375.png', {
       body: await page.screenshot({ fullPage: true }),
       contentType: 'image/png',
     })
-  })
-}
-
-test('asset cards at 375px: no horizontal page scroll, no serious a11y violation', async ({
-  page,
-}, testInfo) => {
-  await page.setViewportSize({ width: 375, height: 812 })
-  await page.goto('/assets')
-  await expect(page.getByTestId('inventory-view-title')).toBeVisible({ timeout: 30_000 })
-  await page.waitForLoadState('networkidle')
-  const overflow = await page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth
-  )
-  expect(overflow, 'horizontal page scroll on a phone').toBeLessThanOrEqual(0)
-  expect(await seriousViolations(page)).toEqual([])
-  await testInfo.attach('assets-375.png', {
-    body: await page.screenshot({ fullPage: true }),
-    contentType: 'image/png',
-  })
-})
+  }
+)
