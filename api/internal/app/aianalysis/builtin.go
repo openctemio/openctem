@@ -514,6 +514,10 @@ func (a *actor) do(ctx context.Context, k aidom.Kind, payload json.RawMessage, c
 		switch {
 		case !mayChange:
 			return a.comment(ctx, k, text, firstReason(reasons, a.conflict, confidence))
+		case v.Verdict == aidom.VerdictLikelyFalsePositive && a.userTriggered():
+			// The person who started this run could otherwise approve the
+			// request it files as the "second person" (RFC-132 D7).
+			return a.comment(ctx, k, text, reasonTriggeredByUser)
 		case v.Verdict == aidom.VerdictLikelyFalsePositive && a.p.Can("findings:write"):
 			return a.change(ctx, k, text, func() (ActionOutcome, error) {
 				err := a.e.commands.RequestFalsePositive(ctx, a.run.TenantID, a.finding, a.p.Analyst.ID, aiJustification(v.Reason))
@@ -537,6 +541,16 @@ func (a *actor) do(ctx context.Context, k aidom.Kind, payload json.RawMessage, c
 		if !mayChange || !a.p.Can("findings:severity") {
 			return a.comment(ctx, k, text, firstReason(reasons, a.conflict, confidence))
 		}
+		if a.userTriggered() {
+			// A downgrade becomes a request the triggering person could
+			// approve themselves (RFC-132 D7): leave it as a comment. When the
+			// finding cannot be read, fail closed the same way.
+			f, err := a.e.findings.GetByID(ctx, a.run.TenantID, a.finding)
+			to, perr := vulnerability.ParseSeverity(v.Severity)
+			if err != nil || perr != nil || vulnerability.IsSeverityDowngrade(f.Severity(), to) {
+				return a.comment(ctx, k, text, reasonTriggeredByUser)
+			}
+		}
 		return a.change(ctx, k, text, func() (ActionOutcome, error) {
 			requested, err := a.e.commands.ChangeSeverity(ctx, a.run.TenantID, a.finding, a.p.Analyst.ID, v.Severity, aiJustification(v.Reason))
 			if requested {
@@ -547,6 +561,15 @@ func (a *actor) do(ctx context.Context, k aidom.Kind, payload json.RawMessage, c
 	}
 	return Action{Kind: string(k), Outcome: ActionSkipped, Reason: "unknown_kind"}
 }
+
+// reasonTriggeredByUser: a run a person started never files a risk-lowering
+// request (false positive, severity downgrade), because that person could
+// approve it as the second person. The suggestion is left as a comment.
+const reasonTriggeredByUser = "triggered_by_user"
+
+// userTriggered reports whether a person started this run (on demand), as
+// opposed to a schedule or an event.
+func (a *actor) userTriggered() bool { return a.run.TriggeredBy != nil && !a.run.TriggeredBy.IsZero() }
 
 func firstReason(reasons []string, conflict bool, confidence float64) string {
 	switch {

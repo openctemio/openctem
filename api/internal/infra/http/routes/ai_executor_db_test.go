@@ -171,7 +171,18 @@ func (h *aiExecHarness) findingFor(a *aidom.Analyst, severity string) string {
 	return id
 }
 
+// analyze runs the analyst on a schedule (no person started it), so its
+// risk-lowering items become requests a person decides.
 func (h *aiExecHarness) analyze(a *aidom.Analyst, findingID, kind string) (*aianalysis.RunDetail, error) {
+	tid, _ := shared.IDFromString(h.org)
+	fid, _ := shared.IDFromString(findingID)
+	return h.executor.Analyze(context.Background(), aianalysis.AnalyzeRequest{
+		TenantID: tid, FindingID: fid, Kind: kind, AnalystID: &a.ID, Trigger: aidom.TriggerSchedule,
+	})
+}
+
+// analyzeOnDemand runs the analyst because the owner asked for it.
+func (h *aiExecHarness) analyzeOnDemand(a *aidom.Analyst, findingID, kind string) (*aianalysis.RunDetail, error) {
 	tid, _ := shared.IDFromString(h.org)
 	fid, _ := shared.IDFromString(findingID)
 	owner, _ := shared.IDFromString(h.owner.id)
@@ -369,5 +380,49 @@ func TestAIExecutor_NeverOverwritesAConcurrentChange_DB(t *testing.T) {
 	}
 	if sev != "low" {
 		t.Fatalf("the analyst overwrote a person's change: severity %s", sev)
+	}
+}
+
+// A person who starts a run could approve the risk-lowering request it files
+// as the "second person" (RFC-132 D7). On demand, the analyst therefore
+// leaves a false positive or a severity downgrade as a comment; raising
+// severity still goes through.
+func TestAIExecutor_OnDemandRunFilesNoRiskLoweringRequest_DB(t *testing.T) {
+	h := newAIExecHarness(t)
+	a := h.analyst("triage")
+	f := h.findingFor(a, "high")
+	h.model.reply = `{"suggestions":[
+ {"kind":"verdict","payload":{"verdict":"likely_false_positive","reason":"Test fixture only."},"confidence":0.9,"evidence":[{"ref":"bundle:finding.title"}]},
+ {"kind":"severity","payload":{"severity":"low","reason":"Internal only."},"confidence":0.9,"evidence":[{"ref":"bundle:finding.title"}]}
+]}`
+	d, err := h.analyzeOnDemand(a, f, "triage.v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := outcomes(d); got["verdict"] != aianalysis.ActionCommented || got["severity"] != aianalysis.ActionCommented {
+		t.Fatalf("on-demand risk-lowering outcomes: %v, want comments only", got)
+	}
+	var fp, sevReq int
+	if err := h.db.QueryRow(`SELECT count(*) FROM finding_status_approvals WHERE finding_id = $1`, f).Scan(&fp); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.db.QueryRow(`SELECT count(*) FROM finding_severity_requests WHERE finding_id = $1`, f).Scan(&sevReq); err != nil {
+		t.Fatal(err)
+	}
+	if fp != 0 || sevReq != 0 {
+		t.Fatalf("an on-demand run filed %d false-positive and %d severity requests, want none", fp, sevReq)
+	}
+
+	// Raising severity lowers no risk: it still applies on demand.
+	f2 := h.findingFor(a, "medium")
+	h.model.reply = `{"suggestions":[
+ {"kind":"severity","payload":{"severity":"high","reason":"Internet facing."},"confidence":0.9,"evidence":[{"ref":"bundle:finding.title"}]}
+]}`
+	d, err = h.analyzeOnDemand(a, f2, "triage.v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := outcomes(d); got["severity"] != aianalysis.ActionApplied {
+		t.Fatalf("on-demand severity raise outcome: %v, want applied", got)
 	}
 }
