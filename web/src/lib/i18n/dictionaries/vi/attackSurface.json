@@ -226,7 +226,7 @@
   "attackSurface.overview.change.changed": "Đã đổi",
   "attackSurface.overview.change.removed": "Đã gỡ",
   "attackSurface.overview.criticalInternetFacing": "Tài sản quan trọng hướng Internet",
-  "attackSurface.overview.criticalInternetFacingInfo": "Tài sản hướng Internet có mức quan trọng nghiêm trọng hoặc cao. Đây là nhóm cần theo dõi, không phải rủi ro đang mở: các điểm phơi nhiễm đang mở được liệt kê bên dưới.",
+  "attackSurface.overview.criticalInternetFacingInfo": "Tài sản hướng Internet có mức độ quan trọng nghiêm trọng hoặc cao. Đây là nhóm cần theo dõi, không phải rủi ro đang mở: các điểm phơi nhiễm đang mở được liệt kê bên dưới.",
   "attackSurface.overview.description": "Những gì tổ chức của bạn đang phơi bày ra ngoài và thay đổi ra sao trong tuần này.",
   "attackSurface.overview.errorDescription": "Hãy tải lại trang để thử lại.",
   "attackSurface.overview.errorTitle": "Không tải được dữ liệu bề mặt tấn công",
