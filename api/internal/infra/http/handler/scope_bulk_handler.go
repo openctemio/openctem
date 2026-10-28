@@ -25,6 +25,12 @@ type BulkCreateScopeTargetsRequest struct {
 	// Origin: refusal_fix when the entries fix the targets a scan refused;
 	// otherwise the entries are recorded as imported.
 	Origin string `json:"origin" validate:"omitempty,oneof=refusal_fix"`
+	// ExpiresInDays makes every entry of the batch expire (1..365, and the
+	// organization's limit per item); omitted: permanent.
+	ExpiresInDays *int `json:"expires_in_days" validate:"omitempty,min=1,max=365"`
+	// MaxTier is the deepest probe every entry allows (t0, t1, t2);
+	// omitted: the organization's default.
+	MaxTier string `json:"max_tier" validate:"omitempty,oneof=t0 t1 t2"`
 }
 
 // BulkScopeTargetItem is one entry of a bulk add.
@@ -61,7 +67,7 @@ type BulkCreateScopeTargetsResponse struct {
 
 // BulkCreateTargets handles POST /api/v1/scope/targets/bulk
 // @Summary      Add many scope entries
-// @Description  Add up to 200 permanent scope entries in one request (a pasted list, inventory assets, or the targets a scan refused). Each item is added as POST /scope/targets would add it: platform guardrails, duplicates, the Strict request and approval rules and the signer ledger apply per item, and each added entry is audited. A caller who adds entries directly needs a recent re-authentication once for the batch (403 STEP_UP_REQUIRED, nothing written); the administrators get one notice for the batch. Every item gets a result: created (with the entry's status), exists (the organization's existing entry) or refused (a code and a message).
+// @Description  Add up to 200 scope entries in one request (permanent, or all expiring after expires_in_days) (a pasted list, inventory assets, or the targets a scan refused). Each item is added as POST /scope/targets would add it: platform guardrails, duplicates, the Strict request and approval rules and the signer ledger apply per item, and each added entry is audited. A caller who adds entries directly needs a recent re-authentication once for the batch (403 STEP_UP_REQUIRED, nothing written); the administrators get one notice for the batch. Every item gets a result: created (with the entry's status), exists (the organization's existing entry) or refused (a code and a message).
 // @Tags         Scope
 // @Accept       json
 // @Produce      json
@@ -95,6 +101,9 @@ func (h *ScopeHandler) BulkCreateTargets(w http.ResponseWriter, r *http.Request)
 		CreatedBy: middleware.GetUserID(r.Context()),
 		Actor:     scopeActor(r),
 		Origin:    scopedom.Origin(req.Origin),
+
+		ExpiresInDays: req.ExpiresInDays,
+		MaxTier:       req.MaxTier,
 	})
 	if err != nil {
 		h.handleServiceError(w, "Scope target", err)
