@@ -68,19 +68,48 @@ func cveListOrderBy(s vulnerability.CVEListSort) (string, error) {
 	return strings.Join(append(parts, "r.cve_id "+cveDir), ", "), nil
 }
 
+// cveListSettings are the transaction settings of the list read: it is one
+// grouping statement under the heavy-read limiter, so JIT compilation (whose
+// cost dwarfs a sub-second plan: seconds of CPU at 300k findings) is off,
+// and work_mem holds the per-CVE and per-asset hash tables in memory.
+const cveListSettings = "SET LOCAL jit = off; SET LOCAL work_mem = '64MB'"
+
 // ListCVEExposures returns one page of the vulnerabilities list as the
 // caller, with its total and the summary counts.
 func (r *FindingRepository) ListCVEExposures(ctx context.Context, q vulnerability.CVEListQuery) (*vulnerability.CVEList, error) {
-	if err := checkFindingWhere(q.Where); err != nil {
+	query, args, page, err := cveListStatement(q)
+	if err != nil {
 		return nil, err
 	}
+	tx, err := r.beginFindingRead(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, cveListSettings); err != nil {
+		return nil, fmt.Errorf("cve list settings: %w", err)
+	}
+	rows, err := tx.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, findingTimeout(fmt.Errorf("list cve exposures: %w", err))
+	}
+	defer rows.Close()
+	return r.scanCVEList(ctx, tx, q.Where, rows, page)
+}
+
+// cveListStatement builds the list statement: page rows, total and summary
+// in one read over the caller's compiled WHERE.
+func cveListStatement(q vulnerability.CVEListQuery) (string, []any, pagination.Pagination, error) {
+	if err := checkFindingWhere(q.Where); err != nil {
+		return "", nil, pagination.Pagination{}, err
+	}
 	if q.AssetScope == nil {
-		return nil, fmt.Errorf("cve list: no asset scope")
+		return "", nil, pagination.Pagination{}, fmt.Errorf("cve list: no asset scope")
 	}
 	o := q.Options
 	orderBy, err := cveListOrderBy(o.Sort)
 	if err != nil {
-		return nil, err
+		return "", nil, pagination.Pagination{}, err
 	}
 	page := pagination.New(o.Page, o.PerPage)
 	w := q.Where
@@ -130,22 +159,20 @@ func (r *FindingRepository) ListCVEExposures(ctx context.Context, q vulnerabilit
 	open := vulnerability.OpenStatusSQL("s.status")
 	pastSLA := "s.sla_status IN ('overdue', 'exceeded')"
 	//nolint:gosec // G202: the compiled filter, constants and placeholders only, no request text
-	query := scopedFindingsCTE(w, "findings.cve_id IS NOT NULL") + `,
-	agg AS (
+	query := cveListScopedCTE(w) + `,
+	-- Per CVE: hash aggregation over 20k-scale groups, no distinct counts
+	-- (those force a sort of every scoped finding).
+	agg0 AS (
 		SELECT s.cve_id,
 			COUNT(*) AS total,
 			COUNT(*) FILTER (WHERE ` + open + `) AS open_count,
-			COUNT(DISTINCT s.asset_id) AS assets,
-			COUNT(DISTINCT s.asset_id) FILTER (WHERE ` + asset.InternetFacingSQL("a") + `) AS internet,
-			COUNT(DISTINCT s.asset_id) FILTER (WHERE COALESCE(a.is_crown_jewel, FALSE)) AS crown,
 			MIN(CASE s.priority_class WHEN 'P0' THEN 0 WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 WHEN 'P3' THEN 3 END) AS prio_rank,
 			MIN(CASE s.severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 WHEN 'info' THEN 5 ELSE 6 END) AS sev_rank,
 			MAX(s.cvss_score) AS f_cvss,
 			MAX(s.epss_score) AS f_epss,
 			BOOL_OR(COALESCE(s.is_in_kev, FALSE)) AS f_kev,
 			BOOL_OR(COALESCE(s.exploit_available, FALSE)) AS f_exploit,
-			BOOL_OR(CASE WHEN jsonb_typeof(s.metadata->'fixed_versions') = 'array'
-				THEN jsonb_array_length(s.metadata->'fixed_versions') > 0 ELSE FALSE END) AS f_fix,
+			BOOL_OR(s.f_fix) AS f_fix,
 			COUNT(*) FILTER (WHERE ` + open + ` AND ` + pastSLA + `) AS past_sla,
 			MIN(s.sla_deadline) FILTER (WHERE ` + open + ` AND NOT (` + pastSLA + `)) AS next_due,
 			COUNT(*) FILTER (WHERE ` + open + ` AND EXISTS (
@@ -154,8 +181,22 @@ func (r *FindingRepository) ListCVEExposures(ctx context.Context, q vulnerabilit
 			MIN(s.first_detected_at) AS first_seen,
 			MAX(s.last_seen_at) AS last_seen
 		FROM scoped s
-		LEFT JOIN assets a ON a.tenant_id = s.tenant_id AND a.id = s.asset_id
 		GROUP BY s.cve_id
+	),
+	-- Per CVE: the distinct assets, from the narrow (CVE, asset) pairs.
+	reach AS (
+		SELECT p.cve_id,
+			COUNT(*) AS assets,
+			COUNT(*) FILTER (WHERE ` + asset.InternetFacingSQL("a") + `) AS internet,
+			COUNT(*) FILTER (WHERE COALESCE(a.is_crown_jewel, FALSE)) AS crown
+		FROM (SELECT DISTINCT s.cve_id, s.asset_id FROM scoped s) p
+		LEFT JOIN assets a ON a.tenant_id = ` + tenantArg + ` AND a.id = p.asset_id
+		GROUP BY p.cve_id
+	),
+	agg AS (
+		SELECT agg0.*, COALESCE(reach.assets, 0) AS assets, COALESCE(reach.internet, 0) AS internet,
+			COALESCE(reach.crown, 0) AS crown
+		FROM agg0 LEFT JOIN reach ON reach.cve_id = agg0.cve_id
 	),
 	vrows AS MATERIALIZED (
 		SELECT agg.*,
@@ -210,18 +251,11 @@ func (r *FindingRepository) ListCVEExposures(ctx context.Context, q vulnerabilit
 	FROM sm
 	LEFT JOIN LATERAL (SELECT * FROM ranked WHERE rn > ` + lo + ` AND rn <= ` + hi + `) p ON TRUE
 	ORDER BY p.rn`
+	return query, args, page, nil
+}
 
-	tx, err := r.beginFindingRead(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = tx.Rollback() }()
-	rows, err := tx.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, findingTimeout(fmt.Errorf("list cve exposures: %w", err))
-	}
-	defer rows.Close()
-
+// scanCVEList reads the list statement's rows and fills each row's details.
+func (r *FindingRepository) scanCVEList(ctx context.Context, tx *sql.Tx, w *filterspec.Where, rows *sql.Rows, page pagination.Pagination) (*vulnerability.CVEList, error) {
 	out := &vulnerability.CVEList{Data: make([]vulnerability.CVEListItem, 0, capHint(page.Limit()))}
 	for rows.Next() {
 		var (
@@ -247,7 +281,7 @@ func (r *FindingRepository) ListCVEExposures(ctx context.Context, q vulnerabilit
 			continue
 		}
 		it := vulnerability.CVEListItem{
-			CVEID: cve.String, InCatalog: inCatalog.Bool, Title: title.String, Aliases: []string{},
+			CVEID: cve.String, InCatalog: inCatalog.Bool, Title: title.String, Aliases: []string{}, EPSSTrend: []vulnerability.EPSSPoint{},
 			Severity: severity.String, CVSSVersion: cvssVersion.String,
 			KEV: kev.Bool, KEVDueDate: coverageTime(kevDue), KEVRansomware: ransomware.Bool,
 			Exploit: exploit.Bool, ExploitMaturity: maturity.String,
@@ -280,6 +314,22 @@ func (r *FindingRepository) ListCVEExposures(ctx context.Context, q vulnerabilit
 	return out, nil
 }
 
+// cveListScopedCTE is the list's scoped findings (the compiled WHERE, as
+// the caller), materialized once with only the columns the grouping reads:
+// the fix flag is computed here so the wide metadata column is never
+// carried through the aggregation.
+func cveListScopedCTE(w *filterspec.Where) string {
+	return `WITH scoped AS MATERIALIZED (
+		SELECT findings.id, findings.tenant_id, findings.asset_id, findings.cve_id, findings.status,
+			findings.priority_class, findings.severity, findings.cvss_score, findings.epss_score,
+			findings.is_in_kev, findings.exploit_available, findings.sla_status, findings.sla_deadline,
+			findings.first_detected_at, findings.last_seen_at,
+			(CASE WHEN jsonb_typeof(findings.metadata->'fixed_versions') = 'array'
+				THEN jsonb_array_length(findings.metadata->'fixed_versions') > 0 ELSE FALSE END) AS f_fix
+		FROM findings WHERE (` + w.SQL + `) AND findings.cve_id IS NOT NULL
+	)`
+}
+
 func cveListFloat(v sql.NullFloat64) *float64 {
 	if !v.Valid {
 		return nil
@@ -288,8 +338,8 @@ func cveListFloat(v sql.NullFloat64) *float64 {
 	return &f
 }
 
-// cveListDetails fills the aliases, affected products and fixed versions of
-// a page's rows: three statements whatever the page size. Products and
+// cveListDetails fills the aliases, EPSS trend, affected products and fixed
+// versions of a page's rows: four statements whatever the page size. Products and
 // fixes come from the same scoped findings as the counts.
 func (r *FindingRepository) cveListDetails(ctx context.Context, tx *sql.Tx, w *filterspec.Where, items []vulnerability.CVEListItem) error {
 	if len(items) == 0 {
@@ -323,6 +373,16 @@ func (r *FindingRepository) cveListDetails(ctx context.Context, tx *sql.Tx, w *f
 	}
 	arows.Close()
 
+	// The page's rows are CVEs the caller has a finding of in scope, so
+	// their EPSS history may be shown.
+	trends, err := epssTrends(ctx, tx, cves)
+	if err != nil {
+		return err
+	}
+	for cve, pts := range trends {
+		items[idx[cve]].EPSSTrend = pts
+	}
+
 	cveArg := "$" + strconv.Itoa(w.NextArg)
 	args := append(append([]any{}, w.Args...), pq.Array(cves))
 
@@ -330,8 +390,8 @@ func (r *FindingRepository) cveListDetails(ctx context.Context, tx *sql.Tx, w *f
 	prows, err := tx.QueryContext(ctx, scopedFindingsCTE(w, "findings.cve_id = ANY("+cveArg+"::text[]) AND findings.component_id IS NOT NULL")+`
 	SELECT s.cve_id, p.name, sv.raw, COUNT(*)
 	FROM scoped s
-	JOIN software_versions sv ON sv.id = s.component_id
-	JOIN software_products p ON p.id = sv.product_id
+	JOIN software_versions sv ON sv.id = s.component_id AND (sv.tenant_id IS NULL OR sv.tenant_id = s.tenant_id)
+	JOIN software_products p ON p.id = sv.product_id AND (p.tenant_id IS NULL OR p.tenant_id = s.tenant_id)
 	GROUP BY s.cve_id, p.name, sv.raw
 	ORDER BY s.cve_id, COUNT(*) DESC, p.name, sv.raw`, args...)
 	if err != nil {

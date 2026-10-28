@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/openctemio/openctem/api/pkg/domain/findinglifecycle"
+	"github.com/openctemio/openctem/api/pkg/filterspec"
 
 	"github.com/openctemio/openctem/api/internal/app/aipolicy"
 	"github.com/openctemio/openctem/api/internal/app/asset"
@@ -14,6 +15,7 @@ import (
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	appcompliance "github.com/openctemio/openctem/api/internal/app/compliance"
 	"github.com/openctemio/openctem/api/internal/app/finding"
+	"github.com/openctemio/openctem/api/internal/app/scopeauth"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/brand"
@@ -72,7 +74,8 @@ type mcpFindingReader interface {
 	// so aggregate posture is confined exactly like list_findings — never the
 	// admin-wide GetFindingStats.
 	GetFindingStatsWithScope(ctx context.Context, input finding.GetFindingStatsInput) (*vulnerability.FindingStats, error)
-	ListActiveCVEs(ctx context.Context, in finding.ListActiveCVEsInput) (pagination.Result[vulnerability.ActiveCVE], error)
+	// ListCVEExposures is the vulnerabilities list, compiled as the caller.
+	ListCVEExposures(ctx context.Context, c finding.FilterCaller, spec *filterspec.Spec, opts vulnerability.CVEListOptions) (*vulnerability.CVEList, error)
 	// ListFindingTransitions is the transition engine's allowed moves (also
 	// data-scoped).
 	ListFindingTransitions(ctx context.Context, tenantID, findingID, actorID string, perms finding.TransitionPermissions) ([]findinglifecycle.Decision, vulnerability.FindingStatus, error)
@@ -184,6 +187,11 @@ type MCPHandler struct {
 	// aiPolicy is the organization's AI egress policy (SetAIPolicy). nil:
 	// the default limit (amber).
 	aiPolicy *aipolicy.Egress
+	// check_scope (SetScopeCheck).
+	scopeTargets  scopeauth.Targets
+	scopeRoots    scopeauth.Roots
+	scopePrograms mcpProgramMembers
+	scopeLimiter  *tenantRateLimiter
 }
 
 // mcpModuleChecker is the route module gate (*middleware.ModuleGate).
@@ -518,7 +526,12 @@ var mcpAuditSafeArgs = map[string]bool{
 	"campaign_id": true, "finding_id": true, "section": true, "category": true,
 	// write tools: the confirmation the call presents.
 	"confirmation_id": true,
+	// check_scope: the intensity and program are enum/ids; the target is hashed.
+	"intensity": true, "program_id": true,
 }
+
+// mcpAuditHashedArgs are keys recorded as a digest of their value.
+var mcpAuditHashedArgs = map[string]bool{"target": true}
 
 // sanitizeMCPArgs reduces raw tool arguments to an audit-safe summary: every
 // key present, with the value only for allowlisted non-sensitive scalars.
@@ -532,6 +545,13 @@ func sanitizeMCPArgs(raw json.RawMessage) map[string]any {
 	}
 	out := make(map[string]any, len(m))
 	for k, v := range m {
+		if mcpAuditHashedArgs[k] {
+			var val string
+			if err := json.Unmarshal(v, &val); err == nil {
+				out[k] = hashAuditTarget(val)
+				continue
+			}
+		}
 		if mcpAuditSafeArgs[k] {
 			var val any
 			if err := json.Unmarshal(v, &val); err == nil {

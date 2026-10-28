@@ -43,9 +43,8 @@ name: Web E2E
 #            plus, when selected, one job for the every-page request budget
 #            check, each against its own stack; 25 minute cap each. The first
 #            failing shard cancels the others (matrix fail-fast, plus
-#            .github/actions/fail-fast: the rest of this run on a PR, every run
-#            of the group in the merge queue); a cancelled shard still uploads
-#            its blob report.
+#            .github/actions/fail-fast: the other runs of the group in the
+#            merge queue); a cancelled shard still uploads its blob report.
 #   caches   npm (setup-node) and the Chromium download (keyed by the Playwright
 #            version).
 #   retries  1, in CI only (web/playwright.config.ts). A test that fails then
@@ -81,7 +80,7 @@ permissions:
 jobs:
   changes:
     name: Detect web changes
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
     permissions:
       contents: read
       pull-requests: read # the `ci:full` label (changed.sh reads it live)
@@ -107,6 +106,7 @@ jobs:
           fetch-depth: 0
           # The nightly run starts from the default branch's workflow file.
           ref: ${{ github.event_name == 'schedule' && 'develop' || '' }}
+      - uses: ./.github/actions/setup-gh
       - id: f
         env:
           EVENT_BEFORE: ${{ github.event.before }}
@@ -219,7 +219,7 @@ jobs:
     name: Select specs and plan shards
     needs: changes
     if: needs.changes.outputs.run == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
     timeout-minutes: 10
     # actions: read for the timings artifact of the last green develop run;
     # write also lets the fail-fast step cancel doomed runs
@@ -237,6 +237,11 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
           ref: ${{ github.event_name == 'schedule' && 'develop' || '' }}
+      - uses: ./.github/actions/setup-gh
+      # select.mjs needs Node.js only (no packages); the self-hosted image has none.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: web/.nvmrc
 
       # The files this run's change touches. An empty file (diff failed) makes
       # the selector run everything.
@@ -408,10 +413,10 @@ jobs:
       - name: Generate the stack's secrets
         run: bash web/e2e/ci/make-env.sh
 
-      # postgres, redis and migrate come from the CI image mirror
+      # postgres and redis come from the CI image mirror
       # (.github/ci-images.txt); pulled first, with retries on registry limits.
       - name: Pull the stack's third-party images
-        run: bash .github/scripts/retry.sh docker compose -f web/e2e/ci/compose.yml pull --quiet postgres redis migrate
+        run: bash .github/scripts/retry.sh docker compose -f web/e2e/ci/compose.yml pull --quiet postgres redis
 
       - name: Start the stack
         run: docker compose -f web/e2e/ci/compose.yml up -d --wait --wait-timeout 180
@@ -495,7 +500,7 @@ jobs:
     if: always() && needs.changes.outputs.run == 'true' && needs.e2e.result != 'skipped'
     permissions:
       contents: read
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -504,7 +509,8 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: web/.nvmrc
-          cache: npm
+          # The self-hosted runner keeps its own npm cache (ci-cd.md).
+          cache: ${{ runner.environment == 'github-hosted' && 'npm' || '' }}
           cache-dependency-path: web/package-lock.json
       - name: Install dependencies
         working-directory: web
@@ -569,7 +575,7 @@ jobs:
     name: E2E OK
     if: always()
     needs: [changes, plan, build, e2e]
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
     timeout-minutes: 5
     steps:
       - name: The suite passed, or was not needed

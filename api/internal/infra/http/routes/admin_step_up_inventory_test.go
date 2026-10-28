@@ -110,56 +110,59 @@ var adminWriteInventory = map[string]struct {
 	"POST /api/v1/admin/access-requests/{id}/reject":                         {routine, "refuses a request; nothing is created"},
 
 	// Platform settings and trust.
-	"PUT /api/v1/admin/settings/signup/":                            {stepUpRoute, "sign-up mode"},
-	"PUT /api/v1/admin/settings/email/":                             {stepUpRoute, "platform mail relay: receives password-reset mail (fresh)"},
-	"POST /api/v1/admin/settings/email/test":                        {routine, "sends a test to the caller's own address"},
-	"PUT /api/v1/admin/settings/legal/":                             {stepUpRoute, "legal pages"},
-	"PUT /api/v1/admin/settings/captcha/":                           {stepUpRoute, "abuse controls of sign-up and every sign-in (fresh)"},
-	"POST /api/v1/admin/settings/captcha/verify":                    {routine, "asks Turnstile about a secret; changes nothing"},
-	"PUT /api/v1/admin/settings/region/":                            {stepUpRoute, "data residency of every new organization, once (fresh)"},
-	"PUT /api/v1/admin/settings/storage-quota/":                     {stepUpRoute, "default storage quota of organizations"},
-	"PUT /api/v1/admin/settings/alerts/":                            {stepUpRoute, "where administrator alerts go (fresh)"},
-	"POST /api/v1/admin/settings/alerts/test":                       {routine, "sends a test alert to the stored webhook; changes nothing"},
-	"PUT /api/v1/admin/settings/ai/":                                {stepUpRoute, "platform AI provider and key: cost and subprocessor (fresh)"},
-	"PUT /api/v1/admin/settings/ai/org-policy":                      {stepUpRoute, "whether organizations may use their own AI provider (fresh)"},
-	"POST /api/v1/admin/settings/ai/test":                           {routine, "one minimal request with the stored key; changes nothing"},
-	"PUT /api/v1/admin/settings/limits/":                            {stepUpRoute, "self-service default limits"},
-	"PUT /api/v1/admin/settings/scan-approval-policy/":              {stepUpRoute, "scan governance default"},
-	"PUT /api/v1/admin/settings/platform-sensor-proof/":             {stepUpRoute, "platform sensor domain proof"},
-	"POST /api/v1/admin/instance-scan-zones/":                       {stepUpRoute, "an instance scan zone that lets shared sensors reach private ranges"},
-	"PUT /api/v1/admin/instance-scan-zones/{zone_id}":               {stepUpRoute, "the ranges of an instance scan zone"},
-	"DELETE /api/v1/admin/instance-scan-zones/{zone_id}":            {stepUpRoute, "an instance scan zone"},
-	"PUT /api/v1/admin/instance-scan-zones/{zone_id}/sensors":       {stepUpRoute, "the shared sensors that serve an instance scan zone"},
-	"PUT /api/v1/admin/instance-scan-zones/{zone_id}/organizations": {stepUpRoute, "the organizations an instance scan zone is assigned to"},
-	"PUT /api/v1/admin/settings/shared-sensors/":                    {stepUpRoute, "shared sensors on or off for the instance, and the default for organizations"},
-	"POST /api/v1/admin/shared-sensors/{sensor_id}/disable":         {stepUpRoute, "stops a shared sensor taking jobs"},
-	"POST /api/v1/admin/shared-sensors/{sensor_id}/enable":          {stepUpRoute, "lets a shared sensor take every organization's jobs again"},
-	"POST /api/v1/admin/shared-sensors/{sensor_id}/revoke":          {stepUpRoute, "revokes a shared sensor for good"},
-	"POST /api/v1/admin/shared-sensors/jobs/{job_id}/view":          {routine, "reads a job's targets and logs; changes nothing; reason required, ops_admin+, rate-limited, audited high before data is returned"},
-	"PUT /api/v1/admin/settings/shared-sensor-internal-zones/":      {stepUpRoute, "whether shared sensors may scan internal zones"},
-	"PUT /api/v1/admin/settings/shared-sensor-anomaly/":             {stepUpRoute, "shared sensor anomaly alert thresholds"},
-	"PUT /api/v1/admin/settings/signup-alerts/":                     {stepUpRoute, "sign-up burst alert thresholds"},
-	"PUT /api/v1/admin/settings/shared-sensors/egress":              {stepUpRoute, "egress addresses every organization is told to allowlist"},
-	"POST /api/v1/admin/shared-sensors/enrollment-tokens":           {stepUpRoute, "shared sensor enrollment token"},
-	"POST /api/v1/admin/version-check/import":                       {stepUpRoute, "release feed trust: what the console says about releases"},
-	"PUT /api/v1/admin/version-check/enabled":                       {stepUpRoute, "egress and privacy: the daily outbound check"},
-	"POST /api/v1/admin/content-packs/":                             {stepUpRoute, "platform content pack"},
-	"POST /api/v1/admin/content-packs/import":                       {stepUpRoute, "platform content pack"},
-	"POST /api/v1/admin/content-packs/{id}/revoke":                  {stepUpRoute, "platform content pack"},
-	"PUT /api/v1/admin/content-packs/channels/{channel}":            {stepUpRoute, "platform content pack"},
-	"POST /api/v1/admin/content-catalog/import":                     {stepUpRoute, "content catalog bundle import"},
-	"POST /api/v1/admin/content-catalog/packages":                   {stepUpRoute, "instance content package"},
-	"POST /api/v1/admin/content-catalog/packages/revoke":            {stepUpRoute, "instance content package"},
-	"POST /api/v1/admin/announcements/":                             {stepUpRoute, "a banner every user sees (phishing channel in a hijacked session)"},
-	"POST /api/v1/admin/announcements/{announcement_id}/cancel":     {stepUpRoute, "ends a banner (can hide a maintenance or incident notice)"},
-	"POST /api/v1/admin/tenants/{tenantId}/dashboard-data/rebuild":  {routine, "recomputes an organization's derived dashboard facts; ops_admin+, once per hour, audited"},
-	"POST /api/v1/admin/threat-intel/sync":                          {routine, "runs a public feed sync; audited"},
-	"PATCH /api/v1/admin/threat-intel/sync/{source}":                {stepUpRoute, "turning a feed off changes every organization's prioritization"},
-	"POST /api/v1/admin/mcp-clients/{id}/block":                     {stepUpRoute, "cuts every organization off an AI client"},
-	"POST /api/v1/admin/mcp-clients/{id}/unblock":                   {stepUpRoute, "readmits an AI client that was cut off"},
-	"POST /api/v1/admin/target-mappings/":                           {routine, "scanner target mapping; rate-limited, audited"},
-	"PATCH /api/v1/admin/target-mappings/{id}":                      {routine, "scanner target mapping; rate-limited, audited"},
-	"DELETE /api/v1/admin/target-mappings/{id}":                     {routine, "scanner target mapping; rate-limited, audited"},
+	"PUT /api/v1/admin/settings/signup/":                                 {stepUpRoute, "sign-up mode"},
+	"PUT /api/v1/admin/settings/email/":                                  {stepUpRoute, "platform mail relay: receives password-reset mail (fresh)"},
+	"POST /api/v1/admin/settings/email/test":                             {routine, "sends a test to the caller's own address"},
+	"PUT /api/v1/admin/settings/legal/":                                  {stepUpRoute, "legal pages"},
+	"PUT /api/v1/admin/settings/captcha/":                                {stepUpRoute, "abuse controls of sign-up and every sign-in (fresh)"},
+	"POST /api/v1/admin/settings/captcha/verify":                         {routine, "asks Turnstile about a secret; changes nothing"},
+	"PUT /api/v1/admin/settings/region/":                                 {stepUpRoute, "data residency of every new organization, once (fresh)"},
+	"PUT /api/v1/admin/settings/storage-quota/":                          {stepUpRoute, "default storage quota of organizations"},
+	"PUT /api/v1/admin/settings/email-relay/":                            {stepUpRoute, "whether organizations may send their own mail through their own relay (fresh)"},
+	"PUT /api/v1/admin/settings/alerts/":                                 {stepUpRoute, "where administrator alerts go (fresh)"},
+	"POST /api/v1/admin/settings/alerts/test":                            {routine, "sends a test alert to the stored webhook; changes nothing"},
+	"PUT /api/v1/admin/settings/ai/":                                     {stepUpRoute, "platform AI provider and key: cost and subprocessor (fresh)"},
+	"PUT /api/v1/admin/settings/social-login-providers/{provider}":       {stepUpRoute, "who can start a sign-in: social login client and secret (fresh)"},
+	"POST /api/v1/admin/settings/social-login-providers/{provider}/test": {routine, "asks the provider's token endpoint about a client; changes nothing"},
+	"PUT /api/v1/admin/settings/ai/org-policy":                           {stepUpRoute, "whether organizations may use their own AI provider (fresh)"},
+	"POST /api/v1/admin/settings/ai/test":                                {routine, "one minimal request with the stored key; changes nothing"},
+	"PUT /api/v1/admin/settings/limits/":                                 {stepUpRoute, "self-service default limits"},
+	"PUT /api/v1/admin/settings/scan-approval-policy/":                   {stepUpRoute, "scan governance default"},
+	"PUT /api/v1/admin/settings/platform-sensor-proof/":                  {stepUpRoute, "platform sensor domain proof"},
+	"POST /api/v1/admin/instance-scan-zones/":                            {stepUpRoute, "an instance scan zone that lets shared sensors reach private ranges"},
+	"PUT /api/v1/admin/instance-scan-zones/{zone_id}":                    {stepUpRoute, "the ranges of an instance scan zone"},
+	"DELETE /api/v1/admin/instance-scan-zones/{zone_id}":                 {stepUpRoute, "an instance scan zone"},
+	"PUT /api/v1/admin/instance-scan-zones/{zone_id}/sensors":            {stepUpRoute, "the shared sensors that serve an instance scan zone"},
+	"PUT /api/v1/admin/instance-scan-zones/{zone_id}/organizations":      {stepUpRoute, "the organizations an instance scan zone is assigned to"},
+	"PUT /api/v1/admin/settings/shared-sensors/":                         {stepUpRoute, "shared sensors on or off for the instance, and the default for organizations"},
+	"POST /api/v1/admin/shared-sensors/{sensor_id}/disable":              {stepUpRoute, "stops a shared sensor taking jobs"},
+	"POST /api/v1/admin/shared-sensors/{sensor_id}/enable":               {stepUpRoute, "lets a shared sensor take every organization's jobs again"},
+	"POST /api/v1/admin/shared-sensors/{sensor_id}/revoke":               {stepUpRoute, "revokes a shared sensor for good"},
+	"POST /api/v1/admin/shared-sensors/jobs/{job_id}/view":               {routine, "reads a job's targets and logs; changes nothing; reason required, ops_admin+, rate-limited, audited high before data is returned"},
+	"PUT /api/v1/admin/settings/shared-sensor-internal-zones/":           {stepUpRoute, "whether shared sensors may scan internal zones"},
+	"PUT /api/v1/admin/settings/shared-sensor-anomaly/":                  {stepUpRoute, "shared sensor anomaly alert thresholds"},
+	"PUT /api/v1/admin/settings/signup-alerts/":                          {stepUpRoute, "sign-up burst alert thresholds"},
+	"PUT /api/v1/admin/settings/shared-sensors/egress":                   {stepUpRoute, "egress addresses every organization is told to allowlist"},
+	"POST /api/v1/admin/shared-sensors/enrollment-tokens":                {stepUpRoute, "shared sensor enrollment token"},
+	"POST /api/v1/admin/version-check/import":                            {stepUpRoute, "release feed trust: what the console says about releases"},
+	"PUT /api/v1/admin/version-check/enabled":                            {stepUpRoute, "egress and privacy: the daily outbound check"},
+	"POST /api/v1/admin/content-packs/":                                  {stepUpRoute, "platform content pack"},
+	"POST /api/v1/admin/content-packs/import":                            {stepUpRoute, "platform content pack"},
+	"POST /api/v1/admin/content-packs/{id}/revoke":                       {stepUpRoute, "platform content pack"},
+	"PUT /api/v1/admin/content-packs/channels/{channel}":                 {stepUpRoute, "platform content pack"},
+	"POST /api/v1/admin/content-catalog/import":                          {stepUpRoute, "content catalog bundle import"},
+	"POST /api/v1/admin/content-catalog/packages":                        {stepUpRoute, "instance content package"},
+	"POST /api/v1/admin/content-catalog/packages/revoke":                 {stepUpRoute, "instance content package"},
+	"POST /api/v1/admin/announcements/":                                  {stepUpRoute, "a banner every user sees (phishing channel in a hijacked session)"},
+	"POST /api/v1/admin/announcements/{announcement_id}/cancel":          {stepUpRoute, "ends a banner (can hide a maintenance or incident notice)"},
+	"POST /api/v1/admin/tenants/{tenantId}/dashboard-data/rebuild":       {routine, "recomputes an organization's derived dashboard facts; ops_admin+, once per hour, audited"},
+	"POST /api/v1/admin/threat-intel/sync":                               {routine, "runs a public feed sync; audited"},
+	"PATCH /api/v1/admin/threat-intel/sync/{source}":                     {stepUpRoute, "turning a feed off changes every organization's prioritization"},
+	"POST /api/v1/admin/mcp-clients/{id}/block":                          {stepUpRoute, "cuts every organization off an AI client"},
+	"POST /api/v1/admin/mcp-clients/{id}/unblock":                        {stepUpRoute, "readmits an AI client that was cut off"},
+	"POST /api/v1/admin/target-mappings/":                                {stepUpRoute, "scanner target mapping: changes which assets every organization's scans take; super_admin, reason, audited"},
+	"PATCH /api/v1/admin/target-mappings/{id}":                           {stepUpRoute, "scanner target mapping: changes which assets every organization's scans take; super_admin, reason, audited"},
+	"DELETE /api/v1/admin/target-mappings/{id}":                          {stepUpRoute, "scanner target mapping: changes which assets every organization's scans take; super_admin, reason, audited"},
 
 	// Account support actions: they change a person's sign-in state, so
 	// step-up as well as reason, rate limit and audit.
@@ -210,9 +213,16 @@ func inventoryRouterFresh(t *testing.T) (infrahttp.Router, *[]string, map[string
 // handlers, reporting the purposes asked and whether each asked fresh.
 func inventoryRouterFull(t *testing.T, adjust func(*Handlers)) (infrahttp.Router, *[]string, map[string]bool) {
 	t.Helper()
+	return inventoryRouterRole(t, admin.AdminRoleSuperAdmin, adjust)
+}
+
+// inventoryRouterRole is inventoryRouterFull with every request authenticated
+// as an administrator of the given role.
+func inventoryRouterRole(t *testing.T, role admin.AdminRole, adjust func(*Handlers)) (infrahttp.Router, *[]string, map[string]bool) {
+	t.Helper()
 	fresh := map[string]bool{}
 	now := time.Now()
-	a := admin.Reconstitute(shared.NewID(), "root@example.com", "Root", admin.AdminRoleSuperAdmin, true,
+	a := admin.Reconstitute(shared.NewID(), "root@example.com", "Root", role, true,
 		nil, nil, "", 0, nil, nil, "", now, nil, now)
 	var h Handlers
 	hv := reflect.ValueOf(&h).Elem()
@@ -254,6 +264,7 @@ func TestFactorRoutesDemandFreshStepUp(t *testing.T) {
 		// Settings whose loosening is a security decision (RFC-079).
 		{"PUT", "/api/v1/admin/settings/captcha/", "settings.captcha"},
 		{"PUT", "/api/v1/admin/settings/region/", "settings.region"},
+		{"PUT", "/api/v1/admin/settings/email-relay/", "settings.email_relay"},
 		{"PUT", "/api/v1/admin/settings/alerts/", "settings.alerts"},
 		{"PUT", "/api/v1/admin/settings/ai/", "settings.ai"},
 		{"PUT", "/api/v1/admin/settings/ai/org-policy", "settings.ai_org_policy"},
@@ -402,5 +413,42 @@ func TestAdminRoutesRefuseOutsideNetworks(t *testing.T) {
 	})
 	if n < 60 {
 		t.Fatalf("only %d console routes walked", n)
+	}
+}
+
+// Target mapping writes change which assets every organization's scans take:
+// operations and read-only administrators are refused before the step-up, and
+// a super admin must confirm with a step-up (purpose target_mapping.change).
+func TestTargetMappingWritesAreSuperAdminWithStepUp(t *testing.T) {
+	id := shared.NewID().String()
+	writes := [][2]string{
+		{http.MethodPost, "/api/v1/admin/target-mappings/"},
+		{http.MethodPatch, "/api/v1/admin/target-mappings/" + id},
+		{http.MethodDelete, "/api/v1/admin/target-mappings/" + id},
+	}
+	do := func(role admin.AdminRole, method, path string) (*httptest.ResponseRecorder, *[]string) {
+		router, purposes, _ := inventoryRouterRole(t, role, nil)
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(method, path, strings.NewReader(`{}`))
+		req.AddCookie(&http.Cookie{Name: middleware.AdminSessionCookie, Value: "s"})
+		req.AddCookie(&http.Cookie{Name: middleware.AdminCSRFCookie, Value: "c"})
+		req.Header.Set(middleware.CSRFHeaderName, middleware.AdminCSRFToken("s"))
+		func() {
+			defer func() { _ = recover() }()
+			router.Handler().ServeHTTP(rec, req)
+		}()
+		return rec, purposes
+	}
+	for _, w := range writes {
+		for _, role := range []admin.AdminRole{admin.AdminRoleReadonly, admin.AdminRoleOpsAdmin} {
+			rec, purposes := do(role, w[0], w[1])
+			if rec.Code != http.StatusForbidden || len(*purposes) != 0 {
+				t.Errorf("%s %s as %s: %d (step-up asked %v), want 403 before any step-up", w[0], w[1], role, rec.Code, *purposes)
+			}
+		}
+		rec, purposes := do(admin.AdminRoleSuperAdmin, w[0], w[1])
+		if rec.Code != http.StatusUnauthorized || len(*purposes) != 1 || (*purposes)[0] != "target_mapping.change" {
+			t.Errorf("%s %s as super admin without a code: %d purposes %v, want 401 asking target_mapping.change", w[0], w[1], rec.Code, *purposes)
+		}
 	}
 }

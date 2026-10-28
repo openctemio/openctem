@@ -25,7 +25,8 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `APP_ENV` | string | `production` |  |  | Environment name. `production` (also when unset) turns on the production checks (TLS to PostgreSQL and Redis, strong secrets, rate limiting, secure cookies; `server -check-config` reports them). Any value other than `development` requires `APP_ENCRYPTION_KEY`, refuses the published development secrets and defaults `AUTH_COOKIE_SECURE` to `true`. Set `development` explicitly for a local or trial setup without TLS to the datastores. Up to v0.8.0 an unset value meant `development`. |
 | `APP_NAME` | string | `openctem` |  |  | Technical name of the service in logs. The product name users see is `BRAND_NAME`. |
 | `APP_URL` | string | empty |  |  | Public origin of the platform (`https://ctem.example.com`): the one URL browsers, sensors and e-mail links use. Set it in every deployment. When set, it is the default of `CORS_ALLOWED_ORIGINS`, `SMTP_BASE_URL` and `OAUTH_FRONTEND_CALLBACK_URL`, and SAML service-provider URLs and the sensor endpoint are built from it. Must be an http(s) URL without credentials, query or fragment. |
-| `MANAGED_SERVICE` | bool | `false` |  |  | Set to true only on a hosted, multi-tenant service run by an operator for organizations it does not control. It changes defaults only, never features: until an administrator stores a value in the console, platform sensors need a verified domain before they scan a target (Console > Scanning > Platform scanning). A value saved in the console always wins. Read at start-up; never tenant data. |
+| `MANAGED_SERVICE` | bool | `false` |  |  | Set to true only on a hosted, multi-tenant service run by an operator for organizations it does not control. It changes defaults only, never features: until an administrator stores a value in the console, platform sensors need a verified domain before they scan a target (Console > Scanning > Platform scanning). A value saved in the console always wins. It also holds an organization's own mail server (the e-mail notification channel) to submission ports 465, 587 and 2525 with a username, a password and TLS or STARTTLS; port 25 is refused. Read at start-up; never tenant data. |
+| `ORG_EMAIL_RELAY_MODE` | string | empty |  |  | Default of the console setting email.tenant_relay until a super admin stores a value: whether an organization's own mail relay (its e-mail notification channel with "organization mail" ticked) carries its invitation notices and scheduled reports. `off`, `verified_sender` (the sender address must be on a verified domain of the organization) or `on`. Unset: `verified_sender` with `MANAGED_SERVICE=true`, else `on`. Account security mail (set-password links, verification, password reset, MFA and sign-in notices) never uses an organization relay. |
 | `DEPLOYMENT_REGION` | string | empty |  |  | Data region of this deployment (1-32 lowercase letters, digits or hyphens, e.g. `eu-central`). Every organization created here gets it, it is shown in the console and never changes. Set: pins the region (the console cannot change it). Unset: a super admin may set it once in the console (Settings > Configuration) before the first organization exists. |
 
 ### Brand
@@ -179,22 +180,22 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `KEYCLOAK_HTTP_TIMEOUT` | duration | `10s` |  |  | Timeout of requests to Keycloak. |
 | `KEYCLOAK_JWKS_REFRESH_INTERVAL` | duration | `1h` |  |  | How often Keycloak's signing keys are refreshed. |
 | `KEYCLOAK_REALM` | string | `openctem` |  |  | Keycloak realm. In production with `oidc` or `hybrid` it must be set to a value other than the default. |
-| `OAUTH_ENABLED` | bool | `true` |  |  | Master switch for social login (Google, GitHub, Microsoft). A provider is offered only when its own `*_ENABLED`, client ID and secret are set. |
+| `OAUTH_ENABLED` | bool | `true` |  |  | Master switch for social login (Google, GitHub, Microsoft). The console (Settings > Social login) is the place to set up the providers; this stays a server-side kill switch, and `false` turns every provider off whatever the console says. |
 | `OAUTH_FRONTEND_CALLBACK_URL` | string | `APP_URL/auth/callback, else http://localhost:3000/auth/callback` |  |  | Web console URL the social-login and SSO flows return to. Set it only when the console is not at `APP_URL`. |
-| `OAUTH_GITHUB_CLIENT_ID` | string | empty |  |  | GitHub OAuth client ID. |
-| `OAUTH_GITHUB_CLIENT_SECRET` | string | empty |  | yes | GitHub OAuth client secret. |
-| `OAUTH_GITHUB_ENABLED` | bool | `false` |  |  | Offer GitHub sign-in. |
-| `OAUTH_GITHUB_SCOPES` | list | `read:user,user:email` |  |  | Requested scopes. |
-| `OAUTH_GOOGLE_CLIENT_ID` | string | empty |  |  | Google OAuth client ID. |
-| `OAUTH_GOOGLE_CLIENT_SECRET` | string | empty |  | yes | Google OAuth client secret. |
-| `OAUTH_GOOGLE_ENABLED` | bool | `false` |  |  | Offer Google sign-in. |
-| `OAUTH_GOOGLE_SCOPES` | list | `openid,email,profile` |  |  | Requested scopes. |
-| `OAUTH_MICROSOFT_CLIENT_ID` | string | empty |  |  | Microsoft OAuth client ID. |
-| `OAUTH_MICROSOFT_CLIENT_SECRET` | string | empty |  | yes | Microsoft OAuth client secret. |
-| `OAUTH_MICROSOFT_ENABLED` | bool | `false` |  |  | Offer Microsoft sign-in. |
-| `OAUTH_MICROSOFT_SCOPES` | list | `openid,email,profile,User.Read` |  |  | Requested scopes. |
+| `OAUTH_GITHUB_CLIENT_ID` | string | empty |  |  | GitHub OAuth client ID. Optional override: set the client in the console (Settings > Social login) instead. Used only together with `OAUTH_GITHUB_CLIENT_SECRET`. |
+| `OAUTH_GITHUB_CLIENT_SECRET` | string | empty |  | yes | GitHub OAuth client secret. Optional override: while it is set, this provider is pinned to the server environment and the console shows it read-only. Leave unset to manage the provider in the console (Settings > Social login), where the secret is stored encrypted and write-only. |
+| `OAUTH_GITHUB_ENABLED` | bool | `false` |  |  | Offer GitHub sign-in. Used only while `OAUTH_GITHUB_CLIENT_SECRET` pins the provider; otherwise the switch in the console decides. |
+| `OAUTH_GITHUB_SCOPES` | list | `read:user,user:email` |  |  | Requested scopes. Used only while the provider is pinned by its client secret variable; otherwise set in the console. |
+| `OAUTH_GOOGLE_CLIENT_ID` | string | empty |  |  | Google OAuth client ID. Optional override: set the client in the console (Settings > Social login) instead. Used only together with `OAUTH_GOOGLE_CLIENT_SECRET`. |
+| `OAUTH_GOOGLE_CLIENT_SECRET` | string | empty |  | yes | Google OAuth client secret. Optional override: while it is set, this provider is pinned to the server environment and the console shows it read-only. Leave unset to manage the provider in the console (Settings > Social login), where the secret is stored encrypted and write-only. |
+| `OAUTH_GOOGLE_ENABLED` | bool | `false` |  |  | Offer Google sign-in. Used only while `OAUTH_GOOGLE_CLIENT_SECRET` pins the provider; otherwise the switch in the console decides. |
+| `OAUTH_GOOGLE_SCOPES` | list | `openid,email,profile` |  |  | Requested scopes. Used only while the provider is pinned by its client secret variable; otherwise set in the console. |
+| `OAUTH_MICROSOFT_CLIENT_ID` | string | empty |  |  | Microsoft OAuth client ID. Optional override: set the client in the console (Settings > Social login) instead. Used only together with `OAUTH_MICROSOFT_CLIENT_SECRET`. |
+| `OAUTH_MICROSOFT_CLIENT_SECRET` | string | empty |  | yes | Microsoft OAuth client secret. Optional override: while it is set, this provider is pinned to the server environment and the console shows it read-only. Leave unset to manage the provider in the console (Settings > Social login), where the secret is stored encrypted and write-only. |
+| `OAUTH_MICROSOFT_ENABLED` | bool | `false` |  |  | Offer Microsoft sign-in. Used only while `OAUTH_MICROSOFT_CLIENT_SECRET` pins the provider; otherwise the switch in the console decides. |
+| `OAUTH_MICROSOFT_SCOPES` | list | `openid,email,profile,User.Read` |  |  | Requested scopes. Used only while the provider is pinned by its client secret variable; otherwise set in the console. |
 | `OAUTH_STATE_DURATION` | duration | `10m` |  |  | Lifetime of an OAuth `state` token. |
-| `OAUTH_STATE_SECRET` | string | empty |  | yes | Secret that signs the OAuth `state` parameter. Unset: derived from the session secret under its own label. |
+| `OAUTH_STATE_SECRET` | string | empty |  | yes | Secret that signs the OAuth `state` parameter. Unset: derived from the session secret under its own label. A bootstrap secret that is never a console setting, so a console change cannot weaken the CSRF binding of a sign-in. |
 | `SSO_ALLOWED_REDIRECT_URIS` | list | `derived` |  |  | Comma-separated exact-match allow-list for the `redirect_uri` of the per-organization SSO flow: origins (`https://ctem.example.com`) or origin-plus-path prefixes ending in `/`. Unset: derived from `CORS_ALLOWED_ORIGINS`, `OAUTH_FRONTEND_CALLBACK_URL` and `SMTP_BASE_URL`. |
 | `SSO_ENTRA_ALLOWED_DOMAINS` | list | `empty (any)` |  |  | Comma-separated email domains the fallback accepts. |
 | `SSO_ENTRA_ALLOWED_TENANTS` | list | `empty (none)` |  |  | Comma-separated organization slugs allowed to use the fallback. Empty disables it for every organization. |
@@ -353,10 +354,10 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `PROGRAMFEED_MIRRORS` | list | empty |  |  | Comma-separated https mirrors of the chunked program feed, tried after `PROGRAMFEED_URL`. |
 | `PROGRAMFEED_ROOT_KEY_ID` | string | empty |  |  | Pinned offline root key id of the public program feed. Unset: no program feed is imported. |
 | `PROGRAMFEED_URL` | url | empty |  |  | https release URL of the chunked public program feed, tried before `PROGRAMFEED_DIR`. |
-| `VULNFEED_BASE_URL` | url | `https://github.com/openctemio/vulnfeed/releases` |  |  | Release base URL of the signed vulnerability bundles. |
+| `VULNFEED_BASE_URL` | url | `https://github.com/openctemio/vulnfeed-bundles/releases` |  |  | Release base URL of the signed vulnerability bundles. |
 | `VULNFEED_BUNDLE_DIR` | path | empty |  |  | Air-gapped platforms: local directory holding a vulnerability bundle release's files. |
 | `VULNFEED_MIRRORS` | list | empty |  |  | Comma-separated https mirrors tried after the release for chunked vulnerability bundles. |
-| `VULNFEED_ROOT_KEY_ID` | string | `official root` |  |  | Pinned root key id of the vulnerability bundles. Defaults to the root of the official openctemio/vulnfeed releases; set it only for a private collector. |
+| `VULNFEED_ROOT_KEY_ID` | string | `official root` |  |  | Pinned root key id of the vulnerability bundles. Defaults to the root of the official feed (openctemio/vulnfeed-bundles releases); set it only for a private collector. |
 
 ### Integrations
 

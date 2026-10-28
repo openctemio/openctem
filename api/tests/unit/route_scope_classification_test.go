@@ -227,7 +227,6 @@ var dataSurfaceRegistry = map[string]dataSurface{
 
 	// --- gap -----------------------------------------------------------------------
 	"/api/v1/credentials":                                {classScoped, "leaks on in-scope assets; asset-less leaks: unrestricted callers only (L-10)"},
-	"/api/v1/vulnerabilities/active":                     {classScoped, "aggregated over in-scope findings, REST and MCP (L-10)"},
 	"GET /api/v1/groups/{groupId}/assets":                {classScoped, "only the group's assets in the caller's scope (L-10)"},
 	"/api/v1/scans":                                      {classGap, "L-06 (scan reads and targets; D9)"},
 	"/api/v1/scan-approvals":                             {classGap, "L-06 (scan approval requests carry the scan definition and targets, as scan reads; D9)"},
@@ -321,7 +320,6 @@ func TestEveryRouteHasADataScopeClass(t *testing.T) {
 func TestDataSurfaceLookup_LongestPrefixWins(t *testing.T) {
 	cases := map[string]dataScopeClass{
 		"GET /api/v1/vulnerabilities/":                         classSystem,
-		"GET /api/v1/vulnerabilities/active":                   classScoped,
 		"GET /api/v1/vulnerabilities/{id}/affected-assets":     classScoped,
 		"GET /api/v1/vulnerability-exposures/{vuln_id}/assets": classScoped,
 		"GET /api/v1/vulnerability-exposures/":                 classScoped,

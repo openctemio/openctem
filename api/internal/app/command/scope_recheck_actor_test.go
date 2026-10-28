@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
+	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -60,4 +61,44 @@ func TestRecheckBatch_ActorAuthority(t *testing.T) {
 			assert.Nil(t, in.FallbackUser, tc.name)
 		}
 	}
+}
+
+// The claim re-check judges ownership confirmation by the sensor that takes
+// the job: a job queued for platform sensors, or claimed by a shared sensor,
+// is checked as a platform job (confirmation applies on the hosted service);
+// a job for the organization's own sensors is not. A platform job and a
+// tenant job never share one gate call.
+func TestRecheck_PlacementOfTheClaimingSensor(t *testing.T) {
+	tenant := shared.NewID()
+	payload := []byte(`{"targets":["found.example"]}`)
+	mk := func(platform bool) *commanddom.Command {
+		return &commanddom.Command{ID: shared.NewID(), TenantID: tenant, Type: commanddom.CommandTypeScan, Payload: payload, IsPlatformJob: platform}
+	}
+	cases := []struct {
+		name string
+		ctx  context.Context
+		cmd  *commanddom.Command
+		want attribution.Placement
+	}{
+		{"tenant job on a tenant sensor", context.Background(), mk(false), attribution.PlacementTenant},
+		{"platform job", context.Background(), mk(true), attribution.PlacementPlatform},
+		{"any job a shared sensor claims", attribution.WithPlacement(context.Background(), attribution.PlacementPlatform), mk(false), attribution.PlacementPlatform},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := &recordingGate{}
+			s := &Service{scopeGate: g, logger: logger.NewNop()}
+			s.recheckScope(tc.ctx, tenant, nil, []*commanddom.Command{tc.cmd})
+			require.Len(t, g.got, 1)
+			assert.Equal(t, tc.want, g.got[0].Placement)
+		})
+	}
+
+	t.Run("separate calls", func(t *testing.T) {
+		g := &recordingGate{}
+		s := &Service{scopeGate: g, logger: logger.NewNop()}
+		s.recheckScope(context.Background(), tenant, nil, []*commanddom.Command{mk(false), mk(true)})
+		require.Len(t, g.got, 2)
+		assert.NotEqual(t, g.got[0].Placement, g.got[1].Placement)
+	})
 }

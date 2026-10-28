@@ -3,6 +3,8 @@
  * (GET /api/v1/vulnerability-exposures/{id}, api/docs/architecture/vulnerability-page.md).
  */
 
+import type { EpssPoint } from './list'
+
 export type ExposureVerdict = 'confirmed' | 'possible' | 'not_affected' | 'no_evidence'
 
 export type PriorityKey = 'P0' | 'P1' | 'P2' | 'P3' | 'none'
@@ -92,6 +94,11 @@ export interface CveExposure {
     feeds: FeedFreshness[]
     emerging?: CveEmergingAlert
   }
+  /**
+   * Daily EPSS over the last 30 feed days, oldest first. Only present when
+   * the caller has a finding of the CVE in scope.
+   */
+  epss_trend?: EpssPoint[]
 }
 
 export interface CveExposureAsset {
