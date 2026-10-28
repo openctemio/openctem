@@ -25,10 +25,17 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
+// ownershipGate is the gate of the hosted service (MANAGED_SERVICE): a job
+// on platform sensors, or one whose sensor is not known yet, needs the
+// ownership of what it probes confirmed; a job on the tenant's own sensors
+// does not (placement.go). Self-hosted installs never confirm; the easm
+// package tests cover that side.
 func ownershipGate(db *sql.DB) *easmapp.ActiveGate {
 	pg := &postgres.DB{DB: db}
-	return easmapp.NewActiveGate(postgres.NewAttributionRepository(pg), postgres.NewAssetRepository(pg),
+	g := easmapp.NewActiveGate(postgres.NewAttributionRepository(pg), postgres.NewAssetRepository(pg),
 		scopeService(db), postgres.NewVerifiedDomainNameRepository(pg))
+	g.SetManagedService(true)
+	return g
 }
 
 func seedOwnedAsset(t *testing.T, db *sql.DB, tenant shared.ID, name, typ string) shared.ID {
@@ -104,11 +111,16 @@ func TestScanOwnershipGate(t *testing.T) {
 		"www.scoped.example.com",               // rejected asset (B1)
 		"https://www.scoped.example.com/login", // the same, as a URL
 		"api.www.scoped.example.com",           // a name under the rejected one
-		"dev.unscoped.example.com",             // needs review, no entry
-		"cand.unscoped.example.com",            // candidate, no entry
 		"manual.example.net",                   // no record, outside scope and seeds
 		"confirmed.example.net",                // confirmed, outside scope and seeds
 		"free.example.net",                     // free text outside scope (tenant B's *.example.net does not count)
+	}
+	// Refused only for a job on platform sensors of the hosted service: a
+	// pending record no entry covers, under one of the organization's
+	// domains. A job on the organization's own sensors may reach them.
+	confirmationOnly := []string{
+		"dev.unscoped.example.com",  // needs review, no entry
+		"cand.unscoped.example.com", // candidate, no entry
 	}
 
 	svc := newTriggerServiceWith(db, scansvc.WithScopeExclusionFilter(scopeService(db)),
@@ -142,16 +154,36 @@ func TestScanOwnershipGate(t *testing.T) {
 		}
 		return &sc.ID, nil
 	}
+	// A scan whose jobs run on platform sensors: ownership confirmation applies.
+	createOnPlatform := func(targets ...string) error {
+		_, err := svc.CreateScan(ctx, scansvc.CreateScanInput{
+			TenantID: tenantA.String(), Name: "own " + shared.NewID().String(), ScanType: "single",
+			ScannerName: "nuclei", Targets: targets, SensorPreference: "platform",
+		})
+		return err
+	}
 
 	t.Run("scan create", func(t *testing.T) {
 		for _, target := range allowed {
 			if _, err := create(target); err != nil {
 				t.Fatalf("%s refused: %v", target, err)
 			}
+			if err := createOnPlatform(target); err != nil {
+				t.Fatalf("%s refused on platform sensors: %v", target, err)
+			}
 		}
 		for _, target := range refusedTargets {
 			_, err := create(target)
 			refused(t, err, target)
+		}
+		for _, target := range append(slices.Clone(refusedTargets), confirmationOnly...) {
+			refused(t, createOnPlatform(target), target)
+		}
+		// On the organization's own sensors no confirmation is needed.
+		for _, target := range confirmationOnly {
+			if _, err := create(target); err != nil {
+				t.Fatalf("%s refused on the organization's own sensor: %v", target, err)
+			}
 		}
 		want := map[string]string{
 			"www.scoped.example.com": scopedom.RefusalRejected, "dev.unscoped.example.com": scopedom.RefusalNeedsReview,
@@ -159,7 +191,7 @@ func TestScanOwnershipGate(t *testing.T) {
 			"confirmed.example.net": scopedom.RefusalNoEntry,
 		}
 		for target, code := range want {
-			_, err := create(target)
+			err := createOnPlatform(target)
 			var de *shared.DomainError
 			_ = errors.As(err, &de)
 			list := de.Details.(map[string]any)["refused"].([]scopedom.Refusal)
@@ -173,6 +205,15 @@ func TestScanOwnershipGate(t *testing.T) {
 		for _, target := range refusedTargets {
 			_, err := svc.QuickScan(ctx, scansvc.QuickScanInput{TenantID: tenantA.String(), ScannerName: "httpx", Targets: []string{target}})
 			refused(t, err, target)
+		}
+		// Without shared sensors a quick scan runs on the organization's own
+		// sensors: no confirmation is needed.
+		for _, target := range confirmationOnly {
+			_, err := svc.QuickScan(ctx, scansvc.QuickScanInput{TenantID: tenantA.String(), ScannerName: "httpx", Targets: []string{target}})
+			var de *shared.DomainError
+			if errors.As(err, &de) && de.Code == "TARGET_OUT_OF_SCOPE" {
+				t.Fatalf("%s refused on the organization's own sensor: %v", target, err)
+			}
 		}
 		// The allowed side of the same check is the scan-create case above.
 	})
@@ -188,6 +229,13 @@ func TestScanOwnershipGate(t *testing.T) {
 			_, err := svc.GateCommandPayload(ctx, tenantA, nil, []byte(`{"scanner":"nuclei","targets":["`+target+`"]}`))
 			if !errors.Is(err, scansvc.ErrCommandTargetRefused) {
 				t.Fatalf("%s: err = %v", target, err)
+			}
+		}
+		// A command goes to the organization's own sensor.
+		for _, target := range confirmationOnly {
+			_, err := svc.GateCommandPayload(ctx, tenantA, nil, []byte(`{"scanner":"nuclei","targets":["`+target+`"]}`))
+			if errors.Is(err, scansvc.ErrCommandTargetRefused) {
+				t.Fatalf("%s refused on the organization's own sensor", target)
 			}
 		}
 	})
@@ -229,7 +277,7 @@ func TestScanOwnershipGate(t *testing.T) {
 
 	t.Run("dispatch gate", func(t *testing.T) {
 		got, err := svc.ResolveDispatchTargets(ctx, scansvc.DispatchTargetsInput{
-			TenantID: tenantA, Targets: append(slices.Clone(allowed), refusedTargets...),
+			TenantID: tenantA, Targets: append(append(slices.Clone(allowed), refusedTargets...), confirmationOnly...),
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -237,7 +285,7 @@ func TestScanOwnershipGate(t *testing.T) {
 		if !slices.Equal(got.Allowed, allowed) {
 			t.Fatalf("allowed = %v, want %v", got.Allowed, allowed)
 		}
-		if len(got.Refused) != len(refusedTargets) {
+		if len(got.Refused) != len(refusedTargets)+len(confirmationOnly) {
 			t.Fatalf("refused = %+v", got.Refused)
 		}
 		// By asset id (coverage, validation): the same decisions.
@@ -368,7 +416,7 @@ func TestScanOwnershipGate_PendingUnderEntry(t *testing.T) {
 	for _, target := range allowed {
 		if _, err := svc.CreateScan(ctx, scansvc.CreateScanInput{
 			TenantID: tenantA.String(), Name: "pend " + shared.NewID().String(), ScanType: "single",
-			ScannerName: "nuclei", Targets: []string{target}, TenantRunner: true,
+			ScannerName: "nuclei", Targets: []string{target}, SensorPreference: "platform",
 		}); err != nil {
 			t.Fatalf("%s refused: %v", target, err)
 		}
@@ -376,7 +424,7 @@ func TestScanOwnershipGate_PendingUnderEntry(t *testing.T) {
 	for target, code := range refused {
 		_, err := svc.CreateScan(ctx, scansvc.CreateScanInput{
 			TenantID: tenantA.String(), Name: "pend " + shared.NewID().String(), ScanType: "single",
-			ScannerName: "nuclei", Targets: []string{target}, TenantRunner: true,
+			ScannerName: "nuclei", Targets: []string{target}, SensorPreference: "platform",
 		})
 		var de *shared.DomainError
 		if !errors.As(err, &de) {

@@ -130,7 +130,7 @@ func (s *Service) startAwaitingScan(ctx context.Context, w ScopeWait) error {
 		_, err := s.scopeWaits.Claim(ctx, w.TenantID, w.ScanID)
 		return err
 	}
-	blocked, err := s.attributionGate.BlockedTargets(ctx, w.TenantID, sc.Targets)
+	blocked, err := s.attributionGate.BlockedTargets(s.withScanPlacement(ctx, sc), w.TenantID, sc.Targets)
 	if err != nil {
 		return fmt.Errorf("ownership check: %w", err)
 	}

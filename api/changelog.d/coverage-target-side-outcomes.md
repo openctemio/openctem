@@ -1,4 +1,0 @@
-### Changed: continuous coverage rechecks hosts that do not answer on a widening schedule
-
-- A coverage pair whose target did not answer (`unreachable`, `timeout`) is no longer a failure retried every few hours for ever. It is paused with the outcome as its reason and rechecked after 1 day, 3 days, then weekly. Any success makes it covered again. It no longer raises "keeps failing" alerts. Sensor, tool and platform failures keep the 1 h to 1 day back-off.
-- The HTTP probe of a subdomain now needs a reason to run: a web port open on an address it resolves to, a web origin of the name already seen, or ports not yet known (no port scan has finished on it or its addresses). A mail or DNS server whose port scan found no web port is no longer probed every 3 days. It becomes `not_applicable` (`web_port_or_unscanned`) and is probed again once a web port appears.

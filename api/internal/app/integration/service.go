@@ -95,6 +95,12 @@ type IntegrationService struct {
 	// (RFC-047). nil: Tenable integrations cannot be created.
 	tenableConnector TenableConnectorValidator
 
+	// Owner notices when an e-mail channel is stopped by the managed service
+	// rules (SetRelayPolicyNotices).
+	relayOwners RelayOwners
+	relayInApp  RelayInAppNotifier
+	relayMailer RelayMailer
+
 	// Rate limiting for test notifications
 	testRateLimitMu  sync.RWMutex
 	testRateLimitMap map[string]time.Time // integration ID -> last test time
@@ -1163,7 +1169,20 @@ type EmailCredentials struct {
 	// (RFC-049 F-5). It is never stored or used.
 	SkipVerify bool   `json:"skip_verify"`
 	ReplyTo    string `json:"reply_to,omitempty"`
+	// OrgMail also sends the organization's business mail (invitation
+	// notices, notifications, reports) through this relay, when the platform
+	// allows it (email.tenant_relay). Never account security mail: set-password
+	// links, password reset, recovery, verification and sign-in notices always
+	// use the platform relay. Absent: off for a new integration, unchanged on
+	// an update. Turning it on needs an owner or administrator of the
+	// organization (the request's CanEnableOrgMail), not only the right to
+	// manage integrations.
+	OrgMail *bool `json:"org_mail,omitempty"`
 }
+
+// ErrOrgMailNeedsAdmin refuses a caller who may manage integrations but is
+// not an owner or administrator turning organization mail on for a relay.
+var ErrOrgMailNeedsAdmin = fmt.Errorf("%w: only an owner or administrator can send organization mail through this relay", shared.ErrForbidden)
 
 // errSMTPSkipVerify refuses a tenant request to turn off TLS verification.
 var errSMTPSkipVerify = fmt.Errorf("%w: skip_verify is not supported: the SMTP server certificate is always verified (use a certificate from a trusted CA)", shared.ErrValidation)
@@ -1239,8 +1258,8 @@ func (s *IntegrationService) parseEmailCredentials(credentials string) (*notifie
 	if emailCreds.SMTPPort == 0 {
 		return nil, fmt.Errorf("SMTP port is required")
 	}
-	if !emailpkg.TenantPortAllowed(emailCreds.SMTPPort) {
-		return nil, emailpkg.ErrTenantPortNotAllowed
+	if err := emailpkg.ValidateTenantRelay(emailCreds.SMTPPort, emailCreds.UseTLS, emailCreds.UseSTARTTLS, emailCreds.Username, emailCreds.Password); err != nil {
+		return nil, err
 	}
 	if emailCreds.FromEmail == "" {
 		return nil, fmt.Errorf("sender email is required")
@@ -1392,13 +1411,17 @@ func getBoolFromMap(m map[string]any, key string) bool {
 // setEmailCredentials parses email credentials JSON and splits into metadata and encrypted credentials.
 // Non-sensitive config (smtp_host, port, from_email, etc.) goes to metadata.
 // Sensitive data (username, password) goes to encrypted credentials.
-func (s *IntegrationService) setEmailCredentials(intg *integrationdom.Integration, credentialsJSON string) error {
+func (s *IntegrationService) setEmailCredentials(intg *integrationdom.Integration, credentialsJSON string, mayEnableOrgMail bool) error {
 	var emailCreds EmailCredentials
 	if err := json.Unmarshal([]byte(credentialsJSON), &emailCreds); err != nil {
 		return fmt.Errorf("parse email credentials: %w", err)
 	}
 	if emailCreds.SkipVerify {
 		return errSMTPSkipVerify
+	}
+	orgMail := emailCreds.OrgMail != nil && *emailCreds.OrgMail
+	if orgMail && !mayEnableOrgMail {
+		return ErrOrgMailNeedsAdmin
 	}
 
 	// Validate required fields
@@ -1408,8 +1431,8 @@ func (s *IntegrationService) setEmailCredentials(intg *integrationdom.Integratio
 	if emailCreds.SMTPPort == 0 {
 		return fmt.Errorf("%w: SMTP port is required", shared.ErrValidation)
 	}
-	if !emailpkg.TenantPortAllowed(emailCreds.SMTPPort) {
-		return fmt.Errorf("%w: %w", shared.ErrValidation, emailpkg.ErrTenantPortNotAllowed)
+	if err := emailpkg.ValidateTenantRelay(emailCreds.SMTPPort, emailCreds.UseTLS, emailCreds.UseSTARTTLS, emailCreds.Username, emailCreds.Password); err != nil {
+		return relayRuleError{err}
 	}
 	if emailCreds.FromEmail == "" {
 		return fmt.Errorf("%w: sender email is required", shared.ErrValidation)
@@ -1423,14 +1446,15 @@ func (s *IntegrationService) setEmailCredentials(intg *integrationdom.Integratio
 
 	// Store non-sensitive config in metadata
 	intg.SetMetadata(map[string]any{
-		"smtp_host":    metadata.SMTPHost,
-		"smtp_port":    metadata.SMTPPort,
-		"from_email":   metadata.FromEmail,
-		"from_name":    metadata.FromName,
-		"to_emails":    metadata.ToEmails,
-		"use_tls":      metadata.UseTLS,
-		"use_starttls": metadata.UseSTARTTLS,
-		"reply_to":     metadata.ReplyTo,
+		"smtp_host":                     metadata.SMTPHost,
+		"smtp_port":                     metadata.SMTPPort,
+		"from_email":                    metadata.FromEmail,
+		"from_name":                     metadata.FromName,
+		"to_emails":                     metadata.ToEmails,
+		"use_tls":                       metadata.UseTLS,
+		"use_starttls":                  metadata.UseSTARTTLS,
+		"reply_to":                      metadata.ReplyTo,
+		integrationdom.MetaEmailOrgMail: orgMail,
 	})
 
 	// Encrypt and store sensitive credentials
@@ -1447,8 +1471,24 @@ func (s *IntegrationService) setEmailCredentials(intg *integrationdom.Integratio
 	return nil
 }
 
+// nextOrgMail is the stored org_mail value after an update: the request's
+// choice, else the stored one. Turning it on (it was off) needs an owner or
+// administrator; keeping it on, or turning it off, does not.
+func nextOrgMail(requested *bool, existing map[string]any, mayEnable bool) (bool, error) {
+	stored := getBoolFromMap(existing, integrationdom.MetaEmailOrgMail)
+	if requested == nil {
+		return stored, nil
+	}
+	if *requested && !stored && !mayEnable {
+		return false, ErrOrgMailNeedsAdmin
+	}
+	return *requested, nil
+}
+
 // updateEmailCredentials updates email credentials, merging with existing metadata if partial update.
-func (s *IntegrationService) updateEmailCredentials(intg *integrationdom.Integration, credentialsJSON string) error {
+//
+//nolint:cyclop // field-by-field merge of a partial update
+func (s *IntegrationService) updateEmailCredentials(intg *integrationdom.Integration, credentialsJSON string, mayEnableOrgMail bool) error {
 	var emailCreds EmailCredentials
 	if err := json.Unmarshal([]byte(credentialsJSON), &emailCreds); err != nil {
 		return fmt.Errorf("parse email credentials: %w", err)
@@ -1511,6 +1551,14 @@ func (s *IntegrationService) updateEmailCredentials(intg *integrationdom.Integra
 	newMetadata["use_tls"] = emailCreds.UseTLS
 	newMetadata["use_starttls"] = emailCreds.UseSTARTTLS
 
+	// Organization mail through this relay: the request's choice, else the
+	// stored one (absent on an integration saved before the flag: off).
+	orgMail, err := nextOrgMail(emailCreds.OrgMail, existingMetadata, mayEnableOrgMail)
+	if err != nil {
+		return err
+	}
+	newMetadata[integrationdom.MetaEmailOrgMail] = orgMail
+
 	// Reply To
 	if emailCreds.ReplyTo != "" {
 		newMetadata["reply_to"] = emailCreds.ReplyTo
@@ -1545,6 +1593,21 @@ func (s *IntegrationService) updateEmailCredentials(intg *integrationdom.Integra
 		return fmt.Errorf("%w: at least one recipient email is required", shared.ErrValidation)
 	}
 
+	// The merged relay must meet the transport rule (on a managed service:
+	// submission port, AUTH, TLS), with the stored login counted when the
+	// request does not replace it.
+	// A request that sends a username or a password replaces the stored login
+	// as given; otherwise the stored login stays.
+	user, pass := emailCreds.Username, emailCreds.Password
+	if user == "" && pass == "" {
+		if stored := s.storedEmailLogin(intg); stored != nil {
+			user, pass = stored.Username, stored.Password
+		}
+	}
+	if err := emailpkg.ValidateTenantRelay(smtpPort, getBoolFromMap(newMetadata, "use_tls"), getBoolFromMap(newMetadata, "use_starttls"), user, pass); err != nil {
+		return relayRuleError{err}
+	}
+
 	// A new relay (host, port) or a weaker transport must not inherit the
 	// stored username/password: the next delivery would present them to it.
 	if err := requireCredentialsForDestinationChange(intg,
@@ -1573,6 +1636,24 @@ func (s *IntegrationService) updateEmailCredentials(intg *integrationdom.Integra
 	}
 
 	return nil
+}
+
+// storedEmailLogin is the username and password saved with an e-mail
+// integration (nil when none or unreadable).
+func (s *IntegrationService) storedEmailLogin(intg *integrationdom.Integration) *EmailSensitiveCredentials {
+	enc := intg.CredentialsEncrypted()
+	if enc == "" {
+		return nil
+	}
+	plain, err := s.encryptor.DecryptString(enc)
+	if err != nil {
+		return nil
+	}
+	var c EmailSensitiveCredentials
+	if err := json.Unmarshal([]byte(plain), &c); err != nil {
+		return nil
+	}
+	return &c
 }
 
 // emailDestinationChanged reports whether the SMTP relay moved (host or port)
@@ -2038,6 +2119,10 @@ type CreateNotificationIntegrationInput struct {
 	// Metadata holds non-sensitive provider config (e.g. Splunk HEC
 	// hec_url/index/sourcetype). Merged onto any provider-set metadata.
 	Metadata map[string]any
+
+	// CanEnableOrgMail is set by the caller's layer when the actor is an
+	// owner or administrator of the organization.
+	CanEnableOrgMail bool
 }
 
 // CreateNotificationIntegration creates a new notification integration.
@@ -2096,7 +2181,7 @@ func (s *IntegrationService) CreateNotificationIntegration(ctx context.Context, 
 	case integrationdom.ProviderEmail:
 		// For email: split into metadata (non-sensitive) and credentials (sensitive)
 		if input.Credentials != "" {
-			if err := s.setEmailCredentials(intg, input.Credentials); err != nil {
+			if err := s.setEmailCredentials(intg, input.Credentials, input.CanEnableOrgMail); err != nil {
 				return nil, err
 			}
 		}
@@ -2218,6 +2303,10 @@ type UpdateNotificationIntegrationInput struct {
 	// Metadata, when non-nil, is merged onto the integration's non-sensitive
 	// provider config (e.g. Splunk HEC hec_url/index/sourcetype).
 	Metadata map[string]any
+
+	// CanEnableOrgMail is set by the caller's layer when the actor is an
+	// owner or administrator of the organization.
+	CanEnableOrgMail bool
 }
 
 // applyNotificationExtensionUpdates applies updates to a notification extension.
@@ -2290,7 +2379,7 @@ func (s *IntegrationService) UpdateNotificationIntegration(ctx context.Context, 
 	case integrationdom.ProviderEmail:
 		// For email: split into metadata (non-sensitive) and credentials (sensitive)
 		if input.Credentials != nil && *input.Credentials != "" {
-			if err := s.updateEmailCredentials(intg, *input.Credentials); err != nil {
+			if err := s.updateEmailCredentials(intg, *input.Credentials, input.CanEnableOrgMail); err != nil {
 				return nil, err
 			}
 		}
@@ -2578,6 +2667,9 @@ func (s *IntegrationService) SendNotification(ctx context.Context, input SendNot
 	// Create notification client
 	client, err := s.notificationFactory.CreateClient(config)
 	if err != nil {
+		if errors.Is(err, emailpkg.ErrTenantRelayPolicy) {
+			s.EmailRelayRefused(ctx, intg.TenantID(), intg.ID(), err)
+		}
 		return &SendNotificationResult{
 			Success: false,
 			Error:   fmt.Sprintf("failed to create client: %v", err),
