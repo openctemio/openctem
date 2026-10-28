@@ -303,7 +303,7 @@ doorbell and the claim by id):
 | Capabilities | every `required_capabilities` is one the sensor has |
 | Features | every `required_features` is one the sensor reported (never only declared) |
 | Refusals | the sensor is not in `refused_by` |
-| Hosts | no other acknowledged or running command of the organization holds a conflicting host key (re-checked under advisory locks) |
+| Hosts | no other acknowledged or running command of the organization holds a conflicting host key (re-checked under advisory locks); a shared job also needs fewer than its limit (2, intrusive 1) of shared jobs of any organization holding one ([sensors.md](sensors.md#the-shared-claim-path)) |
 
 **Fair order** (`fairPendingQuery`): priority class (critical 1 … low 4,
 raised one class per 30 minutes waited, never into critical), then
@@ -315,7 +315,11 @@ candidates of each class.
 organization; within a round the organization with the fewest shared jobs in
 flight first, then class and age; each organization's
 `platform_scans_concurrent` is enforced inside the claim under a
-per-organization lock.
+per-organization lock. The read is bounded by the organizations with pending
+shared work (at most 200 ranked, five jobs each per round, through
+`idx_commands_shared_pending` and `idx_commands_shared_inflight`), never by
+the depth of their queues or by finished jobs
+([sensors.md](sensors.md#the-shared-claim-path)).
 
 **Claim by id** (`POST /commands/{id}/claim`, `TransitionCommand`): the same
 predicates and holds for one command; a replay by the holder answers the
@@ -511,12 +515,14 @@ change and this page updated when it lands:
   work for shared sensors, so they rely on the 5-minute safety poll. Planned:
   wake shared streams and report shared pending work.
 - **Claim cost.** The candidate read evaluates and sorts every pending row of
-  the organization (and every shared job on the shared path) before taking the
+  the organization before taking the
   first 1000; measured about 5 ms at 1k, 45 ms at 10k and 370 ms at 100k
   pending rows. The round-robin across runs holds only inside that window.
-  Planned: the [work pool](../rfcs/RFC-090-work-pool.md) (pending-only lanes and
-  items with an index-ordered, bounded claim), a queue version so a claim with
-  nothing new skips the database, and a bound on the shared candidate read.
+  The shared candidate read is bounded already (per organization, through
+  `idx_commands_shared_pending`). Planned: the
+  [work pool](../rfcs/RFC-090-work-pool.md) (pending-only lanes and items with
+  an index-ordered, bounded claim) and a queue version so a claim with nothing
+  new skips the database.
 - **Lease epoch** becomes mandatory on every request a holder makes (start,
   complete, fail, release, logs, results), and the unused per-job token
   columns are removed.

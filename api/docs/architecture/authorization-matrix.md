@@ -687,6 +687,7 @@ the billing page in the UI.
 | Endpoint | Permission Required |
 |----------|---------------------|
 | `GET /api/v1/findings/{id}/evidence-items` | `findings:read` + data scope (404 outside it) |
+| `PATCH /api/v1/findings/{id}/evidence-items/{item_id}`, `PUT /api/v1/findings/{id}/evidence-items/order` | `findings:write` + data scope (404 outside it) + the item must belong to that finding; a pentest finding also passes the campaign's evidence-write rule; audited |
 | `POST /api/v1/findings/{id}/evidence-items/{item_id}/reveal` | `findings:evidence:reveal` + data scope + per-user rate limit + **step-up** (API keys cannot); audited |
 | `GET/PUT /api/v1/organization/settings/evidence` | owner/admin; PUT audited |
 
@@ -1094,8 +1095,8 @@ empty `owner_emails`. Every member-list view is audited
 | Endpoint | Required Role |
 |----------|---------------|
 | `GET /api/v1/admin/auth/validate` | any admin |
-| `GET /api/v1/admin/platform-users?q=` | **ops_admin+** (3+ characters; account-level facts only; people's emails are not for read-only) |
-| `GET /api/v1/admin/platform-users/{user_id}` | **ops_admin+** (audited `platform_user.view`) |
+| `GET /api/v1/admin/platform-users?q=` | **ops_admin+** (3+ characters; account-level facts only; people's emails are not for read-only); accounts linked to a platform administrator are left out of the rows and the tab counts below **super_admin**; 120 reads/min per administrator |
+| `GET /api/v1/admin/platform-users/{user_id}` | **ops_admin+** (audited `platform_user.view`); 404 for an administrator-linked account below **super_admin**; same read limit |
 | `POST /api/v1/admin/platform-users/{user_id}/revoke-sessions`, `/unlock`, `/password-reset`, `/verification-emails` | **ops_admin+** + **step-up**, `reason` required (10-500), 20/min per administrator, audited `platform_user.<action>`; 409 for a platform administrator's or an erased account; links are emailed, never returned |
 | `POST /api/v1/admin/platform-users/{user_id}/block`, `/unblock` | **ops_admin+** + **step-up**, `reason` required (10-500), 20/min per administrator; **critical** admin audit `platform_user.blocked` / `platform_user.unblocked`; 409 for a platform administrator's or an erased account, or when already in that state. A blocked account (`users.status = 'suspended'`) is refused at sign-in and on every request (session token, API key, MCP token); its sessions end at once. See `organization-suspension.md` |
 | `GET /api/v1/admin/console-sessions` | **super_admin** (every administrator's open console session) |
@@ -1114,12 +1115,12 @@ empty `owner_emails`. Every member-list view is audited
 | `POST /api/v1/admin/auth/password` | any admin (the only write allowed while `password_change_required`) |
 | `GET /api/v1/admin/auth/idp` | public (enabled + display name of the platform IdP, nothing else) |
 | `POST /api/v1/admin/auth/idp/start`, `/idp/callback` | public (token-exchange rate limit, 20/min; state bound to the `admin_idp` cookie, single use) |
-| `POST /api/v1/admin/administrators` | **super_admin** + **step-up** (audited; `break_glass` audited high) |
+| `POST /api/v1/admin/administrators` | **super_admin** + **step-up** (audited; `break_glass` audited high). Invitation by e-mail, no password returned; a new super admin also needs a second super admin's approval and, while approvals are on, working platform e-mail |
 | `POST /api/v1/admin/users/{id}/reset-credentials` | **super_admin** + **step-up** (audited; not self) |
 | `POST /api/v1/admin/users/{id}/break-glass-test` | **super_admin** + **step-up** (audited; not the break-glass account itself) |
 | `DELETE /api/v1/admin/users/{id}/idp-binding` | **super_admin** + **step-up** (audited high) |
 | `GET/PUT/DELETE /api/v1/admin/platform-idp` | **super_admin**; writes + a **fresh** authenticator code (never the step-up window); switching it off, no longer requiring it, a new issuer or client, or a newly trusted ACR/AMR value also need a second super admin; audited **critical** with the previous configuration; secret never returned |
-| `GET /api/v1/admin/access-requests` | any admin |
+| `GET /api/v1/admin/access-requests` | any admin; a **read-only** administrator gets each requester's address masked (`j***@example.com`) and no note, `redacted: true` |
 | `POST /api/v1/admin/access-requests/{id}/approve`, `/reject` | **ops_admin+** (audited); approve creates the organization with the requester as owner and takes **step-up** |
 | `GET /api/v1/admin/settings/limits` | any admin (self-service default limits, configured sources) |
 | `PUT /api/v1/admin/settings/limits` | **super_admin** + a fresh authenticator code; optimistic version (409); audited **critical** |
@@ -1141,7 +1142,7 @@ empty `owner_emails`. Every member-list view is audited
 | `GET /api/v1/admin/audit-logs` (+ `/stats`, `/{id}`) | any admin (readonly ok); the network address, user agent and request body of a row only for **ops_admin+** (by the administrator's own role), a read-only administrator reads action, actor, time and result |
 | `GET /api/v1/admin/audit-logs/chain` | any admin (readonly ok); the administrators' audit chain state: row positions and ids that do not verify, no row content |
 | `GET /api/v1/admin/target-mappings` (+ `/stats`, `/types`, `/{id}`) | any admin |
-| `POST/PATCH/DELETE /api/v1/admin/target-mappings` | **ops_admin+** (rate-limited, audited) |
+| `POST/PATCH/DELETE /api/v1/admin/target-mappings` | **super_admin** + step-up (`target_mapping.change`) + a `reason` (10 to 500 characters) in the JSON body of all three, kept in the audit row; rate-limited. A mapping decides which assets every organization's scans take or skip, so it is a platform-wide change |
 | `GET /api/v1/admin/version-check/` | any admin (release feed status: newer releases, advisories affecting the running version; instance-level, no tenant data; `docs/architecture/version-check.md`) |
 | `POST /api/v1/admin/version-check/import` | **super_admin** + **step-up** (offline import of the signed release feed file, verified like a fetched one; audited high) |
 | `GET /api/v1/admin/tenants/{tenantId}/audit-chain` | any admin (classifies the organization's audit hash-chain; read-only) |
@@ -1182,8 +1183,9 @@ password) and `POST /api/v1/admin/auth/mfa` open a console session. Rules:
 - Provisioning is `POST /api/v1/admin/administrators` (super admin), or
   `bootstrap-admin` for the first one and its break-glass backup. Rows without
   a `user_id` (former API-key identities) were deactivated by migration 000227.
-- **Temporary password gate.** A provisioned account has
-  `password_change_required`; a password-authenticated console session can then
+- **Temporary password gate.** An account made by `bootstrap-admin` has
+  `password_change_required` (an invited administrator chooses their own
+  password and has no temporary one); a password-authenticated console session can then
   call only `GET /auth/validate` and `POST /auth/password` (403
   `PASSWORD_CHANGE_REQUIRED` otherwise).
 
@@ -1289,7 +1291,7 @@ and certificates are never logged — an IdP update records
 
 | Endpoint | Required Role |
 |----------|---------------|
-| `GET /api/v1/admin/tenants` (+ `/{tenantId}`) | any admin (list filter `owner=none\|present`; other values 400; each row says whether limits apply) |
+| `GET /api/v1/admin/tenants` (+ `/{tenantId}`) | any admin (list filter `owner=none\|present`; other values 400; each row says whether limits apply). The list carries the owner count and, for **ops_admin+**, the owners' domains, never their addresses. The single organization view adds the owners' addresses for **ops_admin+** and is audited (`organization.view`). **Read-only** gets the owner count only, and no suspension reason (free text written by an administrator) |
 | `POST /api/v1/admin/tenants` | **ops_admin+** + **step-up** (audited; creates the owner's account when `owner_email` has none) |
 | `GET /api/v1/admin/tenants/{tenantId}/users` | any admin; audited `organization.users_view`; `readonly` gets counts by role only (`redacted: true`) |
 | `POST /api/v1/admin/tenants/{tenantId}/users` | **ops_admin+** + **step-up**, **bootstrap only**: creates the first owner of an organization with no owner, active or suspended, nothing else (409 otherwise). With `"recovery": true`: **super_admin** only (403 otherwise), a `reason` of 10 to 500 characters (400; kept in the admin audit row) (the route's step-up confirms it), for an organization whose owners are all suspended (409 while one is active), link emailed only (400 without email). Audited in `admin_audit_logs` (`organization.user_create` / `organization.owner_recovery`) and the organization's audit log |
@@ -2784,6 +2786,28 @@ report all read it.
 
 Team roles, the administrator bypass and the owner invariants are unchanged:
 they read the built-in roles only, and those never bind.
+
+### Team access presets (RFC-127)
+
+A team carries access without anyone managing roles. `PUT /api/v1/groups/{groupId}/access`
+sets the team's **presets** (role templates) and **scope mode** (`specific`, or
+`all_assets`). Each preset is a **managed role**: a custom role with
+`roles.managed_group_id` set, bound to its team. "All assets" is a managed role
+with full data access and no permissions, so the data-scope engine, notification
+audiences and the full-data guards read it exactly like `has_full_data_access`.
+`v_user_role_grants` is unchanged; `GET /api/v1/users/{userId}/team-access` lists
+what a person inherits and from which team.
+
+| Rule | Enforcement |
+|---|---|
+| A managed role is changed only through the team's access | `ErrManagedRole` on update, delete, assign, invitation roles, bind and unbind; triggers refuse a `user_roles` row and a binding to another team; deleting the team deletes its managed roles |
+| Hidden from the Roles list | `RoleRepository.ListForTenant` excludes managed roles; the team lists them (`managed: true`) |
+| Setting access is a grant | `team:roles:assign` and `team:groups:write`; the actor holds every permission of a preset they add or remove, and without full data access every asset of the team; a non-owner member does not add roles to their own team |
+| Privileged teams are the owner's | a team is privileged when a role of it is (all assets, or a privileged permission): only an owner sets its access or changes the team (rename, deactivate), with step-up; audited at critical severity |
+| Membership of a privileged managed team | needs `team:members:write` on top of `team:groups:members` and the grant ceiling; a team lead without it is refused (`ErrPrivilegedTeamNeedsMembersManage`). Teams that carry a privileged role bound by hand stay owner-only |
+| Outside members and service accounts | never join, and never receive, an all-assets team (`ErrExternalTeamFullData`); an outside invitee to a team with elevated access counts as above member for the outside-member two-factor rules |
+| Owner and admin | never granted through a team (only custom roles bind) |
+| Versioning | the managed role records the template version; `POST .../access/upgrade` applies the current permissions when the editor confirms the version they reviewed (409 otherwise); full data access is never changed by an update |
 
 ## Service accounts
 

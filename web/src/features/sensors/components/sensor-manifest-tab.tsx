@@ -20,6 +20,7 @@ import { agoShort, exactTime } from '../lib/format'
 import {
   concurrencyText,
   contractSummary,
+  ignoredLooksNewer,
   ignoredReasonLabel,
   isEmptyDiff,
   manifestDiffLines,
@@ -219,6 +220,17 @@ function CurrentManifest({ v, now }: { v: SensorManifestVersion; now: number }) 
               : t('sensors.manifest.ignoredMany', 'The platform ignored {n} items', {
                   n: v.ignored.length,
                 })}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {ignoredLooksNewer(v.ignored)
+              ? t(
+                  'sensors.manifest.ignoredNewer',
+                  'This sensor is newer than the platform; these items will be used after the platform is updated.'
+                )
+              : t(
+                  'sensors.manifest.ignoredInvalid',
+                  'Some of these items are invalid; a sensor update will not change that.'
+                )}
           </p>
           <ul className="text-xs text-muted-foreground">
             {v.ignored.map((i) => (
