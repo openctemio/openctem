@@ -70,6 +70,9 @@ describe('SensorManifestTab', () => {
     )
     expect(within(tools).getByText('nuclei-templates v10.4.9')).toBeInTheDocument()
     expect(screen.getByRole('note')).toHaveTextContent('"zap2": not in the tool catalog')
+    expect(screen.getByRole('note')).toHaveTextContent(
+      'This sensor is newer than the platform; these items will be used after the platform is updated.'
+    )
 
     const history = screen.getByRole('list', { name: 'Manifest versions' })
     expect(within(history).getByText('nuclei v3.11.1 → v3.12.0')).toBeInTheDocument()
