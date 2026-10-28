@@ -1063,7 +1063,7 @@
   "admin.org.suspension.since": "Suspended",
   "admin.org.suspension.suspend": "Suspend organization",
   "admin.org.suspension.suspendDone": "Organization suspended.",
-  "admin.org.suspension.suspendWhat": "From the next request on, {name} is closed to every credential: sign-in, API keys, MCP tokens, sensors, SCIM, CI and webhooks. Its scheduled work stops. Nothing is deleted. Members see \"This organization is suspended — contact support\"; your reason stays in the admin audit log.",
+  "admin.org.suspension.suspendWhat": "From the next request on, {name} is closed to every credential: sign-in, API keys, MCP tokens, sensors, SCIM, CI and webhooks. Its scheduled work stops. Nothing is deleted. Members see \"This organization is suspended. Contact support.\"; your reason stays in the admin audit log.",
   "admin.org.tab.activity": "Activity",
   "admin.org.tab.auditChain": "Audit chain",
   "admin.org.tab.limits": "Limits",
