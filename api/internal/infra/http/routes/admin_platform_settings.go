@@ -59,7 +59,7 @@ func registerAdminPlatformSettingsRoutes(router Router, h Handlers, adminMiddlew
 	emailRelay := ps.EmailRelay != nil
 	router.Group("/api/v1/admin/settings/email-relay", func(r Router) {
 		r.GET("/", on(emailRelay, ps.GetEmailRelay))
-		r.PUT("/", on(emailRelay, ps.UpdateEmailRelay), requireSuper, freshStepUp("settings.email_relay"))
+		r.PUT("/", on(emailRelay, ps.UpdateEmailRelay), freshStepUp("settings.email_relay"))
 	}, adminMiddlewares...)
 	router.Group("/api/v1/admin/settings/alerts", func(r Router) {
 		r.GET("/", on(alerts, ps.GetAlertWebhook))
