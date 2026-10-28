@@ -54,7 +54,7 @@
 # log (openctem-signer verify-log checks it).
 services:
   signer:
-    image: ${API_IMAGE:-ghcr.io/openctemio/openctem-api}:${API_VERSION:-${OPENCTEM_VERSION:-v0.15.5}}
+    image: ${API_IMAGE:-ghcr.io/openctemio/openctem-api}:${API_VERSION:-${OPENCTEM_VERSION:-v0.15.6}}
     entrypoint: ["/app/openctem-signer"]
     command: ["serve"]
     user: "1001:1000"
