@@ -87,6 +87,7 @@ import {
 } from '@/features/scans/components/scans-section-tabs'
 import { ScanConfigDetailSheet } from '@/features/scans/components/scan-config-detail-sheet'
 import { LastRunCell } from '@/features/scans/components/last-run-cell'
+import { ManagedScansSection } from '@/features/scans/components/managed-scans-section'
 import { RunHistory } from '@/features/scans/components/run-history'
 import { ScanMobileCard } from '@/features/scans/components/scan-mobile-card'
 import { ScheduleCell } from '@/features/scans/components/schedule-cell'
@@ -962,6 +963,10 @@ function ConfigurationsTab() {
           )}
         </div>
       </div>
+
+      {/* The scans the platform runs itself stay visible, read-only. With the
+          origin filter on System the table already lists them. */}
+      {originFilter === 'all' && <ManagedScansSection onOpenRun={setOpenRunId} />}
 
       <BulkActionBar count={selectedIds.length} onClear={clearSelection}>
         <Can permission={Permission.ScansWrite}>
