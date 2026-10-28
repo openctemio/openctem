@@ -6,3 +6,4 @@
 - Everything an analyst does carries its provenance: timeline rows are labeled `ai` by the database and carry the run, model, prompt and accountable owners; audit rows carry the same under `metadata.ai`.
 - `ai_runs` records every run (analyst, accountable snapshot, model, prompt, digests, usage); one live run per subject and use case.
 - API: `/api/v1/ai/analysts` (list, create, owners, preset, attest, pause, resume, disable, delete), `/api/v1/ai/runs/{id}`, `/api/v1/findings/{id}/ai/runs`. Migrations `003515_ai_analysts` and `003516_ai_analyst_activity_index` (built concurrently); no operator action.
+- Read-only AI assistance runs under the viewer and writes nothing: in an assistance context every finding write path and every writing database statement is refused, and no analyst can be resolved.

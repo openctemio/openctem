@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/aianalysis"
+
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/pkg/domain/retest"
@@ -44,6 +46,10 @@ const findingRetestColumns = `id, tenant_id, finding_id, asset_id, trigger, requ
 // Create inserts a pending retest. A second pending retest of the same finding
 // violates ux_finding_retests_one_pending and returns retest.ErrInFlight.
 func (r *FindingRetestRepository) Create(ctx context.Context, rt *retest.Retest) error {
+	// Read-only AI assistance never writes (docs/architecture/ai-analysis.md).
+	if err := aianalysis.RefuseAssist(ctx); err != nil {
+		return err
+	}
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO finding_retests (id, tenant_id, finding_id, asset_id, trigger, requested_by, status,
 			prior_status, template_id, target, deadline_at, created_at, retest_check_id, check_digest, check_path)

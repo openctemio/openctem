@@ -608,3 +608,70 @@ func TestAIAnalyst_RiskLoweringNeedsAPersonWithApprovalOff_DB(t *testing.T) {
 		t.Fatal("an AI analyst lowered a severity without a person")
 	}
 }
+
+// Read-only AI assistance (explain, summarize, translate, questions) runs
+// under the viewer's own permissions and writes nothing: in an assistance
+// context every finding command is refused before it writes, even for a
+// viewer who could make the change by hand, and no analyst principal can be
+// resolved. The marker exists only in process (no token or header sets it).
+func TestAIAssist_CannotWrite_DB(t *testing.T) {
+	h := newFindingApprovalHarness(t, func(svc *finding.VulnerabilityService, vh *handler.VulnerabilityHandler, db *postgres.DB) {
+		log := logger.NewNop()
+		ts := tenantapp.NewTenantService(postgres.NewTenantRepository(db), log,
+			tenantapp.WithTenantAuditService(auditapp.NewAuditService(postgres.NewAuditRepository(db), log)))
+		actors := postgres.NewScopeActorRepository(db)
+		svc.SetSoloApproval(actors, nil, ts)
+		svc.SetApprovalNotifier(actors, nil, nil, "")
+		vh.SetFindingApprovalSettings(ts)
+		svc.SetSeverityRequestRepository(postgres.NewSeverityRequestRepository(db))
+		svc.SetCommentRepository(postgres.NewFindingCommentRepository(db))
+	})
+	org := h.tenantWithFindings()
+	viewer := h.member(org, "admin")
+	f := h.newFinding(org, "high")
+	ctx := aidom.WithAssist(context.Background())
+
+	if _, err := h.svc.AddFindingCommentWithInput(ctx, finding.AddFindingCommentInput{
+		TenantID: org, FindingID: f, AuthorID: viewer.id, Content: "drafted silently", ActingUserID: viewer.id, IsAdmin: true,
+	}); !errors.Is(err, aidom.ErrAssistReadOnly) {
+		t.Errorf("comment in an assistance context: %v", err)
+	}
+	if _, err := h.svc.UpdateFindingStatus(ctx, f, org, finding.UpdateFindingStatusInput{Status: "in_progress", ActorID: viewer.id}); !errors.Is(err, aidom.ErrAssistReadOnly) {
+		t.Errorf("status in an assistance context: %v", err)
+	}
+	if _, err := h.svc.ChangeFindingSeverity(ctx, finding.ChangeSeverityInput{
+		TenantID: org, FindingID: f, ActorID: viewer.id, Severity: "critical", Reason: "assist", CanApprove: true,
+	}); !errors.Is(err, aidom.ErrAssistReadOnly) {
+		t.Errorf("severity in an assistance context: %v", err)
+	}
+	if _, err := h.svc.RequestApproval(ctx, finding.RequestApprovalInput{
+		TenantID: org, FindingID: f, RequestedStatus: "false_positive", Justification: "assist",
+		RequestedBy: viewer.id, ClosureReason: "test_or_example_code", CanApprove: true,
+	}); !errors.Is(err, aidom.ErrAssistReadOnly) {
+		t.Errorf("approval request in an assistance context: %v", err)
+	}
+	var status, sev string
+	var comments, approvals, activities int
+	if err := h.db.QueryRow(`SELECT status, severity,
+		(SELECT count(*) FROM finding_comments WHERE finding_id = $1::uuid),
+		(SELECT count(*) FROM finding_status_approvals WHERE finding_id = $1::uuid),
+		(SELECT count(*) FROM finding_activities WHERE finding_id = $1::uuid)
+		FROM findings WHERE id = $1::uuid`, f).Scan(&status, &sev, &comments, &approvals, &activities); err != nil {
+		t.Fatal(err)
+	}
+	if status != "confirmed" || sev != "high" || comments+approvals+activities != 0 {
+		t.Fatalf("assistance wrote: status=%s severity=%s comments=%d approvals=%d activities=%d", status, sev, comments, approvals, activities)
+	}
+	// Outside the assistance context the same viewer may comment (control).
+	if _, err := h.svc.AddFindingCommentWithInput(context.Background(), finding.AddFindingCommentInput{
+		TenantID: org, FindingID: f, AuthorID: viewer.id, Content: "posted by the person", ActingUserID: viewer.id, IsAdmin: true,
+	}); err != nil {
+		t.Fatalf("control comment: %v", err)
+	}
+	// No analyst principal is resolved in an assistance context.
+	ah := newAIHarness(t)
+	a := ah.create(t, "suggest", ah.owner, userOwner(ah.triager))
+	if _, err := ah.svc.Principal(aidom.WithAssist(context.Background()), ah.tenant, a.ID); !errors.Is(err, aidom.ErrAssistReadOnly) {
+		t.Fatalf("principal in an assistance context: %v", err)
+	}
+}

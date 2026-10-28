@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/aianalysis"
+
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/pkg/domain/approvalpolicy"
@@ -87,6 +89,9 @@ func saveSeverityDecision(ctx context.Context, x severityExecer, f *vulnerabilit
 // extendSLA the write runs in a transaction marked as an explicit SLA
 // decision (openctem.sla_restart), the one way past the tighten-only guard.
 func (r *FindingRepository) SaveSeverityDecision(ctx context.Context, f *vulnerability.Finding, expected vulnerability.Severity, extendSLA bool) error {
+	if err := aianalysis.RefuseAssist(ctx); err != nil {
+		return err
+	}
 	if !extendSLA {
 		return saveSeverityDecision(ctx, r.db, f, expected)
 	}
@@ -161,6 +166,10 @@ func scanSeverityRequest(row severityRequestScanner) (*vulnerability.SeverityReq
 
 // Create implements vulnerability.SeverityRequestRepository.
 func (r *SeverityRequestRepository) Create(ctx context.Context, req *vulnerability.SeverityRequest) error {
+	// Read-only AI assistance never writes (docs/architecture/ai-analysis.md).
+	if err := aianalysis.RefuseAssist(ctx); err != nil {
+		return err
+	}
 	return r.db.Transaction(ctx, func(tx *sql.Tx) error {
 		// A pending request nobody decided in time stops blocking a new one.
 		if _, err := tx.ExecContext(ctx, `UPDATE finding_severity_requests SET status = 'expired'

@@ -2,6 +2,7 @@ package aianalysis
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -76,4 +77,32 @@ func StampActor(ctx context.Context, actorID *shared.ID) (Provenance, bool) {
 		return Provenance{}, false
 	}
 	return p, true
+}
+
+// ErrAssistReadOnly: read-only AI assistance tried to change state. AI
+// assistance (explain, summarize, translate, questions) runs under the
+// viewer's own permissions, persists no decision and writes nothing; every
+// change to state goes through an AI analyst.
+var ErrAssistReadOnly = fmt.Errorf("%w: AI assistance is read-only; changes go through an AI analyst", shared.ErrForbidden)
+
+type assistKey struct{}
+
+// WithAssist marks ctx as read-only AI assistance for the viewer.
+func WithAssist(ctx context.Context) context.Context {
+	return context.WithValue(ctx, assistKey{}, true)
+}
+
+// IsAssist reports whether ctx is read-only AI assistance.
+func IsAssist(ctx context.Context) bool {
+	v, _ := ctx.Value(assistKey{}).(bool)
+	return v
+}
+
+// RefuseAssist returns ErrAssistReadOnly in an assistance context; the
+// finding write paths call it first.
+func RefuseAssist(ctx context.Context) error {
+	if IsAssist(ctx) {
+		return ErrAssistReadOnly
+	}
+	return nil
 }
