@@ -577,6 +577,15 @@ func (u *User) VerifyEmail() {
 	u.updatedAt = time.Now().UTC()
 }
 
+// MarkEmailUnverified records that the address was not proved: used for an
+// account created by a social sign-in whose provider is not authoritative for
+// the address. Such an account cannot claim an invitation or join an
+// organization by domain until the address is verified another way.
+func (u *User) MarkEmailUnverified() {
+	u.emailVerified = false
+	u.updatedAt = time.Now().UTC()
+}
+
 // SetEmailVerificationToken sets a new email verification token.
 func (u *User) SetEmailVerificationToken(token string, expiresAt time.Time) {
 	u.emailVerificationToken = &token
