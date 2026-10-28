@@ -76,6 +76,8 @@ type EASMReviewer interface {
 	// DecideAs is a person's decision: confirming also adds each confirmed
 	// asset's exact scope entry where the organization's setting allows.
 	DecideAs(ctx context.Context, tenantID shared.ID, assetIDs []string, state attribution.State, actor easmapp.ScopeActor) (*easmapp.DecisionResult, error)
+	// DecideNamesAs is DecideAs for assets named by name as well as by id.
+	DecideNamesAs(ctx context.Context, tenantID shared.ID, assetIDs, names []string, state attribution.State, actor easmapp.ScopeActor) (*easmapp.DecisionResult, error)
 }
 
 // SetReview wires the review queue and its audit trail.
@@ -155,6 +157,10 @@ func (h *EASMHandler) Candidates(w http.ResponseWriter, r *http.Request) {
 // EASMDecisionRequest is one decision on many assets.
 type EASMDecisionRequest struct {
 	AssetIDs []string `json:"asset_ids"`
+	// AssetNames name assets by their name (the skipped targets of a scan
+	// list names): looked up among this organization's own assets, they
+	// join asset_ids. At most 200 ids and names together.
+	AssetNames []string `json:"asset_names,omitempty"`
 	// State: confirmed, rejected, dependency, monitor_only, needs_review,
 	// or automatic (forget a person's decision: the asset goes back to what
 	// its evidence says; the undo of "Not ours").
@@ -168,7 +174,7 @@ const maxDecisionNote = 500
 
 // Decide handles POST /api/v1/easm/candidates/decisions
 // @Summary      Decide EASM attribution in bulk
-// @Description  Record whether each asset is the organization's: confirmed lets scans reach it; rejected, dependency and monitor_only keep it passive. At most 200 assets per call. Assets that are not the organization's, are deleted or are outside the caller's data scope are listed in not_found. Each decision is audited.
+// @Description  Record whether each asset is the organization's: confirmed lets scans reach it; rejected, dependency and monitor_only keep it passive. At most 200 assets per call; assets may be named by asset_ids or by asset_names (the skipped targets of a scan list names). Assets that are not the organization's, are deleted or are outside the caller's data scope are listed in not_found. Each decision is audited.
 // @Tags         Attack Surface
 // @Accept       json
 // @Produce      json
@@ -198,7 +204,7 @@ func (h *EASMHandler) Decide(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	userID := middleware.GetUserID(ctx)
-	res, err := h.review.DecideAs(ctx, tenantID, req.AssetIDs, attribution.State(req.State), confirmActor(ctx))
+	res, err := h.review.DecideNamesAs(ctx, tenantID, req.AssetIDs, req.AssetNames, attribution.State(req.State), confirmActor(ctx))
 	if err != nil {
 		if middleware.WriteStepUpError(w, err, authapp.StepUpWindow) {
 			return
