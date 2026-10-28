@@ -12,6 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { DetailChipList, DetailSection, DetailStat, DetailStatGrid } from '@/features/shared'
 import type { LifecycleRef, MemberAccessReport } from '../types/member.types'
 import { ownedScheduleCount } from '../lib/member-lifecycle'
+import { useUserTeamAccess } from '@/features/access-control/api/use-team-access'
 
 function chips(refs: LifecycleRef[] | undefined, withDetail = true) {
   return (refs ?? []).map((r) => ({
@@ -36,6 +37,9 @@ export function MemberAccessReportView({
   ownedOnly = false,
 }: MemberAccessReportViewProps) {
   const { t } = useTranslation()
+  // Access this person inherits from teams (api RFC-127). Nothing is fetched
+  // for the offboarding view, and a caller who may not read it just sees none.
+  const { grants: teamGrants } = useUserTeamAccess(ownedOnly ? null : report?.user_id)
   if (isLoading) {
     return (
       <div className="space-y-2" aria-busy="true" aria-label="Loading access report">
@@ -71,6 +75,28 @@ export function MemberAccessReportView({
           </DetailSection>
           <DetailSection title="Access groups" icon={Users} count={report.groups?.length ?? 0}>
             <DetailChipList chips={chips(report.groups)} label="Access groups" />
+          </DetailSection>
+          <DetailSection
+            title={t('org.accessReport.fromTeams', 'Access from teams')}
+            icon={Users}
+            count={teamGrants.length}
+          >
+            <DetailChipList
+              chips={teamGrants.map((g) => ({
+                key: `${g.group_id}-${g.role_id}`,
+                label: t('org.accessReport.fromTeam', '{role} from team {team}', {
+                  role: g.role_name,
+                  team: g.group_name,
+                }),
+                meta: g.member_until
+                  ? t('org.accessReport.until', 'until {date}', {
+                      date: new Date(g.member_until).toLocaleDateString(),
+                    })
+                  : undefined,
+                tag: g.privileged ? t('org.accessReport.elevated', 'elevated') : undefined,
+              }))}
+              label={t('org.accessReport.fromTeams', 'Access from teams')}
+            />
           </DetailSection>
           <DetailSection title="API keys" icon={KeyRound} count={report.api_keys?.length ?? 0}>
             <DetailChipList chips={chips(report.api_keys)} label="API keys" />
