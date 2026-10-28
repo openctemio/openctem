@@ -44,6 +44,10 @@ func (r *FindingActivityRepository) Create(ctx context.Context, activity *vulner
 // insertFindingActivity writes one timeline entry through db (the pool or a
 // caller's transaction).
 func insertFindingActivity(ctx context.Context, db execer, activity *vulnerability.FindingActivity) error {
+	// Read-only AI assistance never writes (docs/architecture/ai-analysis.md).
+	if err := aianalysis.RefuseAssist(ctx); err != nil {
+		return err
+	}
 	changesJSON, err := json.Marshal(activity.Changes())
 	if err != nil {
 		return fmt.Errorf("failed to marshal changes: %w", err)

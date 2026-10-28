@@ -28,6 +28,32 @@ is the AI label and the provenance on what it does.
   AI: it calls a platform command (for example "retest this finding") and a scan sensor runs the
   signed job under the scope gate.
 
+## 1a. AI as a user, AI as a service
+
+Every write is made by an AI analyst as a user. Read-only, ephemeral help runs as a service under the
+viewer.
+
+| | Assist (service) | Actor (user) | Enrichment (system data) |
+|---|---|---|---|
+| Runs as | the viewer, with the viewer's permissions and scope | the AI analyst service account | the platform |
+| Writes | nothing; a comment only if the viewer posts it as themselves, marked "drafted with AI" | the normal commands | derived data only (scores, caches, translations), labeled AI with provenance |
+| Approvals | none (no change) | the normal ones; risk-lowering always a request | none; never read as a decision |
+| Enforced by | an assistance context in which every finding write path and every writing database statement is refused, and no analyst principal can be resolved | the analyst principal and the finding service | the system job writes only its own table |
+
+```mermaid
+flowchart LR
+  viewer["Viewer"] --> assist["Assist<br/>viewer's permissions, read only"]
+  assist --> screen["Answer on screen"]
+  screen -->|viewer posts| comment["Comment by the viewer<br/>drafted with AI"]
+  trigger["Trigger"] --> actor["AI analyst principal"]
+  actor --> cmds["Finding commands"]
+  cmds --> approvals["Approvals"]
+  cmds --> audit["Audit with AI provenance"]
+```
+
+**Rule for new AI features:** pick the class from the platform-wide inventory (research note 326,
+section 6d); a write is always Actor.
+
 ## 2. Identity and permission model
 
 ```mermaid
@@ -271,6 +297,7 @@ the queue is worked down.
 | D22 | An outside AI program later gets its own credential path that runs the same principal checks; until then an analyst has no key, grant or role of its own |
 | D23 | Runs are `analyze` jobs on the existing distribution (leases, fair share, chunking, placement) |
 | D24 | Flood control: batch decisions, digest, per-owner request cap, comment-only above a pending-request threshold |
+| D25 | Every write is Actor (the analyst as a user); read-only help is Assist under the viewer and writes nothing; derived data is Enrichment, labeled AI and never a decision |
 
 ## 8. Threat model
 
@@ -289,6 +316,7 @@ the queue is worked down.
 | Audit | unclear actor | provenance and database label | timeline row labeled and carrying the run |
 | Spend | runaway loop | budgets per analyst and organization | planned |
 | Injection | text in a finding steers the AI | the blast radius is the effective permissions: no approve, resolve, delete, reveal, export or targets | covered by the tests above |
+| Assist | read-only help writes through the viewer | assistance context refuses every finding write and writing statement | comment, status, severity and approval request refused in an assistance context; nothing written |
 
 ## 9. Implementation
 
