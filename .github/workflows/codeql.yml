@@ -59,6 +59,7 @@ jobs:
     if: github.event_name != 'merge_group'
     runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
     outputs:
+      pool: ${{ steps.pool.outputs.pool }}
       languages: ${{ steps.lang.outputs.languages }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -66,6 +67,10 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       - uses: ./.github/actions/setup-gh
+      - id: pool
+        uses: ./.github/actions/ci-pool
+        with:
+          share: ${{ vars.CI_SELFHOSTED_SHARE }}
       - id: f
         env:
           EVENT_BEFORE: ${{ github.event.before }}
@@ -98,7 +103,7 @@ jobs:
       contents: read
       security-events: write
       actions: read
-    runs-on: ${{ ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_CODEQL) || (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_HEAVY) || 'ubuntu-latest' }}
+    runs-on: ${{ ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_CODEQL) || (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || needs.changes.outputs.pool || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (vars.CI_RUNNER_HEAVY || needs.changes.outputs.pool)) || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
