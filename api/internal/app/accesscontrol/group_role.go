@@ -63,6 +63,8 @@ func (s *GroupService) SetRoleBindings(bindings groupdom.RoleBindingRepository, 
 type GroupRoleView struct {
 	Binding    groupdom.RoleBinding
 	Privileged bool
+	// Managed: the role belongs to the team's access settings.
+	Managed bool
 }
 
 func (s *GroupService) requireBindings() error {
@@ -127,7 +129,7 @@ func (s *GroupService) checkMembershipGrant(ctx context.Context, g *groupdom.Gro
 	if adding && !a.system && !a.owner && a.id == userID.String() {
 		return true, ErrSelfJoinRoleTeam
 	}
-	privileged, fullData := false, false
+	privileged, managedPrivileged, fullData := false, false, false
 	for _, r := range roles {
 		check := a.mayGrant
 		if !adding {
@@ -136,13 +138,23 @@ func (s *GroupService) checkMembershipGrant(ctx context.Context, g *groupdom.Gro
 		if err := check(r); err != nil {
 			return true, err
 		}
-		privileged = privileged || isPrivileged(r)
+		switch {
+		case isPrivileged(r) && r.IsManaged():
+			managedPrivileged = true
+		case isPrivileged(r):
+			privileged = true
+		}
 		fullData = fullData || r.HasFullDataAccess()
 	}
 	if privileged {
 		if err := s.requireOwnerStepUp(ctx, a); err != nil {
 			return true, err
 		}
+	}
+	// A team with elevated access from its access settings: the people in it
+	// are managed with the members permission, which a team lead lacks.
+	if managedPrivileged && !a.system && !a.owner && !a.perms[string(permission.MembersWrite)] {
+		return true, ErrPrivilegedTeamNeedsMembersManage
 	}
 	if adding && fullData {
 		external, err := s.bindings.IsExternalMember(ctx, g.TenantID(), userID)
@@ -191,7 +203,7 @@ func (s *GroupService) ListGroupRoles(ctx context.Context, tenantID, groupID str
 		if err != nil {
 			return nil, fmt.Errorf("load bound role: %w", err)
 		}
-		out = append(out, GroupRoleView{Binding: b, Privileged: isPrivileged(r)})
+		out = append(out, GroupRoleView{Binding: b, Privileged: isPrivileged(r), Managed: r.IsManaged()})
 	}
 	return out, nil
 }
@@ -239,6 +251,9 @@ func (s *GroupService) loadBindingTarget(ctx context.Context, groupID, roleID st
 	}
 	if r.IsSystem() || r.TenantID() == nil {
 		return nil, nil, grantActor{}, groupdom.ErrSystemRoleBinding
+	}
+	if err := refuseManaged(r); err != nil {
+		return nil, nil, grantActor{}, err
 	}
 	a, err := s.roles.loadGrantActor(ctx, asRoleID(g.TenantID()), actx.ActorID)
 	if err != nil {

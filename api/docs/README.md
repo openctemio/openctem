@@ -12,6 +12,7 @@ or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
 - [Development setup](development/setup.md)
 - [Repositories and how the platform fits together](development/repositories.md)
 - [Architecture overview](architecture/overview.md)
+- [Glossary](glossary.md): one name per concept, for every layer
 - [RFCs](rfcs/README.md): design documents and decisions
 - [User guide](https://docs.openctem.io/user-guide/): the product from a user's point of view
 - Web console: [`web/docs/`](../../web/docs/README.md)

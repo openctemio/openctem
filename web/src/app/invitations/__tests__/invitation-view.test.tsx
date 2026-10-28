@@ -235,6 +235,27 @@ describe('InvitationView', () => {
     }
   )
 
+  it('shows the console text for a refusal code, never the server sentence', async () => {
+    fetchFn.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/lookup')) return new Response(JSON.stringify(preview), { status: 200 })
+      return new Response(
+        JSON.stringify({
+          code: 'INVITATION_MEMBERSHIP_SUSPENDED',
+          message: 'SERVER SENTENCE about the team',
+        }),
+        { status: 400 }
+      )
+    })
+    render(<InvitationView hasSession />)
+    fireEvent.click(await screen.findByRole('button', { name: /accept/i }))
+
+    expect(
+      await screen.findByText(/Your access to this organization is suspended/)
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/SERVER SENTENCE/)).not.toBeInTheDocument()
+  })
+
   describe('organization requires two-factor authentication after joining', () => {
     function mfaRefused() {
       fetchFn = vi.fn(async (input: RequestInfo | URL) => {
