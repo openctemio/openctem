@@ -362,6 +362,11 @@ export const settingsNav: SettingsNavGroup[] = [
             title: 'AI use cases',
             keywords: ['auto-apply', 'suggest', 'confidence', 'data class'],
           },
+          {
+            id: 'ai-masking',
+            title: 'AI data masking',
+            keywords: ['mask', 'placeholder', 'pseudonymise', 'redact', 'terms', 'preview'],
+          },
         ],
       },
       {
