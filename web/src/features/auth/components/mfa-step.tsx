@@ -29,6 +29,7 @@ import {
   VerificationCodeInput,
 } from '@/components/security'
 import { useTranslation } from '@/context/i18n-provider'
+import { authErrorText } from '@/features/auth/lib/auth-error-codes'
 
 import {
   cancelMfaAction,
@@ -46,11 +47,35 @@ interface MfaStepProps {
   onDone: (result: LoginResult) => void
   /** Back to the password form, optionally with a reason to show. */
   onCancel: (message?: string) => void
+  /** Organizations that require the second factor (enroll), named on the screen. */
+  orgs?: string[]
+  /** Label of the back button (default: back to sign in). */
+  backLabel?: string
 }
 
 // The challenge expired, was used up, or the cookie is gone: only a fresh
 // password login helps.
-const RESTART_PATTERN = /sign in again|enter your password again|expired/i
+const RESTART_CODES: ReadonlySet<string> = new Set([
+  'MFA_CHALLENGE_INVALID',
+  'SESSION_EXPIRED',
+  'SESSION_REVOKED',
+  'TOKEN_INVALID',
+  'REFRESH_TOKEN_INVALID',
+  'REFRESH_TOKEN_EXPIRED',
+])
+
+/** The words for a failed step, from the API's code. */
+function stepError(
+  result: { code?: string },
+  t: (key: string, fallback?: string) => string,
+  fallbackKey: string,
+  fallback: string
+): { msg: string; restart: boolean } {
+  return {
+    msg: authErrorText(result.code, t, t(fallbackKey, fallback)),
+    restart: !!result.code && RESTART_CODES.has(result.code),
+  }
+}
 
 /**
  * A completed second factor: the session was issued, or the only memberships
@@ -62,15 +87,29 @@ function isCompleted(result: LoginResult): boolean {
   return result.success || (result.pendingDeletion?.length ?? 0) > 0
 }
 
-export function MfaStep({ purpose, onDone, onCancel }: MfaStepProps) {
+export function MfaStep({ purpose, onDone, onCancel, orgs, backLabel }: MfaStepProps) {
   return purpose === 'enroll' ? (
-    <EnrollStep onDone={onDone} onCancel={onCancel} />
+    <EnrollStep onDone={onDone} onCancel={onCancel} orgs={orgs} backLabel={backLabel} />
   ) : (
-    <VerifyStep onDone={onDone} onCancel={onCancel} />
+    <VerifyStep onDone={onDone} onCancel={onCancel} backLabel={backLabel} />
   )
 }
 
-function BackButton({ onCancel }: { onCancel: () => void }) {
+/** "Required by Acme" or "Required by Acme and 2 more". */
+function RequiredBy({ orgs }: { orgs?: string[] }) {
+  const { t } = useTranslation()
+  if (!orgs || orgs.length === 0) return null
+  const [first, ...rest] = orgs
+  return (
+    <p className="text-sm font-medium">
+      {rest.length === 0
+        ? t('auth.mfa.requiredBy', undefined, { org: first })
+        : t('auth.mfa.requiredByMore', undefined, { org: first, count: rest.length })}
+    </p>
+  )
+}
+
+function BackButton({ onCancel, label }: { onCancel: () => void; label?: string }) {
   const { t } = useTranslation()
   return (
     <Button
@@ -84,12 +123,12 @@ function BackButton({ onCancel }: { onCancel: () => void }) {
       }}
     >
       <ArrowLeft className="h-4 w-4" />
-      {t('auth.common.backToSignIn', 'Back to sign in')}
+      {label ?? t('auth.common.backToSignIn', 'Back to sign in')}
     </Button>
   )
 }
 
-function VerifyStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
+function VerifyStep({ onDone, onCancel, backLabel }: Omit<MfaStepProps, 'purpose' | 'orgs'>) {
   const { t } = useTranslation()
   const [useRecovery, setUseRecovery] = useState(false)
   const [value, setValue] = useState('')
@@ -109,8 +148,8 @@ function VerifyStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
         onDone(result)
         return
       }
-      const msg = result.error || t('auth.mfa.verifyFailed', 'Verification failed')
-      if (RESTART_PATTERN.test(msg)) {
+      const { msg, restart } = stepError(result, t, 'auth.mfa.verifyFailed', 'Verification failed')
+      if (restart) {
         onCancel(msg)
         return
       }
@@ -186,17 +225,18 @@ function VerifyStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
           : t('auth.mfa.useRecovery', 'Use a recovery code instead')}
       </Button>
 
-      <BackButton onCancel={() => onCancel()} />
+      <BackButton onCancel={() => onCancel()} label={backLabel} />
     </form>
   )
 }
 
-function EnrollStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
+function EnrollStep({ onDone, onCancel, orgs, backLabel }: Omit<MfaStepProps, 'purpose'>) {
   const { t } = useTranslation()
   // Read through a ref so the start-once effect below does not depend on t.
   const startFailedRef = useRef(
     t('auth.mfa.startFailed', 'Could not start two-factor setup. Please sign in again.')
   )
+  const tRef = useRef(t)
   const [setup, setSetup] = useState<{ secret: string; uri: string } | null>(null)
   const [code, setCode] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -220,7 +260,7 @@ function EnrollStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
       if (res.success && res.secret && res.otpauthUri) {
         setSetup({ secret: res.secret, uri: res.otpauthUri })
       } else {
-        onCancelRef.current(res.error || startFailedRef.current)
+        onCancelRef.current(authErrorText(res.code, tRef.current, startFailedRef.current))
       }
     })
   }, [])
@@ -234,8 +274,8 @@ function EnrollStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
         setFinished(result)
         return
       }
-      const msg = result.error || t('auth.mfa.verifyFailed', 'Verification failed')
-      if (RESTART_PATTERN.test(msg)) {
+      const { msg, restart } = stepError(result, t, 'auth.mfa.verifyFailed', 'Verification failed')
+      if (restart) {
         onCancel(msg)
         return
       }
@@ -286,7 +326,9 @@ function EnrollStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
               if (isCompleted(result)) {
                 onDone(result)
               } else {
-                onCancel(result.error)
+                onCancel(
+                  authErrorText(result.code, t, t('auth.mfa.verifyFailed', 'Verification failed'))
+                )
               }
             })
           }
@@ -315,6 +357,7 @@ function EnrollStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
             'Your organization requires two-factor authentication. Scan the QR code with an authenticator app, then enter the 6-digit code it shows.'
           )}
         </p>
+        <RequiredBy orgs={orgs} />
       </div>
 
       {setup ? (
@@ -345,7 +388,7 @@ function EnrollStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
         {t('auth.mfa.turnOn', 'Turn on and continue')}
       </Button>
 
-      <BackButton onCancel={() => onCancel()} />
+      <BackButton onCancel={() => onCancel()} label={backLabel} />
     </form>
   )
 }

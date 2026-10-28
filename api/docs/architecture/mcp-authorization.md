@@ -54,6 +54,7 @@ and is neither the public origin nor one of `CORS_ALLOWED_ORIGINS`
 | `mcp:assets.read` | `assets:read` |
 | `mcp:compliance.read` | `compliance:frameworks:read` |
 | `mcp:pentest.read` | `pentest:campaigns:read`, `pentest:findings:read`, `pentest:retests:read`, `pentest:templates:read` |
+| `mcp:scope.read` | `attack_surface:scope:read` |
 | `mcp:findings.comment` (write) | `findings:comment`; never offered up front, only through an `insufficient_scope` challenge, only when the organization policy lists it, and every call is confirmed by the person (below) |
 | `mcp:findings.propose` (write) | `findings:write`; obtained like the comment scope; its tools file requests another person decides (below) |
 | `mcp:pentest.draft` (write) | `pentest:findings:write`; obtained like the comment scope; saves pentest drafts another campaign member confirms (below) |
@@ -161,10 +162,18 @@ resource is this endpoint, the user still an active member with an active
 account. The request then carries the grant's tenant and user, permissions
 `scope permissions ∩ what the user holds now` (owners and administrators hold
 everything), never the owner/admin bypass, auth provider `mcp_oauth`, and
-reads only what the user's scope rows allow, never the full-data access of an
+reads only what the user's scope rows allow, not the full-data access of an
 owner, administrator or full-data role (the same rule as `oct_` keys; an
 owner who is in no group sees no assets through MCP, and every empty asset or
-finding result then carries a `scope_notice` saying so). Each grant has a budget of 3600 requests per hour. Last use (time,
+finding result then carries a `scope_notice` saying so). The one exception is
+a connection its person allowed, at consent, to read all organization data
+(RFC-062 §7a): the grant has `full_data` and `Principal.FullData` is true
+only while the user still holds a full-data role at this request, in which
+case `middleware.ReadsOnOwnScope` is false and the data-scope enforcer
+resolves the person's full-data view (private program assets stay hidden as
+in the console); `IsDelegatedCredential` stays true, so a connection never
+decides an approval alone. Such a grant lives shorter (7 days, refresh 24 h,
+access 5 min). Each grant has a budget of 3600 requests per hour. Last use (time,
 IP) is recorded at most once a minute.
 
 A call the user could make with a scope the token lacks answers `403` with
@@ -175,8 +184,9 @@ tool error.
 ### Audit
 
 `mcp_grant.authorized`, `mcp_grant.denied`, `mcp_grant.token_issued`,
-`mcp_grant.code_reused`, `mcp_grant.refresh_reused`, `mcp_grant.revoked`, and
-every `mcp.tool_called` carries `auth_method`, `grant_id`, `client_id` and
+`mcp_grant.code_reused`, `mcp_grant.refresh_reused`, `mcp_grant.revoked`,
+`mcp_grant.full_data_allowed`, `mcp_grant.full_data_removed`, and
+every `mcp.tool_called` carries `full_data` and `auth_method`, `grant_id`, `client_id` and
 `client_name` for token requests.
 
 ### Storage

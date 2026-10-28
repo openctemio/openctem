@@ -94,7 +94,7 @@ var Registry = []Definition{
 		UserFacing: true,
 		Permission: "assets:read",
 		MCP:        []string{"list_assets"},
-		Jobs:       []string{"AssetIdentityBackfillController", "AssetTechnologyBackfillController", "AssetChangeTimelineController", "AssetLifecycleController", "AssetPurgeController", "AssetRiskScoreController", "AssetRiskReconcileController", "OwnerResolutionController", "DataExpirationController", "DomainReverifyController"},
+		Jobs:       []string{"AssetGroupRulesController", "AssetIdentityBackfillController", "AssetTechnologyBackfillController", "AssetChangeTimelineController", "AssetLifecycleController", "AssetPurgeController", "AssetRiskScoreController", "AssetRiskReconcileController", "OwnerResolutionController", "DataExpirationController", "DomainReverifyController"},
 	},
 	{
 		ID: ModuleFindings, Slug: "findings", Name: "Findings",

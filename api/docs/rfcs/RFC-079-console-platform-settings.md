@@ -132,10 +132,10 @@ every administrator):
 | Deployment region (once, before the first organization) | `deployment.region` | same; immutable once set | — |
 | Default storage quota (+ limit key `storage_mb` per organization) | `storage.tenant_quota_mb` | super admin, step-up, audit | — |
 | Alert webhook | `alerts.webhook` | guarded; SSRF-guarded HTTPS; address and secret write-only | send a test alert |
+| Social login (Google, GitHub, Microsoft) | `auth.social_login` | super admin, fresh confirmation, reason, critical audit, notice; client secret write-only and encrypted; a provider pinned by `OAUTH_<PROVIDER>_CLIENT_SECRET` is read-only | test the client against the provider's token endpoint |
 | Platform AI provider | `ai.platform` | guarded; off by default | one-token request |
 
-Still planned from §3: sign-in policy (tighten-only), social sign-in
-providers, discovery jobs, retention (shown read-only), sensor public URL,
+Still planned from §3: sign-in policy (tighten-only), discovery jobs, retention (shown read-only), sensor public URL,
 log level. Design and order: the console configuration plan of the platform
 console (`docs/architecture/platform-console.md`, "Settings moved from the
 environment").
