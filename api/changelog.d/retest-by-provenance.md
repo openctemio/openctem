@@ -5,4 +5,4 @@
 - A nuclei template retest is addressed to the sensor that reported the finding, else to a sensor with the finding's template release or newer. When every online sensor has an older release, the retest is refused with `RETEST_NO_TEMPLATE_SENSOR` instead of a run that fails.
 - A finding a person reported (manual, pentest, bug bounty, red team) has no automatic retest: the console shows a disabled button and the reason (attach a retest check to retest it).
 - The retest list (`GET /api/v1/findings/{id}/retests`) adds `strategy`, `reason` and `active_check`; `POST` takes an optional `{"mode": "active_check"}`. A refused retest returns 422 with `RETEST_NOT_AVAILABLE`, `RETEST_NO_SENSOR`, `RETEST_NO_CHECK_SENSOR` or `RETEST_NO_TEMPLATE_SENSOR` and `details.reason` (was 400 with free text).
-- Migration 003511 adds `finding_retests.method` and the reason codes `version_not_observed`, `version_still_affected`, `version_not_affected`. Additive, no data change.
+- Migration 003529 adds `finding_retests.method` and the reason codes `version_not_observed`, `version_still_affected`, `version_not_affected`. Additive, no data change.
