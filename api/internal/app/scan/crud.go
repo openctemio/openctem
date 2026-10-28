@@ -921,8 +921,12 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 			return nil, fmt.Errorf("%w: invalid scan_workflow_id", shared.ErrValidation)
 		}
 		tenantID, _ := shared.IDFromString(input.TenantID)
-		if _, err := s.usableWorkflow(ctx, tenantID, scanWorkflowID); err != nil {
-			return nil, err
+		// A scan already on a workflow keeps it even when that one was retired
+		// since; only a different workflow must be usable.
+		if sc.ScanWorkflowID == nil || *sc.ScanWorkflowID != scanWorkflowID {
+			if _, err := s.usableWorkflow(ctx, tenantID, scanWorkflowID); err != nil {
+				return nil, err
+			}
 		}
 		if err := sc.SetWorkflow(scanWorkflowID); err != nil {
 			return nil, err

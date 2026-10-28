@@ -85,9 +85,16 @@ type sockets struct{ closed []string }
 
 func (s *sockets) RevokeOrganization(_ context.Context, id string) { s.closed = append(s.closed, id) }
 
-type adminRows struct{ rows []*admin.AuditLog }
+type adminRows struct {
+	rows []*admin.AuditLog
+	// failAction makes Create fail for that action ("*" for every action).
+	failAction string
+}
 
 func (a *adminRows) Create(_ context.Context, l *admin.AuditLog) error {
+	if a.failAction == "*" || (a.failAction != "" && a.failAction == l.Action) {
+		return errors.New("audit store down")
+	}
 	a.rows = append(a.rows, l)
 	return nil
 }
@@ -222,7 +229,8 @@ func TestPurgeNow(t *testing.T) {
 	if err := h.svc.PurgeNow(ctx, actor, org, "legal request 2026-17", Client{IP: "203.0.113.4"}); err == nil {
 		t.Fatal("failure not reported")
 	}
-	if len(h.cache.forgotten) != 1 || len(h.admin.rows) != 1 || h.admin.rows[0].ResponseStatus != 500 {
+	if len(h.cache.forgotten) != 1 || len(h.admin.rows) != 2 ||
+		h.admin.rows[0].Action != ActionOrganizationPurgeRequested || h.admin.rows[1].ResponseStatus != 500 {
 		t.Fatalf("failed purge: forgotten=%v rows=%+v", h.cache.forgotten, h.admin.rows)
 	}
 	h.purger.fail[org.String()] = false
@@ -232,5 +240,56 @@ func TestPurgeNow(t *testing.T) {
 	last := h.admin.rows[len(h.admin.rows)-1]
 	if len(h.purger.deleted) != 1 || last.Action != ActionOrganizationPurged || last.Severity != admin.SeverityCritical {
 		t.Fatalf("purge: deleted=%v audit=%+v", h.purger.deleted, last)
+	}
+}
+
+// The deletion is irreversible, so it is refused, and changes nothing, while
+// its intent row cannot be written.
+func TestPurgeNow_RefusedWhenAuditCannotBeWritten(t *testing.T) {
+	ctx := context.Background()
+	for name, tc := range map[string]struct {
+		fail string
+		nilA bool
+	}{
+		"audit store down":     {fail: "*"},
+		"intent row fails":     {fail: ActionOrganizationPurgeRequested},
+		"no admin audit wired": {nilA: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness()
+			org := shared.NewID()
+			h.store.status[org] = tenantdom.OrganizationActive
+			h.admin.failAction = tc.fail
+			svc := h.svc
+			if tc.nilA {
+				svc = NewService(h.store, h.purger, h.cache, nil, h.events, nil)
+				svc.SetSocketCloser(h.sockets)
+			}
+			err := svc.PurgeNow(ctx, superAdmin(), org, "legal request 2026-17", Client{})
+			if !errors.Is(err, ErrAuditUnavailable) {
+				t.Fatalf("err = %v, want ErrAuditUnavailable", err)
+			}
+			if len(h.purger.deleted) != 0 {
+				t.Fatalf("DeleteTenant was called without an audit row: %v", h.purger.deleted)
+			}
+			if len(h.sockets.closed) != 0 || len(h.cache.last) != 0 {
+				t.Fatalf("the organization was already locked out: sockets=%v cache=%v", h.sockets.closed, h.cache.last)
+			}
+		})
+	}
+}
+
+// A failing outcome row does not undo or hide a deletion that already has its
+// intent row.
+func TestPurgeNow_OutcomeRowFailureAfterDelete(t *testing.T) {
+	h := newHarness()
+	org := shared.NewID()
+	h.store.status[org] = tenantdom.OrganizationActive
+	h.admin.failAction = ActionOrganizationPurged
+	if err := h.svc.PurgeNow(context.Background(), superAdmin(), org, "legal request 2026-17", Client{}); err != nil {
+		t.Fatalf("purge: %v", err)
+	}
+	if len(h.purger.deleted) != 1 || len(h.admin.rows) != 1 || h.admin.rows[0].Action != ActionOrganizationPurgeRequested {
+		t.Fatalf("deleted=%v rows=%+v", h.purger.deleted, h.admin.rows)
 	}
 }

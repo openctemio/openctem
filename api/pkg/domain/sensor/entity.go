@@ -248,7 +248,7 @@ type Sensor struct {
 	LoadScore        float64 // Computed weighted load score (lower is better)
 	MetricsUpdatedAt *time.Time
 	ActiveJobs       int
-	// CurrentJobs is the number of commands the sensor holds (acknowledged
+	// CurrentJobs is the number of scan commands the sensor holds (acknowledged
 	// or running), counted by the server from the commands table when the
 	// sensor is read: the capacity truth (RFC-030 D5). It is never taken
 	// from the sensor.

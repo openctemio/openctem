@@ -10,7 +10,7 @@ import { LEGACY_VALIDATION_ROUTE_REDIRECTS, splitSource } from '../../src/config
  *   2. Every old pentest list URL answers 308 to its new home.
  */
 
-test('every Validation entry opens', async ({ page }) => {
+test('every Validation entry opens', { tag: ['@validation'] }, async ({ page }) => {
   await page.goto('/validation')
   await expect(page.getByRole('heading', { level: 1, name: 'Validation' })).toBeVisible({
     timeout: 30_000,
@@ -32,7 +32,7 @@ test('every Validation entry opens', async ({ page }) => {
   }
 })
 
-test('old pentest list URLs answer 308', async ({ e2eConfig }) => {
+test('old pentest list URLs answer 308', { tag: ['@validation'] }, async ({ e2eConfig }) => {
   const ctx = await request.newContext({ baseURL: e2eConfig.baseURL })
   for (const r of LEGACY_VALIDATION_ROUTE_REDIRECTS) {
     // Concrete URL: params become "c1", a has-condition key gets "c1".

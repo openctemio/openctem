@@ -101,6 +101,10 @@ type IntelService struct {
 	epssCounts *epssCatalogCounts
 	kevCounts  *kevCatalogCounts
 	now        func() time.Time
+
+	// afterBundle runs after KEV or EPSS was applied from a release (nil:
+	// nothing), see intel_bundle.go.
+	afterBundle func(ctx context.Context, source string)
 }
 
 // NewIntelService creates a new IntelService.
@@ -297,10 +301,14 @@ func (s *IntelService) SyncEPSS(ctx context.Context) IntelSyncResult {
 	result.RecordsSynced = len(scores)
 	result.DurationMs = duration.Milliseconds()
 
-	// Mark sync as successful; the score date is the date of the data.
-	meta := status.Metadata()
-	meta[feedstatus.MetaDataAsOf] = scores[0].ScoreDate().UTC().Format("2006-01-02")
-	status.SetMetadata(meta)
+	// Mark sync as successful
+	if len(scores) > 0 {
+		meta := status.Metadata()
+		markDirect(meta, scores[0].ScoreDate())
+		// The date of the data the feed holds.
+		meta[feedstatus.MetaDataAsOf] = scores[0].ScoreDate().UTC().Format("2006-01-02")
+		status.SetMetadata(meta)
+	}
 	status.MarkSyncSuccess(len(scores), int(duration.Milliseconds()))
 	if err := s.repo.SyncStatus().Update(ctx, status); err != nil {
 		s.logger.Error("failed to update sync status", "error", err)
@@ -415,6 +423,13 @@ func (s *IntelService) SyncKEV(ctx context.Context) IntelSyncResult {
 
 	// Mark sync as successful; keep the validators for the next request.
 	meta[kevValidatorsKey] = validators
+	var released time.Time
+	for _, v := range validators {
+		if t, err := time.Parse(time.RFC3339Nano, v.Released); err == nil {
+			released = t
+		}
+	}
+	markDirect(meta, released)
 	status.SetMetadata(meta)
 	status.MarkSyncSuccess(len(entries), int(duration.Milliseconds()))
 	if err := s.repo.SyncStatus().Update(ctx, status); err != nil {
@@ -568,6 +583,19 @@ func (s *IntelService) fetchEPSSData(ctx context.Context) ([]*threatintel.EPSSSc
 	return scores, nil
 }
 
+// parseEPSSScoreDate reads the feed's score date: FIRST publishes a full
+// timestamp ("2026-10-26T12:03:22Z"); older files carry a plain date. Zero
+// when neither parses.
+func parseEPSSScoreDate(v string) time.Time {
+	v = strings.TrimSpace(v)
+	for _, layout := range []string{time.RFC3339, "2006-01-02"} {
+		if t, err := time.Parse(layout, v); err == nil {
+			return t.UTC()
+		}
+	}
+	return time.Time{}
+}
+
 // parseEPSSCSV parses the (already-decompressed) EPSS scores CSV. The feed opens
 // with a metadata comment line (#model_version:...,score_date:...) whose comma
 // count (2) differs from the 3-column data header; encoding/csv locks
@@ -588,7 +616,9 @@ func parseEPSSCSV(r io.Reader) ([]*threatintel.EPSSScore, error) {
 	var modelVersion string
 	var scoreDate time.Time
 	if len(firstLine) > 0 && strings.HasPrefix(firstLine[0], "#") {
-		metadata := strings.TrimPrefix(firstLine[0], "#")
+		// The csv reader already split the comment line at its comma:
+		// score_date is in the second field, so the fields are joined back.
+		metadata := strings.TrimPrefix(strings.Join(firstLine, ","), "#")
 		for part := range strings.SplitSeq(metadata, ",") {
 			kv := strings.SplitN(part, ":", 2)
 			if len(kv) == 2 {
@@ -596,7 +626,7 @@ func parseEPSSCSV(r io.Reader) ([]*threatintel.EPSSScore, error) {
 				case "model_version":
 					modelVersion = kv[1]
 				case "score_date":
-					scoreDate, _ = time.Parse("2006-01-02", kv[1])
+					scoreDate = parseEPSSScoreDate(kv[1])
 				}
 			}
 		}
@@ -683,6 +713,9 @@ const kevValidatorsKey = "validators"
 type kevValidator struct {
 	ETag         string `json:"etag,omitempty"`
 	LastModified string `json:"modified,omitempty"`
+	// Released is the catalog's own release time (dateReleased): the data
+	// date of what this response carried.
+	Released string `json:"released,omitempty"`
 }
 
 // readKEVValidators reads the stored validators (any shape a JSON round
@@ -706,7 +739,8 @@ func readKEVValidators(meta map[string]any) map[string]kevValidator {
 		if len(et) > 256 || len(lm) > 64 {
 			continue
 		}
-		out[u] = kevValidator{ETag: et, LastModified: lm}
+		rel, _ := m["released"].(string)
+		out[u] = kevValidator{ETag: et, LastModified: lm, Released: rel}
 	}
 	return out
 }
@@ -750,7 +784,8 @@ func (s *IntelService) fetchKEVFrom(ctx context.Context, url string, prev kevVal
 	if len(kevCatalog.Vulnerabilities) == 0 {
 		return nil, prev, fmt.Errorf("kev %w", ErrFeedEmpty)
 	}
-	next := kevValidator{ETag: resp.Header.Get("ETag"), LastModified: resp.Header.Get("Last-Modified")}
+	next := kevValidator{ETag: resp.Header.Get("ETag"), LastModified: resp.Header.Get("Last-Modified"),
+		Released: kevCatalog.releasedAt()}
 	if len(next.ETag) > 256 {
 		next.ETag = ""
 	}
@@ -1065,6 +1100,17 @@ type kevCatalogResponse struct {
 	DateReleased    string             `json:"dateReleased"`
 	Count           int                `json:"count"`
 	Vulnerabilities []kevVulnerability `json:"vulnerabilities"`
+}
+
+// releasedAt is the catalog's release time as RFC 3339 ("" when absent or
+// unparseable).
+func (c kevCatalogResponse) releasedAt() string {
+	for _, layout := range []string{time.RFC3339Nano, "2006-01-02T15:04:05", "2006-01-02"} {
+		if t, err := time.Parse(layout, c.DateReleased); err == nil {
+			return t.UTC().Format(time.RFC3339)
+		}
+	}
+	return ""
 }
 
 type kevVulnerability struct {

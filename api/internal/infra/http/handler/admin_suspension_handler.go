@@ -237,6 +237,7 @@ func (h *AdminSuspensionHandler) SetOrganizationDeletion(s *orgdeletion.Service)
 // @Failure      400  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
 // @Failure      409  {object}  apierror.Error "The system organization"
+// @Failure      503  {object}  apierror.Error "The audit entry could not be written; nothing was deleted"
 // @Failure      428  {object}  apierror.Error "SECOND_APPROVAL_REQUIRED: another super admin must approve first"
 // @Security     BearerAuth
 // @Router       /admin/tenants/{tenantId}/purge [post]
@@ -274,6 +275,8 @@ func (h *AdminSuspensionHandler) PurgeOrganization(w http.ResponseWriter, r *htt
 		writeJSON(w, http.StatusOK, AdminSuspensionResponse{Status: "deleted"})
 	case errors.Is(err, orgdeletion.ErrSystemOrganization):
 		apierror.Conflict("The system organization cannot be deleted.").WriteJSON(w)
+	case errors.Is(err, orgdeletion.ErrAuditUnavailable):
+		apierror.ServiceUnavailable("The deletion was not started because its audit entry could not be written. Nothing was deleted; try again.").WriteJSON(w)
 	default:
 		h.writeError(w, err, "organization")
 	}
