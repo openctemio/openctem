@@ -60,7 +60,7 @@ func (f *refusalFixture) eventCodes(cmdID shared.ID) []string {
 func TestInfra_MovedToAnotherSensorExcludesFailedOne(t *testing.T) {
 	f, ids := newRefusalFixture(t, 2)
 	a, b := ids[0], ids[1]
-	job := f.routedJob(true)
+	job := f.claimableJob(true)
 	if !f.claim(a)[job] {
 		t.Fatal("sensor A did not claim the job")
 	}
@@ -120,6 +120,18 @@ func TestInfra_MovedToAnotherSensorExcludesFailedOne(t *testing.T) {
 	}
 }
 
+// claimableJob is a routed or unrouted job that has waited past the
+// claim-balance window, so the first sensor to ask takes it instead of
+// yielding a fresh task to an idle peer (these tests claim as one sensor).
+func (f *refusalFixture) claimableJob(routed bool) shared.ID {
+	f.t.Helper()
+	job := f.routedJob(routed)
+	if _, err := f.cmds.db.ExecContext(f.ctx, `UPDATE commands SET created_at = NOW() - INTERVAL '1 minute' WHERE id = $1`, job.String()); err != nil {
+		f.t.Fatal(err)
+	}
+	return job
+}
+
 func sensorShort(id shared.ID) string { return id.String()[:8] }
 
 // The budget of 3 attempts per command is shared by every cause: a refusal,
@@ -127,7 +139,7 @@ func sensorShort(id shared.ID) string { return id.String()[:8] }
 // sensor is available, and the reason lists the causes.
 func TestInfra_BudgetSharedWithRefusals(t *testing.T) {
 	f, ids := newRefusalFixture(t, 4)
-	job := f.routedJob(true)
+	job := f.claimableJob(true)
 	if !f.claim(ids[0])[job] {
 		t.Fatal("A did not claim")
 	}
@@ -159,7 +171,7 @@ func TestInfra_BudgetSharedWithRefusals(t *testing.T) {
 func TestInfra_TargetSideAndUnroutedNeverMoved(t *testing.T) {
 	f, ids := newRefusalFixture(t, 2)
 	for _, class := range []string{"target.edge_blocked", "target.edge_challenged", "target.rate_limited", "target.unreachable", "infra.resource.output_limit"} {
-		job := f.routedJob(true)
+		job := f.claimableJob(true)
 		if !f.claim(ids[0])[job] {
 			t.Fatalf("%s: not claimed", class)
 		}
@@ -172,7 +184,7 @@ func TestInfra_TargetSideAndUnroutedNeverMoved(t *testing.T) {
 		}
 	}
 	// A TOOL_EXIT code with a crash-like text is the sensor's own verdict.
-	job := f.routedJob(true)
+	job := f.claimableJob(true)
 	f.claim(ids[0])
 	out, err := f.svc.Fail(f.ctx, commandapp.FailInput{TenantID: f.tenant.String(), SensorID: ids[0].String(), CommandID: job.String(),
 		ErrorMessage: "tool crashed", Infra: &commandapp.InfraReport{ErrorCode: "TOOL_EXIT"}})
@@ -180,7 +192,7 @@ func TestInfra_TargetSideAndUnroutedNeverMoved(t *testing.T) {
 		t.Fatalf("TOOL_EXIT: %v %v", out, err)
 	}
 	// Not routed work.
-	pinned := f.routedJob(false)
+	pinned := f.claimableJob(false)
 	if !f.claim(ids[0])[pinned] {
 		t.Fatal("unrouted not claimed")
 	}
@@ -193,14 +205,14 @@ func TestInfra_TargetSideAndUnroutedNeverMoved(t *testing.T) {
 // its error code.
 func TestInfra_TextAndErrorCodeFallback(t *testing.T) {
 	f, ids := newRefusalFixture(t, 2)
-	job := f.routedJob(true)
+	job := f.claimableJob(true)
 	f.claim(ids[0])
 	out, err := f.svc.Fail(f.ctx, commandapp.FailInput{TenantID: f.tenant.String(), SensorID: ids[0].String(), CommandID: job.String(),
 		ErrorMessage: `exec: "nuclei": executable file not found in $PATH`})
 	if err != nil || out.Status != command.CommandStatusPending {
 		t.Fatalf("text fallback: %v %v", out, err)
 	}
-	job2 := f.routedJob(true)
+	job2 := f.claimableJob(true)
 	f.claim(ids[0])
 	out, err = f.svc.Fail(f.ctx, commandapp.FailInput{TenantID: f.tenant.String(), SensorID: ids[0].String(), CommandID: job2.String(),
 		ErrorMessage: "the run failed", Infra: &commandapp.InfraReport{ErrorCode: "RESOURCE_MEMORY"}})
@@ -208,7 +220,7 @@ func TestInfra_TextAndErrorCodeFallback(t *testing.T) {
 		t.Fatalf("error code: %v %v", out, err)
 	}
 	// A plain failure with no infrastructure sign fails as before.
-	job3 := f.routedJob(true)
+	job3 := f.claimableJob(true)
 	f.claim(ids[0])
 	out, err = f.svc.Fail(f.ctx, commandapp.FailInput{TenantID: f.tenant.String(), SensorID: ids[0].String(), CommandID: job3.String(), ErrorMessage: "scan failed"})
 	if err != nil || out.Status != command.CommandStatusFailed {
@@ -222,7 +234,7 @@ func TestInfra_TextAndErrorCodeFallback(t *testing.T) {
 func TestInfra_FleetStopRuleAfterTwoSensors(t *testing.T) {
 	f, ids := newRefusalFixture(t, 4)
 	ev := command.FailureEvidence{Tool: "nuclei", ToolDigest: "sha256:aaaa", ContentDigest: "sha256:c1"}
-	job := f.routedJob(true)
+	job := f.claimableJob(true)
 	if !f.claim(ids[0])[job] {
 		t.Fatal("A did not claim")
 	}
@@ -240,7 +252,7 @@ func TestInfra_FleetStopRuleAfterTwoSensors(t *testing.T) {
 		t.Fatalf("stop reason %q", out.ErrorMessage)
 	}
 	// Another command with the same tool version stops at its first failure.
-	job2 := f.routedJob(true)
+	job2 := f.claimableJob(true)
 	if !f.claim(ids[2])[job2] {
 		t.Fatal("C did not claim")
 	}
@@ -248,7 +260,7 @@ func TestInfra_FleetStopRuleAfterTwoSensors(t *testing.T) {
 		t.Fatalf("while the rule holds: %s, want failed", out.Status)
 	}
 	// Another version of the tool is not affected.
-	job3 := f.routedJob(true)
+	job3 := f.claimableJob(true)
 	if !f.claim(ids[3])[job3] {
 		t.Fatal("D did not claim")
 	}
@@ -299,7 +311,7 @@ func TestInfra_FleetStopRuleExpires(t *testing.T) {
 func TestInfra_LostLeaseExcludesHolderWhenAnotherCanTake(t *testing.T) {
 	f, ids := newRefusalFixture(t, 2)
 	a, b := ids[0], ids[1]
-	job := f.routedJob(true)
+	job := f.claimableJob(true)
 	if !f.claim(a)[job] {
 		t.Fatal("A did not claim")
 	}
@@ -342,7 +354,7 @@ func (f *refusalFixture) expireLease(id shared.ID) {
 
 func TestInfra_ExhaustedSweepStatesTheCauses(t *testing.T) {
 	f, ids := newRefusalFixture(t, 3)
-	job := f.routedJob(true)
+	job := f.claimableJob(true)
 	for i := range 3 {
 		if !f.claim(ids[i])[job] {
 			t.Fatalf("sensor %d did not claim", i)
@@ -380,7 +392,7 @@ func TestInfra_ExhaustedSweepStatesTheCauses(t *testing.T) {
 func TestInfra_FencingAndLateResult(t *testing.T) {
 	f, ids := newRefusalFixture(t, 2)
 	a, b := ids[0], ids[1]
-	job := f.routedJob(true)
+	job := f.claimableJob(true)
 	f.claim(a)
 	cmd, err := f.cmds.GetByTenantAndID(f.ctx, f.tenant, job)
 	if err != nil {
@@ -411,7 +423,7 @@ func TestInfra_FencingAndLateResult(t *testing.T) {
 // failure never excludes or moves across organizations.
 func TestInfra_CrossTenant(t *testing.T) {
 	f, ids := newRefusalFixture(t, 2)
-	job := f.routedJob(true)
+	job := f.claimableJob(true)
 	f.claim(ids[0])
 	g, gids := newRefusalFixture(t, 1)
 	_, err := g.svc.Fail(g.ctx, commandapp.FailInput{TenantID: g.tenant.String(), SensorID: gids[0].String(), CommandID: job.String(),
