@@ -303,7 +303,7 @@ doorbell and the claim by id):
 | Capabilities | every `required_capabilities` is one the sensor has |
 | Features | every `required_features` is one the sensor reported (never only declared) |
 | Refusals | the sensor is not in `refused_by` |
-| Hosts | no other acknowledged or running command of the organization holds a conflicting host key (re-checked under advisory locks) |
+| Hosts | no other acknowledged or running command of the organization holds a conflicting host key (re-checked under advisory locks); a shared job also needs fewer than its limit (2, intrusive 1) of shared jobs of any organization holding one ([sensors.md](sensors.md#the-shared-claim-path)) |
 
 **Fair order** (`fairPendingQuery`): priority class (critical 1 … low 4,
 raised one class per 30 minutes waited, never into critical), then
