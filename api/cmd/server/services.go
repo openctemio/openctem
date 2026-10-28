@@ -42,6 +42,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/internal/app/module"
+	"github.com/openctemio/openctem/api/internal/app/orgrelay"
 	"github.com/openctemio/openctem/api/internal/app/sensorgrant"
 	"github.com/openctemio/openctem/api/internal/app/sensorpairing"
 	"github.com/openctemio/openctem/api/internal/app/ticketbridge"
@@ -943,6 +944,7 @@ type Services struct {
 	PlatformCaptcha  *platformcaptcha.Service
 	DeploymentRegion *deploymentregion.Service
 	StorageQuota     *storagequota.Service
+	OrgRelay         *orgrelay.Service
 	PlatformAlert    *platformalert.Service
 	PlatformAI       *platformai.Service
 	// TenantAI is the organizations' AI settings (consent, source, own provider).
@@ -1075,6 +1077,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Entitlement = entitlementapp.NewService(repos.Limits, repos.AdminAuditLog, log)
 	if repos.PlatformSetting != nil {
 		s.StorageQuota = storagequota.NewService(repos.PlatformSetting, s.Entitlement, s.SettingRecorder, cfg.Storage.TenantQuotaMB)
+	}
+	if repos.PlatformSetting != nil {
+		s.OrgRelay = orgrelay.NewService(repos.PlatformSetting, s.SettingRecorder, cfg.App.ManagedService, cfg.App.OrgEmailRelayMode, log)
 	}
 	s.IdleWorkspaces = lifecycleapp.NewService(repos.IdleLifecycle, s.Audit, repos.AdminAuditLog, repos.Admin, nil, log)
 	// Suspended organizations: one access gate every credential path asks,
@@ -2496,6 +2501,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		WithTakeoverEvidence(repos.EASMDNS).
 		WithPlatformPolicy(s.ScopeGuardrails)
 	s.ActiveGate.SetWildcardDNS(repos.AssetWildcardDNS)
+	// Ownership confirmation applies only to jobs on platform sensors of the
+	// hosted service (MANAGED_SERVICE).
+	s.ActiveGate.SetManagedService(deps.Config.App.ManagedService)
 	s.ActiveGate.SetCertificates(repos.AssetRelationship)
 	// RFC-065 §16.8: signed jobs for sensors that enforce scope limits carry
 	// the limits of port- and path-limited targets.
