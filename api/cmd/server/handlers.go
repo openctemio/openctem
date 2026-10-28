@@ -1530,6 +1530,7 @@ func newEASMHandler(repos *Repositories, svc *Services, log *logger.Logger) *han
 		return t.Name(), nil
 	})
 	review.SetConfirmScope(newConfirmScope(repos, svc))
+	review.SetAssets(repos.Asset) // decisions may name assets (the skipped targets of a scan)
 	h.SetReview(review, audit)
 	// Suggestion cards (research/117): addresses behind in-scope names and
 	// confirmed assets no entry covers; read only.
