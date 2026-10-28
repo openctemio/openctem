@@ -138,6 +138,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-129](RFC-129-shared-fleet-scheduling.md) | Shared fleet scheduling | Accepted (2026-10-27); P0-F5 (bounded shared claim, #3202) and P0-F3 (cross-organization politeness, #3203) in review, the rest designed |
 | [RFC-131](RFC-131-ai-analysis.md) | AI analysis (governed suggestions, the analyze contract, the AI analyst) | Accepted (2026-10-28). |
 | [RFC-132](RFC-132-ai-analyst-principal.md) | AI analysts as service accounts with accountable owners | Accepted (2026-10-28). |
+| [RFC-133](RFC-133-ai-analyst-harness.md) | The AI analyst harness (own loop, agent pool, scale on the job system, own tool sandbox) | Accepted (2026-10-28). |
 <!-- END RFC INDEX -->
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.
