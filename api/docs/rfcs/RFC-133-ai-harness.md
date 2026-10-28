@@ -5,7 +5,7 @@
 | Status | Accepted (2026-10-28). Shipped in sdk-go (in review): the harness core (`pkg/harness`), pinned copies of the `openctem.analyze/v1` schemas, the playbook format `openctem.io/playbook/v1` with a sample, the eval harness and `openctem playbook init\|test`. The worker lives in the private repository `openctemio/ai-worker` (scaffold: configuration, playbooks with their golden sets, the eval gate in CI, a signed image). Designed: provider adapters, the sensorkit ai-worker role, the platform AI worker pool, the agent manifest and routing, safe rollout, the AI's own tool sandbox, memory and knowledge retrieval, inbound channels |
 | Scope | sdk-go (harness, contract copies, playbooks, evals, CLI, ai-worker role), api (analyze command, grant builder, lanes and affinity, limits, routing, rollout, playbook content), `openctemio/ai-worker` (the AI worker image) and sensor, web (playbook editor, agent comparison), docs |
 | Architecture | [ai-harness.md](../architecture/ai-harness.md), [ai-analyze-contract.md](../architecture/ai-analyze-contract.md) |
-| Related | RFC-131 (AI analysis, analyze contract), RFC-132 (the AI agent as a service account with accountable owners), RFC-030 (scan work distribution), RFC-129 (shared fleet scheduling), RFC-040 (mutual distrust, signed jobs), RFC-094 (the platform depends on contracts only), RFC-099 (signed content catalog) |
+| Related | RFC-135 (AI agents that organizations build: revisions, lifecycle, registry, console), RFC-131 (AI analysis, analyze contract), RFC-132 (the AI agent as a service account with accountable owners), RFC-030 (scan work distribution), RFC-129 (shared fleet scheduling), RFC-040 (mutual distrust, signed jobs), RFC-094 (the platform depends on contracts only), RFC-099 (signed content catalog) |
 
 ## 1. Summary
 
@@ -287,6 +287,48 @@ The same rules hold at every level:
 - a private registry with signature and digest pin plus second-member approval;
 - shadow mode and an eval gate on the organization's own golden set;
 - quotas and console observability.
+
+## 10a. AI agents that organizations build: concept map
+
+Organizations build their own AI agents with the same concepts at every level. The lifecycle, registry and console are
+specified in RFC-135. This table maps each concept an organization meets to the mechanism that implements it.
+
+| Concept | OpenCTEM mechanism |
+|---|---|
+| Built-in agents, available by default | built-in AI agent **roles** with Official playbooks (analyst first; router, reporter, remediator and hunter later); L0: turn on, pick a preset, set owners |
+| Custom agent (instructions + tools, built in the console) | an **L1 playbook** on our harness, with the console editor, "try on these findings", diff, golden set and release |
+| Multi-step procedure (several steps or agents working together) | playbook steps plus depth-1 verification subruns (decision D34 of the harness design); no free-form multi-agent graph |
+| External agent (another runtime triggered from work items) | **L2**: a signed image on the organization's **ai-worker** (an enrolled sensor in the `ai-worker` role claiming `analyze` jobs). **L3**: an external agent behind the adapter shim |
+| Identity of the agent | the **AI agent principal** (RFC-132): a service account with a role and data scope, never an approver, not a seat, with accountable owners and attestation |
+| Catalog to discover and enable agents | the **content catalog** with the `playbook` content type (Official, Verified, Community tiers) plus the organization's **private registry** for L2 images (digest, signer identity, second-member install) |
+| Model selection and restriction | the organization's **provider and model policy**: allowed providers and models, region, retention, data-class ceilings, budgets, fallback; credentials platform-managed, worker-held or platform-provided |
+| Settings cascade | **platform → organization → team**; a lower level can only tighten |
+| Allow custom or external agents | "allowed levels" switches: L1 on, L2 on for self-managed installs, L3 off by default |
+| Outside tool servers (MCP) for agents | **vetted MCP servers only**: catalog or approved private listings, tool schema digests pinned at approval, a changed tool disabled until re-approved, scope and data class per tool, calls through the forwarder |
+| Human approval of sensitive actions | the existing approval engine: risk-lowering is always a request a person decides; intrusive tools always need a person; tool policy before every call and again in the forwarder |
+| Audit of agent activity | audit and finding activity with AI provenance: agent, run, model, prompt digest, revision digest and the accountable owners at that moment |
+
+Stricter by design, with the reason for each rule:
+
+- **No credential for an AI agent at any level.** It never holds an API key, personal token, MCP grant, database role
+  or OAuth token. It holds jobs: a signed grant per run, a job token bound to the run, and a sealed masked bundle. CI
+  publishes through an OIDC trusted publisher and can create drafts only. A CTEM platform holds every known weakness of
+  an organization, so a stolen agent token would be an attack map.
+- **Per-tool scopes for MCP servers, vetted listings only, tool schemas pinned.** This closes tool poisoning and later
+  changes to a server's tools.
+- **A sandbox with scoped egress instead of a shell.** Tool targets are bound placeholders that the forwarder
+  resolves. Agents read hostile text from scanned targets.
+- **A mandatory eval gate and shadow before live.** The gate is the platform baseline, an immutable injection corpus
+  with a 100 % bar, and the organization's golden set. Canary and automatic rollback follow. A wrong triage hides real
+  risk, so a mistake is measured before it can act.
+- **Immutable revisions.** Widening power or changing behavior needs a second member with step-up. Tightening applies
+  at once.
+- **Accountable owners with attestation.** An agent pauses when it has no active owner, so no AI identity is left
+  orphaned.
+
+Configuration: the console is the source of truth. An organization may keep `aiagent.yaml` and playbooks in its own
+repository and use CI to test, build, sign and publish them as drafts. Air-gapped installs import them in the console.
+A second member approves the release.
 
 ## 11. Observability
 
