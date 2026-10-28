@@ -33,6 +33,11 @@ func ruleService(db *sql.DB) *easmapp.RuleService {
 	sc := scopeService(db)
 	sc.SetStepUpGate(passStepUp{})
 	sc.SetEntryPolicy(nil, oneAdmin{}, nil)
+	// Closing exclusions are checked against the caller's data scope; the
+	// reviewer here sees the whole tenant.
+	coverage := postgres.NewScopeCoverageRepository(pg)
+	sc.SetCoverage(coverage, unrestrictedScope{})
+	sc.SetExclusionMatches(coverage)
 	review := easmapp.NewReviewService(postgres.NewAttributionRepository(pg), nil)
 	return easmapp.NewRuleService(review, scopeJoin(db), sc, postgres.NewAssetRepository(pg), ownershipGate(db), scopedom.DefaultGuardrails())
 }
