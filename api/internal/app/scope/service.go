@@ -53,6 +53,8 @@ type Service struct {
 	dataScope DataScopeResolver
 	// exclusionMatches backs the bulk exclusion preview (bulk_exclusions.go).
 	exclusionMatches ExclusionMatchCounter
+	// effects closes and reopens findings after exclusion changes (effects.go).
+	effects *Effects
 	// The scope join after a committed change (join.go).
 	joiner  ScopeJoiner
 	visible VisibleAssetCounter
@@ -720,6 +722,8 @@ type CreateExclusionInput struct {
 	Methods    []string
 	// Origin is the creating path (empty: manual).
 	Origin scopedom.Origin
+	// Kind is why it is out of scope (empty: do_not_scan, exclusion_kind.go).
+	Kind string
 }
 
 // entryOrigin is the origin a new entry records: the path's own when it
@@ -761,8 +765,19 @@ func (s *Service) CreateExclusion(ctx context.Context, input CreateExclusionInpu
 	if exclusionType == scopedom.ExclusionTypeRepository {
 		pattern = scopedom.NormalizeRepositoryPattern(pattern)
 	}
+	kind, err := scopedom.ParseExclusionKind(input.Kind)
+	if err != nil {
+		return nil, err
+	}
+	if kind.ClosesFindings() && !scopedom.ExclusionTypeNamesAssets(exclusionType) {
+		return nil, scopedom.ErrInvalidExclusionKind
+	}
 	exclusion, err := scopedom.NewExclusion(tenantID, exclusionType, pattern, input.Reason, input.ExpiresAt, input.CreatedBy)
 	if err != nil {
+		return nil, err
+	}
+	exclusion.SetKind(kind)
+	if err := s.checkClosingReach(ctx, tenantID, kind, exclusionType, exclusion.Pattern(), input.ExpiresAt == nil); err != nil {
 		return nil, err
 	}
 	if err := s.exclusionDuplicate(ctx, tenantID, exclusionType, exclusion.Pattern()); err != nil {
@@ -815,6 +830,9 @@ func (s *Service) GetExclusion(ctx context.Context, tenantID string, exclusionID
 type UpdateExclusionInput struct {
 	Reason    *string    `validate:"omitempty,max=1000"`
 	ExpiresAt *time.Time `validate:"omitempty"`
+	// Kind changes why it is out of scope (effects.go closes or reopens
+	// findings to match; scanning does not change).
+	Kind *string
 	// Reviewer is the caller; shortening the window of an exclusion in
 	// effect needs Reviewer.CanApprove and someone other than the requester.
 	Reviewer scopedom.Reviewer
@@ -849,11 +867,27 @@ func (s *Service) UpdateExclusion(ctx context.Context, exclusionID string, tenan
 			}
 		}
 	}
+	if input.Kind != nil {
+		kind, err := scopedom.ParseExclusionKind(*input.Kind)
+		if err != nil {
+			return nil, err
+		}
+		if kind.ClosesFindings() && !scopedom.ExclusionTypeNamesAssets(exclusion.ExclusionType()) {
+			return nil, scopedom.ErrInvalidExclusionKind
+		}
+		exclusion.SetKind(kind)
+	}
 	if input.Reason != nil {
 		exclusion.UpdateReason(*input.Reason)
 	}
 	if input.ExpiresAt != nil {
 		exclusion.UpdateExpiresAt(input.ExpiresAt, needsReview)
+	}
+	if input.Kind != nil || input.ExpiresAt != nil {
+		if err := s.checkClosingReach(ctx, parsedTenantID, exclusion.Kind(), exclusion.ExclusionType(),
+			exclusion.Pattern(), exclusion.ExpiresAt() == nil); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := s.commitExclusion(ctx, before, exclusion, false, input.Reviewer.UserID, func() error {

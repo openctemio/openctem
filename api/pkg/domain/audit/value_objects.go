@@ -551,6 +551,10 @@ const (
 	ActionScopeExclusionDeactivated Action = "scope_exclusion.deactivated"
 	ActionScopeExclusionApproved    Action = "scope_exclusion.approved"
 	ActionScopeExclusionRejected    Action = "scope_exclusion.rejected"
+	// ActionScopeEffectsApplied: the platform closed or reopened findings
+	// because their assets went out of scope for good or came back
+	// (research/320). One entry per reconcile pass per organization.
+	ActionScopeEffectsApplied Action = "scope_exclusion.effects_applied"
 
 	// Suppression rule approvals. A self-approval (the owner approving their
 	// own rule because nobody else can, owner decision B16) is Critical.
@@ -890,6 +894,7 @@ func (a Action) IsValid() bool {
 		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionDeleted,
 		ActionScopeExclusionActivated, ActionScopeExclusionDeactivated,
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
+		ActionScopeEffectsApplied,
 		ActionExposureDispositionRequested, ActionExposureDispositionApproved, ActionExposureDispositionSelfApproved, ActionExposureDispositionRejected,
 		ActionExposureDispositionSelfApprovalRefused,
 		ActionSuppressionRuleApproved, ActionSuppressionRuleSelfApproved, ActionSuppressionRuleSelfApprovalRefused,
@@ -1032,6 +1037,7 @@ func (a Action) Category() string {
 		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionDeleted,
 		ActionScopeExclusionActivated, ActionScopeExclusionDeactivated,
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
+		ActionScopeEffectsApplied,
 		ActionEASMSeedCreated, ActionEASMSeedUpdated, ActionEASMSeedDeleted:
 		return "scope"
 	case ActionSuppressionRuleApproved, ActionSuppressionRuleSelfApproved, ActionSuppressionRuleSelfApprovalRefused:
@@ -1284,7 +1290,10 @@ func SeverityForAction(a Action) Severity {
 		// Deleting an asset also deletes its findings.
 		ActionAssetDeleted,
 		// A refused own approval: someone tried to skip the second approver.
-		ActionSuppressionRuleSelfApprovalRefused, ActionExposureDispositionSelfApprovalRefused:
+		ActionSuppressionRuleSelfApprovalRefused, ActionExposureDispositionSelfApprovalRefused,
+		// Findings closed because their assets went out of scope (an insider
+		// could use it to hide findings: it is reviewed like a deletion).
+		ActionScopeEffectsApplied:
 		return SeverityHigh
 
 	// Medium - important changes

@@ -178,6 +178,7 @@ export type AuditAction =
   | 'scope_exclusion.deactivated'
   | 'scope_exclusion.approved'
   | 'scope_exclusion.rejected'
+  | 'scope_exclusion.effects_applied'
   | 'suppression_rule.approved'
   | 'suppression_rule.self_approved'
   | 'exposure.disposition_requested'

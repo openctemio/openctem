@@ -1604,3 +1604,69 @@ with the matching name and entry. Endpoints outside the caller's data scope are 
 | Another tenant's names or verified domains count | The authority and every lookup are loaded per tenant; the relationship read filters both ends by tenant |
 | A certificate hides an endpoint refusal | The strongest refusal among its endpoints is the certificate's; the deny list is evaluated per endpoint |
 | An endpoint outside the caller's data scope is revealed | The response names only endpoints the caller may read |
+
+## 20. Amendment 2026-10-28: why something is out of scope, and what follows
+
+Marking something out of scope used to stop scanning only. Its findings, SLA clocks, remediation tasks and
+tickets stayed open for an asset the organization had just said was not its own.
+
+### 20.1 Kinds
+
+Every exclusion has a `kind`. All kinds stop scanning the same way (dispatch gate, claim re-check, signer
+ledger, job exclusions); the kind decides what else happens.
+
+| Kind | Meaning | Findings |
+|---|---|---|
+| `do_not_scan` (default, and every exclusion made before kinds) | the organization's own, must not be scanned (fragile system, legal hold) | stay open: the risk is still the organization's |
+| `not_ours` | someone else's (sold, third party, a typo in an import) | closed as out of scope |
+| `retired` | gone for good (decommissioned) | closed as out of scope |
+
+"Reject as rule" on the attack surface review creates a `not_ours` exclusion. A "not ours" attribution decision
+counts as `not_ours` for its asset. Path, finding-type and scanner exclusions are always `do_not_scan`.
+
+### 20.2 Scope effects
+
+An asset is **out of scope for good** when a permanent (no end date), approved, active exclusion of kind
+`not_ours` or `retired` matches it, or the organization marked it not its own. The scope effects reconciler:
+
+- closes the asset's open findings (`new`, `confirmed`, `in_progress`, `fix_applied`; pentest drafts are left
+  alone) as `resolved` with closure reason `out_of_scope`, verification `none`. The reason is in the obsolete
+  family: never counted as remediated, never offered to a person;
+- reopens a finding closed that way, to the status it had (read from its timeline, `confirmed` when the timeline
+  does not say), once its asset is no longer out of scope for good: the exclusion was removed, deactivated,
+  given an end date or changed to `do_not_scan`, or the decision was undone. A reopen is not a regression.
+
+Every move has its timeline entry (source `scope_effects`). Each pass that moves something writes one
+`scope_exclusion.effects_applied` audit entry (high severity) with the counts and a sample of finding ids.
+Remediation tasks, tickets and SLA follow the findings through their own reconcilers.
+
+It runs per organization after every saved exclusion change and every attribution decision, and every 5
+minutes for all organizations (expiries, findings that arrived meanwhile, lost kicks). A pass moves at most
+1000 findings in each direction; more finish on the next passes. Rows are locked with `SKIP LOCKED`, so a
+person editing a finding is never overwritten.
+
+A temporary exclusion (with an end date) never closes findings, whatever its kind: it pauses scanning.
+
+### 20.3 Data scope
+
+A permanent `not_ours` or `retired` exclusion created or changed by a member whose data scope is limited must
+match only assets that member can see; otherwise it is refused with `EXCLUSION_REACHES_OUTSIDE_SCOPE`, since it
+would close findings they cannot see. Exclusions that only stop scanning keep the earlier rule.
+
+### 20.4 API
+
+`kind` on `POST /scope/exclusions`, `PUT /scope/exclusions/{id}`, `POST /scope/exclusions/bulk` (with
+`expires_at`) and in every exclusion response. `POST /scope/exclusions/bulk/preview` returns `open_findings`
+per item: what a permanent closing exclusion would close. `POST /scope/exclusions/bulk/delete` takes 200 ids,
+as many as one bulk create adds, so the inventory's Undo is one call.
+
+### 20.5 Threats
+
+| Threat | Control |
+|---|---|
+| An insider marks a vulnerable asset "not ours" to make its findings disappear | distinct closure reason, never counted as fixed; high-severity audit with counts; Strict governance needs an approver before the exclusion is in effect; reversible; data scope rule (§20.3) |
+| One tenant's exclusion closes another tenant's findings | every statement is pinned to one tenant; DB test with two tenants |
+| A broad rule closes far too much | public-suffix refusal, preview counts before submit, bounded passes, re-include reopens |
+| A temporary exclusion ends after findings were closed | temporary exclusions never close findings |
+
+Design and the wider plan (sensor-side name exclusions, imports, alerts, exports): research note 320.

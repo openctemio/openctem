@@ -16,6 +16,8 @@ export interface ExclusionPreviewItem extends ExclusionItem {
   /** The caller's visible inventory assets it would match. */
   matched: number
   sample: string[]
+  /** Open findings on those assets: what a permanent not_ours or retired exclusion closes. */
+  open_findings?: number
   /** Set when the item would be refused. */
   code?: string
   message?: string
@@ -43,16 +45,43 @@ export function previewExclusions(items: ExclusionItem[]) {
   return post<{ items: ExclusionPreviewItem[] }>('/api/v1/scope/exclusions/bulk/preview', { items })
 }
 
-export function createExclusions(items: ExclusionItem[], reason?: string) {
+/**
+ * Why something is out of scope (research/320). Every kind stops scanning;
+ * not_ours and retired, when permanent, also close the open findings of what
+ * they match (reopened when the exclusion goes).
+ */
+export type ExclusionKind = 'not_ours' | 'retired' | 'do_not_scan'
+
+export interface CreateExclusionsOptions {
+  reason?: string
+  kind?: ExclusionKind
+  /** ISO time; omitted = until re-included. */
+  expiresAt?: string
+}
+
+export function createExclusions(items: ExclusionItem[], opts: CreateExclusionsOptions = {}) {
   return post<BulkExclusionsResponse>('/api/v1/scope/exclusions/bulk', {
     items,
-    ...(reason ? { reason } : {}),
+    ...(opts.reason ? { reason: opts.reason } : {}),
+    ...(opts.kind ? { kind: opts.kind } : {}),
+    ...(opts.expiresAt ? { expires_at: opts.expiresAt } : {}),
   })
 }
 
-/** The undo of createExclusions (widens scope: the client asks for re-authentication). */
-export function deleteExclusions(ids: string[]) {
-  return post('/api/v1/scope/exclusions/bulk/delete', { exclusion_ids: ids.slice(0, 100) })
+/** Ids one bulk delete takes on every server version. */
+const DELETE_CHUNK = 100
+
+/**
+ * The undo of createExclusions (widens scope: the client asks for
+ * re-authentication). Every id is sent, in chunks, so an undo never leaves
+ * part of a batch in place.
+ */
+export async function deleteExclusions(ids: string[]) {
+  for (let i = 0; i < ids.length; i += DELETE_CHUNK) {
+    await post('/api/v1/scope/exclusions/bulk/delete', {
+      exclusion_ids: ids.slice(i, i + DELETE_CHUNK),
+    })
+  }
 }
 
 /** rejected = "Not ours"; automatic = forget a person's decision (the undo). */

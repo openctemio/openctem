@@ -201,6 +201,7 @@
   "findings.closureReason.obsolete_asset": "Asset retired",
   "findings.closureReason.obsolete_rule": "Check or rule changed",
   "findings.closureReason.obsolete_source": "Source removed",
+  "findings.closureReason.out_of_scope": "Asset out of scope",
   "findings.closureReason.risk_accepted": "Risk accepted",
   "findings.closureReason.test_or_example_code": "Test or example code",
   "findings.closureReason.unknown": "Not recorded",
