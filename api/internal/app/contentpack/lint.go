@@ -63,7 +63,10 @@ func lint(ctx context.Context, kind string, files []dom.File, exclude bool) (dom
 		case dom.KindSemgrepRules:
 			lintSemgrep(&fr, f)
 		case dom.KindWordlist:
-			lintWordlist(&fr, f)
+			// The manifest and NOTICE are metadata, checked as a whole below.
+			if f.Path != WordlistManifestFile && f.Path != WordlistNoticeFile {
+				lintWordlist(&fr, f)
+			}
 		}
 		if exclude && len(fr.Errors) > 0 {
 			excluded[f.Path] = true
@@ -87,6 +90,9 @@ func lint(ctx context.Context, kind string, files []dom.File, exclude bool) (dom
 	}
 	if kind == dom.KindWordlist && rep.Items > maxWordlistLines {
 		rep.Error("", "TOO_MANY_LINES", fmt.Sprintf("the pack holds more than %d lines", maxWordlistLines))
+	}
+	if kind == dom.KindWordlist {
+		lintWordlistManifest(&rep, files, exclude, excluded)
 	}
 	switch {
 	case dom.IsNamespacedKind(kind):
@@ -356,5 +362,25 @@ func lintWordlist(rep *dom.LintReport, f dom.File) {
 		if strings.TrimSpace(line) != "" {
 			rep.Items++
 		}
+	}
+}
+
+// lintWordlistManifest checks the wordlists.yaml of a wordlist pack. A
+// platform pack (an upstream release) must have one and it must be true; a
+// tenant pack without one is accepted (its lists have no declared purpose).
+// A pack that has one is held to it either way. Problems with the manifest
+// refuse the pack; they never just leave a file out.
+func lintWordlistManifest(rep *dom.LintReport, files []dom.File, platform bool, excluded map[string]bool) {
+	byPath := make(map[string][]byte, len(files))
+	for _, f := range files {
+		if !excluded[f.Path] {
+			byPath[f.Path] = f.Data
+		}
+	}
+	if _, has := byPath[WordlistManifestFile]; !has && !platform {
+		return
+	}
+	for _, is := range CheckWordlistPack(byPath) {
+		rep.Error(is.Path, is.Code, is.Message)
 	}
 }

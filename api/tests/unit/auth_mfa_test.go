@@ -1180,3 +1180,44 @@ func TestChangePassword_WrongPasswordCountsTowardLockout(t *testing.T) {
 		t.Fatalf("locked account with the right password: want ErrAccountLocked, got %v", err)
 	}
 }
+
+// X-02 (research/310): the entry check of a URL-tenant route applies the URL
+// organization's 2FA rule to the token's own session, even when the token was
+// minted for another organization.
+func TestMFA_CheckEntryAppliesURLOrganizationRule(t *testing.T) {
+	h := newMFAHarness(t)
+	tn := newPolicyTenant(t, h.tenants, "entry-tenant", false)
+	pre := tn.TypedSettings()
+	pre.Security.MFARequiredForAdmins = false
+	_ = tn.UpdateSettings(pre)
+	h.tenants.userMemberships = []tenant.UserMembership{{TenantID: tn.ID().String(), TenantSlug: tn.Slug(), TenantName: "Acme", Role: "admin"}}
+	uid := h.seedUser(t, "entry@example.com")
+	ms, _ := tenant.NewMembership(uid, tn.ID(), tenant.RoleAdmin, nil)
+	h.tenants.memberships = append(h.tenants.memberships, ms)
+	res := h.login(t, "entry@example.com") // the organization has no rule yet
+
+	ctx := context.Background()
+	if err := h.svc.CheckEntry(ctx, res.SessionID, uid.String(), tn.ID().String()); err != nil {
+		t.Fatalf("no rule: entry must pass, got %v", err)
+	}
+
+	st := tn.TypedSettings()
+	st.Security.MFARequired = true
+	_ = tn.UpdateSettings(st)
+	err := h.svc.CheckEntry(ctx, res.SessionID, uid.String(), tn.ID().String())
+	var ref *auth.EntryRefusal
+	if !errors.As(err, &ref) || string(ref.Code) != "MFA_ENROLLMENT_REQUIRED" || ref.Status != 403 {
+		t.Fatalf("a member without 2FA must be refused by the organization's rule, got %v", err)
+	}
+
+	// A social sign-in never went through our second step either.
+	h.sessions.sessions[res.SessionID].SetAuthMethod(session.AuthMethodSSO)
+	if err := h.svc.CheckEntry(ctx, res.SessionID, uid.String(), tn.ID().String()); !errors.As(err, &ref) {
+		t.Fatalf("a federated session without this organization's IdP must be refused, got %v", err)
+	}
+
+	// An unknown or other user's session is a 401, not a pass.
+	if err := h.svc.CheckEntry(ctx, shared.NewID().String(), uid.String(), tn.ID().String()); !errors.As(err, &ref) || ref.Status != 401 {
+		t.Fatalf("unknown session: %v", err)
+	}
+}
