@@ -157,6 +157,9 @@ func TestEmailService_EveryMailMethodIsClassified(t *testing.T) {
 		"SendWelcomeEmail",
 		// A set-password link is a credential: platform relay only.
 		"SendAccountSetupEmail",
+		// The administrator invitation is the same link for a platform
+		// administrator: no organization, so only the platform sender exists.
+		"SendAdminInvitationEmail",
 	}
 	organizationMail := []string{
 		"SendMemberReactivatedEmail", "SendMemberSuspendedEmail", "SendReport",
