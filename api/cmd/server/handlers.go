@@ -18,7 +18,6 @@ import (
 	dashfactsapp "github.com/openctemio/openctem/api/internal/app/dashboard/facts"
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	scmappsvc "github.com/openctemio/openctem/api/internal/app/scmapp"
-	"github.com/openctemio/openctem/api/internal/app/supportaccess"
 	"github.com/openctemio/openctem/api/internal/infra/scm/githubapp"
 
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
@@ -920,15 +919,11 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 	// Support access (RFC-063): owners grant, the named administrator reads
 	// through a live support session; both audit logs, owner emails.
-	if repos.SupportAccess != nil && repos.SupportRead != nil && svc.Audit != nil {
-		var mailer supportaccess.Mailer
-		if svc.Email != nil {
-			mailer = svc.Email
-		}
-		supportSvc := supportaccess.NewService(repos.SupportAccess, repos.SupportRead, repos.Admin, svc.Audit,
-			repos.AdminAuditLog, repos.Tenant, tenantNames{repo: repos.Tenant}, mailer, log)
+	if supportSvc := newSupportAccessService(repos, svc, log); supportSvc != nil {
 		handlers.SupportAccess = handler.NewSupportAccessHandler(supportSvc, log)
 		handlers.AdminSupport = handler.NewAdminSupportHandler(supportSvc, log)
+		// Signing out of the console ends the support sessions it opened.
+		adminConsoleSvc.SetSupportSessionEnder(supportSvc)
 	}
 
 	// Social OAuth handler (Google / GitHub / Microsoft). svc.OAuth is non-nil
