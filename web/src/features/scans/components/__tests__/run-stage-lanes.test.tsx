@@ -108,6 +108,12 @@ describe('RunStageLanes', () => {
     const { unmount } = fresh(<RunStageLanes runId="r" />)
     expect(await screen.findByText(/No stage of this run has been planned yet/)).toBeInTheDocument()
     unmount()
+    // A finished run without a plan never had one: no "yet".
+    getMock.mockResolvedValueOnce({ data: [] })
+    const settled = fresh(<RunStageLanes runId="r3" settled />)
+    expect(await screen.findByText(/No stage plan was recorded for this run/)).toBeInTheDocument()
+    expect(screen.queryByText(/planned yet/)).not.toBeInTheDocument()
+    settled.unmount()
     getMock.mockRejectedValueOnce(new Error('boom'))
     fresh(<RunStageLanes runId="r2" />)
     expect(await screen.findByText(/Could not load the stages/)).toBeInTheDocument()
