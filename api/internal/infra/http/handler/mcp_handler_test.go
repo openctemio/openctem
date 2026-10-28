@@ -16,10 +16,12 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/findinglifecycle"
 	"github.com/openctemio/openctem/api/pkg/filterspec"
 
+	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/compliance"
 	findingapp "github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	pentestdom "github.com/openctemio/openctem/api/pkg/domain/pentest"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -1041,6 +1043,45 @@ func TestMCP_ListActiveCVEs_RunsTheListAsTheKeyOwner(t *testing.T) {
 		}
 		if err := json.Unmarshal(resp.Result, &r); err != nil || !r.IsError || fr.gotCVESpec != nil {
 			t.Errorf("args %s: want a refusal before any read", bad)
+		}
+	}
+}
+
+// fakeTotalAssets answers the asset list with a fixed total, as the real
+// service does for a caller whose data scope covers that many assets.
+type fakeTotalAssets struct{ total int64 }
+
+func (a fakeTotalAssets) ListAssets(_ context.Context, _ assetapp.ListAssetsInput) (pagination.Result[*assetdom.Asset], error) {
+	return pagination.NewResult([]*assetdom.Asset{}, a.total, pagination.Pagination{Page: 1, PerPage: 1}), nil
+}
+func (a fakeTotalAssets) GetAsset(context.Context, string, string) (*assetdom.Asset, error) {
+	return nil, shared.ErrNotFound
+}
+
+// A caller whose data scope covers no asset gets an explicit explanation
+// beside every empty asset/finding result, instead of data that looks like an
+// empty organization. A caller whose scope has assets gets none.
+func TestMCP_EmptyScopeNotice(t *testing.T) {
+	calls := []struct{ tool, args string }{
+		{"list_assets", `{}`}, {"list_findings", `{}`}, {"finding_stats", `{}`}, {"list_active_cves", `{}`},
+	}
+	for _, scoped := range []struct {
+		name   string
+		assets int64
+		notice bool
+	}{{"scope covers nothing", 0, true}, {"scope covers assets", 3, false}} {
+		for _, c := range calls {
+			t.Run(scoped.name+"/"+c.tool, func(t *testing.T) {
+				h := NewMCPHandler(&fakeFindingReader{}, nil, nil, nil, nil, fakeTotalAssets{total: scoped.assets}, nil, logger.NewNop())
+				_, resp := doRPC(t, h, "tenant-a", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"`+c.tool+`","arguments":`+c.args+`}}`)
+				if resp.Error != nil {
+					t.Fatalf("error: %+v", resp.Error)
+				}
+				got := strings.Contains(string(resp.Result), "covers 0 assets")
+				if got != scoped.notice {
+					t.Fatalf("notice present=%v want %v: %s", got, scoped.notice, resp.Result)
+				}
+			})
 		}
 	}
 }

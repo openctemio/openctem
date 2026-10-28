@@ -116,6 +116,9 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 	// rejected name, a scope exclusion, the deny list and a name outside the
 	// organization's scope are still refused.
 	passive := runsPassiveOnly(sc) || passiveRun(ctx)
+	// Where the run's jobs go decides whether ownership confirmation applies
+	// (placement.go); a caller that knows better (a workflow's steps) set it.
+	ctx = s.withScanPlacement(ctx, sc)
 
 	seen := make(map[string]int) // lower-cased target -> index in names
 	var names []string
@@ -319,7 +322,7 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 			shared.ErrValidation, len(out.Targets), maxResolvedTargets)
 	}
 	// A single-scanner run of a one-target scanner dispatches one command
-	// per target (perTargetPlan, or the zone batches); refuse up front what
+	// per target (unzonedJobPlan, or the zone batches); refuse up front what
 	// would exceed the per-run job cap. A workflow (no scanner name) plans
 	// its targets per step and never had the one-target caveat: it used to
 	// be warned that only the first target would be scanned.

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { ScanWorkflow } from '@/lib/api/scan-workflow-types'
-import { continuousDiscoveryPair, probeNewAssetsRequest } from '../continuous-discovery'
+import {
+  continuousDiscoveryPair,
+  probeNewAssetsRequest,
+  probeNote,
+  savedProbeOutcome,
+} from '../continuous-discovery'
 
 const wf = (id: string, tags: string[]) => ({ id, name: id, tags }) as unknown as ScanWorkflow
 
@@ -45,5 +50,30 @@ describe('continuous discovery', () => {
         'y'
       )
     ).toBeNull()
+  })
+})
+
+describe('one result for the pair', () => {
+  const t = (key: string, _f?: string, params?: Record<string, string | number>) =>
+    params?.error ? `${key}:${params.error}` : key
+
+  it('adds the waiting note and a sensors link to the success', () => {
+    const note = probeNote(savedProbeOutcome('waiting'), t)
+    expect(note).toEqual({
+      variant: 'success',
+      description: 'scans.new.continuousProbeWaiting',
+      sensorsHref: '/sensors',
+    })
+  })
+
+  it('has nothing to add when the probe is ready', () => {
+    expect(probeNote(savedProbeOutcome('ready'), t)).toEqual({ variant: 'success' })
+    expect(probeNote(null, t)).toEqual({ variant: 'success' })
+  })
+
+  it('a refused probe is a warning on the same toast, not a second error', () => {
+    const note = probeNote({ kind: 'failed', error: 'nope' }, t)
+    expect(note.variant).toBe('warning')
+    expect(note.description).toBe('scans.new.continuousSecondFailed:nope')
   })
 })
