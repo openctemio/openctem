@@ -161,6 +161,12 @@ export interface AdminOrganizationUserList {
   /** Empty when redacted: a read-only administrator sees counts only. */
   data: AdminOrganizationUser[]
   by_role: Record<string, number>
+  /**
+   * Owners who can act: active membership, account active and not erased.
+   * Zero while owners exist means the organization needs an owner recovery.
+   * Every role gets it, also the read-only one that gets no rows.
+   */
+  active_owner_count?: number
   redacted?: boolean
   total: number
 }
