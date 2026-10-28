@@ -40,7 +40,7 @@ import { AdminConfirmDialog } from '@console/features/admin-console/components/a
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { TargetMappingDialog } from '@console/features/admin-console/components/target-mapping-dialog'
 import { useTargetTypeText } from '@console/features/admin-console/lib/target-mappings'
-import { adminCan, type TargetMapping } from '@console/features/admin-console/types'
+import { type TargetMapping, adminHas } from '@console/features/admin-console/types'
 import { useTranslation } from '@/context/i18n-provider'
 
 const ALL = 'all'
@@ -69,7 +69,7 @@ export default function TargetMappingsPage() {
     `${text.label(m.target_type)} → ${getAssetTypeLabel(m.asset_type)}`
   // The API is the authority (every change needs a super admin, a step-up and
   // a reason); this only decides which controls to show.
-  const canWrite = adminCan(me.role, 'super_admin')
+  const canWrite = adminHas(me, 'platform.content.manage')
 
   const [targetType, setTargetType] = useUrlFilter('target_type', '')
   const [assetType, setAssetType] = useUrlFilter('asset_type', '')

@@ -19,7 +19,7 @@ import {
   filterConfig,
   type ConfigFilter,
 } from '@console/features/admin-console/lib/configuration'
-import { adminCan, type ConfigurationItem } from '@console/features/admin-console/types'
+import { type ConfigurationItem, adminHas } from '@console/features/admin-console/types'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { DeploymentRegionCard } from '@console/features/admin-console/components/deployment-region-card'
 
@@ -46,7 +46,7 @@ export default function ConfigurationPage() {
             'Every setting of this installation: what you change here (applied at once) and what the server configuration sets (needs a restart). Secrets are never shown, only whether they are set.'
           )}
         />
-        <DeploymentRegionCard canEdit={adminCan(me.role, 'super_admin')} />
+        <DeploymentRegionCard canEdit={adminHas(me, 'platform.settings.general.write')} />
         <Tabs value={filter} onValueChange={(v) => setFilter(v as ConfigFilter)}>
           <TabsList className="flex-wrap">
             <TabsTrigger value="all">{t('admin.config.filter.all', 'All')}</TabsTrigger>

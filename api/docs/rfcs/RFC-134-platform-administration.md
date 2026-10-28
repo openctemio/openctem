@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-10-28). In review: one identity (an administrator's account signs in to the app as an ordinary member; break-glass accounts stay console-only). Designed: platform roles and permissions, role management in the console, staff governance for the hosted service |
+| Status | Accepted (2026-10-28). In review: one identity (#3256), platform roles and permissions with deny-by-default console routes (#3258), role management in the console with hiding by permission and the generated reference (this RFC's third change). Designed: staff governance for the hosted service (section 5) |
 | Scope | api (sign-in, console authorization, platform role tables), web/console (role management, hiding by permission), web (sign-in page), docs |
-| Architecture | [platform-console.md](../architecture/platform-console.md), [authorization-matrix.md](../architecture/authorization-matrix.md) (Platform admin routes) |
+| Architecture | [platform-console.md](../architecture/platform-console.md), [authorization-matrix.md](../architecture/authorization-matrix.md) (Platform admin routes), [platform-permissions.md](../architecture/platform-permissions.md) (generated) |
 | Related | RFC-022 (the console; this RFC is its revision 25), RFC-063 (support access), RFC-078 (security keys), RFC-050 (member lifecycle) |
 
 ## 1. Problem

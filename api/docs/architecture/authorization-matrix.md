@@ -1076,7 +1076,10 @@ session holds a live elevation (`POST /api/v1/admin/auth/elevate {role}`, a
 **fresh** step-up, 15-60 minutes, one platform role whose permissions are all
 held, or the tier names `ops_admin` / `super_admin`; `DELETE` ends it); it then
 also acts with that role's permissions. `GET /admin/auth/validate` returns
-`roles`, `permissions` (acting) and `max_permissions`. Elevation never
+`roles`, `permissions` (acting) and `max_permissions`. Additional roles are
+given and taken with `platform.roles.assign` (owner only, step-up, reason,
+never to oneself, only roles whose permissions the caller holds); the base role
+follows `admin_users.role`. Reference: `platform-permissions.md` (generated). Elevation never
 rides a step-up window another action opened: it takes a fresh authenticator
 code or a security-key confirmation given within the last minute, and that
 proof then opens the five-minute step-up window for the protected actions that
