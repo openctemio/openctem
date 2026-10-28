@@ -112,6 +112,17 @@ flowchart LR
   pinned by sha256 in a test. A change is the same reviewed change on both sides (RFC-094: the platform never
   imports the SDK).
 
+### 4.1 Where the harness lives
+
+- `pkg/harness` stays in sdk-go. It shares the grant, scope, tool tiers, tool packs, claim and lease, the egress
+  forwarder and the governor with the sensor runtime, so there is one compatibility range and one place for security
+  fixes.
+- Model-provider adapters do not go into sdk-go. They live in `openctemio/ai-worker` as plain HTTP clients, or later in
+  a nested Go module, so sensor builds never pull vendor AI SDKs.
+- Split `pkg/harness` into a nested module (a `go.mod` inside sdk-go, not a new repository) when one of these happens:
+  an outside consumer needs the harness without the sensor runtime, the release cadences conflict, the dependency
+  weight becomes a problem, or a separate team owns it.
+
 ## 5. Playbooks and evals (shipped)
 
 - **Playbook** (`openctem.io/playbook/v1`, YAML). It declares:
