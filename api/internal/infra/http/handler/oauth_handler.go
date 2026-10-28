@@ -2,7 +2,6 @@ package handler
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/url"
 	"strings"
@@ -138,14 +137,15 @@ type CallbackResponse struct {
 
 // Callback handles the OAuth callback from the provider.
 // @Summary      OAuth callback handler
-// @Description  Handles the OAuth callback after user authorization
+// @Description  Handles the OAuth callback after user authorization. A refusal carries a stable `code` (api/internal/infra/http/handler/auth_error_codes.go), for example EMAIL_UNVERIFIED_AT_IDP, USE_ADMIN_CONSOLE, OAUTH_INVALID_STATE, ACCOUNT_LINK_REQUIRED; the console words it in the person's language.
 // @Tags         OAuth
 // @Accept       json
 // @Produce      json
 // @Param        provider  path      string            true  "OAuth provider"
 // @Param        request   body      CallbackRequest   true  "Callback data"
 // @Success      200  {object}  CallbackResponse
-// @Failure      400  {object}  map[string]string
+// @Failure      400  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
 // @Router       /auth/oauth/{provider}/callback [post]
 func (h *OAuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 	provider := r.PathValue("provider")
@@ -213,30 +213,11 @@ func (h *OAuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 
 // handleOAuthError handles OAuth errors and returns appropriate HTTP responses.
 func (h *OAuthHandler) handleOAuthError(w http.ResponseWriter, err error) {
-	switch {
-	case errors.Is(err, auth.ErrOAuthDisabled):
-		apierror.Forbidden("OAuth is disabled").WriteJSON(w)
-	case errors.Is(err, auth.ErrProviderDisabled):
-		apierror.Forbidden("This OAuth provider is not configured").WriteJSON(w)
-	case errors.Is(err, auth.ErrInvalidProvider):
-		apierror.BadRequest("Invalid OAuth provider").WriteJSON(w)
-	case errors.Is(err, auth.ErrInvalidState):
-		apierror.BadRequest("Invalid or expired state token").WriteJSON(w)
-	case errors.Is(err, auth.ErrOAuthExchangeFailed):
-		apierror.BadRequest("Failed to exchange authorization code").WriteJSON(w)
-	case errors.Is(err, auth.ErrSignupNotAvailable):
-		writeSignupNotAvailable(w)
-	case errors.Is(err, auth.ErrSignupSSORequired):
-		writeSignupSSORequired(w)
-	case errors.Is(err, auth.ErrEmailNotAuthoritative):
-		apierror.New(http.StatusForbidden, "EMAIL_NOT_AUTHORITATIVE",
-			"This provider cannot prove that you own this email address. Sign in with your password, or ask an administrator, and link the provider afterwards.").WriteJSON(w)
-	case errors.Is(err, auth.ErrOAuthUserInfoFailed):
-		apierror.BadRequest("Failed to get user information from provider").WriteJSON(w)
-	default:
-		h.logger.Error("oauth error", "error", err)
-		apierror.InternalError(err).WriteJSON(w)
+	if writeAuthTableError(w, err) {
+		return
 	}
+	h.logger.Error("oauth error", "error", err)
+	apierror.InternalError(err).WriteJSON(w)
 }
 
 // isFinalRedirectAllowed checks where the web app sends the person after a
