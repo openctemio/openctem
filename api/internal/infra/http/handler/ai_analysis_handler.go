@@ -3,7 +3,6 @@ package handler
 import (
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"time"
 
@@ -17,7 +16,8 @@ import (
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
-// AIAnalysisHandler serves the AI use-case policy and the AI suggestions
+// AIAnalysisHandler serves AI analysts (service accounts that triage like a
+// person, with accountable owners) and their runs
 // (docs/architecture/ai-analysis.md).
 type AIAnalysisHandler struct {
 	svc    *aianalysis.Service
@@ -30,132 +30,104 @@ func NewAIAnalysisHandler(svc *aianalysis.Service, log *logger.Logger) *AIAnalys
 }
 
 const (
-	aiErrConsentRequiredCode apierror.Code = "AI_CONSENT_REQUIRED"
-	aiErrUndoConflictCode    apierror.Code = "AI_UNDO_CONFLICT"
-	aiErrDecidedCode         apierror.Code = "AI_SUGGESTION_DECIDED"
+	aiErrPausedCode apierror.Code = "AI_ANALYST_PAUSED"
+	aiErrBudgetCode apierror.Code = "AI_ANALYST_LIMIT"
 )
 
-// AIUseCaseResponse is one AI use case's policy.
-type AIUseCaseResponse struct {
-	UseCase          string     `json:"use_case"`
-	Mode             string     `json:"mode"`
-	EffectiveMode    string     `json:"effective_mode"`
-	Consented        bool       `json:"consented"`
-	Executor         string     `json:"executor"`
-	DataClassCeiling string     `json:"data_class_ceiling"`
-	MinConfidence    float64    `json:"min_confidence"`
-	Triggers         []string   `json:"triggers"`
-	BudgetShare      int        `json:"budget_share"`
-	DowngradedAt     *time.Time `json:"downgraded_at,omitempty"`
-	DowngradeReason  string     `json:"downgrade_reason,omitempty"`
-	UpdatedAt        *time.Time `json:"updated_at,omitempty"`
-	UpdatedBy        string     `json:"updated_by,omitempty"`
+// AIOwnerResponse is one accountable owner.
+type AIOwnerResponse struct {
+	Kind string `json:"kind"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
-// AIUseCaseListResponse lists the use cases.
-type AIUseCaseListResponse struct {
-	Data []AIUseCaseResponse `json:"data"`
-	// DowngradeThreshold and DowngradeWindow describe the automatic fall
-	// back from auto-apply to suggest.
-	DowngradeThreshold float64 `json:"downgrade_threshold"`
-	DowngradeWindow    int     `json:"downgrade_window"`
+// AIAnalystResponse is one AI analyst.
+type AIAnalystResponse struct {
+	ID               string            `json:"id"`
+	Name             string            `json:"name"`
+	Description      string            `json:"description"`
+	Preset           string            `json:"preset"`
+	Status           string            `json:"status"`
+	PauseReason      string            `json:"pause_reason,omitempty"`
+	DataClassCeiling string            `json:"data_class_ceiling"`
+	Executor         string            `json:"executor"`
+	RunsPerHour      int               `json:"runs_per_hour"`
+	ActionsPerHour   int               `json:"actions_per_hour"`
+	TokensMonth      int               `json:"tokens_month"`
+	AttestedAt       time.Time         `json:"attested_at"`
+	AttestDueAt      time.Time         `json:"attest_due_at"`
+	Owners           []AIOwnerResponse `json:"owners"`
+	CreatedAt        time.Time         `json:"created_at"`
 }
 
-// UpdateAIUseCaseRequest changes one use case; omitted fields keep their value.
-type UpdateAIUseCaseRequest struct {
-	Mode             *string  `json:"mode,omitempty"`
-	DataClassCeiling *string  `json:"data_class_ceiling,omitempty"`
-	MinConfidence    *float64 `json:"min_confidence,omitempty"`
-	Triggers         []string `json:"triggers,omitempty"`
-	BudgetShare      *int     `json:"budget_share,omitempty"`
+// AIAnalystListResponse lists AI analysts.
+type AIAnalystListResponse struct {
+	Data []AIAnalystResponse `json:"data"`
 }
 
-// AISuggestionResponse is one AI suggestion.
-type AISuggestionResponse struct {
-	ID            string             `json:"id"`
-	RunID         string             `json:"run_id"`
-	UseCase       string             `json:"use_case"`
-	SubjectType   string             `json:"subject_type"`
-	SubjectID     string             `json:"subject_id"`
-	Kind          string             `json:"kind"`
-	Payload       json.RawMessage    `json:"payload"`
-	SchemaVersion string             `json:"schema_version"`
-	Direction     string             `json:"direction"`
-	Confidence    *float64           `json:"confidence,omitempty"`
-	Evidence      []aidom.Evidence   `json:"evidence"`
-	State         string             `json:"state"`
-	ReviewReasons []string           `json:"review_reasons"`
-	ApprovalKind  string             `json:"approval_kind,omitempty"`
-	ApprovalID    string             `json:"approval_id,omitempty"`
-	AppliedBy     string             `json:"applied_by,omitempty"`
-	AppliedAt     *time.Time         `json:"applied_at,omitempty"`
-	UndoneBy      string             `json:"undone_by,omitempty"`
-	UndoneAt      *time.Time         `json:"undone_at,omitempty"`
-	CreatedAt     time.Time          `json:"created_at"`
-	Origin        string             `json:"origin"`
-	Run           *AIRunSummaryShort `json:"run,omitempty"`
-}
-
-// AIRunSummaryShort is the provenance shown on a suggestion card.
-type AIRunSummaryShort struct {
-	Executor         string `json:"executor"`
-	Provider         string `json:"provider,omitempty"`
-	Model            string `json:"model,omitempty"`
-	PromptTemplateID string `json:"prompt_template_id,omitempty"`
-}
-
-// AIRunResponse is a run's full provenance and its suggestions.
+// AIRunResponse is one run with its provenance.
 type AIRunResponse struct {
-	ID                   string                 `json:"id"`
-	UseCase              string                 `json:"use_case"`
-	Kind                 string                 `json:"kind"`
-	SubjectType          string                 `json:"subject_type"`
-	SubjectID            string                 `json:"subject_id"`
-	Executor             string                 `json:"executor"`
-	Status               string                 `json:"status"`
-	DataClass            string                 `json:"data_class"`
-	FieldsSent           []string               `json:"fields_sent"`
-	FieldsWithheld       []string               `json:"fields_withheld"`
-	BundleDigest         string                 `json:"bundle_digest,omitempty"`
-	PromptTemplateID     string                 `json:"prompt_template_id,omitempty"`
-	PromptTemplateDigest string                 `json:"prompt_template_digest,omitempty"`
-	OutputSchema         string                 `json:"output_schema,omitempty"`
-	Provider             string                 `json:"provider,omitempty"`
-	Model                string                 `json:"model,omitempty"`
-	TokensIn             int                    `json:"tokens_in"`
-	TokensOut            int                    `json:"tokens_out"`
-	CostMicroUSD         int64                  `json:"cost_micro_usd"`
-	DurationMS           *int                   `json:"duration_ms,omitempty"`
-	ErrorCode            string                 `json:"error_code,omitempty"`
-	Trigger              string                 `json:"trigger"`
-	RequestedBy          string                 `json:"requested_by,omitempty"`
-	CreatedAt            time.Time              `json:"created_at"`
-	CompletedAt          *time.Time             `json:"completed_at,omitempty"`
-	Suggestions          []AISuggestionResponse `json:"suggestions"`
+	ID                   string            `json:"id"`
+	AnalystID            string            `json:"analyst_id,omitempty"`
+	UseCase              string            `json:"use_case"`
+	Kind                 string            `json:"kind"`
+	SubjectType          string            `json:"subject_type"`
+	SubjectID            string            `json:"subject_id"`
+	Executor             string            `json:"executor"`
+	Status               string            `json:"status"`
+	DataClass            string            `json:"data_class"`
+	FieldsSent           []string          `json:"fields_sent"`
+	FieldsWithheld       []string          `json:"fields_withheld"`
+	BundleDigest         string            `json:"bundle_digest,omitempty"`
+	PromptTemplateID     string            `json:"prompt_template_id,omitempty"`
+	PromptTemplateDigest string            `json:"prompt_template_digest,omitempty"`
+	OutputSchema         string            `json:"output_schema,omitempty"`
+	Provider             string            `json:"provider,omitempty"`
+	Model                string            `json:"model,omitempty"`
+	Actions              int               `json:"actions"`
+	TokensIn             int               `json:"tokens_in"`
+	TokensOut            int               `json:"tokens_out"`
+	CostMicroUSD         int64             `json:"cost_micro_usd"`
+	DurationMS           *int              `json:"duration_ms,omitempty"`
+	ErrorCode            string            `json:"error_code,omitempty"`
+	Trigger              string            `json:"trigger"`
+	TriggeredBy          string            `json:"triggered_by,omitempty"`
+	Accountable          []AIOwnerResponse `json:"accountable"`
+	LegacyOutput         map[string]any    `json:"legacy_output,omitempty"`
+	CreatedAt            time.Time         `json:"created_at"`
+	CompletedAt          *time.Time        `json:"completed_at,omitempty"`
 }
 
-// AISuggestionListResponse lists suggestions.
-type AISuggestionListResponse struct {
-	Data []AISuggestionResponse `json:"data"`
+// AIRunListResponse lists runs.
+type AIRunListResponse struct {
+	Data []AIRunResponse `json:"data"`
 }
 
-// ApplyAISuggestionRequest carries what a person adds when applying.
-type ApplyAISuggestionRequest struct {
-	// ClosureReason is required for a false-positive verdict.
-	ClosureReason string `json:"closure_reason,omitempty"`
+// SetAIAnalystOwnersRequest replaces the accountable owners.
+type SetAIAnalystOwnersRequest struct {
+	Owners []aianalysis.OwnerInput `json:"owners" validate:"required,min=1,max=20,dive"`
 }
 
-// AIDecisionResponse is the result of apply, dismiss or undo.
-type AIDecisionResponse struct {
-	Suggestion      AISuggestionResponse `json:"suggestion"`
-	PendingApproval bool                 `json:"pending_approval"`
+// SetAIAnalystPresetRequest moves an analyst to another preset role.
+type SetAIAnalystPresetRequest struct {
+	Preset string `json:"preset" validate:"required,oneof=suggest triage"`
 }
 
-// AIUndoRunResponse reports a bulk undo.
-type AIUndoRunResponse struct {
-	Undone    int `json:"undone"`
-	Conflicts int `json:"conflicts"`
-	Pending   int `json:"pending"`
+func toAIOwners(o []aidom.OwnerRef) []AIOwnerResponse {
+	out := make([]AIOwnerResponse, 0, len(o))
+	for _, x := range o {
+		out = append(out, AIOwnerResponse{Kind: string(x.Kind), ID: x.ID.String(), Name: x.Name})
+	}
+	return out
+}
+
+func toAIAnalyst(a *aidom.Analyst) AIAnalystResponse {
+	return AIAnalystResponse{
+		ID: a.ID.String(), Name: a.Name, Description: a.Description, Preset: string(a.Preset), Status: string(a.Status),
+		PauseReason: string(a.PauseReason), DataClassCeiling: string(a.DataClassCeiling), Executor: string(a.Executor),
+		RunsPerHour: a.RunsPerHour, ActionsPerHour: a.ActionsPerHour, TokensMonth: a.TokensMonth,
+		AttestedAt: a.AttestedAt, AttestDueAt: a.AttestDueAt, Owners: toAIOwners(a.Owners), CreatedAt: a.CreatedAt,
+	}
 }
 
 func idStr(id *shared.ID) string {
@@ -165,42 +137,19 @@ func idStr(id *shared.ID) string {
 	return id.String()
 }
 
-func toAIUseCase(p aianalysis.PolicyView) AIUseCaseResponse {
-	out := AIUseCaseResponse{
-		UseCase: string(p.UseCase), Mode: string(p.Mode), EffectiveMode: string(p.EffectiveMode), Consented: p.Consented,
-		Executor: string(p.Executor), DataClassCeiling: string(p.DataClassCeiling), MinConfidence: p.MinConfidence,
-		BudgetShare: p.BudgetShare, DowngradedAt: p.DowngradedAt, DowngradeReason: p.DowngradeReason,
-		UpdatedBy: idStr(p.UpdatedBy), Triggers: make([]string, 0, len(p.Triggers)),
+func toAIRun(run *aidom.Run) AIRunResponse {
+	return AIRunResponse{
+		ID: run.ID.String(), AnalystID: idStr(run.AnalystID), UseCase: string(run.UseCase), Kind: run.Kind,
+		SubjectType: string(run.SubjectType), SubjectID: run.SubjectID.String(), Executor: string(run.Executor),
+		Status: string(run.Status), DataClass: string(run.DataClass), FieldsSent: nonNilStrings(run.FieldsSent),
+		FieldsWithheld: nonNilStrings(run.FieldsWithheld), BundleDigest: run.BundleDigest,
+		PromptTemplateID: run.PromptTemplateID, PromptTemplateDigest: run.PromptTemplateDigest,
+		OutputSchema: run.OutputSchema, Provider: run.Provider, Model: run.Model, Actions: run.Actions,
+		TokensIn: run.TokensIn, TokensOut: run.TokensOut, CostMicroUSD: run.CostMicroUSD, DurationMS: run.DurationMS,
+		ErrorCode: run.ErrorCode, Trigger: string(run.Trigger), TriggeredBy: idStr(run.TriggeredBy),
+		Accountable: toAIOwners(run.Accountable), LegacyOutput: run.LegacyOutput, CreatedAt: run.CreatedAt,
+		CompletedAt: run.CompletedAt,
 	}
-	for _, t := range p.Triggers {
-		out.Triggers = append(out.Triggers, string(t))
-	}
-	if p.Stored {
-		at := p.UpdatedAt
-		out.UpdatedAt = &at
-	}
-	return out
-}
-
-func toAISuggestion(s *aidom.Suggestion, run *aidom.Run) AISuggestionResponse {
-	out := AISuggestionResponse{
-		ID: s.ID.String(), RunID: s.RunID.String(), UseCase: string(s.UseCase), SubjectType: string(s.SubjectType),
-		SubjectID: s.SubjectID.String(), Kind: string(s.Kind), Payload: s.Payload, SchemaVersion: s.SchemaVersion,
-		Direction: string(s.Direction), Confidence: s.Confidence, Evidence: s.Evidence, State: string(s.State),
-		ReviewReasons: s.ReviewReasons, ApprovalKind: string(s.ApprovalKind), ApprovalID: idStr(s.ApprovalID),
-		AppliedBy: idStr(s.AppliedBy), AppliedAt: s.AppliedAt, UndoneBy: idStr(s.UndoneBy), UndoneAt: s.UndoneAt,
-		CreatedAt: s.CreatedAt, Origin: "ai",
-	}
-	if out.Evidence == nil {
-		out.Evidence = []aidom.Evidence{}
-	}
-	if out.ReviewReasons == nil {
-		out.ReviewReasons = []string{}
-	}
-	if run != nil {
-		out.Run = &AIRunSummaryShort{Executor: string(run.Executor), Provider: run.Provider, Model: run.Model, PromptTemplateID: run.PromptTemplateID}
-	}
-	return out
 }
 
 func (h *AIAnalysisHandler) actx(r *http.Request) auditapp.AuditContext {
@@ -216,20 +165,18 @@ func (h *AIAnalysisHandler) actx(r *http.Request) auditapp.AuditContext {
 }
 
 func (h *AIAnalysisHandler) fail(w http.ResponseWriter, err error) {
+	var paused *aidom.PausedError
 	switch {
-	case errors.Is(err, aianalysis.ErrConsentRequired):
-		apierror.New(http.StatusBadRequest, aiErrConsentRequiredCode, "Turn AI on for the organization first.").WriteJSON(w)
-	case errors.Is(err, aidom.ErrUndoConflict):
-		apierror.New(http.StatusConflict, aiErrUndoConflictCode,
-			"The field changed after the AI suggestion was applied; edit it by hand.").WriteJSON(w)
-	case errors.Is(err, aidom.ErrStateChanged):
-		apierror.New(http.StatusConflict, aiErrDecidedCode, "The AI suggestion was already decided.").WriteJSON(w)
+	case errors.As(err, &paused):
+		apierror.New(http.StatusConflict, aiErrPausedCode, "The AI analyst is paused: "+string(paused.Reason)+".").WriteJSON(w)
+	case errors.Is(err, aianalysis.ErrBudget):
+		apierror.New(http.StatusTooManyRequests, aiErrBudgetCode, "The AI analyst reached its limit for now.").WriteJSON(w)
 	case errors.Is(err, shared.ErrNotFound):
-		apierror.NotFound("AI suggestion").WriteJSON(w)
+		apierror.NotFound("AI analyst").WriteJSON(w)
 	case errors.Is(err, shared.ErrForbidden):
-		apierror.Forbidden("You do not have the permission this change needs.").WriteJSON(w)
+		apierror.Forbidden("You may not do this to this AI analyst.").WriteJSON(w)
 	case errors.Is(err, shared.ErrConflict):
-		apierror.Conflict("The finding changed; reload and try again.").WriteJSON(w)
+		apierror.Conflict("The AI analyst changed; reload and try again.").WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
 		apierror.BadRequest(easmValidationMessage(err)).WriteJSON(w)
 	default:
@@ -262,116 +209,287 @@ func aiTenantOf(w http.ResponseWriter, r *http.Request) (shared.ID, bool) {
 	return id, true
 }
 
-// ListUseCases handles GET /api/v1/organization/settings/ai/use-cases.
+func aiViewerOf(w http.ResponseWriter, r *http.Request) (shared.ID, bool) {
+	id, err := shared.IDFromString(middleware.GetUserID(r.Context()))
+	if err != nil {
+		apierror.Unauthorized("A person must make this request").WriteJSON(w)
+		return shared.ID{}, false
+	}
+	return id, true
+}
+
+func decodeAIBody(w http.ResponseWriter, r *http.Request, v any) bool {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(v); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return false
+	}
+	return true
+}
+
+// ListAnalysts handles GET /api/v1/ai/analysts.
 //
-// @Summary      List the organization's AI use cases
-// @Description  Per use case (triage, remediation, summary): mode (off, suggest, auto_apply), the mode in force (off until the organization consents to AI), executor, data class ceiling, minimum confidence for auto-apply, triggers, budget share, and an automatic downgrade to suggest when people overrode too many suggestions. Owners and administrators.
-// @Tags         Tenants
+// @Summary      List AI analysts
+// @Description  The organization's AI analysts: service accounts that triage like a person, with their preset role, status, accountable owners and attestation.
+// @Tags         AI
 // @Produce      json
+// @Success      200  {object}  AIAnalystListResponse
 // @Security     BearerAuth
-// @Success      200  {object}  AIUseCaseListResponse
-// @Router       /organization/settings/ai/use-cases [get]
-func (h *AIAnalysisHandler) ListUseCases(w http.ResponseWriter, r *http.Request) {
+// @Router       /ai/analysts [get]
+func (h *AIAnalysisHandler) ListAnalysts(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := aiTenantOf(w, r)
 	if !ok {
 		return
 	}
-	views, err := h.svc.ListPolicies(r.Context(), tenantID)
+	list, err := h.svc.List(r.Context(), tenantID)
 	if err != nil {
 		h.fail(w, err)
 		return
 	}
-	out := AIUseCaseListResponse{Data: make([]AIUseCaseResponse, 0, len(views)),
-		DowngradeThreshold: aidom.DowngradeThreshold, DowngradeWindow: aidom.DowngradeWindow}
-	for _, v := range views {
-		out.Data = append(out.Data, toAIUseCase(v))
+	out := AIAnalystListResponse{Data: make([]AIAnalystResponse, 0, len(list))}
+	for _, a := range list {
+		out.Data = append(out.Data, toAIAnalyst(a))
 	}
 	writeAIJSON(w, http.StatusOK, out)
 }
 
-// UpdateUseCase handles PUT /api/v1/organization/settings/ai/use-cases/{use_case}.
+// GetAnalyst handles GET /api/v1/ai/analysts/{id}.
 //
-// @Summary      Change an AI use case
-// @Description  A partial change of one use case. auto_apply applies additive suggestions on its own (undo available); risk-lowering suggestions always become approval requests and severity or priority changes always wait for a person, whatever the mode. Turning auto-apply on or raising the data class above internal needs a recent sign-in. Re-enabling auto-apply clears an automatic downgrade. Owners and administrators; audited as critical.
-// @Tags         Tenants
+// @Summary      Get an AI analyst
+// @Tags         AI
+// @Produce      json
+// @Param        id path string true "Analyst ID"
+// @Success      200  {object}  AIAnalystResponse
+// @Security     BearerAuth
+// @Router       /ai/analysts/{id} [get]
+func (h *AIAnalysisHandler) GetAnalyst(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := aiTenantOf(w, r)
+	if !ok {
+		return
+	}
+	id, ok := aiPathID(w, r, "id")
+	if !ok {
+		return
+	}
+	a, err := h.svc.Get(r.Context(), tenantID, id)
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	writeAIJSON(w, http.StatusOK, toAIAnalyst(a))
+}
+
+// CreateAnalyst handles POST /api/v1/ai/analysts.
+//
+// @Summary      Create an AI analyst
+// @Description  Creates a service account with the preset role (suggest or triage) and its accountable owners (people or teams, at least one). The preset's permissions must be held by an accountable person and grantable by the caller. Needs a recent sign-in.
+// @Tags         AI
 // @Accept       json
 // @Produce      json
-// @Security     BearerAuth
-// @Param        use_case path string true "Use case"
-// @Param        body body UpdateAIUseCaseRequest true "Changes"
-// @Success      200  {object}  AIUseCaseResponse
+// @Param        request body aianalysis.CreateInput true "Analyst"
+// @Success      201  {object}  AIAnalystResponse
 // @Failure      400  {object}  apierror.Error
-// @Router       /organization/settings/ai/use-cases/{use_case} [put]
-func (h *AIAnalysisHandler) UpdateUseCase(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := aiTenantOf(w, r)
-	if !ok {
+// @Security     BearerAuth
+// @Router       /ai/analysts [post]
+func (h *AIAnalysisHandler) CreateAnalyst(w http.ResponseWriter, r *http.Request) {
+	var in aianalysis.CreateInput
+	if !decodeAIBody(w, r, &in) {
 		return
 	}
-	actor, err := shared.IDFromString(middleware.GetUserID(r.Context()))
-	if err != nil {
-		apierror.Unauthorized("A person must make this change").WriteJSON(w)
-		return
-	}
-	var req UpdateAIUseCaseRequest
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
-		apierror.BadRequest("Invalid request body").WriteJSON(w)
-		return
-	}
-	v, err := h.svc.UpdatePolicy(r.Context(), aianalysis.UpdatePolicyInput{
-		TenantID: tenantID, ActorID: actor, UseCase: r.PathValue("use_case"), Mode: req.Mode,
-		DataClassCeiling: req.DataClassCeiling, MinConfidence: req.MinConfidence, Triggers: req.Triggers,
-		BudgetShare: req.BudgetShare, Audit: h.actx(r),
-	})
+	a, err := h.svc.Create(r.Context(), in, h.actx(r))
 	if err != nil {
 		h.fail(w, err)
 		return
 	}
-	writeAIJSON(w, http.StatusOK, toAIUseCase(v))
+	writeAIJSON(w, http.StatusCreated, toAIAnalyst(a))
 }
 
-// ListFindingSuggestions handles GET /api/v1/findings/{id}/ai/suggestions.
+// SetOwners handles PUT /api/v1/ai/analysts/{id}/owners.
 //
-// @Summary      List a finding's AI suggestions
-// @Description  Every AI suggestion about the finding, newest first, with its direction (computed by the platform), state, confidence, evidence references and the run's provenance (executor, provider, model, prompt template). Free text in a payload is model output: display it as plain text. Applies the caller's data scope.
-// @Tags         Findings
+// @Summary      Replace an AI analyst's accountable owners
+// @Description  People or teams, at least one; the analyst's role must stay within what they hold. Needs a recent sign-in.
+// @Tags         AI
+// @Accept       json
 // @Produce      json
+// @Param        id path string true "Analyst ID"
+// @Param        request body SetAIAnalystOwnersRequest true "Owners"
+// @Success      200  {object}  AIAnalystResponse
 // @Security     BearerAuth
-// @Param        id path string true "Finding ID"
-// @Success      200  {object}  AISuggestionListResponse
-// @Router       /findings/{id}/ai/suggestions [get]
-func (h *AIAnalysisHandler) ListFindingSuggestions(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := aiTenantOf(w, r)
+// @Router       /ai/analysts/{id}/owners [put]
+func (h *AIAnalysisHandler) SetOwners(w http.ResponseWriter, r *http.Request) {
+	id, ok := aiPathID(w, r, "id")
 	if !ok {
 		return
 	}
-	findingID, ok := aiPathID(w, r, "id")
-	if !ok {
+	var in SetAIAnalystOwnersRequest
+	if !decodeAIBody(w, r, &in) {
 		return
 	}
-	items, runs, err := h.svc.ListForFinding(r.Context(), tenantID, findingID)
+	a, err := h.svc.ReplaceOwners(r.Context(), id, in.Owners, h.actx(r))
 	if err != nil {
 		h.fail(w, err)
 		return
 	}
-	out := AISuggestionListResponse{Data: make([]AISuggestionResponse, 0, len(items))}
-	for _, s := range items {
-		out.Data = append(out.Data, toAISuggestion(s, runs[s.RunID]))
+	writeAIJSON(w, http.StatusOK, toAIAnalyst(a))
+}
+
+// SetPreset handles PUT /api/v1/ai/analysts/{id}/preset.
+//
+// @Summary      Move an AI analyst to another preset role
+// @Description  suggest (comments and approval requests only) or triage (also status, severity raise, duplicates, assignment). Needs a recent sign-in.
+// @Tags         AI
+// @Accept       json
+// @Produce      json
+// @Param        id path string true "Analyst ID"
+// @Param        request body SetAIAnalystPresetRequest true "Preset"
+// @Success      200  {object}  AIAnalystResponse
+// @Security     BearerAuth
+// @Router       /ai/analysts/{id}/preset [put]
+func (h *AIAnalysisHandler) SetPreset(w http.ResponseWriter, r *http.Request) {
+	id, ok := aiPathID(w, r, "id")
+	if !ok {
+		return
 	}
-	writeAIJSON(w, http.StatusOK, out)
+	var in SetAIAnalystPresetRequest
+	if !decodeAIBody(w, r, &in) {
+		return
+	}
+	a, err := h.svc.ChangePreset(r.Context(), id, in.Preset, h.actx(r))
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	writeAIJSON(w, http.StatusOK, toAIAnalyst(a))
+}
+
+// Attest handles POST /api/v1/ai/analysts/{id}/attest.
+//
+// @Summary      Attest an AI analyst
+// @Description  An accountable owner (or an administrator) confirms the analyst's role, scope and behavior for another 90 days.
+// @Tags         AI
+// @Produce      json
+// @Param        id path string true "Analyst ID"
+// @Success      200  {object}  AIAnalystResponse
+// @Security     BearerAuth
+// @Router       /ai/analysts/{id}/attest [post]
+func (h *AIAnalysisHandler) Attest(w http.ResponseWriter, r *http.Request) {
+	id, ok := aiPathID(w, r, "id")
+	if !ok {
+		return
+	}
+	a, err := h.svc.Attest(r.Context(), id, middleware.IsAdmin(r.Context()), h.actx(r))
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	writeAIJSON(w, http.StatusOK, toAIAnalyst(a))
+}
+
+// Pause handles POST /api/v1/ai/analysts/{id}/pause.
+//
+// @Summary      Pause an AI analyst
+// @Description  An accountable owner or a holder of service_accounts:manage stops the analyst until it is resumed.
+// @Tags         AI
+// @Produce      json
+// @Param        id path string true "Analyst ID"
+// @Success      200  {object}  AIAnalystResponse
+// @Security     BearerAuth
+// @Router       /ai/analysts/{id}/pause [post]
+func (h *AIAnalysisHandler) Pause(w http.ResponseWriter, r *http.Request) {
+	id, ok := aiPathID(w, r, "id")
+	if !ok {
+		return
+	}
+	canManage := middleware.HasPermission(r.Context(), string(permission.ServiceAccountsManage))
+	a, err := h.svc.Pause(r.Context(), id, canManage, h.actx(r))
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	writeAIJSON(w, http.StatusOK, toAIAnalyst(a))
+}
+
+// Resume handles POST /api/v1/ai/analysts/{id}/resume.
+//
+// @Summary      Resume an AI analyst
+// @Description  Runs a paused or disabled analyst again once it has an active owner and a fresh attestation. Needs a recent sign-in.
+// @Tags         AI
+// @Produce      json
+// @Param        id path string true "Analyst ID"
+// @Success      200  {object}  AIAnalystResponse
+// @Security     BearerAuth
+// @Router       /ai/analysts/{id}/resume [post]
+func (h *AIAnalysisHandler) Resume(w http.ResponseWriter, r *http.Request) {
+	id, ok := aiPathID(w, r, "id")
+	if !ok {
+		return
+	}
+	a, err := h.svc.Resume(r.Context(), id, h.actx(r))
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	writeAIJSON(w, http.StatusOK, toAIAnalyst(a))
+}
+
+// Disable handles POST /api/v1/ai/analysts/{id}/disable.
+//
+// @Summary      Disable an AI analyst (kill switch)
+// @Tags         AI
+// @Produce      json
+// @Param        id path string true "Analyst ID"
+// @Success      200  {object}  AIAnalystResponse
+// @Security     BearerAuth
+// @Router       /ai/analysts/{id}/disable [post]
+func (h *AIAnalysisHandler) Disable(w http.ResponseWriter, r *http.Request) {
+	id, ok := aiPathID(w, r, "id")
+	if !ok {
+		return
+	}
+	a, err := h.svc.Disable(r.Context(), id, h.actx(r))
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	writeAIJSON(w, http.StatusOK, toAIAnalyst(a))
+}
+
+// DeleteAnalyst handles DELETE /api/v1/ai/analysts/{id}.
+//
+// @Summary      Delete an AI analyst
+// @Description  Removes the analyst and its service account; its runs and changes stay in the history. Needs a recent sign-in.
+// @Tags         AI
+// @Param        id path string true "Analyst ID"
+// @Success      204
+// @Security     BearerAuth
+// @Router       /ai/analysts/{id} [delete]
+func (h *AIAnalysisHandler) DeleteAnalyst(w http.ResponseWriter, r *http.Request) {
+	id, ok := aiPathID(w, r, "id")
+	if !ok {
+		return
+	}
+	if err := h.svc.Delete(r.Context(), id, h.actx(r)); err != nil {
+		h.fail(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // GetRun handles GET /api/v1/ai/runs/{id}.
 //
-// @Summary      Read an AI run
-// @Description  The "why" of AI suggestions: executor, model, prompt template id and digest, output schema, bundle digest, the fields sent and withheld, usage and cost, and the run's suggestions. Applies the caller's data scope to the run's subject (out of scope answers 404).
-// @Tags         Findings
+// @Summary      Get an AI run
+// @Description  A run's provenance: analyst, accountable owners at that moment, model, prompt template and digest, fields sent and withheld, usage. Only for a caller who can see the run's subject.
+// @Tags         AI
 // @Produce      json
-// @Security     BearerAuth
 // @Param        id path string true "Run ID"
 // @Success      200  {object}  AIRunResponse
+// @Security     BearerAuth
 // @Router       /ai/runs/{id} [get]
 func (h *AIAnalysisHandler) GetRun(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := aiTenantOf(w, r)
+	if !ok {
+		return
+	}
+	viewer, ok := aiViewerOf(w, r)
 	if !ok {
 		return
 	}
@@ -379,149 +497,44 @@ func (h *AIAnalysisHandler) GetRun(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	d, err := h.svc.GetRun(r.Context(), tenantID, runID)
+	run, err := h.svc.GetRun(r.Context(), tenantID, viewer, runID)
 	if err != nil {
 		h.fail(w, err)
 		return
 	}
-	run := d.Run
-	out := AIRunResponse{
-		ID: run.ID.String(), UseCase: string(run.UseCase), Kind: run.Kind, SubjectType: string(run.SubjectType),
-		SubjectID: run.SubjectID.String(), Executor: string(run.Executor), Status: string(run.Status),
-		DataClass: string(run.DataClass), FieldsSent: nonNilStrings(run.FieldsSent), FieldsWithheld: nonNilStrings(run.FieldsWithheld),
-		BundleDigest: run.BundleDigest, PromptTemplateID: run.PromptTemplateID, PromptTemplateDigest: run.PromptTemplateDigest,
-		OutputSchema: run.OutputSchema, Provider: run.Provider, Model: run.Model, TokensIn: run.TokensIn,
-		TokensOut: run.TokensOut, CostMicroUSD: run.CostMicroUSD, DurationMS: run.DurationMS, ErrorCode: run.ErrorCode,
-		Trigger: string(run.Trigger), RequestedBy: idStr(run.RequestedBy), CreatedAt: run.CreatedAt,
-		CompletedAt: run.CompletedAt, Suggestions: make([]AISuggestionResponse, 0, len(d.Suggestions)),
-	}
-	for _, s := range d.Suggestions {
-		out.Suggestions = append(out.Suggestions, toAISuggestion(s, nil))
-	}
-	writeAIJSON(w, http.StatusOK, out)
+	writeAIJSON(w, http.StatusOK, toAIRun(run))
 }
 
-func (h *AIAnalysisHandler) decide(w http.ResponseWriter, r *http.Request) (aianalysis.DecideInput, bool) {
+// ListFindingRuns handles GET /api/v1/findings/{id}/ai/runs.
+//
+// @Summary      List a finding's AI runs
+// @Tags         AI
+// @Produce      json
+// @Param        id path string true "Finding ID"
+// @Success      200  {object}  AIRunListResponse
+// @Security     BearerAuth
+// @Router       /findings/{id}/ai/runs [get]
+func (h *AIAnalysisHandler) ListFindingRuns(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := aiTenantOf(w, r)
 	if !ok {
-		return aianalysis.DecideInput{}, false
+		return
 	}
-	id, ok := aiPathID(w, r, "id")
-	if !ok {
-		return aianalysis.DecideInput{}, false
-	}
-	actor, err := shared.IDFromString(middleware.GetUserID(r.Context()))
-	if err != nil {
-		apierror.Unauthorized("A person must make this decision").WriteJSON(w)
-		return aianalysis.DecideInput{}, false
-	}
-	ctx := r.Context()
-	return aianalysis.DecideInput{
-		TenantID: tenantID, SuggestionID: id, ActorID: actor,
-		CanApprove: middleware.HasPermission(ctx, permission.FindingsApprove.String()),
-		Can:        func(p string) bool { return middleware.HasPermission(ctx, p) },
-		Audit:      h.actx(r),
-	}, true
-}
-
-// ApplySuggestion handles POST /api/v1/ai/suggestions/{id}/apply.
-//
-// @Summary      Apply an AI suggestion
-// @Description  Makes the change as the caller through the same path as a change made by hand: a severity uses the severity rules (a downgrade may become a request), a false-positive verdict opens a status request with the caller as requester (closure_reason required), a plan or summary becomes part of the finding's record. Needs the permission of the change (findings:severity for a severity, findings:write otherwise).
-// @Tags         Findings
-// @Accept       json
-// @Produce      json
-// @Security     BearerAuth
-// @Param        id path string true "Suggestion ID"
-// @Param        body body ApplyAISuggestionRequest false "Apply options"
-// @Success      200  {object}  AIDecisionResponse
-// @Failure      409  {object}  apierror.Error
-// @Router       /ai/suggestions/{id}/apply [post]
-func (h *AIAnalysisHandler) ApplySuggestion(w http.ResponseWriter, r *http.Request) {
-	in, ok := h.decide(w, r)
+	viewer, ok := aiViewerOf(w, r)
 	if !ok {
 		return
 	}
-	var req ApplyAISuggestionRequest
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2<<10)).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
-		apierror.BadRequest("Invalid request body").WriteJSON(w)
+	findingID, ok := aiPathID(w, r, "id")
+	if !ok {
 		return
 	}
-	in.ClosureReason = req.ClosureReason
-	res, err := h.svc.Apply(r.Context(), in)
+	runs, err := h.svc.ListRunsForFinding(r.Context(), tenantID, viewer, findingID)
 	if err != nil {
 		h.fail(w, err)
 		return
 	}
-	writeAIJSON(w, http.StatusOK, AIDecisionResponse{Suggestion: toAISuggestion(res.Suggestion, nil), PendingApproval: res.PendingApproval})
-}
-
-// DismissSuggestion handles POST /api/v1/ai/suggestions/{id}/dismiss.
-//
-// @Summary      Dismiss an AI suggestion
-// @Description  Declines a suggestion. Counts as an override: when people override 20 percent of the last 50 decisions of an auto-apply use case, it falls back to suggest.
-// @Tags         Findings
-// @Produce      json
-// @Security     BearerAuth
-// @Param        id path string true "Suggestion ID"
-// @Success      200  {object}  AIDecisionResponse
-// @Router       /ai/suggestions/{id}/dismiss [post]
-func (h *AIAnalysisHandler) DismissSuggestion(w http.ResponseWriter, r *http.Request) {
-	in, ok := h.decide(w, r)
-	if !ok {
-		return
+	out := AIRunListResponse{Data: make([]AIRunResponse, 0, len(runs))}
+	for _, run := range runs {
+		out.Data = append(out.Data, toAIRun(run))
 	}
-	s, err := h.svc.Dismiss(r.Context(), in)
-	if err != nil {
-		h.fail(w, err)
-		return
-	}
-	writeAIJSON(w, http.StatusOK, AIDecisionResponse{Suggestion: toAISuggestion(s, nil)})
-}
-
-// UndoSuggestion handles POST /api/v1/ai/suggestions/{id}/undo.
-//
-// @Summary      Undo an applied AI suggestion
-// @Description  Restores the previous value when the field has not changed since (otherwise 409 AI_UNDO_CONFLICT and nothing changes). Restoring a lower severity may need approval (pending_approval). Counts as an override.
-// @Tags         Findings
-// @Produce      json
-// @Security     BearerAuth
-// @Param        id path string true "Suggestion ID"
-// @Success      200  {object}  AIDecisionResponse
-// @Failure      409  {object}  apierror.Error
-// @Router       /ai/suggestions/{id}/undo [post]
-func (h *AIAnalysisHandler) UndoSuggestion(w http.ResponseWriter, r *http.Request) {
-	in, ok := h.decide(w, r)
-	if !ok {
-		return
-	}
-	res, err := h.svc.Undo(r.Context(), in)
-	if err != nil {
-		h.fail(w, err)
-		return
-	}
-	writeAIJSON(w, http.StatusOK, AIDecisionResponse{Suggestion: toAISuggestion(res.Suggestion, nil), PendingApproval: res.PendingApproval})
-}
-
-// UndoRun handles POST /api/v1/ai/runs/{id}/undo.
-//
-// @Summary      Undo everything an AI run applied
-// @Description  Undoes every applied suggestion of the run the caller may undo; reports how many were undone, conflicted or wait for approval.
-// @Tags         Findings
-// @Produce      json
-// @Security     BearerAuth
-// @Param        id path string true "Run ID"
-// @Success      200  {object}  AIUndoRunResponse
-// @Router       /ai/runs/{id}/undo [post]
-func (h *AIAnalysisHandler) UndoRun(w http.ResponseWriter, r *http.Request) {
-	in, ok := h.decide(w, r)
-	if !ok {
-		return
-	}
-	res, err := h.svc.UndoRun(r.Context(), in, in.SuggestionID)
-	if err != nil {
-		h.fail(w, err)
-		return
-	}
-	writeAIJSON(w, http.StatusOK, AIUndoRunResponse{Undone: res.Undone, Conflicts: res.Conflicts, Pending: res.Pending})
+	writeAIJSON(w, http.StatusOK, out)
 }

@@ -171,9 +171,8 @@ verdict never changes the priority class. A result with validation warnings
 severity change) is flagged `needs_review`, audited, and side-effect
 workflows skip it.
 
-Every triage result is also a set of AI suggestions with provenance
-(verdict, severity, remediation steps, summary), governed per use case: see
-[AI analysis governance](ai-analysis.md).
+AI analysts (service accounts that triage like a person, with accountable
+owners) are described in [AI analysts](ai-analysis.md).
 
 ## Providers
 
