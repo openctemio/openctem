@@ -173,6 +173,29 @@ type Identity struct {
 	// the confirmation transcript carries an empty tenant id); empty for a
 	// sensor of the organization TenantID.
 	Scope string `json:"scope,omitempty"`
+	// ContentSigning are the public keys the sensor pins to verify content
+	// packs (RFC-061 §3.7): the platform's key for platform packs and, for
+	// a sensor of one organization, that organization's key for its own
+	// packs. A shared sensor gets the platform key only. The sensor pins
+	// them here, over the pairing connection, and never takes a key later
+	// from a content route.
+	ContentSigning *ContentSigning `json:"content_signing,omitempty"`
+}
+
+// ContentSigning lists the content-pack verification keys of an identity.
+type ContentSigning struct {
+	Platform []ContentKey `json:"platform,omitempty"`
+	// Tenant is empty for a shared sensor (Scope "instance").
+	Tenant []ContentKey `json:"tenant,omitempty"`
+}
+
+// ContentKey is one Ed25519 verification key: KeyID is "SHA256:" + lower-case
+// hex of the SHA-256 of the raw key, and PublicKey the raw 32-byte key in
+// standard base64 (the form of the job-signing keys).
+type ContentKey struct {
+	KeyID     string `json:"keyid"`
+	Algorithm string `json:"algorithm"`
+	PublicKey string `json:"public_key"`
 }
 
 // ScopeInstance is Identity.Scope of a shared sensor.

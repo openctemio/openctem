@@ -129,3 +129,68 @@ func TestHeartbeatStateDigest_StoreGate(t *testing.T) {
 		t.Fatal("stop_claiming must be written at once")
 	}
 }
+
+// The content member of a local store report is read leniently: digests that
+// are not sha256 digests are dropped, counts are clamped, and the held list
+// is bounded.
+func TestParseLocalStoreReport_Content(t *testing.T) {
+	good := "sha256:" + strings.Repeat("a", 64)
+	held := []any{good, "sha256:zz", "../../etc/passwd", 7, "SHA256:" + strings.Repeat("A", 64)}
+	for i := 0; i < MaxReportedPackDigests+10; i++ {
+		held = append(held, "sha256:"+strings.Repeat("b", 63)+string(rune('0'+i%10)))
+	}
+	raw, _ := json.Marshal(map[string]any{
+		"level": "ok", "total_bytes": 10,
+		"content": map[string]any{
+			"held": held, "held_count": 9e18, "held_set_sha256": strings.Repeat("c", 64), "bytes": 5, "hits": 3, "misses": 1,
+			"bytes_downloaded": 100, "bytes_saved": 400, "verify_failures": 2, "desired_version": `"abc-123"`,
+		},
+	})
+	r := ParseLocalStoreReport(raw)
+	if r == nil || r.Content == nil {
+		t.Fatalf("report = %+v", r)
+	}
+	c := r.Content
+	if len(c.Held) != MaxReportedPackDigests || c.Held[0] != good {
+		t.Errorf("held = %d entries, first %q", len(c.Held), c.Held[0])
+	}
+	for _, d := range c.Held {
+		if !packDigestRE.MatchString(d) {
+			t.Errorf("kept a malformed digest %q", d)
+		}
+	}
+	if c.HeldCount != MaxLocalStoreCount || c.HeldSetSHA256 != strings.Repeat("c", 64) || c.Hits != 3 || c.BytesSaved != 400 || c.VerifyFailures != 2 || c.DesiredVersion != `"abc-123"` {
+		t.Errorf("content = %+v", c)
+	}
+	// Garbage members are ignored, not an error.
+	raw, _ = json.Marshal(map[string]any{"level": "ok", "content": map[string]any{
+		"held_set_sha256": "nope", "desired_version": "has spaces and <b>", "hits": "many", "held": "not a list",
+	}})
+	r = ParseLocalStoreReport(raw)
+	if r == nil || r.Content == nil || r.Content.HeldSetSHA256 != "" || r.Content.DesiredVersion != "" || r.Content.Hits != 0 || len(r.Content.Held) != 0 {
+		t.Errorf("garbage content = %+v", r)
+	}
+	// A content member that is not an object is dropped.
+	raw, _ = json.Marshal(map[string]any{"level": "ok", "content": "x"})
+	if r = ParseLocalStoreReport(raw); r == nil || r.Content != nil {
+		t.Errorf("non-object content = %+v", r)
+	}
+}
+
+// The stored report keeps the content member through JSON (it is written to
+// reported_local_store and read back).
+func TestLocalStoreReport_ContentSurvivesStorage(t *testing.T) {
+	raw := []byte(`{"level":"ok","total_bytes":1,"content":{"held":["sha256:` + strings.Repeat("a", 64) + `"],"held_count":1,"bytes":9,"desired_version":"\"v1\""}}`)
+	r := ParseLocalStoreReport(raw)
+	b, err := json.Marshal(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back LocalStoreReport
+	if err := json.Unmarshal(b, &back); err != nil {
+		t.Fatal(err)
+	}
+	if back.Content == nil || back.Content.HeldCount != 1 || len(back.Content.Held) != 1 || back.Content.DesiredVersion != `"v1"` || back.Content.Bytes != 9 {
+		t.Fatalf("stored content = %+v", back.Content)
+	}
+}

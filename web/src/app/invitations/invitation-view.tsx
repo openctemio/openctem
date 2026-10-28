@@ -21,6 +21,7 @@ import {
 import { registerHref } from '@/features/auth/lib/self-register'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { authErrorText } from '@/features/auth/lib/auth-error-codes'
+import { MfaSessionStep } from '@/features/auth/components/mfa-session-step'
 import { useTranslation } from '@/context/i18n-provider'
 import {
   InvitationGrantsNotice,
@@ -77,6 +78,16 @@ async function errorMessage(
   return authErrorText(data.code, t, fallback)
 }
 
+/** The API refused a token only because the organization requires 2FA. */
+async function isMfaEnrollmentRequired(response: Response): Promise<boolean> {
+  if (response.status !== 403) return false
+  const data = (await response
+    .clone()
+    .json()
+    .catch(() => ({}))) as { code?: string }
+  return data.code === 'MFA_ENROLLMENT_REQUIRED'
+}
+
 export function InvitationView({ hasSession }: InvitationViewProps) {
   const router = useRouter()
   const { t } = useTranslation()
@@ -89,6 +100,9 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
   const [invitation, setInvitation] = useState<InvitationData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [acceptError, setAcceptError] = useState<string | null>(null)
+  // The invitation is accepted but the organization needs a second factor:
+  // the page walks the person through it instead of showing an error.
+  const [joinedNeedsMfa, setJoinedNeedsMfa] = useState(false)
 
   // The token never goes back into a URL: sign-in and sign-up return to the
   // bare invitation page, which finds the token kept for this tab.
@@ -166,6 +180,13 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
           if (refreshResponse.status === 401) {
             // No valid session - send the visitor to sign in, then back here
             router.push(invitationLoginHref)
+            return
+          }
+
+          if (await isMfaEnrollmentRequired(refreshResponse)) {
+            // Joined; the organization requires two-factor authentication.
+            // Not an error: set it up here, then open the organization.
+            setJoinedNeedsMfa(true)
             return
           }
 
@@ -290,6 +311,38 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
             <Button variant="outline" className="w-full" onClick={() => router.push('/')}>
               {t('org.acceptInvite.goHome')}
             </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  // Joined, but the organization requires two-factor authentication: set it up
+  // here (the same step the sign-in page uses), then open the organization.
+  if (joinedNeedsMfa && invitation) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4 bg-muted/30">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+              <Check className="h-6 w-6 text-primary" />
+            </div>
+            <CardTitle className="text-xl">
+              {t('org.acceptInvite.joinedMfaTitle', undefined, { org: invitation.tenant.name })}
+            </CardTitle>
+            <CardDescription>{t('org.acceptInvite.joinedMfaBody')}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <MfaSessionStep
+              tenantId={invitation.tenant.id}
+              onComplete={() => navigateWithFreshSession('/')}
+              onSessionExpired={() => router.push(invitationLoginHref)}
+              onReauthRequired={() =>
+                router.push(
+                  `/login?reason=mfa_required&returnTo=${encodeURIComponent(invitationPath)}&email=${encodeURIComponent(invitation.invitation.email || '')}`
+                )
+              }
+            />
           </CardContent>
         </Card>
       </div>
