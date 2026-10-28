@@ -1063,7 +1063,7 @@
   "admin.org.suspension.since": "Tạm ngưng",
   "admin.org.suspension.suspend": "Tạm ngưng tổ chức",
   "admin.org.suspension.suspendDone": "Đã tạm ngưng tổ chức.",
-  "admin.org.suspension.suspendWhat": "Từ yêu cầu tiếp theo, {name} bị từ chối với mọi thông tin xác thực: đăng nhập, khóa API, token MCP, sensor, SCIM, CI và webhook. Công việc theo lịch dừng lại. Không xóa dữ liệu nào. Thành viên thấy \"Tổ chức này đã bị tạm ngưng — hãy liên hệ bộ phận hỗ trợ\"; lý do của bạn chỉ lưu trong nhật ký kiểm toán quản trị.",
+  "admin.org.suspension.suspendWhat": "Từ yêu cầu tiếp theo, {name} bị từ chối với mọi thông tin xác thực: đăng nhập, khóa API, token MCP, sensor, SCIM, CI và webhook. Công việc theo lịch dừng lại. Không xóa dữ liệu nào. Thành viên thấy \"Tổ chức này đã bị tạm ngưng. Hãy liên hệ bộ phận hỗ trợ.\"; lý do của bạn chỉ lưu trong nhật ký kiểm toán quản trị.",
   "admin.org.tab.activity": "Hoạt động",
   "admin.org.tab.auditChain": "Chuỗi kiểm toán",
   "admin.org.tab.limits": "Giới hạn",
