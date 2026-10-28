@@ -7,14 +7,14 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// Provenance is what every change an analyst makes carries: which analyst,
+// Provenance is what every change an AI agent makes carries: which AI agent,
 // which run, which model and prompt, and who was accountable at that moment.
 // The executor puts it in the context before it calls a command; the finding
 // activity writer and the audit logger stamp it on their rows, so a command
 // needs no AI-specific code.
 type Provenance struct {
-	AnalystID            shared.ID
-	AnalystName          string
+	AgentID              shared.ID
+	AgentName            string
 	RunID                shared.ID
 	Executor             Executor
 	Provider             string
@@ -35,7 +35,7 @@ func WithProvenance(ctx context.Context, p Provenance) context.Context {
 // ProvenanceFrom returns the provenance in ctx, if any.
 func ProvenanceFrom(ctx context.Context) (Provenance, bool) {
 	p, ok := ctx.Value(provenanceKey{}).(Provenance)
-	return p, ok && !p.AnalystID.IsZero()
+	return p, ok && !p.AgentID.IsZero()
 }
 
 // Map is the provenance as stored in source_metadata.ai and audit metadata.ai.
@@ -45,11 +45,11 @@ func (p Provenance) Map() map[string]any {
 		acc = append(acc, map[string]any{"kind": string(o.Kind), "id": o.ID.String(), "name": o.Name})
 	}
 	m := map[string]any{
-		"analyst_id":   p.AnalystID.String(),
-		"analyst_name": p.AnalystName,
-		"run_id":       p.RunID.String(),
-		"executor":     string(p.Executor),
-		"accountable":  acc,
+		"ai_agent_id":   p.AgentID.String(),
+		"ai_agent_name": p.AgentName,
+		"run_id":        p.RunID.String(),
+		"executor":      string(p.Executor),
+		"accountable":   acc,
 	}
 	if p.Provider != "" {
 		m["provider"] = p.Provider
@@ -70,10 +70,10 @@ func (p Provenance) Map() map[string]any {
 }
 
 // StampActor reports whether a row written by actorID in ctx is the
-// analyst's, and if so the provenance to stamp.
+// AI agent's, and if so the provenance to stamp.
 func StampActor(ctx context.Context, actorID *shared.ID) (Provenance, bool) {
 	p, ok := ProvenanceFrom(ctx)
-	if !ok || actorID == nil || *actorID != p.AnalystID {
+	if !ok || actorID == nil || *actorID != p.AgentID {
 		return Provenance{}, false
 	}
 	return p, true
@@ -82,8 +82,8 @@ func StampActor(ctx context.Context, actorID *shared.ID) (Provenance, bool) {
 // ErrAssistReadOnly: read-only AI assistance tried to change state. AI
 // assistance (explain, summarize, translate, questions) runs under the
 // viewer's own permissions, persists no decision and writes nothing; every
-// change to state goes through an AI analyst.
-var ErrAssistReadOnly = fmt.Errorf("%w: AI assistance is read-only; changes go through an AI analyst", shared.ErrForbidden)
+// change to state goes through an AI agent.
+var ErrAssistReadOnly = fmt.Errorf("%w: AI assistance is read-only; changes go through an AI agent", shared.ErrForbidden)
 
 type assistKey struct{}
 

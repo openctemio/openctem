@@ -48,7 +48,7 @@ routing) run on the same loop. The analyst is the first role, not the name of th
 | Naming convention | UI and docs say "AI agent" (two words, always with "AI", so it never reads as the retired sensor name). Data, API and audit use `ai_agent` (`actor_kind = ai_agent`). Code identifiers use `aiagent` / `AIAgent`. sdk-go's vocabulary check keeps banning a bare "agent" and the legacy sensor forms (`AGENT_*`, `agent_id`, `X-Agent-*`), and allows only the `ai` prefixed forms, so the CLI word is `aiagent` too and no exception is needed |
 | Playbook | the instructions and checks of one kind of job; the sample `web-vuln-triage` is an analyst playbook |
 
-Platform code and tables keep their current names (`ai_analysts` and friends) for now. Generalising the principal
+Platform code and tables keep their current names (`ai_agents` and friends) for now. Generalising the principal
 (a role or persona column, the UI label "AI agents") is P1 of research/326 and needs its own change.
 
 ## 2. Motivation

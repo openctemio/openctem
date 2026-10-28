@@ -1,4 +1,4 @@
-// Package aianalysis manages AI analysts: service accounts that take part in
+// Package aianalysis manages AI agents: service accounts that take part in
 // triage like a person (same commands, permissions, approvals and audit; the
 // only difference is the AI label and provenance), each with accountable
 // owners who answer for its results, and the ledger of their runs.
@@ -54,24 +54,24 @@ type FindingScope interface {
 	AssertFindingForUser(ctx context.Context, tenantID, userID, findingID shared.ID) error
 }
 
-// Service manages analysts and their runs.
+// Service manages AI agents and their runs.
 type Service struct {
-	analysts aidom.AnalystRepository
-	runs     aidom.RunRepository
-	holder   PermissionHolder
-	scope    FindingScope
-	consent  ConsentReader
-	audit    *auditapp.AuditService
-	now      func() time.Time
-	logger   *logger.Logger
+	agents  aidom.AgentRepository
+	runs    aidom.RunRepository
+	holder  PermissionHolder
+	scope   FindingScope
+	consent ConsentReader
+	audit   *auditapp.AuditService
+	now     func() time.Time
+	logger  *logger.Logger
 }
 
 // New wires the service.
-func New(analysts aidom.AnalystRepository, runs aidom.RunRepository, holder PermissionHolder,
+func New(agents aidom.AgentRepository, runs aidom.RunRepository, holder PermissionHolder,
 	scope FindingScope, consent ConsentReader, audit *auditapp.AuditService, log *logger.Logger,
 ) *Service {
 	return &Service{
-		analysts: analysts, runs: runs, holder: holder, scope: scope, consent: consent,
+		agents: agents, runs: runs, holder: holder, scope: scope, consent: consent,
 		audit: audit, now: time.Now, logger: log.With("service", "ai_analysis"),
 	}
 }
@@ -79,7 +79,7 @@ func New(analysts aidom.AnalystRepository, runs aidom.RunRepository, holder Perm
 // SetClock replaces the clock (tests).
 func (s *Service) SetClock(now func() time.Time) { s.now = now }
 
-func (s *Service) log(ctx context.Context, actx auditapp.AuditContext, action audit.Action, a *aidom.Analyst, msg string, meta map[string]any) {
+func (s *Service) log(ctx context.Context, actx auditapp.AuditContext, action audit.Action, a *aidom.Agent, msg string, meta map[string]any) {
 	if s.audit == nil {
 		return
 	}
@@ -164,7 +164,7 @@ func (s *Service) ceiling(ctx context.Context, tenantID shared.ID, people []shar
 
 // checkCeiling refuses a role no accountable person could hold.
 func (s *Service) checkCeiling(ctx context.Context, tenantID shared.ID, owners []aidom.OwnerRef, role []string) error {
-	people, err := s.analysts.PeopleOf(ctx, tenantID, owners, s.now())
+	people, err := s.agents.PeopleOf(ctx, tenantID, owners, s.now())
 	if err != nil {
 		return err
 	}
@@ -182,7 +182,7 @@ func (s *Service) checkCeiling(ctx context.Context, tenantID shared.ID, owners [
 }
 
 // checkGrantor refuses a preset whose permissions the acting person does not
-// hold: nobody gives an analyst more than they could do themselves.
+// hold: nobody gives an AI agent more than they could do themselves.
 func (s *Service) checkGrantor(ctx context.Context, tenantID, actor shared.ID, perms []string) error {
 	all, held, err := s.holder.HeldPermissions(ctx, tenantID, actor)
 	if err != nil {
@@ -194,10 +194,11 @@ func (s *Service) checkGrantor(ctx context.Context, tenantID, actor shared.ID, p
 	return nil
 }
 
-// CreateInput creates an analyst.
+// CreateInput creates an AI agent.
 type CreateInput struct {
 	Name        string       `json:"name" validate:"required,max=100"`
 	Description string       `json:"description" validate:"max=500"`
+	Role        string       `json:"role" validate:"omitempty,oneof=analyst remediator reporter hunter router"`
 	Preset      string       `json:"preset" validate:"required,oneof=suggest triage"`
 	Owners      []OwnerInput `json:"owners" validate:"required,min=1,max=20,dive"`
 }
@@ -205,7 +206,7 @@ type CreateInput struct {
 // Create makes a service account with the given preset and accountable
 // owners. The preset's permissions must be held by the acting person and by
 // at least one accountable person.
-func (s *Service) Create(ctx context.Context, in CreateInput, actx auditapp.AuditContext) (*aidom.Analyst, error) {
+func (s *Service) Create(ctx context.Context, in CreateInput, actx auditapp.AuditContext) (*aidom.Agent, error) {
 	tid, err := tenantOf(actx)
 	if err != nil {
 		return nil, err
@@ -220,6 +221,10 @@ func (s *Service) Create(ctx context.Context, in CreateInput, actx auditapp.Audi
 	}
 	if len(in.Description) > 500 {
 		return nil, fmt.Errorf("%w: the description is too long", shared.ErrValidation)
+	}
+	role, err := aidom.ParseRole(in.Role)
+	if err != nil {
+		return nil, err
 	}
 	preset, err := aidom.ParsePreset(in.Preset)
 	if err != nil {
@@ -237,21 +242,21 @@ func (s *Service) Create(ctx context.Context, in CreateInput, actx auditapp.Audi
 		return nil, err
 	}
 	now := s.now().UTC()
-	a := &aidom.Analyst{
-		ID: shared.NewID(), TenantID: tid, Name: name, Description: in.Description, Preset: preset,
+	a := &aidom.Agent{
+		ID: shared.NewID(), TenantID: tid, Name: name, Description: in.Description, Role: role, Preset: preset,
 		Status: aidom.StatusActive, DataClassCeiling: aidom.DataClassInternal, Executor: aidom.ExecutorBuiltin,
 		RunsPerHour: aidom.DefaultRunsPerHour, ActionsPerHour: aidom.DefaultActionsPerHour,
 		AttestedAt: now, AttestDueAt: now.Add(aidom.AttestationPeriod), CreatedBy: &actor,
 	}
-	if err := s.analysts.Create(ctx, aidom.NewAnalyst{Analyst: a, Owners: owners}); err != nil {
+	if err := s.agents.Create(ctx, aidom.NewAgent{Agent: a, Owners: owners}); err != nil {
 		return nil, err
 	}
-	out, err := s.analysts.Get(ctx, tid, a.ID)
+	out, err := s.agents.Get(ctx, tid, a.ID)
 	if err != nil {
 		return nil, err
 	}
-	s.log(ctx, actx, audit.ActionAIAnalystCreated, out, fmt.Sprintf("AI analyst %q created", out.Name),
-		map[string]any{"preset": string(preset), "owners": ownerIDs(out.Owners)})
+	s.log(ctx, actx, audit.ActionAIAgentCreated, out, fmt.Sprintf("AI agent %q created", out.Name),
+		map[string]any{"role": string(role), "preset": string(preset), "owners": ownerIDs(out.Owners)})
 	return out, nil
 }
 
@@ -263,20 +268,20 @@ func ownerIDs(o []aidom.OwnerRef) []string {
 	return out
 }
 
-// Get returns one analyst of the organization.
-func (s *Service) Get(ctx context.Context, tenantID, id shared.ID) (*aidom.Analyst, error) {
-	return s.analysts.Get(ctx, tenantID, id)
+// Get returns one AI agent of the organization.
+func (s *Service) Get(ctx context.Context, tenantID, id shared.ID) (*aidom.Agent, error) {
+	return s.agents.Get(ctx, tenantID, id)
 }
 
-// List returns the organization's analysts.
-func (s *Service) List(ctx context.Context, tenantID shared.ID) ([]*aidom.Analyst, error) {
-	return s.analysts.List(ctx, tenantID)
+// List returns the organization's AI agents.
+func (s *Service) List(ctx context.Context, tenantID shared.ID) ([]*aidom.Agent, error) {
+	return s.agents.List(ctx, tenantID)
 }
 
-// ReplaceOwners replaces an analyst's owners. The analyst's current role must stay
-// within what the new owners hold. An analyst paused for want of an owner
+// ReplaceOwners replaces an AI agent's owners. The AI agent's current role must stay
+// within what the new owners hold. An AI agent paused for want of an owner
 // runs again.
-func (s *Service) ReplaceOwners(ctx context.Context, id shared.ID, in []OwnerInput, actx auditapp.AuditContext) (*aidom.Analyst, error) {
+func (s *Service) ReplaceOwners(ctx context.Context, id shared.ID, in []OwnerInput, actx auditapp.AuditContext) (*aidom.Agent, error) {
 	tid, err := tenantOf(actx)
 	if err != nil {
 		return nil, err
@@ -285,7 +290,7 @@ func (s *Service) ReplaceOwners(ctx context.Context, id shared.ID, in []OwnerInp
 	if err != nil {
 		return nil, err
 	}
-	a, err := s.analysts.Get(ctx, tid, id)
+	a, err := s.agents.Get(ctx, tid, id)
 	if err != nil {
 		return nil, err
 	}
@@ -296,30 +301,30 @@ func (s *Service) ReplaceOwners(ctx context.Context, id shared.ID, in []OwnerInp
 	if err := s.checkCeiling(ctx, tid, owners, a.Preset.Permissions()); err != nil {
 		return nil, err
 	}
-	if err := s.analysts.SetOwners(ctx, tid, id, owners, actor); err != nil {
+	if err := s.agents.SetOwners(ctx, tid, id, owners, actor); err != nil {
 		return nil, err
 	}
 	if a.Status == aidom.StatusPaused && a.PauseReason == aidom.PauseNoActiveOwner {
-		if _, err := s.analysts.SetStatus(ctx, tid, id, []aidom.Status{aidom.StatusPaused}, aidom.StatusActive, ""); err != nil {
+		if _, err := s.agents.SetStatus(ctx, tid, id, []aidom.Status{aidom.StatusPaused}, aidom.StatusActive, ""); err != nil {
 			return nil, err
 		}
 	}
-	out, err := s.analysts.Get(ctx, tid, id)
+	out, err := s.agents.Get(ctx, tid, id)
 	if err != nil {
 		return nil, err
 	}
-	s.log(ctx, actx, audit.ActionAIAnalystOwnersChanged, out, fmt.Sprintf("Accountable owners of AI analyst %q changed", out.Name),
+	s.log(ctx, actx, audit.ActionAIAgentOwnersChanged, out, fmt.Sprintf("Accountable owners of AI agent %q changed", out.Name),
 		map[string]any{"from": ownerIDs(a.Owners), "to": ownerIDs(out.Owners)})
 	return out, nil
 }
 
-// ChangePreset moves an analyst to another preset.
-func (s *Service) ChangePreset(ctx context.Context, id shared.ID, presetName string, actx auditapp.AuditContext) (*aidom.Analyst, error) {
+// ChangePreset moves an AI agent to another preset.
+func (s *Service) ChangePreset(ctx context.Context, id shared.ID, presetName string, actx auditapp.AuditContext) (*aidom.Agent, error) {
 	tid, err := tenantOf(actx)
 	if err != nil {
 		return nil, err
 	}
-	a, err := s.analysts.Get(ctx, tid, id)
+	a, err := s.agents.Get(ctx, tid, id)
 	if err != nil {
 		return nil, err
 	}
@@ -338,23 +343,23 @@ func (s *Service) ChangePreset(ctx context.Context, id shared.ID, presetName str
 	if err := s.checkCeiling(ctx, tid, a.Owners, perms); err != nil {
 		return nil, err
 	}
-	if err := s.analysts.SetPreset(ctx, tid, id, preset); err != nil {
+	if err := s.agents.SetPreset(ctx, tid, id, preset); err != nil {
 		return nil, err
 	}
-	out, err := s.analysts.Get(ctx, tid, id)
+	out, err := s.agents.Get(ctx, tid, id)
 	if err != nil {
 		return nil, err
 	}
-	s.log(ctx, actx, audit.ActionAIAnalystRoleChanged, out, fmt.Sprintf("AI analyst %q moved to preset %s", out.Name, preset),
+	s.log(ctx, actx, audit.ActionAIAgentRoleChanged, out, fmt.Sprintf("AI agent %q moved to preset %s", out.Name, preset),
 		map[string]any{"from": string(a.Preset), "to": string(preset)})
 	return out, nil
 }
 
 // Attest records that the actor, an accountable person (or an
-// administrator, actorIsAdmin), confirms the analyst's role, scope and
-// behavior for another period. An analyst paused because its attestation
+// administrator, actorIsAdmin), confirms the AI agent's role, scope and
+// behavior for another period. An AI agent paused because its attestation
 // ran out runs again.
-func (s *Service) Attest(ctx context.Context, id shared.ID, actorIsAdmin bool, actx auditapp.AuditContext) (*aidom.Analyst, error) {
+func (s *Service) Attest(ctx context.Context, id shared.ID, actorIsAdmin bool, actx auditapp.AuditContext) (*aidom.Agent, error) {
 	tid, err := tenantOf(actx)
 	if err != nil {
 		return nil, err
@@ -363,7 +368,7 @@ func (s *Service) Attest(ctx context.Context, id shared.ID, actorIsAdmin bool, a
 	if err != nil {
 		return nil, err
 	}
-	a, err := s.analysts.Get(ctx, tid, id)
+	a, err := s.agents.Get(ctx, tid, id)
 	if err != nil {
 		return nil, err
 	}
@@ -373,25 +378,25 @@ func (s *Service) Attest(ctx context.Context, id shared.ID, actorIsAdmin bool, a
 		}
 	}
 	now := s.now().UTC()
-	if err := s.analysts.Attest(ctx, tid, id, actor, now, now.Add(aidom.AttestationPeriod)); err != nil {
+	if err := s.agents.Attest(ctx, tid, id, actor, now, now.Add(aidom.AttestationPeriod)); err != nil {
 		return nil, err
 	}
 	if a.Status == aidom.StatusPaused && a.PauseReason == aidom.PauseAttestationExpired {
-		if _, err := s.analysts.SetStatus(ctx, tid, id, []aidom.Status{aidom.StatusPaused}, aidom.StatusActive, ""); err != nil {
+		if _, err := s.agents.SetStatus(ctx, tid, id, []aidom.Status{aidom.StatusPaused}, aidom.StatusActive, ""); err != nil {
 			return nil, err
 		}
 	}
-	out, err := s.analysts.Get(ctx, tid, id)
+	out, err := s.agents.Get(ctx, tid, id)
 	if err != nil {
 		return nil, err
 	}
-	s.log(ctx, actx, audit.ActionAIAnalystAttested, out, fmt.Sprintf("AI analyst %q attested", out.Name),
+	s.log(ctx, actx, audit.ActionAIAgentAttested, out, fmt.Sprintf("AI agent %q attested", out.Name),
 		map[string]any{"attest_due_at": out.AttestDueAt.Format(time.RFC3339)})
 	return out, nil
 }
 
 // requireAccountable refuses an actor who is not an accountable person of
-// the analyst now.
+// the AI agent now.
 func (s *Service) requireAccountable(ctx context.Context, id shared.ID, actx auditapp.AuditContext) error {
 	tid, err := tenantOf(actx)
 	if err != nil {
@@ -401,11 +406,11 @@ func (s *Service) requireAccountable(ctx context.Context, id shared.ID, actx aud
 	if err != nil {
 		return err
 	}
-	a, err := s.analysts.Get(ctx, tid, id)
+	a, err := s.agents.Get(ctx, tid, id)
 	if err != nil {
 		return err
 	}
-	people, err := s.analysts.PeopleOf(ctx, tid, a.Owners, s.now())
+	people, err := s.agents.PeopleOf(ctx, tid, a.Owners, s.now())
 	if err != nil {
 		return err
 	}
@@ -424,37 +429,37 @@ func containsID(ids []shared.ID, id shared.ID) bool {
 	return false
 }
 
-// Pause stops an analyst until someone resumes it. An accountable person
-// may pause their analyst; anyone else needs canManage.
-func (s *Service) Pause(ctx context.Context, id shared.ID, canManage bool, actx auditapp.AuditContext) (*aidom.Analyst, error) {
+// Pause stops an AI agent until someone resumes it. An accountable person
+// may pause their AI agent; anyone else needs canManage.
+func (s *Service) Pause(ctx context.Context, id shared.ID, canManage bool, actx auditapp.AuditContext) (*aidom.Agent, error) {
 	if !canManage {
 		if err := s.requireAccountable(ctx, id, actx); err != nil {
 			return nil, err
 		}
 	}
 	return s.setStatus(ctx, id, []aidom.Status{aidom.StatusActive}, aidom.StatusPaused, aidom.PauseAdmin,
-		audit.ActionAIAnalystPaused, actx)
+		audit.ActionAIAgentPaused, actx)
 }
 
-// Disable is the analyst's kill switch: nothing runs until an administrator
+// Disable is the AI agent's kill switch: nothing runs until an administrator
 // enables it again with a fresh step-up.
-func (s *Service) Disable(ctx context.Context, id shared.ID, actx auditapp.AuditContext) (*aidom.Analyst, error) {
+func (s *Service) Disable(ctx context.Context, id shared.ID, actx auditapp.AuditContext) (*aidom.Agent, error) {
 	return s.setStatus(ctx, id, []aidom.Status{aidom.StatusActive, aidom.StatusPaused}, aidom.StatusDisabled, aidom.PauseAdmin,
-		audit.ActionAIAnalystDisabled, actx)
+		audit.ActionAIAgentDisabled, actx)
 }
 
-// Resume runs a paused or disabled analyst again, once nothing keeps it
+// Resume runs a paused or disabled AI agent again, once nothing keeps it
 // paused (an active owner, a fresh attestation).
-func (s *Service) Resume(ctx context.Context, id shared.ID, actx auditapp.AuditContext) (*aidom.Analyst, error) {
+func (s *Service) Resume(ctx context.Context, id shared.ID, actx auditapp.AuditContext) (*aidom.Agent, error) {
 	tid, err := tenantOf(actx)
 	if err != nil {
 		return nil, err
 	}
-	a, err := s.analysts.Get(ctx, tid, id)
+	a, err := s.agents.Get(ctx, tid, id)
 	if err != nil {
 		return nil, err
 	}
-	people, err := s.analysts.PeopleOf(ctx, tid, a.Owners, s.now())
+	people, err := s.agents.PeopleOf(ctx, tid, a.Owners, s.now())
 	if err != nil {
 		return nil, err
 	}
@@ -462,83 +467,83 @@ func (s *Service) Resume(ctx context.Context, id shared.ID, actx auditapp.AuditC
 		return nil, &aidom.PausedError{Reason: r}
 	}
 	return s.setStatus(ctx, id, []aidom.Status{aidom.StatusPaused, aidom.StatusDisabled}, aidom.StatusActive, "",
-		audit.ActionAIAnalystResumed, actx)
+		audit.ActionAIAgentResumed, actx)
 }
 
 func (s *Service) setStatus(ctx context.Context, id shared.ID, from []aidom.Status, to aidom.Status, reason aidom.PauseReason,
 	action audit.Action, actx auditapp.AuditContext,
-) (*aidom.Analyst, error) {
+) (*aidom.Agent, error) {
 	tid, err := tenantOf(actx)
 	if err != nil {
 		return nil, err
 	}
-	moved, err := s.analysts.SetStatus(ctx, tid, id, from, to, reason)
+	moved, err := s.agents.SetStatus(ctx, tid, id, from, to, reason)
 	if err != nil {
 		return nil, err
 	}
-	out, err := s.analysts.Get(ctx, tid, id)
+	out, err := s.agents.Get(ctx, tid, id)
 	if err != nil {
 		return nil, err
 	}
 	if !moved {
 		return out, nil
 	}
-	s.log(ctx, actx, action, out, fmt.Sprintf("AI analyst %q is %s", out.Name, to), map[string]any{"reason": string(reason)})
+	s.log(ctx, actx, action, out, fmt.Sprintf("AI agent %q is %s", out.Name, to), map[string]any{"reason": string(reason)})
 	return out, nil
 }
 
-// Delete removes an analyst and its service account; its runs and every
+// Delete removes an AI agent and its service account; its runs and every
 // change it made stay in the history.
 func (s *Service) Delete(ctx context.Context, id shared.ID, actx auditapp.AuditContext) error {
 	tid, err := tenantOf(actx)
 	if err != nil {
 		return err
 	}
-	a, err := s.analysts.Get(ctx, tid, id)
+	a, err := s.agents.Get(ctx, tid, id)
 	if err != nil {
 		return err
 	}
-	if err := s.analysts.Delete(ctx, tid, id); err != nil {
+	if err := s.agents.Delete(ctx, tid, id); err != nil {
 		return err
 	}
-	s.log(ctx, actx, audit.ActionAIAnalystDeleted, a, fmt.Sprintf("AI analyst %q deleted", a.Name), nil)
+	s.log(ctx, actx, audit.ActionAIAgentDeleted, a, fmt.Sprintf("AI agent %q deleted", a.Name), nil)
 	return nil
 }
 
-// pauseFor pauses an active analyst for a platform reason and audits it as
+// pauseFor pauses an active AI agent for a platform reason and audits it as
 // a system action.
-func (s *Service) pauseFor(ctx context.Context, a *aidom.Analyst, reason aidom.PauseReason) error {
-	moved, err := s.analysts.SetStatus(ctx, a.TenantID, a.ID, []aidom.Status{aidom.StatusActive}, aidom.StatusPaused, reason)
+func (s *Service) pauseFor(ctx context.Context, a *aidom.Agent, reason aidom.PauseReason) error {
+	moved, err := s.agents.SetStatus(ctx, a.TenantID, a.ID, []aidom.Status{aidom.StatusActive}, aidom.StatusPaused, reason)
 	if err != nil {
 		return err
 	}
 	if moved {
 		a.Status, a.PauseReason = aidom.StatusPaused, reason
-		s.log(ctx, auditapp.AuditContext{TenantID: a.TenantID.String(), ActorEmail: "system:ai-analyst"},
-			audit.ActionAIAnalystPaused, a, fmt.Sprintf("AI analyst %q paused: %s", a.Name, reason),
+		s.log(ctx, auditapp.AuditContext{TenantID: a.TenantID.String(), ActorEmail: "system:ai-agent"},
+			audit.ActionAIAgentPaused, a, fmt.Sprintf("AI agent %q paused: %s", a.Name, reason),
 			map[string]any{"reason": string(reason)})
 	}
 	return nil
 }
 
-// Sweep pauses every active analyst that has no active owner left or whose
+// Sweep pauses every active AI agent that has no active owner left or whose
 // attestation ran out (a system job; the run-start check does the same per
 // run, fail closed). It returns how many it paused.
 func (s *Service) Sweep(ctx context.Context) (int, error) {
-	list, err := s.analysts.ListActive(ctx, 0)
+	list, err := s.agents.ListActive(ctx, 0)
 	if err != nil {
 		return 0, err
 	}
 	paused := 0
 	for _, a := range list {
-		people, err := s.analysts.PeopleOf(ctx, a.TenantID, a.Owners, s.now())
+		people, err := s.agents.PeopleOf(ctx, a.TenantID, a.Owners, s.now())
 		if err != nil {
-			s.logger.Error("AI analyst sweep: owners lookup failed", "analyst_id", a.ID.String(), "error", err)
+			s.logger.Error("AI agent sweep: owners lookup failed", "ai_agent_id", a.ID.String(), "error", err)
 			continue
 		}
 		if r := a.HealthReason(s.now(), len(people)); r != "" {
 			if err := s.pauseFor(ctx, a, r); err != nil {
-				s.logger.Error("AI analyst sweep: pause failed", "analyst_id", a.ID.String(), "error", err)
+				s.logger.Error("AI agent sweep: pause failed", "ai_agent_id", a.ID.String(), "error", err)
 				continue
 			}
 			paused++

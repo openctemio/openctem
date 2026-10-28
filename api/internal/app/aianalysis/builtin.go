@@ -22,10 +22,10 @@ import (
 )
 
 // The built-in executor runs single-shot kinds (one model call, no tools) in
-// the API process, through the same contract as an analyst worker. It acts as
-// an AI analyst: the model's output becomes the finding commands a person
+// the API process, through the same contract as an AI agent worker. It acts as
+// an AI agent: the model's output becomes the finding commands a person
 // would call (comment, status, severity, false-positive request), with the
-// analyst as the actor, after its effective permissions and data scope are
+// AI agent as the actor, after its effective permissions and data scope are
 // checked. Multi-step kinds never run here.
 
 // Fixed run error codes (never provider or model text).
@@ -57,8 +57,8 @@ type FindingReader interface {
 	GetByID(ctx context.Context, tenantID, id shared.ID) (*vulnerability.Finding, error)
 }
 
-// FindingCommands are the finding commands an analyst calls, as itself
-// (finding.AIAnalystCommands). A change that lowers risk becomes a request.
+// FindingCommands are the finding commands an AI agent calls, as itself
+// (finding.AIAgentCommands). A change that lowers risk becomes a request.
 type FindingCommands interface {
 	Comment(ctx context.Context, tenantID, findingID, actorID shared.ID, text string) error
 	SetStatus(ctx context.Context, tenantID, findingID, actorID shared.ID, status string) error
@@ -117,7 +117,7 @@ type BuiltinExecutor struct {
 	now                func() time.Time
 }
 
-// NewBuiltinExecutor builds the executor; SetAnalysts wires the analyst
+// NewBuiltinExecutor builds the executor; SetAgents wires the AI agent
 // service before it runs.
 func NewBuiltinExecutor(findings FindingReader, commands FindingCommands, settings tenant.AISettingsRepository, llmFactory ProviderFactory,
 	inputs BundleInputs, bundles BundleBuilder, maps MaskMaps, cfg ExecutorConfig, log *logger.Logger) *BuiltinExecutor {
@@ -134,8 +134,8 @@ func NewBuiltinExecutor(findings FindingReader, commands FindingCommands, settin
 		bundles: bundles, maps: maps, cfg: cfg, logger: log.With("component", "ai_builtin_executor"), now: time.Now}
 }
 
-// SetAnalysts wires the analyst service (principals and the run ledger).
-func (e *BuiltinExecutor) SetAnalysts(svc *Service) { e.svc = svc }
+// SetAgents wires the AI agent service (principals and the run ledger).
+func (e *BuiltinExecutor) SetAgents(svc *Service) { e.svc = svc }
 
 // SetBudget wires the token budget (nil: no budget check).
 func (e *BuiltinExecutor) SetBudget(b TokenBudget) { e.budget = b }
@@ -146,13 +146,13 @@ func (e *BuiltinExecutor) SetOwnProviderPolicy(allowed func(context.Context) boo
 }
 
 // AnalyzeRequest asks for one single-shot analysis of a finding by an
-// analyst (AnalystID; nil: the first active analyst that may read the
+// AI agent (AgentID; nil: the first active AI agent that may read the
 // finding).
 type AnalyzeRequest struct {
 	TenantID    shared.ID
 	FindingID   shared.ID
 	Kind        string
-	AnalystID   *shared.ID
+	AgentID     *shared.ID
 	TriggeredBy *shared.ID
 	Trigger     aidom.Trigger
 }
@@ -161,35 +161,35 @@ type AnalyzeRequest struct {
 type ActionOutcome string
 
 const (
-	// ActionApplied: the analyst changed the finding through the command.
+	// ActionApplied: the AI agent changed the finding through the command.
 	ActionApplied ActionOutcome = "applied"
 	// ActionRequested: the change became a request a person decides.
 	ActionRequested ActionOutcome = "requested"
-	// ActionCommented: the analyst wrote a comment (analysis, plan, or a
+	// ActionCommented: the AI agent wrote a comment (analysis, plan, or a
 	// change it may not make itself).
 	ActionCommented ActionOutcome = "commented"
 	// ActionSkipped: nothing was done.
 	ActionSkipped ActionOutcome = "skipped"
 )
 
-// Action is one item of model output and what the analyst did with it.
+// Action is one item of model output and what the AI agent did with it.
 type Action struct {
 	Kind    string        `json:"kind"`
 	Outcome ActionOutcome `json:"outcome"`
 	Reason  string        `json:"reason,omitempty"`
 }
 
-// RunDetail is a run and the analyst's actions.
+// RunDetail is a run and the AI agent's actions.
 type RunDetail struct {
 	Run     *aidom.Run
 	Actions []Action
 }
 
-// Analyze runs one single-shot kind on a finding as an analyst. The caller
+// Analyze runs one single-shot kind on a finding as an AI agent. The caller
 // has checked that the person who triggered it may see the finding.
 func (e *BuiltinExecutor) Analyze(ctx context.Context, req AnalyzeRequest) (*RunDetail, error) {
 	if e.svc == nil {
-		return nil, fmt.Errorf("%w: AI analysts are not available", shared.ErrConflict)
+		return nil, fmt.Errorf("%w: AI agents are not available", shared.ErrConflict)
 	}
 	kind, ok := analyze.LookupKind(req.Kind)
 	if !ok || !kind.SingleShot {
@@ -210,15 +210,15 @@ func (e *BuiltinExecutor) Analyze(ctx context.Context, req AnalyzeRequest) (*Run
 		return nil, err
 	}
 	var p *Principal
-	if req.AnalystID != nil {
-		p, err = e.svc.Principal(ctx, req.TenantID, *req.AnalystID)
+	if req.AgentID != nil {
+		p, err = e.svc.Principal(ctx, req.TenantID, *req.AgentID)
 	} else {
-		p, err = e.svc.DefaultAnalyst(ctx, req.TenantID, req.FindingID)
+		p, err = e.svc.DefaultAgent(ctx, req.TenantID, req.FindingID)
 	}
 	if err != nil {
 		return nil, err
 	}
-	if p.Analyst.Executor != aidom.ExecutorBuiltin {
+	if p.Agent.Executor != aidom.ExecutorBuiltin {
 		return nil, ErrKindNotBuiltin
 	}
 	if err := p.Require("findings:read"); err != nil {
@@ -232,7 +232,7 @@ func (e *BuiltinExecutor) Analyze(ctx context.Context, req AnalyzeRequest) (*Run
 	}
 	run, err := e.svc.StartRun(ctx, StartRunInput{
 		Principal: p, UseCase: useCase, Kind: kind.Name, SubjectType: aidom.SubjectFinding, SubjectID: req.FindingID,
-		Executor: aidom.ExecutorBuiltin, DataClass: p.Analyst.DataClassCeiling, Trigger: req.Trigger, TriggeredBy: req.TriggeredBy,
+		Executor: aidom.ExecutorBuiltin, DataClass: p.Agent.DataClassCeiling, Trigger: req.Trigger, TriggeredBy: req.TriggeredBy,
 	})
 	if err != nil {
 		return nil, err
@@ -293,7 +293,7 @@ func (e *BuiltinExecutor) execute(ctx context.Context, p *Principal, run *aidom.
 	if settings.Mode == tenant.AIModeBYOK && e.ownProviderAllowed != nil && !e.ownProviderAllowed(ctx) {
 		return nil, refused(RunErrNotConfigured)
 	}
-	ceiling, err := aipolicy.ParseClass(string(p.Analyst.DataClassCeiling))
+	ceiling, err := aipolicy.ParseClass(string(p.Agent.DataClassCeiling))
 	if err != nil || ceiling == aipolicy.ClassTenantOnly {
 		return nil, refused(RunErrPolicyRestricted)
 	}
@@ -403,21 +403,21 @@ func unmaskPayload(u *aimask.Unmasker, raw json.RawMessage) (json.RawMessage, bo
 
 // act validates the model output against the kind's schema, maps
 // placeholders back through the stored mapping, and turns each item into the
-// command a person would call, as the analyst:
+// command a person would call, as the AI agent:
 //
 //   - summary, remediation steps, needs-info verdicts and anything the
-//     analyst may not do itself become a comment by the analyst;
+//     AI agent may not do itself become a comment by the AI agent;
 //   - a true-positive verdict confirms a new finding (findings:status);
 //   - a severity proposal goes through the severity command; a downgrade
-//     becomes a severity request (the analyst can never approve);
+//     becomes a severity request (the AI agent can never approve);
 //   - a likely-false-positive verdict becomes a false-positive approval
 //     request (findings:write), decided by a person.
 //
 // Output that cites nothing real, carries a placeholder the run did not
 // issue, or comes from a bundle with injection markers is written as a
 // comment only. Before each change the finding is read again: if someone
-// else changed it since the analyst last saw it, the change is skipped (the
-// analyst never overwrites a later decision), and every command carries the
+// else changed it since the AI agent last saw it, the change is skipped (the
+// AI agent never overwrites a later decision), and every command carries the
 // row version it expects.
 func (e *BuiltinExecutor) act(ctx context.Context, p *Principal, run *aidom.Run, finding *vulnerability.Finding,
 	kind analyze.Kind, bundle *aibundle.Bundle, content string,
@@ -478,7 +478,7 @@ func (e *BuiltinExecutor) act(ctx context.Context, p *Principal, run *aidom.Run,
 // written as a comment rather than acted on.
 const minActConfidence = 0.5
 
-// actor carries one run's state while the analyst acts.
+// actor carries one run's state while the AI agent acts.
 type actor struct {
 	e         *BuiltinExecutor
 	p         *Principal
@@ -520,7 +520,7 @@ func (a *actor) do(ctx context.Context, k aidom.Kind, payload json.RawMessage, c
 			return a.comment(ctx, k, text, reasonTriggeredByUser)
 		case v.Verdict == aidom.VerdictLikelyFalsePositive && a.p.Can("findings:write"):
 			return a.change(ctx, k, text, func() (ActionOutcome, error) {
-				err := a.e.commands.RequestFalsePositive(ctx, a.run.TenantID, a.finding, a.p.Analyst.ID, aiJustification(v.Reason))
+				err := a.e.commands.RequestFalsePositive(ctx, a.run.TenantID, a.finding, a.p.Agent.ID, aiJustification(v.Reason))
 				return ActionRequested, err
 			})
 		case v.Verdict == aidom.VerdictTruePositive && a.p.Can("findings:status"):
@@ -529,7 +529,7 @@ func (a *actor) do(ctx context.Context, k aidom.Kind, payload json.RawMessage, c
 				return a.comment(ctx, k, text, "not_new")
 			}
 			return a.change(ctx, k, text, func() (ActionOutcome, error) {
-				return ActionApplied, a.e.commands.SetStatus(ctx, a.run.TenantID, a.finding, a.p.Analyst.ID,
+				return ActionApplied, a.e.commands.SetStatus(ctx, a.run.TenantID, a.finding, a.p.Agent.ID,
 					string(vulnerability.FindingStatusConfirmed))
 			})
 		}
@@ -552,7 +552,7 @@ func (a *actor) do(ctx context.Context, k aidom.Kind, payload json.RawMessage, c
 			}
 		}
 		return a.change(ctx, k, text, func() (ActionOutcome, error) {
-			requested, err := a.e.commands.ChangeSeverity(ctx, a.run.TenantID, a.finding, a.p.Analyst.ID, v.Severity, aiJustification(v.Reason))
+			requested, err := a.e.commands.ChangeSeverity(ctx, a.run.TenantID, a.finding, a.p.Agent.ID, v.Severity, aiJustification(v.Reason))
 			if requested {
 				return ActionRequested, err
 			}
@@ -587,7 +587,7 @@ func firstReason(reasons []string, conflict bool, confidence float64) string {
 func aiJustification(reason string) string {
 	reason = strings.TrimSpace(reason)
 	if reason == "" {
-		reason = "Proposed by the AI analyst."
+		reason = "Proposed by the AI agent."
 	}
 	if r := []rune(reason); len(r) > 1900 {
 		reason = string(r[:1900])
@@ -595,7 +595,7 @@ func aiJustification(reason string) string {
 	return reason
 }
 
-// comment writes text as the analyst's comment (when it may comment).
+// comment writes text as the AI agent's comment (when it may comment).
 func (a *actor) comment(ctx context.Context, k aidom.Kind, text, reason string) Action {
 	if !a.p.Can("findings:comment") {
 		return Action{Kind: string(k), Outcome: ActionSkipped, Reason: "not_permitted"}
@@ -603,11 +603,11 @@ func (a *actor) comment(ctx context.Context, k aidom.Kind, text, reason string) 
 	if r := []rune(text); len(r) > 9000 {
 		text = string(r[:9000])
 	}
-	// A comment may move the finding's row version; the analyst keeps track
+	// A comment may move the finding's row version; the AI agent keeps track
 	// of its own writes so they never read as someone else's change.
 	unchanged := a.unchangedSinceSeen(ctx)
-	if err := a.e.commands.Comment(ctx, a.run.TenantID, a.finding, a.p.Analyst.ID, text); err != nil {
-		a.e.logger.Warn("AI analyst comment failed", "run_id", a.run.ID.String(), "error", logger.SanitizeError(err))
+	if err := a.e.commands.Comment(ctx, a.run.TenantID, a.finding, a.p.Agent.ID, text); err != nil {
+		a.e.logger.Warn("AI agent comment failed", "run_id", a.run.ID.String(), "error", logger.SanitizeError(err))
 		return Action{Kind: string(k), Outcome: ActionSkipped, Reason: "command_refused"}
 	}
 	a.done++
@@ -619,8 +619,8 @@ func (a *actor) comment(ctx context.Context, k aidom.Kind, text, reason string) 
 	return Action{Kind: string(k), Outcome: ActionCommented, Reason: reason}
 }
 
-// change runs one finding change as the analyst after checking nobody changed
-// the finding since the analyst last saw it; the command carries that row
+// change runs one finding change as the AI agent after checking nobody changed
+// the finding since the AI agent last saw it; the command carries that row
 // version. A refusal (pending request, lifecycle, conflict) is written as a
 // comment instead.
 func (a *actor) change(ctx context.Context, k aidom.Kind, text string, cmd func() (ActionOutcome, error)) Action {
@@ -642,7 +642,7 @@ func (a *actor) change(ctx context.Context, k aidom.Kind, text string, cmd func(
 			a.conflict = true
 			return a.comment(ctx, k, text, "finding_changed")
 		}
-		a.e.logger.Info("AI analyst command refused", "run_id", a.run.ID.String(), "kind", string(k), "error", logger.SanitizeError(err))
+		a.e.logger.Info("AI agent command refused", "run_id", a.run.ID.String(), "kind", string(k), "error", logger.SanitizeError(err))
 		return a.comment(ctx, k, text, "command_refused")
 	}
 	a.done++
@@ -651,7 +651,7 @@ func (a *actor) change(ctx context.Context, k aidom.Kind, text string, cmd func(
 }
 
 // unchangedSinceSeen reports whether the finding's row version is still the
-// one the analyst last saw.
+// one the AI agent last saw.
 func (a *actor) unchangedSinceSeen(ctx context.Context) bool {
 	if !a.versioned {
 		return true
@@ -663,7 +663,7 @@ func (a *actor) unchangedSinceSeen(ctx context.Context) bool {
 	return cur.RowVersion() == a.version
 }
 
-// refreshSeen records the row version after the analyst's own write.
+// refreshSeen records the row version after the AI agent's own write.
 func (a *actor) refreshSeen(ctx context.Context) {
 	if after, err := a.e.findings.GetByID(ctx, a.run.TenantID, a.finding); err == nil && after.HasRowVersion() {
 		a.version, a.versioned = after.RowVersion(), true

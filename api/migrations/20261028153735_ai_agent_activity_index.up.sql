@@ -1,4 +1,4 @@
--- Per-run lookups of an AI analyst's timeline rows (undo of a run, override
+-- Per-run lookups of an AI agent's timeline rows (undo of a run, override
 -- rate, per-owner metrics; docs/architecture/ai-analysis.md).
 --
 -- CONCURRENTLY keeps finding_activities writable while it builds; it cannot

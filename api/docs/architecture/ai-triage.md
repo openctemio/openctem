@@ -176,8 +176,8 @@ verdict never changes the priority class. A result with validation warnings
 severity change) is flagged `needs_review`, audited, and side-effect
 workflows skip it.
 
-AI analysts (service accounts that triage like a person, with accountable
-owners) are described in [AI analysts](ai-analysis.md).
+AI agents (service accounts that triage like a person, with accountable
+owners) are described in [AI agents](ai-analysis.md).
 
 ## Providers
 

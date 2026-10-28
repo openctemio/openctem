@@ -927,7 +927,7 @@ type Services struct {
 
 	// AI Triage
 	AITriage *aitriage.AITriageService
-	// AIAnalysis manages AI analysts (service accounts that triage like a
+	// AIAnalysis manages AI agents (service accounts that triage like a
 	// person, with accountable owners) and their runs.
 	AIAnalysis *aianalysis.Service
 	// AIExecutor runs single-shot AI kinds in the API process.
@@ -1372,8 +1372,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Vulnerability.SetDataFlowRepository(repos.DataFlow)        // Wire data flow loading
 	s.Vulnerability.SetIssueLinkStore(repos.FindingIssueLinks)   // same-issue groups
 	s.Vulnerability.SetApprovalRepository(repos.FindingApproval) // Wire approval workflow
-	// An AI analyst never lowers risk alone, whatever the organization's levels.
-	s.Vulnerability.SetAIAnalystChecker(repos.AIAnalysis)
+	// An AI agent never lowers risk alone, whatever the organization's levels.
+	s.Vulnerability.SetAIAgentChecker(repos.AIAnalysis)
 	s.Vulnerability.SetSeverityRequestRepository(repos.SeverityRequest)
 	s.Vulnerability.SetAccessControlRepository(repos.AccessControl)
 	s.Vulnerability.SetAssigneeProfileReader(repos.AccessControl) // list rows carry the assignee name
@@ -1976,9 +1976,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.AITriage.SetBudgetService(budgetSvc)
 
 		// The built-in executor: single-shot kinds in the API process,
-		// through the analyze contract and masking, acting as an AI analyst
+		// through the analyze contract and masking, acting as an AI agent
 		// through the finding commands.
-		s.AIExecutor = aianalysis.NewBuiltinExecutor(repos.Finding, finding.AIAnalystCommands{Findings: s.Vulnerability},
+		s.AIExecutor = aianalysis.NewBuiltinExecutor(repos.Finding, finding.AIAgentCommands{Findings: s.Vulnerability},
 			repos.TenantAISettings, llmFactory, s.AIMasking,
 			aibundle.NewBuilder(aiEgress), s.AIMaskMaps, aianalysis.ExecutorConfig{
 				MaxTokens: cfg.AITriage.MaxTokens, Temperature: cfg.AITriage.Temperature,
@@ -3088,14 +3088,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.APIKey.SetServiceKeyGate(s.ServiceKeyGate)
 	}
 
-	// AI analysts: service accounts that triage like a person. What they may
+	// AI agents: service accounts that triage like a person. What they may
 	// do is read from the role tables (no cache) at every run start, bounded
 	// by what their accountable owners hold.
 	s.AIAnalysis = aianalysis.New(repos.AIAnalysis, repos.AIAnalysis,
 		apikey.NewHolderPermissions(repos.Tenant, rolePermissionSource{repos.Role}), s.DataScope,
 		aianalysis.SettingsConsent{Repo: repos.TenantAISettings}, s.Audit, log)
 	if s.AIExecutor != nil {
-		s.AIExecutor.SetAnalysts(s.AIAnalysis)
+		s.AIExecutor.SetAgents(s.AIAnalysis)
 	}
 
 	// Wire permission services to tenant service

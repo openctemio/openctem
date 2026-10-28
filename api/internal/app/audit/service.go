@@ -128,11 +128,11 @@ func (s *AuditService) LogEvent(ctx context.Context, actx AuditContext, event Au
 		log.WithMetadata("api_key_id", k.id)
 		log.WithMetadata("api_key_prefix", k.prefix)
 	}
-	// An AI analyst's action carries its provenance (run, model, prompt,
-	// accountable owners at that moment); the actor is the analyst.
+	// An AI agent's action carries its provenance (run, model, prompt,
+	// accountable owners at that moment); the actor is the AI agent.
 	if actorID, err := shared.IDFromString(actx.ActorID); err == nil {
 		if p, ok := aianalysis.StampActor(ctx, &actorID); ok {
-			log.WithMetadata("auth_method", "ai_analyst")
+			log.WithMetadata("auth_method", "ai_agent")
 			log.WithMetadata("ai", p.Map())
 		}
 	}

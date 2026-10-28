@@ -20,6 +20,12 @@
       "reason": "The AI-triage 'agent' sub-module id and name, generated from the module registry (api/configs/modules/): an LLM agent, not a sensor."
     },
     {
+      "id": "glossary-vocabulary-ai-agent",
+      "files": "^src/lib/i18n/__tests__/glossary-vocabulary\\.test\\.ts$",
+      "pattern": "AI agent",
+      "reason": "The glossary guard names the term to use for the retired 'AI analyst': an AI agent (with the analyst role), not a sensor."
+    },
+    {
       "id": "endpoint-agent-role",
       "files": ".*",
       "pattern": "endpoint[- ]agents?",
