@@ -97,3 +97,42 @@ func (e *Exclusion) SetKind(k ExclusionKind) {
 func (e *Exclusion) ClosesFindings() bool {
 	return e.Kind().ClosesFindings() && e.expiresAt == nil && e.IsActive()
 }
+
+// ErrExclusionClosingKindNeedsApprover: in Strict, turning an approved
+// exclusion into one that closes findings needs the exclusion approval
+// permission (the approval it carries was given for a kind that closes
+// nothing).
+var ErrExclusionClosingKindNeedsApprover = fmt.Errorf(
+	"%w: changing an approved scope exclusion to not ours or retired closes findings and needs the exclusion approval permission",
+	shared.ErrForbidden)
+
+// ErrExclusionSelfClosingKind: the requester of an approved exclusion cannot
+// turn it into one that closes findings alone (separation of duties).
+var ErrExclusionSelfClosingKind = fmt.Errorf(
+	"%w: cannot change a scope exclusion you requested to not ours or retired; another approver must",
+	shared.ErrForbidden)
+
+// AuthorizeKindChange decides whether r may change the exclusion's kind to
+// next. When exclusions need review (Strict), an approved exclusion was put
+// into effect by two people for its current kind; changing it to a kind
+// that closes findings (from one that does not) closes findings no second
+// person agreed to, so it needs the approval permission and someone other
+// than the requester. This holds whether or not it is in effect now: a
+// deactivated one goes back into effect without a new approval. A pending
+// exclusion is approved later with its new kind, and every other change
+// closes nothing more.
+func (e *Exclusion) AuthorizeKindChange(r Reviewer, next ExclusionKind, needsReview bool) error {
+	if !needsReview || !e.IsApproved() || e.Kind().ClosesFindings() || !next.ClosesFindings() {
+		return nil
+	}
+	if !r.CanApprove {
+		return ErrExclusionClosingKindNeedsApprover
+	}
+	if r.UserID == "" {
+		return fmt.Errorf("%w: reviewer is required", shared.ErrValidation)
+	}
+	if e.createdBy != "" && r.UserID == e.createdBy {
+		return ErrExclusionSelfClosingKind
+	}
+	return nil
+}

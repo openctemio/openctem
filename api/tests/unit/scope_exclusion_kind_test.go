@@ -137,3 +137,90 @@ func TestExclusionKind(t *testing.T) {
 		}
 	})
 }
+
+// swapDataScope lets a test change the caller's data scope between calls.
+type swapDataScope struct{ ds *shared.DataScope }
+
+func (f *swapDataScope) Resolve(context.Context, shared.ID) (*shared.DataScope, error) {
+	return f.ds, nil
+}
+
+// In Strict an approved exclusion carries two people's agreement for its
+// kind; turning it into one that closes findings needs a second person, and
+// putting a closing exclusion back into effect is held to the caller's data
+// scope like creating it (research/320 D8, D9).
+func TestExclusionKind_ClosingNeedsApproverAndReach(t *testing.T) {
+	tenant := shared.NewID()
+	ctx := context.Background()
+	ds := &swapDataScope{ds: &shared.DataScope{TenantID: tenant, Unrestricted: true}}
+	newSvc := func() *scope.Service {
+		svc, _, _, _ := newTestScopeService()
+		svc.SetCoverage(kindScopeCoverage{}, ds)
+		svc.SetExclusionMatches(kindMatches{all: 5, visible: 2})
+		return svc
+	}
+	approved := func(svc *scope.Service, pattern, kind string) *scopedom.Exclusion {
+		t.Helper()
+		e, err := svc.CreateExclusion(ctx, scope.CreateExclusionInput{TenantID: tenant.String(), ExclusionType: "domain",
+			Pattern: pattern, Reason: "test", CreatedBy: "u1", Kind: kind})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.ApproveExclusion(ctx, e.ID().String(), tenant.String(), "approver"); err != nil {
+			t.Fatal(err)
+		}
+		return e
+	}
+	notOurs := "not_ours"
+
+	t.Run("requester without the approval permission refused", func(t *testing.T) {
+		svc := newSvc()
+		e := approved(svc, "a.kind.example.com", "")
+		_, err := svc.UpdateExclusion(ctx, e.ID().String(), tenant.String(), scope.UpdateExclusionInput{Kind: &notOurs,
+			Reviewer: scopedom.Reviewer{UserID: "u1"}})
+		if !errors.Is(err, scopedom.ErrExclusionClosingKindNeedsApprover) {
+			t.Fatalf("err %v, want ErrExclusionClosingKindNeedsApprover", err)
+		}
+	})
+	t.Run("requester with the approval permission cannot do it alone", func(t *testing.T) {
+		svc := newSvc()
+		e := approved(svc, "b.kind.example.com", "")
+		_, err := svc.UpdateExclusion(ctx, e.ID().String(), tenant.String(), scope.UpdateExclusionInput{Kind: &notOurs,
+			Reviewer: scopedom.Reviewer{UserID: "u1", CanApprove: true}})
+		if !errors.Is(err, scopedom.ErrExclusionSelfClosingKind) {
+			t.Fatalf("err %v, want ErrExclusionSelfClosingKind", err)
+		}
+	})
+	t.Run("another approver may", func(t *testing.T) {
+		svc := newSvc()
+		e := approved(svc, "c.kind.example.com", "")
+		got, err := svc.UpdateExclusion(ctx, e.ID().String(), tenant.String(), scope.UpdateExclusionInput{Kind: &notOurs,
+			Reviewer: scopedom.Reviewer{UserID: "u2", CanApprove: true}})
+		if err != nil || got.Kind() != scopedom.ExclusionKindNotOurs {
+			t.Fatalf("got %v err %v, want not_ours", got, err)
+		}
+	})
+	t.Run("closing back to do_not_scan needs nobody", func(t *testing.T) {
+		svc := newSvc()
+		e := approved(svc, "d.kind.example.com", "not_ours")
+		dns := "do_not_scan"
+		if _, err := svc.UpdateExclusion(ctx, e.ID().String(), tenant.String(), scope.UpdateExclusionInput{Kind: &dns,
+			Reviewer: scopedom.Reviewer{UserID: "u1"}}); err != nil {
+			t.Fatalf("err %v, want allowed (it closes nothing)", err)
+		}
+	})
+	t.Run("activate by a restricted member reaching unseen assets refused", func(t *testing.T) {
+		svc := newSvc()
+		ds.ds = &shared.DataScope{TenantID: tenant, Unrestricted: true}
+		e := approved(svc, "*.act.example.com", "not_ours")
+		if _, err := svc.DeactivateExclusion(ctx, e.ID().String(), tenant.String(),
+			scopedom.Reviewer{UserID: "u2", CanApprove: true}); err != nil {
+			t.Fatal(err)
+		}
+		ds.ds = &shared.DataScope{TenantID: tenant}
+		defer func() { ds.ds = &shared.DataScope{TenantID: tenant, Unrestricted: true} }()
+		if _, err := svc.ActivateExclusion(ctx, e.ID().String(), tenant.String(), "u3"); !errors.Is(err, scope.ErrClosingReachOutsideScope) {
+			t.Fatalf("err %v, want ErrClosingReachOutsideScope", err)
+		}
+	})
+}
