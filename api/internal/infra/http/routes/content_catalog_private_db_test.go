@@ -19,6 +19,7 @@ import (
 
 	catalogapp "github.com/openctemio/openctem/api/internal/app/contentcatalog"
 	contentpackapp "github.com/openctemio/openctem/api/internal/app/contentpack"
+	"github.com/openctemio/openctem/api/internal/app/contentpack/contentpacktest"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/infra/storage"
 	"github.com/openctemio/openctem/api/pkg/contentpkg"
@@ -34,8 +35,10 @@ func wordlistArchive(t *testing.T, words string) []byte {
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gz)
-	_ = tw.WriteHeader(&tar.Header{Name: "words.txt", Typeflag: tar.TypeReg, Mode: 0o644, Size: int64(len(words))})
-	_, _ = tw.Write([]byte(words))
+	for path, data := range contentpacktest.WordlistPack(words) {
+		_ = tw.WriteHeader(&tar.Header{Name: path, Typeflag: tar.TypeReg, Mode: 0o644, Size: int64(len(data))})
+		_, _ = tw.Write(data)
+	}
 	_ = tw.Close()
 	_ = gz.Close()
 	return buf.Bytes()
