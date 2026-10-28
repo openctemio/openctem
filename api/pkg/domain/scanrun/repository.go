@@ -17,7 +17,10 @@ type RunFilter struct {
 	// ExcludeSystem leaves out system runs (the Runs list default).
 	ExcludeSystem bool
 	// ExcludeKinds leaves out these kinds.
-	ExcludeKinds   []RunKind
+	ExcludeKinds []RunKind
+	// Origin narrows to runs of scans a person owns (user) or that a platform
+	// policy manages (system); empty lists both.
+	Origin         RunOrigin
 	TenantID       *shared.ID
 	ScanWorkflowID *shared.ID
 	// ScanID narrows to the runs of one scan (a scan's "View all runs").

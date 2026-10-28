@@ -45,12 +45,15 @@ const (
 	codeInvalidVerifyToken      apierror.Code = "INVALID_VERIFICATION_TOKEN"
 	codePasswordMismatch        apierror.Code = "PASSWORD_MISMATCH"
 	codeSessionLimitReached     apierror.Code = "SESSION_LIMIT_REACHED"
+	codeEmailNotAuthoritative   apierror.Code = "EMAIL_NOT_AUTHORITATIVE"
 	codeAccessDenied            apierror.Code = "ORGANIZATION_ACCESS_DENIED"
 	codeTenantRequired          apierror.Code = "ORGANIZATION_REQUIRED"
 	codeMFAIDPEvidenceRequired  apierror.Code = "MFA_IDP_EVIDENCE_REQUIRED"
 	codeMFAChallengeInvalid     apierror.Code = "MFA_CHALLENGE_INVALID"
 	codeMFACodeInvalid          apierror.Code = "MFA_CODE_INVALID"
 	codeMFANotSupported         apierror.Code = "MFA_NOT_SUPPORTED"
+	codeMFAFederatedSession     apierror.Code = "MFA_FEDERATED_SESSION"
+	codeSSOBreakGlassNeedsMFA   apierror.Code = "SSO_BREAK_GLASS_NEEDS_MFA"
 	codeMFAAlreadyEnabled       apierror.Code = "MFA_ALREADY_ENABLED"
 	codeMFANotEnabled           apierror.Code = "MFA_NOT_ENABLED"
 	codeMFANoPendingSetup       apierror.Code = "MFA_NO_PENDING_SETUP"
@@ -122,6 +125,7 @@ var authErrorTable = []authErrorEntry{
 	{e(auth.ErrRegistrationDisabled, auth.ErrSignupNotAvailable), http.StatusForbidden, CodeSignupNotAvailable, "Your organization isn't set up yet. Ask your administrator to invite you.", ""},
 	// Sign-up with a claimed address and sign-in to an SSO-enforced
 	// organization are one answer: use the organization's single sign-on.
+	{e(auth.ErrSSOBreakGlassNeedsMFA), http.StatusForbidden, codeSSOBreakGlassNeedsMFA, "This organization requires SSO sign-in. Owner access with a password needs two-factor authentication: turn it on for your account and sign in again, or sign in through your identity provider.", ""},
 	{e(auth.ErrSignupSSORequired, auth.ErrSSORequired), http.StatusForbidden, CodeSignupSSORequired, "Your organization requires single sign-on. Sign in through your identity provider.", "sso_required"},
 	{e(auth.ErrTenantCreationDisabled), http.StatusForbidden, codeTenantCreationDisabled, "Organizations are created by the application administrator.", ""},
 	{e(tenantdom.ErrPlatformAdminMembership), http.StatusConflict, codePlatformAdminMember, "Platform administrators cannot belong to an organization. Use the admin console, or a separate account.", ""},
@@ -144,6 +148,8 @@ var authErrorTable = []authErrorEntry{
 	{e(auth.ErrSSOMFAEvidenceRequired), http.StatusForbidden, codeMFAIDPEvidenceRequired, "This organization requires your identity provider to confirm a second factor. Sign in again through your identity provider with multi-factor authentication.", ""},
 	{e(auth.ErrMFAEnrollmentRequired), http.StatusForbidden, apierror.CodeMFAEnrollmentRequired, "This organization requires two-factor authentication. Sign in again to complete it.", ""},
 	{e(auth.ErrMFANotSupported), http.StatusBadRequest, codeMFANotSupported, "Two-factor authentication for this account is managed by your identity provider.", ""},
+	{e(auth.ErrReauthRequired), http.StatusForbidden, apierror.CodeReauthRequired, "For your security, sign in again to set up two-factor authentication.", ""},
+	{e(auth.ErrMFAFederatedSession), http.StatusBadRequest, codeMFAFederatedSession, "This session was started through an identity provider; sign in with your password to set up two-factor authentication.", ""},
 	{e(auth.ErrMFAAlreadyEnabled), http.StatusConflict, codeMFAAlreadyEnabled, "Two-factor authentication is already enabled.", ""},
 	{e(auth.ErrMFANotEnabled), http.StatusBadRequest, codeMFANotEnabled, "Two-factor authentication is not enabled.", ""},
 	{e(auth.ErrMFANoPendingSetup), http.StatusBadRequest, codeMFANoPendingSetup, "Start two-factor setup first.", ""},
@@ -182,6 +188,7 @@ var authErrorTable = []authErrorEntry{
 	{e(auth.ErrSSODomainNotAllowed, auth.ErrSSOFederatedDomainUnverified), http.StatusForbidden, codeSSODomainNotAllowed, "Your email domain is not allowed for this organization.", "domain_not_allowed"},
 	{e(auth.ErrSSOAwaitingApproval), http.StatusForbidden, codeSSOAwaitingApproval, "Your access to this organization is waiting for an administrator's approval.", "awaiting_approval"},
 	{e(auth.ErrSSONotAMember, auth.ErrSSOFederatedNotMember), http.StatusForbidden, codeSSONotAMember, "You do not have access to this organization. Contact your administrator.", "not_member"},
+	{e(auth.ErrEmailNotAuthoritative), http.StatusForbidden, codeEmailNotAuthoritative, "This provider cannot prove that you own this email address. Sign in with your password, or ask an administrator, and link the provider afterwards.", "link_required"},
 	{e(auth.ErrAccountLinkRequiresVerification, auth.ErrSSOFederatedTakeover), http.StatusForbidden, codeAccountLinkRequired, "An account with this email already exists. Sign in with your existing credentials first, then link this identity provider.", "link_required"},
 
 	// Social sign-in.
