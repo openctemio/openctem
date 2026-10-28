@@ -153,6 +153,10 @@ type ExclusionPreview struct {
 	Item  BulkExclusionItem
 	Match ExclusionMatch
 	Err   error
+	// ClosingNeedsFullAccess: the caller has limited data access and the
+	// pattern is not exact, so as a not_ours or retired rule it would be
+	// refused (ErrClosingRuleNeedsFullAccess).
+	ClosingNeedsFullAccess bool
 }
 
 // PreviewExclusions answers, per item, how many of the caller's visible
@@ -184,6 +188,7 @@ func (s *Service) PreviewExclusions(ctx context.Context, tenantID string, items 
 			out[i].Err = err
 			continue
 		}
+		out[i].ClosingNeedsFullAccess = ds.Restricted() && !isExactClosingRule(t, it.Pattern)
 		valid = append(valid, BulkExclusionItem{ExclusionType: string(t), Pattern: it.Pattern})
 		at = append(at, i)
 	}

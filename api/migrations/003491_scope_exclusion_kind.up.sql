@@ -51,3 +51,17 @@ AS $$
         ELSE p_reason IS NULL AND p_verification IS NULL
     END, false)
 $$;
+
+-- Cut-over: when out-of-scope decisions started to close findings. A "not
+-- ours" decision (a rejected attribution) or a closing exclusion made before
+-- this moment keeps what it always did (the asset is not scanned) and closes
+-- nothing; only decisions made at or after it do. Without this, deploying
+-- would close the open findings of every asset already marked not ours. One
+-- row for the platform; a missing row closes nothing (fail closed).
+CREATE TABLE scope_effects_cutover (
+    singleton    boolean PRIMARY KEY DEFAULT true CHECK (singleton),
+    effective_at timestamptz NOT NULL DEFAULT now()
+);
+INSERT INTO scope_effects_cutover (singleton) VALUES (true);
+COMMENT ON TABLE scope_effects_cutover IS
+    'When out-of-scope decisions started closing findings: older not-ours decisions and closing exclusions only stop scanning';

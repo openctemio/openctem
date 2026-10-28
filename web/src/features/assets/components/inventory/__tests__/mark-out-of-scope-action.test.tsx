@@ -117,6 +117,26 @@ describe('MarkOutOfScopeAction', () => {
     })
   })
 
+  it('limited data access: the rule option is off for closing kinds, with the reason, and back on for do not scan', async () => {
+    api.post.mockImplementation(async (url: string, body: never) => {
+      const p = previewFor(body)
+      return {
+        items: p.items.map((i) => ({
+          ...i,
+          closing_needs_full_access: /[*/]/.test(i.pattern),
+        })),
+      }
+    })
+    render(<MarkOutOfScopeAction selected={selection} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Mark out of scope' }))
+    await waitFor(() => expect(screen.getByTestId('oos-rule-blocked')).toBeInTheDocument())
+    expect(screen.getByTestId('oos-rule-blocked')).toHaveTextContent('limited data access')
+    expect(screen.getByLabelText(/By rule/)).toBeDisabled()
+    await userEvent.click(screen.getByLabelText(/Do not scan/))
+    expect(screen.queryByTestId('oos-rule-blocked')).not.toBeInTheDocument()
+    expect(screen.getByLabelText(/By rule/)).toBeEnabled()
+  })
+
   it('do not scan keeps findings open and records no decision', async () => {
     api.post.mockImplementation(async (url: string, body: never) =>
       url.endsWith('/bulk/preview') ? previewFor(body) : created

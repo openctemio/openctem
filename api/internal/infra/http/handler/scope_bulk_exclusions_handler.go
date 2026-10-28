@@ -133,6 +133,10 @@ type ScopeExclusionPreviewItem struct {
 	// OpenFindings is how many open findings those assets have: what a
 	// permanent not_ours or retired exclusion would close.
 	OpenFindings int `json:"open_findings"`
+	// ClosingNeedsFullAccess is true when the caller has limited data access
+	// and this is not an exact hostname or IP: as a not_ours or retired rule
+	// it needs full data access.
+	ClosingNeedsFullAccess bool `json:"closing_needs_full_access,omitempty"`
 	// Code and Message say why the item would be refused.
 	Code    string `json:"code,omitempty"`
 	Message string `json:"message,omitempty"`
@@ -173,7 +177,8 @@ func (h *ScopeHandler) PreviewBulkExclusions(w http.ResponseWriter, r *http.Requ
 	out := PreviewScopeExclusionsResponse{Items: make([]ScopeExclusionPreviewItem, 0, len(previews))}
 	for _, p := range previews {
 		item := ScopeExclusionPreviewItem{ExclusionType: p.Item.ExclusionType, Pattern: p.Item.Pattern,
-			Matched: p.Match.Matched, Sample: p.Match.Sample, OpenFindings: p.Match.OpenFindings}
+			Matched: p.Match.Matched, Sample: p.Match.Sample, OpenFindings: p.Match.OpenFindings,
+			ClosingNeedsFullAccess: p.ClosingNeedsFullAccess}
 		if item.Sample == nil {
 			item.Sample = []string{}
 		}

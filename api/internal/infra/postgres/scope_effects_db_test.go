@@ -189,3 +189,72 @@ func TestScopeEffects(t *testing.T) {
 	wantStatus(fNotOurs, "confirmed")
 	wantStatus(fApex, "new")
 }
+
+// Decisions made before the cut-over (research/320) close nothing: marking an
+// asset "not ours" or giving it a closing exclusion before the feature went
+// live only ever stopped scanning, and deploying must not close its findings.
+// Decisions at or after the cut-over do. Requires DATABASE_URL.
+func TestScopeEffectsCutover(t *testing.T) {
+	db := openSensorDB(t)
+	ctx := context.Background()
+	repo := NewScopeEffectsRepository(&DB{DB: db})
+	tenant := seedTestTenant(ctx, t, db)
+
+	asset := func(name string) string {
+		id := shared.NewID().String()
+		mustExec(t, db, `INSERT INTO assets (id, tenant_id, name, asset_type, status) VALUES ($1, $2, $3, 'subdomain', 'active')`,
+			id, tenant.String(), name)
+		return id
+	}
+	finding := func(assetID string) string {
+		id := shared.NewID().String()
+		mustExec(t, db, `INSERT INTO findings (id, tenant_id, asset_id, source, tool_name, message, severity, status, fingerprint)
+			VALUES ($1, $2, $3, 'dast', 'tool', 'msg', 'high', 'confirmed', $4)`,
+			id, tenant.String(), assetID, "fp-cutover-"+id)
+		return id
+	}
+	old, fresh := asset("old.cutover.example.com"), asset("new.cutover.example.com")
+	oldEx, freshEx := asset("oldrule.cutover.example.com"), asset("newrule.cutover.example.com")
+	fOld, fFresh, fOldEx, fFreshEx := finding(old), finding(fresh), finding(oldEx), finding(freshEx)
+
+	// The cut-over is ten minutes ago; the "old" decisions are an hour old.
+	mustExec(t, db, `UPDATE scope_effects_cutover SET effective_at = now() - interval '10 minutes'`)
+	for _, a := range []string{old, fresh} {
+		mustExec(t, db, `INSERT INTO asset_attributions (asset_id, tenant_id, state, confidence, decided_at, created_at, updated_at)
+			VALUES ($1, $2, 'rejected', 0, now() - $3::interval, now() - interval '1 hour', now() - interval '1 hour')`,
+			a, tenant.String(), map[bool]string{true: "1 hour", false: "1 minute"}[a == old])
+	}
+	for _, p := range []struct{ pattern, age string }{
+		{"oldrule.cutover.example.com", "1 hour"}, {"newrule.cutover.example.com", "1 minute"},
+	} {
+		mustExec(t, db, `INSERT INTO scope_exclusions (tenant_id, exclusion_type, pattern, reason, status, approved_by, approved_at,
+			created_by, kind, created_at, updated_at)
+			VALUES ($1, 'domain', $2, 'test', 'active', 'a', now(), 'r', 'not_ours', now() - $3::interval, now() - $3::interval)`,
+			tenant.String(), p.pattern, p.age)
+	}
+
+	closed, err := repo.CloseOutOfScope(ctx, tenant, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(closed) != 2 {
+		t.Fatalf("closed %d findings, want 2 (the decisions after the cut-over)", len(closed))
+	}
+	state := func(id string) (st string) {
+		if err := db.QueryRowContext(ctx, `SELECT status FROM findings WHERE id = $1`, id).Scan(&st); err != nil {
+			t.Fatal(err)
+		}
+		return st
+	}
+	for id, want := range map[string]string{fOld: "confirmed", fOldEx: "confirmed", fFresh: "resolved", fFreshEx: "resolved"} {
+		if got := state(id); got != want {
+			t.Fatalf("finding %s: %s, want %s", id, got, want)
+		}
+	}
+	// Moving the cut-over back past the old decisions closes the rest: the
+	// pass reads the cut-over, nothing else tells old from new.
+	mustExec(t, db, `UPDATE scope_effects_cutover SET effective_at = now() - interval '2 hours'`)
+	if closed, err := repo.CloseOutOfScope(ctx, tenant, 100); err != nil || len(closed) != 2 {
+		t.Fatalf("with an earlier cut-over closed %d (err %v), want 2", len(closed), err)
+	}
+}

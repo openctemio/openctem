@@ -18,6 +18,8 @@ export interface ExclusionPreviewItem extends ExclusionItem {
   sample: string[]
   /** Open findings on those assets: what a permanent not_ours or retired exclusion closes. */
   open_findings?: number
+  /** Limited data access and not an exact hostname or IP: a closing rule needs full data access. */
+  closing_needs_full_access?: boolean
   /** Set when the item would be refused. */
   code?: string
   message?: string

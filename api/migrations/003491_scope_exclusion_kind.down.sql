@@ -33,3 +33,5 @@ $$;
 
 ALTER TABLE scope_exclusions DROP CONSTRAINT IF EXISTS chk_scope_exclusions_kind;
 ALTER TABLE scope_exclusions DROP COLUMN IF EXISTS kind;
+
+DROP TABLE IF EXISTS scope_effects_cutover;

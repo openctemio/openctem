@@ -1154,6 +1154,7 @@
   "assets.triage.exclude.existing": "{count} mục đã được loại trừ trước đó",
   "assets.triage.exclude.granularity": "Loại trừ những gì",
   "assets.triage.exclude.refused": "{count} mục bị từ chối",
+  "assets.triage.exclude.ruleNeedsFullAccess": "Không thể dùng quy tắc để đóng phát hiện khi bạn chỉ có quyền dữ liệu giới hạn: quy tắc đó cũng sẽ tác động đến các tài sản bạn không thấy, hiện tại hoặc sau này. Hãy đánh dấu chính xác từng tài sản, hoặc nhờ người có toàn quyền dữ liệu.",
   "assets.triage.exclude.skipped": "{count} mục đã chọn không cần loại trừ (tên nội bộ, kho mã, tài khoản đám mây).",
   "assets.triage.exclude.undoNeedsAdmin": "Đưa vào lại cần quyền xóa phạm vi: hãy nhờ quản trị viên.",
   "assets.triage.exclude.undone": "Đã gỡ các mục loại trừ",
