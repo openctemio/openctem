@@ -53,7 +53,7 @@ func insertFindingActivity(ctx context.Context, db execer, activity *vulnerabili
 		return fmt.Errorf("failed to marshal changes: %w", err)
 	}
 
-	// A row an AI analyst writes carries its provenance (run, model, prompt,
+	// A row an AI agent writes carries its provenance (run, model, prompt,
 	// accountable owners); the database labels it actor_type 'ai'.
 	meta := activity.SourceMetadata()
 	source := string(activity.Source())
@@ -64,7 +64,7 @@ func insertFindingActivity(ctx context.Context, db execer, activity *vulnerabili
 		}
 		merged["ai"] = p.Map()
 		meta = merged
-		source = aiAnalystActivitySource
+		source = aiAgentActivitySource
 	}
 	var sourceMetadataJSON []byte
 	if len(meta) > 0 {
@@ -625,5 +625,5 @@ func (r *FindingActivityRepository) DeletedCommentIDs(ctx context.Context, tenan
 	return out, rows.Err()
 }
 
-// aiAnalystActivitySource is the source of a timeline row an AI analyst wrote.
-const aiAnalystActivitySource = "ai_analyst"
+// aiAgentActivitySource is the source of a timeline row an AI agent wrote.
+const aiAgentActivitySource = "ai_agent"

@@ -1,0 +1,9 @@
+### Added: AI agents, service accounts that triage like a person with accountable owners
+
+- An AI agent is a service account with an AI profile (`ai_agents`): it calls the same finding commands as a person, with its own role and data scope, and its changes go through the same approvals, audit and notifications. It never signs in, never approves, never holds full data access and is not a seat.
+- Presets `suggest` (read, comment, approval requests) and `triage` (also status, duplicates, severity, assignment), defined in code; the person who sets one must hold its permissions. A fixed deny list keeps approve, verify, delete, export, reveal, bulk and administration with people. An AI agent has no API key, MCP grant or role of its own (the schema refuses them), and its risk-lowering requests always wait for a person, whatever the organization's approval levels.
+- Every AI agent has accountable owners, people or teams (`ai_agent_owners`). Its effective permissions never exceed what they hold; it pauses when no owner is active or the 90-day attestation runs out (checked at run start and by an hourly sweep).
+- Everything an AI agent does carries its provenance: timeline rows are labeled `ai` by the database and carry the run, model, prompt and accountable owners; audit rows carry the same under `metadata.ai`.
+- `ai_runs` records every run (AI agent, accountable snapshot, model, prompt, digests, usage); one live run per subject and use case.
+- API: `/api/v1/ai/agents` (list, create, owners, preset, attest, pause, resume, disable, delete), `/api/v1/ai/runs/{id}`, `/api/v1/findings/{id}/ai/runs`. Migrations `003521_ai_agents` and `003522_ai_agent_activity_index` (built concurrently); no operator action.
+- Read-only AI assistance runs under the viewer and writes nothing: in an assistance context every finding write path and every writing database statement is refused, and no AI agent can be resolved.

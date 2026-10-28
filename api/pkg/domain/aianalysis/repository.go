@@ -7,24 +7,24 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// NewAnalyst is what creating an analyst stores: the service account, its AI
+// NewAgent is what creating an AI agent stores: the service account, its AI
 // profile and its first owners, in one transaction.
-type NewAnalyst struct {
-	Analyst *Analyst
-	Owners  []OwnerRef
+type NewAgent struct {
+	Agent  *Agent
+	Owners []OwnerRef
 }
 
-// AnalystRepository stores analysts and their owners. Every method is
+// AgentRepository stores AI agents and their owners. Every method is
 // tenant-scoped.
-type AnalystRepository interface {
+type AgentRepository interface {
 	// Create stores the service account (no role yet), the AI profile and the
 	// owners in one transaction.
-	Create(ctx context.Context, in NewAnalyst) error
-	Get(ctx context.Context, tenantID, id shared.ID) (*Analyst, error)
-	List(ctx context.Context, tenantID shared.ID) ([]*Analyst, error)
+	Create(ctx context.Context, in NewAgent) error
+	Get(ctx context.Context, tenantID, id shared.ID) (*Agent, error)
+	List(ctx context.Context, tenantID shared.ID) ([]*Agent, error)
 	// SetOwners replaces the owners (at least one) in one transaction.
 	SetOwners(ctx context.Context, tenantID, id shared.ID, owners []OwnerRef, by shared.ID) error
-	// SetStatus moves an analyst to status with reason ("" for active).
+	// SetStatus moves an AI agent to status with reason ("" for active).
 	// from limits which current statuses may move (nil: any); false when the
 	// stored status was not one of them.
 	SetStatus(ctx context.Context, tenantID, id shared.ID, from []Status, to Status, reason PauseReason) (bool, error)
@@ -34,14 +34,14 @@ type AnalystRepository interface {
 	// owners who are active members, and active person members of active
 	// owner teams (membership not past its end).
 	PeopleOf(ctx context.Context, tenantID shared.ID, owners []OwnerRef, now time.Time) ([]shared.ID, error)
-	// Delete removes the analyst with its service account (roles, team
+	// Delete removes the AI agent with its service account (roles, team
 	// memberships and keys go with it); runs keep their rows.
 	Delete(ctx context.Context, tenantID, id shared.ID) error
-	// ListActive lists every active analyst of every organization (the
+	// ListActive lists every active AI agent of every organization (the
 	// sweep; a system job).
-	ListActive(ctx context.Context, limit int) ([]*Analyst, error)
-	// IsAnalyst reports whether the user is one of the tenant's analysts.
-	IsAnalyst(ctx context.Context, tenantID, userID shared.ID) (bool, error)
+	ListActive(ctx context.Context, limit int) ([]*Agent, error)
+	// IsAgent reports whether the user is one of the tenant's AI agents.
+	IsAgent(ctx context.Context, tenantID, userID shared.ID) (bool, error)
 }
 
 // RunRepository is the run ledger. Every method is tenant-scoped.
@@ -53,6 +53,6 @@ type RunRepository interface {
 	UpdateRun(ctx context.Context, r *Run) error
 	GetRun(ctx context.Context, tenantID, id shared.ID) (*Run, error)
 	ListRunsBySubject(ctx context.Context, tenantID shared.ID, subjectType SubjectType, subjectID shared.ID, limit int) ([]*Run, error)
-	// Usage is what an analyst used since: runs started and tokens.
-	Usage(ctx context.Context, tenantID, analystID shared.ID, since time.Time) (runs, tokens int, err error)
+	// Usage is what an AI agent used since: runs started and tokens.
+	Usage(ctx context.Context, tenantID, agentID shared.ID, since time.Time) (runs, tokens int, err error)
 }

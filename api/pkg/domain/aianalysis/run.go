@@ -15,11 +15,11 @@ const RunDeadline = 30 * time.Minute
 // ErrorTimeout is the error code of a run that passed its deadline.
 const ErrorTimeout = "timeout"
 
-// Run is one execution of a use case by an analyst, with its provenance.
+// Run is one execution of a use case by an AI agent, with its provenance.
 type Run struct {
 	ID          shared.ID
 	TenantID    shared.ID
-	AnalystID   *shared.ID // nil only for a legacy row or after the analyst was deleted
+	AgentID     *shared.ID // nil only for a legacy row or after the AI agent was deleted
 	UseCase     UseCase
 	Kind        string
 	SubjectType SubjectType
@@ -48,9 +48,9 @@ type Run struct {
 
 	TriggeredBy *shared.ID
 	Trigger     Trigger
-	// Accountable is the analyst's owners when the run started.
+	// Accountable is the AI agent's owners when the run started.
 	Accountable []OwnerRef
-	// LegacyOutput is the stored result of a run made before AI analysts.
+	// LegacyOutput is the stored result of a run made before AI agents.
 	LegacyOutput map[string]any
 
 	DeadlineAt  *time.Time

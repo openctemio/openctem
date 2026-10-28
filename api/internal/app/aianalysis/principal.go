@@ -10,18 +10,18 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// Principal is an analyst resolved for one run: what it may do now and who
-// answers for it. Every command the executor calls for the analyst passes
+// Principal is an AI agent resolved for one run: what it may do now and who
+// answers for it. Every command the executor calls for the AI agent passes
 // through Require and AssertFinding first.
 type Principal struct {
-	Analyst *aidom.Analyst
+	Agent *aidom.Agent
 	// People are the accountable people at this moment.
 	People      []shared.ID
 	permissions map[string]bool
 	scope       FindingScope
 }
 
-// Can reports whether the analyst holds an effective permission.
+// Can reports whether the AI agent holds an effective permission.
 func (p *Principal) Can(perm string) bool { return p.permissions[perm] }
 
 // Permissions lists the effective permissions.
@@ -33,7 +33,7 @@ func (p *Principal) Permissions() []string {
 	return out
 }
 
-// Require refuses an action the analyst may not take.
+// Require refuses an action the AI agent may not take.
 func (p *Principal) Require(perm string) error {
 	if !p.Can(perm) {
 		return fmt.Errorf("%w (%s)", aidom.ErrNotAllowed, perm)
@@ -41,15 +41,15 @@ func (p *Principal) Require(perm string) error {
 	return nil
 }
 
-// AssertFinding refuses a finding outside the analyst's own data scope, or
+// AssertFinding refuses a finding outside the AI agent's own data scope, or
 // outside the scope of every accountable person (out of scope reads as not
 // found).
 func (p *Principal) AssertFinding(ctx context.Context, findingID shared.ID) error {
-	if err := p.scope.AssertFindingForUser(ctx, p.Analyst.TenantID, p.Analyst.ID, findingID); err != nil {
+	if err := p.scope.AssertFindingForUser(ctx, p.Agent.TenantID, p.Agent.ID, findingID); err != nil {
 		return err
 	}
 	for _, person := range p.People {
-		err := p.scope.AssertFindingForUser(ctx, p.Analyst.TenantID, person, findingID)
+		err := p.scope.AssertFindingForUser(ctx, p.Agent.TenantID, person, findingID)
 		if err == nil {
 			return nil
 		}
@@ -60,23 +60,23 @@ func (p *Principal) AssertFinding(ctx context.Context, findingID shared.ID) erro
 	return fmt.Errorf("%w: finding not found", shared.ErrNotFound)
 }
 
-// Provenance is what the analyst's changes in run carry.
+// Provenance is what the AI agent's changes in run carry.
 func (p *Principal) Provenance(run *aidom.Run) aidom.Provenance {
 	return aidom.Provenance{
-		AnalystID: p.Analyst.ID, AnalystName: p.Analyst.Name, RunID: run.ID, Executor: run.Executor,
+		AgentID: p.Agent.ID, AgentName: p.Agent.Name, RunID: run.ID, Executor: run.Executor,
 		Provider: run.Provider, Model: run.Model, PromptTemplateID: run.PromptTemplateID,
-		PromptTemplateDigest: run.PromptTemplateDigest, Accountable: p.Analyst.Owners, TriggeredBy: run.TriggeredBy,
+		PromptTemplateDigest: run.PromptTemplateDigest, Accountable: p.Agent.Owners, TriggeredBy: run.TriggeredBy,
 	}
 }
 
-// Principal resolves an analyst for a run, fail closed: the organization
-// consented to AI, the analyst is active, at least one accountable owner is
+// Principal resolves an AI agent for a run, fail closed: the organization
+// consented to AI, the AI agent is active, at least one accountable owner is
 // active, the attestation is fresh, and something is left of its preset once
 // the ceiling (what the accountable people hold) and the deny list are
-// applied. A failed check pauses the analyst (audited) and returns a
+// applied. A failed check pauses the AI agent (audited) and returns a
 // PausedError.
-func (s *Service) Principal(ctx context.Context, tenantID, analystID shared.ID) (*Principal, error) {
-	// Read-only assistance runs under the viewer and never becomes an analyst.
+func (s *Service) Principal(ctx context.Context, tenantID, agentID shared.ID) (*Principal, error) {
+	// Read-only assistance runs under the viewer and never becomes an AI agent.
 	if err := aidom.RefuseAssist(ctx); err != nil {
 		return nil, err
 	}
@@ -89,7 +89,7 @@ func (s *Service) Principal(ctx context.Context, tenantID, analystID shared.ID) 
 			return nil, fmt.Errorf("%w: AI is off for this organization", shared.ErrConflict)
 		}
 	}
-	a, err := s.analysts.Get(ctx, tenantID, analystID)
+	a, err := s.agents.Get(ctx, tenantID, agentID)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +97,7 @@ func (s *Service) Principal(ctx context.Context, tenantID, analystID shared.ID) 
 		return nil, &aidom.PausedError{Reason: a.PauseReason}
 	}
 	now := s.now()
-	people, err := s.analysts.PeopleOf(ctx, tenantID, a.Owners, now)
+	people, err := s.agents.PeopleOf(ctx, tenantID, a.Owners, now)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +107,7 @@ func (s *Service) Principal(ctx context.Context, tenantID, analystID shared.ID) 
 		}
 		return nil, &aidom.PausedError{Reason: r}
 	}
-	// The analyst's permissions come from its preset in code; it holds no
+	// The AI agent's permissions come from its preset in code; it holds no
 	// database role (a trigger refuses one), so nothing outside this service
 	// can widen it.
 	all, ceil, err := s.ceiling(ctx, tenantID, people)
@@ -125,13 +125,13 @@ func (s *Service) Principal(ctx context.Context, tenantID, analystID shared.ID) 
 	for _, p := range eff {
 		perms[p] = true
 	}
-	return &Principal{Analyst: a, People: people, permissions: perms, scope: s.scope}, nil
+	return &Principal{Agent: a, People: people, permissions: perms, scope: s.scope}, nil
 }
 
-// DefaultAnalyst picks the analyst for a finding when the trigger names none:
-// the first active analyst (by name) that may read the finding.
-func (s *Service) DefaultAnalyst(ctx context.Context, tenantID, findingID shared.ID) (*Principal, error) {
-	list, err := s.analysts.List(ctx, tenantID)
+// DefaultAgent picks the AI agent for a finding when the trigger names none:
+// the first active AI agent (by name) that may read the finding.
+func (s *Service) DefaultAgent(ctx context.Context, tenantID, findingID shared.ID) (*Principal, error) {
+	list, err := s.agents.List(ctx, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -158,12 +158,12 @@ func (s *Service) DefaultAnalyst(ctx context.Context, tenantID, findingID shared
 	if lastPaused != nil {
 		return nil, lastPaused
 	}
-	return nil, aidom.ErrAnalystNotFound
+	return nil, aidom.ErrAgentNotFound
 }
 
-// ErrBudget: the analyst used its runs for this hour or its tokens for this
+// ErrBudget: the AI agent used its runs for this hour or its tokens for this
 // month.
-var ErrBudget = fmt.Errorf("%w: the AI analyst reached its limit", shared.ErrConflict)
+var ErrBudget = fmt.Errorf("%w: the AI agent reached its limit", shared.ErrConflict)
 
 // StartRunInput starts a run.
 type StartRunInput struct {
@@ -185,7 +185,7 @@ func (s *Service) StartRun(ctx context.Context, in StartRunInput) (*aidom.Run, e
 	if err := aidom.RefuseAssist(ctx); err != nil {
 		return nil, err
 	}
-	a := in.Principal.Analyst
+	a := in.Principal.Agent
 	now := s.now().UTC()
 	runs, _, err := s.runs.Usage(ctx, a.TenantID, a.ID, now.Add(-time.Hour))
 	if err != nil {
@@ -206,7 +206,7 @@ func (s *Service) StartRun(ctx context.Context, in StartRunInput) (*aidom.Run, e
 	}
 	deadline := now.Add(aidom.RunDeadline)
 	run := &aidom.Run{
-		ID: shared.NewID(), TenantID: a.TenantID, AnalystID: &a.ID, UseCase: in.UseCase, Kind: in.Kind,
+		ID: shared.NewID(), TenantID: a.TenantID, AgentID: &a.ID, UseCase: in.UseCase, Kind: in.Kind,
 		SubjectType: in.SubjectType, SubjectID: in.SubjectID, Executor: in.Executor, Status: aidom.RunRunning,
 		DataClass: in.DataClass, Trigger: in.Trigger, TriggeredBy: in.TriggeredBy, Accountable: a.Owners,
 		DeadlineAt: &deadline, StartedAt: &now,

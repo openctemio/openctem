@@ -121,10 +121,10 @@ func (h *ServiceAccountHandler) CreateKey(w http.ResponseWriter, r *http.Request
 		h.writeError(w, err)
 		return
 	}
-	// An AI analyst acts only through the platform, which checks its owners,
+	// An AI agent acts only through the platform, which checks its owners,
 	// attestation and preset at every run; a key would bypass that.
-	if account.AIAnalyst {
-		h.writeError(w, serviceaccount.ErrAIAnalyst)
+	if account.AIAgent {
+		h.writeError(w, serviceaccount.ErrAIAgent)
 		return
 	}
 	accountID := account.ID.String()
