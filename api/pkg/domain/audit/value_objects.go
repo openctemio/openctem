@@ -228,6 +228,9 @@ const (
 	// in a finding's evidence: the item, the placeholders and the purpose
 	// (view, copy, copy_curl). Never the values.
 	ActionFindingEvidenceRevealed Action = "finding.evidence_revealed"
+	// ActionFindingEvidenceUpdated records a change to the role or order of a
+	// finding's evidence items.
+	ActionFindingEvidenceUpdated Action = "finding.evidence_updated"
 	// ActionFindingRemediationStepAdded records a manually-appended remediation
 	// step on a generic finding.
 	ActionFindingRemediationStepAdded Action = "finding.remediation_step_added"
@@ -838,7 +841,7 @@ func (a Action) IsValid() bool {
 		ActionVulnerabilityCreated, ActionVulnerabilityUpdated, ActionVulnerabilityDeleted,
 		ActionFindingCreated, ActionFindingUpdated, ActionFindingDeleted, ActionFindingStatusChanged,
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
-		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
+		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingEvidenceUpdated, ActionFindingRemediationStepAdded,
 		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
 		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingVerificationChecklistUpdated, ActionFindingClassified,
 		ActionFindingRetestCheckSaved, ActionFindingRetestCheckRemoved, ActionFindingRetestCheckApproved,
@@ -977,7 +980,7 @@ func (a Action) Category() string {
 		return "vulnerability"
 	case ActionFindingCreated, ActionFindingUpdated, ActionFindingDeleted, ActionFindingStatusChanged,
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
-		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
+		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingEvidenceUpdated, ActionFindingRemediationStepAdded,
 		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
 		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingVerificationChecklistUpdated, ActionFindingClassified, ActionFindingCommentReactionRemoved, ActionFindingCommentEdited, ActionFindingCommentDeleted, ActionFindingDuplicateMarked, ActionFindingIssueUnlinked, ActionFindingBountyReportChanged,
 		ActionFindingRetestCheckSaved, ActionFindingRetestCheckRemoved, ActionFindingRetestCheckApproved,

@@ -2,6 +2,7 @@ package adminconsole
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -25,6 +26,7 @@ const (
 var (
 	ErrElevationRole     = fmt.Errorf("%w: the role must be ops_admin or super_admin and not above your own", shared.ErrValidation)
 	ErrElevationDuration = fmt.Errorf("%w: elevate for 15 to 60 minutes", shared.ErrValidation)
+	ErrAuditUnavailable  = errors.New("the administrators' audit log cannot be written")
 	ErrElevationReason   = fmt.Errorf("%w: give a reason of 10 to 500 characters", shared.ErrValidation)
 )
 
@@ -49,9 +51,9 @@ func (s *Service) Elevate(ctx context.Context, a *admin.AdminUser, sess *admin.S
 	if until.After(sess.ExpiresAt) {
 		until = sess.ExpiresAt
 	}
-	if err := s.console.SetSessionElevation(ctx, sess.ID, role, &until, reason); err != nil {
-		return time.Time{}, err
-	}
+	// The audit row comes first and the elevation only follows a stored row:
+	// with the audit log unavailable a session never becomes more powerful
+	// without a record.
 	if s.audit != nil {
 		entry := admin.NewAuditLogBuilder(a, ActionElevated).
 			Resource("admin_session", ptr(sess.ID), a.Email()).
@@ -59,7 +61,13 @@ func (s *Service) Elevate(ctx context.Context, a *admin.AdminUser, sess *admin.S
 			Request("", "", map[string]any{"role": string(role), "until": until.UTC().Format(time.RFC3339), "reason": reason}).
 			High().
 			Build()
-		s.writeAudit(ctx, ActionElevated, entry)
+		if err := s.audit.Create(ctx, entry); err != nil {
+			s.log.Error("audit admin elevation; elevation refused", "error", err)
+			return time.Time{}, ErrAuditUnavailable
+		}
+	}
+	if err := s.console.SetSessionElevation(ctx, sess.ID, role, &until, reason); err != nil {
+		return time.Time{}, err
 	}
 	return until, nil
 }

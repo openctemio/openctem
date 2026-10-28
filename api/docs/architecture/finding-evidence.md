@@ -43,6 +43,32 @@ not as revealable placeholders. Everything else in the exchange (query and
 body parameters, `Set-Cookie`, custom key headers) arrives and is masked and
 kept for reveal by the platform.
 
+### Role, order and the evidence version
+
+Each stored item also has a **role** (what it shows the reader) and a
+**position** (where it sits):
+
+| Role | Meaning |
+|---|---|
+| `baseline` | normal behaviour, for comparison |
+| `proof` | the issue itself |
+| `verification` | the check that the fix works |
+| `supporting` | anything else (the default) |
+
+A new item is `supporting` at position 0. The list is ordered by position
+(ascending), then newest first, so a finding nobody has ordered reads as it
+did before. A person with `findings:write` sets a role or moves items; a
+sensor cannot (the CTIS contract is unchanged).
+
+`findings.evidence_version` counts every change to a finding's evidence: an
+item added, removed (retention or pruning included), re-roled or reordered.
+Statement-level triggers on `finding_evidence` bump it once per finding per
+statement, so no write path can forget to. The bump does not change
+`findings.row_version`: a full-row write of the finding that began before an
+evidence change still lands. A write-up of the finding stores the version it
+was written against, so a reader can see "evidence changed since this
+write-up".
+
 ## Ingest flow (`internal/app/evidence`)
 
 1. **Normalize** (`evidence.Normalize`): valid UTF-8, no NUL, single-line
@@ -110,8 +136,13 @@ server storage, before deleting.
 | Route | Gate |
 |---|---|
 | `GET /api/v1/findings/{id}/evidence-items[?retest_id=]` | `findings:read` + data scope; masked items, newest first (25), with `curl` built from the masked request, `revealable` placeholders and `secrets_available`; `Cache-Control: no-store` |
+| `PATCH /api/v1/findings/{id}/evidence-items/{item_id}` `{role?, position?}` | `findings:write` + data scope; an item of that finding only (404 otherwise); audited (`finding.evidence_updated`) and on the timeline. A pentest finding also needs the campaign's evidence-write rule (member role, tester ownership, campaign not completed) |
+| `PUT /api/v1/findings/{id}/evidence-items/order` `{item_ids[1..25]}` | as above; the listed items take positions 0..n-1, the others follow; every id must be an item of the finding |
 | `POST /api/v1/findings/{id}/evidence-items/{item_id}/reveal` `{placeholders[≤50], purpose: view\|copy\|copy_curl}` | `findings:evidence:reveal` + data scope + 30-per-user burst (one per 2 s) + step-up; `{values, mask_after_seconds: 60}`, `Cache-Control: no-store`; 410 once the values expired |
 | `GET/PUT /api/v1/organization/settings/evidence` | owner/admin |
+
+The list also returns `evidence_version` and `proof_count` (items with the
+proof role).
 
 A reveal is audited **before** values are returned (`finding.evidence_revealed`:
 item, kind, placeholder names, purpose; never values) and adds an
@@ -132,6 +163,11 @@ characters shown as escapes), never HTML. Masked values are chips; **Reveal**
 (permission-gated, step-up dialog on demand) shows a value inline and masks it
 again after 60 seconds; copy and **Copy curl with secrets** go through the
 same audited reveal. **Copy curl** and **Download** are masked.
+
+Each card shows its role as a chip and its place in the order. A person who
+can write findings changes the role from the card and moves the card up or
+down; both use the shared `EvidenceRoleChip`, `EvidenceRoleSelect` and
+`EvidenceOrderButtons` (`components/detail/evidence-role.tsx`).
 
 One component (`FindingEvidenceItems`) renders evidence on the Evidence tab,
 in the finding drawer and in triage mode. A tool's own `curl` item is folded
