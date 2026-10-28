@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { configure, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import ScansPage from '../page'
@@ -75,6 +75,14 @@ const urlState = new Proxy({} as Record<string, string | undefined>, {
   },
 })
 const resetUrl = () => window.history.replaceState(null, '', '/scans')
+
+// Every interaction re-renders the whole 25-row table (row menus, run strips,
+// checkboxes): about one second per render under coverage on a 4-core runner.
+// The file takes ~26 s for 14 tests on a hosted runner, so a test with five
+// interactions has no headroom left under the 5 s default and times out on a
+// busier self-hosted runner. The tests are slow, not hung.
+configure({ asyncUtilTimeout: 10_000 })
+vi.setConfig({ testTimeout: 30_000 })
 
 globalThis.ResizeObserver ??= class {
   observe() {}
