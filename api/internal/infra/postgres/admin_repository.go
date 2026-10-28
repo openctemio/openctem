@@ -956,19 +956,21 @@ func (r *AdminRepository) GetByUserID(ctx context.Context, userID shared.ID) (*a
 	return r.scanAdmin(row)
 }
 
-// LinkUser links an administrator to a users row, refusing users that belong
-// to an organization. The membership check and the update run in one
-// statement; the tenant_members trigger (migration 000226) blocks the reverse
-// order, so the two rules cannot race into an administrator with members.
+// LinkUser links an administrator to a users row. The account may belong to
+// organizations: the platform role is effective only on the console plane
+// (RFC-133), and the account is an ordinary member in the tenant app. A
+// break-glass administrator is the exception (ErrBreakGlassHasMemberships).
 func (r *AdminRepository) LinkUser(ctx context.Context, adminID, userID shared.ID) error {
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE admin_users SET user_id = $2, updated_at = NOW()
-		WHERE id = $1
-		  AND NOT EXISTS (SELECT 1 FROM tenant_members WHERE user_id = $2)`,
+		WHERE id = $1`,
 		adminID.String(), userID.String())
 	if err != nil {
 		if isUniqueViolation(err) {
 			return admin.ErrUserAlreadyAdmin
+		}
+		if isConstraintViolation(err, breakGlassConsoleOnly) {
+			return admin.ErrBreakGlassHasMemberships
 		}
 		return fmt.Errorf("link admin user: %w", err)
 	}
@@ -979,15 +981,7 @@ func (r *AdminRepository) LinkUser(ctx context.Context, adminID, userID shared.I
 	if n == 1 {
 		return nil
 	}
-	// Nothing updated: either the admin does not exist or the user has members.
-	var exists bool
-	if err := r.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM admin_users WHERE id = $1)`, adminID.String()).Scan(&exists); err != nil {
-		return fmt.Errorf("link admin user: %w", err)
-	}
-	if !exists {
-		return admin.ErrAdminNotFound
-	}
-	return admin.ErrUserHasMemberships
+	return admin.ErrAdminNotFound
 }
 
 // auditSeverity defaults an unset severity to info.

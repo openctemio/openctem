@@ -292,8 +292,6 @@ func (h *AdminConsoleHandler) Provision(w http.ResponseWriter, r *http.Request) 
 			writeInvitationNeedsEmail(w)
 		case errors.Is(err, admin.ErrEmailHasAccount):
 			apierror.Conflict("An account with this email already exists. Platform administrators get a new, dedicated account: use another email.").WriteJSON(w)
-		case errors.Is(err, admin.ErrUserHasMemberships):
-			apierror.Conflict("This account belongs to an organization. Platform administrators cannot; use a separate account.").WriteJSON(w)
 		case shared.IsValidation(err):
 			apierror.BadRequest(sanitizeLogField(err.Error())).WriteJSON(w)
 		default:

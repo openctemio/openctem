@@ -91,7 +91,6 @@ type SSOService struct {
 	tokenGenerator   *jwt.Generator
 	authConfig       config.AuthConfig
 	logger           *logger.Logger
-	platformAdmins   PlatformAdminGate
 	httpClient       *http.Client
 	// features gates configuring connections by the organization's limits.
 	features entitlement.FeatureChecker
@@ -1691,10 +1690,6 @@ type federatedBinding struct {
 const freshAuthMaxAge = 5 * time.Minute
 
 func (s *SSOService) createSession(ctx context.Context, u *userdom.User, authMethod sessiondom.AuthMethod, idpTenant shared.ID, fed federatedBinding) (*SessionResult, error) {
-	// A platform administrator signs in on the admin console only.
-	if refusePlatformAdmin(ctx, s.platformAdmins, s.logger, u, "sso") {
-		return nil, ErrSSOExchangeFailed
-	}
 	// A blocked or suspended account opens no session (it would only 401).
 	if !u.IsActive() {
 		return nil, ErrAccountSuspended

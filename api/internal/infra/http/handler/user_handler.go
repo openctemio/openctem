@@ -22,7 +22,6 @@ import (
 type UserHandler struct {
 	service       *tenant.UserService
 	tenantService *tenant.TenantService
-	platformAdmin PlatformAdminChecker
 	validator     *validator.Validator
 	logger        *logger.Logger
 	// accountDeletion serves DELETE /users/me (account_deletion_handler.go).
@@ -30,11 +29,10 @@ type UserHandler struct {
 }
 
 // NewUserHandler creates a new user handler.
-func NewUserHandler(svc *tenant.UserService, tenantSvc *tenant.TenantService, platformAdmin PlatformAdminChecker, v *validator.Validator, log *logger.Logger) *UserHandler {
+func NewUserHandler(svc *tenant.UserService, tenantSvc *tenant.TenantService, v *validator.Validator, log *logger.Logger) *UserHandler {
 	return &UserHandler{
 		service:       svc,
 		tenantService: tenantSvc,
-		platformAdmin: platformAdmin,
 		validator:     v,
 		logger:        log,
 	}
@@ -57,10 +55,6 @@ type UserResponse struct {
 	LastLoginAt   *time.Time     `json:"last_login_at,omitempty"`
 	CreatedAt     time.Time      `json:"created_at"`
 	UpdatedAt     time.Time      `json:"updated_at"`
-	// IsPlatformAdmin marks an account linked to an active platform
-	// administrator. The UI uses it to offer the admin console. Set
-	// on the /users/me response only, not in every toUserResponse.
-	IsPlatformAdmin bool `json:"is_platform_admin"`
 }
 
 // PreferencesDTO represents user preferences in API responses.
@@ -136,13 +130,11 @@ func (h *UserHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 }
 
 // MeResponse is the caller's own profile as GET /users/me returns it; the
-// session bootstrap embeds the same value.
-func (h *UserHandler) MeResponse(ctx context.Context, u *user.User) UserResponse {
-	response := toUserResponse(u)
-	if h.platformAdmin != nil {
-		response.IsPlatformAdmin = h.platformAdmin.IsPlatformAdmin(ctx, u.ID())
-	}
-	return response
+// session bootstrap embeds the same value. It never says whether the account
+// holds a platform role: that attribute exists only on the console plane
+// (RFC-133).
+func (h *UserHandler) MeResponse(_ context.Context, u *user.User) UserResponse {
+	return toUserResponse(u)
 }
 
 // UpdateMe updates the current authenticated user's profile.

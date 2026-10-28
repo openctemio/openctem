@@ -7,10 +7,12 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// ErrPlatformAdminMembership is returned when a platform administrator's
-// account would join an organization. Administrators belong to no organization
-// (RFC-022); the database enforces it with a trigger on tenant_members.
-var ErrPlatformAdminMembership = fmt.Errorf("%w: platform administrators cannot be members of an organization; use a separate account", shared.ErrConflict)
+// ErrBreakGlassMembership is returned when a break-glass administrator's
+// account would join an organization. Any other administrator's account may be
+// an ordinary member (RFC-133); a break-glass account stays console-only, and
+// the database enforces it (migration 003524). The text does not say why, so
+// an inviter learns nothing about the platform's administrators.
+var ErrBreakGlassMembership = fmt.Errorf("%w: this account cannot be a member of an organization", shared.ErrConflict)
 
 // ErrOrganizationHasOwner is returned when a platform administrator tries to
 // create the first owner of an organization that already has an owner, active

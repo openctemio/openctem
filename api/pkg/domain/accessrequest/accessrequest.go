@@ -55,9 +55,15 @@ const (
 
 // Errors.
 var (
-	ErrNotFound      = fmt.Errorf("%w: access request not found", shared.ErrNotFound)
-	ErrInvalid       = fmt.Errorf("%w: invalid access request", shared.ErrValidation)
-	ErrNotDecidable  = fmt.Errorf("%w: the access request is not pending", shared.ErrConflict)
+	ErrNotFound     = fmt.Errorf("%w: access request not found", shared.ErrNotFound)
+	ErrInvalid      = fmt.Errorf("%w: invalid access request", shared.ErrValidation)
+	ErrNotDecidable = fmt.Errorf("%w: the access request is not pending", shared.ErrConflict)
+	// ErrSelfApproval: an administrator approved a request made with their own
+	// e-mail. An administrator's account may be an ordinary member of
+	// organizations (RFC-133), so approving it would let one person mint an
+	// organization for themselves with platform power; another administrator
+	// decides it.
+	ErrSelfApproval  = fmt.Errorf("%w: an administrator cannot approve an access request made with their own e-mail", shared.ErrForbidden)
 	ErrInvalidToken  = fmt.Errorf("%w: invalid or expired confirmation link", shared.ErrValidation)
 	ErrAlreadyExists = fmt.Errorf("%w: access request already exists", shared.ErrConflict)
 )

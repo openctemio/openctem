@@ -370,6 +370,34 @@ func TestApprove(t *testing.T) {
 	}
 }
 
+// An administrator's account may be an ordinary member of organizations
+// (RFC-133), so an administrator cannot approve a request made with their own
+// e-mail (any case): one person would mint an organization for themselves with
+// platform power. Nothing is created and the request stays pending.
+func TestApprove_SelfApprovalRefused(t *testing.T) {
+	ctx := context.Background()
+	svc, repo, orgs := newSvc(t, openPolicy, nil, nil)
+	_ = submit(svc, "OPS@op.example", "203.0.113.1")
+	id := onePending(t, repo)
+
+	if _, _, err := svc.Approve(ctx, superAdmin(t), id, ApproveInput{Slug: "acme"}, auditapp.AuditContext{}); !errors.Is(err, ardom.ErrSelfApproval) {
+		t.Fatalf("expected ErrSelfApproval, got %v", err)
+	}
+	if len(orgs.calls) != 0 {
+		t.Fatal("no organization may be created on a self-approval")
+	}
+	if r := repo.rows[id.String()]; r == nil || r.Status != ardom.StatusPending {
+		t.Fatalf("the request stays pending, got %+v", r)
+	}
+	other, err := admin.NewAdminUser("other@op.example", "Other", admin.AdminRoleOpsAdmin, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := svc.Approve(ctx, other, id, ApproveInput{Slug: "acme"}, auditapp.AuditContext{}); err != nil {
+		t.Fatalf("another administrator approves it: %v", err)
+	}
+}
+
 func TestApprove_UnconfirmedRefused(t *testing.T) {
 	svc, repo, orgs := newSvc(t, openPolicy, &fakeMailer{configured: true}, nil)
 	_ = submit(svc, "a@acme.com", "203.0.113.1")
