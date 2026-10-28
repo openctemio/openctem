@@ -687,6 +687,7 @@ the billing page in the UI.
 | Endpoint | Permission Required |
 |----------|---------------------|
 | `GET /api/v1/findings/{id}/evidence-items` | `findings:read` + data scope (404 outside it) |
+| `PATCH /api/v1/findings/{id}/evidence-items/{item_id}`, `PUT /api/v1/findings/{id}/evidence-items/order` | `findings:write` + data scope (404 outside it) + the item must belong to that finding; a pentest finding also passes the campaign's evidence-write rule; audited |
 | `POST /api/v1/findings/{id}/evidence-items/{item_id}/reveal` | `findings:evidence:reveal` + data scope + per-user rate limit + **step-up** (API keys cannot); audited |
 | `GET/PUT /api/v1/organization/settings/evidence` | owner/admin; PUT audited |
 
@@ -825,6 +826,16 @@ Owner and administrator only, on top of the permission: `PUT /api/v1/scan-profil
 |----------|---------------------|
 | `GET /api/v1/dashboard-data/` | owner or administrator (`RequireAdmin`) |
 | `POST /api/v1/dashboard-data/rebuild` | owner or administrator (`RequireAdmin`); once per organization per hour, shared with the console route (`docs/architecture/dashboards.md`) |
+
+#### Sidebar pins (`/api/v1/me/pins`)
+
+A member's pins in one organization ([sidebar pins](sidebar-pins.md)). Self-scoped: the tenant and user come from
+the session and every statement filters on both.
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/me/pins` | self; a quick or saved view pin is returned only with `findings:read`, a saved view only while the caller can see it; counts are compiled as the caller (data scope, private programs, pentest membership) |
+| `PUT /api/v1/me/pins` | self; at most 12; a page pin must be an in-app path; quick and saved view pins need `findings:read`, and a saved view must be visible to the caller (404 otherwise) |
 
 #### Dashboards (`/api/v1/me/dashboards`, `/api/v1/organization/dashboards`)
 
@@ -1043,8 +1054,12 @@ Authorization is enforced at the **route layer** in
 
 **Acting role.** With `ADMIN_ELEVATION=required` (default) every request acts
 as `readonly` unless the console session holds a live elevation
-(`POST /api/v1/admin/auth/elevate`, step-up, 15-60 minutes, a role no higher
-than the administrator's own; `DELETE` ends it). Role checks below use that
+(`POST /api/v1/admin/auth/elevate`, a **fresh** step-up, 15-60 minutes, a role
+no higher than the administrator's own; `DELETE` ends it). Elevation never
+rides a step-up window another action opened: it takes a fresh authenticator
+code or a security-key confirmation given within the last minute, and that
+proof then opens the five-minute step-up window for the protected actions that
+follow. Role checks below use that
 acting role, never the stored one.
 
 **Step-up on protected actions.** Every identity, privilege and platform-trust
@@ -1053,7 +1068,8 @@ fresh console authenticator code in the `X-Admin-Step-Up` header, or the
 five-minute step-up window of the same console session (one confirmation,
 recorded in `admin_sessions.step_up_at`, covers the protected actions that
 follow). Without either the API answers `401 ADMIN_STEP_UP_REQUIRED` and the
-console asks for a code and retries; an administrator with no console
+console asks for a code and retries (a refused code the form sent itself
+goes back to that form's code field instead); an administrator with no console
 authenticator gets `403 STEP_UP_UNAVAILABLE`. Each confirmation is audited
 (`console.step_up`, the purpose names the action), a wrong code counts toward
 the sign-in lockout. Every console write is classified in
@@ -1123,7 +1139,7 @@ empty `owner_emails`. Every member-list view is audited
 | `GET /api/v1/admin/users/{id}` | **super_admin** |
 | `PATCH /api/v1/admin/users/{id}` | **super_admin** + **step-up** (audited) |
 | `DELETE /api/v1/admin/users/{id}` | **super_admin** + **step-up** (audited) |
-| `GET /api/v1/admin/audit-logs` (+ `/stats`, `/{id}`) | any admin (readonly ok) |
+| `GET /api/v1/admin/audit-logs` (+ `/stats`, `/{id}`) | any admin (readonly ok); the network address, user agent and request body of a row only for **ops_admin+** (by the administrator's own role), a read-only administrator reads action, actor, time and result |
 | `GET /api/v1/admin/audit-logs/chain` | any admin (readonly ok); the administrators' audit chain state: row positions and ids that do not verify, no row content |
 | `GET /api/v1/admin/target-mappings` (+ `/stats`, `/types`, `/{id}`) | any admin |
 | `POST/PATCH/DELETE /api/v1/admin/target-mappings` | **ops_admin+** (rate-limited, audited) |
@@ -1278,7 +1294,7 @@ and certificates are never logged — an IdP update records
 | `POST /api/v1/admin/tenants` | **ops_admin+** + **step-up** (audited; creates the owner's account when `owner_email` has none) |
 | `GET /api/v1/admin/tenants/{tenantId}/users` | any admin; audited `organization.users_view`; `readonly` gets counts by role only (`redacted: true`) |
 | `POST /api/v1/admin/tenants/{tenantId}/users` | **ops_admin+** + **step-up**, **bootstrap only**: creates the first owner of an organization with no owner, active or suspended, nothing else (409 otherwise). With `"recovery": true`: **super_admin** only (403 otherwise), a `reason` of 10 to 500 characters (400; kept in the admin audit row) (the route's step-up confirms it), for an organization whose owners are all suspended (409 while one is active), link emailed only (400 without email). Audited in `admin_audit_logs` (`organization.user_create` / `organization.owner_recovery`) and the organization's audit log |
-| `POST /api/v1/admin/tenants/{tenantId}/purge` | **super_admin** + **fresh step-up**, `reason` required (10-500); deletes the organization at once whatever its status; **critical** admin audit `organization.purged`; 409 for the system organization. See `organization-deletion.md` |
+| `POST /api/v1/admin/tenants/{tenantId}/purge` | **super_admin** + **fresh step-up**, `reason` required (10-500); deletes the organization at once whatever its status; **critical** admin audit `organization.purge_requested` (written first; 503 and nothing deleted when it cannot be written) then `organization.purged`; 409 for the system organization. See `organization-deletion.md` |
 | `POST /api/v1/admin/tenants/{tenantId}/suspend`, `/unsuspend` | **ops_admin+** + **step-up**, `reason` required (10-500); **critical** admin audit `organization.suspended` / `organization.unsuspended` plus an entry in the organization's own log without the reason; 409 when already in that state or for the system organization. A suspended organization is refused to every credential (see "Organization suspension" below) |
 | `GET /api/v1/admin/tenants/{tenantId}/sso/{saml,identity-providers,verified-domains,enforcement}` | any admin |
 | `PUT/POST/PATCH/DELETE` on those SSO resources, and `PUT .../sso/enforcement` | **super_admin** + **step-up** (audited). SAML `PUT` and identity-provider `POST`/`PUT` on an organization **with an owner** only store a pending change (202) that an owner must approve; see below |

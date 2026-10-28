@@ -1,0 +1,21 @@
+# Flaky-test quarantine (api/docs/development/ci-cd.md#flaky-test-quarantine).
+#
+# A test listed here is skipped on pull requests and in the merge queue until
+# its `fix_by` date (at most 14 days after `added`); after that it runs again.
+# Every entry names its tracking issue and an owner. Security tests are never
+# quarantined. Changing this file needs the maintainer's `security-ack`.
+# Checked by .github/scripts/quarantine.py check (Workflow Lint).
+#
+# - test: go:github.com/openctemio/openctem/api/tests/integration.TestName
+#   issue: 1234
+#   owner: ingest
+#   added: 2026-10-25
+#   fix_by: 2026-11-01
+#   reason: concurrent writers race on the resighting counter
+# - test: "pw:e2e/specs/19-scan-lifecycle.spec.ts::a single scan: create, edit, run, view the run"
+#   issue: 1235
+#   owner: web-scans
+#   added: 2026-10-25
+#   fix_by: 2026-11-01
+#   reason: the confirm dialog races the run list refresh
+[]

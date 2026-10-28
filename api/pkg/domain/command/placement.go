@@ -78,6 +78,16 @@ const (
 	// scanners honor rule sources (an older sensor would also run the
 	// platform's rules).
 	PlacementRuleSourcesUnsupported = "rule_sources_unsupported"
+	// PlacementEgressUnsupported: the sensor's jobs go through a proxy pool
+	// (its own, or the organization's default) and the sensor did not
+	// report that it can honor one (no proxy support, or not confined), so
+	// it would run them from its own address; scan and retest jobs wait for
+	// a sensor that can. SensorPlacement.Egress names the pool.
+	PlacementEgressUnsupported = "egress_unsupported"
+	// PlacementEgressValidateUnsupported: as PlacementEgressUnsupported for
+	// a validate job: the sensor's validate executor did not report that it
+	// goes through the pool.
+	PlacementEgressValidateUnsupported = "egress_validate_unsupported"
 	// PlacementGrantPrefix prefixes a refusal by the sensor's grant:
 	// "grant_" + the grant dimension (job_types, zones, tools, tier, ...).
 	PlacementGrantPrefix = "grant_"
