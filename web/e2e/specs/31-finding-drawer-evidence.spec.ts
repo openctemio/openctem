@@ -38,61 +38,65 @@ for (const size of [
   { name: 'desktop', width: 1440, height: 900 },
   { name: 'phone', width: 390, height: 844 },
 ]) {
-  test(`the drawer shows the request and the response (${size.name})`, async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 900 })
-    await page.goto('/findings')
-    await page.waitForLoadState('networkidle')
-    const id = await evidenceFindingId(page)
-    test.skip(!id, 'The seeded "E2E evidence 01" finding is missing')
+  test(
+    `the drawer shows the request and the response (${size.name})`,
+    { tag: ['@findings'] },
+    async ({ page }) => {
+      await page.setViewportSize({ width: 1440, height: 900 })
+      await page.goto('/findings')
+      await page.waitForLoadState('networkidle')
+      const id = await evidenceFindingId(page)
+      test.skip(!id, 'The seeded "E2E evidence 01" finding is missing')
 
-    await page.setViewportSize({ width: size.width, height: size.height })
-    // The page reads the hash once, on load: leave first so this is a load.
-    await page.goto('about:blank')
-    await page.goto(`/findings#finding=${id}`)
-    const drawer = page.getByRole('dialog')
-    await expect(drawer).toBeVisible()
+      await page.setViewportSize({ width: size.width, height: size.height })
+      // The page reads the hash once, on load: leave first so this is a load.
+      await page.goto('about:blank')
+      await page.goto(`/findings#finding=${id}`)
+      const drawer = page.getByRole('dialog')
+      await expect(drawer).toBeVisible()
 
-    const items = drawer.getByTestId('evidence-item')
-    await expect(items).toHaveCount(1)
-    const item = items.first()
-    await expect(item.getByText('Response', { exact: true })).toBeVisible()
-    await expect(item.getByText(/^\s*200 OK/)).toBeVisible()
-    await expect(item.getByTestId('evidence-match').first()).toHaveText('7.1.0')
-    // Hostile body is text: the tag shows, nothing runs.
-    await expect(item).toContainText('<script>window.__pwned=1</script>')
-    expect(await page.evaluate(() => (window as { __pwned?: number }).__pwned)).toBeUndefined()
-    // Headers are folded in the drawer; the credential inside arrives masked
-    // (a chip), never as its value.
-    await expect(item.getByTestId('evidence-secret').first()).toBeHidden()
-    await item.getByTestId('evidence-headers').first().locator('summary').click()
-    await expect(item.getByTestId('evidence-secret').first()).toBeVisible()
-    expect(await page.content()).not.toContain(TOKEN)
+      const items = drawer.getByTestId('evidence-item')
+      await expect(items).toHaveCount(1)
+      const item = items.first()
+      await expect(item.getByText('Response', { exact: true })).toBeVisible()
+      await expect(item.getByText(/^\s*200 OK/)).toBeVisible()
+      await expect(item.getByTestId('evidence-match').first()).toHaveText('7.1.0')
+      // Hostile body is text: the tag shows, nothing runs.
+      await expect(item).toContainText('<script>window.__pwned=1</script>')
+      expect(await page.evaluate(() => (window as { __pwned?: number }).__pwned)).toBeUndefined()
+      // Headers are folded in the drawer; the credential inside arrives masked
+      // (a chip), never as its value.
+      await expect(item.getByTestId('evidence-secret').first()).toBeHidden()
+      await item.getByTestId('evidence-headers').first().locator('summary').click()
+      await expect(item.getByTestId('evidence-secret').first()).toBeVisible()
+      expect(await page.content()).not.toContain(TOKEN)
 
-    // Nothing wider than the drawer.
-    const overflow = await drawer.evaluate((el) => el.scrollWidth - el.clientWidth)
-    expect(overflow).toBeLessThanOrEqual(1)
+      // Nothing wider than the drawer.
+      const overflow = await drawer.evaluate((el) => el.scrollWidth - el.clientWidth)
+      expect(overflow).toBeLessThanOrEqual(1)
 
-    await test.info().attach(`drawer-evidence-${size.name}`, {
-      body: await page.screenshot(),
-      contentType: 'image/png',
-    })
+      await test.info().attach(`drawer-evidence-${size.name}`, {
+        body: await page.screenshot(),
+        contentType: 'image/png',
+      })
 
-    await page.addScriptTag({ path: AXE })
-    const axe = (await page.evaluate(async () => {
-      const w = window as unknown as {
-        axe: { run: (ctx: unknown, opts: unknown) => Promise<AxeResult> }
-      }
-      // The evidence band only: the drawer's Properties list has its own
-      // known definition-list findings, tracked apart from this spec.
-      return w.axe.run(
-        { include: [['[role="dialog"] [data-testid="finding-evidence-items"]']] },
-        { resultTypes: ['violations'] }
-      )
-    })) as AxeResult
-    expect(
-      axe.violations
-        .filter((v) => v.impact === 'serious' || v.impact === 'critical')
-        .map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)
-    ).toEqual([])
-  })
+      await page.addScriptTag({ path: AXE })
+      const axe = (await page.evaluate(async () => {
+        const w = window as unknown as {
+          axe: { run: (ctx: unknown, opts: unknown) => Promise<AxeResult> }
+        }
+        // The evidence band only: the drawer's Properties list has its own
+        // known definition-list findings, tracked apart from this spec.
+        return w.axe.run(
+          { include: [['[role="dialog"] [data-testid="finding-evidence-items"]']] },
+          { resultTypes: ['violations'] }
+        )
+      })) as AxeResult
+      expect(
+        axe.violations
+          .filter((v) => v.impact === 'serious' || v.impact === 'critical')
+          .map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)
+      ).toEqual([])
+    }
+  )
 }

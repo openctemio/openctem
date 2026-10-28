@@ -57,6 +57,7 @@ var registry = map[Code]Spec{
 	CodeIntegrationRateLimited:           {http.StatusTooManyRequests, "The service is limiting requests. Wait a minute and test again."},
 	CodeIntegrationUpstreamError:         {http.StatusBadGateway, "The service answered with an error. Try again later."},
 	CodeIntegrationTestFailed:            {http.StatusFailedDependency, "The connection test failed. Check the settings and test again."},
+	CodeIntegrationEmailRelayPolicy:      {http.StatusUnprocessableEntity, "This mail server does not meet the service rules: use port 465, 587 or 2525 with a username, a password and TLS. Sending is stopped until you edit it and test again."},
 
 	// Codes call sites already send (ad hoc before the registry).
 	CodeContentSigningUnavailable: {http.StatusServiceUnavailable, "Content signing is not available right now."},
@@ -80,6 +81,7 @@ const (
 	CodeIntegrationRateLimited           Code = "INTEGRATION_RATE_LIMITED"
 	CodeIntegrationUpstreamError         Code = "INTEGRATION_UPSTREAM_ERROR"
 	CodeIntegrationTestFailed            Code = "INTEGRATION_TEST_FAILED"
+	CodeIntegrationEmailRelayPolicy      Code = "INTEGRATION_EMAIL_RELAY_POLICY"
 
 	CodeContentSigningUnavailable Code = "CONTENT_SIGNING_UNAVAILABLE"
 	CodeContentRefused            Code = "CONTENT_REFUSED"

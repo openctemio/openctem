@@ -93,9 +93,15 @@ flowchart LR
 
 Jobs are created when work is triggered, not when a sensor asks:
 
-- **Single-scanner scan:** `internal/app/scan/trigger.go` builds the payload
-  (`scanner`, `config`, `targets`, run and step ids) and queues one command per
-  chunk of `targets_per_job` targets.
+- **Single-scanner scan** (continuous coverage runs included):
+  `internal/app/scan/trigger.go` builds the payload (`scanner`, `config`,
+  `targets`, run and step ids). A scanner that takes a target list gets one
+  command per chunk of `targets_per_job` targets when that is 2 or more
+  (coverage sets it to the capability's chunk size, e.g. 25 for template
+  scans), so every eligible sensor slot takes a share; `targets_per_job` 1, the
+  default of a new scan, keeps one command with every target. A scanner that
+  reads one target gets one command per target (`unzonedJobPlan`,
+  `internal/app/scan/zones.go`).
 - **Workflow step:** `internal/app/scan/step_plan.go` and
   `internal/app/scanrun/run.go` queue a step's commands when the step starts
   ([scan stages](scan-stages.md), [scan orchestration](scan-orchestration.md#work-distribution-today-and-the-work-pool)).
@@ -108,7 +114,12 @@ Jobs are created when work is triggered, not when a sensor asks:
 Each command records at creation: `tenant_id`, `type`, `priority`
 (`low`/`normal`/`high`/`critical`), `payload`, the routing decision
 (`is_platform_job`, `sensor_id` when pinned, `scan_zone_id`), `host_keys` (the
-per-host politeness keys from `github.com/openctemio/ctis/politeness`),
+per-host politeness keys from `github.com/openctemio/ctis/politeness`; an empty
+list for a passive tool that reaches no target host, such as DNS resolution,
+subdomain discovery, RDAP and ASN lookups, whether it runs as a workflow
+stage or as a single-scanner or coverage command, so it never waits behind
+or holds back the active scans of the same names; custom resolvers make a
+DNS tool active again),
 `dispatch_gate` (what the target gate decided), optional `scheduled_at` (a
 scan window not open yet) and `expires_at`.
 
@@ -304,7 +315,11 @@ candidates of each class.
 organization; within a round the organization with the fewest shared jobs in
 flight first, then class and age; each organization's
 `platform_scans_concurrent` is enforced inside the claim under a
-per-organization lock.
+per-organization lock. The read is bounded by the organizations with pending
+shared work (at most 200 ranked, five jobs each per round, through
+`idx_commands_shared_pending` and `idx_commands_shared_inflight`), never by
+the depth of their queues or by finished jobs
+([sensors.md](sensors.md#the-shared-claim-path)).
 
 **Claim by id** (`POST /commands/{id}/claim`, `TransitionCommand`): the same
 predicates and holds for one command; a replay by the holder answers the
@@ -500,12 +515,14 @@ change and this page updated when it lands:
   work for shared sensors, so they rely on the 5-minute safety poll. Planned:
   wake shared streams and report shared pending work.
 - **Claim cost.** The candidate read evaluates and sorts every pending row of
-  the organization (and every shared job on the shared path) before taking the
+  the organization before taking the
   first 1000; measured about 5 ms at 1k, 45 ms at 10k and 370 ms at 100k
   pending rows. The round-robin across runs holds only inside that window.
-  Planned: the [work pool](../rfcs/RFC-090-work-pool.md) (pending-only lanes and
-  items with an index-ordered, bounded claim), a queue version so a claim with
-  nothing new skips the database, and a bound on the shared candidate read.
+  The shared candidate read is bounded already (per organization, through
+  `idx_commands_shared_pending`). Planned: the
+  [work pool](../rfcs/RFC-090-work-pool.md) (pending-only lanes and items with
+  an index-ordered, bounded claim) and a queue version so a claim with nothing
+  new skips the database.
 - **Lease epoch** becomes mandatory on every request a holder makes (start,
   complete, fail, release, logs, results), and the unused per-job token
   columns are removed.

@@ -26,7 +26,7 @@ func TestProvisionNotifiesOtherAdministrators(t *testing.T) {
 	n := &fakeRosterNotifier{}
 	b.svc.SetRosterChangeNotifier(n)
 
-	if _, _, err := b.svc.Provision(context.Background(), b.admin, ProvisionInput{
+	if _, err := b.svc.Provision(context.Background(), b.admin, ProvisionInput{
 		Email: "new@acme.io", Name: "New", Role: admin.AdminRoleSuperAdmin,
 	}, client); err != nil {
 		t.Fatalf("provision: %v", err)
@@ -75,9 +75,39 @@ func TestResetCredentialsNotifies(t *testing.T) {
 // Without a notifier the change still succeeds (the WARN line is the alert).
 func TestRosterNoticeWithoutNotifier(t *testing.T) {
 	b := newBGHarness(t)
-	if _, _, err := b.svc.Provision(context.Background(), b.admin, ProvisionInput{
+	if _, err := b.svc.Provision(context.Background(), b.admin, ProvisionInput{
 		Email: "new@acme.io", Name: "New", Role: admin.AdminRoleReadonly,
 	}, client); err != nil {
 		t.Fatalf("provision without notifier: %v", err)
+	}
+}
+
+// The first console sign-in of a new administrator is announced to every other
+// active administrator, so an invited account nobody expected to be used is
+// noticed at once.
+func TestFirstSignInIsAnnounced(t *testing.T) {
+	b := newBGHarness(t)
+	b.addAdmin(t, "second@acme.io", admin.AdminRoleSuperAdmin, false)
+	n := &fakeRosterNotifier{}
+	b.svc.SetRosterChangeNotifier(n)
+
+	b.enroll(t)
+
+	var first []RosterChange
+	for _, c := range n.changes {
+		if c.Kind == RosterAdminFirstSignIn {
+			first = append(first, c)
+		}
+	}
+	if len(first) != 1 {
+		t.Fatalf("want one first-sign-in notice, got %+v", n.changes)
+	}
+	if first[0].ActorEmail != b.admin.Email() || !strings.Contains(first[0].Summary, "first time") {
+		t.Fatalf("notice must name the administrator: %+v", first[0])
+	}
+	for _, r := range first[0].Recipients {
+		if r == b.admin.Email() {
+			t.Fatal("the new administrator is not a recipient of their own notice")
+		}
 	}
 }

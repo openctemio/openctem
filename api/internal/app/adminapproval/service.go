@@ -135,6 +135,13 @@ func eligible(a *admin.AdminUser) bool {
 	return a != nil && a.IsActive() && a.Role() == admin.AdminRoleSuperAdmin && !a.IsBreakGlass()
 }
 
+// Active reports whether four-eyes approvals are in force for actor (another
+// super admin can approve). It consumes nothing.
+func (s *Service) Active(ctx context.Context, actor *admin.AdminUser) (bool, error) {
+	st, err := s.Status(ctx, actor)
+	return st.Active, err
+}
+
 // Status returns the four-eyes state for actor.
 func (s *Service) Status(ctx context.Context, actor *admin.AdminUser) (Status, error) {
 	active, err := s.admins.ListActive(ctx)
@@ -361,6 +368,9 @@ func (s *Service) tell(ctx context.Context, actor *admin.AdminUser, kind, summar
 // label names the administrator or organization a target points at, read on
 // the server: a requester cannot describe their own target to the approver.
 func (s *Service) label(ctx context.Context, target string) string {
+	if strings.HasPrefix(target, `{"provider"`) {
+		return admin.PlatformAIDestinationLabel(target)
+	}
 	id, ok := admin.TargetID(target)
 	if !ok {
 		return ""
@@ -399,6 +409,8 @@ func describe(a admin.ApprovalAction) string {
 		return "re-sign an organization's audit chain"
 	case admin.ApprovalOrgPurge:
 		return "delete an organization now"
+	case admin.ApprovalPlatformAIDestination:
+		return "change where platform AI sends data (provider, server address or API key)"
 	}
 	return string(a)
 }
