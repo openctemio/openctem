@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
+	"github.com/openctemio/openctem/api/pkg/domain/platformauthz"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -24,21 +25,29 @@ const (
 
 // Elevation errors.
 var (
-	ErrElevationRole     = fmt.Errorf("%w: the role must be ops_admin or super_admin and not above your own", shared.ErrValidation)
+	ErrElevationRole     = fmt.Errorf("%w: elevate as one of your platform roles (or ops_admin / super_admin), never above what you hold", shared.ErrValidation)
 	ErrElevationDuration = fmt.Errorf("%w: elevate for 15 to 60 minutes", shared.ErrValidation)
 	ErrAuditUnavailable  = errors.New("the administrators' audit log cannot be written")
 	ErrElevationReason   = fmt.Errorf("%w: give a reason of 10 to 500 characters", shared.ErrValidation)
 )
 
-// Elevate sets the session's acting role until now+duration and returns the
-// end time.
-func (s *Service) Elevate(ctx context.Context, a *admin.AdminUser, sess *admin.Session, role admin.AdminRole, duration time.Duration, reason string, client ClientInfo) (time.Time, error) {
+// Elevate makes the session act as one platform role (RFC-134) until
+// now+duration and returns the end time. name is a role key, or the tier
+// names super_admin / ops_admin (the owner and admin roles). The role's
+// permissions must all be held by the administrator: never above their own.
+func (s *Service) Elevate(ctx context.Context, a *admin.AdminUser, sess *admin.Session, name string, duration time.Duration, reason string, client ClientInfo) (time.Time, error) {
 	if a == nil || sess == nil || !sess.MFAVerified || sess.AdminID != a.ID() {
 		return time.Time{}, admin.ErrSessionNotFound
 	}
-	if role == admin.AdminRoleReadonly || !admin.RoleAtMost(role, a.MaxRole()) {
+	target, ok := platformauthz.ElevationTarget(name)
+	held := a.PlatformRoles()
+	if len(held) == 0 {
+		held = []platformauthz.RoleKey{platformauthz.BaseRoleFor(platformauthz.Tier(a.MaxRole()))}
+	}
+	if !ok || !platformauthz.CanElevateTo(held, target) {
 		return time.Time{}, ErrElevationRole
 	}
+	role := admin.AdminRole(target)
 	if duration < admin.ElevationMin || duration > admin.ElevationMax {
 		return time.Time{}, ErrElevationDuration
 	}

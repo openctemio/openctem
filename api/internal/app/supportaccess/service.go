@@ -19,6 +19,7 @@ import (
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/platformauthz"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/ssochange"
 	dom "github.com/openctemio/openctem/api/pkg/domain/supportaccess"
@@ -96,10 +97,26 @@ func NewService(repo dom.Repository, reads dom.ReadRepository, admins Admins, te
 // administrator: never a users row, so actor_id stays empty.
 func supportActor(email string) string { return "support:" + email }
 
-// canSupport reports whether an administrator may be named in, and use, a grant.
+// canBeNamed reports whether an organization owner may name an administrator
+// in a grant: any active, unlocked administrator. Whether that administrator
+// may use it is decided on the console (canSupport), where platform roles are
+// read; the organization side never reads them (RFC-134).
+func canBeNamed(a *admin.AdminUser) bool {
+	return a != nil && a.IsActive() && !a.IsLocked()
+}
+
+// canSupport reports whether a console administrator may use a grant: their
+// platform roles hold platform.support.access (elevated or not: the grant and
+// its step-up are the gate for each session).
 func canSupport(a *admin.AdminUser) bool {
-	return a != nil && a.IsActive() && !a.IsLocked() &&
-		(a.Role() == admin.AdminRoleSuperAdmin || a.Role() == admin.AdminRoleOpsAdmin)
+	if !canBeNamed(a) {
+		return false
+	}
+	roles := a.PlatformRoles()
+	if len(roles) == 0 {
+		roles = []platformauthz.RoleKey{platformauthz.BaseRoleFor(platformauthz.Tier(a.Role()))}
+	}
+	return platformauthz.Held(roles).Has(platformauthz.SupportAccess)
 }
 
 // ---------------------------------------------------------------------------
@@ -155,7 +172,7 @@ func (s *Service) CreateGrant(ctx context.Context, in CreateGrantInput, client C
 		}
 		return nil, fmt.Errorf("find support administrator: %w", err)
 	}
-	if !canSupport(a) {
+	if !canBeNamed(a) {
 		return nil, dom.ErrNotSupportAdmin
 	}
 	now := s.now()

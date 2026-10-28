@@ -1044,23 +1044,45 @@ and the console echoes the token it received in the sign-in and validate
 responses and keeps in memory). There are **no admin API keys**: an
 `X-Admin-API-Key` or `Authorization: Bearer` header authenticates nothing here,
 so every admin action has passed TOTP. The session resolves to an
-`admin_users` row with a platform role: `super_admin` > `ops_admin` >
-`readonly`. The tenant JWT never authenticates these routes, and the admin
-session never reaches tenant routes.
+`admin_users` row and the platform roles it holds. The tenant JWT never
+authenticates these routes, and the admin session never reaches tenant routes.
 
-Authorization is enforced at the **route layer** in
-`internal/infra/http/routes/admin.go` via `AdminAuthMiddleware.RequireRole(...)`
-— not in the handlers.
+**Platform roles (RFC-134).** Authorization is by platform permission, a
+catalogue of `platform.*` keys in `pkg/domain/platformauthz`, held through
+platform roles stored in `platform_roles`, `platform_role_permissions` and
+`platform_role_assignments` (console database role only; no foreign key to the
+tenant role tables; the tenant catalogue may never use the `platform.` prefix,
+enforced by CHECK constraints on both sides). Built-in roles: `platform_owner`
+(everything), `platform_admin`, `platform_viewer` (the three base roles, one
+per administrator, kept in step with `admin_users.role` = `super_admin`,
+`ops_admin`, `readonly` by a trigger), and the additional roles `operator`,
+`support`, `security_auditor` and `billing`. The role-to-permission matrix is
+in `platformauthz.BuiltinRoles`.
 
-**Acting role.** With `ADMIN_ELEVATION=required` (default) every request acts
-as `readonly` unless the console session holds a live elevation
-(`POST /api/v1/admin/auth/elevate`, a **fresh** step-up, 15-60 minutes, a role
-no higher than the administrator's own; `DELETE` ends it). Elevation never
+Authorization is enforced at the **route layer**: every console route is listed
+with its permission in `adminRoutePermissions`
+(`internal/infra/http/routes/admin_permissions.go`), and the console route
+registration adds `AdminAuthMiddleware.RequirePlatform(permission)` to it. A
+console route that is not listed panics at registration, so nothing is served
+unclassified (deny by default). `TestLegacyTiersKeepTheirRoutes` pins the three
+base roles to the tiers' previous matrix; `TestPlatformRoleRouteMatrix` checks
+every built-in role against every route. Handlers check a permission only for
+part of a response or request (member e-mails `platform.tenants.members.read`,
+owner recovery `platform.tenants.owner_recovery`).
+
+**Acting permissions.** With `ADMIN_ELEVATION=required` (default) a request
+acts with the baseline (read) permissions of the roles held unless the console
+session holds a live elevation (`POST /api/v1/admin/auth/elevate {role}`, a
+**fresh** step-up, 15-60 minutes, one platform role whose permissions are all
+held, or the tier names `ops_admin` / `super_admin`; `DELETE` ends it); it then
+also acts with that role's permissions. `GET /admin/auth/validate` returns
+`roles`, `permissions` (acting) and `max_permissions`. Elevation never
 rides a step-up window another action opened: it takes a fresh authenticator
 code or a security-key confirmation given within the last minute, and that
 proof then opens the five-minute step-up window for the protected actions that
-follow. Role checks below use that
-acting role, never the stored one.
+follow. The role columns below name the base role that holds a route's
+permission (super_admin = platform owner, ops_admin = platform admin, any
+admin = every role).
 
 **Step-up on protected actions.** Every identity, privilege and platform-trust
 change also takes the route-level step-up (`middleware.RequireAdminStepUp`): a

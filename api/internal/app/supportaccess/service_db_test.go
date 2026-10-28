@@ -18,6 +18,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
+	"github.com/openctemio/openctem/api/pkg/domain/platformauthz"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/ssochange"
 	dom "github.com/openctemio/openctem/api/pkg/domain/supportaccess"
@@ -188,10 +189,9 @@ func TestSupportAccessGrantRules_DB(t *testing.T) {
 		in   supportaccess.CreateGrantInput
 		want error
 	}{
-		"unknown administrator":   {in("nobody@example.com", 4, "a valid reason here"), dom.ErrNotSupportAdmin},
-		"read-only administrator": {in(f.readonly.Email(), 4, "a valid reason here"), dom.ErrNotSupportAdmin},
-		"over 72 hours":           {in(f.support.Email(), 73, "a valid reason here"), dom.ErrInvalidDuration},
-		"reason too short":        {in(f.support.Email(), 4, "short"), shared.ErrValidation},
+		"unknown administrator": {in("nobody@example.com", 4, "a valid reason here"), dom.ErrNotSupportAdmin},
+		"over 72 hours":         {in(f.support.Email(), 73, "a valid reason here"), dom.ErrInvalidDuration},
+		"reason too short":      {in(f.support.Email(), 4, "short"), shared.ErrValidation},
 	} {
 		if _, err := f.svc.CreateGrant(ctx, c.in, client); !errors.Is(err, c.want) {
 			t.Errorf("%s: %v, want %v", name, err, c.want)
@@ -580,5 +580,22 @@ func TestSupportSessionLifecycle_DB(t *testing.T) {
 	}
 	if n, _ := f.svc.EndStaleSessions(ctx); n != 0 {
 		t.Fatalf("a recently used session ended: %d", n)
+	}
+}
+
+// An owner may name any active administrator (the organization side never
+// reads platform roles, RFC-134), but one whose roles lack support access
+// cannot use the grant; holding the support role, the same administrator can.
+func TestSupportAccessNamingVersusUse_DB(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	console := shared.NewID()
+	ro := f.grant(t, f.readonly, []string{dom.ScopeFindings}, 2)
+	if _, _, err := f.svc.StartSession(ctx, f.readonly, console, ro.ID, "", client); !errors.Is(err, dom.ErrGrantRequired) {
+		t.Fatalf("read-only administrator used a grant: %v", err)
+	}
+	f.readonly.SetPlatformAccess([]platformauthz.RoleKey{platformauthz.RoleViewer, platformauthz.RoleSupport}, nil)
+	if _, _, err := f.svc.StartSession(ctx, f.readonly, console, ro.ID, "Case 77 sign-in", client); err != nil {
+		t.Fatalf("read-only administrator holding the support role: %v", err)
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
+	"github.com/openctemio/openctem/api/pkg/domain/platformauthz"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/user"
@@ -184,10 +185,9 @@ type AdminOrgUserListResponse struct {
 }
 
 // adminSeesPersonalData reports whether the console caller may see people's
-// names and emails: every role but readonly, which sees counts.
+// names and emails (platform.tenants.members.read); everyone else sees counts.
 func adminSeesPersonalData(r *http.Request) bool {
-	role := middleware.GetAdminRole(r.Context())
-	return role != "" && role != string(admin.AdminRoleReadonly)
+	return middleware.GetAdminUser(r.Context()).Can(platformauthz.TenantsMembersRead)
 }
 
 // AdminSSOEnforcementRequest turns SSO enforcement on or off for an organization.
@@ -502,8 +502,8 @@ func (h *AdminOrganizationHandler) CreateUser(w http.ResponseWriter, r *http.Req
 		// Owner recovery overrides a suspended owner's hold on the
 		// organization: super admin only, and audited under its own action.
 		middleware.SetAuditAction(r.Context(), "organization.owner_recovery", true)
-		if middleware.GetAdminRole(r.Context()) != string(admin.AdminRoleSuperAdmin) {
-			apierror.Forbidden("Owner recovery requires the super admin role.").WriteJSON(w)
+		if !middleware.GetAdminUser(r.Context()).Can(platformauthz.TenantsOwnerRecovery) {
+			apierror.Forbidden("Owner recovery requires the platform owner role.").WriteJSON(w)
 			return
 		}
 		if n := len([]rune(strings.TrimSpace(req.Reason))); n < ownerRecoveryReasonMin || n > ownerRecoveryReasonMax {

@@ -13,6 +13,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
+	"github.com/openctemio/openctem/api/pkg/domain/platformauthz"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -297,12 +298,13 @@ func (h *AdminAuditHandler) VerifyChain(w http.ResponseWriter, r *http.Request) 
 // user agent and request body of audit rows. Those carry administrators'
 // addresses and the reasons typed for actions on customer accounts, so only an
 // operations administrator or above gets them; a read-only administrator sees
-// the action, the actor, the time and the result. It keys on the
-// administrator's own role: an operations administrator who has not elevated
-// still reads them, a read-only account never does.
+// the action, the actor, the time and the result. It keys on the roles held,
+// elevated or not: a holder of account support (platform.users.read) or of
+// the administrator roster (platform.admins.read, the security auditor) reads
+// them; a read-only account never does.
 func canSeeAuditDetail(r *http.Request) bool {
 	a := middleware.GetAdminUser(r.Context())
-	return a != nil && admin.RoleAtMost(admin.AdminRoleOpsAdmin, a.MaxRole())
+	return a != nil && (a.HeldPermissions().Has(platformauthz.UsersRead) || a.HeldPermissions().Has(platformauthz.AdminsRead))
 }
 
 func toAdminAuditLogResponse(log *admin.AuditLog, detail bool) AdminAuditLogResponse {

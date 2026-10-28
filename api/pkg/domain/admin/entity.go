@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/platformauthz"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -61,31 +62,6 @@ func (r AdminRole) DisplayName() string {
 	}
 }
 
-// CanManageAdmins checks if this role can manage other admin users.
-func (r AdminRole) CanManageAdmins() bool {
-	return r == AdminRoleSuperAdmin
-}
-
-// CanManageSensors checks if this role can manage platform sensors.
-func (r AdminRole) CanManageSensors() bool {
-	return r == AdminRoleSuperAdmin || r == AdminRoleOpsAdmin
-}
-
-// CanManageTokens checks if this role can manage bootstrap tokens.
-func (r AdminRole) CanManageTokens() bool {
-	return r == AdminRoleSuperAdmin || r == AdminRoleOpsAdmin
-}
-
-// CanViewAuditLogs checks if this role can view audit logs.
-func (r AdminRole) CanViewAuditLogs() bool {
-	return r == AdminRoleSuperAdmin || r == AdminRoleOpsAdmin || r == AdminRoleReadonly
-}
-
-// CanCancelJobs checks if this role can cancel platform jobs.
-func (r AdminRole) CanCancelJobs() bool {
-	return r == AdminRoleSuperAdmin || r == AdminRoleOpsAdmin
-}
-
 // =============================================================================
 // Admin User Entity
 // =============================================================================
@@ -100,7 +76,14 @@ type AdminUser struct {
 	name  string
 	role  AdminRole
 	// acting is the role this request acts as (ActAs); empty = role.
-	acting     AdminRole
+	acting AdminRole
+	// roles, held and perms are the platform roles the administrator holds,
+	// what they grant, and what this request acts with (SetPlatformAccess,
+	// RFC-134). Authorization reads perms; nil means nothing.
+	roles      []platformauthz.RoleKey
+	held       platformauthz.Set
+	perms      platformauthz.Set
+	accessSet  bool
 	isActive   bool
 	userID     *shared.ID // the linked users account the administrator signs in with
 	lastUsedAt *time.Time
@@ -315,6 +298,55 @@ func RoleAtMost(r, max AdminRole) bool { return r.IsValid() && roleRank(r) <= ro
 // IsActive returns whether the admin user is active.
 func (a *AdminUser) IsActive() bool { return a.isActive }
 
+// SetPlatformAccess records the platform roles the administrator holds and
+// the permissions this request acts with. Not persisted.
+func (a *AdminUser) SetPlatformAccess(roles []platformauthz.RoleKey, acting platformauthz.Set) {
+	a.roles = append([]platformauthz.RoleKey(nil), roles...)
+	a.held = platformauthz.Held(roles)
+	a.perms = acting
+	a.accessSet = true
+}
+
+// The console's authentication always records the platform access. An
+// administrator loaded without it (a service call outside a console request)
+// holds the base role of its tier and acts at its acting tier, as the tiers
+// did before platform roles.
+func (a *AdminUser) heldSet() platformauthz.Set {
+	if a.accessSet {
+		return a.held
+	}
+	return platformauthz.RolePermissions(platformauthz.BaseRoleFor(platformauthz.Tier(a.role)))
+}
+
+func (a *AdminUser) actingSet() platformauthz.Set {
+	if a.accessSet {
+		return a.perms
+	}
+	return platformauthz.RolePermissions(platformauthz.BaseRoleFor(platformauthz.Tier(a.EffectiveRole())))
+}
+
+// Can reports whether this request may use platform permission p: the
+// administrator is active and acts with it now (elevation included).
+func (a *AdminUser) Can(p platformauthz.Permission) bool {
+	return a != nil && a.isActive && a.actingSet().Has(p)
+}
+
+// Permissions is what this request acts with.
+func (a *AdminUser) Permissions() platformauthz.Set { return a.actingSet() }
+
+// HeldPermissions is everything the administrator's roles grant (the most an
+// elevation can reach).
+func (a *AdminUser) HeldPermissions() platformauthz.Set { return a.heldSet() }
+
+// PlatformRoles is the platform roles the administrator holds (the tier's
+// base role when the access was not recorded).
+func (a *AdminUser) PlatformRoles() []platformauthz.RoleKey {
+	if a.accessSet {
+		return a.roles
+	}
+	return []platformauthz.RoleKey{platformauthz.BaseRoleFor(platformauthz.Tier(a.role))}
+}
+
 // UserID returns the linked users account, or nil for a row that was never
 // linked (such rows were deactivated by migration 000227).
 func (a *AdminUser) UserID() *shared.ID { return a.userID }
@@ -422,48 +454,6 @@ func (a *AdminUser) LastFailedLoginAt() *time.Time { return a.lastFailedLoginAt 
 
 // LastFailedLoginIP returns the IP of the last failed login attempt.
 func (a *AdminUser) LastFailedLoginIP() string { return a.lastFailedLoginIP }
-
-// =============================================================================
-// Authorization Methods
-// =============================================================================
-
-// HasPermission checks if the admin has permission for a specific action.
-func (a *AdminUser) HasPermission(action string) bool {
-	if !a.isActive {
-		return false
-	}
-
-	switch action {
-	// Admin management
-	case "admin:create", "admin:update", "admin:delete", "admin:list":
-		return a.EffectiveRole().CanManageAdmins()
-
-	// Sensor management
-	case "sensor:create", "sensor:update", "sensor:delete", "sensor:disable", "sensor:enable":
-		return a.EffectiveRole().CanManageSensors()
-	case "sensor:list", "sensor:get", "sensor:stats":
-		return true // All roles can view
-
-	// Token management
-	case "token:create", "token:revoke", "token:delete":
-		return a.EffectiveRole().CanManageTokens()
-	case "token:list", "token:get":
-		return true // All roles can view
-
-	// Job management
-	case "job:cancel":
-		return a.EffectiveRole().CanCancelJobs()
-	case "job:list", "job:get", "job:stats":
-		return true // All roles can view
-
-	// Audit logs
-	case "audit:list", "audit:get":
-		return a.EffectiveRole().CanViewAuditLogs()
-
-	default:
-		return false
-	}
-}
 
 // =============================================================================
 // State Mutation Methods

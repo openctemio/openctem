@@ -430,7 +430,8 @@ func (h *AdminConsoleHandler) Logout(w http.ResponseWriter, r *http.Request) {
 
 // AdminElevateRequest elevates the console session for a while.
 type AdminElevateRequest struct {
-	// Role is ops_admin or super_admin, not above the administrator's own.
+	// Role is a platform role key (RFC-134), or ops_admin / super_admin; never
+	// above what the administrator holds.
 	Role string `json:"role"`
 	// Minutes is 15 to 60.
 	Minutes int `json:"minutes"`
@@ -462,7 +463,7 @@ func (h *AdminConsoleHandler) Elevate(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("invalid request body").WriteJSON(w)
 		return
 	}
-	until, err := h.svc.Elevate(r.Context(), actor, middleware.GetAdminSession(r.Context()), admin.AdminRole(req.Role),
+	until, err := h.svc.Elevate(r.Context(), actor, middleware.GetAdminSession(r.Context()), req.Role,
 		time.Duration(req.Minutes)*time.Minute, req.Reason, clientInfo(r))
 	if err != nil {
 		switch {

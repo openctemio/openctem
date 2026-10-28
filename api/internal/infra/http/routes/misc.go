@@ -11,6 +11,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/websocket"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/api/pkg/domain/platformauthz"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -107,7 +108,7 @@ func registerBrandRoutes(router Router, h *handler.BrandHandler) {
 //     administrators with a verified console session (consoleAuth).
 //
 // Outside production /docs and /openapi.yaml stay public for development.
-func registerDocsRoutes(router Router, h *handler.DocsHandler, production bool, authMiddleware, consoleAuth Middleware) {
+func registerDocsRoutes(router Router, h *handler.DocsHandler, production bool, authMiddleware, consoleAuth Middleware, consoleGuard func(platformauthz.Permission) Middleware) {
 	if production {
 		router.GET("/openapi.yaml", h.ServeOpenAPISpec, authMiddleware)
 	} else {
@@ -115,8 +116,18 @@ func registerDocsRoutes(router Router, h *handler.DocsHandler, production bool, 
 		router.GET("/docs", h.ServeDocsUI)
 	}
 	if consoleAuth != nil {
-		router.GET("/api/v1/admin/openapi.yaml", h.ServeOpenAPISpec, consoleAuth)
-		router.GET("/api/v1/admin/docs", h.ServeConsoleDocsUI, consoleAuth)
+		// Console routes, so classified in adminRoutePermissions like the
+		// rest (the guard after the session check).
+		for _, rt := range []struct {
+			path string
+			h    http.HandlerFunc
+		}{{"/api/v1/admin/openapi.yaml", h.ServeOpenAPISpec}, {"/api/v1/admin/docs", h.ServeConsoleDocsUI}} {
+			mws := []Middleware{consoleAuth}
+			if p, ok := adminRoutePermission(http.MethodGet, rt.path); ok && consoleGuard != nil {
+				mws = append(mws, consoleGuard(p))
+			}
+			router.GET(rt.path, rt.h, mws...)
+		}
 	}
 }
 

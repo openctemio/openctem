@@ -44,6 +44,16 @@ type ValidateResponse struct {
 	MaxRole string `json:"max_role,omitempty"`
 	// ElevatedUntil is when the session's elevation ends (absent: not elevated).
 	ElevatedUntil *time.Time `json:"elevated_until,omitempty"`
+	// ElevatedAs is the platform role the session acts as (absent: not
+	// elevated).
+	ElevatedAs string `json:"elevated_as,omitempty"`
+	// Roles are the platform roles the administrator holds (RFC-134).
+	Roles []string `json:"roles"`
+	// Permissions is what the session acts with now; MaxPermissions what the
+	// roles grant (the most an elevation reaches). The console hides what
+	// Permissions lacks; the API decides on its own.
+	Permissions    []string `json:"permissions"`
+	MaxPermissions []string `json:"max_permissions"`
 	// CSRFToken is the console session's CSRF token, for the console to echo
 	// in X-CSRF-Token. Returned only by the sign-in steps that open a session
 	// and by validate (the session's own cookie request), never in a readable
@@ -67,17 +77,24 @@ func (h *AdminAuthHandler) Validate(w http.ResponseWriter, r *http.Request) {
 		"role", adminUser.EffectiveRole())
 
 	response := ValidateResponse{
-		ID:           adminUser.ID().String(),
-		Email:        adminUser.Email(),
-		Name:         adminUser.Name(),
-		Role:         string(adminUser.EffectiveRole()),
-		MaxRole:      string(adminUser.MaxRole()),
-		IsBreakGlass: adminUser.IsBreakGlass(),
+		ID:             adminUser.ID().String(),
+		Email:          adminUser.Email(),
+		Name:           adminUser.Name(),
+		Role:           string(adminUser.EffectiveRole()),
+		MaxRole:        string(adminUser.MaxRole()),
+		IsBreakGlass:   adminUser.IsBreakGlass(),
+		Roles:          []string{},
+		Permissions:    adminUser.Permissions().Sorted(),
+		MaxPermissions: adminUser.HeldPermissions().Sorted(),
+	}
+	for _, k := range adminUser.PlatformRoles() {
+		response.Roles = append(response.Roles, string(k))
 	}
 	if sess := middleware.GetAdminSession(r.Context()); sess != nil {
 		response.AuthMethod = sess.AuthMethod
-		if sess.ElevatedUntil != nil && time.Now().Before(*sess.ElevatedUntil) && adminUser.EffectiveRole() == sess.ElevatedRole {
+		if as := sess.ElevatedAs(time.Now()); as != "" {
 			response.ElevatedUntil = sess.ElevatedUntil
+			response.ElevatedAs = string(as)
 		}
 		response.PasswordChangeRequired = adminUser.PasswordChangeRequired() && sess.AuthMethod == admin.AuthMethodPassword
 		response.FactorEnrollmentRequired = sess.EnrollmentRequired

@@ -15,6 +15,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
+	"github.com/openctemio/openctem/api/pkg/domain/platformauthz"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -29,9 +30,11 @@ const (
 	platformUserReasonMax = 500
 )
 
-// adminIsSuper reports whether the console caller is a super admin.
+// adminIsSuper reports whether the console caller may see platform
+// administrators' own accounts in the directory: it reads the administrator
+// roster (platform.admins.read).
 func adminIsSuper(r *http.Request) bool {
-	return middleware.GetAdminRole(r.Context()) == string(admin.AdminRoleSuperAdmin)
+	return middleware.GetAdminUser(r.Context()).Can(platformauthz.AdminsRead)
 }
 
 // PlatformUserDirectoryReader reads the cross-organization user directory.

@@ -176,6 +176,9 @@ func TestLeastPrivilegeRoles(t *testing.T) {
 		`CREATE TABLE platform_identity_provider (id int PRIMARY KEY)`,
 		`CREATE TABLE admin_idp_login_states (state_hash text PRIMARY KEY)`,
 		`CREATE TABLE admin_approvals (id bigserial PRIMARY KEY)`,
+		`CREATE TABLE platform_roles (id bigserial PRIMARY KEY)`,
+		`CREATE TABLE platform_role_permissions (role_id bigint)`,
+		`CREATE TABLE platform_role_assignments (admin_id bigint)`,
 		`CREATE TABLE users (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text)`,
 		`CREATE TABLE tenant_members (user_id uuid)`,
 	} {
@@ -202,6 +205,10 @@ func TestLeastPrivilegeRoles(t *testing.T) {
 		`INSERT INTO admin_idp_login_states VALUES ('x')`,
 		`INSERT INTO admin_approvals DEFAULT VALUES`,
 		`SELECT count(*) FROM admin_approvals`,
+		`SELECT count(*) FROM platform_roles`,
+		`SELECT count(*) FROM platform_role_permissions`,
+		`SELECT count(*) FROM platform_role_assignments`,
+		`INSERT INTO platform_role_assignments VALUES (1)`,
 	} {
 		if _, err := app.ExecContext(ctx, q); err == nil {
 			t.Errorf("app role was allowed on the console's tables: %s", q)
@@ -214,6 +221,9 @@ func TestLeastPrivilegeRoles(t *testing.T) {
 	exec1(ctx, t, adm, `INSERT INTO platform_identity_provider VALUES (1)`)
 	exec1(ctx, t, adm, `INSERT INTO admin_idp_login_states VALUES ('x')`)
 	exec1(ctx, t, adm, `INSERT INTO admin_approvals DEFAULT VALUES`)
+	exec1(ctx, t, adm, `INSERT INTO platform_roles DEFAULT VALUES`)
+	exec1(ctx, t, adm, `INSERT INTO platform_role_assignments VALUES (1)`)
+	exec1(ctx, t, adm, `SELECT count(*) FROM platform_role_permissions`)
 	exec1(ctx, t, adm, `INSERT INTO admin_audit_logs (action) VALUES ('console')`)
 	exec1(ctx, t, adm, `SELECT count(*) FROM admin_audit_logs`)
 	exec1(ctx, t, adm, `SELECT count(*) FROM admin_audit_chain_anchors`)
