@@ -165,7 +165,7 @@ export function FindingProvenanceSection({ finding }: { finding: FindingDetail }
           </DetailField>
         )}
         {p.runs.length > 0 && (
-          <DetailField label={t('findings.provenance.recentRuns', 'Recent pipelines')} full>
+          <DetailField label={t('findings.provenance.recentRuns', 'Recent CI runs')} full>
             <ul className="space-y-1">
               {p.runs.map((r) => (
                 <li key={r.id} className="flex flex-wrap items-center gap-x-1.5">
