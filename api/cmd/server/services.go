@@ -259,6 +259,46 @@ func (v validationSensorAvailability) HasRetestTemplatesSensor(ctx context.Conte
 	return len(sensors) > 0, nil
 }
 
+// RetestSensors lists the tenant's online sensors, with capacity, that have
+// every capability, with the template release each reports: a template
+// retest is addressed to one that has the finding's template.
+func (v validationSensorAvailability) RetestSensors(ctx context.Context, tenantID shared.ID, capabilities []string) ([]retestapp.SensorCandidate, error) {
+	sensors, err := v.sensors.FindAvailableWithCapacity(ctx, tenantID, capabilities, "")
+	if err != nil {
+		return nil, err
+	}
+	return retestapp.CandidatesOf(sensors), nil
+}
+
+// HasToolSensor reports whether an online sensor of the tenant, with
+// capacity, runs the tool (the fingerprint tool of a version re-check).
+func (v validationSensorAvailability) HasToolSensor(ctx context.Context, tenantID shared.ID, tool string) (bool, error) {
+	sensors, err := v.sensors.FindAvailableWithCapacity(ctx, tenantID, nil, tool)
+	if err != nil {
+		return false, err
+	}
+	return len(sensors) > 0, nil
+}
+
+// retestFingerprinter starts the fingerprint scan of a version re-check as an
+// ad-hoc quick scan of one target with one tool, so every scan target gate
+// (validation, act scope, tier, ownership) applies.
+type retestFingerprinter struct {
+	scans *scan.Service
+}
+
+func (f retestFingerprinter) StartFingerprint(ctx context.Context, tenantID shared.ID, tool, target string, requestedBy *shared.ID) (shared.ID, error) {
+	in := scan.QuickScanInput{TenantID: tenantID.String(), Targets: []string{target}, ScannerName: tool, Tags: []string{"retest"}}
+	if requestedBy != nil {
+		in.CreatedBy = requestedBy.String()
+	}
+	res, err := f.scans.QuickScan(ctx, in)
+	if err != nil {
+		return shared.ID{}, err
+	}
+	return shared.IDFromString(res.ScanRunID)
+}
+
 // RetestTools lists the tools whose findings an online sensor of the tenant,
 // with capacity, can re-check now (validation.RetestToolsOf over their
 // capabilities).
@@ -351,7 +391,7 @@ func httpDataScopeCaller(ctx context.Context) datascope.Caller {
 		UserID:  middleware.GetUserID(ctx),
 		IsAdmin: middleware.IsAdmin(ctx),
 		IsOwner: middleware.IsOwner(ctx),
-		APIKey:  middleware.IsDelegatedCredential(ctx),
+		APIKey:  middleware.ReadsOnOwnScope(ctx),
 	}
 }
 
@@ -669,6 +709,8 @@ type Services struct {
 	CertMonitor  *certmonitorapp.Service
 	// ActiveGate decides what an active scan may touch (RFC-036 §6.3).
 	ActiveGate *easmapp.ActiveGate
+	// AssetGroupRules evaluates rule groups after asset changes (debounced).
+	AssetGroupRules *asset.GroupRuleScheduler
 	// ScopeJoin confirms discovered names a permanent scope target or seed
 	// covers (RFC-054 §4.3).
 	ScopeJoin *easmapp.ScopeJoin
@@ -1167,6 +1209,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	s.AssetGroup = asset.NewAssetGroupService(repos.AssetGroup, log)
 	s.AssetGroup.SetDataScope(s.DataScope)
+	// Groups that fill themselves: rules, member sources and history. Asset
+	// changes ask for the tenant's rule groups to be evaluated again
+	// (debounced); the periodic controller is the safety net.
+	s.AssetGroup.SetRuleStore(repos.AssetGroup, repos.Asset)
+	s.AssetGroup.SetOwnerCheck(datascope.MembershipOwnerLookup(repos.Tenant))
+	s.AssetGroupRules = asset.NewGroupRuleScheduler(s.AssetGroup, 0, log)
+	s.Asset.SetGroupRuleNotifier(s.AssetGroupRules)
 	s.AssetType = asset.NewAssetTypeService(repos.AssetType, repos.AssetTypeCat, log)
 	s.Scope = scope.NewService(repos.ScopeTarget, repos.ScopeExcl, repos.Asset, log)
 	// Every web job carries the path exclusions of its hosts, whatever path
@@ -1758,6 +1807,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// sensor this gate returns false and routing is byte-for-byte Phase 2a
 	// (safe-check only). Reuses the same sensor-registry capability query.
 	s.ValidationRun.SetNucleiAvailability(validationSensorAvailability{sensors: repos.Sensor})
+	// A cross-scanner finding re-runs the template named after its CVE only
+	// when that template ran on one of the tenant's sensors before.
+	s.ValidationRun.SetTemplateEvidence(repos.Finding)
 	// RFC-012 Phase 1b: real safe-check dispatch. An eligible simulation
 	// (network-addressable target + safe-checkable technique) runs for real via
 	// the validation dispatcher; the command-completion hook finalizes the run.
@@ -2317,6 +2369,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Policies are applied from a per-tenant snapshot, reloaded when their
 	// version changes.
 	s.Ingest.SetPolicyVersions(repos.IngestPolicyVersions)
+	s.Ingest.SetAssetChangeNotifier(s.AssetGroupRules)
 	// DefectDojo co-existence sync (RFC-013): pull a tenant's DefectDojo findings
 	// and ingest them as CTIS (one-way; OpenCTEM is the system of record).
 	s.DefectDojoSync = defectdojo.NewSyncService(repos.Integration, s.Ingest, s.Encryptor, log)
@@ -2512,6 +2565,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// hosted service (MANAGED_SERVICE).
 	s.ActiveGate.SetManagedService(deps.Config.App.ManagedService)
 	s.ActiveGate.SetCertificates(repos.AssetRelationship)
+	// A pasted list may create the assets it names that do not exist: the
+	// scope check decides which join the inventory and which wait for review
+	// as candidates (the same hold an import gets).
+	s.AssetGroup.SetPasteAssets(newPasteAssets(s.Asset, s.ActiveGate, easmapp.NewScanStamper(repos.Attribution, repos.VerifiedNames)))
 	// RFC-065 §16.8: signed jobs for sensors that enforce scope limits carry
 	// the limits of port- and path-limited targets.
 	s.Command.SetScopeLimits(s.ActiveGate)
@@ -2708,6 +2765,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Every retest is a scan run (kind retest): Runs lists it with its tasks and logs.
 	if s.Retest != nil {
 		s.Retest.SetRunRecorder(s.ScanRun)
+		// Retest by provenance: a version-match finding is re-checked by
+		// re-running its fingerprint (a quick scan) and evaluating the
+		// version seen; template sightings pick the sensor that has a template.
+		s.Retest.SetVersionRecheck(repos.SoftwareMatch, retestFingerprinter{scans: s.Scan}, repos.ScanRun)
+		s.Retest.SetTemplateEvidence(repos.Finding)
 	}
 	// Every finding validation is a run too (kind validation).
 	if s.ValidationRun != nil {
@@ -2899,6 +2961,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Wire scope rule hooks for real-time evaluation
 	s.Asset.SetScopeRuleEvaluator(s.ScopeRule.EvaluateAsset)
 	s.AssetGroup.SetScopeRuleReconciler(s.ScopeRule.ReconcileByAssetGroup)
+	// A group that a privileged team's scope rules use is changed only by
+	// the owner after a recent sign-in.
+	s.AssetGroup.SetAccessGuard(s.Group)
 
 	// Initialize assignment engine and wire to vulnerability service for auto-routing
 	assignmentEngine := assignment.NewEngine(repos.AccessControl, log)
@@ -3281,6 +3346,12 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		s.SSO.SetSignInHook(s.AccountDeletion.CancelOnSignIn)
 	}
 	s.SSO.SetSessionRevocationStore(sessionRevocations, revocationTTL)
+	if redisClient != nil {
+		// SSO state is single use across replicas only through a shared store.
+		s.SSO.SetStateStore(redisClient)
+	} else {
+		log.Warn("sso: no Redis client; sign-in state kept in process (single-replica only)")
+	}
 	// Configuring SSO connections needs sso.connections for the organization; sign-in
 	// through a configured connection is never gated.
 	s.SSO.SetFeatureGate(s.Entitlement)
@@ -3345,6 +3416,10 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		return sso.HasUsableSSOPath(ctx, t.Slug())
 	})
 	s.SSO.SetJITApprovalNotifier(s.Tenant)
+	s.Auth.SetBreakGlassNotifier(s.Tenant)
+	ssoEnforcement := repos.SSOEnforcement
+	s.SSO.SetSSOSignInRecorder(ssoEnforcement)
+	s.Tenant.SetSSOEnforcementStore(ssoEnforcement)
 	s.Role.SetPrivilegeNotifier(s.Tenant)
 	s.Auth.SetInvitationAcceptor(s.Tenant)
 
