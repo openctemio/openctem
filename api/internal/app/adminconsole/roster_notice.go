@@ -24,6 +24,7 @@ const AlertRosterChange = "admin_roster_change"
 // Roster change kinds (the RosterChange.Kind values).
 const (
 	RosterAdminAdded       = "admin_added"
+	RosterAdminFirstSignIn = "admin_first_sign_in"
 	RosterAdminUpdated     = "admin_updated"
 	RosterAdminRemoved     = "admin_removed"
 	RosterCredentialsReset = "admin_credentials_reset"

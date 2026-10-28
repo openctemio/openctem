@@ -32,6 +32,7 @@ const ORG = {
   created_at: '2026-10-01T00:00:00Z',
   active_members: 1,
   owner_emails: ['owner@acme.test'],
+  owner_domains: [],
   owner_count: 1,
   saml_enabled: false,
   active_identity_providers: 0,
@@ -208,7 +209,47 @@ describe('OrganizationUsersSection', () => {
     )
     render(<OrganizationUsersSection tenantId="t1" orgName="Acme" canManage />)
     expect(screen.queryByRole('button', { name: /create first owner/i })).toBeNull()
+    expect(
+      screen.getByText(/every owner of this organization is suspended, blocked or erased/i)
+    ).toBeInTheDocument()
+  })
+
+  it('shows the owner recovery notice from the server count, also to a read-only administrator', () => {
+    // A read-only administrator gets no rows: only by_role and the count.
+    const redacted = (activeOwners: number) =>
+      ({
+        data: {
+          data: [],
+          total: 1,
+          by_role: { owner: 1 },
+          active_owner_count: activeOwners,
+          redacted: true,
+        },
+        error: undefined,
+        isLoading: false,
+        mutate: vi.fn(),
+      }) as unknown as ReturnType<typeof useOrganizationUsers>
+    vi.mocked(useOrganizationUsers).mockReturnValue(redacted(1))
+    const { unmount } = render(
+      <OrganizationUsersSection tenantId="t1" orgName="Acme" canManage={false} />
+    )
+    expect(screen.queryByText(/every owner of this organization is suspended/i)).toBeNull()
+    unmount()
+    // The only owner's account is blocked: the membership is active, nobody can act.
+    vi.mocked(useOrganizationUsers).mockReturnValue(redacted(0))
+    render(<OrganizationUsersSection tenantId="t1" orgName="Acme" canManage={false} />)
     expect(screen.getByText(/every owner of this organization is suspended/i)).toBeInTheDocument()
+  })
+
+  it('treats an owner whose account is blocked as unusable although the membership is active', () => {
+    vi.mocked(useOrganizationUsers).mockReturnValue({
+      data: { data: [ownerRow], total: 1, by_role: { owner: 1 }, active_owner_count: 0 },
+      error: undefined,
+      isLoading: false,
+      mutate: vi.fn(),
+    } as unknown as ReturnType<typeof useOrganizationUsers>)
+    render(<OrganizationUsersSection tenantId="t1" orgName="Acme" canManage canRecover />)
+    expect(screen.getByRole('button', { name: /recover/i })).toBeInTheDocument()
   })
 
   it('lists users with a pending-setup badge, and hides "Add user" without permission', () => {
