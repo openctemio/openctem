@@ -68,6 +68,28 @@ describe('why a queued task waits', () => {
     expect(screen.getByText('dmz-1')).toBeInTheDocument()
   })
 
+  it('names the sensor that leaves a fresh task to a less-loaded one', async () => {
+    getMock.mockResolvedValue({
+      queued: true,
+      platform: false,
+      job_reasons: [],
+      evaluated: 2,
+      eligible: 2,
+      busy: 0,
+      truncated: false,
+      blocking: [],
+      sensors: [
+        { id: 's1', name: 'vps', eligible: true, busy: false, yields: true, reasons: [] },
+        { id: 's2', name: 'local', eligible: true, busy: false, yields: false, reasons: [] },
+      ],
+    })
+    fresh(<TaskPlacementPanel runId="r1" taskId="t1" />)
+    expect(
+      await screen.findByText('can take it, leaves it to a less-loaded sensor for a few seconds')
+    ).toBeInTheDocument()
+    expect(screen.getByText('can take it')).toBeInTheDocument()
+  })
+
   it('a failed fetch says so', async () => {
     getMock.mockRejectedValueOnce(new Error('placement read failed'))
     fresh(<TaskPlacementPanel runId="r1" taskId="t1" />)

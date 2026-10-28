@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	evidencedom "github.com/openctemio/openctem/api/pkg/domain/evidence"
+	"github.com/openctemio/openctem/api/pkg/domain/pentest"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -24,7 +26,18 @@ const revealTTL = 60 * time.Second
 type FindingEvidenceItemsHandler struct {
 	service *evidenceapp.Service
 	logger  *logger.Logger
+	pentest PentestEvidenceGate
 }
+
+// PentestEvidenceGate applies a campaign's rules to evidence changes on a
+// pentest finding (role, membership, ownership, campaign state).
+type PentestEvidenceGate interface {
+	CheckFindingEvidenceWrite(ctx context.Context, tenantID, findingID, userID string, isAdmin bool) error
+}
+
+// SetPentestGate wires the campaign rules for pentest findings. Without it a
+// pentest finding's evidence cannot be changed here.
+func (h *FindingEvidenceItemsHandler) SetPentestGate(g PentestEvidenceGate) { h.pentest = g }
 
 // NewFindingEvidenceItemsHandler creates the handler.
 func NewFindingEvidenceItemsHandler(svc *evidenceapp.Service, log *logger.Logger) *FindingEvidenceItemsHandler {
@@ -34,11 +47,15 @@ func NewFindingEvidenceItemsHandler(svc *evidenceapp.Service, log *logger.Logger
 // FindingEvidenceItemResponse is one masked evidence item of a finding. Its
 // content is untrusted tool output: clients render it as text, never HTML.
 type FindingEvidenceItemResponse struct {
-	ID             string           `json:"id"`
-	FindingID      string           `json:"finding_id"`
-	RetestID       string           `json:"retest_id,omitempty"`
-	Origin         string           `json:"origin"`
-	Kind           string           `json:"kind"`
+	ID        string `json:"id"`
+	FindingID string `json:"finding_id"`
+	RetestID  string `json:"retest_id,omitempty"`
+	Origin    string `json:"origin"`
+	Kind      string `json:"kind"`
+	// Role is what the item shows: baseline, proof, verification or
+	// supporting. Position is its reader order, ascending.
+	Role           string           `json:"role"`
+	Position       int              `json:"position"`
 	ToolName       string           `json:"tool_name,omitempty"`
 	RuleID         string           `json:"rule_id,omitempty"`
 	TemplateDigest string           `json:"template_digest,omitempty"`
@@ -63,6 +80,22 @@ type FindingEvidenceItemResponse struct {
 // FindingEvidenceItemListResponse is a finding's evidence, newest first.
 type FindingEvidenceItemListResponse struct {
 	Data []FindingEvidenceItemResponse `json:"data"`
+	// EvidenceVersion counts every change to the finding's evidence; a
+	// write-up records the version it was written against.
+	EvidenceVersion int64 `json:"evidence_version"`
+	// ProofCount is how many of the finding's items have the proof role.
+	ProofCount int `json:"proof_count"`
+}
+
+// UpdateEvidenceItemRequest changes an item's role and/or position.
+type UpdateEvidenceItemRequest struct {
+	Role     *string `json:"role" validate:"omitempty,oneof=baseline proof verification supporting"`
+	Position *int    `json:"position" validate:"omitempty,min=0,max=1000"`
+}
+
+// ReorderEvidenceRequest lists the items in the order they should show.
+type ReorderEvidenceRequest struct {
+	ItemIDs []string `json:"item_ids"`
 }
 
 // RevealEvidenceRequest names the placeholders to reveal and why.
@@ -82,6 +115,7 @@ type RevealEvidenceResponse struct {
 func toEvidenceItemResponse(rec *evidencedom.Record, now time.Time) FindingEvidenceItemResponse {
 	out := FindingEvidenceItemResponse{
 		ID: rec.ID.String(), FindingID: rec.FindingID.String(), Origin: string(rec.Origin), Kind: rec.Kind,
+		Role: string(rec.Role), Position: rec.Position,
 		ToolName: rec.ToolName, RuleID: rec.RuleID, TemplateDigest: rec.TemplateDigest, Item: rec.Item,
 		ContentSHA256: rec.ContentSHA256, SizeBytes: rec.SizeBytes, Truncated: rec.Truncated,
 		Revealable: rec.Placeholders, SecretsAvailable: rec.SecretsAvailable(now), SecretsExpireAt: rec.SecretsExpireAt,
@@ -130,8 +164,15 @@ func (h *FindingEvidenceItemsHandler) List(w http.ResponseWriter, r *http.Reques
 		h.writeError(w, err)
 		return
 	}
+	state, err := h.service.State(r.Context(), tenantID, findingID)
+	if err != nil {
+		h.writeError(w, err)
+		return
+	}
 	now := time.Now()
-	out := FindingEvidenceItemListResponse{Data: make([]FindingEvidenceItemResponse, 0, len(recs))}
+	out := FindingEvidenceItemListResponse{
+		Data: make([]FindingEvidenceItemResponse, 0, len(recs)), EvidenceVersion: state.Version, ProofCount: state.ProofCount,
+	}
 	for _, rec := range recs {
 		out.Data = append(out.Data, toEvidenceItemResponse(rec, now))
 	}
@@ -191,6 +232,143 @@ func (h *FindingEvidenceItemsHandler) Reveal(w http.ResponseWriter, r *http.Requ
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Pragma", "no-cache")
 	_ = json.NewEncoder(w).Encode(RevealEvidenceResponse{Values: values, MaskAfterSeconds: int(revealTTL.Seconds())})
+}
+
+// authorizeChange applies the campaign's rules when the finding is a pentest
+// finding; any other finding needs only the route's findings:write.
+func (h *FindingEvidenceItemsHandler) authorizeChange(w http.ResponseWriter, r *http.Request, tenantID, findingID shared.ID) bool {
+	isPentest, err := h.service.IsPentestFinding(r.Context(), tenantID, findingID)
+	if err != nil {
+		h.writeError(w, err)
+		return false
+	}
+	if !isPentest {
+		return true
+	}
+	if h.pentest == nil {
+		apierror.Forbidden("Evidence of a pentest finding is changed through its campaign").WriteJSON(w)
+		return false
+	}
+	if err := h.pentest.CheckFindingEvidenceWrite(r.Context(), tenantID.String(), findingID.String(),
+		middleware.GetUserID(r.Context()), middleware.IsAdmin(r.Context())); err != nil {
+		switch {
+		case errors.Is(err, shared.ErrNotFound), errors.Is(err, pentest.ErrNotCampaignMember):
+			apierror.NotFound("Evidence").WriteJSON(w)
+		case errors.Is(err, pentest.ErrCampaignLocked):
+			apierror.Forbidden("The campaign is locked").WriteJSON(w)
+		case errors.Is(err, pentest.ErrInsufficientCampaignRole):
+			apierror.Forbidden("Your campaign role cannot change this evidence").WriteJSON(w)
+		case errors.Is(err, pentest.ErrFindingNotOwned):
+			apierror.Forbidden("This finding is not assigned to you").WriteJSON(w)
+		case errors.Is(err, shared.ErrForbidden):
+			apierror.Forbidden("Access denied").WriteJSON(w)
+		default:
+			h.logger.Error("pentest evidence gate failed", "error", logger.SanitizeError(err))
+			apierror.InternalServerError("Evidence request failed").WriteJSON(w)
+		}
+		return false
+	}
+	return true
+}
+
+// Update handles PATCH /api/v1/findings/{id}/evidence-items/{item_id}.
+// @Summary      Change an evidence item's role or position
+// @Description  Sets what the item shows (baseline, proof, verification, supporting) and/or its reader order. Bumps the finding's evidence_version. Requires findings:write and the finding in the caller's data scope; on a pentest finding the campaign's rules also apply. Audited.
+// @Tags         Findings
+// @Accept       json
+// @Produce      json
+// @Param        id      path      string                    true  "Finding ID"
+// @Param        item_id path      string                    true  "Evidence item ID"
+// @Param        body    body      UpdateEvidenceItemRequest true  "Role and/or position"
+// @Success      200  {object}  FindingEvidenceItemResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /findings/{id}/evidence-items/{item_id} [patch]
+func (h *FindingEvidenceItemsHandler) Update(w http.ResponseWriter, r *http.Request) {
+	tenantID, findingID, ok := h.ids(w, r)
+	if !ok {
+		return
+	}
+	itemID, err := shared.IDFromString(r.PathValue("item_id"))
+	if err != nil {
+		apierror.NotFound("Evidence").WriteJSON(w)
+		return
+	}
+	var req UpdateEvidenceItemRequest
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	if !h.authorizeChange(w, r, tenantID, findingID) {
+		return
+	}
+	in := evidenceapp.UpdateInput{
+		TenantID: tenantID, FindingID: findingID, EvidenceID: itemID,
+		Role: req.Role, Position: req.Position, Audit: h.auditContext(r),
+	}
+	if uid, err := shared.IDFromString(middleware.GetUserID(r.Context())); err == nil {
+		in.ActorID = &uid
+	}
+	rec, err := h.service.Update(r.Context(), in)
+	if err != nil {
+		h.writeError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "private, no-store")
+	_ = json.NewEncoder(w).Encode(toEvidenceItemResponse(rec, time.Now()))
+}
+
+// Reorder handles PUT /api/v1/findings/{id}/evidence-items/order.
+// @Summary      Set the order of a finding's evidence items
+// @Description  Puts the listed items first, in that order (positions 0..n-1); the finding's other items follow. Every id must be an item of the finding. Bumps evidence_version when anything moved. Requires findings:write; on a pentest finding the campaign's rules also apply. Audited.
+// @Tags         Findings
+// @Accept       json
+// @Param        id   path  string                  true  "Finding ID"
+// @Param        body body  ReorderEvidenceRequest  true  "Item ids in display order"
+// @Success      204
+// @Failure      400  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /findings/{id}/evidence-items/order [put]
+func (h *FindingEvidenceItemsHandler) Reorder(w http.ResponseWriter, r *http.Request) {
+	tenantID, findingID, ok := h.ids(w, r)
+	if !ok {
+		return
+	}
+	var req ReorderEvidenceRequest
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	ids := make([]shared.ID, 0, len(req.ItemIDs))
+	for _, v := range req.ItemIDs {
+		id, err := shared.IDFromString(v)
+		if err != nil {
+			apierror.BadRequest("Invalid item id").WriteJSON(w)
+			return
+		}
+		ids = append(ids, id)
+	}
+	if !h.authorizeChange(w, r, tenantID, findingID) {
+		return
+	}
+	var actor *shared.ID
+	if uid, err := shared.IDFromString(middleware.GetUserID(r.Context())); err == nil {
+		actor = &uid
+	}
+	if err := h.service.Reorder(r.Context(), tenantID, findingID, ids, actor, h.auditContext(r)); err != nil {
+		h.writeError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *FindingEvidenceItemsHandler) ids(w http.ResponseWriter, r *http.Request) (shared.ID, shared.ID, bool) {

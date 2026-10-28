@@ -73,10 +73,39 @@ export function recoverOrganizationOwner(id: string, input: AdminOwnerRecoveryIn
   })
 }
 
-export function setSSOEnforcement(id: string, enforced: boolean) {
+/** What Require SSO needs before it can be turned on, and what turning it on revokes. */
+export interface SSOEnforcementReadiness {
+  /** An owner or admin has signed in through the organization's identity provider. */
+  admin_sso_signin: boolean
+  /** An owner has two-factor authentication, so owner break-glass works. */
+  owner_second_factor: boolean
+  /** Live user API keys that exist now. */
+  api_keys: number
+  /** Live connector (AI client) grants that exist now. */
+  connector_grants: number
+}
+
+export interface SSOEnforcementState {
+  enforced: boolean
+  readiness?: SSOEnforcementReadiness
+}
+
+export function useSSOEnforcement(id: string | null) {
+  return useSWR<SSOEnforcementState>(id ? `/tenants/${id}/sso/enforcement` : null, adminFetcher)
+}
+
+/**
+ * Turns Require SSO on or off. When turning it on, `revokeCredentials` (default
+ * true on the API) revokes the user API keys and connector grants that exist
+ * at that moment; keys made later from SSO sessions keep working.
+ */
+export function setSSOEnforcement(id: string, enforced: boolean, revokeCredentials?: boolean) {
   return adminFetch<{ enforced: boolean }>(`/tenants/${id}/sso/enforcement`, {
     method: 'PUT',
-    body: { enforced },
+    body:
+      revokeCredentials === undefined
+        ? { enforced }
+        : { enforced, revoke_credentials: revokeCredentials },
   })
 }
 

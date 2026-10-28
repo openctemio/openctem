@@ -254,6 +254,9 @@ func (s *Service) Approve(ctx context.Context, actor *admin.AdminUser, id shared
 	created, err := s.orgs.Create(ctx, tenantapp.CreateOrganizationInput{
 		Name: name, Slug: strings.ToLower(strings.TrimSpace(in.Slug)), OwnerEmail: req.Email,
 		Description: "Created from an access request", SignupSource: signupevent.SourceAccessRequest,
+		// An existing account becomes owner only when the requester proved the
+		// address; an unconfirmed request (no mail server) never attaches one.
+		AllowExistingOwner: req.ConfirmedAt != nil,
 	}, actx)
 	if err != nil {
 		req.Status, req.DecidedAt, req.DecidedBy = ardom.StatusPending, nil, nil
@@ -261,6 +264,13 @@ func (s *Service) Approve(ctx context.Context, actor *admin.AdminUser, id shared
 			s.log.Error("return access request to pending after a failed approval", "id", req.ID.String(), "error", rerr)
 		}
 		return nil, nil, err
+	}
+	// A new account gets the set-up link from the creator; an existing one is
+	// told its request was approved.
+	if !created.OwnerCreated && s.mailer != nil && s.mailer.Configured() {
+		if err := s.mailer.SendDecision(ctx, req.Email, true); err != nil {
+			s.log.Warn("access request decision email failed", "error", logger.SanitizeError(err))
+		}
 	}
 	tid := created.Tenant.ID()
 	req.TenantID = &tid

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -49,6 +50,16 @@ const (
 	mcpErrConflict         = "conflict"
 )
 
+// mcpPolicyDecision ends every refusal that comes from a platform policy
+// (permission, role, campaign restriction, scope). It tells an automated
+// client the answer is the platform's decision, so retrying with other
+// arguments or another tool only produces more refusals.
+func mcpPolicyDecision() string {
+	return " This is a platform policy decision, not a fault of the call: variations of it " +
+		"(other arguments, another tool for the same content) are refused too, so do not retry them. " +
+		"A person can change it in " + brand.Name() + "."
+}
+
 // mcpNotFoundMessage is the one answer for an item that does not exist and
 // for one the caller may not read, so the answer never confirms existence.
 const mcpNotFoundMessage = "not found, or you cannot access it: pentest campaigns and their findings are " +
@@ -76,11 +87,11 @@ func classifyMCPError(err error) mcpError {
 	case errors.As(err, &ie):
 		return mcpError{Code: mcpErrInvalidArgument, Message: ie.msg}
 	case errors.As(err, &re):
-		return mcpError{Code: mcpErrCampaignRestricted, Message: re.msg}
+		return mcpError{Code: mcpErrCampaignRestricted, Message: re.msg + mcpPolicyDecision()}
 	case errors.Is(err, shared.ErrNotFound):
 		return mcpError{Code: mcpErrNotFound, Message: mcpNotFoundMessage}
 	case errors.Is(err, shared.ErrForbidden):
-		return mcpError{Code: mcpErrForbidden, Message: domainMessage(err, "your campaign role does not allow this")}
+		return mcpError{Code: mcpErrForbidden, Message: domainMessage(err, "your campaign role does not allow this") + mcpPolicyDecision()}
 	case errors.Is(err, shared.ErrConflict):
 		return mcpError{Code: mcpErrConflict, Message: domainMessage(err, "the item changed or already has a pending request; read it again")}
 	case errors.Is(err, shared.ErrValidation), errors.Is(err, shared.ErrInvalidInput):

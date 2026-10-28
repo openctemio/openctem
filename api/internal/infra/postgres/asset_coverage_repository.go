@@ -142,6 +142,18 @@ func coveragePredicateSQL(p string) string {
 			  AND pc.last_success_at IS NOT NULL AND (pc.asset_id = a.id OR pc.asset_id IN (` + addrs + `)))
 		    OR EXISTS (SELECT 1 FROM asset_relationships rp
 			WHERE rp.tenant_id = a.tenant_id AND rp.relationship_type = 'exposes' AND rp.source_asset_id IN (` + addrs + `))))`
+	case coverage.RequiresNoNamedTwin:
+		// The URL host of an IPv4 web service, and a named web service
+		// whose probe saw that address, on the same port.
+		return `NOT (a.name ~ '^https?://[0-9]{1,3}(\.[0-9]{1,3}){3}(:[0-9]+)?(/|$)'
+			AND EXISTS (SELECT 1 FROM assets n
+				WHERE n.tenant_id = a.tenant_id AND n.id <> a.id
+				  AND n.asset_type = 'service' AND n.sub_type = 'http'
+				  AND n.deleted_at IS NULL AND n.status = 'active'
+				  AND n.name ~ '^https?://[^/:]*[a-zA-Z]'
+				  AND COALESCE(n.properties->>'port', '') = COALESCE(a.properties->>'port', '')
+				  AND jsonb_typeof(n.properties->'ip_addresses') = 'array'
+				  AND n.properties->'ip_addresses' ? substring(a.name from '^https?://([0-9.]+)')))`
 	case coverage.RequiresScopeEntry:
 		return `EXISTS (SELECT 1 FROM scope_targets st
 			WHERE st.tenant_id = a.tenant_id AND st.status = 'active'
@@ -164,7 +176,7 @@ func webPortsSQL() string {
 // rulePredicates are the reasons reconcile itself sets. Only those flip
 // back to due when the precondition holds again: a pair a capability found
 // not applicable (a DNS check on a name that is not registrable) stays so.
-var rulePredicates = []string{coverage.RequiresResolves, coverage.RequiresWebPort, coverage.RequiresWebPortOrUnscanned, coverage.RequiresScopeEntry}
+var rulePredicates = []string{coverage.RequiresResolves, coverage.RequiresWebPort, coverage.RequiresWebPortOrUnscanned, coverage.RequiresScopeEntry, coverage.RequiresNoNamedTwin}
 
 // coverageRuleSQL returns the applicability and reason expressions of a rule.
 func coverageRuleSQL(rule coverage.Rule) (ok, reason string) {

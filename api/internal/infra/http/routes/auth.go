@@ -41,6 +41,9 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 		WithTenantCreationMode(tenantCreationModeOf(cfg.Auth)).
 		WithRegistrationEnabled(cfg.Auth.SignupOpen()).
 		WithPasswordPolicy(cfg.Auth)
+	if h.AdminPlatformSettings != nil && h.AdminPlatformSettings.SocialLogin != nil {
+		authProvidersHandler.WithSocialSource(h.AdminPlatformSettings.SocialLogin.Offered)
+	}
 	if h.SignupPolicy != nil {
 		authProvidersHandler.WithSignupPolicy(h.SignupPolicy)
 	}
@@ -102,6 +105,13 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 			r.POST("/mfa/enroll/start", mfaEnrollStartHandler.ServeHTTP)
 			mfaEnrollConfirmHandler := ChainFunc(h.LocalAuth.ConfirmMFAEnrollment, crossSite, mfaRL)
 			r.POST("/mfa/enroll/confirm", mfaEnrollConfirmHandler.ServeHTTP)
+
+			// Second-factor challenge for a signed-in session that an
+			// organization's 2FA policy holds back (after accepting an
+			// invitation, or when a token refresh is refused). Authenticated
+			// by the refresh-token session, like accept-with-refresh.
+			mfaSessionHandler := ChainFunc(h.LocalAuth.SessionMFAChallenge, crossSite, mfaRL)
+			r.POST("/mfa/enroll/session", mfaSessionHandler.ServeHTTP)
 
 			// Token operations - separate rate limit (20/min)
 			// Token exchange requires valid refresh token, not brute-forceable

@@ -25,6 +25,7 @@ func unclassifiedFixture(t *testing.T, mode string) (*gateFixture, *ActiveGate, 
 	f.targets = append(f.targets, exact)
 	f.resolves = map[string][]string{}
 	g := NewActiveGate(f, f, f, f)
+	g.SetManagedService(true)
 	asked := &[]shared.ID{}
 	g.SetUnclassified(func(_ context.Context, tenantID shared.ID) (string, error) {
 		*asked = append(*asked, tenantID)
@@ -141,6 +142,7 @@ func TestActiveGate_UnclassifiedOff(t *testing.T) {
 	}
 	f := newGateFixture(t)
 	g := NewActiveGate(f, f, f, f)
+	g.SetManagedService(true)
 	g.SetUnclassified(func(context.Context, shared.ID) (string, error) {
 		return unclassifiedFull, errors.New("settings unreadable")
 	}, f)

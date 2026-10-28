@@ -1,0 +1,79 @@
+name: Wordlists Release
+
+# Builds the first-party wordlist packs (S and M) from the pinned upstream
+# files in api/cmd/wordlists-build/sources.yaml and publishes them as assets of
+# the release `wordlists-<release>` (api/docs/architecture/wordlists.md).
+#
+# The lists are not committed: the build is reproducible, so the same pins
+# give the same bytes, and the release carries a build provenance attestation.
+# A super admin imports a pack with the asset URL and its sha256 (release.json)
+# through POST /api/v1/admin/content-packs/import and moves `stable`.
+#
+# Run it by hand after changing sources.yaml (new `release`, commits or
+# sha256) and read the diff of the lists in the release notes first.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wordlists-release
+  cancel-in-progress: false
+
+env:
+  GOWORK: "off"
+
+jobs:
+  publish:
+    name: Build and publish the wordlist packs
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: api/go.mod
+          cache: true
+          cache-dependency-path: api/go.sum
+
+      - name: Build the packs
+        working-directory: api
+        run: go run ./cmd/wordlists-build -out "$RUNNER_TEMP/wordlists"
+
+      - name: Build again and compare
+        working-directory: api
+        run: |
+          go run ./cmd/wordlists-build -out "$RUNNER_TEMP/wordlists-again" > /dev/null
+          for f in "$RUNNER_TEMP"/wordlists/*.tar.gz; do
+            cmp "$f" "$RUNNER_TEMP/wordlists-again/$(basename "$f")"
+          done
+
+      - name: Attest provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/wordlists/*.tar.gz
+
+      - name: Publish the release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          release=$(jq -r '.[0].release' "$RUNNER_TEMP/wordlists/release.json")
+          tag="wordlists-${release}"
+          if gh release view "$tag" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "::error::release $tag exists; raise \`release\` in sources.yaml to publish new lists"
+            exit 1
+          fi
+          gh release create "$tag" -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Wordlist packs ${release}" \
+            --notes "Pinned, reproducible wordlist packs. Import with the asset URL and the sha256 in release.json." \
+            "$RUNNER_TEMP"/wordlists/*.tar.gz "$RUNNER_TEMP/wordlists/release.json"

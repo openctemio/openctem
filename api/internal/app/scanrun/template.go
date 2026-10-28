@@ -106,6 +106,9 @@ func (s *Service) CloneSystemTemplate(ctx context.Context, input CloneSystemTemp
 	if !systemTemplate.IsSystemTemplate {
 		return nil, fmt.Errorf("%w: template is not a system template", shared.ErrValidation)
 	}
+	if err := scanworkflow.RetiredUseError(systemTemplate); err != nil {
+		return nil, err
+	}
 
 	// Determine new name
 	newName := input.NewName
@@ -200,8 +203,10 @@ type ListTemplatesInput struct {
 	IsActive *bool    `json:"is_active"`
 	Tags     []string `json:"tags"`
 	Search   string   `json:"search" validate:"max=255"`
-	Page     int      `json:"page"`
-	PerPage  int      `json:"per_page"`
+	// IncludeRetired also lists retired system workflows.
+	IncludeRetired bool `json:"include_retired"`
+	Page           int  `json:"page"`
+	PerPage        int  `json:"per_page"`
 }
 
 // ListTemplates lists templates with filters.
@@ -216,6 +221,8 @@ func (s *Service) ListTemplates(ctx context.Context, input ListTemplatesInput) (
 		IsActive: input.IsActive,
 		Tags:     input.Tags,
 		Search:   input.Search,
+
+		IncludeRetired: input.IncludeRetired,
 	}
 
 	page := pagination.New(input.Page, input.PerPage)

@@ -6,6 +6,12 @@
 | Scope | api (`migrations/`, `scripts/`, `cmd/server`, `cmd/gen-asset-types`, tests), CI (`.github/scripts/check-migration-versions.sh`), images (migrations, all-in-one) |
 | Guide | [development/migrations.md](../development/migrations.md#migration-baseline), [deployment/safe-deploy-and-migrations.md](../deployment/safe-deploy-and-migrations.md#migration-baseline-upgrading-an-older-database) |
 
+> The migration tool described in §2 and §6 (golang-migrate and its entrypoint
+> wrapper) was replaced by `openctem-migrate`
+> ([RFC-130](RFC-130-migration-applied-set.md)), which keeps the baseline's
+> rules: a fresh database applies it first, a database that has it never runs
+> it, and an older database is refused with the same instructions.
+
 ## 1. Summary
 
 `api/migrations` held 790 files (395 migrations, numbered up to 001146). Every

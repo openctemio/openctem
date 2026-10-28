@@ -115,6 +115,7 @@ type fakeMailer struct {
 	configured bool
 	confirm    []string // confirmation URLs
 	decisions  []string
+	approvals  []string
 }
 
 func (f *fakeMailer) Configured() bool { return f.configured }
@@ -122,14 +123,20 @@ func (f *fakeMailer) SendConfirmation(_ context.Context, _, _, url string) error
 	f.confirm = append(f.confirm, url)
 	return nil
 }
-func (f *fakeMailer) SendDecision(_ context.Context, to string, _ bool) error {
+func (f *fakeMailer) SendDecision(_ context.Context, to string, approved bool) error {
+	if approved {
+		f.approvals = append(f.approvals, to)
+		return nil
+	}
 	f.decisions = append(f.decisions, to)
 	return nil
 }
 
 type fakeOrgs struct {
-	err   error
-	calls []tenantapp.CreateOrganizationInput
+	err error
+	// created reports the owner account as created for this organization.
+	created bool
+	calls   []tenantapp.CreateOrganizationInput
 }
 
 func (f *fakeOrgs) Create(_ context.Context, in tenantapp.CreateOrganizationInput, _ auditapp.AuditContext) (*tenantapp.CreatedOrganization, error) {
@@ -138,7 +145,7 @@ func (f *fakeOrgs) Create(_ context.Context, in tenantapp.CreateOrganizationInpu
 		return nil, f.err
 	}
 	t, _ := tenantdom.NewTenant(in.Name, in.Slug, shared.NewID().String())
-	return &tenantapp.CreatedOrganization{Tenant: t}, nil
+	return &tenantapp.CreatedOrganization{Tenant: t, OwnerCreated: f.created}, nil
 }
 
 type fakeCaptcha struct{ ok bool }
@@ -453,5 +460,53 @@ func TestSubmit_ReportsToSignupFeed(t *testing.T) {
 	if len(rec.events) != 1 || rec.events[0].Kind != signupevent.KindAccessRequested ||
 		rec.events[0].Source != signupevent.SourcePublic || rec.events[0].Email != "owner@acme.com" {
 		t.Fatalf("events = %+v", rec.events)
+	}
+}
+
+// An existing account becomes owner only when the requester confirmed the
+// address; an unconfirmed request (no mail server) never attaches one.
+func TestApprove_ExistingOwnerNeedsConfirmedAddress(t *testing.T) {
+	ctx := context.Background()
+
+	// No mail server: the request is pending but never confirmed.
+	svc, repo, orgs := newSvc(t, openPolicy, nil, nil)
+	_ = submit(svc, "victim@acme.com", "203.0.113.1")
+	if _, _, err := svc.Approve(ctx, superAdmin(t), onePending(t, repo), ApproveInput{Slug: "acme"}, auditapp.AuditContext{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(orgs.calls) != 1 || orgs.calls[0].AllowExistingOwner {
+		t.Fatalf("an unconfirmed request must not be allowed to attach an existing account: %+v", orgs.calls)
+	}
+
+	// Confirmed: allowed, and the existing account is told.
+	mailer := &fakeMailer{configured: true}
+	svc, repo, orgs = newSvc(t, openPolicy, mailer, nil)
+	_ = submit(svc, "owner@acme.com", "203.0.113.2")
+	token := strings.TrimPrefix(mailer.confirm[0], "https://app.example.com/request-access/confirm#token=")
+	if err := svc.Confirm(ctx, token); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := svc.Approve(ctx, superAdmin(t), onePending(t, repo), ApproveInput{Slug: "acme2"}, auditapp.AuditContext{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(orgs.calls) != 1 || !orgs.calls[0].AllowExistingOwner {
+		t.Fatalf("a confirmed request may attach an existing account: %+v", orgs.calls)
+	}
+	if len(mailer.approvals) != 1 || mailer.approvals[0] != "owner@acme.com" {
+		t.Fatalf("an existing account is told it was approved: %v", mailer.approvals)
+	}
+
+	// A new account gets its set-up link from the creator, not a second email.
+	mailer = &fakeMailer{configured: true}
+	svc, repo, orgs = newSvc(t, openPolicy, mailer, nil)
+	orgs.created = true
+	_ = submit(svc, "new@acme.com", "203.0.113.3")
+	token = strings.TrimPrefix(mailer.confirm[0], "https://app.example.com/request-access/confirm#token=")
+	_ = svc.Confirm(ctx, token)
+	if _, _, err := svc.Approve(ctx, superAdmin(t), onePending(t, repo), ApproveInput{Slug: "acme3"}, auditapp.AuditContext{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(mailer.approvals) != 0 {
+		t.Fatalf("a new account is not sent the approval notice: %v", mailer.approvals)
 	}
 }
