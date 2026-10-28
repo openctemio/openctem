@@ -32,6 +32,7 @@ expect "web change runs web only" false true false web/src/a.tsx
 expect "shared file runs both" true true false .github/workflows/x.yml
 expect "RFC and changelog fragment run neither" false false true api/docs/rfcs/RFC-999.md api/changelog.d/x.md
 expect "markdown anywhere is docs" false false true README.md web/README.md .github/PULL_REQUEST_TEMPLATE.md
+expect "a top-level docs directory is docs" false false true docs/guide/x.png docs/index.html
 expect "agent notes are docs" false false true .claude/skills/x/SKILL.md web/.claude/notes.md
 expect "non-markdown under api/docs is docs" false false true api/docs/rfcs/sim/run.py
 expect "generated env reference is api code" true false false api/docs/configuration/environment-variables.md
