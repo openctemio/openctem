@@ -39,6 +39,7 @@
   "errors.OPERATION_RUNNING": "You already have an operation running. Wait for it to finish.",
   "errors.QUERY_TIMEOUT": "This took too long to answer. Narrow the filter or search and try again.",
   "errors.RATE_LIMIT_EXCEEDED": "Too many requests. Wait a moment and try again.",
+  "errors.REAUTH_REQUIRED": "For your security, sign in again to set up two-factor authentication.",
   "errors.RELEASE_FEED_TOO_LARGE": "The file is larger than the release feed limit.",
   "errors.ROTATION_NOT_STALLED": "The rotation is not stalled.",
   "errors.SELECTION_CHANGED": "The selection changed since you confirmed it. Review the new count and confirm again.",

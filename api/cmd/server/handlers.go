@@ -627,7 +627,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		ImportMapping:    newImportMappingHandler(svc, log),
 		GitHubWebhook:    githubWebhookHandler,
 		Exposure:         handler.NewExposureHandler(svc.Exposure, svc.User, v, log),
-		ThreatIntel:      handler.NewThreatIntelHandler(svc.ThreatIntel, v, log).SetDataScope(svc.DataScope),
+		ThreatIntel:      newThreatIntelHandler(deps, v, log),
 		EmergingThreat:   emergingThreatHandler(svc, log),
 		CTEMID:           handler.NewCTEMIDHandler(svc.CTEMID, log),
 		CredentialImport: handler.NewCredentialImportHandler(svc.CredentialImport, v, log),
@@ -1531,6 +1531,7 @@ func newEASMHandler(repos *Repositories, svc *Services, log *logger.Logger) *han
 		return t.Name(), nil
 	})
 	review.SetConfirmScope(newConfirmScope(repos, svc))
+	review.SetAssets(repos.Asset) // decisions may name assets (the skipped targets of a scan)
 	h.SetReview(review, audit)
 	// Suggestion cards (research/117): addresses behind in-scope names and
 	// confirmed assets no entry covers; read only.
@@ -2071,4 +2072,20 @@ func emergingThreatHandler(svc *Services, log *logger.Logger) *handler.EmergingT
 		return nil
 	}
 	return handler.NewEmergingThreatHandler(svc.ThreatAlerts, svc.DataScope, log)
+}
+
+// newThreatIntelHandler builds the threat-intelligence handler; when the
+// bundle source can run (repositories present), the admin sync endpoint also
+// runs the vulnfeed source.
+func newThreatIntelHandler(deps *HandlerDeps, v *validator.Validator, log *logger.Logger) *handler.ThreatIntelHandler {
+	h := handler.NewThreatIntelHandler(deps.Services.ThreatIntel, v, log).SetDataScope(deps.Services.DataScope)
+	repos := deps.Repos
+	if repos != nil && repos.ThreatIntel != nil && repos.CVECorpus != nil && repos.Software != nil {
+		if im, err := newVulnFeedImporter(deps.Config, repos, log.With("component", "vulnfeed")); err == nil {
+			h.SetBundleSyncer(im)
+		} else {
+			log.Warn("vulnfeed sync endpoint disabled", "error", err)
+		}
+	}
+	return h
 }
