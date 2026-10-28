@@ -875,6 +875,11 @@ func (s *Service) UpdateExclusion(ctx context.Context, exclusionID string, tenan
 		if kind.ClosesFindings() && !scopedom.ExclusionTypeNamesAssets(exclusion.ExclusionType()) {
 			return nil, scopedom.ErrInvalidExclusionKind
 		}
+		// In Strict, an approved exclusion turned into one that closes
+		// findings needs a second person (research/320 D8).
+		if err := exclusion.AuthorizeKindChange(input.Reviewer, kind, needsReview); err != nil {
+			return nil, err
+		}
 		exclusion.SetKind(kind)
 	}
 	if input.Reason != nil {
@@ -1085,6 +1090,12 @@ func (s *Service) ActivateExclusion(ctx context.Context, exclusionID string, ten
 			return nil, err
 		}
 	} else if err := exclusion.Activate(); err != nil {
+		return nil, err
+	}
+	// Back in effect, a closing exclusion closes the findings of what it
+	// matches now: the caller's data scope must reach all of it (D9).
+	if err := s.checkClosingReach(ctx, parsedTenantID, exclusion.Kind(), exclusion.ExclusionType(),
+		exclusion.Pattern(), exclusion.ExpiresAt() == nil); err != nil {
 		return nil, err
 	}
 
