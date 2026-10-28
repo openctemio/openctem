@@ -14,7 +14,7 @@ console settings (L0), a playbook (L1), an own agent image (L2) or an adapter to
 |---|---|
 | AI agent principal as a service account with accountable owners (RFC-132) | in review |
 | Harness, playbook format, eval harness, `openctem playbook init\|test` (RFC-133) | in review (sdk-go) |
-| `ai_agents` with a role (rename of `ai_agents`), permissions `ai_agents:read\|author\|manage` | planned (P0) |
+| `ai_agents` with a role column (renamed from the analyst name before merge), permissions `ai_agents:read\|author\|manage` | planned (P0) |
 | Revisions, diff, second-member approval, audit, kill switches | planned (P0) |
 | Eval gate (platform baseline, injection corpus, the organization's golden set) and shadow for single-shot kinds | planned (P0) |
 | AI agents pages, onboarding wizard with masked preview and try-on, owner digest | planned (P0) |

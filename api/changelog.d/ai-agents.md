@@ -5,5 +5,5 @@
 - Every AI agent has accountable owners, people or teams (`ai_agent_owners`). Its effective permissions never exceed what they hold; it pauses when no owner is active or the 90-day attestation runs out (checked at run start and by an hourly sweep).
 - Everything an AI agent does carries its provenance: timeline rows are labeled `ai` by the database and carry the run, model, prompt and accountable owners; audit rows carry the same under `metadata.ai`.
 - `ai_runs` records every run (AI agent, accountable snapshot, model, prompt, digests, usage); one live run per subject and use case.
-- API: `/api/v1/ai/agents` (list, create, owners, preset, attest, pause, resume, disable, delete), `/api/v1/ai/runs/{id}`, `/api/v1/findings/{id}/ai/runs`. Migrations `003521_ai_agents` and `003522_ai_agent_activity_index` (built concurrently); no operator action.
+- API: `/api/v1/ai/agents` (list, create, owners, preset, attest, pause, resume, disable, delete), `/api/v1/ai/runs/{id}`, `/api/v1/findings/{id}/ai/runs`. Migrations `20261028153734_ai_agents` and `20261028153735_ai_agent_activity_index` (built concurrently); no operator action.
 - Read-only AI assistance runs under the viewer and writes nothing: in an assistance context every finding write path and every writing database statement is refused, and no AI agent can be resolved.
