@@ -2,7 +2,9 @@ package unit
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -1215,9 +1217,6 @@ func TestThreatIntelService_GetThreatIntelStats_SyncStatusDTOFields(t *testing.T
 	if dto.NextSyncAt == nil {
 		t.Error("expected NextSyncAt to be set")
 	}
-	if dto.LastError != nil {
-		t.Error("expected LastError to be nil on success")
-	}
 }
 
 func TestThreatIntelService_GetThreatIntelStats_SyncStatusWithError(t *testing.T) {
@@ -1244,11 +1243,9 @@ func TestThreatIntelService_GetThreatIntelStats_SyncStatusWithError(t *testing.T
 	if dto.LastSyncStatus != "failed" {
 		t.Errorf("expected status 'failed', got %q", dto.LastSyncStatus)
 	}
-	if dto.LastError == nil {
-		t.Fatal("expected LastError to be set on failure")
-	}
-	if *dto.LastError != "connection timeout" {
-		t.Errorf("expected error 'connection timeout', got %q", *dto.LastError)
+	// The organization view carries the status only, never the raw sync error.
+	if b, _ := json.Marshal(dto); strings.Contains(string(b), "connection timeout") {
+		t.Errorf("organization sync DTO leaked the raw sync error: %s", b)
 	}
 }
 
