@@ -317,7 +317,7 @@
   "confirm.member.grantConfirm": "Give access",
   "confirm.member.grantCustom": "Roles added: {roles}.",
   "confirm.member.grantNote": "The change applies at once and is recorded in the audit log. You can remove the access again later.",
-  "confirm.member.grantRole": "Role in the organization: {from} to {to}. They can do everything that role allows, in every project they can reach.",
+  "confirm.member.grantRole": "Role in the organization: {from} to {to}. They can do everything that role allows, on every asset they can reach.",
   "confirm.member.grantTitle": "Give {name} more access?",
   "confirm.member.keepInvite": "Keep invitation",
   "confirm.member.reenableConfirm": "Re-enable member",
