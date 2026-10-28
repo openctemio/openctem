@@ -35,9 +35,27 @@ export function useThreatIntelFeeds() {
   return useSWR<ThreatIntelFeed[]>('/threat-intel/sync', adminFetcher)
 }
 
-/** Syncs one feed (or all) now (ops admin and up; audited). */
+/** One feed's outcome in a sync response. */
+export interface ThreatIntelSyncResult {
+  source: string
+  records_synced: number
+  duration_ms: number
+  success: boolean
+  error?: string
+}
+
+/** Syncs one feed (or all) now (ops admin and up; audited). The response is
+ * 200 even when a feed failed: read `results[].success`. */
 export function syncThreatIntel(source: string) {
-  return adminFetch<unknown>('/threat-intel/sync', { method: 'POST', body: { source } })
+  return adminFetch<{ results?: ThreatIntelSyncResult[] }>('/threat-intel/sync', {
+    method: 'POST',
+    body: { source },
+  })
+}
+
+/** The feeds a sync response reports as failed. */
+export function failedSyncResults(res: { results?: ThreatIntelSyncResult[] } | undefined) {
+  return (res?.results ?? []).filter((r) => !r.success)
 }
 
 /** Turns a feed's scheduled sync on or off (ops admin and up; audited). */
