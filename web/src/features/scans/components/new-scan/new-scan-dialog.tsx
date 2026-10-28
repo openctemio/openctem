@@ -142,7 +142,7 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
   const { data: probeWorkflows } = useScanWorkflows(
     open && formData.continuousProbeWorkflowId
       ? { is_active: true, per_page: 100, include: 'readiness' }
-      : undefined,
+      : null,
     { revalidateOnFocus: false }
   )
   const { data: zonesData } = useScanZones(canReadZones && open)
