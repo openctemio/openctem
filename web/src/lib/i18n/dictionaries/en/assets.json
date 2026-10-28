@@ -1154,6 +1154,7 @@
   "assets.triage.exclude.existing": "{count} already excluded",
   "assets.triage.exclude.granularity": "What to exclude",
   "assets.triage.exclude.refused": "{count} refused",
+  "assets.triage.exclude.ruleNeedsFullAccess": "A rule is unavailable for closing findings with limited data access: it would also reach assets you cannot see, now or later. Mark the assets exactly, or ask someone with full data access.",
   "assets.triage.exclude.skipped": "{count} selected need no exclusion (internal names, repositories, cloud accounts).",
   "assets.triage.exclude.undoNeedsAdmin": "Re-including needs the scope delete permission: ask an administrator.",
   "assets.triage.exclude.undone": "Exclusions removed",

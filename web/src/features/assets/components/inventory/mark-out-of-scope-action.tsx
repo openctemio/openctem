@@ -104,6 +104,18 @@ export function MarkOutOfScopeAction({ selected, onDone }: ActionProps) {
     setChosenRules(new Set())
   }, [rules])
 
+  // A member with limited data access may close findings only with exact
+  // rules: a rule that matches by wildcard or range would later reach assets
+  // they cannot see (the server refuses it; the preview says so up front).
+  const closesNow = canExclude && kind !== 'do_not_scan' && duration === 'permanent'
+  const ruleBlocked =
+    closesNow &&
+    rules.length > 0 &&
+    rules.every((r) => preview[keyOf(r.item)]?.closing_needs_full_access)
+  useEffect(() => {
+    if (ruleBlocked) setGranularity('exact')
+  }, [ruleBlocked])
+
   const items: ExclusionItem[] =
     granularity === 'exact'
       ? exact.items
@@ -363,7 +375,11 @@ export function MarkOutOfScopeAction({ selected, onDone }: ActionProps) {
                     </Label>
                   </div>
                   <div className="flex items-center gap-2">
-                    <RadioGroupItem value="rule" id="oos-rule" disabled={rules.length === 0} />
+                    <RadioGroupItem
+                      value="rule"
+                      id="oos-rule"
+                      disabled={rules.length === 0 || ruleBlocked}
+                    />
                     <Label htmlFor="oos-rule" className="font-normal">
                       {t('assets.triage.exclude.byRule', 'By rule ({count})', {
                         count: rules.length,
@@ -372,6 +388,14 @@ export function MarkOutOfScopeAction({ selected, onDone }: ActionProps) {
                   </div>
                 </RadioGroup>
 
+                {ruleBlocked && (
+                  <p className="text-xs text-muted-foreground" data-testid="oos-rule-blocked">
+                    {t(
+                      'assets.triage.exclude.ruleNeedsFullAccess',
+                      'A rule is unavailable for closing findings with limited data access: it would also reach assets you cannot see, now or later. Mark the assets exactly, or ask someone with full data access.'
+                    )}
+                  </p>
+                )}
                 {granularity === 'exact' ? (
                   <ul className="space-y-1 text-xs" data-testid="oos-exact-list">
                     {exact.items.slice(0, SHOWN).map((i) => (

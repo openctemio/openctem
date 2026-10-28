@@ -39,6 +39,11 @@ func NewScopeEffectsRepository(db *DB) *ScopeEffectsRepository {
 // published, still needing action. Pentest drafts are left to their author.
 const scopeEffectsOpenStatuses = `('new', 'confirmed', 'in_progress', 'fix_applied')`
 
+// scopeEffectsCutoverSQL is when out-of-scope decisions started to close
+// findings (migration scope_effects_cutover). Decisions older than it only
+// stop scanning, as before the feature; a missing row closes nothing.
+const scopeEffectsCutoverSQL = `(SELECT effective_at FROM scope_effects_cutover)`
+
 // assetOutOfScopeForGoodSQL is "the asset (alias a) is out of scope for
 // good": marked not ours, or matched by a permanent, approved, active
 // exclusion of a closing kind. The match is the inventory scope filter's
@@ -46,10 +51,12 @@ const scopeEffectsOpenStatuses = `('new', 'confirmed', 'in_progress', 'fix_appli
 func assetOutOfScopeForGoodSQL(a string) string {
 	h, i, n := "sh.host", "sh.ip", "lower("+a+".name)"
 	return `(SELECT EXISTS (SELECT 1 FROM asset_attributions srj
-		             WHERE srj.asset_id = ` + a + `.id AND srj.tenant_id = ` + a + `.tenant_id AND srj.state = 'rejected')
+		             WHERE srj.asset_id = ` + a + `.id AND srj.tenant_id = ` + a + `.tenant_id AND srj.state = 'rejected'
+		               AND COALESCE(srj.decided_at, srj.updated_at) >= ` + scopeEffectsCutoverSQL + `)
 		  OR EXISTS (SELECT 1 FROM scope_exclusions se
 		             WHERE se.tenant_id = ` + a + `.tenant_id AND se.status = 'active' AND se.approved_at IS NOT NULL
 		               AND se.expires_at IS NULL AND se.kind IN ('not_ours', 'retired')
+		               AND se.updated_at >= ` + scopeEffectsCutoverSQL + `
 		               AND se.exclusion_type NOT IN ('finding_type', 'scanner', 'path')
 		               AND ` + scopePatternMatchSQL("se.exclusion_type", "se.pattern", h, i, n) + `)
 	FROM (SELECT hh.host, CASE WHEN pg_input_is_valid(hh.host, 'inet') THEN hh.host::inet END AS ip
@@ -63,8 +70,10 @@ func (r *ScopeEffectsRepository) TenantsWithScopeEffects(ctx context.Context) ([
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT tenant_id::text FROM scope_exclusions
 		WHERE kind IN ('not_ours', 'retired') AND status = 'active' AND expires_at IS NULL
+		  AND updated_at >= `+scopeEffectsCutoverSQL+`
 		UNION
 		SELECT tenant_id::text FROM asset_attributions WHERE state = 'rejected'
+		  AND COALESCE(decided_at, updated_at) >= `+scopeEffectsCutoverSQL+`
 		UNION
 		SELECT tenant_id::text FROM findings WHERE closure_reason = 'out_of_scope' AND status = 'resolved'`)
 	if err != nil {

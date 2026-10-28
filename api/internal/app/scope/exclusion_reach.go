@@ -11,6 +11,8 @@ package scope
 import (
 	"context"
 	"fmt"
+	"net/netip"
+	"strings"
 
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -21,6 +23,31 @@ import (
 var ErrClosingReachOutsideScope = shared.NewDomainError("EXCLUSION_REACHES_OUTSIDE_SCOPE",
 	"This rule also matches assets you cannot see; ask someone with access to them, or mark only the assets you see",
 	shared.ErrForbidden)
+
+// ErrClosingRuleNeedsFullAccess: a member with limited data access asked for
+// a closing rule that is not exact.
+var ErrClosingRuleNeedsFullAccess = shared.NewDomainError("CLOSING_RULE_NEEDS_FULL_ACCESS",
+	"With limited data access you can only close findings with a rule for one exact hostname or IP address (no wildcard, range or network); "+
+		"a broader rule needs full data access, because it also reaches assets you cannot see later",
+	shared.ErrForbidden)
+
+// isExactClosingRule reports whether the rule names one hostname or one IP
+// address: a domain or subdomain rule without a wildcard, or an ip_address
+// rule that is a single address (not a network or a range).
+func isExactClosingRule(t scopedom.ExclusionType, pattern string) bool {
+	p := strings.TrimSpace(pattern)
+	if p == "" || strings.ContainsAny(p, "*?/ ,") {
+		return false
+	}
+	switch t {
+	case scopedom.ExclusionTypeDomain, scopedom.ExclusionTypeSubdomain:
+		return true
+	case scopedom.ExclusionTypeIPAddress:
+		_, err := netip.ParseAddr(p)
+		return err == nil
+	}
+	return false
+}
 
 // checkClosingReach refuses a closing exclusion whose pattern matches assets
 // outside the caller's data scope. Without a data scope resolver or a match
@@ -40,6 +67,12 @@ func (s *Service) checkClosingReach(ctx context.Context, tenantID shared.ID, kin
 	}
 	if !ds.Restricted() {
 		return nil
+	}
+	// A pass re-matches the rule every few minutes, so it reaches assets that
+	// appear later, outside what the creator sees now. A limited member may
+	// therefore only close with an exact rule; a broader one needs full access.
+	if !isExactClosingRule(exclusionType, pattern) {
+		return ErrClosingRuleNeedsFullAccess
 	}
 	item := []BulkExclusionItem{{ExclusionType: string(exclusionType), Pattern: pattern}}
 	visible, err := s.exclusionMatches.ExclusionMatches(ctx, tenantID, ds, item)
