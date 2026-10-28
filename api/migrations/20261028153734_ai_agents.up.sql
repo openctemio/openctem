@@ -35,7 +35,7 @@
 CREATE TABLE ai_agents (
     user_id            uuid         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     tenant_id          uuid         NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    role               varchar(16)  NOT NULL DEFAULT 'agent',
+    role               varchar(16)  NOT NULL DEFAULT 'analyst',
     preset             varchar(16)  NOT NULL DEFAULT 'suggest',
     status             varchar(16)  NOT NULL DEFAULT 'active',
     pause_reason       varchar(48),
@@ -52,7 +52,7 @@ CREATE TABLE ai_agents (
     updated_at         timestamptz  NOT NULL DEFAULT now(),
     CONSTRAINT pk_ai_agents PRIMARY KEY (user_id),
     CONSTRAINT uq_ai_agents_user_tenant UNIQUE (user_id, tenant_id),
-    CONSTRAINT chk_ai_agents_role CHECK (role IN ('agent', 'remediator', 'reporter', 'hunter', 'router')),
+    CONSTRAINT chk_ai_agents_role CHECK (role IN ('analyst', 'remediator', 'reporter', 'hunter', 'router')),
     CONSTRAINT chk_ai_agents_preset CHECK (preset IN ('suggest', 'triage')),
     CONSTRAINT chk_ai_agents_status CHECK (status IN ('active', 'paused', 'disabled')),
     CONSTRAINT chk_ai_agents_pause CHECK ((status = 'active') = (pause_reason IS NULL)
