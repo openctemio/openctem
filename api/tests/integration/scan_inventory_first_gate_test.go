@@ -54,7 +54,7 @@ func TestScanGate_InventoryFirst(t *testing.T) {
 	create := func(target string) error {
 		_, err := svc.CreateScan(ctx, scansvc.CreateScanInput{
 			TenantID: tenantA.String(), Name: "inv " + shared.NewID().String(), ScanType: "single",
-			ScannerName: "nuclei", Targets: []string{target}, TenantRunner: true,
+			ScannerName: "nuclei", Targets: []string{target}, SensorPreference: "platform",
 		})
 		return err
 	}

@@ -18,6 +18,7 @@ import { useCapabilityTable } from '@/features/scan-workflows/lib/use-capability
 const SKIP_REASONS = new Set([
   'excluded',
   'unconfirmed',
+  'wildcard_only',
   'refused',
   'other_zone',
   'hop_limit',
