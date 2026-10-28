@@ -68,8 +68,8 @@ func (s chainSignIns) VerifyPassword(_ context.Context, email, password string, 
 func (s chainSignIns) RecordPasswordSuccess(context.Context, shared.ID) {}
 func (s chainSignIns) RecordPasswordFailure(context.Context, shared.ID) {}
 
-func (s chainSignIns) CreateAccount(context.Context, string, string) (shared.ID, string, error) {
-	return shared.ID{}, "", errors.New("not used")
+func (s chainSignIns) CreateInvitedAccount(context.Context, string, string, time.Duration) (shared.ID, adminconsole.Invitation, error) {
+	return shared.ID{}, adminconsole.Invitation{}, errors.New("not used")
 }
 func (s chainSignIns) AccountActive(_ context.Context, id shared.ID) (bool, error) {
 	for _, u := range s {

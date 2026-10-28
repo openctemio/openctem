@@ -22,6 +22,7 @@ type fakeGate struct {
 	calls    []string
 	err      error
 	released int
+	active   bool
 }
 
 func (g *fakeGate) Require(_ context.Context, _ *admin.AdminUser, action admin.ApprovalAction, target string, _ adminconsole.ClientInfo) (*adminapproval.Grant, error) {
@@ -32,6 +33,8 @@ func (g *fakeGate) Require(_ context.Context, _ *admin.AdminUser, action admin.A
 	id := shared.NewID()
 	return &adminapproval.Grant{ApprovalID: &id}, nil
 }
+
+func (g *fakeGate) Active(context.Context, *admin.AdminUser) (bool, error) { return g.active, nil }
 
 func (g *fakeGate) Release(context.Context, *admin.AdminUser, *adminapproval.Grant, adminconsole.ClientInfo) {
 	g.released++
@@ -137,5 +140,21 @@ func TestAdminRosterSuperAdminChange(t *testing.T) {
 				t.Fatalf("superAdminChange = %q, %v; want %q", got, ok, c.want)
 			}
 		})
+	}
+}
+
+// While approvals are on and the platform cannot send e-mail, a new super admin
+// is refused before the gate is asked, so no approval is spent.
+func TestProvisionSuperAdminNeedsEmailWhileApprovalsAreOn(t *testing.T) {
+	gate := &fakeGate{active: true}
+	h := (&AdminConsoleHandler{logger: logger.NewNop()}).WithApprovals(gate)
+	rec := httptest.NewRecorder()
+	h.Provision(rec, superAdminRequest(t, http.MethodPost, "/api/v1/admin/administrators/",
+		`{"email":"bob@example.com","role":"super_admin"}`))
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), string(CodeInvitationNeedsEmail)) {
+		t.Fatalf("status = %d %s, want 409 INVITATION_NEEDS_EMAIL", rec.Code, rec.Body.String())
+	}
+	if len(gate.calls) != 0 {
+		t.Fatalf("no approval may be asked or spent, got %v", gate.calls)
 	}
 }
