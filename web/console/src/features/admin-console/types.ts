@@ -99,8 +99,13 @@ export interface AdminOrganization {
   description?: string
   created_at: string
   active_members: number
-  /** Empty for a read-only administrator (personal data); see owner_count. */
+  /**
+   * Owners' addresses: only on the organization's own page, for ops_admin and
+   * above (that view is audited). Empty in the list and for read-only.
+   */
   owner_emails: string[]
+  /** Distinct domains of the owners' addresses (list column); empty for read-only. */
+  owner_domains: string[]
   owner_count: number
   saml_enabled: boolean
   active_identity_providers: number
@@ -111,7 +116,7 @@ export interface AdminOrganization {
   /** Platform status: a suspended organization is refused to every credential. */
   status: 'active' | 'suspended' | 'pending_deletion'
   suspended_at?: string
-  /** For administrators only; members never see it. */
+  /** ops_admin and above; read-only administrators and members never get it. */
   suspended_reason?: string
   /** An owner scheduled the deletion for this time. */
   deletion_due_at?: string

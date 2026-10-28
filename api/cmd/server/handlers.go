@@ -794,10 +794,12 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Announcement:            handler.NewAnnouncementHandler(postgres.NewPlatformAnnouncementRepository(deps.DB), log),
 		AdminSession:            handler.NewAdminSessionHandler(postgres.NewAdminSessionDirectory(adminDBOf(repos, deps.DB)), adminConsoleSvc, log),
 		AdminSupportRateLimiter: middleware.NewAdminMappingRateLimiter(middleware.AdminMappingRateLimitConfig{WriteRequestsPerMin: 20}, log),
-		AdminConsole:            handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, log).WithApprovals(adminApprovals),
-		AdminApproval:           handler.NewAdminApprovalHandler(adminApprovals, log),
-		AdminAuditChain:         handler.NewAdminAuditChainHandler(svc.Audit, adminConsoleSvc, repos.AdminAuditLog, repos.AdminOrg, log).WithApprovals(adminApprovals),
-		AdminAuthMiddleware:     middleware.NewAdminAuthMiddleware(adminConsoleSvc, log).WithElevation(cfg.AdminElevationRequired),
+		// Searching and opening accounts: generous for a person, a wall for a script.
+		AdminDirectoryReadLimiter: middleware.NewAdminMappingRateLimiter(middleware.AdminMappingRateLimitConfig{WriteRequestsPerMin: 120}, log),
+		AdminConsole:              handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, log).WithApprovals(adminApprovals),
+		AdminApproval:             handler.NewAdminApprovalHandler(adminApprovals, log),
+		AdminAuditChain:           handler.NewAdminAuditChainHandler(svc.Audit, adminConsoleSvc, repos.AdminAuditLog, repos.AdminOrg, log).WithApprovals(adminApprovals),
+		AdminAuthMiddleware:       middleware.NewAdminAuthMiddleware(adminConsoleSvc, log).WithElevation(cfg.AdminElevationRequired),
 		AdminStepUp: middleware.AdminStepUpFunc(func(ctx context.Context, a *admin.AdminUser, sess *admin.Session, code, purpose string, c middleware.AdminStepUpClient) error {
 			err := adminConsoleSvc.ConfirmProtected(ctx, a, sess, code, purpose, adminconsole.ClientInfo{IP: c.IP, UserAgent: c.UserAgent})
 			if err != nil && !errors.Is(err, admin.ErrStepUpRequired) && !errors.Is(err, admin.ErrStepUpUnavailable) && !errors.Is(err, admin.ErrInvalidMFACode) {
