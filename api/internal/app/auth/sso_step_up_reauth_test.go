@@ -80,7 +80,7 @@ func runOktaReauth(t *testing.T, reauth bool, authTime *time.Time) (*url.URL, *s
 	u, _ := url.Parse(auth.AuthorizationURL)
 	idp.nonce = u.Query().Get("nonce")
 	_, err = svc.HandleCallback(context.Background(), SSOCallbackInput{
-		Provider: string(identityproviderdom.ProviderOkta), Code: "the-code", State: auth.State,
+		Provider: string(identityproviderdom.ProviderOkta), Code: "the-code", State: auth.State, BrowserBinding: auth.BrowserBinding,
 		RedirectURI: "https://app.example.com/auth/sso/callback",
 	})
 	return u, sessions, err
@@ -151,16 +151,17 @@ func TestSSOSignIn_OnlyARecentProviderAuthenticationOpensTheWindow(t *testing.T)
 // state is refused before anything else.
 func TestSSOReauth_FlagIsSigned(t *testing.T) {
 	svc := &SSOService{authConfig: config.AuthConfig{JWTSecret: "s-0123456789abcdef0123456789abcdef"}, encryptor: crypto.NewNoOpEncryptor()}
-	state, _, _, err := svc.generateState("acme", "okta", true)
+	ctx := context.Background()
+	state, _, _, bind, err := svc.generateState(ctx, "acme", "okta", true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	st, err := svc.validateState(state)
+	st, err := svc.consumeState(ctx, state, bind)
 	if err != nil || !st.reauth {
 		t.Fatalf("reauth flag lost: %+v %v", st, err)
 	}
-	plain, _, _, _ := svc.generateState("acme", "okta", false)
-	if st, _ := svc.validateState(plain); st.reauth {
+	plain, _, _, pbind, _ := svc.generateState(ctx, "acme", "okta", false)
+	if st, _ := svc.consumeState(ctx, plain, pbind); st.reauth {
 		t.Fatal("an ordinary state reads as a re-authentication")
 	}
 }

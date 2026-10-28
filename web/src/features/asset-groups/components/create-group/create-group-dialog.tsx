@@ -3,7 +3,7 @@
  *
  * 3-step wizard dialog for creating new asset groups:
  * 1. Basic Info - Name, environment, criticality, business context
- * 2. Add Assets - Select existing or create new assets (combined)
+ * 2. Members - a rule that fills the group, picked assets, a pasted list
  * 3. Review - Summary before creation
  */
 
@@ -25,7 +25,10 @@ import { ChevronLeft, ChevronRight, Loader2, FolderPlus, Layers } from 'lucide-r
 
 import { GroupStepper, type GroupWizardStep } from './group-stepper'
 import { BasicInfoStep } from './basic-info-step'
-import { AddAssetsStep } from './add-assets-step'
+import { MembersStep } from '../members/members-step'
+import { draftToDocument, invalidDomains, isDraftEmpty } from '../../lib/group-rule'
+import { MAX_PASTE_LINES, countPasteLines } from '../../lib/group-paste'
+import { useTranslation } from '@/context/i18n-provider'
 import { ReviewStep } from './review-step'
 import { DEFAULT_CREATE_GROUP_FORM, type CreateGroupFormData } from './types'
 import type { Asset } from '@/features/assets/types'
@@ -44,7 +47,7 @@ interface CreateGroupDialogProps {
   onSubmit?: (input: CreateAssetGroupInput) => void | Promise<void>
 }
 
-const STEPS: GroupWizardStep[] = ['basic', 'add-assets', 'review']
+const STEPS: GroupWizardStep[] = ['basic', 'members', 'review']
 
 export function CreateGroupDialog({
   open,
@@ -54,6 +57,7 @@ export function CreateGroupDialog({
   reviewAssets,
   onSubmit,
 }: CreateGroupDialogProps) {
+  const { t } = useTranslation()
   const [currentStep, setCurrentStep] = useState<GroupWizardStep>('basic')
   const [formData, setFormData] = useState<CreateGroupFormData>(DEFAULT_CREATE_GROUP_FORM)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -74,14 +78,27 @@ export function CreateGroupDialog({
           return false
         }
         return true
-      case 'add-assets':
+      case 'members': {
         // Validate new assets have names
         const invalidAssets = formData.newAssets.filter((asset) => !asset.name.trim())
         if (invalidAssets.length > 0) {
           toast.error('Please provide names for all new assets')
           return false
         }
+        if (invalidDomains(formData.rule).length > 0) {
+          toast.error(t('assetGroups.members.rule.fixDomains', 'Fix the domains of the rule first'))
+          return false
+        }
+        if (countPasteLines(formData.pasteText) > MAX_PASTE_LINES) {
+          toast.error(
+            t('assetGroups.members.paste.tooLong', 'A list has at most {max} lines.', {
+              max: MAX_PASTE_LINES.toLocaleString(),
+            })
+          )
+          return false
+        }
         return true
+      }
       case 'review':
         // Final validation
         if (!formData.name.trim()) {
@@ -143,6 +160,11 @@ export function CreateGroupDialog({
                 tags: asset.tags.length > 0 ? asset.tags : undefined,
               }))
             : undefined,
+        // Members that fill themselves, and a pasted list
+        rule: isDraftEmpty(formData.rule) ? undefined : draftToDocument(formData.rule),
+        paste: formData.pasteText.trim()
+          ? { text: formData.pasteText, createMissing: formData.pasteCreateMissing }
+          : undefined,
       }
 
       // Call submit handler
@@ -176,9 +198,9 @@ export function CreateGroupDialog({
     switch (currentStep) {
       case 'basic':
         return <BasicInfoStep data={formData} onChange={handleDataChange} />
-      case 'add-assets':
+      case 'members':
         return (
-          <AddAssetsStep
+          <MembersStep
             data={formData}
             onChange={handleDataChange}
             ungroupedAssets={ungroupedAssets}
@@ -196,9 +218,9 @@ export function CreateGroupDialog({
   const getNextButtonLabel = () => {
     switch (currentStep) {
       case 'basic':
-        return 'Add Assets'
-      case 'add-assets':
-        return 'Review'
+        return t('assetGroups.wizard.step.members', 'Members')
+      case 'members':
+        return t('assetGroups.wizard.step.review', 'Review')
       default:
         return 'Next'
     }
