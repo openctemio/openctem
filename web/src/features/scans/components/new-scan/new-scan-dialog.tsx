@@ -26,7 +26,7 @@ import { ApprovalRequirement, missingEvidence } from '../approval/approval-requi
 import { toZonePreviewRequest, triggerErrorHint } from '@/features/scan-zones'
 import { ReviewStep } from './review-step'
 import { useScanReview } from '../../hooks/use-scan-review'
-import { useScanWorkflow } from '@/lib/api/scan-workflow-hooks'
+import { useScanWorkflow, useScanWorkflows } from '@/lib/api/scan-workflow-hooks'
 import { useScanZones } from '@/lib/api/scan-zone-hooks'
 import { Permission, useHasPermission } from '@/lib/permissions'
 
@@ -50,7 +50,12 @@ import { post } from '@/lib/api/client'
 import { scanEndpoints } from '@/lib/api/endpoints'
 import { notifyScannerConfigWarnings } from '../../lib/scanner-config-warnings'
 import { useCreateScanConfig, invalidateScanConfigsCache } from '@/lib/api/scan-hooks'
-import { probeNewAssetsRequest } from '../../lib/continuous-discovery'
+import {
+  probeNewAssetsRequest,
+  probeNote,
+  savedProbeOutcome,
+  type ProbeOutcome,
+} from '../../lib/continuous-discovery'
 import { scopeCheckTier } from '../../lib/scan-intensity'
 import { useTranslation } from '@/context/i18n-provider'
 import {
@@ -133,6 +138,13 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
   // Run now needs scans:execute on top of the scans:write that creates it.
   const canExecute = useHasPermission(Permission.ScansExecute)
   const router = useRouter()
+  // The probing workflow's readiness: whether it waits for a sensor.
+  const { data: probeWorkflows } = useScanWorkflows(
+    open && formData.continuousProbeWorkflowId
+      ? { is_active: true, per_page: 100, include: 'readiness' }
+      : null,
+    { revalidateOnFocus: false }
+  )
   const { data: zonesData } = useScanZones(canReadZones && open)
   const zones = useMemo(() => zonesData?.data ?? [], [zonesData?.data])
   // The previews take names: the picked assets by name, with the typed ones.
@@ -312,6 +324,7 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
 
       // Continuous discovery: the probing scan is saved with the passive one
       // (active, only assets new since its last run).
+      let probeOutcome: ProbeOutcome | null = null
       if (formData.continuousProbeWorkflowId) {
         const probe = probeNewAssetsRequest(
           { ...request, targets: directTargets(formData) },
@@ -321,14 +334,36 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
         if (probe) {
           try {
             await createScanConfig(probe)
-          } catch (probeError) {
-            toast.error(
-              t('scans.new.continuousSecondFailed', undefined, {
-                error: getErrorMessage(probeError, t('scans.new.unknownError')),
-              })
+            probeOutcome = savedProbeOutcome(
+              probeWorkflows?.data?.find((w) => w.id === formData.continuousProbeWorkflowId)
+                ?.readiness?.state
             )
+          } catch (probeError) {
+            probeOutcome = {
+              kind: 'failed',
+              error: getErrorMessage(probeError, t('scans.new.unknownError')),
+            }
           }
         }
+      }
+
+      // One result for the pair: the probe's news joins the success toast.
+      const note = probeNote(probeOutcome, t)
+      const done = (message: string, description?: string) => {
+        const text = [description, note.description].filter(Boolean).join(' ') || undefined
+        const opts = {
+          description: text,
+          ...(note.sensorsHref
+            ? {
+                action: {
+                  label: t('scans.new.continuousProbeSensors'),
+                  onClick: () => router.push(note.sensorsHref as string),
+                },
+              }
+            : {}),
+        }
+        if (note.variant === 'warning') toast.warning(message, opts)
+        else toast.success(message, opts)
       }
 
       const waits = !!(scanConfig as { starts_when_scope_approved?: boolean })
@@ -342,7 +377,7 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
             ticket: approvalTicket.trim(),
             run_on_approval: formData.schedule.runImmediately && canExecute,
           })
-          toast.success(
+          done(
             t('scans.approval.submitted', 'Saved "{name}" and submitted it for approval', {
               name: formData.name,
             })
@@ -357,14 +392,15 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
           )
         }
       } else if (waits) {
-        toast.success(t('scans.new.savedWaiting', undefined, { name: formData.name }), {
-          description: t('scans.new.savedWaitingHint'),
-        })
+        done(
+          t('scans.new.savedWaiting', undefined, { name: formData.name }),
+          t('scans.new.savedWaitingHint')
+        )
       } else if (formData.schedule.runImmediately && canExecute) {
         // Trigger scan immediately if requested (and the user may run scans)
         try {
           await post(scanEndpoints.trigger(scanConfig.id), {})
-          toast.success(t('scans.new.started', undefined, { name: formData.name }))
+          done(t('scans.new.started', undefined, { name: formData.name }))
         } catch (triggerError) {
           // Scan config was created but trigger failed - show specific error
           const triggerRefused = refusedFromError(triggerError)
@@ -403,10 +439,10 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
           return
         }
       } else if (formData.schedule.saveOnly) {
-        toast.success(t('scans.new.savedStartLater', undefined, { name: formData.name }))
+        done(t('scans.new.savedStartLater', undefined, { name: formData.name }))
       } else {
         const at = formData.schedule.frequency === 'once' ? onceRunAt(formData) : null
-        toast.success(
+        done(
           at
             ? t('scans.new.willRunOn', undefined, {
                 name: formData.name,

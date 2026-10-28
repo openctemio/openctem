@@ -111,6 +111,8 @@ export interface MfaChallengeBackendResponse {
   mfa_token: string
   mfa_purpose: MfaPurpose
   expires_in: number
+  /** Organizations that require the second factor (enroll challenges). */
+  mfa_orgs?: string[]
 }
 
 export type MfaPurpose = 'verify' | 'enroll'
@@ -147,8 +149,21 @@ export interface LoginResult {
   // yet: the form shows the code step (verify) or the setup step (enroll).
   mfaRequired?: boolean
   mfaPurpose?: MfaPurpose
+  /** Names of the organizations that require the second factor. */
+  mfaOrgs?: string[]
   // Set once, after a forced 2FA enrollment completes the login.
   recoveryCodes?: string[]
+}
+
+export interface SessionMfaStart {
+  success: boolean
+  purpose?: MfaPurpose
+  orgs?: string[]
+  /** The session itself is gone (401): only a new sign-in helps. */
+  sessionExpired?: boolean
+  /** Enrollment needs a recent password sign-in (403 REAUTH_REQUIRED). */
+  reauthRequired?: boolean
+  error?: string
 }
 
 export interface MfaEnrollmentStart {
@@ -338,7 +353,12 @@ export async function loginAction(input: LoginInput): Promise<LoginResult> {
         maxAge: Math.max(1, data.expires_in || 300),
         path: '/',
       })
-      return { success: true, mfaRequired: true, mfaPurpose: data.mfa_purpose }
+      return {
+        success: true,
+        mfaRequired: true,
+        mfaPurpose: data.mfa_purpose,
+        mfaOrgs: data.mfa_orgs,
+      }
     }
 
     return await completeLogin(data as LoginBackendResponse, loginRefreshFromCookie)
@@ -619,6 +639,58 @@ export async function verifyMfaAction(input: {
       success: false,
       error: error instanceof Error ? error.message : 'Verification failed',
       code: errorCode(error),
+    }
+  }
+}
+
+/**
+ * The person is signed in (refresh-token cookie) but an organization's 2FA
+ * policy holds the session back, for example right after accepting an
+ * invitation or when a token refresh is refused. Ask the API for the
+ * enrollment (or verify) challenge, keep it in the same httpOnly cookie the
+ * login uses, and let MfaStep run the rest.
+ */
+export async function startSessionMfaAction(): Promise<SessionMfaStart> {
+  try {
+    const cookieStore = await cookies()
+    const refreshToken = cookieStore.get(env.auth.refreshCookieName)?.value
+    if (!refreshToken) {
+      return { success: false, sessionExpired: true, error: 'Your session expired.' }
+    }
+    // Server-to-server: the refresh token goes in the body (a cookie would
+    // need the browser's CSRF pair).
+    const response = await fetch(`${env.api.url}${authEndpoints.mfaEnrollSession()}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    })
+    const body = (await response
+      .json()
+      .catch(() => ({}))) as Partial<MfaChallengeBackendResponse> & {
+      message?: string
+      code?: string
+    }
+    if (response.status === 401) {
+      return { success: false, sessionExpired: true, error: body.message }
+    }
+    if (response.status === 403 && body.code === 'REAUTH_REQUIRED') {
+      return { success: false, reauthRequired: true, error: body.message }
+    }
+    if (!response.ok || !body.mfa_token || !body.mfa_purpose) {
+      return { success: false, error: body.message || `HTTP ${response.status}` }
+    }
+    await setServerCookie(MFA_CHALLENGE_COOKIE, body.mfa_token, {
+      httpOnly: true,
+      secure: process.env.SECURE_COOKIES !== 'false',
+      sameSite: 'strict',
+      maxAge: Math.max(1, body.expires_in || 300),
+      path: '/',
+    })
+    return { success: true, purpose: body.mfa_purpose, orgs: body.mfa_orgs }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Could not start two-factor setup',
     }
   }
 }

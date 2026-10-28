@@ -16,6 +16,7 @@ vi.mock('@/lib/cookies-server', () => ({
 vi.mock('@/lib/api/browser-context-headers', () => ({ browserContextHeaders: async () => ({}) }))
 
 import { env } from '@/lib/env'
+import { bindingCookieName } from '@/features/auth/lib/browser-binding'
 
 import { completeLinkCallback, handleOAuthCallback, rememberLinkState } from './social-auth-actions'
 
@@ -34,6 +35,7 @@ describe('social sign-in to a linked password account', () => {
 
   it('keeps the second-factor challenge in an httpOnly cookie and issues no session', async () => {
     jar.set('oauth_state', 'st')
+    jar.set(bindingCookieName('oauth'), 'bind')
     fetchMock.mockResolvedValue(
       json({ mfa_required: true, mfa_token: 'challenge', mfa_purpose: 'verify', expires_in: 300 })
     )
@@ -48,6 +50,7 @@ describe('social sign-in to a linked password account', () => {
 
   it('refuses a second step it does not know', async () => {
     jar.set('oauth_state', 'st')
+    jar.set(bindingCookieName('oauth'), 'bind')
     fetchMock.mockResolvedValue(
       json({ mfa_required: true, mfa_token: 'x', mfa_purpose: 'skip', expires_in: 300 })
     )
@@ -58,6 +61,7 @@ describe('social sign-in to a linked password account', () => {
 
   it('maps the 409 to its code', async () => {
     jar.set('oauth_state', 'st')
+    jar.set(bindingCookieName('oauth'), 'bind')
     fetchMock.mockResolvedValue(json({ code: 'OAUTH_ACCOUNT_EXISTS', message: 'm' }, 409))
     const r = await handleOAuthCallback('google', 'code', 'st')
     expect(r).toMatchObject({ success: false, code: 'OAUTH_ACCOUNT_EXISTS' })
@@ -93,6 +97,7 @@ describe('linking a provider to the signed-in account', () => {
 
   it('sends the code with the session of the cookie', async () => {
     jar.set('oauth_state', 'st')
+    jar.set(bindingCookieName('oauth'), 'bind')
     jar.set('oauth_link_intent', 'google')
     jar.set(env.auth.cookieName, 'access')
     fetchMock.mockResolvedValue(json({ id: 'i', provider: 'google' }))
@@ -106,6 +111,7 @@ describe('linking a provider to the signed-in account', () => {
 
   it('returns the API refusal code', async () => {
     jar.set('oauth_state', 'st')
+    jar.set(bindingCookieName('oauth'), 'bind')
     jar.set(env.auth.cookieName, 'access')
     fetchMock.mockResolvedValue(json({ code: 'IDENTITY_LINKED_ELSEWHERE', message: 'm' }, 409))
     expect(await completeLinkCallback('google', 'code', 'st')).toEqual({

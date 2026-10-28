@@ -22,6 +22,7 @@ import { loginErrorHref } from '@/features/auth/lib/login-error'
 
 import { env } from '@/lib/env'
 import { browserContextHeaders } from '@/lib/api/browser-context-headers'
+import { bindingCookieName, bindingCookieOptions } from '@/features/auth/lib/browser-binding'
 import { setServerCookie } from '@/lib/cookies-server'
 import { validateRedirectUrl } from '@/lib/redirect'
 import { isAllowedValue, sanitizeLogValue } from '@/lib/log-sanitize'
@@ -109,6 +110,9 @@ export async function getSSOAuthorizeUrl(
       path: '/',
     })
 
+    // Browser binding: the API refuses the callback without this secret.
+    cookieStore.set(bindingCookieName('sso'), data.browser_binding, bindingCookieOptions())
+
     // Store org slug for callback
     cookieStore.set('sso_org', orgSlug, {
       httpOnly: true,
@@ -176,6 +180,17 @@ export async function handleSSOCallback(
     // Clear state cookie
     cookieStore.delete('sso_state')
 
+    // The binding is single use; a missing one is refused by the API too.
+    const bindingName = bindingCookieName('sso')
+    const browserBinding = cookieStore.get(bindingName)?.value
+    cookieStore.delete(bindingName)
+    if (!browserBinding) {
+      return {
+        success: false,
+        error: 'Invalid SSO state. Please try again.',
+      }
+    }
+
     // Get stored redirect
     const _redirectTo = cookieStore.get('sso_redirect')?.value || '/'
     cookieStore.delete('sso_redirect')
@@ -189,6 +204,7 @@ export async function handleSSOCallback(
         code,
         state,
         redirect_uri: frontendCallbackUrl,
+        browser_binding: browserBinding,
       }),
     })
 

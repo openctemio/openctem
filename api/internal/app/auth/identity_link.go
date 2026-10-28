@@ -296,7 +296,7 @@ func (s *OAuthService) ListSignInMethods(ctx context.Context, userID string) (*S
 	}
 	if s.config.Enabled {
 		for _, p := range []OAuthProvider{OAuthProviderGoogle, OAuthProviderGitHub, OAuthProviderMicrosoft} {
-			if cfg := s.getProviderConfig(p); cfg != nil && cfg.IsConfigured() {
+			if cfg := s.getProviderConfig(ctx, p); cfg != nil && cfg.IsConfigured() {
 				out.Available = append(out.Available, string(p))
 			}
 		}
@@ -334,7 +334,7 @@ type LinkStartInput struct {
 // StartLink returns the provider's authorization URL for a link. The caller
 // already passed step-up (route gate).
 func (s *OAuthService) StartLink(ctx context.Context, in LinkStartInput) (*AuthorizationURLResult, error) {
-	cfg, err := s.readyProvider(in.Provider)
+	cfg, err := s.readyProvider(ctx, in.Provider)
 	if err != nil {
 		return nil, err
 	}
@@ -375,7 +375,7 @@ type LinkCompleteInput struct {
 // CompleteLink binds the provider identity to the signed-in account. The
 // state must be a link state minted for this account and this session.
 func (s *OAuthService) CompleteLink(ctx context.Context, in LinkCompleteInput) (*SignInMethod, error) {
-	cfg, err := s.readyProvider(in.Provider)
+	cfg, err := s.readyProvider(ctx, in.Provider)
 	if err != nil {
 		return nil, err
 	}
@@ -481,14 +481,14 @@ func (s *OAuthService) Unlink(ctx context.Context, userID, identityID string) er
 }
 
 // readyProvider checks social sign-in is on and the provider configured.
-func (s *OAuthService) readyProvider(p OAuthProvider) (*config.OAuthProviderConfig, error) {
+func (s *OAuthService) readyProvider(ctx context.Context, p OAuthProvider) (*config.OAuthProviderConfig, error) {
 	if !s.config.Enabled {
 		return nil, ErrOAuthDisabled
 	}
 	if !p.IsValid() {
 		return nil, ErrInvalidProvider
 	}
-	cfg := s.getProviderConfig(p)
+	cfg := s.getProviderConfig(ctx, p)
 	if cfg == nil || !cfg.IsConfigured() {
 		return nil, ErrProviderDisabled
 	}

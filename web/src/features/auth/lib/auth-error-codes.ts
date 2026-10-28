@@ -16,6 +16,7 @@ export const AUTH_ERROR_CODES = [
   'ACCOUNT_LOCKED',
   'ACCOUNT_SUSPENDED',
   'EMAIL_NOT_VERIFIED',
+  'EMAIL_NOT_AUTHORITATIVE',
   'SIGNUP_NOT_AVAILABLE',
   'SSO_REQUIRED',
   'ORGANIZATION_CREATION_DISABLED',
@@ -34,6 +35,9 @@ export const AUTH_ERROR_CODES = [
   'MFA_ENROLLMENT_REQUIRED',
   'MFA_IDP_EVIDENCE_REQUIRED',
   'MFA_NOT_SUPPORTED',
+  'REAUTH_REQUIRED',
+  'MFA_FEDERATED_SESSION',
+  'SSO_BREAK_GLASS_NEEDS_MFA',
   'MFA_ALREADY_ENABLED',
   'MFA_NOT_ENABLED',
   'MFA_NO_PENDING_SETUP',
@@ -145,6 +149,7 @@ const LOGIN_CODE_FOR_API_CODE: Readonly<Record<string, LoginErrorCode>> = {
   ORGANIZATION_ACCESS_DENIED: 'not_member',
   EMAIL_NOT_VERIFIED: 'email_not_verified',
   OAUTH_ACCOUNT_EXISTS: 'account_exists',
+  EMAIL_NOT_AUTHORITATIVE: 'link_required',
 }
 
 export function loginErrorCodeFor(code: string | undefined | null): LoginErrorCode {
