@@ -1,4 +1,0 @@
-### Added: change a finding's status and read it without leaving its task
-
-- On a task's page each finding row has a status menu built from the moves the server allows that person (blocked moves are shown disabled with the reason). A choice runs the same dialogs as the finding drawer: a fix claim or resolve asks for its note or evidence, a false positive or accepted risk becomes an approval request. Writes send the finding's version, so a finding someone else changed is reloaded instead of overwritten.
-- Clicking a finding opens it in the finding drawer inside the task, with a shareable `?finding=` link, "n of N" and previous/next, `j`/`k` to move through the list, and an option (on by default) to jump to the next finding that still needs work after an action. The full finding page opened from there shows "Remediation tasks > task" above it and links back to the task.

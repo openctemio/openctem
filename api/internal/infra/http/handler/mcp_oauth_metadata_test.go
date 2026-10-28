@@ -40,7 +40,7 @@ func TestMCPResourceMetadata(t *testing.T) {
 	if !reflect.DeepEqual(doc["bearer_methods_supported"], []any{"header"}) {
 		t.Errorf("bearer_methods_supported = %v (tokens only in the header)", doc["bearer_methods_supported"])
 	}
-	want := []any{"mcp:assets.read", "mcp:compliance.read", "mcp:findings.read", "mcp:pentest.read"}
+	want := []any{"mcp:assets.read", "mcp:compliance.read", "mcp:findings.read", "mcp:pentest.read", "mcp:scope.read"}
 	if !reflect.DeepEqual(doc["scopes_supported"], want) {
 		t.Errorf("scopes_supported = %v, want %v", doc["scopes_supported"], want)
 	}

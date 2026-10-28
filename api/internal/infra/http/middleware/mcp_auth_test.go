@@ -20,7 +20,7 @@ func testEndpoints(t *testing.T) mcpoauth.Endpoints {
 
 func TestMCPChallengeOnlyOn401(t *testing.T) {
 	e := testEndpoints(t)
-	want := `Bearer resource_metadata="https://openctem.example/.well-known/oauth-protected-resource/api/v1/mcp", scope="mcp:assets.read mcp:compliance.read mcp:findings.read mcp:pentest.read"`
+	want := `Bearer resource_metadata="https://openctem.example/.well-known/oauth-protected-resource/api/v1/mcp", scope="mcp:assets.read mcp:compliance.read mcp:findings.read mcp:pentest.read mcp:scope.read"`
 
 	refuse := MCPChallenge(e)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		apierror.Unauthorized("Invalid credentials").WriteJSON(w)
