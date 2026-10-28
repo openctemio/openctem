@@ -42,7 +42,8 @@ const SESSION_ENDING = new Set(['/auth/logout', '/auth/password'])
  * is then retried without a code). The API answers ADMIN_STEP_UP_REQUIRED
  * (401, route level), STEP_UP_REQUIRED (401, actions whose form carries the
  * code) or WEBAUTHN_REQUIRED (403, only a security key is accepted), and the
- * console asks and retries.
+ * console asks and retries. A code the form sent itself and the route refused
+ * is the form's to correct (see stepUpRequest).
  */
 export const ADMIN_STEP_UP_HEADER = 'X-Admin-Step-Up'
 export const ADMIN_STEP_UP_REQUIRED = 'ADMIN_STEP_UP_REQUIRED'
@@ -218,14 +219,34 @@ function withoutBodyCode(body: unknown): unknown {
   return body
 }
 
-/** The step-up the refusal asks for, or null when it is not one. */
-function stepUpRequest(err: unknown, sentCode: boolean): AdminStepUpRequest | null {
+/**
+ * The step-up the refusal asks for, or null when it is not one.
+ *
+ * `codeOwner` is who supplied the code that was sent: the caller (the form's
+ * own code field, `totp_code` or `stepUpCode`) or this dialog. A refused code
+ * the caller supplied (wrong, or already used) goes back to the caller, which
+ * shows the refusal under its field and keeps its dialog usable. Opening the
+ * step-up dialog instead would stack a second modal over the form's dialog:
+ * the form's field sits under that overlay, its action stays pending, and the
+ * administrator sees a dimmed dialog that takes no input. Only a code this
+ * dialog asked for is asked for again.
+ */
+function stepUpRequest(
+  err: unknown,
+  codeOwner: 'none' | 'caller' | 'dialog'
+): AdminStepUpRequest | null {
   if (!(err instanceof AdminApiError)) return null
-  if (err.code === ADMIN_STEP_UP_REQUIRED)
-    return { keyOnly: false, formCode: false, problem: sentCode ? err.message : undefined }
+  if (err.code === ADMIN_STEP_UP_REQUIRED) {
+    if (codeOwner === 'caller') return null
+    return {
+      keyOnly: false,
+      formCode: false,
+      problem: codeOwner === 'dialog' ? err.message : undefined,
+    }
+  }
   if (err.code === WEBAUTHN_REQUIRED && err.status === 403)
     return { keyOnly: true, formCode: false }
-  if (err.code === ADMIN_FORM_STEP_UP_REQUIRED && err.status === 401 && !sentCode)
+  if (err.code === ADMIN_FORM_STEP_UP_REQUIRED && err.status === 401 && codeOwner === 'none')
     return { keyOnly: true, formCode: true }
   return null
 }
@@ -233,6 +254,7 @@ function stepUpRequest(err: unknown, sentCode: boolean): AdminStepUpRequest | nu
 export async function adminFetch<T>(path: string, init: AdminFetchInit = {}): Promise<T> {
   let request = init
   let code = init.stepUpCode ?? bodyStepUpCode(init.body)
+  let codeOwner: 'none' | 'caller' | 'dialog' = code ? 'caller' : 'none'
   // The sign-in steps and the key step-up itself never ask for a step-up.
   const canPrompt =
     !SIGN_IN_PATHS.has(path) &&
@@ -250,16 +272,18 @@ export async function adminFetch<T>(path: string, init: AdminFetchInit = {}): Pr
         throw err
       }
       const prompt = stepUpPrompt
-      const ask = canPrompt && attempt <= STEP_UP_ATTEMPTS ? stepUpRequest(err, !!code) : null
+      const ask = canPrompt && attempt <= STEP_UP_ATTEMPTS ? stepUpRequest(err, codeOwner) : null
       if (!ask || !prompt) throw err
       const answer = await prompt(ask)
       if (!answer) throw err
       if (answer.kind === 'code') {
         code = answer.code
+        codeOwner = 'dialog'
       } else {
         // The key opened this session's step-up window: the same request,
         // without any code, now passes.
         code = undefined
+        codeOwner = 'none'
         request = { ...request, stepUpCode: undefined, body: withoutBodyCode(request.body) }
       }
     }

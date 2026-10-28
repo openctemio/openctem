@@ -9,7 +9,7 @@ import { openFirstAssetSheet } from '../helpers/assets'
  * at least one user or group (the seed user themselves). Nothing is saved.
  */
 
-test.describe('Asset owner picker', () => {
+test.describe('Asset owner picker', { tag: ['@assets'] }, () => {
   test('owner field is present on the asset detail sheet', async ({ page }) => {
     const sheet = await openFirstAssetSheet(page)
     test.skip(!sheet, 'No assets in tenant — seed at least one asset')
