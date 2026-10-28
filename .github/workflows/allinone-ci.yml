@@ -47,7 +47,7 @@ permissions:
 jobs:
   changes:
     name: Detect image changes
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
     permissions:
       contents: read
       pull-requests: read # the `ci:full` label (changed.sh reads it live)
@@ -64,6 +64,7 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+      - uses: ./.github/actions/setup-gh
       - id: f
         env:
           EVENT_BEFORE: ${{ github.event.before }}
@@ -269,7 +270,7 @@ jobs:
     name: ${{ github.event_name == 'pull_request' && 'All-in-one (PR build)' || 'All-in-one OK' }}
     if: always()
     needs: [changes, shared, shared-pr, images]
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
     steps:
       - name: All jobs passed or were skipped; the build ran where it must
         env:
