@@ -110,6 +110,42 @@ describe('ConsentView', () => {
     expect(new Headers(init.headers).get('X-CSRF-Token')).toBe('tok123')
   })
 
+  it('offers access to all organization data only to a full-data role, off by default', async () => {
+    render(<ConsentView requestId={REQUEST_ID} />)
+    await screen.findByRole('button', { name: 'Allow' })
+    expect(screen.queryByLabelText('Allow access to all organization data')).not.toBeInTheDocument()
+  })
+
+  it('sends full_data only when the option is checked', async () => {
+    const withOption = () =>
+      new Response(JSON.stringify({ ...consent, full_data_available: true }), { status: 200 })
+    fetchFn.mockImplementationOnce(async () => withOption())
+    render(<ConsentView requestId={REQUEST_ID} />)
+    const box = await screen.findByRole('checkbox', {
+      name: 'Allow access to all organization data',
+    })
+    expect(box).not.toBeChecked()
+    fireEvent.click(box)
+    expect(box).toBeChecked()
+    fireEvent.click(screen.getByRole('button', { name: 'Allow' }))
+    await waitFor(() => expect(assign).toHaveBeenCalled())
+    const [, init] = fetchFn.mock.calls[1] as [string, RequestInit]
+    expect(JSON.parse(String(init.body))).toEqual({ full_data: true })
+  })
+
+  it('sends no body when the option is left off', async () => {
+    fetchFn.mockImplementationOnce(
+      async () =>
+        new Response(JSON.stringify({ ...consent, full_data_available: true }), { status: 200 })
+    )
+    render(<ConsentView requestId={REQUEST_ID} />)
+    await screen.findByRole('checkbox', { name: 'Allow access to all organization data' })
+    fireEvent.click(screen.getByRole('button', { name: 'Allow' }))
+    await waitFor(() => expect(assign).toHaveBeenCalled())
+    const [, init] = fetchFn.mock.calls[1] as [string, RequestInit]
+    expect(init.body).toBeUndefined()
+  })
+
   it('never navigates to a non-http address', async () => {
     render(<ConsentView requestId={REQUEST_ID} />)
     fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }))

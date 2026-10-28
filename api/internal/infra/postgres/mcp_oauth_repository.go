@@ -131,7 +131,7 @@ func (r *MCPOAuthRepository) CreateRequest(ctx context.Context, req *mcpoauth.Au
 }
 
 const mcpRequestSelect = `SELECT r.id, r.redirect_uri, r.state, r.code_challenge, r.resource, r.scopes, r.status,
-	r.user_id, r.tenant_id, r.granted_scopes, r.code_expires_at, r.grant_id, r.created_at, r.expires_at, r.pending_client,
+	r.user_id, r.tenant_id, r.granted_scopes, r.code_expires_at, r.grant_id, r.full_data, r.created_at, r.expires_at, r.pending_client,
 	c.id, c.client_id, c.kind, c.tenant_id, c.name, c.redirect_uris,
 	c.metadata_fetched_at, c.metadata_expires_at, c.blocked_at, c.created_at
 	FROM mcp_oauth_requests r LEFT JOIN mcp_oauth_clients c ON c.id = r.client_ref`
@@ -152,7 +152,7 @@ func scanMCPRequest(row rowScanner) (*mcpoauth.AuthRequest, error) {
 		ccreated                     sql.NullTime
 	)
 	err := row.Scan(&id, &req.RedirectURI, &req.State, &req.CodeChallenge, &req.Resource, pq.Array(&scopes), &status,
-		&userID, &tenantID, pq.Array(&granted), &codeExpires, &grantID, &req.CreatedAt, &req.ExpiresAt, &pending,
+		&userID, &tenantID, pq.Array(&granted), &codeExpires, &grantID, &req.FullData, &req.CreatedAt, &req.ExpiresAt, &pending,
 		&cid, &cclient, &ckind, &ctenant, &cname, pq.Array(&curis),
 		&cfetched, &cexpires, &cblocked, &ccreated)
 	if err != nil {
@@ -227,14 +227,14 @@ func (r *MCPOAuthRepository) ClaimRequest(ctx context.Context, id, userID shared
 }
 
 // ApproveRequest implements mcpoauth.Repository.
-func (r *MCPOAuthRepository) ApproveRequest(ctx context.Context, id, userID, tenantID, clientRef shared.ID, granted []mcpoauth.Scope, codeHash string, codeExpiresAt, now time.Time) error {
+func (r *MCPOAuthRepository) ApproveRequest(ctx context.Context, id, userID, tenantID, clientRef shared.ID, granted []mcpoauth.Scope, fullData bool, codeHash string, codeExpiresAt, now time.Time) error {
 	const q = `
 		UPDATE mcp_oauth_requests
 		   SET status = 'approved', tenant_id = $3, granted_scopes = $4, code_hash = $5, code_expires_at = $6,
-		       client_ref = $8, pending_client = NULL
+		       client_ref = $8, pending_client = NULL, full_data = $9
 		 WHERE id = $1 AND user_id = $2 AND status = 'pending' AND expires_at > $7`
 	res, err := r.db.ExecContext(ctx, q, id.String(), userID.String(), tenantID.String(),
-		pq.Array(scopeStrings(granted)), codeHash, codeExpiresAt, now, clientRef.String())
+		pq.Array(scopeStrings(granted)), codeHash, codeExpiresAt, now, clientRef.String(), fullData)
 	if err != nil {
 		return fmt.Errorf("approve mcp authorization request: %w", err)
 	}
@@ -293,10 +293,10 @@ func (r *MCPOAuthRepository) RedeemCode(ctx context.Context, codeHash string, no
 func (r *MCPOAuthRepository) CreateGrant(ctx context.Context, g *mcpoauth.Grant, requestID shared.ID, tokens ...mcpoauth.Token) error {
 	return r.db.Transaction(ctx, func(tx *sql.Tx) error {
 		const qg = `
-			INSERT INTO mcp_oauth_grants (id, tenant_id, user_id, client_ref, resource, scopes, created_at, expires_at, dpop_jkt)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULLIF($9, ''))`
+			INSERT INTO mcp_oauth_grants (id, tenant_id, user_id, client_ref, resource, scopes, created_at, expires_at, dpop_jkt, full_data)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULLIF($9, ''), $10)`
 		if _, err := tx.ExecContext(ctx, qg, g.ID.String(), g.TenantID.String(), g.UserID.String(), g.Client.ID.String(),
-			g.Resource, pq.Array(scopeStrings(g.Scopes)), g.CreatedAt, g.ExpiresAt, g.DPoPJKT); err != nil {
+			g.Resource, pq.Array(scopeStrings(g.Scopes)), g.CreatedAt, g.ExpiresAt, g.DPoPJKT, g.FullData); err != nil {
 			return fmt.Errorf("insert mcp grant: %w", err)
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE mcp_oauth_requests SET grant_id = $2 WHERE id = $1 AND tenant_id = $3`,
@@ -338,7 +338,7 @@ func (r *MCPOAuthRepository) GetGrantByToken(ctx context.Context, tokenHash stri
 }
 
 const mcpGrantSelectCols = `SELECT g.id, g.tenant_id, g.user_id, g.resource, g.scopes, g.created_at, g.last_used_at,
-	COALESCE(g.last_used_ip, ''), g.expires_at, g.revoked_at, COALESCE(g.revoked_reason, ''), COALESCE(g.dpop_jkt, ''), ` + mcpClientColumns
+	COALESCE(g.last_used_ip, ''), g.expires_at, g.revoked_at, COALESCE(g.revoked_reason, ''), COALESCE(g.dpop_jkt, ''), g.full_data, ` + mcpClientColumns
 
 func scanMCPGrantWithUse(row rowScanner) (*mcpoauth.Grant, bool, error) {
 	var (
@@ -351,7 +351,7 @@ func scanMCPGrantWithUse(row rowScanner) (*mcpoauth.Grant, bool, error) {
 		cfetched, cexpires, cblocked sql.NullTime
 	)
 	if err := row.Scan(&id, &tenantID, &userID, &g.Resource, pq.Array(&scopes), &g.CreatedAt, &lastUsed,
-		&g.LastUsedIP, &g.ExpiresAt, &revoked, &g.RevokedReason, &g.DPoPJKT,
+		&g.LastUsedIP, &g.ExpiresAt, &revoked, &g.RevokedReason, &g.DPoPJKT, &g.FullData,
 		&cid, &g.Client.ClientID, &ckind, &ctenant, &g.Client.Name, pq.Array(&g.Client.RedirectURIs),
 		&cfetched, &cexpires, &cblocked, &g.Client.CreatedAt, &used); err != nil {
 		return nil, false, err
@@ -438,6 +438,19 @@ func (r *MCPOAuthRepository) RevokeGrantsByUser(ctx context.Context, userID shar
 		return nil
 	})
 	return n, err
+}
+
+// SetGrantScoped implements mcpoauth.Repository. Tokens stay: they carry no
+// data scope of their own, the next request resolves it from the grant.
+func (r *MCPOAuthRepository) SetGrantScoped(ctx context.Context, tenantID, grantID shared.ID) (bool, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE mcp_oauth_grants SET full_data = false
+		 WHERE id = $1 AND tenant_id = $2 AND full_data AND revoked_at IS NULL`, grantID.String(), tenantID.String())
+	if err != nil {
+		return false, fmt.Errorf("scope mcp grant: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
 }
 
 // TouchGrant implements mcpoauth.Repository. At most one write a minute per

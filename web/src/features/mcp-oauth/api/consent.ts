@@ -9,6 +9,7 @@
  */
 
 import { csrfFetch } from '@/lib/api/client'
+import { isStepUpRequired, requestStepUp } from '@/lib/api/step-up'
 
 export type ClientKind = 'metadata_document' | 'organization' | 'dynamic'
 
@@ -45,6 +46,11 @@ export interface ConsentRequest {
   /** A request for this publisher is already waiting. */
   access_requested?: boolean
   scopes: ConsentScope[]
+  /**
+   * The person's role has full organization data access, so the page offers
+   * "Allow access to all organization data" (off by default).
+   */
+  full_data_available?: boolean
   expires_at: string
 }
 
@@ -56,6 +62,9 @@ export class ConsentError extends Error {
     super(message)
     this.name = 'ConsentError'
   }
+
+  /** The API's error code (STEP_UP_REQUIRED, ...). */
+  code?: string
 }
 
 const base = (id: string) => `/api/v1/oauth/requests/${encodeURIComponent(id)}`
@@ -70,8 +79,10 @@ export function isRequestId(id: string | null | undefined): id is string {
  * own translated text.
  */
 async function failure(response: Response): Promise<ConsentError> {
-  const data = (await response.json().catch(() => ({}))) as { message?: string }
-  return new ConsentError(data.message || '', response.status)
+  const data = (await response.json().catch(() => ({}))) as { message?: string; code?: string }
+  const err = new ConsentError(data.message || '', response.status)
+  err.code = data.code
+  return err
 }
 
 export async function fetchConsentRequest(id: string): Promise<ConsentRequest> {
@@ -80,16 +91,42 @@ export async function fetchConsentRequest(id: string): Promise<ConsentRequest> {
   return (await response.json()) as ConsentRequest
 }
 
-async function decide(id: string, decision: 'approve' | 'deny'): Promise<string> {
-  const response = await csrfFetch(`${base(id)}/${decision}`, { method: 'POST' })
-  if (!response.ok) throw await failure(response)
+async function decide(
+  id: string,
+  decision: 'approve' | 'deny',
+  fullData = false,
+  stepUpRetried = false
+): Promise<string> {
+  const init: RequestInit = { method: 'POST' }
+  if (fullData) {
+    init.headers = { 'Content-Type': 'application/json' }
+    init.body = JSON.stringify({ full_data: true })
+  }
+  const response = await csrfFetch(`${base(id)}/${decision}`, init)
+  if (!response.ok) {
+    const err = await failure(response)
+    // Approving needs a recent sign-in: ask for it once, then send the same
+    // decision again. Cancelling the dialog keeps the original error.
+    if (
+      !stepUpRetried &&
+      isStepUpRequired({ statusCode: err.status, code: err.code }) &&
+      (await requestStepUp())
+    ) {
+      return decide(id, decision, fullData, true)
+    }
+    throw err
+  }
   const data = (await response.json()) as { redirect_to?: string }
   const to = data.redirect_to ?? ''
   if (!isSafeRedirect(to)) throw new ConsentError('', 400)
   return to
 }
 
-export const approveConsent = (id: string) => decide(id, 'approve')
+/**
+ * fullData allows the connection to read all organization data: offered only
+ * to a full-data role (full_data_available) and always needs a fresh step-up.
+ */
+export const approveConsent = (id: string, fullData = false) => decide(id, 'approve', fullData)
 export const denyConsent = (id: string) => decide(id, 'deny')
 
 /**
