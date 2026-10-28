@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 
@@ -178,7 +179,7 @@ func (s *Service) TriggerPipeline(ctx context.Context, input TriggerRunInput) (*
 
 	// The run's targets reach every step command; check them the way a scan
 	// trigger does (private-range policy, scope exclusions, scan zones).
-	runContext, err := s.gateRunContext(ctx, tenantID, input.TriggeredBy, input.Context)
+	runContext, err := s.gateRunContext(attribution.WithPlacement(ctx, s.runStartPlacement(ctx, tenantID, template)), tenantID, input.TriggeredBy, input.Context)
 	if err != nil {
 		s.logger.Warn("scan workflow run refused by the target gate",
 			"template_id", template.ID.String(), "error", err)
@@ -548,7 +549,14 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 
 	// The hop router: seeds, plus what the predecessors produced that passes
 	// the per-hop gate; recorded once per (run, stage).
-	planned, err := s.planStage(ctx, run, step, resolved, preds, stepTargets)
+	// Whether the step's jobs go to platform sensors decides whether
+	// ownership confirmation applies to the targets the hop router gates.
+	wantsPlatform := scanrun.ScanZoneFromContext(run.Context) == nil && s.stepUsesPlatform(ctx, run, step, settings.SensorPreference)
+	hopPlacement := attribution.PlacementTenant
+	if wantsPlatform {
+		hopPlacement = attribution.PlacementPlatform
+	}
+	planned, err := s.planStage(attribution.WithPlacement(ctx, hopPlacement), run, step, resolved, preds, stepTargets)
 	if err != nil {
 		return fmt.Errorf("step %s: %w", step.StepKey, err)
 	}
@@ -562,7 +570,7 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	zoneID := scanrun.ScanZoneFromContext(run.Context)
 	usePlatform := false
 	if zoneID == nil {
-		usePlatform = s.stepUsesPlatform(ctx, run, step, settings.SensorPreference) &&
+		usePlatform = wantsPlatform &&
 			s.stepTargetsMayGoShared(ctx, run, step, chunkTargets(stepTargets, run.Context))
 	}
 
