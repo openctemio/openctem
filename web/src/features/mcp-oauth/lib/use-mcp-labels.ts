@@ -57,6 +57,8 @@ export function useMcpLabels() {
           return t('mcp.scope.compliance.short', 'Compliance')
         case 'mcp:pentest.read':
           return t('mcp.scope.pentest.short', 'Pentest')
+        case 'mcp:scope.read':
+          return t('mcp.scope.scopeCheck.short', 'Scope check')
         case MCP_COMMENT_SCOPE:
           return t('mcp.scope.comment.short', 'Comments')
         case MCP_PROPOSE_SCOPE:
@@ -87,6 +89,11 @@ export function useMcpLabels() {
           return t(
             'mcp.scope.pentest.title',
             'Read pentest campaigns, findings, retests and templates'
+          )
+        case 'mcp:scope.read':
+          return t(
+            'mcp.scope.scopeCheck.title',
+            'Check whether a target is inside your authorized testing scope, read only'
           )
         case MCP_COMMENT_SCOPE:
           return t(
