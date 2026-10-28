@@ -23,6 +23,8 @@ export interface McpConnection {
   last_used_at?: string
   last_used_ip?: string
   expires_at: string
+  /** May read all organization data while its person keeps a full-data role. */
+  full_data?: boolean
 }
 
 interface McpConnectionList {
@@ -93,6 +95,18 @@ export async function revokeMyConnection(id: string): Promise<void> {
 /** Ends any connection of the organization (owners and administrators). */
 export async function revokeOrgConnection(id: string): Promise<void> {
   await del<void>(`${ORG_CONNECTIONS_URL}/${encodeURIComponent(id)}`)
+  await Promise.all([globalMutate(MY_CONNECTIONS_URL), globalMutate(ORG_CONNECTIONS_URL)])
+}
+
+/** Sets one of the person's own connections back to their own data scope. */
+export async function scopeMyConnection(id: string): Promise<void> {
+  await post<void>(`${MY_CONNECTIONS_URL}/${encodeURIComponent(id)}/scoped`)
+  await Promise.all([globalMutate(MY_CONNECTIONS_URL), globalMutate(ORG_CONNECTIONS_URL)])
+}
+
+/** Sets any connection of the organization back to its person's data scope. */
+export async function scopeOrgConnection(id: string): Promise<void> {
+  await post<void>(`${ORG_CONNECTIONS_URL}/${encodeURIComponent(id)}/scoped`)
   await Promise.all([globalMutate(MY_CONNECTIONS_URL), globalMutate(ORG_CONNECTIONS_URL)])
 }
 

@@ -6,7 +6,9 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +16,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
@@ -137,6 +140,15 @@ type SSOService struct {
 	identities useridentity.Repository
 	// jitApprovals tells administrators about newcomers waiting for approval.
 	jitApprovals JITApprovalNotifier
+
+	// signIns records an owner's or admin's sign-in through the organization's
+	// own IdP (the Require SSO precondition). Nil: not recorded.
+	signIns SSOSignInRecorder
+
+	// stateStore holds the single-use SSO state records (nil: in-process).
+	stateStore   PKCEVerifierStore
+	memStateOnce sync.Once
+	memState     *MemoryPKCEStore
 }
 
 // SetIdentityRepo wires the federated identity store.
@@ -314,6 +326,10 @@ type SSOAuthorizeInput struct {
 type SSOAuthorizeResult struct {
 	AuthorizationURL string `json:"authorization_url"`
 	State            string `json:"state"`
+	// BrowserBinding is a one-time secret for the browser that started the
+	// flow. The caller keeps it in an HttpOnly cookie and sends it back with
+	// the callback; the API refuses a callback without it. Never log it.
+	BrowserBinding string `json:"browser_binding"`
 }
 
 // validateRedirectURI pins the caller-supplied redirect_uri to the configured
@@ -547,10 +563,9 @@ func (s *SSOService) GenerateAuthorizeURL(ctx context.Context, input SSOAuthoriz
 		return nil, err
 	}
 
-	// Generate state token with nonce (CSRF + replay) and a PKCE code_challenge
-	// (RFC 7636). The verifier is carried, encrypted, inside the signed state and
-	// recovered at callback — see generateState.
-	state, nonce, codeChallenge, err := s.generateState(input.OrgSlug, input.Provider, input.ForceReauth)
+	// Create the server-side single-use state record (nonce, PKCE verifier,
+	// browser binding hash) and its opaque handle — see generateState.
+	state, nonce, codeChallenge, binding, err := s.generateState(ctx, input.OrgSlug, input.Provider, input.ForceReauth)
 	if err != nil {
 		return nil, fmt.Errorf("generate state: %w", err)
 	}
@@ -605,6 +620,7 @@ func (s *SSOService) GenerateAuthorizeURL(ctx context.Context, input SSOAuthoriz
 	return &SSOAuthorizeResult{
 		AuthorizationURL: authURL + "?" + params.Encode(),
 		State:            state,
+		BrowserBinding:   binding,
 	}, nil
 }
 
@@ -614,6 +630,9 @@ type SSOCallbackInput struct {
 	Code        string
 	State       string
 	RedirectURI string
+	// BrowserBinding is the secret returned by the authorize call to the
+	// browser that started this flow.
+	BrowserBinding string
 }
 
 // SSOCallbackResult is the result of a successful SSO callback.
@@ -630,7 +649,7 @@ type SSOCallbackResult struct {
 // HandleCallback handles the SSO OAuth callback.
 func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput) (*SSOCallbackResult, error) {
 	// Validate state and extract org slug + nonce + PKCE verifier
-	st, err := s.validateState(input.State)
+	st, err := s.consumeState(ctx, input.State, input.BrowserBinding)
 	if err != nil {
 		return nil, ErrSSOInvalidState
 	}
@@ -1051,77 +1070,129 @@ func entraUserInfoFromClaims(claims *oidc.Claims) (*SSOUserInfo, error) {
 	}, nil
 }
 
-// generateState generates a signed state token containing org slug, provider,
-// nonce, and the PKCE verifier (stored ENCRYPTED), and returns the matching
-// S256 code_challenge for the authorize URL.
-//
-// PKCE verifier storage — the crux: (Path A, oauth.go, keeps its verifier in
-// Redis keyed by state and never sends it.) This state round-trips
-// through the browser AND is sent to the IdP as the `state` param, so anything
-// stored in the clear there is exposed to a redirect interceptor — which would
-// defeat PKCE. We instead ENCRYPT the verifier (AES-256-GCM via s.encryptor,
-// the same encryptor used for client secrets) before placing it in the state.
-// An interceptor sees only opaque ciphertext; only this server (holding
-// APP_ENCRYPTION_KEY) can recover the verifier at callback. This is stateless
-// (works across replicas, unlike an in-memory store) and needs no cookie/proxy
-// changes — the verifier rides inside the existing `state` the UI already
-// round-trips. (In dev without APP_ENCRYPTION_KEY the encryptor is a no-op, so
-// the verifier is plaintext — acceptable for dev only.)
-func (s *SSOService) generateState(orgSlug, provider string, reauth bool) (state, nonce, codeChallenge string, err error) {
-	randomBytes := make([]byte, 16)
-	if _, err := rand.Read(randomBytes); err != nil {
-		return "", "", "", err
+// SSO state lifetime. The record lives in the state store for this long and is
+// consumed (GetDel) by the first callback that presents it.
+const ssoStateTTL = 10 * time.Minute
+
+// ssoStateRecord is what the server keeps for one authorize round trip. The
+// state sent to the browser and the identity provider is only an opaque handle
+// to it, so nothing a redirect interceptor sees (the PKCE verifier included)
+// is usable without the server and the browser binding token.
+type ssoStateRecord struct {
+	Org          string `json:"org"`
+	Provider     string `json:"provider"`
+	Nonce        string `json:"nonce"`
+	CodeVerifier string `json:"cv"`
+	BindingHash  string `json:"bh"`
+	Reauth       bool   `json:"reauth,omitempty"`
+}
+
+// stateStoreOrMemory returns the wired store, or an in-process one (single
+// replica, tests) created on first use.
+func (s *SSOService) stateStoreOrMemory() PKCEVerifierStore {
+	if s.stateStore != nil {
+		return s.stateStore
+	}
+	s.memStateOnce.Do(func() { s.memState = NewMemoryPKCEStore() })
+	return s.memState
+}
+
+// SSOSignInRecorder stamps a member's sign-in through an organization's own
+// identity provider (postgres.SSOEnforcementRepository).
+type SSOSignInRecorder interface {
+	RecordSSOSignIn(ctx context.Context, tenantID, userID shared.ID) error
+}
+
+// SetSSOSignInRecorder wires the recorder behind the Require SSO precondition.
+func (s *SSOService) SetSSOSignInRecorder(r SSOSignInRecorder) { s.signIns = r }
+
+// SetStateStore wires the shared single-use store for SSO state records.
+// Production passes the Redis client so a state is single use across replicas.
+func (s *SSOService) SetStateStore(store PKCEVerifierStore) {
+	if store != nil {
+		s.stateStore = store
+	}
+}
+
+// ssoStateKey is the HMAC key for state handles, derived from the JWT secret
+// with a fixed label so a state signature is never valid for another purpose.
+func (s *SSOService) ssoStateKey() []byte {
+	h := hmac.New(sha256.New, []byte(s.authConfig.JWTSecret))
+	h.Write([]byte("openctem/sso-state/v1"))
+	return h.Sum(nil)
+}
+
+func ssoStoreKey(handle string) string {
+	sum := sha256.Sum256([]byte(handle))
+	return "sso_state:" + hex.EncodeToString(sum[:])
+}
+
+// newBrowserBinding returns a fresh browser-binding secret.
+func newBrowserBinding() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+// bindingMatches compares a presented binding secret with the stored hash in
+// constant time. An empty secret never matches.
+func bindingMatches(binding, wantHash string) bool {
+	if binding == "" || wantHash == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(hashBinding(binding)), []byte(wantHash)) == 1
+}
+
+func hashBinding(binding string) string {
+	sum := sha256.Sum256([]byte(binding))
+	return hex.EncodeToString(sum[:])
+}
+
+// generateState creates the server-side state record and returns the opaque
+// signed handle (the OAuth `state`), the nonce, the PKCE challenge and the
+// browser-binding token. The caller hands the binding token to the browser
+// (an HttpOnly cookie) and presents it again at the callback; only its hash is
+// stored. The PKCE verifier stays server-side.
+func (s *SSOService) generateState(ctx context.Context, orgSlug, provider string, reauth bool) (state, nonce, codeChallenge, binding string, err error) {
+	rnd := make([]byte, 24+16)
+	if _, err := rand.Read(rnd); err != nil {
+		return "", "", "", "", err
+	}
+	handle := base64.RawURLEncoding.EncodeToString(rnd[:24])
+	nonce = base64.RawURLEncoding.EncodeToString(rnd[24:])
+	if binding, err = newBrowserBinding(); err != nil {
+		return "", "", "", "", err
 	}
 
-	// Generate nonce for ID token replay prevention
-	nonceBytes := make([]byte, 16)
-	if _, err := rand.Read(nonceBytes); err != nil {
-		return "", "", "", err
-	}
-	nonce = base64.RawURLEncoding.EncodeToString(nonceBytes)
-
-	// PKCE (RFC 7636): random verifier + S256 challenge.
 	verifier, challenge, pkceErr := generatePKCE()
 	if pkceErr != nil {
-		return "", "", "", pkceErr
-	}
-	encVerifier, encErr := s.encryptor.EncryptString(verifier)
-	if encErr != nil {
-		return "", "", "", fmt.Errorf("encrypt pkce verifier: %w", encErr)
+		return "", "", "", "", pkceErr
 	}
 
-	stateData := map[string]interface{}{
-		"org":      orgSlug,
-		"provider": provider,
-		"nonce":    nonce,
-		"pkce":     encVerifier,
-		"random":   base64.URLEncoding.EncodeToString(randomBytes),
-		"exp":      time.Now().Add(10 * time.Minute).Unix(),
+	rec, mErr := json.Marshal(ssoStateRecord{
+		Org: orgSlug, Provider: provider, Nonce: nonce, CodeVerifier: verifier,
+		BindingHash: hashBinding(binding), Reauth: reauth,
+	})
+	if mErr != nil {
+		return "", "", "", "", mErr
 	}
-	if reauth {
-		stateData["reauth"] = true
+	if err := s.stateStoreOrMemory().Set(ctx, ssoStoreKey(handle), string(rec), ssoStateTTL); err != nil {
+		return "", "", "", "", fmt.Errorf("store sso state: %w", err)
 	}
-
-	stateJSON, marshalErr := json.Marshal(stateData)
-	if marshalErr != nil {
-		return "", "", "", marshalErr
-	}
-
-	stateBase64 := base64.URLEncoding.EncodeToString(stateJSON)
-	signature := s.signState(stateBase64)
-
-	return stateBase64 + "." + signature, nonce, challenge, nil
+	return handle + "." + s.signState(handle), nonce, challenge, binding, nil
 }
 
-// signState creates an HMAC signature for the state.
+// signState creates an HMAC signature for a state handle.
 func (s *SSOService) signState(data string) string {
-	h := hmac.New(sha256.New, []byte(s.authConfig.JWTSecret))
+	h := hmac.New(sha256.New, s.ssoStateKey())
 	h.Write([]byte(data))
-	return base64.URLEncoding.EncodeToString(h.Sum(nil))
+	return base64.RawURLEncoding.EncodeToString(h.Sum(nil))
 }
 
-// ssoState is a verified SSO state: the org slug, provider, the nonce embedded
-// at authorize time (compared against the id_token nonce), the decrypted PKCE
+// ssoState is a consumed SSO state: the org slug, provider, the nonce embedded
+// at authorize time (compared against the id_token nonce), the PKCE
 // code_verifier (RFC 7636) for the token exchange, and whether the flow asked
 // the provider to authenticate the user again.
 type ssoState struct {
@@ -1129,66 +1200,37 @@ type ssoState struct {
 	reauth                             bool
 }
 
-// validateState validates the signed state token and returns its contents.
-func (s *SSOService) validateState(state string) (ssoState, error) {
-	orgSlug, provider, nonce, codeVerifier, reauth, err := s.parseState(state)
-	return ssoState{org: orgSlug, provider: provider, nonce: nonce, codeVerifier: codeVerifier, reauth: reauth}, err
-}
-
-func (s *SSOService) parseState(state string) (orgSlug, provider, nonce, codeVerifier string, reauth bool, err error) {
-	parts := strings.SplitN(state, ".", 2)
-	if len(parts) != 2 {
-		return "", "", "", "", false, errors.New("invalid state format")
+// consumeState verifies the handle's signature, takes its record exactly once
+// (atomic GetDel, so concurrent or replayed callbacks lose) and checks that the
+// presenting browser holds the binding token issued at authorize time. A state
+// is spent even when the binding check fails: a stolen callback URL cannot be
+// retried with guesses.
+func (s *SSOService) consumeState(ctx context.Context, state, binding string) (ssoState, error) {
+	handle, sig, ok := strings.Cut(state, ".")
+	if !ok || handle == "" || len(handle) > 128 {
+		return ssoState{}, errors.New("invalid state format")
 	}
-
-	stateData, signature := parts[0], parts[1]
-
-	// Verify signature
-	expectedSig := s.signState(stateData)
-	if !hmac.Equal([]byte(signature), []byte(expectedSig)) {
-		return "", "", "", "", false, errors.New("invalid state signature")
+	if !hmac.Equal([]byte(sig), []byte(s.signState(handle))) {
+		return ssoState{}, errors.New("invalid state signature")
 	}
-
-	// Decode state data
-	stateJSON, err := base64.URLEncoding.DecodeString(stateData)
+	raw, found, err := s.stateStoreOrMemory().GetDel(ctx, ssoStoreKey(handle))
 	if err != nil {
-		return "", "", "", "", false, errors.New("invalid state encoding")
+		return ssoState{}, fmt.Errorf("read sso state: %w", err)
 	}
-
-	var data map[string]interface{}
-	if err := json.Unmarshal(stateJSON, &data); err != nil {
-		return "", "", "", "", false, errors.New("invalid state JSON")
+	if !found {
+		return ssoState{}, errors.New("state unknown, expired or already used")
 	}
-
-	// Check expiration
-	expFloat, ok := data["exp"].(float64)
-	if !ok {
-		return "", "", "", "", false, errors.New("invalid state expiration")
+	var rec ssoStateRecord
+	if err := json.Unmarshal([]byte(raw), &rec); err != nil {
+		return ssoState{}, errors.New("invalid state record")
 	}
-	if time.Now().Unix() > int64(expFloat) {
-		return "", "", "", "", false, errors.New("state expired")
+	if !bindingMatches(binding, rec.BindingHash) {
+		return ssoState{}, errors.New("state not bound to this browser")
 	}
-
-	orgSlug, _ = data["org"].(string)
-	provider, _ = data["provider"].(string)
-	nonce, _ = data["nonce"].(string)
-	if orgSlug == "" || provider == "" {
-		return "", "", "", "", false, errors.New("missing state fields")
+	if rec.Org == "" || rec.Provider == "" || rec.CodeVerifier == "" {
+		return ssoState{}, errors.New("missing state fields")
 	}
-
-	// Recover the PKCE verifier: it was AES-GCM-encrypted at authorize time (see
-	// generateState). A decryption failure means the ciphertext was tampered with
-	// — fail closed.
-	if enc, encOK := data["pkce"].(string); encOK && enc != "" {
-		v, decErr := s.encryptor.DecryptString(enc)
-		if decErr != nil {
-			return "", "", "", "", false, errors.New("invalid state pkce")
-		}
-		codeVerifier = v
-	}
-
-	reauth, _ = data["reauth"].(bool)
-	return orgSlug, provider, nonce, codeVerifier, reauth, nil
+	return ssoState{org: rec.Org, provider: rec.Provider, nonce: rec.Nonce, codeVerifier: rec.CodeVerifier, reauth: rec.Reauth}, nil
 }
 
 // ssoTokens represents OAuth token response.
@@ -1776,6 +1818,11 @@ func (s *SSOService) createSession(ctx context.Context, u *userdom.User, authMet
 	issuingTenant := ""
 	if !idpTenant.IsZero() {
 		issuingTenant = idpTenant.String()
+		if s.signIns != nil {
+			if err := s.signIns.RecordSSOSignIn(ctx, idpTenant, u.ID()); err != nil {
+				s.logger.Warn("failed to record the SSO sign-in", "tenant_id", issuingTenant, "error", logger.SanitizeError(err))
+			}
+		}
 	}
 	auditFederatedLogin(ctx, s.audit, s.logger, u, issuingTenant, sessionID.String(), string(authMethod), fed.issuer)
 

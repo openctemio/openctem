@@ -160,7 +160,7 @@ func runGoogleCallback(t *testing.T, c googleCase) (*SSOCallbackResult, *cbUserR
 	u, _ := url.Parse(auth.AuthorizationURL)
 	idp.nonce = u.Query().Get("nonce")
 	res, err := svc.HandleCallback(context.Background(), SSOCallbackInput{
-		Provider: string(identityproviderdom.ProviderGoogleWorkspace), Code: "the-code", State: auth.State,
+		Provider: string(identityproviderdom.ProviderGoogleWorkspace), Code: "the-code", State: auth.State, BrowserBinding: auth.BrowserBinding,
 		RedirectURI: "https://app.example.com/auth/sso/callback",
 	})
 	return res, users, members, err

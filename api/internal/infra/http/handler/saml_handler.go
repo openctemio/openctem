@@ -33,6 +33,21 @@ type SAMLHandler struct {
 	audit       *auditsvc.AuditService
 	changes     *auth.SSOChangeService
 	logger      *logger.Logger
+	// refreshTTL is the refresh-cookie lifetime (AUTH_REFRESH_TOKEN_DURATION),
+	// the same as every other sign-in path.
+	refreshTTL time.Duration
+}
+
+// SetRefreshDuration sets the refresh-cookie lifetime from configuration.
+func (h *SAMLHandler) SetRefreshDuration(d time.Duration) { h.refreshTTL = d }
+
+// refreshLifetime is the refresh-cookie lifetime: the configured value, or the
+// documented default (7 days) when it was not wired.
+func (h *SAMLHandler) refreshLifetime() time.Duration {
+	if h.refreshTTL > 0 {
+		return h.refreshTTL
+	}
+	return 7 * 24 * time.Hour
 }
 
 // SetChangeApproval routes SAML changes made from the platform admin console
@@ -160,7 +175,7 @@ func (h *SAMLHandler) ACS(w http.ResponseWriter, r *http.Request) {
 
 	// Establish the session: refresh (httpOnly) + access + tenant cookies, the
 	// same contract the local-login and OAuth flows use.
-	SetRefreshTokenCookie(w, result.RefreshToken, time.Now().Add(30*24*time.Hour), h.cookieCfg)
+	SetRefreshTokenCookie(w, result.RefreshToken, time.Now().Add(h.refreshLifetime()), h.cookieCfg)
 	SetAccessTokenCookie(w, result.AccessToken, time.Now().Add(time.Duration(result.ExpiresIn)*time.Second), h.cookieCfg)
 	SetTenantCookie(w, result.TenantID, result.TenantSlug, "", h.cookieCfg)
 
