@@ -47,6 +47,8 @@ import {
   type FindingEvidenceItem,
   type RevealPurpose,
 } from '../../api/use-finding-evidence-items'
+import { EvidenceOrderButtons, EvidenceRoleChip, EvidenceRoleSelect } from './evidence-role'
+import { moveId, toEvidenceRole, type EvidenceRole } from '../../lib/evidence-role'
 import {
   bodyRanges,
   foldEvidence,
@@ -106,6 +108,10 @@ export interface FindingEvidenceItemsProps {
   className?: string
   /** Shorter panes and folded headers, for the finding drawer. */
   compact?: boolean
+  /** Set: each card offers a role select (people who can write findings). */
+  onChangeRole?: (itemId: string, role: EvidenceRole) => void
+  /** Set: each card offers move up and down; gets the ids in the new order. */
+  onReorder?: (itemIds: string[]) => void
 }
 
 /**
@@ -118,14 +124,25 @@ export function FindingEvidenceItems({
   items,
   className,
   compact = false,
+  onChangeRole,
+  onReorder,
 }: FindingEvidenceItemsProps) {
   const shown = React.useMemo(() => foldEvidence(items), [items])
+  const shownIds = React.useMemo(() => shown.map((it) => it.id ?? ''), [shown])
   if (shown.length === 0) return null
   return (
     <CompactContext.Provider value={compact}>
       <div className={cn('space-y-4', className)} data-testid="finding-evidence-items">
-        {shown.map((it) => (
-          <EvidenceItemCard key={it.id} findingId={findingId} record={it} />
+        {shown.map((it, index) => (
+          <EvidenceItemCard
+            key={it.id}
+            findingId={findingId}
+            record={it}
+            index={index}
+            count={shown.length}
+            onChangeRole={onChangeRole}
+            onMove={onReorder ? (dir) => onReorder(moveId(shownIds, index, dir)) : undefined}
+          />
         ))}
       </div>
     </CompactContext.Provider>
@@ -135,9 +152,17 @@ export function FindingEvidenceItems({
 function EvidenceItemCard({
   findingId,
   record,
+  index,
+  count,
+  onChangeRole,
+  onMove,
 }: {
   findingId: string
   record: FindingEvidenceItem
+  index: number
+  count: number
+  onChangeRole?: (itemId: string, role: EvidenceRole) => void
+  onMove?: (direction: 'up' | 'down') => void
 }) {
   const { t } = useTranslation()
   const kindName = useKindLabel()
@@ -210,6 +235,22 @@ function EvidenceItemCard({
         <header className="flex flex-wrap items-center gap-2 border-b px-4 py-2.5">
           <FileSearch className="h-4 w-4 text-muted-foreground" aria-hidden />
           <span className="text-sm font-medium">{kindName(record.kind ?? '')}</span>
+          {onChangeRole ? (
+            <EvidenceRoleSelect
+              value={toEvidenceRole(record.role)}
+              onChange={(role) => onChangeRole(record.id ?? '', role)}
+            />
+          ) : (
+            <EvidenceRoleChip role={toEvidenceRole(record.role)} />
+          )}
+          {count > 1 && (
+            <span className="text-xs text-muted-foreground" data-testid="evidence-order">
+              {t('findings.evidenceRole.position', '{n} of {total}', {
+                n: index + 1,
+                total: count,
+              })}
+            </span>
+          )}
           {label && (
             <span className="truncate text-xs text-muted-foreground">
               {toDisplayText(label, 200)}
@@ -233,6 +274,7 @@ function EvidenceItemCard({
             </Badge>
           )}
           <RelativeTime date={record.captured_at} className="ms-auto text-xs" />
+          {onMove && <EvidenceOrderButtons index={index} count={count} onMove={onMove} />}
           <ItemActions record={record} item={item} />
         </header>
         <div className="space-y-3 p-4">

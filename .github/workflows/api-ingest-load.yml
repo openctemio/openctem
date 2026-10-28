@@ -58,15 +58,20 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # A schedule runs the default branch's (main's) copy of this file:
+          # test develop, where changes land first.
+          ref: ${{ github.event_name == 'schedule' && 'develop' || '' }}
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: api/go.mod
           cache: true
           cache-dependency-path: api/go.sum
-      - name: Install golang-migrate
-        run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1
+      - name: Build the migration runner
+        run: |
+          go build -o "$RUNNER_TEMP/bin/openctem-migrate" ./cmd/openctem-migrate
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - name: Migrate a fresh database
-        run: migrate -path migrations -database "$DATABASE_URL" up
+        run: openctem-migrate -path migrations -database "$DATABASE_URL" up
         env:
           DATABASE_URL: postgres://openctem@localhost:5432/load_test?sslmode=disable
       - name: Run the load harness

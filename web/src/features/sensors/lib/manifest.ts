@@ -202,6 +202,20 @@ export const IGNORED_REASON_LABEL: Record<string, string> = {
   limit: 'over the limit',
 }
 
+/**
+ * True when every ignored item is one the platform does not know yet (a tool
+ * missing from its catalog, a capability it has no word for) and none is
+ * malformed: the usual sign of a sensor newer than the platform, whose items
+ * are used once the platform is updated. A malformed or over-limit item never
+ * counts, so one of those keeps the warning as "invalid".
+ */
+export function ignoredLooksNewer(ignored: { reason: string }[]): boolean {
+  return (
+    ignored.length > 0 &&
+    ignored.every((i) => i.reason === 'unknown-tool' || i.reason === 'unknown-capability')
+  )
+}
+
 /** How the platform got a manifest version, translated (the raw value when unknown). */
 export function manifestSourceLabel(source: string, t: Translate = plain): string {
   const fallback = MANIFEST_SOURCE_LABEL[source]

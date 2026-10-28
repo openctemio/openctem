@@ -4,17 +4,22 @@
 # that job failed (.github/actions/fail-fast, `if: failure()`).
 #
 #   merge_group   the group is doomed (its required check will fail and the
-#                 queue ejects it), so cancel every unfinished merge_group run
-#                 of the same merge-group head commit, this run last. Runs of
+#                 queue ejects it), so cancel every OTHER unfinished
+#                 merge_group run of the same merge-group head commit. Runs of
 #                 any other commit or event are never touched.
-#   pull_request  cancel the rest of this run only; other workflows keep
-#                 running so lint and test failures still show separately.
-#                 A fork PR has a read-only token: nothing to do.
-#   anything else nothing (a push is the branch's baseline).
+#   anything else nothing.
+#
+# This run is never cancelled: the job calling this script is still running,
+# and cancelling its run turns that job's conclusion from "failure" into
+# "cancelled". The failure then shows only in annotations, and tooling that
+# looks for a failed job (the queue keeper) re-queues a broken group as if a
+# runner had been lost. The other runs' gates fail at once after their
+# cancel, so the queue still ejects the group in minutes; this run's gate
+# fails once its remaining jobs finish.
 #
 # The gates (`API CI OK`, `Web CI OK`, `E2E OK`, `All-in-one OK`) run with
 # `if: always()`, so they still run after the cancel and fail on the
-# failed/cancelled jobs: the queue sees the failure in minutes.
+# failed/cancelled jobs.
 #
 # Never fails the job further: every API error is a warning.
 #
@@ -54,13 +59,6 @@ case "$EVENT" in
       [ "$id" = "$RUN_ID" ] && continue
       cancel "$id"
     done
-    cancel "$RUN_ID"
-    ;;
-  pull_request)
-    if [ "${HEAD_REPO:-}" != "$REPO" ]; then
-      echo "fail-fast: fork pull request, read-only token: nothing cancelled"; exit 0
-    fi
-    cancel "$RUN_ID"
     ;;
   *)
     echo "fail-fast: $EVENT: nothing cancelled"

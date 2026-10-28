@@ -89,8 +89,8 @@ func registerThreatIntelRoutes(
 		r.GET("/stats", h.GetThreatIntelStats, middleware.Require(permission.VulnerabilitiesRead), heavyReads.Middleware())
 
 		// Sync status and management (admin operations)
-		r.GET("/sync", h.GetSyncStatuses, middleware.Require(permission.VulnerabilitiesRead))
-		r.GET("/sync/{source}", h.GetSyncStatus, middleware.Require(permission.VulnerabilitiesRead))
+		r.GET("/sync", h.GetSyncStatusesTenant, middleware.Require(permission.VulnerabilitiesRead))
+		r.GET("/sync/{source}", h.GetSyncStatusTenant, middleware.Require(permission.VulnerabilitiesRead))
 		// The feed syncs are platform-wide: an organization may neither run
 		// nor toggle them, so there is no write route here. Operators use
 		// /api/v1/admin/threat-intel.
