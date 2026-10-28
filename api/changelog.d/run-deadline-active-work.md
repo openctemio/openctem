@@ -1,0 +1,5 @@
+### Fixed: a run's deadline counts active work, not queue wait
+
+- When a sensor claims a task, its run gets at least the time the task's targets need at that sensor's measured speed (its reported targets per minute for the tool, twice over plus 5 minutes), or the run's configured timeout from the claim when the sensor reports no speed. The claimed task's payload deadline follows, so the sensor budgets the job to it. The deadline only moves forward, never past the 24 h platform cap, and never when the scan's owner set a max duration. The run page shows the reason "Moved when a sensor took the work".
+- A run whose open tasks all wait for a busy sensor of the organization (one that could take them is online with no free slot) or for their hosts is no longer timed out at its deadline, and is no longer failed as "no sensor picked up this run's work within 1h". Before, a two-hour coverage run that queued behind other runs was cut before a sensor worked on it, and its partial work was lost.
+- Migration 003452 adds `work_estimate` to the allowed `scan_runs.deadline_reason` values (constraint swap only, no row rewritten).
