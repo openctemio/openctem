@@ -132,7 +132,7 @@ func (h *UserHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 // MeResponse is the caller's own profile as GET /users/me returns it; the
 // session bootstrap embeds the same value. It never says whether the account
 // holds a platform role: that attribute exists only on the console plane
-// (RFC-133).
+// (RFC-134).
 func (h *UserHandler) MeResponse(_ context.Context, u *user.User) UserResponse {
 	return toUserResponse(u)
 }

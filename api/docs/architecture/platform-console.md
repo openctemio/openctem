@@ -190,7 +190,7 @@ recommended production setup. Details: [Docker deployment](../deployment/docker.
   `recovery_codes`. An address (a key `url`, ending in `url`, or naming a
   webhook) keeps only its scheme and host: a webhook path or query works as
   a bearer secret.
-- One identity (RFC-133): the account an administrator signs in with may also
+- One identity (RFC-134): the account an administrator signs in with may also
   sign in on the main site and be an ordinary member of organizations, where
   it acts with its tenant role only. The main site never reads the platform
   role (`/users/me` does not report it). The console keeps its own sign-in,

@@ -1,5 +1,5 @@
 -- One identity for a platform administrator and an application user
--- (RFC-133): the platform role is an attribute of the one users account,
+-- (RFC-134): the platform role is an attribute of the one users account,
 -- effective only on the console plane. The account may now be an ordinary
 -- member of organizations, so the trigger that refused every administrator's
 -- membership goes.

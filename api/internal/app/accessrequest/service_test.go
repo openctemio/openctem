@@ -371,7 +371,7 @@ func TestApprove(t *testing.T) {
 }
 
 // An administrator's account may be an ordinary member of organizations
-// (RFC-133), so an administrator cannot approve a request made with their own
+// (RFC-134), so an administrator cannot approve a request made with their own
 // e-mail (any case): one person would mint an organization for themselves with
 // platform power. Nothing is created and the request stays pending.
 func TestApprove_SelfApprovalRefused(t *testing.T) {

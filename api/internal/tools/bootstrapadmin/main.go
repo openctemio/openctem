@@ -1,7 +1,7 @@
 // Package bootstrapadmin is the bootstrap-admin command: a CLI tool to create the first platform administrators.
 // This is used during initial deployment to bootstrap the admin system.
 //
-// A platform administrator (RFC-022, RFC-133) is a normal sign-in account
+// A platform administrator (RFC-022, RFC-134) is a normal sign-in account
 // (users table) linked to an admin_users row that holds the console role and
 // the authenticator. The account may also be an ordinary member of
 // organizations; the platform role counts only on the console. The administrator signs in on the console's own

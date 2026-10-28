@@ -230,7 +230,7 @@ func TestBootstrapAdminPrintsOwnerLinkWhenEmailFails(t *testing.T) {
 }
 
 // An owner email that already has an account makes that account the owner (no
-// new account, no link); that includes an administrator's account (RFC-133).
+// new account, no link); that includes an administrator's account (RFC-134).
 // A break-glass administrator's account stays console-only: it is refused and
 // nothing is left behind.
 func TestBootstrapAdminOrganizationOwners(t *testing.T) {
@@ -265,7 +265,7 @@ func TestBootstrapAdminOrganizationOwners(t *testing.T) {
 			t.Fatal(err)
 		}
 		// The installer names its own administrator as the first owner: one
-		// account for the console and the organization (RFC-133).
+		// account for the console and the organization (RFC-134).
 		o := orgBootOptions(t, db)
 		o.OrgOwnerEmail = first.Email
 		var out bytes.Buffer

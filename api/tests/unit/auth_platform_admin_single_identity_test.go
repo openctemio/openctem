@@ -11,7 +11,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
-// One identity (RFC-133): the account a platform administrator signs in to the
+// One identity (RFC-134): the account a platform administrator signs in to the
 // console with also signs in on the main site, where it is an ordinary user.
 // The main-site sign-in knows nothing about the platform role (no gate, no
 // flag in the answer), and the console's own password check still accepts the
