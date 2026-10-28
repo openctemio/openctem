@@ -2,26 +2,28 @@
  * Group Wizard Stepper
  *
  * Modern visual step indicator with progress bar for the create group wizard
- * 3-step flow: Basic Info -> Add Assets -> Review
+ * 3-step flow: Basic Info -> Members -> Review
  */
 
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/context/i18n-provider'
 import { Check, FileText, Package, Eye } from 'lucide-react'
 
-export type GroupWizardStep = 'basic' | 'add-assets' | 'review'
+export type GroupWizardStep = 'basic' | 'members' | 'review'
 
 interface GroupStepperProps {
   currentStep: GroupWizardStep
   onStepClick?: (step: GroupWizardStep) => void
 }
 
-const STEPS: { id: GroupWizardStep; label: string; icon: typeof FileText }[] = [
-  { id: 'basic', label: 'Basic Info', icon: FileText },
-  { id: 'add-assets', label: 'Add Assets', icon: Package },
-  { id: 'review', label: 'Review', icon: Eye },
+const STEPS: { id: GroupWizardStep; labelKey: string; label: string; icon: typeof FileText }[] = [
+  { id: 'basic', labelKey: 'assetGroups.wizard.step.basic', label: 'Basic Info', icon: FileText },
+  { id: 'members', labelKey: 'assetGroups.wizard.step.members', label: 'Members', icon: Package },
+  { id: 'review', labelKey: 'assetGroups.wizard.step.review', label: 'Review', icon: Eye },
 ]
 
 export function GroupStepper({ currentStep, onStepClick }: GroupStepperProps) {
+  const { t } = useTranslation()
   const currentIndex = STEPS.findIndex((s) => s.id === currentStep)
 
   return (
@@ -87,7 +89,7 @@ export function GroupStepper({ currentStep, onStepClick }: GroupStepperProps) {
                     isPending && 'text-muted-foreground'
                   )}
                 >
-                  {step.label}
+                  {t(step.labelKey, step.label)}
                 </span>
               </button>
             )

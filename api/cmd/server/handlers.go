@@ -565,7 +565,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Assets & Components
 		Component:        handler.NewComponentHandler(svc.Component, svc.SBOMImport, v, log),
 		VEXStatement:     handler.NewVEXStatementHandler(svc.VEX, log),
-		AssetGroup:       handler.NewAssetGroupHandler(svc.AssetGroup, v, log),
+		AssetGroup:       handler.NewAssetGroupHandler(svc.AssetGroup, v, log).SetAuditService(svc.Audit),
 		AssetType:        handler.NewAssetTypeHandler(svc.AssetType, v, log),
 		Scope:            handler.NewScopeHandler(svc.Scope, v, log),
 		BountyProgram:    handler.NewBountyProgramHandler(svc.BountyProgram, svc.Audit, log),
@@ -966,6 +966,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		)
 		// SP entity ID / ACS URL come from APP_URL, never from client headers.
 		handlers.SAML.SetPublicURL(cfg.App.URL)
+		handlers.SAML.SetRefreshDuration(cfg.Auth.RefreshTokenDuration)
 		handlers.SAML.SetAuditService(svc.Audit)
 		// Admin-console SAML changes wait for an owner of the organization.
 		handlers.SAML.SetChangeApproval(svc.SSOChange)
@@ -1281,6 +1282,10 @@ func wireStepUpGate(handlers *routes.Handlers, svc *Services) {
 	}
 	if handlers.CIAdmin != nil {
 		handlers.CIAdmin.SetStepUpGate(gate)
+	}
+	if handlers.MCPOAuth != nil {
+		// Allowing an AI application to read all organization data.
+		handlers.MCPOAuth.SetStepUpGate(gate)
 	}
 }
 
