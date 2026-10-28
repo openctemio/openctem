@@ -113,6 +113,16 @@ inc "a red commit is not a base" synchronize "api=true web=true incremental=fals
 mkpr api/internal/a.go .github/workflows/x.yml
 green > "$fake/data/$A.json"
 inc "a PR that changes .github is never incremental" synchronize "api=true web=true full=true incremental=false"
+# A CI edit in the green commit, reverted later: that commit's checks ran a CI
+# the PR no longer has, so they vouch for nothing.
+git -C "$d" checkout -q "$base"
+mkdir -p "$d/.github/workflows" "$d/api/internal"
+echo fake > "$d/.github/workflows/fake.yml"; echo "$RANDOM" >> "$d/api/internal/evil.go"
+git -C "$d" add -A; git -C "$d" commit -qm A; A="$(git -C "$d" rev-parse HEAD)"
+git -C "$d" rm -q .github/workflows/fake.yml; git -C "$d" commit -qm revert
+H="$(git -C "$d" rev-parse HEAD)"; printf '%s\n%s\n' "$A" "$H" >"$fake/data/commits"
+green > "$fake/data/$A.json"
+inc "a green commit with a CI edit reverted since is not a base" synchronize "api=true incremental=false"
 mkpr api/internal/a.go README.md
 green > "$fake/data/$A.json"
 inc "only docs since the green commit runs no suite" synchronize "api=false web=false docs=true incremental=true"

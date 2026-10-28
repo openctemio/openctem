@@ -89,7 +89,11 @@ fi
 out ""
 out "### Images (fixable HIGH/CRITICAL, from image-guard)"
 if [[ -z "$images" ]]; then
-  id="$(gh api "repos/${repo}/actions/artifacts?name=image-guard-report&per_page=1" --jq '.artifacts[0] | select(. != null and .expired == false) | .id' 2>/dev/null || true)"
+  # Only a run of develop in this repository counts: a pull request or merge
+  # queue run can upload an artifact of the same name with its own content.
+  id="$(gh api "repos/${repo}/actions/artifacts?name=image-guard-report&per_page=50" \
+    --jq '[.artifacts[] | select(.expired == false and .workflow_run.head_branch == "develop"
+      and .workflow_run.head_repository_id == .workflow_run.repository_id)][0].id // empty' 2>/dev/null || true)"
   if [[ -n "$id" ]] && gh api "repos/${repo}/actions/artifacts/${id}/zip" >"$work/report.zip" 2>/dev/null \
     && unzip -p "$work/report.zip" >"$work/report.ndjson" 2>/dev/null; then
     images="$work/report.ndjson"
