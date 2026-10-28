@@ -81,7 +81,7 @@ func registerAdminPlatformSettingsRoutes(router Router, h Handlers, adminMiddlew
 	}, adminMiddlewares...)
 	router.Group("/api/v1/admin/settings/social-login-providers", func(r Router) {
 		r.GET("/", on(social, ps.GetSocialLogin))
-		r.PUT("/{provider}", on(social, ps.UpdateSocialLogin), requireSuper, freshStepUp("settings.social_login"))
-		r.POST("/{provider}/test", on(social, ps.CheckSocialLogin), requireSuper, checkRL)
+		r.PUT("/{provider}", on(social, ps.UpdateSocialLogin), freshStepUp("settings.social_login"))
+		r.POST("/{provider}/test", on(social, ps.CheckSocialLogin), checkRL)
 	}, adminMiddlewares...)
 }
