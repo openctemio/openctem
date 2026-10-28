@@ -107,6 +107,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/platformalert"
 	"github.com/openctemio/openctem/api/internal/app/platformcaptcha"
 	"github.com/openctemio/openctem/api/internal/app/platformemail"
+	"github.com/openctemio/openctem/api/internal/app/platformsociallogin"
 	programfeedapp "github.com/openctemio/openctem/api/internal/app/programfeed"
 	"github.com/openctemio/openctem/api/internal/app/programtarget"
 	proxypoolapp "github.com/openctemio/openctem/api/internal/app/proxypool"
@@ -982,13 +983,16 @@ type Services struct {
 	// CAPTCHA keys, the one-time deployment region, the default storage
 	// quota, the alert webhook and the platform AI provider. SettingRecorder
 	// writes their audit rows and notices.
-	SettingRecorder  *consolesetting.Recorder
-	PlatformCaptcha  *platformcaptcha.Service
-	DeploymentRegion *deploymentregion.Service
-	StorageQuota     *storagequota.Service
-	OrgRelay         *orgrelay.Service
-	PlatformAlert    *platformalert.Service
-	PlatformAI       *platformai.Service
+	SettingRecorder *consolesetting.Recorder
+	PlatformCaptcha *platformcaptcha.Service
+	// PlatformSocialLogin is the console's social login setting; nil without
+	// the settings store.
+	PlatformSocialLogin *platformsociallogin.Service
+	DeploymentRegion    *deploymentregion.Service
+	StorageQuota        *storagequota.Service
+	PlatformAlert       *platformalert.Service
+	PlatformAI          *platformai.Service
+	OrgRelay            *orgrelay.Service
 	// TenantAI is the organizations' AI settings (consent, source, own provider).
 	TenantAI *tenantai.Service
 	// ScanPolicy is the platform policy for scan approval (RFC-073)
@@ -3443,7 +3447,11 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// Social OAuth (Google / GitHub / Microsoft). Built only when at least one
 	// provider actually has credentials, so the login surface the API advertises
 	// on /auth/providers matches the routes it registers — see registerAuthRoutes.
-	if cfg.OAuth.Enabled && cfg.OAuth.HasAnyProvider() {
+	// With the console setting store the service is built even when no provider
+	// is configured yet: an administrator can turn one on in the console and it
+	// applies without a restart. /auth/providers still reports only providers
+	// that are on.
+	if cfg.OAuth.Enabled && (cfg.OAuth.HasAnyProvider() || s.PlatformSocialLogin != nil) {
 		s.OAuth = auth.NewOAuthService(
 			repos.User,
 			repos.Session,
@@ -3452,6 +3460,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 			cfg.Auth,
 			log,
 		)
+		if s.PlatformSocialLogin != nil {
+			s.OAuth.SetProviderSource(s.PlatformSocialLogin)
+		}
 		// PKCE verifiers live in Redis keyed by state (TTL = state lifetime,
 		// GETDEL = single use) so a login can finish on any replica. Without
 		// Redis the service keeps them in process.
