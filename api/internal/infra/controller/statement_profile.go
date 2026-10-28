@@ -116,6 +116,7 @@ var sqlProfiles = map[string]SQLProfile{
 	"EASMDNSController":                   SQLLight,
 	"EASMWeeklyDigestController":          SQLLight,
 	"IdleWorkspaceController":             SQLLight,
+	"AIAgentSweepController":              SQLLight,
 	"JobRecoveryController":               SQLLight,
 	"MemberAccessExpiryController":        SQLLight,
 	"ReportScheduler":                     SQLLight,

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/aianalysis"
+
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -42,14 +44,31 @@ func (r *FindingActivityRepository) Create(ctx context.Context, activity *vulner
 // insertFindingActivity writes one timeline entry through db (the pool or a
 // caller's transaction).
 func insertFindingActivity(ctx context.Context, db execer, activity *vulnerability.FindingActivity) error {
+	// Read-only AI assistance never writes (docs/architecture/ai-analysis.md).
+	if err := aianalysis.RefuseAssist(ctx); err != nil {
+		return err
+	}
 	changesJSON, err := json.Marshal(activity.Changes())
 	if err != nil {
 		return fmt.Errorf("failed to marshal changes: %w", err)
 	}
 
+	// A row an AI agent writes carries its provenance (run, model, prompt,
+	// accountable owners); the database labels it actor_type 'ai'.
+	meta := activity.SourceMetadata()
+	source := string(activity.Source())
+	if p, ok := aianalysis.StampActor(ctx, activity.ActorID()); ok {
+		merged := make(map[string]any, len(meta)+1)
+		for k, v := range meta {
+			merged[k] = v
+		}
+		merged["ai"] = p.Map()
+		meta = merged
+		source = aiAgentActivitySource
+	}
 	var sourceMetadataJSON []byte
-	if activity.SourceMetadata() != nil && len(activity.SourceMetadata()) > 0 {
-		sourceMetadataJSON, err = json.Marshal(activity.SourceMetadata())
+	if len(meta) > 0 {
+		sourceMetadataJSON, err = json.Marshal(meta)
 		if err != nil {
 			return fmt.Errorf("failed to marshal source metadata: %w", err)
 		}
@@ -78,7 +97,7 @@ func insertFindingActivity(ctx context.Context, db execer, activity *vulnerabili
 		actorIDStr,
 		string(activity.ActorType()),
 		changesJSON,
-		nullString(string(activity.Source())),
+		nullString(source),
 		nullBytes(sourceMetadataJSON),
 		activity.CreatedAt(),
 	)
@@ -605,3 +624,6 @@ func (r *FindingActivityRepository) DeletedCommentIDs(ctx context.Context, tenan
 	}
 	return out, rows.Err()
 }
+
+// aiAgentActivitySource is the source of a timeline row an AI agent wrote.
+const aiAgentActivitySource = "ai_agent"
