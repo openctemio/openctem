@@ -140,7 +140,12 @@ async function runAndOpen(page: Page, scanId: string) {
   const confirm = page.getByRole('alertdialog')
   // The confirm dialog renders a moment after the click; wait for it
   // instead of checking once.
-  if (await confirm.waitFor({ state: 'visible', timeout: 3000 }).then(() => true, () => false)) {
+  if (
+    await confirm.waitFor({ state: 'visible', timeout: 3000 }).then(
+      () => true,
+      () => false
+    )
+  ) {
     await confirm.getByRole('button').last().click()
   }
   const res = await triggered
@@ -157,45 +162,49 @@ async function runAndOpen(page: Page, scanId: string) {
 }
 
 for (const kind of ['single', 'workflow'] as const) {
-  test(`a ${kind} scan: create, edit, run, view the run`, async ({ page }) => {
-    test.setTimeout(240_000)
-    const stamp = `${Date.now().toString(36)}-${kind}`
-    const first = `scan-e2e-${stamp}.example.com`
-    const second = `scan-e2e-${stamp}-b.example.com`
-    await page.goto('/scans')
-    await allowHosts(page, [first, second])
+  test(
+    `a ${kind} scan: create, edit, run, view the run`,
+    { tag: ['@scans', '@smoke'] },
+    async ({ page }) => {
+      test.setTimeout(240_000)
+      const stamp = `${Date.now().toString(36)}-${kind}`
+      const first = `scan-e2e-${stamp}.example.com`
+      const second = `scan-e2e-${stamp}-b.example.com`
+      await page.goto('/scans')
+      await allowHosts(page, [first, second])
 
-    const form: Record<string, unknown> = {
-      name: `E2E ${kind} ${stamp}`,
-      intensity: 'active',
-      mode: kind,
-      targets: {
-        type: 'asset_groups',
-        assetGroupIds: [],
-        assetIds: [],
-        assetNames: {},
-        customTargets: [first],
-      },
-      schedule: {
-        runImmediately: false,
-        saveOnly: true,
-        frequency: 'weekly',
-        dayOfWeek: 1,
-        time: '02:00',
-      },
-    }
-    if (kind === 'single') {
-      form.scannerName = 'nuclei'
-    } else {
-      const workflow = (await apiWrite(page, 'POST', '/api/v1/scan-workflows/', {
-        name: `E2E workflow ${stamp}`,
-        steps: [{ step_key: 'vuln', name: 'Vulnerability templates', tool: 'nuclei', order: 1 }],
-      })) as { id: string }
-      form.workflowId = workflow.id
-    }
+      const form: Record<string, unknown> = {
+        name: `E2E ${kind} ${stamp}`,
+        intensity: 'active',
+        mode: kind,
+        targets: {
+          type: 'asset_groups',
+          assetGroupIds: [],
+          assetIds: [],
+          assetNames: {},
+          customTargets: [first],
+        },
+        schedule: {
+          runImmediately: false,
+          saveOnly: true,
+          frequency: 'weekly',
+          dayOfWeek: 1,
+          time: '02:00',
+        },
+      }
+      if (kind === 'single') {
+        form.scannerName = 'nuclei'
+      } else {
+        const workflow = (await apiWrite(page, 'POST', '/api/v1/scan-workflows/', {
+          name: `E2E workflow ${stamp}`,
+          steps: [{ step_key: 'vuln', name: 'Vulnerability templates', tool: 'nuclei', order: 1 }],
+        })) as { id: string }
+        form.workflowId = workflow.id
+      }
 
-    const scan = await createInWizard(page, form)
-    await editOnScanPage(page, scan.id, `E2E ${kind} ${stamp} edited`, [first, second])
-    await runAndOpen(page, scan.id)
-  })
+      const scan = await createInWizard(page, form)
+      await editOnScanPage(page, scan.id, `E2E ${kind} ${stamp} edited`, [first, second])
+      await runAndOpen(page, scan.id)
+    }
+  )
 }

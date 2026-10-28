@@ -59,177 +59,181 @@ async function fillRequest(page: Page) {
   await expect(dialog).toBeHidden()
 }
 
-test('a keys-only triage session decides ten findings', async ({ page }) => {
-  test.setTimeout(180_000)
-  await page.setViewportSize({ width: 1440, height: 900 })
-  await page.goto('/findings?severity=high')
-  const waiting = await apiGet<ListBody>(page, `/api/v1/findings?${QUEUE}&per_page=25`)
-  test.skip(
-    (waiting.body?.total ?? 0) < 10,
-    'the triage findings were decided by an earlier attempt'
-  )
-
-  // Into triage from the list: Exit must come back to this list.
-  await page.evaluate((q) => {
-    sessionStorage.setItem(
-      'openctem.findings.triage',
-      JSON.stringify({
-        v: 1,
-        query: q,
-        returnTo: '/findings?severity=high',
-        fromList: true,
-        items: [],
-        index: 0,
-        outcomes: {},
-        total: 0,
-        exhausted: false,
-      })
+test(
+  'a keys-only triage session decides ten findings',
+  { tag: ['@findings'] },
+  async ({ page }) => {
+    test.setTimeout(180_000)
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto('/findings?severity=high')
+    const waiting = await apiGet<ListBody>(page, `/api/v1/findings?${QUEUE}&per_page=25`)
+    test.skip(
+      (waiting.body?.total ?? 0) < 10,
+      'the triage findings were decided by an earlier attempt'
     )
-  }, new URLSearchParams(QUEUE).toString())
-  await page.goto(`/findings/triage?${QUEUE}`)
-  await expect(title(page)).toHaveText(/E2E triage/, { timeout: 30_000 })
-  await expect(page.getByTestId('triage-position')).toHaveText(/^1 of 10$/)
 
-  // The decision panel: a labelled region with a visible button per key.
-  const region = page.getByRole('region', { name: 'Decision' })
-  for (const name of [
-    /^Confirm/,
-    /^Request false positive/,
-    /^Request risk acceptance/,
-    /^Assign$/,
-    /^Skip$/,
-    /^Evidence$/,
-    /^Full page$/,
-    /^All keys$/,
-  ]) {
-    await expect(region.getByRole('button', { name })).toBeVisible()
-  }
-  await page.addScriptTag({ path: AXE })
-  const axe = (await page.evaluate(async () => {
-    const w = window as unknown as {
-      axe: { run: (ctx: unknown, opts: unknown) => Promise<AxeResult> }
-    }
-    return w.axe.run({ include: [['main#content']] }, { resultTypes: ['violations'] })
-  })) as AxeResult
-  expect(
-    axe.violations
-      .filter((v) => v.impact === 'serious' || v.impact === 'critical')
-      .map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)
-  ).toEqual([])
+    // Into triage from the list: Exit must come back to this list.
+    await page.evaluate((q) => {
+      sessionStorage.setItem(
+        'openctem.findings.triage',
+        JSON.stringify({
+          v: 1,
+          query: q,
+          returnTo: '/findings?severity=high',
+          fromList: true,
+          items: [],
+          index: 0,
+          outcomes: {},
+          total: 0,
+          exhausted: false,
+        })
+      )
+    }, new URLSearchParams(QUEUE).toString())
+    await page.goto(`/findings/triage?${QUEUE}`)
+    await expect(title(page)).toHaveText(/E2E triage/, { timeout: 30_000 })
+    await expect(page.getByTestId('triage-position')).toHaveText(/^1 of 10$/)
 
-  // What each finding got, by title.
-  // `a` on a new finding: the lifecycle refuses acceptance before confirmation,
-  // so no request opens and the finding is then confirmed. `u` walks the
-  // previous decision back (the request is cancelled, the assignment
-  // returned) and shows that finding again, which is then decided again.
-  const plan = [
-    'c',
-    'c',
-    'f',
-    'u',
-    'f',
-    'c',
-    's',
-    'a-then-c',
-    'o',
-    'u',
-    'o',
-    'c',
-    'c',
-    'c',
-  ] as const
-  type Step = (typeof plan)[number]
-  const decided: Record<string, Step> = {}
-  const undone = new Set<string>()
-  const perNext: number[] = []
-  let lastTitle = ''
-  for (let i = 0; i < plan.length; i++) {
-    const current = (await title(page).textContent())?.trim() ?? ''
-    expect(current).toMatch(/E2E triage/)
-    const k = plan[i]
-    if (k === 'u') {
-      await key(page, 'u')
-      await expect(title(page)).toHaveText(lastTitle, { timeout: 15_000 })
-      undone.add(lastTitle)
-      continue
+    // The decision panel: a labelled region with a visible button per key.
+    const region = page.getByRole('region', { name: 'Decision' })
+    for (const name of [
+      /^Confirm/,
+      /^Request false positive/,
+      /^Request risk acceptance/,
+      /^Assign$/,
+      /^Skip$/,
+      /^Evidence$/,
+      /^Full page$/,
+      /^All keys$/,
+    ]) {
+      await expect(region.getByRole('button', { name })).toBeVisible()
     }
-    decided[current] = k
-    lastTitle = current
-    // The reads moving on makes: the next finding, and a window now and then.
-    const reads: string[] = []
-    const onRequest = (req: Request) => {
-      if (!isApi(req) || req.method() !== 'GET') return
-      const p = new URL(req.url()).pathname
-      if (/^\/api\/v1\/findings(\/[0-9a-f-]{36})?$/.test(p)) reads.push(p)
-    }
-    page.on('request', onRequest)
-    if (k === 'f') {
-      await key(page, k)
-      await fillRequest(page)
-    } else if (k === 'a-then-c') {
-      // Wait for the lifecycle's answer to `a` before the next key.
-      const refused = page.waitForResponse((r) => r.url().endsWith('/transitions'))
-      await key(page, 'a')
-      await refused
-      await expect(
-        page.getByRole('region', { name: 'Decision' }).getByRole('button', { name: /^Confirm/ })
-      ).toBeEnabled()
-      await expect(page.getByRole('dialog')).toHaveCount(0)
-      await expect(title(page)).toHaveText(current)
-      await key(page, 'c')
-    } else if (k === 'o') {
-      await key(page, 'o')
-      await expect(page.getByRole('option').first()).toBeVisible()
-      await page.keyboard.press('Enter')
-    } else {
-      await key(page, k)
-    }
-    if (i < plan.length - 1) {
-      await expect(title(page)).not.toHaveText(current, { timeout: 15_000 })
-      await page.waitForLoadState('networkidle')
-      perNext.push(reads.length)
-    }
-    page.off('request', onRequest)
-  }
-  await expect(page.getByTestId('triage-done')).toBeVisible({ timeout: 15_000 })
-  // Moving on: the next finding, plus a window now and then.
-  for (const n of perNext) expect(n).toBeLessThanOrEqual(2)
+    await page.addScriptTag({ path: AXE })
+    const axe = (await page.evaluate(async () => {
+      const w = window as unknown as {
+        axe: { run: (ctx: unknown, opts: unknown) => Promise<AxeResult> }
+      }
+      return w.axe.run({ include: [['main#content']] }, { resultTypes: ['violations'] })
+    })) as AxeResult
+    expect(
+      axe.violations
+        .filter((v) => v.impact === 'serious' || v.impact === 'critical')
+        .map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)
+    ).toEqual([])
 
-  // Read back what the session did.
-  for (const [findingTitle, action] of Object.entries(decided)) {
-    const found = await apiGet<ListBody>(
-      page,
-      `/api/v1/findings?q=${encodeURIComponent(findingTitle)}&per_page=5`
-    )
-    const f = found.body.data.find((x) => x.title === findingTitle)!
-    expect(f, findingTitle).toBeTruthy()
-    if (action === 'c' || action === 'a-then-c') expect(f.status, findingTitle).toBe('confirmed')
-    if (action === 's' || action === 'o') expect(f.status, findingTitle).toBe('new')
-    if (action === 'f') {
-      const approvals = await apiGet<
-        Array<{ requested_status: string }> | { data: Array<{ requested_status: string }> }
-      >(page, `/api/v1/findings/${f.id}/approvals`)
-      const rows = Array.isArray(approvals.body) ? approvals.body : (approvals.body?.data ?? [])
-      expect(
-        rows.map((r) => r.requested_status),
-        findingTitle
-      ).toContain('false_positive')
-      // The undone request is canceled, not deleted.
-      if (undone.has(findingTitle)) {
+    // What each finding got, by title.
+    // `a` on a new finding: the lifecycle refuses acceptance before confirmation,
+    // so no request opens and the finding is then confirmed. `u` walks the
+    // previous decision back (the request is cancelled, the assignment
+    // returned) and shows that finding again, which is then decided again.
+    const plan = [
+      'c',
+      'c',
+      'f',
+      'u',
+      'f',
+      'c',
+      's',
+      'a-then-c',
+      'o',
+      'u',
+      'o',
+      'c',
+      'c',
+      'c',
+    ] as const
+    type Step = (typeof plan)[number]
+    const decided: Record<string, Step> = {}
+    const undone = new Set<string>()
+    const perNext: number[] = []
+    let lastTitle = ''
+    for (let i = 0; i < plan.length; i++) {
+      const current = (await title(page).textContent())?.trim() ?? ''
+      expect(current).toMatch(/E2E triage/)
+      const k = plan[i]
+      if (k === 'u') {
+        await key(page, 'u')
+        await expect(title(page)).toHaveText(lastTitle, { timeout: 15_000 })
+        undone.add(lastTitle)
+        continue
+      }
+      decided[current] = k
+      lastTitle = current
+      // The reads moving on makes: the next finding, and a window now and then.
+      const reads: string[] = []
+      const onRequest = (req: Request) => {
+        if (!isApi(req) || req.method() !== 'GET') return
+        const p = new URL(req.url()).pathname
+        if (/^\/api\/v1\/findings(\/[0-9a-f-]{36})?$/.test(p)) reads.push(p)
+      }
+      page.on('request', onRequest)
+      if (k === 'f') {
+        await key(page, k)
+        await fillRequest(page)
+      } else if (k === 'a-then-c') {
+        // Wait for the lifecycle's answer to `a` before the next key.
+        const refused = page.waitForResponse((r) => r.url().endsWith('/transitions'))
+        await key(page, 'a')
+        await refused
+        await expect(
+          page.getByRole('region', { name: 'Decision' }).getByRole('button', { name: /^Confirm/ })
+        ).toBeEnabled()
+        await expect(page.getByRole('dialog')).toHaveCount(0)
+        await expect(title(page)).toHaveText(current)
+        await key(page, 'c')
+      } else if (k === 'o') {
+        await key(page, 'o')
+        await expect(page.getByRole('option').first()).toBeVisible()
+        await page.keyboard.press('Enter')
+      } else {
+        await key(page, k)
+      }
+      if (i < plan.length - 1) {
+        await expect(title(page)).not.toHaveText(current, { timeout: 15_000 })
+        await page.waitForLoadState('networkidle')
+        perNext.push(reads.length)
+      }
+      page.off('request', onRequest)
+    }
+    await expect(page.getByTestId('triage-done')).toBeVisible({ timeout: 15_000 })
+    // Moving on: the next finding, plus a window now and then.
+    for (const n of perNext) expect(n).toBeLessThanOrEqual(2)
+
+    // Read back what the session did.
+    for (const [findingTitle, action] of Object.entries(decided)) {
+      const found = await apiGet<ListBody>(
+        page,
+        `/api/v1/findings?q=${encodeURIComponent(findingTitle)}&per_page=5`
+      )
+      const f = found.body.data.find((x) => x.title === findingTitle)!
+      expect(f, findingTitle).toBeTruthy()
+      if (action === 'c' || action === 'a-then-c') expect(f.status, findingTitle).toBe('confirmed')
+      if (action === 's' || action === 'o') expect(f.status, findingTitle).toBe('new')
+      if (action === 'f') {
+        const approvals = await apiGet<
+          Array<{ requested_status: string }> | { data: Array<{ requested_status: string }> }
+        >(page, `/api/v1/findings/${f.id}/approvals`)
+        const rows = Array.isArray(approvals.body) ? approvals.body : (approvals.body?.data ?? [])
         expect(
-          rows.map((r) => (r as { status?: string }).status),
+          rows.map((r) => r.requested_status),
           findingTitle
-        ).toContain('canceled')
+        ).toContain('false_positive')
+        // The undone request is canceled, not deleted.
+        if (undone.has(findingTitle)) {
+          expect(
+            rows.map((r) => (r as { status?: string }).status),
+            findingTitle
+          ).toContain('canceled')
+        }
       }
     }
+
+    // Exit goes back to the list the session started from.
+    await page.getByRole('button', { name: 'Back to the list' }).click()
+    await expect(page).toHaveURL(/\/findings\?severity=high$/)
   }
+)
 
-  // Exit goes back to the list the session started from.
-  await page.getByRole('button', { name: 'Back to the list' }).click()
-  await expect(page).toHaveURL(/\/findings\?severity=high$/)
-})
-
-test('keys do nothing while a dialog is open', async ({ page }) => {
+test('keys do nothing while a dialog is open', { tag: ['@findings'] }, async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto(`/findings/triage?${QUEUE}`)
   const empty = page.getByTestId('triage-done')

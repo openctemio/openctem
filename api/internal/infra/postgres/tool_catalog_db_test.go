@@ -105,3 +105,18 @@ func TestToolCatalog_OutputTypesMatchTheStageCatalog(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// dnsx-enum (the sensor's subdomain brute force, enumerate.subdomains@1) is a
+// platform catalog tool: without its row a sensor's report of it is dropped
+// and its manifest shows it as ignored. The sensor reports it by this name.
+func TestToolCatalog_DnsxEnumSeeded(t *testing.T) {
+	db := catalogTestDB(t)
+	repo := NewToolRepository(&DB{DB: db})
+	tl, err := repo.GetByName(context.Background(), shared.ID{}, "dnsx-enum")
+	if err != nil {
+		t.Fatalf("dnsx-enum is not in the tool catalog: %v", err)
+	}
+	if !tl.IsActive || !tl.IsBuiltin {
+		t.Errorf("dnsx-enum active=%v builtin=%v, want both", tl.IsActive, tl.IsBuiltin)
+	}
+}
