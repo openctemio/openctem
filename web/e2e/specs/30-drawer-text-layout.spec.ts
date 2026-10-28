@@ -163,104 +163,109 @@ async function check(root: Locator, label: string) {
 }
 
 for (const size of SIZES) {
-  test.describe(`drawer text layout (${size.name})`, () => {
-    test.beforeEach(async ({ page }) => {
-      await page.setViewportSize({ width: 1440, height: 900 })
-    })
-    const atSize = (page: Page) => page.setViewportSize({ width: size.width, height: size.height })
+  test.describe(
+    `drawer text layout (${size.name})`,
+    { tag: ['@findings', '@assets', '@scans'] },
+    () => {
+      test.beforeEach(async ({ page }) => {
+        await page.setViewportSize({ width: 1440, height: 900 })
+      })
+      const atSize = (page: Page) =>
+        page.setViewportSize({ width: size.width, height: size.height })
 
-    test('asset drawer, every tab', async ({ page }, info) => {
-      const sheet = await openFirstAssetSheet(page)
-      test.skip(!sheet, 'No assets in tenant')
-      await atSize(page)
-      const tabs = sheet!.getByRole('tab')
-      const count = await tabs.count()
-      for (let i = 0; i < count; i++) {
-        const tab = tabs.nth(i)
-        const name = ((await tab.innerText()) || `tab-${i}`).trim().split('\n')[0]
-        await tab.click()
+      test('asset drawer, every tab', async ({ page }, info) => {
+        const sheet = await openFirstAssetSheet(page)
+        test.skip(!sheet, 'No assets in tenant')
+        await atSize(page)
+        const tabs = sheet!.getByRole('tab')
+        const count = await tabs.count()
+        for (let i = 0; i < count; i++) {
+          const tab = tabs.nth(i)
+          const name = ((await tab.innerText()) || `tab-${i}`).trim().split('\n')[0]
+          await tab.click()
+          await page.waitForLoadState('networkidle')
+          await shot(page, info, `${size.name}-asset-${name}`)
+          await check(sheet!, `asset drawer, ${name} tab`)
+        }
+      })
+
+      test('finding drawer', async ({ page }, info) => {
+        await page.goto('/findings')
+        const row = await firstDataRow(page)
+        test.skip(!row, 'No findings in tenant')
+        await row!.click()
+        const sheet = page.getByRole('dialog')
+        await expect(sheet).toBeVisible({ timeout: 15_000 })
+        await atSize(page)
         await page.waitForLoadState('networkidle')
-        await shot(page, info, `${size.name}-asset-${name}`)
-        await check(sheet!, `asset drawer, ${name} tab`)
-      }
-    })
+        await shot(page, info, `${size.name}-finding`)
+        await check(sheet, 'finding drawer')
+        const tabs = sheet.getByRole('tab')
+        const count = await tabs.count()
+        for (let i = 0; i < count; i++) {
+          const name = ((await tabs.nth(i).innerText()) || `tab-${i}`).trim().split('\n')[0]
+          await tabs.nth(i).click()
+          await page.waitForLoadState('networkidle')
+          await shot(page, info, `${size.name}-finding-${name}`)
+          await check(sheet, `finding drawer, ${name} tab`)
+        }
+      })
 
-    test('finding drawer', async ({ page }, info) => {
-      await page.goto('/findings')
-      const row = await firstDataRow(page)
-      test.skip(!row, 'No findings in tenant')
-      await row!.click()
-      const sheet = page.getByRole('dialog')
-      await expect(sheet).toBeVisible({ timeout: 15_000 })
-      await atSize(page)
-      await page.waitForLoadState('networkidle')
-      await shot(page, info, `${size.name}-finding`)
-      await check(sheet, 'finding drawer')
-      const tabs = sheet.getByRole('tab')
-      const count = await tabs.count()
-      for (let i = 0; i < count; i++) {
-        const name = ((await tabs.nth(i).innerText()) || `tab-${i}`).trim().split('\n')[0]
-        await tabs.nth(i).click()
+      test('scan run view', async ({ page }, info) => {
+        test.setTimeout(120_000)
+        const list = page.waitForResponse(
+          (r) => new URL(r.url()).pathname === '/api/v1/scans' && r.ok(),
+          { timeout: 60_000 }
+        )
+        await page.goto('/scans')
+        const body = (await (await list).json()) as {
+          data?: Array<{ id: string }>
+          items?: Array<{ id: string }>
+        }
+        const scans = body.data ?? body.items ?? []
+        test.skip(scans.length === 0, 'No scans in tenant')
+        await page.goto(`/scans/${scans[0].id}`)
+        const runs = page.getByRole('tab', { name: /runs/i })
+        if (await runs.isVisible().catch(() => false)) await runs.click()
+        const row = await firstDataRow(page)
+        test.skip(!row, 'The first scan has no runs')
+        await row!.click()
+        const sheet = page.getByRole('dialog')
+        await expect(sheet).toBeVisible({ timeout: 15_000 })
+        await atSize(page)
         await page.waitForLoadState('networkidle')
-        await shot(page, info, `${size.name}-finding-${name}`)
-        await check(sheet, `finding drawer, ${name} tab`)
-      }
-    })
+        await shot(page, info, `${size.name}-scan-run`)
+        await check(sheet, 'scan run view')
+      })
 
-    test('scan run view', async ({ page }, info) => {
-      test.setTimeout(120_000)
-      const list = page.waitForResponse(
-        (r) => new URL(r.url()).pathname === '/api/v1/scans' && r.ok(),
-        { timeout: 60_000 }
-      )
-      await page.goto('/scans')
-      const body = (await (await list).json()) as {
-        data?: Array<{ id: string }>
-        items?: Array<{ id: string }>
-      }
-      const scans = body.data ?? body.items ?? []
-      test.skip(scans.length === 0, 'No scans in tenant')
-      await page.goto(`/scans/${scans[0].id}`)
-      const runs = page.getByRole('tab', { name: /runs/i })
-      if (await runs.isVisible().catch(() => false)) await runs.click()
-      const row = await firstDataRow(page)
-      test.skip(!row, 'The first scan has no runs')
-      await row!.click()
-      const sheet = page.getByRole('dialog')
-      await expect(sheet).toBeVisible({ timeout: 15_000 })
-      await atSize(page)
-      await page.waitForLoadState('networkidle')
-      await shot(page, info, `${size.name}-scan-run`)
-      await check(sheet, 'scan run view')
-    })
-
-    test('sensor drawer', async ({ page }, info) => {
-      await page.goto('/sensors')
-      const first = page.locator('[data-slot="sensor-name"]').first()
-      const found = await first
-        .waitFor({ timeout: 30_000 })
-        .then(() => true)
-        .catch(() => false)
-      test.skip(!found, 'No sensor in the organization')
-      await first.click()
-      const sheet = page.locator('[data-slot="detail-sheet"]')
-      await expect(sheet).toBeVisible()
-      await atSize(page)
-      await page.waitForLoadState('networkidle')
-      await shot(page, info, `${size.name}-sensor`)
-      await check(sheet, 'sensor drawer')
-      expect
-        .soft(await seriousAxe(page, '[data-slot="detail-sheet"]'), 'sensor drawer: axe')
-        .toEqual([])
-      const tabs = sheet.getByRole('tab')
-      const count = await tabs.count()
-      for (let i = 0; i < count; i++) {
-        const name = ((await tabs.nth(i).innerText()) || `tab-${i}`).trim().split('\n')[0]
-        await tabs.nth(i).click()
+      test('sensor drawer', async ({ page }, info) => {
+        await page.goto('/sensors')
+        const first = page.locator('[data-slot="sensor-name"]').first()
+        const found = await first
+          .waitFor({ timeout: 30_000 })
+          .then(() => true)
+          .catch(() => false)
+        test.skip(!found, 'No sensor in the organization')
+        await first.click()
+        const sheet = page.locator('[data-slot="detail-sheet"]')
+        await expect(sheet).toBeVisible()
+        await atSize(page)
         await page.waitForLoadState('networkidle')
-        await shot(page, info, `${size.name}-sensor-${name}`)
-        await check(sheet, `sensor drawer, ${name} tab`)
-      }
-    })
-  })
+        await shot(page, info, `${size.name}-sensor`)
+        await check(sheet, 'sensor drawer')
+        expect
+          .soft(await seriousAxe(page, '[data-slot="detail-sheet"]'), 'sensor drawer: axe')
+          .toEqual([])
+        const tabs = sheet.getByRole('tab')
+        const count = await tabs.count()
+        for (let i = 0; i < count; i++) {
+          const name = ((await tabs.nth(i).innerText()) || `tab-${i}`).trim().split('\n')[0]
+          await tabs.nth(i).click()
+          await page.waitForLoadState('networkidle')
+          await shot(page, info, `${size.name}-sensor-${name}`)
+          await check(sheet, `sensor drawer, ${name} tab`)
+        }
+      })
+    }
+  )
 }

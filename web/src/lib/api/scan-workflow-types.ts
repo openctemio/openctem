@@ -205,6 +205,16 @@ export interface ScanWorkflow {
   created_at: string
   updated_at: string
   created_by?: string
+  /** A system workflow retired on purpose: no new scans or copies; superseded_by names its replacement. */
+  is_retired?: boolean
+  superseded_by?: WorkflowRef
+  /** On a copy made from a retired system workflow (detail response only). */
+  based_on_retired?: { id: string; name: string; superseded_by?: WorkflowRef }
+}
+
+export interface WorkflowRef {
+  id: string
+  name: string
 }
 
 // ============================================
@@ -272,7 +282,7 @@ export type ScanRunKind =
 
 /** Which policy set a run's deadline (scan_runs.deadline_reason). */
 export type RunDeadlineReason =
-  'scan_max_duration' | 'workflow_max_duration' | 'platform_cap' | 'legacy'
+  'scan_max_duration' | 'workflow_max_duration' | 'platform_cap' | 'work_estimate' | 'legacy'
 
 export interface ScanRun {
   id: string
@@ -422,6 +432,8 @@ export interface ScanWorkflowListFilters {
   include?: string
   search?: string
   is_active?: boolean
+  /** Also list retired system workflows (hidden by default). */
+  include_retired?: boolean
   tags?: string
   page?: number
   per_page?: number

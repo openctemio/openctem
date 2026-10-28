@@ -882,8 +882,10 @@ func (g *ActiveGate) decide(ctx context.Context, tenantID shared.ID, ids []strin
 			continue
 		}
 		// Resolves only through a wildcard record: passive only until a
-		// person confirms this very asset.
-		if wildcard[id] && !humanConfirmed {
+		// person confirms this very asset. A registrable domain never
+		// resolves through a wildcard of its own zone (RFC 4592): a mark on
+		// one is stale and ignored.
+		if wildcard[id] && !humanConfirmed && !asset.IsRegistrableDomain(a.Name()) {
 			out[id] = attribution.StateWildcardOnly
 			continue
 		}
@@ -1013,7 +1015,7 @@ func (g *ActiveGate) hostRefusals(ctx context.Context, tenantID shared.ID, ids [
 		}
 		rec, ok := recs[hid]
 		hostConfirmedByPerson := ok && rec.State == attribution.StateConfirmed && rec.HumanDecided
-		if wildcardHost[hid] && !hostConfirmedByPerson {
+		if wildcardHost[hid] && !hostConfirmedByPerson && !asset.IsRegistrableDomain(h) {
 			out[id] = attribution.StateWildcardOnly
 			continue
 		}

@@ -47,7 +47,8 @@ import (
 //	                                            step-up; reject: step-up;
 //	                                            cancel: requester (critical audit)
 //	/admin/audit-logs         any admin         —
-//	/admin/target-mappings    any admin         ops_admin+ (+ audited)
+//	/admin/target-mappings    any admin         super_admin + step-up + reason
+//	                                            (audited)
 //	/admin/threat-intel       any admin         sync: ops_admin+ (audited);
 //	                                            turn a feed on or off: ops_admin+ +
 //	                                            step-up (audited)
@@ -138,7 +139,8 @@ import (
 // "step-up" is the route-level gate (middleware.RequireAdminStepUp): a fresh
 // authenticator code in X-Admin-Step-Up, or the five-minute step-up window of
 // the same console session. "fresh step-up" (RequireAdminFreshStepUp) never
-// uses the window. "fresh code in the body" is the older check in the handler
+// uses the window; elevating the session is a fresh step-up that then opens
+// the window. "fresh code in the body" is the older check in the handler
 // (confirmAdminStepUp: a code in the request body, every time), which many
 // routes keep on top of the route-level step-up.
 //
@@ -206,6 +208,13 @@ func registerAdminRoutes(
 		return middleware.RequireAdminFreshStepUp(h.AdminStepUp, purpose)
 	}
 
+	// freshStepUpOpensWindow is freshStepUp for elevating the session, the
+	// gateway to every other protected action: it never rides a window another
+	// action opened, and its own fresh proof opens the window.
+	freshStepUpOpensWindow := func(purpose string) Middleware {
+		return middleware.RequireAdminFreshStepUpOpensWindow(h.AdminStepUp, purpose)
+	}
+
 	// Auth: one group (chi cannot mount the same prefix twice), so the guard is
 	// per route. /validate needs a verified console session. The console signs
 	// in on its own: /login checks the account's email and password and opens
@@ -242,7 +251,7 @@ func registerAdminRoutes(
 				r.POST("/step-up/webauthn", h.AdminConsole.WebAuthnStepUp, consoleRL.LoginMiddleware(), authed)
 				// Time-boxed elevation: read-only until the session elevates
 				// (a fresh confirmation); ending it is always allowed.
-				r.POST("/elevate", h.AdminConsole.Elevate, authed, stepUp("console.elevate"))
+				r.POST("/elevate", h.AdminConsole.Elevate, authed, freshStepUpOpensWindow("console.elevate"))
 				r.DELETE("/elevate", h.AdminConsole.EndElevation, authed)
 				// Platform identity provider sign-in (RFC-022 revision 4). Not a
 				// credential-guessing surface (the IdP authenticates, the state is
@@ -480,7 +489,8 @@ func registerAdminRoutes(
 		}, adminMiddlewares...)
 	}
 
-	// The request-access queue: any admin reads; approving (creates the
+	// The request-access queue: any admin reads (a read-only administrator
+	// gets masked addresses and no notes); approving (creates the
 	// organization, requester as owner) or rejecting needs ops_admin+, audited.
 	if h.AccessRequest != nil {
 		requireOps := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)
@@ -630,7 +640,9 @@ func registerAdminRoutes(
 		router.Group("/api/v1/admin/tenants", func(r Router) {
 			r.GET("/", h.AdminOrganization.List)
 			r.POST("/", h.AdminOrganization.Create, with([]Middleware{opsWrite, stepUp("organization.create")}, audit("organization.create"))...)
-			r.GET("/{tenantId}", h.AdminOrganization.Get)
+			// One organization's page carries its owners' addresses (ops_admin
+			// and above): every view is audited, like the member list.
+			r.GET("/{tenantId}", h.AdminOrganization.Get, audit("organization.view")...)
 
 			// Organization users: list, and bootstrap the FIRST owner of an
 			// organization that has none (RFC-022 rev. 5). The platform
@@ -770,6 +782,9 @@ func registerAdminRoutes(
 		// Finding people by email is personal data: ops_admin+ (a read-only
 		// administrator sees counts elsewhere, never accounts).
 		opsRead := []Middleware{h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)}
+		if h.AdminDirectoryReadLimiter != nil {
+			opsRead = append(opsRead, h.AdminDirectoryReadLimiter.WriteMiddleware())
+		}
 		router.Group("/api/v1/admin/platform-users", func(r Router) {
 			r.GET("/", h.AdminPlatformUser.List, opsRead...)
 			r.GET("/{user_id}", h.AdminPlatformUser.Get, append(cloneMW(opsRead), audited("platform_user.view", nil)...)...)
@@ -890,9 +905,14 @@ func registerAdminRoutes(
 			r.GET("/", h.AdminTargetMapping.List)
 			r.GET("/{id}", h.AdminTargetMapping.Get)
 
-			// Write operations — ops_admin+, rate-limited, and (when wired) audited.
+			// Write operations: a mapping decides which assets every
+			// organization's scans skip or take, so changing one is a
+			// platform-wide decision. super_admin, a step-up, a reason in the
+			// body (kept in the audit row), rate-limited and audited.
 			var writeMiddlewares []Middleware
-			writeMiddlewares = append(writeMiddlewares, h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin))
+			writeMiddlewares = append(writeMiddlewares,
+				h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin),
+				stepUp("target_mapping.change"))
 			if h.AdminMappingRateLimiter != nil {
 				writeMiddlewares = append(writeMiddlewares, h.AdminMappingRateLimiter.WriteMiddleware())
 			}

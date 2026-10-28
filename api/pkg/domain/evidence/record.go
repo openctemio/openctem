@@ -50,6 +50,31 @@ var (
 	ErrSecretUnreadable = errors.New("evidence secret cannot be decrypted")
 )
 
+// Role says what an evidence item shows to the reader of a finding.
+type Role string
+
+// Evidence roles. A finding's reader sees the baseline (normal behavior),
+// the proof (the issue), the verification (the fix check) and anything else
+// as supporting.
+const (
+	RoleBaseline     Role = "baseline"
+	RoleProof        Role = "proof"
+	RoleVerification Role = "verification"
+	RoleSupporting   Role = "supporting"
+)
+
+// MaxPosition bounds an item's reader order.
+const MaxPosition = 1000
+
+// ParseRole validates a role name.
+func ParseRole(s string) (Role, error) {
+	switch r := Role(s); r {
+	case RoleBaseline, RoleProof, RoleVerification, RoleSupporting:
+		return r, nil
+	}
+	return "", fmt.Errorf("%w: role must be baseline, proof, verification or supporting", shared.ErrValidation)
+}
+
 // Record is one stored, masked item.
 type Record struct {
 	ID             shared.ID
@@ -72,11 +97,24 @@ type Record struct {
 	SecretsExpireAt *time.Time
 	CapturedAt      time.Time
 	CreatedAt       time.Time
+	// Role and Position are the reader's view of the item: what it shows
+	// and where it sits (ascending; equal positions fall back to newest
+	// first). A new item is supporting at position 0.
+	Role     Role
+	Position int
 }
 
 // SecretsAvailable reports whether the item's secrets can still be revealed.
 func (r *Record) SecretsAvailable(now time.Time) bool {
 	return r.MaskedCount > 0 && r.SecretsExpireAt != nil && now.Before(*r.SecretsExpireAt)
+}
+
+// State summarizes a finding's evidence for a reader or a write-up.
+type State struct {
+	// Version counts every change to the finding's evidence.
+	Version int64
+	// ProofCount is how many records have the proof role.
+	ProofCount int
 }
 
 // StoredSecret is one encrypted value of a record.
@@ -104,11 +142,24 @@ type Repository interface {
 	// InsertForFinding stores records for one finding (retest attempts) and
 	// prunes the finding's retest records to MaxRetestPerFinding.
 	InsertForFinding(ctx context.Context, tenantID, findingID shared.ID, recs []NewRecord) error
-	// List returns a finding's records, newest first; retestID filters to
-	// one retest attempt.
+	// List returns a finding's records in reader order (position, then
+	// newest first); retestID filters to one retest attempt.
 	List(ctx context.Context, tenantID, findingID shared.ID, retestID *shared.ID, limit int) ([]*Record, error)
 	// Get returns one record of a finding.
 	Get(ctx context.Context, tenantID, findingID, id shared.ID) (*Record, error)
+	// Update sets the role and/or position of one record of a finding and
+	// returns it; a record of another finding or tenant is ErrNotFound.
+	Update(ctx context.Context, tenantID, findingID, id shared.ID, role *Role, position *int) (*Record, error)
+	// SetOrder gives the listed records the positions 0..n-1 in the order of
+	// ids and the finding's other records position n. Every id must be a
+	// record of the finding (else ErrNotFound).
+	SetOrder(ctx context.Context, tenantID, findingID shared.ID, ids []shared.ID) error
+	// State returns the finding's evidence version and how many records
+	// have the proof role.
+	State(ctx context.Context, tenantID, findingID shared.ID) (State, error)
+	// FindingSource returns the finding's source ("pentest", "sast", ...);
+	// a finding of another tenant is ErrNotFound.
+	FindingSource(ctx context.Context, tenantID, findingID shared.ID) (string, error)
 	// Secrets returns the stored secrets of a record for the placeholders.
 	Secrets(ctx context.Context, tenantID, evidenceID shared.ID, placeholders []string) ([]StoredSecret, error)
 	// CountSince counts a tenant's records created since t.

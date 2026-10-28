@@ -17,6 +17,7 @@ export const SKIP_REASONS = [
   'incompatible_type',
   'out_of_scope',
   'ownership_unconfirmed',
+  'wildcard_only',
   'tier_exceeded',
   'internal_outside_zones',
   'outside_zones',

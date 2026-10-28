@@ -4,8 +4,11 @@ package crypto
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -63,6 +66,25 @@ var (
 // Cipher provides AES-256-GCM encryption and decryption.
 type Cipher struct {
 	aead cipher.AEAD
+	// fpKey keys SecretFingerprint; derived from the encryption key, never stored.
+	fpKey [32]byte
+}
+
+// Fingerprinter gives a keyed, truncated fingerprint of a secret, so two
+// values can be compared (or bound into an approval) without storing a plain
+// hash of the secret. The fingerprint changes when the encryption key does.
+type Fingerprinter interface {
+	SecretFingerprint(purpose, value string) string
+}
+
+// SecretFingerprint returns 16 hex characters of HMAC-SHA256(key derived from the
+// encryption key and purpose, value).
+func (c *Cipher) SecretFingerprint(purpose, value string) string {
+	mac := hmac.New(sha256.New, c.fpKey[:])
+	mac.Write([]byte(purpose))
+	mac.Write([]byte{0})
+	mac.Write([]byte(value))
+	return hex.EncodeToString(mac.Sum(nil))[:16]
 }
 
 // Ensure Cipher implements Encryptor interface.
@@ -85,7 +107,12 @@ func NewCipher(key []byte) (*Cipher, error) {
 		return nil, fmt.Errorf("crypto: failed to create GCM cipher: %w", err)
 	}
 
-	return &Cipher{aead: aead}, nil
+	c := &Cipher{aead: aead}
+	derive := sha256.New()
+	derive.Write([]byte("openctem/cipher-fingerprint/v1"))
+	derive.Write(key)
+	copy(c.fpKey[:], derive.Sum(nil))
+	return c, nil
 }
 
 // NewCipherFromHex creates a new Cipher from a hex-encoded key.

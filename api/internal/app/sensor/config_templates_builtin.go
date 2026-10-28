@@ -707,6 +707,9 @@ services:
 {{- end}}
     volumes:
       # One data volume: state/, outbox/ and content/ (see below).
+      # Keep it a named volume: Docker creates it with the sensor's owner. A host
+      # directory here must first be given to the sensor's user (sudo chown -R
+      # 999:999 <dir>). Guide: https://docs.openctem.io/sensors/run-the-sensor/
       - data:/var/lib/openctem
 {{- if isDaemon .Sensor}}
       # The sensor-local policy and the kill switch, read-only.
@@ -800,6 +803,10 @@ echo '{{.SeccompSHA256}}  /etc/openctem/sensor-seccomp.json' | sha256sum -c -
 #   content/  scanner content cache (trivy DB, nuclei templates, semgrep
 #             rules), so a new container does not download it again; it can
 #             be deleted at any time.
+# Keep it a NAMED volume as below: Docker creates it with the sensor's owner. A
+# host directory (bind mount) must first be given to the sensor's user
+# (sudo chown -R 999:999 <dir>), or the sensor stops at start and says so.
+# Guide: https://docs.openctem.io/sensors/run-the-sensor/
 # Hardened: read-only root filesystem, no capabilities, no privilege
 # escalation, the sensor's seccomp profile (add --cap-add NET_RAW only for
 # naabu SYN scans). The sensor

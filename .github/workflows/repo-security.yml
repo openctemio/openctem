@@ -245,14 +245,23 @@ jobs:
           echo "${ZIZMOR_SHA256}  zizmor.tgz" | sha256sum -c -
           tar -xzf zizmor.tgz zizmor
           ./zizmor --no-progress --format github .github
+      # Which languages CodeQL analyses for an event (develop pushes: the changed side).
+      - name: CodeQL languages self-test
+        run: bash .github/scripts/codeql-languages.test.sh
       - name: Actions are pinned to commit SHAs
         run: bash .github/scripts/check-action-pins.sh
       # Which jobs a change runs (api/web/docs routing shared by every workflow).
       - name: Change routing self-test
         run: bash .github/scripts/changed.test.sh
+      # Which part of a side a change touches (e2e-only, catalogs, CI files).
+      - name: Change scope self-test
+        run: bash .github/scripts/scope.test.sh
       # Which develop pushes skip the jobs the merge queue already ran.
       - name: Merge-queue reuse self-test
         run: bash .github/scripts/queue-verified.test.sh
+      # Which runs a failed job cancels (merge queue: the group; PR: its own run).
+      - name: Fail-fast self-test
+        run: bash .github/scripts/fail-fast.test.sh
       # Which merge-queue groups reuse a tree that already passed.
       - name: Tree reuse self-test
         run: bash .github/scripts/tree-verified.test.sh
@@ -289,6 +298,9 @@ jobs:
 
       - name: Tool pin freshness self-test
         run: bash .github/scripts/tool-pins.test.sh
+
+      - name: Release builds use no shared cache
+        run: bash .github/scripts/check-release-no-cache.sh
 
   # New or upgraded dependencies a pull request brings in (Go modules, npm,
   # GitHub Actions) are checked against the GitHub Advisory Database. Fails on a

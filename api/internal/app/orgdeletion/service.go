@@ -24,9 +24,14 @@ import (
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
-// ActionOrganizationPurged is the critical admin audit action of an
-// immediate deletion from the console.
-const ActionOrganizationPurged = "organization.purged"
+// Critical admin audit actions of an immediate deletion from the console.
+// The intent row (ActionOrganizationPurgeRequested) is written before
+// anything is deleted and the deletion is refused when it cannot be written;
+// the outcome row (ActionOrganizationPurged) follows with the result.
+const (
+	ActionOrganizationPurgeRequested = "organization.purge_requested"
+	ActionOrganizationPurged         = "organization.purged"
+)
 
 // Reason length bounds for the console's immediate deletion.
 const (
@@ -43,6 +48,9 @@ var (
 	ErrNotPending = fmt.Errorf("%w: the organization is not scheduled for deletion", shared.ErrConflict)
 	// ErrSystemOrganization: the platform's system organization is never deleted.
 	ErrSystemOrganization = fmt.Errorf("%w: the system organization cannot be deleted", shared.ErrConflict)
+	// ErrAuditUnavailable: an immediate deletion is irreversible, so it is
+	// refused while its audit row cannot be written.
+	ErrAuditUnavailable = errors.New("the deletion was not started because its audit entry could not be written")
 	// ErrReasonRequired: an immediate deletion needs a reason.
 	ErrReasonRequired = fmt.Errorf("%w: a reason of %d to %d characters is required", shared.ErrValidation, MinReasonRunes, MaxReasonRunes)
 )
@@ -230,6 +238,20 @@ func (s *Service) PurgeNow(ctx context.Context, actor *admin.AdminUser, tenantID
 	if err != nil {
 		return err
 	}
+	// The deletion cannot be undone: record the intent first and refuse when it
+	// cannot be written, so no organization disappears without an admin audit row.
+	if s.adminAudit == nil {
+		return ErrAuditUnavailable
+	}
+	intent := admin.NewAuditLogBuilder(actor, ActionOrganizationPurgeRequested).
+		Resource("tenant", &tenantID, name).
+		Context(c.IP, c.UserAgent).
+		Request("POST", "", map[string]any{"reason": reason}).
+		Critical().Response(202).Build()
+	if err := s.adminAudit.Create(ctx, intent); err != nil {
+		s.log.Error("admin audit organization purge intent; deletion refused", "tenant_id", tenantID.String(), "error", err)
+		return ErrAuditUnavailable
+	}
 	// Refuse new requests first, so nothing writes while the rows go.
 	s.remember(ctx, tenantID, tenantdom.OrganizationPendingDeletion)
 	if s.sockets != nil {
@@ -237,20 +259,20 @@ func (s *Service) PurgeNow(ctx context.Context, actor *admin.AdminUser, tenantID
 	}
 	actx := auditapp.AuditContext{ActorEmail: "platform-admin:" + actor.Email(), ActorIP: c.IP, UserAgent: c.UserAgent}
 	err = s.purger.DeleteTenant(ctx, actx, tenantID.String())
-	if s.adminAudit != nil {
-		b := admin.NewAuditLogBuilder(actor, ActionOrganizationPurged).
-			Resource("tenant", &tenantID, name).
-			Context(c.IP, c.UserAgent).
-			Request("POST", "", map[string]any{"reason": reason}).
-			Critical()
-		if err != nil {
-			b = b.Response(500).Error("the deletion failed")
-		} else {
-			b = b.Response(200)
-		}
-		if aerr := s.adminAudit.Create(ctx, b.Build()); aerr != nil {
-			s.log.Error("admin audit organization purge", "tenant_id", tenantID.String(), "error", aerr)
-		}
+	// The outcome row; the intent row above already exists, so a failed write
+	// here is logged and does not hide the deletion.
+	b := admin.NewAuditLogBuilder(actor, ActionOrganizationPurged).
+		Resource("tenant", &tenantID, name).
+		Context(c.IP, c.UserAgent).
+		Request("POST", "", map[string]any{"reason": reason}).
+		Critical()
+	if err != nil {
+		b = b.Response(500).Error("the deletion failed")
+	} else {
+		b = b.Response(200)
+	}
+	if aerr := s.adminAudit.Create(ctx, b.Build()); aerr != nil {
+		s.log.Error("admin audit organization purge", "tenant_id", tenantID.String(), "error", aerr)
 	}
 	if err != nil {
 		// The status cache said pending: put the real status back on the

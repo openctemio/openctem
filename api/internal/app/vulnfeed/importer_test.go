@@ -250,3 +250,9 @@ func TestNewImporterRefusesBadBaseURL(t *testing.T) {
 		}
 	}
 }
+
+func TestDefaultBaseURLIsTheBundlesRepo(t *testing.T) {
+	if DefaultBaseURL != "https://github.com/openctemio/vulnfeed-bundles/releases" {
+		t.Fatalf("DefaultBaseURL = %q", DefaultBaseURL)
+	}
+}

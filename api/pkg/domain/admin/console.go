@@ -49,6 +49,24 @@ func FreshStepUpRequired(ctx context.Context) bool {
 	return v
 }
 
+type freshOpensWindowKey struct{}
+
+// WithFreshStepUpOpensWindow is WithFreshStepUp for an action that is itself
+// the gateway to others (elevating the session): it takes only a fresh code
+// or a just-given key confirmation, and a successful check then opens the
+// session's step-up window, so the first protected action after it needs no
+// second code.
+func WithFreshStepUpOpensWindow(ctx context.Context) context.Context {
+	return context.WithValue(WithFreshStepUp(ctx), freshOpensWindowKey{}, true)
+}
+
+// FreshStepUpOpensWindow reports whether ctx was marked by
+// WithFreshStepUpOpensWindow.
+func FreshStepUpOpensWindow(ctx context.Context) bool {
+	v, _ := ctx.Value(freshOpensWindowKey{}).(bool)
+	return v
+}
+
 type backgroundRequestKey struct{}
 
 // WithBackgroundRequest marks ctx as a read the console made on its own (a

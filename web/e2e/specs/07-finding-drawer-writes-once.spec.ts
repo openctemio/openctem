@@ -12,7 +12,7 @@ import { test, expect } from '../fixtures/authenticated-page'
  *      a code finding.
  */
 
-test.describe('Finding drawer', () => {
+test.describe('Finding drawer', { tag: ['@findings'] }, () => {
   test('a status change is written once', async ({ page }) => {
     await page.goto('/findings')
     await page.waitForLoadState('networkidle')

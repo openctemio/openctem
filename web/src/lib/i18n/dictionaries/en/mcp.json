@@ -199,6 +199,8 @@
   "mcp.scope.pentestDraft.title": "Save pentest findings as drafts, each confirmed by another campaign member",
   "mcp.scope.propose.short": "Proposals",
   "mcp.scope.propose.title": "Propose false positives and accepted risks, each decided by another person",
+  "mcp.scope.scopeCheck.short": "Scope check",
+  "mcp.scope.scopeCheck.title": "Check whether a target is inside your authorized testing scope, read only",
   "mcp.status.anyClient": "Unverified applications allowed",
   "mcp.status.canComment": "Read and comment",
   "mcp.status.days": "Connections last {days} days",

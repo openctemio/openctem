@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 
+	"github.com/openctemio/openctem/api/internal/app/adminapproval"
 	"github.com/openctemio/openctem/api/internal/app/consolesetting"
 	"github.com/openctemio/openctem/api/internal/app/deploymentregion"
 	"github.com/openctemio/openctem/api/internal/app/platformai"
@@ -81,12 +82,13 @@ func newAdminNotifier(cfg *config.Config, repos *Repositories, svc *Services, lo
 
 // newAdminPlatformSettingsHandler serves the moved settings; nil when the
 // console settings store is not configured.
-func newAdminPlatformSettingsHandler(repos *Repositories, svc *Services, log *logger.Logger) *handler.AdminPlatformSettingsHandler {
+func newAdminPlatformSettingsHandler(repos *Repositories, svc *Services, approvals *adminapproval.Service, log *logger.Logger) *handler.AdminPlatformSettingsHandler {
 	if repos.PlatformSetting == nil || repos.Admin == nil {
 		return nil
 	}
-	h := handler.NewAdminPlatformSettingsHandler(repos.Admin, log)
+	h := handler.NewAdminPlatformSettingsHandler(repos.Admin, log).WithApprovals(approvals)
 	h.Captcha, h.Region, h.StorageQuota, h.Alerts, h.AI =
 		svc.PlatformCaptcha, svc.DeploymentRegion, svc.StorageQuota, svc.PlatformAlert, svc.PlatformAI
+	h.EmailRelay = svc.OrgRelay
 	return h
 }

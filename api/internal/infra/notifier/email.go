@@ -51,8 +51,8 @@ func NewEmailClient(config Config) (*EmailClient, error) {
 	if emailConfig.SMTPPort == 0 {
 		return nil, fmt.Errorf("SMTP port is required")
 	}
-	if !emailpkg.TenantPortAllowed(emailConfig.SMTPPort) {
-		return nil, emailpkg.ErrTenantPortNotAllowed
+	if err := validateRelay(emailConfig); err != nil {
+		return nil, err
 	}
 	if emailConfig.FromEmail == "" {
 		return nil, fmt.Errorf("sender email is required")
@@ -161,6 +161,14 @@ var (
 	}
 )
 
+// validateRelay applies the transport rule for an organization's relay (the
+// port always; on a managed service also AUTH and TLS). It runs when the
+// client is built and again before every send, because a stored
+// configuration may predate the rule.
+func validateRelay(c *EmailConfig) error {
+	return emailpkg.ValidateTenantRelay(c.SMTPPort, c.UseTLS, c.UseSTARTTLS, c.Username, c.Password)
+}
+
 // sendSMTP sends an email via SMTP.
 func (c *EmailClient) sendSMTP(ctx context.Context, message []byte) error {
 	// SSRF guard: a tenant controls SMTPHost, so block loopback / link-local
@@ -172,8 +180,8 @@ func (c *EmailClient) sendSMTP(ctx context.Context, message []byte) error {
 	// as ServerName so certificate validation is unaffected.
 	// The port is checked again here: a stored configuration may predate
 	// the rule.
-	if !emailpkg.TenantPortAllowed(c.config.SMTPPort) {
-		return emailpkg.ErrTenantPortNotAllowed
+	if err := validateRelay(&c.config); err != nil {
+		return err
 	}
 	safeIP, err := resolveSMTPHost(ctx, c.config.SMTPHost)
 	if err != nil {

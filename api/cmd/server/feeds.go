@@ -54,6 +54,20 @@ func newFeedControllers(cfg *config.Config, svc *Services, repos *Repositories, 
 			log.Error("vulnerability bundle import disabled", "error", err)
 			return f
 		}
+		// KEV and EPSS ride the same release as a signed side manifest: applied
+		// when newer than what the platform holds, then the same findings sweep
+		// and event log as after a direct sync.
+		if svc.ThreatIntel != nil {
+			im.WithIntel(svc.ThreatIntel)
+			svc.ThreatIntel.SetAfterBundleApply(func(ctx context.Context, source string) {
+				switch source {
+				case "kev":
+					f.kev.Sweeper().Run(ctx, "kev", true, true)
+				case "epss":
+					f.epss.Sweeper().Run(ctx, "epss", true, true)
+				}
+			})
+		}
 		f.bundles = controller.NewVulnFeedImportController(im, log.With("controller", "vuln-feed-import"))
 		if vulnEvents != nil {
 			f.bundles.SetEventEmitter(vulnEvents)

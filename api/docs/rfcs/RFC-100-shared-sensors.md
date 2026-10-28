@@ -209,7 +209,7 @@ reconsidered once sensors that apply the signed zone ranges are released.
 | Per-job isolation (S11) | every job in a fresh, private workdir and process sandbox (unprivileged UID, rlimits, seccomp), destroyed after the job; no writable cache shared between jobs except signed public content; outbox entries tagged with the job and its tenant; egress to private, loopback, link-local and metadata addresses dropped at the network layer unless the job's zone allows the range. The mechanisms live in sdk-go core, the sensor only wires them |
 | Name resolution (G8) | the API resolves every host name of a job bound for shared sensors and refuses it when any address is private, loopback, link-local, CGNAT or a metadata address. The sensor resolves again right before connecting and pins the address it checked, so a name re-bound between the two checks is refused there (DNS rebinding) |
 | Results | written as T1, into the tenant of the job the sensor holds (BOLA per job); never unsolicited push (grant clamp) |
-| Content | public, signed content only; no per-tenant rulesets on a shared box |
+| Content | public, signed content only; no per-tenant rulesets on a shared box. A shared sensor fetches platform packs only (one cached copy for all organizations, [RFC-061](RFC-061-content-packs.md) §3.7); lists generated from an organization's own data ride inline in the signed job and are erased with the task |
 | Credentials | never on the hosted service; self-hosted off unless allowed per sensor, by reference |
 
 ### 8.1 Signed jobs for a sensor that serves many tenants (G9)
