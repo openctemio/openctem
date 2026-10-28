@@ -135,11 +135,12 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-124](RFC-124-outbound-webhooks.md) | Outbound webhooks: delivery per channel, typed events, signing and redelivery | Implemented (2026-10-22): delivery per channel, typed payload, refused redirects, signing and redelivery |
 | [RFC-125](RFC-125-automation-simulate-and-go-live.md) | Automations: catalog, versions, simulate and the go-live gate | Accepted (2026-10-23). |
 | [RFC-126](RFC-126-import-mappings.md) | Import mappings | Accepted (2026-10-23). |
+| [RFC-127](RFC-127-team-access-presets.md) | Team access presets | Accepted (2026-10-26). |
 | [RFC-128](RFC-128-smart-asset-groups.md) | Smart asset groups | Accepted (2026-10-26). |
 | [RFC-129](RFC-129-shared-fleet-scheduling.md) | Shared fleet scheduling | Accepted (2026-10-27); P0-F5 (bounded shared claim, #3202) and P0-F3 (cross-organization politeness, #3203) in review, the rest designed |
 | [RFC-130](RFC-130-migration-applied-set.md) | Migration applied set (versions only have to be unique) | Implemented |
 | [RFC-131](RFC-131-ai-analysis.md) | AI analysis (governed suggestions, the analyze contract, the AI analyst) | Accepted (2026-10-28). |
-| [RFC-133](RFC-133-ai-analyst-harness.md) | The AI analyst harness (own loop, agent pool, scale on the job system, own tool sandbox) | Accepted (2026-10-28). |
+| [RFC-133](RFC-133-ai-harness.md) | The AI harness (own loop, AI worker pool, scale on the job system, own tool sandbox) | Accepted (2026-10-28). |
 | [RFC-135](RFC-135-custom-ai-agents.md) | AI agents that organizations build (revisions, lifecycle, registry, console) | Accepted (2026-10-28). |
 <!-- END RFC INDEX -->
 

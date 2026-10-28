@@ -19,8 +19,9 @@ func TestRegistryCoversEveryEncryptedConsoleSetting(t *testing.T) {
 
 	covered := map[string]bool{}
 	for _, loc := range registry {
-		if j, ok := loc.(jsonField); ok && j.table == "platform_settings" && len(j.path) == 1 {
-			covered[j.where+"|"+j.path[0]] = true
+		if j, ok := loc.(jsonField); ok && j.table == "platform_settings" && len(j.path) >= 1 {
+			// A field nested under a provider (auth.social_login) is covered by its last path element.
+			covered[j.where+"|"+j.path[len(j.path)-1]] = true
 		}
 	}
 
