@@ -352,7 +352,7 @@ describe('DashboardHome', () => {
     data.byKey['personal:p1'] = snapshot('personal', 5)
     renderHome('vi')
     expect(screen.getByText('Phạm vi của bạn')).toBeInTheDocument()
-    expect(screen.getByText('Finding đang mở')).toBeInTheDocument()
+    expect(screen.getByText('Phát hiện đang mở')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Làm mới ngay' })).toBeInTheDocument()
   })
 })
