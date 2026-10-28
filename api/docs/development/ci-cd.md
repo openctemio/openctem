@@ -487,6 +487,35 @@ minutes, typically more than half of the group's total.
 
 ### Reusing a verified tree
 
+**Area mode (API CI, Web CI, Web E2E).** The tree of the whole repository
+rarely repeats in the queue, because other PRs land next to a group. These three
+workflows therefore compare only the part they test: the git object ids of
+`TREE_PATHS` (API CI: `api`, `Makefile`, `go.work`, `go.work.sum`, `.github`,
+`deploy`; Web CI and Web E2E add `web` and also keep `api`, because the contract
+they generate and the image they build come from it). A candidate is the first
+parent chain from `merge_group.base_sha` (the queue entry just ahead of the
+group, or develop's head) and develop's recent commits, whose area id equals
+ours. Only the workflow's own aggregator (`API CI OK`, `Web CI OK`, `E2E OK`)
+has to have passed on it, and its record is `openctem-tested-area <workflow> <id>`.
+Records are written only by a **full-tier** run, so a pull request run (the
+fast tier, which no longer runs the Postgres suite) is never reusable; a
+`ci:full` PR is. So a PR that adds only a `web/` change queued behind an `api/`
+change skips API CI, and the reverse. Workflows with no area (`CodeQL OK`,
+`All-in-one OK`, secret scanning) keep the whole-tree rule below. Self-tests:
+`bash .github/scripts/tree-verified.test.sh` and
+`bash .github/scripts/go-affected.test.sh` (run by Repo Security).
+
+Expected effect, measured over 24 hours before this change: 73 merges caused
+about 1000 `merge_group` runs (117 cancelled rebuilds) on top of about 1000 PR
+runs, and whole-tree reuse hit 6 of 19. In a sample of the last 22 successful API CI runs
+with work, a PR run used about 4860 runner-seconds, of which 3700 (76%) were the
+Postgres shards; a queue run used about 7400, of which 6200 were the shards. The
+Postgres shards were the largest job group of a PR run; they now run once per PR (in the queue) instead of once on
+the PR and again for every queue rebuild, so an API PR run drops to about 1200
+runner-seconds plus the unit job (estimate; compare after merging). A merge queue build width of 2 (the
+`max_entries_to_build` setting of the merge queue ruleset) is recommended with
+this change: a wider queue rebuilds more entries per failure; an owner setting.
+
 A PR that was green runs its checks again in the queue, on the same bytes
 whenever the base did not move in between. In `merge_group` and on a push,
 `.github/scripts/tree-verified.sh` (a step of every workflow's change-detection
@@ -579,16 +608,17 @@ is ignored without a reaction.
 
 Every PR is tested twice (on the PR, then in the queue) on a shared pool of
 hosted runners (about 60 concurrent jobs for the organization), and many PRs are
-open at once, so a PR runs only what catches most breakage early and the queue
-runs everything. Heavy jobs can move to opt-in self-hosted runners
+open at once, so a PR runs one fast tier (lint, type-check, build and the unit
+tests of what it changed) and the merge queue runs the one full, authoritative
+run (Postgres suite with `-race`, PostgreSQL 18, the whole e2e suite). Heavy jobs can move to opt-in self-hosted runners
 ("Self-hosted runner (opt-in)" below); fork PRs never run there.
 
 | Tier | Events | API CI | Web CI | All-in-one CI | Web E2E | CodeQL |
 |------|--------|--------|--------|---------------|---------|--------|
-| Fast | `pull_request` | `API static checks` (gates + vet, staticcheck, golangci-lint) + `Tests (Postgres + Redis)`: the whole suite against Postgres and Redis in 6 shards **without** `-race`, so isolation tests fail on the PR (decision D-30). the suite connects as the least-privilege app role; `Migrations (PostgreSQL 18)` only when `migrations` | `Web checks`, `Web tests` | build skipped | the smoke set when `web/` or the API's HTTP layer changed; the impacted specs with `run-e2e` or when `web/e2e/` changed | changed language(s) |
-| Full | `merge_group`, push to `develop`, a PR with `ci:full` or a changed CI definition | the suite in 8 shards **with** `-race` (as the app role), PostgreSQL 18, `Release Binaries` (not on a PR); Docker build on `main` | `Web checks`, `Web tests`; `next build` on push | images built and smoke-tested | Playwright: all specs in 1 to 4 shards (`web/` or `api/` changed), also on push to `develop`, nightly and for a `release/*` PR | queue: none (the PR head was analysed); push to `develop`: changed language(s); push to `main`: both |
+| Fast | `pull_request` | `API static checks` (gates + vet, staticcheck, golangci-lint) + `Unit tests (changed packages)`: the changed Go packages and every package that imports them, **without** a database (`.github/scripts/go-affected.py`; `ALL` for `go.mod` or anything it cannot map). No Postgres suite on a PR: the queue runs it. `Migrations (PostgreSQL 18)` only when `migrations` | `Web checks`, `Web tests` | build skipped | the smoke set when `web/` changed (an API-only PR runs no e2e on the PR); the impacted specs with `run-e2e` or when `web/e2e/` changed | changed language(s) |
+| Full | `merge_group`, push to `develop`, a PR with `ci:full` or a changed CI definition | `Tests (Postgres + Redis)`: the suite in 8 shards **with** `-race` as the least-privilege app role (isolation tests and grants, decision D-30 now enforced in the queue), PostgreSQL 18, `Release Binaries` (not on a PR); Docker build on `main` | `Web checks`, `Web tests`; `next build` on push | images built and smoke-tested | Playwright: all specs in 1 to 4 shards (`web/` or `api/` changed), also on push to `develop`, nightly and for a `release/*` PR | queue: none (the PR head was analysed); push to `develop`: changed language(s); push to `main`: both |
 
-**Forcing the full tier on a PR:** add the `ci:full` label, then re-run all jobs
+**Forcing the full tier on a PR:** add the `ci:full` label (it also brings the Postgres suite back to the PR, for a change to SQL, grants or tenant isolation that should not wait for the queue), then re-run all jobs
 of the workflow run (or push). Use it for a risky change to concurrency, SQL
 grants or the images before it reaches the queue. A PR that changes a workflow
 or a CI script always runs the full tier.
@@ -597,7 +627,7 @@ or a CI script always runs the full tier.
 
 | Event | Specs |
 |---|---|
-| `pull_request` | the smoke set (specs tagged `@smoke`) plus any spec the PR edits, when `web/` or the API's HTTP layer changed |
+| `pull_request` | the smoke set (specs tagged `@smoke`) plus any spec the PR edits, when `web/` changed |
 | `pull_request` with `run-e2e`, or a changed suite (`web/e2e/`, `web-e2e.yml`) | the specs the changed files map to plus the smoke set (impact selection below) |
 | `pull_request` with `ci:full`, a changed CI definition, or a `release/*` head branch | all specs |
 | `merge_group`, push to `develop`, nightly schedule, manual run | all specs |

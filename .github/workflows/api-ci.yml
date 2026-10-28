@@ -8,18 +8,21 @@ name: API CI
 #
 # Two tiers (`changes` decides; the `full` output of .github/scripts/changed.sh):
 #   fast            pull_request. `API static checks` (one job: every short gate
-#                   and the linters as steps) + `Tests (Postgres + Redis)`: the
-#                   whole suite against real Postgres and Redis in 6 shards
-#                   without the race detector, so the tenant-isolation and other
-#                   DB-backed tests fail on the PR, not first in the merge queue
-#                   (owner decision D-30). The suite always connects as the
-#                   least-privilege app role (D-6), so a missing grant fails on
-#                   the PR too. `Migrations (PostgreSQL 18)` runs on a PR only
-#                   when it changes a migration or the role script. PR runs are
+#                   and the linters as steps) + `Unit tests (changed packages)`:
+#                   the packages the PR changed and everything that imports
+#                   them, without a database (.github/scripts/go-affected.py).
+#                   The Postgres-backed suite does NOT run on a PR: the merge
+#                   queue is authoritative for it (one full run per PR).
+#                   `Migrations (PostgreSQL 18)` runs on a PR only when it
+#                   changes a migration or the role script. PR runs are
 #                   cancelled by a newer push to the same PR (concurrency below).
+#                   Add the `ci:full` label to run the full tier on a PR.
 #   full            merge_group, push, and a PR with the `ci:full` label or a
-#                   changed CI definition. The suite in 8 shards with -race,
-#                   PostgreSQL 18, plus `Release Binaries` (not on a PR).
+#                   changed CI definition. `Tests (Postgres + Redis)`: the whole
+#                   suite in 8 shards with -race against real Postgres and Redis
+#                   as the least-privilege app role (D-6, so the tenant-isolation
+#                   tests and a missing grant fail here), PostgreSQL 18, plus
+#                   `Release Binaries` (not on a PR).
 # `API CI OK` refuses a merge_group or push run that was not the full tier, so
 # nothing reaches develop/main without it.
 # Job bodies are carried over from openctemio/api's ci.yml; see git log for the
@@ -124,20 +127,26 @@ jobs:
           EVENT: ${{ github.event_name }}
           SHA: ${{ github.sha }}
           HEAD_REF: ${{ github.event.merge_group.head_ref }}
+          MG_BASE: ${{ github.event.merge_group.base_sha }}
           REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
+          # Area reuse: this workflow's tests depend on api/ and the shared files.
+          TREE_AREA: API CI
+          TREE_PATHS: api Makefile go.work go.work.sum .github deploy
+          TREE_CHECKS: API CI OK
+          TREE_FULL: ${{ steps.f.outputs.full }}
         run: bash .github/scripts/tree-verified.sh
 
-      # The shards of `Tests (Postgres + Redis)` for this tier. Full: 8 shards
-      # with -race. Fast: 6 shards without it (same tests, about half the
-      # runner time; the race detector runs in the queue and on push).
-      # `API static checks` proves every split covers every test exactly once.
+      # The shards of `Tests (Postgres + Redis)`, which only the full tier runs:
+      # 8 shards with -race. (The fast tier's job is `Unit tests`, below; the
+      # matrix is a placeholder there.) `API static checks` proves every split
+      # covers every test exactly once.
       - id: tier
         working-directory: .
         env:
           FULL: ${{ steps.f.outputs.full }}
         run: |
-          if [ "$FULL" = true ]; then n=8 race=true; else n=6 race=false; fi
+          if [ "$FULL" = true ]; then n=8 race=true; else n=1 race=false; fi
           m="$(jq -nc --argjson n "$n" --argjson race "$race" \
             '[range($n) | {shard: ., total: $n, race: $race}]')"
           echo "test_matrix=$m" | tee -a "$GITHUB_OUTPUT"
@@ -466,10 +475,10 @@ jobs:
         if: failure()
         uses: ./.github/actions/fail-fast
 
-  # Every event (PRs included): the whole suite against real Postgres and
-  # Redis, AS THE LEAST-PRIVILEGE APP ROLE the API runs as in production (D-6,
+  # Full tier (merge queue, push, ci:full, a changed CI definition): the whole
+  # suite against real Postgres and Redis, AS THE LEAST-PRIVILEGE APP ROLE the API runs as in production (D-6,
   # docs/deployment/database-roles.md). The shard list comes from `changes`
-  # (fast tier 6 shards without -race, full tier 8 with -race).
+  # (8 shards with -race).
   #
   # One run proves both things the suite used to need two jobs for:
   #   - the behaviour: every DB-backed test passes;
@@ -494,7 +503,7 @@ jobs:
       packages: read
       actions: write
     needs: [changes, spec]
-    if: needs.changes.outputs.api == 'true'
+    if: needs.changes.outputs.api == 'true' && needs.changes.outputs.full == 'true'
     runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || needs.changes.outputs.pool || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (vars.CI_RUNNER_HEAVY || needs.changes.outputs.pool)) || 'ubuntu-latest' }}
     timeout-minutes: 40
     # The suite is split into parallel shards (.github/scripts/go-shard.sh:
@@ -647,6 +656,64 @@ jobs:
           flags: api
           name: api-${{ matrix.shard }}-of-${{ matrix.total }}
           fail_ci_if_error: false
+      - name: Fail fast
+        if: failure()
+        uses: ./.github/actions/fail-fast
+
+  # Fast tier (pull_request without ci:full): the Go packages this PR changed
+  # and every package that imports them (also through its test files), without
+  # a database, so DB-backed tests skip here and run in the merge queue.
+  # go-affected.py answers ALL for anything it cannot map (go.mod, a Go file
+  # outside every package), and then every package is tested.
+  unit:
+    name: Unit tests (changed packages)
+    permissions:
+      contents: read
+      packages: read
+      actions: write
+    needs: [changes, spec]
+    if: needs.changes.outputs.api == 'true' && needs.changes.outputs.full != 'true' && github.event_name == 'pull_request'
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || needs.changes.outputs.pool || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (vars.CI_RUNNER_HEAVY || needs.changes.outputs.pool)) || 'ubuntu-latest' }}
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: api/go.mod
+          cache: ${{ runner.environment == 'github-hosted' }}
+          cache-dependency-path: api/go.sum
+      - name: Download the OpenAPI spec
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: openapi-spec
+          path: api/api/openapi
+      - name: Packages affected by this PR
+        id: pkgs
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch --no-tags --quiet origin "${BASE_REF}"
+          git diff --name-only "origin/${BASE_REF}...HEAD" > "$RUNNER_TEMP/changed.txt"
+          python3 -I ../.github/scripts/go-affected.py "$RUNNER_TEMP/changed.txt" > "$RUNNER_TEMP/pkgs.txt"
+          if [ "$(head -n1 "$RUNNER_TEMP/pkgs.txt")" = ALL ]; then echo "all packages"; echo "pattern=./..." >> "$GITHUB_OUTPUT"
+          elif [ ! -s "$RUNNER_TEMP/pkgs.txt" ]; then echo "no Go package changed"; echo "pattern=" >> "$GITHUB_OUTPUT"
+          else wc -l < "$RUNNER_TEMP/pkgs.txt"; echo "pattern=@$RUNNER_TEMP/pkgs.txt" >> "$GITHUB_OUTPUT"; fi
+      - name: Unit tests
+        if: steps.pkgs.outputs.pattern != ''
+        shell: bash
+        env:
+          PATTERN: ${{ steps.pkgs.outputs.pattern }}
+        run: |
+          skip="$(python3 ../.github/scripts/quarantine.py go-skip)"
+          flags=(-timeout 20m)
+          if [ -n "$skip" ]; then flags+=(-skip "$skip"); fi
+          if [ "$PATTERN" = ./... ]; then go test "${flags[@]}" ./...
+          else mapfile -t p < "${PATTERN#@}"; go test "${flags[@]}" "${p[@]}"; fi
       - name: Fail fast
         if: failure()
         uses: ./.github/actions/fail-fast
@@ -830,7 +897,7 @@ jobs:
   api-ok:
     name: API CI OK
     if: always()
-    needs: [changes, static, test, pg18, binaries]
+    needs: [changes, static, unit, test, pg18, binaries]
     runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
     steps:
       - name: All API jobs passed or were skipped; the event's tier actually ran
@@ -859,7 +926,9 @@ jobs:
             echo "::error::$EVENT must run the full tier (full=$FULL)"; exit 1
           fi
           if [ "$API" = true ]; then
-            required="changes static test"
+            # Fast tier (a pull request): the unit tests of the changed packages.
+            # Full tier: the Postgres suite. The merge queue is authoritative.
+            if [ "$FULL" = true ]; then required="changes static test"; else required="changes static unit"; fi
             if [ "$FULL" = true ] || [ "$MIGRATIONS" = true ]; then required="$required pg18"; fi
             if [ "$EVENT" != pull_request ]; then required="$required binaries"; fi
             for j in $required; do
