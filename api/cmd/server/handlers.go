@@ -967,6 +967,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		)
 		// SP entity ID / ACS URL come from APP_URL, never from client headers.
 		handlers.SAML.SetPublicURL(cfg.App.URL)
+		handlers.SAML.SetRefreshDuration(cfg.Auth.RefreshTokenDuration)
 		handlers.SAML.SetAuditService(svc.Audit)
 		// Admin-console SAML changes wait for an owner of the organization.
 		handlers.SAML.SetChangeApproval(svc.SSOChange)
@@ -1282,6 +1283,10 @@ func wireStepUpGate(handlers *routes.Handlers, svc *Services) {
 	}
 	if handlers.CIAdmin != nil {
 		handlers.CIAdmin.SetStepUpGate(gate)
+	}
+	if handlers.MCPOAuth != nil {
+		// Allowing an AI application to read all organization data.
+		handlers.MCPOAuth.SetStepUpGate(gate)
 	}
 }
 
