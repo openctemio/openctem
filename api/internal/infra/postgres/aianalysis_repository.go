@@ -15,7 +15,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// AIAnalysisRepository stores AI analysts, their owners and their runs
+// AIAnalysisRepository stores AI agents, their owners and their runs
 // (docs/architecture/ai-analysis.md). Every query filters on tenant_id,
 // except the sweep and the reaper, which are system jobs.
 type AIAnalysisRepository struct {
@@ -28,16 +28,16 @@ func NewAIAnalysisRepository(db *DB) *AIAnalysisRepository {
 }
 
 var (
-	_ aianalysis.AnalystRepository = (*AIAnalysisRepository)(nil)
-	_ aianalysis.RunRepository     = (*AIAnalysisRepository)(nil)
+	_ aianalysis.AgentRepository = (*AIAnalysisRepository)(nil)
+	_ aianalysis.RunRepository   = (*AIAnalysisRepository)(nil)
 )
 
-// ---- analysts ----
+// ---- AI agents ----
 
 // Create stores the service account, the AI profile and the owners in one
 // transaction.
-func (r *AIAnalysisRepository) Create(ctx context.Context, in aianalysis.NewAnalyst) error {
-	a := in.Analyst
+func (r *AIAnalysisRepository) Create(ctx context.Context, in aianalysis.NewAgent) error {
+	a := in.Agent
 	if len(in.Owners) == 0 {
 		return aianalysis.ErrOwnerRequired
 	}
@@ -53,20 +53,20 @@ func (r *AIAnalysisRepository) Create(ctx context.Context, in aianalysis.NewAnal
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO ai_analysts (user_id, tenant_id, preset, status, data_class_ceiling, executor,
+		INSERT INTO ai_agents (user_id, tenant_id, role, preset, status, data_class_ceiling, executor,
 			runs_per_hour, actions_per_hour, tokens_month, attested_at, attested_by, attest_due_at, created_by)
-		VALUES ($1, $2, $3, 'active', $4, $5, $6, $7, $8, $9, $10, $11, $10)`,
-		a.ID, a.TenantID, a.Preset, a.DataClassCeiling, a.Executor, a.RunsPerHour, a.ActionsPerHour,
+		VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, $8, $9, $10, $11, $12, $11)`,
+		a.ID, a.TenantID, a.Role, a.Preset, a.DataClassCeiling, a.Executor, a.RunsPerHour, a.ActionsPerHour,
 		a.TokensMonth, a.AttestedAt, nullID(a.CreatedBy), a.AttestDueAt); err != nil {
-		return fmt.Errorf("create ai analyst: %w", err)
+		return fmt.Errorf("create ai agent: %w", err)
 	}
-	if err := insertAnalystOwners(ctx, tx, a.TenantID, a.ID, in.Owners, a.CreatedBy); err != nil {
+	if err := insertAgentOwners(ctx, tx, a.TenantID, a.ID, in.Owners, a.CreatedBy); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
-func insertAnalystOwners(ctx context.Context, tx *sql.Tx, tenantID, analystID shared.ID, owners []aianalysis.OwnerRef, by *shared.ID) error {
+func insertAgentOwners(ctx context.Context, tx *sql.Tx, tenantID, agentID shared.ID, owners []aianalysis.OwnerRef, by *shared.ID) error {
 	for _, o := range owners {
 		var userID, groupID sql.NullString
 		switch o.Kind {
@@ -78,19 +78,19 @@ func insertAnalystOwners(ctx context.Context, tx *sql.Tx, tenantID, analystID sh
 			return fmt.Errorf("%w: unknown owner kind", shared.ErrValidation)
 		}
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO ai_analyst_owners (tenant_id, analyst_id, user_id, group_id, added_by)
-			VALUES ($1, $2, $3, $4, $5)`, tenantID, analystID, userID, groupID, nullID(by)); err != nil {
+			INSERT INTO ai_agent_owners (tenant_id, ai_agent_id, user_id, group_id, added_by)
+			VALUES ($1, $2, $3, $4, $5)`, tenantID, agentID, userID, groupID, nullID(by)); err != nil {
 			if isCheckViolation(err) || isUniqueViolation(err) {
 				return fmt.Errorf("%w: an owner is not a person or team of this organization, or is listed twice", shared.ErrValidation)
 			}
-			return fmt.Errorf("add ai analyst owner: %w", err)
+			return fmt.Errorf("add ai agent owner: %w", err)
 		}
 	}
 	return nil
 }
 
-const aiAnalystSelect = `
-	SELECT a.user_id, a.tenant_id, u.name, COALESCE(u.preferences->>'description', ''), a.preset, a.status,
+const aiAgentSelect = `
+	SELECT a.user_id, a.tenant_id, u.name, COALESCE(u.preferences->>'description', ''), a.role, a.preset, a.status,
 	       COALESCE(a.pause_reason, ''), a.data_class_ceiling, a.executor, a.runs_per_hour, a.actions_per_hour,
 	       a.tokens_month, a.attested_at, a.attested_by, a.attest_due_at, a.created_by, a.created_at, a.updated_at,
 	       COALESCE((SELECT json_agg(json_build_object(
@@ -98,22 +98,22 @@ const aiAnalystSelect = `
 	                    'id', COALESCE(o.user_id, o.group_id),
 	                    'name', COALESCE(ou.name, ou.email, og.name, ''))
 	                  ORDER BY o.added_at, o.id)
-	                 FROM ai_analyst_owners o
+	                 FROM ai_agent_owners o
 	                 LEFT JOIN users ou ON ou.id = o.user_id
 	                 LEFT JOIN groups og ON og.id = o.group_id AND og.tenant_id = o.tenant_id
-	                 WHERE o.analyst_id = a.user_id AND o.tenant_id = a.tenant_id), '[]')
-	FROM ai_analysts a
+	                 WHERE o.ai_agent_id = a.user_id AND o.tenant_id = a.tenant_id), '[]')
+	FROM ai_agents a
 	JOIN users u ON u.id = a.user_id`
 
-func scanAIAnalyst(row rowScanner) (*aianalysis.Analyst, error) {
+func scanAIAgent(row rowScanner) (*aianalysis.Agent, error) {
 	var (
-		a          aianalysis.Analyst
+		a          aianalysis.Agent
 		reason     string
 		attestedBy sql.NullString
 		createdBy  sql.NullString
 		owners     []byte
 	)
-	if err := row.Scan(&a.ID, &a.TenantID, &a.Name, &a.Description, &a.Preset, &a.Status, &reason,
+	if err := row.Scan(&a.ID, &a.TenantID, &a.Name, &a.Description, &a.Role, &a.Preset, &a.Status, &reason,
 		&a.DataClassCeiling, &a.Executor, &a.RunsPerHour, &a.ActionsPerHour, &a.TokensMonth, &a.AttestedAt,
 		&attestedBy, &a.AttestDueAt, &createdBy, &a.CreatedAt, &a.UpdatedAt, &owners); err != nil {
 		return nil, err
@@ -122,47 +122,47 @@ func scanAIAnalyst(row rowScanner) (*aianalysis.Analyst, error) {
 	a.AttestedBy = nullIDFromString(attestedBy)
 	a.CreatedBy = nullIDFromString(createdBy)
 	if err := json.Unmarshal(owners, &a.Owners); err != nil {
-		return nil, fmt.Errorf("decode ai analyst owners: %w", err)
+		return nil, fmt.Errorf("decode ai agent owners: %w", err)
 	}
 	return &a, nil
 }
 
-// Get reads one analyst of the tenant.
-func (r *AIAnalysisRepository) Get(ctx context.Context, tenantID, id shared.ID) (*aianalysis.Analyst, error) {
-	a, err := scanAIAnalyst(r.db.QueryRowContext(ctx, aiAnalystSelect+` WHERE a.tenant_id = $1 AND a.user_id = $2`, tenantID, id))
+// Get reads one AI agent of the tenant.
+func (r *AIAnalysisRepository) Get(ctx context.Context, tenantID, id shared.ID) (*aianalysis.Agent, error) {
+	a, err := scanAIAgent(r.db.QueryRowContext(ctx, aiAgentSelect+` WHERE a.tenant_id = $1 AND a.user_id = $2`, tenantID, id))
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, aianalysis.ErrAnalystNotFound
+		return nil, aianalysis.ErrAgentNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("get ai analyst: %w", err)
+		return nil, fmt.Errorf("get ai agent: %w", err)
 	}
 	return a, nil
 }
 
-// List returns the tenant's analysts by name.
-func (r *AIAnalysisRepository) List(ctx context.Context, tenantID shared.ID) ([]*aianalysis.Analyst, error) {
-	return r.listAnalysts(ctx, aiAnalystSelect+` WHERE a.tenant_id = $1 ORDER BY u.name, a.user_id LIMIT 200`, tenantID)
+// List returns the tenant's AI agents by name.
+func (r *AIAnalysisRepository) List(ctx context.Context, tenantID shared.ID) ([]*aianalysis.Agent, error) {
+	return r.listAgents(ctx, aiAgentSelect+` WHERE a.tenant_id = $1 ORDER BY u.name, a.user_id LIMIT 200`, tenantID)
 }
 
-// ListActive returns active analysts of every organization (the sweep).
-func (r *AIAnalysisRepository) ListActive(ctx context.Context, limit int) ([]*aianalysis.Analyst, error) {
+// ListActive returns active AI agents of every organization (the sweep).
+func (r *AIAnalysisRepository) ListActive(ctx context.Context, limit int) ([]*aianalysis.Agent, error) {
 	if limit <= 0 || limit > 10000 {
 		limit = 10000
 	}
-	return r.listAnalysts(ctx, aiAnalystSelect+` WHERE a.status = 'active' ORDER BY a.user_id LIMIT $1`, limit)
+	return r.listAgents(ctx, aiAgentSelect+` WHERE a.status = 'active' ORDER BY a.user_id LIMIT $1`, limit)
 }
 
-func (r *AIAnalysisRepository) listAnalysts(ctx context.Context, q string, args ...any) ([]*aianalysis.Analyst, error) {
+func (r *AIAnalysisRepository) listAgents(ctx context.Context, q string, args ...any) ([]*aianalysis.Agent, error) {
 	rows, err := r.db.QueryContext(ctx, q, args...)
 	if err != nil {
-		return nil, fmt.Errorf("list ai analysts: %w", err)
+		return nil, fmt.Errorf("list ai agents: %w", err)
 	}
 	defer rows.Close()
-	var out []*aianalysis.Analyst
+	var out []*aianalysis.Agent
 	for rows.Next() {
-		a, err := scanAIAnalyst(rows)
+		a, err := scanAIAgent(rows)
 		if err != nil {
-			return nil, fmt.Errorf("scan ai analyst: %w", err)
+			return nil, fmt.Errorf("scan ai agent: %w", err)
 		}
 		out = append(out, a)
 	}
@@ -181,26 +181,26 @@ func (r *AIAnalysisRepository) SetOwners(ctx context.Context, tenantID, id share
 	defer func() { _ = tx.Rollback() }()
 	var exists bool
 	if err := tx.QueryRowContext(ctx,
-		`SELECT EXISTS (SELECT 1 FROM ai_analysts WHERE tenant_id = $1 AND user_id = $2 FOR UPDATE)`,
+		`SELECT EXISTS (SELECT 1 FROM ai_agents WHERE tenant_id = $1 AND user_id = $2 FOR UPDATE)`,
 		tenantID, id).Scan(&exists); err != nil {
-		return fmt.Errorf("lock ai analyst: %w", err)
+		return fmt.Errorf("lock ai agent: %w", err)
 	}
 	if !exists {
-		return aianalysis.ErrAnalystNotFound
+		return aianalysis.ErrAgentNotFound
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM ai_analyst_owners WHERE tenant_id = $1 AND analyst_id = $2`, tenantID, id); err != nil {
-		return fmt.Errorf("clear ai analyst owners: %w", err)
+	if _, err := tx.ExecContext(ctx, `DELETE FROM ai_agent_owners WHERE tenant_id = $1 AND ai_agent_id = $2`, tenantID, id); err != nil {
+		return fmt.Errorf("clear ai agent owners: %w", err)
 	}
-	if err := insertAnalystOwners(ctx, tx, tenantID, id, owners, &by); err != nil {
+	if err := insertAgentOwners(ctx, tx, tenantID, id, owners, &by); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE ai_analysts SET updated_at = now() WHERE tenant_id = $1 AND user_id = $2`, tenantID, id); err != nil {
-		return fmt.Errorf("touch ai analyst: %w", err)
+	if _, err := tx.ExecContext(ctx, `UPDATE ai_agents SET updated_at = now() WHERE tenant_id = $1 AND user_id = $2`, tenantID, id); err != nil {
+		return fmt.Errorf("touch ai agent: %w", err)
 	}
 	return tx.Commit()
 }
 
-// SetStatus moves an analyst between statuses, guarded by from.
+// SetStatus moves an AI agent between statuses, guarded by from.
 func (r *AIAnalysisRepository) SetStatus(ctx context.Context, tenantID, id shared.ID, from []aianalysis.Status, to aianalysis.Status, reason aianalysis.PauseReason) (bool, error) {
 	allowed := make([]string, 0, len(from))
 	for _, s := range from {
@@ -211,15 +211,15 @@ func (r *AIAnalysisRepository) SetStatus(ctx context.Context, tenantID, id share
 		pause = sql.NullString{String: string(reason), Valid: true}
 	}
 	res, err := r.db.ExecContext(ctx, `
-		UPDATE ai_analysts SET status = $3, pause_reason = $4, updated_at = now()
+		UPDATE ai_agents SET status = $3, pause_reason = $4, updated_at = now()
 		WHERE tenant_id = $1 AND user_id = $2 AND (cardinality($5::text[]) = 0 OR status = ANY($5::text[]))`,
 		tenantID, id, to, pause, pq.Array(allowed))
 	if err != nil {
-		return false, fmt.Errorf("set ai analyst status: %w", err)
+		return false, fmt.Errorf("set ai agent status: %w", err)
 	}
 	n, err := res.RowsAffected()
 	if err != nil {
-		return false, fmt.Errorf("set ai analyst status: %w", err)
+		return false, fmt.Errorf("set ai agent status: %w", err)
 	}
 	if n == 0 {
 		if _, gerr := r.Get(ctx, tenantID, id); gerr != nil {
@@ -230,15 +230,15 @@ func (r *AIAnalysisRepository) SetStatus(ctx context.Context, tenantID, id share
 	return true, nil
 }
 
-// SetPreset records the preset the analyst's role came from.
+// SetPreset records the preset the AI agent's role came from.
 func (r *AIAnalysisRepository) SetPreset(ctx context.Context, tenantID, id shared.ID, p aianalysis.Preset) error {
 	res, err := r.db.ExecContext(ctx,
-		`UPDATE ai_analysts SET preset = $3, updated_at = now() WHERE tenant_id = $1 AND user_id = $2`, tenantID, id, p)
+		`UPDATE ai_agents SET preset = $3, updated_at = now() WHERE tenant_id = $1 AND user_id = $2`, tenantID, id, p)
 	if err != nil {
-		return fmt.Errorf("set ai analyst preset: %w", err)
+		return fmt.Errorf("set ai agent preset: %w", err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		return aianalysis.ErrAnalystNotFound
+		return aianalysis.ErrAgentNotFound
 	}
 	return nil
 }
@@ -246,13 +246,13 @@ func (r *AIAnalysisRepository) SetPreset(ctx context.Context, tenantID, id share
 // Attest records an owner's attestation.
 func (r *AIAnalysisRepository) Attest(ctx context.Context, tenantID, id, by shared.ID, at, due time.Time) error {
 	res, err := r.db.ExecContext(ctx, `
-		UPDATE ai_analysts SET attested_at = $3, attested_by = $4, attest_due_at = $5, updated_at = now()
+		UPDATE ai_agents SET attested_at = $3, attested_by = $4, attest_due_at = $5, updated_at = now()
 		WHERE tenant_id = $1 AND user_id = $2`, tenantID, id, at, by, due)
 	if err != nil {
-		return fmt.Errorf("attest ai analyst: %w", err)
+		return fmt.Errorf("attest ai agent: %w", err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		return aianalysis.ErrAnalystNotFound
+		return aianalysis.ErrAgentNotFound
 	}
 	return nil
 }
@@ -299,35 +299,35 @@ func (r *AIAnalysisRepository) PeopleOf(ctx context.Context, tenantID shared.ID,
 	return out, rows.Err()
 }
 
-// Delete removes the analyst's service account (the profile, owners, roles,
+// Delete removes the AI agent's service account (the profile, owners, roles,
 // team memberships and keys go with it; runs keep their rows).
 func (r *AIAnalysisRepository) Delete(ctx context.Context, tenantID, id shared.ID) error {
 	res, err := r.db.ExecContext(ctx, `
-		DELETE FROM users u USING ai_analysts a
+		DELETE FROM users u USING ai_agents a
 		WHERE a.user_id = u.id AND a.tenant_id = $1 AND u.id = $2 AND u.kind = 'service' AND u.service_tenant_id = $1`,
 		tenantID, id)
 	if err != nil {
-		return fmt.Errorf("delete ai analyst: %w", err)
+		return fmt.Errorf("delete ai agent: %w", err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		return aianalysis.ErrAnalystNotFound
+		return aianalysis.ErrAgentNotFound
 	}
 	return nil
 }
 
-// IsAnalyst reports whether the user is one of the tenant's analysts.
-func (r *AIAnalysisRepository) IsAnalyst(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
+// IsAgent reports whether the user is one of the tenant's AI agents.
+func (r *AIAnalysisRepository) IsAgent(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
 	var ok bool
 	if err := r.db.QueryRowContext(ctx,
-		`SELECT EXISTS (SELECT 1 FROM ai_analysts WHERE tenant_id = $1 AND user_id = $2)`, tenantID, userID).Scan(&ok); err != nil {
-		return false, fmt.Errorf("check ai analyst: %w", err)
+		`SELECT EXISTS (SELECT 1 FROM ai_agents WHERE tenant_id = $1 AND user_id = $2)`, tenantID, userID).Scan(&ok); err != nil {
+		return false, fmt.Errorf("check ai agent: %w", err)
 	}
 	return ok, nil
 }
 
 // ---- runs ----
 
-const aiRunColumns = `id, tenant_id, analyst_id, use_case, kind, subject_type, subject_id, executor, status, data_class,
+const aiRunColumns = `id, tenant_id, ai_agent_id, use_case, kind, subject_type, subject_id, executor, status, data_class,
 	fields_sent, fields_withheld, COALESCE(bundle_digest, ''), COALESCE(prompt_template_id, ''),
 	COALESCE(prompt_template_digest, ''), COALESCE(output_schema, ''), COALESCE(provider, ''), COALESCE(model, ''),
 	steps, tool_calls, actions, tokens_in, tokens_out, cost_micro_usd, duration_ms, COALESCE(error_code, ''),
@@ -352,12 +352,12 @@ func (r *AIAnalysisRepository) CreateRun(ctx context.Context, run *aianalysis.Ru
 		      AND status IN ('queued', 'running', 'waiting_tool', 'waiting_approval') AND deadline_at < now()
 		    RETURNING id
 		)
-		INSERT INTO ai_runs (id, tenant_id, analyst_id, use_case, kind, subject_type, subject_id, executor, status,
+		INSERT INTO ai_runs (id, tenant_id, ai_agent_id, use_case, kind, subject_type, subject_id, executor, status,
 			data_class, triggered_by, trigger, accountable, deadline_at, started_at)
 		SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
 		FROM (SELECT count(*) FROM expired) e
 		RETURNING created_at`,
-		run.ID, run.TenantID, nullID(run.AnalystID), run.UseCase, run.Kind, run.SubjectType, run.SubjectID,
+		run.ID, run.TenantID, nullID(run.AgentID), run.UseCase, run.Kind, run.SubjectType, run.SubjectID,
 		run.Executor, run.Status, run.DataClass, nullID(run.TriggeredBy), run.Trigger, acc,
 		nullTime(run.DeadlineAt), nullTime(run.StartedAt),
 	).Scan(&run.CreatedAt)
@@ -436,14 +436,14 @@ func (r *AIAnalysisRepository) ListRunsBySubject(ctx context.Context, tenantID s
 	return out, rows.Err()
 }
 
-// Usage counts an analyst's runs and tokens since a moment.
-func (r *AIAnalysisRepository) Usage(ctx context.Context, tenantID, analystID shared.ID, since time.Time) (int, int, error) {
+// Usage counts an AI agent's runs and tokens since a moment.
+func (r *AIAnalysisRepository) Usage(ctx context.Context, tenantID, agentID shared.ID, since time.Time) (int, int, error) {
 	var runs, tokens int
 	if err := r.db.QueryRowContext(ctx, `
 		SELECT count(*), COALESCE(sum(tokens_in + tokens_out), 0)
-		FROM ai_runs WHERE tenant_id = $1 AND analyst_id = $2 AND created_at >= $3`,
-		tenantID, analystID, since).Scan(&runs, &tokens); err != nil {
-		return 0, 0, fmt.Errorf("ai analyst usage: %w", err)
+		FROM ai_runs WHERE tenant_id = $1 AND ai_agent_id = $2 AND created_at >= $3`,
+		tenantID, agentID, since).Scan(&runs, &tokens); err != nil {
+		return 0, 0, fmt.Errorf("ai agent usage: %w", err)
 	}
 	return runs, tokens, nil
 }
@@ -451,7 +451,7 @@ func (r *AIAnalysisRepository) Usage(ctx context.Context, tenantID, analystID sh
 func scanAIRun(row rowScanner) (*aianalysis.Run, error) {
 	var (
 		run         aianalysis.Run
-		analyst     sql.NullString
+		agent       sql.NullString
 		duration    sql.NullInt64
 		triggeredBy sql.NullString
 		deadline    sql.NullTime
@@ -462,14 +462,14 @@ func scanAIRun(row rowScanner) (*aianalysis.Run, error) {
 		acc         []byte
 		legacy      []byte
 	)
-	if err := row.Scan(&run.ID, &run.TenantID, &analyst, &run.UseCase, &run.Kind, &run.SubjectType, &run.SubjectID,
+	if err := row.Scan(&run.ID, &run.TenantID, &agent, &run.UseCase, &run.Kind, &run.SubjectType, &run.SubjectID,
 		&run.Executor, &run.Status, &run.DataClass, &sent, &withheld, &run.BundleDigest, &run.PromptTemplateID,
 		&run.PromptTemplateDigest, &run.OutputSchema, &run.Provider, &run.Model, &run.Steps, &run.ToolCalls,
 		&run.Actions, &run.TokensIn, &run.TokensOut, &run.CostMicroUSD, &duration, &run.ErrorCode, &triggeredBy,
 		&run.Trigger, &acc, &legacy, &deadline, &started, &completed, &run.CreatedAt); err != nil {
 		return nil, err
 	}
-	run.AnalystID = nullIDFromString(analyst)
+	run.AgentID = nullIDFromString(agent)
 	run.FieldsSent, run.FieldsWithheld = sent, withheld
 	if duration.Valid {
 		d := int(duration.Int64)

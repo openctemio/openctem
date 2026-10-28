@@ -5,7 +5,7 @@ import { en, vi } from '../i18n/dictionaries'
 describe('i18n translate', () => {
   it('resolves a key from the requested locale catalog', () => {
     const vi = getDictionary('vi')
-    expect(translate(vi, 'nav.group.scoping')).toBe('Phạm vi')
+    expect(translate(vi, 'nav.group.scoping')).toBe('Xác định phạm vi')
     expect(translate(vi, 'common.cancel')).toBe('Hủy')
   })
 

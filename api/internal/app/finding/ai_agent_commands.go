@@ -9,18 +9,18 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
-// AIAnalystCommands are the finding commands an AI analyst calls
+// AIAgentCommands are the finding commands an AI agent calls
 // (docs/architecture/ai-analysis.md). They are the same service methods a
-// person's request reaches, with the analyst as the actor. The analyst never
+// person's request reaches, with the AI agent as the actor. The AI agent never
 // approves: every call passes CanApprove=false, so a change that lowers risk
 // always becomes a request a person decides. The caller (the executor) has
-// checked the analyst's effective permission and data scope, and put the AI
+// checked the AI agent's effective permission and data scope, and put the AI
 // provenance in ctx.
-type AIAnalystCommands struct {
+type AIAgentCommands struct {
 	Findings *VulnerabilityService
 }
 
-var _ aianalysis.FindingCommands = AIAnalystCommands{}
+var _ aianalysis.FindingCommands = AIAgentCommands{}
 
 // aiFalsePositiveReason is the closure reason of an AI false-positive
 // request: the detection is in error. The person who decides may change it.
@@ -30,9 +30,9 @@ func auditFor(tenantID, actorID shared.ID) auditapp.AuditContext {
 	return auditapp.AuditContext{TenantID: tenantID.String(), ActorID: actorID.String()}
 }
 
-// Comment adds an internal comment by the analyst: shown to members, never
+// Comment adds an internal comment by the AI agent: shown to members, never
 // sent to a ticket, integration or external notifier.
-func (c AIAnalystCommands) Comment(ctx context.Context, tenantID, findingID, actorID shared.ID, text string) error {
+func (c AIAgentCommands) Comment(ctx context.Context, tenantID, findingID, actorID shared.ID, text string) error {
 	_, err := c.Findings.AddFindingCommentWithInput(ctx, AddFindingCommentInput{
 		TenantID: tenantID.String(), FindingID: findingID.String(), AuthorID: actorID.String(), Content: text,
 		IsInternal: true, ActingUserID: actorID.String(),
@@ -40,18 +40,18 @@ func (c AIAnalystCommands) Comment(ctx context.Context, tenantID, findingID, act
 	return err
 }
 
-// SetStatus moves the finding through the lifecycle engine as the analyst
+// SetStatus moves the finding through the lifecycle engine as the AI agent
 // (no verify, fix-apply or approve permission: those are people's).
-func (c AIAnalystCommands) SetStatus(ctx context.Context, tenantID, findingID, actorID shared.ID, status string) error {
+func (c AIAgentCommands) SetStatus(ctx context.Context, tenantID, findingID, actorID shared.ID, status string) error {
 	_, err := c.Findings.UpdateFindingStatus(ctx, findingID.String(), tenantID.String(), UpdateFindingStatusInput{
 		Status: status, ActorID: actorID.String(),
 	})
 	return err
 }
 
-// ChangeSeverity changes the severity as the analyst; a downgrade the policy
+// ChangeSeverity changes the severity as the AI agent; a downgrade the policy
 // gates becomes a severity request (requested true).
-func (c AIAnalystCommands) ChangeSeverity(ctx context.Context, tenantID, findingID, actorID shared.ID, severity, reason string) (bool, error) {
+func (c AIAgentCommands) ChangeSeverity(ctx context.Context, tenantID, findingID, actorID shared.ID, severity, reason string) (bool, error) {
 	res, err := c.Findings.ChangeFindingSeverity(ctx, ChangeSeverityInput{
 		TenantID: tenantID.String(), FindingID: findingID.String(), ActorID: actorID.String(),
 		Severity: severity, Reason: reason, CanApprove: false, Audit: auditFor(tenantID, actorID),
@@ -63,8 +63,8 @@ func (c AIAnalystCommands) ChangeSeverity(ctx context.Context, tenantID, finding
 }
 
 // RequestFalsePositive opens a false-positive approval request by the
-// analyst; it always waits for a person.
-func (c AIAnalystCommands) RequestFalsePositive(ctx context.Context, tenantID, findingID, actorID shared.ID, justification string) error {
+// AI agent; it always waits for a person.
+func (c AIAgentCommands) RequestFalsePositive(ctx context.Context, tenantID, findingID, actorID shared.ID, justification string) error {
 	_, err := c.Findings.RequestApproval(ctx, RequestApprovalInput{
 		TenantID: tenantID.String(), FindingID: findingID.String(),
 		RequestedStatus: string(vulnerability.FindingStatusFalsePositive), Justification: justification,

@@ -3,7 +3,7 @@
   "common.bootstrap.busyTitle": "Máy chủ đang bận",
   "common.bootstrap.retry": "Thử lại",
   "common.bootstrap.retrying": "Đang thử lại…",
-  "common.bootstrap.unreachableBody": "Không tải được không gian làm việc. Thường đây là sự cố kết nối hoặc máy chủ tạm thời. Tài khoản của bạn không có vấn đề.",
+  "common.bootstrap.unreachableBody": "Không tải được tổ chức. Thường đây là sự cố kết nối hoặc máy chủ tạm thời. Tài khoản của bạn không có vấn đề.",
   "common.bootstrap.unreachableTitle": "Không kết nối được máy chủ",
   "common.bulkBar.clear": "Bỏ chọn",
   "common.bulkBar.clearHint": "Bỏ chọn (Esc)",

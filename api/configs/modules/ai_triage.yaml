@@ -16,7 +16,7 @@
     - "/api/v1/findings/{}/ai"
     - "/api/v1/ai"
   jobs:
-    - AIAnalystSweepController
+    - AIAgentSweepController
 - id: ai_triage.bulk
   const: ModuleAITriageBulk
   slug: ai_triage_bulk

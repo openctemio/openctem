@@ -1,6 +1,6 @@
 package postgres
 
-// Analyst severity decisions and severity requests
+// AI agent severity decisions and severity requests
 // (docs/architecture/finding-severity-override.md). Every statement carries
 // the tenant; a decision applies only while the finding's effective
 // severity is still the one the caller decided from (no lost update).

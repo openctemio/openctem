@@ -338,7 +338,7 @@ var Registry = []Definition{
 			{ModuleID: ModuleThreatIntel, Type: DependencySoft, Reason: "triage uses KEV/EPSS context when scoring"},
 		},
 		Routes: []string{"/api/v1/findings/{}/ai-triage", "/api/v1/findings/ai-triage", "/api/v1/findings/{}/ai", "/api/v1/ai"},
-		Jobs:   []string{"AIAnalystSweepController"},
+		Jobs:   []string{"AIAgentSweepController"},
 	},
 	{
 		ID: ModuleAITriageBulk, Slug: "ai_triage_bulk", Name: "Bulk Triage",

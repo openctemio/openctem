@@ -60,7 +60,7 @@ type Repositories struct {
 	AITriage         *postgres.AITriageRepository              // AI-powered vulnerability triage
 	AITriageBudget   *postgres.AITriageBudgetRepository        // Per-tenant LLM token budget (RFC-008)
 	TenantAISettings *postgres.TenantAISettingsRepository      // Organizations' AI settings (consent, source, own provider)
-	AIAnalysis       *postgres.AIAnalysisRepository            // AI analysts, their owners and runs
+	AIAnalysis       *postgres.AIAnalysisRepository            // AI agents, their owners and runs
 	AIMaskMaps       *postgres.AIMaskMapRepository             // Per AI run masking maps (encrypted, expiring)
 	DataFlow         *postgres.DataFlowRepository              // Data flow traces for taint tracking
 	FindingSource    *postgres.FindingSourceRepository         // Finding source configuration

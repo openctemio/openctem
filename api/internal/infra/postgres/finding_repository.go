@@ -802,7 +802,7 @@ func findingUpsertConflictSQL() string {
 			title = COALESCE(EXCLUDED.title, findings.title),
 			description = COALESCE(EXCLUDED.description, findings.description),
 			message = EXCLUDED.message,
-			-- An analyst's severity override stands: the reported severity
+			-- An agent's severity override stands: the reported severity
 			-- then moves source_severity only.
 			` + reportedSeveritySetSQL("findings.", "EXCLUDED.severity") + `,
 			scan_id = EXCLUDED.scan_id,
@@ -4301,7 +4301,7 @@ type enrichColumnDef struct {
 // The SET columns are only those EnrichFrom merges from a sighting. Columns
 // other writers own are never written here, because the row was read before
 // the merge and writing them back would revert a concurrent change: EPSS and
-// KEV (threat-intel refresh), the priority class, its reason and an analyst's
+// KEV (threat-intel refresh), the priority class, its reason and an AI agent's
 // override, reachability (the priority worker) and the SLA deadline and status
 // (the SLA applier). The row_version predicate catches the rest: a row that
 // moved after it was read is re-read and merged again.
@@ -4584,7 +4584,7 @@ func collectEnrichArgs(f *vulnerability.Finding) ([]interface{}, error) {
 		nullString(f.Snippet()),
 		f.Message(),
 		// The reported severity after the merge; buildBatchEnrichQuery
-		// writes it to severity or, under an analyst override, to
+		// writes it to severity or, under an AI agent override, to
 		// source_severity.
 		f.SourceSeverity().String(),
 		nullFloat64(f.CVSSScore()),
@@ -4674,7 +4674,7 @@ func buildBatchEnrichQuery(rowCount int) string {
 		}
 		col := enrichColumnDefs[i].name
 		if col == "severity" {
-			// The analyst's override stands; the row's current override is
+			// The AI agent's override stands; the row's current override is
 			// read here, not the one loaded before the merge.
 			sb.WriteString(reportedSeverityMaxSetSQL("f.", "d.severity"))
 			continue
