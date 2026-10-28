@@ -501,6 +501,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			mcpHandler.SetAIPolicy(mcpPolicies)
 		}
 	}
+	if mcpHandler != nil && svc.Scope != nil {
+		// check_scope answers from the same scope authority a scan asks.
+		mcpHandler.SetScopeCheck(svc.Scope, postgres.NewVerifiedDomainNameRepository(deps.DB), postgres.NewBountyProgramRepository(deps.DB))
+	}
 	mcpDiscovery := newMCPDiscovery(cfg, log)
 	// OAuth for MCP clients (RFC-062): with an authorization server the MCP
 	// endpoint also accepts its access tokens, and a refused call that
