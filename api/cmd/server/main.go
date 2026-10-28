@@ -26,6 +26,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/websocket"
 	"github.com/openctemio/openctem/api/internal/versions"
 	"github.com/openctemio/openctem/api/pkg/brand"
+	emailpkg "github.com/openctemio/openctem/api/pkg/email"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/keycloak"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -119,6 +120,9 @@ func run() int {
 	}
 
 	brand.SetInstance(cfg.Brand)
+	// A hosted service holds organization mail relays to the managed rules
+	// (submission port, AUTH, TLS).
+	emailpkg.SetManagedTenantRelay(cfg.App.ManagedService)
 	log := initLogger(cfg)
 	log.Info("starting application", "app", cfg.App.Name, "env", cfg.App.Env)
 	for _, w := range cfg.EnvWarnings {
@@ -293,6 +297,15 @@ func run() int {
 		services.Auth.SetSecurityNotifier(services.Email)
 	}
 
+	// Owners of an organization whose e-mail channel was stopped by the
+	// managed service rules are told in-app and through the system SMTP.
+	if services.Integration != nil {
+		services.Integration.SetRelayPolicyNotices(repos.Tenant, services.Notification)
+		if services.Email != nil {
+			services.Integration.SetRelayPolicyMailer(services.Email)
+		}
+	}
+
 	// Owners are emailed about an SSO change that waits for their approval.
 	if services.SSOChange != nil && services.Email != nil {
 		services.SSOChange.SetMailer(services.Email)
@@ -308,12 +321,21 @@ func run() int {
 		services.Auth.SetSMTPChecker(services.Email)
 	}
 
-	// Wire the per-tenant SMTP resolver so a tenant that configured an email
-	// notification integration sends from its own SMTP server instead of the
-	// system default. The SetTenantSMTPResolver seam was never called, so
-	// per-tenant SMTP was silently dead and every tenant fell back to system SMTP.
+	// An organization's own mail relay (its e-mail notification channel with
+	// "organization mail" ticked) carries its invitation notices
+	// and reports when the platform mode email.tenant_relay allows it. Account
+	// security mail never uses it. Without the mode setting the relay stays
+	// off.
 	if services.Email != nil {
-		services.Email.SetTenantSMTPResolver(auth.NewIntegrationSMTPResolver(repos.Integration, log))
+		var mode auth.RelayModeSource
+		if services.OrgRelay != nil {
+			mode = services.OrgRelay
+		}
+		var domains auth.SenderDomains
+		if repos.VerifiedDomain != nil {
+			domains = repos.VerifiedDomain
+		}
+		services.Email.SetTenantSMTPResolver(auth.NewIntegrationSMTPResolver(repos.Integration, services.Encryptor.DecryptString, mode, domains, log))
 	}
 
 	// ==========================================================================

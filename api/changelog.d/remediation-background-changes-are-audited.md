@@ -1,3 +1,0 @@
-### Added: background changes to remediation tasks are in the audit log
-
-- The audit log now records, with the system as the actor, what the platform changed on a remediation task without a person: a task's state changed by the background reconcile (`remediation_task.state_changed`, `trigger: reconcile`), the new task opened when a finding of a closed task reopens (new action `remediation_task.regressed`, with `regression_of` and the finding count) and findings joining a task under an action's auto-join rule (`remediation_task.members_added`, `trigger: auto_join`). The task timeline already showed them; the audit log did not.
