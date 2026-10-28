@@ -116,19 +116,16 @@ func registerDocsRoutes(router Router, h *handler.DocsHandler, production bool, 
 		router.GET("/docs", h.ServeDocsUI)
 	}
 	if consoleAuth != nil {
-		// Console routes, so classified in adminRoutePermissions like the
-		// rest (the guard after the session check).
-		for _, rt := range []struct {
-			path string
-			h    http.HandlerFunc
-		}{{"/api/v1/admin/openapi.yaml", h.ServeOpenAPISpec}, {"/api/v1/admin/docs", h.ServeConsoleDocsUI}} {
-			mws := []Middleware{consoleAuth}
-			if p, ok := adminRoutePermission(http.MethodGet, rt.path); ok && consoleGuard != nil {
-				mws = append(mws, consoleGuard(p))
-			}
-			router.GET(rt.path, rt.h, mws...)
+		// Console routes, guarded by their entry in adminRoutePermissions
+		// (platform.console.read) after the session check.
+		docsMW := []Middleware{consoleAuth}
+		if consoleGuard != nil {
+			docsMW = append(docsMW, consoleGuard(adminRoutePermissions["GET /api/v1/admin/docs"]))
 		}
+		router.GET("/api/v1/admin/openapi.yaml", h.ServeOpenAPISpec, docsMW...)
+		router.GET("/api/v1/admin/docs", h.ServeConsoleDocsUI, docsMW...)
 	}
+
 }
 
 // registerDashboardRoutes registers dashboard endpoints.
