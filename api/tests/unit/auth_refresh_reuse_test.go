@@ -123,8 +123,12 @@ func TestAuthService_RefreshToken_LostSpendRaceIsReuse(t *testing.T) {
 	svc, deps := newTestAuthService()
 	rt, sid := loginPassword(t, svc, deps, "race@example.com")
 	deps.rtRepo.lostSpendRace = true
+	// The spend comes after the access and policy checks, so the person must
+	// be a member of the organization for the race to be reached.
+	tn := mustNewEnforcedTenant(t, deps.tenantRepo, "race-org", false)
+	deps.tenantRepo.userMemberships = []tenant.UserMembership{{TenantID: tn.ID().String(), TenantSlug: tn.Slug(), Role: "member"}}
 
-	_, err := svc.RefreshToken(context.Background(), auth.RefreshTokenInput{RefreshToken: rt, TenantID: shared.NewID().String()})
+	_, err := svc.RefreshToken(context.Background(), auth.RefreshTokenInput{RefreshToken: rt, TenantID: tn.ID().String()})
 	if !errors.Is(err, session.ErrRefreshTokenRevoked) {
 		t.Fatalf("lost spend race: want ErrRefreshTokenRevoked, got %v", err)
 	}

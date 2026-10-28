@@ -142,9 +142,14 @@ type attrTable struct {
 	ceiling map[string]scopedom.Tier
 	// uncovered: names no scope authority covers (passive stages).
 	uncovered map[string]bool
+	// placements, when set, records the placement each ownership check ran with.
+	placements *[]attribution.Placement
 }
 
-func (a attrTable) ActiveCheckBlocked(_ context.Context, _ shared.ID, ids []string) (map[string]attribution.State, error) {
+func (a attrTable) ActiveCheckBlocked(ctx context.Context, _ shared.ID, ids []string) (map[string]attribution.State, error) {
+	if a.placements != nil {
+		*a.placements = append(*a.placements, attribution.PlacementOf(ctx))
+	}
 	out := map[string]attribution.State{}
 	for _, id := range ids {
 		if s, ok := a.byID[id]; ok {
@@ -760,5 +765,73 @@ func TestHopRouter_RepositoryOutputsYieldNoHost(t *testing.T) {
 	}
 	if p := f.hops.plan(t, f.run.ID, "dns"); p.Skipped[scanrun.ReasonInvalid] != 2 {
 		t.Fatalf("skipped = %v, want the two repository names refused as hosts", p.Skipped)
+	}
+}
+
+// A derived name the gate keeps passive because it resolves only through a
+// wildcard record gets its own lane reason, not "unconfirmed".
+func TestHopRouter_WildcardOnlyHasItsOwnLaneReason(t *testing.T) {
+	f := newChainFixture(t)
+	f.seed("subs", "acme.com", 0, nil)
+	f.settle("subs", scanrun.StepRunStatusCompleted)
+	guess := f.output("subs", "guess.acme.com", "subdomain", "", attribution.StateWildcardOnly)
+	review := f.output("subs", "new.acme.com", "subdomain", "", attribution.StateNeedsReview)
+	f.output("subs", "www.acme.com", "subdomain", "", "")
+
+	f.schedule(t)
+	f.settle("dns", scanrun.StepRunStatusCompleted)
+	f.hops.outputs[f.sr["dns"]] = []scanrun.StepOutput{
+		{StepRunID: f.sr["dns"], AssetID: guess, Name: "guess.acme.com", Type: "subdomain"},
+		{StepRunID: f.sr["dns"], AssetID: review, Name: "new.acme.com", Type: "subdomain"},
+		{StepRunID: f.sr["dns"], AssetID: shared.NewID(), Name: "www.acme.com", Type: "subdomain"},
+	}
+	f.schedule(t)
+	pp := f.hops.plan(t, f.run.ID, "ports")
+	if pp.Skipped[scanrun.ReasonWildcardOnly] != 1 || pp.Skipped[scanrun.ReasonUnconfirmed] != 1 {
+		t.Fatalf("ports plan skipped = %v, want one wildcard_only and one unconfirmed", pp.Skipped)
+	}
+	var row string
+	for _, r := range f.hops.targets {
+		if r.StageKey == "ports" && r.TargetKey == "guess.acme.com" {
+			row = r.Reason
+		}
+	}
+	if row != scanrun.ReasonWildcardOnly {
+		t.Fatalf("provenance row reason = %q, want %q", row, scanrun.ReasonWildcardOnly)
+	}
+}
+
+// The hop router gates a step's derived targets as the step's jobs will
+// run: a run routed to the organization's sensors is gated as a tenant job,
+// one routed to platform sensors as a platform job.
+func TestHopRouter_GatePlacementFollowsTheRunRouting(t *testing.T) {
+	for routing, want := range map[string]attribution.Placement{
+		scanrun.SensorRoutingTenant:   attribution.PlacementTenant,
+		scanrun.SensorRoutingPlatform: attribution.PlacementPlatform,
+	} {
+		t.Run(routing, func(t *testing.T) {
+			f := newChainFixture(t)
+			var seen []attribution.Placement
+			f.attr.placements = &seen
+			f.s.targetGate = scanapp.NewTargetGate(f.excl, f.attr, zoneList{}, nil, logger.NewNop())
+			scanapp.WithActScope(f.acts)(f.s.targetGate.(*scanapp.Service))
+			f.run.Context[scanrun.RunContextKeySensorRouting] = routing
+			f.seed("subs", "acme.com", 0, nil)
+			f.settle("subs", scanrun.StepRunStatusCompleted)
+			f.output("subs", "www.acme.com", "subdomain", "", "")
+			f.schedule(t)
+			f.settle("dns", scanrun.StepRunStatusCompleted)
+			f.hops.outputs[f.sr["dns"]] = []scanrun.StepOutput{
+				{StepRunID: f.sr["dns"], AssetID: shared.NewID(), Name: "www.acme.com", Type: "subdomain"},
+			}
+			f.schedule(t)
+			if len(seen) == 0 {
+				t.Fatal("no ownership check ran")
+			}
+			// The active (ports) hop is the last gate call.
+			if got := seen[len(seen)-1]; got != want {
+				t.Fatalf("placement of the ports gate = %d, want %d", got, want)
+			}
+		})
 	}
 }
