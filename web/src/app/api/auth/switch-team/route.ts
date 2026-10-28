@@ -90,8 +90,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         {
           success: false,
           error: {
-            code: errorData.code || 'SWITCH_FAILED',
-            message: errorData.message || 'Failed to switch team',
+            // The code only: the console words it in the person's language and
+            // never shows the backend's sentence.
+            code: typeof errorData.code === 'string' ? errorData.code : 'SWITCH_FAILED',
+            message: 'Failed to switch organization',
           },
         },
         { status: response.status }

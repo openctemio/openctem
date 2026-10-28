@@ -18,11 +18,12 @@
 |---|---|
 | **Sensor** | Software on the customer side that authenticates *to* the platform with its own key and heartbeat. The umbrella term; every row of the `sensors` table. |
 | **Scanner** (role) | A sensor that assesses other hosts; routed by scan zone. What every existing sensor is today. |
-| **Agent** (role) | A sensor installed on an endpoint that reports only about its own host. Since RFC-023 the word *agent* means this role only. |
+| **Endpoint** (role, planned) | A sensor installed on an endpoint that reports only about its own host. RFC-023 called this role *agent*; the word is retired for sensors (see the [glossary](../glossary.md)). |
+| **AI worker** (role) | A sensor that runs AI agents (`openctemio/ai-worker`, sdk-go `pkg/harness`). |
 | **Collector** (role) | A sensor that pushes data from systems inside the customer network. |
 | **Integration** | An external system the *platform* calls (Jira, Slack, Splunk out, …); no software of ours runs for it. |
 | `type` | The legacy v1 classification (`worker`, `scanner`, `sensor`, `collector`, `runner`). Kept as input and storage until role + deployment replace it (RFC-023 §9.1). |
-| AI agent | The `ai_triage.agent` module (an LLM agent, unrelated to sensors); the `agent` AI mode is removed. |
+| AI agent | An AI principal with a role (analyst, remediator, reporter, hunter, router) that works under its own identity; data `ai_agent`, code `aiagent`. Unrelated to sensors; never a bare "agent". |
 
 Until 2026-10 the code, database and API called sensors "agents". The rename
 is complete in the API: packages, types, tables, columns, permissions

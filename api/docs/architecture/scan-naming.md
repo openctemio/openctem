@@ -3,7 +3,7 @@
 "Pipeline" is a CI word. In OpenCTEM it names only a customer's CI pipeline.
 The scan side uses the names below at every layer: the console, the API, the
 database, the Go packages and these docs. A bare "workflow" or "pipeline" is
-never used on its own.
+never used on its own. Names of every other concept: [glossary](../glossary.md).
 
 | Concept | Console | API | Database | Go package |
 |---|---|---|---|---|
