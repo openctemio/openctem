@@ -206,7 +206,7 @@ func TestAdminTargetMappingCreate_RegistryCoveredPairIsRefused(t *testing.T) {
 		repo := newFakeTargetMappingRepo()
 		h := NewAdminTargetMappingHandler(repo, logger.NewNop())
 		w := httptest.NewRecorder()
-		h.Create(w, opsAdminRequest(t, http.MethodPost, "/api/v1/admin/target-mappings", body, ""))
+		h.Create(w, mappingSuperAdminRequest(t, http.MethodPost, "/api/v1/admin/target-mappings", body, ""))
 		assert.Equal(t, http.StatusConflict, w.Code, body+" "+w.Body.String())
 		assert.Contains(t, w.Body.String(), "already covered by the asset type registry")
 		assert.Empty(t, repo.byID, "nothing may be stored")
@@ -215,7 +215,7 @@ func TestAdminTargetMappingCreate_RegistryCoveredPairIsRefused(t *testing.T) {
 	repo := newFakeTargetMappingRepo()
 	h := NewAdminTargetMappingHandler(repo, logger.NewNop())
 	w := httptest.NewRecorder()
-	h.Create(w, opsAdminRequest(t, http.MethodPost, "/api/v1/admin/target-mappings", `{"target_type":"certificate","asset_type":"domain"}`, ""))
+	h.Create(w, mappingSuperAdminRequest(t, http.MethodPost, "/api/v1/admin/target-mappings", `{"target_type":"certificate","asset_type":"domain"}`, ""))
 	assert.Equal(t, http.StatusCreated, w.Code, w.Body.String())
 }
 
