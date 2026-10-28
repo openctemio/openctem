@@ -32,6 +32,10 @@ vi.mock('@/features/ai-triage/api/use-ai-settings', () => ({
   useAISettings: () => ({ data: settings, isLoading: false, mutate: mutateSettings }),
   updateAISettings: (...a: unknown[]) => update(...a),
 }))
+vi.mock('@/features/ai-suggestions/api/ai-governance-api', async (orig) => ({
+  ...(await orig<typeof import('@/features/ai-suggestions/api/ai-governance-api')>()),
+  useAIUseCases: () => ({ data: null, mutate: vi.fn() }),
+}))
 vi.mock('@/features/ai-triage/api/use-ai-triage-api', () => ({
   useAIConfig: () => ({
     data: { isEnabled: !reason, reason, provider: 'claude', model: 'm', monthlyTokenLimit: 0 },

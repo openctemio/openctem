@@ -355,7 +355,14 @@ export const settingsNav: SettingsNavGroup[] = [
         permission: Permission.TeamUpdate,
         module: 'ai_triage',
         keywords: ['ai', 'llm', 'triage', 'consent', 'opt in', 'provider', 'data', 'privacy'],
-        anchors: [{ id: 'ai-triage', title: 'AI triage', keywords: ['turn on', 'enable'] }],
+        anchors: [
+          { id: 'ai-triage', title: 'AI triage', keywords: ['turn on', 'enable'] },
+          {
+            id: 'ai-use-cases',
+            title: 'AI use cases',
+            keywords: ['auto-apply', 'suggest', 'confidence', 'data class'],
+          },
+        ],
       },
       {
         id: 'audit-log',

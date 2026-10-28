@@ -1,4 +1,9 @@
 {
+  "components.aiBadge.hint": "An AI suggestion, not a decision. Check the finding before you apply it.",
+  "components.aiBadge.proposedAnalyst": "Proposed by AI analyst",
+  "components.aiBadge.suggestedAnalyst": "Suggested by AI analyst",
+  "components.aiBadge.suggestedApplication": "Suggested by AI application: {client}",
+  "components.aiBadge.suggestedBuiltin": "Suggested by AI triage",
   "components.asset.list": "Assets",
   "components.asset.none": "No asset matches.",
   "components.asset.search": "Search assets…",
