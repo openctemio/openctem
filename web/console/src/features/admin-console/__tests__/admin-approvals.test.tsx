@@ -225,7 +225,7 @@ describe('second approval refusals', () => {
       await adminFetch('/platform-idp/', { method: 'DELETE' }).catch(() => undefined)
     })
     const dialog = await screen.findByRole('dialog')
-    expect(within(dialog).getByText('Waiting for approval')).toBeInTheDocument()
+    expect(within(dialog).getByText('Waiting for a second administrator')).toBeInTheDocument()
     expect(within(dialog).getByRole('link', { name: 'Open approvals' })).toHaveAttribute(
       'href',
       '/security/approvals'
