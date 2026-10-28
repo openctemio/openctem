@@ -86,7 +86,7 @@ type OAuthService struct {
 	config           config.OAuthConfig
 	authConfig       config.AuthConfig
 	logger           *logger.Logger
-	breakGlass       BreakGlassGate
+	breakGlassGate   BreakGlassGate
 	httpClient       *http.Client
 	// oidcVerifier validates the signed id_token for providers that return one
 	// (Microsoft/Entra), so identity is taken from verified claims rather than
@@ -348,7 +348,7 @@ func (s *OAuthService) HandleCallback(ctx context.Context, input CallbackInput) 
 
 	// A break-glass account signs in on the admin console only; the answer is
 	// the generic provider failure.
-	if refuseBreakGlass(ctx, s.breakGlass, s.logger, u, "oauth") {
+	if refuseBreakGlass(ctx, s.breakGlassGate, s.logger, u, "oauth") {
 		return nil, ErrOAuthExchangeFailed
 	}
 
