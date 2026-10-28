@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-10-26). Shipped with migration `003439_team_access_presets` |
+| Status | Accepted (2026-10-26). Shipped with migration `003545_team_access_presets` |
 | Scope | api (`internal/app/accesscontrol/group_access.go`, `pkg/domain/role`, `pkg/domain/group`, group routes), web (settings, team form and member profile) |
 | Architecture | [authorization-matrix.md](../architecture/authorization-matrix.md) (Team access presets) |
 | Related | RFC-095 (role templates and invitations), RFC-058 (outside members), the team role bindings in the authorization matrix |
