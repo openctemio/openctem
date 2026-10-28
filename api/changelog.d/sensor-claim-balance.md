@@ -1,0 +1,6 @@
+### Fixed: work spreads across an organization's sensors, and a sensor never runs more scans than its slots
+
+- Every eligible sensor is woken when a task is queued, and the first claim used to take every task up to its free slots, so the sensor with the lowest round trip (or the one that had just finished the previous stage) got almost all the work while an equally able peer stayed idle. A claim now leaves fresh tasks (queued less than 10 seconds ago) to the least-loaded eligible sensor: the largest share of free slots first, then the fewest recent claims. After the window any eligible sensor takes the task, so a peer that does not claim delays it by seconds at most. Sensors without the tool, outside the zone, offline, disabled, full, shared or of another organization never count.
+- The claim caps scans at the sensor's free slots inside its own transaction, under a per-sensor lock, so two claims of the same sensor racing (a poll and a stream wake, two API replicas) can no longer exceed its job limit together.
+- The sensor's job count counts scan tasks only, the same count the slots use: a content refresh in flight no longer shows a sensor as 6 of 5.
+- The task placement panel says when a sensor that could take a fresh task leaves it to a less-loaded one.

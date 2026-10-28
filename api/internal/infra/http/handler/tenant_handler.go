@@ -2137,7 +2137,7 @@ func toSettingsResponse(s *tenant.Settings) SettingsResponse {
 			MFARequiredForAdmins:  s.Security.MFARequiredForAdmins,
 			IPWhitelist:           s.Security.IPWhitelist,
 			AllowedDomains:        s.Security.AllowedDomains,
-			EmailVerificationMode: string(s.Security.EmailVerificationMode),
+			EmailVerificationMode: readEmailVerificationMode(s.Security.EmailVerificationMode),
 			RequireSensorLocalPolicyForPrivateTargets: s.Security.RequireSensorLocalPolicyForPrivateTargets,
 			AllowSensorInteractsh:                     s.Security.AllowSensorInteractsh,
 			AllowSensorCustomTemplates:                s.Security.AllowSensorCustomTemplates,
@@ -2261,7 +2261,7 @@ type UpdateSecuritySettingsRequest struct {
 	MFARequiredForAdmins  *bool    `json:"mfa_required_for_admins"`
 	IPWhitelist           []string `json:"ip_whitelist"`
 	AllowedDomains        []string `json:"allowed_domains"`
-	EmailVerificationMode *string  `json:"email_verification_mode" validate:"omitempty,oneof=auto always never"`
+	EmailVerificationMode *string  `json:"email_verification_mode" validate:"omitempty,oneof=auto always"`
 	// RequireSensorLocalPolicyForPrivateTargets: see SecuritySettingsResponse.
 	RequireSensorLocalPolicyForPrivateTargets *bool `json:"require_sensor_local_policy_for_private_targets"`
 	// AllowSensorInteractsh / AllowSensorCustomTemplates: see
@@ -3695,4 +3695,13 @@ func (h *TenantHandler) UpdateEmergingThreatSettings(w http.ResponseWriter, r *h
 	h.writeSectionETag(w, r, tenantID, tenant.SectionEmergingThreats)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(es)
+}
+
+// readEmailVerificationMode reports the stored mode; the retired "never" reads
+// as "auto" (no organization setting skips verification any more).
+func readEmailVerificationMode(m tenant.EmailVerificationMode) string {
+	if m == tenant.EmailVerificationNever {
+		return string(tenant.EmailVerificationAuto)
+	}
+	return string(m)
 }

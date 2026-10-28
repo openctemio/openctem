@@ -217,6 +217,7 @@ Shipped (design: [RFC-022 revision 24](../rfcs/RFC-022-platform-admin-console.md
 | Stop requiring security keys | the security-key policy goes from on to off |
 | Remove or relax the administrators' identity provider | removed, switched off, or no longer required |
 | Change the administrators' identity provider or the second factor it is trusted for | a new issuer or client id on an existing provider, or any trusted ACR/AMR value not trusted before (also on a first configuration); the target is the new issuer, client and trusted values |
+| Change where platform AI sends data | platform AI is saved turned on with a provider, server address, private-network switch or API key that differs from the last one applied while on (so a first enable, a key swap and enabling a destination changed while off all ask); the target is the provider, server address, private switch and a keyed fingerprint of the key, never the key. Model and allowed-model changes and turning it off never ask; removing the key of a platform that stays on does, because the server is then called without the credential; a backend that cannot fingerprint the key refuses the save |
 | Reset another administrator's console second factor | always (their next sign-in enrolls a new factor) |
 | Open sign-up | the stored sign-up policy opens wider than before |
 | Re-sign an organization's audit chain | always |

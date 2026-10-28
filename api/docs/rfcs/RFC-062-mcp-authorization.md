@@ -109,6 +109,19 @@ API; the consent page stays in the web app.
 A client of any kind is a public client: no client secrets are issued or
 accepted. The platform operator can block any client.
 
+**When a metadata-document client is stored.** `GET /oauth/authorize` is
+unauthenticated, so it never writes the client registry: the fetched document
+(name, redirect URIs, fetch times) is kept on the authorization request
+(`mcp_oauth_requests.pending_client`) and the redirect URI is checked against
+it. The client row in `mcp_oauth_clients` is created, or refreshed, only when
+a signed-in person approves the consent, in the same step that issues the code.
+A denied, abandoned or expired request leaves no client behind; expired
+requests are purged by the platform janitor a day after they end. The token
+endpoint and refresh read the stored client of the grant. A client blocked
+between authorize and approval is refused at approval. The name in a metadata
+document or a dynamic registration is whatever the application declared, so
+the console shows the host first and the name as "declares itself as".
+
 ## 6. Authorization flow
 
 1. The client calls `GET /oauth/authorize` with `response_type=code`,
@@ -156,6 +169,7 @@ approved before (the page says so); `prompt=none` returns `consent_required`.
 | `mcp:assets.read` | `assets:read` | assets, exposure chains |
 | `mcp:compliance.read` | `compliance:frameworks:read` | compliance posture |
 | `mcp:pentest.read` | `pentest:campaigns:read`, `pentest:findings:read`, `pentest:retests:read`, `pentest:templates:read` | pentest campaigns, findings, retests, templates, report prompts |
+| `mcp:scope.read` | `attack_surface:scope:read` | check_scope: may this target be tested at this intensity (§10b) |
 | `mcp:findings.comment` (write) | `findings:comment` | add a comment, confirmed per call (§10) |
 | `mcp:findings.propose` (write) | `findings:write` | propose a false positive or an accepted risk (§10a) |
 | `mcp:pentest.draft` (write) | `pentest:findings:write` | save a pentest finding as a draft (§10a) |
@@ -168,10 +182,10 @@ effective = permissions(granted scopes) ∩ permissions the user holds now
 
 An owner or administrator holds every permission, so their token has exactly
 the permissions of its scopes. The owner/administrator bypass is never set for
-an MCP token. The token keeps the user's data scope: a role with full data
-access sees what it sees in the web console, any other member sees the assets
-their scope rows allow. (`oct_` keys keep their stricter rule: no full data
-access.)
+an MCP token. The token reads only the assets the user's scope rows allow, whatever the
+user's role: the full-data role is never applied to an MCP token (amended
+2026-10-19, same rule as `oct_` keys). An empty asset or finding result for a
+caller whose scope covers no asset carries a `scope_notice` explaining it.
 
 `tools/list` lists only the tools the token can run. A tool whose permission the
 user holds but whose scope was not granted answers `403` with
@@ -303,6 +317,18 @@ Threats this answers: content the agent reads (finding text, scanner output,
 target responses) steering it to hide a real risk. The agent can at most
 file a request that a different person reads, marked as written by an AI.
 
+## 10b. Scope check tool
+
+`check_scope` lets an outside AI client ask "may I test this target at this intensity?" before it acts. It reads; it never changes a scope, and no tool of this server widens one (widening stays with people: approvals, step-up, audit).
+
+- **Input.** `target` (domain, IP, CIDR or URL), optional `intensity` (`passive`, `active` default, `intrusive`), optional `program_id` for a target only a bug-bounty program rule covers.
+- **Answer.** The one scope authority a scan asks (`scopeauth`), so the answer matches a scan's: `allowed` (with the kind and id of the covering entry), `passive_only` (covered, but not at that intensity) or `refused`, with reason codes and a hint for the person. A refusal is worded as the platform's decision and says variations are refused too.
+- **Never echoed.** Deny-list contents, scope patterns and entries other than the covering one. The platform deny list answers with a reason code only.
+- **Fails closed.** Any lookup error (scope entries, verified domains, program exclusions or memberships) answers `refused` with `scope_lookup_failed`.
+- **Program-only targets.** A target covered only by program rules is allowed only when `program_id` names a program the caller belongs to whose in-effect rule covers it (program exclusions applied).
+- **Tenant and permission.** The tenant comes from the connection. The scope `mcp:scope.read` stands for `attack_surface:scope:read`, the permission of the REST route that lists scope entries, which discloses more than this tool. Another tenant's entries never match.
+- **Abuse.** A rate limit per connection (30 a minute, burst 10; per API replica) stops scope enumeration by brute force; a limited call answers `refused` with `rate_limited` and `retry_after_seconds`. Every call is audited with the target stored as a digest, never in clear.
+
 ## 11. Transport
 
 - Authorization only from the `Authorization` header; never from the body, a
@@ -355,7 +381,7 @@ file a request that a different person reads, marked as written by an AI.
 | MA22 | Origin check; no session-based authorization; protocol upgrade separate. |
 | MA23 | Connected applications for users, organization administrators and platform administrators. |
 | MA24 | Tables for clients, authorization requests, grants and tokens; cascades and purge. |
-| MA25 | An MCP token keeps the user's data scope, including full data access; `oct_` keys do not. |
+| MA25 | An MCP token reads only what the user's scope rows allow (amended 2026-10-19: no full data access, as `oct_` keys); an empty result for an empty scope carries a `scope_notice`. |
 | MA26 | Proposal tools (§10a): requests filed in the person's name, decided by another person; never decided by the person or their agent; no per-call confirmation. |
 
 ## 14. Implementation

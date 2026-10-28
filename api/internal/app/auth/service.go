@@ -3,7 +3,6 @@ package auth
 
 import (
 	"context"
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"strings"
@@ -46,6 +45,11 @@ var (
 	// ErrSignupSSORequired: the address is on a domain whose organization
 	// requires its SSO; nothing was written and the person signs in there.
 	ErrSignupSSORequired = errors.New("sign-up for this address goes through the organization's single sign-on")
+	// ErrEmailNotAuthoritative: a social sign-in presented an e-mail address the
+	// provider does not vouch for (a personal Google account on a company
+	// address, a GitHub address) and the account is not bound to that provider
+	// identity yet. Nothing was written.
+	ErrEmailNotAuthoritative = errors.New("EMAIL_NOT_AUTHORITATIVE: this provider cannot prove ownership of this email address; sign in with your password (or ask an administrator) and link the provider afterwards")
 	// ErrTeamURLNotAvailable: the organization URL (slug) cannot be used,
 	// whether another organization has it or it is reserved.
 	ErrTeamURLNotAvailable = fmt.Errorf("%w: this team URL is not available; choose another", shared.ErrValidation)
@@ -140,7 +144,11 @@ type AuthService struct {
 	platformAdmins PlatformAdminGate
 	auditService   *auditapp.AuditService
 	roleService    *accesscontrol.RoleService // Optional: for database-driven role permissions
-	smtpChecker    SMTPAvailabilityCheck      // Optional: enables smart email verification
+	// grants overrides roleService for the effective-privilege checks (tests).
+	grants interface {
+		HoldsAboveMember(ctx context.Context, tenantID, userID string) (bool, error)
+	}
+	smtpChecker SMTPAvailabilityCheck // Optional: enables smart email verification
 	// permVersionSvc, when set, stamps issued tenant-scoped access tokens with
 	// the user's current permission version so the permission-sync middleware
 	// can reject stale tokens after a role revocation/demotion (AUTHZ-3).
@@ -271,15 +279,13 @@ func (s *AuthService) SetSMTPChecker(checker SMTPAvailabilityCheck) {
 	s.smtpChecker = checker
 }
 
-// shouldRequireEmailVerificationForUser is the login-time variant. It looks
-// at ALL tenants the user belongs to and applies the strictest setting:
-//
-//   - "always" anywhere → require verification (deny login if unverified)
-//   - "never" anywhere (without "always") → skip verification (allow login)
-//   - "auto" everywhere → fall back to SMTP availability check
-//
-// If the user has no memberships at all (e.g., self-registered, not yet
-// invited), fall back to global SMTP detection.
+// shouldRequireEmailVerificationForUser is the login-time variant. Whether an
+// address is verified is a property of the account, not of one organization,
+// so the answer here is the platform rule alone: an organization setting can
+// neither lower it (an unverified account would walk into every other
+// organization it belongs to) nor raise it for the other organizations the
+// account belongs to. An organization that wants verified members enforces it
+// at its own entry (enforceEmailVerificationPolicy).
 func (s *AuthService) shouldRequireEmailVerificationForUser(ctx context.Context, userID shared.ID) bool {
 	if s.tenantRepo == nil {
 		return s.shouldRequireEmailVerification(ctx, "")
@@ -288,42 +294,30 @@ func (s *AuthService) shouldRequireEmailVerificationForUser(ctx context.Context,
 	if err != nil || len(memberships) == 0 {
 		return s.shouldRequireEmailVerification(ctx, "")
 	}
-	hasAlways := false
-	hasNever := false
-	for _, m := range memberships {
-		mode := s.getTenantVerificationMode(ctx, m.TenantID)
-		switch mode {
-		case tenantdom.EmailVerificationAlways:
-			hasAlways = true
-		case tenantdom.EmailVerificationNever:
-			hasNever = true
-		}
-	}
-	if hasAlways {
-		return true
-	}
-	if hasNever {
-		return false
-	}
-	// All tenants are "auto" → fall back to SMTP check using the first tenant
-	return s.shouldRequireEmailVerification(ctx, memberships[0].TenantID)
+	// SMTP availability may depend on the organization (its own mail relay),
+	// so the first membership still decides that part; its verification
+	// mode is not read.
+	return s.shouldRequireEmailVerificationPlatform(ctx, memberships[0].TenantID)
 }
 
-// getTenantVerificationMode reads a tenant's EmailVerificationMode setting.
-// Returns empty string if tenant lookup fails (caller treats as auto).
-func (s *AuthService) getTenantVerificationMode(ctx context.Context, tenantIDStr string) tenantdom.EmailVerificationMode {
-	if tenantIDStr == "" || s.tenantRepo == nil {
-		return ""
+// enforceEmailVerificationPolicy refuses to mint a token for an organization
+// that requires verified email ("always") while the account's address is not
+// verified. The requirement applies to entering that organization only.
+func (s *AuthService) enforceEmailVerificationPolicy(ctx context.Context, u *userdom.User, tenantID string) error {
+	if u.EmailVerified() {
+		return nil
 	}
-	tid, err := shared.IDFromString(tenantIDStr)
-	if err != nil {
-		return ""
+	if s.tenantRepo == nil {
+		return nil
 	}
-	t, err := s.tenantRepo.GetByID(ctx, tid)
-	if err != nil || t == nil {
-		return ""
+	// Fail closed: an unverified account whose organization cannot be read
+	// (bad id, lookup error) gets no token, rather than being let in because
+	// the "always" requirement could not be seen.
+	mode, ok := s.lookupTenantVerificationMode(ctx, tenantID)
+	if !ok || mode == tenantdom.EmailVerificationAlways {
+		return ErrEmailNotVerified
 	}
-	return t.TypedSettings().Security.EmailVerificationMode
+	return nil
 }
 
 // shouldRequireEmailVerification returns true if a newly registered user in
@@ -344,16 +338,20 @@ func (s *AuthService) shouldRequireEmailVerification(ctx context.Context, tenant
 	// 1. Per-tenant override (highest priority)
 	if tenantID != "" && s.tenantRepo != nil {
 		if mode, ok := s.lookupTenantVerificationMode(ctx, tenantID); ok {
-			switch mode {
-			case tenantdom.EmailVerificationAlways:
+			if mode == tenantdom.EmailVerificationAlways {
 				return true
-			case tenantdom.EmailVerificationNever:
-				return false
 			}
-			// EmailVerificationAuto / empty → fall through to SMTP check
+			// Auto, empty and the retired "never" fall through to the SMTP
+			// check: no organization setting skips verification.
 		}
 	}
 
+	return s.shouldRequireEmailVerificationPlatform(ctx, tenantID)
+}
+
+// shouldRequireEmailVerificationPlatform is the platform rule alone (the
+// organization's own mail relay counts, its verification mode does not).
+func (s *AuthService) shouldRequireEmailVerificationPlatform(ctx context.Context, tenantID string) bool {
 	// 2. A deployment that allows public sign-up (SIGNUP_MODE=domain or open)
 	// verifies every account that is not tied to an organization: missing
 	// SMTP never skips it there (start-up refuses that configuration, and
@@ -1040,47 +1038,53 @@ func (s *AuthService) enforceSSOPolicy(ctx context.Context, sess *sessiondom.Ses
 	return nil
 }
 
-// ProvisionedAccount is a user account prepared for a platform administrator.
-type ProvisionedAccount struct {
+// InvitedAccount is a user account prepared for a platform administrator who
+// has not chosen a password yet.
+type InvitedAccount struct {
 	User *userdom.User
-	// TemporaryPassword is set only when the account was created here; it is
-	// shown once to the administrator who created it.
-	TemporaryPassword string
+	// SetupToken is the raw single-use set-password token; only its hash is
+	// stored. The caller delivers it to the new administrator's mailbox.
+	SetupToken string
+	// ExpiresAt is when the token stops working.
+	ExpiresAt time.Time
 }
 
-// CreateLocalAccount creates a verified local account with a temporary
-// password for a new platform administrator (RFC-022). It refuses an email
-// that already has an account (ErrEmailAlreadyExists): with self-registration
-// an attacker can pre-register an administrator's email, so linking an
-// existing account would hand them the administrator.
-func (s *AuthService) CreateLocalAccount(ctx context.Context, email, name string) (*ProvisionedAccount, error) {
+// CreateInvitedAccount creates a verified local account with no password for a
+// new platform administrator (RFC-022) and a single-use set-password token
+// valid for ttl. Nobody learns a password for the account: the administrator
+// chooses one with the emailed link. It refuses an email that already has an
+// account (ErrEmailAlreadyExists): with self-registration an attacker can
+// pre-register an administrator's email, so linking an existing account would
+// hand them the administrator.
+func (s *AuthService) CreateInvitedAccount(ctx context.Context, email, name string, ttl time.Duration) (*InvitedAccount, error) {
 	email = strings.TrimSpace(strings.ToLower(email))
 	if _, err := s.userRepo.GetByEmail(ctx, email); err == nil {
 		return nil, ErrEmailAlreadyExists
 	} else if !shared.IsNotFound(err) {
 		return nil, fmt.Errorf("look up user: %w", err)
 	}
-
-	temp, err := temporaryPassword()
-	if err != nil {
-		return nil, err
-	}
-	hash, err := s.passwordHasher.Hash(temp)
-	if err != nil {
-		return nil, fmt.Errorf("hash temporary password: %w", err)
-	}
 	if strings.TrimSpace(name) == "" {
 		name = email
 	}
-	u, err := userdom.NewLocalUser(email, name, hash)
+	u, err := userdom.NewProvisionedLocalUser(email, name)
 	if err != nil {
 		return nil, err
 	}
-	u.VerifyEmail()
+	token, err := password.GenerateResetToken()
+	if err != nil {
+		return nil, fmt.Errorf("generate setup token: %w", err)
+	}
+	expiresAt := time.Now().Add(ttl)
+	// Only the hash is stored; the raw token is emailed.
+	u.SetPasswordResetToken(crypto.HashToken(token), expiresAt)
 	if err := s.userRepo.Create(ctx, u); err != nil {
 		return nil, fmt.Errorf("create user: %w", err)
 	}
-	return &ProvisionedAccount{User: u, TemporaryPassword: temp}, nil
+	// Create may not persist the token columns: store it explicitly.
+	if err := s.userRepo.Update(ctx, u); err != nil {
+		return nil, fmt.Errorf("store setup token: %w", err)
+	}
+	return &InvitedAccount{User: u, SetupToken: token, ExpiresAt: expiresAt}, nil
 }
 
 // AccountActive reports whether the user can still sign in (active and not
@@ -1094,21 +1098,6 @@ func (s *AuthService) AccountActive(ctx context.Context, userID shared.ID) (bool
 		return false, err
 	}
 	return u.CanLogin(), nil
-}
-
-// temporaryPassword returns 20 random characters that satisfy any password
-// policy the platform supports (upper, lower, digit and a symbol).
-func temporaryPassword() (string, error) {
-	const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
-	buf := make([]byte, 16)
-	if _, err := rand.Read(buf); err != nil {
-		return "", fmt.Errorf("generate temporary password: %w", err)
-	}
-	out := make([]byte, len(buf))
-	for i, b := range buf {
-		out[i] = alphabet[int(b)%len(alphabet)]
-	}
-	return "Oc" + string(out) + "7!", nil
 }
 
 // RefreshSessionIdentity is the signed-in user behind a refresh token and how
@@ -1255,6 +1244,9 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 	// Per-tenant 2FA requirement: a password session whose user has not
 	// enrolled cannot mint a token for a tenant that requires 2FA.
 	if err := s.enforceMFAPolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
+		return nil, err
+	}
+	if err := s.enforceEmailVerificationPolicy(ctx, u, input.TenantID); err != nil {
 		return nil, err
 	}
 	if err := s.enforcePersonalPolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
@@ -1557,11 +1549,6 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 		return nil, err
 	}
 
-	// Mark old token as used (token rotation)
-	if err := s.spendRefreshToken(ctx, storedToken); err != nil {
-		return nil, err
-	}
-
 	// Verify user has access to the requested tenant
 	memberships, err := s.tenantRepo.GetUserMemberships(ctx, u.ID())
 	if err != nil {
@@ -1592,10 +1579,20 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 	if err := s.enforceMFAPolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
 		return nil, err
 	}
+	if err := s.enforceEmailVerificationPolicy(ctx, u, input.TenantID); err != nil {
+		return nil, err
+	}
 	if err := s.enforcePersonalPolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
 		return nil, err
 	}
 	if err := s.enforceOutsidePrivilegePolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
+		return nil, err
+	}
+
+	// Mark old token as used (token rotation). Every refusal above happens
+	// first, so a person held back by a policy (for example 2FA they still
+	// have to set up) keeps a usable session to meet it.
+	if err := s.spendRefreshToken(ctx, storedToken); err != nil {
 		return nil, err
 	}
 
@@ -2346,6 +2343,12 @@ func (s *AuthService) AcceptInvitationWithRefreshToken(ctx context.Context, inpu
 	// a privileged outside member. When one refuses, the person has joined but
 	// gets no token yet; they meet the requirement (for example set up 2FA)
 	// and sign in to the organization.
+	// An invitation token is not mailbox proof (its holder can be anyone who
+	// saw the link), so an organization that requires verified e-mail still
+	// refuses the token until the address is verified.
+	if err := s.enforceEmailVerificationPolicy(ctx, u, t.ID().String()); err != nil {
+		return nil, err
+	}
 	if err := s.enforceSSOPolicy(ctx, sess, t.ID().String(), membership.Role().String()); err != nil {
 		return nil, err
 	}
