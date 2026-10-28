@@ -35,27 +35,27 @@ func TestEmailCredentials_ManagedServiceRules(t *testing.T) {
 		"no creds": `{"smtp_host":"smtp.example.com","smtp_port":25,` + tail + `}`,
 	}
 	for name, creds := range bad {
-		err := s.setEmailCredentials(newEmailIntegration(), creds)
+		err := s.setEmailCredentials(newEmailIntegration(), creds, false)
 		if !errors.Is(err, shared.ErrValidation) || !errors.Is(err, emailpkg.ErrTenantRelayPolicy) {
 			t.Errorf("create %s: err = %v, want a validation error from the relay policy", name, err)
 		}
 	}
-	if err := s.setEmailCredentials(newEmailIntegration(), smtpCredsJSON+`}`); err != nil {
+	if err := s.setEmailCredentials(newEmailIntegration(), smtpCredsJSON+`}`, false); err != nil {
 		t.Fatalf("a compliant relay was refused: %v", err)
 	}
 
 	// An update that keeps the stored login is judged with it; one that
 	// drops TLS is refused.
 	intg := newEmailIntegration()
-	if err := s.setEmailCredentials(intg, smtpCredsJSON+`}`); err != nil {
+	if err := s.setEmailCredentials(intg, smtpCredsJSON+`}`, false); err != nil {
 		t.Fatal(err)
 	}
 	keep := `{"smtp_host":"smtp.example.com","smtp_port":587,"use_starttls":true,"to_emails":["ops@example.com"]}`
-	if err := s.updateEmailCredentials(intg, keep); err != nil {
+	if err := s.updateEmailCredentials(intg, keep, false); err != nil {
 		t.Fatalf("update that keeps the stored login refused: %v", err)
 	}
 	weak := `{"smtp_host":"smtp.example.com","smtp_port":587,"username":"u","password":"p","use_starttls":false,"use_tls":false,"to_emails":["ops@example.com"]}`
-	if err := s.updateEmailCredentials(intg, weak); !errors.Is(err, emailpkg.ErrTenantRelayNeedsTLS) {
+	if err := s.updateEmailCredentials(intg, weak, false); !errors.Is(err, emailpkg.ErrTenantRelayNeedsTLS) {
 		t.Fatalf("update without TLS: err = %v, want ErrTenantRelayNeedsTLS", err)
 	}
 }

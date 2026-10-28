@@ -2,7 +2,13 @@ package email
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
+	"math/big"
 	"net"
 	"strings"
 	"testing"
@@ -127,4 +133,62 @@ func TestSessionTimeout(t *testing.T) {
 	if got := sessionTimeout(10 * time.Second); got != 40*time.Second {
 		t.Fatalf("10s dial timeout: got %v", got)
 	}
+}
+
+// ImplicitTLS (port 465) speaks TLS before the greeting: a server that only
+// answers after a completed TLS handshake sees one.
+func TestSMTPSender_ImplicitTLSHandshakesBeforeGreeting(t *testing.T) {
+	cert, err := selfSignedCert()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ln, err := tls.Listen("tcp", "127.0.0.1:0", &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	handshook := make(chan bool, 1)
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			handshook <- false
+			return
+		}
+		defer c.Close()
+		tc := c.(*tls.Conn)
+		handshook <- tc.Handshake() == nil
+		_, _ = c.Write([]byte("554 no service\r\n"))
+	}()
+
+	stubNetwork(t,
+		func(context.Context, string) (net.IP, error) { return net.ParseIP("203.0.113.9"), nil },
+		func(ctx context.Context, _ time.Duration, _ string) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, "tcp", ln.Addr().String())
+		})
+	s := NewSMTPSender(Config{Host: "mail.tenant.example", Port: 465, From: "a@tenant.example",
+		ImplicitTLS: true, SkipVerify: true, Timeout: 2 * time.Second})
+	_ = s.Send(context.Background(), testMessage())
+	select {
+	case ok := <-handshook:
+		if !ok {
+			t.Fatal("the TLS handshake did not complete")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no connection reached the server")
+	}
+}
+
+func selfSignedCert() (tls.Certificate, error) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	tpl := &x509.Certificate{SerialNumber: big.NewInt(1), NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour),
+		DNSNames: []string{"mail.tenant.example"}}
+	der, err := x509.CreateCertificate(rand.Reader, tpl, tpl, &key.PublicKey, key)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}, nil
 }

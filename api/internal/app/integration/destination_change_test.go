@@ -19,7 +19,7 @@ import (
 func emailWithStoredSecret(t *testing.T, s *IntegrationService) *integrationdom.Integration {
 	t.Helper()
 	intg := newEmailIntegration()
-	if err := s.setEmailCredentials(intg, smtpCredsJSON+`}`); err != nil {
+	if err := s.setEmailCredentials(intg, smtpCredsJSON+`}`, false); err != nil {
 		t.Fatal(err)
 	}
 	return intg
@@ -39,7 +39,7 @@ func TestEmailUpdate_DestinationChangeNeedsNewCredentials(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			intg := emailWithStoredSecret(t, s)
 			before := intg.CredentialsEncrypted()
-			if err := s.updateEmailCredentials(intg, upd); !errors.Is(err, ErrCredentialsRequiredForNewHost) {
+			if err := s.updateEmailCredentials(intg, upd, false); !errors.Is(err, ErrCredentialsRequiredForNewHost) {
 				t.Fatalf("err = %v, want ErrCredentialsRequiredForNewHost", err)
 			}
 			if intg.CredentialsEncrypted() != before {
@@ -53,7 +53,7 @@ func TestEmailUpdate_NewHostWithNewCredentialsReplacesStoredSecret(t *testing.T)
 	s := &IntegrationService{encryptor: crypto.NewNoOpEncryptor()}
 	intg := emailWithStoredSecret(t, s)
 	upd := `{"smtp_host":"mx.other.example","smtp_port":587,"use_starttls":true,"username":"u2","password":"p2","to_emails":["soc@example.com"]}`
-	if err := s.updateEmailCredentials(intg, upd); err != nil {
+	if err := s.updateEmailCredentials(intg, upd, false); err != nil {
 		t.Fatalf("update refused: %v", err)
 	}
 	cfg, err := s.buildNotificationConfig(intg, nil)
@@ -69,7 +69,7 @@ func TestEmailUpdate_SameDestinationKeepsStoredSecret(t *testing.T) {
 	s := &IntegrationService{encryptor: crypto.NewNoOpEncryptor()}
 	intg := emailWithStoredSecret(t, s)
 	upd := `{"smtp_host":"smtp.example.com","smtp_port":587,"use_starttls":true,"to_emails":["ops@example.com"]}`
-	if err := s.updateEmailCredentials(intg, upd); err != nil {
+	if err := s.updateEmailCredentials(intg, upd, false); err != nil {
 		t.Fatalf("update refused: %v", err)
 	}
 	cfg, err := s.buildNotificationConfig(intg, nil)
@@ -88,7 +88,7 @@ func TestEmailUpdate_LegacyRowDestinationChangeNeedsNewCredentials(t *testing.T)
 	intg := newEmailIntegration()
 	intg.SetCredentials(smtpCredsJSON + `}`)
 	upd := `{"smtp_host":"mx.other.example","smtp_port":587,"use_starttls":true,"to_emails":["soc@example.com"]}`
-	if err := s.updateEmailCredentials(intg, upd); !errors.Is(err, ErrCredentialsRequiredForNewHost) {
+	if err := s.updateEmailCredentials(intg, upd, false); !errors.Is(err, ErrCredentialsRequiredForNewHost) {
 		t.Fatalf("err = %v, want ErrCredentialsRequiredForNewHost", err)
 	}
 }
