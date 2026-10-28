@@ -86,7 +86,13 @@ export function AdminActivityTable({
   onRowClick,
 }: AdminActivityTableProps) {
   const { t } = useTranslation()
-  const columns = useColumns()
+  const allColumns = useColumns()
+  // A read-only administrator is not sent addresses; an empty column of
+  // dashes would look like missing data.
+  const showIp = entries.length === 0 || entries.some((e) => !!e.ip_address)
+  const columns = showIp
+    ? allColumns
+    : allColumns.filter((c) => !('accessorKey' in c) || c.accessorKey !== 'ip_address')
 
   return (
     <DataTable
