@@ -170,6 +170,7 @@ export interface MfaEnrollmentStart {
   secret?: string
   otpauthUri?: string
   error?: string
+  code?: string
 }
 
 // ============================================
@@ -429,17 +430,17 @@ async function completeLoginTenants(
           success: false,
           user,
           code: 'ORGANIZATION_SUSPENDED',
-          error: 'This organization is suspended — contact support',
+          error: 'This organization is suspended',
           suspendedTenants: loginData.suspended_tenants,
         }
       }
-      const tenantNames = loginData.suspended_tenants.map((t) => t.name).join(', ')
+      // The words come from the code in the person's language; the
+      // organizations are in suspendedTenants for a form that lists them.
       return {
         success: false,
         user,
-        error: `Your access to ${tenantNames} ${
-          loginData.suspended_tenants.length === 1 ? 'is' : 'are'
-        } suspended. Please contact a team administrator to be reactivated.`,
+        code: 'MEMBERSHIP_SUSPENDED',
+        error: 'Membership suspended',
         suspendedTenants: loginData.suspended_tenants,
       }
     }
@@ -594,6 +595,12 @@ async function readMfaChallenge(): Promise<string | undefined> {
   return cookieStore.get(MFA_CHALLENGE_COOKIE)?.value
 }
 
+/** The API's error code carried on a thrown backend error. */
+function errorCode(error: unknown): string | undefined {
+  const code = (error as { code?: unknown } | null)?.code
+  return typeof code === 'string' ? code : undefined
+}
+
 const MFA_EXPIRED_MESSAGE = 'Your sign-in expired. Please enter your password again.'
 
 /**
@@ -606,7 +613,12 @@ export async function verifyMfaAction(input: {
 }): Promise<LoginResult> {
   const token = await readMfaChallenge()
   if (!token) {
-    return { success: false, error: MFA_EXPIRED_MESSAGE, mfaRequired: false }
+    return {
+      success: false,
+      code: 'MFA_CHALLENGE_INVALID',
+      error: MFA_EXPIRED_MESSAGE,
+      mfaRequired: false,
+    }
   }
   try {
     const { data, refreshToken } = await backendFetchWithMeta<LoginBackendResponse>(
@@ -624,7 +636,11 @@ export async function verifyMfaAction(input: {
     await removeServerCookie(MFA_CHALLENGE_COOKIE)
     return await completeLogin(data, refreshToken)
   } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : 'Verification failed' }
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Verification failed',
+      code: errorCode(error),
+    }
   }
 }
 
@@ -687,7 +703,7 @@ export async function startSessionMfaAction(): Promise<SessionMfaStart> {
 export async function startMfaEnrollmentAction(): Promise<MfaEnrollmentStart> {
   const token = await readMfaChallenge()
   if (!token) {
-    return { success: false, error: MFA_EXPIRED_MESSAGE }
+    return { success: false, code: 'MFA_CHALLENGE_INVALID', error: MFA_EXPIRED_MESSAGE }
   }
   try {
     const data = await backendFetch<{ secret: string; otpauth_uri: string }>(
@@ -699,6 +715,7 @@ export async function startMfaEnrollmentAction(): Promise<MfaEnrollmentStart> {
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Could not start two-factor setup',
+      code: errorCode(error),
     }
   }
 }
@@ -716,7 +733,7 @@ export async function startMfaEnrollmentAction(): Promise<MfaEnrollmentStart> {
 export async function confirmMfaEnrollmentAction(code: string): Promise<LoginResult> {
   const token = await readMfaChallenge()
   if (!token) {
-    return { success: false, error: MFA_EXPIRED_MESSAGE }
+    return { success: false, code: 'MFA_CHALLENGE_INVALID', error: MFA_EXPIRED_MESSAGE }
   }
   try {
     const { data, refreshToken } = await backendFetchWithMeta<LoginBackendResponse>(
@@ -765,7 +782,11 @@ export async function confirmMfaEnrollmentAction(code: string): Promise<LoginRes
       },
     }
   } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : 'Verification failed' }
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Verification failed',
+      code: errorCode(error),
+    }
   }
 }
 
@@ -778,13 +799,17 @@ export async function finishMfaEnrollmentAction(): Promise<LoginResult> {
   const raw = cookieStore.get(MFA_PENDING_LOGIN_COOKIE)?.value
   await removeServerCookie(MFA_PENDING_LOGIN_COOKIE)
   if (!raw) {
-    return { success: false, error: MFA_EXPIRED_MESSAGE }
+    return { success: false, code: 'MFA_CHALLENGE_INVALID', error: MFA_EXPIRED_MESSAGE }
   }
   try {
     const pending = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8')) as PendingLogin
     return await completeLogin(pending.login, pending.rt)
   } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : 'Sign-in failed' }
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Sign-in failed',
+      code: errorCode(error),
+    }
   }
 }
 
@@ -812,6 +837,7 @@ export async function selectTenantAction(tenantId: string): Promise<LoginResult>
     if (!refreshToken) {
       return {
         success: false,
+        code: 'SESSION_EXPIRED',
         error: 'Session expired. Please login again.',
       }
     }
@@ -895,6 +921,7 @@ export async function selectTenantAction(tenantId: string): Promise<LoginResult>
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Failed to select team',
+      code: errorCode(error),
     }
   }
 }
@@ -1253,6 +1280,7 @@ export async function resetPasswordAction(
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Password reset failed',
+      code: errorCode(error),
     }
   }
 }

@@ -210,10 +210,16 @@ describe('LoginForm two-factor step', () => {
 
   it('shows a wrong code inline and stays on the step', async () => {
     loginAction.mockResolvedValueOnce({ success: true, mfaRequired: true, mfaPurpose: 'verify' })
-    verifyMfaAction.mockResolvedValueOnce({ success: false, error: 'Invalid verification code' })
+    verifyMfaAction.mockResolvedValueOnce({
+      success: false,
+      code: 'MFA_CODE_INVALID',
+      error: 'SERVER SENTENCE invalid verification code',
+    })
     const user = await signIn()
     await user.type(await screen.findByLabelText('Authentication code'), '000000')
-    expect(await screen.findByRole('alert')).toHaveTextContent('Invalid verification code')
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('That code is not valid')
+    expect(alert).not.toHaveTextContent('SERVER SENTENCE')
     expect(screen.getByText('Two-factor authentication')).toBeInTheDocument()
     expect(href).not.toHaveBeenCalled()
   })
@@ -237,6 +243,7 @@ describe('LoginForm two-factor step', () => {
     loginAction.mockResolvedValueOnce({ success: true, mfaRequired: true, mfaPurpose: 'verify' })
     verifyMfaAction.mockResolvedValueOnce({
       success: false,
+      code: 'MFA_CHALLENGE_INVALID',
       error: 'Your sign-in verification expired or is no longer valid. Please sign in again.',
     })
     const user = await signIn()
