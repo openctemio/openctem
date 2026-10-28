@@ -40,7 +40,7 @@ func (f fakeBundles) Sync(context.Context) (vulnfeed.Result, error) { return f.r
 
 func failedStatus() *threatintel.SyncStatus {
 	st := threatintel.NewSyncStatus("vulnfeed", 1)
-	st.MarkSyncFailed("vulnfeed fetch keyset.dsse.json: status 404 from https://example.com/x")
+	st.MarkSyncFailedWith("vulnfeed fetch keyset.dsse.json: status 404 from https://example.com/x", "publisher_empty", map[string]string{"host": "example.com"})
 	return st
 }
 
@@ -50,22 +50,36 @@ func TestSyncStatuses_TenantRouteHidesRawError(t *testing.T) {
 	svc := threat.NewIntelService(&fakeIntelRepo{st: &fakeStatusRepo{all: []*threatintel.SyncStatus{failedStatus()}}}, logger.NewNop())
 	h := NewThreatIntelHandler(svc, nil, logger.NewNop())
 
-	for name, tc := range map[string]struct {
-		fn   http.HandlerFunc
-		want bool
-	}{"tenant": {h.GetSyncStatusesTenant, false}, "admin": {h.GetSyncStatuses, true}} {
-		rec := httptest.NewRecorder()
-		tc.fn(rec, httptest.NewRequest(http.MethodGet, "/", nil))
-		var out []SyncStatusResponse
-		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil || len(out) != 1 {
-			t.Fatalf("%s: %v %s", name, err, rec.Body.String())
+	rec := httptest.NewRecorder()
+	h.GetSyncStatusesTenant(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	var tenant []map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &tenant); err != nil || len(tenant) != 1 {
+		t.Fatalf("%v %s", err, rec.Body.String())
+	}
+	if tenant[0]["state"] != "waiting_for_publisher" {
+		t.Fatalf("state = %v", tenant[0]["state"])
+	}
+	for _, k := range []string{"last_error", "error_code", "error_params", "detail", "failing_since"} {
+		if _, ok := tenant[0][k]; ok {
+			t.Fatalf("tenant route returns %q: %s", k, rec.Body.String())
 		}
-		if got := out[0].LastError != ""; got != tc.want {
-			t.Fatalf("%s: last_error present = %v, want %v (%q)", name, got, tc.want, out[0].LastError)
-		}
-		if !tc.want && strings.Contains(rec.Body.String(), "example.com") {
-			t.Fatalf("%s: host leaked: %s", name, rec.Body.String())
-		}
+	}
+	if strings.Contains(rec.Body.String(), "example.com") || strings.Contains(rec.Body.String(), "404") {
+		t.Fatalf("host or status leaked: %s", rec.Body.String())
+	}
+
+	rec = httptest.NewRecorder()
+	h.GetSyncStatuses(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	var admin []SyncStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &admin); err != nil || len(admin) != 1 {
+		t.Fatalf("%v %s", err, rec.Body.String())
+	}
+	a0 := admin[0]
+	if a0.ErrorCode != "publisher_empty" || a0.ErrorParams["host"] != "example.com" || !strings.Contains(a0.LastError, "status 404") {
+		t.Fatalf("admin view: %+v", a0)
+	}
+	if a0.Detail == nil || a0.IntervalSeconds != 1200 {
+		t.Fatalf("admin detail/interval: %+v", a0)
 	}
 }
 
