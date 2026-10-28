@@ -94,7 +94,7 @@ type SSOService struct {
 	tokenGenerator   *jwt.Generator
 	authConfig       config.AuthConfig
 	logger           *logger.Logger
-	breakGlass       BreakGlassGate
+	breakGlassGate   BreakGlassGate
 	httpClient       *http.Client
 	// features gates configuring connections by the organization's limits.
 	features entitlement.FeatureChecker
@@ -1734,7 +1734,7 @@ const freshAuthMaxAge = 5 * time.Minute
 
 func (s *SSOService) createSession(ctx context.Context, u *userdom.User, authMethod sessiondom.AuthMethod, idpTenant shared.ID, fed federatedBinding) (*SessionResult, error) {
 	// A break-glass account signs in on the admin console only.
-	if refuseBreakGlass(ctx, s.breakGlass, s.logger, u, "sso") {
+	if refuseBreakGlass(ctx, s.breakGlassGate, s.logger, u, "sso") {
 		return nil, ErrSSOExchangeFailed
 	}
 	// A blocked or suspended account opens no session (it would only 401).
