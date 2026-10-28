@@ -7,7 +7,7 @@ uncovered is visible. Three parts:
 
 | Part | Where |
 |---|---|
-| **Policy**: per type, the capabilities it needs, how often, the facts that must hold (`resolves`, `web_port`, `web_port_or_unscanned`, `scope_entry`) and the type a run must produce | `configs/asset-types.yaml` (`coverage:`), read with `coverage.Rules()` / `coverage.RulesFor()` |
+| **Policy**: per type, the capabilities it needs, how often, the facts that must hold (`resolves`, `web_port`, `web_port_or_unscanned`, `scope_entry`, `no_named_twin`) and the type a run must produce | `configs/asset-types.yaml` (`coverage:`), read with `coverage.Rules()` / `coverage.RulesFor()` |
 | **Ledger**: one row per asset, capability and vantage: state, reason, last attempt and success, outcome, next due | table `asset_coverage`, `internal/infra/postgres/asset_coverage_repository.go` |
 | **Loop**: the `asset-coverage` controller (one replica, every `ASSET_COVERAGE_INTERVAL`) | `internal/app/coverage` |
 
@@ -143,6 +143,16 @@ unknown (no port scan of the name or its addresses has succeeded and none
 of its addresses has an open port on record). A name whose port scan found
 no web port is `not_applicable` until one appears; reconcile then makes it
 due again.
+
+**Template scans on web services.** A web service reached by an IPv4
+address (`https://203.0.113.10:8443`) is `not_applicable` for
+`vuln.templates` with reason `no_named_twin` when an active web service
+reached by a host name serves the same address on the same port (its
+probe's `ip_addresses` and `port`): a named virtual host or a CDN-fronted
+application answers its bare address with a default page, so the checks
+run once, on the named service, with the right Host and SNI. An address
+service with no named twin is still scanned. Reconcile makes it due again
+when the named service goes away.
 
 An open port is addressed as `host:port`; names and origins by name.
 With the loop on, automatic enrichment of new assets is off: the loop
