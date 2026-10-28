@@ -92,6 +92,14 @@ type stored struct {
 	// AllowedModels, when not empty, limits the models the platform
 	// provider (and an organization that picks a model on it) may use.
 	AllowedModels []string `json:"allowed_models,omitempty"`
+	// KeyFP is the keyed fingerprint of the stored key (see destination), kept
+	// so an unchanged key keeps its fingerprint across an encryption rekey.
+	KeyFP string `json:"key_fp,omitempty"`
+	// AppliedDestination is the canonical destination last saved while
+	// turned on: a later enabled save with another destination needs a
+	// second super admin. Turning off keeps it, so turning back on with the
+	// same destination needs none.
+	AppliedDestination string `json:"applied_destination,omitempty"`
 }
 
 // usable reports whether the stored configuration can make a call: an
@@ -262,58 +270,13 @@ func (s *Service) Update(ctx context.Context, actor *admin.AdminUser, in Input, 
 	if err != nil {
 		return Settings{}, err
 	}
-	in.Provider, in.Model = strings.TrimSpace(in.Provider), strings.TrimSpace(in.Model)
-	if in.Provider != "" && !slices.Contains(Providers, in.Provider) {
-		return Settings{}, fmt.Errorf("%w: the provider must be one of %s", ErrInvalid, strings.Join(Providers, ", "))
-	}
-	if in.Model != "" && !modelRE.MatchString(in.Model) {
-		return Settings{}, fmt.Errorf("%w: the model name has an unexpected shape", ErrInvalid)
-	}
-	models, err := cleanModels(in.AllowedModels)
+	pl, err := s.plan(ctx, in)
 	if err != nil {
 		return Settings{}, err
 	}
-	if len(models) > 0 && in.Model != "" && !slices.Contains(models, in.Model) {
-		return Settings{}, fmt.Errorf("%w: the model must be one of the allowed models", ErrInvalid)
-	}
-	in.BaseURL = strings.TrimSpace(in.BaseURL)
-	if in.Provider == llm.ProviderOpenAICompatible {
-		// SECURITY: a private address is reachable only with the explicit
-		// toggle, never loopback, link-local or cloud metadata.
-		in.BaseURL, err = llm.ValidateBaseURL(ctx, in.BaseURL, in.AllowPrivate)
-		if err != nil {
-			return Settings{}, fmt.Errorf("%w: %s", ErrInvalid, strings.TrimPrefix(err.Error(), llm.ErrInvalidProvider.Error()+": "))
-		}
-	} else {
-		in.BaseURL, in.AllowPrivate = "", false
-	}
-	prev, _, err := s.store.Fresh(ctx)
-	if err != nil {
-		return Settings{}, err
-	}
-	next := stored{Enabled: in.Enabled, Provider: in.Provider, Model: in.Model, KeyEncrypted: prev.KeyEncrypted,
-		BaseURL: in.BaseURL, AllowPrivate: in.AllowPrivate, AllowedModels: models}
-	keyChanged := false
-	if in.APIKey != nil {
-		keyChanged = true
-		next.KeyEncrypted = ""
-		if v := strings.TrimSpace(*in.APIKey); v != "" {
-			if !keyRE.MatchString(v) {
-				return Settings{}, fmt.Errorf("%w: the API key must be 8-512 printable characters without spaces", ErrInvalid)
-			}
-			enc, err := s.encryptor.EncryptString(v)
-			if err != nil {
-				return Settings{}, fmt.Errorf("encrypt AI key: %w", err)
-			}
-			next.KeyEncrypted = enc
-		}
-	}
-	// A key belongs to one provider: switching providers needs a new key.
-	if prev.Provider != "" && next.Provider != prev.Provider && !keyChanged {
-		next.KeyEncrypted = ""
-	}
-	if next.Enabled && !next.usable() {
-		return Settings{}, fmt.Errorf("%w: choose a provider and a model and set its key (an OpenAI-compatible server: its base URL) to turn platform AI on", ErrInvalid)
+	prev, next, keyChanged := pl.prev, pl.next, pl.keyChanged
+	if next.Enabled {
+		next.AppliedDestination = pl.target
 	}
 	if _, err := s.store.Put(ctx, next, expectedVersion, actor.ID()); err != nil {
 		return Settings{}, err
@@ -334,6 +297,157 @@ func (s *Service) Update(ctx context.Context, actor *admin.AdminUser, in Input, 
 		Critical: true, Notify: true,
 	}, ip, userAgent)
 	return s.Get(ctx)
+}
+
+// plan is a validated change: the stored state before and after it.
+type plan struct {
+	prev, next stored
+	keyChanged bool
+	// target is the approval target of next's destination.
+	target string
+}
+
+// plan validates in and builds the state it would store. It changes nothing.
+func (s *Service) plan(ctx context.Context, in Input) (plan, error) {
+	var err error
+	in.Provider, in.Model = strings.TrimSpace(in.Provider), strings.TrimSpace(in.Model)
+	if in.Provider != "" && !slices.Contains(Providers, in.Provider) {
+		return plan{}, fmt.Errorf("%w: the provider must be one of %s", ErrInvalid, strings.Join(Providers, ", "))
+	}
+	if in.Model != "" && !modelRE.MatchString(in.Model) {
+		return plan{}, fmt.Errorf("%w: the model name has an unexpected shape", ErrInvalid)
+	}
+	models, err := cleanModels(in.AllowedModels)
+	if err != nil {
+		return plan{}, err
+	}
+	if len(models) > 0 && in.Model != "" && !slices.Contains(models, in.Model) {
+		return plan{}, fmt.Errorf("%w: the model must be one of the allowed models", ErrInvalid)
+	}
+	in.BaseURL = strings.TrimSpace(in.BaseURL)
+	if in.Provider == llm.ProviderOpenAICompatible {
+		// SECURITY: a private address is reachable only with the explicit
+		// toggle, never loopback, link-local or cloud metadata.
+		in.BaseURL, err = llm.ValidateBaseURL(ctx, in.BaseURL, in.AllowPrivate)
+		if err != nil {
+			return plan{}, fmt.Errorf("%w: %s", ErrInvalid, strings.TrimPrefix(err.Error(), llm.ErrInvalidProvider.Error()+": "))
+		}
+	} else {
+		in.BaseURL, in.AllowPrivate = "", false
+	}
+	prev, _, err := s.store.Fresh(ctx)
+	if err != nil {
+		return plan{}, err
+	}
+	next := stored{Enabled: in.Enabled, Provider: in.Provider, Model: in.Model, KeyEncrypted: prev.KeyEncrypted,
+		BaseURL: in.BaseURL, AllowPrivate: in.AllowPrivate, AllowedModels: models,
+		KeyFP: prev.KeyFP, AppliedDestination: prev.AppliedDestination}
+	keyChanged := false
+	if in.APIKey != nil {
+		keyChanged = true
+		next.KeyEncrypted = ""
+		if v := strings.TrimSpace(*in.APIKey); v != "" {
+			if !keyRE.MatchString(v) {
+				return plan{}, fmt.Errorf("%w: the API key must be 8-512 printable characters without spaces", ErrInvalid)
+			}
+			enc, err := s.encryptor.EncryptString(v)
+			if err != nil {
+				return plan{}, fmt.Errorf("encrypt AI key: %w", err)
+			}
+			next.KeyEncrypted = enc
+		}
+	}
+	// A key belongs to one provider: switching providers needs a new key.
+	if prev.Provider != "" && next.Provider != prev.Provider && !keyChanged {
+		next.KeyEncrypted = ""
+	}
+	if next.Enabled && !next.usable() {
+		return plan{}, fmt.Errorf("%w: choose a provider and a model and set its key (an OpenAI-compatible server: its base URL) to turn platform AI on", ErrInvalid)
+	}
+	switch {
+	case next.KeyEncrypted == "":
+		next.KeyFP = ""
+	case keyChanged:
+		fp, ferr := s.fingerprint(*in.APIKey)
+		if ferr != nil {
+			return plan{}, ferr
+		}
+		next.KeyFP = fp
+	case next.KeyFP == "":
+		// Settings saved before fingerprints were kept: derive it once.
+		if plain, derr := s.encryptor.DecryptString(next.KeyEncrypted); derr == nil {
+			fp, ferr := s.fingerprint(plain)
+			if ferr != nil {
+				return plan{}, ferr
+			}
+			next.KeyFP = fp
+		}
+	}
+	return plan{prev: prev, next: next, keyChanged: keyChanged,
+		target: admin.PlatformAIDestinationTarget(next.Provider, next.BaseURL, next.AllowPrivate, next.KeyFP)}, nil
+}
+
+// ErrNoFingerprint is returned when the encryption backend cannot produce a
+// keyed fingerprint. The destination approval binds the key through that
+// fingerprint, so without it a key swap could not be told from no change: the
+// save is refused rather than approved against a constant.
+var ErrNoFingerprint = errors.New("platformai: the encryption backend cannot fingerprint the API key")
+
+// fingerprint is the keyed fingerprint of an API key (a plain hash of a key
+// is never stored or shown).
+func (s *Service) fingerprint(key string) (string, error) {
+	f, ok := s.encryptor.(crypto.Fingerprinter)
+	if !ok {
+		return "", ErrNoFingerprint
+	}
+	return f.SecretFingerprint("platform-ai-key", strings.TrimSpace(key)), nil
+}
+
+// appliedTarget is the destination last applied while turned on. Settings
+// saved before it was kept count as applied when they are on today.
+func (s *Service) appliedTarget(prev stored) string {
+	if prev.AppliedDestination != "" {
+		return prev.AppliedDestination
+	}
+	if prev.Enabled {
+		return admin.PlatformAIDestinationTarget(prev.Provider, prev.BaseURL, prev.AllowPrivate, s.prevFP(prev))
+	}
+	return ""
+}
+
+func (s *Service) prevFP(prev stored) string {
+	if prev.KeyFP != "" || prev.KeyEncrypted == "" {
+		return prev.KeyFP
+	}
+	// A key that cannot be fingerprinted counts as no fingerprint: the applied
+	// destination then matches nothing and the next turn-on asks for approval.
+	if plain, err := s.encryptor.DecryptString(prev.KeyEncrypted); err == nil {
+		if fp, ferr := s.fingerprint(plain); ferr == nil {
+			return fp
+		}
+	}
+	return ""
+}
+
+// ApprovalNeeded reports whether saving in needs a second super admin, and
+// the approval target. It does when the result is turned on and its
+// destination (provider, base URL, private-network switch, API key) differs
+// from the last one applied while on. Model, allowed models, turning off and
+// any change while staying off need none; removing the key of a platform that
+// stays on changes its destination and asks. An invalid
+// input needs none here: saving refuses it.
+func (s *Service) ApprovalNeeded(ctx context.Context, in Input) (string, bool) {
+	if s.envLocked {
+		return "", false
+	}
+	pl, err := s.plan(ctx, in)
+	if err != nil || !pl.next.Enabled {
+		return "", false
+	}
+	if pl.target == s.appliedTarget(pl.prev) {
+		return "", false
+	}
+	return pl.target, true
 }
 
 // Test sends one minimal request with the stored configuration (whether or

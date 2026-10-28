@@ -37,7 +37,8 @@ const adminOrganizationSelect = `
 	       COALESCE((SELECT array_agg(u.email ORDER BY u.email) FROM tenant_members m
 	         JOIN users u ON u.id = m.user_id
 	         JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
-	         WHERE m.tenant_id = t.id AND ver.role = 'owner' AND m.status = 'active'), '{}'),
+	         WHERE m.tenant_id = t.id AND ver.role = 'owner' AND m.status = 'active'
+	           AND u.status = 'active' AND u.erased_at IS NULL), '{}'),
 	       EXISTS (SELECT 1 FROM saml_providers s WHERE s.tenant_id = t.id AND s.enabled),
 	       (SELECT COUNT(*) FROM tenant_identity_providers p
 	         WHERE p.tenant_id = t.id AND p.is_active),
@@ -49,10 +50,8 @@ const adminOrganizationSelect = `
 	       t.status, t.suspended_at, COALESCE(t.suspended_reason, ''), t.deletion_due_at
 	FROM tenants t`
 
-// adminOrganizationActiveOwner holds when the organization has an active owner.
-const adminOrganizationActiveOwner = `EXISTS (SELECT 1 FROM tenant_members m
-	JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
-	WHERE m.tenant_id = t.id AND ver.role = 'owner' AND m.status = 'active')`
+// adminOrganizationActiveOwner holds when the organization has a usable owner.
+var adminOrganizationActiveOwner = UsableOwnerExists("t.id")
 
 func scanOrganization(sc interface{ Scan(...any) error }) (*admin.Organization, error) {
 	var (
@@ -147,4 +146,14 @@ func (r *AdminOrganizationRepository) GetOrganization(ctx context.Context, id sh
 		return nil, fmt.Errorf("get organization: %w", err)
 	}
 	return o, nil
+}
+
+// CountUsableOwners returns how many usable owners the organization has
+// (UsableOwnerCount); 0 when it does not exist.
+func (r *AdminOrganizationRepository) CountUsableOwners(ctx context.Context, id shared.ID) (int, error) {
+	var n int
+	if err := r.db.QueryRowContext(ctx, UsableOwnerCount("$1"), id.String()).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count usable owners: %w", err)
+	}
+	return n, nil
 }
