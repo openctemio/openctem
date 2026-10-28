@@ -1180,6 +1180,7 @@ components:
         next_heartbeat_seconds: { type: integer }
         actions: { type: array, items: { type: string, description: "pause, resume, drain, rotate_key, update, send_manifest, send_config_report (PUT /config-report; only for a sensor that sent config_report.digest); ignore unknown values" } }
         config_version: { type: string }
+        content_version: { type: string, maxLength: 128, description: "The ETag of the content packs this sensor should hold (its desired set); a change makes the sensor refresh its content at once. Absent when the platform serves no content or the sensor is paused." }
     Command:
       type: object
       required: [id, type, priority, status, sensor_id, payload, created_at]

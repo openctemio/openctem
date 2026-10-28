@@ -99,7 +99,7 @@ Checked in this order (`mcpoauth.Service.StartAuthorization`):
   `client_id`, name the client, list 1..20 redirect URIs (`https`, or `http`
   on loopback) and be a public client (no secret, `token_endpoint_auth_method`
   absent or `none`). The name is cleaned of control and bidirectional
-  characters. The stored copy is in `mcp_oauth_clients`.
+  characters. The stored copy is in `mcp_oauth_clients`. A fetched document is stored there only when a signed-in person approves the consent (migration `mcp_oauth_pending_client`); until then it is kept on the authorization request (`pending_client`).
 - **Organization clients** (`octc_…`): an owner or administrator registers
   them under Settings, AI assistants (MCP), Applications: a name and exact redirect URIs
   (`https`, or loopback `http` any port). `GET/POST /api/v1/mcp-access/clients`,
@@ -161,8 +161,10 @@ resource is this endpoint, the user still an active member with an active
 account. The request then carries the grant's tenant and user, permissions
 `scope permissions ∩ what the user holds now` (owners and administrators hold
 everything), never the owner/admin bypass, auth provider `mcp_oauth`, and
-keeps the user's own data scope including full data access (unlike `oct_`
-keys). Each grant has a budget of 3600 requests per hour. Last use (time,
+reads only what the user's scope rows allow, never the full-data access of an
+owner, administrator or full-data role (the same rule as `oct_` keys; an
+owner who is in no group sees no assets through MCP, and every empty asset or
+finding result then carries a `scope_notice` saying so). Each grant has a budget of 3600 requests per hour. Last use (time,
 IP) is recorded at most once a minute.
 
 A call the user could make with a scope the token lacks answers `403` with
@@ -247,7 +249,7 @@ approve and stay behind `any_client`.
 |---|---|---|
 | Everyone | My account, Connected applications (`/account/connected-apps`) | `GET /api/v1/mcp-access/my-connections`, `DELETE /api/v1/mcp-access/my-connections/{id}` |
 | Owners and administrators | Settings, AI assistants (MCP) (`/settings/mcp`), tabs Applications, Connections and Policy: approved publishers, waiting requests, registered applications, every connection of the organization with the person, and the policy | `GET /api/v1/mcp-access/connections`, `DELETE /api/v1/mcp-access/connections/{id}` (`RequireAdmin`) |
-| Platform administrators | Console, System, AI applications (`/admin/system/ai-applications`): every client with active connections and organization counts (no tenant data); block or unblock (ops_admin+, audited `mcp_client.blocked` / `mcp_client.unblocked`) | `GET /api/v1/admin/mcp-clients`, `POST /api/v1/admin/mcp-clients/{id}/block`, `…/unblock` |
+| Platform administrators | Console, System, AI applications (`/admin/system/ai-applications`): every client with active connections and organization counts (no tenant data); block or unblock (ops_admin+, audited `mcp_client.blocked` / `mcp_client.unblocked`) | `GET /api/v1/admin/mcp-clients` (`page`, `per_page`, `q`, `blocked`), `POST /api/v1/admin/mcp-clients/{id}/block`, `…/unblock` |
 
 A row shows the application, where it is published (or that the
 organization registered it, or that it is unverified), the access, when it
