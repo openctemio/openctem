@@ -41,7 +41,7 @@ func NewFindingRetestRepository(db *DB) *FindingRetestRepository {
 
 const findingRetestColumns = `id, tenant_id, finding_id, asset_id, trigger, requested_by, status, outcome, reason,
 	reason_code, sensor_id, prior_status, result_status, template_id, target, check_command_id, reach_command_id,
-	deadline_at, created_at, completed_at, run_id, retest_check_id, check_digest, check_path`
+	deadline_at, created_at, completed_at, run_id, retest_check_id, check_digest, check_path, method`
 
 // Create inserts a pending retest. A second pending retest of the same finding
 // violates ux_finding_retests_one_pending and returns retest.ErrInFlight.
@@ -52,12 +52,12 @@ func (r *FindingRetestRepository) Create(ctx context.Context, rt *retest.Retest)
 	}
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO finding_retests (id, tenant_id, finding_id, asset_id, trigger, requested_by, status,
-			prior_status, template_id, target, deadline_at, created_at, retest_check_id, check_digest, check_path)
-		VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, $8, $9, $10, $11, $12, $13, $14)`,
+			prior_status, template_id, target, deadline_at, created_at, retest_check_id, check_digest, check_path, method)
+		VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
 		rt.ID.String(), rt.TenantID.String(), rt.FindingID.String(), nullIDValue(rt.AssetID),
 		string(rt.Trigger), nullIDPtr(rt.RequestedBy), string(rt.PriorStatus),
 		rt.TemplateID, rt.Target, rt.DeadlineAt, rt.CreatedAt,
-		nullID(rt.CheckID), nullString(rt.CheckDigest), nullString(rt.CheckPath))
+		nullID(rt.CheckID), nullString(rt.CheckDigest), nullString(rt.CheckPath), nullString(rt.Method))
 	if err != nil {
 		if isUniqueViolation(err) {
 			return retest.ErrInFlight
@@ -207,6 +207,10 @@ func (r *FindingRetestRepository) ListSettleCandidates(ctx context.Context, now 
 					(fr.check_command_id IS NULL OR cc.status IS NULL OR cc.status IN ('completed', 'failed', 'canceled', 'expired'))
 					AND (fr.reach_command_id IS NULL OR rc.status IS NULL OR rc.status IN ('completed', 'failed', 'canceled', 'expired'))
 					AND fr.created_at <= $1 - INTERVAL '1 minute'
+					-- A version re-check waits for its fingerprint run.
+					AND NOT (fr.method = 'version' AND EXISTS (
+						SELECT 1 FROM scan_runs sr WHERE sr.id = fr.run_id AND sr.tenant_id = fr.tenant_id
+							AND sr.status IN ('pending', 'running')))
 				)
 			)
 		ORDER BY fr.deadline_at
@@ -543,10 +547,11 @@ func scanRetest(s retestScanner) (*retest.Retest, error) {
 		completed                              sql.NullTime
 		runID                                  sql.NullString
 		checkID, checkDigest, checkPath        sql.NullString
+		method                                 sql.NullString
 	)
 	if err := s.Scan(&id, &tenantID, &findingID, &assetID, &trigger, &requestedBy, &status, &outcome, &reason,
 		&reasonCode, &sensorID, &priorStatus, &resultStatus, &template, &target, &checkCmd, &reachCmd, &deadline, &created, &completed, &runID,
-		&checkID, &checkDigest, &checkPath); err != nil {
+		&checkID, &checkDigest, &checkPath, &method); err != nil {
 		return nil, err
 	}
 	rt := &retest.Retest{
@@ -566,6 +571,7 @@ func scanRetest(s retestScanner) (*retest.Retest, error) {
 		CheckID:      optionalID(checkID),
 		CheckDigest:  checkDigest.String,
 		CheckPath:    checkPath.String,
+		Method:       method.String,
 	}
 	var err error
 	if rt.ID, err = shared.IDFromString(id); err != nil {
