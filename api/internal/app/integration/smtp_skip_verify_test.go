@@ -24,19 +24,19 @@ func TestEmailCredentials_RefuseSkipVerify(t *testing.T) {
 	s := &IntegrationService{encryptor: crypto.NewNoOpEncryptor()}
 
 	intg := newEmailIntegration()
-	if err := s.setEmailCredentials(intg, smtpCredsJSON+`,"skip_verify":true}`); !errors.Is(err, shared.ErrValidation) {
+	if err := s.setEmailCredentials(intg, smtpCredsJSON+`,"skip_verify":true}`, false); !errors.Is(err, shared.ErrValidation) {
 		t.Fatalf("create with skip_verify: err = %v, want a validation error", err)
 	}
-	if err := s.setEmailCredentials(intg, smtpCredsJSON+`,"skip_verify":false}`); err != nil {
+	if err := s.setEmailCredentials(intg, smtpCredsJSON+`,"skip_verify":false}`, false); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	if _, ok := intg.Metadata()["skip_verify"]; ok {
 		t.Fatal("skip_verify stored in metadata")
 	}
-	if err := s.updateEmailCredentials(intg, smtpCredsJSON+`,"skip_verify":true}`); !errors.Is(err, shared.ErrValidation) {
+	if err := s.updateEmailCredentials(intg, smtpCredsJSON+`,"skip_verify":true}`, false); !errors.Is(err, shared.ErrValidation) {
 		t.Fatalf("update with skip_verify: err = %v, want a validation error", err)
 	}
-	if err := s.updateEmailCredentials(intg, smtpCredsJSON+`}`); err != nil {
+	if err := s.updateEmailCredentials(intg, smtpCredsJSON+`}`, false); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 	if _, ok := intg.Metadata()["skip_verify"]; ok {
@@ -51,7 +51,7 @@ func TestEmailConfig_IgnoresStoredSkipVerify(t *testing.T) {
 	s := &IntegrationService{encryptor: crypto.NewNoOpEncryptor()}
 
 	intg := newEmailIntegration()
-	if err := s.setEmailCredentials(intg, smtpCredsJSON+`}`); err != nil {
+	if err := s.setEmailCredentials(intg, smtpCredsJSON+`}`, false); err != nil {
 		t.Fatal(err)
 	}
 	meta := intg.Metadata()
