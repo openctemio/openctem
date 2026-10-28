@@ -102,6 +102,10 @@ type Service struct {
 	accounts  AccountDirectory
 	now       func() time.Time
 
+	// supportSessions ends a console session's support sessions at sign-out;
+	// nil when support access is not wired.
+	supportSessions SupportSessionEnder
+
 	// Platform identity provider (RFC-022 revision 4); nil when not wired.
 	idps admin.PlatformIdPRepository
 	oidc OIDCProvider
@@ -247,6 +251,11 @@ func (s *Service) Start(ctx context.Context, email, password string, client Clie
 			// and never clears it.
 			s.accounts.RecordPasswordFailure(ctx, u.UserID)
 			s.record(ctx, a, ActionLoginFailed, client, "identity provider sign-in required")
+			// The caller sees the same answer as a wrong password: a distinct
+			// refusal would tell a guesser the password was right. The sign-in
+			// page learns that the identity provider is required from the
+			// public policy endpoint, not from this response.
+			return nil, admin.ErrInvalidCredentials
 		}
 		return nil, err
 	}
@@ -629,6 +638,11 @@ func (s *Service) Logout(ctx context.Context, token string, client ClientInfo) e
 	}
 	if err := s.console.DeleteSession(ctx, sess.ID); err != nil {
 		return err
+	}
+	// A support session lives only as long as the console session that opened
+	// it: signing out ends it now, with the audit rows and the owners' notice.
+	if s.supportSessions != nil {
+		s.supportSessions.EndForConsoleSession(ctx, sess.ID)
 	}
 	if a, err := s.admins.GetByID(ctx, sess.AdminID); err == nil {
 		s.record(ctx, a, ActionLogout, client, "")

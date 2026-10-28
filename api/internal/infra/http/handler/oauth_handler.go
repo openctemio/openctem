@@ -88,7 +88,7 @@ func (h *OAuthHandler) Authorize(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Security: Validate final_redirect against allowed origins (CWE-601)
-	if finalRedirect != "" && !h.isRedirectAllowed(finalRedirect) {
+	if finalRedirect != "" && !h.isFinalRedirectAllowed(finalRedirect) {
 		apierror.BadRequest("Invalid redirect URI").WriteJSON(w)
 		return
 	}
@@ -219,12 +219,31 @@ func (h *OAuthHandler) handleOAuthError(w http.ResponseWriter, err error) {
 		writeSignupNotAvailable(w)
 	case errors.Is(err, auth.ErrSignupSSORequired):
 		writeSignupSSORequired(w)
+	case errors.Is(err, auth.ErrEmailNotAuthoritative):
+		apierror.New(http.StatusForbidden, "EMAIL_NOT_AUTHORITATIVE",
+			"This provider cannot prove that you own this email address. Sign in with your password, or ask an administrator, and link the provider afterwards.").WriteJSON(w)
 	case errors.Is(err, auth.ErrOAuthUserInfoFailed):
 		apierror.BadRequest("Failed to get user information from provider").WriteJSON(w)
 	default:
 		h.logger.Error("oauth error", "error", err)
 		apierror.InternalError(err).WriteJSON(w)
 	}
+}
+
+// isFinalRedirectAllowed checks where the web app sends the person after a
+// successful sign-in: a path on this site ("/", "/findings?x=1") or an
+// absolute URL that isRedirectAllowed accepts. Protocol-relative ("//host")
+// and backslash forms ("/\\host"), which browsers treat as another host, and
+// control characters are refused.
+func (h *OAuthHandler) isFinalRedirectAllowed(raw string) bool {
+	if strings.HasPrefix(raw, "/") {
+		if strings.HasPrefix(raw, "//") || strings.ContainsAny(raw, "\\\r\n\t") {
+			return false
+		}
+		u, err := url.Parse(raw)
+		return err == nil && u.Scheme == "" && u.Host == ""
+	}
+	return h.isRedirectAllowed(raw)
 }
 
 // isRedirectAllowed validates that a redirect URL is safe (CWE-601 protection).

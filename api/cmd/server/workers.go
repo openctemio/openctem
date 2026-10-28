@@ -192,6 +192,18 @@ func registerPurgeControllers(m *controller.Manager, cfg *config.Config, repos *
 			func(ctx context.Context) (int64, error) { return console.DeleteExpiredSessions(ctx, time.Now()) },
 			log.With("controller", "admin-session-purge")))
 	}
+	if supportSvc := newSupportAccessService(repos, svc, log); supportSvc != nil {
+		// Support sessions end with the console session that opened them
+		// (expiry, idle), when their grant ends, or after 30 minutes unused;
+		// sign-out ends them at once (adminconsole). Both audit rows and the
+		// owners' email follow each ended session.
+		m.Register(controller.NewPurgeController("support-session-sweep", time.Minute,
+			func(ctx context.Context) (int64, error) {
+				n, err := supportSvc.EndStaleSessions(ctx)
+				return int64(n), err
+			},
+			log.With("controller", "support-session-sweep")))
+	}
 	if repos.MCPOAuth != nil {
 		// Ended MCP OAuth requests, tokens, grants and unused clients (RFC-062).
 		mcp := repos.MCPOAuth
@@ -763,6 +775,20 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			// (docs/architecture/feed-transfer.md); v1 stays the fallback.
 			im.WithChunks(repos.CVECorpus, vulnfeed.Transfer{Mirrors: cfg.Worker.VulnFeedMirrors, CacheDir: cfg.Scope.FeedCacheDir,
 				Client: httpsec.SafeHTTPClient(0), Registerer: prometheus.DefaultRegisterer})
+			// KEV and EPSS ride the same release as a signed side manifest:
+			// applied when newer than what the platform holds, then the same
+			// findings sweep and event log as after a direct sync.
+			if svc.ThreatIntel != nil {
+				im.WithIntel(svc.ThreatIntel)
+				svc.ThreatIntel.SetAfterBundleApply(func(ctx context.Context, source string) {
+					switch source {
+					case "kev":
+						kevRefresh.Sweeper().Run(ctx, "kev", true, true)
+					case "epss":
+						epssRefresh.Sweeper().Run(ctx, "epss", true, true)
+					}
+				})
+			}
 			importCtl := controller.NewVulnFeedImportController(im, log.With("controller", "vuln-feed-import"))
 			if vulnEvents != nil {
 				importCtl.SetEventEmitter(vulnEvents)

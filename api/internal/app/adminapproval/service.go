@@ -378,6 +378,9 @@ func (s *Service) tell(ctx context.Context, actor *admin.AdminUser, kind, summar
 // label names the administrator or organization a target points at, read on
 // the server: a requester cannot describe their own target to the approver.
 func (s *Service) label(ctx context.Context, target string) string {
+	if strings.HasPrefix(target, `{"provider"`) {
+		return admin.PlatformAIDestinationLabel(target)
+	}
 	id, ok := admin.TargetID(target)
 	if !ok {
 		return ""
@@ -422,6 +425,8 @@ func describe(a admin.ApprovalAction) string {
 		return "delete an organization now"
 	case admin.ApprovalUserMFAReset:
 		return "reset a user's two-factor authentication"
+	case admin.ApprovalPlatformAIDestination:
+		return "change where platform AI sends data (provider, server address or API key)"
 	}
 	return string(a)
 }

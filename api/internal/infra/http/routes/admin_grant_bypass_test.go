@@ -30,6 +30,8 @@ func (bypassOrgs) GetOrganization(context.Context, shared.ID) (*admin.Organizati
 	return &admin.Organization{}, nil
 }
 
+func (bypassOrgs) CountUsableOwners(context.Context, shared.ID) (int, error) { return 1, nil }
+
 type recordingTenantAudit struct {
 	mu     sync.Mutex
 	events []auditapp.AuditEvent
