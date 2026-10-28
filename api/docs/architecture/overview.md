@@ -12,7 +12,7 @@
 | Database | PostgreSQL 17 |
 | Cache | Redis 7 |
 | Logging | Structured logging (slog) |
-| Migrations | golang-migrate |
+| Migrations | `openctem-migrate` (`cmd/openctem-migrate`, RFC-130) |
 
 ## System Diagram
 
@@ -204,6 +204,23 @@ POST   /api/v1/assets
 │  └──────────┘ └────────────┘ └─────────────┘ └────────┘ │
 └─────────────────────────────────────────────────────────┘
 ```
+
+## Database Migrations
+
+SQL migrations in `api/migrations` (`VERSION_name.up.sql` / `.down.sql`, new
+versions are UTC timestamps) are applied by `openctem-migrate`, out of band:
+the migrations image, the all-in-one image's start-up, the binary install's
+`openctem-migrate.service` and `make migrate-up`. It records every applied
+version in `schema_migrations_applied` and applies every shipped migration a
+database lacks, lowest version first, so a migration merged after a higher
+one still runs; versions only have to be unique. `schema_migrations` holds a
+fence (and the dirty flag) that makes an older migrations image refuse the
+database. The API never migrates: at start-up it refuses a database with a
+pending, dirty or pre-baseline migration state (`cmd/server/schema_check.go`).
+CI proves that the order a database receives migrations in does not change its
+schema. Design and threat model:
+[RFC-130](../rfcs/RFC-130-migration-applied-set.md); procedures:
+[development/migrations.md](../development/migrations.md).
 
 ## Project Structure
 

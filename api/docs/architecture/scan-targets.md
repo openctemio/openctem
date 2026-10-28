@@ -188,6 +188,57 @@ that it resolves (RFC-088 A5; `scan.Service.DropStaleNames`):
   step does not gate its seeds again, so an active gate here dropped names
   a passive workflow was allowed to resolve.
 
+## Where ownership confirmation applies
+
+Ownership confirmation of discovered assets and the wildcard-only
+restriction apply **only when `MANAGED_SERVICE` is true and the job runs
+on platform (shared) sensors**: platform sensors send packets from the
+platform's own addresses, so what they probe must be the tenant's. On the
+tenant's own sensors (any install) and on a self-hosted install (any
+sensor) the tenant's scope entries are the authority: a discovered or
+unclassified asset is fully authorized (like `unclassified_scans: full`,
+never `low_impact`) and a wildcard-only name an active scope entry covers
+is scanned. A wildcard-only name no entry covers stays passive everywhere.
+The organization's own choice still holds there: `unclassified_scans: off`,
+or the Strict scan approval mode, keeps every unclassified asset passive on
+every placement. Everywhere: a rejected asset ("not ours"), a scope exclusion, the platform
+deny list and the guardrails (RFC-054 §16.2) still refuse.
+
+The decision is per job, made where the job is checked, as an
+`attribution.Placement` carried in the context to the ownership gate
+(`easm.ActiveGate`, which knows `MANAGED_SERVICE`). A check that does not
+know the placement is judged as a platform job on the hosted service (fail
+closed):
+
+| Path | Placement |
+|---|---|
+| scan create, update, clone, import, quick scan, scope-wait start | predicted from the scan (`placementFor`): tenant preference, run on tenant runner and asset groups are tenant; `platform` is platform; `auto` is tenant while a tenant sensor of the tool is available or busy, or the tenant may not use shared sensors, else platform |
+| run start (`resolveScanTargets`), workflow scans | the same prediction (a workflow: platform when any step's tool has no tenant sensor) |
+| `POST /scan-workflows/runs` | any step that would go to platform sensors |
+| hop router (derived targets of a follow-on stage) | the run's recorded routing, else the step's routing |
+| dry run, `POST /scope/check`, quick preview | the request's sensor preference, as above |
+| coverage orchestrator and web-verify scans | `auto`, as above |
+| `POST /commands`, validate and retest commands, Tenable connector scans and coverage | tenant (they run on the organization's own sensors) |
+| claim-time re-check | the sensor: a job queued for platform sensors, or claimed by a shared sensor, is a platform job |
+
+A prediction that sends a job to a tenant sensor which later runs on a
+platform sensor is corrected at the claim, where the platform sensor's
+re-check applies confirmation and narrows the job.
+
+On the hosted service a person confirms the names of a skipped group in one
+step: **Confirm ownership** in the group sends
+`POST /easm/candidates/decisions` with `state: confirmed` and
+`asset_names` (the listed names; assets of the caller's own organization
+only, inside the caller's data scope, at most 200 with `asset_ids`). It is
+the same decision as confirming one asset: same permission (`assets:write`),
+same scope-entry rule, one audit event per asset
+(`asset.attribution_decided`), and a name that is not the organization's or
+is outside the data scope is reported in `not_found`.
+
+A derived name the hop router keeps passive because it resolves only
+through a wildcard record is skipped with its own lane reason,
+`wildcard_only` (the run's stage lanes), not `unconfirmed`.
+
 ## Skipped targets
 
 A run, and the routing preview of the New Scan review, group every target
