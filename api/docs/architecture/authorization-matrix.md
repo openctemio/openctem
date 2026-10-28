@@ -687,6 +687,7 @@ the billing page in the UI.
 | Endpoint | Permission Required |
 |----------|---------------------|
 | `GET /api/v1/findings/{id}/evidence-items` | `findings:read` + data scope (404 outside it) |
+| `PATCH /api/v1/findings/{id}/evidence-items/{item_id}`, `PUT /api/v1/findings/{id}/evidence-items/order` | `findings:write` + data scope (404 outside it) + the item must belong to that finding; a pentest finding also passes the campaign's evidence-write rule; audited |
 | `POST /api/v1/findings/{id}/evidence-items/{item_id}/reveal` | `findings:evidence:reveal` + data scope + per-user rate limit + **step-up** (API keys cannot); audited |
 | `GET/PUT /api/v1/organization/settings/evidence` | owner/admin; PUT audited |
 
@@ -1067,7 +1068,8 @@ fresh console authenticator code in the `X-Admin-Step-Up` header, or the
 five-minute step-up window of the same console session (one confirmation,
 recorded in `admin_sessions.step_up_at`, covers the protected actions that
 follow). Without either the API answers `401 ADMIN_STEP_UP_REQUIRED` and the
-console asks for a code and retries; an administrator with no console
+console asks for a code and retries (a refused code the form sent itself
+goes back to that form's code field instead); an administrator with no console
 authenticator gets `403 STEP_UP_UNAVAILABLE`. Each confirmation is audited
 (`console.step_up`, the purpose names the action), a wrong code counts toward
 the sign-in lockout. Every console write is classified in

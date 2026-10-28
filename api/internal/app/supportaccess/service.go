@@ -296,6 +296,84 @@ func (s *Service) EndSession(ctx context.Context, a *admin.AdminUser, sessionID 
 	return nil
 }
 
+// ---------------------------------------------------------------------------
+// Session lifecycle
+// ---------------------------------------------------------------------------
+
+// ConsoleSessionIdle is how long a console session may be idle before its
+// support sessions end (the console's own idle timeout).
+const ConsoleSessionIdle = admin.SessionIdleTimeout
+
+// EndForConsoleSession ends the open support sessions bound to a console
+// session that was just signed out, writes both audit rows and tells the
+// owners. It never fails the sign-out: errors are logged.
+func (s *Service) EndForConsoleSession(ctx context.Context, consoleSessionID shared.ID) {
+	if consoleSessionID.IsZero() {
+		return
+	}
+	ended, err := s.repo.EndSessionsForConsoleSession(ctx, consoleSessionID, dom.EndReasonConsoleSessionGone, s.now())
+	if err != nil {
+		s.log.Error("support access: end sessions of a signed-out console session", "error", logger.SanitizeError(err))
+		return
+	}
+	for _, sess := range ended {
+		s.afterEnded(ctx, sess)
+	}
+}
+
+// EndStaleSessions ends every open session whose console session is gone
+// (expired or idle), whose grant ended, or that was idle for
+// dom.SessionIdleTimeout. The worker runs it every minute; each ended session
+// gets both audit rows and an owner email. It returns how many ended.
+func (s *Service) EndStaleSessions(ctx context.Context) (int, error) {
+	ended, err := s.repo.EndStaleSessions(ctx, s.now(), dom.SessionIdleTimeout, ConsoleSessionIdle)
+	if err != nil {
+		return 0, err
+	}
+	for _, sess := range ended {
+		s.afterEnded(ctx, sess)
+	}
+	return len(ended), nil
+}
+
+// afterEnded records an ended session in the organization's audit log and the
+// admin audit log, and emails the owners. Ending already happened, so a failed
+// write is logged by tenantEvent/adminEvent and does not undo it.
+func (s *Service) afterEnded(ctx context.Context, sess *dom.Session) {
+	g, err := s.repo.GetGrant(ctx, sess.TenantID, sess.GrantID)
+	if err != nil {
+		s.log.Error("support access: grant of an ended session", "session_id", sess.ID.String(), "error", logger.SanitizeError(err))
+		return
+	}
+	name := s.tenantName(ctx, sess.TenantID)
+	cause := endCause(sess.EndReason)
+	_ = s.tenantEvent(ctx, sess.TenantID, "", supportActor(g.AdminEmail), Client{}, auditdom.ActionSupportSessionEnded, g,
+		"Support session ended "+cause, map[string]any{"support_session_id": sess.ID.String(), "end_reason": sess.EndReason})
+	if s.admins != nil {
+		if a, aerr := s.admins.GetByEmail(ctx, g.AdminEmail); aerr == nil {
+			_ = s.adminEvent(ctx, a, AdminActionSessionEnded, &sess.TenantID, name, Client{}, http.MethodDelete, "end support session ("+sess.EndReason+")", "")
+		} else {
+			s.log.Warn("support access: administrator of an ended session", "session_id", sess.ID.String(), "error", logger.SanitizeError(aerr))
+		}
+	}
+	s.emailOwners(ctx, sess.TenantID, "Platform support's session ended",
+		fmt.Sprintf("The read-only support session of %s in %s ended %s.", g.AdminEmail, name, cause))
+}
+
+// endCause is the owner-facing reason a session ended.
+func endCause(reason string) string {
+	switch reason {
+	case dom.EndReasonConsoleSessionGone:
+		return "because the administrator signed out or their console session expired"
+	case dom.EndReasonIdle:
+		return fmt.Sprintf("after %d minutes without activity", int(dom.SessionIdleTimeout/time.Minute))
+	case dom.EndReasonGrantExpired:
+		return "because the access granted to them ended"
+	default:
+		return "(" + reason + ")"
+	}
+}
+
 // AccessInput is one support read.
 type AccessInput struct {
 	SessionID        shared.ID
