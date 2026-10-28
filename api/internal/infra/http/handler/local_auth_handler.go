@@ -875,6 +875,52 @@ func (h *LocalAuthHandler) AcceptInvitationWithRefresh(w http.ResponseWriter, r 
 	h.acceptInvitationWithRefresh(w, r, invitationToken, body.RefreshToken)
 }
 
+// SessionMFAChallengeRequest is the body of POST /api/v1/auth/mfa/enroll/session.
+// refresh_token may be omitted when the browser sends the refresh_token cookie
+// (with the CSRF pair).
+type SessionMFAChallengeRequest struct {
+	RefreshToken string `json:"refresh_token,omitempty"`
+}
+
+// SessionMFAChallenge handles POST /api/v1/auth/mfa/enroll/session: a signed-in
+// session that an organization's 2FA policy holds back (accept-with-refresh,
+// token exchange or refresh answered 403 MFA_ENROLLMENT_REQUIRED) asks for the
+// challenge that /auth/mfa/enroll/start|confirm or /auth/mfa/verify complete in
+// place. The completion signs the person in again with a session that proved
+// the factor.
+// @Summary      Start the second-factor step for a signed-in session
+// @Description  For a session refused with MFA_ENROLLMENT_REQUIRED: issues an enrollment challenge (no factor yet) or a verify challenge (factor enabled), with the names of the organizations that require it. Authenticated by the refresh token (body or cookie with the CSRF pair); the refresh token is not spent. Enrollment challenges need a session signed in within the last 15 minutes (else 403 REAUTH_REQUIRED: sign in again with the password); verify challenges have no such limit. Refused for sessions started through an identity provider.
+// @Tags         Authentication
+// @Accept       json
+// @Produce      json
+// @Param        request  body      SessionMFAChallengeRequest  false  "Optional refresh token"
+// @Success      200  {object}  MFAChallengeResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      401  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
+// @Failure      429  {object}  apierror.Error
+// @Router       /auth/mfa/enroll/session [post]
+func (h *LocalAuthHandler) SessionMFAChallenge(w http.ResponseWriter, r *http.Request) {
+	var body SessionMFAChallengeRequest
+	if r.Body != nil {
+		_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body)
+	}
+	refreshToken, ok := h.refreshTokenFrom(w, r, body.RefreshToken)
+	if !ok {
+		return
+	}
+	if refreshToken == "" {
+		apierror.Unauthorized("refresh_token is required (in body or cookie)").WriteJSON(w)
+		return
+	}
+	info, err := h.authService.SessionMFAChallenge(r.Context(), refreshToken, getClientIP(r), r.UserAgent())
+	if err != nil {
+		h.handleAuthError(w, err)
+		return
+	}
+	writeMFAChallenge(w, info)
+}
+
 func (h *LocalAuthHandler) acceptInvitationWithRefresh(w http.ResponseWriter, r *http.Request, invitationToken, bodyRefreshToken string) {
 	refreshToken, ok := h.refreshTokenFrom(w, r, bodyRefreshToken)
 	if !ok {
@@ -1338,6 +1384,8 @@ func (h *LocalAuthHandler) handleAuthError(w http.ResponseWriter, err error) {
 		middleware.WriteOrganizationSuspended(w)
 	case errors.Is(err, auth.ErrTenantAccessDenied):
 		apierror.Forbidden("User does not have access to this tenant").WriteJSON(w)
+	case errors.Is(err, auth.ErrSSOBreakGlassNeedsMFA):
+		apierror.Forbidden("This organization requires SSO sign-in. Owner access with a password needs two-factor authentication: turn it on for your account and sign in again, or sign in through your identity provider.").WriteJSON(w)
 	case errors.Is(err, auth.ErrSSORequired):
 		apierror.Forbidden("This organization requires SSO sign-in. Please sign in through your identity provider.").WriteJSON(w)
 	case errors.Is(err, auth.ErrTenantRequired):
@@ -1353,6 +1401,11 @@ func (h *LocalAuthHandler) handleAuthError(w http.ResponseWriter, err error) {
 	case errors.Is(err, auth.ErrMFAEnrollmentRequired):
 		apierror.New(http.StatusForbidden, apierror.CodeMFAEnrollmentRequired,
 			"This organization requires two-factor authentication. Sign in again to complete it.").WriteJSON(w)
+	case errors.Is(err, auth.ErrReauthRequired):
+		apierror.New(http.StatusForbidden, apierror.CodeReauthRequired,
+			"For your security, sign in again to set up two-factor authentication.").WriteJSON(w)
+	case errors.Is(err, auth.ErrMFAFederatedSession):
+		apierror.BadRequest("This session was started through an identity provider; sign in with your password to set up two-factor authentication").WriteJSON(w)
 	case errors.Is(err, auth.ErrMFANotSupported):
 		apierror.BadRequest("Two-factor authentication for this account is managed by your identity provider").WriteJSON(w)
 	case errors.Is(err, auth.ErrMFAAlreadyEnabled):

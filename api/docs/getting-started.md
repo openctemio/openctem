@@ -105,7 +105,7 @@ api/
 ├── pkg/
 │   ├── domain/          # Entities, value objects, repository interfaces (no external deps)
 │   └── ...              # Shared packages (logger, apierror, pagination, ...)
-├── migrations/          # SQL migrations (golang-migrate)
+├── migrations/          # SQL migrations (openctem-migrate)
 └── tests/               # Integration and end-to-end tests
 ```
 
@@ -125,7 +125,7 @@ make docker-logs       # follow the logs
 
 make migrate-up        # apply migrations
 make migrate-down      # roll back the last migration
-make migrate-create name=add_widgets   # new migration pair
+make migration-new name=add_widgets    # new migration pair (timestamp version)
 ```
 
 All targets: [Makefile reference](MAKEFILE.md).

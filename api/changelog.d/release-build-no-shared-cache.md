@@ -1,0 +1,3 @@
+### Security: release images are built without a shared registry cache
+
+- The release build (`docker-publish.yml`) took layers from, and wrote layers to, a `buildcache-<arch>` tag in the release packages. Any job in the repository holding a `packages: write` token could overwrite that tag, and the next release would be built from those layers and signed. Release builds no longer use a registry cache: every layer comes from the tag's sources and the digest-pinned base images. The Postgres and Redis service containers of the all-in-one smoke test are pinned by digest too. A release build takes longer, since each image is compiled from scratch.

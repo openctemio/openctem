@@ -37,6 +37,7 @@ func (w *wildcardMarks) WildcardOnly(_ context.Context, t shared.ID, ids []share
 func TestActiveGate_WildcardOnly(t *testing.T) {
 	f := newGateFixture(t)
 	g := NewActiveGate(f, f, f, f)
+	g.SetManagedService(true)
 	marks := &wildcardMarks{tenant: f.tenant, marked: map[shared.ID]bool{}}
 	g.SetWildcardDNS(marks)
 
@@ -91,5 +92,38 @@ func TestActiveGate_WildcardOnly(t *testing.T) {
 	g.SetWildcardDNS(&wildcardMarks{err: errors.New("db down")})
 	if _, err := g.ActiveCheckBlocked(ctx, f.tenant, []string{clean.ID().String()}); err == nil {
 		t.Error("a failed mark read must refuse")
+	}
+}
+
+// A registrable domain never resolves through a wildcard of its own zone
+// (RFC 4592): a mark on one (a filtered resolver left out an apex that shares
+// its address with its wildcard) does not refuse it, nor a service on it.
+func TestActiveGate_WildcardOnly_ApexMarkIgnored(t *testing.T) {
+	f := newGateFixture(t)
+	g := NewActiveGate(f, f, f, f)
+	g.SetManagedService(true)
+	marks := &wildcardMarks{tenant: f.tenant, marked: map[shared.ID]bool{}}
+	g.SetWildcardDNS(marks)
+
+	apex := f.add(t, "scoped.com", asset.AssetTypeDomain)
+	f.record(apex, attribution.StateConfirmed, false)
+	marks.marked[apex.ID()] = true
+	svc := f.add(t, "scoped.com:443:tcp", asset.AssetTypeService)
+	sub := f.add(t, "mb2.scoped.com", asset.AssetTypeSubdomain)
+	f.record(sub, attribution.StateConfirmed, false)
+	marks.marked[sub.ID()] = true
+
+	got, err := g.ActiveCheckBlocked(context.Background(), f.tenant, []string{apex.ID().String(), svc.ID().String(), sub.ID().String()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s, no := got[apex.ID().String()]; no {
+		t.Errorf("apex with a stale wildcard mark: refused %s", s)
+	}
+	if s, no := got[svc.ID().String()]; no {
+		t.Errorf("service on the apex: refused %s", s)
+	}
+	if got[sub.ID().String()] != attribution.StateWildcardOnly {
+		t.Errorf("marked subdomain: %q, want wildcard_only", got[sub.ID().String()])
 	}
 }

@@ -33,8 +33,9 @@ import (
 // SourceName is the threat_intel_sync_status row of the importer.
 const SourceName = "vulnfeed"
 
-// DefaultBaseURL is where the collector publishes.
-const DefaultBaseURL = "https://github.com/openctemio/vulnfeed/releases"
+// DefaultBaseURL is where the feed is published: the releases of
+// openctemio/vulnfeed-bundles (the collector code is openctemio/vulnfeed).
+const DefaultBaseURL = "https://github.com/openctemio/vulnfeed-bundles/releases"
 
 // Import tuning.
 const (
@@ -94,6 +95,8 @@ type Importer struct {
 	// vulnIDs applies the release's vulnerability id alias map (nil: not
 	// applied).
 	vulnIDs VulnIDAliasWriter
+	// intel applies the release's KEV and EPSS streams (nil: not applied).
+	intel IntelApplier
 }
 
 // NewImporter creates an importer. It refuses a base URL that is not a
@@ -153,6 +156,26 @@ func toUint(v any) uint64 {
 		return n
 	}
 	return 0
+}
+
+// ErrNotConfigured: no pinned root key, so the importer does nothing.
+var ErrNotConfigured = errors.New("vulnerability bundle import is not configured (VULNFEED_ROOT_KEY_ID is empty)")
+
+// Sync is Run for an operator's request: a feed that would do nothing
+// (not configured, switched off) is reported as such instead of as a run
+// that succeeded.
+func (im *Importer) Sync(ctx context.Context) (Result, error) {
+	if im.cfg.RootKeyID == "" {
+		return Result{}, ErrNotConfigured
+	}
+	st, err := im.status.GetBySource(ctx, SourceName)
+	if err != nil {
+		return Result{}, fmt.Errorf("vulnfeed status: %w", err)
+	}
+	if !st.IsEnabled() {
+		return Result{}, threatintel.ErrSyncDisabled
+	}
+	return im.Run(ctx)
 }
 
 // Run imports the newest bundle when there is one.
