@@ -33,6 +33,8 @@ func registerFindingEvidenceItemRoutes(router Router, h *handler.FindingEvidence
 	}, log)
 	router.Group("/api/v1/findings/{id}/evidence-items", func(r Router) {
 		r.GET("/", h.List, middleware.Require(permission.FindingsRead))
+		r.PUT("/order", h.Reorder, middleware.Require(permission.FindingsWrite))
+		r.PATCH("/{item_id}", h.Update, middleware.Require(permission.FindingsWrite))
 		r.POST("/{item_id}/reveal", h.Reveal, middleware.Require(permission.EvidenceReveal), limiter.UserMiddleware(), requireStepUp())
 	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
 }
