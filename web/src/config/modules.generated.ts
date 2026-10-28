@@ -36,12 +36,6 @@ export const MODULE_REGISTRY: readonly ModuleDefinition[] = [
   { id: 'threat_intel', name: 'Threat Intel', core: false, release: 'released', userFacing: true, permission: 'threat_intel:read' },
   { id: 'exposures', name: 'Exposures', core: false, release: 'released', userFacing: true, permission: 'findings:exposures:read' },
   { id: 'ai_triage', name: 'AI Triage', core: false, release: 'released', userFacing: false, permission: 'ai_triage:read' },
-  { id: 'ai_triage.bulk', name: 'Bulk Triage', core: false, parent: 'ai_triage', release: 'released', userFacing: false },
-  { id: 'ai_triage.auto', name: 'Auto Triage', core: false, parent: 'ai_triage', release: 'released', userFacing: false },
-  { id: 'ai_triage.workflow', name: 'Workflow Triage', core: false, parent: 'ai_triage', release: 'released', userFacing: false },
-  { id: 'ai_triage.byok', name: 'BYOK Mode', core: false, parent: 'ai_triage', release: 'released', userFacing: false },
-  { id: 'ai_triage.agent', name: 'Agent Mode', core: false, parent: 'ai_triage', release: 'released', userFacing: false },
-  { id: 'ai_triage.custom_prompts', name: 'Custom Prompts', core: false, parent: 'ai_triage', release: 'released', userFacing: false },
   { id: 'sla', name: 'SLA Management', core: true, release: 'released', userFacing: true, permission: 'settings:sla:read' },
   { id: 'priority_rules', name: 'Priority Rules', core: false, release: 'released', userFacing: true, permission: 'findings:read' },
   { id: 'risk_analysis', name: 'Risk Analysis', core: false, release: 'released', userFacing: true, permission: 'findings:read' },
@@ -105,12 +99,6 @@ export type ModuleId =
   | 'threat_intel'
   | 'exposures'
   | 'ai_triage'
-  | 'ai_triage.bulk'
-  | 'ai_triage.auto'
-  | 'ai_triage.workflow'
-  | 'ai_triage.byok'
-  | 'ai_triage.agent'
-  | 'ai_triage.custom_prompts'
   | 'sla'
   | 'priority_rules'
   | 'risk_analysis'
