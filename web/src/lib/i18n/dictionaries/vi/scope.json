@@ -502,6 +502,7 @@
   "scope.settings.unclassifiedMode.full": "Đầy đủ",
   "scope.settings.unclassifiedMode.low_impact": "Tác động thấp (mặc định)",
   "scope.settings.unclassifiedMode.off": "Tắt (chỉ thụ động)",
+  "scope.settings.unclassifiedPlatformOnly": "Áp dụng cho cảm biến nền tảng của dịch vụ được lưu trữ. Cảm biến của chính bạn quét tài sản chưa phân loại ở mức đầy đủ.",
   "scope.settings.unclassifiedStrict": "Đang áp dụng phê duyệt quét Strict, nên thiết lập này hiện là Tắt.",
   "scope.show.label": "Hiển thị",
   "scope.strip.entriesInEffect": "Mục đang hiệu lực",

@@ -21,6 +21,7 @@ import (
 	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
 	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/scangov"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -189,14 +190,19 @@ func TestScanUnclassifiedGate(t *testing.T) {
 
 	t.Run("setting off and Strict", func(t *testing.T) {
 		exec(`UPDATE tenants SET settings = jsonb_set(COALESCE(settings, '{}'::jsonb), '{scope}', COALESCE(settings->'scope', '{}'::jsonb) || '{"unclassified_scans":"off"}') WHERE id = $1`, tenantA.String())
-		got, err := svc.ResolveDispatchTargets(ctx, scansvc.DispatchTargetsInput{TenantID: tenantA, Targets: allowed})
-		if err != nil || len(got.Allowed) != 0 {
-			t.Fatalf("setting off: %+v %v", got, err)
+		// The organization's "off" holds on every placement, its own sensors included.
+		for _, place := range []attribution.Placement{attribution.PlacementUnknown, attribution.PlacementPlatform, attribution.PlacementTenant} {
+			got, err := svc.ResolveDispatchTargets(ctx, scansvc.DispatchTargetsInput{TenantID: tenantA, Targets: allowed, Placement: place})
+			if err != nil || len(got.Allowed) != 0 {
+				t.Fatalf("setting off (placement %v): %+v %v", place, got, err)
+			}
 		}
 		exec(`UPDATE tenants SET settings = jsonb_set(settings, '{scope,unclassified_scans}', '"full"'), scan_approval_policy = 'strict' WHERE id = $1`, tenantA.String())
-		got, err = svc.ResolveDispatchTargets(ctx, scansvc.DispatchTargetsInput{TenantID: tenantA, Targets: allowed})
-		if err != nil || len(got.Allowed) != 0 {
-			t.Fatalf("strict: %+v %v", got, err)
+		for _, place := range []attribution.Placement{attribution.PlacementUnknown, attribution.PlacementPlatform, attribution.PlacementTenant} {
+			got, err := svc.ResolveDispatchTargets(ctx, scansvc.DispatchTargetsInput{TenantID: tenantA, Targets: allowed, Placement: place})
+			if err != nil || len(got.Allowed) != 0 {
+				t.Fatalf("strict (placement %v): %+v %v", place, got, err)
+			}
 		}
 	})
 }
