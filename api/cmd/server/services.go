@@ -41,6 +41,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/internal/app/module"
+	"github.com/openctemio/openctem/api/internal/app/orgrelay"
 	"github.com/openctemio/openctem/api/internal/app/sensorgrant"
 	"github.com/openctemio/openctem/api/internal/app/sensorpairing"
 	"github.com/openctemio/openctem/api/internal/app/ticketbridge"
@@ -935,6 +936,7 @@ type Services struct {
 	PlatformCaptcha  *platformcaptcha.Service
 	DeploymentRegion *deploymentregion.Service
 	StorageQuota     *storagequota.Service
+	OrgRelay         *orgrelay.Service
 	PlatformAlert    *platformalert.Service
 	PlatformAI       *platformai.Service
 	// TenantAI is the organizations' AI settings (consent, source, own provider).
@@ -1067,6 +1069,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Entitlement = entitlementapp.NewService(repos.Limits, repos.AdminAuditLog, log)
 	if repos.PlatformSetting != nil {
 		s.StorageQuota = storagequota.NewService(repos.PlatformSetting, s.Entitlement, s.SettingRecorder, cfg.Storage.TenantQuotaMB)
+	}
+	if repos.PlatformSetting != nil {
+		s.OrgRelay = orgrelay.NewService(repos.PlatformSetting, s.SettingRecorder, cfg.App.ManagedService, cfg.App.OrgEmailRelayMode, log)
 	}
 	s.IdleWorkspaces = lifecycleapp.NewService(repos.IdleLifecycle, s.Audit, repos.AdminAuditLog, repos.Admin, nil, log)
 	// Suspended organizations: one access gate every credential path asks,
@@ -2035,6 +2040,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// channels (RFC-065 §15.4): one rule for every integration provider.
 	s.Outbox.SetDeliveryResolver(postgres.NewProgramDeliveryRepository(&postgres.DB{DB: deps.DB}))
 	s.Outbox.SetBrand(cfg.Brand)
+	// An e-mail channel whose relay the managed service rules refuse is
+	// stopped with a visible status and its owners are told.
+	s.Outbox.SetRelayRefusedHandler(s.Integration)
 
 	// Wire outbox notification to vulnerability and exposure services
 	s.Vulnerability.SetOutboxService(deps.DB, s.Outbox)
