@@ -141,6 +141,7 @@ type AuthService struct {
 	tokenGenerator *jwt.Generator
 	config         config.AuthConfig
 	logger         *logger.Logger
+	breakGlass     BreakGlassGate
 	auditService   *auditapp.AuditService
 	roleService    *accesscontrol.RoleService // Optional: for database-driven role permissions
 	smtpChecker    SMTPAvailabilityCheck      // Optional: enables smart email verification
@@ -781,6 +782,13 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (result *Logi
 		return nil, err
 	}
 
+	// A break-glass account signs in on the admin console only. The answer is
+	// the wrong-password one, given before any other account state (email
+	// verification, second factor) can tell the account apart.
+	if refuseBreakGlass(ctx, s.breakGlass, s.logger, u, "password") {
+		return nil, ErrInvalidCredentials
+	}
+
 	// Check if email is verified.
 	// If the user is already verified, allow login. Otherwise:
 	//
@@ -826,6 +834,10 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (result *Logi
 // password plus second factor) and returns the global refresh token and the
 // user's memberships.
 func (s *AuthService) completeLogin(ctx context.Context, u *userdom.User, ipAddress, userAgent string) (*LoginResult, error) {
+	// Backstop for the second-factor steps: no session for a break-glass account.
+	if refuseBreakGlass(ctx, s.breakGlass, s.logger, u, "login_completion") {
+		return nil, ErrInvalidCredentials
+	}
 	// Check session limit
 	activeCount, err := s.sessionRepo.CountActiveByUserID(ctx, u.ID())
 	if err != nil {
@@ -1192,6 +1204,9 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
 
+	if refuseBreakGlass(ctx, s.breakGlass, s.logger, u, "token_exchange") {
+		return nil, sessiondom.ErrRefreshTokenRevoked
+	}
 	// A blocked or suspended account mints nothing, whatever way its session
 	// was opened (a federated sign-in does not pass the password checks).
 	if !u.IsActive() {
@@ -1512,6 +1527,11 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 	u, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user: %w", err)
+	}
+
+	// A break-glass account holds no main-site session.
+	if refuseBreakGlass(ctx, s.breakGlass, s.logger, u, "refresh_token") {
+		return nil, sessiondom.ErrRefreshTokenRevoked
 	}
 	if !u.IsActive() {
 		return nil, ErrAccountSuspended
