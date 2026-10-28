@@ -61,6 +61,7 @@ type Repositories struct {
 	AITriageBudget   *postgres.AITriageBudgetRepository        // Per-tenant LLM token budget (RFC-008)
 	TenantAISettings *postgres.TenantAISettingsRepository      // Organizations' AI settings (consent, source, own provider)
 	AIAnalysis       *postgres.AIAnalysisRepository            // AI runs, suggestions and use-case policies
+	AIMaskMaps       *postgres.AIMaskMapRepository             // Per AI run masking maps (encrypted, expiring)
 	DataFlow         *postgres.DataFlowRepository              // Data flow traces for taint tracking
 	FindingSource    *postgres.FindingSourceRepository         // Finding source configuration
 	FindingSourceCat *postgres.FindingSourceCategoryRepository // Finding source categories
@@ -443,6 +444,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		AITriageBudget:   postgres.NewAITriageBudgetRepository(db), // RFC-008 monthly LLM token budget
 		TenantAISettings: postgres.NewTenantAISettingsRepository(db),
 		AIAnalysis:       postgres.NewAIAnalysisRepository(db),
+		AIMaskMaps:       postgres.NewAIMaskMapRepository(db),
 		DataFlow:         postgres.NewDataFlowRepository(db),              // Data flow traces
 		FindingSource:    postgres.NewFindingSourceRepository(db),         // Finding source configuration
 		FindingSourceCat: postgres.NewFindingSourceCategoryRepository(db), // Finding source categories

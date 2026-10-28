@@ -70,6 +70,8 @@ func seedAll(t *testing.T, db *sql.DB, key string) map[string]string {
 	exec(`INSERT INTO tenants (id, name, slug) VALUES ($1, 'rekey', 'rekey')`, tenantID)
 	exec(`INSERT INTO tenant_ai_settings (tenant_id, source, provider, key_enc) VALUES ($1, 'own', 'openai', $2)`,
 		tenantID, put("tenant_ai_settings.key_enc", "sk-llm-key"))
+	exec(`INSERT INTO ai_mask_maps (tenant_id, run_id, key_enc, map_enc, expires_at) VALUES ($1, gen_random_uuid(), $2, $3, now() + interval '1 day')`,
+		tenantID, put("ai_mask_maps.key_enc", "bWFzay1rZXk="), put("ai_mask_maps.map_enc", `{"tokens":{"HOST_ABC2DE":"db01"}}`))
 	exec(`INSERT INTO users (id, email) VALUES ($1, 'rekey@example.com')`, userID)
 	exec(`INSERT INTO admin_users (id, email, name) VALUES ($1, 'admin@example.com', 'Admin')`, adminID)
 
@@ -192,6 +194,8 @@ func readAll(t *testing.T, db *sql.DB, key string) map[string]string {
 	out := map[string]string{}
 	for loc, q := range map[string]string{
 		"tenant_ai_settings.key_enc":                                 `SELECT key_enc FROM tenant_ai_settings`,
+		"ai_mask_maps.key_enc":                                       `SELECT key_enc FROM ai_mask_maps`,
+		"ai_mask_maps.map_enc":                                       `SELECT map_enc FROM ai_mask_maps`,
 		"integrations.credentials_encrypted":                         `SELECT credentials_encrypted FROM integrations`,
 		"integrations.metadata.webhook_secret_encrypted":             `SELECT metadata->>'webhook_secret_encrypted' FROM integrations`,
 		"integrations.metadata.signing_secret_encrypted":             `SELECT metadata->>'signing_secret_encrypted' FROM integrations`,
