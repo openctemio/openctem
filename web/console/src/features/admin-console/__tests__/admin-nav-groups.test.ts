@@ -26,7 +26,7 @@ describe('console navigation groups', () => {
   })
 
   it('personal security keys stay searchable but leave the sidebar sections', () => {
-    const keys = visibleAdminNav('readonly')
+    const keys = visibleAdminNav({ id: 'a', email: 'a@x', name: 'A', role: 'readonly' })
       .flatMap((s) => s.items)
       .find((i) => i.url === '/security/keys')
     expect(keys?.hideInSidebar).toBe(true)

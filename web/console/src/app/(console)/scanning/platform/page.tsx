@@ -33,7 +33,7 @@ import { useInstanceScanZones } from '@console/features/admin-console/api/use-in
 import { SharedSensorEnrollCard } from '@console/features/admin-console/components/shared-sensor-enroll-card'
 import { SharedSensorsForm } from '@console/features/admin-console/components/shared-sensors-form'
 import { SharedSensorsEgressForm } from '@console/features/admin-console/components/shared-sensors-egress-form'
-import { adminCan } from '@console/features/admin-console/types'
+import { adminHas } from '@console/features/admin-console/types'
 
 /**
  * Scanning > Platform scanning: everything an instance administrator sets for
@@ -54,7 +54,7 @@ const TABS = ['policy', 'fleet', 'queue', 'zones', 'egress', 'anomalies'] as con
 function useScanning() {
   const me = useAdmin()
   return {
-    canEdit: adminCan(me.role, 'super_admin'),
+    canEdit: adminHas(me, 'platform.sensors.manage'),
     proof: usePlatformSensorProof(),
     shared: useSharedSensorsSetting(),
     zones: useSharedSensorInternalZones(),

@@ -7,7 +7,7 @@ import { ErrorState, PageHeader, PageStack } from '@/features/shared'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { useEmailSettings } from '@console/features/admin-console/api/use-email-settings'
 import { EmailSettingsForm } from '@console/features/admin-console/components/email-settings-form'
-import { adminCan } from '@console/features/admin-console/types'
+import { adminHas } from '@console/features/admin-console/types'
 
 /**
  * System -> E-mail: the platform's SMTP server (RFC-079). Any administrator
@@ -36,7 +36,7 @@ export default function EmailSettingsPage() {
         ) : (
           <EmailSettingsForm
             settings={data}
-            canEdit={adminCan(me.role, 'super_admin')}
+            canEdit={adminHas(me, 'platform.settings.email.write')}
             onSaved={() => void mutate()}
           />
         )}

@@ -23,7 +23,7 @@ import { useAdmin } from '@console/features/admin-console/components/admin-conso
 import { AdminActivityTable } from '@console/features/admin-console/components/admin-activity-table'
 import { PlatformUserActions } from '@console/features/admin-console/components/platform-user-actions'
 import { PlatformUserBadges } from '@console/features/admin-console/components/platform-user-badges'
-import { adminCan } from '@console/features/admin-console/types'
+import { adminHas } from '@console/features/admin-console/types'
 
 export default function AdminUserPage({ params }: { params: Promise<{ userId: string }> }) {
   const { userId } = use(params)
@@ -58,7 +58,7 @@ export default function AdminUserPage({ params }: { params: Promise<{ userId: st
               <PlatformUserBadges user={user} />
             </PageHeader>
 
-            {adminCan(admin.role, 'ops_admin') && (
+            {adminHas(admin, 'platform.users.support') && (
               <PlatformUserActions user={user} onDone={refresh} />
             )}
 

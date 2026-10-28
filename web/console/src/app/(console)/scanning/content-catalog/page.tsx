@@ -46,7 +46,7 @@ import {
   RevokeVersionDialog,
 } from '@console/features/admin-console/components/content-catalog-dialogs'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
-import { adminCan } from '@console/features/admin-console/types'
+import { adminHas } from '@console/features/admin-console/types'
 
 const ALL_TYPES = '__all'
 
@@ -61,7 +61,7 @@ const ALL_TYPES = '__all'
 export default function ContentCatalogPage() {
   const { t } = useTranslation()
   const me = useAdmin()
-  const canEdit = adminCan(me.role, 'super_admin')
+  const canEdit = adminHas(me, 'platform.content.manage')
   const list = useListParams({ defaultPageSize: 25, filters: { type: '' } })
   const q = list.searchTerm
   const trust = useCatalogTrust()

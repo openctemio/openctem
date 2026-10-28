@@ -26,7 +26,7 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
 import { adminElevate, adminEndElevation } from '../api/use-admin-session'
-import { adminCan, type AdminIdentity, type AdminRole } from '../types'
+import { adminCanElevate, elevationChoices, type AdminIdentity } from '../types'
 import { REASON_MAX, REASON_MIN, stepUpErrorMessage } from './admin-confirm-dialog'
 
 const DURATIONS = [15, 30, 60] as const
@@ -58,9 +58,8 @@ export function AdminElevationBar({
   const open = openProp ?? ownOpen
   const setOpen = onOpenChange ?? setOwnOpen
   const [busy, setBusy] = useState(false)
-  const max = admin.max_role ?? admin.role
   const elevated = !!admin.elevated_until
-  const canElevate = !elevated && admin.role === 'readonly' && max !== 'readonly'
+  const canElevate = adminCanElevate(admin)
 
   // Refresh the identity when the elevation runs out.
   useEffect(() => {
@@ -124,7 +123,7 @@ export function AdminElevationBar({
       <ElevateDialog
         open={open}
         onOpenChange={setOpen}
-        max={max}
+        choices={elevationChoices(admin)}
         onElevated={() => {
           setOpen(false)
           onChanged()
@@ -137,20 +136,18 @@ export function AdminElevationBar({
 function ElevateDialog({
   open,
   onOpenChange,
-  max,
+  choices,
   onElevated,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  max: AdminRole
+  choices: string[]
   onElevated: () => void
 }) {
   const { t } = useTranslation()
   const reasonId = useId()
-  const roles: AdminRole[] = (['ops_admin', 'super_admin'] as AdminRole[]).filter((r) =>
-    adminCan(max, r)
-  )
-  const [role, setRole] = useState<AdminRole>(roles[roles.length - 1] ?? 'ops_admin')
+  const roles = choices
+  const [role, setRole] = useState<string>(roles[0] ?? 'ops_admin')
   const [minutes, setMinutes] = useState<number>(30)
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
@@ -190,14 +187,16 @@ function ElevateDialog({
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label>{t('admin.elevation.role', 'Role')}</Label>
-                <Select value={role} onValueChange={(v) => setRole(v as AdminRole)}>
+                <Select value={role} onValueChange={(v) => setRole(v)}>
                   <SelectTrigger aria-label={t('admin.elevation.role', 'Role')}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     {roles.map((r) => (
                       <SelectItem key={r} value={r}>
-                        {t(`admin.role.${r}`, r)}
+                        {r.includes('_admin') && !r.startsWith('platform_')
+                          ? t(`admin.role.${r}`, r)
+                          : t(`admin.platformRole.${r}`, r)}
                       </SelectItem>
                     ))}
                   </SelectContent>

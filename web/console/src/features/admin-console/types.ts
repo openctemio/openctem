@@ -24,6 +24,14 @@ export interface AdminIdentity {
   max_role?: AdminRole
   /** When the session's elevation ends (absent: not elevated). */
   elevated_until?: string
+  /** The platform role the session is elevated as (absent: not elevated). */
+  elevated_as?: string
+  /** Platform roles held (RFC-134). */
+  roles?: string[]
+  /** Platform permissions the session acts with now. */
+  permissions?: string[]
+  /** Everything the roles grant: the most an elevation reaches. */
+  max_permissions?: string[]
   /** The session's CSRF token (sign-in and validate only); kept in memory by admin-client. */
   csrf_token?: string
 }
@@ -205,6 +213,85 @@ export const ADMIN_ROLE_LABELS: Record<AdminRole, string> = {
   super_admin: 'Super admin',
   ops_admin: 'Operations admin',
   readonly: 'Read-only admin',
+}
+
+/**
+ * The base tier that held each platform permission before platform roles. Only
+ * used for an identity that carries no permission list; the API always sends
+ * one, so this keeps hand-built identities (tests, stories) meaningful.
+ */
+const PERMISSION_MIN_TIER: Record<string, AdminRole> = {
+  'platform.console.read': 'readonly',
+  'platform.tenants.read': 'readonly',
+  'platform.roles.read': 'readonly',
+  'platform.settings.read': 'readonly',
+  'platform.sensors.read': 'readonly',
+  'platform.audit.read': 'readonly',
+  'platform.tenants.members.read': 'ops_admin',
+  'platform.tenants.create': 'ops_admin',
+  'platform.tenants.lifecycle': 'ops_admin',
+  'platform.tenants.owner_bootstrap': 'ops_admin',
+  'platform.tenants.limits.write': 'ops_admin',
+  'platform.users.read': 'ops_admin',
+  'platform.users.support': 'ops_admin',
+  'platform.announcements.write': 'ops_admin',
+  'platform.sensors.jobs.read': 'ops_admin',
+  'platform.feeds.manage': 'ops_admin',
+  'platform.ai_clients.manage': 'ops_admin',
+  'platform.support.access': 'ops_admin',
+}
+
+/**
+ * Whether the session acts with platform permission p now (RFC-134). Hiding is
+ * a convenience: the API decides on its own.
+ */
+export function adminHas(admin: AdminIdentity | null | undefined, p: string): boolean {
+  if (!admin) return false
+  if (admin.permissions) return admin.permissions.includes(p)
+  return adminCan(admin.role, PERMISSION_MIN_TIER[p] ?? 'super_admin')
+}
+
+/** Whether an elevation could give the session platform permission p. */
+export function adminMayHave(admin: AdminIdentity | null | undefined, p: string): boolean {
+  if (!admin) return false
+  if (admin.max_permissions) return admin.max_permissions.includes(p)
+  return adminCan(admin.max_role ?? admin.role, PERMISSION_MIN_TIER[p] ?? 'super_admin')
+}
+
+/** Whether an elevation would give the session more than it acts with now. */
+export function adminCanElevate(admin: AdminIdentity | null | undefined): boolean {
+  if (!admin || admin.elevated_until) return false
+  if (admin.max_permissions && admin.permissions) {
+    const now = admin.permissions
+    return admin.max_permissions.some((p) => !now.includes(p))
+  }
+  return admin.role === 'readonly' && (admin.max_role ?? admin.role) !== 'readonly'
+}
+
+/** The built-in platform roles, in display order (RFC-134). */
+export const PLATFORM_ROLE_KEYS = [
+  'platform_owner',
+  'platform_admin',
+  'platform_viewer',
+  'operator',
+  'support',
+  'security_auditor',
+  'billing',
+] as const
+
+/**
+ * The roles a session may elevate as: each held role but the read-only one,
+ * and the admin role for an owner. An identity without roles (an older API)
+ * gets the tier names.
+ */
+export function elevationChoices(admin: AdminIdentity): string[] {
+  if (!admin.roles) {
+    const max = admin.max_role ?? admin.role
+    return (['super_admin', 'ops_admin'] as AdminRole[]).filter((r) => adminCan(max, r))
+  }
+  const held = new Set(admin.roles)
+  if (held.has('platform_owner')) held.add('platform_admin')
+  return PLATFORM_ROLE_KEYS.filter((k) => k !== 'platform_viewer' && held.has(k))
 }
 
 /** super_admin > ops_admin > readonly. */
@@ -796,4 +883,34 @@ export interface PlatformAISettings extends SettingChange {
   locked_by_environment: boolean
   providers: string[]
   version: number
+}
+
+/** A built-in platform role (RFC-134). */
+export interface PlatformRoleInfo {
+  key: string
+  name: string
+  description: string
+  /** Base roles follow the administrator's tier; one per administrator. */
+  base: boolean
+  tier: AdminRole
+  permissions: string[]
+  holders: number
+}
+
+/** The platform permission catalog and built-in roles. */
+export interface PlatformRolesCatalog {
+  roles: PlatformRoleInfo[]
+  permissions: { key: string; baseline: boolean; description: string }[]
+  named_owners: number
+  owners_warning: boolean
+}
+
+/** One administrator's platform roles. */
+export interface PlatformRoleAssignment {
+  admin_id: string
+  email: string
+  name: string
+  active: boolean
+  break_glass: boolean
+  roles: string[]
 }

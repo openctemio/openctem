@@ -22,7 +22,7 @@ import { VersionCheckBanner } from './version-check-banner'
 import { ElevationRequestContext } from './elevation-request'
 import { adminLogout, useAdminSession } from '../api/use-admin-session'
 import { setAdminEnrollmentListener } from '@console/lib/admin-api/client'
-import type { AdminIdentity } from '../types'
+import { adminCanElevate, type AdminIdentity } from '../types'
 
 const AdminContext = createContext<AdminIdentity | null>(null)
 
@@ -123,8 +123,7 @@ export function AdminConsoleShell({ children }: { children: ReactNode }) {
 
   // A read-only session of an administrator who may elevate: pages offer the
   // elevate dialog next to what it unlocks.
-  const max = admin.max_role ?? admin.role
-  const canElevate = !admin.elevated_until && admin.role === 'readonly' && max !== 'readonly'
+  const canElevate = adminCanElevate(admin)
   const requestElevation = canElevate ? () => setElevateOpen(true) : null
 
   return (

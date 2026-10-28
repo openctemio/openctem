@@ -32,6 +32,10 @@ import (
 // routes that needed ops_admin or super_admin (every other console route was
 // open to any administrator).
 var legacyMinimumTier = map[string]admin.AdminRole{
+	// Added with platform roles: the roster and role changes are owner-only.
+	"GET /api/v1/admin/platform-roles/assignments":                           admin.AdminRoleSuperAdmin,
+	"POST /api/v1/admin/users/{id}/platform-roles":                           admin.AdminRoleSuperAdmin,
+	"DELETE /api/v1/admin/users/{id}/platform-roles/{role}":                  admin.AdminRoleSuperAdmin,
 	"DELETE /api/v1/admin/console-sessions/{console_session_id}":             admin.AdminRoleSuperAdmin,
 	"DELETE /api/v1/admin/instance-scan-zones/{zone_id}":                     admin.AdminRoleSuperAdmin,
 	"DELETE /api/v1/admin/platform-idp/":                                     admin.AdminRoleSuperAdmin,

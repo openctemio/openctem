@@ -52,7 +52,7 @@ import {
   nameToType,
 } from '@console/features/admin-console/components/type-to-confirm-field'
 import { AdminConfirmDialog } from '@console/features/admin-console/components/admin-confirm-dialog'
-import { adminCan } from '@console/features/admin-console/types'
+import { adminHas } from '@console/features/admin-console/types'
 
 const JOB_STATUSES = [
   'pending',
@@ -68,7 +68,7 @@ const ALL = 'all'
 export function SharedFleetPanel() {
   const { t } = useTranslation()
   const me = useAdmin()
-  const isSuper = adminCan(me.role, 'super_admin')
+  const isSuper = adminHas(me, 'platform.sensors.manage')
   const fleet = useSharedFleet()
   const [acting, setActing] = useState<{
     sensor: SharedFleetSensor
@@ -276,7 +276,7 @@ export function SharedFleetPanel() {
 export function SharedQueuePanel() {
   const { t } = useTranslation()
   const me = useAdmin()
-  const canView = adminCan(me.role, 'ops_admin')
+  const canView = adminHas(me, 'platform.sensors.jobs.read')
   const queue = useSharedQueue()
   const list = useListParams({ pageSizes: [20], defaultPageSize: 20, filters: { status: '' } })
   const status = list.filters.status

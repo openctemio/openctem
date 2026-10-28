@@ -7,7 +7,7 @@ import { ErrorState, PageHeader, PageStack } from '@/features/shared'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { useCaptchaSettings } from '@console/features/admin-console/api/use-platform-settings'
 import { CaptchaSettingsForm } from '@console/features/admin-console/components/captcha-settings-form'
-import { adminCan } from '@console/features/admin-console/types'
+import { adminHas } from '@console/features/admin-console/types'
 
 /** Settings -> CAPTCHA: the Turnstile keys (RFC-079). */
 export default function CaptchaSettingsPage() {
@@ -35,7 +35,7 @@ export default function CaptchaSettingsPage() {
         ) : (
           <CaptchaSettingsForm
             settings={data}
-            canEdit={adminCan(me.role, 'super_admin')}
+            canEdit={adminHas(me, 'platform.settings.general.write')}
             onSaved={() => void mutate()}
           />
         )}

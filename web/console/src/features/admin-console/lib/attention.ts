@@ -1,4 +1,10 @@
-import { adminCan, type AdminOverview, type AdminRole, type AdminSystem } from '../types'
+import {
+  adminHas,
+  type AdminIdentity,
+  type AdminOverview,
+  type AdminRole,
+  type AdminSystem,
+} from '../types'
 import { daysLeft, formatBytes, hoursAgo } from './system'
 
 export type AttentionSeverity = 'critical' | 'warning' | 'info'
@@ -27,10 +33,15 @@ export const STALE_COMMAND_SECONDS = 15 * 60
 
 /**
  * Turns the overview counts into the attention queue, most severe first. An
- * action link is offered only to a role that can act on it (the page behind
- * it still enforces the role).
+ * action link is offered only to an administrator who can act on it (the page
+ * behind it still enforces the permission).
  */
-export function buildAttention(o: AdminOverview, role: AdminRole): AttentionItem[] {
+export function buildAttention(
+  o: AdminOverview,
+  subject: AdminIdentity | AdminRole
+): AttentionItem[] {
+  const who: AdminIdentity =
+    typeof subject === 'string' ? ({ role: subject } as AdminIdentity) : subject
   const items: AttentionItem[] = []
   const p = o.platform
 
@@ -105,8 +116,10 @@ export function buildAttention(o: AdminOverview, role: AdminRole): AttentionItem
         : '{count} organizations have no owner: nobody can manage their members, sign-in or plan.',
       vars: { count: o.organizations.without_owner, name: first ? first.name : '' },
       href: one ? `/organizations/${first.id}?tab=users` : '/organizations?owner=none',
-      actionKey: adminCan(role, 'ops_admin') ? 'admin.attention.addOwner' : 'admin.attention.view',
-      action: adminCan(role, 'ops_admin') ? 'Add an owner' : 'View',
+      actionKey: adminHas(who, 'platform.tenants.owner_bootstrap')
+        ? 'admin.attention.addOwner'
+        : 'admin.attention.view',
+      action: adminHas(who, 'platform.tenants.owner_bootstrap') ? 'Add an owner' : 'View',
     })
   }
 
@@ -144,7 +157,7 @@ export function buildAttention(o: AdminOverview, role: AdminRole): AttentionItem
   }
 
   if (o.security.break_glass_tests_overdue > 0) {
-    const canManage = adminCan(role, 'super_admin')
+    const canManage = adminHas(who, 'platform.admins.manage')
     items.push({
       id: 'break-glass-test-overdue',
       severity: 'warning',

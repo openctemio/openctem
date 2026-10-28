@@ -18,7 +18,7 @@ import {
   useThreatIntelFeeds,
 } from '@console/features/admin-console/api/use-system'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
-import { adminCan, type ThreatIntelFeed } from '@console/features/admin-console/types'
+import { type ThreatIntelFeed, adminHas } from '@console/features/admin-console/types'
 
 const FEED_NAMES: Record<string, string> = {
   epss: 'EPSS (exploit prediction scores)',
@@ -35,7 +35,7 @@ function statusTone(f: ThreatIntelFeed) {
 export default function ThreatIntelFeedsPage() {
   const admin = useAdmin()
   const { t } = useTranslation()
-  const canWrite = adminCan(admin.role, 'ops_admin')
+  const canWrite = adminHas(admin, 'platform.feeds.manage')
   const { data, error, isLoading, mutate } = useThreatIntelFeeds()
   const [busy, setBusy] = useState<string | null>(null)
 

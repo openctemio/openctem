@@ -37,9 +37,8 @@ export default function AdminOverviewPage() {
   const sys = system.data
 
   const attention = useMemo(
-    () =>
-      mergeAttention(o ? buildAttention(o, admin.role) : [], sys ? buildSystemAttention(sys) : []),
-    [o, sys, admin.role]
+    () => mergeAttention(o ? buildAttention(o, admin) : [], sys ? buildSystemAttention(sys) : []),
+    [o, sys, admin]
   )
 
   const metrics: MetricStripItem[] = o

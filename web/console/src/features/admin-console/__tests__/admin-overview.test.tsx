@@ -209,7 +209,9 @@ describe('AttentionQueue', () => {
 
 describe('visibleAdminNav', () => {
   const urls = (role: AdminIdentity['role']) =>
-    visibleAdminNav(role).flatMap((s) => s.items.map((i) => i.url))
+    visibleAdminNav({ id: 'a', email: 'a@x', name: 'A', role }).flatMap((s) =>
+      s.items.map((i) => i.url)
+    )
 
   it('hides super-admin pages from other roles', () => {
     expect(urls('readonly')).not.toContain('/security/administrators')
@@ -217,6 +219,27 @@ describe('visibleAdminNav', () => {
     expect(urls('super_admin')).toEqual(
       expect.arrayContaining(['/security/administrators', '/system/admin-sign-in'])
     )
+  })
+
+  it('shows what the platform roles grant, elevated or not (RFC-134)', () => {
+    const support: AdminIdentity = {
+      id: 's',
+      email: 's@x',
+      name: 'S',
+      role: 'readonly',
+      roles: ['platform_viewer', 'support'],
+      permissions: ['platform.console.read', 'platform.roles.read'],
+      max_permissions: [
+        'platform.console.read',
+        'platform.roles.read',
+        'platform.users.read',
+        'platform.support.access',
+      ],
+    }
+    const seen = visibleAdminNav(support).flatMap((s) => s.items.map((i) => i.url))
+    expect(seen).toEqual(expect.arrayContaining(['/users', '/support', '/security/roles']))
+    expect(seen).not.toContain('/security/administrators')
+    expect(seen).not.toContain('/system/admin-sign-in')
   })
 
   it('lists every console page exactly once', () => {

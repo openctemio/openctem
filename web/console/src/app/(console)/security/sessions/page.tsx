@@ -24,15 +24,15 @@ import { useAdmin } from '@console/features/admin-console/components/admin-conso
 import { AdminConfirmDialog } from '@console/features/admin-console/components/admin-confirm-dialog'
 import {
   ADMIN_ROLE_LABELS,
-  adminCan,
   type AdminConsoleSession,
+  adminHas,
 } from '@console/features/admin-console/types'
 import { RoleRequiredNotice } from '@console/features/admin-console/components/role-required-notice'
 
 export default function AdminSessionsPage() {
   const admin = useAdmin()
   const { t } = useTranslation()
-  const isSuper = adminCan(admin.role, 'super_admin')
+  const isSuper = adminHas(admin, 'platform.admins.read')
   const { data, error, isLoading, mutate } = useAdminSessions(isSuper)
   const [ending, setEnding] = useState<AdminConsoleSession | null>(null)
 

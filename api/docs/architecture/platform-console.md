@@ -282,6 +282,23 @@ route refuses with `428 SECOND_APPROVAL_REQUIRED` and `details` naming the
 action, the target and the caller's open request. Table `admin_approvals`
 (migration `002914`), owned by the console's database role.
 
+## Platform roles
+
+Console authorization is by platform permission (RFC-134): the catalog and
+built-in roles live in `pkg/domain/platformauthz`, every console route names
+its permission in `adminRoutePermissions`, and the generated reference is
+[platform-permissions.md](platform-permissions.md) (`make -C api
+platform-authz-docs`). Security > Roles lists the roles, what each allows and
+who holds them; an owner gives or takes the additional roles (operator,
+support, security auditor, billing) there with a step-up and a reason
+(`POST /api/v1/admin/users/{id}/platform-roles`,
+`DELETE /api/v1/admin/users/{id}/platform-roles/{role}`), never to themselves
+and never a role with permissions they do not hold. The base role (owner,
+admin, read-only) follows the administrator's role on the Administrators page,
+where making an owner needs a second owner. The page warns while fewer than two
+named owners exist. Navigation and actions hide by permission
+(`adminHas`, `adminMayHave`); the elevation dialog offers the roles held.
+
 ## Tests
 
 - `web/console/src/__tests__/app-split.test.ts`: route lists of both apps, no

@@ -5,7 +5,7 @@ import { Main } from '@/components/layout'
 import { PageHeader, PageStack } from '@/features/shared'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { AccessRequestsPanel } from '@console/features/admin-console/components/access-requests-panel'
-import { adminCan } from '@console/features/admin-console/types'
+import { adminHas } from '@console/features/admin-console/types'
 
 /**
  * Requests -> Access requests: people who asked for an organization while
@@ -26,7 +26,7 @@ export default function AccessRequestsPage() {
             'People who asked for an organization while sign-up is closed.'
           )}
         />
-        <AccessRequestsPanel canDecide={adminCan(me.role, 'ops_admin')} />
+        <AccessRequestsPanel canDecide={adminHas(me, 'platform.tenants.create')} />
       </PageStack>
     </Main>
   )

@@ -7,7 +7,7 @@ import { ErrorState, PageHeader, PageStack } from '@/features/shared'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { usePlatformAI } from '@console/features/admin-console/api/use-platform-settings'
 import { PlatformAIForm } from '@console/features/admin-console/components/platform-ai-form'
-import { adminCan } from '@console/features/admin-console/types'
+import { adminHas } from '@console/features/admin-console/types'
 
 /** Settings -> AI provider: the platform AI provider and key (RFC-079). */
 export default function AIProviderSettingsPage() {
@@ -35,7 +35,7 @@ export default function AIProviderSettingsPage() {
         ) : (
           <PlatformAIForm
             settings={data}
-            canEdit={adminCan(me.role, 'super_admin')}
+            canEdit={adminHas(me, 'platform.settings.ai.write')}
             onSaved={() => void mutate()}
           />
         )}
