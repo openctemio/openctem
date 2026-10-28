@@ -3,6 +3,7 @@ package handler
 import (
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -181,7 +182,11 @@ type AdminMCPClient struct {
 
 // AdminMCPClientList is the console's client list.
 type AdminMCPClientList struct {
-	Data []AdminMCPClient `json:"data"`
+	Data       []AdminMCPClient `json:"data"`
+	Total      int              `json:"total"`
+	Page       int              `json:"page"`
+	PerPage    int              `json:"per_page"`
+	TotalPages int              `json:"total_pages"`
 }
 
 // AdminListClients serves GET /api/v1/admin/mcp-clients.
@@ -189,16 +194,46 @@ type AdminMCPClientList struct {
 // @Description  Every MCP client known to the platform with its active connections and how many organizations use it. Counts only; no organization data.
 // @Tags         Admin
 // @Produce      json
+// @Param        q         query  string  false  "Part of the client_id (its host) or the declared name"
+// @Param        blocked   query  bool    false  "true: blocked clients only; false: unblocked only"
+// @Param        page      query  int     false  "Page"
+// @Param        per_page  query  int     false  "Page size (max 100)"
 // @Success      200  {object}  AdminMCPClientList
+// @Failure      400  {object}  apierror.Error
 // @Router       /admin/mcp-clients [get]
 func (h *MCPConnectionsHandler) AdminListClients(w http.ResponseWriter, r *http.Request) {
-	list, err := h.svc.ListAllClients(r.Context())
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	if len(q) > 254 {
+		apierror.BadRequest("Search is too long").WriteJSON(w)
+		return
+	}
+	f := mcpoauth.ClientFilter{Q: q}
+	switch r.URL.Query().Get("blocked") {
+	case "":
+	case "true":
+		t := true
+		f.Blocked = &t
+	case queryParamFalse:
+		t := false
+		f.Blocked = &t
+	default:
+		apierror.BadRequest("blocked must be true or false").WriteJSON(w)
+		return
+	}
+	paging, ok := listPage(w, r, 25)
+	if !ok {
+		return
+	}
+	list, total, err := h.svc.ListAllClients(r.Context(), f, paging.PerPage, (paging.Page-1)*paging.PerPage)
 	if err != nil {
 		h.log.Error("list mcp clients", "error", logger.SanitizeError(err))
 		apierror.InternalServerError("failed to list clients").WriteJSON(w)
 		return
 	}
-	out := AdminMCPClientList{Data: make([]AdminMCPClient, 0, len(list))}
+	out := AdminMCPClientList{
+		Data: make([]AdminMCPClient, 0, len(list)), Total: total, Page: paging.Page, PerPage: paging.PerPage,
+		TotalPages: (total + paging.PerPage - 1) / paging.PerPage,
+	}
 	for _, u := range list {
 		out.Data = append(out.Data, AdminMCPClient{
 			ID: u.Client.ID.String(), ClientID: u.Client.ClientID, Name: u.Client.Name, Kind: string(u.Client.Kind),
