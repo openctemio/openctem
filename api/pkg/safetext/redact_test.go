@@ -140,3 +140,27 @@ func TestRedactSecrets_HTTPTranscriptShapes(t *testing.T) {
 		t.Errorf("scheme must stay: %q", got)
 	}
 }
+
+func TestFindSecrets_MatchesRedactSecrets(t *testing.T) {
+	in := "key AKIAABCDEFGHIJKLMNOP and password=hunter22x\nCookie: sid=abc123; path=/\nAuthorization: Bearer abcdefghijkl"
+	spans := FindSecrets(in)
+	kinds := map[string]string{}
+	for _, s := range spans {
+		kinds[in[s.Start:s.End]] = s.Kind
+	}
+	if kinds["AKIAABCDEFGHIJKLMNOP"] != "aws_access_key" {
+		t.Fatalf("aws key not found: %v", kinds)
+	}
+	if kinds["hunter22x"] != "credential" {
+		t.Fatalf("assignment value not found: %v", kinds)
+	}
+	if kinds["sid=abc123; path=/"] != "cookie" {
+		t.Fatalf("cookie value not found: %v", kinds)
+	}
+	if kinds["abcdefghijkl"] != "authorization" {
+		t.Fatalf("bearer value not found: %v", kinds)
+	}
+	if FindSecrets("") != nil {
+		t.Fatal("empty text has no spans")
+	}
+}

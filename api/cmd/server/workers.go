@@ -186,6 +186,12 @@ func registerPurgeControllers(m *controller.Manager, cfg *config.Config, repos *
 		m.Register(controller.NewPurgeController("organization-delete", cfg.Worker.InvitationPurgeInterval,
 			svc.OrgDeletion.PurgeDue, log.With("controller", "organization-delete")))
 	}
+	if svc.AIMaskMaps != nil {
+		// AI run masking maps past AI_MASK_MAP_TTL
+		// (docs/architecture/ai-context-masking.md).
+		m.Register(controller.NewPurgeController("ai-mask-map-purge", time.Hour,
+			svc.AIMaskMaps.Purge, log.With("controller", "ai-mask-map-purge")))
+	}
 	if repos.AdminConsole != nil {
 		console := repos.AdminConsole
 		m.Register(controller.NewPurgeController("admin-session-purge", cfg.Worker.AdminSessionPurgeInterval,
