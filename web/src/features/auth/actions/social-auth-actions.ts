@@ -21,6 +21,7 @@ import { loginErrorHref } from '@/features/auth/lib/login-error'
 
 import { env } from '@/lib/env'
 import { browserContextHeaders } from '@/lib/api/browser-context-headers'
+import { bindingCookieName, bindingCookieOptions } from '@/features/auth/lib/browser-binding'
 import { setServerCookie } from '@/lib/cookies-server'
 import { authEndpoints } from '@/lib/api/endpoints'
 import { validateRedirectUrl } from '@/lib/redirect'
@@ -57,6 +58,8 @@ export interface OAuthUser {
 export interface OAuthAuthorizationResponse {
   authorization_url: string
   state: string
+  /** One-time secret kept in an HttpOnly cookie and sent back with the callback. */
+  browser_binding: string
 }
 
 export interface OAuthCallbackResult {
@@ -141,6 +144,9 @@ export async function getOAuthAuthorizationUrl(
       path: '/',
     })
 
+    // Browser binding: the API refuses the callback without this secret.
+    cookieStore.set(bindingCookieName('oauth'), data.browser_binding, bindingCookieOptions())
+
     // Store the final redirect destination (validated to prevent open redirect)
     if (redirectTo) {
       cookieStore.set('oauth_redirect', validateRedirectUrl(redirectTo, '/'), {
@@ -198,6 +204,17 @@ export async function handleOAuthCallback(
     // Clear the state cookie
     cookieStore.delete('oauth_state')
 
+    // The binding is single use; a missing one is refused by the API too.
+    const bindingName = bindingCookieName('oauth')
+    const browserBinding = cookieStore.get(bindingName)?.value
+    cookieStore.delete(bindingName)
+    if (!browserBinding) {
+      return {
+        success: false,
+        error: 'Invalid OAuth state. Please try again.',
+      }
+    }
+
     // Get the final redirect destination (stored for use after token exchange)
     const _redirectTo = cookieStore.get('oauth_redirect')?.value || '/'
     cookieStore.delete('oauth_redirect')
@@ -209,6 +226,7 @@ export async function handleOAuthCallback(
         code,
         state,
         redirect_uri: `${env.app.url}/auth/callback/${provider}`,
+        browser_binding: browserBinding,
       }),
     })
 
