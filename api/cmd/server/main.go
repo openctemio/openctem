@@ -321,12 +321,21 @@ func run() int {
 		services.Auth.SetSMTPChecker(services.Email)
 	}
 
-	// Wire the per-tenant SMTP resolver so a tenant that configured an email
-	// notification integration sends from its own SMTP server instead of the
-	// system default. The SetTenantSMTPResolver seam was never called, so
-	// per-tenant SMTP was silently dead and every tenant fell back to system SMTP.
+	// An organization's own mail relay (its e-mail notification channel with
+	// "organization mail" ticked) carries its invitation notices
+	// and reports when the platform mode email.tenant_relay allows it. Account
+	// security mail never uses it. Without the mode setting the relay stays
+	// off.
 	if services.Email != nil {
-		services.Email.SetTenantSMTPResolver(auth.NewIntegrationSMTPResolver(repos.Integration, log))
+		var mode auth.RelayModeSource
+		if services.OrgRelay != nil {
+			mode = services.OrgRelay
+		}
+		var domains auth.SenderDomains
+		if repos.VerifiedDomain != nil {
+			domains = repos.VerifiedDomain
+		}
+		services.Email.SetTenantSMTPResolver(auth.NewIntegrationSMTPResolver(repos.Integration, services.Encryptor.DecryptString, mode, domains, log))
 	}
 
 	// ==========================================================================

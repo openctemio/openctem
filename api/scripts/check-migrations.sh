@@ -41,7 +41,7 @@ MARKER='expand-contract-ok'
 
 # --- every migration version must be unique ---------------------------------
 # Two PRs written in parallel can each pick the next free number and both merge
-# (each is unique on its own branch). golang-migrate then refuses to run, and an
+# (each is unique on its own branch). openctem-migrate then refuses to run, and an
 # api that migrates on deploy does not start. This checks the whole directory,
 # not just changed files, so develop's own CI goes red the moment it happens.
 dupes="$(find "$REPO_ROOT/migrations" -maxdepth 1 -name '*.up.sql' -printf '%f\n' \
@@ -205,8 +205,8 @@ fi
 # ────────────────────────────────────────────────────────────────────────────
 # Duplicate version numbers.
 #
-# golang-migrate keys on the numeric prefix, so two files sharing one is not a
-# style problem — the second is unreachable and `migrate up` errors out. It is
+# openctem-migrate keys on the numeric prefix, so two files sharing one is not a
+# style problem: it refuses to run at all. It is
 # invisible per-PR: two branches cut from the same develop each add 000200, each
 # is green on its own, and the collision only exists after both merge. That is
 # exactly what happened with #396 and #397, and neither CI run could have seen
@@ -227,9 +227,9 @@ if [[ -n "$dupes" ]]; then
   done
   cat >&2 <<'EOF'
 
-golang-migrate keys on the numeric prefix. Two files sharing one means the
-second never runs and `migrate up` fails. Renumber the newer one to the next
-free version and update any comment that names it.
+openctem-migrate keys on the numeric prefix and refuses two files sharing
+one. Give the newer one a new version (make -C api migration-renumber) and
+update any comment that names it.
 
 This usually happens when two branches are cut from the same base — each is
 green alone and the collision only appears once both are merged.

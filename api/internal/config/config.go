@@ -477,6 +477,11 @@ type AppConfig struct {
 	// administrator stores a value in the console
 	// (docs/rfcs/RFC-100-shared-sensors.md §6).
 	ManagedService bool
+	// OrgEmailRelayMode (ORG_EMAIL_RELAY_MODE: off, verified_sender or on) is
+	// the default of the platform setting email.tenant_relay until a super
+	// admin stores a value in the console. Empty: verified_sender when
+	// ManagedService, else on.
+	OrgEmailRelayMode string
 	// Region is DEPLOYMENT_REGION: the data region of this deployment, given
 	// to every organization created here and never changed (empty: not
 	// named).
@@ -1559,7 +1564,8 @@ func Load() (*Config, error) {
 			URL:    getEnv("APP_URL", ""),
 			Region: strings.ToLower(strings.TrimSpace(getEnv("DEPLOYMENT_REGION", ""))),
 
-			ManagedService: getEnvBool("MANAGED_SERVICE", false),
+			ManagedService:    getEnvBool("MANAGED_SERVICE", false),
+			OrgEmailRelayMode: getEnv("ORG_EMAIL_RELAY_MODE", ""),
 		},
 		SensorConfig: SensorConfigConfig{
 			TransportV3: SensorTransportV3Config{

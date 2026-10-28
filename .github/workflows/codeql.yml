@@ -57,7 +57,7 @@ jobs:
     # merge_group analyses nothing (see the header), so do not even spend a
     # runner on detection; `CodeQL OK` passes with everything skipped.
     if: github.event_name != 'merge_group'
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
     outputs:
       languages: ${{ steps.lang.outputs.languages }}
     steps:
@@ -65,6 +65,7 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+      - uses: ./.github/actions/setup-gh
       - id: f
         env:
           EVENT_BEFORE: ${{ github.event.before }}
@@ -161,7 +162,7 @@ jobs:
     name: CodeQL OK
     if: always()
     needs: [changes, analyze]
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
     permissions:
       contents: read
       security-events: read
@@ -177,6 +178,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - if: github.event_name == 'pull_request' && needs.analyze.result == 'success'
+        uses: ./.github/actions/setup-gh
       - name: No new medium-or-higher alerts
         if: github.event_name == 'pull_request' && needs.analyze.result == 'success'
         env:
