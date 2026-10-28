@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openctem.io/schemas/analyze/output/remediation/v1.json",
+  "title": "openctem.ai.remediation/v1",
+  "description": "Output of kind remediation.v1: one remediation plan.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["suggestions"],
+  "properties": {
+    "suggestions": {
+      "type": "array",
+      "maxItems": 1,
+      "items": {
+        "oneOf": [
+          {"$ref": "https://openctem.io/schemas/analyze/suggestion/v1.json#/$defs/remediation_steps"}
+        ]
+      }
+    }
+  }
+}
