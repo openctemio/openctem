@@ -1,6 +1,6 @@
 package handler
 
-// Platform roles in the console (RFC-134): the catalog, the built-in roles,
+// Platform roles in the console (design: RFC-134): the catalog, the built-in roles,
 // who holds what, and giving or taking an additional role. Console routes
 // only; no tenant route serves any of it.
 
@@ -77,7 +77,13 @@ type PlatformRoleChangeRequest struct {
 }
 
 // Roles lists the catalog and the built-in roles with their holder counts.
-// GET /api/v1/admin/platform-roles (platform.roles.read)
+//
+// @Summary      Platform roles and permissions (platform admin)
+// @Description  The platform permission catalog, the built-in platform roles with their permissions and holder counts, and whether fewer than two named platform owners exist. Any console role.
+// @Tags         Admin
+// @Produce      json
+// @Success      200  {object}  PlatformRolesResponse
+// @Router       /admin/platform-roles [get]
 func (h *AdminPlatformRoleHandler) Roles(w http.ResponseWriter, r *http.Request) {
 	as, err := h.svc.List(r.Context())
 	if err != nil {
@@ -112,7 +118,13 @@ func (h *AdminPlatformRoleHandler) Roles(w http.ResponseWriter, r *http.Request)
 }
 
 // Assignments lists every administrator's platform roles.
-// GET /api/v1/admin/platform-roles/assignments (platform.admins.read)
+//
+// @Summary      Who holds which platform role (platform admin)
+// @Description  Every administrator with the platform roles held. Needs the administrator roster permission.
+// @Tags         Admin
+// @Produce      json
+// @Success      200  {object}  map[string][]PlatformRoleAssignmentResponse
+// @Router       /admin/platform-roles/assignments [get]
 func (h *AdminPlatformRoleHandler) Assignments(w http.ResponseWriter, r *http.Request) {
 	as, err := h.svc.List(r.Context())
 	if err != nil {
@@ -133,7 +145,18 @@ func (h *AdminPlatformRoleHandler) Assignments(w http.ResponseWriter, r *http.Re
 }
 
 // Assign gives an administrator an additional role.
-// POST /api/v1/admin/users/{id}/platform-roles (platform.roles.assign, step-up)
+//
+// @Summary      Give a platform role (platform admin)
+// @Description  Gives an administrator an additional platform role (operator, support, security_auditor, billing). Platform owner, step-up and a reason; never to yourself, never a role whose permissions you do not hold. Audited and announced.
+// @Tags         Admin
+// @Accept       json
+// @Param        id       path  string                     true  "Administrator ID"
+// @Param        request  body  PlatformRoleChangeRequest  true  "Role and reason"
+// @Success      204
+// @Failure      400  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Router       /admin/users/{id}/platform-roles [post]
 func (h *AdminPlatformRoleHandler) Assign(w http.ResponseWriter, r *http.Request) {
 	h.change(w, r, func(actor *admin.AdminUser, id shared.ID, req PlatformRoleChangeRequest) error {
 		return h.svc.Assign(r.Context(), actor, id, platformauthz.RoleKey(req.Role), req.Reason, platformrole.Client{IP: middleware.ClientIP(r), UserAgent: r.UserAgent()})
@@ -141,7 +164,19 @@ func (h *AdminPlatformRoleHandler) Assign(w http.ResponseWriter, r *http.Request
 }
 
 // Revoke takes an additional role from an administrator.
-// DELETE /api/v1/admin/users/{id}/platform-roles/{role} (platform.roles.assign, step-up)
+//
+// @Summary      Take a platform role (platform admin)
+// @Description  Takes an additional platform role from an administrator. Platform owner, step-up and a reason; audited and announced.
+// @Tags         Admin
+// @Accept       json
+// @Param        id       path  string                     true  "Administrator ID"
+// @Param        role     path  string                     true  "Role key"
+// @Param        request  body  PlatformRoleChangeRequest  true  "Reason"
+// @Success      204
+// @Failure      400  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Router       /admin/users/{id}/platform-roles/{role} [delete]
 func (h *AdminPlatformRoleHandler) Revoke(w http.ResponseWriter, r *http.Request) {
 	h.change(w, r, func(actor *admin.AdminUser, id shared.ID, req PlatformRoleChangeRequest) error {
 		return h.svc.Revoke(r.Context(), actor, id, platformauthz.RoleKey(chi.URLParam(r, "role")), req.Reason, platformrole.Client{IP: middleware.ClientIP(r), UserAgent: r.UserAgent()})
