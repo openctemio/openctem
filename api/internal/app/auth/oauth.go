@@ -84,6 +84,7 @@ type OAuthService struct {
 	refreshTokenRepo sessiondom.RefreshTokenRepository
 	tokenGenerator   *jwt.Generator
 	config           config.OAuthConfig
+	providers        ProviderSource
 	authConfig       config.AuthConfig
 	logger           *logger.Logger
 	platformAdmins   PlatformAdminGate
@@ -224,6 +225,9 @@ type AuthorizationURLInput struct {
 type AuthorizationURLResult struct {
 	AuthorizationURL string `json:"authorization_url"`
 	State            string `json:"state"`
+	// BrowserBinding is a one-time secret for the browser that started the
+	// flow, returned with the callback to prove the state is its own.
+	BrowserBinding string `json:"browser_binding"`
 }
 
 // GetAuthorizationURL returns the OAuth authorization URL for the specified provider.
@@ -236,7 +240,7 @@ func (s *OAuthService) GetAuthorizationURL(ctx context.Context, input Authorizat
 		return nil, ErrInvalidProvider
 	}
 
-	providerConfig := s.getProviderConfig(input.Provider)
+	providerConfig := s.getProviderConfig(ctx, input.Provider)
 	if providerConfig == nil || !providerConfig.IsConfigured() {
 		return nil, ErrProviderDisabled
 	}
@@ -246,7 +250,11 @@ func (s *OAuthService) GetAuthorizationURL(ctx context.Context, input Authorizat
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate state: %w", err)
 	}
-	if err := s.pkceStore.Set(ctx, pkceStoreKey(state), codeVerifier, s.stateTTL()); err != nil {
+	binding, err := newBrowserBinding()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create browser binding: %w", err)
+	}
+	if err := s.pkceStore.Set(ctx, pkceStoreKey(state), hashBinding(binding)+":"+codeVerifier, s.stateTTL()); err != nil {
 		return nil, fmt.Errorf("failed to store PKCE verifier: %w", err)
 	}
 
@@ -259,6 +267,7 @@ func (s *OAuthService) GetAuthorizationURL(ctx context.Context, input Authorizat
 	return &AuthorizationURLResult{
 		AuthorizationURL: authURL,
 		State:            state,
+		BrowserBinding:   binding,
 	}, nil
 }
 
@@ -268,6 +277,8 @@ type CallbackInput struct {
 	Code        string
 	State       string
 	RedirectURI string
+	// BrowserBinding is the secret the authorize call returned to this browser.
+	BrowserBinding string
 }
 
 // CallbackResult represents the OAuth callback result.
@@ -289,7 +300,7 @@ func (s *OAuthService) HandleCallback(ctx context.Context, input CallbackInput) 
 		return nil, ErrInvalidProvider
 	}
 
-	providerConfig := s.getProviderConfig(input.Provider)
+	providerConfig := s.getProviderConfig(ctx, input.Provider)
 	if providerConfig == nil || !providerConfig.IsConfigured() {
 		return nil, ErrProviderDisabled
 	}
@@ -300,12 +311,14 @@ func (s *OAuthService) HandleCallback(ctx context.Context, input CallbackInput) 
 	if err != nil {
 		return nil, ErrInvalidState
 	}
-	codeVerifier, found, err := s.pkceStore.GetDel(ctx, pkceStoreKey(input.State))
+	stored, found, err := s.pkceStore.GetDel(ctx, pkceStoreKey(input.State))
 	if err != nil {
 		s.logger.Error("failed to read PKCE verifier", "provider", input.Provider, "error", err)
 		return nil, ErrInvalidState
 	}
-	if !found || codeVerifier == "" {
+	// The record is spent now; a wrong browser cannot retry it.
+	bindHash, codeVerifier, split := strings.Cut(stored, ":")
+	if !found || !split || codeVerifier == "" || !bindingMatches(input.BrowserBinding, bindHash) {
 		return nil, ErrInvalidState
 	}
 
@@ -319,6 +332,10 @@ func (s *OAuthService) HandleCallback(ctx context.Context, input CallbackInput) 
 	// Get user info from provider
 	userInfo, err := s.getUserInfo(ctx, input.Provider, tokens)
 	if err != nil {
+		if errors.Is(err, ErrEmailUnverifiedAtIDP) {
+			s.logger.Warn("social sign-in refused: email not verified by the provider", "provider", input.Provider)
+			return nil, ErrEmailUnverifiedAtIDP
+		}
 		s.logger.Error("failed to get user info", "provider", input.Provider, "error", err)
 		return nil, ErrOAuthUserInfoFailed
 	}
@@ -337,7 +354,7 @@ func (s *OAuthService) HandleCallback(ctx context.Context, input CallbackInput) 
 	// A platform administrator signs in on the admin console only; the answer
 	// is the generic provider failure.
 	if refusePlatformAdmin(ctx, s.platformAdmins, s.logger, u, "oauth") {
-		return nil, ErrOAuthExchangeFailed
+		return nil, ErrUseAdminConsole
 	}
 
 	// Create session
@@ -371,16 +388,30 @@ type ProviderInfo struct {
 
 // GetAvailableProviders returns a list of available OAuth providers.
 func (s *OAuthService) GetAvailableProviders() []ProviderInfo {
-	providers := []ProviderInfo{
-		{ID: "google", Name: "Google", Enabled: s.config.Google.IsConfigured()},
-		{ID: "github", Name: "GitHub", Enabled: s.config.GitHub.IsConfigured()},
-		{ID: "microsoft", Name: "Microsoft", Enabled: s.config.Microsoft.IsConfigured()},
+	on := func(p OAuthProvider) bool {
+		c := s.getProviderConfig(context.Background(), p)
+		return c != nil && c.IsConfigured()
 	}
-	return providers
+	return []ProviderInfo{
+		{ID: "google", Name: "Google", Enabled: on(OAuthProviderGoogle)},
+		{ID: "github", Name: "GitHub", Enabled: on(OAuthProviderGitHub)},
+		{ID: "microsoft", Name: "Microsoft", Enabled: on(OAuthProviderMicrosoft)},
+	}
 }
 
 // getProviderConfig returns the configuration for a provider.
-func (s *OAuthService) getProviderConfig(provider OAuthProvider) *config.OAuthProviderConfig {
+//
+// With a ProviderSource wired (the console's social login setting) the
+// provider in force is read on every call, so a change applies without a
+// restart; without one the start-up configuration is used.
+func (s *OAuthService) getProviderConfig(ctx context.Context, provider OAuthProvider) *config.OAuthProviderConfig {
+	if !provider.IsValid() {
+		return nil
+	}
+	if s.providers != nil {
+		cfg := s.providers.OAuthProvider(ctx, string(provider))
+		return &cfg
+	}
 	switch provider {
 	case OAuthProviderGoogle:
 		return &s.config.Google
@@ -391,6 +422,16 @@ func (s *OAuthService) getProviderConfig(provider OAuthProvider) *config.OAuthPr
 	}
 	return nil
 }
+
+// ProviderSource answers which configuration a social provider has right
+// now. Implemented by the console's social login setting.
+type ProviderSource interface {
+	OAuthProvider(ctx context.Context, provider string) config.OAuthProviderConfig
+}
+
+// SetProviderSource makes the providers live: they are read from src on
+// every authorize and callback instead of the start-up configuration.
+func (s *OAuthService) SetProviderSource(src ProviderSource) { s.providers = src }
 
 // generatePKCE generates a PKCE code verifier and challenge (RFC 7636).
 func generatePKCE() (verifier, challenge string, err error) {
@@ -610,7 +651,7 @@ func (s *OAuthService) getGoogleUserInfo(ctx context.Context, tokens *oauthToken
 	if tokens == nil || strings.TrimSpace(tokens.IDToken) == "" {
 		return nil, errors.New("google login returned no id_token (the 'openid' scope is required)")
 	}
-	cfg := s.getProviderConfig(OAuthProviderGoogle)
+	cfg := s.getProviderConfig(ctx, OAuthProviderGoogle)
 	if cfg == nil {
 		return nil, ErrInvalidProvider
 	}
@@ -646,7 +687,7 @@ func (s *OAuthService) getGoogleUserInfo(ctx context.Context, tokens *oauthToken
 // must be verified by Google, and the account is keyed on (Google issuer, sub).
 func googleUserInfoFromClaims(claims *oidc.Claims) (*OAuthUserInfo, error) {
 	if !bool(claims.EmailVerified) {
-		return nil, fmt.Errorf("email not verified by Google")
+		return nil, fmt.Errorf("google: %w", ErrEmailUnverifiedAtIDP)
 	}
 	if strings.TrimSpace(claims.Email) == "" {
 		return nil, errors.New("google id_token has no email claim")
@@ -814,7 +855,7 @@ func (s *OAuthService) getMicrosoftUserInfo(ctx context.Context, idToken string)
 	if strings.TrimSpace(idToken) == "" {
 		return nil, errors.New("microsoft login returned no id_token (the 'openid' scope is required)")
 	}
-	cfg := s.getProviderConfig(OAuthProviderMicrosoft)
+	cfg := s.getProviderConfig(ctx, OAuthProviderMicrosoft)
 	if cfg == nil {
 		return nil, ErrInvalidProvider
 	}
@@ -844,7 +885,7 @@ func (s *OAuthService) getMicrosoftUserInfo(ctx context.Context, idToken string)
 // by pkg/oidc), so it is a pure function to keep it unit-testable.
 func microsoftUserInfoFromClaims(claims *oidc.Claims) (*OAuthUserInfo, error) {
 	if !bool(claims.XMSEdov) {
-		return nil, errors.New("email not verified by Microsoft (email domain not owner-verified)")
+		return nil, fmt.Errorf("microsoft (email domain not owner-verified): %w", ErrEmailUnverifiedAtIDP)
 	}
 	if strings.TrimSpace(claims.Email) == "" {
 		return nil, errors.New("microsoft id_token has no email claim")
@@ -1129,7 +1170,11 @@ func (s *OAuthService) getAuthURL(provider OAuthProvider) string {
 }
 
 // getTokenURL returns the token endpoint URL for a provider.
-func (s *OAuthService) getTokenURL(provider OAuthProvider) string {
+func (s *OAuthService) getTokenURL(provider OAuthProvider) string { return TokenEndpoint(provider) }
+
+// TokenEndpoint is the fixed token endpoint of a social provider ("" for an
+// unknown one). Nothing a request or a setting says changes it.
+func TokenEndpoint(provider OAuthProvider) string {
 	switch provider {
 	case OAuthProviderGoogle:
 		return "https://oauth2.googleapis.com/token"
