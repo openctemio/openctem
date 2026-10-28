@@ -64,4 +64,7 @@ type OrganizationReader interface {
 	ListOrganizations(ctx context.Context, f OrganizationFilter) ([]*Organization, int, error)
 	// GetOrganization returns shared.ErrNotFound when the tenant does not exist.
 	GetOrganization(ctx context.Context, id shared.ID) (*Organization, error)
+	// CountUsableOwners counts the owners who can act: an active membership
+	// of an account that is active and not erased.
+	CountUsableOwners(ctx context.Context, id shared.ID) (int, error)
 }
