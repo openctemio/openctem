@@ -21,8 +21,8 @@
 #                    is enough; PR_LABELS (the event's label names as a JSON
 #                    array) is the fallback.
 #
-# Documentation never counts as code for api/web: Markdown anywhere, all of
-# api/docs/, and the agent notes under .claude/. A docs-only PR therefore runs
+# Documentation never counts as code for api/web: Markdown anywhere (which
+# includes the changelog fragments in api/changelog.d/), all of api/docs/ and docs/, and the agent notes under .claude/. A docs-only PR therefore runs
 # none of the Go or web suites (Docs check, the changelog check in API CI's
 # `changes` job and the secret scan still run). Exception: Markdown that a
 # test generates and compares (api/docs/configuration/environment-variables.md,
@@ -86,7 +86,7 @@ all_files="$(git diff --name-only "$range")"
 is_docs() {
   case "$1" in
     api/docs/configuration/environment-variables.md) return 1 ;;
-    *.md | api/docs/* | .claude/* | */.claude/*) return 0 ;;
+    *.md | api/docs/* | docs/* | .claude/* | */.claude/*) return 0 ;;
   esac
   return 1
 }

@@ -257,6 +257,9 @@ jobs:
         run: bash .github/scripts/check-runners.test.sh
       - name: Runner selection
         run: bash .github/scripts/check-runners.sh
+      # The automatic split of heavy jobs between the pools (run_id modulo 100).
+      - name: Runner pool split self-test
+        run: bash .github/scripts/ci-pool.test.sh
       # Which jobs a change runs (api/web/docs routing shared by every workflow).
       - name: Change routing self-test
         run: bash .github/scripts/changed.test.sh
