@@ -60,6 +60,7 @@ type Repositories struct {
 	AITriage         *postgres.AITriageRepository              // AI-powered vulnerability triage
 	AITriageBudget   *postgres.AITriageBudgetRepository        // Per-tenant LLM token budget (RFC-008)
 	TenantAISettings *postgres.TenantAISettingsRepository      // Organizations' AI settings (consent, source, own provider)
+	AIAnalysis       *postgres.AIAnalysisRepository            // AI agents, their owners and runs
 	DataFlow         *postgres.DataFlowRepository              // Data flow traces for taint tracking
 	FindingSource    *postgres.FindingSourceRepository         // Finding source configuration
 	FindingSourceCat *postgres.FindingSourceCategoryRepository // Finding source categories
@@ -278,6 +279,8 @@ type Repositories struct {
 	PlatformIdP *postgres.PlatformIdPRepository
 	// AdminDB is the pool of the console's identity tables (UseAdminDB).
 	AdminDB *postgres.DB
+	// SSOEnforcement backs the Require SSO guard (preconditions, revoke at enable).
+	SSOEnforcement *postgres.SSOEnforcementRepository
 
 	// Target Mappings (scanner target type -> asset type)
 	TargetMapping *postgres.TargetMappingRepository
@@ -441,6 +444,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		AITriage:         postgres.NewAITriageRepository(db),       // AI-powered vulnerability triage
 		AITriageBudget:   postgres.NewAITriageBudgetRepository(db), // RFC-008 monthly LLM token budget
 		TenantAISettings: postgres.NewTenantAISettingsRepository(db),
+		AIAnalysis:       postgres.NewAIAnalysisRepository(db),
 		DataFlow:         postgres.NewDataFlowRepository(db),              // Data flow traces
 		FindingSource:    postgres.NewFindingSourceRepository(db),         // Finding source configuration
 		FindingSourceCat: postgres.NewFindingSourceCategoryRepository(db), // Finding source categories
@@ -586,6 +590,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		AccessControl:     postgres.NewAccessControlRepository(db),
 		DataScope:         postgres.NewDataScopeRepository(db),
 		MemberLifecycle:   postgres.NewMemberLifecycleRepository(db),
+		SSOEnforcement:    postgres.NewSSOEnforcementRepository(db),
 		OwnershipTransfer: postgres.NewOwnershipTransferRepository(db),
 		Role:              postgres.NewRoleRepository(db),
 		RolePermission:    postgres.NewPermissionRepository(db),

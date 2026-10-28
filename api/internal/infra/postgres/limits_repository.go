@@ -226,7 +226,8 @@ func (r *LimitsRepository) ReplaceOrigin(ctx context.Context, tenantID shared.ID
 
 // Usage counts what the organization uses, one query, every count scoped
 // by tenant_id. A seat is every member who is not offboarded: a suspended
-// member, or a sign-up awaiting approval, still holds one. Findings are
+// member, or a sign-up awaiting approval, still holds one. An AI agent is
+// not a seat. Findings are
 // counted (a second query) only when withFindings is set, that is while a
 // findings limit applies: the count runs over the largest table, so an
 // organization without that limit never pays for it.
@@ -234,7 +235,8 @@ func (r *LimitsRepository) Usage(ctx context.Context, tenantID shared.ID, withFi
 	var seats, assets, sensors, keys, trusts, invites, subStatuses, schemes, storageMB, sources, contentMB int
 	err := r.db.QueryRowContext(ctx, `
 		SELECT
-		  (SELECT count(*) FROM tenant_members WHERE tenant_id = $1 AND status <> 'offboarded'),
+		  (SELECT count(*) FROM tenant_members m WHERE m.tenant_id = $1 AND m.status <> 'offboarded'
+		     AND NOT EXISTS (SELECT 1 FROM ai_agents a WHERE a.user_id = m.user_id AND a.tenant_id = m.tenant_id)),
 		  (SELECT count(*) FROM assets WHERE tenant_id = $1 AND deleted_at IS NULL AND status <> 'archived'),
 		  (SELECT count(*) FROM sensors WHERE tenant_id = $1 AND scope = 'organization' AND status <> 'revoked'),
 		  (SELECT count(*) FROM api_keys WHERE tenant_id = $1 AND status = 'active'),

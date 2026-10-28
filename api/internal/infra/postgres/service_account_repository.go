@@ -32,7 +32,15 @@ func (r *ServiceAccountRepository) Create(ctx context.Context, a *serviceaccount
 		return fmt.Errorf("begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := createServiceAccountTx(ctx, tx, a); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
 
+// createServiceAccountTx stores a service account and its membership (no
+// role) inside the caller's transaction.
+func createServiceAccountTx(ctx context.Context, tx *sql.Tx, a *serviceaccount.ServiceAccount) error {
 	var owner sql.NullString
 	if a.OwnerID != nil {
 		owner = sql.NullString{String: a.OwnerID.String(), Valid: true}
@@ -55,13 +63,14 @@ func (r *ServiceAccountRepository) Create(ctx context.Context, a *serviceaccount
 		a.ID.String(), a.TenantID.String()); err != nil {
 		return fmt.Errorf("clear service account roles: %w", err)
 	}
-	return tx.Commit()
+	return nil
 }
 
 const serviceAccountSelect = `
 	SELECT u.id, u.service_tenant_id, u.name, COALESCE(u.preferences->>'description', ''),
 	       u.service_owner_id, COALESCE(o.name, o.email, ''), COALESCE(tm.status, 'active'), u.created_at,
-	       (SELECT COUNT(*) FROM api_keys k WHERE k.user_id = u.id AND k.tenant_id = u.service_tenant_id AND k.status = 'active')
+	       (SELECT COUNT(*) FROM api_keys k WHERE k.user_id = u.id AND k.tenant_id = u.service_tenant_id AND k.status = 'active'),
+	       EXISTS (SELECT 1 FROM ai_agents a WHERE a.user_id = u.id)
 	FROM users u
 	LEFT JOIN users o ON o.id = u.service_owner_id
 	LEFT JOIN tenant_members tm ON tm.user_id = u.id AND tm.tenant_id = u.service_tenant_id
@@ -72,7 +81,7 @@ func scanServiceAccount(row interface{ Scan(...any) error }) (*serviceaccount.Se
 	var owner sql.NullString
 	var at time.Time
 	a := &serviceaccount.ServiceAccount{}
-	if err := row.Scan(&id, &tid, &a.Name, &a.Description, &owner, &a.OwnerName, &a.Status, &at, &a.APIKeys); err != nil {
+	if err := row.Scan(&id, &tid, &a.Name, &a.Description, &owner, &a.OwnerName, &a.Status, &at, &a.APIKeys, &a.AIAgent); err != nil {
 		return nil, err
 	}
 	a.ID, _ = shared.IDFromString(id)

@@ -30,7 +30,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
 import { SIDEBAR_CHIP_CLASS, SIDEBAR_CONTEXT_ROW_CLASS } from './sidebar-brand'
 import { toast } from 'sonner'
-import { getErrorMessage } from '@/lib/api/error-handler'
+import { authErrorText } from '@/features/auth/lib/auth-error-codes'
 import { useCanCreateOrganization } from '@/features/auth/hooks/use-can-create-organization'
 import { useMemberStats } from '@/features/organization/api/use-members'
 import { useSettingsNav } from '@/hooks/use-settings-nav'
@@ -114,7 +114,13 @@ export function TeamSwitcher() {
         setIsOpen(false)
         toast.success(t('org.switched', 'Switched to {name}', { name: target?.name ?? '' }))
       } catch (err) {
-        toast.error(getErrorMessage(err, t('org.switchFailed', 'Could not switch organization')))
+        toast.error(
+          authErrorText(
+            (err as { code?: unknown } | null)?.code as string | undefined,
+            t,
+            t('org.switchFailed', 'Could not switch organization')
+          )
+        )
       }
     },
     [switchTeam, isTransitioning, organizations, t]

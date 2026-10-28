@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # openctem-supervise — PID 2 of the all-in-one image (tini is PID 1).
 #
-# 1. migrations: `migrate up` once, before anything serves, under a
-#    non-blocking advisory lock (see migrate_locked for why not migrate's own).
+# 1. migrations: `openctem-migrate up` once, before anything serves, under a
+#    non-blocking advisory lock (see migrate_locked).
 # 2. starts api, web, the platform console (unless OPENCTEM_ADMIN_SITE=off)
 #    and (GATEWAY=on) the gateway: api/deploy/gateway's own
 #    entrypoint.sh + Caddyfile, upstreams pointed at 127.0.0.1; every output
@@ -161,12 +161,13 @@ migrate_conn() {
 }
 
 # Migrations under a lock that NOBODY WAITS ON INSIDE POSTGRES.
-# golang-migrate's own lock is a blocking pg_advisory_lock(): a second replica
-# sits in a running statement, and CREATE INDEX CONCURRENTLY (e.g. 000143) waits
+# A blocking pg_advisory_lock() (what the earlier migration tool took) leaves a
+# second replica in a running statement, and CREATE INDEX CONCURRENTLY waits
 # for every open snapshot, including that waiter -> "deadlock detected" and a
 # DIRTY schema. Reproduced in the rehearsal with two replicas on an empty DB.
 # So replicas poll pg_try_advisory_lock() from an idle psql session (an idle
-# session holds no snapshot); only the holder runs migrate.
+# session holds no snapshot); only the holder runs openctem-migrate (which
+# polls its own lock the same way).
 MIGRATE_LOCK_KEY=7402159 # arbitrary; must stay constant across versions
 migrate_locked() {
   local got=f i rc=0 fd
@@ -186,8 +187,8 @@ migrate_locked() {
   done
   if [ "$got" != t ]; then log "could not take the migration lock"; return 1; fi
   log "migration lock held; applying migrations"
-  # openctem-migrate: migrate, plus what to do with a database older than the
-  # migration baseline (api/scripts/migrate-entrypoint.sh).
+  # openctem-migrate (api/cmd/openctem-migrate): applies every migration the
+  # database has not applied.
   PGPASSWORD="$MIG_PASS" openctem-migrate -path /opt/openctem/api/migrations -database "$MIG_URL" up 2>&1 | prefix migrate || rc=$?
   fd="${PSQL[1]:-}"
   [ -n "$fd" ] && { echo "SELECT pg_advisory_unlock(${MIGRATE_LOCK_KEY});" >&"$fd"; } 2>/dev/null
@@ -197,7 +198,7 @@ migrate_locked() {
 
 if [ "${MIGRATE_ON_START:-true}" = "true" ]; then
   migrate_conn
-  migrate_locked || { log "migrations failed; not starting (a dirty schema needs 'migrate force' by an operator)"; exit 1; }
+  migrate_locked || { log "migrations failed; not starting (a dirty schema needs 'openctem-migrate force' by an operator)"; exit 1; }
 fi
 # Nothing after the migrations needs the schema owner: drop it here (the
 # children never get it either, child-env.sh).
