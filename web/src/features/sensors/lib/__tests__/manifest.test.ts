@@ -7,6 +7,7 @@ import { describeSensorActivity } from '../activity'
 import {
   concurrencyText,
   diffManifests,
+  ignoredLooksNewer,
   ignoredReasonLabel,
   isEmptyDiff,
   manifestDiffLines,
@@ -170,5 +171,16 @@ describe('manifest_changed in the activity timeline', () => {
     )
     expect(view.title).toBe('Manifest changed')
     expect(view.details).toEqual(['nuclei v3.11.1 → v3.12.0'])
+  })
+})
+
+describe('ignoredLooksNewer', () => {
+  it('is true only when every ignored item is unknown to the platform', () => {
+    expect(ignoredLooksNewer([])).toBe(false)
+    expect(ignoredLooksNewer([{ reason: 'unknown-tool' }, { reason: 'unknown-capability' }])).toBe(
+      true
+    )
+    expect(ignoredLooksNewer([{ reason: 'unknown-tool' }, { reason: 'invalid-name' }])).toBe(false)
+    expect(ignoredLooksNewer([{ reason: 'limit' }])).toBe(false)
   })
 })
