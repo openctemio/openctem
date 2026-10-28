@@ -47,6 +47,7 @@ vi.mock('@/features/mcp-oauth/api/connections', () => ({
   useMcpPolicy: (on: boolean) => ({ data: on ? { any_client: false } : undefined }),
   useOrgConnections: () => ({ data: undefined, isLoading: false }),
   revokeOrgConnection: vi.fn(),
+  scopeOrgConnection: vi.fn(),
 }))
 
 describe('AI assistants settings page', () => {
