@@ -485,6 +485,13 @@ func (s *EmailService) NotifySAMLCertificateExpiry(ctx context.Context, ownerEma
 	s.sendSecurityNotice(ctx, ownerEmail, ownerName, "", subject, message)
 }
 
+// NotifyEmailRelayStopped tells an organization owner that an e-mail channel
+// was stopped because its mail server no longer meets the service rules. It
+// goes through the platform relay, never the organization's.
+func (s *EmailService) NotifyEmailRelayStopped(ctx context.Context, ownerEmail, ownerName, subject, message string) {
+	s.sendSecurityNotice(ctx, ownerEmail, ownerName, "", subject, message)
+}
+
 // NotifySupportAccess tells an organization owner about support access:
 // a grant, a revocation, a support session opened or ended.
 func (s *EmailService) NotifySupportAccess(ctx context.Context, email, name, subject, message string) {
