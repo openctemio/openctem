@@ -1,0 +1,3 @@
+### Changed: a workflow pull request keeps its security ack over clean develop merges
+
+- The security gate kept `security-ack` on a pull request that changes `.github/workflows/**`, `.github/actions/**`, the path list or the gate script only for the exact commit it was given on, so merging develop in to resolve a conflict or pick up a fix dropped the ack every time. It now also covers a head that is the acknowledged commit plus clean merges of the base branch and nothing else: the acknowledged commit is an ancestor, the merge has no conflict, and the head's whole tree equals that merge's tree. Any other change, a hand-resolved conflict, a rebase or a force-push still needs a new ack.
