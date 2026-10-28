@@ -122,16 +122,22 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: bash .github/scripts/tree-verified.sh
 
-      # The shards of `Tests (Postgres + Redis)` for this tier. Full: 8 shards
-      # with -race. Fast: 6 shards without it (same tests, about half the
-      # runner time; the race detector runs in the queue and on push).
+      # The shards of `Tests (Postgres + Redis)` for this tier. Full: 8 shards.
+      # Fast: 6 shards. The race detector roughly doubles a shard's time and
+      # found one race in October, so it runs on every push to develop,
+      # not in the merge queue (where it was the longest
+      # pole of every group) and not on pull requests. A race found on develop
+      # is fixed forward like any red develop run.
       # `API static checks` proves every split covers every test exactly once.
       - id: tier
         working-directory: .
         env:
           FULL: ${{ steps.f.outputs.full }}
+          EVENT: ${{ github.event_name }}
         run: |
-          if [ "$FULL" = true ]; then n=8 race=true; else n=6 race=false; fi
+          if [ "$FULL" = true ]; then n=8; else n=6; fi
+          race=false
+          if [ "$FULL" = true ] && [ "$EVENT" = push ]; then race=true; fi
           m="$(jq -nc --argjson n "$n" --argjson race "$race" \
             '[range($n) | {shard: ., total: $n, race: $race}]')"
           echo "test_matrix=$m" | tee -a "$GITHUB_OUTPUT"
