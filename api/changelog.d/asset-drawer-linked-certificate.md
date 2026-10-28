@@ -1,3 +1,0 @@
-### Fixed: the asset drawer reads the certificate a service serves
-
-- A service whose TLS certificate was collected showed "Not collected yet: TLS certificate" in the asset drawer, because the drawer read the certificate keys only from the service itself while the probe records the certificate as its own asset, linked by the service's "serves certificate" relationship. The drawer now reads the linked certificate (issuer, expiry, names) through the same relationship and asset reads it already makes, so a certificate outside the caller's data scope or a disabled relationships module simply stays "not collected". The service's own keys still win, and the list cells are unchanged.

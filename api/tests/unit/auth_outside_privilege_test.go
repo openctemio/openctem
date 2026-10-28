@@ -2,11 +2,11 @@ package unit
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/auth"
+	"github.com/openctemio/openctem/api/pkg/domain/mfa"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
@@ -38,11 +38,15 @@ func TestOutsidePrivilegedMemberNeedsSecondFactor(t *testing.T) {
 	}
 
 	t.Run("outside admin without 2FA is refused", func(t *testing.T) {
-		h, tn, email, _ := setup(t, tenant.RoleAdmin, true)
+		h, _, email, _ := setup(t, tenant.RoleAdmin, true)
+		// The sign-in already offers enrollment (it names the organization),
+		// so the person is not sent around in circles; no tokens are issued.
 		res := h.login(t, email)
-		_, err := h.svc.ExchangeToken(context.Background(), auth.ExchangeTokenInput{RefreshToken: res.RefreshToken, TenantID: tn.ID().String()})
-		if !errors.Is(err, auth.ErrMFAEnrollmentRequired) {
-			t.Fatalf("want ErrMFAEnrollmentRequired, got %v", err)
+		if res.MFAChallenge == nil || res.MFAChallenge.Purpose != mfa.PurposeEnroll || res.RefreshToken != "" {
+			t.Fatalf("want an enrollment challenge and no tokens, got %+v", res)
+		}
+		if len(res.MFAChallenge.Organizations) != 1 {
+			t.Fatalf("the challenge must name the organization, got %v", res.MFAChallenge.Organizations)
 		}
 	})
 

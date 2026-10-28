@@ -9,6 +9,8 @@
   "notificationChannels.col.provider": "Nhà cung cấp",
   "notificationChannels.col.severityFilters": "Bộ lọc mức độ",
   "notificationChannels.col.status": "Trạng thái",
+  "notificationChannels.emailOrgMail": "Gửi cả thư nghiệp vụ của tổ chức tôi qua máy chủ này",
+  "notificationChannels.emailOrgMailHelp": "Thông báo lời mời và báo cáo định kỳ dùng máy chủ thư này thay cho máy chủ của nền tảng, khi nền tảng cho phép. Chỉ chủ sở hữu hoặc quản trị viên mới bật được tùy chọn này. Liên kết đặt mật khẩu, thư đặt lại mật khẩu và các thư bảo mật tài khoản khác luôn dùng máy chủ của nền tảng.",
   "notificationChannels.events.all": "Mọi sự kiện",
   "notificationChannels.events.allEnabled": "Đã bật mọi loại sự kiện",
   "notificationChannels.events.count": "{count} loại sự kiện",

@@ -575,6 +575,9 @@ type OAuthUserInfo struct {
 	// the email is a mutable attribute (federated_identity.go).
 	Issuer  string
 	Subject string
+	// HD is the Google Workspace (hosted) domain claim of the id_token; empty
+	// for a consumer Google account.
+	HD string
 	// LegacySubject is the subject the identity was bound under before
 	// (Microsoft: sub); a binding found under it is re-keyed to Subject.
 	LegacySubject string
@@ -654,6 +657,7 @@ func googleUserInfoFromClaims(claims *oidc.Claims) (*OAuthUserInfo, error) {
 		Name:    claims.Name,
 		Issuer:  googleIssuer,
 		Subject: claims.Subject,
+		HD:      claims.HD,
 	}, nil
 }
 
@@ -778,21 +782,15 @@ func (s *OAuthService) getGitHubPrimaryEmail(ctx context.Context, accessToken st
 		return "", err
 	}
 
-	// Find primary verified email
+	// Only the primary address, and only when GitHub verified it. Another
+	// verified address is not the one the account is known by.
 	for _, e := range emails {
 		if e.Primary && e.Verified {
 			return e.Email, nil
 		}
 	}
 
-	// Fallback to first verified email
-	for _, e := range emails {
-		if e.Verified {
-			return e.Email, nil
-		}
-	}
-
-	return "", errors.New("no verified email found")
+	return "", errors.New("no primary verified email found")
 }
 
 // getMicrosoftUserInfo derives identity from the VERIFIED id_token, NOT the
@@ -904,6 +902,11 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUser
 			// belongs to has DNS-verified the email domain: otherwise an
 			// organization that provisioned someone else's address without
 			// that proof would capture the real owner's sign-in.
+			if claimableLocal && !emailAuthoritative(provider, userInfo) {
+				s.logger.Warn("OAuth login blocked: the provider is not authoritative for this email, so it cannot claim an account",
+					"oauth_provider", expectedProvider)
+				return nil, ErrEmailNotAuthoritative
+			}
 			if claimableLocal && !s.claimVouched(ctx, existingUser, userInfo.Email) {
 				return nil, errors.New("this email is registered with a different login method")
 			}
@@ -915,6 +918,16 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUser
 				)
 				return nil, errors.New("this email is registered with a different login method")
 			}
+		}
+
+		// An account of this provider with no bound identity (it predates
+		// bindings) is bound by its email only when the provider is
+		// authoritative for it. Otherwise the person signs in another way and
+		// links the provider afterwards.
+		if key.Valid() && !mayBindLegacyAccount(provider, userInfo) {
+			s.logger.Warn("OAuth login blocked: the provider is not authoritative for this email and the account is not bound to it",
+				"oauth_provider", expectedProvider)
+			return nil, ErrEmailNotAuthoritative
 		}
 
 		// The identity was not found above. An account bound to another
@@ -952,11 +965,19 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUser
 		s.logger.Warn("domain sign-up policy unreadable; OAuth sign-up refused", "provider", provider, "error", err)
 		return nil, ErrSignupNotAvailable
 	}
-	switch signupdom.Admit(policyOrConfig(ctx, s.signupPolicy, s.authConfig), facts.Apply(signupdom.Identity{
+	authoritative := emailAuthoritative(provider, userInfo)
+	identity := facts.Apply(signupdom.Identity{
 		Intent:          signupdom.IntentAccount,
-		InvitedPending:  s.invitedPending(ctx, userInfo.Email),
+		InvitedPending:  authoritative && s.invitedPending(ctx, userInfo.Email),
 		DisposableEmail: disposableEmail(userInfo.Email),
-	})) {
+	})
+	if !authoritative {
+		// The provider does not vouch for the mailbox: no domain join and no
+		// invitation claim. A fresh account without those privileges is
+		// possible only where sign-up is open.
+		identity.DomainJoinable = false
+	}
+	switch signupdom.Admit(policyOrConfig(ctx, s.signupPolicy, s.authConfig), identity) {
 	case signupdom.OutcomeSSORequired:
 		s.logger.Info("OAuth sign-up refused: the domain requires its organization's SSO", "provider", provider)
 		return nil, ErrSignupSSORequired
@@ -968,6 +989,9 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUser
 	newUser, err := userdom.NewOAuthUser(userInfo.Email, userInfo.Name, userInfo.AvatarURL, provider.ToAuthProvider())
 	if err != nil {
 		return nil, err
+	}
+	if !authoritative {
+		newUser.MarkEmailUnverified()
 	}
 	if err := s.userRepo.Create(ctx, newUser); err != nil {
 		return nil, fmt.Errorf("failed to create user: %w", err)
