@@ -2,6 +2,7 @@ package assetgroup
 
 import (
 	"context"
+	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 
@@ -216,6 +217,10 @@ type GroupAsset struct {
 	RiskScore    int
 	FindingCount int
 	LastSeen     string
+	// Source says how the asset came in (rule, manual or paste); AddedAt
+	// when.
+	Source  string
+	AddedAt time.Time
 }
 
 // ScanMemberQuery selects one keyset page of a group's scan members.
