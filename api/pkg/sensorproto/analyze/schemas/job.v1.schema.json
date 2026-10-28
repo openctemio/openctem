@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openctem.io/schemas/analyze/job/v1.json",
+  "title": "openctem.analyze/v1",
+  "description": "An analyze job: what the platform asks an AI executor to do. The platform builds it from the subject; nothing the model says can change it. For a worker it travels inside the signed job statement.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "job_id", "tenant_id", "kind", "use_case", "subject", "bundle", "output_schema", "prompt_template", "deadline"],
+  "properties": {
+    "contract": {"const": "openctem.analyze/v1"},
+    "job_id": {"$ref": "#/$defs/uuid"},
+    "tenant_id": {"$ref": "#/$defs/uuid"},
+    "kind": {"type": "string", "pattern": "^[a-z_]{1,32}\\.v[0-9]{1,3}$"},
+    "use_case": {"enum": ["triage", "remediation", "summary"]},
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": {"enum": ["finding"]},
+        "id": {"$ref": "#/$defs/uuid"},
+        "asset_id": {"$ref": "#/$defs/uuid"}
+      }
+    },
+    "bundle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["digest", "data_class", "fields"],
+      "properties": {
+        "digest": {"$ref": "#/$defs/digest"},
+        "data_class": {"enum": ["public", "internal", "restricted", "tenant_only"]},
+        "sealed_ref": {"type": "string", "maxLength": 256, "pattern": "^/api/"},
+        "fields": {"type": "array", "maxItems": 128, "uniqueItems": true, "items": {"$ref": "#/$defs/field"}},
+        "fields_withheld": {"type": "array", "maxItems": 128, "uniqueItems": true, "items": {"$ref": "#/$defs/field"}},
+        "masked": {"type": "boolean", "description": "Sensitive values in the bundle are placeholders; the mapping stays on the platform."}
+      }
+    },
+    "output_schema": {"enum": ["openctem.ai.triage/v1", "openctem.ai.remediation/v1", "openctem.ai.summary/v1"]},
+    "prompt_template": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "digest"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z_]{1,32}\\.v[0-9]{1,3}$"},
+        "digest": {"$ref": "#/$defs/digest"},
+        "ref": {"type": "string", "maxLength": 256}
+      }
+    },
+    "model_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "providers": {"type": "array", "maxItems": 8, "items": {"enum": ["claude", "openai", "gemini", "openai_compatible"]}},
+        "models": {"type": "array", "maxItems": 16, "items": {"type": "string", "maxLength": 128}},
+        "region": {"type": "string", "maxLength": 32}
+      }
+    },
+    "grant": {
+      "type": "object",
+      "description": "The investigation grant of a multi-step worker job: tools, the subject's targets as placeholder bindings, tier ceiling and budgets. Absent for single-shot kinds.",
+      "additionalProperties": false,
+      "required": ["tools", "targets", "tier_ceiling", "budgets"],
+      "properties": {
+        "tools": {"type": "array", "maxItems": 16, "items": {"type": "string", "pattern": "^[a-z0-9_.@-]{1,64}$"}},
+        "targets": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["token", "value"],
+            "properties": {
+              "token": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]{1,40}$"},
+              "value": {"type": "string", "maxLength": 512}
+            }
+          }
+        },
+        "tier_ceiling": {"enum": ["passive", "safe"]},
+        "budgets": {"$ref": "#/$defs/budgets"}
+      }
+    },
+    "budgets": {"$ref": "#/$defs/budgets"},
+    "deadline": {"type": "string", "format": "date-time"}
+  },
+  "$defs": {
+    "uuid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "field": {"type": "string", "pattern": "^[a-z0-9_]{1,48}(\\.[a-z0-9_]{1,48}){0,3}$"},
+    "budgets": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "steps": {"type": "integer", "minimum": 1, "maximum": 64},
+        "tool_calls": {"type": "integer", "minimum": 0, "maximum": 64},
+        "tokens": {"type": "integer", "minimum": 1, "maximum": 2000000},
+        "seconds": {"type": "integer", "minimum": 1, "maximum": 3600},
+        "cost_micro_usd": {"type": "integer", "minimum": 0, "maximum": 100000000}
+      }
+    }
+  }
+}

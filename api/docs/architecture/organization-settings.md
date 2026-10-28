@@ -27,6 +27,28 @@ decode), `internal/app/tenant/settings_write.go` (the write path),
   plaintext `webhook_secret`) was never read by anything. `PATCH
   /settings/api` is removed and migration 001052 deletes the stored key.
 
+## Entry requirements on every organization route
+
+An organization's access requirements (SSO enforcement, required two-factor,
+personal-account policy, outside-member privilege rule) gate **entry to that
+organization**. Token issuance evaluates them for the organization the token is
+minted for. The `/api/v1/tenants/{tenant}/...` routes take the organization
+from the URL and accept a token minted for another organization the caller
+belongs to, so they carry one more check: `EntryGate`
+(`middleware/entry_gate.go`, `AuthService.CheckEntry`). On every request it
+
+- refuses a token bound to no organization (`403 ACCOUNT_TOKEN_NOT_ALLOWED`):
+  the tenantless token that social and SSO sign-in return proves a sign-in, not
+  entry to any organization; exchange it for an organization token first;
+- re-applies the URL organization's requirements to the token's own session
+  (`MFA_ENROLLMENT_REQUIRED`, `PERSONAL_ACCOUNTS_BLOCKED`, SSO required, with
+  the second factor an SSO exception needs), exactly as at token issuance.
+
+A pass is cached for 15 seconds per (session, organization), so a tightened
+requirement applies within that window; a refusal or a failure to decide is
+never cached and fails closed. A requirement of organization A never affects
+the person's access to organization B (research/310).
+
 ## Organization slug
 
 The slug keys the SAML/SSO sign-in and ACS URLs. Renaming it is owner-only

@@ -411,6 +411,37 @@ func (s *EmailService) SendAccountSetupEmail(ctx context.Context, tenantID, reci
 	return nil
 }
 
+// adminInvitationScope names what a platform administrator's invitation is for
+// ("Your OpenCTEM account for platform administration is ready").
+const adminInvitationScope = "platform administration"
+
+// CanDeliverSystem reports whether the system SMTP sender can send mail.
+func (s *EmailService) CanDeliverSystem() bool { return s.IsConfigured() }
+
+// SendAdminInvitationEmail sends a new platform administrator the one-time
+// link where they choose their password. It uses the system sender only and
+// returns an error when none is configured or the send fails, so the caller
+// never reports an invitation that was not sent.
+func (s *EmailService) SendAdminInvitationEmail(ctx context.Context, recipientEmail, recipientName, token string, expiresIn time.Duration) error {
+	if !s.IsConfigured() {
+		return fmt.Errorf("email: no SMTP sender configured")
+	}
+	data := emaildom.AccountSetupData{
+		UserName:  recipientName,
+		TeamName:  adminInvitationScope,
+		SetupURL:  s.AccountSetupURL(token),
+		ExpiresIn: formatDuration(expiresIn),
+		AppName:   s.appName,
+		Branding:  s.branding,
+	}
+	if err := s.sender.SendTemplate(ctx, recipientEmail, emaildom.TemplateAccountSetup, data); err != nil {
+		s.logger.Error("failed to send administrator invitation email")
+		return fmt.Errorf("failed to send administrator invitation email: %w", err)
+	}
+	s.logger.Info("administrator invitation email sent")
+	return nil
+}
+
 // SendTeamInvitationEmail sends a team invitation email.
 // Uses per-tenant SMTP if configured, otherwise falls back to system SMTP.
 func (s *EmailService) SendTeamInvitationEmail(ctx context.Context, recipientEmail, inviterName, teamName, token string, expiresIn time.Duration, tenantID ...string) error {

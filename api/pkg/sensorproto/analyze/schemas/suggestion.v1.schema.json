@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openctem.io/schemas/analyze/suggestion/v1.json",
+  "title": "openctem.analyze suggestion v1",
+  "description": "One typed AI suggestion. Free text is display-only plain text. A suggestion never states its own direction, state or target: the platform computes them.",
+  "$defs": {
+    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "reason": {"type": "string", "maxLength": 2000},
+    "evidence": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ref"],
+        "properties": {
+          "ref": {"type": "string", "pattern": "^(bundle:[a-z0-9_]{1,48}(\\.[a-z0-9_]{1,48}){0,3}|tool:[0-9]{1,4})$"},
+          "quote": {"type": "string", "maxLength": 500}
+        }
+      }
+    },
+    "verdict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "payload", "confidence", "evidence"],
+      "properties": {
+        "kind": {"const": "verdict"},
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["verdict", "reason"],
+          "properties": {
+            "verdict": {"enum": ["true_positive", "likely_false_positive", "needs_info"]},
+            "reason": {"$ref": "#/$defs/reason"}
+          }
+        },
+        "confidence": {"$ref": "#/$defs/confidence"},
+        "evidence": {"$ref": "#/$defs/evidence"}
+      }
+    },
+    "severity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "payload", "confidence", "evidence"],
+      "properties": {
+        "kind": {"const": "severity"},
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["severity", "reason"],
+          "properties": {
+            "severity": {"enum": ["critical", "high", "medium", "low", "info"]},
+            "reason": {"$ref": "#/$defs/reason"}
+          }
+        },
+        "confidence": {"$ref": "#/$defs/confidence"},
+        "evidence": {"$ref": "#/$defs/evidence"}
+      }
+    },
+    "remediation_steps": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "payload", "confidence", "evidence"],
+      "properties": {
+        "kind": {"const": "remediation_steps"},
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["steps"],
+          "properties": {
+            "steps": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 20,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["step", "description"],
+                "properties": {
+                  "step": {"type": "integer", "minimum": 1, "maximum": 20},
+                  "description": {"type": "string", "minLength": 1, "maxLength": 2000},
+                  "effort": {"enum": ["", "low", "medium", "high"]}
+                }
+              }
+            }
+          }
+        },
+        "confidence": {"$ref": "#/$defs/confidence"},
+        "evidence": {"$ref": "#/$defs/evidence"}
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "payload", "confidence", "evidence"],
+      "properties": {
+        "kind": {"const": "summary"},
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["text"],
+          "properties": {"text": {"type": "string", "minLength": 1, "maxLength": 4000}}
+        },
+        "confidence": {"$ref": "#/$defs/confidence"},
+        "evidence": {"$ref": "#/$defs/evidence"}
+      }
+    }
+  },
+  "oneOf": [
+    {"$ref": "#/$defs/verdict"},
+    {"$ref": "#/$defs/severity"},
+    {"$ref": "#/$defs/remediation_steps"},
+    {"$ref": "#/$defs/summary"}
+  ]
+}
