@@ -492,6 +492,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.TenantAI != nil {
 		aiSettings = handler.NewAISettingsHandler(svc.TenantAI, v, log)
 	}
+	var aiMasking *handler.AIMaskingHandler
+	if svc.AIMasking != nil {
+		aiMasking = handler.NewAIMaskingHandler(svc.AIMasking, v, log)
+	}
 	if svc.Tenant != nil {
 		mcpPolicies = mcpPolicyReader{tenants: svc.Tenant}
 		mcpSettings = handler.NewMCPSettingsHandler(svc.Tenant, cfg.MCP.TrustedClientHosts, log)
@@ -539,6 +543,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		MCPOAuth:       mcpOAuthHandler,
 		MCPSettings:    mcpSettings,
 		AISettings:     aiSettings,
+		AIMasking:      aiMasking,
 		MCPConnections: mcpConnections,
 		MCPClients:     mcpClients,
 		APIKeyAuth:     apiKeyAuth,

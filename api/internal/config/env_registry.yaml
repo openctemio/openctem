@@ -1784,6 +1784,12 @@ vars:
     type: duration
     default: "60s"
     description: "Delay before an automatic triage job runs."
+  - name: AI_MASK_MAP_TTL
+    component: api
+    group: "AI triage"
+    type: duration
+    default: "168h"
+    description: "How long the platform keeps a run's AI masking map (placeholder to real value, encrypted) so it can turn the model's output back into real values; expired maps are purged."
   - name: AI_MAX_TOKENS
     component: api
     group: "AI triage"
