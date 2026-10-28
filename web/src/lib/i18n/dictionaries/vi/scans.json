@@ -1454,6 +1454,8 @@
   "scans.placement.sensorYields": "có thể nhận, nhường cho cảm biến đang rảnh hơn trong vài giây",
   "scans.placement.sensor_hosts_busy.fix": "Tác vụ chạy khi máy chủ đó rảnh trên cảm biến này, hoặc trên một cảm biến khác.",
   "scans.placement.sensor_hosts_busy.text": "Cảm biến đã nhận tác vụ vẫn đang quét một máy chủ của nó nên đã trả lại tác vụ.",
+  "scans.placement.sensor_overloaded.fix": "Sensor tự tiếp tục khi máy chủ hồi phục. Hãy chạy sensor trên máy chủ không có chương trình nặng khác.",
+  "scans.placement.sensor_overloaded.text": "Máy chủ của sensor đang quá tải (CPU, bộ nhớ hoặc đĩa bị nghẽn), nên sensor không nhận việc mới cho đến khi hồi phục. Nguyên nhân thường gặp là các chương trình nặng khác trên cùng máy.",
   "scans.placement.sharedNotAllowed": "Tổ chức này không được dùng cảm biến dùng chung, nên việc này chờ một cảm biến của chính tổ chức.",
   "scans.placement.sharedNotUsed": "Cảm biến dùng chung có thể nhận việc này, nhưng lần quét này chỉ chạy trên cảm biến của tổ chức.",
   "scans.placement.someCan": "Số cảm biến có thể nhận: {count} ({busy} đang bận). Tác vụ sẽ sớm bắt đầu.",

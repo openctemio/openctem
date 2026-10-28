@@ -90,3 +90,78 @@ func TestReportedResources_Percents(t *testing.T) {
 		t.Fatal("nil resources reported ok")
 	}
 }
+
+func pressureSensor(level string, held int, at *time.Time) *Sensor {
+	return &Sensor{MaxConcurrentJobs: 5, CurrentJobs: held, Load: LoadReport{
+		Resources:  &ReportedResources{Pressure: &ReportedPressure{Level: level}},
+		ReportedAt: at,
+	}}
+}
+
+func TestSensor_FreeSlots_HostPressure(t *testing.T) {
+	now := time.Now()
+	fresh := now.Add(-time.Minute)
+	stale := now.Add(-10 * time.Minute)
+	for name, tc := range map[string]struct {
+		level    string
+		held     int
+		at       *time.Time
+		want     int
+		narrowed bool
+	}{
+		"ok":                    {PressureOK, 0, &fresh, 5, false},
+		"unknown level is ok":   {"", 2, &fresh, 3, false},
+		"elevated idle":         {PressureElevated, 0, &fresh, 1, true},
+		"elevated holding":      {PressureElevated, 2, &fresh, 1, true},
+		"elevated, one free":    {PressureElevated, 4, &fresh, 1, false},
+		"overloaded idle":       {PressureOverloaded, 0, &fresh, 1, true},
+		"overloaded holding":    {PressureOverloaded, 1, &fresh, 0, true},
+		"overloaded, stale":     {PressureOverloaded, 1, &stale, 4, false},
+		"overloaded, no report": {PressureOverloaded, 0, nil, 5, false},
+	} {
+		a := pressureSensor(tc.level, tc.held, tc.at)
+		if got := a.FreeSlots(now); got != tc.want {
+			t.Errorf("%s: FreeSlots = %d, want %d", name, got, tc.want)
+		}
+		if got := a.PressureNarrowed(now); got != tc.narrowed {
+			t.Errorf("%s: PressureNarrowed = %v, want %v", name, got, tc.narrowed)
+		}
+	}
+	if got := pressureSensor(PressureElevated, 0, &stale).PressureLevel(now); got != "" {
+		t.Errorf("stale level = %q, want empty", got)
+	}
+}
+
+func TestLoadReport_ClampPressure(t *testing.T) {
+	in := LoadReport{
+		Resources: &ReportedResources{Pressure: &ReportedPressure{
+			Level:        "<script>",
+			Reasons:      []string{"cpu", "cpu", "<b>x</b>", "io", "memory", "load", "mem_available", "fds", "cpu"},
+			LevelSeconds: 1 << 50, CPUSomeAvg10: 250, MemSomeAvg10: math.NaN(), IOSomeAvg10: math.Inf(1),
+			LoadPerCPU: 1e12, FDUsedPct: -4, ForeignCPU: 81, CPUThrottled: 900, Noisy: true,
+		}},
+		Capacity: &ReportedCapacity{LaunchesHeld: 1 << 40, ToolsRunning: -1,
+			Transient: &ReportedTransient{Retried: 1 << 40, Recovered: 2, OOMKills: -5}},
+	}
+	got := in.Clamp()
+	p := got.Resources.Pressure
+	if p.Level != "" || p.LevelSeconds != MaxReportedLevelSecs || p.CPUSomeAvg10 != 100 || p.MemSomeAvg10 != 0 ||
+		p.IOSomeAvg10 != 0 || p.LoadPerCPU != MaxReportedLoad || p.FDUsedPct != 0 || p.ForeignCPU != 81 || p.CPUThrottled != 100 || !p.Noisy {
+		t.Errorf("pressure = %+v", p)
+	}
+	if len(p.Reasons) != 6 || p.Reasons[0] != "cpu" || p.Reasons[1] != "io" {
+		t.Errorf("reasons = %v, want known, deduped, at most 6", p.Reasons)
+	}
+	c := got.Capacity
+	if c.LaunchesHeld != MaxReportedCounter || c.ToolsRunning != 0 || c.Transient.Retried != MaxReportedCounter ||
+		c.Transient.Recovered != 2 || c.Transient.OOMKills != 0 {
+		t.Errorf("capacity = %+v transient %+v", c, c.Transient)
+	}
+	// Absent stays absent; the input was not modified.
+	if out := (LoadReport{Resources: &ReportedResources{}}).Clamp(); out.Resources.Pressure != nil {
+		t.Errorf("absent pressure appeared: %+v", out.Resources.Pressure)
+	}
+	if in.Resources.Pressure.Level != "<script>" {
+		t.Error("Clamp modified its input")
+	}
+}

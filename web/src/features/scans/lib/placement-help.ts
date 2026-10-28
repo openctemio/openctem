@@ -92,6 +92,7 @@ export const PLACEMENT_FIX: Record<string, FixTarget | null> = {
   stopped_claiming: 'sensors',
   egress_unsupported: 'sensors',
   egress_validate_unsupported: 'sensors',
+  sensor_overloaded: 'sensors',
   no_free_slot: null,
 }
 

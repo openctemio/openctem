@@ -14,6 +14,7 @@ package sensor
 import (
 	"math"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 )
@@ -33,7 +34,23 @@ const (
 	MaxReportedQueueItems    = 100000
 	MaxReportedQueueAgeSecs  = 30 * 24 * 3600
 	MaxReportedActiveCommand = 1000
+	MaxReportedLevelSecs     = 30 * 24 * 3600
+	MaxReportedCounter       = 1 << 30
+	MaxReportedReasons       = 6
 )
+
+// Host pressure levels a sensor reports (research/318). An empty level is
+// unknown and counts as ok.
+const (
+	PressureOK         = "ok"
+	PressureElevated   = "elevated"
+	PressureOverloaded = "overloaded"
+)
+
+// pressureReasons is the closed set of reason tokens; others are dropped.
+var pressureReasons = map[string]bool{
+	"cpu": true, "memory": true, "io": true, "load": true, "mem_available": true, "fds": true,
+}
 
 // ReportedResources is the machine the sensor runs on, as the SDK measured
 // it (container limits, not the host, when it runs in one).
@@ -44,6 +61,66 @@ type ReportedResources struct {
 	MemAvailableBytes int64   `json:"mem_available_bytes"`
 	Load1             float64 `json:"load1"`
 	DiskFreeBytes     int64   `json:"disk_free_bytes"`
+	// Pressure is the stall and contention the host shows; nil from a
+	// sensor that does not measure it.
+	Pressure *ReportedPressure `json:"pressure,omitempty"`
+}
+
+// ReportedPressure is how loaded the sensor's host is: kernel stall
+// averages (percent of time some or all tasks waited), load per CPU and
+// descriptor use, and how much CPU other programs on the host take.
+type ReportedPressure struct {
+	Level        string   `json:"level"`
+	Reasons      []string `json:"reasons,omitempty"`
+	LevelSeconds int64    `json:"level_seconds"`
+	PSI          bool     `json:"psi"`
+	CPUSomeAvg10 float64  `json:"cpu_some_avg10"`
+	MemSomeAvg10 float64  `json:"mem_some_avg10"`
+	MemFullAvg10 float64  `json:"mem_full_avg10"`
+	IOSomeAvg10  float64  `json:"io_some_avg10"`
+	IOFullAvg10  float64  `json:"io_full_avg10"`
+	LoadPerCPU   float64  `json:"load_per_cpu"`
+	FDUsedPct    float64  `json:"fd_used_pct"`
+	HostCPUBusy  float64  `json:"host_cpu_busy_pct"`
+	ForeignCPU   float64  `json:"foreign_cpu_pct"`
+	CPUThrottled float64  `json:"cpu_throttled_pct"`
+	Noisy        bool     `json:"noisy_neighbor"`
+}
+
+// ReportedTransient counts the transient start problems the sensor met and
+// absorbed since it started.
+type ReportedTransient struct {
+	HandshakeTimeouts int `json:"handshake_timeouts"`
+	SlowStarts        int `json:"slow_starts"`
+	OOMKills          int `json:"oom_kills"`
+	StartEAGAIN       int `json:"start_eagain"`
+	Retried           int `json:"retried"`
+	Recovered         int `json:"recovered"`
+}
+
+func (p ReportedPressure) clamp() *ReportedPressure {
+	switch p.Level {
+	case PressureOK, PressureElevated, PressureOverloaded:
+	default:
+		p.Level = ""
+	}
+	p.LevelSeconds = clampInt64(p.LevelSeconds, MaxReportedLevelSecs)
+	for _, f := range []*float64{&p.CPUSomeAvg10, &p.MemSomeAvg10, &p.MemFullAvg10, &p.IOSomeAvg10,
+		&p.IOFullAvg10, &p.FDUsedPct, &p.CPUThrottled, &p.HostCPUBusy, &p.ForeignCPU} {
+		*f = clampFloat(*f, 100)
+	}
+	p.LoadPerCPU = clampFloat(p.LoadPerCPU, MaxReportedLoad)
+	var reasons []string
+	for _, r := range p.Reasons {
+		if len(reasons) >= MaxReportedReasons {
+			break
+		}
+		if pressureReasons[r] && !slices.Contains(reasons, r) {
+			reasons = append(reasons, r)
+		}
+	}
+	p.Reasons = reasons
+	return &p
 }
 
 // ToolCost is what one tool has cost the sensor per target, learned by the
@@ -60,6 +137,12 @@ type ReportedCapacity struct {
 	SlotsFree  int                 `json:"slots_free"`
 	ActiveJobs int                 `json:"active_jobs"`
 	PerTool    map[string]ToolCost `json:"per_tool,omitempty"`
+	// LaunchesHeld is the tool starts the sensor holds back for now and
+	// ToolsRunning the tool processes it runs; Transient counts the start
+	// problems it absorbed.
+	LaunchesHeld int                `json:"launches_held,omitempty"`
+	ToolsRunning int                `json:"tools_running,omitempty"`
+	Transient    *ReportedTransient `json:"transient,omitempty"`
 }
 
 // ReportedQueue is the sensor's local work queue (the SDK's; the platform
@@ -111,6 +194,9 @@ func (l LoadReport) Clamp() LoadReport {
 		}
 		r.Load1 = clampFloat(r.Load1, MaxReportedLoad)
 		r.DiskFreeBytes = clampInt64(r.DiskFreeBytes, MaxReportedBytes)
+		if r.Pressure != nil {
+			r.Pressure = r.Pressure.clamp()
+		}
 		out.Resources = &r
 	}
 	if l.Capacity != nil {
@@ -118,6 +204,18 @@ func (l LoadReport) Clamp() LoadReport {
 			SlotsTotal: clampInt(l.Capacity.SlotsTotal, MaxReportedJobs),
 			SlotsFree:  clampInt(l.Capacity.SlotsFree, MaxReportedJobs),
 			ActiveJobs: clampInt(l.Capacity.ActiveJobs, MaxReportedActiveCommand),
+		}
+		c.LaunchesHeld = clampInt(l.Capacity.LaunchesHeld, MaxReportedCounter)
+		c.ToolsRunning = clampInt(l.Capacity.ToolsRunning, MaxReportedCounter)
+		if t := l.Capacity.Transient; t != nil {
+			c.Transient = &ReportedTransient{
+				HandshakeTimeouts: clampInt(t.HandshakeTimeouts, MaxReportedCounter),
+				SlowStarts:        clampInt(t.SlowStarts, MaxReportedCounter),
+				OOMKills:          clampInt(t.OOMKills, MaxReportedCounter),
+				StartEAGAIN:       clampInt(t.StartEAGAIN, MaxReportedCounter),
+				Retried:           clampInt(t.Retried, MaxReportedCounter),
+				Recovered:         clampInt(t.Recovered, MaxReportedCounter),
+			}
 		}
 		if c.SlotsTotal > 0 && c.SlotsFree > c.SlotsTotal {
 			c.SlotsFree = c.SlotsTotal
@@ -167,6 +265,30 @@ func (l LoadReport) IsFresh(now time.Time) bool {
 // fresh load report gives. Never negative. A sensor without a capacity limit
 // is treated as having one free slot.
 func (a *Sensor) FreeSlots(now time.Time) int {
+	return a.freeSlots(now, true)
+}
+
+// PressureLevel is the host pressure level of a FRESH load report
+// (PressureOK, PressureElevated, PressureOverloaded), "" when there is no
+// fresh report or it gives none.
+func (a *Sensor) PressureLevel(now time.Time) string {
+	if !a.Load.IsFresh(now) || a.Load.Resources == nil || a.Load.Resources.Pressure == nil {
+		return ""
+	}
+	return a.Load.Resources.Pressure.Level
+}
+
+// PressureNarrowed reports whether host pressure alone lowers the free
+// slots now (the placement reason sensor_overloaded).
+func (a *Sensor) PressureNarrowed(now time.Time) bool {
+	return a.freeSlots(now, true) < a.freeSlots(now, false)
+}
+
+// freeSlots is FreeSlots with host pressure applied or not. Pressure rule
+// (mirrored by the free-slots SQL): overloaded gives no slot to a sensor
+// that holds a command and at most one to an idle one; elevated gives at
+// most one.
+func (a *Sensor) freeSlots(now time.Time, pressure bool) int {
 	limit := a.EffectiveMaxConcurrentJobs()
 	if limit <= 0 {
 		return 1
@@ -174,6 +296,18 @@ func (a *Sensor) FreeSlots(now time.Time) int {
 	free := limit - a.CurrentJobs
 	if a.Load.IsFresh(now) && a.Load.Capacity != nil && a.Load.Capacity.SlotsTotal > 0 {
 		free = min(free, a.Load.Capacity.SlotsFree)
+	}
+	if pressure {
+		switch a.PressureLevel(now) {
+		case PressureOverloaded:
+			if a.CurrentJobs >= 1 {
+				free = 0
+			} else {
+				free = min(free, 1)
+			}
+		case PressureElevated:
+			free = min(free, 1)
+		}
 	}
 	return max(free, 0)
 }
