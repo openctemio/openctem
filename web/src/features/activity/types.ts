@@ -18,7 +18,7 @@ export interface ActivityActor {
   name: string
   kind: ActivityActorKind
   /**
-   * An AI analyst's identity, from the activity's provenance: its name and the
+   * An AI agent's identity, from the activity's provenance: its name and the
    * people and teams accountable for it. Rendered through the shared AIBadge.
    */
   ai?: { name: string; accountable: string[] }
