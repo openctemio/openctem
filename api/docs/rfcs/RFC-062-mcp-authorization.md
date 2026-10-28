@@ -109,6 +109,19 @@ API; the consent page stays in the web app.
 A client of any kind is a public client: no client secrets are issued or
 accepted. The platform operator can block any client.
 
+**When a metadata-document client is stored.** `GET /oauth/authorize` is
+unauthenticated, so it never writes the client registry: the fetched document
+(name, redirect URIs, fetch times) is kept on the authorization request
+(`mcp_oauth_requests.pending_client`) and the redirect URI is checked against
+it. The client row in `mcp_oauth_clients` is created, or refreshed, only when
+a signed-in person approves the consent, in the same step that issues the code.
+A denied, abandoned or expired request leaves no client behind; expired
+requests are purged by the platform janitor a day after they end. The token
+endpoint and refresh read the stored client of the grant. A client blocked
+between authorize and approval is refused at approval. The name in a metadata
+document or a dynamic registration is whatever the application declared, so
+the console shows the host first and the name as "declares itself as".
+
 ## 6. Authorization flow
 
 1. The client calls `GET /oauth/authorize` with `response_type=code`,

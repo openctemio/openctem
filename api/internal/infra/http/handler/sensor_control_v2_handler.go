@@ -284,6 +284,9 @@ func (h *SensorControlV2Handler) Heartbeat(w http.ResponseWriter, r *http.Reques
 			resp.Actions = append(resp.Actions, string(a))
 		}
 	}
+	if h.content != nil && !id.Paused {
+		resp.ContentVersion = h.content.Version(r.Context(), s)
+	}
 	if ids := h.ingest.commandsToCancel(r.Context(), s, &req); len(ids) > 0 {
 		resp.CancelCommandIDs = ids
 		resp.Actions = append(resp.Actions, protov2.ActionCancel)
