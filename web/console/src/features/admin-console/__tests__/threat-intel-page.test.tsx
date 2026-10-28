@@ -22,8 +22,14 @@ vi.mock('../api/use-system', async (orig) => ({
       {
         source: 'vulnfeed',
         enabled: true,
-        last_sync_status: 'failed',
-        records_synced: 0,
+        state: 'waiting_for_publisher',
+        error_code: 'publisher_empty',
+        last_error: 'vulnfeed fetch keyset.dsse.json: status 404',
+        catalog_records: 0,
+        records_changed: 0,
+        interval_seconds: 1200,
+        stale_after_seconds: 259200,
+        detail: { applied_sequence: 0, keyset_version: 0, sources: [] },
       },
     ] satisfies ThreatIntelFeed[],
     error: undefined,
@@ -67,5 +73,19 @@ describe('Threat intelligence page: sync outcome', () => {
     await userEvent.click(screen.getByRole('button', { name: /^sync now$/i }))
     await waitFor(() => expect(mocks.success).toHaveBeenCalledWith('Sync finished.'))
     expect(mocks.error).not.toHaveBeenCalled()
+  })
+})
+
+describe('Threat intelligence page: feed status', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('shows the state, the error as a code with an action, and the raw text only behind Details', async () => {
+    render(<ThreatIntelFeedsPage />)
+    expect(screen.getByText('Waiting for the publisher')).toBeInTheDocument()
+    expect(screen.getByText('No bundle has been published yet.')).toBeInTheDocument()
+    expect(screen.getByText(/Nothing to fix here/)).toBeInTheDocument()
+    expect(screen.queryByText(/status 404/)).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /details/i }))
+    expect(await screen.findByText(/status 404/)).toBeInTheDocument()
   })
 })

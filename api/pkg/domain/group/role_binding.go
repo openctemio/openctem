@@ -34,6 +34,19 @@ type RoleBinding struct {
 	CreatedAt time.Time
 }
 
+// UserTeamGrant is one role a person holds through one active team they are a
+// member of ("access from team X"). MemberUntil is the end date of their
+// membership, nil when it has none.
+type UserTeamGrant struct {
+	GroupID     shared.ID
+	GroupName   string
+	RoleID      shared.ID
+	RoleName    string
+	Managed     bool
+	TemplateID  string
+	MemberUntil *time.Time
+}
+
 // RoleBindingRepository persists team role bindings. Every method is scoped
 // to the tenant.
 type RoleBindingRepository interface {
@@ -50,4 +63,7 @@ type RoleBindingRepository interface {
 	// IsExternalMember reports whether the user is an external member of the
 	// organization.
 	IsExternalMember(ctx context.Context, tenantID, userID shared.ID) (bool, error)
+	// ListUserTeamGrants returns the roles the user holds through the active
+	// teams they belong to, with the team each comes from.
+	ListUserTeamGrants(ctx context.Context, tenantID, userID shared.ID) ([]UserTeamGrant, error)
 }

@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/feedstatus"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/threatintel"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
@@ -270,7 +271,7 @@ func (s *IntelService) SyncEPSS(ctx context.Context) IntelSyncResult {
 	scores, err := s.fetchEPSSData(ctx)
 	if err != nil {
 		result.Error = err
-		status.MarkSyncFailed(err.Error())
+		markFailed(status, err)
 		if updateErr := s.repo.SyncStatus().Update(ctx, status); updateErr != nil {
 			s.logger.Error("failed to update sync status after error", "error", updateErr)
 		}
@@ -279,7 +280,7 @@ func (s *IntelService) SyncEPSS(ctx context.Context) IntelSyncResult {
 
 	if gerr := s.guardEPSSShrink(ctx, len(scores)); gerr != nil {
 		result.Error = gerr
-		status.MarkSyncFailed(gerr.Error())
+		markFailed(status, gerr)
 		if updateErr := s.repo.SyncStatus().Update(ctx, status); updateErr != nil {
 			s.logger.Error("failed to update sync status after error", "error", updateErr)
 		}
@@ -289,7 +290,7 @@ func (s *IntelService) SyncEPSS(ctx context.Context) IntelSyncResult {
 	// Batch upsert scores
 	if err := s.repo.EPSS().UpsertBatch(ctx, scores); err != nil {
 		result.Error = fmt.Errorf("failed to upsert EPSS scores: %w", err)
-		status.MarkSyncFailed(err.Error())
+		markFailed(status, err)
 		if updateErr := s.repo.SyncStatus().Update(ctx, status); updateErr != nil {
 			s.logger.Error("failed to update sync status after error", "error", updateErr)
 		}
@@ -304,6 +305,8 @@ func (s *IntelService) SyncEPSS(ctx context.Context) IntelSyncResult {
 	if len(scores) > 0 {
 		meta := status.Metadata()
 		markDirect(meta, scores[0].ScoreDate())
+		// The date of the data the feed holds.
+		meta[feedstatus.MetaDataAsOf] = scores[0].ScoreDate().UTC().Format("2006-01-02")
 		status.SetMetadata(meta)
 	}
 	status.MarkSyncSuccess(len(scores), int(duration.Milliseconds()))
@@ -378,7 +381,7 @@ func (s *IntelService) SyncKEV(ctx context.Context) IntelSyncResult {
 	}
 	if err != nil {
 		result.Error = err
-		status.MarkSyncFailed(err.Error())
+		markFailed(status, err)
 		if updateErr := s.repo.SyncStatus().Update(ctx, status); updateErr != nil {
 			s.logger.Error("failed to update sync status after error", "error", updateErr)
 		}
@@ -387,7 +390,7 @@ func (s *IntelService) SyncKEV(ctx context.Context) IntelSyncResult {
 
 	if gerr := s.guardKEVShrink(ctx, len(entries)); gerr != nil {
 		result.Error = gerr
-		status.MarkSyncFailed(gerr.Error())
+		markFailed(status, gerr)
 		if updateErr := s.repo.SyncStatus().Update(ctx, status); updateErr != nil {
 			s.logger.Error("failed to update sync status after error", "error", updateErr)
 		}
@@ -404,7 +407,7 @@ func (s *IntelService) SyncKEV(ctx context.Context) IntelSyncResult {
 		chunk := entries[i:end]
 		if err := s.repo.KEV().UpsertBatch(ctx, chunk); err != nil {
 			result.Error = fmt.Errorf("failed to upsert KEV entries: %w", err)
-			status.MarkSyncFailed(err.Error())
+			markFailed(status, err)
 			if updateErr := s.repo.SyncStatus().Update(ctx, status); updateErr != nil {
 				s.logger.Error("failed to update sync status after error", "error", updateErr)
 			}
@@ -448,16 +451,24 @@ func (s *IntelService) SyncKEV(ctx context.Context) IntelSyncResult {
 // catalog is refused (a truncated or wrong download, not a real change).
 const minSnapshotShare = 0.9
 
-// ErrFeedEmpty: the source answered 200 but carried no entries.
-var ErrFeedEmpty = errors.New("feed returned no entries")
+// The feed errors, classified for display by package feedstatus.
+var (
+	ErrFeedEmpty  = feedstatus.ErrFeedEmpty
+	ErrFeedShrunk = feedstatus.ErrFeedShrunk
+)
 
-// ErrFeedShrunk: the snapshot is far smaller than the stored catalog.
-var ErrFeedShrunk = errors.New("feed refused: snapshot smaller than the stored catalog")
+// markFailed records a failed sync with its classification.
+func markFailed(status *threatintel.SyncStatus, err error) {
+	c := feedstatus.Classify(err)
+	status.MarkSyncFailedWith(err.Error(), c.Code, c.Params)
+}
 
 func shrinkGuard(source string, got int, stored int64) error {
-	if stored > 0 && float64(got) < minSnapshotShare*float64(stored) {
-		return fmt.Errorf("%w (%s: %d entries, %d stored, minimum %d)", ErrFeedShrunk, source, got, stored,
-			int64(minSnapshotShare*float64(stored)))
+	if min := int64(minSnapshotShare * float64(stored)); stored > 0 && int64(got) < min {
+		return &feedstatus.GuardError{
+			Base: ErrFeedShrunk, Kind: feedstatus.GuardSnapshot, N: int64(got), Limit: min,
+			Msg: fmt.Sprintf("%s (%s: %d entries, %d stored, minimum %d)", ErrFeedShrunk, source, got, stored, min),
+		}
 	}
 	return nil
 }
@@ -549,7 +560,7 @@ func (s *IntelService) fetchEPSSData(ctx context.Context) ([]*threatintel.EPSSSc
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return nil, &feedstatus.HTTPError{Op: "epss fetch", Host: req.URL.Host, Status: resp.StatusCode}
 	}
 
 	// Decompress gzip. Bound both the compressed input and the decompressed
@@ -759,7 +770,7 @@ func (s *IntelService) fetchKEVFrom(ctx context.Context, url string, prev kevVal
 		return nil, prev, errKEVNotModified
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, prev, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return nil, prev, &feedstatus.HTTPError{Op: "kev fetch", Host: req.URL.Host, Status: resp.StatusCode}
 	}
 
 	// Parse JSON (bounded to guard against an oversized upstream body)
@@ -1116,4 +1127,45 @@ type kevVulnerability struct {
 	// `string` typing here silently worked only while the feed fetch was failing
 	// upstream, then broke the moment the fetch was repaired.
 	CWEs []string `json:"cwes,omitempty"`
+}
+
+// FeedView returns the view of one feed (threatintel.ErrSyncStatusNotFound
+// when the source is unknown).
+func (s *IntelService) FeedView(ctx context.Context, source string) (feedstatus.View, error) {
+	views, err := s.FeedViews(ctx)
+	if err != nil {
+		return feedstatus.View{}, err
+	}
+	for _, v := range views {
+		if v.Source == source {
+			return v, nil
+		}
+	}
+	return feedstatus.View{}, threatintel.ErrSyncStatusNotFound
+}
+
+// FeedViews returns the status of every feed as the platform admin console
+// shows it: one state, an error code, honest times and catalog sizes.
+func (s *IntelService) FeedViews(ctx context.Context) ([]feedstatus.View, error) {
+	rows, err := s.repo.SyncStatus().GetAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+	now := s.now().UTC()
+	out := make([]feedstatus.View, 0, len(rows))
+	for _, st := range rows {
+		var catalog int64
+		switch st.SourceName() {
+		case feedstatus.SourceEPSS:
+			if c, cerr := s.getEPSSCatalogCounts(ctx); cerr == nil {
+				catalog = c.total
+			}
+		case feedstatus.SourceKEV:
+			if c, cerr := s.getKEVCatalogCounts(ctx); cerr == nil {
+				catalog = c.total
+			}
+		}
+		out = append(out, feedstatus.Build(st, catalog, now))
+	}
+	return out, nil
 }
