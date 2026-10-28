@@ -406,6 +406,11 @@ jobs:
 
       - name: Lint (golangci-lint on new code)
         if: github.event_name == 'pull_request'
+        env:
+          # The Go runtime tightens GC before the self-hosted runner's
+          # container memory limit (12 GiB) is reached, instead of the
+          # kernel killing golangci-lint ("signal: killed").
+          GOMEMLIMIT: 8GiB
         run: |
           base="$(bash ../.github/scripts/effective-base.sh api "origin/${GITHUB_BASE_REF}")"
           make lint-new BASE_REF="$base"
