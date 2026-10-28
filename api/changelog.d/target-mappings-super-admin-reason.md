@@ -1,0 +1,4 @@
+### Security: changing a target mapping needs a super administrator, a step-up and a reason
+
+- Target mappings decide which asset types every organization's scans take or skip (for example `url` to `website`). Creating, editing or deleting one took only an operations administrator's role, with no step-up and no reason, so a mistaken or compromised account could silently turn off DAST for every site on the platform. `POST`, `PATCH` and `DELETE /admin/target-mappings` now require a super administrator, a step-up code (`target_mapping.change`) and a `reason` of 10 to 500 characters in the JSON body (also for `DELETE`). The reason is kept in the audit row.
+- **Upgrade note:** clients of these three endpoints must send `reason`; a request without one is answered with 400. Operations administrators keep read access.

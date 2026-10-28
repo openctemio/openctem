@@ -22,6 +22,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/scm"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
+	emailpkg "github.com/openctemio/openctem/api/pkg/email"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 )
 
@@ -55,6 +56,8 @@ func ClassifyConnFailure(err error) ConnFailure {
 	// its code, so errors.Is(authErr, ErrCredentialsUnreadable) is true.
 	case errors.Is(err, integrationdom.ErrCredentialsUnreadable):
 		return connFailure(apierror.CodeIntegrationCredentialsUnreadable)
+	case errors.Is(err, emailpkg.ErrTenantRelayPolicy):
+		return connFailure(apierror.CodeIntegrationEmailRelayPolicy)
 	case blockedRe.MatchString(err.Error()):
 		return connFailure(apierror.CodeIntegrationURLBlocked)
 	case isUnreachable(err):
