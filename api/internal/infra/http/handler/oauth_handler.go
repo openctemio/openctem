@@ -46,6 +46,9 @@ type AuthorizeRequest struct {
 type AuthorizeResponse struct {
 	AuthorizationURL string `json:"authorization_url"`
 	State            string `json:"state"`
+	// BrowserBinding must be kept in an HttpOnly cookie and sent back with
+	// the callback.
+	BrowserBinding string `json:"browser_binding"`
 }
 
 // Authorize returns the OAuth authorization URL for a provider.
@@ -106,9 +109,11 @@ func (h *OAuthHandler) Authorize(w http.ResponseWriter, r *http.Request) {
 	resp := AuthorizeResponse{
 		AuthorizationURL: result.AuthorizationURL,
 		State:            result.State,
+		BrowserBinding:   result.BrowserBinding,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(resp)
 }
@@ -118,6 +123,8 @@ type CallbackRequest struct {
 	Code        string `json:"code"`
 	State       string `json:"state"`
 	RedirectURI string `json:"redirect_uri"`
+	// BrowserBinding is the secret the authorize response gave this browser.
+	BrowserBinding string `json:"browser_binding"`
 }
 
 // CallbackResponse is the response body for OAuth callback.
@@ -179,6 +186,8 @@ func (h *OAuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 		Code:        req.Code,
 		State:       req.State,
 		RedirectURI: req.RedirectURI,
+
+		BrowserBinding: req.BrowserBinding,
 	})
 	if err != nil {
 		h.handleOAuthError(w, err)

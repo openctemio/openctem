@@ -11,7 +11,7 @@
 # Components:
 #   server           openctem-server-<v>-linux-<arch>.tar.gz: the API server
 #                    (with its operator commands as links), the job signer,
-#                    golang-migrate with the migration files, the OpenAPI spec,
+#                    openctem-migrate with the migration files, the OpenAPI spec,
 #                    the sensor config templates, systemd units, env examples
 #   bootstrap-admin  bootstrap-admin-<v>-<os>-<arch>.tar.gz (.zip on windows):
 #                    the first-administrator CLI (the admin-cli image)
@@ -34,7 +34,7 @@
 # Reproducible: Go builds use CGO_ENABLED=0 and -trimpath; the build time and
 # every archive's file times are the commit time (SOURCE_DATE_EPOCH); archives
 # are sorted, owned by 0:0 and gzipped without a name or time stamp. The
-# third-party tools (golang-migrate, Caddy, swag) are built at the versions the
+# third-party tools (Caddy, swag) are built at the versions the
 # images pin, read from their Dockerfiles, so binaries and images never drift.
 set -euo pipefail
 
@@ -87,18 +87,6 @@ gobuild() { # gobuild <out> <pkg>... (in api/)
 		go build -trimpath -ldflags="$GO_LDFLAGS" -o "$out" "$@")
 }
 
-# gotool <out> <module>@<version> <package> [build tags] [ldflags]: a third-party tool
-# built from its module at a pinned version, checked against the Go checksum
-# database like every other dependency.
-gotool() {
-	local out="$1" modver="$2" pkg="$3" tags="${4:-}" ldx="${5:-}" d
-	d="$(mktemp -d "$WORK/tool.XXXX")"
-	(cd "$d" && go mod init openctem.local/tool >/dev/null 2>&1 &&
-		GOFLAGS=-mod=mod go get "$modver" >/dev/null 2>&1 &&
-		CGO_ENABLED=0 GOOS="$TARGET_OS" GOARCH="$TARGET_ARCH" GOFLAGS=-mod=mod \
-			go build -trimpath -ldflags="-s -w $ldx" ${tags:+-tags "$tags"} -o "$out" "$pkg")
-}
-
 common_files() { # common_files <dir>
 	cp "$ROOT/LICENSE" "$1/LICENSE"
 	sed "s/@VERSION@/${VERSION}/g" "$ROOT/deploy/binary/README.md" >"$1/README.md"
@@ -111,20 +99,15 @@ build_server() {
 	local name="openctem-server-${VERSION}-linux-${TARGET_ARCH}" d
 	d="$WORK/$name"
 	mkdir -p "$d/bin" "$d/api/openapi" "$d/systemd" "$d/env"
-	gobuild "$WORK/gobin/" ./cmd/server ./cmd/signer
+	gobuild "$WORK/gobin/" ./cmd/server ./cmd/signer ./cmd/openctem-migrate
 	install -m 0755 "$WORK/gobin/server" "$d/bin/openctem-server"
 	install -m 0755 "$WORK/gobin/signer" "$d/bin/openctem-signer"
 	# The operator commands: links to the server binary (api/cmd/server/tools.go).
 	for t in bootstrap-admin refingerprint repomerge ci-trust-scope-plan; do
 		ln -s openctem-server "$d/bin/$t"
 	done
-	# golang-migrate at the version the migrations image ships, and the same wrapper.
-	local mv
-	mv="$(sed -n 's|.*golang-migrate/migrate/v4/cmd/migrate@\(v[0-9.]*\).*|\1|p' "$ROOT/api/Dockerfile.migrations" | head -n 1)"
-	[ -n "$mv" ] || die "golang-migrate version not found in api/Dockerfile.migrations"
-	gotool "$d/bin/migrate" "github.com/golang-migrate/migrate/v4@$mv" \
-		github.com/golang-migrate/migrate/v4/cmd/migrate postgres "-X main.Version=$mv"
-	install -m 0755 "$ROOT/api/scripts/migrate-entrypoint.sh" "$d/bin/openctem-migrate"
+	# The migration runner (api/cmd/openctem-migrate), as in the migrations image.
+	install -m 0755 "$WORK/gobin/openctem-migrate" "$d/bin/openctem-migrate"
 	cp -R "$ROOT/api/migrations" "$d/migrations"
 	cp -R "$ROOT/api/configs" "$d/configs"
 	# The OpenAPI spec the server serves at /openapi.yaml (path relative to its

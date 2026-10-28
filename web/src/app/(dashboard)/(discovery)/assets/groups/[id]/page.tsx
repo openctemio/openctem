@@ -41,6 +41,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Tabs, TabsContent, TabsList, TabsTrigger, TabsCount } from '@/components/ui/tabs'
+import { GroupHistoryPanel } from '@/features/asset-groups/components/members/group-history-panel'
+import { RuleStatusNote } from '@/features/asset-groups/components/members/rule-status-note'
 import { Separator } from '@/components/ui/separator'
 import { Checkbox } from '@/components/ui/checkbox'
 import { toast } from 'sonner'
@@ -303,6 +305,21 @@ function AssetGroupDetailContent({ params }: PageProps) {
           <DataTableColumnHeader column={column} title={t('assetGroups.detail.col.type', 'Type')} />
         ),
         cell: ({ row }) => <Badge variant="outline">{typeLabel(row.original.type)}</Badge>,
+      },
+      {
+        accessorKey: 'source',
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('assetGroups.detail.col.source', 'Added by')}
+          />
+        ),
+        cell: ({ row }) =>
+          row.original.source ? (
+            <Badge variant="outline" data-testid="member-source">
+              {t(`assetGroups.members.source.${row.original.source}`, row.original.source)}
+            </Badge>
+          ) : null,
       },
       {
         accessorKey: 'status',
@@ -789,6 +806,8 @@ function AssetGroupDetailContent({ params }: PageProps) {
             ]}
           />
 
+          {group.rule && <RuleStatusNote rule={group.rule} />}
+
           {/* Tabs */}
           <Tabs value={activeTab} onValueChange={handleTabChange}>
             <TabsList>
@@ -802,6 +821,9 @@ function AssetGroupDetailContent({ params }: PageProps) {
               <TabsTrigger value="findings">
                 {t('assetGroups.detail.tab.findings', 'Findings')}{' '}
                 <TabsCount value={group.findingCount} />
+              </TabsTrigger>
+              <TabsTrigger value="history">
+                {t('assetGroups.detail.tab.history', 'History')}
               </TabsTrigger>
             </TabsList>
 
@@ -1127,6 +1149,11 @@ function AssetGroupDetailContent({ params }: PageProps) {
                       )
                 }
               />
+            </TabsContent>
+
+            {/* History Tab: who joined and left, and why */}
+            <TabsContent value="history">
+              <GroupHistoryPanel groupId={group.id} />
             </TabsContent>
           </Tabs>
         </PageStack>
