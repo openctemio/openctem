@@ -1456,6 +1456,7 @@
   "scans.placement.sensorBusy": "có thể nhận, đang bận",
   "scans.placement.sensorCount": "sensor: {count}",
   "scans.placement.sensorEligible": "có thể nhận",
+  "scans.placement.sensorOverloaded": "có thể nhận khi máy chủ của nó hồi phục, hiện đang quá tải",
   "scans.placement.sensorYields": "có thể nhận, nhường cho sensor đang rảnh hơn trong vài giây",
   "scans.placement.sensor_hosts_busy.fix": "Tác vụ chạy khi máy chủ đó rảnh trên sensor này, hoặc trên một sensor khác.",
   "scans.placement.sensor_hosts_busy.text": "Sensor đã nhận tác vụ vẫn đang quét một máy chủ của nó nên đã trả lại tác vụ.",
