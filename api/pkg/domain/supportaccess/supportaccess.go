@@ -36,6 +36,21 @@ const (
 // AllScopes is every scope, the default of a new grant.
 var AllScopes = []string{ScopeFindings, ScopeAssets}
 
+// How a support session ends (Session.EndReason). The first three are set by
+// the administrator or by the grant; the last three by the lifecycle.
+const (
+	EndReasonEndedByAdmin       = "ended_by_admin"
+	EndReasonGrantRevoked       = "grant_revoked"
+	EndReasonSuperseded         = "superseded"
+	EndReasonConsoleSessionGone = "console_session_ended"
+	EndReasonIdle               = "idle"
+	EndReasonGrantExpired       = "grant_expired"
+)
+
+// SessionIdleTimeout ends an open support session that has not been used for
+// this long, even while the administrator stays signed in to the console.
+const SessionIdleTimeout = 30 * time.Minute
+
 // LevelRead is the only access level: support never writes.
 const LevelRead = "read"
 
@@ -175,6 +190,13 @@ type Repository interface {
 	// EndSessionForPlatform ends an open session of adminID (a platform
 	// principal: keyed on the administrator, the tenant comes back).
 	EndSessionForPlatform(ctx context.Context, id, adminID shared.ID, reason string, now time.Time) (*Session, error)
+	// EndStaleSessions ends every open session whose console session is gone
+	// (signed out, expired, idle for consoleIdle), whose grant ended, or that
+	// was not used for idle, and returns them with the reason set.
+	EndStaleSessions(ctx context.Context, now time.Time, idle, consoleIdle time.Duration) ([]*Session, error)
+	// EndSessionsForConsoleSession ends the open sessions bound to one
+	// console session (its sign-out) with reason, and returns them.
+	EndSessionsForConsoleSession(ctx context.Context, consoleSessionID shared.ID, reason string, now time.Time) ([]*Session, error)
 }
 
 // Errors.
