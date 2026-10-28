@@ -15,7 +15,7 @@ export function useAdminUsers(page = 1, enabled = true) {
 /**
  * Make someone a platform administrator. The account with this email is
  * linked (it must not belong to any organization), or a new sign-in account is
- * created and its temporary password returned once.
+ * created and an invitation e-mailed; the link is returned once only when the platform cannot send e-mail.
  */
 export function provisionAdministrator(input: {
   email: string
@@ -24,7 +24,13 @@ export function provisionAdministrator(input: {
   /** Local emergency-access account (super admins only). */
   break_glass?: boolean
 }) {
-  return adminFetch<{ admin: AdminIdentity; temporary_password?: string }>('/administrators', {
+  return adminFetch<{
+    admin: AdminIdentity
+    invitation_emailed: boolean
+    invitation_failed?: boolean
+    invitation_url?: string
+    expires_at?: string
+  }>('/administrators', {
     method: 'POST',
     body: input,
   })

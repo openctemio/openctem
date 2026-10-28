@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 
@@ -108,6 +109,8 @@ func (s *Service) triggerConnectorScan(ctx context.Context, sc *scan.Scan, resol
 		Targets:      resolved.Targets,
 		ActScope:     true,
 		FallbackUser: connectorRunUser(sc),
+		// A connector scan runs on the connector's own sensor.
+		Placement: attribution.PlacementTenant,
 	})
 	if err != nil {
 		return nil, err

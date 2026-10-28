@@ -329,8 +329,31 @@ content: { templates: { mode: merge, sources: [acme-nuclei], include: { tags: [c
 ### 3.7 Isolation
 
 - Tenant packs ship only to that tenant's sensors.
-- Platform (shared) sensors run platform packs, plus tenant packs that
-  passed the stricter lint (no T2 content) when the tenant policy allows it.
+- Shared (platform) sensors fetch, cache and run **platform-scope packs
+  only**: one copy per digest for every organization on the box. A tenant
+  pack never reaches a shared sensor, whatever its lint result: it is not
+  in the sensor's desired set, its digest is `404` on the content routes,
+  the job signer path refuses to pin it, and the sensor refuses a tenant
+  scope pack even with a valid tenant signature. Only data that is not
+  executable crosses to a shared sensor from an organization, and only as a
+  per-job input: a list the platform generates for the job from the
+  organization's own data travels inline in the signed payload (at most 256
+  KiB compressed), is written to the task directory and is erased with it,
+  never put in a content cache. Templates and rules of an organization stay
+  off shared sensors (RFC-100 §8).
+- A sensor pins its content keys at pairing: the platform key for platform
+  packs and, for a sensor of one organization, that organization's key. A
+  shared sensor gets the platform key only. A key is never taken from a
+  content route.
+- Jobs pin content by digest. The `content` and `inputs` members of a scan
+  or retest command are set by the platform on the copy a sensor receives
+  (a member a creator wrote is removed), the signed statement lists each
+  pack's `{slot, digest}` in payload order, and before the signer is asked
+  every digest is checked to be deliverable to the job's organization: a
+  platform stable pack, or one of the organization's own for a sensor of its
+  own; never another organization's, a revoked one or an unknown one. A
+  statement that lists content is refused by a verifier that predates the
+  field.
 - Packs are mounted per task (RFC-060). A task sees only its run's packs.
 - Custom templates move off `$TMPDIR` (closes C3).
 - A digest from another tenant is never resolved: 404 in the API, refused

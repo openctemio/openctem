@@ -16,6 +16,7 @@ import (
 func TestActiveGate_Discovered(t *testing.T) {
 	f := newGateFixture(t)
 	g := NewActiveGate(f, f, f, f)
+	g.SetManagedService(true)
 	ctx := context.Background()
 
 	uncovered := f.add(t, "cdn-target.thirdparty.example", asset.AssetTypeDomain)
@@ -86,6 +87,7 @@ func TestActiveGate_Discovered(t *testing.T) {
 	// Another tenant's entry never covers this tenant's discovered asset.
 	f2 := newGateFixture(t)
 	g2 := NewActiveGate(f2, f2, f2, f2)
+	g2.SetManagedService(true)
 	foreign := f2.add(t, "app.foreign.example", asset.AssetTypeSubdomain)
 	f2.record(foreign, attribution.StateDiscovered, false)
 	if b, err := g2.ActiveCheckBlocked(ctx, f2.tenant, []string{foreign.ID().String()}); err != nil || b[foreign.ID().String()] != attribution.StateDiscovered {

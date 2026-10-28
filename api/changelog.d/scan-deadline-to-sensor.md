@@ -1,5 +1,0 @@
-### Changed: scan commands carry the run's deadline, and a command closed at the deadline says what is known
-
-- Every scan command (single scans and workflow steps) now carries `deadline`, the time its run is settled if still open. Sensors with sdk-go that reads it end the job's time budget a margin before it (a tenth of the time left, 1 to 10 minutes), so a run stopped there still reports the targets it settled instead of being failed with nothing. Older sensors ignore the field.
-- A command still open when its run reaches the deadline is now failed with one of: "scan run reached its deadline before a sensor picked up this command", "the tool finished scanning every target, but its result did not arrive before the scan run reached its deadline" (the sensor's progress showed every target done), or the previous "scan run reached its deadline before this command reported a result".
-- The scan run repository returns the deadline the database fixed (`deadline_at`) to the run on create and on the update that starts it.

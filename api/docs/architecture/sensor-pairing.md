@@ -107,6 +107,19 @@ Rules:
   fingerprint, host facts and source address), each refusal; every
   administrator is notified of creations and enrollments.
 
+### Content keys
+
+The identity an approved pairing returns carries `content_signing`: the
+Ed25519 public keys the sensor pins to verify content packs
+([Content packs](content-packs.md)). `platform` holds the platform content key
+(every sensor); `tenant` holds the organization's own key and is present only
+for a sensor of that organization. A shared sensor gets the platform key only,
+so it can never accept an organization's pack. Each key is `{keyid,
+algorithm: "ed25519", public_key}` in the form of the job-signing keys
+(`keyid` is `SHA256:` + hex of the SHA-256 of the raw key, which the sensor
+recomputes). The sensor pins them over the pairing connection and never takes
+a key from a content route.
+
 ### Onboarding (the Add sensor panel)
 
 The console has one place to add a sensor: **Sensors → Add sensor** (inline

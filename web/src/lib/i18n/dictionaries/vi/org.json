@@ -25,6 +25,8 @@
   "org.acceptInvite.invitationFor": "Lời mời dành cho",
   "org.acceptInvite.invitedBy": "Người mời",
   "org.acceptInvite.joined": "Bạn đã tham gia tổ chức.",
+  "org.acceptInvite.joinedMfaBody": "Hãy thiết lập xác thực hai lớp để mở tổ chức.",
+  "org.acceptInvite.joinedMfaTitle": "Bạn đã tham gia {org}",
   "org.acceptInvite.loadFailed": "Không thể tải lời mời. Hãy thử lại.",
   "org.acceptInvite.mfaOutside": "Bạn sẽ thiết lập xác thực hai yếu tố trước khi mở {org}: vai trò của bạn có đặc quyền và bạn ở ngoài tổ chức.",
   "org.acceptInvite.mfaPolicy": "{org} yêu cầu xác thực hai yếu tố: bạn sẽ thiết lập trước khi mở tổ chức.",
