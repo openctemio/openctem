@@ -45,11 +45,9 @@ export default function ForgotPasswordPage() {
 
       if (result.success) {
         setIsSubmitted(true)
-        toast.success(result.message)
+        toast.success(t('auth.forgot.sentTitle', 'Check your email'))
       } else {
-        toast.error(
-          'error' in result ? result.error : t('auth.forgot.failed', 'Something went wrong')
-        )
+        toast.error(t('auth.forgot.failed', 'Something went wrong'))
       }
     })
   }
