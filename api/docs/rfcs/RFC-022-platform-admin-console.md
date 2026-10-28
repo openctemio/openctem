@@ -142,9 +142,14 @@ Cookie-authenticated state-changing requests must pass the double-submit CSRF
 check. Every `/admin/*` route and role guard works from a browser unchanged.
 
 **Provisioning**: `POST /api/v1/admin/administrators {email, name, role}`
-(super admin, audited) links the account with that email, or creates a local
-account and returns its temporary password once. `bootstrap-admin` does the same
-for the first administrator, and `bootstrap-admin -link` links an administrator
+(super admin, audited) creates a local account for that email with no
+password and emails the new administrator a single-use set-password link (24
+hours); no password is ever returned. Without platform e-mail the link is shown
+once, and only for a non-super role or while four-eyes approvals are off; a new
+super admin is refused while approvals are on and e-mail cannot be sent. The
+first console sign-in of an invited administrator is announced to every other
+administrator. `bootstrap-admin` creates the first administrator with a
+temporary password printed once (it runs with host access), and `bootstrap-admin -link` links an administrator
 created before revision 2 (keeping its role and authenticator, and reactivating
 it: migration 000227 deactivated every administrator without an account, which
 is every v0.8 administrator). Without `-link`, such an administrator is refused
@@ -718,7 +723,12 @@ do. Every protected action takes a route-level step-up
 same console session (`admin_sessions.step_up_at`, migration 002472); another
 session, another administrator or a pending session never rides it. Without
 a code or window the API answers `401 ADMIN_STEP_UP_REQUIRED`; the console's
-one step-up dialog asks for the code and retries the same request. A wrong
+one step-up dialog asks for the code and retries the same request. A form
+that asks for its own code (`totp_code`) sends it in the header too; when the
+route refuses that code (wrong or already used) the refusal goes back to the
+form, which shows it under its field, and the step-up dialog stays closed. It
+asks again only for a code it asked for itself, so it never opens over the
+form's own dialog. A wrong
 code counts toward the sign-in lockout; each confirmation is audited
 (`console.step_up`, with the action as its purpose).
 

@@ -83,6 +83,72 @@ func TestFreshStepUpWithTOTPCode(t *testing.T) {
 	}
 }
 
+// Elevating the session takes a fresh proof: a window another action opened
+// (a step-up for something else) does not elevate, a fresh code does, and the
+// code then opens the window for the next protected action.
+func TestElevationNeedsAFreshProofThenOpensTheWindow(t *testing.T) {
+	w := newWAHarness(t)
+	ctx := context.Background()
+	secret, token := w.enroll(t)
+	elevate := admin.WithFreshStepUpOpensWindow(ctx)
+
+	// Another action's step-up window is open (a code spent on it): no code
+	// for elevation is refused.
+	w.clock = w.clock.Add(totp.Period)
+	code, _ := totp.Code(secret, w.clock)
+	if err := w.svc.ConfirmProtected(ctx, w.admin, w.session(t, token), code, "admin.provision", client); err != nil {
+		t.Fatalf("setup step-up: %v", err)
+	}
+	// Past the one-minute freshness the window of another action is no proof
+	// for elevation, though it is still open for ordinary actions.
+	w.clock = w.clock.Add(2 * time.Minute)
+	if !w.session(t, token).SteppedUp(w.clock) {
+		t.Fatal("test setup: the window should be open")
+	}
+	if err := w.svc.ConfirmProtected(elevate, w.admin, w.session(t, token), "", "console.elevate", client); !errors.Is(err, admin.ErrStepUpRequired) {
+		t.Fatalf("elevation on another action's window: %v, want step-up required", err)
+	}
+
+	// A fresh code elevates and opens a new window at that moment.
+	w.clock = w.clock.Add(time.Minute)
+	code, _ = totp.Code(secret, w.clock)
+	if err := w.svc.ConfirmProtected(elevate, w.admin, w.session(t, token), code, "console.elevate", client); err != nil {
+		t.Fatalf("fresh code for elevation: %v", err)
+	}
+	later := w.clock.Add(admin.StepUpWindow - time.Second)
+	if !w.session(t, token).SteppedUp(later) {
+		t.Fatal("the elevation code must open the window for the next protected action")
+	}
+	// Plain protected action rides that window with no code.
+	if err := w.svc.ConfirmProtected(ctx, w.admin, w.session(t, token), "", "admin.provision", client); err != nil {
+		t.Fatalf("next protected action in the window: %v", err)
+	}
+}
+
+// A key confirmation older than a minute does not elevate; a just-given one
+// does, is spent, and the window is open again afterwards.
+func TestElevationWithSecurityKey(t *testing.T) {
+	w := newWAHarness(t)
+	ctx := context.Background()
+	_, token := w.enroll(t)
+	k := newVirtualKey(t)
+	w.register(t, token, k, "key")
+	elevate := admin.WithFreshStepUpOpensWindow(ctx)
+
+	w.stepUpWithKey(t, token, k)
+	w.clock = w.clock.Add(admin.FreshStepUpWindow + time.Second)
+	if err := w.svc.ConfirmProtected(elevate, w.admin, w.session(t, token), "", "console.elevate", client); !errors.Is(err, admin.ErrStepUpRequired) {
+		t.Fatalf("a key check older than a minute must not elevate: %v", err)
+	}
+	sess := w.stepUpWithKey(t, token, k)
+	if err := w.svc.ConfirmProtected(elevate, w.admin, sess, "", "console.elevate", client); err != nil {
+		t.Fatalf("just-given key check: %v", err)
+	}
+	if !w.session(t, token).SteppedUp(w.clock) {
+		t.Fatal("elevating with a key must leave the step-up window open")
+	}
+}
+
 // Under "require WebAuthn" an administrator without a key keeps TOTP until the
 // grace deadline set at the policy switch, then is refused.
 func TestRequireWebAuthnGraceDeadline(t *testing.T) {

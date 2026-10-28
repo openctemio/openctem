@@ -26,6 +26,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"regexp"
 	"strings"
 	"time"
 	"unicode"
@@ -88,6 +89,9 @@ type LocalStoreReport struct {
 	// that failed authentication since start.
 	BootReset bool  `json:"boot_reset,omitempty"`
 	Tampered  int64 `json:"tampered,omitempty"`
+	// Content is what the sensor says about the content packs it holds
+	// (RFC-061 §3.7); nil when it reported none.
+	Content *ContentReport `json:"content,omitempty"`
 	// ReportedAt is when the stored report was written; nil on a heartbeat.
 	ReportedAt *time.Time `json:"-"`
 }
@@ -173,10 +177,94 @@ func ParseLocalStoreReport(raw json.RawMessage) *LocalStoreReport {
 	if v, ok := count("tampered", MaxLocalStoreCount); ok {
 		r.Tampered = v
 	}
+	if c := parseContentReport(m["content"]); c != nil {
+		r.Content, found = c, true
+	}
 	if !found {
 		return nil
 	}
 	return &r
+}
+
+// Bounds on a content report.
+const (
+	// MaxReportedPackDigests bounds ContentReport.Held.
+	MaxReportedPackDigests = 200
+	// MaxContentVersionLen bounds the desired-set version a sensor echoes.
+	MaxContentVersionLen = 128
+)
+
+// ContentReport is the content packs a sensor holds, from its heartbeat
+// (sdk-go core.ContentReport): digests, so the platform sees drift between
+// what it wants held and what is held, and the cache's delivery counters. It
+// is untrusted and display-only: the platform never dispatches differently
+// because of it. It carries no tenant names, paths or file names.
+type ContentReport struct {
+	// Held are the pack digests held (sorted, at most MaxReportedPackDigests);
+	// HeldCount is how many are held in all and HeldSetSHA256 the hex SHA-256
+	// of the whole sorted list.
+	Held          []string `json:"held,omitempty"`
+	HeldCount     int64    `json:"held_count"`
+	HeldSetSHA256 string   `json:"held_set_sha256,omitempty"`
+	// Bytes is what the packs occupy.
+	Bytes int64 `json:"bytes"`
+	// Hits, Misses, BytesDownloaded and BytesSaved are the cache's delivery
+	// counters since the sensor started.
+	Hits            int64 `json:"hits"`
+	Misses          int64 `json:"misses"`
+	BytesDownloaded int64 `json:"bytes_downloaded"`
+	BytesSaved      int64 `json:"bytes_saved"`
+	// VerifyFailures counts packs that failed a check on load or install.
+	VerifyFailures int64 `json:"verify_failures,omitempty"`
+	// DesiredVersion is the content version the sensor last synced.
+	DesiredVersion string `json:"desired_version,omitempty"`
+}
+
+var (
+	packDigestRE  = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+	sha256HexOnly = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	versionRE     = regexp.MustCompile(`^[0-9A-Za-z\-_:./"]+$`)
+)
+
+// parseContentReport reads the content member of a local store report
+// leniently: a member of the wrong type is ignored, a digest that is not a
+// sha256 digest is dropped, counts are clamped. nil when v is not an object.
+func parseContentReport(v any) *ContentReport {
+	m, ok := v.(map[string]any)
+	if !ok || m == nil {
+		return nil
+	}
+	var c ContentReport
+	count := func(key string, hi int64) int64 {
+		f, ok := m[key].(float64)
+		if !ok {
+			return 0
+		}
+		return clampInt64(floatToInt64(f), hi)
+	}
+	if held, ok := m["held"].([]any); ok {
+		for _, h := range held {
+			d, ok := h.(string)
+			if !ok || !packDigestRE.MatchString(d) || len(c.Held) >= MaxReportedPackDigests {
+				continue
+			}
+			c.Held = append(c.Held, d)
+		}
+	}
+	c.HeldCount = max(count("held_count", MaxLocalStoreCount), int64(len(c.Held)))
+	if h, ok := m["held_set_sha256"].(string); ok && sha256HexOnly.MatchString(h) {
+		c.HeldSetSHA256 = h
+	}
+	c.Bytes = count("bytes", MaxLocalStoreBytes)
+	c.Hits = count("hits", MaxLocalStoreCount)
+	c.Misses = count("misses", MaxLocalStoreCount)
+	c.BytesDownloaded = count("bytes_downloaded", MaxLocalStoreBytes)
+	c.BytesSaved = count("bytes_saved", MaxLocalStoreBytes)
+	c.VerifyFailures = count("verify_failures", MaxLocalStoreCount)
+	if d, ok := m["desired_version"].(string); ok && len(d) <= MaxContentVersionLen && versionRE.MatchString(d) {
+		c.DesiredVersion = d
+	}
+	return &c
 }
 
 // sanitizeStoreReason keeps one line of printable text: control, format
