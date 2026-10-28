@@ -25,6 +25,17 @@ vi.mock('@/lib/permissions', async (orig) => {
     }),
   }
 })
+vi.mock('@/features/integrations/api/use-tenant-modules', () => ({
+  useModuleEnabled: () => true,
+}))
+vi.mock('@/features/saved-views/api/use-saved-views', async (orig) => ({
+  ...(await orig<typeof import('@/features/saved-views/api/use-saved-views')>()),
+  useSavedViews: () => ({ views: [], mutate: vi.fn() }),
+}))
+vi.mock('@/features/access-control/api/use-groups', () => ({ useMyGroups: () => ({ groups: [] }) }))
+vi.mock('@/features/nav-pins/api/use-nav-pins', () => ({
+  useNavPins: () => ({ pins: [], isPinned: () => false, toggle: vi.fn() }),
+}))
 vi.mock('@/context/tenant-provider', () => ({
   useTenant: () => ({ currentTenant: { id: 't1', name: 'Org' } }),
 }))

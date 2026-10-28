@@ -11,6 +11,8 @@ import { test, expect } from '../fixtures/authenticated-page'
  * - A row opens the vulnerability page; the sidebar has the entry.
  * - No horizontal page scroll at 1440 px and 390 px, no serious axe
  *   violation in light or dark.
+ * - Bulk actions: a selected row's findings export as CSV and retest
+ *   through the bulk bar; a saved view opens through ?view=<id>.
  *
  * The CI seed (e2e/ci/seed.sh) gives two findings E2E_CVE (default
  * CVE-2099-0101); without it the tests skip.
@@ -142,4 +144,69 @@ test('phone width: a card per row, no horizontal scroll @phone', async ({ page }
   await expect(page.locator('[data-slot="vuln-card"]').first()).toBeVisible()
   expect(await noHorizontalScroll(page)).toBe(true)
   await page.screenshot({ path: testInfo.outputPath('vulnerabilities-390.png'), fullPage: true })
+})
+
+test('a selected row exports its findings and retests through the bulk bar', async ({ page }) => {
+  const row = await openList(page, '?state=all')
+  test.skip(!row, `no seeded finding of ${CVE}`)
+  await page
+    .getByRole('checkbox', { name: `Select ${CVE}` })
+    .first()
+    .check()
+  const bar = page.getByRole('toolbar', { name: /selected rows/i })
+  await expect(bar).toBeVisible()
+
+  const download = page.waitForEvent('download')
+  await bar.getByRole('button', { name: 'Export' }).click()
+  const file = await download
+  const csv = await file.createReadStream().then(
+    (stream) =>
+      new Promise<string>((resolve) => {
+        let out = ''
+        stream.on('data', (c) => (out += String(c)))
+        stream.on('end', () => resolve(out))
+      })
+  )
+  expect(csv.split('\n')[0]).toContain('asset_name')
+  expect(csv).toContain(CVE)
+
+  const retest = page.waitForResponse(
+    (r) =>
+      r.url().includes('/api/v1/vulnerability-exposures/retests') && r.request().method() === 'POST'
+  )
+  await bar.getByRole('button', { name: 'Retest' }).click()
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Retest' }).click()
+  expect((await retest).status()).toBe(202)
+})
+
+test('a saved view opens through ?view=<id> and runs as the viewer', async ({ page }) => {
+  const row = await openList(page, '?state=all')
+  test.skip(!row, `no seeded finding of ${CVE}`)
+  const id = await page.evaluate(async () => {
+    const res = await fetch('/api/v1/views', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        page: 'vulnerabilities',
+        name: `e2e ${Date.now()}`,
+        query: 'state=all&sort=cve',
+      }),
+    })
+    return ((await res.json()) as { id: string }).id
+  })
+  try {
+    const list = page.waitForResponse(
+      (r) => r.url().includes('/api/v1/vulnerability-exposures?') && r.url().includes(`view=${id}`)
+    )
+    await page.goto(`/vulnerabilities?view=${id}`)
+    expect((await list).status()).toBe(200)
+    await expect(
+      page.getByRole('link', { name: `Vulnerability page for ${CVE}` }).first()
+    ).toBeVisible()
+  } finally {
+    await page.evaluate(async (viewId) => {
+      await fetch(`/api/v1/views/${viewId}`, { method: 'DELETE', credentials: 'same-origin' })
+    }, id)
+  }
 })
