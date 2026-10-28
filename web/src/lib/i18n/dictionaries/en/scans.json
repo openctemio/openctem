@@ -2076,6 +2076,7 @@
   "scans.stage.listLabel": "Stages of this run",
   "scans.stage.loadFailed": "Could not load the stages of this run.",
   "scans.stage.none": "No stage of this run has been planned yet.",
+  "scans.stage.noneSettled": "No stage plan was recorded for this run.",
   "scans.stage.planned": "planned",
   "scans.stage.platform": "Shared sensors",
   "scans.stage.queued": "{count} queued",
