@@ -1,7 +1,0 @@
-### Changed: search boxes send one request when typing settles
-
-- Every search box, picker and filter-as-you-type input in the web console and the platform console now sends its search through one shared hook (`useSearchQuery`): it waits for a 300 ms pause, ignores terms shorter than two characters (one for exact lookups), normalises the term (trimmed, spaces collapsed, Unicode NFC) so equal terms share one cached answer, sends nothing while an input-method composition (Vietnamese Telex, CJK) is open, holds a term that settles in a hidden tab until the tab is visible, and waits out a `429` answer's `Retry-After` before sending the next term.
-- Inputs that sent one request per keystroke now send one per settled term: remediation tasks, suggestions and campaigns, the task move palette, the add-findings and add-tasks dialogs, repository sync, duplicate pickers, finding and task watchers, pentest member and asset pickers, SSO exception member search, scanner templates, CI coverage and the web surface (three requests per keystroke before).
-- List pages that keep their search in the URL (`useListParams`) debounce `q` before it reaches the request.
-- A request can be cancelled by the caller's `AbortSignal`; the inventory asset picker of the asset sources preview cancels the older request when a newer term is sent.
-- A test fails when a new input puts typed text into a request without the hook.
