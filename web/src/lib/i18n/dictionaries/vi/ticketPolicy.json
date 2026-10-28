@@ -1,7 +1,7 @@
 {
   "ticketPolicy.action": "Khi nào tạo issue",
   "ticketPolicy.alwaysKev": "Luôn tạo cho lỗ hổng đang bị khai thác (KEV)",
-  "ticketPolicy.alwaysKevHint": "Phát hiện có trong danh mục KEV luôn được tạo issue, bất kể mức nghiêm trọng.",
+  "ticketPolicy.alwaysKevHint": "Phát hiện có trong danh mục KEV luôn được tạo issue, bất kể mức độ nghiêm trọng.",
   "ticketPolicy.createdToday": "Đã tạo hôm nay: {n}",
   "ticketPolicy.dailyCap": "Giới hạn mỗi ngày",
   "ticketPolicy.dailyCapHint": "Số issue tối đa tự động hóa được tạo mỗi ngày (UTC); 0 là không giới hạn. Phần còn lại chờ sang ngày hôm sau, nghiêm trọng nhất trước.",
@@ -12,7 +12,7 @@
   "ticketPolicy.heldFailed": "Tạo thất bại: {n}",
   "ticketPolicy.loadFailed": "Không tải được chính sách",
   "ticketPolicy.minPriorityClass": "Hoặc lớp ưu tiên tối thiểu",
-  "ticketPolicy.minSeverity": "Mức nghiêm trọng tối thiểu",
+  "ticketPolicy.minSeverity": "Mức độ nghiêm trọng tối thiểu",
   "ticketPolicy.noClass": "Không dùng",
   "ticketPolicy.notSecurity": "Chính sách này chỉ giảm nhiễu. Giới hạn chia sẻ (TLP) vẫn áp dụng cho mọi issue.",
   "ticketPolicy.preview": "Xem trước",

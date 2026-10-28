@@ -184,7 +184,7 @@
   "validation.simulation.confirmDesc": "This sends live safe-check traffic that imitates the technique to your environment now. Your security controls may raise alerts. The result is recorded on the simulation.",
   "validation.simulation.confirmTitle": "Run the simulation \"{name}\" now?",
   "validation.simulation.description": "Run MITRE ATT&CK-mapped attack techniques to check that your controls catch them.",
-  "validation.simulation.emptyDesc": "Simulations appear here once they are created for this tenant.",
+  "validation.simulation.emptyDesc": "Simulations appear here once they are created for this organization.",
   "validation.simulation.emptyTitle": "No simulations yet",
   "validation.simulation.metric.active": "Active",
   "validation.simulation.metric.bypassed": "Bypassed",
