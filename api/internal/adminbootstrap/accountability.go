@@ -82,6 +82,12 @@ func writeAudit(ctx context.Context, tx *sql.Tx, actor Actor, c adminChange) err
 			meta["replaced_admin_id"] = c.Before.ID
 		}
 	}
+	severity := "high"
+	if c.Action == AuditActionAdminInvited {
+		// The set-password link was printed on the host terminal.
+		severity = "critical"
+		meta["setup_link_disclosed"] = "host terminal"
+	}
 	entry := &admin.AuditLog{
 		ID:           shared.NewID(),
 		AdminEmail:   AuditActor,
@@ -92,7 +98,7 @@ func writeAudit(ctx context.Context, tx *sql.Tx, actor Actor, c adminChange) err
 		RequestBody:  meta,
 		UserAgent:    AuditActor,
 		Success:      true,
-		Severity:     "high",
+		Severity:     severity,
 		CreatedAt:    time.Now(),
 	}
 	if err := postgres.CreateAdminAuditLogTx(ctx, tx, entry); err != nil {
@@ -190,6 +196,8 @@ func changeSummary(c adminChange) string {
 	case AuditActionAdminRelinked:
 		return fmt.Sprintf("linked %s %s to a new sign-in account (%s, %s -> %s)",
 			kind, c.Spec.Email, c.Before.Role, statusLabel(c.Before.Active), after)
+	case AuditActionAdminInvited:
+		return fmt.Sprintf("invited %s %s (%s); the set-password link was shown on the host", kind, c.Spec.Email, after)
 	default:
 		return fmt.Sprintf("added %s %s (%s)", kind, c.Spec.Email, after)
 	}

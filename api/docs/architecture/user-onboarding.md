@@ -170,6 +170,29 @@ exists signs in as before: a mode change never locks anyone out.
 `AUTH_ALLOW_REGISTRATION` and `TENANT_CREATION_MODE` are retired: start-up
 refuses to run while either is set and names `SIGNUP_MODE` instead.
 
+### Social sign-in and the e-mail it can prove
+
+A social provider vouches for an address only where it runs the mailbox. The sign-in
+treats the address as proved (and so lets it create an account on a claimed domain, join
+by domain policy, claim an invitation or claim a provisioned seat) in these cases only:
+
+| Provider | The address is proved when |
+|---|---|
+| Google | it is on `gmail.com` or `googlemail.com`, or the id_token's hosted-domain (`hd`) claim equals the address's domain |
+| GitHub | never (only the primary address GitHub verified is read, and it is used for sign-in only) |
+| Microsoft | the domain-owner-verified claim is present (always required) |
+
+Otherwise (for example a personal Google account created on a company address):
+
+- an account already bound to that provider identity signs in as before;
+- an existing account of the same provider that was never bound is bound only for
+  GitHub or an address proved as above; otherwise the sign-in is refused with
+  `EMAIL_NOT_AUTHORITATIVE` and the person signs in with their password (or asks an
+  administrator) and links the provider afterwards;
+- a passwordless account provisioned by an organization is not claimed;
+- a new account is created only where sign-up is open, **unverified**, with no domain
+  join and no invitation claim; under `domain` sign-up and `admin_only` nothing is written.
+
 ### Domain sign-up policy (Settings > Domains, owner only)
 
 An organization that holds a domain **verified for SSO** (exclusive
@@ -305,6 +328,24 @@ appears in a URL a server or proxy records (RFC-041 §3.2 P4):
   history with `history.replaceState`.
 - The API takes the token in the JSON body: `POST /api/v1/invitations/lookup`,
   `/accept`, `/accept-with-refresh` and `/decline`.
+- When the organization needs a second factor from the person (2FA by role
+  with effective privilege, `allowed_with_mfa` for a personal address, or a
+  privileged outside member), `/accept-with-refresh` accepts the invitation and
+  answers 403 `MFA_ENROLLMENT_REQUIRED`. The page then shows "You have joined
+  {org}" and runs the sign-in's second-factor step in place:
+  `POST /api/v1/auth/mfa/enroll/session` (authenticated by the refresh-token
+  session, refresh token not spent) returns an enrollment challenge, or a
+  verify challenge when a factor exists, with the names of the requiring
+  organizations; `/auth/mfa/enroll/{start,confirm}` or `/auth/mfa/verify`
+  complete it and sign the person in again with a session that proved the
+  factor. An enrollment challenge needs a session signed in within the last 15
+  minutes (sign-up or sign-in, then accept); an older session gets 403
+  `REAUTH_REQUIRED` and the web sends the person to the password sign-in, so a
+  stolen refresh token alone cannot bind an authenticator. Verify challenges
+  have no such limit. Sessions started through an identity provider get a clear refusal.
+  The same endpoint serves a refused token refresh (`/two-factor-setup`). The
+  sign-in offers enrollment under the same three policies
+  (`mfaRequiringOrganizations`), so it never loops.
 - Links sent before this change (`/invitations/{token}`) still work: the web
   page redirects them to the fragment form. The API aliases
   `/api/v1/invitations/{token}/...` answer with `Deprecation`/`Sunset`
