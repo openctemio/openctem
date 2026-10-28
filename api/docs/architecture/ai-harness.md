@@ -16,7 +16,8 @@ API process. The API keeps only the single-shot executor (one model call, no too
 | Copies of the analyze/v1 schemas, pinned by sha256 | shipped in sdk-go (in review) | `sdk-go/pkg/harness/contract` (source: `api/pkg/sensorproto/analyze/schemas`) |
 | Playbook format `openctem.io/playbook/v1` + sample | shipped in sdk-go (in review) | `sdk-go/pkg/harness/playbook`, `sdk-go/examples/playbooks/web-vuln-triage` |
 | Eval harness and `openctem playbook init\|test` | shipped in sdk-go (in review) | `sdk-go/pkg/harness/eval`, `sdk-go/internal/playbookcli` |
-| Provider adapters with tool use; sensorkit ai-worker role; hostile-model conformance | planned | sdk-go |
+| Model provider core (settings, presets, per-job credentials, hardened client, retries, prices, degradation, policy-safe fallback with circuit breakers, conformance kit) and adapters: OpenAI family (incl. Azure OpenAI and compatible/local servers), Anthropic, Gemini/Vertex, Bedrock Converse, Cohere | in review | `openctemio/ai-worker` `internal/llm` (RFC-133 §6a) |
+| Sensorkit ai-worker role; hostile-model conformance | planned | sdk-go |
 | `analyze` command type, analyst-role grant profile, grant builder, interactive lane + affinity, shared host keys, AI limit keys, provider token bucket | planned | api |
 | Platform AI worker pool deployment, agent manifest, routing, shadow/canary/rollback, playbook catalog content, editor | planned | api, web, deploy |
 | Institutional memory, knowledge retrieval, inbound channels | planned | api, web |
@@ -73,6 +74,11 @@ openctem playbook test ./my-triage                    # validate, run the golden
 - Nothing crosses tenants. There is one run per sandbox. Prompt-cache keys are derived from the tenant. Mask keys
   are per run. Memory is never shared.
 - Provider and tool text never reaches a result's error code.
+- Model keys reach a worker only for the job that needs them (or stay on the tenant's own worker) and never reach a
+  log, an audit entry or a result. Model endpoints are reached only on their allowlisted hosts, with TLS verified,
+  and never on metadata or private addresses unless the worker operator allowed private endpoints.
+- Fallback never widens the data class, region, retention or locality of a run, and a refusal never moves a run to
+  another model.
 - The worker's schemas are byte-identical copies of the platform's, pinned by digest.
 
 ## Key files
