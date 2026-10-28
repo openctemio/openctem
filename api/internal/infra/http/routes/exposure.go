@@ -219,6 +219,18 @@ func registerVulnerabilityRoutes(
 		pageMW := []Middleware{middleware.RequireAll(permission.VulnerabilitiesRead, permission.FindingsRead), heavyReads.Middleware()}
 		// The list: one row per CVE over the same compiled filter.
 		r.GET("/", h.ListCVEExposures, pageMW...)
+		// Bulk actions on selected rows (the open findings of the selected
+		// CVEs that the list's filter selects for the caller): each needs the
+		// single-finding permission of the action it runs. The export is the
+		// findings export (findings:export, one per user, audited).
+		r.GET("/export", h.ExportCVEExposures,
+			middleware.RequireAll(permission.VulnerabilitiesRead, permission.FindingsRead, permission.FindingsExport), heavyReads.Middleware())
+		r.POST("/exception/preview", h.PreviewCVEException,
+			middleware.RequireAll(permission.VulnerabilitiesRead, permission.FindingsRead, permission.FindingsWrite), heavyReads.Middleware())
+		r.POST("/exception", h.RequestCVEException,
+			middleware.RequireAll(permission.VulnerabilitiesRead, permission.FindingsRead, permission.FindingsWrite), heavyReads.Middleware())
+		r.POST("/retests", h.RetestCVEs,
+			middleware.RequireAll(permission.VulnerabilitiesRead, permission.FindingsRead, permission.FindingsVerify), heavyReads.Middleware())
 		r.GET("/{vuln_id}", h.GetCVEExposure, pageMW...)
 		r.GET("/{vuln_id}/assets", h.ListCVEExposureAssets, pageMW...)
 	}, tenantMiddlewares...)

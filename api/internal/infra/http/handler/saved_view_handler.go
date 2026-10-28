@@ -48,6 +48,11 @@ type SavedViewResponse struct {
 	OwnerName   string          `json:"owner_name,omitempty"`
 	GroupID     *string         `json:"group_id,omitempty"`
 	GroupName   string          `json:"group_name,omitempty"`
+	// PageParams are the page's own params (the vulnerabilities list's kev,
+	// epss_gte, q, sort...), not findings filters.
+	PageParams map[string]string `json:"page_params,omitempty"`
+	// SharedWithOrg: every member of the organization may use the view.
+	SharedWithOrg bool `json:"shared_with_org"`
 	// IsOwner says whether the caller may edit or delete it (decision A1).
 	IsOwner   bool      `json:"is_owner"`
 	CreatedAt time.Time `json:"created_at"`
@@ -67,9 +72,12 @@ type SavedViewRequest struct {
 	Filter      json.RawMessage `json:"filter,omitempty" swaggertype:"object"`
 	Query       string          `json:"query,omitempty"`
 	GroupID     *string         `json:"group_id,omitempty"`
-	GroupBy     string          `json:"group_by,omitempty"`
-	Columns     []string        `json:"columns,omitempty"`
-	Density     string          `json:"density,omitempty"`
+	// ShareWithOrg shares the view with every member of the organization
+	// (needs findings:views:share; not together with group_id).
+	ShareWithOrg bool     `json:"share_with_org,omitempty"`
+	GroupBy      string   `json:"group_by,omitempty"`
+	Columns      []string `json:"columns,omitempty"`
+	Density      string   `json:"density,omitempty"`
 }
 
 func savedViewCaller(r *http.Request) savedviewapp.Caller {
@@ -90,7 +98,8 @@ func toSavedViewResponse(v *savedview.View, caller shared.ID) SavedViewResponse 
 	resp := SavedViewResponse{
 		ID: v.ID.String(), Page: v.Page, Name: v.Name, Description: v.Description, Filter: v.Filter,
 		GroupBy: v.GroupBy, Columns: v.Columns, Density: v.Density, OwnerID: v.OwnerID.String(), OwnerName: v.OwnerName,
-		GroupName: v.GroupName, IsOwner: v.OwnerID == caller, CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt,
+		GroupName: v.GroupName, PageParams: v.PageParams, SharedWithOrg: v.SharedWithOrg,
+		IsOwner: v.OwnerID == caller, CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt,
 	}
 	if v.GroupID != nil {
 		g := v.GroupID.String()
@@ -117,6 +126,8 @@ func (h *SavedViewHandler) writeErr(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, savedview.ErrNotFound), errors.Is(err, savedview.ErrUnknownPage), errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("Saved view").WriteJSON(w)
+	case errors.Is(err, savedview.ErrShareForbidden):
+		apierror.Forbidden(err.Error()).WriteJSON(w)
 	case errors.Is(err, savedview.ErrNotOwner):
 		apierror.Forbidden("Only the owner can change this view; duplicate it to make your own").WriteJSON(w)
 	case errors.Is(err, savedview.ErrLimit):
@@ -150,7 +161,7 @@ func (h *SavedViewHandler) decodeRequest(w http.ResponseWriter, r *http.Request)
 
 func (h *SavedViewHandler) toInput(w http.ResponseWriter, req SavedViewRequest) (savedviewapp.Input, bool) {
 	in := savedviewapp.Input{Page: req.Page, Name: req.Name, Description: req.Description, Filter: req.Filter,
-		Query: req.Query, GroupBy: req.GroupBy, Columns: req.Columns, Density: req.Density}
+		Query: req.Query, ShareWithOrg: req.ShareWithOrg, GroupBy: req.GroupBy, Columns: req.Columns, Density: req.Density}
 	if string(req.Filter) == "null" {
 		in.Filter = nil
 	}
@@ -186,7 +197,7 @@ func (h *SavedViewHandler) write(w http.ResponseWriter, status int, body any) {
 // @Tags         Saved views
 // @Produce      json
 // @Security     BearerAuth
-// @Param        page  query  string  true  "Page"  Enums(findings)
+// @Param        page  query  string  true  "Page"  Enums(findings, vulnerabilities)
 // @Success      200  {object}  map[string]interface{}
 // @Router       /views [get]
 func (h *SavedViewHandler) List(w http.ResponseWriter, r *http.Request) {

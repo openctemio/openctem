@@ -60,7 +60,11 @@ const NATURAL_DESC: ReadonlySet<string> = new Set([
 export const VULN_LIST_FLAGS = ['kev', 'exploit', 'emerging', 'past_sla', 'has_fix'] as const
 export type VulnListFlag = (typeof VULN_LIST_FLAGS)[number]
 
-const LIST_PARAMS = ['severity', 'priority_class', 'source', 'asset_group_id'] as const
+const LIST_PARAMS = ['severity', 'priority_class', 'source', 'asset_group_id', 'cve_id'] as const
+/** A CVE id, the key of a row (and of a bulk selection). */
+export const CVE_ID = /^CVE-\d{4}-\d{4,19}$/
+/** The most rows one bulk action takes (the API's cap). */
+export const VULN_SELECTION_MAX = 100
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const MAX_SEARCH = 200
 
@@ -78,6 +82,11 @@ function allowedList(key: (typeof LIST_PARAMS)[number], raw: string | null): str
       return values.filter((v) => (VULN_LIST_SOURCES as readonly string[]).includes(v))
     case 'asset_group_id':
       return values.filter((v) => UUID.test(v)).slice(0, 20)
+    case 'cve_id':
+      return values
+        .map((v) => v.toUpperCase())
+        .filter((v) => CVE_ID.test(v))
+        .slice(0, VULN_SELECTION_MAX)
   }
 }
 
@@ -134,7 +143,15 @@ export function readSearch(params: URLSearchParams): string {
 /** The API query for the page URL: only known params, each in its shape. */
 export function buildVulnListQuery(params: URLSearchParams): URLSearchParams {
   const out = new URLSearchParams()
-  out.set('state', readState(params))
+  const view = readViewId(params)
+  if (view) {
+    // A saved view is the base the API applies; only what the URL sets
+    // overrides it, so its own lens stays unless the URL names one.
+    out.set('view', view)
+    if (params.has('state')) out.set('state', readState(params))
+  } else {
+    out.set('state', readState(params))
+  }
   for (const key of LIST_PARAMS) {
     const values = readList(params, key)
     if (values.length) out.set(key, values.join(','))
@@ -152,6 +169,24 @@ export function buildVulnListQuery(params: URLSearchParams): URLSearchParams {
   const { page, perPage } = readPage(params)
   out.set('page', String(page))
   out.set('per_page', String(perPage))
+  return out
+}
+
+/** The saved view the URL opens (`view=<id>`), if any. */
+export function readViewId(params: URLSearchParams): string | undefined {
+  const raw = params.get('view')
+  return raw && UUID.test(raw) ? raw : undefined
+}
+
+/**
+ * The list's query for a bulk action or an export: its filters and saved
+ * view without paging. The API resolves the findings from it as the
+ * signed-in person; it never carries a tenant or a scope.
+ */
+export function vulnActionParams(params: URLSearchParams): URLSearchParams {
+  const out = buildVulnListQuery(params)
+  out.delete('page')
+  out.delete('per_page')
   return out
 }
 
@@ -213,6 +248,7 @@ export function rowFindingsHref(
 ): string {
   const q = new URLSearchParams({ cve_id: cve, state: readState(params) })
   for (const key of LIST_PARAMS) {
+    if (key === 'cve_id') continue
     const values = readList(params, key)
     if (values.length) q.set(key, values.join(','))
   }

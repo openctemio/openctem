@@ -814,6 +814,20 @@ Owner and administrator only, on top of the permission: `PUT /api/v1/scan-profil
 | `PUT /api/v1/vulnerabilities/{id}` | `vulnerabilities:write` |
 | `DELETE /api/v1/vulnerabilities/{id}` | `vulnerabilities:delete` |
 
+#### Vulnerabilities list actions (`/api/v1/vulnerability-exposures`)
+
+Each acts on the open findings of the selected CVEs that the list's filter
+selects for the caller (tenant, data scope, private programs compiled as the
+caller); the CVE ids and the filter only narrow that set. Audited.
+([vulnerability page](vulnerability-page.md#bulk-actions))
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `POST /api/v1/vulnerability-exposures/exception/preview`, `POST /api/v1/vulnerability-exposures/exception` | `vulnerabilities:read` + `findings:read` + `findings:write`; at most 500 findings; decided by the organization's approval policy (one or two approvers) |
+| `POST /api/v1/vulnerability-exposures/retests` | `vulnerabilities:read` + `findings:read` + `findings:verify`; at most 50 findings per request, the per-finding cooldown and in-flight caps apply |
+| `GET /api/v1/vulnerability-exposures/export` | `vulnerabilities:read` + `findings:read` + `findings:export`; one export per user at a time, the findings export allowlist |
+| `POST /api/v1/views` with `page=vulnerabilities` | `findings:read` (route) + `vulnerabilities:read` (page); `share_with_org` needs `findings:views:share` (owner and administrator by default) |
+
 #### Dashboard (`/api/v1/dashboard`)
 
 | Endpoint | Permission Required |

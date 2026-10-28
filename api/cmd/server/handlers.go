@@ -391,6 +391,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.BulkGuard != nil {
 		vulnHandler.SetBulkGuard(svc.BulkGuard)
 	}
+	if svc.Retest != nil {
+		// Retest of the open findings of selected vulnerabilities.
+		vulnHandler.SetBulkRetester(svc.Retest)
+	}
 	if svc.PriorityClassification != nil {
 		vulnHandler.SetPriorityExplainer(svc.PriorityClassification)
 	}
