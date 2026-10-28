@@ -21,6 +21,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/adminapproval"
 	"github.com/openctemio/openctem/api/internal/app/consolesetting"
 	"github.com/openctemio/openctem/api/internal/app/deploymentregion"
+	"github.com/openctemio/openctem/api/internal/app/orgrelay"
 	"github.com/openctemio/openctem/api/internal/app/platformai"
 	"github.com/openctemio/openctem/api/internal/app/platformalert"
 	"github.com/openctemio/openctem/api/internal/app/platformcaptcha"
@@ -58,6 +59,7 @@ type AdminPlatformSettingsHandler struct {
 	Alerts       *platformalert.Service
 	AI           *platformai.Service
 	MFA          *platformmfa.Service
+	EmailRelay   *orgrelay.Service
 	admins       AdminDirectory
 	approvals    approvalGate
 	logger       *logger.Logger
@@ -486,6 +488,79 @@ func (h *AdminPlatformSettingsHandler) UpdateMFAFloor(w http.ResponseWriter, r *
 		return
 	}
 	writeJSON(w, http.StatusOK, h.mfaFloorResponse(r.Context(), s))
+}
+
+// ---- Organization mail relay -------------------------------------------------
+
+// EmailRelayResponse is the organization mail relay mode.
+type EmailRelayResponse struct {
+	// Mode: off, verified_sender or on.
+	Mode string `json:"mode"`
+	// Source: console or default.
+	Source string `json:"source"`
+	// Default is the mode while nothing is stored.
+	Default string `json:"default"`
+	EnvVar  string `json:"env_var"`
+	Version int    `json:"version"`
+	SettingChange
+}
+
+// UpdateEmailRelayRequest changes the mode.
+type UpdateEmailRelayRequest struct {
+	Mode    string `json:"mode"`
+	Reason  string `json:"reason"`
+	Version int    `json:"version"`
+}
+
+func (h *AdminPlatformSettingsHandler) emailRelayResponse(ctx context.Context, s orgrelay.Settings) EmailRelayResponse {
+	return EmailRelayResponse{Mode: string(s.Mode), Source: s.Source, Default: string(s.Default), EnvVar: orgrelay.EnvVar,
+		Version: s.Version, SettingChange: h.change(ctx, s.UpdatedAt, s.UpdatedBy)}
+}
+
+// GetEmailRelay returns the organization mail relay mode.
+// @Summary      Get the organization mail relay mode
+// @Description  Whether an organization's own mail relay carries its organization mail (off, verified_sender or on), and where the value comes from. Account security mail never uses an organization relay. Any administrator.
+// @Tags         Admin System
+// @Produce      json
+// @Success      200  {object}  EmailRelayResponse
+// @Security     AdminAuth
+// @Router       /admin/settings/email-relay [get]
+func (h *AdminPlatformSettingsHandler) GetEmailRelay(w http.ResponseWriter, r *http.Request) {
+	s, err := h.EmailRelay.Get(r.Context())
+	if err != nil {
+		h.writeSettingError(w, "organization mail relay mode", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, h.emailRelayResponse(r.Context(), s))
+}
+
+// UpdateEmailRelay changes the organization mail relay mode.
+// @Summary      Change the organization mail relay mode
+// @Description  Super admin with a fresh step-up and a reason. Applies without a restart; audited critical, every administrator is told.
+// @Tags         Admin System
+// @Accept       json
+// @Produce      json
+// @Param        request  body      UpdateEmailRelayRequest  true  "Mode"
+// @Success      200  {object}  EmailRelayResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      409  {object}  apierror.Error
+// @Security     AdminAuth
+// @Router       /admin/settings/email-relay [put]
+func (h *AdminPlatformSettingsHandler) UpdateEmailRelay(w http.ResponseWriter, r *http.Request) {
+	actor := requireActor(w, r)
+	if actor == nil {
+		return
+	}
+	var req UpdateEmailRelayRequest
+	if !decodeSetting(w, r, &req) {
+		return
+	}
+	s, err := h.EmailRelay.Update(r.Context(), actor, req.Mode, req.Reason, req.Version, middleware.ClientIP(r), r.UserAgent())
+	if err != nil {
+		h.writeSettingError(w, "organization mail relay mode", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, h.emailRelayResponse(r.Context(), s))
 }
 
 // ---- Alert webhook ---------------------------------------------------------

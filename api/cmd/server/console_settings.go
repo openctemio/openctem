@@ -90,5 +90,6 @@ func newAdminPlatformSettingsHandler(repos *Repositories, svc *Services, approva
 	h.Captcha, h.Region, h.StorageQuota, h.Alerts, h.AI =
 		svc.PlatformCaptcha, svc.DeploymentRegion, svc.StorageQuota, svc.PlatformAlert, svc.PlatformAI
 	h.MFA = svc.PlatformMFA
+	h.EmailRelay = svc.OrgRelay
 	return h
 }

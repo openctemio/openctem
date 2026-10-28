@@ -25,6 +25,8 @@
   "org.acceptInvite.invitationFor": "Invitation for",
   "org.acceptInvite.invitedBy": "Invited by",
   "org.acceptInvite.joined": "You have joined the organization.",
+  "org.acceptInvite.joinedMfaBody": "Set up two-factor authentication to open it.",
+  "org.acceptInvite.joinedMfaTitle": "You have joined {org}",
   "org.acceptInvite.loadFailed": "The invitation could not be loaded. Try again.",
   "org.acceptInvite.mfaOutside": "You will set up two-factor authentication before you can open {org}: your roles are privileged and you are outside the organization.",
   "org.acceptInvite.mfaPolicy": "{org} requires two-factor authentication: you will set it up before you can open it.",
