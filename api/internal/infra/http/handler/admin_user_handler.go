@@ -411,6 +411,8 @@ func writeAdminRosterError(w http.ResponseWriter, log *logger.Logger, err error,
 		apierror.Conflict("This administrator is bound to the identity provider; remove the binding first.").WriteJSON(w)
 	case errors.Is(err, admin.ErrBreakGlassHasMemberships):
 		apierror.Conflict("A break-glass administrator must belong to no organization, and this account is a member of one.").WriteJSON(w)
+	case errors.Is(err, admin.ErrBreakGlassHasRoles):
+		apierror.Conflict("This account holds extra platform roles; a break-glass account holds its base role only.").WriteJSON(w)
 	default:
 		log.Error("admin roster change failed", "op", op, "error", err)
 		apierror.InternalError(err).WriteJSON(w)

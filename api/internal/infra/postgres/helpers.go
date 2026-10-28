@@ -120,6 +120,10 @@ func isCheckViolation(err error) bool {
 // account belongs to no organization.
 const breakGlassConsoleOnly = "break_glass_console_only"
 
+// breakGlassBaseRoleOnly is the rule (migration 003525) that a break-glass
+// account holds its base platform role only.
+const breakGlassBaseRoleOnly = "break_glass_base_role_only"
+
 // isConstraintViolation reports a check violation of the named constraint (or
 // trigger rule raised with that constraint name).
 func isConstraintViolation(err error, name string) bool {

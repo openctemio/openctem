@@ -122,7 +122,7 @@ sequenceDiagram
   permission, `self` (the caller's own session and factors) or `public` (sign-in steps). The check runs after
   authentication and before step-up.
 - **Grants**: `platform.roles.assign`, step-up and reason; the role's permissions must be a subset of the caller's
-  own; no self-assignment; owner grants and revocations need a second owner; every change audited at high severity
+  own; no self-assignment; owner grants and revocations need a second owner; every change audited at high severity (the audit row is written in the same transaction as the change, so a failed write leaves no change and no false row; a repeated grant changes and audits nothing); a break-glass account holds its base role only (refused in code and by database triggers)
   and announced to the other administrators.
 - **Console UI**: `GET /api/v1/admin/auth/validate` returns the acting permissions and the maximum; navigation and
   pages hide by permission. Hiding is a convenience: the API decides.

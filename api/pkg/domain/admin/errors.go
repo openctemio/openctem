@@ -18,6 +18,10 @@ var (
 	// one (migration 003524).
 	ErrBreakGlassHasMemberships = fmt.Errorf("%w: a break-glass administrator must belong to no organization, and this account is a member of one", shared.ErrConflict)
 
+	// ErrBreakGlassHasRoles: a break-glass account holds its base platform
+	// role only (migration 003525).
+	ErrBreakGlassHasRoles = fmt.Errorf("%w: a break-glass account holds its base platform role only", shared.ErrConflict)
+
 	// ErrUserAlreadyAdmin: the user account is already an administrator.
 	ErrUserAlreadyAdmin = fmt.Errorf("%w: this account is already a platform administrator", shared.ErrConflict)
 

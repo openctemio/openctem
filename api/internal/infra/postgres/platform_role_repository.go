@@ -2,11 +2,13 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/internal/app/platformrole"
+	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	"github.com/openctemio/openctem/api/pkg/domain/platformauthz"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -85,36 +87,84 @@ func (r *PlatformRoleRepository) ListAssignments(ctx context.Context) ([]platfor
 }
 
 // Assign gives an additional role. A base role is never given here (the
-// trigger on admin_users.role owns those).
-func (r *PlatformRoleRepository) Assign(ctx context.Context, adminID shared.ID, role platformauthz.RoleKey, by shared.ID) error {
-	res, err := r.db.ExecContext(ctx, `
-		INSERT INTO platform_role_assignments (admin_id, role_id, granted_by)
-		SELECT $1, id, $3 FROM platform_roles WHERE key = $2 AND NOT base
-		ON CONFLICT DO NOTHING`, adminID.String(), string(role), by.String())
-	if err != nil {
-		return fmt.Errorf("assign platform role: %w", err)
+// trigger on admin_users.role owns those). The audit entry is written in the
+// same transaction and only when the role was new.
+func (r *PlatformRoleRepository) Assign(ctx context.Context, adminID shared.ID, role platformauthz.RoleKey, by shared.ID, entry *admin.AuditLog) (bool, error) {
+	if entry == nil {
+		return false, platformrole.ErrAuditUnavailable
 	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		var held bool
-		if err := r.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM platform_role_assignments a JOIN platform_roles pr ON pr.id = a.role_id
-			WHERE a.admin_id = $1 AND pr.key = $2)`, adminID.String(), string(role)).Scan(&held); err != nil {
+	changed := false
+	err := r.inTx(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `
+			INSERT INTO platform_role_assignments (admin_id, role_id, granted_by)
+			SELECT $1, id, $3 FROM platform_roles WHERE key = $2 AND NOT base
+			ON CONFLICT DO NOTHING`, adminID.String(), string(role), by.String())
+		if err != nil {
+			if isConstraintViolation(err, breakGlassBaseRoleOnly) {
+				return admin.ErrBreakGlassHasRoles
+			}
 			return fmt.Errorf("assign platform role: %w", err)
 		}
-		if !held {
-			return platformrole.ErrUnknownRole
+		n, _ := res.RowsAffected()
+		if n == 0 {
+			var held bool
+			if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM platform_role_assignments a JOIN platform_roles pr ON pr.id = a.role_id
+				WHERE a.admin_id = $1 AND pr.key = $2)`, adminID.String(), string(role)).Scan(&held); err != nil {
+				return fmt.Errorf("assign platform role: %w", err)
+			}
+			if !held {
+				return platformrole.ErrUnknownRole
+			}
+			return nil // already held: nothing changed, nothing to audit
 		}
+		changed = true
+		return auditTx(ctx, tx, entry)
+	})
+	return changed && err == nil, err
+}
+
+// Revoke takes an additional role and reports whether it was held; the audit
+// entry is written in the same transaction and only when a role was taken.
+func (r *PlatformRoleRepository) Revoke(ctx context.Context, adminID shared.ID, role platformauthz.RoleKey, entry *admin.AuditLog) (bool, error) {
+	if entry == nil {
+		return false, platformrole.ErrAuditUnavailable
+	}
+	held := false
+	err := r.inTx(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `
+			DELETE FROM platform_role_assignments a USING platform_roles pr
+			WHERE a.admin_id = $1 AND pr.id = a.role_id AND pr.key = $2 AND NOT pr.base`, adminID.String(), string(role))
+		if err != nil {
+			return fmt.Errorf("revoke platform role: %w", err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil || n == 0 {
+			return err
+		}
+		held = true
+		return auditTx(ctx, tx, entry)
+	})
+	return held && err == nil, err
+}
+
+// auditTx writes the entry in the change's transaction; a failure rolls the
+// change back and surfaces as ErrAuditUnavailable.
+func auditTx(ctx context.Context, tx *sql.Tx, entry *admin.AuditLog) error {
+	if err := CreateAdminAuditLogTx(ctx, tx, entry); err != nil {
+		return fmt.Errorf("%w: %v", platformrole.ErrAuditUnavailable, err)
 	}
 	return nil
 }
 
-// Revoke takes an additional role and reports whether it was held.
-func (r *PlatformRoleRepository) Revoke(ctx context.Context, adminID shared.ID, role platformauthz.RoleKey) (bool, error) {
-	res, err := r.db.ExecContext(ctx, `
-		DELETE FROM platform_role_assignments a USING platform_roles pr
-		WHERE a.admin_id = $1 AND pr.id = a.role_id AND pr.key = $2 AND NOT pr.base`, adminID.String(), string(role))
+// inTx runs fn in a transaction.
+func (r *PlatformRoleRepository) inTx(ctx context.Context, fn func(tx *sql.Tx) error) error {
+	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		return false, fmt.Errorf("revoke platform role: %w", err)
+		return fmt.Errorf("platform role change: %w", err)
 	}
-	n, err := res.RowsAffected()
-	return n > 0, err
+	defer func() { _ = tx.Rollback() }()
+	if err := fn(tx); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
