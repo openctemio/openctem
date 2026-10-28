@@ -154,6 +154,29 @@ describe('adminFetch step-up', () => {
     expect(fetchMock.mock.calls[2][1].headers[ADMIN_STEP_UP_HEADER]).toBe('654321')
   })
 
+  it('hands a refused form code back to the form instead of stacking the dialog over it', async () => {
+    // The route refuses the code the form sent (wrong or already used). The
+    // form shows that under its own field; a step-up dialog opened over the
+    // form's dialog would leave it dimmed and unusable behind a second overlay.
+    const prompt = vi.fn()
+    setAdminStepUpPrompt(prompt)
+    fetchMock.mockResolvedValueOnce(stepUp('Invalid or already used code'))
+    const err = (await adminFetch('/settings/email', {
+      method: 'PUT',
+      body: { host: 'smtp.example.com', totp_code: '123456' },
+    }).catch((e: unknown) => e)) as AdminApiError
+    expect(err).toBeInstanceOf(AdminApiError)
+    expect(err.status).toBe(401)
+    expect(err.message).toBe('Invalid or already used code')
+    // A code passed as stepUpCode is the caller's too.
+    fetchMock.mockResolvedValueOnce(stepUp('Invalid or already used code'))
+    await expect(
+      adminFetch('/tenants/t1/users', { method: 'POST', body: {}, stepUpCode: '111222' })
+    ).rejects.toBeInstanceOf(AdminApiError)
+    expect(prompt).not.toHaveBeenCalled()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
   it('gives up when the administrator cancels', async () => {
     setAdminStepUpPrompt(vi.fn().mockResolvedValue(null))
     fetchMock.mockResolvedValueOnce(stepUp())
