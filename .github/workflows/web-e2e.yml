@@ -12,25 +12,29 @@ name: Web E2E
 # (in the `changes` job) says whether the suite runs.
 #
 # When the suite runs
-#   merge queue   when the queued PR (merge_group.base_sha..head_sha) changed
-#                 web/, api/ or anything shared (.github/, deploy/, root
-#                 Makefile, go.work): .github/scripts/changed.sh, the same
-#                 rules as the other workflows. Docs-only changes skip.
+#   merge queue   the WHOLE suite, when the queued PR (merge_group.base_sha..
+#                 head_sha) changed web/, api/ or anything shared (.github/,
+#                 deploy/, root Makefile, go.work): .github/scripts/changed.sh,
+#                 the same rules as the other workflows. Docs-only changes skip.
 #   develop       on every push, the WHOLE suite: the queue ran only the specs
 #                 the change needed, so this is the net under that selection.
 #                 A failure opens or updates one issue labelled
 #                 `e2e-regression`.
 #   nightly       the whole suite on develop (02:41 UTC), and on demand.
-#   pull request  only with the `run-e2e` label, or when the suite itself
-#                 (web/e2e/, this workflow) changed, and the web or the API's
-#                 HTTP layer (api/internal/infra/http/) changed. With the
-#                 `ci:full` label or a changed CI definition (.github/workflows/,
-#                 .github/scripts/, .github/actions/): the whole suite.
+#   pull request  the SMOKE set (specs tagged @smoke, plus any spec the PR
+#                 edits) when the web or the API's HTTP layer
+#                 (api/internal/infra/http/) changed. With the `run-e2e` label,
+#                 or when the suite itself (web/e2e/, this workflow) changed:
+#                 the specs the changed files map to (impact selection).
+#                 With the `ci:full` label, a changed CI definition
+#                 (.github/workflows/, .github/scripts/, .github/actions/) or a
+#                 release/* head branch: the whole suite.
 #
-# Which specs (pull request, merge queue): the `plan` job maps the changed
-# files to area tags with web/e2e/impact-map.yml (web/e2e/ci/select.mjs). The
-# @smoke specs always run; a shared or unmapped path runs everything; only
-# docs and unit tests select nothing. The specs are split into 1 to 4 shards
+# Which specs: the `plan` job (web/e2e/ci/select.mjs). Merge queue, develop,
+# nightly and dispatch: all of them. Pull request: the @smoke set, or with
+# impact selection the changed files mapped to area tags with
+# web/e2e/impact-map.yml (the @smoke specs always run; a shared or unmapped
+# path runs everything; only docs and unit tests select nothing). The specs are split into 1 to 4 shards
 # by their recorded durations (artifact `e2e-timings` of the last green
 # develop run, the median for a spec without one), longest first, and the
 # every-page request budget check runs only when the @budget specs are
@@ -87,6 +91,7 @@ jobs:
       actions: read # queue-verified.sh reads the merge queue's runs of this commit
       checks: read # green-base.sh and release-provenance.sh read a commit's check runs
     outputs:
+      pool: ${{ steps.pool.outputs.pool }}
       web: ${{ steps.f.outputs.web }}
       api: ${{ steps.f.outputs.api }}
       suite: ${{ steps.suite.outputs.changed }}
@@ -107,6 +112,10 @@ jobs:
           # The nightly run starts from the default branch's workflow file.
           ref: ${{ github.event_name == 'schedule' && 'develop' || '' }}
       - uses: ./.github/actions/setup-gh
+      - id: pool
+        uses: ./.github/actions/ci-pool
+        with:
+          share: ${{ vars.CI_SELFHOSTED_SHARE }}
       - id: f
         env:
           EVENT_BEFORE: ${{ github.event.before }}
@@ -177,15 +186,18 @@ jobs:
           HTTP: ${{ steps.http.outputs.changed }}
           SUITE: ${{ steps.suite.outputs.changed }}
           FULL: ${{ steps.f.outputs.full }}
-          LABELED: ${{ contains(github.event.pull_request.labels.*.name, 'run-e2e') }}
+          RELEASE: ${{ startsWith(github.head_ref, 'release/') }}
         run: |
           run=false
           case "$EVENT" in
             pull_request)
-              # ci:full or a changed CI definition: the merge-queue rule below.
-              if [ "$FULL" = true ]; then
+              # ci:full, a changed CI definition or a release branch: the
+              # merge-queue rule below (the whole suite).
+              if [ "$FULL" = true ] || [ "$RELEASE" = true ]; then
                 if [ "$WEB" = true ] || [ "$API" = true ]; then run=true; fi
-              elif { [ "$WEB" = true ] || [ "$HTTP" = true ]; } && { [ "$SUITE" = true ] || [ "$LABELED" = true ]; }; then run=true; fi ;;
+              # Any other pull request: the smoke set (the `plan` job picks
+              # more with the run-e2e label or a changed suite).
+              elif [ "$WEB" = true ] || [ "$HTTP" = true ]; then run=true; fi ;;
             *)
               # merge_group, push: web/, api/ or a shared file changed.
               if [ "$WEB" = true ] || [ "$API" = true ]; then run=true; fi ;;
@@ -289,10 +301,15 @@ jobs:
           # The full tier asked for: the ci:full label or a changed CI
           # definition. Only on a pull request; the merge queue always reports
           # it and selects by files.
-          FULL: ${{ github.event_name == 'pull_request' && needs.changes.outputs.full == 'true' }}
+          # (or a release/* branch).
+          FULL: ${{ github.event_name == 'pull_request' && (needs.changes.outputs.full == 'true' || startsWith(github.head_ref, 'release/')) }}
+          # A pull request runs the smoke set; the run-e2e label or a changed
+          # suite widens it to the specs the changed files map to.
+          IMPACT: ${{ github.event_name == 'pull_request' && (needs.changes.outputs.suite == 'true' || contains(github.event.pull_request.labels.*.name, 'run-e2e')) }}
         run: |
           args=(plan --changed "$RUNNER_TEMP/changed.txt" --event "$EVENT")
           if [ "$FULL" = true ]; then args+=(--full); fi
+          if [ "$IMPACT" = true ]; then args+=(--impact); fi
           if [ -f "$RUNNER_TEMP/timings/e2e-timings.json" ]; then args+=(--timings "$RUNNER_TEMP/timings/e2e-timings.json"); fi
           node web/e2e/ci/select.mjs "${args[@]}" > "$RUNNER_TEMP/plan.json"
           jq -c '.matrix' "$RUNNER_TEMP/plan.json" | sed 's/^/matrix=/' >> "$GITHUB_OUTPUT"
@@ -315,7 +332,7 @@ jobs:
       actions: write
     needs: [changes, plan]
     if: needs.changes.outputs.run == 'true' && needs.plan.result == 'success' && needs.plan.outputs.count != '0'
-    runs-on: ${{ ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_E2E_BUILD) || (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_HEAVY) || 'ubuntu-latest' }}
+    runs-on: ${{ ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_E2E_BUILD) || (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || needs.changes.outputs.pool || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (vars.CI_RUNNER_HEAVY || needs.changes.outputs.pool)) || 'ubuntu-latest' }}
     timeout-minutes: 25
     env:
       API_IMAGE: local/openctem-api:e2e

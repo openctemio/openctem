@@ -1,0 +1,105 @@
+name: Security Ack Command
+
+# `/security-ack` and `/security-unack` as a pull request comment: a listed
+# acker adds or removes the `security-ack` label from the GitHub mobile app or
+# an e-mail reply, and the workflow reacts +1 (ack) or -1 (unack) to the
+# comment. Guide: api/docs/development/ci-cd.md#security-gate.
+#
+# Safety:
+# - `issue_comment` runs THIS FILE FROM THE DEFAULT BRANCH, never from the pull
+#   request, and no pull request code is checked out or run. The comment text
+#   is only compared with two fixed strings by the script, never put in a
+#   shell or an expression.
+# - Only a user listed under `ackers` in .github/security-paths.yml is obeyed;
+#   the script re-reads the comment through the API (author, text, never
+#   edited) and ignores everyone else silently. The path list comes from the
+#   checked-out default branch, so a pull request cannot widen it.
+# - The label is written with this workflow's token, so GitHub records the
+#   Actions bot as the label's actor. The gate (security_gate.py) therefore
+#   counts the label as the acker's decision only next to the acker's own
+#   `/security-ack` comment just before it, from GitHub's records, under the
+#   same settle and carry rules as a label added by hand. A label added by any
+#   other workflow, or after a stale comment, is no ack.
+# - The label this adds starts no workflow (GITHUB_TOKEN events never do), so a
+#   second job asks the gate to run again (`security_gate.py rerun`).
+# - Jobs get only what they use: the command job writes labels and reactions
+#   (issues + pull-requests write, contents read for the checkout); the re-run
+#   job reads the pull request and re-runs one workflow run (actions write).
+# - Fork pull requests: the label and the reaction work (the token is the base
+#   repository's); the re-run is skipped for a fork head, as for a label by
+#   hand: re-run the gate by hand, or push.
+#
+# Needs the default branch (main) to carry this file and the script: it takes
+# effect with the next release.
+
+on:
+  issue_comment: # zizmor: ignore[dangerous-triggers] comment text is only compared with fixed strings, no pull request code runs
+    types: [created]
+
+permissions: {}
+
+# One command at a time per pull request, in order; never cancel one midway
+# (a cancelled command could leave the label and the comment disagreeing).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  command:
+    name: security-ack-command
+    # A cheap pre-filter; the script decides. Comments on pull requests only,
+    # first line starting with the command word, by a repository member.
+    if: >-
+      github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/security-') &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read # sparse checkout of the default branch
+      pull-requests: write # the pull request's label and reaction
+      issues: write # labels and comment reactions live on the issue side
+    outputs:
+      acted: ${{ steps.cmd.outputs.acted }}
+    steps:
+      - name: Check out the gate from the default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: base
+          persist-credentials: false
+          sparse-checkout: |
+            .github/security-paths.yml
+            .github/scripts/security_gate.py
+          sparse-checkout-cone-mode: false
+
+      - name: Obey the command
+        id: cmd
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          SECURITY_PATHS=base/.github/security-paths.yml python3 base/.github/scripts/security_gate.py ackcmd
+
+  rerun:
+    name: security-ack-rerun
+    needs: command
+    if: needs.command.outputs.acted == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read # sparse checkout of the default branch
+      pull-requests: read # the pull request's current head
+      actions: write # re-run the gate run of that head
+    steps:
+      - name: Check out the gate from the default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: base
+          persist-credentials: false
+          sparse-checkout: |
+            .github/scripts/security_gate.py
+          sparse-checkout-cone-mode: false
+
+      - name: Re-run the gate
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 base/.github/scripts/security_gate.py rerun

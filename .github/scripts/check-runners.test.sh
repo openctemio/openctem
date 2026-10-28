@@ -12,9 +12,12 @@ fails=0
 FORK="(github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)"
 MERGE="(github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest'))"
 LIGHT="\${{ $MERGE || ($FORK && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}"
-HEAVY="\${{ $MERGE || ($FORK && vars.CI_RUNNER_HEAVY) || 'ubuntu-latest' }}"
-CODEQL="\${{ ($FORK && vars.CI_RUNNER_CODEQL) || $MERGE || ($FORK && vars.CI_RUNNER_HEAVY) || 'ubuntu-latest' }}"
-E2E="\${{ ($FORK && vars.CI_RUNNER_E2E_BUILD) || $MERGE || ($FORK && vars.CI_RUNNER_HEAVY) || 'ubuntu-latest' }}"
+POOL="needs.changes.outputs.pool"
+MERGEP="(github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || $POOL || 'ubuntu-latest'))"
+HEAVYV="($FORK && (vars.CI_RUNNER_HEAVY || $POOL))"
+HEAVY="\${{ $MERGEP || $HEAVYV || 'ubuntu-latest' }}"
+CODEQL="\${{ ($FORK && vars.CI_RUNNER_CODEQL) || $MERGEP || $HEAVYV || 'ubuntu-latest' }}"
+E2E="\${{ ($FORK && vars.CI_RUNNER_E2E_BUILD) || $MERGEP || $HEAVYV || 'ubuntu-latest' }}"
 
 case_() { # name want-rc runs-on [extra file text]
   local d="$tmp/$1"
@@ -54,6 +57,12 @@ case_ light-in-merge-group 1 "\${{ ($FORK && vars.CI_RUNNER_LIGHT) || 'ubuntu-la
 # Unknown variable or context.
 case_ unknown-var 1 "\${{ $MERGE || ($FORK && vars.CI_RUNNER_OTHER) || 'ubuntu-latest' }}"
 case_ input 1 "\${{ inputs.runner || 'ubuntu-latest' }}"
+# The pool output must not bypass the fork guard or reach a light job.
+case_ pool-no-fork-guard 1 "\${{ $MERGEP || vars.CI_RUNNER_HEAVY || $POOL || 'ubuntu-latest' }}"
+case_ pool-without-fallback-in-merge 1 "\${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || $POOL)) || $HEAVYV || 'ubuntu-latest' }}"
+case_ pool-in-light 1 "\${{ $MERGE || ($FORK && (vars.CI_RUNNER_LIGHT || $POOL)) || 'ubuntu-latest' }}"
+case_ pool-bare 1 "\${{ $POOL }}"
+case_ pool-other-job 1 "\${{ $MERGE || ($FORK && (vars.CI_RUNNER_HEAVY || needs.other.outputs.pool)) || 'ubuntu-latest' }}"
 # Safe but not one of the approved forms: refused, so every job reads the same.
 case_ unapproved-safe 1 "\${{ $MERGE || 'ubuntu-latest' }}"
 
