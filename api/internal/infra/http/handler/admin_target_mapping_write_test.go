@@ -72,10 +72,20 @@ func (f *fakeTargetMappingRepo) seed(t *testing.T, priority int) *tool.TargetAss
 	return m
 }
 
-func opsAdminRequest(t *testing.T, method, target, body string, id string) *http.Request {
+func mappingSuperAdminRequest(t *testing.T, method, target, body string, id string) *http.Request {
 	t.Helper()
-	a, err := admin.NewAdminUser("ops@example.test", "Ops", admin.AdminRoleOpsAdmin, nil)
+	a, err := admin.NewAdminUser("root@example.test", "Root", admin.AdminRoleSuperAdmin, nil)
 	require.NoError(t, err)
+	// Every mapping write carries a reason; a body that has none gets one so
+	// the tests exercise the field they are about.
+	if method != http.MethodGet && !strings.Contains(body, `"reason"`) {
+		const reason = `"reason":"Reviewed with the scanning team"`
+		if strings.TrimSpace(body) == "" || strings.TrimSpace(body) == "{}" {
+			body = "{" + reason + "}"
+		} else {
+			body = "{" + reason + "," + strings.TrimPrefix(strings.TrimSpace(body), "{")
+		}
+	}
 	r := httptest.NewRequest(method, target, bytes.NewBufferString(body))
 	ctx := context.WithValue(r.Context(), middleware.AdminUserKey, a)
 	if id != "" {
@@ -112,7 +122,7 @@ func TestAdminTargetMappingCreate_Validation(t *testing.T) {
 			h := NewAdminTargetMappingHandler(repo, logger.NewNop())
 
 			w := httptest.NewRecorder()
-			h.Create(w, opsAdminRequest(t, http.MethodPost, "/api/v1/admin/target-mappings", tt.body, ""))
+			h.Create(w, mappingSuperAdminRequest(t, http.MethodPost, "/api/v1/admin/target-mappings", tt.body, ""))
 
 			assert.Equal(t, tt.wantStatus, w.Code, w.Body.String())
 			if tt.wantMsg != "" {
@@ -132,7 +142,7 @@ func TestAdminTargetMappingUpdate_Validation(t *testing.T) {
 		h := NewAdminTargetMappingHandler(repo, logger.NewNop())
 
 		w := httptest.NewRecorder()
-		h.Update(w, opsAdminRequest(t, http.MethodPatch, "/x", `{"priority":0}`, m.ID.String()))
+		h.Update(w, mappingSuperAdminRequest(t, http.MethodPatch, "/x", `{"priority":0}`, m.ID.String()))
 
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 		assert.Equal(t, 20, repo.byID[m.ID.String()].Priority)
@@ -145,7 +155,7 @@ func TestAdminTargetMappingUpdate_Validation(t *testing.T) {
 		body := `{"description":"` + strings.Repeat("é", tool.MaxMappingDescriptionLength+1) + `"}`
 
 		w := httptest.NewRecorder()
-		h.Update(w, opsAdminRequest(t, http.MethodPatch, "/x", body, m.ID.String()))
+		h.Update(w, mappingSuperAdminRequest(t, http.MethodPatch, "/x", body, m.ID.String()))
 
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 	})
@@ -156,7 +166,7 @@ func TestAdminTargetMappingUpdate_Validation(t *testing.T) {
 		h := NewAdminTargetMappingHandler(repo, logger.NewNop())
 
 		w := httptest.NewRecorder()
-		h.Update(w, opsAdminRequest(t, http.MethodPatch, "/x", `{"is_active":false}`, m.ID.String()))
+		h.Update(w, mappingSuperAdminRequest(t, http.MethodPatch, "/x", `{"is_active":false}`, m.ID.String()))
 
 		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 		assert.False(t, repo.byID[m.ID.String()].IsActive)
@@ -168,7 +178,7 @@ func TestAdminTargetMappingUpdate_Validation(t *testing.T) {
 		h := NewAdminTargetMappingHandler(repo, logger.NewNop())
 
 		w := httptest.NewRecorder()
-		h.Update(w, opsAdminRequest(t, http.MethodPatch, "/x", `{"is_primary":true,"priority":0}`, m.ID.String()))
+		h.Update(w, mappingSuperAdminRequest(t, http.MethodPatch, "/x", `{"is_primary":true,"priority":0}`, m.ID.String()))
 
 		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 		assert.Equal(t, tool.PrimaryMappingPriority, repo.byID[m.ID.String()].Priority)
