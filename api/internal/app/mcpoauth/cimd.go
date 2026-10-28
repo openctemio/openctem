@@ -251,29 +251,34 @@ func contains(list []string, v string) bool {
 // served from the stored copy while it is fresh and fetched again when it is
 // not; a registered client is read from the store. Unknown, unusable or
 // blocked clients are errors.
-func (s *Service) resolveClient(ctx context.Context, clientID string) (*mcpoauth.Client, error) {
+//
+// A fetched document is never stored here: the authorization endpoint is
+// unauthenticated, so storing would let anyone fill the client registry the
+// administrators see. pending is true for a document that travels with the
+// authorization request and is stored when a signed-in person approves it.
+func (s *Service) resolveClient(ctx context.Context, clientID string) (client *mcpoauth.Client, pending bool, err error) {
 	if clientID == "" || len(clientID) > maxClientIDLen {
-		return nil, ErrInvalidClientMetadata
+		return nil, false, ErrInvalidClientMetadata
 	}
 	stored, err := s.repo.GetClientByClientID(ctx, clientID)
 	if err != nil && !errors.Is(err, mcpoauth.ErrNotFound) {
-		return nil, err
+		return nil, false, err
 	}
 	now := s.now()
 	if stored != nil && stored.BlockedAt != nil {
-		return nil, errClientBlocked
+		return nil, false, errClientBlocked
 	}
 	if !IsMetadataDocumentClientID(clientID) {
 		if stored == nil {
-			return nil, mcpoauth.ErrNotFound
+			return nil, false, mcpoauth.ErrNotFound
 		}
-		return stored, nil
+		return stored, false, nil
 	}
 	if stored != nil && stored.ExpiresAt != nil && now.Before(*stored.ExpiresAt) {
-		return stored, nil
+		return stored, false, nil
 	}
 	if s.fetcher == nil {
-		return nil, ErrInvalidClientMetadata
+		return nil, false, ErrInvalidClientMetadata
 	}
 	fetched, err := s.fetcher.Fetch(ctx, clientID)
 	if err != nil {
@@ -281,9 +286,14 @@ func (s *Service) resolveClient(ctx context.Context, clientID string) (*mcpoauth
 		// reaches the log.
 		s.log.Info("mcp oauth: client metadata document refused",
 			"client_id", oneLine(clientID), "reason", oneLine(err.Error()))
-		return nil, ErrInvalidClientMetadata
+		return nil, false, ErrInvalidClientMetadata
 	}
-	return s.repo.UpsertClient(ctx, fetched)
+	if stored != nil {
+		// Keep the link to the stored row so a later block still applies.
+		fetched.ID = stored.ID
+		fetched.BlockedAt = stored.BlockedAt
+	}
+	return fetched, true, nil
 }
 
 var errClientBlocked = errors.New("client blocked")

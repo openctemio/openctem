@@ -259,7 +259,7 @@ with the envelope, or a refusal:
 
 | Status | Reasons |
 |---|---|
-| 400 | `malformed` (not JSON, unknown or mistyped field, trailing data), `bad_kind`, `invalid_id`, `missing_command_type`, `missing_tool`, `bad_payload_digest`, `bad_targets`, `bad_templates`, `bad_limits`, `bad_lease_epoch`, `clock_skew`, `bad_expiry`, `server_field_set` |
+| 400 | `malformed` (not JSON, unknown or mistyped field, trailing data), `bad_kind`, `invalid_id`, `missing_command_type`, `missing_tool`, `bad_payload_digest`, `bad_targets`, `bad_templates`, `bad_content`, `bad_limits`, `bad_lease_epoch`, `clock_skew`, `bad_expiry`, `server_field_set` |
 | 403 | `out_of_ledger`, `tier_exceeds_ledger`, `target_excluded`, `template_not_in_ledger` (the [scope ledger](#scope-ledger) does not authorize the job) |
 | 413 | `body_too_large` |
 | 429 | `tenant_rate_limited`, `sensor_rate_limited` |
@@ -291,6 +291,7 @@ Its own rules; nothing the API sends relaxes them:
 - `issued_at` within ±2 minutes of the signer's clock;
 - `expires_at` after `issued_at` and at most 1 hour after it;
 - `seq`, `nonce` and `signer` are not set by the caller;
+- `content`, when present, is well formed ([Content](#content));
 - the organization's and the sensor's signing ceilings;
 - every target against the organization's [scope ledger](#scope-ledger), at
   the tool's tier (in `enforce` mode; `audit` signs and records the miss).
@@ -348,6 +349,7 @@ payload bytes it received and never re-serializes them.
 | `payload_sha256` | string | `sha256:` + hex SHA-256 of the command's `payload` JSON value, exactly as the claim response carries it |
 | `targets` | string[] | payload `targets` and `target`, trimmed, de-duplicated, in order |
 | `templates` | string[] | only when the payload carries custom templates: `sha256:` + hex SHA-256 of each `custom_templates[].content`, base64-decoded after trimming, in payload order, duplicates kept ([Custom templates](#custom-templates)) |
+| `content` | object[] | only when the payload pins content packs: `{slot, digest}` of each `content[]` member, in payload order, duplicates kept ([Content](#content)) |
 | `limits` | object[] | only for a sensor that enforces scope limits, when a target is covered only by port- or path-limited entries: `{host, ports, protocol, path_prefix}` per covering entry ([Scope limits](#scope-limits)) |
 | `lease_epoch` | int | the claim's lease epoch (the command's `lease_epoch`) |
 | `issued_at` | RFC 3339 UTC | when the API asked |
@@ -441,7 +443,10 @@ Before it parses anything else of the command:
     ([Custom templates](#custom-templates));
 12. every `limits` entry names the host of one of `targets` and is well
     formed; the sensor then enforces them ([Scope limits](#scope-limits)).
-    A sensor that predates the field refuses the statement (unknown field).
+    A sensor that predates the field refuses the statement (unknown field);
+13. `content` lists exactly the `{slot, digest}` of the payload's `content`
+    members; it mounts only those packs, each checked against the content
+    keys pinned at pairing ([Content](#content)).
 
 Any failure: refuse the command (fail it with a refusal), never run it.
 
@@ -779,6 +784,36 @@ when people approved it and the signer recorded its digest in the ledger.
 - **Upgrade.** Migration `001572` marks the current version of every
   active template as approved (they ran before); the ledger bootstrap
   exports them for review.
+
+## Content
+
+RFC-061 §3.7. A scan or retest job names the content packs it reads by
+digest, and the platform checks each digest before it asks for a signature.
+
+- **Pinning.** At claim time the platform sets `content` (packs: `slot`,
+  `kind`, `scope`, `pack`, `digest`, `size`, `files`, `max_lines`, the pack's
+  DSSE `signature`) and `inputs` (lists generated for the job) on the copy of
+  the command the sensor receives. They are never on the stored command, and
+  a member a creator wrote is removed. The signature covers them through
+  `payload_sha256`; the statement's `content` repeats each pack's
+  `{slot, digest}`.
+- **Deliverability.** Before the signer is asked, every digest in `content`
+  must be deliverable to the job's organization: a platform pack on the
+  `stable` channel, or an active pack of that organization for a sensor of
+  its own. Another organization's digest, a revoked one, an unknown one and
+  any organization's pack in a job for a shared sensor are refused, and the
+  command fails with `SIGNER_REFUSED` and the reason. A failure to read the
+  packs is transient: the claim is taken back and tried again.
+- **The signer process** validates the statement's `content` (at most 8
+  entries, slot `[a-z][a-z0-9_]{0,31}`, `sha256:` digests, no repeated
+  entry; refusal `bad_content`). It keeps no pack data: the check above runs
+  in the API, and a sensor verifies every pack against the content keys it
+  pinned at pairing (the platform key, and for an organization's own sensor
+  that organization's key), so a pack signed for another organization never
+  verifies on a sensor of this one even if a compromised API listed it.
+- **Older sensors** refuse a statement that carries `content` (unknown
+  field): a job that pins content never runs on a sensor that cannot check
+  the pins.
 
 ## Not yet (next steps)
 
