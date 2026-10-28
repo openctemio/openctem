@@ -809,6 +809,11 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// tenant owns domain assets; disable with CERT_MONITOR_ENABLED=false.
 	// Names a permanent scope target or seed covers are confirmed: once at
 	// start-up (the backfill) and every 6 h (RFC-054 §4.3).
+	// Groups that fill themselves by a rule are evaluated again every hour
+	// (asset changes trigger their own debounced evaluation).
+	if svc.AssetGroup != nil {
+		w.ControllerManager.Register(controller.NewAssetGroupRulesController(svc.AssetGroup, 0))
+	}
 	if svc.ScopeJoin != nil {
 		if svc.Module != nil {
 			svc.ScopeJoin.SetModuleGuard(svc.Module) // skip tenants with attack_surface off
