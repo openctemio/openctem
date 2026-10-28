@@ -458,21 +458,22 @@ func TestConfirmBreakGlassTest(t *testing.T) {
 	}
 }
 
-func TestProvisionSetsTemporaryPasswordMarker(t *testing.T) {
+func TestProvisionBreakGlassByInvitation(t *testing.T) {
 	b := newBGHarness(t)
-	a, temp, err := b.svc.Provision(context.Background(), b.admin, ProvisionInput{
+	b.svc.SetInvitationMailer(&fakeInvites{can: true})
+	res, err := b.svc.Provision(context.Background(), b.admin, ProvisionInput{
 		Email: "new@acme.io", Name: "New", Role: admin.AdminRoleSuperAdmin, BreakGlass: true,
 	}, client)
-	if err != nil || temp == "" {
+	if err != nil || !res.Emailed {
 		t.Fatalf("provision: %v", err)
 	}
-	if !a.PasswordChangeRequired() || !a.IsBreakGlass() {
-		t.Fatalf("expected break-glass with password change required: %+v", a.SignInState())
+	if res.Admin.PasswordChangeRequired() || !res.Admin.IsBreakGlass() {
+		t.Fatalf("expected a break-glass admin with no temporary password: %+v", res.Admin.SignInState())
 	}
 	if e := b.entries.find(ActionAdminProvisioned); e == nil || e.Severity != admin.SeverityHigh {
 		t.Fatal("provisioning a break-glass admin is a high-severity event")
 	}
-	if _, _, err := b.svc.Provision(context.Background(), b.admin, ProvisionInput{
+	if _, err := b.svc.Provision(context.Background(), b.admin, ProvisionInput{
 		Email: "ro@acme.io", Name: "Ro", Role: admin.AdminRoleReadonly, BreakGlass: true,
 	}, client); err == nil {
 		t.Fatal("a break-glass admin must be a super admin")

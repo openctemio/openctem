@@ -37,7 +37,8 @@ on:
       - deploy/airgap/**
       - api/Dockerfile
       - api/Dockerfile.migrations
-      - api/scripts/migrate-entrypoint.sh
+      - api/cmd/openctem-migrate/**
+      - api/internal/migrate/**
       - api/deploy/gateway/**
       - api/cmd/server/main.go
       - api/cmd/signer/main.go
