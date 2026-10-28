@@ -84,6 +84,7 @@ const formSchema = z.object({
   to_emails: z.string().optional(),
   use_tls: z.boolean().optional(),
   use_starttls: z.boolean().optional(),
+  org_mail: z.boolean().optional(),
 })
 
 type FormValues = z.infer<typeof formSchema>
@@ -208,6 +209,7 @@ export function EditNotificationDialog({
       to_emails: '',
       use_tls: false,
       use_starttls: true,
+      org_mail: false,
     },
   })
 
@@ -244,6 +246,7 @@ export function EditNotificationDialog({
           : '',
         use_tls: (metadata.use_tls as boolean) || false,
         use_starttls: (metadata.use_starttls as boolean) ?? true,
+        org_mail: metadata.org_mail === true,
       })
       // Open advanced section if any advanced settings are configured
       setAdvancedOpen(!!(ext?.message_template || ext?.min_interval_minutes))
@@ -284,6 +287,7 @@ export function EditNotificationDialog({
             to_emails: toEmailsList.length > 0 ? toEmailsList : undefined,
             use_tls: data.use_tls,
             use_starttls: data.use_starttls,
+            org_mail: data.org_mail,
           })
         }
       }
@@ -460,6 +464,21 @@ export function EditNotificationDialog({
                     <label htmlFor="edit_use_tls" className="text-sm cursor-pointer">
                       Direct TLS (Port 465)
                     </label>
+                  </div>
+                </div>
+                <div className="flex items-start space-x-2">
+                  <Checkbox
+                    id="edit_org_mail"
+                    checked={watch('org_mail')}
+                    onCheckedChange={(checked) => setValue('org_mail', !!checked)}
+                  />
+                  <div>
+                    <label htmlFor="edit_org_mail" className="text-sm cursor-pointer">
+                      {t('notificationChannels.emailOrgMail')}
+                    </label>
+                    <p className="text-xs text-muted-foreground">
+                      {t('notificationChannels.emailOrgMailHelp')}
+                    </p>
                   </div>
                 </div>
               </div>

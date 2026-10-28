@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/httpsec"
@@ -27,15 +28,17 @@ var (
 
 // Config holds SMTP configuration.
 type Config struct {
-	Host       string
-	Port       int
-	User       string
-	Password   string
-	From       string
-	FromName   string
-	TLS        bool
-	SkipVerify bool
-	Timeout    time.Duration
+	Host     string
+	Port     int
+	User     string
+	Password string
+	From     string
+	FromName string
+	TLS      bool // STARTTLS after the greeting
+	// ImplicitTLS wraps the connection in TLS before the greeting (port 465).
+	ImplicitTLS bool
+	SkipVerify  bool
+	Timeout     time.Duration
 }
 
 // Message represents an email message.
@@ -229,6 +232,15 @@ func (s *SMTPSender) sendSMTP(ctx context.Context, to []string, content []byte) 
 	}
 	if err := conn.SetDeadline(deadline); err != nil {
 		return fmt.Errorf("failed to set deadline: %w", err)
+	}
+
+	// Implicit TLS (port 465): the handshake comes before the greeting.
+	if s.config.ImplicitTLS {
+		tc := tls.Client(conn, TLSConfig(s.config.Host, s.config.SkipVerify))
+		if err := tc.HandshakeContext(ctx); err != nil {
+			return fmt.Errorf("failed to complete TLS handshake: %w", err)
+		}
+		conn = tc
 	}
 
 	// Create SMTP client
@@ -440,3 +452,57 @@ func TenantPortAllowed(port int) bool {
 
 // ErrTenantPortNotAllowed refuses an organization's relay on another port.
 var ErrTenantPortNotAllowed = errors.New("the SMTP port must be 25, 465, 587 or 2525")
+
+// ManagedSubmissionPorts are the ports an organization's relay may use on a
+// managed (hosted, multi-tenant) service: submission with implicit TLS (465)
+// and submission (587, 2525). Port 25 is server-to-server delivery: from the
+// platform's egress it would be direct-to-MX mail with a sender the
+// organization chose, carrying the platform's address reputation.
+var ManagedSubmissionPorts = []int{465, 587, 2525}
+
+// ErrTenantRelayPolicy is wrapped by every refusal of a relay by the managed
+// service rules, so callers can tell a policy refusal from a network failure.
+var ErrTenantRelayPolicy = errors.New("this organization relay does not meet the managed service rules")
+
+var (
+	// ErrTenantRelayPort25 refuses port 25 on a managed service.
+	ErrTenantRelayPort25 = fmt.Errorf("%w: the SMTP port must be 465, 587 or 2525 (port 25 is not allowed)", ErrTenantRelayPolicy)
+	// ErrTenantRelayNeedsAuth refuses a relay without a username and password.
+	ErrTenantRelayNeedsAuth = fmt.Errorf("%w: a username and password are required", ErrTenantRelayPolicy)
+	// ErrTenantRelayNeedsTLS refuses a relay that is not encrypted.
+	ErrTenantRelayNeedsTLS = fmt.Errorf("%w: TLS or STARTTLS is required", ErrTenantRelayPolicy)
+)
+
+var managedTenantRelay atomic.Bool
+
+// SetManagedTenantRelay turns the managed service rules for organization
+// relays on or off. The server sets it once at start-up from MANAGED_SERVICE.
+func SetManagedTenantRelay(on bool) { managedTenantRelay.Store(on) }
+
+// ManagedTenantRelay reports whether the managed service rules apply.
+func ManagedTenantRelay() bool { return managedTenantRelay.Load() }
+
+// ValidateTenantRelay is the one transport rule for an organization's SMTP
+// relay, used when it is saved, tested and every time mail is sent. On every
+// install the port must be one of TenantSMTPPorts. On a managed service it
+// must also be a submission port, authenticated (username and password) and
+// encrypted (implicit TLS or STARTTLS), so the platform never speaks
+// unauthenticated or clear-text SMTP to a host an organization chose.
+func ValidateTenantRelay(port int, useTLS, useSTARTTLS bool, username, password string) error {
+	if !TenantPortAllowed(port) {
+		return ErrTenantPortNotAllowed
+	}
+	if !ManagedTenantRelay() {
+		return nil
+	}
+	if !slices.Contains(ManagedSubmissionPorts, port) {
+		return ErrTenantRelayPort25
+	}
+	if username == "" || password == "" {
+		return ErrTenantRelayNeedsAuth
+	}
+	if !useTLS && !useSTARTTLS {
+		return ErrTenantRelayNeedsTLS
+	}
+	return nil
+}
