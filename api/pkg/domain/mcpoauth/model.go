@@ -79,8 +79,11 @@ const (
 
 // AuthRequest is one authorization transaction.
 type AuthRequest struct {
-	ID            shared.ID
-	Client        Client
+	ID     shared.ID
+	Client Client
+	// ClientPending: Client is a metadata document fetched for this request
+	// and not stored yet. It is stored when a signed-in person approves.
+	ClientPending bool
 	RedirectURI   string
 	State         string
 	CodeChallenge string
@@ -203,10 +206,11 @@ type Repository interface {
 	// already claimed by someone else is ErrRequestState.
 	ClaimRequest(ctx context.Context, id, userID shared.ID, now time.Time) (*AuthRequest, error)
 	// ApproveRequest moves a pending request claimed by userID to approved
-	// and stores the code hash.
+	// and stores the code hash. clientRef is the stored client the request
+	// now points to (a pending metadata-document client is stored first).
 	// fullData records the person's choice to let the grant read all
 	// organization data.
-	ApproveRequest(ctx context.Context, id, userID, tenantID shared.ID, granted []Scope, fullData bool, codeHash string, codeExpiresAt, now time.Time) error
+	ApproveRequest(ctx context.Context, id, userID, tenantID, clientRef shared.ID, granted []Scope, fullData bool, codeHash string, codeExpiresAt, now time.Time) error
 	// DenyRequest moves a pending request claimed by userID to denied.
 	DenyRequest(ctx context.Context, id, userID shared.ID, now time.Time) error
 	// RedeemCode atomically moves the approved request holding codeHash to
@@ -254,13 +258,23 @@ type ClientUsage struct {
 	LastUsedAt        *time.Time
 }
 
+// ClientFilter narrows the platform's client list: Q matches part of the
+// client_id (its host) or the declared name; Blocked keeps blocked (true) or
+// unblocked (false) clients, nil keeps both.
+type ClientFilter struct {
+	Q       string
+	Blocked *bool
+}
+
 // ConnectionRepository lists and manages connections (RFC-062 §12).
 type ConnectionRepository interface {
 	ListConnections(ctx context.Context, tenantID shared.ID, userID *shared.ID, now time.Time) ([]Connection, error)
 	GetGrant(ctx context.Context, tenantID, grantID shared.ID) (*Grant, error)
 	// ListClientsForPlatform and SetClientBlockedForPlatform serve the
 	// platform admin console only.
-	ListClientsForPlatform(ctx context.Context, now time.Time) ([]ClientUsage, error)
+	// ListClientsForPlatform returns one page (newest first) and the total
+	// number of clients matching f.
+	ListClientsForPlatform(ctx context.Context, f ClientFilter, limit, offset int, now time.Time) ([]ClientUsage, int, error)
 	SetClientBlockedForPlatform(ctx context.Context, clientRef shared.ID, blocked bool, now time.Time) error
 }
 

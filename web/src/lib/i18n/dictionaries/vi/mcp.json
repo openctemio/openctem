@@ -205,6 +205,8 @@
   "mcp.scope.pentestDraft.title": "Lưu phát hiện pentest dưới dạng bản nháp, mỗi bản do một thành viên khác của chiến dịch xác nhận",
   "mcp.scope.propose.short": "Đề xuất",
   "mcp.scope.propose.title": "Đề xuất dương tính giả và chấp nhận rủi ro, mỗi đề xuất do người khác quyết định",
+  "mcp.scope.scopeCheck.short": "Kiểm tra phạm vi",
+  "mcp.scope.scopeCheck.title": "Kiểm tra một mục tiêu có nằm trong phạm vi kiểm thử đã được cấp phép hay không, chỉ đọc",
   "mcp.status.anyClient": "Cho phép ứng dụng chưa xác minh",
   "mcp.status.canComment": "Đọc và bình luận",
   "mcp.status.days": "Kết nối kéo dài {days} ngày",
