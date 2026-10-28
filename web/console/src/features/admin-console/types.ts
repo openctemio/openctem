@@ -787,6 +787,40 @@ export interface CaptchaSettings extends SettingChange {
   version: number
 }
 
+/** One social login provider; the client secret is never returned. */
+export interface SocialProvider {
+  provider: 'google' | 'github' | 'microsoft'
+  enabled: boolean
+  client_id: string
+  secret_set: boolean
+  /** The exact callback address to register at the provider. */
+  redirect_uri: string
+  /** Custom scopes; empty means the provider's defaults. */
+  scopes: string[]
+  default_scopes: string[]
+  source: 'none' | 'console' | 'environment'
+  locked_by_environment: boolean
+  env_var: string
+  /** Sign-in with the provider is offered right now. */
+  active: boolean
+  /** The stored secret does not decrypt: the provider is off until replaced. */
+  undecryptable: boolean
+}
+
+/** Settings > Social login. */
+export interface SocialLoginSettings extends SettingChange {
+  providers: SocialProvider[]
+  /** OAUTH_ENABLED on the server; false switches every provider off. */
+  master_enabled: boolean
+  javascript_origin: string
+  /** Who may create an account by public sign-up. */
+  signup_accounts: 'closed' | 'domain' | 'open'
+  version: number
+}
+
+export type SocialCheckResult =
+  'valid' | 'invalid' | 'redirect_mismatch' | 'unreachable' | 'unknown'
+
 /** The deployment region, set once before the first organization. */
 export interface RegionSettings extends SettingChange {
   region: string
