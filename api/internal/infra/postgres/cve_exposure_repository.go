@@ -191,8 +191,8 @@ func (r *FindingRepository) cveExposureComponents(ctx context.Context, tx *sql.T
 			WHERE s2.component_id = sv.id AND length(fv) <= 64
 			ORDER BY fv LIMIT 20), '{}')
 	FROM scoped s
-	JOIN software_versions sv ON sv.id = s.component_id
-	JOIN software_products p ON p.id = sv.product_id
+	JOIN software_versions sv ON sv.id = s.component_id AND (sv.tenant_id IS NULL OR sv.tenant_id = s.tenant_id)
+	JOIN software_products p ON p.id = sv.product_id AND (p.tenant_id IS NULL OR p.tenant_id = s.tenant_id)
 	GROUP BY sv.id, sv.product_id, p.name, sv.purl, sv.raw
 	HAVING COUNT(*) FILTER (WHERE ` + open + `) > 0
 	ORDER BY 6 DESC, p.name, sv.raw
@@ -219,7 +219,7 @@ func (r *FindingRepository) cveExposureComponents(ctx context.Context, tx *sql.T
 	//nolint:gosec // G202: the compiled filter, constants and placeholders only, no request text
 	pq2 := scopedFindingsCTE(w, "findings.component_id IS NOT NULL AND "+vulnerability.OpenStatusSQL("findings.status")) + `
 	SELECT sv.product_id, COUNT(DISTINCT s.asset_id)
-	FROM scoped s JOIN software_versions sv ON sv.id = s.component_id
+	FROM scoped s JOIN software_versions sv ON sv.id = s.component_id AND (sv.tenant_id IS NULL OR sv.tenant_id = s.tenant_id)
 	GROUP BY sv.product_id`
 	prow, err := tx.QueryContext(ctx, pq2, w.Args...)
 	if err != nil {
@@ -293,8 +293,8 @@ func (r *FindingRepository) cveExposureSoftware(ctx context.Context, tx *sql.Tx,
 			EXISTS (SELECT 1 FROM software_version_vulns m
 				WHERE m.software_version_id = asw.software_version_id AND m.cve_id = $` + strconv.Itoa(cveArg) + `) AS matched
 		FROM asset_software asw
-		JOIN software_versions sv ON sv.id = asw.software_version_id
-		JOIN software_products p ON p.id = asw.product_id
+		JOIN software_versions sv ON sv.id = asw.software_version_id AND (sv.tenant_id IS NULL OR sv.tenant_id = asw.tenant_id)
+		JOIN software_products p ON p.id = asw.product_id AND (p.tenant_id IS NULL OR p.tenant_id = asw.tenant_id)
 		JOIN assets a ON a.tenant_id = asw.tenant_id AND a.id = asw.asset_id AND a.deleted_at IS NULL
 		WHERE asw.tenant_id = $` + strconv.Itoa(tenantArg) + ` AND asw.superseded_at IS NULL
 		  AND asw.product_id IN (SELECT va.product_id FROM vulnerability_affected va WHERE va.cve_id = $` + strconv.Itoa(cveArg) + `)
