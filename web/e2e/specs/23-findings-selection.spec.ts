@@ -9,7 +9,7 @@ import { test, expect } from '../fixtures/authenticated-page'
 const bulkBar = (page: import('@playwright/test').Page) =>
   page.getByRole('toolbar', { name: /actions for selected rows/i })
 
-test.describe('Findings selection', () => {
+test.describe('Findings selection', { tag: ['@findings'] }, () => {
   test('a search change clears the selection', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 })
     await page.goto('/findings')
