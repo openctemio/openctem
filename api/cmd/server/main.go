@@ -26,6 +26,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/websocket"
 	"github.com/openctemio/openctem/api/internal/versions"
 	"github.com/openctemio/openctem/api/pkg/brand"
+	emailpkg "github.com/openctemio/openctem/api/pkg/email"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/keycloak"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -119,6 +120,9 @@ func run() int {
 	}
 
 	brand.SetInstance(cfg.Brand)
+	// A hosted service holds organization mail relays to the managed rules
+	// (submission port, AUTH, TLS).
+	emailpkg.SetManagedTenantRelay(cfg.App.ManagedService)
 	log := initLogger(cfg)
 	log.Info("starting application", "app", cfg.App.Name, "env", cfg.App.Env)
 	for _, w := range cfg.EnvWarnings {
@@ -291,6 +295,15 @@ func run() int {
 	// changed) go to the user through the system SMTP server.
 	if services.Auth != nil && services.Email != nil {
 		services.Auth.SetSecurityNotifier(services.Email)
+	}
+
+	// Owners of an organization whose e-mail channel was stopped by the
+	// managed service rules are told in-app and through the system SMTP.
+	if services.Integration != nil {
+		services.Integration.SetRelayPolicyNotices(repos.Tenant, services.Notification)
+		if services.Email != nil {
+			services.Integration.SetRelayPolicyMailer(services.Email)
+		}
 	}
 
 	// Owners are emailed about an SSO change that waits for their approval.

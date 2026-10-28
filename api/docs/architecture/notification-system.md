@@ -340,6 +340,26 @@ func (f *ClientFactory) CreateClient(config Config) (Client, error) {
 | **Email** | SMTP config | HTML with CSS | TLS/STARTTLS, multiple recipients |
 | **Webhook** | Custom URL | JSON payload | Flexible, any endpoint |
 
+### Mail server rules for the e-mail channel
+
+An organization chooses the SMTP host of its e-mail channel, so the platform holds that relay to one
+transport rule (`pkg/email` `ValidateTenantRelay`), applied when the channel is saved, when it is tested
+and before every send:
+
+- Every install: the port is 25, 465, 587 or 2525 (never another service), the host passes the outbound
+  address guard (private and metadata ranges are blocked unless the operator allows them), and the
+  certificate is always verified.
+- `MANAGED_SERVICE=true` (a hosted service): the port is a submission port (465, 587 or 2525; port 25 is
+  refused), a username and password are required, and TLS (465) or STARTTLS (587, 2525) is required.
+  Plain-text login is never attempted.
+
+A channel that was saved before the rule and no longer passes stops sending: its status becomes
+`INTEGRATION_EMAIL_RELAY_POLICY` ("Sending is stopped until you edit it and test again"), shown on the
+integration, and every active owner of the organization gets an in-app notice and an e-mail through the
+platform relay, once. Editing the channel to a compliant relay and testing it resumes delivery. Shipped:
+the transport rules and the stop-and-notify. Designed, not shipped: sender-domain verification and the
+`email.tenant_relay` mode (research 308, D12).
+
 ### Generic webhook payload
 
 ```json

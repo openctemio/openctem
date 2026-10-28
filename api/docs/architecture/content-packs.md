@@ -37,7 +37,7 @@ Code: `pkg/domain/contentpack` (archive, signing) and `internal/app/contentpack`
    |---|---|---|
    | `nuclei-templates` | Every YAML file goes through the custom-template validator (one YAML document per file). Code-class blocks are errors: `code`, `javascript`, `flow` (JavaScript run by the engine), `headless` and `file`. So are self-contained templates, unsafe regexes and more than 10,000 estimated requests per target. Workflow `template:` references and payload list files must name files of the same pack by a relative path that stays inside it; workflow `tags:` selectors are errors. A workflow that runs a refused template, or that loops, is refused with it. Other files are data. | Computed from the parsed document, never from author declarations (see below). T2 for out-of-band callbacks, state-changing requests (PUT/PATCH/DELETE, POST with a body), race requests, more than 25 threads or a non-numeric `threads`, fuzzing rules, and more than 500 estimated requests per target. T1 for dns/network/tcp/ssl/websocket/whois or payloads. A workflow takes the highest tier of what it runs, and at least T1. Otherwise T0. |
    | `semgrep-rules` | Every YAML file goes through the rules validator. | T0 |
-   | `wordlist` | UTF-8 text with no NUL. Each line is at most 4096 bytes, and a pack holds at most 10 million lines. | T0 |
+   | `wordlist` | UTF-8 text with no NUL. Each line is at most 4096 bytes, and a pack holds at most 10 million lines. A pack with a `wordlists.yaml` is held to it (purposes, line counts, sha256, entries valid and unique, sources on the license allow-list, a `NOTICE`); a platform pack must have one. See [wordlists.md](wordlists.md). | T0 |
    | `x-<namespace>/<kind>` | Archive rules only. A warning says the kind has no linter. | T1 |
 
    A lint error refuses the pack with 422 `CONTENT_LINT_FAILED`; the lint report is in `details`.
@@ -131,13 +131,16 @@ Sensors get packs only from the platform, over the sensor channel (protocol v2 r
 
 | Route | What |
 |---|---|
-| `GET /api/v2/sensor/content/desired` | The organization's desired set: its active packs and the platform's packs on the `stable` channel, each with digest, scope, size and the DSSE signature; plus the revoked digests. It has an `ETag` (a hash of the document). `If-None-Match` with the current one answers `304` with no body. |
+| `GET /api/v2/sensor/content/desired` | The sensor's desired set: for an organization sensor its organization's active packs and the platform's packs on the `stable` channel, for a shared sensor the platform's `stable` packs only; each with digest, scope, size and the DSSE signature; plus the revoked digests. It has an `ETag` (a hash of the document). `If-None-Match` with the current one answers `304` with no body. |
 | `GET /api/v2/sensor/content/packs/{digest}` | The canonical archive. Immutable: `ETag` is the digest, `Cache-Control: immutable`, and `Range` is supported. |
 | `GET /api/v2/sensor/content/packs/{digest}/index` | The pack's files: `path`, `sha256`, `size`. |
 | `GET /api/v2/sensor/content/packs/{digest}/files/{sha256}` | One file of the pack. |
 
-- **What a sensor may read.** It reads only digests in its organization's desired set. Anything else is `404 content-not-found`: another organization's pack, a revoked one, an unknown digest, or a file that is not in the pack.
-- **Revocation latency.** The set is cached for 10 seconds per organization, so a delta install's many file requests do not recompute it, and a revocation takes effect within that time.
+- **What a sensor may read.** It reads only digests in its own desired set. Anything else is `404 content-not-found`: another organization's pack, a revoked one, an unknown digest, or a file that is not in the pack.
+- **Shared sensors.** A shared sensor (one that serves several organizations) may read the content routes, in the *instance* scope: the platform's `stable` packs and nothing else. An organization's pack is `404` for it whatever job it holds, so one copy of a platform pack serves every organization on the box and nothing of one organization's is ever cached there. Organization templates and rules never reach a shared sensor ([RFC-061](../rfcs/RFC-061-content-packs.md) §3.7, [RFC-100](../rfcs/RFC-100-shared-sensors.md) §8).
+- **Revocation latency.** The set is cached for 10 seconds per organization (and for the instance scope), so a delta install's many file requests do not recompute it, and a revocation takes effect within that time.
+- **Content version.** The heartbeat answer carries `content_version`, the ETag of the sensor's own desired set, computed from the same cached set. A promotion to `stable`, a revocation or a new organization pack changes it, and the sensor then refreshes at once instead of waiting for its schedule.
+- **Content keys.** The pairing response carries the keys a sensor verifies packs with ([Sensor pairing](sensor-pairing.md#content-keys)); a sensor never takes a key from these routes.
 - **Archive cache.** Served archives are re-checked against their digest and kept in a 256 MiB in-process cache.
 - **The sensor side** (sdk-go `contentcache`):
   - it never fetches a digest it holds;
@@ -145,6 +148,17 @@ Sensors get packs only from the platform, over the sensor channel (protocol v2 r
   - it prefetches on a jittered schedule;
   - it counts hits, misses and bytes saved.
 - **Measured** (integration test, 3 sensors × 2 runs, a 40-file pack with 2 files changed in the new version): the new version cost 30 KB instead of 372 KB of full downloads (92% less). Over both runs, traffic is 44% less than every sensor downloading every version in full, and upstream downloads drop from one per sensor to one per platform.
+
+## Jobs that pin content
+
+A scan or retest job names the packs it reads by digest, and the lists the platform generated for it travel inline (RFC-061 §3.7). The platform sets two members on the copy of the command a sensor receives, never on the stored command; a member a creator wrote is removed.
+
+- **`content[]`**: `{slot, kind, scope, pack, digest, size, files, max_lines, signature}` per pack. `scope` is `platform` or `tenant` (which pinned key signs it), `files` are the pack files the slot uses (at most 64) and `signature` is the pack's DSSE envelope. The signed statement repeats `{slot, digest}` of each in order ([job signing, Content](job-signing.md#content)); the sensor mounts only those packs and checks each against its pinned keys.
+- **`inputs[]`**: `{slot, purpose, sha256, lines, data_b64}` per generated list. `data_b64` is gzip, at most 256 KiB compressed, 512 KiB for all of a job's lists and 8 MiB expanded; `sha256` is that of the uncompressed list. A list is never stored as a pack and never cached: it is written to the task's own directory and erased with it.
+- **Asking for a list.** A payload names the lists it needs in `wordlists`: `[{"slot": "labels", "purpose": "dns-labels"}]` (purposes `dns-labels`, `web-paths`, `web-files`, `api-routes`, `params`). The platform picks the pack: the run's depth selects the size class, standard `wordlists-s` and deep `wordlists-m` (100,000 and 1,000,000 lines at most), both the platform's pack on the `stable` channel; a passive run uses no list, and no class above medium is offered. `files` are the pack's files in the directory of the purpose (`dns/`, `paths/`, `files/`, `api/`, `params/`). A job that asks for a list the platform cannot pin (no stable pack, a pack that is not a wordlist, no list for the purpose) is failed with the reason, not run without it.
+- **Generated lists.** For `dns-labels` the platform adds a list built from the organization's own active domain and subdomain names under the job's DNS targets: the labels left of the root, and the parts of a label (`api-v2-eu` gives `api`, `v2`, `eu` and `api-v2-eu`), most frequent first. Only that organization's rows are read (every query carries its tenant id) and nothing of another organization appears in the list. A list over the cap is cut by rank, so the most frequent labels stay. It is deterministic for a given set of names, so retries of one run agree. It may run on a shared sensor: the names are the organization's own targets, they are signed into the job and live only in the task directory.
+- **Deliverability.** Before the signer is asked, every digest is checked: it must be a platform `stable` pack or, for an organization's own sensor, one of that organization's active packs. Another organization's digest, a revoked one and an unknown one are refused, and the command fails with `SIGNER_REFUSED` and the reason.
+- **What the platform records.** The pinned pack digests and the sha256 and line count of each generated list are written to the API log when the job is planned, and the signing log holds the hash of every signed statement.
 
 ## API
 

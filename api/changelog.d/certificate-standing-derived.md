@@ -1,5 +1,0 @@
-### Changed: a certificate is in scope through the endpoints that served it
-
-- A certificate was judged by its fingerprint, which no scope entry can match, so every certificate showed "Held by a platform guardrail" even when it was served by an endpoint in scope. The active-probe gate now judges a certificate by the endpoints that served it, each through the full gate (deny list, rejections, exclusions, scope entries, guardrails). If any endpoint passes, so does the certificate; if none does, it shows the strongest refusal among them; with no known endpoint nothing is dispatched.
-- Ownership is a separate signal: a name in the certificate (CN or SAN) under one of your domains or a verified domain marks it as yours, and a certificate on your endpoint with only foreign names is a third-party certificate. Ownership never authorizes a probe, and a certificate never brings its endpoint or address into scope.
-- `GET /assets/{id}/attribution` returns `certificate` for a certificate asset (standing, serving endpoints, ownership). Endpoints outside the caller's data scope are not named. `covered_by.kind` can be `served_by`.
