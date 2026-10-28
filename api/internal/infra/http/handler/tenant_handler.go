@@ -592,12 +592,7 @@ func (h *TenantHandler) handleServiceError(w http.ResponseWriter, err error) {
 			"The platform requires two-factor authentication at least for administrators. An organization can require more, not less.").WriteJSON(w)
 		return
 	}
-	if code, status, ok := invitationErrorCode(err); ok {
-		msg := err.Error()
-		if idx := strings.Index(msg, ": "); idx != -1 {
-			msg = msg[idx+2:]
-		}
-		apierror.New(status, apierror.Code(code), msg).WriteJSON(w)
+	if writeAuthTableError(w, err) {
 		return
 	}
 	if errors.Is(err, tenantapp.ErrStoredFilesNotErased) {
@@ -630,26 +625,6 @@ func (h *TenantHandler) handleServiceError(w http.ResponseWriter, err error) {
 		h.logger.Error("service error", "error", logger.SanitizeError(err))
 		apierror.InternalError(err).WriteJSON(w)
 	}
-}
-
-// invitationErrorCode gives the invitation refusals a stable code the console
-// translates (RFC-095 §6).
-func invitationErrorCode(err error) (string, int, bool) {
-	switch {
-	case errors.Is(err, tenantapp.ErrInviteeNotOnVerifiedDomain):
-		return "INVITEE_NOT_ON_VERIFIED_DOMAIN", http.StatusForbidden, true
-	case errors.Is(err, tenantapp.ErrEmailDomainNotAllowed):
-		return "INVITEE_DOMAIN_NOT_ALLOWED", http.StatusBadRequest, true
-	case errors.Is(err, tenantapp.ErrInvitationNoLongerValid):
-		return "INVITATION_NO_LONGER_VALID", http.StatusForbidden, true
-	case errors.Is(err, tenantapp.ErrPersonalAccountsBlocked):
-		return "PERSONAL_ACCOUNTS_BLOCKED", http.StatusForbidden, true
-	case errors.Is(err, tenant.ErrInvitationResendTooSoon):
-		return "INVITATION_RESEND_TOO_SOON", http.StatusTooManyRequests, true
-	case errors.Is(err, tenant.ErrInvitationRateLimited):
-		return "INVITATIONS_RATE_LIMITED", http.StatusTooManyRequests, true
-	}
-	return "", 0, false
 }
 
 // writeToggleErrorJSON serialises a module.ToggleError as the 400

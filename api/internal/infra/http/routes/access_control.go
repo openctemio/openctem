@@ -62,12 +62,25 @@ func registerGroupRoutes(
 		r.POST("/{groupId}/roles", h.BindGroupRole, middleware.RequireAll(permission.RolesAssign, permission.GroupsWrite))
 		r.DELETE("/{groupId}/roles/{roleId}", h.UnbindGroupRole, middleware.RequireAll(permission.RolesAssign, permission.GroupsWrite))
 
+		// Team access presets (managed roles made from role templates, and the
+		// scope mode). Setting them is a grant like binding a role; the
+		// service also applies the owner-only rule with step-up for a team
+		// with elevated access.
+		r.GET("/{groupId}/access", h.GetTeamAccess, middleware.RequireAll(permission.GroupsRead, permission.RolesRead))
+		r.PUT("/{groupId}/access", h.SetTeamAccess, middleware.RequireAll(permission.RolesAssign, permission.GroupsWrite))
+		r.POST("/{groupId}/access/upgrade", h.UpgradeTeamPreset, middleware.RequireAll(permission.RolesAssign, permission.GroupsWrite))
+
 		// Group asset ownership
 		r.GET("/{groupId}/assets", h.ListGroupAssets, middleware.Require(permission.GroupsRead))
 		r.POST("/{groupId}/assets", h.AssignAsset, middleware.RequireAll(permission.GroupsWrite, permission.GroupsAssets))
 		r.POST("/{groupId}/assets/bulk", h.BulkAssignAssets, middleware.RequireAll(permission.GroupsWrite, permission.GroupsAssets))
 		r.PUT("/{groupId}/assets/{assetId}", h.UpdateAssetOwnership, middleware.RequireAll(permission.GroupsWrite, permission.GroupsAssets))
 		r.DELETE("/{groupId}/assets/{assetId}", h.UnassignAsset, middleware.RequireAll(permission.GroupsWrite, permission.GroupsAssets))
+	}, tenantMiddlewares...)
+
+	// Access a person inherits from their teams (member profile).
+	router.Group("/api/v1/users/{userId}/team-access", func(r Router) {
+		r.GET("/", h.ListUserTeamAccess, middleware.RequireAll(permission.GroupsRead, permission.RolesRead))
 	}, tenantMiddlewares...)
 
 	// Current user's groups (my groups)
