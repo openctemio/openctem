@@ -8,6 +8,8 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/consolesetting"
 	cst "github.com/openctemio/openctem/api/internal/app/consolesetting/consolesettingtest"
+	"github.com/openctemio/openctem/api/pkg/crypto"
+	"github.com/openctemio/openctem/api/pkg/domain/admin"
 )
 
 const apiKey = "sk-ant-test-key-0123456789"
@@ -208,5 +210,162 @@ func TestOrgProviderPolicy(t *testing.T) {
 	}
 	if _, err := svc.ChangeOrgPolicy(ctx, cst.SuperAdmin(t), true, "back", p.Version, "", ""); err != nil || !svc.OrgProviderAllowed(ctx) {
 		t.Fatalf("allow again: %v", err)
+	}
+}
+
+// The four-eyes rule: a save that is turned on and whose destination
+// (provider, base URL, private-network switch, key) differs from the last one
+// applied while on needs a second super admin. Everything else stays
+// one-person.
+func TestApprovalNeededMatrix(t *testing.T) {
+	ctx := context.Background()
+	base := Input{Enabled: true, Provider: "claude", Model: "claude-sonnet-4", APIKey: cst.Strp(apiKey), Reason: "offer platform AI"}
+
+	t.Run("first enable needs approval", func(t *testing.T) {
+		svc, _, _, _ := newSvc(t, false)
+		target, needed := svc.ApprovalNeeded(ctx, base)
+		if !needed || !admin.ApprovalPlatformAIDestination.ValidTarget(target) {
+			t.Fatalf("needed=%v target=%q", needed, target)
+		}
+		if strings.Contains(target, apiKey) {
+			t.Fatal("the key is in the approval target")
+		}
+	})
+
+	t.Run("saving while off needs none", func(t *testing.T) {
+		svc, _, _, _ := newSvc(t, false)
+		off := base
+		off.Enabled = false
+		if _, needed := svc.ApprovalNeeded(ctx, off); needed {
+			t.Fatal("a save that stays off must be one-person")
+		}
+	})
+
+	// Applied state: claude with apiKey, on.
+	setup := func(t *testing.T) *Service {
+		svc, _, _, _ := newSvc(t, false)
+		if _, err := svc.Update(ctx, cst.SuperAdmin(t), base, 0, "", ""); err != nil {
+			t.Fatal(err)
+		}
+		return svc
+	}
+	keep := func(mod func(*Input)) Input {
+		in := Input{Enabled: true, Provider: "claude", Model: "claude-sonnet-4", Reason: "change"}
+		mod(&in)
+		return in
+	}
+	cases := []struct {
+		name   string
+		in     Input
+		needed bool
+	}{
+		{"same destination, same key kept", keep(func(*Input) {}), false},
+		{"same key typed again", keep(func(i *Input) { i.APIKey = cst.Strp(apiKey) }), false},
+		{"model change", keep(func(i *Input) { i.Model = "claude-opus-4" }), false},
+		{"allowed models change", keep(func(i *Input) { i.AllowedModels = []string{"claude-sonnet-4"} }), false},
+		{"key swap", keep(func(i *Input) { i.APIKey = cst.Strp("sk-ant-another-key-9876543210") }), true},
+		{"provider switch", keep(func(i *Input) { i.Provider = "openai"; i.APIKey = cst.Strp("sk-openai-key-0123456789") }), true},
+		{"turn off", keep(func(i *Input) { i.Enabled = false }), false},
+		{"remove key while off", keep(func(i *Input) { i.Enabled = false; i.APIKey = cst.Strp("") }), false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			svc := setup(t)
+			if _, needed := svc.ApprovalNeeded(ctx, c.in); needed != c.needed {
+				t.Fatalf("needed = %v, want %v", needed, c.needed)
+			}
+		})
+	}
+
+	t.Run("an environment-locked provider asks nothing (the console cannot change it)", func(t *testing.T) {
+		svc, _, _, _ := newSvc(t, true)
+		if _, needed := svc.ApprovalNeeded(ctx, base); needed {
+			t.Fatal("locked")
+		}
+	})
+}
+
+// Turning back on with the destination that was applied before needs no
+// approval; one changed while off needs one when turning on.
+func TestApprovalNeededConfigureWhileOffThenEnable(t *testing.T) {
+	ctx := context.Background()
+	svc, _, _, _ := newSvc(t, false)
+	admin1 := cst.SuperAdmin(t)
+	on := Input{Enabled: true, Provider: "claude", Model: "m1", APIKey: cst.Strp(apiKey), Reason: "on"}
+	if _, err := svc.Update(ctx, admin1, on, 0, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	off := Input{Enabled: false, Provider: "claude", Model: "m1", Reason: "off"}
+	if _, err := svc.Update(ctx, admin1, off, 1, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, needed := svc.ApprovalNeeded(ctx, Input{Enabled: true, Provider: "claude", Model: "m1", Reason: "back"}); needed {
+		t.Fatal("back on with the applied destination must be one-person")
+	}
+	// Hostile destination staged while off (one-person), then switched on.
+	stage := Input{Enabled: false, Provider: "claude", Model: "m1", APIKey: cst.Strp("sk-ant-attacker-key-0123456789"), Reason: "stage"}
+	if _, err := svc.Update(ctx, admin1, stage, 2, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, needed := svc.ApprovalNeeded(ctx, Input{Enabled: true, Provider: "claude", Model: "m1", Reason: "enable"}); !needed {
+		t.Fatal("enabling a destination changed while off must need approval")
+	}
+}
+
+// The target binds the exact key: another key gives another target, the same
+// key the same one, and neither contains the key.
+func TestApprovalTargetBindsKey(t *testing.T) {
+	ctx := context.Background()
+	svc, _, _, _ := newSvc(t, false)
+	a, _ := svc.ApprovalNeeded(ctx, Input{Enabled: true, Provider: "claude", Model: "m", APIKey: cst.Strp(apiKey)})
+	a2, _ := svc.ApprovalNeeded(ctx, Input{Enabled: true, Provider: "claude", Model: "m", APIKey: cst.Strp(apiKey)})
+	b, _ := svc.ApprovalNeeded(ctx, Input{Enabled: true, Provider: "claude", Model: "m", APIKey: cst.Strp("sk-ant-other-key-0123456789")})
+	if a == "" || a != a2 || a == b {
+		t.Fatalf("targets: %q %q %q", a, a2, b)
+	}
+}
+
+// noFingerprint is an encryptor that cannot fingerprint (it hides the
+// optional crypto.Fingerprinter of the real cipher).
+type noFingerprint struct{ crypto.Encryptor }
+
+// Without a keyed fingerprint a key swap cannot be bound to the approval, so a
+// save that carries a key is refused instead of approved against a constant.
+func TestSaveRefusedWhenTheKeyCannotBeFingerprinted(t *testing.T) {
+	ctx := context.Background()
+	repo, audit, n := cst.NewRepo(), &cst.Audit{}, &cst.Notifier{}
+	svc := NewService(repo, noFingerprint{cst.Cipher(t)}, cst.Recorder(audit, n), false, "claude", "env-model", nil)
+	in := Input{Enabled: true, Provider: "claude", Model: "claude-sonnet-4", APIKey: cst.Strp(apiKey), Reason: "on"}
+
+	if _, err := svc.Update(ctx, cst.SuperAdmin(t), in, 0, "", ""); !errors.Is(err, ErrNoFingerprint) {
+		t.Fatalf("Update = %v, want ErrNoFingerprint", err)
+	}
+	if target, needed := svc.ApprovalNeeded(ctx, in); needed || target != "" {
+		t.Fatalf("an unplannable save must not produce an approval target: %q", target)
+	}
+	if len(audit.Entries) != 0 || repo.Raw(SettingKey) != "" {
+		t.Fatal("a refused save stored or audited something")
+	}
+}
+
+// Removing the key of a platform that stays on is a destination change (the
+// server is then called without the credential): it asks for a second
+// administrator. Removing it while turning off does not.
+func TestRemovingTheKeyWhileOnAsksForApproval(t *testing.T) {
+	ctx := context.Background()
+	svc, _, _, _ := newSvc(t, false)
+	on := Input{Enabled: true, Provider: "openai_compatible", Model: "llama3", BaseURL: "http://10.0.0.5:11434/v1",
+		AllowPrivate: true, APIKey: cst.Strp(apiKey), Reason: "self-hosted model"}
+	if _, err := svc.Update(ctx, cst.SuperAdmin(t), on, 0, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	remove := on
+	remove.APIKey = cst.Strp("")
+	if _, needed := svc.ApprovalNeeded(ctx, remove); !needed {
+		t.Fatal("removing the key while staying on must ask")
+	}
+	remove.Enabled = false
+	if _, needed := svc.ApprovalNeeded(ctx, remove); needed {
+		t.Fatal("removing the key while turning off must not ask")
 	}
 }

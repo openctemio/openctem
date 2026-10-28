@@ -39,7 +39,7 @@ jobs:
   # the full-history upload must stay current. Any error here runs the jobs.
   tree:
     name: Tree reuse
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
     timeout-minutes: 10
     permissions:
       contents: read
@@ -52,6 +52,7 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+      - uses: ./.github/actions/setup-gh
       - id: tree
         env:
           EVENT: ${{ github.event_name }}
@@ -75,7 +76,7 @@ jobs:
       contents: read
       security-events: write
       actions: read
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
     env:
       BETTERLEAKS_VERSION: 1.9.0
       BETTERLEAKS_SHA256: f8b185a39ffcece2a1ca82bf3a4e7435cd81963ffd16b7a9128daf75f35f6de7
@@ -213,7 +214,7 @@ jobs:
     name: Workflow Lint
     needs: tree
     if: ${{ !cancelled() && needs.tree.outputs.verified != 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -245,8 +246,17 @@ jobs:
           echo "${ZIZMOR_SHA256}  zizmor.tgz" | sha256sum -c -
           tar -xzf zizmor.tgz zizmor
           ./zizmor --no-progress --format github .github
+      # Which languages CodeQL analyses for an event (develop pushes: the changed side).
+      - name: CodeQL languages self-test
+        run: bash .github/scripts/codeql-languages.test.sh
       - name: Actions are pinned to commit SHAs
         run: bash .github/scripts/check-action-pins.sh
+      # Every runs-on is a hosted label or an approved runner selector, and a
+      # fork pull request always runs on a GitHub-hosted runner.
+      - name: Runner selection self-test
+        run: bash .github/scripts/check-runners.test.sh
+      - name: Runner selection
+        run: bash .github/scripts/check-runners.sh
       # Which jobs a change runs (api/web/docs routing shared by every workflow).
       - name: Change routing self-test
         run: bash .github/scripts/changed.test.sh
@@ -317,7 +327,7 @@ jobs:
     if: github.event_name == 'pull_request'
     permissions:
       contents: read
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
