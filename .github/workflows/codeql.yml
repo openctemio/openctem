@@ -194,10 +194,11 @@ jobs:
           REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
-          # A release pull request is compared with develop (the script decides).
-          HEAD_REF: ${{ github.event.pull_request.head.ref }}
           HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
-        run: bash .github/scripts/codeql-new-alerts.sh
+        # A release pull request is compared with develop (the script decides).
+        # The head branch name is attacker-chosen text: read it from the
+        # runner's GITHUB_HEAD_REF, never interpolated into the workflow.
+        run: HEAD_REF="$GITHUB_HEAD_REF" bash .github/scripts/codeql-new-alerts.sh
 
   # Early warning (develop only): once the push analysis of both languages is
   # in, list the high or critical alerts develop has and main does not, in one

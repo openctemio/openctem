@@ -169,7 +169,11 @@ if [[ "${GITHUB_EVENT_NAME}" == pull_request && "$action" == synchronize && -n "
   && ! grep -q '^\.github/' <<<"$all_files"; then
   if since="$(PR_HEAD_SHA="$head_sha" PR_NUMBER="$PR_NUMBER" bash "$HERE/green-base.sh")" && [[ -n "$since" ]] \
     && git cat-file -e "${since}^{commit}" 2>/dev/null && git cat-file -e "${head_sha}^{commit}" 2>/dev/null \
-    && inc_files="$(git diff --name-only "${since}..${head_sha}")"; then
+    && inc_files="$(git diff --name-only "${since}..${head_sha}")" \
+    && ! grep -q '^\.github/' <<<"$inc_files"; then
+    # The green commit ran this PR's CI as it was then: when .github/ changed
+    # since (e.g. a CI edit that faked the checks, then reverted), its checks
+    # vouch for nothing and the PR is measured against the base.
     incremental=true
     range="${since}..${head_sha}"
     all_files="$inc_files"
