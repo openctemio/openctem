@@ -292,7 +292,7 @@ async function open(page: Page, route: string): Promise<boolean> {
 
 for (const route of staticRoutes()) {
   if (EXCEPTIONS[route]) continue
-  test(`page anatomy on ${route}`, async ({ page }, info) => {
+  test(`page anatomy on ${route}`, { tag: ['@shell'] }, async ({ page }, info) => {
     test.skip(!(await open(page, route)), `${route} redirects`)
     // The page renders a block layout once its header is drawn.
     await expect(page.locator('main h1').first()).toBeVisible({ timeout: 30_000 })
@@ -304,7 +304,7 @@ for (const route of staticRoutes()) {
 }
 
 for (const { route, list } of DETAIL_ROUTES) {
-  test(`page anatomy on ${route}`, async ({ page }) => {
+  test(`page anatomy on ${route}`, { tag: ['@shell'] }, async ({ page }) => {
     await page.goto('/')
     const id = await page.evaluate(async (url) => {
       const res = await fetch(url, { credentials: 'same-origin' })

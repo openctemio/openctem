@@ -83,3 +83,25 @@ func TestElevationNeverAboveOwnRole(t *testing.T) {
 		t.Fatal("acting read-only must not change the persisted role")
 	}
 }
+
+// With the audit log unavailable the elevation is refused and the session
+// stays read-only: a grant never exists without its record.
+func TestElevationFailsClosedWhenAuditIsUnavailable(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	_, token := h.enroll(t)
+	_, sess, err := h.svc.AuthenticateSession(ctx, token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.audit.fail = true
+	_, err = h.svc.Elevate(ctx, h.admin, sess, admin.AdminRoleSuperAdmin, 30*time.Minute, "Rotate the platform IdP secret, ticket 77", client)
+	if !errors.Is(err, ErrAuditUnavailable) {
+		t.Fatalf("elevate with a failing audit log: %v, want ErrAuditUnavailable", err)
+	}
+	h.audit.fail = false
+	_, sess, _ = h.svc.AuthenticateSession(ctx, token)
+	if got := sess.ActingRole(h.clock); got != admin.AdminRoleReadonly {
+		t.Fatalf("the session acts as %s after a refused elevation, want readonly", got)
+	}
+}

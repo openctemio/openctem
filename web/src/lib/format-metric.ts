@@ -180,3 +180,38 @@ export function formatBucket(
     return new Intl.DateTimeFormat('en', opts).format(d)
   }
 }
+
+const DAY_MS = 24 * 60 * 60 * 1000
+
+/**
+ * The span a time-series bucket covers, from its start (an ISO date, UTC):
+ * a week is its seven days as one locale range ("Oct 20 – 26", "20–26 Oct"),
+ * a day is its weekday and date, a month is its name and year. Callers word
+ * it ("Week of {range}"); `kind` says which form was produced.
+ */
+export function formatBucketRange(
+  value: string,
+  bucket: 'day' | 'week' | 'month',
+  locale = 'en'
+): { kind: 'day' | 'week' | 'month'; text: string } {
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return { kind: bucket, text: value }
+  const fmt = (opts: Intl.DateTimeFormatOptions) => {
+    try {
+      return new Intl.DateTimeFormat(locale, { ...opts, timeZone: 'UTC' })
+    } catch {
+      return new Intl.DateTimeFormat('en', { ...opts, timeZone: 'UTC' })
+    }
+  }
+  if (bucket === 'month') {
+    return { kind: 'month', text: fmt({ month: 'long', year: 'numeric' }).format(d) }
+  }
+  if (bucket === 'day') {
+    return {
+      kind: 'day',
+      text: fmt({ weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }).format(d),
+    }
+  }
+  const end = new Date(d.getTime() + 6 * DAY_MS)
+  return { kind: 'week', text: fmt({ month: 'short', day: 'numeric' }).formatRange(d, end) }
+}

@@ -49,9 +49,9 @@ const adminOverviewSample = 5
 func ReadAdminOverview(ctx context.Context, db opsQuerier, now time.Time) (AdminOverviewCounts, error) {
 	var c AdminOverviewCounts
 
-	const noOwner = `NOT EXISTS (SELECT 1 FROM tenant_members m
-		JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
-		WHERE m.tenant_id = t.id AND ver.role = 'owner' AND m.status = 'active')`
+	// "Without owner" means without a usable one: a blocked or erased account
+	// does not count (UsableOwnerExists).
+	noOwner := "NOT " + UsableOwnerExists("t.id")
 
 	// The platform system tenant is internal (seeded, never has an owner):
 	// it is neither an organization to count nor one that needs an owner.

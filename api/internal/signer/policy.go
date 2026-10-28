@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/jobsign"
@@ -21,6 +22,7 @@ const (
 	ReasonBadDigest      = "bad_payload_digest"
 	ReasonBadTargets     = "bad_targets"
 	ReasonBadTemplates   = "bad_templates"
+	ReasonBadContent     = "bad_content"
 	ReasonBadLimits      = "bad_limits"
 	ReasonBadLeaseEpoch  = "bad_lease_epoch"
 	ReasonClockSkew      = "clock_skew"
@@ -99,6 +101,9 @@ func validate(raw []byte, now time.Time) (*jobsign.Statement, *refusal) {
 	if r := validateTemplates(st.Templates, present["templates"]); r != nil {
 		return st, r
 	}
+	if r := validateContent(st.Content, present["content"]); r != nil {
+		return st, r
+	}
 	if r := checkShared(st); r != nil {
 		return st, r
 	}
@@ -143,6 +148,37 @@ func validateTemplates(templates []string, raw json.RawMessage) *refusal {
 	}
 	return nil
 }
+
+// validateContent checks the content pack references: absent when the job
+// pins none, otherwise 1 to jobsign.MaxContent well-formed references with
+// one pack per slot and digest. That each digest may reach the job's
+// organization is the platform's check before it asks for a signature
+// (command.signJob); a sensor then verifies every pack against the content
+// keys it pinned at pairing, so a pack signed for another organization never
+// verifies.
+func validateContent(content []jobsign.ContentRef, raw json.RawMessage) *refusal {
+	if raw != nil && len(content) == 0 {
+		return refuse(http.StatusBadRequest, ReasonBadContent, "content must be left out when the job pins none")
+	}
+	if len(content) > jobsign.MaxContent {
+		return refuse(http.StatusBadRequest, ReasonBadContent, "more than %d content packs", jobsign.MaxContent)
+	}
+	seen := map[jobsign.ContentRef]bool{}
+	for i, c := range content {
+		switch {
+		case !contentSlotRE.MatchString(c.Slot):
+			return refuse(http.StatusBadRequest, ReasonBadContent, "content %d: invalid slot", i)
+		case !jobsign.ValidDigest(c.Digest):
+			return refuse(http.StatusBadRequest, ReasonBadContent, "content %d must be sha256:<64 lower-case hex>", i)
+		case seen[c]:
+			return refuse(http.StatusBadRequest, ReasonBadContent, "content %d repeats a pack", i)
+		}
+		seen[c] = true
+	}
+	return nil
+}
+
+var contentSlotRE = regexp.MustCompile(`^[a-z][a-z0-9_]{0,31}$`)
 
 // absent reports whether a member was left out or is null.
 func absent(raw json.RawMessage) bool {

@@ -57,7 +57,7 @@ async function openAssets(page: Page): Promise<ListedAsset[]> {
   return body.data ?? []
 }
 
-test.describe('phone card @phone', () => {
+test.describe('phone card @phone', { tag: ['@assets'] }, () => {
   test.beforeEach(async ({ page }, testInfo) => {
     // The webkit-mobile project brings its own iPhone viewport.
     if (testInfo.project.name === 'chromium')
@@ -144,21 +144,25 @@ test.describe('phone card @phone', () => {
   })
 })
 
-test('desktop: risk cells show the number, "Open findings" column, axe', async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 })
-  const rows = await openAssets(page)
-  test.skip(rows.length === 0, 'no seeded assets')
+test(
+  'desktop: risk cells show the number, "Open findings" column, axe',
+  { tag: ['@assets'] },
+  async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    const rows = await openAssets(page)
+    test.skip(rows.length === 0, 'no seeded assets')
 
-  await expect(page.getByRole('columnheader', { name: /^Open findings/ })).toHaveCount(1)
-  await expect(page.getByRole('columnheader', { name: /^Findings/ })).toHaveCount(0)
-  const risk = page.locator(
-    'main tbody tr [data-slot="severity-badge"][data-score]:not([data-score="0"])'
-  )
-  const count = await risk.count()
-  for (let i = 0; i < Math.min(count, 10); i++) {
-    const cell = risk.nth(i)
-    await expect(cell).toHaveText(/^\d+(\.\d)?$/)
-    await expect(cell).toHaveAttribute('aria-label', /^Risk \d/)
+    await expect(page.getByRole('columnheader', { name: /^Open findings/ })).toHaveCount(1)
+    await expect(page.getByRole('columnheader', { name: /^Findings/ })).toHaveCount(0)
+    const risk = page.locator(
+      'main tbody tr [data-slot="severity-badge"][data-score]:not([data-score="0"])'
+    )
+    const count = await risk.count()
+    for (let i = 0; i < Math.min(count, 10); i++) {
+      const cell = risk.nth(i)
+      await expect(cell).toHaveText(/^\d+(\.\d)?$/)
+      await expect(cell).toHaveAttribute('aria-label', /^Risk \d/)
+    }
+    expect(await seriousViolations(page)).toEqual([])
   }
-  expect(await seriousViolations(page)).toEqual([])
-})
+)
