@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/aianalysis"
+
 	"github.com/openctemio/openctem/api/internal/app/audit/chainclassify"
 	cryptopkg "github.com/openctemio/openctem/api/pkg/crypto"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -125,6 +127,14 @@ func (s *AuditService) LogEvent(ctx context.Context, actx AuditContext, event Au
 		log.WithMetadata("auth_method", "api_key")
 		log.WithMetadata("api_key_id", k.id)
 		log.WithMetadata("api_key_prefix", k.prefix)
+	}
+	// An AI analyst's action carries its provenance (run, model, prompt,
+	// accountable owners at that moment); the actor is the analyst.
+	if actorID, err := shared.IDFromString(actx.ActorID); err == nil {
+		if p, ok := aianalysis.StampActor(ctx, &actorID); ok {
+			log.WithMetadata("auth_method", "ai_analyst")
+			log.WithMetadata("ai", p.Map())
+		}
 	}
 	// Same for the organization's identity provider acting with a SCIM token.
 	if k, ok := scimTokenActorFrom(ctx); ok {
