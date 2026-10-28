@@ -115,7 +115,22 @@ func (s *VulnerabilityService) GetCVEExposure(ctx context.Context, c FilterCalle
 		return nil, err
 	}
 	out.InCatalog = inCatalog
+	// The EPSS history exists only for CVEs some organization has a finding
+	// of: show it only when the caller has one in scope, never for a CVE id
+	// alone (it would tell one organization what another one runs).
+	if tr, ok := s.findingRepo.(epssTrendRepo); ok && out.Findings.Total > 0 {
+		pts, err := tr.EPSSTrend(ctx, cveID)
+		if err != nil {
+			return nil, err
+		}
+		out.EPSSTrend = pts
+	}
 	return out, nil
+}
+
+// epssTrendRepo reads a CVE's EPSS history (*postgres.FindingRepository).
+type epssTrendRepo interface {
+	EPSSTrend(ctx context.Context, cveID string) ([]vulnerability.EPSSPoint, error)
 }
 
 // ListCVEExposureAssets lists one page of the assets with a finding of

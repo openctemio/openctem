@@ -43,6 +43,7 @@ import { useSearchQuery } from '@/hooks/use-search-query'
 import { replaceUrlSearch, useUrlParams, useUrlSettled } from '@/hooks/use-url-param'
 import { useSeverityLabel } from '@/hooks/use-scale-labels'
 import { formatEpssScore } from '@/lib/epss'
+import { EpssSparkline } from '../epss-trend'
 import { SEVERITY_DOT_COLORS } from '@/lib/severity-colors'
 import type { SeverityLevel } from '@/lib/severity'
 import { toDisplayText } from '@/lib/untrusted-text'
@@ -516,17 +517,20 @@ function VulnerabilitiesListBody() {
         header: t('vulnPage.list.col.epss', 'EPSS'),
         enableSorting: true,
         cell: ({ row }) => (
-          <span
-            className="tabular-nums"
-            title={
-              row.original.epss_percentile != null
-                ? t('vulnPage.list.epssPercentile', 'Higher than {pct} of all CVEs', {
-                    pct: formatEpssScore(row.original.epss_percentile, 0),
-                  })
-                : undefined
-            }
-          >
-            {formatEpssScore(row.original.epss_score, 1, '—')}
+          <span className="flex flex-col gap-0.5">
+            <span
+              className="tabular-nums"
+              title={
+                row.original.epss_percentile != null
+                  ? t('vulnPage.list.epssPercentile', 'Higher than {pct} of all CVEs', {
+                      pct: formatEpssScore(row.original.epss_percentile, 0),
+                    })
+                  : undefined
+              }
+            >
+              {formatEpssScore(row.original.epss_score, 1, '—')}
+            </span>
+            <EpssSparkline points={row.original.epss_trend} />
           </span>
         ),
       },
