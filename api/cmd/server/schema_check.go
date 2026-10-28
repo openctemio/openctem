@@ -9,10 +9,11 @@ import (
 	"regexp"
 	"strconv"
 
+	"github.com/openctemio/openctem/api/internal/migrate"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
-// migrationUpFileRe matches a golang-migrate up file: NNNN_name.up.sql.
+// migrationUpFileRe matches a migration up file: VERSION_name.up.sql.
 var migrationUpFileRe = regexp.MustCompile(`^(\d+)_.*\.up\.sql$`)
 
 // migrationsDirPath returns the directory holding the .up.sql migrations,
@@ -36,88 +37,82 @@ func migrationsDirPath() string {
 //
 // Best-effort + fail-open on ambiguity: if the migration state can't be read
 // (fresh DB, a different tracker format, unreadable dir) it logs and allows
-// startup rather than false-blocking. Set SKIP_SCHEMA_CHECK=true to bypass.
+// startup rather than false-blocking. A permission error is not ambiguity
+// (the role is misconfigured) and refuses. Set SKIP_SCHEMA_CHECK=true to bypass.
 func verifySchemaUpToDate(ctx context.Context, db *sql.DB, migrationsDir string, log *logger.Logger) error {
 	if os.Getenv("SKIP_SCHEMA_CHECK") == "true" {
 		log.Warn("schema up-to-date check skipped (SKIP_SCHEMA_CHECK=true)")
 		return nil
 	}
 
-	latest, err := latestMigrationVersion(migrationsDir)
-	if err != nil || latest == 0 {
-		log.Warn("could not determine latest migration version; skipping schema check",
+	migs, err := migrate.Load(migrationsDir)
+	if err != nil || len(migs) == 0 {
+		log.Warn("could not read the shipped migrations; skipping schema check",
 			"dir", migrationsDir, "error", err)
 		return nil
 	}
-
-	// golang-migrate tracks a single (version, dirty) row.
-	var version int64
-	var dirty bool
-	row := db.QueryRowContext(ctx, `SELECT version, dirty FROM schema_migrations ORDER BY version DESC LIMIT 1`)
-	switch scanErr := row.Scan(&version, &dirty); {
-	case errors.Is(scanErr, sql.ErrNoRows):
-		version = 0 // fresh DB, nothing applied yet
-	case scanErr != nil:
-		// table missing / a different tracker format — don't hard-block boot.
-		log.Warn("could not read schema_migrations; skipping schema check", "error", scanErr)
+	tracked, err := migrate.Tracked(ctx, db)
+	if migrate.IsPermissionDenied(err) {
+		return unreadableState(err)
+	}
+	if err != nil || !tracked {
+		// No tracker at all: a different tracker format; don't hard-block boot.
+		log.Warn("could not read schema_migrations; skipping schema check", "error", err)
 		return nil
 	}
-
-	if err := schemaVersionProblem(version, dirty, latest, baselineMigrationVersion(migrationsDir)); err != nil {
-		return err
-	}
-
-	log.Info("database schema up to date", "applied_version", version, "latest_migration", latest)
-	return nil
-}
-
-// schemaVersionProblem is the decision of verifySchemaUpToDate for an applied
-// (version, dirty) pair, the newest shipped migration and the migration
-// baseline (0 when the directory has none).
-//
-// A database older than the baseline cannot be migrated by this release at all
-// (golang-migrate refuses it: its version has no file any more), so that is
-// said first and plainly, with the way out (docs/rfcs/RFC-053-migration-baseline.md).
-func schemaVersionProblem(version int64, dirty bool, latest, baseline int64) error {
-	if version > 0 && baseline > 0 && version < baseline {
-		return fmt.Errorf("database is at migration %d, older than the migration baseline %d: this release "+
-			"cannot upgrade it. Back it up, deploy the last release before the baseline (git tag "+
-			"pre-baseline-%06d) and run its migrations, then deploy this release "+
-			"(docs/development/migrations.md, \"Migration baseline\")", version, baseline, baseline)
-	}
-	if dirty {
-		return fmt.Errorf("schema_migrations is DIRTY at version %d — a migration failed midway; "+
-			"resolve it (force to a clean version) before starting", version)
-	}
-	if version < latest {
-		return fmt.Errorf("database schema is behind: applied version %d, this binary ships migrations "+
-			"up to %d — apply migrations (make migrate-up / scripts/migrate.sh up) before starting, "+
-			"or set SKIP_SCHEMA_CHECK=true to override", version, latest)
-	}
-	return nil
-}
-
-// migrationBaselineFileRe matches the migration baseline: NNNN_baseline.up.sql.
-var migrationBaselineFileRe = regexp.MustCompile(`^(\d+)_baseline\.up\.sql$`)
-
-// baselineMigrationVersion returns the version of the dir's baseline file, or
-// 0 when there is none (or the dir cannot be read).
-func baselineMigrationVersion(dir string) int64 {
-	entries, err := os.ReadDir(dir)
+	rels, err := migrate.LoadReleases(migrationsDir)
 	if err != nil {
-		return 0
+		log.Warn("could not read the released migrations list; a database the earlier tool migrated reads as undecided",
+			"dir", migrationsDir, "error", err)
 	}
-	for _, e := range entries {
-		if m := migrationBaselineFileRe.FindStringSubmatch(e.Name()); m != nil && !e.IsDir() {
-			if v, convErr := strconv.ParseInt(m[1], 10, 64); convErr == nil {
-				return v
-			}
-		}
-	}
-	return 0
+	rep, err := migrate.Inspect(ctx, db, migs, migrate.Takeover{Releases: rels})
+	return schemaProblem(rep, err, log)
 }
 
-// latestMigrationVersion returns the highest NNNN in the dir's *.up.sql files.
+// schemaProblem is the decision of verifySchemaUpToDate on the migration
+// state: every shipped migration must be applied, whatever its version (a
+// migration merged after a higher one counts as much as the newest one).
+// A database a newer release migrated is fine (a rollback or a rolling
+// deploy runs this binary on the newer schema) as long as it has every
+// migration this binary ships. A role that may not read the migration state
+// is a misconfiguration and refuses too; any other read failure (no tracker
+// in a format this binary knows) is logged and startup goes on.
+func schemaProblem(rep migrate.Report, err error, log *logger.Logger) error {
+	var newer migrate.ErrNewerDatabase
+	newerDB := errors.As(err, &newer)
+	for _, x := range rep.Renamed {
+		log.Warn("applied migration recorded under another name than the shipped file",
+			"version", x.Version, "applied_name", x.Applied, "shipped_name", x.Shipped)
+	}
+	switch {
+	case len(rep.Pending) > 0 && (err == nil || newerDB):
+		return fmt.Errorf("database schema is behind: %d migrations shipped with this binary are not applied (%s); "+
+			"run openctem-migrate up (make migrate-up) before starting, or set SKIP_SCHEMA_CHECK=true to override",
+			len(rep.Pending), migrate.Versions(rep.Pending, 5))
+	case newerDB:
+		log.Info("database schema is ahead of this binary", "applied_version", newer.Applied, "latest_migration", newer.Shipped)
+		return nil
+	case err != nil && migrate.IsRefusal(err):
+		return fmt.Errorf("database schema: %w", err)
+	case migrate.IsPermissionDenied(err):
+		return unreadableState(err)
+	case err != nil:
+		log.Warn("could not read the migration state; skipping schema check", "error", err)
+		return nil
+	}
+	log.Info("database schema up to date", "applied_version", rep.Version, "applied_migrations", rep.Applied)
+	return nil
+}
+
+// unreadableState is the refusal when the API's role may not read the
+// migration tables.
+func unreadableState(err error) error {
+	return fmt.Errorf("database schema: the API's database role may not read the migration state: %w; "+
+		"grant it SELECT on schema_migrations and schema_migrations_applied (re-run the database roles script), "+
+		"or set SKIP_SCHEMA_CHECK=true to override", err)
+}
+
+// latestMigrationVersion returns the highest version in the dir's *.up.sql files.
 func latestMigrationVersion(dir string) (int64, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {

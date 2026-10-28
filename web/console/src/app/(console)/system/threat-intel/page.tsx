@@ -13,17 +13,13 @@ import { TonePill } from '@/features/shared/components/tone-pill'
 import { useTranslation } from '@/context/i18n-provider'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import {
+  failedSyncResults,
   setThreatIntelEnabled,
   syncThreatIntel,
   useThreatIntelFeeds,
 } from '@console/features/admin-console/api/use-system'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { type ThreatIntelFeed, adminHas } from '@console/features/admin-console/types'
-
-const FEED_NAMES: Record<string, string> = {
-  epss: 'EPSS (exploit prediction scores)',
-  kev: 'CISA KEV (known exploited vulnerabilities)',
-}
 
 function statusTone(f: ThreatIntelFeed) {
   if (!f.enabled) return 'muted' as const
@@ -38,6 +34,48 @@ export default function ThreatIntelFeedsPage() {
   const canWrite = adminHas(admin, 'platform.feeds.manage')
   const { data, error, isLoading, mutate } = useThreatIntelFeeds()
   const [busy, setBusy] = useState<string | null>(null)
+
+  const feedName = (source: string) => {
+    switch (source) {
+      case 'epss':
+        return t('admin.ti.feed.epss', 'EPSS (exploit prediction scores)')
+      case 'kev':
+        return t('admin.ti.feed.kev', 'CISA KEV (known exploited vulnerabilities)')
+      case 'vulnfeed':
+        return t('admin.ti.feed.vulnfeed', 'Vulnerability bundles')
+      default:
+        return source
+    }
+  }
+
+  // A sync answers 200 even when a feed failed: the outcome is per feed.
+  const runSync = async (key: string, source: string) => {
+    setBusy(key)
+    try {
+      const failed = failedSyncResults(await syncThreatIntel(source))
+      if (failed.length === 0) {
+        toast.success(t('admin.ti.synced', 'Sync finished.'))
+      } else {
+        for (const r of failed) {
+          toast.error(
+            t('admin.ti.syncFailed', '{feed} did not sync: {error}', {
+              feed: feedName(r.source),
+              error: r.error || t('admin.confirm.failed', 'The action failed. Try again.'),
+            })
+          )
+        }
+      }
+      await mutate()
+    } catch (err) {
+      toast.error(
+        err instanceof AdminApiError
+          ? err.message
+          : t('admin.confirm.failed', 'The action failed. Try again.')
+      )
+    } finally {
+      setBusy(null)
+    }
+  }
 
   const act = async (key: string, fn: () => Promise<unknown>, done: string) => {
     setBusy(key)
@@ -71,9 +109,7 @@ export default function ThreatIntelFeedsPage() {
               size="sm"
               variant="outline"
               disabled={busy !== null}
-              onClick={() =>
-                act('all', () => syncThreatIntel('all'), t('admin.ti.synced', 'Sync finished.'))
-              }
+              onClick={() => void runSync('all', 'all')}
             >
               <RefreshCw className="me-2 size-4" />
               {t('admin.ti.syncAll', 'Sync all now')}
@@ -97,7 +133,7 @@ export default function ThreatIntelFeedsPage() {
               <Card key={f.source}>
                 <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
                   <div className="space-y-1">
-                    <CardTitle className="text-base">{FEED_NAMES[f.source] ?? f.source}</CardTitle>
+                    <CardTitle className="text-base">{feedName(f.source)}</CardTitle>
                     <TonePill
                       tone={statusTone(f)}
                       label={
@@ -141,13 +177,7 @@ export default function ThreatIntelFeedsPage() {
                       size="sm"
                       variant="outline"
                       disabled={busy !== null}
-                      onClick={() =>
-                        act(
-                          f.source,
-                          () => syncThreatIntel(f.source),
-                          t('admin.ti.synced', 'Sync finished.')
-                        )
-                      }
+                      onClick={() => void runSync(f.source, f.source)}
                     >
                       <RefreshCw className="me-2 size-4" />
                       {t('admin.ti.syncOne', 'Sync now')}

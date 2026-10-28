@@ -143,10 +143,16 @@ SELECT format('ALTER SCHEMA %I OWNER TO %I', nspname, :'migrator_user') FROM app
 SELECT format('GRANT USAGE ON SCHEMA %I TO %I', nspname, :'app_user') FROM app_schemas \gexec
 SELECT format('REVOKE CREATE ON SCHEMA %I FROM %I', nspname, :'app_user') FROM app_schemas \gexec
 
--- golang-migrate's tracker, created ahead of the first migration on a fresh
--- database (same definition migrate uses) so it is the migrator's and the app
--- only ever gets SELECT on it (section 5).
+-- The migration runner's two tables (api/internal/migrate), created ahead of
+-- the first migration on a fresh database (same definitions the runner uses)
+-- so they are the migrator's and the app only ever gets SELECT on them
+-- (section 5): a role that could write them could make the next migration run
+-- skip a migration, or run one again.
 CREATE TABLE IF NOT EXISTS public.schema_migrations (version bigint NOT NULL PRIMARY KEY, dirty boolean NOT NULL);
+CREATE TABLE IF NOT EXISTS public.schema_migrations_applied (
+    version bigint NOT NULL PRIMARY KEY,
+    name text NOT NULL,
+    applied_at timestamptz NOT NULL DEFAULT clock_timestamp());
 
 -- -----------------------------------------------------------------------------
 -- 4. Ownership: every object in those schemas that is not part of an
@@ -203,8 +209,10 @@ WHERE n.oid IN (SELECT oid FROM app_schemas)
 -- -----------------------------------------------------------------------------
 SELECT format('REVOKE ALL ON ALL TABLES IN SCHEMA %I FROM %I', nspname, :'app_user') FROM app_schemas \gexec
 SELECT format('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA %I TO %I', nspname, :'app_user') FROM app_schemas \gexec
--- The migration tracker is read (the startup schema check), never written.
+-- The migration tracking tables are read (the startup schema check, the
+-- console), never written.
 SELECT format('REVOKE INSERT, UPDATE, DELETE ON public.schema_migrations FROM %I', :'app_user') \gexec
+SELECT format('REVOKE INSERT, UPDATE, DELETE ON public.schema_migrations_applied FROM %I', :'app_user') \gexec
 -- The administrators' audit log is append-only: insert and read only. Its
 -- retention anchors are written by admin_audit_prune (the owner) alone.
 SELECT format('REVOKE UPDATE, DELETE, TRUNCATE ON public.admin_audit_logs FROM %I', :'app_user')
@@ -267,7 +275,7 @@ BEGIN
     FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.oid IN (SELECT oid FROM app_schemas) AND c.relkind IN ('r', 'p')
       AND NOT has_table_privilege(app, c.oid, 'SELECT, INSERT, UPDATE, DELETE')
-      AND c.relname <> 'schema_migrations';
+      AND c.relname NOT IN ('schema_migrations', 'schema_migrations_applied');
     IF bad IS NOT NULL THEN
         RAISE EXCEPTION 'role % is missing DML on: %', app, bad;
     END IF;
