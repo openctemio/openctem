@@ -3,9 +3,9 @@ package postgres
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 
+	"github.com/openctemio/openctem/api/internal/migrate"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 )
 
@@ -65,8 +65,8 @@ type OpsSnapshot struct {
 	OutboxDead             int64
 	OutboxOldestPendingSec float64
 
-	// The newest applied migration (golang-migrate's single row) and
-	// whether it is dirty. SchemaKnown is false when the table is empty.
+	// The highest applied migration and whether a migration failed midway
+	// (migrate.AppliedVersion). SchemaKnown is false when none is applied.
 	SchemaVersion int64
 	SchemaDirty   bool
 	SchemaKnown   bool
@@ -171,15 +171,9 @@ func ReadOpsSnapshot(ctx context.Context, db opsQuerier) (OpsSnapshot, error) {
 		return s, fmt.Errorf("outbox: %w", err)
 	}
 
-	err = db.QueryRowContext(ctx,
-		`SELECT version, dirty FROM schema_migrations ORDER BY version DESC LIMIT 1`,
-	).Scan(&s.SchemaVersion, &s.SchemaDirty)
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
-	case err != nil:
+	s.SchemaVersion, s.SchemaDirty, s.SchemaKnown, err = migrate.AppliedVersion(ctx, db)
+	if err != nil {
 		return s, fmt.Errorf("schema version: %w", err)
-	default:
-		s.SchemaKnown = true
 	}
 
 	return s, nil
@@ -188,7 +182,8 @@ func ReadOpsSnapshot(ctx context.Context, db opsQuerier) (OpsSnapshot, error) {
 // readOpsQueue counts pending, unexpired commands by stage, tool, priority
 // and wait reason. The wait reason uses the claim's own predicates: not
 // due (scheduledDuePredicate) is "scheduled", a held host
-// (hostFreePredicate) is "host_busy".
+// (hostFreePredicate, and for a shared job sharedFleetHostFreePredicate) is
+// "host_busy".
 func readOpsQueue(ctx context.Context, db opsQuerier) ([]OpsQueueDepth, error) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT COALESCE(commands.payload->>'capability', ''),
@@ -199,6 +194,7 @@ func readOpsQueue(ctx context.Context, db opsQuerier) ([]OpsQueueDepth, error) {
 		       COALESCE(commands.priority, ''),
 		       CASE WHEN NOT `+scheduledDuePredicate+` THEN '`+QueueWaitScheduled+`'
 		            WHEN NOT `+hostFreePredicate+` THEN '`+QueueWaitHostBusy+`'
+		            WHEN commands.is_platform_job AND NOT `+sharedFleetHostFreePredicate+` THEN '`+QueueWaitHostBusy+`'
 		            ELSE '`+QueueWaitReady+`' END,
 		       count(*)
 		FROM commands
