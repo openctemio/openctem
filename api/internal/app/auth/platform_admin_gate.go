@@ -20,13 +20,13 @@ type BreakGlassGate interface {
 
 // SetBreakGlassGate wires the main-site refusal of break-glass accounts
 // (password, refresh-token and exchange paths).
-func (s *AuthService) SetBreakGlassGate(g BreakGlassGate) { s.breakGlass = g }
+func (s *AuthService) SetBreakGlassGate(g BreakGlassGate) { s.breakGlassGate = g }
 
 // SetBreakGlassGate wires the same refusal on the social sign-in path.
-func (s *OAuthService) SetBreakGlassGate(g BreakGlassGate) { s.breakGlass = g }
+func (s *OAuthService) SetBreakGlassGate(g BreakGlassGate) { s.breakGlassGate = g }
 
 // SetBreakGlassGate wires the same refusal on the organization SSO/SAML path.
-func (s *SSOService) SetBreakGlassGate(g BreakGlassGate) { s.breakGlass = g }
+func (s *SSOService) SetBreakGlassGate(g BreakGlassGate) { s.breakGlassGate = g }
 
 // refuseBreakGlass reports whether the main site must refuse this account
 // because it is a break-glass administrator, and logs the attempt as an alert.
