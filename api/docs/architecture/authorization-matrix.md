@@ -687,6 +687,7 @@ the billing page in the UI.
 | Endpoint | Permission Required |
 |----------|---------------------|
 | `GET /api/v1/findings/{id}/evidence-items` | `findings:read` + data scope (404 outside it) |
+| `PATCH /api/v1/findings/{id}/evidence-items/{item_id}`, `PUT /api/v1/findings/{id}/evidence-items/order` | `findings:write` + data scope (404 outside it) + the item must belong to that finding; a pentest finding also passes the campaign's evidence-write rule; audited |
 | `POST /api/v1/findings/{id}/evidence-items/{item_id}/reveal` | `findings:evidence:reveal` + data scope + per-user rate limit + **step-up** (API keys cannot); audited |
 | `GET/PUT /api/v1/organization/settings/evidence` | owner/admin; PUT audited |
 
