@@ -46,15 +46,22 @@ urlenc() (
   done
 )
 
-# Build connection string
-DATABASE_URL="postgres://$(urlenc "${DB_USER}"):$(urlenc "${DB_PASSWORD}")@${DB_HOST}:${DB_PORT}/$(urlenc "${DB_NAME}")?sslmode=${DB_SSLMODE}"
+# Connection string without the password: it goes in PGPASSWORD, which the
+# runner's driver reads, so it never shows in the process list.
+DATABASE_URL="postgres://$(urlenc "${DB_USER}")@${DB_HOST}:${DB_PORT}/$(urlenc "${DB_NAME}")?sslmode=${DB_SSLMODE}"
+export PGPASSWORD="${DB_PASSWORD}"
 
-# Check if migrate is installed
-if ! command -v migrate &> /dev/null; then
-    echo "Error: migrate is not installed"
-    echo "Install with: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest"
-    exit 1
-fi
+# The migration runner: an installed openctem-migrate, else this tree's.
+migrate() {
+    if command -v openctem-migrate > /dev/null 2>&1; then
+        openctem-migrate "$@"
+    elif command -v go > /dev/null 2>&1; then
+        GOWORK=off go run ./cmd/openctem-migrate "$@"
+    else
+        echo "Error: neither openctem-migrate nor go is installed (build it: go build -o bin/openctem-migrate ./cmd/openctem-migrate)"
+        exit 1
+    fi
+}
 
 # Parse command
 COMMAND=${1:-up}
@@ -62,11 +69,11 @@ COMMAND=${1:-up}
 case $COMMAND in
     up)
         echo "Running migrations up..."
-        migrate -path ${MIGRATIONS_DIR} -database "${DATABASE_URL}" up
+        migrate -path "${MIGRATIONS_DIR}" -database "${DATABASE_URL}" up
         ;;
     down)
-        echo "Running migrations down..."
-        migrate -path ${MIGRATIONS_DIR} -database "${DATABASE_URL}" down 1
+        echo "Rolling back the most recently applied migration..."
+        migrate -path "${MIGRATIONS_DIR}" -database "${DATABASE_URL}" down "${2:-1}"
         ;;
     down-all)
         if [ "${2:-}" != "--yes" ]; then
@@ -74,32 +81,30 @@ case $COMMAND in
             exit 1
         fi
         echo "Rolling back all migrations..."
-        migrate -path ${MIGRATIONS_DIR} -database "${DATABASE_URL}" down -all
+        migrate -path "${MIGRATIONS_DIR}" -database "${DATABASE_URL}" down 2147483647
         ;;
     force)
-        VERSION=${2:-0}
-        echo "Forcing version to ${VERSION}..."
-        migrate -path ${MIGRATIONS_DIR} -database "${DATABASE_URL}" force ${VERSION}
+        VERSION=${2:?usage: $0 force VERSION (or -1 to only clear the dirty flag)}
+        echo "Clearing the dirty flag and recording ${VERSION} as applied..."
+        migrate -path "${MIGRATIONS_DIR}" -database "${DATABASE_URL}" force "${VERSION}"
         ;;
-    version)
-        echo "Current migration version:"
-        migrate -path ${MIGRATIONS_DIR} -database "${DATABASE_URL}" version
+    version|status)
+        migrate -path "${MIGRATIONS_DIR}" -database "${DATABASE_URL}" "${COMMAND}"
         ;;
     create)
-        NAME=${2:-unnamed}
-        echo "Creating migration: ${NAME}"
-        migrate create -ext sql -dir ${MIGRATIONS_DIR} -seq ${NAME}
+        bash scripts/migration-number.sh new "${2:?usage: $0 create snake_case_name}"
         ;;
     *)
-        echo "Usage: $0 {up|down|down-all|force|version|create} [args]"
+        echo "Usage: $0 {up|down [N]|down-all --yes|force V|version|status|create NAME}"
         echo ""
         echo "Commands:"
-        echo "  up         - Run all pending migrations"
-        echo "  down       - Rollback last migration"
-        echo "  down-all --yes - Rollback all migrations (destructive, needs --yes)"
-        echo "  force N    - Force set version to N"
-        echo "  version    - Show current version"
-        echo "  create N   - Create new migration with name N"
+        echo "  up             - Apply every migration the database has not applied"
+        echo "  down [N]       - Roll back the N (default 1) most recently applied migrations"
+        echo "  down-all --yes - Roll back all migrations (destructive, needs --yes)"
+        echo "  force V        - Clear the dirty flag and record V as applied (-1: only clear the flag)"
+        echo "  version        - Show the highest applied version"
+        echo "  status         - Show the pending migrations"
+        echo "  create NAME    - Create a migration with a timestamp version"
         exit 1
         ;;
 esac

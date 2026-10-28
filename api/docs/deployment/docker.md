@@ -35,7 +35,7 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 The `development` container (`scripts/dev-entrypoint.sh`):
 
 1. waits for PostgreSQL,
-2. applies migrations (`migrate -path /app/migrations up`) unless
+2. applies migrations (`go run ./cmd/openctem-migrate -path /app/migrations ... up`) unless
    `AUTO_MIGRATE=false`,
 3. starts Air for hot reload.
 
@@ -45,9 +45,9 @@ The source tree is bind-mounted at `/app`; ports are 8080 (HTTP), 9090 (gRPC) an
 Migrations by hand:
 
 ```bash
-make docker-migrate-up        # uses the migrate/migrate image and DATABASE_URL
-make docker-migrate-down
-make docker-migrate-version
+make migrate-up        # this tree's openctem-migrate against DATABASE_URL
+make migrate-down
+make migrate-status
 ```
 
 ### Debugging with Delve
@@ -103,7 +103,7 @@ docker run --rm --env-file api.env ghcr.io/openctemio/openctem-api:vX.Y.Z -check
 docker compose run --rm --no-deps api -check-config
 ```
 
-If a migration fails midway, `golang-migrate` marks `schema_migrations.dirty` and
+If a migration fails midway, `openctem-migrate` marks the database dirty and
 the API refuses to start. Recovery is in the
 [runbook](safe-deploy-and-migrations.md#dirty-migration-recovery). Never set
 `SKIP_SCHEMA_CHECK=true` in production.

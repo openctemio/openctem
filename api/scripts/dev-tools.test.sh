@@ -9,13 +9,14 @@ bad() { echo "FAIL: $1"; failed=$((failed + 1)); }
 # migrate.sh: down-all needs --yes; .env values with spaces/specials are not word-split.
 d="$(mktemp -d)"
 mkdir -p "$d/bin"
-printf '#!/bin/sh\necho "migrate $*" >>"%s/calls"\n' "$d" >"$d/bin/migrate"
-chmod +x "$d/bin/migrate"
+printf '#!/bin/sh\necho "migrate $* pw=$PGPASSWORD" >>"%s/calls"\n' "$d" >"$d/bin/openctem-migrate"
+chmod +x "$d/bin/openctem-migrate"
 printf "DB_PASSWORD=pw\nDB_USER=u\nSPACED='hello world \$(touch %s/pwned)'\n" "$d" >"$d/.env"
 run() { (cd "$d" && PATH="$d/bin:$PATH" bash "$api/scripts/migrate.sh" "$@" >"$d/out" 2>&1); }
 if run down-all; then bad "down-all without --yes ran"; else ok "down-all without --yes is refused"; fi
 [ ! -e "$d/calls" ] && ok "down-all without --yes did not call migrate" || bad "migrate was called"
-run down-all --yes && grep -q 'down -all' "$d/calls" && ok "down-all --yes runs" || bad "down-all --yes failed: $(tail -2 "$d/out")"
+run down-all --yes && grep -q 'down 2147483647' "$d/calls" && ok "down-all --yes runs" || bad "down-all --yes failed: $(tail -2 "$d/out")"
+grep -q 'postgres://u@localhost' "$d/calls" && grep -q 'pw=pw' "$d/calls" && ok "the password goes in PGPASSWORD, not the URL" || bad "the password is on the command line: $(cat "$d/calls")"
 [ ! -e "$d/pwned" ] && ok "quoted .env values with spaces and $() are kept literal" || bad "a quoted .env value was executed or split"
 
 # the secret-bearing legacy tool and script are gone / env only.

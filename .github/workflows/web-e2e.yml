@@ -413,10 +413,10 @@ jobs:
       - name: Generate the stack's secrets
         run: bash web/e2e/ci/make-env.sh
 
-      # postgres, redis and migrate come from the CI image mirror
+      # postgres and redis come from the CI image mirror
       # (.github/ci-images.txt); pulled first, with retries on registry limits.
       - name: Pull the stack's third-party images
-        run: bash .github/scripts/retry.sh docker compose -f web/e2e/ci/compose.yml pull --quiet postgres redis migrate
+        run: bash .github/scripts/retry.sh docker compose -f web/e2e/ci/compose.yml pull --quiet postgres redis
 
       - name: Start the stack
         run: docker compose -f web/e2e/ci/compose.yml up -d --wait --wait-timeout 180

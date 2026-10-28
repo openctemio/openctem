@@ -287,7 +287,7 @@ with hot reload the API does not migrate by itself.
 
 ### SchemaDirty
 
-A migration failed half way and golang-migrate marked it dirty. Follow
+A migration failed half way and `openctem-migrate` marked the database dirty. Follow
 "dirty-migration recovery" in `docs/deployment/safe-deploy-and-migrations.md`.
 
 ### OpsMetricsFailing

@@ -38,11 +38,13 @@ services:
       interval: 2s
       retries: 30
 
+  # The migration runner and the migrations the API image ships
+  # (/app/openctem-migrate, /app/migrations): the tree under test.
   migrate:
-    image: ghcr.io/openctemio/mirror/migrate:v4.18.1
-    volumes: ['../../../api/migrations:/migrations:ro']
+    image: ${API_IMAGE:?set API_IMAGE}
+    entrypoint: ['/app/openctem-migrate']
     # The URL is assembled from E2E_DB_PASSWORD by make-env.sh / the workflow.
-    command: ['-path=/migrations', '-database', '${E2E_DATABASE_URL:?set E2E_DATABASE_URL}', 'up']
+    command: ['-path=/app/migrations', '-database', '${E2E_DATABASE_URL:?set E2E_DATABASE_URL}', 'up']
     depends_on:
       postgres: { condition: service_healthy }
     restart: 'no'
