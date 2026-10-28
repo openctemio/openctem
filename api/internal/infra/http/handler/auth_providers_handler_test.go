@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -230,5 +231,34 @@ func TestAuthProvidersHandler_TenantCreationMode(t *testing.T) {
 		if body.TenantCreationMode != want {
 			t.Fatalf("mode %q reported as %q, want %q", mode, body.TenantCreationMode, want)
 		}
+	}
+}
+
+// With the console's social login source wired, the buttons follow it (a
+// console change shows without a restart) and the start-up configuration no
+// longer decides; without live routes nothing is offered.
+func TestAuthProvidersHandler_FollowsSocialSource(t *testing.T) {
+	on := map[string]bool{"github": true}
+	src := func(_ context.Context, p string) bool { return on[p] }
+	startup := config.OAuthConfig{Google: configuredProvider("google")}
+	get := func(live bool) SocialProviders {
+		h := NewAuthProvidersHandler(startup, config.EntraSSOConfig{}, live, logger.NewNop()).WithSocialSource(src)
+		rec := httptest.NewRecorder()
+		h.GetProviders(rec, httptest.NewRequest(http.MethodGet, "/api/v1/auth/providers", nil))
+		var resp AuthProvidersResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatal(err)
+		}
+		return resp.Social
+	}
+	if got := get(true); !got.GitHub || got.Google || got.Microsoft {
+		t.Fatalf("social = %+v, want only github", got)
+	}
+	on["github"], on["microsoft"] = false, true
+	if got := get(true); got.GitHub || !got.Microsoft {
+		t.Fatalf("social = %+v after the change", got)
+	}
+	if got := get(false); got.GitHub || got.Microsoft || got.Google {
+		t.Fatalf("routes not live: %+v", got)
 	}
 }
