@@ -15,13 +15,18 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// sensorActiveCommandsSQL is the number of commands the sensor aliased alias
-// holds right now (acknowledged or running): the capacity truth (RFC-030 D5).
+// sensorActiveCommandsSQL is the number of scan commands the sensor aliased
+// alias holds right now (acknowledged or running): the capacity truth
+// (RFC-030 D5), the "jobs" the console shows against the job limit, and the
+// same count the claim caps (CountHeldScans, capToFreeSlots). Commands that
+// take no scan slot (a content refresh, a key rotation) are not counted: a
+// sensor running five scans and a content refresh shows 5 of 5, not 6 of 5.
 // sensors.current_jobs was never written (B1) and is no longer read.
 // idx_commands_sensor bounds it to the sensor's own commands.
 func sensorActiveCommandsSQL(alias string) string {
 	return `(SELECT count(*) FROM commands ac
-		WHERE ac.sensor_id = ` + alias + `.id AND ac.status IN ('acknowledged', 'running'))::int`
+		WHERE ac.sensor_id = ` + alias + `.id AND ac.type = 'scan'
+		  AND ac.status IN ('acknowledged', 'running'))::int`
 }
 
 // loadReportFreshSQL is true when the alias's load report is recent enough

@@ -160,7 +160,7 @@ func (h *AdminConsoleHandler) clearCookie(w http.ResponseWriter, name, path stri
 // @Param request body AdminConsoleLoginRequest true "Email and password"
 // @Success 200 {object} AdminLoginResponse
 // @Failure 401 {object} apierror.Error "Wrong email or password, or not an active unlocked platform administrator (one answer)"
-// @Failure 403 {object} apierror.Error "CAPTCHA required, or the identity provider sign-in is required"
+// @Failure 403 {object} apierror.Error "CAPTCHA required"
 // @Router /admin/auth/login [post]
 func (h *AdminConsoleHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var req AdminConsoleLoginRequest
@@ -191,9 +191,6 @@ func (h *AdminConsoleHandler) Login(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			apierror.Unauthorized("Wrong email or password").WriteJSON(w)
-		case errors.Is(err, admin.ErrIdPSignInRequired):
-			apierror.New(http.StatusForbidden, codeIdPSignInRequired,
-				"Sign in to the admin console with the identity provider").WriteJSON(w)
 		default:
 			h.logger.Error("admin console sign-in", "error", err)
 			apierror.InternalError(err).WriteJSON(w)
@@ -411,6 +408,7 @@ type AdminElevateResponse struct {
 // @Param request body AdminElevateRequest true "Elevation"
 // @Success 200 {object} AdminElevateResponse
 // @Failure 400 {object} apierror.Error "Bad role, duration or reason"
+// @Failure 503 {object} apierror.Error "AUDIT_UNAVAILABLE: the elevation audit row could not be written, so nothing was granted"
 // @Router /admin/auth/elevate [post]
 func (h *AdminConsoleHandler) Elevate(w http.ResponseWriter, r *http.Request) {
 	actor := middleware.MustGetAdminUser(r.Context())
@@ -427,6 +425,9 @@ func (h *AdminConsoleHandler) Elevate(w http.ResponseWriter, r *http.Request) {
 			apierror.BadRequest(strings.TrimPrefix(err.Error(), "validation error: ")).WriteJSON(w)
 		case errors.Is(err, admin.ErrSessionNotFound):
 			apierror.Unauthorized("console session required").WriteJSON(w)
+		case errors.Is(err, adminconsole.ErrAuditUnavailable):
+			apierror.New(http.StatusServiceUnavailable, middleware.CodeAuditUnavailable,
+				"The administrators' audit log cannot be written; the elevation was not granted.").WriteJSON(w)
 		default:
 			h.logger.Error("admin console elevate", "error", err)
 			apierror.InternalError(err).WriteJSON(w)

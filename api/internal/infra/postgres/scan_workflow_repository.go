@@ -378,6 +378,11 @@ func (r *ScanWorkflowRepository) ListWithSystemTemplates(ctx context.Context, te
 	args = append(args, tenantID.String())
 	conditions = append(conditions, fmt.Sprintf("(tenant_id = $%d OR is_system_template = true)", len(args)), "retired_at IS NULL")
 
+	// A retired system workflow (inactive on purpose) is listed only on request.
+	if !filter.IncludeRetired {
+		conditions = append(conditions, "NOT (is_system_template AND NOT is_active)")
+	}
+
 	// Additional filters
 	if filter.IsActive != nil {
 		args = append(args, *filter.IsActive)
@@ -474,7 +479,9 @@ func (r *ScanWorkflowRepository) selectQuery() string {
 		SELECT id, tenant_id, name, description, version,
 		       settings, is_active, is_system_template,
 		       tags, ui_start_position, ui_end_position,
-		       created_by, created_at, updated_at, retired_at
+		       created_by, created_at, updated_at, retired_at,
+		       superseded_by,
+		       (SELECT sup.name FROM scan_workflows sup WHERE sup.id = scan_workflows.superseded_by)
 		FROM scan_workflows
 	`
 }
@@ -522,6 +529,8 @@ func (r *ScanWorkflowRepository) scanTemplate(row *sql.Row) (*scanworkflow.Workf
 		uiEndPos   []byte
 		createdBy  sql.NullString
 		retiredAt  sql.NullTime
+		supersede  sql.NullString
+		supName    sql.NullString
 	)
 
 	err := row.Scan(
@@ -540,6 +549,8 @@ func (r *ScanWorkflowRepository) scanTemplate(row *sql.Row) (*scanworkflow.Workf
 		&t.CreatedAt,
 		&t.UpdatedAt,
 		&retiredAt,
+		&supersede,
+		&supName,
 	)
 
 	if err != nil {
@@ -554,6 +565,12 @@ func (r *ScanWorkflowRepository) scanTemplate(row *sql.Row) (*scanworkflow.Workf
 	t.Tags = tags
 	if retiredAt.Valid {
 		t.RetiredAt = &retiredAt.Time
+	}
+	if supersede.Valid {
+		if sid, err := shared.IDFromString(supersede.String); err == nil {
+			t.SupersededBy = &sid
+			t.SupersededByName = supName.String
+		}
 	}
 
 	if createdBy.Valid {
@@ -591,6 +608,8 @@ func (r *ScanWorkflowRepository) scanTemplateFromRows(rows *sql.Rows) (*scanwork
 		uiEndPos   []byte
 		createdBy  sql.NullString
 		retiredAt  sql.NullTime
+		supersede  sql.NullString
+		supName    sql.NullString
 	)
 
 	err := rows.Scan(
@@ -609,6 +628,8 @@ func (r *ScanWorkflowRepository) scanTemplateFromRows(rows *sql.Rows) (*scanwork
 		&t.CreatedAt,
 		&t.UpdatedAt,
 		&retiredAt,
+		&supersede,
+		&supName,
 	)
 
 	if err != nil {
@@ -620,6 +641,12 @@ func (r *ScanWorkflowRepository) scanTemplateFromRows(rows *sql.Rows) (*scanwork
 	t.Tags = tags
 	if retiredAt.Valid {
 		t.RetiredAt = &retiredAt.Time
+	}
+	if supersede.Valid {
+		if sid, err := shared.IDFromString(supersede.String); err == nil {
+			t.SupersededBy = &sid
+			t.SupersededByName = supName.String
+		}
 	}
 
 	if createdBy.Valid {

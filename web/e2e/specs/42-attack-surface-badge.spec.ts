@@ -7,7 +7,7 @@ import { test, expect } from '../fixtures/authenticated-page'
 
 const REVIEW = '/attack-surface/review'
 
-test('the Review badge and the page agree', async ({ page }) => {
+test('the Review badge and the page agree', { tag: ['@attack-surface'] }, async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto(REVIEW)
   const tabs = page.getByRole('navigation', { name: 'Attack surface sections' })
@@ -28,7 +28,7 @@ test('the Review badge and the page agree', async ({ page }) => {
   }
 })
 
-test('provider addresses show no ports', async ({ page }) => {
+test('provider addresses show no ports', { tag: ['@attack-surface'] }, async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto(REVIEW)
   await page.waitForLoadState('networkidle')
