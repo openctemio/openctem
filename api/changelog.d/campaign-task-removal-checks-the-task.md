@@ -1,3 +1,0 @@
-### Security: removing a task from a campaign also needs access to the task
-
-- `DELETE /api/v1/remediation/campaigns/{id}/tasks/{task_id}` only checked that the caller may change the campaign. Adding a task already required access to the task, and the route's own comment said removal did too. Removal now needs the same: a task the caller cannot see is `404`, and a task with a finding outside their data scope (a private program's asset, a pentest finding they are not a member for) is `403`. Without this, a campaign editor who was not restricted at campaign level could detach such a task and silently drop the campaign's deadline cap from it.
