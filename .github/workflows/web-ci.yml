@@ -311,7 +311,11 @@ jobs:
           cp "$RUNNER_TEMP/contract/api-route-permissions.json" "$RUNNER_TEMP/contract/authz-matrix.json" web/src/config/
           (cd web && npm run generate:api-types)
 
+      # tsc needs more than the default heap: Node sizes it from the machine's
+      # memory, and on a self-hosted runner that default (about 2 GB) runs out.
       - name: Run type check
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
         run: npm run type-check
 
       - name: Run ESLint
