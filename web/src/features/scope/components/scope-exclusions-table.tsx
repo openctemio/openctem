@@ -45,6 +45,7 @@ import {
   useScopeSettingsApi,
 } from '../api/use-scope-api'
 import type { ApiScopeExclusion } from '../api/scope-api.types'
+import { scopeExclusionKindLabel } from '../lib/exclusion-kind'
 import { scopeErrorMessage } from '../lib/scope-codes'
 import { coversText, expiryText } from '../lib/scope-entry'
 import {
@@ -281,6 +282,15 @@ export function ScopeExclusionsTable({
               : scopeTargetTypeLabel(row.original.exclusion_type ?? '')}
           </span>
         </div>
+      ),
+    },
+    {
+      id: 'why',
+      header: t('scope.col.why', 'Why'),
+      cell: ({ row }) => (
+        <span className="text-sm" data-testid="exclusion-why">
+          {scopeExclusionKindLabel(t, (row.original as { kind?: string }).kind)}
+        </span>
       ),
     },
     {

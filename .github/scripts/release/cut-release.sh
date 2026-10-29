@@ -88,8 +88,9 @@ fi
 worktree="$(mktemp -d)"
 cleanup() {
   g worktree remove --force "$worktree" >/dev/null 2>&1 || true
-  rm -rf "$worktree"
+  rm -rf "$worktree" "${tagscripts:-}"
 }
+tagscripts=""
 trap cleanup EXIT
 
 # refuse_cut MESSAGE: drop the half-built local branch, then refuse.
@@ -99,11 +100,16 @@ refuse_cut() {
   die "$*"
 }
 
+# The version checks run with the scripts of the tree being released. A
+# hotfix is the old tag's tree, whose versions.yaml layout the current
+# scripts may not know: use the tag's own copy (a train uses these scripts).
+checker="$HERE/sync-versions.sh"
+
 # version_commit: commit api/deploy/VERSION = VERSION on the worktree's branch.
 version_commit() {
   mkdir -p "$worktree/$(dirname "$VERSION_FILE")"
   printf '%s\n' "$VERSION" >"$worktree/$VERSION_FILE"
-  bash "$HERE/sync-versions.sh" --root "$worktree" --release "$VERSION" >&2 ||
+  bash "$checker" --root "$worktree" --release "$VERSION" >&2 ||
     refuse_cut "the tree does not pass the version checks on the release branch"
   git -C "$worktree" add -- "$VERSION_FILE"
   if ! git -C "$worktree" diff --cached --quiet; then
@@ -168,11 +174,20 @@ else
   g branch -f "$BRANCH" "$last^{commit}" >/dev/null
   g worktree add --quiet "$worktree" "$BRANCH"
   for p in $PICKS; do
-    if ! git -C "$worktree" cherry-pick -x "$p" >/dev/null 2>&1; then
+    # The queue merges with MERGE commits, so a PR's merge commit is what
+    # people pass: pick its first-parent diff (-m 1).
+    mflag=()
+    if [[ "$(git -C "$worktree" rev-list --parents -n 1 "$p" | wc -w)" -gt 2 ]]; then mflag=(-m 1); fi
+    if ! git -C "$worktree" cherry-pick -x ${mflag[@]+"${mflag[@]}"} "$p" >/dev/null 2>&1; then
       git -C "$worktree" cherry-pick --abort >/dev/null 2>&1 || true
       refuse_cut "cherry-pick of $p onto $last conflicts; backport it by hand"
     fi
   done
+  tagscripts="$(mktemp -d)"
+  if g archive "$last" .github/scripts/release 2>/dev/null | tar -x -C "$tagscripts" 2>/dev/null &&
+    [[ -f "$tagscripts/.github/scripts/release/sync-versions.sh" ]]; then
+    checker="$tagscripts/.github/scripts/release/sync-versions.sh"
+  fi
   version_commit
   BASE="$(g rev-parse "$last^{commit}")"
 fi
