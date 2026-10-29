@@ -100,6 +100,7 @@ FROM (VALUES
     ('platform_owner', 'platform.tenants.read'),
     ('platform_owner', 'platform.tenants.scan_policy.write'),
     ('platform_owner', 'platform.tenants.sso.write'),
+    ('platform_owner', 'platform.users.credentials'),
     ('platform_owner', 'platform.users.read'),
     ('platform_owner', 'platform.users.support'),
     ('platform_admin', 'platform.ai_clients.manage'),

@@ -1,5 +1,6 @@
 'use client'
 
+import type { ReactNode } from 'react'
 import { Flame, ListChecks, Wrench } from 'lucide-react'
 import Link from '@/components/link'
 import { Badge } from '@/components/ui/badge'
@@ -24,6 +25,11 @@ export interface VulnHeaderProps {
   fix?: string
   /** Opens "Create remediation task"; undefined when the caller may not create one. */
   onCreateTask?: () => void
+  /**
+   * More actions (exception, retest, export), after "Create remediation
+   * task"; given why the actions on open findings are off, if they are.
+   */
+  actions?: (blocker: string | undefined) => ReactNode
 }
 
 /**
@@ -31,7 +37,7 @@ export interface VulnHeaderProps {
  * signal chips (KEV, emerging threat, worst priority, fix available) and the
  * actions. anatomy-ok: inside a PageStack (vulnerability-page.tsx renders it first). Every action works inside the caller's scope.
  */
-export function VulnHeader({ cve, vuln, exposure, fix, onCreateTask }: VulnHeaderProps) {
+export function VulnHeader({ cve, vuln, exposure, fix, onCreateTask, actions }: VulnHeaderProps) {
   const { t, locale } = useTranslation()
   const title = vuln?.title && vuln.title !== cve ? vuln.title : undefined
   const { findings, intel } = exposure
@@ -47,6 +53,8 @@ export function VulnHeader({ cve, vuln, exposure, fix, onCreateTask }: VulnHeade
         : findings.not_in_task === 0
           ? t('vulnPage.header.allInTasks', 'Every active finding is already in a remediation task')
           : undefined
+  // The other actions work on open findings, in a task or not.
+  const openBlocker = findings.total === 0 || findings.active === 0 ? createTaskBlocker : undefined
 
   return (
     <PageHeader
@@ -145,6 +153,7 @@ export function VulnHeader({ cve, vuln, exposure, fix, onCreateTask }: VulnHeade
             </Button>
           </DisabledReason>
         )}
+        {actions?.(openBlocker)}
       </div>
     </PageHeader>
   )

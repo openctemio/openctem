@@ -325,6 +325,10 @@ func (r *EPSSRepository) UpsertBatch(ctx context.Context, scores []*threatintel.
 		return fmt.Errorf("failed to upsert from temp table: %w", err)
 	}
 
+	if err := recordEPSSHistory(ctx, tx); err != nil {
+		return err
+	}
+
 	// sqlgate:optional — same TEMP table as above.
 	_, err = tx.ExecContext(ctx, `
 		UPDATE threat_intel_sync_status SET data_date = d.v
