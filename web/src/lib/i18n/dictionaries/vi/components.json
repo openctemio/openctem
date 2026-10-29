@@ -1,4 +1,11 @@
 {
+  "components.aiBadge.accountable": "Chịu trách nhiệm: {owners}",
+  "components.aiBadge.agent": "AI agent",
+  "components.aiBadge.agentNamed": "AI agent {name}",
+  "components.aiBadge.proposedAgent": "Do AI agent đề xuất",
+  "components.aiBadge.proposedAgentNamed": "Do AI agent {name} đề xuất",
+  "components.aiBadge.suggestedApplication": "Gợi ý từ ứng dụng AI: {client}",
+  "components.aiBadge.suggestedBuiltin": "Gợi ý từ AI phân loại",
   "components.asset.list": "Tài sản",
   "components.asset.none": "Không có tài sản phù hợp.",
   "components.asset.search": "Tìm tài sản…",
