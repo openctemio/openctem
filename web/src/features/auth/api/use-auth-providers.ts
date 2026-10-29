@@ -9,6 +9,7 @@
 
 import useSWR, { type SWRConfiguration } from 'swr'
 
+import { useBootstrapContextOptional } from '@/context/bootstrap-provider'
 import { get } from '@/lib/api/client'
 
 import type { PasswordPolicy } from '../lib/password-policy'
@@ -42,6 +43,13 @@ export interface AuthProvidersResponse {
   captcha_site_key?: string
   /** DEPLOYMENT_REGION: the region a new organization gets (fixed). */
   deployment_region?: string
+  /**
+   * Whether this server can send email. False: forgot-password, verification
+   * and invitation emails are not sent, so forms say "ask your administrator"
+   * and administrators copy links by hand. Absent until loaded: treat only an
+   * explicit false as "no email".
+   */
+  email_delivery?: boolean
 }
 
 // ============================================
@@ -90,4 +98,22 @@ export function useAuthProviders(config?: SWRConfiguration, enabled = true) {
  */
 export function usePasswordPolicy(): PasswordPolicy | undefined {
   return useAuthProviders().data?.password_policy
+}
+
+/**
+ * True when the server reports it cannot send email (false until the answer
+ * is loaded, so forms do not flash the no-email variant).
+ *
+ * Inside the app shell the session bootstrap carries the flag, so a dashboard
+ * page (the members page) never asks the public /auth/providers for it; the
+ * auth pages, or an API whose bootstrap lacks the field, ask that endpoint.
+ */
+export function useEmailUnavailable(): boolean {
+  const bootstrap = useBootstrapContextOptional()
+  const fromBootstrap = bootstrap?.data?.email_delivery
+  const waitForBootstrap = bootstrap !== null && bootstrap.isLoading
+  const skipProviders = waitForBootstrap || fromBootstrap !== undefined
+  const { data } = useAuthProviders(undefined, !skipProviders)
+  if (fromBootstrap !== undefined) return fromBootstrap === false
+  return data?.email_delivery === false
 }

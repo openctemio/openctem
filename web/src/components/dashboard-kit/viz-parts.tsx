@@ -275,9 +275,12 @@ export function ChartOrTable({
   table,
   summary,
   defaultView = 'chart',
+  lead,
 }: {
   chart: ReactNode
   table: ReactNode
+  /** Context shown at the start of the toggle row (period and scope chips). */
+  lead?: ReactNode
   /** One sentence that says what the chart shows (its accessible name). */
   summary?: string
   defaultView?: 'chart' | 'table'
@@ -287,7 +290,8 @@ export function ChartOrTable({
   const toTable = view === 'chart'
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
-      <div className="flex justify-end">
+      <div className={cn('flex items-center gap-2', lead ? 'justify-between' : 'justify-end')}>
+        {lead}
         <Button
           variant="ghost"
           size="sm"
