@@ -1849,7 +1849,7 @@ func (s *TenantService) ResendInvitation(ctx context.Context, tenantID, invitati
 		return fmt.Errorf("%w: invitation has already been accepted", shared.ErrValidation)
 	}
 	if inv.IsExpired() {
-		return fmt.Errorf("%w: invitation has expired; create a new one", shared.ErrValidation)
+		return fmt.Errorf("%w: invitation has expired; renew it", shared.ErrValidation)
 	}
 
 	if s.emailEnqueuer == nil {
