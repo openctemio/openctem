@@ -66,24 +66,27 @@ func clampLimit(n int) int {
 // --- compact DTOs (domain entities expose getters, not JSON fields) ----------
 
 type mcpFindingDTO struct {
-	ID       string `json:"id"`
-	Title    string `json:"title"`
-	Severity string `json:"severity"`
-	Status   string `json:"status"`
-	CVE      string `json:"cve,omitempty"`
-	AssetID  string `json:"asset_id,omitempty"`
-	Source   string `json:"source,omitempty"`
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	// DisplayTitle is "<title> on <target>": one finding as one string.
+	DisplayTitle string `json:"display_title,omitempty"`
+	Severity     string `json:"severity"`
+	Status       string `json:"status"`
+	CVE          string `json:"cve,omitempty"`
+	AssetID      string `json:"asset_id,omitempty"`
+	Source       string `json:"source,omitempty"`
 }
 
-func toFindingDTO(f *vulnerability.Finding) mcpFindingDTO {
+func toFindingDTO(f *vulnerability.Finding, assetName string) mcpFindingDTO {
 	return mcpFindingDTO{
-		ID:       f.ID().String(),
-		Title:    f.Title(),
-		Severity: string(f.Severity()),
-		Status:   string(f.Status()),
-		CVE:      f.CVEID(),
-		AssetID:  f.AssetID().String(),
-		Source:   string(f.Source()),
+		ID:           f.ID().String(),
+		Title:        f.Title(),
+		DisplayTitle: vulnerability.FindingDisplayTitle(f, assetName),
+		Severity:     string(f.Severity()),
+		Status:       string(f.Status()),
+		CVE:          f.CVEID(),
+		AssetID:      f.AssetID().String(),
+		Source:       string(f.Source()),
 	}
 }
 
@@ -270,8 +273,9 @@ func (h *MCPHandler) toolListFindings(ctx context.Context, tenantID string, raw 
 		return nil, err
 	}
 	out := make([]mcpFindingDTO, 0, len(res.Data))
+	names := map[string]string{}
 	for _, f := range res.Data {
-		out = append(out, toFindingDTO(f))
+		out = append(out, toFindingDTO(f, h.findingAssetName(ctx, tenantID, f, names)))
 	}
 	meta := map[string]any{"total": res.Total}
 	h.noteEmptyScope(ctx, tenantID, res.Total, meta)
@@ -291,7 +295,29 @@ func (h *MCPHandler) toolGetFinding(ctx context.Context, tenantID string, raw js
 	if err := h.checkFindingAI(ctx, tenantID, f); err != nil {
 		return nil, err
 	}
-	return untrustedResult(toFindingDTO(f), map[string]any{"finding_id": id}), nil
+	return untrustedResult(toFindingDTO(f, h.findingAssetName(ctx, tenantID, f, nil)), map[string]any{"finding_id": id}), nil
+}
+
+// findingAssetName names f's asset for its display title. The finding was
+// read through the key owner's data scope, which admits its asset; the asset
+// is read in the same tenant. cache (may be nil) saves repeat lookups on a
+// page; a failed read leaves the name out.
+func (h *MCPHandler) findingAssetName(ctx context.Context, tenantID string, f *vulnerability.Finding, cache map[string]string) string {
+	if h.assets == nil || f.AssetID().IsZero() {
+		return ""
+	}
+	id := f.AssetID().String()
+	if name, ok := cache[id]; ok {
+		return name
+	}
+	name := ""
+	if a, err := h.assets.GetAsset(ctx, tenantID, id); err == nil && a != nil {
+		name = a.Name()
+	}
+	if cache != nil {
+		cache[id] = name
+	}
+	return name
 }
 
 func (h *MCPHandler) toolFindingStats(ctx context.Context, tenantID string, _ json.RawMessage) (any, error) {
