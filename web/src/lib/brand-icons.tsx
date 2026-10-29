@@ -54,7 +54,7 @@ export async function brandOgResponse(): Promise<Response> {
         width: '100%',
         height: '100%',
         background: BRAND_INK,
-        color: '#FAFAF9',
+        color: '#FAFAF9', // label-ok: the brand paper on the ink of a rendered social image, outside the theme
         fontSize: 96,
         fontWeight: 600,
       }}
