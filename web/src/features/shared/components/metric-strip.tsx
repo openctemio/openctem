@@ -40,6 +40,12 @@ export interface MetricStripItem {
   onClick?: () => void
   /** The filter this metric applies (or the list it links to) is current. */
   active?: boolean
+  /**
+   * There is no figure to open (too little data to measure): the tile states
+   * why instead of a number, so it is the one tile that may be neither a link
+   * nor a toggle.
+   */
+  notMeasured?: boolean
 }
 
 /**
@@ -212,6 +218,7 @@ export function MetricStrip({
             className={cellClass}
             title={item.description ?? item.hint}
             data-slot="metric-tile"
+            data-state={item.notMeasured ? 'not-measured' : undefined}
           >
             {body}
           </div>
