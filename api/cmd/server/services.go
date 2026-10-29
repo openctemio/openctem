@@ -1604,6 +1604,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		repos.Finding, repos.Asset, s.PriorityClassification, log,
 	)
 	s.Reclassifier.SetQueue(s.Scoring, s.Scoring)
+	repos.FindingIssueLinks.SetPriorityQueue(s.Scoring) // a confirmed version match is scored again
 	s.Reclassifier.SetWriter(s.Scoring)
 	s.Tenant.SetScoringVersions(s.Scoring)
 	// Recompute the SLA deadline when a sweep escalates a finding's priority
@@ -2427,6 +2428,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// priority and SLA enrichment as ingested ones.
 	s.VulnMatch = vulnmatch.NewService(repos.SoftwareMatch, vulnmatch.TenantPolicy(repos.Tenant), repos.Finding, log.With("component", "vulnmatch"))
 	s.VulnMatch.SetEnrichment(s.PriorityClassification, sla.NewApplier(s.SLA), repos.Asset)
+	s.VulnMatch.SetIssueLinker(repos.FindingIssueLinks)
 	s.VulnMatch.SetLinkReader(repos.Software)
 	s.VulnMatch.SetRemediationKeyApplier(remediationKeys)
 	s.VulnMatch.SetVEXApplier(s.VEX) // The organization's VEX statements cover matched findings too
