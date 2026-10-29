@@ -621,6 +621,10 @@ func Register(
 	if h.User != nil {
 		registerUserRoutes(router, h.User, h.LocalAuth, authMiddleware, userSync, authCfg.Provider)
 	}
+	// Linked sign-in methods exist only where social sign-in is configured.
+	if h.OAuth != nil {
+		registerIdentityLinkRoutes(router, h.OAuth, authMiddleware, userSync)
+	}
 
 	// Tenant routes (protected with user sync)
 	if h.Tenant != nil {
