@@ -13,6 +13,7 @@ package issuelink
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
@@ -25,13 +26,18 @@ const (
 	RuleSASTOverlap = "sast_overlap"
 	RuleSecretValue = "secret_value"
 	RuleVulnAlias   = "vuln_alias"
+	RuleVulnAsset   = "vuln_asset"
 )
 
 // Key kinds.
 const (
 	KindSASTCWE     = "sast_cwe"
 	KindSecretValue = "secret_value"
+	KindVulnAsset   = "vuln_asset"
 )
+
+// HostLocator is the locator of a finding that is about the whole host.
+const HostLocator = "host"
 
 // Link states.
 const (
@@ -57,6 +63,8 @@ func Basis(rule string) []string {
 		return []string{"secret"}
 	case RuleVulnAlias:
 		return []string{"asset", "vuln"}
+	case RuleVulnAsset:
+		return []string{"asset", "vuln", "port"}
 	}
 	return nil
 }
@@ -65,7 +73,7 @@ func Basis(rule string) []string {
 type Finding struct {
 	ID        string
 	AssetID   string
-	Kind      string // identity kind: "sast" or "secret"
+	Kind      string // identity kind: "sast", "secret", "network", "dast" or "sca"
 	Rule      string
 	Path      string
 	CWEs      []string
@@ -73,7 +81,13 @@ type Finding struct {
 	EndLine   int
 	// SecretHMAC is the per-tenant keyed hash of the raw secret (never a mask).
 	SecretHMAC string
-	CreatedAt  time.Time
+	// CVE is the canonical CVE id of a network, dast or sca finding, as its
+	// identity key names it (aliases are resolved from the signed feed before
+	// the key is built); "" when the key names no CVE. Locator is "port/proto"
+	// or HostLocator.
+	CVE       string
+	Locator   string
+	CreatedAt time.Time
 }
 
 // Key is one candidate key of a finding.
@@ -82,7 +96,10 @@ type Key struct {
 	Key       string
 	StartLine int
 	EndLine   int
+	Locator   string
 }
+
+var cveID = regexp.MustCompile(`^CVE-[0-9]{4}-[0-9]{4,}$`)
 
 var cweDigits = regexp.MustCompile(`^(?i:cwe)?[-_: ]?0*([0-9]{1,6})$`)
 
@@ -154,6 +171,13 @@ func Keys(f Finding) []Key {
 			out = append(out, Key{Kind: KindSASTCWE, Key: hashKey(KindSASTCWE, f.AssetID, f.Path, c), StartLine: start, EndLine: end})
 		}
 		return out
+	case "network", "dast", "sca":
+		cve := strings.ToUpper(strings.TrimSpace(f.CVE))
+		loc := strings.TrimSpace(f.Locator)
+		if f.AssetID == "" || !cveID.MatchString(cve) || loc == "" {
+			return nil
+		}
+		return []Key{{Kind: KindVulnAsset, Key: hashKey(KindVulnAsset, f.AssetID, cve), Locator: loc}}
 	case "secret":
 		h := strings.TrimSpace(f.SecretHMAC)
 		if h == "" {
@@ -171,6 +195,9 @@ type Holder struct {
 	StartLine int
 	EndLine   int
 	CreatedAt time.Time
+	// Kind is the identity kind and Locator the vuln_asset locator.
+	Kind    string
+	Locator string
 }
 
 // Link is a link that exists, or one to make.
@@ -326,8 +353,70 @@ func ruleOf(kind string, a, b Holder) string {
 		}
 	case KindSecretValue:
 		return RuleSecretValue
+	case KindVulnAsset:
+		// The same CVE on the same asset through different techniques, or
+		// at a host-level and a port-level location. Same technique at the
+		// same place is one component or one scanner's second report, not a
+		// second view of the issue.
+		if LocatorsAgree(a.Locator, b.Locator) && (a.Kind != b.Kind || a.Locator != b.Locator) {
+			return RuleVulnAsset
+		}
 	}
 	return ""
+}
+
+// LocatorsAgree reports whether two vuln_asset locators can be the same
+// place: equal, or one is the whole host. Both must be set.
+func LocatorsAgree(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	return a == b || a == HostLocator || b == HostLocator
+}
+
+// VulnSignal derives, from the fields of a network, dast or sca identity key,
+// the canonical CVE and the locator of the finding. The CVE is the key's own
+// id (network and sca: "vuln"; dast: the rule, which is the CVE for a CVE
+// template); "" when it is not a CVE. The locator is the network port, the
+// DAST URL's effective port (the scheme's default when the URL has none), or
+// HostLocator.
+func VulnSignal(kind, vuln, rule, port, tmplURL string) (cve, locator string) {
+	switch kind {
+	case "network":
+		cve, locator = vuln, strings.TrimSpace(port)
+	case "sca":
+		cve, locator = vuln, HostLocator
+	case "dast":
+		cve = rule
+		locator = urlLocator(tmplURL)
+	default:
+		return "", ""
+	}
+	cve = strings.ToUpper(strings.TrimSpace(cve))
+	if !cveID.MatchString(cve) || locator == "" {
+		return "", ""
+	}
+	return cve, locator
+}
+
+// urlLocator is "port/tcp" of an http(s) URL template, "" when it has none.
+func urlLocator(raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	port := u.Port()
+	if port == "" {
+		switch strings.ToLower(u.Scheme) {
+		case "https":
+			port = "443"
+		case "http":
+			port = "80"
+		default:
+			return ""
+		}
+	}
+	return port + "/tcp"
 }
 
 // release returns the active links of batch findings (as member, or as the
