@@ -155,7 +155,7 @@ func (s *Service) settleRun(ctx context.Context, tenantID shared.ID, rs covdom.R
 			if msg == "" {
 				msg = rs.Error
 			}
-			fp := covdom.FailedPair{AssetID: d.AssetID, Outcome: v.Outcome, Error: msg}
+			fp := covdom.FailedPair{AssetID: d.AssetID, Outcome: v.Outcome, Error: msg, Observer: v.Observer}
 			if covdom.IsTargetSide(v.Outcome) {
 				// The target did not answer: an observation, rechecked on a
 				// widening schedule, not a failure retried every few hours.
@@ -182,7 +182,89 @@ func (s *Service) settleRun(ctx context.Context, tenantID shared.ID, rs covdom.R
 	if err := s.planner.MarkBlocked(ctx, tenantID, rs.Capability, blocked, BlockedRecheck); err != nil {
 		return n, err
 	}
+	if !stalled {
+		if err := s.countRunClaim(ctx, tenantID, rs); err != nil {
+			return n, err
+		}
+	}
 	return n + len(blocked), nil
+}
+
+// countRunClaim counts a finished run on the capability's hold: a run no
+// sensor took (NO_SENSOR) grows the streak, any other resets it. At
+// covdom.NotClaimedStreak the capability is paused (not_claimed) until the
+// fleet changes or the probe time; each further unclaimed run (a probe)
+// doubles the wait. Pausing only narrows what is dispatched.
+func (s *Service) countRunClaim(ctx context.Context, tenantID shared.ID, rs covdom.RunState) error {
+	streak, err := s.planner.RecordRunClaim(ctx, tenantID, rs.Capability, rs.NoSensor)
+	if err != nil {
+		return err
+	}
+	if !rs.NoSensor || streak < covdom.NotClaimedStreak {
+		return nil
+	}
+	return s.hold(ctx, tenantID, rs.Capability, streak)
+}
+
+// hold pauses the capability with not_claimed for covdom.NotClaimedRetry
+// of streak, recording the fleet it was paused under. A fingerprint that
+// cannot be read is recorded empty: the pause then holds until the probe.
+func (s *Service) hold(ctx context.Context, tenantID shared.ID, capability string, streak int) error {
+	fp, err := s.planner.FleetFingerprint(ctx, tenantID)
+	if err != nil {
+		s.logger.Warn("coverage hold: fleet fingerprint not read", "tenant_id", tenantID.String(), "error", logger.SanitizeError(err))
+		fp = ""
+	}
+	retry := covdom.NotClaimedRetry(streak)
+	n, err := s.planner.HoldCapability(ctx, tenantID, capability, fp, s.now().Add(retry))
+	if err != nil {
+		return err
+	}
+	s.logger.Info("coverage paused: no sensor took its runs", "tenant_id", tenantID.String(), "capability", capability,
+		"unclaimed_runs", streak, "probe_in", retry.String(), "pairs", n)
+	return nil
+}
+
+// heldResume decides, for a capability on hold with no live readiness
+// reason, whether it runs this pass: the fleet changed since the pause, or
+// the probe time has come. Either way the hold moves its probe time on, so
+// the run that follows is the only one until it settles. When it does not
+// run, pairs that came due join the pause.
+func (s *Service) heldResume(ctx context.Context, tenantID shared.ID, h covdom.Hold) (bool, error) {
+	fp, err := s.planner.FleetFingerprint(ctx, tenantID)
+	if err != nil {
+		s.logger.Warn("coverage hold: fleet fingerprint not read", "tenant_id", tenantID.String(), "error", logger.SanitizeError(err))
+		fp = h.Fingerprint
+	}
+	why := ""
+	switch {
+	case h.Fingerprint != "" && fp != h.Fingerprint:
+		why = "sensors changed"
+	case h.ProbeAt == nil || !s.now().Before(*h.ProbeAt):
+		why = "probe"
+	}
+	if why == "" {
+		until := s.now().Add(covdom.NotClaimedProbe)
+		if h.ProbeAt != nil {
+			until = *h.ProbeAt
+		}
+		if h.Fingerprint == "" && fp != "" {
+			// First fingerprint read after a failed one: record it.
+			_, err := s.planner.HoldCapability(ctx, tenantID, h.Capability, fp, until)
+			return false, err
+		}
+		_, err := s.planner.PauseForReadiness(ctx, tenantID, h.Capability, covdom.ReadyNotClaimed, until.Sub(s.now()))
+		return false, err
+	}
+	if _, err := s.planner.HoldCapability(ctx, tenantID, h.Capability, fp, s.now().Add(covdom.NotClaimedRetry(h.Streak))); err != nil {
+		return false, err
+	}
+	n, err := s.planner.ResumeNow(ctx, tenantID, h.Capability)
+	if err != nil {
+		return false, err
+	}
+	s.logger.Info("coverage resumed: "+why, "tenant_id", tenantID.String(), "capability", h.Capability, "pairs", n)
+	return true, nil
 }
 
 // ReasonRepositoryCodeOnly blocks a pair of a repository and a capability
@@ -232,6 +314,10 @@ func (s *Service) plan(ctx context.Context, tenantID shared.ID) (int, error) {
 	left := s.cfg.DailyBudget - used
 	capabilities := plannedCapabilities(s.rules)
 	rd := s.newReadinessPass(tenantID, capabilities)
+	holds, err := s.planner.Holds(ctx, tenantID)
+	if err != nil {
+		return 0, err
+	}
 	total := 0
 	for _, capability := range capabilities {
 		if left <= 0 {
@@ -259,7 +345,20 @@ func (s *Service) plan(ctx context.Context, tenantID shared.ID) (int, error) {
 			}
 			continue
 		}
-		if paused != "" {
+		if h, ok := holds[capability]; ok && h.Active() {
+			// No sensor took its last runs: wait for a fleet change or
+			// the probe instead of starting runs that cannot succeed.
+			run, err := s.heldResume(ctx, tenantID, h)
+			if err != nil {
+				return total, err
+			}
+			if !run {
+				continue
+			}
+			if due, err = s.dueBatch(ctx, tenantID, capability, min(s.cfg.Batch, left), lookahead); err != nil {
+				return total, err
+			}
+		} else if paused != "" {
 			n, err := s.planner.ResumeFromReadiness(ctx, tenantID, capability)
 			if err != nil {
 				return total, err

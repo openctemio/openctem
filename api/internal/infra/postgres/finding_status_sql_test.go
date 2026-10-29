@@ -68,6 +68,7 @@ var findingStatusWriters = map[string]int{
 	"finding_repo_coverage_autoresolve.go": 1, // autoResolveFromSQL
 	"finding_repository.go":                3, // entity Update; UpdateStatusBatch ($7); scan reopen batch
 	"finding_retest_repository.go":         2, // moveFindingInTx checks the lifecycle
+	"scope_effects_repository.go":          2, // out-of-scope close (scopeEffectsOpenStatuses: published, still needing action) and the reopen back in scope (resolved -> the status it had; guarded by closure_reason); both record a transition
 	"softwarematch_repository.go":          1, // regressionReopenFromSQL (reopen); the matcher close builds its SET from autoResolveFromSQL, vexFalsePositiveFromSQL (stale is observation_state)
 	"suppression_apply.go":                 1, // suppressionApplyFrom (SuppressionApplyFromStatuses)
 	"suppression_repository.go":            2, // suppressionRelinkFromSQL, suppressionLiftFromSQL
@@ -137,7 +138,7 @@ var statusWritersRecordedElsewhere = map[string]string{
 // Every file that writes findings.status puts the move on the finding's
 // timeline in the same transaction (research: automatic moves had none).
 func TestFindingStatusSQL_EveryStatusWriteIsOnTheTimeline(t *testing.T) {
-	markers := []string{"findingTransition{", "setFindingTransition(", "execStatusWrite(", "INSERT INTO finding_activities"}
+	markers := []string{"findingTransition{", "setFindingTransition(", "execStatusWrite(", "withFindingTransition(", "queryIDsWithTransition(", "INSERT INTO finding_activities"}
 	for f := range findingStatusWriters {
 		if _, ok := statusWritersRecordedElsewhere[f]; ok {
 			continue

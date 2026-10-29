@@ -20,6 +20,7 @@ import {
   TaskPlacementPanel,
   WhyWaitingButton,
 } from '@/features/scans/components/task-placement'
+import { placementHelp } from '@/features/scans/lib/placement-help'
 
 /**
  * Who runs a task: "Platform scanning" (never a platform sensor's name), the
@@ -52,7 +53,12 @@ const RELEASED_PREFIX = 'released by sensor'
 export function taskStatusNote(
   task: Pick<
     RunTask,
-    'status' | 'error_message' | 'window_hold' | 'waiting_on_hosts' | 'host_wait'
+    | 'status'
+    | 'error_message'
+    | 'window_hold'
+    | 'waiting_on_hosts'
+    | 'host_wait'
+    | 'withheld_reason'
   >,
   t: Translate = enTranslate,
   runId = ''
@@ -68,6 +74,18 @@ export function taskStatusNote(
       return { kind: 'waiting', text: hostWaitLine(task.host_wait, runId, t), full: true }
     }
     return { kind: 'waiting', text: t('scans.tasks.waitingForHosts') }
+  }
+  // A sensor's dispatch gate kept the task from it (its grant, its local
+  // policy, the scan's intensity): the reason, translated, instead of the
+  // generic "no sensor took it".
+  if (task.withheld_reason && (task.status === 'queued' || task.status === 'failed')) {
+    return {
+      kind: task.status === 'queued' ? 'waiting' : 'error',
+      text: t('scans.tasks.withheld', undefined, {
+        reason: placementHelp(task.withheld_reason, t).text,
+      }),
+      full: true,
+    }
   }
   const msg = task.error_message?.trim()
   if (!msg) return null
