@@ -132,7 +132,11 @@ type AuthService struct {
 	sessionRepo      sessiondom.Repository
 	refreshTokenRepo sessiondom.RefreshTokenRepository
 	tenantRepo       tenantdom.Repository
-	passwordHasher   *password.Hasher
+	// mfaFloor is the platform two-factor floor and privilege resolves who
+	// is an administrator by effective grants (SetMFAFloor).
+	mfaFloor       MFAFloorSource
+	privilege      PrivilegeSource
+	passwordHasher *password.Hasher
 	// dummyHash is a hash of a random secret, made once with passwordHasher
 	// (same algorithm and cost as real passwords), for the constant-time
 	// paths: see dummyPasswordHash.
@@ -1870,6 +1874,19 @@ func (s *AuthService) ResetPassword(ctx context.Context, input ResetPasswordInpu
 	// Security: Clear reset token FIRST to prevent race condition reuse (CWE-640).
 	// If two concurrent requests use the same token, the first clears it and
 	// the second will fail at GetByPasswordResetToken (token no longer exists).
+	// The clear is one conditional UPDATE on the stored hash: of two
+	// concurrent submits of the same link exactly one proceeds.
+	storedHash := ""
+	if t := u.PasswordResetToken(); t != nil {
+		storedHash = *t
+	}
+	consumed, err := s.userRepo.ConsumePasswordResetToken(ctx, u.ID(), storedHash)
+	if err != nil {
+		return fmt.Errorf("failed to clear reset token: %w", err)
+	}
+	if !consumed {
+		return ErrInvalidResetToken
+	}
 	u.ClearPasswordResetToken()
 	// The link reached this mailbox, which proves the address: an account
 	// still waiting for its verification email is verified by it.

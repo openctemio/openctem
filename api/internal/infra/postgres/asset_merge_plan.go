@@ -130,6 +130,13 @@ var assetMergeRefs = []mergeRef{
 		keys: []mergeKey{{cols: []string{"business_unit_id"}}}},
 	{table: "asset_group_members", column: "asset_id", idCol: "ctid",
 		keys: []mergeKey{{cols: []string{"asset_group_id"}}}},
+	// A merged asset's exclusion from a group stays an exclusion for the kept
+	// asset; the kept asset's own exclusion of the group wins.
+	{table: "asset_group_exclusions", column: "asset_id", idCol: "ctid",
+		keys: []mergeKey{{cols: []string{"asset_group_id"}}}},
+	// Membership history is an append-only record: the rows follow the kept
+	// asset, no key can conflict.
+	{table: "asset_group_member_history", column: "asset_id", tenantCol: "tenant_id"},
 	{table: "asset_owners", column: "asset_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"user_id"}}, {cols: []string{"group_id"}}}},
 	{table: "user_accessible_assets", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
@@ -226,6 +233,7 @@ var assetMergeLeftAlone = map[string]string{
 	"ingest_receipt_items.asset_id":              "historical record of what one receipt did with an item; it names the asset as it was at ingest and is not part of the asset's live data",
 	"collector_assets.asset_id":                  "a collector source's authority covers only the asset it created: a merge never hands it the kept asset, so the merged asset's rows go with it",
 	"asset_technology_backfill_removed.asset_id": "audit record of a link the technology backfill deleted; it describes the asset as it was and is not part of the asset's live data",
+	"asset_resolution.asset_id":                  "a merged name's resolution state goes with it; the kept name keeps its own and the next resolution checks it again",
 	"asset_wildcard_dns.asset_id":                "a merged name's wildcard-only mark goes with it; the kept name keeps its own and the next filtered resolution marks it again",
 }
 

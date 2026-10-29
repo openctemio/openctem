@@ -72,6 +72,16 @@ var (
 	// never, on its own, enough to bind a federated identity.
 	ErrAccountLinkRequiresVerification = errors.New(
 		"an account with this email already exists; sign in with your existing credentials first, then link this identity provider")
+	// ErrSSODifferentMethod: the email belongs to an account that signs in
+	// another way (another identity provider, or another subject at this one).
+	// The person is told to use the method they signed up with.
+	ErrSSODifferentMethod = errors.New("this email is registered with a different sign-in method")
+	// ErrEmailUnverifiedAtIDP: the identity provider did not vouch for the
+	// email address, so no account is matched or created on it.
+	ErrEmailUnverifiedAtIDP = errors.New("the identity provider did not verify the email address")
+	// ErrUseAdminConsole: a platform administrator signs in on the admin
+	// console only. Raised after the provider authenticated the person.
+	ErrUseAdminConsole = errors.New("platform administrators sign in on the admin console")
 )
 
 // ssoMaxRedirectURILength is the maximum length for redirect URIs.
@@ -720,6 +730,9 @@ func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput)
 		if cerr != nil {
 			s.logger.Warn("entra_id SSO refused", "reason", cerr.Error(),
 				"source", rp.source, "tid", claims.TID, "subject", claims.Subject)
+			if errors.Is(cerr, ErrEmailUnverifiedAtIDP) {
+				return nil, ErrEmailUnverifiedAtIDP
+			}
 			return nil, ErrSSOInvalidIDToken
 		}
 		userInfo = info
@@ -730,6 +743,9 @@ func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput)
 		userInfo, err = s.getUserInfo(ctx, rp.provider, tokens.AccessToken, userInfoURL)
 		if err != nil {
 			s.logger.Error("SSO user info failed", "provider", input.Provider, "error", err)
+			if errors.Is(err, ErrEmailUnverifiedAtIDP) {
+				return nil, ErrEmailUnverifiedAtIDP
+			}
 			return nil, ErrSSOUserInfoFailed
 		}
 		// The account binding comes from the signature-verified, JWKS-pinned
@@ -1038,7 +1054,7 @@ func (s *SSOService) verifyIDToken(ctx context.Context, rp *resolvedProvider, id
 // gate unit-testable (the signature/issuer/audience checks live in pkg/oidc).
 func entraUserInfoFromClaims(claims *oidc.Claims) (*SSOUserInfo, error) {
 	if !bool(claims.XMSEdov) {
-		return nil, errors.New("entra id_token email not domain-owner-verified (xms_edov absent or false)")
+		return nil, fmt.Errorf("entra id_token email not domain-owner-verified (xms_edov absent or false): %w", ErrEmailUnverifiedAtIDP)
 	}
 	if strings.TrimSpace(claims.Email) == "" {
 		return nil, errors.New("entra id_token has no email claim")
@@ -1375,7 +1391,7 @@ func (s *SSOService) parseOktaUserInfo(body io.Reader) (*SSOUserInfo, error) {
 	// returns email_verified=false would otherwise let an attacker claim
 	// any email address and federate into existing accounts.
 	if !data.EmailVerified {
-		return nil, fmt.Errorf("okta identity provider did not mark email as verified")
+		return nil, fmt.Errorf("okta: %w", ErrEmailUnverifiedAtIDP)
 	}
 	return &SSOUserInfo{
 		Email:         data.Email,
@@ -1397,7 +1413,7 @@ func (s *SSOService) parseGoogleUserInfo(body io.Reader) (*SSOUserInfo, error) {
 	// SECURITY: reject unverified emails from Google Workspace. See
 	// parseOktaUserInfo for the rationale.
 	if !data.EmailVerified {
-		return nil, fmt.Errorf("google workspace identity provider did not mark email as verified")
+		return nil, fmt.Errorf("google workspace: %w", ErrEmailUnverifiedAtIDP)
 	}
 	return &SSOUserInfo{
 		Email:         data.Email,
@@ -1549,7 +1565,7 @@ func (s *SSOService) adoptExistingUser(ctx context.Context, t *tenantdom.Tenant,
 				"existing_provider", existingProvider,
 				"sso_provider", expectedProvider,
 			)
-			return nil, fmt.Errorf("%w: this email is registered with a different login method", ErrSSODomainNotAllowed)
+			return nil, ErrSSODifferentMethod
 		}
 
 		// The existing account is LOCAL. A password-backed local account is a real,
@@ -1582,7 +1598,7 @@ func (s *SSOService) adoptExistingUser(ctx context.Context, t *tenantdom.Tenant,
 		if sameIssuer {
 			s.logger.Warn("SSO login blocked: email bound to another subject at this identity provider",
 				"email", userInfo.Email, "issuer", userInfo.Issuer)
-			return nil, fmt.Errorf("%w: %w", ErrSSODomainNotAllowed, ErrFederatedIdentityConflict)
+			return nil, fmt.Errorf("%w: %w", ErrSSODifferentMethod, ErrFederatedIdentityConflict)
 		}
 		if otherIssuer != nil {
 			s.logger.Warn("SSO login blocked: email bound to a different identity provider",
@@ -1590,7 +1606,7 @@ func (s *SSOService) adoptExistingUser(ctx context.Context, t *tenantdom.Tenant,
 				"bound_issuer", otherIssuer.Key.Issuer,
 				"login_issuer", userInfo.Issuer,
 			)
-			return nil, fmt.Errorf("%w: this email is registered with a different identity provider", ErrSSODomainNotAllowed)
+			return nil, ErrSSODifferentMethod
 		}
 	}
 

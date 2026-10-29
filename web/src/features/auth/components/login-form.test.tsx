@@ -106,28 +106,6 @@ describe('LoginForm social-button gating', () => {
   })
 })
 
-describe('LoginForm administrator hint', () => {
-  beforeEach(() => {
-    mockUseTenantSSOProviders.mockReturnValue({
-      data: undefined,
-    } as ReturnType<typeof useTenantSSOProviders>)
-    setAuthProviders({ google: false, github: false, microsoft: false })
-  })
-
-  it('shows the administrator hint after a failed sign-in, and not before', async () => {
-    loginAction.mockResolvedValueOnce({ success: false, error: 'Invalid email or password' })
-    const user = userEvent.setup()
-    render(<LoginForm />)
-    expect(screen.queryByText(/platform administrators sign in on the admin console/i)).toBeNull()
-    await user.type(screen.getByLabelText('Email'), 'ops@acme.io')
-    await user.type(screen.getByLabelText('Password'), 'Correct-Horse-9')
-    await user.click(screen.getByRole('button', { name: /sign in/i }))
-    expect(
-      await screen.findByText(/platform administrators sign in on the admin console/i)
-    ).toBeTruthy()
-  })
-})
-
 describe('LoginForm two-factor step', () => {
   const originalLocation = window.location
   let href: ReturnType<typeof vi.fn<(v: string) => void>>
@@ -210,10 +188,16 @@ describe('LoginForm two-factor step', () => {
 
   it('shows a wrong code inline and stays on the step', async () => {
     loginAction.mockResolvedValueOnce({ success: true, mfaRequired: true, mfaPurpose: 'verify' })
-    verifyMfaAction.mockResolvedValueOnce({ success: false, error: 'Invalid verification code' })
+    verifyMfaAction.mockResolvedValueOnce({
+      success: false,
+      code: 'MFA_CODE_INVALID',
+      error: 'SERVER SENTENCE invalid verification code',
+    })
     const user = await signIn()
     await user.type(await screen.findByLabelText('Authentication code'), '000000')
-    expect(await screen.findByRole('alert')).toHaveTextContent('Invalid verification code')
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('That code is not valid')
+    expect(alert).not.toHaveTextContent('SERVER SENTENCE')
     expect(screen.getByText('Two-factor authentication')).toBeInTheDocument()
     expect(href).not.toHaveBeenCalled()
   })
@@ -237,6 +221,7 @@ describe('LoginForm two-factor step', () => {
     loginAction.mockResolvedValueOnce({ success: true, mfaRequired: true, mfaPurpose: 'verify' })
     verifyMfaAction.mockResolvedValueOnce({
       success: false,
+      code: 'MFA_CHALLENGE_INVALID',
       error: 'Your sign-in verification expired or is no longer valid. Please sign in again.',
     })
     const user = await signIn()

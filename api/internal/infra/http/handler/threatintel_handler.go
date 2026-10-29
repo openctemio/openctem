@@ -6,11 +6,13 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/datascope"
+	"github.com/openctemio/openctem/api/internal/app/feedstatus"
+	"github.com/openctemio/openctem/api/internal/app/feedsync"
 	"github.com/openctemio/openctem/api/internal/app/threat"
-	"github.com/openctemio/openctem/api/internal/app/vulnfeed"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 
 	"github.com/go-chi/chi/v5"
@@ -27,19 +29,22 @@ type ThreatIntelHandler struct {
 	validator *validator.Validator
 	logger    *logger.Logger
 	dataScope *datascope.Enforcer
-	bundles   BundleSyncer
+	runner    FeedRunner
+	// bundlesConfigured: VULNFEED_ROOT_KEY_ID is set.
+	bundlesConfigured bool
 }
 
-// BundleSyncer runs the vulnerability bundle import on request
-// (*vulnfeed.Importer).
-type BundleSyncer interface {
-	Sync(ctx context.Context) (vulnfeed.Result, error)
+// FeedRunner starts a feed's sync in the background (*feedsync.Runner).
+type FeedRunner interface {
+	Has(source string) bool
+	Trigger(source string) (feedsync.Outcome, error)
 }
 
-// SetBundleSyncer wires the vulnerability bundle importer so the admin sync
-// endpoint can run the "vulnfeed" source (nil: the source is not accepted).
-func (h *ThreatIntelHandler) SetBundleSyncer(b BundleSyncer) *ThreatIntelHandler {
-	h.bundles = b
+// SetFeedRunner wires the background runner behind the admin sync endpoint.
+// bundlesConfigured says whether the vulnerability bundle import has a pinned
+// root key (without one a manual sync would do nothing).
+func (h *ThreatIntelHandler) SetFeedRunner(r FeedRunner, bundlesConfigured bool) *ThreatIntelHandler {
+	h.runner, h.bundlesConfigured = r, bundlesConfigured
 	return h
 }
 
@@ -63,13 +68,13 @@ func NewThreatIntelHandler(
 	}
 }
 
-// GetSyncStatuses returns all sync statuses.
-// GET /api/v1/threat-intel/sync (any tenant user), GET /api/v1/admin/threat-intel/sync
-// @Summary      Threat-intelligence feed sync status (platform admin)
-// @Description  Status of the platform-wide EPSS and CISA KEV feed syncs.
+// GetSyncStatuses returns the status of every feed (platform admin view).
+// GET /api/v1/admin/threat-intel/sync
+// @Summary      Threat-intelligence feed status (platform admin)
+// @Description  State, error code, times and sizes of the platform-wide EPSS, CISA KEV and vulnerability bundle feeds.
 // @Tags         Admin Threat Intelligence
 // @Produce      json
-// @Success      200  {object}  map[string]any
+// @Success      200  {array}  SyncStatusResponse
 // @Security     BearerAuth
 // @Router       /admin/threat-intel/sync [get]
 func (h *ThreatIntelHandler) GetSyncStatuses(w http.ResponseWriter, r *http.Request) {
@@ -77,46 +82,48 @@ func (h *ThreatIntelHandler) GetSyncStatuses(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *ThreatIntelHandler) getSyncStatuses(w http.ResponseWriter, r *http.Request, admin bool) {
-	ctx := r.Context()
-
-	statuses, err := h.service.GetSyncStatuses(ctx)
+	views, err := h.service.FeedViews(r.Context())
 	if err != nil {
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
-
-	response := make([]SyncStatusResponse, 0, len(statuses))
-	for _, status := range statuses {
-		response = append(response, toSyncStatusResponse(status, admin))
+	if admin {
+		out := make([]SyncStatusResponse, 0, len(views))
+		for _, v := range views {
+			out = append(out, toSyncStatusResponse(v))
+		}
+		writeJSONResponse(w, http.StatusOK, out)
+		return
 	}
-
-	writeJSONResponse(w, http.StatusOK, response)
+	out := make([]TenantSyncStatusResponse, 0, len(views))
+	for _, v := range views {
+		out = append(out, toTenantSyncStatusResponse(v))
+	}
+	writeJSONResponse(w, http.StatusOK, out)
 }
 
-// GetSyncStatusesTenant is the tenant-facing list: state and freshness only,
-// never the raw error text of a failed fetch (it can name hosts and paths).
+// GetSyncStatusesTenant is the organization-facing list: state and freshness
+// only, never the raw error text of a failed fetch (it can name hosts and
+// paths) or the bundle internals.
 // GET /api/v1/threat-intel/sync
 func (h *ThreatIntelHandler) GetSyncStatusesTenant(w http.ResponseWriter, r *http.Request) {
 	h.getSyncStatuses(w, r, false)
 }
 
-// GetSyncStatusTenant is GetSyncStatus without the raw error text.
+// GetSyncStatusTenant is GetSyncStatus without the admin detail.
 // GET /api/v1/threat-intel/sync/{source}
 func (h *ThreatIntelHandler) GetSyncStatusTenant(w http.ResponseWriter, r *http.Request) {
 	h.getSyncStatus(w, r, false)
 }
 
-// GetSyncStatus returns sync status for a specific source (admin route).
+// GetSyncStatus returns the status of one feed (platform admin view).
 // GET /api/v1/admin/threat-intel/sync/{source}
 func (h *ThreatIntelHandler) GetSyncStatus(w http.ResponseWriter, r *http.Request) {
 	h.getSyncStatus(w, r, true)
 }
 
 func (h *ThreatIntelHandler) getSyncStatus(w http.ResponseWriter, r *http.Request, admin bool) {
-	ctx := r.Context()
-	source := chi.URLParam(r, "source")
-
-	status, err := h.service.GetSyncStatus(ctx, source)
+	v, err := h.service.FeedView(r.Context(), chi.URLParam(r, "source"))
 	if err != nil {
 		if errors.Is(err, threatintel.ErrSyncStatusNotFound) {
 			apierror.NotFound("sync status").WriteJSON(w)
@@ -125,20 +132,25 @@ func (h *ThreatIntelHandler) getSyncStatus(w http.ResponseWriter, r *http.Reques
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
-
-	writeJSONResponse(w, http.StatusOK, toSyncStatusResponse(status, admin))
+	if admin {
+		writeJSONResponse(w, http.StatusOK, toSyncStatusResponse(v))
+		return
+	}
+	writeJSONResponse(w, http.StatusOK, toTenantSyncStatusResponse(v))
 }
 
-// TriggerSync triggers a sync for a specific source or all sources.
+// TriggerSync starts a sync of one feed or all feeds in the background.
 // POST /api/v1/admin/threat-intel/sync
-// @Summary      Run a threat-intelligence feed sync (platform admin)
-// @Description  Syncs the platform-wide EPSS and/or CISA KEV feed now. ops_admin or super_admin; audited.
+// @Summary      Start a threat-intelligence feed sync (platform admin)
+// @Description  Queues a background sync of the EPSS, CISA KEV and/or vulnerability bundle feed and returns at once (202); the outcome shows in the feed status. One run per feed at a time; a feed that is switched off or not configured is not started. ops_admin or super_admin; audited.
 // @Tags         Admin Threat Intelligence
 // @Accept       json
 // @Produce      json
 // @Param        request  body      TriggerSyncRequest  false  "Feed (epss, kev, vulnfeed, all); empty = all"
-// @Success      200  {object}  map[string]any
+// @Success      202  {object}  map[string]any
 // @Failure      400  {object}  apierror.Error
+// @Failure      409  {object}  apierror.Error
+// @Failure      429  {object}  apierror.Error
 // @Security     BearerAuth
 // @Router       /admin/threat-intel/sync [post]
 func (h *ThreatIntelHandler) TriggerSync(w http.ResponseWriter, r *http.Request) {
@@ -148,70 +160,86 @@ func (h *ThreatIntelHandler) TriggerSync(w http.ResponseWriter, r *http.Request)
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		// An empty body is allowed and means "sync all"; a malformed body is a
 		// client error and must not be silently coerced into a full external
-		// EPSS + CISA-KEV sync.
+		// sync.
 		if !errors.Is(err, io.EOF) {
 			apierror.BadRequest("Invalid request body").WriteJSON(w)
 			return
 		}
 		req.Source = ""
 	}
-
-	h.logger.Info("triggering threat intel sync", "source", req.Source)
-
-	var results []threat.IntelSyncResult
-	switch req.Source {
-	case "", "all":
-		results = h.service.SyncAll(ctx)
-		if h.bundles != nil {
-			results = append(results, h.syncBundles(ctx))
-		}
-	case "epss":
-		results = []threat.IntelSyncResult{h.service.SyncEPSS(ctx)}
-	case "kev":
-		results = []threat.IntelSyncResult{h.service.SyncKEV(ctx)}
-	case vulnfeed.SourceName:
-		if h.bundles == nil {
-			apierror.BadRequest("invalid source: " + req.Source).WriteJSON(w)
-			return
-		}
-		results = []threat.IntelSyncResult{h.syncBundles(ctx)}
-	default:
-		apierror.BadRequest("invalid source: " + req.Source).WriteJSON(w)
+	if h.runner == nil {
+		apierror.ServiceUnavailable("feed sync is not available on this instance").WriteJSON(w)
 		return
 	}
 
-	response := make([]SyncResultResponse, 0, len(results))
-	for _, result := range results {
-		resp := SyncResultResponse{
-			Source:        result.Source,
-			RecordsSynced: result.RecordsSynced,
-			DurationMs:    result.DurationMs,
-			Success:       result.Error == nil,
+	all := req.Source == "" || req.Source == "all"
+	var sources []string
+	if all {
+		for _, s := range []string{feedstatus.SourceVulnfeed, feedstatus.SourceEPSS, feedstatus.SourceKEV} {
+			if h.runner.Has(s) {
+				sources = append(sources, s)
+			}
 		}
-		if result.Error != nil {
-			resp.Error = result.Error.Error()
+	} else {
+		if !h.runner.Has(req.Source) {
+			apierror.BadRequest("invalid source: " + req.Source).WriteJSON(w)
+			return
 		}
-		response = append(response, resp)
+		sources = []string{req.Source}
+	}
+	h.logger.Info("triggering threat intel sync", "source", req.Source)
+
+	results := make([]TriggerResult, 0, len(sources))
+	var tooSoon *feedsync.TooSoonError
+	started := 0
+	for _, source := range sources {
+		if reason := h.cannotRun(ctx, source); reason != "" {
+			results = append(results, TriggerResult{Source: source, Status: "skipped", Reason: reason})
+			continue
+		}
+		out, err := h.runner.Trigger(source)
+		var ts *feedsync.TooSoonError
+		switch {
+		case errors.As(err, &ts):
+			tooSoon = ts
+			results = append(results, TriggerResult{Source: source, Status: "skipped", Reason: "rate_limited"})
+		case err != nil:
+			apierror.InternalError(err).WriteJSON(w)
+			return
+		default:
+			started++
+			results = append(results, TriggerResult{Source: source, Status: string(out)})
+		}
 	}
 
-	// Always 200: the outcome of each feed is in results[].success, so a
-	// client that treats any 2xx as success cannot miss a failure by status.
-	writeJSONResponse(w, http.StatusOK, map[string]any{
-		"results": response,
-	})
+	if started == 0 {
+		if tooSoon != nil {
+			w.Header().Set("Retry-After", strconv.Itoa(int(tooSoon.RetryAfter.Seconds())+1))
+			apierror.TooManyRequests("A sync of this feed was just started. Try again in a few seconds.").WriteJSON(w)
+			return
+		}
+		if !all {
+			apierror.Conflict("This feed cannot be synced now: " + results[0].Reason).WriteJSON(w)
+			return
+		}
+	}
+	writeJSONResponse(w, http.StatusAccepted, map[string]any{"results": results})
 }
 
-// syncBundles runs the vulnerability bundle import as a sync result.
-func (h *ThreatIntelHandler) syncBundles(ctx context.Context) threat.IntelSyncResult {
-	start := time.Now()
-	res, err := h.bundles.Sync(ctx)
-	return threat.IntelSyncResult{
-		Source:        vulnfeed.SourceName,
-		RecordsSynced: res.CVEs,
-		DurationMs:    time.Since(start).Milliseconds(),
-		NotModified:   err == nil && !res.Ran,
-		Error:         err,
+// cannotRun says why a feed is not started ("" when it can be): scheduled
+// sync switched off, or the bundle import not configured.
+func (h *ThreatIntelHandler) cannotRun(ctx context.Context, source string) string {
+	if source == feedstatus.SourceVulnfeed && !h.bundlesConfigured {
+		return feedstatus.CodeNotConfigured
 	}
+	enabled, err := h.service.FeedEnabled(ctx, source)
+	if err != nil {
+		return "unknown"
+	}
+	if !enabled {
+		return feedstatus.CodeDisabled
+	}
+	return ""
 }
 
 // SetSyncEnabled enables or disables sync for a source.
@@ -246,7 +274,7 @@ func (h *ThreatIntelHandler) SetSyncEnabled(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	status, err := h.service.GetSyncStatus(ctx, source)
+	v, err := h.service.FeedView(ctx, source)
 	if err != nil {
 		if errors.Is(err, threatintel.ErrSyncStatusNotFound) {
 			apierror.NotFound("sync status").WriteJSON(w)
@@ -255,7 +283,7 @@ func (h *ThreatIntelHandler) SetSyncEnabled(w http.ResponseWriter, r *http.Reque
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
-	writeJSONResponse(w, http.StatusOK, toSyncStatusResponse(status, true))
+	writeJSONResponse(w, http.StatusOK, toSyncStatusResponse(v))
 }
 
 // EnrichCVE enriches a single CVE with threat intel data.
@@ -433,24 +461,73 @@ type EnrichCVEsRequest struct {
 	CVEIDs []string `json:"cve_ids"`
 }
 
-// SyncStatusResponse is the response for sync status.
+// SyncStatusResponse is the platform admin view of a feed. The server
+// computes the state and the error code; the console only renders them.
 type SyncStatusResponse struct {
+	Source  string `json:"source"`
+	Enabled bool   `json:"enabled"`
+	// State: up_to_date, waiting_for_publisher, stale, failing, refused,
+	// running or off.
+	State string `json:"state"`
+	// ErrorCode classifies the last failure (publisher_empty, unreachable,
+	// http_status, signature_invalid, ...); ErrorParams fills its message.
+	ErrorCode   string            `json:"error_code,omitempty"`
+	ErrorParams map[string]string `json:"error_params,omitempty"`
+	// LastError is the raw text of the last failure (admin route only).
+	LastError     string  `json:"last_error,omitempty"`
+	LastAttemptAt *string `json:"last_attempt_at,omitempty"`
+	LastSuccessAt *string `json:"last_success_at,omitempty"`
+	FailingSince  *string `json:"failing_since,omitempty"`
+	NextRunAt     *string `json:"next_run_at,omitempty"`
+	// CatalogRecords is the size of the stored catalog; RecordsChanged what
+	// the last run wrote.
+	CatalogRecords    int64   `json:"catalog_records"`
+	RecordsChanged    int     `json:"records_changed"`
+	DataAsOf          *string `json:"data_as_of,omitempty"`
+	IntervalSeconds   int64   `json:"interval_seconds"`
+	StaleAfterSeconds int64   `json:"stale_after_seconds"`
+	// Detail is the bundle feed's own progress (vulnfeed only).
+	Detail *BundleDetailResponse `json:"detail,omitempty"`
+}
+
+// BundleDetailResponse is the vulnerability bundle feed's progress.
+type BundleDetailResponse struct {
+	AppliedSequence uint64                 `json:"applied_sequence"`
+	KeySetVersion   uint64                 `json:"keyset_version"`
+	RootKeyID       string                 `json:"root_key_id,omitempty"`
+	Kind            string                 `json:"kind,omitempty"`
+	BundleCreatedAt *string                `json:"bundle_created_at,omitempty"`
+	Sources         []BundleSourceResponse `json:"sources"`
+}
+
+// BundleSourceResponse is one upstream source named by the applied bundle.
+type BundleSourceResponse struct {
+	Name  string  `json:"name"`
+	AsOf  *string `json:"as_of,omitempty"`
+	Fresh bool    `json:"fresh"`
+}
+
+// TenantSyncStatusResponse is what an organization sees of a feed: its
+// state and freshness, never an error text, a host or the bundle internals.
+type TenantSyncStatusResponse struct {
 	Source         string  `json:"source"`
 	Enabled        bool    `json:"enabled"`
+	State          string  `json:"state"`
+	DataAsOf       *string `json:"data_as_of,omitempty"`
+	LastSuccessAt  *string `json:"last_success_at,omitempty"`
 	LastSyncAt     *string `json:"last_sync_at,omitempty"`
 	LastSyncStatus string  `json:"last_sync_status"`
-	LastError      string  `json:"last_error,omitempty"`
-	RecordsSynced  int     `json:"records_synced"`
+	RecordsSynced  int64   `json:"records_synced"`
 	NextSyncAt     *string `json:"next_sync_at,omitempty"`
 }
 
-// SyncResultResponse is the response for a sync result.
-type SyncResultResponse struct {
-	Source        string `json:"source"`
-	RecordsSynced int    `json:"records_synced"`
-	DurationMs    int64  `json:"duration_ms"`
-	Success       bool   `json:"success"`
-	Error         string `json:"error,omitempty"`
+// TriggerResult is what a sync request did for one feed: status is
+// queued, already_running or skipped (reason: disabled, not_configured,
+// rate_limited).
+type TriggerResult struct {
+	Source string `json:"source"`
+	Status string `json:"status"`
+	Reason string `json:"reason,omitempty"`
 }
 
 // EnrichmentResponse is the response for CVE enrichment.
@@ -493,29 +570,46 @@ type KEVEntryResponse struct {
 
 // Helper functions
 
-func toSyncStatusResponse(status *threatintel.SyncStatus, includeError bool) SyncStatusResponse {
+func fmtTime(t *time.Time) *string {
+	if t == nil {
+		return nil
+	}
+	f := t.UTC().Format("2006-01-02T15:04:05Z")
+	return &f
+}
+
+func toSyncStatusResponse(v feedstatus.View) SyncStatusResponse {
 	resp := SyncStatusResponse{
-		Source:         status.SourceName(),
-		Enabled:        status.IsEnabled(),
-		LastSyncStatus: status.LastSyncStatus().String(),
-		RecordsSynced:  status.RecordsSynced(),
+		Source: v.Source, Enabled: v.Enabled, State: string(v.State),
+		ErrorCode: v.ErrorCode, ErrorParams: v.ErrorParams, LastError: v.LastError,
+		LastAttemptAt: fmtTime(v.LastAttemptAt), LastSuccessAt: fmtTime(v.LastSuccessAt),
+		FailingSince: fmtTime(v.FailingSince), NextRunAt: fmtTime(v.NextRunAt),
+		CatalogRecords: v.CatalogRecords, RecordsChanged: v.RecordsChanged, DataAsOf: fmtTime(v.DataAsOf),
+		IntervalSeconds: int64(v.Interval.Seconds()), StaleAfterSeconds: int64(v.StaleAfter.Seconds()),
 	}
-
-	if includeError {
-		resp.LastError = status.LastSyncError()
+	if v.State == feedstatus.StateRunning || v.State == feedstatus.StateUpToDate {
+		resp.LastError = ""
 	}
-
-	if status.LastSyncAt() != nil {
-		t := status.LastSyncAt().Format("2006-01-02T15:04:05Z")
-		resp.LastSyncAt = &t
+	if b := v.Bundle; b != nil {
+		d := &BundleDetailResponse{
+			AppliedSequence: b.AppliedSequence, KeySetVersion: b.KeySetVersion, RootKeyID: b.RootKeyID,
+			Kind: b.Kind, BundleCreatedAt: fmtTime(b.BundleCreatedAt), Sources: []BundleSourceResponse{},
+		}
+		for _, s := range b.Sources {
+			d.Sources = append(d.Sources, BundleSourceResponse{Name: s.Name, AsOf: fmtTime(s.AsOf), Fresh: s.Fresh})
+		}
+		resp.Detail = d
 	}
-
-	if status.NextSyncAt() != nil {
-		t := status.NextSyncAt().Format("2006-01-02T15:04:05Z")
-		resp.NextSyncAt = &t
-	}
-
 	return resp
+}
+
+func toTenantSyncStatusResponse(v feedstatus.View) TenantSyncStatusResponse {
+	return TenantSyncStatusResponse{
+		Source: v.Source, Enabled: v.Enabled, State: string(v.State),
+		DataAsOf: fmtTime(v.DataAsOf), LastSuccessAt: fmtTime(v.LastSuccessAt),
+		LastSyncAt: fmtTime(v.LastAttemptAt), LastSyncStatus: v.LastSyncStatus,
+		RecordsSynced: v.CatalogRecords, NextSyncAt: fmtTime(v.NextRunAt),
+	}
 }
 
 func toEnrichmentResponse(enrichment *threatintel.ThreatIntelEnrichment) EnrichmentResponse {

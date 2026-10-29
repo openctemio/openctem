@@ -62,16 +62,26 @@ const (
 	// ApprovalOrgPurge: an organization is deleted at once, before its grace
 	// period ends ("tenant:<id>").
 	ApprovalOrgPurge ApprovalAction = "organization.purge"
+	// ApprovalUserMFAReset: an organization user's two-factor authentication
+	// is turned off by the console ("user:<id>"), for a person who lost their
+	// device and codes and has no organization administrator to reset them.
+	ApprovalUserMFAReset ApprovalAction = "user.reset_mfa"
 	// ApprovalPlatformAIDestination: platform AI is saved turned on with a
 	// destination other than the last one applied while on: provider, base
 	// URL, private-network switch or API key. The target is the new
 	// destination (PlatformAIDestinationTarget). Model changes, turning off
 	// and removing the key never need it.
 	ApprovalPlatformAIDestination ApprovalAction = "platform_ai.destination"
+	// ApprovalPlatformEmailRelay: platform e-mail is saved turned on with a
+	// relay (host, port or connection security) other than the last one
+	// applied while on. The target is the new relay (PlatformEmailRelayTarget).
+	// Password or sender changes on the same relay and turning e-mail off
+	// never need it.
+	ApprovalPlatformEmailRelay ApprovalAction = "platform_email.relay"
 )
 
 var (
-	approvalIDTarget     = regexp.MustCompile(`^(admin|tenant):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+	approvalIDTarget     = regexp.MustCompile(`^(admin|tenant|user):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 	approvalEmailTarget  = regexp.MustCompile(`^email:[^\s@]{1,64}@[^\s@]{1,255}$`)
 	approvalSignupTarget = regexp.MustCompile(`^mode=(admin_only|self_service);accounts=(closed|domain|open)$`)
 )
@@ -98,10 +108,14 @@ func (a ApprovalAction) ValidTarget(target string) bool {
 		return validPlatformIdPChangeTarget(target)
 	case ApprovalPlatformAIDestination:
 		return validPlatformAIDestinationTarget(target)
+	case ApprovalPlatformEmailRelay:
+		return validPlatformEmailRelayTarget(target)
 	case ApprovalSignupOpen:
 		return approvalSignupTarget.MatchString(target)
 	case ApprovalAuditChainRebaseline, ApprovalOrgPurge:
 		return approvalIDTarget.MatchString(target) && strings.HasPrefix(target, "tenant:")
+	case ApprovalUserMFAReset:
+		return approvalIDTarget.MatchString(target) && strings.HasPrefix(target, "user:")
 	}
 	return false
 }
@@ -111,7 +125,8 @@ func (a ApprovalAction) IsValid() bool {
 	switch a {
 	case ApprovalGrantSuperAdmin, ApprovalRevokeSuperAdmin, ApprovalConsoleMFAOff,
 		ApprovalPlatformIdPRemove, ApprovalSignupOpen, ApprovalAuditChainRebaseline, ApprovalOrgPurge,
-		ApprovalPlatformIdPChange, ApprovalResetCredentials, ApprovalPlatformAIDestination:
+		ApprovalPlatformIdPChange, ApprovalResetCredentials, ApprovalUserMFAReset, ApprovalPlatformAIDestination,
+		ApprovalPlatformEmailRelay:
 		return true
 	}
 	return false
@@ -205,6 +220,78 @@ func validPlatformAIDestinationTarget(target string) bool {
 		return false
 	}
 	return PlatformAIDestinationTarget(c.Provider, c.BaseURL, c.AllowPrivate, c.KeyFP) == target
+}
+
+// Connection security values of a platform e-mail relay target.
+const (
+	relaySecurityStartTLS = "starttls"
+	relaySecurityNone     = "none"
+)
+
+// platformEmailRelay is the canonical form of a platform e-mail relay target.
+// Security is "starttls" or "none".
+type platformEmailRelay struct {
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	Security string `json:"security"`
+	Username string `json:"username,omitempty"`
+}
+
+// PlatformEmailRelayTarget is the approval target of a platform e-mail relay:
+// the host (lower case), port, connection security and the SMTP login. The
+// login is part of it because an account on the relay is another mailbox
+// owner: signing in as a different one sends every set-password and reset link
+// through that account. The password is never part of it.
+func PlatformEmailRelayTarget(host string, port int, startTLS bool, username string) string {
+	sec := relaySecurityNone
+	if startTLS {
+		sec = relaySecurityStartTLS
+	}
+	return canonicalTarget(platformEmailRelay{Host: strings.ToLower(host), Port: port, Security: sec, Username: strings.TrimSpace(username)})
+}
+
+// validPlatformEmailRelayTarget accepts only the exact output of
+// PlatformEmailRelayTarget.
+func validPlatformEmailRelayTarget(target string) bool {
+	if approvalHashTarget.MatchString(target) {
+		return true
+	}
+	var c platformEmailRelay
+	dec := json.NewDecoder(strings.NewReader(target))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&c); err != nil || c.Host == "" || c.Port < 1 || c.Port > 65535 || (c.Security != relaySecurityStartTLS && c.Security != relaySecurityNone) {
+		return false
+	}
+	return PlatformEmailRelayTarget(c.Host, c.Port, c.Security == relaySecurityStartTLS, c.Username) == target
+}
+
+// PlatformEmailRelayLabel describes a relay target for the approver, e.g.
+// "smtp.example.com port 587 with STARTTLS". Empty for the hash form.
+func PlatformEmailRelayLabel(target string) string {
+	var c platformEmailRelay
+	if json.Unmarshal([]byte(target), &c) != nil || c.Host == "" {
+		return ""
+	}
+	sec := "without encryption"
+	if c.Security == relaySecurityStartTLS {
+		sec = "with STARTTLS"
+	}
+	out := fmt.Sprintf("%s port %d %s", c.Host, c.Port, sec)
+	if c.Username != "" {
+		out += fmt.Sprintf(", signing in as %s", clipLabel(c.Username))
+	} else {
+		out += ", without a login"
+	}
+	return out
+}
+
+// clipLabel keeps a login short and on one line in an approver's label.
+func clipLabel(v string) string {
+	v = strings.NewReplacer("\r", " ", "\n", " ").Replace(v)
+	if r := []rune(v); len(r) > 64 {
+		return string(r[:64]) + "..."
+	}
+	return v
 }
 
 // PlatformAIDestinationLabel describes a platform AI destination target for

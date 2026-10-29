@@ -22,6 +22,9 @@ entry when it merges.
 A line that genuinely needs a private address (for example a page that explains how
 private ranges are handled) can carry the marker `docs-check: allow-private` in an HTML
 comment on the same line.
+
+The glossary (api/docs/glossary.md) is the one page allowed to carry Vietnamese: it records
+the Vietnamese console wording of every term.
 """
 import os
 import re
@@ -38,6 +41,8 @@ INTERNAL_HOSTS = re.compile(r"manhnv\.com|\.internal\.openctem", re.IGNORECASE)
 # The language's own name is allowed (for example in a list of console languages).
 LANGUAGE_NAMES = re.compile("Tiếng Việt")
 ALLOW_PRIVATE = "docs-check: allow-private"
+# The glossary gives each term's Vietnamese console wording on purpose.
+VIETNAMESE_ALLOWED = {os.path.normpath("api/docs/glossary.md")}
 
 LINK = re.compile(r"!?\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+\"[^\"]*\")?\s*\)")
 REF_DEF = re.compile(r"^\s*\[[^\]]+\]:\s*(\S+)", re.MULTILINE)
@@ -103,8 +108,9 @@ def check_file(path, errors):
     with open(path, encoding="utf-8") as fh:
         text = fh.read()
     in_fence = False
+    vietnamese_ok = any(os.path.normpath(path).endswith(a) for a in VIETNAMESE_ALLOWED)
     for lineno, line in enumerate(text.splitlines(), 1):
-        if VIETNAMESE.search(LANGUAGE_NAMES.sub("", line)):
+        if not vietnamese_ok and VIETNAMESE.search(LANGUAGE_NAMES.sub("", line)):
             errors.append(f"{path}:{lineno}: non-English (Vietnamese) text")
         if ALLOW_PRIVATE not in line:
             m = PRIVATE_IP.search(line)

@@ -79,10 +79,12 @@ type IntakeSource struct {
 	Drill string `json:"drill"`
 }
 
-// IntakeNoise splits what was received in the window: new or reopened
-// findings, merged into findings that exist (seen again, or repeated in a
-// report), suppressed by an approved rule, and not stored. The parts sum to
-// Received.
+// IntakeNoise splits what was received in the window into new or reopened
+// findings (the receipt list's New plus Reopened), merged into findings
+// that exist (seen again, or repeated in a report) and not stored; these
+// three sum to Received. Suppressed is the part of New that an approved
+// rule closed on arrival (the receipt list's Suppressed); it is stored, so
+// it is already inside New and is not a fourth part.
 type IntakeNoise struct {
 	Received   int64 `json:"received"`
 	New        int64 `json:"new"`
@@ -299,12 +301,14 @@ func sourceHealth(r dashboard.IntakeRow, now time.Time) string {
 	return HealthOK
 }
 
-// noiseOf splits the received findings. Suppressed findings are stored (as
-// closed) and so are part of Created; Merged is the rest after new,
-// reopened and not stored, so the parts sum to Received.
+// noiseOf splits the received findings. Every figure is a sum the receipt
+// list shows for the same filter: New is Created plus Reopened, so a figure
+// equals the list it opens. Suppressed findings are stored (as closed), so
+// they stay inside New; Merged is the rest after new, reopened and not
+// stored, so New, Merged and NotStored sum to Received.
 func noiseOf(t IntakeSource) IntakeNoise {
 	n := IntakeNoise{Received: t.Received, Suppressed: t.Suppressed, NotStored: t.NotStored,
-		New: max(t.Created-t.Suppressed, 0) + t.Reopened}
+		New: t.Created + t.Reopened}
 	n.Merged = max(t.Received-t.Created-t.Reopened-t.NotStored, 0)
 	return n
 }

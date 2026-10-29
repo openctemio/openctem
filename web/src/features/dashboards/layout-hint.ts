@@ -11,7 +11,7 @@ import type { Dashboard, DashboardWidget } from './api/dashboards.types'
 import { templateByKey, type DashboardTemplate, type TemplateKey } from './templates'
 
 /** Bump when a template offered here gains widgets, so the hint shows again. */
-export const LAYOUT_HINT_VERSION = '2'
+export const LAYOUT_HINT_VERSION = '3'
 export const LAYOUT_HINT_DISMISSED_KEY = 'openctem:layout-hint-dismissed'
 
 /** Templates whose copies are offered their new widgets, by widget id prefix. */

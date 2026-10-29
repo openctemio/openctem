@@ -16,12 +16,14 @@ asset_coverage
 asset_coverage_alerts
 asset_dedup_review
 asset_enrichment_requests
+asset_group_member_history
 asset_groups
 asset_identifiers
 asset_identity_backfill
 asset_merge_log
 asset_program_links
 asset_relationships
+asset_resolution
 asset_risk_queue
 asset_risk_requests
 asset_services
@@ -119,6 +121,7 @@ easm_weekly_digests
 exposure_disposition_requests
 exposure_events
 exposures
+failure_breakers
 finding_activities
 finding_approval_digest_sent
 finding_branch_occurrences

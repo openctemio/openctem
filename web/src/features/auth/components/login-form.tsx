@@ -15,7 +15,6 @@ import Link from '@/components/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { KeyRound, Loader2, LogIn } from 'lucide-react'
 import { toast } from 'sonner'
-import { safeText } from '@/lib/api/error-message'
 
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -32,7 +31,9 @@ import { PasswordInput } from '@/components/password-input'
 import { IconGoogle, IconGithub, IconMicrosoft } from '@/assets/brand-icons'
 
 import { validateRedirectUrl } from '@/lib/redirect'
+import { authErrorText } from '@/features/auth/lib/auth-error-codes'
 import { loginErrorMessage } from '@/features/auth/lib/login-error'
+import { ResendVerification } from './resend-verification'
 import { isInvitationReturnTo } from '@/features/auth/lib/self-register'
 import { useTranslation } from '@/context/i18n-provider'
 
@@ -140,7 +141,7 @@ export function LoginForm({
   const [captchaRequired, setCaptchaRequired] = useState(false)
   const [captchaToken, setCaptchaToken] = useState('')
   const [captchaReset, setCaptchaReset] = useState(0)
-  // After a failed sign-in: administrators of the platform sign in elsewhere.
+  const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null)
   const router = useRouter()
   const searchParams = useSearchParams()
 
@@ -278,13 +279,18 @@ export function LoginForm({
       hardNavigate(safeRedirectTo)
     } else if (result.code === 'ORGANIZATION_SUSPENDED') {
       toast.error(
-        t('auth.organizationSuspended.message', 'This organization is suspended: contact support')
+        t('auth.organizationSuspended.message', 'This organization is suspended. Contact support.')
       )
+    } else if (result.code === 'EMAIL_NOT_VERIFIED') {
+      // The password was right but the address is not verified: say so and
+      // offer to send the link again.
+      setUnverifiedEmail(form.getValues('email'))
+      toast.error(t('auth.login.emailNotVerified', 'Your email address is not verified yet.'))
     } else if (result.code === 'CAPTCHA_REQUIRED') {
       setCaptchaRequired(true)
       toast.error(t('auth.login.captchaRequired'))
     } else {
-      toast.error(safeText(result.error, t('auth.login.failed', 'Sign-in failed')))
+      toast.error(authErrorText(result.code, t, t('auth.login.failed', 'Sign-in failed')))
     }
   }
 
@@ -431,6 +437,8 @@ export function LoginForm({
             resetSignal={captchaReset}
           />
         )}
+
+        {unverifiedEmail && <ResendVerification email={unverifiedEmail} />}
 
         {/* Submit Button */}
         <Button className="mt-2" disabled={isLoading} type="submit">

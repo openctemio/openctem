@@ -468,6 +468,10 @@ func Register(
 	if stepUpChecker == nil && h.LocalAuth != nil {
 		stepUpChecker = h.LocalAuth.RecentAuthChecker()
 	}
+	credentialFactorChecker = nil
+	if h.LocalAuth != nil {
+		credentialFactorChecker = h.LocalAuth.CredentialFactorChecker()
+	}
 	apiKeyOrJWT = nil
 	if h.APIKeyAuth != nil {
 		apiKeyOrJWT = h.APIKeyAuth.OrJWT
@@ -1027,6 +1031,7 @@ func Register(
 	}
 	if h.ProxyPool != nil {
 		registerProxyPoolRoutes(router, h.ProxyPool, authMiddleware, userSync)
+		registerProxyTestEchoRoute(router, handler.NewProxyTestEchoHandler(h.ProxyPool.Service()))
 	}
 	if h.ScanWindow != nil {
 		registerScanWindowRoutes(router, h.ScanWindow, authMiddleware, userSync)
@@ -1332,6 +1337,20 @@ var ipAllowlistMiddleware Middleware //nolint:gochecknoglobals // set once durin
 // docs/architecture/step-up-reauth.md). Set once during Register from the
 // local auth handler; nil makes every step-up route refuse (fail closed).
 var stepUpChecker middleware.RecentAuthChecker //nolint:gochecknoglobals // set once during init
+
+// credentialFactorChecker answers RequireCredentialFactor (two-factor before
+// creating a credential). Set once during Register from the local auth
+// handler; nil lets requests through (tests without the auth service).
+var credentialFactorChecker middleware.CredentialFactorChecker //nolint:gochecknoglobals // set once during init
+
+// requireCredentialFactor is the middleware for a route that creates a
+// credential (API key, sensor enrolment, integration secret): the caller
+// needs a second factor when the organization or the platform floor covers
+// them, even during their sign-in grace period. Mount it after
+// requireStepUp.
+func requireCredentialFactor() Middleware {
+	return middleware.RequireCredentialFactor(credentialFactorChecker)
+}
 
 // requireStepUp is the middleware for a sensitive route: the caller's session
 // must have signed in or stepped up within authapp.StepUpWindow, otherwise

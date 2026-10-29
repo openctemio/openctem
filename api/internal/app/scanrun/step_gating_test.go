@@ -60,7 +60,9 @@ func (r *statusRuns) Update(_ context.Context, run *scanrun.Run) error {
 func (r *statusRuns) GetWithStepRuns(context.Context, shared.ID) (*scanrun.Run, error) {
 	return r.run, nil
 }
-func (r *statusRuns) UpdateStats(context.Context, shared.ID, int, int, int, int) error { return nil }
+func (r *statusRuns) UpdateStats(context.Context, shared.ID, shared.ID, int, int, int, int) error {
+	return nil
+}
 func (r *statusRuns) UpdateStatus(_ context.Context, _ shared.ID, st scanrun.RunStatus, _ string) error {
 	if len(r.statuses) > 0 {
 		return scanrun.ErrRunAlreadyFinished
