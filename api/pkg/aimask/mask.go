@@ -140,14 +140,18 @@ func (m *Masker) MaskText(text string) string {
 	}
 	s := &spanSet{taken: make([]bool, len(text))}
 
+	secrets := safetext.FindSecrets(text)
 	// 1. Token-shaped input: escaped first, so it can never pass as ours.
+	//    A candidate inside a secret is left to the secret: claiming it
+	//    would block the secret span, so the rest of the secret would reach
+	//    the model and the literal (part of the secret) would be kept in the
+	//    reversible map.
 	for _, ix := range tokenShapeRE.FindAllStringIndex(text, -1) {
-		if !tokenCandidate(text[ix[0]:ix[1]]) {
+		if !tokenCandidate(text[ix[0]:ix[1]]) || overlapsSecret(secrets, ix[0], ix[1]) {
 			continue
 		}
 		s.add(ix[0], ix[1], func() string { return m.token(ClassLiteral, string(ClassLiteral), text[ix[0]:ix[1]]) })
 	}
-	secrets := safetext.FindSecrets(text)
 	// 2. Private key blocks are large; claim them before a URL inside one.
 	for _, sp := range secrets {
 		if sp.Kind == "private_key" {
@@ -192,6 +196,16 @@ func (m *Masker) MaskText(text string) string {
 		m.addTickets(text, s)
 	}
 	return assemble(text, s.spans)
+}
+
+// overlapsSecret reports whether text[a:b] overlaps a detected secret.
+func overlapsSecret(secrets []safetext.SecretSpan, a, b int) bool {
+	for _, sp := range secrets {
+		if a < sp.End && sp.Start < b {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *Masker) addHosts(text string, s *spanSet) {
