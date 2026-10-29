@@ -45,7 +45,7 @@ const (
 
 	// maxDecompressedFeedBytes bounds the decompressed stream so a malicious
 	// gzip (decompression bomb) cannot exhaust memory. The real EPSS feed is
-	// well under this; the bound is defence-in-depth.
+	// well under this; the bound is defense in depth.
 	maxDecompressedFeedBytes = 1 << 30 // 1 GiB
 
 	// epssHighThreshold is the EPSS probability at or above which a CVE is
