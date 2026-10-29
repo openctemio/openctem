@@ -221,7 +221,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `RATE_LIMIT_BURST` | int | `200` |  |  | Burst size per client. |
 | `RATE_LIMIT_CLEANUP` | duration | `1m` |  |  | How often idle limiter entries are removed. |
 | `RATE_LIMIT_ENABLED` | bool | `true` |  |  | Global per-client rate limiter. Production refuses `false`. |
-| `RATE_LIMIT_READ_PER_MIN` | int | `120` |  |  | Per-user budget (and burst) for authenticated `GET` requests. Values of 0 or less fall back to the default. |
+| `RATE_LIMIT_READ_PER_MIN` | int | `600` |  |  | Per-user budget (and burst) for authenticated `GET` requests. Values of 0 or less fall back to the default. |
 | `RATE_LIMIT_RPS` | float | `100` |  |  | Requests per second per client. |
 
 ### Email (SMTP)

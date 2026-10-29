@@ -32,6 +32,23 @@ export function parseRetryAfter(value: string | null | undefined, now = Date.now
   return Math.min(ms, MAX_RATE_LIMIT_WAIT_MS)
 }
 
+/** Longest wait before the one automatic retry of a refused read. */
+export const MAX_READ_RETRY_WAIT_MS = 5_000
+
+/**
+ * How long the API client waits before retrying a read the server refused
+ * with 429: the server's Retry-After (at most MAX_READ_RETRY_WAIT_MS), plus up
+ * to 250 ms of jitter so the panels of one page do not all come back in the
+ * same instant and spend the refilled budget together.
+ */
+export function rateLimitRetryDelayMs(
+  retryAfter: string | null | undefined,
+  now = Date.now(),
+  random = Math.random
+): number {
+  return Math.min(parseRetryAfter(retryAfter, now), MAX_READ_RETRY_WAIT_MS) + Math.floor(random() * 250)
+}
+
 /** Records a 429 answer. */
 export function noteRateLimited(retryAfter: string | null | undefined, now = Date.now()): void {
   blockedUntil = Math.max(blockedUntil, now + parseRetryAfter(retryAfter, now))
