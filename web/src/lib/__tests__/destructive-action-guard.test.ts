@@ -91,6 +91,8 @@ const PROTECTIONS = [
  * a "Gap:" entry when its fix lands.
  */
 const REVIEWED: Record<string, string> = {
+  'src/features/scans/components/new-scan/targets-step.tsx':
+    'removeTyped drops a chip from the unsaved targets field of the new-scan form; the scan is created later.',
   'src/features/scope/components/scope-entry-dialog.tsx':
     'removeScopeValue and removeInvalidScopeValues only edit the pasted list in the dialog; nothing is sent until Add.',
   'src/features/findings/components/triage/triage-mode.tsx':

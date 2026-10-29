@@ -120,6 +120,7 @@ function toSearchFilters(f: InventoryFilters): AssetSearchFilters {
     isCrownJewel: f.isCrownJewel,
     programAssets: f.programAssets,
     freshness: f.freshness,
+    resolution: f.resolution,
     coverage: f.coverage,
     technologies: f.technologies,
     technologyCategories: f.technologyCategories,
@@ -600,7 +601,9 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
                 toolbarBelow={
                   <InventoryFilterBar
                     locked={
-                      !filters.attribution?.length ? (
+                      !filters.attribution?.length &&
+                      hiddenCount !== undefined &&
+                      hiddenCount > 0 ? (
                         <InventoryHiddenChip count={hiddenCount} onShowAll={showAllAttributions} />
                       ) : undefined
                     }

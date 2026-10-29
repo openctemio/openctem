@@ -45,6 +45,8 @@ jobs:
       contents: read
       pull-requests: read # the PR's commits and labels (changed.sh)
       checks: read # green-base.sh and release-provenance.sh read a commit's check runs
+      actions: read # queue-verified.sh reads the merge queue's runs of this commit
+    timeout-minutes: 5
     outputs:
       pool: ${{ steps.pool.outputs.pool }}
       # web: application code or an English catalog (unit tests assert English
@@ -58,6 +60,7 @@ jobs:
       build: ${{ steps.b.outputs.build == 'true' && steps.tree.outputs.verified != 'true' }}
       full: ${{ steps.f.outputs.full }}
       tree_note: ${{ steps.tree.outputs.note }}
+      verified: ${{ steps.queue.outputs.verified }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -107,9 +110,31 @@ jobs:
           EVENT: ${{ github.event_name }}
           SHA: ${{ github.sha }}
           HEAD_REF: ${{ github.event.merge_group.head_ref }}
+          MG_BASE: ${{ github.event.merge_group.base_sha }}
           REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
+          # Area reuse: web/ and the shared files, plus api/ (the contract this
+          # workflow generates and the image it builds come from it).
+          TREE_AREA: Web CI
+          TREE_PATHS: web api Makefile go.work go.work.sum .github deploy
+          TREE_CHECKS: Web CI OK
+          TREE_FULL: ${{ steps.f.outputs.full }}
         run: bash .github/scripts/tree-verified.sh
+
+      # A push to develop of a commit the merge queue already passed with this
+      # workflow skips Web checks and Web tests (.github/scripts/queue-verified.sh).
+      # `contract` and `build` still run on such a push: the tenant-bundle check
+      # runs only in `build`, and `build` keeps develop's Next.js cache current.
+      - id: queue
+        working-directory: .
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          SHA: ${{ github.sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/queue-verified.sh
 
   # Generates the contract files for this commit (artifact `contract`) and, for
   # an API change, compares them with the base's.
@@ -124,6 +149,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.lint == 'true' || needs.changes.outputs.api == 'true'
     runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
+    timeout-minutes: 15
     outputs:
       changed: ${{ steps.diff.outputs.changed }}
     defaults:
@@ -263,6 +289,7 @@ jobs:
       needs.changes.outputs.api == 'true' &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       pull-requests: write
     defaults:
@@ -309,8 +336,9 @@ jobs:
       contents: read
       actions: write
     needs: [changes, contract]
-    if: needs.changes.outputs.lint == 'true' || needs.contract.outputs.changed == 'true'
+    if: (needs.changes.outputs.lint == 'true' || needs.contract.outputs.changed == 'true') && needs.changes.outputs.verified != 'true'
     runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || needs.changes.outputs.pool || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (vars.CI_RUNNER_HEAVY || needs.changes.outputs.pool)) || 'ubuntu-latest' }}
+    timeout-minutes: 20
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -450,7 +478,7 @@ jobs:
   i18n-tests:
     name: Web i18n tests
     needs: [changes, contract]
-    if: needs.changes.outputs.i18n == 'true'
+    if: needs.changes.outputs.i18n == 'true' && needs.changes.outputs.verified != 'true'
     runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
     timeout-minutes: 20
     steps:
@@ -499,8 +527,9 @@ jobs:
       contents: read
       actions: write
     needs: [changes, contract]
-    if: needs.changes.outputs.web == 'true' || needs.contract.outputs.changed == 'true'
+    if: (needs.changes.outputs.web == 'true' || needs.contract.outputs.changed == 'true') && needs.changes.outputs.verified != 'true'
     runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || needs.changes.outputs.pool || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (vars.CI_RUNNER_HEAVY || needs.changes.outputs.pool)) || 'ubuntu-latest' }}
+    timeout-minutes: 25
     strategy:
       fail-fast: true
       matrix:
@@ -637,10 +666,15 @@ jobs:
       contents: read
       actions: write
     needs: [changes, contract, quality]
+    # Runs after a passing or skipped Web checks: a queue-verified push skips
+    # Web checks but still builds (the tenant-bundle check below).
     if: >-
+      !cancelled() && needs.contract.result == 'success' &&
+      (needs.quality.result == 'success' || needs.quality.result == 'skipped') &&
       (needs.changes.outputs.web == 'true' || needs.contract.outputs.changed == 'true') &&
       github.event_name == 'push' && needs.changes.outputs.build == 'true'
     runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || needs.changes.outputs.pool || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (vars.CI_RUNNER_HEAVY || needs.changes.outputs.pool)) || 'ubuntu-latest' }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -688,6 +722,7 @@ jobs:
     if: always()
     needs: [changes, contract, quality, tests, i18n-tests, build]
     runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
+    timeout-minutes: 5
     steps:
       - name: All web jobs passed or were skipped; the checks ran where they must
         working-directory: .
@@ -699,6 +734,8 @@ jobs:
           API: ${{ needs.changes.outputs.api }}
           CHANGED: ${{ needs.contract.outputs.changed }}
           TREE_NOTE: ${{ needs.changes.outputs.tree_note }}
+          VERIFIED: ${{ needs.changes.outputs.verified }}
+          EVENT: ${{ github.event_name }}
         run: |
           echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
           if [ -n "$TREE_NOTE" ]; then echo "$TREE_NOTE"; fi
@@ -709,9 +746,18 @@ jobs:
           # WEB: app code (checks + unit tests). LINT: app, e2e specs or
           # catalogs (checks). I18N: catalogs only (related tests).
           if [ "$LINT" = true ] || [ "$API" = true ]; then required="$required contract"; fi
-          if [ "$LINT" = true ] || [ "$CHANGED" = true ]; then required="$required quality"; fi
-          if [ "$WEB" = true ] || [ "$CHANGED" = true ]; then required="$required tests"; fi
-          if [ "$I18N" = true ]; then required="$required i18n-tests"; fi
+          if [ "$VERIFIED" = true ]; then
+            # A push the merge queue already passed (queue-verified.sh) skips
+            # Web checks and the test jobs; it must still build.
+            if [ "$WEB" = true ] || [ "$CHANGED" = true ]; then required="$required build"; fi
+          else
+            if [ "$LINT" = true ] || [ "$CHANGED" = true ]; then required="$required quality"; fi
+            if [ "$WEB" = true ] || [ "$CHANGED" = true ]; then
+              required="$required tests"
+              if [ "$EVENT" = push ]; then required="$required build"; fi
+            fi
+            if [ "$I18N" = true ]; then required="$required i18n-tests"; fi
+          fi
           for j in $required; do
             r="$(echo "$NEEDS" | jq -r --arg j "$j" '.[$j].result')"
             if [ "$r" != success ]; then echo "::error::$j must run and pass, got: $r"; exit 1; fi

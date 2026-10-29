@@ -157,6 +157,8 @@
   "org.auth.mfa.all": "Bắt buộc với mọi người",
   "org.auth.mfa.allHint": "Thành viên đăng nhập bằng mật khẩu sẽ thiết lập ứng dụng xác thực ở lần đăng nhập tiếp theo.",
   "org.auth.mfa.desc": "Thành viên đăng nhập qua SSO dùng cài đặt xác thực hai lớp của nhà cung cấp danh tính của bạn.",
+  "org.auth.mfa.platformFloorAdmins": "Nền tảng yêu cầu xác thực hai yếu tố cho chủ sở hữu, quản trị viên và thành viên có vai trò đặc quyền. Bạn có thể yêu cầu cho mọi người, không thể yêu cầu ít hơn.",
+  "org.auth.mfa.platformFloorEveryone": "Nền tảng yêu cầu xác thực hai yếu tố cho mọi thành viên. Bạn không thể tắt yêu cầu này cho tổ chức của mình.",
   "org.auth.mfa.ssoProof": "SSO phải chứng minh xác thực hai yếu tố",
   "org.auth.mfa.ssoProofHint": "Với thành viên bắt buộc dùng xác thực hai yếu tố, lần đăng nhập qua nhà cung cấp danh tính chỉ được tính khi nhà cung cấp xác nhận yếu tố thứ hai trong phản hồi đăng nhập đã ký. Hãy bật xác thực đa yếu tố trong nhà cung cấp danh tính trước.",
   "org.auth.mfa.title": "Xác thực hai lớp",

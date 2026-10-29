@@ -59,7 +59,7 @@ func (s *Service) cadences() map[string]time.Duration {
 }
 
 // detect reads the tenant's coverage health and sends the alerts whose
-// condition appeared or changed (count doubled or halved), with the action
+// condition appeared or got clearly worse (covdom.PlanAlerts), with the action
 // that fixes it; several changes in one pass go out as one digest. It
 // returns the alert conditions it sent.
 func (s *Service) detect(ctx context.Context, tenantID shared.ID) (int, error) {

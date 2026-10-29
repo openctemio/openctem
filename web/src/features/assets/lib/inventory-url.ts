@@ -42,6 +42,7 @@ export type InventoryFilters = Pick<
   | 'isCrownJewel'
   | 'programAssets'
   | 'freshness'
+  | 'resolution'
   | 'coverage'
   | 'technologies'
   | 'technologyCategories'
@@ -115,6 +116,7 @@ const STRING_PARAMS = {
   expiresAfter: 'expires_after',
   programAssets: 'program_assets',
   freshness: 'freshness',
+  resolution: 'resolution',
   firstSeenAfter: 'first_seen_after',
 } as const
 
