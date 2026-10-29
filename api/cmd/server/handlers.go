@@ -297,6 +297,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.ScanRun != nil {
 		commandHandler.SetValidationRuns(svc.ScanRun)
 	}
+	// A finished proxy test (the Test button of a proxy pool) is audited.
+	if svc.ProxyPool != nil {
+		commandHandler.SetProxyTests(svc.ProxyPool)
+	}
 	// Per-task logs from sensors (RFC-029 §4.4.1), shown on the run page.
 	commandLogs := commandlog.NewService(repos.CommandLog)
 	commandHandler.SetCommandLogs(commandLogs)
