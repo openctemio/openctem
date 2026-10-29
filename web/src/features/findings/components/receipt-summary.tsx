@@ -42,7 +42,7 @@ function Cell({
       <div className="text-muted-foreground text-xs">{label}</div>
       <div
         className={cn(
-          pending ? 'text-muted-foreground text-xs' : 'text-sm font-medium tabular-nums',
+          pending ? 'text-muted-foreground text-xs' : 'text-sm font-medium tabular-nums', // anatomy-ok: the pending note replaces the figure
           tone === 'danger' && value ? 'text-destructive' : undefined
         )}
       >
