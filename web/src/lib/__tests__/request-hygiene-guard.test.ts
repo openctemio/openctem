@@ -91,6 +91,9 @@ const POLLING_BASELINE: Record<string, number> = {
   // waits for a first run (10 s, the dialog open): neither is pushed as an
   // event.
   'features/ci-runners/components/ci-setup-wizard.tsx': 2,
+  // The receipts of a running scan, polled only while it runs (no event announces
+  // each report); 0 when the run is over.
+  'features/findings/api/receipts-api.ts': 1,
   'features/findings/api/use-finding-retests.ts': 1,
   'features/findings/api/use-findings-api.ts': 1,
   'features/notifications/api/use-notification-api.ts': 1,
