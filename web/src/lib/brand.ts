@@ -29,6 +29,9 @@ export interface Brand {
 }
 
 /** The upstream product, also the name a "Powered by" credit names. */
+/** The brand ink: icon tiles, the web manifest and the browser theme colour. */
+export const BRAND_INK = '#0A1628'
+
 export const UPSTREAM_NAME = 'OpenCTEM'
 
 export const DEFAULT_BRAND: Brand = {

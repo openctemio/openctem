@@ -73,6 +73,35 @@ const STATUS_FALLBACK: Record<string, string> = {
   expired: 'Expired',
 }
 
+const CVE_IN_LABEL = /CVE-\d{4}-\d{4,19}/g
+
+/**
+ * Where a group exception was asked from: its remediation task, or the
+ * vulnerabilities it was asked on (the label names their CVE ids).
+ */
+export function batchSourceHref(
+  batch: Pick<ApprovalBatch, 'source_type' | 'source_id' | 'source_title'>
+): string {
+  if (batch.source_type === 'vulnerability_selection') {
+    const cves = (batch.source_title ?? '').match(CVE_IN_LABEL) ?? []
+    if (cves.length === 1) return `/vulnerabilities/${encodeURIComponent(cves[0])}`
+    return cves.length > 1
+      ? `/vulnerabilities?cve_id=${encodeURIComponent(cves.join(','))}`
+      : '/vulnerabilities'
+  }
+  return `/remediation/tasks/${encodeURIComponent(batch.source_id)}`
+}
+
+function batchSourceTitle(batch: ApprovalBatch, t: Translate): string {
+  if (batch.source_type === 'vulnerability_selection') {
+    return (
+      batch.source_title ||
+      t('findingApprovals.group.untitledSelection', 'Selected vulnerabilities')
+    )
+  }
+  return batch.source_title || t('findingApprovals.group.untitledTask', 'Remediation task')
+}
+
 function StatusBadge({ status }: { status: string }) {
   const { t } = useTranslation()
   return (
@@ -148,14 +177,13 @@ export function GroupExceptionsPanel({
       },
       {
         id: 'task',
-        header: t('findingApprovals.group.col.task', 'Remediation task'),
+        header: t('findingApprovals.group.col.source', 'Asked from'),
         cell: ({ row }) => (
           <Link
-            href={`/remediation/tasks/${encodeURIComponent(row.original.source_id)}`}
+            href={batchSourceHref(row.original)}
             className="line-clamp-2 max-w-[280px] font-medium hover:underline"
           >
-            {row.original.source_title ||
-              t('findingApprovals.group.untitledTask', 'Remediation task')}
+            {batchSourceTitle(row.original, t)}
           </Link>
         ),
       },
@@ -362,12 +390,8 @@ export function GroupExceptionSheet({
             <SheetTitle>{t('findingApprovals.group.sheetTitle', 'Group exception')}</SheetTitle>
             <SheetDescription>
               {batch ? (
-                <Link
-                  href={`/remediation/tasks/${encodeURIComponent(batch.source_id)}`}
-                  className="hover:underline"
-                >
-                  {batch.source_title ||
-                    t('findingApprovals.group.untitledTask', 'Remediation task')}
+                <Link href={batchSourceHref(batch)} className="hover:underline">
+                  {batchSourceTitle(batch, t)}
                 </Link>
               ) : (
                 t('findingApprovals.group.loading', 'Loading…')

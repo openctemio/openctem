@@ -234,6 +234,13 @@ func (h *AdminTargetMappingHandler) Create(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// The registry is the one built-in source: a pair it already declares
+	// would be a second copy that changes nothing.
+	if asset.RegistryCoversMapping(req.TargetType, assetType) {
+		apierror.Conflict("target type " + req.TargetType + " to asset type " + req.AssetType + " is " + mappingCoveredByRegistryMessage).WriteJSON(w)
+		return
+	}
+
 	// Create mapping
 	mapping := tool.NewTargetAssetTypeMapping(req.TargetType, asset.AssetType(req.AssetType))
 	adminID := currentAdmin.ID()
