@@ -49,6 +49,7 @@ Workflows and quick scans keep working and settle the same ledger.
 | D2 | Default policy: the `coverage:` blocks of the registry (domain, subdomain, address, open port, web origin first). |
 | D3 | Workflows stay as presets that settle the same ledger; scheduled workflow scans are retired once the planner covers every capability. A tool swap does not make rows due; a content change does. |
 | D4 | Tenant administrators get per-tenant coverage gaps; the platform operator gets fleet-wide output drops as aggregates with no tenant identity. A gap is a pair uncovered for more than twice its cadence; an output drop is zero outputs over at least 20 inputs, or 3 consecutive failed attempts. |
+| D5 | Coverage does not run as a chained workflow (owner, 2026-10-29). The ledger's `requires` is the stage graph and each capability keeps its own cadence: a chain would either repeat slow stages at the cadence of the fast one or delay the fast one, and its derived targets would widen the due set. A due batch starts when it fills one task of its tool or when its oldest pair has waited a tenth of the cadence, at most 6 h ([asset coverage](../architecture/asset-coverage.md)). |
 
 ## 4. Coverage policy
 
@@ -120,6 +121,7 @@ each of 1 000 tenants 12 ms, one asset's explanation 0.05 ms.
 | P0-13 | Coverage alerts on change: keyed by (capability, kind, reason), sent when a condition appears or gets clearly worse (count doubles and grows by 5, at most daily; an improvement is silent; back within 3 days of clearing is silent), one digest per day, with the action and its link; readiness alerts; no 20-hour repeat ([asset coverage](../architecture/asset-coverage.md)) | PR |
 | P0-14 | Runs no sensor takes: 3 coverage runs in a row ending `NO_SENSOR` pause the capability (`not_claimed`) until the sensor fleet changes or a probe after 2 h (doubling, at most 48 h); readiness alert and paused reason on the asset ([asset coverage](../architecture/asset-coverage.md)) | PR |
 | P0-15 | Unreachable targets are keyed by the scan zone or sensor that saw them (`unreached_from`): the recheck streak widens only for the same observer and restarts for another; they count as unreachable, not as gaps, and raise an `unreachable` alert ("unreachable from your sensors") ([asset coverage](../architecture/asset-coverage.md)) | PR |
+| P0-16 | Batch rule: a due batch waits until it fills one task of the capability's tool or its oldest pair has waited min(cadence / 10, 6 h), so jittered due times share a run instead of starting one run per hour ([asset coverage](../architecture/asset-coverage.md)) | PR |
 | P1 | Tenant and plan policy, priority, budgets, windows, outcome classes for throttling, coverage KPI | designed |
 | P2 | Information-gathering sources, vantage rows, authenticated web coverage, targeted re-checks, ledger history | designed |
 | P3 | Planner emits work-pool items; workflows plan from the ledger | designed |
