@@ -547,6 +547,11 @@ vars:
     type: int
     default: "10"
     description: "Concurrent sessions per user."
+  - name: AUTH_MFA_FLOOR
+    component: api
+    group: "Authentication"
+    type: string
+    description: "Default of the console setting auth.mfa (the lowest two-factor requirement of every organization, which an organization may only raise) until a super admin stores a value: `none`, `admins` (owners, administrators and members holding a privileged role) or `everyone`. Unset: `admins`. An installation that already had users when this setting shipped keeps `none` until its operator raises it (a seeded row); a managed service (`MANAGED_SERVICE=true`) ignores that seed. People get 14 days (existing members) or 7 days (new accounts) before sign-in is gated; creating API keys, sensor tokens and integration secrets needs a second factor from the start."
   - name: AUTH_MAX_LOGIN_ATTEMPTS
     component: api
     group: "Authentication"

@@ -32,7 +32,7 @@ on:
   workflow_call:
     inputs:
       images:
-        description: "Space-separated: api admin-cli web console allinone (allinone implies api web console)"
+        description: "Space-separated: api web console allinone (allinone implies api web console)"
         required: true
         type: string
     secrets:
@@ -47,9 +47,6 @@ on:
       api:
         description: "ghcr.io/openctemio/ci-images/api@sha256:... (empty when not requested or not pushed)"
         value: ${{ jobs.collect.outputs.api }}
-      admin-cli:
-        description: "admin-cli image by digest"
-        value: ${{ jobs.collect.outputs.admin-cli }}
       web:
         description: "web image by digest"
         value: ${{ jobs.collect.outputs.web }}
@@ -70,6 +67,7 @@ jobs:
   plan:
     name: Plan image builds
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       packages: read
@@ -126,7 +124,6 @@ jobs:
           add() { matrix="$(jq -c --arg g "$1" --argjson imgs "$2" --arg k "$3" '. + [{group:$g, images:$imgs, gkey:$k}]' <<<"$matrix")"; }
           has() { case " $need " in *" $1 "*) return 0 ;; esac; return 1; }
           has api && add api '["api"]' "$(jq -r .api <<<"$keys")"
-          has admin-cli && add admin-cli '["admin-cli"]' "$(jq -r '."admin-cli"' <<<"$keys")"
           webs='[]'
           has web && webs="$(jq -c '. + ["web"]' <<<"$webs")"
           has console && webs="$(jq -c '. + ["console"]' <<<"$webs")"
@@ -243,7 +240,7 @@ jobs:
           WRITE_CACHE: ${{ github.event_name == 'push' && github.ref == 'refs/heads/develop' }}
         run: |
           echo "cache_to=$([ "$WRITE_CACHE" = true ] && echo 'true' || echo 'false')" >> "$GITHUB_OUTPUT"
-          for i in api admin-cli web console; do
+          for i in api web console; do
             echo "tag_$(echo "$i" | tr - _)=${REGISTRY}/${i}:${PREFIX}$(jq -r --arg i "$i" '.[$i] // ""' <<<"$KEYS")" >> "$GITHUB_OUTPUT"
           done
 
@@ -264,20 +261,6 @@ jobs:
           sbom: false
           cache-from: type=registry,ref=${{ env.REGISTRY }}/api:buildcache
           cache-to: ${{ steps.meta.outputs.cache_to == 'true' && format('type=registry,ref={0}/api:buildcache,mode=max', env.REGISTRY) || '' }}
-      - name: Build admin-cli
-        id: admin_cli
-        if: steps.need.outputs.admin_cli == 'true'
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: api
-          file: api/Dockerfile.admin-cli
-          push: true
-          tags: ${{ steps.meta.outputs.tag_admin_cli }}
-          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
-          provenance: false
-          sbom: false
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/admin-cli:buildcache
-          cache-to: ${{ steps.meta.outputs.cache_to == 'true' && format('type=registry,ref={0}/admin-cli:buildcache,mode=max', env.REGISTRY) || '' }}
       - name: Build web
         id: web
         if: steps.need.outputs.web == 'true'
@@ -311,13 +294,6 @@ jobs:
         with:
           subject-name: ${{ env.REGISTRY }}/api
           subject-digest: ${{ steps.api.outputs.digest }}
-          push-to-registry: true
-      - name: Attest admin-cli
-        if: steps.admin_cli.outputs.digest != ''
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
-        with:
-          subject-name: ${{ env.REGISTRY }}/admin-cli
-          subject-digest: ${{ steps.admin_cli.outputs.digest }}
           push-to-registry: true
       - name: Attest web
         if: steps.web.outputs.digest != ''
@@ -410,6 +386,7 @@ jobs:
     needs: [plan, build, build-allinone]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       packages: read
@@ -417,7 +394,6 @@ jobs:
     outputs:
       push: ${{ needs.plan.outputs.push }}
       api: ${{ steps.r.outputs.api }}
-      admin-cli: ${{ steps.r.outputs.admin-cli }}
       web: ${{ steps.r.outputs.web }}
       console: ${{ steps.r.outputs.console }}
       allinone: ${{ steps.r.outputs.allinone }}

@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 import type { PriorityClass } from '../../types'
 import type { TriageOutcome, TriageSession } from '../../lib/triage-session'
 import { PriorityClassBadge } from '../priority-class-badge'
+import { FindingTitleCell } from '../cells/finding-title-cell'
 
 const BEFORE = 3
 const AFTER = 12
@@ -79,20 +80,11 @@ export function TriageQueuePanel({
                     )}
                   </span>
                 )}
-                <span
-                  dir="auto"
-                  className={cn(
-                    'truncate text-sm [unicode-bidi:isolate]',
-                    outcome ? 'font-normal' : 'text-foreground'
-                  )}
-                >
-                  {item.title}
-                </span>
-                {item.assetName && !outcome && (
-                  <span dir="auto" className="truncate [unicode-bidi:isolate]">
-                    {item.assetName}
-                  </span>
-                )}
+                <FindingTitleCell
+                  className={cn('text-sm', !outcome && 'text-foreground')}
+                  title={item.title}
+                  target={outcome ? undefined : item.target}
+                />
               </button>
             </li>
           )

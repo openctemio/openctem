@@ -15,8 +15,15 @@ import { cn } from '@/lib/utils'
  */
 interface MarkProps {
   className?: string
+  /** Rendered size in px of the built-in symbol (picks its 16 px, 32 px or master drawing). */
+  size?: number
   'aria-hidden'?: boolean
   'data-slot'?: string
+}
+
+/** True when the instance shows our own logo: the OpenCTEM brand with no image configured. */
+export function usesBuiltInLogo(brand: Brand): boolean {
+  return !brand.logoLightUrl && brand.name === UPSTREAM_NAME
 }
 
 function BrandImage({ brand, className, ...rest }: MarkProps & { brand: Brand }) {
@@ -42,11 +49,11 @@ function BrandImage({ brand, className, ...rest }: MarkProps & { brand: Brand })
 }
 
 /** A square mark (collapsed sidebar, next to the name). */
-export function BrandMark({ className, ...rest }: MarkProps) {
+export function BrandMark({ className, size, ...rest }: MarkProps) {
   const brand = useBrand()
   if (brand.logoLightUrl) return <BrandImage brand={brand} className={className} {...rest} />
   if (brand.name === UPSTREAM_NAME) {
-    return <Logo className={className} aria-label={brand.name} {...rest} />
+    return <Logo className={className} size={size} aria-label={brand.name} {...rest} />
   }
   // A renamed brand without a logo: its initial, never the built-in mark.
   return (
