@@ -38,6 +38,14 @@ describe('describeAuthCode', () => {
     }
   })
 
+  // The rate limiter answers sign-in with RATE_LIMIT_EXCEEDED (429). The form
+  // said only "Sign-in failed" for it, which reads like a wrong password.
+  it('words a 429 on sign-in as a wait, not as a failed sign-in', () => {
+    expect(authErrorText('RATE_LIMIT_EXCEEDED', tFor('en'), 'Sign-in failed')).toBe(
+      'Too many attempts. Wait a minute and try again.'
+    )
+  })
+
   it.each(['Your access is waiting', '', null, undefined, '__proto__', 'unknown_code', 'INVALID'])(
     'is undefined for a value that is not a known code: %j',
     (code) => {

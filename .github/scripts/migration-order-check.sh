@@ -16,6 +16,9 @@
 # be equal; a difference fails with the diff. The upgrade must also have
 # applied every migration of the tree (`status` shows none pending).
 #
+# MIGRATION_ORDER=warning (pull_request) reports a difference as a warning:
+# it often only means other migrations landed meanwhile, and the merge queue
+# (strict) tests the PR on top of them anyway.
 # Environment: SUPER_URL, a connection with CREATEDB to the scratch server
 # (postgres://user@host:port/db?...). openctem-migrate and psql on the PATH.
 # MIGRATION_ORDER_BASE_DIR replaces the base commit's migrations with a
@@ -70,8 +73,10 @@ fp() { psql "$(url_for "$1")" -X -At -v ON_ERROR_STOP=1 -f .github/scripts/schem
 fp "$fresh" >"$work/fresh.txt"
 fp "$upgrade" >"$work/upgrade.txt"
 if ! diff -u "$work/fresh.txt" "$work/upgrade.txt" >"$work/diff.txt"; then
-  echo "::error::the schema depends on the order the migrations are applied in: a fresh install and an upgraded database differ (- fresh, + upgrade). Make the migrations independent of each other's order (or give the later one a version above the one it depends on)."
+  level=error; [[ "${MIGRATION_ORDER:-error}" == warning ]] && level=warning
+  echo "::${level}::the schema depends on the order the migrations are applied in: a fresh install and an upgraded database differ (- fresh, + upgrade). Make the migrations independent of each other's order (or give the later one a version above the one it depends on)."
   head -n 80 "$work/diff.txt"
+  [[ "$level" == warning ]] && exit 0
   exit 1
 fi
 echo "migration-order-check: fresh and upgraded schemas are identical ($(wc -l <"$work/fresh.txt") objects)"

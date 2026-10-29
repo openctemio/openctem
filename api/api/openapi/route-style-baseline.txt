@@ -45,6 +45,8 @@ R3 DELETE /api/v1/repositories/{repositoryId}/branches/{branchId}
 R3 DELETE /api/v1/roles/{roleId}
 R3 DELETE /api/v1/scan-zones/{id}/sensors/{sensorId}
 R3 DELETE /api/v1/tenants/{tenant}/invitations/{invitationId}
+R3 POST /api/v1/tenants/{tenant}/invitations/{invitationId}/link
+R3 POST /api/v1/tenants/{tenant}/invitations/{invitationId}/renew
 R3 DELETE /api/v1/users/me/sessions/{sessionId}
 R3 DELETE /api/v1/users/{userId}/roles/{roleId}
 R3 DELETE /api/v1/workflows/{id}/edges/{edgeId}
@@ -150,6 +152,9 @@ R4 PATCH /api/v1/admin/threat-intel/sync/{source}
 R4 POST /api/v1/notification-outbox/{id}/retry
 R4 POST /api/v1/secret-store/{id}/rotate
 R4 PUT /api/v1/secret-store/{id}
+R5 POST /api/v1/admin/platform-users/{user_id}/mark-verified
+R5 POST /api/v1/admin/platform-users/{user_id}/mfa/reset
+R5 POST /api/v1/admin/platform-users/{user_id}/reset-link
 R5 DELETE /api/v1/assets/{id}/lifecycle/snooze
 R5 GET /api/v1/admin/auth/validate
 R5 GET /api/v1/admin/threat-intel/sync
@@ -157,6 +162,8 @@ R5 GET /api/v1/assets/dedup/merge-log
 R5 GET /api/v1/audit-logs/verify
 R5 GET /api/v1/credentials/import/template
 R5 GET /api/v1/me/permissions/sync
+R5 POST /api/v1/tenants/{tenant}/invitations/{invitationId}/link
+R5 POST /api/v1/tenants/{tenant}/invitations/{invitationId}/renew
 R5 GET /api/v1/threat-intel/enrich/{cveId}
 R5 GET /api/v1/threat-intel/sync
 R5 GET /api/v1/threat-intel/sync/{source}
@@ -223,6 +230,8 @@ R6 DELETE /api/v1/tenants/{tenant}
 R6 DELETE /api/v1/tenants/{tenant}/invitations/{invitationId}
 R6 GET /api/v1/tenants/{tenant}
 R6 GET /api/v1/tenants/{tenant}/invitations
+R6 POST /api/v1/tenants/{tenant}/invitations/{invitationId}/link
+R6 POST /api/v1/tenants/{tenant}/invitations/{invitationId}/renew
 R6 GET /api/v1/tenants/{tenant}/members
 R6 GET /api/v1/tenants/{tenant}/members/stats
 R6 GET /api/v1/tenants/{tenant}/settings
@@ -268,6 +277,8 @@ R8 POST /api/v1/tenants/{tenant}/settings/modules/presets/{presetId}/preview
 R8 PUT /api/v2/sensor/commands/{command_id}/results/{report_id}/segments/{seq}
 R9 DELETE /api/v1/tenants/{tenant}
 R9 DELETE /api/v1/tenants/{tenant}/invitations/{invitationId}
+R9 POST /api/v1/tenants/{tenant}/invitations/{invitationId}/link
+R9 POST /api/v1/tenants/{tenant}/invitations/{invitationId}/renew
 R9 DELETE /api/v1/users/me/sessions
 R9 DELETE /api/v1/users/me/sessions/{sessionId}
 R9 GET /api/v1/tenants/{tenant}

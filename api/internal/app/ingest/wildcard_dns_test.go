@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/assetresolution"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -63,6 +64,38 @@ func (s *wcStore) WildcardOnly(context.Context, shared.ID, []shared.ID) (map[sha
 	return nil, nil
 }
 
+// wcProber answers a fixed class per name.
+type wcProber map[string]NameClass
+
+func (p wcProber) Probe(_ context.Context, name string) NameClass { return p[name] }
+
+// wcResolution records the resolution states written.
+type wcResolution struct {
+	failed, resolved []shared.ID
+}
+
+func (r *wcResolution) RecordResolved(_ context.Context, _ shared.ID, ids []shared.ID, _ time.Time) error {
+	r.resolved = append(r.resolved, ids...)
+	return nil
+}
+
+func (r *wcResolution) RecordFailed(_ context.Context, _ shared.ID, ids []shared.ID, _ time.Time, _ string) error {
+	r.failed = append(r.failed, ids...)
+	return nil
+}
+
+func (r *wcResolution) RecordFailedNames(context.Context, shared.ID, []string, time.Time, string) error {
+	return nil
+}
+
+func (r *wcResolution) NotResolving(context.Context, shared.ID, []string) (map[string]bool, error) {
+	return nil, nil
+}
+
+func (r *wcResolution) Get(context.Context, shared.ID, shared.ID) (*assetresolution.Resolution, error) {
+	return nil, nil
+}
+
 func wcCommand(t *testing.T, tenant shared.ID, payload map[string]any) *command.Command {
 	t.Helper()
 	raw, _ := json.Marshal(payload)
@@ -95,7 +128,8 @@ func TestEvaluateWildcardDNS(t *testing.T) {
 	}
 	run := func(cmd *command.Command, cov *ingestreport.CommandCoverage, asTenant shared.ID) *wcStore {
 		st := &wcStore{}
-		s := &Service{commands: wcCommands{tenant: tenant, cmd: cmd}, assetRepo: assets, wildcardDNS: st, logger: logger.NewNop()}
+		s := &Service{commands: wcCommands{tenant: tenant, cmd: cmd}, assetRepo: assets, wildcardDNS: st, logger: logger.NewNop(),
+			nameProber: wcProber{"guess.example.com": NameWildcardOnly}}
 		s.evaluateWildcardDNS(context.Background(), asTenant, cmd.ID, cov)
 		return st
 	}
@@ -110,6 +144,47 @@ func TestEvaluateWildcardDNS(t *testing.T) {
 		}
 	})
 
+	probed := func(class NameClass) (*wcStore, *wcResolution) {
+		st, res := &wcStore{}, &wcResolution{}
+		cmd := wcCommand(t, tenant, filtered)
+		s := &Service{commands: wcCommands{tenant: tenant, cmd: cmd}, assetRepo: assets, wildcardDNS: st, logger: logger.NewNop(),
+			nameProber: wcProber{"guess.example.com": class}, resolutionStore: res}
+		s.evaluateWildcardDNS(context.Background(), tenant, cmd.ID, done())
+		return st, res
+	}
+
+	// The prod case: names with no DNS answer were marked wildcard-only.
+	t.Run("a name with no DNS answer is not_resolving, never wildcard-only", func(t *testing.T) {
+		st, res := probed(NameNoAnswer)
+		if len(st.marked) != 0 {
+			t.Fatalf("marked %v, want nothing", st.marked)
+		}
+		if len(res.failed) != 1 || res.failed[0] != guess.ID() {
+			t.Fatalf("failed = %v, want the guess", res.failed)
+		}
+	})
+	t.Run("a name that resolves by itself is not marked and any mark is cleared", func(t *testing.T) {
+		st, res := probed(NameResolves)
+		if len(st.marked) != 0 || len(res.failed) != 0 || len(res.resolved) != 1 {
+			t.Fatalf("marked %v failed %v resolved %v", st.marked, res.failed, res.resolved)
+		}
+	})
+	t.Run("an unsure probe changes nothing", func(t *testing.T) {
+		st, res := probed(NameUnknown)
+		if len(st.marked)+len(res.failed)+len(res.resolved) != 0 {
+			t.Fatalf("marked %v failed %v resolved %v", st.marked, res.failed, res.resolved)
+		}
+	})
+	t.Run("without a prober nothing is marked", func(t *testing.T) {
+		st := &wcStore{}
+		cmd := wcCommand(t, tenant, filtered)
+		s := &Service{commands: wcCommands{tenant: tenant, cmd: cmd}, assetRepo: assets, wildcardDNS: st, logger: logger.NewNop()}
+		s.evaluateWildcardDNS(context.Background(), tenant, cmd.ID, done())
+		if len(st.marked) != 0 {
+			t.Fatalf("marked %v", st.marked)
+		}
+	})
+
 	t.Run("an apex the resolver left out is cleared, never marked", func(t *testing.T) {
 		apex := wcAsset(t, "example.com")
 		withApex := wcAssets{tenant: tenant, byName: map[string]*asset.Asset{"example.com": apex, "guess.example.com": guess}}
@@ -117,7 +192,8 @@ func TestEvaluateWildcardDNS(t *testing.T) {
 			"config": map[string]any{"wildcard_filter": true}}
 		cmd := wcCommand(t, tenant, payload)
 		st := &wcStore{}
-		s := &Service{commands: wcCommands{tenant: tenant, cmd: cmd}, assetRepo: withApex, wildcardDNS: st, logger: logger.NewNop()}
+		s := &Service{commands: wcCommands{tenant: tenant, cmd: cmd}, assetRepo: withApex, wildcardDNS: st, logger: logger.NewNop(),
+			nameProber: wcProber{"guess.example.com": NameWildcardOnly}, resolutionStore: &wcResolution{}}
 		cov := &ingestreport.CommandCoverage{CommandStatus: string(command.CommandStatusCompleted),
 			Reports: []ingestreport.CoverageReport{{State: protov2.StateCompleted}}}
 		s.evaluateWildcardDNS(context.Background(), tenant, cmd.ID, cov)

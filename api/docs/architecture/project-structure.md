@@ -20,7 +20,7 @@ api/
 ├── changelog.d/            # One changelog entry per change
 ├── docs/                   # Engineering documentation
 ├── Dockerfile              # development / builder / production targets
-├── Dockerfile.migrations, Dockerfile.seed, Dockerfile.admin-cli
+├── Dockerfile.migrations, Dockerfile.seed
 ├── docker-compose.yml, docker-compose.dev.yml   # development only
 ├── Makefile                # see docs/MAKEFILE.md
 ├── .env.example, .air.toml, .golangci.yml

@@ -1061,6 +1061,9 @@ type Partial struct {
 	// name that did not resolve); SkippedSummary is the step message.
 	Skipped        int
 	SkippedSummary string
+	// Unresolvable is how many of the skipped targets are names that no
+	// longer resolve (informational: a fact about the names).
+	Unresolvable int
 	// Gaps are hosts the sensor could not fully cover (its per-host rate
 	// controller gave them up, they pushed back at the lowest rate, or
 	// blocked the scan; RFC-074); GapSummary is the step message.
@@ -1111,6 +1114,9 @@ const (
 	StepOutputUnreachable = "unreachable_target_count"
 	// StepOutputSkipped counts the targets the sensor's local policy skipped.
 	StepOutputSkipped = "skipped_target_count"
+	// StepOutputNoLongerResolve counts the skipped targets that are names
+	// that no longer resolve (a part of StepOutputSkipped).
+	StepOutputNoLongerResolve = "no_longer_resolve_count"
 	// StepOutputCoverageGapCount counts the hosts not fully covered, and
 	// StepOutputCoverageGaps lists them as {host, reason} (single-command
 	// steps; a batched step's tasks hold the lists).
@@ -1131,7 +1137,7 @@ func (p Partial) withNotes(output map[string]any) map[string]any {
 	if p.Skipped == 0 && p.Unreached == 0 && p.Gaps == 0 && len(p.Unfinished) == 0 {
 		return output
 	}
-	out := make(map[string]any, len(output)+8)
+	out := make(map[string]any)
 	maps.Copy(out, output)
 	if p.Unreached > 0 {
 		out[StepOutputUnreachable] = p.Unreached
@@ -1141,6 +1147,9 @@ func (p Partial) withNotes(output map[string]any) map[string]any {
 	}
 	if p.Skipped > 0 {
 		out[StepOutputSkipped] = p.Skipped
+		if p.Unresolvable > 0 {
+			out[StepOutputNoLongerResolve] = min(p.Unresolvable, p.Skipped)
+		}
 		if p.SkippedSummary != "" {
 			out[stepOutputSkippedNote] = p.SkippedSummary
 		}
@@ -1527,7 +1536,7 @@ func uncoveredTargetCount(runContext map[string]any) int {
 // and how many did not, and still add up to the steps that settled.
 func (s *Service) updateRunStats(ctx context.Context, run *scanrun.Run, st runStats) {
 	// FIXED: Don't silently suppress errors - log them instead
-	if err := s.runRepo.UpdateStats(ctx, run.ID, st.completed, st.failed+st.partial, st.skipped, st.findings); err != nil {
+	if err := s.runRepo.UpdateStats(ctx, run.TenantID, run.ID, st.completed, st.failed+st.partial, st.skipped, st.findings); err != nil {
 		s.logger.Error("failed to update run stats", "run_id", run.ID.String(), "error", err)
 	}
 }
@@ -1543,6 +1552,7 @@ type stepBatches struct {
 	failed     int
 	findings   int
 	skipped    int // targets the completed batches' sensors skipped
+	unresolved int // of those, names that no longer resolve
 	gaps       int // hosts the completed batches' sensors did not fully cover
 	firstError string
 	// Reach of the completed batches (RFC-089): targets tried, reached and
@@ -1554,7 +1564,7 @@ type stepBatches struct {
 // The step fails as unreachable only when every batch reported its reach
 // and no batch reached a target.
 func (b stepBatches) partial() Partial {
-	p := Partial{Skipped: b.skipped, Gaps: b.gaps, Unreached: b.unreached, Tried: b.reachTargets}
+	p := Partial{Skipped: b.skipped, Unresolvable: b.unresolved, Gaps: b.gaps, Unreached: b.unreached, Tried: b.reachTargets}
 	if b.skipped > 0 {
 		p.SkippedSummary = fmt.Sprintf("Completed with %d target(s) skipped by the sensor's local policy (see the tasks)", b.skipped)
 	}
@@ -1602,7 +1612,7 @@ func (s *Service) checkStepBatches(ctx context.Context, run *scanrun.Run, stepRu
 	if st.Total <= 1 {
 		return stepBatches{}
 	}
-	b := stepBatches{batched: true, total: st.Total, failed: st.Failed, findings: st.Findings, skipped: st.Skipped, gaps: st.Gaps, firstError: st.FirstError,
+	b := stepBatches{batched: true, total: st.Total, failed: st.Failed, findings: st.Findings, skipped: st.Skipped, unresolved: st.Unresolvable, gaps: st.Gaps, firstError: st.FirstError,
 		reachBatches: st.ReachBatches, reachTargets: st.ReachTargets, reached: st.Reached, unreached: st.Unreached}
 	if st.Active > 0 {
 		s.logger.Info("scan batch finished; waiting for the others",
@@ -2369,14 +2379,16 @@ func runTargetTypes(rc map[string]any) map[string]asset.TypeRef {
 const (
 	RunContextKeyUnreachableCount = StepOutputUnreachable
 	RunContextKeySkippedCount     = StepOutputSkipped
+	RunContextKeyNoLongerResolve  = StepOutputNoLongerResolve
 )
 
 // recordReachCounts sums the skipped and unreachable counts the steps
 // recorded in their output into the run's context ("completed · N
 // unreachable" in the console).
 func (s *Service) recordReachCounts(ctx context.Context, run *scanrun.Run) {
-	unreached, skipped := 0, 0
+	unreached, skipped, gone := 0, 0, 0
 	for _, sr := range run.StepRuns {
+		gone += outputCount(sr.Output, StepOutputNoLongerResolve)
 		unreached += outputCount(sr.Output, StepOutputUnreachable)
 		skipped += outputCount(sr.Output, StepOutputSkipped)
 	}
@@ -2391,6 +2403,9 @@ func (s *Service) recordReachCounts(ctx context.Context, run *scanrun.Run) {
 	}
 	if skipped > 0 {
 		run.Context[RunContextKeySkippedCount] = skipped
+	}
+	if gone > 0 {
+		run.Context[RunContextKeyNoLongerResolve] = min(gone, skipped)
 	}
 	if err := s.runRepo.Update(ctx, run); err != nil {
 		s.logger.Error("failed to record the run's unreachable and skipped counts", "run_id", run.ID.String(), "error", err)
