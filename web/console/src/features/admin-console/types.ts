@@ -305,6 +305,13 @@ export interface TargetMapping {
   updated_at: string
 }
 
+/** One pair of the asset type catalog: read-only, changes with a release. */
+export interface RegistryTargetPair {
+  target_type: string
+  asset_type: string
+  sub_type?: string
+}
+
 export interface TargetMappingStats {
   total: number
   by_target_type: Record<string, number>
