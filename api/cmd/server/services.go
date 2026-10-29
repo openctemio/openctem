@@ -1853,6 +1853,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// are sealed with the platform key (re-keyed by cmd/rekey).
 	s.Evidence = evidenceapp.NewService(repos.FindingEvidence, s.Encryptor, s.Tenant, repos.FindingActivity, s.Audit, log)
 	s.Retest.SetEvidenceStore(s.Evidence)
+	if s.Pentest != nil {
+		s.Pentest.SetEvidenceState(s.Evidence) // a write-up records the evidence version it was written against
+	}
 	// The finding verification plan asks the retest service whether a
 	// retest would run and why not.
 	s.Vulnerability.SetRetestAvailability(s.Retest)
