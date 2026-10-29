@@ -223,13 +223,14 @@ describe('Relationship suggestions live under /assets/suggestions', () => {
 })
 
 describe('Attack surface tabs', () => {
-  it('Review (not Suggestions) and Web surface, each bound to its route guard', () => {
+  it('Review (not Suggestions), Web surface and Certificates, each bound to its route guard', () => {
     expect(ATTACK_SURFACE_SECTION_TABS.map((t) => [t.label, t.href, t.module])).toEqual([
       ['Overview', '/attack-surface', 'attack_surface'],
       ['Review', '/attack-surface/review', 'attack_surface'],
       ['Lookalikes', '/attack-surface/lookalikes', 'attack_surface'],
       ['Changes', '/attack-surface/changes', 'attack_surface'],
       ['Web surface', '/attack-surface/web', 'assets'],
+      ['Certificates', '/attack-surface/certificates', 'assets'],
     ])
     for (const tab of ATTACK_SURFACE_SECTION_TABS) {
       const guard = matchRoutePermission(tab.href)
