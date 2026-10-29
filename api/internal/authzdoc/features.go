@@ -118,7 +118,7 @@ var Features = []Feature{
 		Description: "The sensor fleet: registration, pairing and grants, scan zones and the sensor protocol.",
 		Stages:      []string{StageDiscovery},
 		Registers: []string{
-			"registerSensorManagementRoutes", "registerSensorInstallRoutes", "registerSensorPairingRoutes", "registerScanZoneRoutes", "registerProxyPoolRoutes",
+			"registerSensorManagementRoutes", "registerSensorInstallRoutes", "registerSensorPairingRoutes", "registerScanZoneRoutes", "registerProxyPoolRoutes", "registerProxyTestEchoRoute",
 			"mountSensorV2",
 		},
 	},
