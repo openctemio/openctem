@@ -336,6 +336,24 @@ describe('grid visualizations', () => {
   })
 })
 
+describe('ItemsViz EPSS', () => {
+  it('draws the shared EPSS bar with the row score, and an empty bar when there is none', () => {
+    render(
+      <ItemsViz
+        result={{
+          shape: 'items',
+          rows: [
+            { id: 'f1', title: 'Scored', href: '/findings/f1', epss: 0.42 },
+            { id: 'f2', title: 'Unscored', href: '/findings/f2', epss: null },
+          ],
+        }}
+      />
+    )
+    expect(screen.getByRole('img', { name: 'EPSS 42%' })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'No EPSS score' })).toBeInTheDocument()
+  })
+})
+
 describe('ItemsViz View all', () => {
   const row = { id: 'f1', title: 'A finding', href: '/findings/f1', severity: 'high' }
   it('shows no number unless the server sent a list total (never the row count)', () => {

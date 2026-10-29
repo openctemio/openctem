@@ -124,6 +124,8 @@ export interface ItemRow {
   asset?: string | null
   due_at?: string | null
   kev?: boolean
+  /** EPSS probability, 0 to 1; absent or null draws the empty bar. */
+  epss?: number | null
   /** Same-origin path the row opens. */
   href?: string | null
 }
