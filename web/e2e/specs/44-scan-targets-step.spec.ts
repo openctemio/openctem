@@ -73,58 +73,62 @@ async function openTargetsStep(page: Page): Promise<Locator> {
 }
 
 for (const width of [390, 1440]) {
-  test(`Targets step reads in order and gates Next (${width}px)`, async ({ page }, info) => {
-    await page.setViewportSize({ width, height: width < 768 ? 844 : 900 })
-    const dialog = await openTargetsStep(page)
+  test(
+    `Targets step reads in order and gates Next (${width}px)`,
+    { tag: ['@scans'] },
+    async ({ page }, info) => {
+      await page.setViewportSize({ width, height: width < 768 ? 844 : 900 })
+      const dialog = await openTargetsStep(page)
 
-    // Input first, result second.
-    const field = dialog.getByTestId('target-chips-field')
-    const result = dialog.getByTestId('targets-result')
-    const fieldBox = (await field.boundingBox())!
-    const resultBox = (await result.boundingBox())!
-    if (width < 768) expect(resultBox.y).toBeGreaterThan(fieldBox.y)
-    else expect(resultBox.x).toBeGreaterThan(fieldBox.x)
+      // Input first, result second.
+      const field = dialog.getByTestId('target-chips-field')
+      const result = dialog.getByTestId('targets-result')
+      const fieldBox = (await field.boundingBox())!
+      const resultBox = (await result.boundingBox())!
+      if (width < 768) expect(resultBox.y).toBeGreaterThan(fieldBox.y)
+      else expect(resultBox.x).toBeGreaterThan(fieldBox.x)
 
-    // The chip's remove button: a 44px tap area (32px plus the hit extension).
-    const remove = field.getByRole('button', { name: /^remove /i }).first()
-    // Polled: the dialog scales in on open, so an early box is a little under 32.
-    await expect.poll(async () => (await remove.boundingBox())!.height).toBeGreaterThanOrEqual(32)
+      // The chip's remove button: a 44px tap area (32px plus the hit extension).
+      const remove = field.getByRole('button', { name: /^remove /i }).first()
+      // Polled: the dialog scales in on open, so an early box is a little under 32.
+      await expect.poll(async () => (await remove.boundingBox())!.height).toBeGreaterThanOrEqual(32)
 
-    // Ranked fixes, the first primary.
-    const fixes = dialog.getByTestId('refusal-remedies').getByRole('button')
-    await expect(fixes.first()).toHaveText(/run on my sensor/i)
-    await expect(fixes.nth(1)).toHaveText(/verify acme-e2e\.example/i)
+      // Ranked fixes, the first primary.
+      const fixes = dialog.getByTestId('refusal-remedies').getByRole('button')
+      await expect(fixes.first()).toHaveText(/run on my sensor/i)
+      await expect(fixes.nth(1)).toHaveText(/verify acme-e2e\.example/i)
 
-    // One footer row: Back left, Next right, disabled with its reason; no Cancel.
-    const back = dialog.getByTestId('wizard-back')
-    const next = dialog.getByTestId('wizard-next')
-    await expect(next).toBeDisabled()
-    await expect(dialog.getByTestId('wizard-note')).toHaveText(/blocked target/i)
-    const b = (await back.boundingBox())!
-    const n = (await next.boundingBox())!
-    expect(Math.abs(b.y - n.y)).toBeLessThan(4)
-    expect(n.x).toBeGreaterThan(b.x)
-    await expect(dialog.getByRole('button', { name: /^cancel$/i })).toHaveCount(0)
+      // One footer row: Back left, Next right, disabled with its reason; no Cancel.
+      const back = dialog.getByTestId('wizard-back')
+      const next = dialog.getByTestId('wizard-next')
+      await expect(next).toBeDisabled()
+      await expect(dialog.getByTestId('wizard-note')).toHaveText(/blocked target/i)
+      const b = (await back.boundingBox())!
+      const n = (await next.boundingBox())!
+      expect(Math.abs(b.y - n.y)).toBeLessThan(4)
+      expect(n.x).toBeGreaterThan(b.x)
+      await expect(dialog.getByRole('button', { name: /^cancel$/i })).toHaveCount(0)
 
-    if (width < 768) {
-      await expect(dialog.getByTestId('stepper-phone')).toHaveText(/step 2 of 5: targets/i)
+      if (width < 768) {
+        await expect(dialog.getByTestId('stepper-phone')).toHaveText(/step 2 of 5: targets/i)
+      }
+
+      const body = dialog.locator('[data-slot="dialog-body"]')
+      const box = await body.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }))
+      expect(box.scroll, 'targets body scrolls sideways').toBeLessThanOrEqual(box.client + 1)
+      await info.attach(`targets-${width}`, {
+        body: await page.screenshot(),
+        contentType: 'image/png',
+      })
+
+      // Run on my sensor switches the preference: the check runs again.
+      const rechecked = page.waitForRequest(
+        (r) =>
+          r.url().includes('/api/v1/scope/check') &&
+          (r.postDataJSON() as { sensor_preference?: string }).sensor_preference === 'tenant'
+      )
+      await fixes.first().click()
+      await rechecked
     }
-
-    const body = dialog.locator('[data-slot="dialog-body"]')
-    const box = await body.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }))
-    expect(box.scroll, 'targets body scrolls sideways').toBeLessThanOrEqual(box.client + 1)
-    await info.attach(`targets-${width}`, {
-      body: await page.screenshot(),
-      contentType: 'image/png',
-    })
-
-    // Run on my sensor switches the preference: the check runs again.
-    const rechecked = page.waitForRequest(
-      (r) =>
-        r.url().includes('/api/v1/scope/check') &&
-        (r.postDataJSON() as { sensor_preference?: string }).sensor_preference === 'tenant'
-    )
-    await fixes.first().click()
-    await rechecked
-  })
+  )
 }
