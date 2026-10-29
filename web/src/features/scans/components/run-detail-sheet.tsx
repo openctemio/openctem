@@ -268,7 +268,16 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
             </DetailStatGrid>
 
             <DetailSections>
-              <RunReceiptSection runId={run.id} />
+              <RunReceiptSection
+                runId={run.id}
+                runState={
+                  isRunInProgress(run)
+                    ? 'running'
+                    : run.status === 'completed'
+                      ? 'settled'
+                      : 'incomplete'
+                }
+              />
               {(run.scan_run_steps?.length ?? 0) > 0 && (
                 <DetailSection title={t('scans.runDetail.runMap')}>
                   <RunMap
@@ -282,7 +291,11 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
               )}
               {isScanRun && (
                 <DetailSection title={t('scans.runDetail.stages')}>
-                  <RunStageLanes runId={run.id} refreshInterval={runRefreshInterval(run)} />
+                  <RunStageLanes
+                    runId={run.id}
+                    refreshInterval={runRefreshInterval(run)}
+                    settled={!isRunInProgress(run)}
+                  />
                 </DetailSection>
               )}
               {(run.window_waits?.waiting_count ?? 0) > 0 && (
