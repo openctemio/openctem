@@ -378,7 +378,7 @@ export async function getAvailableProviders(): Promise<
 /**
  * Keep the state of a link the browser started (Account > Security) for the
  * callback: the same state and browser-binding cookies a sign-in uses, plus
- * the link intent. The state came from POST /users/me/identities/{provider}/link,
+ * the link intent. The state came from POST /me/sign-in-method-links/{provider}/start,
  * which already required a fresh step-up; the API accepts it only for this
  * account and this session, once, and only with this browser's binding.
  */

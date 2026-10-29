@@ -31,10 +31,10 @@ linked providers and the organization SSO identities (read only).
 
 | Route | Gate |
 |---|---|
-| `GET /api/v1/users/me/identities` | signed in |
-| `POST /api/v1/users/me/identities/{provider}/link` | step-up, CSRF, rate limit |
-| `POST /api/v1/users/me/identities/{provider}/link/callback` | signed in, rate limit; state bound to account, session and browser, single use, expires |
-| `DELETE /api/v1/users/me/identities/{id}` | step-up, CSRF, rate limit |
+| `GET /api/v1/me/sign-in-methods` | signed in |
+| `POST /api/v1/me/sign-in-method-links/{provider}/start` | step-up, CSRF, rate limit |
+| `POST /api/v1/me/sign-in-method-links/{provider}/complete` | signed in, rate limit; state bound to account, session and browser, single use, expires |
+| `DELETE /api/v1/me/sign-in-methods/{id}` | step-up, CSRF, rate limit |
 
 Link flow:
 

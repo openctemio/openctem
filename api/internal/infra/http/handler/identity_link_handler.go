@@ -34,7 +34,7 @@ type LinkCallbackRequest struct {
 // @Tags         Account
 // @Produce      json
 // @Success      200  {object}  auth.SignInMethods
-// @Router       /users/me/identities [get]
+// @Router       /me/sign-in-methods [get]
 func (h *OAuthHandler) ListSignInMethods(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	if userID == "" {
@@ -59,7 +59,7 @@ func (h *OAuthHandler) ListSignInMethods(w http.ResponseWriter, r *http.Request)
 // @Param        provider  path  string            true  "google, github or microsoft"
 // @Param        request   body  LinkStartRequest  true  "Callback URL"
 // @Success      200  {object}  AuthorizeResponse
-// @Router       /users/me/identities/{provider}/link [post]
+// @Router       /me/sign-in-method-links/{provider}/start [post]
 func (h *OAuthHandler) StartLink(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	sessionID := middleware.GetSessionID(r.Context())
@@ -99,7 +99,7 @@ func (h *OAuthHandler) StartLink(w http.ResponseWriter, r *http.Request) {
 // @Param        provider  path  string               true  "google, github or microsoft"
 // @Param        request   body  LinkCallbackRequest  true  "Code, state and browser binding"
 // @Success      200  {object}  auth.SignInMethod
-// @Router       /users/me/identities/{provider}/link/callback [post]
+// @Router       /me/sign-in-method-links/{provider}/complete [post]
 func (h *OAuthHandler) CompleteLink(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	sessionID := middleware.GetSessionID(r.Context())
@@ -143,7 +143,7 @@ func (h *OAuthHandler) CompleteLink(w http.ResponseWriter, r *http.Request) {
 // @Tags         Account
 // @Param        id  path  string  true  "Identity id"
 // @Success      204
-// @Router       /users/me/identities/{id} [delete]
+// @Router       /me/sign-in-methods/{id} [delete]
 func (h *OAuthHandler) Unlink(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	if userID == "" {
