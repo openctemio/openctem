@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -26,15 +27,16 @@ func NewSavedViewRepository(db *DB) *SavedViewRepository {
 var _ savedview.Repository = (*SavedViewRepository)(nil)
 
 // savedViewVisibleSQL is "the user ($2) may see the view" in tenant $1: they
-// own it, or it is shared with an active group of the tenant they belong to.
-const savedViewVisibleSQL = `(sv.owner_id = $2 OR sv.group_id IN (
+// own it, it is shared with the whole organization, or it is shared with an
+// active group of the tenant they belong to.
+const savedViewVisibleSQL = `(sv.owner_id = $2 OR sv.shared_with_org OR sv.group_id IN (
 	SELECT gm.group_id FROM group_members gm
 	JOIN groups g ON g.id = gm.group_id AND g.tenant_id = $1 AND g.is_active = true
 	WHERE gm.user_id = $2))`
 
 const savedViewSelectSQL = `SELECT sv.id, sv.tenant_id, sv.owner_id, COALESCE(u.name, ''), sv.group_id, COALESCE(g.name, ''),
 	sv.page, sv.name, COALESCE(sv.description, ''), sv.filter, COALESCE(sv.group_by, ''), sv.columns,
-	COALESCE(sv.density, ''), sv.created_at, sv.updated_at
+	COALESCE(sv.density, ''), sv.page_params, sv.shared_with_org, sv.created_at, sv.updated_at
 	FROM saved_views sv
 	LEFT JOIN users u ON u.id = sv.owner_id
 	LEFT JOIN groups g ON g.id = sv.group_id AND g.tenant_id = sv.tenant_id`
@@ -43,9 +45,15 @@ func scanSavedView(scan func(...any) error) (*savedview.View, error) {
 	var v savedview.View
 	var group sql.NullString
 	var cols pq.StringArray
+	var params []byte
 	if err := scan(&v.ID, &v.TenantID, &v.OwnerID, &v.OwnerName, &group, &v.GroupName, &v.Page, &v.Name,
-		&v.Description, &v.Filter, &v.GroupBy, &cols, &v.Density, &v.CreatedAt, &v.UpdatedAt); err != nil {
+		&v.Description, &v.Filter, &v.GroupBy, &cols, &v.Density, &params, &v.SharedWithOrg, &v.CreatedAt, &v.UpdatedAt); err != nil {
 		return nil, err
+	}
+	if len(params) > 0 {
+		if err := json.Unmarshal(params, &v.PageParams); err != nil {
+			return nil, fmt.Errorf("saved view page params: %w", err)
+		}
 	}
 	if group.Valid {
 		id, err := shared.IDFromString(group.String)
@@ -65,6 +73,18 @@ func savedViewGroupArg(id *shared.ID) any {
 	return id.String()
 }
 
+// savedViewParamsArg is the page params as stored: NULL when there are none.
+func savedViewParamsArg(p map[string]string) (any, error) {
+	if len(p) == 0 {
+		return nil, nil
+	}
+	b, err := json.Marshal(p)
+	if err != nil {
+		return nil, fmt.Errorf("saved view page params: %w", err)
+	}
+	return b, nil
+}
+
 func savedViewColumnsArg(cols []string) any {
 	if len(cols) == 0 {
 		return nil
@@ -74,11 +94,16 @@ func savedViewColumnsArg(cols []string) any {
 
 // Create inserts a view.
 func (r *SavedViewRepository) Create(ctx context.Context, v *savedview.View) error {
-	_, err := r.db.ExecContext(ctx, `INSERT INTO saved_views
-		(id, tenant_id, owner_id, group_id, page, name, description, filter, group_by, columns, density, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), $8, NULLIF($9, ''), $10, NULLIF($11, ''), $12, $12)`,
+	params, err := savedViewParamsArg(v.PageParams)
+	if err != nil {
+		return err
+	}
+	_, err = r.db.ExecContext(ctx, `INSERT INTO saved_views
+		(id, tenant_id, owner_id, group_id, page, name, description, filter, group_by, columns, density,
+		 page_params, shared_with_org, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), $8, NULLIF($9, ''), $10, NULLIF($11, ''), $12, $13, $14, $14)`,
 		v.ID.String(), v.TenantID.String(), v.OwnerID.String(), savedViewGroupArg(v.GroupID), v.Page, v.Name,
-		v.Description, v.Filter, v.GroupBy, savedViewColumnsArg(v.Columns), v.Density, v.CreatedAt)
+		v.Description, v.Filter, v.GroupBy, savedViewColumnsArg(v.Columns), v.Density, params, v.SharedWithOrg, v.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("create saved view: %w", err)
 	}
@@ -87,11 +112,16 @@ func (r *SavedViewRepository) Create(ctx context.Context, v *savedview.View) err
 
 // Update changes a view of the tenant that the owner owns.
 func (r *SavedViewRepository) Update(ctx context.Context, v *savedview.View) error {
+	params, err := savedViewParamsArg(v.PageParams)
+	if err != nil {
+		return err
+	}
 	res, err := r.db.ExecContext(ctx, `UPDATE saved_views SET group_id = $4, name = $5, description = NULLIF($6, ''),
-		filter = $7, group_by = NULLIF($8, ''), columns = $9, density = NULLIF($10, ''), updated_at = $11
+		filter = $7, group_by = NULLIF($8, ''), columns = $9, density = NULLIF($10, ''), updated_at = $11,
+		page_params = $12, shared_with_org = $13
 		WHERE tenant_id = $1 AND id = $2 AND owner_id = $3`,
 		v.TenantID.String(), v.ID.String(), v.OwnerID.String(), savedViewGroupArg(v.GroupID), v.Name, v.Description,
-		v.Filter, v.GroupBy, savedViewColumnsArg(v.Columns), v.Density, v.UpdatedAt)
+		v.Filter, v.GroupBy, savedViewColumnsArg(v.Columns), v.Density, v.UpdatedAt, params, v.SharedWithOrg)
 	if err != nil {
 		return fmt.Errorf("update saved view: %w", err)
 	}
@@ -165,6 +195,11 @@ func (r *SavedViewRepository) CountByOwner(ctx context.Context, tenantID, ownerI
 // CountByGroup counts the views shared with a group of the tenant.
 func (r *SavedViewRepository) CountByGroup(ctx context.Context, tenantID, groupID shared.ID) (int, error) {
 	return r.count(ctx, `SELECT COUNT(*) FROM saved_views WHERE tenant_id = $1 AND group_id = $2`, tenantID.String(), groupID.String())
+}
+
+// CountSharedWithOrg counts the views shared with the whole organization.
+func (r *SavedViewRepository) CountSharedWithOrg(ctx context.Context, tenantID shared.ID) (int, error) {
+	return r.count(ctx, `SELECT COUNT(*) FROM saved_views WHERE tenant_id = $1 AND shared_with_org`, tenantID.String())
 }
 
 // IsActiveGroupMember reports whether the user belongs to an active group of the tenant.

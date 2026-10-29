@@ -126,6 +126,10 @@ type PlacementSensor = NonNullable<RunTaskPlacement['sensors']>[number]
  */
 export function egressSensorLine(s: PlacementSensor, t: Translate): string | null {
   const reasons = s.reasons ?? []
+  if (reasons.includes('egress_host_direct')) {
+    const sensor = toDisplayText(s.name)
+    return t('scans.placement.egressHostDirectSensor', undefined, { sensor })
+  }
   const validate = reasons.includes('egress_validate_unsupported')
   if (!validate && !reasons.includes('egress_unsupported')) return null
   const sensor = toDisplayText(s.name)

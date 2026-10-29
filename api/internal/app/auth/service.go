@@ -132,7 +132,11 @@ type AuthService struct {
 	sessionRepo      sessiondom.Repository
 	refreshTokenRepo sessiondom.RefreshTokenRepository
 	tenantRepo       tenantdom.Repository
-	passwordHasher   *password.Hasher
+	// mfaFloor is the platform two-factor floor and privilege resolves who
+	// is an administrator by effective grants (SetMFAFloor).
+	mfaFloor       MFAFloorSource
+	privilege      PrivilegeSource
+	passwordHasher *password.Hasher
 	// dummyHash is a hash of a random secret, made once with passwordHasher
 	// (same algorithm and cost as real passwords), for the constant-time
 	// paths: see dummyPasswordHash.

@@ -151,7 +151,7 @@ func TestAccountSetupLink_NeverUsesOrganizationRelay(t *testing.T) {
 // must not take an organization relay).
 func TestEmailService_EveryMailMethodIsClassified(t *testing.T) {
 	accountSecurity := []string{
-		"NotifyEmailRelayStopped", "NotifyMFADisabled", "NotifyOwnershipTransfer", "NotifyPasswordChanged",
+		"NotifyEmailRelayStopped", "NotifyIdentityLinked", "NotifyIdentityUnlinked", "NotifyMFADisabled", "NotifyOwnershipTransfer", "NotifyPasswordChanged",
 		"NotifyRecoveryCodeUsed", "NotifySAMLCertificateExpiry", "NotifySSOChangePending", "NotifySupportAccess",
 		"SendDomainManagedEmail", "SendPasswordChangedEmail", "SendPasswordResetEmail", "SendVerificationEmail",
 		"SendWelcomeEmail",

@@ -184,7 +184,7 @@ func TestFindingsExport_SortStrictSlotAndAllowlist(t *testing.T) {
 	if _, ok := row["snippet"]; ok || strings.Contains(body, "EVIDENCE-SNIPPET") || strings.Contains(body, "META-VALUE") {
 		t.Errorf("ndjson row carries evidence or metadata: %s", body)
 	}
-	if _, ok := row["asset_name"]; !ok || len(row) != 40 {
+	if _, ok := row["asset_name"]; !ok || len(row) != 41 {
 		t.Errorf("ndjson keys (%d) = %v", len(row), row)
 	}
 

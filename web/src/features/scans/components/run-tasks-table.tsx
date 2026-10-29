@@ -157,6 +157,7 @@ export function taskProgressNote(
 
 /** Skip reasons that have a translated label. */
 const SKIP_REASONS = new Set([
+  'target_unresolvable',
   'unresolvable',
   'wildcard_pattern',
   'denied_by_policy',
@@ -180,6 +181,25 @@ export function taskSkippedNote(
   const list = task.skipped_targets ?? []
   const total = Math.max(task.skipped_targets_total ?? 0, list.length)
   if (total <= 0) return null
+  // Names that no longer resolve are a fact about the names, not a policy
+  // outcome: said as such, in plain words, when that is all that was skipped.
+  const allGone =
+    list.length > 0 &&
+    list.every((s) => s.reason === 'target_unresolvable' || s.reason === 'unresolvable')
+  if (allGone) {
+    const names = list.slice(0, SKIPPED_NAMED).map((s) => s.target ?? '?')
+    let text = t(
+      total === 1 ? 'scans.tasks.noLongerResolveOne' : 'scans.tasks.noLongerResolveMany',
+      undefined,
+      {
+        count: total,
+      }
+    )
+    text += `: ${names.join(', ')}`
+    const rest = total - names.length
+    if (rest > 0) text += t('scans.tasks.andMore', undefined, { count: rest })
+    return text
+  }
   const named = list
     .slice(0, SKIPPED_NAMED)
     .map(
