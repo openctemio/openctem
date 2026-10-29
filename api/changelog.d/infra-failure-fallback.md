@@ -5,4 +5,4 @@
 - Stop rule: when the same tool and content version fails on 2 different sensors within 30 minutes, the task is not moved to more sensors and fails with `FLEET_TOOL_FAILURE`.
 - Targets that failed because of the sensor's own network or resolver go out again on another sensor. Targets that failed because of the target (unreachable, blocked or challenged by a WAF or CDN, rate limited) are never resent from another sensor in the same run.
 - The run timeline explains every move in English and Vietnamese, and the placement view shows `failed_here_earlier`.
-- Migration `003548_command_infra_failure` adds `commands.failed_on`, `attempts`, `failure_class` and the `failure_breakers` table.
+- Migration `20261028153740_command_infra_failure` adds `commands.failed_on`, `attempts`, `failure_class` and the `failure_breakers` table.
