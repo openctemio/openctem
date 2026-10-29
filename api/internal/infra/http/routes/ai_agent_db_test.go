@@ -93,7 +93,7 @@ func (h *aiHarness) finding(tenant shared.ID, assignee *shared.ID) shared.ID {
 	return id
 }
 
-func (h *aiHarness) create(t *testing.T, preset string, actor shared.ID, owners ...aianalysis.OwnerInput) *aidom.Agent {
+func (h *aiHarness) create(t *testing.T, preset string, actor shared.ID, owners ...aianalysis.OwnerInput) *aidom.AIAgent {
 	t.Helper()
 	a, err := h.svc.Create(context.Background(), aianalysis.CreateInput{Name: "AI " + preset, Preset: preset, Owners: owners}, h.actx(actor))
 	if err != nil {
@@ -506,7 +506,7 @@ func TestAIAgent_ActivityIsLabelledAndCarriesProvenance(t *testing.T) {
 	a := h.create(t, "suggest", h.owner, userOwner(h.triager))
 	f := h.finding(h.tenant, &a.ID)
 	runID := shared.NewID()
-	pctx := aidom.WithProvenance(ctx, aidom.Provenance{AgentID: a.ID, AgentName: a.Name, RunID: runID,
+	pctx := aidom.WithProvenance(ctx, aidom.Provenance{AIAgentID: a.ID, AIAgentName: a.Name, RunID: runID,
 		Executor: aidom.ExecutorBuiltin, Model: "m", Accountable: a.Owners})
 	act, err := vulnerability.NewFindingActivity(h.tenant, f, vulnerability.ActivityCommentAdded, &a.ID,
 		vulnerability.ActorTypeUser, map[string]any{"content": "x"}, vulnerability.SourceAPI, nil)
@@ -574,13 +574,13 @@ func TestAIAgent_RiskLoweringNeedsAPersonWithApprovalOff_DB(t *testing.T) {
 	setFPLevel(h, org, `{"fp_approval":"off","accept_approval":"off"}`)
 	person := h.member(org, "admin")
 
-	agent := shared.NewID().String()
+	aiAgent := shared.NewID().String()
 	h.exec(`INSERT INTO users (id, email, name, kind, service_tenant_id) VALUES ($1, $2, 'AI', 'service', $3)`,
-		agent, "svc-"+agent+"@service-accounts.invalid", org)
-	t.Cleanup(func() { _, _ = h.db.ExecContext(ctx, `DELETE FROM users WHERE id = $1`, agent) })
-	h.exec(`INSERT INTO tenant_members (user_id, tenant_id, role) VALUES ($1, $2, 'viewer')`, agent, org)
-	h.exec(`DELETE FROM user_roles WHERE user_id = $1`, agent)
-	h.exec(`INSERT INTO ai_agents (user_id, tenant_id, preset, attest_due_at) VALUES ($1, $2, 'triage', now() + interval '90 days')`, agent, org)
+		aiAgent, "svc-"+aiAgent+"@service-accounts.invalid", org)
+	t.Cleanup(func() { _, _ = h.db.ExecContext(ctx, `DELETE FROM users WHERE id = $1`, aiAgent) })
+	h.exec(`INSERT INTO tenant_members (user_id, tenant_id, role) VALUES ($1, $2, 'viewer')`, aiAgent, org)
+	h.exec(`DELETE FROM user_roles WHERE user_id = $1`, aiAgent)
+	h.exec(`INSERT INTO ai_agents (user_id, tenant_id, preset, attest_due_at) VALUES ($1, $2, 'triage', now() + interval '90 days')`, aiAgent, org)
 
 	// A person under level off decides alone (control).
 	if status, single, _ := requestFP(h, person, h.newFinding(org, "low")); status != "approved" || !single {
@@ -588,7 +588,7 @@ func TestAIAgent_RiskLoweringNeedsAPersonWithApprovalOff_DB(t *testing.T) {
 	}
 	ap, err := h.svc.RequestApproval(ctx, finding.RequestApprovalInput{
 		TenantID: org, FindingID: h.newFinding(org, "low"), RequestedStatus: "false_positive",
-		Justification: "the AI thinks this is test code", RequestedBy: agent, ClosureReason: "test_or_example_code",
+		Justification: "the AI thinks this is test code", RequestedBy: aiAgent, ClosureReason: "test_or_example_code",
 		CanApprove: true,
 	})
 	if err != nil {
@@ -598,7 +598,7 @@ func TestAIAgent_RiskLoweringNeedsAPersonWithApprovalOff_DB(t *testing.T) {
 		t.Fatalf("an AI agent's false positive under level off is %s, want pending", ap.Status)
 	}
 	res, err := h.svc.ChangeFindingSeverity(ctx, finding.ChangeSeverityInput{
-		TenantID: org, FindingID: h.newFinding(org, "high"), ActorID: agent, Severity: "low",
+		TenantID: org, FindingID: h.newFinding(org, "high"), ActorID: aiAgent, Severity: "low",
 		Reason: "the AI thinks the impact is low", CanApprove: true,
 	})
 	if err != nil {

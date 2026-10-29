@@ -13,8 +13,8 @@ import (
 // activity writer and the audit logger stamp it on their rows, so a command
 // needs no AI-specific code.
 type Provenance struct {
-	AgentID              shared.ID
-	AgentName            string
+	AIAgentID            shared.ID
+	AIAgentName          string
 	RunID                shared.ID
 	Executor             Executor
 	Provider             string
@@ -35,7 +35,7 @@ func WithProvenance(ctx context.Context, p Provenance) context.Context {
 // ProvenanceFrom returns the provenance in ctx, if any.
 func ProvenanceFrom(ctx context.Context) (Provenance, bool) {
 	p, ok := ctx.Value(provenanceKey{}).(Provenance)
-	return p, ok && !p.AgentID.IsZero()
+	return p, ok && !p.AIAgentID.IsZero()
 }
 
 // Map is the provenance as stored in source_metadata.ai and audit metadata.ai.
@@ -45,8 +45,8 @@ func (p Provenance) Map() map[string]any {
 		acc = append(acc, map[string]any{"kind": string(o.Kind), "id": o.ID.String(), "name": o.Name})
 	}
 	m := map[string]any{
-		"ai_agent_id":   p.AgentID.String(),
-		"ai_agent_name": p.AgentName,
+		"ai_agent_id":   p.AIAgentID.String(),
+		"ai_agent_name": p.AIAgentName,
 		"run_id":        p.RunID.String(),
 		"executor":      string(p.Executor),
 		"accountable":   acc,
@@ -73,7 +73,7 @@ func (p Provenance) Map() map[string]any {
 // AI agent's, and if so the provenance to stamp.
 func StampActor(ctx context.Context, actorID *shared.ID) (Provenance, bool) {
 	p, ok := ProvenanceFrom(ctx)
-	if !ok || actorID == nil || *actorID != p.AgentID {
+	if !ok || actorID == nil || *actorID != p.AIAgentID {
 		return Provenance{}, false
 	}
 	return p, true

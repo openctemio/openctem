@@ -14,7 +14,7 @@ import (
 // answers for it. Every command the executor calls for the AI agent passes
 // through Require and AssertFinding first.
 type Principal struct {
-	Agent *aidom.Agent
+	AIAgent *aidom.AIAgent
 	// People are the accountable people at this moment.
 	People      []shared.ID
 	permissions map[string]bool
@@ -45,11 +45,11 @@ func (p *Principal) Require(perm string) error {
 // outside the scope of every accountable person (out of scope reads as not
 // found).
 func (p *Principal) AssertFinding(ctx context.Context, findingID shared.ID) error {
-	if err := p.scope.AssertFindingForUser(ctx, p.Agent.TenantID, p.Agent.ID, findingID); err != nil {
+	if err := p.scope.AssertFindingForUser(ctx, p.AIAgent.TenantID, p.AIAgent.ID, findingID); err != nil {
 		return err
 	}
 	for _, person := range p.People {
-		err := p.scope.AssertFindingForUser(ctx, p.Agent.TenantID, person, findingID)
+		err := p.scope.AssertFindingForUser(ctx, p.AIAgent.TenantID, person, findingID)
 		if err == nil {
 			return nil
 		}
@@ -63,9 +63,9 @@ func (p *Principal) AssertFinding(ctx context.Context, findingID shared.ID) erro
 // Provenance is what the AI agent's changes in run carry.
 func (p *Principal) Provenance(run *aidom.Run) aidom.Provenance {
 	return aidom.Provenance{
-		AgentID: p.Agent.ID, AgentName: p.Agent.Name, RunID: run.ID, Executor: run.Executor,
+		AIAgentID: p.AIAgent.ID, AIAgentName: p.AIAgent.Name, RunID: run.ID, Executor: run.Executor,
 		Provider: run.Provider, Model: run.Model, PromptTemplateID: run.PromptTemplateID,
-		PromptTemplateDigest: run.PromptTemplateDigest, Accountable: p.Agent.Owners, TriggeredBy: run.TriggeredBy,
+		PromptTemplateDigest: run.PromptTemplateDigest, Accountable: p.AIAgent.Owners, TriggeredBy: run.TriggeredBy,
 	}
 }
 
@@ -75,7 +75,7 @@ func (p *Principal) Provenance(run *aidom.Run) aidom.Provenance {
 // the ceiling (what the accountable people hold) and the deny list are
 // applied. A failed check pauses the AI agent (audited) and returns a
 // PausedError.
-func (s *Service) Principal(ctx context.Context, tenantID, agentID shared.ID) (*Principal, error) {
+func (s *Service) Principal(ctx context.Context, tenantID, aiAgentID shared.ID) (*Principal, error) {
 	// Read-only assistance runs under the viewer and never becomes an AI agent.
 	if err := aidom.RefuseAssist(ctx); err != nil {
 		return nil, err
@@ -89,7 +89,7 @@ func (s *Service) Principal(ctx context.Context, tenantID, agentID shared.ID) (*
 			return nil, fmt.Errorf("%w: AI is off for this organization", shared.ErrConflict)
 		}
 	}
-	a, err := s.agents.Get(ctx, tenantID, agentID)
+	a, err := s.aiAgents.Get(ctx, tenantID, aiAgentID)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +97,7 @@ func (s *Service) Principal(ctx context.Context, tenantID, agentID shared.ID) (*
 		return nil, &aidom.PausedError{Reason: a.PauseReason}
 	}
 	now := s.now()
-	people, err := s.agents.PeopleOf(ctx, tenantID, a.Owners, now)
+	people, err := s.aiAgents.PeopleOf(ctx, tenantID, a.Owners, now)
 	if err != nil {
 		return nil, err
 	}
@@ -125,13 +125,13 @@ func (s *Service) Principal(ctx context.Context, tenantID, agentID shared.ID) (*
 	for _, p := range eff {
 		perms[p] = true
 	}
-	return &Principal{Agent: a, People: people, permissions: perms, scope: s.scope}, nil
+	return &Principal{AIAgent: a, People: people, permissions: perms, scope: s.scope}, nil
 }
 
 // DefaultAgent picks the AI agent for a finding when the trigger names none:
 // the first active AI agent (by name) that may read the finding.
-func (s *Service) DefaultAgent(ctx context.Context, tenantID, findingID shared.ID) (*Principal, error) {
-	list, err := s.agents.List(ctx, tenantID)
+func (s *Service) DefaultAIAgent(ctx context.Context, tenantID, findingID shared.ID) (*Principal, error) {
+	list, err := s.aiAgents.List(ctx, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -158,7 +158,7 @@ func (s *Service) DefaultAgent(ctx context.Context, tenantID, findingID shared.I
 	if lastPaused != nil {
 		return nil, lastPaused
 	}
-	return nil, aidom.ErrAgentNotFound
+	return nil, aidom.ErrAIAgentNotFound
 }
 
 // ErrBudget: the AI agent used its runs for this hour or its tokens for this
@@ -185,7 +185,7 @@ func (s *Service) StartRun(ctx context.Context, in StartRunInput) (*aidom.Run, e
 	if err := aidom.RefuseAssist(ctx); err != nil {
 		return nil, err
 	}
-	a := in.Principal.Agent
+	a := in.Principal.AIAgent
 	now := s.now().UTC()
 	runs, _, err := s.runs.Usage(ctx, a.TenantID, a.ID, now.Add(-time.Hour))
 	if err != nil {
@@ -206,7 +206,7 @@ func (s *Service) StartRun(ctx context.Context, in StartRunInput) (*aidom.Run, e
 	}
 	deadline := now.Add(aidom.RunDeadline)
 	run := &aidom.Run{
-		ID: shared.NewID(), TenantID: a.TenantID, AgentID: &a.ID, UseCase: in.UseCase, Kind: in.Kind,
+		ID: shared.NewID(), TenantID: a.TenantID, AIAgentID: &a.ID, UseCase: in.UseCase, Kind: in.Kind,
 		SubjectType: in.SubjectType, SubjectID: in.SubjectID, Executor: in.Executor, Status: aidom.RunRunning,
 		DataClass: in.DataClass, Trigger: in.Trigger, TriggeredBy: in.TriggeredBy, Accountable: a.Owners,
 		DeadlineAt: &deadline, StartedAt: &now,
