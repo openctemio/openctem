@@ -59,11 +59,16 @@ func quotedList(vals []string) string {
 // changed). The partial index idx_asset_coverage_plannable covers them.
 const plannableStatesSQL = `('due', 'failed', 'covered', 'blocked')`
 
+// maxWaitedSecs bounds DueTarget.Waited (a pair never scheduled reads as
+// waiting this long).
+const maxWaitedSecs = 1e9
+
 // DueBatch returns the pairs of a capability whose time has come: due,
 // failed, covered past its cadence, blocked past its recheck and paused for
 // a target-side outcome past its recheck. When at
 // least one is due now, pairs due within lookahead are taken as well (one
 // run instead of several one-target runs); when none is due now, nothing.
+// Each pair says how long it has been due (the planner's batch rule).
 func (r *AssetCoverageRepository) DueBatch(ctx context.Context, tenantID shared.ID, capability string, limit int, lookahead time.Duration) ([]coverage.DueTarget, error) {
 	if limit <= 0 {
 		return nil, nil
@@ -73,7 +78,8 @@ func (r *AssetCoverageRepository) DueBatch(ctx context.Context, tenantID shared.
 	}
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT a.id, a.name, a.asset_type, COALESCE(a.sub_type, ''), c.fail_streak,
-		       (c.next_due_at IS NULL OR c.next_due_at <= now())
+		       (c.next_due_at IS NULL OR c.next_due_at <= now()),
+		       COALESCE(greatest(extract(epoch FROM now() - c.next_due_at), 0), 1e9)::float8
 		FROM asset_coverage c
 		JOIN assets a ON a.tenant_id = c.tenant_id AND a.id = c.asset_id
 		WHERE c.tenant_id = $1 AND c.capability = $2 AND c.vantage = ''
@@ -95,14 +101,16 @@ func (r *AssetCoverageRepository) DueBatch(ctx context.Context, tenantID shared.
 			d       coverage.DueTarget
 			id, typ string
 			dueNow  bool
+			waited  float64
 		)
-		if err := rows.Scan(&id, &d.Name, &typ, &d.SubType, &d.FailStreak, &dueNow); err != nil {
+		if err := rows.Scan(&id, &d.Name, &typ, &d.SubType, &d.FailStreak, &dueNow, &waited); err != nil {
 			return nil, err
 		}
 		if d.AssetID, err = shared.IDFromString(id); err != nil {
 			continue
 		}
 		anyDue = anyDue || dueNow
+		d.Waited = time.Duration(min(waited, maxWaitedSecs) * float64(time.Second))
 		d.Type = asset.AssetType(typ)
 		out = append(out, d)
 	}

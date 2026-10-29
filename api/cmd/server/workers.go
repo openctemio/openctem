@@ -1298,7 +1298,10 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		if svc.Scan != nil && svc.ScanPolicy != nil {
 			svc.AssetCoverage.EnablePlanning(repos.AssetCoverage, svc.Scan,
 				coverageapp.GovernanceSwitch{Modes: svc.ScanPolicy, Settings: svc.Tenant},
-				coverageapp.Config{DailyBudget: cfg.Worker.AssetCoverageDailyBudget})
+				// A due batch waits until it fills one task of its tool or
+				// its oldest pair has waited a tenth of the cadence (at most
+				// 6 h): pairs whose jittered due times are close share a run.
+				coverageapp.Config{DailyBudget: cfg.Worker.AssetCoverageDailyBudget, FillBatches: true})
 			// Readiness: a capability with no sensor or tool that could run
 			// it gets no run; its pairs pause with the reason and resume by
 			// themselves.
