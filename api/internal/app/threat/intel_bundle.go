@@ -51,6 +51,12 @@ const (
 // is refused as truncated.
 const bundleShrinkFloor = 0.90
 
+// Bundle sources, as named in sync status and bundle streams.
+const (
+	bundleSourceKEV  = "kev"
+	bundleSourceEPSS = "epss"
+)
+
 // ErrBundleShrunk is returned for a bundle snapshot far smaller than the
 // stored catalog.
 var ErrBundleShrunk = errors.New("the bundle copy is much smaller than the stored data")
@@ -99,7 +105,7 @@ func newerData(source string, candidate, held time.Time) bool {
 	if held.IsZero() {
 		return true
 	}
-	if source == "epss" {
+	if source == bundleSourceEPSS {
 		return candidate.UTC().Truncate(24 * time.Hour).After(held.UTC().Truncate(24 * time.Hour))
 	}
 	return candidate.After(held)
@@ -163,7 +169,7 @@ func (s *IntelService) RecordBundleRefused(ctx context.Context, source string, c
 // ApplyBundleKEV applies a verified KEV stream when it is newer than the
 // catalog held.
 func (s *IntelService) ApplyBundleKEV(ctx context.Context, st BundleStream, entries []*threatintel.KEVEntry, version string) (BundleOutcome, error) {
-	const source = "kev"
+	const source = bundleSourceKEV
 	start := time.Now()
 	status, err := s.recordBundleSeen(ctx, source, st, nil)
 	if err != nil {
@@ -212,7 +218,7 @@ func (s *IntelService) ApplyBundleKEV(ctx context.Context, st BundleStream, entr
 // ApplyBundleEPSS applies a verified EPSS stream when its score date is
 // newer than the scores held.
 func (s *IntelService) ApplyBundleEPSS(ctx context.Context, st BundleStream, scores []*threatintel.EPSSScore) (BundleOutcome, error) {
-	const source = "epss"
+	const source = bundleSourceEPSS
 	start := time.Now()
 	status, err := s.recordBundleSeen(ctx, source, st, nil)
 	if err != nil {
@@ -338,7 +344,7 @@ func (s *IntelService) ShouldFetchDirect(ctx context.Context, source string) Fet
 		return FetchDecision{Run: true, Reason: ReasonBundleMissing}
 	}
 	limit := KEVBundleStaleAfter
-	if source == "epss" {
+	if source == bundleSourceEPSS {
 		limit = EPSSBundleStaleAfter
 	}
 	if s.now().Sub(fetched) > limit {
@@ -367,7 +373,7 @@ type BundleReadiness struct {
 // BundleReadiness reports the bundle's state for KEV and EPSS.
 func (s *IntelService) BundleReadiness(ctx context.Context) []BundleReadiness {
 	out := make([]BundleReadiness, 0, 2)
-	for _, src := range []string{"kev", "epss"} {
+	for _, src := range []string{bundleSourceKEV, bundleSourceEPSS} {
 		r := BundleReadiness{Source: src}
 		if st, err := s.repo.SyncStatus().GetBySource(ctx, src); err == nil {
 			meta := st.Metadata()
@@ -376,7 +382,7 @@ func (s *IntelService) BundleReadiness(ctx context.Context) []BundleReadiness {
 			r.DataAsOf = storedAsOf(meta)
 			r.BundleFetchedAt = parseMetaTime(meta[MetaBundleFetched])
 			limit := KEVBundleStaleAfter
-			if src == "epss" {
+			if src == bundleSourceEPSS {
 				limit = EPSSBundleStaleAfter
 			}
 			r.Fresh = !r.BundleFetchedAt.IsZero() && s.now().Sub(r.BundleFetchedAt) <= limit
