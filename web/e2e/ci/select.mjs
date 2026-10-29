@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Test-impact selection for the Playwright suite (research/295).
 //
-//   node web/e2e/ci/select.mjs plan --changed <file|-> [--event E] [--full]
+//   node web/e2e/ci/select.mjs plan --changed <file|-> [--event E] [--full] [--impact]
 //        [--timings f.json] [--target-seconds 240] [--max-shards 4]
 //        prints the plan as JSON: which specs run and how they are sharded
 //   node web/e2e/ci/select.mjs timings <report.json>
@@ -127,13 +127,32 @@ export function listSpecs(dir = SPEC_DIR) {
 
 // ---- selection --------------------------------------------------------------
 
-// -> { mode: 'all' | 'selected' | 'none', reason, tags: [], files: [path...] }
-export function select(changed, map, specs, { event = '', full = false } = {}) {
+// Tiers (api/docs/development/ci-cd.md, "E2E tiers"):
+//   merge_group, push, schedule, dispatch, `full`  the whole suite
+//   pull_request                                   the smoke set (and any spec the
+//                                                  change edits), unless `impact`
+//                                                  (the run-e2e label or a changed
+//                                                  suite) asks for the specs the
+//                                                  changed files map to
+// -> { mode: 'all' | 'selected' | 'smoke' | 'none', reason, tags: [], files: [path...] }
+export function select(changed, map, specs, { event = '', full = false, impact = false } = {}) {
   const all = (reason) => ({ mode: 'all', reason, tags: [], files: specs.map((s) => s.file) })
   if (full) return all('full tier requested')
-  if (event && event !== 'pull_request' && event !== 'merge_group')
-    return all(`${event} runs everything`)
+  if (event !== 'pull_request') return all(`${event || 'this event'} runs everything`)
   if (!changed.length) return all('no changed files could be read')
+  if (!impact) {
+    const own = new Set(
+      changed
+        .map((f) => f.match(/^web\/(e2e\/specs\/[^/]+\.spec\.ts)$/)?.[1])
+        .filter((f) => f && specs.some((s) => s.file === f))
+    )
+    return {
+      mode: 'smoke',
+      reason: `pull request: smoke set${own.size ? ` and ${own.size} changed spec(s)` : ''}`,
+      tags: [],
+      files: specs.filter((s) => own.has(s.file) || s.tags.includes(map.smoke)).map((s) => s.file),
+    }
+  }
   const tags = new Set()
   const direct = new Set()
   let ignored = 0
@@ -342,6 +361,7 @@ function main(argv) {
   if (cmd === 'plan') {
     const event = arg(argv, '--event', '')
     const full = argv.includes('--full')
+    const impact = argv.includes('--impact')
     let timings = {}
     const tf = arg(argv, '--timings')
     if (tf) {
@@ -358,6 +378,7 @@ function main(argv) {
       result = plan(changed, loadMap(), specs, timings, {
         event,
         full,
+        impact,
         targetSeconds: Number(arg(argv, '--target-seconds', 240)),
         maxShards: Number(arg(argv, '--max-shards', 4)),
       })
