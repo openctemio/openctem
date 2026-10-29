@@ -58,6 +58,7 @@ func (r *CommandRepository) PlacementPredicates(ctx context.Context, tenantID, c
 		       COALESCE(`+zoneClaimPredicate("ps.id")+`, FALSE),
 		       COALESCE(`+toolClaimPredicate("ps.id")+`, FALSE),
 		       COALESCE(`+refusedByPredicate("ps.id")+`, FALSE),
+		       COALESCE(`+failedOnPredicate("ps.id")+`, FALSE),
 		       COALESCE(`+capabilityClaimPredicate("ps.effective_capabilities")+`, FALSE),
 		       COALESCE(`+featureClaimPredicate("ps.id")+`, FALSE),
 		       (SELECT count(*) FROM commands held
@@ -78,7 +79,7 @@ func (r *CommandRepository) PlacementPredicates(ctx context.Context, tenantID, c
 	for rows.Next() {
 		var c command.SensorClaim
 		var id string
-		if err := rows.Scan(&id, &c.PinOK, &c.ZoneOK, &c.ToolOK, &c.NotRefused, &c.CapabilityOK, &c.FeaturesOK, &c.HeldScans); err != nil {
+		if err := rows.Scan(&id, &c.PinOK, &c.ZoneOK, &c.ToolOK, &c.NotRefused, &c.NotFailedHere, &c.CapabilityOK, &c.FeaturesOK, &c.HeldScans); err != nil {
 			return job, nil, fmt.Errorf("scan sensor placement: %w", err)
 		}
 		if c.SensorID, err = shared.IDFromString(id); err != nil {

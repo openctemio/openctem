@@ -89,6 +89,9 @@ var Rules = []Rule{
 	{Plane: Self, Prefix: "/api/v1/version"},
 	{Plane: Self, Prefix: "/api/v1/announcements"},
 	{Plane: Self, Prefix: "/api/v1/ws"},
+	// The echo a proxy test connects to through each proxy: no session, the
+	// path carries the token of one live test command.
+	{Plane: Self, Prefix: "/api/v1/proxy-test-echo"},
 
 	{Plane: User, Prefix: "/api/v1/agents", Closed: true, Successor: "/api/v1/sensors"},
 	{Plane: User, Prefix: "/api/v1/tenants/{tenant}", Closed: true, Successor: "/api/v1/organization"},

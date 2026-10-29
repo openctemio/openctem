@@ -2,11 +2,13 @@
 
 import * as React from 'react'
 import { Lock, type LucideIcon } from 'lucide-react'
+import Link from '@/components/link'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
 import { foldToFit } from '@/lib/fit-row'
+import { safeInternalHref } from '@/lib/safe-href'
 
 /**
  * The active-filter row under a list toolbar (research/267, research/266 §5),
@@ -308,23 +310,30 @@ export function LockedChip({
   )
 }
 
-/** An action inside a `LockedChip` ("Show", "Hide"). */
+/** An action inside a `LockedChip` ("Show", "Hide"); a link when `href` is set. */
 export function LockedChipAction({
   children,
   onClick,
+  href,
   disabled,
 }: {
   children: React.ReactNode
-  onClick: () => void
+  onClick?: () => void
+  href?: string
   disabled?: boolean
 }) {
+  const className =
+    'inline-flex h-5 shrink-0 items-center rounded-full px-2 font-medium whitespace-nowrap text-foreground hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-50'
+  const safe = safeInternalHref(href)
+  if (safe) {
+    return (
+      <Link href={safe} className={className}>
+        {children}
+      </Link>
+    )
+  }
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className="inline-flex h-5 shrink-0 items-center rounded-full px-2 font-medium whitespace-nowrap text-foreground hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-50"
-    >
+    <button type="button" onClick={onClick} disabled={disabled} className={className}>
       {children}
     </button>
   )

@@ -67,7 +67,7 @@ func TestTargetMappingWritesNeedSuperAdminAndReason(t *testing.T) {
 	bodyFor := func(method, reason string) string {
 		extra := ""
 		if method == http.MethodPost {
-			extra = `"target_type":"url","asset_type":"website",`
+			extra = `"target_type":"certificate","asset_type":"domain",`
 		}
 		if method == http.MethodPatch {
 			extra = `"is_active":false,`
@@ -112,7 +112,7 @@ func TestTargetMappingWritesNeedSuperAdminAndReason(t *testing.T) {
 			}
 		}
 		// With a reason a super admin's write goes through.
-		spy := &mappingRepoSpy{stored: tool.NewTargetAssetTypeMapping("url", asset.AssetType("website"))}
+		spy := &mappingRepoSpy{stored: tool.NewTargetAssetTypeMapping("certificate", asset.AssetType("domain"))}
 		h := NewAdminTargetMappingHandler(spy, logger.NewNop())
 		w := httptest.NewRecorder()
 		fn(h, w, mappingReq(method, bodyFor(method, good), admin.AdminRoleSuperAdmin, id))

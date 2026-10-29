@@ -118,7 +118,7 @@ var Features = []Feature{
 		Description: "The sensor fleet: registration, pairing and grants, scan zones and the sensor protocol.",
 		Stages:      []string{StageDiscovery},
 		Registers: []string{
-			"registerSensorManagementRoutes", "registerSensorInstallRoutes", "registerSensorPairingRoutes", "registerScanZoneRoutes", "registerProxyPoolRoutes",
+			"registerSensorManagementRoutes", "registerSensorInstallRoutes", "registerSensorPairingRoutes", "registerScanZoneRoutes", "registerProxyPoolRoutes", "registerProxyTestEchoRoute",
 			"mountSensorV2",
 		},
 	},
@@ -199,7 +199,7 @@ var Features = []Feature{
 		ID: "account", Title: "Sign-in and own account",
 		Description: "Authentication, the caller's own account, notifications, platform announcements, bootstrap data and the real-time socket.",
 		Registers: []string{
-			"registerAuthRoutes", "registerUserRoutes", "registerNotificationRoutes", "registerBootstrapRoutes",
+			"registerAuthRoutes", "registerUserRoutes", "registerIdentityLinkRoutes", "registerNotificationRoutes", "registerBootstrapRoutes",
 			"registerWebSocketRoutes", "registerAnnouncementRoute",
 		},
 	},

@@ -164,20 +164,30 @@ that it resolves (RFC-088 A5; `scan.Service.DropStaleNames`):
 - **Wildcard DNS.** The platform sends `wildcard_filter: true` with every
   dnsx job that does not set it (`withWildcardFilter`). A name that resolves
   only through a wildcard record is then never reported and gains no DNS
-  evidence. When the job is over (command completed with exit code 0, every
-  report filed under it completed with nothing rejected), ingest marks the
-  input names it did not report (`asset_wildcard_dns`,
-  `ingest.evaluateWildcardDNS`) and clears the mark of the names it did. A
-  marked name is passive only: the active-probe gate refuses it, and a
-  service or URL on it, as `wildcard_only` until a person confirms it or a
-  filtered resolution reports it, and the scope join never confirms it. A
-  run with the filter off proves nothing and changes no mark. A name that
-  stopped resolving at all is marked too; it has nothing to probe, and the
-  mark clears when it resolves again. A registrable domain (`example.com`)
-  is never marked, and a mark it has is cleared and ignored by the gate: a
-  wildcard record never answers for the name it sits under (RFC 4592), so
-  an apex the filter left out either has no address or shares one with its
-  own wildcard.
+  evidence. A name the filtered resolver does not report is either wildcard
+  only or does not resolve at all, and the resolver's output cannot tell
+  the two apart. When the job is over (command completed with exit code 0,
+  every report filed under it completed with nothing rejected), ingest asks
+  DNS itself for each unreported input name (`ingest.NameProber`, through
+  the scan-zone resolver, at most 2000 names, bounded concurrency):
+  - **No DNS answer:** the name does not resolve. It is recorded as a failed
+    check (see "Names that do not resolve" below) and is NOT marked
+    wildcard-only.
+  - **An answer, and a random label under a parent zone resolves to an
+    address the name shares:** the name resolves only through that wildcard
+    record. It is marked (`asset_wildcard_dns`, `ingest.evaluateWildcardDNS`).
+  - **An answer and no wildcard:** it resolves by itself; any mark is cleared.
+  - **Anything unsure** (a resolver error, a timeout), or no prober wired:
+    nothing is marked (a mark needs proof).
+
+  The mark of a name the job did report is cleared. A marked name is passive
+  only: the active-probe gate refuses it, and a service or URL on it, as
+  `wildcard_only` until a person confirms it or a filtered resolution reports
+  it, and the scope join never confirms it. A run with the filter off proves
+  nothing and changes no mark.
+  A registrable domain (`example.com`) is never marked, and a mark it has
+  is cleared and ignored by the gate: a wildcard record never answers for
+  the name it sits under (RFC 4592), so it is not probed either.
 - **Passive runs.** A run whose every probe is passive (the scan's
   intensity is passive, its single scanner is passive, or every workflow
   step is passive) puts its targets through the passive gate at run start
@@ -188,6 +198,38 @@ that it resolves (RFC-088 A5; `scan.Service.DropStaleNames`):
   step does not gate its seeds again, so an active gate here dropped names
   a passive workflow was allowed to resolve.
 
+### Names that do not resolve
+
+Certificate transparency and old DNS leave many names with no DNS answer.
+The platform keeps a resolution state per host-name asset
+(`asset_resolution`: `resolving` or `not_resolving`, the last time it
+resolved, and the failed checks in a row). It is a fact about the name, not
+an ownership or scope decision.
+
+- **Fed by** a resolve stage (a name it reported is `resolving`; one it left
+  out and DNS has no answer for counts a failure), a tool that reached the
+  name (http, tls, ports evidence), and a sensor that refused the name as
+  `unresolvable`. `assetresolution.NotResolvingAfter` (2) failures in a row
+  make the name `not_resolving`: one failed lookup can be a resolver hiccup.
+- **Used by** active stages: a `not_resolving` name is left out
+  (`not_resolving` skip, `DropStaleNames`), whatever older evidence says.
+  Passive stages are not filtered, so the name comes back by itself the
+  next time a resolution reports it (the state flips to `resolving` and the
+  failures reset).
+- **Sensor refusals.** A task whose every target the sensor refused as
+  `unresolvable` is not a failure: the command completes with per-target
+  skips (reason `target_unresolvable`; the sensor says `unresolvable`) and
+  the run shows "N names no longer resolve", informational. A sensor that
+  reports the same task as a failed command ("invalid scan target: N of N
+  targets refused: ... cannot resolve ...") is read by
+  `scanrun.ParseUnresolvableRefusal`: when every listed refusal is
+  unresolvable and the counts add up, the platform completes the command
+  with the same skips (only for the command's own, running sensor). A mixed
+  refusal stays a failure.
+- **Console.** Run: the skip group "No longer resolve" (info tone) and the
+  run note. Assets: filter `resolution=not_resolving` (`GET /assets`), the
+  bulk bar's archive acts on the selection; the asset detail shows the last
+  resolved time (`GET /assets/{id}/freshness`, `resolution`).
 ## Where ownership confirmation applies
 
 Ownership confirmation of discovered assets and the wildcard-only
@@ -253,6 +295,7 @@ run record):
 |---|---|---|
 | `unresolved` | info | zone routing: no DNS answer from the platform |
 | `not_resolving` | info | resolve before active (above) |
+| `target_unresolvable` | info | a sensor refused the names as no longer resolving (run groups, run tasks) |
 | `excluded` | info | a scope exclusion rule |
 | `archived`, `incompatible_type` | info | asset-group members (count only) |
 | `out_of_scope` | warning | the caller's act scope, or no scope entry |
