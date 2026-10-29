@@ -1,0 +1,39 @@
+# Picks the runner pool for this workflow run's heavy jobs:
+#
+#   - id: pool
+#     uses: ./.github/actions/ci-pool
+#     with:
+#       share: ${{ vars.CI_SELFHOSTED_SHARE }}
+#   ... outputs: pool = openctem-ci | ubuntu-latest
+#
+# A share of runs goes to the self-hosted pool (label openctem-ci) so it is not
+# idle while GitHub's hosted runners queue; the rest use hosted runners.
+#   share  vars.CI_SELFHOSTED_SHARE, a whole percent 0..100 (default 20; an
+#          unset, empty or invalid value means 20; 0 turns the split off)
+#   rule   github.run_id modulo 100 below the share goes self-hosted. One run
+#          id gives one answer, so every heavy job of a workflow run lands in
+#          the same pool, and a re-run keeps its pool.
+# The output only offers a pool. The runs-on expressions (approved and checked
+# by .github/scripts/check-runners.sh) decide where it may be used: never a pull
+# request from a fork, and the CI_RUNNER_* variables override it.
+# Doc: api/docs/development/ci-cd.md, "Runner pools".
+name: CI pool
+description: Choose the self-hosted or hosted pool for this run from github.run_id and CI_SELFHOSTED_SHARE.
+inputs:
+  share:
+    description: vars.CI_SELFHOSTED_SHARE (a composite action cannot read `vars` itself)
+    required: false
+    default: ""
+outputs:
+  pool:
+    description: openctem-ci or ubuntu-latest
+    value: ${{ steps.pick.outputs.pool }}
+runs:
+  using: composite
+  steps:
+    - id: pick
+      shell: bash
+      env:
+        RUN_ID: ${{ github.run_id }}
+        SHARE: ${{ inputs.share }}
+      run: bash "$GITHUB_ACTION_PATH/../../scripts/ci-pool.sh"
