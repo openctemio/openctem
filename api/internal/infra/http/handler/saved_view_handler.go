@@ -127,7 +127,7 @@ func (h *SavedViewHandler) writeErr(w http.ResponseWriter, err error) {
 	case errors.Is(err, savedview.ErrNotFound), errors.Is(err, savedview.ErrUnknownPage), errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("Saved view").WriteJSON(w)
 	case errors.Is(err, savedview.ErrShareForbidden):
-		apierror.Forbidden(err.Error()).WriteJSON(w)
+		apierror.Forbidden("Sharing a view with the organization needs the findings:views:share permission").WriteJSON(w)
 	case errors.Is(err, savedview.ErrNotOwner):
 		apierror.Forbidden("Only the owner can change this view; duplicate it to make your own").WriteJSON(w)
 	case errors.Is(err, savedview.ErrLimit):
