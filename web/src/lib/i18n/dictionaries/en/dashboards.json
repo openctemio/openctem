@@ -114,6 +114,8 @@
   "dashboards.empty.scan": "Set up a scan",
   "dashboards.flow.fixed": "Fixed",
   "dashboards.flow.opened": "New",
+  "dashboards.flowPanel.added": "Exposure flow added at the top",
+  "dashboards.flowPanel.undo": "Undo",
   "dashboards.freshness.building": "Dashboard data is being built for the first time.",
   "dashboards.freshness.failed": "The last refresh failed; these are the last good figures.",
   "dashboards.freshness.manual": "Refreshed on request only",
