@@ -256,13 +256,15 @@ func (s *Service) record(ctx context.Context, actor *admin.AdminUser, prev signu
 			Resource("platform_setting", nil, signupdom.SettingKey).
 			Context(ip, userAgent).
 			Request("PUT", "/api/v1/admin/settings/signup", map[string]any{
-				"previous_mode":           string(prev.Mode),
-				"previous_accounts":       string(prev.AccountSignup()),
-				"previous_request_access": prev.RequestAccess,
-				"mode":                    string(next.Policy.Mode),
-				"accounts":                string(next.Policy.AccountSignup()),
-				"request_access":          next.Policy.RequestAccess,
-				"version":                 next.Version,
+				"previous_mode":             string(prev.Mode),
+				"previous_accounts":         string(prev.AccountSignup()),
+				"previous_request_access":   prev.RequestAccess,
+				"mode":                      string(next.Policy.Mode),
+				"accounts":                  string(next.Policy.AccountSignup()),
+				"request_access":            next.Policy.RequestAccess,
+				"previous_social_auto_link": prev.AutoLinkSocial(),
+				"social_auto_link":          next.Policy.AutoLinkSocial(),
+				"version":                   next.Version,
 			}).
 			Critical().
 			Build()
@@ -291,6 +293,7 @@ func (s *Service) record(ctx context.Context, actor *admin.AdminUser, prev signu
 		"from_mode", logger.SanitizeValue(string(prev.Mode)), "to_mode", logger.SanitizeValue(string(next.Policy.Mode)),
 		"from_accounts", string(prev.AccountSignup()), "to_accounts", string(next.Policy.AccountSignup()),
 		"request_access", strconv.FormatBool(next.Policy.RequestAccess),
+		"social_auto_link", strconv.FormatBool(next.Policy.AutoLinkSocial()),
 		"notified", len(recipients),
 	)
 	if s.notifier == nil || len(recipients) == 0 {

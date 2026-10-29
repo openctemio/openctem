@@ -216,6 +216,35 @@ describe('Dialog with a DialogBody', () => {
     })
     expect(dialog.style.getPropertyValue('--modal-kb')).toBe('0px')
   })
+
+  it('ignores viewport changes while no text field is focused (iOS toolbar, rubber-band)', async () => {
+    pointer(false)
+    const vv = Object.assign(new EventTarget(), {
+      height: window.innerHeight,
+      width: window.innerWidth,
+      offsetTop: 0,
+      offsetLeft: 0,
+      scale: 1,
+    })
+    Object.defineProperty(window, 'visualViewport', { configurable: true, get: () => vv })
+    Element.prototype.scrollIntoView = vi.fn()
+
+    const user = userEvent.setup()
+    render(<FormDialog />)
+    await user.click(screen.getByRole('button', { name: 'Open' }))
+    const dialog = screen.getByRole('dialog')
+    act(() => {
+      screen.getByRole('textbox', { name: 'Title' }).blur()
+    })
+    // The browser's toolbar hides and the bounce moves the visual viewport.
+    act(() => {
+      vv.height = window.innerHeight - 80
+      vv.offsetTop = -40
+      vv.dispatchEvent(new Event('resize'))
+      vv.dispatchEvent(new Event('scroll'))
+    })
+    expect(dialog.style.getPropertyValue('--modal-kb')).not.toMatch(/^[1-9]/)
+  })
 })
 
 describe('Dialog without a DialogBody', () => {

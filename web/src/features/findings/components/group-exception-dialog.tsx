@@ -76,10 +76,27 @@ function isBulkTooLarge(err: unknown): boolean {
   return err instanceof ApiClientError && err.code === 'BULK_TOO_LARGE'
 }
 
+/**
+ * What the exception covers when it is not a remediation task (the open
+ * findings of selected vulnerabilities): its own preview and request calls
+ * and texts. The API resolves the findings as the signed-in person.
+ */
+export interface GroupExceptionTarget {
+  /** Changes when the covered findings change (re-runs the preview). */
+  key: string
+  preview: (body: GroupExceptionInput) => Promise<GroupExceptionPreview>
+  request: (body: GroupExceptionInput) => Promise<ApprovalBatch>
+  description: string
+  pendingText: string
+}
+
 interface GroupExceptionDialogProps {
-  taskId: string
+  /** The remediation task the exception covers (or `target`). */
+  taskId?: string
   /** The task version the page shows; the request is based on it. */
-  taskVersion: number
+  taskVersion?: number
+  /** Another set of findings the exception covers (instead of a task). */
+  target?: GroupExceptionTarget
   open: boolean
   onOpenChange: (open: boolean) => void
   /** The exception was requested. */
@@ -91,6 +108,7 @@ interface GroupExceptionDialogProps {
 export function GroupExceptionDialog({
   taskId,
   taskVersion,
+  target,
   open,
   onOpenChange,
   onCreated,
@@ -117,10 +135,19 @@ export function GroupExceptionDialog({
   const expiryValid = !accepted || (!!expiresAt && expiresAt >= minDate && expiresAt <= maxDate)
   const expiresIso = accepted && expiresAt ? new Date(`${expiresAt}T00:00:00`).toISOString() : ''
 
-  const pendingText = t(
-    'findingApprovals.group.pendingConflict',
-    'This task already has a pending exception. Decide or cancel it first.'
-  )
+  const pendingText =
+    target?.pendingText ??
+    t(
+      'findingApprovals.group.pendingConflict',
+      'This task already has a pending exception. Decide or cancel it first.'
+    )
+  const targetKey = target?.key ?? taskId ?? ''
+  const previewCall = (body: GroupExceptionInput) =>
+    target ? target.preview(body) : approvalBatchApi.preview(taskId ?? '', body)
+  const requestCall = (body: GroupExceptionInput) =>
+    target
+      ? target.request(body)
+      : approvalBatchApi.request(taskId ?? '', { ...body, version: taskVersion })
 
   useEffect(() => {
     if (!open || !reason || !expiryValid) {
@@ -139,7 +166,7 @@ export function GroupExceptionDialog({
         justification: '',
         ...(expiresIso ? { expires_at: expiresIso } : {}),
       }
-      approvalBatchApi.preview(taskId, body).then(
+      previewCall(body).then(
         (res) => {
           if (seq.current !== mine) return
           setPreview(res)
@@ -168,7 +195,7 @@ export function GroupExceptionDialog({
     // pendingText and onPendingConflict are stable enough; re-running on them
     // would re-request the preview on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, taskId, status, reason, expiresIso, expiryValid])
+  }, [open, targetKey, status, reason, expiresIso, expiryValid])
 
   const evaluation = preview?.evaluation
   const minNote = Math.max(1, evaluation?.min_note_length ?? 1)
@@ -202,8 +229,7 @@ export function GroupExceptionDialog({
     if (!canSubmit) return
     setSubmitting(true)
     try {
-      const batch = await approvalBatchApi.request(taskId, {
-        version: taskVersion,
+      const batch = await requestCall({
         requested_status: status,
         closure_reason: reason,
         justification: note.trim(),
@@ -249,10 +275,11 @@ export function GroupExceptionDialog({
         <DialogHeader>
           <DialogTitle>{t('findingApprovals.group.title', 'Request an exception')}</DialogTitle>
           <DialogDescription>
-            {t(
-              'findingApprovals.group.description',
-              'One decision for every open finding of this task. Findings that join the task later are not covered.'
-            )}
+            {target?.description ??
+              t(
+                'findingApprovals.group.description',
+                'One decision for every open finding of this task. Findings that join the task later are not covered.'
+              )}
           </DialogDescription>
         </DialogHeader>
         <DialogBody>

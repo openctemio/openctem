@@ -305,6 +305,13 @@ export interface TargetMapping {
   updated_at: string
 }
 
+/** One pair of the asset type catalog: read-only, changes with a release. */
+export interface RegistryTargetPair {
+  target_type: string
+  asset_type: string
+  sub_type?: string
+}
+
 export interface TargetMappingStats {
   total: number
   by_target_type: Record<string, number>
@@ -396,6 +403,8 @@ export interface PlatformUser {
 }
 
 export interface PlatformUserDetail extends PlatformUser {
+  /** The server can send email. False: copy a reset link, mark email verified. */
+  email_delivery?: boolean
   membership_list: {
     tenant_id: string
     tenant_name: string
@@ -423,7 +432,20 @@ export interface PlatformUserDetail extends PlatformUser {
 }
 
 export type PlatformUserAction =
-  'revoke-sessions' | 'unlock' | 'password-reset' | 'verification-emails' | 'block' | 'unblock'
+  | 'revoke-sessions'
+  | 'unlock'
+  | 'password-reset'
+  | 'verification-emails'
+  | 'block'
+  | 'unblock'
+  | 'mark-verified'
+  | 'mfa/reset'
+
+/** POST /admin/platform-users/{id}/reset-link: shown once, never stored. */
+export interface PlatformUserResetLink {
+  link: string
+  expires_at: string
+}
 
 /** GET /admin/sessions: one open console session (super admin). */
 export interface AdminConsoleSession {
@@ -456,6 +478,7 @@ export type AdminApprovalAction =
   | 'signup.open'
   | 'audit_chain.rebaseline'
   | 'organization.purge'
+  | 'user.reset_mfa'
 
 export type AdminApprovalStatus =
   'pending' | 'approved' | 'rejected' | 'canceled' | 'expired' | 'used'
@@ -838,6 +861,22 @@ export interface StorageQuotaSettings extends SettingChange {
   environment_mb: number
   max_mb: number
   version: number
+}
+
+/** Where CISA KEV and EPSS come from, and how the signed release is doing. */
+export interface ThreatSourceSettings extends SettingChange {
+  source: 'direct' | 'bundle'
+  direct_fetch: 'auto' | 'off'
+  stored: boolean
+  version: number
+  feeds: {
+    source: 'kev' | 'epss'
+    delivered_via?: 'bundle' | 'direct'
+    data_as_of?: string
+    bundle_fetched_at?: string
+    bundle_fresh: boolean
+    bundle_error?: string
+  }[]
 }
 
 /** Settings > Alerts: the alert webhook; address and secret never returned. */

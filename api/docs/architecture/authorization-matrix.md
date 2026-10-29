@@ -814,6 +814,20 @@ Owner and administrator only, on top of the permission: `PUT /api/v1/scan-profil
 | `PUT /api/v1/vulnerabilities/{id}` | `vulnerabilities:write` |
 | `DELETE /api/v1/vulnerabilities/{id}` | `vulnerabilities:delete` |
 
+#### Vulnerabilities list actions (`/api/v1/vulnerability-exposures`)
+
+Each acts on the open findings of the selected CVEs that the list's filter
+selects for the caller (tenant, data scope, private programs compiled as the
+caller); the CVE ids and the filter only narrow that set. Audited.
+([vulnerability page](vulnerability-page.md#bulk-actions))
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `POST /api/v1/vulnerability-exposures/exception/preview`, `POST /api/v1/vulnerability-exposures/exception` | `vulnerabilities:read` + `findings:read` + `findings:write`; at most 500 findings; decided by the organization's approval policy (one or two approvers) |
+| `POST /api/v1/vulnerability-exposures/retests` | `vulnerabilities:read` + `findings:read` + `findings:verify`; at most 50 findings per request, the per-finding cooldown and in-flight caps apply |
+| `GET /api/v1/vulnerability-exposures/export` | `vulnerabilities:read` + `findings:read` + `findings:export`; one export per user at a time, the findings export allowlist |
+| `POST /api/v1/views` with `page=vulnerabilities` | `findings:read` (route) + `vulnerabilities:read` (page); `share_with_org` needs `findings:views:share` (owner and administrator by default) |
+
 #### Dashboard (`/api/v1/dashboard`)
 
 | Endpoint | Permission Required |
@@ -1044,23 +1058,53 @@ and the console echoes the token it received in the sign-in and validate
 responses and keeps in memory). There are **no admin API keys**: an
 `X-Admin-API-Key` or `Authorization: Bearer` header authenticates nothing here,
 so every admin action has passed TOTP. The session resolves to an
-`admin_users` row with a platform role: `super_admin` > `ops_admin` >
-`readonly`. The tenant JWT never authenticates these routes, and the admin
-session never reaches tenant routes.
+`admin_users` row and the platform roles it holds. The tenant JWT never
+authenticates these routes, and the admin session never reaches tenant routes.
 
-Authorization is enforced at the **route layer** in
-`internal/infra/http/routes/admin.go` via `AdminAuthMiddleware.RequireRole(...)`
-— not in the handlers.
+**Platform roles (RFC-134).** Authorization is by platform permission, a
+catalogue of `platform.*` keys in `pkg/domain/platformauthz`, held through
+platform roles stored in `platform_roles`, `platform_role_permissions` and
+`platform_role_assignments` (console database role only; no foreign key to the
+tenant role tables; the tenant catalogue may never use the `platform.` prefix,
+enforced by CHECK constraints on both sides). Built-in roles: `platform_owner`
+(everything), `platform_admin`, `platform_viewer` (the three base roles, one
+per administrator, kept in step with `admin_users.role` = `super_admin`,
+`ops_admin`, `readonly` by a trigger), and the additional roles `operator`,
+`support`, `security_auditor` and `billing`. The role-to-permission matrix is
+in `platformauthz.BuiltinRoles`.
 
-**Acting role.** With `ADMIN_ELEVATION=required` (default) every request acts
-as `readonly` unless the console session holds a live elevation
-(`POST /api/v1/admin/auth/elevate`, a **fresh** step-up, 15-60 minutes, a role
-no higher than the administrator's own; `DELETE` ends it). Elevation never
+Authorization is enforced at the **route layer**: every console route is listed
+with its permission in `adminRoutePermissions`
+(`internal/infra/http/routes/admin_permissions.go`), and the console route
+registration adds `AdminAuthMiddleware.RequirePlatform(permission)` to it. A
+console route that is not listed panics at registration, so nothing is served
+unclassified (deny by default). `TestLegacyTiersKeepTheirRoutes` pins the three
+base roles to the tiers' previous matrix; `TestPlatformRoleRouteMatrix` checks
+every built-in role against every route. Handlers check a permission only for
+part of a response or request (member e-mails `platform.tenants.members.read`,
+owner recovery `platform.tenants.owner_recovery`).
+
+Three actions on a platform user hand over or replace a person's proof of
+identity: the password-reset link (`POST /api/v1/admin/platform-users/{user_id}/reset-link`),
+marking an e-mail verified (`.../mark-verified`) and the two-factor reset
+(`.../mfa/reset`). They need `platform.users.credentials`, which only the owner
+role holds (account support and `platform_admin` hold `platform.users.support`,
+not this); step-up, a reason and the audit row are unchanged, and the
+two-factor reset still needs a second administrator's approval.
+
+**Acting permissions.** With `ADMIN_ELEVATION=required` (default) a request
+acts with the baseline (read) permissions of the roles held unless the console
+session holds a live elevation (`POST /api/v1/admin/auth/elevate {role}`, a
+**fresh** step-up, 15-60 minutes, one platform role whose permissions are all
+held, or the tier names `ops_admin` / `super_admin`; `DELETE` ends it); it then
+also acts with that role's permissions. `GET /admin/auth/validate` returns
+`roles`, `permissions` (acting) and `max_permissions`. Elevation never
 rides a step-up window another action opened: it takes a fresh authenticator
 code or a security-key confirmation given within the last minute, and that
 proof then opens the five-minute step-up window for the protected actions that
-follow. Role checks below use that
-acting role, never the stored one.
+follow. The role columns below name the base role that holds a route's
+permission (super_admin = platform owner, ops_admin = platform admin, any
+admin = every role).
 
 **Step-up on protected actions.** Every identity, privilege and platform-trust
 change also takes the route-level step-up (`middleware.RequireAdminStepUp`): a
@@ -1984,7 +2028,7 @@ a personal address, or be a work domain nobody has verified.
 | `GET/POST/DELETE /business-services/{id}/assets`, `POST/DELETE /business-units/{id}/assets` | **bypass** (names; links change an asset's effective criticality) | the list shows in-scope (and not deleted) assets; linking or unlinking an out-of-scope asset answers 404 (L-10) |
 | `GET /ctem-cycles/{id}/scope` | bypass (asset names of the snapshot) | in-scope assets of the snapshot only (L-10) |
 | `/credentials/**` (list, identities, identity exposures, related, stats, get, reveal, resolve, accept, false-positive, reactivate) | **bypass**: every leak of the tenant, incl. reveal and state changes, while `/exposures/{id}` hid the same row | leaks on in-scope assets only (`dataScopeCond`); an asset-less leak is in nobody's asset scope (unrestricted callers only); by id: 404. Stats count only those (and only credentials) (L-10) |
-| `GET /vulnerabilities/active`, `/active/stats`, MCP `list_active_cves` | bypass (CVE ids, affected counts) | aggregated only over findings on in-scope assets (L-10) |
+| MCP `list_active_cves` (was also `GET /vulnerabilities/active`, `/active/stats`, now removed) | bypass (CVE ids, affected counts) | the vulnerabilities list read: the findings list's compiled filter as the key's owner (L-10) |
 | `GET /groups/{g}/assets` (`groups:read`, a member default) | **bypass** (any team's asset names) | only the group's assets in the caller's scope are listed and counted (L-10) |
 
 ### Dashboards follow the viewer
