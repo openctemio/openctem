@@ -110,6 +110,8 @@
   "dashboards.editor.wider": "Wider",
   "dashboards.editor.widgetRole": "widget",
   "dashboards.editor.width": "{name}: {span} of {cols} columns wide",
+  "dashboards.empty.import": "Import results",
+  "dashboards.empty.scan": "Set up a scan",
   "dashboards.flow.fixed": "Fixed",
   "dashboards.flow.opened": "New",
   "dashboards.freshness.building": "Dashboard data is being built for the first time.",

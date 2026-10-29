@@ -228,7 +228,7 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
                     <CardTitle className="flex items-center gap-2 text-base">
                       <button
                         type="button"
-                        className="truncate text-start hover:underline"
+                        className="min-w-0 truncate text-start hover:underline"
                         onClick={() => openView(d.id)}
                       >
                         {d.name}
@@ -244,8 +244,8 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
                       <CardDescription className="line-clamp-2">{d.description}</CardDescription>
                     ) : null}
                   </CardHeader>
-                  <CardContent className="mt-auto flex items-center justify-between">
-                    <span className="flex gap-3 text-xs text-muted-foreground">
+                  <CardContent className="mt-auto flex flex-wrap items-center justify-between gap-2">
+                    <span className="flex gap-3 whitespace-nowrap text-xs text-muted-foreground">
                       <span>
                         {t('dashboards.manage.widgets', '{n} widgets', { n: d.layout.length })}
                       </span>
@@ -253,7 +253,7 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
                         {t('dashboards.manage.columns', '{n} columns', { n: d.columns ?? 2 })}
                       </span>
                     </span>
-                    <div className="flex gap-1">
+                    <div className="flex flex-wrap gap-1">
                       <Button
                         type="button"
                         size="sm"

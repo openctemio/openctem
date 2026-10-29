@@ -120,4 +120,20 @@ describe('ReceiptHistory', () => {
     expect(screen.queryByTestId('receipt-totals')).not.toBeInTheDocument()
     expect(screen.getAllByText(/Import and run receipts/).length).toBeGreaterThan(0)
   })
+
+  it('says there are no receipts yet when no filter is set, and blames filters only when one is', () => {
+    swr.data = { ...(swr.data as object), data: [], total: 0, totals: undefined }
+    vi.mocked(useSearchParams).mockReturnValue(
+      new URLSearchParams('') as unknown as ReturnType<typeof useSearchParams>
+    )
+    const { unmount } = render(<ReceiptHistory />)
+    expect(screen.getByText('No receipts yet.')).toBeInTheDocument()
+    expect(screen.queryByText('No receipts match these filters.')).not.toBeInTheDocument()
+    unmount()
+    vi.mocked(useSearchParams).mockReturnValue(
+      new URLSearchParams('origin=sensor') as unknown as ReturnType<typeof useSearchParams>
+    )
+    render(<ReceiptHistory />)
+    expect(screen.getByText('No receipts match these filters.')).toBeInTheDocument()
+  })
 })
