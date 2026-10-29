@@ -1897,29 +1897,41 @@ func newSensorPairingHandler(svc *Services, log *logger.Logger) *handler.SensorP
 // /easm/candidates, the pending count of /approvals, /me/pins and the organization
 // policy of /auth/providers.
 func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) handler.BootstrapSession {
-	s := handler.BootstrapSession{}
+	boot := handler.BootstrapSession{}
 	if h.User != nil {
-		s.Me = h.User.MeResponse
-		s.MyTenants = h.User.MyTenantsResponse
+		boot.Me = h.User.MeResponse
+		boot.MyTenants = h.User.MyTenantsResponse
 	}
 	if svc.Notification != nil {
-		s.UnreadCount = svc.Notification.GetUnreadCount
+		boot.UnreadCount = svc.Notification.GetUnreadCount
 	}
 	if h.EASM != nil && h.EASM.HasReview() {
-		s.EASMReviewCount = h.EASM.ReviewCount
+		boot.EASMReviewCount = h.EASM.ReviewCount
 	}
 	if h.Announcement != nil {
-		s.Announcements = h.Announcement.ActiveResponses
+		boot.Announcements = h.Announcement.ActiveResponses
 	}
 	if svc.Entitlement != nil {
-		s.LimitsApply = svc.Entitlement.Applies
+		boot.LimitsApply = svc.Entitlement.Applies
 	}
 	if h.NavPin != nil {
-		s.Pins = h.NavPin.Response
+		boot.Pins = h.NavPin.Response
+	}
+	if h.SupportAccess != nil {
+		boot.SupportAccess = h.SupportAccess.ActiveResponse
+	}
+	if svc.AITriage != nil {
+		triage := svc.AITriage
+		boot.AIConfig = func(ctx context.Context, tenantID shared.ID) (any, error) {
+			return triage.GetAIConfig(ctx, tenantID.String())
+		}
+	}
+	if h.SLA != nil && svc.SLA != nil {
+		boot.SLA = h.SLA.BootstrapPart
 	}
 	if svc.Vulnerability != nil {
 		vulns := svc.Vulnerability
-		s.PendingApprovalCount = func(ctx context.Context, tenantID shared.ID) (int, error) {
+		boot.PendingApprovalCount = func(ctx context.Context, tenantID shared.ID) (int, error) {
 			page, err := vulns.ListApprovals(ctx, tenantID.String(), string(vulnerability.ApprovalStatusPending), 1, 1)
 			if err != nil {
 				return 0, err
@@ -1932,7 +1944,7 @@ func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) hand
 		mode = string(signupdom.ModeSelfService)
 	}
 	signup := svc.Signup
-	s.TenantCreationMode = func(ctx context.Context) string {
+	boot.TenantCreationMode = func(ctx context.Context) string {
 		if signup != nil {
 			return string(signup.Current(ctx).Mode)
 		}
@@ -1941,8 +1953,8 @@ func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) hand
 	// The same answer as GET /auth/providers (routes/auth.go): a server
 	// without local auth reports no email delivery.
 	localAuth := h.LocalAuth
-	s.EmailDelivery = func() bool { return localAuth != nil && localAuth.EmailDeliveryAvailable() }
-	return s
+	boot.EmailDelivery = func() bool { return localAuth != nil && localAuth.EmailDeliveryAvailable() }
+	return boot
 }
 
 // newEASMLookalikeHandler serves lookalike monitoring; changes are audited.
