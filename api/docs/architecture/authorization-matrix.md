@@ -814,6 +814,20 @@ Owner and administrator only, on top of the permission: `PUT /api/v1/scan-profil
 | `PUT /api/v1/vulnerabilities/{id}` | `vulnerabilities:write` |
 | `DELETE /api/v1/vulnerabilities/{id}` | `vulnerabilities:delete` |
 
+#### Vulnerabilities list actions (`/api/v1/vulnerability-exposures`)
+
+Each acts on the open findings of the selected CVEs that the list's filter
+selects for the caller (tenant, data scope, private programs compiled as the
+caller); the CVE ids and the filter only narrow that set. Audited.
+([vulnerability page](vulnerability-page.md#bulk-actions))
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `POST /api/v1/vulnerability-exposures/exception/preview`, `POST /api/v1/vulnerability-exposures/exception` | `vulnerabilities:read` + `findings:read` + `findings:write`; at most 500 findings; decided by the organization's approval policy (one or two approvers) |
+| `POST /api/v1/vulnerability-exposures/retests` | `vulnerabilities:read` + `findings:read` + `findings:verify`; at most 50 findings per request, the per-finding cooldown and in-flight caps apply |
+| `GET /api/v1/vulnerability-exposures/export` | `vulnerabilities:read` + `findings:read` + `findings:export`; one export per user at a time, the findings export allowlist |
+| `POST /api/v1/views` with `page=vulnerabilities` | `findings:read` (route) + `vulnerabilities:read` (page); `share_with_org` needs `findings:views:share` (owner and administrator by default) |
+
 #### Dashboard (`/api/v1/dashboard`)
 
 | Endpoint | Permission Required |
@@ -1984,7 +1998,7 @@ a personal address, or be a work domain nobody has verified.
 | `GET/POST/DELETE /business-services/{id}/assets`, `POST/DELETE /business-units/{id}/assets` | **bypass** (names; links change an asset's effective criticality) | the list shows in-scope (and not deleted) assets; linking or unlinking an out-of-scope asset answers 404 (L-10) |
 | `GET /ctem-cycles/{id}/scope` | bypass (asset names of the snapshot) | in-scope assets of the snapshot only (L-10) |
 | `/credentials/**` (list, identities, identity exposures, related, stats, get, reveal, resolve, accept, false-positive, reactivate) | **bypass**: every leak of the tenant, incl. reveal and state changes, while `/exposures/{id}` hid the same row | leaks on in-scope assets only (`dataScopeCond`); an asset-less leak is in nobody's asset scope (unrestricted callers only); by id: 404. Stats count only those (and only credentials) (L-10) |
-| `GET /vulnerabilities/active`, `/active/stats`, MCP `list_active_cves` | bypass (CVE ids, affected counts) | aggregated only over findings on in-scope assets (L-10) |
+| MCP `list_active_cves` (was also `GET /vulnerabilities/active`, `/active/stats`, now removed) | bypass (CVE ids, affected counts) | the vulnerabilities list read: the findings list's compiled filter as the key's owner (L-10) |
 | `GET /groups/{g}/assets` (`groups:read`, a member default) | **bypass** (any team's asset names) | only the group's assets in the caller's scope are listed and counted (L-10) |
 
 ### Dashboards follow the viewer

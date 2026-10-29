@@ -364,6 +364,23 @@ func (m *threatIntelMockSyncStatusRepo) GetDueForSync(_ context.Context) ([]*thr
 	return result, nil
 }
 
+// TryStart mirrors the repository claim: a missing source cannot be claimed,
+// and a row that is already running is refused.
+func (m *threatIntelMockSyncStatusRepo) TryStart(_ context.Context, source string, _ time.Duration) (bool, error) {
+	if m.updateErr != nil {
+		return false, m.updateErr
+	}
+	st, ok := m.statuses[source]
+	if !ok {
+		return false, nil
+	}
+	if st.LastSyncStatus() == threatintel.SyncStateRunning {
+		return false, nil
+	}
+	st.MarkSyncStarted()
+	return true, nil
+}
+
 func (m *threatIntelMockSyncStatusRepo) Update(_ context.Context, status *threatintel.SyncStatus) error {
 	if m.updateErr != nil {
 		return m.updateErr

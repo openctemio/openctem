@@ -17,9 +17,12 @@ import (
 //	                                           organization): super_admin + fresh
 //	                                           step-up + reason (critical audit)
 //	/admin/settings/storage-quota  any admin   PUT: super_admin + step-up (audited)
+//	/admin/settings/threat-intel-source  any admin   PUT: super_admin + step-up (audited)
 //	/admin/settings/alerts         any admin   PUT: super_admin + fresh step-up + reason
 //	                                           (critical audit, admins told);
 //	                                           test: super_admin
+//	/admin/settings/auth-mfa       any admin   PUT: super_admin + fresh step-up + reason
+//	                                           (critical audit, admins told)
 //	/admin/settings/email-relay    any admin   PUT: super_admin + fresh step-up + reason
 //	                                           (critical audit, admins told)
 //	/admin/settings/ai             any admin   PUT: super_admin + fresh step-up + reason
@@ -48,6 +51,7 @@ func registerAdminPlatformSettingsRoutes(router Router, h Handlers, adminMiddlew
 		}
 	}
 	captcha, region, quota, alerts, ai := ps.Captcha != nil, ps.Region != nil, ps.StorageQuota != nil, ps.Alerts != nil, ps.AI != nil
+	threatSource := ps.ThreatSource != nil
 	social := ps.SocialLogin != nil
 	// The client check asks a provider with a secret: bounded like a sign-in
 	// attempt, in its own bucket.
@@ -64,6 +68,15 @@ func registerAdminPlatformSettingsRoutes(router Router, h Handlers, adminMiddlew
 	router.Group("/api/v1/admin/settings/storage-quota", func(r Router) {
 		r.GET("/", on(quota, ps.GetStorageQuota))
 		r.PUT("/", on(quota, ps.UpdateStorageQuota), requireSuper, stepUp("settings.storage_quota"))
+	}, adminMiddlewares...)
+	router.Group("/api/v1/admin/settings/threat-intel-source", func(r Router) {
+		r.GET("/", on(threatSource, ps.GetThreatSource))
+		r.PUT("/", on(threatSource, ps.UpdateThreatSource), requireSuper, stepUp("settings.threat_intel_source"))
+	}, adminMiddlewares...)
+	mfaFloor := ps.MFA != nil
+	router.Group("/api/v1/admin/settings/auth-mfa", func(r Router) {
+		r.GET("/", on(mfaFloor, ps.GetMFAFloor))
+		r.PUT("/", on(mfaFloor, ps.UpdateMFAFloor), requireSuper, freshStepUp("settings.auth_mfa"))
 	}, adminMiddlewares...)
 	emailRelay := ps.EmailRelay != nil
 	router.Group("/api/v1/admin/settings/email-relay", func(r Router) {
