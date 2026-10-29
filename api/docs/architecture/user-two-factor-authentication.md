@@ -60,6 +60,9 @@ an old password hash. Federated accounts get
 
 ## Organization policy ("Require MFA")
 
+The platform also sets a floor that an organization can only raise, with a grace period and a factor required
+before creating credentials: see [platform two-factor floor](two-factor-floor.md).
+
 The setting is `tenant.settings.security.mfa_required`. Only the owner can change it,
 through `PATCH /tenants/{t}/settings/security` (Settings → Organization → Security).
 

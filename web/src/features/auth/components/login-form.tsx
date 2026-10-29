@@ -27,6 +27,7 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { PasswordInput } from '@/components/password-input'
 import { IconGoogle, IconGithub, IconMicrosoft } from '@/assets/brand-icons'
 
@@ -141,8 +142,6 @@ export function LoginForm({
   const [captchaRequired, setCaptchaRequired] = useState(false)
   const [captchaToken, setCaptchaToken] = useState('')
   const [captchaReset, setCaptchaReset] = useState(0)
-  // After a failed sign-in: administrators of the platform sign in elsewhere.
-  const [signInFailed, setSignInFailed] = useState(false)
   const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null)
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -162,12 +161,21 @@ export function LoginForm({
   // Only a known code's message is shown, never the raw parameter: a crafted
   // link must not put arbitrary text on the sign-in page.
   const errorParam = searchParams.get('error')
+  // A social sign-in to a linked password account comes back here for its
+  // second factor (the challenge is in an httpOnly cookie).
+  const mfaParam = searchParams.get('mfa')
+  useEffect(() => {
+    if (mfaParam === 'verify' || mfaParam === 'enroll') setMfaPurpose(mfaParam)
+  }, [mfaParam])
   const { t } = useTranslation()
   const loginError = errorParam ? loginErrorMessage(errorParam) : null
   const errorMessage = loginError ? t(loginError.key, loginError.fallback) : null
+  // A social sign-in found an account that signs in another way: the notice
+  // stays on the page with what to do, instead of a toast that fades.
+  const accountExists = errorParam === 'account_exists'
   useEffect(() => {
-    if (errorMessage) toast.error(errorMessage)
-  }, [errorMessage])
+    if (errorMessage && !accountExists) toast.error(errorMessage)
+  }, [errorMessage, accountExists])
 
   // Sent when a session ended because an organization requires two-factor
   // authentication and the session could not set it up. Only the known value
@@ -292,7 +300,6 @@ export function LoginForm({
       setCaptchaRequired(true)
       toast.error(t('auth.login.captchaRequired'))
     } else {
-      setSignInFailed(true)
       toast.error(authErrorText(result.code, t, t('auth.login.failed', 'Sign-in failed')))
     }
   }
@@ -384,6 +391,18 @@ export function LoginForm({
         className={cn('grid gap-3', className)}
         {...props}
       >
+        {accountExists && (
+          <Alert role="alert" data-testid="login-account-exists">
+            <AlertTitle>{t('auth.accountExists.title')}</AlertTitle>
+            <AlertDescription>
+              <p>{errorMessage}</p>
+              <Link href="/forgot-password" className="font-medium underline underline-offset-4">
+                {t('auth.accountExists.resetPassword')}
+              </Link>
+            </AlertDescription>
+          </Alert>
+        )}
+
         {/* Email Field */}
         <FormField
           control={form.control}
@@ -442,12 +461,6 @@ export function LoginForm({
         )}
 
         {unverifiedEmail && <ResendVerification email={unverifiedEmail} />}
-
-        {signInFailed && (
-          <p className="text-muted-foreground text-sm" role="note">
-            {t('auth.login.platformAdminHint')}
-          </p>
-        )}
 
         {/* Submit Button */}
         <Button className="mt-2" disabled={isLoading} type="submit">

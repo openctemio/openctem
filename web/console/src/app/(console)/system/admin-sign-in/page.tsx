@@ -9,7 +9,7 @@ import { useAdminUsers } from '@console/features/admin-console/api/use-admin-use
 import { usePlatformIdP } from '@console/features/admin-console/api/use-platform-idp'
 import { PlatformIdPForm } from '@console/features/admin-console/components/platform-idp-form'
 import { ConsoleMfaPolicyCard } from '@console/features/admin-console/components/console-mfa-policy-card'
-import { adminCan } from '@console/features/admin-console/types'
+import { adminHas } from '@console/features/admin-console/types'
 import { RoleRequiredNotice } from '@console/features/admin-console/components/role-required-notice'
 
 /**
@@ -20,7 +20,7 @@ import { RoleRequiredNotice } from '@console/features/admin-console/components/r
 export default function AdminSignInPage() {
   const me = useAdmin()
   const { t } = useTranslation()
-  const isSuper = adminCan(me.role, 'super_admin')
+  const isSuper = adminHas(me, 'platform.identity.manage')
   const { data, error, isLoading, mutate } = usePlatformIdP(isSuper)
   const { data: admins } = useAdminUsers(1, isSuper)
 

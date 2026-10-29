@@ -41,3 +41,15 @@ func (r *AssetRouteResolver) ResolveAssetRoute(ctx context.Context, tenantID, as
 	}
 	return string(a.Scope()), string(a.Criticality()), nil, nil
 }
+
+var _ appjira.AssetNameResolver = (*AssetRouteResolver)(nil)
+
+// AssetName returns the name of the finding's asset (tenant-scoped read), for
+// the ticket summary's target.
+func (r *AssetRouteResolver) AssetName(ctx context.Context, tenantID, assetID shared.ID) (string, error) {
+	a, err := r.assets.GetByID(ctx, tenantID, assetID)
+	if err != nil {
+		return "", err
+	}
+	return a.Name(), nil
+}

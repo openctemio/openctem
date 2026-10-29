@@ -20,6 +20,7 @@ import {
   TaskPlacementPanel,
   WhyWaitingButton,
 } from '@/features/scans/components/task-placement'
+import { placementHelp } from '@/features/scans/lib/placement-help'
 
 /**
  * Who runs a task: "Platform scanning" (never a platform sensor's name), the
@@ -52,7 +53,12 @@ const RELEASED_PREFIX = 'released by sensor'
 export function taskStatusNote(
   task: Pick<
     RunTask,
-    'status' | 'error_message' | 'window_hold' | 'waiting_on_hosts' | 'host_wait'
+    | 'status'
+    | 'error_message'
+    | 'window_hold'
+    | 'waiting_on_hosts'
+    | 'host_wait'
+    | 'withheld_reason'
   >,
   t: Translate = enTranslate,
   runId = ''
@@ -68,6 +74,18 @@ export function taskStatusNote(
       return { kind: 'waiting', text: hostWaitLine(task.host_wait, runId, t), full: true }
     }
     return { kind: 'waiting', text: t('scans.tasks.waitingForHosts') }
+  }
+  // A sensor's dispatch gate kept the task from it (its grant, its local
+  // policy, the scan's intensity): the reason, translated, instead of the
+  // generic "no sensor took it".
+  if (task.withheld_reason && (task.status === 'queued' || task.status === 'failed')) {
+    return {
+      kind: task.status === 'queued' ? 'waiting' : 'error',
+      text: t('scans.tasks.withheld', undefined, {
+        reason: placementHelp(task.withheld_reason, t).text,
+      }),
+      full: true,
+    }
   }
   const msg = task.error_message?.trim()
   if (!msg) return null
@@ -139,6 +157,7 @@ export function taskProgressNote(
 
 /** Skip reasons that have a translated label. */
 const SKIP_REASONS = new Set([
+  'target_unresolvable',
   'unresolvable',
   'wildcard_pattern',
   'denied_by_policy',
@@ -162,6 +181,25 @@ export function taskSkippedNote(
   const list = task.skipped_targets ?? []
   const total = Math.max(task.skipped_targets_total ?? 0, list.length)
   if (total <= 0) return null
+  // Names that no longer resolve are a fact about the names, not a policy
+  // outcome: said as such, in plain words, when that is all that was skipped.
+  const allGone =
+    list.length > 0 &&
+    list.every((s) => s.reason === 'target_unresolvable' || s.reason === 'unresolvable')
+  if (allGone) {
+    const names = list.slice(0, SKIPPED_NAMED).map((s) => s.target ?? '?')
+    let text = t(
+      total === 1 ? 'scans.tasks.noLongerResolveOne' : 'scans.tasks.noLongerResolveMany',
+      undefined,
+      {
+        count: total,
+      }
+    )
+    text += `: ${names.join(', ')}`
+    const rest = total - names.length
+    if (rest > 0) text += t('scans.tasks.andMore', undefined, { count: rest })
+    return text
+  }
   const named = list
     .slice(0, SKIPPED_NAMED)
     .map(

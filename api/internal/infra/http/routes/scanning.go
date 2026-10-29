@@ -189,9 +189,9 @@ func registerSensorManagementRoutes(
 		// Creating a sensor and regenerating its key mint a persistent
 		// credential, so they need a recent sign-in (step-up), as an API key
 		// does. Revoking and deleting stay one click.
-		r.POST("/", h.Create, middleware.Require(permission.SensorsWrite), requireStepUp())
+		r.POST("/", h.Create, middleware.Require(permission.SensorsWrite), requireStepUp(), requireCredentialFactor())
 		r.PUT("/{id}", h.Update, middleware.Require(permission.SensorsWrite), own)
-		r.POST("/{id}/regenerate-key", h.RegenerateAPIKey, middleware.Require(permission.SensorsWrite), requireStepUp(), own)
+		r.POST("/{id}/regenerate-key", h.RegenerateAPIKey, middleware.Require(permission.SensorsWrite), requireStepUp(), requireCredentialFactor(), own)
 
 		// Status operations (admin-controlled)
 		r.POST("/{id}/activate", h.Activate, middleware.Require(permission.SensorsWrite), own)
@@ -779,9 +779,9 @@ func registerSecretStoreRoutes(
 		// to an outside system (Git tokens, cloud keys), so every change
 		// needs a fresh step-up: a stolen session cannot plant, swap or
 		// remove one.
-		r.POST("/", h.Create, middleware.Require(permission.SecretStoreWrite), middleware.RequireAdmin(), requireStepUp())
-		r.PUT("/{id}", h.Update, middleware.Require(permission.SecretStoreWrite), middleware.RequireAdmin(), requireStepUp())
-		r.POST("/{id}/rotate", h.Rotate, middleware.Require(permission.SecretStoreWrite), middleware.RequireAdmin(), requireStepUp())
+		r.POST("/", h.Create, middleware.Require(permission.SecretStoreWrite), middleware.RequireAdmin(), requireStepUp(), requireCredentialFactor())
+		r.PUT("/{id}", h.Update, middleware.Require(permission.SecretStoreWrite), middleware.RequireAdmin(), requireStepUp(), requireCredentialFactor())
+		r.POST("/{id}/rotate", h.Rotate, middleware.Require(permission.SecretStoreWrite), middleware.RequireAdmin(), requireStepUp(), requireCredentialFactor())
 
 		// Delete operations
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.SecretStoreDelete), middleware.RequireAdmin(), requireStepUp())

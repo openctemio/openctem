@@ -42,6 +42,10 @@ import {
 } from '@/features/scope/components/scope-entries-table'
 import { ScopeExclusionsTable } from '@/features/scope/components/scope-exclusions-table'
 import { ScopeExclusionDialog } from '@/features/scope/components/scope-exclusion-dialog'
+import { noLongerOursPattern } from '@/features/scope/lib/exclusion-kind'
+import { entryStatus } from '@/features/scope/lib/scope-entry'
+import { setScopeTargetActive } from '@/features/scope/api/use-scope-api'
+import type { ApiScopeTarget, ScopeExclusionKind } from '@/features/scope/api/scope-api.types'
 import { ScopeApprovals, usePendingScopeChanges } from '@/features/scope/components/scope-approvals'
 import { ScopeOnboarding } from '@/features/scope/components/scope-onboarding'
 import { useTranslation } from '@/context/i18n-provider'
@@ -80,6 +84,26 @@ export default function ScopePage() {
 
   const [addOpen, setAddOpen] = useState(false)
   const [excludeOpen, setExcludeOpen] = useState(false)
+  // "No longer ours" on an entry: the exclusion dialog opens prefilled, and
+  // the entry is deactivated once the exclusion is saved (research/320).
+  const [excludeInitial, setExcludeInitial] = useState<
+    { pattern: string; kind: ScopeExclusionKind } | undefined
+  >(undefined)
+  const [retireEntry, setRetireEntry] = useState<ApiScopeTarget | null>(null)
+  const noLongerOurs = (entry: ApiScopeTarget) => {
+    const pattern = noLongerOursPattern(entry)
+    if (!pattern) return
+    setExcludeInitial({ pattern, kind: 'not_ours' })
+    setRetireEntry(entry)
+    setExcludeOpen(true)
+  }
+  const openExclude = (open: boolean) => {
+    setExcludeOpen(open)
+    if (!open) {
+      setExcludeInitial(undefined)
+      setRetireEntry(null)
+    }
+  }
 
   const selectTab = (next: string) => {
     if (next === tab) return
@@ -178,7 +202,7 @@ export default function ScopePage() {
   const primary =
     tab === 'out'
       ? canWrite && (
-          <Button size="sm" onClick={() => setExcludeOpen(true)}>
+          <Button size="sm" onClick={() => openExclude(true)}>
             <ShieldOff className="h-4 w-4" />
             {t('scope.putOut', 'Put out of scope')}
           </Button>
@@ -246,6 +270,7 @@ export default function ScopePage() {
         {tab === 'in' ? (
           <ScopeEntriesTable
             leading={listSelect}
+            onNoLongerOurs={noLongerOurs}
             query={query}
             searchInput={searchInput}
             onSearchInput={setSearchInput}
@@ -292,8 +317,14 @@ export default function ScopePage() {
       <ScopeEntryDialog open={addOpen} onOpenChange={setAddOpen} onShowExisting={showExisting} />
       <ScopeExclusionDialog
         open={excludeOpen}
-        onOpenChange={setExcludeOpen}
+        onOpenChange={openExclude}
         onShowExisting={showExisting}
+        initial={excludeInitial}
+        onCreated={() => {
+          // Deactivating narrows scope: no step-up, no approval.
+          if (retireEntry?.id && entryStatus(retireEntry) === 'active')
+            void setScopeTargetActive(retireEntry.id, false).catch(() => undefined)
+        }}
       />
     </Main>
   )

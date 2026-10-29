@@ -193,6 +193,12 @@ export function TaskPlacementPanel({ runId, taskId }: { runId: string; taskId: s
           {sharedFleetNote(data, t) && (
             <p className="text-muted-foreground">{sharedFleetNote(data, t)}</p>
           )}
+          {data.withheld && !reasons.some((r) => r.code === data.withheld) && (
+            <div className="space-y-1" data-slot="placement-withheld">
+              <p className="text-muted-foreground">{t('scans.placement.withheldBy')}</p>
+              <CodeHelpLine help={placementHelp(data.withheld, t)} />
+            </div>
+          )}
           {(data.host_wait?.holders ?? [])
             .filter((h) => h.run_id && h.run_id !== runId)
             .slice(0, 1)
@@ -231,7 +237,9 @@ export function TaskPlacementPanel({ runId, taskId }: { runId: string; taskId: s
                         <span className="text-muted-foreground">
                           {s.eligible
                             ? s.busy
-                              ? t('scans.placement.sensorBusy')
+                              ? (s.reasons ?? []).includes('sensor_overloaded')
+                                ? t('scans.placement.sensorOverloaded')
+                                : t('scans.placement.sensorBusy')
                               : s.yields
                                 ? t('scans.placement.sensorYields')
                                 : t('scans.placement.sensorEligible')

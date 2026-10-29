@@ -132,7 +132,11 @@ type AuthService struct {
 	sessionRepo      sessiondom.Repository
 	refreshTokenRepo sessiondom.RefreshTokenRepository
 	tenantRepo       tenantdom.Repository
-	passwordHasher   *password.Hasher
+	// mfaFloor is the platform two-factor floor and privilege resolves who
+	// is an administrator by effective grants (SetMFAFloor).
+	mfaFloor       MFAFloorSource
+	privilege      PrivilegeSource
+	passwordHasher *password.Hasher
 	// dummyHash is a hash of a random secret, made once with passwordHasher
 	// (same algorithm and cost as real passwords), for the constant-time
 	// paths: see dummyPasswordHash.
@@ -141,7 +145,7 @@ type AuthService struct {
 	tokenGenerator *jwt.Generator
 	config         config.AuthConfig
 	logger         *logger.Logger
-	platformAdmins PlatformAdminGate
+	breakGlassGate BreakGlassGate
 	auditService   *auditapp.AuditService
 	roleService    *accesscontrol.RoleService // Optional: for database-driven role permissions
 	// grants overrides roleService for the effective-privilege checks (tests).
@@ -788,10 +792,10 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (result *Logi
 		return nil, err
 	}
 
-	// A platform administrator signs in on the admin console only. The answer
-	// is the wrong-password one, given before any other account state (email
+	// A break-glass account signs in on the admin console only. The answer is
+	// the wrong-password one, given before any other account state (email
 	// verification, second factor) can tell the account apart.
-	if refusePlatformAdmin(ctx, s.platformAdmins, s.logger, u, "password") {
+	if refuseBreakGlass(ctx, s.breakGlassGate, s.logger, u, "password") {
 		return nil, ErrInvalidCredentials
 	}
 
@@ -840,8 +844,8 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (result *Logi
 // password plus second factor) and returns the global refresh token and the
 // user's memberships.
 func (s *AuthService) completeLogin(ctx context.Context, u *userdom.User, ipAddress, userAgent string) (*LoginResult, error) {
-	// Backstop for the second-factor steps: no session for an administrator.
-	if refusePlatformAdmin(ctx, s.platformAdmins, s.logger, u, "login_completion") {
+	// Backstop for the second-factor steps: no session for a break-glass account.
+	if refuseBreakGlass(ctx, s.breakGlassGate, s.logger, u, "login_completion") {
 		return nil, ErrInvalidCredentials
 	}
 	// Check session limit
@@ -1272,7 +1276,7 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
 
-	if refusePlatformAdmin(ctx, s.platformAdmins, s.logger, u, "token_exchange") {
+	if refuseBreakGlass(ctx, s.breakGlassGate, s.logger, u, "token_exchange") {
 		return nil, sessiondom.ErrRefreshTokenRevoked
 	}
 	// A blocked or suspended account mints nothing, whatever way its session
@@ -1597,9 +1601,8 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
 
-	// A platform administrator holds no main-site session (one issued before
-	// the account became an administrator stops here too).
-	if refusePlatformAdmin(ctx, s.platformAdmins, s.logger, u, "refresh_token") {
+	// A break-glass account holds no main-site session.
+	if refuseBreakGlass(ctx, s.breakGlassGate, s.logger, u, "refresh_token") {
 		return nil, sessiondom.ErrRefreshTokenRevoked
 	}
 	if !u.IsActive() {

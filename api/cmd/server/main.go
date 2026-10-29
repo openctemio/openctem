@@ -296,6 +296,11 @@ func run() int {
 	if services.Auth != nil && services.Email != nil {
 		services.Auth.SetSecurityNotifier(services.Email)
 	}
+	// A social sign-in method linked or unlinked is told to the account's
+	// mailbox.
+	if services.OAuth != nil && services.Email != nil {
+		services.OAuth.SetIdentityNotifier(services.Email)
+	}
 
 	// Owners of an organization whose e-mail channel was stopped by the
 	// managed service rules are told in-app and through the system SMTP.
@@ -392,6 +397,7 @@ func run() int {
 			tenant.NewOrganizationCreator(services.Tenant, services.UserProvisioning, repos.User, log),
 			accessRequestMailer{email: services.Email, appName: cfg.Brand.DisplayName(), log: log},
 			captcha, cfg.SMTP.BaseURL, log)
+		services.AccessRequest.SetUserLookup(repos.User)
 	}
 	wireSignupEvents(services, repos, redisClient, cfg, log)
 

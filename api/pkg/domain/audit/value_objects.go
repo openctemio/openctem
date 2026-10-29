@@ -231,6 +231,9 @@ const (
 	// ActionFindingEvidenceUpdated records a change to the role or order of a
 	// finding's evidence items.
 	ActionFindingEvidenceUpdated Action = "finding.evidence_updated"
+	// ActionFindingProofOverridden records a pentest finding confirmed without
+	// a proof basis, on the stated reason.
+	ActionFindingProofOverridden Action = "finding.proof_basis_overridden"
 	// ActionFindingRemediationStepAdded records a manually-appended remediation
 	// step on a generic finding.
 	ActionFindingRemediationStepAdded Action = "finding.remediation_step_added"
@@ -329,6 +332,11 @@ const (
 	ActionAuthMFARecoveryCodesRegenerated Action = "auth.mfa_recovery_codes_regenerated"
 	ActionAuthSessionRevoked              Action = "auth.session_revoked"
 	ActionAuthPasswordChanged             Action = "auth.password_changed"
+	// A social sign-in identity (Google, GitHub, Microsoft) was linked to or
+	// unlinked from the account: by the person from Account > Security, or
+	// automatically on a sign-in that met the auto-link rules.
+	ActionAuthIdentityLinked   Action = "auth.identity_linked"
+	ActionAuthIdentityUnlinked Action = "auth.identity_unlinked"
 	// Step-up re-authentication: the signed-in user proved their identity
 	// again (TOTP or password) before a sensitive action, or failed to.
 	ActionAuthStepUp       Action = "auth.step_up"
@@ -560,6 +568,10 @@ const (
 	ActionScopeExclusionDeactivated Action = "scope_exclusion.deactivated"
 	ActionScopeExclusionApproved    Action = "scope_exclusion.approved"
 	ActionScopeExclusionRejected    Action = "scope_exclusion.rejected"
+	// ActionScopeEffectsApplied: the platform closed or reopened findings
+	// because their assets went out of scope for good or came back
+	// (research/320). One entry per reconcile pass per organization.
+	ActionScopeEffectsApplied Action = "scope_exclusion.effects_applied"
 
 	// Suppression rule approvals. A self-approval (the owner approving their
 	// own rule because nobody else can, owner decision B16) is Critical.
@@ -850,7 +862,7 @@ func (a Action) IsValid() bool {
 		ActionVulnerabilityCreated, ActionVulnerabilityUpdated, ActionVulnerabilityDeleted,
 		ActionFindingCreated, ActionFindingUpdated, ActionFindingDeleted, ActionFindingStatusChanged,
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
-		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingEvidenceUpdated, ActionFindingRemediationStepAdded,
+		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingEvidenceUpdated, ActionFindingProofOverridden, ActionFindingRemediationStepAdded,
 		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
 		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingVerificationChecklistUpdated, ActionFindingClassified,
 		ActionFindingRetestCheckSaved, ActionFindingRetestCheckRemoved, ActionFindingRetestCheckApproved,
@@ -864,7 +876,7 @@ func (a Action) IsValid() bool {
 		ActionAuthLogin, ActionAuthLogout, ActionAuthRegister, ActionAuthFailed, ActionPermissionDenied, ActionTokenRevoked,
 		ActionAuthMFAEnabled, ActionAuthMFADisabled, ActionAuthMFAReset, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
 		ActionAuthMFARecoveryCodesRegenerated, ActionAuthSessionRevoked, ActionAuthPasswordChanged,
-		ActionAuthStepUp, ActionAuthStepUpFailed,
+		ActionAuthStepUp, ActionAuthStepUpFailed, ActionAuthIdentityLinked, ActionAuthIdentityUnlinked,
 		ActionSettingsUpdated, ActionDataExported, ActionDataImported,
 		ActionSensorCreated, ActionSensorUpdated, ActionSensorDeleted,
 		ActionSensorActivated, ActionSensorDeactivated, ActionSensorRevoked,
@@ -906,6 +918,7 @@ func (a Action) IsValid() bool {
 		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionDeleted,
 		ActionScopeExclusionActivated, ActionScopeExclusionDeactivated,
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
+		ActionScopeEffectsApplied,
 		ActionExposureDispositionRequested, ActionExposureDispositionApproved, ActionExposureDispositionSelfApproved, ActionExposureDispositionRejected,
 		ActionExposureDispositionSelfApprovalRefused,
 		ActionSuppressionRuleApproved, ActionSuppressionRuleSelfApproved, ActionSuppressionRuleSelfApprovalRefused,
@@ -991,7 +1004,7 @@ func (a Action) Category() string {
 		return "vulnerability"
 	case ActionFindingCreated, ActionFindingUpdated, ActionFindingDeleted, ActionFindingStatusChanged,
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
-		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingEvidenceUpdated, ActionFindingRemediationStepAdded,
+		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingEvidenceUpdated, ActionFindingProofOverridden, ActionFindingRemediationStepAdded,
 		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
 		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingVerificationChecklistUpdated, ActionFindingClassified, ActionFindingCommentReactionRemoved, ActionFindingCommentEdited, ActionFindingCommentDeleted, ActionFindingDuplicateMarked, ActionFindingIssueUnlinked, ActionFindingBountyReportChanged,
 		ActionFindingRetestCheckSaved, ActionFindingRetestCheckRemoved, ActionFindingRetestCheckApproved,
@@ -1007,7 +1020,7 @@ func (a Action) Category() string {
 	case ActionAuthLogin, ActionAuthLogout, ActionAuthRegister, ActionAuthFailed, ActionPermissionDenied, ActionTokenRevoked,
 		ActionAuthMFAEnabled, ActionAuthMFADisabled, ActionAuthMFAReset, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
 		ActionAuthMFARecoveryCodesRegenerated, ActionAuthSessionRevoked, ActionAuthPasswordChanged,
-		ActionAuthStepUp, ActionAuthStepUpFailed:
+		ActionAuthStepUp, ActionAuthStepUpFailed, ActionAuthIdentityLinked, ActionAuthIdentityUnlinked:
 		return "security"
 	case ActionSettingsUpdated:
 		return "settings"
@@ -1050,6 +1063,7 @@ func (a Action) Category() string {
 		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionDeleted,
 		ActionScopeExclusionActivated, ActionScopeExclusionDeactivated,
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
+		ActionScopeEffectsApplied,
 		ActionEASMSeedCreated, ActionEASMSeedUpdated, ActionEASMSeedDeleted:
 		return "scope"
 	case ActionSuppressionRuleApproved, ActionSuppressionRuleSelfApproved, ActionSuppressionRuleSelfApprovalRefused:
@@ -1207,7 +1221,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeSCIMGroupMapping, ResourceTypeOrgTrust,
 		ResourceTypeCredential, ResourceTypeExposure, ResourceTypeAuditChain, ResourceTypeTemplateSource,
 		ResourceTypeScopeTarget, ResourceTypeScopeExclusion, ResourceTypeBountyProgram, ResourceTypeAuthorizationLetter, ResourceTypeSuppressionRule, ResourceTypeScannerTemplate, ResourceTypeIntegration,
-		ResourceTypeRemediationCampaign, ResourceTypeRemediationTask, ResourceTypeRemediationSuggestion, ResourceTypeRemediationAction, ResourceTypeReportSchedule, ResourceTypeEASMSeed,
+		ResourceTypeRemediationCampaign, ResourceTypeRemediationTask, ResourceTypeVulnerabilitySelection, ResourceTypeRemediationSuggestion, ResourceTypeRemediationAction, ResourceTypeReportSchedule, ResourceTypeEASMSeed,
 		ResourceTypeFindingApproval, ResourceTypeSupportGrant:
 		return true
 	}
@@ -1283,6 +1297,7 @@ func SeverityForAction(a Action) Severity {
 		ActionSCIMGroupMappingsUpdated,
 		ActionUserSuspended, ActionUserDeactivated,
 		ActionAuthMFADisabled, ActionAuthMFAReset, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
+		ActionAuthIdentityLinked, ActionAuthIdentityUnlinked,
 		ActionAuthStepUpFailed,
 		ActionMemberRemoved, ActionMemberRoleChanged, ActionMemberSuspended, ActionMemberOffboarded,
 		ActionMemberOwnershipTransferRequested,
@@ -1303,7 +1318,10 @@ func SeverityForAction(a Action) Severity {
 		// Deleting an asset also deletes its findings.
 		ActionAssetDeleted,
 		// A refused own approval: someone tried to skip the second approver.
-		ActionSuppressionRuleSelfApprovalRefused, ActionExposureDispositionSelfApprovalRefused:
+		ActionSuppressionRuleSelfApprovalRefused, ActionExposureDispositionSelfApprovalRefused,
+		// Findings closed because their assets went out of scope (an insider
+		// could use it to hide findings: it is reviewed like a deletion).
+		ActionScopeEffectsApplied:
 		return SeverityHigh
 
 	// Medium - important changes

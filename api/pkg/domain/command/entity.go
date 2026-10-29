@@ -126,6 +126,14 @@ type Command struct {
 
 	Status       CommandStatus
 	ErrorMessage string
+	// FailureCode is the platform's failure code of a command it ended
+	// for an infrastructure reason (scanrun.Failure*), set by the service
+	// when it fails the command; empty otherwise. Not read from storage.
+	FailureCode string
+	// ExcludeParentSensor, on a follow-up not yet stored, says the sensor
+	// that held its parent joins its failed_on: the follow-up carries
+	// targets that sensor's own fault left unscanned (research/302).
+	ExcludeParentSensor bool
 
 	// Timing
 	CreatedAt      time.Time

@@ -27,6 +27,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { ErrorState } from '@/features/shared/components/error-state'
 import { ListToolbar } from '@/features/shared/components/list-toolbar'
 import { useSearchQuery } from '@/hooks/use-search-query'
+import { toDisplayText } from '@/lib/untrusted-text'
 import { cn } from '@/lib/utils'
 import { useCveExposureAssets } from '../../api/use-cve-exposure'
 import type { CveExposureAsset } from '../../types/exposure'
@@ -181,6 +182,7 @@ function AssetRow({ cve, asset }: { cve: string; asset: CveExposureAsset }) {
         >
           {asset.name}
         </Link>
+        <AssetTargets targets={asset.targets} more={asset.targets_more} />
       </TableCell>
       <TableCell>
         <span className="flex flex-wrap items-center gap-1">
@@ -227,5 +229,31 @@ function AssetRow({ cve, asset }: { cve: string; asset: CveExposureAsset }) {
         )}
       </TableCell>
     </TableRow>
+  )
+}
+
+/**
+ * Where on the asset the findings point (a port, a URL path, a file): producer
+ * text, shown as text and never as a link.
+ */
+function AssetTargets({ targets, more }: { targets?: string[]; more?: boolean }) {
+  const { t } = useTranslation()
+  if (!targets?.length) return null
+  return (
+    <ul
+      className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-xs text-muted-foreground"
+      aria-label={t('vulnPage.where.targets', 'Where on the asset')}
+      data-slot="where-targets"
+    >
+      {targets.map((target) => {
+        const text = toDisplayText(target, 120)
+        return (
+          <li key={target} className="max-w-[14rem] truncate" title={text}>
+            {text}
+          </li>
+        )
+      })}
+      {more && <li>{t('vulnPage.where.targetsMore', 'and more')}</li>}
+    </ul>
   )
 }
