@@ -129,6 +129,12 @@ const (
 	// needs findings:read; approving an intrusive check needs scope:approve.
 	FindingsRetestChecksWrite Permission = "findings:retest_checks:write"
 
+	// FindingsViewsShare shares a saved list view with the whole
+	// organization (docs/architecture/vulnerability-page.md, saved views).
+	// Sharing with one of the caller's groups needs only the page's read
+	// permission; a view always runs as the person using it.
+	FindingsViewsShare Permission = "findings:views:share"
+
 	// Vulnerability permissions (findings:vulnerabilities:*)
 	VulnerabilitiesRead Permission = "findings:vulnerabilities:read"
 
@@ -502,7 +508,7 @@ func AllPermissions() []Permission {
 		FindingsFixApply, FindingsVerify, FindingsComment, FindingsSeverity,
 		ExposuresRead, ExposuresWrite, ExposuresDelete, ExposuresTriage,
 		SuppressionsRead, SuppressionsWrite, SuppressionsDelete, SuppressionsApprove,
-		FindingsLifecyclesWrite, FindingsRetestChecksWrite,
+		FindingsLifecyclesWrite, FindingsRetestChecksWrite, FindingsViewsShare,
 		VulnerabilitiesRead,
 		CredentialsRead, CredentialsWrite, CredentialsReveal, EvidenceReveal,
 		RemediationRead, RemediationWrite,

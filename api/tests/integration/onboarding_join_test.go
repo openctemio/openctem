@@ -121,7 +121,13 @@ func TestOnboardingJoinByDomain(t *testing.T) {
 	if _, err := svc.Accept(ctx, eve, ref, actx); !errors.Is(err, onboarding.ErrInvalidRef) {
 		t.Fatalf("another account's reference must be refused, got %v", err)
 	}
-	if _, err := svc.Accept(ctx, bob, ref[:len(ref)-2]+"xx", actx); !errors.Is(err, onboarding.ErrInvalidRef) {
+	// Flip the first character: the last base64 character can carry unused bits, so
+	// changing the tail may decode to the same bytes and the test would flake.
+	tampered := "A" + ref[1:]
+	if ref[0] == 'A' {
+		tampered = "B" + ref[1:]
+	}
+	if _, err := svc.Accept(ctx, bob, tampered, actx); !errors.Is(err, onboarding.ErrInvalidRef) {
 		t.Fatalf("a tampered reference must be refused, got %v", err)
 	}
 

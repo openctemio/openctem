@@ -4,6 +4,7 @@ import {
   DeleteAccountCard,
   PasswordCard,
   SessionsCard,
+  SignInMethodsCard,
   TwoFactorCard,
   useProfile,
   useSessions,
@@ -11,8 +12,9 @@ import {
 import { PageStack } from '@/features/shared'
 
 /**
- * My account → Security: password, two-factor authentication and the
- * devices signed in to the account.
+ * My account → Security: password, two-factor authentication, the linked
+ * Google/GitHub/Microsoft sign-in methods and the devices signed in to the
+ * account.
  */
 export default function SecurityPage() {
   const { profile } = useProfile()
@@ -26,6 +28,7 @@ export default function SecurityPage() {
         activeApiKeys={activeApiKeys}
       />
       <TwoFactorCard email={profile?.email} onOtherSessionsSignedOut={() => mutateSessions()} />
+      <SignInMethodsCard />
       <SessionsCard
         sessions={sessions}
         isLoading={isLoading}
