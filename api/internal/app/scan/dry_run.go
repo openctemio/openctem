@@ -102,6 +102,10 @@ type DryRunRouting struct {
 	Reason     string
 	SensorID   string
 	SensorName string
+	// TenantSensor: one of the organization's own sensors could take the
+	// job now (online, or online and busy), whatever the preference. A scan
+	// form offers "run on my sensor" only then.
+	TenantSensor bool
 }
 
 // DryRunTargets answers what the gate would do with each target and asset
@@ -380,14 +384,17 @@ func dedupeIDs(in []shared.ID) []shared.ID {
 // runs).
 func (s *Service) decideDryRunRouting(ctx context.Context, in DryRunInput, checked []string, needsProof bool, routing *DryRunRouting) {
 	routing.Preference = dryRunPreference(in.SensorPreference)
-	if routing.Preference == prefPlatform {
-		routing.RunsOn, routing.Reason = RoutingPlatform, RoutingReasonPlatform
-		return
-	}
 	if s.sensorSelector == nil {
+		if routing.Preference == prefPlatform {
+			routing.RunsOn, routing.Reason = RoutingPlatform, RoutingReasonPlatform
+			return
+		}
 		routing.RunsOn, routing.Reason = RoutingWaits, RoutingReasonNoTenantSensor
 		return
 	}
+	// The organization's own sensors, looked up for every preference: a
+	// platform-only scan still says whether "run on my sensor" would help.
+	// The selector is scoped to the caller's tenant.
 	req := SelectSensorRequest{TenantID: in.TenantID, Tool: in.Tool, Mode: SelectTenantFirst, AllowQueue: true}
 	if in.Tool != "" {
 		req.Capabilities = []string{in.Tool}
@@ -395,10 +402,18 @@ func (s *Service) decideDryRunRouting(ctx context.Context, in DryRunInput, check
 	res, err := s.sensorSelector.SelectSensor(ctx, req)
 	if err != nil {
 		s.logger.Warn("scope check: sensor lookup failed", "error", err)
+		res = nil
+	}
+	own := res != nil && res.Sensor != nil && !res.IsPlatform
+	routing.TenantSensor = own || (res != nil && res.TenantBusy)
+	if routing.Preference == prefPlatform {
+		routing.RunsOn, routing.Reason = RoutingPlatform, RoutingReasonPlatform
+		return
+	}
+	if err != nil {
 		routing.RunsOn, routing.Reason = RoutingWaits, RoutingReasonNoTenantSensor
 		return
 	}
-	own := res != nil && res.Sensor != nil && !res.IsPlatform
 	switch {
 	case own:
 		routing.RunsOn, routing.SensorID, routing.SensorName = RoutingTenant, res.Sensor.ID.String(), res.Sensor.Name
