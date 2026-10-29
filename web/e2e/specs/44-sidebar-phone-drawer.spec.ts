@@ -77,7 +77,12 @@ for (const size of [
           const o = getComputedStyle(e).overflowY
           return (o === 'auto' || o === 'scroll') && e.scrollHeight > e.clientHeight + 1
         })
+        const sideways = [d, ...d.querySelectorAll('*')].filter((e) => {
+          const o = getComputedStyle(e).overflowX
+          return (o === 'auto' || o === 'scroll') && e.scrollWidth > e.clientWidth
+        })
         return {
+          sideways: sideways.length,
           maxIconInset: Math.max(...icons),
           filled,
           scrollers: scrollers.length,
@@ -89,6 +94,7 @@ for (const size of [
       expect(layout.filled[0]).toMatch(/^Active/)
       expect(layout.scrollers, 'one scroller at most').toBeLessThanOrEqual(1)
       expect(layout.pins).toBe(0)
+      expect(layout.sideways, 'nothing in the drawer scrolls sideways').toBe(0)
 
       // Scrolled to the end, the last nav row sits above the footer, in view.
       const scroller = drawer.locator('[data-slot="sidebar-mobile-scroller"]')

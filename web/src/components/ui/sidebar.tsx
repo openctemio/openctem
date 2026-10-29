@@ -230,10 +230,12 @@ function Sidebar({
               iOS Safari rubber-bands the outer one and the rows shake, and on a
               short screen (a phone on its side) the pinned header and footer left
               the nav a sliver. min-h-full keeps the footer at the bottom when the
-              nav is short; SidebarContent stops scrolling on its own here. */}
+              nav is short; SidebarContent stops scrolling on its own here. No sideways
+              scroll: a few px of horizontal overflow let a finger drag the rows left,
+              clipping the first letters of every label. */}
           <div
             data-slot="sidebar-mobile-scroller"
-            className="no-scrollbar flex h-full w-full flex-col overflow-y-auto overscroll-contain"
+            className="no-scrollbar flex h-full w-full flex-col overflow-x-hidden overflow-y-auto overscroll-contain"
           >
             {children}
           </div>
