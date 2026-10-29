@@ -20,7 +20,7 @@ import { env } from '@/lib/env'
 import { devLog } from '@/lib/logger'
 import { withAuthRefreshLock } from '@/lib/auth-refresh-lock'
 import { coalesceGet } from './request-dedupe'
-import { noteRateLimited } from './rate-limit-backoff'
+import { noteRateLimited, rateLimitRetryDelayMs } from './rate-limit-backoff'
 import { readCsrfCookie } from '@/lib/csrf-client'
 
 // ============================================
@@ -255,6 +255,7 @@ export async function apiClient<T = unknown>(
     retry: _retry, // Reserved for future retry implementation
     _skipRefreshRetry = false,
     _skipStepUpRetry = false,
+    _skipRateLimitRetry = false,
     ...fetchOptions
   } = options
 
@@ -330,7 +331,19 @@ export async function apiClient<T = unknown>(
     // Handle non-ok responses
     if (!response.ok) {
       // Remember the server's wait so search-as-you-type holds new queries.
-      if (response.status === 429) noteRateLimited(response.headers.get('retry-after'))
+      if (response.status === 429) {
+        const retryAfter = response.headers.get('retry-after')
+        noteRateLimited(retryAfter)
+        // A read refused by the rate limit is retried once, after the wait
+        // the server asked for: a page whose panels load together must not
+        // fail (and toast) for a limit that frees up in a second. Writes are
+        // never repeated here; the user repeats them.
+        const method = (fetchOptions.method || 'GET').toUpperCase()
+        if ((method === 'GET' || method === 'HEAD') && !_skipRateLimitRetry && !isServer()) {
+          const waited = await waitUnlessAborted(rateLimitRetryDelayMs(retryAfter), callerSignal)
+          if (waited) return apiClient<T>(endpoint, { ...options, _skipRateLimitRetry: true })
+        }
+      }
       // Handle 401 Unauthorized - try to refresh token
       if (response.status === 401 && !_skipRefreshRetry && !skipAuth) {
         // If already redirecting, don't attempt anything
@@ -493,6 +506,22 @@ export async function apiClient<T = unknown>(
     const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred'
     throw new ApiClientError(errorMessage, 'UNKNOWN_ERROR', 500, { originalError: error })
   }
+}
+
+/** Waits ms, or until signal aborts; reports whether the full wait passed. */
+function waitUnlessAborted(ms: number, signal?: AbortSignal | null): Promise<boolean> {
+  if (signal?.aborted) return Promise.resolve(false)
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort)
+      resolve(true)
+    }, ms)
+    const onAbort = () => {
+      clearTimeout(timer)
+      resolve(false)
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
+  })
 }
 
 /** The request id an error body carries, when it is a plain string. */

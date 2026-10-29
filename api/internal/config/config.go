@@ -1079,7 +1079,7 @@ type RateLimitConfig struct {
 	// ReadRequestsPerMin is the per-user budget for authenticated GET
 	// requests (the read-endpoint limiter). It is also the burst, so a
 	// page that fires many parallel reads on load does not trip it.
-	// Env: RATE_LIMIT_READ_PER_MIN. Default 120. Values <= 0 fall back
+	// Env: RATE_LIMIT_READ_PER_MIN. Default 600. Values <= 0 fall back
 	// to the default; they never disable the limiter.
 	ReadRequestsPerMin int
 }
@@ -1760,9 +1760,9 @@ func Load() (*Config, error) {
 			RequestsPerSec:  getEnvFloat("RATE_LIMIT_RPS", 100),
 			Burst:           getEnvInt("RATE_LIMIT_BURST", 200),
 			CleanupInterval: getEnvDuration("RATE_LIMIT_CLEANUP", 1*time.Minute),
-			// Per-user GET budget. 120/min matches the historical
-			// hard-coded default (DefaultReadEndpointRateLimitConfig).
-			ReadRequestsPerMin: getEnvInt("RATE_LIMIT_READ_PER_MIN", 120),
+			// Per-user GET budget; keep equal to
+			// middleware.DefaultReadRequestsPerMin.
+			ReadRequestsPerMin: getEnvInt("RATE_LIMIT_READ_PER_MIN", 600),
 		},
 		SMTP: SMTPFromEnv(),
 		OAuth: OAuthConfig{

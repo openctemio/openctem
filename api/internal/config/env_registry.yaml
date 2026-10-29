@@ -904,7 +904,7 @@ vars:
     component: api
     group: "CORS and rate limiting"
     type: int
-    default: "120"
+    default: "600"
     description: "Per-user budget (and burst) for authenticated `GET` requests. Values of 0 or less fall back to the default."
   - name: RATE_LIMIT_RPS
     component: api

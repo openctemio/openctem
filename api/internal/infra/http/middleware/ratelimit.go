@@ -1377,18 +1377,28 @@ type ReadEndpointRateLimiter struct {
 
 // ReadEndpointRateLimitConfig configures read endpoint rate limits.
 type ReadEndpointRateLimitConfig struct {
-	// ReadRequestsPerMin is the max GET requests per minute per user.
-	// Default: 120 (2 per second — generous for normal usage, blocks scraping)
+	// ReadRequestsPerMin is the max GET requests per minute per user, and
+	// the burst. Default: DefaultReadRequestsPerMin.
 	ReadRequestsPerMin int
 	// CleanupInterval for visitor entries.
 	// Default: 1 minute
 	CleanupInterval time.Duration
 }
 
+// DefaultReadRequestsPerMin is the per-user GET budget per minute (10 per
+// second sustained, the same number as the burst). A detail page of the web
+// console sends about twenty reads on a hard load; an analyst stepping
+// through findings opens one every two or three seconds. The old 120 (2 per
+// second) refused the panels of the sixth finding opened in a minute. The
+// limit still bounds what one session can pull: a stolen session reads at
+// most 600 responses a minute, each one page of a paginated, scope-filtered
+// list or one object the caller may already open.
+const DefaultReadRequestsPerMin = 600
+
 // DefaultReadEndpointRateLimitConfig returns secure defaults for read endpoint rate limiting.
 func DefaultReadEndpointRateLimitConfig() ReadEndpointRateLimitConfig {
 	return ReadEndpointRateLimitConfig{
-		ReadRequestsPerMin: 120,
+		ReadRequestsPerMin: DefaultReadRequestsPerMin,
 		CleanupInterval:    time.Minute,
 	}
 }
@@ -1412,7 +1422,7 @@ func ReadEndpointRateLimitConfigFrom(rl config.RateLimitConfig) ReadEndpointRate
 // NewReadEndpointRateLimiter creates a rate limiter for read/list endpoints.
 func NewReadEndpointRateLimiter(cfg ReadEndpointRateLimitConfig, log *logger.Logger) *ReadEndpointRateLimiter {
 	if cfg.ReadRequestsPerMin <= 0 {
-		cfg.ReadRequestsPerMin = 120
+		cfg.ReadRequestsPerMin = DefaultReadRequestsPerMin
 	}
 	if cfg.CleanupInterval == 0 {
 		cfg.CleanupInterval = time.Minute
@@ -1479,7 +1489,7 @@ func (rel *ReadEndpointRateLimiter) Middleware() func(http.Handler) http.Handler
 				}
 
 				setRateLimitRemaining(w, 0)
-				w.Header().Set("Retry-After", "1")
+				w.Header().Set("Retry-After", strconv.Itoa(rel.limiter.retryAfterSeconds()))
 				apierror.RateLimitExceeded().WriteJSON(w)
 				return
 			}
