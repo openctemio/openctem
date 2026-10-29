@@ -803,11 +803,29 @@ func (s *Service) completeWithFollowUp(ctx context.Context, cmd *commanddom.Comm
 	if !ok || cmd.SensorID == nil {
 		return s.saveSensorChange(ctx, cmd, fence)
 	}
-	remaining, settled, ok := commanddom.UnfinishedTargets(cmd)
-	if !ok || len(remaining) == 0 {
+	unfinished, sensorSide, settled, ok := commanddom.SplitUnfinished(cmd)
+	if !ok {
+		return s.saveSensorChange(ctx, cmd, fence)
+	}
+	remaining := unfinished
+	excludeParent := false
+	// Targets the sensor's own network or resolver failed go out again on
+	// another sensor, only when one could take them; otherwise they stay
+	// settled as before (the same sensor would fail them the same way), and
+	// when the attempt budget every cause shares has room for one more.
+	if len(sensorSide) > 0 && commanddom.FollowUpAttempts(cmd.DispatchAttempts, settled) < commanddom.MaxDispatchAttempts && s.otherSensorCanTake(ctx, cmd) {
+		remaining = inPayloadOrder(cmd, unfinished, sensorSide)
+		excludeParent = true
+	} else {
+		settled += len(sensorSide)
+	}
+	if len(remaining) == 0 {
 		return s.saveSensorChange(ctx, cmd, fence)
 	}
 	followUp, err := commanddom.NewFollowUp(cmd, remaining, settled)
+	if err == nil {
+		followUp.ExcludeParentSensor = excludeParent
+	}
 	if err != nil {
 		// The completion stands; the unfinished targets are reported
 		// partial by the run (the result says so).
@@ -823,7 +841,7 @@ func (s *Service) completeWithFollowUp(ctx context.Context, cmd *commanddom.Comm
 	}
 	s.logger.Info("command completed with unfinished targets; follow-up queued",
 		"command_id", cmd.ID.String(), "follow_up_id", followUp.ID.String(),
-		"settled", settled, "unfinished", len(remaining), "dispatch_attempts", followUp.DispatchAttempts)
+		"settled", settled, "unfinished", len(remaining), "sensor_side", len(sensorSide), "dispatch_attempts", followUp.DispatchAttempts)
 	return nil
 }
 
@@ -839,6 +857,9 @@ type FailInput struct {
 	// nil (then a failure reason with the local-policy prefix still counts
 	// as one). research/25 §3.6.
 	Refusal *sensordom.DispatchRefusal `json:"-"`
+	// Infra is the sensor's own class of the failure (research/302), or
+	// nil: then the platform reads the error code, else the message.
+	Infra *InfraReport `json:"-"`
 }
 
 // MaxFailErrorMessageBytes caps the sensor-supplied error message stored on a
@@ -911,6 +932,14 @@ func (s *Service) Fail(ctx context.Context, input FailInput) (*commanddom.Comman
 			cmd.Status, cmd.SensorID, cmd.StartedAt, cmd.AcknowledgedAt = commanddom.CommandStatusPending, nil, nil, nil
 			cmd.DispatchAttempts++
 			return cmd, nil
+		}
+	}
+	// A failure that is not about the target (research/302): routed work
+	// goes to another eligible sensor, the failing one excluded.
+	if class, ev, ok := infraClassOf(input, msg); ok {
+		out, done, err := s.handleInfraFailure(ctx, cmd, input, class, ev, msg)
+		if done {
+			return out, err
 		}
 	}
 	cmd.Fail(msg)
