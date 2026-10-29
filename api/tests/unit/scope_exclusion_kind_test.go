@@ -108,13 +108,13 @@ func TestExclusionKind(t *testing.T) {
 		}
 	})
 	t.Run("restricted member: closing rule reaching unseen assets refused", func(t *testing.T) {
-		_, err := create(newKindService(restricted, kindMatches{all: 5, visible: 2}), "domain", "*.corp.example.com", "not_ours", nil)
+		_, err := create(newKindService(restricted, kindMatches{all: 5, visible: 2}), "domain", "host.corp.example.com", "not_ours", nil)
 		if !errors.Is(err, scope.ErrClosingReachOutsideScope) {
 			t.Fatalf("err %v, want ErrClosingReachOutsideScope", err)
 		}
 	})
 	t.Run("restricted member: closing rule within their scope allowed", func(t *testing.T) {
-		if _, err := create(newKindService(restricted, kindMatches{all: 2, visible: 2}), "domain", "*.mine.example.com", "not_ours", nil); err != nil {
+		if _, err := create(newKindService(restricted, kindMatches{all: 2, visible: 2}), "domain", "host.mine.example.com", "not_ours", nil); err != nil {
 			t.Fatalf("err %v, want allowed", err)
 		}
 	})
@@ -125,7 +125,7 @@ func TestExclusionKind(t *testing.T) {
 	})
 	t.Run("update to a closing kind is checked too", func(t *testing.T) {
 		svc := newKindService(restricted, kindMatches{all: 5, visible: 2})
-		e, err := create(svc, "domain", "*.up.example.com", "", nil)
+		e, err := create(svc, "domain", "host.up.example.com", "", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -212,7 +212,7 @@ func TestExclusionKind_ClosingNeedsApproverAndReach(t *testing.T) {
 	t.Run("activate by a restricted member reaching unseen assets refused", func(t *testing.T) {
 		svc := newSvc()
 		ds.ds = &shared.DataScope{TenantID: tenant, Unrestricted: true}
-		e := approved(svc, "*.act.example.com", "not_ours")
+		e := approved(svc, "host.act.example.com", "not_ours")
 		if _, err := svc.DeactivateExclusion(ctx, e.ID().String(), tenant.String(),
 			scopedom.Reviewer{UserID: "u2", CanApprove: true}); err != nil {
 			t.Fatal(err)
