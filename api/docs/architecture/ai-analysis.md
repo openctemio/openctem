@@ -147,9 +147,9 @@ are internal (never sent to tickets or integrations).
 | Route | Gate |
 |---|---|
 | `GET /api/v1/ai/agents`, `GET /api/v1/ai/agents/{id}` | `ai_triage:read` |
-| `POST /api/v1/ai/agents`, `DELETE /{id}`, `PUT /{id}/owners`, `PUT /{id}/preset`, `POST /{id}/resume` | `service_accounts:manage` + recent sign-in |
+| `POST /api/v1/ai/agents`, `DELETE /{id}`, `PUT /{id}/owners`, `PUT /{id}/preset`, `POST /{id}/reactivate` | `service_accounts:manage` + recent sign-in |
 | `POST /api/v1/ai/agents/{id}/disable` | `service_accounts:manage` |
-| `POST /api/v1/ai/agents/{id}/pause` | `ai_triage:read`; an accountable person or `service_accounts:manage` |
+| `POST /api/v1/ai/agents/{id}/suspend` | `ai_triage:read`; an accountable person or `service_accounts:manage` |
 | `POST /api/v1/ai/agents/{id}/attest` | `ai_triage:read` + recent sign-in; an accountable person or an administrator |
 | `GET /api/v1/ai/runs/{id}`, `GET /api/v1/findings/{id}/ai/runs` | `findings:read` + `ai_triage:read`; the subject in the caller's scope |
 | `POST /api/v1/findings/{id}/ai/analyze` | `findings:read` + `ai_triage:trigger`, rate-limited; the finding in the caller's scope; the AI agent acts within its own principal |

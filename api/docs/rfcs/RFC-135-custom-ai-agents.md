@@ -220,7 +220,7 @@ stateDiagram-v2
 
 - `GET /` and `POST /`;
 - `GET|PATCH /{id}`, where PATCH changes operational fields only;
-- `POST /{id}/pause|resume|rollback`;
+- `POST /{id}/suspend|reactivate|rollback`;
 - `GET|POST /{id}/revisions`;
 - `GET /{id}/revisions/{rev}` and `/diff`;
 - `POST .../submit|approve|reject|promote`;

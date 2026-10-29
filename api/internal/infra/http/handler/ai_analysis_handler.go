@@ -75,7 +75,7 @@ type AIAgentListResponse struct {
 // AIRunResponse is one run with its provenance.
 type AIRunResponse struct {
 	ID                   string            `json:"id"`
-	AgentID              string            `json:"ai_agent_id,omitempty"`
+	AIAgentID            string            `json:"ai_agent_id,omitempty"`
 	UseCase              string            `json:"use_case"`
 	Kind                 string            `json:"kind"`
 	SubjectType          string            `json:"subject_type"`
@@ -128,7 +128,7 @@ func toAIOwners(o []aidom.OwnerRef) []AIOwnerResponse {
 	return out
 }
 
-func toAIAgent(a *aidom.Agent) AIAgentResponse {
+func toAIAgent(a *aidom.AIAgent) AIAgentResponse {
 	return AIAgentResponse{
 		ID: a.ID.String(), Name: a.Name, Description: a.Description, Role: string(a.Role), Preset: string(a.Preset), Status: string(a.Status),
 		PauseReason: string(a.PauseReason), DataClassCeiling: string(a.DataClassCeiling), Executor: string(a.Executor),
@@ -146,7 +146,7 @@ func idStr(id *shared.ID) string {
 
 func toAIRun(run *aidom.Run) AIRunResponse {
 	return AIRunResponse{
-		ID: run.ID.String(), AgentID: idStr(run.AgentID), UseCase: string(run.UseCase), Kind: run.Kind,
+		ID: run.ID.String(), AIAgentID: idStr(run.AIAgentID), UseCase: string(run.UseCase), Kind: run.Kind,
 		SubjectType: string(run.SubjectType), SubjectID: run.SubjectID.String(), Executor: string(run.Executor),
 		Status: string(run.Status), DataClass: string(run.DataClass), FieldsSent: nonNilStrings(run.FieldsSent),
 		FieldsWithheld: nonNilStrings(run.FieldsWithheld), BundleDigest: run.BundleDigest,
@@ -242,7 +242,7 @@ func decodeAIBody(w http.ResponseWriter, r *http.Request, v any) bool {
 // @Success      200  {object}  AIAgentListResponse
 // @Security     BearerAuth
 // @Router       /ai/agents [get]
-func (h *AIAnalysisHandler) ListAgents(w http.ResponseWriter, r *http.Request) {
+func (h *AIAnalysisHandler) ListAIAgents(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := aiTenantOf(w, r)
 	if !ok {
 		return
@@ -268,7 +268,7 @@ func (h *AIAnalysisHandler) ListAgents(w http.ResponseWriter, r *http.Request) {
 // @Success      200  {object}  AIAgentResponse
 // @Security     BearerAuth
 // @Router       /ai/agents/{id} [get]
-func (h *AIAnalysisHandler) GetAgent(w http.ResponseWriter, r *http.Request) {
+func (h *AIAnalysisHandler) GetAIAgent(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := aiTenantOf(w, r)
 	if !ok {
 		return
@@ -297,7 +297,7 @@ func (h *AIAnalysisHandler) GetAgent(w http.ResponseWriter, r *http.Request) {
 // @Failure      400  {object}  apierror.Error
 // @Security     BearerAuth
 // @Router       /ai/agents [post]
-func (h *AIAnalysisHandler) CreateAgent(w http.ResponseWriter, r *http.Request) {
+func (h *AIAnalysisHandler) CreateAIAgent(w http.ResponseWriter, r *http.Request) {
 	var in aianalysis.CreateInput
 	if !decodeAIBody(w, r, &in) {
 		return
@@ -391,7 +391,7 @@ func (h *AIAnalysisHandler) Attest(w http.ResponseWriter, r *http.Request) {
 	writeAIJSON(w, http.StatusOK, toAIAgent(a))
 }
 
-// Pause handles POST /api/v1/ai/agents/{id}/pause.
+// Pause handles POST /api/v1/ai/agents/{id}/suspend.
 //
 // @Summary      Pause an AI agent
 // @Description  An accountable owner or a holder of service_accounts:manage stops the AI agent until it is resumed.
@@ -400,7 +400,7 @@ func (h *AIAnalysisHandler) Attest(w http.ResponseWriter, r *http.Request) {
 // @Param        id path string true "AI agent ID"
 // @Success      200  {object}  AIAgentResponse
 // @Security     BearerAuth
-// @Router       /ai/agents/{id}/pause [post]
+// @Router       /ai/agents/{id}/suspend [post]
 func (h *AIAnalysisHandler) Pause(w http.ResponseWriter, r *http.Request) {
 	id, ok := aiPathID(w, r, "id")
 	if !ok {
@@ -415,7 +415,7 @@ func (h *AIAnalysisHandler) Pause(w http.ResponseWriter, r *http.Request) {
 	writeAIJSON(w, http.StatusOK, toAIAgent(a))
 }
 
-// Resume handles POST /api/v1/ai/agents/{id}/resume.
+// Resume handles POST /api/v1/ai/agents/{id}/reactivate.
 //
 // @Summary      Resume an AI agent
 // @Description  Runs a paused or disabled AI agent again once it has an active owner and a fresh attestation. Needs a recent sign-in.
@@ -424,7 +424,7 @@ func (h *AIAnalysisHandler) Pause(w http.ResponseWriter, r *http.Request) {
 // @Param        id path string true "AI agent ID"
 // @Success      200  {object}  AIAgentResponse
 // @Security     BearerAuth
-// @Router       /ai/agents/{id}/resume [post]
+// @Router       /ai/agents/{id}/reactivate [post]
 func (h *AIAnalysisHandler) Resume(w http.ResponseWriter, r *http.Request) {
 	id, ok := aiPathID(w, r, "id")
 	if !ok {
@@ -469,7 +469,7 @@ func (h *AIAnalysisHandler) Disable(w http.ResponseWriter, r *http.Request) {
 // @Success      204
 // @Security     BearerAuth
 // @Router       /ai/agents/{id} [delete]
-func (h *AIAnalysisHandler) DeleteAgent(w http.ResponseWriter, r *http.Request) {
+func (h *AIAnalysisHandler) DeleteAIAgent(w http.ResponseWriter, r *http.Request) {
 	id, ok := aiPathID(w, r, "id")
 	if !ok {
 		return

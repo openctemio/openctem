@@ -9,19 +9,19 @@ import (
 
 // NewAgent is what creating an AI agent stores: the service account, its AI
 // profile and its first owners, in one transaction.
-type NewAgent struct {
-	Agent  *Agent
-	Owners []OwnerRef
+type NewAIAgent struct {
+	AIAgent *AIAgent
+	Owners  []OwnerRef
 }
 
 // AgentRepository stores AI agents and their owners. Every method is
 // tenant-scoped.
-type AgentRepository interface {
+type AIAgentRepository interface {
 	// Create stores the service account (no role yet), the AI profile and the
 	// owners in one transaction.
-	Create(ctx context.Context, in NewAgent) error
-	Get(ctx context.Context, tenantID, id shared.ID) (*Agent, error)
-	List(ctx context.Context, tenantID shared.ID) ([]*Agent, error)
+	Create(ctx context.Context, in NewAIAgent) error
+	Get(ctx context.Context, tenantID, id shared.ID) (*AIAgent, error)
+	List(ctx context.Context, tenantID shared.ID) ([]*AIAgent, error)
 	// SetOwners replaces the owners (at least one) in one transaction.
 	SetOwners(ctx context.Context, tenantID, id shared.ID, owners []OwnerRef, by shared.ID) error
 	// SetStatus moves an AI agent to status with reason ("" for active).
@@ -39,9 +39,9 @@ type AgentRepository interface {
 	Delete(ctx context.Context, tenantID, id shared.ID) error
 	// ListActive lists every active AI agent of every organization (the
 	// sweep; a system job).
-	ListActive(ctx context.Context, limit int) ([]*Agent, error)
+	ListActive(ctx context.Context, limit int) ([]*AIAgent, error)
 	// IsAgent reports whether the user is one of the tenant's AI agents.
-	IsAgent(ctx context.Context, tenantID, userID shared.ID) (bool, error)
+	IsAIAgent(ctx context.Context, tenantID, userID shared.ID) (bool, error)
 }
 
 // RunRepository is the run ledger. Every method is tenant-scoped.
@@ -54,5 +54,5 @@ type RunRepository interface {
 	GetRun(ctx context.Context, tenantID, id shared.ID) (*Run, error)
 	ListRunsBySubject(ctx context.Context, tenantID shared.ID, subjectType SubjectType, subjectID shared.ID, limit int) ([]*Run, error)
 	// Usage is what an AI agent used since: runs started and tokens.
-	Usage(ctx context.Context, tenantID, agentID shared.ID, since time.Time) (runs, tokens int, err error)
+	Usage(ctx context.Context, tenantID, aiAgentID shared.ID, since time.Time) (runs, tokens int, err error)
 }
