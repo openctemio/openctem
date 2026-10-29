@@ -31,7 +31,17 @@ type AssetReclassifier func(ctx context.Context, tenantID shared.ID, assetIDs []
 type DecisionEffects struct {
 	resolver   RejectedExposureResolver
 	reclassify AssetReclassifier
+	scopeKick  func(tenantID shared.ID)
 	logger     *logger.Logger
+}
+
+// SetScopeEffects makes every decision kick the scope effects reconciler
+// (scope.Effects.Kick): "not ours" closes the asset's findings as out of
+// scope, undoing it reopens them.
+func (e *DecisionEffects) SetScopeEffects(kick func(tenantID shared.ID)) {
+	if e != nil {
+		e.scopeKick = kick
+	}
 }
 
 // NewDecisionEffects wires the follow-ups; either may be nil.
@@ -68,5 +78,8 @@ func (e *DecisionEffects) AfterDecision(ctx context.Context, tenantID shared.ID,
 	}
 	if e.reclassify != nil {
 		e.reclassify(ctx, tenantID, ids)
+	}
+	if e.scopeKick != nil {
+		e.scopeKick(tenantID)
 	}
 }

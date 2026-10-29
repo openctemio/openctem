@@ -10,7 +10,7 @@ import {
   useScanPolicyDefault,
 } from '@console/features/admin-console/api/use-scan-policy'
 import { ScanPolicyForm } from '@console/features/admin-console/components/scan-policy-form'
-import { adminCan } from '@console/features/admin-console/types'
+import { adminHas } from '@console/features/admin-console/types'
 
 /**
  * System -> Scan approval: the platform default for scan approval
@@ -48,7 +48,7 @@ export default function ScanApprovalPolicyPage() {
               'Applies to every organization without its own setting.'
             )}
             value={data.policy}
-            canEdit={adminCan(me.role, 'super_admin')}
+            canEdit={adminHas(me, 'platform.sensors.manage')}
             onSave={async (policy, reason, code) => {
               await saveScanPolicyDefault({
                 policy: policy ?? 'tenant_controlled',

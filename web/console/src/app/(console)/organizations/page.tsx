@@ -27,7 +27,7 @@ import { useAdmin } from '@console/features/admin-console/components/admin-conso
 import { CreateOrganizationDialog } from '@console/features/admin-console/components/create-organization-dialog'
 import { SSOPostureBadges } from '@console/features/admin-console/components/sso-posture-badges'
 import { OrganizationStatusBadge } from '@console/features/admin-console/components/organization-suspension'
-import { adminCan, type AdminOrganization } from '@console/features/admin-console/types'
+import { type AdminOrganization, adminHas } from '@console/features/admin-console/types'
 
 const ANY = 'any'
 
@@ -130,7 +130,7 @@ export default function AdminOrganizationsPage() {
             'Every organization on this installation, with its owner, limits and single sign-on setup.'
           )}
         >
-          {adminCan(admin.role, 'ops_admin') && (
+          {adminHas(admin, 'platform.tenants.create') && (
             <CreateOrganizationDialog
               onCreated={(org) => router.push(`/organizations/${org.id}`)}
             />

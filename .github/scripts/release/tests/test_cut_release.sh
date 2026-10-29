@@ -95,4 +95,35 @@ assert_eq "hotfix conflict: refused" 1 "$rc"
 assert_contains "hotfix conflict: explained" "conflicts" "$out"
 assert_rc "hotfix conflict: no branch left behind" 1 git -C "$w" rev-parse -q --verify refs/heads/release/v0.2.1
 
+# A PR's merge commit (the queue merges with MERGE commits) is picked by its
+# first-parent diff (-m 1) instead of failing with "is a merge but no -m".
+git -C "$w" switch -q -c prside develop~1
+commit "$w" "fix(api): pr work" pr.txt
+git -C "$w" switch -q -c prmerge develop~1
+git -C "$w" merge -q --no-ff -m "Merge pull request #7 from side" prside
+mergec="$(git -C "$w" rev-parse HEAD)"
+git -C "$w" switch -q develop
+out="$(bash "$CUT" --repo "$w" --version v0.2.1 --mode hotfix --picks "$mergec" 2>&1)"; rc=$?
+assert_eq "hotfix merge-commit pick: exit 0 ($out)" 0 "$rc"
+assert_rc "hotfix merge-commit pick: the PR's file arrived" 0 git -C "$w" cat-file -e "release/v0.2.1:pr.txt"
+git -C "$w" branch -q -D release/v0.2.1
+
+# The version checks run with the scripts of the tag's own tree: a tag whose
+# layout the current scripts do not know must not be judged by them.
+git -C "$w" switch -q main
+mkdir -p "$w/.github/scripts/release"
+cat >"$w/.github/scripts/release/sync-versions.sh" <<'STUB'
+#!/usr/bin/env bash
+echo "TAG-OWN-CHECKER $*" >&2
+exit 0
+STUB
+git -C "$w" add .github/scripts/release/sync-versions.sh
+git -C "$w" commit -q -m "ci: tag-owned checker"
+git -C "$w" tag -f -a v0.2.0 -m v0.2.0 >/dev/null
+git -C "$w" push -q -f origin main v0.2.0
+git -C "$w" switch -q develop
+out="$(bash "$CUT" --repo "$w" --version v0.2.1 --mode hotfix --picks "$fix" 2>&1)"; rc=$?
+assert_eq "hotfix: exit 0 with the tag's checker ($out)" 0 "$rc"
+assert_contains "hotfix: the tag's own sync-versions.sh ran" "TAG-OWN-CHECKER" "$out"
+
 finish

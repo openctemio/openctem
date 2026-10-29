@@ -1098,7 +1098,10 @@ session holds a live elevation (`POST /api/v1/admin/auth/elevate {role}`, a
 **fresh** step-up, 15-60 minutes, one platform role whose permissions are all
 held, or the tier names `ops_admin` / `super_admin`; `DELETE` ends it); it then
 also acts with that role's permissions. `GET /admin/auth/validate` returns
-`roles`, `permissions` (acting) and `max_permissions`. Elevation never
+`roles`, `permissions` (acting) and `max_permissions`. Additional roles are
+given and taken with `platform.roles.assign` (owner only, step-up, reason,
+never to oneself, only roles whose permissions the caller holds); the base role
+follows `admin_users.role`. Reference: `platform-permissions.md` (generated). Elevation never
 rides a step-up window another action opened: it takes a fresh authenticator
 code or a security-key confirmation given within the last minute, and that
 proof then opens the five-minute step-up window for the protected actions that
@@ -1206,7 +1209,7 @@ and the `PLATFORM_ADMIN_EMAILS` flag that guarded them were removed; no tenant
 role, however high, can reach SSO setup. The SSO **login** flow
 (`/api/v1/auth/sso/*`, `/api/v1/auth/saml/{org}/*`) is public and unchanged.
 
-### Platform administrator identity (RFC-022)
+### Platform administrator identity (RFC-022, RFC-134)
 
 A platform administrator is a `users` account linked to an `admin_users` row
 (`admin_users.user_id`) that holds the role (`super_admin` > `ops_admin` >
@@ -1214,10 +1217,19 @@ A platform administrator is a `users` account linked to an `admin_users` row
 console's own sign-in page: `POST /api/v1/admin/auth/login` (email and
 password) and `POST /api/v1/admin/auth/mfa` open a console session. Rules:
 
-- **Belongs to no organization.** A trigger on `tenant_members` rejects a
-  membership for a linked account (SQLSTATE 23514, surfaced as 409), and an
-  account with memberships cannot be linked. This is what keeps a tenant
-  role and the platform role from ever meeting in one principal.
+- **One identity, two planes.** The account may be an ordinary member of
+  organizations and sign in on the main site, where it acts with its tenant
+  role only: no tenant gate, token claim or response reads or reveals the
+  platform role. What keeps the two roles from meeting in one principal is
+  the plane: the console accepts only its own opaque session (never a tenant
+  JWT) and the tenant API only JWTs (never a console token).
+- **Break-glass stays console-only.** A trigger refuses a membership for a
+  break-glass administrator's account and refuses to mark or link an account
+  that is a member as break-glass (SQLSTATE 23514, constraint
+  `break_glass_console_only`, surfaced as 409).
+- **No self-minted access.** Console paths that create a membership never
+  reuse an existing account, and an administrator cannot approve an access
+  request made with their own e-mail (403).
 - **Password sign-in only.** A session created by SSO, SAML or a social provider
   cannot open the console, so no organization's IdP can authenticate an
   administrator.
@@ -1352,8 +1364,8 @@ leaves the service (409 "verified by another organization"); the other
 organization is never named.
 
 **First-owner bootstrap** (owner decision 2026-10-02, RFC-022 revision 5).
-The platform administrator belongs to no organization and cannot put a person
-of its choosing into one: `POST /admin/tenants/{tenantId}/users` creates only
+The platform administrator cannot put a person of its choosing into an
+organization (its own account included, RFC-134): `POST /admin/tenants/{tenantId}/users` creates only
 the first owner of an organization that has no owner, active or suspended (checked and
 inserted in one transaction under a per-organization advisory lock, so two
 requests cannot create two owners), and answers 409 once an owner exists — the

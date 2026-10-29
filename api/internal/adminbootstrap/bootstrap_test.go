@@ -46,7 +46,7 @@ func TestOptionsFirstOrganization(t *testing.T) {
 		"owner without name":  {func(o *Options) { o.OrgOwnerEmail = "o@acme.io" }, "-org-name", ""},
 		"slug without name":   {func(o *Options) { o.OrgSlug = "acme" }, "-org-name", ""},
 		"bad owner email":     {func(o *Options) { o.OrgName, o.OrgOwnerEmail = "Acme", "nope" }, "invalid organization owner email", ""},
-		"owner is the admin":  {func(o *Options) { o.OrgName, o.OrgOwnerEmail = "Acme", "A@x.io" }, "cannot own an organization", ""},
+		"owner is the admin":  {func(o *Options) { o.OrgName, o.OrgOwnerEmail = "Acme", "A@x.io" }, "", "acme"},
 		"owner is the backup": {func(o *Options) { o.OrgName, o.OrgOwnerEmail = "Acme", "b@x.io" }, "cannot own an organization", ""},
 		"underivable slug":    {func(o *Options) { o.OrgName, o.OrgOwnerEmail = "Ωμέγα", "o@acme.io" }, "-org-slug", ""},
 		"bad explicit slug":   {func(o *Options) { o.OrgName, o.OrgSlug, o.OrgOwnerEmail = "Acme", "a_b", "o@acme.io" }, "invalid -org-slug", ""},
