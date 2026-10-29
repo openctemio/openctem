@@ -5,7 +5,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { PageHeader, PageStack } from '@/features/shared'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { SupportAccessPanel } from '@console/features/admin-console/components/support-access-panel'
-import { adminCan } from '@console/features/admin-console/types'
+import { adminHas } from '@console/features/admin-console/types'
 
 /**
  * Customers › Support access (api RFC-063): organizations whose owner let the
@@ -25,7 +25,7 @@ export default function SupportAccessPage() {
             'Organizations that granted you read-only access to help them, and your support sessions.'
           )}
         />
-        <SupportAccessPanel canSupport={adminCan(me.role, 'ops_admin')} />
+        <SupportAccessPanel canSupport={adminHas(me, 'platform.support.access')} />
       </PageStack>
     </Main>
   )

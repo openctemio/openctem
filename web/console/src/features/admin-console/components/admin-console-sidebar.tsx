@@ -53,20 +53,18 @@ export function AdminConsoleSidebar({ admin, onSignOut }: AdminConsoleSidebarPro
   // By the administrator's own role, not the session's acting one: a super
   // admin acting read-only still sees every page, and the page offers the
   // elevation next to what it unlocks.
-  const sections: GroupedNavSection[] = visibleAdminNav(admin.max_role ?? admin.role).map(
-    (section, i) => ({
-      key: section.title ?? String(i),
-      label: section.i18nKey ? t(section.i18nKey, section.title) : section.title,
-      items: section.items
-        .filter((item) => !item.hideInSidebar)
-        .map((item) => ({
-          key: item.url,
-          title: t(item.i18nKey, item.title),
-          url: item.url,
-          icon: item.icon,
-        })),
-    })
-  )
+  const sections: GroupedNavSection[] = visibleAdminNav(admin).map((section, i) => ({
+    key: section.title ?? String(i),
+    label: section.i18nKey ? t(section.i18nKey, section.title) : section.title,
+    items: section.items
+      .filter((item) => !item.hideInSidebar)
+      .map((item) => ({
+        key: item.url,
+        title: t(item.i18nKey, item.title),
+        url: item.url,
+        icon: item.icon,
+      })),
+  }))
   // The deepest entry that owns the current path is the one marked current.
   const activeUrl = sections
     .flatMap((s) => s.items.map((i) => i.url))

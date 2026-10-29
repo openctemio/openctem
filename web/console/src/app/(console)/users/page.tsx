@@ -21,10 +21,10 @@ import {
 } from '@console/features/admin-console/api/use-platform-users'
 import { PlatformUserBadges } from '@console/features/admin-console/components/platform-user-badges'
 import {
-  adminCan,
   PLATFORM_USER_STATES,
   type PlatformUserListItem,
   type PlatformUserState,
+  adminHas,
 } from '@console/features/admin-console/types'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { RoleRequiredNotice } from '@console/features/admin-console/components/role-required-notice'
@@ -54,7 +54,7 @@ export default function AdminUsersPage() {
   const router = useRouter()
   const { t } = useTranslation()
   const me = useAdmin()
-  const allowed = adminCan(me.role, 'ops_admin')
+  const allowed = adminHas(me, 'platform.users.read')
   // Search, tab and page live in the URL, so a support ticket can link to them.
   const list = useListParams({ defaultPageSize: 25, filters: { state: 'all' } })
   const state: PlatformUserState = isState(list.filters.state) ? list.filters.state : 'all'
