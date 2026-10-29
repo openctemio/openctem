@@ -24,6 +24,67 @@ export interface WidgetPoint {
   v: number
 }
 
+/** One figure and the list it counts (a priority class, a severity, an outcome). */
+export interface FlowFigure {
+  key?: string
+  value: number
+  drill?: string
+}
+
+/** What one source (a source group and a tool) sent in the window, and its health. */
+export interface IntakeSource {
+  origin: 'sensor' | 'import' | 'connector' | 'ci' | ''
+  tool: string
+  receipts: number
+  received: number
+  created: number
+  still_detected: number
+  reopened: number
+  closed: number
+  suppressed: number
+  /** Skipped (out of scope, excluded, invalid) or failed. */
+  not_stored: number
+  last_at: string
+  last_status: string
+  last_receipt_id: string
+  health: 'ok' | 'stale' | 'failed'
+  /** The usual interval between receipts; absent with fewer than three. */
+  expected_every_seconds?: number
+  /** The receipt list of this source in the window (its totals are these figures). */
+  drill: string
+}
+
+/** The organization's intake in the window (ingest.intake, and the exposure flow's sources). */
+export interface IntakeValue {
+  since: string
+  sources: IntakeSource[]
+  totals: IntakeSource
+  /** Received split into parts that sum to it. */
+  noise: { received: number; new: number; merged: number; suppressed: number; not_stored: number }
+  failing: number
+  stale: number
+  drill: string
+  false_positive: FlowFigure
+}
+
+/** The exposure flow (exposure.flow). */
+export interface FlowValue {
+  since: string
+  /** Absent for a read with a data scope (intake_reason organization_only). */
+  intake?: IntakeValue
+  intake_reason?: 'organization_only' | 'no_receipts'
+  actionable: FlowFigure
+  classes: FlowFigure[]
+  open: FlowFigure
+  severity: FlowFigure[]
+  past_sla: FlowFigure
+  in_progress: FlowFigure
+  fixed: FlowFigure
+  accepted: FlowFigure
+  false_positive: FlowFigure
+  stages: NonNullable<WidgetValue['stages']> | null
+}
+
 export interface WidgetValue {
   id: string
   index: number
@@ -105,6 +166,10 @@ export interface WidgetValue {
     }>
     focus: number | null
   }
+  /** The exposure flow (exposure.flow). */
+  flow?: FlowValue
+  /** The organization's intake (ingest.intake). */
+  intake?: IntakeValue
   /** Attack paths to crown jewels (attack_paths.to_crown_jewels). */
   paths?: {
     reachable: number

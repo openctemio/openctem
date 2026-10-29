@@ -95,6 +95,7 @@ func newAdminPlatformSettingsHandler(repos *Repositories, svc *Services, approva
 	if svc.ThreatIntel != nil {
 		h.ThreatReadiness = svc.ThreatIntel
 	}
+	h.MFA = svc.PlatformMFA
 	h.SocialLogin = svc.PlatformSocialLogin
 	if svc.Signup != nil {
 		h.Signup = svc.Signup

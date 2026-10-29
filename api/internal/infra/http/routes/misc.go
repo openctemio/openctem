@@ -297,10 +297,10 @@ func registerIntegrationRoutes(
 		r.GET("/notifications", h.ListNotifications, middleware.Require(permission.IntegrationsRead))
 
 		// Create new integration
-		r.POST("/", h.Create, middleware.Require(permission.IntegrationsManage), requireStepUp())
+		r.POST("/", h.Create, middleware.Require(permission.IntegrationsManage), requireStepUp(), requireCredentialFactor())
 
 		// Create notification integration
-		r.POST("/notifications", h.CreateNotification, middleware.Require(permission.IntegrationsManage), requireStepUp())
+		r.POST("/notifications", h.CreateNotification, middleware.Require(permission.IntegrationsManage), requireStepUp(), requireCredentialFactor())
 
 		// Test credentials without creating (must be before /{id} routes)
 		// A probe of a caller-chosen URL answers differently for reachable and
@@ -353,7 +353,7 @@ func registerIntegrationRoutes(
 
 		// Get, update, delete specific integration
 		r.GET("/{id}", h.Get, middleware.Require(permission.IntegrationsRead))
-		r.PUT("/{id}", h.Update, middleware.Require(permission.IntegrationsManage), requireStepUp())
+		r.PUT("/{id}", h.Update, middleware.Require(permission.IntegrationsManage), requireStepUp(), requireCredentialFactor())
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.IntegrationsManage), requireStepUp())
 
 		// Integration actions
@@ -381,7 +381,7 @@ func registerIntegrationRoutes(
 		// status changes for the organization.
 		r.GET("/{id}/jira-webhook", h.GetJiraWebhook, middleware.Require(permission.IntegrationsManage))
 		r.POST("/{id}/jira-webhook/secret/rotate", h.RotateJiraWebhookSecret, middleware.Require(permission.IntegrationsManage), requireStepUp())
-		r.PUT("/{id}/jira-webhook/secret", h.SetJiraWebhookSecret, middleware.Require(permission.IntegrationsManage), requireStepUp())
+		r.PUT("/{id}/jira-webhook/secret", h.SetJiraWebhookSecret, middleware.Require(permission.IntegrationsManage), requireStepUp(), requireCredentialFactor())
 
 		// Inbound GitHub webhook of one integration: its URL and whether a
 		// secret is set, and the secret's rotation (shown once). Rotation is
@@ -391,7 +391,7 @@ func registerIntegrationRoutes(
 		r.POST("/{id}/github-webhook/secret/rotate", h.RotateGitHubWebhookSecret, middleware.Require(permission.IntegrationsManage), requireStepUp())
 
 		// Notification actions
-		r.PUT("/{id}/notification", h.UpdateNotification, middleware.Require(permission.IntegrationsManage), requireStepUp())
+		r.PUT("/{id}/notification", h.UpdateNotification, middleware.Require(permission.IntegrationsManage), requireStepUp(), requireCredentialFactor())
 		r.POST("/{id}/test-notification", h.TestNotification, middleware.Require(permission.IntegrationsManage))
 		// NOTE: /send endpoint removed for security - notifications are triggered internally only
 		// Use BroadcastNotification from FindingService/ScanService instead
@@ -543,7 +543,7 @@ func registerAPIKeyRoutes(
 
 	router.Group("/api/v1/api-keys", func(r Router) {
 		r.GET("/", h.List, middleware.Require(permission.APIKeysRead))
-		r.POST("/", h.Create, middleware.Require(permission.APIKeysWrite), requireStepUp())
+		r.POST("/", h.Create, middleware.Require(permission.APIKeysWrite), requireStepUp(), requireCredentialFactor())
 		r.GET("/{id}", h.Get, middleware.Require(permission.APIKeysRead))
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.APIKeysDelete), requireStepUp())
 		r.POST("/{id}/revoke", h.Revoke, middleware.Require(permission.APIKeysWrite))

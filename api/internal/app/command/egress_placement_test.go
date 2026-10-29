@@ -90,3 +90,17 @@ func TestEgressHoldsExplainThemselves(t *testing.T) {
 		t.Errorf("a non-job command has a hold reason")
 	}
 }
+
+// A host direct-only sensor that needs a pool is held for its own reason,
+// scans and validate alike: upgrading the sensor does not help.
+func TestEgressDecision_HostDirectHoldReason(t *testing.T) {
+	d := egressDecision{blocked: true, validateBlocked: true, hostDirect: true}
+	for _, typ := range []commanddom.CommandType{commanddom.CommandTypeScan, commanddom.CommandTypeValidate} {
+		if got := d.holdReason(typ); got != commanddom.PlacementEgressHostDirect {
+			t.Errorf("%s: reason = %q, want %q", typ, got, commanddom.PlacementEgressHostDirect)
+		}
+	}
+	if got := d.holdReason(commanddom.CommandTypeCollect); got != "" {
+		t.Errorf("a non-job command has a hold reason: %q", got)
+	}
+}

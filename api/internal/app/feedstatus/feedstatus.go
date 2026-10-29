@@ -47,6 +47,10 @@ const (
 // interrupted (the longest controller run is 45 minutes).
 const runningTimeout = time.Hour
 
+// RunningTimeout is how long a run may hold a feed before it counts as
+// interrupted (and another run may claim the feed).
+const RunningTimeout = runningTimeout
+
 // Interval is the controller interval of a source (0: unknown source).
 func Interval(source string) time.Duration {
 	switch source {

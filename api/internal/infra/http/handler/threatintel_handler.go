@@ -6,12 +6,13 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/feedstatus"
+	"github.com/openctemio/openctem/api/internal/app/feedsync"
 	"github.com/openctemio/openctem/api/internal/app/threat"
-	"github.com/openctemio/openctem/api/internal/app/vulnfeed"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 
 	"github.com/go-chi/chi/v5"
@@ -28,19 +29,22 @@ type ThreatIntelHandler struct {
 	validator *validator.Validator
 	logger    *logger.Logger
 	dataScope *datascope.Enforcer
-	bundles   BundleSyncer
+	runner    FeedRunner
+	// bundlesConfigured: VULNFEED_ROOT_KEY_ID is set.
+	bundlesConfigured bool
 }
 
-// BundleSyncer runs the vulnerability bundle import on request
-// (*vulnfeed.Importer).
-type BundleSyncer interface {
-	Sync(ctx context.Context) (vulnfeed.Result, error)
+// FeedRunner starts a feed's sync in the background (*feedsync.Runner).
+type FeedRunner interface {
+	Has(source string) bool
+	Trigger(source string) (feedsync.Outcome, error)
 }
 
-// SetBundleSyncer wires the vulnerability bundle importer so the admin sync
-// endpoint can run the "vulnfeed" source (nil: the source is not accepted).
-func (h *ThreatIntelHandler) SetBundleSyncer(b BundleSyncer) *ThreatIntelHandler {
-	h.bundles = b
+// SetFeedRunner wires the background runner behind the admin sync endpoint.
+// bundlesConfigured says whether the vulnerability bundle import has a pinned
+// root key (without one a manual sync would do nothing).
+func (h *ThreatIntelHandler) SetFeedRunner(r FeedRunner, bundlesConfigured bool) *ThreatIntelHandler {
+	h.runner, h.bundlesConfigured = r, bundlesConfigured
 	return h
 }
 
@@ -135,16 +139,18 @@ func (h *ThreatIntelHandler) getSyncStatus(w http.ResponseWriter, r *http.Reques
 	writeJSONResponse(w, http.StatusOK, toTenantSyncStatusResponse(v))
 }
 
-// TriggerSync triggers a sync for a specific source or all sources.
+// TriggerSync starts a sync of one feed or all feeds in the background.
 // POST /api/v1/admin/threat-intel/sync
-// @Summary      Run a threat-intelligence feed sync (platform admin)
-// @Description  Syncs the platform-wide EPSS and/or CISA KEV feed now. ops_admin or super_admin; audited.
+// @Summary      Start a threat-intelligence feed sync (platform admin)
+// @Description  Queues a background sync of the EPSS, CISA KEV and/or vulnerability bundle feed and returns at once (202); the outcome shows in the feed status. One run per feed at a time; a feed that is switched off or not configured is not started. ops_admin or super_admin; audited.
 // @Tags         Admin Threat Intelligence
 // @Accept       json
 // @Produce      json
 // @Param        request  body      TriggerSyncRequest  false  "Feed (epss, kev, vulnfeed, all); empty = all"
-// @Success      200  {object}  map[string]any
+// @Success      202  {object}  map[string]any
 // @Failure      400  {object}  apierror.Error
+// @Failure      409  {object}  apierror.Error
+// @Failure      429  {object}  apierror.Error
 // @Security     BearerAuth
 // @Router       /admin/threat-intel/sync [post]
 func (h *ThreatIntelHandler) TriggerSync(w http.ResponseWriter, r *http.Request) {
@@ -154,70 +160,86 @@ func (h *ThreatIntelHandler) TriggerSync(w http.ResponseWriter, r *http.Request)
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		// An empty body is allowed and means "sync all"; a malformed body is a
 		// client error and must not be silently coerced into a full external
-		// EPSS + CISA-KEV sync.
+		// sync.
 		if !errors.Is(err, io.EOF) {
 			apierror.BadRequest("Invalid request body").WriteJSON(w)
 			return
 		}
 		req.Source = ""
 	}
-
-	h.logger.Info("triggering threat intel sync", "source", req.Source)
-
-	var results []threat.IntelSyncResult
-	switch req.Source {
-	case "", "all":
-		results = h.service.SyncAll(ctx)
-		if h.bundles != nil {
-			results = append(results, h.syncBundles(ctx))
-		}
-	case "epss":
-		results = []threat.IntelSyncResult{h.service.SyncEPSS(ctx)}
-	case "kev":
-		results = []threat.IntelSyncResult{h.service.SyncKEV(ctx)}
-	case vulnfeed.SourceName:
-		if h.bundles == nil {
-			apierror.BadRequest("invalid source: " + req.Source).WriteJSON(w)
-			return
-		}
-		results = []threat.IntelSyncResult{h.syncBundles(ctx)}
-	default:
-		apierror.BadRequest("invalid source: " + req.Source).WriteJSON(w)
+	if h.runner == nil {
+		apierror.ServiceUnavailable("feed sync is not available on this instance").WriteJSON(w)
 		return
 	}
 
-	response := make([]SyncResultResponse, 0, len(results))
-	for _, result := range results {
-		resp := SyncResultResponse{
-			Source:        result.Source,
-			RecordsSynced: result.RecordsSynced,
-			DurationMs:    result.DurationMs,
-			Success:       result.Error == nil,
+	all := req.Source == "" || req.Source == "all"
+	var sources []string
+	if all {
+		for _, s := range []string{feedstatus.SourceVulnfeed, feedstatus.SourceEPSS, feedstatus.SourceKEV} {
+			if h.runner.Has(s) {
+				sources = append(sources, s)
+			}
 		}
-		if result.Error != nil {
-			resp.Error = result.Error.Error()
+	} else {
+		if !h.runner.Has(req.Source) {
+			apierror.BadRequest("invalid source: " + req.Source).WriteJSON(w)
+			return
 		}
-		response = append(response, resp)
+		sources = []string{req.Source}
+	}
+	h.logger.Info("triggering threat intel sync", "source", req.Source)
+
+	results := make([]TriggerResult, 0, len(sources))
+	var tooSoon *feedsync.TooSoonError
+	started := 0
+	for _, source := range sources {
+		if reason := h.cannotRun(ctx, source); reason != "" {
+			results = append(results, TriggerResult{Source: source, Status: "skipped", Reason: reason})
+			continue
+		}
+		out, err := h.runner.Trigger(source)
+		var ts *feedsync.TooSoonError
+		switch {
+		case errors.As(err, &ts):
+			tooSoon = ts
+			results = append(results, TriggerResult{Source: source, Status: "skipped", Reason: "rate_limited"})
+		case err != nil:
+			apierror.InternalError(err).WriteJSON(w)
+			return
+		default:
+			started++
+			results = append(results, TriggerResult{Source: source, Status: string(out)})
+		}
 	}
 
-	// Always 200: the outcome of each feed is in results[].success, so a
-	// client that treats any 2xx as success cannot miss a failure by status.
-	writeJSONResponse(w, http.StatusOK, map[string]any{
-		"results": response,
-	})
+	if started == 0 {
+		if tooSoon != nil {
+			w.Header().Set("Retry-After", strconv.Itoa(int(tooSoon.RetryAfter.Seconds())+1))
+			apierror.TooManyRequests("A sync of this feed was just started. Try again in a few seconds.").WriteJSON(w)
+			return
+		}
+		if !all {
+			apierror.Conflict("This feed cannot be synced now: " + results[0].Reason).WriteJSON(w)
+			return
+		}
+	}
+	writeJSONResponse(w, http.StatusAccepted, map[string]any{"results": results})
 }
 
-// syncBundles runs the vulnerability bundle import as a sync result.
-func (h *ThreatIntelHandler) syncBundles(ctx context.Context) threat.IntelSyncResult {
-	start := time.Now()
-	res, err := h.bundles.Sync(ctx)
-	return threat.IntelSyncResult{
-		Source:        vulnfeed.SourceName,
-		RecordsSynced: res.CVEs,
-		DurationMs:    time.Since(start).Milliseconds(),
-		NotModified:   err == nil && !res.Ran,
-		Error:         err,
+// cannotRun says why a feed is not started ("" when it can be): scheduled
+// sync switched off, or the bundle import not configured.
+func (h *ThreatIntelHandler) cannotRun(ctx context.Context, source string) string {
+	if source == feedstatus.SourceVulnfeed && !h.bundlesConfigured {
+		return feedstatus.CodeNotConfigured
 	}
+	enabled, err := h.service.FeedEnabled(ctx, source)
+	if err != nil {
+		return "unknown"
+	}
+	if !enabled {
+		return feedstatus.CodeDisabled
+	}
+	return ""
 }
 
 // SetSyncEnabled enables or disables sync for a source.
@@ -503,13 +525,13 @@ type TenantSyncStatusResponse struct {
 	NextSyncAt     *string `json:"next_sync_at,omitempty"`
 }
 
-// SyncResultResponse is the response for a sync result.
-type SyncResultResponse struct {
-	Source        string `json:"source"`
-	RecordsSynced int    `json:"records_synced"`
-	DurationMs    int64  `json:"duration_ms"`
-	Success       bool   `json:"success"`
-	Error         string `json:"error,omitempty"`
+// TriggerResult is what a sync request did for one feed: status is
+// queued, already_running or skipped (reason: disabled, not_configured,
+// rate_limited).
+type TriggerResult struct {
+	Source string `json:"source"`
+	Status string `json:"status"`
+	Reason string `json:"reason,omitempty"`
 }
 
 // EnrichmentResponse is the response for CVE enrichment.

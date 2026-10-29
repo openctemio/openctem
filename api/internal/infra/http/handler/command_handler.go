@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
@@ -23,12 +24,14 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/validation"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/assetresolution"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/stage"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/validator"
 )
@@ -62,8 +65,10 @@ type CommandHandler struct {
 	validationIngest validationEvidenceIngester
 	retestEvidence   retestEvidenceRecorder
 	retestSettler    retestSettler
+	proxyTests       proxyTestObserver
 	simFinalizer     simulationRunFinalizer
 	validationRuns   validationRunSettler
+	resolution       resolutionRecorder
 	coverage         commandCoverageEvaluator
 	validator        *validator.Validator
 	logger           *logger.Logger
@@ -101,6 +106,61 @@ func (h *CommandHandler) SetAuditService(svc *auditsvc.AuditService) {
 // every scan command is refused (fail closed).
 func (h *CommandHandler) SetScanCommandGate(g scanCommandGate) {
 	h.scanGate = g
+}
+
+// resolutionRecorder records names a sensor could not resolve
+// (assetresolution.Store).
+type resolutionRecorder interface {
+	RecordFailedNames(ctx context.Context, tenantID shared.ID, names []string, at time.Time, source string) error
+}
+
+// SetResolutionRecorder wires the resolution states fed by sensor refusals.
+func (h *CommandHandler) SetResolutionRecorder(r resolutionRecorder) { h.resolution = r }
+
+// recordUnresolvableNames feeds the resolution state from a completed
+// command's refused targets: a name the sensor refused as unresolvable has
+// failed one more check (consecutive failures make it not_resolving, which
+// keeps it out of active probes; passive stages still take it, so it comes
+// back by itself). Sensor-supplied: parsed defensively and bounded; only
+// names of the command's own tenant can match an asset.
+func (h *CommandHandler) recordUnresolvableNames(cmd *commanddom.Command) {
+	if h.resolution == nil || cmd == nil || len(cmd.Result) == 0 {
+		return
+	}
+	var result struct {
+		Metadata struct {
+			RefusedTargets      json.RawMessage `json:"refused_targets"`
+			RefusedTargetsTotal int             `json:"refused_targets_total"`
+		} `json:"metadata"`
+	}
+	if json.Unmarshal(cmd.Result, &result) != nil {
+		return
+	}
+	skipped, _ := scanrundom.ParseSkippedTargets(result.Metadata.RefusedTargets, result.Metadata.RefusedTargetsTotal)
+	var names []string
+	for _, s := range skipped {
+		if s.Reason != scanrundom.SkipReasonTargetUnresolvable {
+			continue
+		}
+		n := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(s.Target), "."))
+		if n != "" && stage.ClassifyTarget(n) == stage.KindName {
+			names = append(names, n)
+		}
+	}
+	if len(names) == 0 {
+		return
+	}
+	tenantID, at := cmd.TenantID, time.Now()
+	if cmd.CompletedAt != nil {
+		at = *cmd.CompletedAt
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := h.resolution.RecordFailedNames(ctx, tenantID, names, at, assetresolution.SourceSensorRefusal); err != nil {
+			h.logger.Warn("failed to record names the sensor could not resolve", "command_id", cmd.ID.String(), "error", logger.SanitizeError(err))
+		}
+	}()
 }
 
 // SetScanRunService sets the scan run service for triggering scan workflow progression.
@@ -159,9 +219,31 @@ func (h *CommandHandler) settleValidationRun(cmd *commanddom.Command, succeeded 
 // validation run. The v2 fail transition and the claim-time scope re-check
 // (command.FailureObserver) both call it.
 func (h *CommandHandler) OnCommandFailed(ctx context.Context, cmd *commanddom.Command, message, code string) {
+	if h.finishProxyTest(ctx, cmd) {
+		return
+	}
 	h.triggerScanRunFailed(ctx, cmd, message, code)
 	h.triggerRetestSettle(cmd)
 	h.settleValidationRun(cmd, false, sensordom.RedactPlatformText(message), code)
+}
+
+// proxyTestObserver records a finished proxy test (the audit log).
+type proxyTestObserver interface {
+	OnProxyTestFinished(ctx context.Context, cmd *commanddom.Command)
+}
+
+// SetProxyTests records finished proxy tests, completed or failed.
+func (h *CommandHandler) SetProxyTests(o proxyTestObserver) { h.proxyTests = o }
+
+// finishProxyTest hands a finished proxy_test command to its observer.
+func (h *CommandHandler) finishProxyTest(ctx context.Context, cmd *commanddom.Command) bool {
+	if cmd == nil || cmd.Type != commanddom.CommandTypeProxyTest {
+		return false
+	}
+	if h.proxyTests != nil {
+		h.proxyTests.OnProxyTestFinished(context.WithoutCancel(ctx), cmd)
+	}
+	return true
 }
 
 // retestSettler settles a pending retest when one of its commands finishes.
@@ -691,6 +773,9 @@ func (h *CommandHandler) triggerSimulationFinalize(cmd *commanddom.Command) {
 // Best-effort and asynchronous — a mapping failure never blocks the sensor's
 // completion response.
 func (h *CommandHandler) triggerValidationEvidence(cmd *commanddom.Command) {
+	if h.finishProxyTest(context.Background(), cmd) {
+		return
+	}
 	// A tool retest (RFC-039) has no validation evidence: its verdict is read
 	// by the retest service, which settles the retest.
 	if cmd != nil && cmd.Type == commanddom.CommandTypeRetest {
@@ -935,7 +1020,8 @@ func (h *CommandHandler) triggerScanRunProgression(ctx context.Context, cmd *com
 	// hosts are not read as "no findings" (RFC-074).
 	gaps, gapsTotal := scanrundom.ParseCoverageGaps(result.Metadata.CoverageGaps, result.Metadata.CoverageGapsTotal)
 	partial := scanrun.Partial{Skipped: skippedTotal, SkippedSummary: skippedSummary,
-		Gaps: gapsTotal, GapSummary: scanrundom.CoverageGapSummary(gaps, gapsTotal), GapList: gaps}
+		Unresolvable: scanrundom.UnresolvableCount(skipped, skippedTotal),
+		Gaps:         gapsTotal, GapSummary: scanrundom.CoverageGapSummary(gaps, gapsTotal), GapList: gaps}
 	// Targets the sensor could not reach (RFC-089): none reached fails the
 	// step as unreachable, some unreached ends it partial. A result without
 	// a reach summary (an older sensor) keeps the outcome above.

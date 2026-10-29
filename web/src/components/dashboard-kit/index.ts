@@ -21,6 +21,8 @@ export { ColumnViz, AreaLineViz, DivergingViz, netOf, toRows } from './series-vi
 export { HeatmapViz, ItemsViz, heatStep } from './grid-viz'
 export { LoopViz } from './loop-viz'
 export { PathsViz } from './paths-viz'
+export { ExposureFlowViz } from './exposure-flow-viz'
+export { IntakeViz, SourceTable } from './intake-viz'
 export { CategoryTable, TimeSeriesTable, MatrixTable, StagesTable, PathsTable } from './table-viz'
 export {
   ChartOrTable,

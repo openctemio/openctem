@@ -82,7 +82,7 @@ type RunRepository interface {
 	CreateRunIfUnderLimit(ctx context.Context, run *Run, maxPerScan, maxPerTenant int) error
 
 	// UpdateStats updates run statistics.
-	UpdateStats(ctx context.Context, id shared.ID, completed, failed, skipped, findings int) error
+	UpdateStats(ctx context.Context, tenantID, id shared.ID, completed, failed, skipped, findings int) error
 
 	// UpdateStatus updates run status.
 	UpdateStatus(ctx context.Context, id shared.ID, status RunStatus, errorMessage string) error

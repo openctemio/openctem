@@ -113,7 +113,7 @@ git -C "$w" switch -q develop
 out="$(bash "$POST" --repo "$w" --version v0.3.2 --mode hotfix --push 2>/dev/null)"; rc=$?
 assert_eq "post conflict: exit 3" 3 "$rc"
 assert_contains "post conflict: names the file" "CONFLICTS=clash.txt" "$out"
-assert_contains "post conflict: names the main commit" "$(git -C "$w" rev-parse --short=12 v0.3.2^{commit})" "$out"
+assert_contains "post conflict: names the main commit" "$(git -C "$w" rev-parse --short=12 "v0.3.2^{commit}")" "$out"
 assert_eq "post conflict: pushes nothing" "" "$(git -C "$w" ls-remote --heads origin chore/post-release-v0.3.2)"
 
 # --- helm-bump.sh ------------------------------------------------------------------

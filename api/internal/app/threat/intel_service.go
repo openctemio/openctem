@@ -226,9 +226,10 @@ type IntelSyncResult struct {
 	// NotModified: the source answered 304 to the conditional request, so
 	// nothing was rewritten.
 	NotModified bool
-	// Skipped: the direct fetch did not run because the platform setting
-	// leaves the feed to the signed release (SkipReason is the code of
-	// FetchDecision).
+	// Skipped: no direct fetch ran. Either the platform setting leaves the
+	// feed to the signed release (SkipReason is the code of FetchDecision), or
+	// another run of the same feed holds it (Error is ErrSyncAlreadyRunning,
+	// which is not a failure of the feed).
 	Skipped    bool
 	SkipReason string
 	Error      error
@@ -271,11 +272,17 @@ func (s *IntelService) SyncEPSS(ctx context.Context) IntelSyncResult {
 		return result
 	}
 
-	// Mark sync as started
-	status.MarkSyncStarted()
-	if err := s.repo.SyncStatus().Update(ctx, status); err != nil {
-		s.logger.Error("failed to update sync status", "error", err)
+	// Claim the run: one at a time per feed, across replicas and between the
+	// scheduled run and an operator's request.
+	if ok, cerr := s.repo.SyncStatus().TryStart(ctx, "epss", feedstatus.RunningTimeout); cerr != nil {
+		result.Error = fmt.Errorf("failed to start sync: %w", cerr)
+		return result
+	} else if !ok {
+		result.Skipped = true
+		result.Error = threatintel.ErrSyncAlreadyRunning
+		return result
 	}
+	status.MarkSyncStarted()
 
 	s.logger.Info("starting EPSS sync")
 
@@ -371,11 +378,17 @@ func (s *IntelService) SyncKEV(ctx context.Context) IntelSyncResult {
 		return result
 	}
 
-	// Mark sync as started
-	status.MarkSyncStarted()
-	if err := s.repo.SyncStatus().Update(ctx, status); err != nil {
-		s.logger.Error("failed to update sync status", "error", err)
+	// Claim the run: one at a time per feed, across replicas and between the
+	// scheduled run and an operator's request.
+	if ok, cerr := s.repo.SyncStatus().TryStart(ctx, "kev", feedstatus.RunningTimeout); cerr != nil {
+		result.Error = fmt.Errorf("failed to start sync: %w", cerr)
+		return result
+	} else if !ok {
+		result.Skipped = true
+		result.Error = threatintel.ErrSyncAlreadyRunning
+		return result
 	}
+	status.MarkSyncStarted()
 
 	s.logger.Info("starting KEV sync")
 
@@ -1144,6 +1157,21 @@ type kevVulnerability struct {
 	// `string` typing here silently worked only while the feed fetch was failing
 	// upstream, then broke the moment the fetch was repaired.
 	CWEs []string `json:"cwes,omitempty"`
+}
+
+// FeedEnabled reports whether a feed's scheduled sync is on
+// (threatintel.ErrSyncStatusNotFound when the source is unknown).
+func (s *IntelService) FeedEnabled(ctx context.Context, source string) (bool, error) {
+	rows, err := s.repo.SyncStatus().GetAll(ctx)
+	if err != nil {
+		return false, err
+	}
+	for _, st := range rows {
+		if st.SourceName() == source {
+			return st.IsEnabled(), nil
+		}
+	}
+	return false, threatintel.ErrSyncStatusNotFound
 }
 
 // FeedView returns the view of one feed (threatintel.ErrSyncStatusNotFound
