@@ -1208,7 +1208,7 @@
   "admin.platformRole.security_auditor": "Kiểm toán bảo mật",
   "admin.platformRole.support": "Hỗ trợ",
   "admin.platformRoleDesc.billing": "Đặt giới hạn và gói dịch vụ của tổ chức.",
-  "admin.platformRoleDesc.operator": "Vận hành cụm cảm biến dùng chung và các nguồn dữ liệu; tạm ngưng tổ chức khi bị lạm dụng.",
+  "admin.platformRoleDesc.operator": "Vận hành cụm sensor dùng chung và các nguồn dữ liệu; tạm ngưng tổ chức khi bị lạm dụng.",
   "admin.platformRoleDesc.platform_admin": "Quản trị hằng ngày các tổ chức và tài khoản; không gồm cài đặt nền tảng, quản trị viên hay định danh.",
   "admin.platformRoleDesc.platform_owner": "Mọi quyền nền tảng. Hãy giữ ít nhất hai chủ sở hữu có tên và một tài khoản khẩn cấp.",
   "admin.platformRoleDesc.platform_viewer": "Đọc trang quản trị: số liệu, cài đặt và nhật ký kiểm toán, không có thông tin cá nhân.",
