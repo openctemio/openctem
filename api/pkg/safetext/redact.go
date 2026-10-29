@@ -79,3 +79,52 @@ func RedactSecrets(text string) string {
 	}
 	return out
 }
+
+// SecretSpan is one secret value FindSecrets found: text[Start:End] is the
+// value (a header name or assignment key around it is not part of the span),
+// Kind a stable type name ("private_key", "aws_access_key", "jwt", ...).
+type SecretSpan struct {
+	Start, End int
+	Kind       string
+}
+
+// shapeKinds names secretShapes, index by index.
+var shapeKinds = []string{
+	"aws_access_key", "jwt", "github_token", "github_token", "slack_token",
+	"slack_token", "google_api_key", "google_oauth_token",
+}
+
+// FindSecrets reports where RedactSecrets would remove secret material,
+// without changing the text, so a caller can replace each value with its own
+// placeholder (the AI context masker). Spans may overlap; callers resolve
+// overlaps. Same rules as RedactSecrets.
+func FindSecrets(text string) []SecretSpan {
+	if text == "" {
+		return nil
+	}
+	var out []SecretSpan
+	add := func(re *regexp.Regexp, group int, kind string) {
+		for _, m := range re.FindAllStringSubmatchIndex(text, -1) {
+			s, e := m[2*group], m[2*group+1]
+			if s >= 0 && e > s {
+				out = append(out, SecretSpan{Start: s, End: e, Kind: kind})
+			}
+		}
+	}
+	add(pemBlockRE, 0, "private_key")
+	add(pemOpenRE, 0, "private_key")
+	// The header name stays: the value is everything after the prefix group.
+	for _, re := range []*regexp.Regexp{cookieRE, cookieQuotedRE} {
+		for _, m := range re.FindAllStringSubmatchIndex(text, -1) {
+			if m[3] < m[1] {
+				out = append(out, SecretSpan{Start: m[3], End: m[1], Kind: "cookie"})
+			}
+		}
+	}
+	add(bearerRE, 2, "authorization")
+	add(secretAssignmentRE, 4, "credential")
+	for i, re := range secretShapes {
+		add(re, 0, shapeKinds[i])
+	}
+	return out
+}

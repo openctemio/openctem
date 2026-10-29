@@ -41,7 +41,7 @@ func registerEmergingThreatSettingsRoutes(router Router, h *handler.TenantHandle
 // Owner/admin only. Turning AI on or changing the provider changes where
 // finding content goes, so the write needs settings:write, a recent sign-in,
 // and is audited; the connection test needs settings:write.
-func registerAISettingsRoutes(router Router, h *handler.AISettingsHandler, authMiddleware, userSyncMiddleware Middleware) {
+func registerAISettingsRoutes(router Router, h *handler.AISettingsHandler, masking *handler.AIMaskingHandler, authMiddleware, userSyncMiddleware Middleware) {
 	if h == nil {
 		return
 	}
@@ -49,5 +49,15 @@ func registerAISettingsRoutes(router Router, h *handler.AISettingsHandler, authM
 		r.GET("/", h.Get, middleware.RequireAdmin(), middleware.Require(permission.SettingsRead))
 		r.PUT("/", h.Update, middleware.RequireAdmin(), middleware.Require(permission.SettingsWrite), requireStepUp())
 		r.POST("/test", h.Test, middleware.RequireAdmin(), middleware.Require(permission.SettingsWrite))
+
+		// Masking of AI context (docs/architecture/ai-context-masking.md):
+		// what is replaced by placeholders before finding data reaches a
+		// model. A change can make less masked, so it needs a recent
+		// sign-in; the preview reads a finding under the caller's own scope.
+		if masking != nil {
+			r.GET("/masking", masking.Get, middleware.RequireAdmin(), middleware.Require(permission.SettingsRead))
+			r.PUT("/masking", masking.Update, middleware.RequireAdmin(), middleware.Require(permission.SettingsWrite), requireStepUp())
+			r.POST("/masking/preview", masking.Preview, middleware.RequireAdmin(), middleware.Require(permission.SettingsRead))
+		}
 	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
 }
