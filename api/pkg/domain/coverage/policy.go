@@ -235,6 +235,9 @@ type RunState struct {
 	// Unfinished are the targets the run did not finish.
 	Unfinished []string
 	QueuedAt   time.Time
+	// NoSensor: a step of the run ended NO_SENSOR (no sensor took its
+	// work before the run's deadline).
+	NoSensor bool
 }
 
 // Run outcomes recorded on settled pairs.
@@ -312,6 +315,25 @@ type Planner interface {
 	// AttemptsSince counts the pairs of the tenant attempted since t (the
 	// daily budget).
 	AttemptsSince(ctx context.Context, tenantID shared.ID, t time.Time) (int, error)
+	// RecordRunClaim counts a finished run of the capability: unclaimed
+	// (no sensor took it) adds one to the hold's streak, any other run
+	// resets it. It returns the new streak.
+	RecordRunClaim(ctx context.Context, tenantID shared.ID, capability string, unclaimed bool) (int, error)
+	// Holds returns the tenant's holds with a streak, by capability.
+	Holds(ctx context.Context, tenantID shared.ID) (map[string]Hold, error)
+	// HoldCapability records the hold's fingerprint and probe time and
+	// pauses the capability with ReadyNotClaimed until probeAt: its pairs
+	// whose time has come, its failed pairs, and pairs paused for another
+	// readiness reason.
+	HoldCapability(ctx context.Context, tenantID shared.ID, capability, fingerprint string, probeAt time.Time) (int, error)
+	// ResumeNow makes the capability's pairs paused for a readiness reason
+	// due now, whatever their retry time.
+	ResumeNow(ctx context.Context, tenantID shared.ID, capability string) (int, error)
+	// FleetFingerprint is a hash of what decides whether the tenant's
+	// work can be claimed: its sensors (state, tools, capabilities, local
+	// policy), their grants, its zone assignments, its shared-fleet access
+	// and the platform sensors' state and tools. Server-side only.
+	FleetFingerprint(ctx context.Context, tenantID shared.ID) (string, error)
 }
 
 // CapabilityHealth is one tenant's coverage of one capability.
