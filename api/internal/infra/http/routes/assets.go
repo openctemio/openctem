@@ -516,6 +516,16 @@ func registerBranchRoutes(
 	}, tenantMiddlewares...)
 }
 
+// registerCertificateRoutes registers the Certificates view of the external
+// attack surface: certificate assets, scoped by their own data scope.
+func registerCertificateRoutes(router Router, h *handler.CertificateHandler, authMiddleware Middleware, userSyncMiddleware Middleware) {
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	router.Group("/api/v1/attack-surface/certificates", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.AssetsRead))
+		r.GET("/stats", h.Stats, middleware.Require(permission.AssetsRead))
+	}, tenantMiddlewares...)
+}
+
 // registerWebEndpointRoutes registers the web surface sub-inventory
 // (RFC-056): endpoints under their origin asset, scoped by the origin's data
 // scope.
