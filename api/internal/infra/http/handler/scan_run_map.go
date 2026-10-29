@@ -221,8 +221,16 @@ func toRunMapResponse(m *scanrunapp.RunMap) RunMapResponse {
 		for _, d := range m.Deltas {
 			deltas[d.StepKey] = d
 		}
-		// Every step compares, a step without outputs in either run as 0/0/0.
+		// Every step that finished its work compares, a step without outputs
+		// in either run as 0/0/0. A step that failed, timed out, was
+		// canceled or skipped, or has not finished produced nothing to
+		// compare: counting the previous run's assets as gone would read as
+		// assets that disappeared (a run no sensor picked up showed every
+		// asset of the last run as gone). It carries no comparison.
 		for _, sr := range run.StepRuns {
+			if !stepComparable(sr.Status) {
+				continue
+			}
 			d := deltas[sr.StepKey]
 			out := outputs[sr.StepKey]
 			out.Previous, out.Added, out.Gone = intPtr(d.Previous), intPtr(d.Added), intPtr(d.Gone)
@@ -460,4 +468,10 @@ func stepOutcome(output map[string]any) *RunMapOutcome {
 		return nil
 	}
 	return &o
+}
+
+// stepComparable reports whether a step run finished its work, so what it
+// produced can be compared with the previous run: completed or partial.
+func stepComparable(st scanrundom.StepRunStatus) bool {
+	return st == scanrundom.StepRunStatusCompleted || st == scanrundom.StepRunStatusPartial
 }

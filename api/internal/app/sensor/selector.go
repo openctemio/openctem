@@ -202,6 +202,27 @@ func (s *SensorSelector) selectLeastLoaded(sensors []*sensordom.Sensor) *sensord
 // sensor that has never reported CPU/memory is ranked purely on queue depth
 // instead of being flattered by zeroed metrics.
 func (s *SensorSelector) loadScore(a *sensordom.Sensor, now time.Time) float64 {
+	return s.baseLoadScore(a, now) + pressureScore(a, now)
+}
+
+// Score added by the host pressure a fresh load report gives, so a sensor
+// on a stalled host ranks behind one that is not.
+const (
+	pressureScoreElevated   = 25
+	pressureScoreOverloaded = 100
+)
+
+func pressureScore(a *sensordom.Sensor, now time.Time) float64 {
+	switch a.PressureLevel(now) {
+	case sensordom.PressureOverloaded:
+		return pressureScoreOverloaded
+	case sensordom.PressureElevated:
+		return pressureScoreElevated
+	}
+	return 0
+}
+
+func (s *SensorSelector) baseLoadScore(a *sensordom.Sensor, now time.Time) float64 {
 	if a.MetricsUpdatedAt == nil || now.Sub(*a.MetricsUpdatedAt) > metricsFreshness {
 		return s.weights.JobLoad * a.JobLoadPercent()
 	}

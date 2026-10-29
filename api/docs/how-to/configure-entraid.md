@@ -12,6 +12,44 @@
 
 ---
 
+## 15-minute checklist (per-organization Entra SSO)
+
+Let `FRONTEND` be your OpenCTEM web origin (the `APP_URL` origin) and `API` the
+address the API is published on (often the same origin).
+
+In the Azure portal (Microsoft Entra ID, App registrations):
+
+1. New registration, **single tenant** (this directory only).
+2. Redirect URI, type **Web**: `FRONTEND/auth/sso/callback/entra_id`.
+3. Certificates & secrets: new client secret. Copy the **Value** and note the
+   expiry date; the secret stops working then.
+4. Token configuration, add optional **ID** claims:
+   - `xms_edov` (required: sign-in is refused without it),
+   - `auth_time` (needed for step-up re-authentication),
+   - `sid` (signs out one session on back-channel logout).
+5. Authentication, **Front-channel logout URL**:
+   `https://<api-host>/api/v1/auth/backchannel-logout`.
+
+In OpenCTEM:
+
+1. API has `APP_ENCRYPTION_KEY` set (it encrypts the stored client secret).
+2. The frontend origin is trusted: set `SSO_ALLOWED_REDIRECT_URIS`, or make sure
+   `APP_URL` (which seeds CORS, `SMTP_BASE_URL` and the allow-list) is correct.
+3. Platform admin console, Organizations, the organization, **Single sign-on**
+   tab: open **Microsoft Entra ID**. The "Set up in Microsoft Entra ID" block
+   lists the values from steps 2 and 5 with copy buttons. Enter the display
+   name, Directory (tenant) ID, Client ID and the secret, then save.
+4. If the organization already has an owner, the save waits: an owner approves
+   it under **Settings, SSO approvals** in the organization's own app (§3).
+5. Same tab, **Verified domains**: add the email domain, publish the DNS TXT
+   record, choose Verify now.
+6. Test: open `FRONTEND/login`, type an email at that domain; the page offers
+   the organization's SSO button (§6).
+7. Optional: switch on **Require single sign-on** (it needs a verified domain
+   and a usable provider; the owner can always sign in with a password).
+
+---
+
 ## 1. Which path do you want?
 
 OpenCTEM has **two independent Microsoft/Entra login paths**. They do not share
@@ -119,26 +157,44 @@ The social button appears when `OAUTH_MICROSOFT_CLIENT_ID` **and**
 and the OAuth handler is wired. `GET /api/v1/auth/providers` reports which
 social providers are enabled.
 
-### Path B — per-tenant Entra SSO (admin UI, recommended)
+### Path B — per-tenant Entra SSO (admin console, recommended)
 
-Each customer configures **their own** Azure app in OpenCTEM. As a **tenant
-admin** (owner/admin), go to **Settings → Identity Providers** (backed by
-`POST /api/v1/settings/identity-providers`, stored encrypted in
-`tenant_identity_providers`).
+A **platform administrator** configures each organization's identity provider in
+the admin console (it is no longer a tenant-admin setting; the former tenant
+routes `/api/v1/settings/identity-providers` and `/api/v1/settings/verified-domains`
+were removed). Open **Organizations**, choose the organization, then the
+**Single sign-on** tab. The provider is backed by
+`POST /api/v1/admin/tenants/{tenantId}/sso/identity-providers` and stored encrypted
+in `tenant_identity_providers`. Writes need a super-admin session with step-up.
 
-Fields (request body of `POST /api/v1/settings/identity-providers`):
+The **Microsoft Entra ID** entry opens with a read-only "Set up in Microsoft
+Entra ID" block: the redirect URI (`APP_URL` origin plus
+`/auth/sso/callback/entra_id`), the front-channel logout URL and the claims to add,
+each address with a copy button. Okta and Google Workspace show their redirect
+URI the same way (`/auth/sso/callback/<provider>`).
+
+Fields:
 
 | Field | Value |
 |-------|-------|
 | `provider` | `entra_id` |
 | `display_name` | Button label, e.g. `Sign in with Company SSO` |
 | `client_id` | Application (client) ID |
-| `client_secret` | Client secret **Value** (stored AES-256-GCM encrypted) |
+| `client_secret` | Client secret **Value** (stored AES-256-GCM encrypted, never shown again; leave empty on edit to keep it) |
 | `tenant_identifier` | **Directory (tenant) ID** (GUID). Pin to your directory; avoid `common` unless you also set an allow-list. |
-| `scopes` | `["openid","email","profile","User.Read"]` |
 | `allowed_domains` | Email domains permitted, e.g. `["example.com"]`. Empty = any domain allowed to **log in**, but see JIT rules below. |
-| `auto_provision` | `true` to create tenant membership on first login (still gated — see §4) |
+| `auto_provision` | `true` to create tenant membership on first login (still gated, see §4) |
 | `default_role` | `member` or `viewer` (role granted to auto-provisioned users) |
+
+**Owner approval.** The platform administrator cannot change who can sign in to
+an organization that already has an owner. Creating or updating an identity
+provider (and saving a SAML config) is then stored as a pending change (HTTP 202,
+`sso_pending_changes`), every active owner is notified (in-app, plus email when
+SMTP is configured), and nothing is applied until an owner approves it under
+**Settings, SSO approvals** in the organization's own app. Changes expire after 7
+days and a newer submission replaces an older one. An organization with no owner
+yet (first-time setup) is applied directly, and so are deletes, SSO enforcement
+and verified domains. Code: `internal/app/auth/sso_change.go`.
 
 The tenant's own active `entra_id` provider always wins over the env fallback.
 
@@ -188,14 +244,16 @@ Letting a valid Entra login **create a new membership** in your org (JIT) is
 gated so an authenticated stranger can't self-join. Existing members are never
 affected.
 
-The **primary gate is a DNS-verified domain.** A tenant admin proves the org
-owns the email domain via a DNS TXT record; only then are that domain's users
-auto-provisioned.
+The **primary gate is a DNS-verified domain.** A platform administrator proves
+that the organization owns the email domain with a DNS TXT record; only then are
+that domain's users auto-provisioned, and only then does email-first sign-in
+(§6) find the organization.
 
-**Settings → Verified Domains** (`/api/v1/settings/verified-domains`, admin-only):
+Admin console, organization, **Single sign-on** tab, **Verified domains**
+(`/api/v1/admin/tenants/{tenantId}/sso/verified-domains`; applied directly, no
+owner approval):
 
-1. **Add domain** (`POST /api/v1/settings/verified-domains`) → OpenCTEM returns a
-   TXT record to publish:
+1. **Add domain** returns a TXT record to publish:
 
    | Field | Value |
    |-------|-------|
@@ -204,25 +262,28 @@ auto-provisioned.
    | Value | `openctem-domain-verification=<token>` |
 
 2. Publish that TXT record at your DNS provider.
-3. **Verify** (`POST /api/v1/settings/verified-domains/{id}/verify`) — OpenCTEM
-   does a live `LookupTXT` and marks the domain verified when the exact token is
-   present.
+3. **Verify now**: OpenCTEM does a live `LookupTXT` and marks the domain verified
+   when the exact token is present.
+
+A domain is claimed by one organization at a time; when two organizations claim
+the same domain, email-first sign-in treats it as unclaimed.
 
 Auto-provisioning decision (`jitProvisioningAllowed`), all branches fail-closed:
 
 - The provider must have `auto_provision = true`.
-- **Verified-domain gate (P1, when wired):** the email domain **must be
-  DNS-verified** for the tenant. If the provider *also* set `allowed_domains`,
-  the domain must be on that list too (admins may narrow further). A DNS lookup
-  error ⇒ refuse.
-- **Pre-wiring fallback (P0):** if the verified-domain verifier isn't wired, the
-  domain must be on a **non-empty** `allowed_domains` list (empty ⇒ refuse).
+- The email domain **must be DNS-verified** for the organization. If no
+  verified-domain checker is wired, or the lookup errors, JIT is refused. (There
+  is no fallback to `allowed_domains` alone.)
+- The verified domain's own JIT switch (per-domain, in the Verified domains list)
+  must be on.
+- If the provider also set `allowed_domains`, the domain must be on that list too.
+- The organization's email-domain security setting must allow the address.
 
 If JIT isn't permitted, the login is refused with "not a member of this
-organization" — the user must be **invited** first (Settings → Team →
-Invitations). Also: with the sign-up policy at `admin_only`, a federated login can
-only bind to an existing/pre-invited account — it will never create a brand-new
-user.
+organization": the user must be **invited** first (Settings, Team,
+Invitations, in the organization's app). Also: with the sign-up policy at
+`admin_only`, a federated login can only bind to an existing/pre-invited
+account; it will never create a brand-new user.
 
 ---
 
@@ -251,18 +312,29 @@ user.
 
 ---
 
-## 6. The login flow (org-slug model)
+## 6. The login flow
 
-Path B is **org-scoped**. A user reaches their org's login by slug:
+Path B is **org-scoped**. A user reaches their organization's SSO in one of two
+ways.
 
-```
-https://app.example.com/login?org=<slug>
-```
+**Email-first (default once the domain is verified).** On `/login` the user types
+their email. When it looks complete the page calls `POST /api/v1/auth/discover`
+(public, rate-limited). If the email's domain is verified for exactly one
+organization that has an **active** identity provider, the answer is `sso` with an
+opaque, 30-minute organization reference (never the slug) and the page shows that
+organization's SSO buttons. Any other email, or any error, answers `password`;
+the answer says nothing about whether the email has an account. Code:
+`internal/app/auth/discovery.go`, web hook `use-email-discovery`.
 
-1. The UI calls `GET /api/v1/auth/sso/providers?org=<slug>` to render the org's
-   SSO buttons (the tenant's own providers, plus the env-fallback button **only**
-   if that tenant opted in).
-2. Clicking a button hits `GET /api/v1/auth/sso/entra_id/authorize?org=<slug>&redirect_uri=<FRONTEND>/auth/sso/callback/entra_id`,
+**By slug.** `https://app.example.com/login?org=<slug>` works without a verified
+domain. The organization's SSO page and the console show this URL.
+
+From there:
+
+1. The UI calls `GET /api/v1/auth/sso/providers?org=<slug-or-reference>` to render
+   the org's SSO buttons (the tenant's own providers, plus the env-fallback button
+   **only** if that tenant opted in).
+2. Clicking a button hits `GET /api/v1/auth/sso/entra_id/authorize?org=<slug-or-reference>&redirect_uri=<FRONTEND>/auth/sso/callback/entra_id`,
    which returns the Microsoft authorization URL (with signed `state`, `nonce`,
    PKCE `code_challenge`).
 3. After Microsoft auth, the browser returns to
@@ -272,10 +344,13 @@ https://app.example.com/login?org=<slug>
    `xms_edov`), enforces the domain allow-list, provisions per §4, and issues an
    OpenCTEM session.
 
-**To enable it for a tenant:** an admin (1) configures the Entra provider under
-Settings → Identity Providers (or you opt the tenant into the env fallback), and
-(2) verifies the email domain under Settings → Verified Domains so first-time
-users auto-join. Then share `…/login?org=<slug>`.
+**To enable it for an organization:** a platform administrator (1) adds the Entra
+provider in the admin console and an owner approves it (§3), and (2) verifies the
+email domain (§4) so email-first sign-in and first-time auto-join work. Then tell
+people to sign in at `FRONTEND/login`. To make SSO mandatory, switch on **Require
+single sign-on** on the same tab: it is refused without a usable provider and at
+least one verified SSO domain, needs step-up, and the organization owner can
+always sign in with a password (break-glass).
 
 ---
 
@@ -290,7 +365,7 @@ configured"*; `ErrSSOTenantNotFound` → 404 *"Organization not found"*. Checkli
 1. **Org slug** — is `?org=<slug>` present and correct? A wrong/missing slug →
    404 "Organization not found."
 2. **Path B, tenant config** — does the tenant have an **active** `entra_id`
-   provider under Settings → Identity Providers? Inactive/absent + no env fallback
+   provider in the admin console (organization, Single sign-on tab)? Inactive/absent + no env fallback
    ⇒ 404.
 3. **Path B, env fallback** — if you rely on the env fallback, confirm **all** of:
    `SSO_ENTRA_ENABLED=true`, `SSO_ENTRA_CLIENT_ID`/`SSO_ENTRA_CLIENT_SECRET` set,
@@ -328,9 +403,10 @@ list). It must match the URL the UI sends: `FRONTEND/auth/sso/callback/entra_id`
 
 ### User authenticates but can't get in ("not a member of this organization")
 
-JIT provisioning was refused (§4). Either **verify the email domain** (Settings →
-Verified Domains) with `auto_provision=true`, or **invite** the user (Settings →
-Team → Invitations). Confirm the email's domain matches a verified/allowed domain.
+JIT provisioning was refused (§4). Either **verify the email domain** (admin
+console, organization, Single sign-on, Verified domains) with `auto_provision=true`
+and the domain's JIT switch on, or **invite** the user (Settings, Team,
+Invitations). Confirm the email's domain matches a verified/allowed domain.
 
 ### Azure `AADSTS50011` (redirect URI mismatch)
 
@@ -386,7 +462,8 @@ services:
 ```
 
 For per-tenant setup (recommended), leave the `SSO_ENTRA_*` block out and have
-each customer's admin add the provider under **Settings → Identity Providers**.
+the platform administrator add the provider in the admin console (organization,
+Single sign-on tab).
 
 ---
 
@@ -445,10 +522,25 @@ generic `400` and revokes nothing.
 ```
 
 > Related hardening: OpenCTEM also re-checks **enforce-SSO on every request**
-> (not only at token mint), so toggling **Settings → Security → "Require SSO"**
-> on takes effect for already-issued password tokens within ~60s, without
-> waiting for them to expire. Federated sessions and the tenant owner
-> (break-glass) are unaffected.
+> (not only at token mint), so switching on **Require single sign-on** (admin
+> console, organization, Single sign-on tab) takes effect for already-issued
+> password tokens within ~60s, without waiting for them to expire. Federated
+> sessions are unaffected. The tenant owner can still enter with a password
+> **and their second factor** (break-glass); a password alone is refused, and each
+> break-glass sign-in is written to the audit log as `sso.break_glass_used` and announced to the
+> organization's other owners and admins.
+>
+> Requiring SSO can be switched on only after an owner or admin has signed in
+> through the organization's identity provider once and an owner has
+> two-factor authentication turned on. Switching it on also revokes, by
+> default, the user API keys and AI connections that exist at that moment
+> (untick the box in the console to keep them); keys and connections made
+> afterwards from an SSO sign-in keep working.
+>
+> The sign-in state is single use and bound to the browser that started the
+> sign-in: the API returns a one-time `browser_binding` secret with the
+> authorize URL, the web app keeps it in an HttpOnly cookie, and the callback
+> is refused without it.
 
 ---
 

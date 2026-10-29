@@ -148,3 +148,41 @@ func (r *TenantAISettingsRepository) Save(ctx context.Context, tenantID shared.I
 	}
 	return nil
 }
+
+var _ tenant.AIMaskingRepository = (*TenantAISettingsRepository)(nil)
+
+// GetMasking reads the organization's AI masking policy. No row or an empty
+// policy is the default (every class masked).
+func (r *TenantAISettingsRepository) GetMasking(ctx context.Context, tenantID shared.ID) (tenant.AIMaskingPolicy, error) {
+	var raw []byte
+	err := r.db.QueryRowContext(ctx, `SELECT masking FROM tenant_ai_settings WHERE tenant_id = $1`, tenantID.String()).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return tenant.AIMaskingPolicy{}, nil
+	}
+	if err != nil {
+		return tenant.AIMaskingPolicy{}, fmt.Errorf("read AI masking policy: %w", err)
+	}
+	var p tenant.AIMaskingPolicy
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return tenant.AIMaskingPolicy{}, fmt.Errorf("decode AI masking policy: %w", err)
+	}
+	return p, nil
+}
+
+// SaveMasking writes the masking policy only. A missing settings row is
+// created with the column defaults (AI stays off until an administrator
+// consents); the row's updated_at is left alone, so a concurrent edit of the
+// provider settings is not reported as a conflict.
+func (r *TenantAISettingsRepository) SaveMasking(ctx context.Context, tenantID shared.ID, p tenant.AIMaskingPolicy) error {
+	raw, err := json.Marshal(p)
+	if err != nil {
+		return fmt.Errorf("encode AI masking policy: %w", err)
+	}
+	const q = `
+		INSERT INTO tenant_ai_settings (tenant_id, masking) VALUES ($1, $2)
+		ON CONFLICT (tenant_id) DO UPDATE SET masking = EXCLUDED.masking`
+	if _, err := r.db.ExecContext(ctx, q, tenantID.String(), raw); err != nil {
+		return fmt.Errorf("save AI masking policy: %w", err)
+	}
+	return nil
+}

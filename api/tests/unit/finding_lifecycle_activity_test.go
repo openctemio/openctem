@@ -101,12 +101,6 @@ func (s *stubFindingRepo) ListByComponentID(_ context.Context, _, _ shared.ID, _
 func (s *stubFindingRepo) ListAffectedAssetsByVulnerabilityID(_ context.Context, _, _ shared.ID, _ bool, _ pagination.Pagination, _ *shared.DataScope) (pagination.Result[vulnerability.VulnerabilityAffectedAsset], error) {
 	return pagination.Result[vulnerability.VulnerabilityAffectedAsset]{}, nil
 }
-func (s *stubFindingRepo) ListActiveCVEsByTenant(_ context.Context, _ shared.ID, _ vulnerability.ActiveCVEFilter, _ pagination.Pagination) (pagination.Result[vulnerability.ActiveCVE], error) {
-	return pagination.Result[vulnerability.ActiveCVE]{}, nil
-}
-func (s *stubFindingRepo) GetActiveCVEStats(_ context.Context, _ shared.ID, _ bool, _ *shared.DataScope) (*vulnerability.ActiveCVEStats, error) {
-	return &vulnerability.ActiveCVEStats{BySeverity: map[string]int{}}, nil
-}
 func (s *stubFindingRepo) Count(_ context.Context, _ vulnerability.FindingFilter) (int64, error) {
 	return 0, nil
 }
@@ -153,7 +147,7 @@ func (s *stubFindingRepo) GetStats(_ context.Context, _ shared.ID, _ *shared.ID,
 func (s *stubFindingRepo) CountBySeverityForScan(_ context.Context, _ shared.ID, _ string) (vulnerability.SeverityCounts, error) {
 	return vulnerability.SeverityCounts{}, nil
 }
-func (s *stubFindingRepo) AutoReopenByFingerprintsBatch(_ context.Context, _ shared.ID, _ []string) (map[string]vulnerability.ReopenedFinding, error) {
+func (s *stubFindingRepo) AutoReopenByFingerprintsBatch(_ context.Context, _ shared.ID, _ []string, _ time.Time) (map[string]vulnerability.ReopenedFinding, error) {
 	return nil, nil
 }
 func (s *stubFindingRepo) ExpireFeatureBranchFindings(_ context.Context, _ shared.ID, _ int) (int64, error) {

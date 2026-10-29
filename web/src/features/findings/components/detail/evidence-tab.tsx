@@ -38,7 +38,13 @@ import { CodeHighlighter } from './code-highlighter'
 import { SectionLoadError } from './section-load-error'
 import { ValidationEvidencePanel } from './validation-evidence-panel'
 import { FindingEvidenceItems } from './finding-evidence-items'
-import { useFindingEvidenceItems } from '../../api/use-finding-evidence-items'
+import {
+  reorderEvidenceItems,
+  updateEvidenceRole,
+  useFindingEvidenceItems,
+} from '../../api/use-finding-evidence-items'
+import { getErrorMessage } from '@/lib/api/error-handler'
+import { toast } from 'sonner'
 import { useFindingAttachments } from '../../api/use-finding-attachments'
 import { useFindingValidationEvidenceApi } from '../../api/use-findings-api'
 import { ComplianceMappingCard } from './compliance-mapping-card'
@@ -128,7 +134,9 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
   const { t, locale } = useTranslation()
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set())
   // The tool's own proof (request, response, match), masked server-side.
-  const { data: evidenceItems } = useFindingEvidenceItems(finding?.id ?? null)
+  const { data: evidenceItems, mutate: refreshToolEvidence } = useFindingEvidenceItems(
+    finding?.id ?? null
+  )
   const toolEvidence = evidenceItems?.data ?? []
 
   // Only surface the Compliance Controls card when the tenant can actually use
@@ -139,6 +147,17 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
   // no subscription is configured (OSS / all-on), so treat that as enabled.
   const { moduleIds } = useTenantModules()
   const { hasPermission } = usePermissions()
+  const canEditEvidence = hasPermission('findings:write')
+  const changeEvidence = async (change: () => Promise<unknown>) => {
+    try {
+      await change()
+    } catch (err) {
+      toast.error(
+        getErrorMessage(err, t('findings.evidenceRole.saveFailed', 'Could not save the change'))
+      )
+    }
+    await refreshToolEvidence()
+  }
   const showComplianceCard =
     (moduleIds.length === 0 || moduleIds.includes('compliance')) &&
     hasPermission('compliance:mappings:read')
@@ -383,7 +402,21 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
               {toolEvidence.length}
             </Badge>
           </h3>
-          <FindingEvidenceItems findingId={finding.id} items={toolEvidence} />
+          <FindingEvidenceItems
+            findingId={finding.id}
+            items={toolEvidence}
+            onChangeRole={
+              canEditEvidence
+                ? (itemId, role) =>
+                    void changeEvidence(() => updateEvidenceRole(finding.id, itemId, role))
+                : undefined
+            }
+            onReorder={
+              canEditEvidence
+                ? (ids) => void changeEvidence(() => reorderEvidenceItems(finding.id, ids))
+                : undefined
+            }
+          />
         </div>
       )}
 
@@ -887,7 +920,7 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate">{att.filename}</p>
                       <p className="text-xs text-muted-foreground">
-                        {att.content_type} · {(att.size / 1024).toFixed(1)} KB
+                        {att.content_type}, {(att.size / 1024).toFixed(1)} KB
                       </p>
                     </div>
                   </SafeExternalLink>

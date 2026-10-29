@@ -1,4 +1,8 @@
 # Base tables with a tenant_id column. Generated: TENANTSQL_UPDATE=1 go test ./tools/lint/tenantsql -run TestTenantTablesMatchSchema
+ai_agent_owners
+ai_agents
+ai_mask_maps
+ai_runs
 ai_triage_budgets
 ai_triage_results
 api_keys
@@ -14,14 +18,17 @@ asset_attributions
 asset_change_events
 asset_coverage
 asset_coverage_alerts
+asset_coverage_holds
 asset_dedup_review
 asset_enrichment_requests
+asset_group_member_history
 asset_groups
 asset_identifiers
 asset_identity_backfill
 asset_merge_log
 asset_program_links
 asset_relationships
+asset_resolution
 asset_risk_queue
 asset_risk_requests
 asset_services
@@ -119,6 +126,7 @@ easm_weekly_digests
 exposure_disposition_requests
 exposure_events
 exposures
+failure_breakers
 finding_activities
 finding_approval_digest_sent
 finding_branch_occurrences
@@ -170,6 +178,7 @@ mcp_action_confirmations
 mcp_oauth_clients
 mcp_oauth_grants
 mcp_oauth_requests
+nav_pins
 notification_events
 notification_outbox
 notification_preferences
@@ -241,6 +250,7 @@ scoring_change_impacts
 scoring_changes
 sensor_config_reports
 sensor_content_policies
+sensor_enrollment_tokens
 sensor_events
 sensor_grants
 sensor_heartbeat_history
@@ -299,7 +309,9 @@ verified_domains
 vex_statements
 vuln_match_queue
 vulnerabilities
+web_alert_fingerprints
 web_endpoint_events
 web_endpoint_params
+web_endpoint_verifications
 web_endpoints
 work_item_subscriptions

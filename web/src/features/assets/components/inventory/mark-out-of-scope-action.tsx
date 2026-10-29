@@ -1,18 +1,24 @@
 'use client'
 
 /**
- * Triage after the fact, in bulk (research/124, RFC-054 §15).
+ * Mark out of scope (research/320, RFC-054 §15 and §20), from the inventory
+ * (bulk) and an asset's page.
  *
- * - "Mark out of scope" either excludes the selection from scanning (scope
- *   exclusions, exact or by rule, with a preview of what each would match),
- *   or marks it not ours (attribution "rejected").
- * - "Archive" hides the selection from the default list.
+ * - Why: Not ours, Retired or Do not scan. Every kind stops scanning; a
+ *   permanent Not ours or Retired exclusion also closes the open findings of
+ *   what it matches as "Asset out of scope" (reopened on re-include). Do not
+ *   scan, and anything with an end date, only stops scanning.
+ * - For how long: until re-included, or until a date.
+ * - Apply to: exactly the selection, or a rule (parent domain, /24), with a
+ *   preview of what each would match and the findings it would close.
  *
- * Every action answers with a toast that offers Undo: deleting the
- * exclusions it added (the client asks for re-authentication, because that
- * widens scope), forgetting the "not ours" decision, or making the assets
- * active again. The server decides everything; the buttons only show for
- * the permission each action needs.
+ * With scope:write it adds scope exclusions of that kind; Not ours exactly
+ * on the selection also records the "not ours" decision (assets:write) so
+ * discovery stops offering the names again. With only assets:write it
+ * records the decision alone. Every action answers with Undo; deleting
+ * exclusions widens scope, so the client asks for re-authentication, and a
+ * caller without scope:delete is told who can re-include instead. The server
+ * decides everything; the buttons only show for the permission each needs.
  */
 
 import { useEffect, useMemo, useState } from 'react'
@@ -29,6 +35,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { useTranslation } from '@/context/i18n-provider'
@@ -44,16 +51,25 @@ import {
   previewExclusions,
   setAssetsStatus,
   type ExclusionItem,
+  type ExclusionKind,
   type ExclusionPreviewItem,
 } from '../../api/triage-api'
 import { exactExclusions, ruleProposals } from '../../lib/out-of-scope-rules'
 import type { Asset } from '../../types/asset.types'
 
-type Mode = 'exclude' | 'reject'
 type Granularity = 'exact' | 'rule'
+type Duration = 'permanent' | 'until'
 
 const keyOf = (i: ExclusionItem) => `${i.exclusion_type}:${i.pattern}`
 const SHOWN = 8
+const KINDS: ExclusionKind[] = ['not_ours', 'retired', 'do_not_scan']
+const DAY_MS = 24 * 60 * 60 * 1000
+
+/** yyyy-mm-dd of a date in local time, for a date input. */
+function dateValue(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
 
 interface ActionProps {
   selected: Asset[]
@@ -65,9 +81,15 @@ export function MarkOutOfScopeAction({ selected, onDone }: ActionProps) {
   const { t } = useTranslation()
   const canExclude = useHasPermission(Permission.ScopeWrite)
   const canReject = useHasPermission(Permission.AssetsWrite)
+  const canUndoExclusions = useHasPermission(Permission.ScopeDelete)
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [mode, setMode] = useState<Mode>(canExclude ? 'exclude' : 'reject')
+  const [kind, setKind] = useState<ExclusionKind>('not_ours')
+  const [duration, setDuration] = useState<Duration>('permanent')
+  const [until, setUntil] = useState(() => dateValue(new Date(Date.now() + 7 * DAY_MS)))
+  // The first day an end date may be (tomorrow), fixed when the dialog mounts.
+  const [minUntil] = useState(() => dateValue(new Date(Date.now() + DAY_MS)))
+  const [reason, setReason] = useState('')
   const [granularity, setGranularity] = useState<Granularity>('exact')
   const names = useMemo(() => selected.map((a) => a.name), [selected])
   const exact = useMemo(() => exactExclusions(names), [names])
@@ -82,6 +104,18 @@ export function MarkOutOfScopeAction({ selected, onDone }: ActionProps) {
     setChosenRules(new Set())
   }, [rules])
 
+  // A member with limited data access may close findings only with exact
+  // rules: a rule that matches by wildcard or range would later reach assets
+  // they cannot see (the server refuses it; the preview says so up front).
+  const closesNow = canExclude && kind !== 'do_not_scan' && duration === 'permanent'
+  const ruleBlocked =
+    closesNow &&
+    rules.length > 0 &&
+    rules.every((r) => preview[keyOf(r.item)]?.closing_needs_full_access)
+  useEffect(() => {
+    if (ruleBlocked) setGranularity('exact')
+  }, [ruleBlocked])
+
   const items: ExclusionItem[] =
     granularity === 'exact'
       ? exact.items
@@ -89,7 +123,7 @@ export function MarkOutOfScopeAction({ selected, onDone }: ActionProps) {
 
   // The preview: what each candidate exclusion would match now.
   useEffect(() => {
-    if (!open || mode !== 'exclude') return
+    if (!open || !canExclude) return
     const all = [...exact.items, ...rules.map((r) => r.item)].slice(0, MAX_BULK_EXCLUSIONS)
     if (all.length === 0) return
     let live = true
@@ -110,16 +144,39 @@ export function MarkOutOfScopeAction({ selected, onDone }: ActionProps) {
     return () => {
       live = false
     }
-  }, [open, mode, exact.items, rules])
+  }, [open, canExclude, exact.items, rules])
 
   if (!canExclude && !canReject) return null
 
+  // Without scope:write only the "not ours" decision is possible.
+  const decisionOnly = !canExclude
+  const effectiveKind: ExclusionKind = decisionOnly ? 'not_ours' : kind
+  const permanent = decisionOnly || duration === 'permanent'
+  const closes = effectiveKind !== 'do_not_scan' && permanent
   const matchedTotal = items.reduce((n, i) => n + (preview[keyOf(i)]?.matched ?? 0), 0)
-  const tooMany =
-    mode === 'exclude' ? items.length > MAX_BULK_EXCLUSIONS : selected.length > MAX_BULK_EXCLUSIONS
+  const findingsTotal = items.reduce((n, i) => n + (preview[keyOf(i)]?.open_findings ?? 0), 0)
+  const tooMany = decisionOnly
+    ? selected.length > MAX_BULK_EXCLUSIONS
+    : items.length > MAX_BULK_EXCLUSIONS
+  const untilInvalid = !permanent && (!until || until < minUntil)
 
   const exclude = async () => {
-    const res = await createExclusions(items)
+    const expiresAt = permanent ? undefined : new Date(`${until}T23:59:59`).toISOString()
+    const res = await createExclusions(items, {
+      kind: effectiveKind,
+      expiresAt,
+      reason: reason.trim() || undefined,
+    })
+    // "Not ours" on exactly the selection is also the decision, so
+    // discovery stops offering these names again.
+    let decided: string[] = []
+    if (effectiveKind === 'not_ours' && permanent && granularity === 'exact' && canReject) {
+      const d = await decideAttribution(
+        selected.map((a) => a.id),
+        'rejected'
+      )
+      decided = (d.decided ?? []).map((x) => x.asset_id)
+    }
     const ids = res.results.filter((r) => r.result === 'created' && r.id).map((r) => r.id as string)
     const text = [
       t('assets.triage.exclude.created', '{count} exclusions added', { count: res.created }),
@@ -133,14 +190,25 @@ export function MarkOutOfScopeAction({ selected, onDone }: ActionProps) {
       .filter(Boolean)
       .join('. ')
     const show = res.refused > 0 && res.created === 0 ? toast.error : toast.success
+    const undoable = ids.length > 0 || decided.length > 0
     show(text, {
       duration: UNDO_TOAST_MS,
+      description:
+        undoable && !canUndoExclusions && ids.length > 0
+          ? t(
+              'assets.triage.exclude.undoNeedsAdmin',
+              'Re-including needs the scope delete permission: ask an administrator.'
+            )
+          : undefined,
       action:
-        ids.length > 0
+        undoable && (canUndoExclusions || ids.length === 0)
           ? {
               label: t('assets.triage.undo', 'Undo'),
               onClick: () => {
-                deleteExclusions(ids)
+                Promise.all([
+                  ids.length > 0 ? deleteExclusions(ids) : Promise.resolve(),
+                  decided.length > 0 ? decideAttribution(decided, 'automatic') : Promise.resolve(),
+                ])
                   .then(() => {
                     toast.success(t('assets.triage.exclude.undone', 'Exclusions removed'))
                     onDone?.()
@@ -176,8 +244,8 @@ export function MarkOutOfScopeAction({ selected, onDone }: ActionProps) {
   const submit = async () => {
     setBusy(true)
     try {
-      if (mode === 'exclude') await exclude()
-      else await reject()
+      if (decisionOnly) await reject()
+      else await exclude()
       setOpen(false)
       onDone?.()
     } catch (err) {
@@ -194,6 +262,25 @@ export function MarkOutOfScopeAction({ selected, onDone }: ActionProps) {
     return t('assets.triage.preview.matches', 'matches {count} assets', { count: p.matched })
   }
 
+  const kindLabel = (k: ExclusionKind) =>
+    ({
+      not_ours: t('assets.triage.kind.notOurs', 'Not ours'),
+      retired: t('assets.triage.kind.retired', 'Retired'),
+      do_not_scan: t('assets.triage.kind.doNotScan', 'Do not scan'),
+    })[k]
+  const kindHint = (k: ExclusionKind) =>
+    ({
+      not_ours: t(
+        'assets.triage.kind.notOursHint',
+        'Someone else owns it: sold, a third party, a typo in an import.'
+      ),
+      retired: t('assets.triage.kind.retiredHint', 'It is gone and will not come back.'),
+      do_not_scan: t(
+        'assets.triage.kind.doNotScanHint',
+        'Yours, but it must not be scanned: a fragile system, a legal hold.'
+      ),
+    })[k]
+
   return (
     <>
       <Button variant="ghost" size="sm" onClick={() => setOpen(true)}>
@@ -209,51 +296,69 @@ export function MarkOutOfScopeAction({ selected, onDone }: ActionProps) {
             <DialogDescription>
               {t(
                 'assets.triage.description',
-                'Out of scope assets are never scanned actively. They stay in the inventory with their history unless you mark them not yours.'
+                'Out of scope assets are never scanned actively. They stay in the inventory with their history.'
               )}
             </DialogDescription>
           </DialogHeader>
           <DialogBody className="space-y-4 text-sm">
-            <RadioGroup
-              value={mode}
-              onValueChange={(v) => setMode(v as Mode)}
-              aria-label={t('assets.triage.modeLabel', 'How')}
-            >
-              {canExclude && (
-                <div className="flex items-start gap-2">
-                  <RadioGroupItem value="exclude" id="oos-exclude" />
-                  <Label htmlFor="oos-exclude" className="grid gap-0.5 font-normal">
-                    <span className="font-medium">
-                      {t('assets.triage.exclude.label', 'Exclude from scanning')}
-                    </span>
-                    <span className="text-muted-foreground">
-                      {t(
-                        'assets.triage.exclude.hint',
-                        'Adds scope exclusions. Exclusions win over every scope entry.'
-                      )}
-                    </span>
-                  </Label>
-                </div>
-              )}
-              {canReject && (
-                <div className="flex items-start gap-2">
-                  <RadioGroupItem value="reject" id="oos-reject" />
-                  <Label htmlFor="oos-reject" className="grid gap-0.5 font-normal">
-                    <span className="font-medium">
-                      {t('assets.triage.reject.label', 'Not ours')}
-                    </span>
-                    <span className="text-muted-foreground">
-                      {t(
-                        'assets.triage.reject.hint',
-                        'Records that these are not your organization’s. Names found again under them stay out too.'
-                      )}
-                    </span>
-                  </Label>
-                </div>
-              )}
-            </RadioGroup>
+            {!decisionOnly && (
+              <fieldset className="space-y-2">
+                <legend className="font-medium">{t('assets.triage.kind.label', 'Why')}</legend>
+                <RadioGroup
+                  value={kind}
+                  onValueChange={(v) => setKind(v as ExclusionKind)}
+                  aria-label={t('assets.triage.kind.label', 'Why')}
+                >
+                  {KINDS.map((k) => (
+                    <div key={k} className="flex items-start gap-2">
+                      <RadioGroupItem value={k} id={`oos-kind-${k}`} />
+                      <Label htmlFor={`oos-kind-${k}`} className="grid gap-0.5 font-normal">
+                        <span className="font-medium">{kindLabel(k)}</span>
+                        <span className="text-muted-foreground">{kindHint(k)}</span>
+                      </Label>
+                    </div>
+                  ))}
+                </RadioGroup>
+              </fieldset>
+            )}
 
-            {mode === 'exclude' && (
+            {!decisionOnly && (
+              <fieldset className="space-y-2">
+                <legend className="font-medium">
+                  {t('assets.triage.duration.label', 'For how long')}
+                </legend>
+                <RadioGroup
+                  value={duration}
+                  onValueChange={(v) => setDuration(v as Duration)}
+                  className="flex flex-wrap items-center gap-4"
+                  aria-label={t('assets.triage.duration.label', 'For how long')}
+                >
+                  <div className="flex items-center gap-2">
+                    <RadioGroupItem value="permanent" id="oos-permanent" />
+                    <Label htmlFor="oos-permanent" className="font-normal">
+                      {t('assets.triage.duration.permanent', 'Until re-included')}
+                    </Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <RadioGroupItem value="until" id="oos-until" />
+                    <Label htmlFor="oos-until" className="font-normal">
+                      {t('assets.triage.duration.until', 'Until')}
+                    </Label>
+                    <Input
+                      type="date"
+                      className="h-8 w-40"
+                      value={until}
+                      min={minUntil}
+                      disabled={duration !== 'until'}
+                      onChange={(e) => setUntil(e.target.value)}
+                      aria-label={t('assets.triage.duration.untilDate', 'End date')}
+                    />
+                  </div>
+                </RadioGroup>
+              </fieldset>
+            )}
+
+            {!decisionOnly && (
               <div className="space-y-3 rounded-md border p-3">
                 <RadioGroup
                   value={granularity}
@@ -270,7 +375,11 @@ export function MarkOutOfScopeAction({ selected, onDone }: ActionProps) {
                     </Label>
                   </div>
                   <div className="flex items-center gap-2">
-                    <RadioGroupItem value="rule" id="oos-rule" disabled={rules.length === 0} />
+                    <RadioGroupItem
+                      value="rule"
+                      id="oos-rule"
+                      disabled={rules.length === 0 || ruleBlocked}
+                    />
                     <Label htmlFor="oos-rule" className="font-normal">
                       {t('assets.triage.exclude.byRule', 'By rule ({count})', {
                         count: rules.length,
@@ -279,6 +388,14 @@ export function MarkOutOfScopeAction({ selected, onDone }: ActionProps) {
                   </div>
                 </RadioGroup>
 
+                {ruleBlocked && (
+                  <p className="text-xs text-muted-foreground" data-testid="oos-rule-blocked">
+                    {t(
+                      'assets.triage.exclude.ruleNeedsFullAccess',
+                      'A rule is unavailable for closing findings with limited data access: it would also reach assets you cannot see, now or later. Mark the assets exactly, or ask someone with full data access.'
+                    )}
+                  </p>
+                )}
                 {granularity === 'exact' ? (
                   <ul className="space-y-1 text-xs" data-testid="oos-exact-list">
                     {exact.items.slice(0, SHOWN).map((i) => (
@@ -318,8 +435,10 @@ export function MarkOutOfScopeAction({ selected, onDone }: ActionProps) {
                               {t('assets.triage.rule.covers', 'covers {count} selected', {
                                 count: r.covers,
                               })}
-                              {matchText(r.item) ? ` · ${matchText(r.item)}` : ''}
                             </span>
+                            {matchText(r.item) && (
+                              <span className="text-muted-foreground">{matchText(r.item)}</span>
+                            )}
                           </Label>
                         </li>
                       )
@@ -346,11 +465,67 @@ export function MarkOutOfScopeAction({ selected, onDone }: ActionProps) {
                 )}
               </div>
             )}
+
+            <section className="space-y-1 rounded-md bg-muted/50 p-3" data-testid="oos-effects">
+              <h3 className="font-medium">{t('assets.triage.effects.title', 'What happens')}</h3>
+              <p>
+                {t(
+                  'assets.triage.effects.scans',
+                  'Scans, coverage, retests and follow-ups stop for these targets.'
+                )}
+              </p>
+              {closes ? (
+                <p data-testid="oos-effects-findings">
+                  {decisionOnly || previewing
+                    ? t(
+                        'assets.triage.effects.closeAny',
+                        'Their open findings close as "Asset out of scope" (not counted as fixed), and their tasks, tickets and SLA clocks follow.'
+                      )
+                    : t(
+                        'assets.triage.effects.close',
+                        '{count} open findings close as "Asset out of scope" (not counted as fixed), and their tasks, tickets and SLA clocks follow.',
+                        { count: findingsTotal }
+                      )}
+                </p>
+              ) : (
+                <p data-testid="oos-effects-findings">
+                  {t('assets.triage.effects.keep', 'Their findings stay open.')}
+                </p>
+              )}
+              <p className="text-muted-foreground">
+                {permanent
+                  ? t('assets.triage.effects.reinclude', 'Re-including them reopens what closed.')
+                  : t(
+                      'assets.triage.effects.resume',
+                      'Scanning resumes by itself after the end date.'
+                    )}
+              </p>
+            </section>
+
+            {!decisionOnly && (
+              <div className="space-y-1">
+                <Label htmlFor="oos-reason">
+                  {t('assets.triage.reason.label', 'Reason (optional)')}
+                </Label>
+                <Input
+                  id="oos-reason"
+                  value={reason}
+                  maxLength={1000}
+                  onChange={(e) => setReason(e.target.value)}
+                  placeholder={t('assets.triage.reason.placeholder', 'Sold in September')}
+                />
+              </div>
+            )}
             {tooMany && (
               <p className="text-destructive">
                 {t('assets.triage.tooMany', 'Select at most {max} at once.', {
                   max: MAX_BULK_EXCLUSIONS,
                 })}
+              </p>
+            )}
+            {untilInvalid && (
+              <p className="text-destructive">
+                {t('assets.triage.duration.invalid', 'Pick an end date after today.')}
               </p>
             )}
           </DialogBody>
@@ -360,13 +535,13 @@ export function MarkOutOfScopeAction({ selected, onDone }: ActionProps) {
             </Button>
             <Button
               onClick={() => void submit()}
-              disabled={busy || tooMany || (mode === 'exclude' && items.length === 0)}
+              disabled={busy || tooMany || untilInvalid || (!decisionOnly && items.length === 0)}
             >
               {busy
                 ? t('assets.triage.saving', 'Saving…')
-                : mode === 'exclude'
-                  ? t('assets.triage.exclude.confirm', 'Exclude')
-                  : t('assets.triage.reject.confirm', 'Mark not ours')}
+                : decisionOnly
+                  ? t('assets.triage.reject.confirm', 'Mark not ours')
+                  : t('assets.triage.confirm', 'Confirm')}
             </Button>
           </DialogFooter>
         </DialogContent>

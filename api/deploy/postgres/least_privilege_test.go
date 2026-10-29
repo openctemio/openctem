@@ -88,6 +88,7 @@ func TestLeastPrivilegeRoles(t *testing.T) {
 	exec1(ctx, t, mig, `CREATE INDEX CONCURRENTLY findings_tenant ON findings(tenant_id)`)
 	exec1(ctx, t, mig, `CREATE TABLE epss_scores (cve_id text PRIMARY KEY)`)
 	exec1(ctx, t, mig, `INSERT INTO schema_migrations VALUES (1, false)`)
+	exec1(ctx, t, mig, `INSERT INTO schema_migrations_applied (version, name) VALUES (1, 'first')`)
 	exec1(ctx, t, mig, `CREATE TABLE admin_audit_logs (id bigserial PRIMARY KEY, action text)`)
 	exec1(ctx, t, mig, `CREATE TABLE admin_audit_chain_anchors (id bigserial PRIMARY KEY)`)
 	// Idempotent, and it grants the special cases (TRUNCATE on the feeds).
@@ -130,6 +131,7 @@ func TestLeastPrivilegeRoles(t *testing.T) {
 	if err := app.QueryRowContext(ctx, `SELECT version FROM schema_migrations`).Scan(&version); err != nil {
 		t.Fatalf("read schema_migrations: %v", err)
 	}
+	exec1(ctx, t, app, `SELECT count(*) FROM schema_migrations_applied`)
 	tx, err := app.BeginTx(ctx, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -148,6 +150,9 @@ func TestLeastPrivilegeRoles(t *testing.T) {
 		`TRUNCATE findings`,
 		`UPDATE schema_migrations SET dirty = true`,
 		`DELETE FROM schema_migrations`,
+		`INSERT INTO schema_migrations_applied (version, name) VALUES (2, 'forged')`,
+		`UPDATE schema_migrations_applied SET name = 'forged'`,
+		`DELETE FROM schema_migrations_applied`,
 		`UPDATE admin_audit_logs SET action = 'forged'`,
 		`DELETE FROM admin_audit_logs`,
 		`TRUNCATE admin_audit_logs`,
@@ -176,6 +181,9 @@ func TestLeastPrivilegeRoles(t *testing.T) {
 		`CREATE TABLE platform_identity_provider (id int PRIMARY KEY)`,
 		`CREATE TABLE admin_idp_login_states (state_hash text PRIMARY KEY)`,
 		`CREATE TABLE admin_approvals (id bigserial PRIMARY KEY)`,
+		`CREATE TABLE platform_roles (id bigserial PRIMARY KEY)`,
+		`CREATE TABLE platform_role_permissions (role_id bigint)`,
+		`CREATE TABLE platform_role_assignments (admin_id bigint)`,
 		`CREATE TABLE users (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text)`,
 		`CREATE TABLE tenant_members (user_id uuid)`,
 	} {
@@ -202,6 +210,10 @@ func TestLeastPrivilegeRoles(t *testing.T) {
 		`INSERT INTO admin_idp_login_states VALUES ('x')`,
 		`INSERT INTO admin_approvals DEFAULT VALUES`,
 		`SELECT count(*) FROM admin_approvals`,
+		`SELECT count(*) FROM platform_roles`,
+		`SELECT count(*) FROM platform_role_permissions`,
+		`SELECT count(*) FROM platform_role_assignments`,
+		`INSERT INTO platform_role_assignments VALUES (1)`,
 	} {
 		if _, err := app.ExecContext(ctx, q); err == nil {
 			t.Errorf("app role was allowed on the console's tables: %s", q)
@@ -214,6 +226,9 @@ func TestLeastPrivilegeRoles(t *testing.T) {
 	exec1(ctx, t, adm, `INSERT INTO platform_identity_provider VALUES (1)`)
 	exec1(ctx, t, adm, `INSERT INTO admin_idp_login_states VALUES ('x')`)
 	exec1(ctx, t, adm, `INSERT INTO admin_approvals DEFAULT VALUES`)
+	exec1(ctx, t, adm, `INSERT INTO platform_roles DEFAULT VALUES`)
+	exec1(ctx, t, adm, `INSERT INTO platform_role_assignments VALUES (1)`)
+	exec1(ctx, t, adm, `SELECT count(*) FROM platform_role_permissions`)
 	exec1(ctx, t, adm, `INSERT INTO admin_audit_logs (action) VALUES ('console')`)
 	exec1(ctx, t, adm, `SELECT count(*) FROM admin_audit_logs`)
 	exec1(ctx, t, adm, `SELECT count(*) FROM admin_audit_chain_anchors`)
@@ -229,6 +244,7 @@ func TestLeastPrivilegeRoles(t *testing.T) {
 		`UPDATE findings SET tenant_id = tenant_id`,
 		`INSERT INTO findings (tenant_id) VALUES (NULL)`,
 		`SELECT count(*) FROM schema_migrations`,
+		`SELECT count(*) FROM schema_migrations_applied`,
 		`INSERT INTO users (name) VALUES ('x')`,
 		`DELETE FROM users`,
 		`INSERT INTO tenant_members (user_id) VALUES (NULL)`,

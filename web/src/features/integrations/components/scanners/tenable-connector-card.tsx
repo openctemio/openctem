@@ -126,13 +126,13 @@ export function TenableConnectorCard({
               )}
             </div>
             <p className="text-muted-foreground text-sm">
-              {t('tenableSc.card.sensorInstance', 'Sensor {sensor} · instance {instance}', {
+              {t('tenableSc.card.sensorInstance', 'Sensor {sensor}, instance {instance}', {
                 sensor:
                   sensor?.name || settings.sensorId || t('tenableSc.card.unknownSensor', 'unknown'),
                 instance: settings.instance,
               })}
               {sync.tenableVersion
-                ? t('tenableSc.card.tenableVersion', ' · Tenable.sc {version}', {
+                ? t('tenableSc.card.tenableVersion', ', Tenable.sc {version}', {
                     version: sync.tenableVersion,
                   })
                 : ''}

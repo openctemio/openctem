@@ -121,7 +121,13 @@ func TestOnboardingJoinByDomain(t *testing.T) {
 	if _, err := svc.Accept(ctx, eve, ref, actx); !errors.Is(err, onboarding.ErrInvalidRef) {
 		t.Fatalf("another account's reference must be refused, got %v", err)
 	}
-	if _, err := svc.Accept(ctx, bob, ref[:len(ref)-2]+"xx", actx); !errors.Is(err, onboarding.ErrInvalidRef) {
+	// Flip the first character: the last base64 character can carry unused bits, so
+	// changing the tail may decode to the same bytes and the test would flake.
+	tampered := "A" + ref[1:]
+	if ref[0] == 'A' {
+		tampered = "B" + ref[1:]
+	}
+	if _, err := svc.Accept(ctx, bob, tampered, actx); !errors.Is(err, onboarding.ErrInvalidRef) {
 		t.Fatalf("a tampered reference must be refused, got %v", err)
 	}
 
@@ -182,14 +188,14 @@ func TestOnboardingJoinByDomain(t *testing.T) {
 	setPolicy(verifieddomain.SignupPolicy{Join: verifieddomain.JoinApproval, JoinRole: "viewer", Discoverable: true})
 
 	// One transaction: when the membership cannot be created (the person
-	// became a platform administrator), the request stays waiting.
-	if _, err := db.Exec(`INSERT INTO admin_users (id, email, name, role, is_active, api_key_hash, api_key_prefix, user_id, created_at, updated_at)
-		VALUES ($1, $2, 'fay', 'super_admin', FALSE, '!revoked', 'revoked-x', $3, NOW(), NOW())`, uuid.NewString(), fay.Email(), fay.ID().String()); err != nil {
+	// became a break-glass administrator), the request stays waiting.
+	if _, err := db.Exec(`INSERT INTO admin_users (id, email, name, role, is_active, is_break_glass, api_key_hash, api_key_prefix, user_id, created_at, updated_at)
+		VALUES ($1, $2, 'fay', 'super_admin', FALSE, TRUE, '!revoked', 'revoked-x', $3, NOW(), NOW())`, uuid.NewString(), fay.Email(), fay.ID().String()); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _, _ = db.Exec(`DELETE FROM admin_users WHERE user_id = $1`, fay.ID().String()) })
 	if err := svc.Approve(ctx, orgA, fayReq, shared.ID{}, "viewer", actx); err == nil {
-		t.Fatal("the membership insert must fail for a platform administrator")
+		t.Fatal("the membership insert must fail for a break-glass administrator")
 	}
 	if jr, err := requests.GetForTenant(ctx, orgA, fayReq); err != nil || jr.Status != joinrequest.StatusPending {
 		t.Fatalf("the failed approval must roll back the decision: %+v %v", jr, err)

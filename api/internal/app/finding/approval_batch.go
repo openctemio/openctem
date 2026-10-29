@@ -64,9 +64,12 @@ func (s *VulnerabilityService) batches() (batchStore, error) {
 // GroupExceptionInput asks for one exception over a set of findings (the open
 // findings of a remediation task).
 type GroupExceptionInput struct {
-	TenantID        shared.ID
-	SourceType      string
-	SourceID        shared.ID
+	TenantID   shared.ID
+	SourceType string
+	SourceID   shared.ID
+	// SourceLabel names a source without a title of its own (the CVE ids of
+	// a vulnerability selection).
+	SourceLabel     string
 	FindingIDs      []shared.ID
 	RequestedStatus string
 	ClosureReason   string
@@ -257,7 +260,7 @@ func (s *VulnerabilityService) RequestGroupException(ctx context.Context, in Gro
 	now := time.Now()
 	status := vulnerability.FindingStatus(in.RequestedStatus)
 	b := &vulnerability.ApprovalBatch{
-		ID: shared.NewID(), TenantID: in.TenantID, SourceType: in.SourceType, SourceID: in.SourceID,
+		ID: shared.NewID(), TenantID: in.TenantID, SourceType: in.SourceType, SourceID: in.SourceID, SourceLabel: in.SourceLabel,
 		RequestedStatus: status, ClosureReason: reason, Justification: strings.TrimSpace(in.Justification),
 		RequestedBy: in.RequestedBy, Tier: string(res.Tier), RiskClass: string(res.Class), RequiredApprovals: res.Required,
 		PolicyEval: policyEvalJSON(res), Status: vulnerability.ApprovalStatusPending, DecideBy: now.Add(res.DecideWithin),

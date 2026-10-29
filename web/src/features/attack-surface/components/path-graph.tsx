@@ -3,6 +3,7 @@
 import { createElement, Fragment } from 'react'
 import Link from '@/components/link'
 import { cn } from '@/lib/utils'
+import { safeInternalHref } from '@/lib/safe-href'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { useTranslation } from '@/context/i18n-provider'
@@ -66,6 +67,8 @@ export interface PathGraphPath {
   criticalCount?: number
   /** How many entry points reach the target (right-hand counter). */
   reachableFrom?: number
+  /** The attack-path view of the target (every route, choke points, score). */
+  detailHref?: string
 }
 
 // ============================================================
@@ -302,6 +305,16 @@ function PathRow({ path }: { path: PathGraphPath }) {
           )}
         </div>
 
+        {safeInternalHref(path.detailHref) && (
+          <Link
+            href={safeInternalHref(path.detailHref) ?? '/'}
+            className="shrink-0 text-sm text-signal-text hover:underline"
+            data-testid="chain-attack-paths-link"
+          >
+            {t('prioritization.pathGraph.openPaths', 'Open attack paths')}
+          </Link>
+        )}
+
         {path.reachableFrom != null && (
           <div className="flex shrink-0 flex-col items-center text-center">
             <span className="text-xl leading-none font-bold tabular-nums">
@@ -353,8 +366,8 @@ interface PathGraphProps {
 }
 
 /**
- * Dependency-free interactive attack-path visualisation shared by the
- * Exposure Chains and Attack Path Analysis views.
+ * Dependency-free attack-chain list of the Exposure chains page (the flow
+ * canvas of one target is the Attack paths view).
  *
  * Each path renders as an ordered chain of nodes (entry → hops → target)
  * connected by directional links. Hovering a row highlights the whole path;

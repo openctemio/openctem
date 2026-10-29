@@ -23,6 +23,13 @@ const (
 	// GrantMaxTTL is the absolute life of a grant; refresh tokens never
 	// outlive it.
 	GrantMaxTTL = 90 * 24 * time.Hour
+
+	// A grant that may read all organization data (Grant.FullData) lives
+	// shorter than a scoped one: a leaked token is worth more, so every
+	// window is smaller.
+	FullDataAccessTokenTTL = 5 * time.Minute
+	FullDataRefreshIdleTTL = 24 * time.Hour
+	FullDataGrantMaxTTL    = 7 * 24 * time.Hour
 )
 
 // Token prefixes. The prefix tells the MCP endpoint which authenticator a
@@ -72,8 +79,11 @@ const (
 
 // AuthRequest is one authorization transaction.
 type AuthRequest struct {
-	ID            shared.ID
-	Client        Client
+	ID     shared.ID
+	Client Client
+	// ClientPending: Client is a metadata document fetched for this request
+	// and not stored yet. It is stored when a signed-in person approves.
+	ClientPending bool
 	RedirectURI   string
 	State         string
 	CodeChallenge string
@@ -85,8 +95,11 @@ type AuthRequest struct {
 	GrantedScopes []Scope
 	CodeExpiresAt *time.Time
 	GrantID       *shared.ID
-	CreatedAt     time.Time
-	ExpiresAt     time.Time
+	// FullData: the person chose, at consent, to let the connection read
+	// all organization data (needs a full-data role and a fresh step-up).
+	FullData  bool
+	CreatedAt time.Time
+	ExpiresAt time.Time
 }
 
 // Grant is what one person allowed one client to do in one organization.
@@ -106,6 +119,34 @@ type Grant struct {
 	// DPoPJKT is the thumbprint of the client key the grant is bound to
 	// (RFC 9449), or "" for a bearer grant.
 	DPoPJKT string
+	// FullData: the connection may read all organization data while its
+	// user still holds a full-data role (re-checked on every request).
+	FullData bool
+}
+
+// AccessTTL is the life of an access token of the grant: shorter when the
+// grant may read all organization data.
+func (g *Grant) AccessTTL() time.Duration {
+	if g.FullData {
+		return FullDataAccessTokenTTL
+	}
+	return AccessTokenTTL
+}
+
+// RefreshIdleTTL is how long an unused refresh token of the grant stays valid.
+func (g *Grant) RefreshIdleTTL() time.Duration {
+	if g.FullData {
+		return FullDataRefreshIdleTTL
+	}
+	return RefreshIdleTTL
+}
+
+// MaxLifetime is the longest a new grant may last.
+func MaxLifetime(fullData bool) time.Duration {
+	if fullData {
+		return FullDataGrantMaxTTL
+	}
+	return GrantMaxTTL
 }
 
 // Active reports whether the grant can still be used at now.
@@ -138,6 +179,7 @@ const (
 	RevokedCodeReuse      = "code_reuse"
 	RevokedMembershipGone = "membership"
 	RevokedByPolicy       = "policy"
+	RevokedCredentials    = "credentials"
 )
 
 // Errors of the repository and the service.
@@ -164,8 +206,11 @@ type Repository interface {
 	// already claimed by someone else is ErrRequestState.
 	ClaimRequest(ctx context.Context, id, userID shared.ID, now time.Time) (*AuthRequest, error)
 	// ApproveRequest moves a pending request claimed by userID to approved
-	// and stores the code hash.
-	ApproveRequest(ctx context.Context, id, userID, tenantID shared.ID, granted []Scope, codeHash string, codeExpiresAt, now time.Time) error
+	// and stores the code hash. clientRef is the stored client the request
+	// now points to (a pending metadata-document client is stored first).
+	// fullData records the person's choice to let the grant read all
+	// organization data.
+	ApproveRequest(ctx context.Context, id, userID, tenantID, clientRef shared.ID, granted []Scope, fullData bool, codeHash string, codeExpiresAt, now time.Time) error
 	// DenyRequest moves a pending request claimed by userID to denied.
 	DenyRequest(ctx context.Context, id, userID shared.ID, now time.Time) error
 	// RedeemCode atomically moves the approved request holding codeHash to
@@ -185,6 +230,15 @@ type Repository interface {
 	RotateRefresh(ctx context.Context, tenantID shared.ID, oldHash string, scopes []Scope, now time.Time, tokens ...Token) error
 	// RevokeGrant revokes the grant and deletes its tokens.
 	RevokeGrant(ctx context.Context, tenantID, grantID shared.ID, reason string, now time.Time) error
+	// RevokeGrantsByUser revokes every live grant of the user in EVERY
+	// organization, deletes their tokens and cancels the user's pending or
+	// approved authorization requests (an approved code must not be
+	// redeemed after a credential change). It touches only that user. It
+	// returns the number of grants revoked.
+	RevokeGrantsByUser(ctx context.Context, userID shared.ID, reason string, now time.Time) (int, error)
+	// SetGrantScoped turns a live grant that may read all organization
+	// data back into a scoped one and reports whether a grant changed.
+	SetGrantScoped(ctx context.Context, tenantID, grantID shared.ID) (bool, error)
 	// TouchGrant records the last use of a grant.
 	TouchGrant(ctx context.Context, tenantID, grantID shared.ID, ip string, now time.Time) error
 }
@@ -204,13 +258,23 @@ type ClientUsage struct {
 	LastUsedAt        *time.Time
 }
 
+// ClientFilter narrows the platform's client list: Q matches part of the
+// client_id (its host) or the declared name; Blocked keeps blocked (true) or
+// unblocked (false) clients, nil keeps both.
+type ClientFilter struct {
+	Q       string
+	Blocked *bool
+}
+
 // ConnectionRepository lists and manages connections (RFC-062 §12).
 type ConnectionRepository interface {
 	ListConnections(ctx context.Context, tenantID shared.ID, userID *shared.ID, now time.Time) ([]Connection, error)
 	GetGrant(ctx context.Context, tenantID, grantID shared.ID) (*Grant, error)
 	// ListClientsForPlatform and SetClientBlockedForPlatform serve the
 	// platform admin console only.
-	ListClientsForPlatform(ctx context.Context, now time.Time) ([]ClientUsage, error)
+	// ListClientsForPlatform returns one page (newest first) and the total
+	// number of clients matching f.
+	ListClientsForPlatform(ctx context.Context, f ClientFilter, limit, offset int, now time.Time) ([]ClientUsage, int, error)
 	SetClientBlockedForPlatform(ctx context.Context, clientRef shared.ID, blocked bool, now time.Time) error
 }
 

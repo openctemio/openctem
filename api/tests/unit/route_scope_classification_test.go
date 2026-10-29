@@ -70,6 +70,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/oauth/requests/{id}/allow-publisher": {classConfig, "organization MCP policy: approves the publisher of the caller's consent request (RFC-062)"},
 	"/api/v1/version":                             {classSystem, "build identity"},
 	"/api/v1/announcements":                       {classSystem, "platform operator notices (plain text); no tenant data"},
+	"/api/v1/proxy-test-echoes":                   {classSystem, "the proxy test's echo: answers the caller's own address for the token of one live test command; no tenant data"},
 	"/api/v1/brand$":                              {classSystem, "instance brand shown before sign-in; server configuration, no tenant data"},
 	"/api/v1/brand/images/":                       {classSystem, "instance brand images; server configuration, no tenant data"},
 	"/api/v1/legal":                               {classSystem, "operator legal information shown before sign-in; no tenant data"},
@@ -77,6 +78,8 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/auth":                                {classSystem, "authentication flows"},
 	"/api/v1/users":                               {classSystem, "the caller's own account"},
 	"/api/v1/me":                                  {classSystem, "the caller's own permissions, groups and assets"},
+	"/api/v1/me/pins":                             {classScoped, "the caller's own sidebar pins; a saved view shows only while visible, view counts compiled as the caller"},
+	"/api/v1/ai":                                  {classScoped, "AI agents (tenant-bound service accounts with accountable owners) and their runs: a run is read only by a caller who can see its subject finding (404 out of scope; docs/architecture/ai-analysis.md)"},
 	"/api/v1/operations":                          {classScoped, "an operation is read by its creator only (tenant and creator bound, 404 otherwise); a bulk change by filter recompiles the filter as the caller (docs/architecture/operations.md)"},
 	"/api/v1/query":                               {classScoped, "custom queries compile through filterspec as the caller: tenant, data scope, pentest member rule and mandatory exclusions are injected into every statement (docs/architecture/query-language.md)"},
 	"/api/v1/views":                               {classSystem, "the caller's saved views and those shared with their groups; a view runs as the viewer, scoped (D15)"},
@@ -205,18 +208,19 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/mcp":                                         {classScoped, "each tool runs as the key's user (API keys never get full data)"},
 
 	// --- partial -------------------------------------------------------------------
-	"/api/v1/asset-groups":                     {classScoped, "a restricted reader sees only the groups holding an asset in their scope or named by their team's scope rule (research/233 D4): list, search, stats and totals; any other id 404s, members and findings too; counts, risk and finding_count follow the reader (L-18); owner email full-data only"},
-	"/api/v1/attack-surface":                   {classPartial, "chains dropped unless every hop is in scope; stats counts, breakdown and average risk and the chain summary follow the scope; the attack-path summary stays an organization-wide count with no ids"},
-	"/api/v1/easm":                             {classPartial, "summary scoped; candidates are tenant discovery output"},
-	"/api/v1/business-services":                {classScoped, "a restricted reader sees only the services linking an asset in their scope (research/233 D4): list and total; any other id 404s, reads and writes; asset links scoped (L-10); update and delete need every linked asset in scope (403); asset_count counts only in-scope links; owner email full-data only"},
-	"/api/v1/business-units":                   {classScoped, "a restricted reader sees only the units holding an asset in their scope, or above one that does (research/233 D4): list, search and total; any other id 404s; asset links scoped (L-10); rollup counters count only in-scope assets; owner email full-data only"},
-	"/api/v1/ctem-cycles":                      {classPartial, "scope snapshot scoped (L-10); cycle metrics are tenant-wide counts"},
-	"/api/v1/approvals":                        {classScoped, "approvals by id and the list: SQL data-scope condition on the finding asset; total and status counts scoped too; group exceptions (batches) are listed, read and decided only with every member finding in scope (RFC-111)"},
-	"/api/v1/remediation":                      {classScoped, "resolve scoped; campaign counts, filter references and risk fields follow the reader (L-18, research 24; B10, research 156); tasks are seen through in-scope findings and changed only with every finding in scope; owner candidates are counts only, computed against each candidate's own scope (research 217 D25); tasks from a query run the query as the caller, or as the stored owner with their current scope (RFC-098)"},
-	"/api/v1/organization/dashboards":          {classConfig, "organization dashboard layouts, no asset data (docs/architecture/dashboards.md): dashboards:org:view plus the dashboard's audience to read, dashboards:org:manage to change"},
-	"/api/v1/organization/settings/dashboards": {classConfig, "organization dashboard defaults (default refresh schedule, refresh floor)"},
-	"/api/v1/dashboard-data":                   {classConfig, "owner/admin only: status of the organization's derived dashboard facts (times and counts, no rows) and the once-per-hour rebuild request"},
-	"/api/v1/dashboard":                        {classScoped, "counts, velocity, data quality, process metrics and the executive summary follow the viewer (countScope, D6); the risk-trend history and the program metrics are organization-wide and a restricted viewer needs dashboards:org:view (empty / 403 otherwise)"},
+	"/api/v1/asset-groups":                             {classScoped, "a restricted reader sees only the groups holding an asset in their scope or named by their team's scope rule (research/233 D4): list, search, stats and totals; any other id 404s, members and findings too; counts, risk and finding_count follow the reader (L-18); owner email full-data only"},
+	"/api/v1/attack-surface":                           {classPartial, "chains dropped unless every hop is in scope; stats counts, breakdown and average risk and the chain summary follow the scope; the attack-path summary stays an organization-wide count with no ids"},
+	"/api/v1/easm":                                     {classPartial, "summary scoped; candidates are tenant discovery output"},
+	"/api/v1/business-services":                        {classScoped, "a restricted reader sees only the services linking an asset in their scope (research/233 D4): list and total; any other id 404s, reads and writes; asset links scoped (L-10); update and delete need every linked asset in scope (403); asset_count counts only in-scope links; owner email full-data only"},
+	"/api/v1/business-units":                           {classScoped, "a restricted reader sees only the units holding an asset in their scope, or above one that does (research/233 D4): list, search and total; any other id 404s; asset links scoped (L-10); rollup counters count only in-scope assets; owner email full-data only"},
+	"/api/v1/ctem-cycles":                              {classPartial, "scope snapshot scoped (L-10); cycle metrics are tenant-wide counts"},
+	"/api/v1/approvals":                                {classScoped, "approvals by id and the list: SQL data-scope condition on the finding asset; total and status counts scoped too; group exceptions (batches) are listed, read and decided only with every member finding in scope (RFC-111)"},
+	"/api/v1/remediation":                              {classScoped, "resolve scoped; campaign counts, filter references and risk fields follow the reader (L-18, research 24; B10, research 156); tasks are seen through in-scope findings and changed only with every finding in scope; owner candidates are counts only, computed against each candidate's own scope (research 217 D25); tasks from a query run the query as the caller, or as the stored owner with their current scope (RFC-098)"},
+	"/api/v1/organization/dashboards":                  {classConfig, "organization dashboard layouts, no asset data (docs/architecture/dashboards.md): dashboards:org:view plus the dashboard's audience to read, dashboards:org:manage to change"},
+	"/api/v1/organization/settings/dashboards":         {classConfig, "organization dashboard defaults (default refresh schedule, refresh floor)"},
+	"/api/v1/organization/settings/ai/masking/preview": {classScoped, "reads one finding under the caller's data scope and pentest campaign rules (GetFindingWithScope) and returns it masked; owner or administrator only"},
+	"/api/v1/dashboard-data":                           {classConfig, "owner/admin only: status of the organization's derived dashboard facts (times and counts, no rows) and the once-per-hour rebuild request"},
+	"/api/v1/dashboard":                                {classScoped, "counts, velocity, data quality, process metrics and the executive summary follow the viewer (countScope, D6); the risk-trend history and the program metrics are organization-wide and a restricted viewer needs dashboards:org:view (empty / 403 otherwise)"},
 
 	// --- separate ------------------------------------------------------------------
 	"/api/v1/pentest":                     {classSeparate, "campaign membership (D5 engagement scope is P2)"},
@@ -226,7 +230,6 @@ var dataSurfaceRegistry = map[string]dataSurface{
 
 	// --- gap -----------------------------------------------------------------------
 	"/api/v1/credentials":                                {classScoped, "leaks on in-scope assets; asset-less leaks: unrestricted callers only (L-10)"},
-	"/api/v1/vulnerabilities/active":                     {classScoped, "aggregated over in-scope findings, REST and MCP (L-10)"},
 	"GET /api/v1/groups/{groupId}/assets":                {classScoped, "only the group's assets in the caller's scope (L-10)"},
 	"/api/v1/scans":                                      {classGap, "L-06 (scan reads and targets; D9)"},
 	"/api/v1/scan-approvals":                             {classGap, "L-06 (scan approval requests carry the scan definition and targets, as scan reads; D9)"},
@@ -320,9 +323,9 @@ func TestEveryRouteHasADataScopeClass(t *testing.T) {
 func TestDataSurfaceLookup_LongestPrefixWins(t *testing.T) {
 	cases := map[string]dataScopeClass{
 		"GET /api/v1/vulnerabilities/":                         classSystem,
-		"GET /api/v1/vulnerabilities/active":                   classScoped,
 		"GET /api/v1/vulnerabilities/{id}/affected-assets":     classScoped,
 		"GET /api/v1/vulnerability-exposures/{vuln_id}/assets": classScoped,
+		"GET /api/v1/vulnerability-exposures/":                 classScoped,
 		"GET /api/v1/groups/{groupId}/assets":                  classScoped,
 		"POST /api/v1/groups/{groupId}/assets":                 classConfig,
 		"GET /api/v1/compliance/findings/{findingId}/controls": classScoped,

@@ -2354,6 +2354,7 @@ func TestTenantSvc_SSOEnforced_Guard(t *testing.T) {
 		svc, repo := newTestTenantService()
 		svc.SetSSOPathChecker(&mockSSOPathChecker{usable: true})
 		svc.SetSSODomainChecker(fixedSSODomain{ok: true})
+		svc.SetSSOEnforcementStore(readySSOStore())
 		existing := seedTenant(repo, "Team", "team-slug")
 
 		result, err := svc.UpdateSecuritySettings(context.Background(), existing.ID().String(),
@@ -2369,6 +2370,7 @@ func TestTenantSvc_SSOEnforced_Guard(t *testing.T) {
 	t.Run("enable allowed (fail-open) when no SSO-path checker is wired", func(t *testing.T) {
 		svc, repo := newTestTenantService() // no SetSSOPathChecker
 		svc.SetSSODomainChecker(fixedSSODomain{ok: true})
+		svc.SetSSOEnforcementStore(readySSOStore())
 		existing := seedTenant(repo, "Team", "team-slug")
 
 		result, err := svc.UpdateSecuritySettings(context.Background(), existing.ID().String(),

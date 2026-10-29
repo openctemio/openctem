@@ -1,4 +1,5 @@
 import type { ScanRun } from '@/lib/api/scan-types'
+import type { ScanRunListFilters } from '@/lib/api/scan-workflow-types'
 import { formatScanDuration, scanSuccessRate } from './format'
 import { enTranslate, type Translate } from './translate'
 
@@ -162,9 +163,9 @@ export function runDeadline(
           })
         : t('scans.runDetail.deadlinePassed')
   }
-  const key = (['scan_max_duration', 'workflow_max_duration', 'platform_cap'] as const).find(
-    (k) => k === run.deadline_reason
-  )
+  const key = (
+    ['scan_max_duration', 'workflow_max_duration', 'platform_cap', 'work_estimate'] as const
+  ).find((k) => k === run.deadline_reason)
   const reason = t(`scans.runDetail.deadlineReason.${key ?? 'legacy'}`)
   return { relative, reason, at: run.deadline_at }
 }
@@ -208,6 +209,61 @@ export const RUN_KIND_FILTERS = [
   { value: 'retest' },
 ] as const
 
+/**
+ * Who started the runs the list shows. People's runs are the default: the
+ * runs the platform starts on its own (continuous coverage) outnumber them
+ * by far. "System" lists only those, "All" both; the filter changes the view
+ * only, every run stays listed and exportable.
+ */
+export const RUN_ORIGIN_FILTERS = [
+  { value: 'user' },
+  { value: 'system' },
+  { value: 'all' },
+] as const
+
+export type RunOriginFilterValue = (typeof RUN_ORIGIN_FILTERS)[number]['value']
+
+/** The default origin of the run list: runs started by people. */
+export const DEFAULT_RUN_ORIGIN: RunOriginFilterValue = 'user'
+
+/** The list query a kind filter value stands for ("All kinds": no kind). */
+export function runKindQuery(value: string): Pick<ScanRunListFilters, 'kind'> {
+  switch (value) {
+    case 'all':
+    case '':
+      return {}
+    default:
+      return { kind: value }
+  }
+}
+
+/** The list query an origin filter value stands for ("All": no origin). */
+export function runOriginQuery(value: string): Pick<ScanRunListFilters, 'origin'> {
+  switch (value) {
+    case 'user':
+    case 'system':
+      return { origin: value }
+    default:
+      return {}
+  }
+}
+
+/** The platform policy that owns a run's scan, in words (null for a person's scan). */
+export function runManagedLabel(
+  managedBy: string | null | undefined,
+  t: Translate = enTranslate
+): string | null {
+  if (!managedBy) return null
+  switch (managedBy) {
+    case 'coverage':
+      return t('scans.runs.managedCoverage')
+    case 'enrichment':
+      return t('scans.runs.managedEnrichment')
+    default:
+      return t('scans.runs.managedPlatform')
+  }
+}
+
 const RUN_KINDS = new Set(['scan', 'quick', 'retest', 'validation', 'test', 'connector', 'system'])
 
 /** A run kind in words; a run from before kinds existed is a scan. */
@@ -233,15 +289,20 @@ export function runHref(runId: string): string {
  * They never change the run's status.
  */
 export function runTargetNote(
-  run: Pick<ScanRun, 'unreachable_target_count' | 'skipped_target_count'>,
+  run: Pick<
+    ScanRun,
+    'unreachable_target_count' | 'skipped_target_count' | 'no_longer_resolve_count'
+  >,
   t: Translate = enTranslate
 ): string | null {
   const parts: string[] = []
   const unreachable = run.unreachable_target_count ?? 0
-  const skipped = run.skipped_target_count ?? 0
+  const gone = Math.min(run.no_longer_resolve_count ?? 0, run.skipped_target_count ?? 0)
+  const skipped = (run.skipped_target_count ?? 0) - gone
   if (unreachable > 0) parts.push(t('scans.outcome.unreachable', undefined, { count: unreachable }))
   if (skipped > 0) parts.push(t('scans.outcome.skipped', undefined, { count: skipped }))
-  return parts.length > 0 ? parts.join(' · ') : null
+  if (gone > 0) parts.push(t('scans.outcome.noLongerResolve', undefined, { count: gone }))
+  return parts.length > 0 ? parts.join(', ') : null
 }
 
 /** Reason codes of an inconclusive or exposed-elsewhere result with their own wording. */
@@ -254,6 +315,7 @@ const RESULT_CODES = new Set([
   'auth_changed',
   'server_error',
   'template_changed',
+  'seen_after_check',
   'no_result',
   'error',
   'template_not_found',

@@ -127,6 +127,7 @@ offboarding without step-up and is removed.
 | `POST /api/v1/tenants/{tenant}/settings/sso/changes/{id}/approve` | Installs who can sign in to the organization. |
 | `DELETE /api/v1/tenants/{tenant}` | Deletes the organization. |
 | `DELETE /api/v1/organization/members/{id}/mfa` | Removes a member's second factor. |
+| `POST /api/v1/me/sign-in-method-links/{provider}/start`, `DELETE /api/v1/me/sign-in-methods/{id}` | Adds or removes a way to sign in to the account ([linking social sign-in](social-login-linking.md)). |
 | `POST /api/v1/organization/members/{id}/offboard`, `.../erase` | Removes a person's access; erases their personal data. Disabling (`POST /api/v1/tenants/{tenant}/members/{id}/suspend`) and re-enabling stay one click: they are reversible and keep everything the member holds. |
 | `POST /api/v1/ci/gate-overrides` | Break-glass past the CI security gate. |
 | `POST /api/v1/integrations/{id}/jira-webhook/secret/rotate`, `PUT …/{id}/jira-webhook/secret`, `POST …/{id}/github-webhook/secret/rotate` | Whoever holds the secret can forge inbound webhook events (issue sync, push events) for that integration. |
@@ -136,6 +137,7 @@ offboarding without step-up and is removed.
 | `DELETE /api/v1/sensors/{id}` | Removes the sensor and its history; it cannot be undone. Revoking (`POST …/{id}/revoke`) cuts a sensor off at once without step-up, so an incident never waits on it. |
 | `DELETE /api/v1/service-accounts/{id}` | Ends every API key the service account holds, as deleting one of its keys (`DELETE …/{id}/api-keys/{key_id}`) does. |
 | `GET /api/v1/audit-logs/export` | The file holds every member's email and IP address for the filtered period. Reading the log in the app stays a plain read. |
+| `POST /api/v1/oauth/requests/{id}/approve` | Connects an application (MCP) for 90 days with the caller's permissions. A stolen session must not be able to mint it. Deny and the other consent steps stay one click. |
 | `POST /api/v1/scan-approvals/{id}/approve` | Lets a held scan send traffic to its targets, the same weight as approving a scope target. Reject and withdraw stay one click. |
 | `POST /api/v1/pentest/campaigns/{id}/secrets/{secret_id}/reveal`, `DELETE …/secrets/{secret_id}` | Shows a campaign test credential in clear text; deletes one for good (the same reason as the secret store and leaked credentials). |
 | `POST /api/v1/priority-rules`, `PUT`/`DELETE /api/v1/priority-rules/{id}` | A rule re-classes findings across the organization, down to the platform floors ([priority explainability](priority-explainability.md)). |
@@ -159,6 +161,7 @@ the web dialog appears and the request is retried.
 | Making someone an administrator or an owner: `POST /api/v1/users/{id}/roles`, `PUT /api/v1/users/{id}/roles`, `POST /api/v1/roles/{id}/members/bulk` with the admin or owner role, `POST/PATCH /api/v1/tenants/{tenant}/members…` with `admin`, an invitation or a created user with the admin role | `RoleService.authorizeAdminPromotion`, `TenantService.authorizeAdminPromotion` (only when the user does not hold the role yet) |
 | Giving a user a privileged custom role they do not hold (`permission.IsPrivilegedRole`: a role with full data access or a member-management, role-management, credential or similar permission) by a direct grant: `POST /api/v1/users/{id}/roles`, `PUT /api/v1/users/{id}/roles`, `POST /api/v1/roles/{id}/members/bulk` | `RoleService.authorizePrivilegedGrant` (not asked of a system path, nor when the user already holds the role; the system admin and owner roles stay with `authorizeAdminPromotion`) |
 | Editing a custom role so that it becomes privileged while at least one user holds it directly: `PATCH /api/v1/roles/{id}` (team-bound roles: `guardBoundRolePrivilege`, owner only) | `RoleService.guardDirectRolePrivilege` |
+| Adding, removing or extending a member of a team that carries a privileged role (`POST/DELETE/PATCH /api/v1/groups/{id}/members`): owner only (403 `TEAM_PRIVILEGED_OWNER_ONLY` otherwise), then step-up (403 `STEP_UP_REQUIRED`) | `GroupService.requireOwnerStepUp` |
 | Renaming the organization's slug: `PATCH /api/v1/tenants/{tenant}` with a new `slug` | `TenantService.UpdateTenant` |
 | Allowing bearer-key sensors again: `PUT /api/v1/sensors/identity-policy` with `bearer_keys_allowed: true` while the organization requires key-bound identity | `SensorService.SetBearerKeysAllowed` (requiring key-bound identity, and re-sending the current value, stay one click) |
 

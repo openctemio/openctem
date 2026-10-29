@@ -28,7 +28,6 @@ vi.mock('@/features/dashboard/hooks/use-dashboard-stats', () => ({
   }),
 }))
 vi.mock('@/features/vulnerabilities', () => ({
-  ActiveCVEsTab: () => null,
   VulnerabilityCatalogTab: () => null,
 }))
 

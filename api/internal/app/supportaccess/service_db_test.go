@@ -18,6 +18,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
+	"github.com/openctemio/openctem/api/pkg/domain/platformauthz"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/ssochange"
 	dom "github.com/openctemio/openctem/api/pkg/domain/supportaccess"
@@ -188,10 +189,9 @@ func TestSupportAccessGrantRules_DB(t *testing.T) {
 		in   supportaccess.CreateGrantInput
 		want error
 	}{
-		"unknown administrator":   {in("nobody@example.com", 4, "a valid reason here"), dom.ErrNotSupportAdmin},
-		"read-only administrator": {in(f.readonly.Email(), 4, "a valid reason here"), dom.ErrNotSupportAdmin},
-		"over 72 hours":           {in(f.support.Email(), 73, "a valid reason here"), dom.ErrInvalidDuration},
-		"reason too short":        {in(f.support.Email(), 4, "short"), shared.ErrValidation},
+		"unknown administrator": {in("nobody@example.com", 4, "a valid reason here"), dom.ErrNotSupportAdmin},
+		"over 72 hours":         {in(f.support.Email(), 73, "a valid reason here"), dom.ErrInvalidDuration},
+		"reason too short":      {in(f.support.Email(), 4, "short"), shared.ErrValidation},
 	} {
 		if _, err := f.svc.CreateGrant(ctx, c.in, client); !errors.Is(err, c.want) {
 			t.Errorf("%s: %v, want %v", name, err, c.want)
@@ -425,5 +425,177 @@ func TestSupportAccessGrant_AuditFailureRevokesIt_DB(t *testing.T) {
 	}
 	if f.mailer.count() != 0 {
 		t.Fatal("owners were told about a grant that was withdrawn")
+	}
+}
+
+// A support session lives only as long as the console session that opened it:
+// sign-out ends it at once, expiry and idle end it within the sweeper's
+// minute, an unused session ends after 30 minutes, and the organization's
+// "support is viewing" signal (open_session) never outlives the console
+// session. Each end writes both audit rows and emails the owners. Another
+// administrator's session, on a live console session, is never touched.
+func TestSupportSessionLifecycle_DB(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+
+	console := func(a *admin.AdminUser, lastSeen, expires time.Time) shared.ID {
+		id := shared.NewID()
+		if _, err := f.db.ExecContext(ctx, `
+			INSERT INTO admin_sessions (id, admin_id, token_hash, mfa_verified, created_at, expires_at, last_seen_at)
+			VALUES ($1, $2, $3, true, $4, $5, $4)`,
+			id.String(), a.ID().String(), "th-"+id.String(), lastSeen, expires); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.db.ExecContext(ctx, `UPDATE admin_sessions SET last_seen_at = $2 WHERE id = $1`, id.String(), lastSeen); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	// The open_session signal compares with the database clock.
+	dbNow := time.Now()
+	alive := func(a *admin.AdminUser) shared.ID { return console(a, dbNow, dbNow.Add(8*time.Hour)) }
+	endReason := func(id shared.ID) (string, bool) {
+		var reason sql.NullString
+		var ended sql.NullTime
+		if err := f.db.QueryRow(`SELECT end_reason, ended_at FROM support_sessions WHERE id = $1`, id.String()).Scan(&reason, &ended); err != nil {
+			t.Fatal(err)
+		}
+		return reason.String, ended.Valid
+	}
+	openSignal := func() bool {
+		t.Helper()
+		gs, err := f.svc.ActiveGrants(ctx, f.tenant)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, g := range gs {
+			if g.OpenSession {
+				return true
+			}
+		}
+		return false
+	}
+	start := func(a *admin.AdminUser, cs shared.ID, g *dom.Grant) *dom.Session {
+		t.Helper()
+		s, _, err := f.svc.StartSession(ctx, a, cs, g.ID, "lifecycle", client)
+		if err != nil {
+			t.Fatalf("start: %v", err)
+		}
+		return s
+	}
+
+	gA := f.grant(t, f.support, nil, 4)
+	gB := f.grant(t, f.otherSupport, nil, 4)
+	csA, csB := alive(f.support), alive(f.otherSupport)
+	sA, sB := start(f.support, csA, gA), start(f.otherSupport, csB, gB)
+	if !openSignal() {
+		t.Fatal("open_session must be true while a session is open on a live console session")
+	}
+
+	// Nothing to end while every console session is alive.
+	if n, err := f.svc.EndStaleSessions(ctx); err != nil || n != 0 {
+		t.Fatalf("sweep with live consoles: %d %v", n, err)
+	}
+
+	// Console expiry without any sweep: the signal drops at once, the row
+	// still says open until the sweeper (or sign-out) runs.
+	if _, err := f.db.ExecContext(ctx, `UPDATE admin_sessions SET expires_at = now() - interval '1 minute' WHERE id = $1`, csA.String()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.ExecContext(ctx, `DELETE FROM admin_sessions WHERE id = $1`, csB.String()); err != nil {
+		t.Fatal(err)
+	}
+	if openSignal() {
+		t.Fatal("open_session stayed true after both console sessions were gone")
+	}
+	before := f.mailer.count()
+	if n, err := f.svc.EndStaleSessions(ctx); err != nil || n != 2 {
+		t.Fatalf("sweep: %d %v, want 2 ended", n, err)
+	}
+	for name, id := range map[string]shared.ID{"expired console": sA.ID, "deleted console": sB.ID} {
+		if r, ended := endReason(id); !ended || r != dom.EndReasonConsoleSessionGone {
+			t.Fatalf("%s: reason %q ended=%v", name, r, ended)
+		}
+	}
+	if got := f.mailer.count() - before; got != 2 {
+		t.Fatalf("owner emails for two ended sessions: %d", got)
+	}
+	if n := f.count(t, `SELECT count(*) FROM audit_logs WHERE tenant_id = $1 AND action = 'support.session_ended'`, f.tenant.String()); n != 2 {
+		t.Fatalf("tenant audit session_ended rows: %d", n)
+	}
+	if n := f.count(t, `SELECT count(*) FROM admin_audit_logs WHERE admin_id IN ($1, $2) AND action = 'support.session_ended'`,
+		f.support.ID().String(), f.otherSupport.ID().String()); n != 2 {
+		t.Fatalf("admin audit session_ended rows: %d", n)
+	}
+	// Sweeping again ends and notifies nothing twice.
+	if n, _ := f.svc.EndStaleSessions(ctx); n != 0 {
+		t.Fatalf("second sweep ended %d", n)
+	}
+
+	// Sign-out ends only the sessions of that console session.
+	csA2, csB2 := alive(f.support), alive(f.otherSupport)
+	sA2, sB2 := start(f.support, csA2, gA), start(f.otherSupport, csB2, gB)
+	before = f.mailer.count()
+	f.svc.EndForConsoleSession(ctx, csA2)
+	if r, ended := endReason(sA2.ID); !ended || r != dom.EndReasonConsoleSessionGone {
+		t.Fatalf("sign-out: reason %q ended=%v", r, ended)
+	}
+	if _, ended := endReason(sB2.ID); ended {
+		t.Fatal("another administrator's session ended with someone else's sign-out")
+	}
+	if f.mailer.count()-before != 1 {
+		t.Fatalf("sign-out owner emails: %d", f.mailer.count()-before)
+	}
+	// An unrelated or unknown console session ends nothing.
+	f.svc.EndForConsoleSession(ctx, shared.NewID())
+	if _, ended := endReason(sB2.ID); ended {
+		t.Fatal("an unknown console session ended a session")
+	}
+
+	// Idle: the console session is alive but the support session was not
+	// used for 30 minutes.
+	later := f.clock.Add(dom.SessionIdleTimeout + time.Minute)
+	f.clock = &later
+	if _, err := f.db.ExecContext(ctx, `UPDATE admin_sessions SET last_seen_at = $2, expires_at = $3 WHERE id = $1`,
+		csB2.String(), later, later.Add(8*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := f.svc.EndStaleSessions(ctx); err != nil || n != 1 {
+		t.Fatalf("idle sweep: %d %v", n, err)
+	}
+	if r, ended := endReason(sB2.ID); !ended || r != dom.EndReasonIdle {
+		t.Fatalf("idle: reason %q ended=%v", r, ended)
+	}
+
+	// A read keeps a session from idling out.
+	csA3 := console(f.support, later, later.Add(8*time.Hour))
+	sA3 := start(f.support, csA3, gA)
+	if _, err := f.svc.Access(ctx, f.support, supportaccess.AccessInput{SessionID: sA3.ID, ConsoleSessionID: csA3, Method: "GET", Route: "overview"}, client); err != nil {
+		t.Fatalf("access: %v", err)
+	}
+	ahead := later.Add(dom.SessionIdleTimeout - time.Minute)
+	f.clock = &ahead
+	if _, err := f.db.ExecContext(ctx, `UPDATE admin_sessions SET last_seen_at = $2 WHERE id = $1`, csA3.String(), ahead); err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := f.svc.EndStaleSessions(ctx); n != 0 {
+		t.Fatalf("a recently used session ended: %d", n)
+	}
+}
+
+// An owner may name any active administrator (the organization side never
+// reads platform roles, RFC-134), but one whose roles lack support access
+// cannot use the grant; holding the support role, the same administrator can.
+func TestSupportAccessNamingVersusUse_DB(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	console := shared.NewID()
+	ro := f.grant(t, f.readonly, []string{dom.ScopeFindings}, 2)
+	if _, _, err := f.svc.StartSession(ctx, f.readonly, console, ro.ID, "", client); !errors.Is(err, dom.ErrGrantRequired) {
+		t.Fatalf("read-only administrator used a grant: %v", err)
+	}
+	f.readonly.SetPlatformAccess([]platformauthz.RoleKey{platformauthz.RoleViewer, platformauthz.RoleSupport}, nil)
+	if _, _, err := f.svc.StartSession(ctx, f.readonly, console, ro.ID, "Case 77 sign-in", client); err != nil {
+		t.Fatalf("read-only administrator holding the support role: %v", err)
 	}
 }

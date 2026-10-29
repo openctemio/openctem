@@ -594,9 +594,17 @@ func payloadTargets(payload json.RawMessage) []string {
 	if len(payload) == 0 {
 		return nil
 	}
-	var p struct {
+	// The targets at the top level and in "context" (the run context a
+	// step carries, which narrowPayload narrows too): a job that names its
+	// targets only in the context is checked like any other, never handed
+	// out unchecked.
+	type targetFields struct {
 		Targets []any `json:"targets"`
 		Target  any   `json:"target"`
+	}
+	var p struct {
+		targetFields
+		Context *targetFields `json:"context"`
 	}
 	if json.Unmarshal(payload, &p) != nil {
 		return nil
@@ -622,13 +630,22 @@ func payloadTargets(payload json.RawMessage) []string {
 		add(t)
 	}
 	add(p.Target)
+	if p.Context != nil {
+		for _, t := range p.Context.Targets {
+			add(t)
+		}
+		add(p.Context.Target)
+	}
 	return out
 }
 
 // narrowPayload keeps only the kept targets in a payload: in "targets" and
-// "target" at the top level and in "context" (the run context a step
-// carries). "target" stays only when it is kept, or becomes the one target
-// left. Everything else is unchanged (numbers keep their exact text).
+// "target" at the top level, in "context" (the run context a step carries)
+// and in the tool settings ("config", "scanner_config", and the context's
+// "scanner_config"), where a quick scan carries its target list too: a
+// narrowed job never names a target it no longer runs on. "target" stays
+// only when it is kept, or becomes the one target left. Everything else is
+// unchanged (numbers keep their exact text).
 func narrowPayload(payload json.RawMessage, kept []string) (json.RawMessage, error) {
 	keep := make(map[string]bool, len(kept))
 	for _, t := range kept {
@@ -641,10 +658,22 @@ func narrowPayload(payload json.RawMessage, kept []string) (json.RawMessage, err
 		return nil, fmt.Errorf("decode command payload: %w", err)
 	}
 	narrowTargets(fields, keep)
+	narrowSettingsTargets(fields, keep)
 	if ctxFields, ok := fields["context"].(map[string]any); ok {
 		narrowTargets(ctxFields, keep)
+		narrowSettingsTargets(ctxFields, keep)
 	}
 	return json.Marshal(fields)
+}
+
+// narrowSettingsTargets narrows the target lists of the tool settings in
+// fields ("config", "scanner_config").
+func narrowSettingsTargets(fields map[string]any, keep map[string]bool) {
+	for _, k := range []string{"config", "scanner_config"} {
+		if cfg, ok := fields[k].(map[string]any); ok {
+			narrowTargets(cfg, keep)
+		}
+	}
 }
 
 func narrowTargets(fields map[string]any, keep map[string]bool) {

@@ -75,7 +75,7 @@
 # and start this overlay (its sensor-data volume is a fresh identity).
 services:
   sensor-enrollment:
-    image: ${API_IMAGE:-ghcr.io/openctemio/openctem-api}:${API_VERSION:-${OPENCTEM_VERSION:-v0.15.6}}
+    image: ${API_IMAGE:-ghcr.io/openctemio/openctem-api}:${API_VERSION:-${OPENCTEM_VERSION:?OPENCTEM_VERSION is not set (run ./setup.sh, or set it in .env)}}
     entrypoint: ["/app/bootstrap-admin"]
     command:
       - "sensor-token"

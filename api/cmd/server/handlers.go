@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 
+	navpinapp "github.com/openctemio/openctem/api/internal/app/navpin"
 	queryapp "github.com/openctemio/openctem/api/internal/app/query"
 
 	"context"
@@ -14,16 +15,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/aianalysis"
 	dashfactsapp "github.com/openctemio/openctem/api/internal/app/dashboard/facts"
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	scmappsvc "github.com/openctemio/openctem/api/internal/app/scmapp"
-	"github.com/openctemio/openctem/api/internal/app/supportaccess"
 	"github.com/openctemio/openctem/api/internal/infra/scm/githubapp"
 
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 
 	apispecapp "github.com/openctemio/openctem/api/internal/app/apispec"
-	contentpackapp "github.com/openctemio/openctem/api/internal/app/contentpack"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/platformlegal"
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
@@ -37,6 +37,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/compliance"
 	"github.com/openctemio/openctem/api/internal/app/configoverview"
 	"github.com/openctemio/openctem/api/internal/app/integration"
+	"github.com/openctemio/openctem/api/internal/app/platformrole"
 	"github.com/openctemio/openctem/api/internal/app/sensor"
 
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
@@ -219,7 +220,14 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	adminConsoleSvc.SetFactorChangeNotifier(adminFactorMailer{email: svc.Email, appName: cfg.Brand.DisplayName(), log: log})
 	// A password reset or change, or a two-step reset, of the linked account
 	// also ends the administrator's console sessions.
-	svc.Auth.SetSessionsRevokedHook(adminConsoleSvc.EndSessionsForAccount)
+	svc.Auth.AddSessionsRevokedHook(adminConsoleSvc.EndSessionsForAccount)
+	// Sign-out everywhere runs the same hooks, and API keys go too when the
+	// request asks for it.
+	svc.Session.SetSessionsRevokedHooks(svc.Auth.SessionsRevoked())
+	if svc.APIKey != nil {
+		svc.Auth.SetAPIKeyRevoker(svc.APIKey)
+	}
+	adminConsoleSvc.SetInvitationMailer(adminInvitationMailer{email: svc.Email})
 	adminConsoleSvc.SetRosterChangeNotifier(rosterChangeMailer{email: svc.Email, appName: cfg.Brand.DisplayName(), log: log})
 	// Console security keys (RFC-078): the relying party is the console origin.
 	if cfg.AdminPublicURL != "" && repos.AdminFactor != nil && repos.PlatformSetting != nil {
@@ -243,6 +251,13 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		}
 		return o.Name, nil
 	}))
+	adminApprovals.SetUserNamer(adminapproval.UserNamerFunc(func(ctx context.Context, id shared.ID) (string, error) {
+		u, err := repos.User.GetByID(ctx, id)
+		if err != nil {
+			return "", err
+		}
+		return u.Email(), nil
+	}))
 	if svc.Signup != nil {
 		svc.Signup.SetNotifier(signupPolicyMailer{email: svc.Email, appName: cfg.Brand.DisplayName(), log: log})
 	}
@@ -262,7 +277,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	commandHandler := handler.NewCommandHandler(svc.Command, v, log)
 	sensorHandler := newSensorHandlerWithTemplates(svc.Sensor, cfg, v, log)
 	sensorHandler.SetContentPolicySource(svc.SensorContent)
-	sensorHandler.SetZoneLister(repos.ScanZone)
+	sensorHandler.SetPolicyPrefill(&handler.SensorPolicyPrefill{
+		Zones: repos.ScanZone, Targets: repos.ScopeTarget, Exclusions: repos.ScopeExcl, Log: log,
+	})
 	sensorHandler.SetGrantService(svc.SensorGrant)
 	if svc.JobSigner != nil {
 		sensorHandler.SetJobSigningRoot(svc.JobSigner.RootKeyID)
@@ -270,6 +287,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	commandHandler.SetScanRunService(svc.ScanRun)
 	commandHandler.SetAuditService(svc.Audit)
 	commandHandler.SetScanCommandGate(svc.Scan)
+	commandHandler.SetResolutionRecorder(repos.AssetResolution)
 	// A job the claim-time scope re-check fails settles what waits on it
 	// (scan step, validation run, retest) as a sensor's failure would.
 	svc.Command.SetFailureObserver(commandHandler)
@@ -281,6 +299,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	commandHandler.SetRetestHooks(svc.ValidationEvidence, svc.Retest)
 	if svc.ScanRun != nil {
 		commandHandler.SetValidationRuns(svc.ScanRun)
+	}
+	// A finished proxy test (the Test button of a proxy pool) is audited.
+	if svc.ProxyPool != nil {
+		commandHandler.SetProxyTests(svc.ProxyPool)
 	}
 	// Per-task logs from sensors (RFC-029 §4.4.1), shown on the run page.
 	commandLogs := commandlog.NewService(repos.CommandLog)
@@ -377,8 +399,15 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	}
 	vulnHandler.SetComponentService(svc.Component)
 	vulnHandler.SetSavedViews(svc.SavedView)
+	if svc.SLA != nil && repos.FindingSLARestart != nil {
+		vulnHandler.SetSLABasis(svc.SLA, repos.FindingSLARestart)
+	}
 	if svc.BulkGuard != nil {
 		vulnHandler.SetBulkGuard(svc.BulkGuard)
+	}
+	if svc.Retest != nil {
+		// Retest of the open findings of selected vulnerabilities.
+		vulnHandler.SetBulkRetester(svc.Retest)
 	}
 	if svc.PriorityClassification != nil {
 		vulnHandler.SetPriorityExplainer(svc.PriorityClassification)
@@ -481,6 +510,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.TenantAI != nil {
 		aiSettings = handler.NewAISettingsHandler(svc.TenantAI, v, log)
 	}
+	var aiMasking *handler.AIMaskingHandler
+	if svc.AIMasking != nil {
+		aiMasking = handler.NewAIMaskingHandler(svc.AIMasking, v, log)
+	}
 	if svc.Tenant != nil {
 		mcpPolicies = mcpPolicyReader{tenants: svc.Tenant}
 		mcpSettings = handler.NewMCPSettingsHandler(svc.Tenant, cfg.MCP.TrustedClientHosts, log)
@@ -489,6 +522,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			// applications never reach an AI client.
 			mcpHandler.SetAIPolicy(mcpPolicies)
 		}
+	}
+	if mcpHandler != nil && svc.Scope != nil {
+		// check_scope answers from the same scope authority a scan asks.
+		mcpHandler.SetScopeCheck(svc.Scope, postgres.NewVerifiedDomainNameRepository(deps.DB), postgres.NewBountyProgramRepository(deps.DB))
 	}
 	mcpDiscovery := newMCPDiscovery(cfg, log)
 	// OAuth for MCP clients (RFC-062): with an authorization server the MCP
@@ -509,6 +546,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Proposal tools file requests another person decides; they need
 		// the person behind an OAuth connection.
 		mcpHandler.SetProposalTools(svc.Vulnerability, mcpDiscovery.Endpoints.Issuer)
+		if svc.Pentest != nil {
+			mcpHandler.SetPentestDraftTool(svc.Pentest, mcpDiscovery.Endpoints.Issuer)
+		}
 	}
 	if mcpAuth != nil && mcpPolicies != nil {
 		auth, gate := mcpAuth, middleware.MCPKeyPolicyGate(mcpPolicies, log)
@@ -525,6 +565,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		MCPOAuth:       mcpOAuthHandler,
 		MCPSettings:    mcpSettings,
 		AISettings:     aiSettings,
+		AIMasking:      aiMasking,
 		MCPConnections: mcpConnections,
 		MCPClients:     mcpClients,
 		APIKeyAuth:     apiKeyAuth,
@@ -547,7 +588,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Assets & Components
 		Component:        handler.NewComponentHandler(svc.Component, svc.SBOMImport, v, log),
 		VEXStatement:     handler.NewVEXStatementHandler(svc.VEX, log),
-		AssetGroup:       handler.NewAssetGroupHandler(svc.AssetGroup, v, log),
+		AssetGroup:       handler.NewAssetGroupHandler(svc.AssetGroup, v, log).SetAuditService(svc.Audit),
 		AssetType:        handler.NewAssetTypeHandler(svc.AssetType, v, log),
 		Scope:            handler.NewScopeHandler(svc.Scope, v, log),
 		BountyProgram:    handler.NewBountyProgramHandler(svc.BountyProgram, svc.Audit, log),
@@ -580,6 +621,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		ReportSchedule:         newReportScheduleHandler(repos, svc, log),
 		UserDashboard:          handler.NewUserDashboardHandler(svc.UserDashboard, log).SetWidgetData(svc.DashboardWidgets),
 		SavedView:              handler.NewSavedViewHandler(svc.SavedView, log),
+		NavPin: handler.NewNavPinHandler(
+			navpinapp.NewService(repos.NavPin, svc.SavedView, svc.Vulnerability, log),
+			svc.Vulnerability, log),
 
 		// Vulnerabilities & Exposures
 		Vulnerability:    vulnHandler,
@@ -593,17 +637,23 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			}
 			return h
 		}(),
-		FindingRetestCheck:   handler.NewFindingRetestCheckHandler(svc.RetestCheck, log),
-		FindingEvidenceItems: handler.NewFindingEvidenceItemsHandler(svc.Evidence, log),
-		JiraWebhook:          jiraWebhookHandler,
-		TicketMapping:        ticketMappingHandler,
-		ImportMapping:        newImportMappingHandler(svc, log),
-		GitHubWebhook:        githubWebhookHandler,
-		Exposure:             handler.NewExposureHandler(svc.Exposure, svc.User, v, log),
-		ThreatIntel:          handler.NewThreatIntelHandler(svc.ThreatIntel, v, log).SetDataScope(svc.DataScope),
-		EmergingThreat:       emergingThreatHandler(svc, log),
-		CTEMID:               handler.NewCTEMIDHandler(svc.CTEMID, log),
-		CredentialImport:     handler.NewCredentialImportHandler(svc.CredentialImport, v, log),
+		FindingRetestCheck: handler.NewFindingRetestCheckHandler(svc.RetestCheck, log),
+		FindingEvidenceItems: func() *handler.FindingEvidenceItemsHandler {
+			h := handler.NewFindingEvidenceItemsHandler(svc.Evidence, log)
+			if svc.Pentest != nil {
+				h.SetPentestGate(svc.Pentest) // a pentest finding's evidence follows its campaign's rules
+			}
+			return h
+		}(),
+		JiraWebhook:      jiraWebhookHandler,
+		TicketMapping:    ticketMappingHandler,
+		ImportMapping:    newImportMappingHandler(svc, log),
+		GitHubWebhook:    githubWebhookHandler,
+		Exposure:         handler.NewExposureHandler(svc.Exposure, svc.User, v, log),
+		ThreatIntel:      newThreatIntelHandler(deps, v, log),
+		EmergingThreat:   emergingThreatHandler(svc, log),
+		CTEMID:           handler.NewCTEMIDHandler(svc.CTEMID, log),
+		CredentialImport: handler.NewCredentialImportHandler(svc.CredentialImport, v, log),
 
 		// Dashboard & Branch
 		Dashboard: handler.NewDashboardHandler(svc.Dashboard, log),
@@ -662,11 +712,11 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		PlatformContentPack: handler.NewPlatformContentPackHandler(svc.PlatformContentPacks, adminConsoleSvc, repos.AdminAuditLog, log),
 		ContentCatalog:      handler.NewContentCatalogHandler(svc.ContentCatalog, log),
 		AdminContentCatalog: handler.NewAdminContentCatalogHandler(svc.ContentCatalog, adminConsoleSvc, repos.AdminAuditLog, log),
-		SensorContentV2:     handler.NewSensorContentV2Handler(contentpackapp.NewDelivery(svc.ContentPacks, svc.PlatformContentPacks), log),
+		SensorContentV2:     handler.NewSensorContentV2Handler(svc.ContentDelivery, log),
 		AdminVersionCheck:   handler.NewAdminVersionCheckHandler(svc.VersionCheck, repos.AdminAuditLog, log),
 		AdminConfiguration: handler.NewAdminConfigurationHandler(
 			configoverview.NewBuilder(cfg, platformSettings(repos), repos.Admin, os.LookupEnv), log),
-		AdminPlatformSettings: newAdminPlatformSettingsHandler(repos, svc, log),
+		AdminPlatformSettings: newAdminPlatformSettingsHandler(repos, svc, adminApprovals, log),
 
 		SecretStore:  handler.NewSecretStoreHandler(svc.SecretStore, v, log),
 		Tool:         handler.NewToolHandler(svc.Tool, v, log),
@@ -723,7 +773,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		APIKey: handler.NewAPIKeyHandler(svc.APIKey, v, log),
 
 		// AI Triage (always initialized - handler returns 503 if service is nil)
-		AITriage: handler.NewAITriageHandler(svc.AITriage, log),
+		AITriage:   handler.NewAITriageHandler(svc.AITriage, log),
+		AIAnalysis: aiAnalysisHandler(svc.AIAnalysis, svc.AIExecutor, log),
 
 		// Suppressions
 		Suppression: newSuppressionHandler(svc, log),
@@ -767,15 +818,23 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AdminPlatformUser: handler.NewAdminPlatformUserHandler(
 			postgres.NewPlatformUserDirectory(deps.DB),
 			newPlatformUserService(repos, svc, cfg, deps.DB, log),
-			log).WithAudit(repos.AdminAuditLog),
+			log).WithAudit(repos.AdminAuditLog).WithApprovals(adminApprovals).
+			WithEmailDelivery(func() bool { return svc.Email != nil && svc.Email.IsConfigured() }).
+			WithLinkBase(cfg.SMTP.BaseURL),
 		AdminOperations:         newAdminOperationsHandler(deps, cfg, log),
 		Announcement:            handler.NewAnnouncementHandler(postgres.NewPlatformAnnouncementRepository(deps.DB), log),
 		AdminSession:            handler.NewAdminSessionHandler(postgres.NewAdminSessionDirectory(adminDBOf(repos, deps.DB)), adminConsoleSvc, log),
 		AdminSupportRateLimiter: middleware.NewAdminMappingRateLimiter(middleware.AdminMappingRateLimitConfig{WriteRequestsPerMin: 20}, log),
-		AdminConsole:            handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, log).WithApprovals(adminApprovals),
-		AdminApproval:           handler.NewAdminApprovalHandler(adminApprovals, log),
-		AdminAuditChain:         handler.NewAdminAuditChainHandler(svc.Audit, adminConsoleSvc, repos.AdminAuditLog, repos.AdminOrg, log).WithApprovals(adminApprovals),
-		AdminAuthMiddleware:     middleware.NewAdminAuthMiddleware(adminConsoleSvc, log).WithElevation(cfg.AdminElevationRequired),
+		// Searching and opening accounts: generous for a person, a wall for a script.
+		AdminDirectoryReadLimiter: middleware.NewAdminMappingRateLimiter(middleware.AdminMappingRateLimitConfig{WriteRequestsPerMin: 120}, log),
+		AdminConsole:              handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, log).WithApprovals(adminApprovals),
+		AdminApproval:             handler.NewAdminApprovalHandler(adminApprovals, log),
+		AdminPlatformRole: handler.NewAdminPlatformRoleHandler(platformrole.NewService(
+			postgres.NewPlatformRoleRepository(adminDBOf(repos, deps.DB)), repos.Admin,
+			platformRoleRoster{adminConsoleSvc}, log), log),
+		AdminAuditChain: handler.NewAdminAuditChainHandler(svc.Audit, adminConsoleSvc, repos.AdminAuditLog, repos.AdminOrg, log).WithApprovals(adminApprovals),
+		AdminAuthMiddleware: middleware.NewAdminAuthMiddleware(adminConsoleSvc, log).WithElevation(cfg.AdminElevationRequired).
+			WithPlatformRoles(postgres.NewPlatformRoleRepository(adminDBOf(repos, deps.DB))),
 		AdminStepUp: middleware.AdminStepUpFunc(func(ctx context.Context, a *admin.AdminUser, sess *admin.Session, code, purpose string, c middleware.AdminStepUpClient) error {
 			err := adminConsoleSvc.ConfirmProtected(ctx, a, sess, code, purpose, adminconsole.ClientInfo{IP: c.IP, UserAgent: c.UserAgent})
 			if err != nil && !errors.Is(err, admin.ErrStepUpRequired) && !errors.Is(err, admin.ErrStepUpUnavailable) && !errors.Is(err, admin.ErrInvalidMFACode) {
@@ -888,6 +947,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.SSO.SetAuditService(svc.Audit)
 		// Admin-console identity-provider creates/updates wait for an owner.
 		handlers.SSO.SetChangeApproval(svc.SSOChange)
+		handlers.SSO.SetAppURL(cfg.SMTP.BaseURL)
 	}
 	if svc.SSOChange != nil {
 		handlers.SSOChange = handler.NewSSOChangeHandler(svc.SSOChange, svc.Audit, log)
@@ -895,15 +955,11 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 	// Support access (RFC-063): owners grant, the named administrator reads
 	// through a live support session; both audit logs, owner emails.
-	if repos.SupportAccess != nil && repos.SupportRead != nil && svc.Audit != nil {
-		var mailer supportaccess.Mailer
-		if svc.Email != nil {
-			mailer = svc.Email
-		}
-		supportSvc := supportaccess.NewService(repos.SupportAccess, repos.SupportRead, repos.Admin, svc.Audit,
-			repos.AdminAuditLog, repos.Tenant, tenantNames{repo: repos.Tenant}, mailer, log)
+	if supportSvc := newSupportAccessService(repos, svc, log); supportSvc != nil {
 		handlers.SupportAccess = handler.NewSupportAccessHandler(supportSvc, log)
 		handlers.AdminSupport = handler.NewAdminSupportHandler(supportSvc, log)
+		// Signing out of the console ends the support sessions it opened.
+		adminConsoleSvc.SetSupportSessionEnder(supportSvc)
 	}
 
 	// Social OAuth handler (Google / GitHub / Microsoft). svc.OAuth is non-nil
@@ -940,6 +996,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		)
 		// SP entity ID / ACS URL come from APP_URL, never from client headers.
 		handlers.SAML.SetPublicURL(cfg.App.URL)
+		handlers.SAML.SetRefreshDuration(cfg.Auth.RefreshTokenDuration)
 		handlers.SAML.SetAuditService(svc.Audit)
 		// Admin-console SAML changes wait for an owner of the organization.
 		handlers.SAML.SetChangeApproval(svc.SSOChange)
@@ -982,6 +1039,11 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.IdleReadOnly = svc.IdleWorkspaces
 		svc.IdleWorkspaces.SetNotifier(idleWorkspaceMailer{email: svc.Email, appName: cfg.Brand.DisplayName(), baseURL: cfg.SMTP.BaseURL, log: log})
 	}
+	// The entry requirements of the organization in the URL, on every
+	// /api/v1/tenants/{tenant}/... request.
+	if svc.Auth != nil {
+		handlers.EntryChecker = svc.Auth
+	}
 	// Suspended organizations: one gate for every credential path, and the
 	// console's suspend / block actions.
 	if svc.OrganizationGate != nil {
@@ -1021,7 +1083,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			handlers.AdminLegal = handler.NewAdminLegalHandler(platformlegal.NewService(repos.PlatformSetting, repos.AdminAuditLog, log), adminConsoleSvc, log)
 		}
 		if svc.PlatformEmail != nil {
-			handlers.AdminEmail = handler.NewAdminEmailHandler(svc.PlatformEmail, adminConsoleSvc, cfg.Brand.DisplayName(), log)
+			handlers.AdminEmail = handler.NewAdminEmailHandler(svc.PlatformEmail, adminConsoleSvc, cfg.Brand.DisplayName(), log).WithApprovals(adminApprovals)
 		}
 		handlers.SignupPolicy = svc.Signup
 	}
@@ -1250,6 +1312,10 @@ func wireStepUpGate(handlers *routes.Handlers, svc *Services) {
 	}
 	if handlers.CIAdmin != nil {
 		handlers.CIAdmin.SetStepUpGate(gate)
+	}
+	if handlers.MCPOAuth != nil {
+		// Allowing an AI application to read all organization data.
+		handlers.MCPOAuth.SetStepUpGate(gate)
 	}
 }
 
@@ -1545,7 +1611,13 @@ func easmDecisionEffects(repos *Repositories, svc *Services, log *logger.Logger)
 			pub.PublishAssetReclassify(ctx, tenantID, ids, controller.ReasonAssetChange, "attribution decided")
 		}
 	}
-	return easmapp.NewDecisionEffects(repos.Exposure, reclassify, log)
+	effects := easmapp.NewDecisionEffects(repos.Exposure, reclassify, log)
+	// "Not ours" closes the asset's findings as out of scope; undoing it
+	// reopens them (research/320).
+	if svc.ScopeEffects != nil {
+		effects.SetScopeEffects(svc.ScopeEffects.Kick)
+	}
+	return effects
 }
 
 // newEASMSettingsHandler builds the EASM settings and run-now handler
@@ -1653,6 +1725,11 @@ func newFindingImportService(cfg *config.Config, repos *Repositories, svc *Servi
 		if repos.APIKey != nil && svc.Role != nil {
 			imp.SetRights(repos.APIKey, svc.Role)
 		}
+	}
+	if svc.ActiveGate != nil {
+		// Recon directories: the organization's scope decides which hosts
+		// are its own; the rest wait for review.
+		imp.SetScopeCover(svc.ActiveGate)
 	}
 	if svc.ImportMapping != nil {
 		imp.SetMappingResolver(svc.ImportMapping)
@@ -1815,7 +1892,7 @@ func newSensorPairingHandler(svc *Services, log *logger.Logger) *handler.SensorP
 
 // bootstrapSession wires the session parts of GET /me/bootstrap to the same
 // code that serves /users/me, /users/me/tenants, /notifications/unread-count,
-// /easm/candidates, the pending count of /approvals and the organization
+// /easm/candidates, the pending count of /approvals, /me/pins and the organization
 // policy of /auth/providers.
 func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) handler.BootstrapSession {
 	s := handler.BootstrapSession{}
@@ -1834,6 +1911,9 @@ func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) hand
 	}
 	if svc.Entitlement != nil {
 		s.LimitsApply = svc.Entitlement.Applies
+	}
+	if h.NavPin != nil {
+		s.Pins = h.NavPin.Response
 	}
 	if svc.Vulnerability != nil {
 		vulns := svc.Vulnerability
@@ -1856,6 +1936,10 @@ func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) hand
 		}
 		return mode
 	}
+	// The same answer as GET /auth/providers (routes/auth.go): a server
+	// without local auth reports no email delivery.
+	localAuth := h.LocalAuth
+	s.EmailDelivery = func() bool { return localAuth != nil && localAuth.EmailDeliveryAvailable() }
 	return s
 }
 
@@ -2008,7 +2092,7 @@ func byIDGuardAsserter(svc *Services) middleware.DataScopeAsserter {
 
 // newUserHandler builds the user handler with self-service account deletion.
 func newUserHandler(svc *Services, repos *Repositories, v *validator.Validator, log *logger.Logger) *handler.UserHandler {
-	h := handler.NewUserHandler(svc.User, svc.Tenant, platformAdminChecker{admins: repos.Admin}, v, log)
+	h := handler.NewUserHandler(svc.User, svc.Tenant, v, log)
 	if svc.AccountDeletion != nil {
 		h.SetAccountDeletion(svc.AccountDeletion)
 	}
@@ -2032,4 +2116,32 @@ func emergingThreatHandler(svc *Services, log *logger.Logger) *handler.EmergingT
 		return nil
 	}
 	return handler.NewEmergingThreatHandler(svc.ThreatAlerts, svc.DataScope, log)
+}
+
+// aiAnalysisHandler is nil when the AI agent service is not built.
+func aiAnalysisHandler(svc *aianalysis.Service, exec *aianalysis.BuiltinExecutor, log *logger.Logger) *handler.AIAnalysisHandler {
+	if svc == nil {
+		return nil
+	}
+	h := handler.NewAIAnalysisHandler(svc, log)
+	h.SetExecutor(exec)
+	return h
+}
+
+// platformRoleRoster announces platform role changes through the console's
+// roster notice (e-mail to the other administrators and an alert line).
+type platformRoleRoster struct{ svc *adminconsole.Service }
+
+func (p platformRoleRoster) NotifyRosterChange(ctx context.Context, actor *admin.AdminUser, kind, summary, ip, userAgent string) {
+	p.svc.NotifyRosterChange(ctx, actor, kind, summary, adminconsole.ClientInfo{IP: ip, UserAgent: userAgent})
+}
+
+// newThreatIntelHandler builds the threat-intelligence handler and the
+// background runner behind its admin sync endpoint.
+func newThreatIntelHandler(deps *HandlerDeps, v *validator.Validator, log *logger.Logger) *handler.ThreatIntelHandler {
+	h := handler.NewThreatIntelHandler(deps.Services.ThreatIntel, v, log).SetDataScope(deps.Services.DataScope)
+	if runner, configured := newFeedRunner(deps, log); runner != nil {
+		h.SetFeedRunner(runner, configured)
+	}
+	return h
 }

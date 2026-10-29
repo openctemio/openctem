@@ -6,7 +6,7 @@ import { EmptyState } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 import { useAdminOrNull } from './admin-console-shell'
 import { useRequestElevation } from './elevation-request'
-import { ADMIN_ROLE_LABELS, adminCan, type AdminRole } from '../types'
+import { ADMIN_ROLE_LABELS, adminCan, adminCanElevate, type AdminRole } from '../types'
 
 interface RoleRequiredNoticeProps {
   /** The acting role the page or action needs. */
@@ -27,7 +27,11 @@ export function RoleRequiredNotice({ needed, variant = 'inline' }: RoleRequiredN
   const { t } = useTranslation()
   const requestElevation = useRequestElevation()
   const roleName = t(`admin.role.${needed}`, ADMIN_ROLE_LABELS[needed])
-  const canElevate = !!admin && adminCan(admin.max_role ?? admin.role, needed) && !!requestElevation
+  const canElevate =
+    !!admin &&
+    adminCan(admin.max_role ?? admin.role, needed) &&
+    adminCanElevate(admin) &&
+    !!requestElevation
 
   const message = canElevate
     ? t('admin.roleNotice.elevate', 'You are acting as read-only. Elevate to {role} to use this.', {

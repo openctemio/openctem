@@ -12,7 +12,7 @@ name: API Security
 
 on:
   push:
-    branches: [main, develop]
+    branches: [develop]
     paths:
       - 'api/**'
       - 'Makefile'
@@ -64,6 +64,7 @@ jobs:
       security-events: write
       actions: read
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -113,6 +114,7 @@ jobs:
       actions: read
       packages: read
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     container:
       # CI image mirror (.github/ci-images.txt): no anonymous Docker Hub quota.
       image: ghcr.io/openctemio/mirror/semgrep:1.178.0
@@ -149,6 +151,7 @@ jobs:
     name: Snyk Security Scan (api)
     if: vars.ENABLE_SNYK == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -166,19 +169,19 @@ jobs:
         with:
           args: --severity-threshold=high --file=api/go.mod
 
-  # Weekly sweep + main pushes + PRs into main (release candidates). Not on every
+  # Weekly sweep + PRs into main (release candidates). Not on every
   # PR: building the image costs minutes and the fs scan covers dependencies.
   docker-scan:
     name: Docker Image Scan (api)
     if: >-
       github.event_name == 'schedule'
-      || (github.event_name == 'push' && github.ref == 'refs/heads/main')
       || (github.event_name == 'pull_request' && github.base_ref == 'main')
     permissions:
       contents: read
       security-events: write
       actions: read
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

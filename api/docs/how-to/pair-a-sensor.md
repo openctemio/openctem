@@ -27,6 +27,13 @@ Keep the sensor's data directory on a persistent volume (one volume at
 directory must be `0700` and the files `0600`, owned by the sensor's user;
 the sensor refuses to start otherwise and prints the command that fixes it.
 
+Use a named volume (`-v openctem-sensor-data:/var/lib/openctem`, as the install
+commands do): Docker creates it with the sensor's owner. A host directory
+mounted instead must first be given to the sensor's user (`sudo chown -R
+999:999 <dir>`; 1001 on the per-tool images, 65532 on the slim image), or the
+sensor stops at start with the path, the owner and this fix. The complete
+guide is [Run the sensor](https://docs.openctem.io/sensors/run-the-sensor/).
+
 ## 2a. Default: the sensor shows a code
 
 Start the sensor (or run `openctemio-sensor pair`). It prints:
@@ -112,3 +119,18 @@ being created.
 | The sensor keeps waiting after you created an expectation | The code typed on the sensor was wrong; run `pair` again with the code from the console. |
 | `certificate chain does not contain the pinned CA` | `SENSOR_CA_FINGERPRINT` does not match the certificate authority your platform presents, or a TLS-inspecting proxy sits in between. |
 | `identity directory permissions` at start | Run the `chmod`/`chown` the sensor printed. |
+
+## Many sensors: enrollment tokens
+
+To install many sensors without approving each one (Kubernetes, Terraform,
+a fleet of hosts), open **Sensors → Enrollment tokens → Create token**
+(needs **Approve sensors** and a recent sign-in). Choose the expiry, how many
+sensors it may enroll, the scan zones, the grant profile, optional labels,
+optional allowed source addresses, and whether each sensor still needs your
+approval. The token is shown once: put it in a root-only file (or a
+Kubernetes Secret) and point the sensor at it with
+`SENSOR_ENROLLMENT_TOKEN_FILE` (sensor releases with sdk-go that reads
+`SENSOR_ENROLLMENT_TOKEN`; older sensors cannot use organization tokens). Each sensor that starts with it
+joins the organization at trust level New; you are notified of every
+enrollment and can revoke the token at any time.
+

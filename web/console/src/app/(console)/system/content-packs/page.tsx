@@ -49,7 +49,7 @@ import {
   KNOWN_KINDS,
 } from '@console/features/admin-console/components/add-content-pack-dialog'
 import { ContentLintReportView } from '@console/features/admin-console/components/content-lint-report'
-import { adminCan } from '@console/features/admin-console/types'
+import { adminHas } from '@console/features/admin-console/types'
 import { safeHref } from '@/lib/safe-href'
 
 const ANY = 'any'
@@ -68,7 +68,7 @@ function formatBytes(n?: number): string {
 export default function ContentPacksPage() {
   const admin = useAdmin()
   const { t } = useTranslation()
-  const canWrite = adminCan(admin.role, 'super_admin')
+  const canWrite = adminHas(admin, 'platform.content.manage')
   const list = useListParams({ defaultPageSize: 25, filters: { kind: '', status: '' } })
   const name = list.searchTerm
   const status =

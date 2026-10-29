@@ -70,6 +70,13 @@ func newMCPOAuthService(d *routes.MCPDiscovery, deps *HandlerDeps, log *logger.L
 	if svc.Audit != nil {
 		audit = svc.Audit
 	}
+	// A person with a full-data role may allow a connection to read all
+	// organization data (RFC-062 MA25); without the data-scope store every
+	// connection stays scoped.
+	var fullData mcpoauthapp.FullDataChecker
+	if repos.DataScope != nil {
+		fullData = repos.DataScope
+	}
 	repo := repos.MCPOAuth
 	if repo == nil {
 		repo = postgres.NewMCPOAuthRepository(deps.DB)
@@ -96,6 +103,7 @@ func newMCPOAuthService(d *routes.MCPDiscovery, deps *HandlerDeps, log *logger.L
 		Fetcher:     mcpoauthapp.NewHTTPMetadataFetcher(),
 		Members:     apikey.NewMembershipChecker(repos.Tenant, repos.User, svc.OrganizationGate),
 		Permissions: apikey.NewHolderPermissions(repos.Tenant, svc.PermCache),
+		FullData:    fullData,
 		Audit:       audit,
 		Logger:      log,
 		Policies:    policies,
@@ -105,6 +113,15 @@ func newMCPOAuthService(d *routes.MCPDiscovery, deps *HandlerDeps, log *logger.L
 	if err != nil {
 		log.Warn("MCP OAuth off", "error", err.Error())
 		return nil
+	}
+	// A password reset or change and a sign-out everywhere also end the
+	// person's connected applications in every organization: a connector
+	// approved with a stolen session must not outlive the credential. The
+	// hook gets one user id and touches only that user.
+	if svc.Auth != nil {
+		svc.Auth.AddSessionsRevokedHook(func(ctx context.Context, userID shared.ID) {
+			_, _ = s.RevokeUserGrants(ctx, userID) // logs its own failure
+		})
 	}
 	return s
 }

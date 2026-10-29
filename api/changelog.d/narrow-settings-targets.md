@@ -1,0 +1,3 @@
+### Security: a job narrowed at claim no longer keeps its full target list in its tool settings
+
+- A quick scan carries its target list in its tool settings (`config.targets`, `scanner_config.targets`) as well as in `targets`. When a job was narrowed before a sensor got it (targets the scope re-check refused, or targets left for later because another task held their hosts), only `targets` and `context.targets` were narrowed, so the settings still named every original target, refused ones included. The sensor runs `targets` only, but a job must never name a target it may not run on. The settings' target lists are now narrowed the same way.

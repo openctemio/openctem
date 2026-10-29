@@ -62,6 +62,28 @@ sign-ins, block reason, memberships and sessions are on the account's page,
 whose viewing is audited. Every list view writes an admin audit row
 (`platform_user.list`, with the state, search and page).
 
+### Accounts on a server that cannot send email
+
+`GET /api/v1/auth/providers` reports `email_delivery` (SMTP is configured).
+When it is false the sign-in pages say so instead of promising an email, and
+the console offers these super admin actions on a user's page, each with a
+reason, a step-up and an admin audit row:
+
+| Action | Route | Rules |
+|---|---|---|
+| Copy reset link | `POST /api/v1/admin/platform-users/{id}/reset-link` | local accounts only; refused (`EMAIL_AVAILABLE`) while email works; one-hour link, returned once with `Cache-Control: no-store`, stored only as a hash, never written to the audit row or the logs; a new link replaces the old one; following it does not bypass the account's second factor |
+| Mark email verified | `POST .../mark-verified` | unverified local accounts, only while email does not work |
+| Reset two-factor | `POST .../mfa/reset` | needs a second super admin's approval of that exact account (four-eyes, `user.reset_mfa`); removes the factor and recovery codes, ends every session, tells the user by email when email works; platform administrator accounts are refused |
+
+The link is a bearer secret: hand it over on a channel you trust. Organization
+invitations have the same fallback: `POST /api/v1/tenants/{tenant}/invitations/{id}/link`
+rotates the token and returns the new one once (no email; `members:invite`,
+and a recent re-authentication for a privileged invitation), and `.../renew`
+does the same for an expired invitation with a new seven-day lifetime. Both
+are audited (`invitation.link_regenerated`, `invitation.renewed`).
+`POST /api/v1/auth/resend-verification` always answers 202 with the same body
+and sends at most one verification email per address every two minutes.
+
 Scanning > Content catalog (`/api/v1/admin/content-catalog`, any role reads)
 shows the instance catalog organizations install from: its trust state (the
 trust roots come from `CONTENT_TRUST_ROOT_KEY_IDS` on the server and are shown
@@ -114,6 +136,7 @@ the alert webhook).
 | CAPTCHA (Turnstile site key and secret), with "check the secret key" | Settings > CAPTCHA | `/admin/settings/captcha`, `/verify` | `CAPTCHA_TURNSTILE_SECRET` + `_SITE_KEY` lock it | guarded |
 | Deployment region, once, before the first organization (the platform's system tenant does not count) | Settings > Configuration | `/admin/settings/region` | `DEPLOYMENT_REGION` locks it | guarded; immutable once set |
 | Default storage quota per organization (an organization's `storage_mb` limit wins; 0 = no quota) | Settings > Limits | `/admin/settings/storage-quota` | `STORAGE_TENANT_QUOTA_MB` is the default until the console stores one | super admin + step-up, audited |
+| Where CISA KEV and EPSS come from: the platform's own fetch (default) or the signed vulnerability release with the own fetch as a fallback for a stale copy (KEV older than 6 hours, EPSS older than 48 hours), and whether the platform may call CISA and FIRST at all (strict-egress installs turn it off) | System > Threat intelligence | `/admin/settings/threat-intel-source` | none | super admin + step-up, audited |
 | Alert webhook (HTTPS only, SSRF-guarded, optional HMAC signature), with "send a test alert" | Settings > Alerts | `/admin/settings/alerts`, `/test` | none (the kit's host probes stay host-side) | guarded; the previous receiver is told first |
 | Platform AI provider (Claude, OpenAI, Gemini or an OpenAI-compatible server with a base URL), model and key, a toggle to allow a private-network server, a model allow-list, off by default, with "test the key" | Settings > AI provider | `/admin/settings/ai`, `/test` | any of `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY` locks it | guarded |
 | Whether organizations may use their own AI provider and key (on by default; off stops every own provider at its next call, no fall back to the platform key) | Settings > AI provider | `/admin/settings/ai/org-policy` | not locked by the environment | guarded (fresh step-up, reason, critical audit, notice) |
@@ -173,22 +196,31 @@ recommended production setup. Details: [Docker deployment](../deployment/docker.
   unattended tab signs out after the idle timeout. A password reset or
   change, or a two-step reset, of the administrator's account ends its
   console sessions.
-- Write-ahead audit: before a super administrator's write runs (any
-  non-read request whose acting role is super_admin), the API writes one
-  `admin.write_started` row (method, path, redacted body) in the request. If
-  that row cannot be written the request is refused with 503
-  `AUDIT_UNAVAILABLE` and nothing changes; the per-route outcome rows are
+- Write-ahead audit: before any console write runs (any non-read request of
+  an authenticated administrator, whatever role the session currently acts
+  as: an unelevated super administrator acts as read-only, and their
+  elevation, factor and password writes are the ones that matter most), the
+  API writes one `admin.write_started` row (method, path, redacted body) in
+  the request. If that row cannot be written the request is refused with 503
+  `AUDIT_UNAVAILABLE` and nothing changes. Elevating a session writes its
+  `console.elevated` row first and grants the elevation only after the row is
+  stored; with the audit log unavailable the elevation is refused with the
+  same 503 and the session stays read-only; the per-route outcome rows are
   written as before. With `MANAGED_SERVICE=true` in production the API does
   not start without the off-box audit sink (`ADMIN_AUDIT_SINK`). Request
   bodies are redacted by key: any key ending in `secret`, `password`, `_key`
   or `_token` (any case), and `code`, `totp`, `recovery_code`,
-  `recovery_codes`.
-- Administrator accounts stay off the main site: the account an administrator
-  signs in with is refused on the tenant site (password, second-factor
-  completion, refresh-token exchange, social and organization SSO sign-in).
-  The answer is the wrong-password one, with no session and no cookie, and a
-  WARN line with `alert=platform_admin_main_site_sign_in` is logged. The
-  console's own password check is a separate path and is unaffected.
+  `recovery_codes`. An address (a key `url`, ending in `url`, or naming a
+  webhook) keeps only its scheme and host: a webhook path or query works as
+  a bearer secret.
+- One identity (RFC-134): the account an administrator signs in with may also
+  sign in on the main site and be an ordinary member of organizations, where
+  it acts with its tenant role only. The main site never reads the platform
+  role (`/users/me` does not report it). The console keeps its own sign-in,
+  second factor and opaque session: the tenant JWT never authenticates a
+  console route and the console token never authenticates a tenant route. A
+  break-glass administrator stays console-only (database rule
+  `break_glass_console_only`, migration 20261029050639).
 - Roster notices: every change to the administrators (added, role or state
   changed, removed, sign-in reset, identity-provider binding removed), the
   administrators' identity provider or the security-key policy is emailed to
@@ -210,9 +242,12 @@ Shipped (design: [RFC-022 revision 24](../rfcs/RFC-022-platform-admin-console.md
 | Stop requiring security keys | the security-key policy goes from on to off |
 | Remove or relax the administrators' identity provider | removed, switched off, or no longer required |
 | Change the administrators' identity provider or the second factor it is trusted for | a new issuer or client id on an existing provider, or any trusted ACR/AMR value not trusted before (also on a first configuration); the target is the new issuer, client and trusted values |
+| Change where platform AI sends data | platform AI is saved turned on with a provider, server address, private-network switch or API key that differs from the last one applied while on (so a first enable, a key swap and enabling a destination changed while off all ask); the target is the provider, server address, private switch and a keyed fingerprint of the key, never the key. Model and allowed-model changes and turning it off never ask; removing the key of a platform that stays on does, because the server is then called without the credential; a backend that cannot fingerprint the key refuses the save |
+| Change the mail server platform e-mail is sent through | platform e-mail is saved turned on with a host, port, connection security or SMTP username that differs from the last one applied while on (so a first relay, a new host or port, a TLS downgrade and a different login ask); the target is host, port, security and username, never the password. Password rotation on the same login, sender changes, the test send and turning e-mail off never ask |
 | Reset another administrator's console second factor | always (their next sign-in enrolls a new factor) |
 | Open sign-up | the stored sign-up policy opens wider than before |
 | Re-sign an organization's audit chain | always |
+| Reset a user's two-factor authentication | always (`user.reset_mfa`, target `user:<id>`; a person who lost their device and codes) |
 
 How it works for the administrators:
 
@@ -257,6 +292,14 @@ IdP their sole first factor and the console factor enrolled after it. Whoever
 can mint an IdP token carrying another administrator's e-mail therefore cannot
 sign in as them and approve their own requests.
 
+While "require IdP" is on, a password sign-in of an administrator who must use
+the IdP is answered exactly like a wrong password (401 "Wrong email or
+password"), so the response never tells a guesser that a password was right.
+The refusal is audited (`console.login_failed`, reason "identity provider
+sign-in required") and counts toward the account's lockout; the sign-in page
+learns that an identity provider exists from the public provider endpoint and
+shows its button after any refused password sign-in.
+
 API: `GET /api/v1/admin/approvals`, `POST /api/v1/admin/approvals`
 (step-up), `POST /api/v1/admin/approvals/{id}/approve` (fresh step-up),
 `/reject` (step-up), `/cancel` (requester); all super admin only. A protected
@@ -264,15 +307,36 @@ route refuses with `428 SECOND_APPROVAL_REQUIRED` and `details` naming the
 action, the target and the caller's open request. Table `admin_approvals`
 (migration `002914`), owned by the console's database role.
 
+## Platform roles
+
+Console authorization is by platform permission (RFC-134): the catalog and
+built-in roles live in `pkg/domain/platformauthz`, every console route names
+its permission in `adminRoutePermissions`, and the generated reference is
+[platform-permissions.md](platform-permissions.md) (`make -C api
+platform-authz-docs`). Security > Roles lists the roles, what each allows and
+who holds them; an owner gives or takes the additional roles (operator,
+support, security auditor, billing) there with a step-up and a reason
+(`POST /api/v1/admin/users/{id}/platform-roles`,
+`DELETE /api/v1/admin/users/{id}/platform-roles/{role}`), never to themselves
+and never a role with permissions they do not hold. The base role (owner,
+admin, read-only) follows the administrator's role on the Administrators page,
+where making an owner needs a second owner. The page warns while fewer than two
+named owners exist. Navigation and actions hide by permission
+(`adminHas`, `adminMayHave`); the elevation dialog offers the roles held.
+
 ## Tests
 
 - `web/console/src/__tests__/app-split.test.ts`: route lists of both apps, no
   cross-imports.
 - `web/console/src/__tests__/console-csrf-cookie.test.ts`: the console sets
   `console_csrf` and never `csrf_token`.
-- `api/tests/unit/auth_platform_admin_main_site_test.go`: an administrator
-  with the right password gets the wrong-password answer and no cookie on the
-  main site; the console password check still works.
+- `api/tests/unit/auth_platform_admin_single_identity_test.go`: an
+  administrator's account signs in on the main site with no platform role in
+  the answer; the console password check still works.
+- `api/internal/infra/http/routes/platform_admin_single_identity_db_test.go`:
+  the account is an ordinary member (403 on a member-administration route as
+  a `member`), the console refuses the app token, the tenant API refuses the
+  console token, and the console needs its second factor.
 - `api/internal/infra/http/middleware/admin_audit_test.go`: the write-ahead row
   is written first, and a failing audit write refuses the request.
 - `web/console/src/__tests__/console-origin.test.ts`: a write from the tenant

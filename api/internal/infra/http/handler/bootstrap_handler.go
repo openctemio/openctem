@@ -138,6 +138,11 @@ type BootstrapResponse struct {
 	// TenantCreationMode is the installation's organization policy
 	// ("self_service" or "admin_only"), as GET /auth/providers reports it.
 	TenantCreationMode string `json:"tenant_creation_mode,omitempty"`
+	// EmailDelivery reports whether this server can send email, as GET
+	// /auth/providers reports it (an installation capability, no tenant
+	// data). Sent as an explicit true or false so pages that switch to the
+	// copy-the-link flows need no extra request; absent when not wired.
+	EmailDelivery *bool `json:"email_delivery,omitempty"`
 	// Badges are the sidebar and header counts.
 	Badges *BootstrapBadges `json:"badges,omitempty"`
 	// Announcements are the platform notices shown now, as GET
@@ -147,6 +152,9 @@ type BootstrapResponse struct {
 	// and admins only; the settings rail lists Usage & limits then). Absent
 	// otherwise.
 	LimitsApply bool `json:"limits_apply,omitempty"`
+	// Pins is the GET /me/pins body (the sidebar's Pinned section, with its
+	// live counts), so the sidebar sends no request of its own per page.
+	Pins *NavPinsResponse `json:"pins,omitempty"`
 }
 
 // BootstrapBadges are the counts the app shell shows on every page. A count
@@ -183,12 +191,18 @@ type BootstrapSession struct {
 	// TenantCreationMode reports the current organization policy (the sign-up
 	// policy when it is configured, else the configured mode).
 	TenantCreationMode func(ctx context.Context) string
+	// EmailDelivery reports whether this server can send email (the same
+	// source as GET /auth/providers email_delivery).
+	EmailDelivery func() bool
 	// Announcements is AnnouncementHandler.ActiveResponses (the
 	// /announcements body).
 	Announcements func(ctx context.Context) ([]AnnouncementResponse, error)
 	// LimitsApply reports whether a limit or deny applies to the
 	// organization (entitlement.Service.Applies; no usage is counted).
 	LimitsApply func(ctx context.Context, tenantID shared.ID) (bool, error)
+	// Pins is NavPinHandler.Response (the /me/pins body for the request's
+	// own caller, counts computed in the caller's data scope).
+	Pins func(r *http.Request) (*NavPinsResponse, error)
 }
 
 // BootstrapPermissions contains user permissions and version.
@@ -447,6 +461,10 @@ func (h *BootstrapHandler) addSession(r *http.Request, resp *BootstrapResponse, 
 	if h.session.TenantCreationMode != nil {
 		resp.TenantCreationMode = h.session.TenantCreationMode(ctx)
 	}
+	if h.session.EmailDelivery != nil {
+		v := h.session.EmailDelivery()
+		resp.EmailDelivery = &v
+	}
 	tenantID, terr := shared.IDFromString(tenantIDStr)
 	userID, uerr := shared.IDFromString(userIDStr)
 	if terr != nil || uerr != nil {
@@ -560,6 +578,18 @@ func (h *BootstrapHandler) addSession(r *http.Request, resp *BootstrapResponse, 
 			}
 			mu.Lock()
 			resp.Announcements = &list
+			mu.Unlock()
+		})
+	}
+	if h.session.Pins != nil {
+		run(func() {
+			pins, err := h.session.Pins(r)
+			if err != nil {
+				h.logger.Warn("bootstrap: pins unavailable", "error", logger.SanitizeError(err))
+				return
+			}
+			mu.Lock()
+			resp.Pins = pins
 			mu.Unlock()
 		})
 	}

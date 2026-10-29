@@ -303,7 +303,7 @@ func TestEffectiveToolsAreTheReportedInstalledTools(t *testing.T) {
 func TestSanitizeKeepsGatedSensorWideCapabilities(t *testing.T) {
 	known := map[string]bool{"nuclei": true}
 	gated := []string{CapabilityValidate, CapabilityScopeLimits, CapabilityNetConfined, CapabilityHTTPIdentity,
-		CapabilityValidate + ":nuclei", CapabilityRetest + ":nuclei"}
+		CapabilityValidate + ":nuclei", CapabilityRetest + ":nuclei", CapabilityRetestTemplates + ":nuclei"}
 	out := CapabilityReportInput{Capabilities: gated}.Sanitize(known, nil)
 	if !reflect.DeepEqual(out.Capabilities, gated) {
 		t.Fatalf("caps = %v, want %v", out.Capabilities, gated)
@@ -314,7 +314,7 @@ func TestSanitizeKeepsGatedSensorWideCapabilities(t *testing.T) {
 		t.Fatalf("normalised http.identity@1 dropped: %v", out.Capabilities)
 	}
 	// A look-alike or a retest for an unknown tool is still dropped.
-	out = CapabilityReportInput{Capabilities: []string{"http.identity@2", "http.identity", "retest:evil"}}.Sanitize(known, nil)
+	out = CapabilityReportInput{Capabilities: []string{"http.identity@2", "http.identity", "retest:evil", "retest-templates:evil"}}.Sanitize(known, nil)
 	if len(out.Capabilities) != 0 {
 		t.Fatalf("unknown capabilities kept: %v", out.Capabilities)
 	}
@@ -361,5 +361,39 @@ func TestSanitizeKeepsReachProbeService(t *testing.T) {
 	out := CapabilityReportInput{Capabilities: []string{"reach.probe@2", "reach-probe-x"}, Tools: []ReportedTool{{Name: "reach-probe2", Installed: true}}}.Sanitize(nil, nil)
 	if len(out.Capabilities) != 0 || len(out.Tools) != 0 {
 		t.Fatalf("look-alikes kept: %v %v", out.Capabilities, out.Tools)
+	}
+}
+
+// Sanitize keeps only known capabilities, so a sensor-wide capability that
+// jobs are gated on must be listed: a missing one is dropped from every
+// report and the work that needs it waits forever.
+func TestSanitizeKeepsTheProxyCapabilities(t *testing.T) {
+	want := []string{CapabilityEgressUpstream, CapabilityEgressValidate, CapabilityEgressHostDirect, CapabilityProxyTest}
+	got := CapabilityReportInput{Capabilities: append([]string{"made-up@1"}, want...)}.Sanitize(map[string]bool{}, map[string]bool{})
+	for _, c := range want {
+		if !slices.Contains(got.Capabilities, c) {
+			t.Errorf("%s dropped from the report: %v", c, got.Capabilities)
+		}
+	}
+	if slices.Contains(got.Capabilities, "made-up@1") {
+		t.Errorf("an unknown capability was kept: %v", got.Capabilities)
+	}
+	if CapabilityEgressHostDirect != "egress.host-direct@1" || CapabilityProxyTest != "proxy.test@1" {
+		t.Fatal("capability names are the wire contract with the sensor SDK")
+	}
+}
+
+// A sensor's "retest-templates:<tool>" survives sanitizing and its tool is
+// looked up in the catalog, so a retest with a custom check finds the sensor.
+func TestSanitizeKeepsRetestTemplates(t *testing.T) {
+	in := CapabilityReportInput{Capabilities: []string{"retest:nuclei", "retest-templates:nuclei"}}
+	_, caps := in.CatalogCandidates()
+	tools, _ := in.CatalogCandidates()
+	if !slices.Contains(caps, "retest-templates:nuclei") || !slices.Contains(tools, "nuclei") {
+		t.Fatalf("candidates tools=%v caps=%v", tools, caps)
+	}
+	out := in.Sanitize(map[string]bool{"nuclei": true}, nil)
+	if !slices.Contains(out.Capabilities, "retest-templates:nuclei") {
+		t.Fatalf("retest-templates:nuclei dropped: %v", out.Capabilities)
 	}
 }

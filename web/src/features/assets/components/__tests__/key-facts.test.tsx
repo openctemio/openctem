@@ -91,7 +91,7 @@ describe('KeyFactsSection', () => {
       expect(screen.getAllByText(ip).length).toBeGreaterThan(0)
     }
     expect(screen.getByText('lb.edge.example.net', { selector: 'dd' })).toBeInTheDocument()
-    expect(screen.getByText('AS64500 · Example Hosting Ltd')).toBeInTheDocument()
+    expect(screen.getByText('AS64500, Example Hosting Ltd')).toBeInTheDocument()
     expect(screen.getByText('TLS 1.2')).toBeInTheDocument()
     // Technologies have their own section, not a key fact row.
     expect(screen.queryByText('nginx')).not.toBeInTheDocument()
@@ -120,7 +120,7 @@ describe('KeyFactsSection', () => {
     )
     expect(screen.getByText('Subject CN')).toBeInTheDocument()
     expect(container.textContent).toContain('m.portal.example.com')
-    expect(screen.getByText('Example CA · Example Trust')).toBeInTheDocument()
+    expect(screen.getByText('Example CA, Example Trust')).toBeInTheDocument()
     expect(screen.getByText('Valid until')).toBeInTheDocument()
     expect(screen.getByText('RSA 2048')).toBeInTheDocument()
   })
@@ -155,7 +155,7 @@ describe('KeyFactsSection', () => {
       />
     )
     expect(screen.getByText('Ubuntu 22.04')).toBeInTheDocument()
-    expect(screen.getByText('8 CPU · 32 GB · x86_64')).toBeInTheDocument()
+    expect(screen.getByText('8 CPU, 32 GB, x86_64')).toBeInTheDocument()
   })
 
   it('renders nothing for an asset with no key fact and nothing missing', () => {

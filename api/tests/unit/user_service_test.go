@@ -181,6 +181,10 @@ func (m *mockUserRepo) GetByPasswordResetToken(_ context.Context, _ string) (*us
 	return nil, user.ErrUserNotFound
 }
 
+func (m *mockUserRepo) ConsumePasswordResetToken(_ context.Context, _ shared.ID, _ string) (bool, error) {
+	return true, nil
+}
+
 // =============================================================================
 // Test Helpers
 // =============================================================================

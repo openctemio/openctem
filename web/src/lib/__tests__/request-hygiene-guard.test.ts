@@ -81,6 +81,10 @@ const POLLING_BASELINE: Record<string, number> = {
   // Shared fleet health and the queue depth are read-time values no event
   // pushes; the page is for an operator watching the fleet (30 s).
   'console/features/admin-console/api/use-shared-fleet.ts': 2,
+  // Feed sync runs in the background and no event announces its end: the list
+  // refreshes every 2 s only while a feed runs or right after a sync request,
+  // otherwise once a minute.
+  'console/features/admin-console/api/use-system.ts': 1,
   'features/ai-triage/hooks/use-ai-triage.ts': 1,
   // Dashboard figures are precomputed snapshots on a refresh schedule no event
   // announces: one read when the next snapshot is due (at least 30 s apart),
@@ -91,10 +95,14 @@ const POLLING_BASELINE: Record<string, number> = {
   // waits for a first run (10 s, the dialog open): neither is pushed as an
   // event.
   'features/ci-runners/components/ci-setup-wizard.tsx': 2,
+  // The receipts of a running scan, polled only while it runs (no event announces
+  // each report); 0 when the run is over.
+  'features/findings/api/receipts-api.ts': 1,
   'features/findings/api/use-finding-retests.ts': 1,
   'features/findings/api/use-findings-api.ts': 1,
   'features/notifications/api/use-notification-api.ts': 1,
   // Whether each policy is open is computed at read time.
+  'features/proxy-pools/api/use-proxy-pool-test.ts': 1,
   'features/scan-windows/api/use-scan-windows.ts': 1,
   'features/scans/components/run-detail-sheet.tsx': 1,
   // The support-access banner (RFC-063): a console session opening or a grant
@@ -113,6 +121,9 @@ const POLLING_BASELINE: Record<string, number> = {
   'lib/api/security-hooks.ts': 1,
   'lib/api/sensor-hooks.ts': 6,
   'lib/api/sensor-pairing-hooks.ts': 1,
+  // Sensors waiting for approval: an enrollment token's sensor arrives with
+  // no event to the page; polled only while the Enrollment tokens tab is open.
+  'lib/api/sensor-enrollment-hooks.ts': 1,
 }
 
 function walk(dir: string, out: string[] = []): string[] {

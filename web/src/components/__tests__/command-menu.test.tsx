@@ -19,11 +19,12 @@ vi.mock('@/context/brand-provider', () => ({ useDocsHref: () => (u: string) => u
 vi.mock('@/lib/permissions', async (orig) => ({
   ...(await orig<typeof import('@/lib/permissions')>()),
   useFilteredSidebarData: () => ({
-    data: { navGroups: [{ title: 'Overview', items: [{ title: 'Dashboard', url: '/' }] }] },
+    data: { navGroups: [{ title: 'Overview', items: sidebarItems }] },
   }),
 }))
 vi.mock('@/hooks/use-settings-nav', () => ({ useSettingsNav: () => [] }))
 let perms = new Set<string>()
+let sidebarItems: { title: string; url: string }[] = [{ title: 'Dashboard', url: '/' }]
 vi.mock('@/context/permission-provider', () => ({
   usePermissions: () => ({ hasPermission: (p: string) => perms.has(p) }),
 }))
@@ -44,6 +45,7 @@ beforeEach(() => {
   push.mockReset()
   searchState.results = []
   searchState.cve = null
+  sidebarItems = [{ title: 'Dashboard', url: '/' }]
 })
 
 describe('CommandMenu', () => {
@@ -84,5 +86,24 @@ describe('CommandMenu', () => {
     expect(screen.getByText('proxy-edge-01')).toBeTruthy()
     fireEvent.click(screen.getByText('Findings for CVE-2026-41187'))
     expect(push).toHaveBeenCalledWith('/findings?cve_id=CVE-2026-41187')
+  })
+
+  it('a typed CVE under Vulnerability opens the vulnerability page, findings stay second', () => {
+    perms = new Set(['findings:read'])
+    sidebarItems = [{ title: 'Vulnerabilities', url: '/vulnerabilities' }]
+    searchState.cve = 'CVE-2026-41187'
+    render(<CommandMenu />)
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'CVE-2026-41187' } })
+    fireEvent.click(screen.getByText('Open CVE-2026-41187'))
+    expect(push).toHaveBeenCalledWith('/vulnerabilities/CVE-2026-41187')
+    expect(screen.getByText('Findings for CVE-2026-41187')).toBeTruthy()
+  })
+
+  it('offers no vulnerability page link when the sidebar does not', () => {
+    perms = new Set(['findings:read'])
+    searchState.cve = 'CVE-2026-41187'
+    render(<CommandMenu />)
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'CVE-2026-41187' } })
+    expect(screen.queryByText('Open CVE-2026-41187')).toBeNull()
   })
 })

@@ -51,7 +51,7 @@ describe('StatViz', () => {
       />
     )
     expect(screen.getByText('5.5 days')).toBeInTheDocument()
-    expect(screen.getByText('median · p90 17 days · 37 fixed')).toBeInTheDocument()
+    expect(screen.getByText('median, p90 17 days, 37 fixed')).toBeInTheDocument()
     expect(screen.getByText('−29 hr').closest('p')).toHaveAttribute('data-tone', 'better')
   })
 })
@@ -251,7 +251,7 @@ describe('grid visualizations', () => {
         drill={({ series, key }) => `/findings?severity=${series}&age_band=${key}`}
       />
     )
-    expect(screen.getByRole('link', { name: 'Critical · 0-30: 9' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Critical, 0-30: 9' })).toHaveAttribute(
       'href',
       '/findings?severity=critical&age_band=0-30'
     )
@@ -365,5 +365,49 @@ describe('ItemsViz View all', () => {
     )
     expect(screen.getByText(/^Overdue/)).toBeInTheDocument()
     expect(screen.getByText('High')).toBeInTheDocument()
+  })
+})
+
+describe('ItemsViz row grid', () => {
+  it('a row with no severity and no due date keeps the dot slot and a due column', () => {
+    render(
+      <ItemsViz
+        result={{
+          shape: 'items',
+          rows: [
+            {
+              id: 'a',
+              title: 'Full',
+              priority: 'P1',
+              severity: 'high',
+              due_at: '2999-01-01T00:00:00Z',
+              href: '/findings/a',
+            },
+            {
+              id: 'b',
+              title: 'Bare',
+              priority: 'P1',
+              severity: 'none',
+              due_at: null,
+              href: '/findings/b',
+            },
+            {
+              id: 'c',
+              title: 'Odd',
+              priority: 'P1',
+              severity: 'weird',
+              due_at: null,
+              href: '/findings/c',
+            },
+          ],
+        }}
+      />
+    )
+    expect(screen.getAllByTestId('items-severity-dot')).toHaveLength(3)
+    expect(screen.getAllByText('No due date')).toHaveLength(2)
+    const odd = screen.getByRole('link', { name: /Odd/ })
+    expect(within(odd).getByText('Unknown')).toBeInTheDocument()
+    const bare = screen.getByRole('link', { name: /Bare/ })
+    expect(within(bare).getByText('Info')).toBeInTheDocument()
   })
 })

@@ -166,7 +166,7 @@ describe('Recent refused pipelines', () => {
     expect(screen.getByText(/pull request from a fork/i)).toBeInTheDocument()
     // An unknown code is shown as is.
     expect(screen.getByText('some_new_code')).toBeInTheDocument()
-    expect(screen.getByText('pull_request · refs/pull/7/merge')).toBeInTheDocument()
+    expect(screen.getByText('pull_request, refs/pull/7/merge')).toBeInTheDocument()
   })
 
   it('says when nothing was refused', () => {

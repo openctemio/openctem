@@ -34,6 +34,7 @@ vi.mock('swr', () => ({
 }))
 
 vi.mock('@/features/findings/api/use-findings-api', () => ({
+  buildFindingsEndpoint: () => '/api/v1/findings',
   useFindingApi: () => ({ data: undefined }),
   useFindingsApi: (filters: Record<string, unknown>) => {
     listCalls.push(filters)
@@ -105,6 +106,10 @@ vi.mock('@/features/config/api/finding-source-api', () => ({
 const denied = new Set<string>()
 vi.mock('@/context/permission-provider', () => ({
   usePermissions: () => ({ hasPermission: (p: string) => !denied.has(p) }),
+}))
+vi.mock('@/lib/permissions', async (orig) => ({
+  ...(await orig<typeof import('@/lib/permissions')>()),
+  usePermissions: () => ({ can: () => false }),
 }))
 vi.mock('@/features/integrations/api/use-tenant-modules', () => ({
   useModuleEnabled: () => true,
@@ -240,7 +245,7 @@ describe('Findings columns', () => {
     render(<FindingsPage />)
     await userEvent.click(screen.getByRole('button', { name: /^display: density/i }))
     await userEvent.click(await screen.findByRole('menuitemcheckbox', { name: 'Severity' }))
-    expect(params().get('columns')).toBe('asset,status,slaStatus')
+    expect(params().get('columns')).toBe('status,slaStatus')
     await userEvent.click(screen.getByRole('button', { name: /^display: density/i }))
     await userEvent.click(await screen.findByRole('menuitemcheckbox', { name: 'Severity' }))
     expect(params().has('columns')).toBe(false)

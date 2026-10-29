@@ -8,7 +8,7 @@ name: Release Train
 #         a check (-s ours precondition, tree equality); changelog preview in
 #         the run summary
 #   cut   (not in a dry run) push release/vX.Y.Z (with its version commit:
-#         versions.yaml platform.release = vX.Y.Z, synced), open the PR into
+#         api/deploy/VERSION = vX.Y.Z), open the PR into
 #         main and queue it. Release Publish tags it when the merge queue
 #         merges it.
 #
@@ -44,6 +44,10 @@ on:
         description: "hotfix only: develop commits to cherry-pick, space-separated, oldest first"
         type: string
         default: ""
+      allow_blockers:
+        description: "Train only: go on although the preflight found blockers (high/critical alerts or fixable image advisories on develop, a bad migration number)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -64,6 +68,8 @@ jobs:
       contents: read
       checks: read
       pull-requests: read # the labels of the pull requests behind the changelog fragments
+      security-events: read # the preflight lists open code-scanning alerts
+      actions: read # the preflight reads the newest image-guard report
     outputs:
       version: ${{ steps.version.outputs.NEXT_VERSION }}
       last_tag: ${{ steps.version.outputs.LAST_TAG }}
@@ -136,6 +142,25 @@ jobs:
             bash "$RELEASE_SCRIPTS/cut-release.sh" --version "$VERSION" --sha "$SHA"
           fi
 
+      # What would stop or surprise this release (.github/scripts/release-preflight.sh):
+      # high/critical code-scanning alerts on develop that main lacks, fixable
+      # HIGH/CRITICAL image advisories, migration numbers. Run on the chosen
+      # commit in a worktree; the verdict step at the end fails the plan on a
+      # blocker unless allow_blockers is set. A hotfix is built on the last
+      # release, not on develop, so it has no preflight.
+      - name: Preflight
+        id: preflight
+        if: ${{ inputs.mode == 'train' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ steps.sha.outputs.sha }}
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/preflight" "$SHA"
+          set +e
+          (cd "$RUNNER_TEMP/preflight" && bash .github/scripts/release-preflight.sh --ref HEAD)
+          echo "rc=$?" >> "$GITHUB_OUTPUT"
+
       - name: Summary
         env:
           DRY_RUN: ${{ inputs.dry_run }}
@@ -180,6 +205,18 @@ jobs:
           name: release-notes
           path: ${{ runner.temp }}/notes.md
           retention-days: 7
+
+      - name: Preflight verdict
+        if: ${{ steps.preflight.outputs.rc != '' && steps.preflight.outputs.rc != '0' }}
+        env:
+          ALLOW: ${{ inputs.allow_blockers }}
+        run: |
+          if [ "$ALLOW" = true ]; then
+            echo "::warning::the preflight found blockers; going on because allow_blockers is set"
+          else
+            echo "::error::the preflight found blockers (see the summary above). Fix them, or run again with allow_blockers."
+            exit 1
+          fi
 
   cut:
     name: Cut and open the release PR
@@ -238,9 +275,9 @@ jobs:
           body="$RUNNER_TEMP/pr-body.md"
           {
             if [ "$MODE" = hotfix ]; then
-              echo "Hotfix release **${VERSION}**: the last release plus cherry-picked fixes, plus one commit that sets \`versions.yaml\` \`platform.release\` to ${VERSION} (synced into every default)."
+              echo "Hotfix release **${VERSION}**: the last release plus cherry-picked fixes, plus one commit that writes \`api/deploy/VERSION\` = ${VERSION}, so the tag's checkout installs ${VERSION}."
             else
-              echo "Release train **${VERSION}**: develop at a commit with every required check green, one commit that sets \`versions.yaml\` \`platform.release\` to ${VERSION} (synced into every default, so the tag's checkout installs ${VERSION}), and one \`merge -s ours\` commit that records main as a parent (the tree is develop's plus that commit, byte for byte)."
+              echo "Release train **${VERSION}**: develop at a commit with every required check green, one commit that writes \`api/deploy/VERSION\` = ${VERSION} (so the tag's checkout installs ${VERSION}; develop never gets it), and one \`merge -s ours\` commit that records main as a parent (the tree is develop's plus that commit, byte for byte)."
             fi
             echo
             echo "When the merge queue merges this PR, **Release Publish** tags ${VERSION} on the merge commit, which publishes the images and the GitHub Release and opens the follow-up PRs. Merge with the queue (merge commit), never squash."

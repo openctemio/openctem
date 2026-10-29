@@ -32,6 +32,8 @@ import (
 
 	"golang.org/x/mod/semver"
 	"gopkg.in/yaml.v3"
+
+	"github.com/openctemio/openctem/api/pkg/version"
 )
 
 //go:embed versions.yaml
@@ -147,14 +149,12 @@ func withLearned(p Product) Product {
 
 // Manifest is the parsed versions.yaml.
 type Manifest struct {
-	PlatformRelease string
-	Products        []Product
-	SDKLatest       string
-	SDKMin          string
-	SDKAdvisories   []string
-	CIRunnerLatest  string
-	CIRunnerMin     string
-	ChartVersion    string
+	Products       []Product
+	SDKLatest      string
+	SDKMin         string
+	SDKAdvisories  []string
+	CIRunnerLatest string
+	CIRunnerMin    string
 }
 
 // Product returns the catalog entry of a product id.
@@ -180,8 +180,22 @@ func mustParse(b []byte) *Manifest {
 // Embedded is the manifest built into this binary.
 func Embedded() *Manifest { return embedded }
 
-// PlatformRelease is platform.release.
-func PlatformRelease() string { return embedded.PlatformRelease }
+// PlatformRelease is the release this binary was built from: the vX.Y.Z of
+// its build version (the tag for a release image, the highest tag for a dev
+// build), "" when the build names none. It comes from the build, never from a
+// committed value, so a release needs no version-bump commit on develop.
+func PlatformRelease() string { return baseRelease(version.Get().Version) }
+
+var baseReleaseRE = regexp.MustCompile(`^(v\d+\.\d+\.\d+)(?:[-+].*)?$`)
+
+// baseRelease is the vX.Y.Z core of a build version ("v0.15.0",
+// "v0.15.0-rc.1", "v0.15.0-dev+abc12345"), or "" for anything else ("dev").
+func baseRelease(v string) string {
+	if m := baseReleaseRE.FindStringSubmatch(strings.TrimSpace(v)); m != nil {
+		return m[1]
+	}
+	return ""
+}
 
 // Products is the sensor product catalog: the built-in products in
 // manifest order with their effective latest release, then the operator's
@@ -347,8 +361,7 @@ func defaultProduct() Product {
 }
 
 var (
-	versionRE      = regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
-	chartVersionRE = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
+	versionRE = regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
 	// productIDRE matches what the API keeps of a reported product token
 	// (pkg/domain/sensor/build.go).
 	productIDRE  = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
@@ -367,10 +380,8 @@ var (
 
 // sections other than products, with their keys and whether each may be "".
 var fixedSections = map[string]map[string]bool{
-	"platform": {"release": false},
-	"sdk":      {"latest": false, "min": true, "advisories": true},
-	"ci":       {"latest": false, "min": true},
-	"chart":    {"version": false},
+	"sdk": {"latest": false, "min": true, "advisories": true},
+	"ci":  {"latest": false, "min": true},
 }
 
 var productKeys = map[string]bool{
@@ -468,9 +479,6 @@ func section(name string, body *yaml.Node, keys map[string]bool) (map[string]str
 
 func (m *Manifest) setFixed(name string, v map[string]string) error {
 	switch name {
-	case "platform":
-		m.PlatformRelease = v["release"]
-		return checkVersion("platform.release", m.PlatformRelease)
 	case "sdk":
 		m.SDKLatest, m.SDKMin = v["latest"], v["min"]
 		if err := checkVersion("sdk.latest", m.SDKLatest); err != nil {
@@ -502,11 +510,6 @@ func (m *Manifest) setFixed(name string, v map[string]string) error {
 			if semver.Compare(m.CIRunnerMin, m.CIRunnerLatest) > 0 {
 				return fmt.Errorf("ci.min %s is newer than ci.latest %s", m.CIRunnerMin, m.CIRunnerLatest)
 			}
-		}
-	case "chart":
-		m.ChartVersion = v["version"]
-		if !chartVersionRE.MatchString(m.ChartVersion) {
-			return fmt.Errorf("chart.version %q is not X.Y.Z", m.ChartVersion)
 		}
 	}
 	return nil

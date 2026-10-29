@@ -12,7 +12,9 @@ import {
   CategoryTable,
   ColumnViz,
   DivergingViz,
+  ExposureFlowViz,
   HeatmapViz,
+  IntakeViz,
   ItemsViz,
   LoopViz,
   MatrixTable,
@@ -28,11 +30,19 @@ import {
 } from '@/components/dashboard-kit'
 import { MarkdownPreview } from '@/components/ui/markdown-editor'
 import { useTranslation } from '@/context/i18n-provider'
+import { usePermissionsSafe } from '@/context/permission-provider'
+import { openFormHref } from '@/lib/open-form'
 import { safeInternalHref } from '@/lib/safe-href'
 import type { WidgetValue } from '../api/widget-data'
 import type { VizType, WidgetSpec } from '../api/widget-spec'
 import { specOf, unitOf, widgetModel, type WidgetModel } from '../api/widget-adapter'
-import { kitPolarity, metricDefinitionKey, metricNameKey, skeletonFor } from '../metrics'
+import {
+  kitPolarity,
+  metricDefinitionKey,
+  metricEmptyAction,
+  metricNameKey,
+  skeletonFor,
+} from '../metrics'
 
 /** The list a mark opens: a category row's own drill-down, else the widget's. */
 function drillFor(v: WidgetValue | undefined, fallback?: string): DrillFn {
@@ -49,10 +59,12 @@ function Viz({
   model,
   value,
   viz,
+  scope,
 }: {
   model: WidgetModel
   value: WidgetValue | undefined
   viz: VizType | undefined
+  scope?: 'organization' | 'personal'
 }): ReactNode {
   const r: WidgetResult | undefined = model.result
   if (!r) return null
@@ -90,6 +102,10 @@ function Viz({
       return viz === 'table' ? <StagesTable result={r} /> : <LoopViz result={r} />
     case 'paths':
       return viz === 'table' ? <PathsTable result={r} /> : <PathsViz result={r} href={href} />
+    case 'flow':
+      return <ExposureFlowViz result={r} scope={scope} />
+    case 'intake':
+      return <IntakeViz result={r} />
     default:
       return null
   }
@@ -109,6 +125,8 @@ export interface WidgetViewProps {
   className?: string
   /** Draws only the visualisation, without the bordered frame (for a host that already is a card). */
   bare?: boolean
+  /** Whose numbers the dashboard shows (the exposure flow names it). */
+  scope?: 'organization' | 'personal'
 }
 
 export function WidgetView({
@@ -122,8 +140,10 @@ export function WidgetView({
   actions,
   className,
   bare = false,
+  scope,
 }: WidgetViewProps) {
   const { t } = useTranslation()
+  const { hasPermission } = usePermissionsSafe()
   const spec: WidgetSpec | undefined = specOf(widget)
   const metric = spec?.data.metric ?? value?.metric
   const title =
@@ -144,7 +164,13 @@ export function WidgetView({
 
   const model: WidgetModel = loading ? { state: 'loading' } : widgetModel(value, spec, stale)
   const reason = model.reasonKey ? t(model.reasonKey) : undefined
-  if (bare) return <Viz model={model} value={value} viz={model.viz} />
+  // Only a truly empty figure gets a next step; "still building" has none.
+  const next = model.reasonKey === 'dashboards.reason.empty' ? metricEmptyAction(metric) : undefined
+  const emptyAction =
+    next && next.needs.every((p) => hasPermission(p))
+      ? { label: t(next.labelKey, next.fallback), href: openFormHref(next.path, next.form) }
+      : undefined
+  if (bare) return <Viz model={model} value={value} viz={model.viz} scope={scope} />
   return (
     <WidgetFrame
       title={title}
@@ -155,11 +181,12 @@ export function WidgetView({
       skeleton={skeletonFor(value?.shape)}
       notMeasuredReason={reason}
       emptyMessage={reason}
+      emptyAction={emptyAction}
       onRetry={model.state === 'error' ? onRetry : undefined}
       actions={actions}
       className={className}
     >
-      <Viz model={model} value={value} viz={model.viz} />
+      <Viz model={model} value={value} viz={model.viz} scope={scope} />
     </WidgetFrame>
   )
 }

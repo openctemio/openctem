@@ -78,7 +78,7 @@ type ReviewItem struct {
 	LastSeen   *time.Time       `json:"last_seen,omitempty"`
 	Evidence   []ReviewEvidence `json:"evidence"`
 	// CoveredBy is the caller's scope entry that
-	// covers the name (RFC-054 §6.6); nil means confirming it widens scope,
+	// covers the name; nil means confirming it widens scope,
 	// so the UI offers "add scope entry" first.
 	CoveredBy *scopeauth.Via `json:"covered_by"`
 	// Address rows (an IP, or a service on one): an address never inherits
@@ -243,7 +243,7 @@ type Decision struct {
 type DecisionResult struct {
 	Decided  []Decision `json:"decided"`
 	NotFound []string   `json:"not_found"`
-	// Scope: the exact scope entries a confirmation added (research/117);
+	// Scope: the exact scope entries a confirmation added;
 	// absent for any other decision.
 	Scope *ConfirmScopeResult `json:"scope,omitempty"`
 }

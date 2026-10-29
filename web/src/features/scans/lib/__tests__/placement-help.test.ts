@@ -48,6 +48,16 @@ function hasKey(d: unknown, key: string): boolean {
   return typeof (d as Record<string, unknown>)[key] === 'string'
 }
 
+describe('host pressure placement help', () => {
+  it('explains sensor_overloaded in both languages', () => {
+    const h = placementHelp('sensor_overloaded')
+    expect(h.text).toContain("sensor's host is overloaded")
+    expect(h.href).toBe('/sensors')
+    const viT = (k: string) => (vi as Record<string, string>)[k] ?? k
+    expect(placementHelp('sensor_overloaded', viT).text).toContain('quá tải')
+  })
+})
+
 describe('every code the API sends has help', () => {
   it('step failure codes', () => {
     const codes = failureCodes()
@@ -167,6 +177,23 @@ describe('rule_sources_unsupported', () => {
       const dict = getDictionary(lang) as Record<string, string>
       expect(dict['scans.placement.rule_sources_unsupported.text']).toBeTruthy()
       expect(dict['scans.placement.rule_sources_unsupported.fix']).toBeTruthy()
+    }
+  })
+})
+
+describe('egress holds', () => {
+  it('have text and a fix in en and vi', () => {
+    for (const code of [
+      'egress_unsupported',
+      'egress_validate_unsupported',
+      'egress_host_direct',
+    ]) {
+      expect(PLACEMENT_FIX[code]).toBe('sensors')
+      for (const d of [en, vi]) {
+        expect(hasKey(d, `scans.placement.${code}.text`), code).toBe(true)
+        expect(hasKey(d, `scans.placement.${code}.fix`), code).toBe(true)
+      }
+      expect(placementHelp(code).href).toBe('/sensors')
     }
   })
 })

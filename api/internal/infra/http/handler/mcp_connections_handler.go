@@ -3,6 +3,7 @@ package handler
 import (
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -43,6 +44,9 @@ type MCPConnection struct {
 	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
 	LastUsedIP string     `json:"last_used_ip,omitempty"`
 	ExpiresAt  time.Time  `json:"expires_at"`
+	// FullData: the connection may read all organization data while its
+	// person keeps a full-data role.
+	FullData bool `json:"full_data"`
 }
 
 // MCPConnectionList is a list of connections.
@@ -61,6 +65,7 @@ func toMCPConnections(list []mcpoauthapp.ConnectionView, withUser bool) MCPConne
 			ID: c.ID, ClientName: c.ClientName, ClientID: c.ClientID, ClientKind: string(c.ClientKind),
 			ClientHost: c.ClientHost, UserID: c.UserID, Scopes: scopes, CreatedAt: c.CreatedAt,
 			LastUsedAt: c.LastUsedAt, LastUsedIP: c.LastUsedIP, ExpiresAt: c.ExpiresAt,
+			FullData: c.FullData,
 		}
 		if withUser {
 			m.UserName, m.UserEmail = c.UserName, c.UserEmail
@@ -120,7 +125,7 @@ func (h *MCPConnectionsHandler) revoke(w http.ResponseWriter, r *http.Request, a
 
 // ListMine serves GET /api/v1/mcp-access/my-connections.
 // @Summary      List my connected AI applications
-// @Description  The caller's active connections in the current organization: which application, what it may read, since when and when it was last used (RFC-062).
+// @Description  The caller's active connections in the current organization: which application, what it may read, since when and when it was last used.
 // @Tags         MCP
 // @Produce      json
 // @Security     BearerAuth
@@ -139,6 +144,55 @@ func (h *MCPConnectionsHandler) ListMine(w http.ResponseWriter, r *http.Request)
 // @Router       /mcp-access/my-connections/{id} [delete]
 func (h *MCPConnectionsHandler) RevokeMine(w http.ResponseWriter, r *http.Request) {
 	h.revoke(w, r, false)
+}
+
+func (h *MCPConnectionsHandler) scope(w http.ResponseWriter, r *http.Request, asAdmin bool) {
+	tenantID, userID, ok := h.caller(r)
+	if !ok {
+		apierror.Unauthorized("Invalid credentials").WriteJSON(w)
+		return
+	}
+	grantID, err := shared.IDFromString(chi.URLParam(r, "id"))
+	if err != nil {
+		apierror.NotFound("Connection").WriteJSON(w)
+		return
+	}
+	err = h.svc.ScopeConnection(r.Context(), tenantID, grantID, userID, asAdmin, oauthActor(r))
+	switch {
+	case err == nil:
+		w.WriteHeader(http.StatusNoContent)
+	case errors.Is(err, mcpoauth.ErrNotFound):
+		apierror.NotFound("Connection").WriteJSON(w)
+	default:
+		h.log.Error("scope mcp connection", "error", logger.SanitizeError(err))
+		apierror.InternalServerError("failed to change the connection").WriteJSON(w)
+	}
+}
+
+// ScopeMine serves POST /api/v1/mcp-access/my-connections/{id}/scoped.
+// @Summary      Limit one of my AI applications to my own data scope
+// @Description  Turns a connection that may read all organization data back into one that reads only what the caller's own groups and scope rules allow. Its tokens stay valid. Someone else's connection is not found. Audited.
+// @Tags         MCP
+// @Security     BearerAuth
+// @Param        id   path  string  true  "Connection id"
+// @Success      204
+// @Failure      404  {object}  apierror.Error
+// @Router       /mcp-access/my-connections/{id}/scoped [post]
+func (h *MCPConnectionsHandler) ScopeMine(w http.ResponseWriter, r *http.Request) {
+	h.scope(w, r, false)
+}
+
+// ScopeAny serves POST /api/v1/mcp-access/connections/{id}/scoped.
+// @Summary      Limit an AI application in the organization to its person's data scope
+// @Description  Turns any connection of the organization that may read all organization data back into one that reads only its person's own data scope. Owners and administrators. Audited.
+// @Tags         MCP
+// @Security     BearerAuth
+// @Param        id   path  string  true  "Connection id"
+// @Success      204
+// @Failure      404  {object}  apierror.Error
+// @Router       /mcp-access/connections/{id}/scoped [post]
+func (h *MCPConnectionsHandler) ScopeAny(w http.ResponseWriter, r *http.Request) {
+	h.scope(w, r, true)
 }
 
 // ListAll serves GET /api/v1/mcp-access/connections.
@@ -181,24 +235,58 @@ type AdminMCPClient struct {
 
 // AdminMCPClientList is the console's client list.
 type AdminMCPClientList struct {
-	Data []AdminMCPClient `json:"data"`
+	Data       []AdminMCPClient `json:"data"`
+	Total      int              `json:"total"`
+	Page       int              `json:"page"`
+	PerPage    int              `json:"per_page"`
+	TotalPages int              `json:"total_pages"`
 }
 
 // AdminListClients serves GET /api/v1/admin/mcp-clients.
 // @Summary      List AI applications (MCP clients)
-// @Description  Every MCP client known to the platform with its active connections and how many organizations use it. Counts only; no organization data (RFC-062).
+// @Description  Every MCP client known to the platform with its active connections and how many organizations use it. Counts only; no organization data.
 // @Tags         Admin
 // @Produce      json
+// @Param        q         query  string  false  "Part of the client_id (its host) or the declared name"
+// @Param        blocked   query  bool    false  "true: blocked clients only; false: unblocked only"
+// @Param        page      query  int     false  "Page"
+// @Param        per_page  query  int     false  "Page size (max 100)"
 // @Success      200  {object}  AdminMCPClientList
+// @Failure      400  {object}  apierror.Error
 // @Router       /admin/mcp-clients [get]
 func (h *MCPConnectionsHandler) AdminListClients(w http.ResponseWriter, r *http.Request) {
-	list, err := h.svc.ListAllClients(r.Context())
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	if len(q) > 254 {
+		apierror.BadRequest("Search is too long").WriteJSON(w)
+		return
+	}
+	f := mcpoauth.ClientFilter{Q: q}
+	switch r.URL.Query().Get("blocked") {
+	case "":
+	case "true":
+		t := true
+		f.Blocked = &t
+	case queryParamFalse:
+		t := false
+		f.Blocked = &t
+	default:
+		apierror.BadRequest("blocked must be true or false").WriteJSON(w)
+		return
+	}
+	paging, ok := listPage(w, r, 25)
+	if !ok {
+		return
+	}
+	list, total, err := h.svc.ListAllClients(r.Context(), f, paging.PerPage, (paging.Page-1)*paging.PerPage)
 	if err != nil {
 		h.log.Error("list mcp clients", "error", logger.SanitizeError(err))
 		apierror.InternalServerError("failed to list clients").WriteJSON(w)
 		return
 	}
-	out := AdminMCPClientList{Data: make([]AdminMCPClient, 0, len(list))}
+	out := AdminMCPClientList{
+		Data: make([]AdminMCPClient, 0, len(list)), Total: total, Page: paging.Page, PerPage: paging.PerPage,
+		TotalPages: (total + paging.PerPage - 1) / paging.PerPage,
+	}
 	for _, u := range list {
 		out.Data = append(out.Data, AdminMCPClient{
 			ID: u.Client.ID.String(), ClientID: u.Client.ClientID, Name: u.Client.Name, Kind: string(u.Client.Kind),

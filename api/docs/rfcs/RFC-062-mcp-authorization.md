@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted, implemented (PRs 1–8 of §14 shipped; the organization policy has the TLP limit for AI applications since 2026-10-12) (owner 2026-10-08: "the most secure, modern and best design of auth for MCP"; decisions MA1–MA25 delegated) |
+| Status | Accepted, implemented (PRs 1–9 of §14 shipped; the organization policy has the TLP limit for AI applications since 2026-10-12) (owner 2026-10-08: "the most secure, modern and best design of auth for MCP"; decisions MA1–MA25 delegated) |
 | Authors | Platform team |
 | Related | RFC-016 (MCP server), RFC-022 (admin console), RFC-041 (API planes), RFC-050 (asset access model), RFC-057 (evidence never leaves through prompts) |
 | Specification | MCP 2026-07-28 (Authorization, Authorization Server Discovery, Client Registration, Security Considerations, Streamable HTTP, Elicitation, Multi Round-Trip Requests) |
@@ -109,6 +109,19 @@ API; the consent page stays in the web app.
 A client of any kind is a public client: no client secrets are issued or
 accepted. The platform operator can block any client.
 
+**When a metadata-document client is stored.** `GET /oauth/authorize` is
+unauthenticated, so it never writes the client registry: the fetched document
+(name, redirect URIs, fetch times) is kept on the authorization request
+(`mcp_oauth_requests.pending_client`) and the redirect URI is checked against
+it. The client row in `mcp_oauth_clients` is created, or refreshed, only when
+a signed-in person approves the consent, in the same step that issues the code.
+A denied, abandoned or expired request leaves no client behind; expired
+requests are purged by the platform janitor a day after they end. The token
+endpoint and refresh read the stored client of the grant. A client blocked
+between authorize and approval is refused at approval. The name in a metadata
+document or a dynamic registration is whatever the application declared, so
+the console shows the host first and the name as "declares itself as".
+
 ## 6. Authorization flow
 
 1. The client calls `GET /oauth/authorize` with `response_type=code`,
@@ -156,8 +169,10 @@ approved before (the page says so); `prompt=none` returns `consent_required`.
 | `mcp:assets.read` | `assets:read` | assets, exposure chains |
 | `mcp:compliance.read` | `compliance:frameworks:read` | compliance posture |
 | `mcp:pentest.read` | `pentest:campaigns:read`, `pentest:findings:read`, `pentest:retests:read`, `pentest:templates:read` | pentest campaigns, findings, retests, templates, report prompts |
+| `mcp:scope.read` | `attack_surface:scope:read` | check_scope: may this target be tested at this intensity (§10b) |
 | `mcp:findings.comment` (write) | `findings:comment` | add a comment, confirmed per call (§10) |
 | `mcp:findings.propose` (write) | `findings:write` | propose a false positive or an accepted risk (§10a) |
+| `mcp:pentest.draft` (write) | `pentest:findings:write` | save a pentest finding as a draft (§10a) |
 
 On every request:
 
@@ -167,10 +182,49 @@ effective = permissions(granted scopes) ∩ permissions the user holds now
 
 An owner or administrator holds every permission, so their token has exactly
 the permissions of its scopes. The owner/administrator bypass is never set for
-an MCP token. The token keeps the user's data scope: a role with full data
-access sees what it sees in the web console, any other member sees the assets
-their scope rows allow. (`oct_` keys keep their stricter rule: no full data
-access.)
+an MCP token. The token reads only the assets the user's scope rows allow, whatever the
+user's role: by default the full-data role is not applied to an MCP token
+(amended 2026-10-19, same rule as `oct_` keys). One opt-in exception (amended
+2026-10-27, MA25): a person whose role has full organization data access
+(owner, administrator, or a role with `has_full_data_access`) may allow a
+connection to read all organization data, see §7a. An empty asset or finding
+result for a caller whose scope covers no asset carries a `scope_notice`
+explaining it.
+
+### 7a. Access to all organization data (opt-in per connection)
+
+On the consent page, a person whose role has full data access sees one more
+choice, "Allow access to all organization data", off by default. It is not
+shown to anyone else, and a request that sets it anyway is refused (403).
+
+- **Step-up.** Turning it on needs a fresh step-up (the same re-authentication
+  window as the other sensitive actions); a stale session gets
+  `STEP_UP_REQUIRED`, and without a step-up check wired the choice is refused.
+- **Stored and shown.** The choice is stored on the authorization request and
+  copied to the grant (`mcp_oauth_grants.full_data`). The organization's AI
+  applications page and the person's own connections list show a badge on
+  such a connection.
+- **Audited.** `mcp_grant.full_data_allowed` (actor, client, client host,
+  redirect host) at approval, `full_data` on `mcp_grant.authorized`,
+  `mcp_grant.token_issued` and every `mcp.tool_called`.
+- **Shorter life.** A full-data grant lives 7 days (scoped: up to 90, bounded
+  by the organization policy), its refresh token is valid 24 hours unused
+  (scoped: 14 days), its access token 5 minutes (scoped: 10).
+- **Enforced on every request.** The token reads all data only if
+  `grant.full_data` is set AND the user still holds a full-data role now. The
+  authorization server re-checks the role on each request: role lost means
+  scoped on that very request, with no token to wait out. A refresh after the
+  role was lost also sets the grant back to scoped for good
+  (`mcp_grant.full_data_removed`, reason `role_lost`). The permissions of the
+  grant's scopes still bound what it may do; nothing about the owner/admin
+  permission bypass changes. Private bug-bounty program assets and pentest
+  campaign membership follow the same rules as for the person in the web
+  console (full data never reaches a private program the person is not in).
+- **Ending it.** The person (own connections) or an organization administrator
+  can revoke the connection, or set it back to scoped without revoking
+  (`POST /mcp-access/my-connections/{id}/scoped`,
+  `POST /mcp-access/connections/{id}/scoped`); narrowing needs no step-up.
+- **Never for `oct_` API keys**, which stay on the user's scope rows.
 
 `tools/list` lists only the tools the token can run. A tool whose permission the
 user holds but whose scope was not granted answers `403` with
@@ -283,9 +337,36 @@ person's name**, with `requested_via` set to the AI application's name:
 - the activity records `source = mcp`; the tool call is audited with the
   grant and client.
 
+The second proposal tool is `draft_pentest_finding` (`mcp:pentest.draft` →
+`pentest:findings:write`): a pentester's AI copilot saves a finding (title,
+severity, description, affected asset or targets, steps, request/response
+pairs, CVSS vector, CWE, OWASP category, impact, remediation, references)
+in a campaign. Campaign membership, the TLP limit and the campaign's AI
+switch are checked first; the campaign phase and role rule for adding a
+finding is the service's, with the person as actor (never as an
+administrator). The finding is always a **draft** (never visible to the
+client), its `source_metadata.drafted_via` names the application and is kept
+on every edit, and `ApplyPentestTransition` refuses its creator confirming
+it: another campaign member (a reviewer or the lead) confirms it. A finding
+with the same title in the campaign answers `conflict`. Hidden characters in
+any text field are refused; request/response pairs are capped (10 pairs,
+bodies 32,000 characters).
+
 Threats this answers: content the agent reads (finding text, scanner output,
 target responses) steering it to hide a real risk. The agent can at most
 file a request that a different person reads, marked as written by an AI.
+
+## 10b. Scope check tool
+
+`check_scope` lets an outside AI client ask "may I test this target at this intensity?" before it acts. It reads; it never changes a scope, and no tool of this server widens one (widening stays with people: approvals, step-up, audit).
+
+- **Input.** `target` (domain, IP, CIDR or URL), optional `intensity` (`passive`, `active` default, `intrusive`), optional `program_id` for a target only a bug-bounty program rule covers.
+- **Answer.** The one scope authority a scan asks (`scopeauth`), so the answer matches a scan's: `allowed` (with the kind and id of the covering entry), `passive_only` (covered, but not at that intensity) or `refused`, with reason codes and a hint for the person. A refusal is worded as the platform's decision and says variations are refused too.
+- **Never echoed.** Deny-list contents, scope patterns and entries other than the covering one. The platform deny list answers with a reason code only.
+- **Fails closed.** Any lookup error (scope entries, verified domains, program exclusions or memberships) answers `refused` with `scope_lookup_failed`.
+- **Program-only targets.** A target covered only by program rules is allowed only when `program_id` names a program the caller belongs to whose in-effect rule covers it (program exclusions applied).
+- **Tenant and permission.** The tenant comes from the connection. The scope `mcp:scope.read` stands for `attack_surface:scope:read`, the permission of the REST route that lists scope entries, which discloses more than this tool. Another tenant's entries never match.
+- **Abuse.** A rate limit per connection (30 a minute, burst 10; per API replica) stops scope enumeration by brute force; a limited call answers `refused` with `rate_limited` and `retry_after_seconds`. Every call is audited with the target stored as a digest, never in clear.
 
 ## 11. Transport
 
@@ -339,7 +420,7 @@ file a request that a different person reads, marked as written by an AI.
 | MA22 | Origin check; no session-based authorization; protocol upgrade separate. |
 | MA23 | Connected applications for users, organization administrators and platform administrators. |
 | MA24 | Tables for clients, authorization requests, grants and tokens; cascades and purge. |
-| MA25 | An MCP token keeps the user's data scope, including full data access; `oct_` keys do not. |
+| MA25 | An MCP token reads only what the user's scope rows allow (amended 2026-10-19: no full data access, as `oct_` keys); an empty result for an empty scope carries a `scope_notice`. Revised 2026-10-27: a person with a full-data role may opt a connection into all organization data at consent (off by default, fresh step-up, audited, badge, revocable or narrowable, shorter lifetimes, role re-checked every request); never for API keys (§7a). |
 | MA26 | Proposal tools (§10a): requests filed in the person's name, decided by another person; never decided by the person or their agent; no per-call confirmation. |
 
 ## 14. Implementation
@@ -354,6 +435,7 @@ file a request that a different person reads, marked as written by an AI.
 | 6 | DPoP |
 | 7 | Write-tool confirmation with the first write tool (`add_finding_comment`); URL-mode elicitation follows the protocol upgrade |
 | 8 | Proposal tools with `propose_finding_status` (§10a) |
+| 9 | `draft_pentest_finding` and peer review of AI drafts (§10a) |
 
 Each PR carries tests for cross-tenant use, scope escalation, token replay,
 redirect URI tampering, refresh reuse and consent bypass, and is checked with a

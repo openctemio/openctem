@@ -15,6 +15,7 @@ import { describeProxyError } from '../lib/errors'
 import type { ProxyPool } from '../types'
 import { EndpointTable } from './endpoint-table'
 import { PoolDialog } from './pool-dialog'
+import { TestPoolButton } from './test-pool-button'
 import { confirmName } from '@/lib/confirm-name'
 
 interface MorePoolsSectionProps {
@@ -98,10 +99,11 @@ export function MorePoolsSection({ pools, canWrite, canDelete }: MorePoolsSectio
                       : t('proxyPools.assignedSensors.other', '{count} sensors assigned', {
                           count: p.assigned_sensors,
                         })}
-                    {p.description ? ` · ${p.description}` : ''}
+                    {p.description ? `, ${p.description}` : ''}
                   </CardDescription>
                 </div>
                 <div className="flex gap-2">
+                  <TestPoolButton pool={p} canWrite={canWrite} />
                   <GatedButton
                     allowed={canWrite}
                     reason={noWrite}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"testing"
+	"time"
 
 	_ "github.com/lib/pq"
 
@@ -89,7 +90,7 @@ func TestAutoReopenBatch_HumanResolvedReopens_DeliberateDispositionsDoNot(t *tes
 	acceptID, acceptFP := seedClosedFinding(ctx, t, db, tenantID, assetID, "accepted", "accepted_risk")
 
 	fps := []string{humanFP, autoFP, verifiedFP, nullResFP, fpDispoFP, acceptFP}
-	reopened, err := repo.AutoReopenByFingerprintsBatch(ctx, tenantID, fps)
+	reopened, err := repo.AutoReopenByFingerprintsBatch(ctx, tenantID, fps, time.Now())
 	if err != nil {
 		t.Fatalf("AutoReopenByFingerprintsBatch: %v", err)
 	}

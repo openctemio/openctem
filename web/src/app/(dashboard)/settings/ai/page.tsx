@@ -14,6 +14,8 @@ import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/context/i18n-provider'
 import { useTenant } from '@/context/tenant-provider'
 import { AISourceCard } from '@/features/ai-triage/components/ai-source-card'
+import { AIMaskingSection } from '@/features/ai-triage/components/ai-masking-section'
+import { AIAgentsSection } from '@/features/ai-triage/components/ai-agents-section'
 import { useAIConfig } from '@/features/ai-triage/api/use-ai-triage-api'
 import { updateAISettings, useAISettings } from '@/features/ai-triage/api/use-ai-settings'
 import { PageHeader, ReadOnlyNotice, PageStack } from '@/features/shared'
@@ -22,8 +24,11 @@ import { formatDateSafe } from '@/lib/format-date'
 import { useCanMutate } from '@/lib/permissions'
 
 /**
- * Settings > AI: the organization's consent to AI triage and where the AI
- * comes from (API docs: architecture/ai-triage.md). Until an owner or administrator turns it on, no
+ * Settings > AI: the organization's consent to AI triage, where the AI
+ * comes from (API docs: architecture/ai-triage.md) and the AI agents
+ * (architecture/ai-analysis.md) and the masking of what is sent
+ * (architecture/ai-context-masking.md). Each part is its own section
+ * component, so a section is added without touching the others. Until an owner or administrator turns it on, no
  * finding content is sent to an AI provider. Turning it on needs a recent
  * sign-in (the shared client asks for it) and is audited.
  */
@@ -202,6 +207,10 @@ export default function AISettingsPage() {
               }}
             />
           )}
+
+          <AIAgentsSection />
+
+          <AIMaskingSection canEdit={canEdit} />
         </PageStack>
 
         <ConfirmDialog

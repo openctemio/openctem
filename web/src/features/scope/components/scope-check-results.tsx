@@ -300,7 +300,7 @@ export function ScopeCheckRow({
           <span className="break-all font-mono text-xs">{target}</span>
           <p className="text-xs text-muted-foreground">
             {viaText(r.via)}
-            {r.zone?.name ? ` · zone ${r.zone.name}` : ''}
+            {r.zone?.name ? `, zone ${r.zone.name}` : ''}
           </p>
         </div>
       </li>

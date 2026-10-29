@@ -66,9 +66,25 @@ func coverageTime(t sql.NullTime) *time.Time {
 	return &v
 }
 
+// withExtra scans the row columns and then extra destinations.
+type withExtra struct {
+	sc    interface{ Scan(...any) error }
+	extra []any
+}
+
+func (w withExtra) Scan(dest ...any) error { return w.sc.Scan(append(dest, w.extra...)...) }
+
 // ListForAsset returns every ledger row of an asset of the tenant.
 func (r *AssetCoverageRepository) ListForAsset(ctx context.Context, tenantID, assetID shared.ID) ([]coverage.Row, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT `+coverageRowColumns+`
+	// The observer of a target-side outcome is named only when it is the
+	// tenant's own scan zone or sensor; a platform sensor stays unnamed.
+	rows, err := r.db.QueryContext(ctx, `SELECT `+coverageRowColumns+`,
+		       COALESCE(CASE
+		         WHEN unreached_from LIKE 'zone:%' THEN (SELECT z.name FROM scan_zones z
+		              WHERE z.tenant_id = $1 AND z.id::text = substr(unreached_from, 6))
+		         WHEN unreached_from LIKE 'sensor:%' THEN (SELECT s.name FROM sensors s
+		              WHERE s.tenant_id = $1 AND s.scope = 'organization' AND s.id::text = substr(unreached_from, 8))
+		       END, '')
 		FROM asset_coverage WHERE tenant_id = $1 AND asset_id = $2
 		ORDER BY capability, vantage`, tenantID.String(), assetID.String())
 	if err != nil {
@@ -77,10 +93,12 @@ func (r *AssetCoverageRepository) ListForAsset(ctx context.Context, tenantID, as
 	defer func() { _ = rows.Close() }()
 	var out []coverage.Row
 	for rows.Next() {
-		row, err := scanCoverageRow(rows, tenantID, assetID)
+		var name string
+		row, err := scanCoverageRow(withExtra{rows, []any{&name}}, tenantID, assetID)
 		if err != nil {
 			return nil, fmt.Errorf("scan asset coverage: %w", err)
 		}
+		row.UnreachedFromName = name
 		out = append(out, row)
 	}
 	return out, rows.Err()
@@ -116,12 +134,19 @@ func coveragePredicateSQL(p string) string {
 	switch p {
 	case coverage.RequiresResolves:
 		// A resolves_to relation (a port scan of the name), an A/AAAA record
-		// a DNS resolution stored, or addresses a probe saw.
-		return `(EXISTS (SELECT 1 FROM asset_relationships rr
+		// a DNS resolution stored, or addresses a probe saw; and the name is
+		// not parked: its latest DNS resolution answered that it has no
+		// address (those facts are then stale). A parked name gets no active
+		// capability; the first resolution that answers un-parks it, and its
+		// pairs become due and go through the full gate again.
+		return `((EXISTS (SELECT 1 FROM asset_relationships rr
 			WHERE rr.tenant_id = a.tenant_id AND rr.source_asset_id = a.id AND rr.relationship_type = 'resolves_to')
 			OR jsonb_path_exists(COALESCE(a.properties, '{}'::jsonb), '$.dns_records[*] ? (@.type == "A" || @.type == "AAAA")')
 			OR COALESCE(jsonb_typeof(a.properties->'ip_addresses') = 'array'
-			            AND jsonb_array_length(a.properties->'ip_addresses') > 0, false))`
+			            AND jsonb_array_length(a.properties->'ip_addresses') > 0, false))
+			AND NOT EXISTS (SELECT 1 FROM asset_coverage pk
+			WHERE pk.tenant_id = a.tenant_id AND pk.asset_id = a.id AND pk.capability = '` + coverage.CapabilityResolveDNS + `'
+			  AND pk.vantage = '' AND pk.last_outcome = '` + coverage.OutcomeNoAnswer + `'))`
 	case coverage.RequiresWebPort:
 		return `COALESCE(a.properties->>'port', '') IN (` + webPortsSQL() + `)`
 	case coverage.RequiresWebPortOrUnscanned:
@@ -142,6 +167,18 @@ func coveragePredicateSQL(p string) string {
 			  AND pc.last_success_at IS NOT NULL AND (pc.asset_id = a.id OR pc.asset_id IN (` + addrs + `)))
 		    OR EXISTS (SELECT 1 FROM asset_relationships rp
 			WHERE rp.tenant_id = a.tenant_id AND rp.relationship_type = 'exposes' AND rp.source_asset_id IN (` + addrs + `))))`
+	case coverage.RequiresNoNamedTwin:
+		// The URL host of an IPv4 web service, and a named web service
+		// whose probe saw that address, on the same port.
+		return `NOT (a.name ~ '^https?://[0-9]{1,3}(\.[0-9]{1,3}){3}(:[0-9]+)?(/|$)'
+			AND EXISTS (SELECT 1 FROM assets n
+				WHERE n.tenant_id = a.tenant_id AND n.id <> a.id
+				  AND n.asset_type = 'service' AND n.sub_type = 'http'
+				  AND n.deleted_at IS NULL AND n.status = 'active'
+				  AND n.name ~ '^https?://[^/:]*[a-zA-Z]'
+				  AND COALESCE(n.properties->>'port', '') = COALESCE(a.properties->>'port', '')
+				  AND jsonb_typeof(n.properties->'ip_addresses') = 'array'
+				  AND n.properties->'ip_addresses' ? substring(a.name from '^https?://([0-9.]+)')))`
 	case coverage.RequiresScopeEntry:
 		return `EXISTS (SELECT 1 FROM scope_targets st
 			WHERE st.tenant_id = a.tenant_id AND st.status = 'active'
@@ -164,7 +201,7 @@ func webPortsSQL() string {
 // rulePredicates are the reasons reconcile itself sets. Only those flip
 // back to due when the precondition holds again: a pair a capability found
 // not applicable (a DNS check on a name that is not registrable) stays so.
-var rulePredicates = []string{coverage.RequiresResolves, coverage.RequiresWebPort, coverage.RequiresWebPortOrUnscanned, coverage.RequiresScopeEntry}
+var rulePredicates = []string{coverage.RequiresResolves, coverage.RequiresWebPort, coverage.RequiresWebPortOrUnscanned, coverage.RequiresScopeEntry, coverage.RequiresNoNamedTwin}
 
 // coverageRuleSQL returns the applicability and reason expressions of a rule.
 func coverageRuleSQL(rule coverage.Rule) (ok, reason string) {
