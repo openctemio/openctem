@@ -149,6 +149,13 @@ export function GroupExceptionDialog({
       ? target.request(body)
       : approvalBatchApi.request(taskId ?? '', { ...body, version: taskVersion })
 
+  // The preview effect reads the newest callbacks and texts through a ref:
+  // listing them as dependencies would re-request the preview on every render.
+  const latest = useRef({ previewCall, pendingText, onPendingConflict, t })
+  useEffect(() => {
+    latest.current = { previewCall, pendingText, onPendingConflict, t }
+  })
+
   useEffect(() => {
     if (!open || !reason || !expiryValid) {
       seq.current++
@@ -166,7 +173,13 @@ export function GroupExceptionDialog({
         justification: '',
         ...(expiresIso ? { expires_at: expiresIso } : {}),
       }
-      previewCall(body).then(
+      const {
+        previewCall: preview,
+        pendingText: pending,
+        onPendingConflict: onConflict,
+        t: tr,
+      } = latest.current
+      preview(body).then(
         (res) => {
           if (seq.current !== mine) return
           setPreview(res)
@@ -178,13 +191,13 @@ export function GroupExceptionDialog({
           setPreview(null)
           setPreviewing(false)
           if (isPendingConflict(err)) {
-            setPreviewError(pendingText)
-            void onPendingConflict?.()
+            setPreviewError(pending)
+            void onConflict?.()
           } else {
             setPreviewError(
               getErrorMessage(
                 err,
-                t('findingApprovals.group.previewFailed', 'Could not preview this exception.')
+                tr('findingApprovals.group.previewFailed', 'Could not preview this exception.')
               )
             )
           }
@@ -192,9 +205,6 @@ export function GroupExceptionDialog({
       )
     }, PREVIEW_DEBOUNCE_MS)
     return () => clearTimeout(timer)
-    // pendingText and onPendingConflict are stable enough; re-running on them
-    // would re-request the preview on every render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, targetKey, status, reason, expiresIso, expiryValid])
 
   const evaluation = preview?.evaluation
