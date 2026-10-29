@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-10-28). Shipped in sdk-go (in review): the harness core (`pkg/harness`), pinned copies of the `openctem.analyze/v1` schemas, the playbook format `openctem.io/playbook/v1` with a sample, the eval harness and `openctem playbook init\|test`. The worker lives in the private repository `openctemio/ai-worker` (scaffold: configuration, playbooks with their golden sets, the eval gate in CI, a signed image). Designed: provider adapters, the sensorkit ai-worker role, the platform AI worker pool, the agent manifest and routing, safe rollout, the AI's own tool sandbox, memory and knowledge retrieval, inbound channels |
+| Status | Accepted (2026-10-28). Shipped in sdk-go (in review): the harness core (`pkg/harness`), pinned copies of the `openctem.analyze/v1` schemas, the playbook format `openctem.io/playbook/v1` with a sample, the eval harness and `openctem playbook init\|test`. The worker lives in the private repository `openctemio/ai-worker` (scaffold: configuration, playbooks with their golden sets, the eval gate in CI, a signed image). In review in `openctemio/ai-worker`: the model provider core and adapters for five wire families (§6a). Designed: the sensorkit ai-worker role, the platform AI worker pool, the agent manifest and routing, safe rollout, the AI's own tool sandbox, memory and knowledge retrieval, inbound channels |
 | Scope | sdk-go (harness, contract copies, playbooks, evals, CLI, ai-worker role), api (analyze command, grant builder, lanes and affinity, limits, routing, rollout, playbook content), `openctemio/ai-worker` (the AI worker image) and sensor, web (playbook editor, agent comparison), docs |
 | Architecture | [ai-harness.md](../architecture/ai-harness.md), [ai-analyze-contract.md](../architecture/ai-analyze-contract.md) |
 | Related | RFC-135 (AI agents that organizations build: revisions, lifecycle, registry, console), RFC-131 (AI analysis, analyze contract), RFC-132 (the AI agent as a service account with accountable owners), RFC-030 (scan work distribution), RFC-129 (shared fleet scheduling), RFC-040 (mutual distrust, signed jobs), RFC-094 (the platform depends on contracts only), RFC-099 (signed content catalog) |
@@ -211,6 +211,270 @@ stateDiagram-v2
 - Shadow runs are recorded, never shown and never applied.
 - A swap only changes routing weights, so in-flight runs finish on their version.
 
+## 6a. Model providers
+
+The adapters live in `openctemio/ai-worker` (`internal/llm`), on top of the sdk-go `harness.Provider` interface,
+which stays unchanged. They are plain HTTP clients. A vendor library is used only where it saves real work and only
+inside one adapter: the AWS SDK for credentials and SigV4, and `golang.org/x/oauth2/google` for Google identities.
+
+### 6a.1 Adapter families
+
+| Family | Wire API | Providers (presets) |
+|---|---|---|
+| OpenAI | Chat Completions and Responses | OpenAI; Azure OpenAI (a deployment with `api-version`, or the v1 API); hosted OpenAI-compatible endpoints: DeepSeek, Mistral, xAI, Groq, Together, Fireworks, OpenRouter, Perplexity, Qwen (DashScope), Kimi (Moonshot), GLM (Z.ai), Cerebras, LiteLLM; local servers: Ollama, vLLM, LM Studio, llama.cpp server, TGI; `openai_compatible` for anything else |
+| Anthropic | Messages | Anthropic API; Claude on Vertex AI (`rawPredict`) |
+| Gemini | generateContent | Gemini API (API key); Vertex AI (Google identity) |
+| Bedrock | Converse | Every Bedrock model, Claude included (SigV4) |
+| Cohere | Chat v2 | Cohere |
+
+A preset is data, not code. Each preset records:
+
+- its family and default endpoint;
+- the egress host allowlist, with `{region}`/`{location}` templates for Bedrock and Vertex;
+- the credential kinds it accepts;
+- how retention is controlled;
+- default capabilities.
+
+A new OpenAI-compatible provider is a preset entry, not a new adapter.
+
+### 6a.2 Capability matrix
+
+Capabilities per model:
+
+- tool calling and parallel tools;
+- structured output: `none`, `json_object` or `json_schema`;
+- streaming;
+- prompt caching: `none`, `automatic` or `explicit`;
+- vision;
+- a system role;
+- temperature;
+- context window and max output;
+- reasoning control: `none`, `effort` or `budget`.
+
+Presets declare conservative defaults. The console overrides them per model, for example a local model without tool
+calling or a smaller window. "Test connection" in the console discovers what the provider's model listing reports;
+a worker never probes at run time.
+
+| Family | Tools | Schema output | Prompt cache | Reasoning control | Retention control |
+|---|---|---|---|---|---|
+| OpenAI (first party) | native, parallel | `json_schema` | automatic + per-tenant cache key | effort | request flag (`store: false`) |
+| Azure OpenAI | native | `json_schema` | automatic | effort | account (attested) |
+| Hosted OpenAI-compatible | native | `json_object` or `json_schema` per preset | some automatic | none | account; OpenRouter request flag |
+| Local servers | native (model-dependent) | `json_object`/`json_schema` per server | server-side | none | local |
+| `openai_compatible` | none until declared (prompted) | none until declared | none | none | account |
+| Anthropic / Claude on Vertex | native, parallel | `json_schema` (direct API) | explicit (`cache_control`) | effort | account |
+| Gemini / Vertex | native | `json_schema` | automatic | budget or level | account |
+| Bedrock Converse | native | none (prompt) | none | none | account |
+| Cohere | native | `json_schema` | none | none | account |
+
+### 6a.3 Degradation
+
+A model that lacks a feature runs on a weaker but validated path. The weaker path never widens what a call may do:
+every tool call still passes the grant policy and the tool's input schema, and every answer still passes the closed
+output schema.
+
+| Missing | Rule |
+|---|---|
+| Native tool calling | Tools are described in the system prompt. The model answers with `{"tool_calls":[{"name":...,"args":{...}}]}`, and earlier tool turns are replayed as text. Call IDs are derived from the turn, so a replay is identical. |
+| Schema output | `json_object` mode plus the schema in the prompt, or the prompt alone; the harness validates and allows one repair turn. With tools offered, native schema modes are used only where the provider supports both together (first-party OpenAI). Elsewhere the schema is enforced on the tool-free final call. |
+| System role | The system prompt becomes a fenced first user turn. |
+| Temperature | Omitted. |
+| Max output | `max_tokens` is clamped to the model's limit. |
+| Context window | A request that cannot fit fails before it is sent (`context_length`), and the chain may move to a larger model. |
+| Prompt caching | The cache key is ignored. |
+
+Provider state the harness message has no field for is kept by the adapter for the job: Anthropic thinking blocks,
+Gemini thought signatures and Bedrock reasoning blocks. The adapter stores the assistant turn verbatim, keyed by a
+digest of the turn, and sends it back unchanged, so history stays append-only. A resume from the run record loses this
+state; an opaque `Message.ProviderState` in sdk-go would make it durable (§14, owner question).
+
+The harness `Provider` is request/response. Adapters do not stream, and the per-attempt timeout bounds a call.
+
+### 6a.4 Credentials and authentication
+
+Policy always lives in the platform (§6a.8). Credentials come from one of three sources, set per provider in the
+console:
+
+1. **Platform-managed (default).** The key is stored encrypted, write-only and covered by rekeying. It is delivered
+   just in time inside the signed job, or fetched with the job token over mTLS. The worker holds it in memory for that
+   job only, never writes it to disk or logs, and wipes it when the job ends. Keys are rotated and revoked centrally,
+   and each use is audited.
+2. **Worker-held (opt-in, self-hosted or regulated).** The key, or better a cloud identity, stays on the tenant's
+   worker. The worker operator binds it in the worker's own credentials file (`openctem.io/ai-worker-credentials/v1`)
+   as an environment variable named `AI_WORKER_PROVIDER_KEY_*`, a file re-read at each use, or a keyless identity.
+   A platform setting can never point the worker at another local secret. The worker manifest advertises the provider
+   with `credential_source: worker`, and the platform routes those jobs only to that worker.
+3. **Platform-provided (SaaS).** OpenCTEM's own keys, with per-tenant quotas and billing. The delivery path is the
+   same as in (1).
+
+Keyless identities are preferred wherever the provider supports them:
+
+- **AWS** (Bedrock): the default chain (instance or task role, EKS IRSA or pod identity), optionally assuming a role
+  with an external ID.
+- **Google** (Vertex AI): workload identity federation, a service account file, or the metadata server.
+- **Azure** (Azure OpenAI): a managed identity through the instance metadata endpoint, or AKS workload identity.
+
+Local models are registered in the console as an endpoint reachable from a named worker or pool, usually with no
+secret.
+
+| Family | Authentication |
+|---|---|
+| OpenAI and compatible | `Authorization: Bearer`; Azure `api-key` header or a bearer token (Entra ID or managed identity); none for local |
+| Anthropic | `x-api-key` + `anthropic-version`; on Vertex a Google bearer token |
+| Gemini | `x-goog-api-key` header (never the `?key=` query parameter); on Vertex a Google bearer token |
+| Bedrock | SigV4 with job-delivered keys or the worker's AWS identity, optional role assumption |
+| Cohere | `Authorization: Bearer` |
+
+### 6a.5 Network, retries and rate limits
+
+Every adapter uses one HTTP client with these properties:
+
+- TLS 1.2 or later, always verified. A private CA can be added, but verification can never be turned off.
+- Redirects are refused, because a redirect could carry a credential header to another host.
+- The host allowlist is checked on every request, and the worker manifest publishes the same list for the egress
+  forwarder.
+- A dial-time address check runs after DNS resolution. Metadata and link-local addresses are always refused.
+  Private and loopback addresses are allowed only when the provider entry asks for a private network *and* the
+  worker operator allowed private model endpoints at bootstrap; platform-owned workers never allow them. Plain http
+  only reaches internal addresses.
+- A per-attempt timeout (default 120 s, at most 600 s) and a response size cap (default 8 MiB).
+
+Retries cover 408, 429, 5xx, 529 and connection errors. They use full-jitter exponential backoff (500 ms base,
+20 s cap, at most 5 attempts). Retry-After and `retry-after-ms` are honoured up to 60 s, but never past the run's
+deadline: then the chain moves on instead. An exhausted quota is not retried. Rate-limit headers (remaining requests
+and tokens, reset) are reported to the platform's shared token bucket per provider key (§7).
+
+Errors are typed by kind. Provider bodies are read only up to 8 KiB to extract a token-shaped error code, then
+cleared. The error text carries only the provider ID, kind, status, code and attempt count, never a message, body,
+header, URL or credential.
+
+### 6a.6 Tokens and cost
+
+Adapters report input tokens without cache reads, output tokens (thinking tokens included), cache reads and cache
+writes.
+
+Prices are data:
+
+- The `openctem.io/ai-prices/v1` table gives USD per million tokens per preset and model, with prefix entries.
+- The platform owns the authoritative table, recomputes each run's cost from it and may send it with the job. The
+  worker embeds a fallback copy, refreshed at release, and uses it only to enforce the run's cost budget.
+- An unknown model is priced deliberately high, so a cost budget still stops the run; a zero "unknown" price is
+  rejected. Local presets are free. The console can override a model's price (a negotiated rate, or zero for a
+  self-hosted model behind a generic endpoint).
+
+### 6a.7 Region and retention
+
+- **Residency.** Region is a label on each provider entry (for example `eu`). The platform matches it against policy,
+  and the worker refuses fallbacks to another region.
+- **Retention.** Request flags are sent where they exist: `store: false` on first-party OpenAI, and OpenRouter's
+  `data_collection: deny`. Where only the account or contract controls retention, a console admin must attest it
+  before the provider can be used with "no training" or "zero retention".
+
+### 6a.8 Settings schema (what the console stores)
+
+The platform stores provider entries and policy per organization, audited. After applying policy it sends the
+worker an `openctem.io/ai-providers/v1` document per job:
+
+```json
+{
+  "version": "openctem.io/ai-providers/v1",
+  "data_class": "internal",
+  "requirements": {"playbook": "web-vuln-triage@sha256:…", "native_tools": false, "native_schema": false, "min_context_window": 32000},
+  "providers": [{
+    "id": "prov-eu-1", "preset": "azure_openai", "base_url": "https://contoso-eu.openai.azure.com",
+    "api": "chat_completions", "azure": {"api_version": "2024-10-21", "deployments": {"gpt-large": "prod-large"}},
+    "credential": {"source": "worker", "kind": "azure_identity"},
+    "retention": {"no_training": true, "zero_retention": true, "attested": true},
+    "region": "eu", "data_class_ceiling": "restricted",
+    "models": {"gpt-large": {"capabilities": {"context_window": 128000}, "reasoning": "medium"}},
+    "limits": {"timeout_seconds": 120, "max_attempts": 3, "max_response_bytes": 8388608},
+    "private_network": false
+  }],
+  "routing": {
+    "small": [{"provider": "prov-eu-1", "model": "gpt-small", "eval_passed": ["web-vuln-triage@sha256:…"]}],
+    "large": [{"provider": "prov-eu-1", "model": "gpt-large", "max_cost_micro_usd": 500000, "eval_passed": ["…"]}]
+  },
+  "prices": {"version": "openctem.io/ai-prices/v1", "…": "optional platform table"}
+}
+```
+
+Provider-specific blocks are `azure` (deployments, api-version), `bedrock` (region, `role_arn`, `external_id`) and
+`vertex` (project, location). Platform-managed secrets travel separately, inside the signed job, never in this
+document.
+
+Console-only fields stay on the platform and are never sent to a worker:
+
+- the write-only secret;
+- the worker or pool a local endpoint is reachable from;
+- per-tier allowed models;
+- per-role chains;
+- cost budgets;
+- connection-test results.
+
+The worker validates the document again (IDs, hosts against presets, https, credential kinds, regex-checked
+region/project/location/api-version, limits) and never widens it.
+
+### 6a.9 Fallback chains and tier routing
+
+- **Chains.** Each tier (small, large) has an ordered chain of at most 4 targets, chosen per AI agent role by the
+  platform policy. Example: `anthropic/claude` → `openai/gpt` → `bedrock/claude` → `local/qwen`. A missing large tier
+  falls back to small, never the other way round.
+- **Triggers.** The chain falls back on a timeout, a connection error, 5xx, an overloaded response, a rate limit or an
+  exhausted quota (after the retries the run's deadline allows), and a prompt that does not fit.
+  - It does not fall back on a refusal. A refusal is an answer, and asking the next model until one complies would get
+    around a provider's safety decision.
+  - It does not fall back on a policy denial, an auth, permission, credential or egress failure, a request the
+    provider rejects as invalid, or a budget stop. Those fail the run, and the accountable owner is told.
+  - Invalid model output first gets the harness's one repair turn on the same model. Falling back after a failed
+    repair needs a harness hook (planned in sdk-go, §14).
+- **Policy-safe.** Every fallback target must satisfy the primary's constraints. The platform checks them, and the
+  worker checks them again when it builds the chain:
+  - the data-class ceiling;
+  - the residency region;
+  - the retention flags;
+  - locality: a chain that starts on a local or private model never falls back to a hosted one.
+  - Ineligible targets are left out and reported. When no target is left, the run fails cleanly with
+    `no_compatible_provider`.
+- **Capable and evaluated.** A target must support what the playbook needs (native tools, schema mode, context window;
+  the degraded mode is allowed unless the playbook requires native support). It must also have passed that playbook's
+  eval gate (`eval_passed` lists `id@digest`).
+- **Circuit breaker.** There is one breaker per organization, provider and model, shared by every run of the worker.
+  States: closed; open after 3 consecutive fallback-class failures (30 s cool-down, doubling up to 5 min); half-open
+  with one trial call. Open targets are skipped. The worker reports breaker health in its heartbeat so the platform
+  routes around a provider that is down.
+- **Mid-run.** Each model call is one step and carries the whole masked context, so a switch happens only at a step
+  boundary. Nothing is streamed, so partial answers never mix.
+- **Record and alert.**
+  - Each step's response names the target that served it (`provider/model`), and the run record keeps it.
+  - Fallback events (step, from, to, reason) and skipped targets go into the run report, then into the run record and
+    the audit log.
+  - The console shows the fallback rate and cost per provider (precomputed).
+  - The accountable owner is alerted when the fallback rate is high or a breaker stays open.
+- **Cost.** The chain's price follows the target that answered, and it feeds the harness meter, so a fallback can never
+  exceed the run budget. An optional cost cap per target is supported.
+
+### 6a.10 Conformance kit
+
+Every adapter runs the same fixture-driven cases against a local HTTP server that speaks its wire format, with no
+network in CI:
+
+- a tool call round trip inside a real harness run;
+- schema output;
+- a refusal as an answer, not an error;
+- a max-tokens stop;
+- a budget stop, where the final call offers no tools;
+- masking placeholders passed through byte for byte;
+- usage mapping;
+- auth and bad-request errors, typed, not retried, and free of provider text;
+- a rate limit that is retried;
+- an overload that gives up after the attempt limit;
+- the response size cap;
+- cancellation;
+- redaction: the key never reaches an error, a log line or a printed value.
+
+An optional live smoke test per adapter runs only with `AI_WORKER_LIVE_SMOKE=1` and `AI_WORKER_SMOKE_<NAME>_*`
+variables.
+
 ## 7. Scale on the job system
 
 | Need | Mechanism |
@@ -352,6 +616,12 @@ A second member approves the release.
 | Fence forgery, hidden characters | nonce removed from data; format characters stripped | `TestFenceCannotBeClosedFromInside` (shipped) |
 | Cross-tenant prompt cache | tenant-derived cache key | `TestRunCacheKeyIsPerOrganization` (shipped) |
 | Provider error text leaking | fixed codes | `TestRunProviderErrorTextNeverReachesTheResult` (shipped) |
+| A tenant base URL reaches metadata or the platform network | dial-time address check after DNS; private addresses only with operator permission; metadata always refused; host allowlist | `TestEgressRefusesMetadataAndPrivateByDefault`, `TestBuildRefuses` (ai-worker) |
+| A model key leaks to logs, audit or results | `Secret` redaction; errors carry no provider text; keys only in headers | conformance `key_never_printed_or_logged`, `TestSecretNeverPrints` (ai-worker) |
+| A platform setting makes a worker send a local secret | worker-held credentials come only from the operator's file, with a fixed variable prefix | `TestWorkerBindings` (ai-worker) |
+| Fallback widens where data goes | eligibility against the primary's data class, region, retention and locality | `TestBuildDropsPolicyIncompatibleTargets`, `TestBuildNeverFallsBackFromLocalToHosted` (ai-worker) |
+| Refusal shopping across a chain | a refusal ends the chain | `TestChainNeverMovesOnAfterARefusal` (ai-worker) |
+| One tenant's failing key takes another tenant's provider down on a shared worker | breakers keyed by organization | `TestBreakersAreScopedToTheTenant` (ai-worker) |
 | Contract drift | sha256-pinned copies | `TestSchemasArePinnedCopiesOfThePlatformContract` (shipped) |
 | Another tenant's worker claims or opens a job | per-tenant claim; shared pool platform-owned only; bundle sealed at claim | integration (planned) |
 | A malicious own or external agent | private registry, conformance, re-validation of every result, trust downgrade, data class ceiling | hostile-agent conformance (planned) |
@@ -377,6 +647,8 @@ The full list D1-D36 is in research/327 §14. These are the ones that bind imple
 - shared schemas and formats, not shared code;
 - host key + unique index for one run per subject;
 - provider token bucket and tenant limit keys;
+- model provider adapters in `openctemio/ai-worker`, policy in the platform, credentials per job (platform-managed,
+  worker-held or platform-provided), policy-safe fallback chains with shared circuit breakers (§6a);
 - `openctem.io/agent/v1` in the sensor manifest;
 - routing, shadow, canary and rollback in the platform;
 - own tool sandbox on lane `interactive` with self-affinity;
@@ -392,8 +664,14 @@ The full list D1-D36 is in research/327 §14. These are the ones that bind imple
   - harness core, contract copies, playbook format and sample;
   - eval harness and `openctem playbook init|test` with a golden set.
 - **Scaffolded:** `openctemio/ai-worker` (private): `cmd/ai-worker` wires configuration and playbook pin checks and marks where the claim and lease, the signed grant and the result plug in; `playbooks/` with golden sets and the CI eval gate; distroless non-root multi-arch image, signed (cosign keyless) with SBOM; security gate and release pipeline as in sensor.
+- **In review (`openctemio/ai-worker`):** the model provider core (settings, presets, credentials, hardened client,
+  retries, prices, degradation, policy-safe fallback with circuit breakers, conformance kit) and the OpenAI-family,
+  Anthropic, Gemini, Bedrock and Cohere adapters (§6a).
 - **Next:**
-  1. provider adapters with tool use;
+  1. sdk-go: an opaque `Message.ProviderState` so thinking blocks and signatures survive a resume, and a hook to fall
+     back after a failed repair turn; platform: provider entries and policy in the console (write-only keys, test
+     connection), per-job settings and key delivery, breaker health from heartbeats, fallback rate and cost per
+     provider;
   2. the sensorkit ai-worker role (claim, digests, sealed bundle, job-token read tools, tool tasks, signed results,
      hostile-model conformance);
   3. platform:
