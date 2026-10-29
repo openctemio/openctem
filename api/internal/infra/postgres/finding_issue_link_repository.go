@@ -21,6 +21,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/pkg/domain/issuelink"
+	"github.com/openctemio/openctem/api/pkg/domain/scoring"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
@@ -28,7 +29,15 @@ import (
 // FindingIssueLinkRepository stores link keys and same-issue links.
 type FindingIssueLinkRepository struct {
 	db *DB
+	// queue, when set, gets the asset of a version match an active check
+	// just confirmed, so its priority is scored again without the cap that
+	// holds an unconfirmed banner match at P2.
+	queue scoring.PriorityQueue
 }
+
+// SetPriorityQueue wires the finding priority queue (nil: a confirmation
+// still marks the finding, and the next sweep scores it).
+func (r *FindingIssueLinkRepository) SetPriorityQueue(q scoring.PriorityQueue) { r.queue = q }
 
 var _ ingest.IssueLinkStore = (*FindingIssueLinkRepository)(nil)
 
@@ -44,12 +53,16 @@ type IssueLinkDerivation struct {
 	Linked   int `json:"linked"`
 	Released int `json:"released"`
 	Crowded  int `json:"crowded"`
+	// Confirmed counts version-match findings an active check confirmed.
+	Confirmed int `json:"confirmed"`
 }
 
-// linkableFindingSQL selects the findings that can have link keys: version-2 SAST
-// and secret findings that are live (not a tombstone, not branch-only).
-const linkableFindingSQL = `f.status <> 'duplicate' AND NOT f.branch_only
-	AND f.identity_key IS NOT NULL AND f.identity_key->>'kind' IN ('sast', 'secret')`
+// linkableFindingSQL selects the findings that can have link keys: version-2
+// SAST and secret findings, and network, DAST and SCA findings with a CVE
+// (never a pentest finding), that are live (not a tombstone, not branch-only).
+const linkableFindingSQL = `f.status <> 'duplicate' AND NOT f.branch_only AND f.source <> 'pentest'
+	AND f.identity_key IS NOT NULL AND (f.identity_key->>'kind' IN ('sast', 'secret')
+		OR (f.identity_key->>'kind' IN ('network', 'dast', 'sca') AND UPPER(COALESCE(f.cve_id, '')) LIKE 'CVE-%'))`
 
 // The linkable findings of a tenant: all of them, or those under the
 // fingerprints or ids in $2.
@@ -157,6 +170,7 @@ func (r *FindingIssueLinkRepository) derive(ctx context.Context, tenantID shared
 	ids := make([]string, 0, len(batch))
 	var kKeys, kFindings, kKinds []string
 	var kStart, kEnd []sql.NullInt64
+	var kLoc []sql.NullString
 	for _, f := range batch {
 		ids = append(ids, f.ID)
 		for _, k := range issuelink.Keys(f) {
@@ -170,6 +184,7 @@ func (r *FindingIssueLinkRepository) derive(ctx context.Context, tenantID shared
 				kStart = append(kStart, sql.NullInt64{})
 				kEnd = append(kEnd, sql.NullInt64{})
 			}
+			kLoc = append(kLoc, sql.NullString{String: k.Locator, Valid: k.Locator != ""})
 		}
 	}
 	res.Keys = len(kKeys)
@@ -179,11 +194,11 @@ func (r *FindingIssueLinkRepository) derive(ctx context.Context, tenantID shared
 	}
 	if len(kKeys) > 0 {
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO finding_link_keys (tenant_id, finding_id, kind, key, start_line, end_line)
-			SELECT $1, u.finding_id, u.kind, u.key, u.start_line, u.end_line
-			FROM unnest($2::uuid[], $3::text[], $4::text[], $5::int[], $6::int[]) AS u(finding_id, kind, key, start_line, end_line)
+			INSERT INTO finding_link_keys (tenant_id, finding_id, kind, key, start_line, end_line, locator)
+			SELECT $1, u.finding_id, u.kind, u.key, u.start_line, u.end_line, u.locator
+			FROM unnest($2::uuid[], $3::text[], $4::text[], $5::int[], $6::int[], $7::text[]) AS u(finding_id, kind, key, start_line, end_line, locator)
 			ON CONFLICT DO NOTHING`,
-			tenant, pq.Array(kFindings), pq.Array(kKinds), pq.Array(kKeys), nullIntArray(kStart), nullIntArray(kEnd)); err != nil {
+			tenant, pq.Array(kFindings), pq.Array(kKinds), pq.Array(kKeys), nullIntArray(kStart), nullIntArray(kEnd), pq.GenericArray{A: kLoc}); err != nil {
 			return res, fmt.Errorf("store link keys: %w", err)
 		}
 	}
@@ -224,10 +239,129 @@ func (r *FindingIssueLinkRepository) derive(ctx context.Context, tenantID shared
 			res.Linked++
 		}
 	}
+	confirmed, err := confirmVersionMatches(ctx, tx, tenant, involved)
+	if err != nil {
+		return res, err
+	}
+	res.Confirmed = len(confirmed)
 	if err := tx.Commit(); err != nil {
 		return res, fmt.Errorf("commit issue links: %w", err)
 	}
+	r.requeueConfirmed(ctx, tenantID, confirmed)
 	return res, nil
+}
+
+// requeueConfirmed queues the assets of the confirmed version matches for a
+// priority pass. Best-effort: the finding is already marked confirmed, and
+// the periodic sweep scores it too.
+func (r *FindingIssueLinkRepository) requeueConfirmed(ctx context.Context, tenantID shared.ID, assetIDs []string) {
+	if r.queue == nil || len(assetIDs) == 0 {
+		return
+	}
+	ids := make([]shared.ID, 0, len(assetIDs))
+	for _, a := range assetIDs {
+		if id, err := shared.IDFromString(a); err == nil {
+			ids = append(ids, id)
+		}
+	}
+	_ = r.queue.EnqueueAssets(ctx, tenantID, ids, scoring.ReasonFindingChange)
+}
+
+// confirmVersionMatches marks, as confirmed, the open version-match findings
+// of the same-issue groups (vuln_asset links) the findings belong to, when
+// another open member is an active check: a template or a network scanner
+// report of the same CVE on the same asset. A package inventory (SCA) is not
+// an active check. The mark is evidence about the version match, recorded
+// with the confirming finding and tool; it never changes a status. It returns
+// the asset ids of the findings it marked.
+func confirmVersionMatches(ctx context.Context, tx *sql.Tx, tenant string, ids []string) ([]string, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	//nolint:gosec // G202: OpenStatusSQL is a fixed predicate over a literal column name
+	query := `
+		WITH grp AS (
+			SELECT DISTINCT l.primary_id FROM finding_issue_links l
+			WHERE l.tenant_id = $1 AND l.state = 'active' AND l.rule = 'vuln_asset'
+			  AND (l.primary_id = ANY($2::uuid[]) OR l.member_id = ANY($2::uuid[]))),
+		mem AS (
+			SELECT g.primary_id AS gid, g.primary_id AS fid FROM grp g
+			UNION
+			SELECT l.primary_id, l.member_id FROM finding_issue_links l
+			JOIN grp g ON g.primary_id = l.primary_id
+			WHERE l.tenant_id = $1 AND l.state = 'active'),
+		confirmer AS (
+			SELECT DISTINCT ON (m.gid) m.gid, c.id, COALESCE(c.tool_name, '') AS tool
+			FROM mem m JOIN findings c ON c.tenant_id = $1 AND c.id = m.fid
+			WHERE COALESCE(c.tool_name, '') <> 'version-match' AND NOT c.branch_only AND c.source <> 'pentest'
+			  AND c.identity_key->>'kind' IN ('dast', 'network')
+			  AND ` + vulnerability.OpenStatusSQL("c.status") + `
+			ORDER BY m.gid, c.created_at, c.id)
+		UPDATE findings v
+		SET metadata = jsonb_set(COALESCE(v.metadata, '{}'::jsonb), '{version_match,confirmed_by}',
+				jsonb_build_object('finding_id', cf.id, 'tool', cf.tool, 'at', to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'))),
+			updated_at = NOW()
+		FROM mem m
+		JOIN confirmer cf ON cf.gid = m.gid
+		WHERE v.tenant_id = $1 AND v.id = m.fid AND v.tool_name = 'version-match'
+		  AND v.metadata ? 'version_match' AND jsonb_typeof(v.metadata->'version_match') = 'object'
+		  AND v.metadata->'version_match'->'confirmed_by' IS NULL
+		  AND ` + vulnerability.OpenStatusSQL("v.status") + `
+		RETURNING COALESCE(v.asset_id::text, '')`
+	rows, err := tx.QueryContext(ctx, query, tenant, pq.Array(ids))
+	if err != nil {
+		return nil, fmt.Errorf("confirm version matches: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []string
+	for rows.Next() {
+		var a string
+		if err := rows.Scan(&a); err != nil {
+			return nil, fmt.Errorf("scan confirmed version match: %w", err)
+		}
+		if a != "" {
+			out = append(out, a)
+		}
+	}
+	return out, rows.Err()
+}
+
+// ReportedByOpenGroup returns, of the findings ids, those that are members
+// of a vuln_asset group whose primary is open and that raise no new
+// signal: the issue is already open and reported. A member more severe than
+// every other finding of its group is not returned: a higher severity alerts.
+// Tenant-scoped; nothing about the group leaves the store.
+func (r *FindingIssueLinkRepository) ReportedByOpenGroup(ctx context.Context, tenantID shared.ID, ids []string) (map[string]bool, error) {
+	out := map[string]bool{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	//nolint:gosec // G202: OpenStatusSQL is a fixed predicate over a literal column name
+	query := `
+		SELECT m.id::text
+		FROM finding_issue_links l
+		JOIN findings m ON m.tenant_id = l.tenant_id AND m.id = l.member_id
+		JOIN findings p ON p.tenant_id = l.tenant_id AND p.id = l.primary_id
+		WHERE l.tenant_id = $1 AND l.state = 'active' AND l.rule = 'vuln_asset' AND l.member_id = ANY($2::uuid[])
+		  AND ` + vulnerability.OpenStatusSQL("p.status") + `
+		  AND NOT (dash_severity_rank(m.severity) < (
+			SELECT min(dash_severity_rank(o.severity)) FROM findings o
+			WHERE o.tenant_id = l.tenant_id AND o.id <> m.id
+			  AND (o.id = l.primary_id OR o.id IN (SELECT x.member_id FROM finding_issue_links x
+			       WHERE x.tenant_id = l.tenant_id AND x.primary_id = l.primary_id AND x.state = 'active'))))`
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), pq.Array(ids))
+	if err != nil {
+		return nil, fmt.Errorf("read reported findings: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan reported finding: %w", err)
+		}
+		out[id] = true
+	}
+	return out, rows.Err()
 }
 
 func execRows(ctx context.Context, tx *sql.Tx, q string, args ...any) (int64, error) {
@@ -275,6 +409,8 @@ func loadLinkable(ctx context.Context, tx *sql.Tx, query string, args ...any) ([
 			f.CWEs = cwes
 		case vulnerability.IdentityKindSecret:
 			f.SecretHMAC = k.Field("secret")
+		case vulnerability.IdentityKindNetwork, vulnerability.IdentityKindDAST, vulnerability.IdentityKindSCA:
+			f.CVE, f.Locator = issuelink.VulnSignal(k.Kind, k.Field("vuln"), k.Field("rule"), k.Field("port"), k.Field("url"))
 		}
 		out = append(out, f)
 	}
@@ -302,11 +438,12 @@ func loadHolders(ctx context.Context, tx *sql.Tx, tenant string, keys []string, 
 			SELECT k.key FROM finding_link_keys k
 			WHERE k.tenant_id = $1 AND k.key = ANY($2)
 			GROUP BY k.key HAVING count(*) <= $3)
-		SELECT k.key, k.kind, k.finding_id, COALESCE(f.rule_id, ''), COALESCE(k.start_line, 0), COALESCE(k.end_line, 0), f.created_at
+		SELECT k.key, k.kind, k.finding_id, COALESCE(f.rule_id, ''), COALESCE(k.start_line, 0), COALESCE(k.end_line, 0), f.created_at,
+		       COALESCE(f.identity_key->>'kind', ''), COALESCE(k.locator, '')
 		FROM finding_link_keys k
 		JOIN ok ON ok.key = k.key
 		JOIN findings f ON f.id = k.finding_id AND f.tenant_id = k.tenant_id
-		WHERE k.tenant_id = $1 AND f.status <> 'duplicate' AND NOT f.branch_only`,
+		WHERE k.tenant_id = $1 AND f.status <> 'duplicate' AND NOT f.branch_only AND f.source <> 'pentest'`,
 		tenant, pq.Array(keys), issuelink.MaxHolders)
 	if err != nil {
 		return 0, fmt.Errorf("load link key holders: %w", err)
@@ -315,7 +452,7 @@ func loadHolders(ctx context.Context, tx *sql.Tx, tenant string, keys []string, 
 	for rows.Next() {
 		var key, kind string
 		var h issuelink.Holder
-		if err := rows.Scan(&key, &kind, &h.FindingID, &h.Rule, &h.StartLine, &h.EndLine, &h.CreatedAt); err != nil {
+		if err := rows.Scan(&key, &kind, &h.FindingID, &h.Rule, &h.StartLine, &h.EndLine, &h.CreatedAt, &h.Kind, &h.Locator); err != nil {
 			return 0, fmt.Errorf("scan link key holder: %w", err)
 		}
 		in.Holders[key] = append(in.Holders[key], h)
@@ -406,6 +543,20 @@ func makeIssueLink(ctx context.Context, tx *sql.Tx, tenant string, l issuelink.L
 		WHERE m.tenant_id = $1 AND m.id = $2::uuid AND m.asset_id IS NOT DISTINCT FROM p.asset_id`,
 		tenant, l.MemberID, changes, "Linked as the same issue as finding "+l.PrimaryID, l.PrimaryID); err != nil {
 		return false, fmt.Errorf("record issue link activity: %w", err)
+	}
+	if l.Rule == issuelink.RuleVulnAsset {
+		// The original learns that another technique saw the issue too.
+		// Both findings are on one asset (the key includes it).
+		pc, _ := json.Marshal(map[string]any{"member_id": l.MemberID, "rule": l.Rule})
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO finding_activities (tenant_id, finding_id, activity_type, actor_type, changes, source, message)
+			SELECT $1, p.id, 'detected_by_another_source', 'system', $3, 'issue_link',
+			       'Also detected by ' || COALESCE(NULLIF(m.tool_name, ''), 'another source') || ' (finding ' || m.id::text || ')'
+			FROM findings p JOIN findings m ON m.tenant_id = p.tenant_id AND m.id = $2::uuid
+			WHERE p.tenant_id = $1 AND p.id = $4::uuid AND m.asset_id IS NOT DISTINCT FROM p.asset_id`,
+			tenant, l.MemberID, pc, l.PrimaryID); err != nil {
+			return false, fmt.Errorf("record detected-by-another-source activity: %w", err)
+		}
 	}
 	return true, nil
 }
@@ -573,6 +724,7 @@ func (r *FindingIssueLinkRepository) BackfillLinks(ctx context.Context, tenantID
 			rep.Linked += d.Linked
 			rep.Released += d.Released
 			rep.Crowded += d.Crowded
+			rep.Confirmed += d.Confirmed
 			after = ids[len(ids)-1]
 		}
 	}
@@ -597,7 +749,7 @@ func (r *FindingIssueLinkRepository) planTenant(ctx context.Context, tenantID sh
 		in.Created[f.ID] = f.CreatedAt
 		for _, k := range issuelink.Keys(f) {
 			rep.Keys++
-			in.Holders[k.Key] = append(in.Holders[k.Key], issuelink.Holder{FindingID: f.ID, Rule: f.Rule, StartLine: k.StartLine, EndLine: k.EndLine, CreatedAt: f.CreatedAt})
+			in.Holders[k.Key] = append(in.Holders[k.Key], issuelink.Holder{FindingID: f.ID, Rule: f.Rule, StartLine: k.StartLine, EndLine: k.EndLine, CreatedAt: f.CreatedAt, Kind: f.Kind, Locator: k.Locator})
 			in.KeyKinds[k.Key] = k.Kind
 		}
 	}

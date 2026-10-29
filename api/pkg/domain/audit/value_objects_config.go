@@ -6,6 +6,12 @@ package audit
 // (internal/app/audit.DiffChanges).
 const (
 	ActionInvitationResent Action = "invitation.resent"
+	// ActionInvitationLinkRegenerated: an administrator copied a new link for
+	// an invitation (the token rotated, nothing was emailed).
+	ActionInvitationLinkRegenerated Action = "invitation.link_regenerated"
+	// ActionInvitationRenewed: an expired invitation got a new lifetime and a
+	// new link.
+	ActionInvitationRenewed Action = "invitation.renewed"
 
 	ActionSCIMTokenCreated Action = "scim_token.created"
 	ActionSCIMTokenRevoked Action = "scim_token.revoked"
@@ -71,6 +77,8 @@ const (
 
 var configActions = map[Action]struct{}{
 	ActionInvitationResent:                {},
+	ActionInvitationLinkRegenerated:       {},
+	ActionInvitationRenewed:               {},
 	ActionSCIMTokenCreated:                {},
 	ActionSCIMTokenRevoked:                {},
 	ActionSCIMTokenRotated:                {},

@@ -28,7 +28,9 @@ func (r *stepUpdates) GetByScanRunID(context.Context, shared.ID) ([]*scanrun.Ste
 
 type statsRunRepo struct{ scanrun.RunRepository }
 
-func (statsRunRepo) UpdateStats(context.Context, shared.ID, int, int, int, int) error { return nil }
+func (statsRunRepo) UpdateStats(context.Context, shared.ID, shared.ID, int, int, int, int) error {
+	return nil
+}
 func (statsRunRepo) UpdateStatus(context.Context, shared.ID, scanrun.RunStatus, string) error {
 	return nil
 }

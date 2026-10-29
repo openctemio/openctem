@@ -25,6 +25,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/platformai"
 	"github.com/openctemio/openctem/api/internal/app/platformalert"
 	"github.com/openctemio/openctem/api/internal/app/platformcaptcha"
+	"github.com/openctemio/openctem/api/internal/app/platformmfa"
 	"github.com/openctemio/openctem/api/internal/app/platformsociallogin"
 	"github.com/openctemio/openctem/api/internal/app/storagequota"
 	"github.com/openctemio/openctem/api/internal/app/threatsource"
@@ -65,6 +66,7 @@ type AdminPlatformSettingsHandler struct {
 	ThreatSource    *threatsource.Service
 	ThreatReadiness ThreatIntelReadiness
 	SocialLogin     *platformsociallogin.Service
+	MFA             *platformmfa.Service
 	// Signup answers the sign-up policy the social login page states the
 	// impact of a provider against (optional).
 	Signup     signupdom.PolicySource
@@ -406,6 +408,97 @@ func (h *AdminPlatformSettingsHandler) UpdateStorageQuota(w http.ResponseWriter,
 		return
 	}
 	writeJSON(w, http.StatusOK, h.quotaResponse(r.Context(), s))
+}
+
+// ---- Two-factor floor ---------------------------------------------------------
+
+// MFAFloorResponse is the platform's two-factor floor.
+type MFAFloorResponse struct {
+	// Floor: none, admins or everyone. "admins" means owners, administrators
+	// and members holding a privileged role.
+	Floor string `json:"floor"`
+	// Source: console, migration or default.
+	Source string `json:"source"`
+	// Default is the floor while nothing is stored.
+	Default           string `json:"default"`
+	EnvVar            string `json:"env_var"`
+	GraceExistingDays int    `json:"grace_days_existing"`
+	GraceNewDays      int    `json:"grace_days_new"`
+	// EffectiveFrom is when the floor came into force; the grace period of
+	// existing members counts from it.
+	EffectiveFrom string `json:"effective_from,omitempty"`
+	// RecommendRaise is true on an upgraded install still on the seeded
+	// "none": the console recommends "admins".
+	RecommendRaise bool `json:"recommend_raise"`
+	Version        int  `json:"version"`
+	SettingChange
+}
+
+// UpdateMFAFloorRequest changes the floor. Grace days omitted keep the
+// current values.
+type UpdateMFAFloorRequest struct {
+	Floor             string `json:"floor"`
+	GraceExistingDays *int   `json:"grace_days_existing,omitempty"`
+	GraceNewDays      *int   `json:"grace_days_new,omitempty"`
+	Reason            string `json:"reason"`
+	Version           int    `json:"version"`
+}
+
+func (h *AdminPlatformSettingsHandler) mfaFloorResponse(ctx context.Context, s platformmfa.Settings) MFAFloorResponse {
+	out := MFAFloorResponse{Floor: string(s.Floor), Source: s.Source, Default: string(s.Default), EnvVar: platformmfa.EnvVar,
+		GraceExistingDays: s.GraceExistingDays, GraceNewDays: s.GraceNewDays, RecommendRaise: s.RecommendRaise,
+		Version: s.Version, SettingChange: h.change(ctx, s.UpdatedAt, s.UpdatedBy)}
+	if !s.EffectiveFrom.IsZero() {
+		out.EffectiveFrom = s.EffectiveFrom.UTC().Format(time.RFC3339)
+	}
+	return out
+}
+
+// GetMFAFloor returns the platform two-factor floor.
+// @Summary      Get the platform two-factor floor
+// @Description  The lowest two-factor requirement of every organization (none, admins, everyone), its grace periods and where the value comes from. Organizations may require more, never less. Any administrator.
+// @Tags         Admin System
+// @Produce      json
+// @Success      200  {object}  MFAFloorResponse
+// @Security     AdminAuth
+// @Router       /admin/settings/auth-mfa [get]
+func (h *AdminPlatformSettingsHandler) GetMFAFloor(w http.ResponseWriter, r *http.Request) {
+	s, err := h.MFA.Get(r.Context())
+	if err != nil {
+		h.writeSettingError(w, "two-factor floor", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, h.mfaFloorResponse(r.Context(), s))
+}
+
+// UpdateMFAFloor changes the platform two-factor floor.
+// @Summary      Change the platform two-factor floor
+// @Description  Super admin with a fresh step-up and a reason. Raising the floor starts a new grace period. Applies without a restart; audited critical, every administrator is told.
+// @Tags         Admin System
+// @Accept       json
+// @Produce      json
+// @Param        request  body      UpdateMFAFloorRequest  true  "Floor"
+// @Success      200  {object}  MFAFloorResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      409  {object}  apierror.Error
+// @Security     AdminAuth
+// @Router       /admin/settings/auth-mfa [put]
+func (h *AdminPlatformSettingsHandler) UpdateMFAFloor(w http.ResponseWriter, r *http.Request) {
+	actor := requireActor(w, r)
+	if actor == nil {
+		return
+	}
+	var req UpdateMFAFloorRequest
+	if !decodeSetting(w, r, &req) {
+		return
+	}
+	s, err := h.MFA.Update(r.Context(), actor, req.Floor, req.GraceExistingDays, req.GraceNewDays, req.Reason, req.Version,
+		middleware.ClientIP(r), r.UserAgent())
+	if err != nil {
+		h.writeSettingError(w, "two-factor floor", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, h.mfaFloorResponse(r.Context(), s))
 }
 
 // ---- Organization mail relay -------------------------------------------------

@@ -391,7 +391,7 @@ flowchart TD
   T --> PIN{Pending, pinned to a stale,<br/>offline or disabled sensor,<br/>routed scan work?}
   PIN -- yes --> UNPIN[Unpin, zone kept]
   T --> PO{dispatch_attempts ≥ 3?}
-  PO -- yes --> FAIL[Failed: Max dispatch attempts exceeded,<br/>the run step fails with the reason]
+  PO -- yes --> FAIL[Failed with every cause named,<br/>the run step fails with the reason]
   E[Every 60 s: expiration checker] --> EX{expires_at passed, or<br/>shared job queued > 60 min?}
   EX -- yes --> EXP[Expired, only if the row is unchanged,<br/>the run step is told]
   RV[Sensor revoked or disabled] --> REL[Held routed work back to pending<br/>without an attempt, other work failed]
@@ -406,6 +406,47 @@ flowchart TD
   sensor, no free slot, hosts busy on the sensor).
 - **Refusal** by a sensor's local policy adds it to `refused_by`; routed work
   goes to another eligible sensor, otherwise it fails with the reason.
+- **Infrastructure failure:** a sensor can fail a command for a reason that is
+  not about the target (the tool crashed or is missing, out of memory or disk,
+  the content pack cannot be read, its own network or resolver failed). Routed
+  scan work then goes to another eligible sensor and the sensors that failed it
+  are excluded (`commands.failed_on`; the claim, the placement explainer and
+  the shared claim all read it). A lost lease adds the old holder to
+  `failed_on` too, when another sensor could take the work (a tenant with one
+  sensor keeps handing the work back to it). The sensor sends the class in the
+  structured `failure` of the fail request (or an infrastructure `error_code`);
+  a sensor that sends neither is read by its message text. The classes, the
+  ones that move and the ones that never move (a fact about the target, the
+  job's own limits, a proxy pool without an endpoint) are in
+  `pkg/domain/command/infra_failure.go`; the decision is
+  `internal/app/command/infra_failure.go`. A command pinned to a sensor by a
+  person and a shared job fail as before.
+- **One budget:** 3 attempts per command for any cause (a lost lease, a
+  refusal, an infrastructure failure; `command.MaxDispatchAttempts`). When it
+  is spent, or no other sensor can take the work, the command fails with every
+  cause named (`commands.attempts`, `failure_class`), and the step carries the
+  matching code (`TOOL_UNAVAILABLE`, `TOOL_CRASHED_ON_INPUT`,
+  `RESOURCE_EXHAUSTED`, `CONTENT_UNAVAILABLE`, `SENSOR_LOST`), never only
+  "max dispatch attempts exceeded".
+- **Fleet stop rule:** when the same tool and content version fails with an
+  infrastructure class on 2 different sensors within 30 minutes
+  (`failure_breakers`, per organization), the command is not moved again and
+  fails with `FLEET_TOOL_FAILURE`; commands with that key fail at their first
+  failure for the next 30 minutes. This caps the load of a bad tool or content
+  release at 2 attempts instead of bouncing every job across the fleet.
+- **Targets that failed on the sensor's side** (`sensor_network_fault`, a name
+  that did not resolve because of the sensor's own resolver) are handed out
+  again as a follow-up command on another sensor (the parent's sensor joins the
+  follow-up's `failed_on`), when another sensor can take it and the budget has
+  room. A fact about the target (unreachable, timeout, name gone), an answer
+  of an edge protection (blocked, challenged), a rate limit, a tool error and
+  the sensor's own egress refusal stay settled: they are never resent from
+  another sensor in the same run. Findings a failed attempt already delivered
+  are kept (they are upserted by fingerprint); a partial attempt never closes
+  findings.
+- Every move is a `requeued` event with the code `moved.<class>` (for example
+  `moved.tool_crashed`, `moved.sensor_offline`); the run page renders a
+  sentence from the code in English and Vietnamese.
 - **Poison:** a command that keeps losing its holder fails after 3 attempts.
 - Two older recovery functions still run on the same tick
   (`recover_stuck_platform_jobs`: shared jobs acknowledged for 30 minutes;
