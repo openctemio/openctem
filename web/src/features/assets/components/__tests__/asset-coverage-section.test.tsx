@@ -42,6 +42,7 @@ const coverage: AssetCoverage = {
       fail_streak: 3,
     },
     { capability: 'resolve.dns', state: 'not_applicable', gap: false, reason: 'resolves' },
+    { capability: 'discover.subdomains', state: 'paused', gap: false, reason: 'not_claimed' },
   ],
 }
 
@@ -63,6 +64,7 @@ describe('AssetCoverageSection', () => {
     expect(screen.getByText('Gap')).toBeInTheDocument()
     expect(screen.getByText('Blocked')).toBeInTheDocument()
     expect(screen.getByText(/the name does not resolve/)).toBeInTheDocument()
+    expect(screen.getByText(/no sensor took its last runs/)).toBeInTheDocument()
   })
 
   it('says a silent target is unreachable from your sensors, naming your own zone when sent', async () => {

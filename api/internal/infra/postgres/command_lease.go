@@ -147,7 +147,25 @@ func (r *CommandRepository) RequeueExpiredLeases(ctx context.Context) ([]command
 		    lease_expires_at = NULL,
 		    dispatch_attempts = c.dispatch_attempts + 1,
 		    `+requeueSQL("c.")+`,
-		    error_message = $1
+		    error_message = $1,
+		    failed_on = CASE
+		        WHEN `+leaseLostRoutedSQL+`
+		         AND NOT (c.failed_on @> ARRAY[expired.old_sensor_id])
+		         AND cardinality(c.failed_on) < 16
+		         AND EXISTS (
+		             SELECT 1 FROM commands
+		             JOIN sensors s ON s.tenant_id = commands.tenant_id
+		             WHERE commands.id = c.id AND commands.tenant_id = c.tenant_id
+		               AND s.id <> expired.old_sensor_id
+		               AND NOT (s.id = ANY(c.failed_on)) AND NOT (s.id = ANY(c.refused_by))
+		               AND `+requeueCandidateSQL+`)
+		        THEN array_append(c.failed_on, expired.old_sensor_id)
+		        ELSE c.failed_on END,
+		    attempts = CASE
+		        WHEN `+leaseLostRoutedSQL+` AND jsonb_array_length(c.attempts) < `+fmt.Sprint(command.MaxInfraAttempts)+`
+		        THEN c.attempts || jsonb_build_array(jsonb_build_object(
+		            'sensor_id', expired.old_sensor_id, 'class', 'infra.sensor_offline', 'at', NOW()))
+		        ELSE c.attempts END
 		FROM (
 			SELECT id, sensor_id AS old_sensor_id, lease_epoch AS old_epoch
 			FROM commands
@@ -164,6 +182,12 @@ func (r *CommandRepository) RequeueExpiredLeases(ctx context.Context) ([]command
 	}
 	return r.collectRequeued(rows)
 }
+
+// leaseLostRoutedSQL is true for a command the platform routed (a scan of
+// a run, held by a sensor of the tenant): its lost lease counts against
+// the sensor that held it. A command addressed to one sensor on purpose,
+// and a shared job, keep going back to where they were.
+var leaseLostRoutedSQL = `(` + routedScanWork("c") + ` AND c.is_platform_job = FALSE AND expired.old_sensor_id IS NOT NULL)`
 
 // collectRequeued reads the (id, tenant, old sensor, old epoch) rows of a
 // re-queue statement and wakes each tenant's streams once.
