@@ -674,7 +674,7 @@ func Register(
 	}
 
 	if h.Certificate != nil {
-		registerCertificateRoutes(router, h.Certificate, authMiddleware, userSync)
+		registerCertificateRoutes(router, h.Certificate, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
 	}
 
 	// Web surface: endpoints under their origin asset (RFC-056)

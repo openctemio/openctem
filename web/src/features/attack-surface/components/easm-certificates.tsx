@@ -28,8 +28,7 @@ import {
 import { FilterChipsRow } from '@/features/shared/components/filter-chips-row'
 import { RemovableFilterChip } from '@/features/shared/components/removable-filter-chip'
 import { useTranslation } from '@/context/i18n-provider'
-import { useSearchQuery } from '@/hooks/use-search-query'
-import { useUrlFilter } from '@/hooks/use-url-param'
+import { useListParams } from '@/hooks/use-list-params'
 import { downloadCsv } from '@/hooks/use-csv-export'
 import { formatDateSafe } from '@/lib/format-date'
 import { copyToClipboard } from '@/lib/clipboard'
@@ -188,21 +187,23 @@ function useColumns(): ColumnDef<CertificateRow>[] {
 export function EASMCertificates() {
   const { t } = useTranslation()
   const canRead = useHasPermission(Permission.AssetsRead)
-  const [q, setQ] = useUrlFilter('q', '')
-  const searchTerm = useSearchQuery(q).term
-  const [statusParam, setStatus] = useUrlFilter('status', '')
+  const {
+    q,
+    searchTerm,
+    setSearch,
+    filters: urlFilters,
+    setFilter,
+    pagination,
+    setPagination,
+  } = useListParams({
+    pageSizes: PAGE_SIZES,
+    defaultPageSize: 20,
+    filters: { status: '' },
+  })
+  const statusParam = urlFilters.status
   const status: CertificateStatus | undefined = isCertificateStatus(statusParam)
     ? statusParam
     : undefined
-  const [pageParam, setPageParam] = useUrlFilter('page', '1')
-  const [perPageParam, setPerPageParam] = useUrlFilter('per_page', '20')
-  const pagination = useMemo(
-    () => ({
-      pageIndex: Math.max(0, (parseInt(pageParam, 10) || 1) - 1),
-      pageSize: PAGE_SIZES.includes(parseInt(perPageParam, 10)) ? parseInt(perPageParam, 10) : 20,
-    }),
-    [pageParam, perPageParam]
-  )
   const filters: CertificateFilters = useMemo(
     () => ({ q: searchTerm, status }),
     [searchTerm, status]
@@ -221,10 +222,9 @@ export function EASMCertificates() {
   )
   const pickStatus = useCallback(
     (s: CertificateStatus | '') => {
-      setStatus(s)
-      setPageParam('1')
+      setFilter('status', s)
     },
-    [setStatus, setPageParam]
+    [setFilter]
   )
 
   const exportCsv = async () => {
@@ -321,10 +321,7 @@ export function EASMCertificates() {
         showSearch={false}
         search={{
           value: q,
-          onChange: (v: string) => {
-            setQ(v)
-            setPageParam('1')
-          },
+          onChange: setSearch,
           placeholder: t(
             'attackSurface.certificates.search',
             'Search subject, issuer or fingerprint…'
@@ -369,10 +366,7 @@ export function EASMCertificates() {
         manualPagination
         rowCount={list.total}
         pagination={pagination}
-        onPaginationChange={(next) => {
-          setPageParam(String(next.pageIndex + 1))
-          setPerPageParam(String(next.pageSize))
-        }}
+        onPaginationChange={setPagination}
         pageSizeOptions={PAGE_SIZES}
         emptyMessage={t('attackSurface.certificates.empty.title', 'No certificates yet')}
         emptyDescription={t(
