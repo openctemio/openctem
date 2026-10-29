@@ -184,6 +184,16 @@ export function inventoryChips(filters: InventoryFilters, ctx: ChipContext): Inv
       clear: without('freshness'),
     })
   }
+  if (filters.resolution) {
+    chips.push({
+      key: 'resolution',
+      text:
+        filters.resolution === 'resolving'
+          ? t('assets.facetPanel.resolving', 'Resolution: resolving')
+          : t('assets.facetPanel.notResolving', 'Resolution: not resolving'),
+      clear: without('resolution'),
+    })
+  }
   if (filters.programAssets) {
     chips.push({
       key: 'programAssets',

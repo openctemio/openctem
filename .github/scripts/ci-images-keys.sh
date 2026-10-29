@@ -9,7 +9,7 @@ set -euo pipefail
 want=" ${1:?requested images} "
 case "$want" in *" allinone "*) want="$want api web console " ;; esac
 keys='{}'
-for i in api admin-cli web console allinone; do
+for i in api web console allinone; do
   case "$want" in *" $i "*) ;; *) continue ;; esac
   k="$(bash "$(dirname "$0")/image-key.sh" "$i")"
   keys="$(jq -c --arg i "$i" --arg k "$k" '. + {($i): $k}' <<<"$keys")"
