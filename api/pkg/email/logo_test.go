@@ -133,3 +133,25 @@ func TestBuildMessageWithoutInlineStaysSinglePart(t *testing.T) {
 		t.Errorf("unexpected structure: %s", raw)
 	}
 }
+
+func TestBrandHeaderEscapesScriptInBothBranches(t *testing.T) {
+	e := NewTemplateEngine()
+	_, body, err := e.Render(TemplateWelcome, WelcomeData{AppName: `<script>alert(1)</script>`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(body, "<script>") {
+		t.Error("unescaped script tag in the header")
+	}
+	if !strings.Contains(body, `<div class="logo">&lt;script&gt;alert(1)&lt;/script&gt;</div>`) {
+		t.Error("operator header not escaped as expected")
+	}
+	_, body, err = e.Render(TemplateWelcome, WelcomeData{AppName: "OpenCTEM"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `<img src="cid:logo" width="140" height="22" alt="OpenCTEM" style="display:block;margin:0 auto;border:0;height:22px;width:140px;">`
+	if !strings.Contains(body, want) {
+		t.Error("default brand header changed")
+	}
+}
