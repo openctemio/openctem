@@ -301,7 +301,8 @@ $$;
 --    platform identity provider, and the app role keeps no write on those
 --    tables (and no read but of admin_users, which the membership trigger and
 --    the platform-admin checks need). A SQL injection anywhere in the tenant
---    plane then cannot add an administrator or a console session.
+--    plane then cannot add an administrator or a console session, nor plant a
+--    console passkey or a known recovery code for an administrator.
 -- -----------------------------------------------------------------------------
 \if :{?admin_user}
 \if :{?admin_password}
@@ -330,14 +331,14 @@ SELECT format('GRANT USAGE ON SCHEMA %I TO %I', nspname, :'admin_user') FROM app
 SELECT format('REVOKE CREATE ON SCHEMA %I FROM %I', nspname, :'admin_user') FROM app_schemas \gexec
 -- The console role starts from no table privilege (an earlier release granted
 -- it the app's row access) and gets exactly what the console's repositories
--- touch: full DML on its own identity tables, append and read of its audit
+-- touch: full DML on its own identity tables (second factors included), append and read of its audit
 -- log, read of the audit chain anchors, link/unlink of an administrator to a
 -- users row (SELECT, UPDATE on users) and the membership check that refuses
 -- linking an account that belongs to an organization (SELECT on tenant_members).
 -- Tenant data (findings, assets, ...) is not readable or writable by it.
 SELECT format('REVOKE ALL ON ALL TABLES IN SCHEMA %I FROM %I', nspname, :'admin_user') FROM app_schemas \gexec
 SELECT format('GRANT SELECT, INSERT, UPDATE, DELETE ON public.%I TO %I', t, :'admin_user')
-FROM unnest(ARRAY['admin_users', 'admin_credentials', 'admin_sessions', 'platform_identity_provider', 'admin_idp_login_states', 'admin_approvals', 'platform_roles', 'platform_role_permissions', 'platform_role_assignments']) AS t
+FROM unnest(ARRAY['admin_users', 'admin_credentials', 'admin_sessions', 'platform_identity_provider', 'admin_idp_login_states', 'admin_approvals', 'platform_roles', 'platform_role_permissions', 'platform_role_assignments', 'admin_webauthn_credentials', 'admin_recovery_codes', 'admin_webauthn_ceremonies']) AS t
 WHERE to_regclass('public.' || t) IS NOT NULL \gexec
 SELECT format('GRANT SELECT, INSERT ON public.%I TO %I', t, :'admin_user')
 FROM unnest(ARRAY['admin_audit_logs']) AS t
@@ -360,12 +361,14 @@ SELECT format('ALTER DEFAULT PRIVILEGES FOR ROLE %I GRANT EXECUTE ON FUNCTIONS T
 
 -- The app keeps reading admin_users, nothing else of the console's identity
 -- (four-eyes approvals included: a tenant-plane injection cannot forge one;
--- platform roles included: the tenant plane neither reads nor grants them).
+-- platform roles included: the tenant plane neither reads nor grants them;
+-- the console's second factors included: passkeys, recovery codes and the
+-- passkey ceremonies, so it cannot plant a factor for an administrator).
 SELECT format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON public.%I FROM %I', t, :'app_user')
-FROM unnest(ARRAY['admin_users', 'admin_credentials', 'admin_sessions', 'platform_identity_provider', 'admin_idp_login_states', 'admin_approvals', 'platform_roles', 'platform_role_permissions', 'platform_role_assignments']) AS t
+FROM unnest(ARRAY['admin_users', 'admin_credentials', 'admin_sessions', 'platform_identity_provider', 'admin_idp_login_states', 'admin_approvals', 'platform_roles', 'platform_role_permissions', 'platform_role_assignments', 'admin_webauthn_credentials', 'admin_recovery_codes', 'admin_webauthn_ceremonies']) AS t
 WHERE to_regclass('public.' || t) IS NOT NULL \gexec
 SELECT format('REVOKE SELECT ON public.%I FROM %I', t, :'app_user')
-FROM unnest(ARRAY['admin_credentials', 'admin_sessions', 'platform_identity_provider', 'admin_idp_login_states', 'admin_approvals', 'platform_roles', 'platform_role_permissions', 'platform_role_assignments']) AS t
+FROM unnest(ARRAY['admin_credentials', 'admin_sessions', 'platform_identity_provider', 'admin_idp_login_states', 'admin_approvals', 'platform_roles', 'platform_role_permissions', 'platform_role_assignments', 'admin_webauthn_credentials', 'admin_recovery_codes', 'admin_webauthn_ceremonies']) AS t
 WHERE to_regclass('public.' || t) IS NOT NULL \gexec
 
 DO $$
@@ -373,6 +376,7 @@ DECLARE
     adm text := current_setting('openctem.admin_user');
     app text := current_setting('openctem.app_user');
     r record;
+    bad text;
 BEGIN
     FOR r IN SELECT rolsuper, rolcreatedb, rolcreaterole, rolreplication, rolbypassrls FROM pg_roles WHERE rolname = adm LOOP
         IF r.rolsuper OR r.rolcreatedb OR r.rolcreaterole OR r.rolreplication OR r.rolbypassrls THEN
@@ -384,6 +388,16 @@ BEGIN
         OR has_table_privilege(app, 'public.admin_users', 'DELETE')
         OR NOT has_table_privilege(adm, 'public.admin_users', 'INSERT')) THEN
         RAISE EXCEPTION 'admin_users is not written by % alone', adm;
+    END IF;
+    SELECT string_agg(t, ', ') INTO bad
+    FROM unnest(ARRAY['admin_webauthn_credentials', 'admin_recovery_codes', 'admin_webauthn_ceremonies']) AS t
+    WHERE to_regclass('public.' || t) IS NOT NULL
+      -- A privilege list is true when ANY of them is held.
+      AND (has_table_privilege(app, 'public.' || t, 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE')
+           OR NOT (has_table_privilege(adm, 'public.' || t, 'SELECT') AND has_table_privilege(adm, 'public.' || t, 'INSERT')
+                   AND has_table_privilege(adm, 'public.' || t, 'UPDATE') AND has_table_privilege(adm, 'public.' || t, 'DELETE')));
+    IF bad IS NOT NULL THEN
+        RAISE EXCEPTION 'console second factors are not % alone: %', adm, bad;
     END IF;
     IF to_regprocedure('public.dash_asset_day_maintain()') IS NOT NULL
        AND has_function_privilege(adm, 'public.dash_asset_day_maintain()', 'EXECUTE') THEN
