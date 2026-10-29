@@ -1,10 +1,12 @@
 'use client'
 
 import { useEffect, useId, useRef, useState } from 'react'
-import { KeyRound, Loader2, Smartphone } from 'lucide-react'
+import { Clock, KeyRound, Loader2, Smartphone } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
+import { SignalChip } from '@/components/ui/signal-chip'
+import { StatusLozenge } from '@/components/ui/status-lozenge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -94,14 +96,22 @@ export function TwoFactorCard({ email, onOtherSessionsSignedOut }: TwoFactorCard
                     : t('settings.twoFactor.off', 'Off')}
                 </span>
                 {status.enabled ? (
-                  <Badge variant="outline" className="border-success/40 text-success">
-                    {t('settings.twoFactor.protected', 'Protected')}
-                  </Badge>
+                  <StatusLozenge
+                    tone="resolved"
+                    label={t('settings.twoFactor.protected', 'Protected')}
+                  />
                 ) : null}
                 {status.required_by_organization && (
                   <Badge variant="outline">
                     {t('settings.twoFactor.required', 'Required by your organization')}
                   </Badge>
+                )}
+                {!status.enabled && !status.required_by_organization && status.grace_due_at && (
+                  <SignalChip icon={Clock} tone="alert">
+                    {t('settings.twoFactor.dueBy', 'Required from {date}', {
+                      date: formatDateSafe(status.grace_due_at),
+                    })}
+                  </SignalChip>
                 )}
               </div>
               <p className="text-sm text-muted-foreground">

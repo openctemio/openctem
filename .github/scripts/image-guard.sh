@@ -13,6 +13,9 @@
 #      image refresh fixes those. Advisories in application dependencies are
 #      listed as warnings; govulncheck and npm audit gate them in API/Web CI.
 # Needs docker and trivy on PATH.
+# IMAGE_GUARD_REPORT=<file>: also append one JSON line per fixable HIGH/CRITICAL
+# advisory (OS and application) to the file, for early-warning.sh. The gates
+# above are unchanged by it.
 set -euo pipefail
 comp="$1" img="$2"
 
@@ -29,7 +32,6 @@ case "$comp" in
   openctem-gateway) budget=75 ;;   # 63 MB (runs as uid 1000)
   migrations)       budget=25 ;;   # 18 MB
   seed)             budget=25 ;;   # 17 MB
-  admin-cli)        budget=48 ;;   # 42 MB at v0.15.0 (Go 1.27.3 toolchain, console four-eyes and recovery actions)
   *) echo "image-guard: no budget for component '$comp'; add one" >&2; exit 2 ;;
 esac
 
@@ -75,6 +77,14 @@ done
 if [ "$db_ok" != 1 ]; then
   echo "::error::image-guard $comp: could not download the vulnerability DB (registry outage), not an image problem"
   exit 1
+fi
+
+if [ -n "${IMAGE_GUARD_REPORT:-}" ]; then
+  for t in os library; do
+    trivy image --quiet --skip-db-update --scanners vuln --pkg-types "$t" --ignore-unfixed --severity HIGH,CRITICAL --format json "$img" |
+      jq -c --arg c "$comp" --arg k "$t" '.Results[]? | .Target as $t | .Vulnerabilities[]? | {component: $c, target: $t, pkg: .PkgName, installed: .InstalledVersion, fixed: .FixedVersion, id: .VulnerabilityID, severity: .Severity, kind: $k}' \
+      >>"$IMAGE_GUARD_REPORT" || true
+  done
 fi
 
 if ! trivy image --quiet --skip-db-update --scanners vuln --pkg-types os --ignore-unfixed \

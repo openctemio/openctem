@@ -213,8 +213,8 @@ wrap-err internal/app/aitriage/service.go:AITriageService.checkEgress 1
 wrap-err internal/app/apispec/service.go:Service.Upload 1
 wrap-err internal/app/asset/service.go:AssetService.CreateAsset 3
 wrap-err internal/app/asset/service.go:AssetService.CreateRepositoryAssetWithOutcome 3
-wrap-err internal/app/asset/service.go:AssetService.ListAssets 1
 wrap-err internal/app/asset/service.go:AssetService.updateAsset 6
+wrap-err internal/app/asset/service.go:withInventoryFilters 1
 wrap-err internal/app/auth/sso.go:SSOService.adoptExistingUser 2
 wrap-err internal/app/auth/sso.go:SSOService.findOrCreateUser 1
 wrap-err internal/app/cirun/preview.go:errPreviewWrap 1
@@ -287,7 +287,7 @@ wrap-err internal/infra/postgres/finding_spec_repository.go:findingTimeout 1
 wrap-err internal/infra/redis/sensor_liveness.go:unavailable 1
 wrap-err internal/signer/keys.go:LoadKey 1
 wrap-err pkg/brand/svg.go:SanitizeSVG 1
-wrap-err pkg/contentpkg/publisher.go:SigstoreVerifier.Verify 3
+wrap-err pkg/contentpkg/publisher.go:PublisherVerifierFunc.Verify 1
 wrap-err pkg/crypto/cipher.go:Cipher.Decrypt 1
 wrap-err pkg/crypto/cipher.go:NewCipher 1
 wrap-err pkg/crypto/cipher.go:NewCipherFromBase64 1

@@ -1,0 +1,10 @@
+### Added: asset groups that fill themselves
+
+- A group can hold a rule: the same filters as the Assets page, plus domains (with or without subdomains, wildcard and international names accepted), the scope entries that cover an asset, and an option to bring the services, URLs and certificates of the matched hosts. The group is the rule's matches, plus the assets added by hand or from a pasted list, minus the assets taken out by hand (taking an asset out of a rule group keeps it out).
+- Members are stored as before, now with how each came in (rule, manual or paste) and a join and leave history with the reason. New `PUT /asset-groups/{id}/rule`, `POST /asset-groups/rule/preview` (count, first 20 matches, who would join and leave, which teams and scans use the group), `POST /asset-groups/{id}/assets/paste` (names, addresses, CIDR ranges and URLs, at most 10,000 lines; the missing ones can be created through the scope check, with candidates for names outside the scope), `POST /asset-groups/{id}/assets/matching` ("add all matching", not limited to a page), and `GET /asset-groups/{id}/history`.
+- Rules are evaluated when assets are created or change (debounced per tenant) and again every hour, as the person who last saved the rule and inside the data scope that person holds; a rule group holds at most 50,000 members. If that person leaves the organization the rule pauses and the members stay.
+- Migration `003440_smart_asset_groups` adds the rule and status columns of `asset_groups`, `asset_group_members.source` (existing members become manual), the exclusions table and the history table.
+
+### Security: changes to a group that teams or scans use are audited, and guarded for privileged teams
+
+- A rule change or a bulk add that brings assets into a group that team scope rules or scans use is recorded as `asset_group.rule_widened` and answered with an impact summary. Changing the members or the rule of a group that a team holding a privileged role uses needs the owner and a recent sign-in.

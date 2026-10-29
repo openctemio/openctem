@@ -146,6 +146,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `AUTH_JWT_SECRET` | string | empty |  | yes | HMAC secret that signs session tokens. Unset: derived from `APP_ENCRYPTION_KEY` (HKDF, 64 bytes), so rotating the encryption key also signs every user out; set it (at least 64 characters in production: `openssl rand -hex 64`) to rotate the two independently. Changing it signs every user out. |
 | `AUTH_LOCKOUT_DURATION` | duration | `15m` |  |  | How long a locked account stays locked. |
 | `AUTH_MAX_ACTIVE_SESSIONS` | int | `10` |  |  | Concurrent sessions per user. |
+| `AUTH_MFA_FLOOR` | string | empty |  |  | Default of the console setting auth.mfa (the lowest two-factor requirement of every organization, which an organization may only raise) until a super admin stores a value: `none`, `admins` (owners, administrators and members holding a privileged role) or `everyone`. Unset: `admins`. An installation that already had users when this setting shipped keeps `none` until its operator raises it (a seeded row); a managed service (`MANAGED_SERVICE=true`) ignores that seed. People get 14 days (existing members) or 7 days (new accounts) before sign-in is gated; creating API keys, sensor tokens and integration secrets needs a second factor from the start. |
 | `AUTH_MAX_LOGIN_ATTEMPTS` | int | `5` |  |  | Failed sign-ins before the account is locked. |
 | `AUTH_PASSWORD_MIN_LENGTH` | int | `12` |  |  | Minimum password length. At least 6; at least 8 in production. |
 | `AUTH_PASSWORD_REQUIRE_LOWERCASE` | bool | `true` |  |  | Require a lowercase letter. |
@@ -180,22 +181,22 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `KEYCLOAK_HTTP_TIMEOUT` | duration | `10s` |  |  | Timeout of requests to Keycloak. |
 | `KEYCLOAK_JWKS_REFRESH_INTERVAL` | duration | `1h` |  |  | How often Keycloak's signing keys are refreshed. |
 | `KEYCLOAK_REALM` | string | `openctem` |  |  | Keycloak realm. In production with `oidc` or `hybrid` it must be set to a value other than the default. |
-| `OAUTH_ENABLED` | bool | `true` |  |  | Master switch for social login (Google, GitHub, Microsoft). A provider is offered only when its own `*_ENABLED`, client ID and secret are set. |
+| `OAUTH_ENABLED` | bool | `true` |  |  | Master switch for social login (Google, GitHub, Microsoft). The console (Settings > Social login) is the place to set up the providers; this stays a server-side kill switch, and `false` turns every provider off whatever the console says. |
 | `OAUTH_FRONTEND_CALLBACK_URL` | string | `APP_URL/auth/callback, else http://localhost:3000/auth/callback` |  |  | Web console URL the social-login and SSO flows return to. Set it only when the console is not at `APP_URL`. |
-| `OAUTH_GITHUB_CLIENT_ID` | string | empty |  |  | GitHub OAuth client ID. |
-| `OAUTH_GITHUB_CLIENT_SECRET` | string | empty |  | yes | GitHub OAuth client secret. |
-| `OAUTH_GITHUB_ENABLED` | bool | `false` |  |  | Offer GitHub sign-in. |
-| `OAUTH_GITHUB_SCOPES` | list | `read:user,user:email` |  |  | Requested scopes. |
-| `OAUTH_GOOGLE_CLIENT_ID` | string | empty |  |  | Google OAuth client ID. |
-| `OAUTH_GOOGLE_CLIENT_SECRET` | string | empty |  | yes | Google OAuth client secret. |
-| `OAUTH_GOOGLE_ENABLED` | bool | `false` |  |  | Offer Google sign-in. |
-| `OAUTH_GOOGLE_SCOPES` | list | `openid,email,profile` |  |  | Requested scopes. |
-| `OAUTH_MICROSOFT_CLIENT_ID` | string | empty |  |  | Microsoft OAuth client ID. |
-| `OAUTH_MICROSOFT_CLIENT_SECRET` | string | empty |  | yes | Microsoft OAuth client secret. |
-| `OAUTH_MICROSOFT_ENABLED` | bool | `false` |  |  | Offer Microsoft sign-in. |
-| `OAUTH_MICROSOFT_SCOPES` | list | `openid,email,profile,User.Read` |  |  | Requested scopes. |
+| `OAUTH_GITHUB_CLIENT_ID` | string | empty |  |  | GitHub OAuth client ID. Optional override: set the client in the console (Settings > Social login) instead. Used only together with `OAUTH_GITHUB_CLIENT_SECRET`. |
+| `OAUTH_GITHUB_CLIENT_SECRET` | string | empty |  | yes | GitHub OAuth client secret. Optional override: while it is set, this provider is pinned to the server environment and the console shows it read-only. Leave unset to manage the provider in the console (Settings > Social login), where the secret is stored encrypted and write-only. |
+| `OAUTH_GITHUB_ENABLED` | bool | `false` |  |  | Offer GitHub sign-in. Used only while `OAUTH_GITHUB_CLIENT_SECRET` pins the provider; otherwise the switch in the console decides. |
+| `OAUTH_GITHUB_SCOPES` | list | `read:user,user:email` |  |  | Requested scopes. Used only while the provider is pinned by its client secret variable; otherwise set in the console. |
+| `OAUTH_GOOGLE_CLIENT_ID` | string | empty |  |  | Google OAuth client ID. Optional override: set the client in the console (Settings > Social login) instead. Used only together with `OAUTH_GOOGLE_CLIENT_SECRET`. |
+| `OAUTH_GOOGLE_CLIENT_SECRET` | string | empty |  | yes | Google OAuth client secret. Optional override: while it is set, this provider is pinned to the server environment and the console shows it read-only. Leave unset to manage the provider in the console (Settings > Social login), where the secret is stored encrypted and write-only. |
+| `OAUTH_GOOGLE_ENABLED` | bool | `false` |  |  | Offer Google sign-in. Used only while `OAUTH_GOOGLE_CLIENT_SECRET` pins the provider; otherwise the switch in the console decides. |
+| `OAUTH_GOOGLE_SCOPES` | list | `openid,email,profile` |  |  | Requested scopes. Used only while the provider is pinned by its client secret variable; otherwise set in the console. |
+| `OAUTH_MICROSOFT_CLIENT_ID` | string | empty |  |  | Microsoft OAuth client ID. Optional override: set the client in the console (Settings > Social login) instead. Used only together with `OAUTH_MICROSOFT_CLIENT_SECRET`. |
+| `OAUTH_MICROSOFT_CLIENT_SECRET` | string | empty |  | yes | Microsoft OAuth client secret. Optional override: while it is set, this provider is pinned to the server environment and the console shows it read-only. Leave unset to manage the provider in the console (Settings > Social login), where the secret is stored encrypted and write-only. |
+| `OAUTH_MICROSOFT_ENABLED` | bool | `false` |  |  | Offer Microsoft sign-in. Used only while `OAUTH_MICROSOFT_CLIENT_SECRET` pins the provider; otherwise the switch in the console decides. |
+| `OAUTH_MICROSOFT_SCOPES` | list | `openid,email,profile,User.Read` |  |  | Requested scopes. Used only while the provider is pinned by its client secret variable; otherwise set in the console. |
 | `OAUTH_STATE_DURATION` | duration | `10m` |  |  | Lifetime of an OAuth `state` token. |
-| `OAUTH_STATE_SECRET` | string | empty |  | yes | Secret that signs the OAuth `state` parameter. Unset: derived from the session secret under its own label. |
+| `OAUTH_STATE_SECRET` | string | empty |  | yes | Secret that signs the OAuth `state` parameter. Unset: derived from the session secret under its own label. A bootstrap secret that is never a console setting, so a console change cannot weaken the CSRF binding of a sign-in. |
 | `SSO_ALLOWED_REDIRECT_URIS` | list | `derived` |  |  | Comma-separated exact-match allow-list for the `redirect_uri` of the per-organization SSO flow: origins (`https://ctem.example.com`) or origin-plus-path prefixes ending in `/`. Unset: derived from `CORS_ALLOWED_ORIGINS`, `OAUTH_FRONTEND_CALLBACK_URL` and `SMTP_BASE_URL`. |
 | `SSO_ENTRA_ALLOWED_DOMAINS` | list | `empty (any)` |  |  | Comma-separated email domains the fallback accepts. |
 | `SSO_ENTRA_ALLOWED_TENANTS` | list | `empty (none)` |  |  | Comma-separated organization slugs allowed to use the fallback. Empty disables it for every organization. |
@@ -291,6 +292,8 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `SENSOR_LB_MEMORY_WEIGHT` | float | `0.15` |  |  | Weight of memory usage. |
 | `SENSOR_LB_NETWORK_WEIGHT` | float | `0.05` |  |  | Weight of network I/O. |
 | `SENSOR_PUBLIC_API_URL` | string | empty |  |  | URL sensors connect to, embedded in the install snippets and configuration templates. Unset: `APP_URL`. |
+| `PROXY_TEST_ECHO_URL` | string | empty |  |  | https origin a proxy test connects to through each proxy of a pool (the Test button of Settings, Scanning, Proxies). It must answer on a public port the proxies can reach: not the sensor mTLS port. Unset: `SENSOR_PUBLIC_API_URL`, else `APP_URL`. The platform never connects to a proxy itself; sensors do. |
+| `PROXY_TEST_ALT_PORT` | int | `80` |  |  | A second port of the proxy test's echo host. A proxy that carries 443 and refuses this port is shown as port-restricted. `0` skips that check. |
 | `SENSOR_SLIM_HEARTBEAT` | bool | `true` |  |  | Let sensors with an acknowledged manifest leave their tool inventory out of heartbeats. `false` asks every sensor for full heartbeats. |
 | `SENSOR_LIVENESS_STORE` | string | `shadow` |  |  | Where heartbeat liveness lives. `postgres`: every heartbeat updates the sensor row. `shadow`: as postgres, and Redis records every heartbeat too so `openctem_sensor_liveness_disagreements_total` compares the two. `redis`: Redis holds liveness; Postgres gets state changes and a batched checkpoint every 10 minutes. Switch to `redis` after a week of zero disagreements. |
 | `WORKER_HEARTBEAT_TIMEOUT` | duration | `5m` |  |  | No heartbeat for this long marks a sensor inactive. Advised heartbeat intervals stay below half of it. |

@@ -17,11 +17,15 @@ import {
   SIGNUP_NOT_AVAILABLE,
   SSO_REQUIRED,
 } from '@/features/auth/lib/signup-outcome'
+import { loginErrorCodeFor } from '@/features/auth/lib/auth-error-codes'
 import { loginErrorHref } from '@/features/auth/lib/login-error'
 import {
+  completeLinkCallback,
   handleOAuthCallback,
   type SocialProvider,
 } from '@/features/auth/actions/social-auth-actions'
+import { OAUTH_LINK_INTENT_COOKIE } from '@/features/auth/lib/oauth-cookies'
+import { linkResultHref } from '@/features/account/lib/link-result'
 import { validateRedirectUrl } from '@/lib/redirect'
 
 export const dynamic = 'force-dynamic'
@@ -50,14 +54,22 @@ export async function GET(
   const cookieStore = await cookies()
   const redirectTo = validateRedirectUrl(cookieStore.get('oauth_redirect')?.value, '/')
 
+  // Linking a provider to the signed-in account (Account > Security).
+  if (cookieStore.get(OAUTH_LINK_INTENT_COOKIE)?.value === provider) {
+    const linked = await completeLinkCallback(provider, code, state)
+    redirect(linkResultHref(provider, linked.success ? undefined : (linked.code ?? 'LINK_FAILED')))
+  }
+
   const result = await handleOAuthCallback(provider, code, state)
+  // A linked password account: the sign-in page asks for the second factor.
+  if (result.success && 'mfaRequired' in result) redirect(`/login?mfa=${result.mfaPurpose}`)
   if (!result.success) {
     // The sign-up policy refused to create an account: the one "not set up"
     // page, whatever the reason.
     if (result.code === SIGNUP_NOT_AVAILABLE) redirect(NOT_SET_UP_PATH)
     // The address's domain requires its organization's SSO.
     if (result.code === SSO_REQUIRED) redirect('/login')
-    redirect(loginErrorHref('callback_failed'))
+    redirect(loginErrorHref(loginErrorCodeFor(result.code)))
   }
   redirect(redirectTo)
 }

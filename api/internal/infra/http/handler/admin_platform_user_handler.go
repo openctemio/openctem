@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -49,7 +50,33 @@ type AdminPlatformUserHandler struct {
 	dir     PlatformUserDirectoryReader
 	actions *platformuser.Service
 	audit   admin.AuditLogRepository
-	logger  *logger.Logger
+	// approvals is the four-eyes gate of the two-factor reset.
+	approvals approvalGate
+	// emailDelivery reports whether the server can send email: the console
+	// offers copied links only when it cannot.
+	emailDelivery func() bool
+	// linkBase is the web app's base URL, for the links an administrator
+	// copies.
+	linkBase string
+	logger   *logger.Logger
+}
+
+// WithApprovals wires the second-approval gate of the two-factor reset.
+func (h *AdminPlatformUserHandler) WithApprovals(g approvalGate) *AdminPlatformUserHandler {
+	h.approvals = g
+	return h
+}
+
+// WithEmailDelivery says whether the server can send email.
+func (h *AdminPlatformUserHandler) WithEmailDelivery(f func() bool) *AdminPlatformUserHandler {
+	h.emailDelivery = f
+	return h
+}
+
+// WithLinkBase sets the web app base URL used to build copied links.
+func (h *AdminPlatformUserHandler) WithLinkBase(base string) *AdminPlatformUserHandler {
+	h.linkBase = strings.TrimSuffix(base, "/")
+	return h
 }
 
 // WithAudit records every list view in the admin audit log (who browsed
@@ -162,6 +189,9 @@ type AdminPlatformUserSession struct {
 // identities and active sessions.
 type AdminPlatformUserDetailResponse struct {
 	AdminPlatformUserResponse
+	// EmailDelivery: the server can send email. False: the console offers a
+	// copied reset link and "mark verified" instead of the email actions.
+	EmailDelivery  bool                          `json:"email_delivery"`
 	MembershipList []AdminPlatformUserMembership `json:"membership_list"`
 	Identities     []AdminPlatformUserIdentity   `json:"identities"`
 	Sessions       []AdminPlatformUserSession    `json:"sessions"`
@@ -295,6 +325,7 @@ func (h *AdminPlatformUserHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp := AdminPlatformUserDetailResponse{
+		EmailDelivery:             h.emailDelivery != nil && h.emailDelivery(),
 		AdminPlatformUserResponse: toPlatformUserResponse(d.PlatformUserSummary, time.Now()),
 		MembershipList:            make([]AdminPlatformUserMembership, 0, len(d.Memberships)),
 		Identities:                make([]AdminPlatformUserIdentity, 0, len(d.Identities)),
@@ -312,19 +343,50 @@ func (h *AdminPlatformUserHandler) Get(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// readActionReason reads and checks the reason of a support action.
+func readActionReason(w http.ResponseWriter, r *http.Request) (string, bool) {
+	var req AdminPlatformUserActionRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return "", false
+	}
+	if n := len([]rune(strings.TrimSpace(req.Reason))); n < platformUserReasonMin || n > platformUserReasonMax {
+		apierror.BadRequest("Give a reason (10 to 500 characters); it is kept in the audit log.").WriteJSON(w)
+		return "", false
+	}
+	return strings.TrimSpace(req.Reason), true
+}
+
+// writeActionError answers a failed support action.
+func (h *AdminPlatformUserHandler) writeActionError(w http.ResponseWriter, err error, done string) {
+	switch {
+	case errors.Is(err, shared.ErrNotFound):
+		apierror.NotFound("user").WriteJSON(w)
+	case errors.Is(err, platformuser.ErrEmailUnavailable):
+		apierror.New(http.StatusConflict, "EMAIL_UNAVAILABLE", "No email can be sent from this installation; configure SMTP first.").WriteJSON(w)
+	case errors.Is(err, platformuser.ErrEmailAvailable):
+		apierror.New(http.StatusConflict, "EMAIL_AVAILABLE", "This installation can send email: use the email action instead.").WriteJSON(w)
+	case errors.Is(err, shared.ErrConflict):
+		msg := err.Error()
+		if i := strings.Index(msg, ": "); i != -1 {
+			msg = msg[i+2:]
+		}
+		apierror.Conflict(strings.ToUpper(msg[:1]) + msg[1:] + ".").WriteJSON(w)
+	default:
+		// err can carry a token-adjacent detail from a lower layer: log the
+		// action name and error only, never request or response bodies.
+		h.logger.Error("platform user action", "action", done, "error", logger.SanitizeError(err))
+		apierror.InternalServerError("the action failed").WriteJSON(w)
+	}
+}
+
 // action runs one support action after checking the reason.
 func (h *AdminPlatformUserHandler) action(w http.ResponseWriter, r *http.Request, run func(context.Context, shared.ID) error, done string) {
 	id, ok := platformUserID(w, r)
 	if !ok {
 		return
 	}
-	var req AdminPlatformUserActionRequest
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		apierror.BadRequest("invalid request body").WriteJSON(w)
-		return
-	}
-	if n := len([]rune(strings.TrimSpace(req.Reason))); n < platformUserReasonMin || n > platformUserReasonMax {
-		apierror.BadRequest("Give a reason (10 to 500 characters); it is kept in the audit log.").WriteJSON(w)
+	if _, ok := readActionReason(w, r); !ok {
 		return
 	}
 	if h.actions == nil {
@@ -332,21 +394,7 @@ func (h *AdminPlatformUserHandler) action(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if err := run(r.Context(), id); err != nil {
-		switch {
-		case errors.Is(err, shared.ErrNotFound):
-			apierror.NotFound("user").WriteJSON(w)
-		case errors.Is(err, platformuser.ErrEmailUnavailable):
-			apierror.New(http.StatusConflict, "EMAIL_UNAVAILABLE", "No email can be sent from this installation; configure SMTP first.").WriteJSON(w)
-		case errors.Is(err, shared.ErrConflict):
-			msg := err.Error()
-			if i := strings.Index(msg, ": "); i != -1 {
-				msg = msg[i+2:]
-			}
-			apierror.Conflict(strings.ToUpper(msg[:1]) + msg[1:] + ".").WriteJSON(w)
-		default:
-			h.logger.Error("platform user action", "action", done, "error", err)
-			apierror.InternalServerError("the action failed").WriteJSON(w)
-		}
+		h.writeActionError(w, err, done)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": done})
@@ -410,4 +458,110 @@ func (h *AdminPlatformUserHandler) SendPasswordReset(w http.ResponseWriter, r *h
 // @Router       /admin/platform-users/{user_id}/verification-emails [post]
 func (h *AdminPlatformUserHandler) ResendVerification(w http.ResponseWriter, r *http.Request) {
 	h.action(w, r, h.actions.ResendVerification, "verification_sent")
+}
+
+// AdminPlatformUserResetLinkResponse is a password reset link for an
+// administrator to hand over. Shown once.
+type AdminPlatformUserResetLinkResponse struct {
+	// Link is the reset link; a bearer secret, valid for one hour.
+	Link      string    `json:"link"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+// IssueResetLink handles POST /api/v1/admin/platform-users/{user_id}/reset-link.
+//
+// @Summary      Copy a password reset link (platform admin)
+// @Description  For an installation that cannot send email: issues a one-hour reset link for a local account and returns it once; the previous reset link stops working. The link is a bearer secret (shown once, never logged, never cached): hand it to the account's owner over a channel you trust. Following it does not bypass the account's two-factor authentication. 409 EMAIL_AVAILABLE when email works (use the email action). super_admin, fresh step-up, reason required, audited.
+// @Tags         Admin
+// @Accept       json
+// @Produce      json
+// @Param        user_id  path  string                          true  "User ID"
+// @Param        request  body  AdminPlatformUserActionRequest  true  "Reason"
+// @Success      200  {object}  AdminPlatformUserResetLinkResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      409  {object}  apierror.Error
+// @Router       /admin/platform-users/{user_id}/reset-link [post]
+func (h *AdminPlatformUserHandler) IssueResetLink(w http.ResponseWriter, r *http.Request) {
+	id, ok := platformUserID(w, r)
+	if !ok {
+		return
+	}
+	if _, ok := readActionReason(w, r); !ok {
+		return
+	}
+	if h.actions == nil || h.linkBase == "" {
+		apierror.ServiceUnavailable("Reset links are not available").WriteJSON(w)
+		return
+	}
+	token, expires, err := h.actions.IssueResetLink(r.Context(), id)
+	if err != nil {
+		h.writeActionError(w, err, "reset_link")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, AdminPlatformUserResetLinkResponse{
+		Link:      h.linkBase + "/reset-password#token=" + url.QueryEscape(token),
+		ExpiresAt: expires,
+	})
+}
+
+// MarkVerified handles POST /api/v1/admin/platform-users/{user_id}/mark-verified.
+//
+// @Summary      Mark an account's email verified (platform admin)
+// @Description  For an installation that cannot send the verification link: marks an unverified local account's email verified. 409 EMAIL_AVAILABLE when email works (the person verifies by link). super_admin, fresh step-up, reason required, audited.
+// @Tags         Admin
+// @Accept       json
+// @Produce      json
+// @Param        user_id  path  string                          true  "User ID"
+// @Param        request  body  AdminPlatformUserActionRequest  true  "Reason"
+// @Success      200  {object}  map[string]string
+// @Failure      409  {object}  apierror.Error
+// @Router       /admin/platform-users/{user_id}/mark-verified [post]
+func (h *AdminPlatformUserHandler) MarkVerified(w http.ResponseWriter, r *http.Request) {
+	h.action(w, r, h.actions.MarkVerified, "verified")
+}
+
+// ResetMFA handles POST /api/v1/admin/platform-users/{user_id}/mfa/reset.
+//
+// @Summary      Reset an account's two-factor authentication (platform admin)
+// @Description  Turns off the account's second factor and recovery codes and signs it out everywhere; the next sign-in is by password and enrolls again where an organization requires it. For a person who lost their device and codes and has no organization administrator above them. super_admin, fresh step-up, reason required, and a second super admin must approve first (428 SECOND_APPROVAL_REQUIRED, action user.reset_mfa, target user:{id}). Platform administrator accounts are refused. Audited; the account's owner is told by email when email works.
+// @Tags         Admin
+// @Accept       json
+// @Produce      json
+// @Param        user_id  path  string                          true  "User ID"
+// @Param        request  body  AdminPlatformUserActionRequest  true  "Reason"
+// @Success      200  {object}  map[string]string
+// @Failure      409  {object}  apierror.Error
+// @Failure      428  {object}  apierror.Error "SECOND_APPROVAL_REQUIRED"
+// @Router       /admin/platform-users/{user_id}/mfa/reset [post]
+func (h *AdminPlatformUserHandler) ResetMFA(w http.ResponseWriter, r *http.Request) {
+	id, ok := platformUserID(w, r)
+	if !ok {
+		return
+	}
+	if _, ok := readActionReason(w, r); !ok {
+		return
+	}
+	if h.actions == nil {
+		apierror.ServiceUnavailable("Account actions are not available").WriteJSON(w)
+		return
+	}
+	actor := middleware.GetAdminUser(r.Context())
+	if actor == nil {
+		apierror.Unauthorized("Authentication required").WriteJSON(w)
+		return
+	}
+	// A second super admin approved this exact account; checked before
+	// anything changes, handed back when nothing did.
+	grant, ok := requireSecondApproval(w, r, h.approvals, actor, admin.ApprovalUserMFAReset, "user:"+id.String(), h.logger)
+	if !ok {
+		return
+	}
+	if err := h.actions.ResetMFA(r.Context(), id, middleware.ClientIP(r)); err != nil {
+		releaseSecondApproval(r, h.approvals, actor, grant)
+		h.writeActionError(w, err, "mfa_reset")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "mfa_reset"})
 }

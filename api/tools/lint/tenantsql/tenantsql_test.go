@@ -293,3 +293,21 @@ func exec(string) {}
 		t.Fatal("isPlatformMethod misclassified")
 	}
 }
+
+// A statement built from many fragments keeps its tenant predicate: the
+// evaluator must not give up on a long concatenation.
+func TestScanFoldsLongConcatenation(t *testing.T) {
+	dir := t.TempDir()
+	chain := strings.Repeat(` + " AND 1=1" `, 40)
+	src := "package p\n\nconst head = \" AND tenant_id = $1\"\n\nfunc A() { exec(\"SELECT id FROM scans WHERE id = $2\" + (head" + chain + ")) }\n\nfunc exec(string) {}\n"
+	if err := os.WriteFile(filepath.Join(dir, "p.go"), []byte(src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fs, err := Scan(dir, map[string]bool{"scans": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fs) != 0 {
+		t.Fatalf("a long concatenation lost its tenant predicate: %v", fs)
+	}
+}

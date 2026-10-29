@@ -99,6 +99,7 @@ export function DashboardView({ dashboard, data, loading, failed, onRetry }: Das
                 stale={data?.stale}
                 loading={loading && !data && !failed}
                 onRetry={onRetry}
+                scope={data?.scope}
                 className="flex-1"
               />
             </WidgetErrorBoundary>

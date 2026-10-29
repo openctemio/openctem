@@ -68,7 +68,28 @@ var registry = map[Code]Spec{
 	CodeTicketBelowThreshold:      {http.StatusConflict, "This finding is below the ticketing threshold."},
 	CodeRotationNotStalled:        {http.StatusConflict, "The rotation is not stalled."},
 	CodeReleaseFeedTooLarge:       {http.StatusRequestEntityTooLarge, "The file is larger than the release feed limit."},
+
+	// Step-up re-authentication and the team membership refusals.
+	CodeStepUpRequired:          {http.StatusForbidden, "Confirm your identity to continue."},
+	CodeStepUpUnavailable:       {http.StatusForbidden, "This action needs a signed-in user session that can re-authenticate."},
+	CodeTeamPrivilegedOwnerOnly: {http.StatusForbidden, "Only the organization owner can change the members of a team that carries a privileged role."},
+	CodeTeamExternalFullData:    {http.StatusForbidden, "Someone outside your organization gets full data access only through a role given to them directly, never through a team."},
+	CodeTeamSelfJoin:            {http.StatusForbidden, "You cannot add yourself to a team that carries roles. Ask the organization owner."},
+	// Retest of a finding (docs/architecture/finding-retest-strategy.md);
+	// details.reason carries the retest reason code.
+	CodeRetestNotAvailable:     {http.StatusUnprocessableEntity, "This finding cannot be retested automatically. The retest panel says why."},
+	CodeRetestNoSensor:         {http.StatusUnprocessableEntity, "No online sensor of your organization can re-check this finding."},
+	CodeRetestNoCheckSensor:    {http.StatusUnprocessableEntity, "No online sensor of your organization can run custom retest checks. Update a sensor, then retest."},
+	CodeRetestNoTemplateSensor: {http.StatusUnprocessableEntity, "No online sensor has the template release this finding was found with. Update the sensor's templates, then retest."},
 }
+
+// Retest codes, registered above.
+const (
+	CodeRetestNotAvailable     Code = "RETEST_NOT_AVAILABLE"
+	CodeRetestNoSensor         Code = "RETEST_NO_SENSOR"
+	CodeRetestNoCheckSensor    Code = "RETEST_NO_CHECK_SENSOR"
+	CodeRetestNoTemplateSensor Code = "RETEST_NO_TEMPLATE_SENSOR"
+)
 
 // Integration and ad hoc codes, registered above.
 const (
@@ -91,6 +112,20 @@ const (
 	CodeTicketBelowThreshold      Code = "TICKET_BELOW_THRESHOLD"
 	CodeRotationNotStalled        Code = "ROTATION_NOT_STALLED"
 	CodeReleaseFeedTooLarge       Code = "RELEASE_FEED_TOO_LARGE"
+
+	// CodeStepUpRequired: the session has not authenticated within the
+	// window; the web client opens its re-authentication dialog and retries.
+	CodeStepUpRequired Code = "STEP_UP_REQUIRED"
+	// CodeStepUpUnavailable: this credential cannot step up.
+	CodeStepUpUnavailable Code = "STEP_UP_UNAVAILABLE"
+	// CodeTeamPrivilegedOwnerOnly: a non-owner changed a team that carries a
+	// privileged role.
+	CodeTeamPrivilegedOwnerOnly Code = "TEAM_PRIVILEGED_OWNER_ONLY"
+	// CodeTeamExternalFullData: an outside member would get full data access
+	// through a team.
+	CodeTeamExternalFullData Code = "TEAM_EXTERNAL_FULL_DATA"
+	// CodeTeamSelfJoin: someone added themselves to a team that carries roles.
+	CodeTeamSelfJoin Code = "TEAM_SELF_JOIN"
 )
 
 // statusMessages is the fallback when a code is not registered.
