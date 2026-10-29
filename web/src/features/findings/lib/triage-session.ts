@@ -95,7 +95,8 @@ export interface TriageItem {
   status: FindingStatus
   priorityClass?: string
   rank?: number
-  assetName?: string
+  /** Where the finding is (host[:port], URL or file): FindingTitleCell's target line. */
+  target?: string
   /** The version the window saw; a later version means someone changed it. */
   rowVersion?: number
 }

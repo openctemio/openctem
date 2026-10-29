@@ -283,7 +283,19 @@ For each target, in order:
    scope. The dry run (`POST /scope/check`) answers the same codes for typed
    targets and for inventory assets (`asset_ids`, checked by name); an asset
    the caller may not see, or that is not the tenant's, answers
-   `out_of_data_scope` by its id only, whichever it is. The state is also
+   `out_of_data_scope` by its id only, whichever it is. Each refused result
+   of the dry run also carries `remedies`, the ranked choices a scan form
+   offers for it, best first: `run_on_tenant_sensor` (only for
+   `proof_required` and `program_platform`, when one of the organization's
+   own sensors could take the job and the scan is not already on them),
+   `verify_domain` (only when the caller may verify, from the filtered
+   fixes), `lower_intensity` with the tier (only for an explicit request
+   tier, a workflow's intensity, and only when the same gate allows the
+   target at that lower tier: the handler re-runs the dry run for the
+   caller's tenant at each lower tier for `tier_exceeds` and `low_impact`
+   refusals) and `remove`, always last. Remedies grant nothing: every one
+   goes through its normal route and the scan is checked again on save and
+   at dispatch. The state is also
    logged (`active scan target refused`) with the path. A request refused as
    a whole (scan create, clone, import, quick scan, `POST /commands`) is also
    **audited** as `scan.target_refused` (medium, result `failure`) in the

@@ -1,0 +1,4 @@
+### Changed: a finding reads with its target wherever it is listed
+
+- Finding lists show the target (host and port, or the URL) as a line under the title, through one shared cell on the Findings page, phone cards, My work, triage mode, asset findings, remediation tasks, the duplicate picker, the verify list and the suppression preview. Two findings of one issue on two assets no longer read as duplicates. The Location column is off by default (Display turns it on).
+- Findings gain a server-computed `display_title` ("<title> on <target>") in `GET /findings`, `GET /findings/{id}`, the export (new `display_title` column after `title`), MCP finding results, Jira summaries and GitHub issue titles, approval notices and e-mails, and the ticket mapping attribute `finding.display_title` (used by the security bug and service desk presets). The stored title is unchanged.

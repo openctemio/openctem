@@ -7,6 +7,7 @@ const ACTION_FALLBACK: Record<string, string> = {
   'admin.revoke_super_admin': 'Remove a super admin',
   'console_mfa.disable': 'Stop requiring security keys',
   'platform_idp.remove': "Remove or relax the administrators' identity provider",
+  'platform_email.relay': 'Change the mail server platform e-mail is sent through',
   'platform_ai.destination':
     'Change where platform AI sends data (provider, server address or API key)',
   'platform_idp.change':

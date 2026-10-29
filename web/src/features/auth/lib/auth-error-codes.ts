@@ -75,6 +75,13 @@ export const AUTH_ERROR_CODES = [
   'OAUTH_INVALID_STATE',
   'OAUTH_EXCHANGE_FAILED',
   'OAUTH_USERINFO_FAILED',
+  'OAUTH_ACCOUNT_EXISTS',
+  'OAUTH_NO_EMAIL',
+  'IDENTITY_LINKED_ELSEWHERE',
+  'PROVIDER_ALREADY_LINKED',
+  'LAST_SIGN_IN_METHOD',
+  'IDENTITY_MANAGED_BY_ORGANIZATION',
+  'IDENTITY_NOT_FOUND',
   'INVITATION_ALREADY_MEMBER',
   'INVITATION_MEMBERSHIP_SUSPENDED',
   'MEMBERSHIP_SUSPENDED_REACTIVATE',
@@ -92,6 +99,10 @@ export const AUTH_ERROR_CODES = [
   'PASSWORD_NO_NUMBER',
   'PASSWORD_NO_SPECIAL',
   'CAPTCHA_REQUIRED',
+  // Not in the API's auth table: the shared rate limiter answers every sign-in
+  // and recovery route with it (429). Without it here the form said only
+  // "Sign-in failed", which reads like a wrong password.
+  'RATE_LIMIT_EXCEEDED',
 ] as const
 
 export type AuthErrorCode = (typeof AUTH_ERROR_CODES)[number]
@@ -141,6 +152,7 @@ const LOGIN_CODE_FOR_API_CODE: Readonly<Record<string, LoginErrorCode>> = {
   ORGANIZATION_SUSPENDED: 'organization_unavailable',
   ORGANIZATION_ACCESS_DENIED: 'not_member',
   EMAIL_NOT_VERIFIED: 'email_not_verified',
+  OAUTH_ACCOUNT_EXISTS: 'account_exists',
   EMAIL_NOT_AUTHORITATIVE: 'link_required',
 }
 

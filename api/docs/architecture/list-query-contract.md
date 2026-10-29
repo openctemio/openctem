@@ -161,7 +161,7 @@ characters per value (`q` 255), 32 KB POST body.
   and `X-Export-Rows` trailers say whether rows were left out. Larger exports are
   not offered yet: they need the background operations resource (research 230
   D10), and until then the caller narrows the filter.
-- **Fields**: the `FindingExportRow` allowlist (40 columns, the same for CSV and
+- **Fields**: the `FindingExportRow` allowlist (41 columns, the same for CSV and
   NDJSON): identity, classification, scores, exploitation, SLA, asset id/name/type,
   location (file, lines, port, service), assignee, observation, validation and
   dates. Evidence (snippets, scanner output, stack traces, attachments, data

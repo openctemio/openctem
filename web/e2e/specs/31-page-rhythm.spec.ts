@@ -185,7 +185,13 @@ async function probe(page: Page): Promise<Probe> {
       .filter((e) => {
         const cs = getComputedStyle(e)
         const line = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.5
-        const pad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom)
+        // The box height includes the border: a one-line bordered chip with
+        // leading-none (SignalChip, 22px) is not a wrapped one.
+        const pad =
+          parseFloat(cs.paddingTop) +
+          parseFloat(cs.paddingBottom) +
+          (parseFloat(cs.borderTopWidth) || 0) +
+          (parseFloat(cs.borderBottomWidth) || 0)
         return e.getBoundingClientRect().height > line * 1.5 + pad + 2
       })
       .map((e) => (e.textContent ?? '').trim())

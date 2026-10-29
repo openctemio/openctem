@@ -38,8 +38,6 @@ scan_run_repository.go:ScanRunRepository.Delete:scan_runs  D-11 baseline: add th
 scan_run_repository.go:ScanRunRepository.GetByID:scan_runs  D-11 baseline: add the tenant predicate
 scan_run_repository.go:ScanRunRepository.notUpdatedError:scan_runs  D-11 baseline: add the tenant predicate
 scan_run_repository.go:ScanRunRepository.ReleaseFailedRetryDispatch:scan_runs  D-11 baseline: add the tenant predicate
-scan_run_repository.go:ScanRunRepository.Update:scan_runs  D-11 baseline: add the tenant predicate
-scan_run_repository.go:ScanRunRepository.UpdateStats:scan_runs  D-11 baseline: add the tenant predicate
 scan_run_repository.go:ScanRunRepository.UpdateStatus:scan_runs  D-11 baseline: add the tenant predicate
 scanner_template_repository.go:ScannerTemplateRepository.Update:scanner_templates  D-11 baseline: add the tenant predicate
 sensor_apikey_repository.go:lockSensorKeys:sensors  D-11 baseline: add the tenant predicate

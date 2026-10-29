@@ -27,6 +27,7 @@ import {
   ShieldCheck,
   Workflow,
   FileWarning,
+  Bug,
   FileText,
   Crosshair,
   ClipboardList,
@@ -115,6 +116,17 @@ export const sidebarData: SidebarData = {
           permission: Permission.FindingsRead,
           module: 'findings',
           quickViews: 'findings',
+        },
+        {
+          // The same findings, one row per vulnerability (CVE) with its
+          // exploitation signals, reach, fix and remediation state: the
+          // issue lens beside the instance lens. The page also needs
+          // findings:read and says so when it is missing.
+          title: 'Vulnerabilities',
+          url: '/vulnerabilities',
+          icon: Bug,
+          permission: Permission.VulnerabilitiesRead,
+          module: 'findings',
         },
         {
           // The four-eyes inbox: false-positive and risk-acceptance requests
