@@ -29,7 +29,7 @@ func NewUserDashboardRepository(db *DB) *UserDashboardRepository {
 }
 
 const dashboardColumns = `id, tenant_id, user_id, kind, name, description, column_count, is_default, is_org_default,
-	position, refresh_schedule, refresh_daily_minute, next_refresh_at, paused_at, origin, layout, created_at, updated_at`
+	position, refresh_schedule, refresh_daily_minute, next_refresh_at, paused_at, origin, layout, flow_panel_at, created_at, updated_at`
 
 // ListByUser returns the personal dashboards owned by (tenantID, userID).
 func (r *UserDashboardRepository) ListByUser(ctx context.Context, tenantID, userID shared.ID) ([]*dashboard.Dashboard, error) {
@@ -69,18 +69,18 @@ func (r *UserDashboardRepository) Create(ctx context.Context, d *dashboard.Dashb
 	}
 	const q = `
 		INSERT INTO user_dashboards (id, tenant_id, user_id, kind, name, description, column_count, is_default,
-		                             layout, origin, position, created_at, updated_at)
+		                             layout, origin, position, flow_panel_at, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
 		        CASE WHEN $4 = 'organization'
 		             THEN COALESCE((SELECT max(position) + 1 FROM user_dashboards
 		                             WHERE tenant_id = $2 AND kind = 'organization'), 0)
 		             ELSE 0 END,
-		        $11, $12)
+		        $13, $11, $12)
 	`
 	_, err = r.db.ExecContext(ctx, q,
 		d.ID().String(), d.TenantID().String(), nullableOwner(d), string(d.Kind()),
 		d.Name(), d.Description(), d.Columns(), d.IsDefault(), layout, string(d.Origin()),
-		d.CreatedAt(), d.UpdatedAt(),
+		d.CreatedAt(), d.UpdatedAt(), d.FlowPanelAt(),
 	)
 	if err != nil {
 		return dashboardWriteError("create dashboard", d.Kind(), err)
@@ -117,6 +117,43 @@ func (r *UserDashboardRepository) Update(ctx context.Context, d *dashboard.Dashb
 		return dashboardWriteError("update dashboard", d.Kind(), err)
 	}
 	return dashboardOneRow(res)
+}
+
+// AddFlowPanel writes the layout of d and sets flow_panel_at in one UPDATE
+// that only matches a row whose flow_panel_at is still NULL, in the caller's
+// tenant (and, for a personal dashboard, owned by d's user). Two concurrent
+// opens race on that predicate: exactly one gets a row. false means nothing
+// changed.
+func (r *UserDashboardRepository) AddFlowPanel(ctx context.Context, d *dashboard.Dashboard, now time.Time) (bool, error) {
+	layout, err := json.Marshal(d.Widgets())
+	if err != nil {
+		return false, fmt.Errorf("marshal layout: %w", err)
+	}
+	return r.flowPanelUpdate(ctx, d, `, layout = $6, updated_at = $3`, now, layout)
+}
+
+// MarkFlowPanel sets flow_panel_at when it is NULL and leaves the layout and
+// updated_at alone.
+func (r *UserDashboardRepository) MarkFlowPanel(ctx context.Context, d *dashboard.Dashboard, now time.Time) (bool, error) {
+	return r.flowPanelUpdate(ctx, d, ``, now)
+}
+
+func (r *UserDashboardRepository) flowPanelUpdate(ctx context.Context, d *dashboard.Dashboard, extraSet string, now time.Time, extra ...any) (bool, error) {
+	// $1 tenant, $2 id, $3 now, $4 kind, $5 owner (personal) or NULL (organization).
+	args := append([]any{d.TenantID().String(), d.ID().String(), now, string(d.Kind()), nullableOwner(d)}, extra...)
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE user_dashboards
+		   SET flow_panel_at = $3`+extraSet+`
+		 WHERE tenant_id = $1 AND id = $2 AND flow_panel_at IS NULL
+		   AND kind = $4 AND user_id IS NOT DISTINCT FROM $5::uuid`, args...)
+	if err != nil {
+		return false, fmt.Errorf("set dashboard flow panel: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("set dashboard flow panel: %w", err)
+	}
+	return n == 1, nil
 }
 
 // Delete removes a personal dashboard scoped to (tenantID, userID).
@@ -443,11 +480,12 @@ func scanUserDashboard(row interface{ Scan(dest ...any) error }) (*dashboard.Das
 		schedule             sql.NullString
 		dailyMinute          sql.NullInt32
 		nextAt, pausedAt     sql.NullTime
+		flowPanelAt          sql.NullTime
 		layoutJSON           []byte
 		createdAt, updatedAt time.Time
 	)
 	err := row.Scan(&id, &tenantID, &userID, &kind, &name, &description, &columnCount, &isDefault, &isOrgDef,
-		&position, &schedule, &dailyMinute, &nextAt, &pausedAt, &origin, &layoutJSON, &createdAt, &updatedAt)
+		&position, &schedule, &dailyMinute, &nextAt, &pausedAt, &origin, &layoutJSON, &flowPanelAt, &createdAt, &updatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, shared.ErrNotFound
@@ -473,6 +511,11 @@ func scanUserDashboard(row interface{ Scan(dest ...any) error }) (*dashboard.Das
 		t := pausedAt.Time
 		s.PausedAt = &t
 	}
+	var flowAt *time.Time
+	if flowPanelAt.Valid {
+		t := flowPanelAt.Time
+		flowAt = &t
+	}
 	var owner shared.ID
 	if userID.Valid {
 		owner = shared.MustIDFromString(userID.String)
@@ -491,6 +534,7 @@ func scanUserDashboard(row interface{ Scan(dest ...any) error }) (*dashboard.Das
 		Schedule:     s,
 		Origin:       dashboard.Origin(origin),
 		Widgets:      widgets,
+		FlowPanelAt:  flowAt,
 		CreatedAt:    createdAt,
 		UpdatedAt:    updatedAt,
 	}), nil
