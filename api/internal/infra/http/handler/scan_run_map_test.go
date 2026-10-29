@@ -149,6 +149,42 @@ func TestRunMap_ComparesWithThePreviousRun(t *testing.T) {
 	}
 }
 
+// A step that did not finish its work (no sensor took it, it failed, timed
+// out or is still running) produced nothing to compare: the previous run's
+// assets are never shown as gone for it.
+func TestRunMap_UnfinishedStepsDoNotCompare(t *testing.T) {
+	prev := shared.NewID()
+	for _, st := range []scanrundom.StepRunStatus{
+		scanrundom.StepRunStatusFailed, scanrundom.StepRunStatusTimeout, scanrundom.StepRunStatusCanceled,
+		scanrundom.StepRunStatusSkipped, scanrundom.StepRunStatusRunning, scanrundom.StepRunStatusQueued,
+		scanrundom.StepRunStatusPending,
+	} {
+		step := mapStepRun("quick_scan", 1, st)
+		m := &scanrunapp.RunMap{
+			Run: &scanrundom.Run{ID: shared.NewID(), Status: scanrundom.RunStatusFailed,
+				StepRuns: []*scanrundom.StepRun{step}},
+			PreviousRunID: prev,
+			Deltas:        []scanrundom.StepOutputDelta{{StepKey: "quick_scan", Previous: 9, Gone: 9}},
+		}
+		got := toRunMapResponse(m)
+		if o := got.Nodes[0].Outputs; o.Previous != nil || o.Gone != nil || o.Added != nil {
+			t.Errorf("%s step compares with the previous run: %+v", st, o)
+		}
+		if got.PreviousRunID != prev.String() {
+			t.Errorf("%s: previous_run_id = %q", st, got.PreviousRunID)
+		}
+	}
+	partial := mapStepRun("quick_scan", 1, scanrundom.StepRunStatusPartial)
+	m := &scanrunapp.RunMap{
+		Run:           &scanrundom.Run{ID: shared.NewID(), Status: scanrundom.RunStatusPartial, StepRuns: []*scanrundom.StepRun{partial}},
+		PreviousRunID: prev,
+		Deltas:        []scanrundom.StepOutputDelta{{StepKey: "quick_scan", Previous: 9, Added: 1, Gone: 2}},
+	}
+	if o := toRunMapResponse(m).Nodes[0].Outputs; o.Gone == nil || *o.Gone != 2 {
+		t.Errorf("a partial step compares: %+v", o)
+	}
+}
+
 // The step whose outputs are listed is required, and the limit must be a
 // positive number,
 // before the run is even looked up.
