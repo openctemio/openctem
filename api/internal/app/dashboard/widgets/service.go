@@ -151,6 +151,9 @@ type WidgetValue struct {
 	Paths    *PathsValue    `json:"paths,omitempty"`
 	Flow     *FlowValue     `json:"flow,omitempty"`
 	Intake   *IntakeValue   `json:"intake,omitempty"`
+	Levers   *LeversValue   `json:"levers,omitempty"`
+	Brief    *BriefValue    `json:"brief,omitempty"`
+	KPIs     *KPIsValue     `json:"kpis,omitempty"`
 }
 
 // ScalarValue is one count, with the previous period and a sparkline when
@@ -447,6 +450,7 @@ func (s *Service) widget(ctx context.Context, i int, w dashboard.Widget, factsRe
 		v.State, v.Reason = StateError, reason
 		v.Scalar, v.Ratio, v.Duration, v.Category, v.Series, v.Matrix, v.Items = nil, nil, nil, nil, nil, nil, nil
 		v.Stages, v.Paths, v.Flow, v.Intake = nil, nil, nil, nil
+		v.Levers, v.Brief, v.KPIs = nil, nil, nil
 	}
 	return v
 }
@@ -537,6 +541,13 @@ func (s *Service) metric(ctx context.Context, v *WidgetValue, m dashboard.Metric
 	case dashboard.MetricKindIntake:
 		v.Window = &win
 		return s.intakeMetric(ctx, v, win, agg)
+	case dashboard.MetricKindLevers:
+		return s.leversMetric(ctx, v, agg)
+	case dashboard.MetricKindBrief:
+		return s.briefMetric(ctx, v, agg)
+	case dashboard.MetricKindKPIs:
+		v.Window = &win
+		return s.kpisMetric(ctx, v, win, compare, agg)
 	}
 	return fmt.Errorf("unknown metric kind %q", m.Kind)
 }
