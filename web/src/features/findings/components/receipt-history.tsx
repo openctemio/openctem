@@ -9,7 +9,7 @@
  * uploads; the API decides.
  */
 
-import { useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { type ColumnDef } from '@tanstack/react-table'
 import { X } from 'lucide-react'
@@ -67,7 +67,7 @@ export function ReceiptHistory() {
   const pathname = usePathname()
   const filters = useMemo(() => receiptFiltersOf(new URLSearchParams(params.toString())), [params])
   const { data, error, isLoading, mutate } = useReceipts(filters)
-  const n = (v: number | undefined) => formatCount(v ?? 0, locale)
+  const n = useCallback((v: number | undefined) => formatCount(v ?? 0, locale), [locale])
 
   const setParam = (key: string, value: string | null) => {
     const next = new URLSearchParams(params.toString())
@@ -78,11 +78,17 @@ export function ReceiptHistory() {
     router.replace(qs ? `${pathname}?${qs}` : pathname)
   }
 
-  const kindLabel = (kind: string) => {
-    const key = KIND_KEY[kind]
-    return key ? t(key, kind) : kind
-  }
-  const statusLabel = (status: string) => t(`findings.receiptHistory.status.${status}`, status)
+  const kindLabel = useCallback(
+    (kind: string) => {
+      const key = KIND_KEY[kind]
+      return key ? t(key, kind) : kind
+    },
+    [t]
+  )
+  const statusLabel = useCallback(
+    (status: string) => t(`findings.receiptHistory.status.${status}`, status),
+    [t]
+  )
 
   const columns = useMemo<ColumnDef<ReceiptResponse>[]>(
     () => [
@@ -171,8 +177,7 @@ export function ReceiptHistory() {
         ),
       })),
     ],
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [t, locale]
+    [t, locale, n, kindLabel, statusLabel]
   )
 
   const totals = data?.totals

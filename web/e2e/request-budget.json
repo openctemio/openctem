@@ -36,5 +36,76 @@
   },
   "$comment_sensorSafety": "/settings/scanning/sensor-safety loads the opt-in impact, shared-sensor setting, tenant settings, identity policy and the last-changed audit line, plus the support-access banner.",
   "$comment_supportAccess": "The support-access banner (a shell element on every page) reads /organization/support-access/active once per load, so each budget above the old one counts that request; /settings/members also loads join requests and the ownership transfer.",
-  "$comment_scans": "/scans lists the scans the platform runs itself (continuous coverage) in a read-only section above the table: GET /api/v1/scans?origin=system&per_page=10&sort=name. It is a different query from the paginated, filtered table (page 1 of 25 mixes both origins), changes with every coverage run (not bootstrap data), is not cached on a hard load and has no event, so the page needs one more request (7 to 8). With the origin filter on System the section is not rendered and the table serves both."
+  "$comment_scans": "/scans lists the scans the platform runs itself (continuous coverage) in a read-only section above the table: GET /api/v1/scans?origin=system&per_page=10&sort=name. It is a different query from the paginated, filtered table (page 1 of 25 mixes both origins), changes with every coverage run (not bootstrap data), is not cached on a hard load and has no event, so the page needs one more request (7 to 8). With the origin filter on System the section is not rendered and the table serves both.",
+  "$comment_dynamicRoutes": "Pages with an id in their path (research/335, RFC-136). Every such page must be listed: the gate loads it for the first item of `sample` (an API list) or the first link to it on the list page `from`, and skips it when the seed has none. /findings/[id] loads through GET /findings/{id}/view: the bootstrap, the view, the asset's SLA policy and the support-access banner. Pages the e2e seed has no item for carry defaultMax until a seed item or the page's own change measures them. /assets/[id] (12) is next in line for a view (research/335 section 1.2, item 11).",
+  "dynamicRoutes": {
+    "/assets/[id]": {
+      "sample": "/api/v1/assets?per_page=1",
+      "max": 12
+    },
+    "/assets/groups/[id]": {
+      "from": "/assets/groups",
+      "max": 6
+    },
+    "/components/[id]": {
+      "from": "/components",
+      "max": 6
+    },
+    "/cycles/[id]": {
+      "from": "/cycles",
+      "max": 6
+    },
+    "/emerging-threats/[id]": {
+      "from": "/settings/emerging-threats",
+      "max": 6
+    },
+    "/findings/[id]": {
+      "sample": "/api/v1/findings?per_page=1",
+      "max": 4
+    },
+    "/pentest/campaigns/[id]": {
+      "from": "/pentest/campaigns",
+      "max": 6
+    },
+    "/pentest/findings/[id]/edit": {
+      "from": "/pentest/campaigns",
+      "max": 6
+    },
+    "/programs/[id]": {
+      "from": "/programs",
+      "max": 2
+    },
+    "/remediation/campaigns/[id]": {
+      "from": "/remediation/campaigns",
+      "max": 6
+    },
+    "/remediation/tasks/[id]": {
+      "from": "/remediation/tasks",
+      "max": 6
+    },
+    "/scans/[id]": {
+      "sample": "/api/v1/scans?per_page=1",
+      "max": 5
+    },
+    "/scans/workflows/[id]": {
+      "from": "/scans/workflows",
+      "max": 6
+    },
+    "/settings/integrations/import-mappings/[id]": {
+      "from": "/settings/integrations/import-mappings",
+      "max": 3
+    },
+    "/settings/integrations/ticketing/mappings/[id]": {
+      "from": "/settings/integrations/ticketing/mappings",
+      "max": 6
+    },
+    "/settings/pentest/templates/[id]/edit": {
+      "from": "/settings/pentest/templates",
+      "max": 6
+    },
+    "/vulnerabilities/[cve]": {
+      "from": "/vulnerabilities",
+      "max": 5
+    }
+  }
 }

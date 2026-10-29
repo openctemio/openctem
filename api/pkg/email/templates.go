@@ -267,7 +267,7 @@ const securityNoticeTemplate = `<!DOCTYPE html>
 <body>
     <div class="container">
         <div class="header">
-            {{brandHeader .AppName}}
+            {{template "brandHeader" .AppName}}
         </div>
 
         <h2>{{.Subject}}</h2>
@@ -317,7 +317,7 @@ const verifyEmailTemplate = `<!DOCTYPE html>
 <body>
     <div class="container">
         <div class="header">
-            {{brandHeader .AppName}}
+            {{template "brandHeader" .AppName}}
         </div>
 
         <h2>Verify your email address</h2>
@@ -369,7 +369,7 @@ const passwordResetTemplate = `<!DOCTYPE html>
 <body>
     <div class="container">
         <div class="header">
-            {{brandHeader .AppName}}
+            {{template "brandHeader" .AppName}}
         </div>
 
         <h2>Reset your password</h2>
@@ -428,7 +428,7 @@ const passwordChangedTemplate = `<!DOCTYPE html>
 <body>
     <div class="container">
         <div class="header">
-            {{brandHeader .AppName}}
+            {{template "brandHeader" .AppName}}
         </div>
 
         <h2>Your password has been changed</h2>
@@ -482,7 +482,7 @@ const welcomeTemplate = `<!DOCTYPE html>
 <body>
     <div class="container">
         <div class="header">
-            {{brandHeader .AppName}}
+            {{template "brandHeader" .AppName}}
         </div>
 
         <h2>Welcome to {{.AppName}}!</h2>
@@ -537,7 +537,7 @@ const teamInvitationTemplate = `<!DOCTYPE html>
 <body>
     <div class="container">
         <div class="header">
-            {{brandHeader .AppName}}
+            {{template "brandHeader" .AppName}}
         </div>
 
         <h2>You've been invited to join a team</h2>
@@ -590,7 +590,7 @@ const accountSetupTemplate = `<!DOCTYPE html>
 <body>
     <div class="container">
         <div class="header">
-            {{brandHeader .AppName}}
+            {{template "brandHeader" .AppName}}
         </div>
 
         <h2>Your account is ready</h2>
@@ -640,7 +640,7 @@ const memberSuspendedTemplate = `<!DOCTYPE html>
 <body>
     <div class="container">
         <div class="header">
-            {{brandHeader .AppName}}
+            {{template "brandHeader" .AppName}}
         </div>
 
         <h2>Your access has been suspended</h2>
@@ -689,7 +689,7 @@ const memberReactivatedTemplate = `<!DOCTYPE html>
 <body>
     <div class="container">
         <div class="header">
-            {{brandHeader .AppName}}
+            {{template "brandHeader" .AppName}}
         </div>
 
         <h2>Welcome back</h2>
