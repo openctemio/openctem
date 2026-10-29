@@ -285,6 +285,8 @@
   "assets.facetPanel.noneRecorded": "None recorded yet.",
   "assets.facetPanel.noneYet": "None in this organization yet.",
   "assets.facetPanel.notCrown": "Not a crown jewel",
+  "assets.facetPanel.notResolving": "Resolution: not resolving",
+  "assets.facetPanel.resolving": "Resolution: resolving",
   "assets.facetPanel.searchFacet": "Search {facet}…",
   "assets.facetPanel.searchFacetAria": "Search {facet}",
   "assets.facetPanel.seenRecently": "Seen recently",
