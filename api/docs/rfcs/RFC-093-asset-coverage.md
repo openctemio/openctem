@@ -49,6 +49,7 @@ Workflows and quick scans keep working and settle the same ledger.
 | D2 | Default policy: the `coverage:` blocks of the registry (domain, subdomain, address, open port, web origin first). |
 | D3 | Workflows stay as presets that settle the same ledger; scheduled workflow scans are retired once the planner covers every capability. A tool swap does not make rows due; a content change does. |
 | D4 | Tenant administrators get per-tenant coverage gaps; the platform operator gets fleet-wide output drops as aggregates with no tenant identity. A gap is a pair uncovered for more than twice its cadence; an output drop is zero outputs over at least 20 inputs, or 3 consecutive failed attempts. |
+| D5 | Coverage does not run as a chained workflow (owner, 2026-10-29). The ledger's `requires` is the stage graph and each capability keeps its own cadence: a chain would either repeat slow stages at the cadence of the fast one or delay the fast one, and its derived targets would widen the due set. A due batch starts when it fills one task of its tool or when its oldest pair has waited a tenth of the cadence, at most 6 h ([asset coverage](../architecture/asset-coverage.md)). |
 
 ## 4. Coverage policy
 
@@ -118,6 +119,7 @@ each of 1 000 tenants 12 ms, one asset's explanation 0.05 ms.
 | P0-11 | Target-side outcomes (`unreachable`, `timeout`) pause a pair with a 1 d / 3 d / 7 d / weekly recheck instead of the failure back-off; HTTP probe on a name only when a web port or origin was seen or its ports are unknown ([asset coverage](../architecture/asset-coverage.md)) | PR |
 | P0-12 | Passive capabilities skip zone routing for public names, so a name that stopped resolving gets its DNS re-check; internal names keep zone routing ([asset coverage](../architecture/asset-coverage.md)) | PR |
 | P0-13 | Coverage alerts on change: keyed by (capability, kind, reason), sent when a condition appears or its count doubles or halves, one digest per day, with the action and its link; readiness alerts; no 20-hour repeat ([asset coverage](../architecture/asset-coverage.md)) | PR |
+| P0-14 | Batch rule: a due batch waits until it fills one task of the capability's tool or its oldest pair has waited min(cadence / 10, 6 h), so jittered due times share a run instead of starting one run per hour ([asset coverage](../architecture/asset-coverage.md)) | PR |
 | P1 | Tenant and plan policy, priority, budgets, windows, outcome classes for throttling, coverage KPI | designed |
 | P2 | Information-gathering sources, vantage rows, authenticated web coverage, targeted re-checks, ledger history | designed |
 | P3 | Planner emits work-pool items; workflows plan from the ledger | designed |
