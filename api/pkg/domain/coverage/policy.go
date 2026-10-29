@@ -114,6 +114,10 @@ type Entry struct {
 	LastError     string     `json:"last_error,omitempty"`
 	LastTool      string     `json:"last_tool,omitempty"`
 	FailStreak    int        `json:"fail_streak,omitempty"`
+	// UnreachedFrom names the organization's own scan zone or sensor whose
+	// tasks found the target silent, for a pair paused for that (never a
+	// platform sensor: "" then, and for any other pair).
+	UnreachedFrom string `json:"unreached_from,omitempty"`
 	// Gap: the pair applies and has gone without a success for more than
 	// twice its cadence (or never succeeded since it was planned that
 	// long ago).
@@ -187,6 +191,9 @@ func fill(e *Entry, row *Row) {
 	e.State, e.Reason = row.State, row.Reason
 	e.NextDueAt, e.LastAttemptAt, e.LastSuccessAt = row.NextDueAt, row.LastAttemptAt, row.LastSuccessAt
 	e.LastOutcome, e.LastError, e.LastTool, e.FailStreak = row.LastOutcome, row.LastError, row.LastTool, row.FailStreak
+	if row.State == StatePaused && IsTargetSide(row.Reason) {
+		e.UnreachedFrom = row.UnreachedFromName
+	}
 }
 
 // Repository is the ledger as the coverage service needs it. Every method
@@ -267,6 +274,8 @@ type FailedPair struct {
 	AssetID shared.ID
 	Outcome string
 	Error   string
+	// Observer is who saw a target-side outcome (ObserverKey); "" unknown.
+	Observer string
 }
 
 // Planner is the ledger as the planner needs it. Every method is scoped to
@@ -353,6 +362,10 @@ type CapabilityHealth struct {
 	// reason (the planner keeps one per capability).
 	Paused       int
 	PausedReason string
+	// Unreachable: pairs paused because their target did not answer
+	// (unreachable, timeout) from the sensors that tried; rechecked on the
+	// TargetSideRecheck schedule. They are not counted in Gaps.
+	Unreachable int
 }
 
 // Alert kinds.
@@ -360,6 +373,9 @@ const (
 	AlertGap        = "gap"
 	AlertOutputDrop = "output_drop"
 	AlertFailing    = "failing"
+	// AlertUnreachable: targets of the capability did not answer from the
+	// organization's sensors (counts only, never the targets).
+	AlertUnreachable = "unreachable"
 )
 
 // Output-drop and failing thresholds (owner decision D4).
@@ -381,6 +397,9 @@ func (h CapabilityHealth) Alerts() []string {
 	}
 	if h.Failing > 0 {
 		out = append(out, AlertFailing)
+	}
+	if h.Unreachable > 0 {
+		out = append(out, AlertUnreachable)
 	}
 	return out
 }
