@@ -14,6 +14,7 @@ import {
   Loader2,
   Moon,
   Plus,
+  Search,
   Server,
   ShieldAlert,
   Sun,
@@ -79,6 +80,12 @@ export function CommandMenu() {
   // '>' lists the commands only.
   const commandMode = query.trimStart().startsWith('>')
   const canFindings = hasPermission(Permission.FindingsRead)
+  // The vulnerability page is offered only when the sidebar (permission and
+  // module gate) offers it, so the palette never links a page the caller
+  // cannot open.
+  const canVulnerabilityPage = filteredSidebarData.navGroups.some((g) =>
+    g.items.some((i) => 'url' in i && i.url === '/vulnerabilities')
+  )
   const search = usePaletteSearch(open ? query : '', {
     findings: canFindings,
     assets: hasPermission(Permission.AssetsRead),
@@ -343,23 +350,39 @@ export function CommandMenu() {
               </CommandItem>
             </CommandGroup>
           )}
-          {!commandMode && search.cve && canFindings && (
+          {!commandMode && search.cve && (canFindings || canVulnerabilityPage) && (
             <CommandGroup
               forceMount
               heading={t('nav.palette.group.vulnerability', 'Vulnerability')}
             >
-              <CommandItem
-                forceMount
-                value={`cve ${search.cve}`}
-                onSelect={() =>
-                  runCommand(() =>
-                    router.push(`/findings?cve_id=${encodeURIComponent(search.cve as string)}`)
-                  )
-                }
-              >
-                <Bug aria-hidden />
-                {t('nav.palette.cveFindings', 'Findings for {cve}', { cve: search.cve })}
-              </CommandItem>
+              {canVulnerabilityPage && (
+                <CommandItem
+                  forceMount
+                  value={`cve open ${search.cve}`}
+                  onSelect={() =>
+                    runCommand(() =>
+                      router.push(`/vulnerabilities/${encodeURIComponent(search.cve as string)}`)
+                    )
+                  }
+                >
+                  <Bug aria-hidden />
+                  {t('nav.palette.cveOpen', 'Open {cve}', { cve: search.cve })}
+                </CommandItem>
+              )}
+              {canFindings && (
+                <CommandItem
+                  forceMount
+                  value={`cve ${search.cve}`}
+                  onSelect={() =>
+                    runCommand(() =>
+                      router.push(`/findings?cve_id=${encodeURIComponent(search.cve as string)}`)
+                    )
+                  }
+                >
+                  <Search aria-hidden />
+                  {t('nav.palette.cveFindings', 'Findings for {cve}', { cve: search.cve })}
+                </CommandItem>
+              )}
             </CommandGroup>
           )}
           {!commandMode &&

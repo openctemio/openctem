@@ -110,6 +110,8 @@
   "dashboards.editor.wider": "Rộng hơn",
   "dashboards.editor.widgetRole": "widget",
   "dashboards.editor.width": "{name}: rộng {span} trên {cols} cột",
+  "dashboards.empty.import": "Nhập kết quả",
+  "dashboards.empty.scan": "Thiết lập quét",
   "dashboards.flow.fixed": "Đã khắc phục",
   "dashboards.flow.opened": "Mới",
   "dashboards.freshness.building": "Dữ liệu bảng điều khiển đang được tạo lần đầu.",
