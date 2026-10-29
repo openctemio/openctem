@@ -266,11 +266,14 @@ type RunResponse struct {
 	// UnreachableTargetCount and SkippedTargetCount are the targets the
 	// run's sensors could not reach, or skipped by their local policy. They
 	// never change the run's status (a run with only these completes).
-	UnreachableTargetCount int                            `json:"unreachable_target_count,omitempty"`
-	SkippedTargetCount     int                            `json:"skipped_target_count,omitempty"`
-	QualityGateResult      *scanprofile.QualityGateResult `json:"quality_gate_result,omitempty"`
-	StepRuns               []StepRunResponse              `json:"scan_run_steps,omitempty"`
-	ErrorMessage           string                         `json:"error_message,omitempty"`
+	UnreachableTargetCount int `json:"unreachable_target_count,omitempty"`
+	SkippedTargetCount     int `json:"skipped_target_count,omitempty"`
+	// NoLongerResolveCount is how many of the skipped targets are names that
+	// no longer resolve (informational, never an error).
+	NoLongerResolveCount int                            `json:"no_longer_resolve_count,omitempty"`
+	QualityGateResult    *scanprofile.QualityGateResult `json:"quality_gate_result,omitempty"`
+	StepRuns             []StepRunResponse              `json:"scan_run_steps,omitempty"`
+	ErrorMessage         string                         `json:"error_message,omitempty"`
 	// RefusalCode says why a blocked run was refused (status blocked only),
 	// e.g. ALL_TARGETS_EXCLUDED, SCAN_WINDOW_NEVER_OPENS, NO_SENSOR_AVAILABLE.
 	RefusalCode string `json:"refusal_code,omitempty"`
@@ -419,6 +422,11 @@ type RunTaskResponse struct {
 	// may finish no target before it is re-queued as stalled. 0: none.
 	BudgetSeconds int `json:"budget_seconds,omitempty"`
 	StallSeconds  int `json:"stall_seconds,omitempty"`
+	// WithheldReason is, for a task no sensor took (queued, or failed
+	// without a claim), the placement code of the last time a sensor's
+	// dispatch gate withheld it (grant_credentials, intensity, ...). The
+	// sensor is never named.
+	WithheldReason string `json:"withheld_reason,omitempty"`
 }
 
 // RunTaskCoverageGap is one host a sensor could not fully cover, and why:
@@ -466,7 +474,7 @@ func toRunTaskResponses(tasks []scanrundom.Task) []RunTaskResponse {
 			CreatedAt: t.CreatedAt.Format(time.RFC3339), ErrorMessage: platformText(t.Platform, t.ErrorMessage),
 			SkippedTargetsTotal: t.SkippedTotal, WindowHold: t.WindowHold, CoverageGapsTotal: t.CoverageGapsTotal,
 			WaitingOnHosts: t.WaitingOnHosts, EgressRefusedTargets: t.EgressRefusedTargets,
-			GuardRefusedTargets: t.GuardRefusedTargets,
+			GuardRefusedTargets: t.GuardRefusedTargets, WithheldReason: t.WithheldReason,
 		}
 		for _, sk := range t.Skipped {
 			r.SkippedTargets = append(r.SkippedTargets, RunTaskSkippedTarget(sk))
@@ -1626,6 +1634,7 @@ func toRunResponse(r *scanrundom.Run) *RunResponse {
 
 	resp.UnreachableTargetCount = contextCount(r.Context, scanrun.RunContextKeyUnreachableCount)
 	resp.SkippedTargetCount = contextCount(r.Context, scanrun.RunContextKeySkippedCount)
+	resp.NoLongerResolveCount = contextCount(r.Context, scanrun.RunContextKeyNoLongerResolve)
 
 	// Extract filtering result from context if present
 	if r.Context != nil {
@@ -1634,6 +1643,17 @@ func toRunResponse(r *scanrundom.Run) *RunResponse {
 		}
 		resp.Dispatch = toRunDispatchResponse(r.Context)
 		resp.WindowWaits = toRunWindowWaits(r.Context)
+		// Names the sensors found no longer resolve: an informational skip
+		// group (a fact about the names, never a failure), next to the
+		// dispatch groups.
+		if n := resp.NoLongerResolveCount; n > 0 {
+			if resp.Dispatch == nil {
+				resp.Dispatch = &RunDispatchResponse{}
+			}
+			resp.Dispatch.Skipped = append(resp.Dispatch.Skipped, scansvc.SkipGroup{
+				Reason: scanrundom.SkipReasonTargetUnresolvable, Tone: scansvc.SkipToneInfo, Count: n, Targets: []string{},
+			})
+		}
 	}
 
 	return resp
