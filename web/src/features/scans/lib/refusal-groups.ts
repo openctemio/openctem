@@ -62,6 +62,21 @@ const ORDER: RefusalGroupKind[] = [
   'invalid',
 ]
 
+/** A remedy action the server ranks for a refused target. */
+export type RemedyAction = 'run_on_tenant_sensor' | 'verify_domain' | 'lower_intensity' | 'remove'
+
+/**
+ * One ranked remedy for a whole group: the server's remedies of its members,
+ * in the server's order. verify_domain carries every distinct domain;
+ * lower_intensity the lowest tier any member needs (so lowering to it fixes
+ * every member that offered it).
+ */
+export interface GroupRemedy {
+  action: RemedyAction
+  domains: string[]
+  tier?: number
+}
+
 export interface RefusalGroup {
   /** Stable key (kind, or kind + entry id for entry groups). */
   key: string
@@ -75,6 +90,8 @@ export interface RefusalGroup {
   fixes: ApiScopeFix[]
   /** Distinct domains to verify (proof groups). */
   domains: string[]
+  /** The server's ranked remedies for the group, best first, remove last. */
+  remedies: GroupRemedy[]
 }
 
 export function refusalKind(code: string | undefined): RefusalGroupKind {
@@ -105,10 +122,12 @@ export function groupRefusals(results: readonly ApiScopeCheckResult[]): RefusalG
         fixes:
           kind === 'entry' ? (r.fixes ?? []).filter((f) => ENTRY_FIXES.has(f.action ?? '')) : [],
         domains: [],
+        remedies: [],
       }
       groups.set(key, g)
     }
     g.results.push(r)
+    mergeRemedies(g.remedies, r)
     if (kind === 'proof') {
       for (const f of r.fixes ?? []) {
         const d = f.action === 'verify_domain' ? (f.domain ?? f.pattern) : undefined
@@ -121,18 +140,35 @@ export function groupRefusals(results: readonly ApiScopeCheckResult[]): RefusalG
   )
 }
 
-/** Whether a "Verify <domain>" fix was offered (the caller may verify). */
-export function canVerify(g: RefusalGroup): boolean {
-  return g.results.some((r) => (r.fixes ?? []).some((f) => f.action === 'verify_domain'))
+const REMEDY_ACTIONS = new Set<string>([
+  'run_on_tenant_sensor',
+  'verify_domain',
+  'lower_intensity',
+  'remove',
+])
+
+/** Adds one result's remedies to the group's, keeping the server's order. */
+function mergeRemedies(into: GroupRemedy[], r: ApiScopeCheckResult) {
+  for (const rem of r.remedies ?? []) {
+    const action = rem.action ?? ''
+    if (!REMEDY_ACTIONS.has(action)) continue
+    let g = into.find((x) => x.action === action)
+    if (!g) {
+      g = { action: action as RemedyAction, domains: [] }
+      // remove stays last, whatever order members arrive in.
+      const removeAt = into.findIndex((x) => x.action === 'remove')
+      if (action !== 'remove' && removeAt >= 0) into.splice(removeAt, 0, g)
+      else into.push(g)
+    }
+    if (rem.domain && !g.domains.includes(rem.domain)) g.domains.push(rem.domain)
+    if (typeof rem.tier === 'number')
+      g.tier = g.tier === undefined ? rem.tier : Math.min(g.tier, rem.tier)
+  }
 }
 
-/** Whether switching to the organization's own sensors would help. */
-export function ownSensorHelps(g: RefusalGroup): boolean {
-  if (g.kind === 'platform') return true
-  return (
-    g.kind === 'proof' &&
-    g.results.some((r) => (r.fixes ?? []).some((f) => f.action === 'use_tenant_sensor'))
-  )
+/** The group's remedy for an action, when the server offered it. */
+export function groupRemedy(g: RefusalGroup, action: RemedyAction): GroupRemedy | undefined {
+  return g.remedies.find((r) => r.action === action)
 }
 
 const IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/

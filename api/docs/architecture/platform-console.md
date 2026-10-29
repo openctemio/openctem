@@ -62,6 +62,28 @@ sign-ins, block reason, memberships and sessions are on the account's page,
 whose viewing is audited. Every list view writes an admin audit row
 (`platform_user.list`, with the state, search and page).
 
+### Accounts on a server that cannot send email
+
+`GET /api/v1/auth/providers` reports `email_delivery` (SMTP is configured).
+When it is false the sign-in pages say so instead of promising an email, and
+the console offers these super admin actions on a user's page, each with a
+reason, a step-up and an admin audit row:
+
+| Action | Route | Rules |
+|---|---|---|
+| Copy reset link | `POST /api/v1/admin/platform-users/{id}/reset-link` | local accounts only; refused (`EMAIL_AVAILABLE`) while email works; one-hour link, returned once with `Cache-Control: no-store`, stored only as a hash, never written to the audit row or the logs; a new link replaces the old one; following it does not bypass the account's second factor |
+| Mark email verified | `POST .../mark-verified` | unverified local accounts, only while email does not work |
+| Reset two-factor | `POST .../mfa/reset` | needs a second super admin's approval of that exact account (four-eyes, `user.reset_mfa`); removes the factor and recovery codes, ends every session, tells the user by email when email works; platform administrator accounts are refused |
+
+The link is a bearer secret: hand it over on a channel you trust. Organization
+invitations have the same fallback: `POST /api/v1/tenants/{tenant}/invitations/{id}/link`
+rotates the token and returns the new one once (no email; `members:invite`,
+and a recent re-authentication for a privileged invitation), and `.../renew`
+does the same for an expired invitation with a new seven-day lifetime. Both
+are audited (`invitation.link_regenerated`, `invitation.renewed`).
+`POST /api/v1/auth/resend-verification` always answers 202 with the same body
+and sends at most one verification email per address every two minutes.
+
 Scanning > Content catalog (`/api/v1/admin/content-catalog`, any role reads)
 shows the instance catalog organizations install from: its trust state (the
 trust roots come from `CONTENT_TRUST_ROOT_KEY_IDS` on the server and are shown
@@ -218,9 +240,11 @@ Shipped (design: [RFC-022 revision 24](../rfcs/RFC-022-platform-admin-console.md
 | Remove or relax the administrators' identity provider | removed, switched off, or no longer required |
 | Change the administrators' identity provider or the second factor it is trusted for | a new issuer or client id on an existing provider, or any trusted ACR/AMR value not trusted before (also on a first configuration); the target is the new issuer, client and trusted values |
 | Change where platform AI sends data | platform AI is saved turned on with a provider, server address, private-network switch or API key that differs from the last one applied while on (so a first enable, a key swap and enabling a destination changed while off all ask); the target is the provider, server address, private switch and a keyed fingerprint of the key, never the key. Model and allowed-model changes and turning it off never ask; removing the key of a platform that stays on does, because the server is then called without the credential; a backend that cannot fingerprint the key refuses the save |
+| Change the mail server platform e-mail is sent through | platform e-mail is saved turned on with a host, port, connection security or SMTP username that differs from the last one applied while on (so a first relay, a new host or port, a TLS downgrade and a different login ask); the target is host, port, security and username, never the password. Password rotation on the same login, sender changes, the test send and turning e-mail off never ask |
 | Reset another administrator's console second factor | always (their next sign-in enrolls a new factor) |
 | Open sign-up | the stored sign-up policy opens wider than before |
 | Re-sign an organization's audit chain | always |
+| Reset a user's two-factor authentication | always (`user.reset_mfa`, target `user:<id>`; a person who lost their device and codes) |
 
 How it works for the administrators:
 

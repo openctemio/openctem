@@ -15,6 +15,7 @@ import (
 	"time"
 
 	freshdom "github.com/openctemio/openctem/api/pkg/domain/assetfreshness"
+	"github.com/openctemio/openctem/api/pkg/domain/assetresolution"
 	scanpkg "github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
@@ -36,6 +37,12 @@ func (s *Service) SetResolveEvidence(r freshdom.NameEvidenceReader, refresh Stal
 	s.resolveEvidence, s.staleRefresher = r, refresh
 }
 
+// SetResolutionStore wires the resolution states (asset_resolution): an
+// active stage leaves out a name in the not_resolving state, whatever older
+// evidence says. Passive stages are not filtered, so the name comes back by
+// itself once a resolution (or a tool reaching it) records it resolving.
+func (s *Service) SetResolutionStore(st assetresolution.Store) { s.resolutionStore = st }
+
 // DropStaleNames keeps the targets an active stage may take: every target
 // that is not a host name, every name without evidence, and every name
 // whose freshest evidence is within freshdom.ResolveTTL. It returns the
@@ -50,7 +57,7 @@ func (s *Service) DropStaleNames(ctx context.Context, tenantID shared.ID, target
 // for them at all, and their enrichment is requested. A typed name without
 // evidence is still handed on.
 func (s *Service) dropNamesWithoutEvidence(ctx context.Context, tenantID shared.ID, targets []string, requireProof map[string]shared.ID) (kept, stale []string, err error) {
-	if s.resolveEvidence == nil || len(targets) == 0 {
+	if (s.resolveEvidence == nil && s.resolutionStore == nil) || len(targets) == 0 {
 		return targets, nil, nil
 	}
 	names := make([]string, 0, len(targets))
@@ -66,9 +73,23 @@ func (s *Service) dropNamesWithoutEvidence(ctx context.Context, tenantID shared.
 	if len(names) == 0 {
 		return targets, nil, nil
 	}
-	ev, err := s.resolveEvidence.FreshestByName(ctx, tenantID, names, freshdom.ResolveEvidenceClasses)
-	if err != nil {
-		return nil, nil, fmt.Errorf("resolution evidence check failed, nothing dispatched: %w", err)
+	var ev []freshdom.NameEvidence
+	if s.resolveEvidence != nil {
+		var err error
+		ev, err = s.resolveEvidence.FreshestByName(ctx, tenantID, names, freshdom.ResolveEvidenceClasses)
+		if err != nil {
+			return nil, nil, fmt.Errorf("resolution evidence check failed, nothing dispatched: %w", err)
+		}
+	}
+	// Names the platform knows do not resolve (a resolve stage or a sensor
+	// said so more than once in a row).
+	var notResolving map[string]bool
+	if s.resolutionStore != nil {
+		var err error
+		notResolving, err = s.resolutionStore.NotResolving(ctx, tenantID, names)
+		if err != nil {
+			return nil, nil, fmt.Errorf("resolution state check failed, nothing dispatched: %w", err)
+		}
 	}
 	freshest := map[string]time.Time{}
 	ids := map[string][]shared.ID{}
@@ -82,8 +103,11 @@ func (s *Service) dropNamesWithoutEvidence(ctx context.Context, tenantID shared.
 	cutoff := time.Now().Add(-freshdom.ResolveTTL)
 	staleSet := map[string]bool{}
 	var refresh []shared.ID
+	for n := range notResolving {
+		staleSet[n] = true
+	}
 	for n, at := range freshest {
-		if at.Before(cutoff) {
+		if at.Before(cutoff) && !notResolving[n] {
 			staleSet[n] = true
 			refresh = append(refresh, ids[n]...)
 		}
@@ -91,7 +115,7 @@ func (s *Service) dropNamesWithoutEvidence(ctx context.Context, tenantID shared.
 	// No evidence at all: never seen resolving. Its enrichment is asked
 	// for, and the resolve.dns coverage of the asset checks it too.
 	for _, n := range names {
-		if id, need := requireProof[n]; need {
+		if id, need := requireProof[n]; need && !notResolving[n] {
 			if _, known := freshest[n]; !known {
 				staleSet[n] = true
 				refresh = append(refresh, id)
@@ -110,7 +134,7 @@ func (s *Service) dropNamesWithoutEvidence(ctx context.Context, tenantID shared.
 		}
 		kept = append(kept, t)
 	}
-	if s.staleRefresher != nil {
+	if s.staleRefresher != nil && len(refresh) > 0 {
 		s.staleRefresher.RequestStale(ctx, tenantID, refresh)
 	}
 	return kept, stale, nil

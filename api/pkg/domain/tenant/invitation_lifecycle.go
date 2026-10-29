@@ -94,3 +94,9 @@ func (i *Invitation) MarkResent(now time.Time) error {
 	i.resendCount++
 	return nil
 }
+
+// Renew gives an invitation a new full lifetime from now. Used for an expired
+// invitation, so an administrator does not have to delete it and invite again.
+func (i *Invitation) Renew(now time.Time) {
+	i.expiresAt = now.UTC().Add(DefaultInvitationExpiry)
+}

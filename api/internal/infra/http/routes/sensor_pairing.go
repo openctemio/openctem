@@ -127,7 +127,7 @@ func registerSensorPairingRoutes(router Router, h *handler.SensorPairingHandler,
 		// creating one needs sensors:approve and a recent re-authentication;
 		// revoking narrows and needs no step-up.
 		r.GET("/enrollment-tokens", h.ListEnrollmentTokens, middleware.Require(permission.SensorsRead))
-		r.POST("/enrollment-tokens", h.CreateEnrollmentToken, middleware.Require(permission.SensorsApprove), requireStepUp(), userLimit)
+		r.POST("/enrollment-tokens", h.CreateEnrollmentToken, middleware.Require(permission.SensorsApprove), requireStepUp(), requireCredentialFactor(), userLimit)
 		r.POST("/enrollment-tokens/{id}/revoke", h.RevokeEnrollmentToken, middleware.Require(permission.SensorsApprove), userLimit)
 	}, tenantMiddlewares...)
 }
