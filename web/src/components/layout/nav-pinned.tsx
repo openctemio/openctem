@@ -102,9 +102,18 @@ export function NavPinned({ groups }: { groups: NavGroup[] }) {
         <SidebarMenu>
           {rows.map((r) => {
             const active = r.pin.kind === 'page' ? pathname === r.href : here === r.href
+            // A pinned page or quick view is also a row of the tree below, which
+            // holds the one fill; the pin mirrors it unfilled. A saved view has
+            // no row of its own, so its pin is the current row.
+            const filled = active && r.pin.kind === 'saved_view'
             return (
               <SidebarMenuItem key={`${r.pin.kind}:${r.pin.ref}`} data-slot="nav-pinned-item">
-                <SidebarMenuButton asChild isActive={active} tooltip={r.label}>
+                <SidebarMenuButton
+                  asChild
+                  isActive={filled}
+                  data-current={active && !filled ? true : undefined}
+                  tooltip={r.label}
+                >
                   <SidebarLink
                     href={r.href}
                     aria-current={active ? 'page' : undefined}

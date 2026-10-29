@@ -15,6 +15,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"regexp"
 	"sort"
 	"strings"
@@ -61,10 +62,20 @@ const (
 	// ApprovalOrgPurge: an organization is deleted at once, before its grace
 	// period ends ("tenant:<id>").
 	ApprovalOrgPurge ApprovalAction = "organization.purge"
+	// ApprovalUserMFAReset: an organization user's two-factor authentication
+	// is turned off by the console ("user:<id>"), for a person who lost their
+	// device and codes and has no organization administrator to reset them.
+	ApprovalUserMFAReset ApprovalAction = "user.reset_mfa"
+	// ApprovalPlatformAIDestination: platform AI is saved turned on with a
+	// destination other than the last one applied while on: provider, base
+	// URL, private-network switch or API key. The target is the new
+	// destination (PlatformAIDestinationTarget). Model changes, turning off
+	// and removing the key never need it.
+	ApprovalPlatformAIDestination ApprovalAction = "platform_ai.destination"
 )
 
 var (
-	approvalIDTarget     = regexp.MustCompile(`^(admin|tenant):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+	approvalIDTarget     = regexp.MustCompile(`^(admin|tenant|user):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 	approvalEmailTarget  = regexp.MustCompile(`^email:[^\s@]{1,64}@[^\s@]{1,255}$`)
 	approvalSignupTarget = regexp.MustCompile(`^mode=(admin_only|self_service);accounts=(closed|domain|open)$`)
 )
@@ -89,10 +100,14 @@ func (a ApprovalAction) ValidTarget(target string) bool {
 		return target == "remove" || target == "disable" || target == "require_idp_off"
 	case ApprovalPlatformIdPChange:
 		return validPlatformIdPChangeTarget(target)
+	case ApprovalPlatformAIDestination:
+		return validPlatformAIDestinationTarget(target)
 	case ApprovalSignupOpen:
 		return approvalSignupTarget.MatchString(target)
 	case ApprovalAuditChainRebaseline, ApprovalOrgPurge:
 		return approvalIDTarget.MatchString(target) && strings.HasPrefix(target, "tenant:")
+	case ApprovalUserMFAReset:
+		return approvalIDTarget.MatchString(target) && strings.HasPrefix(target, "user:")
 	}
 	return false
 }
@@ -102,7 +117,7 @@ func (a ApprovalAction) IsValid() bool {
 	switch a {
 	case ApprovalGrantSuperAdmin, ApprovalRevokeSuperAdmin, ApprovalConsoleMFAOff,
 		ApprovalPlatformIdPRemove, ApprovalSignupOpen, ApprovalAuditChainRebaseline, ApprovalOrgPurge,
-		ApprovalPlatformIdPChange, ApprovalResetCredentials:
+		ApprovalPlatformIdPChange, ApprovalResetCredentials, ApprovalUserMFAReset, ApprovalPlatformAIDestination:
 		return true
 	}
 	return false
@@ -152,6 +167,78 @@ func validPlatformIdPChangeTarget(target string) bool {
 		return false
 	}
 	return PlatformIdPChangeTarget(c.Issuer, c.ClientID, c.ACR, c.AMR) == target
+}
+
+// platformAIDestination is the canonical form of a platform AI destination
+// target. KeyFP is a keyed fingerprint of the API key (never the key, never a
+// plain hash of it), so an approval covers exactly the key it was asked for.
+type platformAIDestination struct {
+	Provider     string `json:"provider"`
+	BaseURL      string `json:"base_url"`
+	AllowPrivate bool   `json:"allow_private"`
+	KeyFP        string `json:"key_fp"`
+}
+
+// canonicalTarget is the canonical JSON of v, or "sha256:<hex>" of it when
+// that is longer than a target may be (the requester's reason then has to
+// describe the change).
+func canonicalTarget(v any) string {
+	raw, _ := json.Marshal(v) // plain strings, numbers and bools always marshal
+	if len(raw) <= maxApprovalTarget {
+		return string(raw)
+	}
+	sum := sha256.Sum256(raw)
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+// PlatformAIDestinationTarget is the approval target of a platform AI
+// destination: provider, normalised base URL, private-network switch and the
+// key fingerprint.
+func PlatformAIDestinationTarget(provider, baseURL string, allowPrivate bool, keyFP string) string {
+	return canonicalTarget(platformAIDestination{Provider: provider, BaseURL: baseURL, AllowPrivate: allowPrivate, KeyFP: keyFP})
+}
+
+// validPlatformAIDestinationTarget accepts only the exact output of
+// PlatformAIDestinationTarget.
+func validPlatformAIDestinationTarget(target string) bool {
+	if approvalHashTarget.MatchString(target) {
+		return true
+	}
+	var c platformAIDestination
+	dec := json.NewDecoder(strings.NewReader(target))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&c); err != nil || c.Provider == "" {
+		return false
+	}
+	return PlatformAIDestinationTarget(c.Provider, c.BaseURL, c.AllowPrivate, c.KeyFP) == target
+}
+
+// PlatformAIDestinationLabel describes a platform AI destination target for
+// the approver: provider, host of the base URL, private on/off and the end of
+// the key fingerprint. Built from the server-made target, never from client
+// text. Empty for the hash form.
+func PlatformAIDestinationLabel(target string) string {
+	var c platformAIDestination
+	if json.Unmarshal([]byte(target), &c) != nil || c.Provider == "" {
+		return ""
+	}
+	out := c.Provider
+	if c.BaseURL != "" {
+		host := c.BaseURL
+		if u, err := url.Parse(c.BaseURL); err == nil && u.Host != "" {
+			host = u.Host
+		}
+		out += " at " + host
+	}
+	if c.AllowPrivate {
+		out += ", private network allowed"
+	}
+	if len(c.KeyFP) >= 4 {
+		out += ", key ending " + c.KeyFP[len(c.KeyFP)-4:]
+	} else {
+		out += ", no key"
+	}
+	return out
 }
 
 // TargetID returns the id in an "admin:<id>" or "tenant:<id>" target.

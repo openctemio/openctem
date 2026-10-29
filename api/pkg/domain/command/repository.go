@@ -158,13 +158,15 @@ type CommandStats struct {
 // zone-routed scan (RFC-023) dispatches one command per zone batch under a
 // single step run, so the step may only finish when the last batch does.
 type StepBatch struct {
-	Total      int    // commands linked to the step run
-	Active     int    // still pending, acknowledged or running
-	Failed     int    // failed, expired or canceled
-	Findings   int    // sum of the batches' reported findings_count
-	Skipped    int    // sum of the completed batches' refused_targets_total
-	Gaps       int    // sum of the completed batches' coverage_gaps_total
-	FirstError string // first failure message, in completion order
+	Total    int // commands linked to the step run
+	Active   int // still pending, acknowledged or running
+	Failed   int // failed, expired or canceled
+	Findings int // sum of the batches' reported findings_count
+	Skipped  int // sum of the completed batches' refused_targets_total
+	// Unresolvable is how many of Skipped are names that no longer resolve.
+	Unresolvable int
+	Gaps         int    // sum of the completed batches' coverage_gaps_total
+	FirstError   string // first failure message, in completion order
 	// Reach of the completed batches (sensor-reported, each bounded):
 	// batches with a reach summary, and the sums of its targets, reached
 	// and unreached counts.
@@ -226,6 +228,15 @@ type StepShareReader interface {
 // needed.
 type ExhaustedFailer interface {
 	FailExhaustedCommandsReturning(ctx context.Context, maxRetries int) ([]*Command, error)
+}
+
+// RunDeadlineExtender moves the deadline of the scan runs whose tasks a
+// sensor just claimed, so the run gets the time those tasks need from the
+// claim on and time spent waiting in the queue does not count
+// (docs/architecture/scan-lifecycle.md, "Deadline"). Optional extension of Repository,
+// asserted by the command service; tenant-scoped.
+type RunDeadlineExtender interface {
+	ExtendRunDeadlinesAtClaim(ctx context.Context, tenantID, sensorID shared.ID, ids []shared.ID) error
 }
 
 // BatchClaimer claims several commands for one sensor in one statement

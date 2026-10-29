@@ -291,7 +291,11 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
               )}
               {isScanRun && (
                 <DetailSection title={t('scans.runDetail.stages')}>
-                  <RunStageLanes runId={run.id} refreshInterval={runRefreshInterval(run)} />
+                  <RunStageLanes
+                    runId={run.id}
+                    refreshInterval={runRefreshInterval(run)}
+                    settled={!isRunInProgress(run)}
+                  />
                 </DetailSection>
               )}
               {(run.window_waits?.waiting_count ?? 0) > 0 && (

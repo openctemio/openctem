@@ -326,6 +326,28 @@ paths:
               type: object
               properties:
                 error_message: { type: string, description: Stored up to 4 KiB. }
+                error_code: { type: string, description: "The failure in the platform's vocabulary (TOOL_EXIT, PARSE_ERROR, TIMEOUT, ... and the infrastructure codes TOOL_UNAVAILABLE, TOOL_CRASHED, RESOURCE_MEMORY, RESOURCE_DISK, CONTENT_UNAVAILABLE, SENSOR_NETWORK, DNS_RESOLVER). Optional: without it the platform reads the message." }
+                failure:
+                  type: object
+                  description: >-
+                    What kind of failure it was (feature "failure_class").
+                    An infrastructure class moves routed work
+                    to another eligible sensor and excludes this one; a
+                    target.* class never moves. The platform decides where
+                    the work goes; evidence members are short tokens and
+                    anything else is dropped.
+                  required: [class]
+                  properties:
+                    class: { type: string, description: "infra.tool_unavailable, infra.tool_crashed, infra.resource.memory, infra.resource.disk, infra.resource.output_limit, infra.content_unavailable, infra.sensor_network, infra.dns_resolver, infra.egress.pool_exhausted, or target.<reason>." }
+                    evidence:
+                      type: object
+                      properties:
+                        tool: { type: string }
+                        tool_digest: { type: string }
+                        content_digest: { type: string }
+                        stage: { type: string }
+                        exit_code: { type: integer }
+                        signal: { type: string }
       responses: *transitionResponses
   /api/v2/sensor/commands/{command_id}/release:
     parameters:
@@ -1180,6 +1202,7 @@ components:
         next_heartbeat_seconds: { type: integer }
         actions: { type: array, items: { type: string, description: "pause, resume, drain, rotate_key, update, send_manifest, send_config_report (PUT /config-report; only for a sensor that sent config_report.digest); ignore unknown values" } }
         config_version: { type: string }
+        content_version: { type: string, maxLength: 128, description: "The ETag of the content packs this sensor should hold (its desired set); a change makes the sensor refresh its content at once. Absent when the platform serves no content or the sensor is paused." }
     Command:
       type: object
       required: [id, type, priority, status, sensor_id, payload, created_at]

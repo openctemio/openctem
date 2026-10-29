@@ -14,19 +14,18 @@ import {
   DialogBody,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
-import { ChevronLeft, ChevronRight, Clock, Loader2, Play, ShieldCheck } from 'lucide-react'
+import { ChevronRight, Clock, Loader2, Play, ShieldCheck } from 'lucide-react'
 import { submitScanApproval, useScanApprovalPreview } from '@/lib/api/scan-approval-hooks'
 import { ApprovalRequirement, missingEvidence } from '../approval/approval-requirement'
 import { toZonePreviewRequest, triggerErrorHint } from '@/features/scan-zones'
 import { ReviewStep } from './review-step'
 import { useScanReview } from '../../hooks/use-scan-review'
-import { useScanWorkflow } from '@/lib/api/scan-workflow-hooks'
+import { useScanWorkflow, useScanWorkflows } from '@/lib/api/scan-workflow-hooks'
 import { useScanZones } from '@/lib/api/scan-zone-hooks'
 import { Permission, useHasPermission } from '@/lib/permissions'
 
@@ -50,16 +49,23 @@ import { post } from '@/lib/api/client'
 import { scanEndpoints } from '@/lib/api/endpoints'
 import { notifyScannerConfigWarnings } from '../../lib/scanner-config-warnings'
 import { useCreateScanConfig, invalidateScanConfigsCache } from '@/lib/api/scan-hooks'
-import { probeNewAssetsRequest } from '../../lib/continuous-discovery'
-import { scopeCheckTier } from '../../lib/scan-intensity'
+import {
+  probeNewAssetsRequest,
+  probeNote,
+  savedProbeOutcome,
+  type ProbeOutcome,
+} from '../../lib/continuous-discovery'
 import { useTranslation } from '@/context/i18n-provider'
 import {
   refusedFromError,
   scopeRefusalSummary,
   ScopeRefusalPanel,
-  useScopeCheck,
   type ScopeRefusal,
 } from '@/features/scope'
+import { useTargetsCheck } from '../../hooks/use-targets-check'
+import { targetsNextBlock } from '../../lib/targets-step'
+import { isFormDirty } from '../../lib/form-dirty'
+import { useDiscardPrompt, WizardFooter } from './wizard-chrome'
 import { useTenant } from '@/context/tenant-provider'
 import {
   clearNewScanDraft,
@@ -107,18 +113,11 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
       saveNewScanDraft(tenantId, { form: formData, step: currentStep })
   }, [open, tenantId, formData, currentStep])
 
-  // The same check the Targets step shows (one cached request): when every
-  // refused target only waits for a scope approval, the scan can be saved to
-  // start once it is approved.
-  const scopeCheck = useScopeCheck(directTargets(formData), {
-    enabled: open,
-    sensor_preference:
-      formData.sensorPreference === 'tenant' || formData.sensorPreference === 'platform'
-        ? formData.sensorPreference
-        : 'auto',
-    scanner_name: formData.mode === 'single' ? formData.scannerName || undefined : undefined,
-    tier: scopeCheckTier(formData),
-  })
+  // The same check the Targets step shows (one cached request): Next on the
+  // Targets step waits while nothing can run, and when every refused target
+  // only waits for a scope approval, the scan can be saved to start once it
+  // is approved.
+  const { check: scopeCheck, readiness } = useTargetsCheck(formData, open)
   const awaitingApproval = onlyAwaitingApproval(scopeCheck.results)
 
   // Store created scan config ID for triggering
@@ -133,6 +132,13 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
   // Run now needs scans:execute on top of the scans:write that creates it.
   const canExecute = useHasPermission(Permission.ScansExecute)
   const router = useRouter()
+  // The probing workflow's readiness: whether it waits for a sensor.
+  const { data: probeWorkflows } = useScanWorkflows(
+    open && formData.continuousProbeWorkflowId
+      ? { is_active: true, per_page: 100, include: 'readiness' }
+      : null,
+    { revalidateOnFocus: false }
+  )
   const { data: zonesData } = useScanZones(canReadZones && open)
   const zones = useMemo(() => zonesData?.data ?? [], [zonesData?.data])
   // The previews take names: the picked assets by name, with the typed ones.
@@ -248,7 +254,10 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
     }
   }
 
+  const nextBlock = currentStep === 'targets' ? targetsNextBlock(readiness, t) : null
+
   const handleNext = () => {
+    if (nextBlock) return
     if (!validateCurrentStep()) return
 
     if (!isLastStep) {
@@ -312,6 +321,7 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
 
       // Continuous discovery: the probing scan is saved with the passive one
       // (active, only assets new since its last run).
+      let probeOutcome: ProbeOutcome | null = null
       if (formData.continuousProbeWorkflowId) {
         const probe = probeNewAssetsRequest(
           { ...request, targets: directTargets(formData) },
@@ -321,14 +331,36 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
         if (probe) {
           try {
             await createScanConfig(probe)
-          } catch (probeError) {
-            toast.error(
-              t('scans.new.continuousSecondFailed', undefined, {
-                error: getErrorMessage(probeError, t('scans.new.unknownError')),
-              })
+            probeOutcome = savedProbeOutcome(
+              probeWorkflows?.data?.find((w) => w.id === formData.continuousProbeWorkflowId)
+                ?.readiness?.state
             )
+          } catch (probeError) {
+            probeOutcome = {
+              kind: 'failed',
+              error: getErrorMessage(probeError, t('scans.new.unknownError')),
+            }
           }
         }
+      }
+
+      // One result for the pair: the probe's news joins the success toast.
+      const note = probeNote(probeOutcome, t)
+      const done = (message: string, description?: string) => {
+        const text = [description, note.description].filter(Boolean).join(' ') || undefined
+        const opts = {
+          description: text,
+          ...(note.sensorsHref
+            ? {
+                action: {
+                  label: t('scans.new.continuousProbeSensors'),
+                  onClick: () => router.push(note.sensorsHref as string),
+                },
+              }
+            : {}),
+        }
+        if (note.variant === 'warning') toast.warning(message, opts)
+        else toast.success(message, opts)
       }
 
       const waits = !!(scanConfig as { starts_when_scope_approved?: boolean })
@@ -342,7 +374,7 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
             ticket: approvalTicket.trim(),
             run_on_approval: formData.schedule.runImmediately && canExecute,
           })
-          toast.success(
+          done(
             t('scans.approval.submitted', 'Saved "{name}" and submitted it for approval', {
               name: formData.name,
             })
@@ -357,14 +389,15 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
           )
         }
       } else if (waits) {
-        toast.success(t('scans.new.savedWaiting', undefined, { name: formData.name }), {
-          description: t('scans.new.savedWaitingHint'),
-        })
+        done(
+          t('scans.new.savedWaiting', undefined, { name: formData.name }),
+          t('scans.new.savedWaitingHint')
+        )
       } else if (formData.schedule.runImmediately && canExecute) {
         // Trigger scan immediately if requested (and the user may run scans)
         try {
           await post(scanEndpoints.trigger(scanConfig.id), {})
-          toast.success(t('scans.new.started', undefined, { name: formData.name }))
+          done(t('scans.new.started', undefined, { name: formData.name }))
         } catch (triggerError) {
           // Scan config was created but trigger failed - show specific error
           const triggerRefused = refusedFromError(triggerError)
@@ -403,10 +436,10 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
           return
         }
       } else if (formData.schedule.saveOnly) {
-        toast.success(t('scans.new.savedStartLater', undefined, { name: formData.name }))
+        done(t('scans.new.savedStartLater', undefined, { name: formData.name }))
       } else {
         const at = formData.schedule.frequency === 'once' ? onceRunAt(formData) : null
-        toast.success(
+        done(
           at
             ? t('scans.new.willRunOn', undefined, {
                 name: formData.name,
@@ -443,13 +476,22 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
     }
   }
 
-  const handleClose = () => {
+  const isLoading = isSubmitting || isCreating
+
+  const close = () => {
     clearNewScanDraft(tenantId)
     setRefused([])
     setFormData(DEFAULT_NEW_SCAN)
     setCurrentStep('basic')
     createdConfigIdRef.current = null
     onOpenChange(false)
+  }
+  const { requestClose, prompt: discardPrompt } = useDiscardPrompt(
+    () => isFormDirty(formData, DEFAULT_NEW_SCAN),
+    close
+  )
+  const handleOpenChange = (next: boolean) => {
+    if (!next && !isLoading) requestClose()
   }
 
   const renderStep = () => {
@@ -459,7 +501,9 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
       case 'targets':
         return (
           <>
-            {refused.length > 0 && <ScopeRefusalPanel refused={refused} className="mx-4 mt-4" />}
+            {refused.length > 0 && (
+              <ScopeRefusalPanel refused={refused} className="mx-4 mt-4 sm:mx-6" />
+            )}
             <TargetsStep data={formData} onChange={handleDataChange} />
           </>
         )
@@ -496,16 +540,16 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
     }
   }
 
-  const isLoading = isSubmitting || isCreating
-
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent size="lg">
-        <DialogHeader>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent size="xl">
+        <DialogHeader className="pb-0">
           <DialogTitle>{t('scans.new.title')}</DialogTitle>
-          <DialogDescription>{t('scans.new.description')}</DialogDescription>
+          <DialogDescription className="max-sm:sr-only">
+            {t('scans.new.description')}
+          </DialogDescription>
           <ScanStepper
-            className="px-0 pt-2 pb-0 sm:px-0"
+            className="px-0 pt-1 pb-2 sm:px-0"
             currentStep={currentStep}
             onStepClick={handleStepClick}
             steps={STEPS}
@@ -514,122 +558,97 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
 
         <DialogBody className="px-0 py-0 sm:px-0">{renderStep()}</DialogBody>
 
-        <DialogFooter className="sm:items-center sm:justify-between">
-          <div className="flex flex-col items-center gap-1 sm:flex-row sm:justify-start">
-            {isLastStep && awaitingApproval && (
-              <p
-                className="text-xs text-muted-foreground sm:order-2 sm:max-w-[18rem]"
-                data-testid="scope-wait-notice"
-              >
-                {t('scans.new.waitNotice')}
-              </p>
-            )}
-            {isLastStep && !blocked && approvalLack && (
-              <p className="text-xs text-destructive sm:order-2 sm:max-w-[16rem]">{approvalLack}</p>
-            )}
-            {isLastStep && blocked && !awaitingApproval && (
-              <p
-                id="review-blocked"
-                className="text-xs text-destructive sm:order-2 sm:max-w-[16rem]"
-              >
-                {review.blockers[0]}
-              </p>
-            )}
-            {!isFirstStep && (
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={handleBack}
-                disabled={isLoading}
-                className="w-full sm:w-auto"
-              >
-                <ChevronLeft className="me-1 h-4 w-4" />
-                {t('scans.common.back')}
-              </Button>
-            )}
-          </div>
-
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <WizardFooter
+          onBack={isFirstStep ? undefined : handleBack}
+          disabled={isLoading}
+          noteId={nextBlock ? 'targets-next-blocked' : isLastStep ? 'review-blocked' : undefined}
+          noteTone={
+            nextBlock || (isLastStep && !awaitingApproval && (blocked || approvalLack))
+              ? 'destructive'
+              : 'muted'
+          }
+          note={
+            nextBlock ??
+            (isLastStep
+              ? awaitingApproval
+                ? t('scans.new.waitNotice')
+                : blocked
+                  ? review.blockers[0]
+                  : approvalLack || undefined
+              : undefined)
+          }
+        >
+          {isLastStep && !awaitingApproval && blocked && canSkipRefused && (
             <Button
               type="button"
-              variant="outline"
-              onClick={handleClose}
-              disabled={isLoading}
-              className="w-full sm:w-auto order-2 sm:order-1"
+              variant="secondary"
+              onClick={() => void handleSubmit({ skipRefused: true })}
+              disabled={isLoading || !!approvalLack}
+              className="h-auto whitespace-normal py-2"
+              data-testid="skip-refused"
             >
-              {t('common.cancel')}
+              {t('scans.review.skipRefused', 'Scan the {count} allowed targets, skip the rest', {
+                count: review.allowedCount,
+              })}
             </Button>
-
-            {isLastStep && !awaitingApproval && blocked && canSkipRefused && (
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => void handleSubmit({ skipRefused: true })}
-                disabled={isLoading || !!approvalLack}
-                className="order-1 h-auto w-full whitespace-normal py-2 sm:order-2 sm:w-auto"
-                data-testid="skip-refused"
-              >
-                {t('scans.review.skipRefused', 'Scan the {count} allowed targets, skip the rest', {
-                  count: review.allowedCount,
-                })}
-              </Button>
-            )}
-            {isLastStep && awaitingApproval ? (
-              <Button
-                type="button"
-                onClick={() => void handleSubmit({ waitForScope: true })}
-                disabled={isLoading || waitBlocked}
-                title={waitBlocked ? review.blockers[0] : undefined}
-                className="order-1 h-auto w-full whitespace-normal py-2 sm:order-2 sm:w-auto"
-              >
-                {isLoading ? (
-                  <Loader2 className="me-2 h-4 w-4 shrink-0 animate-spin" />
-                ) : (
-                  <Clock className="me-2 h-4 w-4 shrink-0" />
-                )}
-                {t('scans.new.createWhenApproved')}
-              </Button>
-            ) : isLastStep ? (
-              <Button
-                type="button"
-                onClick={() => void handleSubmit()}
-                disabled={isLoading || blocked || !!approvalLack}
-                title={blocked ? review.blockers[0] : approvalLack || undefined}
-                aria-describedby={blocked ? 'review-blocked' : undefined}
-                className="w-full sm:w-auto order-1 sm:order-2"
-              >
-                {isLoading ? (
-                  <>
-                    <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                    {formData.schedule.runImmediately
-                      ? t('scans.common.starting')
-                      : t('scans.common.saving')}
-                  </>
-                ) : needsApproval ? (
-                  <>
-                    <ShieldCheck className="me-2 h-4 w-4" />
-                    {t('scans.approval.submitForApproval', 'Submit for approval')}
-                  </>
-                ) : (
-                  <>
-                    <Play className="me-2 h-4 w-4" />
-                    {startLabel}
-                  </>
-                )}
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                onClick={handleNext}
-                className="w-full sm:w-auto order-1 sm:order-2"
-              >
-                {t('scans.common.next')}
-                <ChevronRight className="ms-1 h-4 w-4" />
-              </Button>
-            )}
-          </div>
-        </DialogFooter>
+          )}
+          {isLastStep && awaitingApproval ? (
+            <Button
+              type="button"
+              onClick={() => void handleSubmit({ waitForScope: true })}
+              disabled={isLoading || waitBlocked}
+              title={waitBlocked ? review.blockers[0] : undefined}
+              className="h-auto whitespace-normal py-2"
+            >
+              {isLoading ? (
+                <Loader2 className="me-2 h-4 w-4 shrink-0 animate-spin" />
+              ) : (
+                <Clock className="me-2 h-4 w-4 shrink-0" />
+              )}
+              {t('scans.new.createWhenApproved')}
+            </Button>
+          ) : isLastStep ? (
+            <Button
+              type="button"
+              onClick={() => void handleSubmit()}
+              disabled={isLoading || blocked || !!approvalLack}
+              title={blocked ? review.blockers[0] : approvalLack || undefined}
+              aria-describedby={blocked ? 'review-blocked' : undefined}
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 className="me-2 h-4 w-4 animate-spin" />
+                  {formData.schedule.runImmediately
+                    ? t('scans.common.starting')
+                    : t('scans.common.saving')}
+                </>
+              ) : needsApproval ? (
+                <>
+                  <ShieldCheck className="me-2 h-4 w-4" />
+                  {t('scans.approval.submitForApproval', 'Submit for approval')}
+                </>
+              ) : (
+                <>
+                  <Play className="me-2 h-4 w-4" />
+                  {startLabel}
+                </>
+              )}
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              onClick={handleNext}
+              disabled={!!nextBlock}
+              aria-describedby={nextBlock ? 'targets-next-blocked' : undefined}
+              data-testid="wizard-next"
+            >
+              {t('scans.common.next')}
+              <ChevronRight className="ms-1 h-4 w-4" />
+            </Button>
+          )}
+        </WizardFooter>
       </DialogContent>
+      {discardPrompt}
     </Dialog>
   )
 }
