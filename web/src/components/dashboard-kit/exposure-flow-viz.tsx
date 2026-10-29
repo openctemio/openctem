@@ -229,7 +229,7 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
     },
   ]
 
-  const layout = useWireAnchors(ref, [shown.length, result.open.value])
+  const layout = useWireAnchors(ref, `${shown.length}:${result.open.value}`)
   const maxSource = Math.max(1, ...shown.map((s) => s.received))
   const maxOutcome = Math.max(1, ...outcomes.map((o) => o.fig.value))
 

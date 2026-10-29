@@ -20,8 +20,13 @@ function stable(v: unknown): unknown {
 }
 
 export function formSignature(form: NewScanFormData): string {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { assetNames, assetGroupNames, expandedTargets, ...targets } = form.targets
+  // The display-only name lists and the expanded preview are not user edits.
+  const {
+    assetNames: _assetNames,
+    assetGroupNames: _assetGroupNames,
+    expandedTargets: _expandedTargets,
+    ...targets
+  } = form.targets
   return JSON.stringify(stable({ ...form, targets }))
 }
 

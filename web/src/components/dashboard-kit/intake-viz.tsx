@@ -108,7 +108,7 @@ function ConnectorPanel({ data }: { data: IntakeData }) {
   const ref = useRef<HTMLDivElement>(null)
   const reduced = usePrefersReducedMotion()
   const { active, anchor, tipId, bind, containerProps } = useFlowFocus(ref)
-  const layout = useWireAnchors(ref, [data.sources.length])
+  const layout = useWireAnchors(ref, data.sources.length)
   const max = Math.max(1, ...data.sources.map((s) => s.received))
   const lit = (k: string) => !!active && (k === active || k === 'summary' || k === `w:${active}`)
   const activeSource = data.sources.find((s) => `s:${s.id}` === active)
