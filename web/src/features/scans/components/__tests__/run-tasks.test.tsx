@@ -250,10 +250,20 @@ describe('taskSkippedNote', () => {
   it('says how many targets the sensor skipped and why', () => {
     expect(
       taskSkippedNote({
-        skipped_targets: [{ target: 'api.example.com', reason: 'unresolvable' }],
+        skipped_targets: [{ target: 'api.example.com', reason: 'wildcard_pattern' }],
         skipped_targets_total: 1,
       })
-    ).toBe('Completed with 1 target skipped: api.example.com (does not resolve)')
+    ).toBe('Completed with 1 target skipped: api.example.com (wildcard pattern)')
+    // Names that no longer resolve are a fact about the names, said plainly.
+    expect(
+      taskSkippedNote({
+        skipped_targets: [
+          { target: 'a.example.com', reason: 'target_unresolvable' },
+          { target: 'b.example.com', reason: 'target_unresolvable' },
+        ],
+        skipped_targets_total: 157,
+      })
+    ).toBe('157 names no longer resolve: a.example.com, b.example.com, and 155 more')
     expect(
       taskSkippedNote({
         skipped_targets: [
@@ -282,15 +292,13 @@ describe('taskSkippedNote', () => {
             status: 'completed',
             tool: 'nuclei',
             targets: 1,
-            skipped_targets: [{ target: 'api.example.com', reason: 'unresolvable' }],
+            skipped_targets: [{ target: 'api.example.com', reason: 'target_unresolvable' }],
             skipped_targets_total: 1,
           },
         ]}
       />
     )
-    expect(
-      screen.getByText('Completed with 1 target skipped: api.example.com (does not resolve)')
-    ).toBeInTheDocument()
+    expect(screen.getByText('1 name no longer resolves: api.example.com')).toBeInTheDocument()
   })
 })
 

@@ -67,7 +67,7 @@ func plan(batch []Finding, stored []Finding, existing []Link) Plan {
 		}
 		in.Created[f.ID] = c
 		for _, k := range Keys(f) {
-			in.Holders[k.Key] = append(in.Holders[k.Key], Holder{FindingID: f.ID, Rule: f.Rule, StartLine: k.StartLine, EndLine: k.EndLine, CreatedAt: c})
+			in.Holders[k.Key] = append(in.Holders[k.Key], Holder{FindingID: f.ID, Rule: f.Rule, StartLine: k.StartLine, EndLine: k.EndLine, CreatedAt: c, Kind: f.Kind, Locator: k.Locator})
 			in.KeyKinds[k.Key] = k.Kind
 		}
 	}
@@ -211,5 +211,141 @@ func TestBasisNamesNoValues(t *testing.T) {
 		if len(Basis(r)) == 0 {
 			t.Errorf("%s has no basis", r)
 		}
+	}
+}
+
+func vuln(id, kind, cve, locator string) Finding {
+	return Finding{ID: id, AssetID: "asset-1", Kind: kind, CVE: cve, Locator: locator}
+}
+
+func TestVulnSignal(t *testing.T) {
+	cases := []struct {
+		name                                 string
+		kind, vuln, rule, port, url, wantCVE string
+		wantLoc                              string
+	}{
+		{"network port", "network", "cve-2023-44487", "", "443/tcp", "", "CVE-2023-44487", "443/tcp"},
+		{"network host", "network", "CVE-2023-44487", "", "host", "", "CVE-2023-44487", "host"},
+		{"sca is host level", "sca", "CVE-2023-44487", "", "", "", "CVE-2023-44487", "host"},
+		{"dast https default port", "dast", "", "CVE-2023-44487", "", "https://a.example/x", "CVE-2023-44487", "443/tcp"},
+		{"dast http default port", "dast", "", "CVE-2023-44487", "", "http://a.example/x", "CVE-2023-44487", "80/tcp"},
+		{"dast explicit port", "dast", "", "CVE-2023-44487", "", "https://a.example:8443/x", "CVE-2023-44487", "8443/tcp"},
+		{"advisory id is not a CVE", "network", "GHSA-aaaa-bbbb-cccc", "", "443/tcp", "", "", ""},
+		{"scanner rule is not a CVE", "network", "rule:12345", "", "443/tcp", "", "", ""},
+		{"dast rule that is no CVE", "dast", "", "exposed-panel", "", "https://a.example/", "", ""},
+		{"dast without url", "dast", "", "CVE-2023-44487", "", "", "", ""},
+		{"sast has no signal", "sast", "CVE-2023-44487", "", "", "", "", ""},
+	}
+	for _, c := range cases {
+		cve, loc := VulnSignal(c.kind, c.vuln, c.rule, c.port, c.url)
+		if cve != c.wantCVE || loc != c.wantLoc {
+			t.Errorf("%s: got (%q, %q), want (%q, %q)", c.name, cve, loc, c.wantCVE, c.wantLoc)
+		}
+	}
+}
+
+func TestKeys_VulnAssetNeedsACVEAnAssetAndALocator(t *testing.T) {
+	k := Keys(vuln("a", "network", "CVE-2023-44487", "443/tcp"))
+	if len(k) != 1 || k[0].Kind != KindVulnAsset || k[0].Locator != "443/tcp" || strings.Contains(k[0].Key, "CVE") {
+		t.Fatalf("key: %+v", k)
+	}
+	if Keys(vuln("a", "dast", "GHSA-x", "443/tcp")) != nil || Keys(vuln("a", "dast", "CVE-2023-44487", "")) != nil {
+		t.Error("a key without a CVE or a locator")
+	}
+	noAsset := vuln("a", "sca", "CVE-2023-44487", "host")
+	noAsset.AssetID = ""
+	if Keys(noAsset) != nil {
+		t.Error("a key without an asset")
+	}
+	other := vuln("b", "network", "CVE-2023-44487", "443/tcp")
+	other.AssetID = "asset-2"
+	if Keys(other)[0].Key == k[0].Key {
+		t.Error("the asset must be part of the key")
+	}
+	if Keys(vuln("c", "network", "CVE-2023-44488", "443/tcp"))[0].Key == k[0].Key {
+		t.Error("the CVE must be part of the key")
+	}
+	if Keys(vuln("d", "dast", "cve-2023-44487", "80/tcp"))[0].Key != k[0].Key {
+		t.Error("the port must not be part of the key (it is the locator)")
+	}
+}
+
+func TestPlan_VulnAssetLinksTechniquesOnOneAsset(t *testing.T) {
+	vm := vuln("vm", "network", "CVE-2023-44487", "443/tcp")
+	nuclei := vuln("nu", "dast", "CVE-2023-44487", "443/tcp")
+	p := plan([]Finding{nuclei}, []Finding{vm}, nil)
+	if len(p.Make) != 1 || p.Make[0].PrimaryID != "vm" || p.Make[0].MemberID != "nu" || p.Make[0].Rule != RuleVulnAsset {
+		t.Fatalf("want vm<-nu vuln_asset (the earliest is the original), got %+v", p.Make)
+	}
+	// The order of arrival does not change who the original is.
+	p = plan([]Finding{vm}, []Finding{nuclei}, nil)
+	if len(p.Make) != 1 || p.Make[0].PrimaryID != "nu" {
+		t.Fatalf("the earlier-created finding is the original, got %+v", p.Make)
+	}
+}
+
+func TestPlan_VulnAssetRefusals(t *testing.T) {
+	cases := map[string][2]Finding{
+		"different port":                 {vuln("a", "network", "CVE-2023-44487", "443/tcp"), vuln("b", "dast", "CVE-2023-44487", "8443/tcp")},
+		"different CVE":                  {vuln("a", "network", "CVE-2023-44487", "443/tcp"), vuln("b", "dast", "CVE-2023-44488", "443/tcp")},
+		"two SCA components, one host":   {vuln("a", "sca", "CVE-2023-44487", "host"), vuln("b", "sca", "CVE-2023-44487", "host")},
+		"no locator on one side":         {vuln("a", "network", "CVE-2023-44487", "443/tcp"), vuln("b", "dast", "CVE-2023-44487", "")},
+		"tcp and udp on the same number": {vuln("a", "network", "CVE-2023-44487", "443/udp"), vuln("b", "dast", "CVE-2023-44487", "443/tcp")},
+	}
+	for name, c := range cases {
+		if p := plan([]Finding{c[1]}, []Finding{c[0]}, nil); len(p.Make) != 0 {
+			t.Errorf("%s: linked %+v", name, p.Make)
+		}
+	}
+	// The same CVE on two assets is never linked automatically.
+	a, b := vuln("a", "network", "CVE-2023-44487", "443/tcp"), vuln("b", "dast", "CVE-2023-44487", "443/tcp")
+	b.AssetID = "asset-2"
+	if p := plan([]Finding{b}, []Finding{a}, nil); len(p.Make) != 0 {
+		t.Errorf("linked across assets: %+v", p.Make)
+	}
+}
+
+func TestPlan_VulnAssetHostLevelAgreesWithAPort(t *testing.T) {
+	host := vuln("h", "network", "CVE-2023-44487", "host")
+	nuclei := vuln("nu", "dast", "CVE-2023-44487", "443/tcp")
+	if p := plan([]Finding{nuclei}, []Finding{host}, nil); len(p.Make) != 1 {
+		t.Fatalf("host-level vs port-level: %+v", p.Make)
+	}
+	// A network report on a port and one at host level: one technique, two places.
+	port := vuln("p", "network", "CVE-2023-44487", "443/tcp")
+	if p := plan([]Finding{port}, []Finding{host}, nil); len(p.Make) != 1 {
+		t.Fatalf("network host vs network port: %+v", p.Make)
+	}
+}
+
+func TestPlan_VulnAssetThirdTechniqueJoinsTheGroupNeverDemotesTheOriginal(t *testing.T) {
+	vm := vuln("vm", "network", "CVE-2023-44487", "443/tcp")
+	nu := vuln("nu", "dast", "CVE-2023-44487", "443/tcp")
+	existing := []Link{{PrimaryID: "vm", MemberID: "nu", Rule: RuleVulnAsset, State: StateActive}}
+	// A scanner report created earlier than both (a backfill) still joins as a member.
+	nessus := vuln("nx", "network", "CVE-2023-44487", "host")
+	nessus.CreatedAt = time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	p := plan([]Finding{nessus}, []Finding{vm, nu}, existing)
+	if len(p.Make) != 1 || p.Make[0].PrimaryID != "vm" || p.Make[0].MemberID != "nx" {
+		t.Fatalf("the original is never demoted: %+v", p.Make)
+	}
+}
+
+func TestPlan_VulnAssetUnlinkedPairStaysApartAndAChangedSignalReleases(t *testing.T) {
+	vm := vuln("vm", "network", "CVE-2023-44487", "443/tcp")
+	nu := vuln("nu", "dast", "CVE-2023-44487", "443/tcp")
+	if p := plan([]Finding{nu}, []Finding{vm}, []Link{{PrimaryID: "vm", MemberID: "nu", Rule: RuleVulnAsset, State: StateUnlinked}}); len(p.Make) != 0 {
+		t.Fatalf("relinked an unlinked pair: %+v", p.Make)
+	}
+	moved := vuln("nu", "dast", "CVE-2023-44487", "8443/tcp")
+	p := plan([]Finding{moved}, []Finding{vm}, []Link{{PrimaryID: "vm", MemberID: "nu", Rule: RuleVulnAsset, State: StateActive}})
+	if len(p.Release) != 1 {
+		t.Fatalf("a link whose ports no longer agree is released: %+v", p)
+	}
+}
+
+func TestBasisOfVulnAsset(t *testing.T) {
+	if got := strings.Join(Basis(RuleVulnAsset), ","); got != "asset,vuln,port" {
+		t.Errorf("basis = %s", got)
 	}
 }

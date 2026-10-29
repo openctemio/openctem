@@ -21,6 +21,23 @@
 #                    is enough; PR_LABELS (the event's label names as a JSON
 #                    array) is the fallback.
 #
+#   range=<git range>  the range api/web/docs/migrations were computed from.
+#   incremental=true|false, since=<sha>  (pull request only) the answers above are
+#                    measured against the PR's last commit whose required checks
+#                    all passed (green-base.sh), so a push re-runs only what it
+#                    touched. See the incremental rules below.
+#   release=true|false  the PR is a verified release (release-provenance.sh).
+#
+# Incremental rules (pull_request, action synchronize only): never when the PR
+# changes anything under .github/ (a CI change re-runs everything; an earlier
+# check cannot vouch for a changed CI), never without a green commit, never when
+# the API cannot be asked (no token). `full` is always decided against the base,
+# so a PR that changed a CI definition keeps the full tier for what runs. A
+# merge of the base into the branch is just a commit: what it changed since the
+# green commit is what runs. Release PRs (head release/vX.Y.Z into main) whose
+# content release-provenance.sh verifies skip the heavy suites. merge_group and
+# pushes never use any of this: they run the full tier of what they changed.
+#
 # Documentation never counts as code for api/web: Markdown anywhere (which
 # includes the changelog fragments in api/changelog.d/), all of api/docs/ and docs/, and the agent notes under .claude/. A docs-only PR therefore runs
 # none of the Go or web suites (Docs check, the changelog check in API CI's
@@ -52,12 +69,19 @@ api_paths=(api/ "${shared[@]}")
 web_paths=(web/ "${shared[@]}")
 
 out() { echo "$1=$2" >> "${GITHUB_OUTPUT:-/dev/stdout}"; echo "$1=$2${3:+ ($3)}"; }
-all() { out api true "$1"; out web true "$1"; out docs true "$1"; out migrations true "$1"; out full true "$1"; exit 0; }
+all() { out api true "$1"; out web true "$1"; out docs true "$1"; out migrations true "$1"; out full true "$1"; out release false; out incremental false; exit 0; }
 
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+incremental=false since="" head_sha="" action=""
 case "${GITHUB_EVENT_NAME:-}" in
   pull_request)
     git fetch --no-tags --quiet origin "${GITHUB_BASE_REF}"
-    range="origin/${GITHUB_BASE_REF}...HEAD" ;;
+    range="origin/${GITHUB_BASE_REF}...HEAD"
+    ev="${GITHUB_EVENT_PATH:-}"
+    ev_get() { if [[ -n "$ev" && -f "$ev" ]]; then jq -r "$1 // empty" "$ev" 2>/dev/null || true; fi; }
+    action="${EVENT_ACTION:-$(ev_get .action)}"
+    head_sha="${PR_HEAD_SHA:-$(ev_get .pull_request.head.sha)}"
+    PR_NUMBER="${PR_NUMBER:-$(ev_get .number)}" ;;
   push)
     before="${EVENT_BEFORE:-}"
     if [[ -z "$before" || "$before" =~ ^0+$ ]] || ! git cat-file -e "${before}^{commit}" 2>/dev/null; then
@@ -80,6 +104,17 @@ case "${GITHUB_EVENT_NAME:-}" in
     all "event ${GITHUB_EVENT_NAME:-unknown} runs everything" ;;
 esac
 
+# A release PR whose content is already verified on develop skips the heavy suites.
+if [[ "${GITHUB_EVENT_NAME}" == pull_request ]] \
+  && reason="$(HEAD_SHA="$head_sha" bash "$HERE/release-provenance.sh")"; then
+  out api false "release provenance: $reason"; out web false "release provenance"
+  out docs false "release provenance"; out migrations false "release provenance"
+  out full false "release provenance"; out release true "$reason"
+  out incremental false; out since ""; out range "$range"
+  exit 0
+fi
+out release false
+
 all_files="$(git diff --name-only "$range")"
 
 # is_docs <path>: documentation only, see the header.
@@ -91,10 +126,15 @@ is_docs() {
   return 1
 }
 files="" docs=""
-while IFS= read -r f; do
-  [[ -n "$f" ]] || continue
-  if is_docs "$f"; then docs="$f"; else files+="$f"$'\n'; fi
-done <<<"$all_files"
+classify() { # classify <name list>: sets files and docs
+  local f
+  files="" docs=""
+  while IFS= read -r f; do
+    [[ -n "$f" ]] || continue
+    if is_docs "$f"; then docs="$f"; else files+="$f"$'\n'; fi
+  done <<<"$1"
+}
+classify "$all_files"
 
 # matches <prefix>... : first changed file under any prefix, or nothing.
 matches() {
@@ -108,22 +148,54 @@ matches() {
   return 1
 }
 
-echo "changed files in $range (first 50):"; awk 'NR <= 50 { print "  " $0 }' <<<"$all_files"
-if [[ -n "$docs" ]]; then out docs true "$docs"; else out docs false "no documentation file"; fi
-if hit="$(matches "${api_paths[@]}")"; then out api true "$hit"; else out api false "nothing under ${api_paths[*]}"; fi
-if hit="$(matches "${web_paths[@]}")"; then out web true "$hit"; else out web false "nothing under ${web_paths[*]}"; fi
-if hit="$(matches api/migrations/ api/deploy/postgres/)"; then out migrations true "$hit"; else out migrations false "no migration or role script"; fi
-
-# The full tier: every event except a pull request (the others returned
-# through all() or reach here as push / merge_group).
+# The full tier is decided against the BASE, whatever the answers below measure.
+full_out="" full_why=""
 if [[ "${GITHUB_EVENT_NAME}" != pull_request ]]; then
-  out full true "${GITHUB_EVENT_NAME}"
+  full_out=true full_why="${GITHUB_EVENT_NAME}"
 elif hit="$(matches .github/workflows/ .github/scripts/ .github/actions/)"; then
-  out full true "CI definition changed: $hit"
+  full_out=true full_why="CI definition changed: $hit"
 else
   labels="$(jq -r '.[]?' <<<"${PR_LABELS:-[]}" 2>/dev/null || true)"
   if [[ -n "${PR_NUMBER:-}" && -n "${GH_TOKEN:-}" ]] && command -v gh >/dev/null 2>&1; then
     if live="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/labels" --jq '.[].name' 2>/dev/null)"; then labels="$live"; fi
   fi
-  if grep -qxF 'ci:full' <<<"$labels"; then out full true "label ci:full"; else out full false "pull request without ci:full"; fi
+  if grep -qxF 'ci:full' <<<"$labels"; then full_out=true full_why="label ci:full"; else full_out=false full_why="pull request without ci:full"; fi
 fi
+
+# Incremental: measure against the PR's last green commit. Anything under
+# .github/ in the PR (any CI file, also Dependabot and CODEOWNERS) opts out.
+if [[ "${GITHUB_EVENT_NAME}" == pull_request && "$action" == synchronize && -n "$head_sha" \
+  && -n "${PR_NUMBER:-}" && -n "${GH_TOKEN:-}" ]] \
+  && ! grep -q '^\.github/' <<<"$all_files"; then
+  if since="$(PR_HEAD_SHA="$head_sha" PR_NUMBER="$PR_NUMBER" bash "$HERE/green-base.sh")" && [[ -n "$since" ]] \
+    && git cat-file -e "${since}^{commit}" 2>/dev/null && git cat-file -e "${head_sha}^{commit}" 2>/dev/null \
+    && inc_files="$(git diff --name-only "${since}..${head_sha}")" \
+    && ! grep -q '^\.github/' <<<"$inc_files"; then
+    # The green commit ran this PR's CI as it was then: when .github/ changed
+    # since (e.g. a CI edit that faked the checks, then reverted), its checks
+    # vouch for nothing and the PR is measured against the base.
+    incremental=true
+    range="${since}..${head_sha}"
+    all_files="$inc_files"
+    classify "$all_files"
+    echo "::notice title=Incremental CI::unchanged since ${since:0:12} (last commit of this PR with every required check green); only the changes after it are checked"
+    {
+      echo "### Incremental CI"; echo
+      echo "Measured against \`${since:0:12}\`, the last commit of this PR whose required checks all passed. Areas with no change since report success as *unchanged since ${since:0:12}*. The merge queue runs the full tier."
+    } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+  else
+    since=""
+    echo "incremental: no green commit to compare with; measuring against the base"
+  fi
+fi
+
+echo "changed files in $range (first 50):"; awk 'NR <= 50 { print "  " $0 }' <<<"$all_files"
+unch() { if [[ "$incremental" == true ]]; then echo "unchanged since ${since:0:12}"; else echo "$1"; fi; }
+if [[ -n "$docs" ]]; then out docs true "$docs"; else out docs false "$(unch 'no documentation file')"; fi
+if hit="$(matches "${api_paths[@]}")"; then out api true "$hit"; else out api false "$(unch "nothing under ${api_paths[*]}")"; fi
+if hit="$(matches "${web_paths[@]}")"; then out web true "$hit"; else out web false "$(unch "nothing under ${web_paths[*]}")"; fi
+if hit="$(matches api/migrations/ api/deploy/postgres/)"; then out migrations true "$hit"; else out migrations false "$(unch 'no migration or role script')"; fi
+out full "$full_out" "$full_why"
+out incremental "$incremental" "${since:+since ${since:0:12}}"
+out since "$since"
+if [[ "${GITHUB_EVENT_NAME}" == pull_request ]]; then out range "$range"; fi

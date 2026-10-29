@@ -116,6 +116,26 @@ func TestCapPotentialPriority(t *testing.T) {
 	}
 }
 
+func TestCapPotentialPriority_ConfirmedMatchIsNotCapped(t *testing.T) {
+	f, _ := vulnerability.NewFinding(shared.NewID(), shared.NewID(), vulnerability.FindingSourceVA, softwarematch.ToolName, vulnerability.SeverityHigh, "m")
+	c := 65
+	_ = f.SetConfidence(&c)
+	f.SetPriorityClassification(vulnerability.PriorityP0, "x")
+	f.SetMetadata("version_match", map[string]any{"confirmed_by": map[string]any{"tool": "nuclei"}})
+	if !Confirmed(f) {
+		t.Fatal("a version match with confirmed_by is confirmed")
+	}
+	CapPotentialPriority(f)
+	if got := *f.PriorityClass(); got != vulnerability.PriorityP0 {
+		t.Errorf("a confirmed match was capped to %s", got)
+	}
+	g, _ := vulnerability.NewFinding(shared.NewID(), shared.NewID(), vulnerability.FindingSourceVA, softwarematch.ToolName, vulnerability.SeverityHigh, "m")
+	g.SetMetadata("version_match", map[string]any{"label": "potential"})
+	if Confirmed(g) {
+		t.Error("an unconfirmed match reads as confirmed")
+	}
+}
+
 // fakeStore is an in-memory softwarematch.Store for the reconcile logic.
 type fakeStore struct {
 	matches    []softwarematch.Match

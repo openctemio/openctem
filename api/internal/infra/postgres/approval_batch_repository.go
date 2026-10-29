@@ -73,11 +73,12 @@ func (r *FindingApprovalRepository) CreateBatch(ctx context.Context, b *vulnerab
 	return r.db.Transaction(ctx, func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx, `
 			INSERT INTO approval_batches (id, tenant_id, source_type, source_id, requested_status, closure_reason, justification,
-				expires_at, requested_by, tier, risk_class, required_approvals, policy_eval, status, decide_by, member_count, created_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'pending', $14, $15, $16)`,
+				expires_at, requested_by, tier, risk_class, required_approvals, policy_eval, status, decide_by, member_count, created_at,
+				source_label)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'pending', $14, $15, $16, $17)`,
 			b.ID.String(), b.TenantID.String(), b.SourceType, b.SourceID.String(), string(b.RequestedStatus), b.ClosureReason.String(),
 			b.Justification, b.ExpiresAt, b.RequestedBy.String(), b.Tier, b.RiskClass, b.RequiredApprovals, nullJSON(b.PolicyEval),
-			b.DecideBy, b.MemberCount, b.CreatedAt)
+			b.DecideBy, b.MemberCount, b.CreatedAt, nullString(b.SourceLabel))
 		if err != nil {
 			var pqErr *pq.Error
 			if errors.As(err, &pqErr) && pqErr.Code == "23505" {
@@ -133,7 +134,8 @@ const batchSelect = `
 	       b.version, b.created_at,
 	       (SELECT COUNT(*) FROM approval_signoffs so
 	        WHERE so.tenant_id = b.tenant_id AND so.subject_type = 'approval_batch' AND so.subject_id = b.id),
-	       COALESCE((SELECT t.title FROM remediation_tasks t WHERE t.tenant_id = b.tenant_id AND t.id = b.source_id), '')
+	       COALESCE((SELECT t.title FROM remediation_tasks t WHERE t.tenant_id = b.tenant_id AND t.id = b.source_id
+	                 AND b.source_type = 'remediation_task'), b.source_label, '')
 	FROM approval_batches b`
 
 type batchScanner interface {
@@ -390,6 +392,16 @@ func (r *FindingApprovalRepository) lockBatchMembersTx(ctx context.Context, tx *
 	}
 	if len(pending) == 0 {
 		return nil, nil, nil
+	}
+	var fromTask bool
+	if err := tx.QueryRowContext(ctx, `SELECT source_type = 'remediation_task' FROM approval_batches WHERE tenant_id = $1 AND id = $2`,
+		tenantID.String(), batchID.String()).Scan(&fromTask); err != nil {
+		return nil, nil, fmt.Errorf("read the source of a group exception: %w", err)
+	}
+	if !fromTask {
+		// A selection of vulnerabilities has no membership to leave: each
+		// member is decided on its own state when the batch is applied.
+		return pending, nil, nil
 	}
 	onTask, err := batchTaskMembersTx(ctx, tx, tenantID, batchID)
 	if err != nil {
