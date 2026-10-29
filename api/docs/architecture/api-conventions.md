@@ -341,6 +341,14 @@ everything else is **Planned**. The decision numbers are RFC-041 §11 D1–D16.
 - **Conditional reads.** Single resources that change rarely (settings,
   bootstrap, catalogs) send `ETag` and answer `If-None-Match` with `304`.
   **Planned**
+- **Shared reads come with the session bootstrap.** `GET /me/bootstrap` carries
+  what every page needs and the caller may see: profile, memberships,
+  permissions, modules, badge counts, pins, `support_access` (`team:read`),
+  `ai_config` (`findings:read`, `ai_triage:read` and the `ai_triage` module on)
+  and `sla` (`assets:read`; the organization's windows and whether any asset
+  has a policy of its own). Each part uses the gate of the endpoint it
+  replaces and is left out when the caller fails it or its source errors; the
+  console then asks the endpoint as before. **Shipped**
 
 ### 9.3 Writes and safety
 
