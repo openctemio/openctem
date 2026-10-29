@@ -1486,40 +1486,6 @@ func (r *FindingRepository) ListByComponentID(ctx context.Context, tenantID, com
 	return r.List(ctx, filter, opts, page)
 }
 
-// Tenant CVE views read the tenant's own observation first and the shared
-// catalog second (docs/architecture/global-catalog-trust.md). The catalog's
-// descriptive fields come from whichever tenant first reported a CVE, so they
-// must not decide what another tenant's view shows or filters:
-//   - severity is the worst severity among this tenant's findings for the CVE;
-//   - CVSS and EPSS prefer this tenant's findings (EPSS on findings comes from
-//     the EPSS feed), then the catalog;
-//   - KEV is the finding's feed-derived is_in_kev or the catalog's KEV
-//     columns, which only the KEV feed writes;
-//   - exploit availability is the catalog flag (KEV feed) or this tenant's
-//     own scanner verdict (findings.exploit_available), through the same
-//     predicate as the list filter (vulnerability.FindingExploitAvailableSQL),
-//     which is why tenantCVEAggColumns is a var.
-var tenantCVEAggColumns = `
-				MIN(CASE f.severity
-					WHEN 'critical' THEN 1
-					WHEN 'high'     THEN 2
-					WHEN 'medium'   THEN 3
-					WHEN 'low'      THEN 4
-					WHEN 'info'     THEN 5
-					ELSE 6 END)                         AS sev_rank,
-				MAX(f.cvss_score)                      AS t_cvss,
-				MAX(f.epss_score)                      AS t_epss,
-				BOOL_OR(COALESCE(f.is_in_kev, false))  AS t_kev,
-				BOOL_OR(` + vulnerability.FindingExploitAvailableSQL("f") + `) AS t_exploit`
-
-const (
-	tenantCVESeverity = `(ARRAY['critical','high','medium','low','info','unknown']::text[])[agg.sev_rank]`
-	tenantCVECVSS     = `COALESCE(agg.t_cvss, v.cvss_score)`
-	tenantCVEEPSS     = `COALESCE(agg.t_epss, v.epss_score)`
-	tenantCVEKEV      = `(agg.t_kev OR v.cisa_kev_date_added IS NOT NULL)`
-	tenantCVEExploit  = `(COALESCE(v.exploit_available, false) OR COALESCE(agg.t_exploit, false))`
-)
-
 // ListAffectedAssetsByVulnerabilityID returns the distinct assets affected by a CVE
 // (blast-radius reverse lookup). Aggregates findings GROUP BY asset_id and joins
 // against the assets table for context. Sorted by criticality, then by worst SLA
