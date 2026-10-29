@@ -44,12 +44,8 @@ echo "unpack: checksums-sha256.txt signature verified (release.yml@refs/tags/${v
 
 for arch in $arches; do
 	case "$arch" in amd64 | arm64) ;; *) die "arch $arch is not amd64 or arm64" ;; esac
-	for comp in server gateway web console bootstrap-admin; do
-		if [ "$comp" = bootstrap-admin ]; then
-			archive="bootstrap-admin-${version}-linux-${arch}.tar.gz"
-		else
-			archive="openctem-${comp}-${version}-linux-${arch}.tar.gz"
-		fi
+	for comp in server gateway web console; do
+		archive="openctem-${comp}-${version}-linux-${arch}.tar.gz"
 		[ -r "$assets/$archive" ] || die "$assets/$archive is missing"
 		line="$(awk -v f="$archive" '$2 == f || $2 == "./" f || $2 == "*" f' "$sums")"
 		[ -n "$line" ] || die "$archive is not listed in checksums-sha256.txt"
