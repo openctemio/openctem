@@ -20,8 +20,11 @@ import (
 //     an accountable owner, or service_accounts:manage (pause) or an
 //     administrator (attest);
 //   - runs: findings:read and ai_triage:read, and the caller's data scope on
-//     the run's subject in the service.
-func registerAIAnalysisRoutes(router Router, h *handler.AIAnalysisHandler, authMiddleware, userSyncMiddleware, moduleGate Middleware) {
+//     the run's subject in the service;
+//   - asking for an analysis: findings:read and ai_triage:trigger, the
+//     finding in the caller's scope, rate-limited; the AI agent acts within
+//     its own principal.
+func registerAIAnalysisRoutes(router Router, h *handler.AIAnalysisHandler, authMiddleware, userSyncMiddleware, moduleGate Middleware, rateLimiter *middleware.AITriageRateLimiter) {
 	if h == nil {
 		return
 	}
@@ -43,7 +46,18 @@ func registerAIAnalysisRoutes(router Router, h *handler.AIAnalysisHandler, authM
 	router.Group("/api/v1/ai/runs", func(r Router) {
 		r.GET("/{id}", h.GetRun, middleware.RequireAll(permission.FindingsRead, permission.AITriageRead))
 	}, gated...)
+	// Asking an AI agent to analyze a finding spends model tokens:
+	// ai_triage:trigger, the finding in the caller's scope, rate-limited like
+	// AI triage (the limiter runs before the permission check on that route
+	// only). What the AI agent then does is bounded by its own principal, not
+	// by the caller. One group: the router refuses to mount a prefix twice.
+	analyzeChecks := []Middleware{}
+	if rateLimiter != nil {
+		analyzeChecks = append(analyzeChecks, rateLimiter.RequestMiddleware())
+	}
+	analyzeChecks = append(analyzeChecks, middleware.RequireAll(permission.FindingsRead, permission.AITriageTrigger))
 	router.Group("/api/v1/findings/{id}/ai", func(r Router) {
 		r.GET("/runs", h.ListFindingRuns, middleware.RequireAll(permission.FindingsRead, permission.AITriageRead))
+		r.POST("/analyze", h.AnalyzeFinding, analyzeChecks...)
 	}, gated...)
 }
