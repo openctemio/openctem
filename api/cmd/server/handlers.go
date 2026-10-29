@@ -249,6 +249,13 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		}
 		return o.Name, nil
 	}))
+	adminApprovals.SetUserNamer(adminapproval.UserNamerFunc(func(ctx context.Context, id shared.ID) (string, error) {
+		u, err := repos.User.GetByID(ctx, id)
+		if err != nil {
+			return "", err
+		}
+		return u.Email(), nil
+	}))
 	if svc.Signup != nil {
 		svc.Signup.SetNotifier(signupPolicyMailer{email: svc.Email, appName: cfg.Brand.DisplayName(), log: log})
 	}
@@ -278,6 +285,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	commandHandler.SetScanRunService(svc.ScanRun)
 	commandHandler.SetAuditService(svc.Audit)
 	commandHandler.SetScanCommandGate(svc.Scan)
+	commandHandler.SetResolutionRecorder(repos.AssetResolution)
 	// A job the claim-time scope re-check fails settles what waits on it
 	// (scan step, validation run, retest) as a sensor's failure would.
 	svc.Command.SetFailureObserver(commandHandler)
@@ -289,6 +297,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	commandHandler.SetRetestHooks(svc.ValidationEvidence, svc.Retest)
 	if svc.ScanRun != nil {
 		commandHandler.SetValidationRuns(svc.ScanRun)
+	}
+	// A finished proxy test (the Test button of a proxy pool) is audited.
+	if svc.ProxyPool != nil {
+		commandHandler.SetProxyTests(svc.ProxyPool)
 	}
 	// Per-task logs from sensors (RFC-029 §4.4.1), shown on the run page.
 	commandLogs := commandlog.NewService(repos.CommandLog)
@@ -794,7 +806,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AdminPlatformUser: handler.NewAdminPlatformUserHandler(
 			postgres.NewPlatformUserDirectory(deps.DB),
 			newPlatformUserService(repos, svc, cfg, deps.DB, log),
-			log).WithAudit(repos.AdminAuditLog),
+			log).WithAudit(repos.AdminAuditLog).WithApprovals(adminApprovals).
+			WithEmailDelivery(func() bool { return svc.Email != nil && svc.Email.IsConfigured() }).
+			WithLinkBase(cfg.SMTP.BaseURL),
 		AdminOperations:         newAdminOperationsHandler(deps, cfg, log),
 		Announcement:            handler.NewAnnouncementHandler(postgres.NewPlatformAnnouncementRepository(deps.DB), log),
 		AdminSession:            handler.NewAdminSessionHandler(postgres.NewAdminSessionDirectory(adminDBOf(repos, deps.DB)), adminConsoleSvc, log),
@@ -1054,7 +1068,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			handlers.AdminLegal = handler.NewAdminLegalHandler(platformlegal.NewService(repos.PlatformSetting, repos.AdminAuditLog, log), adminConsoleSvc, log)
 		}
 		if svc.PlatformEmail != nil {
-			handlers.AdminEmail = handler.NewAdminEmailHandler(svc.PlatformEmail, adminConsoleSvc, cfg.Brand.DisplayName(), log)
+			handlers.AdminEmail = handler.NewAdminEmailHandler(svc.PlatformEmail, adminConsoleSvc, cfg.Brand.DisplayName(), log).WithApprovals(adminApprovals)
 		}
 		handlers.SignupPolicy = svc.Signup
 	}
@@ -1901,6 +1915,10 @@ func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) hand
 		}
 		return mode
 	}
+	// The same answer as GET /auth/providers (routes/auth.go): a server
+	// without local auth reports no email delivery.
+	localAuth := h.LocalAuth
+	s.EmailDelivery = func() bool { return localAuth != nil && localAuth.EmailDeliveryAvailable() }
 	return s
 }
 
@@ -2079,18 +2097,12 @@ func emergingThreatHandler(svc *Services, log *logger.Logger) *handler.EmergingT
 	return handler.NewEmergingThreatHandler(svc.ThreatAlerts, svc.DataScope, log)
 }
 
-// newThreatIntelHandler builds the threat-intelligence handler; when the
-// bundle source can run (repositories present), the admin sync endpoint also
-// runs the vulnfeed source.
+// newThreatIntelHandler builds the threat-intelligence handler and the
+// background runner behind its admin sync endpoint.
 func newThreatIntelHandler(deps *HandlerDeps, v *validator.Validator, log *logger.Logger) *handler.ThreatIntelHandler {
 	h := handler.NewThreatIntelHandler(deps.Services.ThreatIntel, v, log).SetDataScope(deps.Services.DataScope)
-	repos := deps.Repos
-	if repos != nil && repos.ThreatIntel != nil && repos.CVECorpus != nil && repos.Software != nil {
-		if im, err := newVulnFeedImporter(deps.Config, repos, log.With("component", "vulnfeed")); err == nil {
-			h.SetBundleSyncer(im)
-		} else {
-			log.Warn("vulnfeed sync endpoint disabled", "error", err)
-		}
+	if runner, configured := newFeedRunner(deps, log); runner != nil {
+		h.SetFeedRunner(runner, configured)
 	}
 	return h
 }

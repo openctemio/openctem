@@ -777,6 +777,14 @@ func registerAdminRoutes(
 			r.POST("/{user_id}/unlock", h.AdminPlatformUser.Unlock, audited("platform_user.unlock", supportMW)...)
 			r.POST("/{user_id}/password-reset", h.AdminPlatformUser.SendPasswordReset, audited("platform_user.password_reset", supportMW)...)
 			r.POST("/{user_id}/verification-emails", h.AdminPlatformUser.ResendVerification, audited("platform_user.resend_verification", supportMW)...)
+			// For a server that cannot send email, and for a person who lost
+			// their second factor: the credentials permission (owner only), step-up,
+			// reason, audited. The reset link and the copied email state are bearer or
+			// identity-proof changes, so account support does not get them; the
+			// two-factor reset also needs a second super admin's approval.
+			r.POST("/{user_id}/reset-link", h.AdminPlatformUser.IssueResetLink, audited("platform_user.reset_link", supportMW)...)
+			r.POST("/{user_id}/mark-verified", h.AdminPlatformUser.MarkVerified, audited("platform_user.mark_verified", supportMW)...)
+			r.POST("/{user_id}/mfa/reset", h.AdminPlatformUser.ResetMFA, audited("platform_user.mfa_reset", supportMW)...)
 			// Block / unblock platform-wide: ops_admin+, step-up, reason; the
 			// service writes the critical admin audit row.
 			if h.AdminSuspension != nil {
@@ -887,6 +895,7 @@ func registerAdminRoutes(
 			// Read operations — any authenticated admin.
 			r.GET("/stats", h.AdminTargetMapping.GetStats)
 			r.GET("/types", h.AdminTargetMapping.Types)
+			r.GET("/registry", h.AdminTargetMapping.Registry)
 			r.GET("/", h.AdminTargetMapping.List)
 			r.GET("/{id}", h.AdminTargetMapping.Get)
 

@@ -106,6 +106,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/platformalert"
 	"github.com/openctemio/openctem/api/internal/app/platformcaptcha"
 	"github.com/openctemio/openctem/api/internal/app/platformemail"
+	"github.com/openctemio/openctem/api/internal/app/platformmfa"
 	"github.com/openctemio/openctem/api/internal/app/platformsociallogin"
 	programfeedapp "github.com/openctemio/openctem/api/internal/app/programfeed"
 	"github.com/openctemio/openctem/api/internal/app/programtarget"
@@ -124,6 +125,7 @@ import (
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/app/tenantai"
 	"github.com/openctemio/openctem/api/internal/app/threatmodel"
+	"github.com/openctemio/openctem/api/internal/app/threatsource"
 	"github.com/openctemio/openctem/api/internal/app/ticketing"
 	appticketmap "github.com/openctemio/openctem/api/internal/app/ticketmap"
 	"github.com/openctemio/openctem/api/internal/app/validation"
@@ -986,9 +988,11 @@ type Services struct {
 	PlatformSocialLogin *platformsociallogin.Service
 	DeploymentRegion    *deploymentregion.Service
 	StorageQuota        *storagequota.Service
+	ThreatSource        *threatsource.Service
 	PlatformAlert       *platformalert.Service
 	PlatformAI          *platformai.Service
 	OrgRelay            *orgrelay.Service
+	PlatformMFA         *platformmfa.Service
 	// TenantAI is the organizations' AI settings (consent, source, own provider).
 	TenantAI *tenantai.Service
 	// ScanPolicy is the platform policy for scan approval (RFC-073)
@@ -1121,6 +1125,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.StorageQuota = storagequota.NewService(repos.PlatformSetting, s.Entitlement, s.SettingRecorder, cfg.Storage.TenantQuotaMB)
 	}
 	if repos.PlatformSetting != nil {
+		s.PlatformMFA = platformmfa.NewService(repos.PlatformSetting, s.SettingRecorder, cfg.App.ManagedService, cfg.Auth.MFAFloor)
 		s.OrgRelay = orgrelay.NewService(repos.PlatformSetting, s.SettingRecorder, cfg.App.ManagedService, cfg.App.OrgEmailRelayMode, log)
 	}
 	s.IdleWorkspaces = lifecycleapp.NewService(repos.IdleLifecycle, s.Audit, repos.AdminAuditLog, repos.Admin, nil, log)
@@ -1189,6 +1194,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Which source decides an asset attribute (RFC-069).
 	s.Asset.SetAttributeSources(repos.AssetAttributeSources, repos.Tenant)
 	s.Asset.SetFreshness(repos.AssetFreshness)
+	s.Asset.SetResolution(repos.AssetResolution)
 	s.Asset.SetCoverage(repos.AssetCoverage)
 	s.AssetCoverage = coverageapp.NewService(repos.AssetCoverage, log)
 	s.Asset.SetChangeTimeline(repos.AssetChangeEvents)
@@ -1415,6 +1421,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		postgres.NewExposureDispositionRepository(&postgres.DB{DB: deps.DB}), s.Audit, log)
 	s.Exposure.SetDispositionGate(exposureDispositions)
 	s.ThreatIntel = threat.NewIntelService(repos.ThreatIntel, log)
+	if repos.PlatformSetting != nil {
+		// Where KEV and EPSS come from (console setting, default: the
+		// platform's own fetch).
+		s.ThreatSource = threatsource.NewService(repos.PlatformSetting, s.SettingRecorder)
+		s.ThreatIntel.SetSourcePolicy(s.ThreatSource)
+	}
 	s.CTEMID = ctemidapp.NewService(repos.CTEMID, cfg.Worker.CTEMIDFeedURL, log)
 	s.VersionCheck = versioncheck.New(postgres.NewVersionCheckRepository(&postgres.DB{DB: deps.DB}), versioncheck.Config{
 		Enabled: cfg.Worker.VersionCheckEnabled, URL: cfg.Worker.VersionCheckURL,
@@ -1604,6 +1616,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		repos.Finding, repos.Asset, s.PriorityClassification, log,
 	)
 	s.Reclassifier.SetQueue(s.Scoring, s.Scoring)
+	repos.FindingIssueLinks.SetPriorityQueue(s.Scoring) // a confirmed version match is scored again
 	s.Reclassifier.SetWriter(s.Scoring)
 	s.Tenant.SetScoringVersions(s.Scoring)
 	// Recompute the SLA deadline when a sweep escalates a finding's priority
@@ -1842,6 +1855,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// are sealed with the platform key (re-keyed by cmd/rekey).
 	s.Evidence = evidenceapp.NewService(repos.FindingEvidence, s.Encryptor, s.Tenant, repos.FindingActivity, s.Audit, log)
 	s.Retest.SetEvidenceStore(s.Evidence)
+	if s.Pentest != nil {
+		s.Pentest.SetEvidenceState(s.Evidence) // a write-up records the evidence version it was written against
+	}
 	// The finding verification plan asks the retest service whether a
 	// retest would run and why not.
 	s.Vulnerability.SetRetestAvailability(s.Retest)
@@ -2262,6 +2278,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Proxy pools for scan traffic: credentials encrypted with the
 	// credentials key, never stored in clear.
 	s.ProxyPool = proxypoolapp.NewService(repos.ProxyPool, s.Encryptor, s.Audit, log)
+	// The Test button: sensors test the endpoints, the platform never
+	// connects to a proxy. Disabled when no https address is known for the
+	// echo (PROXY_TEST_ECHO_URL, SENSOR_PUBLIC_API_URL or APP_URL).
+	s.ProxyPool.EnableTest(repos.Sensor, repos.Command, proxypoolapp.TestConfig{
+		EchoBase: cfg.ProxyTestEchoBase(), AltPort: cfg.SensorConfig.ProxyTestAltPort})
 	contentPlanner := contentpin.New(s.ContentDelivery, postgres.NewKnownNamesRepository(&postgres.DB{DB: deps.DB}), nil)
 	cmdOpts := []command.Option{command.WithSensorLookup(repos.Sensor),
 		// Each scan and retest job carries the claiming sensor's proxy pool.
@@ -2422,6 +2443,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// priority and SLA enrichment as ingested ones.
 	s.VulnMatch = vulnmatch.NewService(repos.SoftwareMatch, vulnmatch.TenantPolicy(repos.Tenant), repos.Finding, log.With("component", "vulnmatch"))
 	s.VulnMatch.SetEnrichment(s.PriorityClassification, sla.NewApplier(s.SLA), repos.Asset)
+	s.VulnMatch.SetIssueLinker(repos.FindingIssueLinks)
 	s.VulnMatch.SetLinkReader(repos.Software)
 	s.VulnMatch.SetRemediationKeyApplier(remediationKeys)
 	s.VulnMatch.SetVEXApplier(s.VEX) // The organization's VEX statements cover matched findings too
@@ -2473,6 +2495,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// tenant's policy.
 	s.Ingest.SetCommandReader(repos.Command)
 	s.Ingest.SetWildcardDNS(repos.AssetWildcardDNS)
+	// A name the resolver left out is told apart (no DNS answer, or a probed
+	// wildcard record) by asking DNS through the scan-zone resolver.
+	s.Ingest.SetNameResolution(ingest.NewDNSNameProber(zoneResolver(cfg.Scope.ZoneResolver)), repos.AssetResolution)
 	s.Ingest.SetResultQuarantine(repos.SensorResult, sensorresult.DefaultLimits())
 	// RFC-052 §5.3: results without a job need push ingest in the sensor's
 	// effective grant (off by default, always off while New).
@@ -3200,6 +3225,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		staleRefresher = s.AssetEnricher
 	}
 	s.Scan.SetResolveEvidence(repos.AssetFreshness, staleRefresher)
+	s.Scan.SetResolutionStore(repos.AssetResolution)
 	s.AssetImport.SetCreatedAssetsHook(requestNew)
 	s.Asset.SetEnrichmentRequests(repos.AssetEnrichmentRequests)
 	s.Ingest.SetAssetsDiscoveredCallback(func(ctx context.Context, tenantID shared.ID, assets []*assetdom.Asset) {
@@ -3212,7 +3238,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetAssetsExposedCallback(s.AssetDiscoveryNotifier.AssetsExposed)
 	// Every asset an ingest wrote moves the freshness clock of the attribute
 	// classes the report's tool observes (docs/architecture/asset-freshness.md).
-	s.Ingest.SetAssetsObservedCallback(assetfreshnessapp.NewRecorder(repos.AssetFreshness, log).AssetsObserved)
+	freshnessRecorder := assetfreshnessapp.NewRecorder(repos.AssetFreshness, log)
+	freshnessRecorder.SetResolution(repos.AssetResolution)
+	s.Ingest.SetAssetsObservedCallback(freshnessRecorder.AssetsObserved)
 	// Network seeds (RFC-082): expanded from RIPEstat through the SSRF guard.
 	s.EASMNetworkSeeds = easmapp.NewNetworkSeedService(repos.EASMNetworkSeed, easmapp.NewRIPEstat(), s.ScopeGuardrails, log.With("service", "easm-network-seeds"))
 	s.EASMNetworkSeeds.SetSettings(s.Tenant) // per-organization opt-out of RIPEstat lookups
@@ -3282,6 +3310,18 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// AES-GCM key as integration credentials.
 	s.Auth.SetMFA(repos.UserMFA, s.Encryptor, cfg.Brand.DisplayName())
 	s.Session.SetMFAChallengeCleanup(repos.UserMFA)
+	// The platform two-factor floor (setting auth.mfa) and the lookup that
+	// tells an administrator by effective grants. Without the settings store
+	// only the organizations' own requirements apply.
+	var floorSource auth.MFAFloorSource
+	if s.PlatformMFA != nil {
+		floorSource = s.PlatformMFA
+	}
+	var privilegeSource auth.PrivilegeSource
+	if s.Role != nil {
+		privilegeSource = s.Role
+	}
+	s.Auth.SetMFAFloor(floorSource, privilegeSource)
 
 	// Immediate session revocation: signing a session out (logout, "sign out
 	// this device", password change, enabling 2FA, suspension) records its id
@@ -3471,6 +3511,11 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		s.OAuth.SetPlatformAdminGate(platformAdminChecker{admins: repos.Admin})
 		s.OAuth.SetIdentityRepo(repos.UserIdentity)
 		s.OAuth.SetAuditService(s.Audit)
+		// A linked password account signs in through its provider only with
+		// the second step of its password sign-in; an automatic link revokes
+		// the account's sessions (identity_link.go).
+		s.OAuth.SetSecondFactorGate(s.Auth)
+		s.OAuth.SetSessionRevoker(s.Session)
 		if redisClient != nil {
 			s.OAuth.SetPKCEStore(redisClient)
 		} else {
@@ -3502,6 +3547,11 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// when the tenant has no usable SSO login path. main.go rebuilds s.Tenant, so
 	// this is re-applied there too.
 	s.Tenant.SetSSOPathChecker(s.SSO)
+	// An organization's 2FA settings may tighten the platform floor, not
+	// loosen below it.
+	if s.PlatformMFA != nil {
+		s.Tenant.SetMFAFloorSource(s.PlatformMFA)
+	}
 	s.Tenant.SetSessionReader(repos.Session)
 
 	// Member lifecycle (RFC-050): disable / re-enable / offboard / erase run

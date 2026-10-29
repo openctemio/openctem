@@ -11,11 +11,7 @@ import (
 
 	threatalertapp "github.com/openctemio/openctem/api/internal/app/threatalert"
 
-	vulneventapp "github.com/openctemio/openctem/api/internal/app/vulnevent"
-
 	scmappsvc "github.com/openctemio/openctem/api/internal/app/scmapp"
-
-	"github.com/prometheus/client_golang/prometheus"
 
 	assettechapp "github.com/openctemio/openctem/api/internal/app/assettech"
 	"github.com/openctemio/openctem/api/internal/app/auth"
@@ -27,7 +23,6 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/internal/app/systemstatus"
 	"github.com/openctemio/openctem/api/internal/app/tenablesc"
-	"github.com/openctemio/openctem/api/internal/app/vulnfeed"
 
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
@@ -46,12 +41,12 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/jobs"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/durablejob"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
@@ -435,7 +430,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		&controller.JobRecoveryControllerConfig{
 			Interval:              60 * time.Second,
 			StuckThresholdMinutes: 30,
-			MaxRetries:            3,
+			MaxRetries:            commanddom.MaxDispatchAttempts,
 			Logger:                log.With("controller", "job-recovery"),
 		},
 	)
@@ -743,51 +738,14 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// recompute for only the findings whose CVE intel moved, and KEV
 	// auto-escalation. Both report material changes to the vulnerability
 	// event log (RFC-117).
-	var intelQueue controller.IntelChangeQueue
-	if svc.Scoring != nil {
-		intelQueue = svc.Scoring
-	}
-	var vulnEvents *vulneventapp.Emitter
-	if repos.VulnEvent != nil {
-		vulnEvents = vulneventapp.NewEmitter(repos.VulnEvent, log)
-	}
-	epssRefresh := controller.NewThreatIntelRefreshController(svc.ThreatIntel, intelQueue, log.With("controller", "threat-intel-refresh"))
-	kevRefresh := controller.NewKEVRefreshController(svc.ThreatIntel, repos.KEVEscalator, intelQueue, log.With("controller", "kev-refresh"))
-	if vulnEvents != nil {
-		epssRefresh.SetEventEmitter(vulnEvents)
-		kevRefresh.SetEventEmitter(vulnEvents)
-	}
-	w.ControllerManager.Register(epssRefresh)
-	w.ControllerManager.Register(kevRefresh)
-
+	feeds := newFeedControllers(cfg, svc, repos, log)
+	w.ControllerManager.Register(feeds.epss)
+	w.ControllerManager.Register(feeds.kev)
 	// Vulnerability bundles (RFC-066 §5.5): verified and imported into the
 	// CVE corpus; nothing happens until VULNFEED_ROOT_KEY_ID is set and a
 	// platform admin enables the "vulnfeed" source.
-	if repos.ThreatIntel != nil && repos.CVECorpus != nil && repos.Software != nil {
-		im, err := newVulnFeedImporter(cfg, repos, log.With("component", "vulnfeed"))
-		if err != nil {
-			log.Error("vulnerability bundle import disabled", "error", err)
-		} else {
-			// KEV and EPSS ride the same release as a signed side manifest:
-			// applied when newer than what the platform holds, then the same
-			// findings sweep and event log as after a direct sync.
-			if svc.ThreatIntel != nil {
-				im.WithIntel(svc.ThreatIntel)
-				svc.ThreatIntel.SetAfterBundleApply(func(ctx context.Context, source string) {
-					switch source {
-					case "kev":
-						kevRefresh.Sweeper().Run(ctx, "kev", true, true)
-					case "epss":
-						epssRefresh.Sweeper().Run(ctx, "epss", true, true)
-					}
-				})
-			}
-			importCtl := controller.NewVulnFeedImportController(im, log.With("controller", "vuln-feed-import"))
-			if vulnEvents != nil {
-				importCtl.SetEventEmitter(vulnEvents)
-			}
-			w.ControllerManager.Register(importCtl)
-		}
+	if feeds.bundles != nil {
+		w.ControllerManager.Register(feeds.bundles)
 	}
 
 	// Inventory vulnerability matching (RFC-066): versions × CVE ranges, then
@@ -1631,21 +1589,4 @@ func redactSinkURL(raw string) string {
 		return "(invalid)"
 	}
 	return fmt.Sprintf("%s://%s", u.Scheme, u.Host)
-}
-
-// newVulnFeedImporter builds the vulnerability bundle importer. The import
-// controller and the admin "Sync now" endpoint each use one: chunked (v2)
-// bundles are fetched with retries, resume and mirror fall-back and applied
-// chunk by chunk with a durable checkpoint (docs/architecture/feed-transfer.md);
-// v1 stays the fallback.
-func newVulnFeedImporter(cfg *config.Config, repos *Repositories, log *logger.Logger) (*vulnfeed.Importer, error) {
-	im, err := vulnfeed.NewImporter(vulnfeed.Config{
-		RootKeyID: cfg.Worker.VulnFeedRootKeyID, BaseURL: cfg.Worker.VulnFeedBaseURL, BundleDir: cfg.Worker.VulnFeedBundleDir,
-	}, repos.CVECorpus, repos.ThreatIntel.SyncStatus(), repos.Software, log)
-	if err != nil {
-		return nil, err
-	}
-	im.WithChunks(repos.CVECorpus, vulnfeed.Transfer{Mirrors: cfg.Worker.VulnFeedMirrors, CacheDir: cfg.Scope.FeedCacheDir,
-		Client: httpsec.SafeHTTPClient(0), Registerer: prometheus.DefaultRegisterer})
-	return im, nil
 }
