@@ -69,6 +69,21 @@ evidence change still lands. A write-up of the finding stores the version it
 was written against, so a reader can see "evidence changed since this
 write-up".
 
+### Pentest write-ups
+
+A pentest finding's write-up (the finding text in `source_metadata`) stores
+`writeup_evidence_version`, the evidence version it was saved against. The
+single-finding reads return `evidence_version`, `writeup_evidence_version`,
+`writeup_stale` (the evidence moved on) and `proof_evidence_count`. A save
+(`PUT /api/v1/pentest/findings/{id}`) may carry `evidence_version`, the
+version the author opened; when the finding has a newer one the save is
+refused with 409 `CONFLICT` and changes nothing. A save without it lands and
+records the current version. The check and the write are two steps: evidence
+that changes between them leaves the stored version older than the evidence,
+so the finding shows as stale, never the other way round. A finding's
+evidence version is read under the tenant and the caller's campaign access
+(a non-member gets 404 and no version).
+
 ## Ingest flow (`internal/app/evidence`)
 
 1. **Normalize** (`evidence.Normalize`): valid UTF-8, no NUL, single-line

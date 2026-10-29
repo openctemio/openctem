@@ -193,7 +193,47 @@ const (
 	// claim when that is the only reason its targets are refused. A fact
 	// about the names, never a scope change.
 	FailureNoResolvingTargets = "NO_RESOLVING_TARGETS"
+
+	// Infrastructure failures of a command (research/302): not about the
+	// target. A command moves to another sensor on these; they name why it
+	// finally failed.
+	//
+	// FailureToolUnavailable: the tool is missing or broken on every sensor
+	// that could take the work.
+	FailureToolUnavailable = "TOOL_UNAVAILABLE"
+	// FailureToolCrashedOnInput: the tool crashed on this work on more than
+	// one sensor (the input, not a sensor, is the likely cause).
+	FailureToolCrashedOnInput = "TOOL_CRASHED_ON_INPUT"
+	// FailureResourceExhausted: the sensors ran out of memory or disk.
+	FailureResourceExhausted = "RESOURCE_EXHAUSTED"
+	// FailureContentUnavailable: the tool's content pack could not be read.
+	FailureContentUnavailable = "CONTENT_UNAVAILABLE"
+	// FailureSensorLost: the sensors that held the work stopped answering.
+	FailureSensorLost = "SENSOR_LOST"
+	// FailureFleetToolFailure: the same tool and content version failed on
+	// two sensors, so the work was not moved to more of them (fleet stop
+	// rule).
+	FailureFleetToolFailure = "FLEET_TOOL_FAILURE"
 )
+
+// FailureCodeForInfra is the step failure code of a command that ended on
+// the infrastructure class class (command.FailureClass spelling). An
+// unknown class gives COMMAND_FAILED.
+func FailureCodeForInfra(class string) string {
+	switch class {
+	case "infra.tool_unavailable":
+		return FailureToolUnavailable
+	case "infra.tool_crashed":
+		return FailureToolCrashedOnInput
+	case "infra.resource.memory", "infra.resource.disk":
+		return FailureResourceExhausted
+	case "infra.content_unavailable":
+		return FailureContentUnavailable
+	case "infra.sensor_offline":
+		return FailureSensorLost
+	}
+	return FailureCommandFailed
+}
 
 var failureClasses = map[string]FailureClass{
 	FailureNoMatchingTool:      FailureClassConfig,
@@ -231,6 +271,12 @@ var failureClasses = map[string]FailureClass{
 	FailureCanceled:            FailureClassCanceled,
 	FailureCoverageGaps:        FailureClassPartial,
 	FailureNoResolvingTargets:  FailureClassTarget,
+	FailureToolUnavailable:     FailureClassTool,
+	FailureToolCrashedOnInput:  FailureClassTool,
+	FailureResourceExhausted:   FailureClassTransient,
+	FailureContentUnavailable:  FailureClassTransient,
+	FailureSensorLost:          FailureClassTransient,
+	FailureFleetToolFailure:    FailureClassTool,
 }
 
 // ClassOf returns the class of a step failure code. An unknown code is a

@@ -11,6 +11,7 @@ import (
 
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	freshdom "github.com/openctemio/openctem/api/pkg/domain/assetfreshness"
+	"github.com/openctemio/openctem/api/pkg/domain/assetresolution"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -27,6 +28,9 @@ func (s *AssetImportService) SetCreatedAssetsHook(h CreatedAssetsHook) { s.creat
 
 // SetEnrichmentRequests wires the requests the freshness view shows.
 func (s *AssetService) SetEnrichmentRequests(r freshdom.RequestRepository) { s.enrichReqs = r }
+
+// SetResolution wires the resolution states the freshness view shows.
+func (s *AssetService) SetResolution(st assetresolution.Store) { s.resolution = st }
 
 // SetFreshness wires the freshness records. Unwired, every asset shows its
 // passive classes as never observed.
@@ -51,6 +55,12 @@ func (s *AssetService) GetFreshness(ctx context.Context, tenantID, assetID strin
 	if s.enrichReqs != nil {
 		if v.Enrichment, err = s.enrichReqs.Get(ctx, a.TenantID(), a.ID()); err != nil {
 			return nil, fmt.Errorf("get enrichment request: %w", err)
+		}
+	}
+	if s.resolution != nil {
+		// Tenant-scoped on the asset the caller was just allowed to see.
+		if v.Resolution, err = s.resolution.Get(ctx, a.TenantID(), a.ID()); err != nil {
+			return nil, fmt.Errorf("get asset resolution: %w", err)
 		}
 	}
 	return &v, nil

@@ -95,10 +95,10 @@ var (
 	alwaysAllowedActions = []string{"pause", "resume", "drain", "cancel", "send_manifest"}
 	gatedActions         = []string{"update", "rotate_key", "diagnostics"}
 	// workJobTypes are the command types a grant's job_types governs;
-	// control types (health_check, cancel, refresh_content) are always
+	// control types (health_check, cancel, refresh_content, proxy_test) are always
 	// allowed: they carry no targets and only narrow or inspect.
 	workJobTypes  = []string{"scan", "collect", "validate", "retest", "connector_sync", "connector_scan", "config_update"}
-	controlJobTyp = []string{"health_check", "cancel", "refresh_content"}
+	controlJobTyp = []string{"health_check", "cancel", "refresh_content", "proxy_test"}
 )
 
 // Grant dimensions, as named in refusals, audits and diffs.
@@ -538,7 +538,7 @@ func CommandTierFor(cmdType string, job Job, c *ToolContract) int {
 		return TierIntrusive
 	}
 	switch cmdType {
-	case "collect", "connector_sync", "health_check", "cancel", "refresh_content", "config_update":
+	case "collect", "connector_sync", "health_check", "cancel", "refresh_content", "proxy_test", "config_update":
 		return TierPassive
 	case "connector_scan", "validate":
 		return TierActive
