@@ -55,9 +55,12 @@ type RoleResponse struct {
 	// Summary is what the role can do, in words: risk, why, and per area.
 	Summary permission.Summary `json:"summary"`
 	// Template is set for a role created from a role template.
-	Template  *RoleTemplateStatusResponse `json:"template,omitempty"`
-	CreatedAt time.Time                   `json:"created_at"`
-	UpdatedAt time.Time                   `json:"updated_at"`
+	Template *RoleTemplateStatusResponse `json:"template,omitempty"`
+	// ManagedGroupID is set for a role a team's access settings own: it is
+	// changed on the team, never by hand.
+	ManagedGroupID *string   `json:"managed_group_id,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 // RoleTemplateStatusResponse relates a custom role to the template it was
@@ -204,6 +207,10 @@ func toRoleResponse(r *role.Role) RoleResponse {
 	if r.TenantID() != nil {
 		tid := r.TenantID().String()
 		resp.TenantID = &tid
+	}
+	if g := r.ManagedGroupID(); g != nil {
+		gs := g.String()
+		resp.ManagedGroupID = &gs
 	}
 	if resp.Permissions == nil {
 		resp.Permissions = []string{}

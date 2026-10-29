@@ -46,6 +46,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/jobs"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/durablejob"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
@@ -435,7 +436,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		&controller.JobRecoveryControllerConfig{
 			Interval:              60 * time.Second,
 			StuckThresholdMinutes: 30,
-			MaxRetries:            3,
+			MaxRetries:            commanddom.MaxDispatchAttempts,
 			Logger:                log.With("controller", "job-recovery"),
 		},
 	)
