@@ -1442,8 +1442,10 @@ func (rel *ReadEndpointRateLimiter) Stop() {
 func (rel *ReadEndpointRateLimiter) Middleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Only rate-limit GET (read/list) requests
-			if r.Method != http.MethodGet {
+			// Only rate-limit GET (read/list) requests. A part of a page view
+			// was paid for by the view itself (ChargeReadCost on the view's
+			// own request), so it takes no token of its own.
+			if r.Method != http.MethodGet || IsViewPart(r.Context()) {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -1487,6 +1489,22 @@ func (rel *ReadEndpointRateLimiter) Middleware() func(http.Handler) http.Handler
 			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), readCostKey{}, limiter)))
 		})
 	}
+}
+
+// viewPartKey marks a request a page view dispatched internally for one of
+// its parts (handler/view_parts.go). Only server code sets it: a client
+// cannot reach a request context.
+type viewPartKey struct{}
+
+// WithViewPart marks ctx as the context of a view part.
+func WithViewPart(ctx context.Context) context.Context {
+	return context.WithValue(ctx, viewPartKey{}, true)
+}
+
+// IsViewPart reports whether the request is a part a page view dispatched.
+func IsViewPart(ctx context.Context) bool {
+	v, _ := ctx.Value(viewPartKey{}).(bool)
+	return v
 }
 
 // readCostKey carries the caller's read limiter to the handler.
