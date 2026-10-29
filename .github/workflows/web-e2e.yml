@@ -23,7 +23,8 @@ name: Web E2E
 #   nightly       the whole suite on develop (02:41 UTC), and on demand.
 #   pull request  the SMOKE set (specs tagged @smoke, plus any spec the PR
 #                 edits) when web/ changed; an API-only change runs no e2e on
-#                 the PR (the merge queue runs the whole suite for it). With the `run-e2e` label,
+#                 the PR (the merge queue runs the whole suite for it). A change
+#                 to a page or its data hooks also runs the request budget job. With the `run-e2e` label,
 #                 or when the suite itself (web/e2e/, this workflow) changed:
 #                 the specs the changed files map to (impact selection).
 #                 With the `ci:full` label, a changed CI definition
