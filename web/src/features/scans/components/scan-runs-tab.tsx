@@ -190,13 +190,6 @@ function ScanRunsTable() {
     per_page: perPage,
   }
 
-  // The runs the platform started on its own, counted for the one-line
-  // summary while the list shows people's runs (one row read, no refresh).
-  const { data: systemRuns } = useScanRuns(
-    originFilter === 'user' ? { origin: 'system', page: 1, per_page: 1 } : null,
-    { revalidateOnFocus: false, dedupingInterval: 60000 }
-  )
-  const systemRunCount = originFilter === 'user' ? (systemRuns?.total ?? 0) : 0
   const { data, isLoading, error, mutate } = useScanRuns(filters, swrConfig)
   const runs = data?.data ?? []
   // The counts follow the list: live while a listed run is live.
@@ -207,6 +200,15 @@ function ScanRunsTable() {
     refreshInterval: runsLive && !realtime ? 30000 : IDLE_RUN_LIST_REFRESH_MS,
   })
   const counts = overview?.scan_runs
+  // The runs the platform started on its own, for the one-line summary while
+  // the list shows people's runs: every run the tenant has (the counters)
+  // less the people's runs the unfiltered list counts. Read from the two
+  // requests the page already makes; a filtered list cannot be subtracted.
+  const unfiltered = statusFilter === 'all' && kindFilter === 'all' && !scanFilter
+  const systemRunCount =
+    originFilter === 'user' && unfiltered && counts && data
+      ? Math.max(0, counts.total - data.total)
+      : 0
 
   const { setFilter } = list
   const setStatus = useCallback((v: RunStatusFilterValue) => setFilter('status', v), [setFilter])
