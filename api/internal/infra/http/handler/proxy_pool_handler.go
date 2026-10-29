@@ -414,6 +414,8 @@ func (h *ProxyPoolHandler) handleError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.As(err, &le):
 		apierror.New(http.StatusBadRequest, apierror.Code(le.Code()), le.Error()).WriteJSON(w)
+	case errors.Is(err, proxypoolapp.ErrTestRateLimited):
+		apierror.TooManyRequests("A proxy pool can be tested once a minute").WriteJSON(w)
 	case errors.Is(err, proxypool.ErrSensorNotFound):
 		apierror.NotFound("Sensor").WriteJSON(w)
 	case errors.Is(err, proxypool.ErrEndpointNotFound):

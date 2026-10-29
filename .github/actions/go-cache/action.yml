@@ -1,0 +1,69 @@
+name: Go caches
+description: >-
+  Restores the Go module cache and build cache (compiled packages) that a run
+  of develop saved, so a pull request only compiles what it changed. Restore
+  only: pull requests never write a cache (the `warm-cache` job of api-ci.yml
+  saves them from develop), and a merge-queue ref cannot read develop's cache
+  so it restores nothing. A self-hosted runner keeps both caches on its own
+  disk between jobs and restores nothing either. A miss runs the same build,
+  only slower.
+  Call after actions/setup-go (with `cache: false`).
+
+outputs:
+  build-key:
+    description: The exact build-cache key of today (what warm-cache saves under).
+    value: ${{ steps.keys.outputs.build }}
+  build-hit:
+    description: "'true' when that exact key was restored."
+    value: ${{ steps.build.outputs.cache-hit }}
+  build-path:
+    description: The build cache directory (GOCACHE).
+    value: ${{ steps.keys.outputs.gocache }}
+  mod-path:
+    description: The module cache directory (GOMODCACHE).
+    value: ${{ steps.keys.outputs.gomodcache }}
+  mod-key:
+    description: The module-cache key (exact, it follows go.sum).
+    value: ${{ steps.keys.outputs.mod }}
+  mod-hit:
+    description: "'true' when the module cache was restored."
+    value: ${{ steps.mod.outputs.cache-hit }}
+
+runs:
+  using: composite
+  steps:
+    # The Go version is in the key: objects built by another toolchain are
+    # never reused, so a Go bump starts clean. The date makes one new build
+    # cache per day at most (warm-cache), so the 10 GB repository limit is not
+    # churned by every push; objects are content-addressed, so a day-old cache
+    # still serves every package that did not change since.
+    - id: keys
+      shell: bash
+      working-directory: api
+      env:
+        SUM: ${{ hashFiles('api/go.sum') }}
+      run: |
+        ver="$(go env GOVERSION)"
+        echo "build=gobuild-${RUNNER_OS}-${ver}-${SUM}-$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
+        echo "build_prefix=gobuild-${RUNNER_OS}-${ver}-${SUM}-" >> "$GITHUB_OUTPUT"
+        echo "build_any=gobuild-${RUNNER_OS}-${ver}-" >> "$GITHUB_OUTPUT"
+        echo "mod=gomod-${RUNNER_OS}-${SUM}" >> "$GITHUB_OUTPUT"
+        echo "gocache=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+        echo "gomodcache=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+
+    - id: mod
+      if: github.event_name != 'merge_group' && runner.environment == 'github-hosted'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.keys.outputs.gomodcache }}
+        key: ${{ steps.keys.outputs.mod }}
+
+    - id: build
+      if: github.event_name != 'merge_group' && runner.environment == 'github-hosted'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.keys.outputs.gocache }}
+        key: ${{ steps.keys.outputs.build }}
+        restore-keys: |
+          ${{ steps.keys.outputs.build_prefix }}
+          ${{ steps.keys.outputs.build_any }}

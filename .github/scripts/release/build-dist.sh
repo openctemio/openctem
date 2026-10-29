@@ -14,7 +14,7 @@
 #                    openctem-migrate with the migration files, the OpenAPI spec,
 #                    the sensor config templates, systemd units, env examples
 #   bootstrap-admin  bootstrap-admin-<v>-<os>-<arch>.tar.gz (.zip on windows):
-#                    the first-administrator CLI (the admin-cli image)
+#                    the first-administrator CLI as a standalone binary
 #   gateway          openctem-gateway-<v>-linux-<arch>.tar.gz: Caddy with the
 #                    layer4 module and the gateway configuration
 #   web              openctem-web-<v>-linux-<arch>.tar.gz: the web console
