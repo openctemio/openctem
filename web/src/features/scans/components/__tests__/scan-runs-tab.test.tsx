@@ -295,9 +295,11 @@ describe('ScanRunsTab', () => {
 
   it('sums up the hidden system runs in one line that opens them and links to coverage', async () => {
     const user = userEvent.setup()
+    statsTotal = 42
+    runsResponse = { data: [run({})], total: 2, page: 1, per_page: 25, total_pages: 1 }
     render(<ScanRunsTab />)
-    // The summary counts system runs with a one-row read.
-    expect(workflowRunsCalls).toContainEqual({ origin: 'system', page: 1, per_page: 1 })
+    // The summary is every run less the people's runs: no extra request.
+    expect(workflowRunsCalls.every((c) => c?.per_page !== 1)).toBe(true)
     const summary = screen.getByTestId('coverage-runs-summary')
     expect(summary).toHaveTextContent('Continuous coverage has started 40 runs')
     expect(within(summary).getByRole('link', { name: 'Coverage settings' })).toHaveAttribute(
