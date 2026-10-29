@@ -115,7 +115,9 @@ lint:
 BASE_REF ?= origin/develop
 lint-new:
 	@echo "Running golangci-lint $(GOLANGCI_LINT_VERSION) against $(BASE_REF)..."
-	@GOWORK=off $(GOLANGCI_LINT) run --new-from-rev=$(BASE_REF) ./...
+	@# A private TMPDIR per run: golangci-lint takes a lock file in it, so
+	@# parallel runs (several worktrees, agents) would wait on or fail each other.
+	@t=$$(mktemp -d); GOWORK=off TMPDIR=$$t $(GOLANGCI_LINT) run --new-from-rev=$(BASE_REF) ./...; rc=$$?; rm -rf "$$t"; exit $$rc
 
 ## lint-ci: Run exactly what CI's Lint job gates on (go vet + staticcheck + lint-new).
 ## The whole point of this target is that it IS what CI runs — nothing else uses
