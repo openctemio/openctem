@@ -28,7 +28,7 @@ jobs:
           cid=$(docker run -d -P -e POSTGRES_PASSWORD=x postgres:17-alpine)
           port=$(docker port "$cid" 5432/tcp | head -1 | sed 's/.*://')
           echo "postgres published on dind:$port"
-          for i in $(seq 1 30); do docker exec "$cid" pg_isready -U postgres && break; sleep 1; done
-          ok=0; for i in $(seq 1 30); do PGPASSWORD=x psql -h dind -p "$port" -U postgres -Atc 'select 1' && { ok=1; break; }; sleep 1; done
+          for _ in $(seq 1 30); do docker exec "$cid" pg_isready -U postgres && break; sleep 1; done
+          ok=0; for _ in $(seq 1 30); do PGPASSWORD=x psql -h dind -p "$port" -U postgres -Atc 'select 1' && { ok=1; break; }; sleep 1; done
           [ "$ok" = 1 ] || { echo "::error::cannot reach postgres on dind:$port from the runner"; docker rm -f "$cid"; exit 1; }
           docker rm -f "$cid"
