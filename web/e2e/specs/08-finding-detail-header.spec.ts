@@ -98,8 +98,11 @@ test.describe('Findings list', { tag: ['@findings', '@smoke'] }, () => {
     const first = findings[0]
     const title = (first.title || first.message || '').trim()
     test.skip(!title, 'First finding has no title')
+    // "{title}, view details", or "{title} on {target}, view details" when the
+    // row names the target the finding was found on.
+    const escaped = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     await expect(
-      page.getByRole('button', { name: `${title}, view details`, exact: true }).first()
+      page.getByRole('button', { name: new RegExp(`^${escaped}( on .+)?, view details$`) }).first()
     ).toBeVisible()
   })
 })

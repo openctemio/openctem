@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/platformauthz"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -132,11 +133,25 @@ const (
 	ElevationMax = 60 * time.Minute
 )
 
-// ActingRole is the role the session acts as at now: the elevated role while
-// the elevation lasts, else read-only.
+// ElevatedAs is the platform role the session acts as at now (RFC-134), or
+// "" when it is not elevated. ElevatedRole holds a role key, or a tier name
+// (super_admin, ops_admin) written before platform roles.
+func (s *Session) ElevatedAs(now time.Time) platformauthz.RoleKey {
+	if s == nil || s.ElevatedUntil == nil || !now.Before(*s.ElevatedUntil) {
+		return ""
+	}
+	k, ok := platformauthz.ElevationTarget(string(s.ElevatedRole))
+	if !ok {
+		return ""
+	}
+	return k
+}
+
+// ActingRole is the tier the session acts at now: the tier of the role it is
+// elevated as while the elevation lasts, else read-only.
 func (s *Session) ActingRole(now time.Time) AdminRole {
-	if s != nil && s.ElevatedUntil != nil && now.Before(*s.ElevatedUntil) && s.ElevatedRole.IsValid() {
-		return s.ElevatedRole
+	if k := s.ElevatedAs(now); k != "" {
+		return AdminRole(platformauthz.TierOf(k))
 	}
 	return AdminRoleReadonly
 }

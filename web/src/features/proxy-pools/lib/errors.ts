@@ -20,6 +20,11 @@ export function isPoolInUseError(err: unknown): boolean {
   return err instanceof ApiClientError && err.statusCode === 409
 }
 
+/** A pool can be tested once a minute: the API answers 429. */
+export function isRateLimitedError(err: unknown): boolean {
+  return err instanceof ApiClientError && err.statusCode === 429
+}
+
 /** What to show for a failed pool request. */
 export function describeProxyError(err: unknown, t: Tr, fallback: string): string {
   if (isPoolInUseError(err)) {

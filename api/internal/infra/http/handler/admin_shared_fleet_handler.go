@@ -20,7 +20,7 @@ import (
 	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/admin"
+	"github.com/openctemio/openctem/api/pkg/domain/platformauthz"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -131,11 +131,12 @@ type SharedFleetReasonRequest struct {
 }
 
 // seesOrganizationNames: organization names in the queue and job lists are
-// for super and operations administrators; a read-only administrator gets
-// the counts and opaque ids only.
+// for administrators whose roles open shared-sensor jobs
+// (platform.sensors.jobs.read, held, elevated or not); a read-only
+// administrator gets the counts and opaque ids only.
 func seesOrganizationNames(r *http.Request) bool {
 	a := middleware.GetAdminUser(r.Context())
-	return a != nil && (a.Role() == admin.AdminRoleSuperAdmin || a.Role() == admin.AdminRoleOpsAdmin)
+	return a != nil && a.HeldPermissions().Has(platformauthz.SensorsJobsRead)
 }
 
 func toSharedJobResponse(j sensorapp.SharedJob) SharedJobResponse {
