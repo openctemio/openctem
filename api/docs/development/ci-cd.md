@@ -634,7 +634,7 @@ run (Postgres suite with `-race`, PostgreSQL 18, the whole e2e suite). Heavy job
 
 | Tier | Events | API CI | Web CI | All-in-one CI | Web E2E | CodeQL |
 |------|--------|--------|--------|---------------|---------|--------|
-| Fast | `pull_request` | `API static checks` (gates + vet, staticcheck, golangci-lint) + `Unit tests (changed packages)`: the changed Go packages and every package that imports them, **without** a database (`.github/scripts/go-affected.sh`; `ALL` for `go.mod` or anything it cannot map). No Postgres suite on a PR: the queue runs it. `Migrations (PostgreSQL 18)` only when `migrations` | `Web checks`, `Web tests` (the tests the change can affect) | build skipped | the smoke set when `web/` changed (an API-only PR runs no e2e on the PR); the impacted specs with `run-e2e` or when `web/e2e/` changed | changed language(s) |
+| Fast | `pull_request` | `API static checks` (gates + vet, staticcheck, golangci-lint) + `Unit tests (changed packages)`: the changed Go packages and every package that imports them, **without** a database (`.github/scripts/go-affected.sh`; `ALL` for `go.mod` or anything it cannot map). No Postgres suite on a PR: the queue runs it. `Migrations (PostgreSQL 18)` only when `migrations` | `Web checks`, `Web tests` (the tests the change can affect) | build skipped | the smoke set when `web/` changed (an API-only PR runs no e2e on the PR), plus the request budget check when a page or its data hooks changed; the impacted specs with `run-e2e` or when `web/e2e/` changed | changed language(s) |
 | Full | `merge_group`, push to `develop`, a PR with `ci:full` or a changed CI definition | `Tests (Postgres + Redis)`: the suite in 8 shards **with** `-race` as the least-privilege app role (isolation tests and grants, decision D-30 now enforced in the queue), PostgreSQL 18, `Release Binaries` (not on a PR); Docker build on `main` | `Web checks`, `Web tests`; `next build` on push | images built and smoke-tested | Playwright: all specs in 1 to 4 shards (`web/` or `api/` changed), also on push to `develop`, nightly and for a `release/*` PR | queue: none (the PR head was analysed); push: both |
 
 **Forcing the full tier on a PR:** add the `ci:full` label (it also brings the Postgres suite back to the PR, for a change to SQL, grants or tenant isolation that should not wait for the queue), then re-run all jobs
@@ -646,7 +646,7 @@ or a CI script always runs the full tier.
 
 | Event | Specs |
 |---|---|
-| `pull_request` | the smoke set (specs tagged `@smoke`) plus any spec the PR edits, when `web/` changed |
+| `pull_request` | the smoke set (specs tagged `@smoke`) plus any spec the PR edits, when `web/` changed; plus the request budget check (`@budget`, its own job, about 5 minutes) when the PR changes `web/src/app/**`, `web/src/features/**/api/**`, a feature's `hooks/`, `web/src/lib/api/**` or `web/e2e/request-budget.json`, so a page over its budget fails the PR, not the queue |
 | `pull_request` with `run-e2e`, or a changed suite (`web/e2e/`, `web-e2e.yml`) | the specs the changed files map to plus the smoke set (impact selection below) |
 | `pull_request` with `ci:full`, a changed CI definition, or a `release/*` head branch | all specs |
 | `merge_group`, push to `develop`, nightly schedule, manual run | all specs |
