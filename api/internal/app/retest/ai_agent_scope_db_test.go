@@ -17,7 +17,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-func (fx *fixture) newAgent() shared.ID {
+func (fx *fixture) newAIAgent() shared.ID {
 	fx.t.Helper()
 	id := shared.NewID()
 	fx.exec(`INSERT INTO users (id, email, name, kind, service_tenant_id) VALUES ($1, $2, 'AI agent', 'service', $3)`,
@@ -30,20 +30,20 @@ func (fx *fixture) newAgent() shared.ID {
 	return id
 }
 
-func TestRetestDB_AgentCannotReachAnOutOfScopeTarget(t *testing.T) {
+func TestRetestDB_AIAgentCannotReachAnOutOfScopeTarget(t *testing.T) {
 	fx := newFixture(t)
 	svc := fx.service()
-	agent := fx.newAgent()
+	aiAgent := fx.newAIAgent()
 	ctx := context.Background()
 
 	// In scope: the AI agent's request queues the same scoped commands a
 	// person's would, recorded as its own.
 	inScope := fx.newFinding(fx.asset, "confirmed", "CVE-2024-1234")
-	rt, err := svc.Request(ctx, retestapp.RequestInput{TenantID: fx.tenant, FindingID: inScope, Trigger: retestdom.TriggerManual, RequestedBy: &agent})
+	rt, err := svc.Request(ctx, retestapp.RequestInput{TenantID: fx.tenant, FindingID: inScope, Trigger: retestdom.TriggerManual, RequestedBy: &aiAgent})
 	if err != nil {
 		t.Fatalf("in-scope retest by the agent: %v", err)
 	}
-	if rt.RequestedBy == nil || *rt.RequestedBy != agent {
+	if rt.RequestedBy == nil || *rt.RequestedBy != aiAgent {
 		t.Fatal("the retest is not recorded as the agent's")
 	}
 
@@ -53,7 +53,7 @@ func TestRetestDB_AgentCannotReachAnOutOfScopeTarget(t *testing.T) {
 	var before int
 	_ = fx.db.QueryRow(`SELECT COUNT(*) FROM commands WHERE tenant_id = $1`, fx.tenant.String()).Scan(&before)
 	excluded := fx.newFinding(fx.asset, "confirmed", "CVE-2024-5678")
-	if _, err := svc.Request(ctx, retestapp.RequestInput{TenantID: fx.tenant, FindingID: excluded, Trigger: retestdom.TriggerManual, RequestedBy: &agent}); !errors.Is(err, validation.ErrTargetRefused) {
+	if _, err := svc.Request(ctx, retestapp.RequestInput{TenantID: fx.tenant, FindingID: excluded, Trigger: retestdom.TriggerManual, RequestedBy: &aiAgent}); !errors.Is(err, validation.ErrTargetRefused) {
 		t.Fatalf("the agent's retest of an out-of-scope target: %v, want refused", err)
 	}
 	var after int

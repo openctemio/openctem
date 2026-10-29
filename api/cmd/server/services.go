@@ -3130,7 +3130,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		apikey.NewHolderPermissions(repos.Tenant, rolePermissionSource{repos.Role}), s.DataScope,
 		aianalysis.SettingsConsent{Repo: repos.TenantAISettings}, s.Audit, log)
 	if s.AIExecutor != nil {
-		s.AIExecutor.SetAgents(s.AIAnalysis)
+		s.AIExecutor.SetAIAgents(s.AIAnalysis)
 	}
 
 	// Wire permission services to tenant service

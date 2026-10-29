@@ -135,7 +135,7 @@ func NewBuiltinExecutor(findings FindingReader, commands FindingCommands, settin
 }
 
 // SetAgents wires the AI agent service (principals and the run ledger).
-func (e *BuiltinExecutor) SetAgents(svc *Service) { e.svc = svc }
+func (e *BuiltinExecutor) SetAIAgents(svc *Service) { e.svc = svc }
 
 // SetBudget wires the token budget (nil: no budget check).
 func (e *BuiltinExecutor) SetBudget(b TokenBudget) { e.budget = b }
@@ -152,7 +152,7 @@ type AnalyzeRequest struct {
 	TenantID    shared.ID
 	FindingID   shared.ID
 	Kind        string
-	AgentID     *shared.ID
+	AIAgentID   *shared.ID
 	TriggeredBy *shared.ID
 	Trigger     aidom.Trigger
 }
@@ -210,15 +210,15 @@ func (e *BuiltinExecutor) Analyze(ctx context.Context, req AnalyzeRequest) (*Run
 		return nil, err
 	}
 	var p *Principal
-	if req.AgentID != nil {
-		p, err = e.svc.Principal(ctx, req.TenantID, *req.AgentID)
+	if req.AIAgentID != nil {
+		p, err = e.svc.Principal(ctx, req.TenantID, *req.AIAgentID)
 	} else {
-		p, err = e.svc.DefaultAgent(ctx, req.TenantID, req.FindingID)
+		p, err = e.svc.DefaultAIAgent(ctx, req.TenantID, req.FindingID)
 	}
 	if err != nil {
 		return nil, err
 	}
-	if p.Agent.Executor != aidom.ExecutorBuiltin {
+	if p.AIAgent.Executor != aidom.ExecutorBuiltin {
 		return nil, ErrKindNotBuiltin
 	}
 	if err := p.Require("findings:read"); err != nil {
@@ -232,7 +232,7 @@ func (e *BuiltinExecutor) Analyze(ctx context.Context, req AnalyzeRequest) (*Run
 	}
 	run, err := e.svc.StartRun(ctx, StartRunInput{
 		Principal: p, UseCase: useCase, Kind: kind.Name, SubjectType: aidom.SubjectFinding, SubjectID: req.FindingID,
-		Executor: aidom.ExecutorBuiltin, DataClass: p.Agent.DataClassCeiling, Trigger: req.Trigger, TriggeredBy: req.TriggeredBy,
+		Executor: aidom.ExecutorBuiltin, DataClass: p.AIAgent.DataClassCeiling, Trigger: req.Trigger, TriggeredBy: req.TriggeredBy,
 	})
 	if err != nil {
 		return nil, err
@@ -293,7 +293,7 @@ func (e *BuiltinExecutor) execute(ctx context.Context, p *Principal, run *aidom.
 	if settings.Mode == tenant.AIModeBYOK && e.ownProviderAllowed != nil && !e.ownProviderAllowed(ctx) {
 		return nil, refused(RunErrNotConfigured)
 	}
-	ceiling, err := aipolicy.ParseClass(string(p.Agent.DataClassCeiling))
+	ceiling, err := aipolicy.ParseClass(string(p.AIAgent.DataClassCeiling))
 	if err != nil || ceiling == aipolicy.ClassTenantOnly {
 		return nil, refused(RunErrPolicyRestricted)
 	}
@@ -520,7 +520,7 @@ func (a *actor) do(ctx context.Context, k aidom.Kind, payload json.RawMessage, c
 			return a.comment(ctx, k, text, reasonTriggeredByUser)
 		case v.Verdict == aidom.VerdictLikelyFalsePositive && a.p.Can("findings:write"):
 			return a.change(ctx, k, text, func() (ActionOutcome, error) {
-				err := a.e.commands.RequestFalsePositive(ctx, a.run.TenantID, a.finding, a.p.Agent.ID, aiJustification(v.Reason))
+				err := a.e.commands.RequestFalsePositive(ctx, a.run.TenantID, a.finding, a.p.AIAgent.ID, aiJustification(v.Reason))
 				return ActionRequested, err
 			})
 		case v.Verdict == aidom.VerdictTruePositive && a.p.Can("findings:status"):
@@ -529,7 +529,7 @@ func (a *actor) do(ctx context.Context, k aidom.Kind, payload json.RawMessage, c
 				return a.comment(ctx, k, text, "not_new")
 			}
 			return a.change(ctx, k, text, func() (ActionOutcome, error) {
-				return ActionApplied, a.e.commands.SetStatus(ctx, a.run.TenantID, a.finding, a.p.Agent.ID,
+				return ActionApplied, a.e.commands.SetStatus(ctx, a.run.TenantID, a.finding, a.p.AIAgent.ID,
 					string(vulnerability.FindingStatusConfirmed))
 			})
 		}
@@ -552,7 +552,7 @@ func (a *actor) do(ctx context.Context, k aidom.Kind, payload json.RawMessage, c
 			}
 		}
 		return a.change(ctx, k, text, func() (ActionOutcome, error) {
-			requested, err := a.e.commands.ChangeSeverity(ctx, a.run.TenantID, a.finding, a.p.Agent.ID, v.Severity, aiJustification(v.Reason))
+			requested, err := a.e.commands.ChangeSeverity(ctx, a.run.TenantID, a.finding, a.p.AIAgent.ID, v.Severity, aiJustification(v.Reason))
 			if requested {
 				return ActionRequested, err
 			}
@@ -606,7 +606,7 @@ func (a *actor) comment(ctx context.Context, k aidom.Kind, text, reason string) 
 	// A comment may move the finding's row version; the AI agent keeps track
 	// of its own writes so they never read as someone else's change.
 	unchanged := a.unchangedSinceSeen(ctx)
-	if err := a.e.commands.Comment(ctx, a.run.TenantID, a.finding, a.p.Agent.ID, text); err != nil {
+	if err := a.e.commands.Comment(ctx, a.run.TenantID, a.finding, a.p.AIAgent.ID, text); err != nil {
 		a.e.logger.Warn("AI agent comment failed", "run_id", a.run.ID.String(), "error", logger.SanitizeError(err))
 		return Action{Kind: string(k), Outcome: ActionSkipped, Reason: "command_refused"}
 	}

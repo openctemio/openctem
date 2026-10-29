@@ -37,7 +37,7 @@ const (
 	aiErrPausedCode      apierror.Code = "AI_AGENT_PAUSED"
 	aiErrBudgetCode      apierror.Code = "AI_AGENT_LIMIT"
 	aiErrRunInFlightCode apierror.Code = "AI_RUN_IN_FLIGHT"
-	aiErrNoAgentCode     apierror.Code = "AI_NO_AGENT"
+	aiErrNoAIAgentCode   apierror.Code = "AI_NO_AGENT"
 )
 
 // AIOwnerResponse is one accountable owner.
@@ -552,7 +552,7 @@ type AnalyzeFindingRequest struct {
 	Kind string `json:"kind"`
 	// AgentID picks the AI agent; empty: the first active AI agent that may
 	// read the finding.
-	AgentID string `json:"ai_agent_id,omitempty"`
+	AIAgentID string `json:"ai_agent_id,omitempty"`
 }
 
 // AIAnalyzeResponse is a run and what the AI agent did.
@@ -597,14 +597,14 @@ func (h *AIAnalysisHandler) AnalyzeFinding(w http.ResponseWriter, r *http.Reques
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
 		return
 	}
-	var agent *shared.ID
-	if req.AgentID != "" {
-		id, err := shared.IDFromString(req.AgentID)
+	var aiAgent *shared.ID
+	if req.AIAgentID != "" {
+		id, err := shared.IDFromString(req.AIAgentID)
 		if err != nil {
 			apierror.BadRequest("Invalid agent id").WriteJSON(w)
 			return
 		}
-		agent = &id
+		aiAgent = &id
 	}
 	// The person asking must see the finding; the AI agent's own scope is
 	// checked by the executor.
@@ -613,15 +613,15 @@ func (h *AIAnalysisHandler) AnalyzeFinding(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	d, err := h.executor.Analyze(r.Context(), aianalysis.AnalyzeRequest{
-		TenantID: tenantID, FindingID: findingID, Kind: req.Kind, AgentID: agent, TriggeredBy: &viewer,
+		TenantID: tenantID, FindingID: findingID, Kind: req.Kind, AIAgentID: aiAgent, TriggeredBy: &viewer,
 		Trigger: aidom.TriggerOnDemand,
 	})
 	switch {
 	case errors.Is(err, aidom.ErrRunInFlight):
 		apierror.New(http.StatusConflict, aiErrRunInFlightCode, "An AI analysis of this finding is already running.").WriteJSON(w)
 		return
-	case errors.Is(err, aidom.ErrAgentNotFound) && agent == nil:
-		apierror.New(http.StatusConflict, aiErrNoAgentCode, "No active AI agent may read this finding.").WriteJSON(w)
+	case errors.Is(err, aidom.ErrAIAgentNotFound) && aiAgent == nil:
+		apierror.New(http.StatusConflict, aiErrNoAIAgentCode, "No active AI agent may read this finding.").WriteJSON(w)
 		return
 	case errors.Is(err, aianalysis.ErrRunRefused) && d != nil:
 	case err != nil:

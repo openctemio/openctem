@@ -87,7 +87,7 @@ type aiExecHarness struct {
 	*findingApprovalHarness
 	org      string
 	owner    policyUser
-	agents   *aianalysis.Service
+	aiAgents *aianalysis.Service
 	executor *aianalysis.BuiltinExecutor
 	model    *aiScriptedModel
 }
@@ -119,7 +119,7 @@ func newAIExecHarness(t *testing.T) *aiExecHarness {
 		return m.IsOwner() || m.IsAdmin(), nil
 	})
 	repo := postgres.NewAIAnalysisRepository(db)
-	out.agents = aianalysis.New(repo, repo, apikey.NewHolderPermissions(tenants, aiRolePerms{postgres.NewRoleRepository(db)}),
+	out.aiAgents = aianalysis.New(repo, repo, apikey.NewHolderPermissions(tenants, aiRolePerms{postgres.NewRoleRepository(db)}),
 		enforcer, nil, nil, logger.NewNop())
 
 	key := make([]byte, 32)
@@ -134,7 +134,7 @@ func newAIExecHarness(t *testing.T) *aiExecHarness {
 	out.executor = aianalysis.NewBuiltinExecutor(postgres.NewFindingRepository(db), finding.AIAgentCommands{Findings: h.svc},
 		aiExecSettings{}, aiScriptedFactory{p: out.model}, aiFixedInputs{host: aiExecHost},
 		aibundle.NewBuilder(aipolicy.New(nil, nil)), maps, aianalysis.ExecutorConfig{MaxTokens: 500}, logger.NewNop())
-	out.executor.SetAgents(out.agents)
+	out.executor.SetAIAgents(out.aiAgents)
 
 	out.org = h.tenantWithFindings()
 	out.owner = h.member(out.org, "owner")
@@ -146,9 +146,9 @@ func newAIExecHarness(t *testing.T) *aiExecHarness {
 	return out
 }
 
-func (h *aiExecHarness) agent(preset string) *aidom.Agent {
+func (h *aiExecHarness) aiAgent(preset string) *aidom.AIAgent {
 	h.t.Helper()
-	a, err := h.agents.Create(context.Background(), aianalysis.CreateInput{
+	a, err := h.aiAgents.Create(context.Background(), aianalysis.CreateInput{
 		Name: "AI " + preset + " " + uuid.NewString()[:6], Preset: preset,
 		Owners: []aianalysis.OwnerInput{{Kind: "user", ID: h.owner.id}},
 	}, auditapp.AuditContext{TenantID: h.org, ActorID: h.owner.id})
@@ -162,7 +162,7 @@ func (h *aiExecHarness) agent(preset string) *aidom.Agent {
 }
 
 // findingFor is a new finding of severity assigned to the AI agent (its scope).
-func (h *aiExecHarness) findingFor(a *aidom.Agent, severity string) string {
+func (h *aiExecHarness) findingFor(a *aidom.AIAgent, severity string) string {
 	h.t.Helper()
 	id := uuid.NewString()
 	h.exec(`INSERT INTO findings (id, tenant_id, source, tool_name, message, severity, fingerprint, status, title, description, assigned_to)
@@ -173,21 +173,21 @@ func (h *aiExecHarness) findingFor(a *aidom.Agent, severity string) string {
 
 // analyze runs the AI agent on a schedule (no person started it), so its
 // risk-lowering items become requests a person decides.
-func (h *aiExecHarness) analyze(a *aidom.Agent, findingID, kind string) (*aianalysis.RunDetail, error) {
+func (h *aiExecHarness) analyze(a *aidom.AIAgent, findingID, kind string) (*aianalysis.RunDetail, error) {
 	tid, _ := shared.IDFromString(h.org)
 	fid, _ := shared.IDFromString(findingID)
 	return h.executor.Analyze(context.Background(), aianalysis.AnalyzeRequest{
-		TenantID: tid, FindingID: fid, Kind: kind, AgentID: &a.ID, Trigger: aidom.TriggerSchedule,
+		TenantID: tid, FindingID: fid, Kind: kind, AIAgentID: &a.ID, Trigger: aidom.TriggerSchedule,
 	})
 }
 
 // analyzeOnDemand runs the AI agent because the owner asked for it.
-func (h *aiExecHarness) analyzeOnDemand(a *aidom.Agent, findingID, kind string) (*aianalysis.RunDetail, error) {
+func (h *aiExecHarness) analyzeOnDemand(a *aidom.AIAgent, findingID, kind string) (*aianalysis.RunDetail, error) {
 	tid, _ := shared.IDFromString(h.org)
 	fid, _ := shared.IDFromString(findingID)
 	owner, _ := shared.IDFromString(h.owner.id)
 	return h.executor.Analyze(context.Background(), aianalysis.AnalyzeRequest{
-		TenantID: tid, FindingID: fid, Kind: kind, AgentID: &a.ID, TriggeredBy: &owner,
+		TenantID: tid, FindingID: fid, Kind: kind, AIAgentID: &a.ID, TriggeredBy: &owner,
 	})
 }
 
@@ -199,9 +199,9 @@ func outcomes(d *aianalysis.RunDetail) map[string]aianalysis.ActionOutcome {
 	return out
 }
 
-func TestAIExecutor_SuggestAgentCommentsAndRequests_DB(t *testing.T) {
+func TestAIExecutor_SuggestAIAgentCommentsAndRequests_DB(t *testing.T) {
 	h := newAIExecHarness(t)
-	a := h.agent("suggest")
+	a := h.aiAgent("suggest")
 	f := h.findingFor(a, "medium")
 	h.model.reply = `{"suggestions":[
  {"kind":"summary","payload":{"text":"Upgrade TLS first."},"confidence":0.9,"evidence":[{"ref":"bundle:finding.title"}]},
@@ -249,9 +249,9 @@ func TestAIExecutor_SuggestAgentCommentsAndRequests_DB(t *testing.T) {
 	}
 }
 
-func TestAIExecutor_TriageAgentActsWithinItsPreset_DB(t *testing.T) {
+func TestAIExecutor_TriageAIAgentActsWithinItsPreset_DB(t *testing.T) {
 	h := newAIExecHarness(t)
-	a := h.agent("triage")
+	a := h.aiAgent("triage")
 	f := h.findingFor(a, "medium")
 	h.model.reply = `{"suggestions":[
  {"kind":"verdict","payload":{"verdict":"true_positive","reason":"Reproduced."},"confidence":0.9,"evidence":[{"ref":"bundle:finding.title"}]},
@@ -294,7 +294,7 @@ func TestAIExecutor_TriageAgentActsWithinItsPreset_DB(t *testing.T) {
 
 func TestAIExecutor_UnsafeOutputOnlyComments_DB(t *testing.T) {
 	h := newAIExecHarness(t)
-	a := h.agent("triage")
+	a := h.aiAgent("triage")
 	f := h.findingFor(a, "medium")
 	// No evidence, a forged placeholder and low confidence: nothing changes.
 	h.model.reply = `{"suggestions":[
@@ -321,7 +321,7 @@ func TestAIExecutor_UnsafeOutputOnlyComments_DB(t *testing.T) {
 
 func TestAIExecutor_RefusesBeforeAnyRun_DB(t *testing.T) {
 	h := newAIExecHarness(t)
-	a := h.agent("triage")
+	a := h.aiAgent("triage")
 	h.model.reply = `{"suggestions":[]}`
 	runs := func() int {
 		var n int
@@ -361,7 +361,7 @@ func TestAIExecutor_RefusesBeforeAnyRun_DB(t *testing.T) {
 // overwrites that decision; its change becomes a comment.
 func TestAIExecutor_NeverOverwritesAConcurrentChange_DB(t *testing.T) {
 	h := newAIExecHarness(t)
-	a := h.agent("triage")
+	a := h.aiAgent("triage")
 	f := h.findingFor(a, "medium")
 	h.model.during = func() { h.exec(`UPDATE findings SET severity = 'low' WHERE id = $1`, f) }
 	h.model.reply = `{"suggestions":[
@@ -389,7 +389,7 @@ func TestAIExecutor_NeverOverwritesAConcurrentChange_DB(t *testing.T) {
 // severity still goes through.
 func TestAIExecutor_OnDemandRunFilesNoRiskLoweringRequest_DB(t *testing.T) {
 	h := newAIExecHarness(t)
-	a := h.agent("triage")
+	a := h.aiAgent("triage")
 	f := h.findingFor(a, "high")
 	h.model.reply = `{"suggestions":[
  {"kind":"verdict","payload":{"verdict":"likely_false_positive","reason":"Test fixture only."},"confidence":0.9,"evidence":[{"ref":"bundle:finding.title"}]},
