@@ -99,9 +99,14 @@ func toFindingExportRow(f FindingResponse) FindingExportRow {
 		}
 		return *p
 	}
+	// The display title: what the findings list shows for a finding
+	// without a title of its own.
 	title := f.Title
-	if title == "" {
-		title = f.Message
+	for _, alt := range []string{f.RuleName, f.RuleID, f.Message} {
+		if title != "" {
+			break
+		}
+		title = alt
 	}
 	row := FindingExportRow{
 		ID: f.ID, Title: title, Severity: f.Severity, Status: f.Status, PriorityClass: deref(f.PriorityClass),
@@ -357,6 +362,13 @@ func (h *VulnerabilityHandler) ExportFindings(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	h.streamFindingsExport(w, r, spec, format, "findings")
+}
+
+// streamFindingsExport streams the findings a compiled-as-the-caller spec
+// selects as CSV or NDJSON (the export allowlist), one export per user at a
+// time, audited. namePrefix starts the file name.
+func (h *VulnerabilityHandler) streamFindingsExport(w http.ResponseWriter, r *http.Request, spec *filterspec.Spec, format, namePrefix string) {
 	ctx := r.Context()
 	tenantID := middleware.MustGetTenantID(ctx)
 	started := false
@@ -369,7 +381,7 @@ func (h *VulnerabilityHandler) ExportFindings(w http.ResponseWriter, r *http.Req
 		hdr.Set("X-Content-Type-Options", "nosniff")
 		hdr.Set("Trailer", "X-Export-Truncated, X-Export-Rows")
 		hdr.Set("X-Export-Max-Rows", strconv.Itoa(finding.MaxExportRows))
-		name := "findings-" + time.Now().UTC().Format("20060102-150405")
+		name := namePrefix + "-" + time.Now().UTC().Format("20060102-150405")
 		if format == exportFormatCSV {
 			hdr.Set("Content-Type", "text/csv; charset=utf-8")
 			hdr.Set("Content-Disposition", `attachment; filename="`+name+`.csv"`)
