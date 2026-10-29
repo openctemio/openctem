@@ -269,6 +269,7 @@ Audit actions: `console.webauthn_registered`, `console.webauthn_removed`,
 | Another administrator's key | the assertion must match one of the signing-in administrator's own credentials and user handle |
 | Turning the policy on locks administrators out | actor must comply; others are held on enrollment, not refused; break-glass keeps TOTP; reset-credentials remains |
 | Grace period abused (TOTP of an administrator without keys is phished, then a key is registered) | the window lasts until each administrator enrolls and never past the 7-day deadline (W12); registration is audited and emailed; super admins see compliance in Security > My security keys; enrol before turning the policy on |
+| SQL injection in the tenant plane, or a compromised API process, plants a passkey or a known recovery-code hash for an administrator | the factor tables (`admin_webauthn_credentials`, `admin_recovery_codes`, `admin_webauthn_ceremonies`) belong to the console database role (`DB_ADMIN_USER`); the factor repository runs on the console pool, the app role has no privilege on them, and a tenant-plane API in production refuses to start if it has ([database-roles.md](../deployment/database-roles.md)) |
 | Recovery code guessing | 60-bit codes, behind the password step, the login rate limit and the lockout |
 | Changing `ADMIN_PUBLIC_URL` | registered keys stop working (different RP ID); administrators sign in with TOTP or a recovery code and register again; documented in the variable |
 

@@ -184,6 +184,9 @@ func TestLeastPrivilegeRoles(t *testing.T) {
 		`CREATE TABLE platform_roles (id bigserial PRIMARY KEY)`,
 		`CREATE TABLE platform_role_permissions (role_id bigint)`,
 		`CREATE TABLE platform_role_assignments (admin_id bigint)`,
+		`CREATE TABLE admin_webauthn_credentials (id bigserial PRIMARY KEY, name text)`,
+		`CREATE TABLE admin_recovery_codes (id bigserial PRIMARY KEY, used_at timestamptz)`,
+		`CREATE TABLE admin_webauthn_ceremonies (id bigserial PRIMARY KEY)`,
 		`CREATE TABLE users (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text)`,
 		`CREATE TABLE tenant_members (user_id uuid)`,
 	} {
@@ -214,6 +217,17 @@ func TestLeastPrivilegeRoles(t *testing.T) {
 		`SELECT count(*) FROM platform_role_permissions`,
 		`SELECT count(*) FROM platform_role_assignments`,
 		`INSERT INTO platform_role_assignments VALUES (1)`,
+		// The console's second factors: a planted passkey or recovery code
+		// is an administrator takeover.
+		`INSERT INTO admin_webauthn_credentials (name) VALUES ('planted')`,
+		`UPDATE admin_webauthn_credentials SET name = name`,
+		`DELETE FROM admin_webauthn_credentials`,
+		`SELECT count(*) FROM admin_webauthn_credentials`,
+		`INSERT INTO admin_recovery_codes DEFAULT VALUES`,
+		`UPDATE admin_recovery_codes SET used_at = NULL`,
+		`SELECT count(*) FROM admin_recovery_codes`,
+		`INSERT INTO admin_webauthn_ceremonies DEFAULT VALUES`,
+		`SELECT count(*) FROM admin_webauthn_ceremonies`,
 	} {
 		if _, err := app.ExecContext(ctx, q); err == nil {
 			t.Errorf("app role was allowed on the console's tables: %s", q)
@@ -229,6 +243,13 @@ func TestLeastPrivilegeRoles(t *testing.T) {
 	exec1(ctx, t, adm, `INSERT INTO platform_roles DEFAULT VALUES`)
 	exec1(ctx, t, adm, `INSERT INTO platform_role_assignments VALUES (1)`)
 	exec1(ctx, t, adm, `SELECT count(*) FROM platform_role_permissions`)
+	exec1(ctx, t, adm, `INSERT INTO admin_webauthn_credentials (name) VALUES ('key')`)
+	exec1(ctx, t, adm, `UPDATE admin_webauthn_credentials SET name = 'renamed'`)
+	exec1(ctx, t, adm, `INSERT INTO admin_recovery_codes DEFAULT VALUES`)
+	exec1(ctx, t, adm, `UPDATE admin_recovery_codes SET used_at = now()`)
+	exec1(ctx, t, adm, `INSERT INTO admin_webauthn_ceremonies DEFAULT VALUES`)
+	exec1(ctx, t, adm, `DELETE FROM admin_webauthn_ceremonies`)
+	exec1(ctx, t, adm, `DELETE FROM admin_webauthn_credentials`)
 	exec1(ctx, t, adm, `INSERT INTO admin_audit_logs (action) VALUES ('console')`)
 	exec1(ctx, t, adm, `SELECT count(*) FROM admin_audit_logs`)
 	exec1(ctx, t, adm, `SELECT count(*) FROM admin_audit_chain_anchors`)
