@@ -2,7 +2,7 @@
   const: ModuleAITriage
   slug: ai_triage
   name: AI Triage
-  description: "AI-powered vulnerability triage (Bulk, Auto, Workflow, BYOK, Agent modes)"
+  description: "AI triage of findings: verdicts, remediation steps and summaries as suggestions with provenance; risk-lowering changes need a person's approval"
   icon: Brain
   category: prioritization
   order: 22
@@ -17,57 +17,3 @@
     - "/api/v1/ai"
   jobs:
     - AIAgentSweepController
-- id: ai_triage.bulk
-  const: ModuleAITriageBulk
-  slug: ai_triage_bulk
-  name: Bulk Triage
-  description: Bulk triage operations
-  icon: Layers
-  category: prioritization
-  order: 1
-  parent: ai_triage
-- id: ai_triage.auto
-  const: ModuleAITriageAuto
-  slug: ai_triage_auto
-  name: Auto Triage
-  description: "Auto-triage on finding creation"
-  icon: Zap
-  category: prioritization
-  order: 2
-  parent: ai_triage
-- id: ai_triage.workflow
-  const: ModuleAITriageWorkflow
-  slug: ai_triage_workflow
-  name: Workflow Triage
-  description: Workflow triggers and actions
-  icon: GitPullRequest
-  category: prioritization
-  order: 3
-  parent: ai_triage
-- id: ai_triage.byok
-  const: ModuleAITriageBYOK
-  slug: ai_triage_byok
-  name: BYOK Mode
-  description: Bring Your Own Key mode
-  icon: Key
-  category: prioritization
-  order: 4
-  parent: ai_triage
-- id: ai_triage.agent
-  const: ModuleAITriageAgent
-  slug: ai_triage_agent
-  name: Agent Mode
-  description: "Self-hosted Agent mode"
-  icon: Cpu
-  category: prioritization
-  order: 5
-  parent: ai_triage
-- id: ai_triage.custom_prompts
-  const: ModuleAITriageCustomPrompts
-  slug: ai_triage_custom_prompts
-  name: Custom Prompts
-  description: Custom prompt templates
-  icon: FileText
-  category: prioritization
-  order: 6
-  parent: ai_triage

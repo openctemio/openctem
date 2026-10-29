@@ -142,8 +142,6 @@ export function LoginForm({
   const [captchaRequired, setCaptchaRequired] = useState(false)
   const [captchaToken, setCaptchaToken] = useState('')
   const [captchaReset, setCaptchaReset] = useState(0)
-  // After a failed sign-in: administrators of the platform sign in elsewhere.
-  const [signInFailed, setSignInFailed] = useState(false)
   const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null)
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -302,7 +300,6 @@ export function LoginForm({
       setCaptchaRequired(true)
       toast.error(t('auth.login.captchaRequired'))
     } else {
-      setSignInFailed(true)
       toast.error(authErrorText(result.code, t, t('auth.login.failed', 'Sign-in failed')))
     }
   }
@@ -464,12 +461,6 @@ export function LoginForm({
         )}
 
         {unverifiedEmail && <ResendVerification email={unverifiedEmail} />}
-
-        {signInFailed && (
-          <p className="text-muted-foreground text-sm" role="note">
-            {t('auth.login.platformAdminHint')}
-          </p>
-        )}
 
         {/* Submit Button */}
         <Button className="mt-2" disabled={isLoading} type="submit">

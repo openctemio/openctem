@@ -45,6 +45,11 @@ type TenantSwitch interface {
 type Config struct {
 	Batch       int
 	DailyBudget int
+	// FillBatches holds a due batch back until it fills one task of the
+	// capability's tool or its oldest pair has waited covdom.BatchWait of
+	// the cadence (the server sets it). Without it a batch starts as soon
+	// as one pair is due.
+	FillBatches bool
 }
 
 // EnablePlanning wires dispatch. Without it the service only reconciles.
@@ -155,7 +160,7 @@ func (s *Service) settleRun(ctx context.Context, tenantID shared.ID, rs covdom.R
 			if msg == "" {
 				msg = rs.Error
 			}
-			fp := covdom.FailedPair{AssetID: d.AssetID, Outcome: v.Outcome, Error: msg}
+			fp := covdom.FailedPair{AssetID: d.AssetID, Outcome: v.Outcome, Error: msg, Observer: v.Observer}
 			if covdom.IsTargetSide(v.Outcome) {
 				// The target did not answer: an observation, rechecked on a
 				// widening schedule, not a failure retried every few hours.
@@ -371,7 +376,7 @@ func (s *Service) plan(ctx context.Context, tenantID shared.ID) (int, error) {
 				}
 			}
 		}
-		if len(due) == 0 {
+		if len(due) == 0 || !s.batchReady(capability, due, min(s.cfg.Batch, left)) {
 			continue
 		}
 		n, err := s.startBatch(ctx, tenantID, capability, due)
@@ -382,6 +387,23 @@ func (s *Service) plan(ctx context.Context, tenantID shared.ID) (int, error) {
 		}
 	}
 	return total, nil
+}
+
+// batchReady applies the batch rule (covdom.BatchReady) when FillBatches is
+// set: the batch fills one task of the capability's tool (at most limit
+// pairs: the daily budget may leave fewer), or its oldest pair has waited
+// a tenth of the cadence, at most covdom.MaxBatchWait. A batch that is not
+// ready stays due and collects the pairs that fall due meanwhile.
+func (s *Service) batchReady(capability string, due []covdom.DueTarget, limit int) bool {
+	if !s.cfg.FillBatches {
+		return true
+	}
+	var oldest time.Duration
+	for _, d := range due {
+		oldest = max(oldest, d.Waited)
+	}
+	minBatch := min(scanapp.CoverageChunkSize(capability), limit)
+	return covdom.BatchReady(len(due), minBatch, oldest, s.ruleOf(capability).Every)
 }
 
 // dueBatch is the planner's due batch with repositories taken out (and

@@ -26,12 +26,6 @@ const (
 	ModuleThreatIntel               = "threat_intel"
 	ModuleExposures                 = "exposures"
 	ModuleAITriage                  = "ai_triage"
-	ModuleAITriageBulk              = "ai_triage.bulk"
-	ModuleAITriageAuto              = "ai_triage.auto"
-	ModuleAITriageWorkflow          = "ai_triage.workflow"
-	ModuleAITriageBYOK              = "ai_triage.byok"
-	ModuleAITriageAgent             = "ai_triage.agent"
-	ModuleAITriageCustomPrompts     = "ai_triage.custom_prompts"
 	ModuleSLA                       = "sla"
 	ModulePriorityRules             = "priority_rules"
 	ModuleRiskAnalysis              = "risk_analysis"
@@ -142,7 +136,7 @@ var Registry = []Definition{
 			{ModuleID: ModuleAssets, Type: DependencyHard, Reason: "scope rules select assets"},
 		},
 		Routes: []string{"/api/v1/scope", "/api/v1/programs"},
-		Jobs:   []string{"ProgramAssignmentController", "ProgramFeedController", "ProgramSyncController", "ScopeAttestationController", "ScopePendingController"},
+		Jobs:   []string{"ProgramAssignmentController", "ProgramFeedController", "ProgramSyncController", "ScopeAttestationController", "ScopeEffectsController", "ScopePendingController"},
 	},
 	{
 		ID: ModuleBusinessServices, Slug: "business-services", Name: "Business Services",
@@ -329,7 +323,7 @@ var Registry = []Definition{
 	},
 	{
 		ID: ModuleAITriage, Slug: "ai_triage", Name: "AI Triage",
-		Description: "AI-powered vulnerability triage (Bulk, Auto, Workflow, BYOK, Agent modes)",
+		Description: "AI triage of findings: verdicts, remediation steps and summaries as suggestions with provenance; risk-lowering changes need a person's approval",
 		Icon:        "Brain",
 		Category:    "prioritization", DisplayOrder: 22, Release: ReleaseStatusReleased,
 		Permission: "ai_triage:read",
@@ -339,48 +333,6 @@ var Registry = []Definition{
 		},
 		Routes: []string{"/api/v1/findings/{}/ai-triage", "/api/v1/findings/ai-triage", "/api/v1/findings/{}/ai", "/api/v1/ai"},
 		Jobs:   []string{"AIAgentSweepController"},
-	},
-	{
-		ID: ModuleAITriageBulk, Slug: "ai_triage_bulk", Name: "Bulk Triage",
-		Description: "Bulk triage operations",
-		Icon:        "Layers",
-		Category:    "prioritization", DisplayOrder: 1, Release: ReleaseStatusReleased,
-		Parent: ModuleAITriage,
-	},
-	{
-		ID: ModuleAITriageAuto, Slug: "ai_triage_auto", Name: "Auto Triage",
-		Description: "Auto-triage on finding creation",
-		Icon:        "Zap",
-		Category:    "prioritization", DisplayOrder: 2, Release: ReleaseStatusReleased,
-		Parent: ModuleAITriage,
-	},
-	{
-		ID: ModuleAITriageWorkflow, Slug: "ai_triage_workflow", Name: "Workflow Triage",
-		Description: "Workflow triggers and actions",
-		Icon:        "GitPullRequest",
-		Category:    "prioritization", DisplayOrder: 3, Release: ReleaseStatusReleased,
-		Parent: ModuleAITriage,
-	},
-	{
-		ID: ModuleAITriageBYOK, Slug: "ai_triage_byok", Name: "BYOK Mode",
-		Description: "Bring Your Own Key mode",
-		Icon:        "Key",
-		Category:    "prioritization", DisplayOrder: 4, Release: ReleaseStatusReleased,
-		Parent: ModuleAITriage,
-	},
-	{
-		ID: ModuleAITriageAgent, Slug: "ai_triage_agent", Name: "Agent Mode",
-		Description: "Self-hosted Agent mode",
-		Icon:        "Cpu",
-		Category:    "prioritization", DisplayOrder: 5, Release: ReleaseStatusReleased,
-		Parent: ModuleAITriage,
-	},
-	{
-		ID: ModuleAITriageCustomPrompts, Slug: "ai_triage_custom_prompts", Name: "Custom Prompts",
-		Description: "Custom prompt templates",
-		Icon:        "FileText",
-		Category:    "prioritization", DisplayOrder: 6, Release: ReleaseStatusReleased,
-		Parent: ModuleAITriage,
 	},
 	{
 		ID: ModuleSLA, Slug: "sla", Name: "SLA Management",
