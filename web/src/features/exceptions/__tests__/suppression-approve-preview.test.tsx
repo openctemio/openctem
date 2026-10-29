@@ -105,7 +105,8 @@ describe('SuppressionApprovePreview', () => {
     })
     render(<SuppressionApprovePreview ruleId="r1" />)
     expect(screen.getByText('SQL injection')).toBeInTheDocument()
-    expect(screen.getByText(/high, repo-a, src\/app\.py/)).toBeInTheDocument()
+    expect(screen.getByText('repo-a, src/app.py')).toBeInTheDocument()
+    expect(screen.getByText('high')).toBeInTheDocument()
     expect(screen.getByText(/examples within your access \(1 of 4\)/i)).toBeInTheDocument()
     expect(screen.getByTestId('suppression-approve-hidden')).toHaveTextContent(
       '3 matching findings are on assets outside your access'

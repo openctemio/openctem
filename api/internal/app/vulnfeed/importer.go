@@ -159,25 +159,9 @@ func toUint(v any) uint64 {
 	return 0
 }
 
-// ErrNotConfigured: no pinned root key, so the importer does nothing.
-var ErrNotConfigured = feedstatus.ErrNotConfigured
-
-// Sync is Run for an operator's request: a feed that would do nothing
-// (not configured, switched off) is reported as such instead of as a run
-// that succeeded.
-func (im *Importer) Sync(ctx context.Context) (Result, error) {
-	if im.cfg.RootKeyID == "" {
-		return Result{}, ErrNotConfigured
-	}
-	st, err := im.status.GetBySource(ctx, SourceName)
-	if err != nil {
-		return Result{}, fmt.Errorf("vulnfeed status: %w", err)
-	}
-	if !st.IsEnabled() {
-		return Result{}, threatintel.ErrSyncDisabled
-	}
-	return im.Run(ctx)
-}
+// Configured reports whether the importer has a pinned root key (without
+// one it does nothing).
+func (im *Importer) Configured() bool { return im.cfg.RootKeyID != "" }
 
 // Run imports the newest bundle when there is one.
 func (im *Importer) Run(ctx context.Context) (Result, error) {
@@ -192,6 +176,14 @@ func (im *Importer) Run(ctx context.Context) (Result, error) {
 	if !st.IsEnabled() {
 		return res, nil
 	}
+	// One run at a time: the scheduled controller and an operator's request
+	// (on this or another replica) never import together.
+	if ok, err := im.status.TryStart(ctx, SourceName, feedstatus.RunningTimeout); err != nil {
+		return res, fmt.Errorf("vulnfeed status: %w", err)
+	} else if !ok {
+		return res, nil
+	}
+	defer im.release(ctx)
 	cur := readState(st.Metadata())
 	if im.useV2(ctx) {
 		return im.runV2(ctx, cur)
@@ -462,6 +454,21 @@ func (im *Importer) fail(ctx context.Context, cause error) error {
 		im.logger.Warn("vulnfeed status not updated", "error", err)
 	}
 	return cause
+}
+
+// release ends a run that left the row running (a run that found nothing
+// newer, or an early return): the platform is current as of now.
+func (im *Importer) release(ctx context.Context) {
+	// The caller's context may be the one that ended the run.
+	ctx = context.WithoutCancel(ctx)
+	st, err := im.status.GetBySource(ctx, SourceName)
+	if err != nil || st.LastSyncStatus() != threatintel.SyncStateRunning {
+		return
+	}
+	st.MarkSyncUnchanged(0, 0)
+	if err := im.status.Update(ctx, st); err != nil {
+		im.logger.Warn("vulnfeed status not updated", "error", err)
+	}
 }
 
 // checked records a run that found nothing newer: the platform is current as

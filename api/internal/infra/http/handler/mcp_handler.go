@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/openctemio/openctem/api/pkg/domain/findinglifecycle"
+	"github.com/openctemio/openctem/api/pkg/filterspec"
 
 	"github.com/openctemio/openctem/api/internal/app/aipolicy"
 	"github.com/openctemio/openctem/api/internal/app/asset"
@@ -73,7 +74,8 @@ type mcpFindingReader interface {
 	// so aggregate posture is confined exactly like list_findings — never the
 	// admin-wide GetFindingStats.
 	GetFindingStatsWithScope(ctx context.Context, input finding.GetFindingStatsInput) (*vulnerability.FindingStats, error)
-	ListActiveCVEs(ctx context.Context, in finding.ListActiveCVEsInput) (pagination.Result[vulnerability.ActiveCVE], error)
+	// ListCVEExposures is the vulnerabilities list, compiled as the caller.
+	ListCVEExposures(ctx context.Context, c finding.FilterCaller, spec *filterspec.Spec, opts vulnerability.CVEListOptions) (*vulnerability.CVEList, error)
 	// ListFindingTransitions is the transition engine's allowed moves (also
 	// data-scoped).
 	ListFindingTransitions(ctx context.Context, tenantID, findingID, actorID string, perms finding.TransitionPermissions) ([]findinglifecycle.Decision, vulnerability.FindingStatus, error)

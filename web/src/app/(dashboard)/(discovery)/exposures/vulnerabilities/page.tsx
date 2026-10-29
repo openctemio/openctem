@@ -1,14 +1,9 @@
 'use client'
 
 import { Main } from '@/components/layout'
-import {
-  PageHeader,
-  PageStack,
-  EmptyState,
-  ErrorState,
-  FilterSelect,
-  ViewSwitcher,
-} from '@/features/shared'
+import { PageHeader, PageStack, EmptyState, ErrorState, ViewSwitcher } from '@/features/shared'
+import Link from '@/components/link'
+import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
 import { useDashboardStats } from '@/features/dashboard/hooks/use-dashboard-stats'
 import { useFindingTypeStats } from '@/features/exposures/hooks'
@@ -26,11 +21,11 @@ import {
 import { useTenant } from '@/context/tenant-provider'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { Bug, LayoutGrid, List } from 'lucide-react'
-import { ActiveCVEsTab, VulnerabilityCatalogTab } from '@/features/vulnerabilities'
+import { VulnerabilityCatalogTab } from '@/features/vulnerabilities'
 import { usePermissions, Permission } from '@/lib/permissions'
 import { VULNERABILITY_SOURCES } from '@/features/exposures/lib/type-sources'
 
-const TABS = ['overview', 'active', 'catalog'] as const
+const TABS = ['overview', 'catalog'] as const
 
 function OverviewTab() {
   const { t } = useTranslation()
@@ -135,35 +130,17 @@ export default function VulnerabilitiesPage() {
   )
   const { can } = usePermissions()
   const canReadCatalog = can(Permission.VulnerabilitiesRead)
-  // Summary (?tab=overview) is the dashboard landing — visible to everyone with findings:read.
-  // Active CVEs and CVE catalog are deeper exploration tabs to its right. The
-  // tab lives in the URL so a view can be linked to.
+  // Summary (?tab=overview) is the dashboard landing, visible to everyone with
+  // findings:read; the CVE catalog is the deeper exploration view. The
+  // vulnerabilities affecting the caller's assets are the /vulnerabilities
+  // list (one list per pattern), linked from the header. The tab lives in the
+  // URL so a view can be linked to.
   const [tabParam, setTab] = useUrlFilter('tab', 'overview')
   const tab =
     (TABS as readonly string[]).includes(tabParam) && (tabParam === 'overview' || canReadCatalog)
       ? tabParam
       : 'overview'
-
-  // Summary and the CVE lists are two views of one subject: a view switch in
-  // the header. Which CVEs the list shows (those affecting my assets, or the
-  // whole catalog) is a token first in the list's toolbar. No second tab row
-  // under the Exposures tabs (research/249 R21).
-  const showsCves = tab === 'active' || tab === 'catalog'
-  const cveList = (
-    <FilterSelect<'active' | 'catalog'>
-      label={t('exposures.vulnerabilities.cvesLabel', 'CVEs')}
-      value={tab === 'catalog' ? 'catalog' : 'active'}
-      clearable={false}
-      options={[
-        {
-          value: 'active',
-          label: t('exposures.vulnerabilities.cvesActive', 'Affecting my assets'),
-        },
-        { value: 'catalog', label: t('exposures.vulnerabilities.cvesCatalog', 'Whole catalog') },
-      ]}
-      onChange={(v) => setTab(v === 'catalog' ? 'catalog' : 'active')}
-    />
-  )
+  const canOpenList = canReadCatalog && can(Permission.FindingsRead)
 
   return (
     <Main>
@@ -184,33 +161,36 @@ export default function VulnerabilitiesPage() {
                     icon: LayoutGrid,
                   },
                   {
-                    value: 'cves',
-                    label: t('exposures.vulnerabilities.cvesView', 'CVE list'),
+                    value: 'catalog',
+                    label: t('exposures.vulnerabilities.catalogView', 'CVE catalog'),
                     icon: List,
                   },
                 ]}
-                value={showsCves ? 'cves' : 'summary'}
-                onChange={(v) => setTab(v === 'cves' ? 'active' : '')}
+                value={tab === 'catalog' ? 'catalog' : 'summary'}
+                onChange={(v) => setTab(v === 'catalog' ? 'catalog' : '')}
               />
             ) : undefined
           }
         >
-          <ViewFindingsButton
-            stats={typeStats}
-            sources={VULNERABILITY_SOURCES}
-            isLoading={typeLoading}
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            {canOpenList && (
+              <Button asChild variant="outline" size="sm">
+                <Link href="/vulnerabilities">
+                  {t('exposures.vulnerabilities.openList', 'Vulnerabilities on my assets')}
+                </Link>
+              </Button>
+            )}
+            <ViewFindingsButton
+              stats={typeStats}
+              sources={VULNERABILITY_SOURCES}
+              isLoading={typeLoading}
+            />
+          </div>
         </PageHeader>
 
         <ExposuresTabs />
 
-        {tab === 'catalog' ? (
-          <VulnerabilityCatalogTab leading={cveList} />
-        ) : tab === 'active' ? (
-          <ActiveCVEsTab leading={cveList} />
-        ) : (
-          <OverviewTab />
-        )}
+        {tab === 'catalog' ? <VulnerabilityCatalogTab /> : <OverviewTab />}
       </PageStack>
     </Main>
   )

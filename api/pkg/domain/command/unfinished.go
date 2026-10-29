@@ -24,31 +24,71 @@ import (
 // is ignored and a target without a valid outcome is unfinished, so a
 // sensor can never add a target.
 func UnfinishedTargets(cmd *Command) (remaining []string, settled int, ok bool) {
+	remaining, _, settled, ok = SplitUnfinished(cmd)
+	return remaining, settled, ok
+}
+
+// SensorSide reports whether a failed target's outcome is a fault of the
+// sensor's own network or resolver, not a fact about the target: the
+// sensor's control probe failed (sensor_network_fault, which includes a
+// proxy pool that carried none of its connections), or a name did not
+// resolve and the sensor says its own resolver is the cause. Another sensor
+// can answer these differently, so the target may go out again on one
+// (research/302 B3). It is never true for a fact about the target
+// (unreachable, timeout, name gone), for an answer of an edge protection
+// (blocked or challenged) or a rate limit, which are never sent from
+// another vantage point (that would be evading the answer), nor for a tool
+// error or the sensor's own egress refusal, which another sensor would
+// repeat.
+func SensorSide(o outcome.Target) bool {
+	if o.State != outcome.Failed || !o.Valid() {
+		return false
+	}
+	switch o.Class {
+	case outcome.SensorNetworkFault:
+		return o.Side() == outcome.CauseSensor
+	case outcome.ResolverFailed:
+		return o.Cause == outcome.CauseSensor
+	}
+	return false
+}
+
+// SplitUnfinished is UnfinishedTargets with the sensor-side failures told
+// apart: unfinished are the targets that got no outcome, sensorSide the
+// targets whose failure is the sensor's own (SensorSide), both in payload
+// order. settled counts the targets with an outcome that is neither: a
+// settled target is never run again. Whether sensorSide targets go out again
+// is the caller's decision: they only can when another eligible sensor
+// exists.
+func SplitUnfinished(cmd *Command) (unfinished, sensorSide []string, settled int, ok bool) {
 	if cmd == nil || cmd.Type != CommandTypeScan || cmd.IsPlatformJob || len(cmd.Result) == 0 {
-		return nil, 0, false
+		return nil, nil, 0, false
 	}
 	if cmd.StepRunID == nil && payloadNamesRun(cmd.Payload) {
 		// A run step settles with the last command carrying its step id;
 		// without it the step would settle before its follow-up ran.
-		return nil, 0, false
+		return nil, nil, 0, false
 	}
 	targets := PayloadTargets(cmd.Payload)
 	if len(targets) == 0 {
-		return nil, 0, false
+		return nil, nil, 0, false
 	}
 	var res struct {
 		Outcomes *[]outcome.Target `json:"target_outcomes"`
 	}
 	if json.Unmarshal(cmd.Result, &res) != nil || res.Outcomes == nil {
-		return nil, 0, false
+		return nil, nil, 0, false
 	}
 	normalized := outcome.Normalize(*res.Outcomes, targets)
 	for _, o := range normalized {
-		if o.State == outcome.Unfinished {
-			remaining = append(remaining, o.Target)
+		switch {
+		case o.State == outcome.Unfinished:
+			unfinished = append(unfinished, o.Target)
+		case SensorSide(o):
+			sensorSide = append(sensorSide, o.Target)
 		}
 	}
-	return remaining, len(normalized) - len(remaining), true
+	return unfinished, sensorSide, len(normalized) - len(unfinished) - len(sensorSide), true
 }
 
 // ConnectorUnfinishedTargets reads a completed connector_scan's result
