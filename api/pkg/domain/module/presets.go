@@ -218,7 +218,7 @@ var presetVMEssentials = ModulePreset{
 		// Discovery
 		"components", "branches", "credentials",
 		// Prioritization
-		"threat_intel", "ai_triage", "ai_triage.auto", "ai_triage.bulk",
+		"threat_intel", "ai_triage",
 		"priority_rules", "risk_scoring", "risk_analysis",
 		// Mobilization
 		"remediation", "suppressions", "workflows",
@@ -328,8 +328,7 @@ var presetOffensive = ModulePreset{
 		"pentest", "attack_simulation", "control_testing",
 		"compensating_controls",
 		// Prioritization
-		"threat_intel", "ai_triage", "ai_triage.auto", "ai_triage.bulk",
-		"ai_triage.custom_prompts", "ai_triage.workflow",
+		"threat_intel", "ai_triage",
 		"priority_rules", "risk_scoring", "risk_analysis",
 		// Mobilization — handoff (pentest) + auto-submit (bounty)
 		"workflows", "suppressions", "remediation",
@@ -379,7 +378,7 @@ var presetASPM = ModulePreset{
 		// Discovery — the AppSec surface: components, repos, secrets
 		"components", "branches", "credentials",
 		// Prioritization — full app-finding lifecycle
-		"threat_intel", "ai_triage", "ai_triage.auto", "ai_triage.bulk",
+		"threat_intel", "ai_triage",
 		"priority_rules", "risk_scoring", "risk_analysis",
 		// Mobilization — gate + fix
 		"remediation", "suppressions", "workflows",
@@ -425,7 +424,7 @@ var presetSBOM = ModulePreset{
 		// Discovery — component-heavy
 		"components", "branches", "credentials",
 		// Prioritization
-		"threat_intel", "ai_triage", "ai_triage.auto", "ai_triage.bulk",
+		"threat_intel", "ai_triage",
 		"priority_rules", "risk_scoring", "risk_analysis",
 		// Mobilization
 		"remediation", "suppressions", "workflows",
@@ -568,8 +567,7 @@ var presetCTEMFull = ModulePreset{
 		// Discovery — vulnerability database is part of the CTEM discovery surface
 		// Prioritization
 		"exposures",
-		"threat_intel", "ai_triage", "ai_triage.auto", "ai_triage.bulk",
-		"ai_triage.workflow", "ai_triage.custom_prompts",
+		"threat_intel", "ai_triage",
 		"priority_rules", "risk_analysis", "business_impact",
 		"risk_scoring",
 		// Validation
