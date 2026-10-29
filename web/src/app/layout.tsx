@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 // import { Geist, Geist_Mono } from "next/font/google";
 import { headers } from 'next/headers'
 import './globals.css'
@@ -6,6 +6,7 @@ import { Providers } from './providers'
 import { getDirFromLocale, defaultLocale, isSupportedLocale } from '@/lib/i18n'
 import { NavProgressBar } from '@/components/layout/nav-progress'
 import { brandSettings } from '@/lib/brand-settings'
+import { BRAND_INK } from '@/lib/brand'
 
 const appDescription =
   process.env.NEXT_PUBLIC_APP_DESCRIPTION || 'Continuous Threat Exposure Management Platform'
@@ -21,6 +22,9 @@ export async function generateMetadata(): Promise<Metadata> {
     description: `${brand.name} - ${appDescription}`,
   }
 }
+
+/** Browser chrome takes the brand ink (the mobile address bar, an installed app's title bar). */
+export const viewport: Viewport = { themeColor: BRAND_INK }
 
 // const geistSans = Geist({
 //   variable: "--font-geist-sans",

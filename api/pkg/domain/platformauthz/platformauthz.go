@@ -40,6 +40,9 @@ const (
 
 	UsersRead    Permission = "platform.users.read"
 	UsersSupport Permission = "platform.users.support"
+	// UsersCredentials: the actions that hand over or replace a person's proof of
+	// identity (reset link, mark verified, two-factor reset). Owner only.
+	UsersCredentials Permission = "platform.users.credentials"
 
 	AdminsRead   Permission = "platform.admins.read"
 	AdminsManage Permission = "platform.admins.manage"
@@ -98,6 +101,7 @@ var catalog = []Definition{
 	{TenantsAuditChainWrite, false, "Re-sign an organization's audit chain (also needs a second owner's approval)"},
 	{UsersRead, false, "Find any account and view its sign-in state, organizations and sessions"},
 	{UsersSupport, false, "Account support: end sessions, unlock, send password-reset or verification mail, block or unblock"},
+	{UsersCredentials, false, "Account credentials: issue a password-reset link, mark an e-mail verified, reset two-factor (the reset also needs a second owner's approval)"},
 	{AdminsRead, false, "List platform administrators and console sessions"},
 	{AdminsManage, false, "Add, change, remove or reset platform administrators; end their console sessions"},
 	{RolesRead, true, "List platform roles and who holds them"},

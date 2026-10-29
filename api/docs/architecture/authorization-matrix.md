@@ -1070,6 +1070,14 @@ every built-in role against every route. Handlers check a permission only for
 part of a response or request (member e-mails `platform.tenants.members.read`,
 owner recovery `platform.tenants.owner_recovery`).
 
+Three actions on a platform user hand over or replace a person's proof of
+identity: the password-reset link (`POST /api/v1/admin/platform-users/{user_id}/reset-link`),
+marking an e-mail verified (`.../mark-verified`) and the two-factor reset
+(`.../mfa/reset`). They need `platform.users.credentials`, which only the owner
+role holds (account support and `platform_admin` hold `platform.users.support`,
+not this); step-up, a reason and the audit row are unchanged, and the
+two-factor reset still needs a second administrator's approval.
+
 **Acting permissions.** With `ADMIN_ELEVATION=required` (default) a request
 acts with the baseline (read) permissions of the roles held unless the console
 session holds a live elevation (`POST /api/v1/admin/auth/elevate {role}`, a

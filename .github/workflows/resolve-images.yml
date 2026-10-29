@@ -1,0 +1,86 @@
+name: Resolve images
+
+# Reusable workflow for pull requests (api/docs/development/ci-cd.md, "Build
+# images once"). Read-only: it never builds, never pushes, and holds no
+# packages: write, attestations: write or id-token: write, so nothing a pull
+# request runs can overwrite a CI image, a release cache or a mirror tag.
+#
+# It looks up the images of the pull request's content keys that develop (or
+# main) already built and attested (.github/scripts/ci-image-resolve.sh). When
+# EVERY requested image resolves, `push` is 'true' and the digests are outputs;
+# otherwise `push` is 'false' and the caller builds locally, as before.
+# Callers: web-e2e.yml, allinone-ci.yml (a pull_request job; the push and
+# merge-queue events call build-images.yml instead).
+
+on:
+  workflow_call:
+    inputs:
+      images:
+        description: "Space-separated: api web console allinone (allinone implies api web console)"
+        required: true
+        type: string
+    outputs:
+      push:
+        description: "'true' when every requested image resolved to a verified digest; 'false' when the caller builds locally"
+        value: ${{ jobs.resolve.outputs.push }}
+      api:
+        description: "ghcr.io/openctemio/ci-images/api@sha256:... (empty when not requested or not resolved)"
+        value: ${{ jobs.resolve.outputs.api }}
+      web:
+        description: "web image by digest"
+        value: ${{ jobs.resolve.outputs.web }}
+      console:
+        description: "console image by digest"
+        value: ${{ jobs.resolve.outputs.console }}
+      allinone:
+        description: "all-in-one image by digest"
+        value: ${{ jobs.resolve.outputs.allinone }}
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    name: Resolve trusted images
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: read
+      attestations: read
+    outputs:
+      push: ${{ steps.r.outputs.push }}
+      api: ${{ steps.r.outputs.api }}
+      web: ${{ steps.r.outputs.web }}
+      console: ${{ steps.r.outputs.console }}
+      allinone: ${{ steps.r.outputs.allinone }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Registry login
+        uses: ./.github/actions/registry-login
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - id: r
+        env:
+          REQUESTED: ${{ inputs.images }}
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # Fork and Dependabot pull requests have a read-only token and the
+          # packages are public: a missing image is simply built by the caller.
+          keys="$(bash .github/scripts/ci-images-keys.sh "$REQUESTED")"
+          out=""; all=true
+          for i in $(jq -r 'keys[]' <<<"$keys"); do
+            k="$(jq -r --arg i "$i" '.[$i]' <<<"$keys")"
+            if ref="$(bash .github/scripts/ci-image-resolve.sh "$i" "$k" 2>/dev/null)"; then
+              echo "reuse $i $k: $ref"; out="$out$i=$ref"$'\n'
+            else
+              echo "no trusted image for $i $k: the caller builds locally"; all=false
+            fi
+          done
+          echo "push=$all" >> "$GITHUB_OUTPUT"
+          if [ "$all" = true ]; then printf '%s' "$out" >> "$GITHUB_OUTPUT"; fi

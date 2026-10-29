@@ -27,10 +27,12 @@ export const PUBLIC_ROUTES = [
   // OAuth / SSO provider callbacks: the session cookie is set by these pages.
   '/auth/callback',
   '/auth/sso/callback',
-  // Metadata routes (app/icon.tsx, app/apple-icon.tsx): the sign-in page's
-  // favicon must load without a session.
+  // Metadata routes (app/icon.tsx, app/apple-icon.tsx, app/opengraph-image.tsx):
+  // the sign-in page's favicon and a shared link's preview image must load
+  // without a session. They render the instance brand only.
   '/icon',
   '/apple-icon',
+  '/opengraph-image',
   // The legal documents (built-in templates when LEGAL_PAGES_ENABLED=true,
   // 404 otherwise): linked from the sign-in page and from each other.
   '/terms',

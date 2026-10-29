@@ -305,7 +305,7 @@ func (h *RoleHandler) handleValidationError(w http.ResponseWriter, err error) {
 }
 
 func (h *RoleHandler) handleServiceError(w http.ResponseWriter, err error) {
-	if writeStepUpError(w, err) {
+	if writeStepUpError(w, err) || writeTeamGrantError(w, err) {
 		return
 	}
 	switch {
