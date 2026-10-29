@@ -217,6 +217,9 @@ type DueTarget struct {
 	Type       asset.AssetType
 	SubType    string
 	FailStreak int
+	// Waited is how long the pair has been due (DueBatch; zero for a pair
+	// taken within the lookahead, very long for one never scheduled).
+	Waited time.Duration
 }
 
 // Target is the scan target of an asset: its name, or "host:port" for an
