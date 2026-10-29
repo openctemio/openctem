@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 
 	"github.com/lib/pq"
 
@@ -151,7 +152,9 @@ func (r *PlatformRoleRepository) Revoke(ctx context.Context, adminID shared.ID, 
 // change back and surfaces as ErrAuditUnavailable.
 func auditTx(ctx context.Context, tx *sql.Tx, entry *admin.AuditLog) error {
 	if err := CreateAdminAuditLogTx(ctx, tx, entry); err != nil {
-		return fmt.Errorf("%w: %v", platformrole.ErrAuditUnavailable, err)
+		// The cause goes to the log; the sentinel is all a caller sees.
+		slog.ErrorContext(ctx, "platform role audit entry not written", "error", err)
+		return platformrole.ErrAuditUnavailable
 	}
 	return nil
 }
