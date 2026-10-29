@@ -23,9 +23,9 @@ import {
   MetricStrip,
   type MetricStripItem,
   RunStatusBadge,
-  SegmentedLens,
   TruncatedText,
 } from '@/features/shared'
+import { FilterSelect } from '@/features/shared/components/filter-select'
 import { Button } from '@/components/ui/button'
 import {
   Select,
@@ -429,14 +429,15 @@ function ScanRunsTable() {
 
   const toolbarStart = (
     <div className="flex flex-wrap items-center gap-2">
-      <SegmentedLens
+      <FilterSelect<RunOriginFilterValue>
+        clearable={false}
         label={t('scans.runs.filterOrigin')}
         value={originFilter}
         options={RUN_ORIGIN_FILTERS.map((f) => ({
           value: f.value,
           label: t(`scans.runOriginFilter.${f.value}`),
         }))}
-        onChange={(v) => setFilter('origin', v)}
+        onChange={(v) => setFilter('origin', v || DEFAULT_RUN_ORIGIN)}
       />
       <Select value={statusFilter} onValueChange={(v) => setStatus(v as RunStatusFilterValue)}>
         <SelectTrigger className="h-9 w-auto min-w-36" aria-label={t('scans.runs.filterStatus')}>
