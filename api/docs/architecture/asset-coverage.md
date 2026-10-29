@@ -158,6 +158,38 @@ the next batch. Only the coverage run's own trigger can skip zone routing
 (an unexported context marker), and every other gate check still applies.
 Without zones, or for an active capability, nothing changes.
 
+**Dead names.** A name that does not resolve is an answer, not a failure.
+A sensor reports it per target: in the result's `refused_targets` with
+reason `unresolvable` and the DNS kind (`name_gone` for NXDOMAIN or NODATA,
+`resolver_failed` when the lookup failed), or as a `name_gone` /
+`resolver_failed` outcome. The list is read only for the task's own
+targets, and a target it lists is never covered by the task.
+
+- For `resolve.dns`, no answer settles the pair as `covered` with outcome
+  `no_answer`. The name is then parked: the `resolves` precondition of every
+  other capability fails for the asset, even when an older `resolves_to`
+  edge or stored address is still there, so its active pairs turn
+  `not_applicable` (reason `resolves`) and are never dispatched. Reconcile
+  runs again in the same pass when a settlement parked a name, so no active
+  run starts on it in between.
+- A parked name is rechecked at 1 day, 3 days, 7 days and then weekly
+  (consecutive no-answer results, jittered), never stopped for good. A
+  covered `no_answer` pair is never a gap and never counts as failing.
+- The first resolution that answers un-parks the name: reconcile makes its
+  active pairs due, and they go through the full scope gate and the
+  claim-time check like any new target. A name re-registered by a third
+  party and pointing at a denied address is refused there.
+- Any other capability whose target the sensor could not resolve is
+  `blocked` with reason `unresolvable` (or `resolver_failed`) on the same
+  1 d / 3 d / 7 d / weekly schedule. It is not a failure, so it raises no
+  failure streak and no gap. A failed lookup of `resolve.dns` itself is
+  blocked as `resolver_failed` in the same way: the resolver may be the
+  sensor's own, so it does not park the name.
+
+A sensor that reports every name of its task as dead can only park those
+names: the assets and their pairs stay, the recheck is bounded, and a
+resolution that answers brings them back.
+
 **HTTP probe on names.** A subdomain is probed only when it resolves and
 is worth a probe (`web_port_or_unscanned`): an address it resolves to has
 an active open port in the web port set, a web origin of the name

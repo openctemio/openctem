@@ -77,6 +77,8 @@ export function AssetCoverageSection({ assetId }: { assetId: string }) {
                   )}
                   {e.last_outcome === 'no_output' &&
                     `, ${t('assetCoverage.noOutput', 'found nothing')}`}
+                  {e.last_outcome === 'no_answer' &&
+                    `, ${t('assetCoverage.noAnswer', 'the name has no DNS answer; checked again later')}`}
                   {e.reason && `, ${coverageReasonText(e, t)}`}
                   {e.next_due_at && e.state !== 'not_applicable' && (
                     <>
