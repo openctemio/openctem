@@ -6,9 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 
@@ -986,6 +989,25 @@ func (r *ScanRunRepository) CloseCanceledRun(ctx context.Context, tenantID, runI
 	return out, nil
 }
 
+// withheldTextSQL is command.WithheldText of the code column col in SQL.
+func withheldTextSQL(col string) string {
+	texts := command.WithheldTexts()
+	codes := make([]string, 0, len(texts))
+	for c := range texts {
+		codes = append(codes, c)
+	}
+	sort.Strings(codes)
+	var b strings.Builder
+	b.WriteString("(CASE WHEN " + col + " LIKE " + pq.QuoteLiteral(command.PlacementGrantPrefix+"%") +
+		" THEN 'withheld by sensor permissions: ' || replace(substr(" + col + ", " +
+		strconv.Itoa(len(command.PlacementGrantPrefix)+1) + "), '_', ' ')")
+	for _, c := range codes {
+		b.WriteString(" WHEN " + col + " = " + pq.QuoteLiteral(c) + " THEN " + pq.QuoteLiteral("withheld: "+texts[c]))
+	}
+	b.WriteString(" ELSE 'withheld: ' || " + col + " END)")
+	return b.String()
+}
+
 // AbortUnclaimedRuns ends runs no sensor ever picked up (D8): every command of
 // the run is still 'pending' and was never acknowledged or started, and the
 // run is older than its threshold (4h scheduled / 1h interactive by default,
@@ -995,7 +1017,9 @@ func (r *ScanRunRepository) CloseCanceledRun(ctx context.Context, tenantID, runI
 // for a busy sensor of the tenant that could take it (queueWaitSQL). Such a run used to wait for the
 // generic run timeout and end as "timeout" with no hint that nobody claimed
 // the work; it was then even retried. Here the run fails with the reason, its
-// open steps fail with NO_SENSOR (a code the retry controller never retries),
+// open steps fail with NO_SENSOR (a code the retry controller never retries;
+// the message names the dispatch gate's refusal when a sensor withheld the
+// work, e.g. "withheld by sensor permissions: credentials"),
 // its commands are failed so no sensor picks them up late, and the scan
 // summary is recomputed from its runs.
 func (r *ScanRunRepository) AbortUnclaimedRuns(ctx context.Context, scheduledAfter, interactiveAfter time.Duration) (int64, error) {
@@ -1012,7 +1036,13 @@ func (r *ScanRunRepository) AbortUnclaimedRunsReporting(ctx context.Context, sch
 			       LEAST(
 			         CASE WHEN pr.trigger_type = 'schedule' THEN $1::bigint ELSE $2::bigint END,
 			         COALESCE((SELECT NULLIF(s.timeout_seconds, 0) FROM scans s WHERE s.id = pr.scan_id), $3::bigint)
-			       ) AS after_seconds
+			       ) AS after_seconds,
+			       -- why a sensor's dispatch gate last withheld the run's work
+			       -- (withheld.go): named in the message instead of a guess
+			       (SELECT c.withheld_reason FROM commands c
+			         WHERE c.tenant_id = pr.tenant_id AND c.payload->>'scan_run_id' = pr.id::text
+			           AND c.withheld_reason IS NOT NULL
+			         ORDER BY c.withheld_at DESC NULLS LAST LIMIT 1) AS withheld
 			FROM scan_runs pr
 			WHERE pr.status IN ('pending', 'running')
 			  AND pr.started_at IS NOT NULL
@@ -1043,7 +1073,9 @@ func (r *ScanRunRepository) AbortUnclaimedRunsReporting(ctx context.Context, sch
 			    error_message = 'no sensor picked up this run''s work within '
 			        || CASE WHEN k.after_seconds % 3600 = 0 THEN (k.after_seconds / 3600)::text || 'h'
 			                ELSE (k.after_seconds / 60)::text || 'm' END
-			        || ' — check that a sensor with this scanner is online (and in the right zone)'
+			        || CASE WHEN k.withheld IS NULL
+			                THEN ' — check that a sensor with this scanner is online (and in the right zone)'
+			                ELSE ' — ' || ` + withheldTextSQL("k.withheld") + ` END
 			FROM candidates k
 			WHERE pr.id = k.id
 			  AND pr.status IN ('pending', 'running')
