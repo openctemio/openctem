@@ -411,6 +411,88 @@ class GateTest(unittest.TestCase):
         self.assertEqual((code, asked), (1, []))
         self.assertIn(self.DROPPED, fake.writes)
 
+    # The `/security-ack` comment command (security-ack-command.yml): the
+    # workflow adds the label with its own token, so the label's `labeled`
+    # event names the Actions bot. The acker is then the author of a
+    # `/security-ack` comment shortly before it, under the same settle and
+    # carry rules (the comment's time stands for the label's).
+
+    BOT_LABEL = [{"event": "labeled", "label": {"name": "security-ack"}, "actor": {"login": "github-actions[bot]"},
+                  "created_at": "2026-10-25T01:00:30Z"}]
+
+    @staticmethod
+    def cmd_comment(body="/security-ack", login="0xmanhnv", at="2026-10-25T01:00:00Z", updated=None, cid=1, kind="User"):
+        return {"id": cid, "body": body, "user": {"login": login, "type": kind}, "created_at": at,
+                "updated_at": updated or at}
+
+    def carried_by_comment(self, comments, events=None, pushes=None, covers=True):
+        return self.run_carried(covers, events=self.BOT_LABEL if events is None else events, comments=comments,
+                                pushes=self.at_label("d" * 40) if pushes is None else pushes)
+
+    def test_command_comment_by_an_acker_is_the_ack_record(self):
+        code, fake, asked = self.carried_by_comment([self.cmd_comment()])
+        self.assertEqual((code, asked), (0, []))
+        self.assertNotIn(self.DROPPED, fake.writes)
+
+    def test_command_ack_is_carried_with_the_same_rules_as_a_label_by_an_acker(self):
+        # The comment's time picks the head: a... was the tip, d... was pushed later.
+        log = [self.push("d" * 40, "2026-10-25T01:05:00Z"), self.push("a" * 40)]
+        code, fake, asked = self.carried_by_comment([self.cmd_comment()], pushes=log, covers=True)
+        self.assertEqual((code, asked[0][0]), (0, "a" * 40))
+        code, fake, asked = self.carried_by_comment([self.cmd_comment()], pushes=log, covers=False)
+        self.assertEqual(code, 1)
+        self.assertIn(self.DROPPED, fake.writes)
+
+    def test_command_ack_settles_like_a_label(self):
+        log = [self.push("a" * 40, "2026-10-25T00:59:30Z"), self.push("c" * 40)]  # moved 30 s before the comment
+        code, fake, asked = self.carried_by_comment([self.cmd_comment()], pushes=log)
+        self.assertEqual((code, asked), (1, []))
+        self.assertIn(self.DROPPED, fake.writes)
+
+    def test_a_bot_label_without_an_acker_comment_does_not_count(self):
+        cases = {
+            "no comment": [],
+            "a user who is not an acker": [self.cmd_comment(login="someone")],
+            "an acker's comment is not the command": [self.cmd_comment(body="/security-ack please")],
+            "the command is not on the first line": [self.cmd_comment(body="hi\n/security-ack")],
+            "written by the bot itself": [self.cmd_comment(login="github-actions[bot]", kind="Bot")],
+            "a bot account named like an acker": [self.cmd_comment(kind="Bot")],
+            "posted after the label": [self.cmd_comment(at="2026-10-25T01:00:40Z")],
+            "too long before the label": [self.cmd_comment(at="2026-10-25T00:40:00Z")],
+            "edited later": [self.cmd_comment(updated="2026-10-25T01:00:20Z")],
+            "withdrawn by /security-unack": [self.cmd_comment(), self.cmd_comment("/security-unack", at="2026-10-25T01:00:10Z", cid=2)],
+        }
+        for name, comments in cases.items():
+            code, fake, asked = self.carried_by_comment(comments)
+            self.assertEqual((code, asked), (1, []), name)  # blocked, like a label by a non-acker
+
+    def test_unack_before_a_newer_ack_does_not_withdraw_it(self):
+        comments = [self.cmd_comment(at="2026-10-25T00:59:00Z"),
+                    self.cmd_comment("/security-unack", at="2026-10-25T00:59:30Z", cid=2),
+                    self.cmd_comment(at="2026-10-25T01:00:00Z", cid=3)]
+        self.assertEqual(self.carried_by_comment(comments)[0], 0)
+
+    def test_a_label_by_someone_else_is_never_rescued_by_a_comment(self):
+        events = [dict(self.BOT_LABEL[0], actor={"login": "someone"})]
+        self.assertEqual(self.carried_by_comment([self.cmd_comment()], events=events)[0], 1)
+
+    def test_retarget_after_the_command_comment_drops_it(self):
+        events = self.BOT_LABEL + [{"event": "base_ref_changed", "created_at": "2026-10-25T01:00:45Z"}]
+        code, fake, _ = self.carried_by_comment([self.cmd_comment()], events=events)
+        self.assertEqual(code, 1)
+        self.assertIn(self.DROPPED, fake.writes)
+
+    def test_command_comments_are_never_trusted_without_the_label(self):
+        pr = self.pr(labels=("security-sensitive",))
+        routes = self.routes(pr, self.SENSITIVE, [])
+        routes["issues/7/comments"] = [self.cmd_comment()]
+        code, _ = self.run_gate("pull_request", {"pull_request": {"number": 7}}, routes)
+        self.assertEqual(code, 1)
+
+    def test_too_many_comments_fail_closed(self):
+        with self.assertRaises(RuntimeError):
+            self.carried_by_comment([self.cmd_comment(cid=i) for i in range(sg.MAX_EVENTS)])
+
     def test_acked_head_is_the_branch_tip_at_the_label(self):
         h, a, c = "d" * 40, "a" * 40, "c" * 40
         log = [self.push(h, "2026-10-25T01:05:00Z"),                  # after the label
@@ -746,6 +828,122 @@ class RerunTest(unittest.TestCase):
                    dict(self.LABELED, action="edited", changes={"base": {"ref": {"from": "feature/p"}}})):
             code, writes, _ = self.rerun([[self.run_(2, "2026-10-25T00:55:00Z")]], event=ev)
             self.assertEqual((code, writes), (0, [("POST", "actions/runs/2/rerun", None)]), ev)
+
+
+class AckCommandTest(unittest.TestCase):
+    """`ackcmd`: /security-ack and /security-unack from an acker."""
+
+    def event(self, body="/security-ack", pr=True, action="created"):
+        issue = {"number": 7}
+        if pr:
+            issue["pull_request"] = {"url": "x"}
+        return {"action": action, "issue": issue, "comment": {"id": 11, "body": body}}
+
+    def run_cmd(self, event, live=None, state="open", event_name="issue_comment"):
+        live = live if live is not None else GateTest.cmd_comment(event["comment"]["body"], cid=11)
+        routes = {"issues/comments/11": live, "pulls/7": {"state": state}}
+        fake = FakeGitHub(routes)
+        with tempfile.TemporaryDirectory() as d:
+            ev, out = pathlib.Path(d, "event.json"), pathlib.Path(d, "out")
+            ev.write_text(json.dumps(event))
+            env = {"GITHUB_REPOSITORY": "o/r", "GITHUB_TOKEN": "t", "GITHUB_EVENT_NAME": event_name,
+                   "GITHUB_EVENT_PATH": str(ev), "GITHUB_OUTPUT": str(out),
+                   "SECURITY_PATHS": str(ROOT / ".github/security-paths.yml")}
+            with mock.patch.dict(os.environ, env), \
+                    mock.patch.object(sg.GitHub, "request", lambda self, *a, **k: fake.request(*a, **k)), \
+                    mock.patch("builtins.print"):
+                code = sg.cmd_ackcmd()
+            acted = out.exists() and "acted=true" in out.read_text()
+        return code, fake.writes, acted
+
+    LABEL = ("POST", "issues/7/labels", {"labels": ["security-ack"]})
+    UNLABEL = ("DELETE", "issues/7/labels/security-ack", None)
+
+    def test_an_acker_adds_the_label_and_gets_a_thumbs_up(self):
+        code, writes, acted = self.run_cmd(self.event())
+        self.assertEqual((code, acted), (0, True))
+        self.assertEqual(writes, [self.LABEL, ("POST", "issues/comments/11/reactions", {"content": "+1"})])
+
+    def test_unack_removes_the_label_with_a_thumbs_down(self):
+        code, writes, acted = self.run_cmd(self.event("/security-unack"))
+        self.assertEqual((code, acted), (0, True))
+        self.assertEqual(writes, [self.UNLABEL, ("POST", "issues/comments/11/reactions", {"content": "-1"})])
+
+    def test_everything_else_is_ignored_without_a_write(self):
+        live = GateTest.cmd_comment
+        cases = {
+            "not a pull request": (self.event(pr=False), None),
+            "not a command": (self.event("looks good"), None),
+            "a longer first line": (self.event("/security-ack now"), None),
+            "an edited comment": (self.event(), live(updated="2026-10-25T01:00:20Z", cid=11)),
+            "edited into another command": (self.event(), live("/security-unack", cid=11)),
+            "not an acker": (self.event(), live(login="someone", cid=11)),
+            "a bot named like an acker": (self.event(), live(kind="Bot", cid=11)),
+            "an edit event": (self.event(action="edited"), None),
+        }
+        for name, (ev, comment) in cases.items():
+            code, writes, acted = self.run_cmd(ev, live=comment)
+            self.assertEqual((code, writes, acted), (0, [], False), name)
+
+    def test_other_events_and_closed_pull_requests_do_nothing(self):
+        self.assertEqual(self.run_cmd(self.event(), event_name="pull_request"), (0, [], False))
+        self.assertEqual(self.run_cmd(self.event(), state="closed"), (0, [], False))
+
+    def test_the_command_reads_the_acker_from_the_repo_list_not_the_event(self):
+        # The commenter named in the event payload plays no part: the live
+        # comment's author decides.
+        ev = self.event()
+        ev["comment"]["user"] = {"login": "0xmanhnv"}
+        code, writes, acted = self.run_cmd(ev, live=GateTest.cmd_comment(login="someone", cid=11))
+        self.assertEqual((writes, acted), ([], False))
+
+
+class RerunAfterCommandTest(unittest.TestCase):
+    """The rerun job after a command: the bot's label event starts no workflow."""
+
+    EVENT = {"action": "created", "issue": {"number": 7, "pull_request": {"url": "x"}},
+             "comment": {"id": 11, "body": "/security-ack"}}
+
+    def rerun(self, event=None, head_repo="o/r", runs=None):
+        runs = runs if runs is not None else [RerunTest.run_(2, "2026-10-25T00:55:00Z")]
+        routes = {"actions/runs/99/jobs": {"jobs": [
+                      {"status": "completed", "started_at": "2026-10-25T01:00:00Z"},
+                      {"status": "in_progress", "started_at": "2026-10-25T01:00:40Z"}]},
+                  "pulls/7": {"state": "open", "head": {"sha": "d" * 40, "repo": {"full_name": head_repo}}}}
+        fake = FakeGitHub(routes)
+
+        def request(self_, method, path, body=None, ok404=False):
+            if method == "GET" and path.startswith("actions/runs?"):
+                return {"workflow_runs": runs}, ""
+            return fake.request(method, path, body, ok404)
+        clock = [datetime.datetime(2026, 10, 25, 1, 1, 0, tzinfo=datetime.timezone.utc)]
+        with tempfile.TemporaryDirectory() as d:
+            ev = pathlib.Path(d, "event.json")
+            ev.write_text(json.dumps(event or self.EVENT))
+            env = {"GITHUB_REPOSITORY": "o/r", "GITHUB_TOKEN": "t", "GITHUB_EVENT_NAME": "issue_comment",
+                   "GITHUB_EVENT_PATH": str(ev), "GITHUB_RUN_ID": "99"}
+            with mock.patch.dict(os.environ, env), mock.patch.object(sg.GitHub, "request", request), \
+                    mock.patch("builtins.print"):
+                code = sg.cmd_rerun(sleep=lambda s: clock.__setitem__(0, clock[0] + datetime.timedelta(seconds=s)),
+                                    now=lambda: clock[0])
+        return code, fake.writes
+
+    def test_reruns_the_heads_gate_run(self):
+        self.assertEqual(self.rerun(), (0, [("POST", "actions/runs/2/rerun", None)]))
+
+    def test_a_run_that_started_after_the_label_changed_is_left_alone(self):
+        # Compared with this job's own start, not the workflow run's creation.
+        run = RerunTest.run_(2, "2026-10-25T01:00:50Z")
+        self.assertEqual(self.rerun(runs=[run]), (0, []))
+        run = RerunTest.run_(2, "2026-10-25T01:00:10Z")  # before the job: it read the label too early
+        self.assertEqual(self.rerun(runs=[run]), (0, [("POST", "actions/runs/2/rerun", None)]))
+
+    def test_other_comments_and_fork_pull_requests_do_nothing(self):
+        for ev in (dict(self.EVENT, comment={"id": 11, "body": "thanks"}),
+                   dict(self.EVENT, issue={"number": 7}),
+                   dict(self.EVENT, action="edited")):
+            self.assertEqual(self.rerun(event=ev), (0, []), ev)
+        self.assertEqual(self.rerun(head_repo="fork/r"), (0, []))
 
 
 class LargePullRequestTest(unittest.TestCase):
