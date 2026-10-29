@@ -13,6 +13,7 @@ import { SignalChip } from '@/components/ui/signal-chip'
 import { useTranslation } from '@/context/i18n-provider'
 import { MetricStrip, type MetricStripItem } from '@/features/shared/components/metric-strip'
 import { formatCount, formatMetric } from '@/lib/format-metric'
+import { safeHref } from '@/lib/safe-href'
 import { cn } from '@/lib/utils'
 import { changeOf } from './compare'
 import { DeltaText } from './viz-parts'
@@ -122,6 +123,7 @@ export function LeversViz({ result }: { result: LeversResult }) {
       {result.levers.map((l, i) => {
         const before = formatMetric(l.effect.before, l.effect.unit, locale)
         const after = formatMetric(l.effect.after, l.effect.unit, locale)
+        const leverHref = safeHref(l.href)
         return (
           <li
             key={`${l.kind}-${i}`}
@@ -141,9 +143,9 @@ export function LeversViz({ result }: { result: LeversResult }) {
               {before} → {after}
             </span>
             <p className="text-sm leading-relaxed">{sentence(l)}</p>
-            {l.href && (
+            {leverHref && (
               <Link
-                href={l.href}
+                href={leverHref}
                 className="mt-auto text-xs font-medium text-primary hover:underline"
               >
                 {t('dashboardKit.levers.open', 'Open the list ({count})', {
@@ -165,8 +167,9 @@ function Chip({ chip }: { chip: BriefChip }) {
       {t(`dashboardKit.brief.chip.${chip.key}`, chip.key)} {formatCount(chip.value, locale)}
     </SignalChip>
   )
-  return chip.href ? (
-    <Link href={chip.href} className="rounded-md hover:underline">
+  const href = safeHref(chip.href)
+  return href ? (
+    <Link href={href} className="rounded-md hover:underline">
       {body}
     </Link>
   ) : (
