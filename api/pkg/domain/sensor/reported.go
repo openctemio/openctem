@@ -90,6 +90,19 @@ const CapabilityEgressUpstream = "egress.upstream@1"
 // address.
 const CapabilityEgressValidate = "egress.validate@1"
 
+// CapabilityEgressHostDirect marks a sensor whose owner set
+// SENSOR_SCAN_EGRESS=direct-only (sdk-go core.CapabilityEgressHostDirect):
+// it takes no pool and runs its scans direct. The platform treats it as a
+// sensor with a Direct path set on the host, not as one to upgrade, unless
+// the organization requires a proxy.
+const CapabilityEgressHostDirect = "egress.host-direct@1"
+
+// CapabilityProxyTest is the capability of a sensor that serves proxy_test
+// commands (sdk-go core.CapabilityProxyTest): the Test button of a proxy
+// pool asks such sensors to test each endpoint. The platform itself never
+// connects to a proxy.
+const CapabilityProxyTest = "proxy.test@1"
+
 // CapabilityHTTPIdentity is the capability of a sensor whose tools send the
 // job's http_policy User-Agent and headers on every request (sdk-go
 // toolhost.CapabilityHTTPIdentity). A job carrying a program's
@@ -133,6 +146,8 @@ var sensorWideCapabilities = []string{
 	CapabilityNetConfined,
 	CapabilityEgressUpstream,
 	CapabilityEgressValidate,
+	CapabilityEgressHostDirect,
+	CapabilityProxyTest,
 	CapabilityHTTPIdentity,
 	CapabilityReachProbe,
 	CapabilityRuleSources,

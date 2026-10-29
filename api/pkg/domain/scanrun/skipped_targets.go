@@ -18,14 +18,16 @@ import (
 	"github.com/openctemio/openctem/api/pkg/safetext"
 )
 
-// Skipped-target reasons a sensor reports. Anything else reads as
-// SkipReasonRefused.
+// Skipped-target reasons a sensor reports (a sensor says "unresolvable",
+// the platform names it SkipReasonTargetUnresolvable). Anything else reads
+// as SkipReasonRefused.
 const (
-	SkipReasonUnresolvable = "unresolvable"
-	SkipReasonWildcard     = "wildcard_pattern"
-	SkipReasonDenied       = "denied_by_policy"
-	SkipReasonInvalid      = "invalid_target"
-	SkipReasonRefused      = "refused"
+	SkipReasonUnresolvable       = "unresolvable"
+	SkipReasonTargetUnresolvable = "target_unresolvable"
+	SkipReasonWildcard           = "wildcard_pattern"
+	SkipReasonDenied             = "denied_by_policy"
+	SkipReasonInvalid            = "invalid_target"
+	SkipReasonRefused            = "refused"
 )
 
 // Bounds of a task's skipped targets.
@@ -114,7 +116,9 @@ func ParseSkippedTargets(list json.RawMessage, total int) ([]SkippedTarget, int)
 
 func normalizeSkipReason(r string) string {
 	switch r {
-	case SkipReasonUnresolvable, SkipReasonWildcard, SkipReasonDenied, SkipReasonInvalid:
+	case SkipReasonUnresolvable, SkipReasonTargetUnresolvable:
+		return SkipReasonTargetUnresolvable
+	case SkipReasonWildcard, SkipReasonDenied, SkipReasonInvalid:
 		return r
 	}
 	return SkipReasonRefused
@@ -129,6 +133,24 @@ func SkippedSummary(list []SkippedTarget, total int) string {
 		return ""
 	}
 	var b strings.Builder
+	if allUnresolvable(list, total) {
+		fmt.Fprintf(&b, "%d name(s) no longer resolve", total)
+		for i, t := range list {
+			if i == maxSkippedInSummary {
+				break
+			}
+			if i == 0 {
+				b.WriteString(": ")
+			} else {
+				b.WriteString(", ")
+			}
+			b.WriteString(t.Target)
+		}
+		if n := total - min(len(list), maxSkippedInSummary); n > 0 && len(list) > 0 {
+			fmt.Fprintf(&b, ", and %d more", n)
+		}
+		return b.String()
+	}
 	fmt.Fprintf(&b, "Completed with %d target(s) skipped by the sensor's local policy", total)
 	for i, t := range list {
 		if i == maxSkippedInSummary {
@@ -145,4 +167,35 @@ func SkippedSummary(list []SkippedTarget, total int) string {
 		fmt.Fprintf(&b, ", and %d more", n)
 	}
 	return b.String()
+}
+
+// UnresolvableCount is how many of a task's skipped targets are names that
+// no longer resolve: all of them when every listed one is (the unlisted rest
+// can only be counted), otherwise the listed ones.
+func UnresolvableCount(list []SkippedTarget, total int) int {
+	if allUnresolvable(list, total) {
+		return total
+	}
+	n := 0
+	for _, t := range list {
+		if t.Reason == SkipReasonTargetUnresolvable {
+			n++
+		}
+	}
+	return n
+}
+
+// allUnresolvable reports whether every skipped target (listed, and the
+// unlisted rest, which can only be counted) is a name that no longer
+// resolves: the listed ones all are.
+func allUnresolvable(list []SkippedTarget, total int) bool {
+	if len(list) == 0 || total <= 0 {
+		return false
+	}
+	for _, t := range list {
+		if t.Reason != SkipReasonTargetUnresolvable {
+			return false
+		}
+	}
+	return true
 }

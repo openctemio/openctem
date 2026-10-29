@@ -1193,6 +1193,17 @@ vars:
     group: "Sensors"
     type: string
     description: "URL sensors connect to, embedded in the install snippets and configuration templates. Unset: `APP_URL`."
+  - name: PROXY_TEST_ECHO_URL
+    component: api
+    group: "Sensors"
+    type: string
+    description: "https origin a proxy test connects to through each proxy of a pool (the Test button of Settings, Scanning, Proxies). It must answer on a public port the proxies can reach: not the sensor mTLS port. Unset: `SENSOR_PUBLIC_API_URL`, else `APP_URL`. The platform never connects to a proxy itself; sensors do."
+  - name: PROXY_TEST_ALT_PORT
+    component: api
+    group: "Sensors"
+    type: int
+    default: "80"
+    description: "A second port of the proxy test's echo host. A proxy that carries 443 and refuses this port is shown as port-restricted. `0` skips that check."
   - name: SENSOR_SLIM_HEARTBEAT
     component: api
     group: "Sensors"

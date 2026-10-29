@@ -429,16 +429,20 @@ tags and scheduled runs are never cancelled.
    aggregators run with `if: always()` and pass when their jobs were skipped;
    Secret Scanning and Workflow Lint are unconditional jobs. Nothing stays Pending.
 5. When all of them pass, the queue fast-forwards the base branch to the commit it
-   tested, and the `push` run (path-scoped, plus CodeQL on both languages)
-   refreshes the branch's baseline. On `develop`, API CI, All-in-one CI and Web
-   E2E first ask `.github/scripts/queue-verified.sh` whether the merge queue
+   tested, and the `push` run (path-scoped, plus CodeQL)
+   refreshes the branch's baseline. On `develop`, API CI, Web CI, All-in-one CI
+   and Web E2E first ask `.github/scripts/queue-verified.sh` whether the merge queue
    already passed this workflow on this exact commit (a `merge_group` run, same
    workflow file, same SHA, conclusion success; only GitHub creates such runs).
    If so they skip their test jobs: the queue ran the same workflow file on the
    same tree. The push still keeps develop's caches current (`Go cache
    (develop)` fills the Go cache when there is none for the current `go.sum`;
-   Web E2E still builds its images, which writes the layer cache). Any doubt
-   (no such run, an API error) runs the workflow in full. CodeQL, Web CI and
+   Web E2E still builds its images, which writes the layer cache). Web CI skips
+   `Web checks` and `Web tests` on such a push but still runs `API contract`
+   and `Build`: the tenant-bundle check (the tenant image holds no console
+   route) runs only in `Build`, which also keeps develop's Next.js cache
+   current; `Web CI OK` then requires `Build` instead of the two skipped jobs.
+   Any doubt (no such run, an API error) runs the workflow in full. CodeQL and
    the security scans always run on push, unless the tree was verified (see
    [Reusing a verified tree](#reusing-a-verified-tree)).
 6. A failure removes the PR from the queue; the groups behind it are rebuilt.
@@ -488,6 +492,17 @@ Saving: a failed queue group of an `api/` + `web/` change starts about 50 jobs
 image smoke test). Now the rest stop about a minute after the first failure;
 a failure in static checks or an early shard frees most of those runner
 minutes, typically more than half of the group's total.
+
+### Job timeouts
+
+Every job sets `timeout-minutes`, about two to three times its measured p90
+duration (October 2026), so a hung job frees its runner, and in the merge queue
+its group, instead of holding both for GitHub's default of 360 minutes. Examples:
+change detection and `… OK` gates 5, API static checks 30, Go test shards 40
+(at least the `go test -timeout` of their slowest package), Web tests 25, CodeQL
+analysis 35, image builds 30 to 60. `.github/scripts/check-job-timeouts.sh`
+(run by `Workflow Lint`, with its self-test) fails when a job has none; a job
+that calls a reusable workflow cannot set one and is exempt.
 
 ### Reusing a verified tree
 
@@ -848,8 +863,8 @@ quarantine it while the fix is made:
 - **Go:** every `actions/setup-go` step uses `go-version-file: api/go.mod`, which
   reads the `toolchain` directive (currently `go1.26.10`). setup-go sets
   `GOTOOLCHAIN=local`, so this is exactly the Go that tests, CodeQL, govulncheck
-  and the release binaries use. `api/Dockerfile` and `api/Dockerfile.admin-cli`
-  pin their `golang:` base image separately: bump them with `go.mod`.
+  and the release binaries use. `api/Dockerfile`
+  pins its `golang:` base image separately: bump them with `go.mod`.
 - **Node:** every `actions/setup-node` step uses `node-version-file: web/.nvmrc`
   (`26`), the same major as `web/Dockerfile` (`node:26-alpine`). Node 25+ ships
   its own `localStorage`; `web/src/test/setup.ts` points Vitest back at jsdom's.
@@ -1317,7 +1332,7 @@ Publish. `build-images.yml` is a reusable workflow that builds
 each CI image **once per content key**; every caller gets it by digest.
 
 **Key** (`.github/scripts/image-key.sh <image>`): a sha256 over the git tree
-hashes of what the image's Dockerfile copies (`api` for the API and admin CLI;
+hashes of what the image's Dockerfile copies (`api` for the API;
 `web`, `api` and the `generate-contract` action for the web app and the
 console, which compile against contract files generated from the Go source;
 `deploy/allinone`, the gateway and the three component keys for the all-in-one),
@@ -1346,7 +1361,7 @@ can hold `packages: write` without such a guard.
    ref, not a self-hosted runner; see below)? If so, nothing is built.
 2. `contract` (its own job, `contents: read` only) generates the contract files
    the web images compile against and hands them over as an artifact.
-3. Missing images build in a matrix (api, admin-cli, and web + console in one
+3. Missing images build in a matrix (api, and web + console in one
    job). Inside a lock (job concurrency keyed by image group and key) the job
    checks again, so two workflows racing on one key build once. The build uses
    buildx with the registry cache `ci-images/<image>:buildcache`, written by
@@ -1354,7 +1369,7 @@ can hold `packages: write` without such a guard.
    `ci-images` packages, apart from every release cache. Then
    `actions/attest-build-provenance` signs the digest.
 4. The all-in-one is built `FROM` the pulled component digests.
-5. `collect` verifies again and returns `api`, `admin-cli`, `web`, `console`,
+5. `collect` verifies again and returns `api`, `web`, `console`,
    `allinone` as `ghcr.io/openctemio/ci-images/<image>@sha256:...`, and `push`.
 
 **Callers** pull the digest and tag it as the old local name (`local/openctem-api:e2e`,
@@ -1500,7 +1515,6 @@ image, so images without a shell are checked the same way.
 | `ghcr.io/openctemio/openctem` | `deploy/allinone/` FROM the two above + `api/deploy/gateway` | All-in-one: API + web + Caddy gateway. `GATEWAY=on` (default) serves only 443; `GATEWAY=off` serves 8080 + 3000. Postgres/Redis external. |
 | `ghcr.io/openctemio/migrations` | `api/Dockerfile.migrations` | One-shot migration runner |
 | `ghcr.io/openctemio/seed` | `api/Dockerfile.seed` | Seeding utility |
-| `ghcr.io/openctemio/admin-cli` | `api/Dockerfile.admin-cli` | Admin CLI |
 
 **Legacy names.** During a transition window (two releases, per the root
 README) `ghcr.io/openctemio/api` and `ghcr.io/openctemio/ui` receive the same
@@ -1624,7 +1638,7 @@ The legacy `ui` GHCR package was created by `openctemio/ui`; this repository nee
   on `develop` (lint diffs against `.github/scripts/effective-base.sh`).
 - **govulncheck fails on every PR at once.** A new Go stdlib CVE: bump the
   `toolchain` directive in `api/go.mod` (CI follows it) and the `golang:` base
-  image in `api/Dockerfile` and `api/Dockerfile.admin-cli`.
+  image in `api/Dockerfile`.
 - **Image not found after a tag.** Check the Docker Publish run; the tag must match
   `v<major>.<minor>.<patch>[-suffix]`. Images for v0.8.0 and earlier exist only
   under the legacy `api` / `ui` names.
