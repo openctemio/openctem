@@ -37,7 +37,8 @@ export default function AISettingsPage() {
   const { currentTenant } = useTenant()
   const canEdit = useCanMutate('PUT /api/v1/organization/settings/ai')
   const settings = useAISettings(true)
-  const config = useAIConfig()
+  // Usage is live data: read it on mount, not from the bootstrap's copy.
+  const config = useAIConfig({ revalidateIfStale: true, dedupingInterval: 2000 })
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [saving, setSaving] = useState(false)
 
