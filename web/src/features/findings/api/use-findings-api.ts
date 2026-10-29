@@ -8,10 +8,12 @@
 
 'use client'
 
+import { useCallback, useRef } from 'react'
 import useSWR, { type SWRConfiguration } from 'swr'
 import useSWRMutation from 'swr/mutation'
 import { get, post, patch } from '@/lib/api/client'
 import { handleApiError } from '@/lib/api/error-handler'
+import { primeView, type ViewResponse } from '@/lib/api/view-prime'
 import { useTenant } from '@/context/tenant-provider'
 import type {
   ApiFinding,
@@ -150,6 +152,42 @@ export function useFindingApi(findingId: string | null, config?: SWRConfiguratio
   const key = currentTenant && findingId ? buildFindingEndpoint(findingId) : null
 
   return useSWR<ApiFinding>(key, fetchFinding, { ...defaultConfig, ...config })
+}
+
+/** The finding page's view: the finding and its panels' reads in one response. */
+export function findingViewEndpoint(findingId: string): string {
+  return `${buildFindingEndpoint(findingId)}/view`
+}
+
+/**
+ * The finding page's finding (research/335). The first load of each finding
+ * the page shows asks GET /findings/{id}/view, which answers the finding and
+ * the reads of the page's panels in one response, and primes those answers
+ * (src/lib/api/view-prime.ts): the finding and every panel then read their
+ * own URL as before and get the view's answer without another request. Later
+ * reads of the same finding (a refresh after a save) go to their endpoints.
+ * When the view fails, the page loads as it did before it.
+ */
+export function useFindingPageApi(findingId: string | null, config?: SWRConfiguration) {
+  const { currentTenant } = useTenant()
+  const key = currentTenant && findingId ? buildFindingEndpoint(findingId) : null
+  // Findings this page already loaded through the view.
+  const viewed = useRef(new Set<string>())
+  const fetcher = useCallback(
+    async (url: string): Promise<ApiFinding> => {
+      if (findingId && !viewed.current.has(findingId)) {
+        viewed.current.add(findingId)
+        try {
+          primeView(await get<ViewResponse>(findingViewEndpoint(findingId)))
+        } catch {
+          // The finding and its panels are read one by one, as without a view.
+        }
+      }
+      return fetchFinding(url)
+    },
+    [findingId]
+  )
+  return useSWR<ApiFinding>(key, fetcher, { ...defaultConfig, ...config })
 }
 
 /**

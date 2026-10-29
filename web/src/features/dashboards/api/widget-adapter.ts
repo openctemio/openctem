@@ -21,11 +21,21 @@ import type {
   StagesResult,
   TimeSeriesResult,
   WidgetResult,
+  BriefResult,
+  KpisResult,
+  LeverRow,
+  LeversResult,
   WidgetState as KitState,
 } from '@/components/dashboard-kit'
 import { safeInternalHref } from '@/lib/safe-href'
-import { dimensionValueKey, groupByOf, metricMeta, ORDINAL_DIMENSIONS } from '../metrics'
-import type { FlowFigure, IntakeSource, IntakeValue, WidgetValue } from './widget-data'
+import {
+  dimensionValueKey,
+  groupByOf,
+  kitPolarity,
+  metricMeta,
+  ORDINAL_DIMENSIONS,
+} from '../metrics'
+import type { FlowFigure, IntakeSource, IntakeValue, LeverValue, WidgetValue } from './widget-data'
 import type { Dimension, VizType, WidgetSpec } from './widget-spec'
 
 export interface WidgetModel {
@@ -62,6 +72,17 @@ export function reasonKeyOf(reason: string | undefined): string {
 
 function figure(f: FlowFigure | undefined): KitFigure {
   return { key: f?.key, value: f?.value ?? 0, drill: safeInternalHref(f?.drill) ?? null }
+}
+
+function leverRow(l: LeverValue): LeverRow {
+  return {
+    kind: l.kind,
+    count: l.count,
+    assets: l.assets,
+    title: l.title,
+    effect: l.effect,
+    href: safeInternalHref(l.drill) ?? null,
+  }
 }
 
 function sourceRow(s: IntakeSource): IntakeSourceRow {
@@ -286,6 +307,47 @@ function toResult(v: WidgetValue, spec: WidgetSpec | undefined): WidgetResult | 
       const out: IntakeResult = {
         shape: 'intake',
         intake: intakeData(v.intake, v.window?.days ?? 30),
+      }
+      return out
+    }
+    case 'levers': {
+      if (!v.levers) return undefined
+      const out: LeversResult = { shape: 'levers', levers: (v.levers.levers ?? []).map(leverRow) }
+      return out
+    }
+    case 'brief': {
+      if (!v.brief) return undefined
+      const out: BriefResult = {
+        shape: 'brief',
+        since: v.brief.since,
+        items: (v.brief.items ?? []).map((it) => ({
+          kind: it.kind,
+          variant: it.variant,
+          chips: (it.chips ?? []).map((c) => ({
+            key: c.key,
+            value: c.value,
+            href: safeInternalHref(c.drill) ?? null,
+          })),
+          lever: it.lever ? leverRow(it.lever) : undefined,
+        })),
+      }
+      return out
+    }
+    case 'kpis': {
+      if (!v.kpis) return undefined
+      const out: KpisResult = {
+        shape: 'kpis',
+        tiles: (v.kpis.tiles ?? []).map((k) => ({
+          key: k.key,
+          metric: k.metric,
+          measured: k.state === 'ready' && k.value != null,
+          reason_key: k.state === 'ready' ? undefined : reasonKeyOf(k.reason),
+          value: k.value,
+          previous: k.previous ?? null,
+          unit: k.unit,
+          polarity: kitPolarity(k.polarity),
+          href: safeInternalHref(k.drill) ?? null,
+        })),
       }
       return out
     }
