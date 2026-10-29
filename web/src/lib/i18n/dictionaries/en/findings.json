@@ -910,6 +910,7 @@
   "findings.list.kevTitle": "CISA Known Exploited Vulnerability",
   "findings.list.location": "Location",
   "findings.list.openRow": "{title}, view details",
+  "findings.list.openRowOn": "{title} on {target}, view details",
   "findings.list.pathChip": "Path",
   "findings.list.refreshing": "Refreshing findings",
   "findings.list.selectAll": "Select all rows on this page",
