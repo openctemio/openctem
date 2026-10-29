@@ -848,6 +848,7 @@
   "settings.twoFactor.disableFailed": "Không thể tắt xác thực hai lớp",
   "settings.twoFactor.disabled": "Đã tắt xác thực hai lớp",
   "settings.twoFactor.done": "Xong",
+  "settings.twoFactor.dueBy": "Bắt buộc từ {date}",
   "settings.twoFactor.enabled": "Đã bật xác thực hai lớp",
   "settings.twoFactor.federated": "Bạn đăng nhập qua nhà cung cấp danh tính của tổ chức, nơi xử lý xác thực hai lớp.",
   "settings.twoFactor.generate": "Tạo",

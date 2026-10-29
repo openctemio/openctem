@@ -16,8 +16,21 @@
 #                              every package and every top-level test of a
 #                              SPLIT package exactly once; exit 1 if not.
 #
-# The assignment is a pure function of the package and test names, so a shard
-# never depends on what another shard did. Each SPLIT slice runs in its own
+# Two optional inputs narrow or balance the plan; both are files every shard of
+# a run reads identically (the `spec` job publishes them once per run):
+#   GO_SHARD_AFFECTED   a list of import paths (go-affected.sh). Only these
+#                       packages run; a SPLIT package outside it is skipped.
+#                       Unset: the whole suite.
+#   GO_SHARD_DURATIONS  JSON {"<import path>": seconds} recorded by an earlier
+#                       full run. The whole packages are then dealt out
+#                       longest first to the least loaded shard instead of by
+#                       checksum. Unset or unusable: the checksum. A package
+#                       missing from the file counts as 10 seconds.
+# Either way every selected package lands on exactly one shard (`check`
+# proves it; a stale or hostile durations file can only unbalance shards).
+#
+# The assignment is a pure function of the package and test names (and those
+# two files), so a shard never depends on what another shard did. Each SPLIT slice runs in its own
 # `go test` process, one after another, so it has the database to itself as
 # before (these packages never ran next to another package's tests).
 set -euo pipefail
@@ -32,21 +45,49 @@ SPLIT=(
 
 is_split() { local s; for s in "${SPLIT[@]}"; do [ "$1" = "$s" ] && return 0; done; return 1; }
 
+# selected <pkg>: the package is in this run's selection (all of them, unless
+# GO_SHARD_AFFECTED names a list).
+selected() {
+  [ -z "${GO_SHARD_AFFECTED:-}" ] || grep -qxF -- "$1" "$GO_SHARD_AFFECTED"
+}
+
 OTHER=""
-other_pkgs() { # every package except the SPLIT ones, sorted (listed once per run)
+other_pkgs() { # the selected packages except the SPLIT ones, sorted (listed once per run)
   local p
   if [ -z "$OTHER" ]; then
-    OTHER="$(while IFS= read -r p; do is_split "$p" || echo "$p"; done < <(go list ./... | LC_ALL=C sort))"
+    OTHER="$(while IFS= read -r p; do if ! is_split "$p" && selected "$p"; then echo "$p"; fi; done < <(go list ./... | LC_ALL=C sort))"
   fi
-  printf '%s\n' "$OTHER"
+  printf '%s\n' "$OTHER" | grep -v '^$' || true
 }
 
 pkg_shard() { # <pkg> <n> -> shard index
   echo $(($(printf '%s' "$1" | cksum | cut -d' ' -f1) % $2))
 }
 
+ASSIGNED=""
+assigned() { # <n>: "<pkg> TAB <shard>" per selected whole package, longest first to the least loaded shard
+  if [ -z "$ASSIGNED" ]; then
+    ASSIGNED="$(awk -F'\t' 'FNR == NR { d[$1] = $2; next } { print ((($1 in d) && d[$1] > 0) ? d[$1] : 10) "\t" $1 }' \
+        <(jq -r 'to_entries[] | select(.value | type == "number") | "\(.key)\t\(.value)"' "$GO_SHARD_DURATIONS") \
+        <(other_pkgs) \
+      | LC_ALL=C sort -t$'\t' -k1,1nr -k2,2 \
+      | awk -F'\t' -v n="$1" 'BEGIN { for (k = 0; k < n; k++) load[k] = 0 }
+          { b = 0; for (k = 1; k < n; k++) if (load[k] < load[b]) b = k; load[b] += $1; print $2 "\t" b }')"
+  fi
+  printf '%s\n' "$ASSIGNED"
+}
+
+use_durations() {
+  [ -n "${GO_SHARD_DURATIONS:-}" ] && [ -s "$GO_SHARD_DURATIONS" ] \
+    && jq -e 'type == "object"' "$GO_SHARD_DURATIONS" >/dev/null 2>&1
+}
+
 pkgs() { # <i> <n>
   local p
+  if use_durations; then
+    assigned "$2" | awk -F'\t' -v i="$1" '$2 == i { print $1 }' | LC_ALL=C sort
+    return 0
+  fi
   while IFS= read -r p; do
     [ "$(pkg_shard "$p" "$2")" = "$1" ] && echo "$p"
   done < <(other_pkgs)
@@ -61,6 +102,7 @@ tests_of() { # <pkg>: its top-level tests, sorted (listed once per run)
   # from a file a build tag leaves out only makes -run match nothing more.
   # `check` proves every test `go test -list` reports is in this list.
   local dir
+  selected "$1" || return 0
   if [ -z "${LISTED[$1]+x}" ]; then
     dir=".${1#"$MOD"}"
     LISTED[$1]="$(grep -hoE '^func (Test|Example|Fuzz)[A-Za-z0-9_]*\(' "$dir"/*_test.go 2>/dev/null \
@@ -109,8 +151,13 @@ check() { # <n>...
     for k in "${!SPLIT[@]}"; do
       p=${SPLIT[$k]}
       want="$(tests_of "$p")"
+      if ! selected "$p"; then # outside the selection: no shard runs any of it
+        got="$(for ((i = 0; i < n; i++)); do slice "$p" "$k" "$i" "$n"; done)"
+        [ -z "$got" ] || { echo "$n shards: $p is not selected but a shard runs it" >&2; exit 1; }
+        continue
+      fi
       [ -n "$want" ] || { echo "$p has no tests; drop it from SPLIT" >&2; exit 1; }
-      if [ "$n" = "$1" ]; then # once: the source list holds every compiled test
+      if [ "$n" = "$1" ] && [ -z "${GO_SHARD_SKIP_COMPILED:-}" ]; then # once: the source list holds every compiled test
         compiled="$(compiled_tests_of "$p")" || exit 1
         missing="$(LC_ALL=C comm -23 <(printf '%s\n' "$compiled") <(printf '%s\n' "$want"))"
         [ -z "$missing" ] || { echo "$p: tests not found in the source list (go-shard.sh tests_of):" >&2; echo "$missing" >&2; exit 1; }

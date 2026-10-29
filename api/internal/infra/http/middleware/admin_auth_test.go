@@ -9,6 +9,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
+	"github.com/openctemio/openctem/api/pkg/domain/platformauthz"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -54,7 +55,7 @@ func adminRequest(method, path, session string) *http.Request {
 
 // buildAdminUsersGuard reproduces the exact middleware composition that
 // registerAdminRoutes applies to /api/v1/admin/users: Authenticate followed by
-// RequireRole(super_admin). The stub handler stands in for the real
+// RequirePlatform(platform.admins.read), which only the owner role holds. The stub handler stands in for the real
 // list/get/update/... handlers and returns 200 so we can observe whether a
 // request was allowed through the guard.
 func buildAdminUsersGuard(t *testing.T) (http.Handler, map[string]string) {
@@ -69,8 +70,8 @@ func buildAdminUsersGuard(t *testing.T) (http.Handler, map[string]string) {
 	stub := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	// Order: Authenticate (outer) -> RequireRole(super_admin) (inner) -> stub.
-	guarded := m.Authenticate(m.RequireRole(admin.AdminRoleSuperAdmin)(stub))
+	// Order: Authenticate (outer) -> RequirePlatform (inner) -> stub.
+	guarded := m.Authenticate(m.RequirePlatform(platformauthz.AdminsRead)(stub))
 
 	keys := map[string]string{
 		"super":    "key-super",
@@ -165,9 +166,10 @@ func TestAdminSessionWriteNeedsCSRF(t *testing.T) {
 	}
 }
 
-// TestTargetMappingWriteGate proves target-mapping WRITES are gated to
-// ops_admin+ (readonly rejected) while reads remain open to any admin.
-func TestTargetMappingWriteGate(t *testing.T) {
+// TestOpsWriteGate proves an operations-level write (creating an
+// organization, platform.tenants.create) admits the owner and admin roles and
+// refuses the read-only one.
+func TestOpsWriteGate(t *testing.T) {
 	sessions := newFakeSessions()
 	sessions.add("key-super", admin.AdminRoleSuperAdmin)
 	sessions.add("key-ops", admin.AdminRoleOpsAdmin)
@@ -175,7 +177,7 @@ func TestTargetMappingWriteGate(t *testing.T) {
 	m := middleware.NewAdminAuthMiddleware(sessions, logger.NewNop())
 
 	stub := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
-	writeGuard := m.Authenticate(m.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)(stub))
+	writeGuard := m.Authenticate(m.RequirePlatform(platformauthz.TenantsCreate)(stub))
 
 	if got := doAdmin(writeGuard, http.MethodPost, "key-readonly"); got != http.StatusForbidden {
 		t.Errorf("write readonly: got %d, want 403", got)

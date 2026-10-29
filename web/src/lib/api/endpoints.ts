@@ -247,6 +247,17 @@ export const userEndpoints = {
   twoFactorDisable: () => `${API_BASE.USERS}/me/2fa/disable`,
   twoFactorRecoveryCodes: () => `${API_BASE.USERS}/me/2fa/recovery-codes`,
 
+  /**
+   * Linked sign-in methods (Account > Security). Link start and unlink need
+   * step-up; the link callback is called by the OAuth callback route.
+   */
+  identities: () => '/api/v1/me/sign-in-methods',
+  identityLink: (provider: string) =>
+    `/api/v1/me/sign-in-method-links/${encodeURIComponent(provider)}/start`,
+  identityLinkCallback: (provider: string) =>
+    `/api/v1/me/sign-in-method-links/${encodeURIComponent(provider)}/complete`,
+  identity: (id: string) => `/api/v1/me/sign-in-methods/${encodeURIComponent(id)}`,
+
   // ============================================
   // USER MANAGEMENT (Admin)
   // ============================================
@@ -1497,6 +1508,11 @@ export const proxyPoolEndpoints = {
     `${API_BASE.PROXY_POOLS}/${poolId}/endpoints/${endpointId}`,
   assignments: () => `${API_BASE.PROXY_POOLS}/assignments`,
   assignment: (sensorId: string) => `${API_BASE.PROXY_POOLS}/assignments/${sensorId}`,
+  /** POST: ask sensors to test a pool's endpoints (the platform never connects to a proxy). */
+  test: (poolId: string) => `${API_BASE.PROXY_POOLS}/${poolId}/test`,
+  /** GET: the results of those tests, by command id. */
+  tests: (poolId: string, commandIds: string[]) =>
+    `${API_BASE.PROXY_POOLS}/${poolId}/tests?command_ids=${commandIds.map(encodeURIComponent).join(',')}`,
 } as const
 
 /**
