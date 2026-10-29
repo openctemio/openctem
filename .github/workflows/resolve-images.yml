@@ -16,7 +16,7 @@ on:
   workflow_call:
     inputs:
       images:
-        description: "Space-separated: api admin-cli web console allinone (allinone implies api web console)"
+        description: "Space-separated: api web console allinone (allinone implies api web console)"
         required: true
         type: string
     outputs:
@@ -26,9 +26,6 @@ on:
       api:
         description: "ghcr.io/openctemio/ci-images/api@sha256:... (empty when not requested or not resolved)"
         value: ${{ jobs.resolve.outputs.api }}
-      admin-cli:
-        description: "admin-cli image by digest"
-        value: ${{ jobs.resolve.outputs.admin-cli }}
       web:
         description: "web image by digest"
         value: ${{ jobs.resolve.outputs.web }}
@@ -54,7 +51,6 @@ jobs:
     outputs:
       push: ${{ steps.r.outputs.push }}
       api: ${{ steps.r.outputs.api }}
-      admin-cli: ${{ steps.r.outputs.admin-cli }}
       web: ${{ steps.r.outputs.web }}
       console: ${{ steps.r.outputs.console }}
       allinone: ${{ steps.r.outputs.allinone }}
