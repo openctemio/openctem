@@ -106,28 +106,6 @@ describe('LoginForm social-button gating', () => {
   })
 })
 
-describe('LoginForm administrator hint', () => {
-  beforeEach(() => {
-    mockUseTenantSSOProviders.mockReturnValue({
-      data: undefined,
-    } as ReturnType<typeof useTenantSSOProviders>)
-    setAuthProviders({ google: false, github: false, microsoft: false })
-  })
-
-  it('shows the administrator hint after a failed sign-in, and not before', async () => {
-    loginAction.mockResolvedValueOnce({ success: false, error: 'Invalid email or password' })
-    const user = userEvent.setup()
-    render(<LoginForm />)
-    expect(screen.queryByText(/platform administrators sign in on the admin console/i)).toBeNull()
-    await user.type(screen.getByLabelText('Email'), 'ops@acme.io')
-    await user.type(screen.getByLabelText('Password'), 'Correct-Horse-9')
-    await user.click(screen.getByRole('button', { name: /sign in/i }))
-    expect(
-      await screen.findByText(/platform administrators sign in on the admin console/i)
-    ).toBeTruthy()
-  })
-})
-
 describe('LoginForm two-factor step', () => {
   const originalLocation = window.location
   let href: ReturnType<typeof vi.fn<(v: string) => void>>

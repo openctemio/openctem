@@ -213,12 +213,14 @@ recommended production setup. Details: [Docker deployment](../deployment/docker.
   `recovery_codes`. An address (a key `url`, ending in `url`, or naming a
   webhook) keeps only its scheme and host: a webhook path or query works as
   a bearer secret.
-- Administrator accounts stay off the main site: the account an administrator
-  signs in with is refused on the tenant site (password, second-factor
-  completion, refresh-token exchange, social and organization SSO sign-in).
-  The answer is the wrong-password one, with no session and no cookie, and a
-  WARN line with `alert=platform_admin_main_site_sign_in` is logged. The
-  console's own password check is a separate path and is unaffected.
+- One identity (RFC-134): the account an administrator signs in with may also
+  sign in on the main site and be an ordinary member of organizations, where
+  it acts with its tenant role only. The main site never reads the platform
+  role (`/users/me` does not report it). The console keeps its own sign-in,
+  second factor and opaque session: the tenant JWT never authenticates a
+  console route and the console token never authenticates a tenant route. A
+  break-glass administrator stays console-only (database rule
+  `break_glass_console_only`, migration 20261029050639).
 - Roster notices: every change to the administrators (added, role or state
   changed, removed, sign-in reset, identity-provider binding removed), the
   administrators' identity provider or the security-key policy is emailed to
@@ -305,15 +307,36 @@ route refuses with `428 SECOND_APPROVAL_REQUIRED` and `details` naming the
 action, the target and the caller's open request. Table `admin_approvals`
 (migration `002914`), owned by the console's database role.
 
+## Platform roles
+
+Console authorization is by platform permission (RFC-134): the catalog and
+built-in roles live in `pkg/domain/platformauthz`, every console route names
+its permission in `adminRoutePermissions`, and the generated reference is
+[platform-permissions.md](platform-permissions.md) (`make -C api
+platform-authz-docs`). Security > Roles lists the roles, what each allows and
+who holds them; an owner gives or takes the additional roles (operator,
+support, security auditor, billing) there with a step-up and a reason
+(`POST /api/v1/admin/users/{id}/platform-roles`,
+`DELETE /api/v1/admin/users/{id}/platform-roles/{role}`), never to themselves
+and never a role with permissions they do not hold. The base role (owner,
+admin, read-only) follows the administrator's role on the Administrators page,
+where making an owner needs a second owner. The page warns while fewer than two
+named owners exist. Navigation and actions hide by permission
+(`adminHas`, `adminMayHave`); the elevation dialog offers the roles held.
+
 ## Tests
 
 - `web/console/src/__tests__/app-split.test.ts`: route lists of both apps, no
   cross-imports.
 - `web/console/src/__tests__/console-csrf-cookie.test.ts`: the console sets
   `console_csrf` and never `csrf_token`.
-- `api/tests/unit/auth_platform_admin_main_site_test.go`: an administrator
-  with the right password gets the wrong-password answer and no cookie on the
-  main site; the console password check still works.
+- `api/tests/unit/auth_platform_admin_single_identity_test.go`: an
+  administrator's account signs in on the main site with no platform role in
+  the answer; the console password check still works.
+- `api/internal/infra/http/routes/platform_admin_single_identity_db_test.go`:
+  the account is an ordinary member (403 on a member-administration route as
+  a `member`), the console refuses the app token, the tenant API refuses the
+  console token, and the console needs its second factor.
 - `api/internal/infra/http/middleware/admin_audit_test.go`: the write-ahead row
   is written first, and a failing audit write refuses the request.
 - `web/console/src/__tests__/console-origin.test.ts`: a write from the tenant
