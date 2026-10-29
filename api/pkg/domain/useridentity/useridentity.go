@@ -21,7 +21,9 @@ var (
 	// issuer.
 	ErrConflict = fmt.Errorf("%w: federated identity already bound", shared.ErrConflict)
 	// ErrInvalid is returned for an empty issuer or subject.
-	ErrInvalid = fmt.Errorf("%w: federated identity needs an issuer and a subject", shared.ErrValidation)
+	// ErrLastIdentity refuses to remove an account's only way to sign in.
+	ErrLastIdentity = fmt.Errorf("%w: the account's only sign-in method cannot be removed", shared.ErrConflict)
+	ErrInvalid      = fmt.Errorf("%w: federated identity needs an issuer and a subject", shared.ErrValidation)
 )
 
 // Key names one identity at one identity provider.
@@ -86,4 +88,11 @@ type Repository interface {
 	ChangeSubject(ctx context.Context, id shared.ID, subject string) error
 	// MarkUsed records a sign-in with the identity.
 	MarkUsed(ctx context.Context, id shared.ID, at time.Time) error
+	// DeleteForUser removes one identity of one account (unlinking a sign-in
+	// method). ErrNotFound when the account has no identity with that id, so
+	// another account's identity can never be removed through it. keepOne
+	// (an account without a password) refuses with ErrLastIdentity when it is
+	// the account's only identity; the check and the delete hold a lock on the
+	// account, so two concurrent unlinks cannot remove the last two.
+	DeleteForUser(ctx context.Context, userID, id shared.ID, keepOne bool) error
 }

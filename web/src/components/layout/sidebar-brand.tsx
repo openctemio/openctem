@@ -3,7 +3,8 @@
 import type { ReactNode } from 'react'
 import Link from '@/components/link'
 import { PanelLeftIcon } from 'lucide-react'
-import { BrandMark } from '@/components/brand-logo'
+import { BrandMark, usesBuiltInLogo } from '@/components/brand-logo'
+import { LogoFull } from '@/assets/logo'
 import { useBrand } from '@/context/brand-provider'
 import { ShortcutKeys } from '@/components/layout/keyboard-shortcuts-dialog'
 import { SidebarTrigger, useSidebar } from '@/components/ui/sidebar'
@@ -38,7 +39,7 @@ interface SidebarBrandProps {
 }
 
 /**
- * Top row of every sidebar shell: product mark + wordmark on the left, the
+ * Top row of every sidebar shell: the logo (our lockup, or an operator's mark and name) on the left, the
  * collapse toggle on the right. Kept separate from the context row below it
  * (the tenant switcher, or a fixed label in the admin console), so a shell
  * without a tenant never has to render a tenant control.
@@ -70,6 +71,7 @@ export function SidebarBrand({ href = '/', badge }: SidebarBrandProps) {
           >
             <BrandMark
               aria-hidden
+              size={28}
               data-slot="brand-mark"
               className="size-7 transition-opacity duration-150 group-hover/brand:opacity-0 group-focus-visible/brand:opacity-0 motion-reduce:transition-none"
             />
@@ -94,10 +96,17 @@ export function SidebarBrand({ href = '/', badge }: SidebarBrandProps) {
         href={href}
         className="flex min-w-0 items-center gap-2 rounded-md text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:outline-none"
       >
-        <BrandMark className="size-7 shrink-0" />
-        <span className="truncate text-lg leading-none font-semibold tracking-tight">
-          {brand.shortName}
-        </span>
+        {usesBuiltInLogo(brand) ? (
+          // Our own brand: the outlined lockup (symbol and Sora wordmark) at 22px.
+          <LogoFull className="h-[22px] w-auto shrink-0" />
+        ) : (
+          <>
+            <BrandMark size={28} className="size-7 shrink-0" />
+            <span className="truncate text-lg leading-none font-semibold tracking-tight">
+              {brand.shortName}
+            </span>
+          </>
+        )}
       </Link>
       {badge}
       {/* On phones the sidebar is a sheet with its own close button. */}

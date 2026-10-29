@@ -19,6 +19,8 @@ const NAME = /OpenCTEM/
 /** Files that may name the default brand, with the reason. */
 const ALLOWED_FILES: Record<string, string> = {
   'lib/brand.ts': 'the default brand itself (DEFAULT_BRAND, UPSTREAM_NAME)',
+  'assets/brand-data.generated.ts':
+    'the brand SVG drawings, which carry the product name as their title',
   'assets/logo.tsx':
     "the built-in mark's own label; BrandMark/BrandLogoFull pass the brand name over it",
 }
