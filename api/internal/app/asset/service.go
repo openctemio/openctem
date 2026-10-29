@@ -18,6 +18,7 @@ import (
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	freshdom "github.com/openctemio/openctem/api/pkg/domain/assetfreshness"
 	assetgroupdom "github.com/openctemio/openctem/api/pkg/domain/assetgroup"
+	"github.com/openctemio/openctem/api/pkg/domain/assetresolution"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	covdom "github.com/openctemio/openctem/api/pkg/domain/coverage"
 	"github.com/openctemio/openctem/api/pkg/domain/scoring"
@@ -110,6 +111,7 @@ type AssetService struct {
 	freshness  freshdom.Repository
 	coverage   covdom.Repository
 	enrichReqs freshdom.RequestRepository
+	resolution assetresolution.Store
 	// createdHook requests enrichment of assets a person created.
 	createdHook CreatedAssetsHook
 	// Background re-resolution after a precedence change, per tenant.
@@ -1431,6 +1433,8 @@ type ListAssetsInput struct {
 	// Freshness: stale (an attribute class past its TTL) or never (a passive
 	// class that applies was never observed); docs/architecture/asset-freshness.md.
 	Freshness string `validate:"omitempty,oneof=stale never"`
+	// Resolution: not_resolving or resolving (asset_resolution).
+	Resolution string `validate:"omitempty,oneof=not_resolving resolving"`
 	// Coverage: covered or uncovered by the coverage ledger
 	// (asset.CoverageWindow).
 	Coverage string `validate:"omitempty,oneof=covered uncovered"`
@@ -1637,6 +1641,7 @@ func withTriageFilters(filter assetdom.Filter, input ListAssetsInput) (assetdom.
 	}
 	filter.ProgramAssets = input.ProgramAssets
 	filter.Freshness = input.Freshness
+	filter.Resolution = input.Resolution
 	filter.Coverage = input.Coverage
 	filter.Technologies = input.Technologies
 	filter.TechnologyCategories = input.TechnologyCategories

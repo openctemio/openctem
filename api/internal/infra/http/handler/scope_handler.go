@@ -1586,6 +1586,10 @@ type ScopeCheckResult struct {
 	// Resolved: for zone_none, the private addresses the hostname resolved
 	// to (when the platform may show them).
 	Resolved []string `json:"resolved,omitempty"`
+	// Remedies: for a refused target, what a scan form can do about it,
+	// best first (run_on_tenant_sensor, verify_domain, lower_intensity,
+	// remove). remove is always last; the first is the primary action.
+	Remedies []scopedom.Remedy `json:"remedies,omitempty"`
 }
 
 // ScopeCheckRouting says where a scan of these targets would run and why.
@@ -1745,8 +1749,69 @@ func (h *ScopeHandler) CheckScope(w http.ResponseWriter, r *http.Request) {
 		item.Fixes = scopedom.FilterFixes(ref.Fixes, has)
 		out.Results = append(out.Results, item)
 	}
+	lower, err := h.lowerTiers(ctx, tid, req, tier, out.Results)
+	if err != nil {
+		h.handleServiceError(w, "Scope check", err)
+		return
+	}
+	for i := range out.Results {
+		item := &out.Results[i]
+		if item.Allowed {
+			continue
+		}
+		in := scopedom.RemedyInput{Code: item.Code, Fixes: item.Fixes, Preference: outcome.Routing.Preference,
+			TenantSensor: outcome.Routing.TenantSensor}
+		if lt, ok := lower[item.Target]; ok && item.AssetID == "" {
+			in.LowerTier = &lt
+		}
+		item.Remedies = scopedom.RankRemedies(in)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)
+}
+
+// lowerTiers finds, for the typed targets refused only for their probe tier,
+// the highest lower tier at which the same gate lets them through: the
+// scan's intensity could be lowered to that. Only when the client asked at
+// an explicit tier (a workflow's intensity; a single scanner's tier is the
+// scanner's own and cannot be lowered). The same dry run, for the same
+// caller and tenant: it tells nothing a check at that tier would not.
+func (h *ScopeHandler) lowerTiers(ctx context.Context, tenantID shared.ID, req CheckScopeRequest, tier int,
+	results []ScopeCheckResult,
+) (map[string]int, error) {
+	found := map[string]int{}
+	if req.Tier == nil || tier <= int(scopedom.TierPassive) {
+		return found, nil
+	}
+	var pending []string
+	for _, r := range results {
+		if !r.Allowed && r.AssetID == "" && scopedom.TierSensitive(r.Code) {
+			pending = append(pending, r.Target)
+		}
+	}
+	for lt := tier - 1; lt >= int(scopedom.TierPassive) && len(pending) > 0; lt-- {
+		outcome, err := h.dryRun.DryRun(ctx, scansvc.DryRunInput{TenantID: tenantID, Targets: pending,
+			SensorPreference: req.SensorPreference, Tier: lt, Tool: req.ScannerName})
+		if err != nil {
+			return nil, err
+		}
+		allowed := make(map[string]bool, len(outcome.Results))
+		for _, res := range outcome.Results {
+			if res.Allowed {
+				allowed[res.Target] = true
+			}
+		}
+		left := pending[:0:0]
+		for _, t := range pending {
+			if allowed[t] {
+				found[t] = lt
+				continue
+			}
+			left = append(left, t)
+		}
+		pending = left
+	}
+	return found, nil
 }
 
 // BulkDeleteTargets handles POST /api/v1/scope/targets/bulk/delete

@@ -1337,6 +1337,9 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 	if cond := assetFreshnessCondition(filter.Freshness); cond != "" {
 		conditions = append(conditions, cond)
 	}
+	if cond := assetResolutionCondition(filter.Resolution); cond != "" {
+		conditions = append(conditions, cond)
+	}
 
 	// Coverage ledger (the dashboard's Discovery stage counts with the same
 	// predicate, so its figure equals this list).
