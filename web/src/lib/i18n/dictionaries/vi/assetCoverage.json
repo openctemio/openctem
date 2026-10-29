@@ -19,6 +19,7 @@
   "assetCoverage.noAnswer": "tên miền không có bản ghi DNS; sẽ kiểm tra lại sau",
   "assetCoverage.noOutput": "không tìm thấy gì",
   "assetCoverage.none": "Không có kiểm tra tự động nào cho loại tài sản này.",
+  "assetCoverage.reason.content_missing": "nền tảng chưa có gói danh sách từ cho công cụ này; quản trị viên hệ thống cần nhập gói",
   "assetCoverage.reason.credentials_missing": "chưa cấu hình khóa API cần thiết",
   "assetCoverage.reason.excluded": "bị loại khỏi phạm vi",
   "assetCoverage.reason.no_eligible_sensor": "không sensor nào nhận được công việc này",
