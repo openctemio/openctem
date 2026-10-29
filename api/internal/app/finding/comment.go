@@ -212,21 +212,31 @@ func (s *FindingCommentService) DeleteComment(ctx context.Context, tenantID, com
 }
 
 // ListFindingComments retrieves all comments for a finding.
-func (s *FindingCommentService) ListFindingComments(ctx context.Context, findingID string) ([]*vulnerability.FindingComment, error) {
+func (s *FindingCommentService) ListFindingComments(ctx context.Context, tenantID, findingID string) ([]*vulnerability.FindingComment, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+
 	parsedID, err := shared.IDFromString(findingID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid finding id format", shared.ErrValidation)
 	}
 
-	return s.commentRepo.ListByFinding(ctx, parsedID)
+	return s.commentRepo.ListByFinding(ctx, parsedTenantID, parsedID)
 }
 
 // CountFindingComments counts comments for a finding.
-func (s *FindingCommentService) CountFindingComments(ctx context.Context, findingID string) (int, error) {
+func (s *FindingCommentService) CountFindingComments(ctx context.Context, tenantID, findingID string) (int, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return 0, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+
 	parsedID, err := shared.IDFromString(findingID)
 	if err != nil {
 		return 0, fmt.Errorf("%w: invalid finding id format", shared.ErrValidation)
 	}
 
-	return s.commentRepo.CountByFinding(ctx, parsedID)
+	return s.commentRepo.CountByFinding(ctx, parsedTenantID, parsedID)
 }
