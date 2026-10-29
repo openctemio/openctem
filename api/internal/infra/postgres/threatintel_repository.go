@@ -1067,6 +1067,26 @@ func (r *SyncStatusRepository) GetDueForSync(ctx context.Context) ([]*threatinte
 	return r.scanSyncStatuses(rows)
 }
 
+// TryStart claims a source's run with one conditional UPDATE (see the
+// interface). The row is left running with the attempt time set; the run
+// writes its outcome with Update.
+func (r *SyncStatusRepository) TryStart(ctx context.Context, source string, staleAfter time.Duration) (bool, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE threat_intel_sync_status SET
+			last_sync_status = 'running', last_sync_at = NOW(), last_sync_error = NULL, updated_at = NOW()
+		WHERE source_name = $1
+		AND (last_sync_status <> 'running' OR updated_at < NOW() - make_interval(secs => $2))`,
+		source, staleAfter.Seconds())
+	if err != nil {
+		return false, fmt.Errorf("failed to start sync: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("failed to start sync: %w", err)
+	}
+	return n == 1, nil
+}
+
 // Update updates a sync status.
 func (r *SyncStatusRepository) Update(ctx context.Context, status *threatintel.SyncStatus) error {
 	metadataJSON, err := json.Marshal(status.Metadata())
