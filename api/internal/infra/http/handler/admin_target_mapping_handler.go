@@ -13,8 +13,8 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/platformauthz"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tool"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -195,9 +195,9 @@ func (h *AdminTargetMappingHandler) Create(w http.ResponseWriter, r *http.Reques
 	// Get current admin (for created_by)
 	currentAdmin := middleware.MustGetAdminUser(ctx)
 
-	// RBAC Check: mappings change every organization's scans (route: super_admin + step-up).
-	if currentAdmin.EffectiveRole() != admin.AdminRoleSuperAdmin {
-		apierror.Forbidden("only super admins can create target mappings").WriteJSON(w)
+	// Mappings change every organization's scans: platform.content.manage (route guard + step-up).
+	if !currentAdmin.Can(platformauthz.ContentManage) {
+		apierror.Forbidden("changing target mappings needs the content management permission").WriteJSON(w)
 		return
 	}
 
@@ -296,9 +296,9 @@ func (h *AdminTargetMappingHandler) Update(w http.ResponseWriter, r *http.Reques
 	idStr := chi.URLParam(r, "id")
 	currentAdmin := middleware.MustGetAdminUser(ctx)
 
-	// RBAC Check: mappings change every organization's scans (route: super_admin + step-up).
-	if currentAdmin.EffectiveRole() != admin.AdminRoleSuperAdmin {
-		apierror.Forbidden("only super admins can update target mappings").WriteJSON(w)
+	// Mappings change every organization's scans: platform.content.manage (route guard + step-up).
+	if !currentAdmin.Can(platformauthz.ContentManage) {
+		apierror.Forbidden("changing target mappings needs the content management permission").WriteJSON(w)
 		return
 	}
 
@@ -383,8 +383,8 @@ func (h *AdminTargetMappingHandler) Delete(w http.ResponseWriter, r *http.Reques
 	currentAdmin := middleware.MustGetAdminUser(ctx)
 
 	// RBAC Check: Only super_admin can delete mappings
-	if currentAdmin.EffectiveRole() != admin.AdminRoleSuperAdmin {
-		apierror.Forbidden("only super admins can delete target mappings").WriteJSON(w)
+	if !currentAdmin.Can(platformauthz.ContentManage) {
+		apierror.Forbidden("changing target mappings needs the content management permission").WriteJSON(w)
 		return
 	}
 

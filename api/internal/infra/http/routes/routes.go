@@ -22,6 +22,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/api/pkg/domain/platformauthz"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -614,7 +615,11 @@ func Register(
 		if h.AdminAuthMiddleware != nil {
 			consoleAuth = h.AdminAuthMiddleware.Authenticate
 		}
-		registerDocsRoutes(router, h.Docs, cfg.IsProduction(), authMiddleware, consoleAuth)
+		var consoleGuard func(platformauthz.Permission) Middleware
+		if h.AdminAuthMiddleware != nil {
+			consoleGuard = func(p platformauthz.Permission) Middleware { return h.AdminAuthMiddleware.RequirePlatform(p) }
+		}
+		registerDocsRoutes(router, h.Docs, cfg.IsProduction(), authMiddleware, consoleAuth, consoleGuard)
 	}
 	if h.Announcement != nil {
 		registerAnnouncementRoute(router, h.Announcement, authMiddleware)

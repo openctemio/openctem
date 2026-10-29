@@ -28,7 +28,10 @@ func (l *listingRepo) List(context.Context, ardom.Filter) ([]*ardom.Request, int
 }
 
 func asAdminRole(r *http.Request, role admin.AdminRole) *http.Request {
-	return r.WithContext(context.WithValue(r.Context(), middleware.AdminRoleKey, string(role)))
+	now := time.Now()
+	a := admin.Reconstitute(shared.NewID(), "a@op.example", "A", role, true, nil, nil, "", 0, nil, nil, "", now, nil, now)
+	ctx := context.WithValue(r.Context(), middleware.AdminRoleKey, string(role))
+	return r.WithContext(context.WithValue(ctx, middleware.AdminUserKey, a))
 }
 
 // A read-only administrator reads the queue without the requesters' personal
