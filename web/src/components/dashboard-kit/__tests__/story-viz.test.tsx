@@ -180,5 +180,7 @@ describe('KpiStripViz', () => {
     // Not measured: no number, no link.
     expect(tiles[3]).toHaveTextContent('Not measured')
     expect(tiles[3].tagName).not.toBe('A')
+    expect(tiles[3]).toHaveAttribute('data-state', 'not-measured')
+    expect(tiles[0]).not.toHaveAttribute('data-state')
   })
 })

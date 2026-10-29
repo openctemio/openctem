@@ -1,0 +1,6 @@
+### Security: console passkeys and recovery codes are written by the console database role alone
+
+- Under the least-privilege production model (`DB_ADMIN_USER`) the API's app role could still read and write `admin_webauthn_credentials`, `admin_recovery_codes` and `admin_webauthn_ceremonies`. A SQL injection in the tenant plane, or a compromised API process on the app pool, could plant a passkey or a known recovery code for a platform administrator and take over the console.
+- The console's factor repository now runs on the console pool, and `deploy/postgres/least-privilege-roles.sql` gives those three tables to the console role: the app role has no `SELECT`, `INSERT`, `UPDATE`, `DELETE` or `TRUNCATE` on them, and the script's own check fails if it does.
+- On the tenant plane in production the API refuses to start while `DB_USER` can insert into those tables, as it already did for `admin_users`; elsewhere it logs an error.
+- Upgrade notes: an installation with `DB_ADMIN_USER` must re-run `least-privilege-roles.sql` from this release with `admin_user` after migrating (the shipped Compose stack does it through `db-grants`). Until it does, console passkey and recovery-code sign-in fails. The ansible kit must vendor `least-privilege-roles.sql` from this release.
