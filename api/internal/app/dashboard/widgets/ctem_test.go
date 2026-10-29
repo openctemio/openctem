@@ -112,6 +112,11 @@ func (f *ctemFacts) OrgIntake(_ context.Context, tenantID shared.ID, since time.
 	return f.intake, nil
 }
 
+func (f *ctemFacts) TopFix(_ context.Context, s dashboard.ReadScope) (*dashboard.FixLever, error) {
+	f.scopes = append(f.scopes, s)
+	return nil, nil
+}
+
 type fakePaths struct {
 	rows    []attack.CrownJewelPath
 	noGraph bool
