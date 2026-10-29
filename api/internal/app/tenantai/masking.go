@@ -229,17 +229,9 @@ func (s *MaskingService) PreviewMasking(ctx context.Context, in PreviewInput, ac
 	if _, err := rand.Read(key); err != nil {
 		return MaskingPreview{}, fmt.Errorf("masking key: %w", err)
 	}
-	bin := aibundle.Input{TenantID: tid, Finding: f, Ceiling: ceiling, Policy: policy.MaskerPolicy(), RunKey: key}
-	if s.tenants != nil {
-		if t, err := s.tenants.GetByID(ctx, tid); err == nil && t != nil {
-			bin.OrgNames = []string{t.Name()}
-		}
-	}
-	if s.assets != nil && !f.AssetID().IsZero() {
-		if a, err := s.assets.GetByID(ctx, tid, f.AssetID()); err == nil && a != nil {
-			bin.Asset = &aibundle.Asset{Name: a.Name(), Type: string(a.Type()), Criticality: string(a.Criticality()),
-				Exposure: string(a.Exposure()), Identifiers: []string{a.Name()}}
-		}
+	bin, err := s.bundleInput(ctx, tid, f, ceiling, policy, key)
+	if err != nil {
+		return MaskingPreview{}, err
 	}
 	b, err := s.bundles.Build(ctx, bin)
 	if err != nil {
@@ -267,4 +259,46 @@ func (s *MaskingService) logAudit(ctx context.Context, actx auditapp.AuditContex
 	if err := s.audit.LogEvent(ctx, actx, event); err != nil {
 		s.log.Error("failed to log audit event", "error", err, "action", event.Action)
 	}
+}
+
+// BundleInput assembles the bundle builder's input for a finding under the
+// organization's masking policy: its asset and the organization's name as
+// seeded identifiers. The preview and the built-in executor use the same
+// input, so the preview shows exactly what a run sends.
+func (s *MaskingService) BundleInput(ctx context.Context, tenantID shared.ID, f *vulnerability.Finding, ceiling aipolicy.Class, runKey []byte) (aibundle.Input, error) {
+	policy, err := s.repo.GetMasking(ctx, tenantID)
+	if err != nil {
+		return aibundle.Input{}, err
+	}
+	return s.bundleInput(ctx, tenantID, f, ceiling, policy, runKey)
+}
+
+func (s *MaskingService) bundleInput(ctx context.Context, tid shared.ID, f *vulnerability.Finding, ceiling aipolicy.Class, policy tenant.AIMaskingPolicy, key []byte) (aibundle.Input, error) {
+	bin := aibundle.Input{TenantID: tid, Finding: f, Ceiling: ceiling, Policy: policy.MaskerPolicy(), RunKey: key}
+	// The organization's and the asset's names are seeded identifiers the
+	// masker replaces wherever they appear. Without them the text would go out
+	// with those names readable, so a failed lookup stops the run (fail closed).
+	if s.tenants != nil {
+		t, err := s.tenants.GetByID(ctx, tid)
+		if err != nil || t == nil {
+			return aibundle.Input{}, fmt.Errorf("masking: organization name unavailable: %w", errOrMissing(err))
+		}
+		bin.OrgNames = []string{t.Name()}
+	}
+	if s.assets != nil && !f.AssetID().IsZero() {
+		a, err := s.assets.GetByID(ctx, tid, f.AssetID())
+		if err != nil || a == nil {
+			return aibundle.Input{}, fmt.Errorf("masking: asset name unavailable: %w", errOrMissing(err))
+		}
+		bin.Asset = &aibundle.Asset{Name: a.Name(), Type: string(a.Type()), Criticality: string(a.Criticality()),
+			Exposure: string(a.Exposure()), Identifiers: []string{a.Name()}}
+	}
+	return bin, nil
+}
+
+func errOrMissing(err error) error {
+	if err != nil {
+		return err
+	}
+	return shared.ErrNotFound
 }

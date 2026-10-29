@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-10-28). In review: governance core (AI suggestions with provenance, per-use-case mode, apply rules, undo, automatic downgrade), reversible masking of AI context, the `openctem.analyze/v1` contract. Designed: the built-in executor writing runs through the contract, the AI analyst worker, third-party analysts |
+| Status | Accepted (2026-10-28). In review: governance core (AI suggestions with provenance, per-use-case mode, apply rules, undo, automatic downgrade), reversible masking of AI context, the `openctem.analyze/v1` contract. In review: the built-in executor writing runs through the contract. Designed: the AI analyst worker, third-party analysts |
 | Scope | api (governance, masking, contract, built-in executor), web (Settings > AI use cases and masking, shared AI badge, suggestion card), sdk-go (analyst harness, conformance cases), sensor (analyst image), docs |
 | Architecture | [ai-analyze-contract.md](../architecture/ai-analyze-contract.md), [ai-triage.md](../architecture/ai-triage.md), `ai-analysis.md` (governance) |
 | Related | RFC-040 (mutual distrust, signed jobs), RFC-016 and RFC-062 (MCP, AI egress policy), RFC-094 (the platform depends on contracts only), RFC-030 (scan distribution) |
@@ -118,6 +118,6 @@ suite.
 | Governance core (tables, apply engine, undo, downgrade, routes) | in review |
 | Reversible masking (`pkg/aimask`, mapping store, masking policy and preview) | in review |
 | `openctem.analyze/v1` schemas and validator (`pkg/sensorproto/analyze`) | in review |
-| Built-in executor for `triage.v1`, `remediation.v1`, `summary.v1` through the contract, with bundle builder, masking and provenance | designed |
+| Built-in executor for `triage.v1`, `remediation.v1`, `summary.v1` through the contract, with bundle builder, masking and provenance | in review |
 | Web: Settings > AI use cases and masking, shared AI badge, suggestion card and "why" drawer | in review |
 | AI analyst worker, harness, conformance cases | designed |

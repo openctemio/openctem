@@ -935,6 +935,8 @@ type Services struct {
 	// AIAnalysis manages AI agents (service accounts that triage like a
 	// person, with accountable owners) and their runs.
 	AIAnalysis *aianalysis.Service
+	// AIExecutor runs single-shot AI kinds in the API process.
+	AIExecutor *aianalysis.BuiltinExecutor
 
 	// WebSocket
 	WebSocketHub *websocket.Hub
@@ -2004,6 +2006,19 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 			}, log,
 		)
 		s.AITriage.SetBudgetService(budgetSvc)
+
+		// The built-in executor: single-shot kinds in the API process,
+		// through the analyze contract and masking, acting as an AI agent
+		// through the finding commands.
+		s.AIExecutor = aianalysis.NewBuiltinExecutor(repos.Finding, finding.AIAgentCommands{Findings: s.Vulnerability},
+			repos.TenantAISettings, llmFactory, s.AIMasking,
+			aibundle.NewBuilder(aiEgress), s.AIMaskMaps, aianalysis.ExecutorConfig{
+				MaxTokens: cfg.AITriage.MaxTokens, Temperature: cfg.AITriage.Temperature,
+			}, log)
+		s.AIExecutor.SetBudget(budgetSvc)
+		if s.PlatformAI != nil {
+			s.AIExecutor.SetOwnProviderPolicy(s.PlatformAI.OrgProviderAllowed)
+		}
 		log.Info("AI triage service initialized",
 			"budget_enabled", cfg.AITriage.BudgetEnabled,
 			"budget_strict", cfg.AITriage.BudgetStrict,
@@ -3121,6 +3136,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.AIAnalysis = aianalysis.New(repos.AIAnalysis, repos.AIAnalysis,
 		apikey.NewHolderPermissions(repos.Tenant, rolePermissionSource{repos.Role}), s.DataScope,
 		aianalysis.SettingsConsent{Repo: repos.TenantAISettings}, s.Audit, log)
+	if s.AIExecutor != nil {
+		s.AIExecutor.SetAIAgents(s.AIAnalysis)
+	}
 
 	// Wire permission services to tenant service
 	s.Tenant.SetPermissionServices(s.PermCache, s.PermVersion)

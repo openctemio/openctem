@@ -268,6 +268,9 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	"ai_runs": func(s *schemaSeeder) map[string]any {
 		return map[string]any{"ai_agent_id": s.rows["ai_agents"]["user_id"], "kind": "triage.v1"}
 	},
+	"ai_mask_maps": func(*schemaSeeder) map[string]any {
+		return map[string]any{"created_at": "2026-01-01T00:00:00Z", "expires_at": "2026-01-02T00:00:00Z"}
+	},
 	"ai_agent_owners": func(s *schemaSeeder) map[string]any {
 		return map[string]any{"user_id": s.userID, "group_id": nil}
 	},
