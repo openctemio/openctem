@@ -39,7 +39,7 @@ const (
 	codeAccountSuspended        apierror.Code = "ACCOUNT_SUSPENDED"
 	codeEmailNotVerified        apierror.Code = "EMAIL_NOT_VERIFIED"
 	codeTenantCreationDisabled  apierror.Code = "ORGANIZATION_CREATION_DISABLED"
-	codePlatformAdminMember     apierror.Code = "PLATFORM_ADMIN_MEMBERSHIP"
+	codeAccountCannotJoinOrg    apierror.Code = "ACCOUNT_CANNOT_JOIN_ORGANIZATION"
 	codeEmailAlreadyExists      apierror.Code = "EMAIL_ALREADY_EXISTS"
 	codeInvalidResetToken       apierror.Code = "INVALID_RESET_TOKEN"
 	codeInvalidVerifyToken      apierror.Code = "INVALID_VERIFICATION_TOKEN"
@@ -128,7 +128,7 @@ var authErrorTable = []authErrorEntry{
 	{e(auth.ErrSSOBreakGlassNeedsMFA), http.StatusForbidden, codeSSOBreakGlassNeedsMFA, "This organization requires SSO sign-in. Owner access with a password needs two-factor authentication: turn it on for your account and sign in again, or sign in through your identity provider.", ""},
 	{e(auth.ErrSignupSSORequired, auth.ErrSSORequired), http.StatusForbidden, CodeSignupSSORequired, "Your organization requires single sign-on. Sign in through your identity provider.", "sso_required"},
 	{e(auth.ErrTenantCreationDisabled), http.StatusForbidden, codeTenantCreationDisabled, "Organizations are created by the application administrator.", ""},
-	{e(tenantdom.ErrPlatformAdminMembership), http.StatusConflict, codePlatformAdminMember, "Platform administrators cannot belong to an organization. Use the admin console, or a separate account.", ""},
+	{e(tenantdom.ErrBreakGlassMembership), http.StatusConflict, codeAccountCannotJoinOrg, "This account cannot be a member of an organization.", ""},
 	{e(auth.ErrEmailAlreadyExists), http.StatusConflict, codeEmailAlreadyExists, "Email already exists.", ""},
 	{e(auth.ErrInvalidResetToken), http.StatusBadRequest, codeInvalidResetToken, "Invalid or expired reset token.", ""},
 	{e(auth.ErrInvalidVerificationToken), http.StatusBadRequest, codeInvalidVerifyToken, "Invalid or expired verification token.", ""},
