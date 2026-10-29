@@ -7,6 +7,7 @@
  */
 
 import { CircleAlert } from 'lucide-react'
+import { EpssBar } from '@/components/ui/epss-bar'
 import { KevBadge } from '@/components/ui/kev-badge'
 import { PriorityBadge } from '@/components/ui/priority-badge'
 import { isPriorityClass } from '@/lib/priority-colors'
@@ -197,6 +198,7 @@ export function ItemsViz({
                   {r.asset}
                 </span>
               )}
+              <EpssBar score={r.epss} className="hidden shrink-0 sm:inline-flex" />
               {due ? (
                 overdue ? (
                   <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-destructive">

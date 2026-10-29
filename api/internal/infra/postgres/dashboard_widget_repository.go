@@ -348,7 +348,7 @@ func (r *DashboardWidgetRepository) Rank(ctx context.Context, scope dashboard.Re
 		)
 		SELECT f.id, COALESCE(NULLIF(f.title, ''), NULLIF(f.rule_id, ''), NULLIF(f.cve_id, ''), NULLIF(left(f.message, 200), ''), ''),
 		       COALESCE(k.severity, ''), COALESCE(k.priority_class, ''), f.asset_id, COALESCE(a.name, ''), k.sort_at, f.sla_deadline,
-		       COALESCE(f.is_in_kev, false), k.is_pentest, k.pentest_campaign_id
+		       COALESCE(f.is_in_kev, false), k.is_pentest, k.pentest_campaign_id, f.epss_score
 		FROM ranked k
 		JOIN findings f ON f.tenant_id = $1 AND f.id = k.finding_id AND ` + openFindingStatusClause + `
 		LEFT JOIN assets a ON a.tenant_id = $1 AND a.id = f.asset_id
@@ -364,7 +364,8 @@ func (r *DashboardWidgetRepository) Rank(ctx context.Context, scope dashboard.Re
 		var it dashboard.RankItem
 		var asset sql.NullString
 		var sortAt, due sql.NullTime
-		if err := rows.Scan(&it.FindingID, &it.Title, &it.Severity, &it.PriorityClass, &asset, &it.AssetName, &sortAt, &due, &it.KEV, &it.Pentest, &it.CampaignID); err != nil {
+		var epss sql.NullFloat64
+		if err := rows.Scan(&it.FindingID, &it.Title, &it.Severity, &it.PriorityClass, &asset, &it.AssetName, &sortAt, &due, &it.KEV, &it.Pentest, &it.CampaignID, &epss); err != nil {
 			return nil, fmt.Errorf("scan rank item: %w", err)
 		}
 		if asset.Valid {
@@ -377,6 +378,9 @@ func (r *DashboardWidgetRepository) Rank(ctx context.Context, scope dashboard.Re
 		}
 		if due.Valid {
 			it.SLADeadline = &due.Time
+		}
+		if epss.Valid {
+			it.EPSS = &epss.Float64
 		}
 		out = append(out, it)
 	}
