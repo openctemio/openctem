@@ -40,6 +40,7 @@ import (
 type FindingExportRow struct {
 	ID               string     `json:"id"`
 	Title            string     `json:"title"`
+	DisplayTitle     string     `json:"display_title"` // "<title> on <target>"; the asset is also its own columns
 	Severity         string     `json:"severity"`
 	Status           string     `json:"status"`
 	PriorityClass    string     `json:"priority_class"`
@@ -109,7 +110,7 @@ func toFindingExportRow(f FindingResponse) FindingExportRow {
 		title = alt
 	}
 	row := FindingExportRow{
-		ID: f.ID, Title: title, Severity: f.Severity, Status: f.Status, PriorityClass: deref(f.PriorityClass),
+		ID: f.ID, Title: title, DisplayTitle: f.DisplayTitle, Severity: f.Severity, Status: f.Status, PriorityClass: deref(f.PriorityClass),
 		Source: f.Source, FindingType: f.FindingType, ToolName: f.ToolName, RuleID: f.RuleID, RuleName: f.RuleName,
 		CVEID: f.CVEID, CVEIDs: f.CVEIDs, CWEIDs: f.CWEIDs, CVSSScore: f.CVSSScore, CVSSVector: f.CVSSVector,
 		EPSSScore: f.EPSSScore, EPSSPercentile: f.EPSSPercentile, IsInKEV: f.IsInKEV,
@@ -162,7 +163,7 @@ func (row FindingExportRow) csvCells() []string {
 		return ts(*t)
 	}
 	cells := []string{
-		row.ID, row.Title, row.Severity, row.Status, row.PriorityClass, row.Source, row.FindingType, row.ToolName,
+		row.ID, row.Title, row.DisplayTitle, row.Severity, row.Status, row.PriorityClass, row.Source, row.FindingType, row.ToolName,
 		row.RuleID, row.RuleName, row.CVEID, strings.Join(row.CVEIDs, ";"), strings.Join(row.CWEIDs, ";"),
 		num(row.CVSSScore), row.CVSSVector, num(row.EPSSScore), num(row.EPSSPercentile),
 		strconv.FormatBool(row.IsInKEV), strconv.FormatBool(row.ExploitAvailable), strconv.FormatBool(row.IsReachable),

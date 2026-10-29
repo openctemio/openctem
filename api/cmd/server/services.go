@@ -2096,6 +2096,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// GitHub Issues as a 2nd finding-ticket provider (selected per create-ticket
 	// request); resolves the tenant's GitHub integration credentials on demand.
 	s.GitHubTicket = ticketing.NewGitHubTicketService(repos.Finding, repos.Integration, s.Encryptor, log)
+	s.GitHubTicket.SetAssetNames(infrajira.NewAssetRouteResolver(repos.Asset))
 	// Inbound issue events take the same finding service path as Jira:
 	// transition map, data scope, pentest and approval gates, "mark fixed"
 	// with the integration as the actor, for every finding linked to the
