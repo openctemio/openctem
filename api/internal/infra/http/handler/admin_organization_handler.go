@@ -393,8 +393,8 @@ func (h *AdminOrganizationHandler) Create(w http.ResponseWriter, r *http.Request
 		}, adminAuditContext(r, ""))
 	if err != nil {
 		switch {
-		case errors.Is(err, tenant.ErrPlatformAdminMembership):
-			apierror.Conflict("Platform administrators cannot belong to an organization. Use another owner email.").WriteJSON(w)
+		case errors.Is(err, tenant.ErrBreakGlassMembership):
+			apierror.Conflict("A break-glass administrator cannot own an organization. Use another owner email.").WriteJSON(w)
 		case errors.Is(err, tenantapp.ErrOwnerAccountExists):
 			apierror.Conflict("This person already has an account; they can create the organization after signing in.").WriteJSON(w)
 		case errors.Is(err, tenantapp.ErrAccountExists):
@@ -528,8 +528,6 @@ func (h *AdminOrganizationHandler) CreateUser(w http.ResponseWriter, r *http.Req
 			apierror.Conflict("This organization has an active owner. Owner recovery is only for an organization whose owners are all suspended.").WriteJSON(w)
 		case errors.Is(err, tenant.ErrOrganizationHasOwner):
 			apierror.Conflict("This organization already has an owner (active or suspended). Its owner and administrators invite or create users themselves; if every owner is suspended, a super admin can use owner recovery.").WriteJSON(w)
-		case errors.Is(err, tenant.ErrPlatformAdminMembership):
-			apierror.Conflict("Platform administrators cannot belong to an organization.").WriteJSON(w)
 		case errors.Is(err, tenantapp.ErrAccountExists):
 			apierror.Conflict("An account with this email already exists. The first owner must be a new account.").WriteJSON(w)
 		case errors.Is(err, shared.ErrNotFound):

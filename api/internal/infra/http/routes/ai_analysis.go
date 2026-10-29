@@ -51,13 +51,13 @@ func registerAIAnalysisRoutes(router Router, h *handler.AIAnalysisHandler, authM
 	// AI triage (the limiter runs before the permission check on that route
 	// only). What the AI agent then does is bounded by its own principal, not
 	// by the caller. One group: the router refuses to mount a prefix twice.
-	analyzeGate := []Middleware{}
+	analyzeChecks := []Middleware{}
 	if rateLimiter != nil {
-		analyzeGate = append(analyzeGate, rateLimiter.RequestMiddleware())
+		analyzeChecks = append(analyzeChecks, rateLimiter.RequestMiddleware())
 	}
-	analyzeGate = append(analyzeGate, middleware.RequireAll(permission.FindingsRead, permission.AITriageTrigger))
+	analyzeChecks = append(analyzeChecks, middleware.RequireAll(permission.FindingsRead, permission.AITriageTrigger))
 	router.Group("/api/v1/findings/{id}/ai", func(r Router) {
 		r.GET("/runs", h.ListFindingRuns, middleware.RequireAll(permission.FindingsRead, permission.AITriageRead))
-		r.POST("/analyze", h.AnalyzeFinding, analyzeGate...)
+		r.POST("/analyze", h.AnalyzeFinding, analyzeChecks...)
 	}, gated...)
 }

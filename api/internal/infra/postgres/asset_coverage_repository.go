@@ -66,9 +66,25 @@ func coverageTime(t sql.NullTime) *time.Time {
 	return &v
 }
 
+// withExtra scans the row columns and then extra destinations.
+type withExtra struct {
+	sc    interface{ Scan(...any) error }
+	extra []any
+}
+
+func (w withExtra) Scan(dest ...any) error { return w.sc.Scan(append(dest, w.extra...)...) }
+
 // ListForAsset returns every ledger row of an asset of the tenant.
 func (r *AssetCoverageRepository) ListForAsset(ctx context.Context, tenantID, assetID shared.ID) ([]coverage.Row, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT `+coverageRowColumns+`
+	// The observer of a target-side outcome is named only when it is the
+	// tenant's own scan zone or sensor; a platform sensor stays unnamed.
+	rows, err := r.db.QueryContext(ctx, `SELECT `+coverageRowColumns+`,
+		       COALESCE(CASE
+		         WHEN unreached_from LIKE 'zone:%' THEN (SELECT z.name FROM scan_zones z
+		              WHERE z.tenant_id = $1 AND z.id::text = substr(unreached_from, 6))
+		         WHEN unreached_from LIKE 'sensor:%' THEN (SELECT s.name FROM sensors s
+		              WHERE s.tenant_id = $1 AND s.scope = 'organization' AND s.id::text = substr(unreached_from, 8))
+		       END, '')
 		FROM asset_coverage WHERE tenant_id = $1 AND asset_id = $2
 		ORDER BY capability, vantage`, tenantID.String(), assetID.String())
 	if err != nil {
@@ -77,10 +93,12 @@ func (r *AssetCoverageRepository) ListForAsset(ctx context.Context, tenantID, as
 	defer func() { _ = rows.Close() }()
 	var out []coverage.Row
 	for rows.Next() {
-		row, err := scanCoverageRow(rows, tenantID, assetID)
+		var name string
+		row, err := scanCoverageRow(withExtra{rows, []any{&name}}, tenantID, assetID)
 		if err != nil {
 			return nil, fmt.Errorf("scan asset coverage: %w", err)
 		}
+		row.UnreachedFromName = name
 		out = append(out, row)
 	}
 	return out, rows.Err()

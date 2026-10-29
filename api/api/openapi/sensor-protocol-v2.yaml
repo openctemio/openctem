@@ -1006,6 +1006,25 @@ components:
             mem_available_bytes: { type: integer }
             load1: { type: number }
             disk_free_bytes: { type: integer }
+            pressure:
+              description: How loaded the sensor's host is (all optional). level and reasons are closed sets, percentages are clamped to 0-100; while fresh, elevated and overloaded can only lower what dispatch offers.
+              type: object
+              properties:
+                level: { type: string, enum: [ok, elevated, overloaded] }
+                reasons: { type: array, maxItems: 6, items: { type: string, enum: [cpu, memory, io, load, mem_available, fds] } }
+                level_seconds: { type: integer, description: How long the sensor has been at this level. }
+                psi: { type: boolean, description: Whether the kernel stall counters were available. }
+                cpu_some_avg10: { type: number, minimum: 0, maximum: 100 }
+                mem_some_avg10: { type: number, minimum: 0, maximum: 100 }
+                mem_full_avg10: { type: number, minimum: 0, maximum: 100 }
+                io_some_avg10: { type: number, minimum: 0, maximum: 100 }
+                io_full_avg10: { type: number, minimum: 0, maximum: 100 }
+                load_per_cpu: { type: number, minimum: 0 }
+                fd_used_pct: { type: number, minimum: 0, maximum: 100 }
+                host_cpu_busy_pct: { type: number, minimum: 0, maximum: 100 }
+                foreign_cpu_pct: { type: number, minimum: 0, maximum: 100, description: CPU used by programs outside the sensor. }
+                cpu_throttled_pct: { type: number, minimum: 0, maximum: 100, description: Share of CPU periods the sensor cgroup was throttled by its quota. }
+                noisy_neighbor: { type: boolean }
         capacity:
           description: The sensor's job slots and per-tool cost; while fresh (3 min) slots_free can only lower what dispatch offers.
           type: object
@@ -1013,6 +1032,18 @@ components:
             slots_total: { type: integer }
             slots_free: { type: integer }
             active_jobs: { type: integer }
+            launches_held: { type: integer, description: Tool starts held back for now (optional). }
+            tools_running: { type: integer, description: Tool processes running (optional). }
+            transient:
+              description: Start problems the sensor absorbed since it started (optional counters).
+              type: object
+              properties:
+                handshake_timeouts: { type: integer }
+                slow_starts: { type: integer }
+                oom_kills: { type: integer }
+                start_eagain: { type: integer }
+                retried: { type: integer }
+                recovered: { type: integer }
             per_tool:
               type: object
               additionalProperties:

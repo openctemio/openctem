@@ -365,6 +365,11 @@ func (s *Service) sensorPlacement(ctx context.Context, tenantID shared.ID, cmd *
 	if cmd.Type == commanddom.CommandTypeScan && sn != nil {
 		free := sn.FreeSlots(now)
 		sp.Busy = freeScanSlots(sn.EffectiveMaxConcurrentJobs(), c.HeldScans, &free) == 0
+		// Free slots that host pressure alone took away: say so instead of
+		// the plain "no free slot".
+		if sp.Busy && sn.PressureNarrowed(now) {
+			sp.Reasons = append(sp.Reasons, commanddom.PlacementSensorOverloaded)
+		}
 	}
 	return sp, nil
 }
@@ -480,6 +485,9 @@ func (p *Placement) summarize() {
 			p.Eligible++
 			if sp.Busy {
 				p.Busy++
+				if slices.Contains(sp.Reasons, commanddom.PlacementSensorOverloaded) {
+					counts[commanddom.PlacementSensorOverloaded]++
+				}
 			}
 		default:
 			for _, r := range sp.Reasons {
