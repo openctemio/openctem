@@ -5,3 +5,4 @@
 - Sheets lost a 500 ms transition on every property that ran on top of their slide animation.
 - One filled row in the sidebar: a row whose quick view is current (Findings with Active) keeps its weight without the fill, and a pinned page or quick view mirrors the current row unfilled.
 - The pin button is not offered in the phone drawer, where it sat over every row's count.
+- The drawer no longer scrolls sideways: a few pixels of horizontal overflow let a finger drag the rows left and clip the first letters of every label.
