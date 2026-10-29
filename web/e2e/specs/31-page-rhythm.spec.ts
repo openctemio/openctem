@@ -168,9 +168,11 @@ async function probe(page: Page): Promise<Probe> {
       .filter(shown)
       .map((dl) => {
         const tiles = Array.from(dl.children)
+        // A tile that says why there is no figure ("Not measured") has nothing to open.
+        const figures = tiles.filter((t) => t.getAttribute('data-state') !== 'not-measured')
         return {
-          tiles: tiles.length,
-          interactive: tiles.filter((t) => t.matches('a[href], button')).length,
+          tiles: figures.length,
+          interactive: figures.filter((t) => t.matches('a[href], button')).length,
           overflowX: dl.scrollWidth > dl.clientWidth + 1,
           rows: new Set(tiles.map((t) => Math.round(t.getBoundingClientRect().top))).size,
         }
