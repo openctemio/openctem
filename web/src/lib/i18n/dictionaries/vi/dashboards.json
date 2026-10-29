@@ -114,6 +114,8 @@
   "dashboards.empty.scan": "Thiết lập quét",
   "dashboards.flow.fixed": "Đã khắc phục",
   "dashboards.flow.opened": "Mới",
+  "dashboards.flowPanel.added": "Đã thêm luồng phơi nhiễm lên đầu bảng điều khiển",
+  "dashboards.flowPanel.undo": "Hoàn tác",
   "dashboards.freshness.building": "Dữ liệu bảng điều khiển đang được tạo lần đầu.",
   "dashboards.freshness.failed": "Lần làm mới gần nhất thất bại; đây là số liệu tốt gần nhất.",
   "dashboards.freshness.manual": "Chỉ làm mới khi yêu cầu",

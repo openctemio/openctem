@@ -117,7 +117,24 @@ stored in one table (`user_dashboards.kind`):
 - **Audit.** `dashboard.org_created`, `org_updated`, `org_deleted`,
   `org_default_set`, `org_reordered`, `audience_changed`, `schedule_changed`
   (organization dashboards), `dashboard.layout_shared`,
-  `dashboard.settings_updated`. Plain views are not audited.
+  `dashboard.settings_updated`, `dashboard.flow_panel_added`,
+  `dashboard.flow_panel_undone`. Plain views are not audited.
+- **Exposure flow panel (offered once).** Dashboards that existed before the
+  exposure flow metric get the panel once, at the top. `user_dashboards.flow_panel_at`
+  records the offer: NULL on every existing row (eligible), `now()` on every
+  new row (never auto-offered). The web app opens an eligible dashboard it may
+  edit, calls `POST /api/v1/me/dashboards/{id}/flow-panel` (organization:
+  `POST /api/v1/organization/dashboards/{id}/flow-panel`, needs
+  `dashboards:org:manage`) once, and shows "Exposure flow added at the top"
+  with Undo (`DELETE .../flow-panel/{widget_id}`). The add is one `UPDATE`
+  guarded by `flow_panel_at IS NULL` in the caller's tenant and owner, so a
+  second or concurrent call changes nothing (`added: false`). An empty layout
+  or one that already holds an `exposure.flow` widget is only marked. Undo
+  removes the widget only when it is an `exposure.flow` panel (400 otherwise)
+  and never clears `flow_panel_at`, so a removed panel is not added again.
+  Both the add and the undo are audited for personal and organization
+  dashboards. Someone else's personal dashboard and other tenants' dashboards
+  answer 404; an organization dashboard without the manage permission, 403.
 
 ### Threat model
 

@@ -49,6 +49,9 @@ type UserDashboardResponse struct {
 	RefreshDailyMinute *int       `json:"refresh_daily_minute,omitempty"`
 	NextRefreshAt      *time.Time `json:"next_refresh_at,omitempty"`
 	PausedAt           *time.Time `json:"paused_at,omitempty"`
+	// FlowPanelAt is when the exposure flow panel was offered on this
+	// dashboard; null means it was never offered.
+	FlowPanelAt *time.Time `json:"flow_panel_at"`
 	// Organization dashboards only.
 	Position     *int `json:"position,omitempty"`
 	IsOrgDefault bool `json:"is_org_default,omitempty"`
@@ -140,6 +143,7 @@ func toUserDashboardResponse(d *dashboard.Dashboard) UserDashboardResponse {
 		RefreshDailyMinute: s.DailyMinute,
 		NextRefreshAt:      s.NextRefreshAt,
 		PausedAt:           s.PausedAt,
+		FlowPanelAt:        d.FlowPanelAt(),
 		CreatedAt:          d.CreatedAt(),
 		UpdatedAt:          d.UpdatedAt(),
 	}
@@ -735,6 +739,114 @@ func (h *UserDashboardHandler) UpdateSettings(w http.ResponseWriter, r *http.Req
 		return
 	}
 	writeJSON(w, http.StatusOK, toDashboardSettingsResponse(st))
+}
+
+// DashboardFlowPanelResponse is the outcome of offering the exposure flow panel.
+type DashboardFlowPanelResponse struct {
+	// Added is true only when this call put the panel on the layout.
+	Added     bool                  `json:"added"`
+	WidgetID  string                `json:"widget_id,omitempty"`
+	Dashboard UserDashboardResponse `json:"dashboard"`
+}
+
+// AddFlowPanel handles POST /api/v1/me/dashboards/{id}/flow-panel
+// @Summary      Offer the exposure flow panel on one of my dashboards
+// @Description  Adds the exposure flow panel once at the top of a non-empty dashboard that has never been offered it. A second call, a layout that already has the flow, or an empty layout changes nothing (added=false). Audited.
+// @Tags         Dashboards
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path      string  true  "Dashboard ID"
+// @Success      200  {object}  DashboardFlowPanelResponse
+// @Failure      404  {object}  apierror.Error
+// @Router       /me/dashboards/{id}/flow-panel [post]
+func (h *UserDashboardHandler) AddFlowPanel(w http.ResponseWriter, r *http.Request) {
+	c, ok := h.caller(w, r)
+	if !ok {
+		return
+	}
+	res, err := h.service.AddFlowPanel(r.Context(), c, r.PathValue("id"))
+	h.writeFlowPanel(w, res, err)
+}
+
+// UndoFlowPanel handles DELETE /api/v1/me/dashboards/{id}/flow-panel/{widget_id}
+// @Summary      Remove the exposure flow panel from one of my dashboards
+// @Description  Removes the widget only when it is an exposure flow panel; the panel is never added again. Audited.
+// @Tags         Dashboards
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id         path      string  true  "Dashboard ID"
+// @Param        widget_id  path      string  true  "Widget config ID"
+// @Success      200        {object}  UserDashboardResponse
+// @Failure      400        {object}  apierror.Error
+// @Failure      404        {object}  apierror.Error
+// @Router       /me/dashboards/{id}/flow-panel/{widget_id} [delete]
+func (h *UserDashboardHandler) UndoFlowPanel(w http.ResponseWriter, r *http.Request) {
+	c, ok := h.caller(w, r)
+	if !ok {
+		return
+	}
+	d, err := h.service.UndoFlowPanel(r.Context(), c, r.PathValue("id"), r.PathValue("widget_id"))
+	h.writeUndoFlowPanel(w, d, err)
+}
+
+// AddOrgFlowPanel handles POST /api/v1/organization/dashboards/{id}/flow-panel
+// @Summary      Offer the exposure flow panel on an organization dashboard
+// @Description  Same rules as the personal route. Needs dashboards:org:manage. Audited.
+// @Tags         Dashboards
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path      string  true  "Dashboard ID"
+// @Success      200  {object}  DashboardFlowPanelResponse
+// @Failure      403  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Router       /organization/dashboards/{id}/flow-panel [post]
+func (h *UserDashboardHandler) AddOrgFlowPanel(w http.ResponseWriter, r *http.Request) {
+	c, ok := h.caller(w, r)
+	if !ok {
+		return
+	}
+	res, err := h.service.AddOrgFlowPanel(r.Context(), c, r.PathValue("id"))
+	h.writeFlowPanel(w, res, err)
+}
+
+// UndoOrgFlowPanel handles DELETE /api/v1/organization/dashboards/{id}/flow-panel/{widget_id}
+// @Summary      Remove the exposure flow panel from an organization dashboard
+// @Description  Same rules as the personal route. Needs dashboards:org:manage. Audited.
+// @Tags         Dashboards
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id         path      string  true  "Dashboard ID"
+// @Param        widget_id  path      string  true  "Widget config ID"
+// @Success      200        {object}  UserDashboardResponse
+// @Failure      400        {object}  apierror.Error
+// @Failure      403        {object}  apierror.Error
+// @Failure      404        {object}  apierror.Error
+// @Router       /organization/dashboards/{id}/flow-panel/{widget_id} [delete]
+func (h *UserDashboardHandler) UndoOrgFlowPanel(w http.ResponseWriter, r *http.Request) {
+	c, ok := h.caller(w, r)
+	if !ok {
+		return
+	}
+	d, err := h.service.UndoOrgFlowPanel(r.Context(), c, r.PathValue("id"), r.PathValue("widget_id"))
+	h.writeUndoFlowPanel(w, d, err)
+}
+
+func (h *UserDashboardHandler) writeFlowPanel(w http.ResponseWriter, res *dashboardapp.FlowPanelResult, err error) {
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, DashboardFlowPanelResponse{
+		Added: res.Added, WidgetID: res.WidgetID, Dashboard: toUserDashboardResponse(res.Dashboard),
+	})
+}
+
+func (h *UserDashboardHandler) writeUndoFlowPanel(w http.ResponseWriter, d *dashboard.Dashboard, err error) {
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toUserDashboardResponse(d))
 }
 
 func toDashboardSettingsResponse(st *dashboardapp.Settings) DashboardSettingsResponse {

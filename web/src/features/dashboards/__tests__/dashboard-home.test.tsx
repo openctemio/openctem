@@ -30,6 +30,8 @@ const api = vi.hoisted(() => ({
   orgError: undefined as Error | undefined,
   create: vi.fn(),
   update: vi.fn(),
+  addFlow: vi.fn(),
+  undoFlow: vi.fn(),
 }))
 vi.mock('../api/use-dashboards-api', () => ({
   useMyDashboards: () => ({ data: { data: api.mine }, isLoading: false }),
@@ -41,6 +43,8 @@ vi.mock('../api/use-dashboards-api', () => ({
   useRevalidateAllDashboards: () => async () => {},
   DASHBOARDS_KEY: '/api/v1/me/dashboards',
   createDashboard: api.create,
+  addFlowPanel: api.addFlow,
+  undoFlowPanel: api.undoFlow,
   updateDashboard: api.update,
   setDefaultDashboard: vi.fn(),
   setOrgDefaultDashboard: vi.fn(),
@@ -472,5 +476,96 @@ describe('DashboardHome new layout hint', () => {
     renderHome()
     expect(await screen.findByTestId('dashboard-freshness')).toBeInTheDocument()
     expect(screen.queryByTestId('layout-hint')).toBeNull()
+  })
+})
+
+describe('DashboardHome exposure flow panel', () => {
+  const eligible = (id: string, extra: Partial<Dashboard> = {}): Dashboard =>
+    dash(id, 'Mine', { kind: 'personal', is_default: true, flow_panel_at: null, ...extra })
+  const flowWidget = {
+    ...stat('w_flow', 'exposure.flow'),
+    config: {
+      v: 2,
+      id: 'w_flow',
+      data: { kind: 'metric', metric: 'exposure.flow', filter: {}, time: {} },
+      viz: { type: 'flow', options: {} },
+    },
+  }
+
+  beforeEach(() => {
+    window.localStorage.clear()
+    perms.list = []
+    api.mine = []
+    api.org = []
+    api.orgError = undefined
+    data.byKey = {}
+    vi.clearAllMocks()
+    api.addFlow.mockResolvedValue({ added: true, widget_id: 'w_flow', dashboard: eligible('d1') })
+    api.undoFlow.mockResolvedValue(eligible('d1'))
+  })
+
+  it('adds the panel once to an eligible personal dashboard and offers Undo', async () => {
+    api.mine = [eligible('d1')]
+    const view = renderHome()
+    await waitFor(() => expect(api.addFlow).toHaveBeenCalledTimes(1))
+    expect(api.addFlow).toHaveBeenCalledWith('d1', 'personal')
+    await waitFor(() => expect(toast.success).toHaveBeenCalled())
+    const [message, opts] = toast.success.mock.calls[0] as [
+      string,
+      { action: { label: string; onClick: () => void } },
+    ]
+    expect(message).toBe('Exposure flow added at the top')
+    expect(opts.action.label).toBe('Undo')
+    // Re-rendering never asks again.
+    view.rerender(
+      <I18nProvider locale="en">
+        <DashboardHome />
+      </I18nProvider>
+    )
+    expect(api.addFlow).toHaveBeenCalledTimes(1)
+    // No layout hint on the open that added the panel.
+    expect(screen.queryByTestId('layout-hint')).toBeNull()
+
+    opts.action.onClick()
+    await waitFor(() => expect(api.undoFlow).toHaveBeenCalledWith('d1', 'personal', 'w_flow'))
+  })
+
+  it('does nothing when flow_panel_at is set, the layout already has the flow or is empty', async () => {
+    api.mine = [
+      eligible('d1', { flow_panel_at: '2026-10-01T00:00:00Z' }),
+      eligible('d2', { is_default: false, layout: [flowWidget] }),
+      eligible('d3', { is_default: false, layout: [] }),
+    ]
+    renderHome()
+    await screen.findByRole('heading', { name: 'Mine' })
+    expect(api.addFlow).not.toHaveBeenCalled()
+    // An older server without the field is not "never offered".
+    api.mine = [dash('d4', 'Old', { kind: 'personal', is_default: true })]
+    renderHome()
+    expect(api.addFlow).not.toHaveBeenCalled()
+  })
+
+  it('never touches an organization dashboard the person cannot manage', async () => {
+    perms.list = ['dashboards:org:view']
+    api.org = [eligible('o1', { kind: 'organization', is_org_default: true, is_default: false })]
+    renderHome()
+    await screen.findByRole('heading', { name: 'Mine' })
+    expect(api.addFlow).not.toHaveBeenCalled()
+  })
+
+  it('offers an organization dashboard to a manager once', async () => {
+    perms.list = ['dashboards:org:view', 'dashboards:org:manage']
+    api.org = [eligible('o1', { kind: 'organization', is_org_default: true, is_default: false })]
+    renderHome()
+    await waitFor(() => expect(api.addFlow).toHaveBeenCalledWith('o1', 'organization'))
+    expect(api.addFlow).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows no toast when the panel was already offered elsewhere', async () => {
+    api.addFlow.mockResolvedValue({ added: false, dashboard: eligible('d1') })
+    api.mine = [eligible('d1')]
+    renderHome()
+    await waitFor(() => expect(api.addFlow).toHaveBeenCalledTimes(1))
+    expect(toast.success).not.toHaveBeenCalled()
   })
 })
