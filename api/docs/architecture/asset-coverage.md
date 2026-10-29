@@ -158,6 +158,36 @@ An open port is addressed as `host:port`; names and origins by name.
 With the loop on, automatic enrichment of new assets is off: the loop
 resolves and looks up every asset its policy names.
 
+**Runs no sensor takes (`not_claimed`).** The readiness check sees
+whether a sensor *could* take a capability's work; it cannot see every
+reason the claim or a sensor's dispatch gate (grant, local policy,
+intensity) keeps it. A coverage run whose step ends `NO_SENSOR` (no sensor
+took its work before the run's deadline) counts on the capability's hold
+(`asset_coverage_holds`, one row per tenant and capability); any other
+finished run resets the count, a stalled one leaves it. At 3 runs in a row
+the capability is paused with readiness reason `not_claimed`: its pairs
+whose time has come, its failed pairs and pairs paused for another
+readiness reason, until the probe time, and newly due pairs join the pause
+on each pass. A live readiness reason still comes first. The pause lifts:
+
+- when the tenant's sensor fleet changes: a hash of its organization
+  sensors (state, tools, capabilities, local policy state, digest and kill
+  switch, unzoned jobs), their grant versions, its zone assignments, its
+  shared-fleet setting and the platform sensors' state and tools. It never
+  reads heartbeats, health or load, so it moves on an administrator's or a
+  sensor report's change, not every minute. The hash is computed and
+  compared on the server only;
+- at the probe time: 2 h after the third unclaimed run, doubled for each
+  further one, at most 48 h (`NotClaimedRetry`).
+
+Either way exactly one run goes (the probe time moves on as it starts). If
+no sensor takes it either, the capability pauses again with the longer
+wait; a run a sensor takes resets the hold. A fingerprint that cannot be
+read is recorded empty: the pause then holds until the probe. The pause
+raises the usual `readiness` alert ("Coverage paused: resolve.dns ... no
+sensor took its last runs") with a link to the sensors, and the asset's
+coverage shows the pair paused with that reason.
+
 ## Gap detection
 
 After planning (tenants with automatic coverage on), at most every 15
@@ -174,10 +204,14 @@ and without the expected output. It raises:
 | `readiness` | pairs are paused for a readiness reason (the reason is part of the key) |
 
 Alerts are sent **on change**, never on a timer. Each key (capability,
-kind, reason) has a row in `asset_coverage_alerts` (tenant-scoped): an alert
-goes out when its condition appears, or when its count doubles or halves
-since it was last sent. A condition that clears and comes back within a day
-comes back silently. Several changes in one pass go out as one digest, at
+kind, reason) has a row in `asset_coverage_alerts` (tenant-scoped), so a
+tenant has at most one open alert per key. It goes out when its condition
+appears, and again only when it gets clearly worse: the count at least
+doubles and grows by 5 or more since it was last sent, at most once a day.
+An improvement updates the open row silently, and the row is resolved
+(cleared) when the condition goes away. A condition that clears and comes
+back within three days comes back silently, so a failing streak or gap on a
+few assets that flaps from run to run stays one alert. Several changes in one pass go out as one digest, at
 most one digest per tenant per day; changes held by that limit stay
 pending and go out with the next digest. Each message names the action and
 links to where it is taken: the scope page for `no_scope`, the sensors page

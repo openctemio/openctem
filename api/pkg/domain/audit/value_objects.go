@@ -231,6 +231,9 @@ const (
 	// ActionFindingEvidenceUpdated records a change to the role or order of a
 	// finding's evidence items.
 	ActionFindingEvidenceUpdated Action = "finding.evidence_updated"
+	// ActionFindingProofOverridden records a pentest finding confirmed without
+	// a proof basis, on the stated reason.
+	ActionFindingProofOverridden Action = "finding.proof_basis_overridden"
 	// ActionFindingRemediationStepAdded records a manually-appended remediation
 	// step on a generic finding.
 	ActionFindingRemediationStepAdded Action = "finding.remediation_step_added"
@@ -329,6 +332,11 @@ const (
 	ActionAuthMFARecoveryCodesRegenerated Action = "auth.mfa_recovery_codes_regenerated"
 	ActionAuthSessionRevoked              Action = "auth.session_revoked"
 	ActionAuthPasswordChanged             Action = "auth.password_changed"
+	// A social sign-in identity (Google, GitHub, Microsoft) was linked to or
+	// unlinked from the account: by the person from Account > Security, or
+	// automatically on a sign-in that met the auto-link rules.
+	ActionAuthIdentityLinked   Action = "auth.identity_linked"
+	ActionAuthIdentityUnlinked Action = "auth.identity_unlinked"
 	// Step-up re-authentication: the signed-in user proved their identity
 	// again (TOTP or password) before a sensitive action, or failed to.
 	ActionAuthStepUp       Action = "auth.step_up"
@@ -454,7 +462,13 @@ const (
 	ActionProxyPoolCredentialsChanged Action = "proxy_pool.credentials_changed"
 	ActionProxyPoolEndpointUpdated    Action = "proxy_pool.endpoint_updated"
 	ActionProxyPoolEndpointQuarantine Action = "proxy_pool.endpoint_quarantined"
-	ActionSensorNetworkPathChanged    Action = "sensor.network_path_changed"
+	// ActionProxyPoolTestRequested: an administrator asked sensors to test a
+	// pool's endpoints (one entry per sensor asked).
+	ActionProxyPoolTestRequested Action = "proxy_pool.test_requested"
+	// ActionProxyPoolTested: a sensor finished testing a pool (the outcome
+	// per endpoint class, never an address or a credential).
+	ActionProxyPoolTested          Action = "proxy_pool.tested"
+	ActionSensorNetworkPathChanged Action = "sensor.network_path_changed"
 
 	// API key (oct_) actions — tenant-scoped programmatic credentials.
 	ActionAPIKeyCreated Action = "api_key.created"
@@ -848,7 +862,7 @@ func (a Action) IsValid() bool {
 		ActionVulnerabilityCreated, ActionVulnerabilityUpdated, ActionVulnerabilityDeleted,
 		ActionFindingCreated, ActionFindingUpdated, ActionFindingDeleted, ActionFindingStatusChanged,
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
-		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingEvidenceUpdated, ActionFindingRemediationStepAdded,
+		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingEvidenceUpdated, ActionFindingProofOverridden, ActionFindingRemediationStepAdded,
 		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
 		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingVerificationChecklistUpdated, ActionFindingClassified,
 		ActionFindingRetestCheckSaved, ActionFindingRetestCheckRemoved, ActionFindingRetestCheckApproved,
@@ -862,7 +876,7 @@ func (a Action) IsValid() bool {
 		ActionAuthLogin, ActionAuthLogout, ActionAuthRegister, ActionAuthFailed, ActionPermissionDenied, ActionTokenRevoked,
 		ActionAuthMFAEnabled, ActionAuthMFADisabled, ActionAuthMFAReset, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
 		ActionAuthMFARecoveryCodesRegenerated, ActionAuthSessionRevoked, ActionAuthPasswordChanged,
-		ActionAuthStepUp, ActionAuthStepUpFailed,
+		ActionAuthStepUp, ActionAuthStepUpFailed, ActionAuthIdentityLinked, ActionAuthIdentityUnlinked,
 		ActionSettingsUpdated, ActionDataExported, ActionDataImported,
 		ActionSensorCreated, ActionSensorUpdated, ActionSensorDeleted,
 		ActionSensorActivated, ActionSensorDeactivated, ActionSensorRevoked,
@@ -880,6 +894,7 @@ func (a Action) IsValid() bool {
 		ActionScanZoneSensorAssigned, ActionScanZoneSensorUnassigned,
 		ActionProxyPoolCreated, ActionProxyPoolUpdated, ActionProxyPoolDeleted, ActionProxyPoolEndpointsChanged,
 		ActionProxyPoolCredentialsChanged, ActionProxyPoolEndpointUpdated, ActionProxyPoolEndpointQuarantine,
+		ActionProxyPoolTestRequested, ActionProxyPoolTested,
 		ActionSensorNetworkPathChanged,
 		ActionAPIKeyCreated, ActionAPIKeyRevoked, ActionAPIKeyDeleted,
 		ActionCredentialCreated, ActionCredentialUpdated, ActionCredentialDeleted, ActionCredentialAccessed,
@@ -989,7 +1004,7 @@ func (a Action) Category() string {
 		return "vulnerability"
 	case ActionFindingCreated, ActionFindingUpdated, ActionFindingDeleted, ActionFindingStatusChanged,
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
-		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingEvidenceUpdated, ActionFindingRemediationStepAdded,
+		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingEvidenceUpdated, ActionFindingProofOverridden, ActionFindingRemediationStepAdded,
 		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
 		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingVerificationChecklistUpdated, ActionFindingClassified, ActionFindingCommentReactionRemoved, ActionFindingCommentEdited, ActionFindingCommentDeleted, ActionFindingDuplicateMarked, ActionFindingIssueUnlinked, ActionFindingBountyReportChanged,
 		ActionFindingRetestCheckSaved, ActionFindingRetestCheckRemoved, ActionFindingRetestCheckApproved,
@@ -1005,7 +1020,7 @@ func (a Action) Category() string {
 	case ActionAuthLogin, ActionAuthLogout, ActionAuthRegister, ActionAuthFailed, ActionPermissionDenied, ActionTokenRevoked,
 		ActionAuthMFAEnabled, ActionAuthMFADisabled, ActionAuthMFAReset, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
 		ActionAuthMFARecoveryCodesRegenerated, ActionAuthSessionRevoked, ActionAuthPasswordChanged,
-		ActionAuthStepUp, ActionAuthStepUpFailed:
+		ActionAuthStepUp, ActionAuthStepUpFailed, ActionAuthIdentityLinked, ActionAuthIdentityUnlinked:
 		return "security"
 	case ActionSettingsUpdated:
 		return "settings"
@@ -1027,7 +1042,8 @@ func (a Action) Category() string {
 		ActionScanZoneSensorAssigned, ActionScanZoneSensorUnassigned:
 		return "scan_zone"
 	case ActionProxyPoolCreated, ActionProxyPoolUpdated, ActionProxyPoolDeleted, ActionProxyPoolEndpointsChanged,
-		ActionProxyPoolCredentialsChanged, ActionProxyPoolEndpointUpdated, ActionProxyPoolEndpointQuarantine:
+		ActionProxyPoolCredentialsChanged, ActionProxyPoolEndpointUpdated, ActionProxyPoolEndpointQuarantine,
+		ActionProxyPoolTestRequested, ActionProxyPoolTested:
 		return "proxy_pool"
 	case ActionSensorNetworkPathChanged:
 		return "sensor"
@@ -1205,7 +1221,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeSCIMGroupMapping, ResourceTypeOrgTrust,
 		ResourceTypeCredential, ResourceTypeExposure, ResourceTypeAuditChain, ResourceTypeTemplateSource,
 		ResourceTypeScopeTarget, ResourceTypeScopeExclusion, ResourceTypeBountyProgram, ResourceTypeAuthorizationLetter, ResourceTypeSuppressionRule, ResourceTypeScannerTemplate, ResourceTypeIntegration,
-		ResourceTypeRemediationCampaign, ResourceTypeRemediationTask, ResourceTypeRemediationSuggestion, ResourceTypeRemediationAction, ResourceTypeReportSchedule, ResourceTypeEASMSeed,
+		ResourceTypeRemediationCampaign, ResourceTypeRemediationTask, ResourceTypeVulnerabilitySelection, ResourceTypeRemediationSuggestion, ResourceTypeRemediationAction, ResourceTypeReportSchedule, ResourceTypeEASMSeed,
 		ResourceTypeFindingApproval, ResourceTypeSupportGrant:
 		return true
 	}
@@ -1281,6 +1297,7 @@ func SeverityForAction(a Action) Severity {
 		ActionSCIMGroupMappingsUpdated,
 		ActionUserSuspended, ActionUserDeactivated,
 		ActionAuthMFADisabled, ActionAuthMFAReset, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
+		ActionAuthIdentityLinked, ActionAuthIdentityUnlinked,
 		ActionAuthStepUpFailed,
 		ActionMemberRemoved, ActionMemberRoleChanged, ActionMemberSuspended, ActionMemberOffboarded,
 		ActionMemberOwnershipTransferRequested,

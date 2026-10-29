@@ -78,12 +78,18 @@ type Service struct {
 	// httpPolicy is the tenant's tool HTTP layer (WithHTTPPolicy).
 	httpPolicy HTTPPolicySource
 	egress     EgressSource
+	// proxyRequired is the organization's "Proxy required" switch
+	// (WithProxyRequirement); nil: not required.
+	proxyRequired ProxyRequirement
 	// toolSettings is the per-sensor tool settings layer (WithToolSettings).
 	toolSettings ToolSettingsSource
 	// balanceWindow is how long a fresh job is left to less-loaded sensors
 	// (claim_balance.go); balanceSet: WithClaimBalanceWindow was given.
 	balanceWindow time.Duration
 	balanceSet    bool
+	// withheld rate-limits the record and log of dispatch-gate refusals
+	// (withheld.go).
+	withheld withheldNotes
 }
 
 // TemplateSigner signs the custom templates embedded in a command payload
@@ -333,7 +339,9 @@ func (s *Service) Poll(ctx context.Context, input PollInput) ([]*commanddom.Comm
 	// one with private targets when the tenant requires a local policy for
 	// them (RFC-040 §5.7, research/25 §3.6): those stay pending for a
 	// sensor that accepts them.
-	cmds = s.gateFor(ctx, tenantID, sensorID, cmds).accepted(cmds)
+	if sensorID != nil {
+		cmds = s.keepAccepted(ctx, tenantID, *sensorID, s.gateFor(ctx, tenantID, sensorID, cmds), cmds)
+	}
 	if len(cmds) > limit {
 		cmds = cmds[:limit]
 	}
@@ -620,6 +628,9 @@ func (s *Service) Acknowledge(ctx context.Context, tenantID, sensorID, commandID
 		cmds := []*commanddom.Command{cmd}
 		gate := s.gateFor(ctx, cmd.TenantID, &sid, cmds)
 		if err := gate.claimError(cmd); err != nil {
+			if r := gate.refusal(cmd); r != nil {
+				s.noteWithheld(ctx, cmd.TenantID, sid, map[shared.ID]string{cmd.ID: gateReason(r)})
+			}
 			if errors.Is(err, ErrOutOfGrant) && s.grantRefusals != nil {
 				s.grantRefusals.ObserveGrantRefusal(ctx, cmd.TenantID, sid, cmd.ID.String(), gate.grantRefusal(cmd))
 			}
@@ -800,11 +811,29 @@ func (s *Service) completeWithFollowUp(ctx context.Context, cmd *commanddom.Comm
 	if !ok || cmd.SensorID == nil {
 		return s.saveSensorChange(ctx, cmd, fence)
 	}
-	remaining, settled, ok := commanddom.UnfinishedTargets(cmd)
-	if !ok || len(remaining) == 0 {
+	unfinished, sensorSide, settled, ok := commanddom.SplitUnfinished(cmd)
+	if !ok {
+		return s.saveSensorChange(ctx, cmd, fence)
+	}
+	remaining := unfinished
+	excludeParent := false
+	// Targets the sensor's own network or resolver failed go out again on
+	// another sensor, only when one could take them; otherwise they stay
+	// settled as before (the same sensor would fail them the same way), and
+	// when the attempt budget every cause shares has room for one more.
+	if len(sensorSide) > 0 && commanddom.FollowUpAttempts(cmd.DispatchAttempts, settled) < commanddom.MaxDispatchAttempts && s.otherSensorCanTake(ctx, cmd) {
+		remaining = inPayloadOrder(cmd, unfinished, sensorSide)
+		excludeParent = true
+	} else {
+		settled += len(sensorSide)
+	}
+	if len(remaining) == 0 {
 		return s.saveSensorChange(ctx, cmd, fence)
 	}
 	followUp, err := commanddom.NewFollowUp(cmd, remaining, settled)
+	if err == nil {
+		followUp.ExcludeParentSensor = excludeParent
+	}
 	if err != nil {
 		// The completion stands; the unfinished targets are reported
 		// partial by the run (the result says so).
@@ -820,7 +849,7 @@ func (s *Service) completeWithFollowUp(ctx context.Context, cmd *commanddom.Comm
 	}
 	s.logger.Info("command completed with unfinished targets; follow-up queued",
 		"command_id", cmd.ID.String(), "follow_up_id", followUp.ID.String(),
-		"settled", settled, "unfinished", len(remaining), "dispatch_attempts", followUp.DispatchAttempts)
+		"settled", settled, "unfinished", len(remaining), "sensor_side", len(sensorSide), "dispatch_attempts", followUp.DispatchAttempts)
 	return nil
 }
 
@@ -836,6 +865,9 @@ type FailInput struct {
 	// nil (then a failure reason with the local-policy prefix still counts
 	// as one). research/25 §3.6.
 	Refusal *sensordom.DispatchRefusal `json:"-"`
+	// Infra is the sensor's own class of the failure (research/302), or
+	// nil: then the platform reads the error code, else the message.
+	Infra *InfraReport `json:"-"`
 }
 
 // MaxFailErrorMessageBytes caps the sensor-supplied error message stored on a
@@ -908,6 +940,14 @@ func (s *Service) Fail(ctx context.Context, input FailInput) (*commanddom.Comman
 			cmd.Status, cmd.SensorID, cmd.StartedAt, cmd.AcknowledgedAt = commanddom.CommandStatusPending, nil, nil, nil
 			cmd.DispatchAttempts++
 			return cmd, nil
+		}
+	}
+	// A failure that is not about the target (research/302): routed work
+	// goes to another eligible sensor, the failing one excluded.
+	if class, ev, ok := infraClassOf(input, msg); ok {
+		out, done, err := s.handleInfraFailure(ctx, cmd, input, class, ev, msg)
+		if done {
+			return out, err
 		}
 	}
 	cmd.Fail(msg)
@@ -1086,7 +1126,7 @@ func (s *Service) claimCandidates(ctx context.Context, tenantID, sensorID shared
 // candidates for an organization sensor, in claim order.
 func (s *Service) holdForSensor(ctx context.Context, tenantID, sensorID shared.ID, cands []*commanddom.Command) ([]*commanddom.Command, map[shared.ID]*bp.JobRules, map[shared.ID]settingsLayers) {
 	n := len(cands)
-	cands = s.gateFor(ctx, tenantID, &sensorID, cands).accepted(cands)
+	cands = s.keepAccepted(ctx, tenantID, sensorID, s.gateFor(ctx, tenantID, &sensorID, cands), cands)
 	claimSkipped(skipLocalPolicy, n, len(cands))
 	// The scope may have changed since the jobs were queued: their targets
 	// pass the dispatch gate again before the claim (scope_recheck.go).
