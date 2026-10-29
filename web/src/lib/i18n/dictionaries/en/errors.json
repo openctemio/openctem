@@ -113,6 +113,7 @@
   "errors.auth.PERSONAL_ACCOUNTS_BLOCKED": "This organization does not accept personal email accounts.",
   "errors.auth.PLATFORM_ADMIN_MEMBERSHIP": "Platform administrators cannot belong to an organization. Use the admin console or a separate account.",
   "errors.auth.PROVIDER_ALREADY_LINKED": "Another account of this provider is already linked. Unlink it first.",
+  "errors.auth.RATE_LIMIT_EXCEEDED": "Too many attempts. Wait a minute and try again.",
   "errors.auth.REAUTH_REQUIRED": "For your security, sign in again to set up two-factor authentication.",
   "errors.auth.REFRESH_TOKEN_EXPIRED": "Your session has expired. Sign in again.",
   "errors.auth.REFRESH_TOKEN_INVALID": "Your session is no longer valid. Sign in again.",

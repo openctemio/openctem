@@ -113,6 +113,7 @@
   "errors.auth.PERSONAL_ACCOUNTS_BLOCKED": "Tổ chức này không chấp nhận tài khoản email cá nhân.",
   "errors.auth.PLATFORM_ADMIN_MEMBERSHIP": "Quản trị viên nền tảng không thể thuộc một tổ chức. Hãy dùng trang quản trị hoặc một tài khoản riêng.",
   "errors.auth.PROVIDER_ALREADY_LINKED": "Một tài khoản khác của nhà cung cấp này đã được liên kết. Hãy hủy liên kết nó trước.",
+  "errors.auth.RATE_LIMIT_EXCEEDED": "Bạn đã thử quá nhiều lần. Hãy đợi một phút rồi thử lại.",
   "errors.auth.REAUTH_REQUIRED": "Vì an toàn của bạn, hãy đăng nhập lại để thiết lập xác thực hai lớp.",
   "errors.auth.REFRESH_TOKEN_EXPIRED": "Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.",
   "errors.auth.REFRESH_TOKEN_INVALID": "Phiên đăng nhập không còn hợp lệ. Hãy đăng nhập lại.",

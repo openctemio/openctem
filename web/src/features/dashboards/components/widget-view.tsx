@@ -12,7 +12,9 @@ import {
   CategoryTable,
   ColumnViz,
   DivergingViz,
+  ExposureFlowViz,
   HeatmapViz,
+  IntakeViz,
   ItemsViz,
   LoopViz,
   MatrixTable,
@@ -49,10 +51,12 @@ function Viz({
   model,
   value,
   viz,
+  scope,
 }: {
   model: WidgetModel
   value: WidgetValue | undefined
   viz: VizType | undefined
+  scope?: 'organization' | 'personal'
 }): ReactNode {
   const r: WidgetResult | undefined = model.result
   if (!r) return null
@@ -90,6 +94,10 @@ function Viz({
       return viz === 'table' ? <StagesTable result={r} /> : <LoopViz result={r} />
     case 'paths':
       return viz === 'table' ? <PathsTable result={r} /> : <PathsViz result={r} href={href} />
+    case 'flow':
+      return <ExposureFlowViz result={r} scope={scope} />
+    case 'intake':
+      return <IntakeViz result={r} />
     default:
       return null
   }
@@ -109,6 +117,8 @@ export interface WidgetViewProps {
   className?: string
   /** Draws only the visualisation, without the bordered frame (for a host that already is a card). */
   bare?: boolean
+  /** Whose numbers the dashboard shows (the exposure flow names it). */
+  scope?: 'organization' | 'personal'
 }
 
 export function WidgetView({
@@ -122,6 +132,7 @@ export function WidgetView({
   actions,
   className,
   bare = false,
+  scope,
 }: WidgetViewProps) {
   const { t } = useTranslation()
   const spec: WidgetSpec | undefined = specOf(widget)
@@ -144,7 +155,7 @@ export function WidgetView({
 
   const model: WidgetModel = loading ? { state: 'loading' } : widgetModel(value, spec, stale)
   const reason = model.reasonKey ? t(model.reasonKey) : undefined
-  if (bare) return <Viz model={model} value={value} viz={model.viz} />
+  if (bare) return <Viz model={model} value={value} viz={model.viz} scope={scope} />
   return (
     <WidgetFrame
       title={title}
@@ -159,7 +170,7 @@ export function WidgetView({
       actions={actions}
       className={className}
     >
-      <Viz model={model} value={value} viz={model.viz} />
+      <Viz model={model} value={value} viz={model.viz} scope={scope} />
     </WidgetFrame>
   )
 }
