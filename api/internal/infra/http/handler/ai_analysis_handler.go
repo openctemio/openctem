@@ -20,9 +20,13 @@ import (
 // person, with accountable owners) and their runs
 // (docs/architecture/ai-analysis.md).
 type AIAnalysisHandler struct {
-	svc    *aianalysis.Service
-	logger *logger.Logger
+	svc      *aianalysis.Service
+	executor *aianalysis.BuiltinExecutor
+	logger   *logger.Logger
 }
+
+// SetExecutor wires the built-in executor (nil: analysis answers 503).
+func (h *AIAnalysisHandler) SetExecutor(e *aianalysis.BuiltinExecutor) { h.executor = e }
 
 // NewAIAnalysisHandler creates the handler.
 func NewAIAnalysisHandler(svc *aianalysis.Service, log *logger.Logger) *AIAnalysisHandler {
@@ -30,8 +34,10 @@ func NewAIAnalysisHandler(svc *aianalysis.Service, log *logger.Logger) *AIAnalys
 }
 
 const (
-	aiErrPausedCode apierror.Code = "AI_AGENT_PAUSED"
-	aiErrBudgetCode apierror.Code = "AI_AGENT_LIMIT"
+	aiErrPausedCode      apierror.Code = "AI_AGENT_PAUSED"
+	aiErrBudgetCode      apierror.Code = "AI_AGENT_LIMIT"
+	aiErrRunInFlightCode apierror.Code = "AI_RUN_IN_FLIGHT"
+	aiErrNoAIAgentCode   apierror.Code = "AI_NO_AGENT"
 )
 
 // AIOwnerResponse is one accountable owner.
@@ -538,4 +544,93 @@ func (h *AIAnalysisHandler) ListFindingRuns(w http.ResponseWriter, r *http.Reque
 		out.Data = append(out.Data, toAIRun(run))
 	}
 	writeAIJSON(w, http.StatusOK, out)
+}
+
+// AnalyzeFindingRequest asks an AI agent to analyze a finding.
+type AnalyzeFindingRequest struct {
+	// Kind is triage.v1, remediation.v1 or summary.v1.
+	Kind string `json:"kind"`
+	// AgentID picks the AI agent; empty: the first active AI agent that may
+	// read the finding.
+	AIAgentID string `json:"ai_agent_id,omitempty"`
+}
+
+// AIAnalyzeResponse is a run and what the AI agent did.
+type AIAnalyzeResponse struct {
+	Run     AIRunResponse       `json:"run"`
+	Actions []aianalysis.Action `json:"actions"`
+}
+
+// AnalyzeFinding handles POST /api/v1/findings/{id}/ai/analyze.
+//
+// @Summary      Ask an AI agent to analyze a finding
+// @Description  Runs one single-shot kind (triage.v1, remediation.v1, summary.v1) on the built-in executor as an AI agent: the AI agent must be active (an active accountable owner, a fresh attestation) and the finding in its scope and in an owner's. The context bundle is masked and the mapping stays on the platform. The model output becomes the AI agent's own commands: comments, status and severity changes its preset allows, and approval requests for anything that lowers risk, which a person decides. Returns the run with its provenance and the actions taken; a refused or failed run is returned with its fixed error code. Rate-limited.
+// @Tags         AI
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Finding ID"
+// @Param        body body AnalyzeFindingRequest true "Kind and AI agent"
+// @Success      200  {object}  AIAnalyzeResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      409  {object}  apierror.Error
+// @Router       /findings/{id}/ai/analyze [post]
+func (h *AIAnalysisHandler) AnalyzeFinding(w http.ResponseWriter, r *http.Request) {
+	if h.executor == nil {
+		apierror.ServiceUnavailable("AI analysis is not available").WriteJSON(w)
+		return
+	}
+	tenantID, ok := aiTenantOf(w, r)
+	if !ok {
+		return
+	}
+	viewer, ok := aiViewerOf(w, r)
+	if !ok {
+		return
+	}
+	findingID, ok := aiPathID(w, r, "id")
+	if !ok {
+		return
+	}
+	var req AnalyzeFindingRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<10)).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	var aiAgent *shared.ID
+	if req.AIAgentID != "" {
+		id, err := shared.IDFromString(req.AIAgentID)
+		if err != nil {
+			apierror.BadRequest("Invalid agent id").WriteJSON(w)
+			return
+		}
+		aiAgent = &id
+	}
+	// The person asking must see the finding; the AI agent's own scope is
+	// checked by the executor.
+	if err := h.svc.AssertViewer(r.Context(), tenantID, viewer, findingID); err != nil {
+		h.fail(w, err)
+		return
+	}
+	d, err := h.executor.Analyze(r.Context(), aianalysis.AnalyzeRequest{
+		TenantID: tenantID, FindingID: findingID, Kind: req.Kind, AIAgentID: aiAgent, TriggeredBy: &viewer,
+		Trigger: aidom.TriggerOnDemand,
+	})
+	switch {
+	case errors.Is(err, aidom.ErrRunInFlight):
+		apierror.New(http.StatusConflict, aiErrRunInFlightCode, "An AI analysis of this finding is already running.").WriteJSON(w)
+		return
+	case errors.Is(err, aidom.ErrAIAgentNotFound) && aiAgent == nil:
+		apierror.New(http.StatusConflict, aiErrNoAIAgentCode, "No active AI agent may read this finding.").WriteJSON(w)
+		return
+	case errors.Is(err, aianalysis.ErrRunRefused) && d != nil:
+	case err != nil:
+		h.fail(w, err)
+		return
+	}
+	actions := d.Actions
+	if actions == nil {
+		actions = []aianalysis.Action{}
+	}
+	writeAIJSON(w, http.StatusOK, AIAnalyzeResponse{Run: toAIRun(d.Run), Actions: actions})
 }

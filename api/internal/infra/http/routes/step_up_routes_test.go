@@ -110,6 +110,8 @@ var stepUpRoutes = []string{
 	"DELETE /api/v1/secret-store/{id}",
 	// Turning AI triage on lets finding content go to the AI provider.
 	"PUT /api/v1/organization/settings/ai",
+	// The AI masking policy decides what of a finding a model sees unmasked.
+	"PUT /api/v1/organization/settings/ai/masking",
 	"POST /api/v1/tenants/acme/settings/sso/changes/{id}/approve",
 	// A domain's sign-up policy decides who may join and who must use SSO.
 	"PUT /api/v1/organization/settings/domains/{id}/signup-policy",
@@ -289,7 +291,7 @@ func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
 			registerSCMAppRoutes(router, &handler.SCMAppHandler{}, auth, nil, chain(), logger.NewNop())
 			registerTenantRoutes(router, &handler.TenantHandler{}, chain(auth, setUser), nil, routeTenantRepo{t: tn}, routeMembers{m: m}, nil, &handler.SSOChangeHandler{})
 			registerOrganizationMemberRoutes(router, &handler.LocalAuthHandler{}, &handler.TenantHandler{}, auth, nil)
-			registerAISettingsRoutes(router, &handler.AISettingsHandler{}, auth, nil)
+			registerAISettingsRoutes(router, &handler.AISettingsHandler{}, &handler.AIMaskingHandler{}, auth, nil)
 			registerUserRoutes(router, &handler.UserHandler{}, nil, auth, nil, config.AuthProviderLocal)
 			registerIdentityLinkRoutes(router, &handler.OAuthHandler{}, auth, nil)
 			registerIntegrationRoutes(router, &handler.IntegrationHandler{}, nil, nil, auth, nil, chain(), nil, nil, &handler.TicketMappingHandler{})

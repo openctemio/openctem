@@ -253,3 +253,12 @@ func (s *Service) ListRunsForFinding(ctx context.Context, tenantID, viewerID, fi
 	}
 	return s.runs.ListRunsBySubject(ctx, tenantID, aidom.SubjectFinding, findingID, 20)
 }
+
+// AssertViewer refuses a finding outside a person's data scope (out of scope
+// reads as not found).
+func (s *Service) AssertViewer(ctx context.Context, tenantID, viewerID, findingID shared.ID) error {
+	if s.scope == nil {
+		return fmt.Errorf("%w: finding not found", shared.ErrNotFound)
+	}
+	return s.scope.AssertFindingForUser(ctx, tenantID, viewerID, findingID)
+}

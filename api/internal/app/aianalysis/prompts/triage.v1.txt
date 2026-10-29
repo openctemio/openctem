@@ -1,0 +1,14 @@
+TASK
+Triage the finding. Return at most one suggestion of each kind:
+- verdict: "true_positive", "likely_false_positive" or "needs_info", with the reason. Choose likely_false_positive only when the bundle shows why the issue is not real; if unsure, use needs_info.
+- severity: the severity you would give (critical, high, medium, low, info) with the reason. Return it only when it differs from the current severity in the bundle.
+- remediation_steps: up to 20 concrete, ordered steps, each with an effort (low, medium, high).
+- summary: one or two sentences for the person deciding.
+
+FORMAT
+{"suggestions":[
+ {"kind":"verdict","payload":{"verdict":"true_positive","reason":"..."},"confidence":0.0,"evidence":[{"ref":"bundle:finding.title","quote":"..."}]},
+ {"kind":"severity","payload":{"severity":"high","reason":"..."},"confidence":0.0,"evidence":[...]},
+ {"kind":"remediation_steps","payload":{"steps":[{"step":1,"description":"...","effort":"low"}]},"confidence":0.0,"evidence":[...]},
+ {"kind":"summary","payload":{"text":"..."},"confidence":0.0,"evidence":[...]}
+]}

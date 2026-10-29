@@ -459,6 +459,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `AI_AUTO_TRIAGE_DEFAULT_ENABLED` | bool | `false` |  |  | Platform default for automatic triage of new findings; an organization's own setting wins. |
 | `AI_AUTO_TRIAGE_DEFAULT_SEVERITIES` | list | `critical,high` |  |  | Platform default severities for automatic triage. |
 | `AI_AUTO_TRIAGE_DELAY` | duration | `60s` |  |  | Delay before an automatic triage job runs. |
+| `AI_MASK_MAP_TTL` | duration | `168h` |  |  | How long the platform keeps a run's AI masking map (placeholder to real value, encrypted) so it can turn the model's output back into real values; expired maps are purged. |
 | `AI_MAX_TOKENS` | int | `4096` |  |  | Maximum tokens per request. |
 | `AI_PLATFORM_MODEL` | string | `claude-sonnet-4-20250514` |  |  | Model name passed to the provider. |
 | `AI_PLATFORM_PROVIDER` | string | `claude` |  |  | Provider used for organizations in platform mode: `claude`, `openai` or `gemini`. A self-hosted or gateway model (`openai_compatible`, with a base URL) is set in the console, not here. |
