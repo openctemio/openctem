@@ -28,7 +28,7 @@ case "$cmd" in
     # Digests named by an open release (a draft or pre-release): kept.
     gh api "repos/${GITHUB_REPOSITORY}/releases" --paginate --jq '.[] | select(.draft or .prerelease) | .body // ""' \
       | grep -oE 'sha256:[0-9a-f]{64}' | sort -u > "$work/protected.txt" || true
-    for img in api admin-cli web console allinone; do
+    for img in api web console allinone; do
       pkg="ci-images%2F${img}"
       gh api "orgs/${ORG}/packages/container/${pkg}/versions" --paginate --jq '.[]' 2>"$work/err" \
         | jq -s '.' > "$work/v.json" || { echo "::notice::$img: no package yet or no access: $(head -c 200 "$work/err")"; continue; }

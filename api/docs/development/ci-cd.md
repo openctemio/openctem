@@ -863,8 +863,8 @@ quarantine it while the fix is made:
 - **Go:** every `actions/setup-go` step uses `go-version-file: api/go.mod`, which
   reads the `toolchain` directive (currently `go1.26.10`). setup-go sets
   `GOTOOLCHAIN=local`, so this is exactly the Go that tests, CodeQL, govulncheck
-  and the release binaries use. `api/Dockerfile` and `api/Dockerfile.admin-cli`
-  pin their `golang:` base image separately: bump them with `go.mod`.
+  and the release binaries use. `api/Dockerfile`
+  pins its `golang:` base image separately: bump them with `go.mod`.
 - **Node:** every `actions/setup-node` step uses `node-version-file: web/.nvmrc`
   (`26`), the same major as `web/Dockerfile` (`node:26-alpine`). Node 25+ ships
   its own `localStorage`; `web/src/test/setup.ts` points Vitest back at jsdom's.
@@ -1332,7 +1332,7 @@ Publish. `build-images.yml` is a reusable workflow that builds
 each CI image **once per content key**; every caller gets it by digest.
 
 **Key** (`.github/scripts/image-key.sh <image>`): a sha256 over the git tree
-hashes of what the image's Dockerfile copies (`api` for the API and admin CLI;
+hashes of what the image's Dockerfile copies (`api` for the API;
 `web`, `api` and the `generate-contract` action for the web app and the
 console, which compile against contract files generated from the Go source;
 `deploy/allinone`, the gateway and the three component keys for the all-in-one),
@@ -1361,7 +1361,7 @@ can hold `packages: write` without such a guard.
    ref, not a self-hosted runner; see below)? If so, nothing is built.
 2. `contract` (its own job, `contents: read` only) generates the contract files
    the web images compile against and hands them over as an artifact.
-3. Missing images build in a matrix (api, admin-cli, and web + console in one
+3. Missing images build in a matrix (api, and web + console in one
    job). Inside a lock (job concurrency keyed by image group and key) the job
    checks again, so two workflows racing on one key build once. The build uses
    buildx with the registry cache `ci-images/<image>:buildcache`, written by
@@ -1369,7 +1369,7 @@ can hold `packages: write` without such a guard.
    `ci-images` packages, apart from every release cache. Then
    `actions/attest-build-provenance` signs the digest.
 4. The all-in-one is built `FROM` the pulled component digests.
-5. `collect` verifies again and returns `api`, `admin-cli`, `web`, `console`,
+5. `collect` verifies again and returns `api`, `web`, `console`,
    `allinone` as `ghcr.io/openctemio/ci-images/<image>@sha256:...`, and `push`.
 
 **Callers** pull the digest and tag it as the old local name (`local/openctem-api:e2e`,
@@ -1515,7 +1515,6 @@ image, so images without a shell are checked the same way.
 | `ghcr.io/openctemio/openctem` | `deploy/allinone/` FROM the two above + `api/deploy/gateway` | All-in-one: API + web + Caddy gateway. `GATEWAY=on` (default) serves only 443; `GATEWAY=off` serves 8080 + 3000. Postgres/Redis external. |
 | `ghcr.io/openctemio/migrations` | `api/Dockerfile.migrations` | One-shot migration runner |
 | `ghcr.io/openctemio/seed` | `api/Dockerfile.seed` | Seeding utility |
-| `ghcr.io/openctemio/admin-cli` | `api/Dockerfile.admin-cli` | Admin CLI |
 
 **Legacy names.** During a transition window (two releases, per the root
 README) `ghcr.io/openctemio/api` and `ghcr.io/openctemio/ui` receive the same
@@ -1639,7 +1638,7 @@ The legacy `ui` GHCR package was created by `openctemio/ui`; this repository nee
   on `develop` (lint diffs against `.github/scripts/effective-base.sh`).
 - **govulncheck fails on every PR at once.** A new Go stdlib CVE: bump the
   `toolchain` directive in `api/go.mod` (CI follows it) and the `golang:` base
-  image in `api/Dockerfile` and `api/Dockerfile.admin-cli`.
+  image in `api/Dockerfile`.
 - **Image not found after a tag.** Check the Docker Publish run; the tag must match
   `v<major>.<minor>.<patch>[-suffix]`. Images for v0.8.0 and earlier exist only
   under the legacy `api` / `ui` names.
