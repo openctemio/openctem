@@ -114,6 +114,30 @@ func (m *memIdentities) ChangeSubject(_ context.Context, id shared.ID, subject s
 	return nil
 }
 
+func (m *memIdentities) DeleteForUser(_ context.Context, userID, id shared.ID, keepOne bool) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if keepOne {
+		n, mine := 0, false
+		for _, r := range m.rows {
+			if r.UserID == userID {
+				n++
+				mine = mine || r.ID == id
+			}
+		}
+		if mine && n <= 1 {
+			return useridentity.ErrLastIdentity
+		}
+	}
+	for i, r := range m.rows {
+		if r.ID == id && r.UserID == userID {
+			m.rows = append(m.rows[:i], m.rows[i+1:]...)
+			return nil
+		}
+	}
+	return useridentity.ErrNotFound
+}
+
 func (m *memIdentities) MarkUsed(_ context.Context, id shared.ID, at time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
