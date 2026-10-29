@@ -299,7 +299,7 @@ func TestScopeCheck_ScannerNameSetsTier_DB(t *testing.T) {
 // The scope check says where the scan would run (the organization's own
 // sensor by name, never a platform sensor), shows the private address a
 // refused hostname resolved to, and offers "use your own sensor" for proof
-// only when that would help (not for intrusive probes).
+// at every tier (proof applies only to platform sensors).
 func TestScopeCheck_RoutingResolvedAndProofFixes_DB(t *testing.T) {
 	db, ctx := openScopingTestDB(t)
 	tenantID := seedHandlerTenant(ctx, t, db)
@@ -350,7 +350,134 @@ func TestScopeCheck_RoutingResolvedAndProofFixes_DB(t *testing.T) {
 		t.Fatalf("safe-active proof fixes: %+v", out.Results[1].Fixes)
 	}
 	intrusive := call(2)
+	// Proof is for platform sensors only, at any tier: the own sensor helps an
+	// intrusive probe too.
 	if !hasFix(intrusive.Results[1], scopedom.FixUseTenantSensor) || !hasFix(intrusive.Results[1], scopedom.FixVerifyDomain) {
 		t.Fatalf("intrusive proof fixes: %+v", intrusive.Results[1].Fixes)
+	}
+}
+
+// tierDryRun refuses tier_exceeds above maxTier and records the tenant of
+// every call (the remedies' re-check runs for the caller's tenant only).
+type tierDryRun struct {
+	maxTier int
+	routing scansvc.DryRunRouting
+	tenants *[]string
+	tiers   *[]int
+}
+
+func (f tierDryRun) DryRun(_ context.Context, in scansvc.DryRunInput) (*scansvc.DryRunOutcome, error) {
+	*f.tenants = append(*f.tenants, in.TenantID.String())
+	*f.tiers = append(*f.tiers, in.Tier)
+	out := &scansvc.DryRunOutcome{Routing: f.routing}
+	for _, t := range in.Targets {
+		switch {
+		case strings.HasPrefix(t, "proof."):
+			out.Results = append(out.Results, scansvc.DryRunResult{Target: t, Code: scopedom.RefusalProofRequired})
+		case in.Tier > f.maxTier:
+			out.Results = append(out.Results, scansvc.DryRunResult{Target: t, Code: scopedom.RefusalTierExceeds})
+		default:
+			out.Results = append(out.Results, scansvc.DryRunResult{Target: t, Allowed: true})
+		}
+	}
+	return out, nil
+}
+
+// POST /scope/check ranks the remedies of each refusal: run on the
+// organization's own sensor (only when one is online), verify the domain
+// (only for a caller who may), a lower intensity (only when the same gate
+// lets the target through at that tier, and only for an explicit tier), and
+// remove last.
+func TestScopeCheck_Remedies_DB(t *testing.T) {
+	db, ctx := openScopingTestDB(t)
+	tenantID := seedHandlerTenant(ctx, t, db)
+	pg := &postgres.DB{DB: db}
+	svc := scopeapp.NewService(postgres.NewScopeTargetRepository(pg), postgres.NewScopeExclusionRepository(pg), postgres.NewAssetRepository(pg), logger.NewNop())
+
+	type call struct {
+		body   string
+		admin  bool
+		perms  []string
+		sensor bool
+	}
+	run := func(c call) (map[string][]scopedom.Remedy, []string, []int) {
+		t.Helper()
+		var tenants []string
+		var tiers []int
+		h := NewScopeHandler(svc, validator.New(), logger.NewNop())
+		h.SetDryRun(tierDryRun{maxTier: 1, tenants: &tenants, tiers: &tiers,
+			routing: scansvc.DryRunRouting{Preference: "platform", RunsOn: scansvc.RoutingPlatform, TenantSensor: c.sensor}}, fakeCoverage{})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/scope/check", strings.NewReader(c.body))
+		cx := context.WithValue(req.Context(), middleware.TenantIDKey, tenantID)
+		cx = context.WithValue(cx, middleware.IsAdminKey, c.admin)
+		cx = context.WithValue(cx, middleware.FetchedPermissionsKey, c.perms)
+		rec := httptest.NewRecorder()
+		h.CheckScope(rec, req.WithContext(cx))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+		}
+		var out CheckScopeResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+		m := map[string][]scopedom.Remedy{}
+		for _, r := range out.Results {
+			if r.Allowed && len(r.Remedies) > 0 {
+				t.Errorf("an allowed target got remedies: %+v", r)
+			}
+			m[r.Target] = r.Remedies
+		}
+		return m, tenants, tiers
+	}
+	acts := func(rs []scopedom.Remedy) string {
+		out := make([]string, 0, len(rs))
+		for _, r := range rs {
+			out = append(out, r.Action)
+		}
+		return strings.Join(out, ",")
+	}
+	body := `{"targets":["proof.acme.example","app.acme.example"],"sensor_preference":"platform","tier":2}`
+
+	// Admin, own sensor online: run on it first, then verify, remove.
+	got, tenants, tiers := run(call{body: body, admin: true, sensor: true})
+	if a := acts(got["proof.acme.example"]); a != "run_on_tenant_sensor,verify_domain,remove" {
+		t.Errorf("proof remedies (admin, sensor): %s", a)
+	}
+	if r := got["proof.acme.example"]; len(r) < 2 || r[1].Domain != "acme.example" {
+		t.Errorf("verify names the registrable domain: %+v", r)
+	}
+	// Intrusive refused, safe active allowed: lower to tier 1.
+	if a := acts(got["app.acme.example"]); a != "lower_intensity,remove" {
+		t.Errorf("tier remedies: %s", a)
+	}
+	if r := got["app.acme.example"]; r[0].Tier == nil || *r[0].Tier != 1 {
+		t.Errorf("lower intensity tier: %+v", r)
+	}
+	if len(tiers) != 2 || tiers[1] != 1 {
+		t.Errorf("the re-check runs once at the next tier down: %v", tiers)
+	}
+	for _, tn := range tenants {
+		if tn != tenantID {
+			t.Errorf("a dry run ran for another tenant: %s", tn)
+		}
+	}
+
+	// No own sensor: verify first; a member without approve gets remove only.
+	got, _, _ = run(call{body: body, admin: true})
+	if a := acts(got["proof.acme.example"]); a != "verify_domain,remove" {
+		t.Errorf("proof remedies (admin, no sensor): %s", a)
+	}
+	got, _, _ = run(call{body: body, perms: []string{"attack_surface:scope:read"}})
+	if a := acts(got["proof.acme.example"]); a != "remove" {
+		t.Errorf("proof remedies (member without approve): %s", a)
+	}
+
+	// A single scanner's tier (no explicit tier) is never lowered.
+	got, _, tiers = run(call{body: `{"targets":["app.acme.example"],"scanner_name":"zap"}`, admin: true})
+	if a := acts(got["app.acme.example"]); a != "remove" {
+		t.Errorf("scanner tier remedies: %s", a)
+	}
+	if len(tiers) != 1 {
+		t.Errorf("no re-check without an explicit tier: %v", tiers)
 	}
 }

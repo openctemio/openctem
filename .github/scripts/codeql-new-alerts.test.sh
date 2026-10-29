@@ -53,5 +53,17 @@ big() { # big <count> -> JSON array of that many fat alerts, numbers 1..count
 big 6000 >"$tmp/big.json"; big 6001 >"$tmp/big1.json"
 expect "thousands of alerts, none new, passes" 0 "No new" "$(cat "$tmp/big.json")" "$(cat "$tmp/big.json")"
 expect "thousands of alerts, one new, fails" 1 "[#6001]" "$(cat "$tmp/big1.json")" "$(cat "$tmp/big.json")"
+
+# A release pull request is compared with develop (the stub has no main).
+rel() { # rel <name> <rc> <head ref> <head repo>
+  local out rc=0
+  echo "$(arr "$(alert 1 high)" "$(alert 2 high go/new)")" >"$tmp/pr.json"; echo "$(arr "$(alert 1 high)")" >"$tmp/base.json"
+  out="$(PATH="$tmp:$PATH" PR_FILE="$tmp/pr.json" BASE_FILE="$tmp/base.json" REPO=o/r PR_NUMBER=7 BASE_REF=main \
+    HEAD_REF="$3" HEAD_REPO="$4" GITHUB_STEP_SUMMARY="$tmp/sum" bash "$script" 2>&1)" || rc=$?
+  if [[ "$rc" -ne "$2" ]]; then echo "FAIL: $1 (exit $rc, want $2)"; echo "$out"; failed=$((failed + 1)); else echo "ok:   $1"; pass=$((pass + 1)); fi
+}
+rel "release PR is compared with develop (new alert still fails)" 1 release/v1.2.3 o/r
+rel "a fork's release/ branch is compared with main" 2 release/v1.2.3 fork/r
+rel "a non-release branch into main is compared with main" 2 feature/x o/r
 echo "$pass passed, $failed failed"
 [[ "$failed" -eq 0 ]]

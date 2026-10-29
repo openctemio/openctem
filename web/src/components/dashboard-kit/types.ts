@@ -186,6 +186,88 @@ export interface PathsResult {
   as_of?: string
 }
 
+/** One figure and the same-origin list it counts (null: no list, plain text). */
+export interface FlowFigure {
+  key?: string
+  value: number
+  drill?: string | null
+}
+
+export type SourceHealth = 'ok' | 'stale' | 'failed'
+
+/** What one source sent in the window, from its receipts, and its health. */
+export interface IntakeSourceRow {
+  /** Stable key: origin and tool. */
+  id: string
+  origin: string
+  /** The tool as reported (attacker-influenced text: shown through toDisplayText). */
+  tool: string
+  receipts: number
+  received: number
+  created: number
+  still_detected: number
+  reopened: number
+  closed: number
+  suppressed: number
+  not_stored: number
+  last_at: string | null
+  last_status: string
+  health: SourceHealth
+  expected_every_seconds: number | null
+  drill: string | null
+}
+
+/** Received split into parts that sum to it. */
+export interface IntakeNoise {
+  received: number
+  new: number
+  merged: number
+  suppressed: number
+  not_stored: number
+}
+
+export interface IntakeData {
+  since: string
+  /** Length of the window in days. */
+  days: number
+  sources: IntakeSourceRow[]
+  totals: IntakeSourceRow
+  noise: IntakeNoise
+  failing: number
+  stale: number
+  drill: string | null
+  false_positive: FlowFigure
+}
+
+export interface IntakeResult {
+  shape: 'intake'
+  intake: IntakeData
+  as_of?: string
+}
+
+/** The exposure flow: sources, received to actionable, classes, stages, outcomes. */
+export interface FlowResult {
+  shape: 'flow'
+  since: string
+  /** Length of the window in days. */
+  days: number
+  /** Null when the read has a data scope (the intake is an organization figure). */
+  intake: IntakeData | null
+  /** Message key of why the sources are not shown. */
+  intake_reason_key?: string
+  actionable: FlowFigure
+  classes: FlowFigure[]
+  open: FlowFigure
+  severity: FlowFigure[]
+  past_sla: FlowFigure
+  in_progress: FlowFigure
+  fixed: FlowFigure
+  accepted: FlowFigure
+  false_positive: FlowFigure
+  stages: StagesResult | null
+  as_of?: string
+}
+
 export type WidgetResult =
   | ScalarResult
   | RatioResult
@@ -196,6 +278,8 @@ export type WidgetResult =
   | ItemsResult
   | StagesResult
   | PathsResult
+  | FlowResult
+  | IntakeResult
 
 export type ResultShape = WidgetResult['shape']
 
