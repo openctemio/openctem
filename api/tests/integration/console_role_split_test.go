@@ -217,8 +217,10 @@ func TestSupportSessions_ConsoleRoleSplit(t *testing.T) {
 	}
 }
 
-// Deleting an authenticator serializes on the administrator without a row
-// lock on admin_users (which needs UPDATE, a privilege the app role lacks).
+// The console's second factors (passkeys, recovery codes, passkey
+// ceremonies) belong to the console role alone: the app role can neither
+// plant nor read one, so a tenant-plane SQL injection cannot take over a
+// platform administrator. The factor repository runs on the console pool.
 func TestAdminFactors_ConsoleRoleSplit(t *testing.T) {
 	db := bootstrapSplitRoles(t)
 	ctx := context.Background()
@@ -227,25 +229,95 @@ func TestAdminFactors_ConsoleRoleSplit(t *testing.T) {
 		adminID, "factor-"+adminID[:8]+"@example.com"); err != nil {
 		t.Fatal(err)
 	}
+	sessionID := uuid.NewString()
+	if _, err := db.console.ExecContext(ctx, `INSERT INTO admin_sessions (id, admin_id, token_hash, mfa_verified, expires_at, last_seen_at)
+		VALUES ($1, $2, $3, true, now() + interval '1 hour', now())`, sessionID, adminID, "th-"+sessionID); err != nil {
+		t.Fatal(err)
+	}
+
+	// The app role: no plant, no change, no read of any factor.
+	for _, q := range []string{
+		`INSERT INTO admin_webauthn_credentials (id, admin_id, credential_id, public_key, name, created_at)
+			VALUES (gen_random_uuid(), '` + adminID + `', 'planted', '\x01', 'planted', now())`,
+		`INSERT INTO admin_recovery_codes (admin_id, code_hash, created_at) VALUES ('` + adminID + `', 'known-hash', now())`,
+		`INSERT INTO admin_webauthn_ceremonies (session_id, purpose, session_data, expires_at)
+			VALUES ('` + sessionID + `', 'login', '\x00', now() + interval '1 minute')`,
+		`UPDATE admin_recovery_codes SET used_at = NULL`,
+		`UPDATE admin_webauthn_credentials SET sign_count = 0`,
+		`DELETE FROM admin_webauthn_credentials`,
+		`DELETE FROM admin_recovery_codes`,
+		`SELECT count(*) FROM admin_webauthn_credentials`,
+		`SELECT count(*) FROM admin_recovery_codes`,
+		`SELECT count(*) FROM admin_webauthn_ceremonies`,
+	} {
+		var pqErr *pq.Error
+		if _, err := db.app.ExecContext(ctx, q); !errors.As(err, &pqErr) || pqErr.Code != "42501" {
+			t.Fatalf("app role ran %q: %v (want 42501)", q, err)
+		}
+	}
+	appRepo := postgres.NewAdminFactorRepository(&postgres.DB{DB: db.app})
 	aid, _ := shared.IDFromString(adminID)
-	repo := postgres.NewAdminFactorRepository(&postgres.DB{DB: db.app})
 	now := time.Now().UTC().Truncate(time.Microsecond)
+	planted := &admin.WebAuthnCredential{ID: shared.NewID(), AdminID: aid, CredentialID: []byte("planted"),
+		PublicKey: []byte{1}, AAGUID: make([]byte, 16), Transports: []string{"usb"}, Name: "planted", CreatedAt: now}
+	if err := appRepo.CreateWebAuthnCredential(ctx, planted); !isInsufficientPrivilege(err) {
+		t.Fatalf("app pool planted a passkey: %v (want 42501)", err)
+	}
+	if err := appRepo.ReplaceRecoveryCodes(ctx, aid, []string{"known-hash"}, now); !isInsufficientPrivilege(err) {
+		t.Fatalf("app pool planted a recovery code: %v (want 42501)", err)
+	}
+
+	// The console pool: the whole factor lifecycle.
+	repo := postgres.NewAdminFactorRepository(&postgres.DB{DB: db.console})
 	creds := make([]*admin.WebAuthnCredential, 0, 2)
 	for i := range 2 {
 		c := &admin.WebAuthnCredential{ID: shared.NewID(), AdminID: aid, CredentialID: []byte(uuid.NewString()),
 			PublicKey: []byte{1, 2, 3}, AAGUID: make([]byte, 16), Transports: []string{"usb"}, Name: "key",
 			CreatedAt: now.Add(time.Duration(i) * time.Second)}
 		if err := repo.CreateWebAuthnCredential(ctx, c); err != nil {
-			t.Fatalf("create: %v", err)
+			t.Fatalf("create as the console role: %v", err)
 		}
 		creds = append(creds, c)
+	}
+	if ok, err := repo.RecordWebAuthnUse(ctx, aid, creds[1].ID, 7, false, now); err != nil || !ok {
+		t.Fatalf("record use: %v %v", ok, err)
+	}
+	if err := repo.RenameWebAuthnCredential(ctx, aid, creds[1].ID, "renamed"); err != nil {
+		t.Fatalf("rename: %v", err)
 	}
 	if err := repo.DeleteWebAuthnCredential(ctx, aid, creds[0].ID, 2); !errors.Is(err, admin.ErrLastWebAuthnCredential) {
 		t.Fatalf("below the floor: %v", err)
 	}
 	if err := repo.DeleteWebAuthnCredential(ctx, aid, creds[0].ID, 1); err != nil {
-		t.Fatalf("delete as the app role: %v", err)
+		t.Fatalf("delete as the console role: %v", err)
 	}
+	if list, err := repo.ListWebAuthnCredentials(ctx, aid); err != nil || len(list) != 1 {
+		t.Fatalf("list: %d %v", len(list), err)
+	}
+	if err := repo.ReplaceRecoveryCodes(ctx, aid, []string{"h1", "h2"}, now); err != nil {
+		t.Fatalf("recovery codes as the console role: %v", err)
+	}
+	if ok, err := repo.UseRecoveryCode(ctx, aid, "h1", now); err != nil || !ok {
+		t.Fatalf("use recovery code: %v %v", ok, err)
+	}
+	if n, err := repo.CountRecoveryCodes(ctx, aid); err != nil || n != 1 {
+		t.Fatalf("count recovery codes: %d %v", n, err)
+	}
+	sid, _ := shared.IDFromString(sessionID)
+	if err := repo.SaveCeremony(ctx, sid, "login", []byte("state"), now.Add(time.Minute)); err != nil {
+		t.Fatalf("save ceremony: %v", err)
+	}
+	if data, err := repo.TakeCeremony(ctx, sid, "login", now); err != nil || string(data) != "state" {
+		t.Fatalf("take ceremony: %q %v", data, err)
+	}
+	if err := repo.DeleteFactorsForAdmin(ctx, aid); err != nil {
+		t.Fatalf("delete factors: %v", err)
+	}
+}
+
+func isInsufficientPrivilege(err error) bool {
+	var pqErr *pq.Error
+	return errors.As(err, &pqErr) && pqErr.Code == "42501"
 }
 
 func splitHex(t *testing.T) string {

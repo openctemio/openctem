@@ -286,6 +286,10 @@ opened it ends, not only through End, a newer session or a revoke:
   `admin_session_live(session, at, idle_seconds)`, a read-only `SECURITY
   DEFINER` function that returns one boolean
   (`docs/deployment/database-roles.md`).
+- The console's own identity, second factors included (passkeys, recovery
+  codes), is written only by the console role: support access never needs
+  them, and a tenant-plane injection cannot plant a factor to reach the
+  console that opens support sessions.
 
 ### 11.2 Differences from the proposal
 

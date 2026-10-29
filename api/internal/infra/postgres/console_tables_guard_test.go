@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -36,7 +37,13 @@ var consolePoolRepos = map[string]string{
 	"AdminSessionDirectory":   "NewAdminSessionDirectory",
 	"AdminApprovalRepository": "NewAdminApprovalRepository",
 	"PlatformRoleRepository":  "NewPlatformRoleRepository",
+	"AdminFactorRepository":   "NewAdminFactorRepository",
 }
+
+// consoleFactorTables are the console's second factors. Write access to any of
+// them is an administrator takeover (plant a passkey or a known recovery
+// code), so the app role must neither read nor write them.
+var consoleFactorTables = []string{"admin_webauthn_credentials", "admin_recovery_codes", "admin_webauthn_ceremonies"}
 
 // consolePoolHelpers are package-level SQL constants and free functions used
 // only by the repositories above.
@@ -135,6 +142,19 @@ func literals(t *testing.T) []sqlLiteral {
 		}
 	}
 	return out
+}
+
+// TestConsoleTables_FactorTablesRevokedFromApp proves the script takes every
+// privilege on the console's second factors from the app role, so the guard
+// below covers them.
+func TestConsoleTables_FactorTablesRevokedFromApp(t *testing.T) {
+	noRead, noWrite := appRevoked(t)
+	for _, tbl := range consoleFactorTables {
+		r, w := slices.Contains(noRead, tbl), slices.Contains(noWrite, tbl)
+		if !r || !w {
+			t.Errorf("%s: %s must be in both app revoke lists (read %v, write %v)", rolesScript, tbl, r, w)
+		}
+	}
 }
 
 func TestConsoleTables_OnlyConsolePoolRepositories(t *testing.T) {
