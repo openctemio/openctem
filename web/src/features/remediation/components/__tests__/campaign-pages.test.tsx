@@ -128,7 +128,7 @@ describe('CampaignList', () => {
     ).toBeGreaterThan(0)
     expect(screen.getAllByText(/overdue/).length).toBeGreaterThan(0)
     expect(screen.getAllByText(/2 hidden/).length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Sam · Ops').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Sam, Ops').length).toBeGreaterThan(0)
     // The status is a filter token (no second tab row); its counts come from
     // the server, not from the page.
     expect(screen.queryByRole('tablist')).not.toBeInTheDocument()

@@ -1,6 +1,7 @@
 package findingimport
 
 import (
+	"archive/zip"
 	"bufio"
 	"bytes"
 	"context"
@@ -42,6 +43,10 @@ type Upload struct {
 	ReportIDPrefix string
 	// TempDir is where a ZIP is spooled ("" = os.TempDir()).
 	TempDir string
+	// NoBundle refuses a ZIP that is a multi-file bundle (a recon
+	// directory): set when the request declares full coverage, which a
+	// bundle can never prove.
+	NoBundle bool
 	// Repository, Branch and CommitSHA, when set, are the repository every
 	// code report is filed on, whatever the file names (a CI run sets them
 	// from its verified token). Records that name no asset go there too.
@@ -201,6 +206,15 @@ func convertArchive(ctx context.Context, up Upload, r io.Reader, each func(Conve
 	if err != nil {
 		return &FileError{Kind: KindReadFailed, Message: "the upload could not be read"}
 	}
+	if names, ok := zipNames(tmp, size); ok {
+		if _, isBundle := importer.DetectBundle(names); isBundle {
+			if up.NoBundle {
+				return &FileError{Kind: KindMalformed,
+					Message: "a recon results directory is partial coverage and cannot be imported with full coverage"}
+			}
+			return convertBundle(ctx, up, tmp, size, each)
+		}
+	}
 	entries, err := importer.OpenZip(tmp, size, ArchiveLimits)
 	if err != nil {
 		return archiveError(err)
@@ -245,6 +259,62 @@ func convertArchive(ctx context.Context, up Upload, r io.Reader, each func(Conve
 		_ = rc.Close()
 		n++
 	}
+	return nil
+}
+
+// BundleLimits bound a multi-file bundle (a recon directory).
+var BundleLimits = importer.DefaultBundleLimits()
+
+// BundleRecordLimits bound the records one bundle may produce.
+var BundleRecordLimits = importer.Limits{
+	MaxInputBytes: 256 << 20,
+	MaxFindings:   200_000,
+	MaxAssets:     200_000,
+	MaxIssues:     100,
+}
+
+// maxBundleNames bounds the names read from an archive's directory before
+// the bundle is recognized.
+const maxBundleNames = 50_000
+
+// zipNames lists the entry names of a ZIP without reading any entry. ok is
+// false when the directory cannot be read or holds too many entries.
+func zipNames(r io.ReaderAt, size int64) ([]string, bool) {
+	zr, err := zip.NewReader(r, size)
+	if err != nil || len(zr.File) > maxBundleNames {
+		return nil, false
+	}
+	names := make([]string, len(zr.File))
+	for i, f := range zr.File {
+		names[i] = f.Name
+	}
+	return names, true
+}
+
+// convertBundle reads a recon directory as one unit (importer.ParseBundle):
+// its files are joined (webs, subdomains, nuclei) into one report, which
+// is partial coverage by nature. The result carries the files the importer
+// did not read (Skipped on purpose, Unmapped).
+func convertBundle(ctx context.Context, up Upload, tmp io.ReaderAt, size int64, each func(Converted)) *FileError {
+	files, err := importer.OpenBundleZip(tmp, size, BundleLimits)
+	if err != nil {
+		return archiveError(err)
+	}
+	if err := ctx.Err(); err != nil {
+		return &FileError{Kind: KindFailed, Message: "the import took too long"}
+	}
+	res, err := importer.ParseBundle(ctx, files, importer.Options{
+		Limits:      BundleRecordLimits,
+		Bundle:      BundleLimits,
+		ReportID:    fmt.Sprintf("%s-0", up.ReportIDPrefix),
+		MinSeverity: up.MinSeverity,
+	})
+	label := SafeName(up.Name)
+	if err != nil {
+		each(Converted{Name: label, Error: fileError(err)})
+		return nil
+	}
+	each(Converted{Name: label, Result: res})
 	return nil
 }
 

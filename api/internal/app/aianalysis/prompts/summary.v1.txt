@@ -1,0 +1,7 @@
+TASK
+Summarise the finding for a person who has not seen it: what it is, where, why it matters here, and what to do first. At most four sentences.
+
+FORMAT
+{"suggestions":[
+ {"kind":"summary","payload":{"text":"..."},"confidence":0.0,"evidence":[{"ref":"bundle:finding.title","quote":"..."}]}
+]}

@@ -107,7 +107,7 @@ describe('FindingWhyItMatters', () => {
         finding={finding({
           priorityClass: 'P2',
           priorityClassReason:
-            'KEV-listed, reachable · capped at P2 until ownership is confirmed (was P0; asset attribution: needs_review)',
+            'KEV-listed, reachable, capped at P2 until ownership is confirmed (was P0; asset attribution: needs_review)',
           assets: [{ id: assetId, type: 'domain', name: 'api.acme.io' }],
         })}
       />
@@ -339,7 +339,7 @@ describe('FindingFixCard', () => {
     render(<FindingFixCard finding={finding()} />)
     const card = screen.getByRole('region', { name: 'Fix' })
     expect(card).toHaveTextContent('Upgrade cross-spawn7.0.37.0.5')
-    expect(card).toHaveTextContent('Transitive dependency · in package.json · npm')
+    expect(card).toHaveTextContent('Transitive dependency, in package.json, npm')
     expect(card).toHaveTextContent('"cross-spawn": "^7.0.5"')
     expect(card).toHaveTextContent('Also fixed in 6.0.6')
     expect(within(card).getByRole('button', { name: 'Copy package.json overrides snippet' }))

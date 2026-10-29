@@ -110,9 +110,13 @@ type Row struct {
 	LastTool      string
 	LastRunID     *shared.ID
 	FailStreak    int
-	ChangeToken   int64
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	// UnreachedFromName is the name of the organization's scan zone or
+	// sensor recorded as the observer of a target-side outcome; filled by
+	// the asset read only, "" for a platform sensor or none.
+	UnreachedFromName string
+	ChangeToken       int64
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 // Clip bounds a stored code or message to n bytes.

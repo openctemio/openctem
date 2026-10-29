@@ -66,7 +66,6 @@ export function CIPipelinesHint({
       </Link>
       {failing > 0 && (
         <>
-          <span aria-hidden>·</span>
           <Link
             href="/ci-cd?pipeline_status=failing"
             className="inline-flex items-center gap-1 rounded-sm font-medium text-destructive hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"

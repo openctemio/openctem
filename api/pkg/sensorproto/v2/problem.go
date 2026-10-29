@@ -215,8 +215,7 @@ type Problem struct {
 	Detail string      `json:"detail"`
 	Errors []ItemError `json:"errors,omitempty"`
 	Limit  *int64      `json:"limit,omitempty"`
-	// State is the command's current state on an invalid-transition problem
-	// (RFC-029 §4.4), so a sensor can drop a canceled or expired command.
+	// State is the command's current state on an invalid-transition problem, so a sensor can drop a canceled or expired command.
 	State string `json:"state,omitempty"`
 	// ServerTime and ClockOffsetSeconds are set on a clock-skew problem:
 	// the server's clock, and the signature time minus it (positive when

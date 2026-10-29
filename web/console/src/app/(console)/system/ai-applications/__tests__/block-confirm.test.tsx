@@ -7,6 +7,8 @@ import AiApplicationsPage from '../page'
 
 const clients = vi.hoisted(() => ({
   list: [] as Array<Record<string, unknown>>,
+  calls: [] as unknown[][],
+  total: 1,
 }))
 vi.mock('@/components/layout', () => ({
   Main: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
@@ -15,8 +17,8 @@ vi.mock('@console/features/admin-console/components/admin-console-shell', () => 
   useAdmin: () => ({ role: 'super_admin' }),
 }))
 vi.mock('@console/features/admin-console/api/use-mcp-clients', () => ({
-  useMcpClients: () => ({
-    data: { data: clients.list },
+  useMcpClients: (...args: unknown[]) => ({
+    data: (clients.calls.push(args), { data: clients.list, total: clients.total, total_pages: 3 }),
     error: undefined,
     isLoading: false,
     mutate: vi.fn(),
@@ -59,5 +61,20 @@ describe('AI applications block', () => {
     expect(dialog).toHaveTextContent('Unblock Desk Assistant everywhere?')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Unblock application' }))
     await waitFor(() => expect(setMcpClientBlocked).toHaveBeenCalledWith('c1', false))
+  })
+
+  it('pages on the server and shows the host before the declared name', () => {
+    clients.calls = []
+    clients.list = [
+      { ...client(false), kind: 'metadata_document', host: 'evil.example', name: 'Trusted Corp' },
+    ]
+    clients.total = 120
+    render(<AiApplicationsPage />)
+    // First page, page size 25, no search, no blocked filter.
+    expect(clients.calls[0]).toEqual(['', null, 1, 25])
+    expect(screen.getByText('evil.example')).toBeInTheDocument()
+    expect(screen.getByText('Declares itself as Trusted Corp')).toBeInTheDocument()
+    expect(screen.getByText('4 active connections')).toBeInTheDocument()
+    expect(screen.getByText('2 organizations')).toBeInTheDocument()
   })
 })

@@ -14,13 +14,18 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 image="caddy:${CADDY_VERSION:-2.11.4-alpine}"
 run="${SMOKE_PREFIX:-gwsmoke}-$$"
 net="$run-net"
+# The Caddyfile and the test certificate live in Docker volumes, not bind
+# mounts: on a self-hosted runner the Docker daemon is a separate dind
+# container that cannot see this checkout, so a bind mount would come up empty.
+cfg="$run-cfg"
+certs="$run-certs"
 fail=0
 
 cleanup() {
-	docker rm -f "$run-gw" "$run-gwh" "$run-gwc" "$run-gwu" "$run-gwl4" "$run-gwa" "$run-gwb" "$run-api" "$run-web" "$run-mtls" >/dev/null 2>&1 || true
+	docker rm -f "$run-cfgfill" "$run-gw" "$run-gwh" "$run-gwc" "$run-gwu" "$run-gwl4" "$run-gwa" "$run-gwb" "$run-api" "$run-web" "$run-mtls" >/dev/null 2>&1 || true
 	docker network rm "$net" >/dev/null 2>&1 || true
 	if [ -z "${GATEWAY_L4_IMAGE:-}" ]; then docker rmi "$run-l4" >/dev/null 2>&1 || true; fi
-	rm -rf "${certs:-}"
+	docker volume rm "$cfg" "$certs" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -30,19 +35,24 @@ bad() {
 	fail=1
 }
 
+docker volume create "$cfg" >/dev/null
+docker volume create "$certs" >/dev/null
+docker create --name "$run-cfgfill" -v "$cfg:/etc/caddy" "$image" true >/dev/null
+docker cp "$here/." "$run-cfgfill:/etc/caddy/" >/dev/null
+docker rm "$run-cfgfill" >/dev/null
+have_cert() { docker run --rm -v "$certs:/c:ro" --entrypoint test "$image" -s /c/tls.crt; }
+
 echo "== Caddyfile validates in every TLS mode"
-certs="$(mktemp -d)"
-chmod 0755 "$certs"
 docker run --rm -v "$certs:/c" --entrypoint sh "$image" -c \
 	'apk add -q --no-cache openssl >/dev/null 2>&1 || true; command -v openssl >/dev/null && openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=t -keyout /c/tls.key -out /c/tls.crt 2>/dev/null; chmod 0644 /c/*' ||
 	true
 for mode in internal acme files http; do
-	if [ "$mode" = files ] && [ ! -s "$certs/tls.crt" ]; then
+	if [ "$mode" = files ] && ! have_cert; then
 		echo "  skip  files (no openssl available to make a test certificate)"
 		continue
 	fi
 	if docker run --rm -e OPENCTEM_TLS_MODE="$mode" -e OPENCTEM_HOSTNAME=203.0.113.10 \
-		-e ACME_EMAIL=ops@example.com -v "$here:/etc/caddy:ro" -v "$certs:/certs:ro" "$image" \
+		-e ACME_EMAIL=ops@example.com -v "$cfg:/etc/caddy:ro" -v "$certs:/certs:ro" "$image" \
 		caddy validate --config /etc/caddy/Caddyfile >/dev/null 2>&1; then
 		ok "$mode"
 	else
@@ -52,14 +62,14 @@ done
 
 echo "== Caddyfile validates with the console's own site, in every TLS mode"
 for mode in internal acme files http; do
-	if [ "$mode" = files ] && [ ! -s "$certs/tls.crt" ]; then continue; fi
+	if [ "$mode" = files ] && ! have_cert; then continue; fi
 	addr="https://203.0.113.10:8443"
 	[ "$mode" != http ] || addr="http://:8443"
 	for a in "$addr" "https://admin.example.test"; do
 		[ "$mode" != http ] || [ "$a" = "$addr" ] || a="http://admin.example.test"
 		if docker run --rm -e OPENCTEM_TLS_MODE="$mode" -e OPENCTEM_HOSTNAME=203.0.113.10 -e ACME_EMAIL=ops@example.com \
 			-e OPENCTEM_ADMIN_SITE_FILE=on -e OPENCTEM_ADMIN_ADDRESS="$a" \
-			-v "$here:/etc/caddy:ro" -v "$certs:/certs:ro" "$image" \
+			-v "$cfg:/etc/caddy:ro" -v "$certs:/certs:ro" "$image" \
 			caddy validate --config /etc/caddy/Caddyfile >/dev/null 2>&1; then
 			ok "$mode, console at $a"
 		else
@@ -72,7 +82,7 @@ echo "== Entrypoint refuses unsafe or incomplete settings"
 refuses() {
 	local what="$1"
 	shift
-	if docker run --rm "$@" -v "$here:/etc/caddy:ro" --entrypoint sh "$image" /etc/caddy/entrypoint.sh true >/dev/null 2>&1; then
+	if docker run --rm "$@" -v "$cfg:/etc/caddy:ro" --entrypoint sh "$image" /etc/caddy/entrypoint.sh true >/dev/null 2>&1; then
 		bad "$what was accepted"
 	else
 		ok "$what"
@@ -97,7 +107,7 @@ refuses "console on the main port" -e OPENCTEM_TLS_MODE=internal -e OPENCTEM_HOS
 refuses "console on the main site's published port" -e OPENCTEM_TLS_MODE=internal -e OPENCTEM_HOSTNAME=x -e OPENCTEM_ADMIN_SITE=port -e GATEWAY_HTTPS_PORT=8443
 refuses "console port out of range" -e OPENCTEM_TLS_MODE=internal -e OPENCTEM_HOSTNAME=x -e OPENCTEM_ADMIN_SITE=port -e OPENCTEM_ADMIN_PORT=70000
 refuses "console allow-list that is not CIDRs" -e OPENCTEM_TLS_MODE=internal -e OPENCTEM_HOSTNAME=x -e OPENCTEM_ADMIN_SITE=port -e "OPENCTEM_ADMIN_ALLOWED_CIDRS=10.0.0.0/8 office"
-if docker run --rm -e OPENCTEM_TLS_MODE=http -e OPENCTEM_ALLOW_PLAIN_HTTP=true -v "$here:/etc/caddy:ro" \
+if docker run --rm -e OPENCTEM_TLS_MODE=http -e OPENCTEM_ALLOW_PLAIN_HTTP=true -v "$cfg:/etc/caddy:ro" \
 	--entrypoint sh "$image" /etc/caddy/entrypoint.sh true >/dev/null 2>&1; then
 	ok "plain http with OPENCTEM_ALLOW_PLAIN_HTTP=true is accepted"
 else
@@ -120,7 +130,7 @@ stub console
 docker run -d --name "$run-gw" --network "$net" \
 	-e OPENCTEM_TLS_MODE=internal -e OPENCTEM_HOSTNAME=gateway.test \
 	-e OPENCTEM_API_UPSTREAM=api:8000 -e OPENCTEM_WEB_UPSTREAM=web:8000 \
-	-v "$here:/etc/caddy:ro" --entrypoint sh "$image" /etc/caddy/entrypoint.sh >/dev/null
+	-v "$cfg:/etc/caddy:ro" --entrypoint sh "$image" /etc/caddy/entrypoint.sh >/dev/null
 
 probe() { # probe <expected api|web|404> <method> <path> [curl args...]
 	local want="$1" method="$2" path="$3"
@@ -219,13 +229,13 @@ docker run -d --name "$run-gwa" --network "$net" \
 	-e OPENCTEM_TLS_MODE=internal -e OPENCTEM_HOSTNAME=gateway.test \
 	-e OPENCTEM_API_UPSTREAM=api:8000 -e OPENCTEM_WEB_UPSTREAM=web:8000 -e OPENCTEM_CONSOLE_UPSTREAM=console:8000 \
 	-e OPENCTEM_ADMIN_SITE=port -e OPENCTEM_ADMIN_ALLOWED_CIDRS="$subnet" \
-	-v "$here:/etc/caddy:ro" --entrypoint sh "$image" /etc/caddy/entrypoint.sh >/dev/null
+	-v "$cfg:/etc/caddy:ro" --entrypoint sh "$image" /etc/caddy/entrypoint.sh >/dev/null
 # Same network, but an allow-list the test client is not in.
 docker run -d --name "$run-gwb" --network "$net" \
 	-e OPENCTEM_TLS_MODE=internal -e OPENCTEM_HOSTNAME=gateway.test \
 	-e OPENCTEM_API_UPSTREAM=api:8000 -e OPENCTEM_WEB_UPSTREAM=web:8000 -e OPENCTEM_CONSOLE_UPSTREAM=console:8000 \
 	-e OPENCTEM_ADMIN_SITE=port -e OPENCTEM_ADMIN_ALLOWED_CIDRS="192.0.2.0/24" \
-	-v "$here:/etc/caddy:ro" --entrypoint sh "$image" /etc/caddy/entrypoint.sh >/dev/null
+	-v "$cfg:/etc/caddy:ro" --entrypoint sh "$image" /etc/caddy/entrypoint.sh >/dev/null
 console() { # console <gateway> <port> <method> <path> [curl args...]: prints "<body> <code>"
 	local gw="$1" port="$2" method="$3" path="$4"
 	shift 4
@@ -263,7 +273,7 @@ echo "== Behind a trusted front proxy, the client is the right-most untrusted X-
 docker run -d --name "$run-gwh" --network "$net" \
 	-e OPENCTEM_TLS_MODE=http -e OPENCTEM_ALLOW_PLAIN_HTTP=true -e OPENCTEM_TRUSTED_PROXIES="$subnet" \
 	-e OPENCTEM_API_UPSTREAM=api:8000 -e OPENCTEM_WEB_UPSTREAM=web:8000 \
-	-v "$here:/etc/caddy:ro" --entrypoint sh "$image" /etc/caddy/entrypoint.sh >/dev/null
+	-v "$cfg:/etc/caddy:ro" --entrypoint sh "$image" /etc/caddy/entrypoint.sh >/dev/null
 gwhip="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$run-gwh")"
 body=""
 for _ in $(seq 1 30); do
@@ -294,7 +304,7 @@ cfgw() { # cfgw <name> <trusted proxies>
 		-e OPENCTEM_TLS_MODE=http -e OPENCTEM_ALLOW_PLAIN_HTTP=true -e OPENCTEM_TRUSTED_PROXIES="$2" \
 		-e OPENCTEM_CLIENT_IP_HEADERS=Cf-Connecting-Ip \
 		-e OPENCTEM_API_UPSTREAM=api:8000 -e OPENCTEM_WEB_UPSTREAM=web:8000 \
-		-v "$here:/etc/caddy:ro" --entrypoint sh "$image" /etc/caddy/entrypoint.sh >/dev/null
+		-v "$cfg:/etc/caddy:ro" --entrypoint sh "$image" /etc/caddy/entrypoint.sh >/dev/null
 	docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$run-$1"
 }
 viacf() { # viacf <gateway ip> <headers...>: what the API stub got
@@ -415,7 +425,7 @@ fi
 for sg in alpn passthrough; do
 	if docker run --rm -e OPENCTEM_TLS_MODE=internal -e OPENCTEM_HOSTNAME=203.0.113.10 \
 		-e OPENCTEM_SENSOR_GATEWAY="$sg" -e SENSOR_PUBLIC_HOSTNAME=sensors.example.test \
-		-v "$here:/etc/caddy:ro" "$l4image" caddy validate --config /etc/caddy/Caddyfile >/dev/null 2>&1; then
+		-v "$cfg:/etc/caddy:ro" "$l4image" caddy validate --config /etc/caddy/Caddyfile >/dev/null 2>&1; then
 		ok "OPENCTEM_SENSOR_GATEWAY=$sg validates"
 	else
 		bad "OPENCTEM_SENSOR_GATEWAY=$sg does not validate"
@@ -423,13 +433,13 @@ for sg in alpn passthrough; do
 done
 refuses "sensor alpn without the layer4 module" -e OPENCTEM_TLS_MODE=internal -e OPENCTEM_HOSTNAME=x -e OPENCTEM_SENSOR_GATEWAY=alpn
 if docker run --rm -e OPENCTEM_TLS_MODE=http -e OPENCTEM_ALLOW_PLAIN_HTTP=true -e OPENCTEM_SENSOR_GATEWAY=alpn \
-	-v "$here:/etc/caddy:ro" --entrypoint sh "$l4image" /etc/caddy/entrypoint.sh true >/dev/null 2>&1; then
+	-v "$cfg:/etc/caddy:ro" --entrypoint sh "$l4image" /etc/caddy/entrypoint.sh true >/dev/null 2>&1; then
 	bad "sensor alpn in plain HTTP mode was accepted"
 else
 	ok "sensor alpn in plain HTTP mode"
 fi
 if docker run --rm -e OPENCTEM_TLS_MODE=internal -e OPENCTEM_HOSTNAME=x -e OPENCTEM_SENSOR_GATEWAY=alpn \
-	-v "$here:/etc/caddy:ro" --entrypoint sh "$l4image" /etc/caddy/entrypoint.sh true >/dev/null 2>&1; then
+	-v "$cfg:/etc/caddy:ro" --entrypoint sh "$l4image" /etc/caddy/entrypoint.sh true >/dev/null 2>&1; then
 	ok "sensor alpn on the layer4 image is accepted"
 else
 	bad "sensor alpn on the layer4 image was refused"
@@ -448,7 +458,7 @@ docker run -d --name "$run-gwl4" --network "$net" \
 	-e OPENCTEM_SENSOR_GATEWAY=passthrough -e SENSOR_PUBLIC_HOSTNAME=sensors.gateway.test -e SENSOR_MTLS_UPSTREAM=mtls:9443 \
 	-e OPENCTEM_API_UPSTREAM=api:8000 -e OPENCTEM_WEB_UPSTREAM=web:8000 \
 	-e OPENCTEM_ADMIN_SITE=port -e OPENCTEM_ADMIN_ALLOWED_CIDRS="$subnet" \
-	-v "$here:/etc/caddy:ro" --entrypoint sh "$l4image" /etc/caddy/entrypoint.sh >/dev/null
+	-v "$cfg:/etc/caddy:ro" --entrypoint sh "$l4image" /etc/caddy/entrypoint.sh >/dev/null
 l4ip="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$run-gwl4")"
 for _ in $(seq 1 30); do
 	docker run --rm --network "$net" curlimages/curl:latest -sk -m 2 -o /dev/null \

@@ -23,6 +23,8 @@ func TestIsGap(t *testing.T) {
 		"not applicable":         {Row{State: StateNotApplicable, CreatedAt: now.Add(-1000 * time.Hour)}, false},
 		"paused is not a gap":    {Row{State: StatePaused, CreatedAt: now.Add(-1000 * time.Hour)}, false},
 		"queued long, no succes": {Row{State: StateQueued, CreatedAt: now.Add(-200 * time.Hour)}, true},
+		"parked dead name":       {Row{State: StateCovered, LastOutcome: OutcomeNoAnswer, LastSuccessAt: at(300), CreatedAt: now.Add(-1000 * time.Hour)}, false},
+		"dead name recheck runs": {Row{State: StateQueued, LastOutcome: OutcomeNoAnswer, LastSuccessAt: at(300), CreatedAt: now.Add(-1000 * time.Hour)}, false},
 	} {
 		row := c.row
 		if got := IsGap(rule, &row, now); got != c.want {

@@ -450,6 +450,9 @@ func (s *Service) applyExportSlots(ctx context.Context, run *cirun.Run, body []b
 		// names; ScopeImported then drops anything still elsewhere.
 		Repository: run.Repository, Branch: run.Branch, CommitSHA: run.CommitSHA,
 		Mapping: mp,
+		// A CI run may change its repository and nothing else: a recon
+		// directory (hosts, endpoints) is not a CI report.
+		NoBundle: true,
 	}, func(c findingimport.Converted) {
 		f := ExportFile{Name: c.Name}
 		if c.Error != nil {

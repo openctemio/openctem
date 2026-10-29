@@ -22,10 +22,10 @@ export function RetestCheckTierBadge({ tier }: { tier: RetestCheckTier }) {
   const { t } = useTranslation()
   const label =
     tier === 'T0'
-      ? t('findings.retestCheck.tierT0', 'T0 · passive')
+      ? t('findings.retestCheck.tierT0', 'T0, passive')
       : tier === 'T1'
-        ? t('findings.retestCheck.tierT1', 'T1 · active')
-        : t('findings.retestCheck.tierT2', 'T2 · intrusive')
+        ? t('findings.retestCheck.tierT1', 'T1, active')
+        : t('findings.retestCheck.tierT2', 'T2, intrusive')
   return (
     <Badge variant="outline" className={cn('font-medium', TIER_CLASS[tier])}>
       {label}

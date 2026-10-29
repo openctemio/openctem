@@ -738,6 +738,7 @@ func (s *Service) SetMFAPolicy(ctx context.Context, actor *admin.AdminUser, p ad
 		}
 	}
 	now := s.now()
+	before, _, _ := s.MFAPolicy(ctx)
 	if p.RequireWebAuthn {
 		// The grace for TOTP-only administrators starts when the policy goes
 		// from off to on; saving it again while on keeps the deadline.
@@ -780,12 +781,19 @@ func (s *Service) SetMFAPolicy(ctx context.Context, actor *admin.AdminUser, p ad
 		}
 		version = st.Version
 	}
-	note := "require_webauthn=off"
-	if p.RequireWebAuthn {
-		note = "require_webauthn=on"
-	}
 	s.forgetFactors(nil)
-	s.recordNote(ctx, actor, ActionMFAPolicyChanged, client, note)
+	// The sign-in factor policy of every administrator: a critical row with
+	// the value before and after.
+	if s.audit != nil {
+		s.writeAudit(ctx, ActionMFAPolicyChanged, admin.NewAuditLogBuilder(actor, ActionMFAPolicyChanged).
+			Context(client.IP, client.UserAgent).
+			Request("", "", map[string]interface{}{
+				"previous": map[string]interface{}{"require_webauthn": before.RequireWebAuthn},
+				"new":      map[string]interface{}{"require_webauthn": p.RequireWebAuthn},
+			}).
+			Critical().
+			Build())
+	}
 	summary := "turned off the security-key requirement for console sign-in"
 	if p.RequireWebAuthn {
 		summary = "turned on the security-key requirement for console sign-in"

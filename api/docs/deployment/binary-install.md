@@ -11,11 +11,11 @@ non-container one.
 
 | Archive | Platforms | Contents |
 |---|---|---|
-| `openctem-server-<v>-linux-<arch>.tar.gz` | linux amd64, arm64 | `openctem-server` (API) and its operator commands as links (`bootstrap-admin`, `refingerprint`, `repomerge`, `ci-trust-scope-plan`), `openctem-signer` (job signer), `migrate` (golang-migrate) and `openctem-migrate` (its wrapper), `migrations/`, `configs/`, `api/openapi/swagger.yaml`, systemd units for the server, the signer and migrations, env examples |
+| `openctem-server-<v>-linux-<arch>.tar.gz` | linux amd64, arm64 | `openctem-server` (API) and its operator commands as links (`bootstrap-admin`, `refingerprint`, `repomerge`, `ci-trust-scope-plan`), `openctem-signer` (job signer), `openctem-migrate` (the migration runner), `migrations/`, `configs/`, `api/openapi/swagger.yaml`, systemd units for the server, the signer and migrations, env examples |
 | `openctem-gateway-<v>-linux-<arch>.tar.gz` | linux amd64, arm64 | `caddy` with the layer4 module (the gateway image's build), the gateway configuration and entrypoint, systemd unit, env example |
 | `openctem-web-<v>-linux-<arch>.tar.gz` | linux amd64, arm64 (glibc) | the web console as a Next.js standalone bundle, systemd unit, env example, `NODE_VERSION` |
 | `openctem-console-<v>-linux-<arch>.tar.gz` | linux amd64, arm64 (glibc) | the platform console, same layout |
-| `bootstrap-admin-<v>-<os>-<arch>.tar.gz` (`.zip` on Windows) | linux, macOS amd64/arm64, Windows amd64 | the first-administrator CLI (the `admin-cli` image) |
+| `bootstrap-admin-<v>-<os>-<arch>.tar.gz` (`.zip` on Windows) | linux, macOS amd64/arm64, Windows amd64 | the first-administrator CLI as a standalone binary (the API image already contains it as `/app/bootstrap-admin`) |
 | `openctem-image-kit-<v>.tar.gz` | any | private registry and air-gap kit ([air-gapped.md](air-gapped.md)) |
 | `*.spdx.json` | | an SPDX SBOM per archive |
 | `checksums-sha256.txt` + `.sigstore.json` | | sha256 of every archive and SBOM, signed keyless by the Release workflow |

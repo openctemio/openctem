@@ -39,7 +39,7 @@
 # ~/.docker/config.json).
 set -euo pipefail
 
-ALL_IMAGES="openctem-api openctem-web openctem-console openctem-gateway migrations seed admin-cli openctem"
+ALL_IMAGES="openctem-api openctem-web openctem-console openctem-gateway migrations seed openctem"
 SRC_REGISTRY="ghcr.io/openctemio"
 REPO_URL="https://github.com/openctemio/openctem"
 OIDC_ISSUER="https://token.actions.githubusercontent.com"

@@ -12,8 +12,12 @@ export function parseDateOnly(value: string): Date {
 }
 
 /** Locale date of a date-only value ('' when missing or unparseable). */
-export function formatDateOnly(value: string | null | undefined, locale?: string): string {
+export function formatDateOnly(
+  value: string | null | undefined,
+  locale?: string,
+  options?: Intl.DateTimeFormatOptions
+): string {
   if (!value) return ''
   const d = parseDateOnly(value)
-  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString(locale)
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString(locale, options)
 }

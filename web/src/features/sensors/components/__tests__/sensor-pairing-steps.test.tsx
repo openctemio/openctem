@@ -99,7 +99,7 @@ describe('EnterCodePanel', () => {
     await findByCode(user)
     expect(api.lookup).toHaveBeenCalledWith('K7QM4ZTD')
     expect(await screen.findByTestId('pairing-fingerprint')).toHaveTextContent(
-      '512 · tiger · violet · anchor'
+      '512, tiger, violet, anchor'
     )
     expect(screen.getByText('dmz-01')).toBeInTheDocument()
     expect(screen.getByText('203.0.113.7')).toBeInTheDocument()

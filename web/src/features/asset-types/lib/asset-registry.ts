@@ -83,5 +83,5 @@ export function classAndLensLabel(
   const assetClass = classOfAsset(registry, type, subType)
   const lens = lensOfClass(registry, assetClass)
   const label = classLabel(registry, assetClass)
-  return lens ? `${label} · ${lensLabel(registry, lens)}` : label
+  return lens ? `${label}, ${lensLabel(registry, lens)}` : label
 }

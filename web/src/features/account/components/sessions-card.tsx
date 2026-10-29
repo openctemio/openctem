@@ -13,6 +13,7 @@ import { EmptyState } from '@/features/shared'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { formatDateSafe, formatRelative } from '@/lib/format-date'
 
+import { RevokeApiKeysOption } from '@/features/auth/components/revoke-api-keys-option'
 import { useRevokeAllSessions, useRevokeSession } from '../api/use-sessions'
 import { describeUserAgent, type DeviceKind } from '../lib/user-agent'
 import type { Session } from '../types/account.types'
@@ -28,18 +29,21 @@ interface SessionsCardProps {
   sessions: Session[]
   isLoading: boolean
   onChanged: () => void
+  /** API keys the person owns, for the "Also revoke API keys (N)" choice. */
+  activeApiKeys?: number
 }
 
 /**
  * Active sign-ins of the current user. Signing a session out takes effect on
  * that device's next request.
  */
-export function SessionsCard({ sessions, isLoading, onChanged }: SessionsCardProps) {
+export function SessionsCard({ sessions, isLoading, onChanged, activeApiKeys }: SessionsCardProps) {
   const { t } = useTranslation()
   const { revokeSession, isRevoking } = useRevokeSession()
   const { revokeAllSessions, isRevoking: isRevokingAll } = useRevokeAllSessions()
   const [toRevoke, setToRevoke] = useState<Session | null>(null)
   const [confirmAll, setConfirmAll] = useState(false)
+  const [revokeKeys, setRevokeKeys] = useState(true)
 
   const ordered = [...sessions].sort((a, b) =>
     a.is_current === b.is_current
@@ -66,8 +70,13 @@ export function SessionsCard({ sessions, isLoading, onChanged }: SessionsCardPro
 
   async function revokeOthers() {
     try {
-      await revokeAllSessions()
-      toast.success(t('account.sessions.revokedOthers', 'Signed out of all other sessions'))
+      await revokeAllSessions(revokeKeys)
+      toast.success(
+        t(
+          'account.sessions.revokedOthers',
+          'Signed out of all other sessions. Connected apps were revoked.'
+        )
+      )
       setConfirmAll(false)
       onChanged()
     } catch (error) {
@@ -146,11 +155,11 @@ export function SessionsCard({ sessions, isLoading, onChanged }: SessionsCardPro
                         ) : (
                           t('account.sessions.unknownIp', 'Unknown IP')
                         )}
-                        {' · '}
+                        {', '}
                         {t('account.sessions.signedIn', 'Signed in {date}', {
                           date: formatDateSafe(s.created_at),
                         })}
-                        {' · '}
+                        {', '}
                         {t('account.sessions.lastActive', 'Last active {when}', {
                           when: formatRelative(s.last_activity_at),
                         })}
@@ -214,7 +223,14 @@ export function SessionsCard({ sessions, isLoading, onChanged }: SessionsCardPro
         destructive
         isLoading={isRevokingAll}
         handleConfirm={revokeOthers}
-      />
+      >
+        <RevokeApiKeysOption
+          id="signout-revoke-keys"
+          checked={revokeKeys}
+          onCheckedChange={setRevokeKeys}
+          count={activeApiKeys}
+        />
+      </ConfirmDialog>
     </Card>
   )
 }

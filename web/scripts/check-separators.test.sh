@@ -66,6 +66,17 @@ printf '%s\n%s\n' '  "z.z": "z",' "$old" > "$t/$D"
 git -C "$t" commit -q -am move
 (cd "$t" && bash "$here/check-separators.sh" change >/dev/null 2>&1) || { echo "FAIL rejected: moved line"; fail=1; }
 
+# A glyph that was already on develop fails too: cleaned files cannot regress.
+git -C "$t" checkout -q develop
+printf "export const old = 'a · b'\n" > "$t/src/old.tsx"
+git -C "$t" add src/old.tsx
+git -C "$t" commit -q -m old
+git -C "$t" checkout -q -b untouched
+echo 'export const b = 2' > "$t/src/b.tsx"
+git -C "$t" add src/b.tsx
+git -C "$t" commit -q -m b
+(cd "$t" && bash "$here/check-separators.sh" develop >/dev/null 2>&1) && { echo "FAIL accepted: glyph already on develop"; fail=1; }
+
 find "$t" -delete
 [ $fail = 0 ] && echo ok
 exit $fail

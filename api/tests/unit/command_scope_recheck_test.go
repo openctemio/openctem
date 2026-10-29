@@ -748,6 +748,35 @@ func TestScopeRecheck_ClampsALowImpactJob(t *testing.T) {
 	}
 }
 
+// A job that names its targets only in its run context is re-checked like
+// any other: a target refused since dispatch is cut from the context, and a
+// job with nothing left is failed, never handed out unchecked.
+func TestScopeRecheck_ContextOnlyTargetsAreChecked(t *testing.T) {
+	const ctxOnly = `{"scanner":"nuclei","context":{"targets":["a.example.com","b.example.com"]}}`
+	f := newRecheckFixture()
+	f.gate.excluded["b.example.com"] = true
+	c := f.repo.add(f.tenant, commanddom.CommandTypeScan, ctxOnly, &commanddom.DispatchGate{Tier: 1})
+	got, err := handOutPaths[0].run(f, c)
+	if err != nil || got == nil {
+		t.Fatalf("hand-out: %v %v", got, err)
+	}
+	if f.gate.callCount() != 1 {
+		t.Fatalf("gate calls = %d, want the context targets checked", f.gate.callCount())
+	}
+	_, _, ctxTargets := payloadTargetList(t, got.Payload)
+	if len(ctxTargets) != 1 || ctxTargets[0] != "a.example.com" {
+		t.Fatalf("context targets %v, want only a.example.com", ctxTargets)
+	}
+
+	g := newRecheckFixture()
+	g.gate.excluded["a.example.com"] = true
+	g.gate.excluded["b.example.com"] = true
+	d := g.repo.add(g.tenant, commanddom.CommandTypeScan, ctxOnly, &commanddom.DispatchGate{Tier: 1})
+	if got, _ := handOutPaths[0].run(g, d); got != nil {
+		t.Fatalf("a context-only job with no target left was handed out: %s", got.Payload)
+	}
+}
+
 // A job whose every target is refused only because its names stopped
 // resolving did not see a scope change: it ends as NO_RESOLVING_TARGETS on
 // every hand-out path (a fact about the targets), never SCOPE_CHANGED.

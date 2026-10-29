@@ -184,7 +184,7 @@ export function PairingFingerprint({ sas }: { sas?: string }) {
       <div className="mt-1 font-mono text-2xl font-semibold tabular-nums">
         {parts.number}
         {parts.words.map((w) => (
-          <span key={w}> · {w}</span>
+          <span key={w}>, {w}</span>
         ))}
       </div>
     </div>

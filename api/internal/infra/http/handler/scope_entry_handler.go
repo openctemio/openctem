@@ -43,7 +43,7 @@ func (h *ScopeHandler) SetProofPolicy(p ScopeProofPolicy) { h.proofPolicy = p }
 
 // ApproveTarget handles POST /api/v1/scope/targets/{id}/approve
 // @Summary      Approve scope entry
-// @Description  Record your approval of a pending scope entry (RFC-054). Needs attack_surface:scope:approve and a recent re-authentication (403 STEP_UP_REQUIRED). The requester cannot approve, and nobody approves twice; once the entry has its required approvals it is active. Audited; the administrators are notified when it takes effect.
+// @Description  Record your approval of a pending scope entry. Needs attack_surface:scope:approve and a recent re-authentication (403 STEP_UP_REQUIRED). The requester cannot approve, and nobody approves twice; once the entry has its required approvals it is active. Audited; the administrators are notified when it takes effect.
 // @Tags         Scope
 // @Produce      json
 // @Param        id   path      string  true  "Target ID"
@@ -109,22 +109,21 @@ type ScopeSettingsResponse struct {
 	AutoJoinDiscovered bool `json:"auto_join_discovered"`
 	// ConfirmAddsToScope: a person confirming an asset as the
 	// organization's also adds its exact scope entry (default true). Never
-	// in effect while scan approval is Strict (research/117).
+	// in effect while scan approval is Strict.
 	ConfirmAddsToScope bool `json:"confirm_adds_to_scope"`
 	// ReviewBeforeInventory: discovered names outside every permanent entry
 	// wait for review outside the inventory (default false: they join the
-	// inventory as discovered, passive only; RFC-054 §15).
+	// inventory as discovered, passive only).
 	ReviewBeforeInventory bool `json:"review_before_inventory"`
 	// UnclassifiedScans is the setting: what active scans may do to an
-	// asset no scope entry covers and nobody excluded or rejected (RFC-054
-	// §16): off (passive only), low_impact (default) or full. The platform
+	// asset no scope entry covers and nobody excluded or rejected: off (passive only), low_impact (default) or full. The platform
 	// guardrails apply in every mode.
 	UnclassifiedScans string `json:"unclassified_scans" enums:"off,low_impact,full"`
 	// UnclassifiedScansEffective is the mode in force: off under the
 	// Strict scan approval mode, else the setting (read-only).
 	UnclassifiedScansEffective string `json:"unclassified_scans_effective" enums:"off,low_impact,full"`
-	// AutoCoverage is the organization's choice for automatic coverage
-	// (RFC-093): true, false, or null for the default (on unless Strict).
+	// AutoCoverage is the organization's choice for automatic coverage:
+	// true, false, or null for the default (on unless Strict).
 	AutoCoverage *bool `json:"auto_coverage"`
 	// AutoCoverageEffective: automatic coverage runs now (read-only).
 	AutoCoverageEffective bool `json:"auto_coverage_effective"`
@@ -156,7 +155,7 @@ type ScopeSettingsResponse struct {
 	// Owner-only.
 	T2AttestationDays int `json:"t2_attestation_days"`
 	// ApprovalPolicy is the organization's scan approval in force and
-	// whether scope entries need approval under it (read-only; RFC-073 §6).
+	// whether scope entries need approval under it (read-only).
 	ApprovalPolicy ScopeApprovalPolicyView `json:"approval_policy"`
 }
 
@@ -231,7 +230,7 @@ func (h *ScopeHandler) activeProofMode(ctx context.Context) string {
 
 // GetSettings handles GET /api/v1/scope/settings
 // @Summary      Scope settings
-// @Description  The organization's scope knobs (RFC-054): auto-join of discovered names, who adds one-off entries, their maximum days, the widening approval count and the default tier, with the approval count in effect now.
+// @Description  The organization's scope knobs: auto-join of discovered names, who adds one-off entries, their maximum days, the widening approval count and the default tier, with the approval count in effect now.
 // @Tags         Scope
 // @Produce      json
 // @Success      200  {object}  ScopeSettingsResponse
@@ -380,7 +379,7 @@ type ScopeIntrusiveSettingsRequest struct {
 
 // UpdateIntrusiveSettings handles PUT /api/v1/scope/settings/intrusive
 // @Summary      Change the intrusive (t2) scope settings
-// @Description  The longest an intrusive (t2) scope entry may last: 7d, 30d (default), 90d, 365d or permanent (RFC-054 §12.4). Owner only, with a recent re-authentication (403 STEP_UP_REQUIRED) and a reason. A t2 entry still needs a verified domain and an approval. Audited at high severity; every administrator is notified. PUT /scope/settings never changes it.
+// @Description  The longest an intrusive (t2) scope entry may last: 7d, 30d (default), 90d, 365d or permanent. Owner only, with a recent re-authentication (403 STEP_UP_REQUIRED) and a reason. A t2 entry still needs a verified domain and an approval. Audited at high severity; every administrator is notified. PUT /scope/settings never changes it.
 // @Tags         Scope
 // @Accept       json
 // @Produce      json

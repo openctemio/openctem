@@ -64,7 +64,7 @@ describe('Access requests', () => {
     render(<AccessRequestsCard canEdit />)
     expect(screen.getByText('Desk Assistant')).toBeInTheDocument()
     expect(screen.getByText('Published by desk.example.net')).toBeInTheDocument()
-    expect(screen.getByText(/Requested by Mark Member · 2 request\(s\)/)).toBeInTheDocument()
+    expect(screen.getByText(/Requested by Mark Member, 2 request\(s\)/)).toBeInTheDocument()
     expect(screen.getByText('Findings')).toBeInTheDocument()
     expect(screen.getByText('Assets')).toBeInTheDocument()
   })

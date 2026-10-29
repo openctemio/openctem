@@ -14,7 +14,7 @@ export function useCampaignOwner() {
   const owners = useOwnerNames()
   return useCallback(
     (c: Pick<RemediationCampaign, 'assigned_to' | 'assigned_team'>) =>
-      [owners.user(c.assigned_to), owners.group(c.assigned_team)].filter(Boolean).join(' · ') ||
+      [owners.user(c.assigned_to), owners.group(c.assigned_team)].filter(Boolean).join(', ') ||
       t('remediationCampaigns.owner.unassigned'),
     [owners, t]
   )
@@ -69,7 +69,7 @@ export function CampaignDue({
     <span className={cn('whitespace-nowrap', late && 'text-destructive font-medium')}>
       {formatDay(campaign.due_date, locale)}
       {rel && ` (${rel})`}
-      {late && ` · ${t('remediationCampaigns.due.overdue')}`}
+      {late && `, ${t('remediationCampaigns.due.overdue')}`}
     </span>
   )
 }
@@ -129,13 +129,13 @@ export function CampaignTasksCell({ summary }: { summary: CampaignSummary }) {
       {t(`remediationCampaigns.tasks.count.${n === 1 ? 'one' : 'other'}`, undefined, { count: n })}
       {summary.overdue_tasks > 0 && (
         <span className="text-destructive">
-          {' · '}
+          {', '}
           {t('remediationCampaigns.tasks.overdue', undefined, { count: summary.overdue_tasks })}
         </span>
       )}
       {summary.hidden_tasks > 0 && (
         <span className="text-muted-foreground">
-          {' · '}
+          {', '}
           {t('remediationCampaigns.tasks.hidden', undefined, { count: summary.hidden_tasks })}
         </span>
       )}

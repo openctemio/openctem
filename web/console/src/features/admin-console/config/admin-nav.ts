@@ -30,7 +30,6 @@ import {
   Waypoints,
   type LucideIcon,
 } from 'lucide-react'
-import type { AdminRole } from '../types'
 
 export interface AdminNavItem {
   /** English label; also the i18n fallback. */
@@ -39,8 +38,8 @@ export interface AdminNavItem {
   i18nKey: string
   url: string
   icon: LucideIcon
-  /** Minimum admin role to see the item; omitted = any admin. */
-  minRole?: AdminRole
+  /** Platform permission needed to see the item (RFC-134); omitted = any admin. */
+  permission?: string
   /** Extra words the command palette matches (synonyms). */
   keywords?: string[]
   /**
@@ -96,7 +95,7 @@ export const adminNav: AdminNavSection[] = [
         url: '/users',
         icon: UserSearch,
         // Finding people by email is personal data: not for read-only.
-        minRole: 'ops_admin',
+        permission: 'platform.users.read',
         keywords: ['accounts', 'people', 'locked', 'sessions', 'support'],
       },
       {
@@ -118,7 +117,7 @@ export const adminNav: AdminNavSection[] = [
         i18nKey: 'admin.nav.supportAccess',
         url: '/support',
         icon: LifeBuoy,
-        minRole: 'ops_admin',
+        permission: 'platform.support.access',
         keywords: ['support', 'grant', 'case', 'help', 'troubleshoot', 'read-only'],
       },
     ],
@@ -206,7 +205,7 @@ export const adminNav: AdminNavSection[] = [
         i18nKey: 'admin.nav.administrators',
         url: '/security/administrators',
         icon: UserCog,
-        minRole: 'super_admin',
+        permission: 'platform.admins.read',
         keywords: ['admins', 'break-glass', 'roster'],
       },
       {
@@ -214,7 +213,7 @@ export const adminNav: AdminNavSection[] = [
         i18nKey: 'admin.nav.sessions',
         url: '/security/sessions',
         icon: MonitorSmartphone,
-        minRole: 'super_admin',
+        permission: 'platform.admins.read',
         keywords: ['signed in', 'console sessions', 'sign out', 'devices'],
       },
       {
@@ -222,15 +221,31 @@ export const adminNav: AdminNavSection[] = [
         i18nKey: 'admin.nav.approvals',
         url: '/security/approvals',
         icon: UserCheck,
-        minRole: 'super_admin',
+        permission: 'platform.approvals.read',
         keywords: ['four-eyes', 'second approval', 'approve', 'dual control'],
+      },
+      {
+        title: 'Roles',
+        i18nKey: 'admin.nav.roles',
+        url: '/security/roles',
+        icon: UserCog,
+        permission: 'platform.roles.read',
+        keywords: [
+          'platform roles',
+          'permissions',
+          'rbac',
+          'support',
+          'operator',
+          'auditor',
+          'billing',
+        ],
       },
       {
         title: 'Admin sign-in',
         i18nKey: 'admin.nav.adminSignIn',
         url: '/system/admin-sign-in',
         icon: KeyRound,
-        minRole: 'super_admin',
+        permission: 'platform.identity.manage',
         keywords: ['identity provider', 'idp', 'sso', 'oidc'],
       },
       {
@@ -267,6 +282,13 @@ export const adminNav: AdminNavSection[] = [
         url: '/system/sign-up',
         icon: UserPlus,
         keywords: ['registration', 'self-service', 'policy'],
+      },
+      {
+        title: 'Social login',
+        i18nKey: 'admin.nav.socialLogin',
+        url: '/system/social-login',
+        icon: KeyRound,
+        keywords: ['google', 'github', 'microsoft', 'oauth', 'sign-in', 'sso'],
       },
       {
         title: 'Limits',

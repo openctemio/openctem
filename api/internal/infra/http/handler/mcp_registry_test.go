@@ -32,12 +32,16 @@ var mcpProposalToolAllowlist = map[string]string{
 	"propose_finding_status": "findings:write; OAuth person only; files RequestApproval with RequestedVia " +
 		"(ByAutomation, never decided alone); Approval.Approve and SelfApproveSolo refuse the requester; " +
 		"data scope and AI egress checked first; hidden characters rejected",
+	"draft_pentest_finding": "pentest:findings:write; OAuth person only; campaign membership, TLP and AI switch first; " +
+		"CreateUnifiedFinding as the person (never admin), always a draft, drafted_via kept on edits; " +
+		"ApplyPentestTransition refuses the creator confirming it; hidden characters rejected",
 }
 
 func TestMCPProposalToolAllowlist(t *testing.T) {
 	h := newTestMCPWithPentest(&fakeFindingReader{}, &fakePentestReader{})
 	h.SetWriteTools(&fakeConfirmer{approved: map[string]string{}}, &fakeCommenter{})
 	h.SetProposalTools(&fakeApprovalRequester{}, "https://openctem.example")
+	h.SetPentestDraftTool(&fakeDrafter{}, "https://openctem.example")
 	n := 0
 	for _, tool := range h.tools {
 		if tool.Propose {
@@ -51,8 +55,8 @@ func TestMCPProposalToolAllowlist(t *testing.T) {
 		}
 		// findings:write reaches an MCP token only through the proposal
 		// scope: a tool needing it must be a proposal tool.
-		if tool.RequiredPerm == "findings:write" && !tool.Propose {
-			t.Errorf("tool %q needs findings:write but is not a proposal tool", tool.Name)
+		if (tool.RequiredPerm == "findings:write" || tool.RequiredPerm == "pentest:findings:write") && !tool.Propose {
+			t.Errorf("tool %q needs a write permission but is not a proposal tool", tool.Name)
 		}
 	}
 	if n != len(mcpProposalToolAllowlist) {

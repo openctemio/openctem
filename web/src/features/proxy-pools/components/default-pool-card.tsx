@@ -10,19 +10,26 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/context/i18n-provider'
 import { ReadOnlyNotice } from '@/features/shared'
+import { useAllSensors } from '@/lib/api/sensor-hooks'
+import { Permission, useHasPermission } from '@/lib/permissions'
 
 import {
   createProxyPool,
   invalidateProxyPools,
   saveProxyEndpoints,
   updateProxyPool,
+  useProxyAssignments,
+  useProxyPools,
 } from '../api/use-proxy-pools'
 import { describeProxyError, isInvalidEndpointError } from '../lib/errors'
 import { hasNoProxyLines } from '../lib/endpoints-text'
+import { defaultPoolImpacts } from '../lib/impact'
 import { maskPasteText } from '../lib/mask'
 import type { ProxyPool } from '../types'
 import { EndpointTable } from './endpoint-table'
+import { ImpactList } from './impact-list'
 import { PasteListField } from './paste-list-field'
+import { TestPoolButton } from './test-pool-button'
 
 interface DefaultPoolCardProps {
   /** The pool with is_default, if the organization has one. */
@@ -42,6 +49,20 @@ export function DefaultPoolCard({ pool, canWrite }: DefaultPoolCardProps) {
   const [enabled, setEnabled] = useState(pool?.enabled ?? false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Which sensors the default pool would hold back, from what they report.
+  // Needs the fleet (sensors:read); without it there is no preview.
+  const canReadSensors = useHasPermission(Permission.SensorsRead)
+  const allPools = useProxyPools()
+  const assignments = useProxyAssignments()
+  const fleet = useAllSensors(undefined, canReadSensors && enabled)
+  const impacts =
+    enabled && fleet.data && assignments.data
+      ? defaultPoolImpacts(
+          fleet.data.items ?? [],
+          assignments.data.items,
+          allPools.data?.items ?? []
+        )
+      : []
 
   // Follow the server after a save or a refresh.
   useEffect(() => {
@@ -129,6 +150,7 @@ export function DefaultPoolCard({ pool, canWrite }: DefaultPoolCardProps) {
             {t('proxyPools.default.toggle', 'Use proxies for scans')}
           </Label>
         </div>
+        <ImpactList impacts={impacts} pending={!pool?.enabled} />
         <PasteListField value={text} onChange={setText} readOnly={!canWrite} error={error} />
         {canWrite && (
           <div className="flex justify-end">
@@ -139,7 +161,12 @@ export function DefaultPoolCard({ pool, canWrite }: DefaultPoolCardProps) {
           </div>
         )}
         {pool && pool.endpoints.length > 0 && (
-          <EndpointTable poolId={pool.id} endpoints={pool.endpoints} canWrite={canWrite} />
+          <>
+            <div className="flex justify-end">
+              <TestPoolButton pool={pool} canWrite={canWrite} />
+            </div>
+            <EndpointTable poolId={pool.id} endpoints={pool.endpoints} canWrite={canWrite} />
+          </>
         )}
       </CardContent>
     </Card>

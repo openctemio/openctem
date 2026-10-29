@@ -86,6 +86,7 @@ if command -v docker > /dev/null && docker compose version > /dev/null 2>&1; the
 	deploy="$(cd "$here/.." && pwd)"
 	envf="$tmp/env"
 	cp "$deploy/.env.example" "$envf"
+	sed -i "s/^OPENCTEM_VERSION=.*/OPENCTEM_VERSION=v0.0.0/" "$envf"
 	[ -z "$(docker compose --env-file "$envf" -f "$deploy/docker-compose.yml" config --services 2> /dev/null | grep -x backup)" ] \
 		&& ok "base compose has no backup service" || bad "base compose has a backup service"
 	for t in s3 sftp local; do

@@ -31,14 +31,14 @@ import type { WebEndpointResponse } from '@/lib/api/generated'
 import { updateWebEndpoint, useWebEndpoint, useWebEndpointParams } from '../api/use-web-surface'
 import { AuthPill, CatalogBadge, ExcludedBadge, MethodBadge, PathText } from './web-surface-badges'
 
-const RISK_LABEL: Record<string, string> = {
+export const RISK_LABEL: Record<string, string> = {
   ssrf_candidate: 'SSRF candidate',
   redirect: 'Open redirect candidate',
   idor_candidate: 'IDOR candidate',
   file_path: 'File path',
 }
 
-const SOURCE_LABEL: Record<string, string> = {
+export const SOURCE_LABEL: Record<string, string> = {
   crawl: 'Crawl',
   js: 'JavaScript',
   sitemap: 'Sitemap',

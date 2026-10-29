@@ -196,7 +196,7 @@ export function AcceptDialog({
                 <div key={i} className="grid gap-2 sm:grid-cols-[1fr_1fr_1fr] sm:items-center">
                   <span className="text-sm">
                     {t('remediationHub.panel.taskN', undefined, { n: i + 1 })}
-                    {' · '}
+                    {', '}
                     {t('remediationHub.suggestions.findingsCount', undefined, {
                       n: p.finding_ids.length,
                     })}

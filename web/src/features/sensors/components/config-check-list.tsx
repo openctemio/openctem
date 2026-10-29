@@ -276,7 +276,7 @@ export function ConfigSettingsTable({ settings }: { settings: SensorConfigSettin
                     </span>
                     {s.secret && (
                       <SensorTag tone="info">
-                        {t('sensors.setup.secret', 'secret · value never leaves the sensor')}
+                        {t('sensors.setup.secret', 'secret, value never leaves the sensor')}
                       </SensorTag>
                     )}
                     {!s.valid && (

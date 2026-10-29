@@ -37,7 +37,7 @@ const sensorPairingColumns = `id, mode, status, tenant_id, COALESCE(code_hash, '
 	host_facts, host(source_ip), repair_sensor_id, sensor_id,
 	COALESCE(requested_name, ''), requested_zone_ids, COALESCE(requested_profile, ''),
 	created_by, approved_by, approved_at, denied_by, denied_at, confirmed_at, created_at, expires_at,
-	instance_token_id`
+	instance_token_id, enrollment_token_id`
 
 func scanPairing(row interface{ Scan(...any) error }) (*sensordom.Pairing, error) {
 	var (
@@ -48,6 +48,7 @@ func scanPairing(row interface{ Scan(...any) error }) (*sensordom.Pairing, error
 		approvedAt, deniedAt, confirmedAt sql.NullTime
 		hostFacts                         []byte
 		sourceIP, instanceToken           sql.NullString
+		enrollmentToken                   sql.NullString
 		zones                             pq.StringArray
 	)
 	if err := row.Scan(&id, &mode, &status, &tenantID, &p.CodeHash,
@@ -55,7 +56,7 @@ func scanPairing(row interface{ Scan(...any) error }) (*sensordom.Pairing, error
 		&hostFacts, &sourceIP, &repairID, &sensorID,
 		&p.RequestedName, &zones, &p.RequestedProfile,
 		&createdBy, &approvedBy, &approvedAt, &deniedBy, &deniedAt, &confirmedAt, &p.CreatedAt, &p.ExpiresAt,
-		&instanceToken); err != nil {
+		&instanceToken, &enrollmentToken); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, sensordom.ErrPairingNotFound
 		}
@@ -69,7 +70,7 @@ func scanPairing(row interface{ Scan(...any) error }) (*sensordom.Pairing, error
 	p.TenantID, p.RepairSensorID, p.SensorID = optionalID(tenantID), optionalID(repairID), optionalID(sensorID)
 	p.CreatedBy, p.ApprovedBy, p.DeniedBy = optionalID(createdBy), optionalID(approvedBy), optionalID(deniedBy)
 	p.ApprovedAt, p.DeniedAt, p.ConfirmedAt = nullTimeValue(approvedAt), nullTimeValue(deniedAt), nullTimeValue(confirmedAt)
-	p.InstanceTokenID = optionalID(instanceToken)
+	p.InstanceTokenID, p.EnrollmentTokenID = optionalID(instanceToken), optionalID(enrollmentToken)
 	if len(hostFacts) > 0 {
 		_ = json.Unmarshal(hostFacts, &p.HostFacts)
 	}

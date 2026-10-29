@@ -39,6 +39,12 @@ describe('Dashboards page', () => {
     api.create.mockResolvedValue({ id: 'new' })
   })
 
+  it('shows the column count of a dashboard, never the raw placeholder', () => {
+    render(<DashboardsPage />)
+    expect(screen.queryByText(/\{[a-z]+\} columns/)).toBeNull()
+    expect(screen.getAllByText('2 columns').length).toBeGreaterThan(0)
+  })
+
   it('a template whose name is taken is created with a numbered name', async () => {
     render(<DashboardsPage />)
     const button = screen

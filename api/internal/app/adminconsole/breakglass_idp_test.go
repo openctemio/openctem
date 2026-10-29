@@ -458,21 +458,22 @@ func TestConfirmBreakGlassTest(t *testing.T) {
 	}
 }
 
-func TestProvisionSetsTemporaryPasswordMarker(t *testing.T) {
+func TestProvisionBreakGlassByInvitation(t *testing.T) {
 	b := newBGHarness(t)
-	a, temp, err := b.svc.Provision(context.Background(), b.admin, ProvisionInput{
+	b.svc.SetInvitationMailer(&fakeInvites{can: true})
+	res, err := b.svc.Provision(context.Background(), b.admin, ProvisionInput{
 		Email: "new@acme.io", Name: "New", Role: admin.AdminRoleSuperAdmin, BreakGlass: true,
 	}, client)
-	if err != nil || temp == "" {
+	if err != nil || !res.Emailed {
 		t.Fatalf("provision: %v", err)
 	}
-	if !a.PasswordChangeRequired() || !a.IsBreakGlass() {
-		t.Fatalf("expected break-glass with password change required: %+v", a.SignInState())
+	if res.Admin.PasswordChangeRequired() || !res.Admin.IsBreakGlass() {
+		t.Fatalf("expected a break-glass admin with no temporary password: %+v", res.Admin.SignInState())
 	}
 	if e := b.entries.find(ActionAdminProvisioned); e == nil || e.Severity != admin.SeverityHigh {
 		t.Fatal("provisioning a break-glass admin is a high-severity event")
 	}
-	if _, _, err := b.svc.Provision(context.Background(), b.admin, ProvisionInput{
+	if _, err := b.svc.Provision(context.Background(), b.admin, ProvisionInput{
 		Email: "ro@acme.io", Name: "Ro", Role: admin.AdminRoleReadonly, BreakGlass: true,
 	}, client); err == nil {
 		t.Fatal("a break-glass admin must be a super admin")
@@ -534,10 +535,12 @@ func TestSavePlatformIdPValidatesAndEncrypts(t *testing.T) {
 	if p.TokenEndpoint != b.idp.issuer+"/token" || p.JWKSURI != b.idp.issuer+"/jwks" {
 		t.Fatalf("endpoints must come from discovery: %+v", p)
 	}
-	if e := b.entries.find(ActionPlatformIdPSave); e == nil || e.Severity != admin.SeverityHigh {
-		t.Fatal("config changes are audited with high severity")
+	if e := b.entries.find(ActionPlatformIdPSave); e == nil || e.Severity != admin.SeverityCritical {
+		t.Fatal("config changes are audited with critical severity")
 	} else if raw, _ := json.Marshal(e.RequestBody); strings.Contains(string(raw), `"s"`) {
 		t.Fatal("the audit row must not carry the secret")
+	} else if _, ok := e.RequestBody["previous"]; !ok {
+		t.Fatal("the audit row must carry the previous configuration")
 	}
 
 	// Update without a secret keeps the stored one.
@@ -574,15 +577,25 @@ func TestRequireIdPRefusesLocalPathExceptBreakGlass(t *testing.T) {
 		t.Fatal("turning on require-IdP must end non-break-glass password sessions")
 	}
 	resetsBefore := b.accounts.resets
-	if _, err := b.svc.Start(context.Background(), refresh, password, client); !errors.Is(err, admin.ErrIdPSignInRequired) {
-		t.Fatalf("local path must be refused, got %v", err)
+	if _, err := b.svc.Start(context.Background(), refresh, password, client); !errors.Is(err, admin.ErrInvalidCredentials) {
+		t.Fatalf("local path must be refused with the one credentials answer, got %v", err)
+	}
+	// A wrong password for the same account must be indistinguishable from the
+	// refusal above (no sign-in oracle for a correct password).
+	_, rightErr := b.svc.Start(context.Background(), refresh, password, client)
+	_, wrongErr := b.svc.Start(context.Background(), refresh, password+"-wrong", client)
+	if rightErr != wrongErr {
+		t.Fatalf("right and wrong password must give the identical error, got %v and %v", rightErr, wrongErr)
+	}
+	if errors.Is(rightErr, admin.ErrIdPSignInRequired) {
+		t.Fatal("the IdP-required refusal must not reach the caller")
 	}
 	if !b.audit.has(ActionLoginFailed) {
 		t.Fatal("the refusal is audited")
 	}
 	// The refusal counts as a failure and never clears the lockout counter.
-	if b.accounts.resets != resetsBefore || b.accounts.failures != 1 {
-		t.Fatalf("idp_required refusal: resets %d -> %d, failures=%d, want no reset and 1 failure", resetsBefore, b.accounts.resets, b.accounts.failures)
+	if b.accounts.resets != resetsBefore || b.accounts.failures != 2 {
+		t.Fatalf("idp_required refusal: resets %d -> %d, failures=%d, want no reset and 2 failures", resetsBefore, b.accounts.resets, b.accounts.failures)
 	}
 	if _, err := b.signIn(t, bgRefresh); err != nil {
 		t.Fatalf("break-glass must still sign in locally: %v", err)

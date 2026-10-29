@@ -134,12 +134,12 @@ export function EASMRuleDialog({
           summary: refusal
             ? undefined
             : accept
-              ? t('easmReview.rule.summaryAccept', 'scope entry · covers {what} · permanent', {
+              ? t('easmReview.rule.summaryAccept', 'scope entry, covers {what}, permanent', {
                   what: coversText({ pattern: entry?.pattern ?? suggestion.pattern }),
                 })
               : t(
                   'easmReview.rule.summaryReject',
-                  'exclusion · names it covers are marked not ours'
+                  'exclusion, names it covers are marked not ours'
                 ),
           message: refusal ?? undefined,
           impact: refusal

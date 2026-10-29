@@ -90,7 +90,7 @@ export function CapabilityCell({ c }: { c?: CICapabilityCoverage }) {
       tone={gap ? 'warning' : meta.tone}
       label={
         gap
-          ? t('scans.ci.coverage.stateExpected', '{state} · expected', { state: meta.label })
+          ? t('scans.ci.coverage.stateExpected', '{state}, expected', { state: meta.label })
           : meta.label
       }
       title={capabilityTitle(c, t)}
@@ -136,7 +136,7 @@ export function coverageColumns(opts: {
                 : t('scans.ci.coverage.noPipeline', 'no pipeline'),
             ]
               .filter(Boolean)
-              .join(' · ')}
+              .join(', ')}
           />
         )
       },
@@ -277,7 +277,7 @@ export function CICoverageView({ toolbarStart }: CICoverageViewProps) {
       label: t('scans.ci.coverage.gaps', 'Gaps'),
       value: s?.gaps ?? 0,
       tone: 'danger',
-      detail: t('scans.ci.coverage.gapsDetail', 'expected and not fresh · {count} expected', {
+      detail: t('scans.ci.coverage.gapsDetail', 'expected and not fresh, {count} expected', {
         count: s?.expected ?? 0,
       }),
       onClick: () => setFilter('gap'),

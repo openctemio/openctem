@@ -39,9 +39,23 @@ type SensorPlacement struct {
 	Eligible bool
 	// Busy: eligible, but it has no free scan slot now.
 	Busy bool
+	// Yields: eligible and free, but a less-loaded eligible sensor goes
+	// first while the command is fresh (claim_balance.go); it takes the
+	// command if that sensor has not claimed it once the window is over.
+	Yields bool
 	// Reasons are the checks that keep the command from this sensor, in
 	// the order the claim applies them (commanddom.Placement*).
 	Reasons []string
+	// Egress names the proxy pool whose use holds the command from this
+	// sensor (an egress_* reason); nil otherwise.
+	Egress *EgressWait
+}
+
+// EgressWait is the proxy pool a sensor's jobs go through when that holds
+// a command from it. PoolName is "" when the pool could not be read.
+type EgressWait struct {
+	PoolID   string
+	PoolName string
 }
 
 // ReasonCount is how many sensors one reason keeps the command from.
@@ -80,6 +94,13 @@ type Placement struct {
 	// organization may take it.
 	SharedFleet       string
 	SharedFleetReason string
+	// Withheld is the placement code of the dispatch gate's last refusal
+	// of the command by any sensor that polled for it, the organization's
+	// or a shared one (withheld.go), and WithheldAt when it was recorded:
+	// it names the reason for a platform job and for the shared fleet,
+	// whose sensors are never listed. "" when no gate withheld it.
+	Withheld   string
+	WithheldAt *time.Time
 }
 
 // SharedFleet values of Placement.
@@ -112,7 +133,8 @@ func (s *Service) ExplainPlacement(ctx context.Context, tenantID, commandID shar
 	if err != nil {
 		return nil, err
 	}
-	out := &Placement{Status: job.Status, Platform: job.IsPlatformJob}
+	out := &Placement{Status: job.Status, Platform: job.IsPlatformJob,
+		Withheld: job.WithheldReason, WithheldAt: job.WithheldAt}
 	if job.Status != commanddom.CommandStatusPending || job.IsPlatformJob {
 		return out, nil
 	}
@@ -141,6 +163,9 @@ func (s *Service) ExplainPlacement(ctx context.Context, tenantID, commandID shar
 			return nil, err
 		}
 		out.Sensors = append(out.Sensors, sp)
+	}
+	if err := s.markYields(ctx, tenantID, cmd, out.Sensors, now); err != nil {
+		return nil, err
 	}
 	out.summarize()
 	if out.Eligible == 0 {
@@ -319,6 +344,17 @@ func (s *Service) sensorPlacement(ctx context.Context, tenantID shared.ID, cmd *
 		sp.Reasons = append(sp.Reasons, gateReason(r))
 		return sp, nil
 	}
+	// The sensor's jobs use a proxy pool it cannot honor: delivery keeps
+	// them from it, and the command waits for one that can.
+	d, err := s.egressFor(ctx, tenantID, c.SensorID.String(), []*commanddom.Command{cmd})
+	if err != nil {
+		return sp, err
+	}
+	if r := d.holdReason(cmd.Type); r != "" {
+		sp.Reasons = append(sp.Reasons, r)
+		sp.Egress = s.egressWait(ctx, tenantID, d)
+		return sp, nil
+	}
 	// The platform would hand it out, but the sensor said it claims nothing
 	// new until its local store recovers: that is why the command waits.
 	if sn != nil && sn.StoppedClaiming() {
@@ -329,8 +365,26 @@ func (s *Service) sensorPlacement(ctx context.Context, tenantID shared.ID, cmd *
 	if cmd.Type == commanddom.CommandTypeScan && sn != nil {
 		free := sn.FreeSlots(now)
 		sp.Busy = freeScanSlots(sn.EffectiveMaxConcurrentJobs(), c.HeldScans, &free) == 0
+		// Free slots that host pressure alone took away: say so instead of
+		// the plain "no free slot".
+		if sp.Busy && sn.PressureNarrowed(now) {
+			sp.Reasons = append(sp.Reasons, commanddom.PlacementSensorOverloaded)
+		}
 	}
 	return sp, nil
+}
+
+// egressWait names the pool of decision d (the pool name only when the
+// source can say it).
+func (s *Service) egressWait(ctx context.Context, tenantID shared.ID, d egressDecision) *EgressWait {
+	if d.egress == nil {
+		return nil
+	}
+	w := &EgressWait{PoolID: d.egress.PoolID}
+	if n, ok := s.egress.(PoolNamer); ok {
+		w.PoolName = n.PoolName(ctx, tenantID, d.egress.PoolID)
+	}
+	return w
 }
 
 // sensorReachable: the sensor checks in (online, or a little late).
@@ -353,6 +407,9 @@ func claimReasons(c commanddom.SensorClaim) []string {
 	}
 	if !c.NotRefused {
 		out = append(out, commanddom.PlacementRefusedEarlier)
+	}
+	if !c.NotFailedHere {
+		out = append(out, commanddom.PlacementFailedHereEarlier)
 	}
 	if !c.CapabilityOK {
 		out = append(out, commanddom.PlacementCapabilityMissing)
@@ -428,6 +485,9 @@ func (p *Placement) summarize() {
 			p.Eligible++
 			if sp.Busy {
 				p.Busy++
+				if slices.Contains(sp.Reasons, commanddom.PlacementSensorOverloaded) {
+					counts[commanddom.PlacementSensorOverloaded]++
+				}
 			}
 		default:
 			for _, r := range sp.Reasons {
@@ -450,4 +510,52 @@ func (p *Placement) summarize() {
 		}
 		return 0
 	})
+}
+
+// markYields flags the eligible, free sensors that leave a fresh unassigned
+// scan command to a less-loaded one (claim_balance.go): the same loads and
+// order the claim uses, so the explanation says why the busier sensor did
+// not take it.
+func (s *Service) markYields(ctx context.Context, tenantID shared.ID, cmd *commanddom.Command, sensors []SensorPlacement, now time.Time) error {
+	window := s.claimBalanceWindow()
+	contester, ok := s.repo.(commanddom.ClaimContester)
+	if !ok || window <= 0 || cmd.SensorID != nil || cmd.Type != commanddom.CommandTypeScan {
+		return nil
+	}
+	since := cmd.CreatedAt
+	if cmd.ScheduledAt != nil && cmd.ScheduledAt.After(since) {
+		since = *cmd.ScheduledAt
+	}
+	if now.Sub(since) >= window {
+		return nil
+	}
+	var ids []shared.ID
+	for _, sp := range sensors {
+		if sp.Eligible && !sp.Busy {
+			ids = append(ids, sp.SensorID)
+		}
+	}
+	if len(ids) < 2 {
+		return nil
+	}
+	loads, err := contester.SensorLoads(ctx, tenantID, ids)
+	if err != nil {
+		return fmt.Errorf("read sensor loads: %w", err)
+	}
+	var best *commanddom.SensorLoad
+	for _, id := range ids {
+		if l, ok := loads[id]; ok && l.Free > 0 && (best == nil || l.LessLoaded(*best)) {
+			best = &l
+		}
+	}
+	if best == nil {
+		return nil
+	}
+	for i := range sensors {
+		sp := &sensors[i]
+		if l, ok := loads[sp.SensorID]; ok && sp.Eligible && !sp.Busy && best.LessLoaded(l) {
+			sp.Yields = true
+		}
+	}
+	return nil
 }

@@ -7,12 +7,13 @@ export type {
   AssetChange,
 } from './hooks/use-attack-surface'
 
-export { useAttackPathScoring } from './hooks/use-attack-path-scoring'
+export { useAttackPathDetail } from './hooks/use-attack-path-detail'
 export type {
-  AttackPathScoring,
-  AttackPathScore,
-  AttackPathSummary,
-} from './hooks/use-attack-path-scoring'
+  AttackPathDetail,
+  AttackPath,
+  PathNode,
+  PathEdge,
+} from './hooks/use-attack-path-detail'
 
 // Components
 export { PathGraph, EASMOverview } from './components'

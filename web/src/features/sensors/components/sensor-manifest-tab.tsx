@@ -20,6 +20,7 @@ import { agoShort, exactTime } from '../lib/format'
 import {
   concurrencyText,
   contractSummary,
+  ignoredLooksNewer,
   ignoredReasonLabel,
   isEmptyDiff,
   manifestDiffLines,
@@ -115,7 +116,7 @@ function CurrentManifest({ v, now }: { v: SensorManifestVersion; now: number }) 
           <span className="flex flex-col gap-0.5">
             <Digest digest={v.digest} />
             <span className="text-xs text-muted-foreground" title={exactTime(v.current_since)}>
-              {t('sensors.manifest.currentSince', '{source} · current since {ago}', {
+              {t('sensors.manifest.currentSince', '{source}, current since {ago}', {
                 source: manifestSourceLabel(v.source, t),
                 ago: agoShort(v.current_since, now),
               })}
@@ -196,9 +197,7 @@ function CurrentManifest({ v, now }: { v: SensorManifestVersion; now: number }) 
             )}
             {(tool.content?.length ?? 0) > 0 && (
               <div className="text-xs text-muted-foreground">
-                {tool
-                  .content!.map((c) => [c.name, c.version].filter(Boolean).join(' '))
-                  .join(' · ')}
+                {tool.content!.map((c) => [c.name, c.version].filter(Boolean).join(' ')).join(', ')}
               </div>
             )}
             {tool.contract && <ToolContract tool={tool.name} c={tool.contract} />}
@@ -221,6 +220,17 @@ function CurrentManifest({ v, now }: { v: SensorManifestVersion; now: number }) 
               : t('sensors.manifest.ignoredMany', 'The platform ignored {n} items', {
                   n: v.ignored.length,
                 })}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {ignoredLooksNewer(v.ignored)
+              ? t(
+                  'sensors.manifest.ignoredNewer',
+                  'This sensor is newer than the platform; these items will be used after the platform is updated.'
+                )
+              : t(
+                  'sensors.manifest.ignoredInvalid',
+                  'Some of these items are invalid; a sensor update will not change that.'
+                )}
           </p>
           <ul className="text-xs text-muted-foreground">
             {v.ignored.map((i) => (

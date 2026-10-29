@@ -4,9 +4,11 @@ import userEvent from '@testing-library/user-event'
 
 import {
   createTargetMapping,
+  deleteTargetMapping,
   targetMappingListPath,
   updateTargetMapping,
   useExistingTargetMapping,
+  useRegistryTargetPairs,
   useTargetMappingStats,
   useTargetMappings,
 } from '../api/use-target-mappings'
@@ -25,6 +27,13 @@ vi.mock('../api/use-target-mappings', async (importOriginal) => {
     updateTargetMapping: vi.fn(),
     deleteTargetMapping: vi.fn(),
     useExistingTargetMapping: vi.fn(),
+    useRegistryTargetPairs: vi.fn(),
+    useTargetMappingTypes: () => ({
+      data: {
+        target_types: ['url', 'domain'],
+        asset_types: ['website', 'domain'],
+      },
+    }),
     useTargetMappings: vi.fn(),
     useTargetMappingStats: vi.fn(),
   }
@@ -137,11 +146,17 @@ describe('TargetMappingDialog', () => {
     const description = screen.getByLabelText('Description (optional)')
     await user.clear(description)
     await user.type(description, 'Edited')
+    // Every change carries a reason (kept in the audit log): without one the
+    // dialog does not call the API.
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    expect(updateTargetMapping).not.toHaveBeenCalled()
+    await user.type(screen.getByLabelText('Reason'), 'Reviewed with the scanning team')
     await user.click(screen.getByRole('button', { name: 'Save changes' }))
     await waitFor(() =>
       expect(updateTargetMapping).toHaveBeenCalledWith('m1', {
         is_active: true,
         description: 'Edited',
+        reason: 'Reviewed with the scanning team',
       })
     )
     expect(onSaved).toHaveBeenCalled()
@@ -155,6 +170,7 @@ describe('TargetMappingDialog', () => {
     vi.mocked(updateTargetMapping).mockRejectedValue(new AdminApiError('conflict', 409))
     const user = userEvent.setup()
     render(<TargetMappingDialog open onOpenChange={() => {}} mapping={MAPPING} onSaved={vi.fn()} />)
+    await user.type(screen.getByLabelText('Reason'), 'Reviewed with the scanning team')
     await user.click(screen.getByRole('button', { name: 'Save changes' }))
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'This target type is already mapped to this asset type.'
@@ -188,6 +204,10 @@ describe('TargetMappingsPage', () => {
       isLoading: false,
       mutate: vi.fn(),
     } as unknown as ReturnType<typeof useTargetMappingStats>)
+    vi.mocked(useRegistryTargetPairs).mockReturnValue({
+      data: { data: [{ target_type: 'url', asset_type: 'website' }] },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useRegistryTargetPairs>)
     listOf([MAPPING])
   })
 
@@ -206,30 +226,48 @@ describe('TargetMappingsPage', () => {
     expect(row.querySelectorAll('button')).toHaveLength(0)
   })
 
-  it('lets an ops admin edit and deactivate but not delete', async () => {
+  it('shows an ops admin no write controls: every change is a super admin decision', () => {
     asRole('ops_admin')
+    render(<TargetMappingsPage />)
+    expect(screen.queryByRole('button', { name: /new mapping/i })).not.toBeInTheDocument()
+    const row = screen.getAllByRole('row').find((r) => r.textContent?.includes('Primary URL'))!
+    expect(row.querySelectorAll('button')).toHaveLength(0)
+  })
+
+  it('offers a super admin edit, deactivate and delete', async () => {
+    asRole('super_admin')
     const user = userEvent.setup()
     render(<TargetMappingsPage />)
     expect(screen.getByRole('button', { name: /new mapping/i })).toBeInTheDocument()
     await openRowMenu(user)
     expect(screen.getByRole('menuitem', { name: 'Edit' })).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: 'Deactivate' })).toBeInTheDocument()
-    expect(screen.queryByRole('menuitem', { name: 'Delete' })).not.toBeInTheDocument()
-  })
-
-  it('offers delete to a super admin', async () => {
-    asRole('super_admin')
-    const user = userEvent.setup()
-    render(<TargetMappingsPage />)
-    await openRowMenu(user)
     expect(screen.getByRole('menuitem', { name: 'Delete' })).toBeInTheDocument()
   })
 
-  it('explains what an empty installation means', () => {
+  it('deletes only with a reason, which is sent to the API', async () => {
+    asRole('super_admin')
+    vi.mocked(deleteTargetMapping).mockResolvedValue(undefined)
+    const user = userEvent.setup()
+    render(<TargetMappingsPage />)
+    await openRowMenu(user)
+    await user.click(screen.getByRole('menuitem', { name: 'Delete' }))
+    const confirm = await screen.findByRole('button', { name: 'Delete' })
+    expect(confirm).toBeDisabled()
+    await user.type(screen.getByLabelText(/Reason/), 'Duplicate of the registry pair')
+    await user.click(confirm)
+    await waitFor(() =>
+      expect(deleteTargetMapping).toHaveBeenCalledWith('m1', 'Duplicate of the registry pair')
+    )
+  })
+
+  it('explains that an empty list only lacks custom mappings', () => {
     asRole('super_admin')
     listOf([])
     render(<TargetMappingsPage />)
-    expect(screen.getByText('No target mappings')).toBeInTheDocument()
-    expect(screen.getByText(/scans skip every asset/i)).toBeInTheDocument()
+    expect(screen.getByText('No custom mappings')).toBeInTheDocument()
+    expect(
+      screen.getByText(/built-in pairs already cover the standard asset types/i)
+    ).toBeInTheDocument()
   })
 })

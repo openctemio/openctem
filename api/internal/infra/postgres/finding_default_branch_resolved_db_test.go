@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 // A run on a feature or pull-request branch must not reopen a finding that
@@ -46,7 +47,7 @@ func TestDefaultBranchResolvedFingerprints(t *testing.T) {
 	}
 
 	// A default-branch run reopens the same finding (no guard applies).
-	reopened, err := repo.AutoReopenByFingerprintsBatch(ctx, tenantID, []string{defaultFP})
+	reopened, err := repo.AutoReopenByFingerprintsBatch(ctx, tenantID, []string{defaultFP}, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -16,42 +16,46 @@ import { test, expect } from '../fixtures/authenticated-page'
 const ASSET = '10.20.30.40'
 
 for (const width of [390, 1440]) {
-  test(`asset delete asks for the name and Enter does nothing (${width}px)`, async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 900 })
-    await page.goto('/assets')
-    const actions = page.getByRole('button', { name: `Actions for ${ASSET}` })
-    await expect(actions).toBeVisible({ timeout: 30_000 })
-    await actions.click()
-    await page.getByRole('menuitem', { name: 'Delete', exact: true }).click()
+  test(
+    `asset delete asks for the name and Enter does nothing (${width}px)`,
+    { tag: ['@assets', '@shell'] },
+    async ({ page }) => {
+      await page.setViewportSize({ width: 1440, height: 900 })
+      await page.goto('/assets')
+      const actions = page.getByRole('button', { name: `Actions for ${ASSET}` })
+      await expect(actions).toBeVisible({ timeout: 30_000 })
+      await actions.click()
+      await page.getByRole('menuitem', { name: 'Delete', exact: true }).click()
 
-    await page.setViewportSize({ width, height: width < 640 ? 844 : 900 })
-    const dialog = page.getByRole('alertdialog')
-    await expect(dialog).toBeVisible()
-    await expect(dialog).toContainText(ASSET)
-    const confirm = dialog.getByRole('button', { name: 'Delete', exact: true })
-    await expect(confirm).toBeDisabled()
+      await page.setViewportSize({ width, height: width < 640 ? 844 : 900 })
+      const dialog = page.getByRole('alertdialog')
+      await expect(dialog).toBeVisible()
+      await expect(dialog).toContainText(ASSET)
+      const confirm = dialog.getByRole('button', { name: 'Delete', exact: true })
+      await expect(confirm).toBeDisabled()
 
-    const field = dialog.getByRole('textbox')
-    await expect(field).toHaveAttribute('autocapitalize', 'none')
-    await expect(field).toBeFocused()
-    await field.fill(ASSET.slice(0, -1))
-    await field.press('Enter')
-    await expect(dialog).toBeVisible()
-    await expect(confirm).toBeDisabled()
+      const field = dialog.getByRole('textbox')
+      await expect(field).toHaveAttribute('autocapitalize', 'none')
+      await expect(field).toBeFocused()
+      await field.fill(ASSET.slice(0, -1))
+      await field.press('Enter')
+      await expect(dialog).toBeVisible()
+      await expect(confirm).toBeDisabled()
 
-    await field.fill(` ${ASSET} `) // a paste with spaces still matches
-    await expect(confirm).toBeEnabled()
-    await field.press('Enter')
-    await expect(dialog).toBeVisible() // Enter never confirms
+      await field.fill(` ${ASSET} `) // a paste with spaces still matches
+      await expect(confirm).toBeEnabled()
+      await field.press('Enter')
+      await expect(dialog).toBeVisible() // Enter never confirms
 
-    const box = await dialog.boundingBox()
-    expect(box, 'dialog box').not.toBeNull()
-    expect(box!.x).toBeGreaterThanOrEqual(0)
-    expect(box!.x + box!.width).toBeLessThanOrEqual(width)
+      const box = await dialog.boundingBox()
+      expect(box, 'dialog box').not.toBeNull()
+      expect(box!.x).toBeGreaterThanOrEqual(0)
+      expect(box!.x + box!.width).toBeLessThanOrEqual(width)
 
-    await dialog.getByRole('button', { name: 'Cancel' }).click()
-    await expect(dialog).toBeHidden()
-    await page.setViewportSize({ width: 1440, height: 900 })
-    await expect(page.getByRole('button', { name: `Actions for ${ASSET}` })).toBeVisible()
-  })
+      await dialog.getByRole('button', { name: 'Cancel' }).click()
+      await expect(dialog).toBeHidden()
+      await page.setViewportSize({ width: 1440, height: 900 })
+      await expect(page.getByRole('button', { name: `Actions for ${ASSET}` })).toBeVisible()
+    }
+  )
 }

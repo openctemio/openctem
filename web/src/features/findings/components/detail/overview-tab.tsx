@@ -47,6 +47,7 @@ import {
 } from '@/features/shared/components/detail-sheet'
 import { UntrustedTextBlock } from '@/features/shared/components/untrusted-text-block'
 import { useTriageResult } from '@/features/ai-triage/api'
+import { AIBadge } from '@/features/shared/components/ai-badge'
 import { useRelatedCVEs } from '../../api/use-finding-groups'
 import { formatEpssPercentile } from '@/lib/epss'
 import { EpssChip } from '@/components/ui/epss-chip'
@@ -324,14 +325,13 @@ function ScannerOutputSection({ output }: { output: NonNullable<FindingDetail['s
         {t('findings.overviewTab.printedProof', 'What the scanner printed as its proof')}
         {output.updatedAt && (
           <>
-            {' '}
-            ·{' '}
+            ,{' '}
             {t('findings.overviewTab.fromSighting', 'from the sighting of {date}', {
               date: formatDay(output.updatedAt, locale),
             })}
           </>
         )}
-        {output.truncated && <> · {t('findings.overviewTab.cutAt', 'cut at 64 KiB')}</>}.{' '}
+        {output.truncated && <>, {t('findings.overviewTab.cutAt', 'cut at 64 KiB')}</>}.{' '}
         {t('findings.overviewTab.shownPlain', 'Shown as plain text.')}
       </p>
       <DetailDisclosure summary={t('findings.overviewTab.showOutput', 'Show output')}>
@@ -363,7 +363,7 @@ function IdentifiersSection({ finding }: { finding: FindingDetail }) {
     (finding.cvssVector && !finding.cvssVector.startsWith('CVSS:') ? finding.cvssVector : undefined)
   const otherVector = finding.cvssVector && finding.cvssVector !== v3 && finding.cvssVector !== v2
   const port = sf?.networkPort
-    ? `${sf.networkPort}${sf.networkTransport ? `/${sf.networkTransport}` : ''}${sf.networkService ? ` · ${sf.networkService}` : ''}`
+    ? `${sf.networkPort}${sf.networkTransport ? `/${sf.networkTransport}` : ''}${sf.networkService ? `, ${sf.networkService}` : ''}`
     : sf?.networkService
   const show =
     finding.cvss !== undefined ||
@@ -389,7 +389,7 @@ function IdentifiersSection({ finding }: { finding: FindingDetail }) {
             <span className="tabular-nums">
               {finding.cvss.toFixed(1)}
               {sf?.cvssVersion && (
-                <span className="text-muted-foreground"> · v{sf.cvssVersion}</span>
+                <span className="text-muted-foreground">, v{sf.cvssVersion}</span>
               )}
             </span>
           ) : null}
@@ -404,8 +404,7 @@ function IdentifiersSection({ finding }: { finding: FindingDetail }) {
               />
               {finding.epssPercentile !== undefined && (
                 <span className="text-muted-foreground">
-                  {' '}
-                  ·{' '}
+                  ,{' '}
                   {t('findings.overviewTab.percentile', '{value} percentile', {
                     value: formatEpssPercentile(finding.epssPercentile, 0),
                   })}
@@ -426,7 +425,7 @@ function IdentifiersSection({ finding }: { finding: FindingDetail }) {
               {sf.vprScore.toFixed(1)}
               <span className="text-muted-foreground">
                 {' '}
-                · {t('findings.overviewTab.notUsedForPriority', 'not used for priority')}
+                , {t('findings.overviewTab.notUsedForPriority', 'not used for priority')}
               </span>
             </span>
           ) : null}
@@ -513,7 +512,7 @@ function IdentifiersSection({ finding }: { finding: FindingDetail }) {
                 ransomware={adv.kev.ransomwareUse === 'Known'}
               />
               <span>
-                {t('findings.overviewTab.kevListed', 'Added {added} · due {due}', {
+                {t('findings.overviewTab.kevListed', 'Added {added}, due {due}', {
                   added: adv.kev.dateAdded.slice(0, 10),
                   due: adv.kev.dueDate.slice(0, 10),
                 })}
@@ -562,7 +561,8 @@ function AITriageSummary({ data }: { data: AITriageSummaryData }) {
       title={t('findings.overviewTab.aiAnalysis', 'AI analysis')}
       icon={Bot}
       actions={
-        <span className="text-xs text-muted-foreground">
+        <span className="flex items-center gap-2 text-xs text-muted-foreground">
+          <AIBadge source="ai_builtin" />
           {new Date(data.createdAt).toLocaleDateString(locale, {
             month: 'short',
             day: 'numeric',

@@ -82,8 +82,8 @@ const digestListed = 10
 
 // digestHighlights are the kinds the digest names first.
 var digestHighlights = []easmchange.Kind{
-	easmchange.KindDNSDangling, easmchange.KindExposureNew, easmchange.KindPortOpened, easmchange.KindHostAdded,
-	easmchange.KindCertExpiring,
+	easmchange.KindDNSDangling, easmchange.KindExposureNew, easmchange.KindWebSensitiveNew, easmchange.KindWebAuthLost,
+	easmchange.KindPortOpened, easmchange.KindHostAdded, easmchange.KindCertExpiring,
 }
 
 // DigestJob sends each organization its weekly attack-surface digest.
@@ -206,6 +206,10 @@ var digestLabels = map[easmchange.Kind][2]string{
 	easmchange.KindDNSDangling:  {"dangling DNS record", "dangling DNS records"},
 	easmchange.KindTechChanged:  {"technology change", "technology changes"},
 	easmchange.KindExposureNew:  {"new exposure", "new exposures"},
+
+	easmchange.KindWebSensitiveNew:        {"new sensitive web path", "new sensitive web paths"},
+	easmchange.KindWebAuthLost:            {"web endpoint without authentication", "web endpoints without authentication"},
+	easmchange.KindWebParamAddedSensitive: {"new parameter on a sensitive web endpoint", "new parameters on sensitive web endpoints"},
 }
 
 // ChangesURL is the console page of the typed changes.

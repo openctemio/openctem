@@ -150,7 +150,7 @@ export function SubStatusLanes({
                       </div>
                       <div className="truncate font-mono text-xs text-muted-foreground">
                         {s.key}
-                        {s.closure_reason ? ` · ${closureReasonLabel(t, s.closure_reason)}` : ''}
+                        {s.closure_reason ? `, ${closureReasonLabel(t, s.closure_reason)}` : ''}
                       </div>
                     </div>
                     {canWrite && (

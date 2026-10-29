@@ -62,7 +62,7 @@ type Row =
       wide?: boolean
     }
 
-const joined = (asset: Asset, keys: string[], sep = ' · ') =>
+const joined = (asset: Asset, keys: string[], sep = ', ') =>
   keys
     .map((k) => factValue(asset.metadata, k))
     .filter((v) => hasPropertyValue(v))
@@ -174,7 +174,7 @@ const HARDWARE: Row = {
       hasPropertyValue(v('architecture')) && String(v('architecture')),
     ]
       .filter(Boolean)
-      .join(' · ')
+      .join(', ')
   },
 }
 
@@ -195,7 +195,7 @@ const ENCRYPTION: Row = {
     return (
       <>
         <PropertyValue value={on} />
-        {hasPropertyValue(kind) && <span className="text-muted-foreground"> · {String(kind)}</span>}
+        {hasPropertyValue(kind) && <span className="text-muted-foreground">, {String(kind)}</span>}
       </>
     )
   },

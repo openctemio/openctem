@@ -82,7 +82,7 @@ type AssetSoftwareListResponse struct {
 
 // List handles GET /api/v1/assets/{id}/software.
 // @Summary      List the software an asset runs
-// @Description  The products and versions scans saw on the asset, each with the CVEs its version falls in (RFC-066): the match confidence, label (likely/potential), the range used and whether the organization's policy makes it a finding. An asset outside the caller's data scope answers 404.
+// @Description  The products and versions scans saw on the asset, each with the CVEs its version falls in: the match confidence, label (likely/potential), the range used and whether the organization's policy makes it a finding. An asset outside the caller's data scope answers 404.
 // @Tags         Assets
 // @Produce      json
 // @Param        id   path      string  true  "Asset ID"

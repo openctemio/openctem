@@ -187,7 +187,7 @@ function GroupTitle({ group }: { group: FindingGroup }) {
         />
       )}
       {Boolean(meta.cisa_kev) && <KevBadge />}
-      <span className="tabular-nums">· {facts.join(' · ')}</span>
+      <span className="tabular-nums">, {facts.join(', ')}</span>
     </span>
   )
 }

@@ -253,7 +253,7 @@
   "remediationHub.plan.loadError": "kế hoạch khắc phục",
   "remediationHub.plan.mine": "Công việc của tôi",
   "remediationHub.plan.openTasks": "Công việc đang mở",
-  "remediationHub.plan.row": "{findings} phát hiện · {risk} điểm rủi ro",
+  "remediationHub.plan.row": "{findings} phát hiện, {risk} điểm rủi ro",
   "remediationHub.plan.suggested": "Được đề xuất",
   "remediationHub.plan.title": "Khắc phục",
   "remediationHub.plan.toReview": "Đề xuất cần xem",

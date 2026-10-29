@@ -451,3 +451,28 @@ func (r *APIKeyRepository) RehashKey(ctx context.Context, id shared.ID, oldHash,
 func (r *APIKeyRepository) CountKeysNotUnderPepper(ctx context.Context) (int, error) {
 	return r.countNotCurrent(ctx, r.db, apiKeyTokens)
 }
+
+// RevokeByUser implements apikey.Repository.
+func (r *APIKeyRepository) RevokeByUser(ctx context.Context, userID, revokedBy apikey.ID, now time.Time) (int, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE api_keys SET status = 'revoked', revoked_at = $3, revoked_by = $2, updated_at = $3
+		 WHERE user_id = $1 AND status = 'active'`, userID.String(), revokedBy.String(), now)
+	if err != nil {
+		return 0, fmt.Errorf("revoke api keys of user: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
+// CountActiveByUser implements apikey.Repository.
+func (r *APIKeyRepository) CountActiveByUser(ctx context.Context, userID apikey.ID, now time.Time) (int, error) {
+	var n int
+	err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM api_keys
+		 WHERE user_id = $1 AND status = 'active' AND (expires_at IS NULL OR expires_at > $2)`,
+		userID.String(), now).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("count api keys of user: %w", err)
+	}
+	return n, nil
+}

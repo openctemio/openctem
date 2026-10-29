@@ -32,13 +32,14 @@ var AllowedPaths = map[string]string{
 
 // AllowedIdents are identifiers that contain "agent" but do not mean a sensor.
 var AllowedIdents = map[string]string{
-	"ModuleAITriageAgent":                "module for that AI agent mode",
 	"TestAITriage_GetAIConfig_AgentMode": "tests that AI agent mode",
 	"ScannerAgentID":                     "a third-party scanner's own endpoint agent id (CTIS identity_hints.agent_id), not a sensor",
 }
 
-// The HTTP User-Agent is not a sensor.
-var userAgent = regexp.MustCompile(`(?i)user_?agent`)
+// The HTTP User-Agent is not a sensor, and neither is an AI agent: its code is
+// spelled AIAgent / aiAgent / ai_agent (owner naming rule 2026-10-28). A bare
+// Agent / agent in an identifier is still the retired sensor name.
+var userAgent = regexp.MustCompile(`(?i)user_?agent|ai_?agent`)
 
 // Violation is one place the old vocabulary appears where it should not.
 type Violation struct {

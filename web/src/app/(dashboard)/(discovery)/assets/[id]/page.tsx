@@ -40,6 +40,7 @@ import { getAssetTypeLabel } from '@/features/assets/lib/asset-type-icon'
 import { AssetStatusBadge } from '@/features/asset-lifecycle'
 import { AssetScanWindowCard } from '@/features/scan-windows'
 import { AssetWebEvidenceCard } from '@/features/attack-surface'
+import { OriginWebSection, isWebOriginType } from '@/features/web-surface'
 import { useTranslation } from '@/context/i18n-provider'
 import { useTenant } from '@/context/tenant-provider'
 import { usePermissions, Permission } from '@/lib/permissions'
@@ -249,6 +250,10 @@ export default function AssetDetailPage() {
         </Card>
         {/* What a sensor saw when it fetched the asset (RFC-081); hidden when none. */}
         <AssetWebEvidenceCard assetId={asset.id} />
+        {/* Header posture, endpoints, parameters and changes of a web origin (research/292). */}
+        {isWebOriginType(asset.type) && (
+          <OriginWebSection assetId={asset.id} assetName={asset.name} properties={asset.metadata} />
+        )}
         {/* When active scans of this asset may run (RFC-067); hidden when no window applies. */}
         <AssetScanWindowCard assetId={asset.id} />
 

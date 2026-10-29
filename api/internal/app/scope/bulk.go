@@ -42,6 +42,12 @@ type BulkTargetsInput struct {
 	// confirmed the assets as the organization's) or connector (a connector
 	// synced them); the last two are set by the server only.
 	Origin scopedom.Origin
+	// ExpiresInDays and MaxTier apply to every item of the batch, as they
+	// would on POST /scope/targets (nil / empty: the entry point's defaults:
+	// permanent, the organization's default tier). Each item still goes
+	// through CreateTarget's policy checks.
+	ExpiresInDays *int
+	MaxTier       string
 }
 
 // BulkTargetOutcome is what happened to one item: Target is the entry it
@@ -98,16 +104,7 @@ func (s *Service) CreateTargets(ctx context.Context, in BulkTargetsInput) ([]Bul
 	var added []*scopedom.Target
 	for _, item := range in.Items {
 		o := BulkTargetOutcome{Item: item}
-		o.Target, o.Err = s.CreateTarget(ctx, CreateTargetInput{
-			TenantID:   in.TenantID,
-			TargetType: strings.TrimSpace(item.TargetType),
-			Pattern:    strings.TrimSpace(item.Pattern),
-			CreatedBy:  in.CreatedBy,
-			Reason:     in.Reason,
-			Actor:      in.Actor,
-			Origin:     origin,
-			batch:      true,
-		})
+		o.Target, o.Err = s.CreateTarget(ctx, bulkItemInput(in, item, origin))
 		if o.Err == nil && o.Target.IsActive() {
 			added = append(added, o.Target)
 		}
@@ -122,6 +119,22 @@ func (s *Service) CreateTargets(ctx context.Context, in BulkTargetsInput) ([]Bul
 		s.NotifyAdmins(ctx, tenantID, bulkTitle(len(added)), bulkBody(added))
 	}
 	return out, nil
+}
+
+// bulkItemInput is the single-entry input one item of a bulk add stands for.
+func bulkItemInput(in BulkTargetsInput, item BulkTargetItem, origin scopedom.Origin) CreateTargetInput {
+	return CreateTargetInput{
+		TenantID:      in.TenantID,
+		TargetType:    strings.TrimSpace(item.TargetType),
+		Pattern:       strings.TrimSpace(item.Pattern),
+		CreatedBy:     in.CreatedBy,
+		Reason:        in.Reason,
+		ExpiresInDays: in.ExpiresInDays,
+		MaxTier:       in.MaxTier,
+		Actor:         in.Actor,
+		Origin:        origin,
+		batch:         true,
+	}
 }
 
 // isItemRefusal reports whether err is an answer about the item (a coded

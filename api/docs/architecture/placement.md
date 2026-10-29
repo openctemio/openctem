@@ -23,6 +23,7 @@ it, instead of "Waiting for a sensor".
 | Claim SQL | in the task's scan zone, with the tool | `outside_zone` |
 | Claim SQL | the sensor reported the tool installed | `tool_missing` |
 | Claim SQL | the sensor has not refused this task | `refused_earlier` |
+| Claim SQL | the sensor has not failed this task for an infrastructure reason or lost its lease | `failed_here_earlier` |
 | Claim SQL | every required capability offered | `capability_missing` |
 | Claim SQL | every required feature *reported by the sensor* (`required_features`: `net.confined@1` for a web-scoped nuclei job) | `not_confined` |
 | Dispatch gate | the sensor grant admits the task | `grant_<dimension>` (`grant_tools`, `grant_tier_ceiling`, `grant_target_network`, …) |
@@ -31,12 +32,73 @@ it, instead of "Waiting for a sensor".
 | Dispatch gate | private targets: the sensor enforces a local policy when the organization requires one | `private_needs_local_policy` |
 | Dispatch gate | the organization enabled the opt-in the task uses | `opt_in_disabled` |
 | Dispatch gate | the sensor's own local policy accepts the task | `local_policy_refuses` |
+| Delivery (proxy pools) | the sensor's jobs go through a proxy pool and the sensor reports it can honor one (`egress.upstream@1`, `net.confined@1`); scan and retest jobs only | `egress_unsupported` |
+| Delivery (proxy pools) | the same, and for a validate job the sensor's validate executor goes through the pool (`egress.validate@1`) | `egress_validate_unsupported` |
+| Delivery (proxy pools) | the sensor's owner set it to scan direct on its host (`egress.host-direct@1`) and the job needs a pool: the organization requires a proxy, or a pool is named for the sensor | `egress_host_direct` |
 | Sensor report | the sensor claims new jobs (its heartbeats do not report `local_store.stop_claiming`: storage over quota, disk low, or results not yet acknowledged) | `stopped_claiming` |
 | Slots | a free scan slot (eligible but busy otherwise) | `no_free_slot` (counted as *busy*) |
+| Host pressure | the sensor's host is not overloaded (a fresh report of `resources.pressure.level` is `overloaded`, or `elevated`, and the sensor's free slots are narrowed by it) | `sensor_overloaded` (counted as *busy*, instead of the plain busy) |
+
+Host pressure narrows the free slots (`Sensor.FreeSlots`, mirrored by
+`sensorFreeSlotsSQL`): with a fresh load report, level `overloaded` leaves no
+free slot to a sensor that holds a command and at most one to an idle one;
+`elevated` leaves at most one. Selection ranks a pressured sensor behind
+others (+25 elevated, +100 overloaded on its load score). The report is
+untrusted: level and reasons are closed sets, numbers are clamped, and it can
+only lower what dispatch offers. A stale report (older than three minutes)
+counts for nothing. Tenants see the detail only on their own sensors' pages;
+platform sensors show tenants a busy state, never their pressure.
 
 The claim SQL lives in `internal/infra/postgres/command_repository.go`
 (`pendingForSensorWhere`); the dispatch gate in
 `internal/app/command/local_policy.go`.
+
+## Spreading work across sensors
+
+Every eligible sensor of the organization is woken when a task is queued,
+and the first claim wins. Left at that, the sensor that answers fastest (the
+lowest round trip, or the one that just finished the previous stage and
+polls again at once) takes every task up to its free slots while an equally
+able peer stays idle. The claim therefore balances
+(`internal/app/command/claim_balance.go`):
+
+1. The claiming sensor reads the fresh tasks it shares with its peers
+   (`ClaimContest`): unassigned scan tasks that became claimable (queued,
+   re-queued or released by their scan window) less than **10 seconds** ago,
+   that pass its own claim SQL, and that at least one other organization
+   sensor (active, online or late, with a free slot) passes too. Shared
+   sensors and other organizations' sensors never count.
+2. It walks them in queue order and gives each to the least-loaded sensor
+   that may take it: the largest share of free slots for its size first,
+   then the fewest claims in the last 15 minutes, then itself on a tie.
+3. It claims every task it does not share, and as many shared tasks as the
+   walk gave it. The rest stay pending for the peers, which were woken too.
+
+A task is shared only for the window: a peer that does not claim it (it
+stopped, or refuses for a reason the claim SQL cannot see, such as its local
+policy) delays it by about 10 seconds at most, and then any eligible sensor
+takes it. A sensor without the tool, outside the zone, offline, disabled or
+full is never a peer, and a task addressed to one sensor is never shared.
+
+The explainer flags the sensors that would leave a fresh task to a
+less-loaded one (`yields: true`, "can take it, leaves it to a less-loaded
+sensor for a few seconds").
+
+### Slots are capped inside the claim
+
+The service counts a sensor's free slots before it claims, but two claims of
+the same sensor can run at once (a poll and a stream wake, two API
+replicas). The claim statement therefore takes a per-sensor transaction
+advisory lock, recounts the scan tasks the sensor holds and claims no more
+scans than its effective job limit minus that count (`capToFreeSlots`).
+Heartbeats writing the sensor row are not blocked by it.
+
+The job count the console shows ("Jobs 5/5") is the same count: scan tasks
+acknowledged or running. A command that takes no scan slot (a content
+refresh) is not a job, so a sensor running five scans and a content refresh
+shows 5 of 5, not 6 of 5. A task whose sensor disappears keeps its slot only
+until its lease runs out; the lease reaper then puts it back in the queue
+(`RequeueExpiredLeases`).
 
 ## The shared fleet
 
@@ -110,6 +172,36 @@ advertises `net.confined@1` from its runtime status only (sensor and sdk-go),
 and still refuses a web-scoped job it cannot confine (`WEB_SCOPE_UNSUPPORTED`)
 as defence in depth.
 
+## Withheld tasks leave a trace
+
+The dispatch gate runs in code after the poll query, so a task that every
+sensor's gate withholds never shows up in the claim SQL as blocked. To keep
+such a task from waiting in silence until its run deadline:
+
+- Every refusal by the gate (poll, claim by id, claim of a shared sensor) is
+  recorded on the pending command: `commands.withheld_reason` holds the
+  placement code (`grant_credentials`, `intensity`, `local_policy_refuses`,
+  …) and `withheld_at` when it was recorded. Only the code is stored, never
+  the sensor, the targets or the job settings.
+- The write is rate-limited twice: in the API process at most once per
+  command and code per 10 minutes (`withheldNotes`), and in SQL a code
+  recorded within that window is not written again. Only pending commands
+  of the caller's tenant are written.
+- One log line per sensor and code per 10 minutes ("dispatch gate withheld
+  commands from a sensor") with the tenant, the sensor, the code and the
+  count. No payload, target or setting is logged.
+- The explainer returns the recorded code as `withheld`, also for a platform
+  task and for the shared fleet, whose sensors are never listed.
+- A run that ends unclaimed (`NO_SENSOR`) names the refusal in its message,
+  e.g. "no sensor picked up this run's work within 1h — withheld by sensor
+  permissions: credentials", and its tasks keep `withheld_reason`, which the
+  run page translates.
+
+Code: `internal/app/command/withheld.go`, `RecordWithheld` in
+`internal/infra/postgres/command_placement.go`, `withheldTextSQL` in
+`internal/infra/postgres/scan_run_repository.go` (kept equal to
+`command.WithheldText` by a DB test).
+
 ## API
 
 `GET /api/v1/scan-runs/{id}/tasks/{task_id}/placement` (`scans:read`):
@@ -121,7 +213,7 @@ as defence in depth.
   "evaluated": 3, "truncated": false,
   "eligible": 1, "busy": 1,
   "blocking": [{"code": "tool_missing", "count": 2}],
-  "sensors": [{"id": "…", "name": "dmz-1", "eligible": true, "busy": true, "reasons": []}]
+  "sensors": [{"id": "…", "name": "dmz-1", "eligible": true, "busy": true, "yields": false, "reasons": []}]
 }
 ```
 
@@ -132,6 +224,10 @@ as defence in depth.
   reader of the run gets the counts and codes.
 - At most 100 sensors are evaluated (by name); `truncated` says there were
   more.
+- `withheld` / `withheld_at`: the placement code of the last time a
+  sensor's dispatch gate withheld the task, by any sensor that asked for work
+  (the organization's or a shared one, never named), and when. Absent when no
+  gate withheld it.
 
 ## Run page
 
@@ -141,6 +237,10 @@ as defence in depth.
   each reason with its count, what it means, the fix and a link to the page
   that applies it, and, for a caller with `sensors:read`, each sensor's
   verdict (`web/src/features/scans/components/task-placement.tsx`).
+  A task no sensor took that a sensor's gate withheld shows the reason under
+  its status ("Withheld: The sensor's grant does not allow it
+  (credentials).") from `withheld_reason`, while queued and after its run
+  ended unclaimed.
 - **Step panel:** a failed, partial, skipped or canceled step shows its error
   code, its class and the code's meaning, fix and link
   (`code-help.tsx`). What the step did not do comes from its structured
@@ -175,6 +275,10 @@ as defence in depth.
   another organization's sensors are never read.
 - **Platform scanning** is never broken down: platform sensors are
   excluded from the sensor list, and a platform task names none.
+- **Withheld reasons** are recorded per command with the command's tenant
+  (`RecordWithheld` writes only pending commands of that tenant). A shared
+  sensor's refusal records only the code on the organization's own command;
+  which sensor refused is never stored or shown.
 - **Least privilege inside the tenant.** Sensor names and per-sensor
   verdicts need `sensors:read` on top of `scans:read`.
 - **No widening.** Reason codes describe the claim; nothing a sensor
@@ -185,4 +289,10 @@ as defence in depth.
 - `pkg/domain/command/placement.go`: reason codes and the repository port.
 - `internal/infra/postgres/command_placement.go`: the predicates read back.
 - `internal/app/command/placement.go`: the explainer.
+- `internal/app/command/claim_balance.go`, `internal/infra/postgres/command_claim_balance.go`:
+  spreading work across sensors and the in-claim slot cap.
 - `internal/infra/http/handler/scan_run_task_placement_handler.go`: the endpoint.
+
+## Proxy pool holds name their pool
+
+A sensor held back by `egress_unsupported`, `egress_validate_unsupported` or `egress_host_direct` carries the pool its jobs use (`egress_pool` with `id` and `name` in the per-sensor verdict of `GET /scan-runs/{id}/tasks/{task_id}/placement`). Like the rest of the per-sensor verdicts it is returned only to a caller with `sensors:read`, and the name is read for the caller's own organization only. The run page turns it into one sentence per sensor ("Sensor X cannot use the proxies of pool P (no proxy support reported)") and links the fix. A pool whose endpoints are all quarantined is not a hold: the sensor fails the job rather than waiting (it never goes direct). Every egress hold takes its code from `egressDecision.holdReason`, so a new kind of hold adds one case there and one entry in the web `PLACEMENT_FIX`.

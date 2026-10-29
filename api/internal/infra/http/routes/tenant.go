@@ -67,6 +67,14 @@ func registerTenantRoutes(
 	tenantMiddlewares = append(tenantMiddlewares,
 		middleware.TenantContext(tenantRepo),
 		middleware.RequireMembership(membershipReader))
+	// The one entry check of every route that names its organization in the
+	// URL: a tenantless token is refused, and the URL organization's SSO,
+	// two-factor and personal-account requirements apply to the token's
+	// session on every request, whichever organization the token was minted
+	// for (research/310 X-02).
+	if entryGateMiddleware != nil {
+		tenantMiddlewares = append(tenantMiddlewares, entryGateMiddleware)
+	}
 	// A suspended organization in the URL is refused to its members (the
 	// membership check above runs first, so only members learn the status).
 	if organizationGate != nil {
@@ -115,6 +123,10 @@ func registerTenantRoutes(
 		r.POST("/users", h.CreateUser, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersWrite))
 		r.POST("/users/{userId}/setup-link", h.ReissueSetupLink, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersWrite))
 		r.POST("/invitations/{invitationId}/resend", h.ResendInvitation, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersInvite))
+		// A new link without email (servers that cannot send mail, lost links)
+		// and renewal of an expired invitation: rotate the token, return it once.
+		r.POST("/invitations/{invitationId}/link", h.RegenerateInvitationLink, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersInvite))
+		r.POST("/invitations/{invitationId}/renew", h.RenewInvitation, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersInvite))
 		r.DELETE("/invitations/{invitationId}", h.DeleteInvitation, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersInvite))
 
 		// Settings management (admin+)

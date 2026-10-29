@@ -455,7 +455,7 @@ export function RoleDetailSheet({
                 value={filteredPermissionCount}
                 caption={t(
                   'org.roleDetail.statBreakdown',
-                  '{read} read · {write} write · {del} delete',
+                  '{read} read, {write} write, {del} delete',
                   {
                     read: permissionStats.read,
                     write: permissionStats.write,

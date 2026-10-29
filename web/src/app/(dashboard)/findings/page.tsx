@@ -170,8 +170,11 @@ import {
   findingStatusesInCategory,
 } from '@/features/findings'
 import { ExploitSignals } from '@/features/findings/components/exploit-signals'
+import { listQuery, writeListContext } from '@/features/findings/lib/list-context'
 import { FindingAssetCell } from '@/features/findings/components/cells/finding-asset-cell'
 import { DuplicatesChip } from '@/features/findings/components/cells/duplicates-chip'
+import { FindingTitleCell } from '@/features/findings/components/cells/finding-title-cell'
+import { AssetMarkers } from '@/features/findings/components/cells/asset-markers'
 import { findingRowTone } from '@/features/findings/lib/row-tone'
 import { PriorityClassBadge } from '@/features/findings/components/priority-class-badge'
 import { BranchOnlyBadge } from '@/features/findings/components/branch-only-badge'
@@ -1506,15 +1509,22 @@ function FindingsContent() {
 
           return (
             <div
-              className="cursor-pointer max-w-[200px] sm:max-w-[260px] 2xl:max-w-md"
+              className="cursor-pointer max-w-[220px] sm:max-w-[360px] 2xl:max-w-xl"
               role="button"
               tabIndex={0}
               // The title leads the name, so a screen reader announces which
               // finding the button opens (it used to read "View finding
               // details" on every row).
-              aria-label={t('findings.list.openRow', '{title}, view details', {
-                title: toDisplayText(row.getValue('title'), 300),
-              })}
+              aria-label={
+                row.original.location?.full
+                  ? t('findings.list.openRowOn', '{title} on {target}, view details', {
+                      title: toDisplayText(row.getValue('title'), 300),
+                      target: toDisplayText(row.original.location.full, 300),
+                    })
+                  : t('findings.list.openRow', '{title}, view details', {
+                      title: toDisplayText(row.getValue('title'), 300),
+                    })
+              }
               onClick={() => handleRowClick(row.original)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
@@ -1523,33 +1533,44 @@ function FindingsContent() {
                 }
               }}
             >
-              <div className="flex items-center gap-1.5">
-                {/* Scanner-supplied text: escaped, isolated, never markup. */}
-                <p dir="auto" className="font-medium truncate [unicode-bidi:isolate]">
-                  {toDisplayText(row.getValue('title'), 500)}
-                </p>
-                <DuplicatesChip count={row.original.duplicatesMarked} interactive={false} />
-                {row.original.branchOnly && <BranchOnlyBadge />}
-                {hasDataFlow && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="inline-flex items-center gap-0.5 rounded-full bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground shrink-0">
-                        <Route className="h-3 w-3" aria-hidden />
-                        {t('findings.list.pathChip', 'Path')}
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="text-xs">
-                      {t('findings.list.attackPath', 'Has attack path data')}
-                    </TooltipContent>
-                  </Tooltip>
-                )}
-              </div>
-              <MetaLine
-                className="flex-nowrap overflow-hidden whitespace-nowrap"
-                items={[
-                  row.original.cve && <CveLink id={row.original.cve} stopPropagation />,
-                  row.original.scanner,
-                ]}
+              <FindingTitleCell
+                title={row.getValue('title')}
+                target={row.original.location?.full}
+                markers={
+                  <AssetMarkers
+                    interactive={false}
+                    internetFacing={row.original.assets[0]?.isInternetAccessible}
+                    crownJewel={row.original.assets[0]?.isCrownJewel}
+                  />
+                }
+                chips={
+                  <>
+                    <DuplicatesChip count={row.original.duplicatesMarked} interactive={false} />
+                    {row.original.branchOnly && <BranchOnlyBadge />}
+                    {hasDataFlow && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="inline-flex items-center gap-0.5 rounded-full bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground shrink-0">
+                            <Route className="h-3 w-3" aria-hidden />
+                            {t('findings.list.pathChip', 'Path')}
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="text-xs">
+                          {t('findings.list.attackPath', 'Has attack path data')}
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+                  </>
+                }
+                meta={
+                  <MetaLine
+                    className="flex-nowrap overflow-hidden whitespace-nowrap"
+                    items={[
+                      row.original.cve && <CveLink id={row.original.cve} stopPropagation />,
+                      row.original.scanner,
+                    ]}
+                  />
+                }
               />
             </div>
           )
@@ -1779,9 +1800,9 @@ function FindingsContent() {
             key={o.value}
             label={
               <>
-                {o.value}{' '}
-                <span className="text-muted-foreground">
-                  · {t(`findings.priority.hint.${o.value}`, o.hint)}
+                {o.value}
+                <span className="block text-xs font-normal text-muted-foreground">
+                  {t(`findings.priority.hint.${o.value}`, o.hint)}
                 </span>
               </>
             }
@@ -1900,6 +1921,22 @@ function FindingsContent() {
         ? t('findings.view.all', 'All findings')
         : t('findings.view.custom', 'Custom view')
   const awaitingVerification = findingStats?.awaiting_verification ?? 0
+  // The finding page's list context (breadcrumb with this view, prev/next):
+  // the query and the ids of the page shown, kept in the tab.
+  const contextLabel = openView?.name ?? viewTitle
+  useEffect(() => {
+    if (!findingsResponse?.data?.length) return
+    const perPage = findingsResponse.per_page || pagination.pageSize
+    writeListContext({
+      query: listQuery(buildFindingsEndpoint(apiFilters)),
+      label: contextLabel,
+      returnPath: `${window.location.pathname}${window.location.search}`,
+      ids: findingsResponse.data.map((f) => f.id),
+      offset: Math.max(0, ((findingsResponse.page || 1) - 1) * perPage),
+      perPage,
+      total: findingsResponse.total ?? findingsResponse.data.length,
+    })
+  }, [findingsResponse, apiFilters, contextLabel, pagination.pageSize])
 
   // Triage: the findings still to be decided (status new), in triage mode
   // (/findings/triage, research/234 §5.2). The session remembers this list,

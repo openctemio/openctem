@@ -115,5 +115,5 @@ export function capacityLabel(sensor: CapacitySource, tr?: Tr): string {
   if (c.reported != null)
     parts.push(msg(tr, 'sensors.detail.capOperator', 'operator cap {n}', { n: c.reported }))
   parts.push(msg(tr, 'sensors.detail.capLimit', 'your limit {n}', { n: c.limit }))
-  return parts.join(' · ')
+  return parts.join(', ')
 }

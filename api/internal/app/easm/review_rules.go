@@ -754,7 +754,9 @@ func (s *RuleService) Apply(ctx context.Context, tenantID shared.ID, in RuleActi
 	case RuleRejectRule:
 		typ, _ := ruleType(in.TargetType)
 		e, err := s.scope.CreateExclusion(ctx, scope.CreateExclusionInput{TenantID: tenantID.String(), Origin: scopedom.OriginReviewRule,
-			ExclusionType: string(exclusionType(typ)), Pattern: in.Pattern, Reason: in.Reason, CreatedBy: in.Actor.UserID})
+			ExclusionType: string(exclusionType(typ)), Pattern: in.Pattern, Reason: in.Reason, CreatedBy: in.Actor.UserID,
+			// Rejecting as a rule says the names are someone else's.
+			Kind: string(scopedom.ExclusionKindNotOurs)})
 		if err != nil {
 			return nil, err
 		}

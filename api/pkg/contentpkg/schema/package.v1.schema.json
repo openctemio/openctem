@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://openctem.io/schemas/package/v1.json",
   "title": "OpenCTEM content package manifest (package.yaml)",
-  "description": "The manifest of a content package, apiVersion openctem.io/package/v1. Design: api/docs/rfcs/RFC-099-content-packages.md.",
+  "description": "The manifest of a content package, apiVersion openctem.io/package/v1.",
   "type": "object",
   "additionalProperties": false,
   "required": ["apiVersion", "id", "version", "type", "title", "artifact", "compatibility", "permissions", "license"],
@@ -20,7 +20,7 @@
     "title": {"$ref": "#/$defs/text", "maxLength": 80, "minLength": 1},
     "summary": {"$ref": "#/$defs/text", "maxLength": 500},
     "content_kind": {
-      "description": "The RFC-061 content pack kind; required for rules, templates and wordlists, forbidden otherwise.",
+      "description": "The content pack kind; required for rules, templates and wordlists, forbidden otherwise.",
       "type": "string",
       "pattern": "^(?:[a-z][a-z0-9-]{1,40}|x-[a-z0-9-]{1,32}/[a-z][a-z0-9-]{1,40})$"
     },

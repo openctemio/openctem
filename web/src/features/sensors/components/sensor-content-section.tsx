@@ -141,7 +141,6 @@ function ContentRow({ c, now }: { c: SensorContent; now: number }) {
           <ContentVersion c={c} now={now} />
           {age && (
             <>
-              <span aria-hidden>·</span>
               <span
                 className={cn(
                   'inline-flex items-center gap-1.5',
@@ -149,20 +148,18 @@ function ContentRow({ c, now }: { c: SensorContent; now: number }) {
                 )}
               >
                 {age}
-                {limit ? ` · ${t('sensors.contentSection.limit', undefined, { limit })}` : ''}
+                {limit ? `, ${t('sensors.contentSection.limit', undefined, { limit })}` : ''}
                 <AgeMeter c={c} now={now} />
               </span>
             </>
           )}
           {checked && (
             <>
-              <span aria-hidden>·</span>
               <span>{checked}</span>
             </>
           )}
           {c.pinned_version && (
             <>
-              <span aria-hidden>·</span>
               <span className={cn(c.pin_mismatch && 'text-warning')}>
                 {t('sensors.contentSection.pinned')}{' '}
                 <span className="text-foreground">{c.pinned_version}</span>

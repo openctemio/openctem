@@ -38,6 +38,13 @@ var (
 	ErrInvalidState        = errors.New("invalid OAuth state")
 	ErrOAuthExchangeFailed = errors.New("failed to exchange OAuth code")
 	ErrOAuthUserInfoFailed = errors.New("failed to get user info from OAuth provider")
+	// ErrOAuthAccountExists: the provider's email names an account that signs
+	// in another way (a password, or another provider) and this provider
+	// identity is not linked to it. Nothing was written. The person signs in
+	// the usual way and links the provider from their account settings.
+	ErrOAuthAccountExists = errors.New("an account with this email already exists; sign in to it and link this provider")
+	// ErrOAuthNoEmail: the provider returned no email address.
+	ErrOAuthNoEmail = errors.New("the OAuth provider did not return an email address")
 )
 
 // OAuthProvider represents a supported OAuth provider.
@@ -84,9 +91,10 @@ type OAuthService struct {
 	refreshTokenRepo sessiondom.RefreshTokenRepository
 	tokenGenerator   *jwt.Generator
 	config           config.OAuthConfig
+	providers        ProviderSource
 	authConfig       config.AuthConfig
 	logger           *logger.Logger
-	platformAdmins   PlatformAdminGate
+	breakGlassGate   BreakGlassGate
 	httpClient       *http.Client
 	// oidcVerifier validates the signed id_token for providers that return one
 	// (Microsoft/Entra), so identity is taken from verified claims rather than
@@ -110,6 +118,12 @@ type OAuthService struct {
 	// social sign-in adopts it (oauth_claim_guard.go). Unset: never adopted.
 	claimMembers ClaimMembershipSource
 	claimDomains DomainVerifier
+	// secondFactor, sessions and identityNotifier serve linked identities
+	// (identity_link.go): the second step of a linked password account, the
+	// session revocation of an automatic link, and the link e-mails.
+	secondFactor     SecondFactorGate
+	sessions         SessionRevoker
+	identityNotifier IdentityNotifier
 }
 
 // InvitationLookup answers whether any organization has a pending invitation
@@ -224,6 +238,9 @@ type AuthorizationURLInput struct {
 type AuthorizationURLResult struct {
 	AuthorizationURL string `json:"authorization_url"`
 	State            string `json:"state"`
+	// BrowserBinding is a one-time secret for the browser that started the
+	// flow, returned with the callback to prove the state is its own.
+	BrowserBinding string `json:"browser_binding"`
 }
 
 // GetAuthorizationURL returns the OAuth authorization URL for the specified provider.
@@ -236,18 +253,19 @@ func (s *OAuthService) GetAuthorizationURL(ctx context.Context, input Authorizat
 		return nil, ErrInvalidProvider
 	}
 
-	providerConfig := s.getProviderConfig(input.Provider)
+	providerConfig := s.getProviderConfig(ctx, input.Provider)
 	if providerConfig == nil || !providerConfig.IsConfigured() {
 		return nil, ErrProviderDisabled
 	}
 
 	// Generate state token with PKCE for CSRF + code interception protection
-	state, codeVerifier, err := s.generateState(input.Provider, input.FinalRedirect)
+	state, codeVerifier, err := s.generateState(input.Provider, input.FinalRedirect, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate state: %w", err)
 	}
-	if err := s.pkceStore.Set(ctx, pkceStoreKey(state), codeVerifier, s.stateTTL()); err != nil {
-		return nil, fmt.Errorf("failed to store PKCE verifier: %w", err)
+	binding, err := s.storeBoundVerifier(ctx, state, codeVerifier)
+	if err != nil {
+		return nil, err
 	}
 
 	// Build authorization URL with PKCE challenge
@@ -259,6 +277,7 @@ func (s *OAuthService) GetAuthorizationURL(ctx context.Context, input Authorizat
 	return &AuthorizationURLResult{
 		AuthorizationURL: authURL,
 		State:            state,
+		BrowserBinding:   binding,
 	}, nil
 }
 
@@ -268,6 +287,8 @@ type CallbackInput struct {
 	Code        string
 	State       string
 	RedirectURI string
+	// BrowserBinding is the secret the authorize call returned to this browser.
+	BrowserBinding string
 }
 
 // CallbackResult represents the OAuth callback result.
@@ -277,6 +298,11 @@ type CallbackResult struct {
 	ExpiresIn    int64         `json:"expires_in"`
 	TokenType    string        `json:"token_type"`
 	User         *userdom.User `json:"user"`
+	// MFAChallenge is set when the account is a password account with a
+	// second factor (or an organization requires one): no session was
+	// issued, and the challenge opens the same second step a password
+	// sign-in takes (POST /auth/mfa/verify or the enrollment steps).
+	MFAChallenge *MFAChallengeInfo `json:"-"`
 }
 
 // HandleCallback handles the OAuth callback.
@@ -289,23 +315,24 @@ func (s *OAuthService) HandleCallback(ctx context.Context, input CallbackInput) 
 		return nil, ErrInvalidProvider
 	}
 
-	providerConfig := s.getProviderConfig(input.Provider)
+	providerConfig := s.getProviderConfig(ctx, input.Provider)
 	if providerConfig == nil || !providerConfig.IsConfigured() {
 		return nil, ErrProviderDisabled
 	}
 
 	// Validate state, then claim its PKCE verifier. Taking it is single use:
 	// a replayed state finds nothing and is refused before any code exchange.
-	finalRedirect, err := s.validateState(input.State, input.Provider)
+	claims, err := s.validateState(input.State, input.Provider)
 	if err != nil {
 		return nil, ErrInvalidState
 	}
-	codeVerifier, found, err := s.pkceStore.GetDel(ctx, pkceStoreKey(input.State))
-	if err != nil {
-		s.logger.Error("failed to read PKCE verifier", "provider", input.Provider, "error", err)
+	// A link state signs nobody in: it belongs to CompleteLink.
+	if claims.Purpose != "" {
 		return nil, ErrInvalidState
 	}
-	if !found || codeVerifier == "" {
+	finalRedirect := claims.FinalRedirect
+	codeVerifier, ok := s.claimBoundVerifier(ctx, input.State, input.BrowserBinding, input.Provider)
+	if !ok {
 		return nil, ErrInvalidState
 	}
 
@@ -319,25 +346,49 @@ func (s *OAuthService) HandleCallback(ctx context.Context, input CallbackInput) 
 	// Get user info from provider
 	userInfo, err := s.getUserInfo(ctx, input.Provider, tokens)
 	if err != nil {
+		if errors.Is(err, ErrEmailUnverifiedAtIDP) {
+			s.logger.Warn("social sign-in refused: email not verified by the provider", "provider", input.Provider)
+			return nil, ErrEmailUnverifiedAtIDP
+		}
 		s.logger.Error("failed to get user info", "provider", input.Provider, "error", err)
 		return nil, ErrOAuthUserInfoFailed
 	}
 
 	// SECURITY: Require email from OAuth provider
 	if userInfo.Email == "" {
-		return nil, fmt.Errorf("OAuth provider did not return an email address")
+		return nil, ErrOAuthNoEmail
 	}
 
-	// Find or create user
-	u, err := s.findOrCreateUser(ctx, userInfo, input.Provider)
+	return s.signIn(ctx, userInfo, input.Provider, finalRedirect)
+}
+
+// signIn finishes a social sign-in for a provider-verified identity: the
+// account, the platform-administrator refusal, the second step of a linked
+// password account, then the session.
+func (s *OAuthService) signIn(ctx context.Context, userInfo *OAuthUserInfo, provider OAuthProvider, finalRedirect string) (*CallbackResult, error) {
+	u, err := s.findOrCreateUser(ctx, userInfo, provider)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find or create user: %w", err)
 	}
 
-	// A platform administrator signs in on the admin console only; the answer
-	// is the generic provider failure.
-	if refusePlatformAdmin(ctx, s.platformAdmins, s.logger, u, "oauth") {
+	// A break-glass account signs in on the admin console only; the answer is
+	// the generic provider failure.
+	if refuseBreakGlass(ctx, s.breakGlassGate, s.logger, u, "oauth") {
 		return nil, ErrOAuthExchangeFailed
+	}
+
+	// A password account reached through a linked provider takes the same
+	// second step as its password sign-in (identity_link.go).
+	if isPasswordAccount(u) {
+		challenge, cerr := s.linkedAccountChallenge(ctx, u)
+		if cerr != nil {
+			return nil, cerr
+		}
+		if challenge != nil {
+			s.logger.Info("OAuth sign-in to a linked password account waits for its second factor",
+				"user_id", u.ID().String(), "provider", provider)
+			return &CallbackResult{User: u, MFAChallenge: challenge}, nil
+		}
 	}
 
 	// Create session
@@ -349,7 +400,7 @@ func (s *OAuthService) HandleCallback(ctx context.Context, input CallbackInput) 
 	s.logger.Info("OAuth login successful",
 		"user_id", u.ID().String(),
 		"email", u.Email(),
-		"provider", input.Provider,
+		"provider", provider,
 		"final_redirect", finalRedirect,
 	)
 
@@ -371,16 +422,30 @@ type ProviderInfo struct {
 
 // GetAvailableProviders returns a list of available OAuth providers.
 func (s *OAuthService) GetAvailableProviders() []ProviderInfo {
-	providers := []ProviderInfo{
-		{ID: "google", Name: "Google", Enabled: s.config.Google.IsConfigured()},
-		{ID: "github", Name: "GitHub", Enabled: s.config.GitHub.IsConfigured()},
-		{ID: "microsoft", Name: "Microsoft", Enabled: s.config.Microsoft.IsConfigured()},
+	on := func(p OAuthProvider) bool {
+		c := s.getProviderConfig(context.Background(), p)
+		return c != nil && c.IsConfigured()
 	}
-	return providers
+	return []ProviderInfo{
+		{ID: "google", Name: "Google", Enabled: on(OAuthProviderGoogle)},
+		{ID: "github", Name: "GitHub", Enabled: on(OAuthProviderGitHub)},
+		{ID: "microsoft", Name: "Microsoft", Enabled: on(OAuthProviderMicrosoft)},
+	}
 }
 
 // getProviderConfig returns the configuration for a provider.
-func (s *OAuthService) getProviderConfig(provider OAuthProvider) *config.OAuthProviderConfig {
+//
+// With a ProviderSource wired (the console's social login setting) the
+// provider in force is read on every call, so a change applies without a
+// restart; without one the start-up configuration is used.
+func (s *OAuthService) getProviderConfig(ctx context.Context, provider OAuthProvider) *config.OAuthProviderConfig {
+	if !provider.IsValid() {
+		return nil
+	}
+	if s.providers != nil {
+		cfg := s.providers.OAuthProvider(ctx, string(provider))
+		return &cfg
+	}
 	switch provider {
 	case OAuthProviderGoogle:
 		return &s.config.Google
@@ -391,6 +456,16 @@ func (s *OAuthService) getProviderConfig(provider OAuthProvider) *config.OAuthPr
 	}
 	return nil
 }
+
+// ProviderSource answers which configuration a social provider has right
+// now. Implemented by the console's social login setting.
+type ProviderSource interface {
+	OAuthProvider(ctx context.Context, provider string) config.OAuthProviderConfig
+}
+
+// SetProviderSource makes the providers live: they are read from src on
+// every authorize and callback instead of the start-up configuration.
+func (s *OAuthService) SetProviderSource(src ProviderSource) { s.providers = src }
 
 // generatePKCE generates a PKCE code verifier and challenge (RFC 7636).
 func generatePKCE() (verifier, challenge string, err error) {
@@ -405,6 +480,41 @@ func generatePKCE() (verifier, challenge string, err error) {
 	return verifier, challenge, nil
 }
 
+// storeBoundVerifier keeps a flow's PKCE verifier server-side under its state,
+// bound to the browser that started the flow: it mints a one-time browser
+// binding secret, stores only its hash next to the verifier, and returns the
+// secret for the caller to hand to that browser (an HttpOnly cookie). The
+// record expires with the state. Sign-in and account linking both use it.
+func (s *OAuthService) storeBoundVerifier(ctx context.Context, state, codeVerifier string) (string, error) {
+	binding, err := newBrowserBinding()
+	if err != nil {
+		return "", fmt.Errorf("failed to create browser binding: %w", err)
+	}
+	if err := s.pkceStore.Set(ctx, pkceStoreKey(state), hashBinding(binding)+":"+codeVerifier, s.stateTTL()); err != nil {
+		return "", fmt.Errorf("failed to store PKCE verifier: %w", err)
+	}
+	return binding, nil
+}
+
+// claimBoundVerifier takes the PKCE verifier stored for state. Taking it is
+// single use: the record is deleted before the binding is checked, so a
+// replayed state finds nothing and a wrong browser cannot retry. It reports
+// false (the caller answers ErrInvalidState) when the record is missing or
+// expired, malformed, or presented without the binding secret of the browser
+// that started the flow.
+func (s *OAuthService) claimBoundVerifier(ctx context.Context, state, browserBinding string, provider OAuthProvider) (string, bool) {
+	stored, found, err := s.pkceStore.GetDel(ctx, pkceStoreKey(state))
+	if err != nil {
+		s.logger.Error("failed to read PKCE verifier", "provider", provider, "error", err)
+		return "", false
+	}
+	bindHash, codeVerifier, split := strings.Cut(stored, ":")
+	if !found || !split || codeVerifier == "" || !bindingMatches(browserBinding, bindHash) {
+		return "", false
+	}
+	return codeVerifier, true
+}
+
 // stateTTL is how long a state (and its stored PKCE verifier) is valid.
 func (s *OAuthService) stateTTL() time.Duration {
 	if s.config.StateDuration > 0 {
@@ -416,7 +526,10 @@ func (s *OAuthService) stateTTL() time.Duration {
 // generateState generates a signed state token and a fresh PKCE verifier.
 // The verifier is returned to the caller to store server-side; it is not
 // part of the state.
-func (s *OAuthService) generateState(provider OAuthProvider, finalRedirect string) (state string, codeVerifier string, err error) {
+//
+// link, when set, makes it a link state: it carries the signed-in account and
+// session that started the link, and only CompleteLink accepts it.
+func (s *OAuthService) generateState(provider OAuthProvider, finalRedirect string, link *linkBinding) (state string, codeVerifier string, err error) {
 	// Generate random bytes
 	randomBytes := make([]byte, 16)
 	if _, err := rand.Read(randomBytes); err != nil {
@@ -435,6 +548,11 @@ func (s *OAuthService) generateState(provider OAuthProvider, finalRedirect strin
 		"final_redirect": finalRedirect,
 		"random":         base64.URLEncoding.EncodeToString(randomBytes),
 		"exp":            time.Now().Add(s.stateTTL()).Unix(),
+	}
+	if link != nil {
+		stateData["purpose"] = statePurposeLink
+		stateData["uid"] = link.UserID
+		stateData["sid"] = link.SessionID
 	}
 
 	// Encode state data
@@ -461,11 +579,29 @@ func (s *OAuthService) signState(data string) string {
 	return base64.URLEncoding.EncodeToString(h.Sum(nil))
 }
 
-// validateState validates and decodes the state token. Returns finalRedirect.
-func (s *OAuthService) validateState(state string, expectedProvider OAuthProvider) (string, error) {
+// stateClaims are the signed contents of a state token.
+type stateClaims struct {
+	FinalRedirect string
+	// Purpose is empty for a sign-in and statePurposeLink for a link.
+	Purpose   string
+	UserID    string
+	SessionID string
+}
+
+// statePurposeLink marks a state minted by StartLink.
+const statePurposeLink = "link"
+
+// linkBinding is the signed-in account and session a link state belongs to.
+type linkBinding struct {
+	UserID    string
+	SessionID string
+}
+
+// validateState validates and decodes the state token.
+func (s *OAuthService) validateState(state string, expectedProvider OAuthProvider) (*stateClaims, error) {
 	parts := strings.SplitN(state, ".", 2)
 	if len(parts) != 2 {
-		return "", errors.New("invalid state format")
+		return nil, errors.New("invalid state format")
 	}
 
 	stateData, signature := parts[0], parts[1]
@@ -473,37 +609,41 @@ func (s *OAuthService) validateState(state string, expectedProvider OAuthProvide
 	// Verify signature
 	expectedSig := s.signState(stateData)
 	if !hmac.Equal([]byte(signature), []byte(expectedSig)) {
-		return "", errors.New("invalid state signature")
+		return nil, errors.New("invalid state signature")
 	}
 
 	// Decode state data
 	stateJSON, err := base64.URLEncoding.DecodeString(stateData)
 	if err != nil {
-		return "", errors.New("invalid state encoding")
+		return nil, errors.New("invalid state encoding")
 	}
 
 	var data map[string]interface{}
 	if err := json.Unmarshal(stateJSON, &data); err != nil {
-		return "", errors.New("invalid state JSON")
+		return nil, errors.New("invalid state JSON")
 	}
 
 	// Check expiration
 	expFloat, ok := data["exp"].(float64)
 	if !ok {
-		return "", errors.New("invalid state expiration")
+		return nil, errors.New("invalid state expiration")
 	}
 	if time.Now().Unix() > int64(expFloat) {
-		return "", errors.New("state expired")
+		return nil, errors.New("state expired")
 	}
 
 	// Check provider
 	provider, ok := data["provider"].(string)
 	if !ok || provider != string(expectedProvider) {
-		return "", errors.New("provider mismatch")
+		return nil, errors.New("provider mismatch")
 	}
 
-	finalRedirect, _ := data["final_redirect"].(string)
-	return finalRedirect, nil
+	c := &stateClaims{}
+	c.FinalRedirect, _ = data["final_redirect"].(string)
+	c.Purpose, _ = data["purpose"].(string)
+	c.UserID, _ = data["uid"].(string)
+	c.SessionID, _ = data["sid"].(string)
+	return c, nil
 }
 
 // OAuth token response.
@@ -575,6 +715,9 @@ type OAuthUserInfo struct {
 	// the email is a mutable attribute (federated_identity.go).
 	Issuer  string
 	Subject string
+	// HD is the Google Workspace (hosted) domain claim of the id_token; empty
+	// for a consumer Google account.
+	HD string
 	// LegacySubject is the subject the identity was bound under before
 	// (Microsoft: sub); a binding found under it is re-keyed to Subject.
 	LegacySubject string
@@ -607,7 +750,7 @@ func (s *OAuthService) getGoogleUserInfo(ctx context.Context, tokens *oauthToken
 	if tokens == nil || strings.TrimSpace(tokens.IDToken) == "" {
 		return nil, errors.New("google login returned no id_token (the 'openid' scope is required)")
 	}
-	cfg := s.getProviderConfig(OAuthProviderGoogle)
+	cfg := s.getProviderConfig(ctx, OAuthProviderGoogle)
 	if cfg == nil {
 		return nil, ErrInvalidProvider
 	}
@@ -643,7 +786,7 @@ func (s *OAuthService) getGoogleUserInfo(ctx context.Context, tokens *oauthToken
 // must be verified by Google, and the account is keyed on (Google issuer, sub).
 func googleUserInfoFromClaims(claims *oidc.Claims) (*OAuthUserInfo, error) {
 	if !bool(claims.EmailVerified) {
-		return nil, fmt.Errorf("email not verified by Google")
+		return nil, fmt.Errorf("google: %w", ErrEmailUnverifiedAtIDP)
 	}
 	if strings.TrimSpace(claims.Email) == "" {
 		return nil, errors.New("google id_token has no email claim")
@@ -654,6 +797,7 @@ func googleUserInfoFromClaims(claims *oidc.Claims) (*OAuthUserInfo, error) {
 		Name:    claims.Name,
 		Issuer:  googleIssuer,
 		Subject: claims.Subject,
+		HD:      claims.HD,
 	}, nil
 }
 
@@ -778,21 +922,15 @@ func (s *OAuthService) getGitHubPrimaryEmail(ctx context.Context, accessToken st
 		return "", err
 	}
 
-	// Find primary verified email
+	// Only the primary address, and only when GitHub verified it. Another
+	// verified address is not the one the account is known by.
 	for _, e := range emails {
 		if e.Primary && e.Verified {
 			return e.Email, nil
 		}
 	}
 
-	// Fallback to first verified email
-	for _, e := range emails {
-		if e.Verified {
-			return e.Email, nil
-		}
-	}
-
-	return "", errors.New("no verified email found")
+	return "", errors.New("no primary verified email found")
 }
 
 // getMicrosoftUserInfo derives identity from the VERIFIED id_token, NOT the
@@ -816,7 +954,7 @@ func (s *OAuthService) getMicrosoftUserInfo(ctx context.Context, idToken string)
 	if strings.TrimSpace(idToken) == "" {
 		return nil, errors.New("microsoft login returned no id_token (the 'openid' scope is required)")
 	}
-	cfg := s.getProviderConfig(OAuthProviderMicrosoft)
+	cfg := s.getProviderConfig(ctx, OAuthProviderMicrosoft)
 	if cfg == nil {
 		return nil, ErrInvalidProvider
 	}
@@ -846,7 +984,7 @@ func (s *OAuthService) getMicrosoftUserInfo(ctx context.Context, idToken string)
 // by pkg/oidc), so it is a pure function to keep it unit-testable.
 func microsoftUserInfoFromClaims(claims *oidc.Claims) (*OAuthUserInfo, error) {
 	if !bool(claims.XMSEdov) {
-		return nil, errors.New("email not verified by Microsoft (email domain not owner-verified)")
+		return nil, fmt.Errorf("microsoft (email domain not owner-verified): %w", ErrEmailUnverifiedAtIDP)
 	}
 	if strings.TrimSpace(claims.Email) == "" {
 		return nil, errors.New("microsoft id_token has no email claim")
@@ -877,7 +1015,14 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUser
 			return nil, fmt.Errorf("resolve federated identity: %w", err)
 		}
 		if u != nil {
-			prev, changed := acc.adoptProviderEmail(ctx, u, userInfo.Email, nil)
+			// The provider's address moves the account only when the account
+			// belongs to that provider. A provider linked to an account of
+			// another kind (a password account) never changes its address.
+			var prev string
+			var changed bool
+			if u.AuthProvider() == provider.ToAuthProvider() {
+				prev, changed = acc.adoptProviderEmail(ctx, u, userInfo.Email, nil)
+			}
 			u.UpdateLastLogin()
 			acc.saveLogin(ctx, u, prev, changed)
 			acc.markUsed(ctx, ident)
@@ -904,8 +1049,23 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUser
 			// belongs to has DNS-verified the email domain: otherwise an
 			// organization that provisioned someone else's address without
 			// that proof would capture the real owner's sign-in.
+			if claimableLocal && !emailAuthoritative(provider, userInfo) {
+				s.logger.Warn("OAuth login blocked: the provider is not authoritative for this email, so it cannot claim an account",
+					"oauth_provider", expectedProvider)
+				return nil, ErrEmailNotAuthoritative
+			}
 			if claimableLocal && !s.claimVouched(ctx, existingUser, userInfo.Email) {
-				return nil, errors.New("this email is registered with a different login method")
+				return nil, ErrOAuthAccountExists
+			}
+			if !claimableLocal && key.Valid() && s.autoLinkAllowed(ctx, existingUser, userInfo, provider) {
+				if lerr := s.autoLink(ctx, existingUser, key, provider); lerr != nil {
+					return nil, lerr
+				}
+				existingUser.UpdateLastLogin()
+				if uerr := s.userRepo.Update(ctx, existingUser); uerr != nil {
+					s.logger.Warn("failed to update last login", "error", uerr)
+				}
+				return existingUser, nil
 			}
 			if !claimableLocal {
 				s.logger.Warn("OAuth login blocked: email registered with a different auth provider",
@@ -913,8 +1073,18 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUser
 					"existing_provider", existingProvider,
 					"oauth_provider", expectedProvider,
 				)
-				return nil, errors.New("this email is registered with a different login method")
+				return nil, ErrOAuthAccountExists
 			}
+		}
+
+		// An account of this provider with no bound identity (it predates
+		// bindings) is bound by its email only when the provider is
+		// authoritative for it. Otherwise the person signs in another way and
+		// links the provider afterwards.
+		if key.Valid() && !mayBindLegacyAccount(provider, userInfo) {
+			s.logger.Warn("OAuth login blocked: the provider is not authoritative for this email and the account is not bound to it",
+				"oauth_provider", expectedProvider)
+			return nil, ErrEmailNotAuthoritative
 		}
 
 		// The identity was not found above. An account bound to another
@@ -929,10 +1099,10 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUser
 			if sameIssuer || otherIssuer != nil {
 				s.logger.Warn("OAuth login blocked: federated identity mismatch for email",
 					"email", userInfo.Email, "oauth_provider", expectedProvider)
-				return nil, errors.New("this email is registered with a different login method")
+				return nil, ErrOAuthAccountExists
 			}
 			if berr := acc.bind(ctx, existingUser, key); berr != nil {
-				return nil, errors.New("this email is registered with a different login method")
+				return nil, ErrOAuthAccountExists
 			}
 		}
 
@@ -952,11 +1122,19 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUser
 		s.logger.Warn("domain sign-up policy unreadable; OAuth sign-up refused", "provider", provider, "error", err)
 		return nil, ErrSignupNotAvailable
 	}
-	switch signupdom.Admit(policyOrConfig(ctx, s.signupPolicy, s.authConfig), facts.Apply(signupdom.Identity{
+	authoritative := emailAuthoritative(provider, userInfo)
+	identity := facts.Apply(signupdom.Identity{
 		Intent:          signupdom.IntentAccount,
-		InvitedPending:  s.invitedPending(ctx, userInfo.Email),
+		InvitedPending:  authoritative && s.invitedPending(ctx, userInfo.Email),
 		DisposableEmail: disposableEmail(userInfo.Email),
-	})) {
+	})
+	if !authoritative {
+		// The provider does not vouch for the mailbox: no domain join and no
+		// invitation claim. A fresh account without those privileges is
+		// possible only where sign-up is open.
+		identity.DomainJoinable = false
+	}
+	switch signupdom.Admit(policyOrConfig(ctx, s.signupPolicy, s.authConfig), identity) {
 	case signupdom.OutcomeSSORequired:
 		s.logger.Info("OAuth sign-up refused: the domain requires its organization's SSO", "provider", provider)
 		return nil, ErrSignupSSORequired
@@ -968,6 +1146,9 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUser
 	newUser, err := userdom.NewOAuthUser(userInfo.Email, userInfo.Name, userInfo.AvatarURL, provider.ToAuthProvider())
 	if err != nil {
 		return nil, err
+	}
+	if !authoritative {
+		newUser.MarkEmailUnverified()
 	}
 	if err := s.userRepo.Create(ctx, newUser); err != nil {
 		return nil, fmt.Errorf("failed to create user: %w", err)
@@ -996,6 +1177,10 @@ type SessionResult struct {
 
 // createSession creates a new session for the user.
 func (s *OAuthService) createSession(ctx context.Context, u *userdom.User) (*SessionResult, error) {
+	// A blocked or suspended account opens no session (it would only 401).
+	if !u.IsActive() {
+		return nil, ErrAccountSuspended
+	}
 	// Bind the token to its session: generate the session id first, embed it in
 	// the JWT, then persist the session under the SAME id — so an OAuth session
 	// is revocable (mirrors the password Login flow). Previously the token was
@@ -1101,7 +1286,11 @@ func (s *OAuthService) getAuthURL(provider OAuthProvider) string {
 }
 
 // getTokenURL returns the token endpoint URL for a provider.
-func (s *OAuthService) getTokenURL(provider OAuthProvider) string {
+func (s *OAuthService) getTokenURL(provider OAuthProvider) string { return TokenEndpoint(provider) }
+
+// TokenEndpoint is the fixed token endpoint of a social provider ("" for an
+// unknown one). Nothing a request or a setting says changes it.
+func TokenEndpoint(provider OAuthProvider) string {
 	switch provider {
 	case OAuthProviderGoogle:
 		return "https://oauth2.googleapis.com/token"

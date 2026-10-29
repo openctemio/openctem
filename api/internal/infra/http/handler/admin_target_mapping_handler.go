@@ -6,14 +6,15 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/platformauthz"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tool"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -82,6 +83,8 @@ type CreateTargetMappingRequest struct {
 	IsPrimary   *bool   `json:"is_primary,omitempty"` // Convenience: sets priority to 10 if true
 	IsActive    *bool   `json:"is_active,omitempty"`
 	Description *string `json:"description,omitempty"`
+	// Reason is required (10 to 500 characters) and kept in the audit row.
+	Reason string `json:"reason"`
 }
 
 // UpdateTargetMappingRequest represents the request to update a target mapping.
@@ -90,6 +93,14 @@ type UpdateTargetMappingRequest struct {
 	IsPrimary   *bool   `json:"is_primary,omitempty"` // Convenience: sets priority to 10 if true
 	IsActive    *bool   `json:"is_active,omitempty"`
 	Description *string `json:"description,omitempty"`
+	// Reason is required (10 to 500 characters) and kept in the audit row.
+	Reason string `json:"reason"`
+}
+
+// DeleteTargetMappingRequest is the body of a mapping delete.
+type DeleteTargetMappingRequest struct {
+	// Reason is required (10 to 500 characters) and kept in the audit row.
+	Reason string `json:"reason"`
 }
 
 // =============================================================================
@@ -176,21 +187,27 @@ func (h *AdminTargetMappingHandler) Get(w http.ResponseWriter, r *http.Request) 
 
 // Create creates a new target mapping.
 // POST /api/v1/admin/target-mappings
+// super_admin, step-up, and a reason (10 to 500 characters) in the body that
+// is kept in the audit row.
 func (h *AdminTargetMappingHandler) Create(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Get current admin (for created_by)
 	currentAdmin := middleware.MustGetAdminUser(ctx)
 
-	// RBAC Check: Only super_admin and ops_admin can create mappings
-	if currentAdmin.EffectiveRole() != admin.AdminRoleSuperAdmin && currentAdmin.EffectiveRole() != admin.AdminRoleOpsAdmin {
-		apierror.Forbidden("only super admins and ops admins can create target mappings").WriteJSON(w)
+	// Mappings change every organization's scans: platform.content.manage (route guard + step-up).
+	if !currentAdmin.Can(platformauthz.ContentManage) {
+		apierror.Forbidden("changing target mappings needs the content management permission").WriteJSON(w)
 		return
 	}
 
 	var req CreateTargetMappingRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384)).Decode(&req); err != nil {
 		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
+	}
+	if !validTargetMappingReason(req.Reason) {
+		apierror.BadRequest(targetMappingReasonMessage).WriteJSON(w)
 		return
 	}
 
@@ -214,6 +231,13 @@ func (h *AdminTargetMappingHandler) Create(w http.ResponseWriter, r *http.Reques
 	assetType := asset.AssetType(req.AssetType)
 	if !assetType.IsValid() {
 		apierror.BadRequest("invalid asset_type: " + req.AssetType).WriteJSON(w)
+		return
+	}
+
+	// The registry is the one built-in source: a pair it already declares
+	// would be a second copy that changes nothing.
+	if asset.RegistryCoversMapping(req.TargetType, assetType) {
+		apierror.Conflict("target type " + req.TargetType + " to asset type " + req.AssetType + " is " + mappingCoveredByRegistryMessage).WriteJSON(w)
 		return
 	}
 
@@ -266,20 +290,31 @@ func (h *AdminTargetMappingHandler) Create(w http.ResponseWriter, r *http.Reques
 
 // Update updates a target mapping.
 // PATCH /api/v1/admin/target-mappings/{id}
+// super_admin, step-up, and a reason in the body (kept in the audit row).
 func (h *AdminTargetMappingHandler) Update(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	idStr := chi.URLParam(r, "id")
 	currentAdmin := middleware.MustGetAdminUser(ctx)
 
-	// RBAC Check: Only super_admin and ops_admin can update mappings
-	if currentAdmin.EffectiveRole() != admin.AdminRoleSuperAdmin && currentAdmin.EffectiveRole() != admin.AdminRoleOpsAdmin {
-		apierror.Forbidden("only super admins and ops admins can update target mappings").WriteJSON(w)
+	// Mappings change every organization's scans: platform.content.manage (route guard + step-up).
+	if !currentAdmin.Can(platformauthz.ContentManage) {
+		apierror.Forbidden("changing target mappings needs the content management permission").WriteJSON(w)
 		return
 	}
 
 	id, err := shared.IDFromString(idStr)
 	if err != nil {
 		apierror.BadRequest("invalid target mapping id").WriteJSON(w)
+		return
+	}
+
+	var req UpdateTargetMappingRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384)).Decode(&req); err != nil {
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
+	}
+	if !validTargetMappingReason(req.Reason) {
+		apierror.BadRequest(targetMappingReasonMessage).WriteJSON(w)
 		return
 	}
 
@@ -291,12 +326,6 @@ func (h *AdminTargetMappingHandler) Update(w http.ResponseWriter, r *http.Reques
 	}
 	if mapping == nil {
 		apierror.NotFound("TargetMapping").WriteJSON(w)
-		return
-	}
-
-	var req UpdateTargetMappingRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		apierror.BadRequest("invalid request body").WriteJSON(w)
 		return
 	}
 
@@ -347,14 +376,21 @@ func (h *AdminTargetMappingHandler) Update(w http.ResponseWriter, r *http.Reques
 
 // Delete deletes a target mapping.
 // DELETE /api/v1/admin/target-mappings/{id}
+// super_admin, step-up, and a JSON body {"reason": ...} (kept in the audit row).
 func (h *AdminTargetMappingHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	idStr := chi.URLParam(r, "id")
 	currentAdmin := middleware.MustGetAdminUser(ctx)
 
 	// RBAC Check: Only super_admin can delete mappings
-	if currentAdmin.EffectiveRole() != admin.AdminRoleSuperAdmin {
-		apierror.Forbidden("only super admins can delete target mappings").WriteJSON(w)
+	if !currentAdmin.Can(platformauthz.ContentManage) {
+		apierror.Forbidden("changing target mappings needs the content management permission").WriteJSON(w)
+		return
+	}
+
+	var req DeleteTargetMappingRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil || !validTargetMappingReason(req.Reason) {
+		apierror.BadRequest(targetMappingReasonMessage).WriteJSON(w)
 		return
 	}
 
@@ -432,6 +468,20 @@ func (h *AdminTargetMappingHandler) GetStats(w http.ResponseWriter, r *http.Requ
 // =============================================================================
 // Helpers
 // =============================================================================
+
+// Reason length bounds for a mapping change (kept in the admin audit row).
+const (
+	targetMappingReasonMin = 10
+	targetMappingReasonMax = 500
+)
+
+// validTargetMappingReason reports whether the reason is 10 to 500 characters.
+func validTargetMappingReason(reason string) bool {
+	n := len([]rune(strings.TrimSpace(reason)))
+	return n >= targetMappingReasonMin && n <= targetMappingReasonMax
+}
+
+const targetMappingReasonMessage = "Give a reason (10 to 500 characters); it is kept in the audit log."
 
 // validateTargetMappingFields checks the admin-editable fields of a new mapping.
 func validateTargetMappingFields(priority int, description string) error {

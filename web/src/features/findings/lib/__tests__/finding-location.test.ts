@@ -26,7 +26,7 @@ describe('findingLocation', () => {
       file_path: 'https://cdn.other.net/x.js',
     })
     expect(l.detail).toBe('https://cdn.other.net/x.js')
-    expect(l.full).toBe('example.com · https://cdn.other.net/x.js')
+    expect(l.full).toBe('example.com, https://cdn.other.net/x.js')
   })
 
   it('gives code findings branch, path and line next to the repository', () => {
@@ -39,7 +39,7 @@ describe('findingLocation', () => {
     expect(l).toEqual({
       asset: 'github.com/acme/payments',
       detail: 'main:src/db/OrderRepository.java:42',
-      full: 'github.com/acme/payments · main:src/db/OrderRepository.java:42',
+      full: 'github.com/acme/payments, main:src/db/OrderRepository.java:42',
     })
   })
 

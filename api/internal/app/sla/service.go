@@ -466,6 +466,12 @@ func (s *Service) CalculateSLADeadlineForPriority(
 		policy, err = s.GetTenantDefaultPolicy(ctx, tenantID)
 	}
 	if err != nil {
+		// No policy configured falls back to the platform defaults. Any
+		// other read error fails the computation: a default deadline written
+		// on a transient error would stick, since deadlines only tighten.
+		if !isPolicyNotFound(err) {
+			return time.Time{}, fmt.Errorf("read sla policy: %w", err)
+		}
 		policy = nil
 	}
 	return deadlineForPriority(policy, priorityClass, severity, detectedAt)
@@ -536,7 +542,7 @@ func (s *Service) SLABatchFuncs(ctx context.Context, tenantID string) (DeadlineF
 
 // KEVCapDays returns the known exploited deadline cap (0 = off) of the policy
 // that governs a finding on assetID, with the same choice as
-// CalculateSLADeadlineForPriority. A policy that cannot be read gives the
+// CalculateSLADeadlineForPriority. No policy configured gives the
 // platform default.
 func (s *Service) KEVCapDays(ctx context.Context, tenantID, assetID string) (int, error) {
 	var policy *sladom.Policy
@@ -547,9 +553,18 @@ func (s *Service) KEVCapDays(ctx context.Context, tenantID, assetID string) (int
 		policy, err = s.GetTenantDefaultPolicy(ctx, tenantID)
 	}
 	if err != nil {
+		if !isPolicyNotFound(err) {
+			return 0, fmt.Errorf("read sla policy: %w", err)
+		}
 		policy = nil
 	}
 	return kevCapDays(policy), nil
+}
+
+// isPolicyNotFound reports whether a policy read failed only because no
+// policy is configured.
+func isPolicyNotFound(err error) bool {
+	return errors.Is(err, sladom.ErrNotFound) || errors.Is(err, shared.ErrNotFound)
 }
 
 // policyResolver loads the tenant's policies once and returns the in-memory

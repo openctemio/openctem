@@ -31,7 +31,7 @@ import (
 var DeprecatedRouteRequests = promauto.NewCounterVec(
 	prometheus.CounterOpts{
 		Name: "deprecated_route_requests_total",
-		Help: "Requests to deprecated API routes (RFC-041), by plane, route and kind of caller",
+		Help: "Requests to deprecated API routes, by plane, route and kind of caller",
 	},
 	[]string{"plane", "route", "client"},
 )

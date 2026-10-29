@@ -45,7 +45,7 @@ describe('CredentialIdentityGroups', () => {
     const ids = ['a@x.io', 'b@x.io', 'c@x.io', 'd@x.io'].map((n) => identity(n))
     render(<CredentialIdentityGroups identities={ids} columns={columns} resetKey="" />)
     expect(screen.getByText('a@x.io')).toBeInTheDocument()
-    expect(screen.getAllByText(/2 exposures · breach · password/)).toHaveLength(4)
+    expect(screen.getAllByText(/2 exposures, breach, password/)).toHaveLength(4)
     await screen.findByText('c@x.io leak')
     expect(get).toHaveBeenCalledTimes(3)
     expect(get.mock.calls[0][0]).toBe(

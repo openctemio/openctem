@@ -91,8 +91,14 @@ export function OrganizationUsersSection({
   const users = data?.data ?? []
   const redacted = !!data?.redacted
   const hasOwner = users.some((u) => u.role === 'owner') || (data?.by_role?.owner ?? 0) > 0
+  // The server counts the owners who can act (active membership, account
+  // active and not erased); a read-only administrator gets no rows, so only
+  // the count can tell. Older responses without it fall back to the rows.
   const ownersAllSuspended =
-    hasOwner && !users.some((u) => u.role === 'owner' && u.status === 'active')
+    hasOwner &&
+    (data?.active_owner_count !== undefined
+      ? data.active_owner_count === 0
+      : !users.some((u) => u.role === 'owner' && u.status === 'active'))
   const canBootstrap = canManage && !isLoading && !error && !hasOwner
 
   return (
@@ -106,7 +112,7 @@ export function OrganizationUsersSection({
             {ownersAllSuspended
               ? t(
                   'admin.organizationUsersSection.everyOwnerOfThisOrganization',
-                  'Every owner of this organization is suspended. A suspended owner still owns the organization, so the console cannot create another one; a super admin can recover ownership (with a reason and an authenticator code; the new owner gets a set-password link by email only).'
+                  'Every owner of this organization is suspended, blocked or erased. Such an owner still owns the organization, so the console cannot create another one; a super admin can recover ownership (with a reason and an authenticator code; the new owner gets a set-password link by email only).'
                 )
               : hasOwner
                 ? t(

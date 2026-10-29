@@ -188,10 +188,10 @@ export function FindingIdentityView({ identity }: { identity: FindingIdentity })
                 >
                   {m.id.slice(0, 8)}
                 </Link>
-                {m.tool_name && <span className="text-muted-foreground">· {m.tool_name}</span>}
-                <span className="text-muted-foreground">· {mergeReasonLabel(t, m.reason)}</span>
+                {m.tool_name && <span className="text-muted-foreground">{m.tool_name}</span>}
+                <span className="text-muted-foreground">{mergeReasonLabel(t, m.reason)}</span>
                 {when(m.merged_at) && (
-                  <span className="text-muted-foreground">· {when(m.merged_at)}</span>
+                  <span className="text-muted-foreground">{when(m.merged_at)}</span>
                 )}
               </li>
             ))}

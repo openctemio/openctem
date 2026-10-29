@@ -305,8 +305,7 @@ func (h *AssetHandler) UnsnoozeAssetLifecycle(w http.ResponseWriter, r *http.Req
 
 // AssetResponse represents an asset in API responses.
 type AssetResponse struct {
-	// SystemTags are derived by the platform from program links (RFC-065
-	// §16.5: bug-bounty, source:…, platform:…, program:…:…,
+	// SystemTags are derived by the platform from program links (bug-bounty, source:…, platform:…, program:…:…,
 	// program-unattested); no request can change them.
 	SystemTags []string `json:"system_tags,omitempty"`
 	// PendingRiskRequest is an edit that lowers the asset's exposure,
@@ -317,9 +316,9 @@ type AssetResponse struct {
 	// scope covers it; organization metrics leave it out by default.
 	ProgramOnly bool `json:"program_only,omitempty"`
 	// Triage: attribution and what an active scan would do now; only with
-	// ?with_triage=true on the list (research/124).
+	// ?with_triage=true on the list.
 	Triage *AssetTriage `json:"triage,omitempty"`
-	// Technologies detected on the asset (RFC-112): at most 20 on a list,
+	// Technologies detected on the asset: at most 20 on a list,
 	// every one on a single asset. Absent when none were detected.
 	Technologies          []AssetTechnologyBrief   `json:"technologies,omitempty"`
 	ID                    string                   `json:"id"`
@@ -629,6 +628,7 @@ func (h *AssetHandler) handleServiceError(w http.ResponseWriter, err error) {
 // @Param        has_findings  query     bool    false  "Filter by whether asset has findings"
 // @Param        coverage      query     string  false  "covered: a run of any capability succeeded in the last 30 days; uncovered: tracked by the coverage ledger without one"  Enums(covered, uncovered)
 // @Param        freshness     query     string  false  "stale: an attribute class is past its freshness TTL; never: a passive class that applies was never observed"
+// @Param        resolution    query     string  false  "not_resolving: the platform knows the host name does not resolve in DNS; resolving: it does"
 // @Param        technology    query     string  false  "Assets using any of these technologies (comma-separated names, case-insensitive, at most 20)"
 // @Param        technology_category query string false "Assets with a technology in any of these categories (comma-separated): web_server, framework, language, js_library, cdn, hosting, waf, analytics, security_header, other"
 // @Param        is_crown_jewel query    bool    false  "Filter crown-jewel assets"
@@ -720,6 +720,7 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		FirstSeenAfter:       parseQueryTimePtr(query.Get("first_seen_after")),
 		ProgramAssets:        query.Get("program_assets"),
 		Freshness:            query.Get("freshness"),
+		Resolution:           query.Get("resolution"),
 		Coverage:             query.Get("coverage"),
 		Technologies:         assettech.ParseFilterValues(query.Get("technology")),
 		TechnologyCategories: technologyCategoryStrings(query.Get("technology_category")),

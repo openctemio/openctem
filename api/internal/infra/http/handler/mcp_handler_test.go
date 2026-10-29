@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -13,11 +14,14 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/findinglifecycle"
+	"github.com/openctemio/openctem/api/pkg/filterspec"
 
+	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/compliance"
 	findingapp "github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	pentestdom "github.com/openctemio/openctem/api/pkg/domain/pentest"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -33,6 +37,10 @@ type fakeFindingReader struct {
 	gotTenant    string
 	gotScopeUser string
 	gotIsAdmin   bool
+	// The vulnerabilities list call of list_active_cves.
+	gotCVECaller findingapp.FilterCaller
+	gotCVESpec   *filterspec.Spec
+	gotCVEOpts   vulnerability.CVEListOptions
 	// scopeErr, when set, is returned by the scoped read paths so tests can
 	// simulate a data-scope/pentest-membership denial.
 	scopeErr error
@@ -71,8 +79,13 @@ func (f *fakeFindingReader) ListFindingTransitions(_ context.Context, tenantID, 
 		vulnerability.TransitionActor{Kind: vulnerability.TransitionActorPerson, CanStatus: perms.Status}, vulnerability.FindingStatusInProgress)
 	return []findinglifecycle.Decision{{TransitionDecision: d}}, vulnerability.FindingStatusConfirmed, nil
 }
-func (f *fakeFindingReader) ListActiveCVEs(_ context.Context, _ findingapp.ListActiveCVEsInput) (pagination.Result[vulnerability.ActiveCVE], error) {
-	return pagination.NewResult([]vulnerability.ActiveCVE{}, 0, pagination.Pagination{Page: 1, PerPage: 25}), nil
+func (f *fakeFindingReader) ListCVEExposures(_ context.Context, c findingapp.FilterCaller, spec *filterspec.Spec, opts vulnerability.CVEListOptions) (*vulnerability.CVEList, error) {
+	f.gotTenant, f.gotScopeUser, f.gotIsAdmin = c.TenantID, c.UserID, c.IsAdmin
+	f.gotCVECaller, f.gotCVESpec, f.gotCVEOpts = c, spec, opts
+	if f.scopeErr != nil {
+		return nil, f.scopeErr
+	}
+	return &vulnerability.CVEList{Data: []vulnerability.CVEListItem{}}, nil
 }
 
 type rpcResp struct {
@@ -986,5 +999,89 @@ func TestMCP_CampaignReportStats_ClientCountsPublishedOnly(t *testing.T) {
 	}
 	if st.TotalFindings != 1 || st.HighFindings != 1 || st.DraftCount != 0 {
 		t.Fatalf("client stats must count published findings only, got %+v", st)
+	}
+}
+
+// list_active_cves runs the vulnerabilities list as the key's owner: never an
+// administrator, open findings only, the args mapped onto the list's params,
+// and a bad severity refused instead of widening the list.
+func TestMCP_ListActiveCVEs_RunsTheListAsTheKeyOwner(t *testing.T) {
+	fr := &fakeFindingReader{}
+	h := newTestMCP(fr)
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_active_cves","arguments":{"kev_only":true,"min_epss":0.2,"severity":"High","limit":5}}}`
+	_, resp := doRPCScoped(t, h, "018f5a1e-0000-7000-8000-000000000001", "user-1", allReadScopes, body)
+	var r struct {
+		IsError bool `json:"isError"`
+	}
+	if err := json.Unmarshal(resp.Result, &r); err != nil || r.IsError {
+		t.Fatalf("list_active_cves failed: %v %s", err, resp.Result)
+	}
+	c := fr.gotCVECaller
+	if c.TenantID != "018f5a1e-0000-7000-8000-000000000001" || c.UserID != "user-1" || c.IsAdmin {
+		t.Errorf("caller %+v: want the key's tenant and owner, never an administrator", c)
+	}
+	o := fr.gotCVEOpts
+	if o.Sort.Key != vulnerability.CVEListSortRisk || o.KEV == nil || !*o.KEV || o.EPSSGte == nil || *o.EPSSGte != 0.2 || o.PerPage != 5 || o.Page != 1 {
+		t.Errorf("options %+v: want kev, epss_gte 0.2, page 1 of 5", o)
+	}
+	fields := map[string]string{}
+	for _, l := range fr.gotCVESpec.Leaves() {
+		if len(l.Values) > 0 {
+			fields[l.Field] = strings.ToLower(fmt.Sprint(l.Values[0]))
+		}
+	}
+	if fields["state"] != "open" || fields["severity"] != "high" {
+		t.Errorf("findings filter %v: want state open and severity high", fields)
+	}
+
+	for _, bad := range []string{`{"severity":"x' OR 1=1"}`, `{"min_epss":2}`} {
+		fr := &fakeFindingReader{}
+		body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_active_cves","arguments":` + bad + `}}`
+		_, resp := doRPCScoped(t, newTestMCP(fr), "018f5a1e-0000-7000-8000-000000000001", "user-1", allReadScopes, body)
+		var r struct {
+			IsError bool `json:"isError"`
+		}
+		if err := json.Unmarshal(resp.Result, &r); err != nil || !r.IsError || fr.gotCVESpec != nil {
+			t.Errorf("args %s: want a refusal before any read", bad)
+		}
+	}
+}
+
+// fakeTotalAssets answers the asset list with a fixed total, as the real
+// service does for a caller whose data scope covers that many assets.
+type fakeTotalAssets struct{ total int64 }
+
+func (a fakeTotalAssets) ListAssets(_ context.Context, _ assetapp.ListAssetsInput) (pagination.Result[*assetdom.Asset], error) {
+	return pagination.NewResult([]*assetdom.Asset{}, a.total, pagination.Pagination{Page: 1, PerPage: 1}), nil
+}
+func (a fakeTotalAssets) GetAsset(context.Context, string, string) (*assetdom.Asset, error) {
+	return nil, shared.ErrNotFound
+}
+
+// A caller whose data scope covers no asset gets an explicit explanation
+// beside every empty asset/finding result, instead of data that looks like an
+// empty organization. A caller whose scope has assets gets none.
+func TestMCP_EmptyScopeNotice(t *testing.T) {
+	calls := []struct{ tool, args string }{
+		{"list_assets", `{}`}, {"list_findings", `{}`}, {"finding_stats", `{}`}, {"list_active_cves", `{}`},
+	}
+	for _, scoped := range []struct {
+		name   string
+		assets int64
+		notice bool
+	}{{"scope covers nothing", 0, true}, {"scope covers assets", 3, false}} {
+		for _, c := range calls {
+			t.Run(scoped.name+"/"+c.tool, func(t *testing.T) {
+				h := NewMCPHandler(&fakeFindingReader{}, nil, nil, nil, nil, fakeTotalAssets{total: scoped.assets}, nil, logger.NewNop())
+				_, resp := doRPC(t, h, "tenant-a", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"`+c.tool+`","arguments":`+c.args+`}}`)
+				if resp.Error != nil {
+					t.Fatalf("error: %+v", resp.Error)
+				}
+				got := strings.Contains(string(resp.Result), "covers 0 assets")
+				if got != scoped.notice {
+					t.Fatalf("notice present=%v want %v: %s", got, scoped.notice, resp.Result)
+				}
+			})
+		}
 	}
 }

@@ -46,6 +46,7 @@ export function FindingsQuickViews() {
         count: v.count,
         active: quickViewIsActive(search, v, include),
         danger: v.key === 'sla_breached',
+        pin: { kind: 'quick_view' as const, ref: v.key },
       }))}
     />
   )

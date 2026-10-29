@@ -363,6 +363,8 @@ export interface ApiFinding {
   sla_status?: string // on_track | warning | overdue | exceeded | not_applicable
   sla_deadline?: string // ISO timestamp of the remediation deadline (nullable)
   sla_kev_capped?: boolean // the deadline was shortened by the policy's known exploited (KEV) cap
+  /** Why the deadline is the date it is (single-finding response only). */
+  sla_basis?: ApiSlaBasis
   acceptance_expires_at?: string // when an accepted risk ends and the finding reopens (accepted only)
 
   // Threat Intel Enrichment (RFC-004)
@@ -810,4 +812,21 @@ export interface FindingSlaBreakdown {
   /** Past due by days past the deadline; adds up to past_due. */
   past_due_by_age: { up_to_7: number; d8_to_30: number; d31_to_90: number; over_90: number }
   past_due_by_severity: Record<string, number>
+}
+
+/** Why a finding's SLA deadline is the date it is (GET /findings/{id}). */
+export interface ApiSlaBasis {
+  policy_id?: string
+  policy_name: string
+  policy_scope: 'asset' | 'organization' | 'platform'
+  basis: 'priority' | 'severity' | 'none'
+  days: number
+  kev_cap_days: number
+  kev_capped: boolean
+  clock_started_at: string
+  clock_reason: 'first_detected' | 'reopened' | 'recalculated'
+  restarts: number
+  last_restart_trigger?: string
+  expected_deadline?: string
+  earlier?: boolean
 }

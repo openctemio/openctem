@@ -25,7 +25,7 @@
   "threatModel.filter.byTactic": "Lọc theo chiến thuật",
   "threatModel.filter.byTechnique": "Lọc theo kỹ thuật",
   "threatModel.filter.clear": "Xóa bộ lọc",
-  "threatModel.generatedWithVersion": "Tạo lúc {date} · {version}",
+  "threatModel.generatedWithVersion": "Tạo lúc {date}, {version}",
   "threatModel.heatmap.coveredMitigated": "Đã bao phủ/Đã giảm thiểu",
   "threatModel.heatmap.description": "Mỗi cột là một chiến thuật trong chuỗi tấn công. Mỗi ô là một kỹ thuật, tô màu theo trạng thái mối đe dọa xấu nhất. {techniques, plural, other {# kỹ thuật}}, bao phủ {pct}%.",
   "threatModel.heatmap.download": "Tải lớp Navigator",

@@ -464,3 +464,25 @@ func (s *VulnerabilityService) CountQuickViews(ctx context.Context, c FilterCall
 	}
 	return out, nil
 }
+
+// CountSpecs counts the findings each decoded filter selects, as the caller,
+// in one statement (facet counts over the caller's visibility). It backs the
+// counts beside pinned views in the sidebar.
+func (s *VulnerabilityService) CountSpecs(ctx context.Context, c FilterCaller, specs []*filterspec.Spec) ([]int64, error) {
+	if len(specs) == 0 {
+		return nil, nil
+	}
+	repo, ok := s.findingRepo.(findingFacetRepo)
+	if !ok {
+		return nil, errNoFindingWhereRepo
+	}
+	actor, err := s.FilterActor(ctx, c)
+	if err != nil {
+		return nil, err
+	}
+	where, preds, err := filterspec.CompileFacets(vulnerability.WithBranchOnlyDefault(&filterspec.Spec{}), specs, vulnerability.FindingFields, actor)
+	if err != nil {
+		return nil, err
+	}
+	return repo.CountFacetsWhere(ctx, where, preds)
+}

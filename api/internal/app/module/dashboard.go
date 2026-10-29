@@ -501,7 +501,7 @@ type ProgramMetrics struct {
 	//
 	// Population: findings with at least one validation_evidence row of
 	// outcome 'detected' (the validation re-check reproduced the exposure —
-	// "still exploitable", RFC-011.2 VerdictReproducible), now in status
+	// "still exploitable", VerdictReproducible), now in status
 	// resolved / verified, with resolved_at in the window.
 	//
 	// Clock start: the first 'detected' validation_evidence.created_at.

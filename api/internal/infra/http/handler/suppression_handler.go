@@ -71,7 +71,7 @@ type SuppressionRuleResponse struct {
 	ReviewFlaggedAt *string `json:"review_flagged_at,omitempty"`
 	ReviewReason    string  `json:"review_reason,omitempty"`
 	// ReasonCode is the rule's structured reason; Tier, ApprovalsRequired
-	// and ApprovalsCollected come from the approval policy (RFC-111).
+	// and ApprovalsCollected come from the approval policy.
 	ReasonCode         string `json:"reason_code,omitempty"`
 	Tier               string `json:"tier,omitempty" enums:"peer,security,dual"`
 	ApprovalsRequired  int    `json:"approvals_required"`

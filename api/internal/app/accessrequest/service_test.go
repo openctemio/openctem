@@ -17,6 +17,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
+	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
 )
 
 type memRepo struct {
@@ -115,6 +116,7 @@ type fakeMailer struct {
 	configured bool
 	confirm    []string // confirmation URLs
 	decisions  []string
+	approvals  []string
 }
 
 func (f *fakeMailer) Configured() bool { return f.configured }
@@ -122,14 +124,20 @@ func (f *fakeMailer) SendConfirmation(_ context.Context, _, _, url string) error
 	f.confirm = append(f.confirm, url)
 	return nil
 }
-func (f *fakeMailer) SendDecision(_ context.Context, to string, _ bool) error {
+func (f *fakeMailer) SendDecision(_ context.Context, to string, approved bool) error {
+	if approved {
+		f.approvals = append(f.approvals, to)
+		return nil
+	}
 	f.decisions = append(f.decisions, to)
 	return nil
 }
 
 type fakeOrgs struct {
-	err   error
-	calls []tenantapp.CreateOrganizationInput
+	err error
+	// created reports the owner account as created for this organization.
+	created bool
+	calls   []tenantapp.CreateOrganizationInput
 }
 
 func (f *fakeOrgs) Create(_ context.Context, in tenantapp.CreateOrganizationInput, _ auditapp.AuditContext) (*tenantapp.CreatedOrganization, error) {
@@ -138,7 +146,7 @@ func (f *fakeOrgs) Create(_ context.Context, in tenantapp.CreateOrganizationInpu
 		return nil, f.err
 	}
 	t, _ := tenantdom.NewTenant(in.Name, in.Slug, shared.NewID().String())
-	return &tenantapp.CreatedOrganization{Tenant: t}, nil
+	return &tenantapp.CreatedOrganization{Tenant: t, OwnerCreated: f.created}, nil
 }
 
 type fakeCaptcha struct{ ok bool }
@@ -363,6 +371,34 @@ func TestApprove(t *testing.T) {
 	}
 }
 
+// An administrator's account may be an ordinary member of organizations
+// (RFC-134), so an administrator cannot approve a request made with their own
+// e-mail (any case): one person would mint an organization for themselves with
+// platform power. Nothing is created and the request stays pending.
+func TestApprove_SelfApprovalRefused(t *testing.T) {
+	ctx := context.Background()
+	svc, repo, orgs := newSvc(t, openPolicy, nil, nil)
+	_ = submit(svc, "OPS@op.example", "203.0.113.1")
+	id := onePending(t, repo)
+
+	if _, _, err := svc.Approve(ctx, superAdmin(t), id, ApproveInput{Slug: "acme"}, auditapp.AuditContext{}); !errors.Is(err, ardom.ErrSelfApproval) {
+		t.Fatalf("expected ErrSelfApproval, got %v", err)
+	}
+	if len(orgs.calls) != 0 {
+		t.Fatal("no organization may be created on a self-approval")
+	}
+	if r := repo.rows[id.String()]; r == nil || r.Status != ardom.StatusPending {
+		t.Fatalf("the request stays pending, got %+v", r)
+	}
+	other, err := admin.NewAdminUser("other@op.example", "Other", admin.AdminRoleOpsAdmin, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := svc.Approve(ctx, other, id, ApproveInput{Slug: "acme"}, auditapp.AuditContext{}); err != nil {
+		t.Fatalf("another administrator approves it: %v", err)
+	}
+}
+
 func TestApprove_UnconfirmedRefused(t *testing.T) {
 	svc, repo, orgs := newSvc(t, openPolicy, &fakeMailer{configured: true}, nil)
 	_ = submit(svc, "a@acme.com", "203.0.113.1")
@@ -454,4 +490,100 @@ func TestSubmit_ReportsToSignupFeed(t *testing.T) {
 		rec.events[0].Source != signupevent.SourcePublic || rec.events[0].Email != "owner@acme.com" {
 		t.Fatalf("events = %+v", rec.events)
 	}
+}
+
+// An existing account becomes owner only when the requester confirmed the
+// address; an unconfirmed request (no mail server) never attaches one.
+func TestApprove_ExistingOwnerNeedsConfirmedAddress(t *testing.T) {
+	ctx := context.Background()
+
+	// No mail server: the request is pending but never confirmed.
+	svc, repo, orgs := newSvc(t, openPolicy, nil, nil)
+	_ = submit(svc, "victim@acme.com", "203.0.113.1")
+	if _, _, err := svc.Approve(ctx, superAdmin(t), onePending(t, repo), ApproveInput{Slug: "acme"}, auditapp.AuditContext{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(orgs.calls) != 1 || orgs.calls[0].AllowExistingOwner {
+		t.Fatalf("an unconfirmed request must not be allowed to attach an existing account: %+v", orgs.calls)
+	}
+
+	// Confirmed: allowed, and the existing account is told.
+	mailer := &fakeMailer{configured: true}
+	svc, repo, orgs = newSvc(t, openPolicy, mailer, nil)
+	_ = submit(svc, "owner@acme.com", "203.0.113.2")
+	token := strings.TrimPrefix(mailer.confirm[0], "https://app.example.com/request-access/confirm#token=")
+	if err := svc.Confirm(ctx, token); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := svc.Approve(ctx, superAdmin(t), onePending(t, repo), ApproveInput{Slug: "acme2"}, auditapp.AuditContext{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(orgs.calls) != 1 || !orgs.calls[0].AllowExistingOwner {
+		t.Fatalf("a confirmed request may attach an existing account: %+v", orgs.calls)
+	}
+	if len(mailer.approvals) != 1 || mailer.approvals[0] != "owner@acme.com" {
+		t.Fatalf("an existing account is told it was approved: %v", mailer.approvals)
+	}
+
+	// A new account gets its set-up link from the creator, not a second email.
+	mailer = &fakeMailer{configured: true}
+	svc, repo, orgs = newSvc(t, openPolicy, mailer, nil)
+	orgs.created = true
+	_ = submit(svc, "new@acme.com", "203.0.113.3")
+	token = strings.TrimPrefix(mailer.confirm[0], "https://app.example.com/request-access/confirm#token=")
+	_ = svc.Confirm(ctx, token)
+	if _, _, err := svc.Approve(ctx, superAdmin(t), onePending(t, repo), ApproveInput{Slug: "acme3"}, auditapp.AuditContext{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(mailer.approvals) != 0 {
+		t.Fatalf("a new account is not sent the approval notice: %v", mailer.approvals)
+	}
+}
+
+type fakeUsers struct{ byEmail map[string]*userdom.User }
+
+func (f fakeUsers) GetByEmail(_ context.Context, email string) (*userdom.User, error) {
+	if u := f.byEmail[strings.ToLower(email)]; u != nil {
+		return u, nil
+	}
+	return nil, userdom.ErrUserNotFound
+}
+
+// The requester's application account can carry a different e-mail than the
+// administrator record (an identity provider may change it). Self-approval is
+// decided on the account id: the linked account is the requester's, so the
+// approval is refused even though the e-mails differ; another administrator
+// still approves.
+func TestApprove_SelfApprovalByAccountID(t *testing.T) {
+	ctx := context.Background()
+	svc, repo, orgs := newSvc(t, openPolicy, nil, nil)
+	_ = submit(svc, "drifted@corp.example", "203.0.113.1")
+	id := onePending(t, repo)
+
+	uid := shared.NewID()
+	linked := mustUser(t, uid, "drifted@corp.example")
+	svc.SetUserLookup(fakeUsers{byEmail: map[string]*userdom.User{"drifted@corp.example": linked}})
+	self := admin.Reconstitute(shared.NewID(), "ops@op.example", "Ops", admin.AdminRoleOpsAdmin, true, &uid,
+		nil, "", 0, nil, nil, "", time.Now(), nil, time.Now())
+	if _, _, err := svc.Approve(ctx, self, id, ApproveInput{Slug: "acme"}, auditapp.AuditContext{}); !errors.Is(err, ardom.ErrSelfApproval) {
+		t.Fatalf("expected ErrSelfApproval by account id, got %v", err)
+	}
+	if len(orgs.calls) != 0 {
+		t.Fatal("no organization may be created")
+	}
+	otherUID := shared.NewID()
+	other := admin.Reconstitute(shared.NewID(), "other@op.example", "Other", admin.AdminRoleOpsAdmin, true, &otherUID,
+		nil, "", 0, nil, nil, "", time.Now(), nil, time.Now())
+	if _, _, err := svc.Approve(ctx, other, id, ApproveInput{Slug: "acme"}, auditapp.AuditContext{}); err != nil {
+		t.Fatalf("another administrator approves it: %v", err)
+	}
+}
+
+func mustUser(t *testing.T, id shared.ID, email string) *userdom.User {
+	t.Helper()
+	u, err := userdom.NewLocalUserWithID(id, email, "N")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return u
 }

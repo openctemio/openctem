@@ -54,8 +54,10 @@ and is neither the public origin nor one of `CORS_ALLOWED_ORIGINS`
 | `mcp:assets.read` | `assets:read` |
 | `mcp:compliance.read` | `compliance:frameworks:read` |
 | `mcp:pentest.read` | `pentest:campaigns:read`, `pentest:findings:read`, `pentest:retests:read`, `pentest:templates:read` |
+| `mcp:scope.read` | `attack_surface:scope:read` |
 | `mcp:findings.comment` (write) | `findings:comment`; never offered up front, only through an `insufficient_scope` challenge, only when the organization policy lists it, and every call is confirmed by the person (below) |
 | `mcp:findings.propose` (write) | `findings:write`; obtained like the comment scope; its tools file requests another person decides (below) |
+| `mcp:pentest.draft` (write) | `pentest:findings:write`; obtained like the comment scope; saves pentest drafts another campaign member confirms (below) |
 
 A test fails when an MCP tool or prompt needs a permission no scope covers.
 
@@ -98,7 +100,7 @@ Checked in this order (`mcpoauth.Service.StartAuthorization`):
   `client_id`, name the client, list 1..20 redirect URIs (`https`, or `http`
   on loopback) and be a public client (no secret, `token_endpoint_auth_method`
   absent or `none`). The name is cleaned of control and bidirectional
-  characters. The stored copy is in `mcp_oauth_clients`.
+  characters. The stored copy is in `mcp_oauth_clients`. A fetched document is stored there only when a signed-in person approves the consent (migration `mcp_oauth_pending_client`); until then it is kept on the authorization request (`pending_client`).
 - **Organization clients** (`octc_…`): an owner or administrator registers
   them under Settings, AI assistants (MCP), Applications: a name and exact redirect URIs
   (`https`, or loopback `http` any port). `GET/POST /api/v1/mcp-access/clients`,
@@ -160,8 +162,18 @@ resource is this endpoint, the user still an active member with an active
 account. The request then carries the grant's tenant and user, permissions
 `scope permissions ∩ what the user holds now` (owners and administrators hold
 everything), never the owner/admin bypass, auth provider `mcp_oauth`, and
-keeps the user's own data scope including full data access (unlike `oct_`
-keys). Each grant has a budget of 3600 requests per hour. Last use (time,
+reads only what the user's scope rows allow, not the full-data access of an
+owner, administrator or full-data role (the same rule as `oct_` keys; an
+owner who is in no group sees no assets through MCP, and every empty asset or
+finding result then carries a `scope_notice` saying so). The one exception is
+a connection its person allowed, at consent, to read all organization data
+(RFC-062 §7a): the grant has `full_data` and `Principal.FullData` is true
+only while the user still holds a full-data role at this request, in which
+case `middleware.ReadsOnOwnScope` is false and the data-scope enforcer
+resolves the person's full-data view (private program assets stay hidden as
+in the console); `IsDelegatedCredential` stays true, so a connection never
+decides an approval alone. Such a grant lives shorter (7 days, refresh 24 h,
+access 5 min). Each grant has a budget of 3600 requests per hour. Last use (time,
 IP) is recorded at most once a minute.
 
 A call the user could make with a scope the token lacks answers `403` with
@@ -172,8 +184,9 @@ tool error.
 ### Audit
 
 `mcp_grant.authorized`, `mcp_grant.denied`, `mcp_grant.token_issued`,
-`mcp_grant.code_reused`, `mcp_grant.refresh_reused`, `mcp_grant.revoked`, and
-every `mcp.tool_called` carries `auth_method`, `grant_id`, `client_id` and
+`mcp_grant.code_reused`, `mcp_grant.refresh_reused`, `mcp_grant.revoked`,
+`mcp_grant.full_data_allowed`, `mcp_grant.full_data_removed`, and
+every `mcp.tool_called` carries `full_data` and `auth_method`, `grant_id`, `client_id` and
 `client_name` for token requests.
 
 ### Storage
@@ -246,7 +259,7 @@ approve and stay behind `any_client`.
 |---|---|---|
 | Everyone | My account, Connected applications (`/account/connected-apps`) | `GET /api/v1/mcp-access/my-connections`, `DELETE /api/v1/mcp-access/my-connections/{id}` |
 | Owners and administrators | Settings, AI assistants (MCP) (`/settings/mcp`), tabs Applications, Connections and Policy: approved publishers, waiting requests, registered applications, every connection of the organization with the person, and the policy | `GET /api/v1/mcp-access/connections`, `DELETE /api/v1/mcp-access/connections/{id}` (`RequireAdmin`) |
-| Platform administrators | Console, System, AI applications (`/admin/system/ai-applications`): every client with active connections and organization counts (no tenant data); block or unblock (ops_admin+, audited `mcp_client.blocked` / `mcp_client.unblocked`) | `GET /api/v1/admin/mcp-clients`, `POST /api/v1/admin/mcp-clients/{id}/block`, `…/unblock` |
+| Platform administrators | Console, System, AI applications (`/admin/system/ai-applications`): every client with active connections and organization counts (no tenant data); block or unblock (ops_admin+, audited `mcp_client.blocked` / `mcp_client.unblocked`) | `GET /api/v1/admin/mcp-clients` (`page`, `per_page`, `q`, `blocked`), `POST /api/v1/admin/mcp-clients/{id}/block`, `…/unblock` |
 
 A row shows the application, where it is published (or that the
 organization registered it, or that it is unverified), the access, when it
@@ -322,6 +335,7 @@ tools. Confirmations are purged a day after they expire.
 | Store | `finding_status_approvals.requested_via` (migration `approval_requested_via`): the AI application's name, set only with a person as requester |
 | Four-eyes | `Approval.Approve` refuses the requester; `SelfApproveSolo` refuses any request with `requested_via` |
 | Web | the approval inbox shows `AIProposalBadge` with the application's name |
+| Pentest drafts | `draft_pentest_finding` (`mcp:pentest.draft`): `PentestService.CreateUnifiedFinding` with `DraftedVia` (always a draft, `source_metadata.drafted_via`, kept on edits, activity `source = mcp`); `Finding.ApplyPentestTransition` refuses the creator confirming an AI draft (`ErrAIDraftSelfConfirm`); the finding sheet shows the badge and hides Confirm for the creator |
 
 Result: `status: proposed`, `approval_id`, `review_url` (the approval
 inbox). A pending request for the finding answers `conflict`; a refused
@@ -333,3 +347,11 @@ cases.
 
 URL-mode elicitation for the confirmation once the endpoint speaks MCP
 2026-07-28 (RFC-062 §10, §11).
+
+## Credential changes end connected applications
+
+A password reset, a password change and "sign out all others" revoke the person's MCP grants in every organization they belong to (all grants of that one user, nobody else's), delete their tokens and cancel any approved but unredeemed authorization code. The next refresh answers `invalid_grant`. This runs as one of the sessions-revoked hooks (`internal/app/auth/sessions_revoked_hook.go`), next to the one that ends the linked administrator's console sessions. Enabling or resetting two-step verification runs the same hooks.
+
+API keys are revoked in the same step only when the request sets `revoke_api_keys` (a ticked checkbox in the web dialogs, "Also revoke API keys"). Keys without an owner (service keys) are never touched.
+
+Approving a consent needs a recent sign-in (step-up), so a stolen session cannot connect a new application. A membership whose end date has passed stops API keys and MCP tokens at once, before the expiry sweeper suspends it. A blocked or suspended account can no longer exchange or refresh a token, or open a session through a federated sign-in.

@@ -181,3 +181,25 @@ customer's brand. Design:
 - `api/pkg/brand/`: the brand type, validation, image checks, SVG sanitizer.
 - `api/internal/config/brand.go`: loading from `BRAND_FILE` and `BRAND_*`.
 - `api/internal/infra/http/handler/brand_handler.go`: the public endpoints.
+
+## The built-in logo
+
+When the instance brand is OpenCTEM and no logo image is configured, the web
+app, the admin console and the e-mails show the built-in logo: the Scope
+symbol (two corner brackets with the marker square caught in the open corner)
+and an outlined Sora wordmark. Instances with their own name or images never
+show it.
+
+- **Source of truth:** the SVGs in `web/src/assets/brand/` (see its README for
+  construction, colour, clear space and minimum sizes). `web/scripts/brand-gen.mjs`
+  derives `logo.tsx`, the icon drawings, `manifest.json`, the manifest PNGs and the
+  e-mail header PNG; `--check` runs in the test suite
+  (`web/src/lib/__tests__/brand-assets.test.ts`, which also fails if a retired
+  shape or the old spelling returns).
+- **Icons and metadata:** `icon` (dedicated 16 px and 32 px drawings), `apple-icon`,
+  `opengraph-image`, `manifest.webmanifest` and the theme colour (ink `#0A1628`) in
+  the web app; `icon` and `apple-icon` in the console. They are public, read only
+  the instance brand (no session, cookie or header), and an operator favicon wins.
+- **E-mail:** every template starts with the lockup as an embedded `cid:logo`
+  part (`pkg/email/logo.go`), never a remote image, with the name as alt text.
+  Operator brands get their name as escaped text in brand ink.

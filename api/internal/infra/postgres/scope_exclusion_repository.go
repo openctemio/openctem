@@ -29,7 +29,7 @@ const scopeExclusionSelectQuery = `
 	SELECT id, tenant_id, exclusion_type, pattern, reason, status, expires_at,
 	       approved_by, approved_at, created_by, created_at, updated_at,
 	       rejected_by, rejected_at, origin,
-	       path_prefix, methods, testing, testing_until, testing_changed_by, testing_changed_at
+	       path_prefix, methods, testing, testing_until, testing_changed_by, testing_changed_at, kind
 	FROM scope_exclusions
 `
 
@@ -56,13 +56,14 @@ func (r *ScopeExclusionRepository) scanExclusion(row interface{ Scan(...any) err
 		testingBy     sql.NullString
 		testingAt     sql.NullTime
 		origin        string
+		kind          string
 	)
 
 	err := row.Scan(
 		&id, &tenantID, &exclusionType, &pattern, &reason, &status, &expiresAt,
 		&approvedBy, &approvedAt, &createdBy, &createdAt, &updatedAt,
 		&rejectedBy, &rejectedAt, &origin,
-		&pathPrefix, &methods, &testing, &testingUntil, &testingBy, &testingAt,
+		&pathPrefix, &methods, &testing, &testingUntil, &testingBy, &testingAt, &kind,
 	)
 	if err != nil {
 		return nil, err
@@ -116,6 +117,7 @@ func (r *ScopeExclusionRepository) scanExclusion(row interface{ Scan(...any) err
 		e.SetWeb(web)
 	}
 	e.SetOrigin(scope.Origin(origin))
+	e.SetKind(scope.ExclusionKind(kind))
 	return e, nil
 }
 
@@ -142,8 +144,8 @@ func (r *ScopeExclusionRepository) Create(ctx context.Context, exclusion *scope.
 		INSERT INTO scope_exclusions (
 			id, tenant_id, exclusion_type, pattern, reason, status, expires_at,
 			approved_by, approved_at, created_by, created_at, updated_at,
-			rejected_by, rejected_at, origin, path_prefix, methods
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+			rejected_by, rejected_at, origin, path_prefix, methods, kind
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 	`
 	var pathPrefix sql.NullString
 	methods := []string{}
@@ -172,6 +174,7 @@ func (r *ScopeExclusionRepository) Create(ctx context.Context, exclusion *scope.
 		string(exclusion.Origin()),
 		pathPrefix,
 		pq.Array(methods),
+		exclusion.Kind().String(),
 	)
 
 	if err != nil {
@@ -211,7 +214,8 @@ func (r *ScopeExclusionRepository) Update(ctx context.Context, exclusion *scope.
 			approved_at = $6,
 			updated_at = $7,
 			rejected_by = $9,
-			rejected_at = $10
+			rejected_at = $10,
+			kind = $11
 		WHERE id = $1 AND tenant_id = $8
 	`
 
@@ -226,6 +230,7 @@ func (r *ScopeExclusionRepository) Update(ctx context.Context, exclusion *scope.
 		exclusion.TenantID().String(),
 		nullString(exclusion.RejectedBy()),
 		nullTime(exclusion.RejectedAt()),
+		exclusion.Kind().String(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update scope exclusion: %w", err)

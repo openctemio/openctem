@@ -1,8 +1,7 @@
 # Code generated from api/internal/infra/http/routes/plane (plane.go, edge.go).
 # DO NOT EDIT. Regenerate with:
 #   cd api && UPDATE_GATEWAY_PLANES=1 go test ./internal/infra/http/routes/plane/ -run TestGatewayPlanesFile
-# CI fails when this file and the plane table disagree (RFC-041,
-# api/docs/rfcs/RFC-041-api-path-design.md).
+# CI fails when this file and the plane table disagree.
 #
 # The gateway routes by plane, from the same table the route-style lint checks
 # every route against. Each plane the gateway sends straight to the API has its

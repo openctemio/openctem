@@ -238,10 +238,10 @@ function SoftwareRow({ item, assetId }: { item: AssetSoftwareResponse; assetId: 
               }),
             ]
               .filter(Boolean)
-              .join(' · ')}
+              .join(', ')}
             {item.last_seen_at && (
               <>
-                {` · ${t('assets.software.lastSeen', 'last seen')} `}
+                {`, ${t('assets.software.lastSeen', 'last seen')} `}
                 <RelativeTime date={item.last_seen_at} />
               </>
             )}
@@ -297,7 +297,7 @@ function MatchRow({ match, assetId }: { match: AssetSoftwareMatchResponse; asset
           {match.label === 'likely'
             ? t('assets.software.likely', 'Likely')
             : t('assets.software.potential', 'Potential')}{' '}
-          · {match.confidence ?? 0}
+          {match.confidence ?? 0}
         </Badge>
         {match.in_policy ? (
           <Badge variant="secondary">{t('assets.software.finding', 'Finding')}</Badge>

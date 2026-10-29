@@ -673,6 +673,12 @@ func TestRequireWebAuthnPolicyNoLockout(t *testing.T) {
 	if err != nil || v != 1 || !w.audit.has(ActionMFAPolicyChanged) {
 		t.Fatalf("enable: v=%d err=%v", v, err)
 	}
+	// The factor policy of every administrator: critical, before and after.
+	if e := w.audit.last(ActionMFAPolicyChanged); e == nil || e.Severity != admin.SeverityCritical {
+		t.Fatalf("policy change must be audited critical: %+v", e)
+	} else if prev, _ := e.RequestBody["previous"].(map[string]interface{}); prev == nil || prev["require_webauthn"] != false {
+		t.Fatalf("policy change must record the previous value: %v", e.RequestBody)
+	}
 	// A stale version is refused.
 	if _, err := w.svc.SetMFAPolicy(ctx, w.admin, admin.ConsoleMFAPolicy{}, 0, client); !errors.Is(err, admin.ErrConsoleMFAPolicyConflict) {
 		t.Fatalf("stale: %v", err)

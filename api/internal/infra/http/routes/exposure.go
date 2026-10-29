@@ -89,8 +89,8 @@ func registerThreatIntelRoutes(
 		r.GET("/stats", h.GetThreatIntelStats, middleware.Require(permission.VulnerabilitiesRead), heavyReads.Middleware())
 
 		// Sync status and management (admin operations)
-		r.GET("/sync", h.GetSyncStatuses, middleware.Require(permission.VulnerabilitiesRead))
-		r.GET("/sync/{source}", h.GetSyncStatus, middleware.Require(permission.VulnerabilitiesRead))
+		r.GET("/sync", h.GetSyncStatusesTenant, middleware.Require(permission.VulnerabilitiesRead))
+		r.GET("/sync/{source}", h.GetSyncStatusTenant, middleware.Require(permission.VulnerabilitiesRead))
 		// The feed syncs are platform-wide: an organization may neither run
 		// nor toggle them, so there is no write route here. Operators use
 		// /api/v1/admin/threat-intel.
@@ -193,16 +193,12 @@ func registerVulnerabilityRoutes(
 		r.GET("/{id}", h.GetVulnerability, middleware.Require(permission.VulnerabilitiesRead))
 		r.GET("/cve/{cveId}", h.GetVulnerabilityByCVE, middleware.Require(permission.VulnerabilitiesRead))
 
-		// Blast-radius reverse lookups + Active CVEs (tenant-scoped). Use
+		// Blast-radius reverse lookups (tenant-scoped). Use
 		// tenantOverlayMiddlewares() to apply RequireTenant + active-membership
 		// + CSRF + rate-limit per-route, since chi forbids mounting a second
 		// Group on the same path. See routes.go.
 		tenantScopedMW := append(tenantOverlayMiddlewares(),
 			middleware.Require(permission.VulnerabilitiesRead))
-		// IMPORTANT: register /active/stats BEFORE /active and /{id} so the
-		// most-specific literal path wins.
-		r.GET("/active/stats", h.GetActiveCVEStats, tenantScopedMW...)
-		r.GET("/active", h.ListActiveCVEs, tenantScopedMW...)
 		r.GET("/{id}/affected-assets", h.ListAffectedAssets, tenantScopedMW...)
 		r.GET("/cve/{cveId}/affected-assets", h.ListAffectedAssetsByCVE, tenantScopedMW...)
 
@@ -221,6 +217,20 @@ func registerVulnerabilityRoutes(
 	// heavy-read limiter like the findings stats.
 	router.Group("/api/v1/vulnerability-exposures", func(r Router) {
 		pageMW := []Middleware{middleware.RequireAll(permission.VulnerabilitiesRead, permission.FindingsRead), heavyReads.Middleware()}
+		// The list: one row per CVE over the same compiled filter.
+		r.GET("/", h.ListCVEExposures, pageMW...)
+		// Bulk actions on selected rows (the open findings of the selected
+		// CVEs that the list's filter selects for the caller): each needs the
+		// single-finding permission of the action it runs. The export is the
+		// findings export (findings:export, one per user, audited).
+		r.GET("/export", h.ExportCVEExposures,
+			middleware.RequireAll(permission.VulnerabilitiesRead, permission.FindingsRead, permission.FindingsExport), heavyReads.Middleware())
+		r.POST("/exception/preview", h.PreviewCVEException,
+			middleware.RequireAll(permission.VulnerabilitiesRead, permission.FindingsRead, permission.FindingsWrite), heavyReads.Middleware())
+		r.POST("/exception", h.RequestCVEException,
+			middleware.RequireAll(permission.VulnerabilitiesRead, permission.FindingsRead, permission.FindingsWrite), heavyReads.Middleware())
+		r.POST("/retests", h.RetestCVEs,
+			middleware.RequireAll(permission.VulnerabilitiesRead, permission.FindingsRead, permission.FindingsVerify), heavyReads.Middleware())
 		r.GET("/{vuln_id}", h.GetCVEExposure, pageMW...)
 		r.GET("/{vuln_id}/assets", h.ListCVEExposureAssets, pageMW...)
 	}, tenantMiddlewares...)

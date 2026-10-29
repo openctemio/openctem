@@ -1,11 +1,14 @@
 package coverage
 
 // Coverage alerts on change (docs/rfcs/RFC-093-asset-coverage.md): an
-// alert is keyed by (capability, kind, reason) and sent when the condition
-// appears, or when its count doubles or halves since it was last sent;
-// never on a timer while it holds. A condition that clears and comes back
-// within a day comes back silently. Several changes in one pass go out as
-// one digest, at most one digest per tenant per day.
+// alert is keyed by (capability, kind, reason), so a tenant has at most one
+// open alert per key. It is sent when the condition appears, and again only
+// when it gets clearly worse (the count at least doubles and grows by
+// AlertMinRise since it was last sent, at most once per AlertRenotifyAfter);
+// an improvement updates the open alert silently, and the alert is resolved
+// (cleared) when the condition goes away. A condition that comes back within
+// AlertQuietAfterClear of clearing comes back silently. Several changes in
+// one pass go out as one digest, at most one digest per tenant per day.
 
 import (
 	"strings"
@@ -19,12 +22,22 @@ const AlertReadiness = "readiness"
 // Alert timing.
 const (
 	// AlertQuietAfterClear: a condition that comes back within this time
-	// of clearing is not sent again.
-	AlertQuietAfterClear = 24 * time.Hour
+	// of clearing is not sent again. Several cadences of a daily
+	// capability, so a streak or gap that flaps across days stays one
+	// alert.
+	AlertQuietAfterClear = 72 * time.Hour
+	// AlertRenotifyAfter: an open alert that gets worse is sent again at
+	// most once per this time.
+	AlertRenotifyAfter = 24 * time.Hour
 	// DigestEvery: at most one digest of several changes per tenant per
 	// this time.
 	DigestEvery = 24 * time.Hour
 )
+
+// AlertMinRise is the smallest growth of an open alert's count, over the
+// count last sent, that sends it again: on a handful of assets a count that
+// moves 2 -> 6 -> 2 as single runs fail and pass is noise, not news.
+const AlertMinRise = 5
 
 // DigestCapability and DigestKind key the tenant's digest row.
 const (
@@ -76,6 +89,8 @@ func Conditions(health []CapabilityHealth) []AlertCondition {
 					continue
 				}
 				c.Count = h.Failing
+			case AlertUnreachable:
+				c.Count = h.Unreachable
 			}
 			out = append(out, c)
 		}
@@ -117,9 +132,11 @@ func PlanAlerts(states []AlertState, conds []AlertCondition, now time.Time) (sen
 			store = append(store, st)
 		case !st.Active:
 			send, sends = append(send, c), append(sends, sent)
-		case c.Count >= 2*st.SentCount || 2*c.Count <= st.SentCount:
+		case worse(st, c.Count, now):
 			send, sends = append(send, c), append(sends, sent)
 		case c.Count != st.LastCount:
+			// Better, or not worse enough: the open alert is updated in
+			// place, nobody is notified.
 			st.LastCount = c.Count
 			store = append(store, st)
 		}
@@ -140,6 +157,17 @@ func PlanAlerts(states []AlertState, conds []AlertCondition, now time.Time) (sen
 	return send, append(store, sends...)
 }
 
+// worse reports whether an open alert's new count is news: at least double
+// the count last sent and AlertMinRise more, and the last send is older than
+// AlertRenotifyAfter (until then it stays pending and is decided again on
+// the next pass). A count going down is never sent.
+func worse(st AlertState, count int, now time.Time) bool {
+	if count < 2*st.SentCount || count-st.SentCount < AlertMinRise {
+		return false
+	}
+	return st.SentAt == nil || now.Sub(*st.SentAt) >= AlertRenotifyAfter
+}
+
 // AlertAction is what an administrator can do about an alert, and where.
 type AlertAction struct {
 	Text string
@@ -149,6 +177,9 @@ type AlertAction struct {
 // ActionFor returns the action of an alert condition. Server-generated
 // English: it reaches integrations verbatim.
 func ActionFor(c AlertCondition) AlertAction {
+	if c.Kind == AlertUnreachable {
+		return AlertAction{Text: "Check that a sensor in the targets' network can reach them, or retire assets that are gone.", URL: "/assets"}
+	}
 	if c.Kind != AlertReadiness {
 		return AlertAction{Text: "Open the assets to see which ones and why.", URL: "/assets"}
 	}
@@ -169,6 +200,8 @@ func ActionFor(c AlertCondition) AlertAction {
 		return AlertAction{"Add the API key the tool needs.", "/settings/scanning/tools"}
 	case ReadyQuotaExhausted:
 		return AlertAction{"It resumes at 00:00 UTC; add your own sensor to scan more.", "/sensors"}
+	case ReadyNotClaimed:
+		return AlertAction{"Open a waiting run's \"Why waiting?\" or check the sensors' grants and policies; coverage tries again on its own.", "/sensors"}
 	default: // ReadyPolicyDisabled
 		return AlertAction{"Turn the tool on in Settings > Scanning > Tools, or check scan approval and windows.", "/settings/scanning/tools"}
 	}
@@ -185,6 +218,7 @@ var readinessText = map[string]string{
 	ReadyNoEligibleSensor:   "no sensor can take the work",
 	ReadyCredentialsMissing: "an API key it needs is not configured",
 	ReadyQuotaExhausted:     "today's shared scanning quota is used up",
+	ReadyNotClaimed:         "no sensor took its last runs",
 }
 
 // ReadinessText returns the English phrase of a readiness reason.

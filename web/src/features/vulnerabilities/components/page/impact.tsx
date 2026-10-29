@@ -55,10 +55,15 @@ export function ImpactStrip({ cve, exposure }: { cve: string; exposure: CveExpos
         t('vulnPage.impact.notPrioritized', 'Not prioritized')
       ),
       detail: (
-        <span className="flex flex-wrap gap-x-2">
+        <span
+          role="list"
+          className="flex flex-wrap items-center gap-3"
+          aria-label={t('vulnPage.impact.byPriority', 'Active findings by priority')}
+        >
           {PRIORITIES.map((p) => (
-            <span key={p} className="tabular-nums">
-              {p} {(findings.by_priority[p] ?? 0).toLocaleString()}
+            <span role="listitem" key={p} className="flex items-center gap-1 tabular-nums">
+              <PriorityBadge priorityClass={p} />
+              <span>{(findings.by_priority[p] ?? 0).toLocaleString()}</span>
             </span>
           ))}
         </span>

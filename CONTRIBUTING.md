@@ -1,6 +1,6 @@
 # Contributing to OpenCTEM
 
-1. Fork and branch from `develop`. Open the pull request against `develop`.
+1. Fork and branch from `develop`. Open the pull request against `develop` (the default branch is `main`, which only takes release and hotfix branches; a pull request into `main` from any other branch fails the Workflow Lint check).
 2. Run `make setup` once: it downloads the Go and npm dependencies, enables the
    git hooks in `.githooks/` and generates the contract files.
 3. Before pushing: `make lint test check`.

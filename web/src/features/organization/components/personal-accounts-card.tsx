@@ -165,7 +165,7 @@ export function PersonalAccountsCard({
                       <div className="min-w-0 flex-1">
                         <p className="truncate font-medium">{nameOf(e.user_id)}</p>
                         <p className="truncate text-xs text-muted-foreground">
-                          {t('org.personal.exceptionLine', '{reason} · until {date}', {
+                          {t('org.personal.exceptionLine', '{reason}, until {date}', {
                             reason: e.reason,
                             date: formatShortDate(e.expires_at),
                           })}

@@ -12,7 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
 import { DetailSection, ErrorState, RelativeTime } from '@/features/shared'
 import { useAssetCoverage } from '../hooks/use-asset-coverage'
-import { coverageBadge } from '../lib/asset-coverage'
+import { coverageBadge, coverageReasonText } from '../lib/asset-coverage'
 
 export function AssetCoverageSection({ assetId }: { assetId: string }) {
   const { t } = useTranslation()
@@ -76,11 +76,13 @@ export function AssetCoverageSection({ assetId }: { assetId: string }) {
                     t('assetCoverage.neverDone', 'Never done')
                   )}
                   {e.last_outcome === 'no_output' &&
-                    ` · ${t('assetCoverage.noOutput', 'found nothing')}`}
-                  {e.reason && ` · ${t(`assetCoverage.reason.${e.reason}`, e.reason)}`}
+                    `, ${t('assetCoverage.noOutput', 'found nothing')}`}
+                  {e.last_outcome === 'no_answer' &&
+                    `, ${t('assetCoverage.noAnswer', 'the name has no DNS answer; checked again later')}`}
+                  {e.reason && `, ${coverageReasonText(e, t)}`}
                   {e.next_due_at && e.state !== 'not_applicable' && (
                     <>
-                      {' · '}
+                      {', '}
                       {t('assetCoverage.nextDue', 'next')}{' '}
                       <RelativeTime date={e.next_due_at} className="text-xs" />
                     </>

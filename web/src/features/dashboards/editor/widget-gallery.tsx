@@ -170,7 +170,7 @@ function PreviewCard({
       <p className="text-xs text-muted-foreground">
         {vizzesFor(metric, 0)
           .map((v) => t(`dashboards.viz.${v}`, v))
-          .join(' · ')}
+          .join(', ')}
       </p>
     </div>
   )

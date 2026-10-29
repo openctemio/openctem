@@ -42,13 +42,13 @@ describe('DataTable rowGroups', () => {
         rowGroups={{
           getKey: (r) => r.zone,
           order: ['dmz', 'lab', 'none'],
-          renderHeader: (key, groupRows) => `${key} · ${groupRows.length}`,
+          renderHeader: (key, groupRows) => `${key}, ${groupRows.length}`,
         }}
       />
     )
     // One tbody per group (a native row group).
     const cells = [...container.querySelectorAll('tbody tr')].map((r) => r.textContent)
-    expect(cells).toEqual(['dmz · 1', 'b', 'lab · 2', 'a', 'c', 'none · 1', 'd'])
+    expect(cells).toEqual(['dmz, 1', 'b', 'lab, 2', 'a', 'c', 'none, 1', 'd'])
     const header = container.querySelector('[data-slot="row-group-header"] td')!
     expect(header.getAttribute('colspan')).toBe('1')
   })

@@ -39,7 +39,7 @@ describe('asset registry lookups', () => {
     expect(classOfAsset(served, 'repository')).toBe('code_repo')
     expect(classLabel(served, 'code_repo')).toBe('Code repository (served)')
     expect(lensLabel(served, 'code')).toBe('Code (served)')
-    expect(classAndLensLabel(served, 'repository')).toBe('Code repository (served) · Code (served)')
+    expect(classAndLensLabel(served, 'repository')).toBe('Code repository (served), Code (served)')
   })
 
   it('keeps an alias in its own class', () => {
@@ -52,9 +52,9 @@ describe('asset registry lookups', () => {
 
   it('falls back to the generated constants before the registry loads', () => {
     expect(classOfAsset(undefined, 'repository')).toBe('code_repo')
-    expect(classAndLensLabel(undefined, 'repository')).toBe('Code repository · Code')
+    expect(classAndLensLabel(undefined, 'repository')).toBe('Code repository, Code')
     expect(classAndLensLabel(undefined, 'kubernetes', 'cluster')).toBe(
-      'Cluster · Containers & Kubernetes'
+      'Cluster, Containers & Kubernetes'
     )
   })
 

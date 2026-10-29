@@ -75,6 +75,7 @@ import {
   saveDraft,
 } from '@/features/scan-workflows/lib/draft'
 import { DraftIssuesPanel } from '@/features/scan-workflows/components/draft-issues-panel'
+import { RetiredNotice } from '@/features/scan-workflows/components/retired-workflow'
 import { TemplateUpdateCard } from '@/features/scan-workflows/components/template-update-card'
 
 // How long the builder waits after the last change before it saves the draft.
@@ -580,7 +581,7 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
                   label={t('workflowStages.builder.systemTemplate')}
                 />
               )}
-              {isSystemTemplate && canWriteWorkflows && (
+              {isSystemTemplate && canWriteWorkflows && !workflow?.is_retired && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -673,6 +674,10 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
                 </Button>
               )}
             </div>
+          </div>
+
+          <div className="px-4 pt-3 empty:hidden">
+            <RetiredNotice workflow={workflow} />
           </div>
 
           {!isReadOnly && (

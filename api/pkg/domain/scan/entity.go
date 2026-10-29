@@ -28,8 +28,7 @@ type Scan struct {
 	// (wildcard domains, CIDRs) against the inventory (RFC-068).
 	TargetOptions TargetOptions
 	// SkippedTargets are the targets the user chose to leave out when the
-	// scan was saved because the scope check refused them, with the reason
-	// (RFC-054 §6.4). They are not in Targets; every run records them.
+	// scan was saved because the scope check refused them, with the reason. They are not in Targets; every run records them.
 	SkippedTargets []SkippedTarget
 
 	// Scan Type
@@ -38,7 +37,7 @@ type Scan struct {
 	ScannerName    string         // For single type
 	ScannerConfig  map[string]any // Scanner-specific configuration
 	TargetsPerJob  int            // Number of targets per job batch
-	// Intensity is the probe ceiling of every run (RFC-071): passive,
+	// Intensity is the probe ceiling of every run: passive,
 	// active or intrusive. Copied to each run.
 	Intensity Intensity
 	// Depth is how much of the workflow each run executes (passive,
@@ -103,8 +102,7 @@ type Scan struct {
 	TotalRuns      int
 	SuccessfulRuns int
 	FailedRuns     int
-	// PartialRuns counts runs that kept results but lost some work
-	// (RFC-046 D5); neither a success nor a failure.
+	// PartialRuns counts runs that kept results but lost some work; neither a success nor a failure.
 	PartialRuns int
 	// BlockedRuns counts triggers that were refused before anything was
 	// dispatched (scanrun.RunStatusBlocked).
@@ -966,11 +964,13 @@ type ManagedBy string
 const (
 	ManagedByCoverage   ManagedBy = "coverage"
 	ManagedByEnrichment ManagedBy = "enrichment"
+	// ManagedByWebVerify owns the verification runs of sensitive web paths.
+	ManagedByWebVerify ManagedBy = "web_verify"
 )
 
 // Valid reports whether m names a known policy.
 func (m ManagedBy) Valid() bool {
-	return m == ManagedByCoverage || m == ManagedByEnrichment
+	return m == ManagedByCoverage || m == ManagedByEnrichment || m == ManagedByWebVerify
 }
 
 // IsManaged reports whether a platform policy owns the scan: its definition

@@ -87,12 +87,6 @@ func (m *MockFindingRepoForLifecycle) ListByComponentID(ctx context.Context, ten
 func (m *MockFindingRepoForLifecycle) ListAffectedAssetsByVulnerabilityID(_ context.Context, _, _ shared.ID, _ bool, _ pagination.Pagination, _ *shared.DataScope) (pagination.Result[vulnerability.VulnerabilityAffectedAsset], error) {
 	return pagination.Result[vulnerability.VulnerabilityAffectedAsset]{}, nil
 }
-func (m *MockFindingRepoForLifecycle) ListActiveCVEsByTenant(_ context.Context, _ shared.ID, _ vulnerability.ActiveCVEFilter, _ pagination.Pagination) (pagination.Result[vulnerability.ActiveCVE], error) {
-	return pagination.Result[vulnerability.ActiveCVE]{}, nil
-}
-func (m *MockFindingRepoForLifecycle) GetActiveCVEStats(_ context.Context, _ shared.ID, _ bool, _ *shared.DataScope) (*vulnerability.ActiveCVEStats, error) {
-	return &vulnerability.ActiveCVEStats{BySeverity: map[string]int{}}, nil
-}
 func (m *MockFindingRepoForLifecycle) Count(ctx context.Context, filter vulnerability.FindingFilter) (int64, error) {
 	return 0, nil
 }
@@ -150,7 +144,7 @@ func (m *MockFindingRepoForLifecycle) GetStats(ctx context.Context, tenantID sha
 func (m *MockFindingRepoForLifecycle) CountBySeverityForScan(ctx context.Context, tenantID shared.ID, scanID string) (vulnerability.SeverityCounts, error) {
 	return vulnerability.SeverityCounts{}, nil
 }
-func (m *MockFindingRepoForLifecycle) AutoReopenByFingerprintsBatch(ctx context.Context, tenantID shared.ID, fingerprints []string) (map[string]vulnerability.ReopenedFinding, error) {
+func (m *MockFindingRepoForLifecycle) AutoReopenByFingerprintsBatch(ctx context.Context, tenantID shared.ID, fingerprints []string, _ time.Time) (map[string]vulnerability.ReopenedFinding, error) {
 	return make(map[string]vulnerability.ReopenedFinding), nil
 }
 func (m *MockFindingRepoForLifecycle) CreateBatchWithResult(ctx context.Context, findings []*vulnerability.Finding) (*vulnerability.BatchCreateResult, error) {

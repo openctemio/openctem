@@ -80,6 +80,21 @@ export const STATUS_TONES = {
       labelKey: 'remediationHub.state.archived',
     },
   },
+  // Organization sensor enrollment tokens.
+  enrollmentToken: {
+    active: { tone: 'progress', icon: HalfCircleGlyph, labelKey: 'sensors.tokens.state.active' },
+    exhausted: {
+      tone: 'closed',
+      icon: CheckCircleGlyph,
+      labelKey: 'sensors.tokens.state.exhausted',
+    },
+    expired: { tone: 'closed', icon: Clock, labelKey: 'sensors.tokens.state.expired' },
+    revoked: {
+      tone: 'closed',
+      icon: SlashedCircleGlyph,
+      labelKey: 'sensors.tokens.state.revoked',
+    },
+  },
 } as const satisfies Record<string, Record<string, StatusEntry>>
 
 export type StatusDomain = keyof typeof STATUS_TONES

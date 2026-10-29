@@ -2,8 +2,10 @@ package sensor
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -110,5 +112,31 @@ func TestPlatformScanning_Egress(t *testing.T) {
 		return nil, errors.New("db down")
 	}).Get(context.Background(), shared.NewID()); err == nil {
 		t.Fatal("an egress read error was swallowed")
+	}
+}
+
+// What a tenant sees of the shared (platform) sensors is a status per
+// region: never a sensor's host pressure (research/318), which would show
+// the activity of other tenants on a shared host.
+func TestPlatformScanning_NeverCarriesHostPressure(t *testing.T) {
+	for _, typ := range []reflect.Type{reflect.TypeOf(sensordom.PlatformRegionState{}), reflect.TypeOf(PlatformRegion{}), reflect.TypeOf(PlatformScanning{})} {
+		for f := range typ.NumField() {
+			name := strings.ToLower(typ.Field(f).Name + typ.Field(f).Tag.Get("json"))
+			for _, banned := range []string{"pressure", "noisy", "stall", "reasons"} {
+				if strings.Contains(name, banned) {
+					t.Errorf("%s.%s exposes host detail", typ.Name(), typ.Field(f).Name)
+				}
+			}
+		}
+	}
+	svc := NewPlatformScanningService(&fakePlatformStore{sum: &sensordom.PlatformScanningSummary{
+		Regions: []sensordom.PlatformRegionState{{Region: "eu", Online: true}}}}, allow(true))
+	got, err := svc.Get(context.Background(), shared.NewID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(got)
+	if strings.Contains(string(raw), "pressure") || got.Status != PlatformScanningBusy {
+		t.Errorf("platform view = %s", raw)
 	}
 }
