@@ -6,6 +6,7 @@ import type {
   PlatformUserAction,
   PlatformUserDetail,
   PlatformUserList,
+  PlatformUserResetLink,
   PlatformUserState,
 } from '../types'
 
@@ -38,6 +39,18 @@ export function usePlatformUser(id: string | null) {
 /** Runs a support action (ops admin and up; the reason goes to the audit log). */
 export function runPlatformUserAction(id: string, action: PlatformUserAction, reason: string) {
   return adminFetch<{ status: string }>(`/platform-users/${encodeURIComponent(id)}/${action}`, {
+    method: 'POST',
+    body: { reason },
+  })
+}
+
+/**
+ * Issues a one-hour password reset link for an account (super admin, a server
+ * that cannot send email). The link is returned once and not kept anywhere:
+ * the caller shows it and drops it.
+ */
+export function issuePlatformUserResetLink(id: string, reason: string) {
+  return adminFetch<PlatformUserResetLink>(`/platform-users/${encodeURIComponent(id)}/reset-link`, {
     method: 'POST',
     body: { reason },
   })

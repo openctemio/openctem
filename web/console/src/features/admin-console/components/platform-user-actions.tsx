@@ -1,11 +1,22 @@
 'use client'
 
 import { useState } from 'react'
-import { Ban, KeyRound, LogOut, MailCheck, ShieldCheck, Unlock } from 'lucide-react'
+import {
+  Ban,
+  Copy,
+  KeyRound,
+  LogOut,
+  MailCheck,
+  ShieldCheck,
+  ShieldOff,
+  Unlock,
+  UserCheck,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
-import { runPlatformUserAction } from '../api/use-platform-users'
+import { OneTimeLinkDialog } from '@/components/one-time-link-dialog'
+import { issuePlatformUserResetLink, runPlatformUserAction } from '../api/use-platform-users'
 import { AdminConfirmDialog } from './admin-confirm-dialog'
 import type { PlatformUserAction, PlatformUserDetail } from '../types'
 
@@ -25,8 +36,15 @@ interface ActionSpec {
   doneKey: string
   done: string
   destructive?: boolean
+  /** Super admin only (the API refuses ops_admin). */
+  superOnly?: boolean
   available: (u: PlatformUserDetail) => boolean
 }
+
+// On a server that cannot send email the email actions would only fail, and
+// the copied link / mark verified take their place.
+const emailOn = (u: PlatformUserDetail) => u.email_delivery !== false
+const emailOff = (u: PlatformUserDetail) => u.email_delivery === false
 
 const ACTIONS: ActionSpec[] = [
   {
@@ -61,7 +79,7 @@ const ACTIONS: ActionSpec[] = [
     what: 'Emails {email} a password reset link, the same as "Forgot password". You never see the link.',
     doneKey: 'admin.users.action.resetDone',
     done: 'Password reset link emailed.',
-    available: (u) => u.auth_provider === 'local',
+    available: (u) => u.auth_provider === 'local' && emailOn(u),
   },
   {
     action: 'verification-emails',
@@ -72,7 +90,44 @@ const ACTIONS: ActionSpec[] = [
     what: 'Emails {email} a new verification link; the previous one stops working.',
     doneKey: 'admin.users.action.verifyDone',
     done: 'Verification email sent.',
-    available: (u) => !u.email_verified,
+    available: (u) => !u.email_verified && emailOn(u),
+  },
+  {
+    action: 'password-reset',
+    icon: Copy,
+    labelKey: 'admin.users.action.resetLink',
+    label: 'Copy reset link',
+    whatKey: 'admin.users.action.resetLinkWhat',
+    what: 'This server cannot send email. Creates a one-hour password reset link for {email} and shows it once, for you to hand over over a channel you trust. Any earlier reset link stops working. They still need their second factor to sign in.',
+    doneKey: 'admin.users.action.resetLinkDone',
+    done: 'Reset link created.',
+    superOnly: true,
+    available: (u) => u.auth_provider === 'local' && emailOff(u),
+  },
+  {
+    action: 'mark-verified',
+    icon: UserCheck,
+    labelKey: 'admin.users.action.markVerified',
+    label: 'Mark email verified',
+    whatKey: 'admin.users.action.markVerifiedWhat',
+    what: 'This server cannot send the verification link. Marks the email address of {email} as verified; only do this once you have confirmed the address is theirs.',
+    doneKey: 'admin.users.action.markVerifiedDone',
+    done: 'Email marked verified.',
+    superOnly: true,
+    available: (u) => u.auth_provider === 'local' && !u.email_verified && emailOff(u),
+  },
+  {
+    action: 'mfa/reset',
+    icon: ShieldOff,
+    labelKey: 'admin.users.action.mfaReset',
+    label: 'Reset two-factor',
+    whatKey: 'admin.users.action.mfaResetWhat',
+    what: 'Turns off two-factor authentication for {email} and ends every session. Use it for someone who lost their device and recovery codes and has no organization administrator above them. Another super admin must approve first.',
+    doneKey: 'admin.users.action.mfaResetDone',
+    done: 'Two-factor authentication reset.',
+    destructive: true,
+    superOnly: true,
+    available: (u) => u.auth_provider === 'local' && u.mfa_enabled,
   },
   {
     action: 'block',
@@ -102,31 +157,37 @@ const ACTIONS: ActionSpec[] = [
 export function PlatformUserActions({
   user,
   onDone,
+  isSuperAdmin = false,
 }: {
   user: PlatformUserDetail
   onDone: () => void
+  /** The signed-in administrator is a super admin (offers the recovery actions). */
+  isSuperAdmin?: boolean
 }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState<ActionSpec | null>(null)
+  const [resetLink, setResetLink] = useState<{ link: string; expiresAt: string } | null>(null)
   const unavailable = user.is_platform_admin || user.erased
 
   return (
     <>
       <div className="flex flex-wrap gap-2">
         {/* A destructive action after routine ones is set apart from them. */}
-        {ACTIONS.filter((a) => a.available(user)).map((a, i, all) => (
-          <Button
-            key={a.action}
-            size="sm"
-            variant={a.destructive ? 'destructive' : 'outline'}
-            className={a.destructive && i > 0 && !all[i - 1].destructive ? 'ms-4' : undefined}
-            disabled={unavailable}
-            onClick={() => setOpen(a)}
-          >
-            <a.icon className="me-2 size-4" />
-            {t(a.labelKey, a.label)}
-          </Button>
-        ))}
+        {ACTIONS.filter((a) => (!a.superOnly || isSuperAdmin) && a.available(user)).map(
+          (a, i, all) => (
+            <Button
+              key={a.action}
+              size="sm"
+              variant={a.destructive ? 'destructive' : 'outline'}
+              className={a.destructive && i > 0 && !all[i - 1].destructive ? 'ms-4' : undefined}
+              disabled={unavailable}
+              onClick={() => setOpen(a)}
+            >
+              <a.icon className="me-2 size-4" />
+              {t(a.labelKey, a.label)}
+            </Button>
+          )
+        )}
       </div>
       {user.blocked && !unavailable && (
         <p className="text-sm text-muted-foreground">
@@ -154,12 +215,33 @@ export function PlatformUserActions({
           confirmLabel={t(open.labelKey, open.label)}
           destructive={open.destructive}
           onConfirm={async ({ reason }) => {
-            await runPlatformUserAction(user.id, open.action, reason)
+            if (open.labelKey === 'admin.users.action.resetLink') {
+              // The link is a bearer secret: it goes straight into the
+              // dialog below and nowhere else.
+              const res = await issuePlatformUserResetLink(user.id, reason)
+              setResetLink({ link: res.link, expiresAt: res.expires_at })
+            } else {
+              await runPlatformUserAction(user.id, open.action, reason)
+            }
             toast.success(t(open.doneKey, open.done))
             onDone()
           }}
         />
       )}
+      <OneTimeLinkDialog
+        open={!!resetLink}
+        onOpenChange={(next) => {
+          if (!next) setResetLink(null)
+        }}
+        title={t('admin.users.action.resetLink', 'Copy reset link')}
+        description={t(
+          'admin.users.action.resetLinkFor',
+          'Password reset link for {email}. It works once.',
+          { email: user.email }
+        )}
+        link={resetLink?.link ?? ''}
+        expiresAt={resetLink?.expiresAt}
+      />
     </>
   )
 }
