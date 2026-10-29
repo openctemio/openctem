@@ -70,6 +70,7 @@ jobs:
   plan:
     name: Plan image builds
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       packages: read
@@ -410,6 +411,7 @@ jobs:
     needs: [plan, build, build-allinone]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       packages: read

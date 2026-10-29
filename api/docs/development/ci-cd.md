@@ -429,16 +429,20 @@ tags and scheduled runs are never cancelled.
    aggregators run with `if: always()` and pass when their jobs were skipped;
    Secret Scanning and Workflow Lint are unconditional jobs. Nothing stays Pending.
 5. When all of them pass, the queue fast-forwards the base branch to the commit it
-   tested, and the `push` run (path-scoped, plus CodeQL on both languages)
-   refreshes the branch's baseline. On `develop`, API CI, All-in-one CI and Web
-   E2E first ask `.github/scripts/queue-verified.sh` whether the merge queue
+   tested, and the `push` run (path-scoped, plus CodeQL)
+   refreshes the branch's baseline. On `develop`, API CI, Web CI, All-in-one CI
+   and Web E2E first ask `.github/scripts/queue-verified.sh` whether the merge queue
    already passed this workflow on this exact commit (a `merge_group` run, same
    workflow file, same SHA, conclusion success; only GitHub creates such runs).
    If so they skip their test jobs: the queue ran the same workflow file on the
    same tree. The push still keeps develop's caches current (`Go cache
    (develop)` fills the Go cache when there is none for the current `go.sum`;
-   Web E2E still builds its images, which writes the layer cache). Any doubt
-   (no such run, an API error) runs the workflow in full. CodeQL, Web CI and
+   Web E2E still builds its images, which writes the layer cache). Web CI skips
+   `Web checks` and `Web tests` on such a push but still runs `API contract`
+   and `Build`: the tenant-bundle check (the tenant image holds no console
+   route) runs only in `Build`, which also keeps develop's Next.js cache
+   current; `Web CI OK` then requires `Build` instead of the two skipped jobs.
+   Any doubt (no such run, an API error) runs the workflow in full. CodeQL and
    the security scans always run on push, unless the tree was verified (see
    [Reusing a verified tree](#reusing-a-verified-tree)).
 6. A failure removes the PR from the queue; the groups behind it are rebuilt.
@@ -488,6 +492,17 @@ Saving: a failed queue group of an `api/` + `web/` change starts about 50 jobs
 image smoke test). Now the rest stop about a minute after the first failure;
 a failure in static checks or an early shard frees most of those runner
 minutes, typically more than half of the group's total.
+
+### Job timeouts
+
+Every job sets `timeout-minutes`, about two to three times its measured p90
+duration (October 2026), so a hung job frees its runner, and in the merge queue
+its group, instead of holding both for GitHub's default of 360 minutes. Examples:
+change detection and `… OK` gates 5, API static checks 30, Go test shards 40
+(at least the `go test -timeout` of their slowest package), Web tests 25, CodeQL
+analysis 35, image builds 30 to 60. `.github/scripts/check-job-timeouts.sh`
+(run by `Workflow Lint`, with its self-test) fails when a job has none; a job
+that calls a reusable workflow cannot set one and is exempt.
 
 ### Reusing a verified tree
 
