@@ -44,7 +44,8 @@ services:
     image: ${API_IMAGE:?set API_IMAGE}
     entrypoint: ['/app/openctem-migrate']
     # The URL is assembled from E2E_DB_PASSWORD by make-env.sh / the workflow.
-    command: ['-path=/app/migrations', '-database', '${E2E_DATABASE_URL:?set E2E_DATABASE_URL}', 'up']
+    command:
+      ['-path=/app/migrations', '-database', '${E2E_DATABASE_URL:?set E2E_DATABASE_URL}', 'up']
     depends_on:
       postgres: { condition: service_healthy }
     restart: 'no'
@@ -75,6 +76,9 @@ services:
       APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?set APP_ENCRYPTION_KEY (64 hex characters)}
       FINGERPRINT_KEY: ${FINGERPRINT_KEY:?set FINGERPRINT_KEY (32+ characters; required outside development)}
       AUTH_REQUIRE_EMAIL_VERIFICATION: 'false'
+      # The seeded owner has no second factor, and the seed creates sensors; the
+      # platform two-factor floor (default admins) would refuse that.
+      AUTH_MFA_FLOOR: none
       # Self-service sign-up needs starting limits; the e2e stack chooses none.
       SELF_SERVICE_START_LIMITS: unlimited
       # One account drives every test; at the default 120 reads a minute per
