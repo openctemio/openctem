@@ -90,6 +90,10 @@ type Task struct {
 	// WaitingOnHosts: a queued task waits while another task of the tenant
 	// holds one of its hosts.
 	WaitingOnHosts bool
+	// WithheldReason is, for a task no sensor took (queued, or failed
+	// without a claim), the placement code of the last dispatch-gate
+	// refusal of it (grant_credentials, intensity, ...); "" otherwise.
+	WithheldReason string
 }
 
 // MaxRunTasks bounds the tasks one run read returns; the summary still counts

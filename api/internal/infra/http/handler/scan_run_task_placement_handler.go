@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -105,11 +106,18 @@ type RunTaskPlacementResponse struct {
 	// access policy's reason, English).
 	SharedFleet       string `json:"shared_fleet,omitempty"`
 	SharedFleetReason string `json:"shared_fleet_reason,omitempty"`
+	// Withheld is the placement code (a sensor reason such as
+	// grant_credentials) of the last time a sensor's dispatch gate withheld
+	// the task, by any sensor that asked for work, the organization's or a
+	// shared one (never named); WithheldAt is when (RFC 3339). Absent when
+	// no gate withheld it.
+	Withheld   string `json:"withheld,omitempty"`
+	WithheldAt string `json:"withheld_at,omitempty"`
 }
 
 // GetRunTaskPlacement handles GET /api/v1/scan-runs/{id}/tasks/{task_id}/placement
 // @Summary      Why a run task waits
-// @Description  For a queued task: the reasons that hold it whatever the sensor (scan window, busy host, expired), how many of the organization's sensors may take it and how many of those are busy, and each reason that keeps it from the others with a count. Callers with sensors:read also get each sensor's verdict. A task waiting for platform scanning names no sensor. A task that is not in the run (or the run is another organization's) is not found.
+// @Description  For a queued task: the reasons that hold it whatever the sensor (scan window, busy host, expired), how many of the organization's sensors may take it and how many of those are busy, and each reason that keeps it from the others with a count. Callers with sensors:read also get each sensor's verdict. A task waiting for platform scanning names no sensor. Withheld names the reason the last sensor that asked for work withheld the task (any sensor; never which one). A task that is not in the run (or the run is another organization's) is not found.
 // @Tags         Scan workflows
 // @Produce      json
 // @Param        id       path      string  true  "Run ID"
@@ -168,6 +176,10 @@ func placementResponse(p *commandapp.Placement, withSensors bool) RunTaskPlaceme
 		return resp
 	}
 	resp.Platform = p.Platform
+	resp.Withheld = p.Withheld
+	if p.WithheldAt != nil {
+		resp.WithheldAt = p.WithheldAt.UTC().Format(time.RFC3339)
+	}
 	if p.Platform {
 		return resp
 	}

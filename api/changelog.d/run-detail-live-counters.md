@@ -1,0 +1,3 @@
+### Fixed: a running scan run shows its findings and counts live
+- The run's Findings figure came from the count each sensor wrote on its command result, which is 0 for tools that report through ingest, so it stayed 0 on running, partial and completed runs. It now follows the run's receipt (new, still detected and reopened findings) as each report lands and is never lowered by the step bookkeeping.
+- "What this run did to findings" refreshes while the run is running, shows "Counted when the run finishes" for Untouched, and no longer says a run could close findings before its tasks have finished; a run that ended partial, failed or timed out says only tasks that finished cleanly could close findings.

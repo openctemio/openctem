@@ -285,6 +285,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	commandHandler.SetScanRunService(svc.ScanRun)
 	commandHandler.SetAuditService(svc.Audit)
 	commandHandler.SetScanCommandGate(svc.Scan)
+	commandHandler.SetResolutionRecorder(repos.AssetResolution)
 	// A job the claim-time scope re-check fails settles what waits on it
 	// (scan step, validation run, retest) as a sensor's failure would.
 	svc.Command.SetFailureObserver(commandHandler)
@@ -401,6 +402,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	}
 	if svc.BulkGuard != nil {
 		vulnHandler.SetBulkGuard(svc.BulkGuard)
+	}
+	if svc.Retest != nil {
+		// Retest of the open findings of selected vulnerabilities.
+		vulnHandler.SetBulkRetester(svc.Retest)
 	}
 	if svc.PriorityClassification != nil {
 		vulnHandler.SetPriorityExplainer(svc.PriorityClassification)
@@ -817,7 +822,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AdminConsole:              handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, log).WithApprovals(adminApprovals),
 		AdminApproval:             handler.NewAdminApprovalHandler(adminApprovals, log),
 		AdminAuditChain:           handler.NewAdminAuditChainHandler(svc.Audit, adminConsoleSvc, repos.AdminAuditLog, repos.AdminOrg, log).WithApprovals(adminApprovals),
-		AdminAuthMiddleware:       middleware.NewAdminAuthMiddleware(adminConsoleSvc, log).WithElevation(cfg.AdminElevationRequired),
+		AdminAuthMiddleware: middleware.NewAdminAuthMiddleware(adminConsoleSvc, log).WithElevation(cfg.AdminElevationRequired).
+			WithPlatformRoles(postgres.NewPlatformRoleRepository(adminDBOf(repos, deps.DB))),
 		AdminStepUp: middleware.AdminStepUpFunc(func(ctx context.Context, a *admin.AdminUser, sess *admin.Session, code, purpose string, c middleware.AdminStepUpClient) error {
 			err := adminConsoleSvc.ConfirmProtected(ctx, a, sess, code, purpose, adminconsole.ClientInfo{IP: c.IP, UserAgent: c.UserAgent})
 			if err != nil && !errors.Is(err, admin.ErrStepUpRequired) && !errors.Is(err, admin.ErrStepUpUnavailable) && !errors.Is(err, admin.ErrInvalidMFACode) {
@@ -1066,7 +1072,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			handlers.AdminLegal = handler.NewAdminLegalHandler(platformlegal.NewService(repos.PlatformSetting, repos.AdminAuditLog, log), adminConsoleSvc, log)
 		}
 		if svc.PlatformEmail != nil {
-			handlers.AdminEmail = handler.NewAdminEmailHandler(svc.PlatformEmail, adminConsoleSvc, cfg.Brand.DisplayName(), log)
+			handlers.AdminEmail = handler.NewAdminEmailHandler(svc.PlatformEmail, adminConsoleSvc, cfg.Brand.DisplayName(), log).WithApprovals(adminApprovals)
 		}
 		handlers.SignupPolicy = svc.Signup
 	}
@@ -1594,7 +1600,13 @@ func easmDecisionEffects(repos *Repositories, svc *Services, log *logger.Logger)
 			pub.PublishAssetReclassify(ctx, tenantID, ids, controller.ReasonAssetChange, "attribution decided")
 		}
 	}
-	return easmapp.NewDecisionEffects(repos.Exposure, reclassify, log)
+	effects := easmapp.NewDecisionEffects(repos.Exposure, reclassify, log)
+	// "Not ours" closes the asset's findings as out of scope; undoing it
+	// reopens them (research/320).
+	if svc.ScopeEffects != nil {
+		effects.SetScopeEffects(svc.ScopeEffects.Kick)
+	}
+	return effects
 }
 
 // newEASMSettingsHandler builds the EASM settings and run-now handler
@@ -2095,18 +2107,12 @@ func emergingThreatHandler(svc *Services, log *logger.Logger) *handler.EmergingT
 	return handler.NewEmergingThreatHandler(svc.ThreatAlerts, svc.DataScope, log)
 }
 
-// newThreatIntelHandler builds the threat-intelligence handler; when the
-// bundle source can run (repositories present), the admin sync endpoint also
-// runs the vulnfeed source.
+// newThreatIntelHandler builds the threat-intelligence handler and the
+// background runner behind its admin sync endpoint.
 func newThreatIntelHandler(deps *HandlerDeps, v *validator.Validator, log *logger.Logger) *handler.ThreatIntelHandler {
 	h := handler.NewThreatIntelHandler(deps.Services.ThreatIntel, v, log).SetDataScope(deps.Services.DataScope)
-	repos := deps.Repos
-	if repos != nil && repos.ThreatIntel != nil && repos.CVECorpus != nil && repos.Software != nil {
-		if im, err := newVulnFeedImporter(deps.Config, repos, log.With("component", "vulnfeed")); err == nil {
-			h.SetBundleSyncer(im)
-		} else {
-			log.Warn("vulnfeed sync endpoint disabled", "error", err)
-		}
+	if runner, configured := newFeedRunner(deps, log); runner != nil {
+		h.SetFeedRunner(runner, configured)
 	}
 	return h
 }

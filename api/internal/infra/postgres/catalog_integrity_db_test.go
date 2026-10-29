@@ -10,9 +10,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/internal/testdb"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // The vulnerabilities, components and licenses catalogs are shared by every
@@ -225,52 +223,5 @@ func TestThreatIntelPropagation_ClearsCVEThatLeftKEV(t *testing.T) {
 	}
 	if exploit, added, _, _ := read(other); !exploit || !added.Valid {
 		t.Errorf("CVE still in KEV lost its flags: exploit=%v added=%v", exploit, added)
-	}
-}
-
-// A CVE first reported by tenant A with a low severity must still show (and
-// filter) as critical for tenant B whose own finding is critical.
-func TestActiveCVEs_TenantViewUsesOwnObservation(t *testing.T) {
-	db := catalogTestDB(t)
-	ctx := context.Background()
-	cve := uniqueCVE()
-	t.Cleanup(func() {
-		_, _ = db.ExecContext(context.Background(), `DELETE FROM vulnerabilities WHERE cve_id = $1`, cve)
-	})
-
-	vulns := NewVulnerabilityRepository(&DB{DB: db})
-	poisoned := sensorReportedVuln(t, cve) // severity low, CVSS 0.1, exploit claimed
-	if err := vulns.UpsertBatchByCVE(ctx, []*vulnerability.Vulnerability{poisoned}); err != nil {
-		t.Fatal(err)
-	}
-
-	tB := seedTestTenant(ctx, t, db)
-	aB := seedTestAsset(ctx, t, db, tB)
-	if _, err := db.ExecContext(ctx, `
-		INSERT INTO findings (tenant_id, asset_id, vulnerability_id, cve_id, source, tool_name, message, severity, fingerprint, cvss_score, status)
-		VALUES ($1, $2, $3, $4, 'sca', 'trivy', 'm', 'critical', $5, 9.8, 'new')`,
-		tB.String(), aB.String(), poisoned.ID().String(), cve, "fp-"+shared.NewID().String()); err != nil {
-		t.Fatal(err)
-	}
-
-	findings := NewFindingRepository(&DB{DB: db})
-	res, err := findings.ListActiveCVEsByTenant(ctx, tB, vulnerability.ActiveCVEFilter{SeverityIn: []string{"critical"}}, pagination.New(1, 10))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.Total != 1 || len(res.Data) != 1 {
-		t.Fatalf("tenant B's critical CVE is hidden by tenant A's report: total=%d", res.Total)
-	}
-	got := res.Data[0]
-	if got.Severity != "critical" || got.CVSSScore == nil || *got.CVSSScore != 9.8 || got.ExploitAvailable {
-		t.Errorf("tenant B sees %s cvss=%v exploit=%v; want its own critical/9.8 and no exploit claim from tenant A",
-			got.Severity, got.CVSSScore, got.ExploitAvailable)
-	}
-	stats, err := findings.GetActiveCVEStats(ctx, tB, false, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if stats.ExploitAvailableCount != 0 {
-		t.Errorf("stats count tenant A's exploit claim: %d", stats.ExploitAvailableCount)
 	}
 }

@@ -15,7 +15,6 @@
 # (api/docs/development/ci-cd.md, "Build images once").
 #
 #   api        the API (target production): tree api
-#   admin-cli  the admin CLI: tree api
 #   web        the web app: tree web, plus tree api and the generate-contract
 #              action, because the web compiles against contract files
 #              generated from the Go source
@@ -34,7 +33,6 @@ h() { sha256sum | cut -c1-40; }
 
 case "$image" in
   api)       parts=("api:$(tree api)" "file:api/Dockerfile" "target:production" "args:") ;;
-  admin-cli) parts=("api:$(tree api)" "file:api/Dockerfile.admin-cli" "target:" "args:") ;;
   web | console)
     target=""; [ "$image" = console ] && target=console
     parts=("web:$(tree web)" "api:$(tree api)" "contract:$(tree .github/actions/generate-contract)"

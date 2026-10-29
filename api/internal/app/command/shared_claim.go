@@ -313,7 +313,7 @@ func (s *Service) holdShared(ctx context.Context, subj gateSubject, sensorID sha
 			continue
 		}
 		group := groups[tenantID]
-		group = s.gateWith(ctx, tenantID, subj, group).accepted(group)
+		group = s.keepAccepted(ctx, tenantID, sensorID, s.gateWith(ctx, tenantID, subj, group), group)
 		group = s.recheckScope(attribution.WithPlacement(ctx, attribution.PlacementPlatform), tenantID, &sensorID, group)
 		group, rates := s.windowHold(ctx, tenantID, group)
 		group, r := s.programHold(ctx, tenantID, &sensorID, group)

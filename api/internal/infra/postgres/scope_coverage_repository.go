@@ -223,11 +223,13 @@ func (r *ScopeCoverageRepository) ExclusionMatches(ctx context.Context, tenantID
 			SELECT i.kind, i.pattern, i.ord FROM unnest($2::text[], $3::text[]) WITH ORDINALITY AS i(kind, pattern, ord)
 		), inv AS (
 			SELECT a.id, a.name, lower(a.name) AS lname, hh.host,
-				CASE WHEN pg_input_is_valid(hh.host, 'inet') THEN hh.host::inet END AS ip
+				CASE WHEN pg_input_is_valid(hh.host, 'inet') THEN hh.host::inet END AS ip,
+				(SELECT count(*) FROM findings f WHERE f.tenant_id = $1 AND f.asset_id = a.id
+				   AND f.status IN `+scopeEffectsOpenStatuses+`) AS open_findings
 			FROM assets a CROSS JOIN LATERAL (SELECT `+assetHostSQL("a")+` AS host) hh
 			WHERE a.tenant_id = $1 AND a.deleted_at IS NULL`+sc+`
 		)
-		SELECT items.ord, count(inv.id), COALESCE((array_agg(inv.name ORDER BY inv.name) FILTER (WHERE inv.id IS NOT NULL))[1:`+fmt.Sprint(maxExclusionSample)+`], '{}')
+		SELECT items.ord, count(inv.id), COALESCE(sum(inv.open_findings), 0), COALESCE((array_agg(inv.name ORDER BY inv.name) FILTER (WHERE inv.id IS NOT NULL))[1:`+fmt.Sprint(maxExclusionSample)+`], '{}')
 		FROM items
 		LEFT JOIN inv ON `+scopePatternMatchSQL("items.kind", "items.pattern", "inv.host", "inv.ip", "inv.lname")+`
 		GROUP BY items.ord
@@ -237,13 +239,13 @@ func (r *ScopeCoverageRepository) ExclusionMatches(ctx context.Context, tenantID
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var ord, n int
+		var ord, n, open int
 		var sample []string
-		if err := rows.Scan(&ord, &n, pq.Array(&sample)); err != nil {
+		if err := rows.Scan(&ord, &n, &open, pq.Array(&sample)); err != nil {
 			return nil, err
 		}
 		if ord >= 1 && ord <= len(out) {
-			out[ord-1] = scopeapp.ExclusionMatch{Matched: n, Sample: sample}
+			out[ord-1] = scopeapp.ExclusionMatch{Matched: n, OpenFindings: open, Sample: sample}
 		}
 	}
 	return out, rows.Err()
