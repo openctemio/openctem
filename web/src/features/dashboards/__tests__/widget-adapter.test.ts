@@ -93,12 +93,21 @@ describe('widgetModel', () => {
       ...base,
       shape: 'items',
       items: {
-        rows: [{ id: 'f/1', title: 'RCE', severity: 'critical', priority_class: 'P0', kev: true }],
+        rows: [
+          {
+            id: 'f/1',
+            title: 'RCE',
+            severity: 'critical',
+            priority_class: 'P0',
+            kev: true,
+            epss: 0.42,
+          },
+        ],
       },
     }
     const m = widgetModel(v, spec('fix.next'), false)
     expect(m.result).toMatchObject({
-      rows: [{ href: '/findings/f%2F1', kev: true, priority: 'P0' }],
+      rows: [{ href: '/findings/f%2F1', kev: true, priority: 'P0', epss: 0.42 }],
     })
     // The row count is not the list total: no total until the server sends one.
     expect((m.result as { total?: number | null }).total).toBeNull()

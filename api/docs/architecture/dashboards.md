@@ -294,7 +294,8 @@ How each figure is computed (`internal/app/dashboard/widgets`,
 - **Fix next, SLA at risk** (F3): the in-scope partitions' top 10 merged
   (exact for up to 10 rows; only the asset group filter, which does not cut
   into the rank order); list fields are read from `findings` by id inside
-  the tenant, and a finding no longer open is left out. The `items` value of
+  the tenant, and a finding no longer open is left out. A row carries the finding's EPSS probability (`epss`, 0 to 1) read from
+  the same `findings` row; it is omitted when the feed has no score. The `items` value of
   Fix next also carries `total`: the open count of the list the widget opens
   (priority P0 to P2 plus the widget's asset group filter), read with the same
   filter and the same server-built read scope as the rows, so it equals the

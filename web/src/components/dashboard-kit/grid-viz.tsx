@@ -6,6 +6,7 @@
  * SLA due). The CTEM loop is loop-viz.tsx.
  */
 
+import { EpssBar } from '@/components/ui/epss-bar'
 import { KevBadge } from '@/components/ui/kev-badge'
 import { PriorityBadge } from '@/components/ui/priority-badge'
 import { isPriorityClass } from '@/lib/priority-colors'
@@ -190,6 +191,7 @@ export function ItemsViz({
                   {r.asset}
                 </span>
               )}
+              <EpssBar score={r.epss} className="hidden shrink-0 sm:inline-flex" />
               <DueLabel dueAt={r.due_at} />
             </div>
           )
