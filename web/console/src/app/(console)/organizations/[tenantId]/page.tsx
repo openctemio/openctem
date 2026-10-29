@@ -31,7 +31,7 @@ import { OrganizationModulesPanel } from '@console/features/admin-console/compon
 import { OrganizationScanPolicyPanel } from '@console/features/admin-console/components/organization-scan-policy-panel'
 import { OrganizationUsersSection } from '@console/features/admin-console/components/organization-users-section'
 import { SSOEnforcementCard } from '@console/features/admin-console/components/sso-enforcement-card'
-import { adminCan } from '@console/features/admin-console/types'
+import { adminHas } from '@console/features/admin-console/types'
 import { SamlConfigForm } from '@console/features/saml/components/saml-config-form'
 import { IdentityProvidersPanel } from '@console/features/sso/components/identity-providers-panel'
 import { PendingSSOChangesNotice } from '@console/features/sso-approvals/components/pending-sso-changes-notice'
@@ -113,15 +113,15 @@ export default function AdminOrganizationPage({
   const admin = useAdmin()
   const router = useRouter()
   // SSO decides who can sign in to the organization: super admins only.
-  const canManageSSO = adminCan(admin.role, 'super_admin')
+  const canManageSSO = adminHas(admin, 'platform.tenants.sso.write')
   // Adding people to an organization: operations admins and up.
-  const canManageUsers = adminCan(admin.role, 'ops_admin')
+  const canManageUsers = adminHas(admin, 'platform.tenants.owner_bootstrap')
   // Suspending an organization (abuse response): operations admins and up.
-  const canSuspend = adminCan(admin.role, 'ops_admin')
+  const canSuspend = adminHas(admin, 'platform.tenants.lifecycle')
   // Deleting an organization now is irreversible: super admins only.
-  const canPurge = adminCan(admin.role, 'super_admin')
+  const canPurge = adminHas(admin, 'platform.tenants.purge')
   // Re-signing the organization's audit chain is irreversible: super admins only.
-  const canRebaselineAuditChain = adminCan(admin.role, 'super_admin')
+  const canRebaselineAuditChain = adminHas(admin, 'platform.tenants.audit_chain.write')
   const { data: org, error, isLoading, mutate } = useOrganization(tenantId)
   const refresh = () => void mutate()
   const { t } = useTranslation()
@@ -199,7 +199,7 @@ export default function AdminOrganizationPage({
                   tenantId={org.id}
                   orgName={org.name}
                   canManage={canManageUsers}
-                  canRecover={adminCan(admin.role, 'super_admin')}
+                  canRecover={adminHas(admin, 'platform.tenants.owner_recovery')}
                   onChanged={refresh}
                 />
               </TabsContent>

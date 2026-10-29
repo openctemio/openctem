@@ -16,7 +16,7 @@ import {
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { AdminConfirmDialog } from '@console/features/admin-console/components/admin-confirm-dialog'
 import { PublishAnnouncementDialog } from '@console/features/admin-console/components/publish-announcement-dialog'
-import { adminCan, type AdminAnnouncement } from '@console/features/admin-console/types'
+import { type AdminAnnouncement, adminHas } from '@console/features/admin-console/types'
 
 const STATE_TONE: Record<AdminAnnouncement['state'], PillTone> = {
   active: 'success',
@@ -31,7 +31,7 @@ function when(iso?: string): string {
 export default function AdminAnnouncementsPage() {
   const admin = useAdmin()
   const { t } = useTranslation()
-  const canWrite = adminCan(admin.role, 'ops_admin')
+  const canWrite = adminHas(admin, 'platform.announcements.write')
   const { data, error, isLoading, mutate } = useAdminAnnouncements()
   const [ending, setEnding] = useState<AdminAnnouncement | null>(null)
 

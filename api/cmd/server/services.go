@@ -3329,8 +3329,8 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	s.AccountDeletion = accountdeletionapp.NewService(repos.AccountDeletion, s.Tenant, s.Session,
 		s.Audit, tenantapp.ErasedUserLabel, log)
 	s.Auth.SetSignInHook(s.AccountDeletion.CancelOnSignIn)
-	// Platform administrators sign in on the admin console only.
-	s.Auth.SetPlatformAdminGate(platformAdminChecker{admins: repos.Admin})
+	// Break-glass accounts sign in on the admin console only.
+	s.Auth.SetBreakGlassGate(breakGlassChecker{admins: repos.Admin})
 	// Stamp the current permission version onto issued access tokens so the
 	// permission-sync middleware can reject stale tokens after a role change
 	// (AUTHZ-3). Without this the JWT carries pv=0 and the stale check is inert.
@@ -3403,7 +3403,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	s.SSO.SetTenantMemberRepo(repos.Tenant)
 	s.SSO.SetIdentityRepo(repos.UserIdentity)
 	s.SSO.SetAuditService(s.Audit)
-	s.SSO.SetPlatformAdminGate(platformAdminChecker{admins: repos.Admin})
+	s.SSO.SetBreakGlassGate(breakGlassChecker{admins: repos.Admin})
 	if s.AccountDeletion != nil {
 		s.SSO.SetSignInHook(s.AccountDeletion.CancelOnSignIn)
 	}
@@ -3538,7 +3538,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		if s.DomainVerify != nil {
 			s.OAuth.SetClaimGuard(repos.Tenant, s.DomainVerify)
 		}
-		s.OAuth.SetPlatformAdminGate(platformAdminChecker{admins: repos.Admin})
+		s.OAuth.SetBreakGlassGate(breakGlassChecker{admins: repos.Admin})
 		s.OAuth.SetIdentityRepo(repos.UserIdentity)
 		s.OAuth.SetAuditService(s.Audit)
 		// A linked password account signs in through its provider only with

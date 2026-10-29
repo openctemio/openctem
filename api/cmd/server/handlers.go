@@ -36,6 +36,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/compliance"
 	"github.com/openctemio/openctem/api/internal/app/configoverview"
 	"github.com/openctemio/openctem/api/internal/app/integration"
+	"github.com/openctemio/openctem/api/internal/app/platformrole"
 	"github.com/openctemio/openctem/api/internal/app/sensor"
 
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
@@ -826,7 +827,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AdminDirectoryReadLimiter: middleware.NewAdminMappingRateLimiter(middleware.AdminMappingRateLimitConfig{WriteRequestsPerMin: 120}, log),
 		AdminConsole:              handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, log).WithApprovals(adminApprovals),
 		AdminApproval:             handler.NewAdminApprovalHandler(adminApprovals, log),
-		AdminAuditChain:           handler.NewAdminAuditChainHandler(svc.Audit, adminConsoleSvc, repos.AdminAuditLog, repos.AdminOrg, log).WithApprovals(adminApprovals),
+		AdminPlatformRole: handler.NewAdminPlatformRoleHandler(platformrole.NewService(
+			postgres.NewPlatformRoleRepository(adminDBOf(repos, deps.DB)), repos.Admin,
+			platformRoleRoster{adminConsoleSvc}, log), log),
+		AdminAuditChain: handler.NewAdminAuditChainHandler(svc.Audit, adminConsoleSvc, repos.AdminAuditLog, repos.AdminOrg, log).WithApprovals(adminApprovals),
 		AdminAuthMiddleware: middleware.NewAdminAuthMiddleware(adminConsoleSvc, log).WithElevation(cfg.AdminElevationRequired).
 			WithPlatformRoles(postgres.NewPlatformRoleRepository(adminDBOf(repos, deps.DB))),
 		AdminStepUp: middleware.AdminStepUpFunc(func(ctx context.Context, a *admin.AdminUser, sess *admin.Session, code, purpose string, c middleware.AdminStepUpClient) error {
@@ -2086,7 +2090,7 @@ func byIDGuardAsserter(svc *Services) middleware.DataScopeAsserter {
 
 // newUserHandler builds the user handler with self-service account deletion.
 func newUserHandler(svc *Services, repos *Repositories, v *validator.Validator, log *logger.Logger) *handler.UserHandler {
-	h := handler.NewUserHandler(svc.User, svc.Tenant, platformAdminChecker{admins: repos.Admin}, v, log)
+	h := handler.NewUserHandler(svc.User, svc.Tenant, v, log)
 	if svc.AccountDeletion != nil {
 		h.SetAccountDeletion(svc.AccountDeletion)
 	}
@@ -2110,6 +2114,14 @@ func emergingThreatHandler(svc *Services, log *logger.Logger) *handler.EmergingT
 		return nil
 	}
 	return handler.NewEmergingThreatHandler(svc.ThreatAlerts, svc.DataScope, log)
+}
+
+// platformRoleRoster announces platform role changes through the console's
+// roster notice (e-mail to the other administrators and an alert line).
+type platformRoleRoster struct{ svc *adminconsole.Service }
+
+func (p platformRoleRoster) NotifyRosterChange(ctx context.Context, actor *admin.AdminUser, kind, summary, ip, userAgent string) {
+	p.svc.NotifyRosterChange(ctx, actor, kind, summary, adminconsole.ClientInfo{IP: ip, UserAgent: userAgent})
 }
 
 // newThreatIntelHandler builds the threat-intelligence handler and the

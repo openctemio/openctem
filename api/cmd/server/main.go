@@ -397,6 +397,7 @@ func run() int {
 			tenant.NewOrganizationCreator(services.Tenant, services.UserProvisioning, repos.User, log),
 			accessRequestMailer{email: services.Email, appName: cfg.Brand.DisplayName(), log: log},
 			captcha, cfg.SMTP.BaseURL, log)
+		services.AccessRequest.SetUserLookup(repos.User)
 	}
 	wireSignupEvents(services, repos, redisClient, cfg, log)
 
