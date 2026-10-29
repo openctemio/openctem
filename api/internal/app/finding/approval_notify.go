@@ -210,7 +210,28 @@ func (s *VulnerabilityService) findingTitle(ctx context.Context, a *vulnerabilit
 	if err != nil {
 		return ""
 	}
-	return f.Title()
+	return s.noticeTitle(ctx, f)
+}
+
+// noticeTitle is "<title> on <target>" for a notice about f: the
+// asset is read in f's own tenant. Every caller sends it only to people the
+// finding's data scope admits (eligibleApprovers, requesterMayHear), so the
+// asset name reaches no one who could not open the finding.
+func (s *VulnerabilityService) noticeTitle(ctx context.Context, f *vulnerability.Finding) string {
+	return vulnerability.FindingDisplayTitle(f, s.findingAssetName(ctx, f))
+}
+
+// findingAssetName is the name of f's asset, read in f's tenant ("" when it
+// cannot be read).
+func (s *VulnerabilityService) findingAssetName(ctx context.Context, f *vulnerability.Finding) string {
+	if s.assetRepo == nil || f.AssetID().IsZero() {
+		return ""
+	}
+	a, err := s.assetRepo.GetByID(ctx, f.TenantID(), f.AssetID())
+	if err != nil {
+		return ""
+	}
+	return a.Name()
 }
 
 func statusLabel(status string) string {
@@ -256,6 +277,9 @@ func (s *VulnerabilityService) approvalMailBody(a *vulnerability.Approval, findi
 }
 
 // oneLineTitle bounds a finding title for a notification.
+// noticeTitleRunes caps a finding title in a decision notice line.
+const noticeTitleRunes = 160
+
 func oneLineTitle(s string) string {
 	s = strings.Join(strings.Fields(s), " ")
 	const limit = 160
@@ -497,7 +521,7 @@ func (s *VulnerabilityService) notifyRequesterDecided(ctx context.Context, tenan
 		return
 	}
 	s.sendDecisionNotice(ctx, tenantID, findingID, requester,
-		fmt.Sprintf("Your %s request was %s", subject, outcome), oneLineTitle(f.Title()), "/findings/"+findingID.String())
+		fmt.Sprintf("Your %s request was %s", subject, outcome), vulnerability.FindingDisplayTitleMax(f, s.findingAssetName(ctx, f), noticeTitleRunes), "/findings/"+findingID.String())
 }
 
 func (s *VulnerabilityService) sendDecisionNotice(ctx context.Context, tenantID shared.ID, findingID, requester shared.ID, title, body, url string) {

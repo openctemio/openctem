@@ -60,7 +60,7 @@ func Presets(kind ObjectKind) []Preset {
 	return []Preset{
 		{ID: "security_bug", ObjectKind: ObjectFinding, Description: "Security bug in a software project: severity as priority, CVEs as labels, SLA as due date.",
 			Spec: Spec{Minimization: MinSummary, CommentsOut: true, Fields: []Row{
-				{ID: "summary", Source: Source{Kind: SourceTemplate, Template: "[{{ finding.severity | upper }}] {{ finding.title | truncate:230 }}"}, Target: Target{FieldID: "summary", Name: "Summary", Schema: schemaString}, Direction: DirOut, Sync: SyncAlways},
+				{ID: "summary", Source: Source{Kind: SourceTemplate, Template: "[{{ finding.severity | upper }}] {{ finding.display_title | truncate:230 }}"}, Target: Target{FieldID: "summary", Name: "Summary", Schema: schemaString}, Direction: DirOut, Sync: SyncAlways},
 				{ID: "description", Source: Source{Kind: SourceTemplate, Template: "Asset: {{ finding.asset_name | default:\"-\" }}\nLocation: {{ finding.location | default:\"-\" }}\nCVE: {{ finding.cve_ids | join:\", \" | default:\"-\" }}\nSLA due: {{ finding.sla_deadline | date | default:\"-\" }}\n\nFix: {{ finding.fix_guidance | default:\"see the finding\" }}\n\nOpen in OpenCTEM: {{ finding.url }}"},
 					Target: Target{FieldID: "description", Name: "Description", Schema: schemaDesc}, Direction: DirOut, Sync: SyncAlways},
 				{ID: "priority", Source: Source{Kind: SourceAttr, Attr: "finding.severity"}, Target: Target{FieldID: "priority", Name: "Priority", Schema: schemaPriority}, Direction: DirOut, Sync: SyncAlways, Transform: severityPriorityMap()},
@@ -70,7 +70,7 @@ func Presets(kind ObjectKind) []Preset {
 			}}},
 		{ID: "service_desk_incident", ObjectKind: ObjectFinding, Description: "Incident in a service-desk project for a SOC hand-off: urgent findings, minimal technical text.",
 			Spec: Spec{Minimization: MinSummary, CommentsOut: true, Fields: []Row{
-				{ID: "summary", Source: Source{Kind: SourceTemplate, Template: "Security exposure: {{ finding.title | truncate:200 }} on {{ finding.asset_name | default:\"an asset\" }}"}, Target: Target{FieldID: "summary", Name: "Summary", Schema: schemaString}, Direction: DirOut, Sync: SyncAlways},
+				{ID: "summary", Source: Source{Kind: SourceTemplate, Template: "Security exposure: {{ finding.display_title | truncate:230 }}"}, Target: Target{FieldID: "summary", Name: "Summary", Schema: schemaString}, Direction: DirOut, Sync: SyncAlways},
 				{ID: "description", Source: Source{Kind: SourceTemplate, Template: "Severity: {{ finding.severity }} ({{ finding.priority_class | default:\"unprioritized\" }})\nKnown exploited: {{ finding.is_kev }}\nAsset: {{ finding.asset_name | default:\"-\" }}\nDetails: {{ finding.url }}"},
 					Target: Target{FieldID: "description", Name: "Description", Schema: schemaDesc}, Direction: DirOut, Sync: SyncCreate},
 				{ID: "priority", Source: Source{Kind: SourceAttr, Attr: "finding.severity"}, Target: Target{FieldID: "priority", Name: "Priority", Schema: schemaPriority}, Direction: DirOut, Sync: SyncAlways, Transform: severityPriorityMap()},
