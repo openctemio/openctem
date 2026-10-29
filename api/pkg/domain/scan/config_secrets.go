@@ -11,6 +11,7 @@ package scan
 
 import (
 	"math"
+	"net"
 	"regexp"
 	"slices"
 	"strconv"
@@ -152,6 +153,12 @@ func secretReason(key, value string) (ConfigSecretReason, bool) {
 			return SecretReasonKnownFormat, true
 		}
 	}
+	if isTargetKey(key) {
+		// A target list holds host names, addresses and URLs, which the
+		// scope gate checks; only a credential format (a URL with a user
+		// and password in it) counts as a secret there.
+		return "", false
+	}
 	if isSecretKeyName(key) && !isPlaceholder(value) {
 		return SecretReasonKeyName, true
 	}
@@ -205,7 +212,7 @@ func looksHighEntropy(v string) bool {
 		return false
 	}
 	if uuidPattern.MatchString(v) || digestPattern.MatchString(v) ||
-		strings.Contains(v, "://") || strings.Count(v, "/") > 2 {
+		strings.Contains(v, "://") || strings.Count(v, "/") > 2 || isHostOrAddress(v) {
 		return false
 	}
 	var lower, upper, digit bool
@@ -229,6 +236,54 @@ func looksHighEntropy(v string) bool {
 		return false
 	}
 	return shannonBitsPerChar(v) >= minEntropyBitsPerChar
+}
+
+// targetKeys name the keys that carry a job's targets.
+var targetKeys = []string{"target", "targets"}
+
+// isTargetKey reports whether key carries a job's targets.
+func isTargetKey(key string) bool {
+	return slices.Contains(targetKeys, strings.ToLower(strings.TrimSpace(key)))
+}
+
+// isHostOrAddress reports whether v is an IP address, a CIDR range or a DNS
+// host name: at least two labels of letters, digits and hyphens (63 at
+// most, no hyphen at either end), an optional leading "*." and a last label
+// of letters only. A long host name ("static-01.example-group.com.vn") has
+// the entropy of a token but is not one; a token has no letters-only last
+// label after a dot.
+func isHostOrAddress(v string) bool {
+	if net.ParseIP(v) != nil {
+		return true
+	}
+	if _, _, err := net.ParseCIDR(v); err == nil {
+		return true
+	}
+	name := strings.TrimSuffix(strings.TrimPrefix(strings.ToLower(v), "*."), ".")
+	labels := strings.Split(name, ".")
+	if len(name) > 253 || len(labels) < 2 {
+		return false
+	}
+	for _, l := range labels {
+		if l == "" || len(l) > 63 || l[0] == '-' || l[len(l)-1] == '-' {
+			return false
+		}
+		for _, r := range l {
+			if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' {
+				return false
+			}
+		}
+	}
+	tld := labels[len(labels)-1]
+	if len(tld) < 2 {
+		return false
+	}
+	for _, r := range tld {
+		if r < 'a' || r > 'z' {
+			return false
+		}
+	}
+	return true
 }
 
 func shannonBitsPerChar(s string) float64 {
