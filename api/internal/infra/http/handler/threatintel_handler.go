@@ -481,11 +481,15 @@ type SyncStatusResponse struct {
 	NextRunAt     *string `json:"next_run_at,omitempty"`
 	// CatalogRecords is the size of the stored catalog; RecordsChanged what
 	// the last run wrote.
-	CatalogRecords    int64   `json:"catalog_records"`
-	RecordsChanged    int     `json:"records_changed"`
-	DataAsOf          *string `json:"data_as_of,omitempty"`
-	IntervalSeconds   int64   `json:"interval_seconds"`
-	StaleAfterSeconds int64   `json:"stale_after_seconds"`
+	CatalogRecords int64   `json:"catalog_records"`
+	RecordsChanged int     `json:"records_changed"`
+	DataAsOf       *string `json:"data_as_of,omitempty"`
+	// DeliveredVia (KEV and EPSS): the path that stored the data held, the
+	// signed vulnerability release ("bundle") or the platform's own fetch
+	// ("direct"); DataAsOf is the data date of that data.
+	DeliveredVia      string `json:"delivered_via,omitempty"`
+	IntervalSeconds   int64  `json:"interval_seconds"`
+	StaleAfterSeconds int64  `json:"stale_after_seconds"`
 	// Detail is the bundle feed's own progress (vulnfeed only).
 	Detail *BundleDetailResponse `json:"detail,omitempty"`
 }
@@ -584,7 +588,7 @@ func toSyncStatusResponse(v feedstatus.View) SyncStatusResponse {
 		ErrorCode: v.ErrorCode, ErrorParams: v.ErrorParams, LastError: v.LastError,
 		LastAttemptAt: fmtTime(v.LastAttemptAt), LastSuccessAt: fmtTime(v.LastSuccessAt),
 		FailingSince: fmtTime(v.FailingSince), NextRunAt: fmtTime(v.NextRunAt),
-		CatalogRecords: v.CatalogRecords, RecordsChanged: v.RecordsChanged, DataAsOf: fmtTime(v.DataAsOf),
+		CatalogRecords: v.CatalogRecords, RecordsChanged: v.RecordsChanged, DataAsOf: fmtTime(v.DataAsOf), DeliveredVia: v.DeliveredVia,
 		IntervalSeconds: int64(v.Interval.Seconds()), StaleAfterSeconds: int64(v.StaleAfter.Seconds()),
 	}
 	if v.State == feedstatus.StateRunning || v.State == feedstatus.StateUpToDate {
