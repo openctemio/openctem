@@ -9,35 +9,37 @@ import (
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
-// PlatformAdminGate answers whether a users-table account is linked to an
-// active platform administrator. Such an account signs in on the admin
-// console only: the main (tenant) site never opens a session for it.
-type PlatformAdminGate interface {
-	IsPlatformAdmin(ctx context.Context, userID shared.ID) bool
+// BreakGlassGate answers whether a users-table account is linked to a
+// break-glass administrator. A regular platform administrator signs in on the
+// main site like any user (RFC-134); a break-glass account is sealed for
+// emergencies and signs in on the admin console only, where its use raises
+// the break-glass alert and audit. The main site never opens a session for it.
+type BreakGlassGate interface {
+	IsBreakGlass(ctx context.Context, userID shared.ID) bool
 }
 
-// SetPlatformAdminGate wires the main-site refusal of platform administrators
+// SetBreakGlassGate wires the main-site refusal of break-glass accounts
 // (password, refresh-token and exchange paths).
-func (s *AuthService) SetPlatformAdminGate(g PlatformAdminGate) { s.platformAdmins = g }
+func (s *AuthService) SetBreakGlassGate(g BreakGlassGate) { s.breakGlassGate = g }
 
-// SetPlatformAdminGate wires the same refusal on the social sign-in path.
-func (s *OAuthService) SetPlatformAdminGate(g PlatformAdminGate) { s.platformAdmins = g }
+// SetBreakGlassGate wires the same refusal on the social sign-in path.
+func (s *OAuthService) SetBreakGlassGate(g BreakGlassGate) { s.breakGlassGate = g }
 
-// SetPlatformAdminGate wires the same refusal on the organization SSO/SAML path.
-func (s *SSOService) SetPlatformAdminGate(g PlatformAdminGate) { s.platformAdmins = g }
+// SetBreakGlassGate wires the same refusal on the organization SSO/SAML path.
+func (s *SSOService) SetBreakGlassGate(g BreakGlassGate) { s.breakGlassGate = g }
 
-// refusePlatformAdmin reports whether the main site must refuse this account
-// because it is a platform administrator, and logs the attempt as an alert.
+// refuseBreakGlass reports whether the main site must refuse this account
+// because it is a break-glass administrator, and logs the attempt as an alert.
 // The caller answers with the same error a wrong password gets, so neither
-// the endpoint nor its timing says which emails are administrators. The log
-// line carries no password and a CR/LF-free email.
-func refusePlatformAdmin(ctx context.Context, g PlatformAdminGate, log *logger.Logger, u *userdom.User, via string) bool {
-	if g == nil || u == nil || !g.IsPlatformAdmin(ctx, u.ID()) {
+// the endpoint nor its timing says which emails are break-glass accounts. The
+// log line carries no password and a CR/LF-free email.
+func refuseBreakGlass(ctx context.Context, g BreakGlassGate, log *logger.Logger, u *userdom.User, via string) bool {
+	if g == nil || u == nil || !g.IsBreakGlass(ctx, u.ID()) {
 		return false
 	}
 	if log != nil {
-		log.Warn("platform administrator refused on the main site",
-			"alert", "platform_admin_main_site_sign_in",
+		log.Warn("break-glass account refused on the main site",
+			"alert", "break_glass_main_site_sign_in",
 			"via", via,
 			"user_id", u.ID().String(),
 			"email", singleLine(u.Email()))

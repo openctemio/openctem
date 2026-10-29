@@ -353,8 +353,8 @@ func insertMembership(ctx context.Context, db membershipExecer, m *tenant.Member
 		m.JoinedAt(),
 	}, append(memberAccessArgs(m), string(m.Status()), nullTime(m.SuspendedAt()), nullString(m.SuspendedReason()))...)...)
 	if err != nil {
-		if isCheckViolation(err) {
-			return tenant.ErrPlatformAdminMembership
+		if isConstraintViolation(err, breakGlassConsoleOnly) {
+			return tenant.ErrBreakGlassMembership
 		}
 		return fmt.Errorf("failed to create membership: %w", err)
 	}
@@ -467,8 +467,8 @@ func (r *TenantRepository) CreateWithOwner(ctx context.Context, t *tenant.Tenant
 		m.ID().String(), m.UserID().String(), m.TenantID().String(),
 		m.Role().String(), invitedBy, m.JoinedAt(),
 	); err != nil {
-		if isCheckViolation(err) {
-			return tenant.ErrPlatformAdminMembership
+		if isConstraintViolation(err, breakGlassConsoleOnly) {
+			return tenant.ErrBreakGlassMembership
 		}
 		return fmt.Errorf("failed to create membership: %w", err)
 	}
@@ -1760,8 +1760,8 @@ func (r *TenantRepository) AcceptInvitationTx(ctx context.Context, inv *tenant.I
 			m.JoinedAt(),
 		}, memberAccessArgs(m)...)...)
 		if err != nil {
-			if isCheckViolation(err) {
-				return tenant.ErrPlatformAdminMembership
+			if isConstraintViolation(err, breakGlassConsoleOnly) {
+				return tenant.ErrBreakGlassMembership
 			}
 			return fmt.Errorf("failed to create membership: %w", err)
 		}
