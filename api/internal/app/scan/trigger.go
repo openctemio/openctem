@@ -916,6 +916,7 @@ func (s *Service) scannerPayload(
 		payloadMap["custom_templates"] = templates
 	}
 	withRunDeadline(payloadMap, run)
+	withWordlistRequests(payloadMap, sc.ScannerName)
 	return payloadMap
 }
 

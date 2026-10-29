@@ -2,6 +2,7 @@
   "assetCoverage.capability.discover.subdomains": "Subdomain discovery",
   "assetCoverage.capability.dns.dangling": "Dangling DNS check",
   "assetCoverage.capability.dns.email": "Email security check",
+  "assetCoverage.capability.enumerate.subdomains": "Subdomain enumeration",
   "assetCoverage.capability.lookup.asn": "Network owner lookup",
   "assetCoverage.capability.lookup.rdap": "Registration lookup",
   "assetCoverage.capability.network_va.connector": "Vulnerability assessment connector",

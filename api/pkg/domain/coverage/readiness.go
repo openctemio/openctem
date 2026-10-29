@@ -46,6 +46,10 @@ const (
 	// claim or dispatch gate kept it). It resumes when the tenant's sensor
 	// fleet changes, or at a probe after NotClaimedRetry.
 	ReadyNotClaimed = "not_claimed"
+	// ReadyContentMissing: the capability's tool reads a list the platform
+	// supplies (a wordlist pack) and the platform has none yet; an instance
+	// administrator imports it.
+	ReadyContentMissing = "content_missing"
 )
 
 // The not_claimed pause: after NotClaimedStreak runs in a row that no
@@ -85,7 +89,7 @@ func (h Hold) Active() bool { return h.Streak >= NotClaimedStreak }
 var readinessReasons = []string{
 	ReadyPolicyDisabled, ReadyNoScope, ReadyToolMissing, ReadyToolNotAllowed, ReadySensorOffline,
 	ReadySensorOutdated, ReadyNoEligibleSensor, ReadyCredentialsMissing, ReadyQuotaExhausted,
-	ReadyNotClaimed,
+	ReadyNotClaimed, ReadyContentMissing,
 }
 
 // ReadinessReasons returns the closed set of readiness reasons.

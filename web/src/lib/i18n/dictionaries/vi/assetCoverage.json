@@ -2,6 +2,7 @@
   "assetCoverage.capability.discover.subdomains": "Phát hiện tên miền con",
   "assetCoverage.capability.dns.dangling": "Kiểm tra DNS treo",
   "assetCoverage.capability.dns.email": "Kiểm tra bảo mật email",
+  "assetCoverage.capability.enumerate.subdomains": "Dò tìm tên miền con",
   "assetCoverage.capability.lookup.asn": "Tra cứu chủ sở hữu mạng",
   "assetCoverage.capability.lookup.rdap": "Tra cứu đăng ký tên miền",
   "assetCoverage.capability.network_va.connector": "Kết nối đánh giá lỗ hổng",

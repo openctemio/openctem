@@ -34,6 +34,7 @@ import (
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/stage"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
 
@@ -266,6 +267,25 @@ func (p *Planner) packFor(ctx context.Context, slot, dir, class string) (*protov
 		Slot: slot, Kind: pack.Kind, Scope: protov2.ContentScopePlatform, Pack: pack.Name,
 		Digest: pack.Digest, Size: pack.Size, Files: files, MaxLines: maxLinesOf(class), Signature: pack.Signature,
 	}, nil
+}
+
+// CoverageContentReady implements scan.CoverageContent: whether every
+// request resolves to a list of the small platform pack (coverage runs at
+// standard depth). A missing pack is false, not an error.
+func (p *Planner) CoverageContentReady(ctx context.Context, requests []stage.WordlistRequest) (bool, error) {
+	for _, r := range requests {
+		dir, ok := purposeDir[r.Purpose]
+		if !ok {
+			return false, nil
+		}
+		if _, err := p.packFor(ctx, r.Slot, dir, classSmall); err != nil {
+			if errors.Is(err, command.ErrContentRefused) {
+				return false, nil
+			}
+			return false, err
+		}
+	}
+	return true, nil
 }
 
 // dnsLabels builds the list of DNS labels learned from the organization's

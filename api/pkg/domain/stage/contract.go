@@ -179,37 +179,40 @@ type contract struct {
 // routed capability must carry. The checked rules are the capability's
 // required output in ctis/capability (RequiredOutput).
 var requiredFields = map[Key][]string{
-	DiscoverSubdomains: []string{"name", "root_domain", "discovery_method"},
-	ResolveDNS:         []string{"name", "resolves_to"},
-	LookupRDAP:         []string{"name", "registration"},
-	LookupASN:          []string{"address", "asn"},
-	DiscoverHosts:      []string{"address", "live_by"},
-	ScanPorts:          []string{"host", "port", "protocol"},
-	ProbeHTTP:          []string{"url", "status_code", "title"},
-	CrawlWeb:           []string{"url", "parent_url"},
-	VulnTemplates:      []string{"rule_id", "severity", "location", "evidence"},
-	DASTWeb:            []string{"rule_id", "severity", "url", "evidence"},
-	SecretsCode:        []string{"rule_id", "file", "line", "masked_value"},
-	SASTCode:           []string{"rule_id", "file", "line", "severity"},
-	SCADeps:            []string{"purl", "version", "cve"},
-	IaCMisconfig:       []string{"rule_id", "file", "resource"},
-	ContainerImage:     []string{"purl", "version", "cve", "image_digest"},
-	NetworkVAConnector: []string{"plugin_id", "host", "severity"},
+	DiscoverSubdomains:  []string{"name", "root_domain", "discovery_method"},
+	EnumerateSubdomains: []string{"name"},
+	ResolveDNS:          []string{"name", "resolves_to"},
+	LookupRDAP:          []string{"name", "registration"},
+	LookupASN:           []string{"address", "asn"},
+	DiscoverHosts:       []string{"address", "live_by"},
+	ScanPorts:           []string{"host", "port", "protocol"},
+	ProbeHTTP:           []string{"url", "status_code", "title"},
+	CrawlWeb:            []string{"url", "parent_url"},
+	VulnTemplates:       []string{"rule_id", "severity", "location", "evidence"},
+	DASTWeb:             []string{"rule_id", "severity", "url", "evidence"},
+	SecretsCode:         []string{"rule_id", "file", "line", "masked_value"},
+	SASTCode:            []string{"rule_id", "file", "line", "severity"},
+	SCADeps:             []string{"purl", "version", "cve"},
+	IaCMisconfig:        []string{"rule_id", "file", "resource"},
+	ContainerImage:      []string{"purl", "version", "cve", "image_digest"},
+	NetworkVAConnector:  []string{"plugin_id", "host", "severity"},
 }
 
 // chunkSizes are how many targets one task of a list-taking tool gets when
 // a workflow step of the capability is cut into chunks (absent: never cut).
 var chunkSizes = map[Key]int{
 	DiscoverSubdomains: 50,
-	ResolveDNS:         200,
-	LookupRDAP:         100,
-	LookupASN:          500,
-	DiscoverHosts:      64,
-	ScanPorts:          50,
-	ProbeHTTP:          200,
-	CrawlWeb:           10,
-	VulnTemplates:      25,
-	DASTWeb:            10,
+	// One root per task: the tool fans out to the whole label list itself.
+	EnumerateSubdomains: 1,
+	ResolveDNS:          200,
+	LookupRDAP:          100,
+	LookupASN:           500,
+	DiscoverHosts:       64,
+	ScanPorts:           50,
+	ProbeHTTP:           200,
+	CrawlWeb:            10,
+	VulnTemplates:       25,
+	DASTWeb:             10,
 }
 
 // chunkAddressBudgets are how many addresses one chunk of an active
@@ -253,11 +256,12 @@ func (s Stage) ToolParamKey(tool, param string) (string, bool) {
 // no entry for a param does not accept it yet. Keep in step with
 // scan workflow.stepToolSettings.
 var toolParams = map[string]map[string]string{
-	"naabu":  {"ports": "ports", "top_n": "top_ports", "rate": "rate"},
-	"dnsx":   {"record_types": "record_types", "wildcard_filter": "wildcard_filter"},
-	"nuclei": {"severity": "severity", "tags": "tags", "exclude_tags": "exclude_tags"},
-	"rdap":   {"follow_registrar": "follow_registrar"},
-	"asn":    {"include_announced": "include_announced", "max_ranges": "max_ranges"},
+	"naabu":     {"ports": "ports", "top_n": "top_ports", "rate": "rate"},
+	"dnsx":      {"record_types": "record_types", "wildcard_filter": "wildcard_filter"},
+	"nuclei":    {"severity": "severity", "tags": "tags", "exclude_tags": "exclude_tags"},
+	"rdap":      {"follow_registrar": "follow_registrar"},
+	"asn":       {"include_announced": "include_announced", "max_ranges": "max_ranges"},
+	"dnsx-enum": {"method": "method", "max_queries": "max_queries"},
 }
 
 // batchTools take a list of targets in one task (the sensor executor reads
@@ -277,6 +281,27 @@ var capabilityJobTools = map[string]bool{
 	"subfinder": true, "dnsx": true, "naabu": true, "httpx": true, "katana": true,
 	"nuclei": true, "trivy": true, "semgrep": true, "opengrep": true, "codeql": true, "betterleaks": true, "gitleaks": true,
 	"rdap": true, "asn": true,
+}
+
+// WordlistRequest is one wordlist a tool's job asks the platform for: the
+// content slot the tool reads and the purpose of the list (the request
+// format of contentpin.PayloadKeyWordlists).
+type WordlistRequest struct {
+	Slot    string `json:"slot"`
+	Purpose string `json:"purpose"`
+}
+
+// toolWordlists are the wordlists each tool's job asks for, from the tool's
+// descriptor (its content slots). A tool that reads a list has none of its
+// own: a job that does not ask carries none, and the sensor refuses it.
+var toolWordlists = map[string][]WordlistRequest{
+	"dnsx-enum": {{Slot: "labels", Purpose: "dns-labels"}},
+}
+
+// ToolWordlists are the wordlists a job of tool asks for (nil: none). The
+// result is a copy.
+func ToolWordlists(tool string) []WordlistRequest {
+	return slices.Clone(toolWordlists[normalizeTool(tool)])
 }
 
 // TakesCapabilityJobs reports whether a step running tool for the stage
