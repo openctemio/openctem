@@ -45,7 +45,6 @@ export const PATHS_WITHOUT_PAGE: ReadonlySet<string> = new Set([
   '/settings/tenant',
   '/settings/pentest/templates/[id]',
   '/settings/scanning',
-  '/vulnerabilities',
 ])
 
 /** Whether `path` (a real URL path, ids included) has a page to link to. */

@@ -56,6 +56,10 @@ type SignupPolicyResponse struct {
 	EffectiveAccounts string `json:"effective_accounts"`
 	// RequestAccess: people who cannot sign up may ask for an organization.
 	RequestAccess bool `json:"request_access"`
+	// SocialAutoLink: a Google or Microsoft sign-in may link itself to an
+	// existing password account with the same verified address (the
+	// account's second factor is still asked).
+	SocialAutoLink bool `json:"social_auto_link"`
 	// Version to send back on PUT (optimistic concurrency).
 	Version int `json:"version"`
 	// Source: environment (seeded from SIGNUP_MODE at first start), console
@@ -89,6 +93,8 @@ type UpdateSignupPolicyRequest struct {
 	// self_service, closed otherwise).
 	Accounts      string `json:"accounts"`
 	RequestAccess bool   `json:"request_access"`
+	// SocialAutoLink: omitted keeps the stored value.
+	SocialAutoLink *bool `json:"social_auto_link,omitempty"`
 	// Version is the version the administrator read.
 	Version int `json:"version"`
 	// TOTPCode is a fresh code from the administrator's authenticator.
@@ -104,6 +110,7 @@ func (h *AdminSignupHandler) toSignupPolicyResponse(st signupdom.State) SignupPo
 		MaxAccounts:       string(ceiling.MaxAccounts()),
 		EffectiveAccounts: string(effective.AccountSignup()),
 		RequestAccess:     st.Policy.RequestAccess,
+		SocialAutoLink:    st.Policy.AutoLinkSocial(),
 		Version:           st.Version,
 		Source:            string(st.Source),
 		DeploymentMode:    ceiling.String(),
@@ -176,6 +183,12 @@ func (h *AdminSignupHandler) Update(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("read sign-up policy", "error", err)
 		apierror.InternalServerError("could not read the sign-up policy").WriteJSON(w)
 		return
+	}
+	// Social auto-link: an omitted value keeps the stored one.
+	policy.SocialAutoLink = cur.Policy.SocialAutoLink
+	if req.SocialAutoLink != nil {
+		v := *req.SocialAutoLink
+		policy.SocialAutoLink = &v
 	}
 	if policy.OpensBeyond(cur.Policy) {
 		target := "mode=" + string(policy.Mode) + ";accounts=" + string(policy.Accounts)

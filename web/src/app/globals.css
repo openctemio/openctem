@@ -336,6 +336,19 @@
   stroke-dasharray: none;
 }
 
+/* Connected visuals (dashboard exposure flow, intake panel): a healthy
+   source's wire carries a moving dash; volume is the wire's width, so the
+   speed is constant. Static under reduced motion (the meaning holds through
+   width and the row's words). */
+.animate-flow-dash {
+  animation: flow-dash 1.6s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-flow-dash {
+    animation: none;
+  }
+}
+
 /* A dim list row (DataTable rowTone, the finding phone card): low-priority or
    closed work. Its text takes --fg-dim, a colour with 4.5:1 contrast, never
    opacity; chips and badges keep their own colours. In the utilities layer

@@ -61,10 +61,11 @@ func ticketDescription(f *vulnerability.Finding) string {
 }
 
 // ticketSummary is the Jira summary (plain text, one line, at most 255
-// characters in Jira): secret-redacted, cleaned of control and bidi
-// characters, folded to one line and capped.
-func ticketSummary(f *vulnerability.Finding) string {
-	return safetext.SingleLine(safetext.RedactSecrets(fmt.Sprintf("[%s] %s", f.Severity(), ticketing.OutboundTitle(f))), safetext.MaxTitleRunes)
+// characters in Jira): the title with its target ("[high] CVE-2019-9516 in
+// nginx 1.15.5 on 10.20.30.41:443"), secret-redacted, cleaned of control and
+// bidi characters, folded to one line and capped.
+func ticketSummary(f *vulnerability.Finding, assetName string) string {
+	return safetext.SingleLine(safetext.RedactSecrets(fmt.Sprintf("[%s] %s", f.Severity(), ticketing.OutboundDisplayTitle(f, assetName))), safetext.MaxTitleRunes)
 }
 
 // withMobilizationBrief appends the CTEM Mobilization brief (definition of done
@@ -347,6 +348,26 @@ func (s *SyncService) SetMappingResolver(r MappingResolver) {
 // asset (+ its group memberships).
 type AssetRouteResolver interface {
 	ResolveAssetRoute(ctx context.Context, tenantID, assetID shared.ID) (scope, criticality string, groups []string, err error)
+}
+
+// AssetNameResolver names a finding's asset (read in the finding's tenant)
+// for the ticket summary's target. The wired AssetRouteResolver may also
+// implement it; without it the summary names no asset.
+type AssetNameResolver interface {
+	AssetName(ctx context.Context, tenantID, assetID shared.ID) (string, error)
+}
+
+// findingAssetName is the name of f's asset, or "" when it cannot be read.
+func (s *SyncService) findingAssetName(ctx context.Context, tenantID shared.ID, f *vulnerability.Finding) string {
+	n, ok := s.assetRouteResolver.(AssetNameResolver)
+	if !ok || f.AssetID().IsZero() {
+		return ""
+	}
+	name, err := n.AssetName(ctx, tenantID, f.AssetID())
+	if err != nil {
+		return ""
+	}
+	return name
 }
 
 // SetAssetRouteResolver wires the optional asset-context resolver used by
@@ -785,7 +806,7 @@ func (s *SyncService) CreateTicketFromFinding(ctx context.Context, input CreateT
 	if !handled {
 		result, err = jiraClient.CreateIssue(ctx, CreateIssueInput{
 			ProjectKey:  projectKey,
-			Summary:     ticketSummary(finding),
+			Summary:     ticketSummary(finding, s.findingAssetName(ctx, tenantID, finding)),
 			Description: ticketDescription(finding),
 			IssueType:   issueType.Name,
 			IssueTypeID: issueType.ID,

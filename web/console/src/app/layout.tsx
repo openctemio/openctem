@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { headers } from 'next/headers'
 
 import './console.css'
@@ -6,12 +6,16 @@ import { Providers } from '@/app/providers'
 import { getDirFromLocale, defaultLocale, isSupportedLocale } from '@/lib/i18n'
 import { NavProgressBar } from '@/components/layout/nav-progress'
 import { brandSettings } from '@/lib/brand-settings'
+import { BRAND_INK } from '@/lib/brand'
 
 /** The page title comes from the instance brand, like the tenant app's. */
 export async function generateMetadata(): Promise<Metadata> {
   const brand = await brandSettings()
   return { title: brand.name, robots: { index: false, follow: false } }
 }
+
+/** Browser chrome takes the brand ink (the mobile address bar, an installed app's title bar). */
+export const viewport: Viewport = { themeColor: BRAND_INK }
 
 /**
  * Root layout of the platform console app: the shared providers (theme,

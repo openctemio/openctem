@@ -118,6 +118,10 @@ var stepUpRoutes = []string{
 	"DELETE /api/v1/tenants/acme",
 	// Deleting one's own account (RFC-104).
 	"DELETE /api/v1/me/account",
+	// Linking or unlinking a sign-in provider changes how the account is
+	// signed into.
+	"POST /api/v1/me/sign-in-method-links/google/start",
+	"DELETE /api/v1/me/sign-in-methods/{id}",
 	"POST /api/v1/organization/leave",
 	"DELETE /api/v1/organization/members/{id}/mfa",
 	"POST /api/v1/organization/members/{id}/offboard",
@@ -289,6 +293,7 @@ func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
 			registerOrganizationMemberRoutes(router, &handler.LocalAuthHandler{}, &handler.TenantHandler{}, auth, nil)
 			registerAISettingsRoutes(router, &handler.AISettingsHandler{}, &handler.AIMaskingHandler{}, auth, nil)
 			registerUserRoutes(router, &handler.UserHandler{}, nil, auth, nil, config.AuthProviderLocal)
+			registerIdentityLinkRoutes(router, &handler.OAuthHandler{}, auth, nil)
 			registerIntegrationRoutes(router, &handler.IntegrationHandler{}, nil, nil, auth, nil, chain(), nil, nil, &handler.TicketMappingHandler{})
 			registerAttachmentRoutes(router, &handler.AttachmentHandler{}, auth, nil)
 			registerImportMappingRoutes(router, &handler.ImportMappingHandler{}, auth, nil)

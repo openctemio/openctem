@@ -45,21 +45,26 @@ const specs = [
 const files = (r) => r.files.map((f) => f.split('/').pop())
 
 test('a feature path selects its tag and the smoke set', () => {
-  const r = select(['web/src/features/b/x.tsx'], map, specs, { event: 'merge_group' })
+  const r = select(['web/src/features/b/x.tsx'], map, specs, {
+    event: 'pull_request',
+    impact: true,
+  })
   assert.equal(r.mode, 'selected')
   assert.deepEqual(files(r), ['01-smoke.spec.ts', '03-b.spec.ts'])
 })
 
 test('an API handler maps to the same tag as the web feature', () => {
   const r = select(['api/internal/infra/http/handler/a_handler.go'], map, specs, {
-    event: 'merge_group',
+    event: 'pull_request',
+    impact: true,
   })
   assert.deepEqual(files(r), ['01-smoke.spec.ts', '02-a.spec.ts'])
 })
 
 test('two areas union', () => {
   const r = select(['web/src/features/a/x.ts', 'web/src/features/b/y.ts'], map, specs, {
-    event: 'merge_group',
+    event: 'pull_request',
+    impact: true,
   })
   assert.deepEqual(files(r), ['01-smoke.spec.ts', '02-a.spec.ts', '03-b.spec.ts'])
 })
@@ -67,13 +72,17 @@ test('two areas union', () => {
 test('shared code runs everything', () => {
   const r = select(['web/src/features/b/x.tsx', 'web/src/components/Button.tsx'], map, specs, {
     event: 'pull_request',
+    impact: true,
   })
   assert.equal(r.mode, 'all')
   assert.equal(r.files.length, specs.length)
 })
 
 test('an unmapped path runs everything', () => {
-  const r = select(['web/src/features/unknown/x.ts'], map, specs, { event: 'pull_request' })
+  const r = select(['web/src/features/unknown/x.ts'], map, specs, {
+    event: 'pull_request',
+    impact: true,
+  })
   assert.equal(r.mode, 'all')
   assert.match(r.reason, /unmapped/)
 })
@@ -84,18 +93,28 @@ test('e2e infrastructure runs everything', () => {
 
 test('only ignored paths select nothing', () => {
   const r = select(['docs/x.md', 'web/src/components/Button.test.tsx'], map, specs, {
-    event: 'merge_group',
+    event: 'pull_request',
+    impact: true,
   })
   assert.equal(r.mode, 'none')
   assert.deepEqual(r.files, [])
 })
 
 test('a negated glob in all lets a unit test fall through to ignore', () => {
-  assert.equal(select(['web/src/components/a.test.tsx'], map, specs).mode, 'none')
+  assert.equal(
+    select(['web/src/components/a.test.tsx'], map, specs, {
+      event: 'pull_request',
+      impact: true,
+    }).mode,
+    'none'
+  )
 })
 
 test('a changed spec runs itself with the smoke set', () => {
-  const r = select(['web/e2e/specs/03-b.spec.ts'], map, specs, { event: 'pull_request' })
+  const r = select(['web/e2e/specs/03-b.spec.ts'], map, specs, {
+    event: 'pull_request',
+    impact: true,
+  })
   assert.equal(r.mode, 'selected')
   assert.deepEqual(files(r), ['01-smoke.spec.ts', '03-b.spec.ts'])
 })
@@ -104,11 +123,38 @@ test('full, push, schedule and an empty diff run everything', () => {
   assert.equal(select(['web/src/features/b/x.ts'], map, specs, { full: true }).mode, 'all')
   assert.equal(select(['web/src/features/b/x.ts'], map, specs, { event: 'push' }).mode, 'all')
   assert.equal(select(['web/src/features/b/x.ts'], map, specs, { event: 'schedule' }).mode, 'all')
-  assert.equal(select([], map, specs, { event: 'merge_group' }).mode, 'all')
+  assert.equal(select([], map, specs, { event: 'pull_request', impact: true }).mode, 'all')
+  assert.equal(
+    select(['web/src/features/b/x.ts'], map, specs, { event: 'merge_group' }).mode,
+    'all'
+  )
+})
+
+test('a pull request runs the smoke set and the specs it edits, nothing else', () => {
+  const r = select(['web/src/features/b/x.tsx'], map, specs, { event: 'pull_request' })
+  assert.equal(r.mode, 'smoke')
+  assert.deepEqual(files(r), ['01-smoke.spec.ts'])
+  const own = select(['web/e2e/specs/03-b.spec.ts'], map, specs, { event: 'pull_request' })
+  assert.deepEqual(files(own), ['01-smoke.spec.ts', '03-b.spec.ts'])
+  // Shared paths do not widen a pull request without `impact`.
+  const shared = select(['web/src/components/Button.tsx'], map, specs, { event: 'pull_request' })
+  assert.equal(shared.mode, 'smoke')
+})
+
+test('the merge queue runs the whole suite', () => {
+  const r = plan(['web/src/features/b/x.tsx'], map, specs, {}, { event: 'merge_group' })
+  assert.equal(r.mode, 'all')
+  assert.equal(r.specs, specs.length)
 })
 
 test('the request budget job exists only when @budget is selected', () => {
-  const without = plan(['web/src/features/b/x.tsx'], map, specs, {}, { event: 'merge_group' })
+  const without = plan(
+    ['web/src/features/b/x.tsx'],
+    map,
+    specs,
+    {},
+    { event: 'pull_request', impact: true }
+  )
   assert.equal(without.budget, false)
   assert.ok(without.matrix.include.every((j) => !j.files.includes('04-budget')))
   const withIt = plan(
@@ -116,7 +162,7 @@ test('the request budget job exists only when @budget is selected', () => {
     map,
     specs,
     {},
-    { event: 'merge_group' }
+    { event: 'pull_request', impact: true }
   )
   assert.equal(withIt.budget, true)
   const job = withIt.matrix.include.find((j) => j.id === 0)
@@ -127,7 +173,7 @@ test('the request budget job exists only when @budget is selected', () => {
 })
 
 test('mode none gives an empty matrix', () => {
-  const r = plan(['docs/x.md'], map, specs, {}, { event: 'merge_group' })
+  const r = plan(['docs/x.md'], map, specs, {}, { event: 'pull_request', impact: true })
   assert.equal(r.count, 0)
   assert.deepEqual(r.matrix.include, [])
 })
@@ -156,7 +202,13 @@ test('shards: a spec without a recorded duration costs the median', () => {
 })
 
 test('every spec lands in exactly one shard', () => {
-  const r = plan(['web/src/components/x.tsx'], map, specs, {}, { event: 'pull_request' })
+  const r = plan(
+    ['web/src/components/x.tsx'],
+    map,
+    specs,
+    {},
+    { event: 'pull_request', impact: true }
+  )
   const run = r.matrix.include.flatMap((j) => j.files.split(' '))
   assert.deepEqual([...run].sort(), specs.map((s) => s.file).sort())
 })
@@ -225,7 +277,7 @@ test('gate: a test Playwright sees untagged fails', () => {
 test('the committed map and specs are consistent', () => {
   const real = loadMap()
   assert.deepEqual(checkTags(real, listSpecs()), [])
-  const all = (paths) => select(paths, real, listSpecs(), { event: 'merge_group' })
+  const all = (paths) => select(paths, real, listSpecs(), { event: 'pull_request', impact: true })
   assert.equal(all(['web/src/features/findings/components/x.tsx']).mode, 'selected')
   assert.equal(all(['web/src/components/ui/button.tsx']).mode, 'all')
   assert.equal(all(['api/migrations/000001_x.up.sql']).mode, 'all')
@@ -238,4 +290,12 @@ test('the committed map and specs are consistent', () => {
     'smoke runs'
   )
   assert.ok(!f.files.some((x) => x.includes('42-vulnerability-page')))
+})
+
+test('a pull request that changes a page data hook also runs the request budget check', () => {
+  const r = select(['web/src/features/b/hooks/use-b.ts'], map, specs, { event: 'pull_request' })
+  assert.equal(r.mode, 'smoke')
+  assert.deepEqual(files(r), ['01-smoke.spec.ts', '04-budget.spec.ts'])
+  const plain = select(['web/src/features/b/x.tsx'], map, specs, { event: 'pull_request' })
+  assert.deepEqual(files(plain), ['01-smoke.spec.ts'])
 })
