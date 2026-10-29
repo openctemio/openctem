@@ -457,7 +457,13 @@ const (
 	ActionProxyPoolCredentialsChanged Action = "proxy_pool.credentials_changed"
 	ActionProxyPoolEndpointUpdated    Action = "proxy_pool.endpoint_updated"
 	ActionProxyPoolEndpointQuarantine Action = "proxy_pool.endpoint_quarantined"
-	ActionSensorNetworkPathChanged    Action = "sensor.network_path_changed"
+	// ActionProxyPoolTestRequested: an administrator asked sensors to test a
+	// pool's endpoints (one entry per sensor asked).
+	ActionProxyPoolTestRequested Action = "proxy_pool.test_requested"
+	// ActionProxyPoolTested: a sensor finished testing a pool (the outcome
+	// per endpoint class, never an address or a credential).
+	ActionProxyPoolTested          Action = "proxy_pool.tested"
+	ActionSensorNetworkPathChanged Action = "sensor.network_path_changed"
 
 	// API key (oct_) actions — tenant-scoped programmatic credentials.
 	ActionAPIKeyCreated Action = "api_key.created"
@@ -879,6 +885,7 @@ func (a Action) IsValid() bool {
 		ActionScanZoneSensorAssigned, ActionScanZoneSensorUnassigned,
 		ActionProxyPoolCreated, ActionProxyPoolUpdated, ActionProxyPoolDeleted, ActionProxyPoolEndpointsChanged,
 		ActionProxyPoolCredentialsChanged, ActionProxyPoolEndpointUpdated, ActionProxyPoolEndpointQuarantine,
+		ActionProxyPoolTestRequested, ActionProxyPoolTested,
 		ActionSensorNetworkPathChanged,
 		ActionAPIKeyCreated, ActionAPIKeyRevoked, ActionAPIKeyDeleted,
 		ActionCredentialCreated, ActionCredentialUpdated, ActionCredentialDeleted, ActionCredentialAccessed,
@@ -1025,7 +1032,8 @@ func (a Action) Category() string {
 		ActionScanZoneSensorAssigned, ActionScanZoneSensorUnassigned:
 		return "scan_zone"
 	case ActionProxyPoolCreated, ActionProxyPoolUpdated, ActionProxyPoolDeleted, ActionProxyPoolEndpointsChanged,
-		ActionProxyPoolCredentialsChanged, ActionProxyPoolEndpointUpdated, ActionProxyPoolEndpointQuarantine:
+		ActionProxyPoolCredentialsChanged, ActionProxyPoolEndpointUpdated, ActionProxyPoolEndpointQuarantine,
+		ActionProxyPoolTestRequested, ActionProxyPoolTested:
 		return "proxy_pool"
 	case ActionSensorNetworkPathChanged:
 		return "sensor"

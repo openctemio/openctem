@@ -41,6 +41,9 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 		WithTenantCreationMode(tenantCreationModeOf(cfg.Auth)).
 		WithRegistrationEnabled(cfg.Auth.SignupOpen()).
 		WithPasswordPolicy(cfg.Auth)
+	if h.LocalAuth != nil {
+		authProvidersHandler.WithEmailDelivery(h.LocalAuth.EmailDeliveryAvailable)
+	}
 	if h.AdminPlatformSettings != nil && h.AdminPlatformSettings.SocialLogin != nil {
 		authProvidersHandler.WithSocialSource(h.AdminPlatformSettings.SocialLogin.Offered)
 	}
@@ -128,6 +131,11 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 			// Email verification - password rate limit
 			verifyHandler := ChainFunc(h.LocalAuth.VerifyEmail, crossSite, passwordRL)
 			r.POST("/verify-email", verifyHandler.ServeHTTP)
+
+			// New verification link (constant 202; per-IP limit here, one
+			// email per address per 2 minutes in the service).
+			resendVerifyHandler := ChainFunc(h.LocalAuth.ResendVerification, crossSite, passwordRL)
+			r.POST("/resend-verification", resendVerifyHandler.ServeHTTP)
 
 			// Password operations - very strict rate limit (3/min)
 			forgotHandler := ChainFunc(h.LocalAuth.ForgotPassword, crossSite, passwordRL)

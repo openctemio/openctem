@@ -26,7 +26,7 @@ import { SchedulePreview } from '../schedule-preview'
 import type { ScanReview } from '../../hooks/use-scan-review'
 import type { ScanWizardStep } from './scan-stepper'
 import { WorkflowPreviewBody } from './workflow-preview'
-import { RefusalGroups } from './refusal-groups'
+import { ReadinessLine, RefusalGroups } from './refusal-groups'
 
 interface ReviewStepProps {
   data: NewScanFormData
@@ -308,13 +308,7 @@ export function ReviewStep({
       {refused.length > 0 && (
         <section aria-label={t('scans.review.refusedLabel')} className="min-w-0 space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm font-medium">
-              {t(
-                refused.length === 1 ? 'scans.scope.refusedOne' : 'scans.scope.refusedMany',
-                undefined,
-                { count: refused.length }
-              )}
-            </p>
+            <ReadinessLine total={results.length} ready={allowed} blocked={refused.length} />
             <div className="flex flex-wrap items-center gap-2">
               <Button
                 type="button"

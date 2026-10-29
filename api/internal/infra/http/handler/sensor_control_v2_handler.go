@@ -90,7 +90,7 @@ func (h *SensorControlV2Handler) Features() []string {
 		out = append(out, protov2.FeaturePosture)
 	}
 	if h.commands != nil {
-		out = append(out, protov2.FeatureCapacity, protov2.FeatureRefusal)
+		out = append(out, protov2.FeatureCapacity, protov2.FeatureRefusal, protov2.FeatureFailureClass)
 	}
 	if h.ingest != nil && h.ingest.sensorService.SupportsConfigReports() {
 		out = append(out, protov2.FeatureConfigReport)
@@ -709,6 +709,15 @@ func (h *SensorControlV2Handler) transition(w http.ResponseWriter, r *http.Reque
 		if req.Refusal != nil {
 			in.Refusal = &sensor.DispatchRefusal{Layer: req.Refusal.Layer, Rule: req.Refusal.Rule, Detail: req.Refusal.Detail}
 		}
+		if req.Failure != nil || req.ErrorCode != "" {
+			rep := &command.InfraReport{ErrorCode: req.ErrorCode}
+			if f := req.Failure; f != nil {
+				rep.Class = f.Class
+				rep.Evidence = commanddom.FailureEvidence{Tool: f.Evidence.Tool, ToolDigest: f.Evidence.ToolDigest,
+					ContentDigest: f.Evidence.ContentDigest, Stage: f.Evidence.Stage, ExitCode: f.Evidence.ExitCode, Signal: f.Evidence.Signal}
+			}
+			in.Infra = rep
+		}
 	default:
 		var ignored struct{}
 		if !decodeControl(w, r, h.limits.MaxControlBodyBytes, &ignored) {
@@ -734,6 +743,9 @@ func (h *SensorControlV2Handler) transition(w http.ResponseWriter, r *http.Reque
 		case command.TransitionFail:
 			// A refused job re-queued to another sensor has not failed.
 			if res.Command.Status == commanddom.CommandStatusFailed {
+				if res.Command.FailureCode != "" {
+					failCode = res.Command.FailureCode
+				}
 				h.commands.OnCommandFailed(r.Context(), res.Command, res.Command.ErrorMessage, failCode)
 			}
 		}
