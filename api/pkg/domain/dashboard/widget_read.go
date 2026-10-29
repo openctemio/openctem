@@ -124,6 +124,49 @@ type FactReader interface {
 	// (tool volumes are not asset-scoped): callers use it for an
 	// organization read only.
 	OrgIntake(ctx context.Context, tenantID shared.ID, since time.Time) ([]IntakeRow, error)
+	// TopFix returns the proposed remediation suggestion that clears the most
+	// risk points over its members that are open and inside the scope (asset
+	// rule, data scope, campaign rule), pentest findings left out; nil when no
+	// suggestion has such a member.
+	TopFix(ctx context.Context, scope ReadScope) (*FixLever, error)
+}
+
+// FixLever is one remediation suggestion re-counted in a read's scope:
+// Findings open members, Assets their distinct assets, PriorityOpen those of
+// class P0 or P1, Points their risk points.
+type FixLever struct {
+	SuggestionID shared.ID
+	Title        string
+	Findings     int64
+	Assets       int64
+	PriorityOpen int64
+	Points       int64
+}
+
+// RiskPoints is the risk weight of n open findings, the same formula as
+// the remediation risk points: by priority class (P0 8, P1 4, P2 2, P3 1),
+// or by severity for an unclassified finding (critical 4, high 2, medium and
+// low 1).
+func RiskPoints(priorityClass, severity string, n int64) int64 {
+	switch priorityClass {
+	case "P0":
+		return 8 * n
+	case "P1":
+		return 4 * n
+	case "P2":
+		return 2 * n
+	case "P3":
+		return n
+	}
+	switch severity {
+	case "critical":
+		return 4 * n
+	case "high":
+		return 2 * n
+	case "medium", "low":
+		return n
+	}
+	return 0
 }
 
 // OutcomeCounts are the findings of a scope by outcome.

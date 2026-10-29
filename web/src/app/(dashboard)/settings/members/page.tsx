@@ -719,7 +719,9 @@ export default function UsersPage() {
   })
   // SSO exceptions (owners and admins see the security settings): a badge
   // on the members who may sign in without SSO.
-  const { settings: tenantSettings } = useTenantSettings(canManageMembers ? tenantSlug : undefined)
+  const { settings: tenantSettings } = useTenantSettings(
+    canManageMembers ? currentTenant?.id : undefined
+  )
   const ssoExceptionUntil = useMemo(() => {
     const map = new Map<string, string>()
     for (const e of tenantSettings?.security?.sso_exceptions ?? []) map.set(e.user_id, e.expires_at)

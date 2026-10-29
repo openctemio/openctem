@@ -85,6 +85,61 @@ export interface FlowValue {
   stages: NonNullable<WidgetValue['stages']> | null
 }
 
+/** A measured figure before and after a lever's list is gone (exact arithmetic). */
+export interface LeverEffect {
+  metric: string
+  before: number
+  after: number
+  unit: 'count' | 'percent'
+}
+
+/** One action that would reduce exposure (exposure.levers). */
+export interface LeverValue {
+  kind: 'kev_open' | 'sla_breached' | 'one_fix' | 'blind_spot'
+  /** Size of the list the lever acts on. */
+  count: number
+  /** Distinct assets of a one-fix lever. */
+  assets?: number
+  /** A one-fix lever's fix (a remediation suggestion title). */
+  title?: string
+  points: number
+  effect: LeverEffect
+  drill?: string
+}
+
+/** One figure of a brief sentence; no drill when no list has exactly that total. */
+export interface BriefChipValue {
+  key: string
+  value: number
+  drill?: string
+}
+
+/** The weekly brief (brief.weekly): deterministic sentences, no generated text. */
+export interface BriefValue {
+  since: string
+  items: Array<{
+    kind: 'change' | 'lever' | 'sla_due' | 'kev' | 'quiet'
+    variant?: 'down' | 'up' | 'flat'
+    chips: BriefChipValue[]
+    lever?: LeverValue
+  }>
+}
+
+/** One tile of the KPI strip (exposure.kpis); value is null when not measured. */
+export interface KpiTileValue {
+  key: 'priority_open' | 'kev_open' | 'sla_within' | 'time_to_fix' | 'coverage'
+  metric: string
+  state: 'ready' | 'not_measured' | 'unsupported'
+  reason?: string
+  value: number | null
+  unit: 'count' | 'percent' | 'hours'
+  previous?: number
+  polarity: Polarity
+  n?: number
+  series?: WidgetPoint[]
+  drill?: string
+}
+
 export interface WidgetValue {
   id: string
   index: number
@@ -172,6 +227,12 @@ export interface WidgetValue {
   flow?: FlowValue
   /** The organization's intake (ingest.intake). */
   intake?: IntakeValue
+  /** The levers (exposure.levers), best first. */
+  levers?: { levers: LeverValue[] }
+  /** The weekly brief (brief.weekly). */
+  brief?: BriefValue
+  /** The KPI strip (exposure.kpis). */
+  kpis?: { tiles: KpiTileValue[] }
   /** Attack paths to crown jewels (attack_paths.to_crown_jewels). */
   paths?: {
     reachable: number

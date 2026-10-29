@@ -181,6 +181,10 @@ func registerVulnerabilityRoutes(
 ) {
 	// Build base middleware chain
 	baseMiddlewares := buildBaseMiddlewares(authMiddleware, userSyncMiddleware)
+	// The finding page's reads in one response (research/335). Each part is
+	// sent through this router with the caller's credentials, so it passes
+	// its own endpoint's gates; this route itself needs findings:read.
+	findingView := handler.NewFindingViewHandler(router.Handler, nil)
 
 	// Vulnerability routes - global CVE database (no tenant required for catalog ops).
 	// EXCEPTION: /{id}/affected-assets and /cve/{cveId}/affected-assets are
@@ -291,6 +295,7 @@ func registerVulnerabilityRoutes(
 
 		// Single finding operations
 		r.GET("/{id}", h.GetFinding, middleware.Require(permission.FindingsRead))
+		r.GET("/{id}/view", findingView.View, middleware.Require(permission.FindingsRead))
 		// Priority explainability: why does this finding hold its P-class?
 		r.GET("/{id}/priority-explanation", h.ExplainPriority, middleware.Require(permission.FindingsRead))
 		// Why this is one finding: recipe and field names of its key, the tools

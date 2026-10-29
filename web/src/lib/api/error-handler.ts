@@ -9,7 +9,7 @@ import type { ApiError } from './types'
 import { devLog } from '@/lib/logger'
 import { IP_NOT_ALLOWED_CODE, IP_NOT_ALLOWED_MESSAGE, notifyIpNotAllowed } from './ip-not-allowed'
 import { describePermissionDenied } from './permission-denied'
-import { apiErrorMessage } from './error-message'
+import { apiErrorMessage, toastError } from './error-message'
 
 // ============================================
 // ERROR CLASSES
@@ -235,6 +235,10 @@ export function handleApiError(
   // IP allowlist blocks share one de-duplicated toast with the API client.
   if (showToast && apiError.code === IP_NOT_ALLOWED_CODE) {
     notifyIpNotAllowed()
+  } else if (showToast && apiError.statusCode === 429) {
+    // A rate-limited page fails several reads at once: one toast, which each
+    // further 429 replaces, instead of one per panel.
+    toastError(apiError)
   } else if (showToast && isReadOnlyModuleError(apiError)) {
     // Unlike a module that is off (its pages are hidden), a module in
     // read-only grace shows its pages, so a refused save must say why.

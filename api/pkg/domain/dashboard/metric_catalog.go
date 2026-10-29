@@ -35,6 +35,15 @@ const (
 	// ShapeIntake is what each source sent and what ingest did with it:
 	// per-source receipts, health, the noise breakdown and false positives.
 	ShapeIntake Shape = "intake"
+	// ShapeLevers is the actions that would most reduce exposure, each with
+	// its exact effect on a measured figure and the list it acts on.
+	ShapeLevers Shape = "levers"
+	// ShapeBrief is the weekly brief: up to three sentences, each a template
+	// with typed figures (chips) and the list each figure counts.
+	ShapeBrief Shape = "brief"
+	// ShapeKPIs is the KPI strip: five fixed figures with their previous
+	// period, state and list.
+	ShapeKPIs Shape = "kpis"
 )
 
 // VizType is how a widget result is drawn.
@@ -58,6 +67,9 @@ const (
 	VizPaths     VizType = "paths"
 	VizFlow      VizType = "flow"
 	VizIntake    VizType = "intake"
+	VizLevers    VizType = "levers"
+	VizBrief     VizType = "brief"
+	VizKPI       VizType = "kpi"
 )
 
 // vizByShape lists the visualizations valid for each result shape; the first
@@ -74,6 +86,9 @@ var vizByShape = map[Shape][]VizType{
 	ShapePaths:      {VizPaths, VizTable},
 	ShapeFlow:       {VizFlow, VizTable},
 	ShapeIntake:     {VizIntake, VizTable},
+	ShapeLevers:     {VizLevers, VizTable},
+	ShapeBrief:      {VizBrief},
+	ShapeKPIs:       {VizKPI, VizTable},
 }
 
 // Dimension is a fact column a widget may filter or group by.
@@ -135,6 +150,15 @@ const (
 	// MetricKindIntake is the organization's intake: receipts per source in
 	// the window (organization reads only).
 	MetricKindIntake MetricKind = "intake"
+	// MetricKindLevers is the levers: open counts (F1), the coverage ledger
+	// and the top remediation suggestion re-counted in the read's scope.
+	MetricKindLevers MetricKind = "levers"
+	// MetricKindBrief is the weekly brief, built from the same reads as the
+	// levers plus the last seven days of flows (F2).
+	MetricKindBrief MetricKind = "brief"
+	// MetricKindKPIs is the KPI strip: the counts, ratio and duration of the
+	// single-figure metrics, computed the same way.
+	MetricKindKPIs MetricKind = "kpis"
 )
 
 // Metric is one catalog entry.
@@ -211,6 +235,14 @@ var catalog = []Metric{
 	{ID: "exposure.flow", Group: "ctem", Kind: MetricKindExposureFlow, Polarity: PolarityNeutral, Timed: true},
 	// What each source sent in the window and what ingest did with it.
 	{ID: "ingest.intake", Group: "ctem", Kind: MetricKindIntake, Polarity: PolarityNeutral, Timed: true},
+	// The actions that would most reduce exposure (at most three), each with
+	// its exact effect: the figure before and after the list it opens is gone.
+	{ID: "exposure.levers", Group: "ctem", Kind: MetricKindLevers, Polarity: PolarityNeutral},
+	// The weekly brief: three deterministic sentences from the snapshot.
+	{ID: "brief.weekly", Group: "ctem", Kind: MetricKindBrief, Polarity: PolarityNeutral},
+	// Five key figures in one strip: P0-P1 open, KEV open, within SLA, median
+	// time to fix and discovery coverage.
+	{ID: "exposure.kpis", Group: "exposure", Kind: MetricKindKPIs, Polarity: PolarityNeutral, Timed: true},
 }
 
 var catalogByID = func() map[string]Metric {
@@ -260,6 +292,12 @@ func (m Metric) ShapeFor(groupBy []Dimension) Shape {
 		return ShapeFlow
 	case MetricKindIntake:
 		return ShapeIntake
+	case MetricKindLevers:
+		return ShapeLevers
+	case MetricKindBrief:
+		return ShapeBrief
+	case MetricKindKPIs:
+		return ShapeKPIs
 	default: // count
 		switch len(groupBy) {
 		case 0:
@@ -298,7 +336,7 @@ func (m Metric) Vizzes(groupBy []Dimension) []VizType {
 // now (no fact history traces them).
 func (m Metric) Current() bool {
 	switch m.Kind {
-	case MetricKindItems, MetricKindAssetCount, MetricKindStages, MetricKindPaths:
+	case MetricKindItems, MetricKindAssetCount, MetricKindStages, MetricKindPaths, MetricKindLevers, MetricKindBrief:
 		return true
 	}
 	return false

@@ -14,6 +14,8 @@ const (
 	ActionDashboardScheduleChanged Action       = "dashboard.schedule_changed"
 	ActionDashboardLayoutShared    Action       = "dashboard.layout_shared"
 	ActionDashboardSettingsUpdated Action       = "dashboard.settings_updated"
+	ActionDashboardFlowPanelAdded  Action       = "dashboard.flow_panel_added"
+	ActionDashboardFlowPanelUndone Action       = "dashboard.flow_panel_undone"
 	ActionRolePermissionMigrated   Action       = "role.permission_migrated"
 	ResourceTypeDashboard          ResourceType = "dashboard"
 )
@@ -28,6 +30,8 @@ var _ = registerActions("dashboard", map[Action]Severity{
 	ActionDashboardScheduleChanged: SeverityLow,
 	ActionDashboardLayoutShared:    SeverityLow,
 	ActionDashboardSettingsUpdated: SeverityLow,
+	ActionDashboardFlowPanelAdded:  SeverityLow,
+	ActionDashboardFlowPanelUndone: SeverityLow,
 })
 
 // ActionRolePermissionMigrated is written by a migration that moves a role's
