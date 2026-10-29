@@ -560,6 +560,10 @@ func TestSupportSessionLifecycle_DB(t *testing.T) {
 		csB2.String(), later, later.Add(8*time.Hour)); err != nil {
 		t.Fatal(err)
 	}
+	// Refused at read time before any sweep ran (a read must not revive it).
+	if _, err := f.svc.Access(ctx, f.otherSupport, supportaccess.AccessInput{SessionID: sB2.ID, ConsoleSessionID: csB2, Method: "GET", Route: "overview"}, client); !errors.Is(err, dom.ErrNoLiveSession) {
+		t.Fatalf("idle session before the sweep: %v", err)
+	}
 	if n, err := f.svc.EndStaleSessions(ctx); err != nil || n != 1 {
 		t.Fatalf("idle sweep: %d %v", n, err)
 	}
