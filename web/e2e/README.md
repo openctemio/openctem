@@ -160,6 +160,8 @@ tests that cover the console's most user-visible flows.
 | `40-filter-chips-row-phone.spec.ts`         | Filter chips row at 390/375px: locked chip and chips never overlap, search on its line   |
 | `41-assets-service-facts.spec.ts`           | Asset service facts: whole chips and +N at 1280/1440/1920, no table side-scroll, axe     |
 | `43-new-scan-review-coverage.spec.ts`       | New Scan review: skipped targets by reason, neutral, searchable, 1440/390px, axe         |
+| `44-scan-targets-step.spec.ts`              | Targets step at 390/1440px: one footer row, Next gated with its reason, ranked fixes     |
+| `44-sidebar-phone-drawer.spec.ts`           | Phone sidebar drawer: one scroller, one filled row, rows hold still, footer never clips  |
 
 Each spec is designed to:
 
