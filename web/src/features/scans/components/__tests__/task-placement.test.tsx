@@ -90,6 +90,28 @@ describe('why a queued task waits', () => {
     expect(screen.getByText('can take it')).toBeInTheDocument()
   })
 
+  it('names why a sensor withheld a platform task, without naming the sensor', async () => {
+    getMock.mockResolvedValue({
+      queued: true,
+      platform: true,
+      job_reasons: [],
+      evaluated: 0,
+      eligible: 0,
+      busy: 0,
+      truncated: false,
+      blocking: [],
+      withheld: 'grant_credentials',
+      withheld_at: '2026-10-28T09:00:00Z',
+    })
+    fresh(<TaskPlacementPanel runId="r1" taskId="t1" />)
+    expect(
+      await screen.findByText('The last sensor that asked for work withheld this task:')
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText("The sensor's grant does not allow it (credentials).")
+    ).toBeInTheDocument()
+  })
+
   it('a failed fetch says so', async () => {
     getMock.mockRejectedValueOnce(new Error('placement read failed'))
     fresh(<TaskPlacementPanel runId="r1" taskId="t1" />)

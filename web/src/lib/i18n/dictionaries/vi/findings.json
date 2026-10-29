@@ -201,6 +201,7 @@
   "findings.closureReason.obsolete_asset": "Tài sản đã ngừng sử dụng",
   "findings.closureReason.obsolete_rule": "Quy tắc kiểm tra đã thay đổi",
   "findings.closureReason.obsolete_source": "Nguồn đã bị gỡ bỏ",
+  "findings.closureReason.out_of_scope": "Tài sản ngoài phạm vi",
   "findings.closureReason.risk_accepted": "Chấp nhận rủi ro",
   "findings.closureReason.test_or_example_code": "Mã kiểm thử hoặc mã ví dụ",
   "findings.closureReason.unknown": "Không được ghi nhận",

@@ -155,7 +155,7 @@ func (s *Service) settleRun(ctx context.Context, tenantID shared.ID, rs covdom.R
 			if msg == "" {
 				msg = rs.Error
 			}
-			fp := covdom.FailedPair{AssetID: d.AssetID, Outcome: v.Outcome, Error: msg}
+			fp := covdom.FailedPair{AssetID: d.AssetID, Outcome: v.Outcome, Error: msg, Observer: v.Observer}
 			if covdom.IsTargetSide(v.Outcome) {
 				// The target did not answer: an observation, rechecked on a
 				// widening schedule, not a failure retried every few hours.
