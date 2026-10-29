@@ -28,6 +28,7 @@ import {
   ListChecks,
   Network,
   Radar,
+  FileBadge,
   ShieldCheck,
   Swords,
   Trophy,
@@ -422,6 +423,16 @@ export const ATTACK_SURFACE_SECTION_TABS: readonly SectionTab[] = [
     labelKey: 'nav.tab.webSurface',
     href: '/attack-surface/web',
     icon: AppWindow,
+    module: 'assets',
+    permission: Permission.AssetsRead,
+  },
+  {
+    // The certificate assets of the external surface with their expiry
+    // status (research/333 D5). Read from the assets module's data.
+    label: 'Certificates',
+    labelKey: 'nav.tab.certificates',
+    href: '/attack-surface/certificates',
+    icon: FileBadge,
     module: 'assets',
     permission: Permission.AssetsRead,
   },
