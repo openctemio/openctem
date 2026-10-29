@@ -97,12 +97,13 @@ func (s *Service) ruleOf(capability string) covdom.Rule {
 // the run (claim-time splits and follow-ups included), never from the run's
 // overall status. A target no task carried fails as not dispatched, with the
 // run's error; a run unfinished after a day fails its pairs as stalled.
-func (s *Service) settle(ctx context.Context, tenantID shared.ID) (int, error) {
+// parked is how many names the pass found without an address (resolve.dns
+// no answer).
+func (s *Service) settle(ctx context.Context, tenantID shared.ID) (total, parked int, err error) {
 	runs, err := s.planner.QueuedRuns(ctx, tenantID)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
-	total := 0
 	for _, rs := range runs {
 		stalled := false
 		switch rs.Status {
@@ -113,31 +114,32 @@ func (s *Service) settle(ctx context.Context, tenantID shared.ID) (int, error) {
 			}
 			stalled = true
 		}
-		n, err := s.settleRun(ctx, tenantID, rs, stalled)
+		n, p, err := s.settleRun(ctx, tenantID, rs, stalled)
 		total += n
+		parked += p
 		if err != nil {
-			return total, err
+			return total, parked, err
 		}
 	}
-	return total, nil
+	return total, parked, nil
 }
 
-func (s *Service) settleRun(ctx context.Context, tenantID shared.ID, rs covdom.RunState, stalled bool) (int, error) {
+func (s *Service) settleRun(ctx context.Context, tenantID shared.ID, rs covdom.RunState, stalled bool) (n, parked int, err error) {
 	rule := s.ruleOf(rs.Capability)
 	queued, err := s.planner.QueuedTargets(ctx, tenantID, rs.RunID, rs.Capability)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	var verdicts map[string]covdom.Verdict
 	if !stalled {
 		tasks, err := s.planner.RunTasks(ctx, tenantID, rs.RunID)
 		if err != nil {
-			return 0, err
+			return 0, 0, err
 		}
 		verdicts = covdom.Verdicts(tasks, rs.Unfinished)
 	}
-	var covered []shared.ID
-	var failed, targetSide []covdom.FailedPair
+	var covered, noAnswer []shared.ID
+	var failed, targetSide, unresolved []covdom.FailedPair
 	blocked := map[shared.ID]string{}
 	for _, d := range queued {
 		v, ok := verdicts[covdom.TargetKey(d.Target())]
@@ -155,6 +157,20 @@ func (s *Service) settleRun(ctx context.Context, tenantID shared.ID, rs covdom.R
 			covered = append(covered, d.AssetID)
 		case v.Kind == covdom.VerdictBlocked:
 			blocked[d.AssetID] = v.Reason
+		case v.Kind == covdom.VerdictUnresolved:
+			// A name that does not resolve: for the DNS resolution that is
+			// the answer (the name is parked); for any other capability the
+			// pair waits for the name on the dead-name schedule. Never a
+			// failure, so never a gap or a failure streak.
+			if rs.Capability == covdom.CapabilityResolveDNS && v.Outcome == covdom.OutcomeNoAnswer {
+				noAnswer = append(noAnswer, d.AssetID)
+				continue
+			}
+			reason := covdom.ReasonUnresolvable
+			if v.Outcome == covdom.ReasonResolverFailed {
+				reason = covdom.ReasonResolverFailed
+			}
+			unresolved = append(unresolved, covdom.FailedPair{AssetID: d.AssetID, Outcome: reason, Error: v.Error})
 		default:
 			msg := v.Error
 			if msg == "" {
@@ -170,29 +186,39 @@ func (s *Service) settleRun(ctx context.Context, tenantID shared.ID, rs covdom.R
 			failed = append(failed, fp)
 		}
 	}
-	n, err := s.planner.SettleCovered(ctx, tenantID, rs.RunID, rs.Capability, covered, rule.Every, rule.Expects == "http_service")
+	n, err = s.planner.SettleCovered(ctx, tenantID, rs.RunID, rs.Capability, covered, rule.Every, rule.Expects == "http_service")
 	if err != nil {
-		return n, err
+		return n, 0, err
 	}
 	k, err := s.planner.SettleFailed(ctx, tenantID, rs.RunID, rs.Capability, failed, rule.Every)
 	n += k
 	if err != nil {
-		return n, err
+		return n, 0, err
 	}
 	k, err = s.planner.SettleTargetSide(ctx, tenantID, rs.RunID, rs.Capability, targetSide)
 	n += k
 	if err != nil {
-		return n, err
+		return n, 0, err
+	}
+	parked, err = s.planner.SettleNoAnswer(ctx, tenantID, rs.RunID, rs.Capability, noAnswer)
+	n += parked
+	if err != nil {
+		return n, parked, err
+	}
+	k, err = s.planner.SettleUnresolved(ctx, tenantID, rs.RunID, rs.Capability, unresolved)
+	n += k
+	if err != nil {
+		return n, parked, err
 	}
 	if err := s.planner.MarkBlocked(ctx, tenantID, rs.Capability, blocked, BlockedRecheck); err != nil {
-		return n, err
+		return n, parked, err
 	}
 	if !stalled {
 		if err := s.countRunClaim(ctx, tenantID, rs); err != nil {
-			return n, err
+			return n, parked, err
 		}
 	}
-	return n + len(blocked), nil
+	return n + len(blocked), parked, nil
 }
 
 // countRunClaim counts a finished run on the capability's hold: a run no

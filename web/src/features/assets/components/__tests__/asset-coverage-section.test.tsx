@@ -42,6 +42,14 @@ const coverage: AssetCoverage = {
       fail_streak: 3,
     },
     { capability: 'resolve.dns', state: 'not_applicable', gap: false, reason: 'resolves' },
+    {
+      capability: 'lookup.rdap',
+      state: 'covered',
+      gap: false,
+      last_success_at: new Date().toISOString(),
+      last_outcome: 'no_answer',
+    },
+    { capability: 'lookup.asn', state: 'blocked', gap: false, reason: 'unresolvable' },
     { capability: 'discover.subdomains', state: 'paused', gap: false, reason: 'not_claimed' },
   ],
 }
@@ -62,8 +70,10 @@ describe('AssetCoverageSection', () => {
     expect(screen.getByText(/shared or CDN network/)).toBeInTheDocument()
     expect(screen.getByText('sensor unreachable')).toBeInTheDocument()
     expect(screen.getByText('Gap')).toBeInTheDocument()
-    expect(screen.getByText('Blocked')).toBeInTheDocument()
-    expect(screen.getByText(/the name does not resolve/)).toBeInTheDocument()
+    expect(screen.getAllByText('Blocked')).toHaveLength(2)
+    expect(screen.getByText(/^.*the name does not resolve$/)).toBeInTheDocument()
+    expect(screen.getByText(/the name has no DNS answer; checked again later/)).toBeInTheDocument()
+    expect(screen.getByText(/the name does not resolve; checked again later/)).toBeInTheDocument()
     expect(screen.getByText(/no sensor took its last runs/)).toBeInTheDocument()
   })
 

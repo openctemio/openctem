@@ -148,3 +148,100 @@ func TestVerdicts_TruncatedResultNeverCovers(t *testing.T) {
 		t.Errorf("complete = %+v", v["a"])
 	}
 }
+
+// A name that does not resolve is unresolved, never failed: from the
+// result's refused_targets (a sensor whose platform accepts revision 1
+// outcomes reports it skipped as refused), from a failed name_gone or
+// resolver_failed outcome (revision 2), and from a completed task without
+// per-target outcomes (an older sensor), where it must not be covered.
+func TestVerdicts_DeadNamesAreUnresolved(t *testing.T) {
+	v := Verdicts([]TaskResult{
+		{Status: "completed", Targets: []string{"gone.example.test", "flaky.example.test", "old.example.test", "denied.example.test", "ok.example.test"},
+			Result: json.RawMessage(`{
+				"metadata": {"refused_targets": [
+					{"target": "gone.example.test", "reason": "unresolvable", "dns": "name_gone"},
+					{"target": "flaky.example.test", "reason": "unresolvable", "dns": "resolver_failed"},
+					{"target": "old.example.test", "reason": "unresolvable"},
+					{"target": "denied.example.test", "reason": "denied_by_policy"}]},
+				"target_outcomes": [
+					{"target": "gone.example.test", "state": "skipped", "class": "refused"},
+					{"target": "flaky.example.test", "state": "skipped", "class": "refused"},
+					{"target": "old.example.test", "state": "skipped", "class": "refused"},
+					{"target": "denied.example.test", "state": "skipped", "class": "refused"},
+					{"target": "ok.example.test", "state": "done"}]}`)},
+		{Status: "completed", Targets: []string{"rev2.example.test", "rev2flaky.example.test"},
+			Result: json.RawMessage(`{"target_outcomes": [
+				{"target": "rev2.example.test", "state": "failed", "class": "name_gone", "cause": "target"},
+				{"target": "rev2flaky.example.test", "state": "failed", "class": "resolver_failed", "cause": "target"}]}`)},
+		{Status: "completed", Targets: []string{"nooutcomes.example.test", "ran.example.test"},
+			Result: json.RawMessage(`{"metadata": {"refused_targets": [{"target": "nooutcomes.example.test", "reason": "unresolvable", "dns": "name_gone"}]}}`)},
+	}, nil)
+	want := map[string]Verdict{
+		"gone.example.test":       {Kind: VerdictUnresolved, Outcome: OutcomeNoAnswer},
+		"flaky.example.test":      {Kind: VerdictUnresolved, Outcome: ReasonResolverFailed},
+		"old.example.test":        {Kind: VerdictUnresolved, Outcome: OutcomeNoAnswer},
+		"denied.example.test":     {Kind: VerdictBlocked},
+		"ok.example.test":         {Kind: VerdictCovered, Outcome: OutcomeOK},
+		"rev2.example.test":       {Kind: VerdictUnresolved, Outcome: OutcomeNoAnswer},
+		"rev2flaky.example.test":  {Kind: VerdictUnresolved, Outcome: ReasonResolverFailed},
+		"nooutcomes.example.test": {Kind: VerdictUnresolved, Outcome: OutcomeNoAnswer},
+		"ran.example.test":        {Kind: VerdictCovered, Outcome: OutcomeOK},
+	}
+	for target, w := range want {
+		got := v[target]
+		if got.Kind != w.Kind || (w.Outcome != "" && got.Outcome != w.Outcome) {
+			t.Errorf("%s = %+v, want kind %s outcome %q", target, got, w.Kind, w.Outcome)
+		}
+	}
+}
+
+// refused_targets is sensor-supplied: an entry for a target the task does
+// not carry settles nothing (a sensor can only speak for its own task's
+// targets), and a later task that covered the name wins over an earlier
+// refusal.
+func TestVerdicts_RefusedTargetsReadAgainstTheTask(t *testing.T) {
+	v := Verdicts([]TaskResult{
+		{Status: "completed", Targets: []string{"mine.example.test"},
+			Result: json.RawMessage(`{"metadata": {"refused_targets": [
+				{"target": "mine.example.test", "reason": "unresolvable", "dns": "name_gone"},
+				{"target": "someone-else.example.test", "reason": "unresolvable", "dns": "name_gone"}]}}`)},
+		{Status: "completed", Targets: []string{"mine.example.test"},
+			Result: json.RawMessage(`{"target_outcomes": [{"target": "mine.example.test", "state": "done"}]}`)},
+	}, nil)
+	if _, ok := v["someone-else.example.test"]; ok {
+		t.Error("a refused entry for a target the task did not carry was taken")
+	}
+	if v["mine.example.test"].Kind != VerdictCovered {
+		t.Errorf("mine = %+v, want the later done to win", v["mine.example.test"])
+	}
+}
+
+// A whole task failed (an older sensor refused the job) still settles the
+// names it listed as unresolvable one by one, not as one failure.
+func TestVerdicts_FailedTaskWithRefusedNamesSettlesPerName(t *testing.T) {
+	v := Verdicts([]TaskResult{{Status: "failed", Error: "local policy refused", Targets: []string{"a.example.test", "b.example.test"},
+		Result: json.RawMessage(`{"metadata": {"refused_targets": [{"target": "a.example.test", "reason": "unresolvable", "dns": "name_gone"}]}}`)}}, nil)
+	if v["a.example.test"].Kind != VerdictUnresolved {
+		t.Errorf("a = %+v", v["a.example.test"])
+	}
+	if v["b.example.test"].Kind != VerdictFailed {
+		t.Errorf("b = %+v (not listed: the task's failure)", v["b.example.test"])
+	}
+}
+
+func TestDeadNameRechecks_WidenToWeekly(t *testing.T) {
+	got := DeadNameRechecks()
+	want := []time.Duration{24 * time.Hour, 72 * time.Hour, 7 * 24 * time.Hour}
+	if len(got) != len(want) {
+		t.Fatalf("schedule %v", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("recheck %d = %v, want %v", i+1, got[i], want[i])
+		}
+	}
+	got[0] = time.Minute
+	if DeadNameRechecks()[0] != 24*time.Hour {
+		t.Error("the schedule can be changed through the returned slice")
+	}
+}

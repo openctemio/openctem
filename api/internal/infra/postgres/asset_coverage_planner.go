@@ -426,6 +426,84 @@ func (r *AssetCoverageRepository) SettleTargetSide(ctx context.Context, tenantID
 	return int(n), nil
 }
 
+// deadNameSchedule is coverage.DeadNameRechecks in seconds.
+func deadNameSchedule() []float64 {
+	rechecks := coverage.DeadNameRechecks()
+	out := make([]float64, len(rechecks))
+	for i, d := range rechecks {
+		out[i] = d.Seconds()
+	}
+	return out
+}
+
+// sameOutcomeStreakSQL is the pair's consecutive observations of the
+// outcome expr including this one.
+func sameOutcomeStreakSQL(expr string) string {
+	return `(CASE WHEN c.last_outcome = ` + expr + ` THEN least(c.fail_streak + 1, 32767) ELSE 1 END)`
+}
+
+// SettleNoAnswer settles queued resolve.dns pairs of a run whose name has no
+// address: covered with outcome no_answer (a DNS answer, so a success and
+// never a gap), the consecutive no-answer streak in fail_streak, and due
+// again on coverage.DeadNameRechecks (1 day, 3 days, 7 days, then weekly),
+// stretched by the pair's jitter. A pair whose last outcome is no_answer
+// is parked: the resolves precondition of every other capability fails for
+// its asset (coveragePredicateSQL).
+func (r *AssetCoverageRepository) SettleNoAnswer(ctx context.Context, tenantID, runID shared.ID, capability string, assetIDs []shared.ID) (int, error) {
+	if len(assetIDs) == 0 {
+		return 0, nil
+	}
+	streak := sameOutcomeStreakSQL(`'` + coverage.OutcomeNoAnswer + `'`)
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE asset_coverage c SET state = 'covered', reason = '',
+		       last_outcome = '`+coverage.OutcomeNoAnswer+`', last_error = '', last_success_at = now(),
+		       fail_streak = `+streak+`,
+		       next_due_at = `+jitteredIntervalSQL(`($5::float8[])[least(`+streak+`, cardinality($5::float8[]))]`)+`,
+		       updated_at = now()
+		WHERE c.tenant_id = $1 AND c.last_run_id = $2 AND c.capability = $3 AND c.vantage = '' AND c.state = 'queued'
+		  AND c.asset_id = ANY($4::uuid[])`,
+		tenantID.String(), runID.String(), capability, pq.Array(coverageIDStrings(assetIDs)), pq.Array(deadNameSchedule()))
+	if err != nil {
+		return 0, fmt.Errorf("settle no-answer coverage: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
+// SettleUnresolved settles queued pairs of a run whose target the sensor
+// could not resolve: blocked with the reason (unresolvable or
+// resolver_failed, also recorded as the last outcome), the streak of that
+// outcome counted, and rechecked on coverage.DeadNameRechecks. Not a
+// failure: no failure streak, no gap.
+func (r *AssetCoverageRepository) SettleUnresolved(ctx context.Context, tenantID, runID shared.ID, capability string, pairs []coverage.FailedPair) (int, error) {
+	if len(pairs) == 0 {
+		return 0, nil
+	}
+	ids := make([]string, len(pairs))
+	reasons := make([]string, len(pairs))
+	errs := make([]string, len(pairs))
+	for i, f := range pairs {
+		ids[i] = f.AssetID.String()
+		reasons[i] = coverage.Clip(f.Outcome, coverage.MaxCodeLen)
+		errs[i] = coverage.Clip(f.Error, coverage.MaxErrorLen)
+	}
+	streak := sameOutcomeStreakSQL(`w.reason`)
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE asset_coverage c SET state = 'blocked', reason = w.reason,
+		       last_outcome = w.reason, last_error = w.err, fail_streak = `+streak+`,
+		       next_due_at = `+jitteredIntervalSQL(`($7::float8[])[least(`+streak+`, cardinality($7::float8[]))]`)+`,
+		       updated_at = now()
+		FROM unnest($4::uuid[], $5::text[], $6::text[]) AS w(asset_id, reason, err)
+		WHERE c.tenant_id = $1 AND c.last_run_id = $2 AND c.capability = $3 AND c.vantage = '' AND c.state = 'queued'
+		  AND c.asset_id = w.asset_id`,
+		tenantID.String(), runID.String(), capability, pq.Array(ids), pq.Array(reasons), pq.Array(errs), pq.Array(deadNameSchedule()))
+	if err != nil {
+		return 0, fmt.Errorf("settle unresolved coverage: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
 // RunTasks returns every task of a run: the commands of its steps (splits
 // and follow-ups carry the same step) and the commands that name the run.
 func (r *AssetCoverageRepository) RunTasks(ctx context.Context, tenantID, runID shared.ID) ([]coverage.TaskResult, error) {
@@ -513,6 +591,7 @@ var _ coverage.Planner = (*AssetCoverageRepository)(nil)
 // alert ("targets unreachable") says why those pairs lack coverage instead
 // of a second, vaguer gap alert for the same pairs. Pairs paused for
 // readiness (no capable sensor) are counted as Paused.
+// A parked dead name (last outcome no_answer) is never a gap.
 func (r *AssetCoverageRepository) Health(ctx context.Context, tenantID shared.ID, cadence map[string]time.Duration) ([]coverage.CapabilityHealth, error) {
 	caps := make([]string, 0, len(cadence))
 	secs := make([]float64, 0, len(cadence))
@@ -526,6 +605,7 @@ func (r *AssetCoverageRepository) Health(ctx context.Context, tenantID shared.ID
 		                          AND NOT (c.state = 'paused' AND c.reason = ANY($5::text[]))),
 		       count(*) FILTER (WHERE c.state NOT IN ('blocked', 'not_applicable')
 		                          AND NOT (c.state = 'paused' AND (c.reason = ANY($5::text[]) OR c.reason = ANY($6::text[])))
+										  AND c.last_outcome <> '`+coverage.OutcomeNoAnswer+`'
 		                          AND COALESCE(c.last_success_at, c.created_at) < now() - make_interval(secs => 2 * COALESCE(p.every, 86400))),
 		       count(*) FILTER (WHERE c.state = 'failed' AND c.fail_streak >= $4),
 		       count(*) FILTER (WHERE c.last_outcome = 'ok' AND c.last_success_at > now() - interval '24 hours'),
