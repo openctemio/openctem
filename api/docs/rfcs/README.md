@@ -140,6 +140,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-129](RFC-129-shared-fleet-scheduling.md) | Shared fleet scheduling | Accepted (2026-10-27); P0-F5 (bounded shared claim, #3202) and P0-F3 (cross-organization politeness, #3203) in review, the rest designed |
 | [RFC-130](RFC-130-migration-applied-set.md) | Migration applied set (versions only have to be unique) | Implemented |
 | [RFC-131](RFC-131-ai-analysis.md) | AI analysis (governed suggestions, the analyze contract, the AI analyst) | Accepted (2026-10-28). |
+| [RFC-132](RFC-132-ai-agent-principal.md) | AI agents as service accounts with accountable owners | Accepted (2026-10-28). |
 | [RFC-133](RFC-133-ai-harness.md) | The AI harness (own loop, AI worker pool, scale on the job system, own tool sandbox) | Accepted (2026-10-28). |
 | [RFC-134](RFC-134-platform-administration.md) | Platform administration (one identity, platform roles, staff governance) | Accepted (2026-10-28). |
 | [RFC-135](RFC-135-custom-ai-agents.md) | AI agents that organizations build (revisions, lifecycle, registry, console) | Accepted (2026-10-28). |

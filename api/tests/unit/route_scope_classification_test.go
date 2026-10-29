@@ -79,6 +79,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/users":                               {classSystem, "the caller's own account"},
 	"/api/v1/me":                                  {classSystem, "the caller's own permissions, groups and assets"},
 	"/api/v1/me/pins":                             {classScoped, "the caller's own sidebar pins; a saved view shows only while visible, view counts compiled as the caller"},
+	"/api/v1/ai":                                  {classScoped, "AI agents (tenant-bound service accounts with accountable owners) and their runs: a run is read only by a caller who can see its subject finding (404 out of scope; docs/architecture/ai-analysis.md)"},
 	"/api/v1/operations":                          {classScoped, "an operation is read by its creator only (tenant and creator bound, 404 otherwise); a bulk change by filter recompiles the filter as the caller (docs/architecture/operations.md)"},
 	"/api/v1/query":                               {classScoped, "custom queries compile through filterspec as the caller: tenant, data scope, pentest member rule and mandatory exclusions are injected into every statement (docs/architecture/query-language.md)"},
 	"/api/v1/views":                               {classSystem, "the caller's saved views and those shared with their groups; a view runs as the viewer, scoped (D15)"},
