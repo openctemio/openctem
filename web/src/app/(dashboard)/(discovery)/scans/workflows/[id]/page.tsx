@@ -676,11 +676,9 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
             </div>
           </div>
 
-          {workflow && (
-            <div className="px-4 pt-3 empty:hidden">
-              <RetiredNotice workflow={workflow} />
-            </div>
-          )}
+          <div className="px-4 pt-3 empty:hidden">
+            <RetiredNotice workflow={workflow} />
+          </div>
 
           {!isReadOnly && (
             <TemplateUpdateCard

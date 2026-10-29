@@ -15,6 +15,7 @@
 
 import { SWRConfig, type SWRConfiguration } from 'swr'
 import { type ReactNode } from 'react'
+import { clearPrimedViews } from '@/lib/api/view-prime'
 
 /**
  * Default SWR configuration for the entire application
@@ -90,6 +91,7 @@ type GlobalMutate = (
  * in the cache or on screen.
  */
 export async function clearSwrCache(mutate: GlobalMutate): Promise<void> {
+  clearPrimedViews()
   await mutate(() => true, undefined, { revalidate: false })
   void mutate(() => true)
 }
