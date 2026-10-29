@@ -268,21 +268,47 @@ describe('ScanRunsTab', () => {
     const badges = screen.getAllByTestId('run-managed-badge')
     expect(badges).toHaveLength(1)
     expect(badges[0]).toHaveTextContent('Continuous coverage')
-    // "All kinds" asks for no kind and no origin: coverage runs are included.
+    // "All kinds" asks for no kind; the default origin is people's runs.
     expect(workflowRunsCalls.at(-1)?.kind).toBeUndefined()
+    expect(workflowRunsCalls.at(-1)?.origin).toBe('user')
+  })
+
+  it('lists runs started by people by default, and system runs on the toggle', async () => {
+    const user = userEvent.setup()
+    render(<ScanRunsTab />)
+    expect(workflowRunsCalls.at(-1)).toMatchObject({ origin: 'user' })
+    await user.click(screen.getByRole('button', { name: 'Origin: People' }))
+    await user.click(await screen.findByRole('menuitemradio', { name: 'System' }))
+    expect(new URLSearchParams(window.location.search).get('origin')).toBe('system')
+    expect(workflowRunsCalls.at(-1)).toMatchObject({ origin: 'system' })
+    await user.click(screen.getByRole('button', { name: 'Origin: System' }))
+    await user.click(await screen.findByRole('menuitemradio', { name: 'All' }))
+    // All: no origin, system runs included.
     expect(workflowRunsCalls.at(-1)?.origin).toBeUndefined()
   })
 
-  it('asks only for coverage runs, or for none, from the kind filter', () => {
-    urlState.kind = 'coverage'
-    const { unmount } = render(<ScanRunsTab />)
-    expect(workflowRunsCalls.at(-1)).toMatchObject({ origin: 'system' })
-    expect(workflowRunsCalls.at(-1)?.kind).toBeUndefined()
-    unmount()
-    resetUrl()
+  it('asks for one kind from the kind filter, origin unchanged', () => {
     urlState.kind = 'scan'
     render(<ScanRunsTab />)
     expect(workflowRunsCalls.at(-1)).toMatchObject({ kind: 'scan', origin: 'user' })
+  })
+
+  it('sums up the hidden system runs in one line that opens them and links to coverage', async () => {
+    const user = userEvent.setup()
+    statsTotal = 42
+    runsResponse = { data: [run({})], total: 2, page: 1, per_page: 25, total_pages: 1 }
+    render(<ScanRunsTab />)
+    // The summary is every run less the people's runs: no extra request.
+    expect(workflowRunsCalls.every((c) => c?.per_page !== 1)).toBe(true)
+    const summary = screen.getByTestId('coverage-runs-summary')
+    expect(summary).toHaveTextContent('Continuous coverage has started 40 runs')
+    expect(within(summary).getByRole('link', { name: 'Coverage settings' })).toHaveAttribute(
+      'href',
+      '/settings/scope'
+    )
+    await user.click(within(summary).getByRole('button', { name: 'Show system runs' }))
+    expect(workflowRunsCalls.at(-1)).toMatchObject({ origin: 'system' })
+    expect(screen.queryByTestId('coverage-runs-summary')).toBeNull()
   })
 
   it('does not say no runs started while the counters show runs', () => {
