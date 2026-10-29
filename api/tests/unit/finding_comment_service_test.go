@@ -100,7 +100,7 @@ func (m *mockFindingCommentServiceRepo) Delete(_ context.Context, _, id shared.I
 	return nil
 }
 
-func (m *mockFindingCommentServiceRepo) ListByFinding(_ context.Context, findingID shared.ID) ([]*vulnerability.FindingComment, error) {
+func (m *mockFindingCommentServiceRepo) ListByFinding(_ context.Context, _, findingID shared.ID) ([]*vulnerability.FindingComment, error) {
 	m.listCalls++
 	if m.listErr != nil {
 		return nil, m.listErr
@@ -114,7 +114,7 @@ func (m *mockFindingCommentServiceRepo) ListByFinding(_ context.Context, finding
 	return result, nil
 }
 
-func (m *mockFindingCommentServiceRepo) CountByFinding(_ context.Context, findingID shared.ID) (int, error) {
+func (m *mockFindingCommentServiceRepo) CountByFinding(_ context.Context, _, findingID shared.ID) (int, error) {
 	m.countCalls++
 	if m.countErr != nil {
 		return 0, m.countErr
@@ -657,7 +657,7 @@ func TestListFindingComments_Success(t *testing.T) {
 	commentRepo.comments[c2.ID().String()] = c2
 	commentRepo.comments[otherFindingComment.ID().String()] = otherFindingComment
 
-	result, err := svc.ListFindingComments(context.Background(), findingID.String())
+	result, err := svc.ListFindingComments(context.Background(), shared.NewID().String(), findingID.String())
 
 	require.NoError(t, err)
 	assert.Len(t, result, 2)
@@ -669,7 +669,7 @@ func TestListFindingComments_InvalidFindingID(t *testing.T) {
 	findingRepo := newMockFindingRepo()
 	svc := newTestCommentService(commentRepo, findingRepo)
 
-	result, err := svc.ListFindingComments(context.Background(), "not-a-uuid")
+	result, err := svc.ListFindingComments(context.Background(), shared.NewID().String(), "not-a-uuid")
 
 	require.Error(t, err)
 	assert.Nil(t, result)
@@ -683,7 +683,7 @@ func TestListFindingComments_RepoError(t *testing.T) {
 
 	commentRepo.listErr = errors.New("list failed")
 
-	result, err := svc.ListFindingComments(context.Background(), shared.NewID().String())
+	result, err := svc.ListFindingComments(context.Background(), shared.NewID().String(), shared.NewID().String())
 
 	require.Error(t, err)
 	assert.Nil(t, result)
@@ -704,7 +704,7 @@ func TestCountFindingComments_Success(t *testing.T) {
 	commentRepo.comments[c1.ID().String()] = c1
 	commentRepo.comments[c2.ID().String()] = c2
 
-	count, err := svc.CountFindingComments(context.Background(), findingID.String())
+	count, err := svc.CountFindingComments(context.Background(), shared.NewID().String(), findingID.String())
 
 	require.NoError(t, err)
 	assert.Equal(t, 2, count)
@@ -716,7 +716,7 @@ func TestCountFindingComments_InvalidFindingID(t *testing.T) {
 	findingRepo := newMockFindingRepo()
 	svc := newTestCommentService(commentRepo, findingRepo)
 
-	count, err := svc.CountFindingComments(context.Background(), "invalid-uuid")
+	count, err := svc.CountFindingComments(context.Background(), shared.NewID().String(), "invalid-uuid")
 
 	require.Error(t, err)
 	assert.Equal(t, 0, count)
@@ -730,7 +730,7 @@ func TestCountFindingComments_RepoError(t *testing.T) {
 
 	commentRepo.countErr = errors.New("count failed")
 
-	count, err := svc.CountFindingComments(context.Background(), shared.NewID().String())
+	count, err := svc.CountFindingComments(context.Background(), shared.NewID().String(), shared.NewID().String())
 
 	require.Error(t, err)
 	assert.Equal(t, 0, count)
