@@ -116,6 +116,10 @@ const (
 	// PlacementNoFreeSlot: the sensor could take the command but runs as
 	// many scans as it can now.
 	PlacementNoFreeSlot = "no_free_slot"
+	// PlacementSensorOverloaded: the sensor's host reports CPU, memory or
+	// I/O stalls, so the platform gives it no new work until it recovers
+	// (it replaces no_free_slot when pressure is the cause).
+	PlacementSensorOverloaded = "sensor_overloaded"
 	// PlacementStoppedClaiming: the platform would hand the command to the
 	// sensor, but the sensor reports that it claims no new jobs because its
 	// local store is full (storage, disk or unacknowledged results).

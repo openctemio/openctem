@@ -237,7 +237,9 @@ export function TaskPlacementPanel({ runId, taskId }: { runId: string; taskId: s
                         <span className="text-muted-foreground">
                           {s.eligible
                             ? s.busy
-                              ? t('scans.placement.sensorBusy')
+                              ? (s.reasons ?? []).includes('sensor_overloaded')
+                                ? t('scans.placement.sensorOverloaded')
+                                : t('scans.placement.sensorBusy')
                               : s.yields
                                 ? t('scans.placement.sensorYields')
                                 : t('scans.placement.sensorEligible')
