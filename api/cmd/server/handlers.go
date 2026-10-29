@@ -1915,6 +1915,18 @@ func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) hand
 	if h.NavPin != nil {
 		s.Pins = h.NavPin.Response
 	}
+	if h.SupportAccess != nil {
+		s.SupportAccess = h.SupportAccess.ActiveResponse
+	}
+	if svc.AITriage != nil {
+		triage := svc.AITriage
+		s.AIConfig = func(ctx context.Context, tenantID shared.ID) (any, error) {
+			return triage.GetAIConfig(ctx, tenantID.String())
+		}
+	}
+	if h.SLA != nil && svc.SLA != nil {
+		s.SLA = h.SLA.BootstrapPart
+	}
 	if svc.Vulnerability != nil {
 		vulns := svc.Vulnerability
 		s.PendingApprovalCount = func(ctx context.Context, tenantID shared.ID) (int, error) {

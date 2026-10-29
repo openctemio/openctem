@@ -230,6 +230,18 @@ func (r *SLAPolicyRepository) Delete(ctx context.Context, tenantID, id shared.ID
 	return nil
 }
 
+// HasAssetOverride reports whether the tenant has an active asset-specific policy.
+func (r *SLAPolicyRepository) HasAssetOverride(ctx context.Context, tenantID shared.ID) (bool, error) {
+	var has bool
+	err := r.db.QueryRowContext(ctx,
+		`SELECT EXISTS (SELECT 1 FROM sla_policies WHERE tenant_id = $1 AND asset_id IS NOT NULL AND is_active = true)`,
+		tenantID.String()).Scan(&has)
+	if err != nil {
+		return false, fmt.Errorf("failed to check asset SLA overrides: %w", err)
+	}
+	return has, nil
+}
+
 // ListByTenant returns all policies for a tenant.
 func (r *SLAPolicyRepository) ListByTenant(ctx context.Context, tenantID shared.ID) ([]*sla.Policy, error) {
 	query := r.selectQuery() + " WHERE tenant_id = $1 ORDER BY is_default DESC, name ASC"
