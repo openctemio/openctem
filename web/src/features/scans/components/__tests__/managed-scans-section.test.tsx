@@ -59,7 +59,7 @@ describe('ManagedScansSection', () => {
     )
     expect(screen.getByRole('link', { name: 'View their runs' })).toHaveAttribute(
       'href',
-      '/scans/runs?kind=coverage'
+      '/scans/runs?origin=system'
     )
     // Read-only: no way to edit, run or schedule from here.
     expect(screen.queryByRole('button')).toBeNull()
