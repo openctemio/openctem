@@ -130,6 +130,20 @@ does not re-align them. A new pair, or one whose precondition holds again,
 is due at once. A blocked or paused pair whose precondition stops holding
 becomes `not_applicable` like any other.
 
+**Batches fill a task.** A capability's due batch starts when it fills one
+task of the capability's default tool (the stage's chunk size, 25 when the
+tool takes no list), or when its oldest due pair has waited a tenth of the
+cadence, at most 6 h (2.4 h for daily DNS, 6 h for HTTP, ports and
+templates). Until then the pairs stay `due` and the batch collects the
+pairs that fall due meanwhile. The jitter spreads re-due times over a tenth
+of the cadence, so pairs settled together come due inside that window and
+one run carries them, instead of one small run per coalescing window. The
+1 h coalescing window stays: once a batch starts it also takes pairs due
+within the hour. The wait only delays coverage work: excluding an asset
+still stops it at the claim-time check, and a scan a person starts is not
+batched. When the daily budget leaves fewer pairs than a task, a batch of
+that size is full.
+
 **Passive capabilities and zones.** A passive capability (`resolve.dns`,
 `lookup.rdap`, `lookup.asn`, `discover.subdomains`) sends no traffic to
 its target. For an organization with scan zones, its public names skip
