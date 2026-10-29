@@ -30,11 +30,19 @@ import {
 } from '@/components/dashboard-kit'
 import { MarkdownPreview } from '@/components/ui/markdown-editor'
 import { useTranslation } from '@/context/i18n-provider'
+import { usePermissionsSafe } from '@/context/permission-provider'
+import { openFormHref } from '@/lib/open-form'
 import { safeInternalHref } from '@/lib/safe-href'
 import type { WidgetValue } from '../api/widget-data'
 import type { VizType, WidgetSpec } from '../api/widget-spec'
 import { specOf, unitOf, widgetModel, type WidgetModel } from '../api/widget-adapter'
-import { kitPolarity, metricDefinitionKey, metricNameKey, skeletonFor } from '../metrics'
+import {
+  kitPolarity,
+  metricDefinitionKey,
+  metricEmptyAction,
+  metricNameKey,
+  skeletonFor,
+} from '../metrics'
 
 /** The list a mark opens: a category row's own drill-down, else the widget's. */
 function drillFor(v: WidgetValue | undefined, fallback?: string): DrillFn {
@@ -135,6 +143,7 @@ export function WidgetView({
   scope,
 }: WidgetViewProps) {
   const { t } = useTranslation()
+  const { hasPermission } = usePermissionsSafe()
   const spec: WidgetSpec | undefined = specOf(widget)
   const metric = spec?.data.metric ?? value?.metric
   const title =
@@ -155,6 +164,12 @@ export function WidgetView({
 
   const model: WidgetModel = loading ? { state: 'loading' } : widgetModel(value, spec, stale)
   const reason = model.reasonKey ? t(model.reasonKey) : undefined
+  // Only a truly empty figure gets a next step; "still building" has none.
+  const next = model.reasonKey === 'dashboards.reason.empty' ? metricEmptyAction(metric) : undefined
+  const emptyAction =
+    next && next.needs.every((p) => hasPermission(p))
+      ? { label: t(next.labelKey, next.fallback), href: openFormHref(next.path, next.form) }
+      : undefined
   if (bare) return <Viz model={model} value={value} viz={model.viz} scope={scope} />
   return (
     <WidgetFrame
@@ -166,6 +181,7 @@ export function WidgetView({
       skeleton={skeletonFor(value?.shape)}
       notMeasuredReason={reason}
       emptyMessage={reason}
+      emptyAction={emptyAction}
       onRetry={model.state === 'error' ? onRetry : undefined}
       actions={actions}
       className={className}

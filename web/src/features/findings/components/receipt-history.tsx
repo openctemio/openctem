@@ -305,7 +305,11 @@ export function ReceiptHistory() {
               setParam('page', p.pageIndex > 0 ? String(p.pageIndex + 1) : null)
             }
             getRowId={(r) => r.id ?? ''}
-            emptyMessage={t('findings.receiptHistory.empty', 'No receipts match these filters.')}
+            emptyMessage={
+              chips.length > 0
+                ? t('findings.receiptHistory.empty', 'No receipts match these filters.')
+                : t('findings.receiptHistory.emptyNone', 'No receipts yet.')
+            }
             emptyDescription={t(
               'findings.receiptHistory.emptyHint',
               'Run a scan or import a report; each upload and run leaves a receipt here.'

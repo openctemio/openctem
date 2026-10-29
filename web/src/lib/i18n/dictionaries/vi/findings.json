@@ -1231,6 +1231,7 @@
   "findings.receiptHistory.description": "Mỗi lần nhập và lần chạy đã làm gì với phát hiện của tổ chức. Số liệu tiếp nhận trên bảng điều khiển mở danh sách này với cùng nguồn và kỳ.",
   "findings.receiptHistory.empty": "Không có biên nhận nào khớp bộ lọc.",
   "findings.receiptHistory.emptyHint": "Chạy quét hoặc nhập báo cáo; mỗi lần nhập và lần chạy đều để lại biên nhận ở đây.",
+  "findings.receiptHistory.emptyNone": "Chưa có biên nhận nào.",
   "findings.receiptHistory.filters": "Bộ lọc",
   "findings.receiptHistory.since": "Từ {date}",
   "findings.receiptHistory.status.completed": "Hoàn tất",

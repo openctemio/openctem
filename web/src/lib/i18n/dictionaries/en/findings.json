@@ -1231,6 +1231,7 @@
   "findings.receiptHistory.description": "What each upload and run did to the organization's findings. The intake figures on the dashboard open this list with the same source and period.",
   "findings.receiptHistory.empty": "No receipts match these filters.",
   "findings.receiptHistory.emptyHint": "Run a scan or import a report; each upload and run leaves a receipt here.",
+  "findings.receiptHistory.emptyNone": "No receipts yet.",
   "findings.receiptHistory.filters": "Filters",
   "findings.receiptHistory.since": "Since {date}",
   "findings.receiptHistory.status.completed": "Completed",

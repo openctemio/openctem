@@ -134,3 +134,40 @@ export function skeletonFor(shape: ResultShape | undefined): SkeletonKind {
       return 'chart'
   }
 }
+
+/**
+ * The next step for a metric that has nothing to show yet: the figures come
+ * from findings (bring some in) or from scan coverage (run a scan). The form
+ * is opened on its own page, behind that page's permission, so the action is
+ * offered only to a caller who may use it (`needs`). Metrics with no fitting
+ * step (a note, an unknown metric) return undefined: no dead link.
+ */
+export interface MetricEmptyAction {
+  labelKey: string
+  fallback: string
+  form: 'import' | 'scan'
+  path: string
+  needs: readonly string[]
+}
+
+const IMPORT_ACTION: MetricEmptyAction = {
+  labelKey: 'dashboards.empty.import',
+  fallback: 'Import results',
+  form: 'import',
+  path: '/findings',
+  needs: ['findings:write', 'assets:write', 'assets:import'],
+}
+const SCAN_ACTION: MetricEmptyAction = {
+  labelKey: 'dashboards.empty.scan',
+  fallback: 'Set up a scan',
+  form: 'scan',
+  path: '/scans',
+  needs: ['scans:write'],
+}
+const SCAN_METRICS = new Set(['coverage.discovery', 'attack_paths.to_crown_jewels'])
+
+export function metricEmptyAction(id: string | undefined): MetricEmptyAction | undefined {
+  const meta = metricMeta(id)
+  if (!meta) return undefined
+  return SCAN_METRICS.has(meta.id) ? SCAN_ACTION : IMPORT_ACTION
+}

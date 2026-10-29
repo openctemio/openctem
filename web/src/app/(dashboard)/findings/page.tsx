@@ -1800,9 +1800,9 @@ function FindingsContent() {
             key={o.value}
             label={
               <>
-                {o.value}{' '}
-                <span className="text-muted-foreground">
-                  · {t(`findings.priority.hint.${o.value}`, o.hint)}
+                {o.value}
+                <span className="block text-xs font-normal text-muted-foreground">
+                  {t(`findings.priority.hint.${o.value}`, o.hint)}
                 </span>
               </>
             }
