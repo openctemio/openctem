@@ -291,3 +291,11 @@ test('the committed map and specs are consistent', () => {
   )
   assert.ok(!f.files.some((x) => x.includes('42-vulnerability-page')))
 })
+
+test('a pull request that changes a page data hook also runs the request budget check', () => {
+  const r = select(['web/src/features/b/hooks/use-b.ts'], map, specs, { event: 'pull_request' })
+  assert.equal(r.mode, 'smoke')
+  assert.deepEqual(files(r), ['01-smoke.spec.ts', '04-budget.spec.ts'])
+  const plain = select(['web/src/features/b/x.tsx'], map, specs, { event: 'pull_request' })
+  assert.deepEqual(files(plain), ['01-smoke.spec.ts'])
+})

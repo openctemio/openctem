@@ -429,16 +429,20 @@ tags and scheduled runs are never cancelled.
    aggregators run with `if: always()` and pass when their jobs were skipped;
    Secret Scanning and Workflow Lint are unconditional jobs. Nothing stays Pending.
 5. When all of them pass, the queue fast-forwards the base branch to the commit it
-   tested, and the `push` run (path-scoped, plus CodeQL on both languages)
-   refreshes the branch's baseline. On `develop`, API CI, All-in-one CI and Web
-   E2E first ask `.github/scripts/queue-verified.sh` whether the merge queue
+   tested, and the `push` run (path-scoped, plus CodeQL)
+   refreshes the branch's baseline. On `develop`, API CI, Web CI, All-in-one CI
+   and Web E2E first ask `.github/scripts/queue-verified.sh` whether the merge queue
    already passed this workflow on this exact commit (a `merge_group` run, same
    workflow file, same SHA, conclusion success; only GitHub creates such runs).
    If so they skip their test jobs: the queue ran the same workflow file on the
    same tree. The push still keeps develop's caches current (`Go cache
    (develop)` fills the Go cache when there is none for the current `go.sum`;
-   Web E2E still builds its images, which writes the layer cache). Any doubt
-   (no such run, an API error) runs the workflow in full. CodeQL, Web CI and
+   Web E2E still builds its images, which writes the layer cache). Web CI skips
+   `Web checks` and `Web tests` on such a push but still runs `API contract`
+   and `Build`: the tenant-bundle check (the tenant image holds no console
+   route) runs only in `Build`, which also keeps develop's Next.js cache
+   current; `Web CI OK` then requires `Build` instead of the two skipped jobs.
+   Any doubt (no such run, an API error) runs the workflow in full. CodeQL and
    the security scans always run on push, unless the tree was verified (see
    [Reusing a verified tree](#reusing-a-verified-tree)).
 6. A failure removes the PR from the queue; the groups behind it are rebuilt.
@@ -489,7 +493,47 @@ image smoke test). Now the rest stop about a minute after the first failure;
 a failure in static checks or an early shard frees most of those runner
 minutes, typically more than half of the group's total.
 
+### Job timeouts
+
+Every job sets `timeout-minutes`, about two to three times its measured p90
+duration (October 2026), so a hung job frees its runner, and in the merge queue
+its group, instead of holding both for GitHub's default of 360 minutes. Examples:
+change detection and `… OK` gates 5, API static checks 30, Go test shards 40
+(at least the `go test -timeout` of their slowest package), Web tests 25, CodeQL
+analysis 35, image builds 30 to 60. `.github/scripts/check-job-timeouts.sh`
+(run by `Workflow Lint`, with its self-test) fails when a job has none; a job
+that calls a reusable workflow cannot set one and is exempt.
+
 ### Reusing a verified tree
+
+**Area mode (API CI, Web CI, Web E2E).** The tree of the whole repository
+rarely repeats in the queue, because other PRs land next to a group. These three
+workflows therefore compare only the part they test: the git object ids of
+`TREE_PATHS` (API CI: `api`, `Makefile`, `go.work`, `go.work.sum`, `.github`,
+`deploy`; Web CI and Web E2E add `web` and also keep `api`, because the contract
+they generate and the image they build come from it). A candidate is the first
+parent chain from `merge_group.base_sha` (the queue entry just ahead of the
+group, or develop's head) and develop's recent commits, whose area id equals
+ours. Only the workflow's own aggregator (`API CI OK`, `Web CI OK`, `E2E OK`)
+has to have passed on it, and its record is `openctem-tested-area <workflow> <id>`.
+Records are written only by a **full-tier** run, so a pull request run (the
+fast tier, which no longer runs the Postgres suite) is never reusable; a
+`ci:full` PR is. So a PR that adds only a `web/` change queued behind an `api/`
+change skips API CI, and the reverse. Workflows with no area (`CodeQL OK`,
+`All-in-one OK`, secret scanning) keep the whole-tree rule below. Self-tests:
+`bash .github/scripts/tree-verified.test.sh` and
+`bash .github/scripts/go-affected.test.sh` (run by Repo Security).
+
+Expected effect, measured over 24 hours before this change: 73 merges caused
+about 1000 `merge_group` runs (117 cancelled rebuilds) on top of about 1000 PR
+runs, and whole-tree reuse hit 6 of 19. In a sample of the last 22 successful API CI runs
+with work, a PR run used about 4860 runner-seconds, of which 3700 (76%) were the
+Postgres shards; a queue run used about 7400, of which 6200 were the shards. The
+Postgres shards were the largest job group of a PR run; they now run once per PR (in the queue) instead of once on
+the PR and again for every queue rebuild, so an API PR run drops to about 1200
+runner-seconds plus the unit job (estimate; compare after merging). A merge queue build width of 2 (the
+`max_entries_to_build` setting of the merge queue ruleset) is recommended with
+this change: a wider queue rebuilds more entries per failure; an owner setting.
 
 A PR that was green runs its checks again in the queue, on the same bytes
 whenever the base did not move in between. In `merge_group` and on a push,
@@ -583,16 +627,17 @@ is ignored without a reaction.
 
 Every PR is tested twice (on the PR, then in the queue) on a shared pool of
 hosted runners (about 60 concurrent jobs for the organization), and many PRs are
-open at once, so a PR runs only what catches most breakage early and the queue
-runs everything. Heavy jobs can move to opt-in self-hosted runners
+open at once, so a PR runs one fast tier (lint, type-check, build and the unit
+tests of what it changed) and the merge queue runs the one full, authoritative
+run (Postgres suite with `-race`, PostgreSQL 18, the whole e2e suite). Heavy jobs can move to opt-in self-hosted runners
 ("Self-hosted runner (opt-in)" below); fork PRs never run there.
 
 | Tier | Events | API CI | Web CI | All-in-one CI | Web E2E | CodeQL |
 |------|--------|--------|--------|---------------|---------|--------|
-| Fast | `pull_request` | `API static checks` (gates + vet, staticcheck, golangci-lint) + `Tests (Postgres + Redis)`: the packages the change can affect (see "Affected tests") against Postgres and Redis in 1 to 6 shards **without** `-race`, so isolation tests fail on the PR (decision D-30). `Tests (least-privilege DB role)` and `Migrations (PostgreSQL 18)` only when `migrations` | `Web checks`, `Web tests` (the tests the change can affect) | build skipped | the smoke set when `web/` or the API's HTTP layer changed; the impacted specs with `run-e2e` or when `web/e2e/` changed | changed language(s) |
-| Full | `merge_group`, push to `develop`, a PR with `ci:full` or a changed CI definition | the suite in 8 shards **with** `-race` (as the app role), PostgreSQL 18, `Release Binaries` (not on a PR); Docker build on `main` | `Web checks`, `Web tests`; `next build` on push | images built and smoke-tested | Playwright: all specs in 1 to 4 shards (`web/` or `api/` changed), also on push to `develop`, nightly and for a `release/*` PR | queue: none (the PR head was analysed); push: both |
+| Fast | `pull_request` | `API static checks` (gates + vet, staticcheck, golangci-lint) + `Unit tests (changed packages)`: the changed Go packages and every package that imports them, **without** a database (`.github/scripts/go-affected.sh`; `ALL` for `go.mod` or anything it cannot map). No Postgres suite on a PR: the queue runs it. `Migrations (PostgreSQL 18)` only when `migrations` | `Web checks`, `Web tests` (the tests the change can affect) | build skipped | the smoke set when `web/` changed (an API-only PR runs no e2e on the PR), plus the request budget check when a page or its data hooks changed; the impacted specs with `run-e2e` or when `web/e2e/` changed | changed language(s) |
+| Full | `merge_group`, push to `develop`, a PR with `ci:full` or a changed CI definition | `Tests (Postgres + Redis)`: the suite in 8 shards **with** `-race` as the least-privilege app role (isolation tests and grants, decision D-30 now enforced in the queue), PostgreSQL 18, `Release Binaries` (not on a PR); Docker build on `main` | `Web checks`, `Web tests`; `next build` on push | images built and smoke-tested | Playwright: all specs in 1 to 4 shards (`web/` or `api/` changed), also on push to `develop`, nightly and for a `release/*` PR | queue: none (the PR head was analysed); push: both |
 
-**Forcing the full tier on a PR:** add the `ci:full` label, then re-run all jobs
+**Forcing the full tier on a PR:** add the `ci:full` label (it also brings the Postgres suite back to the PR, for a change to SQL, grants or tenant isolation that should not wait for the queue), then re-run all jobs
 of the workflow run (or push). Use it for a risky change to concurrency, SQL
 grants or the images before it reaches the queue. A PR that changes a workflow
 or a CI script always runs the full tier.
@@ -601,7 +646,7 @@ or a CI script always runs the full tier.
 
 | Event | Specs |
 |---|---|
-| `pull_request` | the smoke set (specs tagged `@smoke`) plus any spec the PR edits, when `web/` or the API's HTTP layer changed |
+| `pull_request` | the smoke set (specs tagged `@smoke`) plus any spec the PR edits, when `web/` changed; plus the request budget check (`@budget`, its own job, about 5 minutes) when the PR changes `web/src/app/**`, `web/src/features/**/api/**`, a feature's `hooks/`, `web/src/lib/api/**` or `web/e2e/request-budget.json`, so a page over its budget fails the PR, not the queue |
 | `pull_request` with `run-e2e`, or a changed suite (`web/e2e/`, `web-e2e.yml`) | the specs the changed files map to plus the smoke set (impact selection below) |
 | `pull_request` with `ci:full`, a changed CI definition, or a `release/*` head branch | all specs |
 | `merge_group`, push to `develop`, nightly schedule, manual run | all specs |
@@ -848,8 +893,8 @@ quarantine it while the fix is made:
 - **Go:** every `actions/setup-go` step uses `go-version-file: api/go.mod`, which
   reads the `toolchain` directive (currently `go1.26.10`). setup-go sets
   `GOTOOLCHAIN=local`, so this is exactly the Go that tests, CodeQL, govulncheck
-  and the release binaries use. `api/Dockerfile` and `api/Dockerfile.admin-cli`
-  pin their `golang:` base image separately: bump them with `go.mod`.
+  and the release binaries use. `api/Dockerfile`
+  pins its `golang:` base image separately: bump them with `go.mod`.
 - **Node:** every `actions/setup-node` step uses `node-version-file: web/.nvmrc`
   (`26`), the same major as `web/Dockerfile` (`node:26-alpine`). Node 25+ ships
   its own `localStorage`; `web/src/test/setup.ts` points Vitest back at jsdom's.
@@ -1240,7 +1285,7 @@ files stale, so run `make generate-docker` (or `scripts/generate-in-docker.sh
 | Test shards | `.github/scripts/go-shard.sh check` proves the test shards below (8, 6 and 3) cover every package and every top-level test of a split package exactly once. |
 | Lint (steps of `API static checks`; the golangci-lint cache and the staticcheck binary are cached) | `go vet`, staticcheck, and golangci-lint v1.64.8 on **new** code only (PRs: `make lint-new` with `--new-from-rev` against `.github/scripts/effective-base.sh`). `make -C api lint-ci` runs the same locally. |
 | Tests (Postgres + Redis) | PRs (when `api/` or shared files change), merge queue and pushes. `go test -timeout 20m` against Postgres 17 + Redis 7 service containers. Full tier: `-race`, eight parallel shards; fast tier (PR): no `-race`, six. The four packages that hold most of the run time and run their tests one after another (`tests/unit`, `tests/integration`, `internal/infra/http/routes`, `internal/infra/postgres`) are split by top-level test name over every shard, each slice in its own `go test` process so it keeps the database to itself; every other package goes whole to one shard (`.github/scripts/go-shard.sh`, run by `go-shard-run.sh`). Before, `tests/integration` alone held one shard for about 16 minutes while the others finished in 7 to 14. Both splits run the same tests, each with `OPENCTEM_TEST_DB_REQUIRED=1` so `internal/testdb` fails instead of skipping, then `.github/scripts/check-db-test-skips.sh` fails the job if any test skipped itself for a missing or unreachable database. |
-| (least-privilege role) | Part of `Tests (Postgres + Redis)` on every event: each shard bootstraps a fresh database with `api/deploy/postgres/least-privilege-roles.sql`, applies every migration as `openctem_migrator`, re-runs the script, then runs the suite as `openctem_app` (DML only), with `DATABASE_MIGRATE_URL` for tests that replay a migration and a superuser `DATABASE_ADMIN_URL` only for `testdb.PrivateDatabase` and `TestLeastPrivilegeRoles`. It fails if a migration needs a superuser or the API needs more than DML. Until 2026-10 this was a second job that ran the whole suite again (6 shards); with row-level security not enabled on any table, the app role's run also proves the owner's, so the duplicate was removed. When RLS is enabled (the owner bypasses it), add an owner-role run back. See `api/docs/deployment/database-roles.md`. |
+| (least-privilege role) | Part of `Tests (Postgres + Redis)` in the full tier: each shard bootstraps a fresh database with `api/deploy/postgres/least-privilege-roles.sql`, applies every migration as `openctem_migrator`, re-runs the script, then runs the suite as `openctem_app` (DML only), with `DATABASE_MIGRATE_URL` for tests that replay a migration and a superuser `DATABASE_ADMIN_URL` only for `testdb.PrivateDatabase` and `TestLeastPrivilegeRoles`. It fails if a migration needs a superuser or the API needs more than DML. Until 2026-10 this was a second job that ran the whole suite again (6 shards); with row-level security not enabled on any table, the app role's run also proves the owner's, so the duplicate was removed. When RLS is enabled (the owner bypasses it), add an owner-role run back. See `api/docs/deployment/database-roles.md`. |
 | Migrations (PostgreSQL 18) | Full tier, and on a PR that changes `api/migrations/` or `api/deploy/postgres/`. Applies every migration to a fresh PostgreSQL 18 database (the next major; the suites above run on 17), then runs the schema probes that read the catalog (`TestCheckSensorRename`), then the migration order check (`.github/scripts/migration-order-check.sh HEAD^1`): one database gets the base commit's migrations and then this tree's (what every running install sees, a migration merged after a higher version running last), another only this tree's in version order, and their schema fingerprints (`schema-fingerprint.sql`) must be equal. **On a pull request a difference is only a warning** (`MIGRATION_ORDER=warning`: it often means other migrations landed meanwhile, and a PR need not refresh its branch for that); the merge queue and `develop` fail on it, since the queue tests the PR on top of the latest `develop`. PostgreSQL 18 records each column's NOT NULL as a `pg_constraint` row (`contype = 'n'`), so a migration or probe that reads `pg_constraint` must filter on `contype`. The image comes from the CI mirror, or its upstream with the same digest until the mirror has it. |
 | Release Binaries | Merge queue and pushes to `develop`. Builds and uploads static linux/amd64 `cmd/server` and `cmd/bootstrap-admin` binaries. |
 
@@ -1264,11 +1309,11 @@ everything: `go.mod`, `go.sum`, `migrations/`, `configs/`, `deploy/`,
 `scripts/`, the `Makefile`, anything outside `api/` except documentation and
 `web/`, the generated-docs file that a test compares, and every `ci:full` or
 CI-definition change. Markdown, `api/docs/` and `api/changelog.d/` select
-nothing. The `spec` job plans the run once (`go-plan.sh`) and publishes the plan
-as the `go-plan` artifact so every shard reads the same one; the shard count
-follows the size of the selection (about ten packages per shard, 1 to 6). A
-shard with nothing to run exits at once. The race detector runs in the merge
-queue and on push only; a PR runs the same tests without it.
+nothing. A pull request runs `Unit tests (changed packages)` over that selection,
+without a database; the Postgres suite runs in the full tier only (merge queue,
+push, `ci:full`, a changed CI definition). There the `spec` job plans the run
+once (`go-plan.sh`: 8 shards with the race detector) and publishes the plan as
+the `go-plan` artifact so every shard reads the same one.
 
 **API shard balance.** The full runs record each package's run time
 (`go-durations-*` artifacts merged into `go-durations`, kept 14 days). The next
@@ -1317,7 +1362,7 @@ Publish. `build-images.yml` is a reusable workflow that builds
 each CI image **once per content key**; every caller gets it by digest.
 
 **Key** (`.github/scripts/image-key.sh <image>`): a sha256 over the git tree
-hashes of what the image's Dockerfile copies (`api` for the API and admin CLI;
+hashes of what the image's Dockerfile copies (`api` for the API;
 `web`, `api` and the `generate-contract` action for the web app and the
 console, which compile against contract files generated from the Go source;
 `deploy/allinone`, the gateway and the three component keys for the all-in-one),
@@ -1346,7 +1391,7 @@ can hold `packages: write` without such a guard.
    ref, not a self-hosted runner; see below)? If so, nothing is built.
 2. `contract` (its own job, `contents: read` only) generates the contract files
    the web images compile against and hands them over as an artifact.
-3. Missing images build in a matrix (api, admin-cli, and web + console in one
+3. Missing images build in a matrix (api, and web + console in one
    job). Inside a lock (job concurrency keyed by image group and key) the job
    checks again, so two workflows racing on one key build once. The build uses
    buildx with the registry cache `ci-images/<image>:buildcache`, written by
@@ -1354,7 +1399,7 @@ can hold `packages: write` without such a guard.
    `ci-images` packages, apart from every release cache. Then
    `actions/attest-build-provenance` signs the digest.
 4. The all-in-one is built `FROM` the pulled component digests.
-5. `collect` verifies again and returns `api`, `admin-cli`, `web`, `console`,
+5. `collect` verifies again and returns `api`, `web`, `console`,
    `allinone` as `ghcr.io/openctemio/ci-images/<image>@sha256:...`, and `push`.
 
 **Callers** pull the digest and tag it as the old local name (`local/openctem-api:e2e`,
@@ -1500,7 +1545,6 @@ image, so images without a shell are checked the same way.
 | `ghcr.io/openctemio/openctem` | `deploy/allinone/` FROM the two above + `api/deploy/gateway` | All-in-one: API + web + Caddy gateway. `GATEWAY=on` (default) serves only 443; `GATEWAY=off` serves 8080 + 3000. Postgres/Redis external. |
 | `ghcr.io/openctemio/migrations` | `api/Dockerfile.migrations` | One-shot migration runner |
 | `ghcr.io/openctemio/seed` | `api/Dockerfile.seed` | Seeding utility |
-| `ghcr.io/openctemio/admin-cli` | `api/Dockerfile.admin-cli` | Admin CLI |
 
 **Legacy names.** During a transition window (two releases, per the root
 README) `ghcr.io/openctemio/api` and `ghcr.io/openctemio/ui` receive the same
@@ -1624,7 +1668,7 @@ The legacy `ui` GHCR package was created by `openctemio/ui`; this repository nee
   on `develop` (lint diffs against `.github/scripts/effective-base.sh`).
 - **govulncheck fails on every PR at once.** A new Go stdlib CVE: bump the
   `toolchain` directive in `api/go.mod` (CI follows it) and the `golang:` base
-  image in `api/Dockerfile` and `api/Dockerfile.admin-cli`.
+  image in `api/Dockerfile`.
 - **Image not found after a tag.** Check the Docker Publish run; the tag must match
   `v<major>.<minor>.<patch>[-suffix]`. Images for v0.8.0 and earlier exist only
   under the legacy `api` / `ui` names.
