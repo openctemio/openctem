@@ -219,7 +219,7 @@ recommended production setup. Details: [Docker deployment](../deployment/docker.
   second factor and opaque session: the tenant JWT never authenticates a
   console route and the console token never authenticates a tenant route. A
   break-glass administrator stays console-only (database rule
-  `break_glass_console_only`, migration 003539).
+  `break_glass_console_only`, migration 20261029050639).
 - Roster notices: every change to the administrators (added, role or state
   changed, removed, sign-in reset, identity-provider binding removed), the
   administrators' identity provider or the security-key policy is emailed to
