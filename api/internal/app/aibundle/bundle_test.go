@@ -148,3 +148,29 @@ func containsField(fs []aipolicy.Field, f aipolicy.Field) bool {
 	}
 	return false
 }
+
+// Fields sent without masking (CVE, CWE, tool, compliance) still come from
+// scanners and imports; one carrying a secret is withheld, never sent.
+func TestBuild_UnmaskedFieldWithSecretWithheld(t *testing.T) {
+	tenantID := shared.NewID()
+	f, err := vulnerability.NewFinding(tenantID, shared.NewID(), vulnerability.FindingSourceDAST,
+		"scanner token=ghp_abcdefghijklmnopqrstuvwxyz0123456789", vulnerability.SeverityHigh, "m")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.SetTitle("Exposed admin panel")
+	f.SetComplianceImpact([]string{"PCI-DSS", "api_key=AKIAABCDEFGHIJKLMNOP"})
+	b, err := NewBuilder(nil).Build(context.Background(), Input{TenantID: tenantID, Finding: f,
+		Ceiling: aipolicy.ClassInternal, Policy: aimask.FullPolicy(), RunKey: key(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, leak := range []string{"ghp_abcdefghij", "AKIAABCDEFGHIJKLMNOP"} {
+		if strings.Contains(b.Text, leak) {
+			t.Fatalf("secret %q reached the bundle:\n%s", leak, b.Text)
+		}
+	}
+	if !containsField(b.FieldsWithheld, aipolicy.FieldFindingTool) || !containsField(b.FieldsWithheld, aipolicy.FieldFindingCompliance) {
+		t.Fatalf("fields with secrets not withheld: %v", b.FieldsWithheld)
+	}
+}

@@ -361,3 +361,35 @@ func FuzzMaskUnmask(f *testing.F) {
 		}
 	})
 }
+
+// A token-shaped string inside a secret must not block the secret: before the
+// fix the literal was escaped first, the secret span was then not free, and
+// the rest of the secret reached the model while the literal (part of the
+// secret) was kept in the reversible map.
+func TestMask_TokenShapeInsideSecretStaysSecret(t *testing.T) {
+	cases := map[string]string{
+		"cookie":     "Cookie: sid=topsecretcookievalue; uid=USER_A1B2C3D4",
+		"assignment": "password=USER_A1B2C3D4hunter2",
+		"bearer":     "Authorization: Bearer abcdefghijklmnop.ID_ABC123.zzzzqqqq",
+		"pem":        "-----BEGIN RSA PRIVATE KEY-----\nMIIabc ID_ABC123 defsecretbody\n-----END RSA PRIVATE KEY-----",
+	}
+	for name, in := range cases {
+		t.Run(name, func(t *testing.T) {
+			m := newMasker(t, FullPolicy())
+			out := m.MaskText(in)
+			for _, leak := range []string{"topsecretcookievalue", "hunter2", "abcdefghijklmnop", "zzzzqqqq", "defsecretbody", "MIIabc"} {
+				if strings.Contains(out, leak) {
+					t.Fatalf("secret part %q reached the masked text: %q", leak, out)
+				}
+			}
+			if !strings.Contains(out, "SECRET_1") {
+				t.Fatalf("no SECRET token in %q", out)
+			}
+			for tok, v := range m.Mapping() {
+				if strings.Contains(in, v) && strings.HasPrefix(tok, "LIT_") {
+					t.Fatalf("part of a secret kept in the reversible map: %s=%q", tok, v)
+				}
+			}
+		})
+	}
+}

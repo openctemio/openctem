@@ -24,6 +24,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/aimask"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/safetext"
 )
 
 // ErrEmpty is returned when no field is left under the ceiling.
@@ -143,6 +144,17 @@ func (b *Builder) Build(ctx context.Context, in Input) (*Bundle, error) {
 		withheld = append(withheld, aipolicy.FieldFindingSnippet)
 		sort.Slice(withheld, func(i, j int) bool { return withheld[i] < withheld[j] })
 	}
+
+	// Untrusted fields that are not masked (CVE, CWE, tool, compliance, ...)
+	// still come from scanners and imports: one that carries a secret is
+	// withheld, since secrets never reach a model.
+	for _, c := range cands {
+		if ok[c.field] && c.untrusted && !c.mask && len(safetext.FindSecrets(c.value)) > 0 {
+			delete(ok, c.field)
+			withheld = append(withheld, c.field)
+		}
+	}
+	sort.Slice(withheld, func(i, j int) bool { return withheld[i] < withheld[j] })
 
 	out := &Bundle{FieldsWithheld: withheld, DataClass: aipolicy.ClassPublic, Masker: m}
 	for _, c := range cands {
