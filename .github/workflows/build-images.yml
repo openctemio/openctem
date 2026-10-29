@@ -1,0 +1,454 @@
+name: Build images
+
+# Reusable workflow: builds each CI image once per content key and hands every
+# caller the images by digest (api/docs/development/ci-cd.md, "Build images
+# once"). Callers: web-e2e.yml, allinone-ci.yml, on push and merge_group events
+# only. A pull request never calls this workflow (it holds packages: write); it
+# calls resolve-images.yml, which is read-only.
+#
+#   key      .github/scripts/image-key.sh: the git tree hashes of what the
+#            Dockerfile copies + Dockerfile + target + build args + this
+#            workflow + the key script.
+#   exists   ghcr.io/openctemio/ci-images/<image>:<tag> exists AND its build
+#            provenance attestation was made by THIS workflow on a trusted ref
+#            (.github/scripts/ci-image-resolve.sh). Then nothing is built.
+#   missing  buildx build with the registry cache (written by develop pushes
+#            only), push, attest. Two callers racing on one key take a lock
+#            (job concurrency keyed by image group + key); the second finds the
+#            image when its turn comes.
+#
+# Trust. Tags: a push to develop or main writes `<key>`, the only tag every
+# consumer trusts. A merge-queue run writes `q-<commit sha>-<key>`, which only
+# a consumer in that same queue run accepts (its source ref must equal the
+# consumer's own ref). A pushed image is never trusted by its tag: consumers
+# verify the digest's attestation (signer workflow, repository, source ref, no
+# self-hosted runner).
+#
+# Token. No step that runs third-party code holds a registry credential or the
+# token: the contract files are generated in their own job (contents: read) and
+# handed over as an artifact; GH_TOKEN is set on the resolve steps only.
+
+on:
+  workflow_call:
+    inputs:
+      images:
+        description: "Space-separated: api admin-cli web console allinone (allinone implies api web console)"
+        required: true
+        type: string
+    secrets:
+      DOCKERHUB_USERNAME:
+        required: false
+      DOCKERHUB_TOKEN:
+        required: false
+    outputs:
+      push:
+        description: "'true' when images were resolved or built in the registry; 'false' when the caller must build locally"
+        value: ${{ jobs.collect.outputs.push }}
+      api:
+        description: "ghcr.io/openctemio/ci-images/api@sha256:... (empty when not requested or not pushed)"
+        value: ${{ jobs.collect.outputs.api }}
+      admin-cli:
+        description: "admin-cli image by digest"
+        value: ${{ jobs.collect.outputs.admin-cli }}
+      web:
+        description: "web image by digest"
+        value: ${{ jobs.collect.outputs.web }}
+      console:
+        description: "console image by digest"
+        value: ${{ jobs.collect.outputs.console }}
+      allinone:
+        description: "all-in-one image by digest"
+        value: ${{ jobs.collect.outputs.allinone }}
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ghcr.io/openctemio/ci-images
+
+jobs:
+  plan:
+    name: Plan image builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: read
+      attestations: read
+    outputs:
+      push: ${{ steps.p.outputs.push }}
+      tag_prefix: ${{ steps.p.outputs.tag_prefix }}
+      web: ${{ steps.p.outputs.web }}
+      keys: ${{ steps.p.outputs.keys }}
+      matrix: ${{ steps.p.outputs.matrix }}
+      allinone: ${{ steps.p.outputs.allinone }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Registry login
+        uses: ./.github/actions/registry-login
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - id: p
+        env:
+          REQUESTED: ${{ inputs.images }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # Who may push, and under which tag. A pull request never pushes.
+          push=true; prefix=""
+          case "$EVENT" in
+            push) case "$REF" in refs/heads/develop|refs/heads/main) ;; *) push=false ;; esac ;;
+            merge_group) case "$REF" in refs/heads/gh-readonly-queue/*) prefix="q-${GITHUB_SHA}-" ;; *) push=false ;; esac ;;
+            *) push=false ;;
+          esac
+          { echo "push=$push"; echo "tag_prefix=$prefix"; } >> "$GITHUB_OUTPUT"
+          if [ "$push" != true ]; then
+            { echo "keys={}"; echo 'matrix={"include":[]}'; echo "allinone=false"; echo "web=false"; } >> "$GITHUB_OUTPUT"
+            echo "no registry push for $EVENT on $REF: callers build locally"
+            exit 0
+          fi
+          keys="$(bash .github/scripts/ci-images-keys.sh "$REQUESTED")"
+          need=""
+          for i in $(jq -r 'keys[]' <<<"$keys"); do
+            k="$(jq -r --arg i "$i" '.[$i]' <<<"$keys")"
+            if ref="$(bash .github/scripts/ci-image-resolve.sh "$i" "$k" 2>/dev/null)"; then
+              echo "reuse $i $k: $ref"
+            else
+              echo "build $i $k"; need="$need $i"
+            fi
+          done
+          # Groups: web and console share one job (one contract generation, shared layers).
+          matrix='[]'
+          add() { matrix="$(jq -c --arg g "$1" --argjson imgs "$2" --arg k "$3" '. + [{group:$g, images:$imgs, gkey:$k}]' <<<"$matrix")"; }
+          has() { case " $need " in *" $1 "*) return 0 ;; esac; return 1; }
+          has api && add api '["api"]' "$(jq -r .api <<<"$keys")"
+          has admin-cli && add admin-cli '["admin-cli"]' "$(jq -r '."admin-cli"' <<<"$keys")"
+          webs='[]'
+          has web && webs="$(jq -c '. + ["web"]' <<<"$webs")"
+          has console && webs="$(jq -c '. + ["console"]' <<<"$webs")"
+          [ "$webs" != '[]' ] && add web "$webs" "$(jq -r '.web // .console' <<<"$keys")"
+          allinone=false; has allinone && allinone=true
+          web=false; { has web || has console; } && web=true
+          { echo "web=$web"; echo "allinone=$allinone"; echo "keys=$keys"; echo "matrix={\"include\":$matrix}"; } >> "$GITHUB_OUTPUT"
+
+  # The web images compile against contract files that are not committed. They
+  # are generated here, in a job with contents: read only (no registry login,
+  # no GH_TOKEN, no packages: write), because generating them runs npm and Go
+  # tooling: a compromised dependency must not meet a token that can write
+  # packages. The build job receives the files as an artifact.
+  contract:
+    name: Generate the contract files
+    needs: plan
+    if: needs.plan.outputs.push == 'true' && needs.plan.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/generate-contract
+      - name: Pack the generated files
+        run: |
+          set -euo pipefail
+          tar -czf "$RUNNER_TEMP/contract.tgz" \
+            api/api/openapi/swagger.yaml api/api/openapi/routes.txt \
+            web/src/config/api-route-permissions.json web/src/config/authz-matrix.json \
+            web/src/lib/api/generated/api.types.ts
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ci-image-contract
+          path: ${{ runner.temp }}/contract.tgz
+          retention-days: 1
+          if-no-files-found: error
+
+  build:
+    name: Build ${{ matrix.group }} image
+    needs: [plan, contract]
+    if: ${{ !cancelled() && needs.plan.outputs.push == 'true' && (needs.contract.result == 'success' || needs.contract.result == 'skipped') && toJSON(fromJSON(needs.plan.outputs.matrix).include) != '[]' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+      id-token: write # the attestation's signing identity
+      attestations: write
+    # Two callers racing on one key build once: the second waits here, then its
+    # "already built" check below finds the image.
+    concurrency:
+      group: ci-image-${{ matrix.group }}-${{ matrix.gkey }}
+      cancel-in-progress: false
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    # No job-level GH_TOKEN: only the steps that resolve images set it.
+    env:
+      KEYS: ${{ needs.plan.outputs.keys }}
+      PREFIX: ${{ needs.plan.outputs.tag_prefix }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Registry login (GHCR mirror; Docker Hub when configured)
+        uses: ./.github/actions/registry-login
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
+          dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
+      # Inside the lock: did the other caller build it while we waited?
+      - name: Which images are still missing
+        id: need
+        env:
+          IMAGES: ${{ toJSON(matrix.images) }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for i in $(jq -r '.[]' <<<"$IMAGES"); do
+            k="$(jq -r --arg i "$i" '.[$i]' <<<"$KEYS")"
+            if bash .github/scripts/ci-image-resolve.sh "$i" "$k" >/dev/null 2>&1; then
+              echo "$i already built"; echo "${i//-/_}=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "${i//-/_}=true" >> "$GITHUB_OUTPUT"
+            fi
+          done
+      # The web images compile against contract files that are not committed:
+      # generated by the `contract` job, unpacked here (only the five paths).
+      - name: Fetch the contract files
+        if: (steps.need.outputs.web == 'true' || steps.need.outputs.console == 'true')
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ci-image-contract
+          path: ${{ runner.temp }}/contract
+      - name: Unpack the contract files
+        if: (steps.need.outputs.web == 'true' || steps.need.outputs.console == 'true')
+        run: |
+          set -euo pipefail
+          want='api/api/openapi/swagger.yaml api/api/openapi/routes.txt web/src/config/api-route-permissions.json web/src/config/authz-matrix.json web/src/lib/api/generated/api.types.ts'
+          got="$(tar -tzf "$RUNNER_TEMP/contract/contract.tgz" | sort | tr '\n' ' ')"
+          # shellcheck disable=SC2086 # $want is split into its file names on purpose
+          [ "$got" = "$(printf '%s\n' $want | sort | tr '\n' ' ')" ] || { echo "::error::unexpected contract artifact contents: $got"; exit 1; }
+          tar -xzf "$RUNNER_TEMP/contract/contract.tgz"
+      - id: meta
+        env:
+          # Only a push to develop writes the registry cache: a merge-queue run
+          # (a commit about to merge) cannot plant layers later builds read.
+          # The cache lives in ci-images/*, never in a release package.
+          WRITE_CACHE: ${{ github.event_name == 'push' && github.ref == 'refs/heads/develop' }}
+        run: |
+          echo "cache_to=$([ "$WRITE_CACHE" = true ] && echo 'true' || echo 'false')" >> "$GITHUB_OUTPUT"
+          for i in api admin-cli web console; do
+            echo "tag_$(echo "$i" | tr - _)=${REGISTRY}/${i}:${PREFIX}$(jq -r --arg i "$i" '.[$i] // ""' <<<"$KEYS")" >> "$GITHUB_OUTPUT"
+          done
+
+      # One step per image; the cache is develop's (registry), written only by a
+      # push to develop. No provenance/sbom attached by buildx: the attestation
+      # step below is the one signed statement.
+      - name: Build api
+        id: api
+        if: steps.need.outputs.api == 'true'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: api
+          target: production
+          push: true
+          tags: ${{ steps.meta.outputs.tag_api }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          provenance: false
+          sbom: false
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/api:buildcache
+          cache-to: ${{ steps.meta.outputs.cache_to == 'true' && format('type=registry,ref={0}/api:buildcache,mode=max', env.REGISTRY) || '' }}
+      - name: Build admin-cli
+        id: admin_cli
+        if: steps.need.outputs.admin_cli == 'true'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: api
+          file: api/Dockerfile.admin-cli
+          push: true
+          tags: ${{ steps.meta.outputs.tag_admin_cli }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          provenance: false
+          sbom: false
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/admin-cli:buildcache
+          cache-to: ${{ steps.meta.outputs.cache_to == 'true' && format('type=registry,ref={0}/admin-cli:buildcache,mode=max', env.REGISTRY) || '' }}
+      - name: Build web
+        id: web
+        if: steps.need.outputs.web == 'true'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: web
+          push: true
+          tags: ${{ steps.meta.outputs.tag_web }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          provenance: false
+          sbom: false
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/web:buildcache
+          cache-to: ${{ steps.meta.outputs.cache_to == 'true' && format('type=registry,ref={0}/web:buildcache,mode=max', env.REGISTRY) || '' }}
+      - name: Build console
+        id: console
+        if: steps.need.outputs.console == 'true'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: web
+          file: web/Dockerfile
+          target: console
+          push: true
+          tags: ${{ steps.meta.outputs.tag_console }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          provenance: false
+          sbom: false
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/web:buildcache
+      - name: Attest api
+        if: steps.api.outputs.digest != ''
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-name: ${{ env.REGISTRY }}/api
+          subject-digest: ${{ steps.api.outputs.digest }}
+          push-to-registry: true
+      - name: Attest admin-cli
+        if: steps.admin_cli.outputs.digest != ''
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-name: ${{ env.REGISTRY }}/admin-cli
+          subject-digest: ${{ steps.admin_cli.outputs.digest }}
+          push-to-registry: true
+      - name: Attest web
+        if: steps.web.outputs.digest != ''
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-name: ${{ env.REGISTRY }}/web
+          subject-digest: ${{ steps.web.outputs.digest }}
+          push-to-registry: true
+      - name: Attest console
+        if: steps.console.outputs.digest != ''
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-name: ${{ env.REGISTRY }}/console
+          subject-digest: ${{ steps.console.outputs.digest }}
+          push-to-registry: true
+
+  # The all-in-one image is assembled FROM the three component images, pulled by
+  # digest, so it is built after them.
+  build-allinone:
+    name: Build all-in-one image
+    needs: [plan, build]
+    if: ${{ !cancelled() && needs.plan.outputs.allinone == 'true' && needs.build.result != 'failure' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    concurrency:
+      group: ${{ format('ci-image-allinone-{0}', fromJSON(needs.plan.outputs.keys).allinone) }}
+      cancel-in-progress: false
+    # No job-level GH_TOKEN: only the steps that resolve images set it.
+    env:
+      KEYS: ${{ needs.plan.outputs.keys }}
+      PREFIX: ${{ needs.plan.outputs.tag_prefix }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Registry login (GHCR mirror; Docker Hub when configured)
+        uses: ./.github/actions/registry-login
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
+          dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Component digests, and is it already built
+        id: refs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          res() { # <image>
+            local k; k="$(jq -r --arg i "$1" '.[$i]' <<<"$KEYS")"
+            bash .github/scripts/ci-image-resolve.sh "$1" "$k"
+          }
+          for i in api web console; do echo "$i=$(res "$i")" >> "$GITHUB_OUTPUT"; done
+          if res allinone >/dev/null 2>&1; then echo "built=true" >> "$GITHUB_OUTPUT"; else echo "built=false" >> "$GITHUB_OUTPUT"; fi
+          echo "tag=${REGISTRY}/allinone:${PREFIX}$(jq -r .allinone <<<"$KEYS")" >> "$GITHUB_OUTPUT"
+      - name: Build all-in-one
+        id: b
+        if: steps.refs.outputs.built != 'true'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: deploy/allinone
+          build-contexts: gateway=api/deploy/gateway
+          build-args: |
+            API_IMAGE=${{ steps.refs.outputs.api }}
+            WEB_IMAGE=${{ steps.refs.outputs.web }}
+            CONSOLE_IMAGE=${{ steps.refs.outputs.console }}
+          push: true
+          tags: ${{ steps.refs.outputs.tag }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          provenance: false
+          sbom: false
+      - name: Attest all-in-one
+        if: steps.b.outputs.digest != ''
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-name: ${{ env.REGISTRY }}/allinone
+          subject-digest: ${{ steps.b.outputs.digest }}
+          push-to-registry: true
+
+  # The digests every caller uses. Verifies again after the builds, so a caller
+  # only ever gets an image whose attestation checks out.
+  collect:
+    name: Image digests
+    needs: [plan, build, build-allinone]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: read
+      attestations: read
+    outputs:
+      push: ${{ needs.plan.outputs.push }}
+      api: ${{ steps.r.outputs.api }}
+      admin-cli: ${{ steps.r.outputs.admin-cli }}
+      web: ${{ steps.r.outputs.web }}
+      console: ${{ steps.r.outputs.console }}
+      allinone: ${{ steps.r.outputs.allinone }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Registry login
+        uses: ./.github/actions/registry-login
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - id: r
+        env:
+          PUSH: ${{ needs.plan.outputs.push }}
+          KEYS: ${{ needs.plan.outputs.keys }}
+          RESULTS: ${{ toJSON(needs.*.result) }}
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [ "$PUSH" != true ]; then echo "not pushing: callers build locally"; exit 0; fi
+          if jq -e 'any(. == "failure" or . == "cancelled")' <<<"$RESULTS" >/dev/null; then
+            echo "::error::an image build failed or was cancelled"; exit 1
+          fi
+          for i in $(jq -r 'keys[]' <<<"$KEYS"); do
+            k="$(jq -r --arg i "$i" '.[$i]' <<<"$KEYS")"
+            ref="$(bash .github/scripts/ci-image-resolve.sh "$i" "$k")" \
+              || { echo "::error::$i $k: no verified image"; exit 1; }
+            echo "$i=$ref" >> "$GITHUB_OUTPUT"
+            echo "$i $ref" >> "$GITHUB_STEP_SUMMARY"
+          done

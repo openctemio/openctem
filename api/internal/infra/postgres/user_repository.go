@@ -181,6 +181,24 @@ func (r *UserRepository) GetByPasswordResetToken(ctx context.Context, token stri
 	return u, nil
 }
 
+// ConsumePasswordResetToken clears the reset token in one conditional UPDATE
+// (single use under concurrency, CWE-640).
+func (r *UserRepository) ConsumePasswordResetToken(ctx context.Context, id shared.ID, tokenHash string) (bool, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE users
+		SET password_reset_token = NULL, password_reset_expires_at = NULL
+		WHERE id = $1 AND password_reset_token = $2 AND password_reset_expires_at > NOW()
+	`, id.String(), tokenHash)
+	if err != nil {
+		return false, fmt.Errorf("failed to consume reset token: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("rows affected: %w", err)
+	}
+	return n == 1, nil
+}
+
 // Update updates an existing user.
 func (r *UserRepository) Update(ctx context.Context, u *user.User) error {
 	preferences, err := json.Marshal(u.Preferences())

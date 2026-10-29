@@ -454,7 +454,13 @@ const (
 	ActionProxyPoolCredentialsChanged Action = "proxy_pool.credentials_changed"
 	ActionProxyPoolEndpointUpdated    Action = "proxy_pool.endpoint_updated"
 	ActionProxyPoolEndpointQuarantine Action = "proxy_pool.endpoint_quarantined"
-	ActionSensorNetworkPathChanged    Action = "sensor.network_path_changed"
+	// ActionProxyPoolTestRequested: an administrator asked sensors to test a
+	// pool's endpoints (one entry per sensor asked).
+	ActionProxyPoolTestRequested Action = "proxy_pool.test_requested"
+	// ActionProxyPoolTested: a sensor finished testing a pool (the outcome
+	// per endpoint class, never an address or a credential).
+	ActionProxyPoolTested          Action = "proxy_pool.tested"
+	ActionSensorNetworkPathChanged Action = "sensor.network_path_changed"
 
 	// API key (oct_) actions — tenant-scoped programmatic credentials.
 	ActionAPIKeyCreated Action = "api_key.created"
@@ -487,6 +493,9 @@ const (
 	ActionSSOVerifiedDomainAdded     Action = "sso.verified_domain_added"
 	ActionSSOVerifiedDomainVerified  Action = "sso.verified_domain_verified"
 	ActionSSOVerifiedDomainDeleted   Action = "sso.verified_domain_deleted"
+	// ActionSSOBreakGlassUsed: an owner signed in with a password and their
+	// second factor to an organization that requires SSO.
+	ActionSSOBreakGlassUsed Action = "sso.break_glass_used"
 	// ActionSSOVerifiedDomainJITChanged: a domain's just-in-time provisioning
 	// (on/off, role) changed (RFC-058).
 	ActionSSOVerifiedDomainJITChanged Action = "sso.verified_domain_jit_changed"
@@ -610,6 +619,11 @@ const (
 	// Explicit per-user data-scope grants on an asset (asset_access_grants).
 	ActionAssetAccessGranted Action = "asset.access_granted"
 	ActionAssetAccessRevoked Action = "asset.access_revoked"
+
+	// Asset groups that fill themselves: a rule is set or changed, and a
+	// change that brings more assets into a group that teams or scans use.
+	ActionAssetGroupRuleChanged Action = "asset_group.rule_changed"
+	ActionAssetGroupRuleWidened Action = "asset_group.rule_widened"
 
 	// Permission Set actions
 	// Permission sets were removed (permissions come only from roles). The
@@ -868,6 +882,7 @@ func (a Action) IsValid() bool {
 		ActionScanZoneSensorAssigned, ActionScanZoneSensorUnassigned,
 		ActionProxyPoolCreated, ActionProxyPoolUpdated, ActionProxyPoolDeleted, ActionProxyPoolEndpointsChanged,
 		ActionProxyPoolCredentialsChanged, ActionProxyPoolEndpointUpdated, ActionProxyPoolEndpointQuarantine,
+		ActionProxyPoolTestRequested, ActionProxyPoolTested,
 		ActionSensorNetworkPathChanged,
 		ActionAPIKeyCreated, ActionAPIKeyRevoked, ActionAPIKeyDeleted,
 		ActionCredentialCreated, ActionCredentialUpdated, ActionCredentialDeleted, ActionCredentialAccessed,
@@ -877,6 +892,7 @@ func (a Action) IsValid() bool {
 		ActionSSOSAMLConfigUpdated, ActionSSOSAMLConfigDeleted,
 		ActionSSOIdentityProviderCreated, ActionSSOIdentityProviderUpdated, ActionSSOIdentityProviderDeleted,
 		ActionSSOVerifiedDomainAdded, ActionSSOVerifiedDomainVerified, ActionSSOVerifiedDomainDeleted,
+		ActionSSOBreakGlassUsed,
 		ActionSSOVerifiedDomainJITChanged, ActionSSOVerifiedDomainSignupPolicyChanged,
 		ActionMemberJoinedByDomain, ActionJoinRequestCreated, ActionJoinRequestApproved, ActionJoinRequestRejected,
 		ActionSSOChangeRequested, ActionSSOChangeApproved, ActionSSOChangeRejected,
@@ -900,6 +916,7 @@ func (a Action) IsValid() bool {
 		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted, ActionScannerTemplateApproved,
 		ActionAssetAssigned, ActionAssetUnassigned, ActionAssetOwnershipUpdated,
 		ActionAssetAccessGranted, ActionAssetAccessRevoked,
+		ActionAssetGroupRuleChanged, ActionAssetGroupRuleWidened,
 		ActionPermissionSetCreated, ActionPermissionSetUpdated, ActionPermissionSetDeleted,
 		ActionPermissionSetAssigned, ActionPermissionSetUnassigned,
 		ActionPermissionGranted, ActionPermissionRevoked,
@@ -1012,7 +1029,8 @@ func (a Action) Category() string {
 		ActionScanZoneSensorAssigned, ActionScanZoneSensorUnassigned:
 		return "scan_zone"
 	case ActionProxyPoolCreated, ActionProxyPoolUpdated, ActionProxyPoolDeleted, ActionProxyPoolEndpointsChanged,
-		ActionProxyPoolCredentialsChanged, ActionProxyPoolEndpointUpdated, ActionProxyPoolEndpointQuarantine:
+		ActionProxyPoolCredentialsChanged, ActionProxyPoolEndpointUpdated, ActionProxyPoolEndpointQuarantine,
+		ActionProxyPoolTestRequested, ActionProxyPoolTested:
 		return "proxy_pool"
 	case ActionSensorNetworkPathChanged:
 		return "sensor"
@@ -1074,7 +1092,7 @@ func (a Action) Category() string {
 	case ActionSSOSAMLConfigUpdated, ActionSSOSAMLConfigDeleted,
 		ActionSSOIdentityProviderCreated, ActionSSOIdentityProviderUpdated, ActionSSOIdentityProviderDeleted,
 		ActionSSOVerifiedDomainAdded, ActionSSOVerifiedDomainVerified, ActionSSOVerifiedDomainDeleted,
-		ActionSSOVerifiedDomainJITChanged,
+		ActionSSOVerifiedDomainJITChanged, ActionSSOBreakGlassUsed,
 		ActionSSOChangeRequested, ActionSSOChangeApproved, ActionSSOChangeRejected,
 		ActionSSOTrustRequested, ActionSSOTrustAccepted, ActionSSOTrustUpdated, ActionSSOTrustRevoked,
 		ActionSCIMGroupMappingsUpdated:
@@ -1108,6 +1126,7 @@ const (
 	ResourceTypeSavedView      ResourceType = "saved_view"
 	ResourceTypeScan           ResourceType = "scan"
 	ResourceTypeAsset          ResourceType = "asset"
+	ResourceTypeAssetGroup     ResourceType = "asset_group"
 	ResourceTypeSettings       ResourceType = "settings"
 	ResourceTypeToken          ResourceType = "token"
 	ResourceTypeSensor         ResourceType = "sensor"
@@ -1177,7 +1196,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeInvitation, ResourceTypeRepository, ResourceTypeBranch,
 		ResourceTypeComponent, ResourceTypeVulnerability, ResourceTypeFinding,
 		ResourceTypeFindingComment, ResourceTypeSLAPolicy, ResourceTypeSavedView, ResourceTypeScan,
-		ResourceTypeAsset, ResourceTypeSettings, ResourceTypeToken, ResourceTypeSensor, ResourceTypeScanZone, ResourceTypeProxyPool,
+		ResourceTypeAsset, ResourceTypeAssetGroup, ResourceTypeSettings, ResourceTypeToken, ResourceTypeSensor, ResourceTypeScanZone, ResourceTypeProxyPool,
 		ResourceTypeGroup, ResourceTypePermissionSet, ResourceTypeRole,
 		ResourceTypeScanWorkflow, ResourceTypeScanWorkflowStep, ResourceTypeScanRun, ResourceTypeScanConfig,
 		ResourceTypeScanProfile, ResourceTypeCommand,

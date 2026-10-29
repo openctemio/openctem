@@ -12,6 +12,7 @@ export type { SkipGroup, SkipTone } from '@/lib/api/scan-types'
 export const SKIP_REASONS = [
   'unresolved',
   'not_resolving',
+  'target_unresolvable',
   'excluded',
   'archived',
   'incompatible_type',

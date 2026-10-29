@@ -249,6 +249,13 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		}
 		return o.Name, nil
 	}))
+	adminApprovals.SetUserNamer(adminapproval.UserNamerFunc(func(ctx context.Context, id shared.ID) (string, error) {
+		u, err := repos.User.GetByID(ctx, id)
+		if err != nil {
+			return "", err
+		}
+		return u.Email(), nil
+	}))
 	if svc.Signup != nil {
 		svc.Signup.SetNotifier(signupPolicyMailer{email: svc.Email, appName: cfg.Brand.DisplayName(), log: log})
 	}
@@ -278,6 +285,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	commandHandler.SetScanRunService(svc.ScanRun)
 	commandHandler.SetAuditService(svc.Audit)
 	commandHandler.SetScanCommandGate(svc.Scan)
+	commandHandler.SetResolutionRecorder(repos.AssetResolution)
 	// A job the claim-time scope re-check fails settles what waits on it
 	// (scan step, validation run, retest) as a sensor's failure would.
 	svc.Command.SetFailureObserver(commandHandler)
@@ -289,6 +297,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	commandHandler.SetRetestHooks(svc.ValidationEvidence, svc.Retest)
 	if svc.ScanRun != nil {
 		commandHandler.SetValidationRuns(svc.ScanRun)
+	}
+	// A finished proxy test (the Test button of a proxy pool) is audited.
+	if svc.ProxyPool != nil {
+		commandHandler.SetProxyTests(svc.ProxyPool)
 	}
 	// Per-task logs from sensors (RFC-029 §4.4.1), shown on the run page.
 	commandLogs := commandlog.NewService(repos.CommandLog)
@@ -565,7 +577,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Assets & Components
 		Component:        handler.NewComponentHandler(svc.Component, svc.SBOMImport, v, log),
 		VEXStatement:     handler.NewVEXStatementHandler(svc.VEX, log),
-		AssetGroup:       handler.NewAssetGroupHandler(svc.AssetGroup, v, log),
+		AssetGroup:       handler.NewAssetGroupHandler(svc.AssetGroup, v, log).SetAuditService(svc.Audit),
 		AssetType:        handler.NewAssetTypeHandler(svc.AssetType, v, log),
 		Scope:            handler.NewScopeHandler(svc.Scope, v, log),
 		BountyProgram:    handler.NewBountyProgramHandler(svc.BountyProgram, svc.Audit, log),
@@ -794,7 +806,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AdminPlatformUser: handler.NewAdminPlatformUserHandler(
 			postgres.NewPlatformUserDirectory(deps.DB),
 			newPlatformUserService(repos, svc, cfg, deps.DB, log),
-			log).WithAudit(repos.AdminAuditLog),
+			log).WithAudit(repos.AdminAuditLog).WithApprovals(adminApprovals).
+			WithEmailDelivery(func() bool { return svc.Email != nil && svc.Email.IsConfigured() }).
+			WithLinkBase(cfg.SMTP.BaseURL),
 		AdminOperations:         newAdminOperationsHandler(deps, cfg, log),
 		Announcement:            handler.NewAnnouncementHandler(postgres.NewPlatformAnnouncementRepository(deps.DB), log),
 		AdminSession:            handler.NewAdminSessionHandler(postgres.NewAdminSessionDirectory(adminDBOf(repos, deps.DB)), adminConsoleSvc, log),
@@ -966,6 +980,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		)
 		// SP entity ID / ACS URL come from APP_URL, never from client headers.
 		handlers.SAML.SetPublicURL(cfg.App.URL)
+		handlers.SAML.SetRefreshDuration(cfg.Auth.RefreshTokenDuration)
 		handlers.SAML.SetAuditService(svc.Audit)
 		// Admin-console SAML changes wait for an owner of the organization.
 		handlers.SAML.SetChangeApproval(svc.SSOChange)
@@ -1281,6 +1296,10 @@ func wireStepUpGate(handlers *routes.Handlers, svc *Services) {
 	}
 	if handlers.CIAdmin != nil {
 		handlers.CIAdmin.SetStepUpGate(gate)
+	}
+	if handlers.MCPOAuth != nil {
+		// Allowing an AI application to read all organization data.
+		handlers.MCPOAuth.SetStepUpGate(gate)
 	}
 }
 
@@ -1895,6 +1914,10 @@ func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) hand
 		}
 		return mode
 	}
+	// The same answer as GET /auth/providers (routes/auth.go): a server
+	// without local auth reports no email delivery.
+	localAuth := h.LocalAuth
+	s.EmailDelivery = func() bool { return localAuth != nil && localAuth.EmailDeliveryAvailable() }
 	return s
 }
 

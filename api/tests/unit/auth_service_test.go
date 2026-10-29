@@ -187,6 +187,15 @@ func (m *mockAuthUserRepo) GetByPasswordResetToken(_ context.Context, token stri
 	return nil, shared.ErrNotFound
 }
 
+func (m *mockAuthUserRepo) ConsumePasswordResetToken(_ context.Context, id shared.ID, tokenHash string) (bool, error) {
+	u, ok := m.users[id.String()]
+	if !ok || u.PasswordResetToken() == nil || *u.PasswordResetToken() != tokenHash {
+		return false, nil
+	}
+	u.ClearPasswordResetToken()
+	return true, nil
+}
+
 // =============================================================================
 // Mock Tenant Repository for Auth Tests
 // =============================================================================
@@ -2411,21 +2420,6 @@ func TestAuthService_ExchangeToken_SSOEnforcement(t *testing.T) {
 		}
 	})
 
-	t.Run("password OWNER allowed (break-glass)", func(t *testing.T) {
-		svc, deps := newTestAuthService()
-		tn := mustNewEnforcedTenant(t, deps.tenantRepo, "acme-owner", true)
-		deps.tenantRepo.userMemberships = []tenant.UserMembership{
-			{TenantID: tn.ID().String(), TenantSlug: tn.Slug(), TenantName: "Acme", Role: "owner"},
-		}
-		rt, _ := loginPassword(t, svc, deps, "owner@acme.com")
-
-		if _, err := svc.ExchangeToken(context.Background(), auth.ExchangeTokenInput{
-			RefreshToken: rt, TenantID: tn.ID().String(),
-		}); err != nil {
-			t.Fatalf("owner break-glass must be allowed, got %v", err)
-		}
-	})
-
 	t.Run("SSO session allowed on SSO-enforced tenant", func(t *testing.T) {
 		svc, deps := newTestAuthService()
 		tn := mustNewEnforcedTenant(t, deps.tenantRepo, "acme-sso", true)
@@ -2477,21 +2471,7 @@ func TestAuthService_RefreshToken_SSOEnforcement(t *testing.T) {
 			t.Fatalf("expected ErrSSORequired on refresh, got %v", err)
 		}
 	})
-
-	t.Run("password owner allowed on refresh (break-glass)", func(t *testing.T) {
-		svc, deps := newTestAuthService()
-		tn := mustNewEnforcedTenant(t, deps.tenantRepo, "acme-refresh-owner", true)
-		deps.tenantRepo.userMemberships = []tenant.UserMembership{
-			{TenantID: tn.ID().String(), TenantSlug: tn.Slug(), TenantName: "Acme", Role: "owner"},
-		}
-		rt, _ := loginPassword(t, svc, deps, "owner@refresh.com")
-
-		if _, err := svc.RefreshToken(context.Background(), auth.RefreshTokenInput{
-			RefreshToken: rt, TenantID: tn.ID().String(),
-		}); err != nil {
-			t.Fatalf("owner refresh break-glass must be allowed, got %v", err)
-		}
-	})
+	// Owner break-glass (password and second factor) is covered in sso_break_glass_test.go.
 }
 
 // =============================================================================

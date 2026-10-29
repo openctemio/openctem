@@ -22,6 +22,9 @@ import {
 import type { Asset, AssetType } from '@/features/assets/types'
 import { ASSET_TYPE_LABELS, ASSET_TYPE_TILE } from '@/features/assets/types'
 import type { CreateGroupFormData } from './types'
+import { useTranslation } from '@/context/i18n-provider'
+import { draftToDocument, isDraftEmpty, parseDomains } from '../../lib/group-rule'
+import { countPasteLines } from '../../lib/group-paste'
 
 interface ReviewStepProps {
   data: CreateGroupFormData
@@ -43,6 +46,10 @@ const CRITICALITY_CONFIG = Object.fromEntries(
 ) as Record<RatedCriticality, { label: string; color: string }>
 
 export function ReviewStep({ data, ungroupedAssets }: ReviewStepProps) {
+  const { t } = useTranslation()
+  const ruleOn = !isDraftEmpty(data.rule)
+  const ruleDoc = ruleOn ? draftToDocument(data.rule) : null
+  const pasteLines = countPasteLines(data.pasteText)
   // Get selected assets details
   const selectedAssets = React.useMemo(
     () => ungroupedAssets.filter((a) => data.selectedAssetIds.includes(a.id)),
@@ -187,6 +194,44 @@ export function ReviewStep({ data, ungroupedAssets }: ReviewStepProps) {
 
           <Separator />
 
+          {/* Members that fill themselves */}
+          {(ruleOn || pasteLines > 0) && (
+            <div className="space-y-2" data-testid="review-members">
+              <h4 className="text-sm font-medium">
+                {t('assetGroups.members.review.title', 'Automatic members')}
+              </h4>
+              {ruleDoc && (
+                <p className="text-sm text-muted-foreground">
+                  {t(
+                    'assetGroups.members.review.rule',
+                    'A rule keeps the group up to date: {conditions}',
+                    {
+                      conditions: [
+                        parseDomains(data.rule.domainsText).join(', '),
+                        ...(ruleDoc.filter.types ?? []),
+                        ...(ruleDoc.filter.tags ?? []).map((tg) => `#${tg}`),
+                        ruleDoc.filter.search ? `"${ruleDoc.filter.search}"` : '',
+                      ]
+                        .filter(Boolean)
+                        .join(', '),
+                    }
+                  )}
+                </p>
+              )}
+              {pasteLines > 0 && (
+                <p className="text-sm text-muted-foreground">
+                  {t(
+                    'assetGroups.members.review.paste',
+                    '{count} pasted lines are matched when the group is created',
+                    {
+                      count: pasteLines.toLocaleString(),
+                    }
+                  )}
+                </p>
+              )}
+            </div>
+          )}
+
           {/* Assets Summary */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
@@ -197,7 +242,7 @@ export function ReviewStep({ data, ungroupedAssets }: ReviewStepProps) {
               </Badge>
             </div>
 
-            {totalAssets === 0 ? (
+            {totalAssets === 0 && (ruleOn || pasteLines > 0) ? null : totalAssets === 0 ? (
               <div className="rounded-lg border border-dashed p-4 text-center text-muted-foreground">
                 <p className="text-sm">No assets will be added to this group</p>
                 <p className="text-xs">You can add assets later</p>
