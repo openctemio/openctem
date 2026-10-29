@@ -260,9 +260,26 @@ func registerProxyPoolRoutes(
 		r.PATCH("/{id}", h.Update, middleware.Require(permission.SensorEgressWrite))
 		r.PUT("/{id}/endpoints", h.ReplaceEndpoints, middleware.Require(permission.SensorEgressWrite))
 		r.PATCH("/{id}/endpoints/{endpoint_id}", h.UpdateEndpoint, middleware.Require(permission.SensorEgressWrite))
+		// The Test button: sensors test the endpoints (the platform never
+		// connects to a proxy); one test per pool per minute.
+		r.POST("/{id}/test", h.Test, middleware.Require(permission.SensorEgressWrite))
+		r.GET("/{id}/tests", h.TestResults, middleware.Require(permission.SensorEgressRead))
 
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.SensorEgressDelete))
 	}, tenantMiddlewares...)
+}
+
+// registerProxyTestEchoRoute registers the echo a proxy test connects to
+// through each proxy: no session and no sensor key (the request leaves
+// through a proxy the organization chose); the path carries the token of one
+// live proxy_test command and anything else is not found. Rate limited per
+// client address, which is the proxy's exit address.
+func registerProxyTestEchoRoute(router Router, h *handler.ProxyTestEchoHandler) {
+	cfg := middleware.DefaultAuthRateLimitConfig()
+	// A pool of 64 endpoints behind one gateway tests from one address.
+	cfg.TokenExchangeRatePerMin = 600
+	limiter := middleware.NewDistributedAuthRateLimiter(cfg, nil, authRateLimitBackend, "proxy-test-echoes")
+	router.GET("/api/v1/proxy-test-echoes/{nonce}", h.Echo, limiter.TokenExchangeMiddleware())
 }
 
 // registerScanWindowRoutes registers the scan window API (RFC-067).

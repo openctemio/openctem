@@ -505,6 +505,16 @@ type SensorConfigConfig struct {
 	// PublicAPIURL is the URL sensors will connect to (embedded in templates).
 	// If empty, falls back to App.URL.
 	PublicAPIURL string
+	// ProxyTestEchoURL is the https base URL of the platform that a proxy
+	// test connects to through each proxy (the echo page, which answers the
+	// address a request came from): PROXY_TEST_ECHO_URL. It must be reachable
+	// on a public port by the proxies being tested, which is not the sensor
+	// mTLS port. Empty: PublicAPIURL, else App.URL.
+	ProxyTestEchoURL string
+	// ProxyTestAltPort is the echo host's second port a test tries, to tell
+	// a proxy that only allows CONNECT to 443 from one that allows other
+	// ports: PROXY_TEST_ALT_PORT, default 80; 0 skips that check.
+	ProxyTestAltPort int
 	// KeyTTL is how long a self-renewed sensor API key stays valid before it
 	// must be renewed again (RFC-014 Phase 1b, RFC-032 Phase 0):
 	// SENSOR_KEY_TTL, default DefaultSensorKeyTTL (90 days). "0" disables
@@ -1106,6 +1116,29 @@ func (c *Config) SensorPublicHost() string {
 	return net.JoinHostPort(host, port)
 }
 
+// ProxyTestEchoBase is the https origin a proxy test connects to
+// (PROXY_TEST_ECHO_URL, else SENSOR_PUBLIC_API_URL, else APP_URL); "" when
+// none is an https URL with a host name or address.
+func (c *Config) ProxyTestEchoBase() string {
+	for _, raw := range []string{c.SensorConfig.ProxyTestEchoURL, c.SensorConfig.PublicAPIURL, c.App.URL} {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		u, err := url.Parse(raw)
+		if err != nil || !strings.EqualFold(u.Scheme, "https") || u.Hostname() == "" {
+			// An explicit setting that is not usable is not replaced by a
+			// guess from another one.
+			if raw == strings.TrimSpace(c.SensorConfig.ProxyTestEchoURL) {
+				return ""
+			}
+			continue
+		}
+		return "https://" + u.Host
+	}
+	return ""
+}
+
 // Sensor protocol v3 modes (SENSOR_TRANSPORT_V3).
 const (
 	TransportV3Auto = "auto"
@@ -1553,6 +1586,8 @@ func Load() (*Config, error) {
 			TemplatesDir:      getEnv("SENSOR_CONFIG_TEMPLATES_DIR", DefaultSensorConfigTemplatesDir),
 			ProductsFile:      getEnv("SENSOR_PRODUCTS_FILE", ""),
 			PublicAPIURL:      getEnv("SENSOR_PUBLIC_API_URL", ""),
+			ProxyTestEchoURL:  getEnv("PROXY_TEST_ECHO_URL", ""),
+			ProxyTestAltPort:  getEnvInt("PROXY_TEST_ALT_PORT", 80),
 			KeyTTL:            getEnvDuration("SENSOR_KEY_TTL", DefaultSensorKeyTTL),
 			KeyRenewGrace:     getEnvDuration("SENSOR_KEY_RENEW_GRACE", DefaultSensorKeyRenewGrace),
 			KeyPepper:         getEnv("SENSOR_KEY_PEPPER", ""),

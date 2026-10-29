@@ -1031,6 +1031,7 @@ func Register(
 	}
 	if h.ProxyPool != nil {
 		registerProxyPoolRoutes(router, h.ProxyPool, authMiddleware, userSync)
+		registerProxyTestEchoRoute(router, handler.NewProxyTestEchoHandler(h.ProxyPool.Service()))
 	}
 	if h.ScanWindow != nil {
 		registerScanWindowRoutes(router, h.ScanWindow, authMiddleware, userSync)

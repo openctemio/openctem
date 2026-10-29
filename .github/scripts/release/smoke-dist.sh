@@ -143,9 +143,8 @@ mkdir -p "$kit"
 tar -C "$kit" --strip-components=1 -xzf "$dist/openctem-image-kit-${version}.tar.gz"
 mkdir -p "$kit/image-kit/dist/$arch"
 for comp in server gateway web console; do cp -a "$opt/$comp" "$kit/image-kit/dist/$arch/$comp"; done
-cp -a "$work/bootstrap-admin" "$kit/image-kit/dist/$arch/bootstrap-admin"
 tag="openctem-smoke-kit-$$"
-for c in api migrations seed admin-cli gateway web console; do
+for c in api migrations seed gateway web console; do
 	docker buildx build --quiet --load --platform "linux/$arch" --build-arg "TARGETARCH=$arch" \
 		-f "$kit/image-kit/Dockerfile.$c" -t "$tag-$c" "$kit/image-kit" >/dev/null ||
 		fail "image kit: Dockerfile.$c does not build"
@@ -154,7 +153,7 @@ done
 prints "openctem-server ${version} " docker run --rm "$tag-api" -version || fail "kit api image"
 prints "${version}" docker run --rm --entrypoint /app/openctem-signer "$tag-api" version || fail "kit api image: signer"
 prints "^${version}\$" docker run --rm "$tag-migrations" -version || fail "kit migrations image"
-prints 'Usage of bootstrap-admin' docker run --rm "$tag-admin-cli" -h || fail "kit admin-cli image"
+prints 'Usage of bootstrap-admin' docker run --rm --entrypoint /app/bootstrap-admin "$tag-api" -h || fail "kit api image: bootstrap-admin"
 prints '^layer4$' docker run --rm "$tag-gateway" caddy list-modules || fail "kit gateway image"
 prints 'Available seed files' docker run --rm "$tag-seed" || fail "kit seed image"
 [ "$(docker image inspect -f '{{.Config.User}}' "$tag-api")" = "1000:1000" ] || fail "kit api image user"

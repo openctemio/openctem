@@ -240,15 +240,16 @@ and approvals.
 | `sast_overlap` | same asset and repository path, different rule ids, overlapping line ranges, a shared CWE (`CWE-89`, `cwe-089` and `89` are one) | across assets (a monorepo split into two assets), the same rule, another CWE on the line, disjoint lines |
 | `secret_value` | the same per-tenant keyed hash of the raw secret, in another file or repository | a secret known only by its mask; another tenant. CI-hashed secrets link within one repository (the CI key is per repository) |
 | `vuln_alias` | a finding still stored under its advisory key while another finding of the asset holds the CVE key the feed gives it | across assets; decided when keys change, not released on a sighting |
+| `vuln_asset` | the same canonical CVE on the same asset from different techniques (a version match, a template check, a network scanner import, a package inventory), with agreeing ports (`443/tcp` equals `443/tcp`; a host-level finding agrees with any port) | another asset, another port or CVE, two findings of one kind at one place, a pentest finding |
 
 How it runs:
 
 - **Keys.** After an ingest batch is stored (step 11 of
   `FindingProcessor.processBatch`, `internal/app/ingest/issue_links.go`), the
-  batch's version-2 SAST and secret findings get their link keys
+  batch's version-2 SAST, secret and CVE findings (network, DAST, SCA) get their link keys
   (`pkg/domain/issuelink.Keys`) in `finding_link_keys`: a hash of (asset,
-  path, CWE) with the line range per CWE, or a hash of the secret's keyed
-  hash. Keys are never returned by the API.
+  path, CWE) with the line range per CWE, a hash of the secret's keyed
+  hash, or a hash of (asset, CVE) with the port or `host` as the locator. Keys are never returned by the API.
 - **Groups.** One indexed lookup finds the other holders of the batch's keys;
   `issuelink.PlanLinks` decides the links. A group is a star around its
   primary (the earliest-created finding when it formed); a finding joins the
@@ -268,6 +269,14 @@ How it runs:
   secret in two) writes no `issue_linked` entry, and its unlink entries name
   no id, so a viewer of one repository never learns that another holds the
   same secret.
+- **Technique links** ([RFC-043 §18](../rfcs/RFC-043-deduplication-and-identity.md#18-technique-links-on-one-asset-amendment-2026-10-27)).
+  The matcher calls the same derivation after it creates findings. The
+  earliest finding is the original and is never demoted. An open template
+  check or network scanner report in the group confirms its version match
+  (`metadata.version_match.confirmed_by`): the "potential" P2 cap is lifted
+  and the finding counts on the attack path. A member that joins an open
+  original raises no second "new finding" notification (a higher severity
+  still does). `refingerprint -links` backfills it (dry run, then `-apply`).
 - **Reading.** `GET /api/v1/findings/{id}/issue-links` (`findings:read`)
   lists the members the caller may see, the primary first, with the rule and
   the field names it compared; a member on an asset outside the caller's
