@@ -1866,6 +1866,27 @@ func (r *CommandRepository) StepBatchState(ctx context.Context, tenantID, stepRu
 	if err != nil {
 		return b, fmt.Errorf("step batch state: %w", err)
 	}
+	// Of the skipped targets, the names that no longer resolve: every
+	// completed batch whose listed refused targets are all unresolvable
+	// counts its whole total (the list is bounded), any other the listed
+	// unresolvable ones.
+	if b.Skipped > 0 {
+		if err := r.db.QueryRowContext(ctx, `
+			SELECT LEAST(COALESCE(sum(n), 0), $3)::bigint FROM (
+			  SELECT CASE WHEN jsonb_typeof(result->'metadata'->'refused_targets') <> 'array' THEN 0
+			         WHEN jsonb_typeof(result->'metadata'->'refused_targets_total') = 'number'
+			              AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(result->'metadata'->'refused_targets') e
+			                               WHERE e->>'reason' IS DISTINCT FROM 'unresolvable')
+			              THEN LEAST(GREATEST((result->'metadata'->>'refused_targets_total')::numeric, 0), $3)
+			         ELSE (SELECT count(*) FROM jsonb_array_elements(result->'metadata'->'refused_targets') e
+			                WHERE e->>'reason' = 'unresolvable') END AS n
+			    FROM commands
+			   WHERE tenant_id = $1 AND scan_run_step_id = $2 AND status = 'completed'
+			     AND jsonb_typeof(result->'metadata'->'refused_targets') = 'array') t`,
+			tenantID.String(), stepRunID.String(), scanrun.MaxSkippedTargetsTotal).Scan(&b.Unresolvable); err != nil {
+			return b, fmt.Errorf("step batch unresolvable: %w", err)
+		}
+	}
 	return b, nil
 }
 
