@@ -13,6 +13,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -26,6 +27,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
+	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
 	"github.com/openctemio/openctem/api/pkg/emaildomain"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -62,8 +64,17 @@ type OrgCreator interface {
 	Create(ctx context.Context, in tenantapp.CreateOrganizationInput, actx auditapp.AuditContext) (*tenantapp.CreatedOrganization, error)
 }
 
+// UserLookup finds the application account registered under an e-mail
+// (user.Repository satisfies it).
+type UserLookup interface {
+	GetByEmail(ctx context.Context, email string) (*userdom.User, error)
+}
+
 // Service runs the queue.
 type Service struct {
+	// users resolves the requester's account so self-approval is decided on
+	// account ids, not on e-mails that can drift; optional.
+	users UserLookup
 	// signups reports each stored request to the console's sign-up feed
 	// (docs/architecture/signup-activity.md); optional.
 	signups signupevent.Recorder
@@ -85,6 +96,31 @@ func NewService(repo ardom.Repository, policy signupdom.PolicySource, orgs OrgCr
 	}
 	return &Service{repo: repo, policy: policy, orgs: orgs, mailer: mailer, captcha: captcha,
 		baseURL: strings.TrimSuffix(baseURL, "/"), log: log.With("service", "access_request"), now: time.Now}
+}
+
+// SetUserLookup wires the account lookup used to detect self-approval by
+// account id.
+func (s *Service) SetUserLookup(u UserLookup) { s.users = u }
+
+// isSelfApproval reports whether the actor is the requester: the same
+// application account (by id), or, for a requester with no account yet, the
+// same e-mail.
+func (s *Service) isSelfApproval(ctx context.Context, actor *admin.AdminUser, req *ardom.Request) (bool, error) {
+	if actor == nil {
+		return false, nil
+	}
+	if s.users != nil && actor.UserID() != nil {
+		u, err := s.users.GetByEmail(ctx, req.Email)
+		switch {
+		case err == nil:
+			if u.ID() == *actor.UserID() {
+				return true, nil
+			}
+		case !errors.Is(err, userdom.ErrUserNotFound):
+			return false, err
+		}
+	}
+	return strings.EqualFold(strings.TrimSpace(req.Email), strings.TrimSpace(actor.Email())), nil
 }
 
 // Open reports whether requests are accepted now.
@@ -238,6 +274,11 @@ func (s *Service) Approve(ctx context.Context, actor *admin.AdminUser, id shared
 	}
 	if req.Status != ardom.StatusPending {
 		return nil, nil, ardom.ErrNotDecidable
+	}
+	if self, err := s.isSelfApproval(ctx, actor, req); err != nil {
+		return nil, nil, err
+	} else if self {
+		return nil, nil, ardom.ErrSelfApproval
 	}
 	name := strings.TrimSpace(in.Name)
 	if name == "" {

@@ -29,6 +29,9 @@ import (
 	webevidenceapp "github.com/openctemio/openctem/api/internal/app/webevidence"
 
 	"github.com/openctemio/openctem/api/internal/app/activity"
+	"github.com/openctemio/openctem/api/internal/app/aianalysis"
+	"github.com/openctemio/openctem/api/internal/app/aibundle"
+	"github.com/openctemio/openctem/api/internal/app/aimaskmap"
 	"github.com/openctemio/openctem/api/internal/app/aipolicy"
 	"github.com/openctemio/openctem/api/internal/app/aitriage"
 	"github.com/openctemio/openctem/api/internal/app/asset"
@@ -673,6 +676,9 @@ type Services struct {
 	BountyProgram *bountyprogramapp.Service
 	// ScopeSnapshots stores the scope each scan run relied on (RFC-065 §9).
 	ScopeSnapshots *postgres.ScopeSnapshotRepository
+	// ScopeEffects closes and reopens findings as assets go out of scope
+	// for good and come back (research/320).
+	ScopeEffects *scope.Effects
 	// ProgramAssigner keeps program group assignments current (the
 	// periodic pass, RFC-065 §7).
 	ProgramAssigner controller.ProgramAssignments
@@ -926,6 +932,11 @@ type Services struct {
 
 	// AI Triage
 	AITriage *aitriage.AITriageService
+	// AIAnalysis manages AI agents (service accounts that triage like a
+	// person, with accountable owners) and their runs.
+	AIAnalysis *aianalysis.Service
+	// AIExecutor runs single-shot AI kinds in the API process.
+	AIExecutor *aianalysis.BuiltinExecutor
 
 	// WebSocket
 	WebSocketHub *websocket.Hub
@@ -995,6 +1006,10 @@ type Services struct {
 	PlatformMFA         *platformmfa.Service
 	// TenantAI is the organizations' AI settings (consent, source, own provider).
 	TenantAI *tenantai.Service
+	// AIMasking is the organization's AI masking policy and its preview.
+	AIMasking *tenantai.MaskingService
+	// AIMaskMaps keeps each AI run's placeholder map, encrypted, until it expires.
+	AIMaskMaps *aimaskmap.Store
 	// ScanPolicy is the platform policy for scan approval (RFC-073)
 	// (wired in wireScopeApprovers, after the email service exists).
 	ScanPolicy *scanpolicy.Service
@@ -1240,6 +1255,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Scope.SetCoverage(scopeCoverage, s.DataScope)
 	s.Scope.SetCITrustLinks(postgres.NewScopeCITrustLinkRepository(&postgres.DB{DB: deps.DB})) // CI trusts manage repository entries
 	s.Scope.SetExclusionMatches(scopeCoverage)                                                 // bulk exclusion preview (research/124)
+	// Out of scope for good closes the findings, back in scope reopens
+	// them (research/320); every exclusion change kicks a pass.
+	s.ScopeEffects = scope.NewEffects(postgres.NewScopeEffectsRepository(&postgres.DB{DB: deps.DB}), s.Audit, log)
+	s.Scope.SetEffects(s.ScopeEffects)
 	// Program entries (RFC-065) cover nothing a program lists as out of
 	// scope: the authority check reads the program exclusions.
 	programRepo := postgres.NewBountyProgramRepository(&postgres.DB{DB: deps.DB})
@@ -1375,6 +1394,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Vulnerability.SetDataFlowRepository(repos.DataFlow)        // Wire data flow loading
 	s.Vulnerability.SetIssueLinkStore(repos.FindingIssueLinks)   // same-issue groups
 	s.Vulnerability.SetApprovalRepository(repos.FindingApproval) // Wire approval workflow
+	// An AI agent never lowers risk alone, whatever the organization's levels.
+	s.Vulnerability.SetAIAgentChecker(repos.AIAnalysis)
 	s.Vulnerability.SetSeverityRequestRepository(repos.SeverityRequest)
 	s.Vulnerability.SetAccessControlRepository(repos.AccessControl)
 	s.Vulnerability.SetAssigneeProfileReader(repos.AccessControl) // list rows carry the assignee name
@@ -1960,7 +1981,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// The organization's AI data-egress policy, shared with MCP: pentest
 		// findings above the TLP limit for AI, or of a campaign with AI off,
 		// never reach the model.
-		s.AITriage.SetEgressPolicy(aipolicy.New(mcpPolicyReader{tenants: s.Tenant}, repos.PentestCampaign))
+		aiEgress := aipolicy.New(mcpPolicyReader{tenants: s.Tenant}, repos.PentestCampaign)
+		s.AITriage.SetEgressPolicy(aiEgress)
+		// What of a finding an AI model sees unmasked, and the run maps that
+		// turn its answers back into real values
+		// (docs/architecture/ai-context-masking.md).
+		s.AIMasking = tenantai.NewMaskingService(repos.TenantAISettings, s.Vulnerability, repos.Asset, repos.Tenant,
+			aibundle.NewBuilder(aiEgress), s.Audit, log)
+		s.AIMaskMaps = aimaskmap.NewStore(repos.AIMaskMaps, s.Encryptor, cfg.AITriage.MaskMapTTL)
 		// A confident false-positive verdict on a medium or low finding is
 		// recorded as a pending approval for a person; never applied.
 		s.AITriage.SetFalsePositiveProposer(s.Vulnerability)
@@ -1978,6 +2006,19 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 			}, log,
 		)
 		s.AITriage.SetBudgetService(budgetSvc)
+
+		// The built-in executor: single-shot kinds in the API process,
+		// through the analyze contract and masking, acting as an AI agent
+		// through the finding commands.
+		s.AIExecutor = aianalysis.NewBuiltinExecutor(repos.Finding, finding.AIAgentCommands{Findings: s.Vulnerability},
+			repos.TenantAISettings, llmFactory, s.AIMasking,
+			aibundle.NewBuilder(aiEgress), s.AIMaskMaps, aianalysis.ExecutorConfig{
+				MaxTokens: cfg.AITriage.MaxTokens, Temperature: cfg.AITriage.Temperature,
+			}, log)
+		s.AIExecutor.SetBudget(budgetSvc)
+		if s.PlatformAI != nil {
+			s.AIExecutor.SetOwnProviderPolicy(s.PlatformAI.OrgProviderAllowed)
+		}
 		log.Info("AI triage service initialized",
 			"budget_enabled", cfg.AITriage.BudgetEnabled,
 			"budget_strict", cfg.AITriage.BudgetStrict,
@@ -3089,6 +3130,16 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.APIKey.SetServiceKeyGate(s.ServiceKeyGate)
 	}
 
+	// AI agents: service accounts that triage like a person. What they may
+	// do is read from the role tables (no cache) at every run start, bounded
+	// by what their accountable owners hold.
+	s.AIAnalysis = aianalysis.New(repos.AIAnalysis, repos.AIAnalysis,
+		apikey.NewHolderPermissions(repos.Tenant, rolePermissionSource{repos.Role}), s.DataScope,
+		aianalysis.SettingsConsent{Repo: repos.TenantAISettings}, s.Audit, log)
+	if s.AIExecutor != nil {
+		s.AIExecutor.SetAIAgents(s.AIAnalysis)
+	}
+
 	// Wire permission services to tenant service
 	s.Tenant.SetPermissionServices(s.PermCache, s.PermVersion)
 
@@ -3309,8 +3360,8 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	s.AccountDeletion = accountdeletionapp.NewService(repos.AccountDeletion, s.Tenant, s.Session,
 		s.Audit, tenantapp.ErasedUserLabel, log)
 	s.Auth.SetSignInHook(s.AccountDeletion.CancelOnSignIn)
-	// Platform administrators sign in on the admin console only.
-	s.Auth.SetPlatformAdminGate(platformAdminChecker{admins: repos.Admin})
+	// Break-glass accounts sign in on the admin console only.
+	s.Auth.SetBreakGlassGate(breakGlassChecker{admins: repos.Admin})
 	// Stamp the current permission version onto issued access tokens so the
 	// permission-sync middleware can reject stale tokens after a role change
 	// (AUTHZ-3). Without this the JWT carries pv=0 and the stale check is inert.
@@ -3383,7 +3434,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	s.SSO.SetTenantMemberRepo(repos.Tenant)
 	s.SSO.SetIdentityRepo(repos.UserIdentity)
 	s.SSO.SetAuditService(s.Audit)
-	s.SSO.SetPlatformAdminGate(platformAdminChecker{admins: repos.Admin})
+	s.SSO.SetBreakGlassGate(breakGlassChecker{admins: repos.Admin})
 	if s.AccountDeletion != nil {
 		s.SSO.SetSignInHook(s.AccountDeletion.CancelOnSignIn)
 	}
@@ -3518,7 +3569,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		if s.DomainVerify != nil {
 			s.OAuth.SetClaimGuard(repos.Tenant, s.DomainVerify)
 		}
-		s.OAuth.SetPlatformAdminGate(platformAdminChecker{admins: repos.Admin})
+		s.OAuth.SetBreakGlassGate(breakGlassChecker{admins: repos.Admin})
 		s.OAuth.SetIdentityRepo(repos.UserIdentity)
 		s.OAuth.SetAuditService(s.Audit)
 		// A linked password account signs in through its provider only with

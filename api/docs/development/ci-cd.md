@@ -1483,6 +1483,16 @@ how to run a release is [Versioning and releases](../architecture/versioning-and
   (ldflags from the tag). `main` is merged back into `develop` after every
   release (a real merge): the tag becomes reachable, and a hotfix fix that
   never reached `develop` lands there instead of being dropped.
+- Hotfix mode (`cut-release.sh --mode hotfix`): a picked merge commit (the
+  queue merges with merge commits, so a PR's merge commit is what people pass)
+  is cherry-picked by its first-parent diff (`-m 1`); the version checks run
+  with the scripts of the previous tag's own tree, so a layout change after
+  that tag (for example `versions.yaml`) cannot fail the hotfix. When the
+  post-release merge of a hotfix conflicts only because `develop` moved on,
+  `post-release.sh` records the tag with `merge -s ours` if every change in the
+  tag's range (except the version commit) is already on `develop`, checked by
+  patch-id or by the `-x` origin being reachable from `develop`; a fix that
+  exists only on `main` is still refused (exit 3) for a hand-made back-merge.
 - `ui/vX.Y.Z` tags are the old `openctemio/ui` tags, imported with its history.
   They release nothing: the `v*` glob does not match across `/`. Never create one.
 - `vX.Y.Z-staging` (or a manual dispatch with `environment: staging`) publishes
@@ -1616,6 +1626,11 @@ make web-<s>     # any web npm script, e.g. make web-format
 The git hooks in [`.githooks/`](../../../.githooks/) run on commit: `pre-commit`
 type-checks and lint-stages `web/` when web files are staged and runs `gofmt` on
 staged Go files; `commit-msg` rejects AI attribution lines.
+`pre-push` runs `scripts/precheck.sh --verify`. It works in a linked git worktree
+too: the hook unsets the `GIT_DIR` git exports there, so `golangci-lint
+--new-from-rev` diffs against the base and lints only new code. `make lint-new`
+gives each run its own `TMPDIR`, so parallel lint runs do not share a lock file
+(`.github/scripts/pre-push-worktree.test.sh` is the self-test).
 
 ## Branch strategy
 

@@ -1,4 +1,5 @@
 {
+  "activity.aiAssistant": "AI assistant",
   "activity.emptyFiltered": "Nothing of this kind yet",
   "activity.emptyFilteredHint": "Clear the filters to see everything.",
   "activity.filterLabel": "Filter activity",

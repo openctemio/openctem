@@ -7,7 +7,7 @@ import { ErrorState, PageHeader, PageStack } from '@/features/shared'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { useLegalSettings } from '@console/features/admin-console/api/use-legal-settings'
 import { LegalSettingsForm } from '@console/features/admin-console/components/legal-settings-form'
-import { adminCan } from '@console/features/admin-console/types'
+import { adminHas } from '@console/features/admin-console/types'
 
 /**
  * System -> Legal: the operator's legal information (RFC-079). Any administrator
@@ -36,7 +36,7 @@ export default function LegalSettingsPage() {
         ) : (
           <LegalSettingsForm
             settings={data}
-            canEdit={adminCan(me.role, 'super_admin')}
+            canEdit={adminHas(me, 'platform.settings.legal.write')}
             onSaved={() => void mutate()}
           />
         )}

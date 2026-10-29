@@ -24,6 +24,10 @@ const (
 // adminRoutePermissions maps "METHOD /pattern" of every console route to its
 // permission.
 var adminRoutePermissions = map[string]platformauthz.Permission{
+	"GET /api/v1/admin/platform-roles/":                                      platformauthz.RolesRead,
+	"GET /api/v1/admin/platform-roles/assignments":                           platformauthz.AdminsRead,
+	"POST /api/v1/admin/users/{id}/platform-roles":                           platformauthz.RolesAssign,
+	"DELETE /api/v1/admin/users/{id}/platform-roles/{role}":                  platformauthz.RolesAssign,
 	"DELETE /api/v1/admin/auth/elevate":                                      routeSelf,
 	"DELETE /api/v1/admin/auth/webauthn/credentials/{id}":                    routeSelf,
 	"DELETE /api/v1/admin/console-sessions/{console_session_id}":             platformauthz.AdminsManage,

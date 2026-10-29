@@ -187,10 +187,10 @@ func TestAssetCoverage_SensorSideFailureKeepsBackoff(t *testing.T) {
 	}
 }
 
-// A host that stopped answering stays visible: once its pair has had no
-// success for twice the cadence it counts as applicable and as a gap (the
-// input of the gap alert), instead of dropping out of every count.
-func TestAssetCoverage_TargetSidePausedIsAGap(t *testing.T) {
+// A host that stopped answering stays visible: its pair counts as
+// applicable and as unreachable (the input of the "targets unreachable"
+// alert), not as a plain gap, so the same pairs never raise two alerts.
+func TestAssetCoverage_TargetSidePausedIsUnreachable(t *testing.T) {
 	g := newCycleRig(t)
 	a := g.r.newTenant()
 	g.scope(a)
@@ -216,12 +216,117 @@ func TestAssetCoverage_TargetSidePausedIsAGap(t *testing.T) {
 		t.Fatal("no resolve.dns health")
 		return covdom.CapabilityHealth{}
 	}
-	if h := health(); h.Applicable != 1 || h.Gaps != 0 || h.Paused != 0 {
-		t.Fatalf("fresh dark host: %+v, want applicable 1, no gap yet, not readiness-paused", h)
+	if h := health(); h.Applicable != 1 || h.Gaps != 0 || h.Paused != 0 || h.Unreachable != 1 {
+		t.Fatalf("fresh dark host: %+v, want applicable 1, unreachable 1, no gap, not readiness-paused", h)
 	}
 	g.exec(`UPDATE asset_coverage SET last_success_at = now() - interval '3 days', created_at = now() - interval '3 days'
 		WHERE tenant_id = $1 AND asset_id = $2 AND capability = 'resolve.dns'`, a.tenant.String(), name.String())
-	if h := health(); h.Applicable != 1 || h.Gaps != 1 || h.Failing != 0 {
-		t.Fatalf("host dark for 3 days: %+v, want applicable 1, gap 1, not failing", h)
+	if h := health(); h.Applicable != 1 || h.Gaps != 0 || h.Unreachable != 1 || h.Failing != 0 {
+		t.Fatalf("host dark for 3 days: %+v, want applicable 1, unreachable 1 and no second (gap) count, not failing", h)
+	}
+	if conds := covdom.Conditions([]covdom.CapabilityHealth{health()}); len(conds) != 1 || conds[0].Kind != covdom.AlertUnreachable {
+		t.Fatalf("conditions %+v, want only the unreachable alert", conds)
+	}
+}
+
+// finishUnreachableFrom is finishUnreachable from the given scan zone.
+func (g *cycleRig) finishUnreachableFrom(capability, target string, zone shared.ID) {
+	g.t.Helper()
+	g.exec(`UPDATE commands SET scan_zone_id = $2 WHERE payload->>'scan_run_id' = $1`, g.f.runs[capability].String(), zone.String())
+	g.finishUnreachable(capability, target)
+}
+
+// The observer is recorded: the streak (and the widening wait) goes on
+// while the same zone sees the target silent, starts over when another
+// zone does, and a success clears it. Another tenant's pairs are untouched.
+func TestAssetCoverage_UnreachableKeyedByObserver(t *testing.T) {
+	g := newCycleRig(t)
+	a := g.r.newTenant()
+	b := g.r.newTenant()
+	g.scope(a)
+	g.scope(b)
+	name := g.asset(a, "far.tside.test", "subdomain", "", "")
+	other := g.asset(b, "far.tside.test", "subdomain", "", "")
+	zoneA, zoneB := shared.NewID(), shared.NewID()
+	day := 24 * time.Hour
+	g.pass(b) // b's pair is queued in its own run; a's runs below never settle it
+	from := func() string {
+		t.Helper()
+		var s string
+		if err := g.r.db.QueryRow(`SELECT unreached_from FROM asset_coverage WHERE tenant_id = $1 AND asset_id = $2 AND capability = 'resolve.dns'`,
+			a.tenant.String(), name.String()).Scan(&s); err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	step := func(zone shared.ID, wantStreak int, wantAfter time.Duration) {
+		t.Helper()
+		g.bindTenant(a)
+		g.pass(a)
+		g.finishUnreachableFrom("resolve.dns", "far.tside.test", zone)
+		g.pass(a)
+		r := g.row(a, name, "resolve.dns")
+		if r.State != covdom.StatePaused || r.FailStreak != wantStreak || from() != "zone:"+zone.String() {
+			t.Fatalf("%s:%s streak %d from %q, want paused streak %d from zone:%s", r.State, r.Reason, r.FailStreak, from(), wantStreak, zone)
+		}
+		want := covdom.Jittered(wantAfter, name.String(), "resolve.dns")
+		if got := time.Until(*r.NextDueAt); got < want-time.Minute || got > want+time.Second {
+			t.Fatalf("recheck in %v, want about %v", got, want)
+		}
+		g.dueIn(a, name, "resolve.dns", -time.Minute)
+	}
+	step(zoneA, 1, day)
+	step(zoneA, 2, 3*day) // same zone: the wait widens
+	step(zoneB, 1, day)   // another zone gets the short recheck again
+	g.pass(a)
+	g.complete("resolve.dns") // it answers: covered, observer cleared
+	g.pass(a)
+	if r := g.row(a, name, "resolve.dns"); r.State != covdom.StateCovered || from() != "" {
+		t.Fatalf("after success: %s from %q", r.State, from())
+	}
+	if r := g.row(b, other, "resolve.dns"); r.State == covdom.StatePaused {
+		t.Fatalf("another tenant's pair was paused: %+v", r)
+	}
+}
+
+// The asset read names the observer only when it is the tenant's own scan
+// zone; another tenant's zone or an unknown (platform) sensor stays unnamed.
+func TestAssetCoverage_UnreachedFromNamedForOwnZoneOnly(t *testing.T) {
+	g := newCycleRig(t)
+	a := g.r.newTenant()
+	b := g.r.newTenant()
+	g.scope(a)
+	name := g.asset(a, "named.tside.test", "subdomain", "", "")
+	g.pass(a)
+	g.finishUnreachable("resolve.dns", "named.tside.test")
+	g.pass(a)
+	own, foreign := shared.NewID(), shared.NewID()
+	g.exec(`INSERT INTO scan_zones (id, tenant_id, name, ranges) VALUES ($1, $2, 'dmz-own', '{10.9.0.0/16}')`, own, a.tenant)
+	g.exec(`INSERT INTO scan_zones (id, tenant_id, name, ranges) VALUES ($1, $2, 'dmz-foreign', '{10.8.0.0/16}')`, foreign, b.tenant)
+	read := func(key string) string {
+		t.Helper()
+		g.exec(`UPDATE asset_coverage SET unreached_from = $3 WHERE tenant_id = $1 AND asset_id = $2 AND capability = 'resolve.dns'`,
+			a.tenant, name, key)
+		rows, err := g.repo.ListForAsset(context.Background(), a.tenant, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		v := covdom.View(name, covdom.RulesFor("subdomain", ""), rows, time.Now())
+		for _, e := range v.Entries {
+			if e.Capability == "resolve.dns" {
+				return e.UnreachedFrom
+			}
+		}
+		t.Fatal("no resolve.dns entry")
+		return ""
+	}
+	if got := read("zone:" + own.String()); got != "dmz-own" {
+		t.Fatalf("own zone named %q", got)
+	}
+	if got := read("zone:" + foreign.String()); got != "" {
+		t.Fatalf("another tenant's zone named %q", got)
+	}
+	if got := read("sensor:" + shared.NewID().String()); got != "" {
+		t.Fatalf("a sensor that is not the tenant's named %q", got)
 	}
 }

@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/aianalysis"
 	dashfactsapp "github.com/openctemio/openctem/api/internal/app/dashboard/facts"
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	scmappsvc "github.com/openctemio/openctem/api/internal/app/scmapp"
@@ -36,6 +37,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/compliance"
 	"github.com/openctemio/openctem/api/internal/app/configoverview"
 	"github.com/openctemio/openctem/api/internal/app/integration"
+	"github.com/openctemio/openctem/api/internal/app/platformrole"
 	"github.com/openctemio/openctem/api/internal/app/sensor"
 
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
@@ -508,6 +510,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.TenantAI != nil {
 		aiSettings = handler.NewAISettingsHandler(svc.TenantAI, v, log)
 	}
+	var aiMasking *handler.AIMaskingHandler
+	if svc.AIMasking != nil {
+		aiMasking = handler.NewAIMaskingHandler(svc.AIMasking, v, log)
+	}
 	if svc.Tenant != nil {
 		mcpPolicies = mcpPolicyReader{tenants: svc.Tenant}
 		mcpSettings = handler.NewMCPSettingsHandler(svc.Tenant, cfg.MCP.TrustedClientHosts, log)
@@ -559,6 +565,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		MCPOAuth:       mcpOAuthHandler,
 		MCPSettings:    mcpSettings,
 		AISettings:     aiSettings,
+		AIMasking:      aiMasking,
 		MCPConnections: mcpConnections,
 		MCPClients:     mcpClients,
 		APIKeyAuth:     apiKeyAuth,
@@ -766,7 +773,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		APIKey: handler.NewAPIKeyHandler(svc.APIKey, v, log),
 
 		// AI Triage (always initialized - handler returns 503 if service is nil)
-		AITriage: handler.NewAITriageHandler(svc.AITriage, log),
+		AITriage:   handler.NewAITriageHandler(svc.AITriage, log),
+		AIAnalysis: aiAnalysisHandler(svc.AIAnalysis, svc.AIExecutor, log),
 
 		// Suppressions
 		Suppression: newSuppressionHandler(svc, log),
@@ -821,7 +829,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AdminDirectoryReadLimiter: middleware.NewAdminMappingRateLimiter(middleware.AdminMappingRateLimitConfig{WriteRequestsPerMin: 120}, log),
 		AdminConsole:              handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, log).WithApprovals(adminApprovals),
 		AdminApproval:             handler.NewAdminApprovalHandler(adminApprovals, log),
-		AdminAuditChain:           handler.NewAdminAuditChainHandler(svc.Audit, adminConsoleSvc, repos.AdminAuditLog, repos.AdminOrg, log).WithApprovals(adminApprovals),
+		AdminPlatformRole: handler.NewAdminPlatformRoleHandler(platformrole.NewService(
+			postgres.NewPlatformRoleRepository(adminDBOf(repos, deps.DB)), repos.Admin,
+			platformRoleRoster{adminConsoleSvc}, log), log),
+		AdminAuditChain: handler.NewAdminAuditChainHandler(svc.Audit, adminConsoleSvc, repos.AdminAuditLog, repos.AdminOrg, log).WithApprovals(adminApprovals),
 		AdminAuthMiddleware: middleware.NewAdminAuthMiddleware(adminConsoleSvc, log).WithElevation(cfg.AdminElevationRequired).
 			WithPlatformRoles(postgres.NewPlatformRoleRepository(adminDBOf(repos, deps.DB))),
 		AdminStepUp: middleware.AdminStepUpFunc(func(ctx context.Context, a *admin.AdminUser, sess *admin.Session, code, purpose string, c middleware.AdminStepUpClient) error {
@@ -1600,7 +1611,13 @@ func easmDecisionEffects(repos *Repositories, svc *Services, log *logger.Logger)
 			pub.PublishAssetReclassify(ctx, tenantID, ids, controller.ReasonAssetChange, "attribution decided")
 		}
 	}
-	return easmapp.NewDecisionEffects(repos.Exposure, reclassify, log)
+	effects := easmapp.NewDecisionEffects(repos.Exposure, reclassify, log)
+	// "Not ours" closes the asset's findings as out of scope; undoing it
+	// reopens them (research/320).
+	if svc.ScopeEffects != nil {
+		effects.SetScopeEffects(svc.ScopeEffects.Kick)
+	}
+	return effects
 }
 
 // newEASMSettingsHandler builds the EASM settings and run-now handler
@@ -2075,7 +2092,7 @@ func byIDGuardAsserter(svc *Services) middleware.DataScopeAsserter {
 
 // newUserHandler builds the user handler with self-service account deletion.
 func newUserHandler(svc *Services, repos *Repositories, v *validator.Validator, log *logger.Logger) *handler.UserHandler {
-	h := handler.NewUserHandler(svc.User, svc.Tenant, platformAdminChecker{admins: repos.Admin}, v, log)
+	h := handler.NewUserHandler(svc.User, svc.Tenant, v, log)
 	if svc.AccountDeletion != nil {
 		h.SetAccountDeletion(svc.AccountDeletion)
 	}
@@ -2099,6 +2116,24 @@ func emergingThreatHandler(svc *Services, log *logger.Logger) *handler.EmergingT
 		return nil
 	}
 	return handler.NewEmergingThreatHandler(svc.ThreatAlerts, svc.DataScope, log)
+}
+
+// aiAnalysisHandler is nil when the AI agent service is not built.
+func aiAnalysisHandler(svc *aianalysis.Service, exec *aianalysis.BuiltinExecutor, log *logger.Logger) *handler.AIAnalysisHandler {
+	if svc == nil {
+		return nil
+	}
+	h := handler.NewAIAnalysisHandler(svc, log)
+	h.SetExecutor(exec)
+	return h
+}
+
+// platformRoleRoster announces platform role changes through the console's
+// roster notice (e-mail to the other administrators and an alert line).
+type platformRoleRoster struct{ svc *adminconsole.Service }
+
+func (p platformRoleRoster) NotifyRosterChange(ctx context.Context, actor *admin.AdminUser, kind, summary, ip, userAgent string) {
+	p.svc.NotifyRosterChange(ctx, actor, kind, summary, adminconsole.ClientInfo{IP: ip, UserAgent: userAgent})
 }
 
 // newThreatIntelHandler builds the threat-intelligence handler and the

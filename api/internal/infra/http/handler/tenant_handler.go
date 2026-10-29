@@ -1501,8 +1501,8 @@ func (h *TenantHandler) handleProvisioningError(w http.ResponseWriter, err error
 	switch {
 	case errors.Is(err, tenantapp.ErrAccountExists):
 		apierror.Conflict("An account with this email already exists. Invite them instead.").WriteJSON(w)
-	case errors.Is(err, tenant.ErrPlatformAdminMembership):
-		apierror.Conflict("Platform administrators cannot belong to an organization.").WriteJSON(w)
+	case errors.Is(err, tenant.ErrBreakGlassMembership):
+		apierror.Conflict("This account cannot be a member of an organization.").WriteJSON(w)
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("User").WriteJSON(w)
 	case errors.Is(err, tenantapp.ErrSetupLinkForbidden):

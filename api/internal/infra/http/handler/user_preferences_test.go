@@ -46,7 +46,7 @@ func TestUpdatePreferences_ReturnsPreferencesObject(t *testing.T) {
 		t.Fatal(err)
 	}
 	repo := &prefsUserRepo{u: u}
-	h := NewUserHandler(tenant.NewUserService(repo, logger.NewNop()), nil, nil, validator.New(), logger.NewNop())
+	h := NewUserHandler(tenant.NewUserService(repo, logger.NewNop()), nil, validator.New(), logger.NewNop())
 
 	body, _ := json.Marshal(map[string]string{"theme": "dark", "language": "vi"})
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/users/me/preferences", bytes.NewReader(body))
@@ -82,7 +82,7 @@ func TestUpdatePreferences_FindingsInformational(t *testing.T) {
 		t.Fatal(err)
 	}
 	repo := &prefsUserRepo{u: u}
-	h := NewUserHandler(tenant.NewUserService(repo, logger.NewNop()), nil, nil, validator.New(), logger.NewNop())
+	h := NewUserHandler(tenant.NewUserService(repo, logger.NewNop()), nil, validator.New(), logger.NewNop())
 	put := func(body string) (int, map[string]any) {
 		req := httptest.NewRequest(http.MethodPut, "/api/v1/users/me/preferences", bytes.NewReader([]byte(body)))
 		req = req.WithContext(context.WithValue(req.Context(), middleware.LocalUserKey, repo.u))

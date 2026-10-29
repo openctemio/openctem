@@ -41,3 +41,31 @@ func Lookahead(every time.Duration) time.Duration {
 	}
 	return min(every/10, MaxLookahead)
 }
+
+// MaxBatchWait bounds how long the oldest due pair of a capability waits
+// for its batch to fill.
+const MaxBatchWait = 6 * time.Hour
+
+// BatchWait is how long the oldest due pair of a capability may wait for a
+// fuller batch: a tenth of the cadence, at most MaxBatchWait. Due times are
+// jittered over a tenth of the cadence, so pairs settled together come due
+// again within this window and one run carries them.
+func BatchWait(every time.Duration) time.Duration {
+	if every <= 0 {
+		return 0
+	}
+	return min(every/10, MaxBatchWait)
+}
+
+// BatchReady reports whether a due batch of n pairs starts now: it fills
+// one task of the tool (minBatch targets), or its oldest due pair has
+// waited BatchWait(every). Otherwise the batch keeps collecting pairs.
+func BatchReady(n, minBatch int, oldestWait, every time.Duration) bool {
+	if n <= 0 {
+		return false
+	}
+	if minBatch <= 1 || n >= minBatch {
+		return true
+	}
+	return oldestWait >= BatchWait(every)
+}

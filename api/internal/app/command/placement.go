@@ -94,6 +94,13 @@ type Placement struct {
 	// organization may take it.
 	SharedFleet       string
 	SharedFleetReason string
+	// Withheld is the placement code of the dispatch gate's last refusal
+	// of the command by any sensor that polled for it, the organization's
+	// or a shared one (withheld.go), and WithheldAt when it was recorded:
+	// it names the reason for a platform job and for the shared fleet,
+	// whose sensors are never listed. "" when no gate withheld it.
+	Withheld   string
+	WithheldAt *time.Time
 }
 
 // SharedFleet values of Placement.
@@ -126,7 +133,8 @@ func (s *Service) ExplainPlacement(ctx context.Context, tenantID, commandID shar
 	if err != nil {
 		return nil, err
 	}
-	out := &Placement{Status: job.Status, Platform: job.IsPlatformJob}
+	out := &Placement{Status: job.Status, Platform: job.IsPlatformJob,
+		Withheld: job.WithheldReason, WithheldAt: job.WithheldAt}
 	if job.Status != commanddom.CommandStatusPending || job.IsPlatformJob {
 		return out, nil
 	}
@@ -357,6 +365,11 @@ func (s *Service) sensorPlacement(ctx context.Context, tenantID shared.ID, cmd *
 	if cmd.Type == commanddom.CommandTypeScan && sn != nil {
 		free := sn.FreeSlots(now)
 		sp.Busy = freeScanSlots(sn.EffectiveMaxConcurrentJobs(), c.HeldScans, &free) == 0
+		// Free slots that host pressure alone took away: say so instead of
+		// the plain "no free slot".
+		if sp.Busy && sn.PressureNarrowed(now) {
+			sp.Reasons = append(sp.Reasons, commanddom.PlacementSensorOverloaded)
+		}
 	}
 	return sp, nil
 }
@@ -472,6 +485,9 @@ func (p *Placement) summarize() {
 			p.Eligible++
 			if sp.Busy {
 				p.Busy++
+				if slices.Contains(sp.Reasons, commanddom.PlacementSensorOverloaded) {
+					counts[commanddom.PlacementSensorOverloaded]++
+				}
 			}
 		default:
 			for _, r := range sp.Reasons {

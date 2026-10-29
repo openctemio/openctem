@@ -66,6 +66,8 @@ type Handlers struct {
 	MCPSettings *handler.MCPSettingsHandler
 	// AISettings is the organization's AI settings (consent, source, own provider).
 	AISettings *handler.AISettingsHandler
+	// AIMasking is the organization's AI masking policy and its preview.
+	AIMasking *handler.AIMaskingHandler
 	// MCPConnections is the connected applications (RFC-062 §12), tenant
 	// and platform console; nil without the authorization server.
 	MCPConnections *handler.MCPConnectionsHandler
@@ -78,6 +80,7 @@ type Handlers struct {
 	FindingActivity *handler.FindingActivityHandler // nil if not initialized (no database)
 	// Note: Real-time updates moved to WebSocket (see WebSocket field below)
 	AITriage      *handler.AITriageHandler      // Always initialized - handles nil service gracefully
+	AIAnalysis    *handler.AIAnalysisHandler    // AI agents and runs; nil = not wired
 	Dashboard     *handler.DashboardHandler     // nil if not initialized (no database)
 	UserDashboard *handler.UserDashboardHandler // nil if not initialized - per-user customizable dashboards (RFC-021)
 	// DashboardFacts serves "Rebuild dashboard data" (organization and
@@ -284,6 +287,7 @@ type Handlers struct {
 	AdminPlatformUser *handler.AdminPlatformUserHandler
 	AdminSession      *handler.AdminSessionHandler
 	AdminApproval     *handler.AdminApprovalHandler
+	AdminPlatformRole *handler.AdminPlatformRoleHandler // platform roles (RFC-134); nil if not wired
 	AdminOperations   *handler.AdminOperationsHandler
 	AdminSystem       *handler.AdminSystemHandler
 	Announcement      *handler.AnnouncementHandler
@@ -719,7 +723,7 @@ func Register(
 	registerRetestSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerVulnMatchingSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerEmergingThreatSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
-	registerAISettingsRoutes(router, h.AISettings, authMiddleware, userSync)
+	registerAISettingsRoutes(router, h.AISettings, h.AIMasking, authMiddleware, userSync)
 	registerEmergingThreatRoutes(router, h.EmergingThreat, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleThreatIntel))
 	registerLicensePolicySettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerScanGovernanceRoutes(router, h.ScanGovernance, authMiddleware, userSync)
@@ -777,6 +781,8 @@ func Register(
 	// Always registered - handler handles nil service gracefully (returns 503)
 	registerAITriageRoutes(router, h.AITriage, authMiddleware, userSync, aiTriageRateLimiter,
 		h.ModuleGate.RequireModule(moduledom.ModuleAITriage))
+	registerAIAnalysisRoutes(router, h.AIAnalysis, authMiddleware, userSync,
+		h.ModuleGate.RequireModule(moduledom.ModuleAITriage), aiTriageRateLimiter)
 
 	// Dashboard routes (global and tenant from JWT token)
 	if h.Dashboard != nil {

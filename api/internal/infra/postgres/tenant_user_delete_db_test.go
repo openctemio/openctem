@@ -258,6 +258,22 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	"easm_weekly_digests": func(*schemaSeeder) map[string]any {
 		return map[string]any{"window_from": "2026-01-01T00:00:00Z", "slot": "2026-01-08T00:00:00Z"}
 	},
+	// An AI agent is the AI profile of a service account of the same organization.
+	"ai_agents": func(s *schemaSeeder) map[string]any {
+		id := shared.NewID().String()
+		mustExecTx(s.t, s.tx, `INSERT INTO users (id, email, name, kind, service_tenant_id) VALUES ($1, $2, 'FK Delete AI agent', 'service', $3)`,
+			id, "fkdel-ai-"+id+"@example.test", s.tenantID)
+		return map[string]any{"user_id": id, "attest_due_at": "2027-01-01T00:00:00Z"}
+	},
+	"ai_runs": func(s *schemaSeeder) map[string]any {
+		return map[string]any{"ai_agent_id": s.rows["ai_agents"]["user_id"], "kind": "triage.v1"}
+	},
+	"ai_mask_maps": func(*schemaSeeder) map[string]any {
+		return map[string]any{"created_at": "2026-01-01T00:00:00Z", "expires_at": "2026-01-02T00:00:00Z"}
+	},
+	"ai_agent_owners": func(s *schemaSeeder) map[string]any {
+		return map[string]any{"user_id": s.userID, "group_id": nil}
+	},
 	"ai_triage_budgets": func(*schemaSeeder) map[string]any {
 		return map[string]any{"period_start": "2026-01-01", "period_end": "2026-02-01"}
 	},

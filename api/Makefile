@@ -1,3 +1,5 @@
+
+.PHONY: platform-authz-docs
 .PHONY: all build run test test-db budgets-update lint clean docker-build docker-dev docker-prod docker-down migrate generate seed help seed-required docker-seed docker-seed-required db-setup db-setup-dev swagger contract swagger-check swagger-install env-docs authz-matrix migration-new migration-renumber migrations-released migrate-up migrate-down migrate-status migrate-force
 
 # Variables
@@ -115,7 +117,13 @@ lint:
 BASE_REF ?= origin/develop
 lint-new:
 	@echo "Running golangci-lint $(GOLANGCI_LINT_VERSION) against $(BASE_REF)..."
-	@GOWORK=off $(GOLANGCI_LINT) run --new-from-rev=$(BASE_REF) ./...
+	@# A private TMPDIR per run: golangci-lint takes a lock file in it, so
+	@# parallel runs (several worktrees, agents) would wait on or fail each other.
+	@t=$$(mktemp -d); GOWORK=off TMPDIR=$$t $(GOLANGCI_LINT) run --new-from-rev=$(BASE_REF) ./...; rc=$$?; rm -rf "$$t"; exit $$rc
+
+## platform-authz-docs: Rewrite the generated platform (console) permission reference (RFC-134)
+platform-authz-docs:
+	@UPDATE_PLATFORM_AUTHZ_DOC=1 GOWORK=off go test ./internal/infra/http/routes/ -run TestPlatformPermissionReferenceUpToDate -count=1
 
 ## lint-ci: Run exactly what CI's Lint job gates on (go vet + staticcheck + lint-new).
 ## The whole point of this target is that it IS what CI runs — nothing else uses

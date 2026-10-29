@@ -24,7 +24,6 @@ type fakeAdmins struct {
 	mu               sync.Mutex
 	byID             map[string]*admin.AdminUser
 	userLink         map[string]string // user id -> admin id
-	memberUsers      map[string]bool   // user ids that belong to an organization
 }
 
 func (f *fakeAdmins) RecordUsage(context.Context, shared.ID, string) error { return nil }
@@ -55,9 +54,6 @@ func (f *fakeAdmins) Delete(_ context.Context, id shared.ID) error {
 func (f *fakeAdmins) LinkUser(_ context.Context, adminID, userID shared.ID) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.memberUsers[userID.String()] {
-		return admin.ErrUserHasMemberships
-	}
 	if _, taken := f.userLink[userID.String()]; taken {
 		return admin.ErrUserAlreadyAdmin
 	}
@@ -434,9 +430,8 @@ func newHarness(t *testing.T) *harness {
 	}
 	h := &harness{
 		admins: &fakeAdmins{
-			byID:        map[string]*admin.AdminUser{a.ID().String(): a},
-			userLink:    map[string]string{u.UserID.String(): a.ID().String()},
-			memberUsers: map[string]bool{},
+			byID:     map[string]*admin.AdminUser{a.ID().String(): a},
+			userLink: map[string]string{u.UserID.String(): a.ID().String()},
 		},
 		console: newFakeConsole(),
 		audit:   &fakeAudit{},
