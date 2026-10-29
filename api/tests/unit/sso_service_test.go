@@ -513,6 +513,10 @@ func (m *ssoMockUserRepo) GetByPasswordResetToken(_ context.Context, _ string) (
 	return nil, shared.ErrNotFound
 }
 
+func (m *ssoMockUserRepo) ConsumePasswordResetToken(_ context.Context, _ shared.ID, _ string) (bool, error) {
+	return true, nil
+}
+
 // =============================================================================
 // Mock Session Repository for SSO Tests
 // =============================================================================

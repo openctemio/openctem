@@ -57,6 +57,7 @@ var sharedClaimWhere = `commands.is_platform_job = TRUE
 		AND ` + hostFreePredicate + `
 		AND ` + sharedFleetHostFreePredicate + `
 		AND ` + refusedByPredicate("$1") + `
+		AND ` + failedOnPredicate("$1") + `
 		AND ` + sharedSensorGateSQL + `
 		AND ` + capabilityClaimPredicate("$2") + `
 		AND ` + organizationActiveSQL("commands.tenant_id")

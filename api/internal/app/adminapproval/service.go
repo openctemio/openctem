@@ -82,6 +82,19 @@ func (f TenantNamerFunc) TenantName(ctx context.Context, id shared.ID) (string, 
 	return f(ctx, id)
 }
 
+// UserNamer names an account (its email) for an approval's target label.
+type UserNamer interface {
+	UserLabel(ctx context.Context, id shared.ID) (string, error)
+}
+
+// UserNamerFunc adapts a function to UserNamer.
+type UserNamerFunc func(ctx context.Context, id shared.ID) (string, error)
+
+// UserLabel calls f.
+func (f UserNamerFunc) UserLabel(ctx context.Context, id shared.ID) (string, error) {
+	return f(ctx, id)
+}
+
 // Grant is what the gate hands a protected action: the approval it spent, or
 // the single-admin fallback.
 type Grant struct {
@@ -110,6 +123,7 @@ type Service struct {
 	audit   admin.AuditLogRepository
 	notify  RosterNotifier
 	tenants TenantNamer
+	users   UserNamer
 	log     *logger.Logger
 	now     func() time.Time
 }
@@ -125,6 +139,9 @@ func (s *Service) SetNotifier(n RosterNotifier) { s.notify = n }
 
 // SetTenantNamer wires organization names for target labels.
 func (s *Service) SetTenantNamer(t TenantNamer) { s.tenants = t }
+
+// SetUserNamer wires account emails for target labels.
+func (s *Service) SetUserNamer(u UserNamer) { s.users = u }
 
 // SetClock replaces the clock (tests).
 func (s *Service) SetClock(now func() time.Time) { s.now = now }
@@ -383,6 +400,10 @@ func (s *Service) label(ctx context.Context, target string) string {
 		if a, err := s.admins.GetByID(ctx, id); err == nil {
 			return fmt.Sprintf("%s (%s)", a.Email(), adminconsole.RoleLabel(a.Role()))
 		}
+	case strings.HasPrefix(target, "user:") && s.users != nil:
+		if label, err := s.users.UserLabel(ctx, id); err == nil {
+			return label
+		}
 	case strings.HasPrefix(target, "tenant:") && s.tenants != nil:
 		if name, err := s.tenants.TenantName(ctx, id); err == nil {
 			return name
@@ -414,6 +435,8 @@ func describe(a admin.ApprovalAction) string {
 		return "delete an organization now"
 	case admin.ApprovalPlatformEmailRelay:
 		return "change the mail server platform e-mail is sent through"
+	case admin.ApprovalUserMFAReset:
+		return "reset a user's two-factor authentication"
 	case admin.ApprovalPlatformAIDestination:
 		return "change where platform AI sends data (provider, server address or API key)"
 	}

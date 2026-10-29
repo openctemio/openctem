@@ -10,8 +10,8 @@
 # from the environment (web/e2e/ci/.env.example lists the names). Compose reads
 # web/e2e/ci/.env on its own; the workflow sets the same names per run.
 #
-# The images are the production targets of api/Dockerfile, web/Dockerfile and
-# api/Dockerfile.admin-cli. Postgres keeps its data in tmpfs: every run starts
+# The images are the production targets of api/Dockerfile and web/Dockerfile
+# (the seed runs /app/bootstrap-admin from the API image). Postgres keeps its data in tmpfs: every run starts
 # from an empty database.
 name: octe2e-ci
 
@@ -44,7 +44,8 @@ services:
     image: ${API_IMAGE:?set API_IMAGE}
     entrypoint: ['/app/openctem-migrate']
     # The URL is assembled from E2E_DB_PASSWORD by make-env.sh / the workflow.
-    command: ['-path=/app/migrations', '-database', '${E2E_DATABASE_URL:?set E2E_DATABASE_URL}', 'up']
+    command:
+      ['-path=/app/migrations', '-database', '${E2E_DATABASE_URL:?set E2E_DATABASE_URL}', 'up']
     depends_on:
       postgres: { condition: service_healthy }
     restart: 'no'
