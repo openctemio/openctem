@@ -118,6 +118,7 @@ var adminWriteInventory = map[string]struct {
 	"POST /api/v1/admin/settings/captcha/verify":                         {routine, "asks Turnstile about a secret; changes nothing"},
 	"PUT /api/v1/admin/settings/region/":                                 {stepUpRoute, "data residency of every new organization, once (fresh)"},
 	"PUT /api/v1/admin/settings/storage-quota/":                          {stepUpRoute, "default storage quota of organizations"},
+	"PUT /api/v1/admin/settings/threat-intel-source/":                    {stepUpRoute, "where KEV and EPSS come from, and whether the platform may call CISA and FIRST"},
 	"PUT /api/v1/admin/settings/auth-mfa/":                               {stepUpRoute, "lowest two-factor requirement of every organization (fresh)"},
 	"PUT /api/v1/admin/settings/email-relay/":                            {stepUpRoute, "whether organizations may send their own mail through their own relay (fresh)"},
 	"PUT /api/v1/admin/settings/alerts/":                                 {stepUpRoute, "where administrator alerts go (fresh)"},
