@@ -22,8 +22,7 @@ export const SIGN_IN_WINDOW_MS = 60_000
  */
 export async function submitSignIn(page: Page, arrived: (url: URL) => boolean): Promise<void> {
   const deadline = Date.now() + SIGN_IN_WINDOW_MS + 10_000
-  // The API says "Rate limit exceeded"; the web app maps the code to "Too many requests".
-  const refused = page.getByText(/Rate limit exceeded|Too many requests/i).first()
+  const refused = page.getByText('Rate limit exceeded').first()
   let extended = false
   for (;;) {
     await page.getByRole('button', { name: 'Sign in' }).click()
@@ -39,13 +38,7 @@ export async function submitSignIn(page: Page, arrived: (url: URL) => boolean): 
     ])
     if (outcome === 'arrived') return
     if (outcome === 'timeout') {
-      const shown = await page
-        .locator('[role="alert"], [data-sonner-toast]')
-        .allInnerTexts()
-        .catch(() => [] as string[])
-      throw new Error(
-        `sign-in did not reach the expected page within 30s; still at ${page.url()}; shown: ${JSON.stringify(shown).slice(0, 300)}`
-      )
+      throw new Error(`sign-in did not reach the expected page within 30s; still at ${page.url()}`)
     }
     if (Date.now() > deadline) {
       throw new Error(`sign-in still answered 429 after the ${SIGN_IN_WINDOW_MS / 1000}s window`)
