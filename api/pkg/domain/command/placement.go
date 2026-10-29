@@ -10,6 +10,7 @@ package command
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -142,7 +143,25 @@ type PlacementJob struct {
 	// SensorHostsBusy: the sensor that last took it handed it back for its
 	// own per-host limit (error_message is the hosts_busy release).
 	SensorHostsBusy bool
+	// WithheldReason is the placement code of the dispatch gate's last
+	// refusal of the command by any sensor that polled for it (the
+	// organization's or a shared one; the sensor is never recorded), and
+	// WithheldAt when it was recorded. "" when no gate withheld it.
+	WithheldReason string
+	WithheldAt     *time.Time
 }
+
+// WithheldRecorder records why the dispatch gate withheld pending commands
+// of one tenant: reasons maps a command id to its placement code. Only
+// pending commands of tenantID are written, and a code already recorded
+// within WithheldRefresh is not written again.
+type WithheldRecorder interface {
+	RecordWithheld(ctx context.Context, tenantID shared.ID, reasons map[shared.ID]string) error
+}
+
+// WithheldRefresh is how long a recorded withheld reason stands before the
+// same refusal is written again (its time refreshed).
+const WithheldRefresh = 10 * time.Minute
 
 // MaxHostHolders bounds the tasks a host wait names.
 const MaxHostHolders = 3
@@ -190,4 +209,37 @@ type SensorClaim struct {
 // A command of another tenant is shared.ErrNotFound.
 type PlacementReader interface {
 	PlacementPredicates(ctx context.Context, tenantID, commandID shared.ID, maxSensors int) (PlacementJob, []SensorClaim, error)
+}
+
+// withheldText is the English phrase of each dispatch-gate placement code
+// a withheld command can carry (the grant codes are built from their
+// dimension).
+var withheldText = map[string]string{
+	PlacementIntensity:          "the job's tier is above the scan's intensity",
+	PlacementPolicyUnavailable:  "the sensor's policy could not be read",
+	PlacementPrivateNeedsPolicy: "private targets need a sensor with a local policy",
+	PlacementOptInDisabled:      "the organization has not enabled this sensor opt-in",
+	PlacementLocalPolicy:        "the sensor's local policy refuses it",
+}
+
+// WithheldTexts returns the English phrase of each non-grant withheld code.
+func WithheldTexts() map[string]string {
+	out := make(map[string]string, len(withheldText))
+	for k, v := range withheldText {
+		out[k] = v
+	}
+	return out
+}
+
+// WithheldText is the English sentence for a withheld command's code, for
+// logs and server-written run messages: "withheld by sensor permissions:
+// credentials" for a grant code. The web app translates the code itself.
+func WithheldText(code string) string {
+	if dim, ok := strings.CutPrefix(code, PlacementGrantPrefix); ok {
+		return "withheld by sensor permissions: " + strings.ReplaceAll(dim, "_", " ")
+	}
+	if t, ok := withheldText[code]; ok {
+		return "withheld: " + t
+	}
+	return "withheld: " + code
 }

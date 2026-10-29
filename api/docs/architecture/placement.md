@@ -172,6 +172,36 @@ advertises `net.confined@1` from its runtime status only (sensor and sdk-go),
 and still refuses a web-scoped job it cannot confine (`WEB_SCOPE_UNSUPPORTED`)
 as defence in depth.
 
+## Withheld tasks leave a trace
+
+The dispatch gate runs in code after the poll query, so a task that every
+sensor's gate withholds never shows up in the claim SQL as blocked. To keep
+such a task from waiting in silence until its run deadline:
+
+- Every refusal by the gate (poll, claim by id, claim of a shared sensor) is
+  recorded on the pending command: `commands.withheld_reason` holds the
+  placement code (`grant_credentials`, `intensity`, `local_policy_refuses`,
+  …) and `withheld_at` when it was recorded. Only the code is stored, never
+  the sensor, the targets or the job settings.
+- The write is rate-limited twice: in the API process at most once per
+  command and code per 10 minutes (`withheldNotes`), and in SQL a code
+  recorded within that window is not written again. Only pending commands
+  of the caller's tenant are written.
+- One log line per sensor and code per 10 minutes ("dispatch gate withheld
+  commands from a sensor") with the tenant, the sensor, the code and the
+  count. No payload, target or setting is logged.
+- The explainer returns the recorded code as `withheld`, also for a platform
+  task and for the shared fleet, whose sensors are never listed.
+- A run that ends unclaimed (`NO_SENSOR`) names the refusal in its message,
+  e.g. "no sensor picked up this run's work within 1h — withheld by sensor
+  permissions: credentials", and its tasks keep `withheld_reason`, which the
+  run page translates.
+
+Code: `internal/app/command/withheld.go`, `RecordWithheld` in
+`internal/infra/postgres/command_placement.go`, `withheldTextSQL` in
+`internal/infra/postgres/scan_run_repository.go` (kept equal to
+`command.WithheldText` by a DB test).
+
 ## API
 
 `GET /api/v1/scan-runs/{id}/tasks/{task_id}/placement` (`scans:read`):
@@ -194,6 +224,10 @@ as defence in depth.
   reader of the run gets the counts and codes.
 - At most 100 sensors are evaluated (by name); `truncated` says there were
   more.
+- `withheld` / `withheld_at`: the placement code of the last time a
+  sensor's dispatch gate withheld the task, by any sensor that asked for work
+  (the organization's or a shared one, never named), and when. Absent when no
+  gate withheld it.
 
 ## Run page
 
@@ -203,6 +237,10 @@ as defence in depth.
   each reason with its count, what it means, the fix and a link to the page
   that applies it, and, for a caller with `sensors:read`, each sensor's
   verdict (`web/src/features/scans/components/task-placement.tsx`).
+  A task no sensor took that a sensor's gate withheld shows the reason under
+  its status ("Withheld: The sensor's grant does not allow it
+  (credentials).") from `withheld_reason`, while queued and after its run
+  ended unclaimed.
 - **Step panel:** a failed, partial, skipped or canceled step shows its error
   code, its class and the code's meaning, fix and link
   (`code-help.tsx`). What the step did not do comes from its structured
@@ -237,6 +275,10 @@ as defence in depth.
   another organization's sensors are never read.
 - **Platform scanning** is never broken down: platform sensors are
   excluded from the sensor list, and a platform task names none.
+- **Withheld reasons** are recorded per command with the command's tenant
+  (`RecordWithheld` writes only pending commands of that tenant). A shared
+  sensor's refusal records only the code on the organization's own command;
+  which sensor refused is never stored or shown.
 - **Least privilege inside the tenant.** Sensor names and per-sensor
   verdicts need `sensors:read` on top of `scans:read`.
 - **No widening.** Reason codes describe the claim; nothing a sensor

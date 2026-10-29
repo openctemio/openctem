@@ -103,3 +103,18 @@ func TestPlacementSummary_OverloadedBusy(t *testing.T) {
 		t.Fatalf("eligible %d busy %d blocking %v", p.Eligible, p.Busy, p.Blocking)
 	}
 }
+
+func TestWithheldText(t *testing.T) {
+	for code, want := range map[string]string{
+		"grant_credentials":                   "withheld by sensor permissions: credentials",
+		"grant_tier_ceiling":                  "withheld by sensor permissions: tier ceiling",
+		commanddom.PlacementIntensity:         "withheld: the job's tier is above the scan's intensity",
+		commanddom.PlacementLocalPolicy:       "withheld: the sensor's local policy refuses it",
+		commanddom.PlacementPolicyUnavailable: "withheld: the sensor's policy could not be read",
+		"something_new":                       "withheld: something_new",
+	} {
+		if got := commanddom.WithheldText(code); got != want {
+			t.Errorf("%s: %q, want %q", code, got, want)
+		}
+	}
+}
