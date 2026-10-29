@@ -340,7 +340,7 @@ func TestIngestReceipt_RunTotalFindingsLive_DB(t *testing.T) {
 		t.Fatalf("total_findings after one report = %d, want 2", got)
 	}
 	// The step settles with the sensor's own count (0): the run keeps its figure.
-	if err := NewScanRunRepository(&DB{DB: f.db}).UpdateStats(f.ctx, run, 1, 0, 0, 0); err != nil {
+	if err := NewScanRunRepository(&DB{DB: f.db}).UpdateStats(f.ctx, f.tenant, run, 1, 0, 0, 0); err != nil {
 		t.Fatal(err)
 	}
 	if got := total(); got != 2 {
