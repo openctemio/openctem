@@ -25,6 +25,7 @@ import {
   RunStatusBadge,
   TruncatedText,
 } from '@/features/shared'
+import { FilterSelect } from '@/features/shared/components/filter-select'
 import { Button } from '@/components/ui/button'
 import {
   Select,
@@ -40,20 +41,25 @@ import { scanManagementEndpoints } from '@/lib/api/endpoints'
 import type { ScanRun, ScanRunListFilters } from '@/lib/api/scan-workflow-types'
 import { formatScanDate, formatScanDuration } from '@/features/scans/lib/format'
 import {
+  DEFAULT_RUN_ORIGIN,
   IDLE_RUN_LIST_REFRESH_MS,
   RUN_KIND_FILTERS,
+  RUN_ORIGIN_FILTERS,
+  type RunOriginFilterValue,
   elapsedMs,
   isRunInProgress,
   liveRunIds,
   runListRefreshInterval,
   runKindLabel,
   runKindQuery,
+  runOriginQuery,
   runSubjectFindingId,
   runTargetNote,
   runTriggeredByLabel,
   runTaskProgress,
 } from '@/features/scans/lib/run-display'
 import { RunManagedBadge } from '@/features/scans/components/run-managed-badge'
+import { COVERAGE_SETTINGS_HREF } from './managed-scan-banner'
 import { replaceUrlSearch, useUrlParam } from '@/hooks/use-url-param'
 import { useRunChannels } from '@/hooks/use-websocket'
 import {
@@ -117,7 +123,7 @@ function ScanRunsTable() {
     defaultPageSize: RUNS_PAGE_SIZE,
     sortFields: RUN_SORT_FIELDS,
     defaultSort: DEFAULT_RUN_SORT,
-    filters: { status: 'all', scan_id: '', kind: 'all' },
+    filters: { status: 'all', scan_id: '', kind: 'all', origin: DEFAULT_RUN_ORIGIN },
   })
   const statusFilter = (
     RUN_STATUS_FILTERS.some((f) => f.value === list.filters.status) ? list.filters.status : 'all'
@@ -125,6 +131,11 @@ function ScanRunsTable() {
   const kindFilter = (
     RUN_KIND_FILTERS.some((f) => f.value === list.filters.kind) ? list.filters.kind : 'all'
   ) as RunKindFilterValue
+  const originFilter = (
+    RUN_ORIGIN_FILTERS.some((f) => f.value === list.filters.origin)
+      ? list.filters.origin
+      : DEFAULT_RUN_ORIGIN
+  ) as RunOriginFilterValue
   const scanFilter = list.filters.scan_id
   const { pagination, sorting, perPage } = list
   // A link to one run (a retest's "View run") opens it: /scans/runs?run=<id>.
@@ -173,6 +184,7 @@ function ScanRunsTable() {
     status: statusFilter === 'all' ? undefined : statusFilter,
     scan_id: scanFilter || undefined,
     ...runKindQuery(kindFilter),
+    ...runOriginQuery(originFilter),
     sort: list.sort,
     page: list.page,
     per_page: perPage,
@@ -188,6 +200,15 @@ function ScanRunsTable() {
     refreshInterval: runsLive && !realtime ? 30000 : IDLE_RUN_LIST_REFRESH_MS,
   })
   const counts = overview?.scan_runs
+  // The runs the platform started on its own, for the one-line summary while
+  // the list shows people's runs: every run the tenant has (the counters)
+  // less the people's runs the unfiltered list counts. Read from the two
+  // requests the page already makes; a filtered list cannot be subtracted.
+  const unfiltered = statusFilter === 'all' && kindFilter === 'all' && !scanFilter
+  const systemRunCount =
+    originFilter === 'user' && unfiltered && counts && data
+      ? Math.max(0, counts.total - data.total)
+      : 0
 
   const { setFilter } = list
   const setStatus = useCallback((v: RunStatusFilterValue) => setFilter('status', v), [setFilter])
@@ -410,6 +431,16 @@ function ScanRunsTable() {
 
   const toolbarStart = (
     <div className="flex flex-wrap items-center gap-2">
+      <FilterSelect<RunOriginFilterValue>
+        clearable={false}
+        label={t('scans.runs.filterOrigin')}
+        value={originFilter}
+        options={RUN_ORIGIN_FILTERS.map((f) => ({
+          value: f.value,
+          label: t(`scans.runOriginFilter.${f.value}`),
+        }))}
+        onChange={(v) => setFilter('origin', v || DEFAULT_RUN_ORIGIN)}
+      />
       <Select value={statusFilter} onValueChange={(v) => setStatus(v as RunStatusFilterValue)}>
         <SelectTrigger className="h-9 w-auto min-w-36" aria-label={t('scans.runs.filterStatus')}>
           <SelectValue />
@@ -449,7 +480,10 @@ function ScanRunsTable() {
     </div>
   )
 
-  const filtered = statusFilter !== 'all' || kindFilter !== 'all'
+  // People's runs are the default view, not a filter someone set; an
+  // empty list there with runs on the counters still says "no match".
+  const filtered =
+    statusFilter !== 'all' || kindFilter !== 'all' || originFilter !== DEFAULT_RUN_ORIGIN
   // The counters count every run the tenant has; a list that is empty while
   // they are not (a filter held back by the URL, a page past the end) must
   // not claim that no run ever started.
@@ -505,6 +539,28 @@ function ScanRunsTable() {
     // which owns the 20px between them (research/244).
     <>
       <MetricStrip loading={isLoadingStats} items={metrics} />
+      {systemRunCount > 0 && (
+        <p
+          className="text-sm text-muted-foreground"
+          role="status"
+          data-testid="coverage-runs-summary"
+        >
+          {t('scans.runs.coverageSummary', undefined, { count: systemRunCount })}{' '}
+          <Button
+            variant="link"
+            className="h-auto p-0 text-sm"
+            onClick={() => setFilter('origin', 'system')}
+          >
+            {t('scans.runs.showSystemRuns')}
+          </Button>{' '}
+          <Link
+            href={COVERAGE_SETTINGS_HREF}
+            className="text-primary underline-offset-4 hover:underline"
+          >
+            {t('scans.runs.openCoverage')}
+          </Link>
+        </p>
+      )}
       {/* A failed read keeps the toolbar and filters; the error takes the
           rows' place with a Retry (one message, no toast). */}
       <DataTable

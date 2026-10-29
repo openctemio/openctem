@@ -207,27 +207,44 @@ export const RUN_KIND_FILTERS = [
   { value: 'scan' },
   { value: 'quick' },
   { value: 'retest' },
-  // Runs of the scans the platform manages (continuous coverage).
-  { value: 'coverage' },
 ] as const
 
 /**
- * The list query a kind filter value stands for. "All kinds" lists every
- * run, continuous coverage included; "Scans" leaves coverage runs out
- * (they are scans too, owned by the platform), "Continuous coverage" shows
- * only them.
+ * Who started the runs the list shows. People's runs are the default: the
+ * runs the platform starts on its own (continuous coverage) outnumber them
+ * by far. "System" lists only those, "All" both; the filter changes the view
+ * only, every run stays listed and exportable.
  */
-export function runKindQuery(value: string): Pick<ScanRunListFilters, 'kind' | 'origin'> {
+export const RUN_ORIGIN_FILTERS = [
+  { value: 'user' },
+  { value: 'system' },
+  { value: 'all' },
+] as const
+
+export type RunOriginFilterValue = (typeof RUN_ORIGIN_FILTERS)[number]['value']
+
+/** The default origin of the run list: runs started by people. */
+export const DEFAULT_RUN_ORIGIN: RunOriginFilterValue = 'user'
+
+/** The list query a kind filter value stands for ("All kinds": no kind). */
+export function runKindQuery(value: string): Pick<ScanRunListFilters, 'kind'> {
   switch (value) {
-    case 'coverage':
-      return { origin: 'system' }
-    case 'scan':
-      return { kind: 'scan', origin: 'user' }
     case 'all':
     case '':
       return {}
     default:
       return { kind: value }
+  }
+}
+
+/** The list query an origin filter value stands for ("All": no origin). */
+export function runOriginQuery(value: string): Pick<ScanRunListFilters, 'origin'> {
+  switch (value) {
+    case 'user':
+    case 'system':
+      return { origin: value }
+    default:
+      return {}
   }
 }
 
