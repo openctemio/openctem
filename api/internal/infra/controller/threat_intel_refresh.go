@@ -2,10 +2,12 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/feedstatus"
 	"github.com/openctemio/openctem/api/internal/app/threat"
+	"github.com/openctemio/openctem/api/pkg/domain/threatintel"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -93,12 +95,16 @@ func (c *ThreatIntelRefreshController) Interval() time.Duration {
 // moved, reconciles KEV flags and reports material changes.
 func (c *ThreatIntelRefreshController) Reconcile(ctx context.Context) (int, error) {
 	var r threat.IntelSyncResult
-	if c.feed == intelFeedKEV {
+	// The signed release carries the feed too: the direct fetch is the
+	// supplier or a fallback depending on the platform setting.
+	if d := c.service.ShouldFetchDirect(ctx, c.feed); !d.Run {
+		r = threat.IntelSyncResult{Source: c.feed, Skipped: true, SkipReason: d.Reason}
+	} else if c.feed == intelFeedKEV {
 		r = c.service.SyncKEV(ctx)
 	} else {
 		r = c.service.SyncEPSS(ctx)
 	}
-	if r.Skipped {
+	if r.Skipped && errors.Is(r.Error, threatintel.ErrSyncAlreadyRunning) {
 		// An operator's run (or another replica's) holds the feed; its own
 		// pass compares the findings with the catalogs.
 		c.logger.Debug("threat intel sync already running", "source", r.Source)
@@ -106,6 +112,8 @@ func (c *ThreatIntelRefreshController) Reconcile(ctx context.Context) (int, erro
 	}
 	processed := 0
 	switch {
+	case r.Skipped:
+		c.logger.Debug("threat intel direct fetch not needed", "source", r.Source, "reason", r.SkipReason)
 	case r.Error != nil:
 		c.logger.Warn("threat intel sync failed", "source", r.Source, "error", r.Error)
 	case r.NotModified:
@@ -114,7 +122,7 @@ func (c *ThreatIntelRefreshController) Reconcile(ctx context.Context) (int, erro
 		processed += r.RecordsSynced
 		c.logger.Info("threat intel synced", "source", r.Source, "records", r.RecordsSynced, "duration_ms", r.DurationMs)
 	}
-	processed += c.sweeper.Run(ctx, c.feed, r.Error == nil && !r.NotModified, r.Error == nil)
+	processed += c.sweeper.Run(ctx, c.feed, r.Error == nil && !r.NotModified && !r.Skipped, r.Error == nil)
 
 	return processed, nil
 }
