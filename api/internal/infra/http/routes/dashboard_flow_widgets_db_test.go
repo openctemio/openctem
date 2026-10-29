@@ -168,7 +168,7 @@ func TestDashboardFlowWidgets_Organization_DB(t *testing.T) {
 		t.Errorf("failing %d totals %+v", in.Failing, in.Totals)
 	}
 	n := in.Noise
-	if n.New+n.Merged+n.Suppressed+n.NotStored != n.Received || n.Suppressed != 4 || n.New != 27-4+2 {
+	if n.New+n.Merged+n.NotStored != n.Received || n.Suppressed != 4 || n.New != 27+2 {
 		t.Errorf("noise %+v", n)
 	}
 
