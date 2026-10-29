@@ -78,6 +78,9 @@ type Service struct {
 	// httpPolicy is the tenant's tool HTTP layer (WithHTTPPolicy).
 	httpPolicy HTTPPolicySource
 	egress     EgressSource
+	// proxyRequired is the organization's "Proxy required" switch
+	// (WithProxyRequirement); nil: not required.
+	proxyRequired ProxyRequirement
 	// toolSettings is the per-sensor tool settings layer (WithToolSettings).
 	toolSettings ToolSettingsSource
 	// balanceWindow is how long a fresh job is left to less-loaded sensors

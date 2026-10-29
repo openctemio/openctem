@@ -291,6 +291,8 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `SENSOR_LB_MEMORY_WEIGHT` | float | `0.15` |  |  | Weight of memory usage. |
 | `SENSOR_LB_NETWORK_WEIGHT` | float | `0.05` |  |  | Weight of network I/O. |
 | `SENSOR_PUBLIC_API_URL` | string | empty |  |  | URL sensors connect to, embedded in the install snippets and configuration templates. Unset: `APP_URL`. |
+| `PROXY_TEST_ECHO_URL` | string | empty |  |  | https origin a proxy test connects to through each proxy of a pool (the Test button of Settings, Scanning, Proxies). It must answer on a public port the proxies can reach: not the sensor mTLS port. Unset: `SENSOR_PUBLIC_API_URL`, else `APP_URL`. The platform never connects to a proxy itself; sensors do. |
+| `PROXY_TEST_ALT_PORT` | int | `80` |  |  | A second port of the proxy test's echo host. A proxy that carries 443 and refuses this port is shown as port-restricted. `0` skips that check. |
 | `SENSOR_SLIM_HEARTBEAT` | bool | `true` |  |  | Let sensors with an acknowledged manifest leave their tool inventory out of heartbeats. `false` asks every sensor for full heartbeats. |
 | `SENSOR_LIVENESS_STORE` | string | `shadow` |  |  | Where heartbeat liveness lives. `postgres`: every heartbeat updates the sensor row. `shadow`: as postgres, and Redis records every heartbeat too so `openctem_sensor_liveness_disagreements_total` compares the two. `redis`: Redis holds liveness; Postgres gets state changes and a batched checkpoint every 10 minutes. Switch to `redis` after a week of zero disagreements. |
 | `WORKER_HEARTBEAT_TIMEOUT` | duration | `5m` |  |  | No heartbeat for this long marks a sensor inactive. Advised heartbeat intervals stay below half of it. |
