@@ -152,7 +152,7 @@ func TestCommentReactionRepository_AddRemoveSummaries(t *testing.T) {
 	if err != nil || !cc.IsInternal() {
 		t.Fatalf("internal comment read back: %v internal=%v", err, cc != nil && cc.IsInternal())
 	}
-	list, err := f.comments.ListByFinding(ctx, f.finding)
+	list, err := f.comments.ListByFinding(ctx, f.tenantID, f.finding)
 	if err != nil || len(list) != 2 || list[0].IsInternal() || !list[1].IsInternal() {
 		t.Fatalf("list internal flags wrong: %v", err)
 	}
@@ -212,5 +212,32 @@ func TestCommentReactionRepository_CapsHoldUnderConcurrency(t *testing.T) {
 	wg.Wait()
 	if added != vulnerability.MaxReactionsPerUserPerComment || capped != 5 {
 		t.Fatalf("per-user: added=%d capped=%d, want 10 and 5", added, capped)
+	}
+}
+
+// A finding id of another tenant lists and counts no comments: the query
+// carries its own tenant predicate instead of relying on the caller's guard.
+func TestFindingCommentRepository_ListAndCountAreTenantScoped(t *testing.T) {
+	f := newReactionDBFixture(t, 1)
+	ctx := context.Background()
+	f.comment(t, false)
+
+	other := shared.NewID()
+	mustExec(t, f.db, `INSERT INTO tenants (id, name, slug) VALUES ($1,$2,$3)`, other.String(), "other", "cmt-o-"+other.String())
+	t.Cleanup(func() { _, _ = f.db.ExecContext(ctx, `DELETE FROM tenants WHERE id=$1`, other.String()) })
+
+	own, err := f.comments.ListByFinding(ctx, f.tenantID, f.finding)
+	if err != nil || len(own) != 1 {
+		t.Fatalf("own tenant list: %d rows, err %v", len(own), err)
+	}
+	foreign, err := f.comments.ListByFinding(ctx, other, f.finding)
+	if err != nil || len(foreign) != 0 {
+		t.Fatalf("foreign tenant list: %d rows, err %v", len(foreign), err)
+	}
+	if n, err := f.comments.CountByFinding(ctx, f.tenantID, f.finding); err != nil || n != 1 {
+		t.Fatalf("own tenant count: %d, err %v", n, err)
+	}
+	if n, err := f.comments.CountByFinding(ctx, other, f.finding); err != nil || n != 0 {
+		t.Fatalf("foreign tenant count: %d, err %v", n, err)
 	}
 }
