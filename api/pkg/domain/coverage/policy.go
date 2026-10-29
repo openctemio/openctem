@@ -114,6 +114,10 @@ type Entry struct {
 	LastError     string     `json:"last_error,omitempty"`
 	LastTool      string     `json:"last_tool,omitempty"`
 	FailStreak    int        `json:"fail_streak,omitempty"`
+	// UnreachedFrom names the organization's own scan zone or sensor whose
+	// tasks found the target silent, for a pair paused for that (never a
+	// platform sensor: "" then, and for any other pair).
+	UnreachedFrom string `json:"unreached_from,omitempty"`
 	// Gap: the pair applies and has gone without a success for more than
 	// twice its cadence (or never succeeded since it was planned that
 	// long ago).
@@ -192,6 +196,9 @@ func fill(e *Entry, row *Row) {
 	e.State, e.Reason = row.State, row.Reason
 	e.NextDueAt, e.LastAttemptAt, e.LastSuccessAt = row.NextDueAt, row.LastAttemptAt, row.LastSuccessAt
 	e.LastOutcome, e.LastError, e.LastTool, e.FailStreak = row.LastOutcome, row.LastError, row.LastTool, row.FailStreak
+	if row.State == StatePaused && IsTargetSide(row.Reason) {
+		e.UnreachedFrom = row.UnreachedFromName
+	}
 }
 
 // Repository is the ledger as the coverage service needs it. Every method
@@ -215,6 +222,9 @@ type DueTarget struct {
 	Type       asset.AssetType
 	SubType    string
 	FailStreak int
+	// Waited is how long the pair has been due (DueBatch; zero for a pair
+	// taken within the lookahead, very long for one never scheduled).
+	Waited time.Duration
 }
 
 // Target is the scan target of an asset: its name, or "host:port" for an
@@ -240,6 +250,9 @@ type RunState struct {
 	// Unfinished are the targets the run did not finish.
 	Unfinished []string
 	QueuedAt   time.Time
+	// NoSensor: a step of the run ended NO_SENSOR (no sensor took its
+	// work before the run's deadline).
+	NoSensor bool
 }
 
 // Run outcomes recorded on settled pairs.
@@ -269,6 +282,8 @@ type FailedPair struct {
 	AssetID shared.ID
 	Outcome string
 	Error   string
+	// Observer is who saw a target-side outcome (ObserverKey); "" unknown.
+	Observer string
 }
 
 // Planner is the ledger as the planner needs it. Every method is scoped to
@@ -327,6 +342,25 @@ type Planner interface {
 	// AttemptsSince counts the pairs of the tenant attempted since t (the
 	// daily budget).
 	AttemptsSince(ctx context.Context, tenantID shared.ID, t time.Time) (int, error)
+	// RecordRunClaim counts a finished run of the capability: unclaimed
+	// (no sensor took it) adds one to the hold's streak, any other run
+	// resets it. It returns the new streak.
+	RecordRunClaim(ctx context.Context, tenantID shared.ID, capability string, unclaimed bool) (int, error)
+	// Holds returns the tenant's holds with a streak, by capability.
+	Holds(ctx context.Context, tenantID shared.ID) (map[string]Hold, error)
+	// HoldCapability records the hold's fingerprint and probe time and
+	// pauses the capability with ReadyNotClaimed until probeAt: its pairs
+	// whose time has come, its failed pairs, and pairs paused for another
+	// readiness reason.
+	HoldCapability(ctx context.Context, tenantID shared.ID, capability, fingerprint string, probeAt time.Time) (int, error)
+	// ResumeNow makes the capability's pairs paused for a readiness reason
+	// due now, whatever their retry time.
+	ResumeNow(ctx context.Context, tenantID shared.ID, capability string) (int, error)
+	// FleetFingerprint is a hash of what decides whether the tenant's
+	// work can be claimed: its sensors (state, tools, capabilities, local
+	// policy), their grants, its zone assignments, its shared-fleet access
+	// and the platform sensors' state and tools. Server-side only.
+	FleetFingerprint(ctx context.Context, tenantID shared.ID) (string, error)
 }
 
 // CapabilityHealth is one tenant's coverage of one capability.
@@ -346,6 +380,10 @@ type CapabilityHealth struct {
 	// reason (the planner keeps one per capability).
 	Paused       int
 	PausedReason string
+	// Unreachable: pairs paused because their target did not answer
+	// (unreachable, timeout) from the sensors that tried; rechecked on the
+	// TargetSideRecheck schedule. They are not counted in Gaps.
+	Unreachable int
 }
 
 // Alert kinds.
@@ -353,6 +391,9 @@ const (
 	AlertGap        = "gap"
 	AlertOutputDrop = "output_drop"
 	AlertFailing    = "failing"
+	// AlertUnreachable: targets of the capability did not answer from the
+	// organization's sensors (counts only, never the targets).
+	AlertUnreachable = "unreachable"
 )
 
 // Output-drop and failing thresholds (owner decision D4).
@@ -374,6 +415,9 @@ func (h CapabilityHealth) Alerts() []string {
 	}
 	if h.Failing > 0 {
 		out = append(out, AlertFailing)
+	}
+	if h.Unreachable > 0 {
+		out = append(out, AlertUnreachable)
 	}
 	return out
 }

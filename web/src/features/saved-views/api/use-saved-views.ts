@@ -3,7 +3,8 @@
 /**
  * Saved list views (UI style contract D15, API RFC-048 §3.6). A view stores
  * the page's filter (validated by the API on save and on every run) and page
- * state. It is personal, or shared with one of the caller's groups; only its
+ * state. It is personal, shared with one of the caller's groups or with the
+ * whole organization (findings:views:share); only its
  * owner edits it, others duplicate it. A view runs as whoever uses it.
  */
 
@@ -13,7 +14,7 @@ import { useTenant } from '@/context/tenant-provider'
 import { del, get, post, put } from '@/lib/api/client'
 import { SWR_REFERENCE } from '@/lib/swr-config'
 
-export type SavedViewPage = 'findings'
+export type SavedViewPage = 'findings' | 'vulnerabilities'
 
 export interface SavedView {
   id: string
@@ -28,6 +29,10 @@ export interface SavedView {
   owner_name?: string
   group_id?: string
   group_name?: string
+  /** The page's own params (not findings filters), e.g. the vulnerabilities list's kev or sort. */
+  page_params?: Record<string, string>
+  /** Every member of the organization may use it. */
+  shared_with_org?: boolean
   is_owner: boolean
   created_at: string
   updated_at: string
@@ -40,6 +45,8 @@ export interface SaveViewInput {
   /** The page's flat query (the API's own params), e.g. "severity=critical&q=log4j". */
   query: string
   group_id?: string
+  /** Share with the whole organization (needs findings:views:share). */
+  share_with_org?: boolean
   group_by?: string
   /** The columns the list showed (saved with the view). */
   columns?: string[]

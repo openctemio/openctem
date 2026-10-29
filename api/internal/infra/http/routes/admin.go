@@ -5,7 +5,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/domain/admin"
+	"github.com/openctemio/openctem/api/pkg/domain/platformauthz"
 )
 
 // =============================================================================
@@ -19,8 +19,11 @@ import (
 // administrator signed in on /login and passed the TOTP step. There are no
 // admin API keys. This is separate from tenant admin routes (RequireTeamAdmin).
 //
-// AUTHORIZATION MODEL (route-layer, centralized here — do NOT rely on ad-hoc
-// in-handler role checks for the guarantee):
+// AUTHORIZATION MODEL (route-layer): each route's platform permission is in
+// adminRoutePermissions (admin_permissions.go, RFC-134); the registration adds
+// the guard and refuses an unlisted route. The table below names the base
+// role that holds each route's permission (super_admin = platform owner,
+// ops_admin = platform admin, any admin = every role):
 //
 //	Group                     Read (GET)        Write (POST/PATCH/DELETE)
 //	------------------------  ----------------  --------------------------
@@ -165,6 +168,12 @@ func registerAdminRoutes(
 	if h.AdminAuthMiddleware == nil {
 		return
 	}
+	// Every console route is registered with its platform permission
+	// (adminRoutePermissions, admin_permissions.go); an unlisted route panics
+	// here, so nothing is served without a classification (RFC-134).
+	router = newConsolePermRouter(router, func(p platformauthz.Permission) Middleware {
+		return h.AdminAuthMiddleware.RequirePlatform(p)
+	})
 
 	// The console network check first, on every console route (the
 	// server-wide gate already ran on the raw path; this one sees what was
@@ -185,12 +194,6 @@ func registerAdminRoutes(
 		authedWrite = func(next http.Handler) http.Handler { return authenticate(writeAhead(next)) }
 	}
 	adminMiddlewares := append(cloneMW(netGate), authedWrite)
-
-	// Super-admin group guard, composed onto the base chain. Built here so the
-	// authorization guarantee lives at the route layer, not in handlers.
-	// (append onto a fresh slice so the shared base chain is never aliased.)
-	superAdminOnly := append(append([]Middleware{}, adminMiddlewares...),
-		h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin))
 
 	// stepUp is the route-level step-up of a protected action: a fresh
 	// authenticator code in X-Admin-Step-Up, or the step-up window of the same
@@ -273,8 +276,6 @@ func registerAdminRoutes(
 	// authorized live and audited in both logs by the handler; there is no
 	// write route.
 	if h.AdminSupport != nil {
-		supportChain := append(append([]Middleware{}, adminMiddlewares...),
-			h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin))
 		router.Group("/api/v1/admin/support", func(r Router) {
 			r.GET("/grants", h.AdminSupport.Grants)
 			r.POST("/grants/{grant_id}/sessions", h.AdminSupport.StartSession, stepUp("support.session_start"))
@@ -284,7 +285,7 @@ func registerAdminRoutes(
 			r.GET("/sessions/{session_id}/findings/{id}", h.AdminSupport.Finding)
 			r.GET("/sessions/{session_id}/assets", h.AdminSupport.Assets)
 			r.GET("/sessions/{session_id}/assets/{id}", h.AdminSupport.Asset)
-		}, supportChain...)
+		}, adminMiddlewares...)
 	}
 
 	// Build identity for the console's Help > About (any admin role).
@@ -298,12 +299,11 @@ func registerAdminRoutes(
 	// Settings > Announcements: any admin reads; ops_admin+ publishes or ends
 	// one with a reason (audited).
 	if h.Announcement != nil {
-		opsAnn := []Middleware{h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)}
 		// A banner every user of every organization sees is a phishing
 		// channel in a hijacked session: publishing or ending one needs a
 		// step-up.
 		annAudit := func(action string) []Middleware {
-			out := append(cloneMW(opsAnn), stepUp(action))
+			out := []Middleware{stepUp(action)}
 			if h.AdminAuditMiddleware != nil {
 				out = append(out, h.AdminAuditMiddleware.AuditLog(action, "announcement", "announcement_id"))
 			}
@@ -332,10 +332,9 @@ func registerAdminRoutes(
 	// Limits): any admin reads; a super admin changes them with a fresh
 	// authenticator code (checked in the handler, audited critical).
 	if h.Limits != nil {
-		requireSuperLimits := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
 		router.Group("/api/v1/admin/settings/limits", func(r Router) {
 			r.GET("/", h.Limits.GetSelfServiceDefaults)
-			r.PUT("/", h.Limits.UpdateSelfServiceDefaults, requireSuperLimits, stepUp("settings.limits"))
+			r.PUT("/", h.Limits.UpdateSelfServiceDefaults, stepUp("settings.limits"))
 		}, adminMiddlewares...)
 	}
 
@@ -346,10 +345,9 @@ func registerAdminRoutes(
 	// One group per prefix (chi cannot mount the same prefix twice): the
 	// super-admin guard is on the PUT route.
 	if h.AdminSignup != nil {
-		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
 		router.Group("/api/v1/admin/settings/signup", func(r Router) {
 			r.GET("/", h.AdminSignup.Get)
-			r.PUT("/", h.AdminSignup.Update, requireSuper, freshStepUp("settings.signup"))
+			r.PUT("/", h.AdminSignup.Update, freshStepUp("settings.signup"))
 		}, adminMiddlewares...)
 	}
 
@@ -358,24 +356,22 @@ func registerAdminRoutes(
 	// a reason and a fresh authenticator code (critical audit, admins
 	// emailed). The feed holds email domains and network prefixes only.
 	if h.AdminSignupEvents != nil {
-		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
 		router.Group("/api/v1/admin/signup-events", func(r Router) {
 			r.GET("/", h.AdminSignupEvents.List)
 			r.GET("/daily", h.AdminSignupEvents.Daily)
 		}, adminMiddlewares...)
 		router.Group("/api/v1/admin/settings/signup-alerts", func(r Router) {
 			r.GET("/", h.AdminSignupEvents.GetThresholds)
-			r.PUT("/", h.AdminSignupEvents.UpdateThresholds, requireSuper, stepUp("settings.signup_alerts"))
+			r.PUT("/", h.AdminSignupEvents.UpdateThresholds, stepUp("settings.signup_alerts"))
 		}, adminMiddlewares...)
 	}
 
 	// Console MFA policy ("require security keys", RFC-078): any admin reads;
 	// a super admin changes it with a step-up.
 	if h.AdminConsole != nil {
-		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
 		router.Group("/api/v1/admin/settings/console-mfa", func(r Router) {
 			r.GET("/", h.AdminConsole.GetMFAPolicy)
-			r.PUT("/", h.AdminConsole.PutMFAPolicy, requireSuper, freshStepUp("settings.console_mfa"))
+			r.PUT("/", h.AdminConsole.PutMFAPolicy, freshStepUp("settings.console_mfa"))
 		}, adminMiddlewares...)
 	}
 
@@ -383,11 +379,10 @@ func registerAdminRoutes(
 	// a super admin changes it with a fresh authenticator code and sends the
 	// test message (to their own address only).
 	if h.AdminEmail != nil {
-		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
 		router.Group("/api/v1/admin/settings/email", func(r Router) {
 			r.GET("/", h.AdminEmail.Get)
-			r.PUT("/", h.AdminEmail.Update, requireSuper, freshStepUp("settings.email"))
-			r.POST("/test", h.AdminEmail.SendTest, requireSuper)
+			r.PUT("/", h.AdminEmail.Update, freshStepUp("settings.email"))
+			r.POST("/test", h.AdminEmail.SendTest)
 		}, adminMiddlewares...)
 	}
 
@@ -397,10 +392,9 @@ func registerAdminRoutes(
 	// Legal information (Console > Settings > Legal, RFC-079): any admin reads;
 	// a super admin changes it with a fresh authenticator code.
 	if h.AdminLegal != nil {
-		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
 		router.Group("/api/v1/admin/settings/legal", func(r Router) {
 			r.GET("/", h.AdminLegal.Get)
-			r.PUT("/", h.AdminLegal.Update, requireSuper, stepUp("settings.legal"))
+			r.PUT("/", h.AdminLegal.Update, stepUp("settings.legal"))
 		}, adminMiddlewares...)
 	}
 
@@ -408,35 +402,34 @@ func registerAdminRoutes(
 	// admin changes the platform default with a fresh authenticator code and
 	// a reason (checked in the handler; the service audits and notifies).
 	if h.AdminScanPolicy != nil {
-		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
 		router.Group("/api/v1/admin/settings/scan-approval-policy", func(r Router) {
 			r.GET("/", h.AdminScanPolicy.GetDefault)
-			r.PUT("/", h.AdminScanPolicy.UpdateDefault, requireSuper, stepUp("settings.scan_approval"))
+			r.PUT("/", h.AdminScanPolicy.UpdateDefault, stepUp("settings.scan_approval"))
 		}, adminMiddlewares...)
 		// Verified domain before platform sensors scan (RFC-054 §8.1):
 		// same gate, step-up and audit.
 		router.Group("/api/v1/admin/settings/platform-sensor-proof", func(r Router) {
 			r.GET("/", h.AdminScanPolicy.GetProof)
-			r.PUT("/", h.AdminScanPolicy.UpdateProof, requireSuper, stepUp("settings.platform_sensor_proof"))
+			r.PUT("/", h.AdminScanPolicy.UpdateProof, stepUp("settings.platform_sensor_proof"))
 		}, adminMiddlewares...)
 		// Shared sensor access (RFC-100 §5): same gate, step-up and audit;
 		// turning the switch on is refused until shared sensors are ready.
 		router.Group("/api/v1/admin/settings/shared-sensors", func(r Router) {
 			r.GET("/", h.AdminScanPolicy.GetSharedSensors)
-			r.PUT("/", h.AdminScanPolicy.UpdateSharedSensors, requireSuper, stepUp("settings.shared_sensors"))
+			r.PUT("/", h.AdminScanPolicy.UpdateSharedSensors, stepUp("settings.shared_sensors"))
 			// Egress addresses organizations see to allowlist the scanners.
 			r.GET("/egress", h.AdminScanPolicy.GetSharedSensorsEgress)
-			r.PUT("/egress", h.AdminScanPolicy.UpdateSharedSensorsEgress, requireSuper, stepUp("settings.shared_sensors_egress"))
+			r.PUT("/egress", h.AdminScanPolicy.UpdateSharedSensorsEgress, stepUp("settings.shared_sensors_egress"))
 		}, adminMiddlewares...)
 		// Shared sensors may scan internal zones, and the anomaly alert
 		// thresholds (RFC-100 §6, §9): same gate, step-up and audit.
 		router.Group("/api/v1/admin/settings/shared-sensor-internal-zones", func(r Router) {
 			r.GET("/", h.AdminScanPolicy.GetSharedSensorInternalZones)
-			r.PUT("/", h.AdminScanPolicy.UpdateSharedSensorInternalZones, requireSuper, stepUp("settings.shared_sensor_internal_zones"))
+			r.PUT("/", h.AdminScanPolicy.UpdateSharedSensorInternalZones, stepUp("settings.shared_sensor_internal_zones"))
 		}, adminMiddlewares...)
 		router.Group("/api/v1/admin/settings/shared-sensor-anomaly", func(r Router) {
 			r.GET("/", h.AdminScanPolicy.GetSharedSensorAnomaly)
-			r.PUT("/", h.AdminScanPolicy.UpdateSharedSensorAnomaly, requireSuper, stepUp("settings.shared_sensor_anomaly"))
+			r.PUT("/", h.AdminScanPolicy.UpdateSharedSensorAnomaly, stepUp("settings.shared_sensor_anomaly"))
 		}, adminMiddlewares...)
 	}
 
@@ -445,16 +438,15 @@ func registerAdminRoutes(
 	// code and a reason (the service records it with the job signer first
 	// and writes the critical audit row).
 	if h.AdminInstanceScanZone != nil {
-		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
 		z := h.AdminInstanceScanZone
 		router.Group("/api/v1/admin/instance-scan-zones", func(r Router) {
 			r.GET("/", z.List)
-			r.POST("/", z.Create, requireSuper, stepUp("instance_scan_zone.create"))
+			r.POST("/", z.Create, stepUp("instance_scan_zone.create"))
 			r.GET("/{zone_id}", z.Get)
-			r.PUT("/{zone_id}", z.Update, requireSuper, stepUp("instance_scan_zone.update"))
-			r.DELETE("/{zone_id}", z.Delete, requireSuper, stepUp("instance_scan_zone.delete"))
-			r.PUT("/{zone_id}/sensors", z.SetSensors, requireSuper, stepUp("instance_scan_zone.sensors"))
-			r.PUT("/{zone_id}/organizations", z.SetOrganizations, requireSuper, stepUp("instance_scan_zone.organizations"))
+			r.PUT("/{zone_id}", z.Update, stepUp("instance_scan_zone.update"))
+			r.DELETE("/{zone_id}", z.Delete, stepUp("instance_scan_zone.delete"))
+			r.PUT("/{zone_id}/sensors", z.SetSensors, stepUp("instance_scan_zone.sensors"))
+			r.PUT("/{zone_id}/organizations", z.SetOrganizations, stepUp("instance_scan_zone.organizations"))
 		}, adminMiddlewares...)
 	}
 
@@ -467,10 +459,9 @@ func registerAdminRoutes(
 	// the handler; the service writes the console audit row). One group:
 	// the prefix can be mounted only once.
 	if h.AdminSharedFleet != nil || h.AdminSharedSensor != nil {
-		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
 		router.Group("/api/v1/admin/shared-sensors", func(r Router) {
 			if f := h.AdminSharedFleet; f != nil {
-				view := []Middleware{h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)}
+				view := []Middleware{}
 				if h.AdminSupportRateLimiter != nil {
 					view = append(view, h.AdminSupportRateLimiter.WriteMiddleware())
 				}
@@ -478,12 +469,12 @@ func registerAdminRoutes(
 				r.GET("/queue", f.Queue)
 				r.GET("/jobs", f.Jobs)
 				r.POST("/jobs/{job_id}/view", f.ViewJob, view...)
-				r.POST("/{sensor_id}/disable", f.Pause, requireSuper, stepUp("shared_sensor.pause"))
-				r.POST("/{sensor_id}/enable", f.Resume, requireSuper, stepUp("shared_sensor.resume"))
-				r.POST("/{sensor_id}/revoke", f.Retire, requireSuper, stepUp("shared_sensor.retire"))
+				r.POST("/{sensor_id}/disable", f.Pause, stepUp("shared_sensor.pause"))
+				r.POST("/{sensor_id}/enable", f.Resume, stepUp("shared_sensor.resume"))
+				r.POST("/{sensor_id}/revoke", f.Retire, stepUp("shared_sensor.retire"))
 			}
 			if h.AdminSharedSensor != nil {
-				r.POST("/enrollment-tokens", h.AdminSharedSensor.CreateInstanceEnrollmentToken, requireSuper,
+				r.POST("/enrollment-tokens", h.AdminSharedSensor.CreateInstanceEnrollmentToken,
 					stepUp("shared_sensors.enrollment_token"))
 			}
 		}, adminMiddlewares...)
@@ -493,9 +484,8 @@ func registerAdminRoutes(
 	// gets masked addresses and no notes); approving (creates the
 	// organization, requester as owner) or rejecting needs ops_admin+, audited.
 	if h.AccessRequest != nil {
-		requireOps := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)
 		decide := func(action string, extra ...Middleware) []Middleware {
-			mws := append([]Middleware{requireOps}, extra...)
+			mws := append([]Middleware{}, extra...)
 			if h.AdminAuditMiddleware != nil {
 				mws = append(mws, h.AdminAuditMiddleware.AuditLog(action, "access_request", "id"))
 			}
@@ -514,13 +504,12 @@ func registerAdminRoutes(
 	// signed release feed file (air-gapped instances) needs super_admin and
 	// the step-up, audited high.
 	if h.AdminVersionCheck != nil {
-		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
 		vc := h.AdminVersionCheck
 		router.Group("/api/v1/admin/version-check", func(r Router) {
 			r.GET("/", vc.Status)
-			r.POST("/import", vc.Import, requireSuper, stepUp("version_check.import"))
+			r.POST("/import", vc.Import, stepUp("version_check.import"))
 			// Switching the daily check: an egress and privacy decision.
-			r.PUT("/enabled", vc.SetEnabled, requireSuper, stepUp("version_check.switch"))
+			r.PUT("/enabled", vc.SetEnabled, stepUp("version_check.switch"))
 		}, adminMiddlewares...)
 	}
 
@@ -532,15 +521,14 @@ func registerAdminRoutes(
 	if h.AdminContentCatalog != nil {
 		// Import: super_admin here; the handler adds the reason, a fresh
 		// console authenticator code and its own high admin audit row.
-		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
 		c := h.AdminContentCatalog
 		router.Group("/api/v1/admin/content-catalog", func(r Router) {
 			r.GET("/", c.Status)
 			r.GET("/packages", c.Packages)
 			r.GET("/packages/{namespace}/{name}/versions", c.PackageVersions)
-			r.POST("/import", c.Import, requireSuper, stepUp("content_catalog.change"))
-			r.POST("/packages", c.Publish, requireSuper, stepUp("content_catalog.change"))
-			r.POST("/packages/revoke", c.Revoke, requireSuper, stepUp("content_catalog.change"))
+			r.POST("/import", c.Import, stepUp("content_catalog.change"))
+			r.POST("/packages", c.Publish, stepUp("content_catalog.change"))
+			r.POST("/packages/revoke", c.Revoke, stepUp("content_catalog.change"))
 		}, adminMiddlewares...)
 	}
 
@@ -548,7 +536,6 @@ func registerAdminRoutes(
 		// Writes: super_admin here; the handler adds the reason, a fresh
 		// console authenticator code (confirmAdminStepUp) and its own admin
 		// audit row carrying the reason.
-		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
 		p := h.PlatformContentPack
 		router.Group("/api/v1/admin/content-packs", func(r Router) {
 			r.GET("/", p.List)
@@ -556,10 +543,10 @@ func registerAdminRoutes(
 			r.GET("/signing-key", p.SigningKey)
 			r.GET("/{id}", p.Get)
 			r.GET("/{id}/download", p.Download)
-			r.POST("/", p.Upload, requireSuper, stepUp("content_pack.change"))
-			r.POST("/import", p.Import, requireSuper, stepUp("content_pack.change"))
-			r.POST("/{id}/revoke", p.Revoke, requireSuper, stepUp("content_pack.change"))
-			r.PUT("/channels/{channel}", p.SetChannel, requireSuper, stepUp("content_pack.change"))
+			r.POST("/", p.Upload, stepUp("content_pack.change"))
+			r.POST("/import", p.Import, stepUp("content_pack.change"))
+			r.POST("/{id}/revoke", p.Revoke, stepUp("content_pack.change"))
+			r.PUT("/channels/{channel}", p.SetChannel, stepUp("content_pack.change"))
 		}, adminMiddlewares...)
 	}
 
@@ -569,7 +556,7 @@ func registerAdminRoutes(
 	if h.AdminConsole != nil {
 		router.Group("/api/v1/admin/administrators", func(r Router) {
 			r.POST("/", h.AdminConsole.Provision, stepUp("admin.provision"))
-		}, superAdminOnly...)
+		}, adminMiddlewares...)
 
 		// The administrators' identity provider (System -> Admin sign-in):
 		// who may sign in to the console and whether the console asks its own
@@ -580,7 +567,7 @@ func registerAdminRoutes(
 			r.GET("/", h.AdminConsole.GetPlatformIdP)
 			r.PUT("/", h.AdminConsole.PutPlatformIdP, freshStepUp("platform_idp.update"))
 			r.DELETE("/", h.AdminConsole.DeletePlatformIdP, freshStepUp("platform_idp.delete"))
-		}, superAdminOnly...)
+		}, adminMiddlewares...)
 	}
 
 	// Security > Approvals (four-eyes): a super admin asks with a reason and
@@ -594,7 +581,7 @@ func registerAdminRoutes(
 			r.POST("/{id}/approve", h.AdminApproval.Approve, freshStepUp("approval.approve"))
 			r.POST("/{id}/reject", h.AdminApproval.Reject, stepUp("approval.reject"))
 			r.POST("/{id}/cancel", h.AdminApproval.Cancel)
-		}, superAdminOnly...)
+		}, adminMiddlewares...)
 	}
 
 	// Organizations (RFC-022 Phase 2): the platform admin's cross-tenant view,
@@ -604,8 +591,6 @@ func registerAdminRoutes(
 	// verified-domain setup reuse the tenant handlers under AdminTenantScope,
 	// which sets the path organization as the request tenant.
 	if h.AdminOrganization != nil {
-		opsWrite := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)
-		superWrite := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
 		scope := middleware.AdminTenantScope(h.AdminOrganization.TenantExists)
 		audit := func(action string) []Middleware {
 			if h.AdminAuditMiddleware == nil {
@@ -634,12 +619,12 @@ func registerAdminRoutes(
 		// super admin, step-up, audited.
 		ssoStepUp := stepUp("organization.sso_change")
 		write := func(action string) []Middleware {
-			return with([]Middleware{superWrite, ssoStepUp, scope}, audit(action))
+			return with([]Middleware{ssoStepUp, scope}, audit(action))
 		}
 
 		router.Group("/api/v1/admin/tenants", func(r Router) {
 			r.GET("/", h.AdminOrganization.List)
-			r.POST("/", h.AdminOrganization.Create, with([]Middleware{opsWrite, stepUp("organization.create")}, audit("organization.create"))...)
+			r.POST("/", h.AdminOrganization.Create, with([]Middleware{stepUp("organization.create")}, audit("organization.create"))...)
 			// One organization's page carries its owners' addresses (ops_admin
 			// and above): every view is audited, like the member list.
 			r.GET("/{tenantId}", h.AdminOrganization.Get, audit("organization.view")...)
@@ -654,24 +639,24 @@ func registerAdminRoutes(
 			// Creating the first owner (or recovering one) hands an
 			// organization to a person: step-up.
 			r.POST("/{tenantId}/users", h.AdminOrganization.CreateUser,
-				with([]Middleware{opsWrite, freshStepUp("organization.owner_create"), scope}, bypass("owner create or recovery", false), audit("organization.user_create"))...)
+				with([]Middleware{freshStepUp("organization.owner_create"), scope}, bypass("owner create or recovery", false), audit("organization.user_create"))...)
 
 			// Suspend / lift (docs/architecture/organization-suspension.md):
 			// cuts or restores every credential of the organization at once.
 			// ops_admin+ (abuse response), a fresh authenticator code, a
 			// reason; the service writes the critical admin audit row.
 			if h.AdminSuspension != nil {
-				r.POST("/{tenantId}/suspend", h.AdminSuspension.SuspendOrganization, opsWrite, stepUp("organization.suspend"), scope)
-				r.POST("/{tenantId}/unsuspend", h.AdminSuspension.UnsuspendOrganization, opsWrite, stepUp("organization.unsuspend"), scope)
+				r.POST("/{tenantId}/suspend", h.AdminSuspension.SuspendOrganization, stepUp("organization.suspend"), scope)
+				r.POST("/{tenantId}/unsuspend", h.AdminSuspension.UnsuspendOrganization, stepUp("organization.unsuspend"), scope)
 				// Delete now (docs/architecture/organization-deletion.md):
 				// irreversible, so super_admin and a fresh code, not the
 				// step-up window.
-				r.POST("/{tenantId}/purge", h.AdminSuspension.PurgeOrganization, superWrite, freshStepUp("organization.purge"), scope)
+				r.POST("/{tenantId}/purge", h.AdminSuspension.PurgeOrganization, freshStepUp("organization.purge"), scope)
 			}
 
 			r.GET("/{tenantId}/sso/enforcement", h.AdminOrganization.GetSSOEnforcement)
 			r.PUT("/{tenantId}/sso/enforcement", h.AdminOrganization.SetSSOEnforcement,
-				with([]Middleware{superWrite, ssoStepUp}, audit("organization.sso_enforcement"))...)
+				with([]Middleware{ssoStepUp}, audit("organization.sso_enforcement"))...)
 
 			if h.SAML != nil {
 				r.GET("/{tenantId}/sso/saml", h.SAML.GetConfig, read...)
@@ -698,7 +683,7 @@ func registerAdminRoutes(
 			// take the generic audit middleware.
 			if h.AdminAuditChain != nil {
 				r.GET("/{tenantId}/audit-chain", h.AdminAuditChain.Classify, read...)
-				r.POST("/{tenantId}/audit-chain/rebaseline", h.AdminAuditChain.Rebaseline, superWrite, stepUp("organization.audit_chain_rebaseline"), scope)
+				r.POST("/{tenantId}/audit-chain/rebaseline", h.AdminAuditChain.Rebaseline, stepUp("organization.audit_chain_rebaseline"), scope)
 			}
 
 			// Dashboard data of an organization (docs/architecture/dashboards.md,
@@ -709,14 +694,14 @@ func registerAdminRoutes(
 			if h.DashboardFacts != nil {
 				r.GET("/{tenantId}/dashboard-data", h.DashboardFacts.ConsoleStatus, read...)
 				r.POST("/{tenantId}/dashboard-data/rebuild", h.DashboardFacts.ConsoleRequestRebuild,
-					with([]Middleware{opsWrite, scope}, audit("organization.dashboard_data_rebuild"))...)
+					with([]Middleware{scope}, audit("organization.dashboard_data_rebuild"))...)
 			}
 
 			// Idle policy of an organization (off by default): any admin
 			// reads; ops_admin+ turns it on or off (audited by the service).
 			if h.IdleWorkspace != nil {
 				r.GET("/{tenantId}/idle", h.IdleWorkspace.Get, read...)
-				r.PUT("/{tenantId}/idle/policy", h.IdleWorkspace.SetPolicy, with([]Middleware{opsWrite, stepUp("organization.idle_policy"), scope})...)
+				r.PUT("/{tenantId}/idle/policy", h.IdleWorkspace.SetPolicy, with([]Middleware{stepUp("organization.idle_policy"), scope})...)
 			}
 
 			// Limits of one organization: any admin reads (with usage and the
@@ -725,15 +710,15 @@ func registerAdminRoutes(
 			if h.Limits != nil {
 				r.GET("/{tenantId}/limits", h.Limits.GetTenantLimits, read...)
 				// A limit of 0 freezes an organization: step-up like module denies.
-				r.PUT("/{tenantId}/limits/{key}", h.Limits.SetTenantLimit, with([]Middleware{opsWrite, stepUp("organization.limit"), scope})...)
-				r.DELETE("/{tenantId}/limits/{key}", h.Limits.DeleteTenantLimit, with([]Middleware{opsWrite, stepUp("organization.limit"), scope})...)
+				r.PUT("/{tenantId}/limits/{key}", h.Limits.SetTenantLimit, with([]Middleware{stepUp("organization.limit"), scope})...)
+				r.DELETE("/{tenantId}/limits/{key}", h.Limits.DeleteTenantLimit, with([]Middleware{stepUp("organization.limit"), scope})...)
 				// Modules of one organization: any admin reads; ops_admin+
 				// denies one or lifts the deny with a fresh authenticator code
 				// (audited by the service; a denied module keeps read access
 				// for the grace period).
 				r.GET("/{tenantId}/modules", h.Limits.GetTenantModules, read...)
-				r.PUT("/{tenantId}/modules/{module_id}/deny", h.Limits.SetModuleDeny, with([]Middleware{opsWrite, stepUp("organization.module_deny"), scope})...)
-				r.DELETE("/{tenantId}/modules/{module_id}/deny", h.Limits.DeleteModuleDeny, with([]Middleware{opsWrite, stepUp("organization.module_deny"), scope})...)
+				r.PUT("/{tenantId}/modules/{module_id}/deny", h.Limits.SetModuleDeny, with([]Middleware{stepUp("organization.module_deny"), scope})...)
+				r.DELETE("/{tenantId}/modules/{module_id}/deny", h.Limits.DeleteModuleDeny, with([]Middleware{stepUp("organization.module_deny"), scope})...)
 			}
 
 			// The organization's scope approval policy (RFC-054 §12.6): any
@@ -741,11 +726,11 @@ func registerAdminRoutes(
 			// reason (the service writes the critical audit row).
 			if h.AdminScanPolicy != nil {
 				r.GET("/{tenantId}/scan-approval-policy", h.AdminScanPolicy.GetOrganization, read...)
-				r.PUT("/{tenantId}/scan-approval-policy", h.AdminScanPolicy.UpdateOrganization, superWrite, stepUp("organization.scan_approval"), scope)
+				r.PUT("/{tenantId}/scan-approval-policy", h.AdminScanPolicy.UpdateOrganization, stepUp("organization.scan_approval"), scope)
 				// Shared sensor access of the organization (RFC-100 §5):
 				// allow, deny or the instance default; same gate.
 				r.GET("/{tenantId}/shared-sensors", h.AdminScanPolicy.GetOrganizationSharedSensors, read...)
-				r.PUT("/{tenantId}/shared-sensors", h.AdminScanPolicy.UpdateOrganizationSharedSensors, superWrite, stepUp("organization.shared_sensors"), scope)
+				r.PUT("/{tenantId}/shared-sensors", h.AdminScanPolicy.UpdateOrganizationSharedSensors, stepUp("organization.shared_sensors"), scope)
 			}
 
 			if h.VerifiedDomain != nil {
@@ -763,9 +748,9 @@ func registerAdminRoutes(
 	// action on it (ops_admin+, reason required, rate-limited, audited).
 	// Account-level facts only, never organization data.
 	if h.AdminPlatformUser != nil {
-		opsSupport := []Middleware{h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)}
+		supportMW := []Middleware{}
 		if h.AdminSupportRateLimiter != nil {
-			opsSupport = append(opsSupport, h.AdminSupportRateLimiter.WriteMiddleware())
+			supportMW = append(supportMW, h.AdminSupportRateLimiter.WriteMiddleware())
 		}
 		audited := func(action string, base []Middleware) []Middleware {
 			out := cloneMW(base)
@@ -781,34 +766,30 @@ func registerAdminRoutes(
 		}
 		// Finding people by email is personal data: ops_admin+ (a read-only
 		// administrator sees counts elsewhere, never accounts).
-		opsRead := []Middleware{h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)}
+		directoryRead := []Middleware{}
 		if h.AdminDirectoryReadLimiter != nil {
-			opsRead = append(opsRead, h.AdminDirectoryReadLimiter.WriteMiddleware())
+			directoryRead = append(directoryRead, h.AdminDirectoryReadLimiter.WriteMiddleware())
 		}
 		router.Group("/api/v1/admin/platform-users", func(r Router) {
-			r.GET("/", h.AdminPlatformUser.List, opsRead...)
-			r.GET("/{user_id}", h.AdminPlatformUser.Get, append(cloneMW(opsRead), audited("platform_user.view", nil)...)...)
-			r.POST("/{user_id}/revoke-sessions", h.AdminPlatformUser.RevokeSessions, audited("platform_user.revoke_sessions", opsSupport)...)
-			r.POST("/{user_id}/unlock", h.AdminPlatformUser.Unlock, audited("platform_user.unlock", opsSupport)...)
-			r.POST("/{user_id}/password-reset", h.AdminPlatformUser.SendPasswordReset, audited("platform_user.password_reset", opsSupport)...)
-			r.POST("/{user_id}/verification-emails", h.AdminPlatformUser.ResendVerification, audited("platform_user.resend_verification", opsSupport)...)
+			r.GET("/", h.AdminPlatformUser.List, directoryRead...)
+			r.GET("/{user_id}", h.AdminPlatformUser.Get, append(cloneMW(directoryRead), audited("platform_user.view", nil)...)...)
+			r.POST("/{user_id}/revoke-sessions", h.AdminPlatformUser.RevokeSessions, audited("platform_user.revoke_sessions", supportMW)...)
+			r.POST("/{user_id}/unlock", h.AdminPlatformUser.Unlock, audited("platform_user.unlock", supportMW)...)
+			r.POST("/{user_id}/password-reset", h.AdminPlatformUser.SendPasswordReset, audited("platform_user.password_reset", supportMW)...)
+			r.POST("/{user_id}/verification-emails", h.AdminPlatformUser.ResendVerification, audited("platform_user.resend_verification", supportMW)...)
 			// For a server that cannot send email, and for a person who lost
-			// their second factor: super_admin only, step-up, reason, audited.
-			// The reset link and the copied email state are bearer or
-			// identity-proof changes, so ops_admin does not get them; the
+			// their second factor: the credentials permission (owner only), step-up,
+			// reason, audited. The reset link and the copied email state are bearer or
+			// identity-proof changes, so account support does not get them; the
 			// two-factor reset also needs a second super admin's approval.
-			superSupport := []Middleware{h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)}
-			if h.AdminSupportRateLimiter != nil {
-				superSupport = append(superSupport, h.AdminSupportRateLimiter.WriteMiddleware())
-			}
-			r.POST("/{user_id}/reset-link", h.AdminPlatformUser.IssueResetLink, audited("platform_user.reset_link", superSupport)...)
-			r.POST("/{user_id}/mark-verified", h.AdminPlatformUser.MarkVerified, audited("platform_user.mark_verified", superSupport)...)
-			r.POST("/{user_id}/mfa/reset", h.AdminPlatformUser.ResetMFA, audited("platform_user.mfa_reset", superSupport)...)
+			r.POST("/{user_id}/reset-link", h.AdminPlatformUser.IssueResetLink, audited("platform_user.reset_link", supportMW)...)
+			r.POST("/{user_id}/mark-verified", h.AdminPlatformUser.MarkVerified, audited("platform_user.mark_verified", supportMW)...)
+			r.POST("/{user_id}/mfa/reset", h.AdminPlatformUser.ResetMFA, audited("platform_user.mfa_reset", supportMW)...)
 			// Block / unblock platform-wide: ops_admin+, step-up, reason; the
 			// service writes the critical admin audit row.
 			if h.AdminSuspension != nil {
-				r.POST("/{user_id}/block", h.AdminSuspension.BlockUser, append(cloneMW(opsSupport), stepUp("platform_user.block"))...)
-				r.POST("/{user_id}/unblock", h.AdminSuspension.UnblockUser, append(cloneMW(opsSupport), stepUp("platform_user.unblock"))...)
+				r.POST("/{user_id}/block", h.AdminSuspension.BlockUser, append(cloneMW(supportMW), stepUp("platform_user.block"))...)
+				r.POST("/{user_id}/unblock", h.AdminSuspension.UnblockUser, append(cloneMW(supportMW), stepUp("platform_user.unblock"))...)
 			}
 		}, adminMiddlewares...)
 	}
@@ -824,7 +805,7 @@ func registerAdminRoutes(
 				end = append(end, h.AdminAuditMiddleware.AuditLog("console.session_ended", "admin_session", "console_session_id"))
 			}
 			r.DELETE("/{console_session_id}", h.AdminSession.End, end...)
-		}, superAdminOnly...)
+		}, adminMiddlewares...)
 	}
 
 	// Admin user management — the platform admin roster (emails, last-used
@@ -854,7 +835,22 @@ func registerAdminRoutes(
 				r.POST("/{id}/break-glass-test", h.AdminConsole.ConfirmBreakGlassTest, stepUp("admin.break_glass_test"))
 				r.DELETE("/{id}/idp-binding", h.AdminConsole.UnbindIdP, stepUp("admin.idp_unbind"))
 			}
-		}, superAdminOnly...)
+			if h.AdminPlatformRole != nil {
+				// Additional platform roles (RFC-134): owner-held permission,
+				// step-up, a reason, audited first, announced.
+				r.POST("/{id}/platform-roles", h.AdminPlatformRole.Assign, stepUp("platform_role.assign"))
+				r.DELETE("/{id}/platform-roles/{role}", h.AdminPlatformRole.Revoke, stepUp("platform_role.revoke"))
+			}
+		}, adminMiddlewares...)
+	}
+
+	// Platform roles (RFC-134): the catalog and built-in roles (any role
+	// reads them), and who holds what (the administrator roster).
+	if h.AdminPlatformRole != nil {
+		router.Group("/api/v1/admin/platform-roles", func(r Router) {
+			r.GET("/", h.AdminPlatformRole.Roles)
+			r.GET("/assignments", h.AdminPlatformRole.Assignments)
+		}, adminMiddlewares...)
 	}
 
 	// Audit log endpoints — read-only, viewable by ANY admin role (readonly
@@ -875,7 +871,7 @@ func registerAdminRoutes(
 	if h.ThreatIntel != nil {
 		router.Group("/api/v1/admin/threat-intel", func(r Router) {
 			r.GET("/sync", h.ThreatIntel.GetSyncStatuses)
-			feedWrite := []Middleware{h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)}
+			feedWrite := []Middleware{}
 			// Turning a feed off changes every organization's prioritization.
 			syncMW, toggleMW := cloneMW(feedWrite), append(cloneMW(feedWrite), stepUp("threat_intel.sync_toggle"))
 			if h.AdminAuditMiddleware != nil {
@@ -892,7 +888,7 @@ func registerAdminRoutes(
 	if h.MCPConnections != nil {
 		router.Group("/api/v1/admin/mcp-clients", func(r Router) {
 			r.GET("/", h.MCPConnections.AdminListClients)
-			write := []Middleware{h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)}
+			write := []Middleware{}
 			// Unblocking readmits an application that was cut off: both
 			// directions need a step-up.
 			block, unblock := append(cloneMW(write), stepUp("mcp_client.block")), append(cloneMW(write), stepUp("mcp_client.unblock"))
@@ -914,6 +910,7 @@ func registerAdminRoutes(
 			// Read operations — any authenticated admin.
 			r.GET("/stats", h.AdminTargetMapping.GetStats)
 			r.GET("/types", h.AdminTargetMapping.Types)
+			r.GET("/registry", h.AdminTargetMapping.Registry)
 			r.GET("/", h.AdminTargetMapping.List)
 			r.GET("/{id}", h.AdminTargetMapping.Get)
 
@@ -922,9 +919,7 @@ func registerAdminRoutes(
 			// platform-wide decision. super_admin, a step-up, a reason in the
 			// body (kept in the audit row), rate-limited and audited.
 			var writeMiddlewares []Middleware
-			writeMiddlewares = append(writeMiddlewares,
-				h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin),
-				stepUp("target_mapping.change"))
+			writeMiddlewares = append(writeMiddlewares, stepUp("target_mapping.change"))
 			if h.AdminMappingRateLimiter != nil {
 				writeMiddlewares = append(writeMiddlewares, h.AdminMappingRateLimiter.WriteMiddleware())
 			}

@@ -141,10 +141,7 @@ func (s *Service) StartCoverage(ctx context.Context, in CoverageInput) (*Coverag
 	sc.SetTargets(res.Kept)
 	// One command per chunk of the stage's size (list tools are efficient
 	// with lists), not one per target.
-	perJob := st.ChunkSizeFor(tool)
-	if perJob <= 0 {
-		perJob = defaultCoverageChunk
-	}
+	perJob := coverageChunk(st, tool)
 	if err := sc.SetSingleScanner(tool, map[string]any{"targets": res.Kept}, perJob); err != nil {
 		return nil, fmt.Errorf("failed to set scanner: %w", err)
 	}
@@ -223,6 +220,26 @@ func (s *Service) coverageScan(ctx context.Context, tenantID shared.ID, capabili
 		}
 	}
 	return nil, fmt.Errorf("failed to create coverage scan: %w", createErr)
+}
+
+// coverageChunk is how many targets one task of a coverage run of the stage
+// carries with tool.
+func coverageChunk(st stage.Stage, tool string) int {
+	if n := st.ChunkSizeFor(tool); n > 0 {
+		return n
+	}
+	return defaultCoverageChunk
+}
+
+// CoverageChunkSize is how many targets one task of a coverage run of the
+// capability carries (its default tool's chunk size): the size of a batch
+// that fills one task. 0 for a capability that is not a stage.
+func CoverageChunkSize(capability string) int {
+	st, ok := stage.Lookup(stage.Key(capability))
+	if !ok {
+		return 0
+	}
+	return coverageChunk(st, st.DefaultTool())
 }
 
 func stageTool(capability string) string {

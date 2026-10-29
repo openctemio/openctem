@@ -89,3 +89,32 @@ func TestIsHostsBusyRelease(t *testing.T) {
 		t.Fatal("another reason taken for hosts busy")
 	}
 }
+
+// A sensor that is busy only because host pressure took its slots away is
+// counted under sensor_overloaded; a plain busy one stays unexplained.
+func TestPlacementSummary_OverloadedBusy(t *testing.T) {
+	p := &Placement{Sensors: []SensorPlacement{
+		{Eligible: true, Busy: true, Reasons: []string{commanddom.PlacementSensorOverloaded}},
+		{Eligible: true, Busy: true},
+	}}
+	p.summarize()
+	want := []ReasonCount{{commanddom.PlacementSensorOverloaded, 1}}
+	if p.Eligible != 2 || p.Busy != 2 || !slices.Equal(p.Blocking, want) {
+		t.Fatalf("eligible %d busy %d blocking %v", p.Eligible, p.Busy, p.Blocking)
+	}
+}
+
+func TestWithheldText(t *testing.T) {
+	for code, want := range map[string]string{
+		"grant_credentials":                   "withheld by sensor permissions: credentials",
+		"grant_tier_ceiling":                  "withheld by sensor permissions: tier ceiling",
+		commanddom.PlacementIntensity:         "withheld: the job's tier is above the scan's intensity",
+		commanddom.PlacementLocalPolicy:       "withheld: the sensor's local policy refuses it",
+		commanddom.PlacementPolicyUnavailable: "withheld: the sensor's policy could not be read",
+		"something_new":                       "withheld: something_new",
+	} {
+		if got := commanddom.WithheldText(code); got != want {
+			t.Errorf("%s: %q, want %q", code, got, want)
+		}
+	}
+}

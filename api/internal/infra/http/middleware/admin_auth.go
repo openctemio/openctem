@@ -1,6 +1,7 @@
 // Package middleware provides HTTP middleware for the API server.
 // This file implements platform administrator authentication: a verified
-// console session (RFC-022). Administrators have no API keys.
+// console session (RFC-022). Administrators have no API keys. Authorization is
+// by platform permission (RFC-134): RequirePlatform on each console route.
 package middleware
 
 import (
@@ -10,6 +11,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
+	"github.com/openctemio/openctem/api/pkg/domain/platformauthz"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -75,10 +77,19 @@ var enrollmentAllowed = map[string]bool{
 	"POST /api/v1/admin/auth/step-up/webauthn":             true,
 }
 
+// PlatformRoleReader returns the platform roles an administrator holds
+// (RFC-134).
+type PlatformRoleReader interface {
+	HeldRoles(ctx context.Context, adminID string) ([]platformauthz.RoleKey, error)
+}
+
 // AdminAuthMiddleware provides authentication for admin API endpoints.
 type AdminAuthMiddleware struct {
 	sessions AdminSessionAuthenticator
-	logger   *logger.Logger
+	// roles reads the platform roles; without it an administrator holds the
+	// base role of their tier only.
+	roles  PlatformRoleReader
+	logger *logger.Logger
 	// elevation: administrators act as read-only unless their session is
 	// elevated (ADMIN_ELEVATION=required).
 	elevation bool
@@ -89,6 +100,12 @@ type AdminAuthMiddleware struct {
 // read-only unless the session holds a live elevation.
 func (m *AdminAuthMiddleware) WithElevation(on bool) *AdminAuthMiddleware {
 	m.elevation = on
+	return m
+}
+
+// WithPlatformRoles reads each administrator's platform roles from r.
+func (m *AdminAuthMiddleware) WithPlatformRoles(r PlatformRoleReader) *AdminAuthMiddleware {
+	m.roles = r
 	return m
 }
 
@@ -178,8 +195,31 @@ func (m *AdminAuthMiddleware) Authenticate(next http.Handler) http.Handler {
 		}
 		// Time-boxed elevation: without a live elevation the administrator
 		// acts as read-only, whatever their own role.
+		now := m.now()
 		if m.elevation {
-			adminUser.ActAs(sess.ActingRole(m.now()))
+			adminUser.ActAs(sess.ActingRole(now))
+		}
+		// Platform permissions: the roles held, narrowed to the baseline reads
+		// plus the role the session is elevated as (when elevation is on).
+		roles := []platformauthz.RoleKey{platformauthz.BaseRoleFor(platformauthz.Tier(adminUser.Role()))}
+		if m.roles != nil {
+			held, err := m.roles.HeldRoles(r.Context(), adminUser.ID().String())
+			if err != nil {
+				m.logger.Error("admin auth: read platform roles", "error", err)
+				apierror.ServiceUnavailable("The console cannot read your roles right now").WriteJSON(w)
+				return
+			}
+			roles = held
+		}
+		var elevated platformauthz.RoleKey
+		if sess != nil {
+			elevated = sess.ElevatedAs(now)
+		}
+		adminUser.SetPlatformAccess(roles, platformauthz.Acting(roles, m.elevation, elevated))
+		// A route's permission whose guard ran before this authentication.
+		if p, ok := r.Context().Value(pendingPlatformPermKey).(platformauthz.Permission); ok && !adminUser.Can(p) {
+			denyPlatform(w, m.logger, adminUser, p)
+			return
 		}
 		ctx := withAdmin(r.Context(), adminUser, AdminAuthMethodSession)
 		if sess != nil {
@@ -189,65 +229,37 @@ func (m *AdminAuthMiddleware) Authenticate(next http.Handler) http.Handler {
 	})
 }
 
-// RequireRole creates middleware that requires a specific admin role.
-// Use after Authenticate middleware.
-func (m *AdminAuthMiddleware) RequireRole(roles ...admin.AdminRole) func(http.Handler) http.Handler {
+// pendingPlatformPermKey carries a route's platform permission to an
+// authentication that runs after the route's guard (a route that lists the
+// session check among its own middlewares).
+const pendingPlatformPermKey logger.ContextKey = "admin_pending_platform_permission"
+
+// RequirePlatform allows the request only when the authenticated
+// administrator acts with platform permission p (RFC-134). Every console route
+// gets one through the console route registration, which refuses to register
+// a route with no permission, so a console route is denied by default. When
+// the session check runs later in the route's chain, the check moves there.
+func (m *AdminAuthMiddleware) RequirePlatform(p platformauthz.Permission) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			adminUser := GetAdminUser(r.Context())
-			if adminUser == nil {
-				m.logger.Error("admin auth: RequireRole called without Authenticate")
-				apierror.Unauthorized("authentication required").WriteJSON(w)
+			a := GetAdminUser(r.Context())
+			if a == nil {
+				next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), pendingPlatformPermKey, p)))
 				return
 			}
-
-			// Check if admin has one of the required roles
-			hasRole := false
-			for _, role := range roles {
-				if adminUser.EffectiveRole() == role {
-					hasRole = true
-					break
-				}
-			}
-
-			if !hasRole {
-				m.logger.Debug("admin auth: insufficient role",
-					"admin_id", adminUser.ID().String(),
-					"role", adminUser.EffectiveRole(),
-					"required_roles", roles)
-				apierror.Forbidden("insufficient permissions").WriteJSON(w)
+			if !a.Can(p) {
+				denyPlatform(w, m.logger, a, p)
 				return
 			}
-
 			next.ServeHTTP(w, r)
 		})
 	}
 }
 
-// RequirePermission creates middleware that requires a specific permission.
-// Use after Authenticate middleware.
-func (m *AdminAuthMiddleware) RequirePermission(action string) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			adminUser := GetAdminUser(r.Context())
-			if adminUser == nil {
-				m.logger.Error("admin auth: RequirePermission called without Authenticate")
-				apierror.Unauthorized("authentication required").WriteJSON(w)
-				return
-			}
-
-			if !adminUser.HasPermission(action) {
-				m.logger.Debug("admin auth: permission denied",
-					"admin_id", adminUser.ID().String(),
-					"role", adminUser.EffectiveRole(),
-					"action", action)
-				apierror.Forbidden("permission denied: " + action).WriteJSON(w)
-				return
-			}
-
-			next.ServeHTTP(w, r)
-		})
-	}
+func denyPlatform(w http.ResponseWriter, log *logger.Logger, a *admin.AdminUser, p platformauthz.Permission) {
+	log.Debug("admin auth: platform permission denied",
+		"admin_id", a.ID().String(), "permission", string(p), "role", a.EffectiveRole())
+	apierror.Forbidden("insufficient permissions").WriteJSON(w)
 }
 
 // =============================================================================

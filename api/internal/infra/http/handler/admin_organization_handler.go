@@ -14,6 +14,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
+	"github.com/openctemio/openctem/api/pkg/domain/platformauthz"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/user"
@@ -184,10 +185,9 @@ type AdminOrgUserListResponse struct {
 }
 
 // adminSeesPersonalData reports whether the console caller may see people's
-// names and emails: every role but readonly, which sees counts.
+// names and emails (platform.tenants.members.read); everyone else sees counts.
 func adminSeesPersonalData(r *http.Request) bool {
-	role := middleware.GetAdminRole(r.Context())
-	return role != "" && role != string(admin.AdminRoleReadonly)
+	return middleware.GetAdminUser(r.Context()).Can(platformauthz.TenantsMembersRead)
 }
 
 // AdminSSOEnforcementRequest turns SSO enforcement on or off for an organization.
@@ -393,8 +393,8 @@ func (h *AdminOrganizationHandler) Create(w http.ResponseWriter, r *http.Request
 		}, adminAuditContext(r, ""))
 	if err != nil {
 		switch {
-		case errors.Is(err, tenant.ErrPlatformAdminMembership):
-			apierror.Conflict("Platform administrators cannot belong to an organization. Use another owner email.").WriteJSON(w)
+		case errors.Is(err, tenant.ErrBreakGlassMembership):
+			apierror.Conflict("A break-glass administrator cannot own an organization. Use another owner email.").WriteJSON(w)
 		case errors.Is(err, tenantapp.ErrOwnerAccountExists):
 			apierror.Conflict("This person already has an account; they can create the organization after signing in.").WriteJSON(w)
 		case errors.Is(err, tenantapp.ErrAccountExists):
@@ -508,8 +508,8 @@ func (h *AdminOrganizationHandler) CreateUser(w http.ResponseWriter, r *http.Req
 		// Owner recovery overrides a suspended owner's hold on the
 		// organization: super admin only, and audited under its own action.
 		middleware.SetAuditAction(r.Context(), "organization.owner_recovery", true)
-		if middleware.GetAdminRole(r.Context()) != string(admin.AdminRoleSuperAdmin) {
-			apierror.Forbidden("Owner recovery requires the super admin role.").WriteJSON(w)
+		if !middleware.GetAdminUser(r.Context()).Can(platformauthz.TenantsOwnerRecovery) {
+			apierror.Forbidden("Owner recovery requires the platform owner role.").WriteJSON(w)
 			return
 		}
 		if n := len([]rune(strings.TrimSpace(req.Reason))); n < ownerRecoveryReasonMin || n > ownerRecoveryReasonMax {
@@ -528,8 +528,6 @@ func (h *AdminOrganizationHandler) CreateUser(w http.ResponseWriter, r *http.Req
 			apierror.Conflict("This organization has an active owner. Owner recovery is only for an organization whose owners are all suspended.").WriteJSON(w)
 		case errors.Is(err, tenant.ErrOrganizationHasOwner):
 			apierror.Conflict("This organization already has an owner (active or suspended). Its owner and administrators invite or create users themselves; if every owner is suspended, a super admin can use owner recovery.").WriteJSON(w)
-		case errors.Is(err, tenant.ErrPlatformAdminMembership):
-			apierror.Conflict("Platform administrators cannot belong to an organization.").WriteJSON(w)
 		case errors.Is(err, tenantapp.ErrAccountExists):
 			apierror.Conflict("An account with this email already exists. The first owner must be a new account.").WriteJSON(w)
 		case errors.Is(err, shared.ErrNotFound):

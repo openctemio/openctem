@@ -32,9 +32,9 @@ import {
 } from '@console/features/admin-console/lib/approvals'
 import { adminErrorMessage } from '@console/features/admin-console/components/totp-step-form'
 import {
-  adminCan,
   type AdminApproval,
   type AdminApprovalStatus,
+  adminHas,
 } from '@console/features/admin-console/types'
 
 const STATUS_VARIANT: Record<
@@ -63,7 +63,7 @@ type Decision = { kind: 'approve' | 'reject'; approval: AdminApproval }
 export default function AdminApprovalsPage() {
   const admin = useAdmin()
   const { t } = useTranslation()
-  const isSuper = adminCan(admin.role, 'super_admin')
+  const isSuper = adminHas(admin, 'platform.approvals.read')
   const { data, error, isLoading, mutate } = useAdminApprovals(isSuper)
   const [deciding, setDeciding] = useState<Decision | null>(null)
   const canApprove = !!data?.four_eyes.can_approve

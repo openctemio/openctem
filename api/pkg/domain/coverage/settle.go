@@ -21,6 +21,22 @@ type TaskResult struct {
 	Error   string
 	Targets []string
 	Result  json.RawMessage
+	// Observer is who ran the task: ObserverKey of its scan zone or its
+	// sensor ("" when no sensor took it).
+	Observer string
+}
+
+// ObserverKey is the key a target-side observation is recorded under:
+// "zone:<id>" when the task ran for a scan zone (any sensor of the zone
+// sees the same network), else "sensor:<id>", "" when neither is known.
+func ObserverKey(zoneID, sensorID string) string {
+	switch {
+	case zoneID != "":
+		return "zone:" + zoneID
+	case sensorID != "":
+		return "sensor:" + sensorID
+	}
+	return ""
 }
 
 // Verdict kinds.
@@ -66,6 +82,8 @@ type Verdict struct {
 	Outcome string // ok, a failure class (unreachable, timeout, tool_error, egress_refused), unfinished, failed
 	Reason  string // for blocked: the skip class (refused, excluded)
 	Error   string
+	// Observer is the task's TaskResult.Observer for a failed verdict.
+	Observer string
 }
 
 func (v Verdict) rank() int {
@@ -105,7 +123,14 @@ func Verdicts(tasks []TaskResult, runUnfinished []string) map[string]Verdict {
 			out[k] = v
 		}
 	}
-	for _, t := range tasks {
+	for _, task := range tasks {
+		t := task
+		put := func(target string, v Verdict) {
+			if v.Kind == VerdictFailed {
+				v.Observer = t.Observer
+			}
+			put(target, v)
+		}
 		outcomes, unreached, has := readResult(t.Result)
 		refused := readRefused(t.Result)
 		// A target the sensor refused before any tool saw it (listed in

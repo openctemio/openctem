@@ -11,7 +11,7 @@ import {
   saveSignupAlerts,
   useSignupAlerts,
 } from '@console/features/admin-console/api/use-signup-events'
-import { adminCan } from '@console/features/admin-console/types'
+import { adminHas } from '@console/features/admin-console/types'
 
 /**
  * Requests -> Sign-ups: accounts, organizations and access requests as they
@@ -42,7 +42,7 @@ export default function SignupsPage() {
         ) : (
           <SignupAlertsForm
             thresholds={alerts.data}
-            canEdit={adminCan(me.role, 'super_admin')}
+            canEdit={adminHas(me, 'platform.settings.signup.write')}
             onSave={async (next, reason, code) => {
               const saved = await saveSignupAlerts({
                 ...next,
