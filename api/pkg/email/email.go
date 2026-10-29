@@ -3,7 +3,10 @@ package email
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
@@ -49,6 +52,9 @@ type Message struct {
 	IsHTML  bool
 	ReplyTo string
 	Headers map[string]string
+	// Inline images the HTML body references as cid:<CID>; sent as a
+	// multipart/related message.
+	Inline []InlineImage
 }
 
 // Sender defines the interface for sending emails.
@@ -112,12 +118,16 @@ func (s *SMTPSender) SendTemplate(ctx context.Context, to string, template Templ
 		return fmt.Errorf("email: failed to render template: %w", err)
 	}
 
-	return s.Send(ctx, &Message{
+	msg := &Message{
 		To:      []string{to},
 		Subject: subject,
 		Body:    body,
 		IsHTML:  true,
-	})
+	}
+	if usesLogo(body) {
+		msg.Inline = []InlineImage{{CID: logoCID, ContentType: "image/png", Data: logoPNG}}
+	}
+	return s.Send(ctx, msg)
 }
 
 // SanitizeHeaderValue strips CR and LF from a value that will be
@@ -186,6 +196,10 @@ func (s *SMTPSender) buildMessage(msg *Message) []byte {
 
 	// MIME headers
 	builder.WriteString("MIME-Version: 1.0\r\n")
+	if msg.IsHTML && len(msg.Inline) > 0 {
+		writeRelated(&builder, msg)
+		return []byte(builder.String())
+	}
 	if msg.IsHTML {
 		builder.WriteString("Content-Type: text/html; charset=UTF-8\r\n")
 	} else {
@@ -452,6 +466,34 @@ func TenantPortAllowed(port int) bool {
 
 // ErrTenantPortNotAllowed refuses an organization's relay on another port.
 var ErrTenantPortNotAllowed = errors.New("the SMTP port must be 25, 465, 587 or 2525")
+
+// writeRelated writes an HTML body with its inline images as one
+// multipart/related message. The boundary is derived from the content, so it
+// cannot occur in the base64 parts, and the Content-IDs come from constants.
+func writeRelated(b *strings.Builder, msg *Message) {
+	sum := sha256.Sum256([]byte(msg.Body))
+	boundary := "oc-" + hex.EncodeToString(sum[:12])
+	b.WriteString("Content-Type: multipart/related; boundary=\"" + boundary + "\"\r\n\r\n")
+	b.WriteString("--" + boundary + "\r\n")
+	b.WriteString("Content-Type: text/html; charset=UTF-8\r\n")
+	b.WriteString("Content-Transfer-Encoding: 8bit\r\n\r\n")
+	b.WriteString(msg.Body + "\r\n")
+	for _, img := range msg.Inline {
+		cid := SanitizeHeaderValue(img.CID)
+		b.WriteString("--" + boundary + "\r\n")
+		b.WriteString("Content-Type: " + SanitizeHeaderValue(img.ContentType) + "\r\n")
+		b.WriteString("Content-Transfer-Encoding: base64\r\n")
+		b.WriteString("Content-ID: <" + cid + ">\r\n")
+		b.WriteString("Content-Disposition: inline; filename=\"" + cid + ".png\"\r\n\r\n")
+		enc := base64.StdEncoding.EncodeToString(img.Data)
+		for len(enc) > 76 {
+			b.WriteString(enc[:76] + "\r\n")
+			enc = enc[76:]
+		}
+		b.WriteString(enc + "\r\n")
+	}
+	b.WriteString("--" + boundary + "--\r\n")
+}
 
 // ManagedSubmissionPorts are the ports an organization's relay may use on a
 // managed (hosted, multi-tenant) service: submission with implicit TLS (465)

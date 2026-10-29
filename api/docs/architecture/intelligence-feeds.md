@@ -44,9 +44,19 @@ message and is classified by `TagVerify`.
 - `GET /api/v1/admin/threat-intel/sync` (any platform admin): the full view, including the raw `last_error`.
 - `GET /api/v1/threat-intel/sync`, `/sync/{source}` and `/stats` (organizations): state and freshness only. No
   error text, host, status code or bundle internals: a failed fetch can name hosts and paths.
-- `POST /api/v1/admin/threat-intel/sync` (ops_admin+, audited): runs `epss`, `kev`, `vulnfeed` or `all`. It
-  always answers 200 with one result per feed (`success`, `error`); a feed that is switched off or not
-  configured is reported as failed.
+- `POST /api/v1/admin/threat-intel/sync` (ops_admin+, audited): queues a background sync of `epss`, `kev`,
+  `vulnfeed` or `all` and answers 202 with one result per feed (`queued`, `already_running` or `skipped` with a
+  reason: `disabled`, `not_configured`, `rate_limited`). No download or import runs inside the request. A
+  single feed that cannot be started answers 409; a feed started less than 15 seconds ago answers 429 with
+  `Retry-After`. The outcome shows in the feed's state, which the console polls every 2 seconds while a feed runs.
+
+## One run per feed
+
+A run claims its feed with one conditional update of the status row (`TryStart`): it succeeds only when the
+row is not `running`, or has been `running` for more than an hour (an interrupted run). The scheduled
+controller and the background job of "Sync now" call the same code, so they never overlap, on one replica or
+across replicas; the loser skips quietly. The background job runs the feed's controller pass (fetch, store,
+queue the priority recompute, reconcile the KEV flags, emit events), not only the fetch.
 
 ## Fetch rules
 
