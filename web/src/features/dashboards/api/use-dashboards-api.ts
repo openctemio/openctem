@@ -125,10 +125,10 @@ export function updateOrgDashboard(id: string, input: UpdateDashboardInput) {
  * Idempotent on the server: a second call returns `added: false`.
  */
 export function addFlowPanel(id: string, kind: DashboardKind) {
-  return post<FlowPanelResult>(`${basePath(kind)}/${id}/flow-panel`, {})
+  return post<FlowPanelResult>(`${basePath(kind)}/${id}/flow-panels`, {})
 }
 
 /** Undo of the add: removes that widget when it is the flow panel. It is never added again. */
 export function undoFlowPanel(id: string, kind: DashboardKind, widgetId: string) {
-  return del<Dashboard>(`${basePath(kind)}/${id}/flow-panel/${encodeURIComponent(widgetId)}`)
+  return del<Dashboard>(`${basePath(kind)}/${id}/flow-panels/${encodeURIComponent(widgetId)}`)
 }

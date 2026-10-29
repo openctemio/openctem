@@ -123,10 +123,10 @@ stored in one table (`user_dashboards.kind`):
   exposure flow metric get the panel once, at the top. `user_dashboards.flow_panel_at`
   records the offer: NULL on every existing row (eligible), `now()` on every
   new row (never auto-offered). The web app opens an eligible dashboard it may
-  edit, calls `POST /api/v1/me/dashboards/{id}/flow-panel` (organization:
-  `POST /api/v1/organization/dashboards/{id}/flow-panel`, needs
+  edit, calls `POST /api/v1/me/dashboards/{id}/flow-panels` (organization:
+  `POST /api/v1/organization/dashboards/{id}/flow-panels`, needs
   `dashboards:org:manage`) once, and shows "Exposure flow added at the top"
-  with Undo (`DELETE .../flow-panel/{widget_id}`). The add is one `UPDATE`
+  with Undo (`DELETE .../flow-panels/{widget_id}`). The add is one `UPDATE`
   guarded by `flow_panel_at IS NULL` in the caller's tenant and owner, so a
   second or concurrent call changes nothing (`added: false`). An empty layout
   or one that already holds an `exposure.flow` widget is only marked. Undo
