@@ -66,6 +66,12 @@
       "files": "^src/lib/api/(sensor-protocol-guard\\.ts|__tests__/sensor-protocol-guard\\.test\\.ts)$",
       "pattern": "'agent'",
       "reason": "The web UI's /api/v1 proxy refuses the protocol v1 routes (first segment 'agent', a frozen wire name) with 421, so a sensor pointed at the UI is told to use the API address."
+    },
+    {
+      "id": "ai-agent-routes-and-notes",
+      "files": "^src/config/(api-route-permissions|authz-matrix)\\.json$",
+      "pattern": "/ai/agents|AI agents?",
+      "reason": "Generated from the Go API: the AI agent routes (/api/v1/ai/agents) and their route notes name AI agents, not sensors."
     }
   ],
   "excludedPaths": ["^src/lib/api/openapi/", "^src/lib/api/generated/"],
