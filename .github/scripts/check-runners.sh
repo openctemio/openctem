@@ -19,9 +19,13 @@
 # combination of set/empty repository variables, and must give:
 #   - a hosted label for a pull request from a fork, whatever is set;
 #   - a hosted label when no variable is set;
-#   - in a merge group, a hosted label or the value of CI_RUNNER_MERGE (or a
-#     per-job override CI_RUNNER_CODEQL / CI_RUNNER_E2E_BUILD), never the
-#     value of CI_RUNNER_LIGHT or CI_RUNNER_HEAVY.
+#   - in a merge group, a hosted label, the value of CI_RUNNER_MERGE (or a
+#     per-job override CI_RUNNER_CODEQL / CI_RUNNER_E2E_BUILD) or the pool the
+#     run's `changes` job picked (needs.changes.outputs.pool), never the value
+#     of CI_RUNNER_LIGHT or CI_RUNNER_HEAVY;
+#   - the pool output (which is `openctem-ci` for a share of runs, see
+#     .github/actions/ci-pool) reaches neither a fork pull request nor a light
+#     job; only the heavy selectors use it.
 set -euo pipefail
 
 dir="${1:-.github/workflows}"
@@ -35,23 +39,30 @@ import sys
 
 FORK_GUARD = "(github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)"
 MERGE = "(github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest'))"
+# Heavy jobs also take the pool the run's `changes` job picked
+# (.github/actions/ci-pool: run_id modulo 100 against CI_SELFHOSTED_SHARE).
+POOL = "needs.changes.outputs.pool"
+MERGE_POOL = f"(github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || {POOL} || 'ubuntu-latest'))"
+HEAVY_VAR = f"({FORK_GUARD} && (vars.CI_RUNNER_HEAVY || {POOL}))"
 APPROVED = {
     # Light jobs: change detection, plans, gates, hygiene, docs, workflow lint.
     "light": f"{MERGE} || ({FORK_GUARD} && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest'",
     # Heavy jobs: builds and tests.
-    "heavy": f"{MERGE} || ({FORK_GUARD} && vars.CI_RUNNER_HEAVY) || 'ubuntu-latest'",
+    "heavy": f"{MERGE_POOL} || {HEAVY_VAR} || 'ubuntu-latest'",
     # Per-job overrides (they win over CI_RUNNER_MERGE / CI_RUNNER_HEAVY).
-    "codeql": f"({FORK_GUARD} && vars.CI_RUNNER_CODEQL) || {MERGE} || ({FORK_GUARD} && vars.CI_RUNNER_HEAVY) || 'ubuntu-latest'",
-    "e2e-build": f"({FORK_GUARD} && vars.CI_RUNNER_E2E_BUILD) || {MERGE} || ({FORK_GUARD} && vars.CI_RUNNER_HEAVY) || 'ubuntu-latest'",
+    "codeql": f"({FORK_GUARD} && vars.CI_RUNNER_CODEQL) || {MERGE_POOL} || {HEAVY_VAR} || 'ubuntu-latest'",
+    "e2e-build": f"({FORK_GUARD} && vars.CI_RUNNER_E2E_BUILD) || {MERGE_POOL} || {HEAVY_VAR} || 'ubuntu-latest'",
 }
 HOSTED = re.compile(r"^(ubuntu|macos|windows)-[A-Za-z0-9.-]+$")
 VARS = ["CI_RUNNER_LIGHT", "CI_RUNNER_HEAVY", "CI_RUNNER_MERGE", "CI_RUNNER_CODEQL", "CI_RUNNER_E2E_BUILD"]
-MERGE_OK = {"CI_RUNNER_MERGE", "CI_RUNNER_CODEQL", "CI_RUNNER_E2E_BUILD"}
+MERGE_OK = {"CI_RUNNER_MERGE", "CI_RUNNER_CODEQL", "CI_RUNNER_E2E_BUILD", "POOL"}
+SELF_POOL = "openctem-ci"  # the self-hosted pool the automatic split may pick
 REPO = "openctemio/openctem"
 IDENTS = {
     "github.event_name": "event",
     "github.event.pull_request.head.repo.full_name": "head",
     "github.repository": "repo",
+    "needs.changes.outputs.pool": "pool",
 }
 TOKEN = re.compile(r"\s*(\(|\)|&&|\|\||==|!=|'[^']*'|[A-Za-z_][A-Za-z0-9_.-]*)")
 
@@ -102,7 +113,9 @@ def contexts():
     ]
     for (event, head), bits in itertools.product(events, itertools.product([False, True], repeat=len(VARS))):
         v = {name: (f"self-hosted-{name}" if on else "") for name, on in zip(VARS, bits)}
-        yield event, head, v
+        # The pool output of the `changes` job: not run, hosted, or self-hosted.
+        for pool in ("", "ubuntu-latest", SELF_POOL):
+            yield event, head, v, pool
 
 
 def unsafe(expr):
@@ -110,20 +123,22 @@ def unsafe(expr):
     code = to_python(expr)
     if code is None:
         return "uses something other than the approved contexts and variables"
-    for event, head, v in contexts():
+    for event, head, v, pool in contexts():
         try:
-            got = eval(code, {"__builtins__": {}}, {"event": event, "head": head, "repo": REPO, "v": v})
+            got = eval(code, {"__builtins__": {}}, {"event": event, "head": head, "repo": REPO, "v": v, "pool": pool})
         except Exception as e:  # noqa: BLE001 - any failure is a refusal
             return f"does not evaluate ({e})"
         source = next((n for n in VARS if v[n] and got == v[n]), None)
-        where = f"{event}{' from a fork' if head == 'someone/fork' else ''} with {sorted(n for n in VARS if v[n]) or 'no variables'}"
+        if source is None and got == SELF_POOL and pool == SELF_POOL:
+            source = "POOL"
+        where = f"{event}{' from a fork' if head == 'someone/fork' else ''} with {sorted(n for n in VARS if v[n]) or 'no variables'}{' and pool ' + pool if pool else ''}"
         if not isinstance(got, str) or not got:
             return f"gives no runner for {where}"
         if source is None and not HOSTED.match(got):
             return f"gives '{got}' for {where}"
         if event == "pull_request" and head != REPO and source is not None:
             return f"sends a fork pull request to {source} ({where})"
-        if not any(v.values()) and source is not None:
+        if not any(v.values()) and source is not None and source != "POOL":
             return f"is not hosted with no variable set ({where})"
         if event == "merge_group" and source is not None and source not in MERGE_OK:
             return f"sends a merge group to {source} ({where})"

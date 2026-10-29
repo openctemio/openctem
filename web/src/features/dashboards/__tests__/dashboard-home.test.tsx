@@ -154,8 +154,10 @@ describe('DashboardHome', () => {
     const metrics = input.layout.map(
       (w) => (w as unknown as { config: { data: { metric: string } } }).config.data.metric
     )
-    // The CTEM story leads: active exposure, then the loop, fix next and attack paths.
-    expect(metrics.indexOf('ctem.loop')).toBe(4)
+    // The CTEM story leads: the exposure flow (with the five stages), then
+    // active exposure, fix next and attack paths.
+    expect(metrics.indexOf('exposure.flow')).toBe(0)
+    expect(metrics).toContain('ingest.intake')
     expect(metrics).toContain('fix.next')
     expect(metrics).toContain('attack_paths.to_crown_jewels')
     rerender(
@@ -383,7 +385,7 @@ describe('DashboardHome new layout hint', () => {
     api.mine = [overviewCopy('d1')]
     renderHome()
     const hint = await screen.findByTestId('layout-hint')
-    expect(hint).toHaveTextContent('New on the Overview layout: Time to fix')
+    expect(hint).toHaveTextContent('New on the Overview layout: Exposure flow')
     expect(within(hint).getByRole('button', { name: 'Add them to this dashboard' })).toBeVisible()
     expect(within(hint).getByRole('button', { name: 'Switch to the new layout' })).toBeVisible()
     expect(api.update).not.toHaveBeenCalled()
@@ -403,13 +405,13 @@ describe('DashboardHome new layout hint', () => {
     expect(id).toBe('d1')
     expect(input.name).toBe('Overview')
     expect(input.layout.map((w) => w.config.data.metric)).toEqual([
+      'exposure.flow',
       'exposure.priority_open',
       'intel.kev_open',
       'sla.within',
       'fix.time_to_fix',
       'coverage.discovery',
       'exposure.open_by_priority',
-      'ctem.loop',
       'flow.new_vs_fixed',
       'findings.age_bands',
       'fix.next',
