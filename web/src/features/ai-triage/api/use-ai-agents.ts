@@ -75,7 +75,15 @@ export const setAIAgentPreset = (id: string, preset: AIAgentPreset) =>
 
 export type AIAgentAction = 'attest' | 'pause' | 'disable' | 'resume'
 
+/** The route verb of each action (the API's closed verb vocabulary: suspend and reactivate). */
+const AI_AGENT_ACTION_VERB: Record<AIAgentAction, string> = {
+  attest: 'attest',
+  pause: 'suspend',
+  disable: 'disable',
+  resume: 'reactivate',
+}
+
 export const runAIAgentAction = (id: string, action: AIAgentAction) =>
-  post<AIAgent>(aiAgentUrl(id, `/${action}`), {})
+  post<AIAgent>(aiAgentUrl(id, `/${AI_AGENT_ACTION_VERB[action]}`), {})
 
 export const deleteAIAgent = (id: string) => del(aiAgentUrl(id))
