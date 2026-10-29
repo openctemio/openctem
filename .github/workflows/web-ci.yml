@@ -46,6 +46,7 @@ jobs:
       pull-requests: read # the PR's commits and labels (changed.sh)
       checks: read # green-base.sh and release-provenance.sh read a commit's check runs
     outputs:
+      pool: ${{ steps.pool.outputs.pool }}
       # web: application code or an English catalog (unit tests assert English
       # text; Next build). lint: anything Web checks covers (app, e2e specs,
       # catalogs). i18n: only non-English catalogs changed.
@@ -54,6 +55,8 @@ jobs:
       i18n: ${{ steps.f.outputs.web == 'true' && steps.scope.outputs.web_i18n == 'true' && steps.scope.outputs.i18n_en != 'true' && !(steps.scope.outputs.web_app == 'true' || steps.scope.outputs.ci_self == 'true') && steps.tree.outputs.verified != 'true' }}
       i18n_files: ${{ steps.scope.outputs.i18n_files }}
       api: ${{ steps.f.outputs.api == 'true' && (steps.scope.outputs.api_code == 'true' || steps.scope.outputs.ci_self == 'true') && steps.tree.outputs.verified != 'true' }}
+      build: ${{ steps.b.outputs.build == 'true' && steps.tree.outputs.verified != 'true' }}
+      full: ${{ steps.f.outputs.full }}
       tree_note: ${{ steps.tree.outputs.note }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -61,13 +64,29 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       - uses: ./.github/actions/setup-gh
+      - id: pool
+        uses: ./.github/actions/ci-pool
+        with:
+          share: ${{ vars.CI_SELFHOSTED_SHARE }}
       - id: f
         working-directory: .
         env:
           EVENT_BEFORE: ${{ github.event.before }}
           MG_BASE: ${{ github.event.merge_group.base_sha }}
           MG_HEAD: ${{ github.event.merge_group.head_sha }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: bash .github/scripts/changed.sh
+      # `next build` runs on push only; it is skipped when the push changed
+      # nothing that ships (tests, specs, documentation).
+      - id: b
+        working-directory: .
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: bash .github/scripts/web-build-needed.sh
+
       # Which part of the side changed (.github/scripts/scope.sh): only narrows
       # what changed.sh selected, e.g. a change to web/e2e/ alone runs no web
       # unit tests and builds no image, a CI file only the workflows that use it.
@@ -96,7 +115,9 @@ jobs:
   # an API change, compares them with the base's.
   contract:
     name: API contract
-    # actions: write lets the fail-fast step cancel doomed runs (.github/actions/fail-fast).
+    # actions: write lets the fail-fast step cancel doomed runs
+    # (.github/actions/fail-fast) and covers reading the latest recorded test
+    # durations.
     permissions:
       contents: read
       actions: write
@@ -123,6 +144,14 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/contract/head"
           cp api/api/openapi/swagger.yaml api/api/openapi/routes.txt web/src/config/api-route-permissions.json web/src/config/authz-matrix.json "$RUNNER_TEMP/contract/head/"
+
+      # The recorded run time of each test file (the newest full run), so the
+      # test shards are balanced by time. Travels with the contract files.
+      - name: Latest test durations
+        env:
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/latest-artifact.sh vitest-durations durations.json "$RUNNER_TEMP/contract/head/vitest-durations.json" || true
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -281,7 +310,7 @@ jobs:
       actions: write
     needs: [changes, contract]
     if: needs.changes.outputs.lint == 'true' || needs.contract.outputs.changed == 'true'
-    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_HEAVY) || 'ubuntu-latest' }}
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || needs.changes.outputs.pool || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (vars.CI_RUNNER_HEAVY || needs.changes.outputs.pool)) || 'ubuntu-latest' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -298,6 +327,31 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      # The scripts that pick the affected tests and decide on `next build`.
+      - name: Test the CI selection scripts
+        working-directory: .
+        run: |
+          bash .github/scripts/web-select.test.sh
+          bash .github/scripts/web-build-needed.test.sh
+
+      # The TypeScript incremental state and the ESLint results, restored from
+      # develop's last run (read-only on a pull request; the merge queue cannot
+      # read develop's caches). Both check file contents, so a stale cache only
+      # costs the files that changed since; a miss runs the full check.
+      - id: day
+        run: echo "day=$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
+      - name: Cache type check and ESLint state
+        id: lintcache
+        if: github.event_name != 'merge_group'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            web/tsconfig.tsbuildinfo
+            web/.eslintcache
+          key: web-check-${{ runner.os }}-${{ hashFiles('web/.nvmrc', 'web/package-lock.json', 'web/tsconfig.json', 'web/eslint.config.mjs') }}-${{ steps.day.outputs.day }}
+          restore-keys: |
+            web-check-${{ runner.os }}-${{ hashFiles('web/.nvmrc', 'web/package-lock.json', 'web/tsconfig.json', 'web/eslint.config.mjs') }}-
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -319,11 +373,23 @@ jobs:
           NODE_OPTIONS: --max-old-space-size=4096
         run: npm run type-check
 
+      # content strategy: a checkout gives every file a new mtime.
       - name: Run ESLint
-        run: npm run lint
+        run: npm run lint -- --cache --cache-strategy content --cache-location .eslintcache
 
       - name: Run Prettier check
         run: npm run format:check
+
+      # Only a push to develop writes the cache, at most one entry a day (the
+      # key carries the date; the newest wins on restore).
+      - name: Save type check and ESLint state
+        if: github.event_name == 'push' && github.ref == 'refs/heads/develop' && steps.lintcache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            web/tsconfig.tsbuildinfo
+            web/.eslintcache
+          key: web-check-${{ runner.os }}-${{ hashFiles('web/.nvmrc', 'web/package-lock.json', 'web/tsconfig.json', 'web/eslint.config.mjs') }}-${{ steps.day.outputs.day }}
 
       # PR-only on purpose (see the history of web/scripts/check-palette-drift.sh).
       - name: Check palette drift
@@ -434,7 +500,7 @@ jobs:
       actions: write
     needs: [changes, contract]
     if: needs.changes.outputs.web == 'true' || needs.contract.outputs.changed == 'true'
-    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_HEAVY) || 'ubuntu-latest' }}
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || needs.changes.outputs.pool || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (vars.CI_RUNNER_HEAVY || needs.changes.outputs.pool)) || 'ubuntu-latest' }}
     strategy:
       fail-fast: true
       matrix:
@@ -444,6 +510,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '1' }} # the merge base, to pick the affected tests
 
       - name: Setup Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -467,14 +534,64 @@ jobs:
           cp "$RUNNER_TEMP/contract/api-route-permissions.json" "$RUNNER_TEMP/contract/authz-matrix.json" web/src/config/
           (cd web && npm run generate:api-types)
 
+      # A pull request runs the tests its change can affect (web-select.sh:
+      # the tests Vitest relates to the changed files, plus every test that
+      # reads source files from disk); the merge queue and push run all of
+      # them with coverage. Everything runs when the API contract changed, the
+      # `ci:full` label is set, or a changed file is not plain source (config,
+      # lockfile, test setup, CI). Shards are balanced by the recorded run time
+      # of each file (vitest.sequencer.ts); without it Vitest splits by count.
       # A Vitest worker (jsdom + v8 coverage) ran out of its default heap and
       # failed a shard; 4 GB per worker fits the hosted runner's 16 GB.
       - name: Run tests (shard ${{ matrix.shard }}/3)
+        id: vitest
         env:
           NODE_OPTIONS: --max-old-space-size=4096
-        run: npm test -- --run --coverage --passWithNoTests --shard=${{ matrix.shard }}/3
+          SHARD: ${{ matrix.shard }}
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          CONTRACT_CHANGED: ${{ needs.contract.outputs.changed }}
+          FULL: ${{ needs.changes.outputs.full }}
+        run: |
+          args=(--run --passWithNoTests --shard="$SHARD/3")
+          files=() narrow=false
+          if [ "$EVENT" = pull_request ] && [ "$CONTRACT_CHANGED" != true ] && [ "$FULL" != true ]; then
+            git fetch --no-tags --quiet origin "$BASE_REF"
+            sel="$(bash ../.github/scripts/web-select.sh "$(git merge-base "origin/$BASE_REF" HEAD)")" || sel=ALL
+            if [ "$(head -1 <<<"$sel")" != ALL ]; then
+              narrow=true
+              mapfile -t files < <(grep -v '^$' <<<"$sel" || true)
+              echo "affected test files: ${#files[@]}"
+            fi
+          fi
+          echo "narrow=$narrow" >> "$GITHUB_OUTPUT"
+          if [ "$narrow" = true ] && [ "${#files[@]}" -eq 0 ]; then echo "no test is affected by this change"; exit 0; fi
+          if [ "$narrow" = false ]; then args+=(--coverage); fi
+          if [ "$EVENT" != pull_request ]; then args+=(--reporter=default --reporter=json --outputFile.json=vitest-report.json); fi
+          if [ -s "$RUNNER_TEMP/contract/vitest-durations.json" ] && jq -e 'type == "object"' "$RUNNER_TEMP/contract/vitest-durations.json" >/dev/null 2>&1; then
+            export VITEST_DURATIONS="$RUNNER_TEMP/contract/vitest-durations.json"
+          fi
+          npm test -- "${args[@]}" "${files[@]}"
 
+      # File run times of a full run, for the next runs' shard balance.
+      - name: Record test durations
+        if: github.event_name != 'pull_request' && success()
+        run: |
+          jq --arg root "$PWD/" '[.testResults[] | {key: (.name | ltrimstr($root)), value: ((.endTime - .startTime) | floor)} | select(.value > 0)] | from_entries' \
+            vitest-report.json > vitest-durations-shard.json
+          jq length vitest-durations-shard.json
+      - name: Upload test durations
+        if: github.event_name != 'pull_request' && success()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: vitest-durations-${{ matrix.shard }}
+          path: web/vitest-durations-shard.json
+          retention-days: 1
+
+      # A partial run's coverage would read as a drop; develop's baseline comes
+      # from the full runs.
       - name: Upload coverage
+        if: steps.vitest.outputs.narrow != 'true'
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           directory: web/coverage
@@ -486,6 +603,33 @@ jobs:
         if: failure()
         uses: ./.github/actions/fail-fast
 
+  # One file of test-file run times from the three shards, kept 14 days for the
+  # next runs' shard balance (contract job: latest-artifact.sh).
+  durations:
+    name: Web test durations
+    needs: [changes, tests]
+    if: ${{ !cancelled() && needs.tests.result == 'success' && github.event_name != 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: vitest-durations-*
+          path: ${{ runner.temp }}/parts
+      - name: Merge
+        run: |
+          mkdir -p "$RUNNER_TEMP/out"
+          jq -s 'add' "$RUNNER_TEMP"/parts/*/vitest-durations-shard.json > "$RUNNER_TEMP/out/durations.json"
+          jq length "$RUNNER_TEMP/out/durations.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: vitest-durations
+          path: ${{ runner.temp }}/out/durations.json
+          retention-days: 14
+
   build:
     name: Build
     # actions: write lets the fail-fast step cancel doomed runs (.github/actions/fail-fast).
@@ -495,8 +639,8 @@ jobs:
     needs: [changes, contract, quality]
     if: >-
       (needs.changes.outputs.web == 'true' || needs.contract.outputs.changed == 'true') &&
-      github.event_name == 'push'
-    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_HEAVY) || 'ubuntu-latest' }}
+      github.event_name == 'push' && needs.changes.outputs.build == 'true'
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || needs.changes.outputs.pool || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (vars.CI_RUNNER_HEAVY || needs.changes.outputs.pool)) || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

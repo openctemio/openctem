@@ -1,0 +1,4 @@
+### Changed: CI builds each image once per content key and shares it across workflows
+- `build-images.yml` builds the API, web, console, admin CLI and all-in-one images once per content key (git tree hashes of their build inputs plus the workflow and key script), pushes them to `ghcr.io/openctemio/ci-images` with a build provenance attestation, and Web E2E and All-in-one CI use them by digest. Only develop and main pushes and merge-queue runs push; the plain tag is trusted only when built on develop or main, a queue tag only inside its own queue run.
+- Pull requests never get `packages: write`: they reuse develop's verified images through the read-only `resolve-images.yml` and build locally otherwise. The contract files are generated in their own read-only job, and `npm ci` there runs with `--ignore-scripts`. A repo-security self-test fails when a pull-request path can reach `packages: write`.
+- A daily job deletes CI images older than 14 days.
