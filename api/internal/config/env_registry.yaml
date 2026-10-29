@@ -693,7 +693,7 @@ vars:
     type: bool
     default: "true"
     example: "false"
-    description: "Master switch for social login (Google, GitHub, Microsoft). A provider is offered only when its own `*_ENABLED`, client ID and secret are set."
+    description: "Master switch for social login (Google, GitHub, Microsoft). The console (Settings > Social login) is the place to set up the providers; this stays a server-side kill switch, and `false` turns every provider off whatever the console says."
   - name: OAUTH_FRONTEND_CALLBACK_URL
     component: api
     group: "Single sign-on and social login"
@@ -705,71 +705,71 @@ vars:
     component: api
     group: "Single sign-on and social login"
     type: string
-    description: "GitHub OAuth client ID."
+    description: "GitHub OAuth client ID. Optional override: set the client in the console (Settings > Social login) instead. Used only together with `OAUTH_GITHUB_CLIENT_SECRET`."
   - name: OAUTH_GITHUB_CLIENT_SECRET
     component: api
     group: "Single sign-on and social login"
     type: string
     secret: true
-    description: "GitHub OAuth client secret."
+    description: "GitHub OAuth client secret. Optional override: while it is set, this provider is pinned to the server environment and the console shows it read-only. Leave unset to manage the provider in the console (Settings > Social login), where the secret is stored encrypted and write-only."
   - name: OAUTH_GITHUB_ENABLED
     component: api
     group: "Single sign-on and social login"
     type: bool
     default: "false"
-    description: "Offer GitHub sign-in."
+    description: "Offer GitHub sign-in. Used only while `OAUTH_GITHUB_CLIENT_SECRET` pins the provider; otherwise the switch in the console decides."
   - name: OAUTH_GITHUB_SCOPES
     component: api
     group: "Single sign-on and social login"
     type: list
     default: "read:user,user:email"
-    description: "Requested scopes."
+    description: "Requested scopes. Used only while the provider is pinned by its client secret variable; otherwise set in the console."
   - name: OAUTH_GOOGLE_CLIENT_ID
     component: api
     group: "Single sign-on and social login"
     type: string
-    description: "Google OAuth client ID."
+    description: "Google OAuth client ID. Optional override: set the client in the console (Settings > Social login) instead. Used only together with `OAUTH_GOOGLE_CLIENT_SECRET`."
   - name: OAUTH_GOOGLE_CLIENT_SECRET
     component: api
     group: "Single sign-on and social login"
     type: string
     secret: true
-    description: "Google OAuth client secret."
+    description: "Google OAuth client secret. Optional override: while it is set, this provider is pinned to the server environment and the console shows it read-only. Leave unset to manage the provider in the console (Settings > Social login), where the secret is stored encrypted and write-only."
   - name: OAUTH_GOOGLE_ENABLED
     component: api
     group: "Single sign-on and social login"
     type: bool
     default: "false"
-    description: "Offer Google sign-in."
+    description: "Offer Google sign-in. Used only while `OAUTH_GOOGLE_CLIENT_SECRET` pins the provider; otherwise the switch in the console decides."
   - name: OAUTH_GOOGLE_SCOPES
     component: api
     group: "Single sign-on and social login"
     type: list
     default: "openid,email,profile"
-    description: "Requested scopes."
+    description: "Requested scopes. Used only while the provider is pinned by its client secret variable; otherwise set in the console."
   - name: OAUTH_MICROSOFT_CLIENT_ID
     component: api
     group: "Single sign-on and social login"
     type: string
-    description: "Microsoft OAuth client ID."
+    description: "Microsoft OAuth client ID. Optional override: set the client in the console (Settings > Social login) instead. Used only together with `OAUTH_MICROSOFT_CLIENT_SECRET`."
   - name: OAUTH_MICROSOFT_CLIENT_SECRET
     component: api
     group: "Single sign-on and social login"
     type: string
     secret: true
-    description: "Microsoft OAuth client secret."
+    description: "Microsoft OAuth client secret. Optional override: while it is set, this provider is pinned to the server environment and the console shows it read-only. Leave unset to manage the provider in the console (Settings > Social login), where the secret is stored encrypted and write-only."
   - name: OAUTH_MICROSOFT_ENABLED
     component: api
     group: "Single sign-on and social login"
     type: bool
     default: "false"
-    description: "Offer Microsoft sign-in."
+    description: "Offer Microsoft sign-in. Used only while `OAUTH_MICROSOFT_CLIENT_SECRET` pins the provider; otherwise the switch in the console decides."
   - name: OAUTH_MICROSOFT_SCOPES
     component: api
     group: "Single sign-on and social login"
     type: list
     default: "openid,email,profile,User.Read"
-    description: "Requested scopes."
+    description: "Requested scopes. Used only while the provider is pinned by its client secret variable; otherwise set in the console."
   - name: OAUTH_STATE_DURATION
     component: api
     group: "Single sign-on and social login"
@@ -781,7 +781,7 @@ vars:
     group: "Single sign-on and social login"
     type: string
     secret: true
-    description: "Secret that signs the OAuth `state` parameter. Unset: derived from the session secret under its own label."
+    description: "Secret that signs the OAuth `state` parameter. Unset: derived from the session secret under its own label. A bootstrap secret that is never a console setting, so a console change cannot weaken the CSRF binding of a sign-in."
   - name: SSO_ALLOWED_REDIRECT_URIS
     component: api
     group: "Single sign-on and social login"
@@ -1188,6 +1188,17 @@ vars:
     group: "Sensors"
     type: string
     description: "URL sensors connect to, embedded in the install snippets and configuration templates. Unset: `APP_URL`."
+  - name: PROXY_TEST_ECHO_URL
+    component: api
+    group: "Sensors"
+    type: string
+    description: "https origin a proxy test connects to through each proxy of a pool (the Test button of Settings, Scanning, Proxies). It must answer on a public port the proxies can reach: not the sensor mTLS port. Unset: `SENSOR_PUBLIC_API_URL`, else `APP_URL`. The platform never connects to a proxy itself; sensors do."
+  - name: PROXY_TEST_ALT_PORT
+    component: api
+    group: "Sensors"
+    type: int
+    default: "80"
+    description: "A second port of the proxy test's echo host. A proxy that carries 443 and refuses this port is shown as port-restricted. `0` skips that check."
   - name: SENSOR_SLIM_HEARTBEAT
     component: api
     group: "Sensors"

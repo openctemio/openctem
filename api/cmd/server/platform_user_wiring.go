@@ -32,6 +32,9 @@ func newPlatformUserService(repos *Repositories, svc *Services, cfg *config.Conf
 			PasswordReset:     cfg.Auth.PasswordResetDuration,
 			EmailVerification: cfg.Auth.EmailVerificationDuration,
 		})
+	if svc.Auth != nil {
+		s.SetMFAResetter(svc.Auth)
+	}
 	// Block / unblock an account platform-wide (critical admin audit).
 	s.SetBlocking(dir, repos.AdminAuditLog, log)
 	return s

@@ -66,18 +66,23 @@ jobs:
       actions: read # queue-verified.sh reads the merge queue's runs of this commit
       checks: read # green-base.sh and release-provenance.sh read a commit's check runs
     outputs:
+      pool: ${{ steps.pool.outputs.pool }}
       api: ${{ steps.f.outputs.api == 'true' && (steps.scope.outputs.api_code == 'true' || steps.scope.outputs.ci_self == 'true') && steps.queue.outputs.verified != 'true' && steps.tree.outputs.verified != 'true' }}
       tree_note: ${{ steps.tree.outputs.note }}
       verified: ${{ steps.queue.outputs.verified }}
       full: ${{ steps.f.outputs.full }}
       migrations: ${{ steps.f.outputs.migrations }}
-      test_matrix: ${{ steps.tier.outputs.test_matrix }}
+      api_any: ${{ steps.f.outputs.api }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
       - uses: ./.github/actions/setup-gh
+      - id: pool
+        uses: ./.github/actions/ci-pool
+        with:
+          share: ${{ vars.CI_SELFHOSTED_SHARE }}
       - id: f
         working-directory: .
         env:
@@ -124,20 +129,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: bash .github/scripts/tree-verified.sh
 
-      # The shards of `Tests (Postgres + Redis)` for this tier. Full: 8 shards
-      # with -race. Fast: 6 shards without it (same tests, about half the
-      # runner time; the race detector runs in the queue and on push).
-      # `API static checks` proves every split covers every test exactly once.
-      - id: tier
-        working-directory: .
-        env:
-          FULL: ${{ steps.f.outputs.full }}
-        run: |
-          if [ "$FULL" = true ]; then n=8 race=true; else n=6 race=false; fi
-          m="$(jq -nc --argjson n "$n" --argjson race "$race" \
-            '[range($n) | {shard: ., total: $n, race: $race}]')"
-          echo "test_matrix=$m" | tee -a "$GITHUB_OUTPUT"
-
       # Runs on every PR, also a docs-only one that skips the jobs below.
       # Changelog entries live one file per change in api/changelog.d/, so
       # pull requests never conflict on CHANGELOG.md. This also refuses
@@ -157,7 +148,7 @@ jobs:
       actions: write
     needs: changes
     if: needs.changes.outputs.api == 'true'
-    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_HEAVY) || 'ubuntu-latest' }}
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || needs.changes.outputs.pool || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (vars.CI_RUNNER_HEAVY || needs.changes.outputs.pool)) || 'ubuntu-latest' }}
     timeout-minutes: 30
     steps:
       - name: Checkout code
@@ -186,10 +177,10 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: api/go.mod
-          # A merge-queue ref can neither read develop's cache nor share what
-          # it writes, so it neither restores nor saves one.
-          cache: ${{ github.event_name != 'merge_group' && runner.environment == 'github-hosted' }}
-          cache-dependency-path: api/go.sum
+          cache: false # ./.github/actions/go-cache restores; only warm-cache saves
+      - name: Go caches
+        id: gocache
+        uses: ./.github/actions/go-cache
 
       # The analysis caches of golangci-lint, and the installed staticcheck
       # binary (its version is in the key), so a run only re-analyses what
@@ -391,6 +382,8 @@ jobs:
       - name: Test shards cover every test
         run: |
           bash ../.github/scripts/go-shard.sh check 8 6 3
+          bash ../.github/scripts/go-shard.test.sh
+          bash ../.github/scripts/go-affected.test.sh
 
       # vet, staticcheck and golangci-lint: steps of this job (one runner, one
       # checkout, one setup-go) rather than a job of their own. The test shards
@@ -430,7 +423,9 @@ jobs:
   # start their tests when the spec arrives instead of generating it.
   spec:
     name: OpenAPI spec
-    # actions: write lets the fail-fast step cancel doomed runs (.github/actions/fail-fast).
+    # actions: write lets the fail-fast step cancel doomed runs
+    # (.github/actions/fail-fast) and covers reading the latest recorded test
+    # durations (go-plan.sh).
     permissions:
       contents: read
       packages: read
@@ -439,18 +434,21 @@ jobs:
     if: needs.changes.outputs.api == 'true'
     runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
     timeout-minutes: 15
+    outputs:
+      test_matrix: ${{ steps.plan.outputs.test_matrix }}
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '1' }} # the merge base, for the affected packages
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: api/go.mod
-          # Same rule as the shards: a merge-queue ref neither restores nor saves.
-          cache: ${{ github.event_name != 'merge_group' && runner.environment == 'github-hosted' }}
-          cache-dependency-path: api/go.sum
+          cache: false # ./.github/actions/go-cache restores; only warm-cache saves
+      - name: Go caches
+        uses: ./.github/actions/go-cache
       - name: Generate the OpenAPI spec
         run: make swagger
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -462,6 +460,27 @@ jobs:
       - name: Fail fast
         if: failure()
         uses: ./.github/actions/fail-fast
+
+      # The test plan, made once so every shard reads the same one: which
+      # packages a pull request affects (go-affected.sh), how many shards that
+      # needs, and the recorded package durations that balance them
+      # (go-shard.sh). The merge queue and push run everything.
+      - name: Plan the test shards
+        id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          FULL: ${{ needs.changes.outputs.full }}
+          BASE_REF: ${{ github.base_ref }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          GO_PLAN_DIR: ${{ runner.temp }}/go-plan
+        run: bash ../.github/scripts/go-plan.sh
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: go-plan
+          path: ${{ runner.temp }}/go-plan
+          if-no-files-found: error
+          retention-days: 1
 
   # Every event (PRs included): the whole suite against real Postgres and
   # Redis, AS THE LEAST-PRIVILEGE APP ROLE the API runs as in production (D-6,
@@ -492,7 +511,7 @@ jobs:
       actions: write
     needs: [changes, spec]
     if: needs.changes.outputs.api == 'true'
-    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_HEAVY) || 'ubuntu-latest' }}
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || needs.changes.outputs.pool || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (vars.CI_RUNNER_HEAVY || needs.changes.outputs.pool)) || 'ubuntu-latest' }}
     timeout-minutes: 40
     # The suite is split into parallel shards (.github/scripts/go-shard.sh:
     # the few packages that hold most of the run time are split by test name
@@ -501,7 +520,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        include: ${{ fromJSON(needs.changes.outputs.test_matrix) }}
+        include: ${{ fromJSON(needs.spec.outputs.test_matrix) }}
     services:
       postgres:
         image: ghcr.io/openctemio/mirror/postgres:17-alpine
@@ -552,10 +571,10 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: api/go.mod
-          # A merge-queue ref can neither read develop's cache nor share what
-          # it writes, so it neither restores nor saves one.
-          cache: ${{ github.event_name != 'merge_group' && runner.environment == 'github-hosted' }}
-          cache-dependency-path: api/go.sum
+          cache: false # ./.github/actions/go-cache restores; only warm-cache saves
+      - name: Go caches
+        id: gocache
+        uses: ./.github/actions/go-cache
 
       # The spec is generated, not committed; the contract tests read it. The
       # `spec` job generated it once for every shard (a shard used to spend
@@ -565,6 +584,14 @@ jobs:
         with:
           name: openapi-spec
           path: api/api/openapi
+
+      # The run's plan (spec job): the affected packages of a pull request and
+      # the recorded durations that balance the shards.
+      - name: Download the test plan
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: go-plan
+          path: ${{ runner.temp }}/go-plan
 
       - name: Build the migration runner
         run: |
@@ -628,6 +655,11 @@ jobs:
           # Quarantined flaky tests (.github/quarantine.yml) are skipped until their fix date.
           skip="$(python3 ../.github/scripts/quarantine.py go-skip)"
           if [ -n "$skip" ]; then flags+=(-skip "$skip"); echo "quarantined: $skip"; fi
+          plan="$RUNNER_TEMP/go-plan"
+          if [ "$(cat "$plan/mode.txt")" = affected ]; then
+            export GO_SHARD_AFFECTED="$plan/affected.txt"
+          fi
+          if [ -s "$plan/durations.json" ]; then export GO_SHARD_DURATIONS="$plan/durations.json"; fi
           bash ../.github/scripts/go-shard-run.sh "$SHARD" "$TOTAL" test.json \
             "${flags[@]}" -timeout 30m -coverprofile=coverage.out -covermode=atomic
 
@@ -662,7 +694,7 @@ jobs:
       actions: write
     needs: changes
     if: needs.changes.outputs.api == 'true' && (needs.changes.outputs.full == 'true' || needs.changes.outputs.migrations == 'true')
-    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_HEAVY) || 'ubuntu-latest' }}
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || needs.changes.outputs.pool || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (vars.CI_RUNNER_HEAVY || needs.changes.outputs.pool)) || 'ubuntu-latest' }}
     timeout-minutes: 20
     env:
       # postgres:18-alpine in .github/ci-images.txt (bump both together).
@@ -710,10 +742,10 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: api/go.mod
-          # A merge-queue ref can neither read develop's cache nor share what
-          # it writes, so it neither restores nor saves one.
-          cache: ${{ github.event_name != 'merge_group' && runner.environment == 'github-hosted' }}
-          cache-dependency-path: api/go.sum
+          cache: false # ./.github/actions/go-cache restores; only warm-cache saves
+      - name: Go caches
+        id: gocache
+        uses: ./.github/actions/go-cache
 
       - name: Build the migration runner
         run: |
@@ -736,6 +768,9 @@ jobs:
         working-directory: .
         env:
           SUPER_URL: ${{ env.DATABASE_URL }}
+          # A pull request only warns (other migrations landing meanwhile can
+          # change the result); the merge queue and develop fail on it.
+          MIGRATION_ORDER: ${{ github.event_name == 'pull_request' && 'warning' || 'error' }}
         run: bash .github/scripts/migration-order-check.sh HEAD^1
 
       - name: Remove the PostgreSQL 18 container
@@ -745,30 +780,46 @@ jobs:
         if: failure()
         uses: ./.github/actions/fail-fast
 
-  # A push to develop whose jobs were skipped (the merge queue passed this
-  # commit) still keeps develop's Go cache current: pull requests restore it,
-  # and setup-go writes it only when no cache for this go.sum exists yet.
+  # The only writer of the Go caches (module cache and compiled packages):
+  # every push to develop, so pull requests (which restore them, read-only,
+  # through ./.github/actions/go-cache) compile only what they change. At most
+  # one build cache per day and go.sum is saved (the key carries the date).
+  # A push the merge queue already passed skips the test jobs; this job still
+  # runs then, so the cache is kept current either way.
   warm-cache:
     name: Go cache (develop)
     needs: changes
-    if: needs.changes.outputs.verified == 'true'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop' && needs.changes.outputs.api_any == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - id: go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: api/go.mod
-          # A merge-queue ref can neither read develop's cache nor share what
-          # it writes, so it neither restores nor saves one.
-          cache: ${{ github.event_name != 'merge_group' && runner.environment == 'github-hosted' }}
-          cache-dependency-path: api/go.sum
-      - name: Fill the cache (only when there was none for this go.sum)
-        if: steps.go.outputs.cache-hit != 'true'
+          cache: false
+      - name: Go caches
+        id: gocache
+        uses: ./.github/actions/go-cache
+      # vet compiles every package and its test variants, which are the
+      # objects `go test` of a pull request reuses.
+      - name: Compile everything (fills the build cache)
+        if: steps.gocache.outputs.build-hit != 'true' || steps.gocache.outputs.mod-hit != 'true'
         run: go build ./... && go vet ./...
+      - name: Save the module cache
+        if: steps.gocache.outputs.mod-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.gocache.outputs.mod-path }}
+          key: ${{ steps.gocache.outputs.mod-key }}
+      - name: Save the build cache
+        if: steps.gocache.outputs.build-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.gocache.outputs.build-path }}
+          key: ${{ steps.gocache.outputs.build-key }}
 
   # Merge queue and pushes only: the release-style static binaries (the former
   # separate `Build` job).
@@ -793,10 +844,10 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: api/go.mod
-          # A merge-queue ref can neither read develop's cache nor share what
-          # it writes, so it neither restores nor saves one.
-          cache: ${{ github.event_name != 'merge_group' && runner.environment == 'github-hosted' }}
-          cache-dependency-path: api/go.sum
+          cache: false # ./.github/actions/go-cache restores; only warm-cache saves
+      - name: Go caches
+        id: gocache
+        uses: ./.github/actions/go-cache
 
       - name: Build release binaries (linux/amd64, static)
         run: |

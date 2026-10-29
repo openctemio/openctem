@@ -45,7 +45,8 @@ var sharedSensorGateSQL = `EXISTS (
 // shared sensor bound to $1 with the capabilities bound to $2: a shared job,
 // pending, unheld, due, unexpired, unzoned (shared sensors take no zone
 // work), its hosts free in its organization (the same per-host politeness
-// keys as the organization's own sensors), not refused by this sensor,
+// keys as the organization's own sensors) and on the shared fleet
+// (sharedFleetHostFreePredicate), not refused by this sensor,
 // within the sensor's gates (sharedSensorGateSQL) and the capability gate.
 var sharedClaimWhere = `commands.is_platform_job = TRUE
 		AND commands.status = 'pending'
@@ -54,10 +55,39 @@ var sharedClaimWhere = `commands.is_platform_job = TRUE
 		AND (commands.expires_at IS NULL OR commands.expires_at > NOW())
 		AND ` + scheduledDuePredicate + `
 		AND ` + hostFreePredicate + `
+		AND ` + sharedFleetHostFreePredicate + `
 		AND ` + refusedByPredicate("$1") + `
+		AND ` + failedOnPredicate("$1") + `
 		AND ` + sharedSensorGateSQL + `
 		AND ` + capabilityClaimPredicate("$2") + `
 		AND ` + organizationActiveSQL("commands.tenant_id")
+
+// sharedFleetHostLimitSQL is command.SharedFleetHostLimitFor of the
+// command's dispatch gate.
+var sharedFleetHostLimitSQL = fmt.Sprintf(`(CASE WHEN commands.dispatch_gate->>'intensity' = 'intrusive'
+			     OR COALESCE(commands.dispatch_gate->>'tier', '0') NOT IN ('0', '1') THEN %d ELSE %d END)`,
+	command.SharedFleetIntrusiveHostLimit, command.SharedFleetHostLimit)
+
+// sharedFleetHostFreePredicate keeps a shared job whose hosts are free on
+// the shared fleet: for no key it conflicts with do as many shared jobs of
+// any organization as its limit (sharedFleetHostLimitSQL) hold that key
+// unsettled. The harm of shared traffic lands on the target and the
+// platform's egress whoever asked, so this check is across organizations;
+// the organization's own rule (hostFreePredicate) still applies too. The
+// GIN probe (&&) narrows the holders first. It reads only counts: a waiting
+// job learns nothing about who holds the host. The claim re-checks it under
+// lockSharedFleetHostKeysForPlatform and counts its own batch (dropSharedFleetHostsForPlatform).
+var sharedFleetHostFreePredicate = `(commands.host_keys IS NULL OR NOT EXISTS (
+			SELECT 1 FROM commands hk, unnest(hk.host_keys) AS hkk(k)
+			WHERE hk.is_platform_job = TRUE
+			  AND hk.id <> commands.id
+			  AND hk.host_keys IS NOT NULL
+			  AND hk.status IN ('acknowledged', 'running')
+			  AND hk.host_keys && ` + hostKeyConflictsSQL + `
+			  AND hkk.k = ANY(` + hostKeyConflictsSQL + `)
+			  AND (hk.settled_host_keys IS NULL OR hkk.k <> ALL(hk.settled_host_keys))
+			GROUP BY hkk.k
+			HAVING count(DISTINCT hk.id) >= ` + sharedFleetHostLimitSQL + `))`
 
 // sharedTenantBurst is how many of one organization's shared jobs a poll
 // offers before the next organization's: jobs are offered in rounds of this
@@ -291,6 +321,12 @@ func (r *CommandRepository) ClaimManyShared(ctx context.Context, sensorID shared
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	// The shared-fleet host locks first, for every candidate and in key
+	// order, before any organization's lock: every shared claim takes them
+	// in that one order, so two never deadlock.
+	if err := lockSharedFleetHostKeysForPlatform(ctx, tx, want); err != nil {
+		return nil, err
+	}
 	byTenant, tenants, err := sharedJobTenantsForPlatform(ctx, tx, want)
 	if err != nil {
 		return nil, err
@@ -321,6 +357,9 @@ func (r *CommandRepository) ClaimManyShared(ctx context.Context, sensorID shared
 		}
 		keep = append(keep, mine...)
 	}
+	if keep, err = dropSharedFleetHostsForPlatform(ctx, tx, want, keep); err != nil {
+		return nil, err
+	}
 	if len(keep) == 0 {
 		return nil, nil
 	}
@@ -345,6 +384,123 @@ func (r *CommandRepository) ClaimManyShared(ctx context.Context, sensorID shared
 		return nil, fmt.Errorf("failed to claim shared jobs: %w", err)
 	}
 	return out, nil
+}
+
+// lockSharedFleetHostKeysForPlatform takes a transaction advisory lock on every host
+// key of the shared jobs among ids, across organizations ("shost|" key), in
+// key order: two shared claims of one host run one after the other, so the
+// second sees the first one's claim in sharedFleetHostFreePredicate. A
+// bucket marker and a range key of the same bucket take one lock
+// (command.HostKeyLock).
+func lockSharedFleetHostKeysForPlatform(ctx context.Context, tx *sql.Tx, ids []string) error {
+	_, err := tx.ExecContext(ctx, `
+		SELECT count(pg_advisory_xact_lock(hashtextextended('shost|' || keys.k, 0)))
+		FROM (
+			SELECT DISTINCT CASE WHEN k LIKE 'in:%' THEN 'b:' || substr(k, 4)
+			                     WHEN k LIKE 'net:%' THEN 'b:' || substr(k, 5)
+			                     ELSE k END AS k
+			FROM commands c, unnest(c.host_keys) AS k
+			WHERE c.id = ANY($1::uuid[]) AND c.is_platform_job = TRUE AND c.host_keys IS NOT NULL
+			ORDER BY 1
+		) keys`, pq.Array(ids))
+	if err != nil {
+		return fmt.Errorf("failed to lock shared job hosts: %w", err)
+	}
+	return nil
+}
+
+// dropSharedFleetHostsForPlatform keeps, in the order of order, the ids of keep that
+// the shared-fleet host limit still allows once the shared jobs in flight
+// and the ids kept before them are counted
+// (command.SharedFleetHostsAllowed): one claim batch never puts more shared
+// jobs on one host than the limit, whatever their organizations.
+func dropSharedFleetHostsForPlatform(ctx context.Context, tx *sql.Tx, order, keep []string) ([]string, error) {
+	if len(keep) == 0 {
+		return keep, nil
+	}
+	rows, err := tx.QueryContext(ctx, sharedFleetJobHostsSQL, pq.Array(keep))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read shared job hosts: %w", err)
+	}
+	defer rows.Close()
+	jobOf := map[string]command.SharedFleetJob{}
+	var conflicts []string
+	for rows.Next() {
+		var j command.SharedFleetJob
+		if err := rows.Scan(&j.ID, pq.Array(&j.Keys), &j.Limit); err != nil {
+			return nil, fmt.Errorf("failed to read shared job hosts: %w", err)
+		}
+		jobOf[j.ID] = j
+		conflicts = append(conflicts, command.HostKeyConflicts(j.Keys)...)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read shared job hosts: %w", err)
+	}
+	if len(jobOf) == 0 {
+		return keep, nil
+	}
+	held, err := sharedFleetHeldKeys(ctx, tx, conflicts)
+	if err != nil {
+		return nil, err
+	}
+	kept := make(map[string]bool, len(keep))
+	for _, id := range keep {
+		kept[id] = true
+	}
+	jobs := make([]command.SharedFleetJob, 0, len(keep))
+	for _, id := range order {
+		if !kept[id] {
+			continue
+		}
+		j, ok := jobOf[id]
+		if !ok {
+			j = command.SharedFleetJob{ID: id}
+		}
+		jobs = append(jobs, j)
+	}
+	return command.SharedFleetHostsAllowed(held, jobs), nil
+}
+
+// sharedFleetJobHostsSQL reads the host keys and the shared-fleet host limit
+// of the commands among $1 that hold hosts.
+var sharedFleetJobHostsSQL = `
+		SELECT commands.id::text, commands.host_keys, ` + sharedFleetHostLimitSQL + `
+		FROM commands
+		WHERE commands.id = ANY($1::uuid[]) AND commands.host_keys IS NOT NULL`
+
+// sharedFleetHeldKeys counts, per key among keys, the shared jobs in flight
+// (of any organization) that hold it unsettled.
+func sharedFleetHeldKeys(ctx context.Context, tx *sql.Tx, keys []string) (map[string]int, error) {
+	held := map[string]int{}
+	if len(keys) == 0 {
+		return held, nil
+	}
+	rows, err := tx.QueryContext(ctx, `
+		SELECT hkk.k, count(DISTINCT hk.id)
+		FROM commands hk, unnest(hk.host_keys) AS hkk(k)
+		WHERE hk.is_platform_job = TRUE
+		  AND hk.host_keys IS NOT NULL
+		  AND hk.status IN ('acknowledged', 'running')
+		  AND hk.host_keys && $1::text[]
+		  AND hkk.k = ANY($1::text[])
+		  AND (hk.settled_host_keys IS NULL OR hkk.k <> ALL(hk.settled_host_keys))
+		GROUP BY hkk.k`, pq.Array(keys))
+	if err != nil {
+		return nil, fmt.Errorf("failed to count shared job hosts: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var k string
+		var n int
+		if err := rows.Scan(&k, &n); err != nil {
+			return nil, fmt.Errorf("failed to count shared job hosts: %w", err)
+		}
+		held[k] = n
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to count shared job hosts: %w", err)
+	}
+	return held, nil
 }
 
 // sharedJobTenantsForPlatform groups the shared jobs among ids by organization, each

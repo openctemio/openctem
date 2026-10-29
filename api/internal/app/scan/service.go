@@ -6,6 +6,7 @@ import (
 	"time"
 
 	freshdom "github.com/openctemio/openctem/api/pkg/domain/assetfreshness"
+	"github.com/openctemio/openctem/api/pkg/domain/assetresolution"
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 
@@ -193,6 +194,8 @@ type Service struct {
 	// (resolve_evidence.go); nil hands every name on.
 	resolveEvidence freshdom.NameEvidenceReader
 	staleRefresher  StaleRefresher
+	// resolutionStore: names known not to resolve (resolve_evidence.go).
+	resolutionStore assetresolution.Store
 	// approvalGate and governanceAssets: scan approval (governance.go).
 	approvalGate        ApprovalGate
 	governanceAssets    GovernanceAssets

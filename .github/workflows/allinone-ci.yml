@@ -108,6 +108,41 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: bash .github/scripts/tree-verified.sh
 
+  # The four images come from build-images.yml: built once per content key for
+  # the whole pipeline, by digest (the all-in-one is assembled FROM the three
+  # components). Only push and merge-queue runs call it: it holds packages:
+  # write, which a pull request never gets.
+  shared:
+    name: CI images
+    needs: changes
+    if: needs.changes.outputs.images == 'true' && needs.changes.outputs.full == 'true' && github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/build-images.yml
+    with:
+      images: allinone
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+
+  # A pull request only reads: it reuses the images develop built for the same
+  # content keys (verified digests) when all four exist, and otherwise `images`
+  # builds them locally. No packages: write, no id-token, no attestations: write.
+  shared-pr:
+    name: CI images (PR, read-only)
+    needs: changes
+    if: needs.changes.outputs.images == 'true' && needs.changes.outputs.full == 'true' && github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      packages: read
+      attestations: read
+    uses: ./.github/workflows/resolve-images.yml
+    with:
+      images: allinone
+
   images:
     name: Build and smoke-test images (amd64)
     # actions: write lets the fail-fast step cancel doomed runs (.github/actions/fail-fast).
@@ -115,10 +150,12 @@ jobs:
       contents: read
       packages: read
       actions: write
-    needs: changes
-    if: needs.changes.outputs.images == 'true' && needs.changes.outputs.full == 'true'
+    needs: [changes, shared, shared-pr]
+    if: ${{ !cancelled() && needs.changes.outputs.images == 'true' && needs.changes.outputs.full == 'true' && (needs.shared.result == 'success' || needs.shared-pr.result == 'success') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      SHARED: ${{ needs.shared.outputs.push == 'true' || needs.shared-pr.outputs.push == 'true' }}
     services:
       postgres:
         image: ghcr.io/openctemio/mirror/postgres:17-alpine
@@ -150,19 +187,41 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
           dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
-      # The default docker driver: images built here are visible to the next
-      # build's FROM without a registry.
+      # Shared images: pull the digests, tag them as the steps below expect.
+      - name: Pull the shared images
+        if: env.SHARED == 'true'
+        env:
+          API_REF: ${{ needs.shared.outputs.api || needs.shared-pr.outputs.api }}
+          WEB_REF: ${{ needs.shared.outputs.web || needs.shared-pr.outputs.web }}
+          CONSOLE_REF: ${{ needs.shared.outputs.console || needs.shared-pr.outputs.console }}
+          ALLINONE_REF: ${{ needs.shared.outputs.allinone || needs.shared-pr.outputs.allinone }}
+        run: |
+          set -euo pipefail
+          for pair in "$API_REF local/openctem-api:ci" "$WEB_REF local/openctem-web:ci" "$CONSOLE_REF local/openctem-console:ci" "$ALLINONE_REF local/openctem:ci"; do
+            read -r ref tag <<<"$pair"
+            [ -n "$ref" ] || { echo "::error::a shared image is missing"; exit 1; }
+            bash .github/scripts/retry.sh docker pull -q "$ref"
+            docker tag "$ref" "$tag"
+          done
+      # No shared images (a fork pull request): build here, with the default
+      # docker driver, so images built here are visible to the next build's FROM
+      # without a registry.
       - name: Build openctem-api
+        if: env.SHARED != 'true'
         run: bash .github/scripts/retry.sh docker build -t local/openctem-api:ci --target production api
       # The web image compiles against the generated contract files, which are
       # not committed (api/docs/development/ci-cd.md).
       - name: Generate the contract files
+        if: env.SHARED != 'true'
         uses: ./.github/actions/generate-contract
       - name: Build openctem-web
+        if: env.SHARED != 'true'
         run: bash .github/scripts/retry.sh docker build -t local/openctem-web:ci web
       - name: Build openctem-console
+        if: env.SHARED != 'true'
         run: bash .github/scripts/retry.sh docker build -t local/openctem-console:ci --target console web
       - name: Build openctem (all-in-one)
+        if: env.SHARED != 'true'
         run: >-
           bash .github/scripts/retry.sh
           docker buildx build --load -t local/openctem:ci
@@ -196,6 +255,9 @@ jobs:
       - name: Image guard
         env:
           TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db:2,mirror.gcr.io/aquasec/trivy-db:2
+          # Off a pull request, also write the fixable HIGH/CRITICAL advisories to a
+          # report for the early warning and the release preflight.
+          IMAGE_GUARD_REPORT: ${{ github.event_name != 'pull_request' && format('{0}/image-guard-report.ndjson', runner.temp) || '' }}
         run: |
           bash .github/scripts/image-guard.sh openctem-api local/openctem-api:ci
           bash .github/scripts/image-guard.sh openctem-web local/openctem-web:ci
@@ -203,6 +265,14 @@ jobs:
           bash .github/scripts/image-guard.sh openctem local/openctem:ci
       - name: Image sizes
         run: docker image ls --format '{{.Repository}}:{{.Tag}} {{.Size}}' | grep '^local/'
+      - name: Keep the image-guard report
+        if: ${{ always() && github.event_name != 'pull_request' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image-guard-report
+          path: ${{ runner.temp }}/image-guard-report.ndjson
+          if-no-files-found: ignore
+          retention-days: 30
       - name: Fail fast
         if: failure()
         uses: ./.github/actions/fail-fast
@@ -212,7 +282,7 @@ jobs:
     # request pr-hygiene.yml reports that name, so this one must not.
     name: ${{ github.event_name == 'pull_request' && 'All-in-one (PR build)' || 'All-in-one OK' }}
     if: always()
-    needs: [changes, images]
+    needs: [changes, shared, shared-pr, images]
     runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
     timeout-minutes: 5
     steps:
@@ -238,3 +308,34 @@ jobs:
             r="$(echo "$NEEDS" | jq -r '.images.result')"
             if [ "$r" != success ]; then echo "::error::the image build must run and pass for $EVENT, got: $r"; exit 1; fi
           fi
+
+  # Early warning (develop only): fixable HIGH/CRITICAL advisories that image-guard
+  # found in the images of this push become one issue labelled `security`
+  # (.github/scripts/early-warning.sh). Never a gate; a pushed commit the merge
+  # queue already built skips the build, so this runs on the pushes that built.
+  early-warning:
+    name: Early warning (images)
+    if: ${{ always() && github.event_name == 'push' && github.ref == 'refs/heads/develop' && needs.images.result != 'skipped' }}
+    needs: [images]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    permissions:
+      contents: read
+      issues: write # open, update and close the one early-warning issue
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: image-guard-report
+          path: ${{ runner.temp }}/report
+      - name: Fixable advisories in the images of develop
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          REPORT_DIR: ${{ runner.temp }}/report
+        run: bash .github/scripts/early-warning.sh images "$REPORT_DIR"/*.ndjson

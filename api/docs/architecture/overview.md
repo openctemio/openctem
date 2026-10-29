@@ -34,7 +34,7 @@
  Customer networks
  ┌───────────────────────────────────────────────┐
  │ Sensors (openctemio/sensor, built on sdk-go)  │
- │  roles: scanner · collector · agent-mode      │
+ │  roles: scanner, collector, ai-worker         │
  │  pull work from /api/v2/sensor, run tools,    │
  │  report results (CTIS) back                   │
  └───────────────────────────────────────────────┘
@@ -43,11 +43,11 @@
 ## Sensors
 
 Scanning and collection run in **sensors**, not in the API. A sensor runs in the
-customer's network (or as a platform sensor operated by the platform), has its
+customer's network (or as a shared sensor run by the operator for every organization), has its
 own identity ([agent-identity.md](agent-identity.md)), pulls commands over the
 sensor protocol v2 and reports results that the API ingests through the CTIS
 contract. Roles: **scanner** (runs tools such as nuclei, httpx, semgrep, trivy),
-**collector** (pulls data from other systems) and **agent-mode** (endpoint).
+**collector** (pulls data from other systems) and **ai-worker** (runs AI agents); an **endpoint** role is planned.
 Scan zones route work to the sensors that can reach the targets
 ([scan-zones.md](scan-zones.md)). Full model: [sensors.md](sensors.md).
 

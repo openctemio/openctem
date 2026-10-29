@@ -298,6 +298,11 @@ export interface ScanRun {
   scan_id?: string
   /** The run's scan, named by the server on list rows (empty when deleted). */
   scan_name?: string
+  /**
+   * The platform policy that owns the run's scan (list rows only): the run
+   * is read-only for people. Absent for a scan a person owns.
+   */
+  managed_by?: 'coverage' | 'enrichment' | 'web_verify'
   /** The probe ceiling the run started with (RFC-071); absent without one. */
   intensity?: 'passive' | 'active' | 'intrusive'
   trigger_type: ScanWorkflowTriggerType
@@ -324,6 +329,8 @@ export interface ScanRun {
   unreachable_target_count?: number
   /** Targets the sensor's local policy skipped; the run still completes. */
   skipped_target_count?: number
+  /** Of the skipped targets, the names that no longer resolve (informational, never an error). */
+  no_longer_resolve_count?: number
   /** The run's step runs (GET /scan-runs/{id} only). */
   scan_run_steps?: StepRun[]
   error_message?: string
@@ -446,6 +453,8 @@ export interface ScanRunListFilters {
   scan_id?: string
   /** Run kinds, comma-separated; system runs are hidden unless named. */
   kind?: string
+  /** `system` lists only runs of platform-managed scans (continuous coverage), `user` leaves them out. */
+  origin?: 'user' | 'system'
   status?: ScanRunStatus
   trigger_type?: ScanWorkflowTriggerType
   /** One sort key, `-` for descending (created_at, started_at, completed_at, total_findings). */

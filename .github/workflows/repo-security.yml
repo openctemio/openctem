@@ -218,6 +218,24 @@ jobs:
     runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
+      # Branch policy: main only takes release and hotfix branches (the release
+      # train opens them); everything else goes to develop. main is the default
+      # branch, so a pull request opened without choosing a base lands here first.
+      - name: Pull requests into main come from release or hotfix branches
+        if: github.event_name == 'pull_request' && github.base_ref == 'main'
+        env:
+          PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPO: ${{ github.repository }}
+        # The head branch name is attacker-chosen text: read it from the
+        # runner's GITHUB_HEAD_REF, never interpolated into the workflow.
+        run: |
+          HEAD_REF="$GITHUB_HEAD_REF"
+          if [ "$PR_HEAD_REPO" = "$BASE_REPO" ] && printf '%s' "$HEAD_REF" | grep -Eq '^(release|hotfix)/v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "branch policy: $HEAD_REF -> main is allowed"
+            exit 0
+          fi
+          echo "::error::Pull requests into main come only from release/vX.Y.Z or hotfix/vX.Y.Z branches of this repository. Change the base branch to develop (Edit, next to the title)."
+          exit 1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -265,6 +283,9 @@ jobs:
         run: bash .github/scripts/check-runners.test.sh
       - name: Runner selection
         run: bash .github/scripts/check-runners.sh
+      # The automatic split of heavy jobs between the pools (run_id modulo 100).
+      - name: Runner pool split self-test
+        run: bash .github/scripts/ci-pool.test.sh
       # Which jobs a change runs (api/web/docs routing shared by every workflow).
       - name: Change routing self-test
         run: bash .github/scripts/changed.test.sh
@@ -283,6 +304,14 @@ jobs:
       # Which base images the CI image mirror copies for the other repositories.
       - name: CI image mirror base list self-test
         run: bash .github/scripts/ci-image-bases.test.sh
+      # Content keys of the CI images, their attestation check, retention, and the
+      # rule that no pull_request path can hold packages: write.
+      - name: CI image build-once self-tests
+        run: |
+          bash .github/scripts/image-key.test.sh
+          bash .github/scripts/ci-image-resolve.test.sh
+          bash .github/scripts/ci-images-prune.test.sh
+          bash .github/scripts/pr-no-package-write.test.sh
       # Which release the upgrade test starts from, and its refusals.
       - name: Upgrade test self-test
         run: bash .github/scripts/upgrade-test.test.sh
@@ -314,6 +343,15 @@ jobs:
       - name: Tool pin freshness self-test
         run: bash .github/scripts/tool-pins.test.sh
 
+      # Incremental pull request CI and the release fast path.
+      - name: Incremental CI base (last green commit) self-test
+        run: bash .github/scripts/green-base.test.sh
+      - name: Release provenance self-test
+        run: bash .github/scripts/release/tests/test_release_provenance.sh
+      - name: Release preflight self-test
+        run: bash .github/scripts/release/tests/test_release_preflight.sh
+      - name: Early warning self-test
+        run: bash .github/scripts/early-warning.test.sh
       - name: Release builds use no shared cache
         run: bash .github/scripts/check-release-no-cache.sh
 

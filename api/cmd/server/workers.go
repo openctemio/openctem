@@ -46,6 +46,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/jobs"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/durablejob"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
@@ -435,7 +436,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		&controller.JobRecoveryControllerConfig{
 			Interval:              60 * time.Second,
 			StuckThresholdMinutes: 30,
-			MaxRetries:            3,
+			MaxRetries:            commanddom.MaxDispatchAttempts,
 			Logger:                log.With("controller", "job-recovery"),
 		},
 	)
@@ -852,6 +853,11 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// tenant owns domain assets; disable with CERT_MONITOR_ENABLED=false.
 	// Names a permanent scope target or seed covers are confirmed: once at
 	// start-up (the backfill) and every 6 h (RFC-054 §4.3).
+	// Groups that fill themselves by a rule are evaluated again every hour
+	// (asset changes trigger their own debounced evaluation).
+	if svc.AssetGroup != nil {
+		w.ControllerManager.Register(controller.NewAssetGroupRulesController(svc.AssetGroup, 0))
+	}
 	if svc.ScopeJoin != nil {
 		if svc.Module != nil {
 			svc.ScopeJoin.SetModuleGuard(svc.Module) // skip tenants with attack_surface off

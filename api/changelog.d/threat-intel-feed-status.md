@@ -1,0 +1,6 @@
+### Changed: threat intelligence feeds report one computed state
+
+- `GET /api/v1/admin/threat-intel/sync` returns, per feed, a server-computed `state` (`up_to_date`, `waiting_for_publisher`, `stale`, `failing`, `refused`, `running`, `off`), an `error_code` with `error_params`, `last_attempt_at`, `last_success_at`, `failing_since`, `next_run_at` (the scheduler's real interval: 20 minutes for vulnerability bundles, hourly for KEV, daily for EPSS), `catalog_records`, `records_changed`, `data_as_of`, and for `vulnfeed` the applied sequence, key set version, bundle age and per-source freshness. The old `last_sync_status`, `records_synced` and `next_sync_at` fields are gone from the admin route.
+- A missing publisher (404 on the key set or pointer) reads "waiting for the publisher" instead of a failure; a run with nothing newer now clears an earlier failure.
+- The organization routes keep `last_sync_status`, `records_synced` and `next_sync_at` and add `state`, `data_as_of` and `last_success_at`; they carry no error text.
+- Console: the Threat intelligence page shows one card per feed with the state, the error as a code with an action (raw text behind Details), catalog size and last-run changes separately, last attempt and last success separately, and the bundle feed's sequence, signature and per-source freshness. No migration.

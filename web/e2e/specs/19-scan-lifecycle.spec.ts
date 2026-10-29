@@ -104,8 +104,12 @@ async function editOnScanPage(page: Page, scanId: string, name: string, targets:
   await expect(dialog).toBeVisible()
   await dialog.getByLabel(/scan name/i).fill(name)
   await dialog.getByRole('button', { name: /^next/i }).click()
-  await dialog.getByRole('tab', { name: /paste/i }).click()
-  await dialog.locator('#custom-targets').fill(targets.join('\n'))
+  // The targets field holds the saved targets as chips: remove them, then
+  // type the new ones (a comma adds each).
+  const field = dialog.getByTestId('target-chips-field')
+  const removeChip = field.getByRole('button', { name: /^remove /i })
+  while ((await removeChip.count()) > 0) await removeChip.first().click()
+  await field.getByRole('textbox').fill(`${targets.join(', ')}, `)
   await dialog.getByRole('button', { name: /^next/i }).click()
   await dialog
     .getByText(/advanced/i)
