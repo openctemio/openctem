@@ -57,6 +57,10 @@ const (
 	PlacementPinnedElsewhere = "pinned_elsewhere"
 	// PlacementRefusedEarlier: the sensor already refused this command.
 	PlacementRefusedEarlier = "refused_earlier"
+	// PlacementFailedHereEarlier: the sensor already failed this command
+	// for an infrastructure reason (or lost its lease), so it is not
+	// offered it again (research/302).
+	PlacementFailedHereEarlier = "failed_here_earlier"
 	// PlacementOutsideZone: the command belongs to a scan zone the sensor
 	// is not assigned to (or the sensor in the zone lacks the tool).
 	PlacementOutsideZone = "outside_zone"
@@ -84,6 +88,11 @@ const (
 	// a validate job: the sensor's validate executor did not report that it
 	// goes through the pool.
 	PlacementEgressValidateUnsupported = "egress_validate_unsupported"
+	// PlacementEgressHostDirect: the sensor's owner set it to run scans direct
+	// on its host (it reports egress.host-direct@1) and the job needs a pool
+	// (the organization requires a proxy, or named a pool for this sensor):
+	// the host refuses pools, so the job waits and never runs direct.
+	PlacementEgressHostDirect = "egress_host_direct"
 	// PlacementGrantPrefix prefixes a refusal by the sensor's grant:
 	// "grant_" + the grant dimension (job_types, zones, tools, tier, ...).
 	PlacementGrantPrefix = "grant_"
@@ -163,14 +172,17 @@ type HostHoldersReader interface {
 // command and one sensor of its tenant, as the repository evaluates them,
 // with the scans the sensor holds now.
 type SensorClaim struct {
-	SensorID     shared.ID
-	PinOK        bool
-	ZoneOK       bool
-	ToolOK       bool
-	NotRefused   bool
-	CapabilityOK bool
-	FeaturesOK   bool
-	HeldScans    int
+	SensorID   shared.ID
+	PinOK      bool
+	ZoneOK     bool
+	ToolOK     bool
+	NotRefused bool
+	// NotFailedHere is false for a sensor that failed the command for an
+	// infrastructure reason or lost its lease (research/302).
+	NotFailedHere bool
+	CapabilityOK  bool
+	FeaturesOK    bool
+	HeldScans     int
 }
 
 // PlacementReader evaluates the claim predicates of one command of the

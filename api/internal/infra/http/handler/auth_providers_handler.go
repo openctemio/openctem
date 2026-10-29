@@ -50,7 +50,15 @@ type AuthProvidersHandler struct {
 	// passwordPolicy is what the server enforces on a chosen password and
 	// how long a reset link lasts; forms state it instead of their own copy.
 	passwordPolicy PasswordPolicyInfo
-	logger         *logger.Logger
+	// emailDelivery reports whether this server can send email.
+	emailDelivery func() bool
+	logger        *logger.Logger
+}
+
+// WithEmailDelivery sets where the email_delivery capability comes from.
+func (h *AuthProvidersHandler) WithEmailDelivery(f func() bool) *AuthProvidersHandler {
+	h.emailDelivery = f
+	return h
 }
 
 // WithPasswordPolicy reports the password rules and reset-link lifetime of
@@ -196,6 +204,11 @@ type AuthProvidersResponse struct {
 	// PasswordPolicy is the policy every password form states and the server
 	// enforces (it also rejects known-breached passwords).
 	PasswordPolicy PasswordPolicyInfo `json:"password_policy"`
+	// EmailDelivery reports whether this server can send email (SMTP is
+	// configured). False: forgot-password, verification and invitation emails
+	// are not sent, so the UI says "ask your administrator" instead of
+	// "check your email", and administrators copy links by hand.
+	EmailDelivery bool `json:"email_delivery"`
 }
 
 // GetProviders returns which login providers are configured on this server.
@@ -216,6 +229,7 @@ func (h *AuthProvidersHandler) GetProviders(w http.ResponseWriter, r *http.Reque
 		TenantCreationMode:  h.tenantCreationMode,
 		RegistrationEnabled: h.registrationEnabled,
 		PasswordPolicy:      h.passwordPolicy,
+		EmailDelivery:       h.emailDelivery != nil && h.emailDelivery(),
 	}
 	if h.signupPolicy != nil {
 		p := h.signupPolicy.Current(r.Context())

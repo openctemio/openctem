@@ -28,9 +28,11 @@ type View struct {
 	RecordsChanged int
 	CatalogRecords int64
 	DataAsOf       *time.Time
-	Interval       time.Duration
-	StaleAfter     time.Duration
-	Bundle         *BundleDetail
+	// DeliveredVia is the path that stored the data held (bundle or direct).
+	DeliveredVia string
+	Interval     time.Duration
+	StaleAfter   time.Duration
+	Bundle       *BundleDetail
 }
 
 // BundleDetail is the vulnerability bundle feed's own progress.
@@ -66,6 +68,7 @@ func Build(st *threatintel.SyncStatus, catalog int64, now time.Time) View {
 		RecordsChanged: st.RecordsSynced(),
 		CatalogRecords: catalog,
 		Interval:       Interval(source),
+		DeliveredVia:   metaString(meta["delivered_via"]),
 		StaleAfter:     StaleAfter(source),
 	}
 	if c, ok := meta[threatintel.MetaErrorCode].(string); ok {

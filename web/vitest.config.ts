@@ -1,6 +1,7 @@
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import path from 'path'
+import DurationSequencer from './vitest.sequencer'
 
 export default defineConfig({
   plugins: [react()],
@@ -13,6 +14,10 @@ export default defineConfig({
 
     // Global test utilities
     globals: true,
+
+    // `--shard=i/n` balanced by recorded run time (VITEST_DURATIONS); Vitest's
+    // own split when no durations are given.
+    sequence: { sequencer: DurationSequencer },
 
     // Coverage configuration
     coverage: {
