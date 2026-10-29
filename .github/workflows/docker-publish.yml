@@ -57,6 +57,7 @@ jobs:
   prepare:
     name: Prepare
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       version: ${{ steps.vars.outputs.VERSION }}
       build_time: ${{ steps.vars.outputs.BUILD_TIME }}
@@ -116,6 +117,7 @@ jobs:
           - { platform: linux/amd64, runner: ubuntu-latest, arch: amd64 }
           - { platform: linux/arm64, runner: ubuntu-24.04-arm, arch: arm64 }
     runs-on: ${{ matrix.platform.runner }}
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -218,6 +220,7 @@ jobs:
     name: Publish ${{ matrix.image.name }}
     needs: [prepare, build]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       packages: write
@@ -299,6 +302,7 @@ jobs:
           - { platform: linux/amd64, runner: ubuntu-latest, arch: amd64 }
           - { platform: linux/arm64, runner: ubuntu-24.04-arm, arch: arm64 }
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
     services:
       postgres:
         image: ghcr.io/openctemio/mirror/postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
@@ -400,6 +404,7 @@ jobs:
     name: Publish openctem (all-in-one)
     needs: [prepare, allinone]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       packages: write
@@ -437,6 +442,7 @@ jobs:
     name: Sign + SBOM ${{ matrix.name }}
     needs: [prepare, merge, allinone-merge]
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: write
       packages: write
@@ -510,6 +516,7 @@ jobs:
     needs: [prepare, merge, allinone-merge]
     if: needs.prepare.outputs.has_dockerhub == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
