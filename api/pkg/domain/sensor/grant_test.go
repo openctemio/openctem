@@ -138,6 +138,28 @@ func TestAdmit_Credentials(t *testing.T) {
 	}
 }
 
+// A quick scan carries its targets in its settings too: a long host name
+// is not a credential, and a job naming one is never withheld from a sensor
+// whose grant does not allow credentials (prod: every resolve.dns, scan.ports
+// and probe.http coverage job with such a name waited until its deadline).
+func TestAdmit_TargetListsAreNotCredentials(t *testing.T) {
+	hosts := []string{"static-01.example-group.com.vn", "dcommunication-gw-api.example.com.vn", "203.0.113.7"}
+	job := payload(t, map[string]any{"scanner": "dnsx", "targets": hosts,
+		"config": map[string]any{"targets": hosts}, "scanner_config": map[string]any{"targets": hosts}})
+	if CarriesCredentials(job) {
+		t.Fatal("a target list of host names counts as carrying credentials")
+	}
+	g := trusted(mustProfile(t, ProfileInternalScanner))
+	if r := g.Admit("scan", job, nil); r != nil && r.Dimension == DimCredentials {
+		t.Fatalf("grant refused a job for its target list: %v", r)
+	}
+	withPassword := payload(t, map[string]any{"scanner": "httpx", "targets": []string{"example.com"},
+		"config": map[string]any{"targets": []string{"https://user:pw@example.com/"}}})
+	if !CarriesCredentials(withPassword) {
+		t.Fatal("a target URL with a user and password must count as carrying credentials")
+	}
+}
+
 // Threat 15: private targets for easm-external; targets outside the scope.
 func TestAdmit_Targets(t *testing.T) {
 	easm := trusted(mustProfile(t, ProfileEASMExternal))
