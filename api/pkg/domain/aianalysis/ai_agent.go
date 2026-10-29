@@ -16,8 +16,8 @@ const AttestationPeriod = 90 * 24 * time.Hour
 
 // Errors.
 var (
-	ErrAgentNotFound = fmt.Errorf("%w: AI agent not found", shared.ErrNotFound)
-	ErrRunNotFound   = fmt.Errorf("%w: AI run not found", shared.ErrNotFound)
+	ErrAIAgentNotFound = fmt.Errorf("%w: AI agent not found", shared.ErrNotFound)
+	ErrRunNotFound     = fmt.Errorf("%w: AI run not found", shared.ErrNotFound)
 	// ErrRunInFlight: a run of this use case for this subject is live.
 	ErrRunInFlight = fmt.Errorf("%w: an AI run for this subject is already in progress", shared.ErrConflict)
 	// ErrOwnerRequired: an AI agent keeps at least one accountable owner.
@@ -143,7 +143,7 @@ type OwnerRef struct {
 }
 
 // AI agent is the AI profile of a service account.
-type Agent struct {
+type AIAgent struct {
 	ID               shared.ID // the service account's user id
 	TenantID         shared.ID
 	Name             string
@@ -174,7 +174,7 @@ const (
 
 // HealthReason is why an active AI agent must pause now ("" when it may run).
 // activeOwners is the number of accountable owners that are active now.
-func (a *Agent) HealthReason(now time.Time, activeOwners int) PauseReason {
+func (a *AIAgent) HealthReason(now time.Time, activeOwners int) PauseReason {
 	switch {
 	case activeOwners == 0:
 		return PauseNoActiveOwner

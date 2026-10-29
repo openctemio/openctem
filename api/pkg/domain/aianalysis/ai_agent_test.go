@@ -88,7 +88,7 @@ func TestPresets_NeverCarryDeniedPermissions(t *testing.T) {
 
 func TestHealthReason(t *testing.T) {
 	now := time.Now()
-	a := &Agent{AttestDueAt: now.Add(time.Hour)}
+	a := &AIAgent{AttestDueAt: now.Add(time.Hour)}
 	if r := a.HealthReason(now, 1); r != "" {
 		t.Fatalf("healthy agent paused: %s", r)
 	}
@@ -101,17 +101,17 @@ func TestHealthReason(t *testing.T) {
 	}
 }
 
-func TestStampActor_OnlyTheAgentsOwnRows(t *testing.T) {
-	agent, person := shared.NewID(), shared.NewID()
-	ctx := WithProvenance(context.Background(), Provenance{AgentID: agent, RunID: shared.NewID()})
+func TestStampActor_OnlyTheAIAgentsOwnRows(t *testing.T) {
+	aiAgent, person := shared.NewID(), shared.NewID()
+	ctx := WithProvenance(context.Background(), Provenance{AIAgentID: aiAgent, RunID: shared.NewID()})
 	if _, ok := StampActor(ctx, &person); ok {
 		t.Fatal("a person's row in the same context must not be labeled AI")
 	}
-	p, ok := StampActor(ctx, &agent)
+	p, ok := StampActor(ctx, &aiAgent)
 	if !ok || p.Map()["run_id"] == "" {
 		t.Fatal("the agent's row carries the run")
 	}
-	if _, ok := StampActor(context.Background(), &agent); ok {
+	if _, ok := StampActor(context.Background(), &aiAgent); ok {
 		t.Fatal("no provenance, no stamp")
 	}
 }
@@ -120,20 +120,20 @@ func TestStampActor_OnlyTheAgentsOwnRows(t *testing.T) {
 // permissions never include an approve permission and the executor passes
 // CanApprove=false), so every risk-lowering change it asks for needs a
 // person, whatever the organization's levels.
-func TestAgentRequests_AlwaysNeedAPerson(t *testing.T) {
-	agent := shared.NewID()
+func TestAIAgentRequests_AlwaysNeedAPerson(t *testing.T) {
+	aiAgent := shared.NewID()
 	for _, kind := range []approvalpolicy.Kind{approvalpolicy.KindFalsePositive, approvalpolicy.KindAccepted} {
 		for _, level := range []string{approvalpolicy.FPLevelOff, approvalpolicy.FPLevelAll} {
 			res := approvalpolicy.Evaluate(approvalpolicy.Policy{}, approvalpolicy.Request{
-				Kind: kind, RequesterID: agent, RequesterCanApprove: false, FPLevel: level, AcceptLevel: level,
-				Approvers: []approvalpolicy.Candidate{{UserID: agent}},
+				Kind: kind, RequesterID: aiAgent, RequesterCanApprove: false, FPLevel: level, AcceptLevel: level,
+				Approvers: []approvalpolicy.Candidate{{UserID: aiAgent}},
 			})
 			if res.SinglePerson() || res.Required < 1 {
 				t.Errorf("%s at level %s: tier %s, %d approvals: an agent's request was decided without a person",
 					kind, level, res.Tier, res.Required)
 			}
 			for _, e := range res.Eligible {
-				if e == agent {
+				if e == aiAgent {
 					t.Errorf("%s: the requesting agent is an eligible approver", kind)
 				}
 			}
