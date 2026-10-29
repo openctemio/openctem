@@ -453,12 +453,12 @@ export function TargetsStep({
             <Tabs value={pickerSource} onValueChange={(v) => setPickerSource(v as PickerSource)}>
               <TabsList className="w-full">
                 <TabsTrigger value="assets" className="flex-1">
-                  <Target className="h-4 w-4" aria-hidden />
+                  <Target aria-hidden />
                   {t('scans.targets.tabAssets')}
                   <TabsCount value={targets.assetIds.length || null} />
                 </TabsTrigger>
                 <TabsTrigger value="groups" className="flex-1">
-                  <FolderOpen className="h-4 w-4" aria-hidden />
+                  <FolderOpen aria-hidden />
                   {t('scans.targets.tabGroups')}
                   <TabsCount value={targets.assetGroupIds.length || null} />
                 </TabsTrigger>
