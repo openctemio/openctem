@@ -5,6 +5,7 @@ import { adminFetch, adminFetcher } from '@console/lib/admin-api/client'
 import type {
   CreateTargetMappingInput,
   Paged,
+  RegistryTargetPair,
   TargetMapping,
   TargetMappingStats,
   TargetMappingTypes,
@@ -42,6 +43,11 @@ export function useTargetMappings(query: TargetMappingQuery) {
   return useSWR<Paged<TargetMapping>>(targetMappingListPath(query), adminFetcher, {
     keepPreviousData: true,
   })
+}
+
+/** The built-in pairs of the asset type catalog (read-only). */
+export function useRegistryTargetPairs() {
+  return useSWR<{ data: RegistryTargetPair[] }>(`${BASE}/registry`, adminFetcher)
 }
 
 export function useTargetMappingStats() {

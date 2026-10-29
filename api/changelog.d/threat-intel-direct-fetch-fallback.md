@@ -1,0 +1,5 @@
+### Added: choose where KEV and EPSS come from (signed release or direct fetch)
+
+- New console setting (System > Threat intelligence, `/admin/settings/threat-intel-source`; super admin, step-up, audited). **Source** `direct` (default, today's behaviour) keeps the platform's own scheduled fetch from CISA and FIRST as the supplier; `bundle` makes the signed vulnerability release the supplier and runs the own fetch only as a fallback when the release's copy was last read more than 6 hours ago (KEV) or 48 hours ago (EPSS). **Direct fetch** `auto` (default) or `off`: strict-egress installs turn it off and the platform never calls CISA or FIRST (scheduled and manual syncs both refuse).
+- The page shows, per feed, when the collector last read the source, whether the release's copy is fresh and which path supplied the data held; the sync status carries `delivered_via` and `data_as_of`.
+- **Upgrade note:** nothing changes until an administrator sets source `bundle`. Do it after the publisher has released hourly for seven days.

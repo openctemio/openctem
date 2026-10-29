@@ -22,6 +22,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/api/pkg/domain/platformauthz"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -469,6 +470,10 @@ func Register(
 	if stepUpChecker == nil && h.LocalAuth != nil {
 		stepUpChecker = h.LocalAuth.RecentAuthChecker()
 	}
+	credentialFactorChecker = nil
+	if h.LocalAuth != nil {
+		credentialFactorChecker = h.LocalAuth.CredentialFactorChecker()
+	}
 	apiKeyOrJWT = nil
 	if h.APIKeyAuth != nil {
 		apiKeyOrJWT = h.APIKeyAuth.OrJWT
@@ -608,7 +613,11 @@ func Register(
 		if h.AdminAuthMiddleware != nil {
 			consoleAuth = h.AdminAuthMiddleware.Authenticate
 		}
-		registerDocsRoutes(router, h.Docs, cfg.IsProduction(), authMiddleware, consoleAuth)
+		var consoleGuard func(platformauthz.Permission) Middleware
+		if h.AdminAuthMiddleware != nil {
+			consoleGuard = func(p platformauthz.Permission) Middleware { return h.AdminAuthMiddleware.RequirePlatform(p) }
+		}
+		registerDocsRoutes(router, h.Docs, cfg.IsProduction(), authMiddleware, consoleAuth, consoleGuard)
 	}
 	if h.Announcement != nil {
 		registerAnnouncementRoute(router, h.Announcement, authMiddleware)
@@ -617,6 +626,10 @@ func Register(
 	// User routes (protected with user sync for OIDC)
 	if h.User != nil {
 		registerUserRoutes(router, h.User, h.LocalAuth, authMiddleware, userSync, authCfg.Provider)
+	}
+	// Linked sign-in methods exist only where social sign-in is configured.
+	if h.OAuth != nil {
+		registerIdentityLinkRoutes(router, h.OAuth, authMiddleware, userSync)
 	}
 
 	// Tenant routes (protected with user sync)
@@ -1030,6 +1043,7 @@ func Register(
 	}
 	if h.ProxyPool != nil {
 		registerProxyPoolRoutes(router, h.ProxyPool, authMiddleware, userSync)
+		registerProxyTestEchoRoute(router, handler.NewProxyTestEchoHandler(h.ProxyPool.Service()))
 	}
 	if h.ScanWindow != nil {
 		registerScanWindowRoutes(router, h.ScanWindow, authMiddleware, userSync)
@@ -1335,6 +1349,20 @@ var ipAllowlistMiddleware Middleware //nolint:gochecknoglobals // set once durin
 // docs/architecture/step-up-reauth.md). Set once during Register from the
 // local auth handler; nil makes every step-up route refuse (fail closed).
 var stepUpChecker middleware.RecentAuthChecker //nolint:gochecknoglobals // set once during init
+
+// credentialFactorChecker answers RequireCredentialFactor (two-factor before
+// creating a credential). Set once during Register from the local auth
+// handler; nil lets requests through (tests without the auth service).
+var credentialFactorChecker middleware.CredentialFactorChecker //nolint:gochecknoglobals // set once during init
+
+// requireCredentialFactor is the middleware for a route that creates a
+// credential (API key, sensor enrolment, integration secret): the caller
+// needs a second factor when the organization or the platform floor covers
+// them, even during their sign-in grace period. Mount it after
+// requireStepUp.
+func requireCredentialFactor() Middleware {
+	return middleware.RequireCredentialFactor(credentialFactorChecker)
+}
 
 // requireStepUp is the middleware for a sensitive route: the caller's session
 // must have signed in or stepped up within authapp.StepUpWindow, otherwise

@@ -219,3 +219,116 @@ func TestSeed_OnlyWhenAbsent(t *testing.T) {
 		t.Fatalf("second seed must not overwrite: %v %v", created, err)
 	}
 }
+
+// The four-eyes rule: a save that is turned on and whose relay (host, port,
+// connection security, SMTP username) differs from the last one applied while on needs a
+// second super admin. A password on the same login, the sender and turning
+// e-mail off stay one-person.
+func TestApprovalNeededMatrix(t *testing.T) {
+	ctx := context.Background()
+	setup := func(t *testing.T) *Service {
+		svc, _, _ := newTestService(t)
+		if _, err := svc.Update(ctx, superAdmin(t), validInput(strp("pw-one")), 0, "", ""); err != nil {
+			t.Fatal(err)
+		}
+		return svc
+	}
+	mod := func(f func(*Input)) Input {
+		in := validInput(nil)
+		f(&in)
+		return in
+	}
+	cases := []struct {
+		name   string
+		in     Input
+		needed bool
+	}{
+		{"same relay, nothing else", mod(func(*Input) {}), false},
+		{"same relay in other case and with spaces", mod(func(i *Input) { i.Host = "  SMTP.Example.com " }), false},
+		{"password rotation on the same relay", validInput(strp("pw-two")), false},
+		{"username change on the same relay", mod(func(i *Input) { i.Username = "other" }), true},
+		{"username removed on the same relay", mod(func(i *Input) { i.Username = "" }), true},
+		{"sender address change", mod(func(i *Input) { i.From = "alerts@example.com" }), false},
+		{"sender name change", mod(func(i *Input) { i.FromName = "Security" }), false},
+		{"new host", mod(func(i *Input) { i.Host = "smtp.attacker.example" }), true},
+		{"new port", mod(func(i *Input) { i.Port = 2525 }), true},
+		{"TLS downgrade", mod(func(i *Input) { i.StartTLS = false }), true},
+		{"turn off", mod(func(i *Input) { i.Enabled = false }), false},
+		{"turn off with a new host", mod(func(i *Input) { i.Enabled = false; i.Host = "smtp.attacker.example" }), false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			svc := setup(t)
+			target, needed := svc.ApprovalNeeded(ctx, c.in)
+			if needed != c.needed {
+				t.Fatalf("needed = %v, want %v", needed, c.needed)
+			}
+			if needed && !admin.ApprovalPlatformEmailRelay.ValidTarget(target) {
+				t.Fatalf("target %q is not valid", target)
+			}
+		})
+	}
+
+	t.Run("first enable needs approval", func(t *testing.T) {
+		svc, _, _ := newTestService(t)
+		if _, needed := svc.ApprovalNeeded(ctx, validInput(strp("pw"))); !needed {
+			t.Fatal("the first relay must be approved")
+		}
+	})
+
+	t.Run("invalid input asks nothing here (saving refuses it)", func(t *testing.T) {
+		svc := setup(t)
+		in := mod(func(i *Input) { i.Host = "smtp://evil" })
+		if _, needed := svc.ApprovalNeeded(ctx, in); needed {
+			t.Fatal("invalid input")
+		}
+	})
+}
+
+// Turning back on with the relay that was applied before needs no approval;
+// a relay staged while off needs one when e-mail is turned on.
+func TestApprovalNeeded_StagedWhileOff(t *testing.T) {
+	ctx := context.Background()
+	svc, _, _ := newTestService(t)
+	actor := superAdmin(t)
+	if _, err := svc.Update(ctx, actor, validInput(strp("pw")), 0, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	off := validInput(nil)
+	off.Enabled = false
+	if _, err := svc.Update(ctx, actor, off, 1, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, needed := svc.ApprovalNeeded(ctx, validInput(nil)); needed {
+		t.Fatal("back on with the applied relay is one-person")
+	}
+	staged := validInput(nil)
+	staged.Enabled = false
+	staged.Host = "smtp.attacker.example"
+	if _, err := svc.Update(ctx, actor, staged, 2, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	on := validInput(nil)
+	on.Host = "smtp.attacker.example"
+	if _, needed := svc.ApprovalNeeded(ctx, on); !needed {
+		t.Fatal("turning on a relay changed while off must need approval")
+	}
+}
+
+// Settings seeded from the environment (no applied relay recorded) count as
+// applied when they are on.
+func TestApprovalNeeded_SeededSettings(t *testing.T) {
+	ctx := context.Background()
+	svc, _, _ := newTestService(t)
+	if ok, err := svc.Seed(ctx, validInput(strp("pw"))); err != nil || !ok {
+		t.Fatalf("seed: %v %v", ok, err)
+	}
+	if _, needed := svc.ApprovalNeeded(ctx, validInput(strp("rotated"))); needed {
+		t.Fatal("a password rotation on the seeded relay is one-person")
+	}
+	in := validInput(nil)
+	in.Host = "smtp.attacker.example"
+	if _, needed := svc.ApprovalNeeded(ctx, in); !needed {
+		t.Fatal("a new host on seeded settings must need approval")
+	}
+}

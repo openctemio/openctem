@@ -21,6 +21,10 @@ vi.mock('@/features/access-control/api/use-groups', () => ({
   useMyGroups: () => ({ groups: [] }),
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+vi.mock('@/lib/permissions', async (orig) => ({
+  ...(await orig<typeof import('@/lib/permissions')>()),
+  usePermissions: () => ({ can: () => false }),
+}))
 
 globalThis.ResizeObserver ??= class {
   observe() {}
