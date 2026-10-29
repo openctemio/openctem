@@ -21,6 +21,7 @@ var commandProducers = map[string]string{
 	"internal/app/scanrun/run.go":               "scanrun.WithTargetGate -> scan.ResolveDispatchTargets (run_targets.go)",
 	"internal/app/command/service.go":           "POST /commands: scan.CommandGate (command_gate.go)",
 	"internal/app/sensor/content.go":            "refresh_content: no target, sends no traffic at an asset",
+	"internal/app/proxypool/test.go":            "proxy_test: no asset target; the sensor fetches the platform's own echo address through the pool under test",
 	"internal/app/tenablesc/service.go":         "connector_sync: no target; the sensor reads Tenable.sc, sends no traffic at an asset",
 	"internal/app/tenablesc/scan.go":            "connector_scan: targets from the scan trigger (resolveScanTargets + ResolveDispatchTargets in scan/connector.go) or the coverage Scheduler.gateBatch",
 }

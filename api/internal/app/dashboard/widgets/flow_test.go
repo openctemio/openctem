@@ -125,11 +125,12 @@ func TestExposureFlow_OrganizationRead(t *testing.T) {
 		t.Errorf("last receipt %v", in.Totals.LastAt)
 	}
 	n := in.Noise
-	if n.New+n.Merged+n.Suppressed+n.NotStored != n.Received {
+	if n.New+n.Merged+n.NotStored != n.Received {
 		t.Errorf("noise parts %+v do not sum to received", n)
 	}
-	// new = created - suppressed + reopened = (144 - 8) + 4.
-	if n.New != 140 || n.Suppressed != 8 || n.NotStored != 18 || n.Merged != 602-144-4-18 {
+	// new = created + reopened = 144 + 4, the receipt list's New plus
+	// Reopened; the 8 suppressed are inside it.
+	if n.New != 148 || n.New != in.Totals.Created+in.Totals.Reopened || n.Suppressed != 8 || n.NotStored != 18 || n.Merged != 602-144-4-18 {
 		t.Errorf("noise %+v", n)
 	}
 	if in.Drill != "/findings/imports?since=2026-09-26T00:00:00Z" {
@@ -192,11 +193,11 @@ func TestNoiseOf_ClampsAndSums(t *testing.T) {
 	// Still detected larger than the remainder (a report counts a sighting
 	// more than once): merged is the remainder, never negative.
 	n := noiseOf(IntakeSource{Received: 10, Created: 6, Reopened: 2, Suppressed: 7, NotStored: 5})
-	if n.Merged != 0 || n.New != 2 {
+	if n.Merged != 0 || n.New != 8 {
 		t.Errorf("noise %+v", n)
 	}
 	n = noiseOf(IntakeSource{Received: 100, Created: 10, Reopened: 5, Suppressed: 3, NotStored: 2})
-	if n.New+n.Merged+n.Suppressed+n.NotStored != 100 {
+	if n.New+n.Merged+n.NotStored != 100 || n.New != 15 || n.Suppressed != 3 {
 		t.Errorf("noise %+v", n)
 	}
 }
