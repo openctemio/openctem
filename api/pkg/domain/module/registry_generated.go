@@ -142,7 +142,7 @@ var Registry = []Definition{
 			{ModuleID: ModuleAssets, Type: DependencyHard, Reason: "scope rules select assets"},
 		},
 		Routes: []string{"/api/v1/scope", "/api/v1/programs"},
-		Jobs:   []string{"ProgramAssignmentController", "ProgramFeedController", "ProgramSyncController", "ScopeAttestationController", "ScopePendingController"},
+		Jobs:   []string{"ProgramAssignmentController", "ProgramFeedController", "ProgramSyncController", "ScopeAttestationController", "ScopeEffectsController", "ScopePendingController"},
 	},
 	{
 		ID: ModuleBusinessServices, Slug: "business-services", Name: "Business Services",

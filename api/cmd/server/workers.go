@@ -1021,6 +1021,14 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			svc.RemediationTask, 2*time.Minute, log.With("controller", "remediation-tasks"),
 		))
 	}
+	// Scope effects: close the findings of assets out of scope for good,
+	// reopen those back in scope (research/320). Exclusion changes kick a
+	// pass at once; this catches expiries, new findings and missed kicks.
+	if svc != nil && svc.ScopeEffects != nil {
+		w.ControllerManager.Register(controller.NewScopeEffectsController(
+			svc.ScopeEffects, 5*time.Minute, log.With("controller", "scope-effects"),
+		))
+	}
 	// Tasks from a query in auto mode: add new matches as each task's owner
 	// (suspends a task whose owner left or lost access).
 	if svc != nil && svc.RemediationTask != nil {
