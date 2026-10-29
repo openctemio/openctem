@@ -78,6 +78,7 @@ type Handlers struct {
 	FindingActivity *handler.FindingActivityHandler // nil if not initialized (no database)
 	// Note: Real-time updates moved to WebSocket (see WebSocket field below)
 	AITriage      *handler.AITriageHandler      // Always initialized - handles nil service gracefully
+	AIAnalysis    *handler.AIAnalysisHandler    // AI agents and runs; nil = not wired
 	Dashboard     *handler.DashboardHandler     // nil if not initialized (no database)
 	UserDashboard *handler.UserDashboardHandler // nil if not initialized - per-user customizable dashboards (RFC-021)
 	// DashboardFacts serves "Rebuild dashboard data" (organization and
@@ -777,6 +778,8 @@ func Register(
 	// AI Triage routes (tenant from JWT token)
 	// Always registered - handler handles nil service gracefully (returns 503)
 	registerAITriageRoutes(router, h.AITriage, authMiddleware, userSync, aiTriageRateLimiter,
+		h.ModuleGate.RequireModule(moduledom.ModuleAITriage))
+	registerAIAnalysisRoutes(router, h.AIAnalysis, authMiddleware, userSync,
 		h.ModuleGate.RequireModule(moduledom.ModuleAITriage))
 
 	// Dashboard routes (global and tenant from JWT token)

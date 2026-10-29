@@ -9,6 +9,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/apikey"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/serviceaccount"
 )
 
 // API keys of a service account. The generic /api/v1/api-keys routes always
@@ -114,11 +115,19 @@ func (h *ServiceAccountHandler) CreateKey(w http.ResponseWriter, r *http.Request
 		apierror.BadRequest("Select at least one scope").WriteJSON(w)
 		return
 	}
-	accountID, ok := h.serviceAccountID(w, r)
-	if !ok {
+	ctx := r.Context()
+	account, err := h.service.Get(ctx, middleware.MustGetTenantID(ctx), chi.URLParam(r, "id"))
+	if err != nil {
+		h.writeError(w, err)
 		return
 	}
-	ctx := r.Context()
+	// An AI agent acts only through the platform, which checks its owners,
+	// attestation and preset at every run; a key would bypass that.
+	if account.AIAgent {
+		h.writeError(w, serviceaccount.ErrAIAgent)
+		return
+	}
+	accountID := account.ID.String()
 	tenantID := middleware.MustGetTenantID(ctx)
 	result, err := h.keys.Create(ctx, apikey.CreateInput{
 		TenantID:      tenantID,

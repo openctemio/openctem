@@ -13,3 +13,7 @@
   routes:
     - "/api/v1/findings/{}/ai-triage"
     - "/api/v1/findings/ai-triage"
+    - "/api/v1/findings/{}/ai"
+    - "/api/v1/ai"
+  jobs:
+    - AIAgentSweepController

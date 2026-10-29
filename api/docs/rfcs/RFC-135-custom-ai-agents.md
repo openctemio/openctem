@@ -220,7 +220,7 @@ stateDiagram-v2
 
 - `GET /` and `POST /`;
 - `GET|PATCH /{id}`, where PATCH changes operational fields only;
-- `POST /{id}/pause|resume|rollback`;
+- `POST /{id}/suspend|reactivate|rollback`;
 - `GET|POST /{id}/revisions`;
 - `GET /{id}/revisions/{rev}` and `/diff`;
 - `POST .../submit|approve|reject|promote`;
@@ -238,8 +238,8 @@ out-of-scope negative tests.
 
 ## 9. Data model
 
-- **Renames.** `ai_analysts` becomes `ai_agents` with a `role` column (`analyst`, `router`, `reporter`, `remediator`,
-  `hunter`), and `ai_analyst_owners` becomes `ai_agent_owners`. This is one migration with no compatibility views.
+- **Renames.** `ai_agents` becomes `ai_agents` with a `role` column (`analyst`, `router`, `reporter`, `remediator`,
+  `hunter`), and `ai_agent_owners` becomes `ai_agent_owners`. This is one migration with no compatibility views.
 - **New columns on `ai_agents`:**
   - `live_revision_id`;
   - `canary_revision_id`;
@@ -316,7 +316,7 @@ Authorization and tenant isolation:
 - Vetted MCP servers only, with pinned tool schemas.
 - Permissions: `ai_agents:read|author|manage`. Pause is open to every accountable owner.
 - "AI agents" sits in the main navigation, and policy in Settings > AI.
-- Rename `ai_analysts` to `ai_agents` with a role.
+- Rename `ai_agents` to `ai_agents` with a role.
 
 ## 13. Plan
 
