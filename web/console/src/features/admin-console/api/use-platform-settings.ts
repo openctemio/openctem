@@ -10,6 +10,7 @@ import type {
   SocialCheckResult,
   SocialLoginSettings,
   StorageQuotaSettings,
+  ThreatSourceSettings,
 } from '../types'
 
 /*
@@ -24,11 +25,13 @@ const REGION = '/settings/region'
 const QUOTA = '/settings/storage-quota'
 const ALERTS = '/settings/alerts'
 const AI = '/settings/ai'
+const THREAT_SOURCE = '/settings/threat-intel-source'
 const SOCIAL = '/settings/social-login-providers'
 
 export const useCaptchaSettings = () => useSWR<CaptchaSettings>(CAPTCHA, adminFetcher)
 export const useRegionSettings = () => useSWR<RegionSettings>(REGION, adminFetcher)
 export const useStorageQuota = () => useSWR<StorageQuotaSettings>(QUOTA, adminFetcher)
+export const useThreatSource = () => useSWR<ThreatSourceSettings>(THREAT_SOURCE, adminFetcher)
 export const useAlertWebhook = () => useSWR<AlertWebhookSettings>(ALERTS, adminFetcher)
 export const useSocialLoginSettings = () => useSWR<SocialLoginSettings>(SOCIAL, adminFetcher)
 export const usePlatformAI = () => useSWR<PlatformAISettings>(AI, adminFetcher)
@@ -58,6 +61,15 @@ export function setRegion(input: { region: string; reason: string }) {
 
 export function saveStorageQuota(input: { default_mb: number; version: number }) {
   return adminFetch<StorageQuotaSettings>(QUOTA, { method: 'PUT', body: input })
+}
+
+/** Where KEV and EPSS come from (super admin and step-up). */
+export function saveThreatSource(input: {
+  source: 'direct' | 'bundle'
+  direct_fetch: 'auto' | 'off'
+  version: number
+}) {
+  return adminFetch<ThreatSourceSettings>(THREAT_SOURCE, { method: 'PUT', body: input })
 }
 
 /** Omit `url` or `secret` to keep the stored value; "" removes it. */

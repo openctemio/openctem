@@ -501,6 +501,16 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.FindingsRead,
     module: Module.Findings,
   },
+  // The vulnerabilities list and a vulnerability's page (the pages also need
+  // findings:read and show a no-access state without it).
+  '/vulnerabilities': {
+    permission: Permission.VulnerabilitiesRead,
+    module: Module.Findings,
+  },
+  '/vulnerabilities/**': {
+    permission: Permission.VulnerabilitiesRead,
+    module: Module.Findings,
+  },
   '/findings/**': {
     permission: Permission.FindingsRead,
     module: Module.Findings,

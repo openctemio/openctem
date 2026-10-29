@@ -52,12 +52,12 @@ func TestBuildIssueBody_ScannerTextIsCodeOnly(t *testing.T) {
 
 func TestIssueTitle_PlainOneLineCapped(t *testing.T) {
 	f := hostileFinding(t)
-	got := issueTitle(f)
+	got := issueTitle(f, "")
 	if strings.ContainsAny(got, "\n\u202E") {
 		t.Fatalf("title keeps newline or bidi control: %q", got)
 	}
 	f.SetTitle(strings.Repeat("a", 400))
-	if n := len([]rune(issueTitle(f))); n > 256 {
+	if n := len([]rune(issueTitle(f, ""))); n > 256 {
 		t.Fatalf("title is %d runes, GitHub allows 256", n)
 	}
 }

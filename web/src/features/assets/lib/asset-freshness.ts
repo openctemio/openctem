@@ -26,7 +26,17 @@ export interface EnrichmentRequest {
   last_run_id?: string
 }
 
+/** Whether a host name resolves (GET /assets/{id}/freshness, `resolution`). */
+export interface AssetResolution {
+  state: 'resolving' | 'not_resolving'
+  resolved_at?: string
+  checked_at: string
+  failures: number
+  source?: string
+}
+
 export interface AssetFreshness {
+  resolution?: AssetResolution
   state: FreshnessState
   classes: FreshnessClassView[]
   next_due_at?: string
