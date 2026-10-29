@@ -57,6 +57,9 @@ type RankItem struct {
 	SortAt        *time.Time
 	SLADeadline   *time.Time
 	KEV           bool
+	// EPSS is the finding's exploitation probability (0 to 1), nil when the
+	// feed has no score for it.
+	EPSS *float64
 	// Pentest marks a pentest finding; CampaignID is its campaign (zero
 	// when it has none). Organization lists keep them so the viewer's
 	// campaign membership can be applied on read.

@@ -98,11 +98,14 @@ export function NotificationBell() {
         // Tablet+: revert to the fixed 380px right-anchored to the
         // bell, which is the desktop pattern users expect.
         //
-        // overflow-x-hidden + the break-words on inner text prevent
+        // overflow-hidden, not only x: overflow-x alone makes the panel scroll
+        // vertically too, a second scrollbar beside the list's. With the
+        // break-words on inner text it prevents
         // long titles/bodies from rendering past the popover edge on
         // narrow viewports.
-        className="w-[calc(100vw-1rem)] max-w-[380px] p-0 sm:w-[380px] overflow-x-hidden"
+        className="w-[calc(100vw-1rem)] max-w-[380px] p-0 sm:w-[380px] overflow-hidden"
         align="end"
+        aria-label={t('notifications.bell.labelNone', 'Notifications')}
         sideOffset={8}
         collisionPadding={8}
       >
@@ -128,7 +131,10 @@ export function NotificationBell() {
 
         <Separator />
 
-        <ScrollArea className="h-[320px] sm:h-[400px]">
+        {/* The list takes its content's height up to a cap (about 70vh minus the
+            header and footer), so a few items leave no empty area and a long
+            list scrolls inside this one scroll area. */}
+        <ScrollArea className="max-h-[min(25rem,calc(70vh-8rem))]">
           {isLoading ? (
             <div
               role="status"

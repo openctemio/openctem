@@ -233,6 +233,9 @@ type ItemRow struct {
 	AssetName     string     `json:"asset_name,omitempty"`
 	SLADeadline   *time.Time `json:"sla_deadline,omitempty"`
 	KEV           bool       `json:"kev"`
+	// EPSS is the exploitation probability (0 to 1); absent when the feed
+	// has no score. Snapshots stored before it existed simply lack it.
+	EPSS *float64 `json:"epss,omitempty"`
 	// Pentest and CampaignID are kept in stored snapshots so the viewer's
 	// campaign membership can be applied on read; forViewer clears them
 	// from every response.
@@ -515,7 +518,7 @@ func (s *Service) metric(ctx context.Context, v *WidgetValue, m dashboard.Metric
 		out := &ItemsValue{Rows: make([]ItemRow, 0, len(items))}
 		for _, it := range items {
 			r := ItemRow{ID: it.FindingID.String(), Title: it.Title, Severity: it.Severity, PriorityClass: it.PriorityClass,
-				AssetName: it.AssetName, SLADeadline: it.SLADeadline, KEV: it.KEV, Pentest: it.Pentest}
+				AssetName: it.AssetName, SLADeadline: it.SLADeadline, KEV: it.KEV, EPSS: it.EPSS, Pentest: it.Pentest}
 			if it.Pentest {
 				r.CampaignID = it.CampaignID.String()
 			}
