@@ -863,6 +863,22 @@ export interface StorageQuotaSettings extends SettingChange {
   version: number
 }
 
+/** Where CISA KEV and EPSS come from, and how the signed release is doing. */
+export interface ThreatSourceSettings extends SettingChange {
+  source: 'direct' | 'bundle'
+  direct_fetch: 'auto' | 'off'
+  stored: boolean
+  version: number
+  feeds: {
+    source: 'kev' | 'epss'
+    delivered_via?: 'bundle' | 'direct'
+    data_as_of?: string
+    bundle_fetched_at?: string
+    bundle_fresh: boolean
+    bundle_error?: string
+  }[]
+}
+
 /** Settings > Alerts: the alert webhook; address and secret never returned. */
 export interface AlertWebhookSettings extends SettingChange {
   enabled: boolean
