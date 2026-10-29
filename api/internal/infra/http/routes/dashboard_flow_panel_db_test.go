@@ -28,7 +28,7 @@ func TestDashboardFlowPanel_Routes_DB(t *testing.T) {
 	}
 	// An existing dashboard has flow_panel_at NULL.
 	h.exec(`UPDATE user_dashboards SET flow_panel_at = NULL WHERE id = $1`, id)
-	path := "/api/v1/me/dashboards/" + id + "/flow-panel"
+	path := "/api/v1/me/dashboards/" + id + "/flow-panels"
 
 	for name, c := range map[string]caller{"colleague": colleague, "admin of the tenant": {h.tenant, h.owner, true, nil}, "other tenant": otherTenant} {
 		if code, _ := h.do(c, http.MethodPost, path, nil); code != http.StatusNotFound {
@@ -72,7 +72,7 @@ func TestDashboardFlowPanel_Routes_DB(t *testing.T) {
 	}
 	oid := org["id"].(string)
 	h.exec(`UPDATE user_dashboards SET flow_panel_at = NULL WHERE id = $1`, oid)
-	opath := "/api/v1/organization/dashboards/" + oid + "/flow-panel"
+	opath := "/api/v1/organization/dashboards/" + oid + "/flow-panels"
 	for name, c := range map[string]caller{"viewer": viewer, "plain member": colleague} {
 		if code, _ := h.do(c, http.MethodPost, opath, nil); code != http.StatusForbidden {
 			t.Errorf("%s adds = %d, want 403", name, code)
@@ -100,7 +100,7 @@ func TestDashboardFlowPanel_Routes_DB(t *testing.T) {
 		t.Fatal("org undo not audited")
 	}
 	// The org route never reaches a personal dashboard.
-	if code, _ := h.do(manager, http.MethodPost, "/api/v1/organization/dashboards/"+id+"/flow-panel", nil); code != http.StatusNotFound {
+	if code, _ := h.do(manager, http.MethodPost, "/api/v1/organization/dashboards/"+id+"/flow-panels", nil); code != http.StatusNotFound {
 		t.Errorf("org route on a personal dashboard = %d, want 404", code)
 	}
 }

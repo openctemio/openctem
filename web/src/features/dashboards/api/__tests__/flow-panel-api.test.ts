@@ -17,10 +17,10 @@ describe('flow panel API', () => {
   it('posts the add to the personal or organization route', async () => {
     await addFlowPanel('d1', 'personal')
     await addFlowPanel('o1', 'organization')
-    expect(http.post).toHaveBeenNthCalledWith(1, '/api/v1/me/dashboards/d1/flow-panel', {})
+    expect(http.post).toHaveBeenNthCalledWith(1, '/api/v1/me/dashboards/d1/flow-panels', {})
     expect(http.post).toHaveBeenNthCalledWith(
       2,
-      '/api/v1/organization/dashboards/o1/flow-panel',
+      '/api/v1/organization/dashboards/o1/flow-panels',
       {}
     )
   })
@@ -28,10 +28,10 @@ describe('flow panel API', () => {
   it('Undo calls the delete endpoint with the widget id', async () => {
     await undoFlowPanel('d1', 'personal', 'w_flow')
     await undoFlowPanel('o1', 'organization', 'w_flow2')
-    expect(http.del).toHaveBeenNthCalledWith(1, '/api/v1/me/dashboards/d1/flow-panel/w_flow')
+    expect(http.del).toHaveBeenNthCalledWith(1, '/api/v1/me/dashboards/d1/flow-panels/w_flow')
     expect(http.del).toHaveBeenNthCalledWith(
       2,
-      '/api/v1/organization/dashboards/o1/flow-panel/w_flow2'
+      '/api/v1/organization/dashboards/o1/flow-panels/w_flow2'
     )
   })
 })

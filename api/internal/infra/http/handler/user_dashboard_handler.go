@@ -749,7 +749,7 @@ type DashboardFlowPanelResponse struct {
 	Dashboard UserDashboardResponse `json:"dashboard"`
 }
 
-// AddFlowPanel handles POST /api/v1/me/dashboards/{id}/flow-panel
+// AddFlowPanel handles POST /api/v1/me/dashboards/{id}/flow-panels
 // @Summary      Offer the exposure flow panel on one of my dashboards
 // @Description  Adds the exposure flow panel once at the top of a non-empty dashboard that has never been offered it. A second call, a layout that already has the flow, or an empty layout changes nothing (added=false). Audited.
 // @Tags         Dashboards
@@ -758,7 +758,7 @@ type DashboardFlowPanelResponse struct {
 // @Param        id   path      string  true  "Dashboard ID"
 // @Success      200  {object}  DashboardFlowPanelResponse
 // @Failure      404  {object}  apierror.Error
-// @Router       /me/dashboards/{id}/flow-panel [post]
+// @Router       /me/dashboards/{id}/flow-panels [post]
 func (h *UserDashboardHandler) AddFlowPanel(w http.ResponseWriter, r *http.Request) {
 	c, ok := h.caller(w, r)
 	if !ok {
@@ -768,7 +768,7 @@ func (h *UserDashboardHandler) AddFlowPanel(w http.ResponseWriter, r *http.Reque
 	h.writeFlowPanel(w, res, err)
 }
 
-// UndoFlowPanel handles DELETE /api/v1/me/dashboards/{id}/flow-panel/{widget_id}
+// UndoFlowPanel handles DELETE /api/v1/me/dashboards/{id}/flow-panels/{widget_id}
 // @Summary      Remove the exposure flow panel from one of my dashboards
 // @Description  Removes the widget only when it is an exposure flow panel; the panel is never added again. Audited.
 // @Tags         Dashboards
@@ -779,7 +779,7 @@ func (h *UserDashboardHandler) AddFlowPanel(w http.ResponseWriter, r *http.Reque
 // @Success      200        {object}  UserDashboardResponse
 // @Failure      400        {object}  apierror.Error
 // @Failure      404        {object}  apierror.Error
-// @Router       /me/dashboards/{id}/flow-panel/{widget_id} [delete]
+// @Router       /me/dashboards/{id}/flow-panels/{widget_id} [delete]
 func (h *UserDashboardHandler) UndoFlowPanel(w http.ResponseWriter, r *http.Request) {
 	c, ok := h.caller(w, r)
 	if !ok {
@@ -789,7 +789,7 @@ func (h *UserDashboardHandler) UndoFlowPanel(w http.ResponseWriter, r *http.Requ
 	h.writeUndoFlowPanel(w, d, err)
 }
 
-// AddOrgFlowPanel handles POST /api/v1/organization/dashboards/{id}/flow-panel
+// AddOrgFlowPanel handles POST /api/v1/organization/dashboards/{id}/flow-panels
 // @Summary      Offer the exposure flow panel on an organization dashboard
 // @Description  Same rules as the personal route. Needs dashboards:org:manage. Audited.
 // @Tags         Dashboards
@@ -799,7 +799,7 @@ func (h *UserDashboardHandler) UndoFlowPanel(w http.ResponseWriter, r *http.Requ
 // @Success      200  {object}  DashboardFlowPanelResponse
 // @Failure      403  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
-// @Router       /organization/dashboards/{id}/flow-panel [post]
+// @Router       /organization/dashboards/{id}/flow-panels [post]
 func (h *UserDashboardHandler) AddOrgFlowPanel(w http.ResponseWriter, r *http.Request) {
 	c, ok := h.caller(w, r)
 	if !ok {
@@ -809,7 +809,7 @@ func (h *UserDashboardHandler) AddOrgFlowPanel(w http.ResponseWriter, r *http.Re
 	h.writeFlowPanel(w, res, err)
 }
 
-// UndoOrgFlowPanel handles DELETE /api/v1/organization/dashboards/{id}/flow-panel/{widget_id}
+// UndoOrgFlowPanel handles DELETE /api/v1/organization/dashboards/{id}/flow-panels/{widget_id}
 // @Summary      Remove the exposure flow panel from an organization dashboard
 // @Description  Same rules as the personal route. Needs dashboards:org:manage. Audited.
 // @Tags         Dashboards
@@ -821,7 +821,7 @@ func (h *UserDashboardHandler) AddOrgFlowPanel(w http.ResponseWriter, r *http.Re
 // @Failure      400        {object}  apierror.Error
 // @Failure      403        {object}  apierror.Error
 // @Failure      404        {object}  apierror.Error
-// @Router       /organization/dashboards/{id}/flow-panel/{widget_id} [delete]
+// @Router       /organization/dashboards/{id}/flow-panels/{widget_id} [delete]
 func (h *UserDashboardHandler) UndoOrgFlowPanel(w http.ResponseWriter, r *http.Request) {
 	c, ok := h.caller(w, r)
 	if !ok {
