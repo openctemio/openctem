@@ -125,12 +125,16 @@ export function listSpecs(dir = SPEC_DIR) {
     }))
 }
 
+const matchesAny = (globs, changed) => !!globs && changed.some((f) => matches(globs, f))
+
 // ---- selection --------------------------------------------------------------
 
 // Tiers (api/docs/development/ci-cd.md, "E2E tiers"):
 //   merge_group, push, schedule, dispatch, `full`  the whole suite
 //   pull_request                                   the smoke set (and any spec the
-//                                                  change edits), unless `impact`
+//                                                  change edits, and the request
+//                                                  budget check when the change
+//                                                  touches a page's data), unless `impact`
 //                                                  (the run-e2e label or a changed
 //                                                  suite) asks for the specs the
 //                                                  changed files map to
@@ -146,11 +150,21 @@ export function select(changed, map, specs, { event = '', full = false, impact =
         .map((f) => f.match(/^web\/(e2e\/specs\/[^/]+\.spec\.ts)$/)?.[1])
         .filter((f) => f && specs.some((s) => s.file === f))
     )
+    // A change to how a page loads its data also runs the request budget check
+    // (about 5 minutes): the queue would otherwise be the first to see a page
+    // over its budget.
+    const budgetTag = '@budget'
+    const budget = matchesAny(map.areas[budgetTag], changed)
     return {
       mode: 'smoke',
-      reason: `pull request: smoke set${own.size ? ` and ${own.size} changed spec(s)` : ''}`,
-      tags: [],
-      files: specs.filter((s) => own.has(s.file) || s.tags.includes(map.smoke)).map((s) => s.file),
+      reason: `pull request: smoke set${own.size ? ` and ${own.size} changed spec(s)` : ''}${budget ? ' and the request budget check' : ''}`,
+      tags: budget ? [budgetTag] : [],
+      files: specs
+        .filter(
+          (s) =>
+            own.has(s.file) || s.tags.includes(map.smoke) || (budget && s.tags.includes(budgetTag))
+        )
+        .map((s) => s.file),
     }
   }
   const tags = new Set()
