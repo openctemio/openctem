@@ -77,6 +77,7 @@ jobs:
       security-events: write
       actions: read
     runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
+    timeout-minutes: 10
     env:
       BETTERLEAKS_VERSION: 1.9.0
       BETTERLEAKS_SHA256: f8b185a39ffcece2a1ca82bf3a4e7435cd81963ffd16b7a9128daf75f35f6de7
@@ -215,6 +216,7 @@ jobs:
     needs: tree
     if: ${{ !cancelled() && needs.tree.outputs.verified != 'true' }}
     runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
+    timeout-minutes: 10
     steps:
       # Branch policy: main only takes release and hotfix branches (the release
       # train opens them); everything else goes to develop. main is the default
@@ -249,6 +251,12 @@ jobs:
           echo "${ACTIONLINT_SHA256}  actionlint.tgz" | sha256sum -c -
           tar -xzf actionlint.tgz actionlint
           ./actionlint -color
+      # Every job has a timeout-minutes (a hung job otherwise holds a runner,
+      # and a merge-queue group, for 360 minutes).
+      - name: Job timeouts
+        run: |
+          bash .github/scripts/check-job-timeouts.test.sh
+          bash .github/scripts/check-job-timeouts.sh
       # Workflow security audit (template injection, unsafe triggers, credential
       # persistence, unpinned or archived actions, over-broad permissions).
       # Configuration and every suppression with its reason: .github/zizmor.yml.
@@ -296,9 +304,20 @@ jobs:
       # Which merge-queue groups reuse a tree that already passed.
       - name: Tree reuse self-test
         run: bash .github/scripts/tree-verified.test.sh
+      # Which Go packages the fast tier tests for a pull request.
+      - name: Affected packages self-test
+        run: bash .github/scripts/go-affected.test.sh
       # Which base images the CI image mirror copies for the other repositories.
       - name: CI image mirror base list self-test
         run: bash .github/scripts/ci-image-bases.test.sh
+      # Content keys of the CI images, their attestation check, retention, and the
+      # rule that no pull_request path can hold packages: write.
+      - name: CI image build-once self-tests
+        run: |
+          bash .github/scripts/image-key.test.sh
+          bash .github/scripts/ci-image-resolve.test.sh
+          bash .github/scripts/ci-images-prune.test.sh
+          bash .github/scripts/pr-no-package-write.test.sh
       # Which release the upgrade test starts from, and its refusals.
       - name: Upgrade test self-test
         run: bash .github/scripts/upgrade-test.test.sh
@@ -330,6 +349,15 @@ jobs:
       - name: Tool pin freshness self-test
         run: bash .github/scripts/tool-pins.test.sh
 
+      # Incremental pull request CI and the release fast path.
+      - name: Incremental CI base (last green commit) self-test
+        run: bash .github/scripts/green-base.test.sh
+      - name: Release provenance self-test
+        run: bash .github/scripts/release/tests/test_release_provenance.sh
+      - name: Release preflight self-test
+        run: bash .github/scripts/release/tests/test_release_preflight.sh
+      - name: Early warning self-test
+        run: bash .github/scripts/early-warning.test.sh
       - name: Release builds use no shared cache
         run: bash .github/scripts/check-release-no-cache.sh
 
@@ -343,6 +371,7 @@ jobs:
     permissions:
       contents: read
     runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

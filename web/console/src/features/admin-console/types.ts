@@ -305,6 +305,13 @@ export interface TargetMapping {
   updated_at: string
 }
 
+/** One pair of the asset type catalog: read-only, changes with a release. */
+export interface RegistryTargetPair {
+  target_type: string
+  asset_type: string
+  sub_type?: string
+}
+
 export interface TargetMappingStats {
   total: number
   by_target_type: Record<string, number>
@@ -854,6 +861,22 @@ export interface StorageQuotaSettings extends SettingChange {
   environment_mb: number
   max_mb: number
   version: number
+}
+
+/** Where CISA KEV and EPSS come from, and how the signed release is doing. */
+export interface ThreatSourceSettings extends SettingChange {
+  source: 'direct' | 'bundle'
+  direct_fetch: 'auto' | 'off'
+  stored: boolean
+  version: number
+  feeds: {
+    source: 'kev' | 'epss'
+    delivered_via?: 'bundle' | 'direct'
+    data_as_of?: string
+    bundle_fetched_at?: string
+    bundle_fresh: boolean
+    bundle_error?: string
+  }[]
 }
 
 /** Settings > Alerts: the alert webhook; address and secret never returned. */

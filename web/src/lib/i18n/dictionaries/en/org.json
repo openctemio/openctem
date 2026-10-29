@@ -157,6 +157,8 @@
   "org.auth.mfa.all": "Require for everyone",
   "org.auth.mfa.allHint": "Members who sign in with a password set up an authenticator app at their next sign-in.",
   "org.auth.mfa.desc": "Members who sign in through SSO use your identity provider's two-factor settings.",
+  "org.auth.mfa.platformFloorAdmins": "The platform requires two-factor authentication for owners, administrators and members with a privileged role. You can require it for everyone, not less.",
+  "org.auth.mfa.platformFloorEveryone": "The platform requires two-factor authentication for every member. You cannot turn it off for your organization.",
   "org.auth.mfa.ssoProof": "SSO must prove two-factor",
   "org.auth.mfa.ssoProofHint": "For members who must use two-factor, a sign-in through your identity provider counts only when the provider confirms a second factor in the signed sign-in response. Turn on multi-factor authentication in your identity provider first.",
   "org.auth.mfa.title": "Two-factor authentication",

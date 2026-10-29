@@ -83,6 +83,11 @@ func FindingValues(f *vulnerability.Finding, asset *AssetInfo, assignee *UserInf
 			v["finding.description"] = ticketmapdom.Text(d)
 		}
 	}
+	assetName := ""
+	if asset != nil {
+		assetName = asset.Name
+	}
+	v["finding.display_title"] = ticketmapdom.Text(vulnerability.DisplayTitle(findingTitle(f), ticketing.OutboundTarget(f, assetName)))
 	if asset != nil {
 		v["finding.asset_name"] = ticketmapdom.Text(asset.Name)
 		v["finding.asset_type"] = ticketmapdom.Text(asset.Type)

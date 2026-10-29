@@ -99,6 +99,21 @@ func (r *CommandRepository) AppendRefusal(ctx context.Context, tenantID, command
 	return nil
 }
 
+// requeueCandidateSQL is the conditions, over commands and a sensors row
+// aliased s of the same tenant, a sensor must meet to be offered a
+// re-queued command: active, dispatchable, with a usable key, in the
+// command's zone when it has one, and with the command's tool. The
+// callers add their own exclusions.
+var requeueCandidateSQL = `s.status = 'active'
+		  AND s.health IN ` + sensorDispatchableHealthSQL + `
+		  AND s.last_seen_at IS NOT NULL
+		  AND ` + sensorKeyUsableSQL("s") + `
+		  AND (s.execution_mode = 'daemon' OR s.type IN ('worker', 'collector'))
+		  AND (commands.scan_zone_id IS NULL OR EXISTS (
+		        SELECT 1 FROM scan_zone_sensors zs
+		        WHERE zs.zone_id = commands.scan_zone_id AND zs.tenant_id = commands.tenant_id AND zs.sensor_id = s.id))
+		  AND (` + commandToolSQL + ` IS NULL OR ` + commandToolSQL + ` = ANY(` + sensorDispatchTools("s") + `))`
+
 // maxRequeueCandidates bounds the sensors read to decide a re-queue.
 const maxRequeueCandidates = 200
 
@@ -117,16 +132,8 @@ func (r *CommandRepository) RequeueCandidates(ctx context.Context, tenantID, com
 		FROM commands
 		JOIN sensors s ON s.tenant_id = commands.tenant_id
 		WHERE commands.id = $1 AND commands.tenant_id = $2
-		  AND s.status = 'active'
-		  AND s.health IN `+sensorDispatchableHealthSQL+`
-		  AND s.last_seen_at IS NOT NULL
-		  AND `+sensorKeyUsableSQL("s")+`
-		  AND (s.execution_mode = 'daemon' OR s.type IN ('worker', 'collector'))
+		  AND `+requeueCandidateSQL+`
 		  AND NOT (s.id = ANY($3::uuid[]))
-		  AND (commands.scan_zone_id IS NULL OR EXISTS (
-		        SELECT 1 FROM scan_zone_sensors zs
-		        WHERE zs.zone_id = commands.scan_zone_id AND zs.tenant_id = commands.tenant_id AND zs.sensor_id = s.id))
-		  AND (`+commandToolSQL+` IS NULL OR `+commandToolSQL+` = ANY(`+sensorDispatchTools("s")+`))
 		LIMIT $4`,
 		commandID.String(), tenantID.String(), pq.Array(ex), maxRequeueCandidates)
 	if err != nil {

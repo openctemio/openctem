@@ -7,7 +7,7 @@
 #     (enough for the findings picker to scroll; two name CVE-2099-0101) and 10 for the triage
 #     spec, a scan with a run in progress, a remediation task
 #
-# Requires: docker (also runs psql from PSQL_IMAGE, default postgres:17-alpine), curl, jq. Env: ADMIN_IMAGE (api/Dockerfile.admin-cli),
+# Requires: docker (also runs psql from PSQL_IMAGE, default postgres:17-alpine), curl, jq. Env: API_IMAGE (runs /app/bootstrap-admin),
 # E2E_OWNER_PASSWORD and E2E_DATABASE_URL (web/e2e/ci/make-env.sh),
 # API (default http://127.0.0.1:8080), COMPOSE_NETWORK (default
 # octe2e-ci_default).
@@ -46,7 +46,8 @@ call() {
 log "organization and owner"
 # Capture the output even when bootstrap-admin fails, so its error is printed.
 # The output is captured, so -print-secrets; the URL goes in the environment.
-setup=$(DATABASE_URL="$DATABASE_URL" docker run --rm --network "$NETWORK" -e DATABASE_URL "${ADMIN_IMAGE:?set ADMIN_IMAGE}" \
+setup=$(DATABASE_URL="$DATABASE_URL" docker run --rm --network "$NETWORK" -e DATABASE_URL \
+  --entrypoint /app/bootstrap-admin "${API_IMAGE:?set API_IMAGE}" \
   -print-secrets \
   -email="e2e-admin-$RUN@openctem-test.local" -no-backup \
   -org-name="E2E Org $RUN" -org-slug="$SLUG" -org-owner-email="$EMAIL" 2>&1) || {

@@ -115,7 +115,22 @@ func (s *VulnerabilityService) GetCVEExposure(ctx context.Context, c FilterCalle
 		return nil, err
 	}
 	out.InCatalog = inCatalog
+	// The EPSS history exists only for CVEs some organization has a finding
+	// of: show it only when the caller has one in scope, never for a CVE id
+	// alone (it would tell one organization what another one runs).
+	if tr, ok := s.findingRepo.(epssTrendRepo); ok && out.Findings.Total > 0 {
+		pts, err := tr.EPSSTrend(ctx, cveID)
+		if err != nil {
+			return nil, err
+		}
+		out.EPSSTrend = pts
+	}
 	return out, nil
+}
+
+// epssTrendRepo reads a CVE's EPSS history (*postgres.FindingRepository).
+type epssTrendRepo interface {
+	EPSSTrend(ctx context.Context, cveID string) ([]vulnerability.EPSSPoint, error)
 }
 
 // ListCVEExposureAssets lists one page of the assets with a finding of
@@ -137,4 +152,38 @@ func (s *VulnerabilityService) ListCVEExposureAssets(ctx context.Context, c Filt
 		return empty, err
 	}
 	return repo.ListCVEExposureAssets(ctx, q, search, pagination.New(page, perPage))
+}
+
+// cveListRepo is the part of the finding repository that answers the
+// vulnerabilities list. postgres.FindingRepository implements it.
+type cveListRepo interface {
+	ListCVEExposures(ctx context.Context, q vulnerability.CVEListQuery) (*vulnerability.CVEList, error)
+}
+
+// ListCVEExposures lists the vulnerabilities of the findings spec as the
+// caller: the findings list's compiled filter (tenant, data scope, member
+// visibility, branch default) grouped by CVE, then the options'
+// vulnerability-level filters, sort and page.
+func (s *VulnerabilityService) ListCVEExposures(ctx context.Context, c FilterCaller, spec *filterspec.Spec, opts vulnerability.CVEListOptions) (*vulnerability.CVEList, error) {
+	if err := opts.Validate(); err != nil {
+		return nil, err
+	}
+	repo, ok := s.findingRepo.(cveListRepo)
+	if !ok {
+		return nil, errNoCVEExposureRepo
+	}
+	actor, err := s.FilterActor(ctx, c)
+	if err != nil {
+		return nil, err
+	}
+	if spec == nil {
+		spec = &filterspec.Spec{}
+	}
+	where, err := filterspec.Compile(vulnerability.WithBranchOnlyDefault(spec), vulnerability.FindingFields, actor)
+	if err != nil {
+		return nil, err
+	}
+	return repo.ListCVEExposures(ctx, vulnerability.CVEListQuery{
+		Where: where, TenantID: actor.TenantID(), AssetScope: actor.AssetScopeSQL, Options: opts,
+	})
 }
