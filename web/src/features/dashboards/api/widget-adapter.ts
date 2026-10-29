@@ -230,6 +230,7 @@ function toResult(v: WidgetValue, spec: WidgetSpec | undefined): WidgetResult | 
           asset: r.asset_name ?? null,
           due_at: r.sla_deadline ?? null,
           kev: r.kev,
+          epss: typeof r.epss === 'number' ? r.epss : null,
           href: `/findings/${encodeURIComponent(r.id)}`,
         })),
         total: typeof it.total === 'number' ? it.total : null,

@@ -26,8 +26,6 @@
   "notifications.pagination.next": "Next",
   "notifications.pagination.page": "Page {page} of {pages} ({total} total)",
   "notifications.pagination.previous": "Previous",
-  "notifications.row.label": "{title}, {type}, {severity}",
-  "notifications.row.labelUnread": "Unread: {title}, {type}, {severity}",
   "notifications.settings": "Settings",
   "notifications.unread": "Unread",
   "notifications.unreadCount": "{n} unread"

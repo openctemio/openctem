@@ -26,8 +26,6 @@
   "notifications.pagination.next": "Sau",
   "notifications.pagination.page": "Trang {page} / {pages} (tổng {total})",
   "notifications.pagination.previous": "Trước",
-  "notifications.row.label": "{title}, {type}, {severity}",
-  "notifications.row.labelUnread": "Chưa đọc: {title}, {type}, {severity}",
   "notifications.settings": "Cài đặt",
   "notifications.unread": "Chưa đọc",
   "notifications.unreadCount": "{n} chưa đọc"
