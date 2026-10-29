@@ -59,7 +59,11 @@ export default function AdminUserPage({ params }: { params: Promise<{ userId: st
             </PageHeader>
 
             {adminHas(admin, 'platform.users.support') && (
-              <PlatformUserActions user={user} onDone={refresh} />
+              <PlatformUserActions
+                user={user}
+                onDone={refresh}
+                isSuperAdmin={adminHas(admin, 'platform.users.credentials')}
+              />
             )}
 
             <Card>

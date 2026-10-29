@@ -62,7 +62,7 @@ flowchart LR
 ```
 
 - The membership trigger of RFC-022 revision 2 and the main-site refusal of revision 23 are removed (migration
-  `003539`). Break-glass accounts keep a narrower trigger (D6).
+  `20261029050639`). Break-glass accounts keep a narrower trigger (D6).
 - `/users/me` no longer carries `is_platform_admin`; the main site's answers never mention a platform role.
 - Existing administrator accounts keep working on the console unchanged; they can now be invited to organizations.
 - Removing the platform attribute (deactivating or deleting the administrator, or removing every platform role)
@@ -178,7 +178,7 @@ The hosted service runs the same console with stricter policy:
 
 ## 7. Delivery
 
-1. One identity: migration `003539`, removal of the main-site refusal and the membership errors, `/users/me`,
+1. One identity: migration `20261029050639`, removal of the main-site refusal and the membership errors, `/users/me`,
    access-request self-approval, tests.
 2. Platform roles: tables, catalogue, built-in roles, resolver, deny-by-default inventory, elevation by role,
    separation tests.

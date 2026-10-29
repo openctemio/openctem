@@ -14,7 +14,9 @@ fetched commits, which are never checked out), and the workflow runs this
 script and the path list from the base commit. It fails closed: any API or git
 error or an unknown merge-queue ref fails the check.
 An ack is trusted only through records GitHub writes itself (the `labeled`
-issue event, and the branch push log for which commit was the head at that
+issue event, or - when the label came from the `/security-ack` comment command,
+whose label event names the Actions bot - the comment itself, whose author
+GitHub sets; and the branch push log for which commit was the head at that
 moment); the gate comment is output only, because any workflow on any branch
 of the repository writes as the same bot. The workflow file itself comes from
 the pull request on `pull_request` events, so the required check must be
@@ -28,7 +30,8 @@ summary and the check result.
 
 Commands:
   gate                     evaluate the pull request named by the GitHub event
-  rerun                    on a label event: re-run the gate run of the pull request's head
+  rerun                    on a label event or ack comment: re-run the gate run of the pull request's head
+  ackcmd                   on an `issue_comment`: obey /security-ack and /security-unack from an acker
   codeowners --check       fail if CODEOWNERS' security block is out of date
   codeowners --write       rewrite CODEOWNERS' security block
 Only the Python standard library is used.
@@ -81,6 +84,12 @@ ACK_PINNED_PATHS = (".github/workflows/**", ".github/actions/**", ".github/secur
 # is not a change an ack has to see again.
 MIGRATION_VERSION = re.compile(r"(^|/)migrations/[0-9]+_(?=[^/]+$)")
 BOT_LOGIN = "github-actions[bot]"
+# The comment commands (security-ack-command.yml): an acker's comment on a pull
+# request. The workflow adds/removes the label with its own token, so the label's
+# `labeled` event names the bot; the gate then reads the acker from the comment.
+ACK_COMMAND = "/security-ack"
+UNACK_COMMAND = "/security-unack"
+ACK_COMMAND_WINDOW = 600  # seconds a command comment may precede the label it caused
 MAX_FILES = 3000  # GitHub's pull request file list stops here; from this many files on the gate diffs with git
 MAX_PATCH_LINES = 20000  # a larger single-file patch counts as "no diff sent", like the API does
 CODEOWNERS_BEGIN = "# BEGIN security-paths (generated from .github/security-paths.yml; do not edit)"
@@ -643,7 +652,7 @@ def last_ack_event(gh: GitHub, number: int) -> dict | None:
     events = gh.paginate(f"issues/{number}/events")
     if len(events) >= MAX_EVENTS:
         raise RuntimeError(f"pull request has {len(events)}+ issue events; the list may be cut off (fail closed)")
-    last, newest = None, None
+    last, newest, base_changes = None, None, []
     for e in events:
         if e.get("event") in ("labeled", "unlabeled") and (e.get("label") or {}).get("name") == ACK_LABEL:
             newest = e.get("event")
@@ -651,18 +660,90 @@ def last_ack_event(gh: GitHub, number: int) -> dict | None:
             last = dict(e, retargeted_after=False)
         elif e.get("event") == "base_ref_changed" and last is not None:
             last["retargeted_after"] = True
+            base_changes.append(e.get("created_at") or "")
     if newest != "labeled":
         return None  # the label is on the pull request, so a complete list ends with its `labeled` event
+    if last is not None:
+        last["base_changes"] = base_changes
     return last
 
 
+def command_of(body: str) -> str | None:
+    """`ack` or `unack` when the first line of a comment is exactly that slash
+    command (nothing else on the line); None otherwise."""
+    lines = (body or "").strip().splitlines()
+    first = lines[0].strip() if lines else ""
+    return {ACK_COMMAND: "ack", UNACK_COMMAND: "unack"}.get(first)
+
+
+def command_ack(gh: GitHub, number: int, label_event: dict, ackers: list[str]) -> dict | None:
+    """The ack record behind a `security-ack` label that the command workflow
+    (security-ack-command.yml) added, whose `labeled` event names the Actions
+    bot as the actor: the newest `/security-ack` comment WRITTEN BY an acker
+    (GitHub sets the comment's author; only that account, or its token, can
+    write as it) that
+
+    - was posted no later than the label and at most ACK_COMMAND_WINDOW seconds
+      before it (the workflow labels within seconds; a stale comment cannot
+      vouch for a label added much later by something else),
+    - was never edited (an edited comment's time is not the time of the intent),
+    - has no `/security-unack` by an acker between it and the label.
+
+    The record carries the acker, the comment's time (the moment the acker
+    decided, so the push-log lookup and the settle rule use it, exactly as for
+    a `labeled` event by an acker) and the retarget flag. None when there is no
+    such comment."""
+    names = {a.lower() for a in ackers}
+    t_label = _ts(label_event["created_at"]) if label_event.get("created_at") else None
+    if t_label is None:
+        return None
+    comments = gh.paginate(f"issues/{number}/comments")
+    if len(comments) >= MAX_EVENTS:
+        raise RuntimeError(f"pull request has {len(comments)}+ comments; the list may be cut off (fail closed)")
+    cmds = []
+    for c in comments:
+        user = c.get("user") or {}
+        login = (user.get("login") or "").lower()
+        kind = command_of(c.get("body") or "")
+        if kind is None or login not in names or user.get("type") == "Bot" or not c.get("created_at"):
+            continue
+        if c.get("updated_at") and c["updated_at"] != c["created_at"]:
+            continue
+        t = _ts(c["created_at"])
+        if t <= t_label:
+            cmds.append((t, int(c.get("id") or 0), kind, user["login"], c["created_at"]))
+    cmds.sort()
+    acks = [c for c in cmds if c[2] == "ack"]
+    if not acks:
+        return None
+    t, _, _, login, created = acks[-1]
+    if (t_label - t).total_seconds() > ACK_COMMAND_WINDOW:
+        return None
+    if any(c[2] == "unack" and c[0] > t for c in cmds):
+        return None
+    after = [b for b in label_event.get("base_changes", []) if b and _ts(b) > t]
+    return {"event": "labeled", "label": label_event.get("label"), "actor": {"login": login},
+            "created_at": created, "via": "comment",
+            "retargeted_after": bool(label_event.get("retargeted_after") or after)}
+
+
 def ack_state(gh: GitHub, number: int, labels: set[str], ackers: list[str]) -> tuple[bool, str, dict | None]:
+    """Is the `security-ack` label an acker's decision? Two records count:
+    the `labeled` event by an acker, or (the label was added by the Actions bot,
+    as the comment command does) a `/security-ack` comment by an acker."""
     if ACK_LABEL not in labels:
         return False, f"no `{ACK_LABEL}` label", None
     last = last_ack_event(gh, number)
     actor = ((last or {}).get("actor") or {}).get("login", "")
-    if actor and actor.lower() in {a.lower() for a in ackers}:
+    names = {a.lower() for a in ackers}
+    if actor and actor.lower() in names:
         return True, f"`{ACK_LABEL}` added by {actor}", last
+    if last is not None and actor.lower() == BOT_LOGIN:
+        rec = command_ack(gh, number, last, ackers)
+        if rec is not None:
+            return True, f"`{ACK_COMMAND}` commented by {rec['actor']['login']}", rec
+        return False, (f"`{ACK_LABEL}` was added by {BOT_LOGIN} without a `{ACK_COMMAND}` comment of a user listed "
+                       "under `ackers` just before it"), None
     return False, f"`{ACK_LABEL}` was added by {actor or 'an unknown user'}, who is not listed under `ackers`", None
 
 
@@ -914,7 +995,7 @@ def render(r: Result, repo: str, server: str) -> str:
             state = c.get("conclusion") or c.get("status")
             out.append(f"- {c['name']}: {state}")
     out += ["", "### Acknowledge", "",
-            f"A maintainer reviews the change and adds the **`{ACK_LABEL}`** label. The gate runs again on the label. "
+            f"A maintainer reviews the change and adds the **`{ACK_LABEL}`** label, or replies `{ACK_COMMAND}`. The gate runs again on the label. "
             f"Status: {r.ack_note}.", ""]
     if r.ack_commit:
         out += [f"Acknowledged commit: `{r.ack_commit}` (head now `{r.head_sha}`).", ""]
@@ -1073,6 +1154,17 @@ def cmd_gate() -> int:
 
 def rerun_wanted(event_name: str, event: dict, repo: str) -> str:
     """Why the `rerun` command does nothing for this event ("" = re-run)."""
+    if event_name == "issue_comment":
+        # After the comment command changed the label (the bot's label event
+        # starts no workflow). A fork pull request is refused in cmd_rerun,
+        # which reads the head repository from the API.
+        if event.get("action") != "created":
+            return f"`{event.get('action')}` does not change the ack"
+        if not (event.get("issue") or {}).get("pull_request"):
+            return "the comment is not on a pull request"
+        if command_of((event.get("comment") or {}).get("body") or "") is None:
+            return "the comment is not an ack command"
+        return ""
     if event_name != "pull_request":
         return f"unsupported event {event_name}"
     action = event.get("action")
@@ -1110,15 +1202,29 @@ def cmd_rerun(sleep=None, now=None) -> int:
         print(f"security-gate rerun: nothing to do: {why_not}")
         return 0
     gh = GitHub(repo, token, os.environ.get("GITHUB_API_URL", "https://api.github.com"))
-    number = int(event["pull_request"]["number"])
-    own = gh.get(f"actions/runs/{int(env('GITHUB_RUN_ID'))}")
-    anchor = _ts(own["created_at"])  # GitHub's clock, after the label event
+    run_id = int(env("GITHUB_RUN_ID"))
+    if event_name == "issue_comment":
+        number = int(event["issue"]["number"])
+        # This job starts after the command job changed the label: its own
+        # start (GitHub's clock) is the moment from which a gate run has read it.
+        jobs = [j for j in (gh.get(f"actions/runs/{run_id}/jobs") or {}).get("jobs", [])
+                if j.get("status") == "in_progress" and j.get("started_at")]
+        if not jobs:
+            raise RuntimeError("cannot tell when this job started")
+        anchor = max(_ts(j["started_at"]) for j in jobs)
+    else:
+        number = int(event["pull_request"]["number"])
+        own = gh.get(f"actions/runs/{run_id}")
+        anchor = _ts(own["created_at"])  # GitHub's clock, after the label event
     workflow = f".github/workflows/{os.environ.get('GATE_WORKFLOW_FILE', GATE_WORKFLOW)}"
     deadline = now() + datetime.timedelta(seconds=RERUN_WAIT)
     while True:
         pr = gh.get(f"pulls/{number}")
         if pr.get("state") != "open":
             print("security-gate rerun: the pull request is closed")
+            return 0
+        if event_name == "issue_comment" and (pr["head"].get("repo") or {}).get("full_name") != repo:
+            print("security-gate rerun: a fork pull request has a read-only token; a maintainer re-runs the gate by hand")
             return 0
         head = pr["head"]["sha"]
         runs = [r for r in gh.paginate(f"actions/runs?event=pull_request&head_sha={head}")
@@ -1140,6 +1246,63 @@ def cmd_rerun(sleep=None, now=None) -> int:
                   "re-run the security-gate check by hand")
             return 1
         sleep(RERUN_POLL)
+
+
+def cmd_ackcmd() -> int:
+    """`/security-ack` and `/security-unack` as a pull request comment: add or
+    remove the `security-ack` label and react with +1 or -1. Runs from
+    security-ack-command.yml on `issue_comment`, from the default branch, with
+    no pull request code checked out.
+
+    Only a user listed under `ackers` is obeyed (anyone else's command is
+    ignored silently). The label this writes carries the Actions bot as its
+    actor, so it is no ack by itself: the gate counts it only next to the
+    acker's comment (command_ack). The comment is re-read through the API
+    first, so an edit between the event and this run cancels the command.
+    Writes GITHUB_OUTPUT `acted=true` when it changed the label."""
+    repo, token = env("GITHUB_REPOSITORY"), env("GITHUB_TOKEN")
+    event = json.loads(pathlib.Path(env("GITHUB_EVENT_PATH")).read_text())
+    if env("GITHUB_EVENT_NAME") != "issue_comment" or event.get("action") != "created":
+        print("security-gate ackcmd: not a new comment")
+        return 0
+    issue, comment = event.get("issue") or {}, event.get("comment") or {}
+    if not issue.get("pull_request"):
+        print("security-gate ackcmd: not a pull request")
+        return 0
+    kind = command_of(comment.get("body") or "")
+    if kind is None:
+        print("security-gate ackcmd: not a command")
+        return 0
+    config = load_config(pathlib.Path(os.environ.get("SECURITY_PATHS", ".github/security-paths.yml")).read_text())
+    gh = GitHub(repo, token, os.environ.get("GITHUB_API_URL", "https://api.github.com"))
+    number, cid = int(issue["number"]), int(comment["id"])
+    live = gh.get(f"issues/comments/{cid}")
+    user = live.get("user") or {}
+    login = user.get("login") or ""
+    if (command_of(live.get("body") or "") != kind or user.get("type") == "Bot"
+            or live.get("created_at") != live.get("updated_at")):
+        print("security-gate ackcmd: the comment changed; ignoring it")
+        return 0
+    if login.lower() not in {a.lower() for a in config["ackers"]}:
+        print(f"security-gate ackcmd: {login} is not listed under `ackers`; ignoring the command")
+        return 0
+    pr = gh.get(f"pulls/{number}")
+    if pr.get("state") != "open":
+        print("security-gate ackcmd: the pull request is closed")
+        return 0
+    if kind == "ack":
+        gh.request("POST", f"issues/{number}/labels", {"labels": [ACK_LABEL]})
+        reaction = "+1"
+    else:
+        gh.request("DELETE", f"issues/{number}/labels/{ACK_LABEL}", ok404=True)
+        reaction = "-1"
+    gh.request("POST", f"issues/comments/{cid}/reactions", {"content": reaction})
+    print(f"security-gate ackcmd: {login}: {kind} on #{number}")
+    out = os.environ.get("GITHUB_OUTPUT")
+    if out:
+        with open(out, "a", encoding="utf-8") as fh:
+            fh.write("acted=true\n")
+    return 0
 
 
 def cmd_codeowners(argv: list[str]) -> int:
@@ -1164,6 +1327,8 @@ def main(argv: list[str]) -> int:
             return cmd_gate()
         if argv[:1] == ["rerun"]:
             return cmd_rerun()
+        if argv[:1] == ["ackcmd"]:
+            return cmd_ackcmd()
         if argv[:1] == ["codeowners"]:
             return cmd_codeowners(argv[1:])
     except (RuntimeError, ValueError, KeyError) as e:

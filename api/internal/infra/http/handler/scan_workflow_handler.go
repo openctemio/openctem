@@ -244,7 +244,11 @@ type RunResponse struct {
 	ScanID    *string `json:"scan_id,omitempty"`
 	// ScanName names the run's scan (list rows only; empty when the scan was
 	// deleted).
-	ScanName        string  `json:"scan_name,omitempty"`
+	ScanName string `json:"scan_name,omitempty"`
+	// ManagedBy names the platform policy that owns the run's scan, so the
+	// run is read-only for people: coverage (continuous coverage), enrichment
+	// or web_verify. Absent for a scan a person owns (list rows only).
+	ManagedBy       string  `json:"managed_by,omitempty" enums:"coverage,enrichment,web_verify"`
 	ScanProfileID   *string `json:"scan_profile_id,omitempty"`
 	TriggerType     string  `json:"trigger_type"`
 	TriggeredBy     string  `json:"triggered_by,omitempty"`
@@ -262,11 +266,14 @@ type RunResponse struct {
 	// UnreachableTargetCount and SkippedTargetCount are the targets the
 	// run's sensors could not reach, or skipped by their local policy. They
 	// never change the run's status (a run with only these completes).
-	UnreachableTargetCount int                            `json:"unreachable_target_count,omitempty"`
-	SkippedTargetCount     int                            `json:"skipped_target_count,omitempty"`
-	QualityGateResult      *scanprofile.QualityGateResult `json:"quality_gate_result,omitempty"`
-	StepRuns               []StepRunResponse              `json:"scan_run_steps,omitempty"`
-	ErrorMessage           string                         `json:"error_message,omitempty"`
+	UnreachableTargetCount int `json:"unreachable_target_count,omitempty"`
+	SkippedTargetCount     int `json:"skipped_target_count,omitempty"`
+	// NoLongerResolveCount is how many of the skipped targets are names that
+	// no longer resolve (informational, never an error).
+	NoLongerResolveCount int                            `json:"no_longer_resolve_count,omitempty"`
+	QualityGateResult    *scanprofile.QualityGateResult `json:"quality_gate_result,omitempty"`
+	StepRuns             []StepRunResponse              `json:"scan_run_steps,omitempty"`
+	ErrorMessage         string                         `json:"error_message,omitempty"`
 	// RefusalCode says why a blocked run was refused (status blocked only),
 	// e.g. ALL_TARGETS_EXCLUDED, SCAN_WINDOW_NEVER_OPENS, NO_SENSOR_AVAILABLE.
 	RefusalCode string `json:"refusal_code,omitempty"`
@@ -1276,6 +1283,7 @@ func (h *ScanWorkflowHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 		ScanID:         r.URL.Query().Get("scan_id"),
 		Kinds:          parseQueryArray(r.URL.Query().Get("kind")),
 		IncludeSystem:  r.URL.Query().Get("include_system") == queryParamTrue,
+		Origin:         r.URL.Query().Get("origin"),
 		AssetID:        r.URL.Query().Get("asset_id"),
 		Status:         r.URL.Query().Get("status"),
 		Sort:           r.URL.Query().Get("sort"),
@@ -1304,6 +1312,12 @@ func (h *ScanWorkflowHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 		apierror.InternalServerError("failed to read the runs' scans").WriteJSON(w)
 		return
 	}
+	managers, err := h.service.RunScanManagers(r.Context(), tenantID, result.Data)
+	if err != nil {
+		h.logger.Error("failed to read the runs' managing policies", "error", err)
+		apierror.InternalServerError("failed to read the runs' scans").WriteJSON(w)
+		return
+	}
 	names := runTriggerNames(r.Context(), h.users, h.logger, result.Data...)
 	items := make([]*RunResponse, len(result.Data))
 	for i, run := range result.Data {
@@ -1313,6 +1327,7 @@ func (h *ScanWorkflowHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 		}
 		if run.ScanID != nil {
 			items[i].ScanName = scanNames[*run.ScanID]
+			items[i].ManagedBy = managers[*run.ScanID]
 		}
 	}
 
@@ -1614,6 +1629,7 @@ func toRunResponse(r *scanrundom.Run) *RunResponse {
 
 	resp.UnreachableTargetCount = contextCount(r.Context, scanrun.RunContextKeyUnreachableCount)
 	resp.SkippedTargetCount = contextCount(r.Context, scanrun.RunContextKeySkippedCount)
+	resp.NoLongerResolveCount = contextCount(r.Context, scanrun.RunContextKeyNoLongerResolve)
 
 	// Extract filtering result from context if present
 	if r.Context != nil {
@@ -1622,6 +1638,17 @@ func toRunResponse(r *scanrundom.Run) *RunResponse {
 		}
 		resp.Dispatch = toRunDispatchResponse(r.Context)
 		resp.WindowWaits = toRunWindowWaits(r.Context)
+		// Names the sensors found no longer resolve: an informational skip
+		// group (a fact about the names, never a failure), next to the
+		// dispatch groups.
+		if n := resp.NoLongerResolveCount; n > 0 {
+			if resp.Dispatch == nil {
+				resp.Dispatch = &RunDispatchResponse{}
+			}
+			resp.Dispatch.Skipped = append(resp.Dispatch.Skipped, scansvc.SkipGroup{
+				Reason: scanrundom.SkipReasonTargetUnresolvable, Tone: scansvc.SkipToneInfo, Count: n, Targets: []string{},
+			})
+		}
 	}
 
 	return resp

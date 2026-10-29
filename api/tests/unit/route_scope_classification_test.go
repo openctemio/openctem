@@ -70,6 +70,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/oauth/requests/{id}/allow-publisher": {classConfig, "organization MCP policy: approves the publisher of the caller's consent request (RFC-062)"},
 	"/api/v1/version":                             {classSystem, "build identity"},
 	"/api/v1/announcements":                       {classSystem, "platform operator notices (plain text); no tenant data"},
+	"/api/v1/proxy-test-echoes":                   {classSystem, "the proxy test's echo: answers the caller's own address for the token of one live test command; no tenant data"},
 	"/api/v1/brand$":                              {classSystem, "instance brand shown before sign-in; server configuration, no tenant data"},
 	"/api/v1/brand/images/":                       {classSystem, "instance brand images; server configuration, no tenant data"},
 	"/api/v1/legal":                               {classSystem, "operator legal information shown before sign-in; no tenant data"},

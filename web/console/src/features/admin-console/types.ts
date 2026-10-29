@@ -392,6 +392,13 @@ export interface TargetMapping {
   updated_at: string
 }
 
+/** One pair of the asset type catalog: read-only, changes with a release. */
+export interface RegistryTargetPair {
+  target_type: string
+  asset_type: string
+  sub_type?: string
+}
+
 export interface TargetMappingStats {
   total: number
   by_target_type: Record<string, number>
@@ -483,6 +490,8 @@ export interface PlatformUser {
 }
 
 export interface PlatformUserDetail extends PlatformUser {
+  /** The server can send email. False: copy a reset link, mark email verified. */
+  email_delivery?: boolean
   membership_list: {
     tenant_id: string
     tenant_name: string
@@ -510,7 +519,20 @@ export interface PlatformUserDetail extends PlatformUser {
 }
 
 export type PlatformUserAction =
-  'revoke-sessions' | 'unlock' | 'password-reset' | 'verification-emails' | 'block' | 'unblock'
+  | 'revoke-sessions'
+  | 'unlock'
+  | 'password-reset'
+  | 'verification-emails'
+  | 'block'
+  | 'unblock'
+  | 'mark-verified'
+  | 'mfa/reset'
+
+/** POST /admin/platform-users/{id}/reset-link: shown once, never stored. */
+export interface PlatformUserResetLink {
+  link: string
+  expires_at: string
+}
 
 /** GET /admin/sessions: one open console session (super admin). */
 export interface AdminConsoleSession {
@@ -543,6 +565,7 @@ export type AdminApprovalAction =
   | 'signup.open'
   | 'audit_chain.rebaseline'
   | 'organization.purge'
+  | 'user.reset_mfa'
 
 export type AdminApprovalStatus =
   'pending' | 'approved' | 'rejected' | 'canceled' | 'expired' | 'used'
@@ -657,14 +680,47 @@ export interface AdminAnnouncement {
 }
 
 /** One threat-intelligence feed's sync state (GET /admin/threat-intel/sync). */
+export type ThreatIntelFeedState =
+  'up_to_date' | 'waiting_for_publisher' | 'stale' | 'failing' | 'refused' | 'running' | 'off'
+
+/** One upstream source named by the applied vulnerability bundle. */
+export interface ThreatIntelBundleSource {
+  name: string
+  as_of?: string
+  fresh: boolean
+}
+
+/** The vulnerability bundle feed's own progress. */
+export interface ThreatIntelBundleDetail {
+  applied_sequence: number
+  keyset_version: number
+  root_key_id?: string
+  kind?: string
+  bundle_created_at?: string
+  sources: ThreatIntelBundleSource[]
+}
+
+/** A platform-wide intelligence feed as the server computes its status. */
 export interface ThreatIntelFeed {
   source: string
   enabled: boolean
-  last_sync_at?: string
-  last_sync_status: string
+  state: ThreatIntelFeedState
+  /** Classifies the last failure; `error_params` fills its message. */
+  error_code?: string
+  error_params?: Record<string, string>
+  /** The raw text of the last failure (platform admin route only). */
   last_error?: string
-  records_synced: number
-  next_sync_at?: string
+  last_attempt_at?: string
+  last_success_at?: string
+  failing_since?: string
+  next_run_at?: string
+  /** Size of the stored catalog, and what the last run wrote. */
+  catalog_records: number
+  records_changed: number
+  data_as_of?: string
+  interval_seconds: number
+  stale_after_seconds: number
+  detail?: ThreatIntelBundleDetail
 }
 
 /** A release in the signed release feed. */
@@ -841,6 +897,40 @@ export interface CaptchaSettings extends SettingChange {
   version: number
 }
 
+/** One social login provider; the client secret is never returned. */
+export interface SocialProvider {
+  provider: 'google' | 'github' | 'microsoft'
+  enabled: boolean
+  client_id: string
+  secret_set: boolean
+  /** The exact callback address to register at the provider. */
+  redirect_uri: string
+  /** Custom scopes; empty means the provider's defaults. */
+  scopes: string[]
+  default_scopes: string[]
+  source: 'none' | 'console' | 'environment'
+  locked_by_environment: boolean
+  env_var: string
+  /** Sign-in with the provider is offered right now. */
+  active: boolean
+  /** The stored secret does not decrypt: the provider is off until replaced. */
+  undecryptable: boolean
+}
+
+/** Settings > Social login. */
+export interface SocialLoginSettings extends SettingChange {
+  providers: SocialProvider[]
+  /** OAUTH_ENABLED on the server; false switches every provider off. */
+  master_enabled: boolean
+  javascript_origin: string
+  /** Who may create an account by public sign-up. */
+  signup_accounts: 'closed' | 'domain' | 'open'
+  version: number
+}
+
+export type SocialCheckResult =
+  'valid' | 'invalid' | 'redirect_mismatch' | 'unreachable' | 'unknown'
+
 /** The deployment region, set once before the first organization. */
 export interface RegionSettings extends SettingChange {
   region: string
@@ -858,6 +948,22 @@ export interface StorageQuotaSettings extends SettingChange {
   environment_mb: number
   max_mb: number
   version: number
+}
+
+/** Where CISA KEV and EPSS come from, and how the signed release is doing. */
+export interface ThreatSourceSettings extends SettingChange {
+  source: 'direct' | 'bundle'
+  direct_fetch: 'auto' | 'off'
+  stored: boolean
+  version: number
+  feeds: {
+    source: 'kev' | 'epss'
+    delivered_via?: 'bundle' | 'direct'
+    data_as_of?: string
+    bundle_fetched_at?: string
+    bundle_fresh: boolean
+    bundle_error?: string
+  }[]
 }
 
 /** Settings > Alerts: the alert webhook; address and secret never returned. */

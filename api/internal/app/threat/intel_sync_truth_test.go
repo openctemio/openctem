@@ -45,10 +45,21 @@ func (r *truthEPSS) UpsertBatch(_ context.Context, e []*threatintel.EPSSScore) e
 type truthStatus struct {
 	threatintel.SyncStatusRepository
 	st *threatintel.SyncStatus
+	// held: another run holds the feed.
+	held  bool
+	tried int
 }
 
 func (r *truthStatus) GetBySource(context.Context, string) (*threatintel.SyncStatus, error) {
 	return r.st, nil
+}
+func (r *truthStatus) TryStart(context.Context, string, time.Duration) (bool, error) {
+	r.tried++
+	if r.held {
+		return false, nil
+	}
+	r.st.MarkSyncStarted()
+	return true, nil
 }
 func (r *truthStatus) Update(context.Context, *threatintel.SyncStatus) error { return nil }
 
@@ -204,6 +215,34 @@ func TestSyncEPSS_ShrinkGuardAndEmpty(t *testing.T) {
 	s, repo = newTruthService(t, serve(95), 0, 100, 0, map[string]any{})
 	if r := s.SyncEPSS(context.Background()); r.Error != nil || repo.epss.upserted != 95 {
 		t.Fatalf("ok: %+v upserted %d", r, repo.epss.upserted)
+	}
+}
+
+// A run that finds the feed held by another does not fetch, write or touch
+// the status: the scheduled run and an operator's request never overlap.
+func TestSync_SkipsWhenAnotherRunHoldsTheFeed(t *testing.T) {
+	fetched := false
+	rt := func(*http.Request) *http.Response { fetched = true; return resp(200, kevJSON(5), nil) }
+	s, repo := newTruthService(t, rt, 5, 5, 5, map[string]any{})
+	repo.st.held = true
+	for name, r := range map[string]IntelSyncResult{
+		"kev":  s.SyncKEV(context.Background()),
+		"epss": s.SyncEPSS(context.Background()),
+	} {
+		if !r.Skipped || !errors.Is(r.Error, threatintel.ErrSyncAlreadyRunning) {
+			t.Fatalf("%s: %+v", name, r)
+		}
+	}
+	if fetched || repo.kev.upserted != 0 || repo.epss.upserted != 0 {
+		t.Fatalf("a skipped run fetched=%v wrote kev=%d epss=%d", fetched, repo.kev.upserted, repo.epss.upserted)
+	}
+	if repo.st.st.LastSyncStatus() != threatintel.SyncStateSuccess {
+		t.Fatalf("status changed to %s", repo.st.st.LastSyncStatus())
+	}
+	// Free again: it runs.
+	repo.st.held = false
+	if r := s.SyncKEV(context.Background()); r.Skipped || r.Error != nil || !fetched {
+		t.Fatalf("free: %+v", r)
 	}
 }
 

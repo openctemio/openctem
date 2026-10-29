@@ -2,6 +2,7 @@ package threatintel
 
 import (
 	"context"
+	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -106,6 +107,13 @@ type SyncStatusRepository interface {
 
 	// GetDueForSync retrieves sources due for sync.
 	GetDueForSync(ctx context.Context) ([]*SyncStatus, error)
+
+	// TryStart claims a source's run: it marks the row running, and reports
+	// false (nothing changed) when another run holds it. A run that has been
+	// "running" for longer than staleAfter was interrupted and can be claimed
+	// again. The claim is one conditional UPDATE, so it holds across API
+	// replicas, between a scheduled run and an operator's request.
+	TryStart(ctx context.Context, source string, staleAfter time.Duration) (bool, error)
 
 	// Update updates a sync status.
 	Update(ctx context.Context, status *SyncStatus) error
