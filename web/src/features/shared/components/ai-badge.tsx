@@ -60,7 +60,7 @@ export function AIBadge({
     <span className={cn('inline-flex flex-col gap-1', className)}>
       <Badge
         variant="outline"
-        className="w-fit gap-1 text-[11px]"
+        className="w-fit gap-1 text-xs"
         data-testid="ai-badge"
         data-source={source}
       >
