@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { Building2, KeyRound, Link2, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -58,10 +58,18 @@ export function SignInMethodsCard() {
   const [toUnlink, setToUnlink] = useState<SignInMethod | null>(null)
 
   // The result of a link round trip, once, then a clean address.
-  const result = readLinkResult(new URLSearchParams(searchParams.toString()))
-  const resultKey = result ? JSON.stringify(result) : ''
+  const query = searchParams.toString()
+  const result = useMemo(() => readLinkResult(new URLSearchParams(query)), [query])
+  const handled = useRef('')
   useEffect(() => {
-    if (!result) return
+    if (!result) {
+      handled.current = ''
+      return
+    }
+    // The effect also re-runs when t/mutate change identity: handle each result once.
+    const resultKey = JSON.stringify(result)
+    if (handled.current === resultKey) return
+    handled.current = resultKey
     if (result.kind === 'linked') {
       toast.success(
         t('account.signInMethods.linked', '{provider} is linked. You can sign in with it now.', {
@@ -76,9 +84,7 @@ export function SignInMethodsCard() {
       )
     }
     router.replace(pathname)
-    // resultKey stands for result
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resultKey])
+  }, [result, mutate, router, pathname, t])
 
   if (isError || (!isLoading && !methods)) return null
   const social = methods?.identities.filter((m) => m.provider !== 'organization') ?? []

@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { ShieldAlert, X } from 'lucide-react'
 import { toast } from 'sonner'
@@ -52,9 +52,12 @@ export default function AdminRolesPage() {
   const [change, setChange] = useState<Change | null>(null)
   const [newRole, setNewRole] = useState('')
 
-  const roleName = (key: string) =>
-    t(`admin.platformRole.${key}`, catalog.data?.roles.find((r) => r.key === key)?.name ?? key)
-  const additional = (catalog.data?.roles ?? []).filter((r) => !r.base)
+  const roles = useMemo(() => catalog.data?.roles ?? [], [catalog.data])
+  const roleName = useCallback(
+    (key: string) => t(`admin.platformRole.${key}`, roles.find((r) => r.key === key)?.name ?? key),
+    [t, roles]
+  )
+  const additional = useMemo(() => roles.filter((r) => !r.base), [roles])
 
   const roleColumns = useMemo<ColumnDef<PlatformRoleInfo>[]>(
     () => [
@@ -167,8 +170,7 @@ export default function AdminRolesPage() {
           ) : null,
       },
     ],
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [t, canAssign, me.id, catalog.data]
+    [t, canAssign, me.id, roleName, additional]
   )
 
   const assignable =
