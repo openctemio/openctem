@@ -285,6 +285,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	commandHandler.SetScanRunService(svc.ScanRun)
 	commandHandler.SetAuditService(svc.Audit)
 	commandHandler.SetScanCommandGate(svc.Scan)
+	commandHandler.SetResolutionRecorder(repos.AssetResolution)
 	// A job the claim-time scope re-check fails settles what waits on it
 	// (scan step, validation run, retest) as a sensor's failure would.
 	svc.Command.SetFailureObserver(commandHandler)

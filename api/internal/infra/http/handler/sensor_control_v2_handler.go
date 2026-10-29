@@ -705,6 +705,14 @@ func (h *SensorControlV2Handler) transition(w http.ResponseWriter, r *http.Reque
 			return
 		}
 		in.ErrorMessage = req.ErrorMessage
+		// A task whose every target is a name that no longer resolves did
+		// not fail: it completes with per-target skips. A sensor that
+		// predates the typed list says so in the message only.
+		if res, ok := h.unresolvableCompletion(r.Context(), tenantID, s.ID.String(), commandID, req.ErrorMessage); ok {
+			t = command.TransitionComplete
+			in.Result = res
+			break
+		}
 		failCode = sensorFailureCode(req.ErrorCode, req.Refusal != nil)
 		if req.Refusal != nil {
 			in.Refusal = &sensor.DispatchRefusal{Layer: req.Refusal.Layer, Rule: req.Refusal.Rule, Detail: req.Refusal.Detail}
@@ -737,6 +745,7 @@ func (h *SensorControlV2Handler) transition(w http.ResponseWriter, r *http.Reque
 			h.commands.triggerScanRunStarted(r.Context(), res.Command)
 		case command.TransitionComplete:
 			h.commands.triggerScanRunProgression(r.Context(), res.Command)
+			h.commands.recordUnresolvableNames(res.Command)
 			h.commands.triggerValidationEvidence(res.Command)
 			h.commands.triggerSimulationFinalize(res.Command)
 			h.commands.triggerCoverageAutoResolve(res.Command)
@@ -751,6 +760,40 @@ func (h *SensorControlV2Handler) transition(w http.ResponseWriter, r *http.Reque
 		}
 	}
 	writeV2JSON(w, http.StatusOK, toV2Command(res.Command))
+}
+
+// unresolvableCompletion returns the result to complete the command with
+// when message reports that every target of the task was refused as
+// unresolvable. Only a command the sensor holds and is running (or one
+// already completed this way, a retried report) is converted; anything else
+// takes the failure path.
+func (h *SensorControlV2Handler) unresolvableCompletion(ctx context.Context, tenantID, sensorID, commandID, message string) (json.RawMessage, bool) {
+	if _, _, ok := scanrundom.ParseUnresolvableRefusal(message); !ok {
+		return nil, false
+	}
+	cmd, err := h.commands.service.Get(ctx, tenantID, commandID)
+	if err != nil {
+		return nil, false
+	}
+	return unresolvableResultFor(cmd, sensorID, message)
+}
+
+// unresolvableResultFor is unresolvableCompletion for a command already read.
+func unresolvableResultFor(cmd *commanddom.Command, sensorID, message string) (json.RawMessage, bool) {
+	hosts, total, ok := scanrundom.ParseUnresolvableRefusal(message)
+	if !ok || cmd == nil || cmd.SensorID == nil || cmd.SensorID.String() != sensorID {
+		return nil, false
+	}
+	switch cmd.Status {
+	case commanddom.CommandStatusRunning:
+	case commanddom.CommandStatusCompleted:
+		if !scanrundom.IsSynthesizedUnresolvable(cmd.Result) {
+			return nil, false
+		}
+	default:
+		return nil, false
+	}
+	return scanrundom.UnresolvableCompletion(hosts, total), true
 }
 
 func (h *SensorControlV2Handler) transitionFailed(w http.ResponseWriter, route string, err error) {
