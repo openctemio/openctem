@@ -437,6 +437,54 @@ a member without scope rows and the owner, the out-of-scope false positive
 never counts, receipts only for the owner; receipt list filters refuse
 malformed values), `internal/app/dashboard/widgets/flow_test.go`.
 
+### Story widgets: levers, weekly brief, KPI strip
+
+Three metrics tell the dashboard's story above the fold. Like every widget
+they are computed by the refresher into the snapshot (never on open), read
+through `FactReader` with the scope the server built for the read, and carry
+the list each figure counts (`drill`, or none where no list has exactly that
+total). Code: `internal/app/dashboard/widgets/levers.go`, `brief.go`,
+`kpis.go`; web `components/dashboard-kit/story-viz.tsx`.
+
+- **`exposure.levers`** (shape `levers`): at most three actions, each with an
+  exact effect (the figure before and after its list is gone), ranked by the
+  risk points they clear (the remediation formula, P0 8, P1 4, P2 2, P3 1,
+  severity for unclassified findings):
+  - `kev_open`: open KEV findings; effect on P0-P1 open (or on KEV open when
+    none of them is P0-P1);
+  - `sla_breached`: open P0-P1 findings past their SLA; effect on within SLA,
+    `num / (den - n)`;
+  - `one_fix`: the proposed remediation suggestion that clears the most risk
+    points over its members that are open and in the read's scope
+    (`FactReader.TopFix`, `dashboard_levers_repository.go`); pentest findings
+    are never counted, so a fix found only on pentest findings never reaches
+    a reader outside the campaign; effect on P0-P1 open;
+  - `blind_spot`: tracked assets with no successful run in the coverage
+    window; it takes the last slot while coverage is under 90 % (unmeasured is
+    not safe) and never competes on points.
+  Cards carry kind and numbers only (plus a one-fix suggestion title); the web
+  words them from translated templates. No asset names are shown.
+- **`brief.weekly`** (shape `brief`): up to three deterministic sentences:
+  the last seven days' new against fixed findings (F2, chips without a link,
+  daily flows are not a list), the first lever, and the P0-P2 findings due soon
+  and past their SLA (or the KEV open count when there are none); `quiet` when
+  nothing applies. No generated text.
+- **`exposure.kpis`** (shape `kpis`, viz `kpi`): P0-P1 open, KEV open, within
+  SLA, median time to fix and discovery coverage in one strip, each computed
+  by the same code path as its single-figure metric; a figure that cannot be
+  measured is `not_measured` with its reason, never 0. Rendered with the
+  shared `MetricStrip`.
+
+Permissions on a personal read: the widgets need `findings:read`; without
+`assets:read` the parts read from the coverage ledger are removed on the way
+out (`maskAssetParts`): the coverage tile becomes `unsupported`/`forbidden`,
+the blind spot lever and a brief sentence that words it are dropped.
+
+Tests: `widgets/levers_test.go` (ranking, exact effects, every read uses the
+server-built scope, masking), `postgres/dashboard_levers_db_test.go` (TopFix:
+data scope, no-scope member, pentest exclusion, dismissed suggestions, cross
+tenant).
+
 ### Scope and isolation
 
 - The tenant comes from the authenticated caller; every statement starts

@@ -48,6 +48,9 @@ export const METRICS: readonly MetricMeta[] = [
   { id: 'attack_paths.to_crown_jewels', group: 'ctem', unit: 'count', defaultGroupBy: [] },
   { id: 'exposure.flow', group: 'ctem', unit: 'count', defaultGroupBy: [] },
   { id: 'ingest.intake', group: 'ctem', unit: 'count', defaultGroupBy: [] },
+  { id: 'exposure.levers', group: 'ctem', unit: 'count', defaultGroupBy: [] },
+  { id: 'brief.weekly', group: 'ctem', unit: 'count', defaultGroupBy: [] },
+  { id: 'exposure.kpis', group: 'exposure', unit: 'count', defaultGroupBy: [] },
 ]
 
 export const METRIC_GROUPS: readonly MetricGroup[] = [
@@ -119,7 +122,11 @@ export function skeletonFor(shape: ResultShape | undefined): SkeletonKind {
     case 'scalar':
     case 'ratio':
     case 'duration':
+    case 'kpis':
       return 'stat'
+    case 'levers':
+    case 'brief':
+      return 'list'
     case 'items':
     case 'paths':
       return 'list'
