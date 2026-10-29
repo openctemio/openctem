@@ -302,6 +302,41 @@ describe('LoginForm ?error= message', () => {
     expect(toast.error).toHaveBeenCalledTimes(1)
     expect(toast.error).toHaveBeenCalledWith('Sign-in failed. Try again.')
   })
+
+  // Google sign-in for an address that already has a password account (prod
+  // v0.15.3 answered a 500): the page says what to do and keeps saying it.
+  it('keeps the account-exists notice on the page with a password reset action', () => {
+    withParams('error=account_exists')
+    render(<LoginForm />)
+    const notice = screen.getByTestId('login-account-exists')
+    expect(notice).toHaveTextContent('You already have an account')
+    expect(notice).toHaveTextContent(
+      'An account with this email already exists. Sign in with your password, then link this provider in Account > Security.'
+    )
+    expect(screen.getByRole('link', { name: 'Forgot your password? Reset it' })).toHaveAttribute(
+      'href',
+      '/forgot-password'
+    )
+    expect(toast.error).not.toHaveBeenCalled()
+  })
+
+  // Google sign-in to a password account linked to it: the callback sends the
+  // browser here with ?mfa=verify and the code is asked like after a password.
+  it('asks for the second factor after a social sign-in to a linked password account', async () => {
+    withParams('mfa=verify')
+    verifyMfaAction.mockResolvedValueOnce({ success: false, error: 'x', code: 'MFA_CODE_INVALID' })
+    const user = userEvent.setup()
+    render(<LoginForm />)
+    await user.type(await screen.findByLabelText('Authentication code'), '123456')
+    await waitFor(() => expect(verifyMfaAction).toHaveBeenCalledWith({ code: '123456' }))
+  })
+
+  it('ignores an unknown second step in the address', () => {
+    withParams('mfa=skip')
+    render(<LoginForm />)
+    expect(screen.getByLabelText('Password')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Authentication code')).not.toBeInTheDocument()
+  })
 })
 
 describe('LoginForm email-first sign-in', () => {

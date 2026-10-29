@@ -3503,6 +3503,11 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		s.OAuth.SetBreakGlassGate(breakGlassChecker{admins: repos.Admin})
 		s.OAuth.SetIdentityRepo(repos.UserIdentity)
 		s.OAuth.SetAuditService(s.Audit)
+		// A linked password account signs in through its provider only with
+		// the second step of its password sign-in; an automatic link revokes
+		// the account's sessions (identity_link.go).
+		s.OAuth.SetSecondFactorGate(s.Auth)
+		s.OAuth.SetSessionRevoker(s.Session)
 		if redisClient != nil {
 			s.OAuth.SetPKCEStore(redisClient)
 		} else {
