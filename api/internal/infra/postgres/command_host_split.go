@@ -70,11 +70,11 @@ const (
 		INSERT INTO commands (id, tenant_id, sensor_id, type, priority, payload, status, error_message,
 			created_at, expires_at, scheduled_at, schedule_id, scan_run_step_id, is_platform_job,
 			queue_priority, queued_at, dispatch_attempts, scan_zone_id, host_keys, dispatch_gate,
-			window_policy_ids, refused_by, refusals, host_splits)
+			window_policy_ids, refused_by, refusals, host_splits, failed_on, attempts)
 		SELECT $3, p.tenant_id, p.sensor_id, p.type, p.priority, $4, 'pending', '',
 			NOW(), p.expires_at, p.scheduled_at, p.schedule_id, p.scan_run_step_id, FALSE,
 			p.queue_priority, COALESCE(p.queued_at, p.created_at), p.dispatch_attempts, p.scan_zone_id, $5, p.dispatch_gate,
-			p.window_policy_ids, p.refused_by, p.refusals, p.host_splits
+			p.window_policy_ids, p.refused_by, p.refusals, p.host_splits, p.failed_on, p.attempts
 		FROM commands p WHERE p.id = $1 AND p.tenant_id = $2`
 )
 
