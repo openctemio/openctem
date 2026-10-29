@@ -65,6 +65,7 @@ type CommandHandler struct {
 	validationIngest validationEvidenceIngester
 	retestEvidence   retestEvidenceRecorder
 	retestSettler    retestSettler
+	proxyTests       proxyTestObserver
 	simFinalizer     simulationRunFinalizer
 	validationRuns   validationRunSettler
 	resolution       resolutionRecorder
@@ -218,9 +219,31 @@ func (h *CommandHandler) settleValidationRun(cmd *commanddom.Command, succeeded 
 // validation run. The v2 fail transition and the claim-time scope re-check
 // (command.FailureObserver) both call it.
 func (h *CommandHandler) OnCommandFailed(ctx context.Context, cmd *commanddom.Command, message, code string) {
+	if h.finishProxyTest(ctx, cmd) {
+		return
+	}
 	h.triggerScanRunFailed(ctx, cmd, message, code)
 	h.triggerRetestSettle(cmd)
 	h.settleValidationRun(cmd, false, sensordom.RedactPlatformText(message), code)
+}
+
+// proxyTestObserver records a finished proxy test (the audit log).
+type proxyTestObserver interface {
+	OnProxyTestFinished(ctx context.Context, cmd *commanddom.Command)
+}
+
+// SetProxyTests records finished proxy tests, completed or failed.
+func (h *CommandHandler) SetProxyTests(o proxyTestObserver) { h.proxyTests = o }
+
+// finishProxyTest hands a finished proxy_test command to its observer.
+func (h *CommandHandler) finishProxyTest(ctx context.Context, cmd *commanddom.Command) bool {
+	if cmd == nil || cmd.Type != commanddom.CommandTypeProxyTest {
+		return false
+	}
+	if h.proxyTests != nil {
+		h.proxyTests.OnProxyTestFinished(context.WithoutCancel(ctx), cmd)
+	}
+	return true
 }
 
 // retestSettler settles a pending retest when one of its commands finishes.
@@ -750,6 +773,9 @@ func (h *CommandHandler) triggerSimulationFinalize(cmd *commanddom.Command) {
 // Best-effort and asynchronous — a mapping failure never blocks the sensor's
 // completion response.
 func (h *CommandHandler) triggerValidationEvidence(cmd *commanddom.Command) {
+	if h.finishProxyTest(context.Background(), cmd) {
+		return
+	}
 	// A tool retest (RFC-039) has no validation evidence: its verdict is read
 	// by the retest service, which settles the retest.
 	if cmd != nil && cmd.Type == commanddom.CommandTypeRetest {
