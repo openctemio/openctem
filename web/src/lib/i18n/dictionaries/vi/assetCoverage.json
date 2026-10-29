@@ -22,6 +22,7 @@
   "assetCoverage.reason.no_eligible_sensor": "không sensor nào nhận được công việc này",
   "assetCoverage.reason.no_named_twin": "cùng địa chỉ và cổng đã có dịch vụ web theo tên miền, dịch vụ đó được quét thay thế",
   "assetCoverage.reason.no_scope": "tổ chức chưa có mục phạm vi nào",
+  "assetCoverage.reason.not_claimed": "không sensor nào nhận các lần chạy gần đây; sẽ thử lại sau hoặc khi sensor thay đổi",
   "assetCoverage.reason.not_planned": "chưa được lên kế hoạch",
   "assetCoverage.reason.policy_disabled": "một chính sách của tổ chức đang giữ lại (công cụ bị tắt, cần phê duyệt hoặc ngoài khung giờ quét)",
   "assetCoverage.reason.quota_exhausted": "đã dùng hết hạn mức quét dùng chung hôm nay",

@@ -236,7 +236,8 @@ func (r *AssetCoverageRepository) MarkBlocked(ctx context.Context, tenantID shar
 func (r *AssetCoverageRepository) QueuedRuns(ctx context.Context, tenantID shared.ID) ([]coverage.RunState, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT r.id, c.capability, r.status, COALESCE(r.error_message, ''), max(c.last_tool),
-		       COALESCE(r.unfinished_targets, '[]'::jsonb), min(c.queued_at)
+		       COALESCE(r.unfinished_targets, '[]'::jsonb), min(c.queued_at),
+		       EXISTS (SELECT 1 FROM scan_run_steps st WHERE st.scan_run_id = r.id AND st.error_code = 'NO_SENSOR')
 		FROM asset_coverage c
 		JOIN scan_runs r ON r.tenant_id = c.tenant_id AND r.id = c.last_run_id
 		WHERE c.tenant_id = $1 AND c.state = 'queued'
@@ -252,7 +253,7 @@ func (r *AssetCoverageRepository) QueuedRuns(ctx context.Context, tenantID share
 			id         string
 			unfinished []byte
 		)
-		if err := rows.Scan(&id, &rs.Capability, &rs.Status, &rs.Error, &rs.Tool, &unfinished, &rs.QueuedAt); err != nil {
+		if err := rows.Scan(&id, &rs.Capability, &rs.Status, &rs.Error, &rs.Tool, &unfinished, &rs.QueuedAt, &rs.NoSensor); err != nil {
 			return nil, err
 		}
 		if rs.RunID, err = shared.IDFromString(id); err != nil {

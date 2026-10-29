@@ -186,14 +186,15 @@ func (r *ScanRunRepository) Update(ctx context.Context, run *scanrun.Run) error 
 	query := `
 		UPDATE scan_runs
 		SET status = $2, context = $3,
-		    total_steps = $4, completed_steps = $5, failed_steps = $6, skipped_steps = $7, total_findings = $8,
+		    total_steps = $4, completed_steps = $5, failed_steps = $6, skipped_steps = $7,
+		    total_findings = GREATEST($8::int, COALESCE(` + runSightedSQL + `, 0)),
 		    started_at = $9, completed_at = $10, error_message = $11,
 		    scan_profile_id = $12, quality_gate_result = $13, retry_attempt = $14,
 		    deadline_at = COALESCE(deadline_at, ` + runDeadlineSQL("$9::timestamptz", "scan_runs.scan_id", "scan_runs.scan_workflow_id") + `),
 		    deadline_reason = CASE WHEN deadline_at IS NULL
 		        THEN ` + runDeadlineReasonSQL("$9::timestamptz", "scan_runs.scan_id", "scan_runs.scan_workflow_id") + `
 		        ELSE deadline_reason END
-		WHERE id = $1
+		WHERE id = $1 AND tenant_id = $15
 		  AND status NOT IN ` + terminalRunStatusesSQL + `
 		RETURNING deadline_at
 	`
@@ -214,10 +215,11 @@ func (r *ScanRunRepository) Update(ctx context.Context, run *scanrun.Run) error 
 		nullID(run.ScanProfileID),
 		nullBytes(qualityGateResult),
 		run.RetryAttempt,
+		run.TenantID.String(),
 	).Scan(&deadline)
 
 	if errors.Is(err, sql.ErrNoRows) {
-		return r.notUpdatedError(ctx, run.ID)
+		return r.notUpdatedErrorFor(ctx, run.TenantID, run.ID)
 	}
 	if err != nil {
 		return fmt.Errorf("failed to update pipeline run: %w", err)
@@ -236,6 +238,20 @@ func (r *ScanRunRepository) notUpdatedError(ctx context.Context, id shared.ID) e
 	var exists bool
 	if err := r.db.QueryRowContext(ctx,
 		`SELECT EXISTS (SELECT 1 FROM scan_runs WHERE id = $1)`, id.String()).Scan(&exists); err != nil {
+		return fmt.Errorf("failed to check pipeline run: %w", err)
+	}
+	if !exists {
+		return shared.ErrNotFound
+	}
+	return scanrun.ErrRunAlreadyFinished
+}
+
+// notUpdatedErrorFor is notUpdatedError for a run of one tenant: another
+// tenant's run is reported as missing, never as finished.
+func (r *ScanRunRepository) notUpdatedErrorFor(ctx context.Context, tenantID, id shared.ID) error {
+	var exists bool
+	if err := r.db.QueryRowContext(ctx,
+		`SELECT EXISTS (SELECT 1 FROM scan_runs WHERE id = $1 AND tenant_id = $2)`, id.String(), tenantID.String()).Scan(&exists); err != nil {
 		return fmt.Errorf("failed to check pipeline run: %w", err)
 	}
 	if !exists {
@@ -358,14 +374,15 @@ func (r *ScanRunRepository) CountActiveByScanID(ctx context.Context, scanID shar
 	return count, nil
 }
 
-// UpdateStats updates run statistics.
-func (r *ScanRunRepository) UpdateStats(ctx context.Context, id shared.ID, completed, failed, skipped, findings int) error {
+// UpdateStats updates run statistics of a run of the tenant (another tenant's run is not touched).
+func (r *ScanRunRepository) UpdateStats(ctx context.Context, tenantID, id shared.ID, completed, failed, skipped, findings int) error {
 	query := `
 		UPDATE scan_runs
-		SET completed_steps = $2, failed_steps = $3, skipped_steps = $4, total_findings = $5
-		WHERE id = $1
+		SET completed_steps = $2, failed_steps = $3, skipped_steps = $4,
+		    total_findings = GREATEST($5::int, COALESCE(` + runSightedSQL + `, 0))
+		WHERE id = $1 AND tenant_id = $6
 	`
-	_, err := r.db.ExecContext(ctx, query, id.String(), completed, failed, skipped, findings)
+	_, err := r.db.ExecContext(ctx, query, id.String(), completed, failed, skipped, findings, tenantID.String())
 	return err
 }
 

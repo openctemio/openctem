@@ -23,7 +23,15 @@ done
 
 here=$(cd "$(dirname "$0")" && pwd)
 mapfile -t plan < <(bash "$here/go-shard.sh" plan "$i" "$n") || exit 2
-[ "${#plan[@]}" -gt 0 ] || { echo "go-shard-run: shard $i/$n is empty" >&2; exit 2; }
+if [ "${#plan[@]}" -eq 0 ]; then
+  # An affected-only run can leave a shard with nothing to do; a full run
+  # never can (the check proves every shard has work), so it stays an error.
+  [ -n "${GO_SHARD_AFFECTED:-}" ] || { echo "go-shard-run: shard $i/$n is empty" >&2; exit 2; }
+  echo "go-shard-run: shard $i/$n has no affected package; nothing to run"
+  : >"$out"
+  [ -z "$cover" ] || echo "mode: atomic" >"$cover"
+  exit 0
+fi
 
 : >"$out"
 rc=0 step=0 profiles=()

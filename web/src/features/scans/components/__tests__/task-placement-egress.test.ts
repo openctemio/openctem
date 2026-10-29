@@ -23,6 +23,12 @@ describe('egressSensorLine', () => {
       "edge-1 cannot use the organization's proxies (no proxy support reported)"
     )
   })
+  it('says a direct-only sensor host refuses the pool', () => {
+    const s = { id: '1', name: 'edge-1', reasons: ['egress_host_direct'] } as S
+    expect(egressSensorLine(s, enTranslate)).toBe(
+      'edge-1 is set to scan direct on its host, so it takes no jobs that need a proxy'
+    )
+  })
   it('has its own line for validation jobs, and none for other reasons', () => {
     const v = { id: '1', name: 'edge-1', reasons: ['egress_validate_unsupported'] } as S
     expect(egressSensorLine(v, enTranslate)).toContain('no validation probes')
