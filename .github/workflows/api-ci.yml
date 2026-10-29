@@ -19,7 +19,7 @@ name: API CI
 #                   Add the `ci:full` label to run the full tier on a PR.
 #   full            merge_group, push, and a PR with the `ci:full` label or a
 #                   changed CI definition. `Tests (Postgres + Redis)`: the whole
-#                   suite in 8 shards with -race against real Postgres and Redis
+#                   suite in 8 shards (with -race on a push to develop) against real Postgres and Redis
 #                   as the least-privilege app role (D-6, so the tenant-isolation
 #                   tests and a missing grant fail here), PostgreSQL 18, plus
 #                   `Release Binaries` (not on a PR).
@@ -495,7 +495,7 @@ jobs:
   # Full tier (merge queue, push, ci:full, a changed CI definition): the whole
   # suite against real Postgres and Redis, AS THE LEAST-PRIVILEGE APP ROLE the API runs as in production (D-6,
   # docs/deployment/database-roles.md). The shard list comes from the plan
-  # the `spec` job makes (8 shards with -race).
+  # the `spec` job makes (8 shards, -race on a push to develop).
   #
   # One run proves both things the suite used to need two jobs for:
   #   - the behaviour: every DB-backed test passes;

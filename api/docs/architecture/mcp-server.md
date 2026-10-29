@@ -62,7 +62,7 @@ read tools `readOnlyHint: true, idempotentHint: true`, the write tool
 | `list_findings` | `findings:read` | findings (severity/status/source/search filters), caller's data scope |
 | `get_finding` (`finding_id`) | `findings:read` | one finding |
 | `finding_stats` | `findings:read` | totals by severity/status + KEV/EPSS/SLA rollups |
-| `list_active_cves` | `findings:read` | KEV/EPSS-prioritized CVEs |
+| `list_active_cves` | `findings:read` | CVEs of open findings in scope, riskiest first (the vulnerabilities list read) |
 | `explain_finding_priority` (`finding_id`) | `findings:read` | priority explanation (KEV/EPSS/reachability) |
 | `get_exposure_chains` | `assets:read` | shortest attack paths to KEV/crown-jewel assets |
 | `list_remediation_groups` | `findings:read` | solution families |

@@ -69,6 +69,10 @@ const SAFE_TAGS = new Set(['SafeExternalLink'])
  * route builder or a constant.
  */
 const REVIEWED = new Set([
+  // Exception batch source link: batchSourceHref() is a fixed same-origin path (/vulnerabilities or
+  // /remediation/tasks) with the id or CVE ids passed through encodeURIComponent.
+  'features/findings/components/group-exceptions-panel.tsx|Link|href={batchSourceHref(row.original)}',
+  'features/findings/components/group-exceptions-panel.tsx|Link|href={batchSourceHref(batch)}',
   // Asset group page: findingsHref() is a fixed same-origin /findings prefix with the group id encoded and a severity from a fixed list.
   'app/(dashboard)/(discovery)/assets/groups/[id]/page.tsx|NextLink|href={findingsHref(severity)}',
   // StatsCard href only receives the callers' own constant routes (attack surface tiles).
