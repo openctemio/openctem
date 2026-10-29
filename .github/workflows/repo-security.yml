@@ -77,6 +77,7 @@ jobs:
       security-events: write
       actions: read
     runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
+    timeout-minutes: 10
     env:
       BETTERLEAKS_VERSION: 1.9.0
       BETTERLEAKS_SHA256: f8b185a39ffcece2a1ca82bf3a4e7435cd81963ffd16b7a9128daf75f35f6de7
@@ -215,6 +216,7 @@ jobs:
     needs: tree
     if: ${{ !cancelled() && needs.tree.outputs.verified != 'true' }}
     runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
+    timeout-minutes: 10
     steps:
       # Branch policy: main only takes release and hotfix branches (the release
       # train opens them); everything else goes to develop. main is the default
@@ -249,6 +251,12 @@ jobs:
           echo "${ACTIONLINT_SHA256}  actionlint.tgz" | sha256sum -c -
           tar -xzf actionlint.tgz actionlint
           ./actionlint -color
+      # Every job has a timeout-minutes (a hung job otherwise holds a runner,
+      # and a merge-queue group, for 360 minutes).
+      - name: Job timeouts
+        run: |
+          bash .github/scripts/check-job-timeouts.test.sh
+          bash .github/scripts/check-job-timeouts.sh
       # Workflow security audit (template injection, unsafe triggers, credential
       # persistence, unpinned or archived actions, over-broad permissions).
       # Configuration and every suppression with its reason: .github/zizmor.yml.
@@ -357,6 +365,7 @@ jobs:
     permissions:
       contents: read
     runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
