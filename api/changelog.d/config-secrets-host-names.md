@@ -1,0 +1,4 @@
+### Fixed: scan jobs naming a long host name no longer wait for a sensor until they fail
+
+- The secret detector of scan settings counted long host names (for example `static-01.example-group.com.vn`) as high-entropy secrets. A quick scan carries its targets in its settings, so the sensor grant read such a job as one that carries credentials and withheld it from every sensor whose grant does not allow credentials. The job stayed queued until the run's deadline and the run failed with "no sensor picked up this run's work". On the hosted service this failed most continuous coverage runs of `resolve.dns`, `scan.ports` and `probe.http`.
+- Host names, IP addresses and ranges are no longer high-entropy values, and a `target`/`targets` list is checked only for credential formats (a URL with a user and password in it). The `scanner_config_warnings` of a scan drop the same false warnings.

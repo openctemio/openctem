@@ -70,6 +70,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/oauth/requests/{id}/allow-publisher": {classConfig, "organization MCP policy: approves the publisher of the caller's consent request (RFC-062)"},
 	"/api/v1/version":                             {classSystem, "build identity"},
 	"/api/v1/announcements":                       {classSystem, "platform operator notices (plain text); no tenant data"},
+	"/api/v1/proxy-test-echoes":                   {classSystem, "the proxy test's echo: answers the caller's own address for the token of one live test command; no tenant data"},
 	"/api/v1/brand$":                              {classSystem, "instance brand shown before sign-in; server configuration, no tenant data"},
 	"/api/v1/brand/images/":                       {classSystem, "instance brand images; server configuration, no tenant data"},
 	"/api/v1/legal":                               {classSystem, "operator legal information shown before sign-in; no tenant data"},
@@ -228,7 +229,6 @@ var dataSurfaceRegistry = map[string]dataSurface{
 
 	// --- gap -----------------------------------------------------------------------
 	"/api/v1/credentials":                                {classScoped, "leaks on in-scope assets; asset-less leaks: unrestricted callers only (L-10)"},
-	"/api/v1/vulnerabilities/active":                     {classScoped, "aggregated over in-scope findings, REST and MCP (L-10)"},
 	"GET /api/v1/groups/{groupId}/assets":                {classScoped, "only the group's assets in the caller's scope (L-10)"},
 	"/api/v1/scans":                                      {classGap, "L-06 (scan reads and targets; D9)"},
 	"/api/v1/scan-approvals":                             {classGap, "L-06 (scan approval requests carry the scan definition and targets, as scan reads; D9)"},
@@ -322,9 +322,9 @@ func TestEveryRouteHasADataScopeClass(t *testing.T) {
 func TestDataSurfaceLookup_LongestPrefixWins(t *testing.T) {
 	cases := map[string]dataScopeClass{
 		"GET /api/v1/vulnerabilities/":                         classSystem,
-		"GET /api/v1/vulnerabilities/active":                   classScoped,
 		"GET /api/v1/vulnerabilities/{id}/affected-assets":     classScoped,
 		"GET /api/v1/vulnerability-exposures/{vuln_id}/assets": classScoped,
+		"GET /api/v1/vulnerability-exposures/":                 classScoped,
 		"GET /api/v1/groups/{groupId}/assets":                  classScoped,
 		"POST /api/v1/groups/{groupId}/assets":                 classConfig,
 		"GET /api/v1/compliance/findings/{findingId}/controls": classScoped,

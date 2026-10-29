@@ -10,9 +10,10 @@
  */
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { ArrowLeft, Plus, X } from 'lucide-react'
+import { ArrowLeft, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { FilterChipsRow } from '@/features/shared/components/filter-chips-row'
+import { RemovableFilterChip } from '@/features/shared/components/removable-filter-chip'
 import {
   Command,
   CommandEmpty,
@@ -251,22 +252,12 @@ export function InventoryFilterChip({
   // Values can be discovered data (tags, technologies, attribute values): text only.
   const text = toDisplayText(chip.text, 120)
   return (
-    <span
+    <RemovableFilterChip
       data-testid="inventory-filter-chip"
-      className="inline-flex max-w-full items-center gap-1 rounded-full border bg-muted/50 py-0.5 ps-2.5 pe-1 text-xs"
-    >
-      <span dir="auto" className="min-w-0 truncate [unicode-bidi:isolate]" title={text}>
-        {text}
-      </span>
-      <button
-        type="button"
-        onClick={onRemove}
-        aria-label={t('assets.filters.remove', 'Remove filter {filter}', { filter: text })}
-        className="inline-flex size-5 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        <X className="size-3" aria-hidden />
-      </button>
-    </span>
+      text={text}
+      onRemove={onRemove}
+      removeLabel={t('assets.filters.remove', 'Remove filter {filter}', { filter: text })}
+    />
   )
 }
 

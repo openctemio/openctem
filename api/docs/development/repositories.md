@@ -17,7 +17,7 @@ them, shows how they talk to each other, and points you at the right place to wo
 
 | Directory | Stack | What it is | Image |
 |-----------|-------|------------|-------|
-| [`api/`](../../) | Go 1.26 · Chi · PostgreSQL 17 · Redis 7 | The **control plane**. Multi-tenant REST API, domain logic (DDD/clean architecture), auth & RBAC, persistence, migrations, background workers, admin CLI. Go module `github.com/openctemio/openctem/api`. | `ghcr.io/openctemio/openctem-api` (+ `migrations`, `seed`, `admin-cli`) |
+| [`api/`](../../) | Go 1.26 · Chi · PostgreSQL 17 · Redis 7 | The **control plane**. Multi-tenant REST API, domain logic (DDD/clean architecture), auth & RBAC, persistence, migrations, background workers, admin CLI. Go module `github.com/openctemio/openctem/api`. | `ghcr.io/openctemio/openctem-api` (+ `migrations`, `seed`) |
 | [`web/`](../../../web/) | Next.js 16 · React 19 · TypeScript · Tailwind v4 · shadcn/ui | The **web console** users work in. Talks only to the API. Its navigation is the CTEM loop (see the [User Guide](../user-guide/README.md)). | `ghcr.io/openctemio/openctem-web` |
 | [`deploy/allinone/`](../../../deploy/allinone/) | Dockerfile + supervisor | **All-in-one image**: API + web + the `api/deploy/gateway` Caddy gateway in one container (Postgres/Redis external). | `ghcr.io/openctemio/openctem` |
 | [`.github/`](../../../.github/) | GitHub Actions | One set of workflows for both components, path-gated per component. See [CI/CD](ci-cd.md). | — |
@@ -113,7 +113,7 @@ and the web's in `web/`. See [Getting Started](../getting-started.md) and
 ## Cross-repo gotchas worth knowing early
 
 - **One tag releases the product.** A `vX.Y.Z` tag on the monorepo publishes the
-  API, web, all-in-one, migrations, seed and admin-cli images from the same
+  API, web, all-in-one, migrations, and seed images from the same
   commit; there is no separate web release any more. The sensor, sdk-go, ctis and
   helm-charts keep their own tags. See [CI/CD](ci-cd.md) and
   [Safe deploys & migrations](../deployment/safe-deploy-and-migrations.md).

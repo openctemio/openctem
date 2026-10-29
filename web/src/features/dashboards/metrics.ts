@@ -46,6 +46,8 @@ export const METRICS: readonly MetricMeta[] = [
   { id: 'coverage.discovery', group: 'ctem', unit: 'percent', defaultGroupBy: [] },
   { id: 'ctem.loop', group: 'ctem', unit: 'count', defaultGroupBy: [] },
   { id: 'attack_paths.to_crown_jewels', group: 'ctem', unit: 'count', defaultGroupBy: [] },
+  { id: 'exposure.flow', group: 'ctem', unit: 'count', defaultGroupBy: [] },
+  { id: 'ingest.intake', group: 'ctem', unit: 'count', defaultGroupBy: [] },
 ]
 
 export const METRIC_GROUPS: readonly MetricGroup[] = [
@@ -123,6 +125,9 @@ export function skeletonFor(shape: ResultShape | undefined): SkeletonKind {
       return 'list'
     case 'stages':
       return 'stages'
+    case 'flow':
+    case 'intake':
+      return 'chart'
     case 'matrix':
       return 'grid'
     default:

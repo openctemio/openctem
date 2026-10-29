@@ -120,3 +120,23 @@ func (c recentAuthChecker) RecentAuthAt(ctx context.Context, userID, sessionID s
 	}
 	return at, err
 }
+
+// CredentialFactorChecker is what middleware.RequireCredentialFactor asks:
+// whether the caller holds the second factor the organization or the
+// platform floor requires before they create a credential.
+func (h *LocalAuthHandler) CredentialFactorChecker() middleware.CredentialFactorChecker {
+	return credentialFactorChecker{svc: h.authService}
+}
+
+type credentialFactorChecker struct{ svc *authapp.AuthService }
+
+func (c credentialFactorChecker) CheckCredentialFactor(ctx context.Context, userID, tenantID, sessionID string) error {
+	err := c.svc.CheckCredentialFactor(ctx, userID, tenantID, sessionID)
+	switch {
+	case errors.Is(err, authapp.ErrSSOMFAEvidenceRequired):
+		return middleware.ErrCredentialProofRequired
+	case errors.Is(err, authapp.ErrMFAEnrollmentRequired):
+		return middleware.ErrCredentialFactorRequired
+	}
+	return err
+}
