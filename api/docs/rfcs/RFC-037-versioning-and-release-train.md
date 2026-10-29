@@ -243,8 +243,9 @@ For a security or critical fix that cannot wait for the train:
    (the `develop` commits). The version is the last tag's patch + 1.
 3. The workflow builds `release/vX.Y.Z` from the last tag, cherry-picks the
    commits (`-x`), adds the version commit, and continues as in §4.2. The
-   post-release PR to `develop` only bumps `versions.yaml`; it does not merge
-   `main` back (the fix is already on `develop`).
+   post-release PR merges `main` back into `develop`; when that conflicts only
+   because every picked fix is already on `develop`, the tag is recorded with
+   `merge -s ours` (checked by patch-id).
 
 ### 4.4 Gates
 
