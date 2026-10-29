@@ -118,6 +118,7 @@ var adminWriteInventory = map[string]struct {
 	"POST /api/v1/admin/settings/captcha/verify":                         {routine, "asks Turnstile about a secret; changes nothing"},
 	"PUT /api/v1/admin/settings/region/":                                 {stepUpRoute, "data residency of every new organization, once (fresh)"},
 	"PUT /api/v1/admin/settings/storage-quota/":                          {stepUpRoute, "default storage quota of organizations"},
+	"PUT /api/v1/admin/settings/auth-mfa/":                               {stepUpRoute, "lowest two-factor requirement of every organization (fresh)"},
 	"PUT /api/v1/admin/settings/email-relay/":                            {stepUpRoute, "whether organizations may send their own mail through their own relay (fresh)"},
 	"PUT /api/v1/admin/settings/alerts/":                                 {stepUpRoute, "where administrator alerts go (fresh)"},
 	"POST /api/v1/admin/settings/alerts/test":                            {routine, "sends a test alert to the stored webhook; changes nothing"},
@@ -172,6 +173,9 @@ var adminWriteInventory = map[string]struct {
 	"POST /api/v1/admin/platform-users/{user_id}/unlock":              {stepUpRoute, "clears a lockout; reason, audited"},
 	"POST /api/v1/admin/platform-users/{user_id}/password-reset":      {stepUpRoute, "emails the user a reset link; reason, audited"},
 	"POST /api/v1/admin/platform-users/{user_id}/verification-emails": {stepUpRoute, "re-sends verification; reason, audited"},
+	"POST /api/v1/admin/platform-users/{user_id}/reset-link":          {stepUpRoute, "shows a one-hour reset link once, only without email; super_admin, reason, audited"},
+	"POST /api/v1/admin/platform-users/{user_id}/mark-verified":       {stepUpRoute, "marks an email verified, only without email; super_admin, reason, audited"},
+	"POST /api/v1/admin/platform-users/{user_id}/mfa/reset":           {stepUpRoute, "turns off a user's second factor; super_admin, reason, second approval, audited"},
 }
 
 // inventorySessions authenticates every request as one verified super admin.
@@ -264,6 +268,7 @@ func TestFactorRoutesDemandFreshStepUp(t *testing.T) {
 		// Settings whose loosening is a security decision (RFC-079).
 		{"PUT", "/api/v1/admin/settings/captcha/", "settings.captcha"},
 		{"PUT", "/api/v1/admin/settings/region/", "settings.region"},
+		{"PUT", "/api/v1/admin/settings/auth-mfa/", "settings.auth_mfa"},
 		{"PUT", "/api/v1/admin/settings/email-relay/", "settings.email_relay"},
 		{"PUT", "/api/v1/admin/settings/alerts/", "settings.alerts"},
 		{"PUT", "/api/v1/admin/settings/ai/", "settings.ai"},

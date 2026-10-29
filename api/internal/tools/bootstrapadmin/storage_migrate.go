@@ -1,8 +1,8 @@
 package bootstrapadmin
 
 // `bootstrap-admin storage migrate` copies the server file storage between
-// the local driver and an S3-compatible bucket (the admin-cli image's
-// entrypoint is this binary). Design and procedure:
+// the local driver and an S3-compatible bucket (the API image ships it as
+// /app/bootstrap-admin). Design and procedure:
 // api/docs/architecture/file-storage.md, "Moving between local and S3".
 //
 //	# 1. Dry run: what would be copied
