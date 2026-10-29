@@ -94,14 +94,13 @@ describe('host direct-only sensors', () => {
 
 // The dialog.
 let sensors: Sensor[] = []
-let sensorsError: unknown
 let outcomes: ProxyTestOutcome[] = []
 let started: { command_id: string }[] = []
 const startTest = vi.fn()
 vi.mock('@/lib/api/sensor-hooks', () => ({
   useSensors: () => ({
-    data: sensorsError ? undefined : { items: sensors },
-    error: sensorsError,
+    data: { items: sensors },
+    error: undefined,
     isLoading: false,
   }),
 }))
@@ -186,7 +185,6 @@ describe('Test button', () => {
       sensor({ id: 's2', name: 'Edge B' }),
       sensor({ id: 's3', health: 'offline', name: 'Gone' }),
     ]
-    sensorsError = undefined
     outcomes = []
     started = []
     startTest.mockReset()
