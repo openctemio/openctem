@@ -74,10 +74,19 @@ func (s *Service) RunTenant(ctx context.Context, tenantID shared.ID) (int, error
 	if err != nil || s.planner == nil {
 		return n, err
 	}
-	settled, err := s.settle(ctx, tenantID)
+	settled, parked, err := s.settle(ctx, tenantID)
 	n += settled
 	if err != nil {
 		return n, fmt.Errorf("settle: %w", err)
+	}
+	if parked > 0 {
+		// Names found without an address are parked: reconcile again so
+		// their active pairs turn not applicable before this pass plans.
+		added, changed, err := s.repo.Reconcile(ctx, tenantID, s.rules)
+		n += added + changed
+		if err != nil {
+			return n, err
+		}
 	}
 	if s.tenantSwitch != nil {
 		on, err := s.tenantSwitch.CoverageEnabled(ctx, tenantID)
