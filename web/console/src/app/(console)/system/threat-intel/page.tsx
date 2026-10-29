@@ -16,7 +16,7 @@ import {
 } from '@console/features/admin-console/api/use-system'
 import { ThreatSourceCard } from '@console/features/admin-console/components/threat-source-card'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
-import { adminCan } from '@console/features/admin-console/types'
+import { adminHas } from '@console/features/admin-console/types'
 import { BundleDetail } from '@console/features/admin-console/components/bundle-detail'
 import { FeedCard } from '@console/features/admin-console/components/feed-card'
 import { feedName, feedProblem } from '@console/features/admin-console/lib/feed-status'
@@ -24,7 +24,7 @@ import { feedName, feedProblem } from '@console/features/admin-console/lib/feed-
 export default function ThreatIntelFeedsPage() {
   const admin = useAdmin()
   const { t } = useTranslation()
-  const canWrite = adminCan(admin.role, 'ops_admin')
+  const canWrite = adminHas(admin, 'platform.feeds.manage')
   const [watching, setWatching] = useState<Record<string, string | null>>({})
   const { data, error, isLoading, mutate } = useThreatIntelFeeds(Object.keys(watching).length > 0)
   const [busy, setBusy] = useState<string | null>(null)
@@ -186,7 +186,7 @@ export default function ThreatIntelFeedsPage() {
               ))}
           </div>
         )}
-        <ThreatSourceCard canEdit={adminCan(admin.role, 'super_admin')} />
+        <ThreatSourceCard canEdit={adminHas(admin, 'platform.settings.general.write')} />
       </PageStack>
     </Main>
   )

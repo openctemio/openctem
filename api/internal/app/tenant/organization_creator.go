@@ -130,8 +130,7 @@ func (c *OrganizationCreator) Create(ctx context.Context, in CreateOrganizationI
 		SignupSource: source, CreatorEmail: ownerEmail,
 	}, owner.ID(), actx)
 	if err != nil {
-		// tenantdom.ErrPlatformAdminMembership (the owner is a platform
-		// administrator) and slug conflicts surface unchanged.
+		// Slug conflicts surface unchanged.
 		if ownerCreated {
 			c.provisioning.DiscardAccount(ctx, owner.ID())
 		}

@@ -285,6 +285,7 @@ type Handlers struct {
 	AdminPlatformUser *handler.AdminPlatformUserHandler
 	AdminSession      *handler.AdminSessionHandler
 	AdminApproval     *handler.AdminApprovalHandler
+	AdminPlatformRole *handler.AdminPlatformRoleHandler // platform roles (RFC-134); nil if not wired
 	AdminOperations   *handler.AdminOperationsHandler
 	AdminSystem       *handler.AdminSystemHandler
 	Announcement      *handler.AnnouncementHandler

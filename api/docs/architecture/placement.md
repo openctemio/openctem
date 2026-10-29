@@ -37,6 +37,17 @@ it, instead of "Waiting for a sensor".
 | Delivery (proxy pools) | the sensor's owner set it to scan direct on its host (`egress.host-direct@1`) and the job needs a pool: the organization requires a proxy, or a pool is named for the sensor | `egress_host_direct` |
 | Sensor report | the sensor claims new jobs (its heartbeats do not report `local_store.stop_claiming`: storage over quota, disk low, or results not yet acknowledged) | `stopped_claiming` |
 | Slots | a free scan slot (eligible but busy otherwise) | `no_free_slot` (counted as *busy*) |
+| Host pressure | the sensor's host is not overloaded (a fresh report of `resources.pressure.level` is `overloaded`, or `elevated`, and the sensor's free slots are narrowed by it) | `sensor_overloaded` (counted as *busy*, instead of the plain busy) |
+
+Host pressure narrows the free slots (`Sensor.FreeSlots`, mirrored by
+`sensorFreeSlotsSQL`): with a fresh load report, level `overloaded` leaves no
+free slot to a sensor that holds a command and at most one to an idle one;
+`elevated` leaves at most one. Selection ranks a pressured sensor behind
+others (+25 elevated, +100 overloaded on its load score). The report is
+untrusted: level and reasons are closed sets, numbers are clamped, and it can
+only lower what dispatch offers. A stale report (older than three minutes)
+counts for nothing. Tenants see the detail only on their own sensors' pages;
+platform sensors show tenants a busy state, never their pressure.
 
 The claim SQL lives in `internal/infra/postgres/command_repository.go`
 (`pendingForSensorWhere`); the dispatch gate in
