@@ -133,6 +133,8 @@ const REVIEWED = new Set([
   'lib/brand-icons.tsx|img|src={dataUri(OG_IMAGE_SVG)}',
   // COVERAGE_SETTINGS_HREF is the string constant '/settings/scope' exported by managed-scan-banner.tsx.
   'features/scans/components/managed-scans-section.tsx|Link|href={COVERAGE_SETTINGS_HREF}',
+  // Same constant internal route, shown in the runs tab's coverage summary.
+  'features/scans/components/scan-runs-tab.tsx|Link|href={COVERAGE_SETTINGS_HREF}',
   // Prop passthroughs: every caller passes a literal or route builder.
   'features/shared/components/link-card.tsx|Link|href={href}',
   'features/dashboard/components/activity-item.tsx|Link|href={href}',
