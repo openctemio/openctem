@@ -20,6 +20,8 @@ import (
 //	/admin/settings/alerts         any admin   PUT: super_admin + fresh step-up + reason
 //	                                           (critical audit, admins told);
 //	                                           test: super_admin
+//	/admin/settings/auth-mfa       any admin   PUT: super_admin + fresh step-up + reason
+//	                                           (critical audit, admins told)
 //	/admin/settings/email-relay    any admin   PUT: super_admin + fresh step-up + reason
 //	                                           (critical audit, admins told)
 //	/admin/settings/ai             any admin   PUT: super_admin + fresh step-up + reason
@@ -64,6 +66,11 @@ func registerAdminPlatformSettingsRoutes(router Router, h Handlers, adminMiddlew
 	router.Group("/api/v1/admin/settings/storage-quota", func(r Router) {
 		r.GET("/", on(quota, ps.GetStorageQuota))
 		r.PUT("/", on(quota, ps.UpdateStorageQuota), requireSuper, stepUp("settings.storage_quota"))
+	}, adminMiddlewares...)
+	mfaFloor := ps.MFA != nil
+	router.Group("/api/v1/admin/settings/auth-mfa", func(r Router) {
+		r.GET("/", on(mfaFloor, ps.GetMFAFloor))
+		r.PUT("/", on(mfaFloor, ps.UpdateMFAFloor), requireSuper, freshStepUp("settings.auth_mfa"))
 	}, adminMiddlewares...)
 	emailRelay := ps.EmailRelay != nil
 	router.Group("/api/v1/admin/settings/email-relay", func(r Router) {

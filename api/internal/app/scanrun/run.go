@@ -1536,7 +1536,7 @@ func uncoveredTargetCount(runContext map[string]any) int {
 // and how many did not, and still add up to the steps that settled.
 func (s *Service) updateRunStats(ctx context.Context, run *scanrun.Run, st runStats) {
 	// FIXED: Don't silently suppress errors - log them instead
-	if err := s.runRepo.UpdateStats(ctx, run.ID, st.completed, st.failed+st.partial, st.skipped, st.findings); err != nil {
+	if err := s.runRepo.UpdateStats(ctx, run.TenantID, run.ID, st.completed, st.failed+st.partial, st.skipped, st.findings); err != nil {
 		s.logger.Error("failed to update run stats", "run_id", run.ID.String(), "error", err)
 	}
 }
