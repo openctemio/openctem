@@ -88,14 +88,14 @@ func (d *Dashboard) RemoveFlowWidget(widgetID string) error {
 			continue
 		}
 		if !IsFlowWidget(w) {
-			return fmt.Errorf("%w: widget %q is not an exposure flow panel", shared.ErrValidation, widgetID)
+			return fmt.Errorf("%w: the widget is not an exposure flow panel", shared.ErrValidation)
 		}
 		next := make([]Widget, 0, len(d.widgets)-1)
 		next = append(next, d.widgets[:i]...)
 		next = append(next, d.widgets[i+1:]...)
 		return d.Update(d.name, d.description, d.columns, next)
 	}
-	return fmt.Errorf("%w: no exposure flow panel %q on this dashboard", shared.ErrValidation, widgetID)
+	return fmt.Errorf("%w: no such exposure flow panel on this dashboard", shared.ErrValidation)
 }
 
 // MarkFlowPanelOffered records that the panel was offered at t.
