@@ -114,6 +114,7 @@ tests that cover the console's most user-visible flows.
 | `39-assets-list-states.spec.ts`             | Asset search keeps typed keys, toolbar on error, last page, empty default list           |
 | `40-filter-chips-row-phone.spec.ts`         | Filter chips row at 390/375px: locked chip and chips never overlap, search on its line   |
 | `41-attack-path-canvas.spec.ts`             | Attack path canvas at 1440px (zoom 1, keys, hover, axe), list view at 390px, error state |
+| `44-vulnerabilities-list.spec.ts`           | Vulnerabilities list: rows, strip filters, parity with findings, Back, 390px, axe        |
 | Spec file (`specs/`)                        | What it covers                                                                           |
 | ------------------------------------------- | ---------------------------------------------------------------------------------------  |
 | `01-login-and-invitation.spec.ts`           | Login form rejection, successful login, invitation preview                               |
