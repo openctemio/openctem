@@ -22,8 +22,8 @@ name: Web E2E
 #                 `e2e-regression`.
 #   nightly       the whole suite on develop (02:41 UTC), and on demand.
 #   pull request  the SMOKE set (specs tagged @smoke, plus any spec the PR
-#                 edits) when the web or the API's HTTP layer
-#                 (api/internal/infra/http/) changed. With the `run-e2e` label,
+#                 edits) when web/ changed; an API-only change runs no e2e on
+#                 the PR (the merge queue runs the whole suite for it). With the `run-e2e` label,
 #                 or when the suite itself (web/e2e/, this workflow) changed:
 #                 the specs the changed files map to (impact selection).
 #                 With the `ci:full` label, a changed CI definition
@@ -99,7 +99,6 @@ jobs:
       web: ${{ steps.f.outputs.web }}
       api: ${{ steps.f.outputs.api }}
       suite: ${{ steps.suite.outputs.changed }}
-      http: ${{ steps.http.outputs.changed }}
       run: ${{ steps.decide.outputs.run == 'true' && (github.event_name == 'push' || steps.tree.outputs.verified != 'true') }}
       full: ${{ steps.f.outputs.full }}
       tree_note: ${{ steps.tree.outputs.note }}
@@ -138,33 +137,6 @@ jobs:
           MG_BASE: ${{ github.event.merge_group.base_sha }}
           MG_HEAD: ${{ github.event.merge_group.head_sha }}
         run: bash .github/scripts/scope.sh
-      # The API's HTTP layer (handlers, routes, middleware) is where the contract
-      # the web compiles against comes from. Its generated files are not
-      # committed, so a change there no longer shows up as a web change; count
-      # it here so the suite still runs for it.
-      - id: http
-        if: github.event_name == 'pull_request'
-        env:
-          BASE_REF: ${{ github.base_ref }}
-          MG_BASE: ${{ github.event.merge_group.base_sha }}
-          MG_HEAD: ${{ github.event.merge_group.head_sha }}
-          # The range changed.sh measured (incremental: since the last green commit).
-          RANGE: ${{ steps.f.outputs.range }}
-        run: |
-          if [ -n "$MG_BASE" ] && [ -n "$MG_HEAD" ]; then
-            git cat-file -e "${MG_BASE}^{commit}" 2>/dev/null || git fetch --no-tags --quiet origin "$MG_BASE" || true
-            range="${MG_BASE}..${MG_HEAD}"
-          elif [ -n "$RANGE" ]; then
-            range="$RANGE"
-          else
-            git fetch --no-tags --quiet origin "$BASE_REF"
-            range="origin/${BASE_REF}...HEAD"
-          fi
-          if ! files="$(git diff --name-only "$range")" || grep -q '^api/internal/infra/http/' <<<"$files"; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          fi
       # Did a pull request change the suite itself? Then it runs on the PR.
       - id: suite
         if: github.event_name == 'pull_request'
@@ -187,7 +159,6 @@ jobs:
           # elements by it) or this workflow's CI files; not a vi catalog.
           WEB: ${{ steps.f.outputs.web == 'true' && (steps.scope.outputs.web_app == 'true' || steps.scope.outputs.ci_self == 'true' || steps.scope.outputs.web_e2e == 'true' || steps.scope.outputs.i18n_en == 'true') }}
           API: ${{ steps.f.outputs.api == 'true' && (steps.scope.outputs.api_code == 'true' || steps.scope.outputs.ci_self == 'true') }}
-          HTTP: ${{ steps.http.outputs.changed }}
           SUITE: ${{ steps.suite.outputs.changed }}
           FULL: ${{ steps.f.outputs.full }}
           RELEASE: ${{ startsWith(github.head_ref, 'release/') }}
@@ -201,7 +172,7 @@ jobs:
                 if [ "$WEB" = true ] || [ "$API" = true ]; then run=true; fi
               # Any other pull request: the smoke set (the `plan` job picks
               # more with the run-e2e label or a changed suite).
-              elif [ "$WEB" = true ] || [ "$HTTP" = true ]; then run=true; fi ;;
+              elif [ "$WEB" = true ]; then run=true; fi ;;
             *)
               # merge_group, push: web/, api/ or a shared file changed.
               if [ "$WEB" = true ] || [ "$API" = true ]; then run=true; fi ;;
@@ -227,8 +198,15 @@ jobs:
           EVENT: ${{ github.event_name }}
           SHA: ${{ github.sha }}
           HEAD_REF: ${{ github.event.merge_group.head_ref }}
+          MG_BASE: ${{ github.event.merge_group.base_sha }}
           REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
+          # Area reuse: web/ and the shared files, plus api/ (the contract this
+          # workflow generates and the image it builds come from it).
+          TREE_AREA: Web E2E
+          TREE_PATHS: web api Makefile go.work go.work.sum .github deploy
+          TREE_CHECKS: E2E OK
+          TREE_FULL: ${{ steps.f.outputs.full }}
         run: bash .github/scripts/tree-verified.sh
 
   # The images come from build-images.yml: built once per content key and shared
@@ -267,8 +245,8 @@ jobs:
       images: api web
 
   # Which specs this change needs, and how to split them (research/295).
-  # Pull request and merge queue: the changed files through
-  # web/e2e/impact-map.yml; every other event runs everything. Any doubt (a
+  # Pull request: the smoke set, or the changed files through
+  # web/e2e/impact-map.yml; every other event (merge queue included) runs everything. Any doubt (a
   # path nobody mapped, a failed diff, a broken map) gives "all". The job runs
   # the PR's own selector, as it runs the PR's own workflow.
   plan:
