@@ -116,16 +116,43 @@ the run's logical state: `queued`, `running`, `waiting_tool`, `waiting_approval`
 - A run is readable only by someone who can see its subject (finding subjects only for now).
 - The per-run index on `finding_activities` is built concurrently by its own migration.
 
+## The built-in executor
+
+`BuiltinExecutor.Analyze` (`internal/app/aianalysis/builtin.go`) runs one single-shot kind as an AI agent:
+
+1. reads the finding (another organization's id is not found and records nothing), resolves the
+   principal (`Principal` or, without an agent id, the first active AI agent that may read the
+   finding), and checks `findings:read` and the AI agent's scope;
+2. starts a run (budgets, one live run per subject and use case);
+3. builds the masked bundle under the AI agent's data class ceiling, calls the model, validates the
+   output against the kind's schema and maps placeholders back through the stored mapping;
+4. turns each item into the AI agent's own command (`finding.AIAgentCommands`), with the provenance
+   in the context:
+
+| Output | Command | Needs | Result |
+|---|---|---|---|
+| summary, remediation steps, needs-info | internal comment | `findings:comment` | comment |
+| true positive on a new finding | status `confirmed` | `findings:status` | applied, else a comment |
+| severity | severity change | `findings:severity` | raise applied, downgrade a severity request; else a comment |
+| likely false positive | false-positive approval request | `findings:write` | request a person decides |
+
+Output that cites nothing real, carries a placeholder the run did not issue, comes from a bundle with
+injection markers or has a confidence under 0.5 is written as a comment only. Before each change the
+finding is read again: if someone else changed it since the AI agent last saw it, the change is
+written as a comment instead, and every command carries the expected row version. AI agent comments
+are internal (never sent to tickets or integrations).
+
 ## API
 
 | Route | Gate |
 |---|---|
 | `GET /api/v1/ai/agents`, `GET /api/v1/ai/agents/{id}` | `ai_triage:read` |
-| `POST /api/v1/ai/agents`, `DELETE /{id}`, `PUT /{id}/owners`, `PUT /{id}/preset`, `POST /{id}/resume` | `service_accounts:manage` + recent sign-in |
+| `POST /api/v1/ai/agents`, `DELETE /{id}`, `PUT /{id}/owners`, `PUT /{id}/preset`, `POST /{id}/reactivate` | `service_accounts:manage` + recent sign-in |
 | `POST /api/v1/ai/agents/{id}/disable` | `service_accounts:manage` |
-| `POST /api/v1/ai/agents/{id}/pause` | `ai_triage:read`; an accountable person or `service_accounts:manage` |
+| `POST /api/v1/ai/agents/{id}/suspend` | `ai_triage:read`; an accountable person or `service_accounts:manage` |
 | `POST /api/v1/ai/agents/{id}/attest` | `ai_triage:read` + recent sign-in; an accountable person or an administrator |
 | `GET /api/v1/ai/runs/{id}`, `GET /api/v1/findings/{id}/ai/runs` | `findings:read` + `ai_triage:read`; the subject in the caller's scope |
+| `POST /api/v1/findings/{id}/ai/analyze` | `findings:read` + `ai_triage:trigger`, rate-limited; the finding in the caller's scope; the AI agent acts within its own principal |
 
 ## Tests
 
@@ -135,6 +162,11 @@ approval levels off; service account within its preset,
 ceiling at create and at run start, never an approver, cross-tenant refusals, own plus owner data
 scope, pause when the owner leaves and when a team empties (sweep), attestation expiry, kill switch,
 one live run under a race of eight workers, activity label and provenance, not a seat.
+`internal/infra/http/routes/ai_executor_db_test.go`: a suggest AI agent comments and opens a pending
+false-positive request but changes nothing; a triage AI agent confirms and raises severity, and a
+downgrade becomes a request; unsafe output only comments; scope, cross-tenant and owner-left refusals
+record no run; a concurrent change is never overwritten. `internal/app/retest/agent_scope_db_test.go`:
+an AI agent's retest of an out-of-scope target is refused before any job exists.
 `TestAIAssist_CannotWrite_DB`: in an assistance context comment, status, severity and approval
 request are refused and nothing is written; no principal is resolved.
 `pkg/domain/aianalysis/agent_test.go`: deny list, ceiling, presets, health, provenance stamping,

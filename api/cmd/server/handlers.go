@@ -509,6 +509,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.TenantAI != nil {
 		aiSettings = handler.NewAISettingsHandler(svc.TenantAI, v, log)
 	}
+	var aiMasking *handler.AIMaskingHandler
+	if svc.AIMasking != nil {
+		aiMasking = handler.NewAIMaskingHandler(svc.AIMasking, v, log)
+	}
 	if svc.Tenant != nil {
 		mcpPolicies = mcpPolicyReader{tenants: svc.Tenant}
 		mcpSettings = handler.NewMCPSettingsHandler(svc.Tenant, cfg.MCP.TrustedClientHosts, log)
@@ -560,6 +564,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		MCPOAuth:       mcpOAuthHandler,
 		MCPSettings:    mcpSettings,
 		AISettings:     aiSettings,
+		AIMasking:      aiMasking,
 		MCPConnections: mcpConnections,
 		MCPClients:     mcpClients,
 		APIKeyAuth:     apiKeyAuth,
@@ -768,7 +773,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 		// AI Triage (always initialized - handler returns 503 if service is nil)
 		AITriage:   handler.NewAITriageHandler(svc.AITriage, log),
-		AIAnalysis: aiAnalysisHandler(svc.AIAnalysis, log),
+		AIAnalysis: aiAnalysisHandler(svc.AIAnalysis, svc.AIExecutor, log),
 
 		// Suppressions
 		Suppression: newSuppressionHandler(svc, log),
@@ -2104,11 +2109,13 @@ func emergingThreatHandler(svc *Services, log *logger.Logger) *handler.EmergingT
 }
 
 // aiAnalysisHandler is nil when the AI agent service is not built.
-func aiAnalysisHandler(svc *aianalysis.Service, log *logger.Logger) *handler.AIAnalysisHandler {
+func aiAnalysisHandler(svc *aianalysis.Service, exec *aianalysis.BuiltinExecutor, log *logger.Logger) *handler.AIAnalysisHandler {
 	if svc == nil {
 		return nil
 	}
-	return handler.NewAIAnalysisHandler(svc, log)
+	h := handler.NewAIAnalysisHandler(svc, log)
+	h.SetExecutor(exec)
+	return h
 }
 
 // newThreatIntelHandler builds the threat-intelligence handler and the

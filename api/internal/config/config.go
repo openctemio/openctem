@@ -1479,6 +1479,8 @@ type AITriageConfig struct {
 	DefaultAutoTriageEnabled    bool
 	DefaultAutoTriageSeverities []string
 	DefaultAutoTriageDelay      time.Duration
+	// MaskMapTTL is how long a run's AI masking map is kept (AI_MASK_MAP_TTL).
+	MaskMapTTL time.Duration
 
 	// Stuck Job Recovery Settings
 	RecoveryEnabled       bool          // Enable background recovery for stuck jobs
@@ -1944,6 +1946,7 @@ func Load() (*Config, error) {
 			DefaultAutoTriageEnabled:    getEnvBool("AI_AUTO_TRIAGE_DEFAULT_ENABLED", false),
 			DefaultAutoTriageSeverities: getEnvSlice("AI_AUTO_TRIAGE_DEFAULT_SEVERITIES", []string{"critical", "high"}),
 			DefaultAutoTriageDelay:      getEnvDuration("AI_AUTO_TRIAGE_DELAY", 60*time.Second),
+			MaskMapTTL:                  getEnvDuration("AI_MASK_MAP_TTL", 7*24*time.Hour),
 			RecoveryEnabled:             getEnvBool("AI_TRIAGE_RECOVERY_ENABLED", true),
 			RecoveryInterval:            getEnvDuration("AI_TRIAGE_RECOVERY_INTERVAL", 5*time.Minute),
 			RecoveryStuckDuration:       getEnvDuration("AI_TRIAGE_RECOVERY_STUCK_DURATION", 15*time.Minute),

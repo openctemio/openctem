@@ -243,9 +243,9 @@ func (s *VulnerabilityService) evaluateFindingRequest(ctx context.Context, f *vu
 	// false-positive and acceptance levels (docs/architecture/ai-analysis.md):
 	// its requests are evaluated at the strictest level, and it can never
 	// approve them itself.
-	if agent, err := s.isAIAgent(ctx, f.TenantID(), requester); err != nil {
+	if aiAgent, err := s.isAIAgent(ctx, f.TenantID(), requester); err != nil {
 		return policyEvaluation{}, err
-	} else if agent {
+	} else if aiAgent {
 		op.fpLevel, op.acceptLevel = approvalpolicy.FPLevelAll, approvalpolicy.FPLevelAll
 		requesterCanApprove = false
 	}
@@ -568,7 +568,7 @@ func (s *VulnerabilityService) NotifyMaterialChange(ctx context.Context, d vulne
 // AIAgentChecker answers whether a user is one of the organization's AI
 // AI agents (postgres.AIAnalysisRepository).
 type AIAgentChecker interface {
-	IsAgent(ctx context.Context, tenantID, userID shared.ID) (bool, error)
+	IsAIAgent(ctx context.Context, tenantID, userID shared.ID) (bool, error)
 }
 
 // SetAIAgentChecker wires the AI agent check of the approval policy.
@@ -580,5 +580,5 @@ func (s *VulnerabilityService) isAIAgent(ctx context.Context, tenantID, requeste
 	if s.aiAgents == nil || requester.IsZero() {
 		return false, nil
 	}
-	return s.aiAgents.IsAgent(ctx, tenantID, requester)
+	return s.aiAgents.IsAIAgent(ctx, tenantID, requester)
 }

@@ -17,6 +17,7 @@
 //	  user_mfa.secret_encrypted, pending_secret_encrypted  user TOTP
 //	  settings.value_json.access_key / secret_key     tenant file storage (key 'storage_config')
 //	  tenant_ai_settings.key_enc                      organization's own AI provider key
+//	  ai_mask_maps.key_enc, map_enc                   AI run masking key and placeholder map
 //	  exposure_events.details.secret_value_enc        leaked-credential secret
 //	AES-256-GCM, raw bytes (pkg/domain/secretstore, key = hex-decoded key):
 //	  credentials.encrypted_data                      secret store (template sources, ...)
@@ -251,6 +252,8 @@ var registry = []location{
 	jsonField{table: "settings", pk: "id", col: "value_json", path: []string{"access_key"}, where: "key = 'storage_config'"},
 	jsonField{table: "settings", pk: "id", col: "value_json", path: []string{"secret_key"}, where: "key = 'storage_config'"},
 	textCol{table: "tenant_ai_settings", pk: "tenant_id", col: "key_enc"},
+	textCol{table: "ai_mask_maps", pk: "id", col: "key_enc"},
+	textCol{table: "ai_mask_maps", pk: "id", col: "map_enc"},
 	jsonField{table: "platform_settings", pk: "key", col: "value", path: []string{"password_encrypted"}, where: "key = 'email.smtp'"},
 	jsonField{table: "platform_settings", pk: "key", col: "value", path: []string{"key_encrypted"}, where: "key = 'ai.platform'"},
 	jsonField{table: "platform_settings", pk: "key", col: "value", path: []string{"google", "secret_encrypted"}, where: "key = 'auth.social_login'"},
