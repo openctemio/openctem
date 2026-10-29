@@ -7,7 +7,7 @@ uncovered is visible. Three parts:
 
 | Part | Where |
 |---|---|
-| **Policy**: per type, the capabilities it needs, how often, the facts that must hold (`resolves`, `web_port`, `web_port_or_unscanned`, `scope_entry`) and the type a run must produce | `configs/asset-types.yaml` (`coverage:`), read with `coverage.Rules()` / `coverage.RulesFor()` |
+| **Policy**: per type, the capabilities it needs, how often, the facts that must hold (`resolves`, `web_port`, `web_port_or_unscanned`, `scope_entry`, `no_named_twin`) and the type a run must produce | `configs/asset-types.yaml` (`coverage:`), read with `coverage.Rules()` / `coverage.RulesFor()` |
 | **Ledger**: one row per asset, capability and vantage: state, reason, last attempt and success, outcome, next due | table `asset_coverage`, `internal/infra/postgres/asset_coverage_repository.go` |
 | **Loop**: the `asset-coverage` controller (one replica, every `ASSET_COVERAGE_INTERVAL`) | `internal/app/coverage` |
 
@@ -144,6 +144,16 @@ of its addresses has an open port on record). A name whose port scan found
 no web port is `not_applicable` until one appears; reconcile then makes it
 due again.
 
+**Template scans on web services.** A web service reached by an IPv4
+address (`https://203.0.113.10:8443`) is `not_applicable` for
+`vuln.templates` with reason `no_named_twin` when an active web service
+reached by a host name serves the same address on the same port (its
+probe's `ip_addresses` and `port`): a named virtual host or a CDN-fronted
+application answers its bare address with a default page, so the checks
+run once, on the named service, with the right Host and SNI. An address
+service with no named twin is still scanned. Reconcile makes it due again
+when the named service goes away.
+
 An open port is addressed as `host:port`; names and origins by name.
 With the loop on, automatic enrichment of new assets is off: the loop
 resolves and looks up every asset its policy names.
@@ -164,10 +174,14 @@ and without the expected output. It raises:
 | `readiness` | pairs are paused for a readiness reason (the reason is part of the key) |
 
 Alerts are sent **on change**, never on a timer. Each key (capability,
-kind, reason) has a row in `asset_coverage_alerts` (tenant-scoped): an alert
-goes out when its condition appears, or when its count doubles or halves
-since it was last sent. A condition that clears and comes back within a day
-comes back silently. Several changes in one pass go out as one digest, at
+kind, reason) has a row in `asset_coverage_alerts` (tenant-scoped), so a
+tenant has at most one open alert per key. It goes out when its condition
+appears, and again only when it gets clearly worse: the count at least
+doubles and grows by 5 or more since it was last sent, at most once a day.
+An improvement updates the open row silently, and the row is resolved
+(cleared) when the condition goes away. A condition that clears and comes
+back within three days comes back silently, so a failing streak or gap on a
+few assets that flaps from run to run stays one alert. Several changes in one pass go out as one digest, at
 most one digest per tenant per day; changes held by that limit stay
 pending and go out with the next digest. Each message names the action and
 links to where it is taken: the scope page for `no_scope`, the sensors page

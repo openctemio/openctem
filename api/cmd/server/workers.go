@@ -46,6 +46,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/jobs"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/durablejob"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
@@ -191,6 +192,18 @@ func registerPurgeControllers(m *controller.Manager, cfg *config.Config, repos *
 		m.Register(controller.NewPurgeController("admin-session-purge", cfg.Worker.AdminSessionPurgeInterval,
 			func(ctx context.Context) (int64, error) { return console.DeleteExpiredSessions(ctx, time.Now()) },
 			log.With("controller", "admin-session-purge")))
+	}
+	if supportSvc := newSupportAccessService(repos, svc, log); supportSvc != nil {
+		// Support sessions end with the console session that opened them
+		// (expiry, idle), when their grant ends, or after 30 minutes unused;
+		// sign-out ends them at once (adminconsole). Both audit rows and the
+		// owners' email follow each ended session.
+		m.Register(controller.NewPurgeController("support-session-sweep", time.Minute,
+			func(ctx context.Context) (int64, error) {
+				n, err := supportSvc.EndStaleSessions(ctx)
+				return int64(n), err
+			},
+			log.With("controller", "support-session-sweep")))
 	}
 	if repos.MCPOAuth != nil {
 		// Ended MCP OAuth requests, tokens, grants and unused clients (RFC-062).
@@ -423,7 +436,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		&controller.JobRecoveryControllerConfig{
 			Interval:              60 * time.Second,
 			StuckThresholdMinutes: 30,
-			MaxRetries:            3,
+			MaxRetries:            commanddom.MaxDispatchAttempts,
 			Logger:                log.With("controller", "job-recovery"),
 		},
 	)
@@ -752,17 +765,24 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// CVE corpus; nothing happens until VULNFEED_ROOT_KEY_ID is set and a
 	// platform admin enables the "vulnfeed" source.
 	if repos.ThreatIntel != nil && repos.CVECorpus != nil && repos.Software != nil {
-		im, err := vulnfeed.NewImporter(vulnfeed.Config{
-			RootKeyID: cfg.Worker.VulnFeedRootKeyID, BaseURL: cfg.Worker.VulnFeedBaseURL, BundleDir: cfg.Worker.VulnFeedBundleDir,
-		}, repos.CVECorpus, repos.ThreatIntel.SyncStatus(), repos.Software, log.With("component", "vulnfeed"))
+		im, err := newVulnFeedImporter(cfg, repos, log.With("component", "vulnfeed"))
 		if err != nil {
 			log.Error("vulnerability bundle import disabled", "error", err)
 		} else {
-			// Chunked (v2) bundles are fetched with retries, resume and mirror
-			// fall-back and applied chunk by chunk with a durable checkpoint
-			// (docs/architecture/feed-transfer.md); v1 stays the fallback.
-			im.WithChunks(repos.CVECorpus, vulnfeed.Transfer{Mirrors: cfg.Worker.VulnFeedMirrors, CacheDir: cfg.Scope.FeedCacheDir,
-				Client: httpsec.SafeHTTPClient(0), Registerer: prometheus.DefaultRegisterer})
+			// KEV and EPSS ride the same release as a signed side manifest:
+			// applied when newer than what the platform holds, then the same
+			// findings sweep and event log as after a direct sync.
+			if svc.ThreatIntel != nil {
+				im.WithIntel(svc.ThreatIntel)
+				svc.ThreatIntel.SetAfterBundleApply(func(ctx context.Context, source string) {
+					switch source {
+					case "kev":
+						kevRefresh.Sweeper().Run(ctx, "kev", true, true)
+					case "epss":
+						epssRefresh.Sweeper().Run(ctx, "epss", true, true)
+					}
+				})
+			}
 			importCtl := controller.NewVulnFeedImportController(im, log.With("controller", "vuln-feed-import"))
 			if vulnEvents != nil {
 				importCtl.SetEventEmitter(vulnEvents)
@@ -833,6 +853,11 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// tenant owns domain assets; disable with CERT_MONITOR_ENABLED=false.
 	// Names a permanent scope target or seed covers are confirmed: once at
 	// start-up (the backfill) and every 6 h (RFC-054 §4.3).
+	// Groups that fill themselves by a rule are evaluated again every hour
+	// (asset changes trigger their own debounced evaluation).
+	if svc.AssetGroup != nil {
+		w.ControllerManager.Register(controller.NewAssetGroupRulesController(svc.AssetGroup, 0))
+	}
 	if svc.ScopeJoin != nil {
 		if svc.Module != nil {
 			svc.ScopeJoin.SetModuleGuard(svc.Module) // skip tenants with attack_surface off
@@ -1607,4 +1632,21 @@ func redactSinkURL(raw string) string {
 		return "(invalid)"
 	}
 	return fmt.Sprintf("%s://%s", u.Scheme, u.Host)
+}
+
+// newVulnFeedImporter builds the vulnerability bundle importer. The import
+// controller and the admin "Sync now" endpoint each use one: chunked (v2)
+// bundles are fetched with retries, resume and mirror fall-back and applied
+// chunk by chunk with a durable checkpoint (docs/architecture/feed-transfer.md);
+// v1 stays the fallback.
+func newVulnFeedImporter(cfg *config.Config, repos *Repositories, log *logger.Logger) (*vulnfeed.Importer, error) {
+	im, err := vulnfeed.NewImporter(vulnfeed.Config{
+		RootKeyID: cfg.Worker.VulnFeedRootKeyID, BaseURL: cfg.Worker.VulnFeedBaseURL, BundleDir: cfg.Worker.VulnFeedBundleDir,
+	}, repos.CVECorpus, repos.ThreatIntel.SyncStatus(), repos.Software, log)
+	if err != nil {
+		return nil, err
+	}
+	im.WithChunks(repos.CVECorpus, vulnfeed.Transfer{Mirrors: cfg.Worker.VulnFeedMirrors, CacheDir: cfg.Scope.FeedCacheDir,
+		Client: httpsec.SafeHTTPClient(0), Registerer: prometheus.DefaultRegisterer})
+	return im, nil
 }

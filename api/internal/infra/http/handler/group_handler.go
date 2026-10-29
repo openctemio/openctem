@@ -277,7 +277,7 @@ func (h *GroupHandler) handleValidationError(w http.ResponseWriter, err error) {
 }
 
 func (h *GroupHandler) handleServiceError(w http.ResponseWriter, err error) {
-	if writeStepUpError(w, err) {
+	if writeStepUpError(w, err) || writeTeamGrantError(w, err) {
 		return
 	}
 	switch {

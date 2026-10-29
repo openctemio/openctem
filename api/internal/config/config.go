@@ -477,6 +477,11 @@ type AppConfig struct {
 	// administrator stores a value in the console
 	// (docs/rfcs/RFC-100-shared-sensors.md §6).
 	ManagedService bool
+	// OrgEmailRelayMode (ORG_EMAIL_RELAY_MODE: off, verified_sender or on) is
+	// the default of the platform setting email.tenant_relay until a super
+	// admin stores a value in the console. Empty: verified_sender when
+	// ManagedService, else on.
+	OrgEmailRelayMode string
 	// Region is DEPLOYMENT_REGION: the data region of this deployment, given
 	// to every organization created here and never changed (empty: not
 	// named).
@@ -500,6 +505,16 @@ type SensorConfigConfig struct {
 	// PublicAPIURL is the URL sensors will connect to (embedded in templates).
 	// If empty, falls back to App.URL.
 	PublicAPIURL string
+	// ProxyTestEchoURL is the https base URL of the platform that a proxy
+	// test connects to through each proxy (the echo page, which answers the
+	// address a request came from): PROXY_TEST_ECHO_URL. It must be reachable
+	// on a public port by the proxies being tested, which is not the sensor
+	// mTLS port. Empty: PublicAPIURL, else App.URL.
+	ProxyTestEchoURL string
+	// ProxyTestAltPort is the echo host's second port a test tries, to tell
+	// a proxy that only allows CONNECT to 443 from one that allows other
+	// ports: PROXY_TEST_ALT_PORT, default 80; 0 skips that check.
+	ProxyTestAltPort int
 	// KeyTTL is how long a self-renewed sensor API key stays valid before it
 	// must be renewed again (RFC-014 Phase 1b, RFC-032 Phase 0):
 	// SENSOR_KEY_TTL, default DefaultSensorKeyTTL (90 days). "0" disables
@@ -1097,6 +1112,29 @@ func (c *Config) SensorPublicHost() string {
 	return net.JoinHostPort(host, port)
 }
 
+// ProxyTestEchoBase is the https origin a proxy test connects to
+// (PROXY_TEST_ECHO_URL, else SENSOR_PUBLIC_API_URL, else APP_URL); "" when
+// none is an https URL with a host name or address.
+func (c *Config) ProxyTestEchoBase() string {
+	for _, raw := range []string{c.SensorConfig.ProxyTestEchoURL, c.SensorConfig.PublicAPIURL, c.App.URL} {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		u, err := url.Parse(raw)
+		if err != nil || !strings.EqualFold(u.Scheme, "https") || u.Hostname() == "" {
+			// An explicit setting that is not usable is not replaced by a
+			// guess from another one.
+			if raw == strings.TrimSpace(c.SensorConfig.ProxyTestEchoURL) {
+				return ""
+			}
+			continue
+		}
+		return "https://" + u.Host
+	}
+	return ""
+}
+
 // Sensor protocol v3 modes (SENSOR_TRANSPORT_V3).
 const (
 	TransportV3Auto = "auto"
@@ -1165,7 +1203,7 @@ type SensorConfig struct {
 
 	// Vulnerability bundles (RFC-066 §5.5): the pinned root key id
 	// (VULNFEED_ROOT_KEY_ID; defaults to VulnFeedOfficialRootKeyID, the root
-	// of the official openctemio/vulnfeed releases), the release base URL
+	// of the official openctemio/vulnfeed-bundles releases), the release base URL
 	// (VULNFEED_BASE_URL) and, for air-gapped platforms, a local directory
 	// holding a release's files (VULNFEED_BUNDLE_DIR). VulnFeedMirrors
 	// (VULNFEED_MIRRORS, comma separated, https) are tried after the
@@ -1526,7 +1564,8 @@ func Load() (*Config, error) {
 			URL:    getEnv("APP_URL", ""),
 			Region: strings.ToLower(strings.TrimSpace(getEnv("DEPLOYMENT_REGION", ""))),
 
-			ManagedService: getEnvBool("MANAGED_SERVICE", false),
+			ManagedService:    getEnvBool("MANAGED_SERVICE", false),
+			OrgEmailRelayMode: getEnv("ORG_EMAIL_RELAY_MODE", ""),
 		},
 		SensorConfig: SensorConfigConfig{
 			TransportV3: SensorTransportV3Config{
@@ -1543,6 +1582,8 @@ func Load() (*Config, error) {
 			TemplatesDir:      getEnv("SENSOR_CONFIG_TEMPLATES_DIR", DefaultSensorConfigTemplatesDir),
 			ProductsFile:      getEnv("SENSOR_PRODUCTS_FILE", ""),
 			PublicAPIURL:      getEnv("SENSOR_PUBLIC_API_URL", ""),
+			ProxyTestEchoURL:  getEnv("PROXY_TEST_ECHO_URL", ""),
+			ProxyTestAltPort:  getEnvInt("PROXY_TEST_ALT_PORT", 80),
 			KeyTTL:            getEnvDuration("SENSOR_KEY_TTL", DefaultSensorKeyTTL),
 			KeyRenewGrace:     getEnvDuration("SENSOR_KEY_RENEW_GRACE", DefaultSensorKeyRenewGrace),
 			KeyPepper:         getEnv("SENSOR_KEY_PEPPER", ""),
@@ -1746,7 +1787,7 @@ func Load() (*Config, error) {
 			SCMSyncInterval:                   getEnvDuration("SCM_SYNC_INTERVAL", 0),
 			CTEMIDFeedURL:                     getEnv("CTEM_ID_FEED_URL", "https://ctem.org/source.json"),
 			VulnFeedRootKeyID:                 getEnv("VULNFEED_ROOT_KEY_ID", VulnFeedOfficialRootKeyID),
-			VulnFeedBaseURL:                   getEnv("VULNFEED_BASE_URL", "https://github.com/openctemio/vulnfeed/releases"),
+			VulnFeedBaseURL:                   getEnv("VULNFEED_BASE_URL", "https://github.com/openctemio/vulnfeed-bundles/releases"),
 			VulnFeedBundleDir:                 getEnv("VULNFEED_BUNDLE_DIR", ""),
 			VulnFeedMirrors:                   feedURLs("", getEnv("VULNFEED_MIRRORS", "")),
 			VersionCheckEnabled:               getEnvBool("VERSION_CHECK_ENABLED", true),

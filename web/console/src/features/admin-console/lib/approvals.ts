@@ -7,12 +7,15 @@ const ACTION_FALLBACK: Record<string, string> = {
   'admin.revoke_super_admin': 'Remove a super admin',
   'console_mfa.disable': 'Stop requiring security keys',
   'platform_idp.remove': "Remove or relax the administrators' identity provider",
+  'platform_ai.destination':
+    'Change where platform AI sends data (provider, server address or API key)',
   'platform_idp.change':
     "Change the administrators' identity provider or the second factor it is trusted for",
   'admin.reset_credentials': "Reset another administrator's console second factor",
   'signup.open': 'Open sign-up',
   'audit_chain.rebaseline': "Re-sign an organization's audit chain",
   'organization.purge': 'Delete an organization now',
+  'user.reset_mfa': "Reset a user's two-factor authentication",
 }
 
 /** The protected action in words. */
@@ -48,6 +51,8 @@ export function approvalTargetLabel(
   if (target.startsWith('email:')) return target.slice('email:'.length)
   if (target === 'off') return t('admin.approvals.target.off', 'Security keys no longer required')
   if (IDP_TARGETS[target]) return t(`admin.approvals.target.${target}`, IDP_TARGETS[target])
+  const aiDestination = platformAIDestinationLabel(target, t)
+  if (aiDestination) return aiDestination
   const idpChange = platformIdPChangeLabel(target, t)
   if (idpChange) return idpChange
   const signup = /^mode=([a-z_]+);accounts=([a-z_]+)$/.exec(target)
@@ -88,6 +93,31 @@ function platformIdPChangeLabel(target: string, t: Translate): string | null {
         client: c.client_id ?? '',
         acr: c.trusted_acr?.length ? c.trusted_acr.join(', ') : none,
         amr: c.trusted_amr?.length ? c.trusted_amr.join(', ') : none,
+      }
+    )
+  } catch {
+    return null
+  }
+}
+
+/** A platform_ai.destination target in its hash form (the server labels the readable one). */
+function platformAIDestinationLabel(target: string, t: Translate): string | null {
+  if (!target.startsWith('{"provider":')) return null
+  try {
+    const c = JSON.parse(target) as {
+      provider?: string
+      base_url?: string
+      allow_private?: boolean
+    }
+    return t(
+      'admin.approvals.target.platformAiDestination',
+      'Provider {provider}, server {server}, private network {private}',
+      {
+        provider: c.provider ?? '',
+        server: c.base_url || t('admin.approvals.target.none', 'none'),
+        private: c.allow_private
+          ? t('admin.approvals.target.allowed', 'allowed')
+          : t('admin.approvals.target.notAllowed', 'not allowed'),
       }
     )
   } catch {

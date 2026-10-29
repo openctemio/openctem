@@ -12,6 +12,8 @@ package scan
 //     queues; a run now is refused by the trigger-time availability check);
 //   - ci_only: the step's capability runs in the CI images (code analysis)
 //     and no sensor here offers it: it runs from the customer's CI pipeline;
+//     Also waiting: the tool is enabled but no sensor of the organization
+//     has advertised it yet (a new organization before its first sensor);
 //   - blocked: no enabled tool runs the step, or no sensor may run one.
 //
 // Platform sensors are counted as "platform scanning" only: never named or
@@ -218,7 +220,7 @@ func (s *Service) stepReadiness(ctx context.Context, tenantID shared.ID, step *s
 	}
 
 	best := ""
-	var disabled, notInstalled, missing []string
+	var disabled, notInstalled, missing, noSensorYet []string
 	for _, name := range candidates {
 		status, inCatalog := snap.statuses[name]
 		if !inCatalog {
@@ -237,6 +239,11 @@ func (s *Service) stepReadiness(ctx context.Context, tenantID shared.ID, step *s
 			best = ReadinessWaiting
 		case state == "":
 			missing = append(missing, name)
+			// An enabled tool that no sensor of the organization has
+			// advertised yet: a sensor that connects later brings it.
+			if status == sensordom.ToolNoSensor && useTenant {
+				noSensorYet = append(noSensorYet, name)
+			}
 		}
 		if best == ReadinessReady {
 			break
@@ -250,6 +257,12 @@ func (s *Service) stepReadiness(ctx context.Context, tenantID shared.ID, step *s
 		sr.State = ReadinessWaiting
 		sr.Reason = fmt.Sprintf("No sensor that can run %s is online now", what)
 		sr.Fix = "Start a sensor that has one of: " + strings.Join(candidates, ", ")
+	case len(noSensorYet) > 0 && !(placed && ciCapabilities[st.Key]):
+		// Nothing is wrong with the workflow: no sensor with the tool has
+		// connected yet. It can be saved and starts once one is online.
+		sr.State = ReadinessWaiting
+		sr.Reason = fmt.Sprintf("Waits for a sensor with %s", what)
+		sr.Fix = "Add a sensor with " + strings.Join(noSensorYet, " or ")
 	case placed && ciCapabilities[st.Key]:
 		sr.State = ReadinessCIOnly
 		sr.Reason = fmt.Sprintf("%s runs in your CI pipeline", st.Name)

@@ -31,6 +31,8 @@ const CodeSecondApprovalRequired apierror.Code = "SECOND_APPROVAL_REQUIRED"
 
 // approvalGate is the four-eyes gate of a protected action.
 type approvalGate interface {
+	// Active reports whether approvals are in force; it consumes nothing.
+	Active(ctx context.Context, actor *admin.AdminUser) (bool, error)
 	Require(ctx context.Context, actor *admin.AdminUser, action admin.ApprovalAction, target string, client adminconsole.ClientInfo) (*adminapproval.Grant, error)
 	Release(ctx context.Context, actor *admin.AdminUser, g *adminapproval.Grant, client adminconsole.ClientInfo)
 }

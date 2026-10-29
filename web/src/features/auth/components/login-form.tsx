@@ -15,7 +15,6 @@ import Link from '@/components/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { KeyRound, Loader2, LogIn } from 'lucide-react'
 import { toast } from 'sonner'
-import { safeText } from '@/lib/api/error-message'
 
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -32,7 +31,9 @@ import { PasswordInput } from '@/components/password-input'
 import { IconGoogle, IconGithub, IconMicrosoft } from '@/assets/brand-icons'
 
 import { validateRedirectUrl } from '@/lib/redirect'
+import { authErrorText } from '@/features/auth/lib/auth-error-codes'
 import { loginErrorMessage } from '@/features/auth/lib/login-error'
+import { ResendVerification } from './resend-verification'
 import { isInvitationReturnTo } from '@/features/auth/lib/self-register'
 import { useTranslation } from '@/context/i18n-provider'
 
@@ -128,6 +129,7 @@ export function LoginForm({
   const [loadingSSOProvider, setLoadingSSOProvider] = useState<SSOProviderType | null>(null)
   // Set when the password was right but a second factor is needed.
   const [mfaPurpose, setMfaPurpose] = useState<MfaPurpose | null>(null)
+  const [mfaOrgs, setMfaOrgs] = useState<string[] | undefined>(undefined)
   // An owner of an organization scheduled for deletion is offered to cancel
   // before the sign-in goes on.
   const [pendingDeletion, setPendingDeletion] = useState<{
@@ -141,6 +143,7 @@ export function LoginForm({
   const [captchaReset, setCaptchaReset] = useState(0)
   // After a failed sign-in: administrators of the platform sign in elsewhere.
   const [signInFailed, setSignInFailed] = useState(false)
+  const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null)
   const router = useRouter()
   const searchParams = useSearchParams()
 
@@ -165,6 +168,22 @@ export function LoginForm({
   useEffect(() => {
     if (errorMessage) toast.error(errorMessage)
   }, [errorMessage])
+
+  // Sent when a session ended because an organization requires two-factor
+  // authentication and the session could not set it up. Only the known value
+  // shows a message.
+  const mfaRequiredReason = searchParams.get('reason') === 'mfa_required'
+  useEffect(() => {
+    if (mfaRequiredReason) {
+      toast.info(
+        t(
+          'auth.login.mfaRequiredReason',
+          'An organization you belong to requires two-factor authentication. Sign in to set it up.'
+        )
+      )
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mfaRequiredReason])
 
   // Form setup with centralized schema
   const form = useForm<LoginInput>({
@@ -198,6 +217,7 @@ export function LoginForm({
 
       if (result.success && result.mfaRequired && result.mfaPurpose) {
         form.resetField('password')
+        setMfaOrgs(result.mfaOrgs)
         setMfaPurpose(result.mfaPurpose)
         return
       }
@@ -261,14 +281,19 @@ export function LoginForm({
       hardNavigate(safeRedirectTo)
     } else if (result.code === 'ORGANIZATION_SUSPENDED') {
       toast.error(
-        t('auth.organizationSuspended.message', 'This organization is suspended: contact support')
+        t('auth.organizationSuspended.message', 'This organization is suspended. Contact support.')
       )
+    } else if (result.code === 'EMAIL_NOT_VERIFIED') {
+      // The password was right but the address is not verified: say so and
+      // offer to send the link again.
+      setUnverifiedEmail(form.getValues('email'))
+      toast.error(t('auth.login.emailNotVerified', 'Your email address is not verified yet.'))
     } else if (result.code === 'CAPTCHA_REQUIRED') {
       setCaptchaRequired(true)
       toast.error(t('auth.login.captchaRequired'))
     } else {
       setSignInFailed(true)
-      toast.error(safeText(result.error, t('auth.login.failed', 'Sign-in failed')))
+      toast.error(authErrorText(result.code, t, t('auth.login.failed', 'Sign-in failed')))
     }
   }
 
@@ -339,6 +364,7 @@ export function LoginForm({
         {pendingDeletionDialog}
         <MfaStep
           purpose={mfaPurpose}
+          orgs={mfaOrgs}
           onDone={handleLoginResult}
           onCancel={(message) => {
             setMfaPurpose(null)
@@ -414,6 +440,8 @@ export function LoginForm({
             resetSignal={captchaReset}
           />
         )}
+
+        {unverifiedEmail && <ResendVerification email={unverifiedEmail} />}
 
         {signInFailed && (
           <p className="text-muted-foreground text-sm" role="note">

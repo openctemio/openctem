@@ -6,6 +6,7 @@
 
 import type { Environment, Criticality } from '@/features/shared/types'
 import type { AssetType } from '@/features/assets/types'
+import { EMPTY_RULE_DRAFT, type RuleDraft } from '../../lib/group-rule'
 
 /**
  * New asset to be created with the group
@@ -37,6 +38,11 @@ export interface CreateGroupFormData {
   // Assets
   selectedAssetIds: string[] // Existing ungrouped assets to add
   newAssets: NewAssetFormData[] // New assets to create
+
+  // Members that fill themselves, and a pasted list
+  rule: RuleDraft // the rule of the group (empty draft: no rule)
+  pasteText: string
+  pasteCreateMissing: boolean
 }
 
 /**
@@ -53,4 +59,7 @@ export const DEFAULT_CREATE_GROUP_FORM: CreateGroupFormData = {
   tags: [],
   selectedAssetIds: [],
   newAssets: [],
+  rule: EMPTY_RULE_DRAFT,
+  pasteText: '',
+  pasteCreateMissing: false,
 }

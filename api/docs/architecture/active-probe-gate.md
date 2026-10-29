@@ -283,7 +283,19 @@ For each target, in order:
    scope. The dry run (`POST /scope/check`) answers the same codes for typed
    targets and for inventory assets (`asset_ids`, checked by name); an asset
    the caller may not see, or that is not the tenant's, answers
-   `out_of_data_scope` by its id only, whichever it is. The state is also
+   `out_of_data_scope` by its id only, whichever it is. Each refused result
+   of the dry run also carries `remedies`, the ranked choices a scan form
+   offers for it, best first: `run_on_tenant_sensor` (only for
+   `proof_required` and `program_platform`, when one of the organization's
+   own sensors could take the job and the scan is not already on them),
+   `verify_domain` (only when the caller may verify, from the filtered
+   fixes), `lower_intensity` with the tier (only for an explicit request
+   tier, a workflow's intensity, and only when the same gate allows the
+   target at that lower tier: the handler re-runs the dry run for the
+   caller's tenant at each lower tier for `tier_exceeds` and `low_impact`
+   refusals) and `remove`, always last. Remedies grant nothing: every one
+   goes through its normal route and the scan is checked again on save and
+   at dispatch. The state is also
    logged (`active scan target refused`) with the path. A request refused as
    a whole (scan create, clone, import, quick scan, `POST /commands`) is also
    **audited** as `scan.target_refused` (medium, result `failure`) in the
@@ -431,6 +443,18 @@ organization. A scope entry covering the repository does not change this.
 | Coverage planner | `coverage/planner.go` `blockRepositories` | The policy gives repositories no network capability; a ledger row that pairs one with a network capability anyway is never started and is blocked with `repository_code_only`. |
 | Validation and retest | `validation/gate.go` `CheckTarget` | A probe of a repository (by asset type or by form) is refused before the gate is asked; the retest service also refuses assets that are not network addressable. |
 | Re-check at claim | `scan/path_target_gate.go` `refusePathTargets` | A job whose tool or capability the catalog places on a network stage loses every path target (`invalid_target`). A job the catalog cannot place was decided when it was built. |
+
+## Where ownership confirmation applies
+
+Confirmation of discovered assets and the wildcard-only restriction apply
+only to a job on platform sensors of the hosted service
+(`MANAGED_SERVICE`); on a tenant's own sensors and on self-hosted installs
+the scope entries are the authority and unclassified assets are treated as
+`full`. The placement reaches `ActiveGate` through the context
+(`attribution.WithPlacement`); see
+[scan-targets.md](scan-targets.md#where-ownership-confirmation-applies) for
+how each path decides it. Rejections, exclusions, the deny list and the
+guardrails apply on every placement.
 
 ## Re-check at claim
 

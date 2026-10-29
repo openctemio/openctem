@@ -41,6 +41,9 @@ const (
 	// tenant requires two-factor authentication and the user has not set it
 	// up. The client signs the user in again, which leads to enrollment.
 	CodeMFAEnrollmentRequired Code = "MFA_ENROLLMENT_REQUIRED"
+	// CodeReauthRequired is a 403 when an action needs a recent password
+	// sign-in (starting two-factor enrollment from an old session).
+	CodeReauthRequired Code = "REAUTH_REQUIRED"
 	// CodeApprovalRequired is a 403 for a change that only an approver may
 	// make (e.g. marking a finding false positive). Distinct from
 	// CodeForbidden so the UI can explain the approval workflow instead of

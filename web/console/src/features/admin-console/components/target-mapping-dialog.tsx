@@ -32,25 +32,19 @@ import {
   createTargetMapping,
   updateTargetMapping,
   useExistingTargetMapping,
+  useTargetMappingTypes,
 } from '../api/use-target-mappings'
 import {
   DEFAULT_PRIORITY,
-  MAPPABLE_ASSET_TYPES,
   MAX_DESCRIPTION_LENGTH,
   MAX_PRIORITY,
   MIN_PRIORITY,
   PRIMARY_PRIORITY,
-  TARGET_TYPE_OPTIONS,
-  targetTypeHint,
-  targetTypeLabel,
+  useTargetTypeText,
   validateTargetMappingForm,
 } from '../lib/target-mappings'
 import type { TargetMapping } from '../types'
-
-const ASSET_TYPE_OPTIONS = MAPPABLE_ASSET_TYPES.map((v) => ({
-  value: v,
-  label: getAssetTypeLabel(v),
-})).sort((a, b) => a.label.localeCompare(b.label))
+import { REASON_MAX, REASON_MIN } from './admin-confirm-dialog'
 
 interface Props {
   open: boolean
@@ -75,6 +69,15 @@ export function TargetMappingDialog({
   onSaved,
 }: Props) {
   const { t } = useTranslation()
+  const text = useTargetTypeText()
+  const types = useTargetMappingTypes().data
+  const targetTypeOptions = (types?.target_types ?? []).map((v) => ({
+    value: v,
+    label: text.label(v),
+  }))
+  const assetTypeOptions = (types?.asset_types ?? [])
+    .map((v) => ({ value: v, label: getAssetTypeLabel(v) }))
+    .sort((a, b) => a.label.localeCompare(b.label))
 
   const editing = !!mapping
   const [targetType, setTargetType] = useState(mapping?.target_type ?? defaultTargetType ?? '')
@@ -82,6 +85,7 @@ export function TargetMappingDialog({
   const [priority, setPriority] = useState(String(mapping?.priority ?? DEFAULT_PRIORITY))
   const [active, setActive] = useState(mapping?.is_active ?? true)
   const [description, setDescription] = useState(mapping?.description ?? '')
+  const [reason, setReason] = useState('')
   const [touched, setTouched] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -94,7 +98,9 @@ export function TargetMappingDialog({
   const errors = priorityChanged ? formErrors : { description: formErrors.description }
   const isPrimary = priority.trim() === String(PRIMARY_PRIORITY)
   const pairMissing = !editing && (!targetType || !assetType)
-  const invalid = !!errors.priority || !!errors.description || pairMissing || !!existing
+  const reasonOk = reason.trim().length >= REASON_MIN && reason.trim().length <= REASON_MAX
+  const invalid =
+    !!errors.priority || !!errors.description || pairMissing || !!existing || !reasonOk
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
@@ -106,13 +112,14 @@ export function TargetMappingDialog({
       ...(priorityChanged ? { priority: Number(priority.trim()) } : {}),
       is_active: active,
       description: description.trim(),
+      reason: reason.trim(),
     }
     try {
       const saved = editing
         ? await updateTargetMapping(mapping.id, fields)
         : await createTargetMapping({ target_type: targetType, asset_type: assetType, ...fields })
       toast.success(
-        `${targetTypeLabel(saved.target_type)} → ${getAssetTypeLabel(saved.asset_type)} ${
+        `${text.label(saved.target_type)} → ${getAssetTypeLabel(saved.asset_type)} ${
           editing ? 'updated' : 'created'
         }`
       )
@@ -144,7 +151,7 @@ export function TargetMappingDialog({
             <DialogDescription>
               {t(
                 'admin.targetMappingDialog.aScannerThatDeclaresThis',
-                'A scanner that declares this target type can scan assets of this type. Scans skip assets no active mapping covers.'
+                'A scanner that declares this target type can also scan assets of this type. Pairs the asset type catalog already has are refused.'
               )}
             </DialogDescription>
           </DialogHeader>
@@ -156,7 +163,7 @@ export function TargetMappingDialog({
                     <p className="text-sm font-medium">
                       {t('admin.targetMappingDialog.targetType', 'Target type')}
                     </p>
-                    <p className="text-sm">{targetTypeLabel(mapping.target_type)}</p>
+                    <p className="text-sm">{text.label(mapping.target_type)}</p>
                   </div>
                   <div className="space-y-1">
                     <p className="text-sm font-medium">
@@ -182,7 +189,7 @@ export function TargetMappingDialog({
                         <SelectValue placeholder="Choose..." />
                       </SelectTrigger>
                       <SelectContent>
-                        {TARGET_TYPE_OPTIONS.map((o) => (
+                        {targetTypeOptions.map((o) => (
                           <SelectItem key={o.value} value={o.value}>
                             {o.label}
                           </SelectItem>
@@ -190,7 +197,7 @@ export function TargetMappingDialog({
                       </SelectContent>
                     </Select>
                     <p className="text-xs text-muted-foreground">
-                      {targetTypeHint(targetType) ??
+                      {(targetType ? text.hint(targetType) : '') ||
                         t(
                           'admin.targetMappingDialog.fromAScannerSSupported',
                           "From a scanner's supported targets."
@@ -206,7 +213,7 @@ export function TargetMappingDialog({
                         <SelectValue placeholder="Choose..." />
                       </SelectTrigger>
                       <SelectContent>
-                        {ASSET_TYPE_OPTIONS.map((o) => (
+                        {assetTypeOptions.map((o) => (
                           <SelectItem key={o.value} value={o.value}>
                             {o.label}
                           </SelectItem>
@@ -234,7 +241,7 @@ export function TargetMappingDialog({
                         'admin.targetMappingDialog.alreadyMapped',
                         '{target} is already mapped to {asset}. Edit that mapping instead.',
                         {
-                          target: targetTypeLabel(existing.target_type),
+                          target: text.label(existing.target_type),
                           asset: getAssetTypeLabel(existing.asset_type),
                         }
                       )}
@@ -330,6 +337,31 @@ export function TargetMappingDialog({
                 {errors.description && (
                   <p className="text-xs text-destructive">{errors.description}</p>
                 )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="tm-reason">{t('admin.targetMappingDialog.reason', 'Reason')}</Label>
+                <Textarea
+                  id="tm-reason"
+                  rows={2}
+                  maxLength={REASON_MAX}
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  aria-invalid={touched && !reasonOk}
+                />
+                <p
+                  className={
+                    touched && !reasonOk
+                      ? 'text-xs text-destructive'
+                      : 'text-xs text-muted-foreground'
+                  }
+                >
+                  {t(
+                    'admin.targetMappingDialog.reasonHint',
+                    'Why this changes. It applies to every organization and is kept in the audit log ({min} to {max} characters).',
+                    { min: REASON_MIN, max: REASON_MAX }
+                  )}
+                </p>
               </div>
 
               {error && (

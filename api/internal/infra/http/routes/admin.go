@@ -47,7 +47,8 @@ import (
 //	                                            step-up; reject: step-up;
 //	                                            cancel: requester (critical audit)
 //	/admin/audit-logs         any admin         —
-//	/admin/target-mappings    any admin         ops_admin+ (+ audited)
+//	/admin/target-mappings    any admin         super_admin + step-up + reason
+//	                                            (audited)
 //	/admin/threat-intel       any admin         sync: ops_admin+ (audited);
 //	                                            turn a feed on or off: ops_admin+ +
 //	                                            step-up (audited)
@@ -488,7 +489,8 @@ func registerAdminRoutes(
 		}, adminMiddlewares...)
 	}
 
-	// The request-access queue: any admin reads; approving (creates the
+	// The request-access queue: any admin reads (a read-only administrator
+	// gets masked addresses and no notes); approving (creates the
 	// organization, requester as owner) or rejecting needs ops_admin+, audited.
 	if h.AccessRequest != nil {
 		requireOps := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)
@@ -638,7 +640,9 @@ func registerAdminRoutes(
 		router.Group("/api/v1/admin/tenants", func(r Router) {
 			r.GET("/", h.AdminOrganization.List)
 			r.POST("/", h.AdminOrganization.Create, with([]Middleware{opsWrite, stepUp("organization.create")}, audit("organization.create"))...)
-			r.GET("/{tenantId}", h.AdminOrganization.Get)
+			// One organization's page carries its owners' addresses (ops_admin
+			// and above): every view is audited, like the member list.
+			r.GET("/{tenantId}", h.AdminOrganization.Get, audit("organization.view")...)
 
 			// Organization users: list, and bootstrap the FIRST owner of an
 			// organization that has none (RFC-022 rev. 5). The platform
@@ -778,6 +782,9 @@ func registerAdminRoutes(
 		// Finding people by email is personal data: ops_admin+ (a read-only
 		// administrator sees counts elsewhere, never accounts).
 		opsRead := []Middleware{h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)}
+		if h.AdminDirectoryReadLimiter != nil {
+			opsRead = append(opsRead, h.AdminDirectoryReadLimiter.WriteMiddleware())
+		}
 		router.Group("/api/v1/admin/platform-users", func(r Router) {
 			r.GET("/", h.AdminPlatformUser.List, opsRead...)
 			r.GET("/{user_id}", h.AdminPlatformUser.Get, append(cloneMW(opsRead), audited("platform_user.view", nil)...)...)
@@ -785,6 +792,18 @@ func registerAdminRoutes(
 			r.POST("/{user_id}/unlock", h.AdminPlatformUser.Unlock, audited("platform_user.unlock", opsSupport)...)
 			r.POST("/{user_id}/password-reset", h.AdminPlatformUser.SendPasswordReset, audited("platform_user.password_reset", opsSupport)...)
 			r.POST("/{user_id}/verification-emails", h.AdminPlatformUser.ResendVerification, audited("platform_user.resend_verification", opsSupport)...)
+			// For a server that cannot send email, and for a person who lost
+			// their second factor: super_admin only, step-up, reason, audited.
+			// The reset link and the copied email state are bearer or
+			// identity-proof changes, so ops_admin does not get them; the
+			// two-factor reset also needs a second super admin's approval.
+			superSupport := []Middleware{h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)}
+			if h.AdminSupportRateLimiter != nil {
+				superSupport = append(superSupport, h.AdminSupportRateLimiter.WriteMiddleware())
+			}
+			r.POST("/{user_id}/reset-link", h.AdminPlatformUser.IssueResetLink, audited("platform_user.reset_link", superSupport)...)
+			r.POST("/{user_id}/mark-verified", h.AdminPlatformUser.MarkVerified, audited("platform_user.mark_verified", superSupport)...)
+			r.POST("/{user_id}/mfa/reset", h.AdminPlatformUser.ResetMFA, audited("platform_user.mfa_reset", superSupport)...)
 			// Block / unblock platform-wide: ops_admin+, step-up, reason; the
 			// service writes the critical admin audit row.
 			if h.AdminSuspension != nil {
@@ -895,12 +914,18 @@ func registerAdminRoutes(
 			// Read operations — any authenticated admin.
 			r.GET("/stats", h.AdminTargetMapping.GetStats)
 			r.GET("/types", h.AdminTargetMapping.Types)
+			r.GET("/registry", h.AdminTargetMapping.Registry)
 			r.GET("/", h.AdminTargetMapping.List)
 			r.GET("/{id}", h.AdminTargetMapping.Get)
 
-			// Write operations — ops_admin+, rate-limited, and (when wired) audited.
+			// Write operations: a mapping decides which assets every
+			// organization's scans skip or take, so changing one is a
+			// platform-wide decision. super_admin, a step-up, a reason in the
+			// body (kept in the audit row), rate-limited and audited.
 			var writeMiddlewares []Middleware
-			writeMiddlewares = append(writeMiddlewares, h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin))
+			writeMiddlewares = append(writeMiddlewares,
+				h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin),
+				stepUp("target_mapping.change"))
 			if h.AdminMappingRateLimiter != nil {
 				writeMiddlewares = append(writeMiddlewares, h.AdminMappingRateLimiter.WriteMiddleware())
 			}
