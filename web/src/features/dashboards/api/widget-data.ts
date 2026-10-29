@@ -205,6 +205,8 @@ export interface WidgetValue {
       asset_name?: string
       sla_deadline?: string
       kev: boolean
+      /** Exploitation probability, 0 to 1; absent when the feed has no score. */
+      epss?: number
     }>
   }
   /** The CTEM loop (ctem.loop). A stage's value is null when not measured. */
