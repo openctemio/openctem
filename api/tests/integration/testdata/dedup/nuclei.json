@@ -32,6 +32,17 @@
         "location": {"path": "https://shop.example.com"},
         "vulnerability": {"cve_id": "cve-2022-26134"}}
     },
+    {
+      "name": "a CVE template and a network scanner report of the same CVE and port stay two findings, linked as one issue",
+      "expect": "different",
+      "before": {"type": "vulnerability", "title": "HTTP/2 Rapid Reset", "severity": "high", "rule_id": "CVE-2023-44487",
+        "location": {"path": "https://shop.example.com/"},
+        "vulnerability": {"cve_id": "CVE-2023-44487"}},
+      "after_tool": "nessus",
+      "after": {"type": "vulnerability", "title": "HTTP/2 Rapid Reset Attack", "severity": "high", "rule_id": "182837",
+        "network": {"port": 443, "protocol": "tcp"},
+        "vulnerability": {"cve_id": "CVE-2023-44487"}}
+    },
     {"name": "a newer producer that reports the method only in the web location keeps the finding", "expect": "same", "before": {"type": "vulnerability", "title": "t", "severity": "medium", "rule_id": "exposed-env", "location": {"path": "https://shop.example.com/.env"}, "properties": {"request": "GET /.env HTTP/1.1"}}, "after": {"type": "vulnerability", "title": "t", "severity": "medium", "rule_id": "exposed-env", "location": {"path": "https://shop.example.com/.env"}, "web": {"url": "https://shop.example.com/.env", "method": "GET"}}},
     {"name": "a producer that reports no method keeps the GET finding", "expect": "same", "before": {"type": "vulnerability", "title": "t", "severity": "medium", "rule_id": "exposed-git", "location": {"path": "https://shop.example.com/.git/config"}, "properties": {"request": "GET /.git/config HTTP/1.1"}}, "after": {"type": "vulnerability", "title": "t", "severity": "medium", "rule_id": "exposed-git", "location": {"path": "https://shop.example.com/.git/config"}}},
     {"name": "a template that matches two of its own fixed paths on one target is one finding", "expect": "same", "before": {"type": "vulnerability", "title": "t", "severity": "medium", "rule_id": "wp-user-enum", "location": {"path": "https://shop.example.com/wp-json/wp/v2/users"}, "source_extra": {"target": "https://shop.example.com"}, "web": {"url": "https://shop.example.com/wp-json/wp/v2/users", "method": "GET"}}, "after": {"type": "vulnerability", "title": "t", "severity": "medium", "rule_id": "wp-user-enum", "location": {"path": "https://shop.example.com/?rest_route=/wp/v2/users"}, "source_extra": {"target": "shop.example.com"}, "web": {"url": "https://shop.example.com/", "method": "GET"}}},

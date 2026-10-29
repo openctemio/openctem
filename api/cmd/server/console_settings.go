@@ -91,6 +91,7 @@ func newAdminPlatformSettingsHandler(repos *Repositories, svc *Services, approva
 	h := handler.NewAdminPlatformSettingsHandler(repos.Admin, log).WithApprovals(approvals)
 	h.Captcha, h.Region, h.StorageQuota, h.Alerts, h.AI =
 		svc.PlatformCaptcha, svc.DeploymentRegion, svc.StorageQuota, svc.PlatformAlert, svc.PlatformAI
+	h.MFA = svc.PlatformMFA
 	h.SocialLogin = svc.PlatformSocialLogin
 	if svc.Signup != nil {
 		h.Signup = svc.Signup

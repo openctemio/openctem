@@ -108,12 +108,35 @@ func (r *IngestReceiptRepository) Record(ctx context.Context, d *ingestreceipt.D
 		if err := recordCoverageDecision(ctx, tx, d, id, at); err != nil {
 			return err
 		}
+		if kind == ingestreceipt.SourceScanRun {
+			if err := syncRunFindings(ctx, tx, d.TenantID, ref); err != nil {
+				return err
+			}
+		}
 		return upsertIngestFact(ctx, tx, d, kind, tool, at, applied)
 	})
 	if err != nil {
 		return shared.ID{}, err
 	}
 	return id, nil
+}
+
+// runSightedSQL is the findings a run's receipt says it reported: created,
+// still detected and reopened (each finding once, whatever the number of
+// commands). The sensor's own count (command result findings_count) is 0 for
+// tools that report through ingest, so the receipt is the run's count.
+const runSightedSQL = `(SELECT findings_created + findings_updated + findings_reopened
+	FROM ingest_receipts WHERE tenant_id = scan_runs.tenant_id AND source_kind = 'scan_run' AND source_ref = scan_runs.id::text)`
+
+// syncRunFindings raises the run's total_findings to what its receipt holds,
+// as each report lands, so a running run shows its findings live. It never
+// lowers the figure.
+func syncRunFindings(ctx context.Context, tx *sql.Tx, tenantID shared.ID, runID string) error {
+	if _, err := tx.ExecContext(ctx, `UPDATE scan_runs SET total_findings = GREATEST(total_findings, COALESCE(`+runSightedSQL+`, 0))
+		WHERE tenant_id = $1 AND id = $2::uuid`, tenantID.String(), runID); err != nil {
+		return fmt.Errorf("sync run findings: %w", err)
+	}
+	return nil
 }
 
 // recordCoverageDecision stores a command's coverage decision on the
