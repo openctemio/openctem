@@ -50,6 +50,17 @@ describe('TwoFactorCard', () => {
     expect(screen.getByText('Required by your organization')).toBeInTheDocument()
   })
 
+  it('shows the date a platform requirement starts while the user is still in grace', () => {
+    status.mockReturnValue({
+      status: { ...base, grace_due_at: '2026-11-09T00:00:00Z' },
+      isLoading: false,
+      mutate,
+    })
+    render(<TwoFactorCard />)
+    expect(screen.getByText(/Required from/)).toBeInTheDocument()
+    expect(screen.queryByText('Required by your organization')).not.toBeInTheDocument()
+  })
+
   it('enrolls: QR + code, then shows recovery codes once and signs other sessions out', async () => {
     status.mockReturnValue({ status: base, isLoading: false, mutate })
     setupTwoFactor.mockResolvedValue({

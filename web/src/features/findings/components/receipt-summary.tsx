@@ -22,26 +22,47 @@ import {
 
 type T = ReturnType<typeof useTranslation>['t']
 
-function Cell({ label, value, tone }: { label: string; value: number | null; tone?: 'danger' }) {
+/** Where the thing a receipt describes stands: a run still reporting, one that ended short, or settled. */
+export type ReceiptRunState = 'running' | 'incomplete' | 'settled'
+
+function Cell({
+  label,
+  value,
+  tone,
+  pending,
+}: {
+  label: string
+  value: number | null
+  tone?: 'danger'
+  /** Text shown instead of the figure while it is not known yet. */
+  pending?: string
+}) {
   return (
     <div className="rounded-md border p-2">
       <div className="text-muted-foreground text-xs">{label}</div>
       <div
         className={cn(
-          'text-sm font-medium tabular-nums',
+          pending ? 'text-muted-foreground text-xs' : 'text-sm font-medium tabular-nums', // anatomy-ok: the pending note replaces the figure
           tone === 'danger' && value ? 'text-destructive' : undefined
         )}
       >
-        {value === null ? '—' : value}
+        {pending ?? (value === null ? '—' : value)}
       </div>
     </div>
   )
 }
 
 /** The counts of one receipt and what its coverage means. */
-export function ReceiptSummary({ receipt }: { receipt: ReceiptResponse }) {
+export function ReceiptSummary({
+  receipt,
+  runState = 'settled',
+}: {
+  receipt: ReceiptResponse
+  runState?: ReceiptRunState
+}) {
   const { t } = useTranslation()
   const c = receipt.counts
+  const running = runState === 'running'
   const full = receipt.coverage?.type === 'full'
   return (
     <div className="space-y-2" data-testid="receipt-summary">
@@ -53,6 +74,11 @@ export function ReceiptSummary({ receipt }: { receipt: ReceiptResponse }) {
         <Cell
           label={t('findings.receipts.untouched', 'Untouched')}
           value={c?.untouched === undefined || c?.untouched === null ? null : c.untouched}
+          pending={
+            running
+              ? t('findings.receipts.pendingUntilEnd', 'Counted when the run finishes')
+              : undefined
+          }
         />
         <Cell label={t('findings.receipts.skipped', 'Skipped')} value={c?.skipped ?? 0} />
         <Cell
@@ -62,16 +88,26 @@ export function ReceiptSummary({ receipt }: { receipt: ReceiptResponse }) {
         />
       </div>
       <p className="text-muted-foreground text-xs">
-        {full
+        {running
           ? t(
-              'findings.receipts.coverageFull',
-              'Full coverage of its scope: open findings of that scope it did not report could be closed.'
+              'findings.receipts.runningNote',
+              'Counts update as results arrive. Open findings of its scope that it did not report can be closed only when its tasks finish with full coverage.'
             )
-          : t(
-              'findings.receipts.coveragePartial',
-              'Partial coverage: it closes nothing, so untouched is not counted.'
-            )}
-        {full && receipt.coverage?.note === 'held'
+          : full && runState === 'incomplete'
+            ? t(
+                'findings.receipts.coverageIncompleteRun',
+                'The run did not complete: only tasks that finished cleanly with full coverage could close findings, so Closed is what was closed.'
+              )
+            : full
+              ? t(
+                  'findings.receipts.coverageFull',
+                  'Full coverage of its scope: open findings of that scope it did not report could be closed.'
+                )
+              : t(
+                  'findings.receipts.coveragePartial',
+                  'Partial coverage: it closes nothing, so untouched is not counted.'
+                )}
+        {!running && full && receipt.coverage?.note === 'held'
           ? ' ' +
             t(
               'findings.receipts.held',
@@ -148,14 +184,24 @@ export function RecentImports() {
 }
 
 /** The receipt of one scan run, shown on the run page; nothing when there is none to show. */
-export function RunReceiptSection({ runId }: { runId: string }) {
+export function RunReceiptSection({
+  runId,
+  runState = 'settled',
+}: {
+  runId: string
+  runState?: ReceiptRunState
+}) {
   const { t } = useTranslation()
-  const { data } = useReceipts({ sourceKind: 'scan_run', sourceRef: runId, perPage: 1 })
+  const { data } = useReceipts(
+    { sourceKind: 'scan_run', sourceRef: runId, perPage: 1 },
+    true,
+    runState === 'running' ? 5000 : 0
+  )
   const receipt = data?.data?.[0]
   if (!receipt) return null
   return (
     <DetailSection title={t('findings.receipts.runTitle', 'What this run did to findings')}>
-      <ReceiptSummary receipt={receipt} />
+      <ReceiptSummary receipt={receipt} runState={runState} />
     </DetailSection>
   )
 }

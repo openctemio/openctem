@@ -83,6 +83,12 @@ const (
 	// address, active-probe gated) and the items; the result carries one
 	// verdict per item: still_present, fixed or unverifiable.
 	CommandTypeRetest CommandType = "retest"
+	// CommandTypeProxyTest asks one sensor to test each endpoint of a
+	// proxy pool (the Test button). The platform never
+	// connects to a proxy itself. Always pinned to the sensor; the payload
+	// carries the pool's endpoints and the platform's echo, and the result
+	// carries one entry per endpoint (exit address, latency, families).
+	CommandTypeProxyTest CommandType = "proxy_test"
 )
 
 // CommandStatus represents the status of a command.
@@ -120,6 +126,14 @@ type Command struct {
 
 	Status       CommandStatus
 	ErrorMessage string
+	// FailureCode is the platform's failure code of a command it ended
+	// for an infrastructure reason (scanrun.Failure*), set by the service
+	// when it fails the command; empty otherwise. Not read from storage.
+	FailureCode string
+	// ExcludeParentSensor, on a follow-up not yet stored, says the sensor
+	// that held its parent joins its failed_on: the follow-up carries
+	// targets that sensor's own fault left unscanned (research/302).
+	ExcludeParentSensor bool
 
 	// Timing
 	CreatedAt      time.Time

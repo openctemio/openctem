@@ -13,6 +13,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/versions"
 	"github.com/openctemio/openctem/api/pkg/contentpkg"
+	cpsigstore "github.com/openctemio/openctem/api/pkg/contentpkg/sigstore"
 	"github.com/openctemio/openctem/api/pkg/feedsign"
 )
 
@@ -73,12 +74,12 @@ func TestBuild_FirstPartyBundleVerifies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sv, err := contentpkg.NewSigstoreVerifier("")
+	sv, err := cpsigstore.New("")
 	if err != nil {
 		t.Fatal(err)
 	}
 	v, err := contentpkg.Verify(b, contentpkg.VerifyOptions{
-		Trust: contentpkg.Trust{Roots: []string{contentpkg.RootKeyID(root.Public().(ed25519.PublicKey))}}, Publisher: sv})
+		Trust: contentpkg.Trust{Roots: []string{contentpkg.RootKeyID(root.Public().(ed25519.PublicKey))}}, Publisher: contentpkg.PublisherVerifierFunc(sv.Verify)})
 	if err != nil {
 		t.Fatalf("verify: %v", err)
 	}

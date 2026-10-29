@@ -136,6 +136,26 @@ held and how current the bundle's copy is: `delivered_via` (`bundle` or
 `direct`), `intel_as_of` (data date), `bundle_fetched_at`,
 `bundle_sequence`, `bundle_error`.
 
+#### Direct fetch as a fallback
+
+The platform also fetches KEV (hourly, conditional request) and EPSS (daily)
+from CISA and FIRST itself. Two console settings (`threat_intel.source`,
+System > Threat intelligence, `/admin/settings/threat-intel-source`; super
+admin, step-up, audited) decide how the two paths combine:
+
+| Setting | Effect |
+|---|---|
+| source `direct` (default), direct fetch `auto` (default) | the own fetch runs on its schedule and supplies the data; the release copy is applied when its data date is newer |
+| source `bundle`, direct fetch `auto` | the release supplies the data; the scheduled own fetch runs only when the release's copy was last read by the collector more than 6 hours ago (KEV) or 48 hours ago (EPSS), or never (`bundle_fetched_at`, not the publisher's data date, which can be days old while the data is current); it records `delivered_via = direct`, and the newer-data rule lets the release win again once it catches up |
+| direct fetch `off` | the platform never calls CISA or FIRST (the scheduled and the manual sync both refuse); the release is the only supplier and a stale copy shows as stale |
+
+The default stays `direct` until the publisher has released hourly for seven
+days without a gap. Then an administrator sets source `bundle`: the page shows
+per feed when the collector last read the source and whether the release's copy
+is fresh, which is the check to make first. A withheld release (a freeze)
+degrades to the own fetch, not to stale data, and the stale alert still fires.
+The sync status of each feed reports `delivered_via` and `data_as_of`.
+
 ## Push: segments and the outbox
 
 Sensors and collectors send results with protocol v2 (RFC-026): segments
