@@ -69,12 +69,12 @@ func registerAdminPlatformSettingsRoutes(router Router, h Handlers, adminMiddlew
 	}, adminMiddlewares...)
 	router.Group("/api/v1/admin/settings/threat-intel-source", func(r Router) {
 		r.GET("/", on(threatSource, ps.GetThreatSource))
-		r.PUT("/", on(threatSource, ps.UpdateThreatSource), requireSuper, stepUp("settings.threat_intel_source"))
+		r.PUT("/", on(threatSource, ps.UpdateThreatSource), stepUp("settings.threat_intel_source"))
 	}, adminMiddlewares...)
 	mfaFloor := ps.MFA != nil
 	router.Group("/api/v1/admin/settings/auth-mfa", func(r Router) {
 		r.GET("/", on(mfaFloor, ps.GetMFAFloor))
-		r.PUT("/", on(mfaFloor, ps.UpdateMFAFloor), requireSuper, freshStepUp("settings.auth_mfa"))
+		r.PUT("/", on(mfaFloor, ps.UpdateMFAFloor), freshStepUp("settings.auth_mfa"))
 	}, adminMiddlewares...)
 	emailRelay := ps.EmailRelay != nil
 	router.Group("/api/v1/admin/settings/email-relay", func(r Router) {
@@ -94,7 +94,7 @@ func registerAdminPlatformSettingsRoutes(router Router, h Handlers, adminMiddlew
 	}, adminMiddlewares...)
 	router.Group("/api/v1/admin/settings/social-login-providers", func(r Router) {
 		r.GET("/", on(social, ps.GetSocialLogin))
-		r.PUT("/{provider}", on(social, ps.UpdateSocialLogin), requireSuper, freshStepUp("settings.social_login"))
-		r.POST("/{provider}/test", on(social, ps.CheckSocialLogin), requireSuper, checkRL)
+		r.PUT("/{provider}", on(social, ps.UpdateSocialLogin), freshStepUp("settings.social_login"))
+		r.POST("/{provider}/test", on(social, ps.CheckSocialLogin), checkRL)
 	}, adminMiddlewares...)
 }

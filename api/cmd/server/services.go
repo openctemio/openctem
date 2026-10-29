@@ -1353,6 +1353,15 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 			GroupBy:    vulnerability.FindingGroupDimensions(),
 			Extra:      []string{"branch_status"},
 		},
+		// The vulnerabilities list: the findings filter plus the list's own
+		// params (kev, epss_gte, q, sort...). The /views routes need
+		// findings:read; this page also needs vulnerabilities:read.
+		savedview.PageVulnerabilities: {
+			Registry:   vulnerability.FindingFields,
+			Permission: permission.VulnerabilitiesRead.String(),
+			Extra:      append([]string{"branch_status"}, vulnerability.CVEListParams...),
+			Params:     vulnerability.CVEListPageParams,
+		},
 	}, log)
 	s.SavedView.SetAuditService(s.Audit)
 	s.Branch = asset.NewBranchService(repos.Branch, log)

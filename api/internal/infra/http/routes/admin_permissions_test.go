@@ -87,6 +87,7 @@ var legacyMinimumTier = map[string]admin.AdminRole{
 	"POST /api/v1/admin/settings/alerts/test":                                admin.AdminRoleSuperAdmin,
 	"POST /api/v1/admin/settings/captcha/verify":                             admin.AdminRoleSuperAdmin,
 	"POST /api/v1/admin/settings/email/test":                                 admin.AdminRoleSuperAdmin,
+	"POST /api/v1/admin/settings/social-login-providers/{provider}/test":     admin.AdminRoleSuperAdmin,
 	"POST /api/v1/admin/shared-sensors/enrollment-tokens":                    admin.AdminRoleSuperAdmin,
 	"POST /api/v1/admin/shared-sensors/jobs/{job_id}/view":                   admin.AdminRoleOpsAdmin,
 	"POST /api/v1/admin/shared-sensors/{sensor_id}/disable":                  admin.AdminRoleSuperAdmin,
@@ -123,6 +124,11 @@ var legacyMinimumTier = map[string]admin.AdminRole{
 	"PUT /api/v1/admin/settings/legal/":                                      admin.AdminRoleSuperAdmin,
 	"PUT /api/v1/admin/settings/limits/":                                     admin.AdminRoleSuperAdmin,
 	"PUT /api/v1/admin/settings/platform-sensor-proof/":                      admin.AdminRoleSuperAdmin,
+	"POST /api/v1/admin/platform-users/{user_id}/mark-verified":              admin.AdminRoleSuperAdmin,
+	"POST /api/v1/admin/platform-users/{user_id}/mfa/reset":                  admin.AdminRoleSuperAdmin,
+	"POST /api/v1/admin/platform-users/{user_id}/reset-link":                 admin.AdminRoleSuperAdmin,
+	"PUT /api/v1/admin/settings/auth-mfa/":                                   admin.AdminRoleSuperAdmin,
+	"PUT /api/v1/admin/settings/threat-intel-source/":                        admin.AdminRoleSuperAdmin,
 	"PUT /api/v1/admin/settings/region/":                                     admin.AdminRoleSuperAdmin,
 	"PUT /api/v1/admin/settings/scan-approval-policy/":                       admin.AdminRoleSuperAdmin,
 	"PUT /api/v1/admin/settings/shared-sensor-anomaly/":                      admin.AdminRoleSuperAdmin,
@@ -130,6 +136,7 @@ var legacyMinimumTier = map[string]admin.AdminRole{
 	"PUT /api/v1/admin/settings/shared-sensors/":                             admin.AdminRoleSuperAdmin,
 	"PUT /api/v1/admin/settings/shared-sensors/egress":                       admin.AdminRoleSuperAdmin,
 	"PUT /api/v1/admin/settings/signup-alerts/":                              admin.AdminRoleSuperAdmin,
+	"PUT /api/v1/admin/settings/social-login-providers/{provider}":           admin.AdminRoleSuperAdmin,
 	"PUT /api/v1/admin/settings/signup/":                                     admin.AdminRoleSuperAdmin,
 	"PUT /api/v1/admin/settings/storage-quota/":                              admin.AdminRoleSuperAdmin,
 	"PUT /api/v1/admin/tenants/{tenantId}/idle/policy":                       admin.AdminRoleOpsAdmin,
@@ -333,5 +340,43 @@ func TestUnelevatedOwnerReadsOnly(t *testing.T) {
 		if !platformauthz.Baseline(p) && code != http.StatusForbidden {
 			t.Errorf("%s unelevated: %d, want 403 (%s is not a baseline read)", key, code, p)
 		}
+	}
+}
+
+// Credential actions on a platform user (reset link, mark verified, two-factor
+// reset) are the owner's alone: account support and the admin role, which hold
+// platform.users.support, are refused on all three.
+func TestCredentialActionsNeedTheCredentialsPermission(t *testing.T) {
+	router, _ := inventoryRouter(t)
+	keys := []string{
+		"POST /api/v1/admin/platform-users/{user_id}/reset-link",
+		"POST /api/v1/admin/platform-users/{user_id}/mark-verified",
+		"POST /api/v1/admin/platform-users/{user_id}/mfa/reset",
+	}
+	routes := map[string]bool{}
+	for _, k := range consoleRoutes(router) {
+		routes[k] = true
+	}
+	for _, k := range keys {
+		if !routes[k] {
+			t.Fatalf("route %q is not registered", k)
+		}
+		if adminRoutePermissions[k] != platformauthz.UsersCredentials {
+			t.Fatalf("%s needs %s, got %s", k, platformauthz.UsersCredentials, adminRoutePermissions[k])
+		}
+	}
+	for _, role := range []platformauthz.RoleKey{platformauthz.RoleAdmin, platformauthz.RoleSupport} {
+		if !platformauthz.RolePermissions(role).Has(platformauthz.UsersSupport) {
+			t.Fatalf("%s should hold account support, or this test proves nothing", role)
+		}
+		h := routerAs(t, admin.AdminRoleOpsAdmin, []platformauthz.RoleKey{role}, false)
+		for _, k := range keys {
+			if code := callConsole(h, k); code != http.StatusForbidden {
+				t.Errorf("%s as %s: %d, want 403", k, role, code)
+			}
+		}
+	}
+	if !platformauthz.RolePermissions(platformauthz.RoleOwner).Has(platformauthz.UsersCredentials) {
+		t.Fatal("the owner holds the credentials permission")
 	}
 }
