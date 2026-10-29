@@ -149,15 +149,17 @@ func (r *AdminFactorRepository) RenameWebAuthnCredential(ctx context.Context, ad
 }
 
 // DeleteWebAuthnCredential removes one authenticator of adminID unless fewer
-// than keep would remain. The row lock on the administrator serializes two
-// concurrent deletes, so they cannot both pass the floor.
+// than keep would remain. A transaction-scoped advisory lock per administrator
+// serializes two concurrent deletes, so they cannot both pass the floor. (A
+// row lock on admin_users would need UPDATE on it, which the app role this
+// repository runs as does not hold under the least-privilege roles.)
 func (r *AdminFactorRepository) DeleteWebAuthnCredential(ctx context.Context, adminID, id shared.ID, keep int) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("delete webauthn credential: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, `SELECT 1 FROM admin_users WHERE id = $1 FOR UPDATE`, adminID.String()); err != nil {
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('openctem.admin_factors:' || $1::text))`, adminID.String()); err != nil {
 		return fmt.Errorf("lock administrator: %w", err)
 	}
 	var exists bool

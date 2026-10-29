@@ -33,6 +33,18 @@ var _ supportaccess.Repository = (*SupportAccessRepository)(nil)
 // session whose console session is idle longer is no longer open.
 var consoleIdleSeconds = strconv.Itoa(int(admin.SessionIdleTimeout / time.Second))
 
+// supportIdleSeconds is dom.SessionIdleTimeout in seconds: a support session
+// unused that long is no longer live, whether or not the sweep ended it yet.
+var supportIdleSeconds = strconv.Itoa(int(supportaccess.SessionIdleTimeout / time.Second))
+
+// consoleSessionLive is the SQL test that console session `col` is alive at
+// `at`. admin_sessions belongs to the console role and the app role cannot
+// read it, so the test goes through admin_session_live (migration
+// admin_session_live): a SECURITY DEFINER predicate that returns one boolean.
+func consoleSessionLive(col, at, idleSeconds string) string {
+	return "admin_session_live(" + col + ", " + at + ", " + idleSeconds + ")"
+}
+
 // supportGrantColumns: open_session is true only while a support session is
 // open AND the console session that opened it is still alive, so a sign-out,
 // an expiry or an idle console never leaves the organization's banner on.
@@ -43,9 +55,9 @@ var supportGrantColumns = `
 	(SELECT count(*) FROM support_sessions s WHERE s.tenant_id = g.tenant_id AND s.grant_id = g.id),
 	(SELECT max(COALESCE(s.last_access_at, s.started_at)) FROM support_sessions s WHERE s.tenant_id = g.tenant_id AND s.grant_id = g.id),
 	EXISTS (SELECT 1 FROM support_sessions s
-	         JOIN admin_sessions c ON c.id = s.console_session_id
 	        WHERE s.tenant_id = g.tenant_id AND s.grant_id = g.id AND s.ended_at IS NULL
-	          AND c.expires_at > now() AND c.last_seen_at > now() - make_interval(secs => ` + consoleIdleSeconds + `))`
+	          AND COALESCE(s.last_access_at, s.started_at) > now() - make_interval(secs => ` + supportIdleSeconds + `)
+	          AND ` + consoleSessionLive("s.console_session_id", "now()", consoleIdleSeconds) + `)`
 
 func scanSupportGrant(row interface{ Scan(...any) error }) (*supportaccess.Grant, error) {
 	var (
@@ -260,14 +272,19 @@ func (r *SupportAccessRepository) CreateSession(ctx context.Context, s *supporta
 }
 
 // LiveSession resolves a session for one request (no cache): open, opened by
-// adminID in consoleSessionID, grant not revoked and inside its window. It
-// records the access time in the same statement.
+// adminID in consoleSessionID, used within dom.SessionIdleTimeout, grant not
+// revoked and inside its window. Every condition is checked here, at read
+// time, so a session the sweep has not ended yet (or could not end) is still
+// refused once it expired. The console session itself is checked by the
+// console's authentication on the same request. It records the access time in
+// the same statement.
 func (r *SupportAccessRepository) LiveSession(ctx context.Context, id, adminID, consoleSessionID shared.ID, now time.Time) (*supportaccess.LiveSession, error) {
 	row := r.db.QueryRowContext(ctx, `
 		WITH live AS (
 		    UPDATE support_sessions s SET last_access_at = $4
 		    FROM support_grants g
 		    WHERE s.id = $1 AND s.admin_id = $2 AND s.console_session_id = $3 AND s.ended_at IS NULL
+		      AND COALESCE(s.last_access_at, s.started_at) > $4::timestamptz - make_interval(secs => `+supportIdleSeconds+`)
 		      AND g.tenant_id = s.tenant_id AND g.id = s.grant_id AND g.admin_id = s.admin_id
 		      AND g.revoked_at IS NULL AND g.starts_at <= $4 AND g.expires_at > $4
 		    RETURNING s.id, s.tenant_id, s.grant_id, s.reason, s.started_at
@@ -408,9 +425,7 @@ func (r *SupportAccessRepository) EndStaleSessions(ctx context.Context, now time
 		WITH stale AS (
 		    SELECT s.id,
 		           CASE
-		             WHEN NOT EXISTS (SELECT 1 FROM admin_sessions c
-		                    WHERE c.id = s.console_session_id AND c.expires_at > $1
-		                      AND c.last_seen_at > $1::timestamptz - make_interval(secs => $3))
+		             WHEN NOT `+consoleSessionLive("s.console_session_id", "$1", "$3")+`
 		               THEN $4::text
 		             WHEN NOT EXISTS (SELECT 1 FROM support_grants g
 		                    WHERE g.tenant_id = s.tenant_id AND g.id = s.grant_id
@@ -420,9 +435,7 @@ func (r *SupportAccessRepository) EndStaleSessions(ctx context.Context, now time
 		           END AS why
 		      FROM support_sessions s
 		     WHERE s.ended_at IS NULL
-		       AND (NOT EXISTS (SELECT 1 FROM admin_sessions c
-		                    WHERE c.id = s.console_session_id AND c.expires_at > $1
-		                      AND c.last_seen_at > $1::timestamptz - make_interval(secs => $3))
+		       AND (NOT `+consoleSessionLive("s.console_session_id", "$1", "$3")+`
 		            OR NOT EXISTS (SELECT 1 FROM support_grants g
 		                    WHERE g.tenant_id = s.tenant_id AND g.id = s.grant_id
 		                      AND g.revoked_at IS NULL AND g.expires_at > $1)
