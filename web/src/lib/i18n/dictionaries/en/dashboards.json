@@ -266,6 +266,8 @@
   "dashboards.switcher.noPersonal": "No dashboards of your own yet",
   "dashboards.switcher.organization": "Organization",
   "dashboards.switcher.search": "Search dashboards",
+  "dashboards.table.filterOpen": "Open",
+  "dashboards.table.filterPriority": "Priority P0–P2",
   "dashboards.template.ctem.description": "Active exposure, the CTEM loop, what to fix next and the attack paths to your crown jewels.",
   "dashboards.template.ctem.name": "CTEM",
   "dashboards.template.executive.description": "Program figures against their targets over a year, for leadership.",

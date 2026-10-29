@@ -240,6 +240,10 @@ type ItemRow struct {
 // ItemsValue is a ranked list.
 type ItemsValue struct {
 	Rows []ItemRow `json:"rows"`
+	// Total is the open count of the list the widget opens (the drill-down),
+	// read with the same filter and scope as the rows; nil when the widget
+	// opens no list of that count (the SLA list).
+	Total *int64 `json:"total,omitempty"`
 }
 
 // PersonalData returns every widget of the caller's own dashboard, for the
@@ -524,6 +528,17 @@ func (s *Service) metric(ctx context.Context, v *WidgetValue, m dashboard.Metric
 		lf := f
 		lf.PriorityClass = []string{"P0", "P1", "P2"}
 		v.Drill = drillHref(lf)
+		if m.ID == "fix.next" {
+			counts, err := s.facts.CountOpen(ctx, agg, lf, nil)
+			if err != nil {
+				return err
+			}
+			var n int64
+			for _, c := range counts {
+				n += c.Count
+			}
+			out.Total = &n
+		}
 		return nil
 	case dashboard.MetricKindAssetCount:
 		return s.crownJewelsExposed(ctx, v, f, agg)
