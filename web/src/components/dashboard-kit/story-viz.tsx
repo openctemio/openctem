@@ -32,6 +32,7 @@ export function KpiStripViz({ result }: { result: KpisResult }) {
         value: t('dashboardKit.kpi.notMeasured', 'Not measured'),
         description: reason,
         detail: reason,
+        notMeasured: true,
       }
     }
     return {

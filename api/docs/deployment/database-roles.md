@@ -13,7 +13,7 @@ This guide splits the database into three roles.
 | superuser (`DB_SUPERUSER`, e.g. `postgres`) | `initdb`, and the bootstrap script below | everything; the API never holds its password |
 | `openctem_migrator` (`DB_MIGRATE_USER`) | the migrations (`migrate` job, all-in-one start-up) | own the application schemas: create, alter and drop tables, indexes (including `CREATE INDEX CONCURRENTLY`), functions, triggers, policies |
 | `openctem_app` (`DB_USER`) | the API server and its workers | `SELECT`/`INSERT`/`UPDATE`/`DELETE` on the application tables; nothing else |
-| `openctem_console` (`DB_ADMIN_USER`, optional) | the API's second, small pool for the platform console's identity tables | full DML on `admin_users`, `admin_credentials`, `admin_sessions`, `platform_identity_provider`, `admin_idp_login_states`, `admin_approvals` and the platform role tables `platform_roles`, `platform_role_permissions`, `platform_role_assignments` (alone), insert and read on `admin_audit_logs`, read on `admin_audit_chain_anchors` and `tenant_members`, read and update on `users`; nothing else |
+| `openctem_console` (`DB_ADMIN_USER`, optional) | the API's second, small pool for the platform console's identity tables | full DML on `admin_users`, `admin_credentials`, `admin_sessions`, `platform_identity_provider`, `admin_idp_login_states`, `admin_approvals`, the platform role tables `platform_roles`, `platform_role_permissions`, `platform_role_assignments` and the console's second factors `admin_webauthn_credentials`, `admin_recovery_codes`, `admin_webauthn_ceremonies` (alone), insert and read on `admin_audit_logs`, read on `admin_audit_chain_anchors` and `tenant_members`, read and update on `users`; nothing else |
 
 Neither role is `SUPERUSER`, `CREATEDB`, `CREATEROLE`, `REPLICATION` or
 `BYPASSRLS`. Neither belongs to `pg_read_server_files`, `pg_write_server_files`
@@ -92,7 +92,9 @@ moves the platform console's identity tables to it:
   `admin_credentials`, `admin_sessions`, `platform_identity_provider`,
   `admin_idp_login_states`, `admin_approvals` (four-eyes approvals) and the
   platform role tables (`platform_roles`, `platform_role_permissions`,
-  `platform_role_assignments`, RFC-134), and `SELECT` on all of them but
+  `platform_role_assignments`, RFC-134) and the console's second factors
+  (`admin_webauthn_credentials`, `admin_recovery_codes`,
+  `admin_webauthn_ceremonies`, RFC-078), and `SELECT` on all of them but
   `admin_users`
   (the trigger that keeps platform administrators out of organizations and the
   "is this account an administrator" checks read it);
@@ -101,10 +103,24 @@ moves the platform console's identity tables to it:
   cannot read or write tenant data.
 
 The API then opens a second pool (`DB_ADMIN_USER`/`DB_ADMIN_PASSWORD`, at most
-5 connections) for the administrator, console-session and platform identity
-provider repositories. A SQL injection in any tenant-facing code path, which
-runs on the app pool, can no longer add an administrator, read a console
-session or credential, or swap the platform identity provider.
+5 connections) for the administrator, console-session, platform identity
+provider and console second-factor repositories. A SQL injection in any
+tenant-facing code path, which runs on the app pool, can no longer add an
+administrator, read a console session or credential, plant a console passkey
+or a known recovery code, or swap the platform identity provider.
+
+Support access (RFC-063) lives on the app pool but ends a support session with
+the console session that opened it. The one fact it needs from
+`admin_sessions`, "is this console session alive", comes from
+`admin_session_live(session, at, idle_seconds)`: a read-only `SECURITY DEFINER`
+function owned by the migrator that returns a boolean, so the app role keeps
+no privilege on the table. New app-pool SQL that reads a table the app role
+cannot read, or writes or row-locks one it cannot write, fails
+`TestConsoleTables_OnlyConsolePoolRepositories`
+(`internal/infra/postgres/console_tables_guard_test.go`), which reads the
+grants from this script; `tests/integration/console_role_split_test.go` runs
+those repositories as the app role on a database bootstrapped with the console
+role.
 
 The console's organization, member and settings screens run on the app pool
 (the same services as the tenant plane); only the repositories above use the
@@ -115,7 +131,9 @@ container must not hold them): they create or delete the sign-in account in `use
 re-encrypt every location, which the console role cannot do. The script reruns after the migrations (`db-grants` in compose), so a
 console table a release adds is moved before the API starts. If
 `DB_ADMIN_USER` is set but the script did not run with `admin_user`, the API
-logs an error at start-up saying the app role still writes `admin_users`.
+logs an error at start-up saying the app role still writes `admin_users` or
+the console's passkeys and recovery codes; a tenant-plane API in production
+refuses to start instead.
 
 ## Configuration
 
@@ -277,6 +295,19 @@ that uses `DB_ADMIN_USER` re-runs the grant script after migrating, or every
 console request answers 503 (the console cannot read the administrator's
 roles); the shipped Compose stack does this itself through `db-grants`. The app
 role gets no privilege on them.
+
+## Console second factors
+
+From this release the console's passkeys, recovery codes and passkey
+ceremonies (`admin_webauthn_credentials`, `admin_recovery_codes`,
+`admin_webauthn_ceremonies`) belong to the console role: the factor repository
+runs on the console pool and the app role has no privilege on them. Planting a
+passkey or a known recovery code for an administrator would take over the
+console, so this is the same boundary as `admin_users`. An installation that
+uses `DB_ADMIN_USER` re-runs this release's grant script after migrating, or
+console passkey and recovery-code sign-in fails with `permission denied`; the
+shipped Compose stack does it through `db-grants`, and the ansible kit must
+vendor `least-privilege-roles.sql` from this release.
 
 ## Upgrading to v0.11.0
 
