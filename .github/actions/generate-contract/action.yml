@@ -45,5 +45,7 @@ runs:
       shell: bash
       working-directory: web
       run: |
-        [ -d node_modules ] || npm ci --no-audit --no-fund
+        # --ignore-scripts: type generation needs only the packages' files, and
+        # no dependency's install script runs (the job may hold a token).
+        [ -d node_modules ] || npm ci --ignore-scripts --no-audit --no-fund
         npm run generate:api-types

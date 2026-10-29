@@ -466,7 +466,7 @@
   "settings.pentest.form.mitreSelect": "Select MITRE ATT&CK technique",
   "settings.pentest.form.mitreTactic": "Tactic: {name}",
   "settings.pentest.form.noAsset": "No asset",
-  "settings.pentest.form.noAssets": "No assets in tenant yet. Create assets in the Assets page first.",
+  "settings.pentest.form.noAssets": "No assets in the organization yet. Create assets in the Assets page first.",
   "settings.pentest.form.none": "None",
   "settings.pentest.form.notLinked": "Not linked",
   "settings.pentest.form.outOfScope": "Out of scope ({count})",
