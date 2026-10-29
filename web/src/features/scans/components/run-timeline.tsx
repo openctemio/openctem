@@ -50,6 +50,34 @@ export function eventActor(
   return e.sensor_id ? t('scans.timeline.sensor', undefined, { id: e.sensor_id.slice(0, 8) }) : null
 }
 
+/** Move reasons with their own sentence (scans.timeline.moved.*). */
+const MOVED = new Set([
+  'tool_unavailable',
+  'tool_crashed',
+  'resource.memory',
+  'resource.disk',
+  'content_unavailable',
+  'sensor_offline',
+  'sensor_network',
+  'dns_resolver',
+])
+
+/**
+ * The sentence for a task moved to another sensor after an infrastructure
+ * failure (event requeued, code "moved.<reason>"), or null for any other
+ * event. The text comes from the code, never from the sensor's own words.
+ */
+export function movedSentence(
+  e: Pick<RunEvent, 'event' | 'code' | 'platform' | 'sensor_id' | 'attempt'>,
+  t: Translate = enTranslate
+): string | null {
+  if (e.event !== 'requeued' || !e.code?.startsWith('moved.')) return null
+  const reason = e.code.slice('moved.'.length).replace(/^infra\./, '')
+  const key = MOVED.has(reason) ? `scans.timeline.moved.${reason}` : 'scans.timeline.moved.generic'
+  const sensor = e.platform ? t('scans.timeline.platform') : (e.sensor_id ?? '').slice(0, 8)
+  return t(key, undefined, { sensor, attempt: Math.min((e.attempt ?? 0) + 1, 3) })
+}
+
 /** How long a task can sit queued before the run says it waits for a sensor. */
 export const WAITING_FOR_SENSOR_MS = 5 * 60 * 1000
 
@@ -129,11 +157,17 @@ export function RunTimeline({ runId, refreshInterval }: RunTimelineProps) {
                   actor,
                 ]}
               />
-              {(e.code || e.message) && (
+              {movedSentence(e, t) ? (
                 <p className="min-w-0 break-words text-meta text-muted-foreground [unicode-bidi:isolate]">
-                  {e.code && <span className="font-mono">{toDisplayText(e.code, 100)} </span>}
-                  {e.message && toDisplayText(e.message, 400)}
+                  {movedSentence(e, t)}
                 </p>
+              ) : (
+                (e.code || e.message) && (
+                  <p className="min-w-0 break-words text-meta text-muted-foreground [unicode-bidi:isolate]">
+                    {e.code && <span className="font-mono">{toDisplayText(e.code, 100)} </span>}
+                    {e.message && toDisplayText(e.message, 400)}
+                  </p>
+                )
               )}
             </li>
           )
