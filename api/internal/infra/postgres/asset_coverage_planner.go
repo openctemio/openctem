@@ -236,7 +236,8 @@ func (r *AssetCoverageRepository) MarkBlocked(ctx context.Context, tenantID shar
 func (r *AssetCoverageRepository) QueuedRuns(ctx context.Context, tenantID shared.ID) ([]coverage.RunState, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT r.id, c.capability, r.status, COALESCE(r.error_message, ''), max(c.last_tool),
-		       COALESCE(r.unfinished_targets, '[]'::jsonb), min(c.queued_at)
+		       COALESCE(r.unfinished_targets, '[]'::jsonb), min(c.queued_at),
+		       EXISTS (SELECT 1 FROM scan_run_steps st WHERE st.scan_run_id = r.id AND st.error_code = 'NO_SENSOR')
 		FROM asset_coverage c
 		JOIN scan_runs r ON r.tenant_id = c.tenant_id AND r.id = c.last_run_id
 		WHERE c.tenant_id = $1 AND c.state = 'queued'
@@ -252,7 +253,7 @@ func (r *AssetCoverageRepository) QueuedRuns(ctx context.Context, tenantID share
 			id         string
 			unfinished []byte
 		)
-		if err := rows.Scan(&id, &rs.Capability, &rs.Status, &rs.Error, &rs.Tool, &unfinished, &rs.QueuedAt); err != nil {
+		if err := rows.Scan(&id, &rs.Capability, &rs.Status, &rs.Error, &rs.Tool, &unfinished, &rs.QueuedAt, &rs.NoSensor); err != nil {
 			return nil, err
 		}
 		if rs.RunID, err = shared.IDFromString(id); err != nil {
@@ -307,7 +308,7 @@ const expectsHTTPServiceSQL = `EXISTS (
 var settleCoveredSQL = `
 	UPDATE asset_coverage c SET state = 'covered', reason = '',
 	       last_outcome = CASE WHEN $5 AND NOT ` + expectsHTTPServiceSQL + ` THEN '` + coverage.OutcomeNoOutput + `' ELSE '` + coverage.OutcomeOK + `' END,
-	       last_error = '', last_success_at = now(), fail_streak = 0,
+	       last_error = '', last_success_at = now(), fail_streak = 0, unreached_from = '',
 	       next_due_at = ` + jitteredIntervalSQL("$4") + `, updated_at = now()
 	FROM assets a
 	WHERE c.tenant_id = $1 AND c.last_run_id = $2 AND c.capability = $3 AND c.vantage = '' AND c.state = 'queued'
@@ -353,7 +354,7 @@ func (r *AssetCoverageRepository) SettleFailed(ctx context.Context, tenantID, ru
 	}
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE asset_coverage c SET state = 'failed', reason = '',
-		       last_outcome = w.outcome, last_error = w.err, fail_streak = c.fail_streak + 1,
+		       last_outcome = w.outcome, last_error = w.err, fail_streak = c.fail_streak + 1, unreached_from = '',
 		       next_due_at = now() + least(make_interval(secs => $7), make_interval(secs => 3600 * power(2, least(c.fail_streak, 5)))),
 		       updated_at = now()
 		FROM unnest($4::uuid[], $5::text[], $6::text[]) AS w(asset_id, outcome, err)
@@ -369,8 +370,11 @@ func (r *AssetCoverageRepository) SettleFailed(ctx context.Context, tenantID, ru
 
 // targetSideStreakSQL is the pair's consecutive target-side observations
 // including this one: the streak goes on when the previous outcome was
-// target-side too, else it starts at 1.
+// target-side too and the same observer (scan zone or sensor, w.observer)
+// saw it, or either observer is unknown; else it starts at 1, so another
+// zone or sensor gets the short recheck again.
 var targetSideStreakSQL = `(CASE WHEN c.last_outcome IN (` + quotedList(coverage.TargetSideOutcomes()) + `)
+	     AND (c.unreached_from = '' OR w.observer = '' OR c.unreached_from = w.observer)
 	THEN least(c.fail_streak + 1, 32767) ELSE 1 END)`
 
 // SettleTargetSide settles queued pairs of a run whose target did not
@@ -384,10 +388,12 @@ func (r *AssetCoverageRepository) SettleTargetSide(ctx context.Context, tenantID
 	ids := make([]string, len(pairs))
 	outcomes := make([]string, len(pairs))
 	errs := make([]string, len(pairs))
+	observers := make([]string, len(pairs))
 	for i, f := range pairs {
 		ids[i] = f.AssetID.String()
 		outcomes[i] = coverage.Clip(f.Outcome, coverage.MaxCodeLen)
 		errs[i] = coverage.Clip(f.Error, coverage.MaxErrorLen)
+		observers[i] = coverage.Clip(f.Observer, 80)
 	}
 	sched := make([]float64, len(coverage.TargetSideRechecks))
 	for i, d := range coverage.TargetSideRechecks {
@@ -399,11 +405,12 @@ func (r *AssetCoverageRepository) SettleTargetSide(ctx context.Context, tenantID
 		UPDATE asset_coverage c SET state = 'paused', reason = w.outcome,
 		       last_outcome = w.outcome, last_error = w.err, fail_streak = `+targetSideStreakSQL+`,
 		       next_due_at = `+jitteredIntervalSQL(`($7::float8[])[least(`+targetSideStreakSQL+`, cardinality($7::float8[]))]`)+`,
+		       unreached_from = COALESCE(NULLIF(w.observer, ''), c.unreached_from),
 		       updated_at = now()
-		FROM unnest($4::uuid[], $5::text[], $6::text[]) AS w(asset_id, outcome, err)
+		FROM unnest($4::uuid[], $5::text[], $6::text[], $8::text[]) AS w(asset_id, outcome, err, observer)
 		WHERE c.tenant_id = $1 AND c.last_run_id = $2 AND c.capability = $3 AND c.vantage = '' AND c.state = 'queued'
 		  AND c.asset_id = w.asset_id`,
-		tenantID.String(), runID.String(), capability, pq.Array(ids), pq.Array(outcomes), pq.Array(errs), pq.Array(sched))
+		tenantID.String(), runID.String(), capability, pq.Array(ids), pq.Array(outcomes), pq.Array(errs), pq.Array(sched), pq.Array(observers))
 	if err != nil {
 		return 0, fmt.Errorf("settle target-side coverage: %w", err)
 	}
@@ -415,7 +422,8 @@ func (r *AssetCoverageRepository) SettleTargetSide(ctx context.Context, tenantID
 // and follow-ups carry the same step) and the commands that name the run.
 func (r *AssetCoverageRepository) RunTasks(ctx context.Context, tenantID, runID shared.ID) ([]coverage.TaskResult, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT c.status, COALESCE(c.error_message, ''), c.payload, COALESCE(c.result, 'null'::jsonb)
+		SELECT c.status, COALESCE(c.error_message, ''), c.payload, COALESCE(c.result, 'null'::jsonb),
+		       COALESCE(c.scan_zone_id::text, ''), COALESCE(c.sensor_id::text, '')
 		FROM commands c
 		WHERE c.tenant_id = $1
 		  AND (c.scan_run_step_id IN (SELECT s.id FROM scan_run_steps s
@@ -430,12 +438,14 @@ func (r *AssetCoverageRepository) RunTasks(ctx context.Context, tenantID, runID 
 	var out []coverage.TaskResult
 	for rows.Next() {
 		var (
-			t               coverage.TaskResult
-			payload, result []byte
+			t                coverage.TaskResult
+			payload, result  []byte
+			zoneID, sensorID string
 		)
-		if err := rows.Scan(&t.Status, &t.Error, &payload, &result); err != nil {
+		if err := rows.Scan(&t.Status, &t.Error, &payload, &result, &zoneID, &sensorID); err != nil {
 			return nil, err
 		}
+		t.Observer = coverage.ObserverKey(zoneID, sensorID)
 		t.Targets = command.PayloadTargets(payload)
 		if string(result) != "null" {
 			t.Result = result
@@ -491,9 +501,10 @@ var _ coverage.Planner = (*AssetCoverageRepository)(nil)
 // Health returns one entry per capability of the tenant's ledger.
 //
 // A pair paused because the target stopped answering (unreachable, timeout)
-// still applies: once its last success is older than twice the cadence it
-// is a gap, so a host that went dark shows up in the gaps and their alert.
-// Pairs paused for readiness (no capable sensor) are counted as Paused.
+// still applies, but it is counted as Unreachable, not as a gap: one
+// alert ("targets unreachable") says why those pairs lack coverage instead
+// of a second, vaguer gap alert for the same pairs. Pairs paused for
+// readiness (no capable sensor) are counted as Paused.
 func (r *AssetCoverageRepository) Health(ctx context.Context, tenantID shared.ID, cadence map[string]time.Duration) ([]coverage.CapabilityHealth, error) {
 	caps := make([]string, 0, len(cadence))
 	secs := make([]float64, 0, len(cadence))
@@ -506,19 +517,21 @@ func (r *AssetCoverageRepository) Health(ctx context.Context, tenantID shared.ID
 		       count(*) FILTER (WHERE c.state NOT IN ('blocked', 'not_applicable')
 		                          AND NOT (c.state = 'paused' AND c.reason = ANY($5::text[]))),
 		       count(*) FILTER (WHERE c.state NOT IN ('blocked', 'not_applicable')
-		                          AND NOT (c.state = 'paused' AND c.reason = ANY($5::text[]))
+		                          AND NOT (c.state = 'paused' AND (c.reason = ANY($5::text[]) OR c.reason = ANY($6::text[])))
 		                          AND COALESCE(c.last_success_at, c.created_at) < now() - make_interval(secs => 2 * COALESCE(p.every, 86400))),
 		       count(*) FILTER (WHERE c.state = 'failed' AND c.fail_streak >= $4),
 		       count(*) FILTER (WHERE c.last_outcome = 'ok' AND c.last_success_at > now() - interval '24 hours'),
 		       count(*) FILTER (WHERE c.last_outcome = 'no_output' AND c.last_success_at > now() - interval '24 hours'),
 		       count(*) FILTER (WHERE c.state = 'paused' AND c.reason = ANY($5::text[])),
-		       COALESCE(min(c.reason) FILTER (WHERE c.state = 'paused' AND c.reason = ANY($5::text[])), '')
+		       COALESCE(min(c.reason) FILTER (WHERE c.state = 'paused' AND c.reason = ANY($5::text[])), ''),
+		       count(*) FILTER (WHERE c.state = 'paused' AND c.reason = ANY($6::text[]))
 		FROM asset_coverage c
 		LEFT JOIN unnest($2::text[], $3::float8[]) AS p(cap, every) ON p.cap = c.capability
 		WHERE c.tenant_id = $1 AND c.vantage = ''
 		GROUP BY c.capability
 		ORDER BY c.capability`,
-		tenantID.String(), pq.Array(caps), pq.Array(secs), coverage.FailingStreak, pq.Array(coverage.ReadinessReasons()))
+		tenantID.String(), pq.Array(caps), pq.Array(secs), coverage.FailingStreak, pq.Array(coverage.ReadinessReasons()),
+		pq.Array(coverage.TargetSideOutcomes()))
 	if err != nil {
 		return nil, fmt.Errorf("coverage health: %w", err)
 	}
@@ -526,7 +539,7 @@ func (r *AssetCoverageRepository) Health(ctx context.Context, tenantID shared.ID
 	var out []coverage.CapabilityHealth
 	for rows.Next() {
 		var h coverage.CapabilityHealth
-		if err := rows.Scan(&h.Capability, &h.Applicable, &h.Gaps, &h.Failing, &h.OK, &h.NoOutput, &h.Paused, &h.PausedReason); err != nil {
+		if err := rows.Scan(&h.Capability, &h.Applicable, &h.Gaps, &h.Failing, &h.OK, &h.NoOutput, &h.Paused, &h.PausedReason, &h.Unreachable); err != nil {
 			return nil, err
 		}
 		out = append(out, h)

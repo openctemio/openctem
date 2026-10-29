@@ -89,6 +89,8 @@ func Conditions(health []CapabilityHealth) []AlertCondition {
 					continue
 				}
 				c.Count = h.Failing
+			case AlertUnreachable:
+				c.Count = h.Unreachable
 			}
 			out = append(out, c)
 		}
@@ -175,6 +177,9 @@ type AlertAction struct {
 // ActionFor returns the action of an alert condition. Server-generated
 // English: it reaches integrations verbatim.
 func ActionFor(c AlertCondition) AlertAction {
+	if c.Kind == AlertUnreachable {
+		return AlertAction{Text: "Check that a sensor in the targets' network can reach them, or retire assets that are gone.", URL: "/assets"}
+	}
 	if c.Kind != AlertReadiness {
 		return AlertAction{Text: "Open the assets to see which ones and why.", URL: "/assets"}
 	}
@@ -195,6 +200,8 @@ func ActionFor(c AlertCondition) AlertAction {
 		return AlertAction{"Add the API key the tool needs.", "/settings/scanning/tools"}
 	case ReadyQuotaExhausted:
 		return AlertAction{"It resumes at 00:00 UTC; add your own sensor to scan more.", "/sensors"}
+	case ReadyNotClaimed:
+		return AlertAction{"Open a waiting run's \"Why waiting?\" or check the sensors' grants and policies; coverage tries again on its own.", "/sensors"}
 	default: // ReadyPolicyDisabled
 		return AlertAction{"Turn the tool on in Settings > Scanning > Tools, or check scan approval and windows.", "/settings/scanning/tools"}
 	}
@@ -211,6 +218,7 @@ var readinessText = map[string]string{
 	ReadyNoEligibleSensor:   "no sensor can take the work",
 	ReadyCredentialsMissing: "an API key it needs is not configured",
 	ReadyQuotaExhausted:     "today's shared scanning quota is used up",
+	ReadyNotClaimed:         "no sensor took its last runs",
 }
 
 // ReadinessText returns the English phrase of a readiness reason.

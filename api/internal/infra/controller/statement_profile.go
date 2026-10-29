@@ -84,6 +84,7 @@ var sqlProfiles = map[string]SQLProfile{
 	"RemediationProgressController":       SQLBatched,
 	"RemediationSuggestionController":     SQLBatched,
 	"RemediationTaskController":           SQLBatched,
+	"ScopeEffectsController":              SQLBatched,
 	"RemediationTaskQueryController":      SQLBatched,
 	"ThreatAlertPlannerController":        SQLBatched,
 	"ThreatModelRefreshController":        SQLBatched,

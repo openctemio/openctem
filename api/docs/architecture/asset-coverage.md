@@ -61,9 +61,18 @@ Each pass, per tenant, after reconciling:
    rechecked after 1 day, then 3 days, then 7 days and weekly from then on
    (consecutive target-side observations; jittered). The recheck runs the
    capability again; any success makes the pair covered and clears the
-   streak. A paused target-side pair never counts as "keeps failing", but it
-   still applies: once it has had no success for twice the cadence it is a
-   gap, so a host that went dark shows in the gaps and their alert.
+   streak. The observation is **keyed by who made it**: `unreached_from` is
+   `zone:<id>` when the task ran for a scan zone (any sensor of the zone sees
+   the same network), else `sensor:<id>`. The streak, and with it the
+   widening wait, goes on only while the same zone or sensor sees the target
+   silent again (or either key is unknown); when another zone or sensor
+   observes it, the streak starts over at 1, so a different vantage gets the
+   short recheck. A success, or a sensor-side failure, clears the key. A
+   paused target-side pair never counts as "keeps failing" and is not a plain
+   gap: it counts as **unreachable** and raises its own alert (below), so
+   the same pairs never raise two alerts. The asset's coverage entry names
+   the observer (`unreached_from`) only when it is the organization's own
+   scan zone or sensor; a platform sensor is never named.
 2. **Plan**, when the organization has automatic coverage on (Scoping >
    Settings, `auto_coverage`; default on, except while the scan approval
    mode in force is Strict, until the organization turns it on): for
@@ -158,11 +167,42 @@ An open port is addressed as `host:port`; names and origins by name.
 With the loop on, automatic enrichment of new assets is off: the loop
 resolves and looks up every asset its policy names.
 
+**Runs no sensor takes (`not_claimed`).** The readiness check sees
+whether a sensor *could* take a capability's work; it cannot see every
+reason the claim or a sensor's dispatch gate (grant, local policy,
+intensity) keeps it. A coverage run whose step ends `NO_SENSOR` (no sensor
+took its work before the run's deadline) counts on the capability's hold
+(`asset_coverage_holds`, one row per tenant and capability); any other
+finished run resets the count, a stalled one leaves it. At 3 runs in a row
+the capability is paused with readiness reason `not_claimed`: its pairs
+whose time has come, its failed pairs and pairs paused for another
+readiness reason, until the probe time, and newly due pairs join the pause
+on each pass. A live readiness reason still comes first. The pause lifts:
+
+- when the tenant's sensor fleet changes: a hash of its organization
+  sensors (state, tools, capabilities, local policy state, digest and kill
+  switch, unzoned jobs), their grant versions, its zone assignments, its
+  shared-fleet setting and the platform sensors' state and tools. It never
+  reads heartbeats, health or load, so it moves on an administrator's or a
+  sensor report's change, not every minute. The hash is computed and
+  compared on the server only;
+- at the probe time: 2 h after the third unclaimed run, doubled for each
+  further one, at most 48 h (`NotClaimedRetry`).
+
+Either way exactly one run goes (the probe time moves on as it starts). If
+no sensor takes it either, the capability pauses again with the longer
+wait; a run a sensor takes resets the hold. A fingerprint that cannot be
+read is recorded empty: the pause then holds until the probe. The pause
+raises the usual `readiness` alert ("Coverage paused: resolve.dns ... no
+sensor took its last runs") with a link to the sensors, and the asset's
+coverage shows the pair paused with that reason.
+
 ## Gap detection
 
 After planning (tenants with automatic coverage on), at most every 15
 minutes per tenant, the loop reads one health line per capability:
-applicable pairs, gaps (no success for more than twice the cadence), pairs
+applicable pairs, gaps (no success for more than twice the cadence, not
+counting pairs paused as unreachable), unreachable pairs, pairs
 failing 3 or more times in a row, and pairs settled in the last 24 h with
 and without the expected output. It raises:
 
@@ -172,6 +212,7 @@ and without the expected output. It raises:
 | `output_drop` | no expected output over at least 20 settled inputs in 24 h (a broken or blocked tool) |
 | `failing` | a pair failed 3 or more times in a row (not for platform checks `dns.*`: a single asset's answer is shown on that asset) |
 | `readiness` | pairs are paused for a readiness reason (the reason is part of the key) |
+| `unreachable` | pairs are paused because their target did not answer from the organization's sensors (counts and the capability only, never the targets) |
 
 Alerts are sent **on change**, never on a timer. Each key (capability,
 kind, reason) has a row in `asset_coverage_alerts` (tenant-scoped), so a
