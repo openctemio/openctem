@@ -96,3 +96,45 @@ func TestUpdateStatus_TerminalRunIsFinal(t *testing.T) {
 		t.Fatalf("missing run: err=%v, want ErrNotFound", err)
 	}
 }
+
+// Update and UpdateStats are tenant-scoped: another tenant's id touches no row.
+func TestScanRunUpdate_OtherTenantTouchesNothing(t *testing.T) {
+	ctx := context.Background()
+	db := openScanDB(t)
+	runs := NewScanRunRepository(&DB{DB: db})
+	tenantID, scanID := seedCounterScan(ctx, t, db)
+	run := seedCounterRun(ctx, t, runs, tenantID, scanID)
+	stranger := seedScanTriggerTenant(ctx, t, db)
+
+	read := func() (completed int, status string) {
+		t.Helper()
+		if err := db.QueryRowContext(ctx, `SELECT completed_steps, status FROM scan_runs WHERE id = $1`, run.ID.String()).Scan(&completed, &status); err != nil {
+			t.Fatal(err)
+		}
+		return completed, status
+	}
+
+	if err := runs.UpdateStats(ctx, stranger, run.ID, 7, 0, 0, 5); err != nil {
+		t.Fatalf("UpdateStats: %v", err)
+	}
+	if c, _ := read(); c != 0 {
+		t.Fatalf("another tenant's UpdateStats changed the run: completed_steps=%d", c)
+	}
+
+	foreign := *run
+	foreign.TenantID = stranger
+	foreign.CompletedSteps = 9
+	if err := runs.Update(ctx, &foreign); !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("another tenant's Update: err=%v, want ErrNotFound", err)
+	}
+	if c, _ := read(); c != 0 {
+		t.Fatalf("another tenant's Update changed the run: completed_steps=%d", c)
+	}
+
+	if err := runs.UpdateStats(ctx, tenantID, run.ID, 1, 0, 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	if c, _ := read(); c != 1 {
+		t.Fatalf("own tenant's UpdateStats did not apply: completed_steps=%d", c)
+	}
+}
