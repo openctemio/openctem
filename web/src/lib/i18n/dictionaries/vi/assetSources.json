@@ -35,7 +35,7 @@
   "assetSources.kindAll.feed": "Nguồn cấp (chương trình, dữ liệu thụ động)",
   "assetSources.kindAll.import": "Tệp nhập",
   "assetSources.kindAll.integration": "Trình kết nối (tích hợp)",
-  "assetSources.kindAll.scan": "Cảm biến và trình quét",
+  "assetSources.kindAll.scan": "Sensor và trình quét",
   "assetSources.lastSeen": "Thấy lần cuối {when}",
   "assetSources.lockRow": "Giá trị một người khóa trên trang tài sản luôn thắng",
   "assetSources.moveDown": "Chuyển {name} xuống",

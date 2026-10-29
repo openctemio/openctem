@@ -440,7 +440,9 @@ func (m *mockRunRepo) CreateRunIfUnderLimit(_ context.Context, r *scanrundom.Run
 	m.runs[r.ID.String()] = r
 	return nil
 }
-func (m *mockRunRepo) UpdateStats(_ context.Context, _ shared.ID, _, _, _, _ int) error { return nil }
+func (m *mockRunRepo) UpdateStats(_ context.Context, _, _ shared.ID, _, _, _, _ int) error {
+	return nil
+}
 func (m *mockRunRepo) UpdateStatus(_ context.Context, _ shared.ID, _ scanrundom.RunStatus, _ string) error {
 	return nil
 }

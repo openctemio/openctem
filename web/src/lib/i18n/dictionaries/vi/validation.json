@@ -166,7 +166,7 @@
   "validation.controls.type.other": "Khác",
   "validation.controls.type.runtime": "Thời gian chạy",
   "validation.controls.type.segmentation": "Phân đoạn mạng",
-  "validation.coverageCard.description": "Tỷ lệ phát hiện đã được cảm biến kiểm tra lại (có bằng chứng xác thực).",
+  "validation.coverageCard.description": "Tỷ lệ phát hiện đã được sensor kiểm tra lại (có bằng chứng xác thực).",
   "validation.coverageCard.empty": "Chưa có phát hiện nào để xác thực. Hãy chạy xác thực từ một phát hiện để bắt đầu xây dựng độ phủ.",
   "validation.coverageCard.overall": "Tổng thể",
   "validation.coverageCard.title": "Độ phủ xác thực",

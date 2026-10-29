@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/assetresolution"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 )
@@ -204,6 +205,10 @@ type AssetView struct {
 	// Enrichment is the asset's pending or last automatic enrichment; nil
 	// when it never had one.
 	Enrichment *Request `json:"enrichment,omitempty"`
+	// Resolution is whether the asset's host name resolves: the last time it
+	// did, the failed checks in a row and the state. Nil for an asset that
+	// is not a host name or was never checked.
+	Resolution *assetresolution.Resolution `json:"resolution,omitempty"`
 }
 
 // View computes an asset's freshness from its observations: every observed

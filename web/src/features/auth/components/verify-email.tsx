@@ -6,6 +6,7 @@ import { Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
 import { verifyEmailAction } from '../actions/local-auth-actions'
+import { ResendVerification } from './resend-verification'
 
 type State = 'verifying' | 'verified' | 'failed'
 
@@ -45,6 +46,7 @@ export function VerifyEmail() {
             : t('auth.verifyEmail.failed', 'This link is invalid or has expired.')}
         </p>
       )}
+      {state === 'failed' && <ResendVerification />}
       <Button asChild variant="outline">
         <Link href="/login">{t('auth.notSetUp.backToSignIn', 'Back to sign in')}</Link>
       </Button>
