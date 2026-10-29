@@ -260,4 +260,6 @@ areas:
     - web/e2e/request-budget.json
     - web/src/features/*/hooks/**
     - web/src/features/*/api/**
-    - web/src/app/**/page.tsx
+    - web/src/app/**
+    - web/src/features/**/api/**
+    - web/src/lib/api/**

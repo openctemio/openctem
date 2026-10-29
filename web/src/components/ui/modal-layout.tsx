@@ -191,8 +191,22 @@ function useKeyboardInset(el: HTMLElement | null) {
         active.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
       }
     }
+    // Only a focused text field (or a native select's picker) brings the keyboard up. Without this gate the
+    // browser's own viewport changes (iOS Safari's toolbar showing or hiding,
+    // the rubber-band bounce at the end of a scroll, pinch zoom) were read as a
+    // keyboard: the panel's bottom moved every frame and its rows shook.
+    const typing = () => {
+      const active = document.activeElement
+      return (
+        active instanceof HTMLElement &&
+        el.contains(active) &&
+        (active.matches(TEXT_ENTRY) || active.tagName === 'SELECT')
+      )
+    }
     const update = () => {
-      const covered = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop))
+      const covered = typing()
+        ? Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop))
+        : 0
       if (covered === last) return
       const grew = covered > last
       last = covered
@@ -205,14 +219,26 @@ function useKeyboardInset(el: HTMLElement | null) {
       frame = requestAnimationFrame(revealFocused)
       timer = setTimeout(revealFocused, 350)
     }
+    // Focus moving between two fields keeps the keyboard up: read the new
+    // focus on the next frame rather than dropping the inset in between.
+    let focusFrame = 0
+    const onFocusChange = () => {
+      cancelAnimationFrame(focusFrame)
+      focusFrame = requestAnimationFrame(update)
+    }
     update()
     vv.addEventListener('resize', update)
     vv.addEventListener('scroll', update)
+    el.addEventListener('focusin', onFocusChange)
+    el.addEventListener('focusout', onFocusChange)
     return () => {
       cancelAnimationFrame(frame)
+      cancelAnimationFrame(focusFrame)
       clearTimeout(timer)
       vv.removeEventListener('resize', update)
       vv.removeEventListener('scroll', update)
+      el.removeEventListener('focusin', onFocusChange)
+      el.removeEventListener('focusout', onFocusChange)
       el.style.removeProperty('--modal-kb')
     }
   }, [el])

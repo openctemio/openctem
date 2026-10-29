@@ -107,6 +107,10 @@ const denied = new Set<string>()
 vi.mock('@/context/permission-provider', () => ({
   usePermissions: () => ({ hasPermission: (p: string) => !denied.has(p) }),
 }))
+vi.mock('@/lib/permissions', async (orig) => ({
+  ...(await orig<typeof import('@/lib/permissions')>()),
+  usePermissions: () => ({ can: () => false }),
+}))
 vi.mock('@/features/integrations/api/use-tenant-modules', () => ({
   useModuleEnabled: () => true,
 }))
