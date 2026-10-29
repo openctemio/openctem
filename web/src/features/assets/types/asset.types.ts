@@ -935,6 +935,8 @@ export type FindingStatus = 'open' | 'in_progress' | 'resolved' | 'accepted' | '
  * Finding associated with an asset
  */
 export interface AssetFinding {
+  /** The place on the asset (port, path or URL path); empty when the asset is the whole location. */
+  place?: string
   id: string
   type: FindingType
   severity: FindingSeverity

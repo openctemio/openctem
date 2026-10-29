@@ -980,6 +980,7 @@
   "settings.twoFactor.disableFailed": "Could not turn off two-factor authentication",
   "settings.twoFactor.disabled": "Two-factor authentication is off",
   "settings.twoFactor.done": "Done",
+  "settings.twoFactor.dueBy": "Required from {date}",
   "settings.twoFactor.enabled": "Two-factor authentication is on",
   "settings.twoFactor.federated": "You sign in through your organization's identity provider, which handles two-factor authentication.",
   "settings.twoFactor.generate": "Generate",

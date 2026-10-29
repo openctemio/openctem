@@ -287,10 +287,16 @@ func (e *evaluator) walk(body ast.Node, report func(string, token.Pos)) {
 }
 
 // eval returns the string value of expr when it can be folded.
+// maxEvalDepth bounds the evaluator's recursion. A long `a + b + c ...`
+// chain nests one level per operand, so it must stay well above the longest
+// real query; a statement cut off here loses its tenant predicate and is
+// reported as tenantless.
+const maxEvalDepth = 200
+
 func (e *evaluator) eval(expr ast.Expr) (string, bool) {
 	e.depth++
 	defer func() { e.depth-- }()
-	if e.depth > 20 {
+	if e.depth > maxEvalDepth {
 		return "", false
 	}
 	switch x := expr.(type) {

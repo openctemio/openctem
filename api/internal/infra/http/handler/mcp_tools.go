@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/url"
+	"strings"
 
 	"github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/internal/app/finding"
@@ -13,6 +15,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/filterspec"
 )
 
 // toolInputError is a tool argument-validation error whose message is safe to
@@ -63,24 +66,27 @@ func clampLimit(n int) int {
 // --- compact DTOs (domain entities expose getters, not JSON fields) ----------
 
 type mcpFindingDTO struct {
-	ID       string `json:"id"`
-	Title    string `json:"title"`
-	Severity string `json:"severity"`
-	Status   string `json:"status"`
-	CVE      string `json:"cve,omitempty"`
-	AssetID  string `json:"asset_id,omitempty"`
-	Source   string `json:"source,omitempty"`
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	// DisplayTitle is "<title> on <target>": one finding as one string.
+	DisplayTitle string `json:"display_title,omitempty"`
+	Severity     string `json:"severity"`
+	Status       string `json:"status"`
+	CVE          string `json:"cve,omitempty"`
+	AssetID      string `json:"asset_id,omitempty"`
+	Source       string `json:"source,omitempty"`
 }
 
-func toFindingDTO(f *vulnerability.Finding) mcpFindingDTO {
+func toFindingDTO(f *vulnerability.Finding, assetName string) mcpFindingDTO {
 	return mcpFindingDTO{
-		ID:       f.ID().String(),
-		Title:    f.Title(),
-		Severity: string(f.Severity()),
-		Status:   string(f.Status()),
-		CVE:      f.CVEID(),
-		AssetID:  f.AssetID().String(),
-		Source:   string(f.Source()),
+		ID:           f.ID().String(),
+		Title:        f.Title(),
+		DisplayTitle: vulnerability.FindingDisplayTitle(f, assetName),
+		Severity:     string(f.Severity()),
+		Status:       string(f.Status()),
+		CVE:          f.CVEID(),
+		AssetID:      f.AssetID().String(),
+		Source:       string(f.Source()),
 	}
 }
 
@@ -152,8 +158,9 @@ func (h *MCPHandler) buildTools() []mcpTool {
 		},
 		{
 			Name: "list_active_cves",
-			Description: "List KEV/EPSS-prioritized CVEs active in this tenant. Filters: " +
-				"kev_only (CISA Known Exploited), min_epss (0..1 exploit-probability floor), severity." + mcpUntrustedHint,
+			Description: "List the CVEs of open findings you can see, one row per CVE, riskiest first " +
+				"(priority, KEV, emerging threat, EPSS, CVSS, assets). Filters: kev_only (CISA Known " +
+				"Exploited), min_epss (0..1 exploit-probability floor), severity (of the findings)." + mcpUntrustedHint,
 			InputSchema: json.RawMessage(`{"type":"object","properties":{` +
 				`"kev_only":{"type":"boolean"},` +
 				`"min_epss":{"type":"number","description":"0..1 EPSS floor"},` +
@@ -266,8 +273,9 @@ func (h *MCPHandler) toolListFindings(ctx context.Context, tenantID string, raw 
 		return nil, err
 	}
 	out := make([]mcpFindingDTO, 0, len(res.Data))
+	names := map[string]string{}
 	for _, f := range res.Data {
-		out = append(out, toFindingDTO(f))
+		out = append(out, toFindingDTO(f, h.findingAssetName(ctx, tenantID, f, names)))
 	}
 	meta := map[string]any{"total": res.Total}
 	h.noteEmptyScope(ctx, tenantID, res.Total, meta)
@@ -287,7 +295,29 @@ func (h *MCPHandler) toolGetFinding(ctx context.Context, tenantID string, raw js
 	if err := h.checkFindingAI(ctx, tenantID, f); err != nil {
 		return nil, err
 	}
-	return untrustedResult(toFindingDTO(f), map[string]any{"finding_id": id}), nil
+	return untrustedResult(toFindingDTO(f, h.findingAssetName(ctx, tenantID, f, nil)), map[string]any{"finding_id": id}), nil
+}
+
+// findingAssetName names f's asset for its display title. The finding was
+// read through the key owner's data scope, which admits its asset; the asset
+// is read in the same tenant. cache (may be nil) saves repeat lookups on a
+// page; a failed read leaves the name out.
+func (h *MCPHandler) findingAssetName(ctx context.Context, tenantID string, f *vulnerability.Finding, cache map[string]string) string {
+	if h.assets == nil || f.AssetID().IsZero() {
+		return ""
+	}
+	id := f.AssetID().String()
+	if name, ok := cache[id]; ok {
+		return name
+	}
+	name := ""
+	if a, err := h.assets.GetAsset(ctx, tenantID, id); err == nil && a != nil {
+		name = a.Name()
+	}
+	if cache != nil {
+		cache[id] = name
+	}
+	return name
 }
 
 func (h *MCPHandler) toolFindingStats(ctx context.Context, tenantID string, _ json.RawMessage) (any, error) {
@@ -331,23 +361,42 @@ type activeCVEArgs struct {
 	Limit    int      `json:"limit"`
 }
 
+// toolListActiveCVEs is the vulnerabilities list (GET
+// /vulnerability-exposures) for the key's owner: open findings grouped by
+// CVE on the findings list's compiled filter, so the tenant, data scope and
+// member visibility apply exactly as on the page. The key never gets an
+// administrator's view.
 func (h *MCPHandler) toolListActiveCVEs(ctx context.Context, tenantID string, raw json.RawMessage) (any, error) {
 	var a activeCVEArgs
 	if err := parseToolArgs(raw, &a); err != nil {
 		return nil, err
 	}
-
-	in := finding.ListActiveCVEsInput{
-		TenantID: tenantID,
-		KEVOnly:  a.KEVOnly,
-		MinEPSS:  a.MinEPSS,
-		Page:     1,
-		PerPage:  clampLimit(a.Limit),
+	if a.MinEPSS != nil && (*a.MinEPSS < 0 || *a.MinEPSS > 1) {
+		return nil, toolInputError{"min_epss must be between 0 and 1"}
 	}
+	q := url.Values{"state": {"open"}}
 	if a.Severity != "" {
-		in.SeverityIn = []string{a.Severity}
+		q.Set("severity", strings.ToLower(strings.TrimSpace(a.Severity)))
 	}
-	res, err := h.findings.ListActiveCVEs(ctx, in)
+	spec, err := filterspec.ParseValues(q, vulnerability.FindingFields, filterspec.Options{Unknown: filterspec.UnknownStrict})
+	if err != nil {
+		return nil, toolInputError{"severity must be one of critical, high, medium, low, info, none"}
+	}
+	opts := vulnerability.CVEListOptions{EPSSGte: a.MinEPSS, Page: 1, PerPage: clampLimit(a.Limit),
+		Sort: vulnerability.CVEListSort{Key: vulnerability.CVEListSortRisk}}
+	if a.KEVOnly {
+		kev := true
+		opts.KEV = &kev
+	}
+	caller := finding.FilterCaller{
+		TenantID: tenantID,
+		UserID:   actingUser(ctx), // confine to the key owner's data scope
+		IsAdmin:  false,           // API keys never get the administrator bypass
+		// A delegated credential never inherits its holder's full-data role.
+		APIKey: middleware.IsDelegatedCredential(ctx),
+		Has:    func(p string) bool { return middleware.HasPermission(ctx, p) },
+	}
+	res, err := h.findings.ListCVEExposures(ctx, caller, spec, opts)
 	if err != nil {
 		return nil, err
 	}

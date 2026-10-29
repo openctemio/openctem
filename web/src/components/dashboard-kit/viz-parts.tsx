@@ -160,7 +160,9 @@ export function TargetChip({
  * A small trend line whose ends are labelled: the first and last bucket's
  * date and value are printed under the line, so the trend is readable and
  * never decorative. Screen readers get the same as one sentence. Needs two
- * points or more; with fewer nothing is drawn.
+ * points or more; with fewer nothing is drawn. `ends={false}` drops the
+ * printed ends for a dense row (a table cell) where the value is already
+ * shown beside the line; the sentence for screen readers stays.
  */
 export function Sparkline({
   points,
@@ -168,12 +170,14 @@ export function Sparkline({
   bucket = 'day',
   className,
   height = 32,
+  ends: showEnds = true,
 }: {
   points: SeriesPoint[] | undefined
   unit?: MetricUnit
   bucket?: 'day' | 'week' | 'month'
   className?: string
   height?: number
+  ends?: boolean
 }) {
   const { t, locale } = useTranslation()
   if (!points || points.length < 2) return null
@@ -211,7 +215,7 @@ export function Sparkline({
       <svg
         viewBox={`0 0 ${width} ${height}`}
         preserveAspectRatio="none"
-        className="h-8 w-full text-muted-foreground"
+        className={cn('w-full text-muted-foreground', showEnds ? 'h-8' : 'h-4')}
         aria-hidden
         focusable="false"
       >
@@ -225,16 +229,17 @@ export function Sparkline({
       </svg>
       <figcaption className="flex justify-between gap-2 text-[11px] leading-tight text-muted-foreground">
         <span className="sr-only">{summary}</span>
-        {ends.map((e, i) => (
-          <span
-            key={i}
-            aria-hidden
-            className={cn('flex flex-col tabular-nums', i === 1 && 'items-end text-end')}
-          >
-            <span className="font-medium text-foreground">{e.value}</span>
-            <span>{e.date}</span>
-          </span>
-        ))}
+        {showEnds &&
+          ends.map((e, i) => (
+            <span
+              key={i}
+              aria-hidden
+              className={cn('flex flex-col tabular-nums', i === 1 && 'items-end text-end')}
+            >
+              <span className="font-medium text-foreground">{e.value}</span>
+              <span>{e.date}</span>
+            </span>
+          ))}
       </figcaption>
     </figure>
   )
@@ -270,9 +275,12 @@ export function ChartOrTable({
   table,
   summary,
   defaultView = 'chart',
+  lead,
 }: {
   chart: ReactNode
   table: ReactNode
+  /** Context shown at the start of the toggle row (period and scope chips). */
+  lead?: ReactNode
   /** One sentence that says what the chart shows (its accessible name). */
   summary?: string
   defaultView?: 'chart' | 'table'
@@ -282,7 +290,8 @@ export function ChartOrTable({
   const toTable = view === 'chart'
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
-      <div className="flex justify-end">
+      <div className={cn('flex items-center gap-2', lead ? 'justify-between' : 'justify-end')}>
+        {lead}
         <Button
           variant="ghost"
           size="sm"

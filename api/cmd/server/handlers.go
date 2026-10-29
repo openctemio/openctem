@@ -286,6 +286,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	commandHandler.SetScanRunService(svc.ScanRun)
 	commandHandler.SetAuditService(svc.Audit)
 	commandHandler.SetScanCommandGate(svc.Scan)
+	commandHandler.SetResolutionRecorder(repos.AssetResolution)
 	// A job the claim-time scope re-check fails settles what waits on it
 	// (scan step, validation run, retest) as a sensor's failure would.
 	svc.Command.SetFailureObserver(commandHandler)
@@ -297,6 +298,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	commandHandler.SetRetestHooks(svc.ValidationEvidence, svc.Retest)
 	if svc.ScanRun != nil {
 		commandHandler.SetValidationRuns(svc.ScanRun)
+	}
+	// A finished proxy test (the Test button of a proxy pool) is audited.
+	if svc.ProxyPool != nil {
+		commandHandler.SetProxyTests(svc.ProxyPool)
 	}
 	// Per-task logs from sensors (RFC-029 §4.4.1), shown on the run page.
 	commandLogs := commandlog.NewService(repos.CommandLog)
@@ -398,6 +403,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	}
 	if svc.BulkGuard != nil {
 		vulnHandler.SetBulkGuard(svc.BulkGuard)
+	}
+	if svc.Retest != nil {
+		// Retest of the open findings of selected vulnerabilities.
+		vulnHandler.SetBulkRetester(svc.Retest)
 	}
 	if svc.PriorityClassification != nil {
 		vulnHandler.SetPriorityExplainer(svc.PriorityClassification)
@@ -815,7 +824,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AdminConsole:              handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, log).WithApprovals(adminApprovals),
 		AdminApproval:             handler.NewAdminApprovalHandler(adminApprovals, log),
 		AdminAuditChain:           handler.NewAdminAuditChainHandler(svc.Audit, adminConsoleSvc, repos.AdminAuditLog, repos.AdminOrg, log).WithApprovals(adminApprovals),
-		AdminAuthMiddleware:       middleware.NewAdminAuthMiddleware(adminConsoleSvc, log).WithElevation(cfg.AdminElevationRequired),
+		AdminAuthMiddleware: middleware.NewAdminAuthMiddleware(adminConsoleSvc, log).WithElevation(cfg.AdminElevationRequired).
+			WithPlatformRoles(postgres.NewPlatformRoleRepository(adminDBOf(repos, deps.DB))),
 		AdminStepUp: middleware.AdminStepUpFunc(func(ctx context.Context, a *admin.AdminUser, sess *admin.Session, code, purpose string, c middleware.AdminStepUpClient) error {
 			err := adminConsoleSvc.ConfirmProtected(ctx, a, sess, code, purpose, adminconsole.ClientInfo{IP: c.IP, UserAgent: c.UserAgent})
 			if err != nil && !errors.Is(err, admin.ErrStepUpRequired) && !errors.Is(err, admin.ErrStepUpUnavailable) && !errors.Is(err, admin.ErrInvalidMFACode) {
@@ -1064,7 +1074,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			handlers.AdminLegal = handler.NewAdminLegalHandler(platformlegal.NewService(repos.PlatformSetting, repos.AdminAuditLog, log), adminConsoleSvc, log)
 		}
 		if svc.PlatformEmail != nil {
-			handlers.AdminEmail = handler.NewAdminEmailHandler(svc.PlatformEmail, adminConsoleSvc, cfg.Brand.DisplayName(), log)
+			handlers.AdminEmail = handler.NewAdminEmailHandler(svc.PlatformEmail, adminConsoleSvc, cfg.Brand.DisplayName(), log).WithApprovals(adminApprovals)
 		}
 		handlers.SignupPolicy = svc.Signup
 	}
@@ -2101,18 +2111,12 @@ func aiAnalysisHandler(svc *aianalysis.Service, log *logger.Logger) *handler.AIA
 	return handler.NewAIAnalysisHandler(svc, log)
 }
 
-// newThreatIntelHandler builds the threat-intelligence handler; when the
-// bundle source can run (repositories present), the admin sync endpoint also
-// runs the vulnfeed source.
+// newThreatIntelHandler builds the threat-intelligence handler and the
+// background runner behind its admin sync endpoint.
 func newThreatIntelHandler(deps *HandlerDeps, v *validator.Validator, log *logger.Logger) *handler.ThreatIntelHandler {
 	h := handler.NewThreatIntelHandler(deps.Services.ThreatIntel, v, log).SetDataScope(deps.Services.DataScope)
-	repos := deps.Repos
-	if repos != nil && repos.ThreatIntel != nil && repos.CVECorpus != nil && repos.Software != nil {
-		if im, err := newVulnFeedImporter(deps.Config, repos, log.With("component", "vulnfeed")); err == nil {
-			h.SetBundleSyncer(im)
-		} else {
-			log.Warn("vulnfeed sync endpoint disabled", "error", err)
-		}
+	if runner, configured := newFeedRunner(deps, log); runner != nil {
+		h.SetFeedRunner(runner, configured)
 	}
 	return h
 }

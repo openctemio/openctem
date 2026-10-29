@@ -65,6 +65,32 @@ describe('ReceiptSummary', () => {
     expect(box).toHaveTextContent(/Full coverage/)
   })
 
+  it('while the run is running: live counts, untouched pending, and no claim that it closed anything', () => {
+    render(
+      <ReceiptSummary
+        receipt={receipt({ counts: { created: 3, updated: 5 } })}
+        runState="running"
+      />
+    )
+    const box = screen.getByTestId('receipt-summary')
+    expect(screen.getByText('New').nextSibling).toHaveTextContent('3')
+    expect(screen.getByText('Untouched').nextSibling).toHaveTextContent(
+      'Counted when the run finishes'
+    )
+    expect(box).toHaveTextContent(/Counts update as results arrive/)
+    expect(box).toHaveTextContent(/only when its tasks finish with full coverage/)
+    expect(box).not.toHaveTextContent(/did not complete/)
+    expect(box).not.toHaveTextContent(/Partial coverage: it closes nothing/)
+  })
+
+  it('a run that ended short never says its full coverage could close findings', () => {
+    render(<ReceiptSummary receipt={receipt()} runState="incomplete" />)
+    const box = screen.getByTestId('receipt-summary')
+    expect(box).toHaveTextContent(/The run did not complete/)
+    expect(box).not.toHaveTextContent(/it did not report could be closed/)
+    expect(screen.getByText('Untouched').nextSibling).toHaveTextContent('4')
+  })
+
   it('shows untouched as unknown under partial coverage, and a held close', () => {
     const { rerender } = render(
       <ReceiptSummary
@@ -118,6 +144,14 @@ describe('RecentImports', () => {
 })
 
 describe('RunReceiptSection', () => {
+  it('passes the run state down to the summary', async () => {
+    getMock.mockResolvedValueOnce({ data: [receipt()] })
+    wrap(<RunReceiptSection runId="run-1" runState="running" />)
+    await waitFor(() =>
+      expect(screen.getByTestId('receipt-summary')).toHaveTextContent(/Counts update as results/)
+    )
+  })
+
   it('renders the run receipt, and nothing when the API returns none', async () => {
     getMock.mockResolvedValueOnce({ data: [receipt()] })
     const { unmount } = wrap(<RunReceiptSection runId="run-1" />)
