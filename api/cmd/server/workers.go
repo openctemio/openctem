@@ -1034,6 +1034,14 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			svc.RemediationTask, 2*time.Minute, log.With("controller", "remediation-tasks"),
 		))
 	}
+	// Scope effects: close the findings of assets out of scope for good,
+	// reopen those back in scope (research/320). Exclusion changes kick a
+	// pass at once; this catches expiries, new findings and missed kicks.
+	if svc != nil && svc.ScopeEffects != nil {
+		w.ControllerManager.Register(controller.NewScopeEffectsController(
+			svc.ScopeEffects, 5*time.Minute, log.With("controller", "scope-effects"),
+		))
+	}
 	// Tasks from a query in auto mode: add new matches as each task's owner
 	// (suspends a task whose owner left or lost access).
 	if svc != nil && svc.RemediationTask != nil {
@@ -1269,7 +1277,10 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		if svc.Scan != nil && svc.ScanPolicy != nil {
 			svc.AssetCoverage.EnablePlanning(repos.AssetCoverage, svc.Scan,
 				coverageapp.GovernanceSwitch{Modes: svc.ScanPolicy, Settings: svc.Tenant},
-				coverageapp.Config{DailyBudget: cfg.Worker.AssetCoverageDailyBudget})
+				// A due batch waits until it fills one task of its tool or
+				// its oldest pair has waited a tenth of the cadence (at most
+				// 6 h): pairs whose jittered due times are close share a run.
+				coverageapp.Config{DailyBudget: cfg.Worker.AssetCoverageDailyBudget, FillBatches: true})
 			// Readiness: a capability with no sensor or tool that could run
 			// it gets no run; its pairs pause with the reason and resume by
 			// themselves.

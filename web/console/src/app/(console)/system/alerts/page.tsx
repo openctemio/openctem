@@ -7,7 +7,7 @@ import { ErrorState, PageHeader, PageStack } from '@/features/shared'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { useAlertWebhook } from '@console/features/admin-console/api/use-platform-settings'
 import { AlertWebhookForm } from '@console/features/admin-console/components/alert-webhook-form'
-import { adminCan } from '@console/features/admin-console/types'
+import { adminHas } from '@console/features/admin-console/types'
 
 /** Settings -> Alerts: the alert webhook (RFC-079). */
 export default function AlertsSettingsPage() {
@@ -35,7 +35,7 @@ export default function AlertsSettingsPage() {
         ) : (
           <AlertWebhookForm
             settings={data}
-            canEdit={adminCan(me.role, 'super_admin')}
+            canEdit={adminHas(me, 'platform.settings.general.write')}
             onSaved={() => void mutate()}
           />
         )}

@@ -61,9 +61,18 @@ Each pass, per tenant, after reconciling:
    rechecked after 1 day, then 3 days, then 7 days and weekly from then on
    (consecutive target-side observations; jittered). The recheck runs the
    capability again; any success makes the pair covered and clears the
-   streak. A paused target-side pair never counts as "keeps failing", but it
-   still applies: once it has had no success for twice the cadence it is a
-   gap, so a host that went dark shows in the gaps and their alert.
+   streak. The observation is **keyed by who made it**: `unreached_from` is
+   `zone:<id>` when the task ran for a scan zone (any sensor of the zone sees
+   the same network), else `sensor:<id>`. The streak, and with it the
+   widening wait, goes on only while the same zone or sensor sees the target
+   silent again (or either key is unknown); when another zone or sensor
+   observes it, the streak starts over at 1, so a different vantage gets the
+   short recheck. A success, or a sensor-side failure, clears the key. A
+   paused target-side pair never counts as "keeps failing" and is not a plain
+   gap: it counts as **unreachable** and raises its own alert (below), so
+   the same pairs never raise two alerts. The asset's coverage entry names
+   the observer (`unreached_from`) only when it is the organization's own
+   scan zone or sensor; a platform sensor is never named.
 2. **Plan**, when the organization has automatic coverage on (Scoping >
    Settings, `auto_coverage`; default on, except while the scan approval
    mode in force is Strict, until the organization turns it on): for
@@ -120,6 +129,20 @@ same in Go and SQL), so pairs settled together drift apart and a restart
 does not re-align them. A new pair, or one whose precondition holds again,
 is due at once. A blocked or paused pair whose precondition stops holding
 becomes `not_applicable` like any other.
+
+**Batches fill a task.** A capability's due batch starts when it fills one
+task of the capability's default tool (the stage's chunk size, 25 when the
+tool takes no list), or when its oldest due pair has waited a tenth of the
+cadence, at most 6 h (2.4 h for daily DNS, 6 h for HTTP, ports and
+templates). Until then the pairs stay `due` and the batch collects the
+pairs that fall due meanwhile. The jitter spreads re-due times over a tenth
+of the cadence, so pairs settled together come due inside that window and
+one run carries them, instead of one small run per coalescing window. The
+1 h coalescing window stays: once a batch starts it also takes pairs due
+within the hour. The wait only delays coverage work: excluding an asset
+still stops it at the claim-time check, and a scan a person starts is not
+batched. When the daily budget leaves fewer pairs than a task, a batch of
+that size is full.
 
 **Passive capabilities and zones.** A passive capability (`resolve.dns`,
 `lookup.rdap`, `lookup.asn`, `discover.subdomains`) sends no traffic to
@@ -192,7 +215,8 @@ coverage shows the pair paused with that reason.
 
 After planning (tenants with automatic coverage on), at most every 15
 minutes per tenant, the loop reads one health line per capability:
-applicable pairs, gaps (no success for more than twice the cadence), pairs
+applicable pairs, gaps (no success for more than twice the cadence, not
+counting pairs paused as unreachable), unreachable pairs, pairs
 failing 3 or more times in a row, and pairs settled in the last 24 h with
 and without the expected output. It raises:
 
@@ -202,6 +226,7 @@ and without the expected output. It raises:
 | `output_drop` | no expected output over at least 20 settled inputs in 24 h (a broken or blocked tool) |
 | `failing` | a pair failed 3 or more times in a row (not for platform checks `dns.*`: a single asset's answer is shown on that asset) |
 | `readiness` | pairs are paused for a readiness reason (the reason is part of the key) |
+| `unreachable` | pairs are paused because their target did not answer from the organization's sensors (counts and the capability only, never the targets) |
 
 Alerts are sent **on change**, never on a timer. Each key (capability,
 kind, reason) has a row in `asset_coverage_alerts` (tenant-scoped), so a

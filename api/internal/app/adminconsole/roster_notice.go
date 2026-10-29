@@ -31,6 +31,7 @@ const (
 	RosterSignInPolicy     = "console_sign_in_policy"
 	RosterIdentityProvider = "platform_identity_provider"
 	RosterIdPUnbound       = "admin_idp_unbound"
+	RosterPlatformRole     = "admin_platform_role"
 )
 
 // RosterChange describes one change for the notice.
