@@ -46,7 +46,9 @@ export function rateLimitRetryDelayMs(
   now = Date.now(),
   random = Math.random
 ): number {
-  return Math.min(parseRetryAfter(retryAfter, now), MAX_READ_RETRY_WAIT_MS) + Math.floor(random() * 250)
+  return (
+    Math.min(parseRetryAfter(retryAfter, now), MAX_READ_RETRY_WAIT_MS) + Math.floor(random() * 250)
+  )
 }
 
 /** Records a 429 answer. */
