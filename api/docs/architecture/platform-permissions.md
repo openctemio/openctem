@@ -60,6 +60,7 @@ elevation is required, the default).
 | `platform.tenants.read` | yes | yes | yes | yes | yes | yes | yes | yes |
 | `platform.tenants.scan_policy.write` |  | yes |  |  |  |  |  |  |
 | `platform.tenants.sso.write` |  | yes |  |  |  |  |  |  |
+| `platform.users.credentials` |  | yes |  |  |  |  |  |  |
 | `platform.users.read` |  | yes | yes |  |  | yes |  |  |
 | `platform.users.support` |  | yes | yes |  |  | yes |  |  |
 
@@ -89,7 +90,7 @@ elevation is required, the default).
 | `platform.settings.legal.write` | Legal pages |
 | `platform.settings.limits.write` | Default limits of self-service organizations |
 | `platform.settings.read` | Read every platform setting, announcements, content packs, catalog, target mappings, feeds and AI clients |
-| `platform.settings.signup.write` | Sign-up policy and sign-up alert thresholds |
+| `platform.settings.signup.write` | Sign-up policy, sign-up alert thresholds and the social-login providers |
 | `platform.support.access` | Open support sessions inside a grant an organization gave you, and read through them |
 | `platform.tenants.audit_chain.write` | Re-sign an organization's audit chain (also needs a second owner's approval) |
 | `platform.tenants.create` | Create an organization; approve or reject an access request |
@@ -102,6 +103,7 @@ elevation is required, the default).
 | `platform.tenants.read` | Organizations: list, details, limits, modules, single sign-on, audit chain state, access requests and the sign-up feed |
 | `platform.tenants.scan_policy.write` | Change an organization's scan-approval policy and shared sensors |
 | `platform.tenants.sso.write` | Change an organization's SAML, identity providers, verified domains and SSO enforcement |
+| `platform.users.credentials` | Account credentials: issue a password-reset link, mark an e-mail verified, reset two-factor (the reset also needs a second owner's approval) |
 | `platform.users.read` | Find any account and view its sign-in state, organizations and sessions |
 | `platform.users.support` | Account support: end sessions, unlock, send password-reset or verification mail, block or unblock |
 
@@ -189,7 +191,10 @@ session, no permission). `public`: a sign-in step before a session exists.
 | `GET /api/v1/admin/platform-users/` | `platform.users.read` |
 | `GET /api/v1/admin/platform-users/{user_id}` | `platform.users.read` |
 | `POST /api/v1/admin/platform-users/{user_id}/block` | `platform.users.support` |
+| `POST /api/v1/admin/platform-users/{user_id}/mark-verified` | `platform.users.credentials` |
+| `POST /api/v1/admin/platform-users/{user_id}/mfa/reset` | `platform.users.credentials` |
 | `POST /api/v1/admin/platform-users/{user_id}/password-reset` | `platform.users.support` |
+| `POST /api/v1/admin/platform-users/{user_id}/reset-link` | `platform.users.credentials` |
 | `POST /api/v1/admin/platform-users/{user_id}/revoke-sessions` | `platform.users.support` |
 | `POST /api/v1/admin/platform-users/{user_id}/unblock` | `platform.users.support` |
 | `POST /api/v1/admin/platform-users/{user_id}/unlock` | `platform.users.support` |
@@ -201,6 +206,8 @@ session, no permission). `public`: a sign-in step before a session exists.
 | `GET /api/v1/admin/settings/alerts/` | `platform.settings.read` |
 | `PUT /api/v1/admin/settings/alerts/` | `platform.settings.general.write` |
 | `POST /api/v1/admin/settings/alerts/test` | `platform.settings.general.write` |
+| `GET /api/v1/admin/settings/auth-mfa/` | `platform.settings.read` |
+| `PUT /api/v1/admin/settings/auth-mfa/` | `platform.settings.general.write` |
 | `GET /api/v1/admin/settings/captcha/` | `platform.settings.read` |
 | `PUT /api/v1/admin/settings/captcha/` | `platform.settings.general.write` |
 | `POST /api/v1/admin/settings/captcha/verify` | `platform.settings.general.write` |
@@ -233,8 +240,13 @@ session, no permission). `public`: a sign-in step before a session exists.
 | `PUT /api/v1/admin/settings/signup-alerts/` | `platform.settings.signup.write` |
 | `GET /api/v1/admin/settings/signup/` | `platform.settings.read` |
 | `PUT /api/v1/admin/settings/signup/` | `platform.settings.signup.write` |
+| `GET /api/v1/admin/settings/social-login-providers/` | `platform.settings.read` |
+| `PUT /api/v1/admin/settings/social-login-providers/{provider}` | `platform.settings.signup.write` |
+| `POST /api/v1/admin/settings/social-login-providers/{provider}/test` | `platform.settings.signup.write` |
 | `GET /api/v1/admin/settings/storage-quota/` | `platform.settings.read` |
 | `PUT /api/v1/admin/settings/storage-quota/` | `platform.settings.general.write` |
+| `GET /api/v1/admin/settings/threat-intel-source/` | `platform.settings.read` |
+| `PUT /api/v1/admin/settings/threat-intel-source/` | `platform.settings.general.write` |
 | `GET /api/v1/admin/shared-sensors/` | `platform.sensors.read` |
 | `POST /api/v1/admin/shared-sensors/enrollment-tokens` | `platform.sensors.manage` |
 | `GET /api/v1/admin/shared-sensors/jobs` | `platform.sensors.read` |
@@ -256,6 +268,7 @@ session, no permission). `public`: a sign-in step before a session exists.
 | `GET /api/v1/admin/system` | `platform.console.read` |
 | `GET /api/v1/admin/target-mappings/` | `platform.settings.read` |
 | `POST /api/v1/admin/target-mappings/` | `platform.content.manage` |
+| `GET /api/v1/admin/target-mappings/registry` | `platform.settings.read` |
 | `GET /api/v1/admin/target-mappings/stats` | `platform.settings.read` |
 | `GET /api/v1/admin/target-mappings/types` | `platform.settings.read` |
 | `DELETE /api/v1/admin/target-mappings/{id}` | `platform.content.manage` |
