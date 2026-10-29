@@ -99,3 +99,54 @@ func TestDetectConfigSecrets_BoundedAndNilSafe(t *testing.T) {
 	}
 	_ = DetectConfigSecrets(map[string]any{"root": deep})
 }
+
+// A quick scan's target list travels in its settings: long host names have
+// the entropy of a token, and flagging them withheld every such job from
+// every sensor (the grant refuses jobs that carry credentials).
+func TestDetectConfigSecrets_TargetsAndHostNames(t *testing.T) {
+	hosts := []any{
+		"static-01.example-group.com.vn",
+		"dcommunication-gw-api.example.com.vn",
+		"myaccount-v2-uat.example.com.vn",
+		"*.dsb-gateway-bo-uat01.example.net",
+		"2001:db8::1",
+		"203.0.113.0/24",
+	}
+	cfg := map[string]any{
+		"targets":   hosts,
+		"target":    "registry-api-uat9.example.com.vn",
+		"resolvers": []any{"ns1-a9.dns-provider42.example.org"},
+	}
+	if got := paths(DetectConfigSecrets(cfg)); got != "" {
+		t.Fatalf("host names flagged as secrets: %s", got)
+	}
+
+	// A credential format is still a secret, in a target list too.
+	cfg = map[string]any{
+		"targets": []any{"ok.example.com", "https://user:pw@example.com/"},
+		"blob":    "Zm9vYmFyYmF6cXV4MTIzNDU2Nzg5MEFCQ0RFRg",
+		"jwtish":  "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N",
+	}
+	want := "blob=high_entropy,jwtish=high_entropy,targets[1]=known_format"
+	if got := paths(DetectConfigSecrets(cfg)); got != want {
+		t.Fatalf("got  %s\nwant %s", got, want)
+	}
+}
+
+func TestIsHostOrAddress(t *testing.T) {
+	for v, want := range map[string]bool{
+		"a.example.com":                 true,
+		"static-01.example.com.vn.":     true,
+		"10.0.0.1":                      true,
+		"10.0.0.0/8":                    true,
+		"localhost":                     false,
+		"-bad.example.com":              false,
+		"example.c0m":                   false,
+		"Zm9vYmFy.YmF6cXV4MTIzNDU2Nzg5": false,
+		"abc_def.example.com":           false,
+	} {
+		if got := isHostOrAddress(v); got != want {
+			t.Errorf("isHostOrAddress(%q) = %v, want %v", v, got, want)
+		}
+	}
+}
