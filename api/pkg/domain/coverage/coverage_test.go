@@ -3,6 +3,7 @@ package coverage
 import (
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -47,5 +48,25 @@ func TestClipKeepsUTF8(t *testing.T) {
 	}
 	if Clip("short", 64) != "short" {
 		t.Error("a short value changed")
+	}
+}
+
+func TestNotClaimedRetry(t *testing.T) {
+	for streak, want := range map[int]time.Duration{
+		0: 2 * time.Hour, 3: 2 * time.Hour, 4: 4 * time.Hour, 5: 8 * time.Hour,
+		7: 32 * time.Hour, 8: 48 * time.Hour, 50: 48 * time.Hour,
+	} {
+		if got := NotClaimedRetry(streak); got != want {
+			t.Errorf("streak %d: %v, want %v", streak, got, want)
+		}
+	}
+	if !IsReadinessReason(ReadyNotClaimed) || ReadinessText(ReadyNotClaimed) == ReadyNotClaimed {
+		t.Fatal("not_claimed is a readiness reason with a text")
+	}
+	if a := ActionFor(AlertCondition{Kind: AlertReadiness, Reason: ReadyNotClaimed}); a.URL != "/sensors" {
+		t.Fatalf("action %+v", a)
+	}
+	if (Hold{Streak: NotClaimedStreak - 1}).Active() || !(Hold{Streak: NotClaimedStreak}).Active() {
+		t.Fatal("a hold is active from NotClaimedStreak")
 	}
 }

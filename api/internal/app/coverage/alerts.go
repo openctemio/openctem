@@ -113,6 +113,9 @@ func describeCondition(c covdom.AlertCondition) (title, body string) {
 	case covdom.AlertFailing:
 		return "Coverage: " + c.Capability + " keeps failing",
 			fmt.Sprintf("%s failed %d or more times in a row on %d assets.", c.Capability, covdom.FailingStreak, c.Count)
+	case covdom.AlertUnreachable:
+		return "Coverage: " + c.Capability + " targets unreachable",
+			fmt.Sprintf("%d assets did not answer %s from your sensors; they are checked again on a widening schedule.", c.Count, c.Capability)
 	default:
 		return "Coverage gap: " + c.Capability,
 			fmt.Sprintf("%d assets that need %s have not had it for more than twice its cadence (or never).", c.Count, c.Capability)

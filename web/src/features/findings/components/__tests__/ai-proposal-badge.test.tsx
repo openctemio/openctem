@@ -27,3 +27,10 @@ describe('AIProposalBadge', () => {
     expect(container).toBeEmptyDOMElement()
   })
 })
+
+describe('AIProposalBadge for an AI agent', () => {
+  it('marks an approval an AI agent proposed', () => {
+    render(<AIProposalBadge approval={{ requested_by_actor: 'ai_agent' }} />)
+    expect(screen.getByTestId('ai-badge')).toHaveAttribute('data-source', 'ai_agent')
+  })
+})

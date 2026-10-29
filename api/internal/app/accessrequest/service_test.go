@@ -17,6 +17,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
+	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
 )
 
 type memRepo struct {
@@ -370,6 +371,34 @@ func TestApprove(t *testing.T) {
 	}
 }
 
+// An administrator's account may be an ordinary member of organizations
+// (RFC-134), so an administrator cannot approve a request made with their own
+// e-mail (any case): one person would mint an organization for themselves with
+// platform power. Nothing is created and the request stays pending.
+func TestApprove_SelfApprovalRefused(t *testing.T) {
+	ctx := context.Background()
+	svc, repo, orgs := newSvc(t, openPolicy, nil, nil)
+	_ = submit(svc, "OPS@op.example", "203.0.113.1")
+	id := onePending(t, repo)
+
+	if _, _, err := svc.Approve(ctx, superAdmin(t), id, ApproveInput{Slug: "acme"}, auditapp.AuditContext{}); !errors.Is(err, ardom.ErrSelfApproval) {
+		t.Fatalf("expected ErrSelfApproval, got %v", err)
+	}
+	if len(orgs.calls) != 0 {
+		t.Fatal("no organization may be created on a self-approval")
+	}
+	if r := repo.rows[id.String()]; r == nil || r.Status != ardom.StatusPending {
+		t.Fatalf("the request stays pending, got %+v", r)
+	}
+	other, err := admin.NewAdminUser("other@op.example", "Other", admin.AdminRoleOpsAdmin, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := svc.Approve(ctx, other, id, ApproveInput{Slug: "acme"}, auditapp.AuditContext{}); err != nil {
+		t.Fatalf("another administrator approves it: %v", err)
+	}
+}
+
 func TestApprove_UnconfirmedRefused(t *testing.T) {
 	svc, repo, orgs := newSvc(t, openPolicy, &fakeMailer{configured: true}, nil)
 	_ = submit(svc, "a@acme.com", "203.0.113.1")
@@ -509,4 +538,52 @@ func TestApprove_ExistingOwnerNeedsConfirmedAddress(t *testing.T) {
 	if len(mailer.approvals) != 0 {
 		t.Fatalf("a new account is not sent the approval notice: %v", mailer.approvals)
 	}
+}
+
+type fakeUsers struct{ byEmail map[string]*userdom.User }
+
+func (f fakeUsers) GetByEmail(_ context.Context, email string) (*userdom.User, error) {
+	if u := f.byEmail[strings.ToLower(email)]; u != nil {
+		return u, nil
+	}
+	return nil, userdom.ErrUserNotFound
+}
+
+// The requester's application account can carry a different e-mail than the
+// administrator record (an identity provider may change it). Self-approval is
+// decided on the account id: the linked account is the requester's, so the
+// approval is refused even though the e-mails differ; another administrator
+// still approves.
+func TestApprove_SelfApprovalByAccountID(t *testing.T) {
+	ctx := context.Background()
+	svc, repo, orgs := newSvc(t, openPolicy, nil, nil)
+	_ = submit(svc, "drifted@corp.example", "203.0.113.1")
+	id := onePending(t, repo)
+
+	uid := shared.NewID()
+	linked := mustUser(t, uid, "drifted@corp.example")
+	svc.SetUserLookup(fakeUsers{byEmail: map[string]*userdom.User{"drifted@corp.example": linked}})
+	self := admin.Reconstitute(shared.NewID(), "ops@op.example", "Ops", admin.AdminRoleOpsAdmin, true, &uid,
+		nil, "", 0, nil, nil, "", time.Now(), nil, time.Now())
+	if _, _, err := svc.Approve(ctx, self, id, ApproveInput{Slug: "acme"}, auditapp.AuditContext{}); !errors.Is(err, ardom.ErrSelfApproval) {
+		t.Fatalf("expected ErrSelfApproval by account id, got %v", err)
+	}
+	if len(orgs.calls) != 0 {
+		t.Fatal("no organization may be created")
+	}
+	otherUID := shared.NewID()
+	other := admin.Reconstitute(shared.NewID(), "other@op.example", "Other", admin.AdminRoleOpsAdmin, true, &otherUID,
+		nil, "", 0, nil, nil, "", time.Now(), nil, time.Now())
+	if _, _, err := svc.Approve(ctx, other, id, ApproveInput{Slug: "acme"}, auditapp.AuditContext{}); err != nil {
+		t.Fatalf("another administrator approves it: %v", err)
+	}
+}
+
+func mustUser(t *testing.T, id shared.ID, email string) *userdom.User {
+	t.Helper()
+	u, err := userdom.NewLocalUserWithID(id, email, "N")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return u
 }

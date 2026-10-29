@@ -14,16 +14,16 @@
       "reason": "The AI-triage mode 'agent' (self-hosted LLM agent, module ai_triage.agent) is an LLM agent, not a sensor."
     },
     {
-      "id": "ai-triage-agent-module",
-      "files": "^src/config/modules\\.generated\\.ts$",
-      "pattern": "ai_triage\\.agent|Agent Mode",
-      "reason": "The AI-triage 'agent' sub-module id and name, generated from the module registry (api/configs/modules/): an LLM agent, not a sensor."
-    },
-    {
       "id": "glossary-vocabulary-ai-agent",
       "files": "^src/lib/i18n/__tests__/glossary-vocabulary\\.test\\.ts$",
       "pattern": "AI agent",
       "reason": "The glossary guard names the term to use for the retired 'AI analyst': an AI agent (with the analyst role), not a sensor."
+    },
+    {
+      "id": "ai-agent-principal",
+      "files": "^src/",
+      "pattern": "[Aa][Ii][-_ ./]?(?:[Aa]gents?|AGENTS?)|(?:proposed|new|Proposed)Agent(?:Named)?|agentNamed|aiBadge\\.agent\\b|(?:ai\\.|ai/)agents?\\b",
+      "reason": "The AI agent: an AI principal with a role (analyst, remediator, ...) that works under its own service account (RFC-132). Not a sensor; always written 'AI agent'."
     },
     {
       "id": "endpoint-agent-role",
@@ -72,6 +72,12 @@
       "files": "^src/lib/api/(sensor-protocol-guard\\.ts|__tests__/sensor-protocol-guard\\.test\\.ts)$",
       "pattern": "'agent'",
       "reason": "The web UI's /api/v1 proxy refuses the protocol v1 routes (first segment 'agent', a frozen wire name) with 421, so a sensor pointed at the UI is told to use the API address."
+    },
+    {
+      "id": "ai-agent-routes-and-notes",
+      "files": "^src/config/(api-route-permissions|authz-matrix)\\.json$",
+      "pattern": "/ai/agents|AI agents?",
+      "reason": "Generated from the Go API: the AI agent routes (/api/v1/ai/agents) and their route notes name AI agents, not sensors."
     }
   ],
   "excludedPaths": ["^src/lib/api/openapi/", "^src/lib/api/generated/"],

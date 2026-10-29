@@ -3,7 +3,6 @@
 import useSWR from 'swr'
 import { adminFetch, adminFetcher, AdminApiError } from '@console/lib/admin-api/client'
 import type {
-  AdminRole,
   AdminIdPCallbackResult,
   AdminIdPInfo,
   AdminIdentity,
@@ -87,8 +86,8 @@ export function adminChangePassword(currentPassword: string, newPassword: string
  * for `minutes` (15-60), with a reason. The route asks for a fresh code
  * (adminFetch's step-up dialog).
  */
-export function adminElevate(role: AdminRole, minutes: number, reason: string) {
-  return adminFetch<{ role: AdminRole; elevated_until: string }>('/auth/elevate', {
+export function adminElevate(role: string, minutes: number, reason: string) {
+  return adminFetch<{ role: string; elevated_until: string }>('/auth/elevate', {
     method: 'POST',
     body: { role, minutes, reason },
   })

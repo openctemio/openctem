@@ -39,7 +39,14 @@ export const CLOSED_STATUSES: FindingStatus[] = [
 
 /** The reasons a sub-status of each closed status may bind (api ClosureReasonsFor). */
 export const SUB_STATUS_CLOSURE_REASONS: Partial<Record<FindingStatus, string[]>> = {
-  resolved: ['fixed', 'mitigated', 'obsolete_asset', 'obsolete_source', 'obsolete_rule'],
+  resolved: [
+    'fixed',
+    'mitigated',
+    'obsolete_asset',
+    'obsolete_source',
+    'obsolete_rule',
+    'out_of_scope',
+  ],
   false_positive: [
     'component_not_present',
     'vulnerable_code_not_present',

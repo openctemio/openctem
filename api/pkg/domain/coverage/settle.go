@@ -21,6 +21,22 @@ type TaskResult struct {
 	Error   string
 	Targets []string
 	Result  json.RawMessage
+	// Observer is who ran the task: ObserverKey of its scan zone or its
+	// sensor ("" when no sensor took it).
+	Observer string
+}
+
+// ObserverKey is the key a target-side observation is recorded under:
+// "zone:<id>" when the task ran for a scan zone (any sensor of the zone
+// sees the same network), else "sensor:<id>", "" when neither is known.
+func ObserverKey(zoneID, sensorID string) string {
+	switch {
+	case zoneID != "":
+		return "zone:" + zoneID
+	case sensorID != "":
+		return "sensor:" + sensorID
+	}
+	return ""
 }
 
 // Verdict kinds.
@@ -28,6 +44,29 @@ const (
 	VerdictCovered = "covered"
 	VerdictFailed  = "failed"
 	VerdictBlocked = "blocked"
+	// VerdictUnresolved: the target is a name that does not resolve. Its
+	// Outcome is OutcomeNoAnswer (the resolver answered that the name has
+	// no address: NXDOMAIN or NODATA) or ReasonResolverFailed (the lookup
+	// itself failed). A fact about the name, never a failure of the scan.
+	VerdictUnresolved = "unresolved"
+)
+
+// CapabilityResolveDNS is the DNS resolution capability: for it, a name
+// that does not resolve is the answer (OutcomeNoAnswer), not a refusal.
+const CapabilityResolveDNS = "resolve.dns"
+
+// Dead-name outcomes and reasons.
+const (
+	// OutcomeNoAnswer: the DNS resolution of the name answered that it has
+	// no address. The resolve.dns pair is covered with this outcome and
+	// the name is parked (IsParked).
+	OutcomeNoAnswer = "no_answer"
+	// ReasonUnresolvable blocks a pair of another capability whose target
+	// the sensor could not resolve, on the dead-name recheck schedule.
+	ReasonUnresolvable = "unresolvable"
+	// ReasonResolverFailed: the lookup failed (SERVFAIL, REFUSED, a resolver
+	// timeout); ambiguous, it may be the sensor's own DNS.
+	ReasonResolverFailed = "resolver_failed"
 )
 
 // Outcomes recorded on pairs settled per target, besides OutcomeOK and
@@ -43,13 +82,15 @@ type Verdict struct {
 	Outcome string // ok, a failure class (unreachable, timeout, tool_error, egress_refused), unfinished, failed
 	Reason  string // for blocked: the skip class (refused, excluded)
 	Error   string
+	// Observer is the task's TaskResult.Observer for a failed verdict.
+	Observer string
 }
 
 func (v Verdict) rank() int {
 	switch {
 	case v.Kind == VerdictCovered:
 		return 4
-	case v.Kind == VerdictBlocked:
+	case v.Kind == VerdictBlocked, v.Kind == VerdictUnresolved:
 		return 3
 	case v.Kind == VerdictFailed && v.Outcome != OutcomeUnfinished:
 		return 2
@@ -82,8 +123,26 @@ func Verdicts(tasks []TaskResult, runUnfinished []string) map[string]Verdict {
 			out[k] = v
 		}
 	}
-	for _, t := range tasks {
+	for _, task := range tasks {
+		t := task
+		put := func(target string, v Verdict) {
+			if v.Kind == VerdictFailed {
+				v.Observer = t.Observer
+			}
+			put(target, v)
+		}
 		outcomes, unreached, has := readResult(t.Result)
+		refused := readRefused(t.Result)
+		// A target the sensor refused before any tool saw it (listed in
+		// the result's refused_targets, read against the task's own
+		// targets: a sensor cannot settle a target of another task) is
+		// never covered. A name that does not resolve is unresolved; any
+		// other refusal blocks the target with its reason.
+		for _, target := range t.Targets {
+			if r, ok := refused[TargetKey(target)]; ok {
+				put(target, r)
+			}
+		}
 		if t.Status == "completed" && command.ResultTruncated(t.Result) {
 			if has {
 				// A done outcome of a truncated task is withheld: the
@@ -116,6 +175,9 @@ func Verdicts(tasks []TaskResult, runUnfinished []string) map[string]Verdict {
 							Error: "the sensor reached no service on the target"})
 						continue
 					}
+					if _, ok := refused[TargetKey(target)]; ok {
+						continue
+					}
 					put(target, Verdict{Kind: VerdictCovered, Outcome: OutcomeOK})
 				}
 			case "failed", "canceled", "expired", "timeout":
@@ -137,6 +199,10 @@ func Verdicts(tasks []TaskResult, runUnfinished []string) map[string]Verdict {
 				}
 				put(o.Target, Verdict{Kind: VerdictCovered, Outcome: OutcomeOK})
 			case outcome.Failed:
+				if o.Class == outcome.NameGone || o.Class == outcome.ResolverFailed {
+					put(o.Target, unresolvedVerdict(string(o.Class)))
+					continue
+				}
 				if allTargetSide {
 					// Every target of the task failed the same target-side
 					// way: that points at the sensor (no route, no egress),
@@ -152,6 +218,10 @@ func Verdicts(tasks []TaskResult, runUnfinished []string) map[string]Verdict {
 				}
 				put(o.Target, Verdict{Kind: VerdictFailed, Outcome: string(o.Class), Error: t.Error})
 			case outcome.Skipped:
+				if r, ok := refused[TargetKey(o.Target)]; ok {
+					put(o.Target, r)
+					continue
+				}
 				put(o.Target, Verdict{Kind: VerdictBlocked, Reason: string(o.Class)})
 			default:
 				put(o.Target, Verdict{Kind: VerdictFailed, Outcome: OutcomeUnfinished,
@@ -208,6 +278,69 @@ func readResult(raw json.RawMessage) ([]outcome.Target, map[string]bool, bool) {
 	}
 	return *r.Outcomes, unreached, true
 }
+
+// unresolvedVerdict is the verdict of a name that does not resolve, from
+// the sensor's DNS kind: "resolver_failed" when the lookup failed, else
+// (name_gone, or a sensor that does not say) no answer.
+func unresolvedVerdict(dns string) Verdict {
+	if dns == ReasonResolverFailed {
+		return Verdict{Kind: VerdictUnresolved, Outcome: ReasonResolverFailed,
+			Error: "the sensor's DNS lookup of the name failed"}
+	}
+	return Verdict{Kind: VerdictUnresolved, Outcome: OutcomeNoAnswer, Error: "the name has no address"}
+}
+
+// Refused-target reasons a sensor lists in refused_targets (sdk-go
+// core.RefusedTarget*).
+const refusedUnresolvable = "unresolvable"
+
+// readRefused returns the targets a task result's metadata lists as
+// refused by the sensor (refused_targets), by TargetKey: a name that does
+// not resolve as unresolved (with its DNS kind), any other refusal as
+// blocked with its reason. The list is sensor-supplied and bounded; the
+// caller reads it only for the task's own targets.
+func readRefused(raw json.RawMessage) map[string]Verdict {
+	if len(raw) == 0 {
+		return nil
+	}
+	var r struct {
+		Metadata struct {
+			Refused []struct {
+				Target string `json:"target"`
+				Reason string `json:"reason"`
+				DNS    string `json:"dns"`
+			} `json:"refused_targets"`
+		} `json:"metadata"`
+	}
+	if json.Unmarshal(raw, &r) != nil || len(r.Metadata.Refused) == 0 {
+		return nil
+	}
+	out := make(map[string]Verdict, min(len(r.Metadata.Refused), maxRefusedRead))
+	for i, e := range r.Metadata.Refused {
+		if i == maxRefusedRead {
+			break
+		}
+		k := TargetKey(e.Target)
+		if k == "" {
+			continue
+		}
+		if e.Reason == refusedUnresolvable {
+			out[k] = unresolvedVerdict(e.DNS)
+			continue
+		}
+		out[k] = Verdict{Kind: VerdictBlocked, Reason: string(outcome.Refused)}
+	}
+	return out
+}
+
+// maxRefusedRead bounds the refused targets read from one result.
+const maxRefusedRead = 1000
+
+// DeadNameRechecks is the recheck schedule of a name that does not
+// resolve (a resolve.dns pair covered with no answer, or a pair of another
+// capability blocked as unresolvable): the target-side schedule, 1 day,
+// 3 days, 7 days, then weekly.
+func DeadNameRechecks() []time.Duration { return append([]time.Duration(nil), TargetSideRechecks...) }
 
 // Target-side outcomes: the target did not answer (it is down, filtered or
 // gone), not a failure of the sensor, the tool or the platform. Such a pair

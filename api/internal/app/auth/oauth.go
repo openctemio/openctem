@@ -94,7 +94,7 @@ type OAuthService struct {
 	providers        ProviderSource
 	authConfig       config.AuthConfig
 	logger           *logger.Logger
-	platformAdmins   PlatformAdminGate
+	breakGlassGate   BreakGlassGate
 	httpClient       *http.Client
 	// oidcVerifier validates the signed id_token for providers that return one
 	// (Microsoft/Entra), so identity is taken from verified claims rather than
@@ -371,10 +371,10 @@ func (s *OAuthService) signIn(ctx context.Context, userInfo *OAuthUserInfo, prov
 		return nil, fmt.Errorf("failed to find or create user: %w", err)
 	}
 
-	// A platform administrator signs in on the admin console only; the answer
-	// is the generic provider failure.
-	if refusePlatformAdmin(ctx, s.platformAdmins, s.logger, u, "oauth") {
-		return nil, ErrUseAdminConsole
+	// A break-glass account signs in on the admin console only; the answer is
+	// the generic provider failure.
+	if refuseBreakGlass(ctx, s.breakGlassGate, s.logger, u, "oauth") {
+		return nil, ErrOAuthExchangeFailed
 	}
 
 	// A password account reached through a linked provider takes the same

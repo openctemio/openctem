@@ -19,7 +19,7 @@ import {
   useMcpClients,
   type AdminMcpClient,
 } from '@console/features/admin-console/api/use-mcp-clients'
-import { adminCan } from '@console/features/admin-console/types'
+import { adminHas } from '@console/features/admin-console/types'
 import { formatDateSafe, formatRelative } from '@/lib/format-date'
 
 const KIND_KEY: Record<AdminMcpClient['kind'], string> = {
@@ -47,7 +47,7 @@ export default function AiApplicationsPage() {
   const [busy, setBusy] = useState<string | null>(null)
   const [pendingBlock, setPendingBlock] = useState<AdminMcpClient | null>(null)
   const { t } = useTranslation()
-  const canBlock = adminCan(me.role, 'ops_admin')
+  const canBlock = adminHas(me, 'platform.ai_clients.manage')
 
   const toggle = async (c: AdminMcpClient) => {
     setBusy(c.id)
