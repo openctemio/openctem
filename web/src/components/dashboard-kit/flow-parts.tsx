@@ -70,7 +70,8 @@ export interface Anchor {
  */
 export function useWireAnchors(
   ref: RefObject<HTMLElement | null>,
-  deps: unknown[]
+  /** Changes when the content that is measured changes (re-measures). */
+  contentKey: string | number
 ): {
   width: number
   height: number
@@ -97,14 +98,15 @@ export function useWireAnchors(
   }, [ref])
 
   useLayoutEffect(() => {
+    // contentKey is a re-measure trigger, not read here.
+    void contentKey
     setLayout(measure())
     const el = ref.current
     if (!el || typeof ResizeObserver === 'undefined') return
     const ro = new ResizeObserver(() => setLayout(measure()))
     ro.observe(el)
     return () => ro.disconnect()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [measure, ...deps])
+  }, [ref, measure, contentKey])
   return layout
 }
 
