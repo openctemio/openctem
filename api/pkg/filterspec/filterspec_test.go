@@ -296,6 +296,18 @@ func TestAliases(t *testing.T) {
 	}
 }
 
+// A route with NoAliases takes only the current names: a deprecated name is
+// an unknown param (400 in strict mode), never mapped.
+func TestNoAliases(t *testing.T) {
+	for _, q := range []string{"severities=high", "search=x", "epss_min=0.5"} {
+		parseErr(t, q, Options{Unknown: UnknownStrict, NoAliases: true})
+	}
+	s := mustParse(t, "severity=high", Options{Unknown: UnknownStrict, NoAliases: true})
+	if len(s.AliasesUsed) != 0 || len(s.Leaves()) != 1 {
+		t.Fatalf("current name: %+v", s)
+	}
+}
+
 func TestEmptyValueIsNoFilter(t *testing.T) {
 	s := mustParse(t, "severity=&status=,,", testOpts())
 	if s.Root != nil {

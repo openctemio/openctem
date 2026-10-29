@@ -35,6 +35,11 @@ vi.mock('@/features/access-control/api/use-groups', () => ({
   useMyGroups: () => ({ groups: [{ id: 'g1', name: 'Platform team' }] }),
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+const perms = vi.hoisted(() => ({ granted: new Set<string>() }))
+vi.mock('@/lib/permissions', async (orig) => ({
+  ...(await orig<typeof import('@/lib/permissions')>()),
+  usePermissions: () => ({ can: (p: string) => perms.granted.has(p) }),
+}))
 
 Element.prototype.scrollIntoView ??= () => {}
 globalThis.ResizeObserver ??= class {
@@ -204,13 +209,29 @@ describe('sharing', () => {
     await userEvent.click(await screen.findByRole('combobox', { name: 'Visible to' }))
   }
 
-  // Organization-wide views wait for the API that stores them; until then the
-  // menu offers only the viewer and their groups, and sends no org field.
-  it('offers only me and my groups, never the whole organization', async () => {
+  // Sharing with the whole organization needs findings:views:share; without
+  // it the menu offers only the viewer and their groups.
+  it('offers only me and my groups without the share permission', async () => {
+    perms.granted.clear()
     await openSave()
     expect(await screen.findByRole('option', { name: 'Only me' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'Platform team' })).toBeInTheDocument()
     expect(screen.queryByRole('option', { name: /organization/i })).toBeNull()
+  })
+
+  it('offers the whole organization with the share permission and sends share_with_org', async () => {
+    perms.granted = new Set(['findings:views:share'])
+    await openSave()
+    await userEvent.click(
+      await screen.findByRole('option', { name: 'Everyone in the organization' })
+    )
+    await userEvent.type(screen.getByLabelText('Name'), 'Org view')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(createSavedView).toHaveBeenCalled())
+    const body = vi.mocked(createSavedView).mock.calls[0][0] as unknown as Record<string, unknown>
+    expect(body.share_with_org).toBe(true)
+    expect(body.group_id).toBeUndefined()
+    perms.granted.clear()
   })
 
   it('a saved view carries a query, never rows or an org flag', async () => {

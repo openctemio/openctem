@@ -245,7 +245,7 @@ func registerServiceAccountRoutes(
 		// for your own keys.
 		// Listing is for owners and administrators only (owner decision 2026-10-02).
 		r.GET("/{id}/api-keys", h.ListKeys, middleware.RequireAdmin(), middleware.RequireAll(permission.MembersRead, permission.APIKeysRead))
-		r.POST("/{id}/api-keys", h.CreateKey, middleware.RequireAll(permission.ServiceAccountsManage, permission.APIKeysWrite), requireStepUp())
+		r.POST("/{id}/api-keys", h.CreateKey, middleware.RequireAll(permission.ServiceAccountsManage, permission.APIKeysWrite), requireStepUp(), requireCredentialFactor())
 		r.DELETE("/{id}/api-keys/{key_id}", h.DeleteKey, middleware.RequireAll(permission.ServiceAccountsManage, permission.APIKeysDelete), requireStepUp())
 	}, tenantMiddlewares...)
 }

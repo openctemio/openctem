@@ -43,6 +43,11 @@ export const LOGIN_ERROR_CODES = [
   'membership_suspended',
   'organization_unavailable',
   'email_not_verified',
+  /**
+   * The provider's email names an account that signs in another way: sign in
+   * with it, then link the provider in Account > Security.
+   */
+  'account_exists',
 ] as const
 
 export type LoginErrorCode = (typeof LOGIN_ERROR_CODES)[number]
@@ -85,6 +90,8 @@ const FALLBACKS: Record<LoginErrorCode | 'generic', string> = {
   organization_unavailable: 'This organization is suspended. Contact support.',
   email_not_verified:
     'Verify your email address before signing in. Check your inbox for the verification link.',
+  account_exists:
+    'An account with this email already exists. Sign in with your password, then link this provider in Account > Security.',
   generic: 'Sign-in failed. Try again.',
 }
 

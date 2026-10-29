@@ -3,14 +3,14 @@ package handler
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/feedsync"
 	"github.com/openctemio/openctem/api/internal/app/threat"
-	"github.com/openctemio/openctem/api/internal/app/vulnfeed"
 	"github.com/openctemio/openctem/api/pkg/domain/threatintel"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -30,13 +30,6 @@ type fakeIntelRepo struct {
 }
 
 func (r *fakeIntelRepo) SyncStatus() threatintel.SyncStatusRepository { return r.st }
-
-type fakeBundles struct {
-	res vulnfeed.Result
-	err error
-}
-
-func (f fakeBundles) Sync(context.Context) (vulnfeed.Result, error) { return f.res, f.err }
 
 func failedStatus() *threatintel.SyncStatus {
 	st := threatintel.NewSyncStatus("vulnfeed", 1)
@@ -83,43 +76,116 @@ func TestSyncStatuses_TenantRouteHidesRawError(t *testing.T) {
 	}
 }
 
+type fakeRunner struct {
+	known   map[string]bool
+	started []string
+	outcome feedsync.Outcome
+	err     error
+}
+
+func (f *fakeRunner) Has(s string) bool { return f.known[s] }
+func (f *fakeRunner) Trigger(s string) (feedsync.Outcome, error) {
+	if f.err != nil {
+		return "", f.err
+	}
+	f.started = append(f.started, s)
+	return f.outcome, nil
+}
+
+func enabledStatus(source string, enabled bool) *threatintel.SyncStatus {
+	st := threatintel.NewSyncStatus(source, 24)
+	st.SetEnabled(enabled)
+	return st
+}
+
+func triggerHandler(t *testing.T, runner *fakeRunner, configured bool, statuses ...*threatintel.SyncStatus) *ThreatIntelHandler {
+	t.Helper()
+	svc := threat.NewIntelService(&fakeIntelRepo{st: &fakeStatusRepo{all: statuses}}, logger.NewNop())
+	return NewThreatIntelHandler(svc, nil, logger.NewNop()).SetFeedRunner(runner, configured)
+}
+
 func triggerSync(h *ThreatIntelHandler, body string) *httptest.ResponseRecorder {
 	rec := httptest.NewRecorder()
 	h.TriggerSync(rec, httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body)))
 	return rec
 }
 
-// A failed feed is 200 with success=false for that feed, never 206, and the
-// vulnfeed source is accepted.
-func TestTriggerSync_VulnfeedAcceptedAndFailureReported(t *testing.T) {
-	h := NewThreatIntelHandler(nil, nil, logger.NewNop())
-	if rec := triggerSync(h, `{"source":"vulnfeed"}`); rec.Code != http.StatusBadRequest {
-		t.Fatalf("without a bundle syncer: %d", rec.Code)
-	}
-
-	h.SetBundleSyncer(fakeBundles{err: errors.New("vulnfeed fetch keyset.dsse.json: status 404")})
-	rec := triggerSync(h, `{"source":"vulnfeed"}`)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", rec.Code)
-	}
+func results(t *testing.T, rec *httptest.ResponseRecorder) []TriggerResult {
+	t.Helper()
 	var out struct {
-		Results []SyncResultResponse `json:"results"`
+		Results []TriggerResult `json:"results"`
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil || len(out.Results) != 1 {
-		t.Fatalf("%v %s", err, rec.Body.String())
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("%v: %s", err, rec.Body.String())
 	}
-	if r := out.Results[0]; r.Source != "vulnfeed" || r.Success || r.Error == "" {
-		t.Fatalf("result: %+v", r)
+	return out.Results
+}
+
+// Sync now queues the work and answers 202 at once; the vulnfeed source is
+// accepted and "all" includes it.
+func TestTriggerSync_QueuesAndAnswers202(t *testing.T) {
+	runner := &fakeRunner{known: map[string]bool{"epss": true, "kev": true, "vulnfeed": true}, outcome: feedsync.Queued}
+	h := triggerHandler(t, runner, true, enabledStatus("epss", true), enabledStatus("kev", true), enabledStatus("vulnfeed", true))
+
+	rec := triggerSync(h, `{"source":"vulnfeed"}`)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202", rec.Code)
+	}
+	if r := results(t, rec); len(r) != 1 || r[0].Source != "vulnfeed" || r[0].Status != "queued" {
+		t.Fatalf("results %+v", r)
 	}
 
-	h.SetBundleSyncer(fakeBundles{res: vulnfeed.Result{Ran: true, CVEs: 12}})
-	rec = triggerSync(h, `{"source":"vulnfeed"}`)
-	_ = json.Unmarshal(rec.Body.Bytes(), &out)
-	if r := out.Results[0]; !r.Success || r.RecordsSynced != 12 {
-		t.Fatalf("ok result: %+v", r)
+	runner.started = nil
+	rec = triggerSync(h, ``)
+	if rec.Code != http.StatusAccepted || len(results(t, rec)) != 3 || len(runner.started) != 3 {
+		t.Fatalf("all: %d %v", rec.Code, runner.started)
 	}
+
+	runner.outcome = feedsync.AlreadyRunning
+	if r := results(t, triggerSync(h, `{"source":"kev"}`)); r[0].Status != "already_running" {
+		t.Fatalf("running: %+v", r)
+	}
+}
+
+func TestTriggerSync_Refusals(t *testing.T) {
+	runner := &fakeRunner{known: map[string]bool{"epss": true, "kev": true, "vulnfeed": true}, outcome: feedsync.Queued}
+	h := triggerHandler(t, runner, false, enabledStatus("epss", false), enabledStatus("kev", true), enabledStatus("vulnfeed", true))
 
 	if rec := triggerSync(h, `{"source":"nope"}`); rec.Code != http.StatusBadRequest {
 		t.Fatalf("unknown source: %d", rec.Code)
+	}
+	if rec := triggerSync(h, `{bad`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("bad body: %d", rec.Code)
+	}
+	// Switched off, or no root key: not started, and said so.
+	if rec := triggerSync(h, `{"source":"epss"}`); rec.Code != http.StatusConflict {
+		t.Fatalf("disabled: %d", rec.Code)
+	}
+	if rec := triggerSync(h, `{"source":"vulnfeed"}`); rec.Code != http.StatusConflict {
+		t.Fatalf("not configured: %d", rec.Code)
+	}
+	// All: the others still start; the skipped ones carry a reason.
+	rec := triggerSync(h, `{"source":"all"}`)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("all: %d", rec.Code)
+	}
+	reasons := map[string]string{}
+	for _, r := range results(t, rec) {
+		reasons[r.Source] = r.Status + ":" + r.Reason
+	}
+	if reasons["epss"] != "skipped:disabled" || reasons["vulnfeed"] != "skipped:not_configured" || reasons["kev"] != "queued:" {
+		t.Fatalf("reasons %v", reasons)
+	}
+	if len(runner.started) != 1 || runner.started[0] != "kev" {
+		t.Fatalf("started %v", runner.started)
+	}
+}
+
+func TestTriggerSync_RateLimited(t *testing.T) {
+	runner := &fakeRunner{known: map[string]bool{"kev": true}, err: &feedsync.TooSoonError{RetryAfter: 9 * time.Second}}
+	h := triggerHandler(t, runner, true, enabledStatus("kev", true))
+	rec := triggerSync(h, `{"source":"kev"}`)
+	if rec.Code != http.StatusTooManyRequests || rec.Header().Get("Retry-After") != "10" {
+		t.Fatalf("%d retry-after %q", rec.Code, rec.Header().Get("Retry-After"))
 	}
 }
