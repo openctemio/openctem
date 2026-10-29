@@ -55,6 +55,6 @@ git -C "$w" push -q origin main --tags
 git -C "$w" switch -q develop
 out="$(bash "$POST" --repo "$w" --version v0.2.2 --mode hotfix 2>/dev/null)"; rc=$?
 assert_eq "main-only fix: exit 3" 3 "$rc"
-assert_contains "main-only fix: named" "$(git -C "$w" rev-parse --short=12 v0.2.2^{commit})" "$out"
+assert_contains "main-only fix: named" "$(git -C "$w" rev-parse --short=12 "v0.2.2^{commit}")" "$out"
 
 finish
