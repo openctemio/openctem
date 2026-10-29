@@ -19,6 +19,7 @@
   "assetCoverage.noAnswer": "the name has no DNS answer; checked again later",
   "assetCoverage.noOutput": "found nothing",
   "assetCoverage.none": "Nothing is scanned automatically for this kind of asset.",
+  "assetCoverage.reason.content_missing": "the platform has no wordlist pack for its tool yet; an instance administrator imports it",
   "assetCoverage.reason.credentials_missing": "an API key it needs is not configured",
   "assetCoverage.reason.excluded": "excluded from scope",
   "assetCoverage.reason.no_eligible_sensor": "no sensor can take the work",

@@ -460,6 +460,23 @@ Web: the **Monitoring** card on `/attack-surface` shows the last runs, the
 switches with a privacy note for CT, the cadence, and **Run now** (disabled
 inside the 15-minute window). How-to:
 [easm-monitoring-settings.md](../how-to/easm-monitoring-settings.md).
+## 4m. Active subdomain enumeration (built)
+
+Passive sources (certificate transparency, `discover.subdomains`) miss names
+that never had a public certificate or a passive-DNS record, such as
+`charts-uat.example.com` or `academy-go.example.com`. Coverage therefore also
+runs `enumerate.subdomains` weekly on every `domain` asset under a scope
+entry: `dnsx-enum` queries DNS for `<label>.<root>` over the platform's small
+label pack plus the labels learned from the organization's own names, and
+keeps only the names that resolve, after wildcard filtering. Found names
+enter the inventory as `subdomain` assets with attribution like any other
+discovered name. They never widen scope by themselves.
+
+Wiring, gates and the `content_missing` pause are described in
+[asset-coverage.md](asset-coverage.md) ("Subdomain enumeration"); the packs
+in [wordlists.md](wordlists.md). Until an instance administrator imports the
+`wordlists-s` release asset, enumeration coverage stays paused.
+
 ## 4h. Port and service results (built, P0-6)
 
 A port scanner (naabu, nmap, masscan, rustscan) reports an IP address with
