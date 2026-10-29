@@ -601,7 +601,9 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
                 toolbarBelow={
                   <InventoryFilterBar
                     locked={
-                      !filters.attribution?.length ? (
+                      !filters.attribution?.length &&
+                      hiddenCount !== undefined &&
+                      hiddenCount > 0 ? (
                         <InventoryHiddenChip count={hiddenCount} onShowAll={showAllAttributions} />
                       ) : undefined
                     }
