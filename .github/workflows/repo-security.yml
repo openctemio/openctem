@@ -299,6 +299,14 @@ jobs:
       # Which base images the CI image mirror copies for the other repositories.
       - name: CI image mirror base list self-test
         run: bash .github/scripts/ci-image-bases.test.sh
+      # Content keys of the CI images, their attestation check, retention, and the
+      # rule that no pull_request path can hold packages: write.
+      - name: CI image build-once self-tests
+        run: |
+          bash .github/scripts/image-key.test.sh
+          bash .github/scripts/ci-image-resolve.test.sh
+          bash .github/scripts/ci-images-prune.test.sh
+          bash .github/scripts/pr-no-package-write.test.sh
       # Which release the upgrade test starts from, and its refusals.
       - name: Upgrade test self-test
         run: bash .github/scripts/upgrade-test.test.sh
@@ -330,6 +338,15 @@ jobs:
       - name: Tool pin freshness self-test
         run: bash .github/scripts/tool-pins.test.sh
 
+      # Incremental pull request CI and the release fast path.
+      - name: Incremental CI base (last green commit) self-test
+        run: bash .github/scripts/green-base.test.sh
+      - name: Release provenance self-test
+        run: bash .github/scripts/release/tests/test_release_provenance.sh
+      - name: Release preflight self-test
+        run: bash .github/scripts/release/tests/test_release_preflight.sh
+      - name: Early warning self-test
+        run: bash .github/scripts/early-warning.test.sh
       - name: Release builds use no shared cache
         run: bash .github/scripts/check-release-no-cache.sh
 
