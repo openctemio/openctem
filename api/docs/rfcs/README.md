@@ -144,6 +144,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-133](RFC-133-ai-harness.md) | The AI harness (own loop, AI worker pool, scale on the job system, own tool sandbox) | Accepted (2026-10-28). |
 | [RFC-134](RFC-134-platform-administration.md) | Platform administration (one identity, platform roles, staff governance) | Accepted (2026-10-28). |
 | [RFC-135](RFC-135-custom-ai-agents.md) | AI agents that organizations build (revisions, lifecycle, registry, console) | Accepted (2026-10-28). |
+| [RFC-136](RFC-136-page-views-and-request-budgets.md) | Page views and request budgets | Accepted (2026-10-29). |
 <!-- END RFC INDEX -->
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.
