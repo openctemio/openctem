@@ -144,6 +144,11 @@ func IsGap(r Rule, row *Row, now time.Time) bool {
 	case StateBlocked, StatePaused, StateNotApplicable:
 		return false
 	}
+	if row.LastOutcome == OutcomeNoAnswer {
+		// A name with no address is answered, and parked on its own
+		// recheck schedule (also while a recheck runs).
+		return false
+	}
 	since := row.CreatedAt
 	if row.LastSuccessAt != nil {
 		since = *row.LastSuccessAt
@@ -322,6 +327,16 @@ type Planner interface {
 	// answer: paused with the outcome as the reason, the streak counted and
 	// rechecked on the TargetSideRecheck schedule.
 	SettleTargetSide(ctx context.Context, tenantID, runID shared.ID, capability string, pairs []FailedPair) (int, error)
+	// SettleNoAnswer settles queued resolve.dns pairs of a run whose name
+	// has no address: covered with OutcomeNoAnswer (the name is parked),
+	// the consecutive no-answer streak counted, and rechecked on the
+	// DeadNameRechecks schedule.
+	SettleNoAnswer(ctx context.Context, tenantID, runID shared.ID, capability string, assetIDs []shared.ID) (int, error)
+	// SettleUnresolved settles queued pairs of a run whose target the sensor
+	// could not resolve: blocked with the pair's Outcome as the reason
+	// (ReasonUnresolvable or ReasonResolverFailed), the streak counted and
+	// rechecked on the DeadNameRechecks schedule. Never a failure.
+	SettleUnresolved(ctx context.Context, tenantID, runID shared.ID, capability string, pairs []FailedPair) (int, error)
 	// QueuedTargets returns the queued pairs a run holds.
 	QueuedTargets(ctx context.Context, tenantID, runID shared.ID, capability string) ([]DueTarget, error)
 	// AttemptsSince counts the pairs of the tenant attempted since t (the
