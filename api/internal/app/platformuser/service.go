@@ -35,6 +35,12 @@ var (
 	ErrNotLocked = fmt.Errorf("%w: the account is not locked", shared.ErrConflict)
 	// ErrEmailUnavailable: no email can be sent from this installation.
 	ErrEmailUnavailable = errors.New("email is not configured on this installation")
+	// ErrEmailAvailable: this installation can send email, so the account's
+	// own mailbox is the way (a link shown to an administrator is only for
+	// servers that cannot send mail).
+	ErrEmailAvailable = errors.New("email is configured on this installation")
+	// ErrMFANotEnabled: the account has no second factor to reset.
+	ErrMFANotEnabled = fmt.Errorf("%w: the account has no two-factor authentication to reset", shared.ErrConflict)
 )
 
 // SessionRevoker ends every session of an account.
@@ -45,6 +51,11 @@ type SessionRevoker interface {
 // ResetIssuer issues a password reset token (the forgot-password flow).
 type ResetIssuer interface {
 	ForgotPassword(ctx context.Context, input auth.ForgotPasswordInput) (*auth.ForgotPasswordResult, error)
+}
+
+// MFAResetter turns off an account's second factor and ends its sessions.
+type MFAResetter interface {
+	ResetUserMFAByConsole(ctx context.Context, id shared.ID, ip string) error
 }
 
 // Mailer sends the account's own links.
@@ -80,7 +91,9 @@ type Service struct {
 	// blocker and adminAudit: block / unblock (block.go).
 	blocker    Blocker
 	adminAudit AdminAudit
-	log        *logger.Logger
+	// mfa resets a second factor (SetMFAResetter).
+	mfa MFAResetter
+	log *logger.Logger
 }
 
 // NewService creates the service. Any dependency may be nil; the action that
@@ -179,4 +192,82 @@ func (s *Service) ResendVerification(ctx context.Context, id shared.ID) error {
 		return fmt.Errorf("store token: %w", err)
 	}
 	return s.mailer.SendVerificationEmail(ctx, u.Email(), u.Name(), token, s.durations.EmailVerification)
+}
+
+// ResetLinkTTL is how long a password reset link an administrator copies
+// stays valid.
+const ResetLinkTTL = time.Hour
+
+// SetMFAResetter wires the console two-factor reset.
+func (s *Service) SetMFAResetter(m MFAResetter) { s.mfa = m }
+
+// IssueResetLink issues a one-hour password reset token for a local account
+// and returns it for the administrator to hand over. Only on an installation
+// that cannot send email (ErrEmailAvailable otherwise: the account's own
+// mailbox is the way). The token is a bearer secret: only its hash is stored,
+// the caller shows it once and nothing here logs it. Following the link does
+// not bypass the account's second factor.
+func (s *Service) IssueResetLink(ctx context.Context, id shared.ID) (string, time.Time, error) {
+	u, err := s.target(ctx, id)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	if !u.IsLocalUser() {
+		return "", time.Time{}, ErrNotLocal
+	}
+	if s.mailer != nil && s.mailer.IsConfigured() {
+		return "", time.Time{}, ErrEmailAvailable
+	}
+	token, err := password.GenerateResetToken()
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("generate token: %w", err)
+	}
+	expires := time.Now().Add(ResetLinkTTL)
+	u.SetPasswordResetToken(crypto.HashToken(token), expires)
+	if err := s.users.Update(ctx, u); err != nil {
+		return "", time.Time{}, fmt.Errorf("store token: %w", err)
+	}
+	return token, expires, nil
+}
+
+// MarkVerified marks an unverified local account's email verified, for an
+// installation that cannot send the verification link. Refused when email
+// works (the person verifies by the link) and for an already verified one.
+func (s *Service) MarkVerified(ctx context.Context, id shared.ID) error {
+	u, err := s.target(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !u.IsLocalUser() {
+		return ErrNotLocal
+	}
+	if u.EmailVerified() {
+		return ErrAlreadyVerified
+	}
+	if s.mailer != nil && s.mailer.IsConfigured() {
+		return ErrEmailAvailable
+	}
+	u.VerifyEmail()
+	if err := s.users.Update(ctx, u); err != nil {
+		return fmt.Errorf("mark verified: %w", err)
+	}
+	return nil
+}
+
+// ResetMFA turns off the account's second factor and signs it out
+// everywhere. The caller has checked the second approval.
+func (s *Service) ResetMFA(ctx context.Context, id shared.ID, ip string) error {
+	if _, err := s.target(ctx, id); err != nil {
+		return err
+	}
+	if s.mfa == nil {
+		return errors.New("two-factor reset is not configured")
+	}
+	if err := s.mfa.ResetUserMFAByConsole(ctx, id, ip); err != nil {
+		if errors.Is(err, auth.ErrMFANotEnabled) {
+			return ErrMFANotEnabled
+		}
+		return err
+	}
+	return nil
 }
