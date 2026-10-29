@@ -277,6 +277,15 @@ opened it ends, not only through End, a newer session or a revoke:
 - The tenant's `open_session` signal (the "support is viewing now" banner) is
   true only while a session is open **and** its console session is alive and
   not idle, so it drops at once even before the sweeper runs.
+- The sweeper is clean-up and notification, not the enforcement: a support
+  session unused for 30 minutes, or whose grant ended, is refused on its next
+  use even when the sweeper has not ended it yet, and that use does not
+  revive it.
+- The sweeper and the signal run on the app pool, which cannot read
+  `admin_sessions` under the console database role; they ask
+  `admin_session_live(session, at, idle_seconds)`, a read-only `SECURITY
+  DEFINER` function that returns one boolean
+  (`docs/deployment/database-roles.md`).
 
 ### 11.2 Differences from the proposal
 

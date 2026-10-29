@@ -106,6 +106,19 @@ provider repositories. A SQL injection in any tenant-facing code path, which
 runs on the app pool, can no longer add an administrator, read a console
 session or credential, or swap the platform identity provider.
 
+Support access (RFC-063) lives on the app pool but ends a support session with
+the console session that opened it. The one fact it needs from
+`admin_sessions`, "is this console session alive", comes from
+`admin_session_live(session, at, idle_seconds)`: a read-only `SECURITY DEFINER`
+function owned by the migrator that returns a boolean, so the app role keeps
+no privilege on the table. New app-pool SQL that reads a table the app role
+cannot read, or writes or row-locks one it cannot write, fails
+`TestConsoleTables_OnlyConsolePoolRepositories`
+(`internal/infra/postgres/console_tables_guard_test.go`), which reads the
+grants from this script; `tests/integration/console_role_split_test.go` runs
+those repositories as the app role on a database bootstrapped with the console
+role.
+
 The console's organization, member and settings screens run on the app pool
 (the same services as the tenant plane); only the repositories above use the
 console pool. `bootstrap-admin` and `rekey` connect as the schema owner
