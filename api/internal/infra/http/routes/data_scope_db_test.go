@@ -26,6 +26,7 @@ import (
 	"testing"
 	"time"
 
+	certificateapp "github.com/openctemio/openctem/api/internal/app/certificate"
 	webendpointapp "github.com/openctemio/openctem/api/internal/app/webendpoint"
 
 	_ "github.com/lib/pq"
@@ -251,6 +252,7 @@ func newDSHarness(t *testing.T) *dsHarness {
 	suggSvc.SetDataScope(enforcer)
 	dedupHandler := handler.NewAdminDedupHandler(postgres.NewAssetDedupRepository(db), log).SetDataScope(enforcer)
 	registerAssetServiceRoutes(router, svcHandler, auth, nil)
+	registerCertificateRoutes(router, handler.NewCertificateHandler(certificateapp.NewService(postgres.NewCertificateReadRepository(db), enforcer), log), auth, nil)
 	registerWebEndpointRoutes(router, handler.NewWebEndpointHandler(webendpointapp.NewService(postgres.NewWebEndpointRepository(db), enforcer), nil, log), auth, nil)
 	registerAssetStateHistoryRoutes(router, historyHandler, auth, nil)
 	registerAssetRelationshipRoutes(router, handler.NewAssetRelationshipHandler(relSvc, v, log), auth, nil, passthrough)
