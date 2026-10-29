@@ -6,16 +6,16 @@
  * SLA due). The CTEM loop is loop-viz.tsx.
  */
 
-import { CircleAlert } from 'lucide-react'
 import { KevBadge } from '@/components/ui/kev-badge'
 import { PriorityBadge } from '@/components/ui/priority-badge'
 import { isPriorityClass } from '@/lib/priority-colors'
 import { Badge } from '@/components/ui/badge'
 import { useTranslation } from '@/context/i18n-provider'
 import { SEQUENTIAL_STEPS, sequentialStep } from '@/lib/chart-palette'
-import { formatCount, formatRelativeTime } from '@/lib/format-metric'
+import { formatCount } from '@/lib/format-metric'
 import { SEVERITY_DOT_COLORS, type SeverityLevel } from '@/lib/severity-colors'
 import { cn } from '@/lib/utils'
+import { DueLabel } from './due-label'
 import { MatrixTable } from './table-viz'
 import { ChartOrTable, DrillLink, useLabel } from './viz-parts'
 import type { DrillFn, ItemsResult, MatrixResult } from './types'
@@ -24,11 +24,6 @@ import type { DrillFn, ItemsResult, MatrixResult } from './types'
 export function heatStep(value: number, max: number): number {
   if (value <= 0 || max <= 0) return -1
   return Math.min(SEQUENTIAL_STEPS - 1, Math.floor((value / max) * SEQUENTIAL_STEPS))
-}
-
-/** A deadline already behind us. */
-function isPast(iso: string | null | undefined): boolean {
-  return !!iso && Date.parse(iso) < Date.now()
 }
 
 const isSeverity = (k: string): k is SeverityLevel => k in SEVERITY_DOT_COLORS
@@ -153,8 +148,6 @@ export function ItemsViz({
     <div className="flex min-h-0 flex-1 flex-col gap-1">
       <ul className="flex flex-col divide-y">
         {rows.map((r) => {
-          const due = r.due_at ? formatRelativeTime(r.due_at, locale) : null
-          const overdue = isPast(r.due_at)
           // A finding with no severity or the stored "none" still gets a dot
           // slot, so the priority badge and title line up with every other row.
           const rawSev = r.severity === 'none' ? 'info' : r.severity
@@ -197,22 +190,7 @@ export function ItemsViz({
                   {r.asset}
                 </span>
               )}
-              {due ? (
-                overdue ? (
-                  <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-destructive">
-                    <CircleAlert className="size-3.5" aria-hidden />
-                    {t('dashboardKit.items.overdue', 'Overdue {time}', { time: due })}
-                  </span>
-                ) : (
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    {t('dashboardKit.items.due', 'due {time}', { time: due })}
-                  </span>
-                )
-              ) : (
-                <span className="shrink-0 text-xs text-muted-foreground">
-                  {t('dashboardKit.items.noDue', 'No due date')}
-                </span>
-              )}
+              <DueLabel dueAt={r.due_at} />
             </div>
           )
           return (
