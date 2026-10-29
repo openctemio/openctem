@@ -120,7 +120,7 @@ describe('linking a provider to the signed-in account', () => {
     fetchMock.mockResolvedValue(json({ id: 'i', provider: 'google' }))
     expect(await completeLinkCallback('google', 'code', 'st')).toEqual({ success: true })
     const [url, init] = fetchMock.mock.calls[0]
-    expect(String(url)).toContain('/api/v1/users/me/identities/google/link/callback')
+    expect(String(url)).toContain('/api/v1/me/sign-in-method-links/google/complete')
     expect((init.headers as Record<string, string>).Authorization).toBe('Bearer access')
     expect(JSON.parse(init.body)).toMatchObject({
       code: 'code',

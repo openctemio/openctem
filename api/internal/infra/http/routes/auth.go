@@ -312,11 +312,13 @@ func registerIdentityLinkRoutes(router Router, h *handler.OAuthHandler, authMidd
 		}
 		return mws
 	}
-	router.Group("/api/v1/users/me/identities", func(r Router) {
+	router.Group("/api/v1/me/sign-in-methods", func(r Router) {
 		r.GET("/", h.ListSignInMethods)
-		r.POST("/{provider}/link", h.StartLink, withCSRF(linkRL, requireStepUp())...)
-		r.POST("/{provider}/link/callback", h.CompleteLink, linkRL)
 		r.DELETE("/{id}", h.Unlink, withCSRF(linkRL, requireStepUp())...)
+	}, middlewares...)
+	router.Group("/api/v1/me/sign-in-method-links", func(r Router) {
+		r.POST("/{provider}/start", h.StartLink, withCSRF(linkRL, requireStepUp())...)
+		r.POST("/{provider}/complete", h.CompleteLink, linkRL)
 	}, middlewares...)
 }
 

@@ -251,12 +251,12 @@ export const userEndpoints = {
    * Linked sign-in methods (Account > Security). Link start and unlink need
    * step-up; the link callback is called by the OAuth callback route.
    */
-  identities: () => `${API_BASE.USERS}/me/identities`,
+  identities: () => '/api/v1/me/sign-in-methods',
   identityLink: (provider: string) =>
-    `${API_BASE.USERS}/me/identities/${encodeURIComponent(provider)}/link`,
+    `/api/v1/me/sign-in-method-links/${encodeURIComponent(provider)}/start`,
   identityLinkCallback: (provider: string) =>
-    `${API_BASE.USERS}/me/identities/${encodeURIComponent(provider)}/link/callback`,
-  identity: (id: string) => `${API_BASE.USERS}/me/identities/${encodeURIComponent(id)}`,
+    `/api/v1/me/sign-in-method-links/${encodeURIComponent(provider)}/complete`,
+  identity: (id: string) => `/api/v1/me/sign-in-methods/${encodeURIComponent(id)}`,
 
   // ============================================
   // USER MANAGEMENT (Admin)
