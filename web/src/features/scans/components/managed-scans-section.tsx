@@ -37,7 +37,7 @@ export function ManagedScansSection({ onOpenRun }: { onOpenRun?: (runId: string)
       actions={
         <>
           <Button asChild size="sm" variant="outline">
-            <Link href="/scans/runs?kind=coverage">{t('scans.managedSection.viewRuns')}</Link>
+            <Link href="/scans/runs?origin=system">{t('scans.managedSection.viewRuns')}</Link>
           </Button>
           <Button asChild size="sm" variant="outline">
             <Link href={COVERAGE_SETTINGS_HREF}>{t('scans.managed.openSettings')}</Link>

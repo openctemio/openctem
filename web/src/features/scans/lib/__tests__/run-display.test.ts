@@ -56,9 +56,18 @@ describe('continuous coverage runs', () => {
   it('maps each kind filter to the list query', async () => {
     const { runKindQuery } = await import('../run-display')
     expect(runKindQuery('all')).toEqual({})
-    expect(runKindQuery('coverage')).toEqual({ origin: 'system' })
-    expect(runKindQuery('scan')).toEqual({ kind: 'scan', origin: 'user' })
+    expect(runKindQuery('scan')).toEqual({ kind: 'scan' })
     expect(runKindQuery('retest')).toEqual({ kind: 'retest' })
+  })
+
+  it('maps each origin filter to the list query, people by default', async () => {
+    const { runOriginQuery, DEFAULT_RUN_ORIGIN } = await import('../run-display')
+    expect(DEFAULT_RUN_ORIGIN).toBe('user')
+    expect(runOriginQuery('user')).toEqual({ origin: 'user' })
+    expect(runOriginQuery('system')).toEqual({ origin: 'system' })
+    // All: no origin, so system runs stay reachable.
+    expect(runOriginQuery('all')).toEqual({})
+    expect(runOriginQuery('bogus')).toEqual({})
   })
 
   it('words the platform policy that owns the scan', async () => {
