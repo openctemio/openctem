@@ -29,7 +29,11 @@ export const SUPPORT_DEFAULT_DURATION = 4
 export const SUPPORT_REASON_MIN = 10
 export const SUPPORT_REASON_MAX = 500
 
-/** The banner polls once a minute and on focus: one small, indexed read. */
+/**
+ * The session bootstrap carries the active grants, so a page load sends no
+ * request for them. The banner then re-reads once a minute (one small,
+ * indexed read), which also clears a grant that expired or was revoked.
+ */
 const ACTIVE_REFRESH_MS = 60_000
 
 export function useActiveSupportAccess(enabled = true) {
@@ -38,7 +42,8 @@ export function useActiveSupportAccess(enabled = true) {
     fetcher,
     {
       refreshInterval: ACTIVE_REFRESH_MS,
-      revalidateOnFocus: true,
+      revalidateOnFocus: false,
+      revalidateIfStale: false,
       shouldRetryOnError: false,
       dedupingInterval: 10_000,
     }

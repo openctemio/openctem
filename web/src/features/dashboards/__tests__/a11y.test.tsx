@@ -190,6 +190,119 @@ function overview(): { layout: ReturnType<typeof templateLayout>; data: Dashboar
           },
         }
       }
+      case 'exposure.levers':
+        return {
+          ...base,
+          shape: 'levers' as const,
+          levers: {
+            levers: [
+              {
+                kind: 'one_fix' as const,
+                count: 27,
+                assets: 14,
+                title: 'Upgrade openssl',
+                points: 70,
+                effect: {
+                  metric: 'exposure.priority_open',
+                  before: 31,
+                  after: 19,
+                  unit: 'count' as const,
+                },
+                drill: '/remediation/suggestions',
+              },
+              {
+                kind: 'blind_spot' as const,
+                count: 50,
+                points: 0,
+                effect: {
+                  metric: 'coverage.discovery',
+                  before: 75,
+                  after: 100,
+                  unit: 'percent' as const,
+                },
+                drill: '/assets?coverage=uncovered',
+              },
+            ],
+          },
+        }
+      case 'brief.weekly':
+        return {
+          ...base,
+          shape: 'brief' as const,
+          brief: {
+            since: '2026-10-23T00:00:00Z',
+            items: [
+              {
+                kind: 'change' as const,
+                variant: 'down' as const,
+                chips: [
+                  { key: 'opened', value: 8 },
+                  { key: 'fixed', value: 13 },
+                ],
+              },
+              {
+                kind: 'sla_due' as const,
+                chips: [
+                  { key: 'due_soon', value: 4, drill: '/findings?sla_status=warning&state=open' },
+                  { key: 'past_sla', value: 10, drill: '/findings?sla_status=overdue&state=open' },
+                ],
+              },
+            ],
+          },
+        }
+      case 'exposure.kpis':
+        return {
+          ...base,
+          shape: 'kpis' as const,
+          kpis: {
+            tiles: [
+              {
+                key: 'priority_open' as const,
+                metric: 'exposure.priority_open',
+                state: 'ready' as const,
+                value: 31,
+                previous: 43,
+                unit: 'count' as const,
+                polarity: 'lower_better' as const,
+                drill: '/findings?priority_class=P0,P1&state=open',
+              },
+              {
+                key: 'kev_open' as const,
+                metric: 'intel.kev_open',
+                state: 'ready' as const,
+                value: 9,
+                unit: 'count' as const,
+                polarity: 'lower_better' as const,
+                drill: '/findings?is_in_kev=true&state=open',
+              },
+              {
+                key: 'sla_within' as const,
+                metric: 'sla.within',
+                state: 'ready' as const,
+                value: 78,
+                unit: 'percent' as const,
+                polarity: 'higher_better' as const,
+              },
+              {
+                key: 'time_to_fix' as const,
+                metric: 'fix.time_to_fix',
+                state: 'not_measured' as const,
+                reason: 'too_few_fixed',
+                value: null,
+                unit: 'hours' as const,
+                polarity: 'lower_better' as const,
+              },
+              {
+                key: 'coverage' as const,
+                metric: 'coverage.discovery',
+                state: 'ready' as const,
+                value: 91,
+                unit: 'percent' as const,
+                polarity: 'higher_better' as const,
+              },
+            ],
+          },
+        }
       case 'findings.age_bands':
         return {
           ...base,

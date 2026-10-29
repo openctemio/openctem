@@ -180,6 +180,7 @@ type Handlers struct {
 
 	// CTEM Discovery handlers
 	AssetService           *handler.AssetServiceHandler           // nil if not initialized (no database)
+	Certificate            *handler.CertificateHandler            // Certificates view; nil without a database
 	WebEndpoint            *handler.WebEndpointHandler            // Web surface (RFC-056); nil without a database
 	Query                  *handler.QueryHandler                  // Custom queries; nil without a database
 	APISpec                *handler.APISpecHandler                // API descriptions of web origins (RFC-056)
@@ -670,6 +671,10 @@ func Register(
 	// Asset Service routes (CTEM Discovery - network services on assets)
 	if h.AssetService != nil {
 		registerAssetServiceRoutes(router, h.AssetService, authMiddleware, userSync)
+	}
+
+	if h.Certificate != nil {
+		registerCertificateRoutes(router, h.Certificate, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
 	}
 
 	// Web surface: endpoints under their origin asset (RFC-056)
