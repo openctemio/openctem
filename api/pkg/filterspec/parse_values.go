@@ -42,6 +42,10 @@ type Options struct {
 	// page × per_page (default DefaultMaxOffset; negative disables).
 	MaxPerPage int
 	MaxOffset  int
+	// NoAliases refuses the registry's deprecated param names: an alias is
+	// then an unknown param (400 in strict mode). A route that never had
+	// the old names sets it, so no deprecation window opens on it.
+	NoAliases bool
 }
 
 func (o Options) now() time.Time {
@@ -87,7 +91,7 @@ func ParseValues(q url.Values, reg *Registry, opts Options) (*Spec, error) {
 			continue
 		}
 		target, values := name, vals
-		if a, ok := reg.Aliases[name]; ok {
+		if a, ok := reg.Aliases[name]; ok && !opts.NoAliases {
 			target = a.To
 			spec.AliasesUsed = append(spec.AliasesUsed, AliasUse{Old: name, New: a.To})
 			if a.Value != nil {
