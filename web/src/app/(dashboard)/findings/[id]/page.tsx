@@ -37,7 +37,7 @@ import { Tabs, TabsContent, TabsCount, TabsList, TabsTrigger } from '@/component
 import { DetailCallout } from '@/features/shared/components/detail-sheet'
 import { useDetailTab } from '@/features/shared/components/detail-sheet-layout'
 import { getTriageCacheKey } from '@/features/ai-triage/api'
-import { useFindingApi } from '@/features/findings/api/use-findings-api'
+import { useFindingPageApi } from '@/features/findings/api/use-findings-api'
 import { useFindingActivityFeed } from '@/features/findings/hooks/use-finding-activity-feed'
 import { useFindingTriage } from '@/features/findings/hooks/use-finding-triage'
 import { useFindingEvidenceCount } from '@/features/findings/hooks/use-finding-evidence-count'
@@ -136,7 +136,7 @@ export default function FindingDetailPage() {
     error,
     isLoading,
     mutate: mutateFinding,
-  } = useFindingApi(id, { onError: () => {} })
+  } = useFindingPageApi(id, { onError: () => {} })
 
   const handleTriageCompleted = () => {
     if (id) mutate(getTriageCacheKey(id))
