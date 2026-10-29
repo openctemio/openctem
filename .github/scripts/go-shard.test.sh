@@ -11,9 +11,9 @@ go list ./... | LC_ALL=C sort > "$all"
 export GO_SHARD_SKIP_COMPILED=1 # compiling every package is `check`'s own job in CI
 shard() { bash "$here/go-shard.sh" "$@"; }
 
-# 1. A subset (every 4th package, never tests/integration, which step 3 uses as the unselected package, plus one SPLIT package) and a durations file
+# 1. A subset (every 4th package except the SPLIT integration one, plus another SPLIT package) and a durations file
 #    that makes one package dominate, plus junk entries.
-awk 'NR % 4 == 0' "$all" | grep -v 'tests/integration' > "$tmp/affected" || true
+awk 'NR % 4 == 0' "$all" | grep -v 'tests/integration$' > "$tmp/affected" || true
 echo "github.com/openctemio/openctem/api/tests/unit" >> "$tmp/affected"
 {
   echo '{'
