@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -29,6 +30,11 @@ type BulkCreateScopeExclusionsRequest struct {
 	// Reason is recorded on every exclusion (default: marked out of scope
 	// from the inventory).
 	Reason string `json:"reason" validate:"max=1000"`
+	// Kind: why they are out of scope (default do_not_scan). not_ours and
+	// retired close the open findings of what they match unless ExpiresAt
+	// is set (an end date only pauses scanning).
+	Kind      string     `json:"kind,omitempty" validate:"omitempty,oneof=do_not_scan not_ours retired"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 }
 
 // BulkScopeExclusionResult is what happened to one item, in request order.
@@ -76,7 +82,7 @@ func (h *ScopeHandler) BulkCreateExclusions(w http.ResponseWriter, r *http.Reque
 	}
 	outcomes, err := h.service.CreateExclusions(r.Context(), scope.BulkExclusionsInput{
 		TenantID: tenantID, Items: bulkExclusionItems(req.Items), Reason: req.Reason,
-		CreatedBy: middleware.GetUserID(r.Context()),
+		CreatedBy: middleware.GetUserID(r.Context()), Kind: req.Kind, ExpiresAt: req.ExpiresAt,
 	})
 	if err != nil {
 		h.handleServiceError(w, "Scope exclusion", err)
@@ -124,6 +130,13 @@ type ScopeExclusionPreviewItem struct {
 	// match; Sample up to ten of their names.
 	Matched int      `json:"matched"`
 	Sample  []string `json:"sample"`
+	// OpenFindings is how many open findings those assets have: what a
+	// permanent not_ours or retired exclusion would close.
+	OpenFindings int `json:"open_findings"`
+	// ClosingNeedsFullAccess is true when the caller has limited data access
+	// and this is not an exact hostname or IP: as a not_ours or retired rule
+	// it needs full data access.
+	ClosingNeedsFullAccess bool `json:"closing_needs_full_access,omitempty"`
 	// Code and Message say why the item would be refused.
 	Code    string `json:"code,omitempty"`
 	Message string `json:"message,omitempty"`
@@ -164,7 +177,8 @@ func (h *ScopeHandler) PreviewBulkExclusions(w http.ResponseWriter, r *http.Requ
 	out := PreviewScopeExclusionsResponse{Items: make([]ScopeExclusionPreviewItem, 0, len(previews))}
 	for _, p := range previews {
 		item := ScopeExclusionPreviewItem{ExclusionType: p.Item.ExclusionType, Pattern: p.Item.Pattern,
-			Matched: p.Match.Matched, Sample: p.Match.Sample}
+			Matched: p.Match.Matched, Sample: p.Match.Sample, OpenFindings: p.Match.OpenFindings,
+			ClosingNeedsFullAccess: p.ClosingNeedsFullAccess}
 		if item.Sample == nil {
 			item.Sample = []string{}
 		}

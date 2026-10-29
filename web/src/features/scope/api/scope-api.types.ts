@@ -170,11 +170,20 @@ export type ApiScopeFix = Schemas['github_com_openctemio_openctem_api_pkg_domain
 /**
  * Input for creating a scope exclusion
  */
+/**
+ * Why something is out of scope (research/320): every kind stops scanning;
+ * a permanent not_ours or retired exclusion also closes the open findings of
+ * what it matches (reopened when it goes).
+ */
+export type ScopeExclusionKind = 'do_not_scan' | 'not_ours' | 'retired'
+
 export interface CreateScopeExclusionInput {
   exclusion_type: string
   pattern: string
   reason: string
   expires_at?: string
+  /** Default do_not_scan. */
+  kind?: ScopeExclusionKind
   /** `path` exclusions (RFC-056): the pattern is a host pattern. */
   path_prefix?: string
   /** Methods the path rule blocks; empty blocks every method. */
@@ -214,6 +223,7 @@ export interface SetExclusionTestingInput {
  * Input for updating a scope exclusion
  */
 export interface UpdateScopeExclusionInput {
+  kind?: ScopeExclusionKind
   reason?: string
   status?: string
   expires_at?: string
