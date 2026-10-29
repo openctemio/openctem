@@ -200,6 +200,8 @@ func ActionFor(c AlertCondition) AlertAction {
 		return AlertAction{"Add the API key the tool needs.", "/settings/scanning/tools"}
 	case ReadyQuotaExhausted:
 		return AlertAction{"It resumes at 00:00 UTC; add your own sensor to scan more.", "/sensors"}
+	case ReadyContentMissing:
+		return AlertAction{"Ask the instance administrator to import the platform wordlist pack; coverage resumes on its own.", "/settings/scanning/tools"}
 	case ReadyNotClaimed:
 		return AlertAction{"Open a waiting run's \"Why waiting?\" or check the sensors' grants and policies; coverage tries again on its own.", "/sensors"}
 	default: // ReadyPolicyDisabled
@@ -219,6 +221,7 @@ var readinessText = map[string]string{
 	ReadyCredentialsMissing: "an API key it needs is not configured",
 	ReadyQuotaExhausted:     "today's shared scanning quota is used up",
 	ReadyNotClaimed:         "no sensor took its last runs",
+	ReadyContentMissing:     "the platform has no wordlist pack for its tool yet",
 }
 
 // ReadinessText returns the English phrase of a readiness reason.

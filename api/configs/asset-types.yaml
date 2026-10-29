@@ -508,6 +508,7 @@ types:
     scannable_by: [domain]
     coverage:
       - { capability: discover.subdomains, every: 1d, requires: [scope_entry] }
+      - { capability: enumerate.subdomains, every: 7d, requires: [scope_entry] }
       - { capability: resolve.dns, every: 1d }
       - { capability: lookup.rdap, every: 7d }
       - { capability: dns.email, every: 1d }

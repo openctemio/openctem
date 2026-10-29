@@ -2671,6 +2671,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		scan.WithToolConfigChecker(s.Sensor),
 		// Enforce scope EXCLUSIONS on every dispatch path; unwired or failing, nothing is dispatched (fail closed).
 		scan.WithScopeExclusionFilter(s.Scope),
+		// Coverage of a tool that reads a platform wordlist (enumerate.subdomains)
+		// pauses until the platform has the pack, instead of failing at claim.
+		scan.WithCoverageContent(contentPlanner),
 		// Ownership of every actively scanned target (RFC-036 §6.3): confirmed,
 		// or unrecorded inside a scope target / under a seed; never rejected.
 		scan.WithAttributionGate(s.ActiveGate),
