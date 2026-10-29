@@ -116,12 +116,19 @@ func coveragePredicateSQL(p string) string {
 	switch p {
 	case coverage.RequiresResolves:
 		// A resolves_to relation (a port scan of the name), an A/AAAA record
-		// a DNS resolution stored, or addresses a probe saw.
-		return `(EXISTS (SELECT 1 FROM asset_relationships rr
+		// a DNS resolution stored, or addresses a probe saw; and the name is
+		// not parked: its latest DNS resolution answered that it has no
+		// address (those facts are then stale). A parked name gets no active
+		// capability; the first resolution that answers un-parks it, and its
+		// pairs become due and go through the full gate again.
+		return `((EXISTS (SELECT 1 FROM asset_relationships rr
 			WHERE rr.tenant_id = a.tenant_id AND rr.source_asset_id = a.id AND rr.relationship_type = 'resolves_to')
 			OR jsonb_path_exists(COALESCE(a.properties, '{}'::jsonb), '$.dns_records[*] ? (@.type == "A" || @.type == "AAAA")')
 			OR COALESCE(jsonb_typeof(a.properties->'ip_addresses') = 'array'
-			            AND jsonb_array_length(a.properties->'ip_addresses') > 0, false))`
+			            AND jsonb_array_length(a.properties->'ip_addresses') > 0, false))
+			AND NOT EXISTS (SELECT 1 FROM asset_coverage pk
+			WHERE pk.tenant_id = a.tenant_id AND pk.asset_id = a.id AND pk.capability = '` + coverage.CapabilityResolveDNS + `'
+			  AND pk.vantage = '' AND pk.last_outcome = '` + coverage.OutcomeNoAnswer + `'))`
 	case coverage.RequiresWebPort:
 		return `COALESCE(a.properties->>'port', '') IN (` + webPortsSQL() + `)`
 	case coverage.RequiresWebPortOrUnscanned:
