@@ -274,6 +274,8 @@
   "dashboards.switcher.noPersonal": "Bạn chưa có bảng điều khiển riêng",
   "dashboards.switcher.organization": "Tổ chức",
   "dashboards.switcher.search": "Tìm bảng điều khiển",
+  "dashboards.table.filterOpen": "Đang mở",
+  "dashboards.table.filterPriority": "Ưu tiên P0–P2",
   "dashboards.template.ctem.description": "Mức phơi nhiễm hiện tại, vòng lặp CTEM, việc cần khắc phục tiếp theo và các đường tấn công tới tài sản trọng yếu.",
   "dashboards.template.ctem.name": "CTEM",
   "dashboards.template.executive.description": "Số liệu chương trình so với mục tiêu trong một năm, dành cho lãnh đạo.",
