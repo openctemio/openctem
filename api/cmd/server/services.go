@@ -30,6 +30,8 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/activity"
 	"github.com/openctemio/openctem/api/internal/app/aianalysis"
+	"github.com/openctemio/openctem/api/internal/app/aibundle"
+	"github.com/openctemio/openctem/api/internal/app/aimaskmap"
 	"github.com/openctemio/openctem/api/internal/app/aipolicy"
 	"github.com/openctemio/openctem/api/internal/app/aitriage"
 	"github.com/openctemio/openctem/api/internal/app/asset"
@@ -930,6 +932,8 @@ type Services struct {
 	// AIAnalysis manages AI agents (service accounts that triage like a
 	// person, with accountable owners) and their runs.
 	AIAnalysis *aianalysis.Service
+	// AIExecutor runs single-shot AI kinds in the API process.
+	AIExecutor *aianalysis.BuiltinExecutor
 
 	// WebSocket
 	WebSocketHub *websocket.Hub
@@ -999,6 +1003,10 @@ type Services struct {
 	PlatformMFA         *platformmfa.Service
 	// TenantAI is the organizations' AI settings (consent, source, own provider).
 	TenantAI *tenantai.Service
+	// AIMasking is the organization's AI masking policy and its preview.
+	AIMasking *tenantai.MaskingService
+	// AIMaskMaps keeps each AI run's placeholder map, encrypted, until it expires.
+	AIMaskMaps *aimaskmap.Store
 	// ScanPolicy is the platform policy for scan approval (RFC-073)
 	// (wired in wireScopeApprovers, after the email service exists).
 	ScanPolicy *scanpolicy.Service
@@ -1966,7 +1974,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// The organization's AI data-egress policy, shared with MCP: pentest
 		// findings above the TLP limit for AI, or of a campaign with AI off,
 		// never reach the model.
-		s.AITriage.SetEgressPolicy(aipolicy.New(mcpPolicyReader{tenants: s.Tenant}, repos.PentestCampaign))
+		aiEgress := aipolicy.New(mcpPolicyReader{tenants: s.Tenant}, repos.PentestCampaign)
+		s.AITriage.SetEgressPolicy(aiEgress)
+		// What of a finding an AI model sees unmasked, and the run maps that
+		// turn its answers back into real values
+		// (docs/architecture/ai-context-masking.md).
+		s.AIMasking = tenantai.NewMaskingService(repos.TenantAISettings, s.Vulnerability, repos.Asset, repos.Tenant,
+			aibundle.NewBuilder(aiEgress), s.Audit, log)
+		s.AIMaskMaps = aimaskmap.NewStore(repos.AIMaskMaps, s.Encryptor, cfg.AITriage.MaskMapTTL)
 		// A confident false-positive verdict on a medium or low finding is
 		// recorded as a pending approval for a person; never applied.
 		s.AITriage.SetFalsePositiveProposer(s.Vulnerability)
@@ -1984,6 +1999,19 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 			}, log,
 		)
 		s.AITriage.SetBudgetService(budgetSvc)
+
+		// The built-in executor: single-shot kinds in the API process,
+		// through the analyze contract and masking, acting as an AI agent
+		// through the finding commands.
+		s.AIExecutor = aianalysis.NewBuiltinExecutor(repos.Finding, finding.AIAgentCommands{Findings: s.Vulnerability},
+			repos.TenantAISettings, llmFactory, s.AIMasking,
+			aibundle.NewBuilder(aiEgress), s.AIMaskMaps, aianalysis.ExecutorConfig{
+				MaxTokens: cfg.AITriage.MaxTokens, Temperature: cfg.AITriage.Temperature,
+			}, log)
+		s.AIExecutor.SetBudget(budgetSvc)
+		if s.PlatformAI != nil {
+			s.AIExecutor.SetOwnProviderPolicy(s.PlatformAI.OrgProviderAllowed)
+		}
 		log.Info("AI triage service initialized",
 			"budget_enabled", cfg.AITriage.BudgetEnabled,
 			"budget_strict", cfg.AITriage.BudgetStrict,
@@ -3101,6 +3129,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.AIAnalysis = aianalysis.New(repos.AIAnalysis, repos.AIAnalysis,
 		apikey.NewHolderPermissions(repos.Tenant, rolePermissionSource{repos.Role}), s.DataScope,
 		aianalysis.SettingsConsent{Repo: repos.TenantAISettings}, s.Audit, log)
+	if s.AIExecutor != nil {
+		s.AIExecutor.SetAIAgents(s.AIAnalysis)
+	}
 
 	// Wire permission services to tenant service
 	s.Tenant.SetPermissionServices(s.PermCache, s.PermVersion)

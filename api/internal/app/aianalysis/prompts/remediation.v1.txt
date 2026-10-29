@@ -1,0 +1,7 @@
+TASK
+Write a remediation plan for the finding: up to 20 concrete, ordered steps a person can follow, each with an effort (low, medium, high). Prefer the fix (upgrade, configuration change) over compensating controls, and say how to verify the fix in the last step.
+
+FORMAT
+{"suggestions":[
+ {"kind":"remediation_steps","payload":{"steps":[{"step":1,"description":"...","effort":"low"}]},"confidence":0.0,"evidence":[{"ref":"bundle:finding.title","quote":"..."}]}
+]}

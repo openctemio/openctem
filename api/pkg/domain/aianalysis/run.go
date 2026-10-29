@@ -19,7 +19,7 @@ const ErrorTimeout = "timeout"
 type Run struct {
 	ID          shared.ID
 	TenantID    shared.ID
-	AgentID     *shared.ID // nil only for a legacy row or after the AI agent was deleted
+	AIAgentID   *shared.ID // nil only for a legacy row or after the AI agent was deleted
 	UseCase     UseCase
 	Kind        string
 	SubjectType SubjectType

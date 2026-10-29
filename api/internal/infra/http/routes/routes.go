@@ -66,6 +66,8 @@ type Handlers struct {
 	MCPSettings *handler.MCPSettingsHandler
 	// AISettings is the organization's AI settings (consent, source, own provider).
 	AISettings *handler.AISettingsHandler
+	// AIMasking is the organization's AI masking policy and its preview.
+	AIMasking *handler.AIMaskingHandler
 	// MCPConnections is the connected applications (RFC-062 §12), tenant
 	// and platform console; nil without the authorization server.
 	MCPConnections *handler.MCPConnectionsHandler
@@ -720,7 +722,7 @@ func Register(
 	registerRetestSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerVulnMatchingSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerEmergingThreatSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
-	registerAISettingsRoutes(router, h.AISettings, authMiddleware, userSync)
+	registerAISettingsRoutes(router, h.AISettings, h.AIMasking, authMiddleware, userSync)
 	registerEmergingThreatRoutes(router, h.EmergingThreat, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleThreatIntel))
 	registerLicensePolicySettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerScanGovernanceRoutes(router, h.ScanGovernance, authMiddleware, userSync)
@@ -779,7 +781,7 @@ func Register(
 	registerAITriageRoutes(router, h.AITriage, authMiddleware, userSync, aiTriageRateLimiter,
 		h.ModuleGate.RequireModule(moduledom.ModuleAITriage))
 	registerAIAnalysisRoutes(router, h.AIAnalysis, authMiddleware, userSync,
-		h.ModuleGate.RequireModule(moduledom.ModuleAITriage))
+		h.ModuleGate.RequireModule(moduledom.ModuleAITriage), aiTriageRateLimiter)
 
 	// Dashboard routes (global and tenant from JWT token)
 	if h.Dashboard != nil {
