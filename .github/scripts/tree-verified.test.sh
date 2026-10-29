@@ -117,6 +117,62 @@ note="$(cd "$d/repo" && env PATH="$d/bin:$PATH" FIX="$fix" EVENT=merge_group SHA
 want="tree $tree already verified at $pr (https://x/101)"
 if [ "$note" = "$want" ] && grep -qx "verified=true" "$d/gho"; then echo "ok:   note and outputs"; pass=$((pass + 1)); else echo "FAIL: note (got $note)"; failed=$((failed + 1)); fi
 
+# ---- Area mode (TREE_AREA + TREE_PATHS) ------------------------------------
+# A scratch repository with api/ and web/. A is the queue entry ahead of us (a
+# web change); Q is our group (another web change on top of A): the api area of
+# Q equals the api area of A, the web area differs.
+ar="$d/area"; mkdir -p "$ar/api" "$ar/web"
+git -C "$ar" init -q -b main
+echo 1 >"$ar/api/x"; echo 1 >"$ar/web/y"; echo m >"$ar/Makefile"; git -C "$ar" add .; git -C "$ar" commit -qm base
+echo 2 >"$ar/web/y"; git -C "$ar" commit -qam "A: web change"; A=$(git -C "$ar" rev-parse HEAD)
+git -C "$ar" update-ref refs/remotes/origin/develop "$(git -C "$ar" rev-parse HEAD~1)"
+echo 3 >"$ar/web/y"; git -C "$ar" commit -qam "Q: another web change"; Q=$(git -C "$ar" rev-parse HEAD)
+echo 4 >"$ar/api/x"; git -C "$ar" commit -qam "Z: an api change"; Z=$(git -C "$ar" rev-parse HEAD)
+areaid() { # <commit> <paths...>
+  local c=$1 p o lines=""; shift
+  for p in "$@"; do o=$(git -C "$ar" rev-parse --verify -q "$c:$p") || o=none; lines+="$p=$o"$'\n'; done
+  printf '%s' "$lines" | git hash-object --stdin
+}
+apiA=$(areaid "$A" api Makefile)
+webA=$(areaid "$A" web Makefile)
+qref="refs/heads/gh-readonly-queue/develop/pr-78-$Q"
+arun() { # <expect> <name> [env...]  (api area, our group Q, queue entry A ahead)
+  local want=$1 name=$2 got; shift 2
+  got="$(cd "$ar" && env PATH="$d/bin:$PATH" FIX="$fix" EVENT=merge_group SHA=$Q HEAD_REF=$qref MG_BASE=$A REPO=o/r GITHUB_OUTPUT= \
+    TREE_AREA="API CI" TREE_PATHS="api Makefile" TREE_CHECKS="API CI OK" "$@" bash "$script" 2>/dev/null | sed -n "s/^verified=//p")"
+  if [ "$got" = "$want" ]; then echo "ok:   $name"; pass=$((pass + 1)); else echo "FAIL: $name (want $want, got $got)"; failed=$((failed + 1)); fi
+}
+arecord() { # <commit> <conclusion> <area name> <area id>: the commit's check runs and its record
+  local c=$1 concl=$2 nm=$3 id=$4
+  echo "{\"check_runs\":[{\"id\":201,\"name\":\"API CI OK\",\"status\":\"completed\",\"conclusion\":\"$concl\",\"html_url\":\"https://x/201\",\"app\":{\"slug\":\"github-actions\"},\"output\":{\"annotations_count\":2}}]}" >"$fix/repos_o_r_commits_${c}_check-runs"
+  echo "[{\"message\":\"openctem-tested-tree deadbeef\"},{\"message\":\"openctem-tested-area $nm $id\"}]" >"$fix/repos_o_r_check-runs_201_annotations"
+  echo "{\"head\":{\"sha\":\"1111111111111111111111111111111111111111\"}}" >"$fix/repos_o_r_pulls_78"
+}
+clear; arecord "$A" success "API CI" "$apiA"
+arun true "area: the queue entry ahead has the same api area and passed"
+clear; arecord "$A" failure "API CI" "$apiA"
+arun false "area: the entry ahead failed API CI OK"
+clear; arecord "$A" success "API CI" "0000000000000000000000000000000000000000"
+arun false "area: the record names another area id"
+clear; arecord "$A" success "Web CI" "$apiA"
+arun false "area: only another workflow's record exists"
+clear; arecord "$A" success "API CI" "$apiA"
+arun false "area: our api area differs from every candidate" SHA=$Z
+arun false "area: TREE_FULL=false run is not an event of ours (no MG_BASE)" MG_BASE=
+clear; arecord "$A" success "API CI" "$apiA"; echo '[{"message":"unrelated"}]' >"$fix/repos_o_r_check-runs_201_annotations"
+arun false "area: no area record on the candidate"
+clear; arecord "$A" success "API CI" "$apiA"
+arun false "area: api error runs everything" FAKE_FAIL=1
+arun false "area: not a merge_group event" EVENT=pull_request
+# The web area differs between Q and A, so a web workflow does not reuse A.
+clear; arecord "$A" success "Web CI" "$webA"
+arun false "area: the web area changed, a web workflow runs" TREE_AREA="Web CI" TREE_PATHS="web Makefile"
+# Records: only the full tier writes them.
+rec="$(cd "$ar" && env PATH="$d/bin:$PATH" FIX="$fix" EVENT=pull_request SHA=$Q REPO=o/r TREE_AREA="API CI" TREE_PATHS="api Makefile" bash "$script" 2>/dev/null | grep -c "^::notice title=tested-area::openctem-tested-area API CI $(areaid "$Q" api Makefile)\$" || true)"
+if [ "$rec" = 1 ]; then echo "ok:   the full tier records its area"; pass=$((pass + 1)); else echo "FAIL: area record ($rec)"; failed=$((failed + 1)); fi
+rec="$(cd "$ar" && env PATH="$d/bin:$PATH" FIX="$fix" EVENT=pull_request SHA=$Q REPO=o/r TREE_FULL=false TREE_AREA="API CI" TREE_PATHS="api Makefile" bash "$script" 2>/dev/null | grep -c "^::notice" || true)"
+if [ "$rec" = 0 ]; then echo "ok:   a fast-tier run records nothing"; pass=$((pass + 1)); else echo "FAIL: fast tier recorded ($rec)"; failed=$((failed + 1)); fi
+
 find "$d" -mindepth 1 -delete; rmdir "$d"
 echo "$pass passed, $failed failed"
 [ "$failed" = 0 ]

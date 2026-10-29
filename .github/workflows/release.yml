@@ -102,7 +102,6 @@ jobs:
           docker pull ghcr.io/openctemio/openctem-console:${TAG}   # platform console
           docker pull ghcr.io/openctemio/migrations:${TAG}
           docker pull ghcr.io/openctemio/seed:${TAG}
-          docker pull ghcr.io/openctemio/admin-cli:${TAG}
           \`\`\`
 
           Every image is signed with cosign (keyless, GitHub OIDC) and carries a
