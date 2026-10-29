@@ -30,6 +30,9 @@ export type ResultShape =
   | 'paths'
   | 'flow'
   | 'intake'
+  | 'levers'
+  | 'brief'
+  | 'kpis'
 export type VizType =
   | 'stat'
   | 'progress'
@@ -47,6 +50,9 @@ export type VizType =
   | 'paths'
   | 'flow'
   | 'intake'
+  | 'levers'
+  | 'brief'
+  | 'kpi'
 export type Dimension =
   | 'severity'
   | 'priority_class'

@@ -20,6 +20,7 @@
 
 import useSWR, { type SWRConfiguration } from 'swr'
 import { get } from '@/lib/api/client'
+import { SWR_REFERENCE } from '@/lib/swr-config'
 
 // =============================================================================
 // Types — mirror of the api's handler.TenantEventTypesResponse
@@ -66,9 +67,9 @@ export interface TenantEventTypesResponse {
  * risky.
  */
 const eventTypesConfig: SWRConfiguration = {
+  ...SWR_REFERENCE,
   revalidateOnFocus: false,
   revalidateOnReconnect: true,
-  dedupingInterval: 5 * 60 * 1000,
 }
 
 const EMPTY_EVENT_TYPES: NotificationEventTypeInfo[] = []

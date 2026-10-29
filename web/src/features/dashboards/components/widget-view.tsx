@@ -9,6 +9,7 @@ import type { ReactNode } from 'react'
 import {
   AreaLineViz,
   BarViz,
+  BriefViz,
   CategoryTable,
   ColumnViz,
   DivergingViz,
@@ -16,6 +17,8 @@ import {
   HeatmapViz,
   IntakeViz,
   ItemsViz,
+  KpiStripViz,
+  LeversViz,
   LoopViz,
   MatrixTable,
   PathsTable,
@@ -106,6 +109,12 @@ function Viz({
       return <ExposureFlowViz result={r} scope={scope} />
     case 'intake':
       return <IntakeViz result={r} />
+    case 'levers':
+      return <LeversViz result={r} />
+    case 'brief':
+      return <BriefViz result={r} />
+    case 'kpis':
+      return <KpiStripViz result={r} />
     default:
       return null
   }

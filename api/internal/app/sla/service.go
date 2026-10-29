@@ -209,6 +209,16 @@ func (s *Service) GetEffectiveAssetPolicy(ctx context.Context, tenantID, assetID
 	return effectivePolicy(tenantID, p, err)
 }
 
+// HasAssetOverride reports whether the tenant has an active policy tied to one
+// asset. Without one, GetEffectiveTenantPolicy answers for every asset.
+func (s *Service) HasAssetOverride(ctx context.Context, tenantID string) (bool, error) {
+	parsedID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return false, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	return s.repo.HasAssetOverride(ctx, parsedID)
+}
+
 func effectivePolicy(tenantID string, p *sladom.Policy, err error) (*EffectivePolicy, error) {
 	if err == nil {
 		return &EffectivePolicy{Policy: p}, nil
