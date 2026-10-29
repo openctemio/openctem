@@ -98,6 +98,12 @@ func (c *ThreatIntelRefreshController) Reconcile(ctx context.Context) (int, erro
 	} else {
 		r = c.service.SyncEPSS(ctx)
 	}
+	if r.Skipped {
+		// An operator's run (or another replica's) holds the feed; its own
+		// pass compares the findings with the catalogs.
+		c.logger.Debug("threat intel sync already running", "source", r.Source)
+		return 0, nil
+	}
 	processed := 0
 	switch {
 	case r.Error != nil:

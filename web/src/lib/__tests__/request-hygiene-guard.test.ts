@@ -81,6 +81,10 @@ const POLLING_BASELINE: Record<string, number> = {
   // Shared fleet health and the queue depth are read-time values no event
   // pushes; the page is for an operator watching the fleet (30 s).
   'console/features/admin-console/api/use-shared-fleet.ts': 2,
+  // Feed sync runs in the background and no event announces its end: the list
+  // refreshes every 2 s only while a feed runs or right after a sync request,
+  // otherwise once a minute.
+  'console/features/admin-console/api/use-system.ts': 1,
   'features/ai-triage/hooks/use-ai-triage.ts': 1,
   // Dashboard figures are precomputed snapshots on a refresh schedule no event
   // announces: one read when the next snapshot is due (at least 30 s apart),
@@ -95,6 +99,7 @@ const POLLING_BASELINE: Record<string, number> = {
   'features/findings/api/use-findings-api.ts': 1,
   'features/notifications/api/use-notification-api.ts': 1,
   // Whether each policy is open is computed at read time.
+  'features/proxy-pools/api/use-proxy-pool-test.ts': 1,
   'features/scan-windows/api/use-scan-windows.ts': 1,
   'features/scans/components/run-detail-sheet.tsx': 1,
   // The support-access banner (RFC-063): a console session opening or a grant

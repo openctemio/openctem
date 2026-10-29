@@ -141,3 +141,96 @@ func TestResendVerificationStoresOnlyTheHash(t *testing.T) {
 		t.Fatalf("verified account: %v", err)
 	}
 }
+
+type fakeMFA struct {
+	id  shared.ID
+	err error
+	ip  string
+}
+
+func (f *fakeMFA) ResetUserMFAByConsole(_ context.Context, id shared.ID, ip string) error {
+	f.id, f.ip = id, ip
+	return f.err
+}
+
+func TestIssueResetLinkOnlyWithoutEmailAndStoresOnlyTheHash(t *testing.T) {
+	users := &fakeUsers{u: localUser(t, true)}
+	m := &fakeMailer{}
+	s := NewService(users, nil, nil, m, &fakeStates{}, Durations{})
+
+	token, expires, err := s.IssueResetLink(context.Background(), shared.NewID())
+	if err != nil || token == "" {
+		t.Fatalf("issue: token %q err %v", token, err)
+	}
+	if d := time.Until(expires); d > ResetLinkTTL || d < ResetLinkTTL-time.Minute {
+		t.Fatalf("link lives %v, want about %v", d, ResetLinkTTL)
+	}
+	stored := users.updated.PasswordResetToken()
+	if stored == nil || *stored == token {
+		t.Fatal("the raw reset token was stored")
+	}
+	if exp := users.updated.PasswordResetExpiresAt(); exp == nil || !exp.Equal(expires) {
+		t.Fatalf("stored expiry %v, returned %v", exp, expires)
+	}
+
+	// Email works: the account's own mailbox is the way, nothing is issued.
+	users.updated = nil
+	m.configured = true
+	if _, _, err := s.IssueResetLink(context.Background(), shared.NewID()); !errors.Is(err, ErrEmailAvailable) || users.updated != nil {
+		t.Fatalf("with email: %v (updated %v)", err, users.updated != nil)
+	}
+}
+
+func TestIssueResetLinkRefusesAdministratorAndFederatedAccounts(t *testing.T) {
+	users := &fakeUsers{u: localUser(t, true)}
+	s := NewService(users, nil, nil, &fakeMailer{}, &fakeStates{admin: true}, Durations{})
+	if _, _, err := s.IssueResetLink(context.Background(), shared.NewID()); !errors.Is(err, ErrPlatformAdmin) || users.updated != nil {
+		t.Fatalf("platform administrator: %v", err)
+	}
+	if err := s.MarkVerified(context.Background(), shared.NewID()); !errors.Is(err, ErrPlatformAdmin) {
+		t.Fatalf("mark verified, platform administrator: %v", err)
+	}
+	if err := s.ResetMFA(context.Background(), shared.NewID(), ""); !errors.Is(err, ErrPlatformAdmin) {
+		t.Fatalf("reset mfa, platform administrator: %v", err)
+	}
+}
+
+func TestMarkVerified(t *testing.T) {
+	users := &fakeUsers{u: localUser(t, false)}
+	m := &fakeMailer{}
+	s := NewService(users, nil, nil, m, &fakeStates{}, Durations{})
+	if err := s.MarkVerified(context.Background(), shared.NewID()); err != nil {
+		t.Fatal(err)
+	}
+	if users.updated == nil || !users.updated.EmailVerified() {
+		t.Fatal("the account was not marked verified")
+	}
+
+	m.configured = true
+	users.u, users.updated = localUser(t, false), nil
+	if err := s.MarkVerified(context.Background(), shared.NewID()); !errors.Is(err, ErrEmailAvailable) || users.updated != nil {
+		t.Fatalf("with email: %v", err)
+	}
+	m.configured = false
+	users.u = localUser(t, true)
+	if err := s.MarkVerified(context.Background(), shared.NewID()); !errors.Is(err, ErrAlreadyVerified) {
+		t.Fatalf("already verified: %v", err)
+	}
+}
+
+func TestResetMFA(t *testing.T) {
+	id := shared.NewID()
+	mfa := &fakeMFA{}
+	s := NewService(&fakeUsers{u: localUser(t, true)}, nil, nil, nil, &fakeStates{}, Durations{})
+	if err := s.ResetMFA(context.Background(), id, "203.0.113.5"); err == nil {
+		t.Fatal("without a resetter the reset must be refused, not skipped")
+	}
+	s.SetMFAResetter(mfa)
+	if err := s.ResetMFA(context.Background(), id, "203.0.113.5"); err != nil || mfa.id != id || mfa.ip != "203.0.113.5" {
+		t.Fatalf("reset: %v, got %+v", err, mfa)
+	}
+	mfa.err = auth.ErrMFANotEnabled
+	if err := s.ResetMFA(context.Background(), id, ""); !errors.Is(err, ErrMFANotEnabled) || !errors.Is(err, shared.ErrConflict) {
+		t.Fatalf("no factor: %v", err)
+	}
+}
