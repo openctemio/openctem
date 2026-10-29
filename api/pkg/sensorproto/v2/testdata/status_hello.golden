@@ -109,6 +109,7 @@
     "posture",
     "capacity",
     "refusal",
+    "failure_class",
     "config_report",
     "logs"
   ],

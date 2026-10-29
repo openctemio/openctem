@@ -106,6 +106,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/platformalert"
 	"github.com/openctemio/openctem/api/internal/app/platformcaptcha"
 	"github.com/openctemio/openctem/api/internal/app/platformemail"
+	"github.com/openctemio/openctem/api/internal/app/platformsociallogin"
 	programfeedapp "github.com/openctemio/openctem/api/internal/app/programfeed"
 	"github.com/openctemio/openctem/api/internal/app/programtarget"
 	proxypoolapp "github.com/openctemio/openctem/api/internal/app/proxypool"
@@ -978,13 +979,16 @@ type Services struct {
 	// CAPTCHA keys, the one-time deployment region, the default storage
 	// quota, the alert webhook and the platform AI provider. SettingRecorder
 	// writes their audit rows and notices.
-	SettingRecorder  *consolesetting.Recorder
-	PlatformCaptcha  *platformcaptcha.Service
-	DeploymentRegion *deploymentregion.Service
-	StorageQuota     *storagequota.Service
-	OrgRelay         *orgrelay.Service
-	PlatformAlert    *platformalert.Service
-	PlatformAI       *platformai.Service
+	SettingRecorder *consolesetting.Recorder
+	PlatformCaptcha *platformcaptcha.Service
+	// PlatformSocialLogin is the console's social login setting; nil without
+	// the settings store.
+	PlatformSocialLogin *platformsociallogin.Service
+	DeploymentRegion    *deploymentregion.Service
+	StorageQuota        *storagequota.Service
+	PlatformAlert       *platformalert.Service
+	PlatformAI          *platformai.Service
+	OrgRelay            *orgrelay.Service
 	// TenantAI is the organizations' AI settings (consent, source, own provider).
 	TenantAI *tenantai.Service
 	// ScanPolicy is the platform policy for scan approval (RFC-073)
@@ -2258,6 +2262,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Proxy pools for scan traffic: credentials encrypted with the
 	// credentials key, never stored in clear.
 	s.ProxyPool = proxypoolapp.NewService(repos.ProxyPool, s.Encryptor, s.Audit, log)
+	// The Test button: sensors test the endpoints, the platform never
+	// connects to a proxy. Disabled when no https address is known for the
+	// echo (PROXY_TEST_ECHO_URL, SENSOR_PUBLIC_API_URL or APP_URL).
+	s.ProxyPool.EnableTest(repos.Sensor, repos.Command, proxypoolapp.TestConfig{
+		EchoBase: cfg.ProxyTestEchoBase(), AltPort: cfg.SensorConfig.ProxyTestAltPort})
 	contentPlanner := contentpin.New(s.ContentDelivery, postgres.NewKnownNamesRepository(&postgres.DB{DB: deps.DB}), nil)
 	cmdOpts := []command.Option{command.WithSensorLookup(repos.Sensor),
 		// Each scan and retest job carries the claiming sensor's proxy pool.
@@ -3175,6 +3184,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// because it needs both the workflow dispatcher and the in-app
 	// notification service, which is only built above.
 	s.AssetDiscoveryNotifier = assetdiscovery.NewNotifier(s.Outbox, s.Notification, assetdiscovery.DefaultWindow, log)
+	s.AssetDiscoveryNotifier.SetRunResolver(stepRunResolver{steps: repos.StepRun, runs: repos.ScanRun})
 	// Automatic passive enrichment of every new asset, whatever created it
 	// (docs/architecture/asset-freshness.md): ingest, manual create, CSV import.
 	s.AssetEnricher = assetfreshnessapp.NewEnricher(repos.AssetEnrichmentRequests, repos.Asset, s.Tenant, s.Scan,
@@ -3429,7 +3439,11 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// Social OAuth (Google / GitHub / Microsoft). Built only when at least one
 	// provider actually has credentials, so the login surface the API advertises
 	// on /auth/providers matches the routes it registers — see registerAuthRoutes.
-	if cfg.OAuth.Enabled && cfg.OAuth.HasAnyProvider() {
+	// With the console setting store the service is built even when no provider
+	// is configured yet: an administrator can turn one on in the console and it
+	// applies without a restart. /auth/providers still reports only providers
+	// that are on.
+	if cfg.OAuth.Enabled && (cfg.OAuth.HasAnyProvider() || s.PlatformSocialLogin != nil) {
 		s.OAuth = auth.NewOAuthService(
 			repos.User,
 			repos.Session,
@@ -3438,6 +3452,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 			cfg.Auth,
 			log,
 		)
+		if s.PlatformSocialLogin != nil {
+			s.OAuth.SetProviderSource(s.PlatformSocialLogin)
+		}
 		// PKCE verifiers live in Redis keyed by state (TTL = state lifetime,
 		// GETDEL = single use) so a login can finish on any replica. Without
 		// Redis the service keeps them in process.

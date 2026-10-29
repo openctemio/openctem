@@ -1,0 +1,37 @@
+-- Put the removed seed rows back with their original ids.
+
+INSERT INTO target_asset_type_mappings (id, target_type, asset_type, priority, description, is_active, created_at, updated_at, created_by)
+VALUES
+    ('ff0bde99-2b53-490b-8874-e0d1aee44b6a', 'url', 'website', 10, NULL, true, '2026-10-06 03:16:51.566766+00', '2026-10-06 03:16:51.566766+00', NULL),
+    ('d1db5e49-a977-4991-97c8-a4f55103b5cb', 'url', 'api', 30, NULL, true, '2026-10-06 03:16:51.566766+00', '2026-10-06 03:16:51.566766+00', NULL),
+    ('bd69a072-7ba3-4f79-8ca9-fc7605c43728', 'url', 'http_service', 40, NULL, true, '2026-10-06 03:16:51.566766+00', '2026-10-06 03:16:51.566766+00', NULL),
+    ('6023fe2a-0042-4bac-a4f5-9e3d2fb4cd37', 'url', 'discovered_url', 50, NULL, true, '2026-10-06 03:16:51.566766+00', '2026-10-06 03:16:51.566766+00', NULL),
+    ('ff32f144-8d6f-47bc-aa46-2f5310628e72', 'domain', 'domain', 10, NULL, true, '2026-10-06 03:16:51.566766+00', '2026-10-06 03:16:51.566766+00', NULL),
+    ('98a15a2d-f93f-4f1d-b96e-dce1cfa011cc', 'domain', 'subdomain', 20, NULL, true, '2026-10-06 03:16:51.566766+00', '2026-10-06 03:16:51.566766+00', NULL),
+    ('35d0d28d-cb51-4b1d-9e3d-ce44f3b091c6', 'host', 'compute', 40, NULL, true, '2026-10-06 03:16:51.566766+00', '2026-10-06 03:16:51.566766+00', NULL),
+    ('c6394319-9737-4d42-b164-db1458b8bfd7', 'repository', 'repository', 10, NULL, true, '2026-10-06 03:16:51.566766+00', '2026-10-06 03:16:51.566766+00', NULL),
+    ('f6312547-2a47-4fff-a306-904cf5befad5', 'file', 'repository', 10, NULL, true, '2026-10-06 03:16:51.566766+00', '2026-10-06 03:16:51.566766+00', NULL),
+    ('f10ff82b-68d4-42f4-a249-42116a465ff0', 'container', 'container', 10, NULL, true, '2026-10-06 03:16:51.566766+00', '2026-10-06 03:16:51.566766+00', NULL),
+    ('637064ff-c1d5-4ca3-ad93-962577ae1976', 'container', 'container_registry', 20, NULL, true, '2026-10-06 03:16:51.566766+00', '2026-10-06 03:16:51.566766+00', NULL),
+    ('116323c1-8455-4d5f-9213-9381b63c8ca6', 'kubernetes', 'kubernetes_cluster', 10, NULL, true, '2026-10-06 03:16:51.566766+00', '2026-10-06 03:16:51.566766+00', NULL),
+    ('e4314dd4-10d9-486b-bcd0-604d8ea031d2', 'kubernetes', 'kubernetes_namespace', 20, NULL, true, '2026-10-06 03:16:51.566766+00', '2026-10-06 03:16:51.566766+00', NULL),
+    ('26c50f34-cad2-4359-9d22-1be2bc3d8ffa', 'network', 'network', 10, NULL, true, '2026-10-06 03:16:51.566766+00', '2026-10-06 03:16:51.566766+00', NULL),
+    ('7bd689f4-19aa-42df-a823-62300ac12d09', 'network', 'subnet', 20, NULL, true, '2026-10-06 03:16:51.566766+00', '2026-10-06 03:16:51.566766+00', NULL),
+    ('0aa70e2c-6bf5-4e2a-b1ce-6d8a6c13eb4f', 'network', 'vpc', 30, NULL, true, '2026-10-06 03:16:51.566766+00', '2026-10-06 03:16:51.566766+00', NULL),
+    ('43e25078-0641-4b5b-97b8-99833f4683d5', 'network', 'firewall', 40, NULL, true, '2026-10-06 03:16:51.566766+00', '2026-10-06 03:16:51.566766+00', NULL),
+    ('582734bc-018e-49ae-a697-1cd02abf7cc4', 'network', 'load_balancer', 50, NULL, true, '2026-10-06 03:16:51.566766+00', '2026-10-06 03:16:51.566766+00', NULL),
+    ('e88ce0b2-5dbc-47b4-a5ff-4e592a875962', 'service', 'open_port', 20, NULL, true, '2026-10-06 03:16:51.566766+00', '2026-10-06 03:16:51.566766+00', NULL),
+    ('fa227deb-66a9-4d71-bc56-d22b61b93e8c', 'service', 'http_service', 30, NULL, true, '2026-10-06 03:16:51.566766+00', '2026-10-06 03:16:51.566766+00', NULL),
+    ('a11f2e21-0a57-42db-a109-15783ea027a3', 'port', 'open_port', 10, NULL, true, '2026-10-06 03:16:51.566766+00', '2026-10-06 03:16:51.566766+00', NULL),
+    ('329d5525-9bf9-4b32-962b-16d9b725fd03', 'database', 'database', 10, NULL, true, '2026-10-06 03:16:51.566766+00', '2026-10-06 03:16:51.566766+00', NULL),
+    ('a1e81cb9-dabc-4a8b-b858-a034663c9030', 'database', 'data_store', 20, NULL, true, '2026-10-06 03:16:51.566766+00', '2026-10-06 03:16:51.566766+00', NULL),
+    ('5f3f402e-195f-4284-9994-e0d730b747c6', 'mobile', 'mobile_app', 10, NULL, true, '2026-10-06 03:16:51.566766+00', '2026-10-06 03:16:51.566766+00', NULL),
+    ('600bf3b4-e4d1-4bbb-a074-222e79e9d5d7', 'api', 'api', 10, NULL, true, '2026-10-06 03:16:51.566766+00', '2026-10-06 03:16:51.566766+00', NULL),
+    ('6eec2dba-8d43-45e6-a6f4-1728e4988d29', 'certificate', 'certificate', 10, NULL, true, '2026-10-06 03:16:51.566766+00', '2026-10-06 03:16:51.566766+00', NULL),
+    ('75caa832-54b8-4e5e-8629-9beb948dbd46', 'cloud_account', 'cloud_account', 10, NULL, true, '2026-10-06 03:16:51.566766+00', '2026-10-06 03:16:52.578814+00', NULL),
+    ('15b85876-d48a-4496-a0f3-da13a0b15a7e', 'compute', 'compute', 10, NULL, true, '2026-10-06 03:16:51.566766+00', '2026-10-06 03:16:52.578814+00', NULL),
+    ('148d4c3d-9f77-499e-97a1-99cc08215dfc', 'storage', 's3_bucket', 20, NULL, true, '2026-10-06 03:16:51.566766+00', '2026-10-06 03:16:52.578814+00', NULL),
+    ('3e7f582f-7686-4fbf-94cd-f87160775415', 'ip', 'ip_address', 10, NULL, true, '2026-10-06 03:16:51.566766+00', '2026-10-06 03:16:52.578814+00', NULL),
+    ('8ea64686-897e-4c9c-a355-3f02b7daf6c0', 'host', 'ip_address', 30, NULL, true, '2026-10-06 03:16:51.566766+00', '2026-10-06 03:16:52.578814+00', NULL),
+    ('0b9eff80-f26b-454b-bddb-7d39bf30e4e2', 'serverless', 'serverless', 10, NULL, true, '2026-10-06 03:16:51.566766+00', '2026-10-06 03:16:52.578814+00', NULL)
+ON CONFLICT (target_type, asset_type) DO NOTHING;

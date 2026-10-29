@@ -252,6 +252,12 @@ const (
 	// rule, detail}; a refused routed job is re-queued to another eligible
 	// sensor and the refuser cannot claim it again (research/25 §3.6, D8).
 	FeatureRefusal = "refusal"
+	// FeatureFailureClass: POST /commands/{id}/fail accepts "failure"
+	// {class, evidence} and the infrastructure error codes (research/302):
+	// the platform moves routed work to another sensor on an
+	// infrastructure class. A sensor sends them only to a platform that
+	// lists this feature.
+	FeatureFailureClass = "failure_class"
 	// FeatureConfigReport: PUT /config-report stores the sensor's preflight
 	// check results and the heartbeat accepts the config_report summary
 	// (research/26). A sensor sends neither to a server that does not list
@@ -286,7 +292,7 @@ const (
 
 // ControlFeatures are the RFC-029 features, in hello order.
 func ControlFeatures() []string {
-	return []string{FeatureHeartbeat, FeatureCommands, FeatureSuppressions, FeatureFingerprints, FeatureKeys, FeatureLoad, FeatureRelease, FeatureManifest, FeatureLocalPolicy, FeatureCommandProgress, FeatureLocalStore, FeaturePosture, FeatureCapacity, FeatureRefusal, FeatureConfigReport, FeatureLogs}
+	return []string{FeatureHeartbeat, FeatureCommands, FeatureSuppressions, FeatureFingerprints, FeatureKeys, FeatureLoad, FeatureRelease, FeatureManifest, FeatureLocalPolicy, FeatureCommandProgress, FeatureLocalStore, FeaturePosture, FeatureCapacity, FeatureRefusal, FeatureFailureClass, FeatureConfigReport, FeatureLogs}
 }
 
 // Deprecation announces a deprecated protocol on hello.

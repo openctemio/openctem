@@ -141,7 +141,7 @@
   "prioritization.exposureChains.howEntryLead": "Điểm vào",
   "prioritization.exposureChains.howPath": "tìm kiếm trên các quan hệ đường tấn công (runs_on, depends_on, exposes, stores_data_in, ...) để lấy lộ trình ngắn nhất tới từng tài sản nguy hiểm.",
   "prioritization.exposureChains.howPathLead": "Đường đi",
-  "prioritization.exposureChains.howScore": "mức nguy hiểm theo trọng số KEV x mức quan trọng x tài sản trọng yếu, tăng thêm khi mục tiêu càng gần Internet.",
+  "prioritization.exposureChains.howScore": "mức nguy hiểm theo trọng số KEV x mức độ quan trọng x tài sản trọng yếu, tăng thêm khi mục tiêu càng gần Internet.",
   "prioritization.exposureChains.howScoreLead": "Điểm",
   "prioritization.exposureChains.howTarget": "tài sản có phát hiện KEV hoặc nghiêm trọng đang mở. Mục tiêu bị phơi nhiễm trực tiếp (0 bước) là khẩn cấp nhất.",
   "prioritization.exposureChains.howTargetLead": "Mục tiêu",
