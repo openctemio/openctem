@@ -8,6 +8,12 @@ it never changes the finding on its own.
 Status: shipped. Planned work is listed at the end. Design and decisions:
 [RFC-119](../rfcs/RFC-119-ai-triage-governance.md).
 
+> The sub-modules `ai_triage.bulk`, `.auto`, `.workflow`, `.byok`, `.agent` and
+> `.custom_prompts` were removed (migration 20261028153739). The feature is gated by
+> the `ai_triage` module and the `ai_triage:*` permissions only. Model output is
+> a suggestion stored on the triage result; the service never writes a
+> finding's severity or priority (guarded by `no_human_free_change_test.go`).
+
 ## Who turns it on
 
 - **Platform administrator**: sets up the platform AI provider in the
