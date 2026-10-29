@@ -127,3 +127,40 @@ func TestBatchedStep_CoverageGaps_Partial(t *testing.T) {
 		t.Fatalf("step %+v", a)
 	}
 }
+
+// A task whose every target is a name that no longer resolves completes (the
+// step and the run), with the names counted as no longer resolving: a fact
+// about the names, not a failure.
+func TestStepCompleted_AllNamesNoLongerResolve(t *testing.T) {
+	s, store, runs := batchedFixture(command.StepBatch{Total: 1})
+	if err := s.OnStepCompletedPartial(context.Background(), runs.run.TenantID, runs.run.ID.String(), "a", 0, nil,
+		Partial{Skipped: 157, Unresolvable: 157, SkippedSummary: "157 name(s) no longer resolve: a.example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	a := store.rows["a"]
+	if a.Status != scanrun.StepRunStatusCompleted || a.ErrorCode != "" ||
+		a.Output[StepOutputSkipped] != 157 || a.Output[StepOutputNoLongerResolve] != 157 {
+		t.Fatalf("step %s %q output %v", a.Status, a.ErrorCode, a.Output)
+	}
+	if len(runs.statuses) != 1 || runs.statuses[0] != scanrun.RunStatusCompleted {
+		t.Fatalf("run transitions = %v, want [completed]", runs.statuses)
+	}
+	if runs.updated == nil || runs.updated.Context[RunContextKeyNoLongerResolve] != 157 {
+		t.Fatalf("run context %v", runs.updated)
+	}
+}
+
+// A batched step sums the names that no longer resolve of its batches.
+func TestBatchedStep_NoLongerResolveCounted(t *testing.T) {
+	s, store, runs := batchedFixture(command.StepBatch{Total: 2, Skipped: 12, Unresolvable: 10})
+	if err := s.OnStepCompleted(context.Background(), runs.run.TenantID, runs.run.ID.String(), "a", 0, nil); err != nil {
+		t.Fatal(err)
+	}
+	a := store.rows["a"]
+	if a.Output[StepOutputSkipped] != 12 || a.Output[StepOutputNoLongerResolve] != 10 {
+		t.Fatalf("output %v", a.Output)
+	}
+	if runs.updated == nil || runs.updated.Context[RunContextKeyNoLongerResolve] != 10 {
+		t.Fatalf("run context %v", runs.updated)
+	}
+}

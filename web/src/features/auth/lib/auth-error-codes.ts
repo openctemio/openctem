@@ -92,6 +92,10 @@ export const AUTH_ERROR_CODES = [
   'PASSWORD_NO_NUMBER',
   'PASSWORD_NO_SPECIAL',
   'CAPTCHA_REQUIRED',
+  // Not in the API's auth table: the shared rate limiter answers every sign-in
+  // and recovery route with it (429). Without it here the form said only
+  // "Sign-in failed", which reads like a wrong password.
+  'RATE_LIMIT_EXCEEDED',
 ] as const
 
 export type AuthErrorCode = (typeof AUTH_ERROR_CODES)[number]
