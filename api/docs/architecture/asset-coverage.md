@@ -217,12 +217,31 @@ resolution that answers brings them back.
 
 **HTTP probe on names.** A subdomain is probed only when it resolves and
 is worth a probe (`web_port_or_unscanned`): an address it resolves to has
-an active open port in the web port set, a web origin of the name
+an active open port that may carry a web service (the web port set, the
+alternate web ports such as 2083, 7443, 10443, any port 8000-8999, or any
+port whose detected service is http, https or ssl), a web origin of the name
 (`https://<name>` or `http://<name>`) was seen, or its ports are still
 unknown (no port scan of the name or its addresses has succeeded and none
 of its addresses has an open port on record). A name whose port scan found
-no web port is `not_applicable` until one appears; reconcile then makes it
-due again.
+no such port (for example only 22 or 3306) is `not_applicable` until one
+appears; reconcile then makes it due again. The ports are then probed with
+the name by the named-ports rule below (`coverage.WebAltPorts`,
+`coverage.IsWebPlausiblePort`).
+
+**Named ports in an HTTP probe batch.** The probe of a bare name tries the
+scheme's default ports only, and a probe of `<address>:<port>` misses a
+virtual host, CDN or load balancer that routes by name (TLS SNI, the Host
+header). So a coverage batch of `probe.http` also probes `<name>:<port>`
+for each other open TCP port (not 80 or 443) of the live addresses each kept
+name resolves to (`resolves_to`, then `exposes`; a tenant-scoped lookup,
+`AttributionRepository.OpenPortsOfNames`), at most 20 per name and the batch
+cap in all (`scan/coverage_named_ports.go`). Only names the batch already
+kept are used. Each `<name>:<port>` goes through the same gate call as the
+batch (exclusions in host:port form, name ownership, scope entries and tier,
+zones) and only the allowed ones run; they carry no coverage pair of their
+own. A failed lookup or a refusal of the derived set as a whole leaves the
+batch as it was. Workflows apply the same rule after a port scan
+([scan stages](./scan-stages.md), "Open ports by name").
 
 **Template scans on web services.** A web service reached by an IPv4
 address (`https://203.0.113.10:8443`) is `not_applicable` for

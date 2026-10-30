@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 
@@ -29,6 +30,7 @@ type ScanHopRepository struct {
 func NewScanHopRepository(db *DB) *ScanHopRepository { return &ScanHopRepository{db: db} }
 
 var _ scanrun.HopRepository = (*ScanHopRepository)(nil)
+var _ scanrun.DeltaBaseline = (*ScanHopRepository)(nil)
 
 // hopBatch bounds the rows of one multi-row INSERT.
 const hopBatch = 1000
@@ -486,4 +488,59 @@ func (r *ScanHopRepository) StepRunOfCommand(ctx context.Context, tenantID, comm
 		return shared.ID{}, "", fmt.Errorf("parse run id: %w", err)
 	}
 	return id, stepKey, nil
+}
+
+// UnchangedSince implements scanrun.DeltaBaseline: of assetIDs, the assets
+// that are done since the previous run started ($2): first seen before it,
+// no change event since, and either planned by that run's step (same key)
+// that completed within maxAge, or covered for the capability by the
+// coverage ledger and not due. Every table is read under the tenant ($1).
+func (r *ScanHopRepository) UnchangedSince(ctx context.Context, tenantID, previousRunID shared.ID, stepKey, capability string,
+	assetIDs []shared.ID, maxAge time.Duration,
+) (map[shared.ID]bool, error) {
+	out := map[shared.ID]bool{}
+	if len(assetIDs) == 0 || previousRunID.IsZero() {
+		return out, nil
+	}
+	ids := make([]string, 0, len(assetIDs))
+	for _, id := range assetIDs {
+		ids = append(ids, id.String())
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		WITH base AS (
+			SELECT COALESCE(p.started_at, p.created_at) AS since,
+			       (SELECT s.status FROM scan_run_steps s WHERE s.scan_run_id = p.id AND s.step_key = $3 LIMIT 1) AS step_status
+			FROM scan_runs p
+			WHERE p.tenant_id = $1 AND p.id = $2
+		)
+		SELECT a.id
+		FROM base b
+		JOIN assets a ON a.tenant_id = $1 AND a.id = ANY($5::uuid[])
+		WHERE a.first_seen < b.since
+		  AND NOT EXISTS (SELECT 1 FROM asset_change_events e
+		                  WHERE e.tenant_id = $1 AND e.asset_id = a.id AND e.at >= b.since)
+		  AND (
+		    (b.step_status = 'completed' AND b.since > now() - make_interval(secs => $6)
+		     AND EXISTS (SELECT 1 FROM scan_run_targets t
+		                 WHERE t.tenant_id = $1 AND t.run_id = $2 AND t.stage_key = $3
+		                   AND t.asset_id = a.id AND t.decision = 'planned'))
+		    OR EXISTS (SELECT 1 FROM asset_coverage c
+		               WHERE c.tenant_id = $1 AND c.asset_id = a.id AND c.capability = $4
+		                 AND c.state = 'covered' AND c.next_due_at > now())
+		  )`,
+		tenantID.String(), previousRunID.String(), stepKey, capability, pq.Array(ids), maxAge.Seconds())
+	if err != nil {
+		return nil, fmt.Errorf("delta baseline: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan delta baseline: %w", err)
+		}
+		if aid, err := shared.IDFromString(id); err == nil {
+			out[aid] = true
+		}
+	}
+	return out, rows.Err()
 }

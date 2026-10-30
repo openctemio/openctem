@@ -47,7 +47,13 @@ exclusion widens scope, so it asks you to re-authenticate.
 | URL | `https://app.example.com/api` | that URL and what is under it |
 
 An exclusion of an asset also matches its other names (a URL on it, its
-addresses).
+addresses). An exclusion of an address also excludes the names that resolve
+to it, except when the address is a shared front end inside a range a CDN,
+edge or hosting provider publishes: then only the address (bare, `host:port`,
+URL, inside a range) is left out, and names served through it are still
+scanned, port scans on the web ports only. An address known as an edge only
+by its network holder's name counts as dedicated. The exclusion preview
+lists the names an address exclusion would also stop.
 
 ## 3. How an exclusion reaches the sensor
 

@@ -547,8 +547,6 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 		}
 	}
 
-	// The hop router: seeds, plus what the predecessors produced that passes
-	// the per-hop gate; recorded once per (run, stage).
 	// Whether the step's jobs go to platform sensors decides whether
 	// ownership confirmation applies to the targets the hop router gates.
 	wantsPlatform := scanrun.ScanZoneFromContext(run.Context) == nil && s.stepUsesPlatform(ctx, run, step, settings.SensorPreference)
@@ -556,7 +554,7 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	if wantsPlatform {
 		hopPlacement = attribution.PlacementPlatform
 	}
-	planned, err := s.planStage(attribution.WithPlacement(ctx, hopPlacement), run, step, resolved, preds, stepTargets)
+	planned, err := s.planStage(attribution.WithPlacement(ctx, hopPlacement), run, step, resolved, preds, stepTargets, settings.DeltaGating)
 	if err != nil {
 		return fmt.Errorf("step %s: %w", step.StepKey, err)
 	}

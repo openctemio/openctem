@@ -1211,6 +1211,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Asset.SetFreshness(repos.AssetFreshness)
 	s.Asset.SetResolution(repos.AssetResolution)
 	s.Asset.SetCoverage(repos.AssetCoverage)
+	s.Asset.SetResolvedPorts(repos.AssetRelationship)
 	s.AssetCoverage = coverageapp.NewService(repos.AssetCoverage, log)
 	s.Asset.SetChangeTimeline(repos.AssetChangeEvents)
 	s.Asset.SetAttributeSourceLister(repos.AssetChangeEvents)
@@ -3290,6 +3291,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	}
 	s.Scan.SetResolveEvidence(repos.AssetFreshness, staleRefresher)
 	s.Scan.SetResolutionStore(repos.AssetResolution)
+	s.Scan.SetNamePorts(repos.Attribution) // coverage HTTP probe of <name>:<port> (coverage_named_ports.go)
 	s.AssetImport.SetCreatedAssetsHook(requestNew)
 	s.Asset.SetEnrichmentRequests(repos.AssetEnrichmentRequests)
 	s.Ingest.SetAssetsDiscoveredCallback(func(ctx context.Context, tenantID shared.ID, assets []*assetdom.Asset) {

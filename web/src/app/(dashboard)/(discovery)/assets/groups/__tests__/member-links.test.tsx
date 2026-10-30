@@ -53,8 +53,13 @@ vi.mock('@/features/assets', async (importOriginal) => {
     ...actual,
     ...Object.fromEntries(sections),
     useAsset: () => ({ asset: current, isLoading: false, error: null }),
+    useAssetPage: () => ({ asset: current, isLoading: false, error: null }),
   }
 })
+vi.mock('@/features/assets/components/resolved-ports-section', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  ResolvedPortsSection: () => null,
+}))
 
 /**
  * The page file Next.js serves for a URL path: route groups are transparent,

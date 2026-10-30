@@ -16,8 +16,6 @@
 'use server'
 
 import { cookies } from 'next/headers'
-import { redirect } from 'next/navigation'
-import { loginErrorHref } from '@/features/auth/lib/login-error'
 
 import { env } from '@/lib/env'
 import { browserContextHeaders } from '@/lib/api/browser-context-headers'
@@ -315,22 +313,18 @@ export async function handleOAuthCallback(
 // ============================================
 
 /**
- * Initiate social login by redirecting to OAuth provider
- * This is a convenience function that combines getting the URL and redirecting
+ * Start a social sign-in: set the state and browser-binding cookies and return
+ * the provider authorization URL. The client navigates to it (a server-action
+ * redirect() to an external URL makes the awaiting client call fail while the
+ * page is already leaving, which showed a false error).
  */
 export async function initiateSocialLogin(
   provider: SocialProvider,
   redirectTo?: string
-): Promise<never> {
+): Promise<{ ok: true; url: string } | { ok: false }> {
   const result = await getOAuthAuthorizationUrl(provider, redirectTo)
-
-  if (!result.success) {
-    // If we can't get the authorization URL, redirect back to the login page
-    // with an error code; the login form shows the matching message.
-    redirect(loginErrorHref('start_failed'))
-  }
-
-  redirect(result.data.authorizationUrl)
+  if (!result.success) return { ok: false }
+  return { ok: true, url: result.data.authorizationUrl }
 }
 
 // ============================================

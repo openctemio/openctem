@@ -17,8 +17,6 @@
 'use server'
 
 import { cookies } from 'next/headers'
-import { redirect } from 'next/navigation'
-import { loginErrorHref } from '@/features/auth/lib/login-error'
 
 import { env } from '@/lib/env'
 import { browserContextHeaders } from '@/lib/api/browser-context-headers'
@@ -258,19 +256,16 @@ export async function handleSSOCallback(
 // ============================================
 
 /**
- * Initiate SSO login by redirecting to identity provider
+ * Start an SSO sign-in and return the identity provider URL for the client to
+ * navigate to (see initiateSocialLogin for why this does not redirect()).
  */
 export async function initiateSSOLogin(
   provider: SSOProviderType,
   orgSlug: string,
   redirectTo?: string,
   reauth = false
-): Promise<never> {
+): Promise<{ ok: true; url: string } | { ok: false }> {
   const result = await getSSOAuthorizeUrl(provider, orgSlug, redirectTo, reauth)
-
-  if (!result.success) {
-    redirect(loginErrorHref('start_failed', { org: orgSlug }))
-  }
-
-  redirect(result.data.authorizationUrl)
+  if (!result.success) return { ok: false }
+  return { ok: true, url: result.data.authorizationUrl }
 }
