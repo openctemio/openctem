@@ -67,6 +67,7 @@ func registerClosureSettingsRoutes(router Router, h *handler.TenantHandler, auth
 	router.Group("/api/v1/organization/settings/closure", func(r Router) {
 		r.GET("/", h.GetClosureSettings, middleware.RequireAdmin())
 		r.PUT("/", h.UpdateClosureSettings, middleware.RequireAdmin())
+		r.DELETE("/pending", h.CancelPendingClosureSettings, middleware.RequireAdmin())
 	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
 }
 

@@ -119,11 +119,11 @@ func TestBuildVerificationPlan_Methods(t *testing.T) {
 			avail   bool
 			reason  string
 		}{
-			{"review (unset)", vulnerability.SeverityLow, false, tenantdom.ClosureSettings{}, false, VerifyReasonCoverageReviewOnly},
-			{"off", vulnerability.SeverityLow, false, tenantdom.ClosureSettings{Mode: tenantdom.ClosingModeOff}, false, VerifyReasonCoverageOff},
+			{"review (unset)", vulnerability.SeverityLow, false, tenantdom.ClosureSettings{}, false, VerifyReasonCoverageOrgReview},
+			{"off", vulnerability.SeverityLow, false, tenantdom.ClosureSettings{Mode: tenantdom.ClosingModeOff}, false, VerifyReasonCoverageOrgOff},
 			{"auto, high", vulnerability.SeverityHigh, false, auto, true, ""},
-			{"auto, critical", vulnerability.SeverityCritical, false, auto, false, VerifyReasonCoverageReviewOnly},
-			{"auto, KEV", vulnerability.SeverityLow, true, auto, false, VerifyReasonCoverageReviewOnly},
+			{"auto, critical", vulnerability.SeverityCritical, false, auto, false, VerifyReasonCoverageCriticalReview},
+			{"auto, KEV", vulnerability.SeverityLow, true, auto, false, VerifyReasonCoverageCriticalReview},
 			{"auto, critical, owner opted in", vulnerability.SeverityCritical, false,
 				tenantdom.ClosureSettings{Mode: tenantdom.ClosingModeAuto, CriticalAutoClose: true}, true, ""},
 		} {
