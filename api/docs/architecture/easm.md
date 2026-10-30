@@ -494,6 +494,22 @@ the ports it found open (`technical.ip_address.ports`). Ingest
    reactivated (a reactivation is not announced again). Limits: a scan that
    finds no open port reports no address, so "all ports closed" is not
    detected.
+### Ports of a name
+
+The ports a scan of a host name finds are stored on the addresses they were
+found on (`<address>:<port>`), so a domain or subdomain reads them through
+its relations: name `resolves_to` address `exposes` open port.
+`GET /api/v1/assets/{id}/resolved-ports` (`assets:read`) lists the live open
+ports of the live addresses a domain or subdomain resolves to, by address
+then port, with the service, product and version a scanner identified and the
+last seen time (at most 200 rows, `truncated` beyond). The name must be in the
+caller's data scope (the route guard answers 404 otherwise); every address
+and port is filtered by the caller's data scope as well, and the ones left out
+are only counted (`hidden_count`). Every join is bound to the tenant. Other
+asset types answer an empty list. The asset page shows them in a "Ports on
+resolved addresses" section, read through the asset view
+([page-views.md](./page-views.md)).
+
 ## 4g. Honest numbers (built, P0-13)
 
 - `GET /easm/summary` counts only exposure types something writes today

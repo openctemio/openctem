@@ -1211,6 +1211,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Asset.SetFreshness(repos.AssetFreshness)
 	s.Asset.SetResolution(repos.AssetResolution)
 	s.Asset.SetCoverage(repos.AssetCoverage)
+	s.Asset.SetResolvedPorts(repos.AssetRelationship)
 	s.AssetCoverage = coverageapp.NewService(repos.AssetCoverage, log)
 	s.Asset.SetChangeTimeline(repos.AssetChangeEvents)
 	s.Asset.SetAttributeSourceLister(repos.AssetChangeEvents)

@@ -179,6 +179,7 @@ func newDSHarness(t *testing.T) *dsHarness {
 	assetSvc.SetAttributeSources(postgres.NewAssetAttributeSourceRepository(db), tenantRepo)
 	assetSvc.SetChangeTimeline(postgres.NewAssetChangeEventRepository(db))
 	assetSvc.SetTechnologyFacets(postgres.NewAssetTechnologyRepository(db))
+	assetSvc.SetResolvedPorts(postgres.NewAssetRelationshipRepository(db))
 
 	vulnSvc := finding.NewVulnerabilityService(postgres.NewVulnerabilityRepository(db), findingRepo, log)
 	vulnSvc.SetCommentRepository(postgres.NewFindingCommentRepository(db))
