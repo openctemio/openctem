@@ -245,3 +245,53 @@ func (r *AttributionRepository) AddressesOf(ctx context.Context, tenantID shared
 	}
 	return out, rows.Err()
 }
+
+// OpenPortsOfNames maps each of the given names (matched case-insensitively,
+// keyed lower-case) to the port numbers of the live open TCP ports of the
+// live addresses the tenant's live domain or subdomain asset of that name
+// resolves to (name resolves_to address exposes open_port). Tenant-scoped on
+// every table; a name with none is absent. For the coverage HTTP probe of a
+// name (scan.NamePortReader).
+func (r *AttributionRepository) OpenPortsOfNames(ctx context.Context, tenantID shared.ID, names []string) (map[string][]int, error) {
+	out := map[string][]int{}
+	if len(names) == 0 {
+		return out, nil
+	}
+	lower := make([]string, 0, len(names))
+	for _, n := range names {
+		lower = append(lower, strings.ToLower(strings.TrimSpace(n)))
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT lower(src.name), array_agg(DISTINCT (p.properties->>'port')::int)
+		FROM assets src
+		JOIN asset_relationships rel ON rel.tenant_id = src.tenant_id AND rel.source_asset_id = src.id
+			AND rel.relationship_type = 'resolves_to'
+		JOIN assets ip ON ip.id = rel.target_asset_id AND ip.tenant_id = src.tenant_id AND ip.deleted_at IS NULL
+			AND ip.asset_type = 'ip_address'
+		JOIN asset_relationships rp ON rp.tenant_id = src.tenant_id AND rp.source_asset_id = ip.id
+			AND rp.relationship_type = 'exposes'
+		JOIN assets p ON p.id = rp.target_asset_id AND p.tenant_id = src.tenant_id AND p.deleted_at IS NULL
+			AND p.status = 'active' AND p.asset_type = 'service' AND p.sub_type = 'open_port'
+		WHERE src.tenant_id = $1 AND src.deleted_at IS NULL AND src.asset_type IN ('domain', 'subdomain')
+		  AND lower(src.name) = ANY($2)
+		  AND COALESCE(p.properties->>'port', '') ~ '^[0-9]{1,5}$'
+		  AND COALESCE(NULLIF(p.properties->>'transport', ''), NULLIF(p.properties->>'protocol', ''), 'tcp') = 'tcp'
+		GROUP BY lower(src.name)`, tenantID.String(), pq.Array(lower))
+	if err != nil {
+		return nil, fmt.Errorf("open ports of names: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			name  string
+			ports []int64
+		)
+		if err := rows.Scan(&name, pq.Array(&ports)); err != nil {
+			return nil, err
+		}
+		for _, p := range ports {
+			out[name] = append(out[name], int(p))
+		}
+	}
+	return out, rows.Err()
+}
