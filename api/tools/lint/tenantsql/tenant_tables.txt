@@ -200,6 +200,7 @@ pentest_reports
 pentest_retests
 priority_class_audit_log
 priority_override_rules
+proxy_command_egress
 proxy_endpoints
 proxy_pools
 proxy_sensor_assignments

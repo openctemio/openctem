@@ -181,8 +181,8 @@ func TestAssetCoverage_TargetSideOutcomeRecheckSchedule(t *testing.T) {
 	}
 }
 
-// A sensor-side failure keeps the back-off, and a target-side streak starts
-// at one after it.
+// A sensor-side failure keeps the back-off (on its own platform streak, not
+// the target's), and a target-side streak starts at one after it.
 func TestAssetCoverage_SensorSideFailureKeepsBackoff(t *testing.T) {
 	g := newCycleRig(t)
 	a := g.r.newTenant()
@@ -194,8 +194,8 @@ func TestAssetCoverage_SensorSideFailureKeepsBackoff(t *testing.T) {
 	g.exec(`UPDATE scan_runs SET status = 'failed' WHERE id = $1`, run)
 	g.pass(a)
 	r := g.row(a, name, "resolve.dns")
-	if r.State != covdom.StateFailed || r.FailStreak != 1 || time.Until(*r.NextDueAt) > 61*time.Minute {
-		t.Fatalf("sensor-side failure = %s streak %d next in %v", r.State, r.FailStreak, time.Until(*r.NextDueAt))
+	if r.State != covdom.StateFailed || r.FailStreak != 0 || r.PlatformFailStreak != 1 || time.Until(*r.NextDueAt) > 61*time.Minute {
+		t.Fatalf("sensor-side failure = %s streak %d platform %d next in %v", r.State, r.FailStreak, r.PlatformFailStreak, time.Until(*r.NextDueAt))
 	}
 	g.dueIn(a, name, "resolve.dns", -time.Minute)
 	g.pass(a)

@@ -316,7 +316,7 @@ const expectsHTTPServiceSQL = `EXISTS (
 var settleCoveredSQL = `
 	UPDATE asset_coverage c SET state = 'covered', reason = '',
 	       last_outcome = CASE WHEN $5 AND NOT ` + expectsHTTPServiceSQL + ` THEN '` + coverage.OutcomeNoOutput + `' ELSE '` + coverage.OutcomeOK + `' END,
-	       last_error = '', last_success_at = now(), fail_streak = 0, unreached_from = '',
+	       last_error = '', last_success_at = now(), fail_streak = 0, platform_fail_streak = 0, unreached_from = '',
 	       next_due_at = ` + jitteredIntervalSQL("$4") + `, updated_at = now()
 	FROM assets a
 	WHERE c.tenant_id = $1 AND c.last_run_id = $2 AND c.capability = $3 AND c.vantage = '' AND c.state = 'queued'
@@ -344,7 +344,11 @@ func (r *AssetCoverageRepository) SettleCovered(ctx context.Context, tenantID, r
 }
 
 // SettleFailed settles queued pairs of a run as failed, each with its own
-// outcome and error.
+// outcome and error. A platform-side failure (coverage.IsPlatformSide: the
+// check did not run, so it says nothing about the target) grows only
+// platform_fail_streak and keeps the target's fail_streak and observer as
+// they were; any other failure grows fail_streak and resets
+// platform_fail_streak. Each kind backs off on its own streak.
 func (r *AssetCoverageRepository) SettleFailed(ctx context.Context, tenantID, runID shared.ID, capability string, failed []coverage.FailedPair, every time.Duration) (int, error) {
 	if len(failed) == 0 {
 		return 0, nil
@@ -355,20 +359,26 @@ func (r *AssetCoverageRepository) SettleFailed(ctx context.Context, tenantID, ru
 	ids := make([]string, len(failed))
 	outcomes := make([]string, len(failed))
 	errs := make([]string, len(failed))
+	platform := make([]bool, len(failed))
 	for i, f := range failed {
 		ids[i] = f.AssetID.String()
 		outcomes[i] = coverage.Clip(f.Outcome, coverage.MaxCodeLen)
 		errs[i] = coverage.Clip(f.Error, coverage.MaxErrorLen)
+		platform[i] = coverage.IsPlatformSide(f.Outcome)
 	}
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE asset_coverage c SET state = 'failed', reason = '',
-		       last_outcome = w.outcome, last_error = w.err, fail_streak = c.fail_streak + 1, unreached_from = '',
-		       next_due_at = now() + least(make_interval(secs => $7), make_interval(secs => 3600 * power(2, least(c.fail_streak, 5)))),
+		       last_outcome = w.outcome, last_error = w.err,
+		       fail_streak = CASE WHEN w.platform THEN c.fail_streak ELSE least(c.fail_streak + 1, 32767) END,
+		       platform_fail_streak = CASE WHEN w.platform THEN least(c.platform_fail_streak + 1, 32767) ELSE 0 END,
+		       unreached_from = CASE WHEN w.platform THEN c.unreached_from ELSE '' END,
+		       next_due_at = now() + least(make_interval(secs => $7), make_interval(secs => 3600 * power(2,
+		           least(CASE WHEN w.platform THEN c.platform_fail_streak ELSE c.fail_streak END, 5)))),
 		       updated_at = now()
-		FROM unnest($4::uuid[], $5::text[], $6::text[]) AS w(asset_id, outcome, err)
+		FROM unnest($4::uuid[], $5::text[], $6::text[], $8::bool[]) AS w(asset_id, outcome, err, platform)
 		WHERE c.tenant_id = $1 AND c.last_run_id = $2 AND c.capability = $3 AND c.vantage = '' AND c.state = 'queued'
 		  AND c.asset_id = w.asset_id`,
-		tenantID.String(), runID.String(), capability, pq.Array(ids), pq.Array(outcomes), pq.Array(errs), every.Seconds())
+		tenantID.String(), runID.String(), capability, pq.Array(ids), pq.Array(outcomes), pq.Array(errs), every.Seconds(), pq.Array(platform))
 	if err != nil {
 		return 0, fmt.Errorf("settle failed coverage: %w", err)
 	}
@@ -377,11 +387,15 @@ func (r *AssetCoverageRepository) SettleFailed(ctx context.Context, tenantID, ru
 }
 
 // targetSideStreakSQL is the pair's consecutive target-side observations
-// including this one: the streak goes on when the previous outcome was
+// including this one: the streak goes on when the previous observation was
 // target-side too and the same observer (scan zone or sensor, w.observer)
 // saw it, or either observer is unknown; else it starts at 1, so another
-// zone or sensor gets the short recheck again.
-var targetSideStreakSQL = `(CASE WHEN c.last_outcome IN (` + quotedList(coverage.TargetSideOutcomes()) + `)
+// zone or sensor gets the short recheck again. Platform-side failures in
+// between are not observations: they neither break nor grow the streak
+// (they keep fail_streak and unreached_from, and only a target-side
+// observation leaves unreached_from set).
+var targetSideStreakSQL = `(CASE WHEN (c.last_outcome IN (` + quotedList(coverage.TargetSideOutcomes()) + `)
+	       OR (c.platform_fail_streak > 0 AND c.unreached_from <> ''))
 	     AND (c.unreached_from = '' OR w.observer = '' OR c.unreached_from = w.observer)
 	THEN least(c.fail_streak + 1, 32767) ELSE 1 END)`
 
@@ -413,7 +427,7 @@ func (r *AssetCoverageRepository) SettleTargetSide(ctx context.Context, tenantID
 		UPDATE asset_coverage c SET state = 'paused', reason = w.outcome,
 		       last_outcome = w.outcome, last_error = w.err, fail_streak = `+targetSideStreakSQL+`,
 		       next_due_at = `+jitteredIntervalSQL(`($7::float8[])[least(`+targetSideStreakSQL+`, cardinality($7::float8[]))]`)+`,
-		       unreached_from = COALESCE(NULLIF(w.observer, ''), c.unreached_from),
+		       unreached_from = COALESCE(NULLIF(w.observer, ''), c.unreached_from), platform_fail_streak = 0,
 		       updated_at = now()
 		FROM unnest($4::uuid[], $5::text[], $6::text[], $8::text[]) AS w(asset_id, outcome, err, observer)
 		WHERE c.tenant_id = $1 AND c.last_run_id = $2 AND c.capability = $3 AND c.vantage = '' AND c.state = 'queued'
@@ -457,7 +471,7 @@ func (r *AssetCoverageRepository) SettleNoAnswer(ctx context.Context, tenantID, 
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE asset_coverage c SET state = 'covered', reason = '',
 		       last_outcome = '`+coverage.OutcomeNoAnswer+`', last_error = '', last_success_at = now(),
-		       fail_streak = `+streak+`,
+		       fail_streak = `+streak+`, platform_fail_streak = 0, unreached_from = '',
 		       next_due_at = `+jitteredIntervalSQL(`($5::float8[])[least(`+streak+`, cardinality($5::float8[]))]`)+`,
 		       updated_at = now()
 		WHERE c.tenant_id = $1 AND c.last_run_id = $2 AND c.capability = $3 AND c.vantage = '' AND c.state = 'queued'
@@ -490,7 +504,7 @@ func (r *AssetCoverageRepository) SettleUnresolved(ctx context.Context, tenantID
 	streak := sameOutcomeStreakSQL(`w.reason`)
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE asset_coverage c SET state = 'blocked', reason = w.reason,
-		       last_outcome = w.reason, last_error = w.err, fail_streak = `+streak+`,
+		       last_outcome = w.reason, last_error = w.err, fail_streak = `+streak+`, platform_fail_streak = 0, unreached_from = '',
 		       next_due_at = `+jitteredIntervalSQL(`($7::float8[])[least(`+streak+`, cardinality($7::float8[]))]`)+`,
 		       updated_at = now()
 		FROM unnest($4::uuid[], $5::text[], $6::text[]) AS w(asset_id, reason, err)
@@ -591,7 +605,10 @@ var _ coverage.Planner = (*AssetCoverageRepository)(nil)
 // alert ("targets unreachable") says why those pairs lack coverage instead
 // of a second, vaguer gap alert for the same pairs. Pairs paused for
 // readiness (no capable sensor) are counted as Paused.
-// A parked dead name (last outcome no_answer) is never a gap.
+// A parked dead name (last outcome no_answer) is never a gap. Failing counts
+// only pairs whose last outcome is an observation of the target
+// (coverage.ObservedFailureOutcomes, fail closed): a platform-side failure is
+// the operator's signal (PlatformFailures), never the organization's alert.
 func (r *AssetCoverageRepository) Health(ctx context.Context, tenantID shared.ID, cadence map[string]time.Duration) ([]coverage.CapabilityHealth, error) {
 	caps := make([]string, 0, len(cadence))
 	secs := make([]float64, 0, len(cadence))
@@ -607,7 +624,7 @@ func (r *AssetCoverageRepository) Health(ctx context.Context, tenantID shared.ID
 		                          AND NOT (c.state = 'paused' AND (c.reason = ANY($5::text[]) OR c.reason = ANY($6::text[])))
 										  AND c.last_outcome <> '`+coverage.OutcomeNoAnswer+`'
 		                          AND COALESCE(c.last_success_at, c.created_at) < now() - make_interval(secs => 2 * COALESCE(p.every, 86400))),
-		       count(*) FILTER (WHERE c.state = 'failed' AND c.fail_streak >= $4),
+		       count(*) FILTER (WHERE c.state = 'failed' AND c.fail_streak >= $4 AND c.last_outcome = ANY($7::text[])),
 		       count(*) FILTER (WHERE c.last_outcome = 'ok' AND c.last_success_at > now() - interval '24 hours'),
 		       count(*) FILTER (WHERE c.last_outcome = 'no_output' AND c.last_success_at > now() - interval '24 hours'),
 		       count(*) FILTER (WHERE c.state = 'paused' AND c.reason = ANY($5::text[])),
@@ -619,7 +636,7 @@ func (r *AssetCoverageRepository) Health(ctx context.Context, tenantID shared.ID
 		GROUP BY c.capability
 		ORDER BY c.capability`,
 		tenantID.String(), pq.Array(caps), pq.Array(secs), coverage.FailingStreak, pq.Array(coverage.ReadinessReasons()),
-		pq.Array(coverage.TargetSideOutcomes()))
+		pq.Array(coverage.TargetSideOutcomes()), pq.Array(coverage.ObservedFailureOutcomes()))
 	if err != nil {
 		return nil, fmt.Errorf("coverage health: %w", err)
 	}
@@ -706,3 +723,36 @@ func timeArray(ts []*time.Time) []string {
 }
 
 var _ coverage.HealthReader = (*AssetCoverageRepository)(nil)
+
+// PlatformFailures returns the fleet-wide platform-side failing pairs per
+// capability and outcome (coverage.PlatformFailureReader). It reads every
+// organization on purpose: it is the operator's aggregate and returns counts
+// only, never a tenant, asset or target. Outcomes outside the known list
+// fold into coverage.PlatformOutcomeOther, so a sensor-chosen string never
+// becomes a metric label.
+func (r *AssetCoverageRepository) PlatformFailures(ctx context.Context) ([]coverage.PlatformFailureCount, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT c.capability,
+		       CASE WHEN c.last_outcome = ANY($2::text[]) THEN c.last_outcome ELSE $3 END AS outcome,
+		       count(*), count(DISTINCT c.tenant_id)
+		FROM asset_coverage c
+		WHERE c.state = 'failed' AND c.vantage = '' AND c.platform_fail_streak >= $1
+		GROUP BY 1, 2
+		ORDER BY 1, 2`,
+		coverage.PlatformFailingStreak, pq.Array(coverage.PlatformSideOutcomes()), coverage.PlatformOutcomeOther)
+	if err != nil {
+		return nil, fmt.Errorf("coverage platform failures: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []coverage.PlatformFailureCount
+	for rows.Next() {
+		var c coverage.PlatformFailureCount
+		if err := rows.Scan(&c.Capability, &c.Outcome, &c.Pairs, &c.Tenants); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+var _ coverage.PlatformFailureReader = (*AssetCoverageRepository)(nil)
