@@ -519,7 +519,11 @@ func (v *V2Receiver) admit(ctx context.Context, tenantID shared.ID, continuation
 	if errors.As(err, &full) {
 		return &V2ReportError{Problem: protov2.ProblemQueueFull, RetryAfter: full.RetryAfter}
 	}
-	v.logger.Warn("v2 ingest: queue depth unreadable; segment refused", "error", err)
+	cause := ingestqueue.Cause(err)
+	if cause == nil {
+		cause = err
+	}
+	v.logger.Warn("v2 ingest: queue depth unreadable; segment refused", "error", cause)
 	return problem(protov2.ProblemUnavailable)
 }
 
