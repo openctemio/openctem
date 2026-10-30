@@ -123,6 +123,14 @@ first so the masking can read it) and structured (`method`, `url`,
   `row_version` (a storage move is not an edit an editor must lose to) and
   keeps a current write-up current. It is one-way: the migration's down step
   never writes values back to the finding.
+- The move also runs on every tick of the hourly evidence retention sweep, and
+  the finding repository drops `request_responses` from the metadata of every
+  create and update: an edit loaded before the move, or an old replica during
+  a rolling deploy, cannot put the values back in clear. Each finding is moved
+  in its own savepoint; one that fails is skipped and counted (logged without
+  values) and the rest go on. A pentest create checks the daily evidence
+  budget and the entries before the finding row is written, so a refusal
+  leaves no finding behind to be duplicated by a retry.
 
 ## Ingest flow (`internal/app/evidence`)
 

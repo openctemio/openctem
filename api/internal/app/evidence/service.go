@@ -68,6 +68,9 @@ type Service struct {
 	dailyCap int
 }
 
+// SetDailyCap sets the per-tenant daily limit of new records (0 = default).
+func (s *Service) SetDailyCap(n int) { s.dailyCap = n }
+
 // NewService builds the service. enc must not be nil: with a no-op
 // encryptor (no APP_ENCRYPTION_KEY, development only) secrets are still kept
 // apart from the item, but not encrypted.
@@ -513,6 +516,12 @@ func (s *Service) Sweep(ctx context.Context) error {
 	}
 	if secrets > 0 || records > 0 {
 		s.log.Info("evidence retention sweep", "secrets_deleted", secrets, "records_deleted", records)
+	}
+	// Defense in depth: request/responses that reappear in clear in a
+	// finding's metadata (an old replica during a rolling deploy) are moved
+	// on every tick, not only at startup.
+	if _, err := s.MoveLegacyRequestResponses(ctx); err != nil {
+		return err
 	}
 	return nil
 }

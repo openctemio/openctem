@@ -93,48 +93,80 @@ type legacyRequestResponses struct {
 
 // MoveLegacyRequestResponses moves request/responses kept in clear in
 // findings.metadata into manual evidence records and removes the key, one
-// batch per transaction. A maintenance job across tenants by design: each
-// finding's records are stored under the tenant the finding row holds, and
-// the row is updated pinned to that tenant.
-func (r *FindingEvidenceRepository) MoveLegacyRequestResponses(ctx context.Context, batch int, convert evidencedom.LegacyConverter) (int, error) {
-	moved := 0
+// batch per transaction and one savepoint per finding: a finding that fails
+// is rolled back alone, skipped (logged by the caller from the count, never
+// with its values) and the batch goes on. The scan is keyset-paged (after is
+// the last id of the previous batch) so a skipped finding is not read again.
+// A maintenance job across tenants by design: each finding's records are
+// stored under the tenant the finding row holds, and the row is updated
+// pinned to that tenant.
+func (r *FindingEvidenceRepository) MoveLegacyRequestResponses(ctx context.Context, batch int, after string, convert evidencedom.LegacyConverter) (evidencedom.LegacyMoveResult, error) {
+	var res evidencedom.LegacyMoveResult
+	if after == "" {
+		after = "00000000-0000-0000-0000-000000000000"
+	}
 	err := r.db.Transaction(ctx, func(tx *sql.Tx) error {
+		res = evidencedom.LegacyMoveResult{}
 		if err := setLocalStatementTimeout(ctx, tx, timeoutBatch); err != nil {
 			return err
 		}
-		pending, err := lockLegacyRequestResponses(ctx, tx, batch)
+		pending, err := lockLegacyRequestResponses(ctx, tx, batch, after)
 		if err != nil {
 			return err
 		}
 		for _, p := range pending {
-			for _, nr := range convert(ctx, p.tenantID, p.findingID, p.entries) {
-				nr.Record.FindingID = p.findingID
-				nr.Record.Origin = evidencedom.OriginManual
-				if err := insertEvidence(ctx, tx, p.tenantID, nr); err != nil {
-					return err
+			res.Last = p.findingID.String()
+			if err := moveOneLegacy(ctx, tx, p, convert); err != nil {
+				if ctx.Err() != nil {
+					return ctx.Err()
 				}
+				res.Skipped++
+				continue
 			}
-			if err := dropLegacyRequestResponses(ctx, tx, p); err != nil {
-				return err
-			}
+			res.Moved++
 		}
-		moved = len(pending)
 		return nil
 	})
 	if err != nil {
-		return 0, err
+		return evidencedom.LegacyMoveResult{}, err
 	}
-	return moved, nil
+	return res, nil
 }
 
-func lockLegacyRequestResponses(ctx context.Context, tx *sql.Tx, batch int) ([]legacyRequestResponses, error) {
+// moveOneLegacy stores and drops one finding's legacy entries inside a
+// savepoint; on error the savepoint is rolled back and the error returned.
+func moveOneLegacy(ctx context.Context, tx *sql.Tx, p legacyRequestResponses, convert evidencedom.LegacyConverter) error {
+	if _, err := tx.ExecContext(ctx, `SAVEPOINT legacy_rr`); err != nil {
+		return err
+	}
+	err := func() error {
+		for _, nr := range convert(ctx, p.tenantID, p.findingID, p.entries) {
+			nr.Record.FindingID = p.findingID
+			nr.Record.Origin = evidencedom.OriginManual
+			if err := insertEvidence(ctx, tx, p.tenantID, nr); err != nil {
+				return err
+			}
+		}
+		return dropLegacyRequestResponses(ctx, tx, p)
+	}()
+	if err != nil {
+		if _, rerr := tx.ExecContext(ctx, `ROLLBACK TO SAVEPOINT legacy_rr`); rerr != nil {
+			return rerr
+		}
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `RELEASE SAVEPOINT legacy_rr`)
+	return err
+}
+
+func lockLegacyRequestResponses(ctx context.Context, tx *sql.Tx, batch int, after string) ([]legacyRequestResponses, error) {
 	rows, err := tx.QueryContext(ctx, `
 		SELECT tenant_id, id, metadata->'request_responses', evidence_version
 		FROM findings
-		WHERE metadata ? 'request_responses'
+		WHERE metadata ? 'request_responses' AND id > $2::uuid
 		ORDER BY id
 		LIMIT $1
-		FOR NO KEY UPDATE SKIP LOCKED`, batch)
+		FOR NO KEY UPDATE SKIP LOCKED`, batch, after)
 	if err != nil {
 		return nil, fmt.Errorf("select legacy request/responses: %w", err)
 	}
