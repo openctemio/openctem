@@ -68,7 +68,7 @@ func TestCountTasksWindowAndEndpoint(t *testing.T) {
 		{EndpointIDs: []string{"e2"}, Fault: true, At: now.Add(-3 * time.Minute)},
 		{EndpointIDs: []string{"e1"}, Fault: true, At: now.Add(-40 * time.Minute)},
 	}
-	if c := CountTasks(samples, "e1", now.Add(-TaskWindow)); c != (TaskCounts{Faulted: 1, Total: 2}) {
+	if c := CountTasks(samples, "e1", now.Add(-TaskWindow)); c != (TaskCounts{Faulted: 1, Total: 2, Sensors: 1, FaultedSensors: 1}) {
 		t.Fatalf("e1: %+v", c)
 	}
 	if c := CountTasks(samples, "e3", now.Add(-TaskWindow)); c != (TaskCounts{}) {
@@ -134,5 +134,52 @@ func TestApplyTasksRatioRuleAndCleanJobs(t *testing.T) {
 	}
 	if !h.ApplyTasks(TaskCounts{Faulted: 3, Total: 5}, true, "", now) || h.State != StateQuarantined {
 		t.Fatalf("ratio rule: %+v", h)
+	}
+}
+
+func TestSharedEndpointNeedsTwoSensors(t *testing.T) {
+	now := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+	mk := func(sensor string, fault bool, n int) []TaskSample {
+		out := make([]TaskSample, n)
+		for i := range out {
+			out[i] = TaskSample{SensorID: sensor, EndpointIDs: []string{"e1"}, Fault: fault, At: now.Add(-time.Minute)}
+		}
+		return out
+	}
+	start := now.Add(-TaskWindow)
+
+	// One sensor only: the earlier rule, 5 faulted jobs quarantine.
+	single := CountTasks(mk("s1", true, 5), "e1", start)
+	if single.Shared() || !single.Trips() {
+		t.Fatalf("single sensor: %+v", single)
+	}
+
+	// Another sensor used the endpoint cleanly: s1's faults alone do not trip.
+	shared := CountTasks(append(mk("s1", true, 8), mk("s2", false, 2)...), "e1", start)
+	if !shared.Shared() || shared.FaultedSensors != 1 || shared.Trips() {
+		t.Fatalf("one faulting sensor on a shared endpoint tripped: %+v", shared)
+	}
+	h := NewHealth(now.Add(-time.Hour))
+	h.State = StateHealthy
+	if h.ApplyTasks(shared, true, "x", now) || h.State != StateHealthy {
+		t.Fatalf("quarantined on one sensor's reports: %+v", h)
+	}
+
+	// Two sensors reporting faults: quorum, the usual thresholds apply.
+	both := CountTasks(append(mk("s1", true, 4), append(mk("s2", true, 1), mk("s3", false, 1)...)...), "e1", start)
+	if both.FaultedSensors != 2 || !both.Trips() {
+		t.Fatalf("two faulting sensors: %+v", both)
+	}
+	if !h.ApplyTasks(both, true, "x", now) || h.State != StateQuarantined {
+		t.Fatalf("not quarantined with quorum: %+v", h)
+	}
+
+	// The re-probe after a back-off also needs the quorum on a shared one.
+	later := h.QuarantinedUntil.Add(time.Second)
+	if h.ApplyTasks(TaskCounts{Faulted: 1, Total: 2, Sensors: 2, FaultedSensors: 1}, true, "", later) || h.QuarantineCount != 1 {
+		t.Fatalf("re-quarantined on one sensor of a shared endpoint: %+v", h)
+	}
+	if !h.ApplyTasks(TaskCounts{Faulted: 2, Total: 2, Sensors: 2, FaultedSensors: 2}, true, "", later) || h.QuarantineCount != 2 {
+		t.Fatalf("re-probe with quorum: %+v", h)
 	}
 }
