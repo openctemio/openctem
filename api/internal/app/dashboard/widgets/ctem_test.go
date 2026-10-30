@@ -28,6 +28,12 @@ type ctemFacts struct {
 	intake         []dashboard.IntakeRow
 	intakeTenants  []shared.ID
 	since          time.Time
+	// The attack surface and accepted-risk breakdowns.
+	newAssets    []dashboard.NewAssetRow
+	newFrom      [2]time.Time
+	certs        dashboard.CertificateExpiryCounts
+	accepted     dashboard.AcceptanceExpiryCounts
+	breakdownNow time.Time
 }
 
 func (f *ctemFacts) FactsBuiltAt(context.Context, shared.ID) (*time.Time, error) {
@@ -115,6 +121,24 @@ func (f *ctemFacts) OrgIntake(_ context.Context, tenantID shared.ID, since time.
 func (f *ctemFacts) TopFix(_ context.Context, s dashboard.ReadScope) (*dashboard.FixLever, error) {
 	f.scopes = append(f.scopes, s)
 	return nil, nil
+}
+
+func (f *ctemFacts) NewAssets(_ context.Context, s dashboard.ReadScope, from, prevFrom time.Time) ([]dashboard.NewAssetRow, error) {
+	f.scopes = append(f.scopes, s)
+	f.newFrom = [2]time.Time{from, prevFrom}
+	return f.newAssets, nil
+}
+
+func (f *ctemFacts) CertificateExpiry(_ context.Context, s dashboard.ReadScope, now time.Time) (dashboard.CertificateExpiryCounts, error) {
+	f.scopes = append(f.scopes, s)
+	f.breakdownNow = now
+	return f.certs, nil
+}
+
+func (f *ctemFacts) AcceptanceExpiry(_ context.Context, s dashboard.ReadScope, now time.Time) (dashboard.AcceptanceExpiryCounts, error) {
+	f.scopes = append(f.scopes, s)
+	f.breakdownNow = now
+	return f.accepted, nil
 }
 
 type fakePaths struct {
