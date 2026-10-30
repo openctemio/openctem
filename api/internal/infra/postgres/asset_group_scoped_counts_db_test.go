@@ -47,7 +47,7 @@ func TestAssetGroupList_CountsFollowDataScope_DB(t *testing.T) {
 	addAsset("hidden-2.example.com", "domain", 90, 2, false)
 
 	repo := NewAssetGroupRepository(&DB{DB: db})
-	if err := repo.RecalculateCounts(ctx, group); err != nil {
+	if err := repo.RecalculateCounts(ctx, tenant, group); err != nil {
 		t.Fatal(err)
 	}
 	scope := &shared.DataScope{TenantID: tenant, UserID: user}

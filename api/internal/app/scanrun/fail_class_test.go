@@ -31,7 +31,7 @@ type statsRunRepo struct{ scanrun.RunRepository }
 func (statsRunRepo) UpdateStats(context.Context, shared.ID, shared.ID, int, int, int, int) error {
 	return nil
 }
-func (statsRunRepo) UpdateStatus(context.Context, shared.ID, scanrun.RunStatus, string) error {
+func (statsRunRepo) UpdateStatus(context.Context, shared.ID, shared.ID, scanrun.RunStatus, string) error {
 	return nil
 }
 

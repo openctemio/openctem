@@ -101,7 +101,7 @@ type statusOnlyRunRepo struct {
 	finished bool
 }
 
-func (r *statusOnlyRunRepo) UpdateStatus(_ context.Context, _ shared.ID, _ scanrun.RunStatus, _ string) error {
+func (r *statusOnlyRunRepo) UpdateStatus(_ context.Context, _, _ shared.ID, _ scanrun.RunStatus, _ string) error {
 	if r.finished {
 		return scanrun.ErrRunAlreadyFinished
 	}

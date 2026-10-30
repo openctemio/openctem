@@ -978,7 +978,7 @@ func (s *Service) recordScanRun(ctx context.Context, run *scanrun.Run, status st
 // run-settled callback (the `scan_completed` automation trigger, which
 // filters on the outcome), with findings as its finding count.
 func (s *Service) finishRun(ctx context.Context, run *scanrun.Run, status scanrun.RunStatus, message string, findings int) bool {
-	err := s.runRepo.UpdateStatus(ctx, run.ID, status, message)
+	err := s.runRepo.UpdateStatus(ctx, run.TenantID, run.ID, status, message)
 	if errors.Is(err, scanrun.ErrRunAlreadyFinished) {
 		s.logger.Info("run already finished; not recording it again",
 			"run_id", run.ID.String(), "status", string(status))
@@ -2078,7 +2078,7 @@ func (s *Service) CancelRun(ctx context.Context, tenantID, runID string) error {
 	// read above: if the run finished in the meantime the cancel is refused
 	// instead of turning a completed run into a canceled one (and counting it
 	// on the scan a second time).
-	err = s.runRepo.UpdateStatus(ctx, run.ID, scanrun.RunStatusCanceled, "Canceled by user")
+	err = s.runRepo.UpdateStatus(ctx, run.TenantID, run.ID, scanrun.RunStatusCanceled, "Canceled by user")
 	if errors.Is(err, scanrun.ErrRunAlreadyFinished) {
 		// Another cancel won the race: same outcome, nothing more to record.
 		if cur, gerr := s.GetRun(ctx, tenantID, runID); gerr == nil && cur.Status == scanrun.RunStatusCanceled {

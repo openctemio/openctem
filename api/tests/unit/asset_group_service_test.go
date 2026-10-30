@@ -259,7 +259,7 @@ func (m *mockAssetGroupServiceRepo) GetGroupIDsByAssetID(_ context.Context, _ sh
 	return nil, nil
 }
 
-func (m *mockAssetGroupServiceRepo) RecalculateCounts(_ context.Context, _ shared.ID) error {
+func (m *mockAssetGroupServiceRepo) RecalculateCounts(_ context.Context, _, _ shared.ID) error {
 	m.recalculateCalls++
 	return m.recalculateErr
 }

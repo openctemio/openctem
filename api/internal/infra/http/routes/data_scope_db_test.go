@@ -1116,7 +1116,7 @@ func TestDataScope_DedupReviewPermissions(t *testing.T) {
 // the whole group (2 and 2).
 func TestDataScope_AssetGroupCounts_FollowReaderScope(t *testing.T) {
 	h := newDSHarness(t)
-	if err := postgres.NewAssetGroupRepository(&postgres.DB{DB: h.db}).RecalculateCounts(context.Background(), h.group); err != nil {
+	if err := postgres.NewAssetGroupRepository(&postgres.DB{DB: h.db}).RecalculateCounts(context.Background(), h.tenant, h.group); err != nil {
 		t.Fatal(err)
 	}
 	g := h.group.String()

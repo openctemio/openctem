@@ -865,9 +865,10 @@ func (r *AssetGroupRepository) ListScanMembers(ctx context.Context, q assetgroup
 	return page, nil
 }
 
-// RecalculateCounts recalculates asset counts for a group.
+// RecalculateCounts recalculates asset counts for a group of the tenant (another
+// tenant's group is not touched).
 // Note: finding_count is computed in real-time during SELECT queries.
-func (r *AssetGroupRepository) RecalculateCounts(ctx context.Context, groupID shared.ID) error {
+func (r *AssetGroupRepository) RecalculateCounts(ctx context.Context, tenantID, groupID shared.ID) error {
 	// The per-kind counters key on assets.asset_class (derived from the
 	// stored (type, sub_type) by trg_assets_registry_class), never on alias
 	// type names, which are not stored (RFC-042 §6.3.8): website_count and
@@ -912,10 +913,10 @@ func (r *AssetGroupRepository) RecalculateCounts(ctx context.Context, groupID sh
 				WHERE agm.asset_group_id = $1
 			), 0),
 			updated_at = NOW()
-		WHERE id = $1
+		WHERE id = $1 AND tenant_id = $2
 	`
 
-	_, err := r.db.ExecContext(ctx, query, groupID.String())
+	_, err := r.db.ExecContext(ctx, query, groupID.String(), tenantID.String())
 	if err != nil {
 		return fmt.Errorf("recalculate counts: %w", err)
 	}
