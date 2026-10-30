@@ -1725,6 +1725,7 @@ func newIngestReceiptHandler(cfg *config.Config, repos *Repositories, svc *Servi
 // enforcer when the upload is imported.
 func newFindingImportService(cfg *config.Config, repos *Repositories, svc *Services, log *logger.Logger) *findingimport.Service {
 	imp := findingimport.NewService(svc.Ingest, repos.Finding, repos.IngestReceipt, ingest.ParseVEXMode(cfg.Ingest.VEX), log)
+	imp.SetClosureSettings(svc.Tenant) // A full-coverage upload closes under the organization's closing mode
 	var audit findingimport.Auditor
 	if svc.Audit != nil {
 		audit = svc.Audit

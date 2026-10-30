@@ -14,7 +14,7 @@ import (
 // InsertManual stores recorded request/response records for one finding
 // (docs/architecture/finding-evidence.md, "Recorded request/responses"). The
 // finding row is locked so two concurrent writes count the same items.
-func (r *FindingEvidenceRepository) InsertManual(ctx context.Context, tenantID, findingID shared.ID, recs []evidencedom.NewRecord) (int, error) {
+func (r *FindingEvidenceRepository) InsertManual(ctx context.Context, tenantID, findingID shared.ID, recs []evidencedom.NewRecord, dailyCap evidencedom.DailyCap) (int, error) {
 	if len(recs) == 0 {
 		return 0, nil
 	}
@@ -43,6 +43,23 @@ func (r *FindingEvidenceRepository) InsertManual(ctx context.Context, tenantID, 
 		}
 		if len(held) > evidencedom.MaxManualPerFinding {
 			return evidencedom.ErrTooManyManual
+		}
+		if dailyCap.Limit > 0 && len(fresh) > 0 {
+			// Count inside the transaction, under a per-tenant lock held to
+			// its end: a concurrent write of the tenant waits here and then
+			// counts this one's records.
+			if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('finding_evidence_daily:' || $1, 0))`,
+				tenantID.String()); err != nil {
+				return fmt.Errorf("lock evidence budget: %w", err)
+			}
+			var n int
+			if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM finding_evidence WHERE tenant_id = $1 AND created_at >= $2`,
+				tenantID.String(), dailyCap.Since).Scan(&n); err != nil {
+				return fmt.Errorf("count evidence budget: %w", err)
+			}
+			if n+len(fresh) > dailyCap.Limit {
+				return evidencedom.ErrDailyCapReached
+			}
 		}
 		for _, nr := range fresh {
 			nr.Record.FindingID = findingID
