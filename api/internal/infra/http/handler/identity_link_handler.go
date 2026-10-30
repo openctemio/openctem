@@ -163,3 +163,105 @@ func writeIdentityJSON(w http.ResponseWriter, status int, v any) {
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
 }
+
+// PendingLinkDetails is the details of a 409 OAUTH_ACCOUNT_EXISTS that left a
+// pending link: the secret the web server keeps for this browser in an
+// HttpOnly cookie, and the provider.
+type PendingLinkDetails struct {
+	PendingLink string `json:"pending_link"`
+	Provider    string `json:"provider"`
+}
+
+// PendingLinkRequest names a pending link by its secret.
+type PendingLinkRequest struct {
+	Token string `json:"token"`
+}
+
+func decodePendingLink(w http.ResponseWriter, r *http.Request) (string, bool) {
+	var req PendingLinkRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&req); err != nil || req.Token == "" {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return "", false
+	}
+	return req.Token, true
+}
+
+// DescribePendingLink tells the signed-in account which provider account is
+// waiting to be linked to it.
+// @Summary      Describe the sign-in method waiting to be linked
+// @Description  A social sign-in refused with OAUTH_ACCOUNT_EXISTS leaves a pending link (details.pending_link). After signing in to that account, this returns the provider and its address. 404 PENDING_LINK_INVALID when there is none for this account (expired, used, or made for another account, which also spends it).
+// @Tags         Account
+// @Accept       json
+// @Produce      json
+// @Param        request  body  PendingLinkRequest  true  "Pending link secret"
+// @Success      200  {object}  auth.PendingLinkInfo
+// @Router       /me/pending-sign-in-link/describe [post]
+func (h *OAuthHandler) DescribePendingLink(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	if userID == "" {
+		apierror.Unauthorized("User not authenticated").WriteJSON(w)
+		return
+	}
+	token, ok := decodePendingLink(w, r)
+	if !ok {
+		return
+	}
+	info, err := h.oauthService.DescribePendingLink(r.Context(), userID, token)
+	if err != nil {
+		h.handleOAuthError(w, err)
+		return
+	}
+	writeIdentityJSON(w, http.StatusOK, info)
+}
+
+// ConfirmPendingLink links the pending provider identity to the signed-in
+// account.
+// @Summary      Link the sign-in method waiting to be linked
+// @Description  Links the provider identity of a pending link to the signed-in account and signs out the account's other sessions. The session must have signed in (or stepped up) after the pending link was made: 403 PENDING_LINK_SIGN_IN_REQUIRED otherwise; requires a recent re-authentication (STEP_UP_REQUIRED). 404 PENDING_LINK_INVALID, 409 IDENTITY_LINKED_ELSEWHERE or PROVIDER_ALREADY_LINKED when it cannot be linked.
+// @Tags         Account
+// @Accept       json
+// @Produce      json
+// @Param        request  body  PendingLinkRequest  true  "Pending link secret"
+// @Success      200  {object}  auth.SignInMethod
+// @Router       /me/pending-sign-in-link/confirm [post]
+func (h *OAuthHandler) ConfirmPendingLink(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	sessionID := middleware.GetSessionID(r.Context())
+	if userID == "" || sessionID == "" {
+		apierror.Unauthorized("User not authenticated").WriteJSON(w)
+		return
+	}
+	token, ok := decodePendingLink(w, r)
+	if !ok {
+		return
+	}
+	m, err := h.oauthService.ConfirmPendingLink(auth.WithClientInfo(r.Context(), getClientIP(r), r.UserAgent()),
+		auth.ConfirmPendingLinkInput{UserID: userID, SessionID: sessionID, Token: token})
+	if err != nil {
+		h.handleOAuthError(w, err)
+		return
+	}
+	writeIdentityJSON(w, http.StatusOK, m)
+}
+
+// CancelPendingLink drops a pending link ("not now").
+// @Summary      Decline the sign-in method waiting to be linked
+// @Description  Drops the pending link. Always 204.
+// @Tags         Account
+// @Accept       json
+// @Param        request  body  PendingLinkRequest  true  "Pending link secret"
+// @Success      204
+// @Router       /me/pending-sign-in-link/cancel [post]
+func (h *OAuthHandler) CancelPendingLink(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	if userID == "" {
+		apierror.Unauthorized("User not authenticated").WriteJSON(w)
+		return
+	}
+	token, ok := decodePendingLink(w, r)
+	if !ok {
+		return
+	}
+	h.oauthService.CancelPendingLink(r.Context(), userID, token)
+	w.WriteHeader(http.StatusNoContent)
+}

@@ -18,13 +18,14 @@ import (
 
 // --- fakes ------------------------------------------------------------------
 
-type fakeRevoker struct{ revoked []string }
+type fakeRevoker struct {
+	revoked []string
+	except  []string
+}
 
 func (f *fakeRevoker) RevokeAllSessions(_ context.Context, userID, except string) error {
-	if except != "" {
-		panic("auto-link must revoke every session")
-	}
 	f.revoked = append(f.revoked, userID)
+	f.except = append(f.except, except)
 	return nil
 }
 
@@ -93,7 +94,8 @@ func newLinkFixture(t *testing.T, existing *userdom.User) *linkFixture {
 	f.svc.SetIdentityRepo(f.idents)
 	f.svc.SetSessionRevoker(f.revoker)
 	f.svc.SetIdentityNotifier(f.notifier)
-	f.svc.SetSignupPolicy(signupdom.Static{Mode: signupdom.ModeAdminOnly})
+	on := true
+	f.svc.SetSignupPolicy(signupdom.Static{Mode: signupdom.ModeAdminOnly, SocialAutoLink: &on})
 	return f
 }
 
@@ -134,8 +136,8 @@ func TestAutoLink_GmailToVerifiedPasswordAccount(t *testing.T) {
 	if keys := f.idents.keysOf(acct.ID()); len(keys) != 1 || keys[0].Issuer != googleIssuer || keys[0].Subject != "g-1" {
 		t.Fatalf("identity not bound: %+v", keys)
 	}
-	if len(f.revoker.revoked) != 1 || f.revoker.revoked[0] != acct.ID().String() {
-		t.Fatalf("sessions not revoked: %v", f.revoker.revoked)
+	if len(f.revoker.revoked) != 1 || f.revoker.revoked[0] != acct.ID().String() || f.revoker.except[0] != "" {
+		t.Fatalf("every session not revoked: %v %v", f.revoker.revoked, f.revoker.except)
 	}
 	if acct.PasswordResetToken() != nil {
 		t.Fatal("pending reset link not canceled")
@@ -372,7 +374,7 @@ func TestLinkIdentity(t *testing.T) {
 	t.Run("links a provider account with another address", func(t *testing.T) {
 		acct := verifiedPasswordAccount(t, "p@acme.example")
 		f := newLinkFixture(t, acct)
-		m, err := f.svc.linkIdentity(ctx, acct.ID().String(), &OAuthUserInfo{Email: "someone@gmail.com", Issuer: googleIssuer, Subject: "g-1"}, OAuthProviderGoogle)
+		m, err := f.svc.linkIdentity(ctx, acct.ID().String(), &OAuthUserInfo{Email: "someone@gmail.com", Issuer: googleIssuer, Subject: "g-1"}, OAuthProviderGoogle, linkHowManual)
 		if err != nil || m.Provider != "google" {
 			t.Fatalf("link: %+v %v", m, err)
 		}
@@ -389,7 +391,7 @@ func TestLinkIdentity(t *testing.T) {
 		f := newLinkFixture(t, acct)
 		f.users.created = other // GetByID finds both
 		f.idents.bindTo(other, googleIssuer, "g-1")
-		if _, err := f.svc.linkIdentity(ctx, acct.ID().String(), googleInfo("x@gmail.com", "g-1", ""), OAuthProviderGoogle); !errors.Is(err, ErrIdentityLinkedElsewhere) {
+		if _, err := f.svc.linkIdentity(ctx, acct.ID().String(), googleInfo("x@gmail.com", "g-1", ""), OAuthProviderGoogle, linkHowManual); !errors.Is(err, ErrIdentityLinkedElsewhere) {
 			t.Fatalf("want ErrIdentityLinkedElsewhere, got %v", err)
 		}
 		if len(f.idents.keysOf(acct.ID())) != 0 {
@@ -401,7 +403,7 @@ func TestLinkIdentity(t *testing.T) {
 		f := newLinkFixture(t, acct)
 		f.idents.bindTo(acct, "https://login.microsoftonline.com/tid-a/v2.0", "oid-a")
 		info := &OAuthUserInfo{Email: "p@acme.example", Issuer: "https://login.microsoftonline.com/tid-b/v2.0", Subject: "oid-b"}
-		if _, err := f.svc.linkIdentity(ctx, acct.ID().String(), info, OAuthProviderMicrosoft); !errors.Is(err, ErrProviderAlreadyLinked) {
+		if _, err := f.svc.linkIdentity(ctx, acct.ID().String(), info, OAuthProviderMicrosoft, linkHowManual); !errors.Is(err, ErrProviderAlreadyLinked) {
 			t.Fatalf("want ErrProviderAlreadyLinked, got %v", err)
 		}
 	})
@@ -409,7 +411,7 @@ func TestLinkIdentity(t *testing.T) {
 		acct := verifiedPasswordAccount(t, "p@acme.example")
 		f := newLinkFixture(t, acct)
 		f.idents.bindTo(acct, googleIssuer, "g-1")
-		if _, err := f.svc.linkIdentity(ctx, acct.ID().String(), googleInfo("p@gmail.com", "g-1", ""), OAuthProviderGoogle); err != nil {
+		if _, err := f.svc.linkIdentity(ctx, acct.ID().String(), googleInfo("p@gmail.com", "g-1", ""), OAuthProviderGoogle, linkHowManual); err != nil {
 			t.Fatalf("relink: %v", err)
 		}
 		if len(f.idents.keysOf(acct.ID())) != 1 {

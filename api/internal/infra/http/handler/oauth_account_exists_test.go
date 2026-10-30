@@ -85,3 +85,47 @@ func TestIdentityLinkErrorsAreCoded(t *testing.T) {
 		}
 	}
 }
+
+// A refused sign-in that left a pending link answers the same 409 with the
+// pending link in details, for the web server's HttpOnly cookie.
+func TestOAuthCallback_AccountExistsCarriesPendingLink(t *testing.T) {
+	h := &OAuthHandler{logger: logger.NewNop()}
+	rec := httptest.NewRecorder()
+	h.handleOAuthError(rec, fmt.Errorf("failed to find or create user: %w",
+		&auth.PendingLinkError{Token: "secret-1", Provider: auth.OAuthProviderGoogle}))
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status %d, want 409", rec.Code)
+	}
+	var body struct {
+		Code    string             `json:"code"`
+		Details PendingLinkDetails `json:"details"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Code != "OAUTH_ACCOUNT_EXISTS" || body.Details.PendingLink != "secret-1" || body.Details.Provider != "google" {
+		t.Fatalf("got %s", rec.Body.String())
+	}
+}
+
+// The pending-link refusals have their own codes, never a 500.
+func TestPendingLinkErrorCodes(t *testing.T) {
+	h := &OAuthHandler{logger: logger.NewNop()}
+	for err, want := range map[error]struct {
+		status int
+		code   string
+	}{
+		auth.ErrPendingLinkInvalid:     {http.StatusNotFound, "PENDING_LINK_INVALID"},
+		auth.ErrPendingLinkNeedsSignIn: {http.StatusForbidden, "PENDING_LINK_SIGN_IN_REQUIRED"},
+	} {
+		rec := httptest.NewRecorder()
+		h.handleOAuthError(rec, err)
+		var body struct {
+			Code string `json:"code"`
+		}
+		_ = json.Unmarshal(rec.Body.Bytes(), &body)
+		if rec.Code != want.status || body.Code != want.code {
+			t.Fatalf("%v: %d %s", err, rec.Code, body.Code)
+		}
+	}
+}

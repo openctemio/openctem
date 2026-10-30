@@ -1022,6 +1022,13 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUser
 			var changed bool
 			if u.AuthProvider() == provider.ToAuthProvider() {
 				prev, changed = acc.adoptProviderEmail(ctx, u, userInfo.Email, nil)
+				// The new address counts as verified only where the provider
+				// runs its mailbox, as at account creation: a provider that
+				// verified an address once (GitHub, a consumer Google account
+				// on a company address) does not prove the mailbox now.
+				if changed && !emailAuthoritative(provider, userInfo) {
+					u.MarkEmailUnverified()
+				}
 			}
 			u.UpdateLastLogin()
 			acc.saveLogin(ctx, u, prev, changed)
@@ -1073,7 +1080,9 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUser
 					"existing_provider", existingProvider,
 					"oauth_provider", expectedProvider,
 				)
-				return nil, ErrOAuthAccountExists
+				// Nothing changes on the account. The person may sign in to
+				// it and confirm the link (pending_link.go).
+				return nil, s.offerPendingLink(ctx, existingUser, userInfo, provider)
 			}
 		}
 

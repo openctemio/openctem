@@ -17,12 +17,54 @@ Code: `internal/app/auth/identity_link.go` (service),
 
 A social sign-in whose provider-verified address belongs to an account that
 signs in another way (a password account, or an account of another provider)
-and whose provider identity is not linked to it is refused with
-`409 OAUTH_ACCOUNT_EXISTS`. Nothing is written. The sign-in page keeps a notice:
-sign in with your password, then link the provider in Account > Security, with
-a password reset link. Earlier versions answered `500 INTERNAL_ERROR`.
+and whose provider identity is not linked to it changes nothing on that
+account and signs nobody in. It is refused with `409 OAUTH_ACCOUNT_EXISTS`.
+Linking always needs the person to prove the account too: from Account >
+Security, or by signing in to it right away and confirming (below). Automatic
+linking is off unless the platform turns it on.
 
-The only exception is automatic linking, below.
+### Confirming the link after signing in
+
+When the identity could be linked (the account is active and holds no other
+identity of that provider), the refusal carries a pending link in
+`details.pending_link`:
+
+1. The API stores the provider identity (issuer, subject), its address and the
+   account it collided with, for 10 minutes, under the SHA-256 of a random
+   32-byte secret, and returns the secret. Nothing on the account changes.
+2. The web server keeps the secret in an HttpOnly `__Host-oauth_pending_link`
+   cookie (Secure, SameSite=Lax, 10 minutes) and shows the sign-in page with
+   "An account with this email already exists. Sign in with your password or
+   the method you used before to link it."
+3. The person signs in to the account the usual way: password and second
+   factor, or the provider the account already uses. The provider never
+   replaces that sign-in.
+4. In the app, the web server describes the pending link
+   (`POST /api/v1/me/pending-sign-in-link/describe`) and asks "Link Google
+   account x to your account?". "Link" confirms
+   (`POST /api/v1/me/pending-sign-in-link/confirm`), "Not now" drops it
+   (`POST /api/v1/me/pending-sign-in-link/cancel`); either way the cookie is
+   deleted.
+5. The confirm is accepted only from the account the pending link was made
+   for, only from a session that signed in or stepped up after the pending
+   link was made (the session's own server-side record) and inside the
+   step-up window, only with the secret, once, before it expires, and only
+   while the account's address is still the provider's. A pending link
+   presented by another account is spent. The link itself follows the
+   explicit-link rules (identity linked elsewhere, second identity of the
+   provider). Every other session of the account is then revoked, the link is
+   audited (`how=after_sign_in`) and the account's mailbox is told.
+
+| Route | Gate |
+|---|---|
+| `POST /api/v1/me/pending-sign-in-link/describe` | signed in, rate limit; the pending link must be this account's |
+| `POST /api/v1/me/pending-sign-in-link/confirm` | step-up (the sign-in that just happened counts), CSRF, rate limit; authenticated after the pending link |
+| `POST /api/v1/me/pending-sign-in-link/cancel` | signed in, rate limit |
+
+Refusals: `404 PENDING_LINK_INVALID` (none for this account: expired, used,
+made for another account or never made; one answer for all),
+`403 PENDING_LINK_SIGN_IN_REQUIRED` (the session authenticated before the
+pending link), `409 IDENTITY_LINKED_ELSEWHERE` / `PROVIDER_ALREADY_LINKED`.
 
 ## Explicit linking (Account > Security)
 
@@ -79,22 +121,40 @@ identities are managed by the organization (`409 IDENTITY_MANAGED_BY_ORGANIZATIO
 Each link and unlink writes `auth.identity_linked` / `auth.identity_unlinked`
 (security, high) and e-mails the account's address.
 
-## Automatic linking
+## Automatic linking (off by default)
 
-A social sign-in links itself to an existing password account with the same
-address, instead of answering `OAUTH_ACCOUNT_EXISTS`, only when all hold:
+The platform can let a social sign-in link itself to an existing password
+account with the same address, instead of answering `OAUTH_ACCOUNT_EXISTS`.
+It is off unless an operator turns it on in Console > Settings > Sign-up,
+"Link Google and Microsoft sign-in to existing accounts" (`social_auto_link`;
+absent or unreadable is off; the change is audited and the other
+administrators are told). Even then it applies only when all hold:
 
 | Condition | Why |
 |---|---|
-| The platform allows it: Console > Settings > Sign-up, "Link Google and Microsoft sign-in to existing accounts" (`social_auto_link`, on by default; an unreadable policy is off) | An operator whose accounts were ever created without proof of the address can turn it off |
+| The operator turned it on | Mailbox control alone then signs into the account (subject to its second factor); an operator whose accounts were ever created without proof of the address, or whose domains may change hands, keeps it off |
 | The provider is authoritative for the address: Google on `gmail.com`/`googlemail.com`, or a Workspace account whose `hd` claim equals the address domain; Microsoft with the domain-owner-verified claim; never GitHub | The provider must run the mailbox, not merely have seen the address once ([Social sign-in and the e-mail it can prove](user-onboarding.md#social-sign-in-and-the-e-mail-it-can-prove)) |
 | The provider marked the address verified (Google `email_verified`, Microsoft `xms_edov`) | Required by the sign-in itself |
-| The account's own address is verified | Mitigates pre-hijacking, below |
+| The account has a password and its address is verified | Mitigates pre-hijacking, below; an account made by another provider is never linked automatically |
 | The account is active and has no other identity of that provider | A second subject from one issuer is a different person |
 
 On an automatic link every session of the account is revoked, a pending
 password reset link is cancelled, the link is audited (`how=automatic`) and the
 account's mailbox is told.
+
+A stored `social_auto_link` from before the default changed is dropped by the
+migration `signup_policy_social_auto_link_off` (the console sent the old
+default back with every save, so it did not show a choice).
+
+## The provider changes its address
+
+A returning identity is found by (issuer, subject), never by address. On an
+account the provider created, a new verified address replaces the old one when
+no other account holds it; it counts as verified only where the provider is
+authoritative for it (as at account creation), otherwise the account's address
+becomes unverified and cannot claim invitations or join an organization by
+domain until verified another way. A provider linked to a password account
+never changes its address.
 
 ## Second factor after the provider
 
@@ -139,7 +199,14 @@ Organization policies apply to the session exactly as before:
 | Using a link state to sign in, or a sign-in state to link | The sign-in callback refuses a state with a purpose; the link callback accepts only `purpose=link` |
 | Removing someone else's identity | Unlink deletes by (identity id, account id of the session); another account's identity is not found |
 | Locking oneself out | The last sign-in method stays; checked under a row lock |
-| Account enumeration | `OAUTH_ACCOUNT_EXISTS` and `IDENTITY_LINKED_ELSEWHERE` are answered only after the provider proved the person holds that address or provider account |
+| Account enumeration | `OAUTH_ACCOUNT_EXISTS` and `IDENTITY_LINKED_ELSEWHERE` are answered only after the provider proved the person holds that address or provider account; the pending-link refusals have one answer for every reason |
+| Linking by mailbox control alone (a recycled or transferred mailbox or domain, a compromised provider account) | Off by default: a social sign-in never changes an existing account; the person must sign in to the account and confirm |
+| Planting a pending link in someone's browser | The cookie is HttpOnly and `__Host-` (no subdomain or script can set it); the record is bound to the account it collided with, so another account cannot confirm or even read it, and presenting it spends it |
+| Confirming with a session someone already held (stolen session, shared computer) | The session must have signed in or stepped up after the pending link was made, inside the step-up window; on confirm every other session is revoked and the mailbox is told |
+| Replay of a pending link | Single use (GETDEL), 10 minutes, hash-only storage |
+| A provider's later address counted as proven | The new address is verified only where the provider is authoritative |
+| Organization SSO enforcement or two-factor floor bypassed through social sign-in | A social session is stamped `sso` with no issuing organization: enforcement and the two-factor requirement treat it as a password session without our second factor (`Session.FederatedFor`), so it is refused at token mint |
+| Platform administration through social sign-in | The console needs its own sign-in and second factor; its identity provider bindings are separate from social identities, and break-glass accounts are refused on every main-site path |
 
 Tenant isolation: users and identities are global (not organization data); every
 route acts on the session's own account only, no request field names an

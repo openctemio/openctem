@@ -3,7 +3,7 @@ package auth
 // Linking social sign-in identities (Google, GitHub, Microsoft) to an existing
 // account. See docs/architecture/social-login-linking.md for the threat model.
 //
-// Two ways in:
+// Three ways in:
 //
 //   - Explicit: a signed-in person links a provider from Account > Security.
 //     The start needs a fresh step-up (route gate). The state token carries
@@ -15,13 +15,20 @@ package auth
 //     in an HttpOnly cookie and presents at completion. The
 //     provider's address does not have to match the account's: the person
 //     proved both.
-//   - Automatic, on a social sign-in whose address belongs to a password
-//     account, only when all hold: the platform allows it (sign-up policy
-//     social_auto_link, on by default), the provider is authoritative for the
+//   - After signing in (pending_link.go): a social sign-in whose address
+//     belongs to an existing account changes nothing and is refused with
+//     OAUTH_ACCOUNT_EXISTS, carrying a single-use pending link bound to that
+//     provider identity and that account. The person signs in to the account
+//     the usual way (password and second factor) and confirms the link.
+//   - Automatic, off unless the platform turned it on: on a social sign-in
+//     whose address belongs to a password account, only when all hold: the
+//     platform allows it (sign-up policy social_auto_link, off by default),
+//     the provider is authoritative for the
 //     address (emailAuthoritative: Google on gmail.com/googlemail.com or a
 //     Workspace hd equal to the address domain, Microsoft with a domain-owner
-//     verified address; never GitHub), the account's address is verified, the
-//     account is active and holds no other identity of that provider. Every
+//     verified address; never GitHub), the account has a password and a
+//     verified address, the account is active and holds no other identity of
+//     that provider. Every
 //     session of the account is then revoked and a pending password reset
 //     link is canceled, the link is audited and the account's mailbox is told.
 //
@@ -140,6 +147,8 @@ func (s *OAuthService) autoLinkAllowed(ctx context.Context, u *userdom.User, inf
 		reason = "session revocation not wired"
 	case !policyOrConfig(ctx, s.signupPolicy, s.authConfig).AutoLinkSocial():
 		reason = "turned off by the platform"
+	case !isPasswordAccount(u):
+		reason = "not a password account"
 	case !emailAuthoritative(provider, info):
 		reason = "provider not authoritative for the address"
 	case !u.EmailVerified():
@@ -175,7 +184,7 @@ func (s *OAuthService) autoLink(ctx context.Context, u *userdom.User, key userid
 	if u.PasswordResetToken() != nil {
 		u.ClearPasswordResetToken()
 	}
-	s.recordLink(ctx, u, provider, true)
+	s.recordLink(ctx, u, provider, linkHowAutomatic)
 	s.logger.Info("OAuth identity linked automatically to a password account",
 		"user_id", u.ID().String(), "provider", provider)
 	return nil
@@ -208,18 +217,31 @@ func (s *OAuthService) checkLinkable(ctx context.Context, u *userdom.User, key u
 	return nil
 }
 
+// How a provider identity came to be linked (audit metadata "how").
+const (
+	// linkHowManual: from Account > Security, after a step-up.
+	linkHowManual = "manual"
+	// linkHowAfterSignIn: confirmed right after signing in to the account,
+	// from the pending link a refused social sign-in left (pending_link.go).
+	linkHowAfterSignIn = "after_sign_in"
+	// linkHowAutomatic: on a social sign-in, with the platform's automatic
+	// linking turned on.
+	linkHowAutomatic = "automatic"
+)
+
 // recordLink audits a link and tells the account's mailbox.
-func (s *OAuthService) recordLink(ctx context.Context, u *userdom.User, provider OAuthProvider, automatic bool) {
+func (s *OAuthService) recordLink(ctx context.Context, u *userdom.User, provider OAuthProvider, how string) {
 	ci := clientInfoFrom(ctx)
-	how := "manual"
 	msg := "Linked " + string(provider) + " sign-in to the account"
-	if automatic {
-		how = "automatic"
+	switch how {
+	case linkHowAutomatic:
 		msg = "Linked " + string(provider) + " sign-in to the account automatically on a sign-in with a verified address"
+	case linkHowAfterSignIn:
+		msg = "Linked " + string(provider) + " sign-in to the account, confirmed after signing in"
 	}
 	s.auditIdentity(ctx, u, auditdom.ActionAuthIdentityLinked, msg, provider, how)
 	if s.identityNotifier != nil {
-		s.identityNotifier.NotifyIdentityLinked(ctx, u.Email(), u.Name(), ci.IP, providerLabel(provider), automatic)
+		s.identityNotifier.NotifyIdentityLinked(ctx, u.Email(), u.Name(), ci.IP, providerLabel(provider), how == linkHowAutomatic)
 	}
 }
 
@@ -406,12 +428,12 @@ func (s *OAuthService) CompleteLink(ctx context.Context, in LinkCompleteInput) (
 		s.logger.Error("link: failed to get user info", "provider", in.Provider, "error", err)
 		return nil, ErrOAuthUserInfoFailed
 	}
-	return s.linkIdentity(ctx, in.UserID, info, in.Provider)
+	return s.linkIdentity(ctx, in.UserID, info, in.Provider, linkHowManual)
 }
 
 // linkIdentity binds a verified provider identity to the account userID
-// (explicit link, after the provider round trip).
-func (s *OAuthService) linkIdentity(ctx context.Context, userID string, info *OAuthUserInfo, provider OAuthProvider) (*SignInMethod, error) {
+// (explicit link after the provider round trip, or a confirmed pending link).
+func (s *OAuthService) linkIdentity(ctx context.Context, userID string, info *OAuthUserInfo, provider OAuthProvider, how string) (*SignInMethod, error) {
 	key := useridentity.Key{Issuer: info.Issuer, Subject: info.Subject}
 	if !key.Valid() {
 		return nil, ErrOAuthUserInfoFailed
@@ -438,7 +460,7 @@ func (s *OAuthService) linkIdentity(ctx context.Context, userID string, info *OA
 		}
 		return nil, err
 	}
-	s.recordLink(ctx, u, provider, false)
+	s.recordLink(ctx, u, provider, how)
 	got, err := s.identities.GetByKey(ctx, key)
 	if err != nil {
 		return nil, fmt.Errorf("read linked identity: %w", err)

@@ -1,0 +1,6 @@
+### Security: social sign-in never links itself to an existing account by default
+
+- A Google, GitHub or Microsoft sign-in whose address belongs to an existing account no longer links to it automatically. Nothing on the account changes; the person signs in to the account (password and second factor, or the method they used before) and confirms "Link this account?", or links the provider from Account > Security. A confirmed link signs out the account's other sessions, is audited (`how=after_sign_in`) and e-mails the account's address. New routes: `POST /api/v1/me/pending-sign-in-link/{describe,confirm,cancel}`; the confirm needs a step-up and a session that signed in after the refused sign-in.
+- Automatic linking (Console > Settings > Sign-up, `social_auto_link`) is now off by default, and when an operator turns it on it applies only to password accounts. Migration `signup_policy_social_auto_link_off` drops the stored value, which the console used to send back with every save.
+- When a provider changes the address of an account it created, the new address counts as verified only where the provider is authoritative for it (Gmail, the address's own Workspace domain, a Microsoft domain-owner-verified address).
+- **Upgrade note:** an operator who wants automatic linking turns it on again in Console > Settings > Sign-up.
