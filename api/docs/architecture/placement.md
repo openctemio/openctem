@@ -259,7 +259,7 @@ Code: `internal/app/command/withheld.go`, `RecordWithheld` in
   reason (`pkg/domain/command/placement.go`), failure class, coverage-gap
   reason (`coverage_gaps.go`: `breaker_open` the host stopped answering,
   `rate_floor` it kept pushing back at the lowest rate, `blocked` it answered
-  with a block), skipped-target reason (`skipped_targets.go`) and unreached
+  with a block, `proxy_unavailable` the scan's proxy failed so the host was not judged), skipped-target reason (`skipped_targets.go`) and unreached
   reach class (`reach.go`) has en and vi text
   (`web/src/features/scans/lib/placement-help.ts`, `scans.*` keys); a web
   test reads the Go files and fails on one without. The API keeps only the
