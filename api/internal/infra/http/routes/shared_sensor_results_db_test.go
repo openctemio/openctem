@@ -112,6 +112,7 @@ func (h *ctlHarness) processReports(sensorID string) {
 	svc.SetCommandReader(postgres.NewCommandRepository(db))
 	reports, jobs := postgres.NewIngestReportRepository(db), postgres.NewIngestJobRepository(db)
 	proc := ingest.NewV2JobProcessor(svc, reports, jobs, protov2.DefaultLimits(), ingest.DefaultBlindingGuard(), log)
+	proc.SetPayloadSealer(testSegmentSealer(h.t))
 	var refs []string
 	func() {
 		rows, err := h.db.QueryContext(ctx, `SELECT id FROM ingest_reports WHERE sensor_id = $1`, sensorID)
