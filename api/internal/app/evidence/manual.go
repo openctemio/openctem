@@ -22,34 +22,9 @@ var ErrDailyCapReached = fmt.Errorf("%w: the organization reached its daily evid
 // anywhere else. An entry already stored on the finding is skipped. Unlike
 // scan evidence, a failure is returned: the person who sent it must know.
 func (s *Service) StoreManual(ctx context.Context, tenantID, findingID shared.ID, entries []map[string]any, meta Meta) (int, error) {
-	if len(entries) == 0 {
-		return 0, nil
-	}
-	if s == nil {
-		// Never fall back to keeping the exchange in clear somewhere else.
-		return 0, fmt.Errorf("%w: request/response evidence is not available", shared.ErrValidation)
-	}
-	if len(entries) > evidencedom.MaxManualPerFinding {
-		return 0, evidencedom.ErrTooManyManual
-	}
-	items := make([]evidencedom.Item, 0, len(entries))
-	for _, e := range entries {
-		if evidencedom.ContainsPlaceholder(e) {
-			return 0, evidencedom.ErrMaskedResent
-		}
-		if it, ok := evidencedom.FromRequestResponse(e); ok {
-			items = append(items, it)
-		}
-	}
-	if len(items) == 0 {
-		return 0, nil
-	}
-	budget, ok := s.dailyBudget(ctx, tenantID)
-	if !ok {
-		return 0, errors.New("evidence budget check failed")
-	}
-	if budget < len(items) {
-		return 0, ErrDailyCapReached
+	items, err := s.checkManual(ctx, tenantID, entries)
+	if err != nil || len(items) == 0 {
+		return 0, err
 	}
 	recs := s.prepare(ctx, tenantID, findingID, nil, evidencedom.OriginManual, items, meta)
 	n, err := s.repo.InsertManual(ctx, tenantID, findingID, recs)
@@ -59,23 +34,76 @@ func (s *Service) StoreManual(ctx context.Context, tenantID, findingID shared.ID
 	return n, nil
 }
 
+// CheckManual runs, without storing anything, the checks StoreManual does
+// before it writes (entry count, masked placeholders sent back, the tenant's
+// daily evidence budget). A caller that creates the finding first calls it
+// before the create, so these refusals happen before the finding row exists
+// and a retry cannot duplicate the finding.
+func (s *Service) CheckManual(ctx context.Context, tenantID shared.ID, entries []map[string]any) error {
+	_, err := s.checkManual(ctx, tenantID, entries)
+	return err
+}
+
+// checkManual validates the entries and the budget and returns the items to store.
+func (s *Service) checkManual(ctx context.Context, tenantID shared.ID, entries []map[string]any) ([]evidencedom.Item, error) {
+	if len(entries) == 0 {
+		return nil, nil
+	}
+	if s == nil {
+		// Never fall back to keeping the exchange in clear somewhere else.
+		return nil, fmt.Errorf("%w: request/response evidence is not available", shared.ErrValidation)
+	}
+	if len(entries) > evidencedom.MaxManualPerFinding {
+		return nil, evidencedom.ErrTooManyManual
+	}
+	items := make([]evidencedom.Item, 0, len(entries))
+	for _, e := range entries {
+		if evidencedom.ContainsPlaceholder(e) {
+			return nil, evidencedom.ErrMaskedResent
+		}
+		if it, ok := evidencedom.FromRequestResponse(e); ok {
+			items = append(items, it)
+		}
+	}
+	if len(items) == 0 {
+		return nil, nil
+	}
+	budget, ok := s.dailyBudget(ctx, tenantID)
+	if !ok {
+		return nil, errors.New("evidence budget check failed")
+	}
+	if budget < len(items) {
+		return nil, ErrDailyCapReached
+	}
+	return items, nil
+}
+
 // MoveLegacyRequestResponses moves the request/responses still kept in clear
 // in findings.metadata (written before they went through this service) into
 // masked, encrypted manual evidence, and removes them from the finding.
-// Idempotent and batched (SKIP LOCKED): safe on every start and across
-// replicas. It returns how many findings it moved.
+// Idempotent and batched (SKIP LOCKED): safe on every start, every
+// maintenance tick and across replicas. One finding that cannot be moved is
+// skipped and counted (logged without any of its values) and does not stop
+// the rest. It returns how many findings it moved.
 func (s *Service) MoveLegacyRequestResponses(ctx context.Context) (int, error) {
-	total := 0
+	moved, skipped := 0, 0
+	after := "00000000-0000-0000-0000-000000000000"
 	for {
-		n, err := s.repo.MoveLegacyRequestResponses(ctx, legacyBatch, s.convertLegacy)
-		total += n
+		res, err := s.repo.MoveLegacyRequestResponses(ctx, legacyBatch, after, s.convertLegacy)
+		moved += res.Moved
+		skipped += res.Skipped
 		if err != nil {
-			return total, err
+			return moved, err
 		}
-		if n == 0 {
-			return total, nil
+		if res.Moved+res.Skipped == 0 {
+			break
 		}
+		after = res.Last
 	}
+	if skipped > 0 {
+		s.log.Error("legacy request/response move skipped findings it could not move", "skipped", skipped, "moved", moved)
+	}
+	return moved, nil
 }
 
 // convertLegacy builds the masked records of one finding's legacy entries.

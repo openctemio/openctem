@@ -162,9 +162,11 @@ type Repository interface {
 	// findings.metadata (key request_responses, written before they went
 	// through the evidence service) into manual records: it locks up to batch
 	// such findings, lets convert build the masked records, stores them and
-	// removes the key, in one transaction per batch. It returns how many
-	// findings it moved; 0 means none is left.
-	MoveLegacyRequestResponses(ctx context.Context, batch int, convert LegacyConverter) (int, error)
+	// removes the key, in one transaction per batch and one savepoint per
+	// finding (a finding that fails is skipped, not retried in the run).
+	// after is the last id of the previous batch ("" = from the start); an
+	// empty result (Moved+Skipped == 0) means none is left.
+	MoveLegacyRequestResponses(ctx context.Context, batch int, after string, convert LegacyConverter) (LegacyMoveResult, error)
 	// List returns a finding's records in reader order (position, then
 	// newest first); retestID filters to one retest attempt.
 	List(ctx context.Context, tenantID, findingID shared.ID, retestID *shared.ID, limit int) ([]*Record, error)
@@ -190,6 +192,13 @@ type Repository interface {
 	// DeleteExpired deletes expired secrets and records older than the
 	// retention. It returns how many of each were deleted.
 	DeleteExpired(ctx context.Context, now time.Time, retention time.Duration) (secrets, records int64, err error)
+}
+
+// LegacyMoveResult is one batch of the legacy request/response move.
+type LegacyMoveResult struct {
+	Moved   int    // findings moved
+	Skipped int    // findings that failed and were left as they were
+	Last    string // id of the last finding looked at (the next cursor)
 }
 
 // LegacyConverter turns a finding's legacy request/response entries into
