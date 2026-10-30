@@ -86,6 +86,15 @@ describe('FindingIssueGroupSection', () => {
     )
   })
 
+  it.each([
+    ['vuln_asset', 'Same vulnerability on the same asset, found by another technique'],
+    ['dast_scheme', 'Same check on the same page, over HTTP and HTTPS'],
+  ])('names the %s rule', (rule, label) => {
+    members = [primary, { ...member, rule }]
+    render(<FindingIssueGroupSection findingId="f1" />)
+    expect(screen.getByText(label)).toBeInTheDocument()
+  })
+
   it('unlinks after confirmation and reloads the group', async () => {
     render(<FindingIssueGroupSection findingId="f1" />)
     fireEvent.click(screen.getByRole('button', { name: 'Unlink' }))
