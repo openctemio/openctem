@@ -192,12 +192,16 @@ resolution that answers brings them back.
 
 **HTTP probe on names.** A subdomain is probed only when it resolves and
 is worth a probe (`web_port_or_unscanned`): an address it resolves to has
-an active open port in the web port set, a web origin of the name
+an active open port that may carry a web service (the web port set, the
+alternate web ports such as 2083, 7443, 10443, any port 8000-8999, or any
+port whose detected service is http, https or ssl), a web origin of the name
 (`https://<name>` or `http://<name>`) was seen, or its ports are still
 unknown (no port scan of the name or its addresses has succeeded and none
 of its addresses has an open port on record). A name whose port scan found
-no web port is `not_applicable` until one appears; reconcile then makes it
-due again.
+no such port (for example only 22 or 3306) is `not_applicable` until one
+appears; reconcile then makes it due again. The ports are then probed with
+the name by the named-ports rule below (`coverage.WebAltPorts`,
+`coverage.IsWebPlausiblePort`).
 
 **Named ports in an HTTP probe batch.** The probe of a bare name tries the
 scheme's default ports only, and a probe of `<address>:<port>` misses a

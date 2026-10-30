@@ -18,7 +18,9 @@ const (
 	// RequiresWebPort: the open port is one of WebPorts.
 	RequiresWebPort = "web_port"
 	// RequiresWebPortOrUnscanned: a name is worth an HTTP probe: an
-	// address it resolves to has an open port in WebPorts, a web origin of
+	// address it resolves to has an open port that may carry a web service
+	// (IsWebPlausiblePort, or a detected http/https/ssl service on any
+	// port), a web origin of
 	// the name was seen, or its ports are unknown (no port scan of the name
 	// or its addresses has succeeded and none of its addresses has an open
 	// port on record). A name whose port scan found no web port is not
@@ -38,6 +40,33 @@ const (
 // WebPorts are the ports an HTTP probe takes from an open port. A web
 // service on another port is found by the probe of its name.
 var WebPorts = []int{80, 443, 591, 3000, 5000, 8000, 8008, 8080, 8081, 8088, 8443, 8888, 9000, 9443}
+
+// WebAltPorts are further ports that commonly carry a web service (admin
+// panels, control panels, application servers, alternate TLS ports). An open
+// port in WebAltPorts or in WebAltRangeFrom..WebAltRangeTo makes a name worth
+// an HTTP probe (RequiresWebPortOrUnscanned): the probe of the name then
+// tries it with the name's Host header and TLS server name, which a scan of
+// the address alone cannot. They do not change what a probe takes from a bare
+// address (WebPorts).
+var WebAltPorts = []int{2082, 2083, 2086, 2087, 2095, 2096, 4443, 7000, 7080, 7443, 8181, 9001, 9080, 9090, 10000, 10443, 12443}
+
+// WebAltRangeFrom and WebAltRangeTo bound the commonly used alternate HTTP
+// range 8000-8999 (the SQL form matches the thousand WebAltRangeFrom/1000).
+const (
+	WebAltRangeFrom = 8000
+	WebAltRangeTo   = 8999
+)
+
+// WebServiceNamePattern matches (case-insensitively) a service name that a
+// port scan detected for a web service: http, https, ssl, http-alt,
+// ssl/http, http-proxy and the like.
+const WebServiceNamePattern = `^(ssl/)?(https?(-[a-z0-9]+)*|ssl)$`
+
+// IsWebPlausiblePort reports whether an open port, by number alone, may carry
+// a web service: WebPorts, WebAltPorts or the 8000-8999 range.
+func IsWebPlausiblePort(p int) bool {
+	return IsWebPort(p) || slices.Contains(WebAltPorts, p) || (p >= WebAltRangeFrom && p <= WebAltRangeTo)
+}
 
 // IsWebPort reports whether p is one of WebPorts.
 func IsWebPort(p int) bool { return slices.Contains(WebPorts, p) }
