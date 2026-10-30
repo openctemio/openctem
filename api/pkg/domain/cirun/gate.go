@@ -449,14 +449,16 @@ const (
 
 // Decision is the decision the gate honors on f at now: a person marked it a
 // false positive or a duplicate, accepted its risk (until the acceptance
-// expires), or an approved, unexpired suppression rule covers it. "" when
-// none: the finding counts.
+// ends), or an approved, unexpired suppression rule covers it. "" when none:
+// the finding counts. An accepted risk always ends; an acceptance with no
+// recorded end is not honored (fail closed), so a writer that lost the end
+// can never turn an acceptance into a permanent pass.
 func Decision(f RunFinding, now time.Time) string {
 	switch f.Status {
 	case DecisionFalsePositive, DecisionDuplicate:
 		return f.Status
 	case DecisionAccepted:
-		if f.AcceptanceExpiresAt == nil || f.AcceptanceExpiresAt.After(now) {
+		if f.AcceptanceExpiresAt != nil && f.AcceptanceExpiresAt.After(now) {
 			return DecisionAccepted
 		}
 	}

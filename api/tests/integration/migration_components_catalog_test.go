@@ -23,7 +23,7 @@ func TestMigrationComponentsOnSoftwareCatalog(t *testing.T) {
 	db := testdb.PrivateDatabase(t, "migcomponents", dir)
 	v := testdb.MigrationVersion(t, dir, "components_on_software_catalog")
 	// Everything above this migration comes down first, then this one.
-	testdb.Migrate(t, db, dir, v, math.MaxInt32, true)
+	testdb.Migrate(t, db, dir, v, math.MaxInt, true)
 
 	exec := func(q string, args ...any) {
 		t.Helper()
