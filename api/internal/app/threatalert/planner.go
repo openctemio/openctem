@@ -237,42 +237,82 @@ func (p *Planner) fanOut(ctx context.Context, st *Stats, deadline time.Time) err
 		if len(events) == 0 {
 			return nil
 		}
-		for _, e := range events {
-			if e.ID != cursor+1 && p.now().Sub(e.At) < gapWait {
-				// An earlier id may still commit: wait for it.
-				return p.store.SetPlannerCursor(ctx, cursor)
+		// The page up to the first gap in event ids: an earlier id may
+		// still commit, so the events after it wait for the next run.
+		ready, next := len(events), cursor
+		for i, e := range events {
+			if e.ID != next+1 && p.now().Sub(e.At) < gapWait {
+				ready = i
+				break
 			}
-			if err := p.fanOutOne(ctx, e); err != nil {
-				_ = p.store.SetPlannerCursor(ctx, cursor)
-				return err
-			}
-			cursor = e.ID
-			st.Events++
+			next = e.ID
+		}
+		if err := p.fanOutPage(ctx, events[:ready]); err != nil {
+			_ = p.store.SetPlannerCursor(ctx, cursor)
+			return err
+		}
+		st.Events += ready
+		if ready > 0 {
+			cursor = events[ready-1].ID
 		}
 		if err := p.store.SetPlannerCursor(ctx, cursor); err != nil {
 			return err
+		}
+		if ready < len(events) {
+			return nil
 		}
 	}
 	return nil
 }
 
-func (p *Planner) fanOutOne(ctx context.Context, e vulnevent.Event) error {
-	if e.Kind == vulnevent.KindRejected {
-		n, err := p.store.ResolveVuln(ctx, e.VulnID, threatalert.ReasonRejectedUpstream, p.now())
-		if err == nil && n > 0 {
-			p.logger.Info("emerging threats resolved: CVE rejected upstream", "vuln_id", e.VulnID, "alerts", n)
+// fanOutPage queues the organizations a page of events affects, with one
+// lookup for the whole page. Rejections resolve in event order, after the
+// events before them are queued (queueing is idempotent, so a page that
+// fails half way is safely redone from the old cursor).
+func (p *Planner) fanOutPage(ctx context.Context, events []vulnevent.Event) error {
+	var ids []string
+	for _, e := range events {
+		if e.Kind != vulnevent.KindRejected {
+			ids = append(ids, e.VulnID)
 		}
+	}
+	affected, err := p.store.TenantsAffectedBy(ctx, ids)
+	if err != nil {
 		return err
 	}
-	tenants, err := p.store.TenantsAffectedBy(ctx, e.VulnID)
-	if err != nil || len(tenants) == 0 {
+	var items []threatalert.QueueItem
+	queued := map[threatalert.QueueItem]bool{}
+	flush := func() error {
+		if len(items) == 0 {
+			return nil
+		}
+		err := p.store.Enqueue(ctx, items)
+		items = nil
 		return err
 	}
-	items := make([]threatalert.QueueItem, 0, len(tenants))
-	for _, t := range tenants {
-		items = append(items, threatalert.QueueItem{TenantID: t, VulnID: e.VulnID})
+	for _, e := range events {
+		if e.Kind == vulnevent.KindRejected {
+			if err := flush(); err != nil {
+				return err
+			}
+			n, err := p.store.ResolveVuln(ctx, e.VulnID, threatalert.ReasonRejectedUpstream, p.now())
+			if err != nil {
+				return err
+			}
+			if n > 0 {
+				p.logger.Info("emerging threats resolved: CVE rejected upstream", "vuln_id", e.VulnID, "alerts", n)
+			}
+			continue
+		}
+		for _, t := range affected[e.VulnID] {
+			it := threatalert.QueueItem{TenantID: t, VulnID: e.VulnID}
+			if !queued[it] {
+				queued[it] = true
+				items = append(items, it)
+			}
+		}
 	}
-	return p.store.Enqueue(ctx, items)
+	return flush()
 }
 
 // QueueVulns queues an organization's vulnerabilities (the matcher created
