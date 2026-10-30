@@ -12,6 +12,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -65,6 +66,8 @@ type v2HarnessOpts struct {
 	ciKeys handler.CIRunnerKeyPolicy
 	// depth, when set, replaces the queue depth reader.
 	depth brokenDepth
+	// noSealer leaves the receiver without a segment sealer.
+	noSealer bool
 }
 
 // brokenDepth is a queue depth that cannot be read.
@@ -109,7 +112,11 @@ func newV2Harness(t *testing.T, opts v2HarnessOpts) *v2Harness {
 	if opts.depth.on {
 		receiver = ingest.NewV2Receiver(h.reports, parked, opts.depth, postgres.NewCommandRepository(db), limits, opts.maxPending, log)
 	}
+	if !opts.noSealer {
+		receiver.SetPayloadSealer(testSegmentSealer(t))
+	}
 	h.proc = ingest.NewV2JobProcessor(ingestSvc, h.reports, h.jobs, limits, ingest.DefaultBlindingGuard(), log)
+	h.proc.SetPayloadSealer(testSegmentSealer(t))
 
 	// A user route behind the real JWT authenticator, for route isolation.
 	gen := jwt.NewGenerator(jwt.TokenConfig{Secret: "v2-route-test-secret-0123456789abcdef", Issuer: "test",
@@ -867,4 +874,130 @@ func TestIngestV1_QueuedReportOfRevokedSensorIsDropped(t *testing.T) {
 	if audited != 1 {
 		t.Fatalf("%d audit entries for the dropped report, want 1", audited)
 	}
+}
+
+// manifestFor is the commit manifest an honest sensor sends for segments
+// built by v2Segment (one asset each) with the given findings per segment.
+func manifestFor(segs [][]byte, findings []int) protov2.CommitRequest {
+	req := protov2.CommitRequest{SegmentCount: len(segs), Totals: &protov2.Counts{}}
+	hashes := make([][]byte, len(segs))
+	for i, s := range segs {
+		sum := sha256.Sum256(s)
+		hashes[i] = sum[:]
+		req.SegmentDigests = append(req.SegmentDigests, digestOf(s))
+		req.Segments = append(req.Segments, protov2.SegmentManifest{
+			Seq: i, SHA256: hex.EncodeToString(sum[:]), Bytes: int64(len(s)), Assets: 1, Findings: findings[i],
+		})
+		req.Totals.Assets++
+		req.Totals.Findings += findings[i]
+	}
+	req.ReportSHA256 = hex.EncodeToString(protov2.ReportRoot(hashes))
+	return req
+}
+
+func (h *v2Harness) commit(base string, req protov2.CommitRequest) (*http.Response, []byte) {
+	h.t.Helper()
+	b, _ := json.Marshal(req)
+	return h.do(http.MethodPost, base+"/commit", nil, func(r *http.Request) {
+		r.Body = io.NopCloser(bytes.NewReader(b))
+		r.ContentLength = int64(len(b))
+		r.Header.Set("Content-Type", "application/json")
+	})
+}
+
+func (h *v2Harness) reportIntegrity(reportID string) (integrity string, root []byte, committed bool) {
+	h.t.Helper()
+	var at sql.NullTime
+	var in sql.NullString
+	if err := h.db.QueryRow(`SELECT integrity, content_sha256, committed_at FROM ingest_reports WHERE sensor_id = $1 AND report_id = $2`,
+		h.sensorID, reportID).Scan(&in, &root, &at); err != nil {
+		h.t.Fatalf("read report: %v", err)
+	}
+	return in.String, root, at.Valid
+}
+
+// The commit manifest (RFC-026 §3.5a): a matching manifest commits the report
+// as "manifest"; a manifest whose counts or hashes do not match what the
+// server received is refused and the report stays uncommitted (never
+// completes, never proves absence); a commit without a manifest is
+// "digest_only"; a whole report is "single". The status of an uncommitted
+// report lists the segments the server holds.
+func TestSensorV2_CommitManifest(t *testing.T) {
+	h := newV2Harness(t, v2HarnessOpts{})
+	segs := [][]byte{v2Segment("semgrep", "1.0", "a", "b"), v2Segment("semgrep", "1.0", "c")}
+	put := func(base string, seqs ...int) {
+		for _, seq := range seqs {
+			resp, raw := h.do(http.MethodPut, fmt.Sprintf("%s/segments/%d", base, seq), segs[seq])
+			h.expect(resp, raw, 202, "")
+		}
+	}
+
+	t.Run("held segments, then a matching manifest", func(t *testing.T) {
+		id := newReportID()
+		base := "/api/v2/sensor/results/" + id
+		put(base, 1)
+		resp, raw := h.do(http.MethodGet, base, nil)
+		h.expect(resp, raw, 200, "")
+		var st protov2.Status
+		if err := json.Unmarshal(raw, &st); err != nil {
+			t.Fatal(err)
+		}
+		if len(st.Segments.Held) != 1 || st.Segments.Held[0] != 1 {
+			t.Fatalf("held = %v, want [1]", st.Segments.Held)
+		}
+		put(base, 0)
+		resp, raw = h.commit(base, manifestFor(segs, []int{2, 1}))
+		h.expect(resp, raw, 202, "")
+		integrity, root, committed := h.reportIntegrity(id)
+		want := manifestFor(segs, []int{2, 1}).ReportSHA256
+		if !committed || integrity != protov2.IntegrityManifest || hex.EncodeToString(root) != want {
+			t.Fatalf("committed=%v integrity=%q root=%x, want manifest %s", committed, integrity, root, want)
+		}
+	})
+
+	t.Run("inflated counts are refused", func(t *testing.T) {
+		id := newReportID()
+		base := "/api/v2/sensor/results/" + id
+		put(base, 0, 1)
+		req := manifestFor(segs, []int{2, 1})
+		req.Segments[0].Findings, req.Totals.Findings = 50, 51
+		resp, raw := h.commit(base, req)
+		h.expect(resp, raw, 409, "segment-set-mismatch")
+		if !strings.Contains(string(raw), "count_mismatch") {
+			t.Fatalf("refusal does not name the count mismatch: %s", raw)
+		}
+		if _, _, committed := h.reportIntegrity(id); committed {
+			t.Fatal("a refused manifest committed the report")
+		}
+		// The honest manifest still commits it.
+		resp, raw = h.commit(base, manifestFor(segs, []int{2, 1}))
+		h.expect(resp, raw, 202, "")
+	})
+
+	t.Run("a content hash that differs is refused", func(t *testing.T) {
+		base := "/api/v2/sensor/results/" + newReportID()
+		put(base, 0, 1)
+		req := manifestFor(segs, []int{2, 1})
+		other := sha256.Sum256([]byte("not what was sent"))
+		req.Segments[1].SHA256 = hex.EncodeToString(other[:])
+		resp, raw := h.commit(base, req)
+		h.expect(resp, raw, 409, "segment-set-mismatch")
+	})
+
+	t.Run("no manifest is digest_only, a whole report is single", func(t *testing.T) {
+		id := newReportID()
+		base := "/api/v2/sensor/results/" + id
+		put(base, 0, 1)
+		resp, raw := h.commit(base, protov2.CommitRequest{SegmentCount: 2, SegmentDigests: []string{digestOf(segs[0]), digestOf(segs[1])}})
+		h.expect(resp, raw, 202, "")
+		if integrity, _, _ := h.reportIntegrity(id); integrity != protov2.IntegrityDigestOnly {
+			t.Fatalf("integrity %q, want digest_only", integrity)
+		}
+		whole := newReportID()
+		resp, raw = h.do(http.MethodPut, "/api/v2/sensor/results/"+whole, segs[0])
+		h.expect(resp, raw, 202, "")
+		if integrity, root, _ := h.reportIntegrity(whole); integrity != protov2.IntegritySingle || len(root) != 32 {
+			t.Fatalf("whole report integrity %q root %x, want single", integrity, root)
+		}
+	})
 }

@@ -108,10 +108,16 @@ func (s *Service) proposeClosures(ctx context.Context, tenantID, commandID share
 	if !ok {
 		return ids
 	}
+	// The look happened when the command completed; a sighting ingested
+	// after that (even before this write) must invalidate the proposal.
+	observedAt := time.Now().UTC()
+	if cov != nil && !cov.CompletedAt.IsZero() && cov.CompletedAt.Before(observedAt) {
+		observedAt = cov.CompletedAt.UTC()
+	}
 	evidence := map[string]any{
 		"command_id": commandID.String(), "tool": q.ToolName, "profile_id": q.ProfileID,
 		"templates_digest": q.TemplatesDigest, "held": held, "covered_assets": len(q.AssetIDs),
-		"observed_at": time.Now().UTC().Format(time.RFC3339),
+		"observed_at": observedAt.Format(time.RFC3339),
 	}
 	sensors := make([]string, 0, 2)
 	for _, r := range reportsOf(cov) {
@@ -123,7 +129,7 @@ func (s *Service) proposeClosures(ctx context.Context, tenantID, commandID share
 	evidence["sensor_ids"] = sensors
 	recs := make([]vulnerability.ClosureProposalRecord, len(ids))
 	for i, id := range ids {
-		recs[i] = vulnerability.ClosureProposalRecord{FindingID: id, Method: vulnerability.ClosureMethodCoveredScan, CommandID: commandID, Evidence: evidence}
+		recs[i] = vulnerability.ClosureProposalRecord{FindingID: id, Method: vulnerability.ClosureMethodCoveredScan, CommandID: commandID, Evidence: evidence, EvidenceAt: observedAt}
 	}
 	if _, err := repo.RecordClosureProposals(ctx, tenantID, recs); err != nil {
 		s.logger.Warn("coverage auto-resolve: recording closure proposals failed", "tenant_id", tenantID.String(), "command_id", commandID.String(), "error", err)

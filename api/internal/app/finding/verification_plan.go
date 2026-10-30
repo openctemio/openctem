@@ -32,11 +32,15 @@ const (
 	VerifyReasonSourceNotScanned          = "source_not_scanned"
 	VerifyReasonCoverageReviewOnly        = "coverage_auto_resolve_review"
 	VerifyReasonCoverageOff               = "coverage_auto_resolve_off"
-	VerifyReasonNoAsset                   = "no_asset"
-	VerifyReasonAssetInactive             = "asset_inactive"
-	VerifyReasonNotNetworkAddressable     = "asset_not_network_addressable"
-	VerifyReasonNotForSecrets             = "not_for_secrets"
-	VerifyReasonClosed                    = "finding_closed"
+	// The platform enforces; the organization's closing mode decides.
+	VerifyReasonCoverageCriticalReview = "coverage_critical_review"
+	VerifyReasonCoverageOrgReview      = "coverage_org_review"
+	VerifyReasonCoverageOrgOff         = "coverage_org_off"
+	VerifyReasonNoAsset                = "no_asset"
+	VerifyReasonAssetInactive          = "asset_inactive"
+	VerifyReasonNotNetworkAddressable  = "asset_not_network_addressable"
+	VerifyReasonNotForSecrets          = "not_for_secrets"
+	VerifyReasonClosed                 = "finding_closed"
 )
 
 // Requirement of the risk tier for a person's resolve.
@@ -278,9 +282,12 @@ func coveredScanMethod(in verificationPlanInput, open, secret bool) Verification
 		case vulnerability.ClosureDecisionClose:
 			m.Available = true
 		case vulnerability.ClosureDecisionKeep:
-			m.Reason = VerifyReasonCoverageOff
+			m.Reason = VerifyReasonCoverageOrgOff
 		default:
-			m.Reason = VerifyReasonCoverageReviewOnly
+			m.Reason = VerifyReasonCoverageOrgReview
+			if in.Closure.EffectiveMode() == tenantdom.ClosingModeAuto {
+				m.Reason = VerifyReasonCoverageCriticalReview
+			}
 		}
 	case in.CoverageMode == "off":
 		m.Reason = VerifyReasonCoverageOff

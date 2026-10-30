@@ -116,7 +116,7 @@ func (h *VulnerabilityHandler) ListClosureProposals(w http.ResponseWriter, r *ht
 
 // DecideClosureProposals handles POST /api/v1/findings/closure/proposals/decide.
 // @Summary      Confirm or dismiss Ready to close proposals
-// @Description  confirm closes each finding as fixed, verified by the proposal's method, after re-checking that it is still open and was not seen after the evidence; dismiss keeps it open with a reason. Up to 200 proposals; confirming more than one needs a recent re-authentication. Proposals outside the caller's data scope are skipped as not_found. Audited.
+// @Description  confirm closes each finding as fixed, verified by the proposal's method, after re-checking that it is still open and was not seen after the evidence; dismiss keeps it open with a reason. Up to 200 proposals; every confirm needs a recent re-authentication (403 STEP_UP_REQUIRED). Proposals outside the caller's data scope are skipped as not_found. Audited.
 // @Tags         Findings
 // @Accept       json
 // @Produce      json
@@ -199,7 +199,7 @@ func (h *VulnerabilityHandler) ListRecentlyAutoClosed(w http.ResponseWriter, r *
 	})
 }
 
-// ReopenAutoClosedNotFixed handles POST /api/v1/findings/{id}/reopen-not-fixed.
+// ReopenAutoClosedNotFixed handles POST /api/v1/findings/{id}/reopen.
 // @Summary      Reopen a finding closed automatically: not fixed
 // @Description  Reopens (as confirmed) a finding the platform closed by itself in the last seven days, recording that the close was wrong. Not counted as a regression. 404 when the finding is not such a finding in the caller's data scope. Audited.
 // @Tags         Findings
@@ -209,7 +209,7 @@ func (h *VulnerabilityHandler) ListRecentlyAutoClosed(w http.ResponseWriter, r *
 // @Success      204
 // @Failure      404  {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /findings/{id}/reopen-not-fixed [post]
+// @Router       /findings/{id}/reopen [post]
 func (h *VulnerabilityHandler) ReopenAutoClosedNotFixed(w http.ResponseWriter, r *http.Request) {
 	var req ReopenNotFixedRequest
 	if r.ContentLength != 0 {

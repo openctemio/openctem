@@ -68,6 +68,11 @@ type Report struct {
 	AssetsReceived   int
 	FindingsReceived int
 	CommittedAt      *time.Time
+	// Integrity is how the committed report proved it is complete
+	// (protov2.Integrity*); "" while uncommitted. ContentSHA256 is
+	// protov2.ReportRoot over its segments.
+	Integrity     string
+	ContentSHA256 []byte
 
 	Outcomes        map[int]SegmentOutcome
 	TouchedAssetIDs []shared.ID
@@ -97,6 +102,7 @@ func (r *Report) Status(now time.Time) protov2.Status {
 		Segments:     protov2.SegmentCounts{Received: r.SegmentsReceived, Expected: r.SegmentCount},
 		AutoResolved: r.AutoResolved,
 		AutoResolve:  r.AutoResolve,
+		Integrity:    r.Integrity,
 		Errors:       []protov2.ItemError{},
 		ReceivedAt:   r.ReceivedAt.UTC(),
 		UpdatedAt:    r.UpdatedAt.UTC(),
@@ -190,7 +196,7 @@ type Repository interface {
 
 	// Commit closes the report with segmentCount segments. False when it was
 	// already committed or is no longer receiving.
-	Commit(ctx context.Context, id shared.ID, segmentCount int, implicit bool, at time.Time) (bool, error)
+	Commit(ctx context.Context, id shared.ID, c CommitFacts, at time.Time) (bool, error)
 
 	// RecordSegmentOutcome stores (or replaces) a segment's outcome and adds
 	// the asset ids it touched.
@@ -225,4 +231,14 @@ type StagingPurge struct {
 	ReportsDeleted int
 	// JobsDeleted are finished jobs without a report deleted.
 	JobsDeleted int
+}
+
+// CommitFacts is what a commit records on a report.
+type CommitFacts struct {
+	SegmentCount int
+	Implicit     bool
+	// Integrity is protov2.IntegritySingle, IntegrityManifest or
+	// IntegrityDigestOnly.
+	Integrity     string
+	ContentSHA256 []byte
 }

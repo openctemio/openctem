@@ -9,13 +9,16 @@ package ingest
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/ingestqueue"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestpayload"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -42,8 +45,10 @@ type V2Receiver struct {
 	commands   v2CommandReader
 	limits     protov2.Limits
 	maxPending int
-	logger     *logger.Logger
-	now        func() time.Time
+	// sealer seals queued segments; nil refuses every new segment.
+	sealer *ingestpayload.Sealer
+	logger *logger.Logger
+	now    func() time.Time
 }
 
 // NewV2Receiver wires the receiver. maxPendingPerTenant bounds a tenant's
@@ -57,6 +62,11 @@ func NewV2Receiver(reports ingestreport.Repository, jobs ingestjob.V2Repository,
 	return &V2Receiver{reports: reports, jobs: jobs, queue: queue, commands: commands, limits: limits,
 		maxPending: maxPendingPerTenant, logger: log.With("component", "ingest-v2"), now: time.Now}
 }
+
+// SetPayloadSealer sets the sealer queued segments are stored under (the
+// CI upload sealer). Without one every new segment is refused: a segment is
+// never stored in plaintext.
+func (v *V2Receiver) SetPayloadSealer(s *ingestpayload.Sealer) { v.sealer = s }
 
 // Limits are the limits the receiver enforces (published on hello).
 func (v *V2Receiver) Limits() protov2.Limits { return v.limits }
@@ -241,6 +251,11 @@ func (v *V2Receiver) Put(ctx context.Context, t V2Target, seq int, whole bool, b
 		return nil, problem(protov2.ProblemSegmentHeaderMismatch)
 	}
 
+	if v.sealer == nil {
+		v.logger.Error("v2: no segment sealer configured; refusing the segment")
+		return nil, problem(protov2.ProblemUnavailable)
+	}
+
 	if err := v.admit(ctx, tenantID, rep != nil, now); err != nil {
 		return nil, err
 	}
@@ -264,6 +279,10 @@ func (v *V2Receiver) Put(ctx context.Context, t V2Target, seq int, whole bool, b
 	job := ingestjob.NewV2Job(tenantID, &t.Sensor.ID, t.ReportID, ingestjob.V2Segment{
 		ReportRef: rep.ID, Seq: &s, ContentDigest: body.Digest, MediaType: protov2.MediaTypeCTIS,
 	}, body.Decoded)
+	if err := sealSegment(v.sealer, job); err != nil {
+		_ = v.reports.ReleaseSegment(ctx, rep.ID, len(report.Assets), len(report.Findings))
+		return nil, fmt.Errorf("v2: seal segment: %w", err)
+	}
 	stored, created, err := v.jobs.EnqueueV2(ctx, job)
 	if err != nil {
 		_ = v.reports.ReleaseSegment(ctx, rep.ID, len(report.Assets), len(report.Findings))
@@ -276,7 +295,11 @@ func (v *V2Receiver) Put(ctx context.Context, t V2Target, seq int, whole bool, b
 	}
 
 	if whole {
-		if err := v.commit(ctx, rep, 1, true, now); err != nil {
+		// One segment is the whole report: complete by construction.
+		sum := sha256.Sum256(body.Decoded)
+		facts := ingestreport.CommitFacts{SegmentCount: 1, Implicit: true, Integrity: protov2.IntegritySingle,
+			ContentSHA256: protov2.ReportRoot([][]byte{sum[:]})}
+		if err := v.commit(ctx, rep, facts, now); err != nil {
 			return nil, err
 		}
 	}
@@ -415,7 +438,15 @@ func (v *V2Receiver) Commit(ctx context.Context, t V2Target, req protov2.CommitR
 	if !matches {
 		return nil, problem(protov2.ProblemSegmentSetMismatch)
 	}
-	if err := v.commit(ctx, rep, req.SegmentCount, false, now); err != nil {
+	contents, err := v.jobs.V2SegmentContents(ctx, rep.ID)
+	if err != nil {
+		return nil, err
+	}
+	facts, err := v.commitFacts(rep, req, contents)
+	if err != nil {
+		return nil, err
+	}
+	if err := v.commit(ctx, rep, facts, now); err != nil {
 		return nil, err
 	}
 	st, err := v.status(ctx, rep.ID, now)
@@ -425,8 +456,8 @@ func (v *V2Receiver) Commit(ctx context.Context, t V2Target, req protov2.CommitR
 	return &PutResult{Status: st, Created: true}, nil
 }
 
-func (v *V2Receiver) commit(ctx context.Context, rep *ingestreport.Report, count int, implicit bool, now time.Time) error {
-	ok, err := v.reports.Commit(ctx, rep.ID, count, implicit, now)
+func (v *V2Receiver) commit(ctx context.Context, rep *ingestreport.Report, facts ingestreport.CommitFacts, now time.Time) error {
+	ok, err := v.reports.Commit(ctx, rep.ID, facts, now)
 	if err != nil {
 		return err
 	}
@@ -486,7 +517,21 @@ func (v *V2Receiver) Status(ctx context.Context, t V2Target) (protov2.Status, er
 	if err != nil {
 		return protov2.Status{}, err
 	}
-	return rep.Status(v.now()), nil
+	st := rep.Status(v.now())
+	if !rep.Committed() && st.State == protov2.StateReceiving {
+		// The held segments, so a sensor resuming the upload sends only
+		// the missing ones.
+		digests, err := v.jobs.V2SegmentDigests(ctx, rep.ID)
+		if err != nil {
+			return protov2.Status{}, err
+		}
+		st.Segments.Held = make([]int, 0, len(digests))
+		for seq := range digests {
+			st.Segments.Held = append(st.Segments.Held, seq)
+		}
+		slices.Sort(st.Segments.Held)
+	}
+	return st, nil
 }
 
 // Abandon gives up an uncommitted segmented report (DELETE). Its upserts

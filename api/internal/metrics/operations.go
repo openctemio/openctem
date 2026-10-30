@@ -142,6 +142,26 @@ var (
 			Help: "Sensor liveness store rebuilds from the Postgres checkpoint",
 		},
 	)
+
+	// ProxyTaskVerdictsTotal counts the proxy verdicts of ended pooled jobs
+	// (docs/architecture/sensor-proxies.md): "ok" or "proxy_fault".
+	ProxyTaskVerdictsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "openctem_proxy_task_verdicts_total",
+			Help: "Proxy verdicts of ended jobs that ran through a proxy pool, by verdict (ok, proxy_fault)",
+		},
+		[]string{"verdict"},
+	)
+
+	// ProxyEndpointQuarantinesTotal counts proxy endpoint quarantines the
+	// platform decided, by source ("task_reports": the jobs' own results).
+	ProxyEndpointQuarantinesTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "openctem_proxy_endpoint_quarantines_total",
+			Help: "Proxy endpoints quarantined by the platform, by source (task_reports)",
+		},
+		[]string{"source"},
+	)
 )
 
 // RecordPanic counts one recovered panic. where must be a constant from

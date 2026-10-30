@@ -1288,6 +1288,10 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			// Gaps, output drops and repeated failures alert the tenant's
 			// administrators (in-app and integrations) at most once a day.
 			svc.AssetCoverage.EnableAlerts(repos.AssetCoverage, repos.MemberLifecycle, svc.Notification, svc.Outbox)
+			// Platform-side failures (the check did not run) are the
+			// operator's signal: a metric and the platform administrators'
+			// alert channel, never the organization's "keeps failing" alert.
+			svc.AssetCoverage.EnableOperatorAlerts(repos.AssetCoverage, newAdminNotifier(cfg, repos, svc, log))
 		}
 		w.ControllerManager.Register(controller.NewAssetCoverageController(svc.AssetCoverage, cfg.Worker.AssetCoverageInterval))
 	}
@@ -1365,10 +1369,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		// Protocol v2 results jobs (RFC-026) run on the same queue whatever
 		// INGEST_MODE is, whenever v2 results are enabled.
 		if cfg.Ingest.V2Results && repos.IngestReport != nil {
-			jobs.SetV2(ingest.NewV2JobProcessor(svc.Ingest, repos.IngestReport, repos.IngestJob,
+			v2 := ingest.NewV2JobProcessor(svc.Ingest, repos.IngestReport, repos.IngestJob,
 				protov2.DefaultLimits(), ingest.BlindingGuard{
 					Ratio: cfg.Ingest.V2BlindingRatio, MinFindings: cfg.Ingest.V2BlindingMinFindings,
-				}, log))
+				}, log)
+			v2.SetPayloadSealer(svc.IngestQueue.Sealer())
+			jobs.SetV2(v2)
 		}
 		// CI results and file imports accepted with 202 (RFC-122).
 		if ciSvc := newCIRunService(cfg, repos, svc, log); ciSvc != nil {

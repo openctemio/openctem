@@ -119,6 +119,7 @@ func newCtlHarnessWith(t *testing.T, egress bool, opts ...command.Option) *ctlHa
 	}
 	receiver := ingest.NewV2Receiver(postgres.NewIngestReportRepository(db), postgres.NewIngestJobRepository(db),
 		postgres.NewIngestJobRepository(db), cmdRepo, protov2.DefaultLimits(), 100, log)
+	receiver.SetPayloadSealer(testSegmentSealer(t))
 
 	gen := jwt.NewGenerator(jwt.TokenConfig{Secret: "v2-control-test-secret-0123456789abcdef", Issuer: "test",
 		AccessTokenDuration: time.Hour, RefreshTokenDuration: time.Hour})
@@ -249,7 +250,7 @@ func TestSensorV2Control_HelloListsEveryFeature(t *testing.T) {
 	resp, raw := h.call(s.key, http.MethodGet, "/api/v2/sensor/hello", nil)
 	h.want(resp, raw, 200, "")
 	hello := decodeAs[protov2.Hello](t, raw)
-	want := append([]string{protov2.FeatureResults}, protov2.ControlFeatures()...)
+	want := append([]string{protov2.FeatureResults, protov2.FeatureResultsManifest}, protov2.ControlFeatures()...)
 	if strings.Join(hello.Features, ",") != strings.Join(want, ",") {
 		t.Fatalf("features %v, want %v", hello.Features, want)
 	}

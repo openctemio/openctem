@@ -1414,11 +1414,11 @@ func requireStepUpWhenClosing() Middleware {
 	}
 }
 
-// requireStepUpWhenBulkConfirm gates a Ready to close decision that confirms
-// more than one proposal behind a recent re-authentication (a stolen session
-// cannot close a queue of findings in one call); a single confirm and any
-// dismissal pass.
-func requireStepUpWhenBulkConfirm() Middleware {
+// requireStepUpWhenConfirming gates every Ready to close confirm, single or
+// bulk, behind a recent re-authentication (a stolen session cannot close
+// findings one by one either; the step-up window lets one proof cover a short
+// burst). Only a dismissal, which keeps findings open, passes.
+func requireStepUpWhenConfirming() Middleware {
 	gate := requireStepUp()
 	return func(next http.Handler) http.Handler {
 		gated := gate(next)
@@ -1430,11 +1430,10 @@ func requireStepUpWhenBulkConfirm() Middleware {
 			}
 			r.Body = io.NopCloser(bytes.NewReader(body))
 			var req struct {
-				Decision    string   `json:"decision"`
-				ProposalIDs []string `json:"proposal_ids"`
+				Decision string `json:"decision"`
 			}
 			if json.NewDecoder(bytes.NewReader(body)).Decode(&req) == nil &&
-				(req.Decision == "dismiss" || (req.Decision == "confirm" && len(req.ProposalIDs) <= 1)) {
+				req.Decision == "dismiss" {
 				next.ServeHTTP(w, r)
 				return
 			}

@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/lib/pq"
 
@@ -65,6 +67,8 @@ func (r *FindingRepository) RecordClosureProposals(ctx context.Context, tenantID
 	methods := make([]string, 0, len(recs))
 	commands := make([]sql.NullString, 0, len(recs))
 	evidence := make([]string, 0, len(recs))
+	evidenceAt := make([]time.Time, 0, len(recs))
+	now := time.Now().UTC()
 	for _, rec := range recs {
 		raw, err := json.Marshal(rec.Evidence)
 		if err != nil || len(raw) > maxProposalEvidenceBytes || rec.Evidence == nil {
@@ -78,17 +82,22 @@ func (r *FindingRepository) RecordClosureProposals(ctx context.Context, tenantID
 		}
 		commands = append(commands, cmd)
 		evidence = append(evidence, string(raw))
+		at := rec.EvidenceAt.UTC()
+		if at.IsZero() || at.After(now) {
+			at = now
+		}
+		evidenceAt = append(evidenceAt, at)
 	}
 	res, err := r.db.ExecContext(ctx, `
-		INSERT INTO finding_closure_proposals (tenant_id, finding_id, method, command_id, evidence)
-		SELECT $1, f.id, x.method, x.command_id::uuid, x.evidence::jsonb
-		FROM unnest($2::uuid[], $3::text[], $4::text[], $5::text[]) AS x(finding_id, method, command_id, evidence)
+		INSERT INTO finding_closure_proposals (tenant_id, finding_id, method, command_id, evidence, evidence_at)
+		SELECT $1, f.id, x.method, x.command_id::uuid, x.evidence::jsonb, x.evidence_at
+		FROM unnest($2::uuid[], $3::text[], $4::text[], $5::text[], $6::timestamptz[]) AS x(finding_id, method, command_id, evidence, evidence_at)
 		JOIN findings f ON f.tenant_id = $1 AND f.id = x.finding_id
 		WHERE f.status IN `+autoResolveFromSQL+`
 		ON CONFLICT (tenant_id, finding_id) WHERE state = 'pending'
 		DO UPDATE SET method = EXCLUDED.method, command_id = EXCLUDED.command_id,
-			evidence = EXCLUDED.evidence, evidence_at = now()`,
-		tenantID.String(), pq.Array(findings), pq.Array(methods), pq.Array(commands), pq.Array(evidence))
+			evidence = EXCLUDED.evidence, evidence_at = EXCLUDED.evidence_at`,
+		tenantID.String(), pq.Array(findings), pq.Array(methods), pq.Array(commands), pq.Array(evidence), pq.Array(evidenceAt))
 	if err != nil {
 		return 0, fmt.Errorf("record closure proposals: %w", err)
 	}
@@ -261,7 +270,7 @@ func (r *FindingRepository) ConfirmClosureProposals(ctx context.Context, tenantI
 			SET state = 'confirmed', decided_by = $3::uuid, decided_at = now()
 			FROM chosen
 			WHERE p.tenant_id = $1 AND p.id = chosen.id AND chosen.finding_id IN (SELECT id FROM closed)
-			RETURNING p.id::text, p.finding_id::text`, args...)
+			RETURNING p.id::text, p.finding_id::text, p.method`, args...)
 		if err != nil {
 			return err
 		}
@@ -285,11 +294,14 @@ func collectDecided(ctx context.Context, tx *sql.Tx, out *vulnerability.ClosureD
 	defer rows.Close()
 	decided := map[string]bool{}
 	for rows.Next() {
-		var pid, fid string
-		if err := rows.Scan(&pid, &fid); err != nil {
+		var pid, fid, method string
+		if err := rows.Scan(&pid, &fid, &method); err != nil {
 			return nil, err
 		}
 		decided[pid] = true
+		if !slices.Contains(out.Methods, method) {
+			out.Methods = append(out.Methods, method)
+		}
 		if id, err := shared.IDFromString(pid); err == nil {
 			out.Applied = append(out.Applied, id)
 		}
@@ -317,7 +329,7 @@ func (r *FindingRepository) DismissClosureProposals(ctx context.Context, tenantI
 			FROM findings f
 			WHERE p.tenant_id = $1 AND p.state = 'pending' AND p.id = ANY($2::uuid[])
 				AND f.tenant_id = p.tenant_id AND f.id = p.finding_id AND `+cond+`
-			RETURNING p.id::text, p.finding_id::text`, args...)
+			RETURNING p.id::text, p.finding_id::text, p.method`, args...)
 		if err != nil {
 			return err
 		}

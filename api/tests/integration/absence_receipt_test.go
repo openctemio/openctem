@@ -157,7 +157,7 @@ func TestAbsence_ConcurrentRunsNeverCloseWhatTheyReported(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			ctx := context.Background()
-			if ok, err := rr.r.reports.Commit(ctx, reps[i].ID, 1, false, reps[i].ReceivedAt); err != nil || !ok {
+			if ok, err := rr.r.reports.Commit(ctx, reps[i].ID, ingestreport.CommitFacts{SegmentCount: 1, Integrity: "single"}, reps[i].ReceivedAt); err != nil || !ok {
 				t.Errorf("commit %d: %v %v", i, ok, err)
 			}
 		}(i)

@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -122,6 +123,35 @@ func TestClosureProposals_RecordListCancel_DB(t *testing.T) {
 	}
 	if st, why := f.proposalState(t, props[a]); st != "canceled" || why != "seen_again" {
 		t.Fatalf("a = %s/%s, want canceled/seen_again", st, why)
+	}
+}
+
+// evidence_at is the observation time the caller passes, so a sighting
+// ingested between the scan's end and the write cancels the proposal.
+func TestClosureProposals_EvidenceAtIsObservationTime_DB(t *testing.T) {
+	f := newCoverageFixture(t)
+	repo := NewFindingRepository(&DB{DB: f.db})
+	ctx := context.Background()
+	a := f.finding(t, f.host, "nuclei", "", nil)
+	observed := time.Now().UTC().Add(-time.Hour)
+	// seen after the scan ended, before the proposal is written
+	f.exec(t, `UPDATE findings SET last_seen_at = $2 WHERE id = $1`, a, observed.Add(30*time.Minute))
+	_, err := repo.RecordClosureProposals(ctx, f.tenant, []vulnerability.ClosureProposalRecord{{
+		FindingID: a, Method: vulnerability.ClosureMethodCoveredScan, CommandID: shared.NewID(),
+		Evidence: map[string]any{"tool": "nuclei"}, EvidenceAt: observed}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got time.Time
+	if err := f.db.QueryRowContext(ctx, `SELECT evidence_at FROM finding_closure_proposals WHERE tenant_id = $1 AND finding_id = $2`,
+		f.tenant.String(), a.String()).Scan(&got); err != nil || got.Sub(observed).Abs() > time.Second {
+		t.Fatalf("evidence_at = %v (%v), want %v", got, err, observed)
+	}
+	if n, _ := repo.CountClosureProposals(ctx, f.tenant, nil); n != 0 {
+		t.Fatalf("a proposal older than a later sighting must not be listed, got %d", n)
+	}
+	if n, err := repo.CancelStaleClosureProposals(ctx, f.tenant); err != nil || n != 1 {
+		t.Fatalf("sweep = %d, %v; want 1", n, err)
 	}
 }
 

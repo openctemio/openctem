@@ -29,7 +29,8 @@ const ingestJobColumns = `
 	status, attempts, max_attempts, priority, result, error, locked_by, locked_at,
 	available_at, created_at, updated_at,
 	protocol, ingest_report_id, segment_seq, content_digest, media_type,
-	kind, source_ref, submitted_by, public_error, lane, scope_key`
+	kind, source_ref, submitted_by, public_error, lane, scope_key,
+	payload_key_id, payload_bytes`
 
 // Enqueue inserts a pending job, or returns the existing one on idempotency
 // conflict (tenant_id, report_id, payload_sha).
@@ -232,12 +233,16 @@ func (r *IngestJobRepository) Complete(ctx context.Context, id ingestjob.ID, att
 	// is applied, and its stored report is deleted in the same statement:
 	// the parts outlive the apply until the job is recorded completed, so
 	// a crash in between re-applies the upload instead of finding its
-	// report gone and failing an upload that was applied.
+	// report gone and failing an upload that was applied. A sensor
+	// segment's payload is emptied the same way: its outcome is recorded,
+	// nothing reads it again (a replay compares digests, the commit
+	// compares payload_sha and payload_bytes).
 	const query = `
 		WITH done AS (
 			UPDATE ingest_jobs
 			SET status = 'completed', result = $2, error = NULL,
-				payload = CASE WHEN kind <> 'sensor' THEN convert_to('{}', 'UTF8') ELSE payload END,
+				payload = CASE WHEN kind <> 'sensor' THEN convert_to('{}', 'UTF8')
+					WHEN segment_seq IS NOT NULL THEN ''::bytea ELSE payload END,
 				locked_by = NULL, locked_at = NULL, updated_at = NOW()
 			WHERE id = $1 AND status = 'processing' AND attempts = $3
 			RETURNING id, tenant_id, kind
@@ -450,6 +455,8 @@ func scanIngestJobRow(s rowScanner) (*ingestjob.Job, error) {
 		publicError                sql.NullString
 		lane                       int
 		scopeKey                   sql.NullString
+		payloadKeyID               sql.NullString
+		payloadBytes               sql.NullInt64
 	)
 	if err := s.Scan(
 		&idStr, &tenantStr, &sensorStr, &reportID, &sourceType, &payload, &payloadSHA,
@@ -457,6 +464,7 @@ func scanIngestJobRow(s rowScanner) (*ingestjob.Job, error) {
 		&availableAt, &createdAt, &updatedAt,
 		&protocol, &reportRef, &segmentSeq, &contentDigest, &mediaType,
 		&kind, &sourceRef, &submittedBy, &publicError, &lane, &scopeKey,
+		&payloadKeyID, &payloadBytes,
 	); err != nil {
 		return nil, err
 	}
@@ -490,6 +498,9 @@ func scanIngestJobRow(s rowScanner) (*ingestjob.Job, error) {
 	)
 	job.SetUpload(ingestjob.Kind(kind), sourceRef.String, submittedBy.String, publicError.String)
 	job.Route(ingestjob.Lane(lane), scopeKey.String)
+	if payloadKeyID.Valid || payloadBytes.Valid {
+		job.SetSealedPayload(payloadKeyID.String, payload, payloadBytes.Int64)
+	}
 	if protocol.Valid && protocol.Int64 == ingestjob.ProtocolV2 && reportRef.Valid {
 		ref, err := shared.IDFromString(reportRef.String)
 		if err != nil {
@@ -545,9 +556,11 @@ func (r *IngestJobRepository) EnqueueV2(ctx context.Context, job *ingestjob.Job)
 		INSERT INTO ingest_jobs (
 			id, tenant_id, sensor_id, report_id, source_type, payload, payload_sha,
 			status, attempts, max_attempts, priority, available_at, created_at, updated_at,
-			protocol, ingest_report_id, segment_seq, content_digest, media_type, lane, scope_key
+			protocol, ingest_report_id, segment_seq, content_digest, media_type, lane, scope_key,
+			payload_key_id, payload_bytes
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, NULLIF($21, ''))
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, NULLIF($21, ''),
+			NULLIF($22, ''), $23)
 		` + conflict + `
 		RETURNING ` + ingestJobColumns
 	row := r.db.QueryRowContext(ctx, query,
@@ -557,6 +570,7 @@ func (r *IngestJobRepository) EnqueueV2(ctx context.Context, job *ingestjob.Job)
 		job.AvailableAt(), job.CreatedAt(), job.UpdatedAt(),
 		ingestjob.ProtocolV2, seg.ReportRef.String(), seq, seg.ContentDigest, seg.MediaType,
 		int(job.Lane()), job.ScopeKey(),
+		job.PayloadKeyID(), job.PayloadBytes(),
 	)
 	stored, err := scanIngestJobRow(row)
 	if err == nil {
@@ -618,6 +632,36 @@ func (r *IngestJobRepository) V2SegmentDigests(ctx context.Context, reportRef sh
 	return out, nil
 }
 
+// V2SegmentContents returns the decoded SHA-256 and size of every segment of
+// a report. A sealed segment stores its plaintext size in payload_bytes (the
+// stored payload is the longer ciphertext); a row without it is plaintext, so
+// its stored length is its size. Read before the report is committed: payloads are emptied only
+// once it finished.
+func (r *IngestJobRepository) V2SegmentContents(ctx context.Context, reportRef shared.ID) (map[int]ingestjob.V2SegmentContent, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT segment_seq, payload_sha, COALESCE(payload_bytes, octet_length(payload)) FROM ingest_jobs
+		WHERE ingest_report_id = $1 AND segment_seq IS NOT NULL`, reportRef.String())
+	if err != nil {
+		return nil, fmt.Errorf("list v2 segment contents: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[int]ingestjob.V2SegmentContent{}
+	for rows.Next() {
+		var (
+			seq int
+			c   ingestjob.V2SegmentContent
+		)
+		if err := rows.Scan(&seq, &c.SHA256, &c.Bytes); err != nil {
+			return nil, fmt.Errorf("scan v2 segment content: %w", err)
+		}
+		out[seq] = c
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate v2 segment contents: %w", err)
+	}
+	return out, nil
+}
+
 // RequeueDeadV2 gives a report's dead jobs a fresh retry budget.
 func (r *IngestJobRepository) RequeueDeadV2(ctx context.Context, reportRef shared.ID) (int, error) {
 	res, err := r.db.ExecContext(ctx, `
@@ -644,6 +688,73 @@ func (r *IngestJobRepository) ClearV2Payloads(ctx context.Context, reportRef sha
 		return fmt.Errorf("clear v2 payloads: %w", err)
 	}
 	return nil
+}
+
+// SealPlaintextV2Payloads seals, in place, up to batch v2 segment payloads
+// stored in plaintext before olderThan (queued before segments were sealed,
+// or by a replica of the previous release) and returns how many it sealed. seal replaces the
+// job's payload with its sealed form (Job.SetSealedPayload). Safe on many
+// replicas at once: rows are locked with SKIP LOCKED and the update only
+// writes a row that is still plaintext, so a run is idempotent and a row a
+// worker is emptying is never resurrected.
+func (r *IngestJobRepository) SealPlaintextV2Payloads(ctx context.Context, olderThan time.Time, batch int,
+	seal func(*ingestjob.Job) error,
+) (int, error) {
+	if batch <= 0 {
+		return 0, nil
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("seal v2 payloads: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	rows, err := tx.QueryContext(ctx, `SELECT `+ingestJobColumns+`
+		FROM ingest_jobs
+		WHERE kind = 'sensor' AND ingest_report_id IS NOT NULL AND segment_seq IS NOT NULL
+		  AND payload_key_id IS NULL AND octet_length(payload) > 0
+		  AND created_at < $2
+		ORDER BY created_at
+		LIMIT $1
+		FOR UPDATE SKIP LOCKED`, batch, olderThan)
+	if err != nil {
+		return 0, fmt.Errorf("seal v2 payloads: select: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	jobs := make([]*ingestjob.Job, 0, batch)
+	for rows.Next() {
+		j, err := scanIngestJobRow(rows)
+		if err != nil {
+			return 0, fmt.Errorf("seal v2 payloads: %w", err)
+		}
+		jobs = append(jobs, j)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("seal v2 payloads: %w", err)
+	}
+	_ = rows.Close() // free the connection for the updates below
+	n := 0
+	for _, j := range jobs {
+		if err := seal(j); err != nil {
+			return 0, fmt.Errorf("seal v2 payloads: job %s: %w", j.ID(), err)
+		}
+		if !j.PayloadSealed() {
+			return 0, fmt.Errorf("seal v2 payloads: job %s was not sealed", j.ID())
+		}
+		res, err := tx.ExecContext(ctx, `
+			UPDATE ingest_jobs SET payload = $2, payload_key_id = $3, payload_bytes = $4
+			WHERE id = $1 AND tenant_id = $5 AND payload_key_id IS NULL AND octet_length(payload) > 0`,
+			j.ID().String(), j.Payload(), j.PayloadKeyID(), j.PayloadBytes(), j.TenantID().String())
+		if err != nil {
+			return 0, fmt.Errorf("seal v2 payloads: update: %w", err)
+		}
+		if k, _ := res.RowsAffected(); k == 1 {
+			n++
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("seal v2 payloads: commit: %w", err)
+	}
+	return n, nil
 }
 
 // GetV2Commit returns the commit job of a report.
