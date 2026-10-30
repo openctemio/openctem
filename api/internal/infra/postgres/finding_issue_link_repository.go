@@ -58,11 +58,11 @@ type IssueLinkDerivation struct {
 }
 
 // linkableFindingSQL selects the findings that can have link keys: version-2
-// SAST and secret findings, and network, DAST and SCA findings with a CVE
+// SAST, secret and DAST findings, and network and SCA findings with a CVE
 // (never a pentest finding), that are live (not a tombstone, not branch-only).
 const linkableFindingSQL = `f.status <> 'duplicate' AND NOT f.branch_only AND f.source <> 'pentest'
-	AND f.identity_key IS NOT NULL AND (f.identity_key->>'kind' IN ('sast', 'secret')
-		OR (f.identity_key->>'kind' IN ('network', 'dast', 'sca') AND UPPER(COALESCE(f.cve_id, '')) LIKE 'CVE-%'))`
+	AND f.identity_key IS NOT NULL AND (f.identity_key->>'kind' IN ('sast', 'secret', 'dast')
+		OR (f.identity_key->>'kind' IN ('network', 'sca') AND UPPER(COALESCE(f.cve_id, '')) LIKE 'CVE-%'))`
 
 // The linkable findings of a tenant: all of them, or those under the
 // fingerprints or ids in $2.
@@ -327,7 +327,7 @@ func confirmVersionMatches(ctx context.Context, tx *sql.Tx, tenant string, ids [
 }
 
 // ReportedByOpenGroup returns, of the findings ids, those that are members
-// of a vuln_asset group whose primary is open and that raise no new
+// of a vuln_asset or dast_scheme group whose primary is open and that raise no new
 // signal: the issue is already open and reported. A member more severe than
 // every other finding of its group is not returned: a higher severity alerts.
 // Tenant-scoped; nothing about the group leaves the store.
@@ -342,7 +342,7 @@ func (r *FindingIssueLinkRepository) ReportedByOpenGroup(ctx context.Context, te
 		FROM finding_issue_links l
 		JOIN findings m ON m.tenant_id = l.tenant_id AND m.id = l.member_id
 		JOIN findings p ON p.tenant_id = l.tenant_id AND p.id = l.primary_id
-		WHERE l.tenant_id = $1 AND l.state = 'active' AND l.rule = 'vuln_asset' AND l.member_id = ANY($2::uuid[])
+		WHERE l.tenant_id = $1 AND l.state = 'active' AND l.rule IN ('vuln_asset', 'dast_scheme') AND l.member_id = ANY($2::uuid[])
 		  AND ` + vulnerability.OpenStatusSQL("p.status") + `
 		  AND NOT (dash_severity_rank(m.severity) < (
 			SELECT min(dash_severity_rank(o.severity)) FROM findings o
@@ -409,8 +409,11 @@ func loadLinkable(ctx context.Context, tx *sql.Tx, query string, args ...any) ([
 			f.CWEs = cwes
 		case vulnerability.IdentityKindSecret:
 			f.SecretHMAC = k.Field("secret")
-		case vulnerability.IdentityKindNetwork, vulnerability.IdentityKindDAST, vulnerability.IdentityKindSCA:
+		case vulnerability.IdentityKindNetwork, vulnerability.IdentityKindSCA:
 			f.CVE, f.Locator = issuelink.VulnSignal(k.Kind, k.Field("vuln"), k.Field("rule"), k.Field("port"), k.Field("url"))
+		case vulnerability.IdentityKindDAST:
+			f.CVE, f.Locator = issuelink.VulnSignal(k.Kind, k.Field("vuln"), k.Field("rule"), k.Field("port"), k.Field("url"))
+			f.Rule, f.Method, f.URL, f.Params = k.Field("rule"), k.Field("method"), k.Field("url"), k.Field("params")
 		}
 		out = append(out, f)
 	}
