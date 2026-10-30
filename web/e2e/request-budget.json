@@ -3,7 +3,7 @@
   "defaultMax": 5,
   "routes": {
     "/": 4,
-    "/compliance": 13,
+    "/compliance": 11,
     "/scope": 9,
     "/sensors": 9,
     "/assets": 9,
