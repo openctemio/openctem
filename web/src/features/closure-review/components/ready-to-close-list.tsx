@@ -52,7 +52,7 @@ type Pending = { kind: 'confirm' | 'dismiss'; rows: ClosureProposal[] } | null
 /**
  * Ready to close: closes the platform proposes, for a person to confirm
  * (the finding closes as fixed) or keep open with a reason. Rows are only
- * the caller's data scope; confirming more than one asks for a recent
+ * the caller's data scope; confirming asks for a recent
  * sign-in (the API client shows the dialog and retries).
  */
 export function ReadyToCloseList({
