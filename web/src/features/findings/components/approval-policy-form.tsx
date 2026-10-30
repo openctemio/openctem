@@ -474,7 +474,7 @@ export function ApprovalPolicyForm({ settings, canEdit, onSaved }: ApprovalPolic
             )}
           </fieldset>
 
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-1">
               <Label htmlFor={`${id}-decide`}>
                 {t('findingApprovals.policy.decideWithin', 'Decision deadline (days)')}
@@ -556,7 +556,7 @@ export function ApprovalPolicyForm({ settings, canEdit, onSaved }: ApprovalPolic
             )}
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2">
+        <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor={`${id}-mc-accepted`}>
               {t('findingApprovals.policy.materialAccepted', 'Accepted risk')}

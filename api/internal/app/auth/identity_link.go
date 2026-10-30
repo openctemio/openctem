@@ -23,19 +23,12 @@ package auth
 //     provider identity and that account. The person signs in to the account
 //     the usual way (password and second factor) and confirms the link
 //     with a proof typed in the confirm dialog (link_proof.go).
-//   - Automatic, off unless the platform turned it on: on a social sign-in
-//     whose address belongs to a password account, only when all hold: the
-//     platform allows it (sign-up policy social_auto_link, off by default),
-//     the provider is authoritative for the
-//     address (emailAuthoritative: Google on gmail.com/googlemail.com or a
-//     Workspace hd equal to the address domain, Microsoft with a domain-owner
-//     verified address; never GitHub), the account has a password and a
-//     verified address, the account is active and holds no other identity of
-//     that provider. Every
-//     session of the account is then revoked and a pending password reset
-//     link is canceled, the link is audited and the account's mailbox is told.
 //
-// Either way, a password account signed in through a linked provider takes the
+// A collision with an existing account never links by itself: there is no
+// setting that turns that on, because the provider's word about an address is
+// not proof the person owns the account.
+//
+// A password account signed in through a linked provider takes the
 // same second step its password sign-in takes (linkedAccountChallenge): the
 // provider replaces the password, never the second factor.
 
@@ -86,7 +79,7 @@ type SessionRevoker interface {
 // IdentityNotifier tells the account's mailbox that a sign-in method was
 // linked or unlinked (EmailService). Sends in the background.
 type IdentityNotifier interface {
-	NotifyIdentityLinked(ctx context.Context, email, name, ipAddress, provider string, automatic bool)
+	NotifyIdentityLinked(ctx context.Context, email, name, ipAddress, provider string)
 	NotifyIdentityUnlinked(ctx context.Context, email, name, ipAddress, provider string)
 }
 
@@ -94,8 +87,8 @@ type IdentityNotifier interface {
 // Without it a password account is never signed in through a provider.
 func (s *OAuthService) SetSecondFactorGate(g SecondFactorGate) { s.secondFactor = g }
 
-// SetSessionRevoker wires the session revocation automatic linking needs.
-// Without it nothing is linked automatically.
+// SetSessionRevoker wires the session revocation a confirmed link needs
+// (pending_link.go): the account's other sessions end.
 func (s *OAuthService) SetSessionRevoker(r SessionRevoker) { s.sessions = r }
 
 // SetLinkProofVerifier wires the proof every link and unlink needs
@@ -168,59 +161,6 @@ func providerOfKey(k useridentity.Key) OAuthProvider {
 	return ""
 }
 
-// autoLinkAllowed reports whether this sign-in may link itself to u, a
-// password account holding the provider's address. Every condition is
-// required; see the file comment.
-func (s *OAuthService) autoLinkAllowed(ctx context.Context, u *userdom.User, info *OAuthUserInfo, provider OAuthProvider) bool {
-	reason := ""
-	switch {
-	case s.sessions == nil:
-		reason = "session revocation not wired"
-	case !policyOrConfig(ctx, s.signupPolicy, s.authConfig).AutoLinkSocial():
-		reason = "turned off by the platform"
-	case !isPasswordAccount(u):
-		reason = "not a password account"
-	case !emailAuthoritative(provider, info):
-		reason = "provider not authoritative for the address"
-	case !u.EmailVerified():
-		reason = "account address not verified"
-	case !u.IsActive():
-		reason = "account not active"
-	case !strings.EqualFold(strings.TrimSpace(u.Email()), strings.TrimSpace(info.Email)):
-		reason = "address mismatch"
-	}
-	if reason != "" {
-		s.logger.Info("OAuth auto-link not applied", "user_id", u.ID().String(), "provider", provider, "reason", reason)
-		return false
-	}
-	return true
-}
-
-// autoLink binds key to u after autoLinkAllowed, then revokes the account's
-// sessions and cancels a pending reset link: whoever held them before the
-// mailbox owner arrived through the provider loses them.
-func (s *OAuthService) autoLink(ctx context.Context, u *userdom.User, key useridentity.Key, provider OAuthProvider) error {
-	if err := s.checkLinkable(ctx, u, key, provider); err != nil {
-		if errors.Is(err, ErrProviderAlreadyLinked) {
-			return ErrOAuthAccountExists
-		}
-		return err
-	}
-	if err := s.accounts().bind(ctx, u, key); err != nil {
-		return ErrOAuthAccountExists
-	}
-	if err := s.sessions.RevokeAllSessions(ctx, u.ID().String(), ""); err != nil {
-		s.logger.Error("auto-link: revoking the account's sessions failed", "user_id", u.ID().String(), "error", err)
-	}
-	if u.PasswordResetToken() != nil {
-		u.ClearPasswordResetToken()
-	}
-	s.recordLink(ctx, u, provider, linkHowAutomatic, stepUpNothingNeeded)
-	s.logger.Info("OAuth identity linked automatically to a password account",
-		"user_id", u.ID().String(), "provider", provider)
-	return nil
-}
-
 // checkLinkable refuses a key bound to another account and a second identity
 // of the same provider on u. nil means bind may proceed (or key is already
 // u's, which bind accepts).
@@ -255,9 +195,6 @@ const (
 	// linkHowAfterSignIn: confirmed right after signing in to the account,
 	// from the pending link a refused social sign-in left (pending_link.go).
 	linkHowAfterSignIn = "after_sign_in"
-	// linkHowAutomatic: on a social sign-in, with the platform's automatic
-	// linking turned on.
-	linkHowAutomatic = "automatic"
 )
 
 // recordLink audits a link and tells the account's mailbox.
@@ -265,14 +202,12 @@ func (s *OAuthService) recordLink(ctx context.Context, u *userdom.User, provider
 	ci := clientInfoFrom(ctx)
 	msg := "Linked " + string(provider) + " sign-in to the account"
 	switch how {
-	case linkHowAutomatic:
-		msg = "Linked " + string(provider) + " sign-in to the account automatically on a sign-in with a verified address"
 	case linkHowAfterSignIn:
 		msg = "Linked " + string(provider) + " sign-in to the account, confirmed after signing in"
 	}
 	s.auditIdentity(ctx, u, auditdom.ActionAuthIdentityLinked, msg, provider, how, factor)
 	if s.identityNotifier != nil {
-		s.identityNotifier.NotifyIdentityLinked(ctx, u.Email(), u.Name(), ci.IP, providerLabel(provider), how == linkHowAutomatic)
+		s.identityNotifier.NotifyIdentityLinked(ctx, u.Email(), u.Name(), ci.IP, providerLabel(provider))
 	}
 }
 
