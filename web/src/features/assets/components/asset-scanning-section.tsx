@@ -33,7 +33,7 @@ import {
   ScopeEntryDialog,
   type ScopeEntryDraft,
 } from '@/features/scope/components/scope-entry-dialog'
-import { ScanAssetsDialog } from '@/features/scans/components/scan-assets-dialog'
+import { LazyScanAssetsDialog } from '@/features/scans/components/lazy-dialogs'
 import { TenableScanNowButton } from '@/features/integrations/components/scanners/tenable-scan-now'
 import { isTenableScannableAssetType } from '@/features/integrations/lib/tenable-sc'
 import { useAssetAttribution, useDecideAttribution } from '../hooks/use-asset-attribution'
@@ -207,7 +207,7 @@ export function AssetScanningSection({ asset, onShowDetails }: AssetScanningSect
         onCreated={() => void mutate()}
       />
       {canScan && (
-        <ScanAssetsDialog
+        <LazyScanAssetsDialog
           open={scanOpen}
           onOpenChange={setScanOpen}
           candidates={[{ id: asset.id, label: asset.name, target: asset.name.trim() }]}

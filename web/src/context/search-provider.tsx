@@ -3,6 +3,8 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ComponentType } from 'react'
 import dynamic from 'next/dynamic'
 
+import { useOpenedOnce } from '@/hooks/use-opened-once'
+
 // The command palette (cmdk, the full nav and settings lists) loads the first
 // time it opens instead of with every dashboard page: it is in the shell, so a
 // static import put it in the JS of every route.
@@ -43,8 +45,7 @@ export function SearchProvider({ children, menu: Menu = CommandMenu }: SearchPro
 
   // Mounted from the first open on, so closing keeps its exit animation and
   // reopening is instant.
-  const [opened, setOpened] = useState(false)
-  if (open && !opened) setOpened(true)
+  const opened = useOpenedOnce(open)
 
   const value = useMemo(() => ({ open, setOpen }), [open])
 

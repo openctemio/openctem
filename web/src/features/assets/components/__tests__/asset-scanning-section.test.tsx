@@ -73,7 +73,7 @@ beforeEach(() => {
 })
 
 describe('AssetScanningSection', () => {
-  it('in scope: says what covers it and offers Scan now', () => {
+  it('in scope: says what covers it and offers Scan now', async () => {
     state.attribution = attribution({})
     state.perms = ALL
     render(<AssetScanningSection asset={SUBDOMAIN} />)
@@ -81,7 +81,7 @@ describe('AssetScanningSection', () => {
     expect(screen.getByRole('button', { name: 'Scan now' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Add to scope' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Scan now' }))
-    expect(screen.getByRole('dialog')).toHaveTextContent('scan')
+    expect(await screen.findByRole('dialog')).toHaveTextContent('scan')
   })
 
   it('discovered and uncovered: passive only, Add to scope and Mark out of scope, no Scan now', () => {
