@@ -92,6 +92,7 @@ describe('DataTable phone card fields', () => {
     expect(value.textContent).toContain('9 unreachable, 373 skipped')
     // Same relaxation as the card title: nothing in a field may refuse to wrap.
     expect(value.className).toContain('[&_.whitespace-nowrap]:whitespace-normal')
+    expect(value.className).toContain('[&_.truncate]:whitespace-normal')
     expect(value.className).toContain('min-w-0')
   })
 })
