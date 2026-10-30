@@ -216,7 +216,7 @@ export function taskSkippedNote(
 }
 
 /** Coverage-gap reasons that have a translated label. */
-const GAP_REASONS = new Set(['breaker_open', 'rate_floor', 'blocked'])
+const GAP_REASONS = new Set(['breaker_open', 'rate_floor', 'blocked', 'proxy_unavailable'])
 
 /**
  * The note of a task that completed with hosts its sensor could not fully
