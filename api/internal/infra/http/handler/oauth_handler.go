@@ -221,14 +221,15 @@ func (h *OAuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 
 // handleOAuthError handles OAuth errors and returns appropriate HTTP responses.
 func (h *OAuthHandler) handleOAuthError(w http.ResponseWriter, err error) {
-	// The address has an account: the same 409 OAUTH_ACCOUNT_EXISTS, with the
-	// pending link the web server keeps for this browser (HttpOnly cookie)
-	// until the person signs in and confirms it.
+	// The address has an account: the same 409 OAUTH_ACCOUNT_EXISTS. The
+	// pending link's secret travels only in an HttpOnly cookie (never in the
+	// body); the body says only that a link is pending.
 	var pending *auth.PendingLinkError
 	if errors.As(err, &pending) {
+		h.setPendingLinkCookie(w, pending.Token)
 		en, _ := lookupAuthError(auth.ErrOAuthAccountExists)
 		apierror.New(en.Status, en.Code, en.Message).
-			WithDetails(PendingLinkDetails{PendingLink: pending.Token, Provider: string(pending.Provider)}).
+			WithDetails(PendingLinkDetails{LinkPending: true, Provider: string(pending.Provider)}).
 			WriteJSON(w)
 		return
 	}

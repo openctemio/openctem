@@ -165,35 +165,64 @@ func writeIdentityJSON(w http.ResponseWriter, status int, v any) {
 }
 
 // PendingLinkDetails is the details of a 409 OAUTH_ACCOUNT_EXISTS that left a
-// pending link: the secret the web server keeps for this browser in an
-// HttpOnly cookie, and the provider.
+// pending link. The secret itself is only in the HttpOnly pending-link cookie.
 type PendingLinkDetails struct {
-	PendingLink string `json:"pending_link"`
+	LinkPending bool   `json:"link_pending"`
 	Provider    string `json:"provider"`
 }
 
-// PendingLinkRequest names a pending link by its secret.
-type PendingLinkRequest struct {
-	Token string `json:"token"`
+// Pending-link cookie: HttpOnly, SameSite=Lax, Path=/, 10 minutes. With
+// Secure cookies it carries the __Host- prefix, so no subdomain can set it.
+const (
+	pendingLinkCookieSecure = "__Host-oauth_pending_link"
+	pendingLinkCookiePlain  = "oauth_pending_link"
+)
+
+func (h *OAuthHandler) pendingLinkCookieName() string {
+	if h.authConfig.CookieSecure {
+		return pendingLinkCookieSecure
+	}
+	return pendingLinkCookiePlain
 }
 
-func decodePendingLink(w http.ResponseWriter, r *http.Request) (string, bool) {
-	var req PendingLinkRequest
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&req); err != nil || req.Token == "" {
-		apierror.BadRequest("Invalid request body").WriteJSON(w)
+func (h *OAuthHandler) setPendingLinkCookie(w http.ResponseWriter, token string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     h.pendingLinkCookieName(),
+		Value:    token,
+		Path:     "/",
+		MaxAge:   600,
+		HttpOnly: true,
+		Secure:   h.authConfig.CookieSecure,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+func (h *OAuthHandler) clearPendingLinkCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name: h.pendingLinkCookieName(), Value: "", Path: "/", MaxAge: -1,
+		HttpOnly: true, Secure: h.authConfig.CookieSecure, SameSite: http.SameSiteLaxMode,
+	})
+}
+
+// pendingLinkToken reads the pending-link secret from its cookie only: it is
+// never accepted from the body or the URL.
+func (h *OAuthHandler) pendingLinkToken(w http.ResponseWriter, r *http.Request) (string, bool) {
+	c, err := r.Cookie(h.pendingLinkCookieName())
+	if err != nil || c.Value == "" {
+		// No cookie: a malformed request (400), with the same code as an
+		// unknown pending link.
+		apierror.New(http.StatusBadRequest, codePendingLinkInvalid, "There is no sign-in method waiting to be linked to this account.").WriteJSON(w)
 		return "", false
 	}
-	return req.Token, true
+	return c.Value, true
 }
 
 // DescribePendingLink tells the signed-in account which provider account is
 // waiting to be linked to it.
 // @Summary      Describe the sign-in method waiting to be linked
-// @Description  A social sign-in refused with OAUTH_ACCOUNT_EXISTS leaves a pending link (details.pending_link). After signing in to that account, this returns the provider and its address. 404 PENDING_LINK_INVALID when there is none for this account (expired, used, or made for another account, which also spends it).
+// @Description  A social sign-in refused with OAUTH_ACCOUNT_EXISTS leaves a pending link (details.link_pending; the secret is in the HttpOnly pending-link cookie, read from the cookie only). After signing in to that account, this returns the provider and its address. 404 PENDING_LINK_INVALID when there is none for this account (expired, used, or made for another account, which also spends it).
 // @Tags         Account
-// @Accept       json
 // @Produce      json
-// @Param        request  body  PendingLinkRequest  true  "Pending link secret"
 // @Success      200  {object}  auth.PendingLinkInfo
 // @Router       /me/pending-sign-in-link/describe [post]
 func (h *OAuthHandler) DescribePendingLink(w http.ResponseWriter, r *http.Request) {
@@ -202,12 +231,13 @@ func (h *OAuthHandler) DescribePendingLink(w http.ResponseWriter, r *http.Reques
 		apierror.Unauthorized("User not authenticated").WriteJSON(w)
 		return
 	}
-	token, ok := decodePendingLink(w, r)
+	token, ok := h.pendingLinkToken(w, r)
 	if !ok {
 		return
 	}
 	info, err := h.oauthService.DescribePendingLink(r.Context(), userID, token)
 	if err != nil {
+		h.clearPendingLinkCookie(w)
 		h.handleOAuthError(w, err)
 		return
 	}
@@ -219,9 +249,7 @@ func (h *OAuthHandler) DescribePendingLink(w http.ResponseWriter, r *http.Reques
 // @Summary      Link the sign-in method waiting to be linked
 // @Description  Links the provider identity of a pending link to the signed-in account and signs out the account's other sessions. The session must have signed in (or stepped up) after the pending link was made: 403 PENDING_LINK_SIGN_IN_REQUIRED otherwise; requires a recent re-authentication (STEP_UP_REQUIRED). 404 PENDING_LINK_INVALID, 409 IDENTITY_LINKED_ELSEWHERE or PROVIDER_ALREADY_LINKED when it cannot be linked.
 // @Tags         Account
-// @Accept       json
 // @Produce      json
-// @Param        request  body  PendingLinkRequest  true  "Pending link secret"
 // @Success      200  {object}  auth.SignInMethod
 // @Router       /me/pending-sign-in-link/confirm [post]
 func (h *OAuthHandler) ConfirmPendingLink(w http.ResponseWriter, r *http.Request) {
@@ -231,12 +259,13 @@ func (h *OAuthHandler) ConfirmPendingLink(w http.ResponseWriter, r *http.Request
 		apierror.Unauthorized("User not authenticated").WriteJSON(w)
 		return
 	}
-	token, ok := decodePendingLink(w, r)
+	token, ok := h.pendingLinkToken(w, r)
 	if !ok {
 		return
 	}
 	m, err := h.oauthService.ConfirmPendingLink(auth.WithClientInfo(r.Context(), getClientIP(r), r.UserAgent()),
 		auth.ConfirmPendingLinkInput{UserID: userID, SessionID: sessionID, Token: token})
+	h.clearPendingLinkCookie(w)
 	if err != nil {
 		h.handleOAuthError(w, err)
 		return
@@ -246,10 +275,8 @@ func (h *OAuthHandler) ConfirmPendingLink(w http.ResponseWriter, r *http.Request
 
 // CancelPendingLink drops a pending link ("not now").
 // @Summary      Decline the sign-in method waiting to be linked
-// @Description  Drops the pending link. Always 204.
+// @Description  Drops the pending link of the pending-link cookie and clears the cookie. Always 204.
 // @Tags         Account
-// @Accept       json
-// @Param        request  body  PendingLinkRequest  true  "Pending link secret"
 // @Success      204
 // @Router       /me/pending-sign-in-link/cancel [post]
 func (h *OAuthHandler) CancelPendingLink(w http.ResponseWriter, r *http.Request) {
@@ -258,10 +285,9 @@ func (h *OAuthHandler) CancelPendingLink(w http.ResponseWriter, r *http.Request)
 		apierror.Unauthorized("User not authenticated").WriteJSON(w)
 		return
 	}
-	token, ok := decodePendingLink(w, r)
-	if !ok {
-		return
+	if c, err := r.Cookie(h.pendingLinkCookieName()); err == nil && c.Value != "" {
+		h.oauthService.CancelPendingLink(r.Context(), userID, c.Value)
 	}
-	h.oauthService.CancelPendingLink(r.Context(), userID, token)
+	h.clearPendingLinkCookie(w)
 	w.WriteHeader(http.StatusNoContent)
 }

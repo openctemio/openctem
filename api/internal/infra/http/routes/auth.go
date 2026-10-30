@@ -322,14 +322,15 @@ func registerIdentityLinkRoutes(router Router, h *handler.OAuthHandler, authMidd
 	}, middlewares...)
 	// A social sign-in refused because its address has an account leaves a
 	// pending link (auth/pending_link.go); the person signs in to that
-	// account and confirms it here. The secret is in the body, from the web
-	// server's HttpOnly cookie; the record is bound to this account and
-	// single use. Confirming changes how the account is signed into: fresh
-	// step-up (the sign-in that just happened counts) and CSRF.
+	// account and confirms it here. The secret is read from its HttpOnly
+	// cookie only; the record is bound to this account and single use. All
+	// three carry the CSRF check; confirming changes how the account is
+	// signed into and also needs a fresh step-up (the sign-in that just
+	// happened counts).
 	router.Group("/api/v1/me/pending-sign-in-link", func(r Router) {
-		r.POST("/describe", h.DescribePendingLink, linkRL)
+		r.POST("/describe", h.DescribePendingLink, withCSRF(linkRL)...)
 		r.POST("/confirm", h.ConfirmPendingLink, withCSRF(linkRL, requireStepUp())...)
-		r.POST("/cancel", h.CancelPendingLink, linkRL)
+		r.POST("/cancel", h.CancelPendingLink, withCSRF(linkRL)...)
 	}, middlewares...)
 }
 

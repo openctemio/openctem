@@ -26,25 +26,29 @@ linking is off unless the platform turns it on.
 ### Confirming the link after signing in
 
 When the identity could be linked (the account is active and holds no other
-identity of that provider), the refusal carries a pending link in
-`details.pending_link`:
+identity of that provider), the refusal leaves a pending link:
 
 1. The API stores the provider identity (issuer, subject), its address and the
    account it collided with, for 10 minutes, under the SHA-256 of a random
-   32-byte secret, and returns the secret. Nothing on the account changes.
-2. The web server keeps the secret in an HttpOnly `__Host-oauth_pending_link`
-   cookie (Secure, SameSite=Lax, 10 minutes) and shows the sign-in page with
-   "An account with this email already exists. Sign in with your password or
-   the method you used before to link it."
+   32-byte secret. Nothing on the account changes.
+2. The secret travels only in an HttpOnly cookie (`__Host-oauth_pending_link`
+   with Secure cookies, `oauth_pending_link` without; SameSite=Lax, Path=/,
+   10 minutes) set on the 409; the body says only
+   `details: {link_pending: true, provider}`. The web server relays that
+   cookie to the browser and never shows the secret to page script. The
+   sign-in page says "An account with this email already exists. Sign in with
+   your password or the way you signed in before, and we will ask you to
+   confirm linking this provider."
 3. The person signs in to the account the usual way: password and second
    factor, or the provider the account already uses. The provider never
    replaces that sign-in.
-4. In the app, the web server describes the pending link
+4. In the app, the web server (forwarding the cookie) describes the pending link
    (`POST /api/v1/me/pending-sign-in-link/describe`) and asks "Link Google
    account x to your account?". "Link" confirms
    (`POST /api/v1/me/pending-sign-in-link/confirm`), "Not now" drops it
    (`POST /api/v1/me/pending-sign-in-link/cancel`); either way the cookie is
-   deleted.
+   deleted. The routes read the secret from the cookie only, never from the
+   body or the URL.
 5. The confirm is accepted only from the account the pending link was made
    for, only from a session that signed in or stepped up after the pending
    link was made (the session's own server-side record) and inside the
@@ -57,12 +61,13 @@ identity of that provider), the refusal carries a pending link in
 
 | Route | Gate |
 |---|---|
-| `POST /api/v1/me/pending-sign-in-link/describe` | signed in, rate limit; the pending link must be this account's |
+| `POST /api/v1/me/pending-sign-in-link/describe` | signed in, CSRF, rate limit; the pending link must be this account's |
 | `POST /api/v1/me/pending-sign-in-link/confirm` | step-up (the sign-in that just happened counts), CSRF, rate limit; authenticated after the pending link |
-| `POST /api/v1/me/pending-sign-in-link/cancel` | signed in, rate limit |
+| `POST /api/v1/me/pending-sign-in-link/cancel` | signed in, CSRF, rate limit |
 
 Refusals: `404 PENDING_LINK_INVALID` (none for this account: expired, used,
-made for another account or never made; one answer for all),
+made for another account or never made; one answer for all; `400` with the
+same code when the request has no pending-link cookie),
 `403 PENDING_LINK_SIGN_IN_REQUIRED` (the session authenticated before the
 pending link), `409 IDENTITY_LINKED_ELSEWHERE` / `PROVIDER_ALREADY_LINKED`.
 
@@ -201,7 +206,7 @@ Organization policies apply to the session exactly as before:
 | Locking oneself out | The last sign-in method stays; checked under a row lock |
 | Account enumeration | `OAUTH_ACCOUNT_EXISTS` and `IDENTITY_LINKED_ELSEWHERE` are answered only after the provider proved the person holds that address or provider account; the pending-link refusals have one answer for every reason |
 | Linking by mailbox control alone (a recycled or transferred mailbox or domain, a compromised provider account) | Off by default: a social sign-in never changes an existing account; the person must sign in to the account and confirm |
-| Planting a pending link in someone's browser | The cookie is HttpOnly and `__Host-` (no subdomain or script can set it); the record is bound to the account it collided with, so another account cannot confirm or even read it, and presenting it spends it |
+| Planting or stealing a pending link | The secret is never in a response body or URL, only in an HttpOnly `__Host-` cookie (no subdomain or script can read or set it); the record is bound to the account it collided with, so another account cannot confirm or even read it, and presenting it spends it |
 | Confirming with a session someone already held (stolen session, shared computer) | The session must have signed in or stepped up after the pending link was made, inside the step-up window; on confirm every other session is revoked and the mailbox is told |
 | Replay of a pending link | Single use (GETDEL), 10 minutes, hash-only storage |
 | A provider's later address counted as proven | The new address is verified only where the provider is authoritative |
