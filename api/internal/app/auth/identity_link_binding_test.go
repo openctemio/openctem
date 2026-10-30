@@ -91,6 +91,7 @@ func (f *linkBindingFixture) start(t *testing.T) (state, binding string) {
 	t.Helper()
 	res, err := f.svc.StartLink(context.Background(), LinkStartInput{
 		UserID: f.acct.ID().String(), SessionID: "s-1", Provider: OAuthProviderGitHub, RedirectURI: linkRedirect,
+		Proof: goodProof,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -232,4 +233,58 @@ func TestCompleteLink_SignInBindingDoesNotCompleteLink(t *testing.T) {
 		t.Fatalf("want ErrInvalidState, got %v", err)
 	}
 	f.assertNotLinked(t)
+}
+
+// A link start needs the proof typed for it: without one (or with a wrong
+// one) nothing is minted. A link whose start was never proved (a state signed
+// and stored without the proof record) does not complete.
+func TestStartLink_NeedsProof(t *testing.T) {
+	ctx := context.Background()
+	for name, tc := range map[string]struct {
+		proof StepUpProof
+		want  error
+	}{
+		"no proof":    {StepUpProof{}, ErrLinkProofRequired},
+		"wrong proof": {StepUpProof{TOTP: "000000"}, ErrLinkProofFailed},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newLinkBindingFixture(t)
+			res, err := f.svc.StartLink(ctx, LinkStartInput{
+				UserID: f.acct.ID().String(), SessionID: "s-1", Provider: OAuthProviderGitHub, RedirectURI: linkRedirect, Proof: tc.proof,
+			})
+			if !errors.Is(err, tc.want) || res != nil {
+				t.Fatalf("want %v, got %+v %v", tc.want, res, err)
+			}
+			if got := f.proof.purposes; len(got) != 1 || got[0] != LinkProofLinkStart {
+				t.Fatalf("purposes %v", got)
+			}
+		})
+	}
+	t.Run("no verifier wired (fail closed)", func(t *testing.T) {
+		f := newLinkBindingFixture(t)
+		f.svc.SetLinkProofVerifier(nil)
+		if _, err := f.svc.StartLink(ctx, LinkStartInput{
+			UserID: f.acct.ID().String(), SessionID: "s-1", Provider: OAuthProviderGitHub, RedirectURI: linkRedirect, Proof: goodProof,
+		}); !errors.Is(err, ErrLinkProofUnavailable) {
+			t.Fatalf("got %v", err)
+		}
+	})
+	t.Run("start never proved does not complete", func(t *testing.T) {
+		f := newLinkBindingFixture(t)
+		state, verifier, err := f.svc.generateState(OAuthProviderGitHub, "", &linkBinding{UserID: f.acct.ID().String(), SessionID: "s-1"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		binding, err := f.svc.storeBoundVerifier(ctx, state, verifier)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.complete(state, binding, "code-1"); !errors.Is(err, ErrInvalidState) {
+			t.Fatalf("want ErrInvalidState, got %v", err)
+		}
+		if f.gh.tokenCalls != 0 {
+			t.Fatal("an unproved link reached the token endpoint")
+		}
+		f.assertNotLinked(t)
+	})
 }

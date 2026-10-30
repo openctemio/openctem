@@ -6,13 +6,16 @@
  * (API docs: architecture/social-login-linking.md). The pending link is an
  * HttpOnly cookie the server actions read; the layout mounts this only when
  * that cookie exists. The API accepts the link only for the account it was
- * made for, from a session that signed in after it, once.
+ * made for, from a session that signed in after it, once, and only with the
+ * proof typed here: the authenticator code, else the password. The sign-in
+ * that just happened does not count.
  */
 
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 
-import { ConfirmDialog } from '@/components/confirm-dialog'
+import { Button } from '@/components/ui/button'
+import { StepUpDialog, stepUpProofErrorMessage, type StepUpProofInput } from '@/components/security'
 import { useTranslation } from '@/context/i18n-provider'
 import {
   confirmPendingLinkAction,
@@ -21,7 +24,8 @@ import {
   type PendingLink,
 } from '@/features/auth/actions/social-auth-actions'
 import { describeAuthCode } from '@/features/auth/lib/auth-error-codes'
-import { requestStepUp, STEP_UP_REQUIRED_CODE } from '@/lib/api/step-up'
+
+import { linkProofFrom, LinkProofRefused } from '../lib/link-proof'
 
 const PROVIDER_NAME: Record<PendingLink['provider'], string> = {
   google: 'Google',
@@ -32,7 +36,6 @@ const PROVIDER_NAME: Record<PendingLink['provider'], string> = {
 export function PendingLinkPrompt() {
   const { t } = useTranslation()
   const [pending, setPending] = useState<PendingLink | null>(null)
-  const [busy, setBusy] = useState(false)
 
   useEffect(() => {
     let alive = true
@@ -49,24 +52,21 @@ export function PendingLinkPrompt() {
   if (!pending) return null
   const provider = PROVIDER_NAME[pending.provider]
 
-  const confirm = async () => {
-    setBusy(true)
-    try {
-      let res = await confirmPendingLinkAction()
-      // The sign-in is older than the step-up window: confirm it is them,
-      // then try once more.
-      if (!res.success && res.code === STEP_UP_REQUIRED_CODE && (await requestStepUp())) {
-        res = await confirmPendingLinkAction()
-      }
-      if (res.success) {
-        toast.success(t('account.pendingLink.linked', undefined, { provider }))
-      } else {
-        toast.error(describeAuthCode(res.code, t) ?? t('account.signInMethods.linkFailed'))
-      }
+  const confirm = async (input: StepUpProofInput) => {
+    const proof = linkProofFrom(input)
+    if (!proof) return
+    const res = await confirmPendingLinkAction(proof)
+    if (res.success) {
+      toast.success(t('account.pendingLink.linked', undefined, { provider }))
       setPending(null)
-    } finally {
-      setBusy(false)
+      return
     }
+    // A missing or wrong proof keeps the pending link: ask again in place.
+    if (res.code === 'LINK_PROOF_FAILED' || res.code === 'LINK_PROOF_REQUIRED') {
+      throw new LinkProofRefused(res.code)
+    }
+    toast.error(describeAuthCode(res.code, t) ?? t('account.signInMethods.linkFailed'))
+    setPending(null)
   }
 
   const dismiss = async () => {
@@ -74,18 +74,39 @@ export function PendingLinkPrompt() {
     await dismissPendingLinkAction().catch(() => undefined)
   }
 
+  const desc = t('account.pendingLink.desc', undefined, { provider, email: pending.email })
+  const proofHint =
+    pending.proof === 'password'
+      ? t('account.signInMethods.proofPassword')
+      : t('account.signInMethods.proofCode')
+
   return (
-    <ConfirmDialog
+    <StepUpDialog
       open
       onOpenChange={(open) => {
-        if (!open && !busy) void dismiss()
+        if (!open) void dismiss()
       }}
       title={t('account.pendingLink.title', undefined, { provider })}
-      desc={t('account.pendingLink.desc', undefined, { provider, email: pending.email })}
-      confirmText={t('account.pendingLink.confirm', undefined, { provider })}
-      cancelBtnText={t('account.pendingLink.notNow')}
-      handleConfirm={confirm}
-      isLoading={busy}
+      description={pending.proof ? `${desc} ${proofHint}` : desc}
+      factor={pending.proof === 'password' ? 'password' : 'totp'}
+      submitLabel={t('account.pendingLink.confirm', undefined, { provider })}
+      onSubmit={confirm}
+      errorMessage={(err) =>
+        (err instanceof LinkProofRefused ? describeAuthCode(err.code, t) : undefined) ??
+        stepUpProofErrorMessage(t, err)
+      }
+      notice={
+        pending.proof
+          ? undefined
+          : {
+              body: <p className="text-sm">{t('account.signInMethods.proofUnavailable')}</p>,
+              actions: (
+                <Button type="button" variant="outline" onClick={() => void dismiss()}>
+                  {t('account.pendingLink.notNow')}
+                </Button>
+              ),
+            }
+      }
     />
   )
 }

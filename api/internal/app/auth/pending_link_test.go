@@ -114,7 +114,7 @@ func TestPendingLink_ConfirmAfterSignIn(t *testing.T) {
 				t.Fatalf("describe: %+v %v", got, err)
 			}
 			sid := newSessionID()
-			m, err := f.svc.ConfirmPendingLink(ctx, ConfirmPendingLinkInput{UserID: acct.ID().String(), SessionID: sid, Token: pending.Token})
+			m, err := f.svc.ConfirmPendingLink(ctx, ConfirmPendingLinkInput{UserID: acct.ID().String(), SessionID: sid, Token: pending.Token, Proof: goodProof})
 			if err != nil || m.Provider != string(tc.provider) {
 				t.Fatalf("confirm: %+v %v", m, err)
 			}
@@ -128,7 +128,7 @@ func TestPendingLink_ConfirmAfterSignIn(t *testing.T) {
 			if len(f.notifier.linked) != 1 || f.notifier.automatic[0] {
 				t.Fatalf("mailbox not told of a confirmed link: %v %v", f.notifier.linked, f.notifier.automatic)
 			}
-			if _, err := f.svc.ConfirmPendingLink(ctx, ConfirmPendingLinkInput{UserID: acct.ID().String(), SessionID: sid, Token: pending.Token}); !errors.Is(err, ErrPendingLinkInvalid) {
+			if _, err := f.svc.ConfirmPendingLink(ctx, ConfirmPendingLinkInput{UserID: acct.ID().String(), SessionID: sid, Token: pending.Token, Proof: goodProof}); !errors.Is(err, ErrPendingLinkInvalid) {
 				t.Fatalf("a pending link must be single use, got %v", err)
 			}
 		})
@@ -146,7 +146,7 @@ func TestPendingLink_Refusals(t *testing.T) {
 		if _, err := f.svc.DescribePendingLink(ctx, other, pending.Token); !errors.Is(err, ErrPendingLinkInvalid) {
 			t.Fatalf("describe by another account: %v", err)
 		}
-		if _, err := f.svc.ConfirmPendingLink(ctx, ConfirmPendingLinkInput{UserID: acct.ID().String(), SessionID: newSessionID(), Token: pending.Token}); !errors.Is(err, ErrPendingLinkInvalid) {
+		if _, err := f.svc.ConfirmPendingLink(ctx, ConfirmPendingLinkInput{UserID: acct.ID().String(), SessionID: newSessionID(), Token: pending.Token, Proof: goodProof}); !errors.Is(err, ErrPendingLinkInvalid) {
 			t.Fatalf("a pending link shown to another account must be spent, got %v", err)
 		}
 		if n := len(f.idents.keysOf(acct.ID())); n != 0 {
@@ -157,7 +157,9 @@ func TestPendingLink_Refusals(t *testing.T) {
 		acct := verifiedPasswordAccount(t, "p@gmail.com")
 		f, _ := newPendingFixture(t, acct)
 		pending := collide(t, f, googleInfo("p@gmail.com", "g-1", ""), OAuthProviderGoogle)
-		if _, err := f.svc.ConfirmPendingLink(ctx, ConfirmPendingLinkInput{UserID: shared.NewID().String(), SessionID: newSessionID(), Token: pending.Token}); !errors.Is(err, ErrPendingLinkInvalid) {
+		other := verifiedPasswordAccount(t, "o@gmail.com")
+		f.users.created = other
+		if _, err := f.svc.ConfirmPendingLink(ctx, ConfirmPendingLinkInput{UserID: other.ID().String(), SessionID: newSessionID(), Token: pending.Token, Proof: goodProof}); !errors.Is(err, ErrPendingLinkInvalid) {
 			t.Fatalf("got %v", err)
 		}
 		if len(f.idents.keysOf(acct.ID())) != 0 || len(f.revoker.revoked) != 0 {
@@ -169,7 +171,7 @@ func TestPendingLink_Refusals(t *testing.T) {
 		f, sess := newPendingFixture(t, acct)
 		sess.at = time.Now().Add(-time.Hour)
 		pending := collide(t, f, googleInfo("p@gmail.com", "g-1", ""), OAuthProviderGoogle)
-		if _, err := f.svc.ConfirmPendingLink(ctx, ConfirmPendingLinkInput{UserID: acct.ID().String(), SessionID: newSessionID(), Token: pending.Token}); !errors.Is(err, ErrPendingLinkNeedsSignIn) {
+		if _, err := f.svc.ConfirmPendingLink(ctx, ConfirmPendingLinkInput{UserID: acct.ID().String(), SessionID: newSessionID(), Token: pending.Token, Proof: goodProof}); !errors.Is(err, ErrPendingLinkNeedsSignIn) {
 			t.Fatalf("got %v", err)
 		}
 		if len(f.idents.keysOf(acct.ID())) != 0 {
@@ -181,7 +183,7 @@ func TestPendingLink_Refusals(t *testing.T) {
 		f, sess := newPendingFixture(t, acct)
 		sess.err = errors.New("db down")
 		pending := collide(t, f, googleInfo("p@gmail.com", "g-1", ""), OAuthProviderGoogle)
-		if _, err := f.svc.ConfirmPendingLink(ctx, ConfirmPendingLinkInput{UserID: acct.ID().String(), SessionID: newSessionID(), Token: pending.Token}); !errors.Is(err, ErrPendingLinkNeedsSignIn) {
+		if _, err := f.svc.ConfirmPendingLink(ctx, ConfirmPendingLinkInput{UserID: acct.ID().String(), SessionID: newSessionID(), Token: pending.Token, Proof: goodProof}); !errors.Is(err, ErrPendingLinkNeedsSignIn) {
 			t.Fatalf("got %v", err)
 		}
 	})
@@ -190,7 +192,7 @@ func TestPendingLink_Refusals(t *testing.T) {
 		f, _ := newPendingFixture(t, acct)
 		f.svc.sessionRepo = &nopSessions{}
 		pending := collide(t, f, googleInfo("p@gmail.com", "g-1", ""), OAuthProviderGoogle)
-		if _, err := f.svc.ConfirmPendingLink(ctx, ConfirmPendingLinkInput{UserID: acct.ID().String(), SessionID: newSessionID(), Token: pending.Token}); !errors.Is(err, ErrPendingLinkNeedsSignIn) {
+		if _, err := f.svc.ConfirmPendingLink(ctx, ConfirmPendingLinkInput{UserID: acct.ID().String(), SessionID: newSessionID(), Token: pending.Token, Proof: goodProof}); !errors.Is(err, ErrPendingLinkNeedsSignIn) {
 			t.Fatalf("got %v", err)
 		}
 	})
@@ -199,7 +201,7 @@ func TestPendingLink_Refusals(t *testing.T) {
 		f, _ := newPendingFixture(t, acct)
 		pending := collide(t, f, googleInfo("p@gmail.com", "g-1", ""), OAuthProviderGoogle)
 		_ = acct.UpdateEmail("moved@example.com")
-		if _, err := f.svc.ConfirmPendingLink(ctx, ConfirmPendingLinkInput{UserID: acct.ID().String(), SessionID: newSessionID(), Token: pending.Token}); !errors.Is(err, ErrPendingLinkInvalid) {
+		if _, err := f.svc.ConfirmPendingLink(ctx, ConfirmPendingLinkInput{UserID: acct.ID().String(), SessionID: newSessionID(), Token: pending.Token, Proof: goodProof}); !errors.Is(err, ErrPendingLinkInvalid) {
 			t.Fatalf("got %v", err)
 		}
 	})
@@ -208,7 +210,7 @@ func TestPendingLink_Refusals(t *testing.T) {
 		f, _ := newPendingFixture(t, acct)
 		pending := collide(t, f, googleInfo("p@gmail.com", "g-1", ""), OAuthProviderGoogle)
 		f.users.byEmail = suspendedCopy(acct)
-		if _, err := f.svc.ConfirmPendingLink(ctx, ConfirmPendingLinkInput{UserID: acct.ID().String(), SessionID: newSessionID(), Token: pending.Token}); !errors.Is(err, ErrAccountSuspended) {
+		if _, err := f.svc.ConfirmPendingLink(ctx, ConfirmPendingLinkInput{UserID: acct.ID().String(), SessionID: newSessionID(), Token: pending.Token, Proof: goodProof}); !errors.Is(err, ErrAccountSuspended) {
 			t.Fatalf("got %v", err)
 		}
 	})
@@ -219,7 +221,7 @@ func TestPendingLink_Refusals(t *testing.T) {
 		someone, _ := userdom.NewLocalUser("someone@example.com", "S", "$2a$10$hash")
 		f.idents.bindTo(someone, googleIssuer, "g-1")
 		f.users.created = someone
-		if _, err := f.svc.ConfirmPendingLink(ctx, ConfirmPendingLinkInput{UserID: acct.ID().String(), SessionID: newSessionID(), Token: pending.Token}); !errors.Is(err, ErrIdentityLinkedElsewhere) {
+		if _, err := f.svc.ConfirmPendingLink(ctx, ConfirmPendingLinkInput{UserID: acct.ID().String(), SessionID: newSessionID(), Token: pending.Token, Proof: goodProof}); !errors.Is(err, ErrIdentityLinkedElsewhere) {
 			t.Fatalf("got %v", err)
 		}
 	})
@@ -228,7 +230,7 @@ func TestPendingLink_Refusals(t *testing.T) {
 		f, _ := newPendingFixture(t, acct)
 		pending := collide(t, f, googleInfo("p@gmail.com", "g-1", ""), OAuthProviderGoogle)
 		f.svc.CancelPendingLink(ctx, acct.ID().String(), pending.Token)
-		if _, err := f.svc.ConfirmPendingLink(ctx, ConfirmPendingLinkInput{UserID: acct.ID().String(), SessionID: newSessionID(), Token: pending.Token}); !errors.Is(err, ErrPendingLinkInvalid) {
+		if _, err := f.svc.ConfirmPendingLink(ctx, ConfirmPendingLinkInput{UserID: acct.ID().String(), SessionID: newSessionID(), Token: pending.Token, Proof: goodProof}); !errors.Is(err, ErrPendingLinkInvalid) {
 			t.Fatalf("got %v", err)
 		}
 	})
@@ -241,7 +243,7 @@ func TestPendingLink_Refusals(t *testing.T) {
 			long[i] = 'a'
 		}
 		for _, tok := range []string{"", "forged", string(long)} {
-			if _, err := f.svc.ConfirmPendingLink(ctx, ConfirmPendingLinkInput{UserID: acct.ID().String(), SessionID: newSessionID(), Token: tok}); !errors.Is(err, ErrPendingLinkInvalid) {
+			if _, err := f.svc.ConfirmPendingLink(ctx, ConfirmPendingLinkInput{UserID: acct.ID().String(), SessionID: newSessionID(), Token: tok, Proof: goodProof}); !errors.Is(err, ErrPendingLinkInvalid) {
 				t.Fatalf("%q: got %v", tok, err)
 			}
 		}
@@ -258,7 +260,7 @@ func TestPendingLink_Refusals(t *testing.T) {
 			store.entries[k] = e
 		}
 		store.mu.Unlock()
-		if _, err := f.svc.ConfirmPendingLink(ctx, ConfirmPendingLinkInput{UserID: acct.ID().String(), SessionID: newSessionID(), Token: pending.Token}); !errors.Is(err, ErrPendingLinkInvalid) {
+		if _, err := f.svc.ConfirmPendingLink(ctx, ConfirmPendingLinkInput{UserID: acct.ID().String(), SessionID: newSessionID(), Token: pending.Token, Proof: goodProof}); !errors.Is(err, ErrPendingLinkInvalid) {
 			t.Fatalf("got %v", err)
 		}
 	})
@@ -320,5 +322,43 @@ func TestProviderEmailChange_VerifiedOnlyWhenAuthoritative(t *testing.T) {
 				t.Fatalf("verified = %v, want %v", acct.EmailVerified(), tc.want)
 			}
 		})
+	}
+}
+
+// Confirming a pending link needs the proof typed in the dialog: the sign-in
+// that just happened is not one. A missing or wrong proof links nothing and
+// leaves the pending link for another try; the right one then links.
+func TestPendingLink_NeedsProof(t *testing.T) {
+	ctx := context.Background()
+	acct := verifiedPasswordAccount(t, "p@gmail.com")
+	f, _ := newPendingFixture(t, acct)
+	pending := collide(t, f, googleInfo("p@gmail.com", "g-1", ""), OAuthProviderGoogle)
+	sid := newSessionID()
+	in := ConfirmPendingLinkInput{UserID: acct.ID().String(), SessionID: sid, Token: pending.Token}
+
+	if info, err := f.svc.DescribePendingLink(ctx, acct.ID().String(), pending.Token); err != nil || info.Proof != string(StepUpTOTP) {
+		t.Fatalf("describe must say which proof to ask for: %+v %v", info, err)
+	}
+	if _, err := f.svc.ConfirmPendingLink(ctx, in); !errors.Is(err, ErrLinkProofRequired) {
+		t.Fatalf("recent sign-in alone: %v", err)
+	}
+	in.Proof = StepUpProof{TOTP: "000000"}
+	if _, err := f.svc.ConfirmPendingLink(ctx, in); !errors.Is(err, ErrLinkProofFailed) {
+		t.Fatalf("wrong code: %v", err)
+	}
+	if len(f.idents.keysOf(acct.ID())) != 0 || len(f.revoker.revoked) != 0 || len(f.notifier.linked) != 0 {
+		t.Fatal("linked, revoked or told without a proof")
+	}
+	in.Proof = goodProof
+	if _, err := f.svc.ConfirmPendingLink(ctx, in); err != nil {
+		t.Fatalf("the pending link must survive a refused proof: %v", err)
+	}
+	if len(f.idents.keysOf(acct.ID())) != 1 {
+		t.Fatal("not linked")
+	}
+	for _, p := range f.proof.purposes {
+		if p != LinkProofPendingLink {
+			t.Fatalf("purpose %q", p)
+		}
 	}
 }

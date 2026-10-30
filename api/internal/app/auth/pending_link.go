@@ -14,8 +14,9 @@ package auth
 // The person then signs in to the account the usual way: password and second
 // factor, or the provider the account already uses. Only that account, from a
 // session that authenticated after the pending link was made (a sign-in or a
-// step-up, checked against the session's own record), with the secret, may
-// confirm it; the link then follows the explicit-link rules (linkIdentity),
+// step-up, checked against the session's own record), with the secret and a
+// proof typed in the confirm dialog (an authenticator code, else the
+// password; link_proof.go), may confirm it; the link then follows the explicit-link rules (linkIdentity),
 // every other session of the account is revoked, the link is audited and the
 // account's mailbox is told. The record is single use: confirming, canceling
 // or presenting it from another account spends it.
@@ -86,6 +87,9 @@ type PendingLinkInfo struct {
 	// the pending link was made because they are the same).
 	Email     string    `json:"email"`
 	ExpiresAt time.Time `json:"expires_at"`
+	// Proof is what confirming asks for: totp, password, or "" when the
+	// account has neither (it must turn on two-factor authentication first).
+	Proof string `json:"proof"`
 }
 
 func pendingLinkKey(token string) string { return pendingLinkKeyPrefix + hashBinding(token) }
@@ -171,7 +175,7 @@ func (s *OAuthService) DescribePendingLink(ctx context.Context, userID, token st
 			return nil, fmt.Errorf("keep pending link: %w", err)
 		}
 	}
-	return &PendingLinkInfo{Provider: string(rec.Provider), Email: rec.Email, ExpiresAt: rec.expiresAt()}, nil
+	return &PendingLinkInfo{Provider: string(rec.Provider), Email: rec.Email, ExpiresAt: rec.expiresAt(), Proof: s.linkProofMethod(ctx, userID)}, nil
 }
 
 // CancelPendingLink drops a pending link ("not now"). Always succeeds.
@@ -186,14 +190,26 @@ type ConfirmPendingLinkInput struct {
 	UserID    string
 	SessionID string
 	Token     string
+	// Proof is the code or password typed in the confirm dialog
+	// (link_proof.go). The sign-in that just happened does not count.
+	Proof StepUpProof
 }
 
 // ConfirmPendingLink links the pending provider identity to the signed-in
-// account. The session must have authenticated (signed in or stepped up)
-// after the pending link was made; the route also requires a fresh step-up.
+// account. It needs the proof typed in the confirm dialog, checked before the
+// pending link is taken (a mistyped code leaves it for another try), and a
+// session that authenticated after the pending link was made.
 func (s *OAuthService) ConfirmPendingLink(ctx context.Context, in ConfirmPendingLinkInput) (*SignInMethod, error) {
 	if in.SessionID == "" {
 		return nil, ErrPendingLinkInvalid
+	}
+	owner, _, err := s.accountAndIdentities(ctx, in.UserID)
+	if err != nil {
+		return nil, err
+	}
+	factor, err := s.verifyLinkProof(ctx, owner, in.SessionID, in.Proof, LinkProofPendingLink)
+	if err != nil {
+		return nil, err
 	}
 	rec, err := s.takePendingLink(ctx, in.UserID, in.Token)
 	if err != nil {
@@ -216,7 +232,7 @@ func (s *OAuthService) ConfirmPendingLink(ctx context.Context, in ConfirmPending
 		return nil, ErrPendingLinkInvalid
 	}
 	info := &OAuthUserInfo{Email: rec.Email, Issuer: rec.Issuer, Subject: rec.Subject, LegacySubject: rec.LegacySubject}
-	m, err := s.linkIdentity(ctx, in.UserID, info, rec.Provider, linkHowAfterSignIn)
+	m, err := s.linkIdentity(ctx, in.UserID, info, rec.Provider, linkHowAfterSignIn, factor)
 	if err != nil {
 		return nil, err
 	}
