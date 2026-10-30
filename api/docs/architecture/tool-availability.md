@@ -199,6 +199,15 @@ with its sensor popover, and the sensor list.
   `true`, so a picker is never blocked by an outage. Trigger time still refuses
   work no sensor can run.
 
+## Per-operation memo
+
+A decision that asks about several tools (a scan trigger, a workflow preview, a
+coverage planner tick) wraps its context with `WithAvailabilityMemo`, so the
+tenant view is computed once for that operation instead of once per tool. The
+memo is keyed by tenant and zone, lives only in that context, holds results
+(never errors) and has no TTL. There is no cross-request cache: a sensor going
+offline is seen by the next decision.
+
 ## Code
 
 | Layer | Where |
