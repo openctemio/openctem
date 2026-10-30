@@ -59,7 +59,7 @@ func TestDecideRunCoverage_TemplatesDigest(t *testing.T) {
 	rel2 := "sha256:" + strings.Repeat("2", 64)
 	report := func(rel string) ingestreport.CoverageReport {
 		h, _ := json.Marshal(V2Header{Tool: toolWithRelease(rel), Metadata: ctis.ReportMetadata{CoverageType: "full"}})
-		return ingestreport.CoverageReport{ReportID: shared.NewID().String(), State: protov2.StateCompleted, ToolName: "nuclei",
+		return ingestreport.CoverageReport{Integrity: protov2.IntegritySingle, ReportID: shared.NewID().String(), State: protov2.StateCompleted, ToolName: "nuclei",
 			Header: h, TouchedAssetIDs: []shared.ID{shared.NewID()}}
 	}
 	cov := func(rs ...ingestreport.CoverageReport) *ingestreport.CommandCoverage {
