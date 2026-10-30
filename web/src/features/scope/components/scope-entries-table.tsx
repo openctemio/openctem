@@ -559,9 +559,14 @@ function ManagedByCITrust({ entry }: { entry: ApiScopeTarget }) {
 
 /**
  * The edge label of an entry wholly inside a provider's published range, or a
- * name under a provider's host suffix (API `edge`, read until the generated
- * contract carries it on every build).
+ * name under a provider's host suffix (API `edge`). The generated contract
+ * types `class` as a string, so it is narrowed to the known classes here and
+ * an unknown class shows no label.
  */
-function EntryEdgeLabel({ entry }: { entry: ApiScopeTarget & { edge?: AssetEdge } }) {
-  return entry.edge ? <EdgeLabel edge={entry.edge} /> : null
+const EDGE_CLASSES: readonly AssetEdge['class'][] = ['edge', 'saas_hosting', 'cloud_shared']
+
+function EntryEdgeLabel({ entry }: { entry: ApiScopeTarget & { edge?: unknown } }) {
+  const edge = entry.edge as Partial<AssetEdge> | undefined
+  if (!edge?.provider || !edge.class || !EDGE_CLASSES.includes(edge.class)) return null
+  return <EdgeLabel edge={edge as AssetEdge} />
 }
