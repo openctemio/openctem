@@ -127,7 +127,6 @@ offboarding without step-up and is removed.
 | `POST /api/v1/tenants/{tenant}/settings/sso/changes/{id}/approve` | Installs who can sign in to the organization. |
 | `DELETE /api/v1/tenants/{tenant}` | Deletes the organization. |
 | `DELETE /api/v1/organization/members/{id}/mfa` | Removes a member's second factor. |
-| `POST /api/v1/me/sign-in-method-links/{provider}/start`, `POST /api/v1/me/pending-sign-in-link/complete`, `DELETE /api/v1/me/sign-in-methods/{id}` | Adds or removes a way to sign in to the account ([linking social sign-in](social-login-linking.md)). |
 | `POST /api/v1/organization/members/{id}/offboard`, `.../erase` | Removes a person's access; erases their personal data. Disabling (`POST /api/v1/tenants/{tenant}/members/{id}/suspend`) and re-enabling stay one click: they are reversible and keep everything the member holds. |
 | `POST /api/v1/ci/gate-overrides` | Break-glass past the CI security gate. |
 | `POST /api/v1/integrations/{id}/jira-webhook/secret/rotate`, `PUT …/{id}/jira-webhook/secret`, `POST …/{id}/github-webhook/secret/rotate` | Whoever holds the secret can forge inbound webhook events (issue sync, push events) for that integration. |
@@ -179,6 +178,17 @@ sensor: the grant service knows that, so the check runs there
 (`handler.StepUpWideningApprover`, `middleware.CheckRecentAuth`) and the
 answer is the same 403 `STEP_UP_REQUIRED`. Narrowing stays one click. Reads
 and cosmetic changes never prompt.
+
+Changing an account's sign-in methods (starting a social link, confirming a
+pending link, unlinking: `POST /api/v1/me/sign-in-method-links/{provider}/start`,
+`POST /api/v1/me/pending-sign-in-link/complete`,
+`DELETE /api/v1/me/sign-in-methods/{id}`) is deliberately **not** behind the
+window: each request carries its own proof (`step_up` in the body), checked by
+`AuthService.VerifyLinkProof` with the same rules as `VerifyStepUp`, except
+that an SSO-only account's fresh session is never enough (it must turn on
+TOTP) and the proof never stamps the session. A recent sign-in or an open
+window does not count. See
+[linking social sign-in](social-login-linking.md#proof-at-the-moment-of-the-change).
 
 The platform admin console has its own sessions: it already requires a fresh
 authenticator code inside the request for the audit-chain rebaseline
