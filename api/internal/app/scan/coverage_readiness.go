@@ -15,6 +15,7 @@ import (
 	"errors"
 	"strings"
 
+	tooldom "github.com/openctemio/openctem/api/internal/app/tool"
 	covdom "github.com/openctemio/openctem/api/pkg/domain/coverage"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -26,6 +27,7 @@ import (
 // checks know). A source that cannot be read counts as ready: the trigger's
 // own checks still apply.
 func (s *Service) CoverageReadiness(ctx context.Context, tenantID shared.ID, capabilities []string) map[string]string {
+	ctx = tooldom.WithAvailabilityMemo(ctx) // one tenant view for all tools of this tick
 	out := make(map[string]string, len(capabilities))
 	byTool := map[string]string{}
 	for _, c := range capabilities {
