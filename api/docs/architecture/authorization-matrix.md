@@ -1810,6 +1810,15 @@ results an out-of-scope id is reported exactly like an unknown id.
   `/api/v1/compliance/findings/{uuid}/**` or
   `/api/v1/verification-checklists/{uuid}` — read or write, the object or any
   sub-resource, including routes added later — is checked before the handler.
+- **Request memo:** the guard also installs a memo in the request context
+  (`datascope.WithRequestMemo`), so the checks a service repeats after the
+  guard (resolve the caller's scope, assert the finding or asset, asset in
+  scope) cost their queries once per request. It belongs to that request only,
+  every key carries the tenant and the whole caller (user, admin, owner, API
+  key), only resolved scopes and "allowed" answers are kept (a refusal or a
+  lookup error is asked again), and a context that outlives its request stops
+  using it after 10 seconds. There is no cross-request cache: a revoked group,
+  role or grant is seen by the next request.
 - **Bulk-by-id and id-in-body paths:** services filter with the same enforcer.
 - **Grouped / by-filter finding queries** (`/findings/groups`, related CVEs,
   verify / reject-fix / fix-applied by filter, assign-to-owners):
