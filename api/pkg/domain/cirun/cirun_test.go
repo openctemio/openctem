@@ -465,3 +465,24 @@ func TestEvaluateMissingCapability(t *testing.T) {
 		t.Fatalf("nothing missing = %+v", v)
 	}
 }
+
+func TestDecision_AcceptanceWithoutEndIsNotHonored(t *testing.T) {
+	now := time.Now()
+	future, past := now.Add(time.Hour), now.Add(-time.Hour)
+	for name, c := range map[string]struct {
+		f    RunFinding
+		want string
+	}{
+		"accepted, end ahead":    {RunFinding{Status: "accepted", AcceptanceExpiresAt: &future}, DecisionAccepted},
+		"accepted, end passed":   {RunFinding{Status: "accepted", AcceptanceExpiresAt: &past}, ""},
+		"accepted, no end":       {RunFinding{Status: "accepted"}, ""},
+		"accepted, no end, rule": {RunFinding{Status: "accepted", Suppressed: true}, DecisionSuppressed},
+		"false positive":         {RunFinding{Status: "false_positive"}, DecisionFalsePositive},
+		"duplicate":              {RunFinding{Status: "duplicate"}, DecisionDuplicate},
+		"open":                   {RunFinding{Status: "new"}, ""},
+	} {
+		if got := Decision(c.f, now); got != c.want {
+			t.Errorf("%s: Decision = %q, want %q", name, got, c.want)
+		}
+	}
+}

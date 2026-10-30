@@ -59,7 +59,8 @@
 {
   "protocol": 2,
   "features": [
-    "results"
+    "results",
+    "results_manifest"
   ],
   "media_types": [
     "application/vnd.openctem.ctis.v1+json"
@@ -95,6 +96,7 @@
   "protocol": 2,
   "features": [
     "results",
+    "results_manifest",
     "heartbeat",
     "commands",
     "suppressions",

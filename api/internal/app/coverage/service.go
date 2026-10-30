@@ -25,6 +25,7 @@ type Service struct {
 	tenantSwitch TenantSwitch
 	cfg          Config
 	alerts       *alerting
+	operator     *operatorAlerts
 	now          func() time.Time
 	logger       *logger.Logger
 }
@@ -62,6 +63,7 @@ func (s *Service) Run(ctx context.Context) (int, error) {
 			metrics.AssetCoverageGapPairs.WithLabelValues(c).Set(float64(n))
 		}
 	}
+	s.operatorPass(ctx)
 	return total, nil
 }
 

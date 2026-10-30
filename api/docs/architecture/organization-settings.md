@@ -93,7 +93,8 @@ Consequences:
   settings object carry `etags`: the entity tag of each section **as stored**
   (a hash of its canonical JSON).
 - Section `GET`/`PATCH` endpoints (`pentest`, `risk-scoring`,
-  `asset-lifecycle`, `asset-identity`, `/organization/settings/retest`, and the
+  `asset-lifecycle`, `asset-identity`, `/organization/settings/retest`,
+  `/organization/settings/closure`, and the
   section `PATCH`es) also set the `ETag` response header for their section.
 - A section write may send `If-Match: <etag>`. When the section changed since,
   the API answers **409 `SETTINGS_CONFLICT`** with

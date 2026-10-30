@@ -12,6 +12,7 @@ import (
 
 	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
+	"github.com/openctemio/openctem/api/pkg/domain/proxypool"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/toolbudget"
@@ -474,6 +475,7 @@ func (s *Service) Claim(ctx context.Context, input ClaimInput) ([]*commanddom.Co
 	if out, err = eg.stamp(out); err != nil {
 		return nil, err
 	}
+	s.recordEgress(ctx, out)
 	delivered, err := s.deliver(ctx, input.SensorID, out, rules, layers)
 	if err != nil {
 		return nil, err
@@ -797,6 +799,7 @@ func (s *Service) Complete(ctx context.Context, input CompleteInput) (*commanddo
 		return nil, err
 	}
 	s.learnDuration(ctx, cmd)
+	s.observeEgressVerdict(ctx, cmd, proxypool.CompletedVerdict(cmd.Result))
 
 	return cmd, nil
 }
@@ -940,6 +943,13 @@ func (s *Service) Fail(ctx context.Context, input FailInput) (*commanddom.Comman
 			cmd.Status, cmd.SensorID, cmd.StartedAt, cmd.AcknowledgedAt = commanddom.CommandStatusPending, nil, nil, nil
 			cmd.DispatchAttempts++
 			return cmd, nil
+		}
+	}
+	// A job whose proxy pool carried nothing charges the path it was
+	// handed (egress.go); any other failure says nothing about the pool.
+	if class, _, _ := infraClassOf(input, msg); class != "" {
+		if v, ok := proxypool.FailedVerdict(string(class)); ok {
+			s.observeEgressVerdict(ctx, cmd, v)
 		}
 	}
 	// A failure that is not about the target (research/302): routed work

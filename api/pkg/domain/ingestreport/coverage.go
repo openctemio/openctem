@@ -31,6 +31,9 @@ type CoverageReport struct {
 	Header          json.RawMessage
 	SegmentOutcomes map[string]SegmentOutcome
 	TouchedAssetIDs []shared.ID
+	// Integrity is how the report proved it is complete
+	// (protov2.Integrity*).
+	Integrity string
 }
 
 // CoverageQuery selects the open, non-repository findings that a covered run

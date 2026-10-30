@@ -1221,7 +1221,7 @@ disabled sensor is refused on every v2 route.
 | `GET /hello` | Protocol, features, media types, encodings, digests and the limits the SDK sizes segments from. |
 | `PUT /results/{report_id}` | A whole report: segment 0 plus an implicit commit. |
 | `PUT /results/{report_id}/segments/{seq}` | One segment, `seq` 0–255, any order. |
-| `POST /results/{report_id}/commit` | `{"segment_count":n,"segment_digests":["sha-256=:…:",…]}`. |
+| `POST /results/{report_id}/commit` | `{"segment_count":n,"segment_digests":["sha-256=:…:",…]}`, plus the optional manifest `segments[]` (`seq`, decoded `sha256`, `bytes`, `assets`, `findings`), `totals` and `report_sha256` (RFC-026 §3.5a). |
 | `GET /results/{report_id}` | The status resource. |
 | `DELETE /results/{report_id}` | Abandon an uncommitted report (it becomes `expired`). |
 | `PUT/POST /commands/{command_id}/results/…` | The same, bound to a command this sensor claimed (open, or finished under 15 minutes ago). Its tool is the only tool the report may name. |
@@ -1269,7 +1269,17 @@ already admitted pass up to twice the limit), and at most 100,000
 assets and findings per report, reserved in one conditional `UPDATE` so
 parallel segments cannot overshoot (`413 report-too-large`). The commit
 must list exactly the received segments with their digests
-(`409 segment-set-mismatch`). Stored: one `ingest_reports` row per report
+(`409 segment-set-mismatch`); when it carries the manifest (hello feature
+`results_manifest`), every segment's decoded hash and size, the counts and
+the report hash must match what the server stored, or the report stays
+uncommitted (`409 segment-set-mismatch` naming `hash_mismatch`,
+`size_mismatch`, `count_mismatch` or `report_hash_mismatch`). The report
+records its integrity: `single` (one segment), `manifest` (verified) or
+`digest_only` (segmented, no manifest: never proof for coverage
+auto-close), and `content_sha256`, one hash for its content. `GET
+/results/{report_id}` of an uncommitted report lists the held segment
+numbers (`segments.held`) so a sensor resuming an upload sends only the
+missing ones. Stored: one `ingest_reports` row per report
 with the server-stamped provenance (tenant from the key, sensor, command,
 zone from the command, protocol, media type, user agent, receive time), and
 one RFC-005 `ingest_jobs` row per segment plus one for the commit.
@@ -1347,8 +1357,10 @@ Each segment runs through the v1 pipeline with the v2 options:
   guard applies. `INGEST_COVERAGE_AUTO_RESOLVE` = `dry_run` (default: log,
   `findings_coverage_auto_resolve_total{mode,result}` and an
   `ingest.coverage_auto_resolve_dry_run` audit entry listing the findings, no
-  state change), `enforce` (closes them as `auto_fixed`, `fixed` / `covered_scan`,
-  audited as `ingest.coverage_auto_resolved`) or `off`.
+  state change), `enforce` or its alias `tenant` (applies each organization's
+  [closing mode](finding-verification-plan.md#closing-mode): closes the findings
+  the tier rule allows as `auto_fixed`, `fixed` / `covered_scan`, audited as
+  `ingest.coverage_auto_resolved`, and records the rest as proposals) or `off`.
 - An uncommitted report expires 60 minutes after its last segment; its
   upserts stay and it never resolves anything. A segment's outcome is stored
   under its number, so a retried segment is never counted twice. Payloads
@@ -1419,7 +1431,7 @@ compose and single-replica installs do.
 | `SENSOR_PROTOCOL_V2_RESULTS` | `true` | Mount `/api/v2/sensor`, process v2 jobs, advertise on the heartbeat. `false` unmounts it; v2 jobs already queued wait until it is on again. |
 | `SENSOR_V2_BLINDING_RATIO` | `0.5` | Blinding guard ratio. |
 | `SENSOR_V2_BLINDING_MIN_FINDINGS` | `100` | Blinding guard floor. |
-| `INGEST_COVERAGE_AUTO_RESOLVE` | `dry_run` | Coverage-scoped auto-resolve of non-repository findings: `off`, `dry_run` or `enforce`. Keep `dry_run`: enforcement is postponed until the closure evaluator ships (decision D-22); this path cannot see template, port or authentication coverage. |
+| `INGEST_COVERAGE_AUTO_RESOLVE` | `dry_run` | Platform ceiling of coverage-scoped auto-resolve of non-repository findings: `off`, `dry_run` or `enforce` (alias `tenant`: each organization's closing mode decides). Keep `dry_run`: enforcement is postponed until the closure evaluator ships (decision D-22); this path cannot see template, port or authentication coverage. |
 | `INGEST_MAX_PENDING_PER_TENANT` | `100` | Queue depth per tenant. |
 
 Migrations 000237 (`ingest_reports`, v2 columns on `ingest_jobs`) and 000239

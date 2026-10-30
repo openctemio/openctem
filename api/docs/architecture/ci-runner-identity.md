@@ -307,7 +307,7 @@ A decision made on the platform holds on the next run of the same repository:
 
 - **Gate.** `cirun.Decision` leaves out of the verdict (counted as
   `accepted`) a finding marked false positive or duplicate, accepted until
-  its acceptance expires, or covered by an approved, unexpired suppression
+  its acceptance ends (an acceptance without an end is not honored), or covered by an approved, unexpired suppression
   rule. Rules are matched at evaluation time (`applyActiveRules`), so an
   exception approved after the finding was first seen (an `.openctem.yml`
   request) covers it; ingest only stamps findings created after approval. A

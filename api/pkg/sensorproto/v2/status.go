@@ -1,6 +1,7 @@
 package v2
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"time"
 )
@@ -101,6 +102,10 @@ type Counts struct {
 type SegmentCounts struct {
 	Received int  `json:"received"`
 	Expected *int `json:"expected,omitempty"`
+	// Held lists the segment numbers the server holds, on the status of an
+	// uncommitted report (GET), so a sensor resuming an upload sends only
+	// the missing ones.
+	Held []int `json:"held,omitempty"`
 }
 
 // Status is the report status resource (RFC-026 §3.7), the body of a 202, of
@@ -117,16 +122,68 @@ type Status struct {
 	AutoResolve     string        `json:"auto_resolve,omitempty"`
 	Errors          []ItemError   `json:"errors"`
 	ErrorsTruncated bool          `json:"errors_truncated"`
-	ReceivedAt      time.Time     `json:"received_at"`
-	UpdatedAt       time.Time     `json:"updated_at"`
+	// Integrity is how the committed report proved it is complete:
+	// "single", "manifest" or "digest_only" (Integrity* constants).
+	Integrity  string    `json:"integrity,omitempty"`
+	ReceivedAt time.Time `json:"received_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 // CommitRequest is the body of POST .../results/{report_id}/commit. The
 // digests are the canonical sha-256 Content-Digest member of each segment, in
 // segment order.
+//
+// The manifest fields are optional (older SDKs send only the first two).
+// When Segments is present, Totals and ReportSHA256 are required and every
+// value must match what the server stored, or the commit is refused with
+// segment-set-mismatch (RFC-026 §3.5a).
 type CommitRequest struct {
 	SegmentCount   int      `json:"segment_count"`
 	SegmentDigests []string `json:"segment_digests"`
+	// Segments describes each segment's decoded content, one entry per
+	// segment.
+	Segments []SegmentManifest `json:"segments,omitempty"`
+	// Totals are the assets and findings of the whole report.
+	Totals *Counts `json:"totals,omitempty"`
+	// ReportSHA256 is ReportRoot over the segments' SHA256, lower-case hex.
+	ReportSHA256 string `json:"report_sha256,omitempty"`
+}
+
+// HasManifest reports whether the commit carries the manifest.
+func (c CommitRequest) HasManifest() bool {
+	return len(c.Segments) > 0 || c.Totals != nil || c.ReportSHA256 != ""
+}
+
+// SegmentManifest is one segment of a commit manifest. SHA256 is over the
+// decoded bytes (after Content-Encoding is removed), lower-case hex: it is
+// independent of the coding the segment was sent in, unlike the
+// Content-Digest, which covers the bytes as sent and is checked before
+// decoding.
+type SegmentManifest struct {
+	Seq      int    `json:"seq"`
+	SHA256   string `json:"sha256"`
+	Bytes    int64  `json:"bytes"`
+	Assets   int    `json:"assets"`
+	Findings int    `json:"findings"`
+}
+
+// Report integrity levels (Status.Integrity).
+const (
+	IntegritySingle     = "single"
+	IntegrityManifest   = "manifest"
+	IntegrityDigestOnly = "digest_only"
+)
+
+// ReportRoot is the hash of a report's content: SHA-256 over the 32-byte
+// decoded SHA-256 of every segment, concatenated in segment order. Every
+// segment is verified on its own and the full list is present at commit, so
+// a plain hash list is enough (no tree).
+func ReportRoot(segmentSHA256 [][]byte) []byte {
+	h := sha256.New()
+	for _, s := range segmentSHA256 {
+		h.Write(s)
+	}
+	return h.Sum(nil)
 }
 
 // Limits are the server's ingest limits, published on hello so the SDK sizes
@@ -212,6 +269,10 @@ func DefaultLimits() Limits {
 const (
 	// FeatureResults: the results resource (RFC-026).
 	FeatureResults = "results"
+	// FeatureResultsManifest: the commit accepts the manifest (per-segment
+	// content hash, size and counts, totals and report hash) and the status
+	// of an uncommitted report lists the held segments (RFC-026 §3.5a).
+	FeatureResultsManifest = "results_manifest"
 	// FeatureHeartbeat: POST /heartbeat (RFC-029 §4.3).
 	FeatureHeartbeat = "heartbeat"
 	// FeatureCommands: GET /commands and the claim/start/complete/fail
@@ -361,7 +422,7 @@ type TransportV3 struct {
 // NewHello builds the hello document for the given limits. Results are always
 // listed; extra names the other features this server mounted.
 func NewHello(l Limits, extra ...string) Hello {
-	features := append([]string{FeatureResults}, extra...)
+	features := append([]string{FeatureResults, FeatureResultsManifest}, extra...)
 	return Hello{
 		Protocol:   ProtocolVersion,
 		Features:   features,

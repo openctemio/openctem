@@ -632,6 +632,34 @@ func (r *IngestJobRepository) V2SegmentDigests(ctx context.Context, reportRef sh
 	return out, nil
 }
 
+// V2SegmentContents returns the decoded SHA-256 and size of every segment of
+// a report. Read before the report is committed: payloads are emptied only
+// once it finished.
+func (r *IngestJobRepository) V2SegmentContents(ctx context.Context, reportRef shared.ID) (map[int]ingestjob.V2SegmentContent, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT segment_seq, payload_sha, octet_length(payload) FROM ingest_jobs
+		WHERE ingest_report_id = $1 AND segment_seq IS NOT NULL`, reportRef.String())
+	if err != nil {
+		return nil, fmt.Errorf("list v2 segment contents: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[int]ingestjob.V2SegmentContent{}
+	for rows.Next() {
+		var (
+			seq int
+			c   ingestjob.V2SegmentContent
+		)
+		if err := rows.Scan(&seq, &c.SHA256, &c.Bytes); err != nil {
+			return nil, fmt.Errorf("scan v2 segment content: %w", err)
+		}
+		out[seq] = c
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate v2 segment contents: %w", err)
+	}
+	return out, nil
+}
+
 // RequeueDeadV2 gives a report's dead jobs a fresh retry budget.
 func (r *IngestJobRepository) RequeueDeadV2(ctx context.Context, reportRef shared.ID) (int, error) {
 	res, err := r.db.ExecContext(ctx, `
