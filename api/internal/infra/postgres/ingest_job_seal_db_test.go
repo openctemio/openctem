@@ -170,7 +170,7 @@ func TestSensorV1Jobs_SealedThenEmptiedOnComplete(t *testing.T) {
 	if _, err := db.Exec(`UPDATE ingest_jobs SET status = 'processing', attempts = 1 WHERE id = $1`, ids[0].String()); err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.Complete(ctx, ids[0], 1, []byte(`{}`)); err != nil {
+	if err := repo.Complete(ctx, tenant, ids[0], 1, []byte(`{}`)); err != nil {
 		t.Fatal(err)
 	}
 	var n int
