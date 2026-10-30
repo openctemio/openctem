@@ -1366,6 +1366,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// backpressure that protects the DB pool under heavy ingest.
 	if svc.Ingest != nil && repos.IngestJob != nil {
 		jobs := ingest.NewJobProcessor(svc.Ingest)
+		// Queued sensor payloads (v1 jobs and v2 segments) are opened, and
+		// those still in plaintext sealed in place, with the CI upload sealer.
+		jobs.SetPayloadSealer(svc.IngestQueue.Sealer(), repos.IngestJob, log)
 		// Protocol v2 results jobs (RFC-026) run on the same queue whatever
 		// INGEST_MODE is, whenever v2 results are enabled.
 		if cfg.Ingest.V2Results && repos.IngestReport != nil {

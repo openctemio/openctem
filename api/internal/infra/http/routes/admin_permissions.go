@@ -211,7 +211,7 @@ var adminRoutePermissions = map[string]platformauthz.Permission{
 	"PUT /api/v1/admin/settings/ai/org-policy":                               platformauthz.SettingsAIWrite,
 	"PUT /api/v1/admin/settings/alerts/":                                     platformauthz.SettingsGeneralWrite,
 	"PUT /api/v1/admin/settings/captcha/":                                    platformauthz.SettingsGeneralWrite,
-	"PUT /api/v1/admin/settings/auth-mfa/":                                   platformauthz.SettingsGeneralWrite,
+	"PUT /api/v1/admin/settings/auth-mfa/":                                   platformauthz.SettingsMFAWrite,
 	"PUT /api/v1/admin/settings/console-mfa/":                                platformauthz.IdentityManage,
 	"PUT /api/v1/admin/settings/email/":                                      platformauthz.SettingsEmailWrite,
 	"PUT /api/v1/admin/settings/email-relay/":                                platformauthz.SettingsEmailWrite,

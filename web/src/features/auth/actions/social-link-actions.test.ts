@@ -18,7 +18,7 @@ vi.mock('@/lib/api/browser-context-headers', () => ({ browserContextHeaders: asy
 import { env } from '@/lib/env'
 import { bindingCookieName } from '@/features/auth/lib/browser-binding'
 
-import { completeLinkCallback, handleOAuthCallback, rememberLinkState } from './social-auth-actions'
+import { completeLinkCallback, handleOAuthCallback, startLinkAction } from './social-auth-actions'
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -77,20 +77,53 @@ describe('linking a provider to the signed-in account', () => {
   })
   afterEach(() => vi.unstubAllGlobals())
 
-  it('keeps the state, the browser binding and the link intent, for a known provider only', async () => {
-    expect(await rememberLinkState('google', 'st', 'bind')).toEqual({ success: true })
+  const started = {
+    authorization_url: 'https://idp.example/auth?state=st',
+    state: 'st',
+    browser_binding: 'bind',
+  }
+
+  it('starts on the server: the binding goes to an httpOnly cookie, never back to the page', async () => {
+    jar.set(env.auth.cookieName, 'access')
+    fetchMock.mockResolvedValue(json(started))
+    const r = await startLinkAction('google', { totp: '123456' })
+    expect(r).toEqual({ success: true, authorizationUrl: started.authorization_url })
+    expect(JSON.stringify(r)).not.toContain('bind')
     expect(jar.get('oauth_state')).toBe('st')
     expect(jar.get(bindingCookieName('oauth'))).toBe('bind')
     expect(jar.get('oauth_link_intent')).toBe('google')
-    jar.clear()
-    expect(await rememberLinkState('evil' as never, 'st', 'bind')).toEqual({ success: false })
-    expect(jar.size).toBe(0)
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(String(url)).toContain('/sign-in-method-links/google/start')
+    expect(init.headers.Authorization).toBe('Bearer access')
+    expect(JSON.parse(init.body)).toMatchObject({ step_up: { totp: '123456' } })
   })
 
-  it('refuses to start a link without a browser binding', async () => {
-    expect(await rememberLinkState('google', 'st', '')).toEqual({ success: false })
-    expect(await rememberLinkState('google', 'st', undefined as never)).toEqual({ success: false })
-    expect(jar.size).toBe(0)
+  it('keeps the typed step-up: no proof, no call', async () => {
+    jar.set(env.auth.cookieName, 'access')
+    const r = await startLinkAction('google', {} as never)
+    expect(r).toMatchObject({ success: false, code: 'LINK_PROOF_REQUIRED' })
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(jar.has(bindingCookieName('oauth'))).toBe(false)
+  })
+
+  it('a refused proof sets no cookie and passes the code and status on', async () => {
+    jar.set(env.auth.cookieName, 'access')
+    fetchMock.mockResolvedValue(json({ code: 'LINK_PROOF_FAILED', message: 'm' }, 403))
+    const r = await startLinkAction('github', { password: 'wrong' })
+    expect(r).toEqual({ success: false, code: 'LINK_PROOF_FAILED', status: 403 })
+    expect(jar.has('oauth_state')).toBe(false)
+    expect(jar.has(bindingCookieName('oauth'))).toBe(false)
+  })
+
+  it('refuses an unknown provider, a missing session and an answer without a binding', async () => {
+    expect(await startLinkAction('evil' as never, { totp: '1' })).toEqual({ success: false })
+    expect(await startLinkAction('google', { totp: '1' })).toMatchObject({
+      code: 'SESSION_EXPIRED',
+    })
+    jar.set(env.auth.cookieName, 'access')
+    fetchMock.mockResolvedValue(json({ ...started, browser_binding: '' }))
+    expect(await startLinkAction('google', { totp: '1' })).toEqual({ success: false })
+    expect(jar.size).toBe(1)
   })
 
   it('a callback in a browser without the binding never reaches the API', async () => {
