@@ -33,7 +33,7 @@ func completedRun(t *testing.T, sensorID, assetID shared.ID) *ingestreport.Comma
 	return &ingestreport.CommandCoverage{
 		CommandType: "scan", CommandStatus: "completed", Result: json.RawMessage(`{"exit_code":0}`),
 		ProfileID: "p-1",
-		Reports: []ingestreport.CoverageReport{{
+		Reports: []ingestreport.CoverageReport{{Integrity: protov2.IntegritySingle,
 			ReportID: "r-1", SensorID: sensorID, State: protov2.StateCompleted, ToolName: "nuclei",
 			Header:          coverageHeader(t, "nuclei", ctis.ReportMetadata{CoverageType: "full"}),
 			SegmentOutcomes: map[string]ingestreport.SegmentOutcome{"0": {AcceptedFindings: 3}},

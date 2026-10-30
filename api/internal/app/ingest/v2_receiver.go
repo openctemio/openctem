@@ -9,8 +9,10 @@ package ingest
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/ingestqueue"
@@ -276,7 +278,11 @@ func (v *V2Receiver) Put(ctx context.Context, t V2Target, seq int, whole bool, b
 	}
 
 	if whole {
-		if err := v.commit(ctx, rep, 1, true, now); err != nil {
+		// One segment is the whole report: complete by construction.
+		sum := sha256.Sum256(body.Decoded)
+		facts := ingestreport.CommitFacts{SegmentCount: 1, Implicit: true, Integrity: protov2.IntegritySingle,
+			ContentSHA256: protov2.ReportRoot([][]byte{sum[:]})}
+		if err := v.commit(ctx, rep, facts, now); err != nil {
 			return nil, err
 		}
 	}
@@ -415,7 +421,15 @@ func (v *V2Receiver) Commit(ctx context.Context, t V2Target, req protov2.CommitR
 	if !matches {
 		return nil, problem(protov2.ProblemSegmentSetMismatch)
 	}
-	if err := v.commit(ctx, rep, req.SegmentCount, false, now); err != nil {
+	contents, err := v.jobs.V2SegmentContents(ctx, rep.ID)
+	if err != nil {
+		return nil, err
+	}
+	facts, err := v.commitFacts(rep, req, contents)
+	if err != nil {
+		return nil, err
+	}
+	if err := v.commit(ctx, rep, facts, now); err != nil {
 		return nil, err
 	}
 	st, err := v.status(ctx, rep.ID, now)
@@ -425,8 +439,8 @@ func (v *V2Receiver) Commit(ctx context.Context, t V2Target, req protov2.CommitR
 	return &PutResult{Status: st, Created: true}, nil
 }
 
-func (v *V2Receiver) commit(ctx context.Context, rep *ingestreport.Report, count int, implicit bool, now time.Time) error {
-	ok, err := v.reports.Commit(ctx, rep.ID, count, implicit, now)
+func (v *V2Receiver) commit(ctx context.Context, rep *ingestreport.Report, facts ingestreport.CommitFacts, now time.Time) error {
+	ok, err := v.reports.Commit(ctx, rep.ID, facts, now)
 	if err != nil {
 		return err
 	}
@@ -486,7 +500,21 @@ func (v *V2Receiver) Status(ctx context.Context, t V2Target) (protov2.Status, er
 	if err != nil {
 		return protov2.Status{}, err
 	}
-	return rep.Status(v.now()), nil
+	st := rep.Status(v.now())
+	if !rep.Committed() && st.State == protov2.StateReceiving {
+		// The held segments, so a sensor resuming the upload sends only
+		// the missing ones.
+		digests, err := v.jobs.V2SegmentDigests(ctx, rep.ID)
+		if err != nil {
+			return protov2.Status{}, err
+		}
+		st.Segments.Held = make([]int, 0, len(digests))
+		for seq := range digests {
+			st.Segments.Held = append(st.Segments.Held, seq)
+		}
+		slices.Sort(st.Segments.Held)
+	}
+	return st, nil
 }
 
 // Abandon gives up an uncommitted segmented report (DELETE). Its upserts
