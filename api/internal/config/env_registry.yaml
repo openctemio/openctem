@@ -1313,6 +1313,12 @@ vars:
     type: int
     default: "100"
     description: "Unfinished ingest jobs per organization (CI uploads, imports, sensor report segments); a further upload gets `429` with a `Retry-After` computed from how fast the organization's jobs drain. A depth that cannot be read refuses the upload (`503`). `0` turns the check off."
+  - name: EVIDENCE_DAILY_CAP
+    component: api
+    group: "Ingest"
+    type: int
+    default: "0"
+    description: "New finding-evidence records an organization may store per 24 hours (retest and pentest evidence); records over the budget are dropped and a manual add is refused. `0` uses the built-in default."
   - name: INGEST_MAX_RUNNING_PER_TENANT
     component: api
     group: "Ingest"
