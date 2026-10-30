@@ -103,3 +103,31 @@ func TestV2ReadVerified_BudgetSharePerOwner(t *testing.T) {
 		t.Fatalf("a lone request over the share: %d %s", rec.Code, rec.Body.String())
 	}
 }
+
+// readCapped holds its chunks and the joined copy at once, so a compressed
+// request reserves its encoded size plus twice the decoded size it may reach.
+func TestDecodedWeight_TwoDecodedCopies(t *testing.T) {
+	old := V2DecodeBudgetBytes
+	t.Cleanup(func() { SetV2DecodeBudget(old) })
+	SetV2DecodeBudget(1 << 40)
+	limits := protov2.DefaultLimits()
+	limits.MaxCompressionRatio = 10
+	limits.MaxDecompressedBytes = 1 << 30
+
+	if got := decodedWeight(1000, "", limits); got != 1000 {
+		t.Fatalf("identity: %d, want 1000", got)
+	}
+	if got, want := decodedWeight(1000, "gzip", limits), int64(1000+2*10*1000); got != want {
+		t.Fatalf("gzip: %d, want %d", got, want)
+	}
+	// The absolute cap bounds the decoded part, still counted twice.
+	limits.MaxDecompressedBytes = 5000
+	if got, want := decodedWeight(1000, "gzip", limits), int64(1000+2*5000); got != want {
+		t.Fatalf("capped gzip: %d, want %d", got, want)
+	}
+	// Never past the whole budget, so one maximal request can run alone.
+	SetV2DecodeBudget(4000)
+	if got := decodedWeight(1000, "gzip", limits); got != 4000 {
+		t.Fatalf("budget clamp: %d, want 4000", got)
+	}
+}

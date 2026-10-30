@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -315,4 +317,112 @@ func joinIDs(ids []string) string {
 		out += id
 	}
 	return out
+}
+
+// A segment reserved after the commit, or a commit racing a late segment,
+// must never both succeed: the commit would otherwise freeze a segment set
+// that does not include the late segment (L1).
+func TestIngestReportRepository_CommitRacesLateSegment(t *testing.T) {
+	db, tenantID, sensorID := ingestReportFixture(t)
+	ctx := context.Background()
+	repo := NewIngestReportRepository(&DB{DB: db})
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	facts := ingestreport.CommitFacts{SegmentCount: 2, Integrity: protov2.IntegrityManifest}
+
+	// A closed report refuses a reservation outright.
+	closed := newTestReport(tenantID, sensorID, "0192a3b4-5c6d-7e8f-9a0b-000000000001", now)
+	if err := repo.Create(ctx, closed); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		if ok, err := repo.ReserveSegment(ctx, closed.ID, 0, 0, 100, 100, now.Add(time.Hour)); err != nil || !ok {
+			t.Fatalf("reserve: %v %v", ok, err)
+		}
+	}
+	if ok, err := repo.Commit(ctx, closed.ID, facts, now); err != nil || !ok {
+		t.Fatalf("commit: %v %v", ok, err)
+	}
+	if ok, err := repo.ReserveSegment(ctx, closed.ID, 0, 0, 100, 100, now.Add(time.Hour)); err != nil || ok {
+		t.Fatalf("reserve after commit: ok=%v err=%v, want refused", ok, err)
+	}
+	if got, _ := repo.GetByID(ctx, closed.ID); got.SegmentsReceived != 2 {
+		t.Fatalf("segments_received %d after a refused reserve, want 2", got.SegmentsReceived)
+	}
+
+	// A commit for a count that does not match what was reserved fails.
+	short := newTestReport(tenantID, sensorID, "0192a3b4-5c6d-7e8f-9a0b-000000000002", now)
+	if err := repo.Create(ctx, short); err != nil {
+		t.Fatal(err)
+	}
+	if ok, _ := repo.ReserveSegment(ctx, short.ID, 0, 0, 100, 100, now.Add(time.Hour)); !ok {
+		t.Fatal("reserve")
+	}
+	if ok, err := repo.Commit(ctx, short.ID, facts, now); err != nil || ok {
+		t.Fatalf("commit with 1 of 2 segments: ok=%v err=%v, want refused", ok, err)
+	}
+
+	// Races: reserve (the third segment) against commit of two.
+	for i := 0; i < 40; i++ {
+		rep := newTestReport(tenantID, sensorID, fmt.Sprintf("0192a3b4-5c6d-7e8f-9a0b-1%011x", i), now)
+		if err := repo.Create(ctx, rep); err != nil {
+			t.Fatal(err)
+		}
+		for s := 0; s < 2; s++ {
+			if ok, _ := repo.ReserveSegment(ctx, rep.ID, 0, 0, 100, 100, now.Add(time.Hour)); !ok {
+				t.Fatal("reserve")
+			}
+		}
+		var reserved, committed bool
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			reserved, _ = repo.ReserveSegment(ctx, rep.ID, 0, 0, 100, 100, now.Add(time.Hour))
+		}()
+		go func() {
+			defer wg.Done()
+			committed, _ = repo.Commit(ctx, rep.ID, facts, now)
+		}()
+		wg.Wait()
+		if reserved && committed {
+			t.Fatalf("iteration %d: a segment was reserved AND the commit of 2 succeeded", i)
+		}
+	}
+}
+
+// Finalize needs an outcome for every real segment (numbers below the
+// count); a stray outcome key past the count does not stand in for one.
+func TestIngestReportRepository_ClaimFinalizeCountsRealSegments(t *testing.T) {
+	db, tenantID, sensorID := ingestReportFixture(t)
+	ctx := context.Background()
+	repo := NewIngestReportRepository(&DB{DB: db})
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	rep := newTestReport(tenantID, sensorID, "0192a3b4-5c6d-7e8f-9a0b-000000000003", now)
+	if err := repo.Create(ctx, rep); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		if ok, _ := repo.ReserveSegment(ctx, rep.ID, 0, 0, 100, 100, now.Add(time.Hour)); !ok {
+			t.Fatal("reserve")
+		}
+	}
+	if ok, err := repo.Commit(ctx, rep.ID, ingestreport.CommitFacts{SegmentCount: 2, Integrity: protov2.IntegrityManifest}, now); err != nil || !ok {
+		t.Fatalf("commit: %v %v", ok, err)
+	}
+	o := ingestreport.SegmentOutcome{AcceptedFindings: 1}
+	// Outcomes for segment 0 and a stray segment 5: only one real segment done.
+	for _, seq := range []int{0, 5} {
+		if err := repo.RecordSegmentOutcome(ctx, rep.ID, seq, o, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, ok, err := repo.ClaimFinalize(ctx, rep.ID); ok || err != nil {
+		t.Fatalf("finalize claimed with segment 1 outstanding: %v %v", ok, err)
+	}
+	if err := repo.RecordSegmentOutcome(ctx, rep.ID, 1, o, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := repo.ClaimFinalize(ctx, rep.ID); !ok || err != nil {
+		t.Fatalf("finalize with every real segment done: %v %v", ok, err)
+	}
 }
