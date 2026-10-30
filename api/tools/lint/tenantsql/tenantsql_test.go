@@ -243,6 +243,19 @@ func TestTenantless(t *testing.T) {
 		{"INSERT INTO scans (id) VALUES ($1)", nil},     // not a by-id read/write
 		{"SELECT * FROM scans WHERE scan_id = $1", nil}, // a foreign key, not the pk
 		{"SELECT * FROM scans WHERE name = $1 AND id = $2", []string{"scans"}},
+
+		// A tenant predicate in a subquery does not protect the outer statement.
+		{"UPDATE scans SET name = $2 WHERE id = $1 AND EXISTS (SELECT 1 FROM assets WHERE tenant_id = $3)", []string{"scans"}},
+		{"DELETE FROM scans WHERE id = $1 AND owner_id IN (SELECT id FROM integrations WHERE tenant_id = $2)", []string{"scans"}},
+		{"WITH t AS (SELECT 1 FROM assets WHERE tenant_id = $2) UPDATE scans SET name = $3 WHERE id = $1", []string{"scans"}},
+		// The predicate in the statement's own WHERE counts, whatever the subqueries hold.
+		{"UPDATE scans SET name = $2 WHERE id = $1 AND tenant_id = $3 AND EXISTS (SELECT 1 FROM assets WHERE name = $4)", nil},
+		{"WITH t AS (SELECT 1 FROM assets WHERE name = $4) UPDATE scans SET name = $3 WHERE id = $1 AND tenant_id = $2", nil},
+		// A subquery that reads a tenant table by id needs its own predicate.
+		{"SELECT * FROM tools WHERE x IN (SELECT id FROM scans WHERE id = $1)", []string{"scans"}},
+		{"SELECT * FROM tools WHERE x IN (SELECT id FROM scans WHERE id = $1 AND tenant_id = $2)", nil},
+		// A parenthesis or keyword inside a string literal does not open a scope.
+		{"UPDATE scans SET name = '(select tenant_id = 1)' WHERE id = $1", []string{"scans"}},
 	}
 	for _, c := range cases {
 		got := tenantless(c.sql, tables)

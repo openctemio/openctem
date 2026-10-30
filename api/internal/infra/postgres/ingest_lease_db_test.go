@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // A worker writes the outcome only for the attempt it claimed and only while
@@ -28,11 +29,23 @@ func TestIngestLease_CompleteAndFailAreConditional_DB(t *testing.T) {
 	j := enqueueRouted(t, repo, tenant, "lease-a", ingestjob.LaneBulk, "")
 	attempt := processing(t, db, j.ID())
 
+	// Another tenant's id writes nothing, even with the right attempt.
+	other := shared.NewID()
+	if err := repo.Complete(ctx, other, j.ID(), attempt, []byte(`{}`)); !errors.Is(err, ingestjob.ErrLeaseLost) {
+		t.Fatalf("Complete with another tenant = %v, want ErrLeaseLost", err)
+	}
+	if err := repo.Fail(ctx, other, j.ID(), attempt, "x", "", time.Now(), true); !errors.Is(err, ingestjob.ErrLeaseLost) {
+		t.Fatalf("Fail with another tenant = %v, want ErrLeaseLost", err)
+	}
+	if status(j) != ingestjob.StatusProcessing {
+		t.Fatalf("status = %s after cross-tenant writes", status(j))
+	}
+
 	// The wrong attempt writes nothing.
-	if err := repo.Complete(ctx, j.ID(), attempt+1, []byte(`{}`)); !errors.Is(err, ingestjob.ErrLeaseLost) {
+	if err := repo.Complete(ctx, j.TenantID(), j.ID(), attempt+1, []byte(`{}`)); !errors.Is(err, ingestjob.ErrLeaseLost) {
 		t.Fatalf("Complete with another attempt = %v", err)
 	}
-	if err := repo.Fail(ctx, j.ID(), attempt+1, "x", "", time.Now(), false); !errors.Is(err, ingestjob.ErrLeaseLost) {
+	if err := repo.Fail(ctx, j.TenantID(), j.ID(), attempt+1, "x", "", time.Now(), false); !errors.Is(err, ingestjob.ErrLeaseLost) {
 		t.Fatalf("Fail with another attempt = %v", err)
 	}
 	if status(j) != ingestjob.StatusProcessing {
@@ -47,17 +60,17 @@ func TestIngestLease_CompleteAndFailAreConditional_DB(t *testing.T) {
 	if n, _, err := repo.ReleaseStale(ctx, 5*time.Minute); err != nil || n < 1 {
 		t.Fatalf("ReleaseStale = %d, %v", n, err)
 	}
-	if err := repo.Complete(ctx, j.ID(), attempt, []byte(`{}`)); !errors.Is(err, ingestjob.ErrLeaseLost) {
+	if err := repo.Complete(ctx, j.TenantID(), j.ID(), attempt, []byte(`{}`)); !errors.Is(err, ingestjob.ErrLeaseLost) {
 		t.Fatalf("Complete after release = %v", err)
 	}
 	if status(j) != ingestjob.StatusPending {
 		t.Fatalf("status = %s, want pending", status(j))
 	}
 	second := processing(t, db, j.ID())
-	if err := repo.Fail(ctx, j.ID(), attempt, "late", "", time.Now(), true); !errors.Is(err, ingestjob.ErrLeaseLost) {
+	if err := repo.Fail(ctx, j.TenantID(), j.ID(), attempt, "late", "", time.Now(), true); !errors.Is(err, ingestjob.ErrLeaseLost) {
 		t.Fatalf("Fail by the first attempt = %v", err)
 	}
-	if err := repo.Complete(ctx, j.ID(), second, []byte(`{}`)); err != nil {
+	if err := repo.Complete(ctx, j.TenantID(), j.ID(), second, []byte(`{}`)); err != nil {
 		t.Fatalf("Complete by the holder: %v", err)
 	}
 	if status(j) != ingestjob.StatusCompleted {
@@ -95,7 +108,7 @@ func TestIngestLease_RenewKeepsTheLease_DB(t *testing.T) {
 	if got.Status() != ingestjob.StatusProcessing {
 		t.Fatalf("a renewed job was released: %s", got.Status())
 	}
-	if err := repo.Complete(ctx, j.ID(), attempt, []byte(`{}`)); err != nil {
+	if err := repo.Complete(ctx, j.TenantID(), j.ID(), attempt, []byte(`{}`)); err != nil {
 		t.Fatal(err)
 	}
 	if err := repo.Renew(ctx, j.TenantID(), j.ID(), attempt); !errors.Is(err, ingestjob.ErrLeaseLost) {

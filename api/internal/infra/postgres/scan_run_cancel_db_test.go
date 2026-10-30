@@ -84,7 +84,7 @@ func (f *cancelFixture) commandState(t *testing.T, id shared.ID) (status string,
 
 func (f *cancelFixture) cancelRun(t *testing.T, run shared.ID) {
 	t.Helper()
-	if err := f.runs.UpdateStatus(f.ctx, run, scanrun.RunStatusCanceled, "Canceled by user"); err != nil {
+	if err := f.runs.UpdateStatus(f.ctx, f.tenant, run, scanrun.RunStatusCanceled, "Canceled by user"); err != nil {
 		t.Fatalf("cancel run: %v", err)
 	}
 }

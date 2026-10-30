@@ -112,7 +112,7 @@ func TestRemoveScanWorkflow_RefusedWhileARunIsActive(t *testing.T) {
 	if err != nil || wf.RetiredAt != nil {
 		t.Fatalf("workflow changed by a refused remove: %+v, %v", wf, err)
 	}
-	if err := NewScanRunRepository(&DB{DB: db}).UpdateStatus(ctx, f.run.ID, scanrun.RunStatusCanceled, ""); err != nil {
+	if err := NewScanRunRepository(&DB{DB: db}).UpdateStatus(ctx, f.tenant, f.run.ID, scanrun.RunStatusCanceled, ""); err != nil {
 		t.Fatal(err)
 	}
 	if retired, err := repo.Remove(ctx, f.tenant, f.template); err != nil || !retired {
