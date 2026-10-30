@@ -116,7 +116,7 @@ func (h *VulnerabilityHandler) ListClosureProposals(w http.ResponseWriter, r *ht
 
 // DecideClosureProposals handles POST /api/v1/findings/closure/proposals/decide.
 // @Summary      Confirm or dismiss Ready to close proposals
-// @Description  confirm closes each finding as fixed, verified by the proposal's method, after re-checking that it is still open and was not seen after the evidence; dismiss keeps it open with a reason. Up to 200 proposals; confirming more than one needs a recent re-authentication. Proposals outside the caller's data scope are skipped as not_found. Audited.
+// @Description  confirm closes each finding as fixed, verified by the proposal's method, after re-checking that it is still open and was not seen after the evidence; dismiss keeps it open with a reason. Up to 200 proposals; every confirm needs a recent re-authentication (403 STEP_UP_REQUIRED). Proposals outside the caller's data scope are skipped as not_found. Audited.
 // @Tags         Findings
 // @Accept       json
 // @Produce      json

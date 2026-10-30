@@ -297,7 +297,7 @@ func registerVulnerabilityRoutes(
 		// Reads and decisions run in the caller's data scope; confirming more
 		// than one proposal at once needs a recent re-authentication.
 		r.GET("/closure/proposals", h.ListClosureProposals, middleware.Require(permission.FindingsRead))
-		r.POST("/closure/proposals/decide", h.DecideClosureProposals, middleware.Require(permission.FindingsVerify), requireStepUpWhenBulkConfirm())
+		r.POST("/closure/proposals/decide", h.DecideClosureProposals, middleware.Require(permission.FindingsVerify), requireStepUpWhenConfirming())
 		r.GET("/closure/auto-closed", h.ListRecentlyAutoClosed, middleware.Require(permission.FindingsRead))
 
 		// Single finding operations

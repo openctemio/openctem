@@ -3,6 +3,7 @@ package ingest
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -48,6 +49,22 @@ func TestEvaluateCommandCoverage_RecordsProposals(t *testing.T) {
 		}
 		if len(out.Resolved) != 1 || out.Resolved[0] != medium || pr.canceled != 1 {
 			t.Fatalf("outcome %+v, sweeps %d", out, pr.canceled)
+		}
+	})
+	t.Run("evidence_at is the command's completion, not the write time", func(t *testing.T) {
+		svc, repo, _, _ := closureCase(t, fixedClosure{Mode: tenant.ClosingModeReview})
+		done := time.Now().UTC().Add(-10 * time.Minute).Truncate(time.Second)
+		repo.cov.CompletedAt = done
+		pr := &proposalRepo{coverageFindingRepo: repo}
+		svc.findingRepo = pr
+		_ = svc.EvaluateCommandCoverage(ctx, shared.NewID(), shared.NewID())
+		if len(pr.recorded) == 0 {
+			t.Fatal("nothing recorded")
+		}
+		for _, rec := range pr.recorded {
+			if !rec.EvidenceAt.Equal(done) {
+				t.Fatalf("EvidenceAt = %v, want completion %v", rec.EvidenceAt, done)
+			}
 		}
 	})
 	t.Run("held run: everything proposed, nothing closed", func(t *testing.T) {
