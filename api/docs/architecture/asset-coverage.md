@@ -144,6 +144,23 @@ still stops it at the claim-time check, and a scan a person starts is not
 batched. When the daily budget leaves fewer pairs than a task, a batch of
 that size is full.
 
+**Port depth.** The platform names the port set of every port scan: a
+coverage run of `scan.ports` (every 7 days per address, and at once for a
+new address or name) scans the top 1 000 ports
+(`stage.DefaultTopPorts`, `top_ports: 1000` in the job), never the
+sensor's own default of the top 100. The same default fills a workflow
+step or a scan of a port scan tool that names no ports (`ports` or
+`top_n`); a set list, `top-100` or `full` is kept. The whole range runs
+only when a scan sets it. The scope clamps still apply at claim: a job on
+names whose addresses are not in scope is cut to the web ports, one on
+unclassified assets to the low-impact list (`scope.LowImpactClamp`), and
+a port-limited program target refuses any top list. A top-1 000 scan
+removes an open port that the same source found with a shorter top list
+or with the old default (`ports:top-100`, `ports:default`), so a port
+that closed leaves the asset after the switch. Separate cadences per port
+depth (re-checking only the known open ports daily, the whole range on a
+slower cadence) need a depth column on the ledger and are not built yet.
+
 **Passive capabilities and zones.** A passive capability (`resolve.dns`,
 `lookup.rdap`, `lookup.asn`, `discover.subdomains`) sends no traffic to
 its target. For an organization with scan zones, its public names skip

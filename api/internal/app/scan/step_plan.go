@@ -302,6 +302,13 @@ func (t StepTool) CommandPayload(run *scanrun.Run, step *scanworkflow.Step, step
 	}
 	if t.Declared && t.HasStage {
 		payload[PayloadKeyCapability] = t.Stage.ID()
+		// A declared tool gets the platform's port set through the keys
+		// its descriptor maps, as a catalog tool does.
+		cfg, _ := payload[scanworkflow.PayloadKeyConfig].(map[string]any)
+		keyOf := func(p string) (string, bool) { k, ok := t.params[p]; return k, ok }
+		if c := stage.WithDefaultPortSet(t.Stage, keyOf, cfg); c != nil {
+			payload[scanworkflow.PayloadKeyConfig] = c
+		}
 	}
 	return payload, nil
 }
@@ -354,18 +361,27 @@ func StepCommandPayload(run *scanrun.Run, step *scanworkflow.Step, toolName, ste
 	if run.AssetID != nil {
 		payload["asset_id"] = run.AssetID.String()
 	}
+	// The platform decides the port set of a port scan that names none
+	// (stage.DefaultTopPorts), pinned tool or capability step alike.
+	stg, hasStage := stage.ForStep(toolName, step.Capabilities)
+	if hasStage {
+		if c := stg.DefaultPortSet(toolName, config); c != nil {
+			config = c
+			payload[scanworkflow.PayloadKeyConfig] = config
+		}
+	}
 	// A capability job (RFC-055): the sensor checks that the tool implements
 	// the capability, checks the output against its contract and stamps it
 	// in the provenance; the platform's grant check applies the
 	// capability's tier floor. The settings stay in config, mapped to the
 	// tool's keys as before, so an older sensor runs the step unchanged.
-	if st, ok := stage.ForStep(toolName, step.Capabilities); ok && stage.TakesCapabilityJobs(st, toolName) {
-		payload[PayloadKeyCapability] = st.ID()
+	if hasStage && stage.TakesCapabilityJobs(stg, toolName) {
+		payload[PayloadKeyCapability] = stg.ID()
 		// The platform decides how hosts are probed: a host discovery step
 		// that names no ports probes the platform's set, never a default
 		// a sensor picks.
-		if st.Key == stage.DiscoverHosts {
-			if key, ok := st.ToolParamKey(toolName, "ports"); ok {
+		if stg.Key == stage.DiscoverHosts {
+			if key, ok := stg.ToolParamKey(toolName, "ports"); ok {
 				if config == nil {
 					config = map[string]any{}
 				}

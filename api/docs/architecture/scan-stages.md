@@ -306,6 +306,12 @@ workflow preview). Every step reacts to it:
   scan runs at Passive depth". Independent of intensity.
 - A step's **run policy** (`scan_workflow_steps.run_policy`) may set
   `min_depth`: below it the step is skipped with the reason.
+- **Port set.** A port scan step (`scan.ports`) whose config, after its
+  depth's params, names no ports (`ports` or `top_n`) gets the platform's
+  set, the top 1 000 ports (`stage.DefaultTopPorts`), mapped to the tool's
+  key (a declared tool through its descriptor's params). The sensor's own
+  default (the top 100) is never relied on. A single-tool port scan, and
+  every coverage run, gets the same default. `full` runs only when set.
 - `depths.<depth>.params` are standard params of the step's capability,
   merged over its config at dispatch, before the tool is resolved (a tool
   that does not take a param is not eligible, as for config). Checked on
