@@ -1885,9 +1885,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Finding evidence (docs/architecture/finding-evidence.md): secret values
 	// are sealed with the platform key (re-keyed by cmd/rekey).
 	s.Evidence = evidenceapp.NewService(repos.FindingEvidence, s.Encryptor, s.Tenant, repos.FindingActivity, s.Audit, log)
+	s.Evidence.SetDailyCap(cfg.Ingest.EvidenceDailyCap) // 0 = built-in per-tenant default
 	s.Retest.SetEvidenceStore(s.Evidence)
 	if s.Pentest != nil {
-		s.Pentest.SetEvidenceState(s.Evidence) // a write-up records the evidence version it was written against
+		s.Pentest.SetEvidenceState(s.Evidence)       // a write-up records the evidence version it was written against
+		s.Pentest.SetManualEvidenceStore(s.Evidence) // recorded request/responses: masked, secrets encrypted
 	}
 	// The finding verification plan asks the retest service whether a
 	// retest would run and why not.
