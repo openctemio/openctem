@@ -234,6 +234,9 @@ widget has `widget_type` `metric` or `note` and a `config` of this form
   | `attack_paths.to_crown_jewels` | paths (reachable crown jewels) | none | attack-path scoring + `assets` |
   | `exposure.flow` | flow (sources, funnel, classes, stages, outcomes) | none | F1 + `findings` + receipts, see "Exposure flow and intake" |
   | `ingest.intake` | intake (receipts per source, noise, health) | none | `ingest_receipts`, see "Exposure flow and intake" |
+  | `surface.new_assets` | category: assets added in the window by asset type, with the previous window | none | `assets`, see "Attack surface and accepted risk" |
+  | `certificates.expiry` | category: certificates expired, or expiring within 7, 8-30 and 31-90 days | none | `assets` |
+  | `exceptions.expiring` | category: accepted findings whose acceptance ends within 7, 8-30 days or later | none | `findings` |
 
 - **Shapes and visualizations.** scalar: stat, progress; ratio: progress,
   stat; duration: stat; category: bar, column, table, donut, stat; time
@@ -489,6 +492,42 @@ Tests: `widgets/levers_test.go` (ranking, exact effects, every read uses the
 server-built scope, masking), `postgres/dashboard_levers_db_test.go` (TopFix:
 data scope, no-scope member, pentest exclusion, dismissed suggestions, cross
 tenant).
+
+### Attack surface and accepted risk
+
+Three breakdown metrics (kind `breakdown`, shape `category`, default
+visualization `bar`) answer "what changed on our attack surface", "which
+certificates need renewing" and "which accepted risks come back soon". Like
+every widget they are computed by the refresher into the snapshot, read
+through `FactReader` with the scope the server built for the read
+(`assetWhere` / `findingWhere`: tenant first, deleted and program-only assets
+left out, the data scope, the campaign rule), and each row carries the list
+it counts. Code: `internal/app/dashboard/widgets/surface.go`,
+`internal/infra/postgres/dashboard_surface_repository.go`.
+
+| Metric | Rows | A row opens | Not measured |
+|---|---|---|---|
+| `surface.new_assets` (timed, previous period allowed) | one per asset type with an asset added (`created_at`) since the window's first day; with a comparison, also types that had additions only in the previous window (no link) | `/assets?types=<type>&first_seen_after=<first day>&program_assets=exclude` | never; nothing added is the empty state |
+| `certificates.expiry` (current) | `expired` (expiry before now), `within_7d`, `within_30d` (after 7 days, before 30), `within_90d` (after 30, before 90); the expiry is the asset list's expiry expression | `/assets?types=certificate&expires_after=...&expires_before=...&program_assets=exclude` (strict bounds, the list's own comparisons) | `no_certificates`: no certificate in scope, never "0 expiring" |
+| `exceptions.expiring` (current) | `within_7d` (ends at or before now + 7 days), `within_30d` (after 7, at or before 30), `later`; every acceptance ends (the database caps it), so the bands cover all accepted findings | `/findings?status=accepted&acceptance_expires_at_lte=P7D` (and `_gt` / `_lte` for the others) | never; no accepted risk is the empty state |
+
+- An empty band has no link. The band bounds are taken at the snapshot time;
+  a relative findings filter (`P7D`) is evaluated when the list opens, so a
+  band equals its list up to the refresh interval.
+- Permissions on a personal read: `assets:read` for `surface.new_assets` and
+  `certificates.expiry`, `findings:read` for `exceptions.expiring`; without
+  it the widget is `unsupported` with reason `forbidden` and no figure, also
+  from a stored snapshot.
+- Threat model: the rows name asset types and fixed band keys only, never an
+  asset or a finding; the counts follow the read's scope, so a scoped member
+  never learns how many assets or acceptances exist outside it, and another
+  tenant's rows never count (every statement starts with `tenant_id = $1`).
+- Tests: `widgets/surface_test.go` (rows, bands, links, not measured, every
+  read uses the server-built scope, permission masking),
+  `routes/dashboard_surface_widgets_db_test.go` (a scoped member, a member
+  without scope rows and an administrator: assets and findings outside the
+  scope, program-only certificates and another tenant's rows never count or
+  show; every band equals the asset or findings list it opens).
 
 ### Scope and isolation
 
