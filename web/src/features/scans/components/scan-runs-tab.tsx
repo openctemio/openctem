@@ -68,7 +68,7 @@ import {
   RUN_SORT_FIELDS,
   SCAN_PAGE_SIZES,
 } from '@/features/scans/lib/scans-url'
-import { RunDetailSheet } from './run-detail-sheet'
+import { LazyRunDetailSheet } from './lazy-dialogs'
 import { Download, Loader2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { exportToCsv } from '@/hooks/use-csv-export'
@@ -594,7 +594,7 @@ function ScanRunsTable() {
         emptyMessage={emptyIsFiltered ? t('scans.runs.emptyFiltered') : t('scans.runs.empty')}
         emptyDescription={emptyIsFiltered ? t('scans.runs.tryOther') : t('scans.runs.emptyHint')}
       />
-      <RunDetailSheet runId={openRunId} onOpenChange={(o) => !o && closeRun()} />
+      <LazyRunDetailSheet runId={openRunId} onOpenChange={(o) => !o && closeRun()} />
     </>
   )
 }
