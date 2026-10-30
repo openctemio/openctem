@@ -154,6 +154,7 @@ func (s *Service) planStage(ctx context.Context, run *scanrun.Run, step *scanwor
 	}
 
 	outputs = canonicalWebInputs(st, outputs, plan.Skipped)
+	outputs = s.namedPortOutputs(ctx, run.TenantID, st, outputs, parents)
 	cands, inputs := deriveCandidates(st, outputs, parents, stageOf, seen, plan.Skipped, len(seedList), stepTargetCap(run, step))
 	if cands, err = s.expandEndpoints(ctx, run, st, step, cands, plan.Skipped); err != nil {
 		return nil, err
@@ -318,8 +319,12 @@ type hopCandidate struct {
 }
 
 func (c hopCandidate) row(decision, reason string) scanrun.RunTarget {
-	id := c.assetID
-	return scanrun.RunTarget{TargetKey: c.key, AssetID: &id, Origin: scanrun.TargetOriginDerived,
+	var assetID *shared.ID
+	if !c.assetID.IsZero() {
+		id := c.assetID
+		assetID = &id
+	}
+	return scanrun.RunTarget{TargetKey: c.key, AssetID: assetID, Origin: scanrun.TargetOriginDerived,
 		ParentAssetID: c.parentAsset, ParentStageKey: c.parentStage, Relation: c.relation,
 		Hop: c.hop, Decision: decision, Reason: reason}
 }
@@ -420,6 +425,11 @@ func (s *Service) gateCandidates(ctx context.Context, run *scanrun.Run, st stage
 	for _, c := range cands.gate {
 		byKey[c.key] = c
 		in.Targets = append(in.Targets, c.key)
+		if c.assetID.IsZero() {
+			// A named open port (hop_named_ports.go) names no asset: it is
+			// checked by name, as a seed is.
+			continue
+		}
 		in.Assets[c.key] = scanapp.DispatchAsset{IDs: []string{c.assetID.String()}}
 	}
 	d, err := s.targetGate.ResolveDispatchTargets(ctx, in)

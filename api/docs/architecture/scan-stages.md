@@ -574,6 +574,17 @@ what makes chained outputs trustworthy.
   that declares open ports. Dropped outputs count as `covered_by_origin`.
   Without any origin among the outputs (a chain with no HTTP probe), the
   open ports stay.
+- **Open ports by name.** A port scan of a host name reports its open
+  ports on the addresses (`<address>:<port>`), but a virtual host, a CDN or
+  a load balancer routes by name (TLS SNI, the Host header). The HTTP probe
+  after a port scan therefore also gets `<name>:<port>` for each open port
+  on an address that a name the port scan planned resolves to
+  (`resolves_to` in the inventory, read for the run's tenant). Only names
+  the predecessor planned are used, never a new one; each `<name>:<port>`
+  goes through the per-hop gate checked by name (no asset), and the sensor
+  checks every address the name resolves to. A failed relation read leaves
+  the address forms only. Web consumers (`vuln.templates`) are not fed this
+  way: they take the origins the probe found.
 - **The per-hop gate.** Each candidate: the stage takes its stored pair; the
   name parses strictly (host, IP, host:port or an http(s) URL without
   credentials; no control or bidi characters; at most 2 048 characters);
