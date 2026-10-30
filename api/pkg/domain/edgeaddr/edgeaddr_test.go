@@ -130,3 +130,50 @@ func TestName(t *testing.T) {
 		}
 	}
 }
+
+// SharedFrontEnd answers true only for a published shared range: a CDN
+// record or a network holder's name is no proof, and a published dedicated
+// range overlapping a shared one wins (fail closed).
+func TestSharedFrontEnd(t *testing.T) {
+	c := Default()
+	for _, tc := range []struct {
+		addr string
+		want bool
+	}{
+		{"104.16.1.1", true},
+		{"[2606:4700::1]", true},
+		{"::ffff:151.101.1.1", true},
+		{"203.0.113.7", false},
+		{"23.192.0.1", false}, // an Akamai address: no published range in the dataset
+		{"not-an-ip", false},
+		{"", false},
+		{"fe80::1%eth0", false},
+	} {
+		if _, got := c.SharedFrontEnd(tc.addr); got != tc.want {
+			t.Errorf("SharedFrontEnd(%q) = %v, want %v", tc.addr, got, tc.want)
+		}
+	}
+	mixed, err := New(Dataset{Ranges: []RangeEntry{
+		{Provider: "CDN", Class: Edge, Prefixes: []string{"192.0.2.0/24"}},
+		{Provider: "Host", Class: Dedicated, Prefixes: []string{"192.0.2.128/25"}},
+		{Provider: "Pages", Class: SaaSHosting, Prefixes: []string{"198.51.100.0/24"}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r, ok := mixed.SharedFrontEnd("192.0.2.5"); !ok || r.Provider != "CDN" {
+		t.Fatalf("shared range: %+v %v", r, ok)
+	}
+	if _, ok := mixed.SharedFrontEnd("192.0.2.200"); ok {
+		t.Fatal("a dedicated range overlapping a shared one must win")
+	}
+	if r, ok := mixed.SharedFrontEnd("198.51.100.1"); !ok || r.Class != SaaSHosting {
+		t.Fatalf("hosting range: %+v %v", r, ok)
+	}
+	if n := len(mixed.SharedFrontEndPrefixes()); n != 2 {
+		t.Fatalf("shared prefixes = %d", n)
+	}
+	if d := mixed.DedicatedPrefixes(); len(d) != 1 || d[0] != netip.MustParsePrefix("192.0.2.128/25") {
+		t.Fatalf("dedicated prefixes = %v", d)
+	}
+}
