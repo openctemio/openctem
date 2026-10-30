@@ -79,7 +79,7 @@ func TestClosureSettings_LooseningNeedsStepUpAndIsAuditedHigh(t *testing.T) {
 	cs, err := svc.UpdateClosureSettings(ctx, id, tenant.ClosureSettings{Mode: tenant.ClosingModeAuto}, actx)
 	// The loosening waits 24 hours: off stays in force, auto is pending.
 	if err != nil || cs.EffectiveMode() != tenant.ClosingModeOff || cs.PendingMode != tenant.ClosingModeAuto ||
-		cs.PendingAt == nil || cs.PendingAt.Sub(time.Now()) < 23*time.Hour {
+		cs.PendingAt == nil || time.Until(*cs.PendingAt) < 23*time.Hour {
 		t.Fatalf("loosen inside the window: %+v, %v", cs, err)
 	}
 	if got, _ := svc.GetClosureSettings(ctx, id); got.EffectiveMode() != tenant.ClosingModeOff || got.PendingMode != tenant.ClosingModeAuto {
