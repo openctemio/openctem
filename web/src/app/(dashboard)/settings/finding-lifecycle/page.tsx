@@ -1,6 +1,7 @@
 'use client'
 
 import { Main } from '@/components/layout'
+import { ClosingModeSection } from '@/features/closure-settings'
 import { FindingLifecycleSettings } from '@/features/findings/components/lifecycle/finding-lifecycle-settings'
 import { PageHeader, PageStack } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
@@ -18,6 +19,7 @@ export default function FindingLifecycleSettingsPage() {
             'Your own sub-statuses, moves and the requirements each move needs.'
           )}
         />
+        <ClosingModeSection />
         <FindingLifecycleSettings />
       </PageStack>
     </Main>
