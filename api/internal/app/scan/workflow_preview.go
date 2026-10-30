@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	tooldom "github.com/openctemio/openctem/api/internal/app/tool"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -135,6 +136,7 @@ func (s *Service) PreviewWorkflow(ctx context.Context, in WorkflowPreviewInput) 
 	if err != nil {
 		return nil, err
 	}
+	ctx = tooldom.WithAvailabilityMemo(ctx) // one tenant view for every step
 	for _, step := range tpl.Steps {
 		node := s.previewStepAtDepth(ctx, tenantID, zoneID, step, depth)
 		if node.Blocking != nil {
