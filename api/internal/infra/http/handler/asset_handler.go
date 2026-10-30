@@ -318,6 +318,11 @@ type AssetResponse struct {
 	// Triage: attribution and what an active scan would do now; only with
 	// ?with_triage=true on the list.
 	Triage *AssetTriage `json:"triage,omitempty"`
+	// Edge: the asset is a CDN, edge, SaaS-hosting or cloud-shared address,
+	// or a name or service served through one (pkg/domain/edgeaddr). The
+	// platform labels it and never refuses to scan it by itself; the
+	// organization adds the address to out of scope. Absent otherwise.
+	Edge *EdgeLabel `json:"edge,omitempty"`
 	// Technologies detected on the asset: at most 20 on a list,
 	// every one on a single asset. Absent when none were detected.
 	Technologies          []AssetTechnologyBrief   `json:"technologies,omitempty"`
@@ -518,6 +523,7 @@ func toAssetResponse(a *asset.Asset) AssetResponse {
 	}
 	resp.RiskScoredAt = a.RiskScoredAt()
 	resp.RiskScorePending = a.RiskScorePending()
+	resp.Edge = assetEdgeLabel(a)
 
 	// Include finding severity breakdown if available
 	if counts := a.FindingSeverityCounts(); counts != nil {

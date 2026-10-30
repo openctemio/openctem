@@ -31,7 +31,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { PasswordInput } from '@/components/password-input'
 import { IconGoogle, IconGithub, IconMicrosoft } from '@/assets/brand-icons'
 
-import { validateRedirectUrl } from '@/lib/redirect'
+import { isHttpsUrl, validateRedirectUrl } from '@/lib/redirect'
 import { authErrorText } from '@/features/auth/lib/auth-error-codes'
 import { loginErrorMessage } from '@/features/auth/lib/login-error'
 import { ResendVerification } from './resend-verification'
@@ -310,8 +310,10 @@ export function LoginForm({
   async function handleSocialLogin(provider: SocialProvider) {
     setLoadingProvider(provider)
     try {
-      // This will redirect to the OAuth provider
-      await initiateSocialLogin(provider, safeRedirectTo)
+      const res = await initiateSocialLogin(provider, safeRedirectTo)
+      if (!res.ok || !isHttpsUrl(res.url)) throw new Error('start_failed')
+      // Keep the loading state: the page is leaving for the provider.
+      window.location.assign(res.url)
     } catch (error) {
       setLoadingProvider(null)
       console.error(`Social login error (${provider}):`, error)
@@ -330,7 +332,9 @@ export function LoginForm({
     if (!ssoOrg) return
     setLoadingSSOProvider(provider)
     try {
-      await initiateSSOLogin(provider, ssoOrg, safeRedirectTo, reauth)
+      const res = await initiateSSOLogin(provider, ssoOrg, safeRedirectTo, reauth)
+      if (!res.ok || !isHttpsUrl(res.url)) throw new Error('start_failed')
+      window.location.assign(res.url)
     } catch (error) {
       setLoadingSSOProvider(null)
       console.error(`SSO login error (${provider}):`, error)
