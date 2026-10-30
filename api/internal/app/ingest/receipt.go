@@ -143,6 +143,9 @@ func (s *Service) recordCoverageReceipt(ctx context.Context, tenantID, commandID
 		note = "held"
 	case out.Mode == CoverageAutoResolveDryRun:
 		note = "dry_run"
+	case len(out.Proposed) > 0:
+		// The closing mode or the tier rule sent findings to a person.
+		note = "review"
 	}
 	cmd := commandID
 	d := &ingestreceipt.Delta{

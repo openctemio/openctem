@@ -17,8 +17,10 @@ package ingest
 // AND every report filed under it is completed — so it is evaluated from both
 // ends (command completion, report finalize); whichever comes second decides.
 //
-// Mode (INGEST_COVERAGE_AUTO_RESOLVE): off, dry_run (the default: log, metric
-// and a "would resolve" audit entry, no state change) or enforce.
+// Mode (INGEST_COVERAGE_AUTO_RESOLVE) is the platform ceiling: off, dry_run
+// (the default: log, metric and a "would resolve" audit entry, no state
+// change) or enforce (alias tenant): act per the organization's closing mode
+// and the tier rule (closure_mode.go).
 
 import (
 	"context"
@@ -45,14 +47,15 @@ const (
 	CoverageAutoResolveEnforce CoverageAutoResolveMode = "enforce"
 )
 
-// ParseCoverageAutoResolveMode reads the configured mode. Anything that is not
-// "off" or "enforce" is dry_run: an unknown value must never start closing
+// ParseCoverageAutoResolveMode reads the configured mode. "tenant" is an
+// alias of "enforce" (follow the organization's closing mode). Anything else
+// that is not "off" is dry_run: an unknown value must never start closing
 // findings.
 func ParseCoverageAutoResolveMode(v string) CoverageAutoResolveMode {
 	switch CoverageAutoResolveMode(strings.ToLower(strings.TrimSpace(v))) {
 	case CoverageAutoResolveOff:
 		return CoverageAutoResolveOff
-	case CoverageAutoResolveEnforce:
+	case CoverageAutoResolveEnforce, "tenant":
 		return CoverageAutoResolveEnforce
 	default:
 		return CoverageAutoResolveDryRun
@@ -313,7 +316,10 @@ type CoverageOutcome struct {
 	// marked stale (NotObserved, observation_state) in enforce mode.
 	TemplateDrift []shared.ID
 	NotObserved   []shared.ID
-	Held          bool
+	// Proposed are the candidates the organization's closing mode and the
+	// tier rule send to a person instead of closing (enforce only).
+	Proposed []shared.ID
+	Held     bool
 }
 
 // templateDriftRepo is implemented by the postgres finding repository.
@@ -520,6 +526,12 @@ func (s *Service) EvaluateCommandCoverage(ctx context.Context, tenantID, command
 				}
 			}
 		}
+		// The organization's closing mode and the tier rule decide per
+		// finding: close, propose to a person, or keep.
+		stale, out.Proposed, _ = s.splitByClosureDecision(ctx, tenantID, stale)
+		if len(out.Proposed) > 0 {
+			metrics.FindingsCoverageAutoResolve.WithLabelValues(string(mode), "proposed").Add(float64(len(out.Proposed)))
+		}
 		resolved, err := repo.ResolveCoverageStale(ctx, tenantID, stale)
 		if err != nil {
 			s.logger.Warn("coverage auto-resolve failed", append(logArgs, "error", err)...)
@@ -527,7 +539,7 @@ func (s *Service) EvaluateCommandCoverage(ctx context.Context, tenantID, command
 		}
 		out.Resolved = resolved
 		metrics.FindingsCoverageAutoResolve.WithLabelValues(string(mode), "resolved").Add(float64(len(resolved)))
-		s.logger.Info("coverage auto-resolve: resolved findings", append(logArgs, "resolved", len(resolved))...)
+		s.logger.Info("coverage auto-resolve: resolved findings", append(logArgs, "resolved", len(resolved), "proposed", len(out.Proposed))...)
 	}
 	s.auditCoverageAutoResolve(ctx, tenantID, commandID, d.query, out, open)
 	s.recordCoverageReceipt(ctx, tenantID, commandID, d.query, out, false)
@@ -651,10 +663,24 @@ func (s *Service) auditCoverageAutoResolve(ctx context.Context, tenantID, comman
 	}
 	action := audit.ActionIngestCoverageAutoResolved
 	ids := out.Resolved
-	if out.Mode != CoverageAutoResolveEnforce || out.Held {
+	decision := "resolved"
+	switch {
+	case out.Mode != CoverageAutoResolveEnforce || out.Held:
 		action = audit.ActionIngestCoverageAutoResolveDryRun
 		ids = out.WouldResolve
+		decision = "dry_run"
+	case len(out.Proposed) > 0:
+		// The proposals are recorded like a dry run, in their own entry.
+		s.writeCoverageAudit(ctx, tenantID, commandID, q, out, open, audit.ActionIngestCoverageAutoResolveDryRun, out.Proposed, "review")
+		if len(ids) == 0 {
+			return
+		}
 	}
+	s.writeCoverageAudit(ctx, tenantID, commandID, q, out, open, action, ids, decision)
+}
+
+func (s *Service) writeCoverageAudit(ctx context.Context, tenantID, commandID shared.ID, q ingestreport.CoverageQuery, out CoverageOutcome, open int,
+	action audit.Action, ids []shared.ID, decision string) {
 	listed := make([]string, 0, min(len(ids), maxAuditedFindingIDs))
 	for i, id := range ids {
 		if i == maxAuditedFindingIDs {
@@ -666,9 +692,9 @@ func (s *Service) auditCoverageAutoResolve(ctx context.Context, tenantID, comman
 	event.ResourceName = q.ToolName
 	event.Message = "coverage-scoped auto-resolve"
 	event.Metadata = map[string]any{
-		"mode": string(out.Mode), "held": out.Held, "tool_name": q.ToolName, "profile_id": q.ProfileID,
+		"mode": string(out.Mode), "decision": decision, "held": out.Held, "tool_name": q.ToolName, "profile_id": q.ProfileID,
 		"covered_assets": len(q.AssetIDs), "open": open, "count": len(ids),
-		"template_drift": len(out.TemplateDrift), "not_observed": len(out.NotObserved),
+		"template_drift": len(out.TemplateDrift), "not_observed": len(out.NotObserved), "proposed": len(out.Proposed),
 		"finding_ids": listed, "finding_ids_truncated": len(ids) > maxAuditedFindingIDs,
 	}
 	if err := s.writeIngestAuditLog(ctx, auditapp.AuditContext{TenantID: tenantID.String()}, event); err != nil {

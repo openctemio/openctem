@@ -121,6 +121,8 @@ type Service struct {
 	// dry_run.
 	coverageMode  CoverageAutoResolveMode
 	coverageGuard BlindingGuard
+	// closureSettings reads the organization's closing mode (closure_mode.go).
+	closureSettings ClosureSettingsReader
 
 	// commands binds reports to the commands they name; results holds the
 	// tenant policy for unsolicited reports and their quarantine (RFC-040
