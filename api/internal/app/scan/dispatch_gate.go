@@ -20,6 +20,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/actscope"
 	"github.com/openctemio/openctem/api/internal/app/scope"
+	"github.com/openctemio/openctem/api/internal/app/scopeauth"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
@@ -317,6 +318,10 @@ func (s *Service) ResolveDispatchTargets(ctx context.Context, in DispatchTargets
 		}
 	}
 
+	resolving, err := s.resolvingExclusionValues(ctx, in, ordered)
+	if err != nil {
+		return nil, err
+	}
 	candidates := make([]scope.ExclusionCandidate, 0, len(ordered))
 	byID := make(map[shared.ID]string, len(ordered))
 	for _, t := range ordered {
@@ -327,6 +332,11 @@ func (s *Service) ResolveDispatchTargets(ctx context.Context, in DispatchTargets
 				if v = strings.TrimSpace(v); v != "" && !strings.EqualFold(v, t) {
 					values = append(values, v)
 				}
+			}
+		}
+		for _, v := range resolving[t] {
+			if !slices.ContainsFunc(values, func(x string) bool { return strings.EqualFold(x, v) }) {
+				values = append(values, v)
 			}
 		}
 		candidates = append(candidates, scope.ExclusionCandidate{ID: id, Values: values})
@@ -842,4 +852,102 @@ func addrStrings(addrs []netip.Addr) []string {
 		out = append(out, a.String())
 	}
 	return out
+}
+
+// NameAddressReader maps names (lower-case) to the addresses the tenant's
+// asset of that name resolves to (*postgres.AttributionRepository).
+type NameAddressReader interface {
+	AddressesOf(ctx context.Context, tenantID shared.ID, names []string) (map[string][]string, error)
+}
+
+// WithNameAddresses wires the resolution relations the exclusion match
+// reads (resolvingExclusionValues). Without it, an exclusion of an address
+// does not reach the names that resolve to it on a path that does not fill
+// DispatchAsset.AlsoMatch itself.
+func WithNameAddresses(r NameAddressReader) ServiceOption {
+	return func(s *Service) { s.nameAddresses = r }
+}
+
+// maxExclusionAssetLookup bounds the ids of one asset lookup.
+const maxExclusionAssetLookup = 5000
+
+// resolvingExclusionValues are, per target, the extra values an exclusion is
+// tested against so that excluding a dedicated address stops the names that
+// resolve to it on every dispatch path, not only those that fill AlsoMatch:
+// for a hostname target (also the host of host:port and URL targets) the
+// addresses the tenant's inventory says the name resolves to; for an entry
+// naming inventory assets, what a probe of each asset reaches
+// (AssetTargetResolver). Shared front ends never propagate
+// (scope.PropagatingAddresses). Lookups are batched, tenant-scoped, and a
+// failed lookup is an error (fail closed). Unwired readers add nothing.
+func (s *Service) resolvingExclusionValues(ctx context.Context, in DispatchTargetsInput, targets []string) (map[string][]string, error) {
+	out := map[string][]string{}
+	if s.nameAddresses != nil {
+		hostOf := make(map[string]string, len(targets))
+		var hosts []string
+		seen := map[string]bool{}
+		for _, t := range targets {
+			h := scopeauth.Host(t)
+			if h == "" {
+				continue
+			}
+			hostOf[t] = h
+			if !seen[h] {
+				seen[h] = true
+				hosts = append(hosts, h)
+			}
+		}
+		if len(hosts) > 0 {
+			addrsOf, err := s.nameAddresses.AddressesOf(ctx, in.TenantID, hosts)
+			if err != nil {
+				return nil, fmt.Errorf("scope exclusion check failed, nothing dispatched: addresses behind names: %w", err)
+			}
+			for t, h := range hostOf {
+				if addrs := scope.PropagatingAddresses(addrsOf[h]); len(addrs) > 0 {
+					out[t] = append(out[t], addrs...)
+				}
+			}
+		}
+	}
+	resolver, ok := s.attributionGate.(AssetTargetResolver)
+	if !ok {
+		return out, nil
+	}
+	idsOf := map[string][]shared.ID{}
+	var all []shared.ID
+	dup := map[shared.ID]bool{}
+	for _, t := range targets {
+		a, ok := assetOf(in.Assets, t)
+		if !ok {
+			continue
+		}
+		for _, raw := range a.IDs {
+			id, err := shared.IDFromString(raw)
+			if err != nil || id.IsZero() {
+				continue // the ownership gate refuses a malformed id
+			}
+			idsOf[t] = append(idsOf[t], id)
+			if !dup[id] {
+				dup[id] = true
+				all = append(all, id)
+			}
+		}
+	}
+	named := map[shared.ID][]string{}
+	for i := 0; i < len(all); i += maxExclusionAssetLookup {
+		end := min(i+maxExclusionAssetLookup, len(all))
+		m, err := resolver.AssetTargets(ctx, in.TenantID, all[i:end])
+		if err != nil {
+			return nil, fmt.Errorf("scope exclusion check failed, nothing dispatched: asset values: %w", err)
+		}
+		for id, v := range m {
+			named[id] = v
+		}
+	}
+	for t, ids := range idsOf {
+		for _, id := range ids {
+			out[t] = append(out[t], named[id]...)
+		}
+	}
+	return out, nil
 }
