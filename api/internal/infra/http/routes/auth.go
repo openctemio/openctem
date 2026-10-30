@@ -329,7 +329,7 @@ func registerIdentityLinkRoutes(router Router, h *handler.OAuthHandler, authMidd
 	// happened counts).
 	router.Group("/api/v1/me/pending-sign-in-link", func(r Router) {
 		r.POST("/describe", h.DescribePendingLink, withCSRF(linkRL)...)
-		r.POST("/confirm", h.ConfirmPendingLink, withCSRF(linkRL, requireStepUp())...)
+		r.POST("/complete", h.ConfirmPendingLink, withCSRF(linkRL, requireStepUp())...)
 		r.POST("/cancel", h.CancelPendingLink, withCSRF(linkRL)...)
 	}, middlewares...)
 }

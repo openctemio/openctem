@@ -45,7 +45,7 @@ identity of that provider), the refusal leaves a pending link:
 4. In the app, the web server (forwarding the cookie) describes the pending link
    (`POST /api/v1/me/pending-sign-in-link/describe`) and asks "Link Google
    account x to your account?". "Link" confirms
-   (`POST /api/v1/me/pending-sign-in-link/confirm`), "Not now" drops it
+   (`POST /api/v1/me/pending-sign-in-link/complete`), "Not now" drops it
    (`POST /api/v1/me/pending-sign-in-link/cancel`); either way the cookie is
    deleted. The routes read the secret from the cookie only, never from the
    body or the URL.
@@ -62,7 +62,7 @@ identity of that provider), the refusal leaves a pending link:
 | Route | Gate |
 |---|---|
 | `POST /api/v1/me/pending-sign-in-link/describe` | signed in, CSRF, rate limit; the pending link must be this account's |
-| `POST /api/v1/me/pending-sign-in-link/confirm` | step-up (the sign-in that just happened counts), CSRF, rate limit; authenticated after the pending link |
+| `POST /api/v1/me/pending-sign-in-link/complete` | step-up (the sign-in that just happened counts), CSRF, rate limit; authenticated after the pending link |
 | `POST /api/v1/me/pending-sign-in-link/cancel` | signed in, CSRF, rate limit |
 
 Refusals: `404 PENDING_LINK_INVALID` (none for this account: expired, used,

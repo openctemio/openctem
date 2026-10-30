@@ -505,6 +505,12 @@ export type PendingLink = { provider: SocialProvider; email: string }
 /** The result of confirming a pending link: the API code on a refusal. */
 export type PendingLinkResult = { success: true } | { success: false; code?: string }
 
+const pendingLinkPath = {
+  describe: userEndpoints.pendingLinkDescribe,
+  confirm: userEndpoints.pendingLinkComplete,
+  cancel: userEndpoints.pendingLinkCancel,
+} as const
+
 async function pendingLinkCall<T>(
   action: 'describe' | 'confirm' | 'cancel'
 ): Promise<{ ok: true; data: T } | { ok: false; code?: string } | null> {
@@ -519,7 +525,7 @@ async function pendingLinkCall<T>(
   const accessToken = cookieStore.get(env.auth.cookieName)?.value
   if (!accessToken) return { ok: false, code: 'SESSION_EXPIRED' }
   try {
-    const url = `${env.api.url}${userEndpoints.pendingLink(action)}`
+    const url = `${env.api.url}${pendingLinkPath[action]()}`
     const response = await fetch(url, {
       method: 'POST',
       headers: {

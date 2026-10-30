@@ -122,7 +122,7 @@ var stepUpRoutes = []string{
 	// signed into.
 	"POST /api/v1/me/sign-in-method-links/google/start",
 	"DELETE /api/v1/me/sign-in-methods/{id}",
-	"POST /api/v1/me/pending-sign-in-link/confirm",
+	"POST /api/v1/me/pending-sign-in-link/complete",
 	"POST /api/v1/organization/leave",
 	"DELETE /api/v1/organization/members/{id}/mfa",
 	"POST /api/v1/organization/members/{id}/offboard",

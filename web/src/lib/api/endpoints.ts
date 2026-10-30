@@ -262,8 +262,9 @@ export const userEndpoints = {
    * in (describe, confirm with step-up, cancel). Called by server actions
    * with the HttpOnly pending-link cookie.
    */
-  pendingLink: (action: 'describe' | 'confirm' | 'cancel') =>
-    `/api/v1/me/pending-sign-in-link/${action}`,
+  pendingLinkDescribe: () => '/api/v1/me/pending-sign-in-link/describe',
+  pendingLinkComplete: () => '/api/v1/me/pending-sign-in-link/complete',
+  pendingLinkCancel: () => '/api/v1/me/pending-sign-in-link/cancel',
 
   // ============================================
   // USER MANAGEMENT (Admin)

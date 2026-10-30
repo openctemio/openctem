@@ -3,7 +3,7 @@
 - A Google, GitHub or Microsoft sign-in whose address belongs to an existing account no longer links to it automatically. Nothing on the account changes: the sign-in is refused with `409 OAUTH_ACCOUNT_EXISTS`. The person signs in to the account (password and second factor, or the method they used before) and the app asks "Link {provider} to your account?". They can also link the provider from Account > Security.
 - A confirmed link signs out the account's other sessions, is audited (`how=after_sign_in`) and e-mails the account's address.
 - The pending link's secret travels only in an HttpOnly, SameSite=Lax cookie (`__Host-oauth_pending_link` with Secure cookies), valid for 10 minutes and usable once. It is never in a response body or URL.
-- New routes: `POST /api/v1/me/pending-sign-in-link/{describe,confirm,cancel}`, all with the CSRF check. The confirm also needs a step-up and a session that signed in after the refused sign-in.
+- New routes: `POST /api/v1/me/pending-sign-in-link/{describe,complete,cancel}`, all with the CSRF check. The confirm also needs a step-up and a session that signed in after the refused sign-in.
 - Automatic linking (Console > Settings > Sign-up, "Link Google and Microsoft sign-in to existing accounts", `social_auto_link`) is now off by default. When turned on, it applies only to password accounts.
 - When a provider changes the address of an account it created, the new address counts as verified only where the provider is authoritative for it (Gmail, the address's own Workspace domain, or a Microsoft domain-owner-verified address).
 
