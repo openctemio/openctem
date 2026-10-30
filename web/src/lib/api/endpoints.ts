@@ -257,6 +257,14 @@ export const userEndpoints = {
   identityLinkCallback: (provider: string) =>
     `/api/v1/me/sign-in-method-links/${encodeURIComponent(provider)}/complete`,
   identity: (id: string) => `/api/v1/me/sign-in-methods/${encodeURIComponent(id)}`,
+  /**
+   * The pending link a refused social sign-in left, confirmed after signing
+   * in (describe, confirm with step-up, cancel). Called by server actions
+   * with the HttpOnly pending-link cookie.
+   */
+  pendingLinkDescribe: () => '/api/v1/me/pending-sign-in-link/describe',
+  pendingLinkComplete: () => '/api/v1/me/pending-sign-in-link/complete',
+  pendingLinkCancel: () => '/api/v1/me/pending-sign-in-link/cancel',
 
   // ============================================
   // USER MANAGEMENT (Admin)

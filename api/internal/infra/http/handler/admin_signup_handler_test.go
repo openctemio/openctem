@@ -128,7 +128,7 @@ func TestAdminSignupHandler(t *testing.T) {
 		})
 	}
 
-	// Social auto-link: on for a seeded policy, turned off by the console, and
+	// Social auto-link: off for a seeded policy, turned on by the console, and
 	// an update that omits it keeps the stored value.
 	t.Run("social auto-link", func(t *testing.T) {
 		h, svc := newHandler(nil)
@@ -139,18 +139,18 @@ func TestAdminSignupHandler(t *testing.T) {
 			_ = json.Unmarshal(rec.Body.Bytes(), &resp)
 			return resp
 		}
-		if !get().SocialAutoLink || !svc.Current(context.Background()).AutoLinkSocial() {
-			t.Fatal("a seeded policy must have social auto-link on")
+		if get().SocialAutoLink || svc.Current(context.Background()).AutoLinkSocial() {
+			t.Fatal("a seeded policy must have social auto-link off")
 		}
 		rec := httptest.NewRecorder()
-		h.Update(rec, signupRequest(t, http.MethodPut, map[string]any{"mode": "admin_only", "social_auto_link": false, "version": 1, "totp_code": "123456"}))
-		if rec.Code != http.StatusOK || get().SocialAutoLink || svc.Current(context.Background()).AutoLinkSocial() {
-			t.Fatalf("turning it off: %d %s", rec.Code, rec.Body.String())
+		h.Update(rec, signupRequest(t, http.MethodPut, map[string]any{"mode": "admin_only", "social_auto_link": true, "version": 1, "totp_code": "123456"}))
+		if rec.Code != http.StatusOK || !get().SocialAutoLink || !svc.Current(context.Background()).AutoLinkSocial() {
+			t.Fatalf("turning it on: %d %s", rec.Code, rec.Body.String())
 		}
 		rec = httptest.NewRecorder()
 		h.Update(rec, signupRequest(t, http.MethodPut, map[string]any{"mode": "admin_only", "request_access": true, "version": 2, "totp_code": "123456"}))
-		if rec.Code != http.StatusOK || get().SocialAutoLink {
-			t.Fatalf("an update without the field turned it back on: %d %s", rec.Code, rec.Body.String())
+		if rec.Code != http.StatusOK || !get().SocialAutoLink {
+			t.Fatalf("an update without the field turned it back off: %d %s", rec.Code, rec.Body.String())
 		}
 	})
 
