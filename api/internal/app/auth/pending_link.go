@@ -231,17 +231,20 @@ func (s *OAuthService) ConfirmPendingLink(ctx context.Context, in ConfirmPending
 	if !strings.EqualFold(strings.TrimSpace(u.Email()), rec.Email) {
 		return nil, ErrPendingLinkInvalid
 	}
+	// Whoever else held a session of the account loses it before the new
+	// sign-in method exists; the person who just signed in and confirmed keeps
+	// theirs. Fail closed: when the revoke fails nothing is linked, so a
+	// session an attacker may hold never outlives the change.
+	if s.sessions != nil {
+		if rerr := s.sessions.RevokeAllSessions(ctx, in.UserID, in.SessionID); rerr != nil {
+			s.logger.Error("pending link: revoking the account's other sessions failed; link refused", "user_id", in.UserID, "error", rerr)
+			return nil, fmt.Errorf("revoke other sessions before linking: %w", rerr)
+		}
+	}
 	info := &OAuthUserInfo{Email: rec.Email, Issuer: rec.Issuer, Subject: rec.Subject, LegacySubject: rec.LegacySubject}
 	m, err := s.linkIdentity(ctx, in.UserID, info, rec.Provider, linkHowAfterSignIn, factor)
 	if err != nil {
 		return nil, err
-	}
-	// Whoever else held a session of the account loses it; the person who
-	// just signed in and confirmed keeps theirs.
-	if s.sessions != nil {
-		if rerr := s.sessions.RevokeAllSessions(ctx, in.UserID, in.SessionID); rerr != nil {
-			s.logger.Error("pending link: revoking the account's other sessions failed", "user_id", in.UserID, "error", rerr)
-		}
 	}
 	return m, nil
 }

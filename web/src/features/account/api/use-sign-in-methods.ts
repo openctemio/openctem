@@ -3,19 +3,19 @@
  *
  * Linking and unlinking carry the proof typed in the confirm dialog (the
  * authenticator code, else the password; a recent sign-in does not count).
- * Linking then goes through the provider: the API returns the authorization URL, the state and
- * the one-time browser binding are kept in httpOnly cookies by a server action, and the browser goes to the
- * provider. The OAuth callback route finishes the link and comes back to
+ * Linking then goes through the provider: a server action starts the link with the API and keeps the
+ * state and the one-time browser binding in httpOnly cookies (the binding never reaches page
+ * JavaScript), and the browser goes to the provider. The OAuth callback route finishes the link and comes back to
  * Account > Security with the result.
  */
 
 import useSWR from 'swr'
 import { useCallback, useState } from 'react'
 
-import { del, get, post } from '@/lib/api/client'
+import { del, get } from '@/lib/api/client'
 import { userEndpoints } from '@/lib/api/endpoints'
 import {
-  rememberLinkState,
+  startLinkAction,
   type LinkProof,
   type LinkProofKind,
 } from '@/features/auth/actions/social-auth-actions'
@@ -50,19 +50,27 @@ export function useSignInMethods() {
   return { methods: data, isLoading, isError: !!error, mutate }
 }
 
+/** A refused link start, shaped like an API error so the dialog shows its message. */
+class LinkStartRefused extends Error {
+  constructor(
+    readonly code?: string,
+    readonly statusCode?: number
+  ) {
+    super('')
+    this.name = 'LinkStartRefused'
+  }
+}
+
 /** Starts linking a provider; resolves only on failure (the page navigates away). */
 export function useLinkProvider() {
   const [linking, setLinking] = useState<LinkProvider | null>(null)
   const link = useCallback(async (provider: LinkProvider, proof: LinkProof) => {
     setLinking(provider)
     try {
-      const res = await post<{ authorization_url: string; state: string; browser_binding: string }>(
-        userEndpoints.identityLink(provider),
-        { redirect_uri: `${window.location.origin}/auth/callback/${provider}`, step_up: proof }
-      )
-      const kept = await rememberLinkState(provider, res.state, res.browser_binding)
-      if (!kept.success) throw new Error('link state not kept')
-      window.location.assign(res.authorization_url)
+      // The start runs on the server: the browser binding stays out of this page.
+      const res = await startLinkAction(provider, proof)
+      if (!res.success) throw new LinkStartRefused(res.code, res.status)
+      window.location.assign(res.authorizationUrl)
     } catch (err) {
       setLinking(null)
       throw err
