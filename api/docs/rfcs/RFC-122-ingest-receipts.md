@@ -220,7 +220,11 @@ organization moving and every scope consistent.
   (`INGEST_QUEUE_FULL`; sensors `queue-full`) with a `Retry-After` from how
   fast its jobs drained over the last 5 minutes (5 s to 5 min). A depth that
   cannot be read refuses the upload with `503` and `Retry-After` (fail
-  closed); nothing is stored. An import is checked before its receipt is
+  closed); nothing is stored. A sensor report is admitted as a whole: its
+  first segment is checked against the limit, its further segments against
+  twice the limit, so a refusal never leaves a half-received report that
+  expires; the sensor's `Retry-After` is jittered (up to +50 %) so sensors
+  refused together do not return together. An import is checked before its receipt is
   written, so a refused one leaves no trace.
 - **Poison.** A job is claimed only while `attempts < max_attempts`
   (attempts count at claim). A lease that expires on the last attempt (a
