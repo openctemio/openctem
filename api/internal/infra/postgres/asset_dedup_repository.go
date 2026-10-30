@@ -340,23 +340,11 @@ func (r *AssetDedupRepository) ApproveAndMergeReport(ctx context.Context, tenant
 	// delete, for the audit entries.
 	report := &MergeReport{ReviewID: rev.ID, KeptAssetID: keepID}
 	_ = tx.QueryRowContext(ctx, "SELECT name FROM assets WHERE id = $1 AND tenant_id = $2", keepID, rev.TenantID).Scan(&report.KeptName)
-	nameRows, err := tx.QueryContext(ctx, "SELECT id, name FROM assets WHERE id = ANY($1) AND tenant_id = $2", pq.Array(mergeIDs), rev.TenantID)
+	merged, err := readMergedAssetNames(ctx, tx, rev.TenantID, mergeIDs)
 	if err != nil {
-		return nil, fmt.Errorf("read merged asset names: %w", err)
+		return nil, err
 	}
-	for nameRows.Next() {
-		var m MergedAsset
-		if err := nameRows.Scan(&m.ID, &m.Name); err != nil {
-			_ = nameRows.Close()
-			return nil, fmt.Errorf("scan merged asset name: %w", err)
-		}
-		report.MergedAssets = append(report.MergedAssets, m)
-	}
-	if err := nameRows.Err(); err != nil {
-		_ = nameRows.Close()
-		return nil, fmt.Errorf("read merged asset names: %w", err)
-	}
-	_ = nameRows.Close()
+	report.MergedAssets = merged
 
 	// Move everything that references the merged assets onto the kept one
 	// (see asset_merge_plan.go for the full list and how each table is
@@ -522,4 +510,26 @@ func (r *AssetDedupRepository) GetMergeLog(ctx context.Context, tenantID, assetI
 		return nil, 0, err
 	}
 	return results, total, nil
+}
+
+// readMergedAssetNames returns the id and stored name of each asset to be
+// merged, read in the tenant inside the merge transaction.
+func readMergedAssetNames(ctx context.Context, tx *sql.Tx, tenantID string, ids []string) ([]MergedAsset, error) {
+	rows, err := tx.QueryContext(ctx, "SELECT id, name FROM assets WHERE id = ANY($1) AND tenant_id = $2", pq.Array(ids), tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("read merged asset names: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []MergedAsset
+	for rows.Next() {
+		var m MergedAsset
+		if err := rows.Scan(&m.ID, &m.Name); err != nil {
+			return nil, fmt.Errorf("scan merged asset name: %w", err)
+		}
+		out = append(out, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read merged asset names: %w", err)
+	}
+	return out, nil
 }
