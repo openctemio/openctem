@@ -285,6 +285,19 @@ var (
 			Help: "Async ingest jobs awaiting or in processing across all tenants",
 		},
 	)
+
+	// IngestQueueOldestSeconds is the import lag per lane: how long the
+	// oldest claimable job has waited (0 = nothing waiting), refreshed each
+	// worker cycle. Depth says how much is queued; this says how far behind
+	// imports are. No tenant label (cardinality); per-tenant views come from
+	// ingest_jobs.
+	IngestQueueOldestSeconds = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "openctem_ingest_queue_oldest_seconds",
+			Help: "Age of the oldest claimable ingest job per lane (0 = none waiting)",
+		},
+		[]string{"lane"},
+	)
 )
 
 // Dispatch (RFC-046 §12). No tenant, sensor or run labels (B9): per-tenant
