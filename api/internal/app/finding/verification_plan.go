@@ -13,6 +13,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/validation"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
@@ -133,6 +134,16 @@ func (s *VulnerabilityService) SetCoverageAutoResolveMode(mode string) {
 	s.coverageAutoResolveMode = strings.ToLower(strings.TrimSpace(mode))
 }
 
+// ClosureSettingsReader reads an organization's closing policy (the tenant
+// service implements it).
+type ClosureSettingsReader interface {
+	GetClosureSettings(ctx context.Context, tenantID string) (*tenantdom.ClosureSettings, error)
+}
+
+// SetClosureSettings wires the organization closing policy for the
+// verification plan. Without it every organization reads as review.
+func (s *VulnerabilityService) SetClosureSettings(r ClosureSettingsReader) { s.closureSettings = r }
+
 // verificationPlanInput is everything the plan is computed from.
 type verificationPlanInput struct {
 	Status        vulnerability.FindingStatus
@@ -150,8 +161,11 @@ type verificationPlanInput struct {
 	RetestAvailable bool
 	RetestReason    string
 	CoverageMode    string
-	Evidence        resolveEvidence
-	CallerID        shared.ID
+	// Closure is the organization's closing policy; it decides only when
+	// CoverageMode is enforce (an empty mode reads as review).
+	Closure  tenantdom.ClosureSettings
+	Evidence resolveEvidence
+	CallerID shared.ID
 }
 
 // coverageProtectedSources are never closed by a covered scan (no scanner
@@ -243,7 +257,8 @@ func retestMethod(in verificationPlanInput, open, secret bool) VerificationMetho
 // coveredScanMethod: the platform closes the finding itself when a full scan
 // of the same tool and profile covers the asset and no longer reports it
 // (a repository's default branch always; other assets when the platform's
-// coverage auto-resolve enforces).
+// coverage auto-resolve enforces and the organization's closing mode and the
+// tier rule let a covered scan close this finding).
 func coveredScanMethod(in verificationPlanInput, open, secret bool) VerificationMethod {
 	m := VerificationMethod{Kind: VerifyMethodCoveredScan, CountsAsProof: true, Automatic: true}
 	switch {
@@ -255,8 +270,18 @@ func coveredScanMethod(in verificationPlanInput, open, secret bool) Verification
 		m.Reason = VerifyReasonSourceNotScanned
 	case in.AssetType == nil:
 		m.Reason = VerifyReasonNoAsset
-	case *in.AssetType == asset.AssetTypeRepository, in.CoverageMode == "enforce":
+	case *in.AssetType == asset.AssetTypeRepository:
 		m.Available = true
+	case in.CoverageMode == "enforce":
+		tier := vulnerability.FindingRiskTier(in.Severity, in.PriorityClass, in.IsKEV)
+		switch vulnerability.DecideClosure(in.Closure.EffectiveMode(), tier, vulnerability.ClosureMethodCoveredScan, false, in.Closure.CriticalAutoClose) {
+		case vulnerability.ClosureDecisionClose:
+			m.Available = true
+		case vulnerability.ClosureDecisionKeep:
+			m.Reason = VerifyReasonCoverageOff
+		default:
+			m.Reason = VerifyReasonCoverageReviewOnly
+		}
 	case in.CoverageMode == "off":
 		m.Reason = VerifyReasonCoverageOff
 	default:
@@ -334,6 +359,12 @@ func (s *VulnerabilityService) GetVerificationPlan(ctx context.Context, tenantID
 		PriorityClass: priorityClassString(f), IsKEV: f.IsInKEV(), CoverageMode: s.coverageAutoResolveMode,
 	}
 	in.CallerID, _ = shared.IDFromString(callerID)
+	if in.CoverageMode == "enforce" && s.closureSettings != nil {
+		// A read failure leaves the empty policy: review.
+		if cs, err := s.closureSettings.GetClosureSettings(ctx, tid.String()); err == nil && cs != nil {
+			in.Closure = *cs
+		}
+	}
 	if !f.AssetID().IsZero() && s.assetRepo != nil {
 		a, err := s.assetRepo.GetByID(ctx, tid, f.AssetID())
 		switch {

@@ -53,6 +53,7 @@ func settingsSectionTargets(s *Settings) map[string]any {
 		SectionAssetIdentity:       &s.AssetIdentity,
 		SectionAssetLifecycle:      &s.AssetLifecycle,
 		SectionRetest:              &s.Retest,
+		SectionClosure:             &s.Closure,
 		SectionEvidence:            &s.Evidence,
 		SectionEASM:                &s.EASM,
 		SectionScope:               &s.Scope,
