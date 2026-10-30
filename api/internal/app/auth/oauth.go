@@ -124,6 +124,9 @@ type OAuthService struct {
 	secondFactor     SecondFactorGate
 	sessions         SessionRevoker
 	identityNotifier IdentityNotifier
+	// linkProof checks the code or password typed to link or unlink a
+	// sign-in method (link_proof.go). Unset: nothing is linked or unlinked.
+	linkProof LinkProofVerifier
 }
 
 // InvitationLookup answers whether any organization has a pending invitation

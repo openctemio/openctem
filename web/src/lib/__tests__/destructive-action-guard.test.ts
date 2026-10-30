@@ -79,6 +79,8 @@ const PROTECTIONS = [
   /^AdminConfirmDialog$/,
   /^AlertDialog$/,
   /^undoToast$/,
+  // The confirmation that also asks for the authenticator code or password.
+  /^StepUpDialog$/,
   // Feature dialogs that wrap ConfirmDialog for one object kind.
   /^\w*(?:Delete|Remove|Revoke|Confirm|Purge|Rotate|Regenerate|Offboard|Erase|Disable|Cancel)\w*Dialog\w*$/,
 ]

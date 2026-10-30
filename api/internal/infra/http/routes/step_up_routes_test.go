@@ -118,11 +118,6 @@ var stepUpRoutes = []string{
 	"DELETE /api/v1/tenants/acme",
 	// Deleting one's own account (RFC-104).
 	"DELETE /api/v1/me/account",
-	// Linking or unlinking a sign-in provider changes how the account is
-	// signed into.
-	"POST /api/v1/me/sign-in-method-links/google/start",
-	"DELETE /api/v1/me/sign-in-methods/{id}",
-	"POST /api/v1/me/pending-sign-in-link/complete",
 	"POST /api/v1/organization/leave",
 	"DELETE /api/v1/organization/members/{id}/mfa",
 	"POST /api/v1/organization/members/{id}/offboard",
@@ -354,6 +349,57 @@ func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// linkProofRoutes change how the account is signed into. They are not behind
+// the step-up window on purpose: each needs a code or password typed for that
+// request, checked by the service (auth/link_proof.go), so an open window or
+// a fresh sign-in must not be what lets them through, and a closed window
+// must not ask for a second, separate proof first.
+var linkProofRoutes = []string{
+	"POST /api/v1/me/sign-in-method-links/google/start",
+	"DELETE /api/v1/me/sign-in-methods/{id}",
+	"POST /api/v1/me/pending-sign-in-link/complete",
+}
+
+func TestLinkProofRoutes_NotBehindStepUpWindow(t *testing.T) {
+	saved := csrfProtectionMiddleware
+	t.Cleanup(func() { csrfProtectionMiddleware = saved })
+	csrfProtectionMiddleware = nil
+	withStepUpChecker(t, steppedUpAt(time.Now().Add(-time.Hour)))
+	gen := jwt.NewGenerator(jwt.TokenConfig{Secret: "step-up-route-test-secret-0123456789abcdef", Issuer: "test",
+		AccessTokenDuration: time.Hour, RefreshTokenDuration: time.Hour})
+	tok, err := gen.GenerateTenantScopedAccessToken(shared.NewID().String(), "p@acme.test", "P", shared.NewID().String(),
+		jwt.TenantMembership{TenantID: shared.NewID().String(), TenantSlug: "acme", Role: "member"}, false, 0, "password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	auth := middleware.UnifiedAuth(middleware.UnifiedAuthConfig{Provider: config.AuthProviderLocal, LocalValidator: gen})
+	router := infrahttp.NewChiRouter()
+	registerIdentityLinkRoutes(router, &handler.OAuthHandler{}, auth, nil)
+	mux := router.(interface{ Handler() http.Handler }).Handler()
+	for _, route := range linkProofRoutes {
+		method, path, _ := strings.Cut(route, " ")
+		path = strings.ReplaceAll(path, "{id}", shared.NewID().String())
+		code, body := func() (code int, body string) {
+			defer func() {
+				if recover() != nil {
+					code = reachedHandler
+				}
+			}()
+			req := httptest.NewRequest(method, path, strings.NewReader("{}"))
+			req.Header.Set("Authorization", "Bearer "+tok.AccessToken)
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, req)
+			return rec.Code, rec.Body.String()
+		}()
+		if code == http.StatusNotFound || code == http.StatusMethodNotAllowed {
+			t.Errorf("%s: %d from the router (route not registered)", route, code)
+		}
+		if strings.Contains(body, "STEP_UP") {
+			t.Errorf("%s: answered %d %s; the proof is checked by the service, not the window", route, code, body)
+		}
 	}
 }
 

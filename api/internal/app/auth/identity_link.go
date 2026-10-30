@@ -6,7 +6,9 @@ package auth
 // Three ways in:
 //
 //   - Explicit: a signed-in person links a provider from Account > Security.
-//     The start needs a fresh step-up (route gate). The state token carries
+//     The start needs a proof typed for it (link_proof.go: an authenticator
+//     code, else the password; a recent sign-in does not count), and so does
+//     unlinking. The state token carries
 //     the account and the session that started the link, signed, and is
 //     accepted only by CompleteLink for that same account and session, once,
 //     before it expires, and only from the browser that started the link: its
@@ -19,7 +21,8 @@ package auth
 //     belongs to an existing account changes nothing and is refused with
 //     OAUTH_ACCOUNT_EXISTS, carrying a single-use pending link bound to that
 //     provider identity and that account. The person signs in to the account
-//     the usual way (password and second factor) and confirms the link.
+//     the usual way (password and second factor) and confirms the link
+//     with a proof typed in the confirm dialog (link_proof.go).
 //   - Automatic, off unless the platform turned it on: on a social sign-in
 //     whose address belongs to a password account, only when all hold: the
 //     platform allows it (sign-up policy social_auto_link, off by default),
@@ -94,6 +97,34 @@ func (s *OAuthService) SetSecondFactorGate(g SecondFactorGate) { s.secondFactor 
 // SetSessionRevoker wires the session revocation automatic linking needs.
 // Without it nothing is linked automatically.
 func (s *OAuthService) SetSessionRevoker(r SessionRevoker) { s.sessions = r }
+
+// SetLinkProofVerifier wires the proof every link and unlink needs
+// (link_proof.go). Without it every link and unlink is refused.
+func (s *OAuthService) SetLinkProofVerifier(v LinkProofVerifier) { s.linkProof = v }
+
+// verifyLinkProof checks the proof typed for one change of u's sign-in
+// methods. Fail closed: without a verifier nothing changes.
+func (s *OAuthService) verifyLinkProof(ctx context.Context, u *userdom.User, sessionID string, proof StepUpProof, purpose string) (StepUpMethod, error) {
+	if s.linkProof == nil {
+		return stepUpNothingNeeded, ErrLinkProofUnavailable
+	}
+	ci := clientInfoFrom(ctx)
+	actx := auditapp.AuditContext{ActorID: u.ID().String(), ActorEmail: u.Email(), ActorIP: ci.IP, UserAgent: ci.UserAgent}
+	return s.linkProof.VerifyLinkProof(ctx, actx, u.ID().String(), sessionID, proof, purpose)
+}
+
+// linkProofMethod is what userID must type to change its sign-in methods
+// ("" when it cannot, or when no verifier is wired).
+func (s *OAuthService) linkProofMethod(ctx context.Context, userID string) string {
+	if s.linkProof == nil {
+		return ""
+	}
+	m, err := s.linkProof.LinkProofMethod(ctx, userID)
+	if err != nil {
+		return ""
+	}
+	return string(m)
+}
 
 // SetIdentityNotifier wires the link and unlink e-mails.
 func (s *OAuthService) SetIdentityNotifier(n IdentityNotifier) { s.identityNotifier = n }
@@ -184,7 +215,7 @@ func (s *OAuthService) autoLink(ctx context.Context, u *userdom.User, key userid
 	if u.PasswordResetToken() != nil {
 		u.ClearPasswordResetToken()
 	}
-	s.recordLink(ctx, u, provider, linkHowAutomatic)
+	s.recordLink(ctx, u, provider, linkHowAutomatic, stepUpNothingNeeded)
 	s.logger.Info("OAuth identity linked automatically to a password account",
 		"user_id", u.ID().String(), "provider", provider)
 	return nil
@@ -230,7 +261,7 @@ const (
 )
 
 // recordLink audits a link and tells the account's mailbox.
-func (s *OAuthService) recordLink(ctx context.Context, u *userdom.User, provider OAuthProvider, how string) {
+func (s *OAuthService) recordLink(ctx context.Context, u *userdom.User, provider OAuthProvider, how string, factor StepUpMethod) {
 	ci := clientInfoFrom(ctx)
 	msg := "Linked " + string(provider) + " sign-in to the account"
 	switch how {
@@ -239,13 +270,13 @@ func (s *OAuthService) recordLink(ctx context.Context, u *userdom.User, provider
 	case linkHowAfterSignIn:
 		msg = "Linked " + string(provider) + " sign-in to the account, confirmed after signing in"
 	}
-	s.auditIdentity(ctx, u, auditdom.ActionAuthIdentityLinked, msg, provider, how)
+	s.auditIdentity(ctx, u, auditdom.ActionAuthIdentityLinked, msg, provider, how, factor)
 	if s.identityNotifier != nil {
 		s.identityNotifier.NotifyIdentityLinked(ctx, u.Email(), u.Name(), ci.IP, providerLabel(provider), how == linkHowAutomatic)
 	}
 }
 
-func (s *OAuthService) auditIdentity(ctx context.Context, u *userdom.User, action auditdom.Action, msg string, provider OAuthProvider, how string) {
+func (s *OAuthService) auditIdentity(ctx context.Context, u *userdom.User, action auditdom.Action, msg string, provider OAuthProvider, how string, factor StepUpMethod) {
 	if s.audit == nil {
 		return
 	}
@@ -256,6 +287,11 @@ func (s *OAuthService) auditIdentity(ctx context.Context, u *userdom.User, actio
 		WithMetadata("provider", string(provider))
 	if how != "" {
 		ev = ev.WithMetadata("how", how)
+	}
+	// factor: what the person typed to confirm the change (totp or
+	// password); empty for an automatic link.
+	if factor != "" {
+		ev = ev.WithMetadata("factor", string(factor))
 	}
 	actx := auditapp.AuditContext{ActorID: u.ID().String(), ActorEmail: u.Email(), ActorIP: ci.IP, UserAgent: ci.UserAgent}
 	if err := s.audit.LogEvent(ctx, actx, ev); err != nil {
@@ -296,6 +332,10 @@ type SignInMethods struct {
 	Identities []SignInMethod `json:"identities"`
 	// Available: social providers this platform offers for linking.
 	Available []string `json:"available"`
+	// Proof is what linking or unlinking asks for in the confirm dialog:
+	// totp, password, or "" when the account has neither (it must turn on
+	// two-factor authentication first).
+	Proof string `json:"proof"`
 }
 
 // ListSignInMethods returns the account's sign-in methods. Only the caller's
@@ -305,7 +345,7 @@ func (s *OAuthService) ListSignInMethods(ctx context.Context, userID string) (*S
 	if err != nil {
 		return nil, err
 	}
-	out := &SignInMethods{Password: isPasswordAccount(u), Identities: []SignInMethod{}, Available: []string{}}
+	out := &SignInMethods{Password: isPasswordAccount(u), Identities: []SignInMethod{}, Available: []string{}, Proof: s.linkProofMethod(ctx, userID)}
 	total := len(idents)
 	if out.Password {
 		total++
@@ -355,10 +395,15 @@ type LinkStartInput struct {
 	SessionID   string
 	Provider    OAuthProvider
 	RedirectURI string
+	// Proof is the code or password typed in the confirm dialog
+	// (link_proof.go).
+	Proof StepUpProof
 }
 
-// StartLink returns the provider's authorization URL for a link. The caller
-// already passed step-up (route gate).
+// StartLink returns the provider's authorization URL for a link after
+// checking the proof typed for it. The factor is kept with the link's PKCE
+// verifier, so CompleteLink audits it and refuses a link whose start was
+// never proved.
 func (s *OAuthService) StartLink(ctx context.Context, in LinkStartInput) (*AuthorizationURLResult, error) {
 	cfg, err := s.readyProvider(ctx, in.Provider)
 	if err != nil {
@@ -374,6 +419,10 @@ func (s *OAuthService) StartLink(ctx context.Context, in LinkStartInput) (*Autho
 	if !u.IsActive() {
 		return nil, ErrAccountSuspended
 	}
+	factor, err := s.verifyLinkProof(ctx, u, in.SessionID, in.Proof, LinkProofLinkStart)
+	if err != nil {
+		return nil, err
+	}
 	state, verifier, err := s.generateState(in.Provider, "", &linkBinding{UserID: in.UserID, SessionID: in.SessionID})
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate state: %w", err)
@@ -381,6 +430,9 @@ func (s *OAuthService) StartLink(ctx context.Context, in LinkStartInput) (*Autho
 	binding, err := s.storeBoundVerifier(ctx, state, verifier)
 	if err != nil {
 		return nil, err
+	}
+	if err := s.pkceStore.Set(ctx, linkFactorKey(state), string(factor), s.stateTTL()); err != nil {
+		return nil, fmt.Errorf("store link proof: %w", err)
 	}
 	authURL, err := s.buildAuthorizationURL(in.Provider, cfg, in.RedirectURI, state, verifier)
 	if err != nil {
@@ -418,6 +470,10 @@ func (s *OAuthService) CompleteLink(ctx context.Context, in LinkCompleteInput) (
 	if !ok {
 		return nil, ErrInvalidState
 	}
+	factor, ok := s.takeLinkFactor(ctx, in.State)
+	if !ok {
+		return nil, ErrInvalidState
+	}
 	tokens, err := s.exchangeCode(ctx, in.Provider, cfg, in.Code, in.RedirectURI, verifier)
 	if err != nil {
 		s.logger.Error("link: failed to exchange OAuth code", "provider", in.Provider, "error", err)
@@ -428,12 +484,32 @@ func (s *OAuthService) CompleteLink(ctx context.Context, in LinkCompleteInput) (
 		s.logger.Error("link: failed to get user info", "provider", in.Provider, "error", err)
 		return nil, ErrOAuthUserInfoFailed
 	}
-	return s.linkIdentity(ctx, in.UserID, info, in.Provider, linkHowManual)
+	return s.linkIdentity(ctx, in.UserID, info, in.Provider, linkHowManual, factor)
+}
+
+// linkFactorKey is where StartLink keeps the factor that proved a link start,
+// under the hash of the state, until CompleteLink takes it.
+func linkFactorKey(state string) string { return "oauth_link_factor:" + hashBinding(state) }
+
+// takeLinkFactor removes and returns the factor StartLink verified for state.
+// False when there is none (never proved, expired, or already used).
+func (s *OAuthService) takeLinkFactor(ctx context.Context, state string) (StepUpMethod, bool) {
+	raw, found, err := s.pkceStore.GetDel(ctx, linkFactorKey(state))
+	if err != nil {
+		s.logger.Error("link: failed to read the link proof", "error", err)
+		return stepUpNothingNeeded, false
+	}
+	m := StepUpMethod(raw)
+	if !found || (m != StepUpTOTP && m != StepUpPassword) {
+		return stepUpNothingNeeded, false
+	}
+	return m, true
 }
 
 // linkIdentity binds a verified provider identity to the account userID
 // (explicit link after the provider round trip, or a confirmed pending link).
-func (s *OAuthService) linkIdentity(ctx context.Context, userID string, info *OAuthUserInfo, provider OAuthProvider, how string) (*SignInMethod, error) {
+// factor is the proof the person typed for it (audited).
+func (s *OAuthService) linkIdentity(ctx context.Context, userID string, info *OAuthUserInfo, provider OAuthProvider, how string, factor StepUpMethod) (*SignInMethod, error) {
 	key := useridentity.Key{Issuer: info.Issuer, Subject: info.Subject}
 	if !key.Valid() {
 		return nil, ErrOAuthUserInfoFailed
@@ -460,7 +536,7 @@ func (s *OAuthService) linkIdentity(ctx context.Context, userID string, info *OA
 		}
 		return nil, err
 	}
-	s.recordLink(ctx, u, provider, how)
+	s.recordLink(ctx, u, provider, how, factor)
 	got, err := s.identities.GetByKey(ctx, key)
 	if err != nil {
 		return nil, fmt.Errorf("read linked identity: %w", err)
@@ -468,10 +544,22 @@ func (s *OAuthService) linkIdentity(ctx context.Context, userID string, info *OA
 	return &SignInMethod{ID: got.ID.String(), Provider: string(provider), CreatedAt: got.CreatedAt, LastUsedAt: got.LastUsedAt}, nil
 }
 
-// Unlink removes a social identity from the signed-in account. The caller
-// already passed step-up (route gate). The account's last sign-in method is
-// never removed.
-func (s *OAuthService) Unlink(ctx context.Context, userID, identityID string) error {
+// UnlinkInput removes one social identity from the signed-in account.
+type UnlinkInput struct {
+	UserID     string
+	SessionID  string
+	IdentityID string
+	// Proof is the code or password typed in the confirm dialog.
+	Proof StepUpProof
+}
+
+// Unlink removes a social identity from the signed-in account after checking
+// the proof typed for it. The account's last sign-in method is never removed.
+func (s *OAuthService) Unlink(ctx context.Context, in UnlinkInput) error {
+	userID, identityID := in.UserID, in.IdentityID
+	if userID == "" || in.SessionID == "" {
+		return ErrLinkProofUnavailable
+	}
 	u, idents, err := s.accountAndIdentities(ctx, userID)
 	if err != nil {
 		return err
@@ -493,6 +581,10 @@ func (s *OAuthService) Unlink(ctx context.Context, userID, identityID string) er
 	if !hasPassword && len(idents) <= 1 {
 		return ErrLastSignInMethod
 	}
+	factor, err := s.verifyLinkProof(ctx, u, in.SessionID, in.Proof, LinkProofUnlink)
+	if err != nil {
+		return err
+	}
 	if err := s.identities.DeleteForUser(ctx, u.ID(), target.ID, !hasPassword); err != nil {
 		switch {
 		case errors.Is(err, useridentity.ErrLastIdentity):
@@ -502,7 +594,7 @@ func (s *OAuthService) Unlink(ctx context.Context, userID, identityID string) er
 		}
 		return fmt.Errorf("unlink identity: %w", err)
 	}
-	s.auditIdentity(ctx, u, auditdom.ActionAuthIdentityUnlinked, "Unlinked "+string(provider)+" sign-in from the account", provider, "")
+	s.auditIdentity(ctx, u, auditdom.ActionAuthIdentityUnlinked, "Unlinked "+string(provider)+" sign-in from the account", provider, "", factor)
 	if s.identityNotifier != nil {
 		s.identityNotifier.NotifyIdentityUnlinked(ctx, u.Email(), u.Name(), clientInfoFrom(ctx).IP, providerLabel(provider))
 	}
