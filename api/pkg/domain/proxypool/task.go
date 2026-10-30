@@ -125,6 +125,8 @@ func FailedVerdict(failureClass string) (TaskVerdict, bool) {
 
 // TaskSample is one ended job's verdict on the endpoints it was handed.
 type TaskSample struct {
+	// SensorID is the sensor that held the job (the platform's record).
+	SensorID    string
 	EndpointIDs []string
 	Fault       bool
 	At          time.Time
@@ -134,11 +136,35 @@ type TaskSample struct {
 type TaskCounts struct {
 	Faulted int
 	Total   int
+	// Sensors is the distinct sensors whose jobs are counted; FaultedSensors
+	// the distinct ones among them that reported a fault.
+	Sensors        int
+	FaultedSensors int
+}
+
+// minSharedFaultSensors is how many distinct sensors must report faults
+// before an endpoint used by several sensors is quarantined: one sensor's
+// own network problem must not take a shared endpoint from everyone.
+const minSharedFaultSensors = 2
+
+// Shared reports whether more than one sensor's jobs went through the
+// endpoint in the window.
+func (c TaskCounts) Shared() bool { return c.Sensors > 1 }
+
+// Quorum reports whether the faults come from enough sensors to act on:
+// always for an endpoint one sensor uses, at least minSharedFaultSensors
+// distinct sensors for a shared one.
+func (c TaskCounts) Quorum() bool {
+	return !c.Shared() || c.FaultedSensors >= minSharedFaultSensors
 }
 
 // Trips reports whether the counts quarantine an endpoint: taskFaultLimit
 // faulted jobs, or more than half of at least taskRatioMinSamples jobs.
 func (c TaskCounts) Trips() bool {
+	return c.Quorum() && c.trips()
+}
+
+func (c TaskCounts) trips() bool {
 	return c.Faulted >= taskFaultLimit || (c.Total >= taskRatioMinSamples && 2*c.Faulted > c.Total)
 }
 
@@ -160,15 +186,19 @@ func (h *Health) TaskWindowStart(now time.Time) time.Time {
 // CountTasks counts the samples that charge endpointID since start.
 func CountTasks(samples []TaskSample, endpointID string, start time.Time) TaskCounts {
 	var c TaskCounts
+	all, faulted := map[string]struct{}{}, map[string]struct{}{}
 	for _, s := range samples {
 		if s.At.Before(start) || !containsID(s.EndpointIDs, endpointID) {
 			continue
 		}
 		c.Total++
+		all[s.SensorID] = struct{}{}
 		if s.Fault {
 			c.Faulted++
+			faulted[s.SensorID] = struct{}{}
 		}
 	}
+	c.Sensors, c.FaultedSensors = len(all), len(faulted)
 	return c
 }
 
@@ -185,7 +215,8 @@ func containsID(ids []string, id string) bool {
 // after a job ended (fault: that job reported a proxy fault). The score is
 // capped by the share of clean jobs; the endpoint is quarantined when the
 // counts trip the rule, or at the first faulted job after a quarantine's
-// back-off (the re-probe failed). Task verdicts never promote an endpoint:
+// back-off (the re-probe failed), in both cases only when an endpoint shared
+// by several sensors has faults from at least two of them (Quorum). Task verdicts never promote an endpoint:
 // only the sensor's per-connection report can. Returns true when the state
 // changed.
 func (h *Health) ApplyTasks(c TaskCounts, fault bool, lastError string, now time.Time) bool {
@@ -204,7 +235,7 @@ func (h *Health) ApplyTasks(c TaskCounts, fault bool, lastError string, now time
 		// Already out; a late verdict of an older job changes nothing.
 		return false
 	case h.State == StateQuarantined:
-		if fault {
+		if fault && c.Quorum() {
 			h.quarantine(now)
 			return true
 		}
