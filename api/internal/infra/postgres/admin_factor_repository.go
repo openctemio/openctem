@@ -16,7 +16,10 @@ import (
 
 // AdminFactorRepository persists console WebAuthn authenticators, recovery
 // codes and ceremony state (RFC-078, console part). Platform-level tables:
-// every query is keyed on the administrator, never on a tenant.
+// every query is keyed on the administrator, never on a tenant. It runs on the
+// console pool (DB_ADMIN_USER): the app role can neither read nor write these
+// tables, so a tenant-plane SQL injection cannot plant a passkey or a known
+// recovery code for an administrator.
 type AdminFactorRepository struct {
 	db *DB
 }
@@ -149,15 +152,16 @@ func (r *AdminFactorRepository) RenameWebAuthnCredential(ctx context.Context, ad
 }
 
 // DeleteWebAuthnCredential removes one authenticator of adminID unless fewer
-// than keep would remain. The row lock on the administrator serializes two
-// concurrent deletes, so they cannot both pass the floor.
+// than keep would remain. A transaction-scoped advisory lock per administrator
+// serializes two concurrent deletes, so they cannot both pass the floor. It
+// needs no privilege on admin_users, so it works on either pool.
 func (r *AdminFactorRepository) DeleteWebAuthnCredential(ctx context.Context, adminID, id shared.ID, keep int) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("delete webauthn credential: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, `SELECT 1 FROM admin_users WHERE id = $1 FOR UPDATE`, adminID.String()); err != nil {
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('openctem.admin_factors:' || $1::text))`, adminID.String()); err != nil {
 		return fmt.Errorf("lock administrator: %w", err)
 	}
 	var exists bool

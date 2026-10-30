@@ -148,7 +148,7 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
   const ownerOf = (task: RemediationTask) =>
     [owners.user(task.assignee_user_id), owners.group(task.assignee_group_id)]
       .filter(Boolean)
-      .join(' · ') || t('remediationCampaigns.owner.unassigned')
+      .join(', ') || t('remediationCampaigns.owner.unassigned')
 
   const completeBlocked = s.live_tasks > 0
   const completeReason = t(
@@ -339,7 +339,7 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
                   pct: s.progress,
                   verified: s.verified_findings,
                 })}
-              {s.findings > 0 && ' · '}
+              {s.findings > 0 && ', '}
               {t(
                 `remediationCampaigns.detail.tasksLine.${s.tasks === 1 ? 'one' : 'other'}`,
                 undefined,
@@ -351,7 +351,7 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
               )}
               {s.overdue_tasks > 0 && (
                 <span className="text-destructive">
-                  {' · '}
+                  {', '}
                   {t('remediationCampaigns.tasks.overdue', undefined, { count: s.overdue_tasks })}
                 </span>
               )}

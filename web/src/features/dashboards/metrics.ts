@@ -46,6 +46,11 @@ export const METRICS: readonly MetricMeta[] = [
   { id: 'coverage.discovery', group: 'ctem', unit: 'percent', defaultGroupBy: [] },
   { id: 'ctem.loop', group: 'ctem', unit: 'count', defaultGroupBy: [] },
   { id: 'attack_paths.to_crown_jewels', group: 'ctem', unit: 'count', defaultGroupBy: [] },
+  { id: 'exposure.flow', group: 'ctem', unit: 'count', defaultGroupBy: [] },
+  { id: 'ingest.intake', group: 'ctem', unit: 'count', defaultGroupBy: [] },
+  { id: 'exposure.levers', group: 'ctem', unit: 'count', defaultGroupBy: [] },
+  { id: 'brief.weekly', group: 'ctem', unit: 'count', defaultGroupBy: [] },
+  { id: 'exposure.kpis', group: 'exposure', unit: 'count', defaultGroupBy: [] },
 ]
 
 export const METRIC_GROUPS: readonly MetricGroup[] = [
@@ -117,15 +122,59 @@ export function skeletonFor(shape: ResultShape | undefined): SkeletonKind {
     case 'scalar':
     case 'ratio':
     case 'duration':
+    case 'kpis':
       return 'stat'
+    case 'levers':
+    case 'brief':
+      return 'list'
     case 'items':
     case 'paths':
       return 'list'
     case 'stages':
       return 'stages'
+    case 'flow':
+    case 'intake':
+      return 'chart'
     case 'matrix':
       return 'grid'
     default:
       return 'chart'
   }
+}
+
+/**
+ * The next step for a metric that has nothing to show yet: the figures come
+ * from findings (bring some in) or from scan coverage (run a scan). The form
+ * is opened on its own page, behind that page's permission, so the action is
+ * offered only to a caller who may use it (`needs`). Metrics with no fitting
+ * step (a note, an unknown metric) return undefined: no dead link.
+ */
+export interface MetricEmptyAction {
+  labelKey: string
+  fallback: string
+  form: 'import' | 'scan'
+  path: string
+  needs: readonly string[]
+}
+
+const IMPORT_ACTION: MetricEmptyAction = {
+  labelKey: 'dashboards.empty.import',
+  fallback: 'Import results',
+  form: 'import',
+  path: '/findings',
+  needs: ['findings:write', 'assets:write', 'assets:import'],
+}
+const SCAN_ACTION: MetricEmptyAction = {
+  labelKey: 'dashboards.empty.scan',
+  fallback: 'Set up a scan',
+  form: 'scan',
+  path: '/scans',
+  needs: ['scans:write'],
+}
+const SCAN_METRICS = new Set(['coverage.discovery', 'attack_paths.to_crown_jewels'])
+
+export function metricEmptyAction(id: string | undefined): MetricEmptyAction | undefined {
+  const meta = metricMeta(id)
+  if (!meta) return undefined
+  return SCAN_METRICS.has(meta.id) ? SCAN_ACTION : IMPORT_ACTION
 }

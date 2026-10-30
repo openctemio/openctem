@@ -36,6 +36,10 @@ type DisplayInfo struct {
 	ID   shared.ID
 	Name string
 	Type AssetType
+	// CrownJewel and InternetFacing are the two asset facts a findings row
+	// shows beside the asset name.
+	CrownJewel     bool
+	InternetFacing bool
 }
 
 // Repository defines the interface for asset persistence.
@@ -273,6 +277,12 @@ type RepositoryExtensionRepository interface {
 	GetByAssetIDs(ctx context.Context, assetIDs []shared.ID) (map[shared.ID]*RepositoryExtension, error)
 }
 
+// DomainName is one domain condition of a Filter.
+type DomainName struct {
+	Name       string
+	Subdomains bool
+}
+
 // Filter defines the filtering options for listing assets.
 type Filter struct {
 	TenantID      *string       // Filter by tenant ID
@@ -296,6 +306,10 @@ type Filter struct {
 	// its TTL) or "never" (a passive class that applies was never observed);
 	// docs/architecture/asset-freshness.md. "" = no filter.
 	Freshness string
+	// Resolution keeps host-name assets by whether their name resolves
+	// ("not_resolving": the platform knows it does not; "resolving": it
+	// does). A name never checked matches neither. "" = no filter.
+	Resolution string
 	// Coverage keeps assets the coverage ledger tracks that had a
 	// successful run of any capability within CoverageWindow ("covered"),
 	// or none ("uncovered"). "" = no filter.
@@ -317,10 +331,14 @@ type Filter struct {
 	AssetGroupIDs []string
 	// OwnerIDs keeps the assets owned by any of these users or groups of
 	// the tenant (asset_owners).
-	OwnerIDs            []string
-	IDs                 []string   // Only these assets (a batch lookup by id; data scope still applies)
-	UnderDomains        []string   // Names equal to or below these DNS names (example.com, *.example.com)
-	InCIDRs             []string   // Address assets (ip_address, host named by an address) inside these ranges
+	OwnerIDs     []string
+	IDs          []string // Only these assets (a batch lookup by id; data scope still applies)
+	UnderDomains []string // Names equal to or below these DNS names (example.com, *.example.com)
+	InCIDRs      []string // Address assets (ip_address, host named by an address) inside these ranges
+	// DomainNames keeps the names that are one of these domains, or (with
+	// Subdomains) below one on a label boundary. Names are normalised
+	// (lowercase, punycode) by the caller.
+	DomainNames         []DomainName
 	HasOwner            *bool      // Filter assets with/without an assigned owner (asset_owners)
 	DataClassifications []string   // Filter by data_classification (public|internal|confidential|restricted|secret)
 	IsControlPlane      *bool      // Filter assets that are a control-plane dependency (asset_relationships edge)
@@ -716,6 +734,7 @@ func (f Filter) IsEmpty() bool {
 		f.MaxRiskScore == nil &&
 		f.HasFindings == nil &&
 		f.Freshness == "" &&
+		f.Resolution == "" &&
 		f.Coverage == "" &&
 		len(f.Technologies) == 0 &&
 		len(f.TechnologyCategories) == 0 &&

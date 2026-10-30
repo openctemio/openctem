@@ -9,6 +9,7 @@
  * undone from its toast.
  */
 
+import { FindingTitleCell } from '@/features/findings/components/cells/finding-title-cell'
 import { useBreadcrumbTitle } from '@/components/layout'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
@@ -86,7 +87,8 @@ import { nextWorkFinding, positionOf, stepFinding } from '../lib/task-nav'
 import type { FindingStatus } from '@/features/findings/types'
 
 const MEMBER_PAGE = 200
-const ROW_HEIGHT = 44
+// Two lines: the title and the target under it (FindingTitleCell).
+const ROW_HEIGHT = 52
 
 type Row =
   | { kind: 'group'; key: string; label: string; count: number }
@@ -417,7 +419,7 @@ export function TaskDetail({ taskId }: { taskId: string }) {
   const owner =
     [owners.user(task.assignee_user_id), owners.group(task.assignee_group_id)]
       .filter(Boolean)
-      .join(' · ') || t('remediationHub.owner.unassigned')
+      .join(', ') || t('remediationHub.owner.unassigned')
   const steps = fixSteps(undefined, task.action_key)
   const targets = (siblings?.data ?? []).filter((x) => x.id !== task.id)
 
@@ -798,10 +800,12 @@ function MemberRow({
       <button
         type="button"
         onClick={onOpen}
-        className="min-w-0 flex-1 truncate text-start hover:underline"
-        aria-label={t('remediationHub.detail.openFinding', undefined, { title: m.title })}
+        className="min-w-0 flex-1 text-start hover:[&_p]:underline"
+        aria-label={t('remediationHub.detail.openFinding', undefined, {
+          title: [m.title, m.asset_name].filter(Boolean).join(', '),
+        })}
       >
-        {m.title}
+        <FindingTitleCell title={m.title} target={m.asset_name} />
       </button>
       {m.role === 'related' && (
         <span className="text-muted-foreground text-xs">{t('remediationHub.detail.related')}</span>

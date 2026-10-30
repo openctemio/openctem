@@ -301,9 +301,12 @@ func TestLedgerGuard_RepositoriesHandedOutOnlyAtKnownSites(t *testing.T) {
 		"cmd/server/signer_ledger_export.go NewScopeExclusionRepository": true,
 		// Read-only dry run of CI trusts' repositories against scope; the
 		// repositories go straight into scope.NewService and nothing is written.
-		"internal/tools/citrustscopeplan/main.go NewScopeTargetRepository":              true,
-		"internal/tools/citrustscopeplan/main.go NewScopeExclusionRepository":           true,
-		"cmd/server/services.go NewBountyProgramRepository":                             true,
+		"internal/tools/citrustscopeplan/main.go NewScopeTargetRepository":    true,
+		"internal/tools/citrustscopeplan/main.go NewScopeExclusionRepository": true,
+		"cmd/server/services.go NewBountyProgramRepository":                   true,
+		// check_scope: handed to the read-only mcpProgramMembers lister
+		// (MemberProgramIDs only), so nothing it holds can write scope.
+		"cmd/server/handlers.go NewBountyProgramRepository":                             true,
 		"internal/infra/postgres/bounty_program_repository.go NewScopeTargetRepository": true,
 		// scope.NewService, CertMonitor.SetDomainSources (reads verified
 		// domains' entries), the data-expiration controller (time-based
@@ -312,6 +315,10 @@ func TestLedgerGuard_RepositoriesHandedOutOnlyAtKnownSites(t *testing.T) {
 		"cmd/server/services.go ScopeExcl":   true,
 		"cmd/server/workers.go ScopeTarget":  true,
 		"cmd/server/workers.go ScopeExcl":    true,
+		// The sensor policy prefill: read-only lister interfaces (ListActive only),
+		// so nothing it holds can write scope around the ledger hook.
+		"cmd/server/handlers.go ScopeTarget": true,
+		"cmd/server/handlers.go ScopeExcl":   true,
 	}
 	root := moduleRoot(t)
 	seen := map[string]int{}

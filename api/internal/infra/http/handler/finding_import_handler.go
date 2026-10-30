@@ -163,15 +163,32 @@ type FindingImportResponse struct {
 type ImportFileResponse struct {
 	// ImportID is the record of a committed file: the producer of the
 	// findings (scan_id) and assets (import_id) it wrote. Empty in a preview.
-	ImportID string               `json:"import_id,omitempty"`
-	Name     string               `json:"name"`
-	Format   string               `json:"format,omitempty"`
-	Error    *ImportFileError     `json:"error,omitempty"`
-	Stats    ImportStats          `json:"stats"`
-	Issues   []ImportIssue        `json:"issues,omitempty"`
-	Unmapped []string             `json:"unmapped,omitempty"`
-	VEX      *ImportVEXSummary    `json:"vex,omitempty"`
-	Ingest   *ImportIngestSummary `json:"ingest,omitempty"`
+	ImportID string           `json:"import_id,omitempty"`
+	Name     string           `json:"name"`
+	Format   string           `json:"format,omitempty"`
+	Error    *ImportFileError `json:"error,omitempty"`
+	Stats    ImportStats      `json:"stats"`
+	Issues   []ImportIssue    `json:"issues,omitempty"`
+	Unmapped []string         `json:"unmapped,omitempty"`
+	// UnmappedTotal is the count before the lists were cut.
+	UnmappedTotal int `json:"unmapped_total,omitempty"`
+	// Layout of a recon directory ("v3", "v4").
+	Layout string `json:"layout,omitempty"`
+	// SkippedByPolicy are the files of a recon directory that were not
+	// opened on purpose (people and credential data, images).
+	SkippedByPolicy      []ImportSkippedPath `json:"skipped_by_policy,omitempty"`
+	SkippedByPolicyTotal int                 `json:"skipped_by_policy_total,omitempty"`
+	// Candidates are the imported hosts outside the organization's scope:
+	// held for review, never scanned.
+	Candidates int                  `json:"candidates,omitempty"`
+	VEX        *ImportVEXSummary    `json:"vex,omitempty"`
+	Ingest     *ImportIngestSummary `json:"ingest,omitempty"`
+}
+
+// ImportSkippedPath is a file of a bundle that was not read, with the reason.
+type ImportSkippedPath struct {
+	Path   string `json:"path"`
+	Reason string `json:"reason"`
 }
 
 // ImportFileError is why a file could not be imported.
@@ -190,6 +207,7 @@ type ImportStats struct {
 	Components int            `json:"components"`
 	Statements int            `json:"statements"`
 	Skipped    int            `json:"skipped"`
+	Endpoints  int            `json:"endpoints,omitempty"`
 	BySeverity map[string]int `json:"by_severity,omitempty"`
 }
 
@@ -222,13 +240,16 @@ type ImportIngestSummary struct {
 	FindingsSkipped         int      `json:"findings_skipped"`
 	ComponentsCreated       int      `json:"components_created"`
 	ComponentsUpdated       int      `json:"components_updated"`
+	EndpointsCreated        int      `json:"endpoints_created,omitempty"`
+	EndpointsUpdated        int      `json:"endpoints_updated,omitempty"`
+	EndpointsRefused        int      `json:"endpoints_refused,omitempty"`
 	Errors                  []string `json:"errors,omitempty"`
 }
 
 // Import handles POST /api/v1/findings/imports.
 //
 // @Summary      Import results from another tool
-// @Description  Multipart upload of an exported file (Nessus .nessus, Qualys detection XML with an optional KnowledgeBase part, CycloneDX, SPDX, OSV results, CSAF, OpenVEX, DefectDojo Generic Findings JSON) or a ZIP of them. The format is detected from the content. A committed upload is stored and imported by the ingest worker: it answers 202 with Location (its receipt) as soon as the files are stored; GET /findings/imports/{id}/result (with wait=N to wait) returns the per-file results once it is imported, and the receipt says what it did to the organization's findings. The same files from the same caller within 10 minutes, without an Idempotency-Key, are the same upload. With dry_run=true the files are only parsed and counted in the request (200). The import runs with the uploader's rights: findings land only on assets in the uploader's data scope, nothing is closed unless the upload declares coverage=full for explicit asset_id values (then the open findings of each file's tool on those assets that the upload did not report are closed, with the same guards as a covered scan), and a VEX not_affected statement only requests a false positive (a pending request that a second person decides under the approval policy), and only under INGEST_VEX=enforce for an uploader holding findings:approve. Send the knowledge_base part before the file part. An Idempotency-Key header (1-128 printable ASCII) makes a retry of the same files return the first answer (Idempotent-Replayed: true); the same key with other files is 422, while the first request runs 409, and when the key store is unavailable 503 (nothing imported).
+// @Description  Multipart upload of an exported file (Nessus .nessus, Qualys detection XML with an optional KnowledgeBase part, CycloneDX, SPDX, OSV results, CSAF, OpenVEX, DefectDojo Generic Findings JSON) or a ZIP of them. A ZIP that is a reconFTW results directory (detected from its layout) is read as one unit: subdomains, addresses, ports, live web services, URLs and nuclei results are joined into one partial-coverage report, the hosts the organization's scope does not cover are held for review and never scanned, people and credential files (osint/) are never opened, and the answer lists the skipped-by-policy and unmapped files; it is refused with coverage=full. The format is detected from the content. A committed upload is stored and imported by the ingest worker: it answers 202 with Location (its receipt) as soon as the files are stored; GET /findings/imports/{id}/result (with wait=N to wait) returns the per-file results once it is imported, and the receipt says what it did to the organization's findings. The same files from the same caller within 10 minutes, without an Idempotency-Key, are the same upload. With dry_run=true the files are only parsed and counted in the request (200). The import runs with the uploader's rights: findings land only on assets in the uploader's data scope, nothing is closed unless the upload declares coverage=full for explicit asset_id values (then the open findings of each file's tool on those assets that the upload did not report are closed, with the same guards as a covered scan), and a VEX not_affected statement only requests a false positive (a pending request that a second person decides under the approval policy), and only under INGEST_VEX=enforce for an uploader holding findings:approve. Send the knowledge_base part before the file part. An Idempotency-Key header (1-128 printable ASCII) makes a retry of the same files return the first answer (Idempotent-Replayed: true); the same key with other files is 422, while the first request runs 409, and when the key store is unavailable 503 (nothing imported).
 // @Tags         Findings
 // @Accept       multipart/form-data
 // @Produce      json
@@ -237,7 +258,7 @@ type ImportIngestSummary struct {
 // @Param        dry_run          query     bool    false  "Parse and count only"
 // @Param        format           query     string  false  "Force the format of a single file"
 // @Param        min_severity     query     string  false  "Drop findings below: info, low, medium, high, critical"
-// @Param        coverage         query     string  false  "partial (default, closes nothing) or full: the upload is a complete scan of the asset_id assets by each file's tool, and their open findings of that tool it does not report are closed (needs findings:status, findings:bulk_update and step-up; not with min_severity)"
+// @Param        coverage         query     string  false  "partial (default, closes nothing) or full: the upload is a complete scan of the asset_id assets by each file's tool, and their open findings of that tool it does not report are closed (needs findings:status, findings:bulk_update and step-up; not with min_severity; closes only with findings:verify, else the receipt note is needs_verify and nothing closes; critical and known-exploited findings, and findings last sighted by a platform sensor, stay open)"
 // @Param        asset_id         query     []string  false  "With coverage=full: 1 to 100 asset ids visible to the uploader"  collectionFormat(multi)
 // @Param        Idempotency-Key  header    string  false  "Makes a retry of the same upload return the first answer"
 // @Success      200  {object}  FindingImportResponse  "Preview"
@@ -478,6 +499,9 @@ func (h *FindingImportHandler) parseCoverage(r *http.Request, req *findingimport
 					" and " + permission.FindingsBulkUpdate.String())
 			}
 		}
+		// Closing as fixed is a verification: without findings:verify the
+		// upload is imported and closes nothing (coverage note needs_verify).
+		req.Coverage.CanVerify = middleware.HasPermission(r.Context(), permission.FindingsVerify.String())
 		if req.MinSeverity != "" {
 			// Findings below min_severity are dropped, so their absence
 			// proves nothing.
@@ -617,7 +641,13 @@ func toImportFileResponse(fr *findingimport.FileResult) ImportFileResponse {
 		Stats: ImportStats{
 			Records: fr.Stats.Records, Assets: fr.Stats.Assets, Findings: fr.Stats.Findings,
 			Components: fr.Stats.Components, Statements: fr.Stats.Statements, Skipped: fr.Stats.Skipped,
+			Endpoints: fr.Stats.Endpoints,
 		},
+		UnmappedTotal: fr.UnmappedTotal, Layout: fr.Layout, Candidates: fr.Candidates,
+		SkippedByPolicyTotal: fr.SkippedByPolicyTotal,
+	}
+	for _, sp := range fr.SkippedByPolicy {
+		out.SkippedByPolicy = append(out.SkippedByPolicy, ImportSkippedPath{Path: sp.Path, Reason: sp.Reason})
 	}
 	if len(fr.Stats.BySeverity) > 0 {
 		out.Stats.BySeverity = make(map[string]int, len(fr.Stats.BySeverity))
@@ -640,6 +670,7 @@ func toImportFileResponse(fr *findingimport.FileResult) ImportFileResponse {
 			AssetsCreated: o.AssetsCreated, AssetsUpdated: o.AssetsUpdated, AssetsSkippedOutOfScope: o.AssetsSkippedOutOfScope,
 			FindingsCreated: o.FindingsCreated, FindingsUpdated: o.FindingsUpdated, FindingsSkipped: o.FindingsSkipped,
 			ComponentsCreated: o.ComponentsCreated, ComponentsUpdated: o.ComponentsUpdated, Errors: o.Errors,
+			EndpointsCreated: o.EndpointsCreated, EndpointsUpdated: o.EndpointsUpdated, EndpointsRefused: o.EndpointsRefused,
 		}
 	}
 	return out
@@ -715,7 +746,7 @@ func (h *FindingImportHandler) commitImport(w http.ResponseWriter, r *http.Reque
 	hasher := newRequestHasher(q)
 	env := findingimport.Envelope{
 		SessionID: req.SessionID, Format: string(req.Format), MinSeverity: string(req.MinSeverity),
-		CanApprove: req.CanApprove, CoverageAll: req.Coverage.Full, Caller: h.callerOf(r),
+		CanApprove: req.CanApprove, CoverageAll: req.Coverage.Full, CoverageVerify: req.Coverage.CanVerify, Caller: h.callerOf(r),
 		Audit: h.auditContext(r, tid),
 	}
 	if req.Mapping != nil {

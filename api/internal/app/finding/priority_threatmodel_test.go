@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -159,7 +160,7 @@ func TestThreatenedSet_ErrorDegrades(t *testing.T) {
 func TestEnrichAndClassifyBatch_ThreatOracleCalledOncePerBatch(t *testing.T) {
 	svc := newClassifySvc()
 	svc.epssRepo = emptyEPSS{}
-	svc.kevRepo = emptyKEV{}
+	svc.kevRepo = kevOf{"CVE-2024-0001"}
 
 	tenant := shared.NewID()
 	onPath := newTestAsset(t, asset.ExposurePrivate)
@@ -172,7 +173,9 @@ func TestEnrichAndClassifyBatch_ThreatOracleCalledOncePerBatch(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NewFinding: %v", err)
 		}
-		f.SetIsInKEV(true)
+		if err := f.SetClassification("CVE-2024-0001", nil, "", nil, nil); err != nil {
+			t.Fatalf("SetClassification: %v", err)
+		}
 		return f
 	}
 	fOn := mkKEV(onPath)
@@ -297,8 +300,70 @@ func (emptyEPSS) GetByCVEIDs(_ context.Context, _ []string) (map[string]EPSSData
 	return map[string]EPSSData{}, nil
 }
 
+// kevOf is a KEV catalog holding exactly the given CVEs.
+type kevOf []string
+
+func (k kevOf) GetByCVEIDs(_ context.Context, ids []string) (map[string]KEVData, error) {
+	out := map[string]KEVData{}
+	for _, id := range ids {
+		for _, c := range k {
+			if id == c {
+				out[id] = KEVData{}
+			}
+		}
+	}
+	return out, nil
+}
+
 type emptyKEV struct{}
 
 func (emptyKEV) GetByCVEIDs(_ context.Context, _ []string) (map[string]KEVData, error) {
 	return map[string]KEVData{}, nil
+}
+
+// The KEV flag follows the catalog: a finding stored as KEV whose CVE is no
+// longer in the catalog loses the flag and its due date; a failed catalog
+// lookup keeps the stored flag.
+func TestEnrichAndClassifyBatch_KEVFlagFollowsCatalog(t *testing.T) {
+	tenant := shared.NewID()
+	a := newTestAsset(t, asset.ExposurePrivate)
+	assets := map[shared.ID]*asset.Asset{a.ID(): a}
+	mk := func() *vulnerability.Finding {
+		f, err := vulnerability.NewFinding(tenant, a.ID(), vulnerability.FindingSourceSCA, "trivy", vulnerability.SeverityMedium, "kev")
+		if err != nil {
+			t.Fatalf("NewFinding: %v", err)
+		}
+		if err := f.SetClassification("CVE-2024-0002", nil, "", nil, nil); err != nil {
+			t.Fatalf("SetClassification: %v", err)
+		}
+		f.SetIsInKEV(true)
+		f.SetKEVDueDate(time.Now())
+		return f
+	}
+
+	svc := newClassifySvc()
+	svc.epssRepo = emptyEPSS{}
+	svc.kevRepo = emptyKEV{}
+	left := mk()
+	if err := svc.EnrichAndClassifyBatch(context.Background(), tenant, []*vulnerability.Finding{left}, assets); err != nil {
+		t.Fatalf("EnrichAndClassifyBatch: %v", err)
+	}
+	if left.IsInKEV() || left.KEVDueDate() != nil {
+		t.Fatalf("CVE left the catalog: is_in_kev=%v due=%v, want cleared", left.IsInKEV(), left.KEVDueDate())
+	}
+
+	svc.kevRepo = failingKEV{}
+	kept := mk()
+	if err := svc.EnrichAndClassifyBatch(context.Background(), tenant, []*vulnerability.Finding{kept}, assets); err != nil {
+		t.Fatalf("EnrichAndClassifyBatch: %v", err)
+	}
+	if !kept.IsInKEV() || kept.KEVDueDate() == nil {
+		t.Fatal("a failed KEV lookup must keep the stored flag and due date")
+	}
+}
+
+type failingKEV struct{}
+
+func (failingKEV) GetByCVEIDs(_ context.Context, _ []string) (map[string]KEVData, error) {
+	return nil, errors.New("catalog down")
 }

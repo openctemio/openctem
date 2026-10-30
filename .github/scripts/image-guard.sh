@@ -13,6 +13,9 @@
 #      image refresh fixes those. Advisories in application dependencies are
 #      listed as warnings; govulncheck and npm audit gate them in API/Web CI.
 # Needs docker and trivy on PATH.
+# IMAGE_GUARD_REPORT=<file>: also append one JSON line per fixable HIGH/CRITICAL
+# advisory (OS and application) to the file, for early-warning.sh. The gates
+# above are unchanged by it.
 set -euo pipefail
 comp="$1" img="$2"
 
@@ -29,7 +32,6 @@ case "$comp" in
   openctem-gateway) budget=75 ;;   # 63 MB (runs as uid 1000)
   migrations)       budget=25 ;;   # 18 MB
   seed)             budget=25 ;;   # 17 MB
-  admin-cli)        budget=40 ;;   # 34 MB at v0.10.0 (WebAuthn + TOTP for console sign-in)
   *) echo "image-guard: no budget for component '$comp'; add one" >&2; exit 2 ;;
 esac
 
@@ -64,11 +66,32 @@ else
   echo "image-guard $comp: no setuid/setgid files"
 fi
 
-if ! trivy image --quiet --scanners vuln --pkg-types os --ignore-unfixed \
+# Fetch the vulnerability DB first, with retries: a registry hiccup (a 404 on a
+# mirror layer) must fail as "DB unavailable", never be reported as advisories.
+db_ok=0
+for attempt in 1 2 3; do
+  if trivy image --quiet --download-db-only; then db_ok=1; break; fi
+  echo "image-guard $comp: vulnerability DB download failed (attempt $attempt), retrying"
+  sleep $((attempt * 15))
+done
+if [ "$db_ok" != 1 ]; then
+  echo "::error::image-guard $comp: could not download the vulnerability DB (registry outage), not an image problem"
+  exit 1
+fi
+
+if [ -n "${IMAGE_GUARD_REPORT:-}" ]; then
+  for t in os library; do
+    trivy image --quiet --skip-db-update --scanners vuln --pkg-types "$t" --ignore-unfixed --severity HIGH,CRITICAL --format json "$img" |
+      jq -c --arg c "$comp" --arg k "$t" '.Results[]? | .Target as $t | .Vulnerabilities[]? | {component: $c, target: $t, pkg: .PkgName, installed: .InstalledVersion, fixed: .FixedVersion, id: .VulnerabilityID, severity: .Severity, kind: $k}' \
+      >>"$IMAGE_GUARD_REPORT" || true
+  done
+fi
+
+if ! trivy image --quiet --skip-db-update --scanners vuln --pkg-types os --ignore-unfixed \
   --severity HIGH,CRITICAL --exit-code 1 --format table "$img"; then
   bad "OS packages with fixable HIGH/CRITICAL advisories (refresh the base image)"
 fi
-lib=$(trivy image --quiet --scanners vuln --pkg-types library --ignore-unfixed \
+lib=$(trivy image --quiet --skip-db-update --scanners vuln --pkg-types library --ignore-unfixed \
   --severity HIGH,CRITICAL --format json "$img" |
   jq -r '[.Results[]? | .Target as $t | .Vulnerabilities[]? | "\($t): \(.PkgName) \(.InstalledVersion) -> \(.FixedVersion) \(.VulnerabilityID)"] | unique | .[]')
 if [ -n "$lib" ]; then

@@ -26,7 +26,7 @@ import { SchedulePreview } from '../schedule-preview'
 import type { ScanReview } from '../../hooks/use-scan-review'
 import type { ScanWizardStep } from './scan-stepper'
 import { WorkflowPreviewBody } from './workflow-preview'
-import { RefusalGroups } from './refusal-groups'
+import { ReadinessLine, RefusalGroups } from './refusal-groups'
 
 interface ReviewStepProps {
   data: NewScanFormData
@@ -168,6 +168,8 @@ export function ReviewStep({
 }: ReviewStepProps) {
   const { t } = useTranslation()
   const tgt = data.targets
+  // Typed targets (not picked assets or inventory names) the review may take out.
+  const typedSet = new Set(tgt.customTargets.map((x) => x.trim().toLowerCase()))
   const typed = parsePastedTargets(tgt.customTargets).targets.length
   const expanded = tgt.coverage && tgt.coverage !== 'host' ? (tgt.expandedTargets ?? []).length : 0
   const results = review.scope.results ?? []
@@ -244,7 +246,7 @@ export function ReviewStep({
               { count: review.targets.length.toLocaleString() }
             )}
           </span>
-          {parts.length > 0 && <span className="text-muted-foreground"> · {parts.join(', ')}</span>}
+          {parts.length > 0 && <span className="text-muted-foreground">, {parts.join(', ')}</span>}
           {review.scope.available && review.targets.length > 0 && (
             <span className="mt-1 flex items-center gap-1 text-xs">
               {review.scope.isLoading && results.length === 0 ? (
@@ -252,7 +254,7 @@ export function ReviewStep({
               ) : refused.length > 0 ? (
                 <>
                   <ShieldAlert className="h-3.5 w-3.5 text-warning" aria-hidden />
-                  {t('scans.summary.inScope', undefined, { count: allowed })} ·{' '}
+                  {t('scans.summary.inScope', undefined, { count: allowed })},{' '}
                   <span className="text-warning">
                     {t('scans.summary.mayNotScan', undefined, { count: refused.length })}
                   </span>
@@ -273,8 +275,7 @@ export function ReviewStep({
           <RoutingNote routing={review.scope.routing} />
           {data.scanZoneId && (
             <span className="text-muted-foreground">
-              {' '}
-              ·{' '}
+              ,{' '}
               {t('scans.review.zone', undefined, {
                 name: zones.find((z) => z.id === data.scanZoneId)?.name ?? data.scanZoneId,
               })}
@@ -286,8 +287,7 @@ export function ReviewStep({
             {t(`scans.rules.review.${data.ruleSources || 'inherit'}`)}
             {data.ruleSources !== 'platform' && data.customTemplateIds.length > 0 && (
               <span className="text-muted-foreground">
-                {' '}
-                ·{' '}
+                ,{' '}
                 {t('scans.rules.review.templates', undefined, {
                   count: data.customTemplateIds.length,
                 })}
@@ -308,13 +308,7 @@ export function ReviewStep({
       {refused.length > 0 && (
         <section aria-label={t('scans.review.refusedLabel')} className="min-w-0 space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm font-medium">
-              {t(
-                refused.length === 1 ? 'scans.scope.refusedOne' : 'scans.scope.refusedMany',
-                undefined,
-                { count: refused.length }
-              )}
-            </p>
+            <ReadinessLine total={results.length} ready={allowed} blocked={refused.length} />
             <div className="flex flex-wrap items-center gap-2">
               <Button
                 type="button"
@@ -357,13 +351,25 @@ export function ReviewStep({
         </section>
       )}
 
-      {canReadZones && zones.length > 0 && (
+      {canReadZones && (
         <div className="rounded-lg border">
           <ScanRoutingSection
             zones={zones}
             value={data.scanZoneId}
             onChange={(scanZoneId) => onChange({ scanZoneId })}
             request={zoneRequest}
+            removable={(target) => typedSet.has(target.toLowerCase())}
+            onRemove={(targets) => {
+              const drop = new Set(targets.map((x) => x.toLowerCase()))
+              onChange({
+                targets: {
+                  ...data.targets,
+                  customTargets: data.targets.customTargets.filter(
+                    (x) => !drop.has(x.trim().toLowerCase())
+                  ),
+                },
+              })
+            }}
           />
         </div>
       )}

@@ -41,8 +41,8 @@ type ReviewNetwork struct {
 	// the range around the address is offered as a fix.
 	OrgMatches bool `json:"org_matches"`
 	// Seeded: the address is in one of the organization's network seeds
-	// (a seeded AS, its announced prefixes, or a seeded organization name,
-	// RFC-082); the range around it is offered as a fix too.
+	// (a seeded AS, its announced prefixes, or a seeded organization name);
+	// the range around it is offered as a fix too.
 	Seeded bool `json:"seeded"`
 }
 

@@ -18,6 +18,7 @@ import (
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	freshdom "github.com/openctemio/openctem/api/pkg/domain/assetfreshness"
 	assetgroupdom "github.com/openctemio/openctem/api/pkg/domain/assetgroup"
+	"github.com/openctemio/openctem/api/pkg/domain/assetresolution"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	covdom "github.com/openctemio/openctem/api/pkg/domain/coverage"
 	"github.com/openctemio/openctem/api/pkg/domain/scoring"
@@ -71,6 +72,9 @@ type AssetService struct {
 	// Scope rule evaluator callback (set by services.go wiring)
 	scopeRuleEvaluator scope.RuleEvaluatorFunc
 
+	// ruleNotifier evaluates the tenant's rule groups after asset changes.
+	ruleNotifier GroupRuleNotifier
+
 	// User matcher for resolving owner_ref (an email) to a tenant member, who
 	// becomes the asset's primary owner in asset_owners.
 	userMatcher UserMatcher
@@ -107,6 +111,7 @@ type AssetService struct {
 	freshness  freshdom.Repository
 	coverage   covdom.Repository
 	enrichReqs freshdom.RequestRepository
+	resolution assetresolution.Store
 	// createdHook requests enrichment of assets a person created.
 	createdHook CreatedAssetsHook
 	// Background re-resolution after a precedence change, per tenant.
@@ -185,6 +190,17 @@ func (s *AssetService) SetScoringConfigProvider(provider assetdom.ScoringConfigP
 // SetRedisClient sets the Redis client for distributed locking.
 func (s *AssetService) SetRedisClient(client *redis.Client) {
 	s.redisClient = client
+}
+
+// SetGroupRuleNotifier wires the evaluation of rule groups after an asset
+// of the tenant is created or changed.
+func (s *AssetService) SetGroupRuleNotifier(n GroupRuleNotifier) { s.ruleNotifier = n }
+
+// notifyGroupRules asks for the tenant's rule groups to be evaluated again.
+func (s *AssetService) notifyGroupRules(tenantID shared.ID) {
+	if s.ruleNotifier != nil {
+		s.ruleNotifier.NotifyAssetsChanged(tenantID)
+	}
 }
 
 // SetScopeRuleEvaluator sets the scope rule evaluator callback.
@@ -545,6 +561,7 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 		s.createdHook(ctx, tenantID, []*assetdom.Asset{a})
 	}
 
+	s.notifyGroupRules(tenantID)
 	s.logger.Info("asset created", "id", a.ID().String(), "name", logger.SanitizeValue(a.Name()))
 	return a, nil
 }
@@ -1231,6 +1248,7 @@ func (s *AssetService) updateAsset(ctx context.Context, assetID string, tenantID
 		}()
 	}
 
+	s.notifyGroupRules(parsedTenantID)
 	s.logger.Info("asset updated", "id", a.ID().String())
 	return a, held, nil
 }
@@ -1397,8 +1415,7 @@ type ListAssetsInput struct {
 	// dependency, monitor_only, rejected) or the aliases unknown, unconfirmed
 	// and approved (RFC-036). Validated by attribution.ParseFilter.
 	Attribution []string `validate:"max=9,dive,max=20"`
-	// CoveredBy: assets the scope join confirmed through this scope entry
-	// (RFC-054 §4.3), the link behind "N assets confirmed".
+	// CoveredBy: assets the scope join confirmed through this scope entry, the link behind "N assets confirmed".
 	CoveredBy string `validate:"omitempty,uuid"`
 	// Triage (research/124, RFC-054 §15): scope status (in_scope,
 	// not_covered, excluded, internal), the attribution rules and discovery
@@ -1416,6 +1433,8 @@ type ListAssetsInput struct {
 	// Freshness: stale (an attribute class past its TTL) or never (a passive
 	// class that applies was never observed); docs/architecture/asset-freshness.md.
 	Freshness string `validate:"omitempty,oneof=stale never"`
+	// Resolution: not_resolving or resolving (asset_resolution).
+	Resolution string `validate:"omitempty,oneof=not_resolving resolving"`
 	// Coverage: covered or uncovered by the coverage ledger
 	// (asset.CoverageWindow).
 	Coverage string `validate:"omitempty,oneof=covered uncovered"`
@@ -1434,10 +1453,20 @@ type ListAssetsInput struct {
 	IsAdmin      bool   // True for owner/admin (bypasses data scope)
 }
 
-// ListAssets retrieves assets with filtering, sorting, and pagination.
-func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (pagination.Result[*assetdom.Asset], error) {
-	filter := assetdom.NewFilter()
+// BuildAssetFilter turns the list parameters into the repository filter: the
+// one filter compiler the Assets list and the group rules share. It sets no
+// data scope; the caller adds the one that applies.
+func BuildAssetFilter(input ListAssetsInput) (assetdom.Filter, error) {
+	filter := withCoreFilters(assetdom.NewFilter(), input)
+	filter, err := withInventoryFilters(filter, input)
+	if err != nil {
+		return assetdom.Filter{}, err
+	}
+	return withTriageFilters(filter, input)
+}
 
+// withCoreFilters applies the type, state, tag, search and risk parameters.
+func withCoreFilters(filter assetdom.Filter, input ListAssetsInput) assetdom.Filter {
 	// Tenant filter
 	if input.TenantID != "" {
 		filter = filter.WithTenantID(input.TenantID)
@@ -1552,6 +1581,12 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 		filter = filter.WithPropertiesFilter(input.PropertiesFilter)
 	}
 
+	return filter
+}
+
+// withInventoryFilters applies the inventory dimensions (business units,
+// groups, owners, names and ranges) and the attribution parameters.
+func withInventoryFilters(filter assetdom.Filter, input ListAssetsInput) (assetdom.Filter, error) {
 	// CTEM inventory dimensions.
 	if len(input.BusinessUnitIDs) > 0 {
 		filter = filter.WithBusinessUnitIDs(input.BusinessUnitIDs...)
@@ -1575,20 +1610,26 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 		filter = filter.WithHasOwner(*input.HasOwner)
 	}
 	if af, given, err := attribution.ParseFilter(input.Attribution); err != nil {
-		return pagination.Result[*assetdom.Asset]{}, fmt.Errorf("%w: %s", shared.ErrValidation, err.Error())
+		return assetdom.Filter{}, fmt.Errorf("%w: %s", shared.ErrValidation, err.Error())
 	} else if given {
 		filter = filter.WithAttribution(af)
 	}
 	if input.CoveredBy != "" {
 		id, err := shared.IDFromString(input.CoveredBy)
 		if err != nil {
-			return pagination.Result[*assetdom.Asset]{}, fmt.Errorf("%w: covered_by must be a scope entry id", shared.ErrValidation)
+			return assetdom.Filter{}, fmt.Errorf("%w: covered_by must be a scope entry id", shared.ErrValidation)
 		}
 		filter.CoveredByScopeTarget = &id
 	}
+	return filter, nil
+}
+
+// withTriageFilters applies the triage, technology, environment and time
+// parameters.
+func withTriageFilters(filter assetdom.Filter, input ListAssetsInput) (assetdom.Filter, error) {
 	for _, r := range input.DiscoveredBy {
 		if _, _, err := attribution.Weight(attribution.Rule(r)); err != nil {
-			return pagination.Result[*assetdom.Asset]{}, fmt.Errorf("%w: unknown discovered_by rule %q", shared.ErrValidation, r)
+			return assetdom.Filter{}, fmt.Errorf("%w: unknown discovered_by rule %q", shared.ErrValidation, r)
 		}
 	}
 	filter.ScopeStatuses = input.ScopeStatus
@@ -1600,6 +1641,7 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 	}
 	filter.ProgramAssets = input.ProgramAssets
 	filter.Freshness = input.Freshness
+	filter.Resolution = input.Resolution
 	filter.Coverage = input.Coverage
 	filter.Technologies = input.Technologies
 	filter.TechnologyCategories = input.TechnologyCategories
@@ -1634,6 +1676,16 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 	}
 	filter.ExpiresAfter = input.ExpiresAfter
 	filter.ExpiresBefore = input.ExpiresBefore
+
+	return filter, nil
+}
+
+// ListAssets retrieves assets with filtering, sorting, and pagination.
+func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (pagination.Result[*assetdom.Asset], error) {
+	filter, err := BuildAssetFilter(input)
+	if err != nil {
+		return pagination.Result[*assetdom.Asset]{}, err
+	}
 
 	// Layer 2: Data Scope - non-admin users only see assets in their groups
 	access, err := s.listAccessScope(ctx, input.TenantID, input.ActingUserID, input.IsAdmin)
@@ -1967,6 +2019,9 @@ func (s *AssetService) BulkUpdateAssetStatus(ctx context.Context, tenantID strin
 	if int(updated) < len(validIDs) {
 		result.Failed += len(validIDs) - int(updated)
 	}
+	if updated > 0 {
+		s.notifyGroupRules(parsedTenantID)
+	}
 
 	s.logger.Info("bulk asset status update completed",
 		"status", input.Status,
@@ -2274,6 +2329,9 @@ type AssetDisplay struct {
 	Name   string
 	Type   string
 	WebURL string // repository assets only; empty otherwise
+	// CrownJewel and InternetFacing: the asset facts a findings row shows.
+	CrownJewel     bool
+	InternetFacing bool
 }
 
 // GetAssetDisplayInfo resolves the display label of many assets with two
@@ -2317,7 +2375,10 @@ func (s *AssetService) GetAssetDisplayInfo(ctx context.Context, tenantID string,
 
 	var repoIDs []shared.ID
 	for id, info := range infos {
-		result[id.String()] = AssetDisplay{ID: id.String(), Name: info.Name, Type: info.Type.String()}
+		result[id.String()] = AssetDisplay{
+			ID: id.String(), Name: info.Name, Type: info.Type.String(),
+			CrownJewel: info.CrownJewel, InternetFacing: info.InternetFacing,
+		}
 		if info.Type == assetdom.AssetTypeRepository {
 			repoIDs = append(repoIDs, id)
 		}

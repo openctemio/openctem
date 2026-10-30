@@ -17,22 +17,24 @@ import (
 // "no owner" and create two owners.
 //
 // Any owner membership counts, active or suspended: an organization whose
-// owner is suspended has an owner, and its data is theirs. Only the explicit
-// owner recovery (super admin, recovery=true) may add an owner then, and only
-// while none of its owners is active.
+// owner is suspended (or whose owner's account is blocked or erased) has an
+// owner, and its data is theirs. Only the explicit owner recovery (super
+// admin, recovery=true) may add an owner then, and only while none of its
+// owners is usable (UsableOwnerExists).
 
 // ownerPresenceQuery reports whether the organization has any member who is
 // its owner (by membership label or by holding the system owner role), and
-// whether any of them is active.
-const ownerPresenceQuery = `
-	SELECT COUNT(*) > 0,
-	       COALESCE(BOOL_OR(COALESCE(m.status, 'active') = 'active'), FALSE)
-	  FROM tenant_members m
-	 WHERE m.tenant_id = $1
-	   AND EXISTS (
-	        SELECT 1 FROM v_user_effective_role ver
-	         WHERE ver.tenant_id = m.tenant_id AND ver.user_id = m.user_id
-	           AND ver.role = 'owner')`
+// whether any of them is usable (UsableOwnerExists: active membership and an
+// account that is active and not erased).
+var ownerPresenceQuery = `
+	SELECT EXISTS (
+	        SELECT 1 FROM tenant_members m
+	         WHERE m.tenant_id = $1
+	           AND EXISTS (
+	                SELECT 1 FROM v_user_effective_role ver
+	                 WHERE ver.tenant_id = m.tenant_id AND ver.user_id = m.user_id
+	                   AND ver.role = 'owner')),
+	       ` + UsableOwnerExists("$1")
 
 type ownerQuerier interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
@@ -93,9 +95,8 @@ func (r *TenantRepository) CreateFirstOwnerMembership(ctx context.Context, m *te
 		VALUES ($1, $2, $3, $4, $5, $6)`,
 		m.ID().String(), m.UserID().String(), tenantID, m.Role().String(), invitedBy, m.JoinedAt(),
 	); err != nil {
-		if isCheckViolation(err) {
-			err = tenant.ErrPlatformAdminMembership
-			return err
+		if isConstraintViolation(err, breakGlassConsoleOnly) {
+			return tenant.ErrBreakGlassMembership
 		}
 		return fmt.Errorf("failed to create membership: %w", err)
 	}

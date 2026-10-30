@@ -142,6 +142,9 @@ func registerSensorManagementRoutes(
 		// sensors:grant:widen (the service decides). Before /{id}.
 		r.GET("/grant-profiles", h.ListGrantProfiles, middleware.Require(permission.SensorsRead))
 		r.GET("/grant-summaries", h.ListGrantSummaries, middleware.Require(permission.SensorsRead))
+		// Install commands for a sensor that pairs (the "Add sensor" panel):
+		// no key; a pairing code, when given, travels in the body.
+		r.POST("/install-templates", h.InstallTemplates, middleware.Require(permission.SensorsPair))
 		r.GET("/{id}", h.Get, middleware.Require(permission.SensorsRead), own)
 		// Signing keys of key-bound sensors (RFC-052).
 		r.GET("/{id}/keys", h.ListSigningKeys, middleware.Require(permission.SensorsRead), own)
@@ -186,9 +189,9 @@ func registerSensorManagementRoutes(
 		// Creating a sensor and regenerating its key mint a persistent
 		// credential, so they need a recent sign-in (step-up), as an API key
 		// does. Revoking and deleting stay one click.
-		r.POST("/", h.Create, middleware.Require(permission.SensorsWrite), requireStepUp())
+		r.POST("/", h.Create, middleware.Require(permission.SensorsWrite), requireStepUp(), requireCredentialFactor())
 		r.PUT("/{id}", h.Update, middleware.Require(permission.SensorsWrite), own)
-		r.POST("/{id}/regenerate-key", h.RegenerateAPIKey, middleware.Require(permission.SensorsWrite), requireStepUp(), own)
+		r.POST("/{id}/regenerate-key", h.RegenerateAPIKey, middleware.Require(permission.SensorsWrite), requireStepUp(), requireCredentialFactor(), own)
 
 		// Status operations (admin-controlled)
 		r.POST("/{id}/activate", h.Activate, middleware.Require(permission.SensorsWrite), own)
@@ -257,9 +260,26 @@ func registerProxyPoolRoutes(
 		r.PATCH("/{id}", h.Update, middleware.Require(permission.SensorEgressWrite))
 		r.PUT("/{id}/endpoints", h.ReplaceEndpoints, middleware.Require(permission.SensorEgressWrite))
 		r.PATCH("/{id}/endpoints/{endpoint_id}", h.UpdateEndpoint, middleware.Require(permission.SensorEgressWrite))
+		// The Test button: sensors test the endpoints (the platform never
+		// connects to a proxy); one test per pool per minute.
+		r.POST("/{id}/test", h.Test, middleware.Require(permission.SensorEgressWrite))
+		r.GET("/{id}/tests", h.TestResults, middleware.Require(permission.SensorEgressRead))
 
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.SensorEgressDelete))
 	}, tenantMiddlewares...)
+}
+
+// registerProxyTestEchoRoute registers the echo a proxy test connects to
+// through each proxy: no session and no sensor key (the request leaves
+// through a proxy the organization chose); the path carries the token of one
+// live proxy_test command and anything else is not found. Rate limited per
+// client address, which is the proxy's exit address.
+func registerProxyTestEchoRoute(router Router, h *handler.ProxyTestEchoHandler) {
+	cfg := middleware.DefaultAuthRateLimitConfig()
+	// A pool of 64 endpoints behind one gateway tests from one address.
+	cfg.TokenExchangeRatePerMin = 600
+	limiter := middleware.NewDistributedAuthRateLimiter(cfg, nil, authRateLimitBackend, "proxy-test-echoes")
+	router.GET("/api/v1/proxy-test-echoes/{nonce}", h.Echo, limiter.TokenExchangeMiddleware())
 }
 
 // registerScanWindowRoutes registers the scan window API (RFC-067).
@@ -759,9 +779,9 @@ func registerSecretStoreRoutes(
 		// to an outside system (Git tokens, cloud keys), so every change
 		// needs a fresh step-up: a stolen session cannot plant, swap or
 		// remove one.
-		r.POST("/", h.Create, middleware.Require(permission.SecretStoreWrite), middleware.RequireAdmin(), requireStepUp())
-		r.PUT("/{id}", h.Update, middleware.Require(permission.SecretStoreWrite), middleware.RequireAdmin(), requireStepUp())
-		r.POST("/{id}/rotate", h.Rotate, middleware.Require(permission.SecretStoreWrite), middleware.RequireAdmin(), requireStepUp())
+		r.POST("/", h.Create, middleware.Require(permission.SecretStoreWrite), middleware.RequireAdmin(), requireStepUp(), requireCredentialFactor())
+		r.PUT("/{id}", h.Update, middleware.Require(permission.SecretStoreWrite), middleware.RequireAdmin(), requireStepUp(), requireCredentialFactor())
+		r.POST("/{id}/rotate", h.Rotate, middleware.Require(permission.SecretStoreWrite), middleware.RequireAdmin(), requireStepUp(), requireCredentialFactor())
 
 		// Delete operations
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.SecretStoreDelete), middleware.RequireAdmin(), requireStepUp())

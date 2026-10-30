@@ -7,7 +7,7 @@
 
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from '@/context/i18n-provider'
 import { ScanRoutingSection, toZonePreviewRequest } from '@/features/scan-zones'
 import { useScanZones } from '@/lib/api/scan-zone-hooks'
@@ -18,13 +18,12 @@ import {
   DialogBody,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
-import { ChevronLeft, ChevronRight, Loader2, Save } from 'lucide-react'
+import { ChevronRight, Loader2, Save } from 'lucide-react'
 
 import { ScanStepper, type ScanWizardStep } from './new-scan/scan-stepper'
 import { BasicInfoStep } from './new-scan/basic-info-step'
@@ -41,10 +40,15 @@ import {
   scheduleError,
 } from '../lib/scan-form'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { apiTargetOptions } from '../lib/dynamic-targets'
 import { notifyScannerConfigWarnings } from '../lib/scanner-config-warnings'
 import { useUpdateScanConfig, invalidateScanConfigsCache } from '@/lib/api/scan-hooks'
 import type { ScanConfig } from '@/lib/api/scan-types'
 import { refusedFromError, ScopeRefusalPanel, type ScopeRefusal } from '@/features/scope'
+import { useTargetsCheck } from '../hooks/use-targets-check'
+import { targetsNextBlock } from '../lib/targets-step'
+import { isFormDirty } from '../lib/form-dirty'
+import { useDiscardPrompt, WizardFooter } from './new-scan/wizard-chrome'
 
 interface EditScanDialogProps {
   scanConfig: ScanConfig | null
@@ -75,6 +79,7 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
           scanner_name: formData.mode === 'single' ? formData.scannerName : undefined,
           scan_workflow_id: formData.mode === 'workflow' ? formData.workflowId : undefined,
           targets_per_job: formData.maxConcurrent || 10,
+          target_options: apiTargetOptions(formData.targets.targetOptions),
         },
         formData.scanZoneId
       ),
@@ -85,10 +90,14 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
     scanConfig?.id ?? ''
   )
 
-  // Pre-populate form when scanConfig changes
+  // Pre-populate form when scanConfig changes; keep what it loaded with, to
+  // ask before closing with changes.
+  const initial = useRef<NewScanFormData>(DEFAULT_NEW_SCAN)
   useEffect(() => {
     if (scanConfig && open) {
-      setFormData(scanConfigToFormData(scanConfig))
+      const loaded = scanConfigToFormData(scanConfig)
+      initial.current = loaded
+      setFormData(loaded)
       setCurrentStep('basic')
     }
   }, [scanConfig, open])
@@ -164,7 +173,13 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
     }
   }
 
+  // Next on the Targets step waits while nothing can run (the same check the
+  // step shows, one cached request).
+  const { readiness } = useTargetsCheck(formData, open)
+  const nextBlock = currentStep === 'targets' ? targetsNextBlock(readiness, t) : null
+
   const handleNext = () => {
+    if (nextBlock) return
     if (!validateCurrentStep()) return
     if (!isLastStep) {
       setCurrentStep(STEPS[currentStepIndex + 1])
@@ -212,10 +227,19 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
     }
   }
 
-  const handleClose = () => {
+  const isLoading = isSubmitting || isUpdating
+
+  const close = () => {
     setRefused([])
     setCurrentStep('basic')
     onOpenChange(false)
+  }
+  const { requestClose, prompt: discardPrompt } = useDiscardPrompt(
+    () => isFormDirty(formData, initial.current),
+    close
+  )
+  const handleOpenChange = (next: boolean) => {
+    if (!next && !isLoading) requestClose()
   }
 
   const renderStep = () => {
@@ -225,7 +249,9 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
       case 'targets':
         return (
           <div>
-            {refused.length > 0 && <ScopeRefusalPanel refused={refused} className="mx-6 mt-4" />}
+            {refused.length > 0 && (
+              <ScopeRefusalPanel refused={refused} className="mx-4 mt-4 sm:mx-6" />
+            )}
             <TargetsStep
               data={formData}
               onChange={handleDataChange}
@@ -240,7 +266,7 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
         return (
           <>
             <ScheduleStep data={formData} onChange={handleDataChange} requireFutureRun={false} />
-            {canReadZones && zones.length > 0 && (
+            {canReadZones && (
               <ScanRoutingSection
                 zones={zones}
                 value={formData.scanZoneId}
@@ -255,18 +281,20 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
     }
   }
 
-  const isLoading = isSubmitting || isUpdating
-
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent size="lg">
-        <DialogHeader>
-          <DialogTitle>{t('scans.edit.title')}</DialogTitle>
-          <DialogDescription>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent size="xl">
+        <DialogHeader className="pb-0">
+          <DialogTitle>
+            {scanConfig?.name
+              ? t('scans.edit.titleNamed', undefined, { name: scanConfig.name })
+              : t('scans.edit.title')}
+          </DialogTitle>
+          <DialogDescription className="max-sm:sr-only">
             {t('scans.edit.description', undefined, { name: scanConfig?.name ?? '' })}
           </DialogDescription>
           <ScanStepper
-            className="px-0 pt-2 pb-0 sm:px-0"
+            className="px-0 pt-1 pb-2 sm:px-0"
             currentStep={currentStep}
             onStepClick={handleStepClick}
           />
@@ -274,65 +302,42 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
 
         <DialogBody className="px-0 py-0 sm:px-0">{renderStep()}</DialogBody>
 
-        <DialogFooter className="sm:items-center sm:justify-between">
-          <div className="flex justify-center sm:justify-start">
-            {!isFirstStep && (
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={handleBack}
-                disabled={isLoading}
-                className="w-full sm:w-auto"
-              >
-                <ChevronLeft className="me-1 h-4 w-4" />
-                {t('scans.common.back')}
-              </Button>
-            )}
-          </div>
-
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <WizardFooter
+          onBack={isFirstStep ? undefined : handleBack}
+          disabled={isLoading}
+          note={nextBlock ?? undefined}
+          noteId={nextBlock ? 'targets-next-blocked' : undefined}
+          noteTone="destructive"
+        >
+          {isLastStep ? (
+            <Button type="button" onClick={handleSubmit} disabled={isLoading}>
+              {isLoading ? (
+                <>
+                  <Loader2 className="me-2 h-4 w-4 animate-spin" />
+                  {t('scans.common.saving')}
+                </>
+              ) : (
+                <>
+                  <Save className="me-2 h-4 w-4" />
+                  {t('scans.edit.saveChanges')}
+                </>
+              )}
+            </Button>
+          ) : (
             <Button
               type="button"
-              variant="outline"
-              onClick={handleClose}
-              disabled={isLoading}
-              className="w-full sm:w-auto order-2 sm:order-1"
+              onClick={handleNext}
+              disabled={!!nextBlock}
+              aria-describedby={nextBlock ? 'targets-next-blocked' : undefined}
+              data-testid="wizard-next"
             >
-              {t('common.cancel')}
+              {t('scans.common.next')}
+              <ChevronRight className="ms-1 h-4 w-4" />
             </Button>
-
-            {isLastStep ? (
-              <Button
-                type="button"
-                onClick={handleSubmit}
-                disabled={isLoading}
-                className="w-full sm:w-auto order-1 sm:order-2"
-              >
-                {isLoading ? (
-                  <>
-                    <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                    {t('scans.common.saving')}
-                  </>
-                ) : (
-                  <>
-                    <Save className="me-2 h-4 w-4" />
-                    {t('scans.edit.saveChanges')}
-                  </>
-                )}
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                onClick={handleNext}
-                className="w-full sm:w-auto order-1 sm:order-2"
-              >
-                {t('scans.common.next')}
-                <ChevronRight className="ms-1 h-4 w-4" />
-              </Button>
-            )}
-          </div>
-        </DialogFooter>
+          )}
+        </WizardFooter>
       </DialogContent>
+      {discardPrompt}
     </Dialog>
   )
 }

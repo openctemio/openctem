@@ -58,6 +58,21 @@ function str(v: unknown): string | undefined {
   return typeof v === 'string' && v.trim() ? v.trim() : undefined
 }
 
+/** The AI agent behind an activity (`source_metadata.ai`), when it carries one. */
+function aiAgentOf(a: Activity): { name: string; accountable: string[] } | undefined {
+  const ai = a.metadata?.ai
+  if (!ai || typeof ai !== 'object') return undefined
+  const rec = ai as Record<string, unknown>
+  const name = str(rec.ai_agent_name)
+  if (!name) return undefined
+  const accountable = Array.isArray(rec.accountable)
+    ? rec.accountable
+        .map((o) => str((o as Record<string, unknown> | null)?.name))
+        .filter((n): n is string => !!n)
+    : []
+  return { name, accountable }
+}
+
 export function findingActor(a: Activity): ActivityActor {
   const t = str(a.metadata?.actorType)
   // Scanners and integrations come through as actor_type with no person
@@ -72,7 +87,12 @@ export function findingActor(a: Activity): ActivityActor {
           : 'System'
     return { name, kind: t === 'integration' ? 'integration' : 'system' }
   }
-  if (a.actor === 'ai' || t === 'ai') return { name: 'AI assistant', kind: 'ai' }
+  if (a.actor === 'ai' || t === 'ai') {
+    const ai = aiAgentOf(a)
+    if (ai) return { name: ai.name, kind: 'ai', ai }
+    // Rows written before AI agents carried their provenance.
+    return { name: 'AI assistant', kind: 'ai' }
+  }
   return { id: a.actor.id, name: a.actor.name || a.actor.email || 'Someone', kind: 'user' }
 }
 
@@ -185,7 +205,7 @@ export function describeFindingEvent(a: Activity): EventText | null {
       return {
         icon: Bot,
         tone: 'info',
-        summary: `finished AI triage${sev ? ` · suggests ${sev}` : ''}`,
+        summary: `finished AI triage${sev ? `, suggests ${sev}` : ''}`,
         detail: str(m.ai_recommendation),
       }
     }

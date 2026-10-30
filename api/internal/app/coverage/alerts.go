@@ -59,7 +59,7 @@ func (s *Service) cadences() map[string]time.Duration {
 }
 
 // detect reads the tenant's coverage health and sends the alerts whose
-// condition appeared or changed (count doubled or halved), with the action
+// condition appeared or got clearly worse (covdom.PlanAlerts), with the action
 // that fixes it; several changes in one pass go out as one digest. It
 // returns the alert conditions it sent.
 func (s *Service) detect(ctx context.Context, tenantID shared.ID) (int, error) {
@@ -113,6 +113,9 @@ func describeCondition(c covdom.AlertCondition) (title, body string) {
 	case covdom.AlertFailing:
 		return "Coverage: " + c.Capability + " keeps failing",
 			fmt.Sprintf("%s failed %d or more times in a row on %d assets.", c.Capability, covdom.FailingStreak, c.Count)
+	case covdom.AlertUnreachable:
+		return "Coverage: " + c.Capability + " targets unreachable",
+			fmt.Sprintf("%d assets did not answer %s from your sensors; they are checked again on a widening schedule.", c.Count, c.Capability)
 	default:
 		return "Coverage gap: " + c.Capability,
 			fmt.Sprintf("%d assets that need %s have not had it for more than twice its cadence (or never).", c.Count, c.Capability)

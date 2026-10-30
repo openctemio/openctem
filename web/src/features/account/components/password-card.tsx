@@ -22,6 +22,7 @@ import { getErrorMessage } from '@/lib/api/error-handler'
 import { useTranslation } from '@/context/i18n-provider'
 
 import { usePasswordPolicy } from '@/features/auth/api/use-auth-providers'
+import { RevokeApiKeysOption } from '@/features/auth/components/revoke-api-keys-option'
 import { PasswordPolicyHint } from '@/features/auth/components/password-policy-hint'
 import { passwordPolicyIssue } from '@/features/auth/lib/password-policy'
 
@@ -34,14 +35,17 @@ interface PasswordCardProps {
   isLocalAccount: boolean
   /** Called after a change: the server signed out every other session. */
   onChanged?: () => void
+  /** API keys the person owns, for the "Also revoke API keys (N)" choice. */
+  activeApiKeys?: number
 }
 
-export function PasswordCard({ isLocalAccount, onChanged }: PasswordCardProps) {
+export function PasswordCard({ isLocalAccount, onChanged, activeApiKeys }: PasswordCardProps) {
   const { t } = useTranslation()
   const { changePassword, isChanging } = useChangePassword()
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState(EMPTY)
   const [error, setError] = useState('')
+  const [revokeKeys, setRevokeKeys] = useState(true)
   const passwordPolicy = usePasswordPolicy()
 
   async function submit(e: React.FormEvent) {
@@ -57,11 +61,14 @@ export function PasswordCard({ isLocalAccount, onChanged }: PasswordCardProps) {
       return
     }
     try {
-      await changePassword(form)
+      await changePassword({ ...form, revoke_api_keys: revokeKeys })
       setOpen(false)
       setForm(EMPTY)
       toast.success(
-        t('account.password.changed', 'Password changed. Your other sessions were signed out.')
+        t(
+          'account.password.changed',
+          'Password changed. Your other sessions were signed out and connected apps were revoked.'
+        )
       )
       onChanged?.()
     } catch (err) {
@@ -150,6 +157,12 @@ export function PasswordCard({ isLocalAccount, onChanged }: PasswordCardProps) {
                   onChange={(e) => setForm({ ...form, confirm_password: e.target.value })}
                 />
               </div>
+              <RevokeApiKeysOption
+                id="change-revoke-keys"
+                checked={revokeKeys}
+                onCheckedChange={setRevokeKeys}
+                count={activeApiKeys}
+              />
               {error && (
                 <p role="alert" className="text-sm text-destructive">
                   {error}

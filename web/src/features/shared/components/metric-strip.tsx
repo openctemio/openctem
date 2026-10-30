@@ -40,6 +40,12 @@ export interface MetricStripItem {
   onClick?: () => void
   /** The filter this metric applies (or the list it links to) is current. */
   active?: boolean
+  /**
+   * There is no figure to open (too little data to measure): the tile states
+   * why instead of a number, so it is the one tile that may be neither a link
+   * nor a toggle.
+   */
+  notMeasured?: boolean
 }
 
 /**
@@ -95,7 +101,7 @@ export function MetricStrip({
 }) {
   if (process.env.NODE_ENV !== 'production' && items.length > METRIC_STRIP_MAX) {
     console.warn(
-      `MetricStrip: ${items.length} tiles; the page anatomy allows ${METRIC_STRIP_MAX} (research/244). Use quick views or filters for the rest.`
+      `MetricStrip: ${items.length} tiles; the page anatomy allows ${METRIC_STRIP_MAX}. Use quick views or filters for the rest.`
     )
   }
   return (
@@ -212,6 +218,7 @@ export function MetricStrip({
             className={cellClass}
             title={item.description ?? item.hint}
             data-slot="metric-tile"
+            data-state={item.notMeasured ? 'not-measured' : undefined}
           >
             {body}
           </div>

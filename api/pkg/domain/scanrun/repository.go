@@ -17,7 +17,10 @@ type RunFilter struct {
 	// ExcludeSystem leaves out system runs (the Runs list default).
 	ExcludeSystem bool
 	// ExcludeKinds leaves out these kinds.
-	ExcludeKinds   []RunKind
+	ExcludeKinds []RunKind
+	// Origin narrows to runs of scans a person owns (user) or that a platform
+	// policy manages (system); empty lists both.
+	Origin         RunOrigin
 	TenantID       *shared.ID
 	ScanWorkflowID *shared.ID
 	// ScanID narrows to the runs of one scan (a scan's "View all runs").
@@ -79,7 +82,7 @@ type RunRepository interface {
 	CreateRunIfUnderLimit(ctx context.Context, run *Run, maxPerScan, maxPerTenant int) error
 
 	// UpdateStats updates run statistics.
-	UpdateStats(ctx context.Context, id shared.ID, completed, failed, skipped, findings int) error
+	UpdateStats(ctx context.Context, tenantID, id shared.ID, completed, failed, skipped, findings int) error
 
 	// UpdateStatus updates run status.
 	UpdateStatus(ctx context.Context, id shared.ID, status RunStatus, errorMessage string) error
@@ -125,7 +128,7 @@ type RunStats struct {
 	Pending   int64
 	Running   int64
 	Completed int64
-	// Partial: kept results but lost some work (RFC-046 D5).
+	// Partial: kept results but lost some work.
 	Partial  int64
 	Failed   int64
 	Canceled int64
@@ -236,8 +239,7 @@ type RolloverStore interface {
 
 // UnfinishedTargetRecorder records targets an open run will not scan, so
 // the run's unfinished list (and the next scheduled run's rollover) keeps
-// them: a step not dispatched because its run's deadline was too close
-// (research/122).
+// them: a step not dispatched because its run's deadline was too close.
 type UnfinishedTargetRecorder interface {
 	// AddUnfinishedTargets appends targets to runID's unfinished targets,
 	// deduplicated, in order, bounded like the reaper's list. Only an open

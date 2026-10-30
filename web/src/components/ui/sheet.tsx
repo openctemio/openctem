@@ -115,7 +115,7 @@ function SheetContent({
         data-slot="sheet-content"
         data-layout={layout.sections ? 'sections' : 'block'}
         className={cn(
-          'bg-background data-[state=open]:animate-in data-[state=closed]:animate-out motion-reduce:animate-none fixed z-50 flex flex-col shadow-lg transition ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-500',
+          'bg-background data-[state=open]:animate-in data-[state=closed]:animate-out motion-reduce:animate-none fixed z-50 flex flex-col shadow-lg ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-500',
           layout.sections
             ? 'gap-0 overflow-hidden supports-[overflow:clip]:overflow-clip'
             : 'gap-4 overflow-y-auto',

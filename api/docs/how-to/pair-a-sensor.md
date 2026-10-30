@@ -11,17 +11,28 @@ for the approval, your TOTP code or your password.
 
 ## 1. Install the sensor
 
-Install the sensor as described in the sensor installation guide at
-[docs.openctem.io/install](https://docs.openctem.io/install/). The
-configuration needs only the platform URL and, when your platform uses a
-private certificate authority, its fingerprint (`SENSOR_CA_FINGERPRINT`). It
-contains no key.
+Open **Sensors → Add sensor** (on an organization with no sensor yet, the
+same panel is on the page). Pick where the sensor runs (Docker, Docker
+Compose, Kubernetes or a Linux service) and how it joins (2a or 2b below);
+the panel shows the exact command for this platform: the current release,
+this instance's URL, the hardening (read-only root filesystem, no
+capabilities, the checked seccomp profile) and the local policy file to save
+next to it. The command contains no key. The sensor installation guide at
+[docs.openctem.io/install](https://docs.openctem.io/install/) has the same
+steps.
 
 Keep the sensor's data directory on a persistent volume (one volume at
 `/var/lib/openctem` in the container, holding `state/`, `outbox/` and
 `content/`): the sensor's identity lives in `state/identity/`. The
 directory must be `0700` and the files `0600`, owned by the sensor's user;
 the sensor refuses to start otherwise and prints the command that fixes it.
+
+Use a named volume (`-v openctem-sensor-data:/var/lib/openctem`, as the install
+commands do): Docker creates it with the sensor's owner. A host directory
+mounted instead must first be given to the sensor's user (`sudo chown -R
+999:999 <dir>`; 1001 on the per-tool images, 65532 on the slim image), or the
+sensor stops at start with the path, the owner and this fix. The complete
+guide is [Run the sensor](https://docs.openctem.io/sensors/run-the-sensor/).
 
 ## 2a. Default: the sensor shows a code
 
@@ -35,22 +46,22 @@ Pair this sensor in OpenCTEM → Sensors → Pair a sensor
   Expires:     10:42 (10 minutes)
 ```
 
-In the console, open **Sensors → Pair a sensor → Enter code** and type the
-code. The console shows the same fingerprint, the host name, OS and version
+In the console, open **Sensors → Add sensor**, choose **Pair a sensor that
+shows a code** and type the code. The console shows the same fingerprint, the host name, OS and version
 the sensor reported, and the address the request came from.
 
 ## 2b. Reverse: the console shows a code
 
-Open **Sensors → Pair a sensor → Expect a sensor**. The console shows a code;
-on the host run:
+Open **Sensors → Add sensor** and keep **Create a pairing code first**, then
+**Create pairing code**. The command the panel shows now carries the code
+(`SENSOR_PAIRING_CODE`, single use, valid 10 minutes); run it on the host
+(`openctemio-sensor pair K7QM-4ZTD` does the same for an installed binary).
+The panel waits live: as soon as the sensor connects it shows the
+fingerprint to compare, then the approval, then the sensor online.
 
-```
-openctemio-sensor pair K7QM-4ZTD
-```
-
-(the dialog shows this command with the code). The sensor prints its
-fingerprint; the console shows the fingerprint it received as soon as the
-sensor connects.
+The panel's **Troubleshooting** section lists what the sensor log shows for
+the common failures (a code that expired, a wrong clock, too many attempts,
+the platform unreachable, the local policy missing) and the fix for each.
 
 ## 3. Compare and approve
 
@@ -108,3 +119,18 @@ being created.
 | The sensor keeps waiting after you created an expectation | The code typed on the sensor was wrong; run `pair` again with the code from the console. |
 | `certificate chain does not contain the pinned CA` | `SENSOR_CA_FINGERPRINT` does not match the certificate authority your platform presents, or a TLS-inspecting proxy sits in between. |
 | `identity directory permissions` at start | Run the `chmod`/`chown` the sensor printed. |
+
+## Many sensors: enrollment tokens
+
+To install many sensors without approving each one (Kubernetes, Terraform,
+a fleet of hosts), open **Sensors → Enrollment tokens → Create token**
+(needs **Approve sensors** and a recent sign-in). Choose the expiry, how many
+sensors it may enroll, the scan zones, the grant profile, optional labels,
+optional allowed source addresses, and whether each sensor still needs your
+approval. The token is shown once: put it in a root-only file (or a
+Kubernetes Secret) and point the sensor at it with
+`SENSOR_ENROLLMENT_TOKEN_FILE` (sensor releases with sdk-go that reads
+`SENSOR_ENROLLMENT_TOKEN`; older sensors cannot use organization tokens). Each sensor that starts with it
+joins the organization at trust level New; you are notified of every
+enrollment and can revoke the token at any time.
+

@@ -152,6 +152,32 @@ type TemplateResponse struct {
 	// RetiredAt is set when the workflow was deleted while it had runs (it
 	// is read-only and kept for their history).
 	RetiredAt string `json:"retired_at,omitempty"`
+	// IsRetired: a system workflow retired on purpose. It cannot start new
+	// scans or be copied; SupersededBy names its replacement, when it has one.
+	IsRetired    bool         `json:"is_retired"`
+	SupersededBy *WorkflowRef `json:"superseded_by,omitempty"`
+	// BasedOnRetired is set on a tenant copy made from a retired system workflow.
+	BasedOnRetired *RetiredSourceResponse `json:"based_on_retired,omitempty"`
+}
+
+// WorkflowRef points at another workflow.
+type WorkflowRef struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// RetiredSourceResponse is the retired system workflow a copy was made from.
+type RetiredSourceResponse struct {
+	ID           string       `json:"id"`
+	Name         string       `json:"name"`
+	SupersededBy *WorkflowRef `json:"superseded_by,omitempty"`
+}
+
+func supersededRef(t *scanworkflow.Workflow) *WorkflowRef {
+	if t.SupersededBy == nil {
+		return nil
+	}
+	return &WorkflowRef{ID: t.SupersededBy.String(), Name: t.SupersededByName}
 }
 
 // ScanWorkflowSettingsResponse represents template settings in the response.
@@ -211,14 +237,18 @@ type RunResponse struct {
 	ID             string `json:"id"`
 	TenantID       string `json:"tenant_id"`
 	ScanWorkflowID string `json:"scan_workflow_id"`
-	// Intensity is the probe ceiling the run started with (RFC-071):
+	// Intensity is the probe ceiling the run started with:
 	// passive, active or intrusive; absent for a run without one.
 	Intensity string  `json:"intensity,omitempty" enums:"passive,active,intrusive"`
 	AssetID   *string `json:"asset_id,omitempty"`
 	ScanID    *string `json:"scan_id,omitempty"`
 	// ScanName names the run's scan (list rows only; empty when the scan was
 	// deleted).
-	ScanName        string  `json:"scan_name,omitempty"`
+	ScanName string `json:"scan_name,omitempty"`
+	// ManagedBy names the platform policy that owns the run's scan, so the
+	// run is read-only for people: coverage (continuous coverage), enrichment
+	// or web_verify. Absent for a scan a person owns (list rows only).
+	ManagedBy       string  `json:"managed_by,omitempty" enums:"coverage,enrichment,web_verify"`
 	ScanProfileID   *string `json:"scan_profile_id,omitempty"`
 	TriggerType     string  `json:"trigger_type"`
 	TriggeredBy     string  `json:"triggered_by,omitempty"`
@@ -236,11 +266,14 @@ type RunResponse struct {
 	// UnreachableTargetCount and SkippedTargetCount are the targets the
 	// run's sensors could not reach, or skipped by their local policy. They
 	// never change the run's status (a run with only these completes).
-	UnreachableTargetCount int                            `json:"unreachable_target_count,omitempty"`
-	SkippedTargetCount     int                            `json:"skipped_target_count,omitempty"`
-	QualityGateResult      *scanprofile.QualityGateResult `json:"quality_gate_result,omitempty"`
-	StepRuns               []StepRunResponse              `json:"scan_run_steps,omitempty"`
-	ErrorMessage           string                         `json:"error_message,omitempty"`
+	UnreachableTargetCount int `json:"unreachable_target_count,omitempty"`
+	SkippedTargetCount     int `json:"skipped_target_count,omitempty"`
+	// NoLongerResolveCount is how many of the skipped targets are names that
+	// no longer resolve (informational, never an error).
+	NoLongerResolveCount int                            `json:"no_longer_resolve_count,omitempty"`
+	QualityGateResult    *scanprofile.QualityGateResult `json:"quality_gate_result,omitempty"`
+	StepRuns             []StepRunResponse              `json:"scan_run_steps,omitempty"`
+	ErrorMessage         string                         `json:"error_message,omitempty"`
 	// RefusalCode says why a blocked run was refused (status blocked only),
 	// e.g. ALL_TARGETS_EXCLUDED, SCAN_WINDOW_NEVER_OPENS, NO_SENSOR_AVAILABLE.
 	RefusalCode string `json:"refusal_code,omitempty"`
@@ -264,10 +297,11 @@ type RunResponse struct {
 	CreatedAt           string `json:"created_at"`
 	// ScheduledFor is the schedule occurrence this run serves (scheduled runs only).
 	ScheduledFor *string `json:"scheduled_for,omitempty"`
-	// DeadlineAt is when the run is settled if it is still open (RFC-046 §6.3).
+	// DeadlineAt is when the run is settled if it is still open.
 	DeadlineAt *string `json:"deadline_at,omitempty"`
 	// DeadlineReason is which policy set DeadlineAt: scan_max_duration,
-	// workflow_max_duration, platform_cap, or legacy (set before reasons
+	// workflow_max_duration, platform_cap, work_estimate (moved at a claim to
+	// the time the claimed work needs), or legacy (set before reasons
 	// were recorded).
 	DeadlineReason string `json:"deadline_reason,omitempty"`
 	// UnfinishedTargetCount is how many targets were still open when the run
@@ -286,7 +320,7 @@ type RunResponse struct {
 	// (GET /scan-runs/{id}/tasks?cursor=) when TasksTruncated.
 	TasksNextCursor string `json:"tasks_next_cursor,omitempty"`
 	// WindowWaits: the targets that had to wait for their scan windows when
-	// the run started, and until when (RFC-067).
+	// the run started, and until when.
 	WindowWaits *RunWindowWaitsResponse `json:"window_waits,omitempty"`
 }
 
@@ -382,12 +416,17 @@ type RunTaskResponse struct {
 	// by which task, and how many of its targets can start.
 	HostWait *RunTaskHostWait `json:"host_wait,omitempty"`
 	// Progress is a running task's finished targets as its sensor last
-	// reported them, and when that count last grew (research/122).
+	// reported them, and when that count last grew.
 	Progress *RunTaskProgress `json:"progress,omitempty"`
 	// BudgetSeconds is the task's expected time; StallSeconds how long it
 	// may finish no target before it is re-queued as stalled. 0: none.
 	BudgetSeconds int `json:"budget_seconds,omitempty"`
 	StallSeconds  int `json:"stall_seconds,omitempty"`
+	// WithheldReason is, for a task no sensor took (queued, or failed
+	// without a claim), the placement code of the last time a sensor's
+	// dispatch gate withheld it (grant_credentials, intensity, ...). The
+	// sensor is never named.
+	WithheldReason string `json:"withheld_reason,omitempty"`
 }
 
 // RunTaskCoverageGap is one host a sensor could not fully cover, and why:
@@ -435,7 +474,7 @@ func toRunTaskResponses(tasks []scanrundom.Task) []RunTaskResponse {
 			CreatedAt: t.CreatedAt.Format(time.RFC3339), ErrorMessage: platformText(t.Platform, t.ErrorMessage),
 			SkippedTargetsTotal: t.SkippedTotal, WindowHold: t.WindowHold, CoverageGapsTotal: t.CoverageGapsTotal,
 			WaitingOnHosts: t.WaitingOnHosts, EgressRefusedTargets: t.EgressRefusedTargets,
-			GuardRefusedTargets: t.GuardRefusedTargets,
+			GuardRefusedTargets: t.GuardRefusedTargets, WithheldReason: t.WithheldReason,
 		}
 		for _, sk := range t.Skipped {
 			r.SkippedTargets = append(r.SkippedTargets, RunTaskSkippedTarget(sk))
@@ -481,7 +520,7 @@ type RunDispatchResponse struct {
 	ExcludedTargets int `json:"excluded_targets"`
 	// Excluded lists the targets the organization's exclusions left out
 	// (whole, or a range cut around excluded addresses) with the matching
-	// rules, at most 50 (RFC-054 §6.5).
+	// rules, at most 50.
 	Excluded         []RunExcludedTarget  `json:"excluded,omitempty"`
 	Warnings         []string             `json:"warnings,omitempty"`
 	UncoveredTargets []RunUncoveredTarget `json:"uncovered_targets,omitempty"`
@@ -490,8 +529,7 @@ type RunDispatchResponse struct {
 	// "platform" (shared platform sensors), decided at trigger time.
 	SensorRouting string `json:"sensor_routing,omitempty"`
 	// TargetExpansion is what each dynamic target selector (*.example.com,
-	// an inventory-mode CIDR) added from the inventory when the run started
-	// (RFC-068).
+	// an inventory-mode CIDR) added from the inventory when the run started.
 	TargetExpansion []RunTargetExpansion `json:"target_expansion,omitempty"`
 	// WillScan is how many targets the run dispatched; Skipped groups every
 	// other target by reason (docs/architecture/scan-targets.md, "Skipped
@@ -703,6 +741,11 @@ func (h *ScanWorkflowHandler) GetTemplate(w http.ResponseWriter, r *http.Request
 	}
 
 	out := toTemplateResponse(template)
+	if src, err := h.service.RetiredSource(r.Context(), tenantID, template); err != nil {
+		h.logger.Warn("failed to read the retired source of a copy", "error", logger.SanitizeError(err), "template_id", logger.SanitizeValue(templateID))
+	} else if src != nil {
+		out.BasedOnRetired = &RetiredSourceResponse{ID: src.ID.String(), Name: src.Name, SupersededBy: supersededRef(src)}
+	}
 	if wantsReadiness(r) {
 		h.attachReadiness(r.Context(), tenantID, []*scanworkflow.Workflow{template}, []*TemplateResponse{out})
 	}
@@ -717,6 +760,7 @@ func (h *ScanWorkflowHandler) GetTemplate(w http.ResponseWriter, r *http.Request
 // @Produce      json
 // @Param        is_active  query  bool    false  "Active only"
 // @Param        search     query  string  false  "Name search"
+// @Param        include_retired query bool false  "Also list retired system workflows (hidden by default)"
 // @Param        include    query  string  false  "readiness"
 // @Param        page       query  int     false  "Page"
 // @Param        per_page   query  int     false  "Page size"
@@ -743,6 +787,8 @@ func (h *ScanWorkflowHandler) ListTemplates(w http.ResponseWriter, r *http.Reque
 		Search:   r.URL.Query().Get("search"),
 		Page:     page.Page,
 		PerPage:  page.PerPage,
+
+		IncludeRetired: r.URL.Query().Get("include_retired") == queryParamTrue,
 	}
 
 	result, err := h.service.ListTemplates(r.Context(), input)
@@ -1242,6 +1288,7 @@ func (h *ScanWorkflowHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 		ScanID:         r.URL.Query().Get("scan_id"),
 		Kinds:          parseQueryArray(r.URL.Query().Get("kind")),
 		IncludeSystem:  r.URL.Query().Get("include_system") == queryParamTrue,
+		Origin:         r.URL.Query().Get("origin"),
 		AssetID:        r.URL.Query().Get("asset_id"),
 		Status:         r.URL.Query().Get("status"),
 		Sort:           r.URL.Query().Get("sort"),
@@ -1270,6 +1317,12 @@ func (h *ScanWorkflowHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 		apierror.InternalServerError("failed to read the runs' scans").WriteJSON(w)
 		return
 	}
+	managers, err := h.service.RunScanManagers(r.Context(), tenantID, result.Data)
+	if err != nil {
+		h.logger.Error("failed to read the runs' managing policies", "error", err)
+		apierror.InternalServerError("failed to read the runs' scans").WriteJSON(w)
+		return
+	}
 	names := runTriggerNames(r.Context(), h.users, h.logger, result.Data...)
 	items := make([]*RunResponse, len(result.Data))
 	for i, run := range result.Data {
@@ -1279,6 +1332,7 @@ func (h *ScanWorkflowHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 		}
 		if run.ScanID != nil {
 			items[i].ScanName = scanNames[*run.ScanID]
+			items[i].ManagedBy = managers[*run.ScanID]
 		}
 	}
 
@@ -1424,6 +1478,11 @@ func toTemplateResponse(t *scanworkflow.Workflow) *TemplateResponse {
 		Steps:     steps,
 		CreatedAt: t.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		UpdatedAt: t.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+	}
+
+	if t.IsRetiredSystem() {
+		resp.IsRetired = true
+		resp.SupersededBy = supersededRef(t)
 	}
 
 	if t.RetiredAt != nil {
@@ -1575,6 +1634,7 @@ func toRunResponse(r *scanrundom.Run) *RunResponse {
 
 	resp.UnreachableTargetCount = contextCount(r.Context, scanrun.RunContextKeyUnreachableCount)
 	resp.SkippedTargetCount = contextCount(r.Context, scanrun.RunContextKeySkippedCount)
+	resp.NoLongerResolveCount = contextCount(r.Context, scanrun.RunContextKeyNoLongerResolve)
 
 	// Extract filtering result from context if present
 	if r.Context != nil {
@@ -1583,6 +1643,17 @@ func toRunResponse(r *scanrundom.Run) *RunResponse {
 		}
 		resp.Dispatch = toRunDispatchResponse(r.Context)
 		resp.WindowWaits = toRunWindowWaits(r.Context)
+		// Names the sensors found no longer resolve: an informational skip
+		// group (a fact about the names, never a failure), next to the
+		// dispatch groups.
+		if n := resp.NoLongerResolveCount; n > 0 {
+			if resp.Dispatch == nil {
+				resp.Dispatch = &RunDispatchResponse{}
+			}
+			resp.Dispatch.Skipped = append(resp.Dispatch.Skipped, scansvc.SkipGroup{
+				Reason: scanrundom.SkipReasonTargetUnresolvable, Tone: scansvc.SkipToneInfo, Count: n, Targets: []string{},
+			})
+		}
 	}
 
 	return resp

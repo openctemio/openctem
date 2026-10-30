@@ -128,7 +128,7 @@ export function ScopeChangePreview({
               <p className="text-sm">
                 <span className="sr-only">{MARK_WORD[l.mark]}: </span>
                 <code className="break-all font-medium">{l.pattern}</code>
-                {l.summary && <span className="text-muted-foreground"> · {l.summary}</span>}
+                {l.summary && <span className="text-muted-foreground">, {l.summary}</span>}
               </p>
               {l.message && (
                 <p

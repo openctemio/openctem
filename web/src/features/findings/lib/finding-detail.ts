@@ -70,6 +70,7 @@ function mapAssets(api: ApiFinding): AffectedAsset[] {
       criticality: normalizeCriticality(crit),
       exposure: api.asset?.exposure,
       isInternetAccessible: api.asset?.is_internet_accessible,
+      isCrownJewel: api.asset?.is_crown_jewel,
     })
   }
   // Pentest-style findings list free-text targets next to (or instead of) an
@@ -311,6 +312,7 @@ export function toFindingDetail(api: ApiFinding): FindingDetail {
     slaStatus: api.sla_status,
     slaDeadline: api.sla_deadline,
     slaKevCapped: api.sla_kev_capped,
+    slaBasis: api.sla_basis,
 
     // The finding's own copy first (classifier input), then the CVE record.
     epssScore: api.epss_score ?? v?.epss_score,
@@ -352,6 +354,7 @@ export function toFindingDetail(api: ApiFinding): FindingDetail {
     workItemUris: api.work_item_uris,
     occurrenceCount: api.occurrence_count,
     duplicateCount: api.duplicate_count,
+    duplicatesMarked: api.duplicates_marked,
     lastSeenAt: api.last_seen_at,
     correlationId: api.correlation_id,
 

@@ -249,6 +249,13 @@ continue-on-failure on (§1.5). Discover, Discover + Vuln and Web app are
 superseded by Subdomains, Standard recon and Web: deactivated, not deleted,
 so scans and copies made from them keep working.
 
+An inactive system workflow is retired. `scan_workflows.superseded_by` names the
+workflow that replaces it (empty when there is no direct replacement). The list
+hides retired workflows unless `include_retired=true`; each carries `is_retired`
+and `superseded_by`. A retired workflow cannot start a new scan or be copied (a
+validation error names the replacement). A scan already on it keeps running, and
+the detail of a tenant copy made from it carries `based_on_retired`.
+
 | Workflow | Graph (→ dependency, ∥ parallel) | Passive | Standard | Deep |
 |---|---|---|---|---|
 | Passive discovery | subdomains ∥ rdap → dns → asn | every step (all T0), no announced ranges | + announced ranges | + every DNS record type |

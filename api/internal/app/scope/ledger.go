@@ -178,6 +178,19 @@ func (s *Service) commitEntry(ctx context.Context, before *jobsign.LedgerEntry, 
 func (s *Service) commitExclusion(ctx context.Context, before *jobsign.LedgerExclusion, e *scopedom.Exclusion, deleted bool,
 	reviewer string, save func() error,
 ) error {
+	if err := s.commitExclusionLedger(ctx, before, e, deleted, reviewer, save); err != nil {
+		return err
+	}
+	// A saved change may close or reopen findings (effects.go).
+	s.effects.Kick(e.TenantID())
+	return nil
+}
+
+// commitExclusionLedger orders the signer ledger change and the save of an
+// exclusion change (see commitLedger).
+func (s *Service) commitExclusionLedger(ctx context.Context, before *jobsign.LedgerExclusion, e *scopedom.Exclusion, deleted bool,
+	reviewer string, save func() error,
+) error {
 	now := time.Now().UTC()
 	var after *jobsign.LedgerExclusion
 	if !deleted {

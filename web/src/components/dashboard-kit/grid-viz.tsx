@@ -6,16 +6,17 @@
  * SLA due). The CTEM loop is loop-viz.tsx.
  */
 
-import { CircleAlert } from 'lucide-react'
+import { EpssBar } from '@/components/ui/epss-bar'
 import { KevBadge } from '@/components/ui/kev-badge'
 import { PriorityBadge } from '@/components/ui/priority-badge'
 import { isPriorityClass } from '@/lib/priority-colors'
 import { Badge } from '@/components/ui/badge'
 import { useTranslation } from '@/context/i18n-provider'
 import { SEQUENTIAL_STEPS, sequentialStep } from '@/lib/chart-palette'
-import { formatCount, formatRelativeTime } from '@/lib/format-metric'
+import { formatCount } from '@/lib/format-metric'
 import { SEVERITY_DOT_COLORS, type SeverityLevel } from '@/lib/severity-colors'
 import { cn } from '@/lib/utils'
+import { DueLabel } from './due-label'
 import { MatrixTable } from './table-viz'
 import { ChartOrTable, DrillLink, useLabel } from './viz-parts'
 import type { DrillFn, ItemsResult, MatrixResult } from './types'
@@ -24,11 +25,6 @@ import type { DrillFn, ItemsResult, MatrixResult } from './types'
 export function heatStep(value: number, max: number): number {
   if (value <= 0 || max <= 0) return -1
   return Math.min(SEQUENTIAL_STEPS - 1, Math.floor((value / max) * SEQUENTIAL_STEPS))
-}
-
-/** A deadline already behind us. */
-function isPast(iso: string | null | undefined): boolean {
-  return !!iso && Date.parse(iso) < Date.now()
 }
 
 const isSeverity = (k: string): k is SeverityLevel => k in SEVERITY_DOT_COLORS
@@ -84,7 +80,7 @@ export function HeatmapViz({ result, drill }: { result: MatrixResult; drill?: Dr
               const v = result.cells[i]?.[j] ?? null
               const step = v == null ? -1 : heatStep(v, max)
               const shade = step >= 0 ? sequentialStep(step) : null
-              const text = `${label(r)} · ${label(c)}: ${formatCount(v, locale)}`
+              const text = `${label(r)}, ${label(c)}: ${formatCount(v, locale)}`
               const cell = (
                 <span
                   className={cn(
@@ -153,23 +149,27 @@ export function ItemsViz({
     <div className="flex min-h-0 flex-1 flex-col gap-1">
       <ul className="flex flex-col divide-y">
         {rows.map((r) => {
-          const due = r.due_at ? formatRelativeTime(r.due_at, locale) : null
-          const overdue = isPast(r.due_at)
-          const sev = r.severity && isSeverity(r.severity) ? r.severity : null
+          // A finding with no severity or the stored "none" still gets a dot
+          // slot, so the priority badge and title line up with every other row.
+          const rawSev = r.severity === 'none' ? 'info' : r.severity
+          const sev = rawSev && isSeverity(rawSev) ? rawSev : null
+          const sevLabel = sev ? t(`severity.${sev}`, sev) : t('severity.unknown', 'Unknown')
           const body = (
             <div className="flex items-center gap-2 py-1.5 text-sm">
-              {sev && (
+              <span
+                className="inline-flex size-2 shrink-0 items-center"
+                title={sevLabel}
+                data-testid="items-severity-dot"
+              >
                 <span
-                  className="inline-flex shrink-0 items-center"
-                  title={t(`severity.${sev}`, sev)}
-                >
-                  <span
-                    className={cn('size-2 rounded-full', SEVERITY_DOT_COLORS[sev])}
-                    aria-hidden
-                  />
-                  <span className="sr-only">{t(`severity.${sev}`, sev)}</span>
-                </span>
-              )}
+                  className={cn(
+                    'size-2 rounded-full',
+                    sev ? SEVERITY_DOT_COLORS[sev] : 'bg-muted-foreground/40'
+                  )}
+                  aria-hidden
+                />
+                <span className="sr-only">{sevLabel}</span>
+              </span>
               {r.priority &&
                 (isPriorityClass(r.priority) ? (
                   <PriorityBadge priorityClass={r.priority} />
@@ -191,17 +191,8 @@ export function ItemsViz({
                   {r.asset}
                 </span>
               )}
-              {due &&
-                (overdue ? (
-                  <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-destructive">
-                    <CircleAlert className="size-3.5" aria-hidden />
-                    {t('dashboardKit.items.overdue', 'Overdue {time}', { time: due })}
-                  </span>
-                ) : (
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    {t('dashboardKit.items.due', 'due {time}', { time: due })}
-                  </span>
-                ))}
+              <EpssBar score={r.epss} className="hidden shrink-0 sm:inline-flex" />
+              <DueLabel dueAt={r.due_at} />
             </div>
           )
           return (

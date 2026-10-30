@@ -155,7 +155,7 @@ groups:
         labels: {severity: critical, component: api}
         annotations:
           summary: The last database migration failed half way (dirty)
-          description: golang-migrate marked the newest migration dirty; no further migration runs until it is fixed.
+          description: openctem-migrate marked a migration dirty (it failed midway); no further migration runs until it is fixed.
           runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#schemadirty
 
       - alert: OpsMetricsFailing
@@ -387,6 +387,15 @@ groups:
           summary: Postgres is unreachable
           runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#postgresdown
 
+      - alert: PostgresExporterCannotConnect
+        expr: pg_up == 0
+        for: 10m
+        labels: {severity: warning, component: platform}
+        annotations:
+          summary: The Postgres exporter cannot log in to Postgres
+          description: The exporter process is up (its scrape succeeds) but pg_up is 0, so every Postgres alert is blind. The usual cause is that the openctem_monitor role does not exist or its password differs from OBS_PG_MONITOR_PASSWORD. Apply deploy/observability/postgres/monitor-role.sql (the postgres-monitor-role service does it on every `up`).
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#postgresexportercannotconnect
+
       - alert: PostgresTooManyConnections
         expr: sum(pg_stat_activity_count) / max(pg_settings_max_connections) > 0.8
         for: 5m
@@ -419,6 +428,15 @@ groups:
           summary: Redis is unreachable
           description: Sessions, rate limits and caches fail over to the database or refuse requests.
           runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#redisdown
+
+      - alert: RedisExporterCannotConnect
+        expr: redis_up == 0
+        for: 10m
+        labels: {severity: warning, component: platform}
+        annotations:
+          summary: The Redis exporter cannot connect to Redis
+          description: The exporter process is up but redis_up is 0, so the Redis alerts are blind. Check REDIS_PASSWORD, OBS_REDIS_ADDR and, with the Compose overlay, the TLS CA of the datastore.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#redisexportercannotconnect
 
       - alert: RedisMemoryHigh
         expr: max(redis_memory_used_bytes / (redis_memory_max_bytes > 0)) > 0.9
@@ -517,6 +535,24 @@ groups:
         annotations:
           summary: Host load is {{ $value | humanize }} per CPU
           runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#hosthighload
+
+      - alert: HostClockUnsynchronised
+        expr: node_timex_sync_status == 0
+        for: 10m
+        labels: {severity: warning, component: platform}
+        annotations:
+          summary: The host clock is not synchronised
+          description: The kernel reports the clock as unsynchronised. Sensor request signatures allow only 2 minutes of skew, so a drifting clock breaks sensor pairing and requests. Check `chronyc tracking`.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#hostclockunsynchronised
+
+      - alert: HostClockOffsetLarge
+        expr: abs(node_timex_offset_seconds) > 30
+        for: 10m
+        labels: {severity: critical, component: platform}
+        annotations:
+          summary: The host clock is off by {{ $value | humanizeDuration }}
+          description: Sensor request signatures allow 2 minutes of skew, so sensors cannot pair or call the API while the clock is off. Fix now with `sudo chronyc makestep`, and set `makestep 1 -1` in chrony.conf so it can step at any time, not only at boot.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#hostclockoffsetlarge
 
       - alert: ContainerRestarting
         expr: changes(container_start_time_seconds{name!=""}[30m]) >= 2

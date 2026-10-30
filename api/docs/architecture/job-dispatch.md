@@ -93,9 +93,15 @@ flowchart LR
 
 Jobs are created when work is triggered, not when a sensor asks:
 
-- **Single-scanner scan:** `internal/app/scan/trigger.go` builds the payload
-  (`scanner`, `config`, `targets`, run and step ids) and queues one command per
-  chunk of `targets_per_job` targets.
+- **Single-scanner scan** (continuous coverage runs included):
+  `internal/app/scan/trigger.go` builds the payload (`scanner`, `config`,
+  `targets`, run and step ids). A scanner that takes a target list gets one
+  command per chunk of `targets_per_job` targets when that is 2 or more
+  (coverage sets it to the capability's chunk size, e.g. 25 for template
+  scans), so every eligible sensor slot takes a share; `targets_per_job` 1, the
+  default of a new scan, keeps one command with every target. A scanner that
+  reads one target gets one command per target (`unzonedJobPlan`,
+  `internal/app/scan/zones.go`).
 - **Workflow step:** `internal/app/scan/step_plan.go` and
   `internal/app/scanrun/run.go` queue a step's commands when the step starts
   ([scan stages](scan-stages.md), [scan orchestration](scan-orchestration.md#work-distribution-today-and-the-work-pool)).
@@ -108,7 +114,12 @@ Jobs are created when work is triggered, not when a sensor asks:
 Each command records at creation: `tenant_id`, `type`, `priority`
 (`low`/`normal`/`high`/`critical`), `payload`, the routing decision
 (`is_platform_job`, `sensor_id` when pinned, `scan_zone_id`), `host_keys` (the
-per-host politeness keys from `github.com/openctemio/ctis/politeness`),
+per-host politeness keys from `github.com/openctemio/ctis/politeness`; an empty
+list for a passive tool that reaches no target host, such as DNS resolution,
+subdomain discovery, RDAP and ASN lookups, whether it runs as a workflow
+stage or as a single-scanner or coverage command, so it never waits behind
+or holds back the active scans of the same names; custom resolvers make a
+DNS tool active again),
 `dispatch_gate` (what the target gate decided), optional `scheduled_at` (a
 scan window not open yet) and `expires_at`.
 
@@ -292,7 +303,7 @@ doorbell and the claim by id):
 | Capabilities | every `required_capabilities` is one the sensor has |
 | Features | every `required_features` is one the sensor reported (never only declared) |
 | Refusals | the sensor is not in `refused_by` |
-| Hosts | no other acknowledged or running command of the organization holds a conflicting host key (re-checked under advisory locks) |
+| Hosts | no other acknowledged or running command of the organization holds a conflicting host key (re-checked under advisory locks); a shared job also needs fewer than its limit (2, intrusive 1) of shared jobs of any organization holding one ([sensors.md](sensors.md#the-shared-claim-path)) |
 
 **Fair order** (`fairPendingQuery`): priority class (critical 1 … low 4,
 raised one class per 30 minutes waited, never into critical), then
@@ -304,7 +315,11 @@ candidates of each class.
 organization; within a round the organization with the fewest shared jobs in
 flight first, then class and age; each organization's
 `platform_scans_concurrent` is enforced inside the claim under a
-per-organization lock.
+per-organization lock. The read is bounded by the organizations with pending
+shared work (at most 200 ranked, five jobs each per round, through
+`idx_commands_shared_pending` and `idx_commands_shared_inflight`), never by
+the depth of their queues or by finished jobs
+([sensors.md](sensors.md#the-shared-claim-path)).
 
 **Claim by id** (`POST /commands/{id}/claim`, `TransitionCommand`): the same
 predicates and holds for one command; a replay by the holder answers the
@@ -376,7 +391,7 @@ flowchart TD
   T --> PIN{Pending, pinned to a stale,<br/>offline or disabled sensor,<br/>routed scan work?}
   PIN -- yes --> UNPIN[Unpin, zone kept]
   T --> PO{dispatch_attempts ≥ 3?}
-  PO -- yes --> FAIL[Failed: Max dispatch attempts exceeded,<br/>the run step fails with the reason]
+  PO -- yes --> FAIL[Failed with every cause named,<br/>the run step fails with the reason]
   E[Every 60 s: expiration checker] --> EX{expires_at passed, or<br/>shared job queued > 60 min?}
   EX -- yes --> EXP[Expired, only if the row is unchanged,<br/>the run step is told]
   RV[Sensor revoked or disabled] --> REL[Held routed work back to pending<br/>without an attempt, other work failed]
@@ -391,6 +406,47 @@ flowchart TD
   sensor, no free slot, hosts busy on the sensor).
 - **Refusal** by a sensor's local policy adds it to `refused_by`; routed work
   goes to another eligible sensor, otherwise it fails with the reason.
+- **Infrastructure failure:** a sensor can fail a command for a reason that is
+  not about the target (the tool crashed or is missing, out of memory or disk,
+  the content pack cannot be read, its own network or resolver failed). Routed
+  scan work then goes to another eligible sensor and the sensors that failed it
+  are excluded (`commands.failed_on`; the claim, the placement explainer and
+  the shared claim all read it). A lost lease adds the old holder to
+  `failed_on` too, when another sensor could take the work (a tenant with one
+  sensor keeps handing the work back to it). The sensor sends the class in the
+  structured `failure` of the fail request (or an infrastructure `error_code`);
+  a sensor that sends neither is read by its message text. The classes, the
+  ones that move and the ones that never move (a fact about the target, the
+  job's own limits, a proxy pool without an endpoint) are in
+  `pkg/domain/command/infra_failure.go`; the decision is
+  `internal/app/command/infra_failure.go`. A command pinned to a sensor by a
+  person and a shared job fail as before.
+- **One budget:** 3 attempts per command for any cause (a lost lease, a
+  refusal, an infrastructure failure; `command.MaxDispatchAttempts`). When it
+  is spent, or no other sensor can take the work, the command fails with every
+  cause named (`commands.attempts`, `failure_class`), and the step carries the
+  matching code (`TOOL_UNAVAILABLE`, `TOOL_CRASHED_ON_INPUT`,
+  `RESOURCE_EXHAUSTED`, `CONTENT_UNAVAILABLE`, `SENSOR_LOST`), never only
+  "max dispatch attempts exceeded".
+- **Fleet stop rule:** when the same tool and content version fails with an
+  infrastructure class on 2 different sensors within 30 minutes
+  (`failure_breakers`, per organization), the command is not moved again and
+  fails with `FLEET_TOOL_FAILURE`; commands with that key fail at their first
+  failure for the next 30 minutes. This caps the load of a bad tool or content
+  release at 2 attempts instead of bouncing every job across the fleet.
+- **Targets that failed on the sensor's side** (`sensor_network_fault`, a name
+  that did not resolve because of the sensor's own resolver) are handed out
+  again as a follow-up command on another sensor (the parent's sensor joins the
+  follow-up's `failed_on`), when another sensor can take it and the budget has
+  room. A fact about the target (unreachable, timeout, name gone), an answer
+  of an edge protection (blocked, challenged), a rate limit, a tool error and
+  the sensor's own egress refusal stay settled: they are never resent from
+  another sensor in the same run. Findings a failed attempt already delivered
+  are kept (they are upserted by fingerprint); a partial attempt never closes
+  findings.
+- Every move is a `requeued` event with the code `moved.<class>` (for example
+  `moved.tool_crashed`, `moved.sensor_offline`); the run page renders a
+  sentence from the code in English and Vietnamese.
 - **Poison:** a command that keeps losing its holder fails after 3 attempts.
 - Two older recovery functions still run on the same tick
   (`recover_stuck_platform_jobs`: shared jobs acknowledged for 30 minutes;
@@ -500,12 +556,14 @@ change and this page updated when it lands:
   work for shared sensors, so they rely on the 5-minute safety poll. Planned:
   wake shared streams and report shared pending work.
 - **Claim cost.** The candidate read evaluates and sorts every pending row of
-  the organization (and every shared job on the shared path) before taking the
+  the organization before taking the
   first 1000; measured about 5 ms at 1k, 45 ms at 10k and 370 ms at 100k
   pending rows. The round-robin across runs holds only inside that window.
-  Planned: the [work pool](../rfcs/RFC-090-work-pool.md) (pending-only lanes and
-  items with an index-ordered, bounded claim), a queue version so a claim with
-  nothing new skips the database, and a bound on the shared candidate read.
+  The shared candidate read is bounded already (per organization, through
+  `idx_commands_shared_pending`). Planned: the
+  [work pool](../rfcs/RFC-090-work-pool.md) (pending-only lanes and items with
+  an index-ordered, bounded claim) and a queue version so a claim with nothing
+  new skips the database.
 - **Lease epoch** becomes mandatory on every request a holder makes (start,
   complete, fail, release, logs, results), and the unused per-job token
   columns are removed.

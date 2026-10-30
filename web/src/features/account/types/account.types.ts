@@ -38,6 +38,8 @@ export interface ChangePasswordInput {
   current_password: string
   new_password: string
   confirm_password: string
+  /** Also revoke every API key the person owns (connected apps always go). */
+  revoke_api_keys?: boolean
 }
 
 /** GET /api/v1/users/me/2fa */
@@ -49,6 +51,11 @@ export interface TwoFactorStatus {
   recovery_codes_remaining: number
   /** an organization the user belongs to requires 2FA */
   required_by_organization: boolean
+  /**
+   * The platform's two-factor floor covers the user but their grace period
+   * has not ended: the date from which sign-in is gated. They can set up now.
+   */
+  grace_due_at?: string
 }
 
 /** POST /api/v1/users/me/2fa/setup — nothing changes until it is confirmed */
@@ -90,6 +97,8 @@ export interface Session {
 
 export interface SessionListResponse {
   sessions: Session[]
+  /** API keys the person owns, in every organization. */
+  active_api_keys?: number
 }
 
 // ============================================

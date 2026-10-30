@@ -20,6 +20,16 @@ const policy = vi.hoisted(() => ({
 }))
 vi.mock('../api/use-auth-providers', () => ({ usePasswordPolicy: () => policy.current }))
 
+// The checkbox measures itself with ResizeObserver, which jsdom lacks.
+vi.stubGlobal(
+  'ResizeObserver',
+  class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+)
+
 const mockReset = vi.mocked(resetPasswordAction)
 const PASSWORD = 'Str0ng!Passw0rd#2026'
 
@@ -41,7 +51,7 @@ describe('PasswordTokenForm', () => {
     expect(screen.getByText('Set your password')).toBeInTheDocument()
     await fillAndSubmit(/^set password$/i)
 
-    await waitFor(() => expect(mockReset).toHaveBeenCalledWith('tok-1', PASSWORD))
+    await waitFor(() => expect(mockReset).toHaveBeenCalledWith('tok-1', PASSWORD, false))
     expect(
       await screen.findByText('Your password is set. Sign in to continue.')
     ).toBeInTheDocument()
@@ -53,8 +63,18 @@ describe('PasswordTokenForm', () => {
 
     expect(screen.getByRole('heading', { level: 1, name: 'Reset password' })).toBeInTheDocument()
     await fillAndSubmit(/^reset password$/i)
-    await waitFor(() => expect(mockReset).toHaveBeenCalledWith('tok-2', PASSWORD))
+    await waitFor(() => expect(mockReset).toHaveBeenCalledWith('tok-2', PASSWORD, true))
     expect(await screen.findByText('Password reset')).toBeInTheDocument()
+  })
+
+  it('reset mode lets the person keep their API keys', async () => {
+    mockReset.mockResolvedValue({ success: true, data: null, message: 'ok' })
+    render(<PasswordTokenForm mode="reset" token="tok-3" />)
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('checkbox', { name: /also revoke api keys/i }))
+    await fillAndSubmit(/^reset password$/i)
+    await waitFor(() => expect(mockReset).toHaveBeenCalledWith('tok-3', PASSWORD, false))
   })
 
   // The page reads the token from the URL after hydration, so the first render
@@ -66,7 +86,7 @@ describe('PasswordTokenForm', () => {
     const { rerender } = render(<PasswordTokenForm mode="setup" token="" />)
     rerender(<PasswordTokenForm mode="setup" token="tok-late" />)
     await fillAndSubmit(/^set password$/i)
-    await waitFor(() => expect(mockReset).toHaveBeenCalledWith('tok-late', PASSWORD))
+    await waitFor(() => expect(mockReset).toHaveBeenCalledWith('tok-late', PASSWORD, false))
   })
 
   it('setup mode without a token says to ask the administrator (no self-service reset link)', () => {
@@ -85,10 +105,15 @@ describe('PasswordTokenForm', () => {
   })
 
   it('an expired setup link tells the user to ask for a new one', async () => {
-    mockReset.mockResolvedValue({ success: false, error: 'Token expired' })
+    mockReset.mockResolvedValue({
+      success: false,
+      code: 'INVALID_RESET_TOKEN',
+      error: 'SERVER SENTENCE token expired',
+    })
     render(<PasswordTokenForm mode="setup" token="tok-3" />)
     await fillAndSubmit(/^set password$/i)
-    expect(await screen.findByText('Token expired')).toBeInTheDocument()
+    expect(await screen.findByText(/reset link is invalid or has expired/i)).toBeInTheDocument()
+    expect(screen.queryByText(/SERVER SENTENCE/)).not.toBeInTheDocument()
     expect(screen.getByText(/ask your administrator for a new one/i)).toBeInTheDocument()
   })
 })

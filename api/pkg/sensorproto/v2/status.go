@@ -252,6 +252,12 @@ const (
 	// rule, detail}; a refused routed job is re-queued to another eligible
 	// sensor and the refuser cannot claim it again (research/25 §3.6, D8).
 	FeatureRefusal = "refusal"
+	// FeatureFailureClass: POST /commands/{id}/fail accepts "failure"
+	// {class, evidence} and the infrastructure error codes (research/302):
+	// the platform moves routed work to another sensor on an
+	// infrastructure class. A sensor sends them only to a platform that
+	// lists this feature.
+	FeatureFailureClass = "failure_class"
 	// FeatureConfigReport: PUT /config-report stores the sensor's preflight
 	// check results and the heartbeat accepts the config_report summary
 	// (research/26). A sensor sends neither to a server that does not list
@@ -276,11 +282,17 @@ const (
 	// FeatureKeyBind: a bearer-key sensor may bind its own Ed25519 signing
 	// key at POST /identity/bind (RFC-052 §4.8) and become key-bound.
 	FeatureKeyBind = "key_bind"
+	// FeatureLocalStore: heartbeats may carry "local_store", the state of the
+	// sensor's local data (watermark, whether it stopped claiming jobs and
+	// why, bytes per class, disk level, cleanup sweeps). The platform stores
+	// and shows it and names it when a queued job waits. Display and health
+	// data only: it never changes dispatch.
+	FeatureLocalStore = "local_store"
 )
 
 // ControlFeatures are the RFC-029 features, in hello order.
 func ControlFeatures() []string {
-	return []string{FeatureHeartbeat, FeatureCommands, FeatureSuppressions, FeatureFingerprints, FeatureKeys, FeatureLoad, FeatureRelease, FeatureManifest, FeatureLocalPolicy, FeatureCommandProgress, FeaturePosture, FeatureCapacity, FeatureRefusal, FeatureConfigReport, FeatureLogs}
+	return []string{FeatureHeartbeat, FeatureCommands, FeatureSuppressions, FeatureFingerprints, FeatureKeys, FeatureLoad, FeatureRelease, FeatureManifest, FeatureLocalPolicy, FeatureCommandProgress, FeatureLocalStore, FeaturePosture, FeatureCapacity, FeatureRefusal, FeatureFailureClass, FeatureConfigReport, FeatureLogs}
 }
 
 // Deprecation announces a deprecated protocol on hello.

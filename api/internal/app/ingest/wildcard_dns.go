@@ -22,6 +22,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/assetfreshness"
+	"github.com/openctemio/openctem/api/pkg/domain/assetresolution"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -36,6 +37,13 @@ const wildcardFilterTool = "dnsx"
 
 // SetWildcardDNS wires the wildcard-only marks. Nil: nothing is marked.
 func (s *Service) SetWildcardDNS(st assetfreshness.WildcardDNSStore) { s.wildcardDNS = st }
+
+// SetNameResolution wires what tells a name that does not resolve from one
+// that resolves only through a wildcard record, and where the not-resolving
+// names are recorded. Without a prober no name is marked wildcard-only.
+func (s *Service) SetNameResolution(p NameProber, st assetresolution.Store) {
+	s.nameProber, s.resolutionStore = p, st
+}
 
 // wildcardFilterOn reports whether a command ran dnsx with the wildcard-DNS
 // filter on ("wildcard_filter": true in its config or scanner_config).
@@ -104,7 +112,11 @@ func resolverInputNames(cmd *command.Command) []string {
 }
 
 // splitWildcardOnly divides the input assets into the ones the run reported
-// (clear) and the ones it did not (mark).
+// (clear) and the ones it did not (mark). A registrable domain is never
+// marked, and any mark it has is cleared: a wildcard record never answers
+// for the name it sits under, so an apex the resolver left out has no
+// address, or shares its address with its own wildcard (which the
+// resolver's filter cannot tell apart); neither makes it wildcard-only.
 func splitWildcardOnly(inputs map[string]*asset.Asset, c *ingestreport.CommandCoverage) (mark, clear []shared.ID) {
 	reported := map[shared.ID]bool{}
 	for _, r := range c.Reports {
@@ -118,7 +130,7 @@ func splitWildcardOnly(inputs map[string]*asset.Asset, c *ingestreport.CommandCo
 			continue
 		}
 		seen[a.ID()] = true
-		if reported[a.ID()] {
+		if reported[a.ID()] || asset.IsRegistrableDomain(a.Name()) {
 			clear = append(clear, a.ID())
 		} else {
 			mark = append(mark, a.ID())
@@ -152,6 +164,10 @@ func (s *Service) evaluateWildcardDNS(ctx context.Context, tenantID, commandID s
 	if cmd.CompletedAt != nil {
 		at = *cmd.CompletedAt
 	}
+	// A name the resolver left out is not wildcard-only by that alone: it
+	// may not resolve at all. Ask DNS; mark only what resolves through a
+	// probed wildcard record.
+	mark, clear = s.classifyUnreported(ctx, tenantID, commandID, inputs, mark, clear, at)
 	if err := s.wildcardDNS.ClearWildcardOnly(ctx, tenantID, clear); err != nil {
 		s.logger.Warn("wildcard-DNS marks: clear failed", "command_id", commandID.String(), "error", logger.SanitizeError(err))
 	}
@@ -162,4 +178,58 @@ func (s *Service) evaluateWildcardDNS(ctx context.Context, tenantID, commandID s
 	if len(mark) > 0 {
 		s.logger.Info("names resolve only through a wildcard record; passive only", "tenant_id", tenantID.String(), "command_id", commandID.String(), "count", len(mark))
 	}
+}
+
+// classifyUnreported sorts the names the resolver did not report: a name
+// DNS has no answer for is recorded as failing to resolve (not_resolving
+// after consecutive failures) and is not marked; a name that resolves
+// through a wildcard record of a parent zone stays marked; a name that
+// resolves by itself has any mark cleared. Without a prober, or when the
+// probe is unsure, nothing is marked (a mark needs proof). It returns the
+// final mark and clear lists.
+func (s *Service) classifyUnreported(ctx context.Context, tenantID, commandID shared.ID, inputs map[string]*asset.Asset, mark, clear []shared.ID, at time.Time) (marks, clears []shared.ID) {
+	if len(mark) == 0 {
+		return nil, clear
+	}
+	if s.nameProber == nil {
+		return nil, clear
+	}
+	byID := make(map[shared.ID]string, len(inputs))
+	for n, a := range inputs {
+		if a != nil {
+			byID[a.ID()] = n
+		}
+	}
+	names := make([]string, 0, len(mark))
+	for _, id := range mark {
+		if n, ok := byID[id]; ok {
+			names = append(names, n)
+		}
+	}
+	classes := probeNames(ctx, s.nameProber, names)
+	var failed, resolved []shared.ID
+	for _, id := range mark {
+		switch classes[byID[id]] {
+		case NameWildcardOnly:
+			marks = append(marks, id)
+		case NameNoAnswer:
+			failed = append(failed, id)
+			clear = append(clear, id)
+		case NameResolves:
+			resolved = append(resolved, id)
+			clear = append(clear, id)
+		}
+	}
+	if s.resolutionStore != nil {
+		if err := s.resolutionStore.RecordFailed(ctx, tenantID, failed, at, assetresolution.SourceResolveStage); err != nil {
+			s.logger.Warn("resolution states: failed names not recorded", "command_id", commandID.String(), "error", logger.SanitizeError(err))
+		}
+		if err := s.resolutionStore.RecordResolved(ctx, tenantID, resolved, at); err != nil {
+			s.logger.Warn("resolution states: resolved names not recorded", "command_id", commandID.String(), "error", logger.SanitizeError(err))
+		}
+	}
+	if len(failed) > 0 {
+		s.logger.Info("names the resolver left out do not resolve", "tenant_id", tenantID.String(), "command_id", commandID.String(), "count", len(failed))
+	}
+	return marks, clear
 }

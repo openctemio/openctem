@@ -93,12 +93,16 @@ export interface BulkScopeTargetItemInput {
   pattern: string
 }
 
-/** Input of POST /scope/targets/bulk: 1..200 permanent entries. */
+/** Input of POST /scope/targets/bulk: 1..200 entries, permanent unless expires_in_days is set. */
 export interface BulkCreateScopeTargetsInput {
   items: BulkScopeTargetItemInput[]
   reason?: string
   /** refusal_fix when the entries fix the targets a scan refused. */
   origin?: 'refusal_fix'
+  /** Every entry of the batch expires after this many days (omitted: permanent). */
+  expires_in_days?: number
+  /** The deepest probe every entry allows (omitted: the organization's default). */
+  max_tier?: 't0' | 't1' | 't2'
 }
 
 /** Probe tiers (RFC-036): t0 passive, t1 safe active, t2 intrusive. */
@@ -166,11 +170,20 @@ export type ApiScopeFix = Schemas['github_com_openctemio_openctem_api_pkg_domain
 /**
  * Input for creating a scope exclusion
  */
+/**
+ * Why something is out of scope (research/320): every kind stops scanning;
+ * a permanent not_ours or retired exclusion also closes the open findings of
+ * what it matches (reopened when it goes).
+ */
+export type ScopeExclusionKind = 'do_not_scan' | 'not_ours' | 'retired'
+
 export interface CreateScopeExclusionInput {
   exclusion_type: string
   pattern: string
   reason: string
   expires_at?: string
+  /** Default do_not_scan. */
+  kind?: ScopeExclusionKind
   /** `path` exclusions (RFC-056): the pattern is a host pattern. */
   path_prefix?: string
   /** Methods the path rule blocks; empty blocks every method. */
@@ -210,6 +223,7 @@ export interface SetExclusionTestingInput {
  * Input for updating a scope exclusion
  */
 export interface UpdateScopeExclusionInput {
+  kind?: ScopeExclusionKind
   reason?: string
   status?: string
   expires_at?: string

@@ -27,6 +27,9 @@ import { Label } from '@/components/ui/label'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { OneTimeLinkDialog } from '@/components/one-time-link-dialog'
+import { useEmailUnavailable } from '@/features/auth/api/use-auth-providers'
+import { buildInvitationLink } from '@/features/organization/components/invite-user-dialog'
 import {
   Select,
   SelectContent,
@@ -78,6 +81,9 @@ import {
   Eraser,
   CalendarClock,
   Crown,
+  Info,
+  LinkIcon,
+  RotateCw,
 } from 'lucide-react'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
@@ -713,7 +719,9 @@ export default function UsersPage() {
   })
   // SSO exceptions (owners and admins see the security settings): a badge
   // on the members who may sign in without SSO.
-  const { settings: tenantSettings } = useTenantSettings(canManageMembers ? tenantSlug : undefined)
+  const { settings: tenantSettings } = useTenantSettings(
+    canManageMembers ? currentTenant?.id : undefined
+  )
   const ssoExceptionUntil = useMemo(() => {
     const map = new Map<string, string>()
     for (const e of tenantSettings?.security?.sso_exceptions ?? []) map.set(e.user_id, e.expires_at)
@@ -759,6 +767,12 @@ export default function UsersPage() {
   // Reset-2FA confirmation: the member awaiting confirmation.
   const [resetMfaMember, setResetMfaMember] = useState<MemberWithUser | null>(null)
   const [pendingCancelInvite, setPendingCancelInvite] = useState<Invitation | null>(null)
+  const [inviteLink, setInviteLink] = useState<{
+    email: string
+    url: string
+    expiresAt: string
+  } | null>(null)
+  const emailUnavailable = useEmailUnavailable()
   const { t } = useTranslation()
   const [isResettingMfa, setIsResettingMfa] = useState(false)
   // Offboarding wizard (RFC-050): the member being offboarded. Offboarding
@@ -1210,6 +1224,33 @@ export default function UsersPage() {
       )
     }
   }
+  // A new link without email: the token rotates (the old link stops working)
+  // and the API returns the new one once. Renew does the same for an expired
+  // invitation and gives it a new lifetime.
+  const reissueInviteLink = async (invitation: Invitation, renew: boolean) => {
+    if (!tenantSlug) return
+    try {
+      const res = await fetcherWithOptions<{ token: string; invitation: Invitation }>(
+        renew
+          ? tenantEndpoints.renewInvitation(tenantSlug, invitation.id)
+          : tenantEndpoints.invitationLink(tenantSlug, invitation.id),
+        { method: 'POST' }
+      )
+      setInviteLink({
+        email: invitation.email,
+        url: buildInvitationLink(res.token),
+        expiresAt: res.invitation.expires_at,
+      })
+      mutateInvitations()
+    } catch (err) {
+      toast.error(
+        getErrorMessage(
+          err,
+          t('org.invitations.linkFailed', 'Could not issue a new invitation link')
+        )
+      )
+    }
+  }
   const cancelInvite = async (invitation: Invitation) => {
     if (!tenantSlug) return
     try {
@@ -1330,18 +1371,42 @@ export default function UsersPage() {
       cell: ({ row }) => (
         <DataTableRowActions
           actions={[
-            {
-              label: t('org.membersPage.resendEmail', 'Resend email'),
-              icon: Send,
-              route: 'POST /api/v1/tenants/{tenant}/invitations/{invitationId}/resend',
-              onClick: () => resendInvite(row.original),
-            },
+            ...(new Date(row.original.expires_at).getTime() <= Date.now()
+              ? [
+                  {
+                    label: t('org.membersPage.renewInvitation', 'Renew'),
+                    icon: RotateCw,
+                    route:
+                      'POST /api/v1/tenants/{tenant}/invitations/{invitationId}/renew' as const,
+                    onClick: () => reissueInviteLink(row.original, true),
+                  },
+                ]
+              : [
+                  {
+                    label: t('org.membersPage.copyNewLink', 'Copy new link'),
+                    icon: LinkIcon,
+                    route: 'POST /api/v1/tenants/{tenant}/invitations/{invitationId}/link' as const,
+                    onClick: () => reissueInviteLink(row.original, false),
+                  },
+                ]),
+            // The email actions only make sense on a server that sends email.
+            ...(emailUnavailable
+              ? []
+              : [
+                  {
+                    label: t('org.membersPage.resendEmail', 'Resend email'),
+                    icon: Send,
+                    route:
+                      'POST /api/v1/tenants/{tenant}/invitations/{invitationId}/resend' as const,
+                    onClick: () => resendInvite(row.original),
+                  },
+                ]),
             {
               label: t('org.membersPage.cancelInvitation', 'Cancel invitation'),
               icon: Trash2,
               destructive: true,
               separatorBefore: true,
-              route: 'DELETE /api/v1/tenants/{tenant}/invitations/{invitationId}',
+              route: 'DELETE /api/v1/tenants/{tenant}/invitations/{invitationId}' as const,
               onClick: () => setPendingCancelInvite(row.original),
             },
           ]}
@@ -1431,6 +1496,21 @@ export default function UsersPage() {
           </PageHeader>
 
           <JoinRequestsCard canManage={isAtLeast('admin')} onChanged={refreshData} />
+
+          {emailUnavailable && (
+            <Alert>
+              <Info className="h-4 w-4" />
+              <AlertTitle>
+                {t('org.membersPage.noEmailTitle', 'This server cannot send email')}
+              </AlertTitle>
+              <AlertDescription>
+                {t(
+                  'org.membersPage.noEmailBody',
+                  'Invitation emails are not sent. Copy each invitation link and give it to the person yourself.'
+                )}
+              </AlertDescription>
+            </Alert>
+          )}
 
           <OwnershipTransferBanner
             transfer={pendingTransfer}
@@ -1673,6 +1753,22 @@ export default function UsersPage() {
         member={accessMember}
         onOpenChange={(open) => !open && setAccessMember(null)}
         onSaved={refreshData}
+      />
+      <OneTimeLinkDialog
+        open={!!inviteLink}
+        onOpenChange={(open) => {
+          if (!open) setInviteLink(null)
+        }}
+        title={t('org.invitations.linkTitle', 'Invitation link')}
+        description={t(
+          'org.invitations.linkDesc',
+          'A new link for {email}. The previous link no longer works.',
+          {
+            email: inviteLink?.email ?? '',
+          }
+        )}
+        link={inviteLink?.url ?? ''}
+        expiresAt={inviteLink?.expiresAt}
       />
       <InviteUserDialog
         tenantSlug={tenantSlug}

@@ -8,6 +8,7 @@ import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { AlertTriangle, Shield, Target, FileWarning, Clock, Bot, XCircle } from 'lucide-react'
 import { useTranslation } from '@/context/i18n-provider'
+import { AIBadge } from '@/features/shared/components/ai-badge'
 import { TriageStatusBadge } from './triage-status-badge'
 import { triageFailureMessage } from '../lib/messages'
 import {
@@ -96,7 +97,10 @@ export function TriageResultCard({ result, className }: TriageResultCardProps) {
             <Bot className="h-5 w-5" />
             AI Triage Analysis
           </CardTitle>
-          <TriageStatusBadge status={result.status} />
+          <div className="flex items-center gap-2">
+            <AIBadge source="ai_builtin" />
+            <TriageStatusBadge status={result.status} />
+          </div>
         </div>
         <div className="flex items-center gap-4 text-xs text-muted-foreground mt-2">
           <span className="flex items-center gap-1">

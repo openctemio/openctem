@@ -228,6 +228,12 @@ const (
 	// in a finding's evidence: the item, the placeholders and the purpose
 	// (view, copy, copy_curl). Never the values.
 	ActionFindingEvidenceRevealed Action = "finding.evidence_revealed"
+	// ActionFindingEvidenceUpdated records a change to the role or order of a
+	// finding's evidence items.
+	ActionFindingEvidenceUpdated Action = "finding.evidence_updated"
+	// ActionFindingProofOverridden records a pentest finding confirmed without
+	// a proof basis, on the stated reason.
+	ActionFindingProofOverridden Action = "finding.proof_basis_overridden"
 	// ActionFindingRemediationStepAdded records a manually-appended remediation
 	// step on a generic finding.
 	ActionFindingRemediationStepAdded Action = "finding.remediation_step_added"
@@ -326,6 +332,11 @@ const (
 	ActionAuthMFARecoveryCodesRegenerated Action = "auth.mfa_recovery_codes_regenerated"
 	ActionAuthSessionRevoked              Action = "auth.session_revoked"
 	ActionAuthPasswordChanged             Action = "auth.password_changed"
+	// A social sign-in identity (Google, GitHub, Microsoft) was linked to or
+	// unlinked from the account: by the person from Account > Security, or
+	// automatically on a sign-in that met the auto-link rules.
+	ActionAuthIdentityLinked   Action = "auth.identity_linked"
+	ActionAuthIdentityUnlinked Action = "auth.identity_unlinked"
 	// Step-up re-authentication: the signed-in user proved their identity
 	// again (TOTP or password) before a sensitive action, or failed to.
 	ActionAuthStepUp       Action = "auth.step_up"
@@ -409,7 +420,12 @@ const (
 	ActionSensorPairingDenied    Action = "sensor.pairing_denied"
 	ActionSensorPairingCompleted Action = "sensor.pairing_completed"
 	ActionSensorRepaired         Action = "sensor.repaired"
-	ActionSensorKeyRevoked       Action = "sensor.key_revoked"
+	// Organization enrollment tokens (docs/architecture/sensor-pairing.md).
+	ActionSensorEnrollmentTokenCreated Action = "sensor.enrollment_token_created"
+	ActionSensorEnrollmentTokenRevoked Action = "sensor.enrollment_token_revoked"
+	ActionSensorEnrolled               Action = "sensor.enrolled"
+	ActionSensorEnrollmentRefused      Action = "sensor.enrollment_refused"
+	ActionSensorKeyRevoked             Action = "sensor.key_revoked"
 	// ActionSensorKeyBound: a bearer-key sensor bound its own signing key
 	// (its API keys retired, one way); ActionSensorKeyBindRefused: such a
 	// bind was refused (policy, proof, state).
@@ -446,7 +462,13 @@ const (
 	ActionProxyPoolCredentialsChanged Action = "proxy_pool.credentials_changed"
 	ActionProxyPoolEndpointUpdated    Action = "proxy_pool.endpoint_updated"
 	ActionProxyPoolEndpointQuarantine Action = "proxy_pool.endpoint_quarantined"
-	ActionSensorNetworkPathChanged    Action = "sensor.network_path_changed"
+	// ActionProxyPoolTestRequested: an administrator asked sensors to test a
+	// pool's endpoints (one entry per sensor asked).
+	ActionProxyPoolTestRequested Action = "proxy_pool.test_requested"
+	// ActionProxyPoolTested: a sensor finished testing a pool (the outcome
+	// per endpoint class, never an address or a credential).
+	ActionProxyPoolTested          Action = "proxy_pool.tested"
+	ActionSensorNetworkPathChanged Action = "sensor.network_path_changed"
 
 	// API key (oct_) actions — tenant-scoped programmatic credentials.
 	ActionAPIKeyCreated Action = "api_key.created"
@@ -479,6 +501,9 @@ const (
 	ActionSSOVerifiedDomainAdded     Action = "sso.verified_domain_added"
 	ActionSSOVerifiedDomainVerified  Action = "sso.verified_domain_verified"
 	ActionSSOVerifiedDomainDeleted   Action = "sso.verified_domain_deleted"
+	// ActionSSOBreakGlassUsed: an owner signed in with a password and their
+	// second factor to an organization that requires SSO.
+	ActionSSOBreakGlassUsed Action = "sso.break_glass_used"
 	// ActionSSOVerifiedDomainJITChanged: a domain's just-in-time provisioning
 	// (on/off, role) changed (RFC-058).
 	ActionSSOVerifiedDomainJITChanged Action = "sso.verified_domain_jit_changed"
@@ -543,6 +568,10 @@ const (
 	ActionScopeExclusionDeactivated Action = "scope_exclusion.deactivated"
 	ActionScopeExclusionApproved    Action = "scope_exclusion.approved"
 	ActionScopeExclusionRejected    Action = "scope_exclusion.rejected"
+	// ActionScopeEffectsApplied: the platform closed or reopened findings
+	// because their assets went out of scope for good or came back
+	// (research/320). One entry per reconcile pass per organization.
+	ActionScopeEffectsApplied Action = "scope_exclusion.effects_applied"
 
 	// Suppression rule approvals. A self-approval (the owner approving their
 	// own rule because nobody else can, owner decision B16) is Critical.
@@ -602,6 +631,11 @@ const (
 	// Explicit per-user data-scope grants on an asset (asset_access_grants).
 	ActionAssetAccessGranted Action = "asset.access_granted"
 	ActionAssetAccessRevoked Action = "asset.access_revoked"
+
+	// Asset groups that fill themselves: a rule is set or changed, and a
+	// change that brings more assets into a group that teams or scans use.
+	ActionAssetGroupRuleChanged Action = "asset_group.rule_changed"
+	ActionAssetGroupRuleWidened Action = "asset_group.rule_widened"
 
 	// Permission Set actions
 	// Permission sets were removed (permissions come only from roles). The
@@ -828,7 +862,7 @@ func (a Action) IsValid() bool {
 		ActionVulnerabilityCreated, ActionVulnerabilityUpdated, ActionVulnerabilityDeleted,
 		ActionFindingCreated, ActionFindingUpdated, ActionFindingDeleted, ActionFindingStatusChanged,
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
-		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
+		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingEvidenceUpdated, ActionFindingProofOverridden, ActionFindingRemediationStepAdded,
 		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
 		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingVerificationChecklistUpdated, ActionFindingClassified,
 		ActionFindingRetestCheckSaved, ActionFindingRetestCheckRemoved, ActionFindingRetestCheckApproved,
@@ -842,7 +876,7 @@ func (a Action) IsValid() bool {
 		ActionAuthLogin, ActionAuthLogout, ActionAuthRegister, ActionAuthFailed, ActionPermissionDenied, ActionTokenRevoked,
 		ActionAuthMFAEnabled, ActionAuthMFADisabled, ActionAuthMFAReset, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
 		ActionAuthMFARecoveryCodesRegenerated, ActionAuthSessionRevoked, ActionAuthPasswordChanged,
-		ActionAuthStepUp, ActionAuthStepUpFailed,
+		ActionAuthStepUp, ActionAuthStepUpFailed, ActionAuthIdentityLinked, ActionAuthIdentityUnlinked,
 		ActionSettingsUpdated, ActionDataExported, ActionDataImported,
 		ActionSensorCreated, ActionSensorUpdated, ActionSensorDeleted,
 		ActionSensorActivated, ActionSensorDeactivated, ActionSensorRevoked,
@@ -853,12 +887,14 @@ func (a Action) IsValid() bool {
 		ActionSensorResultPolicyUpdated,
 		ActionSensorPairingExpected, ActionSensorPairingApproved, ActionSensorPairingDenied, ActionSensorPairingCompleted,
 		ActionSensorRepaired, ActionSensorKeyRevoked, ActionSensorIdentityPolicySet, ActionSensorKeyBound, ActionSensorKeyBindRefused,
+		ActionSensorEnrollmentTokenCreated, ActionSensorEnrollmentTokenRevoked, ActionSensorEnrolled, ActionSensorEnrollmentRefused,
 		ActionSensorGrantChanged, ActionSensorClaimRefusedGrant, ActionSensorCredentialRefused, ActionSensorPushRefusedGrant,
 		ActionIntegrationSyncRequested,
 		ActionScanZoneCreated, ActionScanZoneUpdated, ActionScanZoneDeleted,
 		ActionScanZoneSensorAssigned, ActionScanZoneSensorUnassigned,
 		ActionProxyPoolCreated, ActionProxyPoolUpdated, ActionProxyPoolDeleted, ActionProxyPoolEndpointsChanged,
 		ActionProxyPoolCredentialsChanged, ActionProxyPoolEndpointUpdated, ActionProxyPoolEndpointQuarantine,
+		ActionProxyPoolTestRequested, ActionProxyPoolTested,
 		ActionSensorNetworkPathChanged,
 		ActionAPIKeyCreated, ActionAPIKeyRevoked, ActionAPIKeyDeleted,
 		ActionCredentialCreated, ActionCredentialUpdated, ActionCredentialDeleted, ActionCredentialAccessed,
@@ -868,6 +904,7 @@ func (a Action) IsValid() bool {
 		ActionSSOSAMLConfigUpdated, ActionSSOSAMLConfigDeleted,
 		ActionSSOIdentityProviderCreated, ActionSSOIdentityProviderUpdated, ActionSSOIdentityProviderDeleted,
 		ActionSSOVerifiedDomainAdded, ActionSSOVerifiedDomainVerified, ActionSSOVerifiedDomainDeleted,
+		ActionSSOBreakGlassUsed,
 		ActionSSOVerifiedDomainJITChanged, ActionSSOVerifiedDomainSignupPolicyChanged,
 		ActionMemberJoinedByDomain, ActionJoinRequestCreated, ActionJoinRequestApproved, ActionJoinRequestRejected,
 		ActionSSOChangeRequested, ActionSSOChangeApproved, ActionSSOChangeRejected,
@@ -881,6 +918,7 @@ func (a Action) IsValid() bool {
 		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionDeleted,
 		ActionScopeExclusionActivated, ActionScopeExclusionDeactivated,
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
+		ActionScopeEffectsApplied,
 		ActionExposureDispositionRequested, ActionExposureDispositionApproved, ActionExposureDispositionSelfApproved, ActionExposureDispositionRejected,
 		ActionExposureDispositionSelfApprovalRefused,
 		ActionSuppressionRuleApproved, ActionSuppressionRuleSelfApproved, ActionSuppressionRuleSelfApprovalRefused,
@@ -891,6 +929,7 @@ func (a Action) IsValid() bool {
 		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted, ActionScannerTemplateApproved,
 		ActionAssetAssigned, ActionAssetUnassigned, ActionAssetOwnershipUpdated,
 		ActionAssetAccessGranted, ActionAssetAccessRevoked,
+		ActionAssetGroupRuleChanged, ActionAssetGroupRuleWidened,
 		ActionPermissionSetCreated, ActionPermissionSetUpdated, ActionPermissionSetDeleted,
 		ActionPermissionSetAssigned, ActionPermissionSetUnassigned,
 		ActionPermissionGranted, ActionPermissionRevoked,
@@ -965,7 +1004,7 @@ func (a Action) Category() string {
 		return "vulnerability"
 	case ActionFindingCreated, ActionFindingUpdated, ActionFindingDeleted, ActionFindingStatusChanged,
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
-		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
+		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingEvidenceUpdated, ActionFindingProofOverridden, ActionFindingRemediationStepAdded,
 		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
 		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingVerificationChecklistUpdated, ActionFindingClassified, ActionFindingCommentReactionRemoved, ActionFindingCommentEdited, ActionFindingCommentDeleted, ActionFindingDuplicateMarked, ActionFindingIssueUnlinked, ActionFindingBountyReportChanged,
 		ActionFindingRetestCheckSaved, ActionFindingRetestCheckRemoved, ActionFindingRetestCheckApproved,
@@ -981,7 +1020,7 @@ func (a Action) Category() string {
 	case ActionAuthLogin, ActionAuthLogout, ActionAuthRegister, ActionAuthFailed, ActionPermissionDenied, ActionTokenRevoked,
 		ActionAuthMFAEnabled, ActionAuthMFADisabled, ActionAuthMFAReset, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
 		ActionAuthMFARecoveryCodesRegenerated, ActionAuthSessionRevoked, ActionAuthPasswordChanged,
-		ActionAuthStepUp, ActionAuthStepUpFailed:
+		ActionAuthStepUp, ActionAuthStepUpFailed, ActionAuthIdentityLinked, ActionAuthIdentityUnlinked:
 		return "security"
 	case ActionSettingsUpdated:
 		return "settings"
@@ -996,13 +1035,15 @@ func (a Action) Category() string {
 		ActionSensorResultPolicyUpdated,
 		ActionSensorPairingExpected, ActionSensorPairingApproved, ActionSensorPairingDenied, ActionSensorPairingCompleted,
 		ActionSensorRepaired, ActionSensorKeyRevoked, ActionSensorIdentityPolicySet, ActionSensorKeyBound, ActionSensorKeyBindRefused,
+		ActionSensorEnrollmentTokenCreated, ActionSensorEnrollmentTokenRevoked, ActionSensorEnrolled, ActionSensorEnrollmentRefused,
 		ActionSensorGrantChanged, ActionSensorClaimRefusedGrant, ActionSensorCredentialRefused, ActionSensorPushRefusedGrant:
 		return "sensor"
 	case ActionScanZoneCreated, ActionScanZoneUpdated, ActionScanZoneDeleted,
 		ActionScanZoneSensorAssigned, ActionScanZoneSensorUnassigned:
 		return "scan_zone"
 	case ActionProxyPoolCreated, ActionProxyPoolUpdated, ActionProxyPoolDeleted, ActionProxyPoolEndpointsChanged,
-		ActionProxyPoolCredentialsChanged, ActionProxyPoolEndpointUpdated, ActionProxyPoolEndpointQuarantine:
+		ActionProxyPoolCredentialsChanged, ActionProxyPoolEndpointUpdated, ActionProxyPoolEndpointQuarantine,
+		ActionProxyPoolTestRequested, ActionProxyPoolTested:
 		return "proxy_pool"
 	case ActionSensorNetworkPathChanged:
 		return "sensor"
@@ -1022,6 +1063,7 @@ func (a Action) Category() string {
 		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionDeleted,
 		ActionScopeExclusionActivated, ActionScopeExclusionDeactivated,
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
+		ActionScopeEffectsApplied,
 		ActionEASMSeedCreated, ActionEASMSeedUpdated, ActionEASMSeedDeleted:
 		return "scope"
 	case ActionSuppressionRuleApproved, ActionSuppressionRuleSelfApproved, ActionSuppressionRuleSelfApprovalRefused:
@@ -1064,7 +1106,7 @@ func (a Action) Category() string {
 	case ActionSSOSAMLConfigUpdated, ActionSSOSAMLConfigDeleted,
 		ActionSSOIdentityProviderCreated, ActionSSOIdentityProviderUpdated, ActionSSOIdentityProviderDeleted,
 		ActionSSOVerifiedDomainAdded, ActionSSOVerifiedDomainVerified, ActionSSOVerifiedDomainDeleted,
-		ActionSSOVerifiedDomainJITChanged,
+		ActionSSOVerifiedDomainJITChanged, ActionSSOBreakGlassUsed,
 		ActionSSOChangeRequested, ActionSSOChangeApproved, ActionSSOChangeRejected,
 		ActionSSOTrustRequested, ActionSSOTrustAccepted, ActionSSOTrustUpdated, ActionSSOTrustRevoked,
 		ActionSCIMGroupMappingsUpdated:
@@ -1098,6 +1140,7 @@ const (
 	ResourceTypeSavedView      ResourceType = "saved_view"
 	ResourceTypeScan           ResourceType = "scan"
 	ResourceTypeAsset          ResourceType = "asset"
+	ResourceTypeAssetGroup     ResourceType = "asset_group"
 	ResourceTypeSettings       ResourceType = "settings"
 	ResourceTypeToken          ResourceType = "token"
 	ResourceTypeSensor         ResourceType = "sensor"
@@ -1167,18 +1210,18 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeInvitation, ResourceTypeRepository, ResourceTypeBranch,
 		ResourceTypeComponent, ResourceTypeVulnerability, ResourceTypeFinding,
 		ResourceTypeFindingComment, ResourceTypeSLAPolicy, ResourceTypeSavedView, ResourceTypeScan,
-		ResourceTypeAsset, ResourceTypeSettings, ResourceTypeToken, ResourceTypeSensor, ResourceTypeScanZone, ResourceTypeProxyPool,
+		ResourceTypeAsset, ResourceTypeAssetGroup, ResourceTypeSettings, ResourceTypeToken, ResourceTypeSensor, ResourceTypeScanZone, ResourceTypeProxyPool,
 		ResourceTypeGroup, ResourceTypePermissionSet, ResourceTypeRole,
 		ResourceTypeScanWorkflow, ResourceTypeScanWorkflowStep, ResourceTypeScanRun, ResourceTypeScanConfig,
 		ResourceTypeScanProfile, ResourceTypeCommand,
 		ResourceTypeWorkflow, ResourceTypeWorkflowRun, ResourceTypeCapability, ResourceTypeTool,
-		ResourceTypeRuleSource, ResourceTypeRuleOverride, ResourceTypeIngest, ResourceTypeAITriage,
+		ResourceTypeRuleSource, ResourceTypeRuleOverride, ResourceTypeIngest, ResourceTypeAITriage, ResourceTypeAIAnalysis,
 		ResourceTypeCampaign, ResourceTypeMCPTool, ResourceTypeMCPPrompt, ResourceTypeAPIKey,
 		ResourceTypeSAMLConfig, ResourceTypeIdentityProvider, ResourceTypeVerifiedDomain, ResourceTypeEASMNetworkSeed, ResourceTypeEASMLookalikeWatch, ResourceTypeSSOChange,
 		ResourceTypeSCIMGroupMapping, ResourceTypeOrgTrust,
 		ResourceTypeCredential, ResourceTypeExposure, ResourceTypeAuditChain, ResourceTypeTemplateSource,
 		ResourceTypeScopeTarget, ResourceTypeScopeExclusion, ResourceTypeBountyProgram, ResourceTypeAuthorizationLetter, ResourceTypeSuppressionRule, ResourceTypeScannerTemplate, ResourceTypeIntegration,
-		ResourceTypeRemediationCampaign, ResourceTypeRemediationTask, ResourceTypeRemediationSuggestion, ResourceTypeRemediationAction, ResourceTypeReportSchedule, ResourceTypeEASMSeed,
+		ResourceTypeRemediationCampaign, ResourceTypeRemediationTask, ResourceTypeVulnerabilitySelection, ResourceTypeRemediationSuggestion, ResourceTypeRemediationAction, ResourceTypeReportSchedule, ResourceTypeEASMSeed,
 		ResourceTypeFindingApproval, ResourceTypeSupportGrant:
 		return true
 	}
@@ -1254,6 +1297,7 @@ func SeverityForAction(a Action) Severity {
 		ActionSCIMGroupMappingsUpdated,
 		ActionUserSuspended, ActionUserDeactivated,
 		ActionAuthMFADisabled, ActionAuthMFAReset, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
+		ActionAuthIdentityLinked, ActionAuthIdentityUnlinked,
 		ActionAuthStepUpFailed,
 		ActionMemberRemoved, ActionMemberRoleChanged, ActionMemberSuspended, ActionMemberOffboarded,
 		ActionMemberOwnershipTransferRequested,
@@ -1274,7 +1318,10 @@ func SeverityForAction(a Action) Severity {
 		// Deleting an asset also deletes its findings.
 		ActionAssetDeleted,
 		// A refused own approval: someone tried to skip the second approver.
-		ActionSuppressionRuleSelfApprovalRefused, ActionExposureDispositionSelfApprovalRefused:
+		ActionSuppressionRuleSelfApprovalRefused, ActionExposureDispositionSelfApprovalRefused,
+		// Findings closed because their assets went out of scope (an insider
+		// could use it to hide findings: it is reviewed like a deletion).
+		ActionScopeEffectsApplied:
 		return SeverityHigh
 
 	// Medium - important changes

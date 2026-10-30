@@ -7,6 +7,11 @@
 import type {
   CategoryResult,
   DurationResult,
+  FlowFigure as KitFigure,
+  FlowResult,
+  IntakeData,
+  IntakeResult,
+  IntakeSourceRow,
   ItemsResult,
   MatrixResult,
   PathsResult,
@@ -16,11 +21,21 @@ import type {
   StagesResult,
   TimeSeriesResult,
   WidgetResult,
+  BriefResult,
+  KpisResult,
+  LeverRow,
+  LeversResult,
   WidgetState as KitState,
 } from '@/components/dashboard-kit'
 import { safeInternalHref } from '@/lib/safe-href'
-import { dimensionValueKey, groupByOf, metricMeta, ORDINAL_DIMENSIONS } from '../metrics'
-import type { WidgetValue } from './widget-data'
+import {
+  dimensionValueKey,
+  groupByOf,
+  kitPolarity,
+  metricMeta,
+  ORDINAL_DIMENSIONS,
+} from '../metrics'
+import type { FlowFigure, IntakeSource, IntakeValue, LeverValue, WidgetValue } from './widget-data'
 import type { Dimension, VizType, WidgetSpec } from './widget-spec'
 
 export interface WidgetModel {
@@ -47,9 +62,86 @@ export function reasonKeyOf(reason: string | undefined): string {
     case 'timeout':
     case 'empty':
     case 'pending':
+    case 'organization_only':
+    case 'no_receipts':
       return `dashboards.reason.${reason}`
     default:
       return 'dashboards.reason.failed'
+  }
+}
+
+function figure(f: FlowFigure | undefined): KitFigure {
+  return { key: f?.key, value: f?.value ?? 0, drill: safeInternalHref(f?.drill) ?? null }
+}
+
+function leverRow(l: LeverValue): LeverRow {
+  return {
+    kind: l.kind,
+    count: l.count,
+    assets: l.assets,
+    title: l.title,
+    effect: l.effect,
+    href: safeInternalHref(l.drill) ?? null,
+  }
+}
+
+function sourceRow(s: IntakeSource): IntakeSourceRow {
+  return {
+    id: `${s.origin}:${s.tool}`,
+    origin: s.origin,
+    tool: s.tool,
+    receipts: s.receipts,
+    received: s.received,
+    created: s.created,
+    still_detected: s.still_detected,
+    reopened: s.reopened,
+    closed: s.closed,
+    suppressed: s.suppressed,
+    not_stored: s.not_stored,
+    last_at: s.last_at && !s.last_at.startsWith('0001-') ? s.last_at : null,
+    last_status: s.last_status,
+    health: s.health === 'stale' || s.health === 'failed' ? s.health : 'ok',
+    expected_every_seconds: s.expected_every_seconds ?? null,
+    drill: safeInternalHref(s.drill) ?? null,
+  }
+}
+
+function intakeData(v: IntakeValue, days: number): IntakeData {
+  return {
+    since: v.since,
+    days,
+    sources: v.sources.map(sourceRow),
+    totals: sourceRow(v.totals),
+    noise: v.noise,
+    failing: v.failing,
+    stale: v.stale,
+    drill: safeInternalHref(v.drill) ?? null,
+    false_positive: figure(v.false_positive),
+  }
+}
+
+function stagesResult(st: NonNullable<WidgetValue['stages']>): StagesResult {
+  return {
+    shape: 'stages',
+    focus: st.focus,
+    stages: st.stages.map((s) => ({
+      key: s.key,
+      label_key: `dashboards.loop.stage.${s.key}`,
+      label: s.key,
+      value: s.value,
+      unit: s.unit,
+      state: stageState(s.state),
+      drill: safeInternalHref(s.drill) ?? null,
+      reason_key: s.reason ? `dashboards.loop.reason.${s.reason}` : undefined,
+      flag_key: s.flag ? `dashboards.loop.flag.${s.flag}` : undefined,
+      detail: s.detail
+        ? {
+            label_key: `dashboards.loop.detail.${s.detail.key}`,
+            value: s.detail.value,
+            drill: safeInternalHref(s.detail.drill) ?? null,
+          }
+        : undefined,
+    })),
   }
 }
 
@@ -159,39 +251,15 @@ function toResult(v: WidgetValue, spec: WidgetSpec | undefined): WidgetResult | 
           asset: r.asset_name ?? null,
           due_at: r.sla_deadline ?? null,
           kev: r.kev,
+          epss: typeof r.epss === 'number' ? r.epss : null,
           href: `/findings/${encodeURIComponent(r.id)}`,
         })),
         total: typeof it.total === 'number' ? it.total : null,
       }
       return out
     }
-    case 'stages': {
-      const st = v.stages
-      if (!st) return undefined
-      const out: StagesResult = {
-        shape: 'stages',
-        focus: st.focus,
-        stages: st.stages.map((s) => ({
-          key: s.key,
-          label_key: `dashboards.loop.stage.${s.key}`,
-          label: s.key,
-          value: s.value,
-          unit: s.unit,
-          state: stageState(s.state),
-          drill: safeInternalHref(s.drill) ?? null,
-          reason_key: s.reason ? `dashboards.loop.reason.${s.reason}` : undefined,
-          flag_key: s.flag ? `dashboards.loop.flag.${s.flag}` : undefined,
-          detail: s.detail
-            ? {
-                label_key: `dashboards.loop.detail.${s.detail.key}`,
-                value: s.detail.value,
-                drill: safeInternalHref(s.detail.drill) ?? null,
-              }
-            : undefined,
-        })),
-      }
-      return out
-    }
+    case 'stages':
+      return v.stages ? stagesResult(v.stages) : undefined
     case 'paths': {
       const p = v.paths
       if (!p) return undefined
@@ -208,6 +276,77 @@ function toResult(v: WidgetValue, spec: WidgetSpec | undefined): WidgetResult | 
           entry_point: r.entry_point,
           score: r.score,
           href: `/assets/${encodeURIComponent(r.asset_id)}`,
+        })),
+      }
+      return out
+    }
+    case 'flow': {
+      const f = v.flow
+      if (!f) return undefined
+      const out: FlowResult = {
+        shape: 'flow',
+        since: f.since,
+        days: v.window?.days ?? 30,
+        intake: f.intake ? intakeData(f.intake, v.window?.days ?? 30) : null,
+        intake_reason_key: f.intake_reason ? `dashboards.reason.${f.intake_reason}` : undefined,
+        actionable: figure(f.actionable),
+        classes: (f.classes ?? []).map(figure),
+        open: figure(f.open),
+        severity: (f.severity ?? []).map(figure),
+        past_sla: figure(f.past_sla),
+        in_progress: figure(f.in_progress),
+        fixed: figure(f.fixed),
+        accepted: figure(f.accepted),
+        false_positive: figure(f.false_positive),
+        stages: f.stages ? stagesResult(f.stages) : null,
+      }
+      return out
+    }
+    case 'intake': {
+      if (!v.intake) return undefined
+      const out: IntakeResult = {
+        shape: 'intake',
+        intake: intakeData(v.intake, v.window?.days ?? 30),
+      }
+      return out
+    }
+    case 'levers': {
+      if (!v.levers) return undefined
+      const out: LeversResult = { shape: 'levers', levers: (v.levers.levers ?? []).map(leverRow) }
+      return out
+    }
+    case 'brief': {
+      if (!v.brief) return undefined
+      const out: BriefResult = {
+        shape: 'brief',
+        since: v.brief.since,
+        items: (v.brief.items ?? []).map((it) => ({
+          kind: it.kind,
+          variant: it.variant,
+          chips: (it.chips ?? []).map((c) => ({
+            key: c.key,
+            value: c.value,
+            href: safeInternalHref(c.drill) ?? null,
+          })),
+          lever: it.lever ? leverRow(it.lever) : undefined,
+        })),
+      }
+      return out
+    }
+    case 'kpis': {
+      if (!v.kpis) return undefined
+      const out: KpisResult = {
+        shape: 'kpis',
+        tiles: (v.kpis.tiles ?? []).map((k) => ({
+          key: k.key,
+          metric: k.metric,
+          measured: k.state === 'ready' && k.value != null,
+          reason_key: k.state === 'ready' ? undefined : reasonKeyOf(k.reason),
+          value: k.value,
+          previous: k.previous ?? null,
+          unit: k.unit,
+          polarity: kitPolarity(k.polarity),
+          href: safeInternalHref(k.drill) ?? null,
         })),
       }
       return out

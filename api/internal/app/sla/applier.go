@@ -174,7 +174,10 @@ func (a *Applier) singleKEVCap(ctx context.Context, tenantID string) KEVCapFunc 
 	return func(assetID string) int {
 		days, err := src.KEVCapDays(ctx, tenantID, assetID)
 		if err != nil {
-			return sladom.DefaultKEVCapDays
+			// The policy could not be read: no cap on this pass. A default
+			// cap written now would stick (deadlines only tighten); the next
+			// pass applies the policy's own cap.
+			return 0
 		}
 		return days
 	}

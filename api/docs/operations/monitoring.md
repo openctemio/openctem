@@ -47,8 +47,16 @@ OpenCTEM compose stack and publishes nothing on a public interface.
 
 1. Set the API's metrics token. In the stack's `.env` and on the `api`
    service: `METRICS_TOKEN=<openssl rand -hex 32>`. Restart the API.
-2. Create the exporter's database role (least privilege: `pg_monitor`, no
-   table access, at most 3 connections):
+2. The exporter's database role (least privilege: `pg_monitor`, no table
+   access, at most 3 connections) is created for you: the
+   `postgres-monitor-role` one-shot service applies
+   `deploy/observability/postgres/monitor-role.sql` on every `up`, with the
+   password from `OBS_PG_MONITOR_PASSWORD`, as the Postgres superuser
+   (`DB_SUPERUSER` and `DB_SUPERUSER_PASSWORD` from the stack's `.env`, else
+   `DB_USER` and `DB_PASSWORD`). The script is idempotent (it creates the role
+   only when missing and otherwise resets its password), the password is never
+   printed, and the exporter starts only after it succeeded. To apply it by
+   hand:
 
    ```bash
    docker compose exec -T postgres psql -U openctem -d openctem \
@@ -279,7 +287,7 @@ with hot reload the API does not migrate by itself.
 
 ### SchemaDirty
 
-A migration failed half way and golang-migrate marked it dirty. Follow
+A migration failed half way and `openctem-migrate` marked the database dirty. Follow
 "dirty-migration recovery" in `docs/deployment/safe-deploy-and-migrations.md`.
 
 ### OpsMetricsFailing
@@ -507,6 +515,17 @@ Postgres is unreachable (or refuses the exporter's login). `docker ps`,
 `docker logs <postgres container>`. A full disk makes Postgres stop with
 PANIC: see [HostDiskLow](#hostdisklow).
 
+### PostgresExporterCannotConnect
+
+The exporter process runs (so its scrape shows `up`) but cannot log in to
+Postgres: `pg_up` is 0 and every Postgres alert is blind. Usually the
+`openctem_monitor` role is missing or its password differs from
+`OBS_PG_MONITOR_PASSWORD`. Run `docker compose ... up -d` again (the
+`postgres-monitor-role` service applies the role), or apply
+`deploy/observability/postgres/monitor-role.sql` by hand as in
+[Install](#install-docker-compose). `docker logs <postgres-exporter>` shows the
+login error.
+
 ### PostgresTooManyConnections
 
 Over 80% of `max_connections` used. Find the holders:
@@ -528,6 +547,12 @@ statements.
 
 Redis is unreachable: sessions, rate limits and caches fail. `docker logs
 <redis container>`; a full disk breaks its append-only file too.
+
+### RedisExporterCannotConnect
+
+The Redis exporter runs but `redis_up` is 0, so the Redis alerts are blind.
+Check `REDIS_PASSWORD`, `OBS_REDIS_ADDR` and, with the Compose overlay, the
+datastore TLS CA mounted into the exporter; `docker logs <redis-exporter>`.
 
 ### RedisMemoryHigh
 
@@ -589,6 +614,24 @@ names it. If it was a platform container, check that it came back.
 
 Load above 2 per CPU for 30 minutes. `top`; scans running on the same host
 are a common cause.
+
+### HostClockUnsynchronised
+
+The kernel reports the host clock as unsynchronised for 10 minutes. Sensor
+request signatures allow 2 minutes of skew, so a drifting clock breaks sensor
+pairing and every signed sensor request. `chronyc tracking` and
+`chronyc sources` show the state; `timedatectl` shows whether NTP is on.
+
+### HostClockOffsetLarge
+
+The clock offset is over 30 seconds for 10 minutes. Sensors cannot pair or
+call the API until it is fixed. Step the clock now with
+`sudo chronyc makestep`, and add `makestep 1 -1` to `chrony.conf` so chrony
+steps whenever the offset is large, not only in the first updates after boot
+(a clock that ran 4 hours fast for a day went unnoticed that way). The kernel
+reports only the offset it is still correcting, so a very large offset can be
+capped by the kernel: treat `HostClockUnsynchronised` as the main signal and
+check `chronyc tracking` when either fires.
 
 ### ContainerRestarting
 

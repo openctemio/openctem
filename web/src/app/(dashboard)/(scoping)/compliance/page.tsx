@@ -410,7 +410,7 @@ export default function CompliancePage() {
           <p className="font-medium">{row.original.title}</p>
           <p className="text-xs text-muted-foreground">
             <span className="font-mono">{row.original.controlId}</span>
-            {row.original.category ? ` · ${row.original.category}` : ''}
+            {row.original.category ? `, ${row.original.category}` : ''}
           </p>
         </div>
       ),
@@ -644,7 +644,7 @@ export default function CompliancePage() {
           <DialogHeader>
             <DialogTitle>Update control status</DialogTitle>
             <DialogDescription>
-              {editRequirement && `${editRequirement.frameworkName} · ${editRequirement.controlId}`}
+              {editRequirement && `${editRequirement.frameworkName}, ${editRequirement.controlId}`}
             </DialogDescription>
           </DialogHeader>
           <DialogBody>

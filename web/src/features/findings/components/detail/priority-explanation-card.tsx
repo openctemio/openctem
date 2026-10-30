@@ -60,7 +60,7 @@ export function ScoreBreakdown({ breakdown }: { breakdown: PriorityScoreBreakdow
           : ''}
         {t(
           'findings.priorityCard.formulaNote',
-          ' · sub-scores 0–5. Explains the class, does not change it.'
+          ', sub-scores 0–5. Explains the class, does not change it.'
         )}
       </p>
     </div>

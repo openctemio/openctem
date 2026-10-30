@@ -187,6 +187,15 @@ func (m *mockAuthUserRepo) GetByPasswordResetToken(_ context.Context, token stri
 	return nil, shared.ErrNotFound
 }
 
+func (m *mockAuthUserRepo) ConsumePasswordResetToken(_ context.Context, id shared.ID, tokenHash string) (bool, error) {
+	u, ok := m.users[id.String()]
+	if !ok || u.PasswordResetToken() == nil || *u.PasswordResetToken() != tokenHash {
+		return false, nil
+	}
+	u.ClearPasswordResetToken()
+	return true, nil
+}
+
 // =============================================================================
 // Mock Tenant Repository for Auth Tests
 // =============================================================================
@@ -1327,7 +1336,7 @@ func TestAuthService_Register(t *testing.T) {
 		}
 	})
 
-	t.Run("invitation token resolves to inviting tenant rule", func(t *testing.T) {
+	t.Run("invitation token never lowers verification (inviting tenant rule never is ignored)", func(t *testing.T) {
 		// User registers via an invitation link → backend should resolve
 		// the invitation, find its tenant, and apply that tenant's
 		// EmailVerificationMode (here: "never") even though the global
@@ -1367,8 +1376,8 @@ func TestAuthService_Register(t *testing.T) {
 		if err != nil {
 			t.Fatalf("register: %v", err)
 		}
-		if result.RequiresVerification {
-			t.Error("expected RequiresVerification=false (invitation tenant rule = never)")
+		if !result.RequiresVerification || result.User.EmailVerified() {
+			t.Error("an invitation token is not mailbox proof: the inviting organization's \"never\" must not verify the address")
 		}
 	})
 
@@ -2411,21 +2420,6 @@ func TestAuthService_ExchangeToken_SSOEnforcement(t *testing.T) {
 		}
 	})
 
-	t.Run("password OWNER allowed (break-glass)", func(t *testing.T) {
-		svc, deps := newTestAuthService()
-		tn := mustNewEnforcedTenant(t, deps.tenantRepo, "acme-owner", true)
-		deps.tenantRepo.userMemberships = []tenant.UserMembership{
-			{TenantID: tn.ID().String(), TenantSlug: tn.Slug(), TenantName: "Acme", Role: "owner"},
-		}
-		rt, _ := loginPassword(t, svc, deps, "owner@acme.com")
-
-		if _, err := svc.ExchangeToken(context.Background(), auth.ExchangeTokenInput{
-			RefreshToken: rt, TenantID: tn.ID().String(),
-		}); err != nil {
-			t.Fatalf("owner break-glass must be allowed, got %v", err)
-		}
-	})
-
 	t.Run("SSO session allowed on SSO-enforced tenant", func(t *testing.T) {
 		svc, deps := newTestAuthService()
 		tn := mustNewEnforcedTenant(t, deps.tenantRepo, "acme-sso", true)
@@ -2477,21 +2471,7 @@ func TestAuthService_RefreshToken_SSOEnforcement(t *testing.T) {
 			t.Fatalf("expected ErrSSORequired on refresh, got %v", err)
 		}
 	})
-
-	t.Run("password owner allowed on refresh (break-glass)", func(t *testing.T) {
-		svc, deps := newTestAuthService()
-		tn := mustNewEnforcedTenant(t, deps.tenantRepo, "acme-refresh-owner", true)
-		deps.tenantRepo.userMemberships = []tenant.UserMembership{
-			{TenantID: tn.ID().String(), TenantSlug: tn.Slug(), TenantName: "Acme", Role: "owner"},
-		}
-		rt, _ := loginPassword(t, svc, deps, "owner@refresh.com")
-
-		if _, err := svc.RefreshToken(context.Background(), auth.RefreshTokenInput{
-			RefreshToken: rt, TenantID: tn.ID().String(),
-		}); err != nil {
-			t.Fatalf("owner refresh break-glass must be allowed, got %v", err)
-		}
-	})
+	// Owner break-glass (password and second factor) is covered in sso_break_glass_test.go.
 }
 
 // =============================================================================
@@ -2925,9 +2905,9 @@ func TestAuthService_Register_RegistrationOff_InvitedEmailMayRegister(t *testing
 	if result.User == nil || deps.userRepo.createCalls != 1 {
 		t.Fatal("expected the account to be created")
 	}
-	// The invitation was delivered to this address, so it is already proven.
-	if result.RequiresVerification || !result.User.EmailVerified() {
-		t.Fatal("an invited registration is email-verified")
+	// The inviter holds the raw token, so the token does not prove the mailbox.
+	if !result.RequiresVerification || result.User.EmailVerified() {
+		t.Fatal("an invited registration is verified by a mailbox link, not by the token")
 	}
 }
 
@@ -3096,4 +3076,43 @@ func TestAuthService_VerifyConsolePassword(t *testing.T) {
 			t.Fatalf("locked, wrong password: %v", err)
 		}
 	})
+}
+
+// holderStub says which organization holds which address.
+type holderStub struct{ held map[string]bool }
+
+func (h holderStub) HeldBy(_ context.Context, tenantID shared.ID, email string) (bool, error) {
+	return h.held[tenantID.String()+"|"+email], nil
+}
+
+// X-01: the inviting organization (A) holds the raw invitation token, so
+// registering with it must not make the address verified. The account must
+// not receive organization B's pending invitation for the same address.
+func TestAuthService_Register_InvitationIsNotMailboxProof(t *testing.T) {
+	svc, _, inv := registrationOffWithInvitation(t, "cfo@acme.test")
+	result, err := svc.Register(context.Background(), auth.RegisterInput{
+		Email: "cfo@acme.test", Password: "Password123!", Name: "X", InvitationToken: inv.Token(),
+	})
+	if err != nil || result.User == nil {
+		t.Fatalf("register: %v", err)
+	}
+	if result.User.EmailVerified() || !result.RequiresVerification || result.VerificationToken == "" {
+		t.Fatal("an invitation token held by the inviter must leave the account unverified with a mailbox link")
+	}
+}
+
+// The inviting organization verified the address's domain: it may vouch for
+// the address (the same rule as creating the account directly).
+func TestAuthService_Register_InvitationFromDomainHolderStillVerifies(t *testing.T) {
+	svc, _, inv := registrationOffWithInvitation(t, "cfo@acme.test")
+	svc.SetAddressHolder(holderStub{held: map[string]bool{inv.TenantID().String() + "|cfo@acme.test": true}})
+	result, err := svc.Register(context.Background(), auth.RegisterInput{
+		Email: "cfo@acme.test", Password: "Password123!", Name: "X", InvitationToken: inv.Token(),
+	})
+	if err != nil || result.User == nil {
+		t.Fatalf("register: %v", err)
+	}
+	if result.RequiresVerification || !result.User.EmailVerified() {
+		t.Fatal("an organization that holds the domain may vouch for the address")
+	}
 }

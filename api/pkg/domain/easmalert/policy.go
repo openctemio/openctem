@@ -37,6 +37,9 @@ const (
 	// ReasonReopened: an exposure the check had resolved itself was found
 	// again.
 	ReasonReopened Reason = "reopened"
+	// ReasonReappeared: an active exposure that was not seen for longer than
+	// the tenant's alert fingerprint lifetime was seen again.
+	ReasonReappeared Reason = "reappeared"
 )
 
 // Attribution labels carried in the payload.

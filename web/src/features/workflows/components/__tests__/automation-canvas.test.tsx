@@ -85,12 +85,22 @@ describe('AutomationCanvas palette', () => {
     expect(screen.getByTestId('palette-action-add_tags')).toBeEnabled()
   })
 
+  it('marks each palette step with an icon, not a letter', () => {
+    renderCanvas()
+    const glyphs = screen.getByTestId('automation-palette').querySelectorAll('[data-glyph]')
+    expect(glyphs.length).toBeGreaterThan(0)
+    glyphs.forEach((g) => {
+      expect(g.querySelector('svg')).not.toBeNull()
+      expect(g.textContent).toBe('')
+    })
+  })
+
   it('adds a step preset to the clicked catalog type', () => {
     const { setNodes } = renderCanvas()
     fireEvent.click(screen.getByTestId('palette-action-add_tags'))
     const next = setNodes.mock.calls[0][0](graph) as AutomationNode[]
     expect(next.at(-1)?.data.config.action_type).toBe('add_tags')
-    expect(next.at(-1)?.data.label).toBe('Add Tags')
+    expect(next.at(-1)?.data.label).toBe('Add tags')
   })
 
   it('has no palette when the viewer may not edit', () => {

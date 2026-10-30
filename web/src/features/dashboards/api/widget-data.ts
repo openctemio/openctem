@@ -24,6 +24,122 @@ export interface WidgetPoint {
   v: number
 }
 
+/** One figure and the list it counts (a priority class, a severity, an outcome). */
+export interface FlowFigure {
+  key?: string
+  value: number
+  drill?: string
+}
+
+/** What one source (a source group and a tool) sent in the window, and its health. */
+export interface IntakeSource {
+  origin: 'sensor' | 'import' | 'connector' | 'ci' | ''
+  tool: string
+  receipts: number
+  received: number
+  created: number
+  still_detected: number
+  reopened: number
+  closed: number
+  suppressed: number
+  /** Skipped (out of scope, excluded, invalid) or failed. */
+  not_stored: number
+  last_at: string
+  last_status: string
+  last_receipt_id: string
+  health: 'ok' | 'stale' | 'failed'
+  /** The usual interval between receipts; absent with fewer than three. */
+  expected_every_seconds?: number
+  /** The receipt list of this source in the window (its totals are these figures). */
+  drill: string
+}
+
+/** The organization's intake in the window (ingest.intake, and the exposure flow's sources). */
+export interface IntakeValue {
+  since: string
+  sources: IntakeSource[]
+  totals: IntakeSource
+  /** Received split into parts that sum to it. */
+  noise: { received: number; new: number; merged: number; suppressed: number; not_stored: number }
+  failing: number
+  stale: number
+  drill: string
+  false_positive: FlowFigure
+}
+
+/** The exposure flow (exposure.flow). */
+export interface FlowValue {
+  since: string
+  /** Absent for a read with a data scope (intake_reason organization_only). */
+  intake?: IntakeValue
+  intake_reason?: 'organization_only' | 'no_receipts'
+  actionable: FlowFigure
+  classes: FlowFigure[]
+  open: FlowFigure
+  severity: FlowFigure[]
+  past_sla: FlowFigure
+  in_progress: FlowFigure
+  fixed: FlowFigure
+  accepted: FlowFigure
+  false_positive: FlowFigure
+  stages: NonNullable<WidgetValue['stages']> | null
+}
+
+/** A measured figure before and after a lever's list is gone (exact arithmetic). */
+export interface LeverEffect {
+  metric: string
+  before: number
+  after: number
+  unit: 'count' | 'percent'
+}
+
+/** One action that would reduce exposure (exposure.levers). */
+export interface LeverValue {
+  kind: 'kev_open' | 'sla_breached' | 'one_fix' | 'blind_spot'
+  /** Size of the list the lever acts on. */
+  count: number
+  /** Distinct assets of a one-fix lever. */
+  assets?: number
+  /** A one-fix lever's fix (a remediation suggestion title). */
+  title?: string
+  points: number
+  effect: LeverEffect
+  drill?: string
+}
+
+/** One figure of a brief sentence; no drill when no list has exactly that total. */
+export interface BriefChipValue {
+  key: string
+  value: number
+  drill?: string
+}
+
+/** The weekly brief (brief.weekly): deterministic sentences, no generated text. */
+export interface BriefValue {
+  since: string
+  items: Array<{
+    kind: 'change' | 'lever' | 'sla_due' | 'kev' | 'quiet'
+    variant?: 'down' | 'up' | 'flat'
+    chips: BriefChipValue[]
+    lever?: LeverValue
+  }>
+}
+
+/** One tile of the KPI strip (exposure.kpis); value is null when not measured. */
+export interface KpiTileValue {
+  key: 'priority_open' | 'kev_open' | 'sla_within' | 'time_to_fix' | 'coverage'
+  metric: string
+  state: 'ready' | 'not_measured' | 'unsupported'
+  reason?: string
+  value: number | null
+  unit: 'count' | 'percent' | 'hours'
+  previous?: number
+  polarity: Polarity
+  n?: number
+  series?: WidgetPoint[]
+  drill?: string
+}
+
 export interface WidgetValue {
   id: string
   index: number
@@ -89,6 +205,8 @@ export interface WidgetValue {
       asset_name?: string
       sla_deadline?: string
       kev: boolean
+      /** Exploitation probability, 0 to 1; absent when the feed has no score. */
+      epss?: number
     }>
   }
   /** The CTEM loop (ctem.loop). A stage's value is null when not measured. */
@@ -105,6 +223,16 @@ export interface WidgetValue {
     }>
     focus: number | null
   }
+  /** The exposure flow (exposure.flow). */
+  flow?: FlowValue
+  /** The organization's intake (ingest.intake). */
+  intake?: IntakeValue
+  /** The levers (exposure.levers), best first. */
+  levers?: { levers: LeverValue[] }
+  /** The weekly brief (brief.weekly). */
+  brief?: BriefValue
+  /** The KPI strip (exposure.kpis). */
+  kpis?: { tiles: KpiTileValue[] }
   /** Attack paths to crown jewels (attack_paths.to_crown_jewels). */
   paths?: {
     reachable: number

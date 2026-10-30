@@ -64,12 +64,18 @@ describe('finding page load errors', () => {
     vi.mocked(useFindingActivityFeed).mockClear()
   })
 
-  it('404 shows the not-found copy, one request, no toast, feed not enabled', async () => {
+  it('404 shows the not-found copy, one read, no toast, feed not enabled', async () => {
     getMock.mockRejectedValue(new ApiClientError('not found', 'NOT_FOUND', 404))
     renderPage()
     expect(await screen.findByText('Finding not found')).toBeInTheDocument()
     await new Promise((r) => setTimeout(r, 100))
-    expect(getMock).toHaveBeenCalledTimes(1)
+    // The page view first (it answers the finding and its panels at once),
+    // then the finding itself, which a working view serves without a
+    // request; no panel read follows a missing finding.
+    expect(getMock.mock.calls.map((c) => c[0])).toEqual([
+      '/api/v1/findings/f-1/view',
+      '/api/v1/findings/f-1',
+    ])
     expect(toastError).not.toHaveBeenCalled()
     expect(screen.queryByText('Retry')).not.toBeInTheDocument()
     for (const call of vi.mocked(useFindingActivityFeed).mock.calls) {

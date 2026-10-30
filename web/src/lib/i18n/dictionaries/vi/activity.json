@@ -1,4 +1,5 @@
 {
+  "activity.aiAssistant": "Trợ lý AI",
   "activity.emptyFiltered": "Chưa có hoạt động loại này",
   "activity.emptyFilteredHint": "Bỏ bộ lọc để xem tất cả.",
   "activity.filterLabel": "Lọc hoạt động",

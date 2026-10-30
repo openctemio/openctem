@@ -18,6 +18,7 @@ import { useCapabilityTable } from '@/features/scan-workflows/lib/use-capability
 const SKIP_REASONS = new Set([
   'excluded',
   'unconfirmed',
+  'wildcard_only',
   'refused',
   'other_zone',
   'hop_limit',
@@ -75,9 +76,12 @@ export function skippedReasons(skipped?: Record<string, number>): Array<[string,
 export function RunStageLanes({
   runId,
   refreshInterval,
+  settled = false,
 }: {
   runId: string
   refreshInterval?: number
+  /** The run has finished: an empty list means it never had a stage plan. */
+  settled?: boolean
 }) {
   const { t } = useTranslation()
   const { table } = useCapabilityTable()
@@ -94,7 +98,11 @@ export function RunStageLanes({
   if (error) return <p className="text-sm text-destructive">{t('scans.stage.loadFailed')}</p>
   const lanes = data?.data ?? []
   if (lanes.length === 0) {
-    return <p className="text-sm text-muted-foreground">{t('scans.stage.none')}</p>
+    return (
+      <p className="text-sm text-muted-foreground">
+        {t(settled ? 'scans.stage.noneSettled' : 'scans.stage.none')}
+      </p>
+    )
   }
   return (
     <ol className="space-y-2" aria-label={t('scans.stage.listLabel')}>

@@ -19,6 +19,7 @@ import (
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/platformauthz"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/ssochange"
 	dom "github.com/openctemio/openctem/api/pkg/domain/supportaccess"
@@ -96,10 +97,26 @@ func NewService(repo dom.Repository, reads dom.ReadRepository, admins Admins, te
 // administrator: never a users row, so actor_id stays empty.
 func supportActor(email string) string { return "support:" + email }
 
-// canSupport reports whether an administrator may be named in, and use, a grant.
+// canBeNamed reports whether an organization owner may name an administrator
+// in a grant: any active, unlocked administrator. Whether that administrator
+// may use it is decided on the console (canSupport), where platform roles are
+// read; the organization side never reads them (RFC-134).
+func canBeNamed(a *admin.AdminUser) bool {
+	return a != nil && a.IsActive() && !a.IsLocked()
+}
+
+// canSupport reports whether a console administrator may use a grant: their
+// platform roles hold platform.support.access (elevated or not: the grant and
+// its step-up are the gate for each session).
 func canSupport(a *admin.AdminUser) bool {
-	return a != nil && a.IsActive() && !a.IsLocked() &&
-		(a.Role() == admin.AdminRoleSuperAdmin || a.Role() == admin.AdminRoleOpsAdmin)
+	if !canBeNamed(a) {
+		return false
+	}
+	roles := a.PlatformRoles()
+	if len(roles) == 0 {
+		roles = []platformauthz.RoleKey{platformauthz.BaseRoleFor(platformauthz.Tier(a.Role()))}
+	}
+	return platformauthz.Held(roles).Has(platformauthz.SupportAccess)
 }
 
 // ---------------------------------------------------------------------------
@@ -155,7 +172,7 @@ func (s *Service) CreateGrant(ctx context.Context, in CreateGrantInput, client C
 		}
 		return nil, fmt.Errorf("find support administrator: %w", err)
 	}
-	if !canSupport(a) {
+	if !canBeNamed(a) {
 		return nil, dom.ErrNotSupportAdmin
 	}
 	now := s.now()
@@ -294,6 +311,84 @@ func (s *Service) EndSession(ctx context.Context, a *admin.AdminUser, sessionID 
 	s.emailOwners(ctx, sess.TenantID, "Platform support ended its session",
 		fmt.Sprintf("%s ended the read-only support session in %s.", a.Email(), name))
 	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Session lifecycle
+// ---------------------------------------------------------------------------
+
+// ConsoleSessionIdle is how long a console session may be idle before its
+// support sessions end (the console's own idle timeout).
+const ConsoleSessionIdle = admin.SessionIdleTimeout
+
+// EndForConsoleSession ends the open support sessions bound to a console
+// session that was just signed out, writes both audit rows and tells the
+// owners. It never fails the sign-out: errors are logged.
+func (s *Service) EndForConsoleSession(ctx context.Context, consoleSessionID shared.ID) {
+	if consoleSessionID.IsZero() {
+		return
+	}
+	ended, err := s.repo.EndSessionsForConsoleSession(ctx, consoleSessionID, dom.EndReasonConsoleSessionGone, s.now())
+	if err != nil {
+		s.log.Error("support access: end sessions of a signed-out console session", "error", logger.SanitizeError(err))
+		return
+	}
+	for _, sess := range ended {
+		s.afterEnded(ctx, sess)
+	}
+}
+
+// EndStaleSessions ends every open session whose console session is gone
+// (expired or idle), whose grant ended, or that was idle for
+// dom.SessionIdleTimeout. The worker runs it every minute; each ended session
+// gets both audit rows and an owner email. It returns how many ended.
+func (s *Service) EndStaleSessions(ctx context.Context) (int, error) {
+	ended, err := s.repo.EndStaleSessions(ctx, s.now(), dom.SessionIdleTimeout, ConsoleSessionIdle)
+	if err != nil {
+		return 0, err
+	}
+	for _, sess := range ended {
+		s.afterEnded(ctx, sess)
+	}
+	return len(ended), nil
+}
+
+// afterEnded records an ended session in the organization's audit log and the
+// admin audit log, and emails the owners. Ending already happened, so a failed
+// write is logged by tenantEvent/adminEvent and does not undo it.
+func (s *Service) afterEnded(ctx context.Context, sess *dom.Session) {
+	g, err := s.repo.GetGrant(ctx, sess.TenantID, sess.GrantID)
+	if err != nil {
+		s.log.Error("support access: grant of an ended session", "session_id", sess.ID.String(), "error", logger.SanitizeError(err))
+		return
+	}
+	name := s.tenantName(ctx, sess.TenantID)
+	cause := endCause(sess.EndReason)
+	_ = s.tenantEvent(ctx, sess.TenantID, "", supportActor(g.AdminEmail), Client{}, auditdom.ActionSupportSessionEnded, g,
+		"Support session ended "+cause, map[string]any{"support_session_id": sess.ID.String(), "end_reason": sess.EndReason})
+	if s.admins != nil {
+		if a, aerr := s.admins.GetByEmail(ctx, g.AdminEmail); aerr == nil {
+			_ = s.adminEvent(ctx, a, AdminActionSessionEnded, &sess.TenantID, name, Client{}, http.MethodDelete, "end support session ("+sess.EndReason+")", "")
+		} else {
+			s.log.Warn("support access: administrator of an ended session", "session_id", sess.ID.String(), "error", logger.SanitizeError(aerr))
+		}
+	}
+	s.emailOwners(ctx, sess.TenantID, "Platform support's session ended",
+		fmt.Sprintf("The read-only support session of %s in %s ended %s.", g.AdminEmail, name, cause))
+}
+
+// endCause is the owner-facing reason a session ended.
+func endCause(reason string) string {
+	switch reason {
+	case dom.EndReasonConsoleSessionGone:
+		return "because the administrator signed out or their console session expired"
+	case dom.EndReasonIdle:
+		return fmt.Sprintf("after %d minutes without activity", int(dom.SessionIdleTimeout/time.Minute))
+	case dom.EndReasonGrantExpired:
+		return "because the access granted to them ended"
+	default:
+		return "(" + reason + ")"
+	}
 }
 
 // AccessInput is one support read.

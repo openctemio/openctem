@@ -196,55 +196,55 @@ func (e *TemplateEngine) registerTemplates() {
 	// Verify Email
 	e.templates[TemplateVerifyEmail] = &templateDef{
 		subjectTmpl: template.Must(template.New("verify_email_subject").Parse("Verify your email address")),
-		bodyTmpl:    template.Must(template.New("verify_email").Parse(verifyEmailTemplate)),
+		bodyTmpl:    bodyTemplate("verify_email", verifyEmailTemplate),
 	}
 
 	// Password Reset
 	e.templates[TemplatePasswordReset] = &templateDef{
 		subjectTmpl: template.Must(template.New("password_reset_subject").Parse("Reset your password")),
-		bodyTmpl:    template.Must(template.New("password_reset").Parse(passwordResetTemplate)),
+		bodyTmpl:    bodyTemplate("password_reset", passwordResetTemplate),
 	}
 
 	// Password Changed
 	e.templates[TemplatePasswordChanged] = &templateDef{
 		subjectTmpl: template.Must(template.New("password_changed_subject").Parse("Your password has been changed")),
-		bodyTmpl:    template.Must(template.New("password_changed").Parse(passwordChangedTemplate)),
+		bodyTmpl:    bodyTemplate("password_changed", passwordChangedTemplate),
 	}
 
 	// Welcome
 	e.templates[TemplateWelcome] = &templateDef{
 		subjectTmpl: template.Must(template.New("welcome_subject").Parse("Welcome to {{.AppName}}")),
-		bodyTmpl:    template.Must(template.New("welcome").Funcs(template.FuncMap{"docsURL": func() string { return brand.Instance().Docs() + "/" }}).Parse(welcomeTemplate)),
+		bodyTmpl:    bodyTemplate("welcome", welcomeTemplate, template.FuncMap{"docsURL": func() string { return brand.Instance().Docs() + "/" }}),
 	}
 
 	// Team Invitation
 	e.templates[TemplateTeamInvitation] = &templateDef{
 		subjectTmpl: template.Must(template.New("team_invitation_subject").Parse("You've been invited to join {{.TeamName}}")),
-		bodyTmpl:    template.Must(template.New("team_invitation").Parse(teamInvitationTemplate)),
+		bodyTmpl:    bodyTemplate("team_invitation", teamInvitationTemplate),
 	}
 
 	// Member Suspended
 	e.templates[TemplateMemberSuspended] = &templateDef{
 		subjectTmpl: template.Must(template.New("member_suspended_subject").Parse("Your access to {{.TeamName}} has been suspended")),
-		bodyTmpl:    template.Must(template.New("member_suspended").Parse(memberSuspendedTemplate)),
+		bodyTmpl:    bodyTemplate("member_suspended", memberSuspendedTemplate),
 	}
 
 	// Member Reactivated
 	e.templates[TemplateMemberReactivated] = &templateDef{
 		subjectTmpl: template.Must(template.New("member_reactivated_subject").Parse("Your access to {{.TeamName}} has been restored")),
-		bodyTmpl:    template.Must(template.New("member_reactivated").Parse(memberReactivatedTemplate)),
+		bodyTmpl:    bodyTemplate("member_reactivated", memberReactivatedTemplate),
 	}
 
 	// Account security notice
 	e.templates[TemplateSecurityNotice] = &templateDef{
 		subjectTmpl: template.Must(template.New("security_notice_subject").Parse("{{.Subject}}")),
-		bodyTmpl:    template.Must(template.New("security_notice").Parse(securityNoticeTemplate)),
+		bodyTmpl:    bodyTemplate("security_notice", securityNoticeTemplate),
 	}
 
 	// Account Setup (administrator-created account)
 	e.templates[TemplateAccountSetup] = &templateDef{
 		subjectTmpl: template.Must(template.New("account_setup_subject").Parse("Your {{.AppName}} account for {{.TeamName}} is ready")),
-		bodyTmpl:    template.Must(template.New("account_setup").Parse(accountSetupTemplate)),
+		bodyTmpl:    bodyTemplate("account_setup", accountSetupTemplate),
 	}
 }
 
@@ -258,7 +258,7 @@ const securityNoticeTemplate = `<!DOCTYPE html>
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
         .container { background: #ffffff; border-radius: 8px; padding: 40px; border: 1px solid #e0e0e0; }
         .header { text-align: center; margin-bottom: 30px; }
-        .logo { font-size: 24px; font-weight: bold; color: #2563eb; }
+        .logo { font-size: 24px; font-weight: bold; color: #0A1628; }
         .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0; font-size: 12px; color: #666; text-align: center; }
         .warning { background: #fef2f2; border: 1px solid #ef4444; border-radius: 4px; padding: 12px; margin: 20px 0; }
         .security-info { background: #f3f4f6; border-radius: 4px; padding: 12px; margin: 20px 0; font-size: 13px; }
@@ -267,7 +267,7 @@ const securityNoticeTemplate = `<!DOCTYPE html>
 <body>
     <div class="container">
         <div class="header">
-            <div class="logo">{{.AppName}}</div>
+            {{template "brandHeader" .AppName}}
         </div>
 
         <h2>{{.Subject}}</h2>
@@ -307,8 +307,8 @@ const verifyEmailTemplate = `<!DOCTYPE html>
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
         .container { background: #ffffff; border-radius: 8px; padding: 40px; border: 1px solid #e0e0e0; }
         .header { text-align: center; margin-bottom: 30px; }
-        .logo { font-size: 24px; font-weight: bold; color: #2563eb; }
-        .button { display: inline-block; background: #2563eb; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 600; margin: 20px 0; }
+        .logo { font-size: 24px; font-weight: bold; color: #0A1628; }
+        .button { display: inline-block; background: #0A1628; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 600; margin: 20px 0; }
         .button:hover { background: #1d4ed8; }
         .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0; font-size: 12px; color: #666; text-align: center; }
         .warning { background: #fef3c7; border: 1px solid #f59e0b; border-radius: 4px; padding: 12px; margin: 20px 0; font-size: 14px; }
@@ -317,7 +317,7 @@ const verifyEmailTemplate = `<!DOCTYPE html>
 <body>
     <div class="container">
         <div class="header">
-            <div class="logo">{{.AppName}}</div>
+            {{template "brandHeader" .AppName}}
         </div>
 
         <h2>Verify your email address</h2>
@@ -358,8 +358,8 @@ const passwordResetTemplate = `<!DOCTYPE html>
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
         .container { background: #ffffff; border-radius: 8px; padding: 40px; border: 1px solid #e0e0e0; }
         .header { text-align: center; margin-bottom: 30px; }
-        .logo { font-size: 24px; font-weight: bold; color: #2563eb; }
-        .button { display: inline-block; background: #2563eb; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 600; margin: 20px 0; }
+        .logo { font-size: 24px; font-weight: bold; color: #0A1628; }
+        .button { display: inline-block; background: #0A1628; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 600; margin: 20px 0; }
         .button:hover { background: #1d4ed8; }
         .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0; font-size: 12px; color: #666; text-align: center; }
         .warning { background: #fef3c7; border: 1px solid #f59e0b; border-radius: 4px; padding: 12px; margin: 20px 0; font-size: 14px; }
@@ -369,7 +369,7 @@ const passwordResetTemplate = `<!DOCTYPE html>
 <body>
     <div class="container">
         <div class="header">
-            <div class="logo">{{.AppName}}</div>
+            {{template "brandHeader" .AppName}}
         </div>
 
         <h2>Reset your password</h2>
@@ -418,7 +418,7 @@ const passwordChangedTemplate = `<!DOCTYPE html>
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
         .container { background: #ffffff; border-radius: 8px; padding: 40px; border: 1px solid #e0e0e0; }
         .header { text-align: center; margin-bottom: 30px; }
-        .logo { font-size: 24px; font-weight: bold; color: #2563eb; }
+        .logo { font-size: 24px; font-weight: bold; color: #0A1628; }
         .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0; font-size: 12px; color: #666; text-align: center; }
         .alert { background: #dcfce7; border: 1px solid #22c55e; border-radius: 4px; padding: 12px; margin: 20px 0; }
         .warning { background: #fef2f2; border: 1px solid #ef4444; border-radius: 4px; padding: 12px; margin: 20px 0; }
@@ -428,7 +428,7 @@ const passwordChangedTemplate = `<!DOCTYPE html>
 <body>
     <div class="container">
         <div class="header">
-            <div class="logo">{{.AppName}}</div>
+            {{template "brandHeader" .AppName}}
         </div>
 
         <h2>Your password has been changed</h2>
@@ -471,8 +471,8 @@ const welcomeTemplate = `<!DOCTYPE html>
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
         .container { background: #ffffff; border-radius: 8px; padding: 40px; border: 1px solid #e0e0e0; }
         .header { text-align: center; margin-bottom: 30px; }
-        .logo { font-size: 24px; font-weight: bold; color: #2563eb; }
-        .button { display: inline-block; background: #2563eb; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 600; margin: 20px 0; }
+        .logo { font-size: 24px; font-weight: bold; color: #0A1628; }
+        .button { display: inline-block; background: #0A1628; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 600; margin: 20px 0; }
         .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0; font-size: 12px; color: #666; text-align: center; }
         .features { background: #f3f4f6; border-radius: 4px; padding: 20px; margin: 20px 0; }
         .features ul { margin: 0; padding-left: 20px; }
@@ -482,7 +482,7 @@ const welcomeTemplate = `<!DOCTYPE html>
 <body>
     <div class="container">
         <div class="header">
-            <div class="logo">{{.AppName}}</div>
+            {{template "brandHeader" .AppName}}
         </div>
 
         <h2>Welcome to {{.AppName}}!</h2>
@@ -526,8 +526,8 @@ const teamInvitationTemplate = `<!DOCTYPE html>
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
         .container { background: #ffffff; border-radius: 8px; padding: 40px; border: 1px solid #e0e0e0; }
         .header { text-align: center; margin-bottom: 30px; }
-        .logo { font-size: 24px; font-weight: bold; color: #2563eb; }
-        .button { display: inline-block; background: #2563eb; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 600; margin: 20px 0; }
+        .logo { font-size: 24px; font-weight: bold; color: #0A1628; }
+        .button { display: inline-block; background: #0A1628; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 600; margin: 20px 0; }
         .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0; font-size: 12px; color: #666; text-align: center; }
         .warning { background: #fef3c7; border: 1px solid #f59e0b; border-radius: 4px; padding: 12px; margin: 20px 0; font-size: 14px; }
         .invite-box { background: #eff6ff; border: 1px solid #3b82f6; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center; }
@@ -537,7 +537,7 @@ const teamInvitationTemplate = `<!DOCTYPE html>
 <body>
     <div class="container">
         <div class="header">
-            <div class="logo">{{.AppName}}</div>
+            {{template "brandHeader" .AppName}}
         </div>
 
         <h2>You've been invited to join a team</h2>
@@ -581,8 +581,8 @@ const accountSetupTemplate = `<!DOCTYPE html>
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
         .container { background: #ffffff; border-radius: 8px; padding: 40px; border: 1px solid #e0e0e0; }
         .header { text-align: center; margin-bottom: 30px; }
-        .logo { font-size: 24px; font-weight: bold; color: #2563eb; }
-        .button { display: inline-block; background: #2563eb; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 600; margin: 20px 0; }
+        .logo { font-size: 24px; font-weight: bold; color: #0A1628; }
+        .button { display: inline-block; background: #0A1628; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 600; margin: 20px 0; }
         .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0; font-size: 12px; color: #666; text-align: center; }
         .warning { background: #fef3c7; border: 1px solid #f59e0b; border-radius: 4px; padding: 12px; margin: 20px 0; font-size: 14px; }
     </style>
@@ -590,7 +590,7 @@ const accountSetupTemplate = `<!DOCTYPE html>
 <body>
     <div class="container">
         <div class="header">
-            <div class="logo">{{.AppName}}</div>
+            {{template "brandHeader" .AppName}}
         </div>
 
         <h2>Your account is ready</h2>
@@ -630,7 +630,7 @@ const memberSuspendedTemplate = `<!DOCTYPE html>
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
         .container { background: #ffffff; border-radius: 8px; padding: 40px; border: 1px solid #e0e0e0; }
         .header { text-align: center; margin-bottom: 30px; }
-        .logo { font-size: 24px; font-weight: bold; color: #2563eb; }
+        .logo { font-size: 24px; font-weight: bold; color: #0A1628; }
         .alert { background: #fff7ed; border: 1px solid #f97316; border-radius: 8px; padding: 20px; margin: 20px 0; }
         .alert-title { color: #c2410c; font-weight: bold; font-size: 16px; margin-bottom: 8px; }
         .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0; font-size: 12px; color: #666; text-align: center; }
@@ -640,7 +640,7 @@ const memberSuspendedTemplate = `<!DOCTYPE html>
 <body>
     <div class="container">
         <div class="header">
-            <div class="logo">{{.AppName}}</div>
+            {{template "brandHeader" .AppName}}
         </div>
 
         <h2>Your access has been suspended</h2>
@@ -678,8 +678,8 @@ const memberReactivatedTemplate = `<!DOCTYPE html>
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
         .container { background: #ffffff; border-radius: 8px; padding: 40px; border: 1px solid #e0e0e0; }
         .header { text-align: center; margin-bottom: 30px; }
-        .logo { font-size: 24px; font-weight: bold; color: #2563eb; }
-        .button { display: inline-block; background: #2563eb; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 600; margin: 20px 0; }
+        .logo { font-size: 24px; font-weight: bold; color: #0A1628; }
+        .button { display: inline-block; background: #0A1628; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 600; margin: 20px 0; }
         .alert { background: #ecfdf5; border: 1px solid #10b981; border-radius: 8px; padding: 20px; margin: 20px 0; }
         .alert-title { color: #047857; font-weight: bold; font-size: 16px; margin-bottom: 8px; }
         .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0; font-size: 12px; color: #666; text-align: center; }
@@ -689,7 +689,7 @@ const memberReactivatedTemplate = `<!DOCTYPE html>
 <body>
     <div class="container">
         <div class="header">
-            <div class="logo">{{.AppName}}</div>
+            {{template "brandHeader" .AppName}}
         </div>
 
         <h2>Welcome back</h2>

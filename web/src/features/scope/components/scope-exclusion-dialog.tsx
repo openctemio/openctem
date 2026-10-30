@@ -30,6 +30,13 @@ import {
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
 import {
@@ -38,6 +45,8 @@ import {
   useScopeSettingsApi,
 } from '../api/use-scope-api'
 import { scopeDuplicateOf, scopeErrorMessage, type ScopeDuplicate } from '../lib/scope-codes'
+import { SCOPE_EXCLUSION_KINDS, scopeExclusionKindLabel } from '../lib/exclusion-kind'
+import type { ScopeExclusionKind } from '../api/scope-api.types'
 import { ScopeExistingNotice } from './scope-existing-notice'
 import { coversText } from '../lib/scope-entry'
 import {
@@ -67,12 +76,21 @@ interface ScopeExclusionDialogProps {
   onOpenChange: (open: boolean) => void
   /** Opens an existing exclusion on this page (the duplicate notice's Show it). */
   onShowExisting?: (href: string) => void
+  /**
+   * Opens prefilled, as "No longer ours" on a scope entry does: the pattern
+   * (for a domain, `*.root`: the root and every name under it) and the kind.
+   */
+  initial?: { pattern: string; kind: ScopeExclusionKind; reason?: string }
+  /** Called once the exclusion is saved (before the dialog closes). */
+  onCreated?: () => void
 }
 
 export function ScopeExclusionDialog({
   open,
   onOpenChange,
   onShowExisting,
+  initial,
+  onCreated,
 }: ScopeExclusionDialogProps) {
   const { t } = useTranslation()
   const id = useId()
@@ -82,6 +100,7 @@ export function ScopeExclusionDialog({
   const [what, setWhat] = useState('')
   const [override, setOverride] = useState<ScopeKind | null>(null)
   const [reason, setReason] = useState('')
+  const [exclusionKind, setExclusionKind] = useState<ScopeExclusionKind>('do_not_scan')
   const [days, setDays] = useState('')
   const [pathOnly, setPathOnly] = useState(false)
   const [pathPrefix, setPathPrefix] = useState('')
@@ -96,13 +115,14 @@ export function ScopeExclusionDialog({
     setPathOnly(false)
     setPathPrefix('')
     setMethods([])
-    setWhat('')
+    setWhat(initial?.pattern ?? '')
     setOverride(null)
-    setReason('')
+    setReason(initial?.reason ?? '')
+    setExclusionKind(initial?.kind ?? 'do_not_scan')
     setDays('')
     setError(null)
     setDup(null)
-  }, [open])
+  }, [open, initial])
 
   const detected = detectScopeKind(what)
   const kind: ScopeKind = override ?? detected ?? 'domain'
@@ -141,10 +161,11 @@ export function ScopeExclusionDialog({
               path_prefix: pathPrefix.trim(),
               ...(methods.length > 0 ? { methods } : {}),
             }
-          : { exclusion_type: kind, pattern }),
+          : { exclusion_type: kind, pattern, kind: exclusionKind }),
         reason: reason.trim(),
         ...(n > 0 ? { expires_at: daysFromNow(n) } : {}),
       })
+      onCreated?.()
       await invalidateScopeCache()
       const label = pathOnly ? `${pattern || '*'}${pathPrefix.trim()}` : pattern
       toast.success(
@@ -243,7 +264,7 @@ export function ScopeExclusionDialog({
                     <span aria-live="polite">
                       {pattern
                         ? detected
-                          ? `Detected: ${SCOPE_KIND_LABEL[detected]} · covers ${coversText({ pattern, target_type: detected })}`
+                          ? `Detected: ${SCOPE_KIND_LABEL[detected]}, covers ${coversText({ pattern, target_type: detected })}`
                           : 'Kind not recognised'
                         : 'A domain (*.x covers x and every name below it), IP address or range, URL or repository.'}
                     </span>
@@ -334,6 +355,34 @@ export function ScopeExclusionDialog({
                 </>
               )}
             </div>
+            {!pathOnly && (
+              <div className="space-y-2">
+                <Label htmlFor={`${id}-kind`}>{t('scope.exclusion.kind.label', 'Why')}</Label>
+                <Select
+                  value={exclusionKind}
+                  onValueChange={(v) => setExclusionKind(v as ScopeExclusionKind)}
+                >
+                  <SelectTrigger id={`${id}-kind`} className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SCOPE_EXCLUSION_KINDS.map((k) => (
+                      <SelectItem key={k} value={k}>
+                        {scopeExclusionKindLabel(t, k)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground" data-testid="exclusion-kind-effect">
+                  {exclusionKind === 'do_not_scan'
+                    ? t('scope.exclusion.kind.keepHint', 'Scans stop. Findings stay open.')
+                    : t(
+                        'scope.exclusion.kind.closeHint',
+                        'Scans stop. Without an end date, the open findings of what it matches close as "Asset out of scope"; lifting it reopens them.'
+                      )}
+                </p>
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor={`${id}-reason`}>Reason</Label>
               <Textarea
