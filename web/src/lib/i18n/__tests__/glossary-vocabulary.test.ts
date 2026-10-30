@@ -72,7 +72,6 @@ const RULES: Rule[] = [
         why: 'the Google Workspace domain field',
       },
       { key: 'admin.socialLogin.note.google', why: 'Google Workspace is the product name' },
-      { key: 'admin.signup.socialAutoLinkHint', why: 'Google Workspace is the product name' },
       {
         key: 'scans.ci.refusal.organization_mismatchFix',
         why: 'Bitbucket calls a repository owner a workspace',

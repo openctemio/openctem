@@ -18,7 +18,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -68,8 +70,8 @@ type v2HarnessOpts struct {
 // brokenDepth is a queue depth that cannot be read.
 type brokenDepth struct{ on bool }
 
-func (brokenDepth) CountPendingByTenant(context.Context, shared.ID) (int, error) {
-	return 0, errors.New("connection refused")
+func (brokenDepth) TenantDepth(context.Context, shared.ID, time.Time) (int, int, error) {
+	return 0, 0, errors.New("connection refused")
 }
 
 func newV2Harness(t *testing.T, opts v2HarnessOpts) *v2Harness {
@@ -627,6 +629,105 @@ func TestSensorV2_RateLimitAndQueueFull(t *testing.T) {
 	b.expect(resp, raw, 503, "unavailable")
 	if resp.Header.Get("Retry-After") == "" {
 		t.Fatal("503 without Retry-After")
+	}
+}
+
+// Admission is per report: once a report's first segment was accepted, its
+// further segments are accepted past the tenant's queue limit up to a hard
+// ceiling (2x), while a new report is refused at the limit. Every queue-full
+// refusal carries a Retry-After within the advised bounds.
+func TestSensorV2_QueueFullAdmitsByReport(t *testing.T) {
+	h := newV2Harness(t, v2HarnessOpts{maxPending: 2})
+	seg := func(name string) []byte { return v2Segment("semgrep", "1.0", name) }
+	base := "/api/v2/sensor/results/" + newReportID()
+
+	// Segments 0 and 1 fill the tenant's limit (2 unfinished jobs).
+	for seq := range 2 {
+		resp, raw := h.do(http.MethodPut, fmt.Sprintf("%s/segments/%d", base, seq), seg(fmt.Sprint("s", seq)))
+		h.expect(resp, raw, 202, "")
+	}
+	// A new report is refused at the limit.
+	resp, raw := h.do(http.MethodPut, "/api/v2/sensor/results/"+newReportID(), seg("other"))
+	h.expect(resp, raw, 429, "queue-full")
+	assertRetryAfter(t, resp)
+	// The open report still gets its next segments, up to the ceiling (4).
+	for seq := 2; seq < 4; seq++ {
+		resp, raw := h.do(http.MethodPut, fmt.Sprintf("%s/segments/%d", base, seq), seg(fmt.Sprint("s", seq)))
+		h.expect(resp, raw, 202, "")
+	}
+	resp, raw = h.do(http.MethodPut, base+"/segments/4", seg("s4"))
+	h.expect(resp, raw, 429, "queue-full")
+	assertRetryAfter(t, resp)
+	// A replay of a segment the server holds is never refused.
+	resp, raw = h.do(http.MethodPut, base+"/segments/0", seg("s0"))
+	h.expect(resp, raw, 200, "")
+}
+
+// A burst of concurrent pushes (sensors finishing a scheduled run at the same
+// moment): every answer is 202 or 429, never a server error; every 429 says
+// when to come back; and every 202 is backed by a stored report (the sensor
+// deletes its copy on 2xx, so an acknowledged report must never be lost).
+func TestSensorV2_BurstOfPushes(t *testing.T) {
+	h := newV2Harness(t, v2HarnessOpts{maxPending: 10})
+	const n = 40
+	type answer struct {
+		status     int
+		retryAfter string
+	}
+	answers := make([]answer, n)
+	var wg sync.WaitGroup
+	for i := range n {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			body := v2Segment("semgrep", "1.0", fmt.Sprint("burst-", i))
+			req, _ := http.NewRequestWithContext(context.Background(), http.MethodPut,
+				h.srv.URL+"/api/v2/sensor/results/"+newReportID(), bytes.NewReader(body))
+			req.Header.Set("Authorization", "Bearer "+h.key)
+			req.Header.Set("Content-Type", protov2.MediaTypeCTIS)
+			req.Header.Set(protov2.HeaderContentDigest, digestOf(body))
+			resp, err := h.srv.Client().Do(req)
+			if err != nil {
+				answers[i] = answer{status: -1}
+				return
+			}
+			_, _ = io.Copy(io.Discard, resp.Body)
+			_ = resp.Body.Close()
+			answers[i] = answer{status: resp.StatusCode, retryAfter: resp.Header.Get("Retry-After")}
+		}(i)
+	}
+	wg.Wait()
+
+	accepted := 0
+	for i, a := range answers {
+		switch a.status {
+		case http.StatusAccepted:
+			accepted++
+		case http.StatusTooManyRequests:
+			if a.retryAfter == "" {
+				t.Fatalf("push %d: 429 without Retry-After", i)
+			}
+		default:
+			t.Fatalf("push %d: status %d, want 202 or 429", i, a.status)
+		}
+	}
+	if accepted == 0 {
+		t.Fatal("the burst accepted nothing")
+	}
+	var stored int
+	if err := h.db.QueryRow(`SELECT count(*) FROM ingest_reports WHERE sensor_id = $1`, h.sensorID).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if stored != accepted {
+		t.Fatalf("%d pushes acknowledged, %d reports stored", accepted, stored)
+	}
+}
+
+func assertRetryAfter(t *testing.T, resp *http.Response) {
+	t.Helper()
+	n, err := strconv.Atoi(resp.Header.Get("Retry-After"))
+	if err != nil || n < 5 || n > 300 {
+		t.Fatalf("Retry-After = %q, want 5..300 seconds", resp.Header.Get("Retry-After"))
 	}
 }
 

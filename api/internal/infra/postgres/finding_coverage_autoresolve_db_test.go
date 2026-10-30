@@ -283,3 +283,85 @@ func TestCoverageAbsence_ReceiptDecides(t *testing.T) {
 		t.Fatalf("truncated receipt: stale = %v, err = %v; want none and ErrReceiptIncomplete", stale, err)
 	}
 }
+
+// TestCoverageCandidateAssets: the assets a covered target reaches are the
+// ones whose open findings of the tool were last seen by a command aimed at
+// that target. Another tool, another target, another tenant, a closed or a
+// protected finding never makes an asset a candidate.
+func TestCoverageCandidateAssets(t *testing.T) {
+	f := newCoverageFixture(t)
+	repo := NewFindingRepository(&DB{DB: f.db})
+	ctx := context.Background()
+
+	aimed := func(target string) string {
+		cmd, report := shared.NewID(), shared.NewID().String()
+		f.exec(t, `INSERT INTO commands (id, tenant_id, sensor_id, type, status, payload, result)
+			VALUES ($1, $2, $3, 'scan', 'completed', jsonb_build_object('scanner', 'nuclei', 'targets', jsonb_build_array($4::text)), '{"exit_code":0}')`,
+			cmd, f.tenant, f.sensor, target)
+		f.exec(t, `INSERT INTO ingest_reports (id, tenant_id, sensor_id, report_id, command_id, state, media_type,
+				header_digest, header, tool_name, segment_outcomes, expires_at, committed_at)
+			VALUES ($1, $2, $3, $4, $5, 'completed', 'application/vnd.ctis+json', 'd', '{"tool":{"name":"nuclei"}}',
+				'nuclei', '{}', NOW() + interval '1 hour', NOW())`, shared.NewID(), f.tenant, f.sensor, report, cmd)
+		return report
+	}
+	onTarget := aimed("a.example.com")
+	elsewhere := aimed("z.example.com")
+
+	f.finding(t, f.host, "nuclei", onTarget, nil)
+	f.finding(t, f.otherHost, "nuclei", elsewhere, nil)
+	closed := f.finding(t, f.repoAsset, "nuclei", onTarget, nil)
+	f.exec(t, `UPDATE findings SET status = 'resolved' WHERE id = $1`, closed)
+	other := f.finding(t, f.repoAsset, "httpx", onTarget, nil)
+	_ = other
+	pentest := f.finding(t, f.repoAsset, "nuclei", onTarget, nil)
+	f.exec(t, `UPDATE findings SET source = 'pentest' WHERE id = $1`, pentest)
+
+	got, err := repo.CoverageCandidateAssets(ctx, f.tenant, "nuclei", []string{"a.example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := idStrings([]shared.ID{f.host}); len(got) != 1 || idStrings(got)[0] != want[0] {
+		t.Fatalf("candidates = %v, want only the host last seen on a.example.com", idStrings(got))
+	}
+	if got, err := repo.CoverageCandidateAssets(ctx, shared.NewID(), "nuclei", []string{"a.example.com"}); err != nil || len(got) != 0 {
+		t.Fatalf("another tenant must see nothing: %v, %v", got, err)
+	}
+	if got, err := repo.CoverageCandidateAssets(ctx, f.tenant, "nuclei", nil); err != nil || len(got) != 0 {
+		t.Fatalf("no target, no candidate: %v, %v", got, err)
+	}
+}
+
+// TestTemplateDriftedFindings_FailsClosed: a finding last seen with another
+// template release is drifted, and so is one that recorded no release when
+// the run reports one (nothing proves the same check looked again). A run
+// that reports no release keeps a finding without one resolvable (tools
+// without template content).
+func TestTemplateDriftedFindings_FailsClosed(t *testing.T) {
+	f := newCoverageFixture(t)
+	repo := NewFindingRepository(&DB{DB: f.db})
+	ctx := context.Background()
+	same := f.finding(t, f.host, "nuclei", "s1", nil)
+	other := f.finding(t, f.host, "nuclei", "s2", nil)
+	none := f.finding(t, f.host, "nuclei", "s3", nil)
+	f.exec(t, `UPDATE findings SET templates_digest = 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' WHERE id = $1`, same)
+	f.exec(t, `UPDATE findings SET templates_digest = 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' WHERE id = $1`, other)
+	ids := []shared.ID{same, other, none}
+
+	got, err := repo.TemplateDriftedFindings(ctx, f.tenant, ids, "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := idStrings([]shared.ID{other, none}); len(got) != 2 || idStrings(got)[0] != want[0] || idStrings(got)[1] != want[1] {
+		t.Fatalf("drifted = %v, want the other release and the unknown one %v", idStrings(got), want)
+	}
+	got, err = repo.TemplateDriftedFindings(ctx, f.tenant, ids, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := idStrings([]shared.ID{same, other}); len(got) != 2 || idStrings(got)[0] != want[0] || idStrings(got)[1] != want[1] {
+		t.Fatalf("run without a release: drifted = %v, want the ones with a release %v", idStrings(got), want)
+	}
+	if got, err := repo.TemplateDriftedFindings(ctx, shared.NewID(), ids, "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"); err != nil || len(got) != 0 {
+		t.Fatalf("another tenant must see nothing: %v, %v", got, err)
+	}
+}

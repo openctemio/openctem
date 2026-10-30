@@ -114,38 +114,11 @@ describe('SignupPolicyForm', () => {
         mode: 'self_service',
         accounts: 'open',
         request_access: false,
-        social_auto_link: false,
         version: 1,
         totp_code: '123456',
       })
     )
     await waitFor(() => expect(onSaved).toHaveBeenCalled())
-  })
-
-  // Social auto-link: off unless stored on (absent reads as off, as in the
-  // API), and the switch alone makes the form savable.
-  it('turns social auto-link on', async () => {
-    const user = userEvent.setup()
-    vi.mocked(saveSignupPolicy).mockResolvedValue({
-      ...SEEDED,
-      social_auto_link: true,
-      version: 2,
-    })
-    render(<SignupPolicyForm policy={SEEDED} canEdit onSaved={vi.fn()} />)
-    const toggle = screen.getByRole('switch', {
-      name: /link google and microsoft sign-in to existing accounts/i,
-    })
-    expect(toggle).not.toBeChecked()
-    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
-    await user.click(toggle)
-    await user.click(screen.getByRole('button', { name: 'Save' }))
-    await user.type(screen.getByLabelText(/code from your authenticator/i), '123456')
-    await user.click(screen.getByRole('button', { name: 'Confirm' }))
-    await waitFor(() =>
-      expect(saveSignupPolicy).toHaveBeenCalledWith(
-        expect.objectContaining({ social_auto_link: true, mode: 'admin_only' })
-      )
-    )
   })
 
   it('a wrong code keeps the dialog open with the reason', async () => {

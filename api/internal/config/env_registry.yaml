@@ -1312,7 +1312,7 @@ vars:
     group: "Ingest"
     type: int
     default: "100"
-    description: "Unfinished ingest jobs per organization (CI uploads, imports, sensor report segments); a further upload gets `429` with a `Retry-After` computed from how fast the organization's jobs drain. A depth that cannot be read refuses the upload (`503`). `0` turns the check off."
+    description: "Unfinished ingest jobs per organization (CI uploads, imports, sensor report segments); a further upload gets `429` with a `Retry-After` computed from how fast the organization's jobs drain. A segment of a sensor report that was already admitted is accepted up to twice this number, so a started report can finish. A depth that cannot be read refuses the upload (`503`). `0` turns the check off."
   - name: INGEST_MAX_RUNNING_PER_TENANT
     component: api
     group: "Ingest"

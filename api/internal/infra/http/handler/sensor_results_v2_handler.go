@@ -305,6 +305,11 @@ func (h *SensorResultsV2Handler) fail(w http.ResponseWriter, route string, err e
 	var re *ingest.V2ReportError
 	if errors.As(err, &re) {
 		p := protov2.NewProblem(re.Problem).WithErrors(re.Errors)
+		if re.RetryAfter > 0 {
+			// Jittered so sensors refused together do not come back
+			// together (a burst of scheduled runs finishing at once).
+			w.Header().Set(protov2.HeaderRetryAfter, strconv.Itoa(middleware.JitteredRetryAfter(re.RetryAfter)))
+		}
 		if p.Status == http.StatusRequestEntityTooLarge {
 			p.WithLimit(h.limitFor(re.Problem))
 		}
