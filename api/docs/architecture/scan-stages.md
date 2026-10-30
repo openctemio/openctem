@@ -595,7 +595,8 @@ what makes chained outputs trustworthy.
   goes through the per-hop gate checked by name (no asset), and the sensor
   checks every address the name resolves to. A failed relation read leaves
   the address forms only. Web consumers (`vuln.templates`) are not fed this
-  way: they take the origins the probe found.
+  way: they take the origins the probe found. Continuous coverage applies the same
+  rule to its HTTP probe batches ([asset coverage](./asset-coverage.md)).
 - **The per-hop gate.** Each candidate: the stage takes its stored pair; the
   name parses strictly (host, IP, host:port or an http(s) URL without
   credentials; no control or bidi characters; at most 2 048 characters);
