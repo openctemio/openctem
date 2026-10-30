@@ -14,7 +14,7 @@ deploy OpenCTEM with Docker Compose or the all-in-one image, follow
 | File | Purpose |
 |------|---------|
 | `api/Dockerfile` | Multi-target build: `development` (Air, Delve, migrate), `base` and `builder`, `production` (Alpine, non-root user `openctem`) |
-| `api/Dockerfile.migrations`, `Dockerfile.seed`, `Dockerfile.admin-cli` | The `migrations`, `seed` and `admin-cli` release images |
+| `api/Dockerfile.migrations`, `Dockerfile.seed` | The `migrations` and `seed` release images |
 | `api/docker-compose.yml` | Base services: PostgreSQL 17 and Redis 7 (ports published for development). Supported PostgreSQL: 16, 17 and 18; 17 is recommended. |
 | `api/docker-compose.dev.yml` | The API in the `development` target, source bind-mounted |
 | `api/deploy/docker-compose.yml` | The supported Compose deployment: gateway (one HTTPS port), web, API, PostgreSQL and Redis with TLS, and the one-shot `datastore-tls`, `db-roles` and `migrate` services |
@@ -35,7 +35,7 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 The `development` container (`scripts/dev-entrypoint.sh`):
 
 1. waits for PostgreSQL,
-2. applies migrations (`migrate -path /app/migrations up`) unless
+2. applies migrations (`go run ./cmd/openctem-migrate -path /app/migrations ... up`) unless
    `AUTO_MIGRATE=false`,
 3. starts Air for hot reload.
 
@@ -45,9 +45,9 @@ The source tree is bind-mounted at `/app`; ports are 8080 (HTTP), 9090 (gRPC) an
 Migrations by hand:
 
 ```bash
-make docker-migrate-up        # uses the migrate/migrate image and DATABASE_URL
-make docker-migrate-down
-make docker-migrate-version
+make migrate-up        # this tree's openctem-migrate against DATABASE_URL
+make migrate-down
+make migrate-status
 ```
 
 ### Debugging with Delve
@@ -78,7 +78,12 @@ make allinone
 Release images are built by `.github/workflows/docker-publish.yml` from a
 `vX.Y.Z` tag: `ghcr.io/openctemio/openctem-api`, `openctem-web`,
 `openctem-console` (the platform console), `openctem` (all-in-one),
-`openctem-gateway`, `migrations`, `seed` and `admin-cli`.
+`openctem-gateway`, `migrations` and `seed`.
+
+There is no separate admin image: `bootstrap-admin` (first administrator, `storage migrate`,
+`verify-audit`, ...) ships in the API image. With Compose run
+`docker compose run --rm bootstrap-admin ...`; on Kubernetes use a Job with the `openctem-api`
+image and command `/app/bootstrap-admin`.
 
 ## Production
 
@@ -90,7 +95,9 @@ image and the Helm chart; the API-only and web-only Compose files are removed.
 In `api/deploy` the API starts only after the `migrate` one-shot service
 succeeds (`depends_on: migrate: { condition: service_completed_successfully }`),
 and `OPENCTEM_VERSION` tags every platform image, so the migrations always match
-the API.
+the API. There is no default: `./setup.sh` writes it into `.env` from the
+release you checked out (`api/deploy/VERSION` in a tag's checkout), or from
+`--version vX.Y.Z`; to upgrade, check out the new tag and set it in `.env`.
 
 The API image runs in production mode unless `APP_ENV` says otherwise: an unset
 `APP_ENV` means `production`. Check a configuration without starting anything:
@@ -101,7 +108,7 @@ docker run --rm --env-file api.env ghcr.io/openctemio/openctem-api:vX.Y.Z -check
 docker compose run --rm --no-deps api -check-config
 ```
 
-If a migration fails midway, `golang-migrate` marks `schema_migrations.dirty` and
+If a migration fails midway, `openctem-migrate` marks the database dirty and
 the API refuses to start. Recovery is in the
 [runbook](safe-deploy-and-migrations.md#dirty-migration-recovery). Never set
 `SKIP_SCHEMA_CHECK=true` in production.

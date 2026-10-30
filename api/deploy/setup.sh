@@ -10,6 +10,12 @@
 #                                  # the platform console on its own host name
 #                                  # (recommended for production)
 #
+# The release it installs (OPENCTEM_VERSION in .env) is the one this checkout
+# is: api/deploy/VERSION (present in a release tag's checkout), else the tag
+# checked out. From a branch checkout there is none: name it with
+# --version vX.Y.Z (or the OPENCTEM_VERSION environment variable).
+#   --version vX.Y.Z             the release to install
+#
 # The platform console (OPENCTEM_ADMIN_* in .env) has its own site:
 #   --admin-site port|host|off   port: https://<host>:<port> (default, no DNS
 #                                needed); host: its own DNS name (implied by
@@ -33,21 +39,35 @@ example="$here/.env.example"
 
 die() { echo "setup: $*" >&2; exit 1; }
 
-host="" acme_email="" admin_site="" admin_host="" admin_port="" admin_cidrs="" admin_public=""
+version="${OPENCTEM_VERSION:-}" host="" acme_email="" admin_site="" admin_host="" admin_port="" admin_cidrs="" admin_public=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --version) [[ $# -ge 2 ]] || die "--version needs a release such as v0.15.0"; version="$2"; shift ;;
     --acme) [[ $# -ge 2 ]] || die "--acme needs an e-mail address"; acme_email="$2"; shift ;;
     --admin-site) [[ $# -ge 2 ]] || die "--admin-site needs port, host or off"; admin_site="$2"; shift ;;
     --admin-host) [[ $# -ge 2 ]] || die "--admin-host needs a host name"; admin_host="$2"; shift ;;
     --admin-port) [[ $# -ge 2 ]] || die "--admin-port needs a port number"; admin_port="$2"; shift ;;
     --admin-cidrs) [[ $# -ge 2 ]] || die "--admin-cidrs needs a list of networks"; admin_cidrs="$2"; shift ;;
     --admin-public) admin_public=1 ;;
-    -h|--help) sed -n '2,31p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,33p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) die "unknown option $1" ;;
     *) [[ -z "$host" ]] || die "one host name only"; host="$1" ;;
   esac
   shift
 done
+
+# The release to install: --version / OPENCTEM_VERSION, else the version this
+# checkout is. api/deploy/VERSION exists only in a release's tree; a develop or
+# branch checkout has none and must be told.
+if [[ -z "$version" && -f "$here/VERSION" ]]; then
+  version="$(tr -d '[:space:]' <"$here/VERSION")"
+fi
+if [[ -z "$version" ]] && command -v git >/dev/null 2>&1; then
+  version="$(git -C "$here" describe --tags --exact-match HEAD 2>/dev/null | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)"
+fi
+[[ -n "$version" ]] ||
+  die "this checkout is not a release (no api/deploy/VERSION, no release tag): check out a release tag (git checkout vX.Y.Z) or pass --version vX.Y.Z"
+[[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || die "'$version' is not a release such as v0.15.0"
 
 [[ -e "$env_file" ]] && die "$env_file already exists; move it away first (this script never overwrites it)"
 [[ -f "$example" ]] || die "missing $example"
@@ -115,6 +135,7 @@ set_value() { # set_value <NAME> <value>: replace the NAME= line, comment includ
   sed -i -E "s|^${name}=.*$|${name}=${value}|" "$tmp"
 }
 
+set_value OPENCTEM_VERSION "$version"
 set_value OPENCTEM_HOSTNAME "$host"
 if [[ -n "$acme_email" ]]; then
   set_value OPENCTEM_TLS_MODE acme
@@ -177,7 +198,7 @@ browser then isolates it from the main site entirely."
 fi
 
 cat <<MSG
-Wrote $env_file (mode 0600) for https://$host with generated secrets.
+Wrote $env_file (mode 0600) for https://$host, release $version, with generated secrets.
 Back up APP_ENCRYPTION_KEY from it now: without that key the stored
 credentials cannot be decrypted.
 

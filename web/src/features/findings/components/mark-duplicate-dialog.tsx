@@ -11,6 +11,8 @@
  * positive or a risk acceptance also needs findings:approve; the API decides.
  */
 
+import { FindingTitleCell } from './cells/finding-title-cell'
+import { findingLocation } from '../lib/finding-location'
 import { useTranslation } from '@/context/i18n-provider'
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
@@ -34,6 +36,7 @@ import { useFindingsApi, useMarkDuplicateApi } from '../api/use-findings-api'
 import type { ApiFinding } from '../api/finding-api.types'
 import { FindingStatusBadge } from './finding-status-badge'
 import type { FindingStatus } from '../types'
+import { useSearchQuery } from '@/hooks/use-search-query'
 
 interface MarkDuplicateDialogProps {
   findingId: string
@@ -61,12 +64,13 @@ export function MarkDuplicateDialog({
   const { t } = useTranslation()
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState('')
+  const searchTerm = useSearchQuery(search).term
 
   const { data, isLoading } = useFindingsApi(
     {
       asset_id: assetId,
       exclude_statuses: ['duplicate'],
-      search: search.trim() || undefined,
+      search: searchTerm || undefined,
       per_page: CANDIDATE_PAGE,
     },
     { enabled: open && !!assetId }
@@ -162,16 +166,18 @@ export function MarkDuplicateDialog({
                       className="hover:bg-muted/50 flex cursor-pointer items-start gap-3 border-b p-3 font-normal last:border-b-0"
                     >
                       <RadioGroupItem id={`dup-${f.id}`} value={f.id} className="mt-0.5" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium">
-                          {candidateTitle(f)}
-                        </span>
-                        <span className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-2 text-xs">
-                          <FindingStatusBadge status={f.status as FindingStatus} />
-                          <span>{f.tool_name}</span>
-                          {f.file_path && <span className="truncate font-mono">{f.file_path}</span>}
-                        </span>
-                      </span>
+                      {/* One asset: the target line is the place on it (port, path, URL). */}
+                      <FindingTitleCell
+                        className="flex-1 text-sm"
+                        title={candidateTitle(f)}
+                        target={findingLocation(f).detail}
+                        meta={
+                          <span className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-2 text-xs">
+                            <FindingStatusBadge status={f.status as FindingStatus} />
+                            <span>{f.tool_name}</span>
+                          </span>
+                        }
+                      />
                     </Label>
                   ))}
                 </RadioGroup>

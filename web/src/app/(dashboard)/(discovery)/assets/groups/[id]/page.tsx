@@ -10,19 +10,21 @@ import type { ColumnDef } from '@tanstack/react-table'
 import {
   PageHeader,
   RiskScoreBadge,
-  StatsCard,
+  MetricStrip,
+  MetaLine,
+  MetaItem,
   SeverityBadge,
   EmptyState,
   DataTable,
   DataTableColumnHeader,
   ErrorState,
+  PageStack,
 } from '@/features/shared'
 import { copyToClipboard } from '@/lib/clipboard'
 import { cn } from '@/lib/utils'
 import { Can, Permission } from '@/lib/permissions'
 import { CriticalityBadge } from '@/features/assets/components/classification-badges'
 import type { Criticality } from '@/features/assets/types'
-import { CRITICALITY_LABELS } from '@/lib/criticality'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { FindingStatusBadge } from '@/features/findings/components/finding-status-badge'
@@ -30,7 +32,7 @@ import type { FindingStatus } from '@/features/findings/types'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { ConfirmDialog } from '@/components/confirm-dialog'
+import { ConfirmDialog, ConfirmSample } from '@/components/confirm-dialog'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -39,6 +41,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Tabs, TabsContent, TabsList, TabsTrigger, TabsCount } from '@/components/ui/tabs'
+import { GroupHistoryPanel } from '@/features/asset-groups/components/members/group-history-panel'
+import { RuleStatusNote } from '@/features/asset-groups/components/members/rule-status-note'
 import { Separator } from '@/components/ui/separator'
 import { Checkbox } from '@/components/ui/checkbox'
 import { toast } from 'sonner'
@@ -83,10 +87,11 @@ import {
 } from '@/features/asset-groups'
 import { groupMemberHref } from '@/features/asset-groups/lib/member-link'
 import { useCsvExport, type ExportFieldConfig } from '@/hooks/use-csv-export'
-import { IssuesChip } from '@/features/assets/components/service-cells'
+import { OpenFindingsCell } from '@/features/assets/components/service-cells'
 import { SEVERITY_LEVELS, normalizeSeverity, type SeverityLevel } from '@/lib/severity'
 import { useTranslation } from '@/context/i18n-provider'
 import { useAssetTypeRegistry } from '@/features/asset-types/api/use-asset-type-registry'
+import { confirmName } from '@/lib/confirm-name'
 
 /** Most severe first when sorted descending. */
 const SEVERITY_RANK: Record<string, number> = { critical: 5, high: 4, medium: 3, low: 2, info: 1 }
@@ -188,6 +193,7 @@ function AssetGroupDetailContent({ params }: PageProps) {
   // The assets table owns its checkboxes; this mirrors the ticked ids for the
   // bulk remove, and bumping selectionEpoch clears the table's copy.
   const [selectedAssets, setSelectedAssets] = useState<string[]>([])
+  const [selectedAssetNames, setSelectedAssetNames] = useState<string[]>([])
   const [selectionEpoch, setSelectionEpoch] = useState(0)
 
   // Dialog State
@@ -301,6 +307,21 @@ function AssetGroupDetailContent({ params }: PageProps) {
         cell: ({ row }) => <Badge variant="outline">{typeLabel(row.original.type)}</Badge>,
       },
       {
+        accessorKey: 'source',
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('assetGroups.detail.col.source', 'Added by')}
+          />
+        ),
+        cell: ({ row }) =>
+          row.original.source ? (
+            <Badge variant="outline" data-testid="member-source">
+              {t(`assetGroups.members.source.${row.original.source}`, row.original.source)}
+            </Badge>
+          ) : null,
+      },
+      {
         accessorKey: 'status',
         header: ({ column }) => (
           <DataTableColumnHeader
@@ -334,16 +355,12 @@ function AssetGroupDetailContent({ params }: PageProps) {
         header: ({ column }) => (
           <DataTableColumnHeader
             column={column}
-            title={t('assetGroups.detail.col.findings', 'Findings')}
+            title={t('assets.col.openFindings', 'Open findings')}
           />
         ),
-        // The shared "N issues found" chip, linking to the asset's findings.
-        cell: ({ row }) =>
-          row.original.findingCount > 0 ? (
-            <IssuesChip assetId={row.original.id} count={row.original.findingCount} />
-          ) : (
-            <span className="text-muted-foreground tabular-nums">0</span>
-          ),
+        cell: ({ row }) => (
+          <OpenFindingsCell assetId={row.original.id} count={row.original.findingCount} />
+        ),
       },
       {
         accessorKey: 'lastSeen',
@@ -467,7 +484,7 @@ function AssetGroupDetailContent({ params }: PageProps) {
       <>
         <Main>
           {/* Header skeleton */}
-          <div className="flex items-center gap-4 mb-6">
+          <div className="flex items-center gap-4">
             <Button variant="ghost" size="icon" disabled>
               <ArrowLeft className="h-5 w-5" />
             </Button>
@@ -487,7 +504,7 @@ function AssetGroupDetailContent({ params }: PageProps) {
           </div>
 
           {/* Stats cards skeleton */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[...Array(4)].map((_, i) => (
               <Card key={i}>
                 <CardHeader className="pb-2">
@@ -499,7 +516,7 @@ function AssetGroupDetailContent({ params }: PageProps) {
           </div>
 
           {/* Tabs skeleton */}
-          <Skeleton className="h-10 w-80 rounded-md mb-6" />
+          <Skeleton className="h-10 w-80 rounded-md" />
 
           {/* Content skeleton */}
           <div className="grid md:grid-cols-2 gap-6">
@@ -538,7 +555,7 @@ function AssetGroupDetailContent({ params }: PageProps) {
         <Button
           variant="ghost"
           size="sm"
-          className="-ms-2 mb-2"
+          className="-ms-2 self-start"
           onClick={() => router.push('/assets/groups')}
         >
           <ArrowLeft className="me-2 h-4 w-4" />
@@ -580,8 +597,6 @@ function AssetGroupDetailContent({ params }: PageProps) {
   }
 
   const envLabel = (env: string) => t(`assetGroups.environment.${env}`, env)
-  const critLabel = (crit: string) =>
-    t(`criticality.${crit}`, (CRITICALITY_LABELS as Record<string, string>)[crit] ?? crit)
 
   // Handlers
   const handleCopyId = () => {
@@ -684,448 +699,464 @@ function AssetGroupDetailContent({ params }: PageProps) {
   return (
     <>
       <Main>
-        {/* Header with Back Button */}
-        <Button
-          variant="ghost"
-          size="sm"
-          className="-ms-2 mb-2"
-          onClick={() => router.push('/assets/groups')}
-        >
-          <ArrowLeft className="me-2 h-4 w-4" />
-          {t('assetGroups.detail.back', 'Back to asset groups')}
-        </Button>
-        <PageHeader
-          title={group.name}
-          className="mb-6"
-          description={
-            <div className="flex flex-wrap items-center gap-2">
-              <span>
-                {group.description || t('assetGroups.detail.noDescription', 'No description')}
-              </span>
-              <Badge variant="outline">{envLabel(group.environment)}</Badge>
-              <CriticalityBadge
-                criticality={group.criticality as Criticality}
-                showTooltip={false}
-              />
-            </div>
-          }
-        >
-          <Button variant="outline" size="sm" onClick={handleCopyId}>
-            <Copy className="me-2 h-4 w-4" />
-            {t('assetGroups.detail.copyId', 'Copy ID')}
+        <PageStack>
+          {/* Header with Back Button */}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-ms-2 self-start"
+            onClick={() => router.push('/assets/groups')}
+          >
+            <ArrowLeft className="me-2 h-4 w-4" />
+            {t('assetGroups.detail.back', 'Back to asset groups')}
           </Button>
-          <Can permission={Permission.AssetGroupsWrite}>
-            <Button variant="outline" size="sm" onClick={handleEdit}>
-              <Pencil className="me-2 h-4 w-4" />
-              {t('assetGroups.detail.edit', 'Edit')}
-            </Button>
-          </Can>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="outline"
-                size="icon"
-                aria-label={t('assetGroups.detail.moreActions', 'More actions')}
-              >
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={handleCopyLink}>
-                <Link className="me-2 h-4 w-4" />
-                {t('assetGroups.detail.copyLink', 'Copy link')}
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => handleExport('JSON')}>
-                <Download className="me-2 h-4 w-4" />
-                {t('assetGroups.detail.exportJson', 'Export as JSON')}
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleExport('CSV')}>
-                <Download className="me-2 h-4 w-4" />
-                {t('assetGroups.detail.exportCsv', 'Export as CSV')}
-              </DropdownMenuItem>
-              <Can permission={Permission.AssetGroupsDelete}>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  className="text-destructive"
-                  onClick={() => setDeleteDialogOpen(true)}
-                >
-                  <Trash2 className="me-2 h-4 w-4" />
-                  {t('assetGroups.detail.deleteGroup', 'Delete group')}
-                </DropdownMenuItem>
-              </Can>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </PageHeader>
-
-        {/* Stats Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          <StatsCard
-            title={t('assetGroups.detail.stat.assets', 'Total assets')}
-            value={group.assetCount}
-          />
-          <StatsCard
-            title={t('assetGroups.detail.stat.findings', 'Findings')}
-            value={group.findingCount}
-          />
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription>
-                {t('assetGroups.detail.stat.riskScore', 'Risk score')}
-              </CardDescription>
-              <div className="pt-1">
-                <RiskScoreBadge score={group.riskScore} size="lg" />
+          <PageHeader
+            title={group.name}
+            description={
+              <div className="flex flex-wrap items-center gap-2">
+                <span>
+                  {group.description || t('assetGroups.detail.noDescription', 'No description')}
+                </span>
+                <Badge variant="outline">{envLabel(group.environment)}</Badge>
+                <CriticalityBadge
+                  criticality={group.criticality as Criticality}
+                  showTooltip={false}
+                />
               </div>
-            </CardHeader>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription>
-                {t('assetGroups.detail.stat.lastUpdated', 'Last updated')}
-              </CardDescription>
-              <CardTitle className="text-lg">
+            }
+          >
+            <Button variant="outline" size="sm" onClick={handleCopyId}>
+              <Copy className="me-2 h-4 w-4" />
+              {t('assetGroups.detail.copyId', 'Copy ID')}
+            </Button>
+            <Can permission={Permission.AssetGroupsWrite}>
+              <Button variant="outline" size="sm" onClick={handleEdit}>
+                <Pencil className="me-2 h-4 w-4" />
+                {t('assetGroups.detail.edit', 'Edit')}
+              </Button>
+            </Can>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  aria-label={t('assetGroups.detail.moreActions', 'More actions')}
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={handleCopyLink}>
+                  <Link className="me-2 h-4 w-4" />
+                  {t('assetGroups.detail.copyLink', 'Copy link')}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => handleExport('JSON')}>
+                  <Download className="me-2 h-4 w-4" />
+                  {t('assetGroups.detail.exportJson', 'Export as JSON')}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExport('CSV')}>
+                  <Download className="me-2 h-4 w-4" />
+                  {t('assetGroups.detail.exportCsv', 'Export as CSV')}
+                </DropdownMenuItem>
+                <Can permission={Permission.AssetGroupsDelete}>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="text-destructive"
+                    onClick={() => setDeleteDialogOpen(true)}
+                  >
+                    <Trash2 className="me-2 h-4 w-4" />
+                    {t('assetGroups.detail.deleteGroup', 'Delete group')}
+                  </DropdownMenuItem>
+                </Can>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </PageHeader>
+
+          <MetricStrip
+            items={[
+              {
+                key: 'assets',
+                label: t('assetGroups.detail.stat.assets', 'Total assets'),
+                value: group.assetCount,
+                onClick: () => handleTabChange('assets'),
+                active: activeTab === 'assets',
+              },
+              {
+                key: 'findings',
+                label: t('assetGroups.detail.stat.findings', 'Findings'),
+                value: group.findingCount,
+                onClick: () => handleTabChange('findings'),
+                active: activeTab === 'findings',
+              },
+            ]}
+          />
+
+          <MetaLine
+            items={[
+              <MetaItem key="risk" label={t('assetGroups.detail.stat.riskScore', 'Risk score')}>
+                <RiskScoreBadge score={group.riskScore} />
+              </MetaItem>,
+              <MetaItem
+                key="updated"
+                label={t('assetGroups.detail.stat.lastUpdated', 'Last updated')}
+              >
                 {new Date(group.updatedAt).toLocaleDateString()}
-              </CardTitle>
-            </CardHeader>
-          </Card>
-        </div>
+              </MetaItem>,
+            ]}
+          />
 
-        {/* Tabs */}
-        <Tabs value={activeTab} onValueChange={handleTabChange}>
-          <TabsList>
-            <TabsTrigger value="overview">
-              {t('assetGroups.detail.tab.overview', 'Overview')}
-            </TabsTrigger>
-            <TabsTrigger value="assets">
-              {t('assetGroups.detail.tab.assets', 'Assets')} <TabsCount value={group.assetCount} />
-            </TabsTrigger>
-            <TabsTrigger value="findings">
-              {t('assetGroups.detail.tab.findings', 'Findings')}{' '}
-              <TabsCount value={group.findingCount} />
-            </TabsTrigger>
-          </TabsList>
+          {group.rule && <RuleStatusNote rule={group.rule} />}
 
-          {/* Overview Tab */}
-          <TabsContent value="overview" className="mt-6">
-            <div className="grid md:grid-cols-2 gap-6">
-              {/* Asset Distribution */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">
-                    {t('assets.groups.detail.typesTitle', 'Assets by type')}
-                  </CardTitle>
-                  <CardDescription>
-                    {assetsPartial
-                      ? partialNote(safeAssets.length, group.assetCount)
-                      : t('assets.groups.detail.typesDesc', 'The group’s members by asset type')}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {Object.keys(assetsByType).length === 0 ? (
-                    <EmptyState
-                      icon={Package}
-                      title={t('assetGroups.detail.noAssetsYet', 'No assets in this group yet')}
-                      card={false}
-                    />
-                  ) : (
-                    <div className="space-y-4">
-                      {Object.entries(assetsByType).map(([type, count]) => (
-                        <div key={type} className="flex items-center gap-3">
-                          <div className="h-8 w-8 rounded-lg bg-muted flex items-center justify-center">
-                            {assetTypeIcons[type] || <Server className="h-4 w-4" />}
-                          </div>
-                          <div className="flex-1">
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="text-sm font-medium">{typeLabel(type)}</span>
-                              <span className="text-sm text-muted-foreground">{count}</span>
+          {/* Tabs */}
+          <Tabs value={activeTab} onValueChange={handleTabChange}>
+            <TabsList>
+              <TabsTrigger value="overview">
+                {t('assetGroups.detail.tab.overview', 'Overview')}
+              </TabsTrigger>
+              <TabsTrigger value="assets">
+                {t('assetGroups.detail.tab.assets', 'Assets')}{' '}
+                <TabsCount value={group.assetCount} />
+              </TabsTrigger>
+              <TabsTrigger value="findings">
+                {t('assetGroups.detail.tab.findings', 'Findings')}{' '}
+                <TabsCount value={group.findingCount} />
+              </TabsTrigger>
+              <TabsTrigger value="history">
+                {t('assetGroups.detail.tab.history', 'History')}
+              </TabsTrigger>
+            </TabsList>
+
+            {/* Overview Tab */}
+            <TabsContent value="overview">
+              <div className="grid md:grid-cols-2 gap-6">
+                {/* Asset Distribution */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">
+                      {t('assets.groups.detail.typesTitle', 'Assets by type')}
+                    </CardTitle>
+                    <CardDescription>
+                      {assetsPartial
+                        ? partialNote(safeAssets.length, group.assetCount)
+                        : t('assets.groups.detail.typesDesc', 'The group’s members by asset type')}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {Object.keys(assetsByType).length === 0 ? (
+                      <EmptyState
+                        icon={Package}
+                        title={t('assetGroups.detail.noAssetsYet', 'No assets in this group yet')}
+                        card={false}
+                      />
+                    ) : (
+                      <div className="space-y-4">
+                        {Object.entries(assetsByType).map(([type, count]) => (
+                          <div key={type} className="flex items-center gap-3">
+                            <div className="h-8 w-8 rounded-lg bg-muted flex items-center justify-center">
+                              {assetTypeIcons[type] || <Server className="h-4 w-4" />}
                             </div>
-                            <Progress
-                              value={(count / Math.max(safeAssets.length, 1)) * 100}
-                              className="h-2"
-                            />
+                            <div className="flex-1">
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-sm font-medium">{typeLabel(type)}</span>
+                                <span className="text-sm text-muted-foreground">{count}</span>
+                              </div>
+                              <Progress
+                                value={(count / Math.max(safeAssets.length, 1)) * 100}
+                                className="h-2"
+                              />
+                            </div>
                           </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Finding Severity */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">
-                    {t('assets.groups.detail.severityTitle', 'Open findings by severity')}
-                  </CardTitle>
-                  <CardDescription>
-                    {findingsPartial
-                      ? partialNote(findings?.length ?? 0, findingsTotal)
-                      : t(
-                          'assets.groups.detail.severityDesc',
-                          'The same findings as the group’s count; each row opens them'
-                        )}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {Object.entries(findingsBySeverity).map(([severity, count]) => (
-                      <NextLink
-                        key={severity}
-                        href={findingsHref(severity)}
-                        className="flex items-center justify-between rounded-md px-1 py-0.5 hover:bg-muted"
-                        aria-label={t(
-                          'assets.groups.detail.severityLink',
-                          'Open {count} {severity} findings of this group',
-                          { count, severity }
-                        )}
-                      >
-                        <div className="flex items-center gap-2">
-                          <SeverityBadge severity={severity as GroupFinding['severity']} />
-                        </div>
-                        <span className="font-medium tabular-nums">{count}</span>
-                      </NextLink>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Risk Score */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">
-                    {t('assetGroups.detail.riskAssessment', 'Risk assessment')}
-                  </CardTitle>
-                  <CardDescription>
-                    {t('assetGroups.detail.riskAssessmentDesc', 'Overall group risk score')}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-center gap-4">
-                    <RiskScoreBadge score={group.riskScore} size="lg" />
-                    <div className="flex-1">
-                      <Progress
-                        value={group.riskScore}
-                        className={cn(
-                          'h-3',
-                          group.riskScore >= 80
-                            ? SEVERITY_PROGRESS_COLORS.critical
-                            : group.riskScore >= 60
-                              ? SEVERITY_PROGRESS_COLORS.high
-                              : group.riskScore >= 40
-                                ? SEVERITY_PROGRESS_COLORS.medium
-                                : '[&>div]:bg-success'
-                        )}
-                      />
-                      <div className="flex justify-between mt-1 text-xs text-muted-foreground">
-                        <span>{t('severity.low', 'Low')}</span>
-                        <span>{t('severity.medium', 'Medium')}</span>
-                        <span>{t('severity.high', 'High')}</span>
-                        <span>{t('severity.critical', 'Critical')}</span>
+                        ))}
                       </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Group Info */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">
-                    {t('assetGroups.detail.info.title', 'Group information')}
-                  </CardTitle>
-                  <CardDescription>
-                    {t('assetGroups.detail.info.desc', 'Metadata and details')}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">
-                        {t('assetGroups.detail.info.id', 'Group ID')}
-                      </span>
-                      <span className="font-mono">{group.id}</span>
-                    </div>
-                    <Separator />
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">
-                        {t('assetGroups.detail.info.created', 'Created')}
-                      </span>
-                      <span>{new Date(group.createdAt).toLocaleDateString()}</span>
-                    </div>
-                    <Separator />
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">
-                        {t('assetGroups.detail.info.updated', 'Updated')}
-                      </span>
-                      <span>{new Date(group.updatedAt).toLocaleDateString()}</span>
-                    </div>
-                    <Separator />
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">
-                        {t('assetGroups.detail.info.environment', 'Environment')}
-                      </span>
-                      <Badge variant="outline">{envLabel(group.environment)}</Badge>
-                    </div>
-                    <Separator />
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">
-                        {t('assetGroups.detail.info.criticality', 'Criticality')}
-                      </span>
-                      <CriticalityBadge
-                        criticality={group.criticality as Criticality}
-                        showTooltip={false}
-                      />
-                    </div>
-                    {group.businessUnit && (
-                      <>
-                        <Separator />
-                        <div className="flex justify-between items-center">
-                          <span className="text-muted-foreground flex items-center gap-1">
-                            <Building2 className="h-3 w-3" />
-                            {t('assetGroups.detail.info.businessUnit', 'Business unit')}
-                          </span>
-                          <span>{group.businessUnit}</span>
-                        </div>
-                      </>
                     )}
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Owner Info */}
-              {(group.owner || group.ownerEmail) && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <User className="h-4 w-4" />
-                      {t('assetGroups.detail.owner', 'Owner')}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted">
-                        <User className="h-5 w-5" />
-                      </div>
-                      <div>
-                        <p className="font-medium">
-                          {group.owner || t('assetGroups.detail.notAssigned', 'Not assigned')}
-                        </p>
-                        {group.ownerEmail && (
-                          <p className="text-sm text-muted-foreground flex items-center gap-1">
-                            <Mail className="h-3 w-3" />
-                            {group.ownerEmail}
-                          </p>
-                        )}
-                      </div>
-                    </div>
                   </CardContent>
                 </Card>
-              )}
 
-              {/* Tags */}
-              {group.tags && group.tags.length > 0 && (
+                {/* Finding Severity */}
                 <Card>
                   <CardHeader>
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <Tags className="h-4 w-4" />
-                      {t('assetGroups.detail.tags', 'Tags')}
+                    <CardTitle className="text-lg">
+                      {t('assets.groups.detail.severityTitle', 'Open findings by severity')}
                     </CardTitle>
+                    <CardDescription>
+                      {findingsPartial
+                        ? partialNote(findings?.length ?? 0, findingsTotal)
+                        : t(
+                            'assets.groups.detail.severityDesc',
+                            'The same findings as the group’s count; each row opens them'
+                          )}
+                    </CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <div className="flex flex-wrap gap-2">
-                      {group.tags.map((tag) => (
-                        <Badge key={tag} variant="secondary">
-                          {tag}
-                        </Badge>
+                    <div className="space-y-3">
+                      {Object.entries(findingsBySeverity).map(([severity, count]) => (
+                        <NextLink
+                          key={severity}
+                          href={findingsHref(severity)}
+                          className="flex items-center justify-between rounded-md px-1 py-0.5 hover:bg-muted"
+                          aria-label={t(
+                            'assets.groups.detail.severityLink',
+                            'Open {count} {severity} findings of this group',
+                            { count, severity }
+                          )}
+                        >
+                          <div className="flex items-center gap-2">
+                            <SeverityBadge severity={severity as GroupFinding['severity']} />
+                          </div>
+                          <span className="font-medium tabular-nums">{count}</span>
+                        </NextLink>
                       ))}
                     </div>
                   </CardContent>
                 </Card>
-              )}
-            </div>
-          </TabsContent>
 
-          {/* Assets Tab */}
-          <TabsContent value="assets" className="mt-6">
-            {assetsPartial && (
-              <p className="mb-2 text-xs text-muted-foreground">
-                {partialNote(safeAssets.length, group.assetCount)}
-              </p>
-            )}
-            <DataTable
-              columns={assetColumns}
-              data={safeAssets}
-              getRowId={(a) => a.id}
-              isLoading={assetsLoading}
-              searchKey="name"
-              searchPlaceholder={t('assetGroups.detail.searchAssets', 'Search assets…')}
-              onSelectionChange={(rows) => setSelectedAssets(rows.map((a) => a.id))}
-              resetSelectionKey={selectionEpoch}
-              showSelectionCount={false}
-              onRowClick={(a) => router.push(groupMemberHref(a.id))}
-              toolbarEnd={
-                <>
-                  {selectedAssets.length > 0 && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-9"
-                      onClick={() => setRemoveAssetsDialogOpen(true)}
-                    >
-                      <X className="me-2 h-4 w-4" />
-                      {t('assetGroups.detail.removeSelected', 'Remove {count} from group', {
-                        count: selectedAssets.length,
-                      })}
+                {/* Risk Score */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">
+                      {t('assetGroups.detail.riskAssessment', 'Risk assessment')}
+                    </CardTitle>
+                    <CardDescription>
+                      {t('assetGroups.detail.riskAssessmentDesc', 'Overall group risk score')}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex items-center gap-4">
+                      <RiskScoreBadge score={group.riskScore} size="lg" />
+                      <div className="flex-1">
+                        <Progress
+                          value={group.riskScore}
+                          className={cn(
+                            'h-3',
+                            group.riskScore >= 80
+                              ? SEVERITY_PROGRESS_COLORS.critical
+                              : group.riskScore >= 60
+                                ? SEVERITY_PROGRESS_COLORS.high
+                                : group.riskScore >= 40
+                                  ? SEVERITY_PROGRESS_COLORS.medium
+                                  : '[&>div]:bg-success'
+                          )}
+                        />
+                        <div className="flex justify-between mt-1 text-xs text-muted-foreground">
+                          <span>{t('severity.low', 'Low')}</span>
+                          <span>{t('severity.medium', 'Medium')}</span>
+                          <span>{t('severity.high', 'High')}</span>
+                          <span>{t('severity.critical', 'Critical')}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Group Info */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">
+                      {t('assetGroups.detail.info.title', 'Group information')}
+                    </CardTitle>
+                    <CardDescription>
+                      {t('assetGroups.detail.info.desc', 'Metadata and details')}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">
+                          {t('assetGroups.detail.info.id', 'Group ID')}
+                        </span>
+                        <span className="font-mono">{group.id}</span>
+                      </div>
+                      <Separator />
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">
+                          {t('assetGroups.detail.info.created', 'Created')}
+                        </span>
+                        <span>{new Date(group.createdAt).toLocaleDateString()}</span>
+                      </div>
+                      <Separator />
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">
+                          {t('assetGroups.detail.info.updated', 'Updated')}
+                        </span>
+                        <span>{new Date(group.updatedAt).toLocaleDateString()}</span>
+                      </div>
+                      <Separator />
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">
+                          {t('assetGroups.detail.info.environment', 'Environment')}
+                        </span>
+                        <Badge variant="outline">{envLabel(group.environment)}</Badge>
+                      </div>
+                      <Separator />
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">
+                          {t('assetGroups.detail.info.criticality', 'Criticality')}
+                        </span>
+                        <CriticalityBadge
+                          criticality={group.criticality as Criticality}
+                          showTooltip={false}
+                        />
+                      </div>
+                      {group.businessUnit && (
+                        <>
+                          <Separator />
+                          <div className="flex justify-between items-center">
+                            <span className="text-muted-foreground flex items-center gap-1">
+                              <Building2 className="h-3 w-3" />
+                              {t('assetGroups.detail.info.businessUnit', 'Business unit')}
+                            </span>
+                            <span>{group.businessUnit}</span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Owner Info */}
+                {(group.owner || group.ownerEmail) && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-lg flex items-center gap-2">
+                        <User className="h-4 w-4" />
+                        {t('assetGroups.detail.owner', 'Owner')}
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted">
+                          <User className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <p className="font-medium">
+                            {group.owner || t('assetGroups.detail.notAssigned', 'Not assigned')}
+                          </p>
+                          {group.ownerEmail && (
+                            <p className="text-sm text-muted-foreground flex items-center gap-1">
+                              <Mail className="h-3 w-3" />
+                              {group.ownerEmail}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Tags */}
+                {group.tags && group.tags.length > 0 && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-lg flex items-center gap-2">
+                        <Tags className="h-4 w-4" />
+                        {t('assetGroups.detail.tags', 'Tags')}
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex flex-wrap gap-2">
+                        {group.tags.map((tag) => (
+                          <Badge key={tag} variant="secondary">
+                            {tag}
+                          </Badge>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            </TabsContent>
+
+            {/* Assets Tab */}
+            <TabsContent value="assets">
+              {assetsPartial && (
+                <p className="mb-2 text-xs text-muted-foreground">
+                  {partialNote(safeAssets.length, group.assetCount)}
+                </p>
+              )}
+              <DataTable
+                columns={assetColumns}
+                data={safeAssets}
+                getRowId={(a) => a.id}
+                isLoading={assetsLoading}
+                searchKey="name"
+                searchPlaceholder={t('assetGroups.detail.searchAssets', 'Search assets…')}
+                onSelectionChange={(rows) => {
+                  setSelectedAssets(rows.map((a) => a.id))
+                  setSelectedAssetNames(rows.map((a) => a.name))
+                }}
+                resetSelectionKey={selectionEpoch}
+                showSelectionCount={false}
+                onRowClick={(a) => router.push(groupMemberHref(a.id))}
+                toolbarEnd={
+                  <>
+                    {selectedAssets.length > 0 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-9"
+                        onClick={() => setRemoveAssetsDialogOpen(true)}
+                      >
+                        <X className="me-2 h-4 w-4" />
+                        {t('assetGroups.detail.removeSelected', 'Remove {count} from group', {
+                          count: selectedAssets.length,
+                        })}
+                      </Button>
+                    )}
+                    <Button size="sm" className="h-9" onClick={() => setAddAssetsDialogOpen(true)}>
+                      <Plus className="me-2 h-4 w-4" />
+                      {t('assetGroups.detail.addAssets', 'Add assets')}
                     </Button>
-                  )}
-                  <Button size="sm" className="h-9" onClick={() => setAddAssetsDialogOpen(true)}>
-                    <Plus className="me-2 h-4 w-4" />
-                    {t('assetGroups.detail.addAssets', 'Add assets')}
-                  </Button>
-                </>
-              }
-              emptyMessage={t('assetGroups.detail.emptyAssets', 'No assets in this group')}
-              emptyDescription={t(
-                'assetGroups.detail.emptyAssetsHint',
-                'Add assets to this group to track and manage them together'
-              )}
-            />
-          </TabsContent>
+                  </>
+                }
+                emptyMessage={t('assetGroups.detail.emptyAssets', 'No assets in this group')}
+                emptyDescription={t(
+                  'assetGroups.detail.emptyAssetsHint',
+                  'Add assets to this group to track and manage them together'
+                )}
+              />
+            </TabsContent>
 
-          {/* Findings Tab */}
-          <TabsContent value="findings" className="mt-6">
-            {findingsPartial && (
-              <p className="mb-2 text-xs text-muted-foreground">
-                {partialNote(findings?.length ?? 0, findingsTotal)}
-              </p>
-            )}
-            <DataTable
-              columns={findingColumns}
-              data={safeFindings}
-              getRowId={(f) => f.id}
-              isLoading={findingsLoading}
-              searchPlaceholder={t('assetGroups.detail.searchFindings', 'Search findings…')}
-              onRowClick={(f) => router.push(`/findings/${f.id}`)}
-              emptyMessage={
-                group.findingCount > 0
-                  ? t('assetGroups.detail.noOpenLoaded', 'No open findings in the loaded rows')
-                  : t('assetGroups.detail.emptyFindings', 'No findings')
-              }
-              emptyDescription={
-                group.findingCount > 0
-                  ? t(
-                      'assetGroups.detail.noOpenLoadedHint',
-                      '{count} findings belong to this group; open the findings list to see them all.',
-                      { count: group.findingCount }
-                    )
-                  : t(
-                      'assetGroups.detail.emptyFindingsHint',
-                      'No security findings have been discovered for assets in this group'
-                    )
-              }
-            />
-          </TabsContent>
-        </Tabs>
+            {/* Findings Tab */}
+            <TabsContent value="findings">
+              {findingsPartial && (
+                <p className="mb-2 text-xs text-muted-foreground">
+                  {partialNote(findings?.length ?? 0, findingsTotal)}
+                </p>
+              )}
+              <DataTable
+                columns={findingColumns}
+                data={safeFindings}
+                getRowId={(f) => f.id}
+                isLoading={findingsLoading}
+                searchPlaceholder={t('assetGroups.detail.searchFindings', 'Search findings…')}
+                onRowClick={(f) => router.push(`/findings/${f.id}`)}
+                emptyMessage={
+                  group.findingCount > 0
+                    ? t('assetGroups.detail.noOpenLoaded', 'No open findings in the loaded rows')
+                    : t('assetGroups.detail.emptyFindings', 'No findings')
+                }
+                emptyDescription={
+                  group.findingCount > 0
+                    ? t(
+                        'assetGroups.detail.noOpenLoadedHint',
+                        '{count} findings belong to this group; open the findings list to see them all.',
+                        { count: group.findingCount }
+                      )
+                    : t(
+                        'assetGroups.detail.emptyFindingsHint',
+                        'No security findings have been discovered for assets in this group'
+                      )
+                }
+              />
+            </TabsContent>
+
+            {/* History Tab: who joined and left, and why */}
+            <TabsContent value="history">
+              <GroupHistoryPanel groupId={group.id} />
+            </TabsContent>
+          </Tabs>
+        </PageStack>
       </Main>
 
       {/* Edit Dialog */}
@@ -1146,12 +1177,15 @@ function AssetGroupDetailContent({ params }: PageProps) {
         })}
         desc={t(
           'confirm.assetGroup.deleteDesc',
-          'The group is deleted and its assets leave it; scans and rules that target the group no longer cover them. The assets themselves are not deleted. This cannot be undone.'
+          'The group is deleted for good and its assets leave it; scans and rules that target the group no longer cover them. The assets themselves are kept.'
         )}
         confirmText={
-          isDeleting ? t('confirm.deleting', 'Deleting…') : t('confirm.delete', 'Delete')
+          isDeleting
+            ? t('confirm.deleting', 'Deleting…')
+            : t('confirm.assetGroup.deleteButton', 'Delete group')
         }
         destructive
+        typeToConfirm={confirmName(group.name, group.id)}
         isLoading={isDeleting}
         handleConfirm={handleDelete}
       />
@@ -1175,12 +1209,18 @@ function AssetGroupDetailContent({ params }: PageProps) {
           'The selected assets leave the group, so scans and rules that target the group no longer cover them. The assets themselves are not deleted.'
         )}
         confirmText={
-          isRemovingAssets ? t('confirm.removing', 'Removing…') : t('confirm.remove', 'Remove')
+          isRemovingAssets
+            ? t('confirm.removing', 'Removing…')
+            : t('confirm.assetGroup.removeAssetsButton', 'Remove {count} from group', {
+                count: selectedAssets.length,
+              })
         }
         destructive
         isLoading={isRemovingAssets}
         handleConfirm={handleRemoveAssets}
-      />
+      >
+        <ConfirmSample names={selectedAssetNames} total={selectedAssets.length} />
+      </ConfirmDialog>
 
       {/* Add Assets Dialog */}
       <AddAssetsDialog

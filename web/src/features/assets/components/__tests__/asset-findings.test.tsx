@@ -46,7 +46,11 @@ describe('AssetFindings', () => {
     render(
       <AssetFindings assetId="a1" findingCount={120} severityCounts={{ critical: 7, high: 113 }} />
     )
-    expect(screen.getByText(/View all findings \(120\)/)).toBeInTheDocument()
+    const viewOpen = screen.getByRole('link', { name: /View 120 open findings/ })
+    // The same open set as the count, so the list shows that number.
+    expect(viewOpen.getAttribute('href')).toMatch(
+      /status=new%2Cconfirmed%2Cin_progress%2Cfix_applied/
+    )
     expect(screen.getByText(/7 Critical/)).toBeInTheDocument()
     expect(screen.getByText(/113 High/)).toBeInTheDocument()
   })

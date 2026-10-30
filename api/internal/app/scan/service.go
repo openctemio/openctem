@@ -6,6 +6,7 @@ import (
 	"time"
 
 	freshdom "github.com/openctemio/openctem/api/pkg/domain/assetfreshness"
+	"github.com/openctemio/openctem/api/pkg/domain/assetresolution"
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 
@@ -23,7 +24,6 @@ import (
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/templatesource"
 	"github.com/openctemio/openctem/api/pkg/domain/tool"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -168,18 +168,6 @@ type SelectSensorResult struct {
 	TenantBusy bool
 }
 
-// TemplateSyncer interface for template sync operations.
-type TemplateSyncer interface {
-	SyncSource(ctx context.Context, source *templatesource.TemplateSource) (*TemplateSyncResult, error)
-}
-
-// TemplateSyncResult represents the result of syncing a template source.
-type TemplateSyncResult struct {
-	Success        bool
-	TemplatesFound int
-	TemplatesAdded int
-}
-
 // ========== Service ==========
 
 // Service handles scan business operations.
@@ -206,18 +194,18 @@ type Service struct {
 	// (resolve_evidence.go); nil hands every name on.
 	resolveEvidence freshdom.NameEvidenceReader
 	staleRefresher  StaleRefresher
+	// resolutionStore: names known not to resolve (resolve_evidence.go).
+	resolutionStore assetresolution.Store
 	// approvalGate and governanceAssets: scan approval (governance.go).
 	approvalGate        ApprovalGate
 	governanceAssets    GovernanceAssets
 	stepRunRepo         scanrun.StepRunRepository
 	commandRepo         command.Repository
 	scannerTemplateRepo scannertemplate.Repository
-	templateSourceRepo  templatesource.Repository
 	toolRepo            tool.Repository
 	targetMappingRepo   tool.TargetMappingRepository // For asset-scanner compatibility
 	toolConfigChecker   ToolConfigChecker
 	profileRepo         scanprofile.Repository // For ScanProfile linking and quality gates
-	templateSyncer      TemplateSyncer
 	sensorSelector      SensorSelector
 	securityValidator   SecurityValidator
 	auditService        AuditService
@@ -361,9 +349,7 @@ func NewService(
 	stepRunRepo scanrun.StepRunRepository,
 	commandRepo command.Repository,
 	scannerTemplateRepo scannertemplate.Repository,
-	templateSourceRepo templatesource.Repository,
 	toolRepo tool.Repository,
-	templateSyncer TemplateSyncer,
 	sensorSelector SensorSelector,
 	securityValidator SecurityValidator,
 	log *logger.Logger,
@@ -378,9 +364,7 @@ func NewService(
 		stepRunRepo:         stepRunRepo,
 		commandRepo:         commandRepo,
 		scannerTemplateRepo: scannerTemplateRepo,
-		templateSourceRepo:  templateSourceRepo,
 		toolRepo:            toolRepo,
-		templateSyncer:      templateSyncer,
 		sensorSelector:      sensorSelector,
 		securityValidator:   securityValidator,
 		logger:              log.With("service", "scan"),

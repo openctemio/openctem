@@ -510,9 +510,8 @@ export function EditSensorDialog({
                       action={
                         <Button
                           type="button"
-                          variant="outline"
+                          variant="destructive"
                           size="sm"
-                          className="border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive"
                           onClick={() => setDeleteOpen(true)}
                           disabled={busy}
                         >

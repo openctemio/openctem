@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strings"
 
 	"github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/filterspec"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -108,6 +110,58 @@ func (s *VulnerabilityService) ListFindingsBySpec(ctx context.Context, c FilterC
 		return empty, err
 	}
 	return repo.ListWhere(ctx, where, pagination.New(spec.Page, spec.PerPage))
+}
+
+// findingDuplicatesRepo counts the duplicates of a page of findings.
+type findingDuplicatesRepo interface {
+	CountDuplicatesOfWhere(ctx context.Context, w *filterspec.Where, ids []shared.ID) (map[shared.ID]int, error)
+}
+
+// ListFindingsWithDuplicatesBySpec is ListFindingsBySpec plus, per listed
+// finding, how many findings marked as its duplicates the caller can read.
+// The count is compiled with the same actor as the list (tenant, data
+// scope, private programs, pentest membership), so a duplicate on an asset
+// outside the caller's scope is neither shown nor counted. One extra
+// statement whatever the page size.
+func (s *VulnerabilityService) ListFindingsWithDuplicatesBySpec(ctx context.Context, c FilterCaller, spec *filterspec.Spec) (pagination.Result[*vulnerability.Finding], map[shared.ID]int, error) {
+	var empty pagination.Result[*vulnerability.Finding]
+	repo, ok := s.findingRepo.(findingWhereRepo)
+	if !ok {
+		return empty, nil, errNoFindingWhereRepo
+	}
+	actor, err := s.FilterActor(ctx, c)
+	if err != nil {
+		return empty, nil, err
+	}
+	where, err := filterspec.Compile(vulnerability.WithBranchOnlyDefault(spec), vulnerability.FindingFields, actor)
+	if err != nil {
+		return empty, nil, err
+	}
+	result, err := repo.ListWhere(ctx, where, pagination.New(spec.Page, spec.PerPage))
+	if err != nil {
+		return empty, nil, err
+	}
+	dups, ok := s.findingRepo.(findingDuplicatesRepo)
+	if !ok {
+		return result, nil, nil
+	}
+	// The count is an enhancement: when it cannot be computed the list stands
+	// without it.
+	visible, err := filterspec.Compile(&filterspec.Spec{}, vulnerability.FindingFields, actor)
+	if err != nil {
+		s.logger.Debug("compile duplicate visibility failed", "error", err)
+		return result, nil, nil
+	}
+	ids := make([]shared.ID, 0, len(result.Data))
+	for _, f := range result.Data {
+		ids = append(ids, f.ID())
+	}
+	counts, err := dups.CountDuplicatesOfWhere(ctx, visible, ids)
+	if err != nil {
+		s.logger.Debug("count duplicates failed", "error", err)
+		return result, nil, nil
+	}
+	return result, counts, nil
 }
 
 // GetFindingStatsBySpec computes the findings stats for a decoded filter, as
@@ -307,6 +361,41 @@ type QuickViewCount struct {
 	Key    string
 	Params string
 	Count  int64
+	// InformationalHidden, for a view that leaves informational findings
+	// out, is how many it leaves out (the same params with
+	// informational=true); nil for the other views.
+	InformationalHidden *int64
+}
+
+// FindingViewSettingsReader reads the organization's findings work-view
+// defaults (*tenant.TenantService).
+type FindingViewSettingsReader interface {
+	GetFindingViewSettings(ctx context.Context, tenantID string) (*tenantdom.FindingViewSettings, error)
+}
+
+// SetFindingViewSettings wires the organization defaults of the work views
+// (nil: informational findings are left out unless the member chose).
+func (s *VulnerabilityService) SetFindingViewSettings(r FindingViewSettingsReader) {
+	s.findingViewSettings = r
+}
+
+// IncludeInformational resolves whether the caller's work views show
+// informational findings: their own choice (memberChoice, nil = none), else
+// the organization's default, else no. A failed settings read falls back to
+// no (the default) and is logged: it only shapes a view, never access.
+func (s *VulnerabilityService) IncludeInformational(ctx context.Context, tenantID string, memberChoice *bool) bool {
+	if memberChoice != nil {
+		return *memberChoice
+	}
+	if s.findingViewSettings == nil {
+		return false
+	}
+	fv, err := s.findingViewSettings.GetFindingViewSettings(ctx, tenantID)
+	if err != nil {
+		s.logger.Warn("read finding view settings", "tenant_id", tenantID, "error", err)
+		return false
+	}
+	return fv != nil && fv.IncludeInformational
 }
 
 // CountQuickViews counts every built-in quick view (vulnerability
@@ -314,8 +403,9 @@ type QuickViewCount struct {
 // are parsed with the strict findings registry and compiled as facets over
 // the caller's scoped WHERE (the list's own default branch rule), so a
 // count equals the total GET /findings?<params> returns to the same caller.
-// It fails closed like every filtered read.
-func (s *VulnerabilityService) CountQuickViews(ctx context.Context, c FilterCaller) ([]QuickViewCount, error) {
+// includeInformational shapes the work views (IncludeInformational). It
+// fails closed like every filtered read.
+func (s *VulnerabilityService) CountQuickViews(ctx context.Context, c FilterCaller, includeInformational bool) ([]QuickViewCount, error) {
 	repo, ok := s.findingRepo.(findingFacetRepo)
 	if !ok {
 		return nil, errNoFindingWhereRepo
@@ -324,16 +414,37 @@ func (s *VulnerabilityService) CountQuickViews(ctx context.Context, c FilterCall
 	if err != nil {
 		return nil, err
 	}
-	views := vulnerability.FindingQuickViews()
-	facets := make([]*filterspec.Spec, len(views))
-	for i, v := range views {
-		q, perr := url.ParseQuery(v.Params)
+	views := vulnerability.FindingQuickViews(includeInformational)
+	parse := func(key, params string) (*filterspec.Spec, error) {
+		q, perr := url.ParseQuery(params)
 		if perr != nil {
-			return nil, fmt.Errorf("quick view %s: %w", v.Key, perr)
+			return nil, fmt.Errorf("quick view %s: %w", key, perr)
 		}
-		if facets[i], perr = filterspec.ParseValues(q, vulnerability.FindingFields, filterspec.Options{Unknown: filterspec.UnknownStrict}); perr != nil {
-			return nil, fmt.Errorf("quick view %s: %w", v.Key, perr)
+		spec, perr := filterspec.ParseValues(q, vulnerability.FindingFields, filterspec.Options{Unknown: filterspec.UnknownStrict})
+		if perr != nil {
+			return nil, fmt.Errorf("quick view %s: %w", key, perr)
 		}
+		return spec, nil
+	}
+	facets := make([]*filterspec.Spec, len(views), 2*len(views))
+	// hiddenAt[i] is the facet that counts what view i leaves out (-1: none).
+	hiddenAt := make([]int, len(views))
+	for i, v := range views {
+		if facets[i], err = parse(v.Key, v.Params); err != nil {
+			return nil, err
+		}
+		hiddenAt[i] = -1
+	}
+	for i, v := range views {
+		if !strings.Contains(v.Params, vulnerability.ExcludeInformationalParam) {
+			continue
+		}
+		hidden, perr := parse(v.Key, strings.Replace(v.Params, vulnerability.ExcludeInformationalParam, "informational=true", 1))
+		if perr != nil {
+			return nil, perr
+		}
+		hiddenAt[i] = len(facets)
+		facets = append(facets, hidden)
 	}
 	where, preds, err := filterspec.CompileFacets(vulnerability.WithBranchOnlyDefault(&filterspec.Spec{}), facets, vulnerability.FindingFields, actor)
 	if err != nil {
@@ -346,6 +457,32 @@ func (s *VulnerabilityService) CountQuickViews(ctx context.Context, c FilterCall
 	out := make([]QuickViewCount, len(views))
 	for i, v := range views {
 		out[i] = QuickViewCount{Key: v.Key, Params: v.Params, Count: counts[i]}
+		if j := hiddenAt[i]; j >= 0 {
+			n := counts[j]
+			out[i].InformationalHidden = &n
+		}
 	}
 	return out, nil
+}
+
+// CountSpecs counts the findings each decoded filter selects, as the caller,
+// in one statement (facet counts over the caller's visibility). It backs the
+// counts beside pinned views in the sidebar.
+func (s *VulnerabilityService) CountSpecs(ctx context.Context, c FilterCaller, specs []*filterspec.Spec) ([]int64, error) {
+	if len(specs) == 0 {
+		return nil, nil
+	}
+	repo, ok := s.findingRepo.(findingFacetRepo)
+	if !ok {
+		return nil, errNoFindingWhereRepo
+	}
+	actor, err := s.FilterActor(ctx, c)
+	if err != nil {
+		return nil, err
+	}
+	where, preds, err := filterspec.CompileFacets(vulnerability.WithBranchOnlyDefault(&filterspec.Spec{}), specs, vulnerability.FindingFields, actor)
+	if err != nil {
+		return nil, err
+	}
+	return repo.CountFacetsWhere(ctx, where, preds)
 }

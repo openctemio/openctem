@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Clock } from 'lucide-react'
 import { toast } from 'sonner'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Card, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -26,6 +27,8 @@ export function ApprovalSettings() {
   const canEdit = can(Permission.SettingsWrite)
   const settings = useContentSettings()
   const [saving, setSaving] = useState(false)
+  // Switching approval off weakens the install check (after 24 hours): ask first.
+  const [askLoosen, setAskLoosen] = useState(false)
   const state = approvalState(settings.data)
   const switchId = 'content-require-approval'
 
@@ -86,7 +89,7 @@ export function ApprovalSettings() {
                   id={switchId}
                   checked={state.mode === 'on'}
                   disabled={!canEdit || saving}
-                  onCheckedChange={(on) => void change(on)}
+                  onCheckedChange={(on) => (on ? void change(true) : setAskLoosen(true))}
                 />
               </div>
               {state.mode === 'switching-off' && (
@@ -117,6 +120,18 @@ export function ApprovalSettings() {
           )}
         </CardContent>
       </Card>
+      <ConfirmDialog
+        open={askLoosen}
+        onOpenChange={setAskLoosen}
+        destructive
+        title={t('confirm.contentApproval.title')}
+        desc={t('confirm.contentApproval.desc')}
+        confirmText={t('confirm.contentApproval.btn')}
+        handleConfirm={async () => {
+          setAskLoosen(false)
+          await change(false)
+        }}
+      />
     </SettingsSection>
   )
 }

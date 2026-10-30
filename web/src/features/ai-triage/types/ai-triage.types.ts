@@ -1,4 +1,5 @@
 import type { Severity } from '@/features/shared/types'
+import type { HealthState } from '@/lib/health-colors'
 
 /**
  * AI Triage status enum
@@ -63,62 +64,33 @@ export interface AITriageResult {
 }
 
 /**
- * Status configuration for UI display
+ * An AI triage job is a machine's work, so its status is a health state
+ * (research/247 section 4): pending queued, analyzing running, completed ok,
+ * failed down. The map holds no classes.
  */
-export interface TriageStatusConfig {
-  label: string
-  color: string
-  bgColor: string
-  icon: string
+export const TRIAGE_STATUS_CONFIG: Record<TriageStatus, { label: string; health: HealthState }> = {
+  pending: { label: 'Pending', health: 'queued' },
+  processing: { label: 'Analyzing', health: 'run' },
+  completed: { label: 'Completed', health: 'ok' },
+  failed: { label: 'Failed', health: 'down' },
 }
 
-/**
- * Status configuration map
- */
-export const TRIAGE_STATUS_CONFIG: Record<TriageStatus, TriageStatusConfig> = {
-  pending: {
-    label: 'Pending',
-    color: 'text-yellow-600',
-    bgColor: 'bg-yellow-100 dark:bg-yellow-900/20',
-    icon: 'clock',
-  },
-  processing: {
-    label: 'Analyzing',
-    color: 'text-blue-600',
-    bgColor: 'bg-blue-100 dark:bg-blue-900/20',
-    icon: 'loader',
-  },
-  completed: {
-    label: 'Completed',
-    color: 'text-green-600',
-    bgColor: 'bg-green-100 dark:bg-green-900/20',
-    icon: 'check-circle',
-  },
-  failed: {
-    label: 'Failed',
-    color: 'text-red-600',
-    bgColor: 'bg-red-100 dark:bg-red-900/20',
-    icon: 'x-circle',
-  },
+/** Exploitability as an ordinal level (bars and the word), not a colour. */
+export const EXPLOITABILITY_CONFIG: Record<
+  Exploitability,
+  { label: string; level: 0 | 1 | 2 | 3 }
+> = {
+  high: { label: 'High', level: 3 },
+  medium: { label: 'Medium', level: 2 },
+  low: { label: 'Low', level: 1 },
+  theoretical: { label: 'Theoretical', level: 0 },
 }
 
-/**
- * Exploitability configuration for UI display
- */
-export const EXPLOITABILITY_CONFIG: Record<Exploitability, { label: string; color: string }> = {
-  high: { label: 'High', color: 'text-red-600' },
-  medium: { label: 'Medium', color: 'text-orange-600' },
-  low: { label: 'Low', color: 'text-yellow-600' },
-  theoretical: { label: 'Theoretical', color: 'text-gray-600' },
-}
-
-/**
- * Effort configuration for UI display
- */
-export const EFFORT_CONFIG: Record<RemediationEffort, { label: string; color: string }> = {
-  low: { label: 'Low Effort', color: 'text-green-600' },
-  medium: { label: 'Medium Effort', color: 'text-yellow-600' },
-  high: { label: 'High Effort', color: 'text-red-600' },
+/** Remediation effort as an ordinal level. */
+export const EFFORT_CONFIG: Record<RemediationEffort, { label: string; level: 0 | 1 | 2 | 3 }> = {
+  low: { label: 'Low Effort', level: 1 },
+  medium: { label: 'Medium Effort', level: 2 },
+  high: { label: 'High Effort', level: 3 },
 }
 
 /**

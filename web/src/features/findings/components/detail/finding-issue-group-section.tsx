@@ -152,6 +152,7 @@ export function FindingIssueGroupSection({ findingId }: { findingId: string }) {
           'It leaves the group and is counted on its own again. It will not be linked to this group automatically again. Neither finding changes otherwise.'
         )}
         confirmText={t('findings.issueGroup.unlink', 'Unlink')}
+        destructive
         handleConfirm={confirmUnlink}
         isLoading={busy}
       />

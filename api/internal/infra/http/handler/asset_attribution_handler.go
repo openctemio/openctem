@@ -122,12 +122,12 @@ type AssetAttributionResponse struct {
 	// out_of_scope: confirmed, but no scope entry
 	// covers it (confirmation alone does not authorize active checks).
 	ActiveChecksBlockedBy string `json:"active_checks_blocked_by,omitempty"`
-	// BlockedCode is the structured refusal code (RFC-054 §6.5) for
+	// BlockedCode is the structured refusal code for
 	// active_checks_blocked_by.
 	BlockedCode string `json:"blocked_code,omitempty"`
 	// ScopeStatus: in_scope, out_of_scope, internal (zone-gated) or
 	// not_applicable. CoveredBy is the organization's scope target, seed or
-	// verified domain that covers it (RFC-054 §6.6). Removing the scope entry
+	// verified domain that covers it. Removing the scope entry
 	// keeps the asset and its findings; active checks stop (out_of_scope).
 	ScopeStatus string         `json:"scope_status,omitempty"`
 	CoveredBy   *scopeauth.Via `json:"covered_by,omitempty"`
@@ -139,7 +139,7 @@ type AssetAttributionResponse struct {
 	Certificate *easmapp.CertStanding      `json:"certificate,omitempty"`
 	Evidence    []AssetAttributionEvidence `json:"evidence"`
 	// Scope: on a confirmation, the exact scope entry it added (or why
-	// not); absent otherwise (research/117).
+	// not); absent otherwise.
 	Scope *easmapp.ConfirmScopeResult `json:"scope,omitempty"`
 }
 

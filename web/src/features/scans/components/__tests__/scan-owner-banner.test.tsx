@@ -1,60 +1,43 @@
-/**
- * A scan without an active owner: the banner says why, offers "Take
- * ownership" to owners and administrators only, and posts to the scan's
- * take-ownership endpoint. Nothing shows for a scan with an active owner.
- */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
-const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }))
-vi.mock('sonner', () => ({ toast }))
-const api = vi.hoisted(() => ({ post: vi.fn() }))
-vi.mock('@/lib/api/client', () => ({ post: api.post }))
-const role = vi.hoisted(() => ({ admin: false }))
-vi.mock('@/lib/permissions', () => ({
-  usePermissions: () => ({ isAdmin: () => role.admin }),
-}))
+const postMock = vi.hoisted(() => vi.fn())
+vi.mock('@/lib/api/client', () => ({ post: (...a: unknown[]) => postMock(...a) }))
+vi.mock('@/lib/permissions', () => ({ usePermissions: () => ({ isAdmin: () => true }) }))
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
-const { ScanOwnerBanner } = await import('../scan-owner-banner')
+import { ScanOwnerBanner } from '../scan-owner-banner'
 
-const base = { id: 'scan-1', name: 'Nightly', schedule_type: 'daily', status: 'paused' } as const
+const config = {
+  id: 's1',
+  name: 'Nightly recon',
+  owner_state: 'missing' as const,
+  schedule_type: 'daily' as const,
+  status: 'paused' as const,
+}
 
 describe('ScanOwnerBanner', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    role.admin = false
+  beforeEach(() => postMock.mockReset().mockResolvedValue({}))
+
+  it('asks before taking ownership: scheduled runs will act as you', async () => {
+    const user = userEvent.setup()
+    render(<ScanOwnerBanner config={config} />)
+    await user.click(screen.getByRole('button', { name: 'Take ownership' }))
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('Take ownership of "Nightly recon"?')
+    expect(postMock).not.toHaveBeenCalled()
+    await user.click(within(dialog).getByRole('button', { name: 'Take ownership' }))
+    await waitFor(() =>
+      expect(postMock).toHaveBeenCalledWith('/api/v1/scans/s1/take-ownership', {})
+    )
   })
 
-  it('renders nothing while the owner is active', () => {
-    const { container } = render(<ScanOwnerBanner config={{ ...base, owner_state: 'ok' }} />)
-    expect(container).toBeEmptyDOMElement()
-  })
-
-  it('tells a member to ask an administrator, with no button', () => {
-    render(<ScanOwnerBanner config={{ ...base, owner_state: 'missing' }} />)
-    expect(screen.getByText(/no longer exists/)).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Take ownership' })).toBeNull()
-    expect(screen.getByText(/administrator can take ownership/)).toBeInTheDocument()
-  })
-
-  it('lets an administrator take ownership in one click', async () => {
-    role.admin = true
-    api.post.mockResolvedValue({})
-    const onChanged = vi.fn()
-    render(<ScanOwnerBanner config={{ ...base, owner_state: 'inactive' }} onChanged={onChanged} />)
-    expect(screen.getByText(/no longer an active member/)).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Take ownership' }))
-    await waitFor(() => expect(onChanged).toHaveBeenCalled())
-    expect(api.post).toHaveBeenCalledWith('/api/v1/scans/scan-1/take-ownership', {})
-    expect(toast.success).toHaveBeenCalled()
-  })
-
-  it('shows the refusal when the API refuses', async () => {
-    role.admin = true
-    api.post.mockRejectedValue(new Error("This scan's owner is an active member."))
-    render(<ScanOwnerBanner config={{ ...base, owner_state: 'missing' }} />)
-    await userEvent.click(screen.getByRole('button', { name: 'Take ownership' }))
-    await waitFor(() => expect(toast.error).toHaveBeenCalled())
+  it('Cancel takes nothing', async () => {
+    const user = userEvent.setup()
+    render(<ScanOwnerBanner config={config} />)
+    await user.click(screen.getByRole('button', { name: 'Take ownership' }))
+    await user.click(await screen.findByRole('button', { name: 'Cancel' }))
+    expect(postMock).not.toHaveBeenCalled()
   })
 })

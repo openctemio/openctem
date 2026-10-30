@@ -53,7 +53,7 @@ type EASMRuleRequest struct {
 
 // Suggestions handles GET /api/v1/easm/candidates/suggestions
 // @Summary      Review by rule: suggestions
-// @Description  The caller's pending review items grouped into candidate scope rules (RFC-054 §6.7): wildcards at each label level up to the registrable domain (never a public suffix), /24 (IPv4) or /48 (IPv6) ranges (never for shared, CDN or cloud-provider space: those are listed individually), each with the items it covers, the items an exclusion or rejection keeps out, ownership hints and a strength. Narrowed to the caller's data scope.
+// @Description  The caller's pending review items grouped into candidate scope rules: wildcards at each label level up to the registrable domain (never a public suffix), /24 (IPv4) or /48 (IPv6) ranges (never for shared, CDN or cloud-provider space: those are listed individually), each with the items it covers, the items an exclusion or rejection keeps out, ownership hints and a strength. Narrowed to the caller's data scope.
 // @Tags         Attack Surface
 // @Produce      json
 // @Security     BearerAuth

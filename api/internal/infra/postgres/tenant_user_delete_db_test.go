@@ -258,6 +258,22 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	"easm_weekly_digests": func(*schemaSeeder) map[string]any {
 		return map[string]any{"window_from": "2026-01-01T00:00:00Z", "slot": "2026-01-08T00:00:00Z"}
 	},
+	// An AI agent is the AI profile of a service account of the same organization.
+	"ai_agents": func(s *schemaSeeder) map[string]any {
+		id := shared.NewID().String()
+		mustExecTx(s.t, s.tx, `INSERT INTO users (id, email, name, kind, service_tenant_id) VALUES ($1, $2, 'FK Delete AI agent', 'service', $3)`,
+			id, "fkdel-ai-"+id+"@example.test", s.tenantID)
+		return map[string]any{"user_id": id, "attest_due_at": "2027-01-01T00:00:00Z"}
+	},
+	"ai_runs": func(s *schemaSeeder) map[string]any {
+		return map[string]any{"ai_agent_id": s.rows["ai_agents"]["user_id"], "kind": "triage.v1"}
+	},
+	"ai_mask_maps": func(*schemaSeeder) map[string]any {
+		return map[string]any{"created_at": "2026-01-01T00:00:00Z", "expires_at": "2026-01-02T00:00:00Z"}
+	},
+	"ai_agent_owners": func(s *schemaSeeder) map[string]any {
+		return map[string]any{"user_id": s.userID, "group_id": nil}
+	},
 	"ai_triage_budgets": func(*schemaSeeder) map[string]any {
 		return map[string]any{"period_start": "2026-01-01", "period_end": "2026-02-01"}
 	},
@@ -330,6 +346,20 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	},
 	"content_packs": func(*schemaSeeder) map[string]any {
 		return map[string]any{"name": "seed", "version": "1", "kind": "wordlist", "tier": "T0", "status": "active", "source": "upload"}
+	},
+	// Rule sources: an organization's git source and a candidate snapshot.
+	"content_sources": func(*schemaSeeder) map[string]any {
+		return map[string]any{"scope": "tenant", "slug": "seed", "rule_namespace": "seed", "kind": "semgrep-rules", "origin": "git",
+			"url": "https://git.example.com/acme/rules.git", "ref": "main", "path": "", "archive_sha256": nil,
+			"availability": nil, "official": false, "promotion_policy": "auto", "storage_mode": "mirror",
+			"sync_interval_minutes": 60, "last_sync_status": "pending", "last_sync_report": nil,
+			"credential_encrypted": nil, "credential_updated_at": nil, "webhook_secret_hash": nil,
+			"ca_pem": nil, "current_snapshot_id": nil, "previous_snapshot_id": nil}
+	},
+	"content_source_snapshots": func(*schemaSeeder) map[string]any {
+		return map[string]any{"scope": "tenant", "digest": "sha256:" + strings.Repeat("ab", 32), "platform_pack_id": nil,
+			"tier": "T0", "state": "candidate", "size_bytes": "1", "file_count": "1", "file_index": "[]", "rules": "[]",
+			"lint": "{}", "diff": "{}", "checks": "{}", "signature": "{}"}
 	},
 	// Content catalog (RFC-099): an organization package with valid
 	// digests; a request that has no target (uninstall) and no decider yet
@@ -410,6 +440,18 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	// An import mapping's name is a slug and its source a closed set (CHECKs; RFC-126).
 	"import_mappings": func(*schemaSeeder) map[string]any {
 		return map[string]any{"name": "probe-mapping", "source": "csv", "latest_version": 1}
+	},
+	// An enrollment token lives at most 30 days and allows 1 to 1000 uses
+	// (CHECKs).
+	"sensor_enrollment_tokens": func(*schemaSeeder) map[string]any {
+		return map[string]any{"name": "probe-token", "max_uses": 1, "use_count": 0, "labels": "{}",
+			"created_at": "2026-10-05T10:00:00Z", "expires_at": "2026-10-06T10:00:00Z"}
+	},
+	// A person can only hold a role that no team manages, so the seeded role is
+	// not tied to a team (the managed-team column is filled from its foreign
+	// key otherwise).
+	"roles": func(*schemaSeeder) map[string]any {
+		return map[string]any{"managed_group_id": nil}
 	},
 	"scan_window_overrides": func(*schemaSeeder) map[string]any {
 		return map[string]any{"reason": "incident rescan now", "starts_at": "2026-10-05T10:00:00Z", "ends_at": "2026-10-05T11:00:00Z"}

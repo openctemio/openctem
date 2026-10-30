@@ -22,7 +22,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/templatesource"
 	"github.com/openctemio/openctem/api/pkg/domain/tool"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -441,7 +440,9 @@ func (m *mockRunRepo) CreateRunIfUnderLimit(_ context.Context, r *scanrundom.Run
 	m.runs[r.ID.String()] = r
 	return nil
 }
-func (m *mockRunRepo) UpdateStats(_ context.Context, _ shared.ID, _, _, _, _ int) error { return nil }
+func (m *mockRunRepo) UpdateStats(_ context.Context, _, _ shared.ID, _, _, _, _ int) error {
+	return nil
+}
 func (m *mockRunRepo) UpdateStatus(_ context.Context, _ shared.ID, _ scanrundom.RunStatus, _ string) error {
 	return nil
 }
@@ -665,45 +666,6 @@ func (m *mockScannerTemplateRepo) GetUsage(_ context.Context, _ shared.ID) (*sca
 }
 
 // =============================================================================
-// Mock: templatesource.Repository
-// =============================================================================
-
-type mockTemplateSourceRepo struct{}
-
-func (m *mockTemplateSourceRepo) Create(_ context.Context, _ *templatesource.TemplateSource) error {
-	return nil
-}
-func (m *mockTemplateSourceRepo) GetByID(_ context.Context, _ shared.ID) (*templatesource.TemplateSource, error) {
-	return nil, nil
-}
-func (m *mockTemplateSourceRepo) GetByTenantAndID(_ context.Context, _, _ shared.ID) (*templatesource.TemplateSource, error) {
-	return nil, nil
-}
-func (m *mockTemplateSourceRepo) GetByTenantAndName(_ context.Context, _ shared.ID, _ string) (*templatesource.TemplateSource, error) {
-	return nil, nil
-}
-func (m *mockTemplateSourceRepo) List(_ context.Context, _ templatesource.ListInput) (*templatesource.ListOutput, error) {
-	return nil, nil
-}
-func (m *mockTemplateSourceRepo) ListByTenantAndTemplateType(_ context.Context, _ shared.ID, _ scannertemplate.TemplateType) ([]*templatesource.TemplateSource, error) {
-	return nil, nil
-}
-func (m *mockTemplateSourceRepo) ListEnabledForSync(_ context.Context, _ shared.ID) ([]*templatesource.TemplateSource, error) {
-	return nil, nil
-}
-func (m *mockTemplateSourceRepo) ListAllNeedingSync(_ context.Context) ([]*templatesource.TemplateSource, error) {
-	return nil, nil
-}
-func (m *mockTemplateSourceRepo) Update(_ context.Context, _ *templatesource.TemplateSource) error {
-	return nil
-}
-func (m *mockTemplateSourceRepo) Delete(_ context.Context, _ shared.ID) error { return nil }
-func (m *mockTemplateSourceRepo) UpdateSyncStatus(_ context.Context, _ *templatesource.TemplateSource) error {
-	return nil
-}
-func (m *mockTemplateSourceRepo) CountByTenant(_ context.Context, _ shared.ID) (int, error) {
-	return 0, nil
-}
 
 // =============================================================================
 // Mock: tool.Repository
@@ -795,12 +757,6 @@ func (m *mockToolRepo) addTool(name string, active bool) {
 // Mock: TemplateSyncer
 // =============================================================================
 
-type mockTemplateSyncer struct{}
-
-func (m *mockTemplateSyncer) SyncSource(_ context.Context, _ *templatesource.TemplateSource) (*scanservice.TemplateSyncResult, error) {
-	return &scanservice.TemplateSyncResult{Success: true}, nil
-}
-
 // =============================================================================
 // Mock: SensorSelector
 // =============================================================================
@@ -844,6 +800,11 @@ func (m *mockSensorSelector) SelectSensor(_ context.Context, _ scanservice.Selec
 
 type mockSecurityValidator struct {
 	cronErr error
+	// refuseConfigKey, when set, makes ValidateScannerConfig refuse a
+	// config holding that key (stands in for the dangerous-key checks).
+	refuseConfigKey string
+	// configChecks counts the ValidateScannerConfig calls.
+	configChecks int
 }
 
 func (m *mockSecurityValidator) ValidateIdentifier(_ string, _ int, _ string) *scanservice.ValidationResult {
@@ -854,7 +815,11 @@ func (m *mockSecurityValidator) ValidateIdentifiers(_ []string, _ int, _ string)
 	return &scanservice.ValidationResult{Valid: true}
 }
 
-func (m *mockSecurityValidator) ValidateScannerConfig(_ context.Context, _ shared.ID, _ map[string]any) *scanservice.ValidationResult {
+func (m *mockSecurityValidator) ValidateScannerConfig(_ context.Context, _ shared.ID, cfg map[string]any) *scanservice.ValidationResult {
+	m.configChecks++
+	if _, bad := cfg[m.refuseConfigKey]; m.refuseConfigKey != "" && bad {
+		return &scanservice.ValidationResult{Valid: false, Errors: []scanservice.ValidationError{{Field: m.refuseConfigKey, Message: "refused key"}}}
+	}
 	return &scanservice.ValidationResult{Valid: true}
 }
 
@@ -921,9 +886,7 @@ func newTestScanService(opts ...scanservice.ServiceOption) (*scanservice.Service
 		&mockStepRunRepo{},
 		deps.commandRepo,
 		&mockScannerTemplateRepo{},
-		&mockTemplateSourceRepo{},
 		deps.toolRepo,
-		&mockTemplateSyncer{},
 		deps.sensorSelector,
 		deps.secValidator,
 		log,

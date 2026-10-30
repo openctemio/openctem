@@ -31,6 +31,25 @@ describe('i18n namespace files', () => {
     })
   }
 
+  // Sorted keys spread new text over a file, so parallel pull requests rarely
+  // touch the same lines; scripts/i18n-json.mjs merges the rest key by key.
+  it('every catalog is written with sorted keys (node web/scripts/i18n-json.mjs sort)', () => {
+    const off: string[] = []
+    for (const locale of Object.keys(locales)) {
+      for (const ns of filesOf(locale)) {
+        const text = readFileSync(join(dir, locale, `${ns}.json`), 'utf8')
+        const raw = JSON.parse(text) as Dictionary
+        const sorted = Object.fromEntries(
+          Object.keys(raw)
+            .sort()
+            .map((k) => [k, raw[k]])
+        )
+        if (JSON.stringify(sorted, null, 2) + '\n' !== text) off.push(`${locale}/${ns}.json`)
+      }
+    }
+    expect(off, `not sorted; run: node web/scripts/i18n-json.mjs sort`).toEqual([])
+  })
+
   it('en and vi have the same namespaces and the same keys in each', () => {
     expect(filesOf('vi')).toEqual(filesOf('en'))
     for (const ns of filesOf('en')) {

@@ -67,6 +67,11 @@ import { FindingProvenanceSection } from './detail/finding-provenance-section'
 import { FindingIssueGroupSection } from './detail/finding-issue-group-section'
 import { FindingIdentitySection } from './detail/finding-identity-section'
 import { FindingTypePanel } from './detail/finding-type-panel'
+import {
+  FindingCodeLocation,
+  codeLocationOf,
+  showDrawerCodeLocation,
+} from './detail/finding-code-location'
 import { FindingIntelSection } from './detail/finding-intel-section'
 import { FindingRetestSection } from './detail/finding-retest'
 import { VerificationPanel } from './detail/verification-panel'
@@ -338,8 +343,15 @@ export function FindingDetailDrawer({
             {!taskNav && <FindingTaskBand findingId={detail.id} />}
             <FindingFixCard finding={detail} compact onOpenPlan={() => openPage('remediation')} />
             <DetailSections>
-              <FindingTypePanel finding={detail} onOpenTrace={() => openPage('attack-path')} />
+              <FindingTypePanel
+                finding={detail}
+                onOpenTrace={() => openPage('attack-path')}
+                onOpenEvidence={() => openPage('evidence')}
+              />
               <FindingProperties finding={detail} triage={triage} hideTriage />
+              {showDrawerCodeLocation(detail) && (
+                <FindingCodeLocation location={codeLocationOf(detail)} compact />
+              )}
               <FindingIntelSection finding={detail} />
               <FindingProvenanceSection finding={detail} />
               <FindingIdentitySection findingId={detail.id} />

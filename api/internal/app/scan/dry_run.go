@@ -102,6 +102,10 @@ type DryRunRouting struct {
 	Reason     string
 	SensorID   string
 	SensorName string
+	// TenantSensor: one of the organization's own sensors could take the
+	// job now (online, or online and busy), whatever the preference. A scan
+	// form offers "run on my sensor" only then.
+	TenantSensor bool
 }
 
 // DryRunTargets answers what the gate would do with each target and asset
@@ -142,16 +146,18 @@ func dryRunPreference(p string) string {
 }
 
 // dryRunProof refuses the allowed targets that need proof and lack it, when
-// the platform requires proof: platform sensors need it, intrusive probes
-// need it on any sensor. In auto mode a job with an unproven target runs on
-// the tenant's own sensor (the trigger's rule); only without one does the
-// target need proof. It also fills routing.
+// the platform requires proof. Proof is for jobs that run on platform
+// sensors, which send from the operator's addresses: a job on the
+// organization's own sensor needs none, at any tier (an intrusive probe is
+// governed by the scope entry's tier ceiling). In auto mode a job with an
+// unproven target runs on the tenant's own sensor (the trigger's rule); only
+// without one do those targets need proof, because the job never falls back
+// to platform sensors for an unproven target. It also fills routing.
 func (s *Service) dryRunProof(ctx context.Context, in DryRunInput, checked, allowed []string, routing *DryRunRouting,
 	set func(string, func(*DryRunResult)),
 ) ([]string, error) {
-	intrusive := in.Tier >= int(scopedom.TierIntrusive)
 	var unproven map[string]bool
-	if s.platformNeedsProof(ctx) && len(allowed) > 0 && (in.SensorPreference != prefTenant || intrusive) {
+	if s.platformNeedsProof(ctx) && len(allowed) > 0 && in.SensorPreference != prefTenant {
 		missing, err := s.unverified(ctx, in.TenantID, allowed)
 		if err != nil {
 			return nil, fmt.Errorf("proof check failed: %w", err)
@@ -162,21 +168,29 @@ func (s *Service) dryRunProof(ctx context.Context, in DryRunInput, checked, allo
 		}
 	}
 	s.decideDryRunRouting(ctx, in, checked, len(unproven) > 0, routing)
-	if len(unproven) == 0 || (!intrusive && in.SensorPreference != prefPlatform && routing.RunsOn == RoutingTenant) {
+	if len(unproven) == 0 || routing.RunsOn == RoutingTenant {
 		return allowed, nil
+	}
+	why := proofReasonNoSensor
+	if routing.Preference == prefPlatform {
+		why = proofReasonPlatform
 	}
 	kept := allowed[:0:0]
 	for _, t := range allowed {
 		if unproven[t] {
-			set(t, func(r *DryRunResult) {
-				r.Code, r.Reason = scopedom.RefusalProofRequired, scopedom.RefusalMessages[scopedom.RefusalProofRequired]
-			})
+			set(t, func(r *DryRunResult) { r.Code, r.Reason = scopedom.RefusalProofRequired, why })
 			continue
 		}
 		kept = append(kept, t)
 	}
 	return kept, nil
 }
+
+// Why an unproven target is refused (the dry run's reason for proof_required).
+const (
+	proofReasonPlatform = "Platform sensors need a verified domain of your organization. Verify the domain, or run this scan on your own sensor."
+	proofReasonNoSensor = "No sensor of yours can run this scan, and platform sensors need a verified domain of your organization. Verify the domain, or connect a sensor."
+)
 
 func (s *Service) dryRunResults(ctx context.Context, in DryRunInput, routing *DryRunRouting) ([]DryRunResult, error) {
 	targets := dedupeTargets(in.Targets)
@@ -245,7 +259,9 @@ func (s *Service) dryRunResults(ctx context.Context, in DryRunInput, routing *Dr
 	// 3. The dispatch gate: validator, exclusions, ownership and authority,
 	// zones.
 	tier := scopedom.Tier(min(max(in.Tier, 0), int(scopedom.TierIntrusive)))
-	res, err := s.ResolveDispatchTargets(ctx, DispatchTargetsInput{TenantID: in.TenantID, Targets: remaining, Assets: dispatchAssets, DryRun: true, Tier: &tier})
+	// Where the job would run decides whether ownership confirmation applies.
+	place := s.placementFor(ctx, in.TenantID, scan.SensorPreference(dryRunPreference(in.SensorPreference)), false, false, scannerTools(in.Tool)...)
+	res, err := s.ResolveDispatchTargets(ctx, DispatchTargetsInput{TenantID: in.TenantID, Targets: remaining, Assets: dispatchAssets, DryRun: true, Tier: &tier, Placement: place})
 	if err != nil {
 		return nil, err
 	}
@@ -258,10 +274,10 @@ func (s *Service) dryRunResults(ctx context.Context, in DryRunInput, routing *Dr
 		set(rt.Target, func(r *DryRunResult) { r.Code, r.Reason, r.Resolved = rt.Code, rt.Reason, rt.Resolved })
 	}
 
-	// 4. Proof, when the platform requires it: platform sensors need it,
-	// intrusive probes need it on any sensor. In auto mode a job with an
-	// unproven target runs on the tenant's own sensor (the trigger's rule);
-	// only without one does the target need proof.
+	// 4. Proof, when the platform requires it: platform sensors need it, the
+	// organization's own sensors do not. In auto mode a job with an unproven
+	// target runs on the tenant's own sensor (the trigger's rule); only
+	// without one does the target need proof.
 	allowed, err := s.dryRunProof(ctx, in, remaining, res.Allowed, routing, set)
 	if err != nil {
 		return nil, err
@@ -368,14 +384,17 @@ func dedupeIDs(in []shared.ID) []shared.ID {
 // runs).
 func (s *Service) decideDryRunRouting(ctx context.Context, in DryRunInput, checked []string, needsProof bool, routing *DryRunRouting) {
 	routing.Preference = dryRunPreference(in.SensorPreference)
-	if routing.Preference == prefPlatform {
-		routing.RunsOn, routing.Reason = RoutingPlatform, RoutingReasonPlatform
-		return
-	}
 	if s.sensorSelector == nil {
+		if routing.Preference == prefPlatform {
+			routing.RunsOn, routing.Reason = RoutingPlatform, RoutingReasonPlatform
+			return
+		}
 		routing.RunsOn, routing.Reason = RoutingWaits, RoutingReasonNoTenantSensor
 		return
 	}
+	// The organization's own sensors, looked up for every preference: a
+	// platform-only scan still says whether "run on my sensor" would help.
+	// The selector is scoped to the caller's tenant.
 	req := SelectSensorRequest{TenantID: in.TenantID, Tool: in.Tool, Mode: SelectTenantFirst, AllowQueue: true}
 	if in.Tool != "" {
 		req.Capabilities = []string{in.Tool}
@@ -383,10 +402,18 @@ func (s *Service) decideDryRunRouting(ctx context.Context, in DryRunInput, check
 	res, err := s.sensorSelector.SelectSensor(ctx, req)
 	if err != nil {
 		s.logger.Warn("scope check: sensor lookup failed", "error", err)
+		res = nil
+	}
+	own := res != nil && res.Sensor != nil && !res.IsPlatform
+	routing.TenantSensor = own || (res != nil && res.TenantBusy)
+	if routing.Preference == prefPlatform {
+		routing.RunsOn, routing.Reason = RoutingPlatform, RoutingReasonPlatform
+		return
+	}
+	if err != nil {
 		routing.RunsOn, routing.Reason = RoutingWaits, RoutingReasonNoTenantSensor
 		return
 	}
-	own := res != nil && res.Sensor != nil && !res.IsPlatform
 	switch {
 	case own:
 		routing.RunsOn, routing.SensorID, routing.SensorName = RoutingTenant, res.Sensor.ID.String(), res.Sensor.Name

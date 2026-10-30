@@ -35,9 +35,9 @@ func (r *SLAPolicyRepository) Create(ctx context.Context, policy *sla.Policy) er
 			critical_days, high_days, medium_days, low_days, info_days,
 			warning_threshold_percent, escalation_enabled, escalation_config,
 			is_active, created_at, updated_at,
-			p0_days, p1_days, p2_days, p3_days
+			p0_days, p1_days, p2_days, p3_days, kev_cap_days
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
@@ -62,6 +62,7 @@ func (r *SLAPolicyRepository) Create(ctx context.Context, policy *sla.Policy) er
 		policy.P1Days(),
 		policy.P2Days(),
 		policy.P3Days(),
+		policy.KEVCapDays(),
 	)
 
 	if err != nil {
@@ -165,7 +166,7 @@ func (r *SLAPolicyRepository) updateExec(ctx context.Context, ex sqlExecer, poli
 			critical_days = $5, high_days = $6, medium_days = $7, low_days = $8, info_days = $9,
 			warning_threshold_percent = $10, escalation_enabled = $11, escalation_config = $12,
 			is_active = $13, updated_at = $14,
-			p0_days = $16, p1_days = $17, p2_days = $18, p3_days = $19
+			p0_days = $16, p1_days = $17, p2_days = $18, p3_days = $19, kev_cap_days = $20
 		WHERE id = $1 AND tenant_id = $15
 	`
 
@@ -189,6 +190,7 @@ func (r *SLAPolicyRepository) updateExec(ctx context.Context, ex sqlExecer, poli
 		policy.P1Days(),
 		policy.P2Days(),
 		policy.P3Days(),
+		policy.KEVCapDays(),
 	)
 
 	if err != nil {
@@ -228,6 +230,18 @@ func (r *SLAPolicyRepository) Delete(ctx context.Context, tenantID, id shared.ID
 	return nil
 }
 
+// HasAssetOverride reports whether the tenant has an active asset-specific policy.
+func (r *SLAPolicyRepository) HasAssetOverride(ctx context.Context, tenantID shared.ID) (bool, error) {
+	var has bool
+	err := r.db.QueryRowContext(ctx,
+		`SELECT EXISTS (SELECT 1 FROM sla_policies WHERE tenant_id = $1 AND asset_id IS NOT NULL AND is_active = true)`,
+		tenantID.String()).Scan(&has)
+	if err != nil {
+		return false, fmt.Errorf("failed to check asset SLA overrides: %w", err)
+	}
+	return has, nil
+}
+
 // ListByTenant returns all policies for a tenant.
 func (r *SLAPolicyRepository) ListByTenant(ctx context.Context, tenantID shared.ID) ([]*sla.Policy, error) {
 	query := r.selectQuery() + " WHERE tenant_id = $1 ORDER BY is_default DESC, name ASC"
@@ -261,7 +275,7 @@ func (r *SLAPolicyRepository) selectQuery() string {
 			critical_days, high_days, medium_days, low_days, info_days,
 			warning_threshold_percent, escalation_enabled, escalation_config,
 			is_active, created_at, updated_at,
-			p0_days, p1_days, p2_days, p3_days
+			p0_days, p1_days, p2_days, p3_days, kev_cap_days
 		FROM sla_policies
 	`
 }
@@ -301,6 +315,7 @@ func (r *SLAPolicyRepository) doScan(scan func(dest ...any) error) (*sla.Policy,
 		createdAt           time.Time
 		updatedAt           time.Time
 		p0, p1, p2, p3      sql.NullInt64
+		kevCapDays          int
 	)
 
 	err := scan(
@@ -308,7 +323,7 @@ func (r *SLAPolicyRepository) doScan(scan func(dest ...any) error) (*sla.Policy,
 		&criticalDays, &highDays, &mediumDays, &lowDays, &infoDays,
 		&warningThresholdPct, &escalationEnabled, &escalationConfig,
 		&isActive, &createdAt, &updatedAt,
-		&p0, &p1, &p2, &p3,
+		&p0, &p1, &p2, &p3, &kevCapDays,
 	)
 	if err != nil {
 		return nil, err
@@ -357,7 +372,7 @@ func (r *SLAPolicyRepository) doScan(scan func(dest ...any) error) (*sla.Policy,
 		isActive,
 		createdAt,
 		updatedAt,
-	).WithPriorityDays(nullDays(p0), nullDays(p1), nullDays(p2), nullDays(p3)), nil
+	).WithPriorityDays(nullDays(p0), nullDays(p1), nullDays(p2), nullDays(p3)).WithKEVCapDays(kevCapDays), nil
 }
 
 // nullDays maps a NULL priority-days column to 0, which WithPriorityDays

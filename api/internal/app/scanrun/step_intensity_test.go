@@ -25,7 +25,7 @@ func TestStepAboveIntensity_SkippedNeverDispatched(t *testing.T) {
 	tpl.Steps[0].Capabilities = []string{"resolve.dns"}
 	tpl.Steps[1].Capabilities = []string{"probe.http"}
 
-	if err := s.OnStepCompleted(context.Background(), run.ID.String(), "a", 0, nil); err != nil {
+	if err := s.OnStepCompleted(context.Background(), run.TenantID, run.ID.String(), "a", 0, nil); err != nil {
 		t.Fatal(err)
 	}
 	if len(cmds.created) != 0 {

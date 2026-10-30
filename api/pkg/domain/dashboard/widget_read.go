@@ -57,6 +57,9 @@ type RankItem struct {
 	SortAt        *time.Time
 	SLADeadline   *time.Time
 	KEV           bool
+	// EPSS is the finding's exploitation probability (0 to 1), nil when the
+	// feed has no score for it.
+	EPSS *float64
 	// Pentest marks a pentest finding; CampaignID is its campaign (zero
 	// when it has none). Organization lists keep them so the viewer's
 	// campaign membership can be applied on read.
@@ -111,6 +114,88 @@ type FactReader interface {
 	// VisibleAssets keeps the ids that are assets of the tenant, not
 	// deleted, not program-only and inside the scope.
 	VisibleAssets(ctx context.Context, scope ReadScope, ids []shared.ID) (map[shared.ID]bool, error)
+
+	// Outcomes counts the findings in scope by where they went: in progress
+	// now, and fixed, accepted and false positive since the given time
+	// (resolved_at), with the findings list's rules (campaign rule applied).
+	Outcomes(ctx context.Context, scope ReadScope, since time.Time) (OutcomeCounts, error)
+	// OrgIntake sums the organization's receipts with activity since the
+	// given time, per source group and tool. Receipts are organization-wide
+	// (tool volumes are not asset-scoped): callers use it for an
+	// organization read only.
+	OrgIntake(ctx context.Context, tenantID shared.ID, since time.Time) ([]IntakeRow, error)
+	// TopFix returns the proposed remediation suggestion that clears the most
+	// risk points over its members that are open and inside the scope (asset
+	// rule, data scope, campaign rule), pentest findings left out; nil when no
+	// suggestion has such a member.
+	TopFix(ctx context.Context, scope ReadScope) (*FixLever, error)
+}
+
+// FixLever is one remediation suggestion re-counted in a read's scope:
+// Findings open members, Assets their distinct assets, PriorityOpen those of
+// class P0 or P1, Points their risk points.
+type FixLever struct {
+	SuggestionID shared.ID
+	Title        string
+	Findings     int64
+	Assets       int64
+	PriorityOpen int64
+	Points       int64
+}
+
+// RiskPoints is the risk weight of n open findings, the same formula as
+// the remediation risk points: by priority class (P0 8, P1 4, P2 2, P3 1),
+// or by severity for an unclassified finding (critical 4, high 2, medium and
+// low 1).
+func RiskPoints(priorityClass, severity string, n int64) int64 {
+	switch priorityClass {
+	case "P0":
+		return 8 * n
+	case "P1":
+		return 4 * n
+	case "P2":
+		return 2 * n
+	case "P3":
+		return n
+	}
+	switch severity {
+	case "critical":
+		return 4 * n
+	case "high":
+		return 2 * n
+	case "medium", "low":
+		return n
+	}
+	return 0
+}
+
+// OutcomeCounts are the findings of a scope by outcome.
+type OutcomeCounts struct {
+	InProgress    int64
+	Fixed         int64
+	Accepted      int64
+	FalsePositive int64
+}
+
+// IntakeRow is the receipts of one source (a source group and a tool) in a
+// window: their sums, the latest receipt and the median time between
+// receipts (nil with fewer than three).
+type IntakeRow struct {
+	Origin        string
+	Tool          string
+	Receipts      int64
+	Received      int64
+	Created       int64
+	StillDetected int64
+	Reopened      int64
+	Closed        int64
+	Skipped       int64
+	Failed        int64
+	Suppressed    int64
+	LastAt        time.Time
+	LastStatus    string
+	LastReceiptID shared.ID
+	MedianGap     *time.Duration
 }
 
 // CrownJewelCounts are the crown jewels of a scope.

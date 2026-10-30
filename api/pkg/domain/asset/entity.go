@@ -619,6 +619,12 @@ func (a *Asset) MarkSeen() {
 // the report arrived, so the store can keep the newer of two observations
 // whatever order they arrive in. A time in the future counts as now.
 func (a *Asset) MarkSeenAt(observedAt time.Time) {
+	a.markSeenAt(observedAt, true)
+}
+
+// markSeenAt records the sighting; a stale asset is active again, and an
+// inactive one too when reviveInactive is set.
+func (a *Asset) markSeenAt(observedAt time.Time, reviveInactive bool) {
 	now := time.Now().UTC()
 	if observedAt.IsZero() || observedAt.After(now) {
 		observedAt = now
@@ -629,7 +635,7 @@ func (a *Asset) MarkSeenAt(observedAt time.Time) {
 	if a.manualStatusOverride || a.status == StatusArchived {
 		return
 	}
-	if a.status == StatusStale || a.status == StatusInactive {
+	if a.status == StatusStale || (reviveInactive && a.status == StatusInactive) {
 		a.status = StatusActive
 		a.lifecyclePausedUntil = nil
 	}
@@ -640,6 +646,10 @@ func (a *Asset) MarkSeenAt(observedAt time.Time) {
 // delivered late): the observation time is recorded as the asset's, so the
 // store keeps the newer one and the older one's properties only fill gaps,
 // but an older observation never reactivates a stale or inactive asset.
+//
+// It is the ingest path, whose store upsert revives a stale asset only: an
+// inactive one (a closed port, a person's decision) stays inactive, so the
+// asset in memory, its "recovered" history and the stored row agree.
 func (a *Asset) ObserveAt(observedAt time.Time) {
 	now := time.Now().UTC()
 	if observedAt.IsZero() || observedAt.After(now) {
@@ -650,7 +660,7 @@ func (a *Asset) ObserveAt(observedAt time.Time) {
 		a.updatedAt = now
 		return
 	}
-	a.MarkSeenAt(observedAt)
+	a.markSeenAt(observedAt, false)
 }
 
 // MarkStale is called by the lifecycle worker to flag an asset that

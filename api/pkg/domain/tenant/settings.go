@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	_ "time/tzdata" // isValidTimezone must not depend on the host zone database
 
 	"github.com/openctemio/openctem/api/pkg/domain/branch"
 	"github.com/openctemio/openctem/api/pkg/domain/licensepolicy"
@@ -59,6 +60,8 @@ type Settings struct {
 	Dashboards DashboardSettings `json:"dashboards,omitempty"`
 	// EmergingThreats is the emerging-threat alert policy (RFC-117).
 	EmergingThreats EmergingThreatSettings `json:"emerging_threats,omitempty"`
+	// FindingViews are the findings work-view defaults.
+	FindingViews FindingViewSettings `json:"finding_views,omitempty"`
 }
 
 // FindingCorrelationSettings are the per-organization kill switches of
@@ -331,9 +334,9 @@ const (
 	// If SMTP is not configured, registered users will be unable to verify and
 	// thus unable to log in — operator must configure SMTP first.
 	EmailVerificationAlways EmailVerificationMode = "always"
-	// EmailVerificationNever skips verification for all users in this tenant.
-	// Use only for closed/internal deployments. Opens the door to account
-	// hijacking via email spoofing.
+	// EmailVerificationNever is retired and no longer accepted on write.
+	// Verification belongs to the account, so one organization cannot skip it
+	// for the others the account belongs to; a stored "never" is read as auto.
 	EmailVerificationNever EmailVerificationMode = "never"
 )
 
@@ -666,6 +669,12 @@ func (s *RiskScoringSettings) Validate() error {
 			return fmt.Errorf("%w: weight '%s' must be 0-100, got %d", shared.ErrValidation, name, w)
 		}
 	}
+	// With CTEM points off the CTEM weight is shared out over the other three
+	// components; when they all weigh 0 there is nothing to share it with and
+	// every asset would score 0.
+	if !s.CTEMPoints.Enabled && s.Weights.Exposure+s.Weights.Criticality+s.Weights.Findings == 0 {
+		return fmt.Errorf("%w: enable CTEM points or give exposure, criticality or findings a weight", shared.ErrValidation)
+	}
 	for name, v := range map[string]int{
 		"public": s.ExposureScores.Public, "restricted": s.ExposureScores.Restricted,
 		"private": s.ExposureScores.Private, "isolated": s.ExposureScores.Isolated,
@@ -951,27 +960,17 @@ func SettingsFromMap(m map[string]any) Settings {
 // Validation Helpers
 // =============================================================================
 
-// Valid timezones (simplified list - in production, use time.LoadLocation)
-var validTimezones = map[string]bool{
-	"UTC":                 true,
-	"Asia/Ho_Chi_Minh":    true,
-	"Asia/Bangkok":        true,
-	"Asia/Singapore":      true,
-	"Asia/Tokyo":          true,
-	"Asia/Seoul":          true,
-	"Asia/Shanghai":       true,
-	"Asia/Hong_Kong":      true,
-	"Europe/London":       true,
-	"Europe/Paris":        true,
-	"Europe/Berlin":       true,
-	"America/New_York":    true,
-	"America/Los_Angeles": true,
-	"America/Chicago":     true,
-	"Australia/Sydney":    true,
-}
-
+// isValidTimezone accepts any IANA time zone name ("Europe/Berlin",
+// "America/Argentina/Buenos_Aires", "UTC"). The zone database is embedded in
+// the binary (time/tzdata), so the answer does not depend on the host. The
+// readers (alert quiet hours, scan approval clocks) load it the same way.
+// "Local" is refused: it would mean the server's own zone.
 func isValidTimezone(tz string) bool {
-	return validTimezones[tz]
+	if tz == "" || tz == "Local" || len(tz) > 64 {
+		return false
+	}
+	_, err := time.LoadLocation(tz)
+	return err == nil
 }
 
 // Valid languages

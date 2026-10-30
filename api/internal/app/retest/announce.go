@@ -24,6 +24,9 @@ const (
 	ChangeFixed ChangeKind = "fixed"
 	// ChangeRegression: a finding closed as fixed was seen again and reopened.
 	ChangeRegression ChangeKind = "regression"
+	// ChangeVerifiedRegression: a finding whose fix a retest or a review had
+	// verified was seen again. The strongest signal: a checked fix failed.
+	ChangeVerifiedRegression ChangeKind = "verified_regression"
 	// ChangeFixRejected: a finding marked fix_applied was still detected.
 	ChangeFixRejected ChangeKind = "fix_rejected"
 )
@@ -56,6 +59,12 @@ type NotificationEnqueuer interface {
 	Enqueue(ctx context.Context, params outbox.EnqueueParams) error
 }
 
+// PeopleNotifier tells the finding's assignee and its watchers about a
+// regression, in the app (*finding.VulnerabilityService).
+type PeopleNotifier interface {
+	NotifyRegression(ctx context.Context, tenantID, findingID shared.ID, verifiedFix bool, detail string)
+}
+
 // ChangeAnnouncer comments on the linked ticket and queues a finding_fixed /
 // finding_reopened notification, which the tenant's notification integrations
 // route by their event filters. Best-effort: a failure is logged, never fails
@@ -64,14 +73,22 @@ type ChangeAnnouncer struct {
 	findings FindingReader
 	tickets  TicketCommenter
 	notify   NotificationEnqueuer
+	people   PeopleNotifier
 	logger   *logger.Logger
 }
+
+// SetPeopleNotifier wires the in-app notice to the assignee and watchers of a
+// regressed finding (optional).
+func (a *ChangeAnnouncer) SetPeopleNotifier(p PeopleNotifier) { a.people = p }
 
 // NewChangeAnnouncer wires the announcer. tickets or notify may be nil (that
 // channel is then skipped).
 func NewChangeAnnouncer(findings FindingReader, tickets TicketCommenter, notify NotificationEnqueuer, log *logger.Logger) *ChangeAnnouncer {
 	return &ChangeAnnouncer{findings: findings, tickets: tickets, notify: notify, logger: log.With("component", "finding-change-announcer")}
 }
+
+// eventFindingReopened is the notification event of a regression or a rejected fix.
+const eventFindingReopened = "finding_reopened"
 
 // maxDetail bounds the free text carried into a ticket or notification.
 const maxDetail = 300
@@ -99,6 +116,9 @@ func (a *ChangeAnnouncer) Announce(ctx context.Context, c Change) {
 		if err := a.tickets.CommentOnFinding(ctx, c.TenantID, c.FindingID, body); err != nil {
 			a.logger.Warn("announce: ticket comment failed", "finding_id", c.FindingID.String(), "error", err)
 		}
+	}
+	if a.people != nil && (c.Kind == ChangeRegression || c.Kind == ChangeVerifiedRegression) {
+		a.people.NotifyRegression(ctx, c.TenantID, c.FindingID, c.Kind == ChangeVerifiedRegression, detail)
 	}
 	if a.notify != nil {
 		fid, err := uuid.Parse(c.FindingID.String())
@@ -147,10 +167,12 @@ func changeHeadline(c Change, title string) (string, string) {
 	switch c.Kind {
 	case ChangeFixed:
 		return fmt.Sprintf("Fixed: %q is no longer detected", title), "finding_fixed"
+	case ChangeVerifiedRegression:
+		return fmt.Sprintf("Verified fix regressed: %q was fixed and verified, and is detected again", title), eventFindingReopened
 	case ChangeFixRejected:
-		return fmt.Sprintf("Fix did not hold: %q is still detected", title), "finding_reopened"
+		return fmt.Sprintf("Fix did not hold: %q is still detected", title), eventFindingReopened
 	default:
-		return fmt.Sprintf("Regression: %q was detected again and reopened", title), "finding_reopened"
+		return fmt.Sprintf("Regression: %q was detected again and reopened", title), eventFindingReopened
 	}
 }
 
@@ -182,9 +204,14 @@ func NewScanRegressions(sla RegressionSLA, announce Announcer, log *logger.Logge
 // HandleRegressions implements the ingest regression seam.
 func (h *ScanRegressions) HandleRegressions(ctx context.Context, tenantID shared.ID, reopened []vulnerability.ReopenedFinding, scanner string) {
 	ids := make([]shared.ID, 0, len(reopened))
+	verified := make(map[shared.ID]bool)
 	for _, rf := range reopened {
-		if rf.PreviousStatus == vulnerability.FindingStatusResolved {
+		// A finding that flaps (closed automatically, seen again within days)
+		// reopened without counting as a regression: no new SLA clock, no
+		// announcement.
+		if rf.PreviousStatus == vulnerability.FindingStatusResolved && rf.Class != vulnerability.ReopenSeenAgain {
 			ids = append(ids, rf.ID)
+			verified[rf.ID] = rf.Class == vulnerability.ReopenVerifiedRegression
 		}
 	}
 	if len(ids) == 0 {
@@ -208,6 +235,10 @@ func (h *ScanRegressions) HandleRegressions(ctx context.Context, tenantID shared
 		if scanner != "" {
 			detail += " (" + scanner + ")"
 		}
-		h.announce.Announce(ctx, Change{TenantID: tenantID, FindingID: id, Kind: ChangeRegression, Source: "scan", Detail: detail + "."})
+		kind := ChangeRegression
+		if verified[id] {
+			kind = ChangeVerifiedRegression
+		}
+		h.announce.Announce(ctx, Change{TenantID: tenantID, FindingID: id, Kind: kind, Source: "scan", Detail: detail + "."})
 	}
 }

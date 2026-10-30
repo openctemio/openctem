@@ -333,7 +333,6 @@ POST /api/v1/simulations/{}/run
 POST /api/v1/suppressions
 POST /api/v1/suppressions/{}/approve
 POST /api/v1/suppressions/{}/reject
-POST /api/v1/template-sources/{}/sync
 POST /api/v1/tenants
 POST /api/v1/tenants/{}/invitations
 POST /api/v1/tenants/{}/invitations/{}/resend

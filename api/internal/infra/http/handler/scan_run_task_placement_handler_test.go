@@ -211,3 +211,26 @@ func TestGetRunTaskPlacement_SharedFleet(t *testing.T) {
 		t.Fatalf("shared fleet %q reason %q", got.SharedFleet, got.SharedFleetReason)
 	}
 }
+
+// An egress hold names the proxy pool, to a caller who can read sensors
+// only; the count and code are open to any reader of the run.
+func TestGetRunTaskPlacement_EgressHoldNamesThePool(t *testing.T) {
+	h, f := newPlacementHandler(t)
+	f.p.Sensors[0].Reasons = []string{commanddom.PlacementEgressUnsupported}
+	f.p.Sensors[0].Egress = &commandapp.EgressWait{PoolID: "p1", PoolName: "EU exit"}
+	f.p.Blocking = []commandapp.ReasonCount{{Code: commanddom.PlacementEgressUnsupported, Count: 1}}
+
+	w := httptest.NewRecorder()
+	h.GetRunTaskPlacement(w, placementRequest(f.tenant, f.run.String(), f.task.String()))
+	got := decodePlacement(t, w)
+	if got.Blocking[0].Code != commanddom.PlacementEgressUnsupported || strings.Contains(w.Body.String(), "EU exit") {
+		t.Fatalf("a caller without sensors:read: %s", w.Body)
+	}
+
+	w = httptest.NewRecorder()
+	h.GetRunTaskPlacement(w, placementRequest(f.tenant, f.run.String(), f.task.String(), "sensors:read"))
+	got = decodePlacement(t, w)
+	if p := got.Sensors[0].EgressPool; p == nil || p.ID != "p1" || p.Name != "EU exit" {
+		t.Fatalf("egress pool: %+v", got.Sensors[0])
+	}
+}

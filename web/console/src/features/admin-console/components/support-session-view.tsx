@@ -10,11 +10,10 @@
  */
 
 import { useEffect, useState } from 'react'
-import { Loader2, Search, ShieldAlert } from 'lucide-react'
+import { Loader2, ShieldAlert } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -39,10 +38,11 @@ import {
   DetailHeader,
   DetailSheet,
   ErrorState,
+  ListToolbar,
   SeverityBadge,
 } from '@/features/shared'
 import type { Severity } from '@/features/shared/types/common.types'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { SEVERITY_LEVELS } from '@/lib/severity'
 import { formatSupportTime } from '@/features/support-access/lib/format'
 
@@ -127,25 +127,6 @@ function Pager({
   )
 }
 
-function SearchBox({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const { t } = useTranslation()
-  return (
-    <div className="relative w-full sm:w-64">
-      <Search
-        className="pointer-events-none absolute start-2.5 top-2.5 size-4 text-muted-foreground"
-        aria-hidden="true"
-      />
-      <Input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={t('admin.support.search', 'Search by name')}
-        aria-label={t('admin.support.search', 'Search by name')}
-        className="ps-8"
-      />
-    </div>
-  )
-}
-
 function OverviewTab({ session, onEnded }: { session: SupportSessionState; onEnded: () => void }) {
   const { t } = useTranslation()
   const { data, error, isLoading } = useSupportOverview(session.id)
@@ -199,7 +180,7 @@ function FindingsTab({ session, onEnded }: { session: SupportSessionState; onEnd
   const [status, setStatus] = useState<string>('open')
   const [page, setPage] = useState(1)
   const [selected, setSelected] = useState<string | null>(null)
-  const debounced = useDebounce(search, 300)
+  const debounced = useSearchQuery(search).term
   const { data, error, isLoading } = useSupportFindings(session.id, {
     search: debounced,
     severity: severity === ALL ? undefined : severity,
@@ -211,60 +192,65 @@ function FindingsTab({ session, onEnded }: { session: SupportSessionState; onEnd
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-        <SearchBox
-          value={search}
-          onChange={(v) => {
+      <ListToolbar
+        search={{
+          value: search,
+          onChange: (v) => {
             setSearch(v)
             setPage(1)
-          }}
-        />
-        <Select
-          value={severity}
-          onValueChange={(v) => {
-            setSeverity(v)
-            setPage(1)
-          }}
-        >
-          <SelectTrigger
-            className="w-full sm:w-40"
-            aria-label={t('admin.support.severity', 'Severity')}
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>
-              {t('admin.support.allSeverities', 'All severities')}
-            </SelectItem>
-            {SEVERITIES.map((s) => (
-              <SelectItem key={s} value={s}>
-                {t(`admin.support.severity.${s}`, s)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select
-          value={status}
-          onValueChange={(v) => {
-            setStatus(v)
-            setPage(1)
-          }}
-        >
-          <SelectTrigger
-            className="w-full sm:w-44"
-            aria-label={t('admin.support.status', 'Status')}
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {FINDING_STATUSES.map((s) => (
-              <SelectItem key={s} value={s}>
-                {t(`admin.support.findingStatus.${s}`, s)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+          },
+          placeholder: t('admin.support.search', 'Search by name…'),
+        }}
+        start={
+          <>
+            <Select
+              value={severity}
+              onValueChange={(v) => {
+                setSeverity(v)
+                setPage(1)
+              }}
+            >
+              <SelectTrigger
+                className="w-full sm:w-40"
+                aria-label={t('admin.support.severity', 'Severity')}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>
+                  {t('admin.support.allSeverities', 'All severities')}
+                </SelectItem>
+                {SEVERITIES.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {t(`admin.support.severity.${s}`, s)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={status}
+              onValueChange={(v) => {
+                setStatus(v)
+                setPage(1)
+              }}
+            >
+              <SelectTrigger
+                className="w-full sm:w-44"
+                aria-label={t('admin.support.status', 'Status')}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {FINDING_STATUSES.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {t(`admin.support.findingStatus.${s}`, s)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </>
+        }
+      />
       {error ? (
         <ReadError error={error} />
       ) : isLoading && !data ? (
@@ -405,7 +391,7 @@ function AssetsTab({ session, onEnded }: { session: SupportSessionState; onEnded
   const [status, setStatus] = useState<string>(ALL)
   const [page, setPage] = useState(1)
   const [selected, setSelected] = useState<string | null>(null)
-  const debounced = useDebounce(search, 300)
+  const debounced = useSearchQuery(search).term
   const { data, error, isLoading } = useSupportAssets(session.id, {
     search: debounced,
     status: status === ALL ? '' : status,
@@ -416,36 +402,41 @@ function AssetsTab({ session, onEnded }: { session: SupportSessionState; onEnded
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-        <SearchBox
-          value={search}
-          onChange={(v) => {
+      <ListToolbar
+        search={{
+          value: search,
+          onChange: (v) => {
             setSearch(v)
             setPage(1)
-          }}
-        />
-        <Select
-          value={status}
-          onValueChange={(v) => {
-            setStatus(v)
-            setPage(1)
-          }}
-        >
-          <SelectTrigger
-            className="w-full sm:w-44"
-            aria-label={t('admin.support.status', 'Status')}
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {ASSET_STATUSES.map((s) => (
-              <SelectItem key={s} value={s}>
-                {t(`admin.support.assetStatus.${s}`, s)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+          },
+          placeholder: t('admin.support.search', 'Search by name…'),
+        }}
+        start={
+          <>
+            <Select
+              value={status}
+              onValueChange={(v) => {
+                setStatus(v)
+                setPage(1)
+              }}
+            >
+              <SelectTrigger
+                className="w-full sm:w-44"
+                aria-label={t('admin.support.status', 'Status')}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {ASSET_STATUSES.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {t(`admin.support.assetStatus.${s}`, s)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </>
+        }
+      />
       {error ? (
         <ReadError error={error} />
       ) : isLoading && !data ? (
@@ -606,7 +597,7 @@ export function SupportSessionView({
           <ShieldAlert className="mt-0.5 size-5 shrink-0 text-warning" aria-hidden="true" />
           <div className="min-w-0">
             <p className="font-semibold break-words">
-              {t('admin.support.frame', 'Support session — read-only — ends {time}', {
+              {t('admin.support.frame', 'Support session, read-only, ends {time}', {
                 time: formatSupportTime(session.expiresAt, locale),
               })}
             </p>

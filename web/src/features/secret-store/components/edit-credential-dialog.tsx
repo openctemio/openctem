@@ -9,6 +9,8 @@ import { toast } from 'sonner'
 import { getErrorMessage } from '@/lib/api/error-handler'
 
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 import {
   Dialog,
   DialogContent,
@@ -93,6 +95,8 @@ export function EditCredentialDialog({
   onSuccess,
 }: EditCredentialDialogProps) {
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({})
+  const [pendingRotation, setPendingRotation] = useState<FormData | null>(null)
+  const { t } = useTranslation()
 
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
@@ -127,7 +131,7 @@ export function EditCredentialDialog({
     setShowSecrets((prev) => ({ ...prev, [field]: !prev[field] }))
   }
 
-  const onSubmit = async (data: FormData) => {
+  const onSubmit = async (data: FormData, confirmedRotation = false) => {
     // Metadata: send only what changed. Clearing is explicit ('' for the
     // description, null for the expiry), never a silently dropped field.
     const request: UpdateSecretStoreCredentialRequest = {}
@@ -214,6 +218,12 @@ export function EditCredentialDialog({
     const hasRotation = Object.keys(rotation).length > 0
     if (!hasMetadata && !hasRotation) {
       toast.info('No changes to save')
+      return
+    }
+
+    // A new secret replaces the stored one: confirm before it is sent.
+    if (hasRotation && !confirmedRotation) {
+      setPendingRotation(data)
       return
     }
 
@@ -625,7 +635,7 @@ export function EditCredentialDialog({
         </DialogHeader>
 
         <Form {...form}>
-          <DialogForm onSubmit={form.handleSubmit(onSubmit)}>
+          <DialogForm onSubmit={form.handleSubmit((data) => onSubmit(data))}>
             {/* Basic Info */}
             <DialogBody className="space-y-6">
               <div className="space-y-4">
@@ -711,6 +721,19 @@ export function EditCredentialDialog({
           </DialogForm>
         </Form>
       </DialogContent>
+      <ConfirmDialog
+        open={pendingRotation !== null}
+        onOpenChange={(next) => !next && setPendingRotation(null)}
+        destructive
+        title={t('confirm.secretStore.rotateTitle', undefined, { name: credential.name })}
+        desc={t('confirm.secretStore.rotateDesc')}
+        confirmText={t('confirm.secretStore.rotateBtn')}
+        handleConfirm={async () => {
+          const data = pendingRotation
+          setPendingRotation(null)
+          if (data) await onSubmit(data, true)
+        }}
+      />
     </Dialog>
   )
 }

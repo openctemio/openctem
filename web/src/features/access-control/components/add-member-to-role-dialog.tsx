@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog, ConfirmSample } from '@/components/confirm-dialog'
 import { Input } from '@/components/ui/input'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -65,6 +66,14 @@ export function AddMemberToRoleDialog({
   // State
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set())
+  const [confirming, setConfirming] = useState(false)
+  const selectedNames = useMemo(
+    () =>
+      tenantMembers
+        .filter((m) => selectedUserIds.has(m.user_id))
+        .map((m) => m.name || m.email || m.user_id),
+    [tenantMembers, selectedUserIds]
+  )
 
   // Filter available members (exclude those already in role)
   const existingMemberIds = useMemo(() => {
@@ -107,6 +116,7 @@ export function AddMemberToRoleDialog({
 
   // Handle add members using bulk endpoint
   const handleAddMembers = async () => {
+    setConfirming(false)
     if (!role || selectedUserIds.size === 0) return
 
     try {
@@ -292,7 +302,10 @@ export function AddMemberToRoleDialog({
           <Button variant="ghost" onClick={() => handleOpenChange(false)}>
             {t('common.cancel', 'Cancel')}
           </Button>
-          <Button onClick={handleAddMembers} disabled={isAssigning || selectedUserIds.size === 0}>
+          <Button
+            onClick={() => setConfirming(true)}
+            disabled={isAssigning || selectedUserIds.size === 0}
+          >
             {isAssigning ? (
               <Loader2 className="me-2 h-4 w-4 animate-spin" />
             ) : (
@@ -308,6 +321,25 @@ export function AddMemberToRoleDialog({
           </Button>
         </DialogFooter>
       </DialogContent>
+      <ConfirmDialog
+        open={confirming}
+        onOpenChange={setConfirming}
+        title={t('org.roleAddMember.confirmTitle', 'Add {count} members to {role}?', {
+          count: selectedUserIds.size,
+          role: role?.name ?? '',
+        })}
+        desc={t(
+          'org.roleAddMember.confirmDesc',
+          'They get every permission this role has ({permissions} permissions) at once, and the change is recorded in the audit log. You can remove them from the role later.',
+          { permissions: role?.permission_count ?? 0 }
+        )}
+        confirmText={t('org.roleAddMember.confirmButton', 'Add {count} members', {
+          count: selectedUserIds.size,
+        })}
+        handleConfirm={handleAddMembers}
+      >
+        <ConfirmSample names={selectedNames} total={selectedUserIds.size} />
+      </ConfirmDialog>
     </Dialog>
   )
 }

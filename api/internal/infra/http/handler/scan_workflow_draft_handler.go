@@ -197,6 +197,7 @@ func fromAddStepInput(in scanrun.AddStepInput) CreateStepRequest {
 		DependsOn:         in.DependsOn,
 		MaxRetries:        in.MaxRetries,
 		RetryDelaySeconds: in.RetryDelaySeconds,
+		RunPolicy:         in.RunPolicy,
 	}
 	if in.UIPositionX != nil && in.UIPositionY != nil {
 		out.UIPosition = &UIPositionRequest{X: *in.UIPositionX, Y: *in.UIPositionY}

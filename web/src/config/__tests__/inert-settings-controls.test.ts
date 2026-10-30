@@ -25,7 +25,7 @@ const HIDDEN: Array<{ file: string; text: string; why: string }> = [
   {
     file: 'features/organization/components/organization-settings.tsx',
     text: 'Default language',
-    why: 'organization language and timezone have no reader (B6)',
+    why: 'organization language has no reader (B6); the time zone moved to General, where alert hours and scan approval read it',
   },
   {
     file: 'app/(dashboard)/account/preferences/page.tsx',
@@ -41,6 +41,16 @@ const HIDDEN: Array<{ file: string; text: string; why: string }> = [
     file: 'app/(dashboard)/account/notifications/page.tsx',
     text: 'Desktop notifications',
     why: 'no desktop notifications are sent',
+  },
+  {
+    file: 'app/(dashboard)/account/preferences/page.tsx',
+    text: 'htmlFor="timezone"',
+    why: 'a personal time zone saved in the browser that no date formatter read (research 273 D9)',
+  },
+  {
+    file: 'app/(dashboard)/account/preferences/page.tsx',
+    text: 'htmlFor="date-format"',
+    why: 'a personal date and time format that no date formatter read (research 273 D9)',
   },
   {
     file: 'features/asset-lifecycle/components/lifecycle-settings-form.tsx',

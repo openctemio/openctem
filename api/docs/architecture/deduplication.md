@@ -240,15 +240,16 @@ and approvals.
 | `sast_overlap` | same asset and repository path, different rule ids, overlapping line ranges, a shared CWE (`CWE-89`, `cwe-089` and `89` are one) | across assets (a monorepo split into two assets), the same rule, another CWE on the line, disjoint lines |
 | `secret_value` | the same per-tenant keyed hash of the raw secret, in another file or repository | a secret known only by its mask; another tenant. CI-hashed secrets link within one repository (the CI key is per repository) |
 | `vuln_alias` | a finding still stored under its advisory key while another finding of the asset holds the CVE key the feed gives it | across assets; decided when keys change, not released on a sighting |
+| `vuln_asset` | the same canonical CVE on the same asset from different techniques (a version match, a template check, a network scanner import, a package inventory), with agreeing ports (`443/tcp` equals `443/tcp`; a host-level finding agrees with any port) | another asset, another port or CVE, two findings of one kind at one place, a pentest finding |
 
 How it runs:
 
 - **Keys.** After an ingest batch is stored (step 11 of
   `FindingProcessor.processBatch`, `internal/app/ingest/issue_links.go`), the
-  batch's version-2 SAST and secret findings get their link keys
+  batch's version-2 SAST, secret and CVE findings (network, DAST, SCA) get their link keys
   (`pkg/domain/issuelink.Keys`) in `finding_link_keys`: a hash of (asset,
-  path, CWE) with the line range per CWE, or a hash of the secret's keyed
-  hash. Keys are never returned by the API.
+  path, CWE) with the line range per CWE, a hash of the secret's keyed
+  hash, or a hash of (asset, CVE) with the port or `host` as the locator. Keys are never returned by the API.
 - **Groups.** One indexed lookup finds the other holders of the batch's keys;
   `issuelink.PlanLinks` decides the links. A group is a star around its
   primary (the earliest-created finding when it formed); a finding joins the
@@ -268,6 +269,14 @@ How it runs:
   secret in two) writes no `issue_linked` entry, and its unlink entries name
   no id, so a viewer of one repository never learns that another holds the
   same secret.
+- **Technique links** ([RFC-043 §18](../rfcs/RFC-043-deduplication-and-identity.md#18-technique-links-on-one-asset-amendment-2026-10-27)).
+  The matcher calls the same derivation after it creates findings. The
+  earliest finding is the original and is never demoted. An open template
+  check or network scanner report in the group confirms its version match
+  (`metadata.version_match.confirmed_by`): the "potential" P2 cap is lifted
+  and the finding counts on the attack path. A member that joins an open
+  original raises no second "new finding" notification (a higher severity
+  still does). `refingerprint -links` backfills it (dry run, then `-apply`).
 - **Reading.** `GET /api/v1/findings/{id}/issue-links` (`findings:read`)
   lists the members the caller may see, the primary first, with the rule and
   the field names it compared; a member on an asset outside the caller's
@@ -307,12 +316,22 @@ How it runs:
 Many pipelines, sensors and tools upload at once, often the same findings (CI
 re-runs, matrix jobs). The batched writes are deadlock-safe:
 
-- **One lock order.** Every batched write takes its row locks in a stable order:
-  assets by `(tenant, name)` (`UpsertBatch`), new findings by fingerprint
-  (`CreateBatchWithResult`), existing findings by id (`EnrichBatchByFingerprints`
-  reads them `ORDER BY id FOR NO KEY UPDATE`, `UpdateScanIDBatchByFingerprints`
-  locks them the same way in a CTE). Concurrent writers of the same rows queue
-  instead of deadlocking.
+- **One lock order.** Every batched write takes its row locks in one stable order:
+  assets by `(tenant, name)` (`UpsertBatch`), and findings rows by fingerprint
+  in byte order (Go's string `<`, SQL `fingerprint COLLATE "C"`;
+  `finding_lock_order.go`). Fingerprint, because the upsert of new findings
+  (`CreateBatchWithResult`) can order only by what it has before the rows exist:
+  its `ON CONFLICT DO UPDATE` branch locks the rows another upload inserted first
+  in the order of its sorted `VALUES` list. Every other batched writer of findings
+  locks its rows in a CTE first (`SELECT ... ORDER BY fingerprint COLLATE "C"
+  FOR NO KEY UPDATE`) and then updates only rows it holds: enrichment, the
+  sighting update, auto-reopen, snippets, interop data, scanner output, branch
+  backfill, a person's bulk status move and the finding-priority pass (class and
+  version stamp). Branch occurrences are upserted in `(fingerprint, branch)`
+  order. A writer that locked by id or in report order deadlocked with the
+  upsert: Postgres aborted one of them (`40P01`) and the best-effort writers
+  dropped their rows with only a warning. Concurrent writers of the same rows
+  now queue instead.
 - **Enrichment under the lock.** `EnrichBatchByFingerprints` locks the stored rows,
   reads them, merges each sighting (`Finding.EnrichFrom`) and writes them in one
   transaction, so no writer can change a row between the read and the write. The
@@ -332,7 +351,13 @@ Measured with the research/241 harness (20 concurrent uploads of the same 500
 findings to one repository, 3 rounds): before, 7–30 deadlocks per round, 9–17 of
 20 uploads with errors, and 3,000 of 10,000 sightings recorded in one round.
 After, 0 deadlocks, 0 uploads with errors, and every sighting recorded
-(`tests/integration/ingest_concurrent_resighting_test.go`).
+(`tests/integration/ingest_concurrent_resighting_test.go`). The database's own
+deadlock counter stays at 0 with concurrent uploads, priority stamps and bulk
+status moves on the same findings (`tests/integration/ingest_lock_order_test.go`).
+
+A write of branch occurrences that still fails is reported in the upload's
+errors, and the occurrence sweep of that scan is skipped, so the findings it
+saw are never marked as gone from the branch.
 
 ## 2. Entity table
 

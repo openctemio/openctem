@@ -33,7 +33,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { ErrorState, PageHeader } from '@/features/shared'
+import { ErrorState, PageHeader, PageStack } from '@/features/shared'
+import { confirmName } from '@/lib/confirm-name'
 import { usePermissions, Permission } from '@/lib/permissions'
 import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
@@ -117,7 +118,19 @@ export function MappingEditor({ id }: { id: string }) {
   const [importOpen, setImportOpen] = useState(false)
   const [importText, setImportText] = useState('')
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [askDryRunOff, setAskDryRunOff] = useState(false)
   const [tab, setTab] = useState('fields')
+
+  const setDryRun = async (value: boolean) => {
+    try {
+      await mappingApi.setDryRun(id, value)
+      await mutate()
+    } catch (err) {
+      toast.error(
+        getErrorMessage(err, t('ticketMapping.editor.dryRunFailed', 'Could not change dry run'))
+      )
+    }
+  }
 
   useEffect(() => {
     if (base && !dirty) setSpec(normalizeSpec(base.spec))
@@ -266,19 +279,23 @@ export function MappingEditor({ id }: { id: string }) {
   if (isLoading || (!spec && !error)) {
     return (
       <Main>
-        <Skeleton className="h-10 w-80" />
-        <Skeleton className="mt-6 h-96 w-full" />
+        <PageStack>
+          <Skeleton className="h-10 w-80" />
+          <Skeleton className="h-96 w-full" />
+        </PageStack>
       </Main>
     )
   }
   if (error || !profile || !spec) {
     return (
       <Main>
-        <ErrorState
-          title={t('ticketMapping.list.title', 'Ticket field mapping')}
-          error={error}
-          onRetry={() => mutate()}
-        />
+        <PageStack>
+          <ErrorState
+            title={t('ticketMapping.list.title', 'Ticket field mapping')}
+            error={error}
+            onRetry={() => mutate()}
+          />
+        </PageStack>
       </Main>
     )
   }
@@ -287,278 +304,284 @@ export function MappingEditor({ id }: { id: string }) {
 
   return (
     <Main>
-      <Link
-        href="/settings/integrations/ticketing/mappings"
-        className="mb-3 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" aria-hidden />
-        {t('ticketMapping.list.title', 'Ticket field mapping')}
-      </Link>
-      <PageHeader
-        title={profile.name}
-        description={
-          <span className="flex flex-wrap items-center gap-2">
-            <span>
-              {profile.project_key} · {profile.issue_type || profile.issue_type_id} ·{' '}
-              {profile.object_kind === 'task'
-                ? t('ticketMapping.kind.taskShort', 'Tasks')
-                : t('ticketMapping.kind.findingShort', 'Findings')}
+      <PageStack>
+        <Link
+          href="/settings/integrations/ticketing/mappings"
+          className="mb-3 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" aria-hidden />
+          {t('ticketMapping.list.title', 'Ticket field mapping')}
+        </Link>
+        <PageHeader
+          title={profile.name}
+          description={
+            <span className="flex flex-wrap items-center gap-2">
+              <span>{profile.project_key}</span>
+              <span>{profile.issue_type || profile.issue_type_id}</span>
+              <span>
+                {profile.object_kind === 'task'
+                  ? t('ticketMapping.kind.taskShort', 'Tasks')
+                  : t('ticketMapping.kind.findingShort', 'Findings')}
+              </span>
+              {profile.published_version > 0 ? (
+                <Badge variant="outline">
+                  {t('ticketMapping.list.published', 'Published v{v}', {
+                    v: profile.published_version,
+                  })}
+                </Badge>
+              ) : (
+                <Badge variant="outline">
+                  {t('ticketMapping.list.notPublished', 'Not published')}
+                </Badge>
+              )}
+              {profile.draft_version > 0 && (
+                <Badge variant="secondary">
+                  {t('ticketMapping.list.draft', 'Draft v{v}', { v: profile.draft_version })}
+                </Badge>
+              )}
+              {dirty && (
+                <Badge variant="secondary">
+                  {t('ticketMapping.editor.unsaved', 'Unsaved changes')}
+                </Badge>
+              )}
             </span>
-            {profile.published_version > 0 ? (
-              <Badge variant="outline">
-                {t('ticketMapping.list.published', 'Published v{v}', {
-                  v: profile.published_version,
-                })}
-              </Badge>
-            ) : (
-              <Badge variant="outline">
-                {t('ticketMapping.list.notPublished', 'Not published')}
-              </Badge>
-            )}
-            {profile.draft_version > 0 && (
-              <Badge variant="secondary">
-                {t('ticketMapping.list.draft', 'Draft v{v}', { v: profile.draft_version })}
-              </Badge>
-            )}
-            {dirty && (
-              <Badge variant="secondary">
-                {t('ticketMapping.editor.unsaved', 'Unsaved changes')}
-              </Badge>
-            )}
-          </span>
-        }
-      >
-        {canManage && (
-          <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" onClick={save} disabled={busy || !dirty}>
-              <Save className="me-1 h-4 w-4" aria-hidden />
-              {t('ticketMapping.editor.save', 'Save draft')}
-            </Button>
-            <Button onClick={publish} disabled={busy || errorCount > 0}>
-              <Send className="me-1 h-4 w-4" aria-hidden />
-              {t('ticketMapping.editor.publish', 'Publish')}
-            </Button>
-          </div>
-        )}
-      </PageHeader>
-
-      {profile.drifted && (
-        <div
-          className="mt-4 flex flex-wrap items-center gap-2 rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm"
-          role="alert"
-        >
-          <TriangleAlert className="h-4 w-4 text-destructive" aria-hidden />
-          {t(
-            'ticketMapping.editor.driftBanner',
-            'Jira changed under the published mapping (a field or status it uses). Fix the mapping and publish again.'
-          )}
-        </div>
-      )}
-
-      <div className="mt-4 flex flex-wrap items-center gap-2">
-        <Button variant="ghost" size="sm" onClick={() => reloadMeta()} disabled={metaLoading}>
-          <RefreshCw className={cn('me-1 h-4 w-4', metaLoading && 'animate-spin')} aria-hidden />
-          {t('ticketMapping.editor.reloadJira', 'Reload from Jira')}
-        </Button>
-        <Button variant="ghost" size="sm" onClick={verify}>
-          <ShieldCheck className="me-1 h-4 w-4" aria-hidden />
-          {t('ticketMapping.editor.verify', 'Check')}
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={checkDrift}
-          disabled={!canManage || profile.published_version === 0}
-        >
-          <TriangleAlert className="me-1 h-4 w-4" aria-hidden />
-          {t('ticketMapping.editor.drift', 'Check for Jira changes')}
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() =>
-            exportToJSON(
-              exportDocument(spec, profile.object_kind, profile.project_key, profile.issue_type),
-              `ticket-mapping-${profile.project_key}-${profile.object_kind}`
-            )
           }
         >
-          <Download className="me-1 h-4 w-4" aria-hidden />
-          {t('ticketMapping.editor.export', 'Export')}
-        </Button>
-        {canManage && (
-          <>
-            <Button variant="ghost" size="sm" onClick={() => setImportOpen(true)}>
-              <Upload className="me-1 h-4 w-4" aria-hidden />
-              {t('ticketMapping.editor.import', 'Import')}
-            </Button>
-            {profile.draft_version > 0 && (
-              <Button variant="ghost" size="sm" onClick={discard} disabled={busy}>
-                {t('ticketMapping.editor.discard', 'Discard draft')}
+          {canManage && (
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="outline" onClick={save} disabled={busy || !dirty}>
+                <Save className="me-1 h-4 w-4" aria-hidden />
+                {t('ticketMapping.editor.save', 'Save draft')}
               </Button>
+              <Button onClick={publish} disabled={busy || errorCount > 0}>
+                <Send className="me-1 h-4 w-4" aria-hidden />
+                {t('ticketMapping.editor.publish', 'Publish')}
+              </Button>
+            </div>
+          )}
+        </PageHeader>
+
+        {profile.drifted && (
+          <div
+            className="mt-4 flex flex-wrap items-center gap-2 rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm"
+            role="alert"
+          >
+            <TriangleAlert className="h-4 w-4 text-destructive" aria-hidden />
+            {t(
+              'ticketMapping.editor.driftBanner',
+              'Jira changed under the published mapping (a field or status it uses). Fix the mapping and publish again.'
             )}
-            <label className="ms-2 flex items-center gap-2 text-sm">
-              <FlaskConical className="h-4 w-4 text-muted-foreground" aria-hidden />
-              <Switch
-                checked={profile.dry_run}
-                onCheckedChange={async (v) => {
-                  try {
-                    await mappingApi.setDryRun(id, v)
-                    await mutate()
-                  } catch (err) {
-                    toast.error(
-                      getErrorMessage(
-                        err,
-                        t('ticketMapping.editor.dryRunFailed', 'Could not change dry run')
-                      )
-                    )
-                  }
-                }}
-              />
-              {t('ticketMapping.editor.dryRun', 'Dry run (log only)')}
-            </label>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-destructive"
-              onClick={() => setDeleteOpen(true)}
-            >
-              <Trash2 className="me-1 h-4 w-4" aria-hidden />
-              {t('ticketMapping.editor.delete', 'Delete')}
-            </Button>
-          </>
+          </div>
         )}
-      </div>
 
-      <div className="mt-4">
-        <IssueList issues={issues} />
-      </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={() => reloadMeta()} disabled={metaLoading}>
+            <RefreshCw className={cn('me-1 h-4 w-4', metaLoading && 'animate-spin')} aria-hidden />
+            {t('ticketMapping.editor.reloadJira', 'Reload from Jira')}
+          </Button>
+          <Button variant="ghost" size="sm" onClick={verify}>
+            <ShieldCheck className="me-1 h-4 w-4" aria-hidden />
+            {t('ticketMapping.editor.verify', 'Check')}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={checkDrift}
+            disabled={!canManage || profile.published_version === 0}
+          >
+            <TriangleAlert className="me-1 h-4 w-4" aria-hidden />
+            {t('ticketMapping.editor.drift', 'Check for Jira changes')}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() =>
+              exportToJSON(
+                exportDocument(spec, profile.object_kind, profile.project_key, profile.issue_type),
+                `ticket-mapping-${profile.project_key}-${profile.object_kind}`
+              )
+            }
+          >
+            <Download className="me-1 h-4 w-4" aria-hidden />
+            {t('ticketMapping.editor.export', 'Export')}
+          </Button>
+          {canManage && (
+            <>
+              <Button variant="ghost" size="sm" onClick={() => setImportOpen(true)}>
+                <Upload className="me-1 h-4 w-4" aria-hidden />
+                {t('ticketMapping.editor.import', 'Import')}
+              </Button>
+              {profile.draft_version > 0 && (
+                <Button variant="ghost" size="sm" onClick={discard} disabled={busy}>
+                  {t('ticketMapping.editor.discard', 'Discard draft')}
+                </Button>
+              )}
+              <label className="ms-2 flex items-center gap-2 text-sm">
+                <FlaskConical className="h-4 w-4 text-muted-foreground" aria-hidden />
+                <Switch
+                  checked={profile.dry_run}
+                  // Turning dry run off starts Jira writes: ask first. On is one click.
+                  onCheckedChange={(v) => (v ? void setDryRun(true) : setAskDryRunOff(true))}
+                />
+                {t('ticketMapping.editor.dryRun', 'Dry run (log only)')}
+              </label>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="ms-4 text-destructive hover:text-destructive"
+                onClick={() => setDeleteOpen(true)}
+              >
+                <Trash2 className="me-1 h-4 w-4" aria-hidden />
+                {t('ticketMapping.editor.delete', 'Delete')}
+              </Button>
+            </>
+          )}
+        </div>
 
-      {!catalog ? (
-        <Skeleton className="mt-6 h-96 w-full" />
-      ) : (
-        <Tabs value={tab} onValueChange={setTab} className="mt-6 min-w-0">
-          <TabsList>
-            <TabsTrigger value="fields">{t('ticketMapping.tab.fields', 'Fields')}</TabsTrigger>
-            <TabsTrigger value="status">{t('ticketMapping.tab.status', 'Status')}</TabsTrigger>
-            <TabsTrigger value="preview">{t('ticketMapping.tab.preview', 'Preview')}</TabsTrigger>
-            <TabsTrigger value="history">{t('ticketMapping.tab.history', 'History')}</TabsTrigger>
-          </TabsList>
-          <TabsContent value="fields" className="mt-4 grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4">
-            <MappingSettingsBar spec={spec} onChange={edit} readOnly={readOnly} />
-            {metaLoading && fields.length === 0 ? (
-              <Skeleton className="h-80 w-full" />
-            ) : (
-              <FieldMapper
+        <div>
+          <IssueList issues={issues} />
+        </div>
+
+        {!catalog ? (
+          <Skeleton className="mt-6 h-96 w-full" />
+        ) : (
+          <Tabs value={tab} onValueChange={setTab} className="min-w-0">
+            <TabsList>
+              <TabsTrigger value="fields">{t('ticketMapping.tab.fields', 'Fields')}</TabsTrigger>
+              <TabsTrigger value="status">{t('ticketMapping.tab.status', 'Status')}</TabsTrigger>
+              <TabsTrigger value="preview">{t('ticketMapping.tab.preview', 'Preview')}</TabsTrigger>
+              <TabsTrigger value="history">{t('ticketMapping.tab.history', 'History')}</TabsTrigger>
+            </TabsList>
+            <TabsContent value="fields" className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4">
+              <MappingSettingsBar spec={spec} onChange={edit} readOnly={readOnly} />
+              {metaLoading && fields.length === 0 ? (
+                <Skeleton className="h-80 w-full" />
+              ) : (
+                <FieldMapper
+                  spec={spec}
+                  onChange={edit}
+                  catalog={catalog}
+                  fields={fields}
+                  issues={issues}
+                  readOnly={readOnly}
+                  onSuggest={canManage ? suggest : undefined}
+                />
+              )}
+            </TabsContent>
+            <TabsContent value="status" className="min-w-0">
+              <WorkflowMapper
+                profileId={id}
+                kind={profile.object_kind}
                 spec={spec}
                 onChange={edit}
                 catalog={catalog}
-                fields={fields}
+                workflow={meta?.workflow}
                 issues={issues}
                 readOnly={readOnly}
-                onSuggest={canManage ? suggest : undefined}
+                dirty={dirty}
               />
-            )}
-          </TabsContent>
-          <TabsContent value="status" className="mt-4 min-w-0">
-            <WorkflowMapper
-              profileId={id}
-              kind={profile.object_kind}
-              spec={spec}
-              onChange={edit}
-              catalog={catalog}
-              workflow={meta?.workflow}
-              issues={issues}
-              readOnly={readOnly}
-              dirty={dirty}
-            />
-          </TabsContent>
-          <TabsContent value="preview" className="mt-4 min-w-0">
-            <MappingPreview
-              profileId={id}
-              kind={profile.object_kind}
-              fields={fields}
-              dirty={dirty}
-            />
-          </TabsContent>
-          <TabsContent value="history" className="mt-4">
-            <MappingHistory
-              profileId={id}
-              onRolledBack={() => {
-                setDirty(false)
-                void mutate()
-                setTab('fields')
-              }}
-            />
-          </TabsContent>
-        </Tabs>
-      )}
-
-      <Dialog open={importOpen} onOpenChange={setImportOpen}>
-        <DialogContent size="lg">
-          <DialogHeader>
-            <DialogTitle>{t('ticketMapping.import.title', 'Import a mapping')}</DialogTitle>
-            <DialogDescription>
-              {t(
-                'ticketMapping.import.description',
-                'Paste an exported JSON or YAML document. It replaces the draft; nothing is published.'
-              )}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogBody>
-            <input
-              type="file"
-              accept=".json,.yaml,.yml,application/json,application/yaml"
-              aria-label={t('ticketMapping.import.file', 'File')}
-              className="text-sm"
-              onChange={async (e) => {
-                const f = e.target.files?.[0]
-                if (f && f.size <= 256 * 1024) setImportText(await f.text())
-                else if (f)
-                  toast.error(t('ticketMapping.import.tooLarge', 'The file is larger than 256 KiB'))
-              }}
-            />
-            <Textarea
-              rows={14}
-              className="mt-3 font-mono text-xs"
-              value={importText}
-              onChange={(e) => setImportText(e.target.value)}
-              aria-label={t('ticketMapping.import.document', 'Document')}
-            />
-          </DialogBody>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setImportOpen(false)}>
-              {t('ticketMapping.common.cancel', 'Cancel')}
-            </Button>
-            <Button onClick={doImport} disabled={busy || !importText.trim()}>
-              {t('ticketMapping.import.submit', 'Import into the draft')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <ConfirmDialog
-        open={deleteOpen}
-        onOpenChange={setDeleteOpen}
-        title={t('ticketMapping.delete.title', 'Delete this mapping?')}
-        desc={t(
-          'ticketMapping.delete.description',
-          'Tickets for this destination go back to the built-in fields. Versions are deleted; the audit log keeps the history.'
+            </TabsContent>
+            <TabsContent value="preview" className="min-w-0">
+              <MappingPreview
+                profileId={id}
+                kind={profile.object_kind}
+                fields={fields}
+                dirty={dirty}
+              />
+            </TabsContent>
+            <TabsContent value="history">
+              <MappingHistory
+                profileId={id}
+                onRolledBack={() => {
+                  setDirty(false)
+                  void mutate()
+                  setTab('fields')
+                }}
+              />
+            </TabsContent>
+          </Tabs>
         )}
-        confirmText={t('ticketMapping.editor.delete', 'Delete')}
-        destructive
-        handleConfirm={async () => {
-          try {
-            await mappingApi.remove(id)
-            await invalidateMappings()
-            router.push('/settings/integrations/ticketing/mappings')
-          } catch (err) {
-            toast.error(
-              getErrorMessage(err, t('ticketMapping.delete.failed', 'Could not delete the mapping'))
-            )
-          }
-        }}
-      />
+
+        <Dialog open={importOpen} onOpenChange={setImportOpen}>
+          <DialogContent size="lg">
+            <DialogHeader>
+              <DialogTitle>{t('ticketMapping.import.title', 'Import a mapping')}</DialogTitle>
+              <DialogDescription>
+                {t(
+                  'ticketMapping.import.description',
+                  'Paste an exported JSON or YAML document. It replaces the draft; nothing is published.'
+                )}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogBody>
+              <input
+                type="file"
+                accept=".json,.yaml,.yml,application/json,application/yaml"
+                aria-label={t('ticketMapping.import.file', 'File')}
+                className="text-sm"
+                onChange={async (e) => {
+                  const f = e.target.files?.[0]
+                  if (f && f.size <= 256 * 1024) setImportText(await f.text())
+                  else if (f)
+                    toast.error(
+                      t('ticketMapping.import.tooLarge', 'The file is larger than 256 KiB')
+                    )
+                }}
+              />
+              <Textarea
+                rows={14}
+                className="mt-3 font-mono text-xs"
+                value={importText}
+                onChange={(e) => setImportText(e.target.value)}
+                aria-label={t('ticketMapping.import.document', 'Document')}
+              />
+            </DialogBody>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setImportOpen(false)}>
+                {t('ticketMapping.common.cancel', 'Cancel')}
+              </Button>
+              <Button onClick={doImport} disabled={busy || !importText.trim()}>
+                {t('ticketMapping.import.submit', 'Import into the draft')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <ConfirmDialog
+          open={askDryRunOff}
+          onOpenChange={setAskDryRunOff}
+          title={t('confirm.ticketMapping.dryRunOffTitle', undefined, { name: profile.name })}
+          desc={t('confirm.ticketMapping.dryRunOffDesc')}
+          confirmText={t('confirm.ticketMapping.dryRunOffBtn')}
+          handleConfirm={async () => {
+            setAskDryRunOff(false)
+            await setDryRun(false)
+          }}
+        />
+        <ConfirmDialog
+          open={deleteOpen}
+          onOpenChange={setDeleteOpen}
+          title={t('confirm.ticketMapping.deleteTitle', undefined, { name: profile.name })}
+          desc={t('confirm.ticketMapping.deleteDesc')}
+          confirmText={t('confirm.ticketMapping.deleteBtn')}
+          destructive
+          typeToConfirm={confirmName(profile.name, profile.id)}
+          handleConfirm={async () => {
+            try {
+              await mappingApi.remove(id)
+              await invalidateMappings()
+              router.push('/settings/integrations/ticketing/mappings')
+            } catch (err) {
+              toast.error(
+                getErrorMessage(
+                  err,
+                  t('ticketMapping.delete.failed', 'Could not delete the mapping')
+                )
+              )
+            }
+          }}
+        />
+      </PageStack>
     </Main>
   )
 }

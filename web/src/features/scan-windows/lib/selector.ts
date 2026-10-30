@@ -103,5 +103,5 @@ export function selectorSummary(
   t: Translate = englishT
 ): string {
   const parts = selectorParts(s, names, t)
-  return parts.length === 0 ? t('scanWindows.selector.every', 'Every target') : parts.join(' · ')
+  return parts.length === 0 ? t('scanWindows.selector.every', 'Every target') : parts.join(', ')
 }

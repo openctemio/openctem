@@ -17,6 +17,7 @@ import {
   type DataTableRowGroups,
   type FilterPanelToggleProps,
   type RowAction,
+  type DataTableSearch,
 } from '@/features/shared'
 
 import type { Sensor } from '@/lib/api/sensor-types'
@@ -51,6 +52,7 @@ interface SensorTableProps {
   onSelectionChange?: (sensors: Sensor[]) => void
   /** Bump to clear the selection (e.g. after a bulk delete). */
   resetSelectionKey?: number
+  search?: DataTableSearch
   toolbarStart?: React.ReactNode
   toolbarEnd?: React.ReactNode
   filterToggle?: FilterPanelToggleProps
@@ -98,6 +100,7 @@ export function SensorTable({
   onRegenerateKey,
   onSelectionChange,
   resetSelectionKey,
+  search,
   toolbarStart,
   toolbarEnd,
   filterToggle,
@@ -252,7 +255,7 @@ export function SensorTable({
               ? t('sensors.table.roleCollector')
               : t('sensors.table.roleScanner')}
             <span className="text-muted-foreground">
-              {' · '}
+              {', '}
               {t(`sensors.table.type.${row.original.type}`, row.original.type)}
             </span>
           </span>
@@ -378,6 +381,7 @@ export function SensorTable({
       resetSelectionKey={resetSelectionKey}
       showSelectionCount={false}
       filterToggle={filterToggle}
+      search={search}
       toolbarStart={toolbarStart}
       toolbarEnd={toolbarEnd}
       emptyMessage={emptyMessage ?? t('sensors.table.emptyMessage')}

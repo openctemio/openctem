@@ -39,6 +39,12 @@ export const FAILURE_FIX: Record<string, FixTarget | null> = {
   COMMAND_FAILED: null,
   COMMAND_EXPIRED: 'sensors',
   LEASE_LOST: 'sensors',
+  TOOL_UNAVAILABLE: 'sensors',
+  TOOL_CRASHED_ON_INPUT: null,
+  RESOURCE_EXHAUSTED: 'sensors',
+  CONTENT_UNAVAILABLE: 'tools',
+  SENSOR_LOST: 'sensors',
+  FLEET_TOOL_FAILURE: 'tools',
   TOOL_EXIT: null,
   PARSE_ERROR: null,
   TIMEOUT: 'workflows',
@@ -53,6 +59,8 @@ export const FAILURE_FIX: Record<string, FixTarget | null> = {
   NO_CONFINED_SENSOR: 'sensors',
   TARGET_UNREACHABLE: 'zones',
   DEADLINE_TOO_CLOSE: null,
+  COVERAGE_GAPS: null,
+  NO_RESOLVING_TARGETS: null,
   // Retest reason codes (api pkg/domain/retest).
   UNREACHABLE: null,
   BLOCKED: 'sensors',
@@ -76,6 +84,7 @@ export const PLACEMENT_FIX: Record<string, FixTarget | null> = {
   offline: 'sensors',
   pinned_elsewhere: null,
   refused_earlier: 'sensors',
+  failed_here_earlier: 'sensors',
   outside_zone: 'zones',
   tool_missing: 'sensors',
   capability_missing: 'sensors',
@@ -87,6 +96,11 @@ export const PLACEMENT_FIX: Record<string, FixTarget | null> = {
   private_needs_local_policy: 'sensors',
   opt_in_disabled: 'sensors',
   local_policy_refuses: 'sensors',
+  stopped_claiming: 'sensors',
+  egress_unsupported: 'sensors',
+  egress_validate_unsupported: 'sensors',
+  sensor_overloaded: 'sensors',
+  egress_host_direct: 'sensors',
   no_free_slot: null,
 }
 
@@ -103,6 +117,8 @@ const CLASSES = new Set([
   'tool',
   'timeout',
   'canceled',
+  'partial',
+  'target',
 ])
 
 /** What to show for one code: its meaning, the fix and where to apply it. */
@@ -162,4 +178,22 @@ export function placementHelp(code: string, t: Translate = enTranslate): CodeHel
     fix: t(`scans.placement.${key}.fix`),
     ...fixLink(PLACEMENT_FIX[key], t),
   }
+}
+
+/** Coverage-gap reasons the API accepts (api pkg/domain/scanrun GapReasons). */
+export const GAP_REASONS = ['breaker_open', 'rate_floor', 'blocked'] as const
+
+/** Step codes whose message is the sensor's or the tool's own text. */
+export const SENSOR_TEXT_CODES = new Set([
+  'COMMAND_FAILED',
+  'TOOL_EXIT',
+  'PARSE_ERROR',
+  'BATCH_FAILED',
+])
+
+/** The translated reason of one coverage gap: a short label and why. */
+export function gapReasonHelp(reason: string | undefined, t: Translate = enTranslate) {
+  const known = (GAP_REASONS as readonly string[]).includes(reason ?? '')
+  const key = known ? (reason as string) : 'other'
+  return { label: t(`scans.tasks.gap.${key}`), help: t(`scans.tasks.gapHelp.${key}`) }
 }

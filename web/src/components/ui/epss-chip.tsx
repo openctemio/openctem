@@ -31,7 +31,9 @@ export function EpssChip({
 }: EpssChipProps) {
   const { t } = useTranslation()
   if (typeof score !== 'number' || !Number.isFinite(score) || score < threshold) return null
-  const pct = formatEpssScore(score, digits)
+  // Whole percents round 0.995 and above to "100%", which reads as certain:
+  // EPSS is a probability, so the top shows as "99%+".
+  const pct = digits === 0 && score >= 0.995 ? '99%+' : formatEpssScore(score, digits)
   const text = t('findings.list.epss', 'EPSS {score}', { score: pct })
   return (
     <SignalChip

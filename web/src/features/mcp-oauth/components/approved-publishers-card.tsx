@@ -58,7 +58,16 @@ export function ApprovedPublishersCard({ policy, canEdit }: ApprovedPublishersCa
         ? t('mcp.publishers.duplicate', 'This publisher is already approved.')
         : null
 
+  // Approving a publisher lets every member connect its applications: ask first.
+  const [confirmAdd, setConfirmAdd] = useState(false)
+  const askToAdd = () => {
+    setTouched(true)
+    if (!host || duplicate) return
+    setConfirmAdd(true)
+  }
+
   const add = async () => {
+    setConfirmAdd(false)
     setTouched(true)
     if (!host || duplicate) return
     setSaving(true)
@@ -185,7 +194,7 @@ export function ApprovedPublishersCard({ policy, canEdit }: ApprovedPublishersCa
               className="space-y-2"
               onSubmit={(e) => {
                 e.preventDefault()
-                void add()
+                askToAdd()
               }}
             >
               <Label htmlFor="mcp-publisher-host">
@@ -217,13 +226,28 @@ export function ApprovedPublishersCard({ policy, canEdit }: ApprovedPublishersCa
             <Button variant="outline" onClick={() => setOpen(false)} disabled={saving}>
               {t('mcp.common.cancel', 'Cancel')}
             </Button>
-            <Button onClick={() => void add()} disabled={saving || !value.trim()}>
+            <Button onClick={askToAdd} disabled={saving || !value.trim()}>
               {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />}
               {t('mcp.publishers.approve', 'Approve')}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={confirmAdd}
+        onOpenChange={setConfirmAdd}
+        title={t('confirm.mcpPublisher.addTitle', 'Approve {host} as a publisher?', {
+          host: host ?? '',
+        })}
+        desc={t(
+          'confirm.mcpPublisher.addDesc',
+          "Every member can then connect applications published on this host. Each person still approves what an application may do. You will be asked to verify it's you, and you can remove the publisher later."
+        )}
+        confirmText={t('confirm.mcpPublisher.addConfirm', 'Approve {host}', { host: host ?? '' })}
+        isLoading={saving}
+        handleConfirm={add}
+      />
 
       <ConfirmDialog
         open={removing !== null}

@@ -86,13 +86,31 @@ describe('FilterPanelToggle', () => {
       />
     )
     const [panel, sheet] = screen.getAllByRole('button', { name: 'Filters (2 active)' })
-    expect(panel).toHaveAttribute('aria-controls', 'x-filters')
+    // Closed: the panel is not in the page, so nothing to point at.
+    expect(panel).not.toHaveAttribute('aria-controls')
     expect(panel).toHaveAttribute('aria-pressed', 'false')
     expect(sheet).toHaveAttribute('aria-haspopup', 'dialog')
     fireEvent.click(panel)
     fireEvent.click(sheet)
     expect(onToggle).toHaveBeenCalledOnce()
     expect(onOpenSheet).toHaveBeenCalledOnce()
+  })
+
+  it('points at the panel while it is open and keeps the filter icon', () => {
+    render(
+      <FilterPanelToggle
+        open
+        onToggle={() => {}}
+        onOpenSheet={() => {}}
+        activeCount={0}
+        controlsId="x-filters"
+      />
+    )
+    const [panel] = screen.getAllByRole('button', { name: 'Filters' })
+    expect(panel).toHaveAttribute('aria-controls', 'x-filters')
+    expect(panel).toHaveAttribute('aria-pressed', 'true')
+    expect(panel).toHaveClass('bg-accent')
+    expect(panel.querySelector('svg')).toHaveClass('lucide-list-filter')
   })
 })
 

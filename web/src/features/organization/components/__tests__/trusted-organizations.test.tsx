@@ -7,13 +7,14 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 const approve = vi.fn(async (_id: string, _attest: boolean) => ({}))
 const remove = vi.fn(async (_id: string) => ({}))
 const mutate = vi.fn()
+const update = vi.fn(async (_id: string, _input: unknown) => ({}))
 let trusts: unknown[] = []
 vi.mock('../../api/use-org-trusts', () => ({
   useOrgTrusts: () => ({ trusts, isLoading: false, error: undefined, mutate }),
   approveOrgTrust: (id: string, attest: boolean) => approve(id, attest),
   deleteOrgTrust: (id: string) => remove(id),
   createOrgTrust: vi.fn(),
-  updateOrgTrust: vi.fn(),
+  updateOrgTrust: (id: string, input: unknown) => update(id, input),
 }))
 
 import { TrustedOrganizations } from '../trusted-organizations'
@@ -68,6 +69,35 @@ describe('TrustedOrganizations', () => {
     await user.click(await screen.findByLabelText(/requires a second factor/))
     await user.click(screen.getAllByRole('button', { name: 'Approve' }).at(-1)!)
     expect(approve).toHaveBeenCalledWith('t2', true)
+  })
+
+  it('ends a trust only after typing the organization name', async () => {
+    const user = userEvent.setup()
+    render(<TrustedOrganizations canRead isOwner />)
+    const outgoing = screen.getAllByTestId('org-trust-row')[0]
+    await user.click(within(outgoing).getByRole('button', { name: /End trust with Partner Co/ }))
+    const dialog = await screen.findByRole('alertdialog')
+    const confirm = within(dialog).getByRole('button', { name: 'End trust' })
+    expect(confirm).toBeDisabled()
+    await user.type(within(dialog).getByRole('textbox'), 'Partner Co')
+    await user.click(confirm)
+    expect(remove).toHaveBeenCalledWith('t1')
+  })
+
+  it('asks before a setting change that makes the trust weaker', async () => {
+    const user = userEvent.setup()
+    render(<TrustedOrganizations canRead isOwner />)
+    const outgoing = screen.getAllByTestId('org-trust-row')[0]
+    await user.click(within(outgoing).getByRole('button', { name: 'Settings' }))
+    const edit = await screen.findByRole('dialog')
+    // Allowing API keys loosens the trust.
+    await user.click(within(edit).getByRole('switch', { name: /API keys/i }))
+    await user.click(within(edit).getByRole('button', { name: 'Save' }))
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('Loosen the trust with Partner Co?')
+    expect(update).not.toHaveBeenCalled()
+    await user.click(within(dialog).getByRole('button', { name: 'Save weaker trust' }))
+    expect(update).toHaveBeenCalledWith('t1', expect.objectContaining({ allow_api_keys: true }))
   })
 
   it('gives an administrator a read-only view', () => {

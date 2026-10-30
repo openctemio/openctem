@@ -25,9 +25,9 @@ const insertStepSQL = `
 		ui_position_x, ui_position_y,
 		tool, tool_id, capabilities, config, timeout_seconds,
 		depends_on, condition_type, condition_value,
-		max_retries, retry_delay_seconds, created_at, prefer_tools
+		max_retries, retry_delay_seconds, created_at, prefer_tools, run_policy
 	)
-	VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+	VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
 `
 
 // insertStep inserts one step.
@@ -35,6 +35,10 @@ func insertStep(ctx context.Context, ex stepExecer, s *scanworkflow.Step) error 
 	config, err := json.Marshal(s.Config)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+	policy, err := scanworkflow.MarshalPolicy(s.RunPolicy)
+	if err != nil {
+		return fmt.Errorf("failed to marshal run policy: %w", err)
 	}
 	_, err = ex.ExecContext(ctx, insertStepSQL,
 		s.ID.String(),
@@ -57,6 +61,7 @@ func insertStep(ctx context.Context, ex stepExecer, s *scanworkflow.Step) error 
 		s.RetryDelaySeconds,
 		s.CreatedAt,
 		pq.Array(nonNilStrings(s.PreferTools)),
+		policy,
 	)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -75,13 +80,17 @@ func updateStepInPlace(ctx context.Context, ex stepExecer, s *scanworkflow.Step)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
+	policy, err := scanworkflow.MarshalPolicy(s.RunPolicy)
+	if err != nil {
+		return fmt.Errorf("failed to marshal run policy: %w", err)
+	}
 	res, err := ex.ExecContext(ctx, `
 		UPDATE scan_workflow_steps
 		SET step_key = $3, name = $4, description = $5, step_order = $6,
 		    ui_position_x = $7, ui_position_y = $8,
 		    tool = $9, tool_id = $10, capabilities = $11, config = $12, timeout_seconds = $13,
 		    depends_on = $14, condition_type = $15, condition_value = $16,
-		    max_retries = $17, retry_delay_seconds = $18, prefer_tools = $19
+		    max_retries = $17, retry_delay_seconds = $18, prefer_tools = $19, run_policy = $20
 		WHERE id = $1 AND scan_workflow_id = $2
 	`,
 		s.ID.String(),
@@ -103,6 +112,7 @@ func updateStepInPlace(ctx context.Context, ex stepExecer, s *scanworkflow.Step)
 		s.MaxRetries,
 		s.RetryDelaySeconds,
 		pq.Array(nonNilStrings(s.PreferTools)),
+		policy,
 	)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -260,7 +270,7 @@ func (r *ScanWorkflowStepRepository) stepsInTx(ctx context.Context, tx *sql.Tx, 
 		       ui_position_x, ui_position_y,
 		       tool, tool_id, capabilities, config, timeout_seconds,
 		       depends_on, condition_type, condition_value,
-		       max_retries, retry_delay_seconds, created_at, prefer_tools
+		       max_retries, retry_delay_seconds, created_at, prefer_tools, run_policy
 		FROM scan_workflow_steps
 		WHERE scan_workflow_id = $1
 		ORDER BY step_order ASC

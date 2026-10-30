@@ -3,10 +3,8 @@
 import { useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Search } from 'lucide-react'
 import { Main } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
-import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -14,16 +12,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { DataTable, ErrorState, PageHeader, RelativeTime, StackedCell } from '@/features/shared'
+import {
+  DataTable,
+  ErrorState,
+  PageHeader,
+  PageStack,
+  RelativeTime,
+  StackedCell,
+} from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
-import { useDebounce } from '@/hooks/use-debounce'
 import { useListParams } from '@/hooks/use-list-params'
 import { useOrganizations } from '@console/features/admin-console/api/use-admin-organizations'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { CreateOrganizationDialog } from '@console/features/admin-console/components/create-organization-dialog'
 import { SSOPostureBadges } from '@console/features/admin-console/components/sso-posture-badges'
 import { OrganizationStatusBadge } from '@console/features/admin-console/components/organization-suspension'
-import { adminCan, type AdminOrganization } from '@console/features/admin-console/types'
+import { type AdminOrganization, adminHas } from '@console/features/admin-console/types'
 
 const ANY = 'any'
 
@@ -34,7 +38,7 @@ export default function AdminOrganizationsPage() {
   // The list lives in the URL (one list convention): page, per_page, q and
   // the filters, so the overview can link to "organizations without an owner".
   const list = useListParams({ defaultPageSize: 20, filters: { owner: '' } })
-  const debounced = useDebounce(list.q, 300)
+  const debounced = list.searchTerm
   const owner =
     list.filters.owner === 'none' || list.filters.owner === 'present' ? list.filters.owner : ''
   const filtered = Boolean(debounced || owner)
@@ -58,10 +62,11 @@ export default function AdminOrganizationsPage() {
         ),
       },
       {
-        accessorKey: 'owner_emails',
+        accessorKey: 'owner_domains',
         header: t('admin.org.col.owner', 'Owner'),
         cell: ({ row }) => {
-          const owners = row.original.owner_emails
+          // The list carries the owners' domains, never their addresses.
+          const owners = row.original.owner_domains
           if (owners.length === 0 && row.original.owner_count > 0)
             return (
               <span className="text-sm text-muted-foreground">
@@ -117,18 +122,20 @@ export default function AdminOrganizationsPage() {
 
   return (
     <Main>
-      <PageHeader
-        title={t('admin.nav.organizations', 'Organizations')}
-        description={t(
-          'admin.org.listDescription',
-          'Every organization on this installation, with its owner, limits and single sign-on setup.'
-        )}
-      >
-        {adminCan(admin.role, 'ops_admin') && (
-          <CreateOrganizationDialog onCreated={(org) => router.push(`/organizations/${org.id}`)} />
-        )}
-      </PageHeader>
-      <div className="mt-5">
+      <PageStack>
+        <PageHeader
+          title={t('admin.nav.organizations', 'Organizations')}
+          description={t(
+            'admin.org.listDescription',
+            'Every organization on this installation, with its owner, limits and single sign-on setup.'
+          )}
+        >
+          {adminHas(admin, 'platform.tenants.create') && (
+            <CreateOrganizationDialog
+              onCreated={(org) => router.push(`/organizations/${org.id}`)}
+            />
+          )}
+        </PageHeader>
         {error ? (
           <ErrorState
             title={t('admin.organizationsPage.organizations', 'organizations')}
@@ -156,18 +163,14 @@ export default function AdminOrganizationsPage() {
             rowCount={data?.total ?? 0}
             pagination={list.pagination}
             onPaginationChange={list.setPagination}
+            search={{
+              value: list.q,
+              onChange: list.setSearch,
+              placeholder: t('admin.org.search', 'Search name or slug…'),
+              label: t('admin.org.searchLabel', 'Search organizations'),
+            }}
             toolbarStart={
-              <div className="flex w-full flex-col gap-2 sm:flex-row">
-                <div className="relative w-full sm:max-w-xs">
-                  <Search className="absolute start-2.5 top-2.5 size-4 text-muted-foreground" />
-                  <Input
-                    placeholder={t('admin.org.search', 'Search name or slug...')}
-                    value={list.q}
-                    onChange={(e) => list.setSearch(e.target.value)}
-                    className="ps-8"
-                    aria-label={t('admin.org.searchLabel', 'Search organizations')}
-                  />
-                </div>
+              <>
                 <Select
                   value={owner || ANY}
                   onValueChange={(v) => list.setFilter('owner', v === ANY ? '' : v)}
@@ -188,11 +191,11 @@ export default function AdminOrganizationsPage() {
                     </SelectItem>
                   </SelectContent>
                 </Select>
-              </div>
+              </>
             }
           />
         )}
-      </div>
+      </PageStack>
     </Main>
   )
 }

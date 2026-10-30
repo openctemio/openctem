@@ -25,7 +25,7 @@
   "remediationClaim.add.title.other": "Thêm {count} phát hiện vào khắc phục",
   "remediationClaim.conflict.description": "Mỗi phát hiện được xử lý trong một tác vụ đang mở. Bỏ qua các phát hiện này, hoặc chuyển những phát hiện bạn có quyền sang tác vụ này.",
   "remediationClaim.conflict.hiddenTask": "Thuộc một tác vụ bạn không xem được",
-  "remediationClaim.conflict.inTask": "Thuộc {task} · {owner}",
+  "remediationClaim.conflict.inTask": "Thuộc {task}, {owner}",
   "remediationClaim.conflict.intro.one": "1 phát hiện đã thuộc một tác vụ đang mở khác.",
   "remediationClaim.conflict.intro.other": "{count} phát hiện đã thuộc các tác vụ đang mở khác.",
   "remediationClaim.conflict.list": "Các phát hiện đã thuộc tác vụ",

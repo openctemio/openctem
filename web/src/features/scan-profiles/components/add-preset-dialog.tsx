@@ -52,13 +52,6 @@ const PRESET_ICONS: Record<PresetProfileType, React.ReactNode> = {
   compliance: <ClipboardCheck className="h-5 w-5" />,
 }
 
-const PRESET_COLORS: Record<PresetProfileType, string> = {
-  discovery: 'bg-blue-500/10 text-blue-500 border-blue-500/30',
-  quick: 'bg-yellow-500/10 text-yellow-500 border-yellow-500/30',
-  full: 'bg-green-500/10 text-green-500 border-green-500/30',
-  compliance: 'bg-purple-500/10 text-purple-500 border-purple-500/30',
-}
-
 export function AddPresetDialog({ open, onOpenChange }: AddPresetDialogProps) {
   const { t } = useTranslation()
   const presetName = (type: PresetProfileType) => t(`scans.profiles.preset.${type}.name`)
@@ -135,7 +128,7 @@ export function AddPresetDialog({ open, onOpenChange }: AddPresetDialogProps) {
                 >
                   <CardHeader className="pb-2">
                     <div className="flex items-start justify-between">
-                      <div className={`rounded-lg p-2 ${PRESET_COLORS[type]}`}>
+                      <div className={`rounded-lg p-2 bg-muted text-foreground`}>
                         {PRESET_ICONS[type]}
                       </div>
                       {nameExists ? (
@@ -169,7 +162,7 @@ export function AddPresetDialog({ open, onOpenChange }: AddPresetDialogProps) {
 
         <DialogFooter className="flex-col sm:flex-row">
           {isDuplicateName && (
-            <p className="text-amber-500 text-xs flex items-center gap-1 me-auto">
+            <p className="text-warning text-xs flex items-center gap-1 me-auto">
               <AlertTriangle className="h-3 w-3" />
               {t('scans.profiles.preset.duplicate')}
             </p>

@@ -167,7 +167,9 @@ describe('CIPipelinesPanel', () => {
     expect(screen.getAllByText('Failing').length).toBeGreaterThan(0)
     expect(screen.queryByText(/offline/i)).not.toBeInTheDocument()
     // Header counts: 5 active (archived is inactive), 2 inactive.
-    const strip = screen.getByText('CI pipelines').closest('dl') as HTMLElement
+    const strip = screen
+      .getByText('CI pipelines')
+      .closest('[data-slot="metric-strip"]') as HTMLElement
     expect(within(strip).getByText('5')).toBeInTheDocument()
     expect(within(strip).getByText('Inactive')).toBeInTheDocument()
     // Inactive pipelines are hidden by default.
@@ -228,7 +230,7 @@ describe('CIPipelinesPanel', () => {
       pipelines = [failing]
       counts = { failing: 1 }
       render(<CIPipelinesPanel />)
-      const box = screen.getByRole('textbox', { name: /search ci pipelines/i })
+      const box = screen.getByRole('searchbox', { name: /search ci pipelines/i })
       await userEvent.type(box, 'api')
       expect(lastPipelineFilters?.search).toBe('')
       await act(async () => {

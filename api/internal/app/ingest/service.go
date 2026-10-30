@@ -10,9 +10,11 @@ import (
 
 	"github.com/openctemio/ctis"
 
+	"github.com/openctemio/openctem/api/internal/app/assetdiscovery"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/assetfreshness"
+	"github.com/openctemio/openctem/api/pkg/domain/assetresolution"
 	"github.com/openctemio/openctem/api/pkg/domain/assettech"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/branch"
@@ -98,6 +100,11 @@ type Service struct {
 	// scanAttribution stamps tenant_scanned attribution evidence on the
 	// assets of command-bound reports (RFC-036 O8). Nil-safe.
 	scanAttribution ScanAttributionStamper
+	// importCandidates holds the new hosts of an import for review.
+	importCandidates ImportCandidateHolder
+	// groupRules is told when a report created or updated assets, so the
+	// tenant's rule groups are evaluated again (debounced). Nil-safe.
+	groupRules AssetChangeNotifier
 
 	// takeoverConfirmer raises subdomain_takeover from nuclei takeover
 	// findings of command-bound reports (RFC-036 P1). Nil-safe.
@@ -121,7 +128,11 @@ type Service struct {
 	commands commandReader
 	// wildcardDNS keeps the names a filtered resolution did not report.
 	wildcardDNS assetfreshness.WildcardDNSStore
-	results     sensorresult.Repository
+	// nameProber and resolutionStore: names that do not resolve
+	// (name_probe.go).
+	nameProber      NameProber
+	resolutionStore assetresolution.Store
+	results         sensorresult.Repository
 	// policyVersions and policies: the versioned policy snapshots.
 	policyVersions PolicyVersionReader
 	policies       policyCache
@@ -541,7 +552,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	scope.collector = collector
 
 	// Step 1: Process assets using batch operations
-	assetMap, err := s.assetProcessor.processBatch(ctx, tenantID, report, output, assetIdentityCfg, opts.RequireAssetForFindings, scope)
+	assetMap, err := s.assetProcessor.processBatch(assetdiscovery.WithStepRun(ctx, binding.StepRunID), tenantID, report, output, assetIdentityCfg, opts.RequireAssetForFindings, scope)
 	if err != nil {
 		s.logger.Error("failed to process assets batch", "error", logger.SanitizeError(err))
 		// Continue with partial results, but say so: the asset upsert is one
@@ -574,6 +585,13 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// What each asset was fingerprinted with (RFC-112), after the sets
 	// decided which technologies the asset shows.
 	s.recordTechnologies(ctx, tenantID, scope, src, observedAt, report, assetMap)
+	if binding.Kind == BindingTrusted && sourceKind == asset.SourceKindImport {
+		s.holdImportCandidates(ctx, tenantID, scope, report, assetMap, output)
+	}
+
+	if s.groupRules != nil && output.AssetsCreated+output.AssetsUpdated > 0 {
+		s.groupRules.NotifyAssetsChanged(tenantID)
+	}
 
 	s.logger.Debug("asset processing complete",
 		"assets_created", output.AssetsCreated,
@@ -683,7 +701,9 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// the scan no longer reports as auto_fixed — so per-branch state reflects what
 	// is actually present on that branch. Additive: it only touches occurrence
 	// rows, never the finding's headline status. Best-effort.
-	if !opts.DeferAutoResolve && unsolicitedMayResolve && !scope.actorRestricted() && input.IsFullCoverage() && s.findingRepo != nil && s.branchRepo != nil &&
+	// Skipped when this ingest could not record its occurrences: the sweep
+	// would mark the findings it did see as gone from the branch.
+	if !opts.DeferAutoResolve && unsolicitedMayResolve && !output.BranchOccurrencesFailed && !scope.actorRestricted() && input.IsFullCoverage() && s.findingRepo != nil && s.branchRepo != nil &&
 		report.Tool != nil && report.Metadata.ID != "" &&
 		report.Metadata.Branch != nil && report.Metadata.Branch.Name != "" {
 		toolName := report.Tool.Name
@@ -1163,3 +1183,13 @@ func UnmarshalReport(data []byte) (*ctis.Report, error) {
 	}
 	return &report, nil
 }
+
+// AssetChangeNotifier is told when assets of a tenant were created or
+// changed (*asset.GroupRuleScheduler).
+type AssetChangeNotifier interface {
+	NotifyAssetsChanged(tenantID shared.ID)
+}
+
+// SetAssetChangeNotifier wires the evaluation of rule groups after a report
+// created or updated assets.
+func (s *Service) SetAssetChangeNotifier(n AssetChangeNotifier) { s.groupRules = n }

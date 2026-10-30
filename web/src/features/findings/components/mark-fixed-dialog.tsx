@@ -162,7 +162,7 @@ export function MarkFixedDialog({
           <DialogTitle>{t('findings.markFixed.title', 'Mark as Fixed')}</DialogTitle>
           <DialogDescription>
             {groupType === 'cve' &&
-              t('findings.markFixed.descCve', '{label} — {count} findings', {
+              t('findings.markFixed.descCve', '{label}: {count} findings', {
                 label: groupLabel,
                 count: findingCount,
               })}

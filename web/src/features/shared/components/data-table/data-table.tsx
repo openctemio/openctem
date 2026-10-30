@@ -30,8 +30,8 @@ import {
 } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
 import { ListToolbar } from '../list-toolbar'
-import { FilterPanelToggle, type FilterPanelToggleProps } from '../filter-button'
-import { Input } from '@/components/ui/input'
+import type { ListSearchProps } from '../list-search'
+import type { FilterPanelToggleProps } from '../filter-button'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   DropdownMenu,
@@ -55,9 +55,7 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
-  Search,
   SlidersHorizontal,
-  X,
   Inbox,
 } from 'lucide-react'
 import {
@@ -80,11 +78,21 @@ export interface MobileRowSelection {
   onSelectedChange: (selected: boolean) => void
 }
 
+/** A server-side search box (`DataTable`'s `search`). */
+export type DataTableSearch = Omit<ListSearchProps, 'filter' | 'className'>
+
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[]
   data: TData[]
   searchKey?: string
   searchPlaceholder?: string
+  /**
+   * A server-side search: the box shows `value` and reports typing through
+   * `onChange`; the page sends the term through `useListParams` /
+   * `useSearchQuery`. Replaces the built-in search (which only filters the rows
+   * already loaded). Never draw a search box in `toolbarStart`.
+   */
+  search?: DataTableSearch
   showColumnToggle?: boolean
   showPagination?: boolean
   showSearch?: boolean
@@ -103,6 +111,11 @@ interface DataTableProps<TData, TValue> {
    */
   errorState?: React.ReactNode
   onRowClick?: (row: TData) => void
+  /**
+   * The tone of a row: 'dim' greys its text (a colour, never opacity) for rows
+   * that are not the work of the moment, such as low-priority or closed ones.
+   */
+  rowTone?: (row: TData) => 'dim' | undefined
   /**
    * Notified whenever the row selection changes, with the selected row data.
    * The table owns selection state internally (via the `select` column's
@@ -144,7 +157,12 @@ interface DataTableProps<TData, TValue> {
    * the toolbar. Pass this rather than drawing a filter button in `toolbarStart`.
    */
   filterToggle?: FilterPanelToggleProps
-  /** Rendered at the start of the toolbar, after the filter toggle (e.g. search). */
+  /** A filter trigger that opens a sheet (`FilterButton`) on a list with no side panel. */
+  filter?: React.ReactNode
+  /**
+   * Filter tokens after the search box: `FilterSelect`, at most two selects,
+   * a lens. Never a search box (pass `search`).
+   */
   toolbarStart?: React.ReactNode
   /** Rendered at the end of the toolbar, before the column toggle. */
   toolbarEnd?: React.ReactNode
@@ -245,6 +263,9 @@ const DENSITY_LABEL_KEYS: Record<TableDensity, [string, string]> = {
   compact: ['common.table.densityCompact', 'Compact'],
   comfortable: ['common.table.densityComfortable', 'Comfortable'],
 }
+
+/** The narrowest a row's name column may get: other columns scroll instead. */
+const NAME_COLUMN_FLOOR = 'min-w-[min(12rem,36vw)]'
 
 /** Fixed width of the selection column, so the pinned column after it knows its offset. */
 const SELECT_COL_WIDTH = 40
@@ -394,6 +415,7 @@ export function DataTable<TData, TValue>({
   data,
   searchKey,
   searchPlaceholder,
+  search: serverSearch,
   showColumnToggle = true,
   showPagination = true,
   showSearch = true,
@@ -404,6 +426,7 @@ export function DataTable<TData, TValue>({
   emptyState,
   errorState,
   onRowClick,
+  rowTone,
   onSelectionChange,
   manualPagination = false,
   pageCount,
@@ -414,6 +437,7 @@ export function DataTable<TData, TValue>({
   sorting: sortingProp,
   onSortingChange,
   filterToggle,
+  filter,
   toolbarStart,
   toolbarEnd,
   toolbarBelow,
@@ -435,7 +459,7 @@ export function DataTable<TData, TValue>({
 }: DataTableProps<TData, TValue>) {
   const { t } = useTranslation()
   // Defaults are translated here, not in the signature: they depend on the locale.
-  searchPlaceholder ??= t('common.table.search', 'Search...')
+  searchPlaceholder ??= t('common.table.search', 'Search…')
   emptyMessage ??= t('common.table.noResults', 'No results found')
   paginationNoun ??= t('common.table.resultsNoun', 'results')
   pageSizeLabel ??= t('common.table.rowsPerPage', 'Rows per page')
@@ -469,6 +493,28 @@ export function DataTable<TData, TValue>({
     () => initialColumnVisibility ?? {}
   )
   const columnVisibility = columnVisibilityProp ?? ownVisibility
+  // Column priority: a column whose `meta.hideBelow` is wider than the
+  // table's frame is hidden, so a narrow screen drops the least important
+  // columns instead of scrolling the table sideways. A column the viewer
+  // turned on or off under Columns keeps that choice (the state has its key);
+  // the menu shows an auto-hidden column as off, so turning it on is one click.
+  const [frameWidth, setFrameWidth] = React.useState(0)
+  React.useEffect(() => {
+    const el = tableWrapRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => setFrameWidth(el.clientWidth))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  const effectiveVisibility = React.useMemo(() => {
+    if (frameWidth === 0) return columnVisibility
+    const auto: VisibilityState = {}
+    for (const c of columns) {
+      const hideBelow = (c.meta as { hideBelow?: number } | undefined)?.hideBelow
+      if (c.id && hideBelow && frameWidth < hideBelow) auto[c.id] = false
+    }
+    return { ...auto, ...columnVisibility }
+  }, [columns, columnVisibility, frameWidth])
   const columnVisibilityRef = React.useRef(columnVisibility)
   columnVisibilityRef.current = columnVisibility
   const setColumnVisibility = React.useCallback(
@@ -486,7 +532,8 @@ export function DataTable<TData, TValue>({
   const [globalFilter, setGlobalFilter] = React.useState('')
   // "Try adjusting your search" only makes sense while one is applied: an
   // empty list with no search or filter says just what is empty.
-  const filterActive = Boolean(globalFilter) || columnFilters.length > 0
+  const filterActive =
+    Boolean(globalFilter) || Boolean(serverSearch?.value) || columnFilters.length > 0
   const emptyHint =
     emptyDescription ??
     (filterActive
@@ -555,7 +602,7 @@ export function DataTable<TData, TValue>({
     state: {
       sorting,
       columnFilters,
-      columnVisibility,
+      columnVisibility: effectiveVisibility,
       rowSelection,
       globalFilter,
       ...(manualPagination && pagination ? { pagination } : {}),
@@ -586,7 +633,7 @@ export function DataTable<TData, TValue>({
     if (selectColumn) pinned.set(selectColumn.id, { start: 0, last: false })
     pinned.set(firstDataColumn.id, { start: selectColumn ? SELECT_COL_WIDTH : 0, last: true })
   }
-  const pinnedProps = (columnId: string) => {
+  const pinnedPropsBase = (columnId: string) => {
     const isSelect = columnId === 'select'
     const width = isSelect
       ? { width: SELECT_COL_WIDTH, minWidth: SELECT_COL_WIDTH, maxWidth: SELECT_COL_WIDTH }
@@ -604,11 +651,24 @@ export function DataTable<TData, TValue>({
         PINNED_CELL_CLASS,
         pin.last && PINNED_START_EDGE_CLASS,
         // The pinned name column must leave room for the columns that scroll:
-        // cap it and let long names wrap instead of widening the pin.
-        pin.last && 'max-w-[min(26rem,38vw)] whitespace-normal'
+        // cap it and let long names wrap instead of widening the pin. It also
+        // keeps a floor: in an automatic table layout a truncating name has no
+        // minimum width, so ten other columns squeezed it to a few letters
+        // ("e2..."); with the floor the other columns scroll instead.
+        pin.last && cn(NAME_COLUMN_FLOOR, 'max-w-[min(26rem,38vw)] whitespace-normal')
       ),
       style: { ...width, insetInlineStart: pin.start },
     }
+  }
+
+  // A column marked `meta: { primary: true }` (the row's name when it is not
+  // the first column, e.g. a finding title after its priority) gets the same
+  // floor as the pinned name column, so other columns cannot squeeze it.
+  const pinnedProps = (columnId: string) => {
+    const props = pinnedPropsBase(columnId)
+    const primary = (table.getColumn(columnId)?.columnDef.meta as { primary?: boolean } | undefined)
+      ?.primary
+    return primary ? { ...props, className: cn(props.className, NAME_COLUMN_FLOOR) } : props
   }
 
   // Re-measure when the rows, visible columns or container size change.
@@ -619,7 +679,7 @@ export function DataTable<TData, TValue>({
     const ro = new ResizeObserver(measureEdges)
     ro.observe(el)
     return () => ro.disconnect()
-  }, [measureEdges, data, columnVisibility])
+  }, [measureEdges, data, effectiveVisibility])
 
   // Clear the selection whenever the parent bumps resetSelectionKey, and
   // whenever a server-paged table changes page, page size or sort: the rows
@@ -676,64 +736,36 @@ export function DataTable<TData, TValue>({
     // keeps it in state), so only a selection change re-runs this.
   }, [rowSelection, table])
 
+  // Rows the footer pages through: the server's count under manual pagination,
+  // else the rows left after client-side filtering.
+  const paginationTotal = manualPagination
+    ? (rowCount ?? data.length)
+    : table.getFilteredRowModel().rows.length
+
   return (
     <div className="space-y-4">
       {/* Toolbar: the shared ListToolbar row (order and wrapping rules live
           there). */}
       <ListToolbar
-        start={
-          toolbarStart ? (
-            <>
-              {filterToggle && <FilterPanelToggle {...filterToggle} />}
-              {toolbarStart}
-            </>
-          ) : undefined
-        }
+        filterToggle={filterToggle}
+        filter={filter}
         search={
-          <>
-            {!toolbarStart && filterToggle && <FilterPanelToggle {...filterToggle} />}
-            {/* Search */}
-            {showSearch && (
-              <div className="relative min-w-36 flex-1 sm:max-w-sm">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder={searchPlaceholder}
-                  value={
-                    searchKey
-                      ? ((table.getColumn(searchKey)?.getFilterValue() as string) ?? '')
-                      : globalFilter
-                  }
-                  onChange={(event) => {
-                    if (searchKey) {
-                      table.getColumn(searchKey)?.setFilterValue(event.target.value)
-                    } else {
-                      setGlobalFilter(event.target.value)
-                    }
-                  }}
-                  className="ps-9 pe-9"
-                />
-                {Boolean(
-                  searchKey ? table.getColumn(searchKey)?.getFilterValue() : globalFilter
-                ) && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="absolute right-1 top-1/2 h-6 w-6 -translate-y-1/2 p-0"
-                    onClick={() => {
-                      if (searchKey) {
-                        table.getColumn(searchKey)?.setFilterValue('')
-                      } else {
-                        setGlobalFilter('')
-                      }
-                    }}
-                  >
-                    <X className="h-3 w-3" />
-                  </Button>
-                )}
-              </div>
-            )}
-          </>
+          serverSearch ??
+          (showSearch
+            ? {
+                value: searchKey
+                  ? ((table.getColumn(searchKey)?.getFilterValue() as string) ?? '')
+                  : globalFilter,
+                onChange: (value: string) => {
+                  if (searchKey) table.getColumn(searchKey)?.setFilterValue(value)
+                  else setGlobalFilter(value)
+                },
+                placeholder: searchPlaceholder,
+              }
+            : undefined)
         }
+        start={toolbarStart}
+        below={toolbarBelow}
         end={
           <>
             {toolbarEnd}
@@ -747,19 +779,20 @@ export function DataTable<TData, TValue>({
               </span>
             )}
 
-            {/* View menu: row density (every table, D14) and, when the table
-              allows it, which columns show. */}
+            {/* Display menu: row density (every table, D14) and, when the
+              table allows it, which columns show. Named "Display" so it is
+              never confused with saved "Views". */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="outline"
                   size="sm"
                   className={cn('h-9', phoneCards && 'hidden')}
-                  aria-label={t('common.table.viewMenu', 'Table view: density and columns')}
+                  aria-label={t('common.table.displayMenu', 'Display: density and columns')}
                 >
                   <SlidersHorizontal className="h-4 w-4 @xl/toolbar:me-2" />
                   <span className="sr-only @xl/toolbar:not-sr-only">
-                    {t('common.table.view', 'View')}
+                    {t('common.table.display', 'Display')}
                   </span>
                 </Button>
               </DropdownMenuTrigger>
@@ -807,18 +840,6 @@ export function DataTable<TData, TValue>({
           </>
         }
       />
-
-      {/* Active context filters: their own full-width row under the toolbar
-          (8px below it), so the toolbar row keeps one height and its end
-          controls never shift when a chip comes or goes. */}
-      {toolbarBelow ? (
-        <div
-          data-testid="data-table-toolbar-below"
-          className="-mt-2 flex min-w-0 flex-wrap items-center gap-2"
-        >
-          {toolbarBelow}
-        </div>
-      ) : null}
 
       {phoneCards && (
         <div className="divide-y rounded-md border">
@@ -1014,6 +1035,7 @@ export function DataTable<TData, TValue>({
                       <TableRow
                         key={row.id}
                         data-state={row.getIsSelected() && 'selected'}
+                        data-tone={rowTone?.(row.original)}
                         className={cn(
                           'group/row',
                           onRowClick && 'cursor-pointer hover:bg-muted/50'
@@ -1113,8 +1135,10 @@ export function DataTable<TData, TValue>({
         </Table>
       </div>
 
-      {/* Pagination */}
-      {showPagination && !errorState && (
+      {/* Pagination. Hidden while there is no row to page through (an empty
+          list, or the first load): never "Showing 0 - 0 of 0" or
+          "Page 1 of 0". */}
+      {showPagination && !errorState && paginationTotal > 0 && (
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           {/* Row count info - centered on mobile. Under manual pagination the
               total is the server row count, not the current page's length. */}
@@ -1193,7 +1217,7 @@ export function DataTable<TData, TValue>({
               <span className="text-sm text-muted-foreground">
                 {t('common.table.pageOf', 'Page {page} of {pages}', {
                   page: table.getState().pagination.pageIndex + 1,
-                  pages: table.getPageCount(),
+                  pages: Math.max(1, table.getPageCount()),
                 })}
               </span>
 

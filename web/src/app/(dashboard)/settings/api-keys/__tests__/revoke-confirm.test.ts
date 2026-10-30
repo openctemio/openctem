@@ -15,7 +15,7 @@ const src = readFileSync(
 describe('API key revoke', () => {
   it('the Revoke button opens a confirmation instead of revoking', () => {
     expect(src).not.toMatch(/onClick=\{handleRevoke\}/)
-    expect(src).toMatch(/onClick=\{\(\) => setRevokeOpen\(true\)\}/)
+    expect(src).toMatch(/onClick: \(\) => setRevokeOpen\(true\)/)
   })
 
   it('only the confirmation calls handleRevoke', () => {

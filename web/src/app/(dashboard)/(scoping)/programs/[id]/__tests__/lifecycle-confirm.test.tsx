@@ -69,7 +69,11 @@ describe('Program lifecycle actions', () => {
     expect(endProgram).not.toHaveBeenCalled()
     const dialog = await screen.findByRole('alertdialog')
     expect(dialog).toHaveTextContent('End the program "Acme VDP"?')
-    await userEvent.click(within(dialog).getByRole('button', { name: 'End program' }))
+    const confirm = within(dialog).getByRole('button', { name: 'End program' })
+    // Ending is permanent, so the program's name is typed first.
+    expect(confirm).toBeDisabled()
+    await userEvent.type(within(dialog).getByRole('textbox'), 'Acme VDP')
+    await userEvent.click(confirm)
     await waitFor(() => expect(endProgram).toHaveBeenCalledWith('p1'))
   })
 

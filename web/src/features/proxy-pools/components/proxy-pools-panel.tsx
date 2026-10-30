@@ -2,7 +2,7 @@
 
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
-import { ErrorState } from '@/features/shared'
+import { ErrorState, PageStack } from '@/features/shared'
 import { Permission, usePermissions } from '@/lib/permissions'
 
 import { useProxyPools } from '../api/use-proxy-pools'
@@ -31,13 +31,13 @@ export function ProxyPoolsPanel() {
   if (isLoading) return <Skeleton className="h-48 w-full" />
 
   return (
-    <div className="space-y-8" data-testid="proxy-pools-panel">
+    <PageStack data-testid="proxy-pools-panel">
       <DefaultPoolCard pool={pools.find((p) => p.is_default)} canWrite={canWrite} />
       <MorePoolsSection
         pools={pools.filter((p) => !p.is_default)}
         canWrite={canWrite}
         canDelete={canDelete}
       />
-    </div>
+    </PageStack>
   )
 }

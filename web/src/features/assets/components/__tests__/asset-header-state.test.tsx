@@ -40,7 +40,12 @@ describe('ClassificationBadges, labelled (asset header)', () => {
     expect(text).toContain('Zone:')
     expect(text.indexOf('Criticality:')).toBeLessThan(text.indexOf('Exposure:'))
     expect(text.indexOf('Exposure:')).toBeLessThan(text.indexOf('Zone:'))
-    expect(screen.getByText('Public')).toBeInTheDocument()
+    expect(screen.getByText('Exposure: Public')).toBeInTheDocument()
+    // Public exposure is a caution-tone chip (research/266).
+    expect(container.querySelector('[data-slot="tone-chip"][data-value="public"]')).toHaveAttribute(
+      'data-tone',
+      'caution'
+    )
   })
 
   it('hides the default zone, so a public website never reads "Zone: Internal"', () => {
@@ -92,7 +97,7 @@ describe('AssetScopeChip', () => {
     })
     render(<AssetScopeChip asset={{ id: 'a2' }} />)
     expect(attributionMock.calls).toContain('a2')
-    expect(screen.getByText('Not in scope · passive only')).toBeInTheDocument()
+    expect(screen.getByText('Not in scope')).toBeInTheDocument()
   })
 
   it('an excluded asset reads Excluded', () => {

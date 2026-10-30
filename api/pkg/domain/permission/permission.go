@@ -129,6 +129,12 @@ const (
 	// needs findings:read; approving an intrusive check needs scope:approve.
 	FindingsRetestChecksWrite Permission = "findings:retest_checks:write"
 
+	// FindingsViewsShare shares a saved list view with the whole
+	// organization (docs/architecture/vulnerability-page.md, saved views).
+	// Sharing with one of the caller's groups needs only the page's read
+	// permission; a view always runs as the person using it.
+	FindingsViewsShare Permission = "findings:views:share"
+
 	// Vulnerability permissions (findings:vulnerabilities:*)
 	VulnerabilitiesRead Permission = "findings:vulnerabilities:read"
 
@@ -176,10 +182,12 @@ const (
 	ScanProfilesWrite  Permission = "scans:profiles:write"
 	ScanProfilesDelete Permission = "scans:profiles:delete"
 
-	// Template source permissions (scans:sources:*)
-	TemplateSourcesRead   Permission = "scans:sources:read"
-	TemplateSourcesWrite  Permission = "scans:sources:write"
-	TemplateSourcesDelete Permission = "scans:sources:delete"
+	// Rule source permissions (scans:sources:*). Approve promotes, rejects
+	// and rolls back snapshots (docs/architecture/content-sources.md).
+	ContentSourcesRead    Permission = "scans:sources:read"
+	ContentSourcesWrite   Permission = "scans:sources:write"
+	ContentSourcesDelete  Permission = "scans:sources:delete"
+	ContentSourcesApprove Permission = "scans:sources:approve"
 
 	// Tool Registry permissions (scans:tools:*)
 	ToolsRead   Permission = "scans:tools:read"
@@ -500,7 +508,7 @@ func AllPermissions() []Permission {
 		FindingsFixApply, FindingsVerify, FindingsComment, FindingsSeverity,
 		ExposuresRead, ExposuresWrite, ExposuresDelete, ExposuresTriage,
 		SuppressionsRead, SuppressionsWrite, SuppressionsDelete, SuppressionsApprove,
-		FindingsLifecyclesWrite, FindingsRetestChecksWrite,
+		FindingsLifecyclesWrite, FindingsRetestChecksWrite, FindingsViewsShare,
 		VulnerabilitiesRead,
 		CredentialsRead, CredentialsWrite, CredentialsReveal, EvidenceReveal,
 		RemediationRead, RemediationWrite,
@@ -509,7 +517,7 @@ func AllPermissions() []Permission {
 		// Scans module
 		ScansRead, ScansWrite, ScansDelete, ScansExecute, ScansApprove,
 		ScanProfilesRead, ScanProfilesWrite, ScanProfilesDelete,
-		TemplateSourcesRead, TemplateSourcesWrite, TemplateSourcesDelete,
+		ContentSourcesRead, ContentSourcesWrite, ContentSourcesDelete, ContentSourcesApprove,
 		ToolsRead, ToolsWrite, ToolsDelete,
 		TenantToolsRead, TenantToolsWrite,
 		ScannerTemplatesRead, ScannerTemplatesWrite, ScannerTemplatesDelete,

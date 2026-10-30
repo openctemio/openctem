@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
 import { safeHref } from '@/lib/safe-href'
-import { EmptyState, ErrorState } from '@/features/shared'
+import { EmptyState, ErrorState, PageStack } from '@/features/shared'
 import { useTenantModules } from '@/features/integrations/api/use-tenant-modules'
 import { useOrganizationLimits } from '../api/use-organization-limits'
 import { isLimitKey } from '../lib/limit-keys'
@@ -72,7 +72,7 @@ export function OrganizationLimitsUsage() {
     : ''
 
   return (
-    <div className="space-y-5">
+    <PageStack>
       {portalURL && (
         <a
           href={portalURL}
@@ -144,6 +144,6 @@ export function OrganizationLimitsUsage() {
           </CardContent>
         </Card>
       )}
-    </div>
+    </PageStack>
   )
 }

@@ -29,6 +29,8 @@ func ActionTypes() []ActionType {
 		ActionTypeUpdateTicket,
 		ActionTypeTriggerScan,
 		ActionTypeTriggerAITriage,
+		ActionTypeRequestFalsePositive,
+		ActionTypeRequestRiskAcceptance,
 	}
 }
 

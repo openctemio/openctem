@@ -41,6 +41,7 @@ import {
   useLetters,
   type AuthorizationLetter,
 } from '@/features/scope-letters'
+import { confirmName } from '@/lib/confirm-name'
 
 function errorText(err: unknown, fallback: string): string {
   return err instanceof ApiClientError ? err.message : fallback
@@ -302,7 +303,8 @@ export default function ScopeLettersPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="text-destructive"
+                          // Set apart from Download so a tap meant for it cannot land here.
+                          className="ms-3 text-destructive"
                           disabled={busy === l.id}
                           onClick={() => setPendingRevoke(l)}
                         >
@@ -328,7 +330,10 @@ export default function ScopeLettersPage() {
           'confirm.letter.revokeDesc',
           'Scope entries that name this letter stop authorizing active scans at once. A revoked letter cannot be reinstated; upload a new letter instead.'
         )}
-        confirmText={t('confirm.revoke', 'Revoke')}
+        confirmText={t('confirm.letter.revokeButton', 'Revoke letter')}
+        typeToConfirm={
+          pendingRevoke ? confirmName(pendingRevoke.title, pendingRevoke.id) : undefined
+        }
         isLoading={busy !== null}
         handleConfirm={() => (pendingRevoke ? revoke(pendingRevoke) : undefined)}
       />

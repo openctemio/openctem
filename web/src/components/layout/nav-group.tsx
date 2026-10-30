@@ -39,6 +39,8 @@ import {
 } from '@/features/integrations/api/use-tenant-modules'
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
+import { NavCount } from './nav-count'
+import { PinAction } from '@/features/nav-pins/components/pin-action'
 import { subModuleStatus } from '@/lib/permissions/sub-modules'
 import { activeSubItemUrl, checkIsActive, sectionHasActiveRoute } from './nav-active'
 import { NavPendingHint, SidebarLink } from './sidebar-link'
@@ -130,7 +132,7 @@ const SUB_MENU_CLASS =
 
 /**
  * Sub-row label: wraps to a second line rather than truncating, so a long name
- * ("Assignment Rules", "SCIM Provisioning") stays readable in the narrow rail.
+ * ("Assignment rules", "SCIM provisioning") stays readable in the narrow rail.
  * `!` beats the sub-button's own `[&>span:last-child]:truncate`.
  */
 const SUB_LABEL_CLASS = 'flex-1 whitespace-normal! text-start leading-snug text-pretty'
@@ -273,7 +275,7 @@ export function NavBadge({
       </Badge>
     )
   }
-  return <Badge className="ms-auto shrink-0 rounded-full px-1 py-0 text-xs">{children}</Badge>
+  return <NavCount tone="action">{children}</NavCount>
 }
 
 /**
@@ -376,6 +378,9 @@ const SidebarMenuLink = memo(function SidebarMenuLink({
           )}
         </SidebarLink>
       </SidebarMenuButton>
+      {typeof item.url === 'string' && (
+        <PinAction pin={{ kind: 'page', ref: item.url }} label={item.title} />
+      )}
       {item.quickViews === 'findings' && <FindingsQuickViews />}
     </SidebarMenuItem>
   )

@@ -18,6 +18,7 @@ import {
   SetupLinkResult,
   type SetupLinkOutcome,
 } from '@/features/shared/components/one-time-setup-link'
+import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
 
 export interface SetupLinkTarget {
@@ -38,6 +39,7 @@ interface SetupLinkDialogProps {
  * an explicit step because it invalidates any link given out before.
  */
 export function SetupLinkDialog({ target, onOpenChange, issue }: SetupLinkDialogProps) {
+  const { t } = useTranslation()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [outcome, setOutcome] = useState<SetupLinkOutcome | null>(null)
@@ -55,7 +57,7 @@ export function SetupLinkDialog({ target, onOpenChange, issue }: SetupLinkDialog
     try {
       setOutcome(await issue(target.userId))
     } catch (err) {
-      setError(getErrorMessage(err, 'Could not issue a setup link'))
+      setError(getErrorMessage(err, t('org.setupLink.failed', 'Could not issue a setup link')))
     } finally {
       setBusy(false)
     }
@@ -65,9 +67,11 @@ export function SetupLinkDialog({ target, onOpenChange, issue }: SetupLinkDialog
     <Dialog open={!!target} onOpenChange={(next) => (next ? undefined : close())}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Setup link</DialogTitle>
+          <DialogTitle>{t('org.setupLink.title', 'Setup link')}</DialogTitle>
           <DialogDescription>
-            {target?.name || target?.email} has not set a password yet.
+            {t('org.setupLink.desc', '{name} has not set a password yet.', {
+              name: target?.name || target?.email || '',
+            })}
           </DialogDescription>
         </DialogHeader>
 
@@ -77,8 +81,10 @@ export function SetupLinkDialog({ target, onOpenChange, issue }: SetupLinkDialog
               <SetupLinkResult outcome={outcome} email={target.email} />
             ) : (
               <p className="text-sm text-muted-foreground">
-                Issue a new one-time link they can use to set their password. Any link issued before
-                stops working.
+                {t(
+                  'org.setupLink.body',
+                  'Issue a new one-time link they can use to set their password. Any link issued before stops working.'
+                )}
               </p>
             )}
             {error && (
@@ -92,11 +98,11 @@ export function SetupLinkDialog({ target, onOpenChange, issue }: SetupLinkDialog
 
         <DialogFooter>
           {outcome ? (
-            <Button onClick={close}>Done</Button>
+            <Button onClick={close}>{t('org.setupLink.done', 'Done')}</Button>
           ) : (
             <>
               <Button variant="ghost" onClick={close} disabled={busy}>
-                Cancel
+                {t('common.cancel', 'Cancel')}
               </Button>
               <Button onClick={run} disabled={busy || !target}>
                 {busy ? (
@@ -104,7 +110,7 @@ export function SetupLinkDialog({ target, onOpenChange, issue }: SetupLinkDialog
                 ) : (
                   <KeyRound className="me-2 h-4 w-4" />
                 )}
-                Issue setup link
+                {t('org.setupLink.issue', 'Issue setup link')}
               </Button>
             </>
           )}

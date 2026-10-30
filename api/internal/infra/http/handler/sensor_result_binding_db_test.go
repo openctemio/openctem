@@ -302,8 +302,8 @@ func TestResultBinding_UnsolicitedCannotReopenHumanResolved(t *testing.T) {
 	if got := r.findingStatus("human"); got != "resolved" {
 		t.Fatalf("a report without a command reopened a human-resolved finding: %s", got)
 	}
-	if got := r.findingStatus("machine"); got != "confirmed" {
-		t.Fatalf("an auto-resolved finding seen again was not reopened: %s", got)
+	if got := r.findingStatus("machine"); got != "new" {
+		t.Fatalf("an auto-resolved finding seen again was not reopened to new (never triaged): %s", got)
 	}
 
 	cmd := r.command("worker", "running", map[string]any{"scanner": "nmap", "targets": []string{"app-1.corp.example"}}, 0)
@@ -311,7 +311,7 @@ func TestResultBinding_UnsolicitedCannotReopenHumanResolved(t *testing.T) {
 	if code != http.StatusCreated || body["binding"] != "command" {
 		t.Fatalf("bound push: %d %v", code, body)
 	}
-	if got := r.findingStatus("human"); got != "confirmed" {
+	if got := r.findingStatus("human"); got != "new" {
 		t.Fatalf("a report bound to a covering command did not reopen the regression: %s", got)
 	}
 }

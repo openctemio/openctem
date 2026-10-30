@@ -32,13 +32,52 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Merge queue only: when the exact tree under test already passed every
+  # required check (a pull request's tested merge, or an earlier queue run), the
+  # two jobs below are skipped, which a required check reports as success
+  # (.github/scripts/tree-verified.sh). A push and the weekly run always scan:
+  # the full-history upload must stay current. Any error here runs the jobs.
+  tree:
+    name: Tree reuse
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read # the PR named by the merge-queue branch
+      checks: read # the candidate commit's check runs and their annotations
+    outputs:
+      verified: ${{ steps.tree.outputs.verified }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-gh
+      - id: tree
+        env:
+          EVENT: ${{ github.event_name }}
+          SHA: ${{ github.sha }}
+          HEAD_REF: ${{ github.event.merge_group.head_ref }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          TREE_EVENTS: merge_group
+        run: bash .github/scripts/tree-verified.sh
+      - name: Verified tree
+        if: steps.tree.outputs.verified == 'true'
+        env:
+          NOTE: ${{ steps.tree.outputs.note }}
+        run: echo "$NOTE" | tee -a "$GITHUB_STEP_SUMMARY"
+
   secret-scan:
     name: Secret Scanning
+    needs: tree
+    if: ${{ !cancelled() && needs.tree.outputs.verified != 'true' }}
     permissions:
       contents: read
       security-events: write
       actions: read
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
+    timeout-minutes: 10
     env:
       BETTERLEAKS_VERSION: 1.9.0
       BETTERLEAKS_SHA256: f8b185a39ffcece2a1ca82bf3a4e7435cd81963ffd16b7a9128daf75f35f6de7
@@ -174,8 +213,29 @@ jobs:
 
   actionlint:
     name: Workflow Lint
-    runs-on: ubuntu-latest
+    needs: tree
+    if: ${{ !cancelled() && needs.tree.outputs.verified != 'true' }}
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
+    timeout-minutes: 10
     steps:
+      # Branch policy: main only takes release and hotfix branches (the release
+      # train opens them); everything else goes to develop. main is the default
+      # branch, so a pull request opened without choosing a base lands here first.
+      - name: Pull requests into main come from release or hotfix branches
+        if: github.event_name == 'pull_request' && github.base_ref == 'main'
+        env:
+          PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPO: ${{ github.repository }}
+        # The head branch name is attacker-chosen text: read it from the
+        # runner's GITHUB_HEAD_REF, never interpolated into the workflow.
+        run: |
+          HEAD_REF="$GITHUB_HEAD_REF"
+          if [ "$PR_HEAD_REPO" = "$BASE_REPO" ] && printf '%s' "$HEAD_REF" | grep -Eq '^(release|hotfix)/v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "branch policy: $HEAD_REF -> main is allowed"
+            exit 0
+          fi
+          echo "::error::Pull requests into main come only from release/vX.Y.Z or hotfix/vX.Y.Z branches of this repository. Change the base branch to develop (Edit, next to the title)."
+          exit 1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -191,6 +251,12 @@ jobs:
           echo "${ACTIONLINT_SHA256}  actionlint.tgz" | sha256sum -c -
           tar -xzf actionlint.tgz actionlint
           ./actionlint -color
+      # Every job has a timeout-minutes (a hung job otherwise holds a runner,
+      # and a merge-queue group, for 360 minutes).
+      - name: Job timeouts
+        run: |
+          bash .github/scripts/check-job-timeouts.test.sh
+          bash .github/scripts/check-job-timeouts.sh
       # Workflow security audit (template injection, unsafe triggers, credential
       # persistence, unpinned or archived actions, over-broad permissions).
       # Configuration and every suppression with its reason: .github/zizmor.yml.
@@ -206,14 +272,52 @@ jobs:
           echo "${ZIZMOR_SHA256}  zizmor.tgz" | sha256sum -c -
           tar -xzf zizmor.tgz zizmor
           ./zizmor --no-progress --format github .github
+      # Which languages CodeQL analyses for an event (develop pushes: the changed side).
+      - name: CodeQL languages self-test
+        run: bash .github/scripts/codeql-languages.test.sh
       - name: Actions are pinned to commit SHAs
         run: bash .github/scripts/check-action-pins.sh
+      # Every runs-on is a hosted label or an approved runner selector, and a
+      # fork pull request always runs on a GitHub-hosted runner.
+      - name: Runner selection self-test
+        run: bash .github/scripts/check-runners.test.sh
+      - name: Runner selection
+        run: bash .github/scripts/check-runners.sh
+      # The automatic split of heavy jobs between the pools (run_id modulo 100).
+      - name: Runner pool split self-test
+        run: bash .github/scripts/ci-pool.test.sh
+      # The pre-push hook of a linked worktree lints only the branch's changes.
+      - name: Pre-push hook worktree self-test
+        run: bash .github/scripts/pre-push-worktree.test.sh
       # Which jobs a change runs (api/web/docs routing shared by every workflow).
       - name: Change routing self-test
         run: bash .github/scripts/changed.test.sh
+      # Which part of a side a change touches (e2e-only, catalogs, CI files).
+      - name: Change scope self-test
+        run: bash .github/scripts/scope.test.sh
+      # Which develop pushes skip the jobs the merge queue already ran.
+      - name: Merge-queue reuse self-test
+        run: bash .github/scripts/queue-verified.test.sh
+      # Which runs a failed job cancels (merge queue: the group; PR: its own run).
+      - name: Fail-fast self-test
+        run: bash .github/scripts/fail-fast.test.sh
+      # Which merge-queue groups reuse a tree that already passed.
+      - name: Tree reuse self-test
+        run: bash .github/scripts/tree-verified.test.sh
+      # Which Go packages the fast tier tests for a pull request.
+      - name: Affected packages self-test
+        run: bash .github/scripts/go-affected.test.sh
       # Which base images the CI image mirror copies for the other repositories.
       - name: CI image mirror base list self-test
         run: bash .github/scripts/ci-image-bases.test.sh
+      # Content keys of the CI images, their attestation check, retention, and the
+      # rule that no pull_request path can hold packages: write.
+      - name: CI image build-once self-tests
+        run: |
+          bash .github/scripts/image-key.test.sh
+          bash .github/scripts/ci-image-resolve.test.sh
+          bash .github/scripts/ci-images-prune.test.sh
+          bash .github/scripts/pr-no-package-write.test.sh
       # Which release the upgrade test starts from, and its refusals.
       - name: Upgrade test self-test
         run: bash .github/scripts/upgrade-test.test.sh
@@ -224,6 +328,12 @@ jobs:
       # Moved here from their own jobs (one runner each for a few seconds).
       # The security gate's tests run pull request code, which the gate job
       # itself never does (security-gate.yml).
+      # The flaky-test quarantine list: schema, owner, issue, fix SLA, no security tests.
+      - name: Flaky-test quarantine
+        run: |
+          python3 .github/scripts/quarantine_test.py
+          python3 .github/scripts/quarantine.py check
+
       - name: Security gate unit tests
         run: python3 .github/scripts/security_gate_test.py
 
@@ -239,6 +349,18 @@ jobs:
       - name: Tool pin freshness self-test
         run: bash .github/scripts/tool-pins.test.sh
 
+      # Incremental pull request CI and the release fast path.
+      - name: Incremental CI base (last green commit) self-test
+        run: bash .github/scripts/green-base.test.sh
+      - name: Release provenance self-test
+        run: bash .github/scripts/release/tests/test_release_provenance.sh
+      - name: Release preflight self-test
+        run: bash .github/scripts/release/tests/test_release_preflight.sh
+      - name: Early warning self-test
+        run: bash .github/scripts/early-warning.test.sh
+      - name: Release builds use no shared cache
+        run: bash .github/scripts/check-release-no-cache.sh
+
   # New or upgraded dependencies a pull request brings in (Go modules, npm,
   # GitHub Actions) are checked against the GitHub Advisory Database. Fails on a
   # known high or critical vulnerability in what the pull request adds; existing
@@ -248,7 +370,8 @@ jobs:
     if: github.event_name == 'pull_request'
     permissions:
       contents: read
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

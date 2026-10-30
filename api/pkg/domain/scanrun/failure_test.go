@@ -57,6 +57,7 @@ func TestFailureClasses(t *testing.T) {
 		FailureToolExit:            FailureClassTool,
 		FailureTimeout:             FailureClassTimeout,
 		FailureCanceled:            FailureClassCanceled,
+		FailureCoverageGaps:        FailureClassPartial,
 		"SOMETHING_NEW":            FailureClassTool,
 	} {
 		if got := ClassOf(code); got != want {
@@ -89,5 +90,11 @@ func TestTargetUnreachableIsSensorCode(t *testing.T) {
 	}
 	if !IsPermanentFailure(FailureTargetUnreachable) {
 		t.Fatal("TARGET_UNREACHABLE is not retried: the same sensor fails the same way")
+	}
+}
+
+func TestCoverageGapsIsAKnownPartialCode(t *testing.T) {
+	if !IsKnownFailureCode(ErrCodeCoverageGaps) || ClassOf(ErrCodeCoverageGaps).Retryable() {
+		t.Fatal("COVERAGE_GAPS is a known code of the partial class, not a retryable failure")
 	}
 }

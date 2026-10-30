@@ -9,11 +9,12 @@
  * assets of the caller's data scope and runs every scan gate.
  */
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { ChevronDown, Loader2, Radar } from 'lucide-react'
 
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -69,6 +70,8 @@ export function TenableScanNowButton({
   const router = useRouter()
   const connectors = useScanNowConnectors()
   const { trigger, isMutating } = useConnectorScanNowApi()
+  // A scan sends traffic to the assets now: the user confirms the connector first.
+  const [pending, setPending] = useState<Integration | null>(null)
 
   if (connectors.length === 0 || assetIds.length === 0) return null
 
@@ -102,47 +105,77 @@ export function TenableScanNowButton({
     <Radar className="me-1.5 h-3.5 w-3.5" aria-hidden />
   )
 
+  const count = assetIds.length
+  const dialog = (
+    <ConfirmDialog
+      open={pending !== null}
+      onOpenChange={(open) => !open && setPending(null)}
+      title={
+        count === 1
+          ? t('confirm.tenableScan.titleOne', undefined, { name: pending?.name ?? '' })
+          : t('confirm.tenableScan.title', undefined, { count, name: pending?.name ?? '' })
+      }
+      desc={t('confirm.tenableScan.desc')}
+      confirmText={
+        count === 1
+          ? t('confirm.tenableScan.btnOne')
+          : t('confirm.tenableScan.btn', undefined, { count })
+      }
+      handleConfirm={async () => {
+        const integration = pending
+        setPending(null)
+        if (integration) await start(integration)
+      }}
+    />
+  )
+
   if (connectors.length === 1) {
     return (
-      <Button
-        size="sm"
-        variant={variant}
-        className={className}
-        title={title}
-        disabled={isMutating}
-        onClick={() => void start(connectors[0])}
-      >
-        {icon}
-        {label}
-      </Button>
-    )
-  }
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
+      <>
         <Button
           size="sm"
           variant={variant}
           className={className}
           title={title}
           disabled={isMutating}
+          onClick={() => setPending(connectors[0])}
         >
           {icon}
           {label}
-          <ChevronDown className="ms-1 h-3.5 w-3.5" aria-hidden />
         </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuLabel>
-          {t('tenableSc.scanNow.pickConnector', 'Scan with connector')}
-        </DropdownMenuLabel>
-        {connectors.map((c) => (
-          <DropdownMenuItem key={c.id} onSelect={() => void start(c)}>
-            {c.name}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+        {dialog}
+      </>
+    )
+  }
+
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            size="sm"
+            variant={variant}
+            className={className}
+            title={title}
+            disabled={isMutating}
+          >
+            {icon}
+            {label}
+            <ChevronDown className="ms-1 h-3.5 w-3.5" aria-hidden />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuLabel>
+            {t('tenableSc.scanNow.pickConnector', 'Scan with connector')}
+          </DropdownMenuLabel>
+          {connectors.map((c) => (
+            <DropdownMenuItem key={c.id} onSelect={() => setPending(c)}>
+              {c.name}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {dialog}
+    </>
   )
 }

@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
+import errorsEn from '../../src/lib/i18n/dictionaries/en/errors.json'
 import type { E2EConfig } from './env'
 
 /**
@@ -8,21 +9,25 @@ import type { E2EConfig } from './env'
  * attempts do not count. The whole suite signs in from one address: the
  * login spec, every worker's session and the specs that sign in as the
  * limited member already make five sign-ins within seconds, so the next one
- * is answered 429 for up to a minute. The form then shows the API's
- * "Rate limit exceeded" and stays on /login.
+ * is answered 429 for up to a minute. The form then shows the console's
+ * text for the API's RATE_LIMIT_EXCEEDED code and stays on /login.
  */
 export const SIGN_IN_WINDOW_MS = 60_000
+
+/** The sign-in form's 429 text, read from the catalog so a rewording cannot break the match. */
+const RATE_LIMITED_TEXT = errorsEn['errors.auth.RATE_LIMIT_EXCEEDED']
 
 /**
  * Clicks "Sign in" on the filled form and waits until the browser reaches a
  * URL `arrived` accepts. When the API refuses with 429 it waits for the
  * refusal toast to go and submits again, until the window has passed, and
- * gives the running test that much more time. Any other outcome (wrong
- * credentials, a redirect elsewhere) still fails after 30 s as before.
+ * gives the running test that much more time. Any other error toast (wrong
+ * credentials, a server error) fails at once with the toast's text; no
+ * navigation and no toast fails after 30 s.
  */
 export async function submitSignIn(page: Page, arrived: (url: URL) => boolean): Promise<void> {
   const deadline = Date.now() + SIGN_IN_WINDOW_MS + 10_000
-  const refused = page.getByText('Rate limit exceeded').first()
+  const errorToast = page.locator('[data-sonner-toast][data-type="error"]').first()
   let extended = false
   for (;;) {
     await page.getByRole('button', { name: 'Sign in' }).click()
@@ -31,14 +36,18 @@ export async function submitSignIn(page: Page, arrived: (url: URL) => boolean): 
         .waitForURL(arrived, { timeout: 30_000 })
         .then(() => 'arrived' as const)
         .catch(() => 'timeout' as const),
-      refused
+      errorToast
         .waitFor({ state: 'visible', timeout: 30_000 })
-        .then(() => 'rate-limited' as const)
+        .then(() => 'refused' as const)
         .catch(() => 'timeout' as const),
     ])
     if (outcome === 'arrived') return
     if (outcome === 'timeout') {
       throw new Error(`sign-in did not reach the expected page within 30s; still at ${page.url()}`)
+    }
+    const said = ((await errorToast.textContent().catch(() => '')) ?? '').trim()
+    if (!said.includes(RATE_LIMITED_TEXT)) {
+      throw new Error(`sign-in was refused; still at ${page.url()}; the form said: ${said}`)
     }
     if (Date.now() > deadline) {
       throw new Error(`sign-in still answered 429 after the ${SIGN_IN_WINDOW_MS / 1000}s window`)
@@ -54,7 +63,7 @@ export async function submitSignIn(page: Page, arrived: (url: URL) => boolean): 
       }
     }
     // The toast lasts a few seconds; a fresh one is the next attempt's answer.
-    await refused.waitFor({ state: 'hidden', timeout: 30_000 })
+    await errorToast.waitFor({ state: 'hidden', timeout: 30_000 })
     await page.waitForTimeout(5_000)
   }
 }
@@ -71,6 +80,10 @@ export async function submitSignIn(page: Page, arrived: (url: URL) => boolean): 
  */
 export async function loginAs(page: Page, config: E2EConfig): Promise<void> {
   await page.goto('/login')
+  // Fill only once the form is hydrated: text typed into the server-rendered
+  // inputs before React takes over is dropped (seen on WebKit against a dev
+  // server, where hydration is slow).
+  await page.waitForLoadState('networkidle')
 
   // Email + password fields. Targeting by accessible label survives
   // class name and DOM structure changes.

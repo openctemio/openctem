@@ -122,8 +122,8 @@ func (s stubSignIn) RecordPasswordSuccess(context.Context, shared.ID) {}
 
 func (s stubSignIn) RecordPasswordFailure(context.Context, shared.ID) {}
 
-func (s stubSignIn) CreateAccount(context.Context, string, string) (shared.ID, string, error) {
-	return shared.ID{}, "", errors.New("not used")
+func (s stubSignIn) CreateInvitedAccount(context.Context, string, string, time.Duration) (shared.ID, adminconsole.Invitation, error) {
+	return shared.ID{}, adminconsole.Invitation{}, errors.New("not used")
 }
 
 func (s stubSignIn) AccountActive(_ context.Context, userID shared.ID) (bool, error) {
@@ -294,10 +294,12 @@ func TestAdminConsoleLoginEndToEnd(t *testing.T) {
 	}
 }
 
-// TestPlatformAdminCannotJoinOrganization checks the database guarantee
-// behind the platform administrator model: an administrator's account belongs to no
-// organization, and an organization member cannot be made an administrator.
-func TestPlatformAdminCannotJoinOrganization(t *testing.T) {
+// TestPlatformAdminAccountMayJoinOrganization checks the single-identity model
+// (RFC-134): the platform role is an attribute of the one users account,
+// effective only on the console plane, so an administrator's account may be an
+// ordinary member of an organization and a member may be linked as an
+// administrator. One account still backs at most one administrator.
+func TestPlatformAdminAccountMayJoinOrganization(t *testing.T) {
 	db := openConsoleDB(t)
 	admins := postgres.NewAdminRepository(db)
 	stamp := time.Now().Format("150405.000000")
@@ -322,32 +324,67 @@ func TestPlatformAdminCannotJoinOrganization(t *testing.T) {
 		return a
 	}
 
-	// An administrator's account cannot be added to an organization.
+	// An administrator's account joins an organization like any other account.
 	adminEmail := "admin-it-" + stamp + "@example.test"
 	a := newAdmin(adminEmail)
 	adminUser := createUser(t, db, adminEmail)
 	if err := admins.LinkUser(t.Context(), a.ID(), adminUser); err != nil {
 		t.Fatal(err)
 	}
-	_, err := db.ExecContext(t.Context(), `INSERT INTO tenant_members (user_id, tenant_id) VALUES ($1, $2)`, adminUser.String(), tenantID.String())
-	var pqErr *pq.Error
-	if !errors.As(err, &pqErr) || pqErr.Code != "23514" {
-		t.Fatalf("membership insert for an administrator: got %v, want check_violation", err)
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO tenant_members (user_id, tenant_id) VALUES ($1, $2)`, adminUser.String(), tenantID.String()); err != nil {
+		t.Fatalf("membership insert for an administrator's account: %v", err)
 	}
 
-	// An organization member cannot be linked as an administrator.
+	// An organization member can be linked as an administrator.
 	memberEmail := "member-it-" + stamp + "@example.test"
 	b := newAdmin(memberEmail)
 	member := createUser(t, db, memberEmail)
 	if _, err := db.ExecContext(t.Context(), `INSERT INTO tenant_members (user_id, tenant_id) VALUES ($1, $2)`, member.String(), tenantID.String()); err != nil {
 		t.Fatal(err)
 	}
-	if err := admins.LinkUser(t.Context(), b.ID(), member); !errors.Is(err, admin.ErrUserHasMemberships) {
-		t.Fatalf("link a member: got %v, want ErrUserHasMemberships", err)
+	if err := admins.LinkUser(t.Context(), b.ID(), member); err != nil {
+		t.Fatalf("link a member: %v", err)
+	}
+
+	// Removing the platform role never deletes the account or its membership.
+	if err := admins.Delete(t.Context(), b.ID()); err != nil {
+		t.Fatal(err)
+	}
+	var stillMember bool
+	if err := db.QueryRowContext(t.Context(), `SELECT EXISTS (SELECT 1 FROM tenant_members m JOIN users u ON u.id = m.user_id WHERE m.user_id = $1)`, member.String()).Scan(&stillMember); err != nil || !stillMember {
+		t.Fatalf("account and membership after removing the platform role: member=%v err=%v", stillMember, err)
+	}
+
+	// A break-glass administrator stays console-only: its account cannot join
+	// an organization, and an account that is a member cannot be marked
+	// break-glass.
+	bgEmail := "bg-it-" + stamp + "@example.test"
+	bg := newAdmin(bgEmail)
+	bgUser := createUser(t, db, bgEmail)
+	if err := admins.LinkUser(t.Context(), bg.ID(), bgUser); err != nil {
+		t.Fatal(err)
+	}
+	if err := bg.SetBreakGlass(true); err != nil {
+		t.Fatal(err)
+	}
+	if err := admins.GuardedUpdate(t.Context(), bg); err != nil {
+		t.Fatalf("mark a member-less account break-glass: %v", err)
+	}
+	_, err := db.ExecContext(t.Context(), `INSERT INTO tenant_members (user_id, tenant_id) VALUES ($1, $2)`, bgUser.String(), tenantID.String())
+	var pqErr *pq.Error
+	if !errors.As(err, &pqErr) || pqErr.Code != "23514" || pqErr.Constraint != "break_glass_console_only" {
+		t.Fatalf("membership for a break-glass account: got %v, want break_glass_console_only", err)
+	}
+	if err := a.SetBreakGlass(true); err != nil {
+		t.Fatal(err)
+	}
+	if err := admins.GuardedUpdate(t.Context(), a); !errors.Is(err, admin.ErrBreakGlassHasMemberships) {
+		t.Fatalf("mark a member account break-glass: got %v, want ErrBreakGlassHasMemberships", err)
 	}
 
 	// One account backs at most one administrator.
-	if err := admins.LinkUser(t.Context(), b.ID(), adminUser); !errors.Is(err, admin.ErrUserAlreadyAdmin) {
+	c := newAdmin("other-it-" + stamp + "@example.test")
+	if err := admins.LinkUser(t.Context(), c.ID(), adminUser); !errors.Is(err, admin.ErrUserAlreadyAdmin) {
 		t.Fatalf("link an already-linked account: got %v, want ErrUserAlreadyAdmin", err)
 	}
 }

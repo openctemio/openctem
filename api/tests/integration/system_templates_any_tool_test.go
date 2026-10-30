@@ -15,8 +15,9 @@ import (
 
 // Every system template copies into a tenant and saves with the real
 // validator: no step pins a tool (so none can be missing on the tenant's
-// sensors), every step runs a catalog capability, and the settings are the
-// capability's standard params. The owner's case: "Full Reconnaissance"
+// sensors), every step runs a catalog capability (an optional step that
+// waits for a tool may run a planned one), and the settings and depth params
+// are the capability's standard params. The owner's case: "Full Reconnaissance"
 // pinned gowitness and wappalyzer, and a copy refused to save with
 // "tool not found in registry: gowitness".
 func TestSystemTemplates_AreAnyToolCapabilityStepsThatSave(t *testing.T) {
@@ -62,13 +63,15 @@ func TestSystemTemplates_AreAnyToolCapabilityStepsThatSave(t *testing.T) {
 			if s.Tool != "" {
 				t.Errorf("%s / %s pins %q: a template step runs on any tool", name, s.StepKey, s.Tool)
 			}
-			if _, ok := stage.ForStep(s.Tool, s.Capabilities); !ok {
+			// An optional step may wait for a tool: a planned capability.
+			if _, ok := stage.ForStep(s.Tool, s.Capabilities); !ok && !(s.RunPolicy.Optional && len(s.Capabilities) == 1 && stage.IsPlanned(stage.Key(s.Capabilities[0]))) {
 				t.Errorf("%s / %s runs no catalog capability: %v", name, s.StepKey, s.Capabilities)
 			}
+			policy := s.RunPolicy
 			inputs = append(inputs, scanrun.AddStepInput{
 				TenantID: tenant, StepKey: s.StepKey, Name: s.Name, Order: s.StepOrder,
 				Tool: s.Tool, Capabilities: s.Capabilities, Config: s.Config,
-				TimeoutSeconds: s.TimeoutSeconds, DependsOn: s.DependsOn,
+				TimeoutSeconds: s.TimeoutSeconds, DependsOn: s.DependsOn, RunPolicy: &policy,
 			})
 		}
 		if err := svc.ValidateSteps(ctx, inputs); err != nil {

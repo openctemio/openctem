@@ -359,7 +359,12 @@ func MatchesPattern(targetType TargetType, pattern, value string) bool {
 	case TargetTypeDomain, TargetTypeSubdomain, TargetTypeEmailDomain:
 		return matchDomain(pattern, value)
 	case TargetTypeIPAddress:
-		return pattern == value
+		// One address in any spelling: "2001:DB8::1" and "2001:db8::1",
+		// "10.0.0.5" and "::ffff:10.0.0.5" are the same address.
+		if a, err := netip.ParseAddr(strings.Trim(strings.TrimSpace(pattern), "[]")); err == nil {
+			return matchCIDR(a.Unmap().String(), value)
+		}
+		return false
 	case TargetTypeIPRange, TargetTypeCIDR:
 		return matchCIDR(pattern, value)
 	case TargetTypeRepository:
@@ -418,13 +423,22 @@ func MatchesPattern(targetType TargetType, pattern, value string) bool {
 func matchDomain(pattern, domain string) bool {
 	pWild, p := splitDomainWildcard(pattern)
 	dWild, d := splitDomainWildcard(domain)
-	if p == "" || d == "" {
+	if p == "" || d == "" || !hostnameOnly(p) || !hostnameOnly(d) {
 		return false
 	}
 	if !pWild {
 		return !dWild && d == p
 	}
 	return d == p || strings.HasSuffix(d, "."+p)
+}
+
+// hostnameOnly reports whether s can only be a host name: no URL, port,
+// user, path, query or fragment syntax and no whitespace. A domain entry
+// matches host names only; without this, the raw text of a URL such as
+// "http://other.test/?q=.example.com" ends in ".example.com" and passed the
+// suffix test. The host of a URL or host:port is matched as its own form.
+func hostnameOnly(s string) bool {
+	return !strings.ContainsAny(s, "/?#@:\\[]% \t\r\n")
 }
 
 // domainIDNA converts a name to its ASCII (punycode) form for comparison.

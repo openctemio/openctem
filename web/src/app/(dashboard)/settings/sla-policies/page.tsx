@@ -5,7 +5,13 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { AlertCircle, Plus, Pencil, Trash2, ShieldCheck, ShieldPlus, Timer } from 'lucide-react'
 
 import { Main } from '@/components/layout'
-import { PageHeader, DataTable, DataTableColumnHeader, EmptyState } from '@/features/shared'
+import {
+  PageHeader,
+  DataTable,
+  DataTableColumnHeader,
+  EmptyState,
+  PageStack,
+} from '@/features/shared'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -240,24 +246,24 @@ export default function SlaPoliciesPage() {
 
   return (
     <Main>
-      <PageHeader
-        title={t('settings.slaPolicies.title', 'SLA policies')}
-        description={t(
-          'settings.slaPolicies.description',
-          'Remediation windows per priority class (P0–P3), and per severity for findings without a class.'
-        )}
-      >
-        {!isLoading && !error && (
-          <Can permission={Permission.SLAWrite}>
-            <Button size="sm" onClick={openCreate}>
-              <Plus className="h-4 w-4" />
-              {t('settings.slaPolicies.page.newPolicy', 'New policy')}
-            </Button>
-          </Can>
-        )}
-      </PageHeader>
+      <PageStack>
+        <PageHeader
+          title={t('settings.slaPolicies.title', 'SLA policies')}
+          description={t(
+            'settings.slaPolicies.description',
+            'Remediation windows per priority class (P0–P3), and per severity for findings without a class.'
+          )}
+        >
+          {!isLoading && !error && (
+            <Can permission={Permission.SLAWrite}>
+              <Button size="sm" onClick={openCreate}>
+                <Plus className="h-4 w-4" />
+                {t('settings.slaPolicies.page.newPolicy', 'New policy')}
+              </Button>
+            </Can>
+          )}
+        </PageHeader>
 
-      <div className="mt-5">
         {error ? (
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
@@ -306,40 +312,40 @@ export default function SlaPoliciesPage() {
             searchPlaceholder={t('settings.slaPolicies.page.searchPlaceholder', 'Search policies…')}
           />
         )}
-      </div>
 
-      <SlaPolicyDialog open={dialogOpen} onOpenChange={setDialogOpen} policy={editing} />
+        <SlaPolicyDialog open={dialogOpen} onOpenChange={setDialogOpen} policy={editing} />
 
-      <ConfirmDialog
-        open={Boolean(defaultTarget)}
-        onOpenChange={(o) => !o && setDefaultTarget(null)}
-        title={t('confirm.slaPolicy.makeDefaultTitle', 'Make "{name}" the default SLA policy?', {
-          name: defaultTarget?.name ?? '',
-        })}
-        desc={t(
-          'confirm.slaPolicy.makeDefaultDesc',
-          'New deadlines will follow this policy from now on. Open findings are re-scored right away: where this policy has tighter windows their deadlines move earlier; they are never moved later, so switching back does not restore the old deadlines.'
-        )}
-        confirmText={t('confirm.slaPolicy.makeDefaultConfirm', 'Make default')}
-        isLoading={isSettingDefault}
-        handleConfirm={handleMakeDefault}
-      />
+        <ConfirmDialog
+          open={Boolean(defaultTarget)}
+          onOpenChange={(o) => !o && setDefaultTarget(null)}
+          title={t('confirm.slaPolicy.makeDefaultTitle', 'Make "{name}" the default SLA policy?', {
+            name: defaultTarget?.name ?? '',
+          })}
+          desc={t(
+            'confirm.slaPolicy.makeDefaultDesc',
+            'New deadlines will follow this policy from now on. Open findings are re-scored right away: where this policy has tighter windows their deadlines move earlier; they are never moved later, so switching back does not restore the old deadlines.'
+          )}
+          confirmText={t('confirm.slaPolicy.makeDefaultConfirm', 'Make default')}
+          isLoading={isSettingDefault}
+          handleConfirm={handleMakeDefault}
+        />
 
-      <ConfirmDialog
-        open={Boolean(deleteTarget)}
-        onOpenChange={(o) => !o && setDeleteTarget(null)}
-        title={t('confirm.slaPolicy.deleteTitle', 'Delete the SLA policy "{name}"?', {
-          name: deleteTarget?.name ?? '',
-        })}
-        desc={t(
-          'confirm.slaPolicy.deleteDesc',
-          'It does not apply to any finding (only the default policy does). This cannot be undone.'
-        )}
-        confirmText={t('confirm.delete', 'Delete')}
-        destructive
-        isLoading={isDeleting}
-        handleConfirm={handleDelete}
-      />
+        <ConfirmDialog
+          open={Boolean(deleteTarget)}
+          onOpenChange={(o) => !o && setDeleteTarget(null)}
+          title={t('confirm.slaPolicy.deleteTitle', 'Delete the SLA policy "{name}"?', {
+            name: deleteTarget?.name ?? '',
+          })}
+          desc={t(
+            'confirm.slaPolicy.deleteDesc',
+            'It does not apply to any finding (only the default policy does). This cannot be undone.'
+          )}
+          confirmText={t('confirm.delete', 'Delete')}
+          destructive
+          isLoading={isDeleting}
+          handleConfirm={handleDelete}
+        />
+      </PageStack>
     </Main>
   )
 }

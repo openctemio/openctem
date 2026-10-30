@@ -20,6 +20,7 @@ import { env } from '@/lib/env'
 import { devLog } from '@/lib/logger'
 import { withAuthRefreshLock } from '@/lib/auth-refresh-lock'
 import { coalesceGet } from './request-dedupe'
+import { noteRateLimited } from './rate-limit-backoff'
 import { readCsrfCookie } from '@/lib/csrf-client'
 
 // ============================================
@@ -300,6 +301,12 @@ export async function apiClient<T = unknown>(
   // Create abort controller for timeout
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), timeout)
+  // A caller's signal (a newer search superseding this one) aborts too.
+  const callerSignal = fetchOptions.signal
+  if (callerSignal) {
+    if (callerSignal.aborted) controller.abort()
+    else callerSignal.addEventListener('abort', () => controller.abort(), { once: true })
+  }
 
   try {
     // Make request
@@ -322,6 +329,8 @@ export async function apiClient<T = unknown>(
 
     // Handle non-ok responses
     if (!response.ok) {
+      // Remember the server's wait so search-as-you-type holds new queries.
+      if (response.status === 429) noteRateLimited(response.headers.get('retry-after'))
       // Handle 401 Unauthorized - try to refresh token
       if (response.status === 401 && !_skipRefreshRetry && !skipAuth) {
         // If already redirecting, don't attempt anything

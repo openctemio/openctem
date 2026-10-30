@@ -1,6 +1,9 @@
 package apikey
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Filter represents filtering options for listing API keys.
 type Filter struct {
@@ -35,4 +38,9 @@ type Repository interface {
 	// use_count). Best-effort — callers ignore its error so telemetry never
 	// blocks authentication.
 	TouchLastUsed(ctx context.Context, tenantID, id ID, ip string) error
+	// RevokeByUser revokes every active key owned by userID in EVERY
+	// organization (keys without an owner are untouched) and returns how
+	// many. CountActiveByUser counts them. Both filter on the owner only.
+	RevokeByUser(ctx context.Context, userID, revokedBy ID, now time.Time) (int, error)
+	CountActiveByUser(ctx context.Context, userID ID, now time.Time) (int, error)
 }

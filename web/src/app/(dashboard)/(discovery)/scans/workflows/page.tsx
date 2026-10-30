@@ -85,6 +85,7 @@ import {
   saveDraftSteps,
 } from '@/features/scan-workflows/lib/draft'
 import { firstProblem, readinessLabel } from '@/features/scan-workflows/lib/readiness'
+import { RetiredBadge, RetiredNotice } from '@/features/scan-workflows/components/retired-workflow'
 import { WorkflowStagesView } from '@/features/scan-workflows/components/workflow-stages'
 import { ScansPageHeader, ScansSectionTabs } from '@/features/scans/components/scans-section-tabs'
 import { NewScanWorkflowButton } from '@/features/scan-workflows/components/new-scan-workflow-button'
@@ -108,6 +109,9 @@ export default function ScanWorkflowsPage() {
   const { t } = useTranslation()
   // The owner filter lives in the URL so a reload or shared link keeps it.
   const [owner, setOwner] = useUrlFilter('owner', 'all')
+  // Retired system workflows are hidden unless asked for.
+  const [retiredFilter, setRetiredFilter] = useUrlFilter('retired', 'hide')
+  const showRetired = retiredFilter === 'show'
   const [selectedWorkflow, setSelectedWorkflow] = useState<ScanWorkflow | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [isFormOpen, setIsFormOpen] = useState(false)
@@ -126,7 +130,7 @@ export default function ScanWorkflowsPage() {
     data: workflows,
     isLoading: loadingWorkflows,
     error: workflowsError,
-  } = useScanWorkflows({ per_page: 100, include: 'readiness' })
+  } = useScanWorkflows({ per_page: 100, include: 'readiness', include_retired: showRetired })
   // Changing a workflow (switch, edit, clone, use a template) needs
   // scan_workflows:write, as the API requires.
   const canWriteWorkflows = useHasPermission(Permission.ScanWorkflowsWrite)
@@ -308,7 +312,7 @@ export default function ScanWorkflowsPage() {
               <p className="truncate text-sm font-medium">{workflow.name}</p>
               {workflow.is_system_template && (
                 <Badge variant="secondary" className="shrink-0 text-xs">
-                  System
+                  {t('scans.workflows.badgeSystem', 'System')}
                 </Badge>
               )}
               {readinessLabel(workflow.readiness) && (
@@ -330,17 +334,18 @@ export default function ScanWorkflowsPage() {
     },
     {
       id: 'status',
-      accessorFn: (p) => (p.is_active ? 'active' : 'inactive'),
+      accessorFn: (p) => (p.is_retired ? 'retired' : p.is_active ? 'active' : 'inactive'),
       header: ({ column }) => <DataTableColumnHeader column={column} title="Status" />,
-      cell: ({ row }) => (
-        <Badge variant={row.original.is_active ? 'default' : 'secondary'}>
-          {row.original.is_active
-            ? 'Active'
-            : row.original.is_system_template
-              ? 'Unavailable'
-              : 'Inactive'}
-        </Badge>
-      ),
+      cell: ({ row }) =>
+        row.original.is_retired ? (
+          <RetiredBadge workflow={row.original} />
+        ) : (
+          <Badge variant={row.original.is_active ? 'default' : 'secondary'}>
+            {row.original.is_active
+              ? t('scans.workflows.statusActive', 'Active')
+              : t('scans.workflows.statusInactive', 'Inactive')}
+          </Badge>
+        ),
     },
     {
       id: 'steps',
@@ -399,7 +404,7 @@ export default function ScanWorkflowsPage() {
               {!canWriteWorkflows ? null : workflow.is_system_template ? (
                 <DropdownMenuItem
                   onClick={() => handleOpenCloneDialog(workflow)}
-                  disabled={!workflow.is_active}
+                  disabled={!workflow.is_active || workflow.is_retired}
                 >
                   <Copy className="me-2 h-4 w-4" />
                   Use template
@@ -450,21 +455,33 @@ export default function ScanWorkflowsPage() {
   )
 
   const ownerFilter = (
-    <Select value={owner} onValueChange={setOwner}>
-      <SelectTrigger
-        className="h-9 w-auto min-w-36"
-        aria-label={t('scans.workflows.ownerFilter', 'Workflow owner')}
-      >
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value="all">{t('scans.workflows.ownerAll', 'All workflows')}</SelectItem>
-        <SelectItem value="mine">{t('scans.workflows.ownerMine', 'My workflows')}</SelectItem>
-        <SelectItem value="system">
-          {t('scans.workflows.ownerSystem', 'System templates')}
-        </SelectItem>
-      </SelectContent>
-    </Select>
+    <div className="flex flex-wrap items-center gap-3">
+      <Select value={owner} onValueChange={setOwner}>
+        <SelectTrigger
+          className="h-9 w-auto min-w-36"
+          aria-label={t('scans.workflows.ownerFilter', 'Workflow owner')}
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">{t('scans.workflows.ownerAll', 'All workflows')}</SelectItem>
+          <SelectItem value="mine">{t('scans.workflows.ownerMine', 'My workflows')}</SelectItem>
+          <SelectItem value="system">
+            {t('scans.workflows.ownerSystem', 'System templates')}
+          </SelectItem>
+        </SelectContent>
+      </Select>
+      <div className="flex items-center gap-2">
+        <Switch
+          id="show-retired-workflows"
+          checked={showRetired}
+          onCheckedChange={(on) => setRetiredFilter(on ? 'show' : 'hide')}
+        />
+        <Label htmlFor="show-retired-workflows" className="text-sm font-normal">
+          {t('scans.workflows.showRetired', 'Show retired')}
+        </Label>
+      </div>
+    </div>
   )
 
   return (
@@ -510,7 +527,7 @@ export default function ScanWorkflowsPage() {
               columns={workflowColumns}
               data={visibleWorkflows}
               searchKey="name"
-              searchPlaceholder="Search workflows..."
+              searchPlaceholder={t('scans.workflows.search', 'Search workflows…')}
               getRowId={(p) => p.id}
               onRowClick={handleOpenWorkflowDetail}
               toolbarStart={ownerFilter}
@@ -572,7 +589,7 @@ export default function ScanWorkflowsPage() {
                       {isTemplate ? (
                         <Badge variant="secondary" className="gap-1 text-xs">
                           <Cloud className="h-3 w-3" />
-                          System template
+                          {t('scans.workflows.systemTemplate', 'System template')}
                         </Badge>
                       ) : (
                         <Badge
@@ -582,9 +599,12 @@ export default function ScanWorkflowsPage() {
                             pl.is_active && 'border-success/30 bg-success/10 text-success'
                           )}
                         >
-                          {pl.is_active ? 'Active' : 'Inactive'}
+                          {pl.is_active
+                            ? t('scans.workflows.statusActive', 'Active')
+                            : t('scans.workflows.statusInactive', 'Inactive')}
                         </Badge>
                       )}
+                      {pl.is_retired && <RetiredBadge workflow={pl} />}
                       <Badge variant="outline" className="text-xs">
                         v{pl.version}
                       </Badge>
@@ -596,6 +616,7 @@ export default function ScanWorkflowsPage() {
                       <>
                         <Button
                           size="sm"
+                          disabled={pl.is_retired}
                           onClick={() => {
                             handleOpenCloneDialog(pl)
                             setSelectedWorkflow(null)
@@ -628,7 +649,8 @@ export default function ScanWorkflowsPage() {
               }
             >
               <div className="space-y-5">
-                {isTemplate && (
+                <RetiredNotice workflow={pl} />
+                {isTemplate && !pl.is_retired && (
                   <DetailCallout tone="info" icon={Cloud} title="Read-only system template">
                     Use Add to my workflows to create your own editable copy.
                   </DetailCallout>

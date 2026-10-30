@@ -2,6 +2,7 @@ package scm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -51,7 +52,8 @@ func (c *BitbucketClient) TestConnection(ctx context.Context) (*ConnectionTestRe
 	// Get authenticated user
 	user, err := c.GetUser(ctx)
 	if err != nil {
-		result.Message = fmt.Sprintf("Authentication failed: %v", err)
+		result.Message = authenticationFailed
+		result.Cause = errors.Join(ErrAuthFailed, err)
 		return result, nil
 	}
 	result.User = user
@@ -72,7 +74,8 @@ func (c *BitbucketClient) TestConnection(ctx context.Context) (*ConnectionTestRe
 		} else {
 			org, err := c.getWorkspaceOrProject(ctx, c.config.Organization)
 			if err != nil {
-				result.Message = fmt.Sprintf("Cannot access workspace/project '%s': %v", c.config.Organization, err)
+				result.Message = fmt.Sprintf("Cannot access workspace/project '%s'", c.config.Organization)
+				result.Cause = errors.Join(ErrNotFound, err)
 				return result, nil
 			}
 			result.Organization = org

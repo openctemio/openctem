@@ -15,6 +15,8 @@ import { describeProxyError } from '../lib/errors'
 import type { ProxyPool } from '../types'
 import { EndpointTable } from './endpoint-table'
 import { PoolDialog } from './pool-dialog'
+import { TestPoolButton } from './test-pool-button'
+import { confirmName } from '@/lib/confirm-name'
 
 interface MorePoolsSectionProps {
   pools: ProxyPool[]
@@ -97,10 +99,11 @@ export function MorePoolsSection({ pools, canWrite, canDelete }: MorePoolsSectio
                       : t('proxyPools.assignedSensors.other', '{count} sensors assigned', {
                           count: p.assigned_sensors,
                         })}
-                    {p.description ? ` · ${p.description}` : ''}
+                    {p.description ? `, ${p.description}` : ''}
                   </CardDescription>
                 </div>
                 <div className="flex gap-2">
+                  <TestPoolButton pool={p} canWrite={canWrite} />
                   <GatedButton
                     allowed={canWrite}
                     reason={noWrite}
@@ -115,6 +118,7 @@ export function MorePoolsSection({ pools, canWrite, canDelete }: MorePoolsSectio
                     reason={canDelete ? inUse : noDelete}
                     variant="ghost"
                     size="sm"
+                    className="ms-3 text-destructive hover:text-destructive"
                     aria-label={t('proxyPools.deleteNamed', 'Delete {name}', { name: p.name })}
                     onClick={() => setDeleting(p)}
                   >
@@ -141,16 +145,16 @@ export function MorePoolsSection({ pools, canWrite, canDelete }: MorePoolsSectio
       <ConfirmDialog
         open={!!deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
-        title={t('proxyPools.deleteTitle', 'Delete pool')}
+        title={t('proxyPools.deleteTitle', 'Delete the pool "{name}"?', {
+          name: deleting?.name ?? '',
+        })}
         desc={t(
           'proxyPools.deleteDesc',
-          'Delete "{name}" and its proxies? Their stored credentials are erased.',
-          {
-            name: deleting?.name ?? '',
-          }
+          'The pool and its proxies are deleted. Their stored credentials are erased.'
         )}
-        confirmText={t('proxyPools.delete', 'Delete')}
+        confirmText={t('proxyPools.deleteButton', 'Delete pool')}
         destructive
+        typeToConfirm={deleting ? confirmName(deleting.name, deleting.id) : undefined}
         handleConfirm={() => {
           const target = deleting
           setDeleting(null)

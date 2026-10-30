@@ -6,7 +6,9 @@
  * organizations; an existing organization sees a banner until it opts in.
  */
 
+import { useState } from 'react'
 import { toast } from 'sonner'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { ShieldAlert, ShieldCheck } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Label } from '@/components/ui/label'
@@ -18,6 +20,8 @@ export function CIRequireOIDC({ canWrite }: { canWrite: boolean }) {
   const { t } = useTranslation()
   const { data, error, mutate } = useCISettings()
   const { trigger, isMutating } = useSaveCISettings()
+  // Accepting CI sensor keys again weakens CI authentication: ask first.
+  const [askLoosen, setAskLoosen] = useState(false)
   if (error || !data) return null
   const required = !!data.require_oidc
 
@@ -41,7 +45,7 @@ export function CIRequireOIDC({ canWrite }: { canWrite: boolean }) {
         id="ci-require-oidc"
         checked={required}
         disabled={!canWrite || isMutating}
-        onCheckedChange={change}
+        onCheckedChange={(next) => (next ? void change(true) : setAskLoosen(true))}
       />
       <Label htmlFor="ci-require-oidc" className="font-normal">
         {t('scans.ci.oidc.toggle', 'Require OIDC for CI')}
@@ -49,40 +53,61 @@ export function CIRequireOIDC({ canWrite }: { canWrite: boolean }) {
     </div>
   )
 
+  const dialog = (
+    <ConfirmDialog
+      open={askLoosen}
+      onOpenChange={setAskLoosen}
+      destructive
+      title={t('confirm.ciOidc.title')}
+      desc={t('confirm.ciOidc.desc')}
+      confirmText={t('confirm.ciOidc.btn')}
+      handleConfirm={async () => {
+        setAskLoosen(false)
+        await change(false)
+      }}
+    />
+  )
+
   if (required) {
     return (
-      <Alert>
-        <ShieldCheck />
+      <>
+        {dialog}
+        <Alert>
+          <ShieldCheck />
+          <AlertTitle>
+            {t('scans.ci.oidc.requiredTitle', 'CI jobs must use their OIDC identity')}
+          </AlertTitle>
+          <AlertDescription className="space-y-2">
+            <p>
+              {t(
+                'scans.ci.oidc.requiredBody',
+                'Results sent by a CI sensor with an API key are refused. Pipelines authenticate with the token their CI provider issues for the job, checked against the trust configurations below.'
+              )}
+            </p>
+            {toggle}
+          </AlertDescription>
+        </Alert>
+      </>
+    )
+  }
+  return (
+    <>
+      {dialog}
+      <Alert variant="destructive" data-testid="ci-require-oidc-banner">
+        <ShieldAlert />
         <AlertTitle>
-          {t('scans.ci.oidc.requiredTitle', 'CI jobs must use their OIDC identity')}
+          {t('scans.ci.oidc.acceptedTitle', 'CI sensor API keys are still accepted')}
         </AlertTitle>
         <AlertDescription className="space-y-2">
           <p>
             {t(
-              'scans.ci.oidc.requiredBody',
-              'Results sent by a CI sensor with an API key are refused. Pipelines authenticate with the token their CI provider issues for the job, checked against the trust configurations below.'
+              'scans.ci.oidc.acceptedBody',
+              'A stored CI key never expires with the job and works from anywhere it leaks to. Move your pipelines to OIDC (add trust below, set OPENCTEM_TENANT_ID in the pipeline), then require it.'
             )}
           </p>
           {toggle}
         </AlertDescription>
       </Alert>
-    )
-  }
-  return (
-    <Alert variant="destructive" data-testid="ci-require-oidc-banner">
-      <ShieldAlert />
-      <AlertTitle>
-        {t('scans.ci.oidc.acceptedTitle', 'CI sensor API keys are still accepted')}
-      </AlertTitle>
-      <AlertDescription className="space-y-2">
-        <p>
-          {t(
-            'scans.ci.oidc.acceptedBody',
-            'A stored CI key never expires with the job and works from anywhere it leaks to. Move your pipelines to OIDC (add trust below, set OPENCTEM_TENANT_ID in the pipeline), then require it.'
-          )}
-        </p>
-        {toggle}
-      </AlertDescription>
-    </Alert>
+    </>
   )
 }

@@ -18,7 +18,7 @@ export const METRIC_STRIP_MAX = 5
 export interface MetricStripItem {
   key: string
   label: string
-  value: number | string
+  value: number | string | React.ReactElement
   /** Small caption after the value. */
   hint?: string
   /**
@@ -40,6 +40,12 @@ export interface MetricStripItem {
   onClick?: () => void
   /** The filter this metric applies (or the list it links to) is current. */
   active?: boolean
+  /**
+   * There is no figure to open (too little data to measure): the tile states
+   * why instead of a number, so it is the one tile that may be neither a link
+   * nor a toggle.
+   */
+  notMeasured?: boolean
 }
 
 /**
@@ -51,10 +57,30 @@ export function smColumns(count: number): number {
 }
 
 /**
+ * Phone grid span (out of 6 tracks) of tile `index` in a strip of `count`:
+ * every row is full and no tile sits alone.
+ */
+export function phoneSpan(count: number, index: number): 2 | 3 | 6 {
+  if (count <= 1) return 6
+  if (count === 3) return 2
+  if (count === 5) return index < 3 ? 2 : 3
+  if (count === 2 || count === 4) return 3
+  // More than five is refused by the anatomy (warned above); keep rows of three.
+  return 2
+}
+
+const PHONE_SPAN_CLASS = { 2: 'col-span-2', 3: 'col-span-3', 6: 'col-span-6' } as const
+
+/**
  * A page's headline numbers as one divided strip (no corner icons, no card per
- * number); the list below stays the focus.
+ * number); the list below stays the focus. Plain elements, not a definition
+ * list: a tile is often a link or a button, and a `<dl>` may hold only
+ * `<dt>`/`<dd>` groups (axe definition-list, dlitem).
  *
- * Phone: two columns, an odd last tile spans both, never a sideways scroll.
+ * Phone (research/244 mobile decision M2): compact tiles on a six-track
+ * grid, at most two rows: 2 and 4 tiles in halves, 3 in thirds, 5 as three
+ * thirds over two halves; smaller values; a long label wraps to a second line
+ * instead of being cut. Never a sideways scroll.
  * Tablet: balanced rows (`smColumns`). Desktop: one row.
  *
  * States: `loading` shows a skeleton per value; `error` shows "—" per value
@@ -75,16 +101,14 @@ export function MetricStrip({
 }) {
   if (process.env.NODE_ENV !== 'production' && items.length > METRIC_STRIP_MAX) {
     console.warn(
-      `MetricStrip: ${items.length} tiles; the page anatomy allows ${METRIC_STRIP_MAX} (research/244). Use quick views or filters for the rest.`
+      `MetricStrip: ${items.length} tiles; the page anatomy allows ${METRIC_STRIP_MAX}. Use quick views or filters for the rest.`
     )
   }
   return (
-    <dl
+    <div
       data-slot="metric-strip"
       className={cn(
-        'grid grid-cols-2 overflow-hidden rounded-lg border bg-card',
-        // An odd last tile spans the phone row, so no tile sits alone.
-        '[&>*:last-child:nth-child(odd)]:col-span-2 sm:[&>*:last-child:nth-child(odd)]:col-span-1',
+        'grid grid-cols-6 overflow-hidden rounded-lg border bg-card',
         'sm:grid-cols-[repeat(var(--metric-cols-sm),minmax(0,1fr))] lg:grid-cols-[repeat(var(--metric-cols),minmax(0,1fr))]',
         className
       )}
@@ -95,7 +119,7 @@ export function MetricStrip({
         } as React.CSSProperties
       }
     >
-      {items.map((item) => {
+      {items.map((item, index) => {
         const numeric = typeof item.value === 'number'
         const zero = numeric && item.value === 0
         const positive = numeric && (item.value as number) > 0
@@ -103,13 +127,18 @@ export function MetricStrip({
         const warning = item.tone === 'warning' && positive
         const body = (
           <>
-            <dt className="truncate text-xs text-muted-foreground">{item.label}</dt>
-            <dd className="mt-0.5">
+            <span
+              data-slot="metric-label"
+              className="line-clamp-2 block text-xs text-muted-foreground sm:line-clamp-none sm:truncate"
+            >
+              {item.label}
+            </span>
+            <span data-slot="metric-value" className="mt-0.5 block">
               {loading ? (
-                <Skeleton className="h-7 w-14" />
+                <Skeleton className="h-6 w-12 sm:h-7 sm:w-14" />
               ) : error ? (
                 <span
-                  className="text-kpi tabular-nums tracking-tight text-muted-foreground"
+                  className="text-lg font-semibold tabular-nums tracking-tight text-muted-foreground sm:text-kpi"
                   title={error}
                 >
                   —
@@ -117,7 +146,7 @@ export function MetricStrip({
               ) : (
                 <span
                   className={cn(
-                    'text-kpi tabular-nums tracking-tight',
+                    'text-lg font-semibold tabular-nums tracking-tight sm:text-kpi',
                     zero && 'text-muted-foreground',
                     alarming && 'text-destructive',
                     warning && 'text-warning'
@@ -127,16 +156,26 @@ export function MetricStrip({
                 </span>
               )}
               {item.hint && !loading && !error ? (
-                <span className="ms-1.5 text-xs text-muted-foreground">{item.hint}</span>
+                // A compact phone tile has no room for a caption: it moves to
+                // the tile's tooltip there.
+                <span className="ms-1.5 hidden text-xs text-muted-foreground sm:inline">
+                  {item.hint}
+                </span>
               ) : null}
-            </dd>
+            </span>
             {item.detail && !loading && !error ? (
-              <dd className="mt-1 min-w-0 text-xs text-muted-foreground">{item.detail}</dd>
+              <span
+                data-slot="metric-detail"
+                className="mt-1 block min-w-0 text-xs text-muted-foreground"
+              >
+                {item.detail}
+              </span>
             ) : null}
           </>
         )
         const cellClass = cn(
-          'block min-w-0 -ms-px -mt-px border-s border-t px-4 py-2.5 text-start',
+          'block min-w-0 -ms-px -mt-px border-s border-t px-3 py-2 text-start sm:col-span-1 sm:px-4 sm:py-2.5',
+          PHONE_SPAN_CLASS[phoneSpan(items.length, index)],
           item.active && 'bg-accent'
         )
         const interactive =
@@ -150,7 +189,7 @@ export function MetricStrip({
               key={item.key}
               href={href}
               aria-current={item.active ? 'page' : undefined}
-              title={item.description}
+              title={item.description ?? item.hint}
               data-slot="metric-tile"
               className={cn(cellClass, interactive)}
             >
@@ -165,7 +204,7 @@ export function MetricStrip({
               type="button"
               onClick={item.onClick}
               aria-pressed={item.active ?? false}
-              title={item.description}
+              title={item.description ?? item.hint}
               data-slot="metric-tile"
               className={cn(cellClass, interactive)}
             >
@@ -177,13 +216,14 @@ export function MetricStrip({
           <div
             key={item.key}
             className={cellClass}
-            title={item.description}
+            title={item.description ?? item.hint}
             data-slot="metric-tile"
+            data-state={item.notMeasured ? 'not-measured' : undefined}
           >
             {body}
           </div>
         )
       })}
-    </dl>
+    </div>
   )
 }

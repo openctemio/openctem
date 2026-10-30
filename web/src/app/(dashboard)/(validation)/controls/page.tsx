@@ -4,8 +4,20 @@ import { useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import useSWR from 'swr'
 import { Main } from '@/components/layout'
-import { PageHeader, DataTable, DataTableColumnHeader, EmptyState } from '@/features/shared'
+import {
+  PageHeader,
+  PageStack,
+  DataTable,
+  DataTableColumnHeader,
+  EmptyState,
+} from '@/features/shared'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -26,8 +38,9 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { confirmName } from '@/lib/confirm-name'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Plus, Trash2, FlaskConical, Link2, ShieldCheck } from 'lucide-react'
+import { Plus, Trash2, FlaskConical, Link2, MoreHorizontal, ShieldCheck } from 'lucide-react'
 import { get, post, del } from '@/lib/api/client'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { Can, Permission } from '@/lib/permissions'
@@ -334,17 +347,30 @@ export default function CompensatingControlsPage() {
                   <FlaskConical className="me-1 h-3 w-3" />
                   {t('validation.controls.test', 'Test')}
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setDeleteControl(control)}
-                  className="text-destructive"
-                  aria-label={t('validation.controls.deleteAria', 'Delete {name}', {
-                    name: control.name,
-                  })}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      aria-label={t('validation.controls.moreAria', 'More actions for {name}', {
+                        name: control.name,
+                      })}
+                    >
+                      <MoreHorizontal className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive"
+                      onSelect={() => setDeleteControl(control)}
+                    >
+                      <Trash2 className="me-2 h-4 w-4" />
+                      {t('validation.controls.deleteAria', 'Delete {name}', {
+                        name: control.name,
+                      })}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </Can>
           )
@@ -357,22 +383,22 @@ export default function CompensatingControlsPage() {
   return (
     <>
       <Main>
-        <PageHeader
-          title={t('validation.controls.title', 'Compensating controls')}
-          description={t(
-            'validation.controls.description',
-            'Controls that hold down the priority of findings on the assets they protect.'
-          )}
-        >
-          <Can permission={Permission.CompensatingControlsWrite}>
-            <Button size="sm" onClick={() => setIsCreateOpen(true)}>
-              <Plus className="me-2 h-4 w-4" />
-              {t('validation.controls.new', 'New control')}
-            </Button>
-          </Can>
-        </PageHeader>
+        <PageStack>
+          <PageHeader
+            title={t('validation.controls.title', 'Compensating controls')}
+            description={t(
+              'validation.controls.description',
+              'Controls that hold down the priority of findings on the assets they protect.'
+            )}
+          >
+            <Can permission={Permission.CompensatingControlsWrite}>
+              <Button size="sm" onClick={() => setIsCreateOpen(true)}>
+                <Plus className="me-2 h-4 w-4" />
+                {t('validation.controls.new', 'New control')}
+              </Button>
+            </Can>
+          </PageHeader>
 
-        <div className="mt-5">
           {isLoading ? (
             <div className="space-y-2">
               {[1, 2, 3].map((i) => (
@@ -395,7 +421,7 @@ export default function CompensatingControlsPage() {
               searchPlaceholder={t('validation.controls.searchPlaceholder', 'Search controls…')}
             />
           )}
-        </div>
+        </PageStack>
       </Main>
 
       {/* Create Dialog */}
@@ -574,8 +600,14 @@ export default function CompensatingControlsPage() {
         title={t('confirm.control.deleteTitle', 'Delete the control "{name}"?', {
           name: deleteControl?.name ?? '',
         })}
-        desc={t('confirm.control.deleteDesc', 'This cannot be undone.')}
-        confirmText={t('confirm.delete', 'Delete')}
+        desc={t(
+          'confirm.control.deleteDesc',
+          'The control and its links to assets are removed, so findings on those assets are no longer held down by it and their priority rises again.'
+        )}
+        typeToConfirm={
+          deleteControl ? confirmName(deleteControl.name, deleteControl.id) : undefined
+        }
+        confirmText={t('confirm.control.deleteButton', 'Delete control')}
         destructive
         handleConfirm={handleDelete}
       />

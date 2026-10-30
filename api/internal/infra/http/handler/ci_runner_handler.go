@@ -201,8 +201,12 @@ func (h *CIRunnerHandler) Exchange(w http.ResponseWriter, r *http.Request) {
 		if errors.As(err, &refused) {
 			// The token was admitted by the organization's trust
 			// configuration: the job is told why it was refused.
-			apierror.New(http.StatusUnauthorized, apierror.Code("CI_TOKEN_"+strings.ToUpper(refused.Code)),
-				"The CI token was not accepted: "+refused.Message+" "+ciRefusalHelp).WriteJSON(w)
+			e := apierror.New(http.StatusUnauthorized, apierror.Code("CI_TOKEN_"+strings.ToUpper(refused.Code)),
+				"The CI token was not accepted: "+refused.Message+" "+ciRefusalHelp)
+			if refused.RunID != "" {
+				e = e.WithDetails(map[string]string{"run_id": refused.RunID})
+			}
+			e.WriteJSON(w)
 			return
 		}
 		if errors.Is(err, cirunapp.ErrExchangeRefused) {

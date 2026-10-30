@@ -110,7 +110,11 @@ func (s *Service) checkStep(ctx context.Context, tenantID shared.ID, in AddStepI
 			add(e.Code, e.Field, e.Message)
 		}
 	}
-	st, err := constructStep(shared.ID{}, in, caps)
+	declared, derr := s.declaredToolsFor(ctx, tenantID, in.PreferTools)
+	if derr != nil {
+		add(IssueInvalidStep, "prefer_tools", "the organization's declared tools could not be read")
+	}
+	st, err := constructStep(shared.ID{}, in, caps, declared)
 	if err == nil {
 		return st, issues
 	}

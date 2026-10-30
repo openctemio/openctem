@@ -28,7 +28,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
-import { ErrorState } from '@/features/shared'
+import { ErrorState, PageStack } from '@/features/shared'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import {
   saveScanGovernanceMode,
@@ -151,7 +151,7 @@ export function ScanApprovalSettings() {
   }
 
   return (
-    <div className="space-y-6">
+    <PageStack>
       <Card>
         <CardHeader>
           <CardTitle>{t('scans.approvalSettings.title', 'Scan approval')}</CardTitle>
@@ -366,6 +366,6 @@ export function ScanApprovalSettings() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageStack>
   )
 }

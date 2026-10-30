@@ -3,12 +3,12 @@
 import { Main } from '@/components/layout'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
-import { ErrorState, PageHeader } from '@/features/shared'
+import { ErrorState, PageHeader, PageStack } from '@/features/shared'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { useSelfServiceLimits } from '@console/features/admin-console/api/use-limits'
 import { SelfServiceLimitsForm } from '@console/features/admin-console/components/self-service-limits-form'
 import { StorageQuotaCard } from '@console/features/admin-console/components/storage-quota-card'
-import { adminCan } from '@console/features/admin-console/types'
+import { adminHas } from '@console/features/admin-console/types'
 
 /**
  * System -> Limits: the limits self-service organizations start with. Any
@@ -22,14 +22,14 @@ export default function LimitsPage() {
 
   return (
     <Main>
-      <PageHeader
-        title={t('limits.console.page.title', 'Limits')}
-        description={t(
-          'limits.console.page.description',
-          'Limits of organizations on this installation. None apply unless you set them.'
-        )}
-      />
-      <div className="mt-5 space-y-5">
+      <PageStack>
+        <PageHeader
+          title={t('limits.console.page.title', 'Limits')}
+          description={t(
+            'limits.console.page.description',
+            'Limits of organizations on this installation. None apply unless you set them.'
+          )}
+        />
         {error ? (
           <ErrorState
             title={t('limits.console.defaults.loadError', 'the default limits')}
@@ -41,12 +41,12 @@ export default function LimitsPage() {
         ) : (
           <SelfServiceLimitsForm
             defaults={data}
-            canEdit={adminCan(me.role, 'super_admin')}
+            canEdit={adminHas(me, 'platform.settings.limits.write')}
             onSaved={() => void mutate()}
           />
         )}
-        <StorageQuotaCard canEdit={adminCan(me.role, 'super_admin')} />
-      </div>
+        <StorageQuotaCard canEdit={adminHas(me, 'platform.settings.general.write')} />
+      </PageStack>
     </Main>
   )
 }

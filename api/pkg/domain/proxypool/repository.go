@@ -76,6 +76,11 @@ type JobEndpoint struct {
 func BuildJobEgress(p *Pool, appliesTo string, now time.Time) JobEgress {
 	out := JobEgress{Mode: ModePool, PoolID: p.ID.String(), Revision: p.Revision, Strategy: p.Strategy,
 		AppliesTo: appliesTo, Endpoints: []JobEndpoint{}}
+	if !p.Enabled {
+		// A disabled pool a sensor is assigned to: the job fails closed on
+		// the sensor (no usable endpoint), it never goes direct.
+		return out
+	}
 	for _, e := range p.Endpoints {
 		if !e.Enabled {
 			continue

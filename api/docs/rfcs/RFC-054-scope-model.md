@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (decisions S1–S6, 2026-10-07; S3 and S6 revised by A1–A5, 2026-10-09, §12; approvals limited to Strict scan governance by RFC-073, 2026-10-10, §13; flexible scope amendment 2026-10-11, §14: bulk add implemented; attack-surface decisions 2026-10-13, §14.5: R3 and R4 adopted and implemented, connector assets in scope by default, children follow their host; R5 awaiting owner decision; inventory first, scope later 2026-10-13, §15: state `discovered` and the review-gate setting implemented, triage and metrics toggle in progress; unclassified assets get low-impact checks behind platform guardrails 2026-10-14, §16: implemented; repository entries and CI trusts 2026-10-15, §17: implemented); P0 implemented |
+| Status | Accepted (decisions S1–S6, 2026-10-07; S3 and S6 revised by A1–A5, 2026-10-09, §12; approvals limited to Strict scan governance by RFC-073, 2026-10-10, §13; flexible scope amendment 2026-10-11, §14: bulk add implemented; attack-surface decisions 2026-10-13, §14.5: R3 and R4 adopted and implemented, connector assets in scope by default, children follow their host; R5 awaiting owner decision; inventory first, scope later 2026-10-13, §15: state `discovered` and the review-gate setting implemented, triage and metrics toggle in progress; unclassified assets get low-impact checks behind platform guardrails 2026-10-14, §16: implemented; repository entries and CI trusts 2026-10-15, §17: implemented; ownership confirmation only on managed platform sensors 2026-10-26, §20: implemented); P0 implemented |
 | Scope | api (`pkg/domain/scope`, `internal/app/scope`, `internal/app/actscope`, `internal/app/easm`, `internal/app/scan`, `internal/app/certmonitor`, handlers, migrations), web (Scoping, scan dialog), sensor-local policy (follow-up) |
 | Architecture | [active-probe-gate.md](../architecture/active-probe-gate.md) |
 | Related | RFC-023 (zones), RFC-036 §6.3/§6.4 (ownership gate, attribution), RFC-040 §5.6 (widening approvals, amended here), RFC-042 §6.13 (wildcard semantics, superseded here), RFC-050 (data scope) |
@@ -63,7 +63,7 @@ Every lookup error refuses (fail closed).
 | # | Decision |
 |---|---|
 | S1 | (a) `*.x` = `x` + all subdomains; exclusion `x` carves the apex out |
-| S2 | (a) proof for active probes is a platform setting (revised 2026-10-11, §8.1): default off; a public multi-tenant cloud turns it on, and then platform sensors and intrusive (T2) probes need proof |
+| S2 | (a) proof for active probes is a platform setting (revised 2026-10-11, §8.1): default off; a public multi-tenant cloud turns it on, and then platform sensors need proof; a job on the organization's own sensor needs none at any tier |
 | S3 | (a) widening approvals are a tenant setting 0/1/2, default `min(1, admins − 1)`, never 0 for T2 (amends RFC-040 Q2 (a)). Revised 2026-10-09 (§12): approvers are named and reminded; an owner with no other approver self-approves with a fresh authenticator code; a platform policy may make approvals tenant-controlled or off |
 | S4 | yes, refined 2026-10-07: an active, non-expiring scope entry or seed confirms the names it covers (`matches_scope_target`, no review); IPs only through IP entries; one-off entries never confirm; tombstones and exclusions win; removal keeps the asset and stops scanning; backfill of existing `needs_review` rows |
 | S5 | tenant knobs (§7); no global scope-off switch, ever |
@@ -517,9 +517,10 @@ the job runs on the organization's own sensor), `tenant_first`, `tenant_busy`,
 `internal_targets`, `no_tenant_sensor`, `platform_sensors`. `sensor` names
 only the organization's own sensor; a platform sensor is never named. With
 the proof setting on, auto refuses an unproven target (`proof_required`) only
-when no own sensor can take the job; intrusive probes need proof on any
-sensor, and their `proof_required` refusal does not offer "use your own
-sensor".
+when no own sensor can take the job, and the refusal says why (platform
+sensors need a verified domain; or no sensor of the organization can take
+the job). Intrusive probes on the organization's own sensor need no proof:
+the scope entry's tier ceiling and the scan's approval govern them.
 
 **Resolved address** (`resolved`). A `zone_none` refusal of a hostname that
 resolves to a private address lists those addresses (at most 8), so the
@@ -799,7 +800,7 @@ a hint (owner decision 2026-10-11, revising S2).
 | Setting | Rule |
 |---|---|
 | off (default) | no proof needed anywhere: assets come from many sources, and the organization's scope entry is the authorization. The scope gate, exclusions, the deny list (§8.2), scan zones for private addresses and tier ceilings stay in force |
-| on | a job routed to platform sensors needs every target at or under a verified domain of the tenant, and intrusive (T2) probes need one on any sensor |
+| on | a job routed to platform sensors needs every target at or under a verified domain of the tenant; a job on the organization's own sensor needs none at any tier, and a job with an unproven target never falls back to platform sensors (it waits for the own sensor) |
 
 A public multi-tenant cloud should turn it on: platform sensors send packets
 from the operator's addresses, and only ownership proof stops a tenant from
@@ -889,7 +890,7 @@ are gated by zones and are not capped.
 | Review by rule | §6.7 suggestions, preview, accept/reject as a rule |
 | Inventory | §4.4 one membership definition; `attribution_state` on recent changes; review counts by reason; `covered_by` on queue items |
 | Refusals | codes, fixes, `POST /check` dry run |
-| Tier ceilings | `max_tier` enforced at every dispatch (`tier_exceeds`, `raise_tier`); per-step proof for intrusive workflow steps |
+| Tier ceilings | `max_tier` enforced at every dispatch (`tier_exceeds`, `raise_tier`); per-step tier check for workflow steps |
 
 ## 12. Amendment 2026-10-09: approvers, long intrusive grants, platform policy
 
@@ -1147,7 +1148,14 @@ turns scope off.
 ```
 
 - 1 to 200 items (the dry run's limit, so a scan's refused targets fit in
-  one request); `reason` is recorded on every entry; `origin` may be
+  one request); `expires_in_days` (1 to 365) and `max_tier` (`t0`, `t1`,
+  `t2`) are optional and apply to every item exactly as on `POST
+  /scope/targets` (omitted: permanent, the organization's default tier; the
+  organization's expiry and tier rules are checked per item, so an item the
+  rules refuse answers its code). The Add to scope dialog uses them for a
+  pasted list: the web splits the text into values, detects each kind, and
+  sends batches of 200 in turn, so one step-up covers the list;
+  `reason` is recorded on every entry; `origin` may be
   `refusal_fix`, otherwise the entries are recorded as `import`.
 - A caller who adds entries directly (Off and On, or an approver in Strict)
   needs a recent re-authentication once: without it the request answers
@@ -1596,3 +1604,114 @@ with the matching name and entry. Endpoints outside the caller's data scope are 
 | Another tenant's names or verified domains count | The authority and every lookup are loaded per tenant; the relationship read filters both ends by tenant |
 | A certificate hides an endpoint refusal | The strongest refusal among its endpoints is the certificate's; the deny list is evaluated per endpoint |
 | An endpoint outside the caller's data scope is revealed | The response names only endpoints the caller may read |
+
+## 20. Amendment 2026-10-28: why something is out of scope, and what follows
+
+Marking something out of scope used to stop scanning only. Its findings, SLA clocks, remediation tasks and
+tickets stayed open for an asset the organization had just said was not its own.
+
+### 20.1 Kinds
+
+Every exclusion has a `kind`. All kinds stop scanning the same way (dispatch gate, claim re-check, signer
+ledger, job exclusions); the kind decides what else happens.
+
+| Kind | Meaning | Findings |
+|---|---|---|
+| `do_not_scan` (default, and every exclusion made before kinds) | the organization's own, must not be scanned (fragile system, legal hold) | stay open: the risk is still the organization's |
+| `not_ours` | someone else's (sold, third party, a typo in an import) | closed as out of scope |
+| `retired` | gone for good (decommissioned) | closed as out of scope |
+
+"Reject as rule" on the attack surface review creates a `not_ours` exclusion. A "not ours" attribution decision
+counts as `not_ours` for its asset. Path, finding-type and scanner exclusions are always `do_not_scan`.
+
+### 20.2 Scope effects
+
+An asset is **out of scope for good** when a permanent (no end date), approved, active exclusion of kind
+`not_ours` or `retired` matches it, or the organization marked it not its own. The scope effects reconciler:
+
+- closes the asset's open findings (`new`, `confirmed`, `in_progress`, `fix_applied`; pentest drafts are left
+  alone) as `resolved` with closure reason `out_of_scope`, verification `none`. The reason is in the obsolete
+  family: never counted as remediated, never offered to a person;
+- reopens a finding closed that way, to the status it had (read from its timeline, `confirmed` when the timeline
+  does not say), once its asset is no longer out of scope for good: the exclusion was removed, deactivated,
+  given an end date or changed to `do_not_scan`, or the decision was undone. A reopen is not a regression.
+
+Every move has its timeline entry (source `scope_effects`). Each pass that moves something writes one
+`scope_exclusion.effects_applied` audit entry (high severity) with the counts and a sample of finding ids.
+Remediation tasks, tickets and SLA follow the findings through their own reconcilers.
+
+It runs per organization after every saved exclusion change and every attribution decision, and every 5
+minutes for all organizations (expiries, findings that arrived meanwhile, lost kicks). A pass moves at most
+1000 findings in each direction; more finish on the next passes. Rows are locked with `SKIP LOCKED`, so a
+person editing a finding is never overwritten.
+
+A temporary exclusion (with an end date) never closes findings, whatever its kind: it pauses scanning.
+
+### 20.3 Data scope
+
+A permanent `not_ours` or `retired` exclusion created or changed by a member whose data scope is limited must
+match only assets that member can see; otherwise it is refused with `EXCLUSION_REACHES_OUTSIDE_SCOPE`, since it
+would close findings they cannot see. Exclusions that only stop scanning keep the earlier rule.
+
+### 20.4 API
+
+`kind` on `POST /scope/exclusions`, `PUT /scope/exclusions/{id}`, `POST /scope/exclusions/bulk` (with
+`expires_at`) and in every exclusion response. `POST /scope/exclusions/bulk/preview` returns `open_findings`
+per item: what a permanent closing exclusion would close. `POST /scope/exclusions/bulk/delete` takes 200 ids,
+as many as one bulk create adds, so the inventory's Undo is one call.
+
+### 20.5 Threats
+
+| Threat | Control |
+|---|---|
+| An insider marks a vulnerable asset "not ours" to make its findings disappear | distinct closure reason, never counted as fixed; high-severity audit with counts; Strict governance needs an approver before the exclusion is in effect; reversible; data scope rule (§20.3) |
+| One tenant's exclusion closes another tenant's findings | every statement is pinned to one tenant; DB test with two tenants |
+| A broad rule closes far too much | public-suffix refusal, preview counts before submit, bounded passes, re-include reopens |
+| A temporary exclusion ends after findings were closed | temporary exclusions never close findings |
+
+Design and the wider plan (sensor-side name exclusions, imports, alerts, exports): research note 320.
+## 20. Amendment 2026-10-26: confirmation only on managed platform sensors
+
+### 20.1 Decision
+
+Ownership confirmation of discovered assets (§15) and the wildcard-only
+restriction (§15.3) apply **only when `MANAGED_SERVICE` is true and the job
+runs on platform (shared) sensors**. On the tenant's own sensors (any
+install) and on a self-hosted install (any sensor), a discovered or
+unclassified asset is fully authorized, like `unclassified_scans: full`
+(§16), and a wildcard-only name covered by an active scope entry is scanned.
+A wildcard-only name no entry covers stays passive. The setting
+`unclassified_scans` therefore decides only jobs on platform sensors of the
+hosted service.
+
+### 20.2 What does not change
+
+A rejected asset ("not ours", §15.4), a scope exclusion, the platform deny
+list (§8.2) and the guardrails (§16.2) refuse on every placement, as do the
+tier ceilings, the act scope and scan zones. The gate fails closed: a check
+that does not know where its job runs is judged as a platform job on the
+hosted service.
+
+### 20.3 Per job, at placement time
+
+Placement is decided where each path checks the job (see
+[scan-targets.md](../architecture/scan-targets.md#where-ownership-confirmation-applies)):
+auto placement that picks a tenant sensor is not refused, one that picks a
+platform sensor is checked, and the claim-time re-check judges the sensor
+that really takes the job.
+
+### 20.4 Threat model
+
+| Threat | Control |
+|---|---|
+| A tenant on the hosted service points platform sensors at assets nobody confirmed | Confirmation still applies to every job on platform sensors, and a job whose placement is unknown |
+| A job predicted for a tenant sensor ends on a platform sensor | The claim-time re-check judges the claiming sensor and narrows the job |
+| A tenant's own sensor scans a third party's asset | Guardrails (shared, CDN, cloud networks, names outside the organization's domains), the deny list, exclusions and rejections still refuse; the tenant owns the traffic of its own sensors |
+| Bulk confirmation reaches another organization's assets | Names are looked up among the caller's tenant only, the data scope filters the rest, one audit event per asset |
+
+### 20.5 UI
+
+A skipped-targets group of unconfirmed or wildcard-only names offers
+**Confirm ownership** (`assets:write`) and says that confirmation is
+"Required on platform sensors of the hosted service"; the Scope policy page
+notes that `unclassified_scans` applies there.

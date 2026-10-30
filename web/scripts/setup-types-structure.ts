@@ -422,7 +422,7 @@ const indexTemplate = (domain: string, files: string[]) => `/**
  * Re-exports all ${domain} types
  */
 
-${files.map(file => `export * from './${file.replace('.ts', '')}'`).join('\n')}
+${files.map((file) => `export * from './${file.replace('.ts', '')}'`).join('\n')}
 `
 
 const mainIndexTemplate = (domains: string[]) => `/**
@@ -431,7 +431,7 @@ const mainIndexTemplate = (domains: string[]) => `/**
  * Centralized re-export of all API types
  */
 
-${domains.map(domain => `export * from './${domain}'`).join('\n')}
+${domains.map((domain) => `export * from './${domain}'`).join('\n')}
 `
 
 function setupTypesStructure() {
@@ -459,7 +459,9 @@ function setupTypesStructure() {
       const templateKey = `${domain}/${file}`
 
       if (!existsSync(filePath)) {
-        const content = templates[templateKey as keyof typeof templates] || `/**\n * ${file}\n */\n\n// Add your types here\n`
+        const content =
+          templates[templateKey as keyof typeof templates] ||
+          `/**\n * ${file}\n */\n\n// Add your types here\n`
         writeFileSync(filePath, content)
         console.log(`  ✅ Created: ${file}`)
       }

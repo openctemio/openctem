@@ -4,6 +4,7 @@
  * turn its numbers into readable text.
  */
 
+import type { HealthState } from '@/lib/health-colors'
 import type { useTranslation } from '@/context/i18n-provider'
 import type { CharterEvaluation, CriterionEvaluation, CriterionOutcome } from './types'
 
@@ -13,11 +14,11 @@ export const OUTCOME_LABEL: Record<CriterionOutcome, string> = {
   not_measurable: 'Not measurable',
 }
 
-/** Token-only badge tints, one per outcome. */
-export const OUTCOME_BADGE_CLASS: Record<CriterionOutcome, string> = {
-  met: 'border-transparent bg-success/15 text-success',
-  unmet: 'border-transparent bg-destructive/15 text-destructive',
-  not_measurable: 'border-transparent bg-muted text-muted-foreground',
+/** A criterion's verdict is computed by the platform, so it reads as a health state. */
+export const OUTCOME_HEALTH: Record<CriterionOutcome, HealthState> = {
+  met: 'ok',
+  unmet: 'down',
+  not_measurable: 'unknown',
 }
 
 const COMPARATOR_SYMBOL: Record<string, string> = {

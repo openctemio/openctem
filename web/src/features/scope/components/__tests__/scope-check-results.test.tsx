@@ -3,7 +3,7 @@
  * TARGET_OUT_OF_SCOPE error), with the fixes the server offered.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SWRConfig } from 'swr'
 import type { ReactNode } from 'react'
@@ -109,6 +109,10 @@ describe('ScopeCheckList', () => {
     )
     expect(screen.getByText(/waiting for approval\. \(\*\.acme\.io\)/)).toBeInTheDocument()
     await user.click(await screen.findByRole('button', { name: 'Approve the entry' }))
+    expect(api.post).not.toHaveBeenCalled()
+    await user.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Approve' })
+    )
     await waitFor(() =>
       expect(api.post).toHaveBeenCalledWith('/api/v1/scope/targets/e1/approve', {})
     )

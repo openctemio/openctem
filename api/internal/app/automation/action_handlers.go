@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
 
@@ -128,6 +129,11 @@ func (h *FindingActionHandler) updateStatus(ctx context.Context, input *ActionIn
 	status, ok := input.ActionConfig["status"].(string)
 	if !ok || status == "" {
 		return nil, fmt.Errorf("status is required for update_status action")
+	}
+	// A stored node may predate the allow-list: it never closes risk.
+	if !automationdom.StatusTargetAllowed(status) {
+		return nil, shared.NewDomainError(automationdom.ErrCodeStatusNotAllowed,
+			fmt.Sprintf("update_status may set only %v, not %q", automationdom.AutomationStatusTargets, status), shared.ErrValidation)
 	}
 
 	// FIXED: Actually call the vulnerability service to update status
@@ -578,6 +584,79 @@ func (h *AITriageActionHandler) getFindingID(input *ActionInput) (string, error)
 }
 
 // ----------------------------------------------------------------------------
+// Request actions
+// ----------------------------------------------------------------------------
+
+// ApprovalRequester creates a finding's false-positive or risk-acceptance
+// request (finding.VulnerabilityService).
+type ApprovalRequester interface {
+	RequestApproval(ctx context.Context, input finding.RequestApprovalInput) (*vulnerability.Approval, error)
+}
+
+// RequestActionHandler runs request_false_positive and
+// request_risk_acceptance. It only ever creates a request, marked as made by
+// an automation, which a person decides: the approvals service never lets
+// one person decide such a request, whatever the organization's level.
+type RequestActionHandler struct {
+	requests ApprovalRequester
+	now      func() time.Time
+}
+
+// NewRequestActionHandler creates a RequestActionHandler.
+func NewRequestActionHandler(requests ApprovalRequester) *RequestActionHandler {
+	return &RequestActionHandler{requests: requests, now: time.Now}
+}
+
+// Execute creates the request on behalf of the step's principal.
+func (h *RequestActionHandler) Execute(ctx context.Context, input *ActionInput) (map[string]any, error) {
+	var status vulnerability.FindingStatus
+	switch input.ActionType {
+	case automationdom.ActionTypeRequestFalsePositive:
+		status = vulnerability.FindingStatusFalsePositive
+	case automationdom.ActionTypeRequestRiskAcceptance:
+		status = vulnerability.FindingStatusAccepted
+	default:
+		return nil, fmt.Errorf("unsupported action type: %s", input.ActionType)
+	}
+	if h.requests == nil {
+		return nil, fmt.Errorf("%s: the approvals service is not available", input.ActionType)
+	}
+	if input.Principal.IsZero() {
+		return nil, fmt.Errorf("%s: the step has no person to request for", input.ActionType)
+	}
+	findingID, err := findingIDFromInput(input)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", input.ActionType, err)
+	}
+	if err := automationdom.ValidateRequestConfigs(automationdom.NodeConfig{ActionType: input.ActionType, ActionConfig: input.ActionConfig}); err != nil {
+		return nil, err
+	}
+	reason, _ := input.ActionConfig["closure_reason"].(string)
+	note, _ := input.ActionConfig["justification"].(string)
+	req := finding.RequestApprovalInput{
+		TenantID: input.TenantID.String(), FindingID: findingID, RequestedStatus: string(status),
+		Justification: note, RequestedBy: input.Principal.String(), ClosureReason: reason,
+		CanApprove: false, ByAutomation: true,
+	}
+	if status == vulnerability.FindingStatusAccepted {
+		days, _ := input.ActionConfig["expires_in_days"].(float64)
+		end := h.now().Add(time.Duration(days) * 24 * time.Hour).UTC().Format(time.RFC3339)
+		req.ExpiresAt = &end
+	}
+	a, err := h.requests.RequestApproval(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", input.ActionType, err)
+	}
+	return map[string]any{
+		"finding_id":  findingID,
+		"approval_id": a.ID.String(),
+		"status":      string(a.Status),
+		"requested":   true,
+		"action":      string(input.ActionType),
+	}, nil
+}
+
+// ----------------------------------------------------------------------------
 // Handler Registration Helper
 // ----------------------------------------------------------------------------
 
@@ -615,6 +694,9 @@ func RegisterAllActionHandlersWithAI(
 		executor.RegisterActionHandler(automationdom.ActionTypeUpdateStatus, findingHandler)
 		executor.RegisterActionHandler(automationdom.ActionTypeAddTags, findingHandler)
 		executor.RegisterActionHandler(automationdom.ActionTypeRemoveTags, findingHandler)
+		requestHandler := NewRequestActionHandler(vulnSvc)
+		executor.RegisterActionHandler(automationdom.ActionTypeRequestFalsePositive, requestHandler)
+		executor.RegisterActionHandler(automationdom.ActionTypeRequestRiskAcceptance, requestHandler)
 	}
 
 	// Pipeline/Scan actions

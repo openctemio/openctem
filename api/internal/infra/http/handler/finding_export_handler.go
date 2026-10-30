@@ -40,6 +40,7 @@ import (
 type FindingExportRow struct {
 	ID               string     `json:"id"`
 	Title            string     `json:"title"`
+	DisplayTitle     string     `json:"display_title"` // "<title> on <target>"; the asset is also its own columns
 	Severity         string     `json:"severity"`
 	Status           string     `json:"status"`
 	PriorityClass    string     `json:"priority_class"`
@@ -99,12 +100,17 @@ func toFindingExportRow(f FindingResponse) FindingExportRow {
 		}
 		return *p
 	}
+	// The display title: what the findings list shows for a finding
+	// without a title of its own.
 	title := f.Title
-	if title == "" {
-		title = f.Message
+	for _, alt := range []string{f.RuleName, f.RuleID, f.Message} {
+		if title != "" {
+			break
+		}
+		title = alt
 	}
 	row := FindingExportRow{
-		ID: f.ID, Title: title, Severity: f.Severity, Status: f.Status, PriorityClass: deref(f.PriorityClass),
+		ID: f.ID, Title: title, DisplayTitle: f.DisplayTitle, Severity: f.Severity, Status: f.Status, PriorityClass: deref(f.PriorityClass),
 		Source: f.Source, FindingType: f.FindingType, ToolName: f.ToolName, RuleID: f.RuleID, RuleName: f.RuleName,
 		CVEID: f.CVEID, CVEIDs: f.CVEIDs, CWEIDs: f.CWEIDs, CVSSScore: f.CVSSScore, CVSSVector: f.CVSSVector,
 		EPSSScore: f.EPSSScore, EPSSPercentile: f.EPSSPercentile, IsInKEV: f.IsInKEV,
@@ -157,7 +163,7 @@ func (row FindingExportRow) csvCells() []string {
 		return ts(*t)
 	}
 	cells := []string{
-		row.ID, row.Title, row.Severity, row.Status, row.PriorityClass, row.Source, row.FindingType, row.ToolName,
+		row.ID, row.Title, row.DisplayTitle, row.Severity, row.Status, row.PriorityClass, row.Source, row.FindingType, row.ToolName,
 		row.RuleID, row.RuleName, row.CVEID, strings.Join(row.CVEIDs, ";"), strings.Join(row.CWEIDs, ";"),
 		num(row.CVSSScore), row.CVSSVector, num(row.EPSSScore), num(row.EPSSPercentile),
 		strconv.FormatBool(row.IsInKEV), strconv.FormatBool(row.ExploitAvailable), strconv.FormatBool(row.IsReachable),
@@ -220,6 +226,7 @@ func (h *VulnerabilityHandler) ExportFindingsDocument(w http.ResponseWriter, r *
 // @Param  vulnerability_id_not  query  []string  false  "vulnerability id: none of (comma list)"  collectionFormat(csv)
 // @Param  severity  query  []string  false  "severity: any of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low, info, none)
 // @Param  severity_not  query  []string  false  "severity: none of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low, info, none)
+// @Param  informational  query  boolean  false  "informational equals"
 // @Param  status  query  []string  false  "status: any of (comma list)"  collectionFormat(csv)  Enums(new, confirmed, in_progress, fix_applied, resolved, false_positive, accepted, duplicate, draft, in_review)
 // @Param  status_not  query  []string  false  "status: none of (comma list)"  collectionFormat(csv)  Enums(new, confirmed, in_progress, fix_applied, resolved, false_positive, accepted, duplicate, draft, in_review)
 // @Param  observation  query  []string  false  "observation: any of (comma list)"  collectionFormat(csv)  Enums(present, stale)
@@ -241,6 +248,7 @@ func (h *VulnerabilityHandler) ExportFindingsDocument(w http.ResponseWriter, r *
 // @Param  finding_type  query  []string  false  "finding type: any of (comma list)"  collectionFormat(csv)  Enums(vulnerability, secret, misconfiguration, compliance, web3, license)
 // @Param  finding_type_not  query  []string  false  "finding type: none of (comma list)"  collectionFormat(csv)  Enums(vulnerability, secret, misconfiguration, compliance, web3, license)
 // @Param  is_in_kev  query  boolean  false  "is in kev equals"
+// @Param  kev_ransomware  query  boolean  false  "kev ransomware equals"
 // @Param  is_reachable  query  boolean  false  "is reachable equals"
 // @Param  epss_score_gte  query  number  false  "epss score at least"
 // @Param  epss_score_lte  query  number  false  "epss score at most"
@@ -259,7 +267,7 @@ func (h *VulnerabilityHandler) ExportFindingsDocument(w http.ResponseWriter, r *
 // @Param  asset_tag  query  []string  false  "asset tag: any of (comma list)"  collectionFormat(csv)
 // @Param  asset_tag_not  query  []string  false  "asset tag: none of (comma list)"  collectionFormat(csv)
 // @Param  asset_group_id  query  []string  false  "asset group id: any of (comma list)"  collectionFormat(csv)
-// @Param  related_to  query  string  false  "related to equals"  Enums(me)
+// @Param  related_to  query  string  false  "related to equals"  Enums(me, my_team)
 // @Param  cvss_score_gte  query  number  false  "cvss score at least"
 // @Param  cvss_score_lte  query  number  false  "cvss score at most"
 // @Param  cvss_score_gt  query  number  false  "cvss score greater than"
@@ -355,6 +363,13 @@ func (h *VulnerabilityHandler) ExportFindings(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	h.streamFindingsExport(w, r, spec, format, "findings")
+}
+
+// streamFindingsExport streams the findings a compiled-as-the-caller spec
+// selects as CSV or NDJSON (the export allowlist), one export per user at a
+// time, audited. namePrefix starts the file name.
+func (h *VulnerabilityHandler) streamFindingsExport(w http.ResponseWriter, r *http.Request, spec *filterspec.Spec, format, namePrefix string) {
 	ctx := r.Context()
 	tenantID := middleware.MustGetTenantID(ctx)
 	started := false
@@ -367,7 +382,7 @@ func (h *VulnerabilityHandler) ExportFindings(w http.ResponseWriter, r *http.Req
 		hdr.Set("X-Content-Type-Options", "nosniff")
 		hdr.Set("Trailer", "X-Export-Truncated, X-Export-Rows")
 		hdr.Set("X-Export-Max-Rows", strconv.Itoa(finding.MaxExportRows))
-		name := "findings-" + time.Now().UTC().Format("20060102-150405")
+		name := namePrefix + "-" + time.Now().UTC().Format("20060102-150405")
 		if format == exportFormatCSV {
 			hdr.Set("Content-Type", "text/csv; charset=utf-8")
 			hdr.Set("Content-Disposition", `attachment; filename="`+name+`.csv"`)

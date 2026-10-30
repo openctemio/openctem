@@ -89,8 +89,8 @@ func registerThreatIntelRoutes(
 		r.GET("/stats", h.GetThreatIntelStats, middleware.Require(permission.VulnerabilitiesRead), heavyReads.Middleware())
 
 		// Sync status and management (admin operations)
-		r.GET("/sync", h.GetSyncStatuses, middleware.Require(permission.VulnerabilitiesRead))
-		r.GET("/sync/{source}", h.GetSyncStatus, middleware.Require(permission.VulnerabilitiesRead))
+		r.GET("/sync", h.GetSyncStatusesTenant, middleware.Require(permission.VulnerabilitiesRead))
+		r.GET("/sync/{source}", h.GetSyncStatusTenant, middleware.Require(permission.VulnerabilitiesRead))
 		// The feed syncs are platform-wide: an organization may neither run
 		// nor toggle them, so there is no write route here. Operators use
 		// /api/v1/admin/threat-intel.
@@ -181,6 +181,10 @@ func registerVulnerabilityRoutes(
 ) {
 	// Build base middleware chain
 	baseMiddlewares := buildBaseMiddlewares(authMiddleware, userSyncMiddleware)
+	// The finding page's reads in one response (research/335). Each part is
+	// sent through this router with the caller's credentials, so it passes
+	// its own endpoint's gates; this route itself needs findings:read.
+	findingView := handler.NewFindingViewHandler(router.Handler, nil)
 
 	// Vulnerability routes - global CVE database (no tenant required for catalog ops).
 	// EXCEPTION: /{id}/affected-assets and /cve/{cveId}/affected-assets are
@@ -193,16 +197,12 @@ func registerVulnerabilityRoutes(
 		r.GET("/{id}", h.GetVulnerability, middleware.Require(permission.VulnerabilitiesRead))
 		r.GET("/cve/{cveId}", h.GetVulnerabilityByCVE, middleware.Require(permission.VulnerabilitiesRead))
 
-		// Blast-radius reverse lookups + Active CVEs (tenant-scoped). Use
+		// Blast-radius reverse lookups (tenant-scoped). Use
 		// tenantOverlayMiddlewares() to apply RequireTenant + active-membership
 		// + CSRF + rate-limit per-route, since chi forbids mounting a second
 		// Group on the same path. See routes.go.
 		tenantScopedMW := append(tenantOverlayMiddlewares(),
 			middleware.Require(permission.VulnerabilitiesRead))
-		// IMPORTANT: register /active/stats BEFORE /active and /{id} so the
-		// most-specific literal path wins.
-		r.GET("/active/stats", h.GetActiveCVEStats, tenantScopedMW...)
-		r.GET("/active", h.ListActiveCVEs, tenantScopedMW...)
 		r.GET("/{id}/affected-assets", h.ListAffectedAssets, tenantScopedMW...)
 		r.GET("/cve/{cveId}/affected-assets", h.ListAffectedAssetsByCVE, tenantScopedMW...)
 
@@ -213,6 +213,31 @@ func registerVulnerabilityRoutes(
 
 	// Build tenant middleware chain from JWT token (used by /findings group below)
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+
+	// The vulnerability page (docs/architecture/vulnerability-page.md): one
+	// exposure answer per vulnerability, addressed by its CVE or an advisory
+	// id the signed feed aliases to one. Finding counts run as the caller
+	// (the findings list's own filter), so findings:read as well, under the
+	// heavy-read limiter like the findings stats.
+	router.Group("/api/v1/vulnerability-exposures", func(r Router) {
+		pageMW := []Middleware{middleware.RequireAll(permission.VulnerabilitiesRead, permission.FindingsRead), heavyReads.Middleware()}
+		// The list: one row per CVE over the same compiled filter.
+		r.GET("/", h.ListCVEExposures, pageMW...)
+		// Bulk actions on selected rows (the open findings of the selected
+		// CVEs that the list's filter selects for the caller): each needs the
+		// single-finding permission of the action it runs. The export is the
+		// findings export (findings:export, one per user, audited).
+		r.GET("/export", h.ExportCVEExposures,
+			middleware.RequireAll(permission.VulnerabilitiesRead, permission.FindingsRead, permission.FindingsExport), heavyReads.Middleware())
+		r.POST("/exception/preview", h.PreviewCVEException,
+			middleware.RequireAll(permission.VulnerabilitiesRead, permission.FindingsRead, permission.FindingsWrite), heavyReads.Middleware())
+		r.POST("/exception", h.RequestCVEException,
+			middleware.RequireAll(permission.VulnerabilitiesRead, permission.FindingsRead, permission.FindingsWrite), heavyReads.Middleware())
+		r.POST("/retests", h.RetestCVEs,
+			middleware.RequireAll(permission.VulnerabilitiesRead, permission.FindingsRead, permission.FindingsVerify), heavyReads.Middleware())
+		r.GET("/{vuln_id}", h.GetCVEExposure, pageMW...)
+		r.GET("/{vuln_id}/assets", h.ListCVEExposureAssets, pageMW...)
+	}, tenantMiddlewares...)
 
 	// Finding routes - tenant from JWT token
 	router.Group("/api/v1/findings", func(r Router) {
@@ -270,6 +295,7 @@ func registerVulnerabilityRoutes(
 
 		// Single finding operations
 		r.GET("/{id}", h.GetFinding, middleware.Require(permission.FindingsRead))
+		r.GET("/{id}/view", findingView.View, middleware.Require(permission.FindingsRead))
 		// Priority explainability: why does this finding hold its P-class?
 		r.GET("/{id}/priority-explanation", h.ExplainPriority, middleware.Require(permission.FindingsRead))
 		// Why this is one finding: recipe and field names of its key, the tools

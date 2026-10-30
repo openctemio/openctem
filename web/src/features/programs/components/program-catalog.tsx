@@ -8,13 +8,12 @@
  */
 
 import { useState } from 'react'
-import { Loader2, Search, Trophy } from 'lucide-react'
+import { Loader2, Trophy } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { useTranslation } from '@/context/i18n-provider'
 import { ApiClientError } from '@/lib/api/error-handler'
-import { EmptyState } from '@/features/shared'
+import { EmptyState, ListToolbar } from '@/features/shared'
 import type { ProgramChange } from '../api/programs-api.types'
 import { subscribeProgram, useProgramCatalog } from '../api/use-programs'
 
@@ -45,17 +44,14 @@ export function ProgramCatalog({ onFollowed, onError }: ProgramCatalogProps) {
   const programs = data?.data ?? []
   return (
     <section className="space-y-3">
-      <div className="relative max-w-md">
-        <Search className="text-muted-foreground absolute top-2.5 left-2.5 h-4 w-4" aria-hidden />
-        <Input
-          className="pl-8"
-          value={search}
-          maxLength={100}
-          aria-label={t('programs.catalog.search', 'Search public programs')}
-          placeholder={t('programs.catalog.search', 'Search public programs')}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-      </div>
+      <ListToolbar
+        search={{
+          value: search,
+          onChange: setSearch,
+          placeholder: t('programs.catalog.search', 'Search public programs…'),
+          inputProps: { maxLength: 100 },
+        }}
+      />
       <p className="text-muted-foreground text-xs">
         {t(
           'programs.catalog.hint',

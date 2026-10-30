@@ -102,11 +102,6 @@ export const LEGACY_SETTINGS_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
     permanent: true,
   },
   {
-    source: '/template-sources/:path*',
-    destination: '/settings/scanning/template-sources/:path*',
-    permanent: true,
-  },
-  {
     source: '/secret-store/:path*',
     destination: '/settings/scanning/credentials/:path*',
     permanent: true,

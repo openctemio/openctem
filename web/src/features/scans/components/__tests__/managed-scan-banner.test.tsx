@@ -17,7 +17,7 @@ describe('ManagedScanBanner', () => {
   it('names continuous coverage and links to the coverage settings', () => {
     render(<ManagedScanBanner config={{ managed_by: 'coverage', owner_state: 'managed' }} />)
     expect(screen.getByTestId('managed-scan-banner')).toHaveTextContent(
-      'Managed by the platform · Continuous coverage'
+      'Managed by the platform: continuous coverage'
     )
     expect(screen.getByRole('link', { name: 'Open coverage settings' })).toHaveAttribute(
       'href',
@@ -29,7 +29,7 @@ describe('ManagedScanBanner', () => {
   it('names automatic enrichment and links nowhere', () => {
     render(<ManagedScanBanner config={{ managed_by: 'enrichment', owner_state: 'managed' }} />)
     expect(screen.getByTestId('managed-scan-banner')).toHaveTextContent(
-      'Managed by the platform · Automatic enrichment'
+      'Managed by the platform: automatic enrichment'
     )
     expect(screen.queryByRole('link')).toBeNull()
   })

@@ -27,7 +27,7 @@ import { getErrorMessage } from '@/lib/api/error-handler'
 import { useFindingApprovalPolicy, useRequestApproval } from '../api/use-findings-api'
 import { ApprovalEvaluationBanner } from './approval-evaluation-banner'
 import { FINDING_STATUS_CONFIG } from '../types'
-import type { FindingStatus } from '../types'
+import type { ApiApproval, FindingStatus } from '../types'
 import { PERSON_CLOSURE_REASONS, closureReasonLabel } from '../lib/closure'
 
 /** Days an accepted risk lasts unless the requester picks another date. */
@@ -53,8 +53,17 @@ interface ApprovalDialogProps {
    * stops there and the default end never passes it.
    */
   maxAcceptanceDays?: number
-  /** Called after an approval request is submitted successfully (e.g. to refresh lists/history) */
-  onSuccess?: () => void | Promise<void>
+  /**
+   * Called after an approval request is submitted successfully (e.g. to
+   * refresh lists/history), with the API's answer: a pending request, or an
+   * approved one (`single_person`) when the person decided alone.
+   */
+  onSuccess?: (result?: ApiApproval & { single_person?: boolean }) => void | Promise<void>
+  /**
+   * A note to start from (triage's AI suggestion). Only fills the form: the
+   * person still picks the reason, edits the note and sends the request.
+   */
+  initialJustification?: string
 }
 
 export function ApprovalDialog({
@@ -64,6 +73,7 @@ export function ApprovalDialog({
   onOpenChange,
   onSuccess,
   maxAcceptanceDays,
+  initialJustification,
 }: ApprovalDialogProps) {
   const { t } = useTranslation()
   // How a request of this status would be decided now: the tier and why, who
@@ -81,7 +91,7 @@ export function ApprovalDialog({
   const capDays = policyCap > 0 ? Math.min(propCap, policyCap) : propCap
   const defaultDays = Math.min(DEFAULT_ACCEPTANCE_DAYS, capDays)
   const minNote = Math.max(0, evaluation?.min_note_length ?? 0)
-  const [justification, setJustification] = useState('')
+  const [justification, setJustification] = useState(initialJustification ?? '')
   // Why the finding is not a risk to fix: a VEX-aligned code the server
   // requires and stores as the closure reason.
   const [reason, setReason] = useState('')
@@ -190,7 +200,7 @@ export function ApprovalDialog({
       setExpiresAt(acceptanceDate(defaultDays))
       setStep('input')
       onOpenChange(false)
-      await onSuccess?.()
+      await onSuccess?.(result as (ApiApproval & { single_person?: boolean }) | undefined)
     } catch (error) {
       toast.error(
         getErrorMessage(
@@ -312,7 +322,7 @@ export function ApprovalDialog({
                       count: justification.length,
                     })}
                     {minNote > 0 &&
-                      ` · ${t('findingApprovals.evaluation.noteMin', 'at least {count}', {
+                      `, ${t('findingApprovals.evaluation.noteMin', 'at least {count}', {
                         count: minNote,
                       })}`}
                   </p>

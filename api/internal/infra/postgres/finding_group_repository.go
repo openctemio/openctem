@@ -93,8 +93,10 @@ func buildFilterWhere(filter vulnerability.FindingFilter, argOffset int) (string
 	var args []any
 
 	if len(filter.Severities) > 0 {
-		sevs := make([]string, len(filter.Severities))
-		for i, s := range filter.Severities {
+		// info also matches none (vulnerability.ExpandSeverityFilter).
+		expanded := vulnerability.ExpandSeverityFilter(filter.Severities)
+		sevs := make([]string, len(expanded))
+		for i, s := range expanded {
 			sevs[i] = s.String()
 		}
 		clauses = append(clauses, fmt.Sprintf("f.severity = ANY($%d)", argOffset))

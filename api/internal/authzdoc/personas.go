@@ -75,7 +75,7 @@ var TeamPatterns = []TeamPattern{
 	},
 	{
 		ID: "bounty-program", Name: "Program: <bug-bounty program>", GroupType: "project",
-		Purpose: "Researchers working one bug-bounty program (RFC-064).",
+		Purpose: "Researchers working one bug-bounty program.",
 		Assets:  "The program's targets; nothing from the organization's own inventory.",
 		Roles:   []string{"researcher"},
 	},
@@ -329,7 +329,7 @@ var Personas = []Persona{
 		Roles:     []string{"researcher"},
 		Team:      "bounty-program",
 		DataScope: "The targets of the programs they belong to.",
-		Access:    "A role created from the Researcher template (RFC-064) and a program group.",
+		Access:    "A role created from the Researcher template and a program group.",
 		MustNot:   []string{"widen the organization's own scope", "approve scope entries"},
 	},
 	{
@@ -349,7 +349,7 @@ var Personas = []Persona{
 		Stages:    []string{StageDiscovery, StageMobilization},
 		Roles:     []string{},
 		DataScope: "The repository the run is bound to.",
-		Access:    "OIDC workload identity exchanged for a 15-minute run token (RFC-051); no user, no role, no API key.",
+		Access:    "OIDC workload identity exchanged for a 15-minute run token; no user, no role, no API key.",
 		MustNot:   []string{"read the organization's data", "override the gate"},
 	},
 	{
@@ -365,7 +365,7 @@ var Personas = []Persona{
 		Goal:      "Answers questions about exposures for a signed-in person.",
 		Roles:     []string{},
 		DataScope: "The person's own data scope.",
-		Access:    "An OAuth grant on the MCP endpoint (RFC-062): granted scopes intersected with the person's live permissions; the administrator bypass never applies.",
+		Access:    "An OAuth grant on the MCP endpoint: granted scopes intersected with the person's live permissions; the administrator bypass never applies.",
 		MustNot:   []string{"exceed the person's permissions", "write without the person's confirmation"},
 	},
 	{
@@ -373,7 +373,7 @@ var Personas = []Persona{
 		Goal:      "Runs the OpenCTEM service: health, organizations, first owners.",
 		Roles:     []string{},
 		DataScope: "No organization data.",
-		Access:    "The platform admin console realm (RFC-022), never a member of an organization.",
-		MustNot:   []string{"read an organization's data without a support grant (RFC-063)"},
+		Access:    "The platform admin console realm, never a member of an organization.",
+		MustNot:   []string{"read an organization's data without a support grant"},
 	},
 }

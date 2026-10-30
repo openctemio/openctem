@@ -18,7 +18,7 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { DetailCallout, DetailSection } from '@/features/shared'
+import { DetailCallout, DetailSection, KeyValueList } from '@/features/shared'
 import { ApiClientError } from '@/lib/api/error-handler'
 import { useScanZones } from '@/lib/api/scan-zone-hooks'
 import {
@@ -27,10 +27,17 @@ import {
   useSensorGrant,
   type SensorGrant,
 } from '@/lib/api/sensor-grant-hooks'
+import { formatList } from '@/lib/format-list'
 import { Permission, useHasPermission } from '@/lib/permissions'
 
 import type { Tr } from '../lib/format'
-import { formatGrantList, profileLabel, targetNetworkLabel, tierLabel } from '../lib/grant'
+import {
+  formatGrantList,
+  GATED_REMOTE_ACTIONS,
+  profileLabel,
+  targetNetworkLabel,
+  tierLabel,
+} from '../lib/grant'
 import { SensorGrantEditDialog } from './sensor-grant-edit-dialog'
 import { SensorGrantSuggestionCard } from './sensor-grant-suggestion-card'
 
@@ -51,12 +58,28 @@ export function isVersionConflict(err: unknown): boolean {
   return !!err && typeof err === 'object' && (err as { statusCode?: number }).statusCode === 409
 }
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+/**
+ * What the platform may ask the sensor to do remotely, in words: pausing and
+ * draining are always allowed (they only narrow), the rest only when the
+ * grant lists them. A permission, not a button: the actions themselves are
+ * Disable and Rotate key in the drawer's menu.
+ */
+function RemoteActions({ actions }: { actions: string[] | null | undefined }) {
+  const { t, locale } = useTranslation()
+  const gated = GATED_REMOTE_ACTIONS.filter((a) => actions?.includes(a)).map((a) =>
+    t(`sensors.grantSection.remote.${a}`)
+  )
   return (
-    <div className="grid grid-cols-[10rem_1fr] gap-2 text-sm">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 break-words">{children}</dd>
-    </div>
+    <span className="flex flex-col">
+      <span>{t('sensors.grantSection.remote.always')}</span>
+      <span className="text-muted-foreground">
+        {gated.length > 0
+          ? t('sensors.grantSection.remote.granted', undefined, {
+              list: formatList(gated, locale),
+            })
+          : t('sensors.grantSection.remote.none')}
+      </span>
+    </span>
   )
 }
 
@@ -241,61 +264,92 @@ export function SensorGrantSection({
         </div>
       )}
 
-      <dl className="space-y-1.5" data-testid="sensor-grant">
-        <Row label={t('sensors.grantEdit.profile')}>{profileLabel(grant.profile, t)}</Row>
-        <Row label={t('sensors.grantSection.trustLevel')}>
-          <span className="inline-flex flex-wrap items-center gap-2">
-            <TrustBadge level={grant.trust_level} />
-            {isNew && canWiden && (
-              <Button size="sm" variant="outline" onClick={() => setTrustTarget('trusted')}>
-                {t('sensors.grantSection.promote')}
-              </Button>
-            )}
-            {!isNew && canNarrow && (
-              <Button size="sm" variant="ghost" onClick={() => setTrustTarget('new')}>
-                {t('sensors.grantSection.setBack')}
-              </Button>
-            )}
-          </span>
-        </Row>
-        <Row label={t('sensors.grantEdit.dim.jobTypes')}>
-          {formatGrantList(grant.job_types, undefined, t)}
-        </Row>
-        <Row label={t('sensors.grantEdit.dim.zones')}>
-          {formatGrantList(grant.zone_ids, zoneName, t)}
-        </Row>
-        <Row label={t('sensors.grantEdit.dim.tools')}>
-          {formatGrantList(grant.tools, undefined, t)}
-        </Row>
-        <Row label={t('sensors.grantEdit.dim.capabilities')}>
-          {formatGrantList(grant.capabilities, undefined, t)}
-        </Row>
-        <Row label={t('sensors.grantEdit.dim.tierCeiling')}>
-          {tierLabel(grant.tier_ceiling, t)}
-          {eff && eff.tier_ceiling < grant.tier_ceiling && (
-            <span className="text-muted-foreground">
-              {' '}
-              ·{' '}
-              {t('sensors.grantSection.tierWhileNew', undefined, {
-                tier: tierLabel(eff.tier_ceiling, t),
-              })}
-            </span>
-          )}
-        </Row>
-        <Row label={t('sensors.grantEdit.dim.targetNetwork')}>
-          {targetNetworkLabel(grant.target_network, t)}
-        </Row>
-        <Row label={t('sensors.grantSection.targetScope')}>{scope}</Row>
-        <Row label={t('sensors.grantSection.credentials')}>
-          <Flag granted={grant.allow_credentials} effective={eff?.allow_credentials} />
-        </Row>
-        <Row label={t('sensors.grantSection.pushIngest')}>
-          <Flag granted={grant.allow_push_ingest} effective={eff?.allow_push_ingest} />
-        </Row>
-        <Row label={t('sensors.grantEdit.dim.remoteActions')}>
-          pause, drain{grant.remote_actions?.length ? `, ${grant.remote_actions.join(', ')}` : ''}
-        </Row>
-      </dl>
+      <KeyValueList
+        data-testid="sensor-grant"
+        items={[
+          {
+            key: 'profile',
+            label: t('sensors.grantEdit.profile'),
+            value: profileLabel(grant.profile, t),
+          },
+          {
+            key: 'trust',
+            label: t('sensors.grantSection.trustLevel'),
+            value: (
+              <span className="inline-flex flex-wrap items-center gap-2">
+                <TrustBadge level={grant.trust_level} />
+                {isNew && canWiden && (
+                  <Button size="sm" variant="outline" onClick={() => setTrustTarget('trusted')}>
+                    {t('sensors.grantSection.promote')}
+                  </Button>
+                )}
+                {!isNew && canNarrow && (
+                  <Button size="sm" variant="ghost" onClick={() => setTrustTarget('new')}>
+                    {t('sensors.grantSection.setBack')}
+                  </Button>
+                )}
+              </span>
+            ),
+          },
+          {
+            key: 'job_types',
+            label: t('sensors.grantEdit.dim.jobTypes'),
+            value: formatGrantList(grant.job_types, undefined, t),
+          },
+          {
+            key: 'zones',
+            label: t('sensors.grantEdit.dim.zones'),
+            value: formatGrantList(grant.zone_ids, zoneName, t),
+          },
+          {
+            key: 'tools',
+            label: t('sensors.grantEdit.dim.tools'),
+            value: formatGrantList(grant.tools, undefined, t),
+          },
+          {
+            key: 'capabilities',
+            label: t('sensors.grantEdit.dim.capabilities'),
+            value: formatGrantList(grant.capabilities, undefined, t),
+          },
+          {
+            key: 'tier',
+            label: t('sensors.grantEdit.dim.tierCeiling'),
+            value: (
+              <span className="flex flex-col">
+                <span>{tierLabel(grant.tier_ceiling, t)}</span>
+                {eff && eff.tier_ceiling < grant.tier_ceiling && (
+                  <span className="text-muted-foreground">
+                    {t('sensors.grantSection.tierWhileNew', undefined, {
+                      tier: tierLabel(eff.tier_ceiling, t),
+                    })}
+                  </span>
+                )}
+              </span>
+            ),
+          },
+          {
+            key: 'network',
+            label: t('sensors.grantEdit.dim.targetNetwork'),
+            value: targetNetworkLabel(grant.target_network, t),
+          },
+          { key: 'scope', label: t('sensors.grantSection.targetScope'), value: scope },
+          {
+            key: 'credentials',
+            label: t('sensors.grantSection.credentials'),
+            value: <Flag granted={grant.allow_credentials} effective={eff?.allow_credentials} />,
+          },
+          {
+            key: 'push',
+            label: t('sensors.grantSection.pushIngest'),
+            value: <Flag granted={grant.allow_push_ingest} effective={eff?.allow_push_ingest} />,
+          },
+          {
+            key: 'remote',
+            label: t('sensors.grantEdit.dim.remoteActions'),
+            value: <RemoteActions actions={grant.remote_actions} />,
+          },
+        ]}
+      />
 
       <ConfirmDialog
         open={trustTarget !== null}

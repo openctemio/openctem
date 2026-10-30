@@ -11,6 +11,7 @@ import {
   getRiskLevel,
   MetricStrip,
   PageHeader,
+  PageStack,
   RiskScoreBadge,
   DetailCallout,
   DetailField,
@@ -40,7 +41,6 @@ import { Badge } from '@/components/ui/badge'
 import {
   Plus,
   Download,
-  Search,
   Eye,
   Pencil,
   Trash2,
@@ -85,7 +85,7 @@ import { Progress } from '@/components/ui/progress'
 import { cn } from '@/lib/utils'
 import { CRITICALITY_BADGE_SOFT, type CriticalityLevel } from '@/lib/criticality-colors'
 import { useTranslation } from '@/context/i18n-provider'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { getAssetTypeIcon } from '@/features/assets/lib/asset-type-icon'
 import { ASSET_TYPE_LABELS } from '@/features/assets/types/asset.types'
 import { formatDateOnly } from '@/lib/date-only'
@@ -160,7 +160,7 @@ export default function CrownJewelsPage() {
   // Asset search for the "designate" create dialog
   const [assetSearch, setAssetSearch] = useState('')
   const [selectedAssetId, setSelectedAssetId] = useState<string>('')
-  const debouncedAssetSearch = useDebounce(assetSearch, 300)
+  const debouncedAssetSearch = useSearchQuery(assetSearch).term
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   // Only fetch candidates while the designate dialog is open.
   const { data: allAssets } = useAllAssets(debouncedAssetSearch, isCreateOpen)
@@ -262,11 +262,6 @@ export default function CrownJewelsPage() {
     return {
       total: jewels.length,
       exposed: jewels.filter(isExposed).length,
-      withCritical: jewels.filter((j) => (j.findingSeverity?.critical ?? 0) > 0).length,
-      // Guard against divide-by-zero on an empty tenant (was rendering "NaN").
-      averageRiskScore: jewels.length
-        ? Math.round(jewels.reduce((acc, j) => acc + (j.riskScore ?? 0), 0) / jewels.length)
-        : 0,
     }
   }, [crownJewels])
 
@@ -308,18 +303,6 @@ export default function CrownJewelsPage() {
       tone: 'danger',
       onClick: () => setFilterExposure(exposedOnly ? 'all' : 'exposed'),
       active: exposedOnly,
-    },
-    {
-      key: 'critical',
-      label: t('crownJewels.metric.critical', 'With critical findings'),
-      value: stats.withCritical,
-      tone: 'danger',
-    },
-    {
-      key: 'risk',
-      label: t('crownJewels.metric.risk', 'Average risk score'),
-      value: stats.averageRiskScore,
-      hint: t('crownJewels.metric.riskHint', 'of 100'),
     },
   ]
 
@@ -438,7 +421,7 @@ export default function CrownJewelsPage() {
               <div className="truncate font-medium">{jewel.name}</div>
               <div className="text-xs text-muted-foreground">
                 {assetTypeLabel(jewel.assetType)}
-                {jewel.criticality ? ` · ${criticalityText(jewel.criticality)}` : ''}
+                {jewel.criticality ? `, ${criticalityText(jewel.criticality)}` : ''}
               </div>
             </div>
           </div>
@@ -550,128 +533,125 @@ export default function CrownJewelsPage() {
   return (
     <>
       <Main>
-        <PageHeader
-          title={t('crownJewels.title', 'Crown jewels')}
-          description={t(
-            'crownJewels.description',
-            'The assets whose compromise would hurt the business most.'
-          )}
-        >
-          <Can permission={Permission.AssetsWrite}>
-            <Button size="sm" onClick={() => setIsCreateOpen(true)}>
-              <Plus className="me-2 h-4 w-4" />
-              {t('crownJewels.designate', 'Designate crown jewel')}
-            </Button>
-          </Can>
-        </PageHeader>
-        <GatedSectionTabs
-          tabs={BUSINESS_CONTEXT_SECTION_TABS}
-          label={t('businessContext.sectionsLabel', 'Business context sections')}
-          className="mt-4 mb-0"
-        />
+        <PageStack>
+          <PageHeader
+            title={t('crownJewels.title', 'Crown jewels')}
+            description={t(
+              'crownJewels.description',
+              'The assets whose compromise would hurt the business most.'
+            )}
+          >
+            <Can permission={Permission.AssetsWrite}>
+              <Button size="sm" onClick={() => setIsCreateOpen(true)}>
+                <Plus className="me-2 h-4 w-4" />
+                {t('crownJewels.designate', 'Designate crown jewel')}
+              </Button>
+            </Can>
+          </PageHeader>
+          <GatedSectionTabs
+            tabs={BUSINESS_CONTEXT_SECTION_TABS}
+            label={t('businessContext.sectionsLabel', 'Business context sections')}
+          />
 
-        <MetricStrip className="mt-5" loading={isLoading} items={metrics} />
+          <MetricStrip loading={isLoading} items={metrics} />
 
-        <div className="mt-5">
-          <DataTable
-            columns={columns}
-            data={filteredJewels}
-            showSearch={false}
-            isLoading={isLoading}
-            errorState={
-              loadError ? (
-                <ErrorState
-                  title={t('crownJewels.loadError', 'crown jewels')}
-                  error={loadError}
-                  onRetry={() => reload()}
-                />
-              ) : undefined
-            }
-            toolbarStart={
-              <>
-                <div className="relative min-w-0 flex-1 sm:max-w-xs">
-                  <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder={t('crownJewels.search.placeholder', 'Search name or owner…')}
-                    aria-label={t('crownJewels.search.aria', 'Search crown jewels')}
-                    className="h-9 ps-9"
+          <div>
+            <DataTable
+              columns={columns}
+              data={filteredJewels}
+              showSearch={false}
+              search={{
+                value: searchQuery,
+                onChange: setSearchQuery,
+                placeholder: t('crownJewels.search.placeholder', 'Search name or owner…'),
+                label: t('crownJewels.search.aria', 'Search crown jewels'),
+              }}
+              isLoading={isLoading}
+              errorState={
+                loadError ? (
+                  <ErrorState
+                    title={t('crownJewels.loadError', 'crown jewels')}
+                    error={loadError}
+                    onRetry={() => reload()}
                   />
-                </div>
-                <Select value={filterExposure} onValueChange={setFilterExposure}>
-                  <SelectTrigger
-                    className="h-9 w-auto min-w-36"
-                    aria-label={t('crownJewels.filter.exposure.aria', 'Filter by exposure')}
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">
-                      {t('crownJewels.filter.exposure.any', 'Any exposure')}
-                    </SelectItem>
-                    <SelectItem value="exposed">
-                      {t('crownJewels.exposed', 'Internet-exposed')}
-                    </SelectItem>
-                    <SelectItem value="not_exposed">
-                      {t('crownJewels.notExposed', 'Not exposed')}
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-                {assetTypes.length > 1 && (
-                  <Select value={filterType} onValueChange={setFilterType}>
+                ) : undefined
+              }
+              toolbarStart={
+                <>
+                  <Select value={filterExposure} onValueChange={setFilterExposure}>
                     <SelectTrigger
-                      className="h-9 w-auto min-w-32"
-                      aria-label={t('crownJewels.filter.type.aria', 'Filter by asset type')}
+                      className="h-9 w-auto min-w-36"
+                      aria-label={t('crownJewels.filter.exposure.aria', 'Filter by exposure')}
                     >
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">
-                        {t('crownJewels.filter.type.all', 'All types')}
+                        {t('crownJewels.filter.exposure.any', 'Any exposure')}
                       </SelectItem>
-                      {assetTypes.map((type) => (
-                        <SelectItem key={type} value={type}>
-                          {assetTypeLabel(type)}
-                        </SelectItem>
-                      ))}
+                      <SelectItem value="exposed">
+                        {t('crownJewels.exposed', 'Internet-exposed')}
+                      </SelectItem>
+                      <SelectItem value="not_exposed">
+                        {t('crownJewels.notExposed', 'Not exposed')}
+                      </SelectItem>
                     </SelectContent>
                   </Select>
-                )}
-              </>
-            }
-            toolbarEnd={
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-9"
-                onClick={handleExport}
-                disabled={crownJewels.length === 0}
-              >
-                <Download className="h-4 w-4 md:me-2" />
-                <span className="sr-only md:not-sr-only">{t('common.export', 'Export')}</span>
-              </Button>
-            }
-            emptyMessage={
-              crownJewels.length === 0
-                ? t('crownJewels.empty.none', 'No crown jewels yet')
-                : t('crownJewels.empty.noMatch', 'No crown jewels match')
-            }
-            emptyDescription={
-              crownJewels.length === 0
-                ? t(
-                    'crownJewels.empty.noneDesc',
-                    'Designate a critical asset as a crown jewel to track it here.'
-                  )
-                : t('crownJewels.empty.noMatchDesc', 'Try adjusting your search or filters.')
-            }
-            onRowClick={(jewel) => setViewJewel(jewel)}
+                  {assetTypes.length > 1 && (
+                    <Select value={filterType} onValueChange={setFilterType}>
+                      <SelectTrigger
+                        className="h-9 w-auto min-w-32"
+                        aria-label={t('crownJewels.filter.type.aria', 'Filter by asset type')}
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">
+                          {t('crownJewels.filter.type.all', 'All types')}
+                        </SelectItem>
+                        {assetTypes.map((type) => (
+                          <SelectItem key={type} value={type}>
+                            {assetTypeLabel(type)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </>
+              }
+              toolbarEnd={
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-9"
+                  onClick={handleExport}
+                  disabled={crownJewels.length === 0}
+                >
+                  <Download className="h-4 w-4 md:me-2" />
+                  <span className="sr-only md:not-sr-only">{t('common.export', 'Export')}</span>
+                </Button>
+              }
+              emptyMessage={
+                crownJewels.length === 0
+                  ? t('crownJewels.empty.none', 'No crown jewels yet')
+                  : t('crownJewels.empty.noMatch', 'No crown jewels match')
+              }
+              emptyDescription={
+                crownJewels.length === 0
+                  ? t(
+                      'crownJewels.empty.noneDesc',
+                      'Designate a critical asset as a crown jewel to track it here.'
+                    )
+                  : t('crownJewels.empty.noMatchDesc', 'Try adjusting your search or filters.')
+              }
+              onRowClick={(jewel) => setViewJewel(jewel)}
+            />
+          </div>
+          <CappedNotice
+            loaded={(apiCrownJewels?.data ?? []).length}
+            total={apiCrownJewels?.total ?? 0}
           />
-        </div>
-        <CappedNotice
-          loaded={(apiCrownJewels?.data ?? []).length}
-          total={apiCrownJewels?.total ?? 0}
-        />
+        </PageStack>
       </Main>
 
       {/* Create Dialog */}

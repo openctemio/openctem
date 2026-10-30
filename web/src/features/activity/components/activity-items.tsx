@@ -50,6 +50,8 @@ import { collapsedLabel, dayLabel } from '../lib/activity-feed'
 import { QUICK_REACTIONS, type ReactionViewer } from '../lib/reactions'
 import { ReactionPicker, ReactionPills } from './comment-reactions'
 import { useTranslation } from '@/context/i18n-provider'
+import { AIBadge } from '@/features/shared/components/ai-badge'
+import { confirmName } from '@/lib/confirm-name'
 
 const TONE: Record<ActivityTone, string> = {
   muted: 'bg-muted text-muted-foreground',
@@ -81,6 +83,19 @@ export function actorInitials(actor: ActivityActor): string {
   const letters =
     parts.length > 1 ? parts[0][0] + parts[parts.length - 1][0] : actor.name.slice(0, 2)
   return letters.toUpperCase()
+}
+
+/**
+ * The actor's name. An AI agent renders as the shared AIBadge with its
+ * accountable owners; an AI row without provenance reads "AI assistant".
+ */
+export function ActorName({ actor }: { actor: ActivityActor }) {
+  const { t } = useTranslation()
+  if (actor.ai) {
+    return <AIBadge source="ai_agent" name={actor.ai.name} accountable={actor.ai.accountable} />
+  }
+  if (actor.kind === 'ai') return <>{t('activity.aiAssistant', 'AI assistant')}</>
+  return <>{actor.name}</>
 }
 
 /** Relative time ("2 hours ago"), the absolute time on hover. */
@@ -152,11 +167,11 @@ export function EventRow({ item }: { item: ActivityEventItem }) {
       <div className="min-w-0 flex-1 text-sm">
         <p className="break-words text-muted-foreground">
           {item.actor.name && (
-            <span className="font-medium text-foreground">{item.actor.name} </span>
+            <span className="font-medium text-foreground">
+              <ActorName actor={item.actor} />{' '}
+            </span>
           )}
-          {item.summary}
-          <span aria-hidden> · </span>
-          <ActivityTime at={item.at} />
+          {item.summary} <ActivityTime at={item.at} className="ms-2" />
         </p>
         {item.detail && (
           <div className="mt-0.5 text-xs break-words text-muted-foreground">{item.detail}</div>
@@ -191,9 +206,7 @@ export function CollapsedEventsRow({
         <Layers className="h-3 w-3" />
       </span>
       <span className="min-w-0 flex-1 truncate">
-        {label}
-        <span aria-hidden> · </span>
-        <ActivityTime at={items[items.length - 1].at} />
+        {label} <ActivityTime at={items[items.length - 1].at} className="ms-2" />
       </span>
       <span className="flex shrink-0 items-center gap-0.5 text-xs font-medium text-foreground group-hover:underline">
         Show
@@ -307,14 +320,16 @@ export function CommentCard({
             {actorInitials(item.actor)}
           </AvatarFallback>
         </Avatar>
-        <span className="truncate text-sm font-medium">{item.actor.name}</span>
+        <span className="truncate text-sm font-medium">
+          <ActorName actor={item.actor} />
+        </span>
         <ActivityTime at={item.at} />
         {item.editedAt && !isPending && (
           <span
             className="text-xs text-muted-foreground"
             title={`Edited ${new Date(item.editedAt).toLocaleString()}`}
           >
-            · edited
+            , edited
           </span>
         )}
         {item.visibility === 'client' && (
@@ -359,10 +374,13 @@ export function CommentCard({
         {item.internal && (
           <span
             className="inline-flex shrink-0 items-center gap-1 rounded-full bg-warning/15 px-2 py-0.5 text-[11px] font-medium text-warning"
-            title="Internal: only people in your organization see it. Never sent to Jira or other integrations."
+            title={t(
+              'activity.item.internalTitle',
+              'Internal: only people in your organization see it. Never sent to Jira or other integrations.'
+            )}
           >
             <Lock className="h-3 w-3" aria-hidden />
-            Internal
+            {t('activity.item.internal', 'Internal')}
           </span>
         )}
       </header>
@@ -405,8 +423,8 @@ export function CommentCard({
             >
               <button
                 type="button"
-                aria-label="Add reaction"
-                title="Add reaction"
+                aria-label={t('activity.item.addReaction', 'Add reaction')}
+                title={t('activity.item.addReaction', 'Add reaction')}
                 className="flex size-7 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none [@media(hover:none)]:sr-only"
               >
                 <SmilePlus className="h-4 w-4" aria-hidden />
@@ -417,7 +435,7 @@ export function CommentCard({
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                aria-label="Comment actions"
+                aria-label={t('activity.item.actions', 'Comment actions')}
                 className="flex size-7 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
               >
                 <MoreHorizontal className="h-4 w-4" aria-hidden />
@@ -440,17 +458,17 @@ export function CommentCard({
                   }}
                 >
                   <SmilePlus className="h-4 w-4" />
-                  Add reaction
+                  {t('activity.item.addReaction', 'Add reaction')}
                 </DropdownMenuItem>
               )}
               <DropdownMenuItem
                 onSelect={() => {
                   void copyToClipboard(item.body)
-                  toast.success('Comment copied')
+                  toast.success(t('activity.item.copied', 'Comment copied'))
                 }}
               >
                 <Copy className="h-4 w-4" />
-                Copy text
+                {t('activity.item.copyText', 'Copy text')}
               </DropdownMenuItem>
               {onEdit && !isPending && (
                 <DropdownMenuItem
@@ -460,7 +478,7 @@ export function CommentCard({
                   }}
                 >
                   <Pencil className="h-4 w-4" />
-                  Edit
+                  {t('activity.item.edit', 'Edit')}
                 </DropdownMenuItem>
               )}
               {onDelete && !isPending && (
@@ -471,7 +489,7 @@ export function CommentCard({
                     onSelect={() => setConfirmDelete(true)}
                   >
                     <Trash2 className="h-4 w-4" />
-                    Delete
+                    {t('activity.item.delete', 'Delete')}
                   </DropdownMenuItem>
                 </>
               )}
@@ -484,7 +502,7 @@ export function CommentCard({
         <div className="mt-2 space-y-2">
           <Textarea
             ref={editRef}
-            aria-label="Edit comment"
+            aria-label={t('activity.item.editLabel', 'Edit comment')}
             value={draft}
             maxLength={MAX_COMMENT_LENGTH}
             onChange={(e) => setDraft(e.target.value)}
@@ -504,10 +522,10 @@ export function CommentCard({
           />
           <div className="flex justify-end gap-2">
             <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>
-              Cancel
+              {t('activity.item.cancel', 'Cancel')}
             </Button>
             <Button size="sm" onClick={() => void save()} disabled={!draft.trim() || saving}>
-              Save
+              {t('activity.item.save', 'Save')}
             </Button>
           </div>
         </div>
@@ -563,22 +581,22 @@ export function CommentCard({
 
       {item.pending === 'sending' && (
         <p className="mt-2 ps-8 text-xs text-muted-foreground" role="status">
-          Sending…
+          {t('activity.item.sending', 'Sending…')}
         </p>
       )}
       {item.pending === 'failed' && (
         <div className="mt-2 flex flex-wrap items-center gap-2 ps-8 text-xs" role="alert">
-          <span className="text-destructive">Not sent.</span>
+          <span className="text-destructive">{t('activity.item.notSent', 'Not sent.')}</span>
           {onRetry && (
             <Button variant="outline" size="sm" className="h-7" onClick={onRetry}>
               <RotateCcw className="h-3.5 w-3.5" />
-              Retry
+              {t('activity.item.retry', 'Retry')}
             </Button>
           )}
           {onDiscard && (
             <Button variant="ghost" size="sm" className="h-7" onClick={onDiscard}>
               <X className="h-3.5 w-3.5" />
-              Discard
+              {t('activity.item.discard', 'Discard')}
             </Button>
           )}
         </div>
@@ -591,9 +609,10 @@ export function CommentCard({
           title={t('confirm.comment.deleteTitle', 'Delete this comment?')}
           desc={t(
             'confirm.comment.deleteDesc',
-            'The comment is permanently deleted for everyone. This cannot be undone.'
+            'The comment is permanently removed for everyone who can see this thread. The finding itself is not changed.'
           )}
-          confirmText={t('confirm.delete', 'Delete')}
+          typeToConfirm={confirmName(item.body, item.id)}
+          confirmText={t('confirm.comment.deleteButton', 'Delete comment')}
           destructive
           handleConfirm={() => {
             setConfirmDelete(false)

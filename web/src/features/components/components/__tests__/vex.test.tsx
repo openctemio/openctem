@@ -121,7 +121,11 @@ describe('VEX statements panel', () => {
     render(<VexStatementsPanel productId="p1" />)
     expect(screen.getByRole('button', { name: 'New statement' })).toBeTruthy()
     await userEvent.click(screen.getByRole('button', { name: 'Delete statement CVE-2021-23337' }))
-    await userEvent.click(await screen.findByRole('button', { name: 'Delete' }))
+    const confirm = await screen.findByRole('button', { name: 'Delete statement' })
+    expect(confirm).toBeDisabled()
+    expect(deleteVexStatement).not.toHaveBeenCalled()
+    await userEvent.type(screen.getByRole('textbox'), 'CVE-2021-23337')
+    await userEvent.click(confirm)
     await waitFor(() => expect(deleteVexStatement).toHaveBeenCalledWith('s1'))
   })
 

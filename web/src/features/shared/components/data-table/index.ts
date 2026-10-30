@@ -2,6 +2,7 @@ export {
   DataTable,
   groupRowsForDisplay,
   type DataTableRowGroups,
+  type DataTableSearch,
   type MobileRowSelection,
 } from './data-table'
 export { DataTableColumnHeader } from './data-table-column-header'

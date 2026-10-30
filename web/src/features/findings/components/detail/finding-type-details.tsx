@@ -132,7 +132,7 @@ function SecretSection({ finding }: { finding: FindingDetail }) {
           </span>
           {s.verifiedAt && (
             <span className="text-muted-foreground">
-              {' · '}
+              {', '}
               {t('findings.typeDetails.checked', 'checked {date}', {
                 date: formatDate(s.verifiedAt, locale) ?? '',
               })}
@@ -203,7 +203,7 @@ function MisconfigSection({ finding }: { finding: FindingDetail }) {
           {m.policyId || m.policyName ? (
             <span>
               {m.policyId && <Mono>{m.policyId}</Mono>}
-              {m.policyId && m.policyName && ' · '}
+              {m.policyId && m.policyName && ', '}
               {m.policyName}
             </span>
           ) : null}
@@ -299,7 +299,7 @@ function ComplianceSection({ finding }: { finding: FindingDetail }) {
           {c.controlId || c.controlName ? (
             <span>
               {c.controlId && <Mono>{c.controlId}</Mono>}
-              {c.controlId && c.controlName && ' · '}
+              {c.controlId && c.controlName && ', '}
               {c.controlName}
             </span>
           ) : null}

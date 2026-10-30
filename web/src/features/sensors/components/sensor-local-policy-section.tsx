@@ -2,11 +2,11 @@
 
 import { Lock, OctagonPause, ShieldAlert } from 'lucide-react'
 
-import { Badge } from '@/components/ui/badge'
+import { HealthStatus } from '@/components/ui/health-status'
+import type { HealthState } from '@/lib/health-colors'
 import { useTranslation } from '@/context/i18n-provider'
 import { DetailCallout, DetailField, DetailFieldGrid, DetailSection } from '@/features/shared'
 import type { Sensor } from '@/lib/api/sensor-types'
-import { cn } from '@/lib/utils'
 
 import { exactTime } from '../lib/format'
 import {
@@ -14,23 +14,47 @@ import {
   localPolicySummaryLines,
   localPolicyView,
   noLocalPolicyGuidance,
+  policyApplyCommand,
 } from '../lib/local-policy'
+import { Snippet, useSensorTemplates } from './sensor-install-snippets'
 
-const TONE_CLASS = {
-  ok: 'border-success/40 bg-success/10 text-success',
-  warn: 'border-warning/40 bg-warning/10 text-warning',
-  danger: 'border-destructive/40 bg-destructive/10 text-destructive',
-  muted: 'text-muted-foreground',
-} as const
+const TONE_STATE = {
+  ok: 'ok',
+  warn: 'warn',
+  danger: 'down',
+  muted: 'off',
+} as const satisfies Record<string, HealthState>
 
 /** The state of a sensor's local policy as a small badge (api RFC-040 §5.7). */
 export function SensorLocalPolicyBadge({ sensor }: { sensor: Pick<Sensor, 'local_policy'> }) {
   const { t } = useTranslation()
   const view = localPolicyView(sensor.local_policy, t)
+  return <HealthStatus state={TONE_STATE[view.tone]} label={view.label} title={view.description} />
+}
+
+/**
+ * The policy the platform suggests for a sensor without one (its zones, else
+ * the organization's scope), as one command that writes the file on the
+ * host. The platform only proposes the text: the network owner reviews it
+ * and runs it; the sensor enforces the file, which the platform cannot
+ * change.
+ */
+export function SensorPolicySuggestion({ sensorId }: { sensorId: string }) {
+  const { t } = useTranslation()
+  const { data, loading, error } = useSensorTemplates(sensorId)
+  const policy = data?.policy?.trim()
+  if (loading || error || !policy) return null
   return (
-    <Badge variant="outline" className={cn(TONE_CLASS[view.tone])} title={view.description}>
-      {view.label}
-    </Badge>
+    <div className="space-y-2" data-testid="policy-suggestion">
+      <p className="text-sm font-medium">{t('sensors.localPolicy.suggest.title')}</p>
+      <p className="text-sm text-muted-foreground">{t('sensors.localPolicy.suggest.body')}</p>
+      <Snippet
+        text={policyApplyCommand(policy)}
+        label={t('sensors.localPolicy.suggest.title')}
+        file="sensor-policy.sh"
+      />
+      <p className="text-xs text-muted-foreground">{t('sensors.localPolicy.suggest.reload')}</p>
+    </div>
   )
 }
 
@@ -39,7 +63,11 @@ export function SensorLocalPolicyBadge({ sensor }: { sensor: Pick<Sensor, 'local
  * sensor host, enforced there, and only reported here (state, digest and a
  * summary, never the ranges). The platform cannot change it.
  */
-export function SensorLocalPolicySection({ sensor }: { sensor: Pick<Sensor, 'local_policy'> }) {
+export function SensorLocalPolicySection({
+  sensor,
+}: {
+  sensor: Pick<Sensor, 'local_policy'> & { id?: string }
+}) {
   const { t } = useTranslation()
   const p = sensor.local_policy
   if (!p) return null
@@ -70,7 +98,9 @@ export function SensorLocalPolicySection({ sensor }: { sensor: Pick<Sensor, 'loc
           {t('sensors.localPolicy.noneBody')}
         </DetailCallout>
       )}
-      {(p.state === 'absent' || hasNoLocalPolicyWarning(p)) && (
+      {p.state === 'absent' && sensor.id && <SensorPolicySuggestion sensorId={sensor.id} />}
+      {((p.state === 'absent' && !p.required) ||
+        (p.state !== 'absent' && hasNoLocalPolicyWarning(p))) && (
         <ul className="space-y-0.5 text-sm text-muted-foreground" data-testid="no-policy-guidance">
           {noLocalPolicyGuidance(t).map((g) => (
             <li key={g}>{g}</li>

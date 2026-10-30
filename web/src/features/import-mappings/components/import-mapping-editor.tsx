@@ -13,7 +13,8 @@ import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { ErrorState, PageHeader } from '@/features/shared'
+import { ErrorState, PageHeader, PageStack } from '@/features/shared'
+import { confirmName } from '@/lib/confirm-name'
 import { Can, Permission, usePermissions } from '@/lib/permissions'
 import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
@@ -320,19 +321,23 @@ export function ImportMappingEditor({ id }: { id?: string }) {
   if (!isNew && isLoading) {
     return (
       <Main>
-        <Skeleton className="h-10 w-72" />
-        <Skeleton className="mt-6 h-96 w-full" />
+        <PageStack>
+          <Skeleton className="h-10 w-72" />
+          <Skeleton className="h-96 w-full" />
+        </PageStack>
       </Main>
     )
   }
   if (!isNew && (error || !detail)) {
     return (
       <Main>
-        <ErrorState
-          title={t('importMappings.editor.loadFailed', 'Could not load the mapping')}
-          error={error}
-          onRetry={() => mutate()}
-        />
+        <PageStack>
+          <ErrorState
+            title={t('importMappings.editor.loadFailed', 'Could not load the mapping')}
+            error={error}
+            onRetry={() => mutate()}
+          />
+        </PageStack>
       </Main>
     )
   }
@@ -342,318 +347,325 @@ export function ImportMappingEditor({ id }: { id?: string }) {
 
   return (
     <Main>
-      <Link
-        href="/settings/integrations/import-mappings"
-        className="mb-3 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" aria-hidden />
-        {t('importMappings.editor.back', 'Import mappings')}
-      </Link>
-      <PageHeader
-        title={title}
-        description={
-          mapping ? (
-            <>
-              {mapping.description && <span className="block">{mapping.description}</span>}
-              <span className="block">
-                {t('importMappings.editor.usage', 'Imports choose it as format {format}.', {
-                  format: `mapping:${mapping.name}`,
-                })}
-              </span>
-            </>
-          ) : (
-            t(
-              'importMappings.editor.newDescription',
-              'Map the columns of a CSV, JSON, JSON Lines or XML export to findings and assets, checking the result on a sample.'
+      <PageStack>
+        <Link
+          href="/settings/integrations/import-mappings"
+          className="mb-3 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" aria-hidden />
+          {t('importMappings.editor.back', 'Import mappings')}
+        </Link>
+        <PageHeader
+          title={title}
+          description={
+            mapping ? (
+              <>
+                {mapping.description && <span className="block">{mapping.description}</span>}
+                <span className="block">
+                  {t('importMappings.editor.usage', 'Imports choose it as format {format}.', {
+                    format: `mapping:${mapping.name}`,
+                  })}
+                </span>
+              </>
+            ) : (
+              t(
+                'importMappings.editor.newDescription',
+                'Map the columns of a CSV, JSON, JSON Lines or XML export to findings and assets, checking the result on a sample.'
+              )
             )
-          )
-        }
-      >
-        {draft && (
-          <div className="flex flex-wrap items-center gap-2">
-            <Can permission={Permission.IntegrationsManage}>
-              <Button variant="outline" onClick={validate}>
-                <ShieldCheck className="me-1 h-4 w-4" aria-hidden />
-                {t('importMappings.editor.validate', 'Check')}
-              </Button>
-              {isNew ? (
-                <Button
-                  onClick={() => {
-                    setSaveErrors([])
-                    setCreateOpen(true)
-                  }}
-                  disabled={busy}
-                >
-                  <Save className="me-1 h-4 w-4" aria-hidden />
-                  {t('importMappings.editor.save', 'Save')}
+          }
+        >
+          {draft && (
+            <div className="flex flex-wrap items-center gap-2">
+              <Can permission={Permission.IntegrationsManage}>
+                <Button variant="outline" onClick={validate}>
+                  <ShieldCheck className="me-1 h-4 w-4" aria-hidden />
+                  {t('importMappings.editor.validate', 'Check')}
                 </Button>
-              ) : (
-                <Button
-                  onClick={() => {
-                    setSaveErrors([])
-                    setVersionOpen(true)
-                  }}
-                  disabled={busy || !dirty}
-                >
-                  <Save className="me-1 h-4 w-4" aria-hidden />
-                  {t('importMappings.editor.saveVersion', 'Save as new version')}
-                </Button>
-              )}
-            </Can>
-          </div>
-        )}
-      </PageHeader>
-
-      {mapping && (
-        <Can permission={Permission.IntegrationsManage}>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <Button variant="ghost" size="sm" onClick={() => setDetailsOpen(true)}>
-              <Pencil className="me-1 h-4 w-4" aria-hidden />
-              {t('importMappings.editor.editDetails', 'Rename')}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-destructive"
-              onClick={() => setDeleteOpen(true)}
-            >
-              <Trash2 className="me-1 h-4 w-4" aria-hidden />
-              {t('importMappings.editor.delete', 'Delete')}
-            </Button>
-          </div>
-        </Can>
-      )}
-
-      {isNew && !canManage ? (
-        <p className="mt-6 text-sm text-muted-foreground">
-          {t(
-            'importMappings.editor.noPermission',
-            'Creating a mapping needs the permission to manage integrations.'
-          )}
-        </p>
-      ) : isNew && !draft ? (
-        <TemplatePicker
-          onPick={(d, name) => {
-            loadDocument(d, false)
-            setSuggestedName(name)
-          }}
-        />
-      ) : draft && doc ? (
-        <>
-          {(problems.length > 0 || validation) && (
-            <div className="mt-4 grid gap-2">
-              {problems.length > 0 && (
-                <ul
-                  className="grid gap-1 rounded-md border p-3 text-sm"
-                  aria-label={t('importMappings.problem.label', 'To fix')}
-                >
-                  {problems.map((p, i) => (
-                    <li key={i}>{problemText(t, p)}</li>
-                  ))}
-                </ul>
-              )}
-              {validation &&
-                (validation.valid ? (
-                  <p className="flex items-center gap-2 text-sm" role="status">
-                    <CheckCircle2 className="h-4 w-4 text-success" aria-hidden />
-                    {t('importMappings.validate.ok', 'The mapping is valid. Identity: {members}.', {
-                      members: validation.identity.join(', ') || '-',
-                    })}
-                  </p>
-                ) : (
-                  <ul
-                    className="list-disc rounded-md border border-destructive/50 bg-destructive/5 p-3 ps-7 text-sm"
-                    role="alert"
+                {isNew ? (
+                  <Button
+                    onClick={() => {
+                      setSaveErrors([])
+                      setCreateOpen(true)
+                    }}
+                    disabled={busy}
                   >
-                    {validation.errors.map((e, i) => (
-                      <li key={i} className="break-words">
-                        {e}
-                      </li>
-                    ))}
-                  </ul>
-                ))}
+                    <Save className="me-1 h-4 w-4" aria-hidden />
+                    {t('importMappings.editor.save', 'Save')}
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={() => {
+                      setSaveErrors([])
+                      setVersionOpen(true)
+                    }}
+                    disabled={busy || !dirty}
+                  >
+                    <Save className="me-1 h-4 w-4" aria-hidden />
+                    {t('importMappings.editor.saveVersion', 'Save as new version')}
+                  </Button>
+                )}
+              </Can>
             </div>
           )}
+        </PageHeader>
 
-          <Tabs value={tab} onValueChange={setTab} className="mt-6 min-w-0">
-            {!isNew && (
-              <TabsList>
-                <TabsTrigger value="mapping">
-                  {t('importMappings.tab.mapping', 'Mapping')}
-                </TabsTrigger>
-                <TabsTrigger value="versions">
-                  {t('importMappings.tab.versions', 'Versions')}
-                  <TabsCount value={detail?.versions.length} />
-                </TabsTrigger>
-              </TabsList>
+        {mapping && (
+          <Can permission={Permission.IntegrationsManage}>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="ghost" size="sm" onClick={() => setDetailsOpen(true)}>
+                <Pencil className="me-1 h-4 w-4" aria-hidden />
+                {t('importMappings.editor.editDetails', 'Rename')}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="ms-4 text-destructive hover:text-destructive"
+                onClick={() => setDeleteOpen(true)}
+              >
+                <Trash2 className="me-1 h-4 w-4" aria-hidden />
+                {t('importMappings.editor.delete', 'Delete')}
+              </Button>
+            </div>
+          </Can>
+        )}
+
+        {isNew && !canManage ? (
+          <p className="mt-6 text-sm text-muted-foreground">
+            {t(
+              'importMappings.editor.noPermission',
+              'Creating a mapping needs the permission to manage integrations.'
             )}
-            <TabsContent value="mapping" className="mt-4 min-w-0">
-              <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-[16rem_minmax(0,1fr)] 2xl:grid-cols-[16rem_minmax(0,1fr)_minmax(0,26rem)]">
-                <section
-                  className="min-w-0 self-start rounded-lg border bg-card p-4"
-                  aria-labelledby="im-pane-sample"
-                >
-                  <h2 id="im-pane-sample" className="mb-3 text-sm font-semibold">
-                    {t('importMappings.pane.sample', 'Sample')}
-                  </h2>
-                  <SamplePane
-                    draft={draft}
-                    onChange={editDraft}
-                    file={file}
-                    onFile={(f) => {
-                      setFile(f)
-                      if (!f) setFields([])
-                    }}
-                    autoSource={isNew}
-                    readOnly={readOnly}
-                  />
-                </section>
-
-                <section className="min-w-0" aria-labelledby="im-pane-fields">
-                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                    <h2 id="im-pane-fields" className="text-sm font-semibold">
-                      {t('importMappings.pane.fields', 'Fields')}
-                    </h2>
-                    <label className="flex items-center gap-2 text-sm">
-                      <FileCode2 className="h-4 w-4 text-muted-foreground" aria-hidden />
-                      {t('importMappings.editor.advanced', 'Advanced: JSON')}
-                      <Switch
-                        checked={advanced}
-                        onCheckedChange={(v) => {
-                          if (v) setJsonText(JSON.stringify(doc, null, 2))
-                          setAdvanced(v)
-                        }}
-                      />
-                    </label>
-                  </div>
-                  {advanced ? (
-                    <div className="grid gap-2">
-                      <Textarea
-                        rows={24}
-                        spellCheck={false}
-                        className="font-mono text-xs"
-                        value={jsonText}
-                        readOnly={readOnly}
-                        aria-invalid={jsonError}
-                        aria-label={t('importMappings.editor.jsonLabel', 'Mapping document (JSON)')}
-                        onChange={(e) => editJson(e.target.value)}
-                      />
-                      {jsonError && (
-                        <p className="text-sm text-destructive" role="alert">
-                          {t(
-                            'importMappings.editor.jsonInvalid',
-                            'Not a mapping document yet: it needs valid JSON with source and records. The table keeps the last valid version.'
-                          )}
-                        </p>
-                      )}
-                    </div>
-                  ) : (
-                    <MappingTable
-                      draft={draft}
-                      onChange={editDraft}
-                      fields={fields}
-                      readOnly={readOnly}
-                    />
-                  )}
-                </section>
-
-                <section
-                  className="min-w-0 self-start rounded-lg border bg-card p-4 lg:col-span-2 2xl:col-span-1"
-                  aria-labelledby="im-pane-preview"
-                >
-                  <h2 id="im-pane-preview" className="mb-3 text-sm font-semibold">
-                    {t('importMappings.pane.preview', 'Preview')}
-                  </h2>
-                  <PreviewPane
-                    document={doc}
-                    file={file}
-                    canPreview={canManage}
-                    onFields={setFields}
-                  />
-                </section>
-              </div>
-            </TabsContent>
-            {!isNew && detail && id && (
-              <TabsContent value="versions" className="mt-4">
-                <VersionHistory
-                  mappingId={id}
-                  versions={detail.versions}
-                  latest={detail.mapping.latest_version}
-                  onLoad={
-                    canManage
-                      ? (d) => {
-                          loadDocument(d, false)
-                          setTab('mapping')
-                        }
-                      : undefined
-                  }
-                />
-              </TabsContent>
-            )}
-          </Tabs>
-        </>
-      ) : null}
-
-      <CreateMappingDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        onSubmit={create}
-        busy={busy}
-        errors={saveErrors}
-        initialName={suggestedName}
-      />
-      <SaveVersionDialog
-        open={versionOpen}
-        onOpenChange={setVersionOpen}
-        onSubmit={(note) => saveVersion(note)}
-        busy={busy}
-        errors={saveErrors}
-        nextVersion={(mapping?.latest_version ?? 0) + 1}
-      />
-      <IdentityConfirmDialog
-        change={pendingIdentity?.change ?? null}
-        busy={busy}
-        onCancel={() => setPendingIdentity(null)}
-        onConfirm={() => pendingIdentity && saveVersion(pendingIdentity.note, true)}
-      />
-      {mapping && (
-        <>
-          <EditDetailsDialog
-            open={detailsOpen}
-            onOpenChange={setDetailsOpen}
-            name={mapping.name}
-            description={mapping.description}
-            onSubmit={updateDetails}
-            busy={busy}
-          />
-          <ConfirmDialog
-            open={deleteOpen}
-            onOpenChange={setDeleteOpen}
-            title={t('importMappings.delete.title', 'Delete this mapping?')}
-            desc={t(
-              'importMappings.delete.description',
-              'Imports that name it stop working. Findings it imported stay as they are.'
-            )}
-            confirmText={t('importMappings.editor.delete', 'Delete')}
-            destructive
-            handleConfirm={async () => {
-              if (!id) return
-              try {
-                await importMappingsApi.remove(id)
-                await invalidateImportMappings()
-                router.push(IMPORT_MAPPINGS_PATH)
-              } catch (err) {
-                toast.error(
-                  getErrorMessage(
-                    err,
-                    t('importMappings.delete.failed', 'Could not delete the mapping')
-                  )
-                )
-              }
+          </p>
+        ) : isNew && !draft ? (
+          <TemplatePicker
+            onPick={(d, name) => {
+              loadDocument(d, false)
+              setSuggestedName(name)
             }}
           />
-        </>
-      )}
+        ) : draft && doc ? (
+          <>
+            {(problems.length > 0 || validation) && (
+              <div className="grid gap-2">
+                {problems.length > 0 && (
+                  <ul
+                    className="grid gap-1 rounded-md border p-3 text-sm"
+                    aria-label={t('importMappings.problem.label', 'To fix')}
+                  >
+                    {problems.map((p, i) => (
+                      <li key={i}>{problemText(t, p)}</li>
+                    ))}
+                  </ul>
+                )}
+                {validation &&
+                  (validation.valid ? (
+                    <p className="flex items-center gap-2 text-sm" role="status">
+                      <CheckCircle2 className="h-4 w-4 text-success" aria-hidden />
+                      {t(
+                        'importMappings.validate.ok',
+                        'The mapping is valid. Identity: {members}.',
+                        {
+                          members: validation.identity.join(', ') || '-',
+                        }
+                      )}
+                    </p>
+                  ) : (
+                    <ul
+                      className="list-disc rounded-md border border-destructive/50 bg-destructive/5 p-3 ps-7 text-sm"
+                      role="alert"
+                    >
+                      {validation.errors.map((e, i) => (
+                        <li key={i} className="break-words">
+                          {e}
+                        </li>
+                      ))}
+                    </ul>
+                  ))}
+              </div>
+            )}
+
+            <Tabs value={tab} onValueChange={setTab} className="min-w-0">
+              {!isNew && (
+                <TabsList>
+                  <TabsTrigger value="mapping">
+                    {t('importMappings.tab.mapping', 'Mapping')}
+                  </TabsTrigger>
+                  <TabsTrigger value="versions">
+                    {t('importMappings.tab.versions', 'Versions')}
+                    <TabsCount value={detail?.versions.length} />
+                  </TabsTrigger>
+                </TabsList>
+              )}
+              <TabsContent value="mapping" className="min-w-0">
+                <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-[16rem_minmax(0,1fr)] 2xl:grid-cols-[16rem_minmax(0,1fr)_minmax(0,26rem)]">
+                  <section
+                    className="min-w-0 self-start rounded-lg border bg-card p-4"
+                    aria-labelledby="im-pane-sample"
+                  >
+                    <h2 id="im-pane-sample" className="mb-3 text-sm font-semibold">
+                      {t('importMappings.pane.sample', 'Sample')}
+                    </h2>
+                    <SamplePane
+                      draft={draft}
+                      onChange={editDraft}
+                      file={file}
+                      onFile={(f) => {
+                        setFile(f)
+                        if (!f) setFields([])
+                      }}
+                      autoSource={isNew}
+                      readOnly={readOnly}
+                    />
+                  </section>
+
+                  <section className="min-w-0" aria-labelledby="im-pane-fields">
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                      <h2 id="im-pane-fields" className="text-sm font-semibold">
+                        {t('importMappings.pane.fields', 'Fields')}
+                      </h2>
+                      <label className="flex items-center gap-2 text-sm">
+                        <FileCode2 className="h-4 w-4 text-muted-foreground" aria-hidden />
+                        {t('importMappings.editor.advanced', 'Advanced: JSON')}
+                        <Switch
+                          checked={advanced}
+                          onCheckedChange={(v) => {
+                            if (v) setJsonText(JSON.stringify(doc, null, 2))
+                            setAdvanced(v)
+                          }}
+                        />
+                      </label>
+                    </div>
+                    {advanced ? (
+                      <div className="grid gap-2">
+                        <Textarea
+                          rows={24}
+                          spellCheck={false}
+                          className="font-mono text-xs"
+                          value={jsonText}
+                          readOnly={readOnly}
+                          aria-invalid={jsonError}
+                          aria-label={t(
+                            'importMappings.editor.jsonLabel',
+                            'Mapping document (JSON)'
+                          )}
+                          onChange={(e) => editJson(e.target.value)}
+                        />
+                        {jsonError && (
+                          <p className="text-sm text-destructive" role="alert">
+                            {t(
+                              'importMappings.editor.jsonInvalid',
+                              'Not a mapping document yet: it needs valid JSON with source and records. The table keeps the last valid version.'
+                            )}
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <MappingTable
+                        draft={draft}
+                        onChange={editDraft}
+                        fields={fields}
+                        readOnly={readOnly}
+                      />
+                    )}
+                  </section>
+
+                  <section
+                    className="min-w-0 self-start rounded-lg border bg-card p-4 lg:col-span-2 2xl:col-span-1"
+                    aria-labelledby="im-pane-preview"
+                  >
+                    <h2 id="im-pane-preview" className="mb-3 text-sm font-semibold">
+                      {t('importMappings.pane.preview', 'Preview')}
+                    </h2>
+                    <PreviewPane
+                      document={doc}
+                      file={file}
+                      canPreview={canManage}
+                      onFields={setFields}
+                    />
+                  </section>
+                </div>
+              </TabsContent>
+              {!isNew && detail && id && (
+                <TabsContent value="versions">
+                  <VersionHistory
+                    mappingId={id}
+                    versions={detail.versions}
+                    latest={detail.mapping.latest_version}
+                    onLoad={
+                      canManage
+                        ? (d) => {
+                            loadDocument(d, false)
+                            setTab('mapping')
+                          }
+                        : undefined
+                    }
+                  />
+                </TabsContent>
+              )}
+            </Tabs>
+          </>
+        ) : null}
+
+        <CreateMappingDialog
+          open={createOpen}
+          onOpenChange={setCreateOpen}
+          onSubmit={create}
+          busy={busy}
+          errors={saveErrors}
+          initialName={suggestedName}
+        />
+        <SaveVersionDialog
+          open={versionOpen}
+          onOpenChange={setVersionOpen}
+          onSubmit={(note) => saveVersion(note)}
+          busy={busy}
+          errors={saveErrors}
+          nextVersion={(mapping?.latest_version ?? 0) + 1}
+        />
+        <IdentityConfirmDialog
+          change={pendingIdentity?.change ?? null}
+          busy={busy}
+          onCancel={() => setPendingIdentity(null)}
+          onConfirm={() => pendingIdentity && saveVersion(pendingIdentity.note, true)}
+        />
+        {mapping && (
+          <>
+            <EditDetailsDialog
+              open={detailsOpen}
+              onOpenChange={setDetailsOpen}
+              name={mapping.name}
+              description={mapping.description}
+              onSubmit={updateDetails}
+              busy={busy}
+            />
+            <ConfirmDialog
+              open={deleteOpen}
+              onOpenChange={setDeleteOpen}
+              title={t('confirm.importMapping.deleteTitle', undefined, { name: mapping.name })}
+              desc={t('confirm.importMapping.deleteDesc')}
+              confirmText={t('confirm.importMapping.deleteBtn')}
+              destructive
+              typeToConfirm={confirmName(mapping.name, mapping.id)}
+              handleConfirm={async () => {
+                if (!id) return
+                try {
+                  await importMappingsApi.remove(id)
+                  await invalidateImportMappings()
+                  router.push(IMPORT_MAPPINGS_PATH)
+                } catch (err) {
+                  toast.error(
+                    getErrorMessage(
+                      err,
+                      t('importMappings.delete.failed', 'Could not delete the mapping')
+                    )
+                  )
+                }
+              }}
+            />
+          </>
+        )}
+      </PageStack>
     </Main>
   )
 }

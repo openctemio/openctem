@@ -36,6 +36,11 @@ func (s *Service) ValidateToolReferences(ctx context.Context, template *scanwork
 	var stepsWithNoMatchingCapabilities []string
 
 	for _, step := range template.Steps {
+		// An optional step waits for a tool: without one it is skipped at
+		// dispatch with the reason, so it never refuses the workflow.
+		if step.RunPolicy.Optional {
+			continue
+		}
 		// Case 1: Step has explicit tool specified
 		if step.Tool != "" {
 			// Try to find the tool (platform first, then tenant-specific)

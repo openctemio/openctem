@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -39,12 +40,12 @@ func TestAutoReopenBatch_RegressionKeepsPreviousResolverInActivity(t *testing.T)
 	// The reopen writes its own timeline entry in the same transaction, with
 	// the scan from the context's evidence.
 	scanCtx := vulnerability.WithTransitionEvidence(ctx, map[string]any{"scanner": "nuclei", "scan_id": "report-9"})
-	reopened, err := repo.AutoReopenByFingerprintsBatch(scanCtx, tenantID, []string{humanFP})
+	reopened, err := repo.AutoReopenByFingerprintsBatch(scanCtx, tenantID, []string{humanFP}, time.Now())
 	if err != nil {
 		t.Fatalf("AutoReopenByFingerprintsBatch: %v", err)
 	}
-	if got := statusOf(ctx, t, db, humanID); got != "confirmed" {
-		t.Errorf("human-resolved finding status = %s, want confirmed", got)
+	if got := statusOf(ctx, t, db, humanID); got != "new" {
+		t.Errorf("human-resolved finding status = %s, want new (never triaged)", got)
 	}
 
 	rf, ok := reopened[humanFP]

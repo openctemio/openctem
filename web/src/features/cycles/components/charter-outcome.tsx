@@ -1,11 +1,11 @@
 'use client'
 
-import { Badge } from '@/components/ui/badge'
+import { HealthStatus } from '@/components/ui/health-status'
 import { MetricStrip } from '@/features/shared'
 import { cn } from '@/lib/utils'
 
 import type { CharterEvaluation } from '../types'
-import { OUTCOME_BADGE_CLASS, OUTCOME_LABEL, describeCriterion } from '../charter-outcome'
+import { OUTCOME_HEALTH, OUTCOME_LABEL, describeCriterion } from '../charter-outcome'
 
 /**
  * CharterOutcome shows how a closed cycle did against its charter: the
@@ -56,7 +56,7 @@ export function CharterOutcome({ evaluation }: { evaluation: CharterEvaluation }
                 <div className="min-w-0 space-y-0.5">
                   <p className="text-sm font-medium">{c.name || 'Untitled criterion'}</p>
                   <p className="text-xs text-muted-foreground">
-                    {c.metric || 'No metric'} · {c.target || 'no target'}
+                    {c.metric || 'No metric'}, {c.target || 'no target'}
                   </p>
                   <p
                     className={cn(
@@ -67,9 +67,11 @@ export function CharterOutcome({ evaluation }: { evaluation: CharterEvaluation }
                     {describeCriterion(c)}
                   </p>
                 </div>
-                <Badge variant="outline" className={OUTCOME_BADGE_CLASS[outcome]}>
-                  {OUTCOME_LABEL[outcome]}
-                </Badge>
+                <HealthStatus
+                  state={OUTCOME_HEALTH[outcome]}
+                  label={OUTCOME_LABEL[outcome]}
+                  value={outcome}
+                />
               </li>
             )
           })}

@@ -407,6 +407,7 @@ export function PlatformAIForm({ settings, canEdit, onSaved }: PlatformAIFormPro
           'admin.ai.policyConfirmDesc',
           'Applies at once to every organization. Recorded in the admin audit log and sent to every administrator.'
         )}
+        confirmText={t('admin.ai.policyConfirmButton', 'Change policy')}
         onConfirm={savePolicy}
       />
       <ReasonConfirmDialog
@@ -417,6 +418,7 @@ export function PlatformAIForm({ settings, canEdit, onSaved }: PlatformAIFormPro
           'admin.ai.confirmDesc',
           'Applies at once to every organization in platform AI mode. Recorded in the admin audit log (never the key) and sent to every administrator.'
         )}
+        confirmText={t('admin.ai.confirmButton', 'Change AI provider')}
         onConfirm={save}
       />
     </>

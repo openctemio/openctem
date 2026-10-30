@@ -30,6 +30,8 @@ type ScanConfigExport struct {
 	TargetOptions *scan.TargetOptions `json:"target_options,omitempty"`
 	// Intensity is the probe ceiling (RFC-071).
 	Intensity string `json:"intensity,omitempty"`
+	// Depth is how much of the workflow each run executes.
+	Depth string `json:"depth,omitempty"`
 
 	// Scan Type
 	ScanType       string         `json:"scan_type"`
@@ -121,6 +123,7 @@ func (s *Service) ExportConfigWithOptions(ctx context.Context, tenantID, scanID 
 		export.ScannerConfig = scan.RedactConfigSecrets(sc.ScannerConfig)
 	}
 	export.Intensity = string(sc.EffectiveIntensity())
+	export.Depth = string(sc.EffectiveDepth())
 	if !sc.TargetOptions.IsZero() {
 		o := sc.TargetOptions
 		export.TargetOptions = &o
@@ -242,6 +245,7 @@ func (s *Service) ImportConfig(ctx context.Context, tenantID shared.ID, data []b
 		TargetsPerJob:       export.TargetsPerJob,
 		TargetOptions:       export.TargetOptions,
 		Intensity:           export.Intensity,
+		Depth:               export.Depth,
 		ScheduleType:        export.ScheduleType,
 		ScheduleCron:        export.ScheduleCron,
 		ScheduleRRule:       export.ScheduleRRule,

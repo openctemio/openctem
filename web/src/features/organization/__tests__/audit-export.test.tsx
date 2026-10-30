@@ -10,6 +10,8 @@ vi.mock('@/context/i18n-provider', () => ({
   }),
 }))
 vi.mock('@/lib/api/client', () => ({ getApiBaseUrl: () => 'https://api.example.test' }))
+const stepUp = vi.hoisted(() => ({ requestStepUp: vi.fn() }))
+vi.mock('@/lib/api/step-up', () => ({ ...stepUp, STEP_UP_REQUIRED_CODE: 'STEP_UP_REQUIRED' }))
 
 import { buildAuditExportUrl, downloadAuditLog } from '../api/export-audit-logs'
 import { useAuditExport } from '../hooks/use-audit-export'
@@ -113,5 +115,58 @@ describe('useAuditExport', () => {
     await act(() => result.current.run('csv'))
     expect(toast.error).toHaveBeenCalled()
     expect(result.current.isExporting).toBe(false)
+  })
+})
+
+describe('downloadAuditLog step-up', () => {
+  function response(status: number, body: unknown) {
+    const r = {
+      ok: status < 400,
+      status,
+      headers: new Headers({ 'Content-Disposition': 'attachment; filename="audit.csv"' }),
+      blob: () => Promise.resolve(new Blob(['a\n'])),
+      json: () => Promise.resolve(body),
+    }
+    return { ...r, clone: () => r }
+  }
+
+  beforeEach(() => {
+    vi.restoreAllMocks()
+    stepUp.requestStepUp.mockReset()
+    URL.createObjectURL = vi.fn(() => 'blob:x')
+    URL.revokeObjectURL = vi.fn()
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+  })
+
+  it('asks for verification and retries once when the API requires step-up', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response(403, { code: 'STEP_UP_REQUIRED', message: 'verify' }))
+      .mockResolvedValueOnce(response(200, {}))
+    vi.stubGlobal('fetch', fetchMock)
+    stepUp.requestStepUp.mockResolvedValue(true)
+    const res = await downloadAuditLog('csv')
+    expect(stepUp.requestStepUp).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(res.filename).toBe('audit.csv')
+  })
+
+  it('does not download when verification is cancelled', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(response(403, { code: 'STEP_UP_REQUIRED', message: 'verify' }))
+    vi.stubGlobal('fetch', fetchMock)
+    stepUp.requestStepUp.mockResolvedValue(false)
+    await expect(downloadAuditLog('csv')).rejects.toThrow('verify')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not ask for verification on another refusal', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(response(403, { code: 'FORBIDDEN', message: 'no' }))
+    )
+    await expect(downloadAuditLog('csv')).rejects.toThrow('no')
+    expect(stepUp.requestStepUp).not.toHaveBeenCalled()
   })
 })

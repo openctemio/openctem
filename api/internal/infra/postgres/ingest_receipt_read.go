@@ -17,8 +17,17 @@ import (
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
-// List returns a page of the tenant's receipts, newest first.
-func (r *IngestReceiptRepository) List(ctx context.Context, tenantID shared.ID, f ingestreceipt.Filter, p pagination.Pagination) ([]*ingestreceipt.Receipt, int64, error) {
+// receiptOriginSQL is a receipt's source group (ingestreceipt FactKind) and
+// receiptToolSQL its tool key: the list filters and the dashboards' intake
+// read group by the same expressions, so a dashboard figure equals the list
+// it opens.
+const (
+	receiptOriginSQL = `CASE source_kind WHEN 'upload' THEN 'import' WHEN 'ci_run' THEN 'ci' WHEN 'connector' THEN 'connector' ELSE 'sensor' END`
+	receiptToolSQL   = `COALESCE(NULLIF(tool_name, ''), '` + ingestreceipt.UnknownTool + `')`
+)
+
+// receiptWhere is the WHERE clause of a receipt list filter, tenant first.
+func receiptWhere(tenantID shared.ID, f ingestreceipt.Filter) (string, []any) {
 	args := []any{tenantID.String()}
 	where := "tenant_id = $1"
 	add := func(cond string, v any) {
@@ -31,9 +40,40 @@ func (r *IngestReceiptRepository) List(ctx context.Context, tenantID shared.ID, 
 	if f.SourceRef != "" {
 		add("source_ref = $%d", f.SourceRef)
 	}
+	if f.Origin != "" {
+		add(receiptOriginSQL+" = $%d", f.Origin)
+	}
+	if f.Tool != "" {
+		add(receiptToolSQL+" = $%d", f.Tool)
+	}
+	if f.Since != nil {
+		add("updated_at >= $%d", f.Since.UTC())
+	}
 	if f.ActorUserID != nil {
 		add("actor_user_id = $%d", f.ActorUserID.String())
 	}
+	return where, args
+}
+
+// Totals sums the receipts of a filter.
+func (r *IngestReceiptRepository) Totals(ctx context.Context, tenantID shared.ID, f ingestreceipt.Filter) (ingestreceipt.Totals, error) {
+	where, args := receiptWhere(tenantID, f)
+	var t ingestreceipt.Totals
+	//nolint:gosec // G202: fixed SQL, values bound
+	err := r.db.QueryRowContext(ctx, `SELECT count(*), COALESCE(sum(findings_received), 0), COALESCE(sum(findings_created), 0),
+		COALESCE(sum(findings_updated), 0), COALESCE(sum(findings_reopened), 0), COALESCE(sum(findings_closed), 0),
+		COALESCE(sum(skipped), 0), COALESCE(sum(findings_failed), 0), COALESCE(sum(findings_suppressed), 0)
+		FROM ingest_receipts WHERE `+where, args...).Scan(&t.Receipts, &t.Received, &t.Created, &t.StillDetected,
+		&t.Reopened, &t.Closed, &t.Skipped, &t.Failed, &t.Suppressed)
+	if err != nil {
+		return t, fmt.Errorf("sum receipts: %w", err)
+	}
+	return t, nil
+}
+
+// List returns a page of the tenant's receipts, newest first.
+func (r *IngestReceiptRepository) List(ctx context.Context, tenantID shared.ID, f ingestreceipt.Filter, p pagination.Pagination) ([]*ingestreceipt.Receipt, int64, error) {
+	where, args := receiptWhere(tenantID, f)
 	var total int64
 	if err := r.db.QueryRowContext(ctx, `SELECT count(*) FROM ingest_receipts WHERE `+where, args...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("count receipts: %w", err)

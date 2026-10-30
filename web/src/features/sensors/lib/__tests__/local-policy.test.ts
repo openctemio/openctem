@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { localPolicySummaryLines, localPolicyView, shortPolicyDigest } from '../local-policy'
+import {
+  localPolicySummaryLines,
+  localPolicyView,
+  policyApplyCommand,
+  shortPolicyDigest,
+} from '../local-policy'
 
 describe('localPolicyView', () => {
   it('maps every state', () => {
@@ -55,5 +60,22 @@ describe('localPolicySummaryLines', () => {
       })[0]
     ).toBe('Targets: any outside 0 denied entries')
     expect(localPolicySummaryLines({ state: 'absent', kill_switch: false })).toEqual([])
+  })
+})
+
+describe('policyApplyCommand', () => {
+  it('writes the reviewed policy to the default path with a quoted heredoc', () => {
+    const cmd = policyApplyCommand('apiVersion: openctem.io/sensor-policy/v1\ntargets: {}')
+    expect(cmd.split('\n')).toEqual([
+      'sudo install -d -m 0755 /etc/openctem',
+      "sudo tee /etc/openctem/sensor-policy.yaml >/dev/null <<'OPENCTEM_POLICY'",
+      'apiVersion: openctem.io/sensor-policy/v1',
+      'targets: {}',
+      'OPENCTEM_POLICY',
+      'sudo chmod 0644 /etc/openctem/sensor-policy.yaml',
+      '',
+    ])
+    // A trailing newline in the policy is not doubled.
+    expect(policyApplyCommand('a: 1\n')).toContain('a: 1\nOPENCTEM_POLICY')
   })
 })

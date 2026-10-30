@@ -397,7 +397,7 @@ describe('SensorToolSettingsSection', () => {
       'tenant'
     )
     expect(screen.getByTestId('tool-setting-source-timeout')).toHaveTextContent(
-      `20 · ${en['sensors.toolSettings.source.tenant']}`
+      `20, ${en['sensors.toolSettings.source.tenant']}`
     )
     // Overridden here: the sensor is the source; reset goes back to the organization's.
     expect(screen.getByTestId('tool-setting-source-rate_limit')).toHaveAttribute(
@@ -405,7 +405,7 @@ describe('SensorToolSettingsSection', () => {
       'sensor'
     )
     expect(screen.getByTestId('tool-setting-source-rate_limit')).toHaveTextContent(
-      `300 · ${en['sensors.toolSettings.source.sensor']}`
+      `300, ${en['sensors.toolSettings.source.sensor']}`
     )
     fireEvent.click(
       screen.getByRole('button', {

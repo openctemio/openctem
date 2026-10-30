@@ -185,3 +185,15 @@ func TestThumbprintRFC8037Example(t *testing.T) {
 		t.Fatalf("thumbprint %s", got)
 	}
 }
+
+func TestClockOffset(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0)
+	p := &Parsed{Params: Params{Created: now.Add(4 * time.Hour), Expires: now.Add(4*time.Hour + DefaultWindow)}}
+	if !errors.Is(p.CheckWindow(now), ErrExpired) || p.ClockOffset(now) != 4*time.Hour {
+		t.Fatalf("ahead: %v %v", p.CheckWindow(now), p.ClockOffset(now))
+	}
+	p = &Parsed{Params: Params{Created: now.Add(-3 * time.Hour), Expires: now.Add(-3*time.Hour + DefaultWindow)}}
+	if !errors.Is(p.CheckWindow(now), ErrExpired) || p.ClockOffset(now) != -3*time.Hour {
+		t.Fatalf("behind: %v %v", p.CheckWindow(now), p.ClockOffset(now))
+	}
+}

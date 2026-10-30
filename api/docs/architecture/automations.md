@@ -18,7 +18,7 @@ each type is built from them.
 | Kind | Types |
 |---|---|
 | Trigger | `manual`, `finding_created`, `finding_status_changed`, `asset_discovered`, `scan_completed`, `ai_triage_completed`, `ai_triage_failed` |
-| Action | `assign_user`, `update_status`, `add_tags`, `remove_tags`, `create_ticket`, `update_ticket`, `trigger_scan`, `trigger_ai_triage` |
+| Action | `assign_user`, `update_status` (to `confirmed` or `in_progress` only), `add_tags`, `remove_tags`, `create_ticket`, `update_ticket`, `trigger_scan`, `trigger_ai_triage`, `request_false_positive`, `request_risk_acceptance` |
 | Notification | `slack`, `teams`, `email`, `webhook` (a registered integration) |
 
 **Removed types.** The `schedule`, `finding_age`, `finding_updated` and
@@ -170,6 +170,32 @@ class is the highest of its steps.
   `workflow.version_approved`, `workflow.rolled_back`, `workflow.mode_changed`
   with the version, digest and risk class.
 
+## Guardrails: no rule closes risk, and no run makes unlimited changes
+
+- **Requests only.** No action writes false positive, accepted, resolved or
+  duplicate. `update_status` may set only `confirmed` or `in_progress`
+  (400 `AUTOMATION_STATUS_NOT_ALLOWED` on save; a stored node is refused at
+  run time; validate reports `STATUS_NOT_ALLOWED`). `request_false_positive`
+  (`closure_reason`, `justification`) and `request_risk_acceptance` (plus
+  `expires_in_days`, 1-365) create a request through the approvals service on
+  behalf of the run's owner, marked as an automation's (`ByAutomation`,
+  activity `by_automation: true`). The approval policy never lets one person
+  decide such a request (`approvalpolicy.Request.AutomationMade`, reason
+  `automation_cannot_decide`), even when the organization's false-positive or
+  acceptance level is `off`: the level lets a *person* decide alone, never a
+  rule. The request actions are high risk, so going live needs a second
+  publisher.
+- **Change cap.** A live run makes at most `max_changes_per_run` changes (an
+  action or notification step is one change; default 250, at most 1,000; set
+  on the automation, pinned by the version; above 250 the automation is high
+  risk). The step past the cap does not start: the run becomes `paused`
+  (`pause_reason: blast_radius`) and `POST /workflow-runs/{id}/approve`
+  (`automations:publish`) lets it continue past the cap, keeping the steps it
+  finished; cancel ends it.
+- Migration `automation_guardrails` switched off (and back to simulate) every
+  automation whose draft or published version set another status
+  (`disabled_reason = status_not_allowed`); nothing was deleted.
+
 ## One run per subject
 
 An event starts **one run per matching subject**. A batch of new findings
@@ -256,3 +282,44 @@ Code: `pkg/domain/automation/run_limits.go` (the values),
 `WorkflowRunRepository.CreateRunIfUnderLimit` (enforcement),
 `WorkflowEventDispatcher.dispatchFindingsCreated`, and
 `WorkflowExecutor.ExecuteAsyncWithTenant`.
+
+## The console builder
+
+The Automations page (`web/src/app/(dashboard)/(mobilization)/automations`)
+edits the draft graph on a canvas (`web/src/features/workflows`). Below 900px
+the canvas becomes a list of steps in run order and the run trace becomes
+cards.
+
+- **Palette and pickers** come only from `GET /workflows/catalog`; the web
+  keeps no list of types. An entry whose permission the viewer lacks is
+  listed disabled with that permission. A stored node of a type the catalog
+  no longer lists shows as "Removed type: `<id>`", and
+  `disabled_reason = uses_removed_type` is explained on the canvas and in the
+  detail sheet. `update_status` offers only Confirmed and In progress; the
+  request actions say that they create a request a person decides.
+- **Simulate or live.** The header shows the mode, "Version N, published by X
+  on date" and "Unpublished changes" (`draft_changed`). Simulate is one click
+  (`PUT /workflows/{id}/mode`); live is reached only through publishing.
+  "Before going live" lists the rule's risk class and what publishing needs
+  (step-up for elevated, step-up and a second publisher for high), the latest
+  validate result and the change cap. A step-up answer opens the shared
+  re-authentication dialog and the publish is retried. A pending version shows
+  who published it and an Approve button for another holder of
+  `automations:publish` (the digest is sent with the approval); the publisher
+  never gets the button. The versions dialog lists every version with rollback.
+- **Preview** (`POST /workflows/{id}/preview`, 20, 50 or 100 subjects) puts
+  in/out and skipped counts on the steps and lists what would be sent; a 429
+  is explained. Without a preview, the counts of recorded simulate runs
+  (`GET /workflows/{id}/trace`) are shown.
+- **Validate** lists problems and warnings; one with a `node_key` selects that
+  step. Known codes are translated; others show the API's message.
+- **Run trace.** A row of Recent executions opens the run: per-step status,
+  in/out and skipped counts, errors, the deliveries ("Never sent: simulate"
+  in simulate) and "Kept until" from `retained_until`. A run paused at the
+  change cap offers Continue (`POST /workflow-runs/{id}/approve`) and Cancel.
+
+The page hides or disables each control by the permission it needs
+(`automations:write` to edit, preview, validate and run by hand;
+`automations:publish` to go live, approve, roll back, change the mode, switch
+on or off, delete and continue a paused run). The API is the authority for
+all of them.

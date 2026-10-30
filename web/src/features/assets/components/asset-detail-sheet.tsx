@@ -283,7 +283,7 @@ export function AssetDetailSheet<T extends Asset>({
       asset.subType && asset.subType !== asset.type && humanizePropertyKey(asset.subType),
     ]
       .filter(Boolean)
-      .join(' · ')
+      .join(', ')
 
   const tabs: DetailTab[] = [
     { value: 'overview', label: t('assets.sheet.tab.overview', 'Overview') },

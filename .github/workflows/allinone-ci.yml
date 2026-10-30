@@ -14,18 +14,24 @@ name: All-in-one CI
 # built from the whole component directory, so any change there is an image
 # change. A docs-only change at the root runs nothing.
 #
-# FULL tier only: the merge queue and pushes to develop/main build the images;
-# a pull_request does not (the image build is the single most expensive job, and
-# the queue tests the PR on its final base anyway), unless it has the `ci:full`
-# label or changes a CI definition (the `full` output of changed.sh). On a fast
-# PR, `All-in-one OK` passes with the build skipped; in the queue it requires
-# the build.
+# FULL tier only: the merge queue and pushes to develop/main build the images
+# (the image build is the single most expensive job; the queue tests the PR on
+# its final base). A pull_request starts this workflow only when it changes a CI
+# definition (see `paths:` below); the required `All-in-one OK` of a PR comes from
+# pr-hygiene.yml.
 
 on:
   push:
-    branches: [main, develop]
+    branches: [develop]
+  # A pull request runs this workflow only when it changes a CI definition (the
+  # build then gives early feedback as "All-in-one (PR build)", not required).
+  # Any other PR gets the required `All-in-one OK` from pr-hygiene.yml.
   pull_request:
     branches: [main, develop]
+    paths:
+      - .github/workflows/**
+      - .github/scripts/**
+      - .github/actions/**
   merge_group:
     types: [checks_requested]
 
@@ -41,18 +47,25 @@ permissions:
 jobs:
   changes:
     name: Detect image changes
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
+    timeout-minutes: 5
     permissions:
       contents: read
       pull-requests: read # the `ci:full` label (changed.sh reads it live)
+      actions: read # queue-verified.sh reads the merge queue's runs of this commit
+      checks: read # green-base.sh and release-provenance.sh read a commit's check runs
     outputs:
-      images: ${{ steps.f.outputs.api == 'true' || steps.f.outputs.web == 'true' }}
+      # The images hold the API and the web app, not the e2e suite or docs.
+      images: ${{ ((steps.f.outputs.api == 'true' && (steps.scope.outputs.api_code == 'true' || steps.scope.outputs.ci_self == 'true')) || (steps.f.outputs.web == 'true' && (steps.scope.outputs.web_app == 'true' || steps.scope.outputs.ci_self == 'true'))) && steps.queue.outputs.verified != 'true' && steps.tree.outputs.verified != 'true' }}
+      tree_note: ${{ steps.tree.outputs.note }}
+      verified: ${{ steps.queue.outputs.verified }}
       full: ${{ steps.f.outputs.full }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
+      - uses: ./.github/actions/setup-gh
       - id: f
         env:
           EVENT_BEFORE: ${{ github.event.before }}
@@ -62,12 +75,87 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: bash .github/scripts/changed.sh
+      # Which part of the side changed (.github/scripts/scope.sh): only narrows
+      # what changed.sh selected, e.g. a change to web/e2e/ alone runs no web
+      # unit tests and builds no image, a CI file only the workflows that use it.
+      - id: scope
+        env:
+          EVENT_BEFORE: ${{ github.event.before }}
+          MG_BASE: ${{ github.event.merge_group.base_sha }}
+          MG_HEAD: ${{ github.event.merge_group.head_sha }}
+        run: bash .github/scripts/scope.sh
+      # A push to develop of a commit the merge queue already passed with this
+      # workflow skips the jobs below (.github/scripts/queue-verified.sh).
+      - id: queue
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          SHA: ${{ github.sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/queue-verified.sh
+
+      # The exact tree of this commit already passed every required check on a
+      # pull request or an earlier queue run: skip the jobs below
+      # (.github/scripts/tree-verified.sh). Also records the tree this run tested.
+      - id: tree
+        env:
+          EVENT: ${{ github.event_name }}
+          SHA: ${{ github.sha }}
+          HEAD_REF: ${{ github.event.merge_group.head_ref }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/tree-verified.sh
+
+  # The four images come from build-images.yml: built once per content key for
+  # the whole pipeline, by digest (the all-in-one is assembled FROM the three
+  # components). Only push and merge-queue runs call it: it holds packages:
+  # write, which a pull request never gets.
+  shared:
+    name: CI images
+    needs: changes
+    if: needs.changes.outputs.images == 'true' && needs.changes.outputs.full == 'true' && github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/build-images.yml
+    with:
+      images: allinone
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+
+  # A pull request only reads: it reuses the images develop built for the same
+  # content keys (verified digests) when all four exist, and otherwise `images`
+  # builds them locally. No packages: write, no id-token, no attestations: write.
+  shared-pr:
+    name: CI images (PR, read-only)
+    needs: changes
+    if: needs.changes.outputs.images == 'true' && needs.changes.outputs.full == 'true' && github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      packages: read
+      attestations: read
+    uses: ./.github/workflows/resolve-images.yml
+    with:
+      images: allinone
 
   images:
     name: Build and smoke-test images (amd64)
-    needs: changes
-    if: needs.changes.outputs.images == 'true' && needs.changes.outputs.full == 'true'
+    # actions: write lets the fail-fast step cancel doomed runs (.github/actions/fail-fast).
+    permissions:
+      contents: read
+      packages: read
+      actions: write
+    needs: [changes, shared, shared-pr]
+    if: ${{ !cancelled() && needs.changes.outputs.images == 'true' && needs.changes.outputs.full == 'true' && (needs.shared.result == 'success' || needs.shared-pr.result == 'success') }}
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SHARED: ${{ needs.shared.outputs.push == 'true' || needs.shared-pr.outputs.push == 'true' }}
     services:
       postgres:
         image: ghcr.io/openctemio/mirror/postgres:17-alpine
@@ -82,7 +170,7 @@ jobs:
           POSTGRES_DB: app_smoke
         ports: ["5432:5432"]
         options: >-
-          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+          --health-cmd "pg_isready -U openctem -d app_smoke" --health-interval 5s --health-timeout 5s --health-retries 10
       redis:
         image: ghcr.io/openctemio/mirror/redis:7-alpine
         credentials:
@@ -99,19 +187,41 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
           dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
-      # The default docker driver: images built here are visible to the next
-      # build's FROM without a registry.
+      # Shared images: pull the digests, tag them as the steps below expect.
+      - name: Pull the shared images
+        if: env.SHARED == 'true'
+        env:
+          API_REF: ${{ needs.shared.outputs.api || needs.shared-pr.outputs.api }}
+          WEB_REF: ${{ needs.shared.outputs.web || needs.shared-pr.outputs.web }}
+          CONSOLE_REF: ${{ needs.shared.outputs.console || needs.shared-pr.outputs.console }}
+          ALLINONE_REF: ${{ needs.shared.outputs.allinone || needs.shared-pr.outputs.allinone }}
+        run: |
+          set -euo pipefail
+          for pair in "$API_REF local/openctem-api:ci" "$WEB_REF local/openctem-web:ci" "$CONSOLE_REF local/openctem-console:ci" "$ALLINONE_REF local/openctem:ci"; do
+            read -r ref tag <<<"$pair"
+            [ -n "$ref" ] || { echo "::error::a shared image is missing"; exit 1; }
+            bash .github/scripts/retry.sh docker pull -q "$ref"
+            docker tag "$ref" "$tag"
+          done
+      # No shared images (a fork pull request): build here, with the default
+      # docker driver, so images built here are visible to the next build's FROM
+      # without a registry.
       - name: Build openctem-api
+        if: env.SHARED != 'true'
         run: bash .github/scripts/retry.sh docker build -t local/openctem-api:ci --target production api
       # The web image compiles against the generated contract files, which are
       # not committed (api/docs/development/ci-cd.md).
       - name: Generate the contract files
+        if: env.SHARED != 'true'
         uses: ./.github/actions/generate-contract
       - name: Build openctem-web
+        if: env.SHARED != 'true'
         run: bash .github/scripts/retry.sh docker build -t local/openctem-web:ci web
       - name: Build openctem-console
+        if: env.SHARED != 'true'
         run: bash .github/scripts/retry.sh docker build -t local/openctem-console:ci --target console web
       - name: Build openctem (all-in-one)
+        if: env.SHARED != 'true'
         run: >-
           bash .github/scripts/retry.sh
           docker buildx build --load -t local/openctem:ci
@@ -145,6 +255,9 @@ jobs:
       - name: Image guard
         env:
           TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db:2,mirror.gcr.io/aquasec/trivy-db:2
+          # Off a pull request, also write the fixable HIGH/CRITICAL advisories to a
+          # report for the early warning and the release preflight.
+          IMAGE_GUARD_REPORT: ${{ github.event_name != 'pull_request' && format('{0}/image-guard-report.ndjson', runner.temp) || '' }}
         run: |
           bash .github/scripts/image-guard.sh openctem-api local/openctem-api:ci
           bash .github/scripts/image-guard.sh openctem-web local/openctem-web:ci
@@ -152,12 +265,26 @@ jobs:
           bash .github/scripts/image-guard.sh openctem local/openctem:ci
       - name: Image sizes
         run: docker image ls --format '{{.Repository}}:{{.Tag}} {{.Size}}' | grep '^local/'
+      - name: Keep the image-guard report
+        if: ${{ always() && github.event_name != 'pull_request' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image-guard-report
+          path: ${{ runner.temp }}/image-guard-report.ndjson
+          if-no-files-found: ignore
+          retention-days: 30
+      - name: Fail fast
+        if: failure()
+        uses: ./.github/actions/fail-fast
 
   allinone-ok:
-    name: All-in-one OK
+    # `All-in-one OK` is required on develop/main and the merge queue. On a pull
+    # request pr-hygiene.yml reports that name, so this one must not.
+    name: ${{ github.event_name == 'pull_request' && 'All-in-one (PR build)' || 'All-in-one OK' }}
     if: always()
-    needs: [changes, images]
-    runs-on: ubuntu-latest
+    needs: [changes, shared, shared-pr, images]
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
+    timeout-minutes: 5
     steps:
       - name: All jobs passed or were skipped; the build ran where it must
         env:
@@ -165,8 +292,10 @@ jobs:
           IMAGES: ${{ needs.changes.outputs.images }}
           FULL: ${{ needs.changes.outputs.full }}
           EVENT: ${{ github.event_name }}
+          TREE_NOTE: ${{ needs.changes.outputs.tree_note }}
         run: |
           echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          if [ -n "$TREE_NOTE" ]; then echo "$TREE_NOTE"; fi
           if echo "$NEEDS" | jq -e 'to_entries | map(.value.result) | any(. == "failure" or . == "cancelled")' >/dev/null; then
             echo "::error::a job failed or was cancelled"; exit 1
           fi
@@ -179,3 +308,34 @@ jobs:
             r="$(echo "$NEEDS" | jq -r '.images.result')"
             if [ "$r" != success ]; then echo "::error::the image build must run and pass for $EVENT, got: $r"; exit 1; fi
           fi
+
+  # Early warning (develop only): fixable HIGH/CRITICAL advisories that image-guard
+  # found in the images of this push become one issue labelled `security`
+  # (.github/scripts/early-warning.sh). Never a gate; a pushed commit the merge
+  # queue already built skips the build, so this runs on the pushes that built.
+  early-warning:
+    name: Early warning (images)
+    if: ${{ always() && github.event_name == 'push' && github.ref == 'refs/heads/develop' && needs.images.result != 'skipped' }}
+    needs: [images]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    permissions:
+      contents: read
+      issues: write # open, update and close the one early-warning issue
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: image-guard-report
+          path: ${{ runner.temp }}/report
+      - name: Fixable advisories in the images of develop
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          REPORT_DIR: ${{ runner.temp }}/report
+        run: bash .github/scripts/early-warning.sh images "$REPORT_DIR"/*.ndjson

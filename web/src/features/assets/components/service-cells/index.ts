@@ -5,7 +5,7 @@
  * - external-surface facts, per type via `cellsForType`: `SurfaceFacts`,
  *   `HttpStatusChip`, `OverflowChips`, `TechChips`, `TlsSummary`,
  *   `CertExpiryChip`, `PortChip`, `OpenPortChips`, `ProductChip`;
- * - every type: `LabelChips` (tags, "+ Add label") and `IssuesChip`;
+ * - every type: `LabelChips` (tags, "+ Add label") and `OpenFindingsLink`;
  * - building blocks: `FactChip`, `ChipRow`, `ChipMono`;
  * - facts nothing collected (ui-style-contract §7, "Unknown facts"): every
  *   cell renders nothing for them (its `fallback` prop overrides that),
@@ -19,7 +19,7 @@
 export { FactChip, ChipRow, ChipMono, type FactChipTone } from './fact-chip'
 export { EmptyCell, NotCollectedNote, notCollectedText } from './not-collected'
 export { HttpStatusChip, httpStatusTone, httpReason } from './http-status-chip'
-export { IssuesChip, assetFindingsHref } from './issues-chip'
+export { OpenFindingsCell, OpenFindingsLink, assetFindingsHref } from './open-findings-link'
 export { OverflowChips } from './overflow-chips'
 export { TechChips } from './tech-chips'
 export { TlsSummary, CertExpiryChip, tlsNotCollected } from './tls-summary'
@@ -27,6 +27,7 @@ export { LabelChips, labelError, MAX_TAGS_PER_ASSET, MAX_TAG_LENGTH } from './la
 export {
   SurfaceFacts,
   SurfaceFactsDetail,
+  SurfaceFactsLine,
   PortChip,
   OpenPortChips,
   ProductChip,

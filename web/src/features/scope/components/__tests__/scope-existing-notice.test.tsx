@@ -5,7 +5,7 @@
  * an expired entry, remove a rejected one through Show it).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SWRConfig } from 'swr'
 import type { ReactNode } from 'react'
@@ -128,6 +128,9 @@ describe('ScopeEntryDialog on a duplicate', () => {
     )
     api.post.mockResolvedValueOnce({ id: 'e1', status: 'active' })
     await user.click(await screen.findByRole('button', { name: 'Approve' }))
+    await user.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Approve' })
+    )
     await waitFor(() =>
       expect(api.post).toHaveBeenCalledWith('/api/v1/scope/targets/e1/approve', {})
     )
@@ -152,6 +155,9 @@ describe('ScopeEntryDialog on a duplicate', () => {
     expect(screen.queryByRole('link', { name: 'Open approvals' })).toBeNull()
     api.post.mockResolvedValueOnce({ id: 'e1', status: 'active' })
     await user.click(screen.getByRole('button', { name: 'Put in effect' }))
+    await user.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Put in effect' })
+    )
     await waitFor(() =>
       expect(api.post).toHaveBeenCalledWith('/api/v1/scope/targets/e1/activate', {})
     )
@@ -162,6 +168,9 @@ describe('ScopeEntryDialog on a duplicate', () => {
     expect(notice).toHaveTextContent('but deactivated')
     api.post.mockResolvedValueOnce({ id: 'e1', status: 'active' })
     await user.click(screen.getByRole('button', { name: 'Activate' }))
+    await user.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Put in effect' })
+    )
     await waitFor(() =>
       expect(api.post).toHaveBeenCalledWith('/api/v1/scope/targets/e1/activate', {})
     )
@@ -172,6 +181,9 @@ describe('ScopeEntryDialog on a duplicate', () => {
     expect(notice).toHaveTextContent('but expired')
     api.put.mockResolvedValueOnce({ id: 'e1', status: 'active' })
     await user.click(screen.getByRole('button', { name: 'Renew for 7 days' }))
+    await user.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Renew entry' })
+    )
     await waitFor(() =>
       expect(api.put).toHaveBeenCalledWith('/api/v1/scope/targets/e1', { expires_in_days: 7 })
     )
@@ -230,6 +242,9 @@ describe('ScopeExclusionDialog on a duplicate', () => {
     )
     api.post.mockResolvedValueOnce({ id: 'x1', status: 'active' })
     await user.click(screen.getByRole('button', { name: 'Approve' }))
+    await user.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Approve' })
+    )
     await waitFor(() =>
       expect(api.post).toHaveBeenCalledWith('/api/v1/scope/exclusions/x1/approve', {})
     )

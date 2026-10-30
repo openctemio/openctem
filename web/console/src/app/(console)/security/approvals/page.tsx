@@ -9,7 +9,14 @@ import Link from '@/components/link'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { DataTable, ErrorState, PageHeader, RelativeTime, StackedCell } from '@/features/shared'
+import {
+  DataTable,
+  ErrorState,
+  PageHeader,
+  PageStack,
+  RelativeTime,
+  StackedCell,
+} from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 import {
   approveAdminApproval,
@@ -25,9 +32,9 @@ import {
 } from '@console/features/admin-console/lib/approvals'
 import { adminErrorMessage } from '@console/features/admin-console/components/totp-step-form'
 import {
-  adminCan,
   type AdminApproval,
   type AdminApprovalStatus,
+  adminHas,
 } from '@console/features/admin-console/types'
 
 const STATUS_VARIANT: Record<
@@ -56,7 +63,7 @@ type Decision = { kind: 'approve' | 'reject'; approval: AdminApproval }
 export default function AdminApprovalsPage() {
   const admin = useAdmin()
   const { t } = useTranslation()
-  const isSuper = adminCan(admin.role, 'super_admin')
+  const isSuper = adminHas(admin, 'platform.approvals.read')
   const { data, error, isLoading, mutate } = useAdminApprovals(isSuper)
   const [deciding, setDeciding] = useState<Decision | null>(null)
   const canApprove = !!data?.four_eyes.can_approve
@@ -198,14 +205,14 @@ export default function AdminApprovalsPage() {
 
   return (
     <Main>
-      <PageHeader
-        title={t('admin.nav.approvals', 'Approvals')}
-        description={t(
-          'admin.approvals.description',
-          'Making or removing a super admin, turning off security keys, removing the administrators’ identity provider, opening sign-up and re-signing an audit chain need a second super admin. Approve only what you have checked with the person who asked.'
-        )}
-      />
-      <div className="mt-5 space-y-4">
+      <PageStack>
+        <PageHeader
+          title={t('admin.nav.approvals', 'Approvals')}
+          description={t(
+            'admin.approvals.description',
+            'Making or removing a super admin, turning off security keys, removing the administrators’ identity provider, opening sign-up and re-signing an audit chain need a second super admin. Approve only what you have checked with the person who asked.'
+          )}
+        />
         {!isSuper ? (
           <p className="text-sm text-muted-foreground">
             {t('admin.approvals.superOnly', 'Only a super admin can see approvals.')}
@@ -267,53 +274,53 @@ export default function AdminApprovalsPage() {
             />
           </>
         )}
-      </div>
-      {deciding && (
-        <AdminConfirmDialog
-          open
-          onOpenChange={(open) => !open && setDeciding(null)}
-          title={
-            deciding.kind === 'approve'
-              ? t('admin.approvals.approveTitle', 'Approve this request')
-              : t('admin.approvals.rejectTitle', 'Reject this request')
-          }
-          description={
-            <p>
-              {t(
-                'admin.approvals.decideWhat',
-                '{email} asks: {action} ({target}). Reason: {reason}',
-                {
-                  email: deciding.approval.requested_by_email || '-',
-                  action: approvalActionLabel(deciding.approval.action, t),
-                  target: approvalTargetLabel(deciding.approval, t),
-                  reason: deciding.approval.reason,
-                }
-              )}
-            </p>
-          }
-          confirmLabel={
-            deciding.kind === 'approve'
-              ? t('admin.approvals.approve', 'Approve')
-              : t('admin.approvals.reject', 'Reject')
-          }
-          destructive={deciding.kind === 'reject'}
-          onConfirm={async ({ reason }) => {
-            if (deciding.kind === 'approve') {
-              await approveAdminApproval(deciding.approval.id, reason)
-              toast.success(
-                t(
-                  'admin.approvals.approved',
-                  'Approved. The requester can now repeat the action once.'
-                )
-              )
-            } else {
-              await rejectAdminApproval(deciding.approval.id, reason)
-              toast.success(t('admin.approvals.rejected', 'Request rejected.'))
+        {deciding && (
+          <AdminConfirmDialog
+            open
+            onOpenChange={(open) => !open && setDeciding(null)}
+            title={
+              deciding.kind === 'approve'
+                ? t('admin.approvals.approveTitle', 'Approve this request')
+                : t('admin.approvals.rejectTitle', 'Reject this request')
             }
-            void mutate()
-          }}
-        />
-      )}
+            description={
+              <p>
+                {t(
+                  'admin.approvals.decideWhat',
+                  '{email} asks: {action} ({target}). Reason: {reason}',
+                  {
+                    email: deciding.approval.requested_by_email || '-',
+                    action: approvalActionLabel(deciding.approval.action, t),
+                    target: approvalTargetLabel(deciding.approval, t),
+                    reason: deciding.approval.reason,
+                  }
+                )}
+              </p>
+            }
+            confirmLabel={
+              deciding.kind === 'approve'
+                ? t('admin.approvals.approve', 'Approve')
+                : t('admin.approvals.reject', 'Reject')
+            }
+            destructive={deciding.kind === 'reject'}
+            onConfirm={async ({ reason }) => {
+              if (deciding.kind === 'approve') {
+                await approveAdminApproval(deciding.approval.id, reason)
+                toast.success(
+                  t(
+                    'admin.approvals.approved',
+                    'Approved. The requester can now repeat the action once.'
+                  )
+                )
+              } else {
+                await rejectAdminApproval(deciding.approval.id, reason)
+                toast.success(t('admin.approvals.rejected', 'Request rejected.'))
+              }
+              void mutate()
+            }}
+          />
+        )}
+      </PageStack>
     </Main>
   )
 }

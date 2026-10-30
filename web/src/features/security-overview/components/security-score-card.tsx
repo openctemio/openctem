@@ -57,7 +57,7 @@ export function SecurityScoreCard({ enabled }: { enabled: boolean }) {
           })}
         />
         <p className="text-xs text-muted-foreground">
-          {t('settings.securityCard.counts', '{risks} risks · {warns} warnings', {
+          {t('settings.securityCard.counts', '{risks} risks, {warns} warnings', {
             risks,
             warns,
           })}

@@ -1,0 +1,4 @@
+### Changed: fewer requests on every page (support access, AI setup, SLA windows come with `/me/bootstrap`)
+
+- `GET /me/bootstrap` now also carries `support_access` (the active platform support grants, for callers with `team:read`), `ai_config` (the AI setup summary, for callers with `findings:read` and `ai_triage:read` while the `ai_triage` module is on) and `sla` (the windows that govern the organization's assets, plus whether any asset has a policy of its own, for callers with `assets:read`). A caller who may not read one gets no field. The console reads the three from the bootstrap, so every page sends one request less, and a finding or asset page no longer asks for the AI setup or for each asset's windows.
+- Reference reads (AI setup, SLA windows, notification event types, organization settings) are no longer refetched on every mount, and module state no longer refetches on window focus. The limits are unchanged.

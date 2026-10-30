@@ -6,6 +6,7 @@ package handler
 // active ones (the banner).
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -221,10 +222,20 @@ func (h *SupportAccessHandler) Active(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("Tenant context required").WriteJSON(w)
 		return
 	}
-	grants, err := h.svc.ActiveGrants(r.Context(), tenantID)
+	out, err := h.ActiveResponse(r.Context(), tenantID)
 	if err != nil {
 		h.writeError(w, err, "active")
 		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// ActiveResponse is the body of GET /organization/support-access/active for a
+// tenant; the bootstrap carries the same answer.
+func (h *SupportAccessHandler) ActiveResponse(ctx context.Context, tenantID shared.ID) (*SupportActiveResponse, error) {
+	grants, err := h.svc.ActiveGrants(ctx, tenantID)
+	if err != nil {
+		return nil, err
 	}
 	out := SupportActiveResponse{Data: make([]SupportActiveGrant, 0, len(grants))}
 	for _, g := range grants {
@@ -234,5 +245,5 @@ func (h *SupportAccessHandler) Active(w http.ResponseWriter, r *http.Request) {
 		}
 		out.Data = append(out.Data, SupportActiveGrant{AdminName: name, Scopes: g.Scopes, ExpiresAt: g.ExpiresAt, OpenSession: g.OpenSession, CaseRef: g.CaseRef})
 	}
-	writeJSON(w, http.StatusOK, out)
+	return &out, nil
 }

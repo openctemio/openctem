@@ -79,8 +79,11 @@ type Repository struct {
 
 // ConnectionTestResult represents the result of testing a connection
 type ConnectionTestResult struct {
-	Success      bool
-	Message      string
+	Success bool
+	Message string
+	// Cause is why a failed test failed, for classification and the log;
+	// never shown (it may hold an upstream body or an internal address).
+	Cause        error
 	User         *User
 	Organization *Organization
 	RepoCount    int

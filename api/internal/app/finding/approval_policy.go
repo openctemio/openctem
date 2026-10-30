@@ -239,6 +239,16 @@ func (s *VulnerabilityService) evaluateFindingRequest(ctx context.Context, f *vu
 	if err != nil {
 		return policyEvaluation{}, err
 	}
+	// An AI agent never lowers risk alone, whatever the organization's
+	// false-positive and acceptance levels (docs/architecture/ai-analysis.md):
+	// its requests are evaluated at the strictest level, and it can never
+	// approve them itself.
+	if aiAgent, err := s.isAIAgent(ctx, f.TenantID(), requester); err != nil {
+		return policyEvaluation{}, err
+	} else if aiAgent {
+		op.fpLevel, op.acceptLevel = approvalpolicy.FPLevelAll, approvalpolicy.FPLevelAll
+		requesterCanApprove = false
+	}
 	pf, err := s.findingPolicyFacts(ctx, f)
 	if err != nil {
 		return policyEvaluation{}, err
@@ -249,10 +259,24 @@ func (s *VulnerabilityService) evaluateFindingRequest(ctx context.Context, f *vu
 	}
 	res := approvalpolicy.Evaluate(op.policy, approvalpolicy.Request{
 		Kind: kind, Facts: pf.Facts, RequesterID: requester, ActorMade: actorMade, RequesterCanApprove: requesterCanApprove,
-		FPLevel: op.fpLevel, AcceptLevel: op.acceptLevel, AssetOwners: pf.AssetOwners, AssigneeID: pf.AssigneeID,
+		AutomationMade: automationRequestFrom(ctx),
+		FPLevel:        op.fpLevel, AcceptLevel: op.acceptLevel, AssetOwners: pf.AssetOwners, AssigneeID: pf.AssigneeID,
 		Approvers: cands, SecurityPoolConfigured: op.poolConfigured,
 	})
 	return policyEvaluation{result: res, facts: pf.Facts, org: op}, nil
+}
+
+type automationRequestKey struct{}
+
+// withAutomationRequest marks ctx as carrying a request an automation made:
+// the policy never lets one person decide it.
+func withAutomationRequest(ctx context.Context) context.Context {
+	return context.WithValue(ctx, automationRequestKey{}, true)
+}
+
+func automationRequestFrom(ctx context.Context) bool {
+	v, _ := ctx.Value(automationRequestKey{}).(bool)
+	return v
 }
 
 // kindOfStatus maps a requested finding status to a policy kind.
@@ -539,4 +563,22 @@ func (s *VulnerabilityService) NotifyMaterialChange(ctx context.Context, d vulne
 			s.logger.Warn("material change: in-app notification", "error", logger.SanitizeError(err))
 		}
 	}
+}
+
+// AIAgentChecker answers whether a user is one of the organization's AI
+// AI agents (postgres.AIAnalysisRepository).
+type AIAgentChecker interface {
+	IsAIAgent(ctx context.Context, tenantID, userID shared.ID) (bool, error)
+}
+
+// SetAIAgentChecker wires the AI agent check of the approval policy.
+func (s *VulnerabilityService) SetAIAgentChecker(c AIAgentChecker) { s.aiAgents = c }
+
+// isAIAgent reports whether requester is an AI agent of the tenant. A
+// lookup failure is an error (fail closed: the request is not decided).
+func (s *VulnerabilityService) isAIAgent(ctx context.Context, tenantID, requester shared.ID) (bool, error) {
+	if s.aiAgents == nil || requester.IsZero() {
+		return false, nil
+	}
+	return s.aiAgents.IsAIAgent(ctx, tenantID, requester)
 }

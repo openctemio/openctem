@@ -40,15 +40,17 @@ type CreateOrganizationInput struct {
 	// Provisioned: the control plane's limits, denies and idle policy,
 	// written with the organization (nil from the console).
 	Provisioned *ProvisionedEntitlements
-	// NewOwnerOnly refuses an owner email that already has an account
-	// (ErrOwnerAccountExists): someone else's request must never make an
-	// existing person the owner of an organization without their consent.
-	NewOwnerOnly bool
+	// AllowExistingOwner lets an owner email that already has an account
+	// become the owner. The default refuses it (ErrOwnerAccountExists):
+	// someone else's request must never make an existing person the owner of
+	// an organization without their consent. Only the operator CLI and a
+	// request whose requester confirmed the address set it.
+	AllowExistingOwner bool
 	// SignupSource names the path in the sign-up feed (default console).
 	SignupSource signupevent.Source
 }
 
-// ErrOwnerAccountExists is returned when NewOwnerOnly is set and the owner
+// ErrOwnerAccountExists is returned when AllowExistingOwner is not set and the owner
 // email already has an account.
 var ErrOwnerAccountExists = fmt.Errorf("%w: the owner email already has an account; that person creates the organization after signing in", shared.ErrConflict)
 
@@ -97,7 +99,7 @@ func (c *OrganizationCreator) Create(ctx context.Context, in CreateOrganizationI
 
 	owner, err := c.users.GetByEmail(ctx, ownerEmail)
 	ownerCreated := false
-	if err == nil && in.NewOwnerOnly {
+	if err == nil && !in.AllowExistingOwner {
 		return nil, ErrOwnerAccountExists
 	}
 	if err != nil {
@@ -111,7 +113,7 @@ func (c *OrganizationCreator) Create(ctx context.Context, in CreateOrganizationI
 		// through a one-time link issued once the organization exists.
 		owner, err = c.provisioning.CreateAccount(ctx, ownerEmail, in.OwnerName)
 		if err != nil {
-			if in.NewOwnerOnly && errors.Is(err, ErrAccountExists) {
+			if !in.AllowExistingOwner && errors.Is(err, ErrAccountExists) {
 				return nil, ErrOwnerAccountExists
 			}
 			return nil, err
@@ -128,8 +130,7 @@ func (c *OrganizationCreator) Create(ctx context.Context, in CreateOrganizationI
 		SignupSource: source, CreatorEmail: ownerEmail,
 	}, owner.ID(), actx)
 	if err != nil {
-		// tenantdom.ErrPlatformAdminMembership (the owner is a platform
-		// administrator) and slug conflicts surface unchanged.
+		// Slug conflicts surface unchanged.
 		if ownerCreated {
 			c.provisioning.DiscardAccount(ctx, owner.ID())
 		}

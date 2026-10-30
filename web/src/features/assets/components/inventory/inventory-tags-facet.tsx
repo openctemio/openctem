@@ -22,7 +22,7 @@ import { Lock, MinusCircle, Search } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { useTranslation } from '@/context/i18n-provider'
 import { FacetGroupLabel, FacetOption, FacetSection } from '@/features/shared'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { cn } from '@/lib/utils'
 import { useAssetTags } from '../../hooks/use-asset-tags'
 import {
@@ -54,7 +54,7 @@ export function InventoryTagsFacet({
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
   const [expanded, setExpanded] = useState(false)
-  const q = useDebounce(query.trim(), 250)
+  const q = useSearchQuery(query).term
   const { tags, systemTags, isLoading } = useAssetTags(undefined, true, types, {
     q: q || undefined,
     includeSystem: true,

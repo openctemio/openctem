@@ -112,7 +112,7 @@ Applied in `NewAsset()` constructor — single chokepoint, every entry point cov
 
 | Asset Type | Rule | Example |
 |---|---|---|
-| domain, subdomain | lowercase + strip trailing dot | `Example.COM.` → `example.com` |
+| domain, subdomain | percent-decode (at most twice), strip scheme/port/path, lowercase, trim what cannot start or end a host name (a wildcard `*.` and a `_` label stay) | `%2Fwww.Example.COM.` → `www.example.com` |
 | ip_address | `net.ParseIP` canonical, strip brackets/port/CIDR | `[2001:db8::1]:443` → `2001:db8::1` |
 | host | DNS normalize or IP canonical | `Web-Server.CORP.` → `web-server.corp` |
 | repository | lowercase, strip protocol/SSH/.git, preserve host | `git@GitHub.com:Org/Repo.git` → `github.com/org/repo` |
@@ -125,6 +125,18 @@ Applied in `NewAsset()` constructor — single chokepoint, every entry point cov
 | identity (IAM) | trim only (ARN is case-sensitive) | preserve case |
 
 **Key files**: `pkg/domain/asset/normalize.go`, `normalize_test.go` (158 test cases)
+
+**Discovered names** (`pkg/domain/asset/hostname.go`). Passive sources hand
+back names cut out of free text and URLs. At ingest, a domain or subdomain
+whose normalized name is still not a host name (`ValidHostname`: after IDNA,
+two or more labels of letters, digits, `-` and `_`, 1 to 63 characters, no
+label starting or ending with `-`, 253 characters at most, an optional
+leading `*.`) is not created and the report records why. A name whose first
+label starts with the remnant of a percent-encoded URL delimiter
+(`2fwww.example.com`, from `%2Fwww.example.com` with the `%` dropped by the
+source; `EncodedRemnant`) is dropped only when the name without it is in the
+same report or already in the tenant's inventory; otherwise it is kept
+(`3ds.example.com` is a real name).
 
 ## Correlation (legacy identifiers)
 

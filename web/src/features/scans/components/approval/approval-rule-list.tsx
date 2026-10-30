@@ -180,6 +180,7 @@ function RuleRow({
           <Button
             size="icon"
             variant="ghost"
+            className="ms-3 text-destructive hover:text-destructive"
             aria-label={t('scans.approvalSettings.removeRule', 'Remove rule "{name}"', {
               name: rule.name,
             })}

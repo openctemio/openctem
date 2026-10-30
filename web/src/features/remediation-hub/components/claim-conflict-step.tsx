@@ -48,7 +48,7 @@ export function ClaimConflictStep({
                   owners.group(c.assignee_group_id ?? undefined),
                 ]
                   .filter(Boolean)
-                  .join(' · ') || t('remediationClaim.conflict.unassigned')
+                  .join(', ') || t('remediationClaim.conflict.unassigned')
           const boxId = `move-${c.finding_id}`
           return (
             <li key={c.finding_id} className="flex items-start gap-3 p-3 text-sm">

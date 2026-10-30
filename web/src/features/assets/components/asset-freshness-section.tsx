@@ -76,7 +76,7 @@ export function AssetFreshnessSection({ assetId }: { assetId: string }) {
                     ) : (
                       t('assetFreshness.neverObserved', 'Not observed yet')
                     )}
-                    {' · '}
+                    {', '}
                     {t(`assetFreshness.ttl.${ttl.key}`, `fresh for ${ttl.n}`, { n: ttl.n })}
                   </div>
                 </div>
@@ -85,6 +85,22 @@ export function AssetFreshnessSection({ assetId }: { assetId: string }) {
             )
           })}
         </ul>
+      )}
+      {data.resolution && (
+        <p className="mt-2 text-xs text-muted-foreground" data-testid="asset-resolution-status">
+          {data.resolution.state === 'not_resolving'
+            ? t('assetFreshness.resolution.not_resolving', 'DNS has no answer for this name')
+            : t('assetFreshness.resolution.resolving', 'This name resolves')}
+          {', '}
+          {data.resolution.resolved_at ? (
+            <>
+              {t('assetFreshness.resolution.lastResolved', 'last resolved')}{' '}
+              <RelativeTime date={data.resolution.resolved_at} className="text-xs" />
+            </>
+          ) : (
+            t('assetFreshness.resolution.neverResolved', 'never seen resolving')
+          )}
+        </p>
       )}
       {enrichment && (
         <p className="mt-2 text-xs text-muted-foreground" data-testid="asset-enrichment-status">
@@ -98,7 +114,7 @@ export function AssetFreshnessSection({ assetId }: { assetId: string }) {
           />
           {enrichment.last_run_id && (
             <>
-              {' · '}
+              {', '}
               <Link
                 href={`/scans/runs?run=${encodeURIComponent(enrichment.last_run_id)}`}
                 className="underline"

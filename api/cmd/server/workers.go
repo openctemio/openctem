@@ -11,11 +11,7 @@ import (
 
 	threatalertapp "github.com/openctemio/openctem/api/internal/app/threatalert"
 
-	vulneventapp "github.com/openctemio/openctem/api/internal/app/vulnevent"
-
 	scmappsvc "github.com/openctemio/openctem/api/internal/app/scmapp"
-
-	"github.com/prometheus/client_golang/prometheus"
 
 	assettechapp "github.com/openctemio/openctem/api/internal/app/assettech"
 	"github.com/openctemio/openctem/api/internal/app/auth"
@@ -27,7 +23,6 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/internal/app/systemstatus"
 	"github.com/openctemio/openctem/api/internal/app/tenablesc"
-	"github.com/openctemio/openctem/api/internal/app/vulnfeed"
 
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
@@ -39,18 +34,19 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/reclassify"
 	"github.com/openctemio/openctem/api/internal/app/scancoverage"
 	"github.com/openctemio/openctem/api/internal/app/sla"
+	webverifyapp "github.com/openctemio/openctem/api/internal/app/webverify"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/auditsink"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/jobs"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/durablejob"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
@@ -185,11 +181,29 @@ func registerPurgeControllers(m *controller.Manager, cfg *config.Config, repos *
 		m.Register(controller.NewPurgeController("organization-delete", cfg.Worker.InvitationPurgeInterval,
 			svc.OrgDeletion.PurgeDue, log.With("controller", "organization-delete")))
 	}
+	if svc.AIMaskMaps != nil {
+		// AI run masking maps past AI_MASK_MAP_TTL
+		// (docs/architecture/ai-context-masking.md).
+		m.Register(controller.NewPurgeController("ai-mask-map-purge", time.Hour,
+			svc.AIMaskMaps.Purge, log.With("controller", "ai-mask-map-purge")))
+	}
 	if repos.AdminConsole != nil {
 		console := repos.AdminConsole
 		m.Register(controller.NewPurgeController("admin-session-purge", cfg.Worker.AdminSessionPurgeInterval,
 			func(ctx context.Context) (int64, error) { return console.DeleteExpiredSessions(ctx, time.Now()) },
 			log.With("controller", "admin-session-purge")))
+	}
+	if supportSvc := newSupportAccessService(repos, svc, log); supportSvc != nil {
+		// Support sessions end with the console session that opened them
+		// (expiry, idle), when their grant ends, or after 30 minutes unused;
+		// sign-out ends them at once (adminconsole). Both audit rows and the
+		// owners' email follow each ended session.
+		m.Register(controller.NewPurgeController("support-session-sweep", time.Minute,
+			func(ctx context.Context) (int64, error) {
+				n, err := supportSvc.EndStaleSessions(ctx)
+				return int64(n), err
+			},
+			log.With("controller", "support-session-sweep")))
 	}
 	if repos.MCPOAuth != nil {
 		// Ended MCP OAuth requests, tokens, grants and unused clients (RFC-062).
@@ -422,7 +436,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		&controller.JobRecoveryControllerConfig{
 			Interval:              60 * time.Second,
 			StuckThresholdMinutes: 30,
-			MaxRetries:            3,
+			MaxRetries:            commanddom.MaxDispatchAttempts,
 			Logger:                log.With("controller", "job-recovery"),
 		},
 	)
@@ -575,6 +589,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			svc.VEX, log.With("controller", "vex-statement-expiry")))
 	}
 
+	// Rule sources: scheduled, requested and webhook syncs; snapshot collection.
+	if svc.ContentSource != nil {
+		svc.ContentSource.SetModuleGuard(svc.Module) // skip organizations with rule sources off
+		w.ControllerManager.Register(controller.NewContentSourceSyncController(
+			svc.ContentSource, log.With("controller", "content-source-sync")))
+	}
+
 	// Access requests: unconfirmed ones go after 24 h, decided ones after 90 days.
 	if svc.AccessRequest != nil {
 		w.ControllerManager.Register(controller.NewAccessRequestRetentionController(
@@ -640,6 +661,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	if svc.ServiceKeyGate != nil {
 		w.ControllerManager.Register(controller.NewServiceKeyCreatorController(repos.ServiceAccount,
 			svc.ServiceKeyGate, repos.MemberLifecycle, 5*time.Minute, log.With("controller", "service-key-creator")))
+	}
+
+	// AI agents without an active accountable owner or a fresh attestation
+	// pause (every run start checks the same, fail closed).
+	if svc.AIAnalysis != nil {
+		w.ControllerManager.Register(controller.NewAIAgentSweepController(svc.AIAnalysis, time.Hour,
+			log.With("controller", "ai-agent-sweep")))
 	}
 
 	registerPurgeControllers(w.ControllerManager, cfg, repos, svc, log)
@@ -723,44 +751,14 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// recompute for only the findings whose CVE intel moved, and KEV
 	// auto-escalation. Both report material changes to the vulnerability
 	// event log (RFC-117).
-	var intelQueue controller.IntelChangeQueue
-	if svc.Scoring != nil {
-		intelQueue = svc.Scoring
-	}
-	var vulnEvents *vulneventapp.Emitter
-	if repos.VulnEvent != nil {
-		vulnEvents = vulneventapp.NewEmitter(repos.VulnEvent, log)
-	}
-	epssRefresh := controller.NewThreatIntelRefreshController(svc.ThreatIntel, intelQueue, log.With("controller", "threat-intel-refresh"))
-	kevRefresh := controller.NewKEVRefreshController(svc.ThreatIntel, repos.KEVEscalator, intelQueue, log.With("controller", "kev-refresh"))
-	if vulnEvents != nil {
-		epssRefresh.SetEventEmitter(vulnEvents)
-		kevRefresh.SetEventEmitter(vulnEvents)
-	}
-	w.ControllerManager.Register(epssRefresh)
-	w.ControllerManager.Register(kevRefresh)
-
+	feeds := newFeedControllers(cfg, svc, repos, log)
+	w.ControllerManager.Register(feeds.epss)
+	w.ControllerManager.Register(feeds.kev)
 	// Vulnerability bundles (RFC-066 §5.5): verified and imported into the
 	// CVE corpus; nothing happens until VULNFEED_ROOT_KEY_ID is set and a
 	// platform admin enables the "vulnfeed" source.
-	if repos.ThreatIntel != nil && repos.CVECorpus != nil && repos.Software != nil {
-		im, err := vulnfeed.NewImporter(vulnfeed.Config{
-			RootKeyID: cfg.Worker.VulnFeedRootKeyID, BaseURL: cfg.Worker.VulnFeedBaseURL, BundleDir: cfg.Worker.VulnFeedBundleDir,
-		}, repos.CVECorpus, repos.ThreatIntel.SyncStatus(), repos.Software, log.With("component", "vulnfeed"))
-		if err != nil {
-			log.Error("vulnerability bundle import disabled", "error", err)
-		} else {
-			// Chunked (v2) bundles are fetched with retries, resume and mirror
-			// fall-back and applied chunk by chunk with a durable checkpoint
-			// (docs/architecture/feed-transfer.md); v1 stays the fallback.
-			im.WithChunks(repos.CVECorpus, vulnfeed.Transfer{Mirrors: cfg.Worker.VulnFeedMirrors, CacheDir: cfg.Scope.FeedCacheDir,
-				Client: httpsec.SafeHTTPClient(0), Registerer: prometheus.DefaultRegisterer})
-			importCtl := controller.NewVulnFeedImportController(im, log.With("controller", "vuln-feed-import"))
-			if vulnEvents != nil {
-				importCtl.SetEventEmitter(vulnEvents)
-			}
-			w.ControllerManager.Register(importCtl)
-		}
+	if feeds.bundles != nil {
+		w.ControllerManager.Register(feeds.bundles)
 	}
 
 	// Inventory vulnerability matching (RFC-066): versions × CVE ranges, then
@@ -825,6 +823,11 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// tenant owns domain assets; disable with CERT_MONITOR_ENABLED=false.
 	// Names a permanent scope target or seed covers are confirmed: once at
 	// start-up (the backfill) and every 6 h (RFC-054 §4.3).
+	// Groups that fill themselves by a rule are evaluated again every hour
+	// (asset changes trigger their own debounced evaluation).
+	if svc.AssetGroup != nil {
+		w.ControllerManager.Register(controller.NewAssetGroupRulesController(svc.AssetGroup, 0))
+	}
 	if svc.ScopeJoin != nil {
 		if svc.Module != nil {
 			svc.ScopeJoin.SetModuleGuard(svc.Module) // skip tenants with attack_surface off
@@ -1031,6 +1034,14 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			svc.RemediationTask, 2*time.Minute, log.With("controller", "remediation-tasks"),
 		))
 	}
+	// Scope effects: close the findings of assets out of scope for good,
+	// reopen those back in scope (research/320). Exclusion changes kick a
+	// pass at once; this catches expiries, new findings and missed kicks.
+	if svc != nil && svc.ScopeEffects != nil {
+		w.ControllerManager.Register(controller.NewScopeEffectsController(
+			svc.ScopeEffects, 5*time.Minute, log.With("controller", "scope-effects"),
+		))
+	}
 	// Tasks from a query in auto mode: add new matches as each task's owner
 	// (suspends a task whose owner left or lost access).
 	if svc != nil && svc.RemediationTask != nil {
@@ -1178,6 +1189,14 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			repos.WebEndpoint, log.With("controller", "web-surface-retention")))
 	}
 
+	// Verification of sensitive web paths: new or changed catalog endpoints
+	// get the mapped signed templates, budgeted per tenant.
+	if repos.WebEndpoint != nil && svc.Scan != nil && svc.Scope != nil {
+		w.ControllerManager.Register(controller.NewWebVerifyController(
+			webverifyapp.NewPlanner(postgres.NewWebVerifyRepository(&postgres.DB{DB: deps.DB}), svc.Scan, webverifyapp.ScopeRules{Svc: svc.Scope},
+				webverifyapp.Config{}, log.With("controller", "web-verify")), 15*time.Minute))
+	}
+
 	// Per-task sensor logs (RFC-029 §4.4.1): kept 14 days.
 	if repos.CommandLog != nil {
 		w.ControllerManager.Register(controller.NewCommandLogRetentionController(
@@ -1258,7 +1277,14 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		if svc.Scan != nil && svc.ScanPolicy != nil {
 			svc.AssetCoverage.EnablePlanning(repos.AssetCoverage, svc.Scan,
 				coverageapp.GovernanceSwitch{Modes: svc.ScanPolicy, Settings: svc.Tenant},
-				coverageapp.Config{DailyBudget: cfg.Worker.AssetCoverageDailyBudget})
+				// A due batch waits until it fills one task of its tool or
+				// its oldest pair has waited a tenth of the cadence (at most
+				// 6 h): pairs whose jittered due times are close share a run.
+				coverageapp.Config{DailyBudget: cfg.Worker.AssetCoverageDailyBudget, FillBatches: true})
+			// Readiness: a capability with no sensor or tool that could run
+			// it gets no run; its pairs pause with the reason and resume by
+			// themselves.
+			svc.AssetCoverage.EnableReadiness(svc.Scan)
 			// Gaps, output drops and repeated failures alert the tenant's
 			// administrators (in-app and integrations) at most once a day.
 			svc.AssetCoverage.EnableAlerts(repos.AssetCoverage, repos.MemberLifecycle, svc.Notification, svc.Outbox)

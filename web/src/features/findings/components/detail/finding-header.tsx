@@ -7,13 +7,15 @@
  *
  *   [SCA] [CVE-2024-21538 ↗] [CWE-1333]
  *   cross-spawn ReDoS vulnerability
- *   [Re-verify] [AI triage] [⋯]
+ *   [Re-verify] [Add to task] [AI triage] [⋯]
  *
  * Verifying a fix is the Retest section's job (RFC-039): it re-runs the check
  * that found the issue. The old whole-asset "verification scan" is retired.
  */
 
+import { CveLink } from '@/features/vulnerabilities/components/cve-link'
 import { useState } from 'react'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import Link from '@/components/link'
 import { useRouter } from 'next/navigation'
 import {
@@ -22,6 +24,7 @@ import {
   Link2,
   Loader2,
   MoreHorizontal,
+  ListPlus,
   ShieldCheck,
   Ticket,
 } from 'lucide-react'
@@ -40,6 +43,9 @@ import { copyToClipboard } from '@/lib/clipboard'
 import { safeHref } from '@/lib/safe-href'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { usePermissions } from '@/context/permission-provider'
+import { useCanMutate } from '@/lib/permissions'
+import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
+import { AddFindingsToTaskDialog } from '@/features/remediation-hub/components/add-findings-to-task-dialog'
 import { AITriageButton } from '@/features/ai-triage/components'
 import { isNoValidationSensorError, useRequestValidationApi } from '../../api/use-findings-api'
 import type { FindingDetail, FindingStatus } from '../../types'
@@ -64,8 +70,14 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
   // Re-verify dispatches the reachability check (POST /validate): findings:verify.
   const canVerify = hasPermission('findings:verify')
   const canCreateTicket = useCanCreateTicket()
+  // Adding to a task needs the task write permission and the remediation module.
+  const canCreateTask = useCanMutate('POST /api/v1/remediation/tasks')
+  const remediationEnabled = useModuleEnabled('remediation')
+  const canAddToTask = canCreateTask && remediationEnabled
+  const [taskOpen, setTaskOpen] = useState(false)
   const [ticketOpen, setTicketOpen] = useState(false)
   const [duplicateOpen, setDuplicateOpen] = useState(false)
+  const [reverifyOpen, setReverifyOpen] = useState(false)
   // An inventory asset (not a free-text pentest target) the duplicate must share.
   const assetId = isHuman ? undefined : finding.assets[0]?.id
   const canMarkDuplicate =
@@ -79,6 +91,7 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
   )
 
   const reverify = async () => {
+    setReverifyOpen(false)
     try {
       await requestValidation()
       toast.success(t('findings.header.reverifyQueued', 'Re-verification queued'), {
@@ -125,16 +138,8 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
         )}
         {finding.branchOnly && <BranchOnlyBadge />}
         {finding.cve && (
-          <Badge variant="outline" asChild className="font-mono text-xs">
-            <a
-              href={`https://nvd.nist.gov/vuln/detail/${encodeURIComponent(finding.cve)}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label={`${t('findings.header.cveOnNvd', '{cve} on NVD', { cve: finding.cve })} ${t('common.opensNewTab', '(opens in a new tab)')}`}
-            >
-              {finding.cve}
-              <ExternalLink className="h-3 w-3" aria-hidden />
-            </a>
+          <Badge variant="outline" className="text-xs">
+            <CveLink id={finding.cve} />
           </Badge>
         )}
         {duplicateOfHref && (
@@ -169,7 +174,7 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
           <Button
             variant="outline"
             size="sm"
-            onClick={() => void reverify()}
+            onClick={() => setReverifyOpen(true)}
             disabled={reverifying}
             title={t(
               'findings.header.reverifyTitle',
@@ -182,6 +187,12 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
               <ShieldCheck className="h-3.5 w-3.5" />
             )}
             {t('findings.header.reverify', 'Re-verify')}
+          </Button>
+        )}
+        {canAddToTask && (
+          <Button variant="outline" size="sm" onClick={() => setTaskOpen(true)}>
+            <ListPlus className="h-3.5 w-3.5" aria-hidden />
+            {t('remediationClaim.add.addToTask', 'Add to task')}
           </Button>
         )}
         <AITriageButton
@@ -228,6 +239,20 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
         </DropdownMenu>
       </div>
 
+      <ConfirmDialog
+        open={reverifyOpen}
+        onOpenChange={setReverifyOpen}
+        title={t('findings.header.reverifyConfirmTitle', 'Re-verify "{title}" now?', {
+          title: finding.title,
+        })}
+        desc={t(
+          'findings.header.reverifyConfirmDesc',
+          "A safe check sends a request to the finding's target now. The result is recorded as evidence and never changes the status."
+        )}
+        confirmText={t('findings.header.reverifyConfirmButton', 'Run safe check')}
+        handleConfirm={reverify}
+      />
+
       {canMarkDuplicate && assetId && (
         <MarkDuplicateDialog
           findingId={finding.id}
@@ -235,6 +260,16 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
           open={duplicateOpen}
           onOpenChange={setDuplicateOpen}
           onMarked={(canonicalId) => router.push(`/findings/${encodeURIComponent(canonicalId)}`)}
+        />
+      )}
+
+      {canAddToTask && taskOpen && (
+        <AddFindingsToTaskDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setTaskOpen(false)
+          }}
+          findings={[{ id: finding.id, title: finding.title }]}
         />
       )}
 

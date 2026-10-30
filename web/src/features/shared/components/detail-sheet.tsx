@@ -111,6 +111,8 @@ export interface DetailSectionProps {
   actions?: React.ReactNode
   children?: React.ReactNode
   className?: string
+  /** For a link or a "show me" button that scrolls to the section. */
+  id?: string
 }
 
 export function DetailSection({
@@ -120,11 +122,12 @@ export function DetailSection({
   actions,
   children,
   className,
+  id,
 }: DetailSectionProps) {
   // The section is a landmark named by its heading.
   const headingId = React.useId()
   return (
-    <section className={cn('min-w-0 space-y-3', className)} aria-labelledby={headingId}>
+    <section id={id} className={cn('min-w-0 space-y-3', className)} aria-labelledby={headingId}>
       <div className="flex min-h-7 items-center justify-between gap-2">
         <h3 id={headingId} className="flex min-w-0 items-center gap-2 text-sm font-semibold">
           {Icon && <Icon className="h-4 w-4 shrink-0" />}
@@ -223,6 +226,8 @@ export interface DetailStatProps {
   unit?: React.ReactNode
   /** One short muted line under the value. */
   caption?: React.ReactNode
+  /** Let the caption wrap onto several lines instead of truncating it. */
+  wrapCaption?: boolean
   /** A thin bar under the value (value / max), e.g. slots in use. */
   meter?: { value: number; max: number; label: string }
   /** Colour the value: only for a problem (style contract: never a zero). */
@@ -240,6 +245,7 @@ export function DetailStat({
   meter,
   tone = 'default',
   title,
+  wrapCaption,
   className,
 }: DetailStatProps) {
   return (
@@ -264,7 +270,14 @@ export function DetailStat({
         </dd>
       )}
       {caption && (
-        <dd className="mt-1 truncate text-xs text-muted-foreground tabular-nums">{caption}</dd>
+        <dd
+          className={cn(
+            'mt-1 text-xs text-muted-foreground tabular-nums',
+            wrapCaption ? 'min-w-0 break-words' : 'truncate'
+          )}
+        >
+          {caption}
+        </dd>
       )}
     </div>
   )

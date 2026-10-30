@@ -26,11 +26,14 @@ const (
 	ReasonAcceptLevel         = "accept_level"
 	ReasonRequesterCannotSelf = "requester_cannot_decide_alone"
 	ReasonRequesterOwnsAsset  = "requester_owns_asset"
-	ReasonGroupDecision       = "group_decision"
-	ReasonPoolFallback        = "security_pool_fallback"
-	ReasonNoEligibleApprover  = "no_eligible_approver"
-	ReasonNotEnoughApprovers  = "not_enough_eligible_approvers"
-	ReasonActorExtraSignoff   = "actor_request_extra_signoff"
+	// ReasonAutomationCannotSelf: an automation made the request; a person
+	// always decides it, whatever the organization's approval level.
+	ReasonAutomationCannotSelf = "automation_cannot_decide"
+	ReasonGroupDecision        = "group_decision"
+	ReasonPoolFallback         = "security_pool_fallback"
+	ReasonNoEligibleApprover   = "no_eligible_approver"
+	ReasonNotEnoughApprovers   = "not_enough_eligible_approvers"
+	ReasonActorExtraSignoff    = "actor_request_extra_signoff"
 )
 
 // ExcludeReason says why a member may not approve a request.
@@ -66,6 +69,10 @@ type Request struct {
 	// RequesterCanApprove: the requester holds the approve permission and
 	// the subject is in their data scope (only then may they decide alone).
 	RequesterCanApprove bool
+	// AutomationMade: an automation step made the request (on behalf of its
+	// owner). It is never decided by one person, even when the organization's
+	// level would let the owner decide alone (RFC-125 D9).
+	AutomationMade bool
 	// FPLevel is the organization's false-positive level in force (false
 	// positives only; "" = all).
 	FPLevel string
@@ -180,6 +187,9 @@ func Evaluate(p Policy, r Request) Result {
 	isOwner := func(id shared.ID) bool { return containsID(r.AssetOwners, id) }
 	if tier == TierSingle {
 		switch {
+		case r.AutomationMade:
+			tier = TierPeer
+			res.Reasons = append(res.Reasons, ReasonAutomationCannotSelf)
 		case r.RequesterID.IsZero() || !r.RequesterCanApprove:
 			tier = TierPeer
 			res.Reasons = append(res.Reasons, ReasonRequesterCannotSelf)

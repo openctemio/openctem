@@ -249,6 +249,23 @@ export function DynamicTargetsPanel({
               {t('scans.dynamic.includeStale')}
             </Label>
           </div>
+          <div className="flex items-start gap-2">
+            <Checkbox
+              id="dyn-include-unresolved"
+              className="mt-0.5"
+              checked={!!options?.include_unresolved}
+              onCheckedChange={(v) => set({ include_unresolved: v === true || undefined })}
+              aria-describedby="dyn-include-unresolved-help"
+            />
+            <div className="space-y-0.5">
+              <Label htmlFor="dyn-include-unresolved" className="text-sm font-normal">
+                {t('scans.dynamic.includeUnresolved')}
+              </Label>
+              <p id="dyn-include-unresolved-help" className="text-xs text-muted-foreground">
+                {t('scans.dynamic.includeUnresolvedHelp')}
+              </p>
+            </div>
+          </div>
         </div>
       )}
     </fieldset>

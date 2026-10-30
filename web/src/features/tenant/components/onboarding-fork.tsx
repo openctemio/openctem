@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, useTransition } from 'react'
 import { Building2, Clock, Loader2, Mail } from 'lucide-react'
 import { toast } from 'sonner'
+import { safeText } from '@/lib/api/error-message'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -66,7 +67,7 @@ export function OnboardingFork({ createSlot, emptySlot }: OnboardingForkProps) {
       } else if (res.code === 'OFFER_UNAVAILABLE') {
         toast.error(t('org.onboarding.unavailable'))
       } else {
-        toast.error(res.error || t('org.onboarding.failed'))
+        toast.error(safeText(res.error, t('org.onboarding.failed')))
       }
       void load()
     })

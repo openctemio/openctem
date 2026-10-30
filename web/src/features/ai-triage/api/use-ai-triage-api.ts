@@ -5,6 +5,7 @@ import useSWRMutation from 'swr/mutation'
 import type { SWRConfiguration } from 'swr'
 
 import { get, post } from '@/lib/api/client'
+import { SWR_REFERENCE } from '@/lib/swr-config'
 import { handleApiError } from '@/lib/api/error-handler'
 import { useTenant } from '@/context/tenant-provider'
 import { usePermissionsSafe } from '@/context/permission-provider'
@@ -12,8 +13,6 @@ import { Permission } from '@/lib/permissions/constants'
 import type {
   AITriageResult,
   AIConfig,
-  AIMode,
-  AIUnavailableReason,
   RequestTriageInput,
   RequestTriageResponse,
   TriageHistoryResponse,
@@ -29,6 +28,7 @@ import type {
   ApiRequestTriageInput,
   ApiAIConfigResponse,
 } from './ai-triage-api.types'
+import { AI_CONFIG_ENDPOINT, transformAIConfig } from '../lib/ai-config'
 
 // ============================================
 // CONFIGURATION
@@ -238,24 +238,7 @@ export function getTriageCacheKey(findingId: string): string {
 // AI CONFIG HOOK
 // ============================================
 
-export const AI_CONFIG_ENDPOINT = '/api/v1/findings/ai-triage/config'
-
-/**
- * Transform API AI config to domain type
- */
-function transformAIConfig(api: ApiAIConfigResponse): AIConfig {
-  return {
-    mode: api.mode as AIMode,
-    provider: api.provider,
-    model: api.model,
-    isEnabled: api.is_enabled,
-    reason: (api.reason || undefined) as AIUnavailableReason | undefined,
-    autoTriageEnabled: api.auto_triage_enabled,
-    autoTriageSeverities: api.auto_triage_severities,
-    monthlyTokenLimit: api.monthly_token_limit,
-    tokensUsedThisMonth: api.tokens_used_this_month,
-  }
-}
+export { AI_CONFIG_ENDPOINT }
 
 /**
  * Fetch AI config from API
@@ -286,8 +269,10 @@ export function useAIConfig(config?: SWRConfiguration) {
 
   return useSWR<AIConfig>(key, fetchAIConfig, {
     ...defaultConfig,
-    // Cache for longer since config changes rarely
-    dedupingInterval: 60000, // 1 minute
+    // The session bootstrap seeds this key and the setup changes only by an
+    // admin action (which calls mutate): never refetch on mount. A page that
+    // shows live usage (settings/ai) passes its own config.
+    ...SWR_REFERENCE,
     ...config,
   })
 }

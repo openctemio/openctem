@@ -128,7 +128,7 @@ export function CISetupWizard({ open, onClose }: { open: boolean; onClose: () =>
       return
     }
     const body: CITrustConfigRequest = {
-      name: `${PROVIDER_LABEL[provider]} · ${scopeList.join(', ')}`.slice(0, 200),
+      name: `${PROVIDER_LABEL[provider]}, ${scopeList.join(', ')}`.slice(0, 200),
       provider,
       issuer: traits.issuerInput === 'fixed' ? undefined : issuerFor(provider, issuer),
       default_branch: defaultBranch.trim() || 'main',

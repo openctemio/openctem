@@ -75,8 +75,8 @@ func TestRiskScoringEngine_LegacyConfig(t *testing.T) {
 			exposure:    asset.ExposurePublic,
 			criticality: asset.CriticalityNone,
 			findings:    0,
-			wantMin:     50,
-			wantMax:     70,
+			wantMin:     0,
+			wantMax:     0,
 		},
 		{
 			name:        "unknown medium 1 finding",
@@ -532,14 +532,14 @@ func TestRiskScoringEngine_LegacyPreset_MatchesOldFormula(t *testing.T) {
 			exposure:    asset.ExposureIsolated,
 			criticality: asset.CriticalityNone,
 			findings:    0,
-			oldScore:    4, // (5+0+0)*0.8 = 4
+			oldScore:    0, // was (5+0+0)*0.8 = 4; no open finding now scores 0
 		},
 		{
 			name:        "public/none/0findings → old=60",
 			exposure:    asset.ExposurePublic,
 			criticality: asset.CriticalityNone,
 			findings:    0,
-			oldScore:    60, // (40+0+0)*1.5 = 60
+			oldScore:    0, // was (40+0+0)*1.5 = 60; no open finding now scores 0
 		},
 		{
 			name:        "restricted/high/2findings → old=63",
@@ -567,7 +567,7 @@ func TestRiskScoringEngine_LegacyPreset_MatchesOldFormula(t *testing.T) {
 			exposure:    asset.ExposureIsolated,
 			criticality: asset.CriticalityCritical,
 			findings:    0,
-			oldScore:    24, // (5+25+0)*0.8 = 24
+			oldScore:    0, // was (5+25+0)*0.8 = 24; no open finding now scores 0
 		},
 	}
 
@@ -594,15 +594,16 @@ func TestRiskScoringEngine_LegacyPreset_ExposureContribution(t *testing.T) {
 	config := asset.LegacyRiskScoringConfig()
 	engine := asset.NewRiskScoringEngine(config)
 
-	// Old: Public BaseRiskScore=40, new: ExposureScore=100 × 40% weight = 40
-	// The exposure component should produce ~40 for public with multiplier=1.0
-	a := makeTestAsset(t, asset.ExposurePublic, asset.CriticalityNone, 0)
+	// Exposure scales an asset that has an open finding: ExposureScore=100 ×
+	// 40% weight = 40, plus one finding 14 × 35% = 4.9, times 1.5 = 67.35.
+	a := makeTestAsset(t, asset.ExposurePublic, asset.CriticalityNone, 1)
 	score := engine.CalculateScore(a)
-
-	// Old formula: (40+0+0)*1.5=60
-	// New formula: 100*0.40=40, multiplier=1.5 → 60
-	if score != 60 {
-		t.Errorf("public/none/0findings: expected ~60, got %d", score)
+	if score != 67 {
+		t.Errorf("public/none/1finding: expected 67, got %d", score)
+	}
+	// Exposure alone is not risk.
+	if got := engine.CalculateScore(makeTestAsset(t, asset.ExposurePublic, asset.CriticalityNone, 0)); got != 0 {
+		t.Errorf("public/none/0findings: expected 0, got %d", got)
 	}
 }
 
@@ -611,13 +612,16 @@ func TestRiskScoringEngine_LegacyPreset_CriticalityContribution(t *testing.T) {
 	engine := asset.NewRiskScoringEngine(config)
 
 	// Old: Critical Score()/4 = 25, new: CriticalityScore=100 × 25% weight = 25
-	a := makeTestAsset(t, asset.ExposurePrivate, asset.CriticalityCritical, 0)
+	a := makeTestAsset(t, asset.ExposurePrivate, asset.CriticalityCritical, 1)
 	score := engine.CalculateScore(a)
 
-	// Old formula: (15+25+0)*1.0=40
-	// New formula: 37*0.40+100*0.25+0*0.35 = 14.8+25+0 = 39.8 → round(39.8*1.0) = 40
-	if score < 38 || score > 42 {
-		t.Errorf("private/critical/0findings: expected ~40, got %d", score)
+	// 37*0.40 + 100*0.25 + 14*0.35 = 14.8 + 25 + 4.9 = 44.7 → 45
+	if score != 45 {
+		t.Errorf("private/critical/1finding: expected 45, got %d", score)
+	}
+	// Criticality alone is not risk.
+	if got := engine.CalculateScore(makeTestAsset(t, asset.ExposurePrivate, asset.CriticalityCritical, 0)); got != 0 {
+		t.Errorf("private/critical/0findings: expected 0, got %d", got)
 	}
 }
 
@@ -890,6 +894,9 @@ func TestH2_ShadowScoreComparison(t *testing.T) {
 	// same way CalculateScore does (weights sum to 100, CTEM disabled) using
 	// only public config fields, then apply round(raw × multiplier) + clamp.
 	oldFormula := func(exp asset.Exposure, crit asset.Criticality, f int) int {
+		if f == 0 {
+			return 0 // no open finding scores 0 in every model
+		}
 		w := multiplyCfg.Weights // CTEM disabled & weight 0 → no redistribution
 		expScore := map[asset.Exposure]int{
 			asset.ExposurePublic:     multiplyCfg.ExposureScores.Public,

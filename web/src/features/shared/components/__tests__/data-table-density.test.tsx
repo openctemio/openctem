@@ -60,7 +60,7 @@ describe('DataTable density', () => {
         </div>
       </>
     )
-    const [viewA] = screen.getAllByRole('button', { name: 'Table view: density and columns' })
+    const [viewA] = screen.getAllByRole('button', { name: 'Display: density and columns' })
     await userEvent.click(viewA)
     await userEvent.click(await screen.findByRole('menuitemradio', { name: 'Compact' }))
 
@@ -72,7 +72,7 @@ describe('DataTable density', () => {
 
   it('keeps the menu even when columns cannot be toggled', async () => {
     render(<DataTable columns={columns} data={data} showColumnToggle={false} />)
-    await userEvent.click(screen.getByRole('button', { name: 'Table view: density and columns' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Display: density and columns' }))
     expect(await screen.findByRole('menuitemradio', { name: 'Comfortable' })).toBeInTheDocument()
     expect(screen.queryByText('Columns')).not.toBeInTheDocument()
   })
@@ -91,7 +91,7 @@ describe('DataTable density', () => {
       throw new Error('blocked')
     })
     const second = render(<DataTable columns={columns} data={data} />)
-    await userEvent.click(screen.getByRole('button', { name: 'Table view: density and columns' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Display: density and columns' }))
     await userEvent.click(await screen.findByRole('menuitemradio', { name: 'Compact' }))
     expect(frame(second.container)).toHaveAttribute('data-density', 'compact')
   })

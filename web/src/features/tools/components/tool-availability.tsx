@@ -66,7 +66,7 @@ export function ToolTrustBadge({
     return (
       <TonePill
         tone="warning"
-        label={item.tier ? `Unverified · ${item.tier}` : 'Unverified'}
+        label={item.tier ? `Unverified, ${item.tier}` : 'Unverified'}
         title="Installed by a sensor's operator and not verified: it runs only as tier T2 (intrusive), under a grant that allows T2."
         state="unverified"
         className={className}
@@ -98,7 +98,7 @@ function SensorRow({ sensor }: { sensor: ToolAvailabilitySensor }) {
         </p>
         <p className="truncate text-xs text-muted-foreground">
           {sensor.online ? 'Online' : sensor.state.replace(/_/g, ' ')}
-          {sensor.zones.length > 0 && ` · ${sensor.zones.map((z) => z.name).join(', ')}`}
+          {sensor.zones.length > 0 && `, ${sensor.zones.map((z) => z.name).join(', ')}`}
         </p>
         {sensor.trust === 'unverified' && (
           <p className="text-xs text-warning">Operator-installed copy (unverified, T2)</p>

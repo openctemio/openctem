@@ -27,7 +27,7 @@ describe('sidebar labels', () => {
   const titles = [...new Set(itemTitles(groups))]
 
   it('finds the items', () => {
-    expect(titles).toContain('My Work')
+    expect(titles).toContain('My work')
   })
 
   it.each(titles)('"%s" has a label in en and vi', (title) => {

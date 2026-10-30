@@ -16,7 +16,8 @@ import (
 // WebEndpointRepository stores the web surface sub-inventory
 // (web_endpoints, web_endpoint_params). Every query is tenant-scoped.
 type WebEndpointRepository struct {
-	db *DB
+	db     *DB
+	alerts WebAlertSink
 }
 
 // NewWebEndpointRepository creates a WebEndpointRepository.
@@ -110,6 +111,17 @@ func (r *WebEndpointRepository) Record(ctx context.Context, tenantID, originAsse
 		return res, err
 	}
 	res.Events = len(events)
+	if r.alerts != nil {
+		prior := make(map[string]webendpoint.PriorState, len(existing))
+		for h, p := range existing {
+			prior[h] = webendpoint.PriorState{Status: p.status, Auth: p.auth, State: p.state}
+		}
+		if cands := webendpoint.AlertCandidates(kept, prior, ids); len(cands) > 0 {
+			if err := r.alerts.AlertInTx(ctx, tx, tenantID, originAssetID, cands); err != nil {
+				return res, err
+			}
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return res, fmt.Errorf("commit: %w", err)
 	}
@@ -122,6 +134,16 @@ type priorEndpoint struct {
 	auth   string
 	state  string
 }
+
+// WebAlertSink announces web endpoint changes inside the recording
+// transaction (*WebAlerter).
+type WebAlertSink interface {
+	AlertInTx(ctx context.Context, tx *sql.Tx, tenantID, originAssetID shared.ID, cands []webendpoint.AlertCandidate) error
+}
+
+// SetAlerter wires the immediate alerts of web changes. Unwired, changes
+// still reach the change feed and the digest.
+func (r *WebEndpointRepository) SetAlerter(a WebAlertSink) { r.alerts = a }
 
 // existingTemplates reads the origin's endpoints among hashes, as they were.
 func existingTemplates(ctx context.Context, tx *sql.Tx, tenantID, originAssetID shared.ID, hashes []string) (map[string]priorEndpoint, error) {
@@ -261,6 +283,7 @@ func upsertEndpoints(ctx context.Context, tx *sql.Tx, tenantID, originAssetID sh
 		inScope                                           = make([]bool, n)
 		exclusions                                        = make([]string, n)
 		catalogs                                          = make([]string, n)
+		labels                                            = make([]string, n)
 	)
 	for i, o := range obs {
 		ids[i] = shared.NewID().String()
@@ -271,6 +294,7 @@ func upsertEndpoints(ctx context.Context, tx *sql.Tx, tenantID, originAssetID sh
 		statuses[i] = int64(o.StatusCode)
 		inScope[i] = !o.OutOfScope
 		catalogs[i] = o.CatalogKey
+		labels[i] = strings.Join(o.Labels, "\x1f")
 		if o.ExclusionID != nil {
 			exclusions[i] = o.ExclusionID.String()
 		}
@@ -284,16 +308,17 @@ func upsertEndpoints(ctx context.Context, tx *sql.Tx, tenantID, originAssetID sh
 	_, err := tx.ExecContext(ctx, `
 		INSERT INTO web_endpoints (id, tenant_id, origin_asset_id, method, path_template, template_hash, path_hash,
 			kind, sources, example_path, last_status, content_type, auth_state, technologies, response_sig, in_scope,
-			last_run_id, last_sensor_id, last_tool, exclusion_id, catalog_key)
+			last_run_id, last_sensor_id, last_tool, exclusion_id, catalog_key, labels)
 		SELECT u.id::uuid, $1::uuid, $2::uuid, u.method, u.tmpl, u.thash, u.phash,
 			u.kind, string_to_array(u.source, ','), NULLIF(u.example, ''), NULLIF(u.status, 0)::smallint, NULLIF(u.ctype, ''), u.auth,
 			CASE WHEN u.tech = '' THEN '{}'::text[] ELSE string_to_array(u.tech, E'\x1f') END, u.sig, u.in_scope,
 			$17::uuid, $18::uuid, NULLIF($19, ''),
 			(SELECT x.id FROM scope_exclusions x WHERE x.id = NULLIF(u.excl, '')::uuid AND x.tenant_id = $1::uuid),
-			NULLIF(u.catalog, '')
+			NULLIF(u.catalog, ''),
+			CASE WHEN u.labels = '' THEN '{}'::text[] ELSE string_to_array(u.labels, E'\x1f') END
 		FROM unnest($3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[], $9::text[],
-			$10::text[], $11::bigint[], $12::text[], $13::text[], $14::text[], $15::text[], $16::bool[], $20::text[], $21::text[])
-			AS u(id, method, tmpl, thash, phash, kind, source, example, status, ctype, auth, tech, sig, in_scope, excl, catalog)
+			$10::text[], $11::bigint[], $12::text[], $13::text[], $14::text[], $15::text[], $16::bool[], $20::text[], $21::text[], $22::text[])
+			AS u(id, method, tmpl, thash, phash, kind, source, example, status, ctype, auth, tech, sig, in_scope, excl, catalog, labels)
 		ON CONFLICT (tenant_id, origin_asset_id, template_hash) DO UPDATE SET
 			sources = CASE WHEN excluded.sources <@ web_endpoints.sources THEN web_endpoints.sources
 				ELSE ARRAY(SELECT DISTINCT s FROM unnest(web_endpoints.sources || excluded.sources) s ORDER BY s) END,
@@ -308,6 +333,8 @@ func upsertEndpoints(ctx context.Context, tx *sql.Tx, tenantID, originAssetID sh
 			in_scope = excluded.in_scope,
 			exclusion_id = excluded.exclusion_id,
 			catalog_key = excluded.catalog_key,
+			labels = CASE WHEN excluded.labels <@ web_endpoints.labels THEN web_endpoints.labels
+				ELSE ARRAY(SELECT DISTINCT l FROM unnest(web_endpoints.labels || excluded.labels) l ORDER BY l) END,
 			state = CASE WHEN web_endpoints.state = 'gone' THEN 'active' ELSE web_endpoints.state END,
 			last_seen_at = now(),
 			last_run_id = COALESCE(excluded.last_run_id, web_endpoints.last_run_id),
@@ -318,13 +345,14 @@ func upsertEndpoints(ctx context.Context, tx *sql.Tx, tenantID, originAssetID sh
 			OR web_endpoints.in_scope IS DISTINCT FROM excluded.in_scope
 			OR web_endpoints.exclusion_id IS DISTINCT FROM excluded.exclusion_id
 			OR web_endpoints.catalog_key IS DISTINCT FROM excluded.catalog_key
+			OR NOT (excluded.labels <@ web_endpoints.labels)
 			OR web_endpoints.response_sig IS DISTINCT FROM excluded.response_sig
 			OR NOT (excluded.sources <@ web_endpoints.sources)`,
 		tenantID.String(), originAssetID.String(),
 		pq.Array(ids), pq.Array(methods), pq.Array(tmpls), pq.Array(thash), pq.Array(phash),
 		pq.Array(kinds), pq.Array(sources), pq.Array(examples), pq.Array(statuses), pq.Array(ctypes),
 		pq.Array(auths), pq.Array(techs), pq.Array(sigs), pq.Array(inScope),
-		nullID(prov.RunID), nullID(prov.SensorID), tool, pq.Array(exclusions), pq.Array(catalogs))
+		nullID(prov.RunID), nullID(prov.SensorID), tool, pq.Array(exclusions), pq.Array(catalogs), pq.Array(labels))
 	if err != nil {
 		return fmt.Errorf("upsert endpoints: %w", err)
 	}

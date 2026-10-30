@@ -198,7 +198,11 @@ export function ConsoleMfaPolicyCard() {
               )
         }
         destructive={pending === false}
-        confirmText={t('admin.mfaPolicy.confirm', 'Confirm')}
+        confirmText={
+          pending
+            ? t('admin.mfaPolicy.confirmOnButton', 'Require security keys')
+            : t('admin.mfaPolicy.confirmOffButton', 'Stop requiring security keys')
+        }
         isLoading={busy}
         handleConfirm={() => void save()}
       />

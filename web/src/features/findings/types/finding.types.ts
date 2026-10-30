@@ -5,6 +5,7 @@
  */
 
 import type { FindingLocation } from '@/features/findings/lib/finding-location'
+import type { ApiSlaBasis } from '@/features/findings/api/finding-api.types'
 
 import type { Severity } from '@/features/shared/types'
 import { severityStyleParts } from '@/lib/severity-colors'
@@ -252,6 +253,7 @@ export interface AffectedAsset {
   /** public | restricted | private | isolated | unknown (detail page only). */
   exposure?: string
   isInternetAccessible?: boolean
+  isCrownJewel?: boolean
 }
 
 /** The package an SCA finding is about (detail page only). */
@@ -722,12 +724,18 @@ export interface Finding {
   rank?: number // priority score
   slaStatus?: string // on_track | warning | overdue | exceeded | not_applicable
   slaDeadline?: string // ISO timestamp of the remediation deadline (nullable)
+  /** The deadline was shortened by the SLA policy's known exploited (KEV) cap. */
+  slaKevCapped?: boolean
+  /** Why the deadline is the date it is (detail page only). */
+  slaBasis?: ApiSlaBasis
 
   // Threat Intel Enrichment (RFC-004)
   epssScore?: number
   epssPercentile?: number
   isInKev?: boolean
   kevDueDate?: string
+  /** CISA marks the KEV entry as used in known ransomware campaigns. */
+  kevRansomware?: boolean
 
   // Priority Classification (RFC-004)
   priorityClass?: PriorityClass
@@ -796,6 +804,8 @@ export interface Finding {
   workItemUris?: string[] // linked issues
   occurrenceCount?: number
   duplicateCount?: number
+  /** Findings marked as duplicates of this one that the viewer can read. */
+  duplicatesMarked?: number
   lastSeenAt?: string
   correlationId?: string // for grouping related findings
 
@@ -1217,6 +1227,12 @@ export interface ApiApproval {
    * Its justification is model output: show it as plain text only.
    */
   requested_by_actor?: string
+  /**
+   * The AI application that made the request over MCP for `requested_by`,
+   * who therefore cannot approve it. Its justification is model output:
+   * show it as plain text only.
+   */
+  requested_via?: string
   justification: string
   /** The closure reason the request applies (absent on older requests). */
   closure_reason?: string
@@ -1256,6 +1272,23 @@ export interface ApiApproval {
    * only with its group (approving it alone answers 409 BATCH_MEMBER).
    */
   batch_id?: string
+  /** The finding's facts now (My Work queue lists, `?queue=`). */
+  finding?: ApprovalFindingFacts
+  /**
+   * Approval-policy class reasons true for the finding now and not when the
+   * request was made (`kev`, `severity_critical`, ...): queue lists, pending
+   * requests only.
+   */
+  changed_since_request?: string[]
+}
+
+/** What an approver weighs at a glance (approval queue rows). */
+export interface ApprovalFindingFacts {
+  severity: string
+  priority_class?: string
+  kev: boolean
+  epss?: number
+  asset_name?: string
 }
 
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'canceled' | 'expired'

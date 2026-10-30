@@ -159,3 +159,27 @@ func containsFold(list []string, s string) bool {
 	}
 	return false
 }
+
+// LookupOnly reports whether the stage only looks names up: it is passive
+// and its tools reach recursive resolvers, third-party sources, a vendor
+// API or nothing, never the target hosts. Such a stage can run on a name
+// with no DNS answer: finding out whether the name resolves (or what
+// third parties know about it) is the work itself.
+func (s Stage) LookupOnly() bool {
+	return s.Tier.Passive() && !s.NetworkOf().TouchesTargets()
+}
+
+// LookupOnlyTool reports whether every stage the tool implements is
+// LookupOnly. A tool the catalog does not know is not (fail closed).
+func LookupOnlyTool(tool string) bool {
+	stages := ForTool(tool)
+	if len(stages) == 0 {
+		return false
+	}
+	for _, s := range stages {
+		if !s.LookupOnly() {
+			return false
+		}
+	}
+	return true
+}

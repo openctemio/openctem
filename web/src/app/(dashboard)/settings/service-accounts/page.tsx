@@ -21,6 +21,7 @@ import {
   RelativeTime,
   StackedCell,
   ErrorState,
+  PageStack,
 } from '@/features/shared'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -233,7 +234,7 @@ function AccountKeysSheet({
                         {k.expires_at && (
                           <>
                             {' '}
-                            · {t('settings.serviceAccounts.expires', 'expires')}{' '}
+                            , {t('settings.serviceAccounts.expires', 'expires')}{' '}
                             <RelativeTime date={k.expires_at} />
                           </>
                         )}
@@ -451,72 +452,78 @@ export default function ServiceAccountsPage() {
   if (isLoading)
     return (
       <Main>
-        <Skeleton className="mb-6 h-8 w-48" />
-        <Skeleton className="h-64 rounded-lg" />
+        <PageStack>
+          <Skeleton className="h-8 w-48" />
+          <Skeleton className="h-64 rounded-lg" />
+        </PageStack>
       </Main>
     )
   if (error)
     return (
       <Main>
-        <PageHeader title={PAGE_TITLE} description={PAGE_DESCRIPTION} />
-        <ErrorState title={PAGE_TITLE} error={error} onRetry={() => void mutate()} />
+        <PageStack>
+          <PageHeader title={PAGE_TITLE} description={PAGE_DESCRIPTION} />
+          <ErrorState title={PAGE_TITLE} error={error} onRetry={() => void mutate()} />
+        </PageStack>
       </Main>
     )
 
   return (
     <Main>
-      <PageHeader title={PAGE_TITLE} description={PAGE_DESCRIPTION}>
-        {createButton}
-      </PageHeader>
+      <PageStack>
+        <PageHeader title={PAGE_TITLE} description={PAGE_DESCRIPTION}>
+          {createButton}
+        </PageHeader>
 
-      <Card className="mt-6">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <ServerCog className="h-5 w-5" />
-            {PAGE_TITLE}
-          </CardTitle>
-          <CardDescription>
-            {t(
-              'settings.serviceAccounts.cardDescription',
-              'A service account never signs in and can never be an owner, an administrator or see every asset. It holds what its roles and teams give it, and its keys carry no more.'
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <ServerCog className="h-5 w-5" />
+              {PAGE_TITLE}
+            </CardTitle>
+            <CardDescription>
+              {t(
+                'settings.serviceAccounts.cardDescription',
+                'A service account never signs in and can never be an owner, an administrator or see every asset. It holds what its roles and teams give it, and its keys carry no more.'
+              )}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {accounts.length === 0 ? (
+              <EmptyState
+                icon={ServerCog}
+                title={t('settings.serviceAccounts.emptyTitle', 'No service accounts yet')}
+                description={
+                  canCreate
+                    ? t(
+                        'settings.serviceAccounts.emptyDescCreate',
+                        'Create one for each integration, then generate its keys.'
+                      )
+                    : t(
+                        'settings.serviceAccounts.emptyDescAsk',
+                        'Ask an owner or administrator to create one for your integration.'
+                      )
+                }
+                card={false}
+                action={createButton}
+              />
+            ) : (
+              <DataTable
+                columns={columns}
+                data={accounts}
+                getRowId={(a) => a.id}
+                paginationNoun={t('settings.serviceAccounts.noun', 'service accounts')}
+                emptyMessage={t('settings.serviceAccounts.noAccounts', 'No service accounts')}
+              />
             )}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {accounts.length === 0 ? (
-            <EmptyState
-              icon={ServerCog}
-              title={t('settings.serviceAccounts.emptyTitle', 'No service accounts yet')}
-              description={
-                canCreate
-                  ? t(
-                      'settings.serviceAccounts.emptyDescCreate',
-                      'Create one for each integration, then generate its keys.'
-                    )
-                  : t(
-                      'settings.serviceAccounts.emptyDescAsk',
-                      'Ask an owner or administrator to create one for your integration.'
-                    )
-              }
-              card={false}
-              action={createButton}
-            />
-          ) : (
-            <DataTable
-              columns={columns}
-              data={accounts}
-              getRowId={(a) => a.id}
-              paginationNoun={t('settings.serviceAccounts.noun', 'service accounts')}
-              emptyMessage={t('settings.serviceAccounts.noAccounts', 'No service accounts')}
-            />
-          )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
 
-      <CreateAccountDialog open={createOpen} onOpenChange={setCreateOpen} />
-      {keysFor && (
-        <AccountKeysSheet account={keysFor} onOpenChange={(o) => !o && setKeysFor(null)} />
-      )}
+        <CreateAccountDialog open={createOpen} onOpenChange={setCreateOpen} />
+        {keysFor && (
+          <AccountKeysSheet account={keysFor} onOpenChange={(o) => !o && setKeysFor(null)} />
+        )}
+      </PageStack>
     </Main>
   )
 }

@@ -35,6 +35,9 @@ type CreateScanProfileInput struct {
 	QualityGate *scanprofile.QualityGate `json:"quality_gate"`
 	// RuleSources: both (default when empty), platform or tenant.
 	RuleSources string `json:"rule_sources"`
+	// CallerIsAdmin: only an owner or admin may create the profile as the
+	// organization's default (see UpdateScanProfileInput.CallerIsAdmin).
+	CallerIsAdmin bool `json:"-"`
 }
 
 // CreateScanProfile creates a new scan profile.
@@ -81,6 +84,9 @@ func (s *ScanProfileService) CreateScanProfile(ctx context.Context, input Create
 	}
 
 	// Handle default flag
+	if input.IsDefault && !input.CallerIsAdmin {
+		return nil, ErrOrgScanConfigAdminOnly
+	}
 	if input.IsDefault {
 		// Clear any existing default for this tenant
 		if err := s.repo.ClearDefaultForTenant(ctx, tenantID); err != nil {
@@ -204,7 +210,17 @@ type UpdateScanProfileInput struct {
 	QualityGate *scanprofile.QualityGate `json:"quality_gate"`
 	// RuleSources: nil = unchanged.
 	RuleSources *string `json:"rule_sources"`
+	// CallerIsAdmin is true for an owner or admin. The organization's default
+	// profile and every quality gate are organization-wide configuration (the
+	// gate decides whether a merge is blocked), so only they may change them;
+	// the dedicated quality-gate and set-default routes hold the same rule.
+	CallerIsAdmin bool `json:"-"`
 }
+
+// ErrOrgScanConfigAdminOnly refuses a member's change to the default profile
+// or to a quality gate.
+var ErrOrgScanConfigAdminOnly = shared.NewDomainError("FORBIDDEN",
+	"only an owner or admin can change the default scan profile or a quality gate", shared.ErrForbidden)
 
 // UpdateScanProfile updates an existing scan profile.
 func (s *ScanProfileService) UpdateScanProfile(ctx context.Context, input UpdateScanProfileInput) (*scanprofile.ScanProfile, error) {
@@ -223,6 +239,15 @@ func (s *ScanProfileService) UpdateScanProfile(ctx context.Context, input Update
 	// Validate ownership - tenants can only edit their own profiles, not system profiles
 	if err := profile.CanManage(tenantID); err != nil {
 		return nil, err
+	}
+	if !input.CallerIsAdmin {
+		if profile.IsDefault {
+			return nil, ErrOrgScanConfigAdminOnly
+		}
+		// The edit form sends the gate back unchanged; only a real change is refused.
+		if input.QualityGate != nil && *input.QualityGate != profile.QualityGate {
+			return nil, ErrOrgScanConfigAdminOnly
+		}
 	}
 
 	err = profile.Update(

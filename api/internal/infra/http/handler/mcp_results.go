@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -46,7 +47,18 @@ const (
 	mcpErrUnavailable      = "unavailable"
 	mcpErrInternal         = "internal_error"
 	mcpErrResultTooLarge   = "result_too_large"
+	mcpErrConflict         = "conflict"
 )
+
+// mcpPolicyDecision ends every refusal that comes from a platform policy
+// (permission, role, campaign restriction, scope). It tells an automated
+// client the answer is the platform's decision, so retrying with other
+// arguments or another tool only produces more refusals.
+func mcpPolicyDecision() string {
+	return " This is a platform policy decision, not a fault of the call: variations of it " +
+		"(other arguments, another tool for the same content) are refused too, so do not retry them. " +
+		"A person can change it in " + brand.Name() + "."
+}
 
 // mcpNotFoundMessage is the one answer for an item that does not exist and
 // for one the caller may not read, so the answer never confirms existence.
@@ -75,11 +87,13 @@ func classifyMCPError(err error) mcpError {
 	case errors.As(err, &ie):
 		return mcpError{Code: mcpErrInvalidArgument, Message: ie.msg}
 	case errors.As(err, &re):
-		return mcpError{Code: mcpErrCampaignRestricted, Message: re.msg}
+		return mcpError{Code: mcpErrCampaignRestricted, Message: re.msg + mcpPolicyDecision()}
 	case errors.Is(err, shared.ErrNotFound):
 		return mcpError{Code: mcpErrNotFound, Message: mcpNotFoundMessage}
 	case errors.Is(err, shared.ErrForbidden):
-		return mcpError{Code: mcpErrForbidden, Message: domainMessage(err, "your campaign role does not allow this")}
+		return mcpError{Code: mcpErrForbidden, Message: domainMessage(err, "your campaign role does not allow this") + mcpPolicyDecision()}
+	case errors.Is(err, shared.ErrConflict):
+		return mcpError{Code: mcpErrConflict, Message: domainMessage(err, "the item changed or already has a pending request; read it again")}
 	case errors.Is(err, shared.ErrValidation), errors.Is(err, shared.ErrInvalidInput):
 		return mcpError{Code: mcpErrInvalidArgument, Message: domainMessage(err, "invalid arguments")}
 	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
@@ -93,13 +107,13 @@ func classifyMCPError(err error) mcpError {
 // campaign_id must be ..." gives "campaign_id must be ...").
 func domainMessage(err error, fallback string) string {
 	msg := err.Error()
-	for _, prefix := range []string{shared.ErrValidation.Error() + ": ", shared.ErrForbidden.Error() + ": ", shared.ErrInvalidInput.Error() + ": "} {
+	for _, prefix := range []string{shared.ErrValidation.Error() + ": ", shared.ErrForbidden.Error() + ": ", shared.ErrInvalidInput.Error() + ": ", shared.ErrConflict.Error() + ": "} {
 		if i := strings.LastIndex(msg, prefix); i >= 0 {
 			msg = msg[i+len(prefix):]
 		}
 	}
 	msg = strings.TrimSpace(msg)
-	if msg == "" || msg == shared.ErrValidation.Error() || msg == shared.ErrForbidden.Error() {
+	if msg == "" || msg == shared.ErrValidation.Error() || msg == shared.ErrForbidden.Error() || msg == shared.ErrConflict.Error() {
 		return fallback
 	}
 	return msg

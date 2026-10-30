@@ -175,7 +175,7 @@ type HeartbeatRequest struct {
 	// "failures"}. Read leniently (a member of the wrong type is ignored)
 	// and clamped; interval_s feeds the sensor's heartbeat deadline.
 	Control json.RawMessage `json:"control,omitempty" swaggertype:"object"`
-	// LocalPolicy is the sensor-local policy report (RFC-040 §5.7): state,
+	// LocalPolicy is the sensor-local policy report: state,
 	// digest, summary and kill switch, sent by SDKs that see
 	// "local_policy" on hello. Display data; sanitized before it is stored.
 	LocalPolicy *sensor.LocalPolicyReport `json:"local_policy,omitempty"`
@@ -184,6 +184,11 @@ type HeartbeatRequest struct {
 	// "config_report" on hello. The digest is the one PUT /config-report
 	// returned. Read leniently (a member of the wrong shape is ignored).
 	ConfigReport json.RawMessage `json:"config_report,omitempty" swaggertype:"object"`
+	// LocalStore is the sensor's local data report, sent by SDKs that see
+	// "local_store" on hello: watermark, whether it stopped claiming jobs and
+	// why, bytes per class, disk level, cleanup sweeps. Read leniently and
+	// clamped (sensor.ParseLocalStoreReport); display and health only.
+	LocalStore json.RawMessage `json:"local_store,omitempty" swaggertype:"object"`
 }
 
 // loadReport returns the heartbeat's load report, nil when it carried none.
@@ -317,8 +322,11 @@ func (h *IngestHandler) AuthenticateSource(next http.Handler) http.Handler {
 		if err == nil && id.Paused {
 			err = errSensorPaused
 		}
+		if writeClockSkew(w, r, err, h.logger) {
+			return
+		}
 		if err != nil {
-			h.logger.Debug("authentication failed", "error", err)
+			h.logger.Debug("authentication failed", "reason", sensorAuthFailureReason(err))
 			apierror.Unauthorized("Invalid API key").WriteJSON(w)
 			return
 		}

@@ -4,8 +4,12 @@
  * a figure and its list cannot drift apart.
  */
 export const DRILL = {
-  /** All open findings (`findings_total` is the open count). */
-  open: '/findings?state=open',
+  /**
+   * All open findings (`findings_total` is the open count). The count includes
+   * informational findings, which the list hides by default, so the link asks
+   * for them and the list total equals the figure.
+   */
+  open: '/findings?state=open&informational=true',
   /** Open P0 findings (executive summary `p0_open`). */
   p0Open: '/findings?state=open&priority_class=P0',
   /** Open P1 findings (`p1_open`). */

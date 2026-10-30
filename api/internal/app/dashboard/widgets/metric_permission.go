@@ -30,11 +30,50 @@ func maskForbidden(d *DashboardData, c dashboardapp.Caller) {
 		}
 		m, ok := dashboard.LookupMetric(w.Metric)
 		if !ok || (c.Has != nil && c.Has(metricPermission(m).String())) {
+			if ok {
+				maskAssetParts(&d.Widgets[i], c)
+			}
 			continue
 		}
 		d.Widgets[i] = WidgetValue{
 			ID: w.ID, Index: w.Index, WidgetType: w.WidgetType, Metric: w.Metric,
 			State: StateUnsupported, Reason: ReasonForbidden,
 		}
+	}
+}
+
+// maskAssetParts removes the parts of a findings widget that are read from
+// the coverage ledger (asset figures) when the caller may not read assets:
+// the KPI strip's coverage tile, the blind spot lever, and a brief sentence
+// that words it.
+func maskAssetParts(w *WidgetValue, c dashboardapp.Caller) {
+	if c.Has == nil || c.Has(permission.AssetsRead.String()) {
+		return
+	}
+	if k := w.KPIs; k != nil {
+		for i := range k.Tiles {
+			if k.Tiles[i].Metric == "coverage.discovery" {
+				k.Tiles[i] = KPITile{Key: k.Tiles[i].Key, Metric: k.Tiles[i].Metric, State: StateUnsupported, Reason: ReasonForbidden,
+					Unit: k.Tiles[i].Unit, Polarity: k.Tiles[i].Polarity}
+			}
+		}
+	}
+	if l := w.Levers; l != nil {
+		kept := l.Levers[:0]
+		for _, x := range l.Levers {
+			if x.Kind != LeverBlindSpot {
+				kept = append(kept, x)
+			}
+		}
+		l.Levers = kept
+	}
+	if b := w.Brief; b != nil {
+		kept := b.Items[:0]
+		for _, it := range b.Items {
+			if it.Lever == nil || it.Lever.Kind != LeverBlindSpot {
+				kept = append(kept, it)
+			}
+		}
+		b.Items = kept
 	}
 }

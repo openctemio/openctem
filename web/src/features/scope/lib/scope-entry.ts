@@ -4,7 +4,13 @@
  * and the scan dialog.
  */
 
-import type { PillTone } from '@/features/shared'
+import { Clock } from 'lucide-react'
+import {
+  CheckCircleGlyph,
+  SlashedCircleGlyph,
+  type StatusGlyph,
+} from '@/components/ui/status-glyphs'
+import type { StatusTone } from '@/lib/status-colors'
 import type { ApiScopeTarget } from '../api/scope-api.types'
 
 export type ScopeEntryStatus = 'active' | 'pending' | 'inactive' | 'rejected' | 'expired'
@@ -25,12 +31,20 @@ export const SCOPE_ENTRY_STATUS_LABEL: Record<ScopeEntryStatus, string> = {
   expired: 'Expired',
 }
 
-export const SCOPE_ENTRY_STATUS_TONE: Record<ScopeEntryStatus, PillTone> = {
-  active: 'success',
-  pending: 'warning',
-  inactive: 'muted',
-  rejected: 'destructive',
-  expired: 'muted',
+/**
+ * An entry's state on the shared workflow tones (research/247 section 4):
+ * pending waits for approvals, active is done, and an inactive, rejected or
+ * expired entry ended without authorizing anything.
+ */
+export const SCOPE_ENTRY_STATUS_TONE: Record<
+  ScopeEntryStatus,
+  { tone: StatusTone; icon: StatusGlyph }
+> = {
+  active: { tone: 'resolved', icon: CheckCircleGlyph },
+  pending: { tone: 'waiting', icon: Clock },
+  inactive: { tone: 'closed', icon: SlashedCircleGlyph },
+  rejected: { tone: 'closed', icon: SlashedCircleGlyph },
+  expired: { tone: 'closed', icon: SlashedCircleGlyph },
 }
 
 export const SCOPE_ENTRY_STATUS_HINT: Record<ScopeEntryStatus, string> = {

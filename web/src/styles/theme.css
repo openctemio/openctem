@@ -124,6 +124,27 @@
   --st-waiting-fg: var(--st-accepted-fg);
   --st-waiting-border: var(--st-accepted-border);
 
+  /* Attention tones (ToneChip, research/266): one colour language for labels
+     a reader scans a column for (exposure, scope standing, HTTP status class).
+     Colour says how much attention it needs; the icon says which family. The
+     ok, info, caution and neutral pairs are the status lozenge pairs; danger
+     is the critical red on a light tint. Text on every tint is AA. */
+  --tone-danger-bg: #fdecee;
+  --tone-danger-fg: #a3123a;
+  --tone-danger-border: #fdecee;
+
+  /* Ordinal levels (Tag level: criticality, CIA impact), research/266: brand
+     ink by weight, never a severity hue. 4 solid ink, 3 ink tint, 2 outline,
+     1 muted text, 0 dashed. The fill steps sit far apart in lightness, and
+     the bars glyph and the word carry the level without colour. */
+  --lvl-4-bg: #0a1628;
+  --lvl-4-fg: #ffffff;
+  --lvl-3-bg: #d5dce7;
+  --lvl-3-fg: #0a1628;
+  --lvl-2-border: #7d8799;
+  --lvl-2-fg: #0a1628;
+  --lvl-1-fg: #525252;
+
   /* Machine health icons (HealthStatus): the text stays --foreground. Each is
      >= 3:1 on the card (WCAG 1.4.11); the idle grey is the neutral states.
      ok, warn and down sit apart in lightness, so they stay apart for red-green
@@ -289,6 +310,18 @@
   --st-waiting-bg: var(--st-accepted-bg);
   --st-waiting-fg: var(--st-accepted-fg);
   --st-waiting-border: var(--st-accepted-border);
+
+  --tone-danger-bg: #3a1520;
+  --tone-danger-fg: #f7a1b5;
+  --tone-danger-border: #3a1520;
+
+  --lvl-4-bg: #fafaf9;
+  --lvl-4-fg: #0a1628;
+  --lvl-3-bg: #33445f;
+  --lvl-3-fg: #fafaf9;
+  --lvl-2-border: #63728a;
+  --lvl-2-fg: #fafaf9;
+  --lvl-1-fg: #a9b4c4;
 
   /* Machine health icons (HealthStatus): the text stays --foreground. Each is
      >= 3:1 on the card (WCAG 1.4.11); the idle grey is the neutral states.
@@ -498,6 +531,16 @@
   --color-st-closed-fg: var(--st-closed-fg);
   --color-st-closed-border: var(--st-closed-border);
   --color-sig-icon: var(--sig-icon);
+  --color-tone-danger-bg: var(--tone-danger-bg);
+  --color-tone-danger-fg: var(--tone-danger-fg);
+  --color-tone-danger-border: var(--tone-danger-border);
+  --color-lvl-4-bg: var(--lvl-4-bg);
+  --color-lvl-4-fg: var(--lvl-4-fg);
+  --color-lvl-3-bg: var(--lvl-3-bg);
+  --color-lvl-3-fg: var(--lvl-3-fg);
+  --color-lvl-2-border: var(--lvl-2-border);
+  --color-lvl-2-fg: var(--lvl-2-fg);
+  --color-lvl-1-fg: var(--lvl-1-fg);
   --color-st-waiting-bg: var(--st-waiting-bg);
   --color-st-waiting-fg: var(--st-waiting-fg);
   --color-st-waiting-border: var(--st-waiting-border);

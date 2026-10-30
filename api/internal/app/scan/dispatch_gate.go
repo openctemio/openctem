@@ -84,6 +84,9 @@ type DispatchTargetsInput struct {
 	// without a scope entry: every other
 	// path leaves this off and gets the full active-scan gate.
 	PassiveOnly bool
+	// Placement is where the job the targets go to runs (placement.go).
+	// Unknown is judged as a platform job on the hosted service.
+	Placement attribution.Placement
 	// DryRun answers POST /scope/check: nothing is logged as refused.
 	DryRun bool
 	// Tier is the probe's tier (RFC-054 §4.2 step 6): a target the scope
@@ -133,6 +136,13 @@ type DispatchTargetsInput struct {
 	// refused when the job could reach other ports or paths (constrained;
 	// RFC-065 §16.8). The claim-time re-check always sets it.
 	Job *scopedom.JobShape
+	// Tool and Capability name what the targets go to when the caller sets
+	// no Job (Job wins). They decide one thing: a job that only looks names
+	// up (scopedom.JobShape.LookupOnly: DNS resolution, passive
+	// enumeration) is not refused a hostname for having no DNS answer
+	// (unresolved). Left empty, such names are refused as before.
+	Tool       string
+	Capability string
 	// SplitRanges cuts a range target (CIDR or "a-b") around the active
 	// exclusions of an address kind and the built-in deny list: the rest
 	// is dispatched as pieces (Allowed holds the pieces, Split names them)
@@ -262,6 +272,7 @@ func (s *Service) ResolveDispatchTargets(ctx context.Context, in DispatchTargets
 	if s.scopeExclusions == nil {
 		return nil, ErrDispatchGateUnavailable
 	}
+	ctx = attribution.WithPlacement(ctx, in.Placement)
 	targets := dedupeTargets(in.Targets)
 	out := &DispatchTargets{}
 	if len(targets) == 0 {
@@ -647,7 +658,7 @@ func (s *Service) refuseOverTier(ctx context.Context, in DispatchTargetsInput, k
 // SystemPolicies are the platform policies that may dispatch work as the
 // system (DispatchTargetsInput.SystemPolicy, command.DispatchGate): the
 // managed_by values of the scans they carry their runs on.
-var SystemPolicies = []string{string(scan.ManagedByCoverage), string(scan.ManagedByEnrichment)}
+var SystemPolicies = []string{string(scan.ManagedByCoverage), string(scan.ManagedByEnrichment), string(scan.ManagedByWebVerify)}
 
 // ValidSystemPolicy reports whether p names a platform policy.
 func ValidSystemPolicy(p string) bool { return slices.Contains(SystemPolicies, p) }
@@ -744,6 +755,15 @@ func assetOf(assets map[string]DispatchAsset, target string) (DispatchAsset, boo
 	return a, ok
 }
 
+// lookupOnly reports whether the targets go to a job that only looks names
+// up (its Job, else Tool and Capability): one rule for dispatch and claim.
+func (in DispatchTargetsInput) lookupOnly() bool {
+	if in.Job != nil {
+		return in.Job.LookupOnly()
+	}
+	return scopedom.JobShape{Tool: in.Tool, Capability: in.Capability}.LookupOnly()
+}
+
 // routeDispatchTargets routes the kept targets over the tenant's zones and
 // fills Allowed (and Refused for what cannot be routed).
 func (s *Service) routeDispatchTargets(ctx context.Context, in DispatchTargetsInput, kept []string, out *DispatchTargets) error {
@@ -758,7 +778,7 @@ func (s *Service) routeDispatchTargets(ctx context.Context, in DispatchTargetsIn
 		out.Allowed = kept
 		return nil
 	}
-	plan := scanzone.NewRouter(zones, s.zoneResolver).Plan(ctx, kept)
+	plan := scanzone.NewRouter(zones, s.zoneResolver).LookupOnly(in.lookupOnly()).Plan(ctx, kept)
 	out.ZoneOf = make(map[string]*scanzone.Zone, len(kept))
 	for _, r := range plan.Routes {
 		switch {

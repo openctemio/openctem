@@ -20,7 +20,7 @@
   "siemIntegration.form.title": "New Splunk HEC integration",
   "siemIntegration.form.token": "HEC token",
   "siemIntegration.form.url": "HEC endpoint URL",
-  "siemIntegration.searchPlaceholder": "Search integrations...",
+  "siemIntegration.searchPlaceholder": "Search integrations…",
   "siemIntegration.status.connected": "connected",
   "siemIntegration.status.disabled": "disabled",
   "siemIntegration.status.disconnected": "disconnected",

@@ -10,7 +10,12 @@ import { Pencil, Trash2, Globe, Sparkles, Wrench, Bot, Eye } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { DynamicIcon } from '@/components/dynamic-icon'
-import { DataTable, DataTableColumnHeader, DataTableRowActions } from '@/features/shared'
+import {
+  DataTable,
+  DataTableColumnHeader,
+  DataTableRowActions,
+  type DataTableSearch,
+} from '@/features/shared'
 
 import type { Capability, CapabilityUsageStatsBatchResponse } from '@/lib/api/capability-types'
 import { useToolAvailability } from '@/lib/api/tool-hooks'
@@ -25,6 +30,7 @@ interface CapabilityTableProps {
   onViewDetails?: (capability: Capability) => void
   readOnly?: boolean
   /** Passed through to the DataTable toolbar (search, filters, view toggle). */
+  search?: DataTableSearch
   toolbarStart?: React.ReactNode
   toolbarEnd?: React.ReactNode
 }
@@ -65,17 +71,17 @@ function UsageCell({
             {ready != null && stats.tool_count > 0 && `, ${ready} ready on your sensors`}
           </p>
           {stats.tool_names && stats.tool_names.length > 0 && (
-            <ul className="mt-1 text-xs text-muted-foreground">
+            <ul className="mt-1 list-disc ps-4 text-xs text-muted-foreground">
               {stats.tool_names.slice(0, 5).map((name) => {
                 const a = availability?.get(name)
                 return (
                   <li key={name}>
-                    • {name}
+                    {name}
                     {a && ` (${TOOL_STATUS_META[a.status].label.toLowerCase()})`}
                   </li>
                 )
               })}
-              {stats.tool_names.length > 5 && <li>• +{stats.tool_names.length - 5} more</li>}
+              {stats.tool_names.length > 5 && <li>+{stats.tool_names.length - 5} more</li>}
             </ul>
           )}
         </TooltipContent>
@@ -97,11 +103,11 @@ function UsageCell({
               : `${stats.sensor_count} sensor${stats.sensor_count > 1 ? 's' : ''}`}
           </p>
           {stats.sensor_names && stats.sensor_names.length > 0 && (
-            <ul className="mt-1 text-xs text-muted-foreground">
+            <ul className="mt-1 list-disc ps-4 text-xs text-muted-foreground">
               {stats.sensor_names.slice(0, 5).map((name) => (
-                <li key={name}>• {name}</li>
+                <li key={name}>{name}</li>
               ))}
-              {stats.sensor_names.length > 5 && <li>• +{stats.sensor_names.length - 5} more</li>}
+              {stats.sensor_names.length > 5 && <li>+{stats.sensor_names.length - 5} more</li>}
             </ul>
           )}
         </TooltipContent>
@@ -117,6 +123,7 @@ export function CapabilityTable({
   onDelete,
   onViewDetails,
   readOnly = false,
+  search,
   toolbarStart,
   toolbarEnd,
 }: CapabilityTableProps) {
@@ -249,6 +256,7 @@ export function CapabilityTable({
       columns={columns}
       data={capabilities}
       showSearch={false}
+      search={search}
       toolbarStart={toolbarStart}
       toolbarEnd={toolbarEnd}
       emptyMessage="No capabilities"

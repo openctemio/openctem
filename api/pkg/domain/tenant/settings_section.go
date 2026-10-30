@@ -67,6 +67,7 @@ func settingsSectionTargets(s *Settings) map[string]any {
 		SectionFindingApprovals:    &s.FindingApprovals,
 		SectionDashboards:          &s.Dashboards,
 		SectionEmergingThreats:     &s.EmergingThreats,
+		SectionFindingViews:        &s.FindingViews,
 	}
 }
 

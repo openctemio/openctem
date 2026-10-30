@@ -108,7 +108,7 @@ func newRedactScanFixture(t *testing.T) (*ScanHandler, *redactScanRepo, *scan.Sc
 		t.Fatal(err)
 	}
 	repo := &redactScanRepo{stored: sc}
-	svc := scansvc.NewService(repo, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, logger.NewNop())
+	svc := scansvc.NewService(repo, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, logger.NewNop())
 	return NewScanHandler(svc, nil, nil, validator.New(), logger.NewNop()), repo, sc
 }
 

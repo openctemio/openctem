@@ -160,7 +160,11 @@ func (rs resolveState) resolveTouched(ctx context.Context, tx *sql.Tx, touched m
 			continue // not this tenant's asset, or deleted
 		}
 		for attr := range attrs {
-			ch, ev, err := rs.resolveOne(ctx, tx, id, attr, cur[attr])
+			shown := cur[attr]
+			if prior, ok := rs.in.Prior[asset.AttributeRef{AssetID: id, Attribute: attr}]; ok {
+				shown = prior
+			}
+			ch, ev, err := rs.resolveOne(ctx, tx, id, attr, shown)
 			if err != nil {
 				return nil, nil, err
 			}

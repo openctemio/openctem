@@ -2,6 +2,7 @@
 package scanworkflow
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -42,6 +43,13 @@ type Settings struct {
 	FailFast         bool             `json:"fail_fast,omitempty"`
 	TimeoutSeconds   int              `json:"timeout_seconds,omitempty"`
 	SensorPreference SensorPreference `json:"sensor_preference,omitempty"` // Sensor selection mode: auto, tenant, platform
+	// DeltaGating: heavy chained stages (stage.Heavy) take only the assets
+	// that are new, changed or due since the previous run of the same scan.
+	DeltaGating bool `json:"delta_gating,omitempty"`
+	// ContinueOnFailedDependency: a step whose dependency failed, was
+	// skipped or timed out still runs, on the seeds and on what its other
+	// predecessors produced.
+	ContinueOnFailedDependency bool `json:"continue_on_failed_dependency,omitempty"`
 }
 
 // DefaultSettings returns default scan workflow settings.
@@ -71,6 +79,11 @@ type Workflow struct {
 	// RetiredAt is set when the workflow was deleted while it had runs: it
 	// is hidden, read-only and cannot run, and is kept for its run history.
 	RetiredAt *time.Time
+	// SupersededBy is, for a retired system workflow, the system workflow
+	// that replaces it (nil: retired with no direct replacement).
+	// SupersededByName is that workflow's name, read with it.
+	SupersededBy     *shared.ID
+	SupersededByName string
 
 	// Metadata
 	Tags []string
@@ -86,6 +99,14 @@ type Workflow struct {
 	CreatedBy *shared.ID
 	CreatedAt time.Time
 	UpdatedAt time.Time
+}
+
+// IsRetiredSystem reports a system workflow that was retired (made inactive on
+// purpose, usually because another replaced it). It is hidden from lists by
+// default and cannot start new scans or be copied; scans and tenant copies
+// made from it keep working.
+func (t *Workflow) IsRetiredSystem() bool {
+	return t.IsSystemTemplate && !t.IsActive
 }
 
 // NewWorkflow creates a new scan workflow.
@@ -341,4 +362,19 @@ func (t *Workflow) Clone(newName string) *Workflow {
 	}
 
 	return clone
+}
+
+// RetiredUseError is the refusal to start a new scan from, or copy, a retired
+// system workflow; it names the replacement when there is one. Nil for any
+// other workflow.
+func RetiredUseError(w *Workflow) error {
+	if !w.IsRetiredSystem() {
+		return nil
+	}
+	if w.SupersededByName != "" {
+		return fmt.Errorf("%w: scan workflow %q is retired and replaced by %q; use %q instead",
+			shared.ErrValidation, w.Name, w.SupersededByName, w.SupersededByName)
+	}
+	return fmt.Errorf("%w: scan workflow %q is retired and has no direct replacement; pick another workflow",
+		shared.ErrValidation, w.Name)
 }

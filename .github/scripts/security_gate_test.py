@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import datetime
 import json
 import os
 import pathlib
@@ -207,6 +208,20 @@ class DigestTest(unittest.TestCase):
         mig = sg.ChangedFile("api/migrations/000999_x.up.sql", status="added", patch=patch("GRANT SELECT ON t TO app;"))
         self.assertNotEqual(self.digest(s), self.digest(s, mig))
 
+    def test_renumbered_migration_keeps_the_digest_reordered_ones_do_not(self):
+        s = sg.ChangedFile("api/pkg/httpsec/ssrf.go", patch=patch("x := 1"))
+        mig = lambda n, name, body: sg.ChangedFile(f"api/migrations/{n}_{name}.up.sql", status="added",  # noqa: E731
+                                                   patch=patch(body))
+        before = self.digest(s, mig("003389", "finding_a", "GRANT a;"), mig("003390", "finding_b", "GRANT b;"))
+        renumbered = self.digest(s, mig("003410", "finding_a", "GRANT a;"), mig("003411", "finding_b", "GRANT b;"))
+        reordered = self.digest(s, mig("003411", "finding_a", "GRANT a;"), mig("003410", "finding_b", "GRANT b;"))
+        edited = self.digest(s, mig("003410", "finding_a", "GRANT all;"), mig("003411", "finding_b", "GRANT b;"))
+        self.assertEqual(before, renumbered)
+        self.assertNotEqual(before, reordered)
+        self.assertNotEqual(before, edited)
+        self.assertEqual(sg.stable_path("api/migrations/003410_finding_a.up.sql"), "api/migrations/#_finding_a.up.sql")
+        self.assertEqual(sg.stable_path("api/pkg/v2_x.go"), "api/pkg/v2_x.go")
+
     def test_missing_patch_uses_the_blob(self):
         a = sg.ChangedFile("api/pkg/httpsec/ssrf.go", patch=None, sha="a" * 40)
         b = sg.ChangedFile("api/pkg/httpsec/ssrf.go", patch=None, sha="b" * 40)
@@ -250,16 +265,31 @@ class GateTest(unittest.TestCase):
 
     def pr(self, labels=(), head_repo="o/r", base="develop", head_ref="feature/x"):
         return {"number": 7, "changed_files": 1, "labels": [{"name": n} for n in labels],
-                "head": {"sha": "h" * 40, "ref": head_ref, "repo": {"full_name": head_repo}},
+                "head": {"sha": "d" * 40, "ref": head_ref, "repo": {"full_name": head_repo}},
                 "base": {"ref": base}}
 
-    def routes(self, pr, files, events=()):
+    ACTIVITY = "activity?ref=refs%2Fheads%2Ffeature%2Fx"
+
+    @staticmethod
+    def push(after, at="2026-10-25T00:50:00Z", ref="refs/heads/feature/x", kind="push"):
+        """One entry of the head branch's push log (GitHub's server time)."""
+        return {"activity_type": kind, "after": after, "before": "0" * 40, "ref": ref, "timestamp": at,
+                "actor": {"login": "0xmanhnv"}}
+
+    def at_label(self, head):
+        """A push log whose tip at the label time (01:00:00) is `head`."""
+        return [self.push(head)]
+
+    def routes(self, pr, files, events=(), pushes=None):
         return {"pulls/7": pr, "pulls/7/files": files, "issues/7/events": list(events),
-                "issues/7/comments": [], "commits/" + "h" * 40 + "/check-runs": {"check_runs": []}}
+                "issues/7/comments": [], "commits/" + "d" * 40 + "/check-runs": {"check_runs": []},
+                self.ACTIVITY: self.at_label("d" * 40) if pushes is None else pushes,
+                "rules/branches/develop": []}
 
     SENSITIVE = [{"filename": "api/pkg/httpsec/ssrf.go", "status": "modified", "deletions": 1, "patch": patch("x := 1")}]
     PLAIN = [{"filename": "web/src/app/page.tsx", "status": "modified", "deletions": 0, "patch": patch("x")}]
-    ACK_BY_OWNER = [{"event": "labeled", "label": {"name": "security-ack"}, "actor": {"login": "0xmanhnv"}}]
+    ACK_BY_OWNER = [{"event": "labeled", "label": {"name": "security-ack"}, "actor": {"login": "0xmanhnv"},
+                     "created_at": "2026-10-25T01:00:00Z"}]
 
     def test_plain_pr_passes_without_comment(self):
         code, fake = self.run_gate("pull_request", {"pull_request": {"number": 7}}, self.routes(self.pr(), self.PLAIN))
@@ -292,87 +322,337 @@ class GateTest(unittest.TestCase):
         code, _ = self.run_gate("pull_request", {"pull_request": {"number": 7}}, routes)
         self.assertEqual(code, 1)
 
-    def test_push_of_sensitive_change_drops_ack(self):
+    # Which commit the ack covers comes from GitHub's own records: the
+    # `labeled` event and the head branch's push log. Comments, commit dates
+    # and workflow runs never count.
+
+    SYNC = {"action": "synchronize", "before": "a", "after": "h", "pull_request": {"number": 7}}
+
+    def run_carried(self, covers, files=None, pushes=None, events=None, comments=None,
+                    event_name="pull_request", event=None, rules=None, merges_only=False):
+        """An ack given on commit a...a, the head is now d...d."""
+        pr = self.pr(labels=("security-sensitive", "security-ack"))
+        pr["base"]["sha"] = "b" * 40
+        routes = self.routes(pr, files or self.SENSITIVE, self.ACK_BY_OWNER if events is None else events,
+                             pushes=[self.push("d" * 40, "2026-10-25T01:05:00Z"), self.push("a" * 40)]
+                             if pushes is None else pushes)
+        if comments is not None:
+            routes["issues/7/comments"] = comments
+        if rules is not None:
+            routes["rules/branches/develop"] = rules
+        asked = []
+
+        def still_covers(gitdir, base_sha, acked, head_sha, config, env=None):
+            asked.append((acked, base_sha, head_sha))
+            return covers
+        with mock.patch.object(sg, "fetch_pr_commits", lambda *a: None), \
+                mock.patch.object(sg, "ack_still_covers", still_covers), \
+                mock.patch.object(sg, "only_base_merges", lambda *a, **k: merges_only):
+            code, fake = self.run_gate(event_name, event or self.SYNC, routes)
+        return code, fake, asked
+
+    DROPPED = ("DELETE", "issues/7/labels/security-ack", None)
+
+    def test_ack_on_the_current_head_keeps_it_without_git(self):
+        code, fake, asked = self.run_carried(False, pushes=self.at_label("d" * 40))
+        self.assertEqual((code, asked), (0, []))
+        self.assertNotIn(self.DROPPED, fake.writes)
+
+    def test_ack_label_event_passes_without_reading_runs(self):
         routes = self.routes(self.pr(labels=("security-ack",)), self.SENSITIVE, self.ACK_BY_OWNER)
-        routes["compare/a...b"] = {"status": "ahead", "files": [{"filename": "api/pkg/httpsec/ssrf.go", "deletions": 1}]}
-        event = {"action": "synchronize", "before": "a", "after": "b", "pull_request": {"number": 7}}
-        code, fake = self.run_gate("pull_request", event, routes)
-        self.assertEqual(code, 1)
-        self.assertIn(("DELETE", "issues/7/labels/security-ack", None), fake.writes)
-
-    def test_merging_the_base_branch_keeps_ack(self):
-        routes = self.routes(self.pr(labels=("security-ack",)), self.SENSITIVE, self.ACK_BY_OWNER)
-        routes["compare/a...b"] = {"status": "ahead", "files": [{"filename": "api/pkg/crypto/cipher.go", "deletions": 1}]}
-        event = {"action": "synchronize", "before": "a", "after": "b", "pull_request": {"number": 7}}
-        code, fake = self.run_gate("pull_request", event, routes)
-        self.assertEqual(code, 0)
-        self.assertNotIn(("DELETE", "issues/7/labels/security-ack", None), fake.writes)
-
-    def test_force_push_drops_ack(self):
-        routes = self.routes(self.pr(labels=("security-ack",)), self.SENSITIVE, self.ACK_BY_OWNER)
-        routes["compare/a...b"] = {"status": "diverged", "files": []}
-        event = {"action": "synchronize", "before": "a", "after": "b", "pull_request": {"number": 7}}
-        code, _ = self.run_gate("pull_request", event, routes)
-        self.assertEqual(code, 1)
-
-    # The ack covers the sensitive diff, recorded as a digest in the gate comment.
-
-    def comment(self, files, login="github-actions[bot]"):
-        fs = [sg.changed_file(f) for f in files]
-        d = sg.sensitive_digest(fs, CONFIG, sg.review(fs)[0])
-        body = f"{sg.COMMENT_MARKER}\nold\n<!-- security-gate:ack-digest={d} -->\n"
-        return [{"id": 5, "body": body, "user": {"login": login}}]
-
-    def test_ack_label_event_records_the_digest(self):
-        routes = self.routes(self.pr(labels=("security-ack",)), self.SENSITIVE, self.ACK_BY_OWNER)
-        event = {"action": "labeled", "label": {"name": "security-ack"}, "pull_request": {"number": 7}}
+        del routes[self.ACTIVITY]
+        del routes["rules/branches/develop"]
+        event = {"action": "labeled", "label": {"name": "security-ack"}, "sender": {"login": "0xmanhnv"},
+                 "pull_request": {"number": 7, "head": {"sha": "d" * 40}}}
         code, fake = self.run_gate("pull_request", event, routes)
         self.assertEqual(code, 0)
         posted = [b["body"] for m, p, b in fake.writes if m == "POST" and p == "issues/7/comments"]
         self.assertEqual(len(posted), 1)
-        self.assertIn(self.comment(self.SENSITIVE)[0]["body"].splitlines()[-1], posted[0])
+        self.assertNotIn("security-gate:ack", posted[0])  # nothing to read back
 
-    def test_base_merge_touching_the_sensitive_file_keeps_ack(self):
-        # develop changed other lines of the same file: the compare lists it, the PR's own lines are the same.
-        moved = [dict(self.SENSITIVE[0], patch=patch("x := 1", start=80))]
-        routes = self.routes(self.pr(labels=("security-ack",)), moved, self.ACK_BY_OWNER)
-        routes["issues/7/comments"] = self.comment(self.SENSITIVE)
-        routes["compare/a...b"] = {"status": "ahead", "files": [{"filename": "api/pkg/httpsec/ssrf.go", "deletions": 3}]}
-        event = {"action": "synchronize", "before": "a", "after": "b", "pull_request": {"number": 7}}
-        code, fake = self.run_gate("pull_request", event, routes)
+    def test_label_event_on_an_older_head_is_checked_like_a_carried_ack(self):
+        event = {"action": "labeled", "label": {"name": "security-ack"}, "sender": {"login": "0xmanhnv"},
+                 "pull_request": {"number": 7, "head": {"sha": "a" * 40}}}
+        code, fake, asked = self.run_carried(False, event=event)
+        self.assertEqual((code, len(asked)), (1, 1))
+        self.assertIn(self.DROPPED, fake.writes)
+
+    def test_carried_ack_kept_when_git_confirms(self):
+        code, fake, asked = self.run_carried(True)
         self.assertEqual(code, 0)
-        self.assertFalse(any(m == "DELETE" for m, _, _ in fake.writes))
+        self.assertEqual(asked, [("a" * 40, "b" * 40, "d" * 40)])
+        self.assertNotIn(self.DROPPED, fake.writes)
 
-    def test_changed_sensitive_line_drops_ack(self):
-        changed = [dict(self.SENSITIVE[0], patch=patch("x := 2"))]
-        routes = self.routes(self.pr(labels=("security-ack",)), changed, self.ACK_BY_OWNER)
-        routes["issues/7/comments"] = self.comment(self.SENSITIVE)
-        event = {"action": "synchronize", "before": "a", "after": "b", "pull_request": {"number": 7}}
-        code, fake = self.run_gate("pull_request", event, routes)
+    def test_carried_ack_dropped_when_the_sensitive_lines_changed(self):
+        code, fake, asked = self.run_carried(False)
+        self.assertEqual((code, len(asked)), (1, 1))
+        self.assertIn(self.DROPPED, fake.writes)
+        patched = [b["body"] for m, p, b in fake.writes if m == "PATCH"] + \
+                  [b["body"] for m, p, b in fake.writes if m == "POST" and p == "issues/7/comments"]
+        self.assertIn("was removed", patched[0])
+
+    def forged_comment(self, login="github-actions[bot]"):
+        # What PR #3001's gate trusted: a digest of the current diff and the
+        # current head, planted by any workflow running as the bot.
+        fs = [sg.changed_file(f) for f in self.SENSITIVE]
+        d = sg.sensitive_digest(fs, CONFIG, sg.review(fs)[0])
+        body = (f"{sg.COMMENT_MARKER}\nforged\n<!-- security-gate:ack-digest={d} -->\n"
+                f"<!-- security-gate:ack-head={'d' * 40} base=develop -->\n")
+        return [{"id": 5, "body": body, "user": {"login": login}}]
+
+    def test_forged_bot_markers_cannot_carry_an_ack(self):
+        code, fake, asked = self.run_carried(False, comments=self.forged_comment())
         self.assertEqual(code, 1)
-        self.assertIn(("DELETE", "issues/7/labels/security-ack", None), fake.writes)
-        patched = [b["body"] for m, p, b in fake.writes if m == "PATCH"]
-        self.assertTrue(patched and "ack-digest" not in patched[0] and "was removed" in patched[0])
+        self.assertEqual(asked, [("a" * 40, "b" * 40, "d" * 40)])  # decided from git, from the real acked head
+        self.assertIn(self.DROPPED, fake.writes)
 
-    def test_digest_in_a_comment_someone_else_wrote_is_ignored(self):
-        # A planted marker comment cannot vouch for a push that touches the sensitive file.
-        routes = self.routes(self.pr(labels=("security-ack",)), self.SENSITIVE, self.ACK_BY_OWNER)
-        routes["issues/7/comments"] = self.comment(self.SENSITIVE, login="someone")
-        routes["compare/a...b"] = {"status": "ahead", "files": [{"filename": "api/pkg/httpsec/ssrf.go", "deletions": 1}]}
-        event = {"action": "synchronize", "before": "a", "after": "b", "pull_request": {"number": 7}}
-        code, fake = self.run_gate("pull_request", event, routes)
+    def test_forged_bot_markers_without_a_push_log_drop_the_ack(self):
+        code, fake, asked = self.run_carried(True, pushes=[], comments=self.forged_comment())
+        self.assertEqual((code, asked), (1, []))
+        self.assertIn(self.DROPPED, fake.writes)
+
+    # The `/security-ack` comment command (security-ack-command.yml): the
+    # workflow adds the label with its own token, so the label's `labeled`
+    # event names the Actions bot. The acker is then the author of a
+    # `/security-ack` comment shortly before it, under the same settle and
+    # carry rules (the comment's time stands for the label's).
+
+    BOT_LABEL = [{"event": "labeled", "label": {"name": "security-ack"}, "actor": {"login": "github-actions[bot]"},
+                  "created_at": "2026-10-25T01:00:30Z"}]
+
+    @staticmethod
+    def cmd_comment(body="/security-ack", login="0xmanhnv", at="2026-10-25T01:00:00Z", updated=None, cid=1, kind="User"):
+        return {"id": cid, "body": body, "user": {"login": login, "type": kind}, "created_at": at,
+                "updated_at": updated or at}
+
+    def carried_by_comment(self, comments, events=None, pushes=None, covers=True):
+        return self.run_carried(covers, events=self.BOT_LABEL if events is None else events, comments=comments,
+                                pushes=self.at_label("d" * 40) if pushes is None else pushes)
+
+    def test_command_comment_by_an_acker_is_the_ack_record(self):
+        code, fake, asked = self.carried_by_comment([self.cmd_comment()])
+        self.assertEqual((code, asked), (0, []))
+        self.assertNotIn(self.DROPPED, fake.writes)
+
+    def test_command_ack_is_carried_with_the_same_rules_as_a_label_by_an_acker(self):
+        # The comment's time picks the head: a... was the tip, d... was pushed later.
+        log = [self.push("d" * 40, "2026-10-25T01:05:00Z"), self.push("a" * 40)]
+        code, fake, asked = self.carried_by_comment([self.cmd_comment()], pushes=log, covers=True)
+        self.assertEqual((code, asked[0][0]), (0, "a" * 40))
+        code, fake, asked = self.carried_by_comment([self.cmd_comment()], pushes=log, covers=False)
         self.assertEqual(code, 1)
-        self.assertIn(("DELETE", "issues/7/labels/security-ack", None), fake.writes)
+        self.assertIn(self.DROPPED, fake.writes)
 
-    def test_merge_group_with_a_changed_digest_blocks_without_writing(self):
+    def test_command_ack_settles_like_a_label(self):
+        log = [self.push("a" * 40, "2026-10-25T00:59:30Z"), self.push("c" * 40)]  # moved 30 s before the comment
+        code, fake, asked = self.carried_by_comment([self.cmd_comment()], pushes=log)
+        self.assertEqual((code, asked), (1, []))
+        self.assertIn(self.DROPPED, fake.writes)
+
+    def test_a_bot_label_without_an_acker_comment_does_not_count(self):
+        cases = {
+            "no comment": [],
+            "a user who is not an acker": [self.cmd_comment(login="someone")],
+            "an acker's comment is not the command": [self.cmd_comment(body="/security-ack please")],
+            "the command is not on the first line": [self.cmd_comment(body="hi\n/security-ack")],
+            "written by the bot itself": [self.cmd_comment(login="github-actions[bot]", kind="Bot")],
+            "a bot account named like an acker": [self.cmd_comment(kind="Bot")],
+            "posted after the label": [self.cmd_comment(at="2026-10-25T01:00:40Z")],
+            "too long before the label": [self.cmd_comment(at="2026-10-25T00:40:00Z")],
+            "edited later": [self.cmd_comment(updated="2026-10-25T01:00:20Z")],
+            "withdrawn by /security-unack": [self.cmd_comment(), self.cmd_comment("/security-unack", at="2026-10-25T01:00:10Z", cid=2)],
+        }
+        for name, comments in cases.items():
+            code, fake, asked = self.carried_by_comment(comments)
+            self.assertEqual((code, asked), (1, []), name)  # blocked, like a label by a non-acker
+
+    def test_unack_before_a_newer_ack_does_not_withdraw_it(self):
+        comments = [self.cmd_comment(at="2026-10-25T00:59:00Z"),
+                    self.cmd_comment("/security-unack", at="2026-10-25T00:59:30Z", cid=2),
+                    self.cmd_comment(at="2026-10-25T01:00:00Z", cid=3)]
+        self.assertEqual(self.carried_by_comment(comments)[0], 0)
+
+    def test_a_label_by_someone_else_is_never_rescued_by_a_comment(self):
+        events = [dict(self.BOT_LABEL[0], actor={"login": "someone"})]
+        self.assertEqual(self.carried_by_comment([self.cmd_comment()], events=events)[0], 1)
+
+    def test_retarget_after_the_command_comment_drops_it(self):
+        events = self.BOT_LABEL + [{"event": "base_ref_changed", "created_at": "2026-10-25T01:00:45Z"}]
+        code, fake, _ = self.carried_by_comment([self.cmd_comment()], events=events)
+        self.assertEqual(code, 1)
+        self.assertIn(self.DROPPED, fake.writes)
+
+    def test_command_comments_are_never_trusted_without_the_label(self):
+        pr = self.pr(labels=("security-sensitive",))
+        routes = self.routes(pr, self.SENSITIVE, [])
+        routes["issues/7/comments"] = [self.cmd_comment()]
+        code, _ = self.run_gate("pull_request", {"pull_request": {"number": 7}}, routes)
+        self.assertEqual(code, 1)
+
+    def test_too_many_comments_fail_closed(self):
+        with self.assertRaises(RuntimeError):
+            self.carried_by_comment([self.cmd_comment(cid=i) for i in range(sg.MAX_EVENTS)])
+
+    def test_acked_head_is_the_branch_tip_at_the_label(self):
+        h, a, c = "d" * 40, "a" * 40, "c" * 40
+        log = [self.push(h, "2026-10-25T01:05:00Z"),                  # after the label
+               self.push(a, "2026-10-25T00:50:00Z"),                  # the tip at the label
+               self.push(c, "2026-10-25T00:40:00Z", kind="branch_creation")]
+        code, _, asked = self.run_carried(True, pushes=log)
+        self.assertEqual((code, asked[0][0]), (0, a))
+        # A force push counts like any other move of the branch.
+        log[1] = self.push(a, "2026-10-25T00:50:00Z", kind="force_push")
+        self.assertEqual(self.run_carried(True, pushes=log)[2][0][0], a)
+
+    def test_push_log_without_an_answer_fails_closed(self):
+        h, a = "d" * 40, "a" * 40
+        cases = {
+            "only pushes after the label": [self.push(h, "2026-10-25T01:05:00Z")],
+            "moved moments before the label": [self.push(a, "2026-10-25T00:59:30Z"), self.push("c" * 40)],
+            "pushed in the same second": [self.push(a, "2026-10-25T01:00:00Z"), self.push("c" * 40)],
+            "deleted at the label": [self.push("0" * 40, kind="branch_deletion")],
+            "not a commit id": [self.push("main")],
+            "older entry listed first": [self.push("c" * 40, "2026-10-25T00:30:00Z"), self.push(a, "2026-10-25T00:59:50Z")],
+            "another branch only": [self.push(a, ref="refs/heads/feature/y")],
+        }
+        for name, log in cases.items():
+            code, fake, asked = self.run_carried(True, pushes=log)
+            self.assertEqual((code, asked), (1, []), name)
+            self.assertIn(self.DROPPED, fake.writes, name)
+
+    def test_forged_commit_dates_and_runs_are_ignored(self):
+        # The pusher writes author and committer dates, and any workflow can
+        # create check suites or start runs. Planting them next to a push log
+        # whose tip at the label is a...a changes nothing: only the log counts.
+        pr = self.pr(labels=("security-sensitive", "security-ack"))
+        pr["base"]["sha"] = "b" * 40
+        routes = self.routes(pr, self.SENSITIVE, self.ACK_BY_OWNER,
+                             pushes=[self.push("d" * 40, "2026-10-25T01:05:00Z"), self.push("a" * 40)])
+        routes["pulls/7/commits"] = [{"sha": "d" * 40, "commit": {
+            "author": {"date": "2026-10-25T00:30:00Z"}, "committer": {"date": "2026-10-25T00:30:00Z"}}}]
+        routes["actions/runs"] = {"workflow_runs": [{"event": "pull_request", "head_sha": "d" * 40,
+                                                     "created_at": "2026-10-25T01:00:02Z",
+                                                     "path": ".github/workflows/security-gate.yml",
+                                                     "actor": {"login": "0xmanhnv"}}]}
+        routes["commits/" + "d" * 40 + "/check-suites"] = {"check_suites": [{"created_at": "2026-10-25T00:30:00Z"}]}
+        asked = []
+
+        def still_covers(gitdir, base_sha, acked, head_sha, config, env=None):
+            asked.append(acked)
+            return False
+        with mock.patch.object(sg, "fetch_pr_commits", lambda *a: None), \
+                mock.patch.object(sg, "ack_still_covers", still_covers):
+            code, fake = self.run_gate("pull_request", self.SYNC, routes)
+        self.assertEqual((code, asked), (1, ["a" * 40]))
+        self.assertIn(self.DROPPED, fake.writes)
+
+    def test_push_log_api_error_fails_closed(self):
+        pr = self.pr(labels=("security-ack",))
+        routes = self.routes(pr, self.SENSITIVE, self.ACK_BY_OWNER)
+        del routes[self.ACTIVITY]  # the fake raises like an HTTP error
+        code, fake = self.run_gate("pull_request", self.SYNC, routes)
+        self.assertEqual(code, 1)
+        self.assertIn(self.DROPPED, fake.writes)
+
+    def test_fork_head_reads_the_forks_push_log(self):
+        pr = self.pr(labels=("security-ack",), head_repo="fork/r")
+        routes = self.routes(pr, self.SENSITIVE, self.ACK_BY_OWNER)
+        routes["https://api.github.com/repos/fork/r/activity?ref=refs%2Fheads%2Ffeature%2Fx"] = routes.pop(self.ACTIVITY)
+        code, fake = self.run_gate("pull_request", self.SYNC, routes)
+        self.assertEqual((code, fake.writes), (0, []))
+
+    def test_pr_touching_workflows_or_the_gate_gets_no_carried_ack(self):
+        for name in (".github/workflows/api-ci.yml", ".github/actions/setup/action.yml",
+                     ".github/security-paths.yml", ".github/scripts/security_gate.py"):
+            files = self.SENSITIVE + [{"filename": name, "status": "modified", "deletions": 0, "patch": patch("x")}]
+            code, fake, asked = self.run_carried(True, files=files)
+            self.assertEqual((code, asked), (1, []), name)  # git is not even asked
+            self.assertIn(self.DROPPED, fake.writes, name)
+            # Acked on exactly this head, the same pull request passes.
+            code, _, _ = self.run_carried(True, files=files, pushes=self.at_label("d" * 40))
+            self.assertEqual(code, 0, name)
+
+    def test_pr_touching_workflows_keeps_the_ack_over_clean_base_merges_only(self):
+        files = self.SENSITIVE + [{"filename": ".github/workflows/api-ci.yml", "status": "modified",
+                                   "deletions": 0, "patch": patch("x")}]
+        code, fake, asked = self.run_carried(False, files=files, merges_only=True)
+        self.assertEqual((code, asked), (0, []))  # the sensitive-digest path is not used
+        self.assertNotIn(self.DROPPED, fake.writes)
+        code, fake, _ = self.run_carried(True, files=files, merges_only=False)
+        self.assertEqual(code, 1)
+        self.assertIn(self.DROPPED, fake.writes)
+
+    def test_touches_gate_sees_both_names_of_a_rename(self):
+        moved = sg.ChangedFile("docs/x.yml", "renamed", 0, "", ".github/workflows/security-gate.yml")
+        self.assertEqual(sg.touches_gate([moved]), ["docs/x.yml"])
+        self.assertEqual(sg.touches_gate([sg.ChangedFile(".github/scripts/security_gate_test.py")]), [])
+
+    def test_retargeted_after_the_ack_drops_it(self):
+        events = self.ACK_BY_OWNER + [{"event": "base_ref_changed", "actor": {"login": "0xmanhnv"}}]
+        code, fake, asked = self.run_carried(True, events=events, pushes=self.at_label("d" * 40))
+        self.assertEqual((code, asked), (1, []))
+        self.assertIn(self.DROPPED, fake.writes)
+        # A retarget before the label does not matter.
+        events = [{"event": "base_ref_changed", "actor": {"login": "0xmanhnv"}}] + self.ACK_BY_OWNER
+        self.assertEqual(self.run_carried(True, events=events, pushes=self.at_label("d" * 40))[0], 0)
+
+    RULESET = [{"type": "workflows", "parameters": {"workflows": [
+        {"path": ".github/workflows/security-gate.yml", "ref": "refs/heads/develop", "repository_id": 1}]}}]
+    GATE_EDIT = [{"filename": ".github/workflows/security-gate.yml", "status": "modified", "deletions": 1,
+                  "patch": patch("x")}]
+
+    def test_gate_editing_pr_needs_the_ack_on_its_exact_head(self):
+        # Its own workflows run on its events, but they cannot rewrite the
+        # push log: the tip at the label decides, also with a ruleset.
+        h = "d" * 40
+        code, fake, asked = self.run_carried(True, files=self.GATE_EDIT, rules=self.RULESET)
+        self.assertEqual((code, asked), (1, []))  # acked a...a, head d...d: no carry, git not asked
+        self.assertIn(self.DROPPED, fake.writes)
+        code, fake, _ = self.run_carried(False, files=self.GATE_EDIT, pushes=self.at_label(h), rules=self.RULESET)
+        self.assertEqual(code, 0)
+        self.assertNotIn(self.DROPPED, fake.writes)
+        body = [b["body"] for m, p, b in fake.writes if m == "POST" and p == "issues/7/comments"][0]
+        self.assertNotIn("no ruleset requires", body)
+
+    def test_gate_editing_pr_in_the_merge_queue(self):
         event = {"merge_group": {"head_ref": "refs/heads/gh-readonly-queue/develop/pr-7-abc123"}}
-        changed = [dict(self.SENSITIVE[0], patch=patch("x := 2"))]
-        routes = self.routes(self.pr(labels=("security-ack",)), changed, self.ACK_BY_OWNER)
-        routes["issues/7/comments"] = self.comment(self.SENSITIVE)
-        code, fake = self.run_gate("merge_group", event, routes)
+        code, fake, _ = self.run_carried(True, files=self.GATE_EDIT, rules=self.RULESET,
+                                         event_name="merge_group", event=event)
         self.assertEqual((code, fake.writes), (1, []))
-        routes["pulls/7/files"] = self.SENSITIVE
-        code, fake = self.run_gate("merge_group", event, routes)
+        code, fake, _ = self.run_carried(True, files=self.GATE_EDIT, rules=self.RULESET, pushes=self.at_label("d" * 40),
+                                         event_name="merge_group", event=event)
+        self.assertEqual((code, fake.writes), (0, []))
+
+    def test_gate_editing_pr_without_a_ruleset_is_flagged(self):
+        code, fake, _ = self.run_carried(True, files=self.GATE_EDIT, pushes=self.at_label("d" * 40))
+        self.assertEqual(code, 0)
+        body = [b["body"] for m, p, b in fake.writes if m == "POST" and p == "issues/7/comments"][0]
+        self.assertIn("no ruleset requires the gate workflow", body)
+        code, fake, _ = self.run_carried(True, pushes=self.at_label("d" * 40))  # not gate-touching: no flag
+        body = [b["body"] for m, p, b in fake.writes if m == "POST" and p == "issues/7/comments"][0]
+        self.assertNotIn("no ruleset requires", body)
+
+    def test_comment_shows_the_acknowledged_commit(self):
+        code, fake, _ = self.run_carried(True)
+        body = [b["body"] for m, p, b in fake.writes if m == "POST" and p == "issues/7/comments"][0]
+        self.assertIn(f"Acknowledged commit: `{'a' * 40}` (head now `{'d' * 40}`)", body)
+
+    def test_event_list_that_does_not_end_with_the_label_is_not_trusted(self):
+        # The label is on the PR, so the newest security-ack event must be `labeled`.
+        events = self.ACK_BY_OWNER + [{"event": "unlabeled", "label": {"name": "security-ack"},
+                                       "actor": {"login": "0xmanhnv"}}]
+        self.assertEqual(self.run_carried(True, events=events, pushes=self.at_label("d" * 40))[0], 1)
+
+    def test_too_many_events_fails_closed(self):
+        events = [{"event": "commented"}] * sg.MAX_EVENTS + self.ACK_BY_OWNER
+        with self.assertRaises(RuntimeError):
+            self.run_carried(True, events=events, pushes=self.at_label("d" * 40))
+
+    def test_merge_group_with_an_uncovered_ack_blocks_without_writing(self):
+        event = {"merge_group": {"head_ref": "refs/heads/gh-readonly-queue/develop/pr-7-abc123"}}
+        code, fake, _ = self.run_carried(False, event_name="merge_group", event=event)
+        self.assertEqual((code, fake.writes), (1, []))
+        code, fake, _ = self.run_carried(False, event_name="merge_group", event=event, pushes=self.at_label("d" * 40))
         self.assertEqual((code, fake.writes), (0, []))
 
     def test_fork_pr_is_read_only(self):
@@ -405,11 +685,11 @@ class GateTest(unittest.TestCase):
     def test_release_pr_evaluates_only_what_it_adds_to_develop(self):
         pr = self.pr(base="main", head_ref="release/v1.2.3")
         routes = self.routes(pr, self.SENSITIVE)  # the full diff carries develop's sensitive change
-        routes["compare/develop..." + "h" * 40] = {"files": [{"filename": "versions.yaml", "status": "modified",
+        routes["compare/develop..." + "d" * 40] = {"files": [{"filename": "versions.yaml", "status": "modified",
                                                              "deletions": 1, "patch": patch("v: 1.2.3")}]}
         code, _ = self.run_gate("pull_request", {"pull_request": {"number": 7}}, routes)
         self.assertEqual(code, 0)
-        routes["compare/develop..." + "h" * 40] = {"files": self.SENSITIVE}
+        routes["compare/develop..." + "d" * 40] = {"files": self.SENSITIVE}
         code, _ = self.run_gate("pull_request", {"pull_request": {"number": 7}}, routes)
         self.assertEqual(code, 1)
 
@@ -423,6 +703,247 @@ class GateTest(unittest.TestCase):
         del routes["pulls/7/files"]
         with self.assertRaises(RuntimeError):
             self.run_gate("pull_request", {"pull_request": {"number": 7}}, routes)
+
+
+class PushLogTest(unittest.TestCase):
+    """acked_head walks every page of the push log and orders it itself."""
+
+    class Pages:
+        def __init__(self, pages):
+            self.pages, self.api, self.urls = pages, "https://api.github.com", []
+
+        def request(self, method, url):
+            self.urls.append(url)
+            i = len(self.urls) - 1
+            more = f'<https://api.github.com/next?page={i + 1}>; rel="next"' if i + 1 < len(self.pages) else ""
+            return self.pages[i], more
+
+    PR = {"head": {"ref": "feature/x", "repo": {"full_name": "o/r"}, "sha": "d" * 40}}
+    ACK = {"created_at": "2026-10-25T01:00:00Z"}
+
+    def test_reads_every_page_and_sorts_by_time(self):
+        push = GateTest.push
+        pages = [[push("e" * 40, "2026-10-25T00:10:00Z")],          # ascending, across two pages
+                 [push("a" * 40, "2026-10-25T00:50:00Z"), push("d" * 40, "2026-10-25T01:20:00Z")]]
+        gh = self.Pages(pages)
+        self.assertEqual(sg.acked_head(gh, self.PR, self.ACK), "a" * 40)
+        self.assertEqual(len(gh.urls), 2)
+        self.assertIn("/repos/o/r/activity?ref=refs%2Fheads%2Ffeature%2Fx", gh.urls[0])
+
+    def test_same_second_pushes_are_ordered_by_id(self):
+        one, two = GateTest.push("a" * 40), GateTest.push("e" * 40)
+        one["id"], two["id"] = 2, 1
+        self.assertEqual(sg.acked_head(self.Pages([[two, one]]), self.PR, self.ACK), "a" * 40)
+
+    def test_a_log_longer_than_the_page_cap_fails_closed(self):
+        pages = [[GateTest.push("a" * 40)]] * (sg.MAX_ACTIVITY_PAGES + 1)
+        self.assertIsNone(sg.acked_head(self.Pages(pages), self.PR, self.ACK))
+
+    def test_missing_label_time_or_head_repo_fails_closed(self):
+        gh = self.Pages([[GateTest.push("a" * 40)]])
+        self.assertIsNone(sg.acked_head(gh, self.PR, {}))
+        self.assertIsNone(sg.acked_head(gh, {"head": {"ref": "feature/x", "repo": None}}, self.ACK))
+
+
+class RerunTest(unittest.TestCase):
+    """The label workflow's `rerun` command: it only asks the gate to run again."""
+
+    LABELED = {"action": "labeled", "label": {"name": "security-ack"},
+               "pull_request": {"number": 7, "head": {"repo": {"full_name": "o/r"}}}}
+
+    @staticmethod
+    def run_(run_id, started, status="completed", head="d" * 40, path=".github/workflows/security-gate.yml",
+             repo="o/r", created=None):
+        return {"id": run_id, "event": "pull_request", "head_sha": head, "path": path, "status": status,
+                "created_at": created or started, "run_started_at": started,
+                "head_repository": {"full_name": repo}}
+
+    def rerun(self, runs_seq, event=None, state="open"):
+        """runs_seq: the gate runs listed on each poll (the last one repeats)."""
+        polls = []
+        routes = {"actions/runs/99": {"created_at": "2026-10-25T01:00:05Z"},
+                  "pulls/7": {"state": state, "head": {"sha": "d" * 40}}}
+        fake = FakeGitHub(routes)
+
+        def request(self_, method, path, body=None, ok404=False):
+            if method == "GET" and path.startswith("actions/runs?"):
+                polls.append(path)
+                runs = runs_seq[min(len(polls), len(runs_seq)) - 1]
+                return {"workflow_runs": runs}, ""
+            return fake.request(method, path, body, ok404)
+        clock = [datetime.datetime(2026, 10, 25, 1, 0, 6, tzinfo=datetime.timezone.utc)]
+
+        def sleep(sec):
+            clock[0] += datetime.timedelta(seconds=sec)
+        with tempfile.TemporaryDirectory() as d:
+            ev = pathlib.Path(d, "event.json")
+            ev.write_text(json.dumps(event or self.LABELED))
+            env = {"GITHUB_REPOSITORY": "o/r", "GITHUB_TOKEN": "t", "GITHUB_EVENT_NAME": "pull_request",
+                   "GITHUB_EVENT_PATH": str(ev), "GITHUB_RUN_ID": "99"}
+            with mock.patch.dict(os.environ, env), mock.patch.object(sg.GitHub, "request", request), \
+                    mock.patch("builtins.print"):
+                code = sg.cmd_rerun(sleep=sleep, now=lambda: clock[0])
+        return code, [w for w in fake.writes], polls
+
+    def test_reruns_the_finished_gate_run_of_the_head(self):
+        old = self.run_(1, "2026-10-25T00:40:00Z")
+        newest = self.run_(2, "2026-10-25T00:55:00Z")
+        decoys = [self.run_(5, "2026-10-25T00:58:00Z", path=".github/workflows/other.yml"),
+                  self.run_(6, "2026-10-25T00:58:00Z", head="a" * 40),
+                  self.run_(7, "2026-10-25T00:58:00Z", repo="fork/r")]
+        code, writes, _ = self.rerun([[old, newest] + decoys])
+        self.assertEqual((code, writes), (0, [("POST", "actions/runs/2/rerun", None)]))
+
+    def test_waits_for_a_running_gate_run_then_reruns_it(self):
+        running = self.run_(2, "2026-10-25T00:59:00Z", status="in_progress")
+        done = self.run_(2, "2026-10-25T00:59:00Z")
+        code, writes, polls = self.rerun([[running], [running], [done]])
+        self.assertEqual((code, writes, len(polls)), (0, [("POST", "actions/runs/2/rerun", None)], 3))
+
+    def test_a_run_started_after_the_change_already_read_the_label(self):
+        code, writes, _ = self.rerun([[self.run_(2, "2026-10-25T01:00:30Z", status="in_progress")]])
+        self.assertEqual((code, writes), (0, []))
+        # A re-run attempt started after the change counts too (run_started_at is per attempt).
+        code, writes, _ = self.rerun([[self.run_(2, "2026-10-25T01:00:30Z", created="2026-10-25T00:30:00Z")]])
+        self.assertEqual((code, writes), (0, []))
+
+    def test_no_gate_run_within_the_wait_fails_visibly(self):
+        code, writes, polls = self.rerun([[]])
+        self.assertEqual((code, writes), (1, []))
+        self.assertGreater(len(polls), 1)
+
+    def test_ignores_other_events_forks_and_closed_prs(self):
+        cases = [dict(self.LABELED, label={"name": "run-e2e"}),
+                 dict(self.LABELED, action="edited", changes={"title": {"from": "x"}}),
+                 dict(self.LABELED, action="synchronize"),
+                 dict(self.LABELED, pull_request={"number": 7, "head": {"repo": {"full_name": "fork/r"}}})]
+        for ev in cases:
+            code, writes, polls = self.rerun([[self.run_(2, "2026-10-25T00:55:00Z")]], event=ev)
+            self.assertEqual((code, writes, polls), (0, [], []), ev)
+        code, writes, _ = self.rerun([[self.run_(2, "2026-10-25T00:55:00Z")]], state="closed")
+        self.assertEqual((code, writes), (0, []))
+
+    def test_unlabel_and_retarget_rerun_too(self):
+        for ev in (dict(self.LABELED, action="unlabeled"),
+                   dict(self.LABELED, action="edited", changes={"base": {"ref": {"from": "feature/p"}}})):
+            code, writes, _ = self.rerun([[self.run_(2, "2026-10-25T00:55:00Z")]], event=ev)
+            self.assertEqual((code, writes), (0, [("POST", "actions/runs/2/rerun", None)]), ev)
+
+
+class AckCommandTest(unittest.TestCase):
+    """`ackcmd`: /security-ack and /security-unack from an acker."""
+
+    def event(self, body="/security-ack", pr=True, action="created"):
+        issue = {"number": 7}
+        if pr:
+            issue["pull_request"] = {"url": "x"}
+        return {"action": action, "issue": issue, "comment": {"id": 11, "body": body}}
+
+    def run_cmd(self, event, live=None, state="open", event_name="issue_comment"):
+        live = live if live is not None else GateTest.cmd_comment(event["comment"]["body"], cid=11)
+        routes = {"issues/comments/11": live, "pulls/7": {"state": state}}
+        fake = FakeGitHub(routes)
+        with tempfile.TemporaryDirectory() as d:
+            ev, out = pathlib.Path(d, "event.json"), pathlib.Path(d, "out")
+            ev.write_text(json.dumps(event))
+            env = {"GITHUB_REPOSITORY": "o/r", "GITHUB_TOKEN": "t", "GITHUB_EVENT_NAME": event_name,
+                   "GITHUB_EVENT_PATH": str(ev), "GITHUB_OUTPUT": str(out),
+                   "SECURITY_PATHS": str(ROOT / ".github/security-paths.yml")}
+            with mock.patch.dict(os.environ, env), \
+                    mock.patch.object(sg.GitHub, "request", lambda self, *a, **k: fake.request(*a, **k)), \
+                    mock.patch("builtins.print"):
+                code = sg.cmd_ackcmd()
+            acted = out.exists() and "acted=true" in out.read_text()
+        return code, fake.writes, acted
+
+    LABEL = ("POST", "issues/7/labels", {"labels": ["security-ack"]})
+    UNLABEL = ("DELETE", "issues/7/labels/security-ack", None)
+
+    def test_an_acker_adds_the_label_and_gets_a_thumbs_up(self):
+        code, writes, acted = self.run_cmd(self.event())
+        self.assertEqual((code, acted), (0, True))
+        self.assertEqual(writes, [self.LABEL, ("POST", "issues/comments/11/reactions", {"content": "+1"})])
+
+    def test_unack_removes_the_label_with_a_thumbs_down(self):
+        code, writes, acted = self.run_cmd(self.event("/security-unack"))
+        self.assertEqual((code, acted), (0, True))
+        self.assertEqual(writes, [self.UNLABEL, ("POST", "issues/comments/11/reactions", {"content": "-1"})])
+
+    def test_everything_else_is_ignored_without_a_write(self):
+        live = GateTest.cmd_comment
+        cases = {
+            "not a pull request": (self.event(pr=False), None),
+            "not a command": (self.event("looks good"), None),
+            "a longer first line": (self.event("/security-ack now"), None),
+            "an edited comment": (self.event(), live(updated="2026-10-25T01:00:20Z", cid=11)),
+            "edited into another command": (self.event(), live("/security-unack", cid=11)),
+            "not an acker": (self.event(), live(login="someone", cid=11)),
+            "a bot named like an acker": (self.event(), live(kind="Bot", cid=11)),
+            "an edit event": (self.event(action="edited"), None),
+        }
+        for name, (ev, comment) in cases.items():
+            code, writes, acted = self.run_cmd(ev, live=comment)
+            self.assertEqual((code, writes, acted), (0, [], False), name)
+
+    def test_other_events_and_closed_pull_requests_do_nothing(self):
+        self.assertEqual(self.run_cmd(self.event(), event_name="pull_request"), (0, [], False))
+        self.assertEqual(self.run_cmd(self.event(), state="closed"), (0, [], False))
+
+    def test_the_command_reads_the_acker_from_the_repo_list_not_the_event(self):
+        # The commenter named in the event payload plays no part: the live
+        # comment's author decides.
+        ev = self.event()
+        ev["comment"]["user"] = {"login": "0xmanhnv"}
+        code, writes, acted = self.run_cmd(ev, live=GateTest.cmd_comment(login="someone", cid=11))
+        self.assertEqual((writes, acted), ([], False))
+
+
+class RerunAfterCommandTest(unittest.TestCase):
+    """The rerun job after a command: the bot's label event starts no workflow."""
+
+    EVENT = {"action": "created", "issue": {"number": 7, "pull_request": {"url": "x"}},
+             "comment": {"id": 11, "body": "/security-ack"}}
+
+    def rerun(self, event=None, head_repo="o/r", runs=None):
+        runs = runs if runs is not None else [RerunTest.run_(2, "2026-10-25T00:55:00Z")]
+        routes = {"actions/runs/99/jobs": {"jobs": [
+                      {"status": "completed", "started_at": "2026-10-25T01:00:00Z"},
+                      {"status": "in_progress", "started_at": "2026-10-25T01:00:40Z"}]},
+                  "pulls/7": {"state": "open", "head": {"sha": "d" * 40, "repo": {"full_name": head_repo}}}}
+        fake = FakeGitHub(routes)
+
+        def request(self_, method, path, body=None, ok404=False):
+            if method == "GET" and path.startswith("actions/runs?"):
+                return {"workflow_runs": runs}, ""
+            return fake.request(method, path, body, ok404)
+        clock = [datetime.datetime(2026, 10, 25, 1, 1, 0, tzinfo=datetime.timezone.utc)]
+        with tempfile.TemporaryDirectory() as d:
+            ev = pathlib.Path(d, "event.json")
+            ev.write_text(json.dumps(event or self.EVENT))
+            env = {"GITHUB_REPOSITORY": "o/r", "GITHUB_TOKEN": "t", "GITHUB_EVENT_NAME": "issue_comment",
+                   "GITHUB_EVENT_PATH": str(ev), "GITHUB_RUN_ID": "99"}
+            with mock.patch.dict(os.environ, env), mock.patch.object(sg.GitHub, "request", request), \
+                    mock.patch("builtins.print"):
+                code = sg.cmd_rerun(sleep=lambda s: clock.__setitem__(0, clock[0] + datetime.timedelta(seconds=s)),
+                                    now=lambda: clock[0])
+        return code, fake.writes
+
+    def test_reruns_the_heads_gate_run(self):
+        self.assertEqual(self.rerun(), (0, [("POST", "actions/runs/2/rerun", None)]))
+
+    def test_a_run_that_started_after_the_label_changed_is_left_alone(self):
+        # Compared with this job's own start, not the workflow run's creation.
+        run = RerunTest.run_(2, "2026-10-25T01:00:50Z")
+        self.assertEqual(self.rerun(runs=[run]), (0, []))
+        run = RerunTest.run_(2, "2026-10-25T01:00:10Z")  # before the job: it read the label too early
+        self.assertEqual(self.rerun(runs=[run]), (0, [("POST", "actions/runs/2/rerun", None)]))
+
+    def test_other_comments_and_fork_pull_requests_do_nothing(self):
+        for ev in (dict(self.EVENT, comment={"id": 11, "body": "thanks"}),
+                   dict(self.EVENT, issue={"number": 7}),
+                   dict(self.EVENT, action="edited")):
+            self.assertEqual(self.rerun(event=ev), (0, []), ev)
+        self.assertEqual(self.rerun(head_repo="fork/r"), (0, []))
 
 
 class LargePullRequestTest(unittest.TestCase):
@@ -494,7 +1015,8 @@ class LargePullRequestTest(unittest.TestCase):
                   "head": {"sha": head, "ref": "feature/x", "repo": {"full_name": "o/r"}},
                   "base": {"ref": "main", "sha": base}}
             routes = {"pulls/7": pr, "issues/7/events": list(events), "issues/7/comments": [],
-                      "commits/" + head + "/check-runs": {"check_runs": []}}  # no pulls/7/files route: the API list is not used
+                      "commits/" + head + "/check-runs": {"check_runs": []},  # no pulls/7/files route: the API list is not used
+                      GateTest.ACTIVITY: [GateTest.push(head)]}
             fake = FakeGitHub(routes)
             evp = pathlib.Path(ev_dir, "event.json")
             evp.write_text(json.dumps({"pull_request": {"number": 7}}))
@@ -528,6 +1050,182 @@ class LargePullRequestTest(unittest.TestCase):
         routes = GateTest.routes(GateTest(), GateTest.pr(GateTest()), GateTest.PLAIN)
         code, _ = GateTest.run_gate(GateTest(), "pull_request", {"pull_request": {"number": 7}}, routes)
         self.assertEqual(code, 0)
+
+
+class CoveredByMergesTest(unittest.TestCase):
+    """covered_by_merges on a real repository: a head that only merged the
+    base branch in (and renumbered its migration) keeps the ack; any other
+    change to a sensitive file does not."""
+
+    git = LargePullRequestTest.git
+    SENSITIVE = "api/pkg/httpsec/ssrf.go"
+    NAMES = {"api/pkg/httpsec/ssrf.go", "api/migrations/000011_finding_x.up.sql"}
+
+    def write(self, d, name, body):
+        pathlib.Path(d, name).parent.mkdir(parents=True, exist_ok=True)
+        pathlib.Path(d, name).write_text(body)
+
+    def commit(self, d, msg):
+        self.git(d, "add", "-A"); self.git(d, "commit", "-qm", msg)
+        return self.git(d, "rev-parse", "HEAD")
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        d = self.d = self.tmp.name
+        self.git(d, "init", "-q", "-b", "develop")
+        lines = [f"line {i}" for i in range(40)]
+        self.write(d, self.SENSITIVE, "\n".join(lines) + "\n")
+        self.write(d, "api/migrations/000009_base.up.sql", "SELECT 9;\n")
+        self.write(d, "web/a.tsx", "a\n")
+        self.commit(d, "base")
+        self.git(d, "checkout", "-q", "-b", "feature")
+        lines[2] = "line 2 changed by the PR"
+        self.write(d, self.SENSITIVE, "\n".join(lines) + "\n")
+        self.write(d, "api/migrations/000010_finding_x.up.sql", "GRANT SELECT ON f TO app;\n")
+        self.acked = self.commit(d, "pr")
+        # develop moves on: another line of the same sensitive file, and a
+        # migration that takes the PR's number.
+        self.git(d, "checkout", "-q", "develop")
+        dev = self.SENSITIVE
+        text = pathlib.Path(d, dev).read_text().replace("line 30", "line 30 changed on develop")
+        self.write(d, dev, text)
+        self.write(d, "api/migrations/000010_other.up.sql", "SELECT 10;\n")
+        self.base = self.commit(d, "develop moves")
+        self.git(d, "checkout", "-q", "feature")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def merge_and_renumber(self):
+        self.git(self.d, "merge", "-q", "--no-edit", "develop")
+        self.git(self.d, "mv", "api/migrations/000010_finding_x.up.sql", "api/migrations/000011_finding_x.up.sql")
+        return self.commit(self.d, "renumber 10 -> 11")
+
+    def covered(self, head):
+        return sg.covered_by_merges(self.d, self.acked, self.base, head, self.NAMES)
+
+    def test_clean_base_merge_and_renumber_keep_the_ack(self):
+        self.assertTrue(self.covered(self.merge_and_renumber()))
+
+    def test_plain_file_commit_after_the_merge_keeps_the_ack(self):
+        self.merge_and_renumber()
+        self.write(self.d, "web/a.tsx", "b\n")
+        self.assertTrue(self.covered(self.commit(self.d, "web only")))
+
+    def test_sensitive_commit_after_the_merge_drops_it(self):
+        self.merge_and_renumber()
+        text = pathlib.Path(self.d, self.SENSITIVE).read_text().replace("line 5", "line 5 sneaked in")
+        self.write(self.d, self.SENSITIVE, text)
+        self.assertFalse(self.covered(self.commit(self.d, "sensitive")))
+
+    def test_change_hidden_in_the_merge_commit_drops_it(self):
+        self.git(self.d, "merge", "-q", "--no-commit", "develop")
+        text = pathlib.Path(self.d, self.SENSITIVE).read_text().replace("line 7", "line 7 in the merge")
+        self.write(self.d, self.SENSITIVE, text)
+        self.git(self.d, "mv", "api/migrations/000010_finding_x.up.sql", "api/migrations/000011_finding_x.up.sql")
+        self.assertFalse(self.covered(self.commit(self.d, "evil merge")))
+
+    def test_renumber_that_also_edits_the_migration_drops_it(self):
+        self.merge_and_renumber()
+        self.write(self.d, "api/migrations/000011_finding_x.up.sql", "GRANT ALL ON f TO app;\n")
+        self.assertFalse(self.covered(self.commit(self.d, "edit")))
+
+    def test_rebase_drops_it(self):
+        self.git(self.d, "rebase", "-q", "develop")
+        self.git(self.d, "mv", "api/migrations/000010_finding_x.up.sql", "api/migrations/000011_finding_x.up.sql")
+        self.assertFalse(self.covered(self.commit(self.d, "renumber after rebase")))
+
+    def still_covers(self, head):
+        return sg.ack_still_covers(self.d, self.base, self.acked, head, CONFIG)
+
+    def test_digests_are_recomputed_from_git(self):
+        self.assertTrue(self.still_covers(self.acked))
+        self.assertTrue(self.still_covers(self.merge_and_renumber()))
+        self.write(self.d, "web/a.tsx", "b\n")
+        self.assertTrue(self.still_covers(self.commit(self.d, "web only")))
+        text = pathlib.Path(self.d, self.SENSITIVE).read_text().replace("line 5", "line 5 changed")
+        self.write(self.d, self.SENSITIVE, text)
+        self.assertFalse(self.still_covers(self.commit(self.d, "sensitive")))
+
+    def test_rebase_with_the_same_sensitive_lines_keeps_it(self):
+        self.git(self.d, "rebase", "-q", "develop")
+        self.git(self.d, "mv", "api/migrations/000010_finding_x.up.sql", "api/migrations/000011_finding_x.up.sql")
+        self.assertTrue(self.still_covers(self.commit(self.d, "renumber after rebase")))
+
+    def test_renaming_a_sensitive_file_needs_a_new_ack(self):
+        self.git(self.d, "mv", self.SENSITIVE, "api/pkg/httpsec/ssrf_guard.go")
+        self.assertFalse(self.still_covers(self.commit(self.d, "rename")))
+
+    def test_unknown_acked_commit_does_not_cover(self):
+        self.assertFalse(sg.ack_still_covers(self.d, self.base, "f" * 40, self.acked, CONFIG))
+
+    def test_unknown_acked_commit_counts_as_not_covered(self):
+        self.assertFalse(sg.covered_by_merges(self.d, "f" * 40, self.base, self.merge_and_renumber(), self.NAMES))
+
+
+class OnlyBaseMergesTest(unittest.TestCase):
+    """only_base_merges on a real repository: a pull request that changes a
+    workflow keeps its ack only while its head is exactly the acknowledged
+    commit plus clean merges of the base branch."""
+
+    git = LargePullRequestTest.git
+    write = CoveredByMergesTest.write
+    commit = CoveredByMergesTest.commit
+    WORKFLOW = ".github/workflows/api-ci.yml"
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        d = self.d = self.tmp.name
+        self.git(d, "init", "-q", "-b", "develop")
+        self.write(d, self.WORKFLOW, "name: API CI\non: pull_request\n")
+        self.write(d, "api/x.go", "package x\n")
+        self.commit(d, "base")
+        self.git(d, "checkout", "-q", "-b", "feature")
+        self.write(d, self.WORKFLOW, "name: API CI\non: pull_request\nenv: {A: 1}\n")
+        self.acked = self.commit(d, "pr edits the workflow")
+        self.git(d, "checkout", "-q", "develop")
+        self.write(d, "api/y.go", "package x // develop\n")
+        self.base = self.commit(d, "develop moves")
+        self.git(d, "checkout", "-q", "feature")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def ok(self, head):
+        return sg.only_base_merges(self.d, self.acked, self.base, head)
+
+    def test_the_acked_head_itself(self):
+        self.assertTrue(self.ok(self.acked))
+
+    def test_clean_merge_of_the_base_keeps_it(self):
+        self.git(self.d, "merge", "-q", "--no-edit", "develop")
+        self.assertTrue(self.ok(self.git(self.d, "rev-parse", "HEAD")))
+
+    def test_workflow_edit_hidden_in_the_merge_drops_it(self):
+        self.git(self.d, "merge", "-q", "--no-commit", "develop")
+        self.write(self.d, self.WORKFLOW, "name: API CI\non: pull_request\nenv: {A: 2}\n")
+        self.assertFalse(self.ok(self.commit(self.d, "evil merge")))
+
+    def test_any_commit_after_the_merge_drops_it(self):
+        self.git(self.d, "merge", "-q", "--no-edit", "develop")
+        self.write(self.d, "api/x.go", "package x // later\n")
+        self.assertFalse(self.ok(self.commit(self.d, "non-workflow change")))
+
+    def test_conflict_resolved_by_hand_drops_it(self):
+        self.git(self.d, "checkout", "-q", "develop")
+        self.write(self.d, self.WORKFLOW, "name: API CI\non: pull_request\nenv: {B: 1}\n")
+        self.base = self.commit(self.d, "develop edits the same line")
+        self.git(self.d, "checkout", "-q", "feature")
+        subprocess.run(["git", "-C", self.d, "merge", "-q", "--no-edit", "develop"], capture_output=True)
+        self.write(self.d, self.WORKFLOW, "name: API CI\non: pull_request\nenv: {A: 1, B: 1}\n")
+        self.assertFalse(self.ok(self.commit(self.d, "resolved")))
+
+    def test_rebase_drops_it(self):
+        self.git(self.d, "rebase", "-q", "develop")
+        self.assertFalse(self.ok(self.git(self.d, "rev-parse", "HEAD")))
+
+    def test_unknown_acked_commit_does_not_cover(self):
+        self.assertFalse(sg.only_base_merges(self.d, "f" * 40, self.base, self.acked))
 
 
 if __name__ == "__main__":

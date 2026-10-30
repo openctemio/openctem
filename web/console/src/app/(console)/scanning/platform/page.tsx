@@ -3,7 +3,7 @@
 import { Main } from '@/components/layout'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
-import { ErrorState, PageHeader } from '@/features/shared'
+import { ErrorState, PageHeader, PageStack } from '@/features/shared'
 import { Info } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -33,7 +33,7 @@ import { useInstanceScanZones } from '@console/features/admin-console/api/use-in
 import { SharedSensorEnrollCard } from '@console/features/admin-console/components/shared-sensor-enroll-card'
 import { SharedSensorsForm } from '@console/features/admin-console/components/shared-sensors-form'
 import { SharedSensorsEgressForm } from '@console/features/admin-console/components/shared-sensors-egress-form'
-import { adminCan } from '@console/features/admin-console/types'
+import { adminHas } from '@console/features/admin-console/types'
 
 /**
  * Scanning > Platform scanning: everything an instance administrator sets for
@@ -54,7 +54,7 @@ const TABS = ['policy', 'fleet', 'queue', 'zones', 'egress', 'anomalies'] as con
 function useScanning() {
   const me = useAdmin()
   return {
-    canEdit: adminCan(me.role, 'super_admin'),
+    canEdit: adminHas(me, 'platform.sensors.manage'),
     proof: usePlatformSensorProof(),
     shared: useSharedSensorsSetting(),
     zones: useSharedSensorInternalZones(),
@@ -135,159 +135,171 @@ function SharedTabs({ s }: { s: Scanning }) {
           {t('admin.scanning.tab.anomalies', 'Anomalies')}
         </TabsTrigger>
       </TabsList>
-      <TabsContent value="policy" className="mt-5 space-y-5">
-        <ProofPolicy s={s} />
-        {zones.error ? (
-          <ErrorState
-            title={t('admin.internalZones.errorTitle')}
-            error={zones.error}
-            onRetry={() => void zones.mutate()}
-          />
-        ) : zones.isLoading || !zones.data ? (
-          <Skeleton className="h-56 w-full" />
-        ) : (
-          <PlatformSensorProofForm
-            prefix="admin.internalZones"
-            required={zones.data.allowed}
-            stored={(zones.data.version ?? 0) > 0}
-            defaultValue={zones.data.default}
-            enforced={zones.data.enforced}
+      <TabsContent value="policy">
+        <PageStack>
+          <ProofPolicy s={s} />
+          {zones.error ? (
+            <ErrorState
+              title={t('admin.internalZones.errorTitle')}
+              error={zones.error}
+              onRetry={() => void zones.mutate()}
+            />
+          ) : zones.isLoading || !zones.data ? (
+            <Skeleton className="h-56 w-full" />
+          ) : (
+            <PlatformSensorProofForm
+              prefix="admin.internalZones"
+              required={zones.data.allowed}
+              stored={(zones.data.version ?? 0) > 0}
+              defaultValue={zones.data.default}
+              enforced={zones.data.enforced}
+              canEdit={canEdit}
+              onSave={async (allowed, reason, code) => {
+                const z = zones.data
+                if (!z) return
+                await saveSharedSensorInternalZones({
+                  allowed,
+                  version: z.version ?? 0,
+                  reason,
+                  totp_code: code,
+                })
+                await zones.mutate()
+              }}
+            />
+          )}
+        </PageStack>
+      </TabsContent>
+      <TabsContent value="fleet">
+        <PageStack>
+          {shared.error ? (
+            <ErrorState
+              title={t('admin.sharedSensors.errorTitle')}
+              error={shared.error}
+              onRetry={() => void shared.mutate()}
+            />
+          ) : shared.isLoading || !shared.data ? (
+            <Skeleton className="h-56 w-full" />
+          ) : (
+            <SharedSensorsForm
+              enabled={shared.data.enabled}
+              newOrgs={shared.data.new_orgs}
+              ready={shared.data.ready}
+              canEdit={canEdit}
+              onSave={async (enabled, newOrgs, reason, code) => {
+                const s = shared.data
+                if (!s) return
+                await saveSharedSensorsSetting({
+                  enabled,
+                  new_orgs: newOrgs,
+                  version: s.version ?? 0,
+                  reason,
+                  totp_code: code,
+                })
+                await shared.mutate()
+              }}
+            />
+          )}
+          <SharedSensorEnrollCard
             canEdit={canEdit}
-            onSave={async (allowed, reason, code) => {
-              const z = zones.data
-              if (!z) return
-              await saveSharedSensorInternalZones({
-                allowed,
-                version: z.version ?? 0,
+            onIssue={({ name, ttlMinutes, reason, code }) =>
+              createSharedSensorEnrollmentToken({
+                name,
+                ttl_minutes: ttlMinutes,
                 reason,
                 totp_code: code,
               })
-              await zones.mutate()
-            }}
+            }
           />
-        )}
+          <SharedFleetPanel />
+        </PageStack>
       </TabsContent>
-      <TabsContent value="fleet" className="mt-5 space-y-5">
-        {shared.error ? (
-          <ErrorState
-            title={t('admin.sharedSensors.errorTitle')}
-            error={shared.error}
-            onRetry={() => void shared.mutate()}
-          />
-        ) : shared.isLoading || !shared.data ? (
-          <Skeleton className="h-56 w-full" />
-        ) : (
-          <SharedSensorsForm
-            enabled={shared.data.enabled}
-            newOrgs={shared.data.new_orgs}
-            ready={shared.data.ready}
-            canEdit={canEdit}
-            onSave={async (enabled, newOrgs, reason, code) => {
-              const s = shared.data
-              if (!s) return
-              await saveSharedSensorsSetting({
-                enabled,
-                new_orgs: newOrgs,
-                version: s.version ?? 0,
-                reason,
-                totp_code: code,
-              })
-              await shared.mutate()
-            }}
-          />
-        )}
-        <SharedSensorEnrollCard
-          canEdit={canEdit}
-          onIssue={({ name, ttlMinutes, reason, code }) =>
-            createSharedSensorEnrollmentToken({
-              name,
-              ttl_minutes: ttlMinutes,
-              reason,
-              totp_code: code,
-            })
-          }
-        />
-        <SharedFleetPanel />
+      <TabsContent value="queue">
+        <PageStack>
+          <SharedQueuePanel />
+        </PageStack>
       </TabsContent>
-      <TabsContent value="queue" className="mt-5 space-y-5">
-        <SharedQueuePanel />
+      <TabsContent value="zones">
+        <PageStack>
+          {instanceZones.error ? (
+            <ErrorState
+              title={t('admin.instanceZones.errorTitle')}
+              error={instanceZones.error}
+              onRetry={() => void instanceZones.mutate()}
+            />
+          ) : instanceZones.isLoading || !instanceZones.data ? (
+            <Skeleton className="h-40 w-full" />
+          ) : (
+            <InstanceScanZonesCard
+              zones={instanceZones.data.items ?? []}
+              canEdit={canEdit}
+              onChanged={() => instanceZones.mutate()}
+            />
+          )}
+        </PageStack>
       </TabsContent>
-      <TabsContent value="zones" className="mt-5 space-y-5">
-        {instanceZones.error ? (
-          <ErrorState
-            title={t('admin.instanceZones.errorTitle')}
-            error={instanceZones.error}
-            onRetry={() => void instanceZones.mutate()}
-          />
-        ) : instanceZones.isLoading || !instanceZones.data ? (
-          <Skeleton className="h-40 w-full" />
-        ) : (
-          <InstanceScanZonesCard
-            zones={instanceZones.data.items ?? []}
-            canEdit={canEdit}
-            onChanged={() => instanceZones.mutate()}
-          />
-        )}
+      <TabsContent value="egress">
+        <PageStack>
+          {egress.error ? (
+            <ErrorState
+              title={t('admin.sharedEgress.errorTitle')}
+              error={egress.error}
+              onRetry={() => void egress.mutate()}
+            />
+          ) : egress.isLoading || !egress.data ? (
+            <Skeleton className="h-40 w-full" />
+          ) : (
+            <SharedSensorsEgressForm
+              global={egress.data.global}
+              regions={egress.data.regions}
+              canEdit={canEdit}
+              onSave={async (global, regions, reason, code) => {
+                const e = egress.data
+                if (!e) return
+                await saveSharedSensorsEgress({
+                  global,
+                  regions,
+                  version: e.version ?? 0,
+                  reason,
+                  totp_code: code,
+                })
+                await egress.mutate()
+              }}
+            />
+          )}
+        </PageStack>
       </TabsContent>
-      <TabsContent value="egress" className="mt-5 space-y-5">
-        {egress.error ? (
-          <ErrorState
-            title={t('admin.sharedEgress.errorTitle')}
-            error={egress.error}
-            onRetry={() => void egress.mutate()}
-          />
-        ) : egress.isLoading || !egress.data ? (
-          <Skeleton className="h-40 w-full" />
-        ) : (
-          <SharedSensorsEgressForm
-            global={egress.data.global}
-            regions={egress.data.regions}
-            canEdit={canEdit}
-            onSave={async (global, regions, reason, code) => {
-              const e = egress.data
-              if (!e) return
-              await saveSharedSensorsEgress({
-                global,
-                regions,
-                version: e.version ?? 0,
-                reason,
-                totp_code: code,
-              })
-              await egress.mutate()
-            }}
-          />
-        )}
-      </TabsContent>
-      <TabsContent value="anomalies" className="mt-5 space-y-5">
-        {anomaly.error ? (
-          <ErrorState
-            title={t('admin.anomaly.errorTitle')}
-            error={anomaly.error}
-            onRetry={() => void anomaly.mutate()}
-          />
-        ) : anomaly.isLoading || !anomaly.data ? (
-          <Skeleton className="h-56 w-full" />
-        ) : (
-          <SharedSensorAnomalyForm
-            thresholds={{
-              distinct_domains_per_day: anomaly.data.distinct_domains_per_day,
-              failures_per_day: anomaly.data.failures_per_day,
-              deny_list_hits_per_day: anomaly.data.deny_list_hits_per_day,
-            }}
-            canEdit={canEdit}
-            onSave={async (next, reason, code) => {
-              const a = anomaly.data
-              if (!a) return
-              await saveSharedSensorAnomaly({
-                ...next,
-                version: a.version ?? 0,
-                reason,
-                totp_code: code,
-              })
-              await anomaly.mutate()
-            }}
-          />
-        )}
+      <TabsContent value="anomalies">
+        <PageStack>
+          {anomaly.error ? (
+            <ErrorState
+              title={t('admin.anomaly.errorTitle')}
+              error={anomaly.error}
+              onRetry={() => void anomaly.mutate()}
+            />
+          ) : anomaly.isLoading || !anomaly.data ? (
+            <Skeleton className="h-56 w-full" />
+          ) : (
+            <SharedSensorAnomalyForm
+              thresholds={{
+                distinct_domains_per_day: anomaly.data.distinct_domains_per_day,
+                failures_per_day: anomaly.data.failures_per_day,
+                deny_list_hits_per_day: anomaly.data.deny_list_hits_per_day,
+              }}
+              canEdit={canEdit}
+              onSave={async (next, reason, code) => {
+                const a = anomaly.data
+                if (!a) return
+                await saveSharedSensorAnomaly({
+                  ...next,
+                  version: a.version ?? 0,
+                  reason,
+                  totp_code: code,
+                })
+                await anomaly.mutate()
+              }}
+            />
+          )}
+        </PageStack>
       </TabsContent>
     </Tabs>
   )
@@ -299,14 +311,14 @@ export default function PlatformScanningPage() {
   const notAvailable = !!s.shared.data && !s.shared.data.ready
   return (
     <Main>
-      <PageHeader
-        title={t('admin.proof.pageTitle')}
-        description={t(
-          'admin.scanning.pageDesc',
-          'Rules for the scans that run on the platform sensors and, when enabled, the shared sensor fleet.'
-        )}
-      />
-      <div className="mt-5 space-y-5">
+      <PageStack>
+        <PageHeader
+          title={t('admin.proof.pageTitle')}
+          description={t(
+            'admin.scanning.pageDesc',
+            'Rules for the scans that run on the platform sensors and, when enabled, the shared sensor fleet.'
+          )}
+        />
         {notAvailable ? (
           <>
             <NotAvailablePanel />
@@ -315,7 +327,7 @@ export default function PlatformScanningPage() {
         ) : (
           <SharedTabs s={s} />
         )}
-      </div>
+      </PageStack>
     </Main>
   )
 }

@@ -25,6 +25,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/integration"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 	"github.com/openctemio/openctem/api/pkg/validator"
@@ -165,14 +166,17 @@ func NewIntegrationHandler(svc *integrationapp.IntegrationService, v *validator.
 // IntegrationResponse represents an integration in API responses.
 // @Description Integration details including provider info and status
 type IntegrationResponse struct {
-	ID                  string                    `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
-	TenantID            string                    `json:"tenant_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440001"`
-	Name                string                    `json:"name" example:"GitHub Production"`
-	Description         string                    `json:"description,omitempty" example:"Main GitHub integration"`
-	Category            string                    `json:"category" example:"scm" enums:"scm,security,cloud,ticketing,notification"`
-	Provider            string                    `json:"provider" example:"github"`
-	Status              string                    `json:"status" example:"connected" enums:"pending,connected,disconnected,error"`
-	StatusMessage       string                    `json:"status_message,omitempty" example:""`
+	ID            string `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	TenantID      string `json:"tenant_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440001"`
+	Name          string `json:"name" example:"GitHub Production"`
+	Description   string `json:"description,omitempty" example:"Main GitHub integration"`
+	Category      string `json:"category" example:"scm" enums:"scm,security,cloud,ticketing,notification"`
+	Provider      string `json:"provider" example:"github"`
+	Status        string `json:"status" example:"connected" enums:"pending,connected,disconnected,error"`
+	StatusMessage string `json:"status_message,omitempty" example:""`
+	// StatusCode says why the last connection failed (an INTEGRATION_*
+	// code); the console words the failure from it and offers the fix.
+	StatusCode          string                    `json:"status_code,omitempty" example:"INTEGRATION_NO_CREDENTIALS"`
 	AuthType            string                    `json:"auth_type" example:"token" enums:"token,oauth,api_key,basic,app"`
 	BaseURL             string                    `json:"base_url,omitempty" example:"https://github.com"`
 	LastSyncAt          *time.Time                `json:"last_sync_at,omitempty" example:"2024-01-15T10:30:00Z"`
@@ -326,13 +330,14 @@ func toIntegrationResponse(i *integration.Integration) IntegrationResponse {
 		Provider:            string(i.Provider()),
 		Supported:           i.Provider().HasClient(),
 		Status:              string(i.Status()),
-		StatusMessage:       i.StatusMessage(),
+		StatusMessage:       publicStatusText(i.StatusMessage()),
+		StatusCode:          i.StatusCode(),
 		AuthType:            string(i.AuthType()),
 		BaseURL:             i.BaseURL(),
 		LastSyncAt:          i.LastSyncAt(),
 		NextSyncAt:          i.NextSyncAt(),
 		SyncIntervalMinutes: i.SyncIntervalMinutes(),
-		SyncError:           i.SyncError(),
+		SyncError:           publicStatusText(i.SyncError()),
 		Config:              sanitizeConfigMap(i.Config()),   // Sanitize sensitive data
 		Metadata:            sanitizeConfigMap(i.Metadata()), // Sanitize sensitive data
 		CreatedAt:           i.CreatedAt(),
@@ -414,8 +419,11 @@ type TestIntegrationCredentialsRequest struct {
 // TestIntegrationCredentialsResponse represents the response from testing credentials.
 // @Description Response from testing integration credentials
 type TestIntegrationCredentialsResponse struct {
-	Success         bool   `json:"success" example:"true"`
-	Message         string `json:"message" example:"Connection successful"`
+	Success bool   `json:"success" example:"true"`
+	Message string `json:"message" example:"Connection successful"`
+	// Code says why a failed test failed (INTEGRATION_* or
+	// VALIDATION_FAILED); the console words the failure from it.
+	Code            string `json:"code,omitempty" example:"INTEGRATION_AUTH_FAILED"`
 	RepositoryCount int    `json:"repository_count,omitempty" example:"25"`
 	Organization    string `json:"organization,omitempty" example:"my-org"`
 	Username        string `json:"username,omitempty" example:"octocat"`
@@ -489,6 +497,10 @@ func (h *IntegrationHandler) handleServiceError(w http.ResponseWriter, err error
 		apierror.Conflict("Integration already exists").WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
 		apierror.BadRequest(err.Error()).WriteJSON(w)
+	case errors.Is(err, integrationapp.ErrOrgMailNeedsAdmin):
+		apierror.Forbidden("Only an owner or administrator can send organization mail through this relay.").WriteJSON(w)
+	case errors.Is(err, shared.ErrForbidden):
+		apierror.Forbidden("").WriteJSON(w)
 	case errors.Is(err, scm.ErrAuthFailed):
 		h.logger.Warn("integration auth failed", "error", err)
 		apierror.New(http.StatusFailedDependency, apierror.Code("INTEGRATION_AUTH_FAILED"),
@@ -992,9 +1004,11 @@ func (h *IntegrationHandler) TestCredentials(w http.ResponseWriter, r *http.Requ
 		// Return test failure as success response with success=false
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
+		msg, _ := apierror.SafeMessage(apierror.CodeValidationFailed, http.StatusBadRequest, err.Error())
 		_ = json.NewEncoder(w).Encode(TestIntegrationCredentialsResponse{
 			Success: false,
-			Message: err.Error(),
+			Code:    string(apierror.CodeValidationFailed),
+			Message: msg,
 		})
 		return
 	}
@@ -1004,6 +1018,7 @@ func (h *IntegrationHandler) TestCredentials(w http.ResponseWriter, r *http.Requ
 	_ = json.NewEncoder(w).Encode(TestIntegrationCredentialsResponse{
 		Success:         result.Success,
 		Message:         result.Message,
+		Code:            result.Code,
 		RepositoryCount: result.RepoCount,
 		Organization:    result.Organization,
 		Username:        result.Username,
@@ -1368,6 +1383,13 @@ type CreateNotificationIntegrationRequest struct {
 	Metadata map[string]any `json:"metadata"`
 }
 
+// canEnableOrgMail reports whether the caller is an owner or administrator of
+// the organization: only they may send organization mail through a relay.
+func canEnableOrgMail(r *http.Request) bool {
+	role := tenantdom.Role(middleware.GetTenantRole(r.Context()))
+	return role == tenantdom.RoleOwner || role == tenantdom.RoleAdmin
+}
+
 // CreateNotification handles POST /api/v1/integrations/notifications
 // @Summary      Create notification integration
 // @Description  Creates a new notification integration (Slack, Teams, Telegram, Webhook)
@@ -1422,6 +1444,7 @@ func (h *IntegrationHandler) CreateNotification(w http.ResponseWriter, r *http.R
 		IncludeDetails:     includeDetails,
 		MinIntervalMinutes: minInterval,
 		Metadata:           req.Metadata,
+		CanEnableOrgMail:   canEnableOrgMail(r),
 	}
 
 	intg, err := h.service.CreateNotificationIntegration(r.Context(), input)
@@ -1507,6 +1530,7 @@ func (h *IntegrationHandler) UpdateNotification(w http.ResponseWriter, r *http.R
 		IncludeDetails:     req.IncludeDetails,
 		MinIntervalMinutes: req.MinIntervalMinutes,
 		Metadata:           req.Metadata,
+		CanEnableOrgMail:   canEnableOrgMail(r),
 	}
 
 	var beforeNotif any
@@ -1584,7 +1608,10 @@ func (h *IntegrationHandler) TestNotification(w http.ResponseWriter, r *http.Req
 
 	// Include error if test failed
 	if intg.Integration.Status() != integration.StatusConnected {
-		response["error"] = intg.Integration.StatusMessage()
+		response["error"] = publicStatusText(intg.Integration.StatusMessage())
+		if code := intg.Integration.StatusCode(); code != "" {
+			response["code"] = code
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -2081,4 +2108,16 @@ func (h *IntegrationHandler) ResumeCoverageRotation(w http.ResponseWriter, r *ht
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(toIntegrationResponse(intg))
+}
+
+// publicStatusText is a stored status sentence as a read returns it. Rows
+// written before failures were stored as codes can hold an upstream error's
+// text with ids or internal addresses: it goes through the same cleaning as
+// an error response.
+func publicStatusText(s string) string {
+	if s == "" {
+		return ""
+	}
+	out, _ := apierror.SafeMessage(apierror.CodeIntegrationTestFailed, http.StatusFailedDependency, s)
+	return out
 }

@@ -71,6 +71,7 @@ type Service struct {
 	keys       RemediationKeyApplier
 	alerts     AlertQueue
 	vex        VEXApplier
+	issueLinks IssueLinker
 	// maxRows bounds one pass's read of a tenant's matches (memory).
 	maxRows int
 }
@@ -105,6 +106,16 @@ type VEXApplier interface {
 // SetVEXApplier wires the VEX statements (nil: matched findings are not
 // checked against them).
 func (s *Service) SetVEXApplier(v VEXApplier) { s.vex = v }
+
+// IssueLinker derives same-issue links for stored findings
+// (*postgres.FindingIssueLinkRepository): a version match created on an asset
+// where another technique already reported the CVE is linked to it.
+type IssueLinker interface {
+	DeriveIssueLinks(ctx context.Context, tenantID shared.ID, fingerprints []string) error
+}
+
+// SetIssueLinker wires same-issue links for matched findings (nil: off).
+func (s *Service) SetIssueLinker(l IssueLinker) { s.issueLinks = l }
 
 // NewService creates the matcher. classifier, sla and assets are optional.
 func NewService(store softwarematch.Store, policy PolicyReader, findings FindingWriter, log *logger.Logger) *Service {
@@ -502,6 +513,11 @@ func (s *Service) create(ctx context.Context, tenantID shared.ID, cands []*candi
 	for _, f := range findings {
 		built = append(built, f.Fingerprint())
 	}
+	if s.issueLinks != nil && len(built) > 0 {
+		if err := s.issueLinks.DeriveIssueLinks(ctx, tenantID, built); err != nil {
+			s.logger.Warn("vulnerability matching: same-issue links not derived", "tenant_id", tenantID.String(), "error", err)
+		}
+	}
 	return built, nil
 }
 
@@ -556,11 +572,23 @@ func (s *Service) enrich(ctx context.Context, tenantID shared.ID, findings []*vu
 	}
 }
 
+// Confirmed reports whether an active check (a template or a network scanner
+// report of the same CVE on the same asset) confirmed the version match: the
+// same-issue link step records it as version_match.confirmed_by.
+func Confirmed(f *vulnerability.Finding) bool {
+	vm, ok := f.Metadata()["version_match"].(map[string]any)
+	if !ok {
+		return false
+	}
+	_, ok = vm["confirmed_by"]
+	return ok
+}
+
 // CapPotentialPriority lowers a P0/P1 version match below the likely
 // threshold to P2 unless the CVE is in KEV.
 func CapPotentialPriority(f *vulnerability.Finding) {
 	c := f.Confidence()
-	if c == nil || *c >= vulnmatch.LikelyThreshold || f.IsInKEV() {
+	if c == nil || *c >= vulnmatch.LikelyThreshold || f.IsInKEV() || Confirmed(f) {
 		return
 	}
 	if p := f.PriorityClass(); p != nil && (*p == vulnerability.PriorityP0 || *p == vulnerability.PriorityP1) {

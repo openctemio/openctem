@@ -15,6 +15,7 @@ import {
   DataTableRowActions,
   MetricStrip,
   type MetricStripItem,
+  PageStack,
 } from '@/features/shared'
 import {
   AssetDetailSheet,
@@ -24,8 +25,8 @@ import {
   MetadataRow,
   SectionTitle,
 } from '@/features/assets'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import {
   Select,
@@ -37,7 +38,6 @@ import {
 import { toast } from 'sonner'
 import {
   KeyRound,
-  Search as SearchIcon,
   Eye,
   Download,
   Shield,
@@ -46,7 +46,6 @@ import {
   Copy,
   User,
   Calendar,
-  X,
   Layers,
 } from 'lucide-react'
 import type { Asset } from '@/features/assets'
@@ -72,7 +71,7 @@ import { exportToCsv } from '@/hooks/use-csv-export'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { resetListPage, useListParams, DEFAULT_PAGE_SIZES } from '@/hooks/use-list-params'
 import { useTranslation } from '@/context/i18n-provider'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { Permission, usePermissions } from '@/lib/permissions'
@@ -103,7 +102,7 @@ export default function CredentialsPage() {
   // Search is server-side (the list and identity endpoints both take it), so it
   // lives in the URL like the other filters and is debounced per keystroke.
   const [searchQuery, setSearchQueryRaw] = useUrlFilter('q', '')
-  const debouncedSearch = useDebounce(searchQuery, 300)
+  const debouncedSearch = useSearchQuery(searchQuery).term
   // A filter change returns to page 1.
   const setStatusFilter = (v: StatusFilter) => {
     setStatusFilterRaw(v)
@@ -264,7 +263,6 @@ export default function CredentialsPage() {
       key: 'critical',
       label: t('credentials.metric.critical', 'Critical'),
       value: stats.critical,
-      tone: 'danger',
       onClick: () => setSeverityFilter(severityFilter === 'critical' ? '' : 'critical'),
       active: severityFilter === 'critical',
     },
@@ -419,6 +417,7 @@ export default function CredentialsPage() {
   // Export every leak matching the current filters (all pages), not just the
   // page on screen.
   const [isExporting, setIsExporting] = useState(false)
+  const [confirmExport, setConfirmExport] = useState(false)
   const handleExport = async () => {
     if (isExporting) return
     setIsExporting(true)
@@ -490,29 +489,12 @@ export default function CredentialsPage() {
 
   // Search + status apply to both views (both endpoints take them); the source
   // filter only applies to the list.
-  const searchInput = (
-    <div className="relative min-w-0 flex-1 sm:max-w-sm">
-      <SearchIcon className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-      <Input
-        placeholder={t('credentials.search.placeholder', 'Search credentials...')}
-        aria-label={t('credentials.search.aria', 'Search credentials')}
-        value={searchQuery}
-        onChange={(e) => setSearchQuery(e.target.value)}
-        className="ps-9 pe-9"
-      />
-      {searchQuery && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="absolute end-1 top-1/2 h-6 w-6 -translate-y-1/2 p-0"
-          onClick={() => setSearchQuery('')}
-          aria-label={t('credentials.search.clear', 'Clear search')}
-        >
-          <X className="h-4 w-4" />
-        </Button>
-      )}
-    </div>
-  )
+  const search = {
+    value: searchQuery,
+    onChange: setSearchQuery,
+    placeholder: t('credentials.search.placeholder', 'Search credentials…'),
+    label: t('credentials.search.aria', 'Search credentials'),
+  }
   const statusSelect = (
     <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
       <SelectTrigger
@@ -581,29 +563,29 @@ export default function CredentialsPage() {
   return (
     <>
       <Main>
-        <PageHeader
-          title={t('credentials.page.title', 'Credential leaks')}
-          description={t(
-            'credentials.page.description',
-            'Leaked passwords, keys and tokens tied to your organisation, from breaches, code and the dark web.'
-          )}
-        >
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleExport}
-            disabled={!credentials.length || isExporting}
+        <PageStack>
+          <PageHeader
+            title={t('credentials.page.title', 'Credential leaks')}
+            description={t(
+              'credentials.page.description',
+              'Leaked passwords, keys and tokens tied to your organisation, from breaches, code and the dark web.'
+            )}
           >
-            <Download className="h-4 w-4 sm:me-2" />
-            <span className="sr-only sm:not-sr-only">
-              {t('credentials.export.label', 'Export')}
-            </span>
-          </Button>
-        </PageHeader>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setConfirmExport(true)}
+              disabled={!credentials.length || isExporting}
+            >
+              <Download className="h-4 w-4 sm:me-2" />
+              <span className="sr-only sm:not-sr-only">
+                {t('credentials.export.label', 'Export')}
+              </span>
+            </Button>
+          </PageHeader>
 
-        <MetricStrip className="mt-5" loading={statsLoading} items={metrics} />
+          <MetricStrip loading={statsLoading} items={metrics} />
 
-        <div className="mt-5">
           {viewMode === 'identity' ? (
             <CredentialIdentityGroups
               identities={identitiesResponse?.items ?? []}
@@ -611,12 +593,8 @@ export default function CredentialsPage() {
               columns={columns}
               onRowClick={(c) => setSelectedCredential(c)}
               resetKey={`${debouncedSearch}|${statusFilter}`}
-              toolbarStart={
-                <>
-                  {searchInput}
-                  {statusSelect}
-                </>
-              }
+              search={search}
+              toolbarStart={statusSelect}
               toolbarEnd={groupSelect}
               emptyMessage={t('credentials.identity.emptyTitle', 'No identities found')}
               emptyDescription={
@@ -652,9 +630,9 @@ export default function CredentialsPage() {
               columns={columns}
               data={credentials}
               showSearch={false}
+              search={search}
               toolbarStart={
                 <>
-                  {searchInput}
                   {statusSelect}
                   {sourceSelect}
                 </>
@@ -673,8 +651,24 @@ export default function CredentialsPage() {
               emptyDescription={emptyDescription}
             />
           )}
-        </div>
+        </PageStack>
       </Main>
+
+      <ConfirmDialog
+        open={confirmExport}
+        onOpenChange={setConfirmExport}
+        title={t('credentials.export.confirmTitle', 'Export the leaked credentials?')}
+        desc={t(
+          'credentials.export.confirmDesc',
+          'The CSV lists every leak that matches the current filters with usernames, sources and leak dates. It is personal data about leaked accounts and leaves the console unprotected, so store it as you would the leaks themselves.'
+        )}
+        confirmText={t('credentials.export.confirmButton', 'Export CSV')}
+        isLoading={isExporting}
+        handleConfirm={async () => {
+          setConfirmExport(false)
+          await handleExport()
+        }}
+      />
 
       {/* Detail Sheet */}
       <AssetDetailSheet

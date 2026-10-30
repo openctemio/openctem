@@ -33,11 +33,23 @@ const (
 	FeatureLDAP = "ldap"
 )
 
+// Named features of rule sources (docs/architecture/content-sources.md).
+const (
+	// FeatureContentWebhook: push-triggered sync of a rule source.
+	FeatureContentWebhook = "content_sources.webhook"
+	// FeatureContentReviewPolicy: the review promotion policy (a second
+	// member promotes).
+	FeatureContentReviewPolicy = "content_sources.review_policy"
+	// FeatureContentPrivateGit: rule sources on hosts in a private network
+	// the installation allows.
+	FeatureContentPrivateGit = "content_sources.private_git"
+)
+
 // NamedFeatures are the deniable features below module level, each checked
 // with entitlement.Service.Allowed (or Usable) at its own seam. Add a key
 // here, check it at the seam, and list it in docs/architecture/limits.md (a
 // test compares them).
-var NamedFeatures = []string{FeatureLDAP, FeatureSCIM, FeatureSSOConnections, FeatureSSOEnforcement, FeatureSSOGroupLinks}
+var NamedFeatures = []string{FeatureContentPrivateGit, FeatureContentReviewPolicy, FeatureContentWebhook, FeatureLDAP, FeatureSCIM, FeatureSSOConnections, FeatureSSOEnforcement, FeatureSSOGroupLinks}
 
 // ErrFeatureDenied refuses a change that needs a feature the organization's
 // plan does not include. Unavailable: the entitlement could not be read, so

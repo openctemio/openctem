@@ -11,11 +11,16 @@
 #     -f deploy/observability/docker-compose.openctem.yml --profile observability up -d
 #
 # Every value can still be overridden from the environment / --env-file.
-# Before the first start, create the monitoring role in the stack's Postgres
-# (deploy/observability/postgres/monitor-role.sql) and set OBS_PG_MONITOR_PASSWORD.
+# Set OBS_PG_MONITOR_PASSWORD: the postgres-monitor-role one-shot creates the
+# monitoring role in the stack's Postgres on every `up`
+# (deploy/observability/postgres/monitor-role.sql).
 # =============================================================================
 
 services:
+  postgres-monitor-role:
+    environment:
+      PGSSLMODE: ${OBS_POSTGRES_SSLMODE:-require}
+
   prometheus:
     environment:
       OBS_WEB_UPSTREAM: ${OBS_WEB_UPSTREAM:-web:3000}

@@ -388,6 +388,11 @@ type AttributeApply struct {
 	// release of this apply caused (ChangeReasonTTLExpiry,
 	// ChangeReasonPolicyChange). Empty: ChangeReasonNewerObservation.
 	Reason ChangeReason
+	// Prior is the value an attribute showed before the caller wrote the
+	// column itself (an edit saves the asset row, then records the person's
+	// lock). The change, its history row and its timeline event read the old
+	// value from it, so a person's edit is never a silent change.
+	Prior map[AttributeRef]string
 }
 
 // ApplyResult is what one reconciliation did.

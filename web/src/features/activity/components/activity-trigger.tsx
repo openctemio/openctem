@@ -123,6 +123,8 @@ export const ActivityTrigger = forwardRef<HTMLButtonElement, ActivityTriggerProp
       )
     }
     const previewAt = latestComment?.at ?? latest?.at
+    const title = t('activity.trigger.title', 'Activity')
+    const newLabel = t('activity.trigger.new', '{count} new', { count: unread })
 
     return (
       <button
@@ -130,7 +132,7 @@ export const ActivityTrigger = forwardRef<HTMLButtonElement, ActivityTriggerProp
         type="button"
         onClick={() => onOpen()}
         aria-haspopup="dialog"
-        aria-label={`Activity, ${headline}${unread > 0 ? `, ${unread} new` : ''}. ${previewText}`.trim()}
+        aria-label={`${title}, ${headline}${unread > 0 ? `, ${newLabel}` : ''}. ${previewText}`.trim()}
         aria-keyshortcuts={shortcut ? 'C' : undefined}
         className={cn(
           'group flex w-full items-start gap-3 rounded-lg text-start transition-colors hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
@@ -149,13 +151,12 @@ export const ActivityTrigger = forwardRef<HTMLButtonElement, ActivityTriggerProp
           )}
         </span>
         <span className="min-w-0 flex-1" aria-hidden>
-          <span className="flex items-center gap-1.5 text-sm">
-            <span className="font-semibold">Activity</span>
-            <span className="text-muted-foreground">·</span>
+          <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm">
+            <span className="font-semibold">{title}</span>
             <span className="text-muted-foreground tabular-nums">{headline}</span>
             {unread > 0 && (
-              <span className="rounded-full bg-primary/10 px-1.5 text-[11px] font-medium text-primary tabular-nums">
-                {unread} new
+              <span className="rounded-full bg-primary/10 px-1.5 text-xs font-medium text-primary tabular-nums">
+                {newLabel}
               </span>
             )}
           </span>

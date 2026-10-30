@@ -1,5 +1,5 @@
 import { renderHook, act } from '@testing-library/react'
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 
 import { parseListSort, useListParams } from './use-list-params'
 
@@ -64,7 +64,6 @@ describe('useListParams', () => {
     act(() => result.current.setSearch('  acme '))
     expect(new URLSearchParams(window.location.search).get('page')).toBeNull()
     expect(new URLSearchParams(window.location.search).get('q')).toBe('  acme ')
-    expect(result.current.apiParams.q).toBe('acme')
     act(() => result.current.setPage(2))
     act(() => result.current.setPagination({ pageIndex: 1, pageSize: 100 }))
     const params = new URLSearchParams(window.location.search)
@@ -119,5 +118,27 @@ describe('parseListSort', () => {
     expect(parseListSort('a,b', ['a', 'b'])).toBeNull()
     expect(parseListSort('', ['a'])).toBeNull()
     expect(parseListSort(null, ['a'])).toBeNull()
+  })
+
+  it('the request gets the search once typing settles, never per keystroke', () => {
+    vi.useFakeTimers()
+    try {
+      const { result } = renderHook(() => useListParams(OPTIONS))
+      const seen = new Set<string | number | undefined>()
+      for (const prefix of ['a', 'ac', 'acm', 'acme']) {
+        act(() => result.current.setSearch(prefix))
+        act(() => vi.advanceTimersByTime(100))
+        seen.add(result.current.apiParams.q)
+      }
+      expect([...seen]).toEqual([undefined])
+      expect(result.current.searchPending).toBe(true)
+      act(() => result.current.setSearch('  acme '))
+      act(() => vi.advanceTimersByTime(300))
+      expect(result.current.apiParams.q).toBe('acme')
+      expect(result.current.searchTerm).toBe('acme')
+      expect(result.current.searchPending).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

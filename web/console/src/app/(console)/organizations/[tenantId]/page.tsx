@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ErrorState, PageHeader } from '@/features/shared'
+import { ErrorState, PageHeader, PageStack } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
@@ -31,7 +31,7 @@ import { OrganizationModulesPanel } from '@console/features/admin-console/compon
 import { OrganizationScanPolicyPanel } from '@console/features/admin-console/components/organization-scan-policy-panel'
 import { OrganizationUsersSection } from '@console/features/admin-console/components/organization-users-section'
 import { SSOEnforcementCard } from '@console/features/admin-console/components/sso-enforcement-card'
-import { adminCan } from '@console/features/admin-console/types'
+import { adminHas } from '@console/features/admin-console/types'
 import { SamlConfigForm } from '@console/features/saml/components/saml-config-form'
 import { IdentityProvidersPanel } from '@console/features/sso/components/identity-providers-panel'
 import { PendingSSOChangesNotice } from '@console/features/sso-approvals/components/pending-sso-changes-notice'
@@ -113,15 +113,15 @@ export default function AdminOrganizationPage({
   const admin = useAdmin()
   const router = useRouter()
   // SSO decides who can sign in to the organization: super admins only.
-  const canManageSSO = adminCan(admin.role, 'super_admin')
+  const canManageSSO = adminHas(admin, 'platform.tenants.sso.write')
   // Adding people to an organization: operations admins and up.
-  const canManageUsers = adminCan(admin.role, 'ops_admin')
+  const canManageUsers = adminHas(admin, 'platform.tenants.owner_bootstrap')
   // Suspending an organization (abuse response): operations admins and up.
-  const canSuspend = adminCan(admin.role, 'ops_admin')
+  const canSuspend = adminHas(admin, 'platform.tenants.lifecycle')
   // Deleting an organization now is irreversible: super admins only.
-  const canPurge = adminCan(admin.role, 'super_admin')
+  const canPurge = adminHas(admin, 'platform.tenants.purge')
   // Re-signing the organization's audit chain is irreversible: super admins only.
-  const canRebaselineAuditChain = adminCan(admin.role, 'super_admin')
+  const canRebaselineAuditChain = adminHas(admin, 'platform.tenants.audit_chain.write')
   const { data: org, error, isLoading, mutate } = useOrganization(tenantId)
   const refresh = () => void mutate()
   const { t } = useTranslation()
@@ -131,135 +131,143 @@ export default function AdminOrganizationPage({
 
   return (
     <Main>
-      <Button asChild variant="ghost" size="sm" className="mb-2 -ms-2">
-        <Link href="/organizations">
-          <ChevronLeft className="me-1 size-4" />
-          {t('admin.nav.organizations', 'Organizations')}
-        </Link>
-      </Button>
+      <PageStack>
+        <Button asChild variant="ghost" size="sm" className="-ms-2 self-start">
+          <Link href="/organizations">
+            <ChevronLeft className="me-1 size-4" />
+            {t('admin.nav.organizations', 'Organizations')}
+          </Link>
+        </Button>
 
-      {error ? (
-        <ErrorState
-          title={t('admin.organizationsDetailPage.theOrganization', 'the organization')}
-          error={error}
-          onRetry={refresh}
-        />
-      ) : isLoading || !org ? (
-        <div className="space-y-3">
-          <Skeleton className="h-10 w-1/3" />
-          <Skeleton className="h-48 w-full" />
-        </div>
-      ) : (
-        <>
-          <PageHeader
-            title={org.name}
-            description={
-              org.description ||
-              t('admin.organizationsDetailPage.organization', 'Organization {slug}', {
-                slug: org.slug,
-              })
-            }
-          >
-            <OrganizationStatusBadge org={org} />
-            {canSuspend && <OrganizationSuspensionAction org={org} onDone={refresh} />}
-            {canPurge && (
-              <OrganizationPurgeAction org={org} onDone={() => router.push('/organizations')} />
-            )}
-          </PageHeader>
-          <OrganizationSuspendedNotice org={org} />
-          <Tabs value={tab} onValueChange={setTab} className="mt-5">
-            <div className="-mx-1 overflow-x-auto px-1">
-              <TabsList>
-                <TabsTrigger value="overview">
-                  {t('admin.org.tab.overview', 'Overview')}
-                </TabsTrigger>
-                <TabsTrigger value="users">{t('admin.org.tab.users', 'Members')}</TabsTrigger>
-                <TabsTrigger value="limits">{t('admin.org.tab.limits', 'Limits')}</TabsTrigger>
-                <TabsTrigger value="sso">{t('admin.org.tab.sso', 'Single sign-on')}</TabsTrigger>
-                <TabsTrigger value="scope">{t('admin.org.tab.scope', 'Scope')}</TabsTrigger>
-                <TabsTrigger value="activity">
-                  {t('admin.org.tab.activity', 'Activity')}
-                </TabsTrigger>
-                <TabsTrigger value="audit-chain">
-                  {t('admin.org.tab.auditChain', 'Audit chain')}
-                </TabsTrigger>
-              </TabsList>
-            </div>
-
-            <TabsContent value="overview" className="mt-4 space-y-5">
-              <OrganizationSummary org={org} onOpenTab={setTab} />
-              <OrganizationDashboardDataPanel tenantId={org.id} canRebuild={canManageUsers} />
-            </TabsContent>
-
-            <TabsContent value="users" className="mt-4">
-              <OrganizationUsersSection
-                tenantId={org.id}
-                orgName={org.name}
-                canManage={canManageUsers}
-                canRecover={adminCan(admin.role, 'super_admin')}
-                onChanged={refresh}
-              />
-            </TabsContent>
-
-            <TabsContent value="limits" className="mt-4 space-y-5">
-              <OrganizationLimitsPanel tenantId={org.id} canManage={canManageUsers} />
-              <OrganizationModulesPanel tenantId={org.id} canManage={canManageUsers} />
-            </TabsContent>
-
-            <TabsContent value="sso" className="mt-4 space-y-5">
-              {!canManageSSO && (
-                <p className="text-sm text-muted-foreground">
-                  {t(
-                    'admin.organizationsDetailPage.youCanViewThisOrganization',
-                    "You can view this organization's SSO setup. Changing it requires a super admin."
-                  )}
-                </p>
+        {error ? (
+          <ErrorState
+            title={t('admin.organizationsDetailPage.theOrganization', 'the organization')}
+            error={error}
+            onRetry={refresh}
+          />
+        ) : isLoading || !org ? (
+          <div className="space-y-3">
+            <Skeleton className="h-10 w-1/3" />
+            <Skeleton className="h-48 w-full" />
+          </div>
+        ) : (
+          <>
+            <PageHeader
+              title={org.name}
+              description={
+                org.description ||
+                t('admin.organizationsDetailPage.organization', 'Organization {slug}', {
+                  slug: org.slug,
+                })
+              }
+            >
+              <OrganizationStatusBadge org={org} />
+              {canSuspend && <OrganizationSuspensionAction org={org} onDone={refresh} />}
+              {canPurge && (
+                <OrganizationPurgeAction org={org} onDone={() => router.push('/organizations')} />
               )}
-              <SSOEnforcementCard org={org} canManage={canManageSSO} onChanged={refresh} />
-              <PendingSSOChangesNotice tenantId={org.id} />
-              {/* A section, not a Card: the SAML form is built from its own cards. */}
-              <section className="space-y-1">
-                <h2 className="text-base font-semibold">SAML 2.0</h2>
-                <p className="text-sm text-muted-foreground">
-                  {t(
-                    'admin.organizationsDetailPage.federateSignInThroughA',
-                    'Federate sign-in through a SAML identity provider (Okta, Entra ID, ADFS).'
-                  )}
-                </p>
-                <SamlConfigForm
+            </PageHeader>
+            <OrganizationSuspendedNotice org={org} />
+            <Tabs value={tab} onValueChange={setTab}>
+              <div className="-mx-1 overflow-x-auto px-1">
+                <TabsList>
+                  <TabsTrigger value="overview">
+                    {t('admin.org.tab.overview', 'Overview')}
+                  </TabsTrigger>
+                  <TabsTrigger value="users">{t('admin.org.tab.users', 'Members')}</TabsTrigger>
+                  <TabsTrigger value="limits">{t('admin.org.tab.limits', 'Limits')}</TabsTrigger>
+                  <TabsTrigger value="sso">{t('admin.org.tab.sso', 'Single sign-on')}</TabsTrigger>
+                  <TabsTrigger value="scope">{t('admin.org.tab.scope', 'Scope')}</TabsTrigger>
+                  <TabsTrigger value="activity">
+                    {t('admin.org.tab.activity', 'Activity')}
+                  </TabsTrigger>
+                  <TabsTrigger value="audit-chain">
+                    {t('admin.org.tab.auditChain', 'Audit chain')}
+                  </TabsTrigger>
+                </TabsList>
+              </div>
+
+              <TabsContent value="overview">
+                <PageStack>
+                  <OrganizationSummary org={org} onOpenTab={setTab} />
+                  <OrganizationDashboardDataPanel tenantId={org.id} canRebuild={canManageUsers} />
+                </PageStack>
+              </TabsContent>
+
+              <TabsContent value="users">
+                <OrganizationUsersSection
                   tenantId={org.id}
-                  tenantSlug={org.slug}
-                  canManage={canManageSSO}
+                  orgName={org.name}
+                  canManage={canManageUsers}
+                  canRecover={adminHas(admin, 'platform.tenants.owner_recovery')}
                   onChanged={refresh}
                 />
-              </section>
-              <IdentityProvidersPanel
-                tenantId={org.id}
-                tenantSlug={org.slug}
-                canManage={canManageSSO}
-                onChanged={refresh}
-              />
-              <VerifiedDomainsSection tenantId={org.id} canManage={canManageSSO} />
-            </TabsContent>
+              </TabsContent>
 
-            <TabsContent value="scope" className="mt-4">
-              <OrganizationScanPolicyPanel tenantId={org.id} canEdit={canManageSSO} />
-            </TabsContent>
+              <TabsContent value="limits">
+                <PageStack>
+                  <OrganizationLimitsPanel tenantId={org.id} canManage={canManageUsers} />
+                  <OrganizationModulesPanel tenantId={org.id} canManage={canManageUsers} />
+                </PageStack>
+              </TabsContent>
 
-            <TabsContent value="activity" className="mt-4">
-              <OrganizationActivity tenantId={org.id} />
-            </TabsContent>
+              <TabsContent value="sso">
+                <PageStack>
+                  {!canManageSSO && (
+                    <p className="text-sm text-muted-foreground">
+                      {t(
+                        'admin.organizationsDetailPage.youCanViewThisOrganization',
+                        "You can view this organization's SSO setup. Changing it requires a super admin."
+                      )}
+                    </p>
+                  )}
+                  <SSOEnforcementCard org={org} canManage={canManageSSO} onChanged={refresh} />
+                  <PendingSSOChangesNotice tenantId={org.id} />
+                  {/* A section, not a Card: the SAML form is built from its own cards. */}
+                  <section className="space-y-1">
+                    <h2 className="text-base font-semibold">SAML 2.0</h2>
+                    <p className="text-sm text-muted-foreground">
+                      {t(
+                        'admin.organizationsDetailPage.federateSignInThroughA',
+                        'Federate sign-in through a SAML identity provider (Okta, Entra ID, ADFS).'
+                      )}
+                    </p>
+                    <SamlConfigForm
+                      tenantId={org.id}
+                      tenantSlug={org.slug}
+                      canManage={canManageSSO}
+                      onChanged={refresh}
+                    />
+                  </section>
+                  <IdentityProvidersPanel
+                    tenantId={org.id}
+                    tenantSlug={org.slug}
+                    canManage={canManageSSO}
+                    onChanged={refresh}
+                  />
+                  <VerifiedDomainsSection tenantId={org.id} canManage={canManageSSO} />
+                </PageStack>
+              </TabsContent>
 
-            <TabsContent value="audit-chain" className="mt-4">
-              <OrganizationAuditChainPanel
-                tenantId={org.id}
-                orgName={org.name}
-                canRebaseline={canRebaselineAuditChain}
-              />
-            </TabsContent>
-          </Tabs>
-        </>
-      )}
+              <TabsContent value="scope">
+                <OrganizationScanPolicyPanel tenantId={org.id} canEdit={canManageSSO} />
+              </TabsContent>
+
+              <TabsContent value="activity">
+                <OrganizationActivity tenantId={org.id} />
+              </TabsContent>
+
+              <TabsContent value="audit-chain">
+                <OrganizationAuditChainPanel
+                  tenantId={org.id}
+                  orgName={org.name}
+                  canRebaseline={canRebaselineAuditChain}
+                />
+              </TabsContent>
+            </Tabs>
+          </>
+        )}
+      </PageStack>
     </Main>
   )
 }

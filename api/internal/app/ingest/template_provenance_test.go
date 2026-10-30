@@ -36,6 +36,23 @@ func TestFindingTemplateProvenance(t *testing.T) {
 	}
 }
 
+// The exposure class comes from the template's tags as the sensor reported
+// them, and an attacking tag wins over an exposure tag.
+func TestFindingTemplateProvenance_ExposureClass(t *testing.T) {
+	d := "sha256:" + strings.Repeat("c", 64)
+	props := ctis.Properties{"template_digest": d}
+	if !findingTemplateProvenance(&ctis.Finding{Properties: props, Tags: []string{"exposure", "swagger"}}, nil).ExposureClass {
+		t.Error("an exposure template is not marked")
+	}
+	if findingTemplateProvenance(&ctis.Finding{Properties: props, Tags: []string{"exposure", "sqli"}}, nil).ExposureClass {
+		t.Error("an attacking template is marked exposure")
+	}
+	own := ctis.Properties{"template_digest": d, "rule_source": "tenant"}
+	if findingTemplateProvenance(&ctis.Finding{Properties: own, Tags: []string{"exposure"}}, nil).ExposureClass {
+		t.Error("an organization's own rule is marked exposure")
+	}
+}
+
 // The run's template release is one value across its reports, else unknown.
 func TestDecideRunCoverage_TemplatesDigest(t *testing.T) {
 	rel1 := "sha256:" + strings.Repeat("1", 64)
@@ -185,5 +202,20 @@ func TestEvaluateCommandCoverage_SecretsAreMarkedNotResolved(t *testing.T) {
 	svc3.findingRepo = repo3
 	if svc3.EvaluateCommandCoverage(context.Background(), shared.NewID(), shared.NewID()); repo3.calls != 0 || len(base3.resolved) != 0 {
 		t.Fatalf("dry run: mark calls %d resolved %v", repo3.calls, base3.resolved)
+	}
+}
+
+// An import that is not the result of a command the platform dispatched (API,
+// CTIS or CI upload) cannot set the exposure class, whatever tags it carries.
+func TestSightingProvenance_ExposureOnlyForCommandBoundResults(t *testing.T) {
+	f := &ctis.Finding{Properties: map[string]any{"template_digest": "sha256:" + strings.Repeat("a", 64)},
+		Tags: []string{"exposure", "swagger"}}
+	if !sightingProvenance(f, nil, &alterScope{commandBound: true}).ExposureClass {
+		t.Fatal("a command-bound result must keep the exposure class")
+	}
+	for name, sc := range map[string]*alterScope{"nil scope": nil, "unbound import": {}} {
+		if sightingProvenance(f, nil, sc).ExposureClass {
+			t.Errorf("%s set the exposure class", name)
+		}
 	}
 }

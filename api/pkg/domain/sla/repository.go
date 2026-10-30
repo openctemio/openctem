@@ -34,6 +34,10 @@ type Repository interface {
 	// Delete removes a policy of the tenant.
 	Delete(ctx context.Context, tenantID, id shared.ID) error
 
+	// HasAssetOverride reports whether the tenant has an active policy tied to
+	// a single asset. With none, every asset is governed by the tenant default.
+	HasAssetOverride(ctx context.Context, tenantID shared.ID) (bool, error)
+
 	// ListByTenant returns all policies for a tenant.
 	ListByTenant(ctx context.Context, tenantID shared.ID) ([]*Policy, error)
 }

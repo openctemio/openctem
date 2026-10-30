@@ -129,15 +129,16 @@ type RecentChangeLister interface {
 
 // SurfaceService provides attack surface operations.
 type SurfaceService struct {
-	assetRepo   asset.Repository
-	relRepo     asset.RelationshipRepository
-	history     RecentChangeLister
-	attribution AttributionRecords
-	findingRisk FindingRiskCounter
-	dataScope   *datascope.Enforcer               // Layer 2 narrowing of member-facing reads (nil = unrestricted)
-	chains      *tenantCache[ExposureChainResult] // per-tenant exposure-chain results, shared by every reader
-	scores      *tenantCache[PathScoringResult]   // per-tenant attack-path scores
-	logger      *logger.Logger
+	assetRepo    asset.Repository
+	relRepo      asset.RelationshipRepository
+	history      RecentChangeLister
+	attribution  AttributionRecords
+	findingRisk  FindingRiskCounter
+	pathFindings PathFindingReader                 // per-asset finding summary for the attack paths to one asset
+	dataScope    *datascope.Enforcer               // Layer 2 narrowing of member-facing reads (nil = unrestricted)
+	chains       *tenantCache[ExposureChainResult] // per-tenant exposure-chain results, shared by every reader
+	scores       *tenantCache[PathScoringResult]   // per-tenant attack-path scores
+	logger       *logger.Logger
 }
 
 // NewSurfaceService creates a new SurfaceService.

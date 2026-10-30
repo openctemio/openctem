@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 const api = vi.hoisted(() => ({
@@ -97,6 +97,10 @@ describe('ProgramSource', () => {
     })
     render(<ProgramSource program={program()} canWrite onChanged={() => {}} />)
     await userEvent.click(screen.getByRole('button', { name: /Sync now/ }))
+    // A sync can remove entries and pause the program, so it asks first.
+    expect(api.syncProgram).not.toHaveBeenCalled()
+    const dialog = await screen.findByRole('alertdialog')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Sync scope' }))
     await waitFor(() =>
       expect(toast.success).toHaveBeenCalledWith(
         'Synced: 2 entries removed, 1 exclusions added, 3 additions waiting for acceptance.'

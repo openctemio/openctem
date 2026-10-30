@@ -91,7 +91,7 @@ func TestRoleTemplates_NoAdministration(t *testing.T) {
 		permission.SCMConnectionsWrite, permission.SCMConnectionsDelete,
 		permission.NotificationsWrite, permission.NotificationsDelete,
 		permission.SecretStoreWrite, permission.SecretStoreDelete,
-		permission.ScannerTemplatesWrite, permission.TemplateSourcesWrite, permission.ContentPacksWrite,
+		permission.ScannerTemplatesWrite, permission.ContentSourcesWrite, permission.ContentPacksWrite,
 		permission.ContentInstall, permission.ContentPublish,
 		permission.ToolsWrite, permission.TenantToolsWrite, permission.ScanWindowsManage, permission.ScanWindowsOverride,
 		permission.CredentialsReveal, permission.EvidenceReveal,

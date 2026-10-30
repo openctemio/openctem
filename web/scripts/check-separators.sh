@@ -51,15 +51,30 @@ fi
 
 merge_base="$(git merge-base "$BASE_REF" HEAD)"
 
-# Added lines as "file:text", tests excluded.
-added="$(git diff -U0 "$merge_base"...HEAD -- 'src/*.tsx' 'src/*.ts' 'src/lib/i18n/dictionaries/*.json' \
-  | awk '/^\+\+\+ b\//{f=substr($0,7); next} /^\+/{print f ":" substr($0,2)}' \
-  | grep -v 'separator-ok:' | grep -v '/__tests__/' | grep -Ev '\.test\.tsx?:' || true)"
-
-if [[ -z "$added" ]]; then
-  echo "check-separators: no added source lines."
-  exit 0
+# Existing lines: outside the files listed in scripts/separators-debt.txt (the
+# few still waiting for a cleanup) no source file and no dictionary may carry a
+# separator glyph at all, so a cleaned file cannot regress when its line is
+# edited or moved. Comment lines, a trailing // comment, a credential mask (three
+# or more bullets) and a `separator-ok:` line are ignored. Remove a file from the
+# list when it is clean; never add one.
+debt_file="$(dirname "$0")/separators-debt.txt"
+existing="$(grep -rnE '[·•∙⋅]' src --include='*.ts' --include='*.tsx' --include='*.json' \
+  --exclude='*.test.ts' --exclude='*.test.tsx' --exclude-dir=__tests__ \
+  | grep -v 'separator-ok:' \
+  | awk -F: '{f=$1; t=substr($0, length($1)+length($2)+3); u=t; sub(/ \/\/ .*$/, "", u); gsub(/•••+/, "", u); \
+      if (u ~ /^[[:space:]]*(\/\/|\/\*|\*|\{\/\*)/) next; if (u ~ /[·•∙⋅]/) print f ":" $2 ":" substr(t,1,160)}' \
+  | grep -vFf <(sed 's#$#:#' "$debt_file" 2>/dev/null) || true)"
+if [[ -n "$existing" ]]; then
+  printf '\nA separator glyph remains in a file that was cleaned:\n\n%s\n\n%s\n' "$existing" \
+    "Use <MetaLine items={[...]}/> for rendered rows or a comma for text. Files still being cleaned are listed in scripts/separators-debt.txt." >&2
+  exit 1
 fi
+
+# Added lines as "file:text", tests excluded. A line that the same file also
+# loses is a moved line (the catalogs are re-sorted by key), not a new one.
+added="$(git diff -U0 "$merge_base"...HEAD -- 'src/*.tsx' 'src/*.ts' 'src/lib/i18n/dictionaries/*.json' \
+  | awk '/^\+\+\+ b\//{f=substr($0,7); next} /^-[^-]/{rm[f SUBSEP substr($0,2)]=1; next} /^\+/{n++; af[n]=f; at[n]=substr($0,2)} END{for(i=1;i<=n;i++) if(!((af[i] SUBSEP at[i]) in rm)) print af[i] ":" at[i]}' \
+  | grep -v 'separator-ok:' | grep -v '/__tests__/' | grep -Ev '\.test\.tsx?:' || true)"
 
 fail=0
 report() { # <title> <lines> <advice>
@@ -78,6 +93,29 @@ scan() { # <ERE> [skip]
       if (skip == 1 && u ~ /^[[:space:]]*(\/\/|\/\*|\*|\{\/\*)/) next
       if (u ~ re) print f ":" t }'
 }
+
+# The sign-in dictionaries are checked whole, not only on added lines: every
+# sentence a person meets while signing in follows the text rules (owner,
+# research/290). The API's error strings are checked on added lines: a Go string
+# literal in an apierror, errors.New or fmt.Errorf call, or a Message field.
+auth_dicts="$(for f in src/lib/i18n/dictionaries/en/auth.json src/lib/i18n/dictionaries/vi/auth.json; do
+  if [[ -f "$f" ]]; then awk -v f="$f" '/ — |·|•|∙|⋅/{print f ":" $0}' "$f"; fi
+done)"
+[[ -n "$auth_dicts" ]] && report "A sign-in dictionary has a separator glyph or a spaced em dash:" "$auth_dicts" \
+  "Use a colon, a comma or a full stop, or split into two keys."
+
+go_added="$(git diff -U0 "$merge_base"...HEAD -- ':(top)api/*.go' \
+  | awk '/^\+\+\+ b\//{f=substr($0,7); next} /^\+/{print f ":" substr($0,2)}' \
+  | grep -Ev '_test\.go:' | grep -v 'separator-ok:' \
+  | grep -E '(apierror\.[A-Za-z]+\(|errors\.New\(|fmt\.Errorf\(|Message:)' \
+  | grep -E ' — | · ' || true)"
+[[ -n "$go_added" ]] && report "This branch adds a spaced em dash or middle dot to an API error string:" "$go_added" \
+  "Write the sentence with a colon, a comma or a full stop. The web console shows its own text for the error code."
+
+if [[ -z "$added" ]]; then
+  [[ $fail = 0 ]] && echo "check-separators: no added source lines."
+  exit "$fail"
+fi
 
 hits="$(scan "·|•|∙|⋅" 1)"
 [[ -n "$hits" ]] && report "This branch adds a separator glyph to UI text:" "$hits" \

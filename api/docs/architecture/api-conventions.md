@@ -341,6 +341,14 @@ everything else is **Planned**. The decision numbers are RFC-041 §11 D1–D16.
 - **Conditional reads.** Single resources that change rarely (settings,
   bootstrap, catalogs) send `ETag` and answer `If-None-Match` with `304`.
   **Planned**
+- **Shared reads come with the session bootstrap.** `GET /me/bootstrap` carries
+  what every page needs and the caller may see: profile, memberships,
+  permissions, modules, badge counts, pins, `support_access` (`team:read`),
+  `ai_config` (`findings:read`, `ai_triage:read` and the `ai_triage` module on)
+  and `sla` (`assets:read`; the organization's windows and whether any asset
+  has a policy of its own). Each part uses the gate of the endpoint it
+  replaces and is left out when the caller fails it or its source errors; the
+  console then asks the endpoint as before. **Shipped**
 
 ### 9.3 Writes and safety
 
@@ -405,10 +413,19 @@ keeps RFC 9457):
 ```
 
 - `code` is `UPPER_SNAKE`, specific, and listed in the registry
-  `pkg/apierror/codes.go` with its status, description and params. The spec
-  lists the codes per operation. **Planned** (the registry)
-- `message` is English for logs and developers. The web app translates from
-  `code` and `params` through the `errors.<CODE>` i18n keys (en and vi).
+  `pkg/apierror/codes.go` with its status and default message. **Shipped**
+  (the registry, `apierror.FromCode`); the spec listing codes per operation
+  is **Planned**.
+- `message` is English fallback text for API clients, CI logs and codes the
+  web does not know. The web app chooses its own words from `code` and
+  `details.params` through the `errors.<CODE>` i18n keys (en and vi).
+- `message` never carries an entity id, SQL or driver text, a dial error,
+  a file path, a Go type name or an upstream body: every message is cleaned
+  when it is written, and `tools/lint/errleak` stops new code that relies on
+  the cleaning. **Shipped**; details in
+  [error-responses.md](error-responses.md).
+- `details.params` holds values the client may show (a name, a count),
+  never an id; `WithParams` drops anything else. **Shipped**
 - `request_id` is always present and equals the `X-Request-ID` header.
   **Shipped** for every error written through `pkg/apierror` after the
   request-id middleware; the few answers written before it (the concurrency

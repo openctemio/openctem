@@ -35,7 +35,8 @@ func TestGuardCatchesTheOldVocabulary(t *testing.T) {
 		want bool
 	}{
 		{"agentID", true}, {"AgentService", true}, {"platform_agent_id", true},
-		{"UserAgent", false}, {"userAgent", false}, {"actorUserAgent", false}, {"sensorID", false},
+		{"AIAgent", false}, {"aiAgents", false}, {"ErrAIAgentNotFound", false}, {"ai_agent_owners", false},
+		{"Agent", true}, {"agents", true}, {"AgentID", true}, {"AIAgentAndAgent", true}, {"UserAgent", false}, {"userAgent", false}, {"actorUserAgent", false}, {"sensorID", false},
 	} {
 		if got := mentionsAgent(c.name); got != c.want {
 			t.Errorf("mentionsAgent(%q) = %v, want %v", c.name, got, c.want)

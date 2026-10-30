@@ -33,7 +33,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { Main } from '@/components/layout'
-import { EmptyState, PageHeader } from '@/features/shared'
+import { EmptyState, PageHeader, PageStack } from '@/features/shared'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -236,91 +236,95 @@ export function AssetCategoriesView({ viewSwitcher }: { viewSwitcher?: ReactNode
 
   return (
     <Main>
-      <PageHeader
-        title={t('assets.overview.title', 'Assets')}
-        description={t(
-          'assets.overview.description',
-          'Everything your organization owns that can be attacked, by area.'
-        )}
-        viewSwitcher={viewSwitcher}
-      />
-      <AssetsSectionTabs />
-
-      {dedupCount > 0 && (
-        <Alert className="mt-5">
-          <GitMerge className="h-4 w-4" />
-          <AlertTitle>
-            {dedupCount === 1
-              ? t('assets.overview.duplicatesOne', '1 duplicate set to review')
-              : t('assets.overview.duplicatesMany', '{n} duplicate sets to review', {
-                  n: dedupCount,
-                })}
-          </AlertTitle>
-          <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
-            <span>
-              {t(
-                'assets.overview.duplicatesHint',
-                'Some assets look like the same thing: approve the merges or keep them separate.'
-              )}
-            </span>
-            <Button variant="outline" size="sm" asChild>
-              <Link href="/assets/duplicates">
-                {t('assets.overview.review', 'Review')}
-                <ArrowRight className="ms-2 h-4 w-4" />
-              </Link>
-            </Button>
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {error ? (
-        <Alert variant="destructive" className="mt-5">
-          <AlertTitle>{t('assets.overview.loadError', 'The overview did not load')}</AlertTitle>
-          <AlertDescription>
-            <Button variant="outline" size="sm" className="mt-2" onClick={() => void mutate()}>
-              <RefreshCw className="me-2 h-4 w-4" />
-              {t('assets.overview.retry', 'Retry')}
-            </Button>
-          </AlertDescription>
-        </Alert>
-      ) : loading ? (
-        <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-44 w-full rounded-xl" />
-          ))}
-        </div>
-      ) : (
-        <>
-          {total === 0 && (
-            <EmptyState
-              className="mt-5 border-dashed"
-              icon={Boxes}
-              title={t('assets.overview.empty.title', 'No assets discovered yet')}
-              description={t(
-                'assets.overview.empty.description',
-                'Add your domains to the scope and run a discovery scan, connect an integration, or add assets by hand.'
-              )}
-              action={
-                <div className="flex flex-wrap justify-center gap-2">
-                  <Button size="sm" asChild>
-                    <Link href="/scans">
-                      {t('assets.overview.empty.runScan', 'Run a discovery scan')}
-                    </Link>
-                  </Button>
-                  <Button variant="outline" size="sm" asChild>
-                    <Link href="/scope">{t('assets.overview.empty.openScope', 'Open scope')}</Link>
-                  </Button>
-                </div>
-              }
-            />
+      <PageStack>
+        <PageHeader
+          title={t('assets.overview.title', 'Assets')}
+          description={t(
+            'assets.overview.description',
+            'Everything your organization owns that can be attacked, by area.'
           )}
-          <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
-            {ordered.map((l) => (
-              <LensCard key={l.id || 'other'} lens={l} />
+          viewSwitcher={viewSwitcher}
+        />
+        <AssetsSectionTabs />
+
+        {dedupCount > 0 && (
+          <Alert>
+            <GitMerge className="h-4 w-4" />
+            <AlertTitle>
+              {dedupCount === 1
+                ? t('assets.overview.duplicatesOne', '1 duplicate set to review')
+                : t('assets.overview.duplicatesMany', '{n} duplicate sets to review', {
+                    n: dedupCount,
+                  })}
+            </AlertTitle>
+            <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
+              <span>
+                {t(
+                  'assets.overview.duplicatesHint',
+                  'Some assets look like the same thing: approve the merges or keep them separate.'
+                )}
+              </span>
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/assets/duplicates">
+                  {t('assets.overview.review', 'Review')}
+                  <ArrowRight className="ms-2 h-4 w-4" />
+                </Link>
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {error ? (
+          <Alert variant="destructive">
+            <AlertTitle>{t('assets.overview.loadError', 'The overview did not load')}</AlertTitle>
+            <AlertDescription>
+              <Button variant="outline" size="sm" className="mt-2" onClick={() => void mutate()}>
+                <RefreshCw className="me-2 h-4 w-4" />
+                {t('assets.overview.retry', 'Retry')}
+              </Button>
+            </AlertDescription>
+          </Alert>
+        ) : loading ? (
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Skeleton key={i} className="h-44 w-full rounded-xl" />
             ))}
           </div>
-        </>
-      )}
+        ) : (
+          <>
+            {total === 0 && (
+              <EmptyState
+                className="border-dashed"
+                icon={Boxes}
+                title={t('assets.overview.empty.title', 'No assets discovered yet')}
+                description={t(
+                  'assets.overview.empty.description',
+                  'Add your domains to the scope and run a discovery scan, connect an integration, or add assets by hand.'
+                )}
+                action={
+                  <div className="flex flex-wrap justify-center gap-2">
+                    <Button size="sm" asChild>
+                      <Link href="/scans">
+                        {t('assets.overview.empty.runScan', 'Run a discovery scan')}
+                      </Link>
+                    </Button>
+                    <Button variant="outline" size="sm" asChild>
+                      <Link href="/scope">
+                        {t('assets.overview.empty.openScope', 'Open scope')}
+                      </Link>
+                    </Button>
+                  </div>
+                }
+              />
+            )}
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
+              {ordered.map((l) => (
+                <LensCard key={l.id || 'other'} lens={l} />
+              ))}
+            </div>
+          </>
+        )}
+      </PageStack>
     </Main>
   )
 }

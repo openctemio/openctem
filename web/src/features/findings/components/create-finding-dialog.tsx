@@ -1,7 +1,7 @@
 'use client'
 
 import { useTranslation } from '@/context/i18n-provider'
-import { useState, useDeferredValue, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import {
   Dialog,
   DialogBody,
@@ -45,6 +45,7 @@ import { SEVERITY_CONFIG } from '../types'
 import type { Severity } from '@/features/shared/types'
 import type { FindingSource } from '../types'
 import { canonicalAssetType, resolveTypeName } from '@/features/asset-types/type-match'
+import { useSearchQuery } from '@/hooks/use-search-query'
 
 // Asset type names per field category, matched on the stored (type,
 // sub-type) through the registry (RFC-042 §6.3.8). Order matters: a host
@@ -104,7 +105,7 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
   // Cloud-specific fields
   const [resourceArn, setResourceArn] = useState('')
 
-  const deferredAssetSearch = useDeferredValue(assetSearch)
+  const deferredAssetSearch = useSearchQuery(assetSearch).term
 
   // Fetch assets for selection
   const { assets, isLoading: assetsLoading } = useAssets({

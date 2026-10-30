@@ -1,7 +1,7 @@
 package jira
 
 import (
-	"strings"
+	"errors"
 	"testing"
 
 	"github.com/openctemio/openctem/api/pkg/crypto"
@@ -32,7 +32,7 @@ func TestResolveCredentials_UndecryptableFailsClosed(t *testing.T) {
 	} {
 		intg := newJiraIntegration(t, integration.StatusConnected, "https://jira.example.com", stored, nil)
 		email, token, err := r.resolveCredentials(intg)
-		if err == nil || !strings.Contains(err.Error(), "cannot be decrypted") {
+		if !errors.Is(err, integration.ErrCredentialsUnreadable) {
 			t.Fatalf("%s: err = %v, want a decrypt error", name, err)
 		}
 		if email != "" || token != "" {

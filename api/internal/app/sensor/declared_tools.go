@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -71,6 +72,12 @@ func declarationOf(dt sensordom.DeclaredTool) tooldom.Declaration {
 		Description  string         `json:"description"`
 		Consumes     []string       `json:"consumes"`
 		Config       map[string]any `json:"config"`
+		Implements   []struct {
+			Capability string `json:"capability"`
+			Params     map[string]struct {
+				Key string `json:"key"`
+			} `json:"params"`
+		} `json:"implements"`
 		Presentation *struct {
 			DisplayName string `json:"display_name"`
 			Category    string `json:"category"`
@@ -89,6 +96,23 @@ func declarationOf(dt sensordom.DeclaredTool) tooldom.Declaration {
 	}
 	if p := desc.Presentation; p != nil {
 		d.DisplayName, d.Category, d.Icon = p.DisplayName, p.Category, p.Icon
+	}
+	// The standard params each implemented capability takes and the config
+	// key each one sets (a param without a key sets the key of its name),
+	// so a capability step maps them for this tool as it does for a
+	// catalog tool. Only references the contract lists are kept.
+	for _, im := range desc.Implements {
+		if !slices.Contains(d.Implements, im.Capability) {
+			continue
+		}
+		if d.Params == nil {
+			d.Params = map[string]map[string]string{}
+		}
+		m := map[string]string{}
+		for name, p := range im.Params {
+			m[name] = firstNonEmpty(p.Key, name)
+		}
+		d.Params[im.Capability] = m
 	}
 	return d
 }

@@ -395,33 +395,3 @@ export function getCompatibilityStatus(percent: number): CompatibilityStatus {
   if (percent > 0) return 'partial'
   return 'none'
 }
-
-/**
- * Get color config for compatibility status
- */
-export const COMPATIBILITY_STATUS_CONFIG: Record<
-  CompatibilityStatus,
-  { label: string; color: string; bgColor: string; textColor: string; icon: string }
-> = {
-  full: {
-    label: 'Fully Compatible',
-    color: 'green',
-    bgColor: 'bg-green-500/15',
-    textColor: 'text-green-600',
-    icon: 'CheckCircle',
-  },
-  partial: {
-    label: 'Partially Compatible',
-    color: 'yellow',
-    bgColor: 'bg-yellow-500/15',
-    textColor: 'text-yellow-600',
-    icon: 'AlertTriangle',
-  },
-  none: {
-    label: 'Not Compatible',
-    color: 'red',
-    bgColor: 'bg-red-500/15',
-    textColor: 'text-red-600',
-    icon: 'XCircle',
-  },
-}

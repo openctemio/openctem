@@ -29,6 +29,7 @@ import en_emergingThreats from './en/emergingThreats.json'
 import en_auth from './en/auth.json'
 import en_automations from './en/automations.json'
 import en_common from './en/common.json'
+import en_errors from './en/errors.json'
 import en_labels from './en/labels.json'
 import en_repositories from './en/repositories.json'
 import en_dashboardMetrics from './en/dashboardMetrics.json'
@@ -87,6 +88,7 @@ import en_riskScore from './en/riskScore.json'
 import en_severity from './en/severity.json'
 import en_userMenu from './en/userMenu.json'
 import en_validation from './en/validation.json'
+import en_vulnPage from './en/vulnPage.json'
 import en_webEvidence from './en/webEvidence.json'
 import en_workflowStages from './en/workflowStages.json'
 import en_remediationHub from './en/remediationHub.json'
@@ -120,6 +122,7 @@ import vi_emergingThreats from './vi/emergingThreats.json'
 import vi_auth from './vi/auth.json'
 import vi_automations from './vi/automations.json'
 import vi_common from './vi/common.json'
+import vi_errors from './vi/errors.json'
 import vi_labels from './vi/labels.json'
 import vi_repositories from './vi/repositories.json'
 import vi_dashboardMetrics from './vi/dashboardMetrics.json'
@@ -178,6 +181,7 @@ import vi_riskScore from './vi/riskScore.json'
 import vi_severity from './vi/severity.json'
 import vi_userMenu from './vi/userMenu.json'
 import vi_validation from './vi/validation.json'
+import vi_vulnPage from './vi/vulnPage.json'
 import vi_webEvidence from './vi/webEvidence.json'
 import vi_workflowStages from './vi/workflowStages.json'
 import vi_remediationHub from './vi/remediationHub.json'
@@ -216,6 +220,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   auth: en_auth,
   automations: en_automations,
   common: en_common,
+  errors: en_errors,
   labels: en_labels,
   repositories: en_repositories,
   dashboardMetrics: en_dashboardMetrics,
@@ -274,6 +279,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   severity: en_severity,
   userMenu: en_userMenu,
   validation: en_validation,
+  vulnPage: en_vulnPage,
   webEvidence: en_webEvidence,
   workflowStages: en_workflowStages,
   remediationHub: en_remediationHub,
@@ -310,6 +316,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   auth: vi_auth,
   automations: vi_automations,
   common: vi_common,
+  errors: vi_errors,
   labels: vi_labels,
   repositories: vi_repositories,
   dashboardMetrics: vi_dashboardMetrics,
@@ -368,6 +375,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   severity: vi_severity,
   userMenu: vi_userMenu,
   validation: vi_validation,
+  vulnPage: vi_vulnPage,
   webEvidence: vi_webEvidence,
   workflowStages: vi_workflowStages,
   remediationHub: vi_remediationHub,

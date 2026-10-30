@@ -22,6 +22,7 @@ organization's findings. The ingest service writes it; nothing else does.
 | Dispositions: suppressed (with rule and policy version), out of scope, rejected and quarantined items on the receipt (`ingest_receipt_items`, `GET /findings/imports/{id}/items`); versioned policy snapshot that fails the ingest when it cannot load; automations of new findings through a durable `side_effects` job (migration `003384_ingest_dispositions`, RFC-122 §6d). `filtered` and `held` are reserved for ingest filters and the review gate | shipped |
 | Nightly load harness (`TestIngestLoad`, workflow `api-ingest-load.yml`): concurrent uploads, the urgent lane behind bulk work, one repository from many runs (RFC-122 §6e) | shipped |
 | Full-coverage uploads (`coverage=full` with an explicit scope) | shipped |
+| List filters `origin` (source group), `tool` and `since`, and the `totals` of every receipt the filter keeps: the figures the dashboard intake shows for the same filter ([dashboards](dashboards.md), "Exposure flow and intake") | shipped |
 | Web: receipt and recent imports in the import dialog, "What this run did to findings" on the scan run page, "Last seen in" on the finding overview (en, vi) | shipped |
 
 ## Which receipt
@@ -74,6 +75,17 @@ output says so (`Output.ReceiptFailed`). A segment of a command's run is
 retried instead (`IngestV2Segment`), because that run's receipt decides absence
 (below), and re-ingesting a segment is idempotent.
 
+## The run's findings figure
+
+`scan_runs.total_findings` is the number of findings the run's receipt holds
+(created, still detected and reopened). `IngestReceiptRepository.Record`
+raises it in the same transaction as each report of a run, and `UpdateStats`
+and the run save never lower it below the receipt, so a running run shows its
+findings live. The sensor's `findings_count` on a command result is 0 for
+tools that report through ingest and is only a floor. The run page refreshes
+the receipt while the run is running and shows `untouched` as counted when the
+run finishes.
+
 ## Absence
 
 A covered run closes the open findings of its scope that it did not report.
@@ -90,6 +102,15 @@ deadlock leaves the previous one. Either made a finding the run did report look
 unreported, and the run closed it. A finding whose `scan_id` is one of the
 run's reports still counts as seen. The like-for-like guards are unchanged:
 same tool, same scan profile, a clean command, the blinding guard.
+
+A run that did not cover every target closes nothing either, whatever its
+reports' `coverage_type` says. The evaluation ends with the reason
+`uncovered_targets` when the command result lists or counts coverage gaps
+(hosts the sensor gave up or that blocked it), unreached targets or targets
+its local policy refused (`resultLeftTargetsUncovered`,
+`internal/app/ingest/coverage_autoresolve.go`). Such a host can still count as
+touched (an asset record, some findings), so a finding the run did not repeat
+there proves nothing. A metadata block that does not parse is not trusted.
 
 A receipt that cannot prove absence closes nothing. The evaluation ends with the
 reason `receipt_incomplete` (`ingestreport.ErrReceiptIncomplete`) when:
@@ -154,11 +175,16 @@ member may write to but not see. When the request has read every part,
   longer lists everything the upload reported (`AbsenceReceiptByID`);
 - checks the declaration again (`scope_changed`, nothing closed, when an
   asset left the uploader's scope or the organization while the upload ran);
+- refuses to close anything (`coverage_note = needs_verify`, coverage stays
+  `partial`, the file is still imported) when the uploader lacks
+  `findings:verify`, as closing a finding as fixed is a verification;
 - per tool: candidates are the open findings on the declared assets last
   seen by that tool, not a branch occurrence, not from a human source (pentest,
   manual, bug bounty, red team), not a leaked secret, and not reported by
   this upload: no action row on the upload's receipt (the same rule as a
-  covered scan, see "Absence"). A concurrent upload of the same tool
+  covered scan, see "Absence"), not critical, not in the known-exploited list,
+  and whose latest sighting (newest action row) came from an upload, so a
+  finding a platform sensor saw last stays open. A concurrent upload of the same tool
   overwrites `scan_id`, so `scan_id` alone does not prove absence;
 - the blinding guard holds a mass close (`held`, nothing closed);
 - otherwise closes them (`resolved`, verification `covered_scan`, timeline
@@ -170,7 +196,7 @@ member may write to but not see. When the request has read every part,
 
 | Route | Gate | Who sees what |
 |---|---|---|
-| `GET /api/v1/findings/imports` | `findings:read` | organization view (unrestricted data scope, or `dashboards:org:view`): every receipt; anyone else: only their own uploads. Filters `source_kind`, `source_ref`; unknown parameter 400 `INVALID_FILTER`; `per_page` ≤ 100 |
+| `GET /api/v1/findings/imports` | `findings:read` | organization view (unrestricted data scope, or `dashboards:org:view`): every receipt; anyone else: only their own uploads. Filters `source_kind`, `source_ref`, `origin` (sensor, import, connector, ci), `tool` (`unknown`: none named), `since` (RFC 3339, activity at or after); `totals` sum every receipt the filter keeps; unknown or malformed parameter 400 `INVALID_FILTER`; `per_page` ≤ 100 |
 | `GET /api/v1/findings/imports/{id}` | `findings:read` | as the list (else 404); `by_severity` counts the actions per action and severity over findings in the caller's scope |
 | `GET /api/v1/findings/imports/{id}/actions` | `findings:read` | as the list; rows only for findings in the caller's data scope and pentest visibility; filter `action` |
 | `GET /api/v1/findings/{id}/imports` | `findings:read` | the finding must be in scope (404); the newest 20 receipts that acted on it: id, kind, ref, tool, action, time (no counts) |

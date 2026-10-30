@@ -44,6 +44,10 @@ const (
 	MetaIcon     = "icon"
 	// MetaImplements are the capability references ("dast.web@1").
 	MetaImplements = "implements"
+	// MetaParams maps each implemented capability reference to the
+	// standard params the tool takes for it and the config key each one
+	// sets ({"scan.ports@1": {"rate": "rate", "ports": "port_list"}}).
+	MetaParams = "params"
 )
 
 // MaxDeclaredToolsPerTenant bounds how many declared tools one organization
@@ -56,6 +60,7 @@ const (
 	maxDeclaredDescription = 1000
 	maxDeclaredHint        = 32
 	maxDeclaredList        = 32
+	maxDeclaredParams      = 64
 )
 
 // Declaration is what a sensor's manifest says about one tool, already
@@ -71,6 +76,9 @@ type Declaration struct {
 	// Implements are the capability references the descriptor implements
 	// that the capability taxonomy knows ("dast.web@1").
 	Implements []string
+	// Params maps each reference of Implements to the standard params the
+	// tool takes for it and the config key each one sets.
+	Params map[string]map[string]string
 	// Consumes are the target types the tool takes.
 	Consumes []string
 	// ConfigSchema is the descriptor's settings schema (nil: none).
@@ -122,9 +130,14 @@ func (t *Tool) DeclaredDigest() string {
 // RefreshDeclaration applies a newer declaration of the same tool to a
 // declared row and reports whether anything changed. A declaration of an
 // older version than the row's is ignored (a fleet in the middle of an
-// upgrade reports both), as is one for a row a member created.
+// upgrade reports both), as is one for a row a member created. A row
+// projected before it kept the param mappings is refreshed once from the
+// same descriptor.
 func (t *Tool) RefreshDeclaration(d Declaration, newer func(a, b string) bool) bool {
-	if !t.IsDeclared() || d.Digest == t.DeclaredDigest() {
+	if !t.IsDeclared() {
+		return false
+	}
+	if _, mapped := t.Metadata[MetaParams]; mapped && d.Digest == t.DeclaredDigest() {
 		return false
 	}
 	if cur, _ := t.Metadata[MetaVersion].(string); cur != "" && d.Version != "" && newer != nil && newer(cur, d.Version) {
@@ -158,6 +171,7 @@ func (t *Tool) applyDeclaration(d Declaration) {
 	t.Metadata[MetaCategory] = declaredHint(d.Category, maxDeclaredHint)
 	t.Metadata[MetaIcon] = declaredHint(d.Icon, maxDeclaredHint)
 	t.Metadata[MetaImplements] = declaredRefs(d.Implements)
+	t.Metadata[MetaParams] = declaredParams(d.Implements, d.Params)
 	t.CurrentVersion = declaredHint(d.Version, 50)
 }
 
@@ -183,6 +197,64 @@ func declaredRefs(refs []string) []string {
 		}
 	}
 	return out
+}
+
+// declaredParams keeps the param mappings of the implemented capability
+// references only, with machine-word names and keys, bounded.
+func declaredParams(refs []string, in map[string]map[string]string) map[string]map[string]string {
+	out := map[string]map[string]string{}
+	for _, ref := range declaredRefs(refs) {
+		m := map[string]string{}
+		for name, key := range in[ref] {
+			name, key = declaredHint(name, 64), declaredHint(key, 64)
+			if name == "" || key == "" || strings.ContainsAny(name+key, ".@+") || len(m) >= maxDeclaredParams {
+				continue
+			}
+			m[name] = key
+		}
+		out[ref] = m
+	}
+	return out
+}
+
+// DeclaredImplements reports whether a declared tool implements the
+// capability reference ref ("scan.ports@1"), with the standard params it
+// takes for it and the config key each one sets. A row a member created,
+// or one that does not implement ref, reports false.
+func (t *Tool) DeclaredImplements(ref string) (map[string]string, bool) {
+	if t == nil || !t.IsDeclared() || ref == "" {
+		return nil, false
+	}
+	found := false
+	switch refs := t.Metadata[MetaImplements].(type) {
+	case []string:
+		found = contains(refs, ref)
+	case []any:
+		for _, r := range refs {
+			if s, ok := r.(string); ok && s == ref {
+				found = true
+			}
+		}
+	}
+	if !found {
+		return nil, false
+	}
+	params := map[string]string{}
+	switch all := t.Metadata[MetaParams].(type) {
+	case map[string]map[string]string:
+		for name, key := range all[ref] {
+			params[name] = key
+		}
+	case map[string]any:
+		if m, ok := all[ref].(map[string]any); ok {
+			for name, key := range m {
+				if k, ok := key.(string); ok {
+					params[name] = k
+				}
+			}
+		}
+	}
+	return params, true
 }
 
 func declaredWords(in []string) []string {

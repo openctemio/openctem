@@ -28,6 +28,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { MetaLine } from '@/features/shared/components/text-layout'
 import { useTranslation } from '@/context/i18n-provider'
 import { ApiClientError } from '@/lib/api/error-handler'
 import { getErrorMessage } from '@/lib/api/error-handler'
@@ -101,8 +102,8 @@ export interface DashboardFreshnessProps {
 }
 
 /**
- * "Your scope · Updated 2m ago · Next in 58m" on one line; the next refresh
- * truncates first on a narrow screen (the full times are in the hover text), and a
+ * "Your scope", "Updated 2m ago" and "Next in 58m" as one MetaLine (the full times
+ * are in the hover text), and a
  * status line under it only when the figures are stale or still being built.
  */
 /** Re-renders its component every minute so relative times keep ticking. */
@@ -120,49 +121,35 @@ export function DashboardFreshness({ kind, data }: DashboardFreshnessProps) {
   useMinuteTick()
   const computed = data?.computed_at
   const rel = (d: string) => formatRelativeTime(d, locale, new Date(), 'narrow')
-  const sep = (
-    <span aria-hidden className="shrink-0 px-1.5">
-      ·
-    </span>
-  )
   return (
     <div
       className="flex flex-col gap-1 text-xs text-muted-foreground"
       data-testid="dashboard-freshness"
     >
-      <p className="flex min-w-0 items-center" data-testid="dashboard-meta">
-        <ScopeBadge data={data} kind={kind} />
-        {computed && (
-          <>
-            {sep}
-            <span className="shrink-0" title={formatAbsoluteTime(computed, locale)}>
+      <MetaLine
+        data-testid="dashboard-meta"
+        items={[
+          <ScopeBadge key="scope" data={data} kind={kind} />,
+          computed && (
+            <span key="updated" title={formatAbsoluteTime(computed, locale)}>
               {t('dashboards.freshness.updated', 'Updated {time}', { time: rel(computed) })}
             </span>
-          </>
-        )}
-        {data?.next_refresh_at ? (
-          <>
-            {sep}
-            <span
-              className="min-w-0 truncate"
-              title={formatAbsoluteTime(data.next_refresh_at, locale)}
-            >
+          ),
+          data?.next_refresh_at ? (
+            <span key="next" title={formatAbsoluteTime(data.next_refresh_at, locale)}>
               {t('dashboards.freshness.next', 'Next {time}', {
                 time: rel(data.next_refresh_at),
               })}
             </span>
-          </>
-        ) : (
-          data && (
-            <>
-              {sep}
-              <span className="min-w-0 truncate">
+          ) : (
+            data && (
+              <span key="manual">
                 {t('dashboards.freshness.manual', 'Refreshed on request only')}
               </span>
-            </>
-          )
-        )}
-      </p>
+            )
+          ),
+        ]}
+      />
       {data?.stale && (
         <p className="flex items-start gap-1 text-warning" role="status">
           <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />

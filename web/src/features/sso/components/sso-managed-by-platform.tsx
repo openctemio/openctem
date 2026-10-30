@@ -6,7 +6,7 @@ import { ShieldCheck } from 'lucide-react'
 import { Main } from '@/components/layout'
 import { Button } from '@/components/ui/button'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { EmptyState, PageHeader } from '@/features/shared'
+import { EmptyState, PageHeader, PageStack } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 
 /** One wording for every place that explains where SSO is configured. */
@@ -32,21 +32,23 @@ export function SsoManagedByPlatform({ title, what }: SsoManagedByPlatformProps)
   const { t } = useTranslation()
   return (
     <Main>
-      <PageHeader title={title} />
-      <div className="mt-5">
-        <EmptyState
-          icon={ShieldCheck}
-          title={t('org.sso.managedTitle', SSO_MANAGED_TITLE)}
-          description={t('org.sso.managedText', ssoManagedText('{what}'), { what })}
-          action={
-            <Button asChild variant="outline" size="sm">
-              <Link href="/settings/authentication">
-                {t('org.sso.authLink', 'Authentication settings')}
-              </Link>
-            </Button>
-          }
-        />
-      </div>
+      <PageStack>
+        <PageHeader title={title} />
+        <div>
+          <EmptyState
+            icon={ShieldCheck}
+            title={t('org.sso.managedTitle', SSO_MANAGED_TITLE)}
+            description={t('org.sso.managedText', ssoManagedText('{what}'), { what })}
+            action={
+              <Button asChild variant="outline" size="sm">
+                <Link href="/settings/authentication">
+                  {t('org.sso.authLink', 'Authentication settings')}
+                </Link>
+              </Button>
+            }
+          />
+        </div>
+      </PageStack>
     </Main>
   )
 }

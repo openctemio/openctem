@@ -13,28 +13,44 @@ import { BookOpen } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { SafeExternalLink } from '@/components/safe-external-link'
-import { PageHeader } from '@/features/shared'
+import { PageHeader, PageStack } from '@/features/shared'
 import { DOCS } from '@/lib/docs-links'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { CIPipelinesPanel } from './ci-pipelines-panel'
 import { CITrustSettings } from './ci-trust-settings'
 import { useTranslation } from '@/context/i18n-provider'
 
-export type CICDTab = 'pipelines' | 'setup'
+export type CICDTab = 'pipelines' | 'runs' | 'coverage' | 'setup'
 
-/** The tab a URL asks for (`?tab=setup`); anything else is Pipelines. */
-export function cicdTab(raw: string): CICDTab {
-  return raw === 'setup' ? 'setup' : 'pipelines'
+/**
+ * The tab a URL asks for. `?tab=setup` is Trust and gate; otherwise `?view=`
+ * picks Pipelines, Runs or Coverage (the parameters existing links use).
+ */
+export function cicdTab(tabRaw: string, viewRaw = ''): CICDTab {
+  if (tabRaw === 'setup') return 'setup'
+  return viewRaw === 'runs' || viewRaw === 'coverage' ? viewRaw : 'pipelines'
 }
 
 export function CICDIntegration() {
   const docsHref = useDocsHref()
   const { t } = useTranslation()
-  const [tabParam, setTabParam] = useUrlFilter('tab', 'pipelines')
-  const tab = cicdTab(tabParam)
+  const [tabParam, setTabParam] = useUrlFilter('tab', '')
+  const [viewParam, setViewParam] = useUrlFilter('view', '')
+  const tab = cicdTab(tabParam, viewParam)
+  // One tab row (research/249 R21): pipelines, runs and coverage are lists of
+  // different rows, so they are tabs beside Trust and gate, not a second row.
+  const changeTab = (next: string) => {
+    if (next === 'setup') {
+      setViewParam('')
+      setTabParam('setup')
+    } else {
+      setTabParam('')
+      setViewParam(next === 'runs' || next === 'coverage' ? next : '')
+    }
+  }
 
   return (
-    <div className="space-y-4">
+    <PageStack>
       <PageHeader
         title={t('scans.ci.title', 'CI/CD integration')}
         description={t(
@@ -49,13 +65,15 @@ export function CICDIntegration() {
           </SafeExternalLink>
         </Button>
       </PageHeader>
-      <Tabs value={tab} onValueChange={(v) => setTabParam(v === 'setup' ? 'setup' : '')}>
-        <TabsList>
-          <TabsTrigger value="pipelines">{t('scans.ci.tab.pipelines', 'Pipelines')}</TabsTrigger>
+      <Tabs value={tab} onValueChange={changeTab}>
+        <TabsList aria-label={t('scans.ci.tabsLabel', 'CI/CD sections')}>
+          <TabsTrigger value="pipelines">{t('scans.ci.view.pipelines', 'Pipelines')}</TabsTrigger>
+          <TabsTrigger value="runs">{t('scans.ci.view.runs', 'Runs')}</TabsTrigger>
+          <TabsTrigger value="coverage">{t('scans.ci.view.coverage', 'Coverage')}</TabsTrigger>
           <TabsTrigger value="setup">{t('scans.ci.tab.setup', 'Trust and gate')}</TabsTrigger>
         </TabsList>
       </Tabs>
       {tab === 'setup' ? <CITrustSettings embedded /> : <CIPipelinesPanel />}
-    </div>
+    </PageStack>
   )
 }

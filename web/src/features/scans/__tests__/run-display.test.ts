@@ -70,14 +70,14 @@ describe('scanRunCounts', () => {
     })
   })
 
-  it('uses the scan list formula: canceled runs are out, partial runs are settled', () => {
+  it('uses the scan list formula: canceled runs are out, partial runs are successes', () => {
     // 10 runs: 5 succeeded, 2 partial, 1 failed, 2 canceled.
     const c = scanRunCounts(
       { total_runs: 10, successful_runs: 5, failed_runs: 1, partial_runs: 2 },
       []
     )
     expect(c.partial).toBe(2)
-    expect(c.successRate).toBe(63) // 5 / (5 + 2 + 1), not 5 / 10
+    expect(c.successRate).toBe(88) // (5 + 2) / (5 + 2 + 1), not 5 / 10
   })
 
   it('knows which statuses are in progress', () => {

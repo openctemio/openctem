@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/lib/pq"
@@ -29,6 +30,10 @@ const maxScannerEvidenceBatch = 1000
 // scanner_output_at means "the output last changed". Values are sanitized
 // again here (defense in depth).
 func (r *FindingRepository) UpdateScannerEvidenceBatch(ctx context.Context, tenantID shared.ID, updates []vulnerability.ScannerEvidenceUpdate) (int64, error) {
+	// The global lock order of findings rows (finding_lock_order.go), across
+	// the statements and inside each.
+	updates = slices.Clone(updates)
+	sortByFingerprint(updates, func(u vulnerability.ScannerEvidenceUpdate) string { return u.Fingerprint })
 	var total int64
 	for start := 0; start < len(updates); start += maxScannerEvidenceBatch {
 		end := min(start+maxScannerEvidenceBatch, len(updates))
@@ -51,19 +56,13 @@ func (r *FindingRepository) UpdateScannerEvidenceBatch(ctx context.Context, tena
 		if len(fps) == 0 {
 			continue
 		}
-		res, err := r.db.ExecContext(ctx, `
-			UPDATE findings AS f SET
-				scanner_output = COALESCE(d.output, f.scanner_output),
-				scanner_output_at = CASE WHEN d.output IS NOT NULL AND d.output IS DISTINCT FROM f.scanner_output
-				                         THEN now() ELSE f.scanner_output_at END,
-				cvss_v2_vector = COALESCE(d.v2, f.cvss_v2_vector),
-				cvss_v3_vector = COALESCE(d.v3, f.cvss_v3_vector)
-			FROM unnest($2::text[], $3::text[], $4::text[], $5::text[]) AS d(fingerprint, output, v2, v3)
-			WHERE f.tenant_id = $1 AND f.fingerprint = d.fingerprint
-			  AND ((d.output IS NOT NULL AND d.output IS DISTINCT FROM f.scanner_output)
-			    OR (d.v2 IS NOT NULL AND d.v2 IS DISTINCT FROM f.cvss_v2_vector)
-			    OR (d.v3 IS NOT NULL AND d.v3 IS DISTINCT FROM f.cvss_v3_vector))`,
-			tenantID.String(), pq.Array(fps), pq.Array(outs), pq.Array(v2s), pq.Array(v3s))
+		var res sql.Result
+		err := retryWriteConflict(ctx, func() error {
+			var execErr error
+			res, execErr = r.db.ExecContext(ctx, scannerEvidenceUpdateSQL,
+				tenantID.String(), pq.Array(fps), pq.Array(outs), pq.Array(v2s), pq.Array(v3s))
+			return execErr
+		})
 		if err != nil {
 			return total, fmt.Errorf("update scanner evidence: %w", err)
 		}
@@ -119,3 +118,26 @@ func (r *FindingRepository) ClearScannerOutputClosedBefore(ctx context.Context, 
 	}
 	return res.RowsAffected()
 }
+
+// scannerEvidenceInput is the sightings of UpdateScannerEvidenceBatch.
+const scannerEvidenceInput = `unnest($2::text[], $3::text[], $4::text[], $5::text[]) AS d(fingerprint, output, v2, v3)`
+
+// scannerEvidenceChanges selects the findings a sighting changes.
+const scannerEvidenceChanges = `f.tenant_id = $1 AND f.fingerprint = d.fingerprint
+		  AND ((d.output IS NOT NULL AND d.output IS DISTINCT FROM f.scanner_output)
+		    OR (d.v2 IS NOT NULL AND d.v2 IS DISTINCT FROM f.cvss_v2_vector)
+		    OR (d.v3 IS NOT NULL AND d.v3 IS DISTINCT FROM f.cvss_v3_vector))`
+
+// scannerEvidenceUpdateSQL writes the scanner output and vectors of
+// UpdateScannerEvidenceBatch. The rows it changes are locked first in the
+// global order (finding_lock_order.go); the update rechecks the condition.
+var scannerEvidenceUpdateSQL = `
+		WITH ` + findingLockCTE("findings f, "+scannerEvidenceInput, scannerEvidenceChanges) + `
+		UPDATE findings AS f SET
+			scanner_output = COALESCE(d.output, f.scanner_output),
+			scanner_output_at = CASE WHEN d.output IS NOT NULL AND d.output IS DISTINCT FROM f.scanner_output
+			                         THEN now() ELSE f.scanner_output_at END,
+			cvss_v2_vector = COALESCE(d.v2, f.cvss_v2_vector),
+			cvss_v3_vector = COALESCE(d.v3, f.cvss_v3_vector)
+		FROM locked l, ` + scannerEvidenceInput + `
+		WHERE f.id = l.locked_id AND ` + scannerEvidenceChanges

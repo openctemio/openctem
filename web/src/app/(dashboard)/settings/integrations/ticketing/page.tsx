@@ -1,5 +1,6 @@
 'use client'
 
+import { IntegrationHealth } from '@/features/integrations/components/integration-health'
 import { useMemo, useState } from 'react'
 import { Main } from '@/components/layout'
 import type { ColumnDef } from '@tanstack/react-table'
@@ -13,6 +14,7 @@ import {
   RelativeTime,
   StackedCell,
   type MetricStripItem,
+  PageStack,
 } from '@/features/shared'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -48,10 +50,13 @@ import {
   Trash2,
   Webhook,
   SlidersHorizontal,
+  KeyRound,
 } from 'lucide-react'
+import { confirmName } from '@/lib/confirm-name'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Can } from '@/lib/permissions'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { connectionProblem } from '@/features/integrations/lib/connection-status'
 import { RoutingRulesDialog } from '@/features/integrations/components/routing-rules-dialog'
 import { JiraWebhookDialog } from '@/features/integrations/components/jira-webhook-dialog'
 import { TicketCreatePolicyDialog } from '@/features/integrations/components/ticket-create-policy-dialog'
@@ -73,10 +78,7 @@ import {
   useTestIntegrationApi,
   useDeleteIntegrationApi,
 } from '@/features/integrations/api/use-integrations-api'
-import type {
-  Integration,
-  IntegrationStatus,
-} from '@/features/integrations/types/integration.types'
+import type { Integration } from '@/features/integrations/types/integration.types'
 import { toast } from 'sonner'
 import { SEVERITY_LEVELS, type SeverityLevel } from '@/lib/severity'
 import { useSeverityLabel } from '@/hooks/use-scale-labels'
@@ -149,30 +151,7 @@ function StatusBadge({ integration }: { integration: Integration }) {
       </Badge>
     )
   }
-  const status: IntegrationStatus = integration.status
-  // Only a problem (error / expired) is coloured; other states stay neutral.
-  const config: Record<
-    IntegrationStatus,
-    { variant: 'default' | 'secondary' | 'destructive' | 'outline'; label: string }
-  > = {
-    connected: {
-      variant: 'default',
-      label: t('ticketingIntegration.status.connected', 'Connected'),
-    },
-    disconnected: {
-      variant: 'secondary',
-      label: t('ticketingIntegration.status.disconnected', 'Not connected'),
-    },
-    error: { variant: 'destructive', label: t('ticketingIntegration.status.error', 'Error') },
-    pending: { variant: 'outline', label: t('ticketingIntegration.status.pending', 'Pending') },
-    expired: { variant: 'destructive', label: t('ticketingIntegration.status.expired', 'Expired') },
-    disabled: {
-      variant: 'secondary',
-      label: t('ticketingIntegration.status.disabled', 'Disabled'),
-    },
-  }
-  const { variant, label } = config[status] ?? config.disconnected
-  return <Badge variant={variant}>{label}</Badge>
+  return <IntegrationHealth status={integration.status} />
 }
 
 // ─────────────────────────────────────────────────────────
@@ -604,12 +583,26 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
   const [webhookOpen, setWebhookOpen] = useState(false)
   const [policyOpen, setPolicyOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [tokenOpen, setTokenOpen] = useState(false)
 
   const { trigger: syncNow, isMutating: isSyncing } = useSyncIntegrationApi(integration.id)
+  // A sync creates and updates tickets in the tracker: ask first.
+  const [syncOpen, setSyncOpen] = useState(false)
   const { trigger: testNow, isMutating: isTesting } = useTestIntegrationApi(integration.id)
   const { trigger: deleteNow, isMutating: isDeleting } = useDeleteIntegrationApi(integration.id)
 
   const supported = isSupported(integration)
+  // The fix a failed test calls for ("Add API token"), first in the menu.
+  const problem =
+    integration.status === 'error'
+      ? connectionProblem(
+          integration,
+          t,
+          t('ticketingIntegration.actions.couldNotConnect', '{name} could not connect', {
+            name: integration.name,
+          })
+        )
+      : undefined
 
   // A connection is only used once a test has marked it connected, so a
   // pending or failed one needs a way to be (re)tested.
@@ -624,10 +617,13 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
         )
       } else {
         toast.error(
-          result?.status_message ||
+          connectionProblem(
+            result ?? undefined,
+            t,
             t('ticketingIntegration.actions.couldNotConnect', '{name} could not connect', {
               name: integration.name,
             })
+          ).message
         )
       }
       await revalidateIntegrations()
@@ -688,21 +684,35 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
     supported && integration.provider === 'jira' && integration.status === 'connected'
 
   const confirmDelete = (
-    <ConfirmDialog
-      open={deleteOpen}
-      onOpenChange={setDeleteOpen}
-      title={t('confirm.ticketing.deleteTitle', 'Delete the ticketing connection "{name}"?', {
-        name: integration.name,
-      })}
-      desc={t(
-        'confirm.ticketing.deleteDesc',
-        'Its settings are deleted and findings no longer sync with it. Tickets already in the tracker are not deleted. This cannot be undone.'
-      )}
-      confirmText={t('confirm.delete', 'Delete')}
-      destructive
-      isLoading={isDeleting}
-      handleConfirm={() => void handleDelete()}
-    />
+    <>
+      <ConfirmDialog
+        open={syncOpen}
+        onOpenChange={setSyncOpen}
+        title={t('confirm.ticketing.syncTitle', undefined, { name: integration.name })}
+        desc={t('confirm.ticketing.syncDesc')}
+        confirmText={t('confirm.ticketing.syncBtn')}
+        handleConfirm={async () => {
+          setSyncOpen(false)
+          await handleSync()
+        }}
+      />
+      <ConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title={t('confirm.ticketing.deleteTitle', 'Delete the ticketing connection "{name}"?', {
+          name: integration.name,
+        })}
+        desc={t(
+          'confirm.ticketing.deleteDesc',
+          'Its settings are deleted and findings no longer sync with it. Tickets already in the tracker are not deleted. This cannot be undone.'
+        )}
+        confirmText={t('confirm.ticketing.deleteBtn')}
+        destructive
+        typeToConfirm={confirmName(integration.name, integration.id)}
+        isLoading={isDeleting}
+        handleConfirm={() => void handleDelete()}
+      />
+    </>
   )
 
   // No client exists for this provider: nothing to sync, test or configure.
@@ -720,6 +730,18 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
     <>
       <DataTableRowActions
         actions={[
+          ...(integration.provider === 'jira'
+            ? [
+                {
+                  label:
+                    problem?.actionLabel ??
+                    t('ticketingIntegration.token.action', 'Update API token'),
+                  icon: KeyRound,
+                  onClick: () => setTokenOpen(true),
+                  route: 'PUT /api/v1/integrations/{id}' as const,
+                },
+              ]
+            : []),
           ...(integration.status !== 'connected'
             ? [
                 {
@@ -740,7 +762,7 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
                     ? t('ticketingIntegration.actions.syncing', 'Syncing…')
                     : t('ticketingIntegration.actions.syncNow', 'Sync now'),
                   icon: RefreshCw,
-                  onClick: () => void handleSync(),
+                  onClick: () => setSyncOpen(true),
                   disabled: isSyncing,
                   route: 'POST /api/v1/integrations/{id}/sync' as const,
                 },
@@ -786,6 +808,13 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
           revalidated `integration` prop every time it opens (otherwise the
           always-mounted form keeps stale values after a save) — and so the two
           dialogs never build their config payload from a stale prop. */}
+      {integration.provider === 'jira' && tokenOpen && (
+        <UpdateJiraTokenDialog
+          integration={integration}
+          open={tokenOpen}
+          onOpenChange={setTokenOpen}
+        />
+      )}
       {integration.provider === 'jira' && configOpen && (
         <ConfigureTicketingDialog
           integration={integration}
@@ -830,7 +859,19 @@ function useColumns(): ColumnDef<Integration>[] {
             primary={row.original.name}
             secondary={
               isSupported(row.original)
-                ? row.original.description || row.original.status_message
+                ? row.original.status === 'error'
+                  ? connectionProblem(
+                      row.original,
+                      t,
+                      t(
+                        'ticketingIntegration.actions.couldNotConnect',
+                        '{name} could not connect',
+                        {
+                          name: row.original.name,
+                        }
+                      )
+                    ).message
+                  : row.original.description
                 : t(
                     'ticketingIntegration.unsupportedNote',
                     'This provider has no client yet, so this connection does nothing.'
@@ -956,11 +997,15 @@ function ConnectJiraDialog({ open, onOpenChange, onSuccess }: ConnectJiraDialogP
         toast.success(t('ticketingIntegration.connect.connected', '{name} connected', { name }))
       } else {
         toast.error(
-          created?.status_message
+          created?.status_code || created?.status_message
             ? t(
                 'ticketingIntegration.connect.savedNotConnectedWithReason',
                 '{name} was saved but could not connect: {reason}',
-                { name, reason: created.status_message }
+                {
+                  name,
+                  reason: connectionProblem(created, t, t('errors.INTEGRATION_TEST_FAILED'))
+                    .message,
+                }
               )
             : t(
                 'ticketingIntegration.connect.savedNotConnected',
@@ -1110,6 +1155,131 @@ function ConnectJiraDialog({ open, onOpenChange, onSuccess }: ConnectJiraDialogP
   )
 }
 
+/**
+ * Enter the Jira account email and API token again, then test: the fix for a
+ * connection without credentials, with unreadable ones, or with ones the
+ * service refused. The token is sent once, encrypted at rest, never shown.
+ */
+function UpdateJiraTokenDialog({
+  integration,
+  open,
+  onOpenChange,
+}: {
+  integration: Integration
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const { t } = useTranslation()
+  const [email, setEmail] = useState('')
+  const [apiToken, setApiToken] = useState('')
+  const { trigger: update, isMutating: isSaving } = useUpdateIntegrationApi(integration.id)
+  const { trigger: testNow, isMutating: isTesting } = useTestIntegrationApi(integration.id)
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!email.trim() || !apiToken.trim()) return
+    try {
+      await update({
+        credentials: JSON.stringify({ email: email.trim(), api_token: apiToken.trim() }),
+      })
+      const result = await testNow()
+      if (result?.status === 'connected') {
+        toast.success(
+          t('ticketingIntegration.actions.connected', '{name} is connected', {
+            name: integration.name,
+          })
+        )
+        onOpenChange(false)
+      } else {
+        toast.error(
+          connectionProblem(
+            result ?? undefined,
+            t,
+            t('ticketingIntegration.actions.couldNotConnect', '{name} could not connect', {
+              name: integration.name,
+            })
+          ).message
+        )
+      }
+      await revalidateIntegrations()
+    } catch (err) {
+      toast.error(
+        getErrorMessage(
+          err,
+          t('ticketingIntegration.token.failed', 'Could not save the API token.')
+        )
+      )
+    }
+  }
+
+  const busy = isSaving || isTesting
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent size="sm">
+        <DialogHeader>
+          <DialogTitle>
+            {t('ticketingIntegration.token.title', 'API token for {name}', {
+              name: integration.name,
+            })}
+          </DialogTitle>
+          <DialogDescription>
+            {t(
+              'ticketingIntegration.token.description',
+              'Enter the Atlassian account email and an API token. The connection is tested when you save.'
+            )}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogForm onSubmit={handleSubmit}>
+          <DialogBody className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="token-email">
+                {t('ticketingIntegration.connect.email', 'Atlassian account email')}
+              </Label>
+              <Input
+                id="token-email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="off"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="token-value">
+                {t('ticketingIntegration.connect.apiToken', 'API token')}
+              </Label>
+              <Input
+                id="token-value"
+                type="password"
+                value={apiToken}
+                onChange={(e) => setApiToken(e.target.value)}
+                autoComplete="off"
+                required
+              />
+              <p className="text-muted-foreground text-xs">
+                {t(
+                  'ticketingIntegration.connect.tokenHint',
+                  'Generate from Atlassian account settings under Security.'
+                )}
+              </p>
+            </div>
+          </DialogBody>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              {t('ticketingIntegration.common.cancel', 'Cancel')}
+            </Button>
+            <Button type="submit" disabled={busy || !email.trim() || !apiToken.trim()}>
+              {busy
+                ? t('ticketingIntegration.token.saving', 'Saving and testing…')
+                : t('ticketingIntegration.token.save', 'Save and test')}
+            </Button>
+          </DialogFooter>
+        </DialogForm>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 // ─────────────────────────────────────────────────────────
 // Skeletons & empty state
 // ─────────────────────────────────────────────────────────
@@ -1144,99 +1314,118 @@ export default function TicketingIntegrationPage() {
     (c) => c.status === 'pending' || c.status === 'disconnected'
   ).length
 
+  // The strip filters the list: click a tile to show only those connections, again to clear.
+  const [group, setGroup] = useState<'connected' | 'attention' | 'pending' | null>(null)
+  const inGroup = (c: (typeof connections)[number], g: 'connected' | 'attention' | 'pending') => {
+    if (g === 'connected') return isSupported(c) && c.status === 'connected'
+    if (g === 'attention') return !isSupported(c) || c.status === 'error' || c.status === 'expired'
+    return isSupported(c) && (c.status === 'pending' || c.status === 'disconnected')
+  }
+  const visible = group ? connections.filter((c) => inGroup(c, group)) : connections
+  const tile = (g: 'connected' | 'attention' | 'pending') => ({
+    active: group === g,
+    onClick: () => setGroup(group === g ? null : g),
+  })
   const metrics: MetricStripItem[] = [
-    {
-      key: 'total',
-      label: t('ticketingIntegration.metrics.connections', 'Connections'),
-      value: connections.length,
-    },
     {
       key: 'connected',
       label: t('ticketingIntegration.status.connected', 'Connected'),
       value: connected,
+      ...tile('connected'),
     },
     {
       key: 'attention',
       label: t('ticketingIntegration.metrics.needsAttention', 'Needs attention'),
       value: needsAttention,
       tone: 'danger',
+      ...tile('attention'),
     },
-    { key: 'pending', label: t('ticketingIntegration.status.pending', 'Pending'), value: pending },
+    {
+      key: 'pending',
+      label: t('ticketingIntegration.status.pending', 'Pending'),
+      value: pending,
+      ...tile('pending'),
+    },
   ]
 
   return (
     <Main>
-      <PageHeader
-        title={t('ticketingIntegration.page.title', 'Ticketing')}
-        description={t(
-          'ticketingIntegration.page.description',
-          'Connect ticketing systems to create and track remediation tickets automatically.'
-        )}
-      >
-        <Can route="POST /api/v1/integrations">
-          <Button size="sm" onClick={() => setDialogOpen(true)}>
-            <Plus className="me-2 h-4 w-4" />
-            {t('ticketingIntegration.connect.title', 'Connect Jira')}
-          </Button>
-        </Can>
-      </PageHeader>
+      <PageStack>
+        <PageHeader
+          title={t('ticketingIntegration.page.title', 'Ticketing')}
+          description={t(
+            'ticketingIntegration.page.description',
+            'Connect ticketing systems to create and track remediation tickets automatically.'
+          )}
+        >
+          <Can route="POST /api/v1/integrations">
+            <Button size="sm" onClick={() => setDialogOpen(true)}>
+              <Plus className="me-2 h-4 w-4" />
+              {t('ticketingIntegration.connect.title', 'Connect Jira')}
+            </Button>
+          </Can>
+        </PageHeader>
 
-      {error ? (
-        <div className="mt-5">
-          <ErrorState
-            title={t('ticketingIntegration.page.errorTitle', 'ticketing connections')}
-            error={error}
-            onRetry={() => void reloadIntegrations()}
-          />
-        </div>
-      ) : (
-        <>
-          <MetricStrip className="mt-5" loading={isLoading} items={metrics} />
-
-          <div className="mt-5">
-            {isLoading ? (
-              <div className="space-y-3">
-                <Skeleton className="h-9 w-full max-w-sm" />
-                <Skeleton className="h-48 w-full" />
-              </div>
-            ) : connections.length === 0 ? (
-              <EmptyState
-                icon={Ticket}
-                title={t('ticketingIntegration.page.emptyTitle', 'No ticketing systems connected')}
-                description={t(
-                  'ticketingIntegration.page.emptyDescription',
-                  'Connect a ticketing system to automatically create and track remediation tickets.'
-                )}
-                action={
-                  <Can route="POST /api/v1/integrations">
-                    <Button size="sm" onClick={() => setDialogOpen(true)}>
-                      <Plus className="me-2 h-4 w-4" />
-                      {t('ticketingIntegration.connect.title', 'Connect Jira')}
-                    </Button>
-                  </Can>
-                }
-              />
-            ) : (
-              <DataTable
-                columns={columns}
-                data={connections}
-                getRowId={(c) => c.id}
-                searchPlaceholder={t(
-                  'ticketingIntegration.page.searchPlaceholder',
-                  'Search connections...'
-                )}
-                showSelectionCount={false}
-              />
-            )}
+        {error ? (
+          <div>
+            <ErrorState
+              title={t('ticketingIntegration.page.errorTitle', 'ticketing connections')}
+              error={error}
+              onRetry={() => void reloadIntegrations()}
+            />
           </div>
-        </>
-      )}
+        ) : (
+          <>
+            <MetricStrip loading={isLoading} items={metrics} />
 
-      <ConnectJiraDialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        onSuccess={() => reloadIntegrations()}
-      />
+            <div>
+              {isLoading ? (
+                <div className="space-y-3">
+                  <Skeleton className="h-9 w-full max-w-sm" />
+                  <Skeleton className="h-48 w-full" />
+                </div>
+              ) : connections.length === 0 ? (
+                <EmptyState
+                  icon={Ticket}
+                  title={t(
+                    'ticketingIntegration.page.emptyTitle',
+                    'No ticketing systems connected'
+                  )}
+                  description={t(
+                    'ticketingIntegration.page.emptyDescription',
+                    'Connect a ticketing system to automatically create and track remediation tickets.'
+                  )}
+                  action={
+                    <Can route="POST /api/v1/integrations">
+                      <Button size="sm" onClick={() => setDialogOpen(true)}>
+                        <Plus className="me-2 h-4 w-4" />
+                        {t('ticketingIntegration.connect.title', 'Connect Jira')}
+                      </Button>
+                    </Can>
+                  }
+                />
+              ) : (
+                <DataTable
+                  columns={columns}
+                  data={visible}
+                  getRowId={(c) => c.id}
+                  searchPlaceholder={t(
+                    'ticketingIntegration.page.searchPlaceholder',
+                    'Search connections…'
+                  )}
+                  showSelectionCount={false}
+                />
+              )}
+            </div>
+          </>
+        )}
+
+        <ConnectJiraDialog
+          open={dialogOpen}
+          onOpenChange={setDialogOpen}
+          onSuccess={() => reloadIntegrations()}
+        />
+      </PageStack>
     </Main>
   )
 }

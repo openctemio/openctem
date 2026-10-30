@@ -9,6 +9,7 @@
  * where (asset, source), then when (first / last seen), then trivia.
  */
 
+import { SlaWhyThisDate } from './sla-why-this-date'
 import { assigneeLabel } from '../../lib/assignee-label'
 import { VERSION_MATCH_TOOL } from '@/features/vuln-matching/types'
 import { findingStatusesInCategory } from '@/features/findings/types/finding.types'
@@ -63,10 +64,13 @@ export function SlaDue({
   deadline,
   status,
   closed,
+  kevCapped,
 }: {
   deadline?: string
   status?: string
   closed?: boolean
+  /** The SLA policy's known exploited (KEV) cap shortened the deadline. */
+  kevCapped?: boolean
 }) {
   const { t, locale } = useTranslation()
   if (!deadline)
@@ -99,6 +103,11 @@ export function SlaDue({
           )}
         >
           {rel}
+        </span>
+      )}
+      {kevCapped && (
+        <span data-slot="sla-kev-capped" className="block text-xs text-muted-foreground">
+          {t('findings.properties.slaKevCapped', 'Shortened because it is in CISA KEV')}
         </span>
       )}
     </span>
@@ -250,7 +259,19 @@ export function FindingProperties({
         </Row>
       )}
       <Row label={t('findings.properties.slaDue', 'SLA due')}>
-        <SlaDue deadline={finding.slaDeadline} status={finding.slaStatus} closed={closed} />
+        <div className="flex flex-col items-start gap-0.5">
+          <SlaDue
+            deadline={finding.slaDeadline}
+            status={finding.slaStatus}
+            closed={closed}
+            kevCapped={finding.slaKevCapped}
+          />
+          <SlaWhyThisDate
+            basis={finding.slaBasis}
+            priorityClass={finding.priorityClass}
+            severity={finding.severity}
+          />
+        </div>
       </Row>
       <FindingPeople findingId={finding.id} assignee={assigneeNode} />
 

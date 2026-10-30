@@ -614,6 +614,26 @@ func (s *Service) Revoke(ctx context.Context, input RevokeInput) (*apikeydom.API
 	return key, nil
 }
 
+// RevokeAllForUser revokes every active API key the user owns, in every
+// organization (a credential change: password reset or change, sign-out
+// everywhere). It touches only that user's keys and returns how many.
+func (s *Service) RevokeAllForUser(ctx context.Context, userID shared.ID) (int, error) {
+	n, err := s.repo.RevokeByUser(ctx, userID, userID, time.Now())
+	if err != nil {
+		s.logger.Error("revoke api keys of user failed", "user_id", userID.String(), "error", err)
+		return 0, err
+	}
+	if n > 0 {
+		s.logger.Info("api keys revoked after a credential change", "user_id", userID.String(), "keys", n)
+	}
+	return n, nil
+}
+
+// CountActiveForUser counts the active API keys the user owns.
+func (s *Service) CountActiveForUser(ctx context.Context, userID shared.ID) (int, error) {
+	return s.repo.CountActiveByUser(ctx, userID, time.Now())
+}
+
 // Delete deletes an API key. Tenant isolation enforced at DB level. A non-nil
 // auditCtx records an api_key.deleted audit event.
 func (s *Service) Delete(ctx context.Context, id, tenantIDStr string, auditCtx ...*auditapp.AuditContext) error {

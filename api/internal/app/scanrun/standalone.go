@@ -85,7 +85,28 @@ type StandaloneOutcome struct {
 	Unable  bool
 	Message string
 	Code    string
+	// Result is what a run that completed concluded, when that is not just
+	// "done": a retest's outcome ("inconclusive", "still_exposed_elsewhere")
+	// with the reason code. The run and its step complete (the tool did its
+	// work); the console reads the result to word the run, never as a failure.
+	Result *StandaloneResult
 }
+
+// StandaloneResult is the conclusion of a completed standalone run.
+type StandaloneResult struct {
+	// Kind is the outcome ("inconclusive", "still_exposed_elsewhere", ...).
+	Kind string
+	// Code is the lower-case reason code.
+	Code string
+}
+
+// Keys of a completed run's Context and its step's output holding the result.
+const (
+	RunContextResult     = "result"
+	StepOutputResultKind = "result_kind"
+	StepOutputResultCode = "result_code"
+	StepOutputResultNote = "result_message"
+)
 
 // FinishStandaloneRun settles a standalone run and its step. A run of another
 // tenant is not found; a run that already finished stays as it is.
@@ -106,7 +127,11 @@ func (s *Service) FinishStandaloneRun(ctx context.Context, tenantID, runID share
 			continue
 		}
 		if out.Succeeded {
-			step.Complete(0, nil)
+			var output map[string]any
+			if out.Result != nil {
+				output = map[string]any{StepOutputResultKind: out.Result.Kind, StepOutputResultCode: out.Result.Code}
+			}
+			step.Complete(0, output)
 		} else if out.Unable {
 			step.Skip(out.Message)
 		} else {
@@ -119,6 +144,12 @@ func (s *Service) FinishStandaloneRun(ctx context.Context, tenantID, runID share
 	if out.Succeeded {
 		run.Complete()
 		run.CompletedSteps = 1
+		if out.Result != nil {
+			if run.Context == nil {
+				run.Context = map[string]any{}
+			}
+			run.Context[RunContextResult] = map[string]any{"kind": out.Result.Kind, "code": out.Result.Code}
+		}
 	} else if out.Unable {
 		run.Block(out.Code, out.Message)
 		run.SkippedSteps = 1
@@ -182,6 +213,15 @@ func (s *Service) FinishValidationRun(ctx context.Context, tenantID, runID share
 // FinishRetestRun settles a retest's run (retest.RunRecorder).
 func (s *Service) FinishRetestRun(ctx context.Context, tenantID, runID shared.ID, succeeded bool, message, code string) error {
 	return s.FinishStandaloneRun(ctx, tenantID, runID, StandaloneOutcome{Succeeded: succeeded, Message: message, Code: code})
+}
+
+// FinishRetestRunResult settles a retest's run that completed with a
+// conclusion the console words itself: an inconclusive retest or one that
+// found the exposure at another path. The tool did its work, so the run is
+// completed, never failed.
+func (s *Service) FinishRetestRunResult(ctx context.Context, tenantID, runID shared.ID, kind, code string) error {
+	return s.FinishStandaloneRun(ctx, tenantID, runID, StandaloneOutcome{Succeeded: true,
+		Result: &StandaloneResult{Kind: kind, Code: code}})
 }
 
 // FinishRetestRunUnable settles a retest's run whose tool could not run the

@@ -17,18 +17,20 @@ describe('scan formatting', () => {
 })
 
 describe('scanSuccessRate', () => {
-  it('is null before any run finished (not 0%)', () => {
+  it('is null until three runs settled (not 0%)', () => {
     expect(scanSuccessRate({ successful_runs: 0, failed_runs: 0 })).toBeNull()
+    expect(scanSuccessRate({ successful_runs: 1, failed_runs: 1 })).toBeNull()
   })
-  it('divides by finished runs, not by every run started', () => {
+  it('divides by settled runs, not by every run started', () => {
     // 4 failures and nothing else is 0%, never a high rate.
     expect(scanSuccessRate({ successful_runs: 0, failed_runs: 4 })).toBe(0)
     expect(scanSuccessRate({ successful_runs: 3, failed_runs: 1 })).toBe(75)
     expect(scanSuccessRate({ successful_runs: 2, failed_runs: 1 })).toBe(67)
     expect(scanSuccessRate({ successful_runs: 5, failed_runs: 0 })).toBe(100)
   })
-  it('counts a partial run as settled but not as a success', () => {
-    expect(scanSuccessRate({ successful_runs: 3, failed_runs: 0, partial_runs: 1 })).toBe(75)
-    expect(scanSuccessRate({ successful_runs: 0, failed_runs: 0, partial_runs: 2 })).toBe(0)
+  it('counts a partial run (coverage gaps) as a success, not a failure', () => {
+    expect(scanSuccessRate({ successful_runs: 3, failed_runs: 0, partial_runs: 1 })).toBe(100)
+    expect(scanSuccessRate({ successful_runs: 0, failed_runs: 0, partial_runs: 3 })).toBe(100)
+    expect(scanSuccessRate({ successful_runs: 0, failed_runs: 1, partial_runs: 3 })).toBe(75)
   })
 })

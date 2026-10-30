@@ -32,6 +32,8 @@ export function AttackSurfaceSectionTabs() {
             return { ...tab, label: t('attackSurface.tab.changes', tab.label) }
           case LOOKALIKES_HREF:
             return { ...tab, label: t('lookalikes.tab', tab.label) }
+          case '/attack-surface/certificates':
+            return { ...tab, label: t('attackSurface.tab.certificates', tab.label) }
           case '/attack-surface/web':
             return { ...tab, label: t('attackSurface.tab.webSurface', tab.label) }
           default:
@@ -44,7 +46,6 @@ export function AttackSurfaceSectionTabs() {
     <GatedSectionTabs
       tabs={tabs}
       label={t('attackSurface.tab.label', 'Attack surface sections')}
-      className="mt-4 mb-0"
       counts={{ [REVIEW_HREF]: waiting }}
     />
   )

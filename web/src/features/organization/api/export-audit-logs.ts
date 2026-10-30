@@ -5,6 +5,7 @@
  */
 
 import { getApiBaseUrl } from '@/lib/api/client'
+import { requestStepUp, STEP_UP_REQUIRED_CODE } from '@/lib/api/step-up'
 
 import type { AuditLogFilters } from '../types/audit.types'
 import { buildAuditFilterParams } from './use-audit-logs'
@@ -33,6 +34,16 @@ async function errorMessage(res: Response): Promise<string> {
   return `Export failed (${res.status})`
 }
 
+/** True when the API refused with STEP_UP_REQUIRED (reads a clone of the body). */
+async function isStepUpRefusal(res: Response): Promise<boolean> {
+  try {
+    const body = (await res.clone().json()) as { code?: string }
+    return body.code === STEP_UP_REQUIRED_CODE
+  } catch {
+    return false
+  }
+}
+
 function fileNameOf(res: Response, format: AuditExportFormat): string {
   const match = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')
   return match?.[1] ?? `audit-log-${new Date().toISOString().slice(0, 10)}.${format}`
@@ -53,7 +64,13 @@ export async function downloadAuditLog(
   format: AuditExportFormat,
   filters?: AuditLogFilters
 ): Promise<AuditExportResult> {
-  const res = await fetch(buildAuditExportUrl(format, filters), { credentials: 'include' })
+  const url = buildAuditExportUrl(format, filters)
+  let res = await fetch(url, { credentials: 'include' })
+  // The export holds every member's email and IP address, so the API asks
+  // for a recent sign-in: verify in the shared dialog, then retry once.
+  if (res.status === 403 && (await isStepUpRefusal(res)) && (await requestStepUp())) {
+    res = await fetch(url, { credentials: 'include' })
+  }
   if (!res.ok) {
     throw new Error(await errorMessage(res))
   }

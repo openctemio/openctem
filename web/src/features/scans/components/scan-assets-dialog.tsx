@@ -32,7 +32,7 @@ import { AlertTriangle, Loader2, Wifi } from 'lucide-react'
 import { ApiClientError, getErrorMessage } from '@/lib/api/error-handler'
 import { invalidateScanRunsCache, useQuickScan } from '@/lib/api/scan-workflow-hooks'
 import { refusedFromError, ScopeRefusalPanel, type ScopeRefusal } from '@/features/scope'
-import { SelectionSummary } from './target-picker/selection-summary'
+import { SelectionSummary, type ScanReadiness } from './target-picker/selection-summary'
 import { ScannerSelect } from './scanner-select'
 
 /** Backend hard cap on targets per quick scan (see POST /scans/quick, 1..1000). */
@@ -76,6 +76,7 @@ export function ScanAssetsDialog({
   const [scannerName, setScannerName] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [refused, setRefused] = useState<ScopeRefusal[]>([])
+  const [readiness, setReadiness] = useState<ScanReadiness | null>(null)
   const { trigger: quickScan } = useQuickScan()
 
   // Resolve + de-duplicate targets; track how many were unusable.
@@ -99,7 +100,9 @@ export function ScanAssetsDialog({
   const isOverCap = targets.length > MAX_TARGETS
   const cappedTargets = useMemo(() => targets.slice(0, MAX_TARGETS), [targets])
   const isLargeSet = cappedTargets.length > LARGE_SET_THRESHOLD
-  const canSubmit = cappedTargets.length > 0 && !!scannerName && !isSubmitting
+  // Nothing the scope check lets through: starting would only be refused.
+  const blocked = readiness?.state === 'blocked'
+  const canSubmit = cappedTargets.length > 0 && !!scannerName && !isSubmitting && !blocked
 
   const handleSubmit = async () => {
     if (cappedTargets.length === 0) {
@@ -196,8 +199,8 @@ export function ScanAssetsDialog({
             </p>
           )}
           {isOverCap && (
-            <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-400">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
               <span>
                 {t('scans.assetsDialog.overCap', undefined, {
                   count: targets.length,
@@ -207,8 +210,8 @@ export function ScanAssetsDialog({
             </div>
           )}
           {isLargeSet && (
-            <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-400">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
               <span>
                 {t('scans.assetsDialog.large', undefined, { count: cappedTargets.length })}
               </span>
@@ -235,6 +238,7 @@ export function ScanAssetsDialog({
               groupCount={0}
               invalidCount={0}
               scannerName={scannerName}
+              onReadinessChange={setReadiness}
             />
           )}
         </DialogBody>

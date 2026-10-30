@@ -19,7 +19,7 @@ import { Search } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { useTranslation } from '@/context/i18n-provider'
 import { FacetGroupLabel, FacetOption, FacetSection } from '@/features/shared'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { useTechnologyFacets } from '../../hooks/use-asset-technologies'
 import type { InventoryFilters } from '../../lib/inventory-url'
 import { TECHNOLOGY_CATEGORIES, useCategoryLabel } from '../technologies/technologies-by-category'
@@ -49,7 +49,7 @@ export function InventoryTechnologiesFacet({
   const [query, setQuery] = useState('')
   const [expanded, setExpanded] = useState(false)
   const [open, setOpen] = useState(defaultOpen)
-  const q = useDebounce(query.trim(), 250)
+  const q = useSearchQuery(query).term
   const selectedTech = filters.technologies ?? []
   const selectedCats = filters.technologyCategories ?? []
   // Ask only once the section is opened or something is selected.

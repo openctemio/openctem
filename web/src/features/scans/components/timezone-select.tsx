@@ -22,9 +22,18 @@ interface TimezoneSelectProps {
   id?: string
   value: string
   onChange: (zone: string) => void
+  disabled?: boolean
+  /** Ids of the help text that describes the picker. */
+  'aria-describedby'?: string
 }
 
-export function TimezoneSelect({ id, value, onChange }: TimezoneSelectProps) {
+export function TimezoneSelect({
+  id,
+  value,
+  onChange,
+  disabled,
+  'aria-describedby': describedBy,
+}: TimezoneSelectProps) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const zones = useMemo(() => timeZoneOptions(value), [value])
@@ -37,6 +46,8 @@ export function TimezoneSelect({ id, value, onChange }: TimezoneSelectProps) {
           variant="outline"
           role="combobox"
           aria-expanded={open}
+          aria-describedby={describedBy}
+          disabled={disabled}
           className="w-full justify-between font-normal"
         >
           <span className="truncate">{value}</span>

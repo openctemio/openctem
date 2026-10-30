@@ -12,10 +12,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ErrorState, PageHeader } from '@/features/shared'
+import { ErrorState, PageHeader, PageStack } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 import { useCsvExport, type ExportFieldConfig } from '@/hooks/use-csv-export'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { useListParams } from '@/hooks/use-list-params'
 import {
   useAdminAuditLogs,
@@ -73,8 +73,8 @@ export default function AdminActivityPage() {
     list.filters.outcome === 'success' || list.filters.outcome === 'failure'
       ? list.filters.outcome
       : ''
-  const dAction = useDebounce(action, 300)
-  const dEmail = useDebounce(adminEmail, 300)
+  const dAction = useSearchQuery(action).term
+  const dEmail = useSearchQuery(adminEmail).term
   const { data, error, isLoading, mutate } = useAdminAuditLogs({
     page,
     action: dAction,
@@ -89,22 +89,25 @@ export default function AdminActivityPage() {
 
   return (
     <Main>
-      <PageHeader
-        title={t('admin.nav.activity', 'Admin activity')}
-        description={t(
-          'admin.activity.description',
-          'Every action taken by platform administrators, including sign-ins and refused attempts.'
-        )}
-      >
-        <Button size="sm" variant="outline" onClick={handleExport} disabled={entries.length === 0}>
-          <Download className="me-2 size-4" />
-          {t('admin.activity.export', 'Export this page (CSV)')}
-        </Button>
-      </PageHeader>
-      <div className="mt-5">
+      <PageStack>
+        <PageHeader
+          title={t('admin.nav.activity', 'Admin activity')}
+          description={t(
+            'admin.activity.description',
+            'Every action taken by platform administrators, including sign-ins and refused attempts.'
+          )}
+        >
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleExport}
+            disabled={entries.length === 0}
+          >
+            <Download className="me-2 size-4" />
+            {t('admin.activity.export', 'Export this page (CSV)')}
+          </Button>
+        </PageHeader>
         <AdminAuditChainStatus />
-      </div>
-      <div className="mt-5">
         {error ? (
           <ErrorState
             title={t('admin.securityActivityPage.adminActivity', 'admin activity')}
@@ -178,8 +181,8 @@ export default function AdminActivityPage() {
             }
           />
         )}
-      </div>
-      <AdminAuditDetailSheet entryId={openId} onClose={() => setOpenId(null)} />
+        <AdminAuditDetailSheet entryId={openId} onClose={() => setOpenId(null)} />
+      </PageStack>
     </Main>
   )
 }

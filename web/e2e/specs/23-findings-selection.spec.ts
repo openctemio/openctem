@@ -9,7 +9,7 @@ import { test, expect } from '../fixtures/authenticated-page'
 const bulkBar = (page: import('@playwright/test').Page) =>
   page.getByRole('toolbar', { name: /actions for selected rows/i })
 
-test.describe('Findings selection', () => {
+test.describe('Findings selection', { tag: ['@findings'] }, () => {
   test('a search change clears the selection', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 })
     await page.goto('/findings')
@@ -20,7 +20,7 @@ test.describe('Findings selection', () => {
     await box.check()
     await expect(bulkBar(page)).toBeVisible()
 
-    await page.getByRole('textbox', { name: /search findings/i }).fill('zz-no-such-finding')
+    await page.getByRole('searchbox', { name: /search findings/i }).fill('zz-no-such-finding')
     await expect(bulkBar(page)).toBeHidden({ timeout: 10_000 })
   })
 

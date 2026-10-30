@@ -33,6 +33,21 @@ type SAMLHandler struct {
 	audit       *auditsvc.AuditService
 	changes     *auth.SSOChangeService
 	logger      *logger.Logger
+	// refreshTTL is the refresh-cookie lifetime (AUTH_REFRESH_TOKEN_DURATION),
+	// the same as every other sign-in path.
+	refreshTTL time.Duration
+}
+
+// SetRefreshDuration sets the refresh-cookie lifetime from configuration.
+func (h *SAMLHandler) SetRefreshDuration(d time.Duration) { h.refreshTTL = d }
+
+// refreshLifetime is the refresh-cookie lifetime: the configured value, or the
+// documented default (7 days) when it was not wired.
+func (h *SAMLHandler) refreshLifetime() time.Duration {
+	if h.refreshTTL > 0 {
+		return h.refreshTTL
+	}
+	return 7 * 24 * time.Hour
 }
 
 // SetChangeApproval routes SAML changes made from the platform admin console
@@ -131,7 +146,10 @@ func isSafeIdPRedirect(u string) bool {
 
 // ACS handles POST /api/v1/auth/saml/{org}/acs — the IdP posts the SAML
 // response here. On success it establishes the session cookies and redirects
-// the browser to the frontend.
+// the browser to the frontend. A refusal redirects to /login?error=<code>
+// with a code from a fixed list (awaiting_approval, not_member, no_seat,
+// domain_not_allowed, link_required, different_method, use_console,
+// saml_failed, ...); the specific SAML failure stays in the log.
 func (h *SAMLHandler) ACS(w http.ResponseWriter, r *http.Request) {
 	org := chi.URLParam(r, "org")
 
@@ -157,7 +175,7 @@ func (h *SAMLHandler) ACS(w http.ResponseWriter, r *http.Request) {
 
 	// Establish the session: refresh (httpOnly) + access + tenant cookies, the
 	// same contract the local-login and OAuth flows use.
-	SetRefreshTokenCookie(w, result.RefreshToken, time.Now().Add(30*24*time.Hour), h.cookieCfg)
+	SetRefreshTokenCookie(w, result.RefreshToken, time.Now().Add(h.refreshLifetime()), h.cookieCfg)
 	SetAccessTokenCookie(w, result.AccessToken, time.Now().Add(time.Duration(result.ExpiresIn)*time.Second), h.cookieCfg)
 	SetTenantCookie(w, result.TenantID, result.TenantSlug, "", h.cookieCfg)
 
@@ -165,10 +183,11 @@ func (h *SAMLHandler) ACS(w http.ResponseWriter, r *http.Request) {
 }
 
 // redirectWithError sends the browser back to the frontend login page with a
-// generic error flag (never leaks the specific SAML failure).
+// login error code (auth_error_codes.go). The code is one of a fixed list the
+// web translates; the specific SAML failure stays in the log.
 func (h *SAMLHandler) redirectWithError(w http.ResponseWriter, r *http.Request, err error) {
 	h.logger.Warn("saml login failed", "error", err)
-	dest := strings.TrimSuffix(h.frontendURL, "/") + "/login?error=saml"
+	dest := strings.TrimSuffix(h.frontendURL, "/") + "/login?error=" + samlLoginErrorCode(err)
 	http.Redirect(w, r, dest, http.StatusFound)
 }
 
@@ -300,7 +319,7 @@ func toSAMLConfigView(p *samldom.SAMLProvider) samlConfigView {
 
 // GetConfig handles GET /api/v1/settings/saml (JWT admin).
 // @Summary Get an organization's SAML config
-// @Description Platform admin console (RFC-022): runs against the organization in the path.
+// @Description Platform admin console: runs against the organization in the path.
 // @Tags Admin Organization SSO
 // @Produce json
 // @Param tenantId path string true "Organization ID"
@@ -327,7 +346,7 @@ func (h *SAMLHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 
 // SetConfig handles PUT /api/v1/settings/saml (JWT admin).
 // @Summary Set an organization's SAML config
-// @Description Platform admin console (RFC-022): runs against the organization in the path. When the organization has an owner, the change is stored as pending (202, SSOChangeResponse) and takes effect only after an owner approves it; an organization without an owner yet gets it applied directly (200).
+// @Description Platform admin console: runs against the organization in the path. When the organization has an owner, the change is stored as pending (202, SSOChangeResponse) and takes effect only after an owner approves it; an organization without an owner yet gets it applied directly (200).
 // @Tags Admin Organization SSO
 // @Produce json
 // @Param tenantId path string true "Organization ID"
@@ -406,7 +425,7 @@ func (h *SAMLHandler) writeSetError(w http.ResponseWriter, err error) {
 
 // DeleteConfig handles DELETE /api/v1/settings/saml (JWT admin).
 // @Summary Delete an organization's SAML config
-// @Description Platform admin console (RFC-022): runs against the organization in the path.
+// @Description Platform admin console: runs against the organization in the path.
 // @Tags Admin Organization SSO
 // @Produce json
 // @Param tenantId path string true "Organization ID"

@@ -36,6 +36,44 @@ type Preferences struct {
 	Theme         string `json:"theme,omitempty"`         // "light", "dark", "system"
 	Language      string `json:"language,omitempty"`      // "en", "vi"
 	Notifications bool   `json:"notifications,omitempty"` // Enable notifications
+	// FindingsIncludeInformational is the member's own choice for the
+	// findings work views: nil = the organization's default.
+	FindingsIncludeInformational *bool `json:"findings_include_informational,omitempty"`
+}
+
+// Values of the findings_informational preference in the API.
+const (
+	FindingsInformationalDefault = "default"
+	FindingsInformationalInclude = "include"
+	FindingsInformationalExclude = "exclude"
+)
+
+// FindingsInformational returns the work-view choice as its API value.
+func (p Preferences) FindingsInformational() string {
+	switch {
+	case p.FindingsIncludeInformational == nil:
+		return FindingsInformationalDefault
+	case *p.FindingsIncludeInformational:
+		return FindingsInformationalInclude
+	default:
+		return FindingsInformationalExclude
+	}
+}
+
+// WithFindingsInformational returns p with the work-view choice set from its
+// API value (default, include or exclude; anything else is default).
+func (p Preferences) WithFindingsInformational(v string) Preferences {
+	switch v {
+	case FindingsInformationalInclude:
+		b := true
+		p.FindingsIncludeInformational = &b
+	case FindingsInformationalExclude:
+		b := false
+		p.FindingsIncludeInformational = &b
+	default:
+		p.FindingsIncludeInformational = nil
+	}
+	return p
 }
 
 // AuthProvider represents the authentication provider for a user.
@@ -536,6 +574,15 @@ func (u *User) VerifyEmail() {
 	u.emailVerified = true
 	u.emailVerificationToken = nil
 	u.emailVerificationExpiresAt = nil
+	u.updatedAt = time.Now().UTC()
+}
+
+// MarkEmailUnverified records that the address was not proved: used for an
+// account created by a social sign-in whose provider is not authoritative for
+// the address. Such an account cannot claim an invitation or join an
+// organization by domain until the address is verified another way.
+func (u *User) MarkEmailUnverified() {
+	u.emailVerified = false
 	u.updatedAt = time.Now().UTC()
 }
 

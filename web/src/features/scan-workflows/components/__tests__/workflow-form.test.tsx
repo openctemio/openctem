@@ -283,7 +283,7 @@ describe('ScanWorkflowForm: stages', () => {
     render(<ScanWorkflowForm workflow={recon} onSubmit={vi.fn()} onCancel={vi.fn()} />)
     await userEvent.click(screen.getByRole('button', { name: /next/i }))
     const headings = screen.getAllByRole('heading', { level: 4 }).map((h) => h.textContent)
-    expect(headings).toEqual(['Stage 1', 'Stage 2 · 2 steps run in parallel · waits for Stage 1'])
+    expect(headings).toEqual(['Stage 1', 'Stage 2, 2 steps run in parallel, waits for Stage 1'])
     expect(screen.getByLabelText('Step 1')).toBeInTheDocument()
     expect(screen.getByLabelText('Step 2a')).toBeInTheDocument()
     expect(screen.getByLabelText('Step 2b')).toBeInTheDocument()

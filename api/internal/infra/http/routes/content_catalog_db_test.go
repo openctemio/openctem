@@ -31,6 +31,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/contentpkg"
+	cpsigstore "github.com/openctemio/openctem/api/pkg/contentpkg/sigstore"
 	catalogdom "github.com/openctemio/openctem/api/pkg/domain/contentcatalog"
 	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
@@ -46,7 +47,7 @@ const (
 
 // ccPublisher verifies the real sast-rules Sigstore bundle offline and, for
 // packages the test builds, a test signature naming the artifact digest.
-type ccPublisher struct{ real *contentpkg.SigstoreVerifier }
+type ccPublisher struct{ real *cpsigstore.Verifier }
 
 func (p ccPublisher) Verify(sig, artifact []byte, want contentpkg.Publisher) (time.Time, error) {
 	if s := string(sig); strings.HasPrefix(s, ccTestSigPrefix) {
@@ -55,7 +56,7 @@ func (p ccPublisher) Verify(sig, artifact []byte, want contentpkg.Publisher) (ti
 		}
 		return time.Now(), nil
 	}
-	return p.real.Verify(sig, artifact, want)
+	return contentpkg.PublisherVerifierFunc(p.real.Verify).Verify(sig, artifact, want)
 }
 
 type ccHarness struct {
@@ -102,14 +103,17 @@ func newCCHarness(t *testing.T) *ccHarness {
 	if h.sastSig, err = os.ReadFile(filepath.Join(fixtures, "sast-rules-0.1.0.tar.gz.sigstore.json")); err != nil {
 		t.Fatal(err)
 	}
-	real, err := contentpkg.NewSigstoreVerifier("")
+	real, err := cpsigstore.New("")
 	if err != nil {
 		t.Fatal(err)
 	}
 	h.tenantA, h.tenantB = shared.NewID(), shared.NewID()
 	h.userA1, h.userA2, h.userB = shared.NewID(), shared.NewID(), shared.NewID()
+	// A slug with no dashed UUID in it: the error envelope cuts UUIDs out of
+	// messages, and a real slug is a name, so the namespace the 422 tells the
+	// publisher to use stays readable.
 	for _, tn := range []shared.ID{h.tenantA, h.tenantB} {
-		h.exec(`INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $2)`, tn.String(), "cc-"+tn.String())
+		h.exec(`INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $2)`, tn.String(), "cc-"+strings.ReplaceAll(tn.String(), "-", ""))
 	}
 	for u, tn := range map[shared.ID]shared.ID{h.userA1: h.tenantA, h.userA2: h.tenantA, h.userB: h.tenantB} {
 		role := "member"

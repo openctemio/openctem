@@ -356,9 +356,10 @@ func TestAssetService_ScoringConfig_UsesCustomWeights(t *testing.T) {
 		t.Fatalf("CreateAsset failed: %v", err)
 	}
 
-	// With 100% exposure weight and public=80, score should be 80
-	if created.RiskScore() != 80 {
-		t.Errorf("expected risk score 80 (100%% exposure, public=80), got %d", created.RiskScore())
+	// The custom weights are read, but exposure alone is not risk: a new
+	// asset without an open finding scores 0 even at 100% exposure weight.
+	if created.RiskScore() != 0 {
+		t.Errorf("expected risk score 0 (no open finding), got %d", created.RiskScore())
 	}
 }
 

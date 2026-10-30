@@ -154,6 +154,12 @@ export interface Integration {
   status: IntegrationStatus
   status_message?: string
   /**
+   * Why the last connection test failed (an INTEGRATION_* API code); the
+   * console words it from errors.<code>. status_message is the English
+   * fallback.
+   */
+  status_code?: string
+  /**
    * False when the backend has no client for this provider (e.g. a Linear or
    * Asana row created before the API began refusing them). Such an
    * integration never runs; show it as not supported.
@@ -284,6 +290,8 @@ export interface TestCredentialsRequest {
 export interface TestCredentialsResponse {
   success: boolean
   message: string
+  /** Why a failed test failed (INTEGRATION_* or VALIDATION_FAILED). */
+  code?: string
   repository_count?: number
   organization?: string
   username?: string
@@ -577,47 +585,4 @@ export interface NotificationEventsResponse {
   page: number
   per_page: number
   total_pages: number
-}
-
-/**
- * Status configuration
- */
-export const INTEGRATION_STATUS_CONFIG: Record<
-  IntegrationStatus,
-  {
-    label: string
-    color: string
-    bgColor: string
-  }
-> = {
-  connected: {
-    label: 'Connected',
-    color: 'text-green-500',
-    bgColor: 'bg-green-500',
-  },
-  disconnected: {
-    label: 'Disconnected',
-    color: 'text-gray-500',
-    bgColor: 'bg-gray-500',
-  },
-  error: {
-    label: 'Error',
-    color: 'text-red-500',
-    bgColor: 'bg-red-500',
-  },
-  pending: {
-    label: 'Pending',
-    color: 'text-yellow-500',
-    bgColor: 'bg-yellow-500',
-  },
-  expired: {
-    label: 'Expired',
-    color: 'text-orange-500',
-    bgColor: 'bg-orange-500',
-  },
-  disabled: {
-    label: 'Disabled',
-    color: 'text-gray-400',
-    bgColor: 'bg-gray-400',
-  },
 }

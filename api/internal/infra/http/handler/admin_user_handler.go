@@ -84,7 +84,7 @@ type AdminResponse struct {
 	CreatedAt  string  `json:"created_at"`
 	UpdatedAt  string  `json:"updated_at"`
 
-	// Break-glass (emergency access) and platform IdP state (RFC-022 rev. 4).
+	// Break-glass (emergency access) and platform IdP state.
 	IsBreakGlass           bool    `json:"is_break_glass"`
 	BreakGlassTestedAt     *string `json:"break_glass_tested_at,omitempty"`
 	BreakGlassTestOverdue  bool    `json:"break_glass_test_overdue"`
@@ -409,6 +409,10 @@ func writeAdminRosterError(w http.ResponseWriter, log *logger.Logger, err error,
 		apierror.Conflict("At least one active local super admin must remain (a break-glass super admin while the identity provider is required).").WriteJSON(w)
 	case errors.Is(err, admin.ErrBreakGlassBound):
 		apierror.Conflict("This administrator is bound to the identity provider; remove the binding first.").WriteJSON(w)
+	case errors.Is(err, admin.ErrBreakGlassHasMemberships):
+		apierror.Conflict("A break-glass administrator must belong to no organization, and this account is a member of one.").WriteJSON(w)
+	case errors.Is(err, admin.ErrBreakGlassHasRoles):
+		apierror.Conflict("This account holds extra platform roles; a break-glass account holds its base role only.").WriteJSON(w)
 	default:
 		log.Error("admin roster change failed", "op", op, "error", err)
 		apierror.InternalError(err).WriteJSON(w)

@@ -22,6 +22,7 @@ import {
   technologies,
   tlsFacts,
   webServer,
+  withServedCertificate,
 } from './service-facts'
 import {
   bareService,
@@ -201,5 +202,35 @@ describe('tlsFacts', () => {
     expect(
       tlsFacts(withMeta({}, { name: 'https://typed-in.example.com' } as Partial<Asset>), NOW)
     ).toEqual({ kind: 'not_collected' })
+  })
+})
+
+describe('withServedCertificate', () => {
+  const cert = ctisCertificate(new Date(NOW + 40 * DAY).toISOString())
+  const service = withMeta({ port: 443, scheme: 'https', tls_fingerprint: 'ab:cd' })
+
+  it('lets a service read the certificate it serves', () => {
+    expect(tlsFacts(service, NOW)).toEqual({ kind: 'tls' })
+    const t = tlsFacts(withServedCertificate(service, cert), NOW)
+    expect(t.kind).toBe('cert')
+    if (t.kind === 'cert') {
+      expect(t.cert.issuer).toBe("Let's Encrypt")
+      expect(t.cert.sans).toContain('example.com')
+      expect(t.cert.daysLeft).toBe(40)
+    }
+  })
+
+  it('keeps the service own certificate and leaves other keys alone', () => {
+    const own = withMeta({ not_after: new Date(NOW + 5 * DAY).toISOString(), issuer_org: 'Own CA' })
+    expect(withServedCertificate(own, cert)).toBe(own)
+    expect(withServedCertificate(service, cert).metadata).toMatchObject({
+      port: 443,
+      tls_fingerprint: 'ab:cd',
+    })
+  })
+
+  it('does nothing without a usable certificate', () => {
+    expect(withServedCertificate(service, null)).toBe(service)
+    expect(withServedCertificate(service, withMeta({ fingerprint_sha256: 'x' }))).toBe(service)
   })
 })

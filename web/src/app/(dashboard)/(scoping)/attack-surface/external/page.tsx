@@ -14,7 +14,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Download, Eye, Pencil, Plus, RefreshCw, Search as SearchIcon, Trash2 } from 'lucide-react'
+import { Download, Eye, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Main } from '@/components/layout'
@@ -24,6 +24,7 @@ import {
   ErrorState,
   MetricStrip,
   PageHeader,
+  PageStack,
   RelativeTime,
   RiskScoreBadge,
   StackedCell,
@@ -65,12 +66,16 @@ import { ipAddresses } from '@/features/assets/lib/service-facts'
 import { propertyValue } from '@/features/asset-types/lib/property-schema'
 import type { AssetMetadata } from '@/features/assets/types'
 import { toastIfDuplicateAsset } from '@/features/assets/lib/duplicate-asset'
-import { IssuesChip, LabelChips, SurfaceFacts } from '@/features/assets/components/service-cells'
+import {
+  LabelChips,
+  OpenFindingsCell,
+  SurfaceFacts,
+} from '@/features/assets/components/service-cells'
 import { useExposures } from '@/features/exposures/hooks'
 import { ScanAssetsDialog, type ScanCandidate } from '@/features/scans/components'
 import { useTenant } from '@/context/tenant-provider'
 import { useRiskThresholds } from '@/context/risk-scoring-provider'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
 import { exportToCsv } from '@/hooks/use-csv-export'
@@ -191,7 +196,7 @@ export default function ExternalSurfacePage() {
   const { pagination, setPagination, setPage } = list
 
   const [searchInput, setSearchInput] = useState(qParam)
-  const search = useDebounce(searchInput, 300)
+  const search = useSearchQuery(searchInput).term
   // Push the debounced search into the URL and back to page 1. The ref holds
   // the last value written, so the URL echoing it back (or a new setter
   // identity) never re-triggers the reset to page 1.
@@ -292,7 +297,7 @@ export default function ExternalSurfacePage() {
         : certsError
           ? t('attackSurface.external.metric.certsError', 'Could not be loaded')
           : t('attackSurface.external.metric.certsHint', 'Open, expired included'),
-      onClick: canReadExposures ? () => router.push(CERT_EXPOSURES_HREF) : undefined,
+      href: canReadExposures ? CERT_EXPOSURES_HREF : undefined,
     },
   ]
   const metricsLoading =
@@ -523,14 +528,11 @@ export default function ExternalSurfacePage() {
       },
       {
         id: 'findings',
-        header: t('attackSurface.external.col.findings', 'Findings'),
+        header: t('assets.col.openFindings', 'Open findings'),
         enableSorting: false,
-        cell: ({ row }) =>
-          row.original.findingCount > 0 ? (
-            <IssuesChip assetId={row.original.id} count={row.original.findingCount} />
-          ) : (
-            <span className="text-muted-foreground tabular-nums">0</span>
-          ),
+        cell: ({ row }) => (
+          <OpenFindingsCell assetId={row.original.id} count={row.original.findingCount} />
+        ),
       },
       {
         id: 'labels',
@@ -593,17 +595,7 @@ export default function ExternalSurfacePage() {
     !!qParam || typeParam !== 'all' || riskParam !== 'all' || findingsParam !== 'all'
 
   const toolbarStart = (
-    <div className="flex flex-wrap items-center gap-2">
-      <div className="relative w-full sm:w-64">
-        <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder={t('attackSurface.external.search', 'Search assets')}
-          aria-label={t('attackSurface.external.search', 'Search assets')}
-          className="h-9 ps-9"
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-        />
-      </div>
+    <>
       <Select
         value={typeParam}
         onValueChange={(v) => {
@@ -648,7 +640,7 @@ export default function ExternalSurfacePage() {
           ))}
         </SelectContent>
       </Select>
-    </div>
+    </>
   )
 
   const toolbarEnd = (
@@ -743,39 +735,39 @@ export default function ExternalSurfacePage() {
   return (
     <>
       <Main>
-        <PageHeader
-          title={t('attackSurface.external.title', 'External attack surface')}
-          description={t(
-            'attackSurface.external.description',
-            'Every internet-facing asset, riskiest first.'
-          )}
-        >
-          <Can permission={Permission.ScansExecute}>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => openScanDialog(assets)}
-              disabled={assets.length === 0}
-            >
-              <RefreshCw className="me-2 h-4 w-4" />
-              {t('attackSurface.external.scanPage', 'Scan this page')}
+        <PageStack>
+          <PageHeader
+            title={t('attackSurface.external.title', 'External attack surface')}
+            description={t(
+              'attackSurface.external.description',
+              'Every internet-facing asset, riskiest first.'
+            )}
+          >
+            <Can permission={Permission.ScansExecute}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => openScanDialog(assets)}
+                disabled={assets.length === 0}
+              >
+                <RefreshCw className="me-2 h-4 w-4" />
+                {t('attackSurface.external.scanPage', 'Scan this page')}
+              </Button>
+            </Can>
+            <Button variant="outline" size="sm" onClick={() => void handleExport()}>
+              <Download className="me-2 h-4 w-4" />
+              {t('attackSurface.external.export', 'Export')}
             </Button>
-          </Can>
-          <Button variant="outline" size="sm" onClick={() => void handleExport()}>
-            <Download className="me-2 h-4 w-4" />
-            {t('attackSurface.external.export', 'Export')}
-          </Button>
-          <Can permission={Permission.AssetsWrite}>
-            <Button size="sm" onClick={() => setIsCreateOpen(true)}>
-              <Plus className="me-2 h-4 w-4" />
-              {t('attackSurface.external.addAsset', 'Add asset')}
-            </Button>
-          </Can>
-        </PageHeader>
+            <Can permission={Permission.AssetsWrite}>
+              <Button size="sm" onClick={() => setIsCreateOpen(true)}>
+                <Plus className="me-2 h-4 w-4" />
+                {t('attackSurface.external.addAsset', 'Add asset')}
+              </Button>
+            </Can>
+          </PageHeader>
 
-        <MetricStrip className="mt-5" loading={metricsLoading} items={metrics} />
+          <MetricStrip loading={metricsLoading} items={metrics} />
 
-        <div className="mt-5">
           {error && !isLoading ? (
             <ErrorState
               title={t('attackSurface.external.errorTitle', 'external assets')}
@@ -795,6 +787,11 @@ export default function ExternalSurfacePage() {
               data={assets}
               getRowId={(a) => a.id}
               showSearch={false}
+              search={{
+                value: searchInput,
+                onChange: setSearchInput,
+                placeholder: t('attackSurface.external.search', 'Search assets…'),
+              }}
               showColumnToggle={false}
               toolbarStart={toolbarStart}
               toolbarEnd={toolbarEnd}
@@ -822,7 +819,7 @@ export default function ExternalSurfacePage() {
               }
             />
           )}
-        </div>
+        </PageStack>
       </Main>
 
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>

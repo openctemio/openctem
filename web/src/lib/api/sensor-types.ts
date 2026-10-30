@@ -324,6 +324,8 @@ export interface Sensor {
    * `octs_` format; `rda_` keys are retired after enrollment ships.
    */
   legacy_key?: boolean
+  /** The last authenticated request with any of the sensor's keys; null until recorded. */
+  key_last_used_at?: string | null
   /** Process start, from the uptime the heartbeat reports. */
   started_at?: string | null
   uptime_seconds?: number | null
@@ -444,10 +446,54 @@ export interface SensorLoadCapacity {
   slots_total: number
   slots_free: number
   active_jobs: number
+  /** Tool starts the sensor holds back for now (host pressure). */
+  launches_held?: number
+  tools_running?: number
+  /** Start problems the sensor absorbed since it started. */
+  transient?: SensorTransientCounts | null
+}
+
+/** Counters since the sensor started; all reported by the sensor (clamped). */
+export interface SensorTransientCounts {
+  handshake_timeouts: number
+  slow_starts: number
+  oom_kills: number
+  start_eagain: number
+  retried: number
+  recovered: number
+}
+
+export type SensorPressureLevel = 'ok' | 'elevated' | 'overloaded'
+
+/** How loaded the sensor's host is (api research/318); stall values are percent. */
+export interface SensorPressure {
+  /** Empty when the sensor sent a level this API does not know. */
+  level: SensorPressureLevel | ''
+  reasons?: string[] | null
+  level_seconds: number
+  psi: boolean
+  cpu_some_avg10: number
+  mem_some_avg10: number
+  mem_full_avg10: number
+  io_some_avg10: number
+  io_full_avg10: number
+  load_per_cpu: number
+  fd_used_pct: number
+  host_cpu_busy_pct: number
+  foreign_cpu_pct: number
+  /** Share of CPU periods the sensor cgroup was throttled by its quota. */
+  cpu_throttled_pct?: number
+  noisy_neighbor: boolean
+}
+
+/** The machine the sensor reported about itself. */
+export interface SensorLoadResources {
+  pressure?: SensorPressure | null
 }
 
 /** A sensor's last load report; a part is null when never reported. */
 export interface SensorLoad {
+  resources?: SensorLoadResources | null
   capacity: SensorLoadCapacity | null
   reported_at: string | null
   /** False once the report is older than 3 minutes. */

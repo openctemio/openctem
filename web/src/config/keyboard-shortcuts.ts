@@ -90,6 +90,20 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     shells: ['app'],
   },
   {
+    id: 'focus-search',
+    label: 'Search the list',
+    keys: ['/'],
+    group: 'lists',
+    shells: ['app'],
+  },
+  {
+    id: 'open-filters',
+    label: 'Open the list filters',
+    keys: ['F'],
+    group: 'lists',
+    shells: ['app'],
+  },
+  {
     id: 'add-filter',
     label: 'Add a filter (findings and assets lists)',
     keys: ['F'],

@@ -28,6 +28,11 @@ export type ResultShape =
   | 'items'
   | 'stages'
   | 'paths'
+  | 'flow'
+  | 'intake'
+  | 'levers'
+  | 'brief'
+  | 'kpis'
 export type VizType =
   | 'stat'
   | 'progress'
@@ -43,6 +48,11 @@ export type VizType =
   | 'note'
   | 'loop'
   | 'paths'
+  | 'flow'
+  | 'intake'
+  | 'levers'
+  | 'brief'
+  | 'kpi'
 export type Dimension =
   | 'severity'
   | 'priority_class'

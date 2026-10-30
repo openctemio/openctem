@@ -12,11 +12,12 @@ import { CalendarClock, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { confirmName } from '@/lib/confirm-name'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
-import { EmptyState, ErrorState, GatedButton, TonePill } from '@/features/shared'
+import { EmptyState, ErrorState, GatedButton, TonePill, PageStack } from '@/features/shared'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { Permission, usePermissions } from '@/lib/permissions'
 
@@ -49,7 +50,7 @@ export function ScanWindowsPanel() {
   )
 
   return (
-    <div className="space-y-8" data-testid="scan-windows-panel">
+    <PageStack data-testid="scan-windows-panel">
       <section aria-labelledby="policies-heading" className="space-y-3">
         <div className="flex flex-wrap items-end justify-between gap-2">
           <h2 id="policies-heading" className="text-base font-semibold">
@@ -129,11 +130,13 @@ export function ScanWindowsPanel() {
                       >
                         {t('scanWindows.edit', 'Edit')}
                       </GatedButton>
+                      {/* Set apart from Edit: a mis-tap must not delete. */}
                       <GatedButton
                         allowed={canManage}
                         reason={noWrite}
                         variant="ghost"
                         size="sm"
+                        className="ms-3 text-destructive hover:text-destructive"
                         aria-label={t('scanWindows.deleteNamed', 'Delete {name}', {
                           name: p.name ?? '',
                         })}
@@ -164,16 +167,11 @@ export function ScanWindowsPanel() {
       <ConfirmDialog
         open={!!deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
-        title={t('scanWindows.deleteTitle', 'Delete scan window policy')}
-        desc={t(
-          'scanWindows.deleteDesc',
-          'Delete "{name}"? Work it holds now is released at once.',
-          {
-            name: deleting?.name ?? '',
-          }
-        )}
-        confirmText={t('scanWindows.delete', 'Delete')}
+        title={t('confirm.scanWindow.deleteTitle', undefined, { name: deleting?.name ?? '' })}
+        desc={t('confirm.scanWindow.deleteDesc')}
+        confirmText={t('confirm.scanWindow.deleteBtn')}
         destructive
+        typeToConfirm={deleting ? confirmName(deleting.name, deleting.id ?? '') : undefined}
         handleConfirm={() => {
           const target = deleting
           setDeleting(null)
@@ -193,6 +191,6 @@ export function ScanWindowsPanel() {
             )
         }}
       />
-    </div>
+    </PageStack>
   )
 }

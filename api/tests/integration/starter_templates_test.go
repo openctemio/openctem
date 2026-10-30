@@ -32,13 +32,20 @@ func TestStarterTemplates_ValidAndRunnable(t *testing.T) {
 		"a0000002-0000-0000-0000-000000000006": 4, // Passive discovery (with the RDAP and ASN lookups)
 		"a0000002-0000-0000-0000-000000000007": 2, // Probe new assets
 	}
+	// Superseded by the EASM recon set (Subdomains, Standard recon, Web):
+	// kept, inactive, so scans made from them keep working.
+	superseded := map[string]bool{
+		"a0000002-0000-0000-0000-000000000001": true,
+		"a0000002-0000-0000-0000-000000000002": true,
+		"a0000002-0000-0000-0000-000000000003": true,
+	}
 	for idStr, steps := range want {
 		id, _ := shared.IDFromString(idStr)
 		tpl, err := templates.GetWithSteps(ctx, id)
 		if err != nil {
 			t.Fatalf("%s: %v", idStr, err)
 		}
-		if !tpl.IsSystemTemplate || !tpl.IsActive || len(tpl.Steps) != steps {
+		if !tpl.IsSystemTemplate || tpl.IsActive == superseded[idStr] || len(tpl.Steps) != steps {
 			t.Fatalf("%s (%s): system=%v active=%v steps=%d", idStr, tpl.Name, tpl.IsSystemTemplate, tpl.IsActive, len(tpl.Steps))
 		}
 		rep := stage.ValidateGraph(scanrun.StepsGraph(tpl.Steps))

@@ -38,7 +38,9 @@ describe('ExposureBulkActions resolve', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Resolve' }))
     const dialog = await screen.findByRole('alertdialog')
     await userEvent.click(
-      Array.from(dialog.querySelectorAll('button')).find((b) => b.textContent === 'Resolve')!
+      Array.from(dialog.querySelectorAll('button')).find(
+        (b) => b.textContent === 'Resolve 3 exposures'
+      )!
     )
     await waitFor(() => expect(onBulkResolve).toHaveBeenCalledWith(['e1', 'e2', 'e3']))
     expect(onClearSelection).toHaveBeenCalled()

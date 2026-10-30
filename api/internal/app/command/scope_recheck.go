@@ -8,8 +8,10 @@ package command
 // scope revoked). Before a sensor gets such a command, its targets pass the
 // dispatch gate again with the inputs recorded when it was created
 // (commanddom.DispatchGate). Targets the gate now refuses are taken out of
-// the job; a job left with none is failed with SCOPE_CHANGED, and what
-// waits on it (step, validation run, retest) hears about it. A gate that cannot decide withholds the job (fail closed):
+// the job; a job left with none is failed with SCOPE_CHANGED (or with
+// NO_RESOLVING_TARGETS when the only reason is that its names stopped
+// resolving in DNS, a fact about the targets), and what waits on it (step,
+// validation run, retest) hears about it. A gate that cannot decide withholds the job (fail closed):
 // it stays pending for a later claim, and the command TTL is the backstop.
 //
 // One enforcement point: Poll, Claim and Acknowledge (claim by id) all call
@@ -25,6 +27,7 @@ import (
 	"strings"
 
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
+	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	scanrundom "github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
@@ -77,6 +80,12 @@ const maxRecheckTargets = 10000
 var ErrScopeChanged = fmt.Errorf("%w (%w): the scope of this job changed and none of its targets may be scanned",
 	ErrCommandClaimed, shared.ErrConflict)
 
+// ErrNoResolvingTargets: no target name of the command resolves in DNS
+// any more. It reads as "claimed", so the sensor drops it; the command is
+// failed with NO_RESOLVING_TARGETS.
+var ErrNoResolvingTargets = fmt.Errorf("%w (%w): none of this job's target names resolves in DNS now",
+	ErrCommandClaimed, shared.ErrConflict)
+
 // ErrScopeRecheckUnavailable: the re-check could not decide. It reads as
 // "claimed"; the command stays pending for a later claim.
 var ErrScopeRecheckUnavailable = fmt.Errorf("%w (%w): the job's scope could not be checked; try later",
@@ -88,6 +97,7 @@ type recheckOutcome int
 const (
 	recheckKeep     recheckOutcome = iota // hand out (maybe narrowed)
 	recheckFailed                         // failed (SCOPE_CHANGED, GATE_RECORD_MISSING)
+	recheckEnded                          // failed for a fact about the targets (NO_RESOLVING_TARGETS)
 	recheckWithheld                       // not decided, or changed meanwhile: stays pending
 )
 
@@ -99,12 +109,22 @@ type recheckJob struct {
 	// job is the command's tool and port settings, checked against port-
 	// and path-limited scope entries.
 	job scopedom.JobShape
+	// platform: the job is for platform sensors (ownership confirmation
+	// applies on the hosted service, attribution.Placement).
+	platform bool
 }
 
 // recheckKey groups jobs the gate can decide in one call.
 type recheckKey struct {
-	gate commanddom.DispatchGate
-	job  scopedom.JobShape
+	gate     commanddom.DispatchGate
+	job      scopedom.JobShape
+	platform bool
+}
+
+// platformJob reports whether c runs on platform sensors: a job queued for
+// them, or any job a shared sensor claims (the caller marks the context).
+func platformJob(ctx context.Context, c *commanddom.Command) bool {
+	return c.IsPlatformJob || attribution.PlacementOf(ctx) == attribution.PlacementPlatform
 }
 
 // jobShapeOf reads a command's tool and port settings as the sensor's
@@ -174,8 +194,11 @@ func (s *Service) recheckOne(ctx context.Context, sensorID shared.ID, cmd *comma
 	if len(out) == 1 {
 		return out[0], nil
 	}
-	if outcomes[cmd.ID] == recheckFailed {
+	switch outcomes[cmd.ID] {
+	case recheckFailed:
 		return nil, ErrScopeChanged
+	case recheckEnded:
+		return nil, ErrNoResolvingTargets
 	}
 	return nil, ErrScopeRecheckUnavailable
 }
@@ -213,7 +236,7 @@ func (s *Service) recheck(ctx context.Context, tenantID shared.ID, sensorID *sha
 		}
 		shape := jobShapeOf(c)
 		shape.LimitsEnforced = enforced
-		jobs = append(jobs, recheckJob{cmd: c, targets: targets, gate: gate, job: shape})
+		jobs = append(jobs, recheckJob{cmd: c, targets: targets, gate: gate, job: shape, platform: platformJob(ctx, c)})
 	}
 	for _, batch := range recheckBatches(jobs) {
 		s.recheckBatch(ctx, tenantID, sensorID, batch, outcomes, replaced)
@@ -264,7 +287,7 @@ func recheckBatches(jobs []recheckJob) [][]recheckJob {
 	var groups [][]recheckJob
 	sizes := []int{}
 	for _, j := range jobs {
-		key := recheckKey{gate: j.gate, job: j.job}
+		key := recheckKey{gate: j.gate, job: j.job, platform: j.platform}
 		i, ok := index[key]
 		if !ok || sizes[i]+len(j.targets) > maxRecheckTargets {
 			groups = append(groups, nil)
@@ -289,6 +312,10 @@ func (s *Service) recheckBatch(ctx context.Context, tenantID shared.ID, sensorID
 		AllowNonNetworkTargets: !g.Validated, SkipZoneRouting: g.NoZoneRouting,
 		Tier: &tier, PassiveOnly: g.Passive, ActScope: g.ActScope,
 		SystemPolicy: g.SystemPolicy,
+		Placement:    attribution.PlacementTenant,
+	}
+	if jobs[0].platform {
+		in.Placement = attribution.PlacementPlatform
 	}
 	if g.ActScope && g.Actor == "" && g.SystemPolicy == "" {
 		s.withholdAll(jobs, outcomes, "the job has no recorded actor and no system authority", nil)
@@ -417,6 +444,17 @@ func (s *Service) settle(ctx context.Context, j recheckJob, v targetVerdict,
 	}
 	log := s.logger.With("tenant_id", j.cmd.TenantID.String(), "command_id", j.cmd.ID.String())
 	if len(kept) == 0 {
+		if onlyTargetSide(refused) {
+			// Nothing about the scope changed: the names stopped resolving
+			// while the job was queued. An honest outcome, not a scope one.
+			outcomes[j.cmd.ID] = s.failAtClaim(ctx, j.cmd, noResolvingTargetsMessage(refused), FailureNoResolvingTargets)
+			if outcomes[j.cmd.ID] == recheckFailed {
+				outcomes[j.cmd.ID] = recheckEnded
+				log.Info("job ended at claim: none of its target names resolves in DNS now",
+					"type", string(j.cmd.Type), "refused", len(refused))
+			}
+			return
+		}
 		outcomes[j.cmd.ID] = s.failAtClaim(ctx, j.cmd, scopeChangedMessage(refused), FailureScopeChanged)
 		if outcomes[j.cmd.ID] == recheckFailed {
 			log.Warn("SECURITY: job failed at claim: its scope changed and no target may be scanned",
@@ -484,12 +522,44 @@ func (s *Service) failAtClaim(ctx context.Context, cmd *commanddom.Command, msg,
 	return recheckFailed
 }
 
+// FailureNoResolvingTargets is the failure code of a job whose every target
+// the re-check refused only because the name no longer resolves in DNS.
+const FailureNoResolvingTargets = scanrundom.FailureNoResolvingTargets
+
+// onlyTargetSide reports whether every refusal is a fact about the target
+// (its name does not resolve) rather than about the scope: such a job ends
+// as NO_RESOLVING_TARGETS, never SCOPE_CHANGED.
+func onlyTargetSide(refused map[string]string) bool {
+	if len(refused) == 0 {
+		return false
+	}
+	for _, c := range refused {
+		if c != scopedom.RefusalUnresolved {
+			return false
+		}
+	}
+	return true
+}
+
+// noResolvingTargetsMessage is the error recorded on such a job.
+func noResolvingTargetsMessage(refused map[string]string) string {
+	return refusedListMessage(FailureNoResolvingTargets+
+		": none of this job's target names resolves in DNS now, so there is nothing to scan: ", refused)
+}
+
 // maxListedRefused bounds the targets a SCOPE_CHANGED message names.
 const maxListedRefused = 10
 
 // scopeChangedMessage is the error recorded on a failed command and its
 // step: the refused targets with their refusal code.
 func scopeChangedMessage(refused map[string]string) string {
+	return refusedListMessage(FailureScopeChanged+
+		": the scope changed while the job was queued and none of its targets may be scanned now: ", refused)
+}
+
+// refusedListMessage is prefix and the refused targets with their code,
+// bounded.
+func refusedListMessage(prefix string, refused map[string]string) string {
 	targets := make([]string, 0, len(refused))
 	for t := range refused {
 		targets = append(targets, t)
@@ -502,8 +572,7 @@ func scopeChangedMessage(refused map[string]string) string {
 		}
 		parts = append(parts, fmt.Sprintf("%s (%s)", t, refused[t]))
 	}
-	msg := FailureScopeChanged + ": the scope changed while the job was queued and none of its targets may be scanned now: " +
-		strings.Join(parts, "; ")
+	msg := prefix + strings.Join(parts, "; ")
 	if n := len(targets) - len(parts); n > 0 {
 		msg += fmt.Sprintf("; and %d more", n)
 	}
@@ -525,9 +594,17 @@ func payloadTargets(payload json.RawMessage) []string {
 	if len(payload) == 0 {
 		return nil
 	}
-	var p struct {
+	// The targets at the top level and in "context" (the run context a
+	// step carries, which narrowPayload narrows too): a job that names its
+	// targets only in the context is checked like any other, never handed
+	// out unchecked.
+	type targetFields struct {
 		Targets []any `json:"targets"`
 		Target  any   `json:"target"`
+	}
+	var p struct {
+		targetFields
+		Context *targetFields `json:"context"`
 	}
 	if json.Unmarshal(payload, &p) != nil {
 		return nil
@@ -553,13 +630,22 @@ func payloadTargets(payload json.RawMessage) []string {
 		add(t)
 	}
 	add(p.Target)
+	if p.Context != nil {
+		for _, t := range p.Context.Targets {
+			add(t)
+		}
+		add(p.Context.Target)
+	}
 	return out
 }
 
 // narrowPayload keeps only the kept targets in a payload: in "targets" and
-// "target" at the top level and in "context" (the run context a step
-// carries). "target" stays only when it is kept, or becomes the one target
-// left. Everything else is unchanged (numbers keep their exact text).
+// "target" at the top level, in "context" (the run context a step carries)
+// and in the tool settings ("config", "scanner_config", and the context's
+// "scanner_config"), where a quick scan carries its target list too: a
+// narrowed job never names a target it no longer runs on. "target" stays
+// only when it is kept, or becomes the one target left. Everything else is
+// unchanged (numbers keep their exact text).
 func narrowPayload(payload json.RawMessage, kept []string) (json.RawMessage, error) {
 	keep := make(map[string]bool, len(kept))
 	for _, t := range kept {
@@ -572,10 +658,22 @@ func narrowPayload(payload json.RawMessage, kept []string) (json.RawMessage, err
 		return nil, fmt.Errorf("decode command payload: %w", err)
 	}
 	narrowTargets(fields, keep)
+	narrowSettingsTargets(fields, keep)
 	if ctxFields, ok := fields["context"].(map[string]any); ok {
 		narrowTargets(ctxFields, keep)
+		narrowSettingsTargets(ctxFields, keep)
 	}
 	return json.Marshal(fields)
+}
+
+// narrowSettingsTargets narrows the target lists of the tool settings in
+// fields ("config", "scanner_config").
+func narrowSettingsTargets(fields map[string]any, keep map[string]bool) {
+	for _, k := range []string{"config", "scanner_config"} {
+		if cfg, ok := fields[k].(map[string]any); ok {
+			narrowTargets(cfg, keep)
+		}
+	}
 }
 
 func narrowTargets(fields map[string]any, keep map[string]bool) {

@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 
@@ -178,7 +179,7 @@ func (s *Service) TriggerPipeline(ctx context.Context, input TriggerRunInput) (*
 
 	// The run's targets reach every step command; check them the way a scan
 	// trigger does (private-range policy, scope exclusions, scan zones).
-	runContext, err := s.gateRunContext(ctx, tenantID, input.TriggeredBy, input.Context)
+	runContext, err := s.gateRunContext(attribution.WithPlacement(ctx, s.runStartPlacement(ctx, tenantID, template)), tenantID, input.TriggeredBy, input.Context)
 	if err != nil {
 		s.logger.Warn("scan workflow run refused by the target gate",
 			"template_id", template.ID.String(), "error", err)
@@ -255,11 +256,17 @@ func (s *Service) scheduleRunnableSteps(ctx context.Context, run *scanrun.Run, t
 	// partial: some batches failed, the others' results are kept). Every
 	// terminal step used to count as "completed" here, so a step whose
 	// dependency had failed (or been skipped, or timed out) was queued anyway.
+	//
+	// With continue-on-failure, a dependency gates only by finishing: a
+	// step runs once every dependency is terminal, on the seeds and on what
+	// the dependencies that produced results found (the hop router reads
+	// only those).
+	continueOnFailure := template.Settings.ContinueOnFailedDependency
 	succeededSteps := make(map[string]bool)
 	runningSteps := 0
 	for _, sr := range stepRuns {
 		if sr.IsComplete() {
-			if sr.Status.ProducedResults() {
+			if sr.Status.ProducedResults() || continueOnFailure {
 				succeededSteps[sr.StepKey] = true
 			}
 		} else if sr.IsRunning() || sr.IsQueued() {
@@ -323,6 +330,17 @@ func (s *Service) scheduleRunnableSteps(ctx context.Context, run *scanrun.Run, t
 			settledInline = true
 			continue
 		}
+		// The run's depth decides whether the step runs (passive runs only
+		// steps that send nothing to the targets; a step may start at a
+		// deeper depth); its dependents are then skipped as blocked.
+		if reason := depthSkipReason(run, step); reason != "" {
+			stepRun.Skip(reason)
+			if err := s.stepRunRepo.Update(ctx, stepRun); err != nil {
+				s.logger.Error("failed to skip a step below its depth", "step_key", step.StepKey, "error", err)
+			}
+			settledInline = true
+			continue
+		}
 
 		// Queue the step - create a command that sensors can poll
 		err := s.queueStepForExecutionWithSettings(ctx, run, step, stepRun, template.Settings, predecessorsOf(template, step))
@@ -347,6 +365,16 @@ func (s *Service) scheduleRunnableSteps(ctx context.Context, run *scanrun.Run, t
 			s.settleNoInputs(ctx, stepRun, step.StepKey, noInputs)
 			settledInline = true
 		default:
+			if msg := optionalSkipMessage(step, err); msg != "" {
+				// An optional step waits for a tool: skipped with the
+				// reason, never failed and never silent.
+				stepRun.Skip(msg)
+				if uerr := s.stepRunRepo.Update(ctx, stepRun); uerr != nil {
+					s.logger.Error("failed to skip an optional step", "step_key", step.StepKey, "error", uerr)
+				}
+				settledInline = true
+				continue
+			}
 			s.logger.Error("failed to queue step", "step_key", logger.SanitizeValue(step.StepKey), "error", logger.SanitizeError(err))
 			s.failQueuedStep(ctx, stepRun, step.StepKey, err)
 			settledInline = true
@@ -389,13 +417,19 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	// The tool the step runs: its pinned tool, or the implementation of its
 	// capability the planner picks (F1: a capability-only step used to
 	// reach the sensor with no scanner). Every check below and the payload
-	// read the resolved tool.
+	// read the resolved tool. The step runs with its config at the run's
+	// depth (the depth's standard params merged over it), so the tool's
+	// eligibility is decided on what it will receive.
+	step = stepAtDepth(run, step)
 	resolved, err := scanapp.ResolveStepTool(ctx, s.toolRepo, run.TenantID, step)
 	if err != nil {
 		return fmt.Errorf("step %s: %w", step.StepKey, err)
 	}
 	step = resolved.WithTool(step)
 	if err := checkStepIntensity(run, step, resolved); err != nil {
+		return fmt.Errorf("step %s: %w", step.StepKey, err)
+	}
+	if err := checkStepDepth(run, resolved); err != nil {
 		return fmt.Errorf("step %s: %w", step.StepKey, err)
 	}
 	// The step run records what it runs: the capability and the tool the
@@ -421,6 +455,10 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	// left with none fails here (INCOMPATIBLE_TARGETS), before any sensor
 	// sees it.
 	chained := s.hops != nil && resolved.HasStage && len(feedingPredecessors(run, resolved.Stage, preds)) > 0
+	// A step that runs although a dependency did not succeed (continue on
+	// failure) may find no seed it can take: it then has nothing to do,
+	// which is not a failure of its own.
+	dependent := settings.ContinueOnFailedDependency && len(preds) > 0 && !chained
 	var stepTargets *scanapp.StepTargets
 	if f, ok := s.targetGate.(StepTargetFilter); ok {
 		st, ferr := f.FilterStepTargets(ctx, run.TenantID, step.Tool, run.Context)
@@ -429,7 +467,13 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 		}
 		if ferr != nil {
 			var de *shared.DomainError
-			if !chained || !errors.As(ferr, &de) || (de.Code != "INCOMPATIBLE_TARGETS" && de.Code != scanapp.CodeStepTargetsRefused) {
+			if !errors.As(ferr, &de) || (de.Code != "INCOMPATIBLE_TARGETS" && de.Code != scanapp.CodeStepTargetsRefused) {
+				return fmt.Errorf("step %s: %w", step.StepKey, ferr)
+			}
+			if dependent {
+				return &noInputsError{summary: "no dependency produced anything this step takes, and the scan's targets do not fit it"}
+			}
+			if !chained {
 				return fmt.Errorf("step %s: %w", step.StepKey, ferr)
 			}
 			// A chained step may take no seed: its targets come from
@@ -450,6 +494,9 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	kindGated, kerr := gateStepKinds(resolved, stepTargets, run.Context, chained)
 	if kerr != nil && findsNoHosts(resolved, kerr) {
 		return &noInputsError{summary: "no address or range to probe"}
+	}
+	if kerr != nil && dependent {
+		return &noInputsError{summary: "no dependency produced anything this step takes, and the scan's targets do not fit it"}
 	}
 	if kerr != nil {
 		return fmt.Errorf("step %s: %w", step.StepKey, kerr)
@@ -502,7 +549,14 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 
 	// The hop router: seeds, plus what the predecessors produced that passes
 	// the per-hop gate; recorded once per (run, stage).
-	planned, err := s.planStage(ctx, run, step, resolved, preds, stepTargets)
+	// Whether the step's jobs go to platform sensors decides whether
+	// ownership confirmation applies to the targets the hop router gates.
+	wantsPlatform := scanrun.ScanZoneFromContext(run.Context) == nil && s.stepUsesPlatform(ctx, run, step, settings.SensorPreference)
+	hopPlacement := attribution.PlacementTenant
+	if wantsPlatform {
+		hopPlacement = attribution.PlacementPlatform
+	}
+	planned, err := s.planStage(attribution.WithPlacement(ctx, hopPlacement), run, step, resolved, preds, stepTargets)
 	if err != nil {
 		return fmt.Errorf("step %s: %w", step.StepKey, err)
 	}
@@ -516,7 +570,7 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	zoneID := scanrun.ScanZoneFromContext(run.Context)
 	usePlatform := false
 	if zoneID == nil {
-		usePlatform = s.stepUsesPlatform(ctx, run, step, settings.SensorPreference) &&
+		usePlatform = wantsPlatform &&
 			s.stepTargetsMayGoShared(ctx, run, step, chunkTargets(stepTargets, run.Context))
 	}
 
@@ -534,7 +588,7 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	}
 	created := make([]*command.Command, 0, len(chunks))
 	for _, chunk := range chunks {
-		cmd, err := s.stepCommand(ctx, run, step, stepRun, chunk)
+		cmd, err := s.stepCommand(ctx, run, step, resolved, stepRun, chunk)
 		if err == nil {
 			// An active stage holds its hosts while a sensor runs the
 			// chunk, so no other sensor hits them at the same time; the
@@ -684,10 +738,10 @@ func targetWeight(t string, weighRanges bool) uint64 {
 // stepCommand builds one command of a step for the given chunk of its
 // targets, after the payload passed the security validator. Its web scope
 // is attached when the command is stored (command.CreateGuard).
-func (s *Service) stepCommand(ctx context.Context, run *scanrun.Run, step *scanworkflow.Step, stepRun *scanrun.StepRun,
+func (s *Service) stepCommand(ctx context.Context, run *scanrun.Run, step *scanworkflow.Step, resolved scanapp.StepTool, stepRun *scanrun.StepRun,
 	chunk *scanapp.StepTargets,
 ) (*command.Command, error) {
-	payload, err := scanapp.StepCommandPayload(run, step, step.Tool, stepRun.ID.String(), chunk)
+	payload, err := resolved.CommandPayload(run, step, stepRun.ID.String(), chunk)
 	if err != nil {
 		return nil, fmt.Errorf("step %s: %w", step.StepKey, err)
 	}
@@ -874,7 +928,13 @@ func (s *Service) refreshStepRuns(ctx context.Context, run *scanrun.Run) {
 // skipBlockedSteps skips every pending step whose dependency finished without
 // succeeding, transitively, so a failed step does not leave its dependents
 // pending forever (the run could then never complete).
+//
+// A workflow with continue-on-failure skips nothing here: its steps run on
+// what their other dependencies produced.
 func (s *Service) skipBlockedSteps(ctx context.Context, run *scanrun.Run, template *scanworkflow.Workflow) {
+	if template.Settings.ContinueOnFailedDependency {
+		return
+	}
 	for changed := true; changed; {
 		changed = false
 		for _, step := range template.Steps {
@@ -946,10 +1006,17 @@ func (s *Service) finishRun(ctx context.Context, run *scanrun.Run, status scanru
 // which step is executing and how long each step took. Before this nothing
 // called it: a step went from queued straight to completed and its
 // started_at stayed empty.
-func (s *Service) OnStepStarted(ctx context.Context, runID, stepKey string, sensorID, commandID shared.ID) error {
+func (s *Service) OnStepStarted(ctx context.Context, tenantID shared.ID, runID, stepKey string, sensorID, commandID shared.ID) error {
 	rid, err := shared.IDFromString(runID)
 	if err != nil {
 		return err
+	}
+	// The run id comes from the command payload: bind it to the command's
+	// tenant before touching a step run.
+	if run, err := s.runRepo.GetByTenantAndID(ctx, tenantID, rid); err != nil {
+		return err
+	} else if run == nil {
+		return shared.ErrNotFound
 	}
 	stepRun, err := s.stepRunRepo.GetByStepKey(ctx, rid, stepKey)
 	if err != nil {
@@ -965,10 +1032,27 @@ func (s *Service) OnStepStarted(ctx context.Context, runID, stepKey string, sens
 	return nil
 }
 
+// stepResultRun loads the run a step result names. The run id is read from
+// the command payload, so the run must belong to the command's tenant: a
+// command of one organization can never settle, fail or advance a step of
+// another organization's run (a foreign run is not found).
+func (s *Service) stepResultRun(ctx context.Context, tenantID, runID shared.ID) (*scanrun.Run, error) {
+	run, err := s.runRepo.GetWithStepRuns(ctx, runID)
+	if err != nil {
+		return nil, err
+	}
+	if run == nil || tenantID.IsZero() || run.TenantID != tenantID {
+		s.logger.Warn("step result refused: the run belongs to another tenant or none",
+			"run_id", runID.String(), "tenant_id", tenantID.String())
+		return nil, shared.ErrNotFound
+	}
+	return run, nil
+}
+
 // OnStepCompleted is called when a sensor reports step completion.
 // This triggers scheduling of dependent steps.
-func (s *Service) OnStepCompleted(ctx context.Context, runID, stepKey string, findingsCount int, output map[string]any) error {
-	return s.OnStepCompletedPartial(ctx, runID, stepKey, findingsCount, output, Partial{})
+func (s *Service) OnStepCompleted(ctx context.Context, tenantID shared.ID, runID, stepKey string, findingsCount int, output map[string]any) error {
+	return s.OnStepCompletedPartial(ctx, tenantID, runID, stepKey, findingsCount, output, Partial{})
 }
 
 // Partial says why a completed command covered less than it was given.
@@ -977,11 +1061,18 @@ type Partial struct {
 	// name that did not resolve); SkippedSummary is the step message.
 	Skipped        int
 	SkippedSummary string
+	// Unresolvable is how many of the skipped targets are names that no
+	// longer resolve (informational: a fact about the names).
+	Unresolvable int
 	// Gaps are hosts the sensor could not fully cover (its per-host rate
 	// controller gave them up, they pushed back at the lowest rate, or
 	// blocked the scan; RFC-074); GapSummary is the step message.
 	Gaps       int
 	GapSummary string
+	// GapList are the hosts and reasons of a single command's gaps
+	// (cleaned, at most scanrun.MaxTaskCoverageGaps); a batched step keeps
+	// them on its tasks and records only the count.
+	GapList []scanrun.CoverageGap
 	// Unreached targets the sensor could not reach (no route, refused by a
 	// filter, timeout, name not resolving; RFC-089); UnreachedSummary is
 	// the step message.
@@ -1023,18 +1114,30 @@ const (
 	StepOutputUnreachable = "unreachable_target_count"
 	// StepOutputSkipped counts the targets the sensor's local policy skipped.
 	StepOutputSkipped = "skipped_target_count"
+	// StepOutputNoLongerResolve counts the skipped targets that are names
+	// that no longer resolve (a part of StepOutputSkipped).
+	StepOutputNoLongerResolve = "no_longer_resolve_count"
+	// StepOutputCoverageGapCount counts the hosts not fully covered, and
+	// StepOutputCoverageGaps lists them as {host, reason} (single-command
+	// steps; a batched step's tasks hold the lists).
+	StepOutputCoverageGapCount = "coverage_gap_count"
+	StepOutputCoverageGaps     = "coverage_gaps"
+	// StepOutputUnfinished counts the targets the step left unfinished.
+	StepOutputUnfinished = "unfinished_target_count"
 	// stepOutputUnreachableNote / stepOutputSkippedNote carry the summaries.
 	stepOutputUnreachableNote = "unreachable_summary"
 	stepOutputSkippedNote     = "skipped_summary"
 )
 
-// withNotes returns output with the skipped and unreachable counts (and
-// their summaries) of p added; output itself is not changed.
+// withNotes returns output with the step's outcome added: the skipped,
+// unreachable and unfinished counts, the coverage-gap count and the hosts
+// with their reasons. The console words them from these structured values;
+// the summaries stay for API clients. output itself is not changed.
 func (p Partial) withNotes(output map[string]any) map[string]any {
-	if p.Skipped == 0 && p.Unreached == 0 {
+	if p.Skipped == 0 && p.Unreached == 0 && p.Gaps == 0 && len(p.Unfinished) == 0 {
 		return output
 	}
-	out := make(map[string]any, len(output)+4)
+	out := make(map[string]any)
 	maps.Copy(out, output)
 	if p.Unreached > 0 {
 		out[StepOutputUnreachable] = p.Unreached
@@ -1044,9 +1147,25 @@ func (p Partial) withNotes(output map[string]any) map[string]any {
 	}
 	if p.Skipped > 0 {
 		out[StepOutputSkipped] = p.Skipped
+		if p.Unresolvable > 0 {
+			out[StepOutputNoLongerResolve] = min(p.Unresolvable, p.Skipped)
+		}
 		if p.SkippedSummary != "" {
 			out[stepOutputSkippedNote] = p.SkippedSummary
 		}
+	}
+	if p.Gaps > 0 {
+		out[StepOutputCoverageGapCount] = p.Gaps
+		if len(p.GapList) > 0 {
+			list := make([]map[string]string, 0, len(p.GapList))
+			for _, g := range p.GapList {
+				list = append(list, map[string]string{"host": g.Host, "reason": g.Reason})
+			}
+			out[StepOutputCoverageGaps] = list
+		}
+	}
+	if n := len(p.Unfinished); n > 0 {
+		out[StepOutputUnfinished] = n
 	}
 	return out
 }
@@ -1075,7 +1194,7 @@ func (p Partial) message() (string, string) {
 // host with a gap is never read as "no findings". A task that reached
 // none of its targets and found nothing fails the step with
 // TARGET_UNREACHABLE: unreachable is not "nothing found".
-func (s *Service) OnStepCompletedPartial(ctx context.Context, runID, stepKey string, findingsCount int, output map[string]any, p Partial) error {
+func (s *Service) OnStepCompletedPartial(ctx context.Context, tenantID shared.ID, runID, stepKey string, findingsCount int, output map[string]any, p Partial) error {
 	rid, err := shared.IDFromString(runID)
 	if err != nil {
 		return err
@@ -1086,7 +1205,7 @@ func (s *Service) OnStepCompletedPartial(ctx context.Context, runID, stepKey str
 		"findings", findingsCount, "skipped_targets", p.Skipped, "coverage_gaps", p.Gaps)
 
 	// Get the run with step runs
-	run, err := s.runRepo.GetWithStepRuns(ctx, rid)
+	run, err := s.stepResultRun(ctx, tenantID, rid)
 	if err != nil {
 		return err
 	}
@@ -1158,7 +1277,7 @@ func (s *Service) OnStepCompletedPartial(ctx context.Context, runID, stepKey str
 }
 
 // OnStepFailed is called when a sensor reports step failure.
-func (s *Service) OnStepFailed(ctx context.Context, runID, stepKey, errorMessage, errorCode string) error {
+func (s *Service) OnStepFailed(ctx context.Context, tenantID shared.ID, runID, stepKey, errorMessage, errorCode string) error {
 	s.logger.Info("step failed", "run_id", logger.SanitizeValue(runID), "step_key", logger.SanitizeValue(stepKey), "error", logger.SanitizeValue(errorMessage))
 
 	rid, err := shared.IDFromString(runID)
@@ -1167,7 +1286,7 @@ func (s *Service) OnStepFailed(ctx context.Context, runID, stepKey, errorMessage
 	}
 
 	// Get the run
-	run, err := s.runRepo.GetWithStepRuns(ctx, rid)
+	run, err := s.stepResultRun(ctx, tenantID, rid)
 	if err != nil {
 		return err
 	}
@@ -1417,7 +1536,7 @@ func uncoveredTargetCount(runContext map[string]any) int {
 // and how many did not, and still add up to the steps that settled.
 func (s *Service) updateRunStats(ctx context.Context, run *scanrun.Run, st runStats) {
 	// FIXED: Don't silently suppress errors - log them instead
-	if err := s.runRepo.UpdateStats(ctx, run.ID, st.completed, st.failed+st.partial, st.skipped, st.findings); err != nil {
+	if err := s.runRepo.UpdateStats(ctx, run.TenantID, run.ID, st.completed, st.failed+st.partial, st.skipped, st.findings); err != nil {
 		s.logger.Error("failed to update run stats", "run_id", run.ID.String(), "error", err)
 	}
 }
@@ -1433,6 +1552,7 @@ type stepBatches struct {
 	failed     int
 	findings   int
 	skipped    int // targets the completed batches' sensors skipped
+	unresolved int // of those, names that no longer resolve
 	gaps       int // hosts the completed batches' sensors did not fully cover
 	firstError string
 	// Reach of the completed batches (RFC-089): targets tried, reached and
@@ -1444,7 +1564,7 @@ type stepBatches struct {
 // The step fails as unreachable only when every batch reported its reach
 // and no batch reached a target.
 func (b stepBatches) partial() Partial {
-	p := Partial{Skipped: b.skipped, Gaps: b.gaps, Unreached: b.unreached, Tried: b.reachTargets}
+	p := Partial{Skipped: b.skipped, Unresolvable: b.unresolved, Gaps: b.gaps, Unreached: b.unreached, Tried: b.reachTargets}
 	if b.skipped > 0 {
 		p.SkippedSummary = fmt.Sprintf("Completed with %d target(s) skipped by the sensor's local policy (see the tasks)", b.skipped)
 	}
@@ -1492,7 +1612,7 @@ func (s *Service) checkStepBatches(ctx context.Context, run *scanrun.Run, stepRu
 	if st.Total <= 1 {
 		return stepBatches{}
 	}
-	b := stepBatches{batched: true, total: st.Total, failed: st.Failed, findings: st.Findings, skipped: st.Skipped, gaps: st.Gaps, firstError: st.FirstError,
+	b := stepBatches{batched: true, total: st.Total, failed: st.Failed, findings: st.Findings, skipped: st.Skipped, unresolved: st.Unresolvable, gaps: st.Gaps, firstError: st.FirstError,
 		reachBatches: st.ReachBatches, reachTargets: st.ReachTargets, reached: st.Reached, unreached: st.Unreached}
 	if st.Active > 0 {
 		s.logger.Info("scan batch finished; waiting for the others",
@@ -1794,6 +1914,34 @@ func (s *Service) RunScanNames(ctx context.Context, tenantID string, runs []*sca
 	return namer.ScanNames(ctx, tid, ids)
 }
 
+// RunScanManagers returns, for each run in runs whose scan a platform policy
+// manages (continuous coverage, enrichment, web verification), that policy's
+// name keyed by scan id. Nil when the repository cannot say. Every run must
+// belong to tenantID; the read is scoped to it.
+func (s *Service) RunScanManagers(ctx context.Context, tenantID string, runs []*scanrun.Run) (map[shared.ID]string, error) {
+	reader, ok := s.runRepo.(scanrun.RunScanManagerReader)
+	if !ok || len(runs) == 0 {
+		return nil, nil
+	}
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	seen := make(map[shared.ID]struct{}, len(runs))
+	ids := make([]shared.ID, 0, len(runs))
+	for _, r := range runs {
+		if r.ScanID == nil {
+			continue
+		}
+		if _, dup := seen[*r.ScanID]; dup {
+			continue
+		}
+		seen[*r.ScanID] = struct{}{}
+		ids = append(ids, *r.ScanID)
+	}
+	return reader.ScanManagers(ctx, tid, ids)
+}
+
 // RunTaskSummaries returns the task summary of each run in runs that has
 // tasks, keyed by run id. Every run must belong to tenantID; the read is
 // scoped to it.
@@ -1824,6 +1972,9 @@ type ListRunsInput struct {
 	Kinds []string `json:"kind"`
 	// IncludeSystem lists system runs too (hidden by default).
 	IncludeSystem bool `json:"include_system"`
+	// Origin narrows to runs of scans people own ("user") or that a platform
+	// policy manages, such as continuous coverage ("system"). Empty lists both.
+	Origin string `json:"origin"`
 	// ExcludeKinds leaves these kinds out (set by the handler, not the
 	// client: runs about a finding the caller may not see).
 	ExcludeKinds []string `json:"-"`
@@ -1881,6 +2032,11 @@ func (s *Service) ListRuns(ctx context.Context, input ListRunsInput) (pagination
 	for _, k := range input.ExcludeKinds {
 		filter.ExcludeKinds = append(filter.ExcludeKinds, scanrun.RunKind(k))
 	}
+	origin := scanrun.RunOrigin(input.Origin)
+	if !origin.Valid() {
+		return pagination.Result[*scanrun.Run]{}, fmt.Errorf("%w: invalid origin", shared.ErrValidation)
+	}
+	filter.Origin = origin
 	// System runs are housekeeping: hidden unless asked for or named.
 	filter.ExcludeSystem = !input.IncludeSystem && len(filter.Kinds) == 0
 
@@ -2070,6 +2226,16 @@ func (s *Service) QueueRunStep(ctx context.Context, run *scanrun.Run, step *scan
 			s.notifyRun(run.TenantID, run.ID)
 			return scanapp.ErrStepSettled
 		}
+		if msg := optionalSkipMessage(step, qerr); msg != "" && stepRun != nil {
+			// An optional first step waits for a tool: skipped with the
+			// reason; the caller advances the run.
+			stepRun.Skip(msg)
+			if err := s.stepRunRepo.Update(ctx, stepRun); err != nil {
+				s.logger.Error("failed to skip an optional step", "step_key", step.StepKey, "error", err)
+			}
+			s.notifyRun(run.TenantID, run.ID)
+			return scanapp.ErrStepSettled
+		}
 		s.failQueuedStep(ctx, stepRun, step.StepKey, qerr)
 		s.notifyRun(run.TenantID, run.ID)
 		return qerr
@@ -2213,14 +2379,16 @@ func runTargetTypes(rc map[string]any) map[string]asset.TypeRef {
 const (
 	RunContextKeyUnreachableCount = StepOutputUnreachable
 	RunContextKeySkippedCount     = StepOutputSkipped
+	RunContextKeyNoLongerResolve  = StepOutputNoLongerResolve
 )
 
 // recordReachCounts sums the skipped and unreachable counts the steps
 // recorded in their output into the run's context ("completed · N
 // unreachable" in the console).
 func (s *Service) recordReachCounts(ctx context.Context, run *scanrun.Run) {
-	unreached, skipped := 0, 0
+	unreached, skipped, gone := 0, 0, 0
 	for _, sr := range run.StepRuns {
+		gone += outputCount(sr.Output, StepOutputNoLongerResolve)
 		unreached += outputCount(sr.Output, StepOutputUnreachable)
 		skipped += outputCount(sr.Output, StepOutputSkipped)
 	}
@@ -2235,6 +2403,9 @@ func (s *Service) recordReachCounts(ctx context.Context, run *scanrun.Run) {
 	}
 	if skipped > 0 {
 		run.Context[RunContextKeySkippedCount] = skipped
+	}
+	if gone > 0 {
+		run.Context[RunContextKeyNoLongerResolve] = min(gone, skipped)
 	}
 	if err := s.runRepo.Update(ctx, run); err != nil {
 		s.logger.Error("failed to record the run's unreachable and skipped counts", "run_id", run.ID.String(), "error", err)

@@ -111,6 +111,7 @@
   "scanWindows.override.action": "Override windows",
   "scanWindows.override.activeUntil": "Active until {at}",
   "scanWindows.override.all": "Every policy",
+  "scanWindows.override.codeLabel": "Authentication code",
   "scanWindows.override.description": "Scans may run outside the chosen windows until the override ends. It is recorded in the audit log and every owner and administrator is notified. Bug-bounty program windows are never lifted.",
   "scanWindows.override.duration": "For",
   "scanWindows.override.endDesc": "The windows apply again at once.",
@@ -158,6 +159,8 @@
   "scanWindows.ref.policy": "{name} (policy)",
   "scanWindows.ref.program": "{name} (bug-bounty program)",
   "scanWindows.ref.unnamed": "Unnamed window",
+  "scanWindows.review.never": "{n} targets have scan windows that never open: starting the scan is refused until a policy changes",
+  "scanWindows.review.waiting": "{n} targets wait for their scan windows; they are scanned when their windows open",
   "scanWindows.schedule.none": "No windows",
   "scanWindows.selector.any": "Any",
   "scanWindows.selector.assetTypes": "Asset types",
@@ -207,8 +210,5 @@
   "scanWindows.waits.neverOpens": "never opens",
   "scanWindows.waits.one": "1 target waits for its scan window",
   "scanWindows.waits.opens": "opens {at}",
-  "scanWindows.waits.range": "the first opens {first}, the last {last}",
-  "scanWindows.review.never": "{n} targets have scan windows that never open: starting the scan is refused until a policy changes",
-  "scanWindows.review.waiting": "{n} targets wait for their scan windows; they are scanned when their windows open",
-  "scanWindows.override.codeLabel": "Authentication code"
+  "scanWindows.waits.range": "the first opens {first}, the last {last}"
 }

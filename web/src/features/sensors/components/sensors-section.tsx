@@ -1,13 +1,12 @@
 'use client'
 
 import { useState, useMemo, useCallback, useEffect } from 'react'
-import { Plus, Loader2, Search, Download, Trash2, Layers } from 'lucide-react'
+import { Plus, Loader2, Download, Trash2, Layers } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { ScanZonesPanel } from '@/features/scan-zones'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -15,7 +14,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ConfirmDialog } from '@/components/confirm-dialog'
+import {
+  ConfirmDialog,
+  ConfirmSample,
+  irreversibleTypeToConfirm,
+} from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
 import { RefreshButton, TableSkeleton } from '@/components/list-page-parts'
 import { useUrlFilter, useUrlFilterList } from '@/hooks/use-url-param'
@@ -25,7 +28,7 @@ import { Can, Permission, useHasPermission } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 
 import { InstallSensorDialog } from './install-sensor-dialog'
-import { PairSensorButton, PairSensorDialog } from './pair-sensor-dialog'
+import { AddSensorButton, AddSensorDialog } from './add-sensor-dialog'
 import { SensorInstallFlow } from './sensor-install-flow'
 import { EditSensorDialog } from './edit-sensor-dialog'
 import { RegenerateKeyDialog } from './regenerate-key-dialog'
@@ -51,9 +54,10 @@ import { useSensorIdentityPolicy } from '@/lib/api/sensor-pairing-hooks'
 import type { Sensor, SensorRole, SensorState, SensorVersionStatus } from '@/lib/api/sensor-types'
 import { Tabs, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { PlatformScanningCard } from '@/features/platform'
-import { BulkActionBar, ErrorState, FilterSheet, PageHeader } from '@/features/shared'
+import { BulkActionBar, ErrorState, FilterSheet, PageHeader, PageStack } from '@/features/shared'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
 import { CIPipelinesHint } from '@/features/ci-runners/components/ci-pipelines-hint'
+import { EnrollmentTokensPanel } from './enrollment-tokens-panel'
 import { SensorsEmptyState } from './sensors-empty-state'
 
 import {
@@ -206,6 +210,9 @@ export function SensorsSection({
   const bearerKeysAllowed = identityPolicy?.bearer_keys_allowed !== false
   const canInstallWithKey = canWriteSensors && bearerKeysAllowed
   const zonesTab = tabParam === 'zones' && canReadZones
+  // Organization enrollment tokens (unattended installs) and the sensors
+  // waiting for approval.
+  const tokensTab = tabParam === 'tokens' && canReadSensors
   // CI pipelines have their own page; this page only links there.
   const scansEnabled = useModuleEnabled('scans')
   const canReadCI = useHasPermission(Permission.CIRead) && scansEnabled
@@ -298,6 +305,11 @@ export function SensorsSection({
   // API data: the whole fleet (every page), refreshed every 15s.
   const { data: sensorsData, error, isLoading, mutate } = useAllSensors()
   const sensors: Sensor[] = useMemo(() => sensorsData?.items ?? [], [sensorsData?.items])
+  // The names behind the selected ids on screen, for the bulk delete sample.
+  const selectedNames = useMemo(() => {
+    const picked = new Set(selectedIds)
+    return sensors.filter((s) => picked.has(s.id)).map((s) => s.name)
+  }, [sensors, selectedIds])
   const [updatedAt, setUpdatedAt] = useState<number | null>(null)
   useEffect(() => {
     if (sensorsData) setUpdatedAt(Date.now())
@@ -387,10 +399,9 @@ export function SensorsSection({
           <span className="flex flex-wrap items-center gap-x-1.5">
             <span className="font-medium text-foreground">{g.label}</span>
             {g.zone && g.zone.ranges.length > 0 && (
-              <span className="font-mono">· {g.zone.ranges.slice(0, 2).join(', ')}</span>
+              <span className="font-mono">{g.zone.ranges.slice(0, 2).join(', ')}</span>
             )}
             <span>
-              ·{' '}
               {t(
                 rows.length === 1 ? 'sensors.list.count.one' : 'sensors.list.count.other',
                 undefined,
@@ -400,12 +411,12 @@ export function SensorsSection({
               )}
             </span>
             {zoneGap ? (
-              <span className="text-destructive">· {t('sensors.list.zoneGap')}</span>
+              <span className="text-destructive">{t('sensors.list.zoneGap')}</span>
             ) : (
-              <span>· {t('sensors.list.onlineCount', undefined, { count: online })}</span>
+              <span>{t('sensors.list.onlineCount', undefined, { count: online })}</span>
             )}
             {key === '__none__' && groupBy === 'zone' && (
-              <span>· {t('sensors.list.noZoneHint')}</span>
+              <span>{t('sensors.list.noZoneHint')}</span>
             )}
           </span>
         )
@@ -615,18 +626,15 @@ export function SensorsSection({
     />
   )
 
-  const toolbarStart = (
+  const search = {
+    value: searchQuery,
+    onChange: setSearchQuery,
+    placeholder: t('sensors.list.search.placeholder'),
+    label: t('sensors.list.search.label'),
+  }
+
+  const toolbarEnd = (
     <>
-      <div className="relative min-w-0 flex-1 sm:max-w-sm">
-        <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder={t('sensors.list.search.placeholder')}
-          aria-label={t('sensors.list.search.label')}
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="h-9 ps-9"
-        />
-      </div>
       <Select value={groupBy} onValueChange={(v) => setGroupParam(v === 'none' ? '' : v)}>
         <SelectTrigger
           className="h-9 w-auto gap-2 sm:min-w-36"
@@ -644,11 +652,6 @@ export function SensorsSection({
           <SelectItem value="version">{t(GROUP_LABELS.version)}</SelectItem>
         </SelectContent>
       </Select>
-    </>
-  )
-
-  const toolbarEnd = (
-    <>
       <LiveIndicator updatedAt={updatedAt} now={now} />
       <FleetContentRefreshButton sensors={scopedSensors} onDone={handleRefresh} />
       <RefreshButton onClick={handleRefresh} loading={isLoading} />
@@ -679,8 +682,8 @@ export function SensorsSection({
         canPair={canPairSensors}
         canInstallWithKey={canInstallWithKey}
         canReadCI={canReadCI}
-        onPair={() => setPairDialogOpen(true)}
         onInstall={() => setInlineInstall(true)}
+        onOpenSensor={handleViewSensor}
       />
     )
   } else {
@@ -707,7 +710,7 @@ export function SensorsSection({
           activeCount: filterCount,
           controlsId: 'sensor-filters',
         }}
-        toolbarStart={toolbarStart}
+        search={search}
         toolbarEnd={toolbarEnd}
       />
     )
@@ -720,9 +723,9 @@ export function SensorsSection({
       : t('sensors.list.seconds', undefined, { count: s })
 
   return (
-    <>
+    <PageStack>
       <PageHeader title={title} description={description}>
-        {zonesTab ? (
+        {tokensTab ? null : zonesTab ? (
           <Can permission={Permission.ScanZonesWrite}>
             <Button size="sm" onClick={() => setZoneCreateOpen(true)}>
               <Plus className="h-4 w-4" />
@@ -742,8 +745,8 @@ export function SensorsSection({
                 <Download className="h-4 w-4" />
                 {t('sensors.list.export')}
               </Button>
-              <PairSensorButton onClick={() => setPairDialogOpen(true)} />
-              {canInstallWithKey && (
+              <AddSensorButton onClick={() => setPairDialogOpen(true)} />
+              {canInstallWithKey && !canPairSensors && (
                 <Button size="sm" onClick={() => setAddDialogOpen(true)}>
                   <Plus className="h-4 w-4" />
                   {t('sensors.list.install')}
@@ -754,35 +757,40 @@ export function SensorsSection({
         )}
       </PageHeader>
 
-      {canReadZones && (
+      {(canReadZones || canReadSensors) && (
         <Tabs
-          value={zonesTab ? 'zones' : 'sensors'}
-          onValueChange={(v) => setTabParam(v === 'zones' ? 'zones' : '')}
-          className="mt-4"
+          value={tokensTab ? 'tokens' : zonesTab ? 'zones' : 'sensors'}
+          onValueChange={(v) => setTabParam(v === 'zones' || v === 'tokens' ? v : '')}
         >
           <TabsList>
             <TabsTrigger value="sensors">
               {t('sensors.list.tab.sensors')} <TabsCount value={isLoading ? null : roleCount} />
             </TabsTrigger>
-            <TabsTrigger value="zones">
-              {t('sensors.list.tab.zones')} <TabsCount value={zonesData ? zones.length : null} />
-            </TabsTrigger>
+            {canReadZones && (
+              <TabsTrigger value="zones">
+                {t('sensors.list.tab.zones')} <TabsCount value={zonesData ? zones.length : null} />
+              </TabsTrigger>
+            )}
+            {canReadSensors && (
+              <TabsTrigger value="tokens">{t('sensors.list.tab.tokens')}</TabsTrigger>
+            )}
           </TabsList>
         </Tabs>
       )}
 
-      {zonesTab ? (
+      {tokensTab ? (
+        <EnrollmentTokensPanel />
+      ) : zonesTab ? (
         <ScanZonesPanel createOpen={zoneCreateOpen} onCreateOpenChange={setZoneCreateOpen} />
       ) : (
         <>
           {/* The one way across to CI pipelines: a line, never their list. */}
-          {!fleetEmpty && <CIPipelinesHint className="mt-4" enabled={canReadCI} />}
+          {!fleetEmpty && <CIPipelinesHint enabled={canReadCI} />}
           {/* Where else scans can run: the platform's shared scanning, shown
               only when the organization may use it. */}
-          <PlatformScanningCard className="mt-4" />
+          <PlatformScanningCard />
           {!fleetEmpty && (
             <FleetHealthStrip
-              className="mt-5"
               loading={isLoading}
               summary={summary}
               channel={channel}
@@ -799,7 +807,7 @@ export function SensorsSection({
             />
           )}
 
-          <div className="mt-5 flex items-start">
+          <div className="flex items-start">
             {/* The facet panel, as on Findings: a floating card beside the
                 table from lg up, a sheet below. */}
             {!fleetEmpty && !error && (
@@ -852,12 +860,7 @@ export function SensorsSection({
           onClear={clearSelection}
           noun={t('sensors.list.selected')}
         >
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-destructive hover:text-destructive"
-            onClick={() => setBulkDeleteDialogOpen(true)}
-          >
+          <Button variant="destructive" size="sm" onClick={() => setBulkDeleteDialogOpen(true)}>
             <Trash2 className="h-4 w-4" />
             {t('confirm.delete', 'Delete')}
           </Button>
@@ -865,7 +868,19 @@ export function SensorsSection({
       </Can>
 
       {pairDialogOpen && (
-        <PairSensorDialog open={pairDialogOpen} onOpenChange={setPairDialogOpen} />
+        <AddSensorDialog
+          open={pairDialogOpen}
+          onOpenChange={setPairDialogOpen}
+          canInstallWithKey={canInstallWithKey}
+          onInstallWithKey={() => {
+            setPairDialogOpen(false)
+            setAddDialogOpen(true)
+          }}
+          onOpenSensor={(s) => {
+            setPairDialogOpen(false)
+            handleViewSensor(s)
+          }}
+        />
       )}
 
       {/* Mounted only while open: it loads tools and zones. */}
@@ -950,13 +965,19 @@ export function SensorsSection({
           'Their API keys stop working at once and they can no longer claim jobs or send results. Findings they reported stay. This cannot be undone.'
         )}
         confirmText={
-          isBulkDeleting ? t('confirm.deleting', 'Deleting…') : t('confirm.delete', 'Delete')
+          isBulkDeleting
+            ? t('confirm.deleting', 'Deleting…')
+            : selectedIds.length === 1
+              ? t('confirm.sensor.bulkDeleteBtnOne')
+              : t('confirm.sensor.bulkDeleteBtn', undefined, { count: selectedIds.length })
         }
         destructive
         isLoading={isBulkDeleting}
-        typeToConfirm={String(selectedIds.length)}
+        typeToConfirm={irreversibleTypeToConfirm(selectedNames)}
         handleConfirm={handleBulkDeleteConfirm}
-      />
+      >
+        <ConfirmSample names={selectedNames} total={selectedIds.length} />
+      </ConfirmDialog>
 
       {/* Disable: reversible, the sensor stops claiming jobs until enabled. */}
       <ConfirmDialog
@@ -1017,6 +1038,6 @@ export function SensorsSection({
           </Button>
         </p>
       </ConfirmDialog>
-    </>
+    </PageStack>
   )
 }

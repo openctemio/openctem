@@ -3,14 +3,14 @@
 import { Main } from '@/components/layout'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
-import { ErrorState, PageHeader } from '@/features/shared'
+import { ErrorState, PageHeader, PageStack } from '@/features/shared'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import {
   saveScanPolicyDefault,
   useScanPolicyDefault,
 } from '@console/features/admin-console/api/use-scan-policy'
 import { ScanPolicyForm } from '@console/features/admin-console/components/scan-policy-form'
-import { adminCan } from '@console/features/admin-console/types'
+import { adminHas } from '@console/features/admin-console/types'
 
 /**
  * System -> Scan approval: the platform default for scan approval
@@ -24,14 +24,14 @@ export default function ScanApprovalPolicyPage() {
 
   return (
     <Main>
-      <PageHeader
-        title={t('admin.scanPolicy.pageTitle', 'Scan approval')}
-        description={t(
-          'admin.scanPolicy.pageDesc',
-          'Whether organizations choose their own scan approval, or the platform sets it.'
-        )}
-      />
-      <div className="mt-5">
+      <PageStack>
+        <PageHeader
+          title={t('admin.scanPolicy.pageTitle', 'Scan approval')}
+          description={t(
+            'admin.scanPolicy.pageDesc',
+            'Whether organizations choose their own scan approval, or the platform sets it.'
+          )}
+        />
         {error ? (
           <ErrorState
             title={t('admin.scanPolicy.errorTitle', 'the scan approval policy')}
@@ -48,7 +48,7 @@ export default function ScanApprovalPolicyPage() {
               'Applies to every organization without its own setting.'
             )}
             value={data.policy}
-            canEdit={adminCan(me.role, 'super_admin')}
+            canEdit={adminHas(me, 'platform.sensors.manage')}
             onSave={async (policy, reason, code) => {
               await saveScanPolicyDefault({
                 policy: policy ?? 'tenant_controlled',
@@ -60,7 +60,7 @@ export default function ScanApprovalPolicyPage() {
             }}
           />
         )}
-      </div>
+      </PageStack>
     </Main>
   )
 }

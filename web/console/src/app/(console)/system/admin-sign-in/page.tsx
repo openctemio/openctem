@@ -3,13 +3,13 @@
 import { Main } from '@/components/layout'
 import { useTranslation } from '@/context/i18n-provider'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ErrorState, PageHeader } from '@/features/shared'
+import { ErrorState, PageHeader, PageStack } from '@/features/shared'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { useAdminUsers } from '@console/features/admin-console/api/use-admin-users'
 import { usePlatformIdP } from '@console/features/admin-console/api/use-platform-idp'
 import { PlatformIdPForm } from '@console/features/admin-console/components/platform-idp-form'
 import { ConsoleMfaPolicyCard } from '@console/features/admin-console/components/console-mfa-policy-card'
-import { adminCan } from '@console/features/admin-console/types'
+import { adminHas } from '@console/features/admin-console/types'
 import { RoleRequiredNotice } from '@console/features/admin-console/components/role-required-notice'
 
 /**
@@ -20,15 +20,17 @@ import { RoleRequiredNotice } from '@console/features/admin-console/components/r
 export default function AdminSignInPage() {
   const me = useAdmin()
   const { t } = useTranslation()
-  const isSuper = adminCan(me.role, 'super_admin')
+  const isSuper = adminHas(me, 'platform.identity.manage')
   const { data, error, isLoading, mutate } = usePlatformIdP(isSuper)
   const { data: admins } = useAdminUsers(1, isSuper)
 
   if (!isSuper) {
     return (
       <Main>
-        <PageHeader title={t('admin.nav.adminSignIn', 'Admin sign-in')} />
-        <RoleRequiredNotice needed="super_admin" variant="page" />
+        <PageStack>
+          <PageHeader title={t('admin.nav.adminSignIn', 'Admin sign-in')} />
+          <RoleRequiredNotice needed="super_admin" variant="page" />
+        </PageStack>
       </Main>
     )
   }
@@ -39,14 +41,14 @@ export default function AdminSignInPage() {
 
   return (
     <Main>
-      <PageHeader
-        title={t('admin.nav.adminSignIn', 'Admin sign-in')}
-        description={t(
-          'admin.systemAdminSignInPage.howAdministratorsSignInTo',
-          'How administrators sign in to this console. Separate from organization sign-in.'
-        )}
-      />
-      <div className="mt-5 space-y-4">
+      <PageStack>
+        <PageHeader
+          title={t('admin.nav.adminSignIn', 'Admin sign-in')}
+          description={t(
+            'admin.systemAdminSignInPage.howAdministratorsSignInTo',
+            'How administrators sign in to this console. Separate from organization sign-in.'
+          )}
+        />
         <ConsoleMfaPolicyCard />
         {error ? (
           <ErrorState
@@ -62,7 +64,7 @@ export default function AdminSignInPage() {
         ) : (
           <PlatformIdPForm idp={data} hasBreakGlass={hasBreakGlass} onSaved={() => void mutate()} />
         )}
-      </div>
+      </PageStack>
     </Main>
   )
 }

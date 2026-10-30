@@ -1,5 +1,6 @@
 'use client'
 
+import { HealthStatus } from '@/components/ui/health-status'
 import { useState } from 'react'
 import { Plus, Link2, AlertCircle, RefreshCw, Loader2, ChevronRight } from 'lucide-react'
 
@@ -40,8 +41,8 @@ export function SCMConnectionsSection({
 
   if (error) {
     return (
-      <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4">
-        <div className="flex items-center gap-2 text-red-500">
+      <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4">
+        <div className="flex items-center gap-2 text-destructive">
           <AlertCircle className="h-4 w-4" />
           <span className="text-sm font-medium">Failed to load SCM connections</span>
         </div>
@@ -73,21 +74,9 @@ export function SCMConnectionsSection({
                     {connections.length}
                   </Badge>
                   {connectedCount > 0 && (
-                    <Badge
-                      variant="outline"
-                      className="h-5 px-1.5 text-xs text-green-500 border-green-500/30"
-                    >
-                      {connectedCount} active
-                    </Badge>
+                    <HealthStatus state="ok" label={`${connectedCount} active`} />
                   )}
-                  {errorCount > 0 && (
-                    <Badge
-                      variant="outline"
-                      className="h-5 px-1.5 text-xs text-red-500 border-red-500/30"
-                    >
-                      {errorCount} error
-                    </Badge>
-                  )}
+                  {errorCount > 0 && <HealthStatus state="down" label={`${errorCount} error`} />}
                 </div>
               )}
             </Button>

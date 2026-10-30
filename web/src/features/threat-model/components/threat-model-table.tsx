@@ -15,10 +15,10 @@ import {
 } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { cn } from '@/lib/utils'
 import { ExternalLink, FileWarning, Info } from 'lucide-react'
 import { getMitreTechnique, mitreTechniqueUrl } from '@/features/pentest/lib/mitre-attack'
 import type { AttackerProfileLite, Threat, ThreatFilters } from '../types'
+import { StatusLozenge } from '@/components/ui/status-lozenge'
 import { getThreatStatusStyle } from '../lib/threat-status'
 
 interface ThreatModelTableProps {
@@ -64,7 +64,7 @@ export function ThreatModelTable({
       const techName = th.technique_name ?? getMitreTechnique(th.technique_id)?.name
       techniqueSet.set(
         th.technique_id,
-        techName ? `${th.technique_id} · ${techName}` : th.technique_id
+        techName ? `${th.technique_id}, ${techName}` : th.technique_id
       )
     }
     return {
@@ -195,9 +195,12 @@ export function ThreatModelTable({
           const style = getThreatStatusStyle(threat.status)
           return (
             <div className="flex items-center gap-1.5">
-              <Badge variant="outline" className={cn('font-medium', style.badgeClass)}>
-                {t(style.labelKey, threat.status)}
-              </Badge>
+              <StatusLozenge
+                tone={style.tone}
+                icon={style.icon}
+                label={t(style.labelKey, threat.status)}
+                value={threat.status}
+              />
               {threat.status_reason && (
                 <TooltipProvider>
                   <Tooltip>

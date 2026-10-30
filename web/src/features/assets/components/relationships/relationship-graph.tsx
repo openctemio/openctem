@@ -171,6 +171,7 @@ interface GraphNodeProps {
 }
 
 function GraphNode({ node, isCentral, onClick }: GraphNodeProps) {
+  const { t } = useTranslation()
   const color = NODE_COLOR
   const label = EXTENDED_ASSET_TYPE_LABELS[node.type] || node.type
 
@@ -220,10 +221,18 @@ function GraphNode({ node, isCentral, onClick }: GraphNodeProps) {
             <p className="font-medium">{node.name}</p>
             <p className="text-xs text-muted-foreground">{label}</p>
             {node.riskScore !== undefined && (
-              <p className="text-xs">Risk Score: {node.riskScore}</p>
+              <p className="text-xs">
+                {t('riskScore.labelled', 'Risk: {score}', { score: node.riskScore })}
+              </p>
             )}
             {node.findingCount !== undefined && (
-              <p className="text-xs">Findings: {node.findingCount}</p>
+              <p className="text-xs">
+                {node.findingCount === 1
+                  ? t('assets.openFindings.one', '1 open finding')
+                  : t('assets.openFindings.many', '{count} open findings', {
+                      count: node.findingCount,
+                    })}
+              </p>
             )}
           </div>
         </TooltipContent>

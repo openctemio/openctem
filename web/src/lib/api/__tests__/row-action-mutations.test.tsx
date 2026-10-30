@@ -32,12 +32,6 @@ import {
   useDeleteSensor,
   useRegenerateSensorKey,
 } from '../sensor-hooks'
-import {
-  useEnableTemplateSource,
-  useDisableTemplateSource,
-  useSyncTemplateSource,
-  templateSourceEndpoints,
-} from '../template-source-hooks'
 import { useSetDefaultScanProfile } from '../scan-profile-hooks'
 import { useRetryOutboxEntryApi } from '@/features/notifications/api/use-notification-outbox-api'
 import { sensorEndpoints, scanProfileEndpoints } from '../endpoints'
@@ -71,9 +65,6 @@ describe('row-action mutations target the id passed to trigger()', () => {
     ['deactivate sensor', useDeactivateSensor, sensorEndpoints.deactivate],
     ['revoke sensor', useRevokeSensor, sensorEndpoints.revoke],
     ['regenerate sensor key', useRegenerateSensorKey, sensorEndpoints.regenerateKey],
-    ['enable template source', useEnableTemplateSource, templateSourceEndpoints.enable],
-    ['disable template source', useDisableTemplateSource, templateSourceEndpoints.disable],
-    ['sync template source', useSyncTemplateSource, templateSourceEndpoints.sync],
     ['set default scan profile', useSetDefaultScanProfile, scanProfileEndpoints.setDefault],
     [
       'retry outbox entry',

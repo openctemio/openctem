@@ -95,7 +95,9 @@ type WatcherView struct {
 	AvatarURL string
 	Reason    participation.Reason
 	AddedBy   *shared.ID
-	Since     string
+	// AddedByName is shown as "Added by ..." (empty: nobody, or a former member).
+	AddedByName string
+	Since       string
 }
 
 // OwnerView is an asset owner shown as context.
@@ -108,6 +110,9 @@ type OwnerView struct {
 
 // Me is the caller's own subscription.
 type Me struct {
+	// UserID is the caller, so a client can tell its own row in the list
+	// without decoding its token.
+	UserID shared.ID
 	// State is "subscribed", "unsubscribed" or "" (no row).
 	State  participation.State
 	Reason participation.Reason
@@ -181,7 +186,7 @@ func (s *Service) Participants(ctx context.Context, tenantID shared.ID, item par
 		if out.NamesVisible {
 			out.Watchers = append(out.Watchers, WatcherView{
 				UserID: w.UserID, Name: w.Name, AvatarURL: w.AvatarURL, Reason: w.Reason,
-				AddedBy: w.AddedBy, Since: w.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+				AddedBy: w.AddedBy, AddedByName: w.AddedByName, Since: w.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 			})
 		}
 	}
@@ -195,12 +200,13 @@ func (s *Service) Participants(ctx context.Context, tenantID shared.ID, item par
 		}
 	}
 	if !caller.UserID.IsZero() {
+		out.Me.UserID = caller.UserID
 		mine, err := s.repo.Get(ctx, tenantID, item, caller.UserID)
 		if err != nil {
 			return nil, err
 		}
 		if mine != nil {
-			out.Me = Me{State: mine.State, Reason: mine.Reason}
+			out.Me.State, out.Me.Reason = mine.State, mine.Reason
 		}
 	}
 	return out, nil
@@ -336,6 +342,10 @@ type Event struct {
 	// Forced are told even if they stopped watching: the new assignee on an
 	// assignment.
 	Forced []shared.ID
+	// WatchersToo tells the watchers about an event no person caused, for the
+	// few platform events that matter to everyone following the item (a fix
+	// that did not hold).
+	WatchersToo bool
 	// TeamOnly: the event shows team-only content (a team comment on a pentest
 	// finding), which pentest campaign clients never see.
 	TeamOnly bool
@@ -391,7 +401,7 @@ func (s *Service) Recipients(ctx context.Context, tenantID shared.ID, ev Event) 
 	for _, id := range ev.Direct {
 		add(id, "assigned")
 	}
-	if ev.Actor != nil {
+	if ev.Actor != nil || ev.WatchersToo {
 		for _, id := range subscribed {
 			add(id, "watching")
 		}

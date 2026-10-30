@@ -226,15 +226,17 @@ func (r *LimitsRepository) ReplaceOrigin(ctx context.Context, tenantID shared.ID
 
 // Usage counts what the organization uses, one query, every count scoped
 // by tenant_id. A seat is every member who is not offboarded: a suspended
-// member, or a sign-up awaiting approval, still holds one. Findings are
+// member, or a sign-up awaiting approval, still holds one. An AI agent is
+// not a seat. Findings are
 // counted (a second query) only when withFindings is set, that is while a
 // findings limit applies: the count runs over the largest table, so an
 // organization without that limit never pays for it.
 func (r *LimitsRepository) Usage(ctx context.Context, tenantID shared.ID, withFindings bool) (map[limits.Key]int, error) {
-	var seats, assets, sensors, keys, trusts, invites, subStatuses, schemes, storageMB int
+	var seats, assets, sensors, keys, trusts, invites, subStatuses, schemes, storageMB, sources, contentMB int
 	err := r.db.QueryRowContext(ctx, `
 		SELECT
-		  (SELECT count(*) FROM tenant_members WHERE tenant_id = $1 AND status <> 'offboarded'),
+		  (SELECT count(*) FROM tenant_members m WHERE m.tenant_id = $1 AND m.status <> 'offboarded'
+		     AND NOT EXISTS (SELECT 1 FROM ai_agents a WHERE a.user_id = m.user_id AND a.tenant_id = m.tenant_id)),
 		  (SELECT count(*) FROM assets WHERE tenant_id = $1 AND deleted_at IS NULL AND status <> 'archived'),
 		  (SELECT count(*) FROM sensors WHERE tenant_id = $1 AND scope = 'organization' AND status <> 'revoked'),
 		  (SELECT count(*) FROM api_keys WHERE tenant_id = $1 AND status = 'active'),
@@ -242,8 +244,13 @@ func (r *LimitsRepository) Usage(ctx context.Context, tenantID shared.ID, withFi
 		  (SELECT count(*) FROM tenant_invitations WHERE tenant_id = $1 AND created_at > now() - interval '24 hours'),
 		  (SELECT count(*) FROM lifecycle_sub_statuses WHERE tenant_id = $1 AND archived_at IS NULL),
 		  (SELECT count(*) FROM lifecycle_schemes WHERE tenant_id = $1 AND archived_at IS NULL),
-		  (SELECT CEIL(COALESCE(SUM(size), 0) / 1048576.0)::int FROM attachments WHERE tenant_id = $1)`,
-		tenantID.String()).Scan(&seats, &assets, &sensors, &keys, &trusts, &invites, &subStatuses, &schemes, &storageMB)
+		  (SELECT CEIL(COALESCE(SUM(size), 0) / 1048576.0)::int FROM attachments WHERE tenant_id = $1),
+		  (SELECT count(*) FROM content_sources WHERE tenant_id = $1 AND storage_mode <> 'tenant_hosted'),
+		  (SELECT CEIL(COALESCE(SUM(b.size_bytes), 0) / 1048576.0)::int FROM content_pack_blobs b
+		    WHERE b.tenant_id = $1 AND EXISTS (
+		      SELECT 1 FROM content_packs p JOIN content_source_snapshots s ON s.content_pack_id = p.id
+		      WHERE p.tenant_id = b.tenant_id AND p.digest = b.digest))`,
+		tenantID.String()).Scan(&seats, &assets, &sensors, &keys, &trusts, &invites, &subStatuses, &schemes, &storageMB, &sources, &contentMB)
 	if err != nil {
 		return nil, fmt.Errorf("count usage: %w", err)
 	}
@@ -251,7 +258,8 @@ func (r *LimitsRepository) Usage(ctx context.Context, tenantID shared.ID, withFi
 		limits.Seats: seats, limits.Assets: assets, limits.Sensors: sensors,
 		limits.APIKeys: keys, limits.CITrusts: trusts, limits.InvitesPerDay: invites,
 		limits.LifecycleSubStatuses: subStatuses, limits.LifecycleSchemes: schemes,
-		limits.StorageMB: storageMB,
+		limits.StorageMB:      storageMB,
+		limits.ContentSources: sources, limits.ContentStorageMB: contentMB,
 	}
 	// Shared-sensor scans started today (UTC): one per run (a run's chunks
 	// count once), or per command outside a run.

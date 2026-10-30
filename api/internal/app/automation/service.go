@@ -139,8 +139,10 @@ type CreateWorkflowInput struct {
 	Name        string
 	Description string
 	Tags        []string
-	Nodes       []CreateNodeInput
-	Edges       []CreateEdgeInput
+	// MaxChangesPerRun caps one live run's changes (0: the default).
+	MaxChangesPerRun int
+	Nodes            []CreateNodeInput
+	Edges            []CreateEdgeInput
 }
 
 // CreateNodeInput represents input for creating a workflow node.
@@ -177,6 +179,10 @@ func (s *WorkflowService) CreateWorkflow(ctx context.Context, input CreateWorkfl
 	if input.Tags != nil {
 		w.Tags = input.Tags
 	}
+	if err := automationdom.ValidateMaxChanges(input.MaxChangesPerRun); err != nil {
+		return nil, err
+	}
+	w.MaxChangesPerRun = input.MaxChangesPerRun
 
 	// Refuse trigger/action types the platform does not execute and an
 	// invalid graph (cycle, unreachable node, edge into a trigger), before
@@ -294,6 +300,9 @@ type UpdateWorkflowInput struct {
 	Description *string
 	Tags        []string
 	IsActive    *bool
+	// MaxChangesPerRun sets the draft's change cap (published with the next
+	// version; above the default it makes the automation high risk).
+	MaxChangesPerRun *int
 }
 
 // UpdateWorkflow updates a workflow.
@@ -311,6 +320,19 @@ func (s *WorkflowService) UpdateWorkflow(ctx context.Context, input UpdateWorkfl
 	}
 	if input.Tags != nil {
 		w.Tags = input.Tags
+	}
+	if input.MaxChangesPerRun != nil {
+		if err := automationdom.ValidateMaxChanges(*input.MaxChangesPerRun); err != nil {
+			return nil, err
+		}
+		// The cap is part of the version: a new one withdraws a request
+		// waiting for approval (withdrawRequestIfChanged).
+		if *input.MaxChangesPerRun != w.MaxChangesPerRun && s.versions != nil {
+			if err := s.versions.RetirePending(ctx, input.TenantID, input.WorkflowID); err != nil {
+				return nil, err
+			}
+		}
+		w.MaxChangesPerRun = *input.MaxChangesPerRun
 	}
 
 	// Track activation changes for audit
@@ -426,9 +448,9 @@ func (s *WorkflowService) UpdateWorkflowGraph(ctx context.Context, input UpdateW
 	if input.Tags != nil {
 		w.Tags = input.Tags
 	}
-	// The new graph holds only known types: a removed-type reason no longer
-	// applies (the automation stays off until someone switches it on).
-	if w.DisabledReason == automationdom.DisabledReasonRemovedType {
+	// The new graph holds only known types and allowed status targets: the
+	// platform's reason no longer applies (the automation stays off until someone switches it on).
+	if w.DisabledReason == automationdom.DisabledReasonRemovedType || w.DisabledReason == automationdom.DisabledReasonStatusNotAllowed {
 		w.DisabledReason = ""
 	}
 
@@ -1054,6 +1076,12 @@ func validateSupportedNodeInputs(nodes []CreateNodeInput) error {
 // trigger options that would never match.
 func validateNodeConfigs(configs ...automationdom.NodeConfig) error {
 	if err := automationdom.ValidateSupported(configs...); err != nil {
+		return err
+	}
+	if err := automationdom.ValidateStatusTargets(configs...); err != nil {
+		return err
+	}
+	if err := automationdom.ValidateRequestConfigs(configs...); err != nil {
 		return err
 	}
 	return automationdom.ValidateTriggerConfig(configs...)

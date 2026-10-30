@@ -226,8 +226,8 @@ describe('ConfigCheckList: header, notices, settings', () => {
   it('shows health, counts and groups failing areas first', () => {
     render(<ConfigCheckList report={report()} />)
     expect(screen.getByText('Setup needs attention')).toBeInTheDocument()
-    expect(document.querySelector('[data-slot="config-counts"]')).toHaveTextContent(
-      '1 warnings · 1 passed'
+    expect(document.querySelector('[data-testid="config-counts"]')).toHaveTextContent(
+      '1 with warnings, 1 passed'
     )
     const headings = screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent)
     expect(headings[0]).toContain('Identity')
@@ -272,7 +272,7 @@ describe('ConfigCheckList: header, notices, settings', () => {
     expect(details.open).toBe(true)
     const table = within(details).getByRole('table', { name: 'Settings' })
     const apiKey = table.querySelector('[data-setting="SENSOR_API_KEY"]') as HTMLElement
-    expect(within(apiKey).getByText('secret · value never leaves the sensor')).toBeInTheDocument()
+    expect(within(apiKey).getByText('secret, value never leaves the sensor')).toBeInTheDocument()
     expect(within(apiKey).getByRole('img', { name: 'set' })).toBeInTheDocument()
     const ca = table.querySelector('[data-setting="SENSOR_CA_CERT_FILE"]') as HTMLElement
     expect(within(ca).getByRole('img', { name: 'not set' })).toBeInTheDocument()

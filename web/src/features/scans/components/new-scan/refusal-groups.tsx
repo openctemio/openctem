@@ -1,17 +1,28 @@
 'use client'
 
 /**
- * Refused targets on the Review step, grouped by reason (RFC-054 §6.4): one
- * collapsible group per reason with its count, a few examples, "Show all",
- * and one action for the whole group. Every action goes through the normal
- * route (switching the sensor preference, verifying a domain, approving or
- * activating an entry, removing targets): nothing here grants anything, and
- * the scope check runs again after each.
+ * Refused targets of a scan form, grouped by reason (RFC-054 §6.4), shared by
+ * the Targets and Review steps: the readiness line (how many targets, how
+ * many ready, how many blocked) and one collapsible group per reason with its
+ * count, a few examples, "Show all", and the server's ranked remedies for the
+ * whole group (run on my sensor, verify the domain, lower the intensity,
+ * remove), the first one primary. Every action goes through the normal route
+ * (switching the sensor preference, verifying a domain, lowering the scan's
+ * intensity, approving or activating an entry, removing targets): nothing
+ * here grants anything, and the scope check runs again after each.
  */
 
 import { useState } from 'react'
 import Link from '@/components/link'
-import { ChevronDown, ServerCog, ShieldAlert, Trash2 } from 'lucide-react'
+import {
+  ChevronDown,
+  Gauge,
+  Loader2,
+  ServerCog,
+  ShieldAlert,
+  ShieldCheck,
+  Trash2,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
 import {
@@ -22,13 +33,14 @@ import {
 } from '@/features/scope'
 import { safeInternalHref } from '@/lib/safe-href'
 import { cn } from '@/lib/utils'
+import { VerifyDomainDialog } from '@/features/attack-surface/components/easm-verify-domain-dialog'
 import {
-  canVerify,
   groupRefusals,
   internalAddressOf,
-  ownSensorHelps,
+  type GroupRemedy,
   type RefusalGroup,
 } from '../../lib/refusal-groups'
+import { intensityForTier, type ProbeTier } from '../../lib/scan-intensity'
 
 /** Examples shown before "Show all". */
 export const GROUP_EXAMPLES = 5
@@ -42,6 +54,12 @@ interface RefusalGroupsProps {
   onRemove: (targets: string[]) => void
   /** Run the scan on the organization's own sensors. */
   onUseOwnSensors?: () => void
+  /**
+   * Lower the scan's intensity to this tier. Offered only when given and
+   * canLowerIntensity allows the tier (the chosen workflow still fits it).
+   */
+  onLowerIntensity?: (tier: ProbeTier) => void
+  canLowerIntensity?: (tier: ProbeTier) => boolean
   /** Re-run the scope check (after a fix). */
   onRecheck: () => void
 }
@@ -52,24 +70,96 @@ export function RefusalGroups({
   sensorPreference,
   onRemove,
   onUseOwnSensors,
+  onLowerIntensity,
+  canLowerIntensity,
   onRecheck,
 }: RefusalGroupsProps) {
   const groups = groupRefusals(results)
   if (groups.length === 0) return null
   return (
-    <div className="space-y-2">
+    <div className="min-w-0 divide-y border-y" data-testid="refusal-groups">
       {groups.map((g) => (
-        <GroupCard
+        <GroupSection
           key={g.key}
           group={g}
           probeTier={probeTier}
           sensorPreference={sensorPreference}
           onRemove={onRemove}
           onUseOwnSensors={sensorPreference === 'tenant' ? undefined : onUseOwnSensors}
+          onLowerIntensity={onLowerIntensity}
+          canLowerIntensity={canLowerIntensity}
           onRecheck={onRecheck}
         />
       ))}
     </div>
+  )
+}
+
+interface ReadinessLineProps {
+  /** Targets the scan sends. */
+  total: number
+  ready: number
+  blocked: number
+  /** The first answer is on its way. */
+  checking?: boolean
+  /** Asset groups, whose members are checked when the scan runs. */
+  groupCount?: number
+}
+
+/**
+ * One line, no card: "3 targets, 2 ready, 1 blocked", each count with a
+ * small status dot, separated by space (never a middle dot).
+ */
+export function ReadinessLine({
+  total,
+  ready,
+  blocked,
+  checking,
+  groupCount = 0,
+}: ReadinessLineProps) {
+  const { t } = useTranslation()
+  return (
+    <p
+      className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-sm"
+      aria-live="polite"
+      data-testid="readiness-line"
+    >
+      <span className="font-medium">
+        {total === 1
+          ? t('scans.readiness.targetsOne')
+          : t('scans.readiness.targetsMany', undefined, { count: total.toLocaleString() })}
+      </span>
+      {groupCount > 0 && (
+        <span className="font-medium">
+          {groupCount === 1
+            ? t('scans.readiness.groupsOne')
+            : t('scans.readiness.groupsMany', undefined, { count: groupCount })}
+        </span>
+      )}
+      {checking ? (
+        <span className="flex items-center gap-1.5 text-muted-foreground">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+          {t('scans.readiness.checking')}
+        </span>
+      ) : (
+        <>
+          <span className="flex items-center gap-1.5">
+            <span className="h-2 w-2 shrink-0 rounded-full bg-success" aria-hidden />
+            {t('scans.readiness.ready', undefined, { count: ready })}
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span
+              className={cn(
+                'h-2 w-2 shrink-0 rounded-full',
+                blocked > 0 ? 'bg-warning' : 'bg-muted-foreground/40'
+              )}
+              aria-hidden
+            />
+            {t('scans.readiness.blocked', undefined, { count: blocked })}
+          </span>
+        </>
+      )}
+    </p>
   )
 }
 
@@ -79,7 +169,7 @@ function useGroupTitle(g: RefusalGroup): string {
   const vars = { count, pattern: g.rule?.pattern ?? '' }
   switch (g.kind) {
     case 'proof':
-      return t('scans.groups.proof', '{count} need a verified domain for shared sensors', vars)
+      return t('scans.groups.proof', undefined, vars)
     case 'platform':
       return t(
         'scans.groups.platform',
@@ -123,19 +213,14 @@ function useGroupTitle(g: RefusalGroup): string {
   }
 }
 
-function useGroupHint(g: RefusalGroup, probeTier?: number): string {
+function useGroupHint(g: RefusalGroup): string {
   const { t } = useTranslation()
   switch (g.kind) {
     case 'proof':
-      return (probeTier ?? 1) >= 2
-        ? t(
-            'scans.groups.proofIntrusiveHint',
-            'Intrusive checks need a verified domain of your organization on every sensor. Verify the domain, or remove these targets.'
-          )
-        : t(
-            'scans.groups.proofHint',
-            "The platform's shared sensors scan only domains your organization verified. Run the scan on your own sensor, verify the domain, or remove these targets."
-          )
+      return t(
+        'scans.groups.proofHint',
+        "The platform's shared sensors scan only domains your organization verified. Run the scan on your own sensor, verify the domain, or remove these targets."
+      )
     case 'platform':
       return t(
         'scans.groups.platformHint',
@@ -173,12 +258,14 @@ function useGroupHint(g: RefusalGroup, probeTier?: number): string {
   }
 }
 
-function GroupCard({
+function GroupSection({
   group,
   probeTier,
   sensorPreference,
   onRemove,
   onUseOwnSensors,
+  onLowerIntensity,
+  canLowerIntensity,
   onRecheck,
 }: {
   group: RefusalGroup
@@ -186,48 +273,124 @@ function GroupCard({
   sensorPreference?: string
   onRemove: (targets: string[]) => void
   onUseOwnSensors?: () => void
+  onLowerIntensity?: (tier: ProbeTier) => void
+  canLowerIntensity?: (tier: ProbeTier) => boolean
   onRecheck: () => void
 }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(true)
   const [all, setAll] = useState(false)
+  const [verifying, setVerifying] = useState<string | null>(null)
   const title = useGroupTitle(group)
-  const hint = useGroupHint(group, probeTier)
+  const hint = useGroupHint(group)
   const shown = all ? group.results : group.results.slice(0, GROUP_EXAMPLES)
   const targets = group.results.map((r) => r.target ?? '').filter(Boolean)
   const bodyId = `refusal-group-${group.key.replace(/[^a-z0-9]/gi, '-')}`
-  const intrusive = (probeTier ?? 1) >= 2
-  const verifyFixes = canVerify(group)
-    ? group.domains.map((domain) => ({ action: 'verify_domain', domain }))
-    : []
   const zonesHref = safeInternalHref('/sensors?tab=zones')
   const scopeHref = safeInternalHref('/scope?tab=targets')
 
+  // The server's remedies the form can act on here, in its order; remove is
+  // always possible, so it is kept (last) even when the answer predates it.
+  const usable = (r: GroupRemedy): boolean => {
+    switch (r.action) {
+      case 'run_on_tenant_sensor':
+        return !!onUseOwnSensors
+      case 'verify_domain':
+        return r.domains.length > 0
+      case 'lower_intensity':
+        return (
+          !!onLowerIntensity &&
+          r.tier !== undefined &&
+          (canLowerIntensity?.(r.tier as ProbeTier) ?? true)
+        )
+      default:
+        return true
+    }
+  }
+  const remedies = group.remedies.filter(usable)
+  if (!remedies.some((r) => r.action === 'remove')) remedies.push({ action: 'remove', domains: [] })
+
+  const remedyButton = (r: GroupRemedy, i: number) => {
+    const primary = i === 0
+    const common = {
+      type: 'button' as const,
+      size: 'sm' as const,
+      variant: primary ? ('default' as const) : ('outline' as const),
+      className: 'h-8 max-sm:min-h-11',
+    }
+    switch (r.action) {
+      case 'run_on_tenant_sensor':
+        return (
+          <Button key={r.action} {...common} onClick={onUseOwnSensors}>
+            <ServerCog className="me-1.5 h-3.5 w-3.5" aria-hidden />
+            {t('scans.groups.remedy.runOnTenantSensor')}
+          </Button>
+        )
+      case 'verify_domain':
+        return r.domains.map((domain, j) => (
+          <Button
+            key={`verify-${domain}`}
+            {...common}
+            variant={primary && j === 0 ? 'default' : 'outline'}
+            onClick={() => setVerifying(domain)}
+          >
+            <ShieldCheck className="me-1.5 h-3.5 w-3.5" aria-hidden />
+            {t('scans.groups.remedy.verifyDomain', undefined, { domain })}
+          </Button>
+        ))
+      case 'lower_intensity':
+        return (
+          <Button
+            key={r.action}
+            {...common}
+            onClick={() => onLowerIntensity?.(r.tier as ProbeTier)}
+          >
+            <Gauge className="me-1.5 h-3.5 w-3.5" aria-hidden />
+            {t('scans.groups.remedy.lowerIntensity', undefined, {
+              level: t(`scans.intensity.${intensityForTier(r.tier as ProbeTier)}`),
+            })}
+          </Button>
+        )
+      default:
+        return (
+          <Button key={r.action} {...common} onClick={() => onRemove(targets)}>
+            <Trash2 className="me-1.5 h-3.5 w-3.5" aria-hidden />
+            {targets.length === 1
+              ? t('scans.groups.removeOne', 'Remove this target')
+              : t('scans.groups.removeMany', 'Remove these {count} targets', {
+                  count: targets.length,
+                })}
+          </Button>
+        )
+    }
+  }
+
   return (
     <section
-      className="min-w-0 rounded-lg border border-warning/50"
+      className="min-w-0 py-3"
       aria-label={title}
       data-testid={`refusal-group-${group.kind}`}
     >
       <button
         type="button"
-        className="flex w-full min-w-0 items-start gap-2 p-3 text-start"
+        className="flex min-h-11 w-full min-w-0 items-start gap-2 text-start"
         aria-expanded={open}
         aria-controls={bodyId}
         onClick={() => setOpen((o) => !o)}
       >
-        <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden />
-        <span className="min-w-0 flex-1">
-          <span className="block text-sm font-medium">{title}</span>
-          <span className="block text-xs text-muted-foreground">{hint}</span>
-        </span>
         <ChevronDown
-          className={cn('mt-0.5 h-4 w-4 shrink-0 transition-transform', open && 'rotate-180')}
+          className={cn(
+            'mt-0.5 h-4 w-4 shrink-0 text-muted-foreground transition-transform',
+            !open && '-rotate-90'
+          )}
           aria-hidden
         />
+        <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden />
+        <span className="min-w-0 flex-1 text-sm font-medium">{title}</span>
       </button>
       {open && (
-        <div id={bodyId} className="min-w-0 space-y-3 border-t px-3 pt-2 pb-3">
+        <div id={bodyId} className="min-w-0 space-y-2 ps-6 pt-1">
+          <p className="text-xs text-muted-foreground">{hint}</p>
           <ul className="min-w-0 divide-y" aria-label={t('scans.groups.targets', 'Targets')}>
             {shown.map((r, i) => (
               <GroupRow key={`${r.target}-${i}`} result={r} kind={group.kind} />
@@ -246,16 +409,8 @@ function GroupCard({
                 : t('scans.groups.showAll', 'Show all {count}', { count: group.results.length })}
             </Button>
           )}
-          <div className="flex flex-wrap items-center gap-2">
-            {onUseOwnSensors && ownSensorHelps(group) && !intrusive && (
-              <Button type="button" size="sm" className="h-8" onClick={onUseOwnSensors}>
-                <ServerCog className="me-1.5 h-3.5 w-3.5" aria-hidden />
-                {t('scans.groups.useOwnSensor', 'Run on your own sensor')}
-              </Button>
-            )}
-            {group.kind === 'proof' && verifyFixes.length > 0 && (
-              <ScopeFixButtons fixes={verifyFixes} onApplied={onRecheck} size="sm" />
-            )}
+          <div className="flex flex-wrap items-center gap-2 pt-1" data-testid="refusal-remedies">
+            {remedies.flatMap((r, i) => remedyButton(r, i))}
             {group.kind === 'entry' && group.code === 'entry_pending' && group.rule?.id ? (
               <ScopePendingEntry
                 entryId={group.rule.id}
@@ -272,32 +427,35 @@ function GroupCard({
               />
             ) : null}
             {group.kind === 'zone' && zonesHref && (
-              <Button asChild type="button" size="sm" variant="outline" className="h-8">
+              <Button
+                asChild
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 max-sm:min-h-11"
+              >
                 <Link href={zonesHref}>{t('scans.groups.setUpZone', 'Set up a scan zone')}</Link>
               </Button>
             )}
             {group.kind === 'scope' && scopeHref && (
-              <Button asChild type="button" size="sm" variant="outline" className="h-8">
+              <Button
+                asChild
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 max-sm:min-h-11"
+              >
                 <Link href={scopeHref}>{t('scans.groups.openScope', 'Open Scoping')}</Link>
               </Button>
             )}
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-8"
-              onClick={() => onRemove(targets)}
-            >
-              <Trash2 className="me-1.5 h-3.5 w-3.5" aria-hidden />
-              {targets.length === 1
-                ? t('scans.groups.removeOne', 'Remove this target')
-                : t('scans.groups.removeMany', 'Remove these {count} targets', {
-                    count: targets.length,
-                  })}
-            </Button>
           </div>
         </div>
       )}
+      <VerifyDomainDialog
+        domain={verifying}
+        onOpenChange={(o) => !o && setVerifying(null)}
+        onChanged={onRecheck}
+      />
     </section>
   )
 }

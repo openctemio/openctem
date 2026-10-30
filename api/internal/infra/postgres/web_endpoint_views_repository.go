@@ -224,7 +224,16 @@ func (r *WebEndpointRepository) DeleteEventsBefore(ctx context.Context, before t
 		return 0, fmt.Errorf("delete old endpoint events: %w", err)
 	}
 	n, _ := res.RowsAffected()
-	return n, nil
+	// Alert fingerprints outlive the longest alert lifetime a tenant may
+	// choose (tenant.MaxReappearAfterDays, one year) by a day, then go.
+	res, err = r.db.ExecContext(ctx, `DELETE FROM web_alert_fingerprints
+		WHERE (tenant_id, fingerprint) IN (SELECT tenant_id, fingerprint FROM web_alert_fingerprints
+			WHERE last_alerted_at < now() - interval '366 days' LIMIT $1)`, limit)
+	if err != nil {
+		return n, fmt.Errorf("delete old web alert fingerprints: %w", err)
+	}
+	m, _ := res.RowsAffected()
+	return n + m, nil
 }
 
 var (

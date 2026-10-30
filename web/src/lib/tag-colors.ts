@@ -39,3 +39,22 @@ export const TAG_SWATCH_CLASS: Record<TagPaletteName, string> = {
 export function isTagPaletteName(name: unknown): name is TagPaletteName {
   return typeof name === 'string' && (TAG_PALETTE as readonly string[]).includes(name)
 }
+
+/**
+ * A category or tool colour name (stored as a free word such as "purple" or
+ * "slate") as the nearest palette name; anything unknown is grey.
+ */
+const NAME_ALIAS: Record<string, TagPaletteName> = {
+  purple: 'violet',
+  indigo: 'violet',
+  emerald: 'green',
+  slate: 'grey',
+  gray: 'grey',
+}
+
+export function tagColorForName(name: string | null | undefined): TagPaletteName {
+  if (!name) return 'grey'
+  const key = name.toLowerCase()
+  if (isTagPaletteName(key)) return key
+  return NAME_ALIAS[key] ?? 'grey'
+}

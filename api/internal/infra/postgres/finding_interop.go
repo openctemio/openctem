@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -28,6 +29,10 @@ const maxInteropBatch = 500
 // the stored value; one it carries replaces it (the latest sighting wins).
 // Data is sanitized again here (defense in depth).
 func (r *FindingRepository) UpdateInteropBatch(ctx context.Context, tenantID shared.ID, updates []vulnerability.InteropUpdate) (int64, error) {
+	// The global lock order of findings rows (finding_lock_order.go), across
+	// the statements and inside each.
+	updates = slices.Clone(updates)
+	sortByFingerprint(updates, func(u vulnerability.InteropUpdate) string { return u.Fingerprint })
 	var total int64
 	for start := 0; start < len(updates); start += maxInteropBatch {
 		end := min(start+maxInteropBatch, len(updates))
@@ -83,43 +88,15 @@ func (r *FindingRepository) UpdateInteropBatch(ctx context.Context, tenantID sha
 		if len(fps) == 0 {
 			continue
 		}
-		// A VEX statement replaces the previous one as a whole (status,
-		// justification, statement, source, time), so a new statement never
-		// keeps an old justification.
-		res, err := r.db.ExecContext(ctx, `
-			UPDATE findings AS f SET
-				native_vuln_id    = COALESCE(d.native_vuln_id, f.native_vuln_id),
-				native_scheme     = COALESCE(d.native_scheme, f.native_scheme),
-				source_meta       = COALESCE(d.source_meta::jsonb, f.source_meta),
-				scores            = COALESCE(d.scores::jsonb, f.scores),
-				vulnerability_ids = COALESCE(d.vulnerability_ids::jsonb, f.vulnerability_ids),
-				source_extra      = COALESCE(d.source_extra::jsonb, f.source_extra),
-				location_key      = COALESCE(d.location_key, f.location_key),
-				vex_status        = CASE WHEN d.vex_status IS NOT NULL THEN d.vex_status ELSE f.vex_status END,
-				vex_justification = CASE WHEN d.vex_status IS NOT NULL THEN d.vex_justification ELSE f.vex_justification END,
-				vex_statement     = CASE WHEN d.vex_status IS NOT NULL THEN d.vex_statement ELSE f.vex_statement END,
-				vex_source        = CASE WHEN d.vex_status IS NOT NULL THEN d.vex_source ELSE f.vex_source END,
-				vex_at            = CASE WHEN d.vex_status IS NOT NULL THEN d.vex_at::timestamptz ELSE f.vex_at END
-			FROM unnest($2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[],
-				$9::text[], $10::text[], $11::text[], $12::text[], $13::text[], $14::text[])
-				AS d(fingerprint, native_vuln_id, native_scheme, source_meta, scores, vulnerability_ids, source_extra,
-					location_key, vex_status, vex_justification, vex_statement, vex_source, vex_at)
-			WHERE f.tenant_id = $1 AND f.fingerprint = d.fingerprint
-			  -- Skip a sighting that changes nothing: every rewritten row is a
-			  -- new tuple in all of the findings indexes, and a rescan
-			  -- re-reports the same data for nearly every finding. A VEX
-			  -- statement always writes (it carries its own time).
-			  AND (d.vex_status IS NOT NULL
-			       OR (f.native_vuln_id, f.native_scheme, f.source_meta, f.scores, f.vulnerability_ids,
-			           f.source_extra, f.location_key)
-			          IS DISTINCT FROM
-			          (COALESCE(d.native_vuln_id, f.native_vuln_id), COALESCE(d.native_scheme, f.native_scheme),
-			           COALESCE(d.source_meta::jsonb, f.source_meta), COALESCE(d.scores::jsonb, f.scores),
-			           COALESCE(d.vulnerability_ids::jsonb, f.vulnerability_ids),
-			           COALESCE(d.source_extra::jsonb, f.source_extra), COALESCE(d.location_key, f.location_key)))`,
-			tenantID.String(), pq.Array(fps), pq.Array(nativeIDs), pq.Array(schemes), pq.Array(metas),
+		args := []any{tenantID.String(), pq.Array(fps), pq.Array(nativeIDs), pq.Array(schemes), pq.Array(metas),
 			pq.Array(scores), pq.Array(vids), pq.Array(extras), pq.Array(locs),
-			pq.Array(vexStatus), pq.Array(vexJust), pq.Array(vexStmt), pq.Array(vexSrc), pq.Array(vexAt))
+			pq.Array(vexStatus), pq.Array(vexJust), pq.Array(vexStmt), pq.Array(vexSrc), pq.Array(vexAt)}
+		var res sql.Result
+		err := retryWriteConflict(ctx, func() error {
+			var execErr error
+			res, execErr = r.db.ExecContext(ctx, interopUpdateSQL, args...)
+			return execErr
+		})
 		if err != nil {
 			return total, fmt.Errorf("update finding interop data: %w", err)
 		}
@@ -128,6 +105,50 @@ func (r *FindingRepository) UpdateInteropBatch(ctx context.Context, tenantID sha
 	}
 	return total, nil
 }
+
+// interopInput is the sightings of UpdateInteropBatch, one row per
+// fingerprint.
+const interopInput = `unnest($2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[],
+			$9::text[], $10::text[], $11::text[], $12::text[], $13::text[], $14::text[])
+			AS d(fingerprint, native_vuln_id, native_scheme, source_meta, scores, vulnerability_ids, source_extra,
+				location_key, vex_status, vex_justification, vex_statement, vex_source, vex_at)`
+
+// interopChanges selects the findings a sighting changes. A sighting that
+// changes nothing is skipped: every rewritten row is a new tuple in all of
+// the findings indexes, and a rescan re-reports the same data for nearly
+// every finding. A VEX statement always writes (it carries its own time).
+const interopChanges = `f.tenant_id = $1 AND f.fingerprint = d.fingerprint
+		  AND (d.vex_status IS NOT NULL
+		       OR (f.native_vuln_id, f.native_scheme, f.source_meta, f.scores, f.vulnerability_ids,
+		           f.source_extra, f.location_key)
+		          IS DISTINCT FROM
+		          (COALESCE(d.native_vuln_id, f.native_vuln_id), COALESCE(d.native_scheme, f.native_scheme),
+		           COALESCE(d.source_meta::jsonb, f.source_meta), COALESCE(d.scores::jsonb, f.scores),
+		           COALESCE(d.vulnerability_ids::jsonb, f.vulnerability_ids),
+		           COALESCE(d.source_extra::jsonb, f.source_extra), COALESCE(d.location_key, f.location_key)))`
+
+// interopUpdateSQL writes the interop data of UpdateInteropBatch. The rows
+// it changes are locked first in the global order (finding_lock_order.go);
+// the update rechecks the same condition. A VEX statement replaces the
+// previous one as a whole (status, justification, statement, source, time),
+// so a new statement never keeps an old justification.
+var interopUpdateSQL = `
+		WITH ` + findingLockCTE("findings f, "+interopInput, interopChanges) + `
+		UPDATE findings AS f SET
+			native_vuln_id    = COALESCE(d.native_vuln_id, f.native_vuln_id),
+			native_scheme     = COALESCE(d.native_scheme, f.native_scheme),
+			source_meta       = COALESCE(d.source_meta::jsonb, f.source_meta),
+			scores            = COALESCE(d.scores::jsonb, f.scores),
+			vulnerability_ids = COALESCE(d.vulnerability_ids::jsonb, f.vulnerability_ids),
+			source_extra      = COALESCE(d.source_extra::jsonb, f.source_extra),
+			location_key      = COALESCE(d.location_key, f.location_key),
+			vex_status        = CASE WHEN d.vex_status IS NOT NULL THEN d.vex_status ELSE f.vex_status END,
+			vex_justification = CASE WHEN d.vex_status IS NOT NULL THEN d.vex_justification ELSE f.vex_justification END,
+			vex_statement     = CASE WHEN d.vex_status IS NOT NULL THEN d.vex_statement ELSE f.vex_statement END,
+			vex_source        = CASE WHEN d.vex_status IS NOT NULL THEN d.vex_source ELSE f.vex_source END,
+			vex_at            = CASE WHEN d.vex_status IS NOT NULL THEN d.vex_at::timestamptz ELSE f.vex_at END
+		FROM locked l, ` + interopInput + `
+		WHERE f.id = l.locked_id AND ` + interopChanges
 
 func jsonOrNull(v any) sql.NullString {
 	b := vulnerability.MarshalJSONOrNil(v)

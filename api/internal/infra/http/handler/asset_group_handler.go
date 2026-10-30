@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/openctemio/openctem/api/internal/app/asset"
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/assetgroup"
@@ -22,9 +23,18 @@ import (
 // AssetGroupHandler handles asset group HTTP requests.
 type AssetGroupHandler struct {
 	configAuditor
-	service   *asset.AssetGroupService
-	validator *validator.Validator
-	logger    *logger.Logger
+	service      *asset.AssetGroupService
+	validator    *validator.Validator
+	logger       *logger.Logger
+	auditService *auditapp.AuditService
+}
+
+// SetAuditService wires the audit log for rule changes that widen a group and
+// for deletes.
+func (h *AssetGroupHandler) SetAuditService(a *auditapp.AuditService) *AssetGroupHandler {
+	h.auditService = a
+	h.audit = a
+	return h
 }
 
 // NewAssetGroupHandler creates a new asset group handler.
@@ -59,6 +69,8 @@ type AssetGroupResponse struct {
 	FindingCount    int       `json:"finding_count"`
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
+	// Rule is set when the group fills itself (a rule group).
+	Rule *GroupRuleResponse `json:"rule,omitempty"`
 }
 
 // CreateAssetGroupRequest represents the request to create an asset group.
@@ -72,6 +84,10 @@ type CreateAssetGroupRequest struct {
 	OwnerEmail   string   `json:"owner_email" validate:"omitempty,email,max=255"`
 	Tags         []string `json:"tags" validate:"max=20,dive,max=50"`
 	AssetIDs     []string `json:"existing_asset_ids" validate:"max=1000,dive,uuid"`
+	// Rule makes the group fill itself: a rule document (see PUT
+	// /asset-groups/{id}/rule). The caller's data scope applies to what it
+	// matches.
+	Rule json.RawMessage `json:"rule,omitempty" swaggertype:"object"`
 }
 
 // UpdateAssetGroupRequest represents the request to update an asset group.
@@ -137,6 +153,9 @@ type GroupAssetResponse struct {
 	RiskScore    int    `json:"risk_score"`
 	FindingCount int    `json:"finding_count"`
 	LastSeen     string `json:"last_seen"`
+	// Source says how the asset joined the group: rule, manual or paste.
+	Source  string    `json:"source,omitempty" enums:"rule,manual,paste"`
+	AddedAt time.Time `json:"added_at,omitzero"`
 }
 
 // businessUnitIDString renders the optional reconciled BU FK as a string,
@@ -183,6 +202,8 @@ func toGroupAssetResponse(a *assetgroup.GroupAsset) GroupAssetResponse {
 		RiskScore:    a.RiskScore,
 		FindingCount: a.FindingCount,
 		LastSeen:     a.LastSeen,
+		Source:       a.Source,
+		AddedAt:      a.AddedAt,
 	}
 }
 
@@ -203,7 +224,12 @@ func (h *AssetGroupHandler) handleValidationError(w http.ResponseWriter, err err
 }
 
 func (h *AssetGroupHandler) handleServiceError(w http.ResponseWriter, err error) {
+	if writeStepUpError(w, err) {
+		return
+	}
 	switch {
+	case errors.Is(err, shared.ErrForbidden):
+		apierror.SafeForbidden(err).WriteJSON(w)
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("Asset group").WriteJSON(w)
 	case errors.Is(err, shared.ErrAlreadyExists):
@@ -277,8 +303,14 @@ func (h *AssetGroupHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	groups := make([]AssetGroupResponse, len(result.Groups))
+	ids := make([]shared.ID, len(result.Groups))
 	for i, g := range result.Groups {
 		groups[i] = toAssetGroupResponse(g)
+		ids[i] = g.ID()
+	}
+	rules := h.service.RuleSummaries(r.Context(), middleware.MustGetTenantID(r.Context()), ids)
+	for i := range groups {
+		groups[i].Rule = toGroupRuleResponse(rules[ids[i]])
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -321,7 +353,7 @@ func (h *AssetGroupHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(toAssetGroupResponse(group))
+	_ = json.NewEncoder(w).Encode(h.groupResponse(r, group))
 }
 
 // Create handles POST /api/v1/asset-groups
@@ -362,6 +394,7 @@ func (h *AssetGroupHandler) Create(w http.ResponseWriter, r *http.Request) {
 		OwnerEmail:   req.OwnerEmail,
 		Tags:         req.Tags,
 		AssetIDs:     req.AssetIDs,
+		Rule:         req.Rule,
 	}
 
 	group, err := h.service.CreateAssetGroup(r.Context(), input)
@@ -372,7 +405,7 @@ func (h *AssetGroupHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(toAssetGroupResponse(group))
+	_ = json.NewEncoder(w).Encode(h.groupResponse(r, group))
 }
 
 // Update handles PATCH /api/v1/asset-groups/{id}
@@ -427,7 +460,7 @@ func (h *AssetGroupHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(toAssetGroupResponse(group))
+	_ = json.NewEncoder(w).Encode(h.groupResponse(r, group))
 }
 
 // Delete handles DELETE /api/v1/asset-groups/{id}

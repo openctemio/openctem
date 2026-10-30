@@ -246,6 +246,9 @@ type LivenessLoad struct {
 	Load          *LoadReport    `json:"load,omitempty"`
 	Outbox        *OutboxStats   `json:"outbox,omitempty"`
 	Control       *ControlReport `json:"control,omitempty"`
+	// LocalStore is the local store report; whether the sensor claims is in
+	// the state digest, so a change of that is never left to a checkpoint.
+	LocalStore *LocalStoreReport `json:"store,omitempty"`
 }
 
 // LivenessCheckpoint is one sensor's liveness and load written to Postgres
@@ -264,6 +267,22 @@ type LivenessCheckpoint struct {
 // postgres.SensorRepository.
 type LivenessCheckpointer interface {
 	CheckpointLiveness(ctx context.Context, rows []LivenessCheckpoint) (int64, error)
+}
+
+// storeGate is the part of a local store report that changes what the
+// console and placement say (stop claiming, the levels): a change of it is
+// written at once, the byte counts go with the checkpoint.
+type storeGate struct {
+	Stop  bool   `json:"s"`
+	Level string `json:"l"`
+	Disk  string `json:"d"`
+}
+
+func storeGateOf(r *LocalStoreReport) *storeGate {
+	if r == nil {
+		return nil
+	}
+	return &storeGate{Stop: r.StopClaiming, Level: r.Level, Disk: r.DiskLevel}
 }
 
 // HeartbeatStateDigest is the digest of what a heartbeat stores in Postgres
@@ -297,8 +316,9 @@ func HeartbeatStateDigest(hb HeartbeatUpdate) string {
 		Build                                                              BuildInfo
 		LocalPolicy                                                        *LocalPolicyReport
 		Slots                                                              *slots
+		Store                                                              *storeGate
 	}{hb.Version, hb.Hostname, hb.Region, ip, hb.UserAgent, hb.Binding, hb.FallbackReason, hb.ConfigReportDigest,
-		hb.Protocol, started, hb.Report, hb.Build, hb.LocalPolicy, sl}
+		hb.Protocol, started, hb.Report, hb.Build, hb.LocalPolicy, sl, storeGateOf(hb.LocalStore)}
 	raw, _ := json.Marshal(v)
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:12])

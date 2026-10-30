@@ -12,6 +12,8 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
+	"github.com/openctemio/openctem/api/pkg/domain/tool"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // Editing a scan workflow's steps.
@@ -49,6 +51,9 @@ type AddStepInput struct {
 	Condition         *scanworkflow.Condition `json:"condition"`
 	MaxRetries        int                     `json:"max_retries"`
 	RetryDelaySeconds int                     `json:"retry_delay_seconds"`
+	// RunPolicy is how the step runs at each depth and whether it waits
+	// for a tool; nil keeps a stored step's policy on update.
+	RunPolicy *scanworkflow.RunPolicy `json:"run_policy"`
 }
 
 // buildStep validates one step input (key format, tool and config) and
@@ -71,7 +76,7 @@ func (s *Service) buildStep(ctx context.Context, tenantID, templateID shared.ID,
 		return nil, err
 	}
 	if s.securityValidator != nil {
-		result := s.securityValidator.ValidateStepConfig(ctx, tenantID, input.Tool, capabilities, input.Config)
+		result := s.securityValidator.ValidateStepConfig(ctx, tenantID, input.Tool, validatedCapabilities(capabilities, input.RunPolicy), input.Config)
 		if !result.Valid {
 			// A refused step is the user's input, not a fault: debug level.
 			s.logger.Debug("step refused",
@@ -82,7 +87,11 @@ func (s *Service) buildStep(ctx context.Context, tenantID, templateID shared.ID,
 			return nil, fmt.Errorf("%w: %s", shared.ErrValidation, stepMessage(input, result.Errors[0].Message))
 		}
 	}
-	return constructStep(templateID, input, capabilities)
+	declared, err := s.declaredToolsFor(ctx, tenantID, input.PreferTools)
+	if err != nil {
+		return nil, err
+	}
+	return constructStep(templateID, input, capabilities, declared)
 }
 
 // stepCapabilities are the step's capabilities, derived from its tool when
@@ -109,7 +118,7 @@ func (s *Service) stepCapabilities(ctx context.Context, tenantID shared.ID, inpu
 // constructStep builds the step an input describes (no registry checks):
 // timeouts, condition, position, and the tool selection against the
 // capability contract.
-func constructStep(templateID shared.ID, input AddStepInput, capabilities []string) (*scanworkflow.Step, error) {
+func constructStep(templateID shared.ID, input AddStepInput, capabilities []string, declared map[string]*tool.Tool) (*scanworkflow.Step, error) {
 	step, err := scanworkflow.NewStep(templateID, input.StepKey, input.Name, input.Order, capabilities)
 	if err != nil {
 		return nil, err
@@ -145,7 +154,10 @@ func constructStep(templateID shared.ID, input AddStepInput, capabilities []stri
 		step.SetRetry(input.MaxRetries, input.RetryDelaySeconds)
 	}
 	step.PreferTools = normalizeToolList(input.PreferTools)
-	if err := checkStepSelection(step); err != nil {
+	if input.RunPolicy != nil {
+		step.RunPolicy = input.RunPolicy.Clone()
+	}
+	if err := checkStepSelection(step, declared); err != nil {
 		return nil, err
 	}
 	return step, nil
@@ -181,19 +193,28 @@ func normalizeToolList(in []string) []string {
 // every preferred tool implements the capability; the standard params have
 // the contract's types and bounds; tool settings need a pinned tool. A step
 // the catalog cannot place (a tenant tool) keeps its settings as they are.
-func checkStepSelection(step *scanworkflow.Step) error {
+// A preferred tool may also be one of the organization's declared tools
+// that implements the capability (declared, by name; scan.ResolveStepTool
+// picks it the same way).
+func checkStepSelection(step *scanworkflow.Step, declared map[string]*tool.Tool) error {
 	if step.Tool != "" && len(step.PreferTools) > 0 {
 		return fmt.Errorf("%w: a step pins a tool or lists tools to prefer, not both", shared.ErrValidation)
 	}
+	if err := step.RunPolicy.Validate(); err != nil {
+		return fmt.Errorf("step '%s': %w", step.StepKey, err)
+	}
 	st, ok := stage.ForStep(step.Tool, step.Capabilities)
 	if !ok {
+		if hasDepthParams(step.RunPolicy) {
+			return fmt.Errorf("%w: step '%s': depth params need a catalog capability", shared.ErrValidation, step.StepKey)
+		}
 		if len(step.PreferTools) > 0 {
 			return fmt.Errorf("%w: step '%s': tools to prefer need a catalog capability", shared.ErrValidation, step.StepKey)
 		}
 		return nil
 	}
 	for _, t := range step.PreferTools {
-		if !st.Implements(t) {
+		if _, ok := declared[t].DeclaredImplements(st.ID()); !st.Implements(t) && !ok {
 			return fmt.Errorf("%w: step '%s': %s does not implement %s (it can run on %s)",
 				shared.ErrValidation, step.StepKey, t, st.Key, strings.Join(st.Tools(), ", "))
 		}
@@ -201,7 +222,7 @@ func checkStepSelection(step *scanworkflow.Step) error {
 	if err := stage.ValidateParams(st, step.Config, step.Tool); err != nil {
 		return fmt.Errorf("%w: step '%s': %w", shared.ErrValidation, step.StepKey, err)
 	}
-	return nil
+	return checkRunPolicyParams(step, st)
 }
 
 // ValidateSteps validates step inputs without storing anything: each step
@@ -229,6 +250,39 @@ func (s *Service) ValidateSteps(ctx context.Context, inputs []AddStepInput) erro
 }
 
 // errStepKeyTaken refuses a second step with the same key in one scan workflow.
+// maxDeclaredLookup bounds the declared tools read to check a prefer list
+// (an organization holds at most tool.MaxDeclaredToolsPerTenant).
+const maxDeclaredLookup = tool.MaxDeclaredToolsPerTenant
+
+// declaredToolsFor returns the organization's declared tools by name when
+// prefer names a tool no catalog stage implements (nil otherwise, without a
+// query). Only that organization's own tools are read.
+func (s *Service) declaredToolsFor(ctx context.Context, tenantID shared.ID, prefer []string) (map[string]*tool.Tool, error) {
+	if s.toolRepo == nil || tenantID.IsZero() {
+		return nil, nil
+	}
+	need := false
+	for _, t := range normalizeToolList(prefer) {
+		if len(stage.ForTool(t)) == 0 {
+			need = true
+		}
+	}
+	if !need {
+		return nil, nil
+	}
+	res, err := s.toolRepo.ListTenantCustomTools(ctx, tenantID, tool.ToolFilter{}, pagination.Pagination{Page: 1, PerPage: maxDeclaredLookup})
+	if err != nil {
+		return nil, fmt.Errorf("list declared tools: %w", err)
+	}
+	out := map[string]*tool.Tool{}
+	for _, t := range res.Data {
+		if t != nil && t.TenantID != nil && *t.TenantID == tenantID && t.IsDeclared() {
+			out[strings.ToLower(t.Name)] = t
+		}
+	}
+	return out, nil
+}
+
 func errStepKeyTaken(key string) error {
 	return shared.NewDomainError("ALREADY_EXISTS",
 		fmt.Sprintf("another step of this scan workflow already uses the key '%s'", key), shared.ErrAlreadyExists)
@@ -433,8 +487,18 @@ func (s *Service) UpdateStep(ctx context.Context, stepID string, input AddStepIn
 	if err := s.checkStepToolConfig(ctx, tenantID, input); err != nil {
 		return nil, err
 	}
+	// The step keeps its prefer list unless the input replaces it, so both
+	// are checked against the organization's declared tools.
+	declared, err := s.declaredToolsFor(ctx, tenantID, append(append([]string{}, step.PreferTools...), input.PreferTools...))
+	if err != nil {
+		return nil, err
+	}
 	if s.securityValidator != nil {
-		result := s.securityValidator.ValidateStepConfig(ctx, tenantID, input.Tool, input.Capabilities, input.Config)
+		policy := input.RunPolicy
+		if policy == nil {
+			policy = &step.RunPolicy
+		}
+		result := s.securityValidator.ValidateStepConfig(ctx, tenantID, input.Tool, validatedCapabilities(input.Capabilities, policy), input.Config)
 		if !result.Valid {
 			s.logger.Warn("step config validation failed",
 				"step_id", sid.String(),
@@ -454,7 +518,7 @@ func (s *Service) UpdateStep(ctx context.Context, stepID string, input AddStepIn
 				if err := applyStepUpdate(c, input); err != nil {
 					return nil, err
 				}
-				if err := checkStepSelection(c); err != nil {
+				if err := checkStepSelection(c, declared); err != nil {
 					return nil, err
 				}
 				updated = c
@@ -517,6 +581,9 @@ func applyStepUpdate(step *scanworkflow.Step, input AddStepInput) error {
 	}
 	if input.PreferTools != nil {
 		step.PreferTools = normalizeToolList(input.PreferTools)
+	}
+	if input.RunPolicy != nil {
+		step.RunPolicy = input.RunPolicy.Clone()
 	}
 	return nil
 }

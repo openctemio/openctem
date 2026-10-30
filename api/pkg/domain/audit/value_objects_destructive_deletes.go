@@ -16,7 +16,6 @@ const (
 
 // Resource types.
 const (
-	ResourceTypeAssetGroup        ResourceType = "asset_group"
 	ResourceTypeBusinessUnit      ResourceType = "business_unit"
 	ResourceTypeBusinessService   ResourceType = "business_service"
 	ResourceTypeAttackerProfile   ResourceType = "attacker_profile"

@@ -6,9 +6,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Skeleton } from '@/components/ui/skeleton'
 import { SEVERITY_DOT_COLORS } from '@/lib/severity-colors'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/context/i18n-provider'
 
 import { useAssetSlaPolicyApi, type SlaPolicy } from '../api/use-sla-policies-api'
-import { NO_SLA } from '../schemas/sla-policy-schema'
+import { DEFAULT_KEV_CAP_DAYS, NO_SLA } from '../schemas/sla-policy-schema'
 import { SEVERITY_LABELS, SEVERITY_LEVELS, type SeverityLevel } from '@/lib/severity'
 
 /** The windows a policy (or the platform default) sets, in days. */
@@ -23,6 +24,7 @@ export type SlaWindowValues = Pick<
   | 'medium_days'
   | 'low_days'
   | 'info_days'
+  | 'kev_cap_days'
   | 'warning_threshold_pct'
   | 'escalation_enabled'
 >
@@ -60,6 +62,8 @@ export function formatSlaWindow(days: number): string {
  * severity row (findings without a class).
  */
 export function SlaWindows({ policy }: { policy: SlaWindowValues }) {
+  const { t } = useTranslation()
+  const kevCap = policy.kev_cap_days ?? DEFAULT_KEV_CAP_DAYS
   return (
     <div className="flex flex-col gap-1">
       <div className="flex flex-wrap items-center gap-3" aria-label="Priority-class windows">
@@ -69,6 +73,23 @@ export function SlaWindows({ policy }: { policy: SlaWindowValues }) {
             <span className="font-medium">{policy[w.key]}d</span>
           </div>
         ))}
+        <div
+          className="flex items-center gap-1 text-sm tabular-nums"
+          data-slot="sla-kev-cap"
+          title={t(
+            'settings.slaPolicies.kevCapTitle',
+            'Known exploited (CISA KEV) findings are due within this many days of being seen as KEV'
+          )}
+        >
+          <span className="text-muted-foreground">
+            {t('settings.slaPolicies.kevCapShort', 'KEV')}
+          </span>
+          <span className="font-medium">
+            {kevCap > 0
+              ? t('settings.slaPolicies.kevCapDays', '{days}d', { days: kevCap })
+              : t('settings.slaPolicies.kevCapOff', 'off')}
+          </span>
+        </div>
       </div>
       <div className="flex flex-wrap items-center gap-3" aria-label="Severity windows">
         {SEVERITY_WINDOWS.map((w) => (

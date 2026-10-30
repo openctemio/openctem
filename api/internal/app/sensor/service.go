@@ -683,8 +683,7 @@ type SensorHeartbeatData struct {
 	Outbox *sensordom.OutboxStats
 
 	// Protocol is the sensor protocol the heartbeat arrived on (1 or 2) and
-	// UserAgent the client's User-Agent, for the fleet's protocol telemetry
-	// (RFC-029 §5.3). Protocol 0 leaves the stored values untouched.
+	// UserAgent the client's User-Agent, for the fleet's protocol telemetry. Protocol 0 leaves the stored values untouched.
 	Protocol  int
 	UserAgent string
 	// Binding is the binding the heartbeat arrived on (decided by the
@@ -742,9 +741,13 @@ type SensorHeartbeatData struct {
 	AdvisedSeconds int
 	DoorbellAware  bool
 
-	// LocalPolicy is the local policy report the heartbeat carried
-	// (RFC-040 §5.7), untrusted; nil when it carried none.
+	// LocalPolicy is the local policy report the heartbeat carried, untrusted; nil when it carried none.
 	LocalPolicy *sensordom.LocalPolicyReport
+
+	// LocalStore is the local store report the heartbeat carried, already
+	// read leniently and clamped (sensordom.ParseLocalStoreReport); nil when
+	// it carried none.
+	LocalStore *sensordom.LocalStoreReport
 
 	// ManifestDigest is the manifest digest the sensor echoes (RFC-033); ""
 	// from a sensor that registers no manifest, whose manifest is then
@@ -890,6 +893,7 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 		Build:          build,
 		Interval:       sensordom.FollowedHeartbeatInterval(data.Control, data.AdvisedSeconds, data.DoorbellAware),
 		Control:        data.Control,
+		LocalStore:     data.LocalStore,
 		LocalPolicy:    localPolicy,
 		// The digest the sensor holds: "" (none) marks a stored report stale.
 		ConfigReportDigest: sensordom.HeartbeatConfigDigest(data.ConfigReport),

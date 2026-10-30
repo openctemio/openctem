@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Waypoints } from 'lucide-react'
+import { AlertTriangle, Info, Waypoints } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
-import { DetailSection } from '@/features/shared'
+import { DetailCallout, DetailDisclosure, DetailSection } from '@/features/shared'
 import { Permission, useHasPermission } from '@/lib/permissions'
 
 import {
@@ -25,30 +25,30 @@ import {
   useProxyPools,
 } from '../api/use-proxy-pools'
 import { describeProxyError } from '../lib/errors'
-import type { SetProxyAssignmentRequest } from '../types'
+import { hostDirectState } from '../lib/host-direct'
+import {
+  POOL_PREFIX,
+  pathRequest,
+  pathValue,
+  pathWarning,
+  type PathWarning,
+} from '../lib/path-warning'
 
-const POOL_PREFIX = 'pool:'
-
-/** The select value for a request, and back. */
-export function pathValue(mode?: string, poolId?: string | null): string {
-  if (mode === 'direct') return 'direct'
-  if (mode === 'pool' && poolId) return `${POOL_PREFIX}${poolId}`
-  return 'inherit'
-}
-
-export function pathRequest(value: string): SetProxyAssignmentRequest {
-  if (value === 'direct') return { mode: 'direct' }
-  if (value.startsWith(POOL_PREFIX))
-    return { mode: 'pool', pool_id: value.slice(POOL_PREFIX.length) }
-  return { mode: 'inherit' }
-}
+export { pathRequest, pathValue, pathWarning, type PathWarning }
 
 /**
  * Sensor detail: the sensor's network path. Hidden without
  * sensors:egress:read; changing it needs sensors:egress:write. Not offered
  * for shared sensors, which never use an organization's proxies.
  */
-export function SensorNetworkPathSection({ sensorId }: { sensorId: string }) {
+export function SensorNetworkPathSection({
+  sensorId,
+  capabilities,
+}: {
+  sensorId: string
+  /** What the sensor last reported (null: never reported). */
+  capabilities?: string[] | null
+}) {
   const { t } = useTranslation()
   const canRead = useHasPermission(Permission.SensorEgressRead)
   const canWrite = useHasPermission(Permission.SensorEgressWrite)
@@ -56,6 +56,8 @@ export function SensorNetworkPathSection({ sensorId }: { sensorId: string }) {
   const assignments = useProxyAssignments(canRead)
   const [saving, setSaving] = useState(false)
   const [confirmDirect, setConfirmDirect] = useState(false)
+  // A pool choice that would leave this sensor without jobs, asked first.
+  const [confirmPool, setConfirmPool] = useState<string | null>(null)
   if (!canRead) return null
 
   const failed = !!pools.error || !!assignments.error
@@ -67,6 +69,14 @@ export function SensorNetworkPathSection({ sensorId }: { sensorId: string }) {
   const known =
     value === 'inherit' || value === 'direct' || list.some((p) => `${POOL_PREFIX}${p.id}` === value)
   const defaultOn = list.some((p) => p.is_default && p.enabled)
+  // A host direct-only sensor takes no pool: its scans run direct (set on
+  // the host) unless a pool is chosen for it, which holds its jobs.
+  const hostState =
+    loading || failed ? null : hostDirectState(known ? value : 'inherit', capabilities)
+  const warning =
+    loading || failed || hostState
+      ? null
+      : pathWarning(known ? value : 'inherit', list, capabilities)
 
   async function change(next: string) {
     setSaving(true)
@@ -90,6 +100,7 @@ export function SensorNetworkPathSection({ sensorId }: { sensorId: string }) {
     // Direct sends this sensor's scans from its own address, around the
     // organization's proxies: ask first while they are on.
     if (next === 'direct' && defaultOn) setConfirmDirect(true)
+    else if (pathWarning(next, list, capabilities) === 'unsupported') setConfirmPool(next)
     else void change(next)
   }
 
@@ -137,21 +148,89 @@ export function SensorNetworkPathSection({ sensorId }: { sensorId: string }) {
                   <SelectItem key={p.id} value={`${POOL_PREFIX}${p.id}`}>
                     {p.enabled
                       ? p.name
-                      : t('proxyPools.sensor.poolDisabled', '{name} (disabled)', { name: p.name })}
+                      : t('proxyPools.sensor.poolDisabled', '{name} (disabled, scans fail)', {
+                          name: p.name,
+                        })}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </>
         )}
+        {hostState === 'direct-host' && (
+          <DetailCallout
+            tone="info"
+            icon={Info}
+            title={t('proxyPools.sensor.hostDirectTitle', 'Direct (set on the sensor host)')}
+          >
+            {t(
+              'proxyPools.sensor.hostDirectBody',
+              "This sensor's owner set it to run scans direct (SENSOR_SCAN_EGRESS=direct-only). It sends scans from its own address and does not use proxy pools. Change that setting on the sensor host to use them."
+            )}
+          </DetailCallout>
+        )}
+        {hostState === 'host-conflict' && (
+          <DetailCallout
+            tone="warning"
+            icon={AlertTriangle}
+            title={t('proxyPools.sensor.hostConflictTitle', 'This sensor receives no scan jobs')}
+          >
+            {t(
+              'proxyPools.sensor.hostConflictBody',
+              'A pool is chosen for this sensor, but its owner set it to run scans direct on the sensor host. Its scans wait; they never go direct. Choose Inherit, or change the sensor setting.'
+            )}
+          </DetailCallout>
+        )}
+        {warning === 'pool-disabled' && (
+          <DetailCallout
+            tone="warning"
+            icon={AlertTriangle}
+            title={t('proxyPools.sensor.warnDisabledTitle', 'The chosen pool is disabled')}
+          >
+            {t(
+              'proxyPools.sensor.warnDisabledBody',
+              "This sensor's scans fail until you enable the pool or choose another path. They never go direct."
+            )}
+          </DetailCallout>
+        )}
+        {warning === 'unsupported' && (
+          <DetailCallout
+            tone="warning"
+            icon={AlertTriangle}
+            title={t('proxyPools.sensor.warnUnsupportedTitle', 'This sensor receives no scan jobs')}
+          >
+            {t(
+              'proxyPools.sensor.warnUnsupportedBody',
+              'A proxy pool applies to it and it does not report proxy support. Upgrade it and run it with network confinement, or choose Direct.'
+            )}
+          </DetailCallout>
+        )}
+        {warning === 'validate-waits' && (
+          <DetailCallout
+            tone="info"
+            icon={Info}
+            title={t('proxyPools.sensor.warnValidateTitle', 'Validation jobs wait')}
+          >
+            {t(
+              'proxyPools.sensor.warnValidateBody',
+              "This sensor's version does not send validation probes through the proxy pool, so it receives no validation jobs while a pool applies. Scans run through the pool."
+            )}
+          </DetailCallout>
+        )}
         <p className="text-xs text-muted-foreground">
-          <span>
+          {t('proxyPools.sensor.summary', "The proxy pool that carries this sensor's scans.")}
+        </p>
+        <DetailDisclosure
+          summary={t('proxyPools.sensor.howItWorks', 'How network paths work')}
+          className="text-xs"
+        >
+          <p className="mt-1 text-muted-foreground">
             {t(
               'proxyPools.sensor.help',
-              "A pool chosen here carries all of this sensor's scan traffic. The organization default only carries public targets. A sensor needs a recent version with network confinement to run proxied scans: without it, the sensor receives no scan jobs while a pool applies to it. It never falls back to a direct connection."
+              "A pool chosen here carries all of this sensor's scan and validation traffic. The organization default only carries public targets. A sensor without proxy support (a recent version with network confinement) receives no scan or validation jobs while a pool applies to it. Traffic never falls back to a direct connection: while the chosen pool is disabled, this sensor's scans fail."
             )}
-          </span>
-        </p>
+          </p>
+        </DetailDisclosure>
       </div>
       <ConfirmDialog
         open={confirmDirect}
@@ -166,6 +245,22 @@ export function SensorNetworkPathSection({ sensorId }: { sensorId: string }) {
         handleConfirm={() => {
           setConfirmDirect(false)
           return change('direct')
+        }}
+      />
+      <ConfirmDialog
+        open={confirmPool !== null}
+        onOpenChange={(open) => !open && setConfirmPool(null)}
+        destructive
+        title={t('proxyPools.sensor.poolTitle', 'This sensor would stop getting scan jobs')}
+        desc={t(
+          'proxyPools.sensor.poolDesc',
+          'The sensor does not report proxy support, so a proxy pool cannot carry its scans and none are sent to it. Upgrade it and run it with network confinement, or choose Direct.'
+        )}
+        confirmText={t('proxyPools.sensor.poolConfirm', 'Use the pool anyway')}
+        handleConfirm={() => {
+          const next = confirmPool
+          setConfirmPool(null)
+          return next ? change(next) : undefined
         }}
       />
     </DetailSection>

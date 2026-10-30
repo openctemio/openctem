@@ -10,6 +10,7 @@ import type { HealthState } from '@/lib/health-colors'
 import type { StatusTone } from '@/lib/status-colors'
 import { SeverityBadge } from '@/components/ui/severity-badge'
 import { useTranslation } from '@/context/i18n-provider'
+import { ScanConfirmDialog } from '@/features/assets/components/scan-confirm-dialog'
 import { deleteAssetSafely } from '@/features/assets/lib/safe-delete'
 import { AssetDeleteDialogShared } from '@/features/assets/components/asset-delete-dialog-shared'
 import { useState, useMemo, useCallback } from 'react'
@@ -24,6 +25,7 @@ import {
   EmptyState,
   DangerZone,
   DangerZoneItem,
+  ListToolbar,
 } from '@/features/shared'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -59,13 +61,12 @@ import { AssetSlaPolicyCard } from '@/features/sla/components/sla-windows'
 import type { ActivityItem } from '@/features/activity/types'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from 'sonner'
 import {
   ArrowLeft,
   GitBranch,
-  Search as SearchIcon,
   MoreHorizontal,
   Eye,
   Trash2,
@@ -564,7 +565,7 @@ function transformToRepositoryView(asset: ApiAssetResponse): RepositoryView {
 
 import { cn, sanitizeExternalUrl } from '@/lib/utils'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
-import { SEVERITY_DOT_COLORS } from '@/lib/severity-colors'
+import { SEVERITY_DOT_COLORS, SEVERITY_TEXT_COLORS } from '@/lib/severity-colors'
 import { copyToClipboard } from '@/lib/clipboard'
 import { Can, Permission } from '@/lib/permissions'
 import { getErrorMessage } from '@/lib/api/error-handler'
@@ -731,14 +732,16 @@ function OverviewTab({
               )}
             </p>
             <p className="text-muted-foreground text-xs">
-              Run a scan to map its branches, build the SBOM (components), and enable per-branch
-              drift &amp; SLA tracking.
+              {t(
+                'assets.repository.runFirstScanHint',
+                'Run a scan to map its branches, build the SBOM (components), and enable per-branch drift and SLA tracking.'
+              )}
             </p>
           </div>
           {onScan && (
             <Button size="sm" onClick={onScan} className="shrink-0">
               <Play className="me-2 h-4 w-4" />
-              Run first scan
+              {t('assets.repository.runFirstScan', 'Run first scan')}
             </Button>
           )}
         </div>
@@ -748,10 +751,12 @@ function OverviewTab({
         <Card>
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-destructive" />
+              <AlertTriangle className="h-4 w-4 text-muted-foreground" />
               Critical/High
             </CardDescription>
-            <CardTitle className="text-3xl text-destructive">{criticalCount + highCount}</CardTitle>
+            <CardTitle className={cn('text-3xl', SEVERITY_TEXT_COLORS.critical)}>
+              {criticalCount + highCount}
+            </CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
             <p className="text-xs text-muted-foreground">{findings.length} total findings</p>
@@ -761,13 +766,13 @@ function OverviewTab({
         <Card className={overdueFindingsCount > 0 ? 'border-destructive/50' : ''}>
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center gap-2">
-              <Timer className="h-4 w-4 text-warning" />
+              <Timer className="h-4 w-4 text-muted-foreground" />
               SLA Overdue
             </CardDescription>
             <CardTitle
               className={cn(
                 'text-3xl',
-                overdueFindingsCount > 0 ? 'text-destructive' : 'text-success'
+                overdueFindingsCount > 0 ? 'text-destructive' : 'text-foreground'
               )}
             >
               {overdueFindingsCount}
@@ -781,11 +786,14 @@ function OverviewTab({
         <Card>
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center gap-2">
-              <GitBranch className="h-4 w-4 text-info" />
+              <GitBranch className="h-4 w-4 text-muted-foreground" />
               Branches
             </CardDescription>
             <CardTitle
-              className={cn('text-3xl', neverScanned ? 'text-muted-foreground/50' : 'text-info')}
+              className={cn(
+                'text-3xl',
+                neverScanned ? 'text-muted-foreground/50' : 'text-foreground'
+              )}
             >
               {neverScanned ? '—' : branches.length}
             </CardTitle>
@@ -810,7 +818,7 @@ function OverviewTab({
                 'text-3xl',
                 !repository.components_summary?.total
                   ? 'text-muted-foreground/50'
-                  : 'text-muted-foreground'
+                  : 'text-foreground'
               )}
             >
               {repository.components_summary?.total ? repository.components_summary.total : '—'}
@@ -829,7 +837,7 @@ function OverviewTab({
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center gap-2">
               <Activity className="h-4 w-4 text-muted-foreground" />
-              Risk Score
+              {t('assets.overview2.riskScore', 'Risk score')}
             </CardDescription>
           </CardHeader>
           <CardContent className="pt-0">
@@ -1299,9 +1307,9 @@ function BranchesTab({
                   <TableCell>
                     <div className="flex items-center gap-1">
                       {branch.findings_summary.by_severity.critical > 0 && (
-                        <Badge variant="destructive" className="h-5 px-1.5 text-xs">
+                        <SeverityBadge severity="critical" variant="soft">
                           {branch.findings_summary.by_severity.critical}C
-                        </Badge>
+                        </SeverityBadge>
                       )}
                       {branch.findings_summary.by_severity.high > 0 && (
                         <SeverityBadge severity="high" variant="soft">
@@ -1359,11 +1367,10 @@ function BranchesTab({
                           {branch.last_commit_message || ''}
                         </span>
                       </div>
-                      <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
                         <span>{branch.last_commit_author || 'unknown'}</span>
                         {branch.last_commit_at && (
                           <>
-                            <span>·</span>
                             <span>{formatTimeAgo(branch.last_commit_at)}</span>
                           </>
                         )}
@@ -1401,12 +1408,13 @@ function FindingsTab({
   branches: BranchDetail[]
   branchFromUrl?: string
 }) {
+  const { t } = useTranslation()
   const router = useRouter()
   const searchParams = useSearchParams()
 
   // Read filters from URL (shareable)
   const [searchInput, setSearchInput] = useState(searchParams.get('q') || '')
-  const debouncedSearch = useDebounce(searchInput, 300)
+  const debouncedSearch = useSearchQuery(searchInput).term
   const [severityFilter, setSeverityFilter] = useState<string>(
     searchParams.get('severity') || 'all'
   )
@@ -1510,105 +1518,107 @@ function FindingsTab({
                 {total}
               </Badge>
             </CardTitle>
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-              <div className="relative min-w-[140px]">
-                <SearchIcon className="absolute left-2 top-[7px] h-3.5 w-3.5 text-muted-foreground" />
-                <Input
-                  placeholder="Search..."
-                  value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
-                  className="ps-7 h-7 text-xs w-[140px]"
-                />
-              </div>
-              <Select
-                value={severityFilter}
-                onValueChange={(v) => handleFilterChange(setSeverityFilter, 'severity', v)}
-              >
-                <SelectTrigger className="w-[110px] h-7 text-xs">
-                  <SelectValue placeholder="Severity" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Severities</SelectItem>
-                  {SEVERITY_LEVELS.map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {SEVERITY_LABELS[s]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select
-                value={statusFilter}
-                onValueChange={(v) => handleFilterChange(setStatusFilter, 'status', v)}
-              >
-                <SelectTrigger className="w-[110px] h-7 text-xs">
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Statuses</SelectItem>
-                  <SelectItem value="new">New</SelectItem>
-                  <SelectItem value="confirmed">Confirmed</SelectItem>
-                  <SelectItem value="in_progress">In Progress</SelectItem>
-                  <SelectItem value="fix_applied">Fix Applied</SelectItem>
-                  <SelectItem value="resolved">Resolved</SelectItem>
-                  <SelectItem value="false_positive">False Positive</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select
-                value={scannerFilter}
-                onValueChange={(v) => handleFilterChange(setScannerFilter, 'scanner', v)}
-              >
-                <SelectTrigger className="w-[120px] h-8 text-xs">
-                  <SelectValue placeholder="Scanner" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Scanners</SelectItem>
-                  <SelectItem value="sast">SAST</SelectItem>
-                  <SelectItem value="sca">SCA</SelectItem>
-                  <SelectItem value="secret">Secret</SelectItem>
-                  <SelectItem value="iac">IaC</SelectItem>
-                  <SelectItem value="container">Container</SelectItem>
-                </SelectContent>
-              </Select>
-              {branches.length > 0 && (
+          </div>
+          <ListToolbar
+            className="mt-3"
+            search={{
+              value: searchInput,
+              onChange: setSearchInput,
+              placeholder: t('assets.repository.findingsSearch.placeholder', 'Search findings…'),
+              label: t('assets.repository.findingsSearch.label', 'Search findings'),
+            }}
+            start={
+              <>
                 <Select
-                  value={branchFilter}
-                  onValueChange={(v) => handleFilterChange(setBranchFilter, 'branch', v)}
+                  value={severityFilter}
+                  onValueChange={(v) => handleFilterChange(setSeverityFilter, 'severity', v)}
                 >
-                  <SelectTrigger className="w-[160px] h-8 text-xs">
-                    <SelectValue placeholder="Branch" />
+                  <SelectTrigger className="w-[110px] h-9 text-xs">
+                    <SelectValue placeholder="Severity" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Branches</SelectItem>
-                    {branches.map((b) => (
-                      <SelectItem key={b.id} value={b.name}>
-                        <span className="flex items-center gap-1">
-                          <GitBranch className="h-3 w-3" />
-                          {b.name}
-                        </span>
+                    <SelectItem value="all">All Severities</SelectItem>
+                    {SEVERITY_LEVELS.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {SEVERITY_LABELS[s]}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-              )}
-              {branchFilter !== 'all' && (
                 <Select
-                  value={branchStatusFilter}
-                  onValueChange={(v) =>
-                    handleFilterChange(setBranchStatusFilter, 'branch_status', v)
-                  }
+                  value={statusFilter}
+                  onValueChange={(v) => handleFilterChange(setStatusFilter, 'status', v)}
                 >
-                  <SelectTrigger className="w-[130px] h-8 text-xs">
-                    <SelectValue placeholder="On branch" />
+                  <SelectTrigger className="w-[110px] h-9 text-xs">
+                    <SelectValue placeholder="Status" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All on branch</SelectItem>
-                    <SelectItem value="open">Open on branch</SelectItem>
-                    <SelectItem value="fixed">Fixed on branch</SelectItem>
+                    <SelectItem value="all">All Statuses</SelectItem>
+                    <SelectItem value="new">New</SelectItem>
+                    <SelectItem value="confirmed">Confirmed</SelectItem>
+                    <SelectItem value="in_progress">In Progress</SelectItem>
+                    <SelectItem value="fix_applied">Fix Applied</SelectItem>
+                    <SelectItem value="resolved">Resolved</SelectItem>
+                    <SelectItem value="false_positive">False Positive</SelectItem>
                   </SelectContent>
                 </Select>
-              )}
-            </div>
-          </div>
+                <Select
+                  value={scannerFilter}
+                  onValueChange={(v) => handleFilterChange(setScannerFilter, 'scanner', v)}
+                >
+                  <SelectTrigger className="w-[120px] h-9 text-xs">
+                    <SelectValue placeholder="Scanner" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Scanners</SelectItem>
+                    <SelectItem value="sast">SAST</SelectItem>
+                    <SelectItem value="sca">SCA</SelectItem>
+                    <SelectItem value="secret">Secret</SelectItem>
+                    <SelectItem value="iac">IaC</SelectItem>
+                    <SelectItem value="container">Container</SelectItem>
+                  </SelectContent>
+                </Select>
+                {branches.length > 0 && (
+                  <Select
+                    value={branchFilter}
+                    onValueChange={(v) => handleFilterChange(setBranchFilter, 'branch', v)}
+                  >
+                    <SelectTrigger className="w-[160px] h-9 text-xs">
+                      <SelectValue placeholder="Branch" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Branches</SelectItem>
+                      {branches.map((b) => (
+                        <SelectItem key={b.id} value={b.name}>
+                          <span className="flex items-center gap-1">
+                            <GitBranch className="h-3 w-3" />
+                            {b.name}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                {branchFilter !== 'all' && (
+                  <Select
+                    value={branchStatusFilter}
+                    onValueChange={(v) =>
+                      handleFilterChange(setBranchStatusFilter, 'branch_status', v)
+                    }
+                  >
+                    <SelectTrigger className="w-[130px] h-9 text-xs">
+                      <SelectValue placeholder="On branch" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All on branch</SelectItem>
+                      <SelectItem value="open">Open on branch</SelectItem>
+                      <SelectItem value="fixed">Fixed on branch</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              </>
+            }
+          />
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
@@ -1747,6 +1757,7 @@ function FindingsTab({
 
 // Settings Tab
 function SettingsTab({ repository, onDelete }: { repository: Repository; onDelete?: () => void }) {
+  const { t: tDanger } = useTranslation()
   const [autoScan, setAutoScan] = useState(repository.scan_settings?.auto_scan ?? false)
   const [scanOnPush, setScanOnPush] = useState(repository.scan_settings?.scan_on_push ?? false)
   const [scanOnPR, setScanOnPR] = useState(repository.scan_settings?.scan_on_pr ?? false)
@@ -1946,7 +1957,7 @@ function SettingsTab({ repository, onDelete }: { repository: Repository; onDelet
                 key={key}
                 className={cn(
                   'flex items-center gap-3 p-3 rounded-lg border',
-                  enabled ? 'bg-muted/30' : 'bg-muted/30'
+                  enabled ? 'bg-card' : 'bg-muted/30'
                 )}
               >
                 {enabled ? (
@@ -1976,11 +1987,14 @@ function SettingsTab({ repository, onDelete }: { repository: Repository; onDelet
           </Can>
           <Can permission={Permission.AssetsDelete}>
             <DangerZoneItem
-              title="Delete repository"
-              description="Permanently delete this repository and all associated data."
+              title={tDanger('assets.repository.danger.deleteTitle', 'Delete repository')}
+              description={tDanger(
+                'assets.repository.danger.deleteDesc',
+                'Remove this repository from the inventory. It leaves its groups, owners and scope. A repository with findings is not deleted, so the finding history is kept.'
+              )}
               action={
                 <Button variant="destructive" size="sm" onClick={onDelete} disabled={!onDelete}>
-                  Delete
+                  {tDanger('assets.repository.danger.deleteButton', 'Delete repository')}
                 </Button>
               }
             />
@@ -2118,6 +2132,7 @@ export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) 
   const [isScanning, setIsScanning] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [showScanDialog, setShowScanDialog] = useState(false)
 
   // Fetch repository data from API
   const {
@@ -2193,16 +2208,18 @@ export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) 
         body: JSON.stringify({ scanMode: 'full' }),
       })
       if (!response.ok) {
-        throw new Error('Failed to trigger scan')
+        throw new Error(t('assets.repository.scanFailed', 'Failed to start the scan'))
       }
-      toast.success('Scan initiated successfully')
+      toast.success(t('assets.repository.scanStarted', 'Scan started'))
       mutateRepo()
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to trigger scan'))
+      toast.error(
+        getErrorMessage(error, t('assets.repository.scanFailed', 'Failed to start the scan'))
+      )
     } finally {
       setIsScanning(false)
     }
-  }, [repository, mutateRepo])
+  }, [repository, mutateRepo, t])
 
   const handleDelete = useCallback(async () => {
     if (!repository) return
@@ -2341,13 +2358,15 @@ export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) 
                 )}
                 {isSyncing ? 'Syncing...' : 'Sync'}
               </Button>
-              <Button size="sm" onClick={handleScan} disabled={isScanning}>
+              <Button size="sm" onClick={() => setShowScanDialog(true)} disabled={isScanning}>
                 {isScanning ? (
                   <Loader2 className="me-2 h-4 w-4 animate-spin" />
                 ) : (
                   <Play className="me-2 h-4 w-4" />
                 )}
-                {isScanning ? 'Scanning...' : 'Scan Now'}
+                {isScanning
+                  ? t('assets.repository.scanning', 'Scanning...')
+                  : t('assets.repository.scanNow', 'Scan now')}
               </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -2378,11 +2397,21 @@ export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) 
                       onClick={() => setShowDeleteDialog(true)}
                     >
                       <Trash2 className="me-2 h-4 w-4" />
-                      Delete Repository
+                      {t('assets.repository.danger.deleteTitle', 'Delete repository')}
                     </DropdownMenuItem>
                   </Can>
                 </DropdownMenuContent>
               </DropdownMenu>
+
+              <ScanConfirmDialog
+                open={showScanDialog}
+                onOpenChange={setShowScanDialog}
+                names={[repository.name]}
+                onConfirm={async () => {
+                  setShowScanDialog(false)
+                  await handleScan()
+                }}
+              />
 
               <AssetDeleteDialogShared
                 open={showDeleteDialog}
@@ -2431,7 +2460,7 @@ export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) 
               branches={branches}
               findings={findings}
               activities={activities}
-              onScan={handleScan}
+              onScan={() => setShowScanDialog(true)}
             />
           </TabsContent>
 

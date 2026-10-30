@@ -3,7 +3,6 @@
 import { KevBadge } from '@/components/ui/kev-badge'
 import { formatEpssScore } from '@/lib/epss'
 import { useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import Link from '@/components/link'
 import { DRILL } from '@/features/dashboard/lib/drill'
 import type { ColumnDef } from '@tanstack/react-table'
@@ -11,6 +10,7 @@ import { Main } from '@/components/layout'
 import {
   PageHeader,
   MetricStrip,
+  PageStack,
   EmptyState,
   DataTable,
   SeverityBadge,
@@ -138,7 +138,6 @@ function useTopRiskColumns(): ColumnDef<TopRiskRow>[] {
 
 export default function ExecutiveSummaryPage() {
   const { t, locale } = useTranslation()
-  const router = useRouter()
   const { currentTenant } = useTenant()
   const [period, setPeriod] = useState<Period>('30')
   const tenantId = currentTenant?.id ?? null
@@ -176,17 +175,6 @@ export default function ExecutiveSummaryPage() {
   )
 
   const window90 = t('insights.executive.last90', 'Last {days} days', { days: MTTR_WINDOW_DAYS })
-  const mttrSub = (
-    mean: number | null | undefined,
-    p90: number | null | undefined,
-    n: number | undefined
-  ) =>
-    t('dashboardMetrics.executive.mttrSub', undefined, {
-      mean: formatHours(mean),
-      p90: formatHours(p90),
-      n: n ?? 0,
-    })
-
   const riskChange = summary?.risk_score_change ?? 0
   const headline = summary
     ? [
@@ -200,14 +188,7 @@ export default function ExecutiveSummaryPage() {
                   change: `${riskChange > 0 ? '+' : ''}${riskChange.toFixed(1)}`,
                 })
               : undefined,
-        },
-        {
-          key: 'resolved',
-          label: t('insights.executive.resolved', 'Findings resolved'),
-          value: summary.findings_resolved_period,
-          hint: t('insights.executive.newInPeriod', '{count} new in period', {
-            count: formatCount(summary.findings_new_period ?? 0, locale),
-          }),
+          href: DRILL.open,
         },
         {
           key: 'sla',
@@ -216,7 +197,7 @@ export default function ExecutiveSummaryPage() {
           hint: t('insights.executive.breached', '{count} breached', {
             count: formatCount(summary.sla_breached, locale),
           }),
-          onClick: () => router.push(DRILL.slaBreached),
+          href: DRILL.slaBreached,
         },
         {
           key: 'p0',
@@ -226,12 +207,8 @@ export default function ExecutiveSummaryPage() {
           hint: t('insights.executive.resolvedThisPeriod', '{count} resolved this period', {
             count: formatCount(summary.p0_resolved_period, locale),
           }),
-          onClick: () => router.push(DRILL.p0Open),
+          href: DRILL.p0Open,
         },
-      ]
-    : []
-  const headline2 = summary
-    ? [
         {
           key: 'p1',
           label: t('insights.executive.p1', 'P1 open'),
@@ -239,272 +216,260 @@ export default function ExecutiveSummaryPage() {
           hint: t('insights.executive.resolvedThisPeriod', '{count} resolved this period', {
             count: formatCount(summary.p1_resolved_period ?? 0, locale),
           }),
-          onClick: () => router.push(DRILL.p1Open),
+          href: DRILL.p1Open,
         },
         {
-          // No link: the figure counts assets, the findings list counts findings.
           key: 'crown',
           label: t('dashboardMetrics.hero.crownJewels'),
           value: summary.crown_jewels_at_risk,
           tone: 'danger' as const,
           hint: t('insights.executive.crownHint', 'High-value assets exposed'),
-        },
-        {
-          key: 'mttr-critical',
-          label: t('dashboardMetrics.executive.mttrCritical'),
-          value: formatHours(summary.mttr_critical_median_hours),
-          hint: mttrSub(
-            summary.mttr_critical_hours,
-            summary.mttr_critical_p90_hours,
-            summary.mttr_critical_sample
-          ),
-        },
-        {
-          key: 'mttr-high',
-          label: t('dashboardMetrics.executive.mttrHigh'),
-          value: formatHours(summary.mttr_high_median_hours),
-          hint: mttrSub(
-            summary.mttr_high_hours,
-            summary.mttr_high_p90_hours,
-            summary.mttr_high_sample
-          ),
+          href: '/crown-jewels',
         },
       ]
     : []
 
   return (
     <Main>
-      <PageHeader
-        title={t('insights.executive.title', 'Executive summary')}
-        description={t(
-          'insights.executive.description',
-          'Risk posture, remediation performance and process health at a glance.'
-        )}
-      >
-        <Select value={period} onValueChange={(v) => setPeriod(v as Period)}>
-          <SelectTrigger
-            className="h-9 w-[150px]"
-            aria-label={t('insights.period.label', 'Period')}
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {PERIOD_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {t(opt.labelKey, opt.fallback)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </PageHeader>
+      <PageStack>
+        <PageHeader
+          title={t('insights.executive.title', 'Executive summary')}
+          description={t(
+            'insights.executive.description',
+            'Risk posture, remediation performance and process health at a glance.'
+          )}
+        >
+          <Select value={period} onValueChange={(v) => setPeriod(v as Period)}>
+            <SelectTrigger
+              className="h-9 w-[150px]"
+              aria-label={t('insights.period.label', 'Period')}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PERIOD_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {t(opt.labelKey, opt.fallback)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </PageHeader>
 
-      {/* Headline numbers */}
-      <div className="mt-5 space-y-4">
+        {/* Headline numbers */}
         {summaryLoading ? (
-          <>
-            <StripSkeleton />
-            <StripSkeleton />
-          </>
+          <StripSkeleton />
         ) : !summary && summaryError ? (
           <WidgetError onRetry={() => void retrySummary()} className="rounded-lg border py-8" />
         ) : (
-          <>
-            <MetricStrip items={headline} />
-            <MetricStrip items={headline2} />
-          </>
+          <MetricStrip items={headline} />
         )}
-      </div>
 
-      {/* Top risks */}
-      <section className="mt-5 space-y-3">
-        <div>
-          <h2 className="text-base font-semibold">
-            {t('insights.executive.topRisks', 'Top risks')}
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            {t(
-              'insights.executive.topRisksHint',
-              'Highest-priority findings that need executive attention.'
-            )}
-          </p>
-        </div>
-        {summaryLoading ? (
-          <div className="space-y-px overflow-hidden rounded-lg border">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <Skeleton key={i} className="h-11 w-full rounded-none" />
-            ))}
-          </div>
-        ) : topRisks.length > 0 ? (
-          <DataTable
-            columns={columns}
-            data={topRisks}
-            showSearch={false}
-            showColumnToggle={false}
-            showPagination={false}
-            pageSize={topRisks.length}
-            getRowId={(r) => r.rowId}
-          />
-        ) : !summary && summaryError ? null : (
-          <EmptyState
-            icon={ShieldCheck}
-            title={t('insights.executive.noTopRisks', 'No top risks for the selected period')}
-          />
-        )}
-      </section>
-
-      {/* MTTR breakdown: a fixed 90-day window */}
-      <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>{t('insights.executive.mttrSeverity', 'MTTR by severity')}</CardTitle>
-            <CardDescription>
-              {t('insights.executive.mttrSeverityHint', 'Average remediation time, {window}', {
-                window: window90.toLowerCase(),
-              })}
-              {mttr?.sample_size ? ` (n=${formatCount(mttr.sample_size, locale)})` : ''}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {mttrLoading ? (
-              <Skeleton className="h-40 w-full" />
-            ) : !mttr && mttrError ? (
-              <WidgetError onRetry={() => void retryMttr()} className="h-40" />
-            ) : mttr && Object.keys(mttr.by_severity).length > 0 ? (
-              <div className="divide-y">
-                {Object.entries(mttr.by_severity)
-                  // Critical is the headline tile above (median, with n), so it is
-                  // not repeated here with a different definition.
-                  .filter(([severity]) => severity.toLowerCase() !== 'critical')
-                  .sort(([a], [b]) => compareSeverity(a, b))
-                  .map(([severity, hours]) => (
-                    <div key={severity} className="flex items-center justify-between py-2.5">
-                      <SeverityBadge severity={severity.toLowerCase() as Severity} />
-                      <span className="text-sm font-medium tabular-nums">{formatHours(hours)}</span>
-                    </div>
-                  ))}
-                <div className="flex items-center justify-between py-2.5">
-                  <span className="text-sm font-medium">
-                    {t('insights.executive.overall', 'Overall')}
-                  </span>
-                  <span className="text-sm font-semibold tabular-nums">
-                    {formatHours(mttr.overall_hours)}
-                  </span>
-                </div>
-              </div>
-            ) : (
-              <EmptyState
-                card={false}
-                className="py-8"
-                icon={Timer}
-                title={t('insights.executive.mttrEmptyTitle', 'Not enough data yet')}
-                description={t(
-                  'insights.executive.mttrEmptyDescription',
-                  'MTTR appears once enough findings have been resolved.'
-                )}
-              />
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>{t('insights.executive.mttrPriority', 'MTTR by priority class')}</CardTitle>
-            <CardDescription>
+        {/* Top risks */}
+        <section className="space-y-3">
+          <div>
+            <h2 className="text-base font-semibold">
+              {t('insights.executive.topRisks', 'Top risks')}
+            </h2>
+            <p className="text-sm text-muted-foreground">
               {t(
-                'insights.executive.mttrPriorityHint',
-                'Average remediation time per priority class (P0 to P3), {window}',
-                { window: window90.toLowerCase() }
+                'insights.executive.topRisksHint',
+                'Highest-priority findings that need executive attention.'
               )}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {mttrLoading ? (
-              <Skeleton className="h-40 w-full" />
-            ) : !mttr && mttrError ? (
-              <WidgetError onRetry={() => void retryMttr()} className="h-40" />
-            ) : mttr && Object.keys(mttr.by_priority_class).length > 0 ? (
-              <div className="divide-y">
-                {Object.entries(mttr.by_priority_class)
-                  .sort(([a], [b]) => PRIORITY_CLASSES.indexOf(a) - PRIORITY_CLASSES.indexOf(b))
-                  .map(([priority, hours]) => (
-                    <div key={priority} className="flex items-center justify-between py-2.5">
-                      <PriorityChip value={priority} />
-                      <span className="text-sm font-medium tabular-nums">{formatHours(hours)}</span>
+            </p>
+          </div>
+          {summaryLoading ? (
+            <div className="space-y-px overflow-hidden rounded-lg border">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <Skeleton key={i} className="h-11 w-full rounded-none" />
+              ))}
+            </div>
+          ) : topRisks.length > 0 ? (
+            <DataTable
+              columns={columns}
+              data={topRisks}
+              showSearch={false}
+              showColumnToggle={false}
+              showPagination={false}
+              pageSize={topRisks.length}
+              getRowId={(r) => r.rowId}
+            />
+          ) : !summary && summaryError ? null : (
+            <EmptyState
+              icon={ShieldCheck}
+              title={t('insights.executive.noTopRisks', 'No top risks for the selected period')}
+            />
+          )}
+        </section>
+
+        {/* MTTR breakdown: a fixed 90-day window */}
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>{t('insights.executive.mttrSeverity', 'MTTR by severity')}</CardTitle>
+              <CardDescription>
+                {t('insights.executive.mttrSeverityHint', 'Average remediation time, {window}', {
+                  window: window90.toLowerCase(),
+                })}
+                {mttr?.sample_size ? ` (n=${formatCount(mttr.sample_size, locale)})` : ''}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {mttrLoading ? (
+                <Skeleton className="h-40 w-full" />
+              ) : !mttr && mttrError ? (
+                <WidgetError onRetry={() => void retryMttr()} className="h-40" />
+              ) : mttr && Object.keys(mttr.by_severity).length > 0 ? (
+                <div className="divide-y">
+                  {Object.entries(mttr.by_severity)
+                    .sort(([a], [b]) => compareSeverity(a, b))
+                    .map(([severity, hours]) => (
+                      <div key={severity} className="flex items-center justify-between py-2.5">
+                        <SeverityBadge severity={severity.toLowerCase() as Severity} />
+                        <span className="text-sm font-medium tabular-nums">
+                          {formatHours(hours)}
+                        </span>
+                      </div>
+                    ))}
+                  <div className="flex items-center justify-between py-2.5">
+                    <span className="text-sm font-medium">
+                      {t('insights.executive.overall', 'Overall')}
+                    </span>
+                    <span className="text-sm font-semibold tabular-nums">
+                      {formatHours(mttr.overall_hours)}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <EmptyState
+                  card={false}
+                  className="py-8"
+                  icon={Timer}
+                  title={t('insights.executive.mttrEmptyTitle', 'Not enough data yet')}
+                  description={t(
+                    'insights.executive.mttrEmptyDescription',
+                    'MTTR appears once enough findings have been resolved.'
+                  )}
+                />
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>
+                {t('insights.executive.mttrPriority', 'MTTR by priority class')}
+              </CardTitle>
+              <CardDescription>
+                {t(
+                  'insights.executive.mttrPriorityHint',
+                  'Average remediation time per priority class (P0 to P3), {window}',
+                  { window: window90.toLowerCase() }
+                )}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {mttrLoading ? (
+                <Skeleton className="h-40 w-full" />
+              ) : !mttr && mttrError ? (
+                <WidgetError onRetry={() => void retryMttr()} className="h-40" />
+              ) : mttr && Object.keys(mttr.by_priority_class).length > 0 ? (
+                <div className="divide-y">
+                  {Object.entries(mttr.by_priority_class)
+                    .sort(([a], [b]) => PRIORITY_CLASSES.indexOf(a) - PRIORITY_CLASSES.indexOf(b))
+                    .map(([priority, hours]) => (
+                      <div key={priority} className="flex items-center justify-between py-2.5">
+                        <PriorityChip value={priority} />
+                        <span className="text-sm font-medium tabular-nums">
+                          {formatHours(hours)}
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              ) : (
+                <EmptyState
+                  card={false}
+                  className="py-8"
+                  icon={Timer}
+                  title={t('insights.executive.priorityEmpty', 'No priority class data yet')}
+                />
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Process metrics: a fixed 90-day window */}
+        <section className="space-y-3">
+          <h2 className="text-base font-semibold">
+            {t('insights.executive.process', 'Process health')}
+            <span className="ms-2 text-sm font-normal text-muted-foreground">{window90}</span>
+          </h2>
+          {processLoading ? (
+            <StripSkeleton />
+          ) : !processMetrics && processError ? (
+            <WidgetError onRetry={() => void retryProcess()} className="rounded-lg border py-8" />
+          ) : processMetrics ? (
+            <Card>
+              <CardContent className="py-0">
+                <dl className="divide-y">
+                  {[
+                    {
+                      key: 'approval',
+                      label: t('insights.executive.approvalAvg', 'Approval avg time'),
+                      value:
+                        processMetrics.approval_count > 0
+                          ? formatHours(processMetrics.approval_avg_hours)
+                          : '—',
+                      hint:
+                        processMetrics.approval_count > 0
+                          ? t('insights.executive.approvalsTracked', '{count} approvals tracked', {
+                              count: formatCount(processMetrics.approval_count, locale),
+                            })
+                          : t('dashboardMetrics.executive.noApprovals', 'No approvals decided yet'),
+                    },
+                    {
+                      key: 'stale',
+                      label: t('insights.executive.stale', 'Stale assets'),
+                      value: formatCount(processMetrics.stale_assets, locale),
+                      hint: t('insights.executive.ofInventory', '{pct} of inventory', {
+                        pct: formatPct(processMetrics.stale_assets_pct, { locale }),
+                      }),
+                    },
+                    {
+                      key: 'no-owner',
+                      label: t('insights.executive.noOwner', 'Findings without owner'),
+                      value: formatCount(processMetrics.findings_without_owner, locale),
+                      hint: t('insights.executive.needTriage', 'Need triage assignment'),
+                    },
+                    {
+                      key: 'assign',
+                      label: t('insights.executive.timeToAssign', 'Avg time to assign'),
+                      value: formatHours(processMetrics.avg_time_to_assign_hours),
+                      hint: t(
+                        'insights.executive.timeToAssignHint',
+                        'From finding creation to owner assignment'
+                      ),
+                    },
+                  ].map((row) => (
+                    <div key={row.key} className="flex items-baseline justify-between gap-4 py-2.5">
+                      <div className="min-w-0">
+                        <dt className="text-sm font-medium">{row.label}</dt>
+                        <dd className="text-xs text-muted-foreground">{row.hint}</dd>
+                      </div>
+                      <span className="text-sm font-semibold tabular-nums">{row.value}</span>
                     </div>
                   ))}
-              </div>
-            ) : (
-              <EmptyState
-                card={false}
-                className="py-8"
-                icon={Timer}
-                title={t('insights.executive.priorityEmpty', 'No priority class data yet')}
-              />
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Process metrics: a fixed 90-day window */}
-      <section className="mt-5 space-y-3">
-        <h2 className="text-base font-semibold">
-          {t('insights.executive.process', 'Process health')}
-          <span className="ms-2 text-sm font-normal text-muted-foreground">{window90}</span>
-        </h2>
-        {processLoading ? (
-          <StripSkeleton />
-        ) : !processMetrics && processError ? (
-          <WidgetError onRetry={() => void retryProcess()} className="rounded-lg border py-8" />
-        ) : processMetrics ? (
-          <MetricStrip
-            items={[
-              {
-                key: 'approval',
-                label: t('insights.executive.approvalAvg', 'Approval avg time'),
-                value:
-                  processMetrics.approval_count > 0
-                    ? formatHours(processMetrics.approval_avg_hours)
-                    : '—',
-                hint:
-                  processMetrics.approval_count > 0
-                    ? t('insights.executive.approvalsTracked', '{count} approvals tracked', {
-                        count: formatCount(processMetrics.approval_count, locale),
-                      })
-                    : t('dashboardMetrics.executive.noApprovals', 'No approvals decided yet'),
-              },
-              {
-                key: 'stale',
-                label: t('insights.executive.stale', 'Stale assets'),
-                value: formatCount(processMetrics.stale_assets, locale),
-                hint: t('insights.executive.ofInventory', '{pct} of inventory', {
-                  pct: formatPct(processMetrics.stale_assets_pct, { locale }),
-                }),
-              },
-              {
-                key: 'no-owner',
-                label: t('insights.executive.noOwner', 'Findings without owner'),
-                value: processMetrics.findings_without_owner,
-                tone: 'danger',
-                hint: t('insights.executive.needTriage', 'Need triage assignment'),
-              },
-              {
-                key: 'assign',
-                label: t('insights.executive.timeToAssign', 'Avg time to assign'),
-                value: formatHours(processMetrics.avg_time_to_assign_hours),
-                hint: t(
-                  'insights.executive.timeToAssignHint',
-                  'From finding creation to owner assignment'
-                ),
-              },
-            ]}
-          />
-        ) : (
-          <EmptyState
-            icon={Users}
-            title={t('insights.executive.processEmpty', 'No process metrics yet')}
-          />
-        )}
-      </section>
+                </dl>
+              </CardContent>
+            </Card>
+          ) : (
+            <EmptyState
+              icon={Users}
+              title={t('insights.executive.processEmpty', 'No process metrics yet')}
+            />
+          )}
+        </section>
+      </PageStack>
     </Main>
   )
 }

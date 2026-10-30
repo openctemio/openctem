@@ -5,7 +5,10 @@
 > [RFC-039](../rfcs/RFC-039-continuous-retest.md). Related:
 > [validation engine](validation-engine.md) (the `validate` command transport a
 > retest reuses), [finding retest checks](finding-retest-checks.md) (a custom
-> check a person attaches to a finding, run by its retest).
+> check a person attaches to a finding, run by its retest),
+> [retest strategy by provenance](finding-retest-strategy.md) (how a finding is
+> re-checked follows from what raised it: a version-based finding re-runs its
+> fingerprint instead of a template).
 
 ## What a retest is
 
@@ -21,15 +24,85 @@ decides:
 | Re-run | Attempt evidence | Outcome (`reason_code`) | Finding |
 |---|---|---|---|
 | matched | any | `still_vulnerable` (`matched`) | open: unchanged · `resolved` → `confirmed` (regression) · `fix_applied` → `in_progress`; validation `reproducible`, observation `present` |
-| no match | request to the finding's endpoint, answered 1xx–4xx except 401/403/407/429 | `confirmed_fixed` (`not_matched`) | status unchanged, validation `not_reproducible` ("verified fixed — awaiting confirmation"); → `resolved` (`fixed` / `retest`) only with `settings.retest.auto_resolve`; `resolved` stays |
-| no match | answered 403 / 429 | `inconclusive` (`blocked`) | unchanged |
-| no match | answered 401 / 407 | `inconclusive` (`auth_changed`) | unchanged |
+| no match | request to the finding's endpoint, answered 1xx–4xx except 401/403/407/429, with no edge marker | `confirmed_fixed` (`not_matched`) | status unchanged, validation `not_reproducible` ("verified fixed — awaiting confirmation"); → `resolved` (`fixed` / `retest`) only with `settings.retest.auto_resolve`; `resolved` stays |
+| no match | any answer carrying a CDN or WAF challenge or block marker (a vendor header or error page), or a throttle with a vendor marker | `inconclusive` (`edge_blocked`), never a fix | unchanged |
+| no match | origin 401 / 403 (no edge marker), exposure-class platform template, second sighting (the previous completed retest, at least an hour earlier, was the same origin refusal) | `confirmed_fixed` (`access_denied`), "access now denied by the server" | as for any confirmed fix |
+| no match | origin 401 / 403, exposure-class template, first sighting, or less than an hour after the first | `inconclusive` (`access_denied`) | unchanged |
+| no match | origin 401 / 403, any other class | `inconclusive` (`access_denied`), "access denied: cannot confirm the fix" | unchanged |
+| no match | answered 429 (no edge marker) | `inconclusive` (`blocked`) | unchanged |
+| no match | answered 407, or a 3xx to another path (a login page) or with no recorded target, for a class other than exposure | `inconclusive` (`auth_changed`) | unchanged |
 | no match | answered 5xx | `inconclusive` (`server_error`) | unchanged |
-| no match | request to another URL | `inconclusive` (`endpoint_mismatch`) | unchanged |
+| no match | request to another URL (a sensor that reports no per-request results) | `inconclusive` (`endpoint_mismatch`) | unchanged |
+| per-request results, the finding's endpoint matched | any | `still_vulnerable` (`matched`) | as above |
+| per-request results, the endpoint did not match, another path matched | any | `still_exposed_elsewhere` (`matched_elsewhere`) | unchanged (never closed, never reopened); the other paths are named in the reason and kept on the retest activity (`other_paths`) |
+| per-request results, nothing matched, the endpoint was not requested | any | `inconclusive` (`endpoint_mismatch`) | unchanged |
+| per-request results, nothing matched, the endpoint answered | its own answer | the rows above for a non-match (`confirmed_fixed`, `edge_blocked`, `access_denied`, `blocked`, `auth_changed`, `server_error`, `unreachable`); the line's edge state (`challenged`, `blocked`, `rate_limited`, from the sensor's edge detector) is `edge_blocked`, and so is an edge marker the platform reads in the recorded exchange at the same endpoint when the line names none (sdk-go sensors send no edge state), and an origin 401/403 follows the access-denied rules of the finding's class | as above |
 | no match | no response | `inconclusive` (`unreachable`) | unchanged |
 | no match | none, target answered the probe | `not_reproduced` (`no_endpoint_proof`) | unchanged |
 | no match | none, target did not answer | `inconclusive` (`unreachable`) | unchanged |
 | error / no result / deadline passed | any | `inconclusive` (`error`, `no_result`) | unchanged |
+| tool: check not in the sensor's template set | any | `inconclusive` (`template_not_found`) | unchanged |
+| tool: check excluded by the sensor's safety policy | any | `inconclusive` (`excluded_by_policy`) | unchanged |
+| tool: ended without judging the item | any | `inconclusive` (`no_verdict`) | unchanged |
+
+**A sighting after the check.** A confirmed fix is applied only if no scan sighted the finding (`last_seen_at`) or reopened it after the check command completed; the settlement checks this under the finding's row lock. Otherwise the retest is recorded `inconclusive` (`seen_after_check`, "the finding was sighted again after the check ran") and the finding does not move.
+
+**Edge answers and access denied.** The platform reads the recorded response
+(status, headers, body) with the edge detector of ctis (`edgeprotect`).
+A challenge or block page of a CDN or WAF says nothing about the service, so
+it is `edge_blocked` (the message names the vendor and asks to allow the
+scanner at the edge, see the edge-protection guidance) and is never a fix. A
+bare 403 with no marker is the origin's own answer. For an exposure-class
+platform template the class comes from the template's own tags (such as
+`exposure`, `exposed-panel`, `swagger`, `config`, `backup`, `debug`,
+`listing`, `disclosure`; any attacking tag such as `rce`, `sqli`, `xss`,
+`lfi`, `bypass` or `default-login` wins), recorded by the scanner at the
+finding's last sighting in `findings.template_exposure`. It is never read
+from the finding's own tags, which a user can edit, and it is not recorded
+for an organization's own rules or a custom retest check. A server that
+refuses the request has then removed what was exposed: that is a fix once
+seen twice, on two consecutive retests of the same check at least an hour
+apart, both answered by the origin (an edge-marked answer in between is not a
+refusal and resets the count; the reachability probe is not a second
+sighting). The earlier refusal counts only when it is at most 14 days old and
+the finding was neither sighted nor reopened since it. The hour is measured between the two checks' completion times, not to the moment the second is settled. Only a result of a
+command the platform dispatched sets the class: an API, CTIS or CI upload
+never does, whatever tags it carries. For every other class a refusal may only mean the check never
+reached the vulnerable code, so it stays inconclusive. The classification
+needs no new
+data from the sensor: the evidence it already reports carries the response.
+
+A tool that retests gives an unverifiable item a reason code (sdk-go
+`tool.VerdictCode`: `template_not_found`, `excluded_by_policy`,
+`target_unreachable`, `egress_refused`, `no_verdict`). The platform maps it to
+the reason codes above (`target_unreachable` to `unreachable`, `egress_refused`
+to `blocked`), and the finding card shows what it means and what to do next
+(en and vi). The code only labels an inconclusive result: it never changes a
+verdict, and an unknown or missing code (an older sensor) is a plain `error`.
+A retest whose tool could not run the check (`error`, `template_not_found`,
+`excluded_by_policy`, `no_verdict`) settles its run as blocked, not failed.
+
+**Checks that probe several paths.** A template such as swagger tries many
+paths and the tool keeps the exchange of only a few as evidence. Newer
+sensors report one line per request (`requests`: URL without query values,
+status, matched, failure class, CDN or WAF vendor and state; at most 64) in a
+tool verdict (sdk-go `tool.RequestResult`) and in the validate result's
+evidence. The platform then decides on the finding's own endpoint from those
+lines, not on whichever exchange was kept. The lines are untrusted: bounded,
+printable, and a verdict that says "still present" while no line matched is
+`inconclusive`, never a fix. An older sensor reports none, and the settlement
+reads the evidence as before. The platform does not open a finding for another
+matching path (ingest does that on the next scan); it names the path. A finding
+whose retest keeps ending `endpoint_mismatch` or `matched_elsewhere` can get a
+retest check pinned to the exact URL (HTTP assertion, see
+[finding retest checks](finding-retest-checks.md)); the console suggests it.
+
+A retest run whose tool ran to the end and ended `inconclusive` (any code but
+`no_result`, `unreachable` and the tool-unable codes) or `still_exposed_elsewhere`
+is a **completed** run with a result (`result.kind`, `result.code` on the run
+and its step, shown as "Completed, inconclusive"), not a failed one. A run
+fails only when the sensor returned nothing (`no_result`), the target did not
+answer (`unreachable`), or the platform could not settle it.
 
 The endpoint is the finding's matched-at: scheme, host, port (default ports
 dropped), path and the parameter names (values are not compared: a token
@@ -136,7 +209,7 @@ A run whose reports disagree on the release counts as reporting none.
 |---|---|
 | `POST /api/v1/findings/{id}/retests` — Retest now (202) | `findings:verify` + data scope |
 | `GET /api/v1/findings/{id}/retests` — history, newest first | `findings:read` + data scope |
-| `GET/PUT /api/v1/organization/settings/retest` — `auto_enabled`, `interval_hours`, `daily_cap` (audited `tenant.retest_updated`) | team admin |
+| `GET/PUT /api/v1/organization/settings/retest` — `auto_enabled`, `interval_hours`, `daily_cap`, `auto_resolve` (audited `tenant.retest_updated`; turning `auto_resolve` on needs step-up re-authentication, is audited high and tells every owner and administrator) | team admin |
 
 Auto-retest is **off** for every tenant until an admin turns it on (owner
 ordering: until the scans redesign P1 lands).
@@ -144,17 +217,55 @@ ordering: until the scans redesign P1 lands).
 ## Regression reopen from scans
 
 Independently of retests, ingest reopens every re-detected finding that was
-closed as fixed — by a scan or by a person: `AutoReopenByFingerprintsBatch` locks the rows, reopens
-them to `confirmed` and returns what it cleared. The `auto_reopened` activity
-keeps `previous_status`, `previous_resolution`, `previous_closure_reason`, `previous_verification`,
+closed as fixed (a scan or a person closed it) on the **same record**, never a
+second row: `AutoReopenByFingerprintsBatch` locks the rows, reopens them and
+returns what it cleared. The `auto_reopened` activity keeps `previous_status`,
+`previous_resolution`, `previous_closure_reason`, `previous_verification`,
 `previous_resolved_by`, `previous_resolved_at`, `scanner` and `scan_id`, so the
-person who resolved it is never lost. Deliberate dispositions are never
-reopened.
+person who resolved it is never lost. Deliberate dispositions (false positive,
+accepted risk within its end, duplicate) and a close recorded as mitigated are
+never reopened by detection; an accepted risk whose end passed returns to
+`confirmed` through the expiry, not as a regression.
+
+What a re-detection of a closed finding is, in the order it is decided
+(`reopenClassSQL`, `vulnerability.ReopenClass`):
+
+| Class | When | Counts as a regression | Timeline wording |
+|---|---|---|---|
+| `verified_regression` | the close was verified (`verification` `retest` or `security_review`) | yes, announced as "Verified fix regressed" | "Seen again after a verified fix: the fix did not hold" |
+| `seen_again` | an automatic close (no person), unverified, younger than `SeenAgainWindow` (7 days): the finding flaps between found and not found | no: no `is_regression`, no `reopen_count`, no new SLA clock, no announcement | "Seen again shortly after an automatic close: not counted as a regression" (reason `seen_again`) |
+| `regression` | everything else: a person's close, or an automatic close that lasted the window | yes | "Seen again after it was closed as fixed" |
+
+- **Reopen target (D8).** A finding that was ever triaged (it has an assignee, or its
+  timeline shows a move to `confirmed`, `in_progress` or `fix_applied`) reopens as `confirmed`;
+  one nobody touched reopens as `new`. A retest that still matches reopens to `confirmed`.
+- **Counters and clock (D3).** A regression sets `is_regression`, adds one to `reopen_count`,
+  sets `last_reopened_at`, and starts a new SLA clock (`sla_started_at`); `first_detected_at`
+  is kept, so the age of the finding is unchanged. The trigger `mark_finding_regression` skips
+  a person's move (`openctem.person_move`, so Undo is not a regression) and a flap
+  (`openctem.seen_again`).
+- **Not a coverage proof, no close.** A partial scan, a run that did not complete cleanly, or the
+  full scan of another tool never auto-resolves a finding, so the next sighting is a plain
+  sighting.
+- **An older report does not reopen a fix.** A report is judged by when its source observed
+  the findings (its timestamp, clamped into the command's window, else the arrival time). A
+  finding resolved at or after that time stays resolved (`AutoReopenByFingerprintsBatch`
+  compares `resolved_at` with it); a report observed after the fix reopens it.
+- **A duplicate seen again** is a sighting of the finding it was folded into (`duplicate_of`,
+  same asset): that finding is marked seen in the scan (it is not auto-resolved) and reopens if it
+  was closed; the duplicate itself stays a duplicate.
+- **Remediation tasks.** A finding of a `done` or `closed_unverified` task that reopens is moved
+  into a new task `Regression: <title>` at the next recompute
+  ([remediation-tasks.md](remediation-tasks.md)); the closed task keeps its state and history.
+- **Identity.** A finding keeps its record across a scan only while its fingerprint matches
+  ([deduplication.md](deduplication.md)): a SAST result that carries its code survives a moved line,
+  a result with only a line, or a renamed rule or template id, is a new finding and the old one
+  closes by the usual rules.
 
 ## Phase 2: what follows a status change (decisions D2–D4)
 
 - **Fresh SLA on a regression (D2).** A finding closed as fixed that a scan or
-  a retest sees again gets a new SLA deadline computed by the tenant's policy
+  a retest sees again (a regression, not a flap) gets a new SLA deadline computed by the tenant's policy
   (priority class, then severity) from the reopen, `sla_status = on_track`, and
   an `sla_restarted` activity with the reason, the trigger (`scan`/`retest`) and
   the previous deadline (`sla.RegressionRestarter`,
@@ -165,7 +276,10 @@ reopened.
   Jira issue — only when the tenant enabled outbound sync on its Jira
   integration (`jira.SyncService.CommentOnFinding`). Platform-written text only,
   free text capped at 300 characters, at most 50 announcements per scan
-  (`retest.ChangeAnnouncer`, `retest.ScanRegressions`).
+  (`retest.ChangeAnnouncer`, `retest.ScanRegressions`). A regression is also told
+  in the app to the finding's assignee and to its watchers who can still read it
+  (`VulnerabilityService.NotifyRegression`, a `finding_status_change` notice;
+  see [participants-and-watchers.md](participants-and-watchers.md)).
 - **Honest `/validate` (D3).** See [validation-engine.md](validation-engine.md):
   a safe-check never moves a finding; a nuclei miss without proof the target
   answered is unknown.

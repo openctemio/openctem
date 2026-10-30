@@ -1,5 +1,6 @@
 'use client'
 
+import { Tag } from '@/components/ui/tag'
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import {
   Loader2,
@@ -14,6 +15,7 @@ import {
   Square,
   MinusSquare,
   RefreshCw,
+  Download,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -45,6 +47,7 @@ import {
   invalidateRepositoriesCache,
 } from '@/features/repositories/hooks/use-repositories'
 import type { SCMProvider } from '@/features/assets/types/asset.types'
+import { useSearchQuery } from '@/hooks/use-search-query'
 
 // Helper to get scmOrganization from either Integration or SCMConnection
 function getScmOrganization(connection: Integration | SCMConnection): string | undefined {
@@ -81,6 +84,7 @@ export function SyncRepositoriesDialog({
   onSuccess,
 }: SyncRepositoriesDialogProps) {
   const [searchQuery, setSearchQuery] = useState('')
+  const searchTerm = useSearchQuery(searchQuery).term
   const [selectedRepos, setSelectedRepos] = useState<Set<string>>(new Set())
   const [page, setPage] = useState(1)
   const [isImporting, setIsImporting] = useState(false)
@@ -95,7 +99,7 @@ export function SyncRepositoriesDialog({
     mutate: refetch,
   } = useIntegrationRepositoriesApi(
     open ? connection.id : null,
-    { search: searchQuery, page, per_page: perPage },
+    { search: searchTerm, page, per_page: perPage },
     { revalidateOnFocus: false }
   )
 
@@ -581,11 +585,7 @@ function RepositoryItem({ repo, selected, onSelect, disabled, isImported }: Repo
             <Globe className="h-3.5 w-3.5 text-muted-foreground" />
           )}
           {repo.is_fork && <GitFork className="h-3.5 w-3.5 text-muted-foreground" />}
-          {isImported && (
-            <Badge variant="outline" className="text-xs text-green-600 border-green-600/30">
-              Imported
-            </Badge>
-          )}
+          {isImported && <Tag variant="plain" icon={Download} label="Imported" />}
           {repo.is_archived && (
             <Badge variant="secondary" className="text-xs">
               <Archive className="h-3 w-3 me-1" />

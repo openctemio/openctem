@@ -452,6 +452,13 @@ func configProblems(n *automationdom.Node) []Problem {
 	case automationdom.ActionTypeUpdateStatus:
 		if str("status") == "" {
 			out = append(out, missing("status"))
+		} else if !automationdom.StatusTargetAllowed(str("status")) {
+			out = append(out, Problem{Code: "STATUS_NOT_ALLOWED", NodeKey: n.NodeKey,
+				Message: "an automation may set only confirmed or in_progress; request a false positive or a risk acceptance instead"})
+		}
+	case automationdom.ActionTypeRequestFalsePositive, automationdom.ActionTypeRequestRiskAcceptance:
+		if err := automationdom.ValidateRequestConfigs(n.Config); err != nil {
+			out = append(out, Problem{Code: "CONFIG_MISSING", NodeKey: n.NodeKey, Message: err.Error()})
 		}
 	case automationdom.ActionTypeAddTags, automationdom.ActionTypeRemoveTags:
 		if len(configTags(c)) == 0 {

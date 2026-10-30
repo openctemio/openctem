@@ -25,7 +25,8 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `APP_ENV` | string | `production` |  |  | Environment name. `production` (also when unset) turns on the production checks (TLS to PostgreSQL and Redis, strong secrets, rate limiting, secure cookies; `server -check-config` reports them). Any value other than `development` requires `APP_ENCRYPTION_KEY`, refuses the published development secrets and defaults `AUTH_COOKIE_SECURE` to `true`. Set `development` explicitly for a local or trial setup without TLS to the datastores. Up to v0.8.0 an unset value meant `development`. |
 | `APP_NAME` | string | `openctem` |  |  | Technical name of the service in logs. The product name users see is `BRAND_NAME`. |
 | `APP_URL` | string | empty |  |  | Public origin of the platform (`https://ctem.example.com`): the one URL browsers, sensors and e-mail links use. Set it in every deployment. When set, it is the default of `CORS_ALLOWED_ORIGINS`, `SMTP_BASE_URL` and `OAUTH_FRONTEND_CALLBACK_URL`, and SAML service-provider URLs and the sensor endpoint are built from it. Must be an http(s) URL without credentials, query or fragment. |
-| `MANAGED_SERVICE` | bool | `false` |  |  | Set to true only on a hosted, multi-tenant service run by an operator for organizations it does not control. It changes defaults only, never features: until an administrator stores a value in the console, platform sensors need a verified domain before they scan a target (Console > Scanning > Platform scanning). A value saved in the console always wins. Read at start-up; never tenant data. |
+| `MANAGED_SERVICE` | bool | `false` |  |  | Set to true only on a hosted, multi-tenant service run by an operator for organizations it does not control. It changes defaults only, never features: until an administrator stores a value in the console, platform sensors need a verified domain before they scan a target (Console > Scanning > Platform scanning). A value saved in the console always wins. It also holds an organization's own mail server (the e-mail notification channel) to submission ports 465, 587 and 2525 with a username, a password and TLS or STARTTLS; port 25 is refused. Read at start-up; never tenant data. |
+| `ORG_EMAIL_RELAY_MODE` | string | empty |  |  | Default of the console setting email.tenant_relay until a super admin stores a value: whether an organization's own mail relay (its e-mail notification channel with "organization mail" ticked) carries its invitation notices and scheduled reports. `off`, `verified_sender` (the sender address must be on a verified domain of the organization) or `on`. Unset: `verified_sender` with `MANAGED_SERVICE=true`, else `on`. Account security mail (set-password links, verification, password reset, MFA and sign-in notices) never uses an organization relay. |
 | `DEPLOYMENT_REGION` | string | empty |  |  | Data region of this deployment (1-32 lowercase letters, digits or hyphens, e.g. `eu-central`). Every organization created here gets it, it is shown in the console and never changes. Set: pins the region (the console cannot change it). Unset: a super admin may set it once in the console (Settings > Configuration) before the first organization exists. |
 
 ### Brand
@@ -60,7 +61,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `SERVER_REQUEST_TIMEOUT` | duration | `30s` |  |  | Per-request handler timeout. |
 | `SERVER_SHUTDOWN_TIMEOUT` | duration | `30s` |  |  | Grace period for in-flight requests on shutdown. |
 | `SERVER_TRUSTED_PROXIES` | list | empty |  |  | Comma-separated CIDRs or IPs of proxies whose `X-Real-IP` / `X-Forwarded-For` the API believes (audit log, rate limits, IP allowlists). Empty: the API treats every peer as the client. The Compose stack lists the gateway and the web console. |
-| `SERVER_WRITE_TIMEOUT` | duration | `15s` |  |  | HTTP server write timeout. |
+| `SERVER_WRITE_TIMEOUT` | duration | `SERVER_REQUEST_TIMEOUT + 5s (35s)` |  |  | HTTP server write timeout. Keep it above `SERVER_REQUEST_TIMEOUT`: at or below it the connection closes before the `503` timeout answer is written and the client sees EOF. The API logs a warning at startup when it is not. |
 | `SESSION_TIMEOUT_MINUTES` | int | `30` |  |  | Maximum age, in minutes, of an access token (from its issued-at time) before the API answers `401 Session has expired`. `0` turns the check off. |
 | `SERVER_TLS_CERT_FILE` | path | empty |  |  | PEM certificate (full chain) for the API listener to terminate TLS itself, when no TLS proxy is in front. Set together with `SERVER_TLS_KEY_FILE`. |
 | `SERVER_TLS_KEY_FILE` | path | empty |  |  | PEM key matching `SERVER_TLS_CERT_FILE`. |
@@ -129,8 +130,8 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `APP_TEMPLATE_SIGNING_KEY` | string | empty |  | yes | Master secret the per-organization signing keys of custom scanner templates are derived from. Same formats as `APP_ENCRYPTION_KEY` and must differ from it. Set it to rotate template keys independently of the encryption key. Unset: derived from `APP_ENCRYPTION_KEY`. |
 | `APP_CONTENT_SIGNING_KEY` | string | empty |  | yes | Master secret of each organization's content pack signing key (Ed25519). Same formats as `APP_ENCRYPTION_KEY` and must differ from it and from `APP_TEMPLATE_SIGNING_KEY`. Unset: derived from `APP_ENCRYPTION_KEY` under its own label. |
 | `FINGERPRINT_KEY` | string | empty | production | yes | Server secret the fingerprint of each reported secret finding is keyed from (and the key CI jobs hash raw secrets with). At least 32 characters: `openssl rand -hex 32`. Never rotate it with `APP_ENCRYPTION_KEY`: changing it changes every secret's identity, so a secret seen again opens a second finding. On an install that already stores secret findings, set it to the current `APP_ENCRYPTION_KEY` value (the key those fingerprints were made with). Required unless `APP_ENV=development`, where `APP_ENCRYPTION_KEY` is used when it is unset. Back it up with the database. |
-| `CONTENT_TRUST_ROOT_KEY_IDS` | list | empty |  |  | Extra content catalog roots (comma-separated key ids, `SHA256:<hex>`) trusted beside the roots pinned in the release, for an operator's own catalog source (RFC-099). Setting it writes a high-severity admin audit row at startup. Unset: only the pinned roots; with none, bundle imports are refused. |
-| `CONTENT_SIGSTORE_TRUSTED_ROOT` | path | empty |  |  | Path of a Sigstore trusted root (JSON) that replaces the one embedded in the release for verifying publisher signatures of content packages (RFC-099). Setting it writes a high-severity admin audit row with the file's SHA-256 at startup. Unset: the embedded trusted root. |
+| `CONTENT_TRUST_ROOT_KEY_IDS` | list | empty |  |  | Extra content catalog roots (comma-separated key ids, `SHA256:<hex>`) trusted beside the roots pinned in the release, for an operator's own catalog source. Setting it writes a high-severity admin audit row at startup. Unset: only the pinned roots; with none, bundle imports are refused. |
+| `CONTENT_SIGSTORE_TRUSTED_ROOT` | path | empty |  |  | Path of a Sigstore trusted root (JSON) that replaces the one embedded in the release for verifying publisher signatures of content packages. Setting it writes a high-severity admin audit row with the file's SHA-256 at startup. Unset: the embedded trusted root. |
 
 ### Authentication
 
@@ -145,6 +146,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `AUTH_JWT_SECRET` | string | empty |  | yes | HMAC secret that signs session tokens. Unset: derived from `APP_ENCRYPTION_KEY` (HKDF, 64 bytes), so rotating the encryption key also signs every user out; set it (at least 64 characters in production: `openssl rand -hex 64`) to rotate the two independently. Changing it signs every user out. |
 | `AUTH_LOCKOUT_DURATION` | duration | `15m` |  |  | How long a locked account stays locked. |
 | `AUTH_MAX_ACTIVE_SESSIONS` | int | `10` |  |  | Concurrent sessions per user. |
+| `AUTH_MFA_FLOOR` | string | empty |  |  | Default of the console setting auth.mfa (the lowest two-factor requirement of every organization, which an organization may only raise) until a super admin stores a value: `none`, `admins` (owners, administrators and members holding a privileged role) or `everyone`. Unset: `admins`. An installation that already had users when this setting shipped keeps `none` until its operator raises it (a seeded row); a managed service (`MANAGED_SERVICE=true`) ignores that seed. People get 14 days (existing members) or 7 days (new accounts) before sign-in is gated; creating API keys, sensor tokens and integration secrets needs a second factor from the start. |
 | `AUTH_MAX_LOGIN_ATTEMPTS` | int | `5` |  |  | Failed sign-ins before the account is locked. |
 | `AUTH_PASSWORD_MIN_LENGTH` | int | `12` |  |  | Minimum password length. At least 6; at least 8 in production. |
 | `AUTH_PASSWORD_REQUIRE_LOWERCASE` | bool | `true` |  |  | Require a lowercase letter. |
@@ -179,22 +181,22 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `KEYCLOAK_HTTP_TIMEOUT` | duration | `10s` |  |  | Timeout of requests to Keycloak. |
 | `KEYCLOAK_JWKS_REFRESH_INTERVAL` | duration | `1h` |  |  | How often Keycloak's signing keys are refreshed. |
 | `KEYCLOAK_REALM` | string | `openctem` |  |  | Keycloak realm. In production with `oidc` or `hybrid` it must be set to a value other than the default. |
-| `OAUTH_ENABLED` | bool | `true` |  |  | Master switch for social login (Google, GitHub, Microsoft). A provider is offered only when its own `*_ENABLED`, client ID and secret are set. |
+| `OAUTH_ENABLED` | bool | `true` |  |  | Master switch for social login (Google, GitHub, Microsoft). The console (Settings > Social login) is the place to set up the providers; this stays a server-side kill switch, and `false` turns every provider off whatever the console says. |
 | `OAUTH_FRONTEND_CALLBACK_URL` | string | `APP_URL/auth/callback, else http://localhost:3000/auth/callback` |  |  | Web console URL the social-login and SSO flows return to. Set it only when the console is not at `APP_URL`. |
-| `OAUTH_GITHUB_CLIENT_ID` | string | empty |  |  | GitHub OAuth client ID. |
-| `OAUTH_GITHUB_CLIENT_SECRET` | string | empty |  | yes | GitHub OAuth client secret. |
-| `OAUTH_GITHUB_ENABLED` | bool | `false` |  |  | Offer GitHub sign-in. |
-| `OAUTH_GITHUB_SCOPES` | list | `read:user,user:email` |  |  | Requested scopes. |
-| `OAUTH_GOOGLE_CLIENT_ID` | string | empty |  |  | Google OAuth client ID. |
-| `OAUTH_GOOGLE_CLIENT_SECRET` | string | empty |  | yes | Google OAuth client secret. |
-| `OAUTH_GOOGLE_ENABLED` | bool | `false` |  |  | Offer Google sign-in. |
-| `OAUTH_GOOGLE_SCOPES` | list | `openid,email,profile` |  |  | Requested scopes. |
-| `OAUTH_MICROSOFT_CLIENT_ID` | string | empty |  |  | Microsoft OAuth client ID. |
-| `OAUTH_MICROSOFT_CLIENT_SECRET` | string | empty |  | yes | Microsoft OAuth client secret. |
-| `OAUTH_MICROSOFT_ENABLED` | bool | `false` |  |  | Offer Microsoft sign-in. |
-| `OAUTH_MICROSOFT_SCOPES` | list | `openid,email,profile,User.Read` |  |  | Requested scopes. |
+| `OAUTH_GITHUB_CLIENT_ID` | string | empty |  |  | GitHub OAuth client ID. Optional override: set the client in the console (Settings > Social login) instead. Used only together with `OAUTH_GITHUB_CLIENT_SECRET`. |
+| `OAUTH_GITHUB_CLIENT_SECRET` | string | empty |  | yes | GitHub OAuth client secret. Optional override: while it is set, this provider is pinned to the server environment and the console shows it read-only. Leave unset to manage the provider in the console (Settings > Social login), where the secret is stored encrypted and write-only. |
+| `OAUTH_GITHUB_ENABLED` | bool | `false` |  |  | Offer GitHub sign-in. Used only while `OAUTH_GITHUB_CLIENT_SECRET` pins the provider; otherwise the switch in the console decides. |
+| `OAUTH_GITHUB_SCOPES` | list | `read:user,user:email` |  |  | Requested scopes. Used only while the provider is pinned by its client secret variable; otherwise set in the console. |
+| `OAUTH_GOOGLE_CLIENT_ID` | string | empty |  |  | Google OAuth client ID. Optional override: set the client in the console (Settings > Social login) instead. Used only together with `OAUTH_GOOGLE_CLIENT_SECRET`. |
+| `OAUTH_GOOGLE_CLIENT_SECRET` | string | empty |  | yes | Google OAuth client secret. Optional override: while it is set, this provider is pinned to the server environment and the console shows it read-only. Leave unset to manage the provider in the console (Settings > Social login), where the secret is stored encrypted and write-only. |
+| `OAUTH_GOOGLE_ENABLED` | bool | `false` |  |  | Offer Google sign-in. Used only while `OAUTH_GOOGLE_CLIENT_SECRET` pins the provider; otherwise the switch in the console decides. |
+| `OAUTH_GOOGLE_SCOPES` | list | `openid,email,profile` |  |  | Requested scopes. Used only while the provider is pinned by its client secret variable; otherwise set in the console. |
+| `OAUTH_MICROSOFT_CLIENT_ID` | string | empty |  |  | Microsoft OAuth client ID. Optional override: set the client in the console (Settings > Social login) instead. Used only together with `OAUTH_MICROSOFT_CLIENT_SECRET`. |
+| `OAUTH_MICROSOFT_CLIENT_SECRET` | string | empty |  | yes | Microsoft OAuth client secret. Optional override: while it is set, this provider is pinned to the server environment and the console shows it read-only. Leave unset to manage the provider in the console (Settings > Social login), where the secret is stored encrypted and write-only. |
+| `OAUTH_MICROSOFT_ENABLED` | bool | `false` |  |  | Offer Microsoft sign-in. Used only while `OAUTH_MICROSOFT_CLIENT_SECRET` pins the provider; otherwise the switch in the console decides. |
+| `OAUTH_MICROSOFT_SCOPES` | list | `openid,email,profile,User.Read` |  |  | Requested scopes. Used only while the provider is pinned by its client secret variable; otherwise set in the console. |
 | `OAUTH_STATE_DURATION` | duration | `10m` |  |  | Lifetime of an OAuth `state` token. |
-| `OAUTH_STATE_SECRET` | string | empty |  | yes | Secret that signs the OAuth `state` parameter. Unset: derived from the session secret under its own label. |
+| `OAUTH_STATE_SECRET` | string | empty |  | yes | Secret that signs the OAuth `state` parameter. Unset: derived from the session secret under its own label. A bootstrap secret that is never a console setting, so a console change cannot weaken the CSRF binding of a sign-in. |
 | `SSO_ALLOWED_REDIRECT_URIS` | list | `derived` |  |  | Comma-separated exact-match allow-list for the `redirect_uri` of the per-organization SSO flow: origins (`https://ctem.example.com`) or origin-plus-path prefixes ending in `/`. Unset: derived from `CORS_ALLOWED_ORIGINS`, `OAUTH_FRONTEND_CALLBACK_URL` and `SMTP_BASE_URL`. |
 | `SSO_ENTRA_ALLOWED_DOMAINS` | list | `empty (any)` |  |  | Comma-separated email domains the fallback accepts. |
 | `SSO_ENTRA_ALLOWED_TENANTS` | list | `empty (none)` |  |  | Comma-separated organization slugs allowed to use the fallback. Empty disables it for every organization. |
@@ -290,6 +292,8 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `SENSOR_LB_MEMORY_WEIGHT` | float | `0.15` |  |  | Weight of memory usage. |
 | `SENSOR_LB_NETWORK_WEIGHT` | float | `0.05` |  |  | Weight of network I/O. |
 | `SENSOR_PUBLIC_API_URL` | string | empty |  |  | URL sensors connect to, embedded in the install snippets and configuration templates. Unset: `APP_URL`. |
+| `PROXY_TEST_ECHO_URL` | string | empty |  |  | https origin a proxy test connects to through each proxy of a pool (the Test button of Settings, Scanning, Proxies). It must answer on a public port the proxies can reach: not the sensor mTLS port. Unset: `SENSOR_PUBLIC_API_URL`, else `APP_URL`. The platform never connects to a proxy itself; sensors do. |
+| `PROXY_TEST_ALT_PORT` | int | `80` |  |  | A second port of the proxy test's echo host. A proxy that carries 443 and refuses this port is shown as port-restricted. `0` skips that check. |
 | `SENSOR_SLIM_HEARTBEAT` | bool | `true` |  |  | Let sensors with an acknowledged manifest leave their tool inventory out of heartbeats. `false` asks every sensor for full heartbeats. |
 | `SENSOR_LIVENESS_STORE` | string | `shadow` |  |  | Where heartbeat liveness lives. `postgres`: every heartbeat updates the sensor row. `shadow`: as postgres, and Redis records every heartbeat too so `openctem_sensor_liveness_disagreements_total` compares the two. `redis`: Redis holds liveness; Postgres gets state changes and a batched checkpoint every 10 minutes. Switch to `redis` after a week of zero disagreements. |
 | `WORKER_HEARTBEAT_TIMEOUT` | duration | `5m` |  |  | No heartbeat for this long marks a sensor inactive. Advised heartbeat intervals stay below half of it. |
@@ -344,7 +348,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `SCM_SYNC_INTERVAL` | duration | `0` |  |  | Interval of the scheduled repository and branch sync of SCM integrations (for example `6h`). Off: repositories are imported on demand only. |
 | `ASSET_ENRICHMENT_DAILY_BUDGET` | int | `2000` |  |  | Most assets one organization sends to automatic enrichment per 24 hours. |
 | `ASSET_ENRICHMENT_ENABLED` | bool | `true` |  |  | Automatic passive enrichment of new assets, platform-wide. Each organization can still turn it off. |
-| `ASSET_COVERAGE_ENABLED` | bool | `true` |  |  | The asset coverage loop, platform-wide: every asset gets the capabilities its type needs (RFC-093). |
+| `ASSET_COVERAGE_ENABLED` | bool | `true` |  |  | The asset coverage loop, platform-wide: every asset gets the capabilities its type needs. |
 | `ASSET_COVERAGE_DAILY_BUDGET` | int | `5000` |  |  | Most asset and capability pairs one organization's automatic coverage attempts per 24 hours. |
 | `ASSET_COVERAGE_INTERVAL` | duration | `1m` |  |  | How often the asset coverage loop runs. |
 | `FEED_CACHE_DIR` | path | `<system temp dir>/openctem-feeds` |  |  | Directory holding verified feed chunks between imports. |
@@ -353,16 +357,16 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `PROGRAMFEED_MIRRORS` | list | empty |  |  | Comma-separated https mirrors of the chunked program feed, tried after `PROGRAMFEED_URL`. |
 | `PROGRAMFEED_ROOT_KEY_ID` | string | empty |  |  | Pinned offline root key id of the public program feed. Unset: no program feed is imported. |
 | `PROGRAMFEED_URL` | url | empty |  |  | https release URL of the chunked public program feed, tried before `PROGRAMFEED_DIR`. |
-| `VULNFEED_BASE_URL` | url | `https://github.com/openctemio/vulnfeed/releases` |  |  | Release base URL of the signed vulnerability bundles. |
+| `VULNFEED_BASE_URL` | url | `https://github.com/openctemio/vulnfeed-bundles/releases` |  |  | Release base URL of the signed vulnerability bundles. |
 | `VULNFEED_BUNDLE_DIR` | path | empty |  |  | Air-gapped platforms: local directory holding a vulnerability bundle release's files. |
 | `VULNFEED_MIRRORS` | list | empty |  |  | Comma-separated https mirrors tried after the release for chunked vulnerability bundles. |
-| `VULNFEED_ROOT_KEY_ID` | string | empty |  |  | Pinned root key id of the vulnerability bundles. Unset: no bundle is imported. |
+| `VULNFEED_ROOT_KEY_ID` | string | `official root` |  |  | Pinned root key id of the vulnerability bundles. Defaults to the root of the official feed (openctemio/vulnfeed-bundles releases); set it only for a private collector. |
 
 ### Integrations
 
 | Variable | Type | Default | Required | Secret | Description |
 |---|---|---|---|---|---|
-| `GITHUB_APP_ID` | int | empty |  |  | The GitHub App's numeric id (RFC-077). With the slug, client id and secret, private key and webhook secret it turns on the gate check and pull request comments; a partial configuration leaves the app off and is logged. |
+| `GITHUB_APP_ID` | int | empty |  |  | The GitHub App's numeric id. With the slug, client id and secret, private key and webhook secret it turns on the gate check and pull request comments; a partial configuration leaves the app off and is logged. |
 | `GITHUB_APP_SLUG` | string | empty |  |  | The GitHub App's URL name, used for its install link. |
 | `GITHUB_APP_CLIENT_ID` | string | empty |  |  | The GitHub App's OAuth client id (binding an installation to an organization). |
 | `GITHUB_APP_CLIENT_SECRET` | string | empty |  | yes | The GitHub App's OAuth client secret. |
@@ -372,7 +376,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `GITHUB_APP_API_URL` | url | empty |  |  | GitHub API base URL for GitHub Enterprise Server. Unset: api.github.com. |
 | `GITHUB_APP_WEB_URL` | url | empty |  |  | GitHub web base URL for GitHub Enterprise Server. Unset: github.com. |
 | `OPENCTEM_HTTPSEC_ALLOW_PRIVATE` | string | `unset` |  |  | `1` opens every private range. Honored only with `APP_ENV=development`: with any other `APP_ENV` (or none) the API refuses to start, because it would open the platform's own network to every organization. Use `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` instead. Any value other than empty, `0` or `1` is refused. |
-| `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` | string | empty |  |  | Comma-separated private ranges that outbound calls of the API (webhook and notification channels, self-hosted Jira or GitLab, an SMTP relay) may reach, for example `10.20.0.0/16`. Each entry must be a CIDR inside `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` or `fc00::/7`, otherwise the API refuses to start. The list applies to every organization, so name only the subnets of your own services. Loopback, link-local, CGNAT and cloud metadata addresses stay blocked whatever the list says. |
+| `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` | string | empty |  |  | Comma-separated private ranges that outbound calls of the API (webhook and notification channels, self-hosted Jira or GitLab, an SMTP relay) may reach, for example `10.20.0.0/16`. Each entry must be a CIDR inside `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` or `fc00::/7`, otherwise the API refuses to start. The list applies to every organization, so name only the subnets of your own services; the API refuses to start when it is set together with `SIGNUP_MODE=open`. Loopback, link-local, CGNAT and cloud metadata addresses stay blocked whatever the list says. |
 
 ### Internal entitlements API
 
@@ -412,7 +416,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 |---|---|---|---|---|---|
 | `ADMIN_ALLOWED_CIDRS` | list | `127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7` |  |  | Comma-separated CIDRs or addresses of the client networks that may reach the platform admin console (`/api/v1/admin`); others get 403 `ADMIN_NETWORK_NOT_ALLOWED`. Default: private networks only. Set `0.0.0.0/0,::/0` for an internet-facing console. The client address is the TCP peer unless it is in `SERVER_TRUSTED_PROXIES` (then `X-Forwarded-For`): behind the web console and the gateway, list them there, or every console request looks like it comes from their private address. |
 | `ADMIN_LISTEN_ADDR` | string | empty |  |  | The platform admin console's own listener, a loopback or private IP and port, e.g. `10.0.0.5:8081` (any other address needs `ADMIN_LISTEN_ALLOW_ALL_INTERFACES=true`). Set: `/api/v1/admin` is served only there (plain HTTP, internal: the gateway's admin site and the web console reach it) and the main listener answers 404 for it; the admin listener answers 404 for everything else but `/health`. Empty: the console shares the main listener. |
-| `OPENCTEM_PLANE` | all \| tenant \| admin | `all` |  |  | What this API process serves (RFC-022 revision 21). `all` (default, self-host): everything in one process. `tenant`: never registers the console routes, refuses `ADMIN_LISTEN_ADDR` and console database credentials, and runs the background work. `admin`: its main listener serves only the console API and `/health`, needs the console database role (`DB_ADMIN_USER`) and a loopback or private listen address (or `ADMIN_LISTEN_ALLOW_ALL_INTERFACES=true`), and runs no background work and no sensor binding. A hosted deployment runs the same image twice, as `tenant` and as `admin`. |
+| `OPENCTEM_PLANE` | all \| tenant \| admin | `all` |  |  | What this API process serves. `all` (default, self-host): everything in one process. `tenant`: never registers the console routes, refuses `ADMIN_LISTEN_ADDR` and console database credentials, and runs the background work. `admin`: its main listener serves only the console API and `/health`, needs the console database role (`DB_ADMIN_USER`) and a loopback or private listen address (or `ADMIN_LISTEN_ALLOW_ALL_INTERFACES=true`), and runs no background work and no sensor binding. A hosted deployment runs the same image twice, as `tenant` and as `admin`. |
 | `ADMIN_LISTEN_ALLOW_ALL_INTERFACES` | bool | `false` |  |  | `true` lets `ADMIN_LISTEN_ADDR` be any address: every interface (`:8081`, `0.0.0.0:8081`), a public or link-local IP, or a hostname. Off: only a loopback or private IP (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `fc00::/7`) is accepted and the API refuses to start otherwise. Set it only when the network itself keeps the port private, such as a container network with no published port. |
 | `ADMIN_ELEVATION` | string | `required` |  |  | `required`: platform administrators act as read-only until they elevate their console session to a role no higher than their own, for 15 to 60 minutes, with a reason and a fresh confirmation (audited). `off`: they act as their own role from sign-in. |
 
@@ -455,6 +459,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `AI_AUTO_TRIAGE_DEFAULT_ENABLED` | bool | `false` |  |  | Platform default for automatic triage of new findings; an organization's own setting wins. |
 | `AI_AUTO_TRIAGE_DEFAULT_SEVERITIES` | list | `critical,high` |  |  | Platform default severities for automatic triage. |
 | `AI_AUTO_TRIAGE_DELAY` | duration | `60s` |  |  | Delay before an automatic triage job runs. |
+| `AI_MASK_MAP_TTL` | duration | `168h` |  |  | How long the platform keeps a run's AI masking map (placeholder to real value, encrypted) so it can turn the model's output back into real values; expired maps are purged. |
 | `AI_MAX_TOKENS` | int | `4096` |  |  | Maximum tokens per request. |
 | `AI_PLATFORM_MODEL` | string | `claude-sonnet-4-20250514` |  |  | Model name passed to the provider. |
 | `AI_PLATFORM_PROVIDER` | string | `claude` |  |  | Provider used for organizations in platform mode: `claude`, `openai` or `gemini`. A self-hosted or gateway model (`openai_compatible`, with a base URL) is set in the console, not here. |

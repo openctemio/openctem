@@ -7,7 +7,7 @@ import { Main } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ErrorState, PageHeader, RelativeTime } from '@/features/shared'
+import { ErrorState, PageHeader, PageStack, RelativeTime } from '@/features/shared'
 import { TonePill, type PillTone } from '@/features/shared/components/tone-pill'
 import { useTranslation } from '@/context/i18n-provider'
 import { useAdminOperations } from '@console/features/admin-console/api/use-admin-operations'
@@ -540,29 +540,29 @@ export default function AdminHealthPage() {
   const checkedAt = sys.data?.checked_at ?? ops.data?.checked_at
   return (
     <Main>
-      <PageHeader
-        title={t('admin.nav.health', 'Health')}
-        description={t(
-          'admin.health.description',
-          'The health of this installation: services, storage, backup, certificates, version, work queues, sensors and background jobs. Read-only: backup, restore and upgrade run from the kit on the host.'
-        )}
-      >
-        {checkedAt && (
-          <span className="flex items-center gap-2 text-xs text-muted-foreground">
-            {sys.data && (
-              <TonePill
-                tone={levelTone(sys.data.level)}
-                label={t(
-                  `admin.system.level.${levelKey(sys.data.level)}`,
-                  levelKey(sys.data.level)
-                )}
-              />
-            )}
-            {t('admin.overview.updated', 'Updated')} <RelativeTime date={checkedAt} />
-          </span>
-        )}
-      </PageHeader>
-      <div className="mt-5 space-y-5">
+      <PageStack>
+        <PageHeader
+          title={t('admin.nav.health', 'Health')}
+          description={t(
+            'admin.health.description',
+            'The health of this installation: services, storage, backup, certificates, version, work queues, sensors and background jobs. Read-only: backup, restore and upgrade run from the kit on the host.'
+          )}
+        >
+          {checkedAt && (
+            <span className="flex items-center gap-2 text-xs text-muted-foreground">
+              {sys.data && (
+                <TonePill
+                  tone={levelTone(sys.data.level)}
+                  label={t(
+                    `admin.system.level.${levelKey(sys.data.level)}`,
+                    levelKey(sys.data.level)
+                  )}
+                />
+              )}
+              {t('admin.overview.updated', 'Updated')} <RelativeTime date={checkedAt} />
+            </span>
+          )}
+        </PageHeader>
         {sys.error && !sys.data ? (
           <ErrorState
             title={t('admin.healthPage.system', 'system')}
@@ -585,7 +585,7 @@ export default function AdminHealthPage() {
         ) : (
           <WorkSections o={ops.data} />
         )}
-      </div>
+      </PageStack>
     </Main>
   )
 }

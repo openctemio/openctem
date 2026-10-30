@@ -68,6 +68,7 @@ type Dashboard struct {
 	schedule     Schedule
 	origin       Origin
 	widgets      []Widget
+	flowPanelAt  *time.Time // when the exposure flow panel was offered; nil = never
 	createdAt    time.Time
 	updatedAt    time.Time
 }
@@ -97,6 +98,9 @@ func NewDashboard(tenantID, userID shared.ID, name, description string, columns 
 		description: description,
 		columns:     columns,
 		widgets:     widgets,
+		// A new dashboard is never auto-offered the exposure flow panel
+		// (matches the column default).
+		flowPanelAt: &now,
 		createdAt:   now,
 		updatedAt:   now,
 	}, nil
@@ -139,6 +143,7 @@ type Stored struct {
 	Schedule             Schedule
 	Origin               Origin
 	Widgets              []Widget
+	FlowPanelAt          *time.Time
 	CreatedAt, UpdatedAt time.Time
 }
 
@@ -170,6 +175,7 @@ func Reconstruct(s Stored) *Dashboard {
 		schedule:     s.Schedule,
 		origin:       s.Origin,
 		widgets:      s.Widgets,
+		flowPanelAt:  s.FlowPanelAt,
 		createdAt:    s.CreatedAt,
 		updatedAt:    s.UpdatedAt,
 	}
@@ -266,21 +272,22 @@ func inBounds(v int) bool { return v >= 0 && v <= maxCoord }
 
 // Accessors.
 
-func (d *Dashboard) ID() shared.ID        { return d.id }
-func (d *Dashboard) TenantID() shared.ID  { return d.tenantID }
-func (d *Dashboard) UserID() shared.ID    { return d.userID }
-func (d *Dashboard) Kind() Kind           { return d.kind }
-func (d *Dashboard) IsOrgDefault() bool   { return d.isOrgDefault }
-func (d *Dashboard) Position() int        { return d.position }
-func (d *Dashboard) Schedule() Schedule   { return d.schedule }
-func (d *Dashboard) Origin() Origin       { return d.origin }
-func (d *Dashboard) Name() string         { return d.name }
-func (d *Dashboard) Description() string  { return d.description }
-func (d *Dashboard) Columns() int         { return d.columns }
-func (d *Dashboard) IsDefault() bool      { return d.isDefault }
-func (d *Dashboard) Widgets() []Widget    { return d.widgets }
-func (d *Dashboard) CreatedAt() time.Time { return d.createdAt }
-func (d *Dashboard) UpdatedAt() time.Time { return d.updatedAt }
+func (d *Dashboard) ID() shared.ID           { return d.id }
+func (d *Dashboard) TenantID() shared.ID     { return d.tenantID }
+func (d *Dashboard) UserID() shared.ID       { return d.userID }
+func (d *Dashboard) Kind() Kind              { return d.kind }
+func (d *Dashboard) IsOrgDefault() bool      { return d.isOrgDefault }
+func (d *Dashboard) Position() int           { return d.position }
+func (d *Dashboard) Schedule() Schedule      { return d.schedule }
+func (d *Dashboard) Origin() Origin          { return d.origin }
+func (d *Dashboard) Name() string            { return d.name }
+func (d *Dashboard) Description() string     { return d.description }
+func (d *Dashboard) Columns() int            { return d.columns }
+func (d *Dashboard) IsDefault() bool         { return d.isDefault }
+func (d *Dashboard) Widgets() []Widget       { return d.widgets }
+func (d *Dashboard) FlowPanelAt() *time.Time { return d.flowPanelAt }
+func (d *Dashboard) CreatedAt() time.Time    { return d.createdAt }
+func (d *Dashboard) UpdatedAt() time.Time    { return d.updatedAt }
 
 // Repository persists dashboards. Every method is tenant-bound; personal
 // methods also filter on the owner, organization methods on kind.
@@ -294,6 +301,15 @@ type Repository interface {
 	// Update writes name, description, columns and layout (either kind).
 	Update(ctx context.Context, d *Dashboard) error
 	Delete(ctx context.Context, tenantID, userID, id shared.ID) error
+	// AddFlowPanel writes d's layout and sets flow_panel_at = now in one
+	// UPDATE guarded by flow_panel_at IS NULL (either kind, by d.Kind()).
+	// It reports whether this call did the write: false means the panel was
+	// already offered (or the row is not the caller's) and nothing changed.
+	AddFlowPanel(ctx context.Context, d *Dashboard, now time.Time) (bool, error)
+	// MarkFlowPanel sets flow_panel_at = now when it is NULL, without
+	// touching the layout (the panel is already there, or the layout is
+	// deliberately empty). Same guard and scope as AddFlowPanel.
+	MarkFlowPanel(ctx context.Context, d *Dashboard, now time.Time) (bool, error)
 	// SetDefault clears any other default for the user and marks id as the
 	// single default, atomically. Returns shared.ErrNotFound if id is absent.
 	SetDefault(ctx context.Context, tenantID, userID, id shared.ID) error

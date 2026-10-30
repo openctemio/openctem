@@ -10,6 +10,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
+import { HealthStatus } from '@/components/ui/health-status'
 import { Progress } from '@/components/ui/progress'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -132,8 +133,8 @@ export function AssetCompatibilityWarning({
               <Tooltip>
                 <TooltipTrigger asChild>
                   <div className="flex items-center gap-1">
-                    <Info className="h-3.5 w-3.5 text-slate-500" />
-                    <span className="text-slate-500">
+                    <Info className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="text-muted-foreground">
                       {t('scans.compat.unclassifiedCount', undefined, {
                         count: preview.unclassifiedAssets,
                       })}
@@ -193,30 +194,13 @@ export function AssetCompatibilityWarning({
                         <td className="py-1 text-end tabular-nums">{item.count}</td>
                         <td className="py-1 text-end">
                           {item.isCompatible ? (
-                            <Badge
-                              variant="outline"
-                              className="border-success/30 bg-success/10 text-success"
-                            >
-                              {t('scans.compat.compatible')}
-                            </Badge>
+                            <HealthStatus state="ok" label={t('scans.compat.compatible')} />
                           ) : (
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Badge
-                                    variant="outline"
-                                    className="border-destructive/30 bg-destructive/10 text-destructive"
-                                  >
-                                    {t('scans.compat.skipped')}
-                                  </Badge>
-                                </TooltipTrigger>
-                                {item.reason && (
-                                  <TooltipContent>
-                                    <p>{item.reason}</p>
-                                  </TooltipContent>
-                                )}
-                              </Tooltip>
-                            </TooltipProvider>
+                            <HealthStatus
+                              state="off"
+                              label={t('scans.compat.skipped')}
+                              title={item.reason || undefined}
+                            />
                           )}
                         </td>
                       </tr>

@@ -135,3 +135,21 @@ func TestMergeCTISIntoAsset_ActiveAssetNotFlaggedRecovered(t *testing.T) {
 		t.Fatalf("an already-active asset must not be flagged recovered, got %v", recovered)
 	}
 }
+
+// An inactive asset found again is not "recovered": the store keeps it
+// inactive, so the history must not say otherwise.
+func TestMergeCTISIntoAsset_InactiveNotRecovered(t *testing.T) {
+	p := newProcessorWithHistory(nil)
+	a := newTestAsset(t, shared.NewID(), "closed.example.com")
+	a.Deactivate()
+
+	var recovered []shared.ID
+	p.mergeCTISIntoAsset(a, &ctis.Asset{}, nil, time.Time{}, &recovered)
+
+	if a.Status() != asset.StatusInactive {
+		t.Fatalf("status %q, want inactive", a.Status())
+	}
+	if len(recovered) != 0 {
+		t.Fatalf("an inactive asset must not be flagged recovered, got %v", recovered)
+	}
+}

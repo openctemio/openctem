@@ -46,7 +46,7 @@ func TestUpdatePreferences_ReturnsPreferencesObject(t *testing.T) {
 		t.Fatal(err)
 	}
 	repo := &prefsUserRepo{u: u}
-	h := NewUserHandler(tenant.NewUserService(repo, logger.NewNop()), nil, nil, validator.New(), logger.NewNop())
+	h := NewUserHandler(tenant.NewUserService(repo, logger.NewNop()), nil, validator.New(), logger.NewNop())
 
 	body, _ := json.Marshal(map[string]string{"theme": "dark", "language": "vi"})
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/users/me/preferences", bytes.NewReader(body))
@@ -71,5 +71,40 @@ func TestUpdatePreferences_ReturnsPreferencesObject(t *testing.T) {
 	}
 	if p := repo.u.Preferences(); p.Theme != "dark" || p.Language != "vi" {
 		t.Errorf("stored preferences = %+v, want dark/vi", p)
+	}
+}
+
+// The findings work-view choice is set, kept by an unrelated save, cleared
+// back to the organization default, and validated.
+func TestUpdatePreferences_FindingsInformational(t *testing.T) {
+	u, err := user.New("grace@example.com", "Grace")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := &prefsUserRepo{u: u}
+	h := NewUserHandler(tenant.NewUserService(repo, logger.NewNop()), nil, validator.New(), logger.NewNop())
+	put := func(body string) (int, map[string]any) {
+		req := httptest.NewRequest(http.MethodPut, "/api/v1/users/me/preferences", bytes.NewReader([]byte(body)))
+		req = req.WithContext(context.WithValue(req.Context(), middleware.LocalUserKey, repo.u))
+		rec := httptest.NewRecorder()
+		h.UpdatePreferences(rec, req)
+		var got map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &got)
+		return rec.Code, got
+	}
+	if code, got := put(`{"findings_informational":"include"}`); code != http.StatusOK || got["findings_informational"] != "include" {
+		t.Fatalf("include: %d %v", code, got)
+	}
+	if code, got := put(`{"theme":"dark"}`); code != http.StatusOK || got["findings_informational"] != "include" {
+		t.Fatalf("an unrelated save dropped the choice: %d %v", code, got)
+	}
+	if code, got := put(`{"findings_informational":"default"}`); code != http.StatusOK || got["findings_informational"] != "default" {
+		t.Fatalf("default: %d %v", code, got)
+	}
+	if repo.u.Preferences().FindingsIncludeInformational != nil {
+		t.Fatal("default must clear the stored choice")
+	}
+	if code, _ := put(`{"findings_informational":"always"}`); code != http.StatusUnprocessableEntity {
+		t.Fatalf("unknown value = %d, want 422", code)
 	}
 }

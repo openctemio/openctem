@@ -118,7 +118,7 @@ classification: built-in → catalogue; certified → signed attestation; otherw
 | `builtin` | embedded in the signed sensor | yes | yes |
 | `certified` | signed attestation over descriptor digest, artifact digest and conformance per `capability@major` | yes | yes |
 | `tenant-verified` | self-test passed + tenant admin classification (step-up, audited) | sandbox `required` | yes |
-| `unverified` | default | sandbox `required` on an enforcing backend, as T2 | drafts and admin single checks only |
+| `unverified` | default | as T2; a tool delivered to the sensor (not installed by its operator) only with sandbox `required` on a backend that enforces its network class | drafts and admin single checks only (planned; today a declared tool runs in any workflow, as T2) |
 
 - Platform-operated sensors load only `builtin` and `certified` tools.
 - A classification never goes below the capability floor.
@@ -182,7 +182,10 @@ classification: built-in → catalogue; certified → signed attestation; otherw
   128 per organization, cannot be edited or deleted through the API (only
   deactivated), and is never created by a platform sensor. So a new tool
   needs no catalog migration: `internal/app/sensor/declared_tools.go`,
-  `pkg/domain/tool/declared.go`.
+  `pkg/domain/tool/declared.go`. The row also keeps each implemented
+  capability's param mapping (`metadata.params`), so capability steps offer
+  the tool and map their standard params to its keys
+  ([scan-stages.md](scan-stages.md) §1.2, `internal/app/scan/step_plan.go`).
 
 ## 7. Zero-code tools
 

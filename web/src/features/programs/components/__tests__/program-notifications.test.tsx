@@ -120,7 +120,7 @@ describe('ProgramNotifications', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Detach Team Slack' }))
     const dialog = await screen.findByRole('alertdialog')
     expect(api.detachProgramChannel).not.toHaveBeenCalled()
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Detach' }))
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Detach channel' }))
     await waitFor(() => expect(api.detachProgramChannel).toHaveBeenCalledWith('p1', 'i-slack'))
   })
 

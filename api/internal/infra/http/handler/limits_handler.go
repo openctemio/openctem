@@ -492,6 +492,8 @@ func LimitMessage(lim *limits.ErrLimitReached) string {
 		limits.OrgsPerUser: "organizations per person", limits.Findings: "findings",
 		limits.PlatformScansPerDay: "shared sensor scans a day", limits.PlatformScansConcurrent: "shared sensor jobs at a time",
 		limits.LifecycleSubStatuses: "finding sub-statuses", limits.LifecycleSchemes: "finding lifecycles",
+		limits.ContentSources: "rule sources", limits.ContentStorageMB: "MiB of rule snapshots",
+		limits.ContentSnapshotMaxMB: "MiB per rule snapshot",
 	}[lim.Key]
 	if label == "" {
 		label = string(lim.Key)
@@ -522,11 +524,14 @@ func WriteFeatureDenied(w http.ResponseWriter, err error) bool {
 // FeatureMessage is the person-facing text of a feature refusal.
 func FeatureMessage(feature string) string {
 	label := map[string]string{
-		limits.FeatureSSOConnections: "Single sign-on connections",
-		limits.FeatureSSOEnforcement: "Requiring single sign-on",
-		limits.FeatureSCIM:           "SCIM provisioning",
-		limits.FeatureSSOGroupLinks:  "Identity provider group links",
-		limits.FeatureLDAP:           "LDAP sign-in",
+		limits.FeatureSSOConnections:      "Single sign-on connections",
+		limits.FeatureSSOEnforcement:      "Requiring single sign-on",
+		limits.FeatureSCIM:                "SCIM provisioning",
+		limits.FeatureSSOGroupLinks:       "Identity provider group links",
+		limits.FeatureLDAP:                "LDAP sign-in",
+		limits.FeatureContentWebhook:      "Rule source webhooks",
+		limits.FeatureContentReviewPolicy: "The review promotion policy for rule sources",
+		limits.FeatureContentPrivateGit:   "Rule sources on private network hosts",
 	}[feature]
 	if label == "" {
 		label = feature

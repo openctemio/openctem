@@ -259,6 +259,11 @@ type Integration struct {
 	// Connection status
 	status        Status
 	statusMessage string
+	// statusCode is the machine code of the last failure (the
+	// INTEGRATION_* codes of pkg/apierror), empty when connected or
+	// unknown. The client words the failure from it; statusMessage is the
+	// safe English fallback.
+	statusCode string
 
 	// Authentication
 	authType             AuthType
@@ -376,6 +381,7 @@ func (i *Integration) Category() Category           { return i.category }
 func (i *Integration) Provider() Provider           { return i.provider }
 func (i *Integration) Status() Status               { return i.status }
 func (i *Integration) StatusMessage() string        { return i.statusMessage }
+func (i *Integration) StatusCode() string           { return i.statusCode }
 func (i *Integration) AuthType() AuthType           { return i.authType }
 func (i *Integration) BaseURL() string              { return i.baseURL }
 func (i *Integration) CredentialsEncrypted() string { return i.credentialsEncrypted }
@@ -429,6 +435,7 @@ func (i *Integration) SetStatus(status Status) {
 
 func (i *Integration) SetStatusMessage(message string) {
 	i.statusMessage = message
+	i.statusCode = ""
 	i.updatedAt = time.Now()
 }
 
@@ -440,24 +447,31 @@ func (i *Integration) SetConnected() {
 		i.status = StatusConnected
 	}
 	i.statusMessage = ""
+	i.statusCode = ""
 	i.syncError = ""
 	now := time.Now()
 	i.lastSyncAt = &now
 	i.updatedAt = now
 }
 
-// SetError records a failed connection. A disabled integration stays
-// disabled; the reason is still recorded.
-func (i *Integration) SetError(err string) {
+// SetFailure records a failed connection with its code and a safe
+// sentence (never the upstream error's text; that goes to the log). A
+// disabled integration stays disabled; the reason is still recorded.
+func (i *Integration) SetFailure(code, message string) {
 	if i.status != StatusDisabled {
 		i.status = StatusError
 	}
-	i.syncError = err
-	i.statusMessage = err
+	i.statusCode = code
+	i.syncError = message
+	i.statusMessage = message
 	now := time.Now()
 	i.lastSyncAt = &now
 	i.updatedAt = now
 }
+
+// RestoreStatusCode sets the stored failure code when the integration is
+// read back from storage.
+func (i *Integration) RestoreStatusCode(code string) { i.statusCode = code }
 
 func (i *Integration) SetDisconnected() {
 	i.status = StatusDisconnected

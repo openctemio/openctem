@@ -5,6 +5,7 @@ import { useNodesState, useEdgesState, type Edge } from '@xyflow/react'
 
 import { Main } from '@/components/layout'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { confirmName } from '@/lib/confirm-name'
 import { useTranslation } from '@/context/i18n-provider'
 import type { ColumnDef } from '@tanstack/react-table'
 import {
@@ -66,7 +67,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
-import { Can, Permission } from '@/lib/permissions'
+import { Can, Permission, useHasPermission } from '@/lib/permissions'
 import { get, put, csrfFetch } from '@/lib/api/client'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { workflowEndpoints } from '@/lib/api/endpoints'
@@ -79,7 +80,11 @@ import {
   invalidateWorkflowsCache,
   invalidateWorkflowRunsCache,
 } from '@/lib/api/workflow-hooks'
-import { AutomationCanvas } from '@/features/workflows/components/automation-canvas'
+import { AutomationWorkbench } from '@/features/workflows/components/automation-workbench'
+import {
+  AutomationRunSheet,
+  useRunStatusLabel,
+} from '@/features/workflows/components/automation-run-sheet'
 import {
   fromApiGraph,
   starterGraph,
@@ -92,7 +97,6 @@ import type {
   CreateWorkflowRequest,
   UpdateWorkflowGraphRequest,
 } from '@/lib/api/workflow-types'
-import { getUnsupportedWorkflowFeatures } from '@/lib/api/workflow-types'
 import { useAutomationLabels } from '@/features/workflows/lib/use-automation-labels'
 
 type T = ReturnType<typeof useTranslation>['t']
@@ -138,11 +142,11 @@ function UnsupportedBadge({ features }: { features: string[] }) {
     <Badge
       variant="outline"
       className="border-warning/30 bg-warning/10 text-warning text-xs"
-      title={t('automations.unsupported.badgeTitle', 'Not supported: {features}', {
+      title={t('automations.unsupported.badgeTitle', 'Removed types: {features}', {
         features: features.map(labels.feature).join(', '),
       })}
     >
-      {t('automations.unsupported.badge', 'Unsupported')}
+      {t('automations.unsupported.badge', 'Removed type')}
     </Badge>
   )
 }
@@ -155,23 +159,25 @@ function getActionNames(workflow: Workflow): string[] {
     .map((n) => n.name)
 }
 
-// Workflow card component for the trigger mutation
-function WorkflowTriggerButton({
-  workflowId,
-  workflowName,
+// Run now starts the workflow's actions for real (notifications, ticket and
+// other changes), so it asks first. One dialog for the row menu and the sheet.
+function WorkflowRunDialog({
+  workflow,
+  onClose,
 }: {
-  workflowId: string
-  workflowName: string
+  workflow: Workflow | null
+  onClose: () => void
 }) {
   const { t } = useTranslation()
-  const { trigger, isMutating } = useTriggerWorkflow(workflowId)
+  const { trigger } = useTriggerWorkflow(workflow?.id ?? '')
 
   const handleRun = async () => {
+    if (!workflow) return
     try {
       await trigger({ trigger_type: 'manual' })
       toast.success(
         t('automations.toast.triggered', 'Workflow "{name}" triggered successfully', {
-          name: workflowName,
+          name: workflow.name,
         })
       )
       await invalidateWorkflowRunsCache()
@@ -180,20 +186,24 @@ function WorkflowTriggerButton({
         getErrorMessage(
           err,
           t('automations.toast.triggerFailed', 'Failed to trigger workflow "{name}"', {
-            name: workflowName,
+            name: workflow.name,
           })
         )
       )
+    } finally {
+      onClose()
     }
   }
 
   return (
-    <DropdownMenuItem onClick={handleRun} disabled={isMutating}>
-      <Play className="me-2 h-4 w-4" />
-      {isMutating
-        ? t('automations.menu.running', 'Running...')
-        : t('automations.menu.runNow', 'Run now')}
-    </DropdownMenuItem>
+    <ConfirmDialog
+      open={workflow !== null}
+      onOpenChange={(open) => !open && onClose()}
+      title={t('confirm.automation.runTitle', undefined, { name: workflow?.name ?? '' })}
+      desc={t('confirm.automation.runDesc')}
+      confirmText={t('confirm.automation.runBtn')}
+      handleConfirm={handleRun}
+    />
   )
 }
 
@@ -206,9 +216,17 @@ export default function WorkflowsPage() {
   // The workflow waiting for delete confirmation. Its id keys the delete
   // mutation, so the hook has the right URL by the time the user confirms.
   const [pendingDelete, setPendingDelete] = useState<Workflow | null>(null)
+  // Run now and switching a workflow on start its actions: both ask first.
+  const [pendingRun, setPendingRun] = useState<Workflow | null>(null)
+  const [pendingActivate, setPendingActivate] = useState<Workflow | null>(null)
   const deleteWorkflowId = pendingDelete?.id ?? null
   const { t } = useTranslation()
   const labels = useAutomationLabels()
+  const runStatusLabel = useRunStatusLabel()
+  const canWrite = useHasPermission(Permission.AutomationsWrite)
+  const canPublish = useHasPermission(Permission.AutomationsPublish)
+  // The run whose trace is open (a row of Recent executions).
+  const [openRunId, setOpenRunId] = useState<string | null>(null)
   const triggerOf = (w: Workflow) => getTriggerDisplay(w, t, labels.trigger)
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [newWorkflowName, setNewWorkflowName] = useState('')
@@ -284,7 +302,10 @@ export default function WorkflowsPage() {
       }
 
       // Atomic update - replaces entire graph in a single transaction
-      await put<Workflow>(workflowEndpoints.updateGraph(editingWorkflow.id), request)
+      const updated = await put<Workflow>(
+        workflowEndpoints.updateGraph(editingWorkflow.id),
+        request
+      )
 
       toast.success(
         t('automations.toast.saved', 'Workflow "{name}" saved successfully', {
@@ -292,7 +313,8 @@ export default function WorkflowsPage() {
         })
       )
       await invalidateWorkflowsCache()
-      setEditingWorkflow(null)
+      // Stay on the saved draft: simulate, preview and going live follow a save.
+      setEditingWorkflow(updated ?? editingWorkflow)
     } catch (err) {
       console.error('Failed to save workflow:', err)
       toast.error(
@@ -440,7 +462,19 @@ export default function WorkflowsPage() {
     setSelectedWorkflow(workflow)
   }
 
-  const handleEditInBuilder = (workflow: Workflow) => {
+  const handleEditInBuilder = async (listed: Workflow) => {
+    // List items may omit the graph; load the full automation to edit it.
+    let workflow = listed
+    if (!listed.nodes) {
+      try {
+        workflow = await get<Workflow>(workflowEndpoints.get(listed.id))
+      } catch (err) {
+        toast.error(
+          getErrorMessage(err, t('automations.toast.loadFailed', 'Could not load the workflow'))
+        )
+        return
+      }
+    }
     // Load the workflow into the visual builder for editing
     setEditingWorkflow(workflow)
     // A workflow without nodes opens as the starter graph (one manual trigger).
@@ -516,7 +550,7 @@ export default function WorkflowsPage() {
         <div className="min-w-0 max-w-[360px]">
           <div className="flex min-w-0 items-center gap-2">
             <p className="truncate text-sm font-medium">{row.original.name}</p>
-            <UnsupportedBadge features={getUnsupportedWorkflowFeatures(row.original)} />
+            <UnsupportedBadge features={row.original.unsupported_features ?? []} />
           </div>
           {row.original.description && (
             <p className="truncate text-xs text-muted-foreground">{row.original.description}</p>
@@ -614,21 +648,28 @@ export default function WorkflowsPage() {
       cell: ({ row }) => {
         // An unsupported workflow can be switched off, never on (API 400).
         const blocked =
-          !row.original.is_active && getUnsupportedWorkflowFeatures(row.original).length > 0
+          !canPublish ||
+          (!row.original.is_active && (row.original.unsupported_features ?? []).length > 0)
         return (
           <div onClick={(e) => e.stopPropagation()}>
             <Switch
               checked={row.original.is_active}
               disabled={blocked}
               title={
-                blocked
-                  ? t(
-                      'automations.unsupported.switchTitle',
-                      'Uses an unsupported trigger or action'
-                    )
-                  : undefined
+                !canPublish
+                  ? t('automations.golive.noPermission', 'Needs the publish permission')
+                  : blocked
+                    ? t(
+                        'automations.unsupported.switchTitle',
+                        'Uses an unsupported trigger or action'
+                      )
+                    : undefined
               }
-              onCheckedChange={(checked) => handleToggleWorkflow(row.original, checked)}
+              onCheckedChange={(checked) =>
+                checked
+                  ? setPendingActivate(row.original)
+                  : void handleToggleWorkflow(row.original, false)
+              }
               aria-label={
                 row.original.is_active
                   ? t('automations.switch.deactivate', 'Deactivate workflow')
@@ -668,7 +709,10 @@ export default function WorkflowsPage() {
                 <Pencil className="me-2 h-4 w-4" />
                 {t('automations.menu.editInBuilder', 'Edit in builder')}
               </DropdownMenuItem>
-              <WorkflowTriggerButton workflowId={workflow.id} workflowName={workflow.name} />
+              <DropdownMenuItem onSelect={() => setPendingRun(workflow)} disabled={!canWrite}>
+                <Play className="me-2 h-4 w-4" />
+                {t('automations.menu.runNow', 'Run now')}
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => handleDuplicateWorkflow(workflow)}>
                 <Copy className="me-2 h-4 w-4" />
@@ -678,7 +722,7 @@ export default function WorkflowsPage() {
               <DropdownMenuItem
                 className="text-destructive focus:text-destructive"
                 onSelect={() => setPendingDelete(workflow)}
-                disabled={isDeleting && deleteWorkflowId === workflow.id}
+                disabled={!canPublish || (isDeleting && deleteWorkflowId === workflow.id)}
               >
                 <Trash2 className="me-2 h-4 w-4" />
                 {t('confirm.delete', 'Delete')}
@@ -708,7 +752,21 @@ export default function WorkflowsPage() {
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title={t('automations.columns.status', 'Status')} />
       ),
-      cell: ({ row }) => <RunStatusBadge status={row.original.status} />,
+      cell: ({ row }) => (
+        <RunStatusBadge status={row.original.status} label={runStatusLabel(row.original.status)} />
+      ),
+    },
+    {
+      id: 'mode',
+      enableSorting: false,
+      header: t('automations.columns.mode', 'Mode'),
+      cell: ({ row }) => (
+        <span className="text-sm text-muted-foreground">
+          {row.original.mode === 'simulate'
+            ? t('automations.mode.simulate', 'Simulate')
+            : t('automations.mode.live', 'Live')}
+        </span>
+      ),
     },
     {
       id: 'nodes',
@@ -840,10 +898,7 @@ export default function WorkflowsPage() {
                   columns={workflowColumns}
                   data={workflows}
                   searchKey="name"
-                  searchPlaceholder={t(
-                    'automations.table.searchPlaceholder',
-                    'Search workflows...'
-                  )}
+                  searchPlaceholder={t('automations.table.searchPlaceholder', 'Search workflows…')}
                   getRowId={(w) => w.id}
                   onRowClick={handleViewWorkflow}
                   emptyMessage={t('automations.table.noMatch', 'No workflows match')}
@@ -871,6 +926,7 @@ export default function WorkflowsPage() {
                   showColumnToggle={false}
                   showPagination={false}
                   getRowId={(r) => r.id}
+                  onRowClick={(r) => setOpenRunId(r.id)}
                   toolbarStart={
                     <span className="text-sm text-muted-foreground">
                       {t('automations.executions.latest', 'Latest {n} runs', { n: runs.length })}
@@ -925,7 +981,11 @@ export default function WorkflowsPage() {
                         <RefreshCw className="me-2 h-4 w-4" />
                         {t('automations.builder.reset', 'Reset')}
                       </Button>
-                      <Button size="sm" onClick={handleSaveWorkflow} disabled={isSaving}>
+                      <Button
+                        size="sm"
+                        onClick={handleSaveWorkflow}
+                        disabled={isSaving || !canWrite}
+                      >
                         <Save className="me-2 h-4 w-4" />
                         {isSaving
                           ? t('automations.builder.saving', 'Saving...')
@@ -937,7 +997,8 @@ export default function WorkflowsPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="p-0">
-                  <AutomationCanvas
+                  <AutomationWorkbench
+                    workflow={editingWorkflow}
                     nodes={nodes}
                     edges={edges}
                     setNodes={setNodes}
@@ -950,6 +1011,21 @@ export default function WorkflowsPage() {
             </TabsContent>
           </Tabs>
         </PageStack>
+        <WorkflowRunDialog workflow={pendingRun} onClose={() => setPendingRun(null)} />
+        <ConfirmDialog
+          open={pendingActivate !== null}
+          onOpenChange={(open) => !open && setPendingActivate(null)}
+          title={t('confirm.automation.activateTitle', undefined, {
+            name: pendingActivate?.name ?? '',
+          })}
+          desc={t('confirm.automation.activateDesc')}
+          confirmText={t('confirm.automation.activateBtn')}
+          handleConfirm={async () => {
+            const workflow = pendingActivate
+            setPendingActivate(null)
+            if (workflow) await handleToggleWorkflow(workflow, true)
+          }}
+        />
         <ConfirmDialog
           open={pendingDelete !== null}
           onOpenChange={(open) => !open && !isDeleting && setPendingDelete(null)}
@@ -962,12 +1038,29 @@ export default function WorkflowsPage() {
             'The workflow and its steps are deleted and its triggers stop starting it. This cannot be undone.'
           )}
           confirmText={
-            isDeleting ? t('confirm.deleting', 'Deleting…') : t('confirm.delete', 'Delete')
+            isDeleting ? t('confirm.deleting', 'Deleting…') : t('confirm.automation.deleteBtn')
           }
           isLoading={isDeleting}
+          typeToConfirm={
+            pendingDelete ? confirmName(pendingDelete.name, pendingDelete.id) : undefined
+          }
           handleConfirm={() => (pendingDelete ? handleDeleteWorkflow(pendingDelete) : undefined)}
         />
       </Main>
+
+      {openRunId &&
+        (() => {
+          const run = runs.find((r) => r.id === openRunId)
+          const wf = run ? workflows.find((w) => w.id === run.workflow_id) : undefined
+          return (
+            <AutomationRunSheet
+              runId={openRunId}
+              workflowName={wf?.name}
+              nodeName={(key) => wf?.nodes?.find((n) => n.node_key === key)?.name}
+              onClose={() => setOpenRunId(null)}
+            />
+          )
+        })()}
 
       {/* Workflow Detail Sheet */}
       {selectedWorkflow &&
@@ -976,7 +1069,7 @@ export default function WorkflowsPage() {
           const successRate =
             wf.total_runs > 0 ? Math.round((wf.successful_runs / wf.total_runs) * 100) : 0
           const actions = getActionNames(wf)
-          const unsupported = getUnsupportedWorkflowFeatures(wf)
+          const unsupported = wf.unsupported_features ?? []
           return (
             <DetailSheet
               open
@@ -998,13 +1091,21 @@ export default function WorkflowsPage() {
                           ? t('automations.status.active', 'Active')
                           : t('automations.status.inactive', 'Inactive')}
                       </Badge>
+                      <Badge variant="outline" className="text-xs">
+                        {wf.mode === 'live'
+                          ? t('automations.mode.live', 'Live')
+                          : t('automations.mode.simulate', 'Simulate')}
+                      </Badge>
                       <UnsupportedBadge features={unsupported} />
                     </>
                   }
                   meta={[triggerOf(wf)]}
                   actions={
                     <>
-                      <WorkflowRunButton workflow={wf} size="sm" />
+                      <Button size="sm" onClick={() => setPendingRun(wf)}>
+                        <Play className="h-4 w-4" />
+                        {t('automations.menu.runNow', 'Run now')}
+                      </Button>
                       <Can permission={Permission.AutomationsWrite} mode="disable">
                         <Button size="sm" variant="outline" onClick={() => handleEditInBuilder(wf)}>
                           <Pencil className="h-4 w-4" />
@@ -1018,6 +1119,19 @@ export default function WorkflowsPage() {
               }
             >
               <div className="space-y-5">
+                {wf.disabled_reason === 'uses_removed_type' && (
+                  <Alert>
+                    <AlertTitle>
+                      {t('automations.disabled.title', 'Switched off by the platform')}
+                    </AlertTitle>
+                    <AlertDescription>
+                      {t(
+                        'automations.disabled.removedType',
+                        'Switched off: a step uses a type the platform no longer runs. Replace or remove the step marked "Removed type", then publish again.'
+                      )}
+                    </AlertDescription>
+                  </Alert>
+                )}
                 {unsupported.length > 0 && (
                   <Alert variant="destructive">
                     <AlertTitle>
@@ -1244,49 +1358,5 @@ export default function WorkflowsPage() {
         </DialogContent>
       </Dialog>
     </>
-  )
-}
-
-// Separate component for the run button in the sheet
-function WorkflowRunButton({
-  workflow,
-  className,
-  size,
-}: {
-  workflow: Workflow
-  className?: string
-  size?: 'sm' | 'default'
-}) {
-  const { t } = useTranslation()
-  const { trigger, isMutating } = useTriggerWorkflow(workflow.id)
-
-  const handleRun = async () => {
-    try {
-      await trigger({ trigger_type: 'manual' })
-      toast.success(
-        t('automations.toast.triggered', 'Workflow "{name}" triggered successfully', {
-          name: workflow.name,
-        })
-      )
-      await invalidateWorkflowRunsCache()
-    } catch (err) {
-      toast.error(
-        getErrorMessage(
-          err,
-          t('automations.toast.triggerFailed', 'Failed to trigger workflow "{name}"', {
-            name: workflow.name,
-          })
-        )
-      )
-    }
-  }
-
-  return (
-    <Button className={className} size={size} onClick={handleRun} disabled={isMutating}>
-      <Play className="h-4 w-4" />
-      {isMutating
-        ? t('automations.menu.running', 'Running...')
-        : t('automations.menu.runNow', 'Run now')}
-    </Button>
   )
 }

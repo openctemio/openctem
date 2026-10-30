@@ -39,14 +39,23 @@ const (
 	// KindExposureNew: any other new exposure on the surface (TLS issue,
 	// weak email posture, misconfiguration, leaked credential, ...).
 	KindExposureNew Kind = "exposure_new"
+	// KindWebSensitiveNew: a sensitive path (a catalog entry of severity high
+	// or critical, or an admin panel) appeared on a web origin.
+	KindWebSensitiveNew Kind = "web_sensitive_new"
+	// KindWebAuthLost: a sensitive or API endpoint that asked for
+	// authentication no longer does.
+	KindWebAuthLost Kind = "web_auth_lost"
+	// KindWebParamAddedSensitive: a parameter appeared on a sensitive
+	// endpoint, or a credential-class parameter appeared on any endpoint.
+	KindWebParamAddedSensitive Kind = "web_param_added_sensitive"
 )
 
 // AllKinds lists every kind in the order the digest presents them: the
 // riskiest first.
 func AllKinds() []Kind {
 	return []Kind{
-		KindDNSDangling, KindExposureNew, KindPortOpened, KindHostAdded,
-		KindCertExpiring, KindCertChanged, KindDNSChanged, KindTechChanged,
+		KindDNSDangling, KindExposureNew, KindWebSensitiveNew, KindWebAuthLost, KindPortOpened, KindHostAdded,
+		KindWebParamAddedSensitive, KindCertExpiring, KindCertChanged, KindDNSChanged, KindTechChanged,
 		KindPortClosed, KindHostRemoved,
 	}
 }

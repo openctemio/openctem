@@ -19,14 +19,17 @@ import {
   DetailSheet,
   DetailStat,
   DetailStatGrid,
+  PageStack,
 } from '@/features/shared'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { OneTimeLinkDialog } from '@/components/one-time-link-dialog'
+import { useEmailUnavailable } from '@/features/auth/api/use-auth-providers'
+import { buildInvitationLink } from '@/features/organization/components/invite-user-dialog'
 import {
   Select,
   SelectContent,
@@ -65,7 +68,6 @@ import {
   Trash2,
   Send,
   Ban,
-  Search as SearchIcon,
   Eye,
   Pencil,
   Copy,
@@ -79,10 +81,13 @@ import {
   Eraser,
   CalendarClock,
   Crown,
+  Info,
+  LinkIcon,
+  RotateCw,
 } from 'lucide-react'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { useTenant } from '@/context/tenant-provider'
 import {
   useMembers,
@@ -483,7 +488,31 @@ function EditUserRolesDialog({
     }
   }, [open, userRoles, userRolesLoading])
 
+  // Widening access (a higher role in the organization, or custom roles added)
+  // asks first; narrowing saves at once.
+  const [confirmGrant, setConfirmGrant] = useState(false)
+  const teamRoleRank: Record<string, number> = { viewer: 0, member: 1, admin: 2, owner: 3 }
+  const teamRoleLabel = (r: string) =>
+    r === 'admin'
+      ? t('org.role.admin', 'Admin')
+      : r === 'viewer'
+        ? t('org.role.viewer', 'Viewer')
+        : r === 'owner'
+          ? t('org.role.owner', 'Owner')
+          : t('org.role.member', 'Member')
+  const promoted =
+    !!member && !teamRoleLocked && (teamRoleRank[teamRole] ?? 0) > (teamRoleRank[member.role] ?? 0)
+  const addedRoleNames = allRoles
+    .filter((r) => selectedRoleIds.includes(r.id) && !userRoles.some((u) => u.id === r.id))
+    .map((r) => r.name)
+  const widens = promoted || addedRoleNames.length > 0
+
   const handleSave = async () => {
+    if (widens && !confirmGrant) {
+      setConfirmGrant(true)
+      return
+    }
+    setConfirmGrant(false)
     try {
       if (member && !teamRoleLocked && teamRole !== member.role) {
         await updateRole({ role: teamRole })
@@ -581,6 +610,41 @@ function EditUserRolesDialog({
           </Button>
         </DialogFooter>
       </DialogContent>
+      <ConfirmDialog
+        open={confirmGrant}
+        onOpenChange={setConfirmGrant}
+        title={t('confirm.member.grantTitle', 'Give {name} more access?', {
+          name: member?.name || member?.email || '',
+        })}
+        desc={
+          <div className="space-y-2">
+            {promoted && member && (
+              <p>
+                {t(
+                  'confirm.member.grantRole',
+                  'Role in the organization: {from} to {to}. They can do everything that role allows, in every project they can reach.',
+                  { from: teamRoleLabel(member.role), to: teamRoleLabel(teamRole) }
+                )}
+              </p>
+            )}
+            {addedRoleNames.length > 0 && (
+              <p>
+                {t('confirm.member.grantCustom', 'Roles added: {roles}.', {
+                  roles: addedRoleNames.join(', '),
+                })}
+              </p>
+            )}
+            <p>
+              {t(
+                'confirm.member.grantNote',
+                'The change applies at once and is recorded in the audit log. You can remove the access again later.'
+              )}
+            </p>
+          </div>
+        }
+        confirmText={t('confirm.member.grantConfirm', 'Give access')}
+        handleConfirm={handleSave}
+      />
     </Dialog>
   )
 }
@@ -610,7 +674,7 @@ export default function UsersPage() {
   const roleFilter: RoleFilter = roleFilters.some((f) => f.value === roleParam)
     ? (roleParam as RoleFilter)
     : 'all'
-  const debouncedSearch = useDebounce(searchQuery.trim(), 300)
+  const debouncedSearch = useSearchQuery(searchQuery).term
 
   // Paged, searched and filtered on the server. The list used to load one
   // capped page (100) and filter it in the browser, so every member past the
@@ -655,7 +719,9 @@ export default function UsersPage() {
   })
   // SSO exceptions (owners and admins see the security settings): a badge
   // on the members who may sign in without SSO.
-  const { settings: tenantSettings } = useTenantSettings(canManageMembers ? tenantSlug : undefined)
+  const { settings: tenantSettings } = useTenantSettings(
+    canManageMembers ? currentTenant?.id : undefined
+  )
   const ssoExceptionUntil = useMemo(() => {
     const map = new Map<string, string>()
     for (const e of tenantSettings?.security?.sso_exceptions ?? []) map.set(e.user_id, e.expires_at)
@@ -701,6 +767,12 @@ export default function UsersPage() {
   // Reset-2FA confirmation: the member awaiting confirmation.
   const [resetMfaMember, setResetMfaMember] = useState<MemberWithUser | null>(null)
   const [pendingCancelInvite, setPendingCancelInvite] = useState<Invitation | null>(null)
+  const [inviteLink, setInviteLink] = useState<{
+    email: string
+    url: string
+    expiresAt: string
+  } | null>(null)
+  const emailUnavailable = useEmailUnavailable()
   const { t } = useTranslation()
   const [isResettingMfa, setIsResettingMfa] = useState(false)
   // Offboarding wizard (RFC-050): the member being offboarded. Offboarding
@@ -713,6 +785,7 @@ export default function UsersPage() {
   const [transferMember, setTransferMember] = useState<MemberWithUser | null>(null)
   const { transfer: pendingTransfer, mutate: mutateTransfer } = usePendingOwnershipTransfer()
   const [isErasing, setIsErasing] = useState(false)
+  const [reactivateMember, setReactivateMember] = useState<MemberWithUser | null>(null)
 
   // Track if sheet is fully closed (after animation completes)
   const [isSheetAnimating, setIsSheetAnimating] = useState(false)
@@ -974,31 +1047,10 @@ export default function UsersPage() {
                     )}
                     {member.status === 'suspended' ? (
                       <DropdownMenuItem
-                        onClick={async () => {
-                          if (!tenantSlug) return
-                          try {
-                            await fetcherWithOptions(
-                              tenantEndpoints.reactivateMember(tenantSlug, member.id),
-                              { method: 'POST' }
-                            )
-                            toast.success(
-                              member.suspended_reason === 'awaiting_approval'
-                                ? t('org.membersPage.approved', '{name} approved', {
-                                    name: member.name || member.email,
-                                  })
-                                : t('org.membersPage.reenabled', '{name} re-enabled', {
-                                    name: member.name || member.email,
-                                  })
-                            )
-                            refreshData()
-                          } catch (error) {
-                            toast.error(
-                              getErrorMessage(
-                                error,
-                                t('org.membersPage.reenableFailed', 'Failed to re-enable member')
-                              )
-                            )
-                          }
+                        onSelect={(e) => {
+                          // Restoring access asks first; onSelect lets the menu close.
+                          e.preventDefault()
+                          setReactivateMember(member)
                         }}
                       >
                         <CheckCircle className="me-2 h-4 w-4" />
@@ -1035,12 +1087,52 @@ export default function UsersPage() {
                   </Can>
                 </>
               )}
+              {!isOwnerRow && offboarded && caller.isOwner && (
+                <Can route="POST /api/v1/organization/members/{member_id}/erase">
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    variant="destructive"
+                    onSelect={(e) => {
+                      // Confirm first; onSelect lets the menu close cleanly.
+                      e.preventDefault()
+                      setEraseConfirmMember(member)
+                    }}
+                  >
+                    <Eraser className="me-2 h-4 w-4" />
+                    {t('org.membersPage.erasePersonalData', 'Erase personal data...')}
+                  </DropdownMenuItem>
+                </Can>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         )
       },
     },
   ]
+
+  // Restores a disabled member (or approves one awaiting approval).
+  const handleReactivate = async (member: MemberWithUser) => {
+    if (!tenantSlug) return
+    try {
+      await fetcherWithOptions(tenantEndpoints.reactivateMember(tenantSlug, member.id), {
+        method: 'POST',
+      })
+      toast.success(
+        member.suspended_reason === 'awaiting_approval'
+          ? t('org.membersPage.approved', '{name} approved', { name: member.name || member.email })
+          : t('org.membersPage.reenabled', '{name} re-enabled', {
+              name: member.name || member.email,
+            })
+      )
+      refreshData()
+    } catch (error) {
+      toast.error(
+        getErrorMessage(error, t('org.membersPage.reenableFailed', 'Failed to re-enable member'))
+      )
+    } finally {
+      setReactivateMember(null)
+    }
+  }
 
   // Actions
   // Erase an offboarded person's name and email (owner only). Rows and
@@ -1129,6 +1221,33 @@ export default function UsersPage() {
         err instanceof ApiClientError && err.code === 'INVITATION_RESEND_TOO_SOON'
           ? t('org.invitations.resendTooSoon')
           : t('org.invitations.resendFailed')
+      )
+    }
+  }
+  // A new link without email: the token rotates (the old link stops working)
+  // and the API returns the new one once. Renew does the same for an expired
+  // invitation and gives it a new lifetime.
+  const reissueInviteLink = async (invitation: Invitation, renew: boolean) => {
+    if (!tenantSlug) return
+    try {
+      const res = await fetcherWithOptions<{ token: string; invitation: Invitation }>(
+        renew
+          ? tenantEndpoints.renewInvitation(tenantSlug, invitation.id)
+          : tenantEndpoints.invitationLink(tenantSlug, invitation.id),
+        { method: 'POST' }
+      )
+      setInviteLink({
+        email: invitation.email,
+        url: buildInvitationLink(res.token),
+        expiresAt: res.invitation.expires_at,
+      })
+      mutateInvitations()
+    } catch (err) {
+      toast.error(
+        getErrorMessage(
+          err,
+          t('org.invitations.linkFailed', 'Could not issue a new invitation link')
+        )
       )
     }
   }
@@ -1252,18 +1371,42 @@ export default function UsersPage() {
       cell: ({ row }) => (
         <DataTableRowActions
           actions={[
-            {
-              label: t('org.membersPage.resendEmail', 'Resend email'),
-              icon: Send,
-              route: 'POST /api/v1/tenants/{tenant}/invitations/{invitationId}/resend',
-              onClick: () => resendInvite(row.original),
-            },
+            ...(new Date(row.original.expires_at).getTime() <= Date.now()
+              ? [
+                  {
+                    label: t('org.membersPage.renewInvitation', 'Renew'),
+                    icon: RotateCw,
+                    route:
+                      'POST /api/v1/tenants/{tenant}/invitations/{invitationId}/renew' as const,
+                    onClick: () => reissueInviteLink(row.original, true),
+                  },
+                ]
+              : [
+                  {
+                    label: t('org.membersPage.copyNewLink', 'Copy new link'),
+                    icon: LinkIcon,
+                    route: 'POST /api/v1/tenants/{tenant}/invitations/{invitationId}/link' as const,
+                    onClick: () => reissueInviteLink(row.original, false),
+                  },
+                ]),
+            // The email actions only make sense on a server that sends email.
+            ...(emailUnavailable
+              ? []
+              : [
+                  {
+                    label: t('org.membersPage.resendEmail', 'Resend email'),
+                    icon: Send,
+                    route:
+                      'POST /api/v1/tenants/{tenant}/invitations/{invitationId}/resend' as const,
+                    onClick: () => resendInvite(row.original),
+                  },
+                ]),
             {
               label: t('org.membersPage.cancelInvitation', 'Cancel invitation'),
               icon: Trash2,
               destructive: true,
               separatorBefore: true,
-              route: 'DELETE /api/v1/tenants/{tenant}/invitations/{invitationId}',
+              route: 'DELETE /api/v1/tenants/{tenant}/invitations/{invitationId}' as const,
               onClick: () => setPendingCancelInvite(row.original),
             },
           ]}
@@ -1277,16 +1420,6 @@ export default function UsersPage() {
 
   const toolbarStart = (
     <>
-      <div className="relative min-w-0 flex-1 sm:max-w-sm">
-        <SearchIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder={t('org.membersPage.searchPlaceholder', 'Search members...')}
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="ps-9"
-          aria-label={t('org.membersPage.searchLabel', 'Search members')}
-        />
-      </div>
       <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v)}>
         <SelectTrigger
           className="h-9 w-[140px]"
@@ -1338,151 +1471,173 @@ export default function UsersPage() {
   return (
     <MemberRolesContext.Provider value={memberRolesMap}>
       <Main>
-        <PageHeader
-          title={t('org.membersPage.title', 'Members')}
-          description={t(
-            'org.membersPage.description',
-            'People in this organization, their roles and pending invitations.'
-          )}
-        >
-          {/* Accounts are created by owners/admins (no self-registration);
+        <PageStack>
+          <PageHeader
+            title={t('org.membersPage.title', 'Members')}
+            description={t(
+              'org.membersPage.description',
+              'People in this organization, their roles and pending invitations.'
+            )}
+          >
+            {/* Accounts are created by owners/admins (no self-registration);
               inviting someone who already has an account stays available. */}
-          <Can route="POST /api/v1/tenants/{tenant}/invitations" mode="disable">
-            <Button size="sm" variant="outline" onClick={() => setInviteDialogOpen(true)}>
-              <Send className="me-2 h-4 w-4" />
-              {t('org.membersPage.inviteUser', 'Invite user')}
-            </Button>
-          </Can>
-          <Can route="POST /api/v1/tenants/{tenant}/users" mode="disable">
-            <Button size="sm" onClick={() => setAddUserOpen(true)}>
-              <UserPlus className="me-2 h-4 w-4" />
-              {t('org.membersPage.addUser', 'Add user')}
-            </Button>
-          </Can>
-        </PageHeader>
-
-        <JoinRequestsCard canManage={isAtLeast('admin')} onChanged={refreshData} />
-
-        <OwnershipTransferBanner
-          transfer={pendingTransfer}
-          onChanged={() => {
-            void mutateTransfer()
-            refreshData()
-          }}
-        />
-
-        {membersError && !membersLoading ? (
-          <Alert variant="destructive" className="mt-5">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>
-              {t('org.membersPage.loadFailedTitle', 'Failed to load members')}
-            </AlertTitle>
-            <AlertDescription>
-              <p>{t('org.membersPage.loadFailedBody', 'The member list could not be loaded.')}</p>
-              <Button variant="outline" size="sm" className="mt-2" onClick={refreshData}>
-                <RefreshCw className="me-2 h-4 w-4" />
-                {t('common.retry', 'Retry')}
+            <Can route="POST /api/v1/tenants/{tenant}/invitations" mode="disable">
+              <Button size="sm" variant="outline" onClick={() => setInviteDialogOpen(true)}>
+                <Send className="me-2 h-4 w-4" />
+                {t('org.membersPage.inviteUser', 'Invite user')}
               </Button>
-            </AlertDescription>
-          </Alert>
-        ) : (
-          <>
-            <MetricStrip
-              className="mt-5"
-              loading={membersLoading}
-              items={[
-                {
-                  key: 'current',
-                  label: t('org.membersPage.metric.members', 'Members'),
-                  value: statusCounts.current,
-                  onClick: () => setStatusFilter('current'),
-                  active: statusFilter === 'current',
-                },
-                {
-                  key: 'active',
-                  label: t('org.membersPage.filter.active', 'Active'),
-                  value: statusCounts.active,
-                  onClick: () => toggleStatus('active'),
-                  active: statusFilter === 'active',
-                },
-                {
-                  key: 'suspended',
-                  label: t('org.membersPage.filter.suspended', 'Disabled'),
-                  value: statusCounts.suspended,
-                  onClick: () => toggleStatus('suspended'),
-                  active: statusFilter === 'suspended',
-                },
-                {
-                  key: 'offboarded',
-                  label: t('org.membersPage.filter.offboarded', 'Offboarded'),
-                  value: statusCounts.offboarded,
-                  onClick: () => toggleStatus('offboarded'),
-                  active: statusFilter === 'offboarded',
-                },
-                {
-                  key: 'invites',
-                  label: t('org.membersPage.metric.pendingInvites', 'Pending invitations'),
-                  value: invitations.length,
-                  onClick: () =>
-                    document
-                      .getElementById('pending-invitations')
-                      ?.scrollIntoView({ behavior: 'smooth' }),
-                },
-              ]}
-            />
+            </Can>
+            <Can route="POST /api/v1/tenants/{tenant}/users" mode="disable">
+              <Button size="sm" onClick={() => setAddUserOpen(true)}>
+                <UserPlus className="me-2 h-4 w-4" />
+                {t('org.membersPage.addUser', 'Add user')}
+              </Button>
+            </Can>
+          </PageHeader>
 
-            <div className="mt-5">
-              {membersLoading ? (
-                <div className="space-y-2">
-                  <Skeleton className="h-9 w-full max-w-sm" />
-                  {Array.from({ length: 6 }).map((_, i) => (
-                    <Skeleton key={i} className="h-12 w-full" />
-                  ))}
-                </div>
-              ) : (
-                /*
+          <JoinRequestsCard canManage={isAtLeast('admin')} onChanged={refreshData} />
+
+          {emailUnavailable && (
+            <Alert>
+              <Info className="h-4 w-4" />
+              <AlertTitle>
+                {t('org.membersPage.noEmailTitle', 'This server cannot send email')}
+              </AlertTitle>
+              <AlertDescription>
+                {t(
+                  'org.membersPage.noEmailBody',
+                  'Invitation emails are not sent. Copy each invitation link and give it to the person yourself.'
+                )}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          <OwnershipTransferBanner
+            transfer={pendingTransfer}
+            onChanged={() => {
+              void mutateTransfer()
+              refreshData()
+            }}
+          />
+
+          {membersError && !membersLoading ? (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>
+                {t('org.membersPage.loadFailedTitle', 'Failed to load members')}
+              </AlertTitle>
+              <AlertDescription>
+                <p>{t('org.membersPage.loadFailedBody', 'The member list could not be loaded.')}</p>
+                <Button variant="outline" size="sm" className="mt-2" onClick={refreshData}>
+                  <RefreshCw className="me-2 h-4 w-4" />
+                  {t('common.retry', 'Retry')}
+                </Button>
+              </AlertDescription>
+            </Alert>
+          ) : (
+            <>
+              <MetricStrip
+                loading={membersLoading}
+                items={[
+                  {
+                    key: 'current',
+                    label: t('org.membersPage.metric.members', 'Members'),
+                    value: statusCounts.current,
+                    onClick: () => setStatusFilter('current'),
+                    active: statusFilter === 'current',
+                  },
+                  {
+                    key: 'active',
+                    label: t('org.membersPage.filter.active', 'Active'),
+                    value: statusCounts.active,
+                    onClick: () => toggleStatus('active'),
+                    active: statusFilter === 'active',
+                  },
+                  {
+                    key: 'suspended',
+                    label: t('org.membersPage.filter.suspended', 'Disabled'),
+                    value: statusCounts.suspended,
+                    onClick: () => toggleStatus('suspended'),
+                    active: statusFilter === 'suspended',
+                  },
+                  {
+                    key: 'offboarded',
+                    label: t('org.membersPage.filter.offboarded', 'Offboarded'),
+                    value: statusCounts.offboarded,
+                    onClick: () => toggleStatus('offboarded'),
+                    active: statusFilter === 'offboarded',
+                  },
+                  {
+                    key: 'invites',
+                    label: t('org.membersPage.metric.pendingInvites', 'Pending invitations'),
+                    value: invitations.length,
+                    onClick: () =>
+                      document
+                        .getElementById('pending-invitations')
+                        ?.scrollIntoView({ behavior: 'smooth' }),
+                  },
+                ]}
+              />
+
+              <div>
+                {membersLoading ? (
+                  <div className="space-y-2">
+                    <Skeleton className="h-9 w-full max-w-sm" />
+                    {Array.from({ length: 6 }).map((_, i) => (
+                      <Skeleton key={i} className="h-12 w-full" />
+                    ))}
+                  </div>
+                ) : (
+                  /*
                   No selection column: the old bulk "Resend / Deactivate /
                   Delete" actions fired toasts without calling any API. Per-row
                   actions are the supported way to disable / offboard a member.
                 */
-                <DataTable
-                  columns={columns}
-                  data={members}
-                  getRowId={(m) => m.id}
-                  manualPagination
-                  rowCount={membersTotal}
-                  pagination={pagination}
-                  onPaginationChange={setPagination}
-                  pageSizeOptions={MEMBER_PAGE_SIZES}
-                  paginationNoun={t('org.membersPage.noun', 'members')}
-                  showSearch={false}
-                  showColumnToggle={false}
-                  toolbarStart={toolbarStart}
-                  onRowClick={(m) => setSelectedMember(m)}
-                  emptyMessage={t('org.membersPage.noMatch', 'No members match these filters')}
-                />
-              )}
-            </div>
+                  <DataTable
+                    columns={columns}
+                    data={members}
+                    getRowId={(m) => m.id}
+                    manualPagination
+                    rowCount={membersTotal}
+                    pagination={pagination}
+                    onPaginationChange={setPagination}
+                    pageSizeOptions={MEMBER_PAGE_SIZES}
+                    paginationNoun={t('org.membersPage.noun', 'members')}
+                    showSearch={false}
+                    search={{
+                      value: searchQuery,
+                      onChange: setSearchQuery,
+                      placeholder: t('org.membersPage.searchPlaceholder', 'Search members…'),
+                      label: t('org.membersPage.searchLabel', 'Search members'),
+                    }}
+                    showColumnToggle={false}
+                    toolbarStart={toolbarStart}
+                    onRowClick={(m) => setSelectedMember(m)}
+                    emptyMessage={t('org.membersPage.noMatch', 'No members match these filters')}
+                  />
+                )}
+              </div>
 
-            {/* Pending Invitations Section */}
-            {invitations.length > 0 && (
-              <section id="pending-invitations" className="mt-5 scroll-mt-4">
-                <h2 className="mb-3 text-base font-semibold">
-                  {t('org.membersPage.metric.pendingInvites', 'Pending invitations')}
-                </h2>
-                <DataTable
-                  columns={invitationColumns}
-                  data={invitations}
-                  getRowId={(inv) => inv.id}
-                  showSearch={false}
-                  showColumnToggle={false}
-                  showPagination={invitations.length > 10}
-                  emptyMessage={t('org.membersPage.noInvites', 'No pending invitations')}
-                />
-              </section>
-            )}
-          </>
-        )}
+              {/* Pending Invitations Section */}
+              {invitations.length > 0 && (
+                <section id="pending-invitations" className="scroll-mt-4">
+                  <h2 className="mb-3 text-base font-semibold">
+                    {t('org.membersPage.metric.pendingInvites', 'Pending invitations')}
+                  </h2>
+                  <DataTable
+                    columns={invitationColumns}
+                    data={invitations}
+                    getRowId={(inv) => inv.id}
+                    showSearch={false}
+                    showColumnToggle={false}
+                    showPagination={invitations.length > 10}
+                    emptyMessage={t('org.membersPage.noInvites', 'No pending invitations')}
+                  />
+                </section>
+              )}
+            </>
+          )}
+        </PageStack>
       </Main>
 
       {/* User Details Sheet */}
@@ -1598,6 +1753,22 @@ export default function UsersPage() {
         member={accessMember}
         onOpenChange={(open) => !open && setAccessMember(null)}
         onSaved={refreshData}
+      />
+      <OneTimeLinkDialog
+        open={!!inviteLink}
+        onOpenChange={(open) => {
+          if (!open) setInviteLink(null)
+        }}
+        title={t('org.invitations.linkTitle', 'Invitation link')}
+        description={t(
+          'org.invitations.linkDesc',
+          'A new link for {email}. The previous link no longer works.',
+          {
+            email: inviteLink?.email ?? '',
+          }
+        )}
+        link={inviteLink?.url ?? ''}
+        expiresAt={inviteLink?.expiresAt}
       />
       <InviteUserDialog
         tenantSlug={tenantSlug}
@@ -1735,6 +1906,31 @@ export default function UsersPage() {
           if (!open) setOffboardMember(null)
         }}
         onOffboarded={refreshData}
+      />
+
+      {/* Re-enable or approve a member: restores their access */}
+      <ConfirmDialog
+        open={!!reactivateMember}
+        onOpenChange={(open) => !open && setReactivateMember(null)}
+        title={
+          reactivateMember?.suspended_reason === 'awaiting_approval'
+            ? t('confirm.member.approveTitle', 'Approve {name}?', {
+                name: reactivateMember?.name || reactivateMember?.email || '',
+              })
+            : t('confirm.member.reenableTitle', 'Re-enable {name}?', {
+                name: reactivateMember?.name || reactivateMember?.email || '',
+              })
+        }
+        desc={t(
+          'confirm.member.reenableDesc',
+          'They can sign in again and use what their roles allow. Their schedules and scans resume.'
+        )}
+        confirmText={
+          reactivateMember?.suspended_reason === 'awaiting_approval'
+            ? t('confirm.member.approveConfirm', 'Approve member')
+            : t('confirm.member.reenableConfirm', 'Re-enable member')
+        }
+        handleConfirm={() => (reactivateMember ? handleReactivate(reactivateMember) : undefined)}
       />
 
       {/* Erase personal data confirmation (owner only, offboarded members) */}

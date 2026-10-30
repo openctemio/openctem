@@ -29,7 +29,7 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
-import { EmptyState, ErrorState } from '@/features/shared'
+import { EmptyState, ErrorState, PageStack } from '@/features/shared'
 import { formatSupportTime } from '@/features/support-access/lib/format'
 import { replaceUrlSearch, useUrlParam } from '@/hooks/use-url-param'
 import type { AdminSupportGrant } from '@/lib/api/generated'
@@ -228,7 +228,7 @@ export function SupportAccessPanel({ canSupport }: { canSupport: boolean }) {
   }
 
   return (
-    <div className="space-y-4">
+    <PageStack>
       {ended && (
         <Alert data-testid="support-access-ended">
           <AlertCircle className="size-4" />
@@ -315,6 +315,6 @@ export function SupportAccessPanel({ canSupport }: { canSupport: boolean }) {
         </ul>
       )}
       <OpenSessionDialog grant={opening} onClose={() => setOpening(null)} onOpened={start} />
-    </div>
+    </PageStack>
   )
 }

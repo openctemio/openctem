@@ -1,7 +1,9 @@
 package tool
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -123,5 +125,84 @@ func TestCanEditRefusesDeclaredTools(t *testing.T) {
 	own, _ := NewTenantCustomTool(tenant, shared.NewID(), "mine", "Mine", nil, InstallBinary)
 	if err := own.CanEdit(tenant); err != nil {
 		t.Fatalf("own tool: %v", err)
+	}
+}
+
+// The param mappings are kept per implemented reference only, as machine
+// words, bounded; DeclaredImplements reads them back fresh and after a
+// round trip through the metadata column (JSON).
+func TestDeclaredParams(t *testing.T) {
+	d := toyDeclaration()
+	d.Params = map[string]map[string]string{
+		"vuln.templates@1": {"rate": "rps", "severity": "severity", "Bad.Key": "x", "tags": "a.b"},
+		"scan.ports@1":     {"rate": "rate"}, // not implemented: dropped
+	}
+	tl, err := NewDeclaredTool(shared.NewID(), d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := func(tl *Tool) {
+		t.Helper()
+		got, ok := tl.DeclaredImplements("vuln.templates@1")
+		if !ok || len(got) != 2 || got["rate"] != "rps" || got["severity"] != "severity" {
+			t.Fatalf("vuln.templates@1 params = %v, %v", got, ok)
+		}
+		if got, ok := tl.DeclaredImplements("dast.web@1"); !ok || len(got) != 0 {
+			t.Fatalf("dast.web@1 params = %v, %v (implemented, takes no param)", got, ok)
+		}
+		if _, ok := tl.DeclaredImplements("scan.ports@1"); ok {
+			t.Fatal("a capability the descriptor does not implement was reported")
+		}
+		if _, ok := tl.DeclaredImplements(""); ok {
+			t.Fatal("empty reference reported")
+		}
+	}
+	check(tl)
+
+	raw, err := json.Marshal(tl.Metadata)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var meta map[string]any
+	if err := json.Unmarshal(raw, &meta); err != nil {
+		t.Fatal(err)
+	}
+	stored := *tl
+	stored.Metadata = meta
+	check(&stored)
+
+	// A tool a member created is never read as declared.
+	member := &Tool{Name: "mine", Metadata: map[string]any{MetaImplements: []string{"vuln.templates@1"}}}
+	if _, ok := member.DeclaredImplements("vuln.templates@1"); ok {
+		t.Fatal("a member's tool was read as a declared implementation")
+	}
+
+	many := map[string]string{}
+	for i := 0; i < 2*maxDeclaredParams; i++ {
+		many[fmt.Sprintf("p%d", i)] = "k"
+	}
+	if got := declaredParams([]string{"vuln.templates@1"}, map[string]map[string]string{"vuln.templates@1": many}); len(got["vuln.templates@1"]) != maxDeclaredParams {
+		t.Fatalf("kept %d params, want the bound %d", len(got["vuln.templates@1"]), maxDeclaredParams)
+	}
+}
+
+// A row projected before the param mappings were kept is refreshed once
+// from the same descriptor; after that the same digest changes nothing.
+func TestRefreshDeclarationAddsParamsOnce(t *testing.T) {
+	d := toyDeclaration()
+	tl, err := NewDeclaredTool(shared.NewID(), d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	delete(tl.Metadata, MetaParams) // as projected by an older platform
+	d.Params = map[string]map[string]string{"vuln.templates@1": {"rate": "rps"}}
+	if !tl.RefreshDeclaration(d, func(a, b string) bool { return false }) {
+		t.Fatal("a row without param mappings was not refreshed")
+	}
+	if got, _ := tl.DeclaredImplements("vuln.templates@1"); got["rate"] != "rps" {
+		t.Fatalf("params = %v", got)
+	}
+	if tl.RefreshDeclaration(d, func(a, b string) bool { return false }) {
+		t.Fatal("the same digest refreshed the row again")
 	}
 }

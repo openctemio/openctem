@@ -92,7 +92,7 @@ describe('landing page copy', () => {
         <IntegrationsPage />
       </I18nProvider>
     )
-    expect(container.textContent).toContain('Tổng số tích hợp')
+    expect(container.textContent).toContain('Cần chú ý')
     expect(container.textContent).toContain('Quản lý mã nguồn')
     expect(container.textContent).toContain('Đã hết hạn')
   })

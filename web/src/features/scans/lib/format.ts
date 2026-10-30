@@ -1,3 +1,5 @@
+import { successRate } from './run-history'
+
 /** "Oct 2, 03:41 PM"; "-" without a date. */
 export function formatScanDate(dateString?: string): string {
   if (!dateString) return '-'
@@ -21,19 +23,16 @@ export function formatScanDuration(ms?: number): string {
 }
 
 /**
- * Share of a scan's SETTLED runs that fully succeeded, 0–100, or null before
- * any run settled. Settled = succeeded + partial + failed. Runs still going
- * and canceled runs are in total_runs but are neither, so they are left out.
- * A partial run (results kept, some work lost) is settled but not a success.
- * The one formula every scan page uses.
+ * A scan's success rate over its settled runs, 0-100, or null below
+ * MIN_RUNS_FOR_RATE settled runs. A partial run (finished with coverage gaps)
+ * is a success; only failed runs count against it; blocked, canceled and
+ * live runs are left out. The same rule as the list's run history
+ * (run-history.ts), applied to the scan's lifetime counters.
  */
 export function scanSuccessRate(config: {
   successful_runs: number
   failed_runs: number
   partial_runs?: number
 }): number | null {
-  const ok = config.successful_runs ?? 0
-  const settled = ok + (config.partial_runs ?? 0) + (config.failed_runs ?? 0)
-  if (settled <= 0) return null
-  return Math.round((ok / settled) * 100)
+  return successRate(config.successful_runs ?? 0, config.partial_runs ?? 0, config.failed_runs ?? 0)
 }

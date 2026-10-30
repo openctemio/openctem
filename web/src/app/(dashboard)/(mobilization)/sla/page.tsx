@@ -9,6 +9,7 @@ import Link from '@/components/link'
 import { Main } from '@/components/layout'
 import {
   PageHeader,
+  PageStack,
   MetricStrip,
   DataTable,
   DataTableColumnHeader,
@@ -172,16 +173,16 @@ export default function SlaCompliancePage() {
 
   return (
     <Main>
-      <PageHeader
-        title={t('sla.title', 'SLA compliance')}
-        description={t(
-          'sla.description',
-          'Open findings tracked against their remediation deadlines.'
-        )}
-      />
+      <PageStack>
+        <PageHeader
+          title={t('sla.title', 'SLA compliance')}
+          description={t(
+            'sla.description',
+            'Open findings tracked against their remediation deadlines.'
+          )}
+        />
 
-      {failed ? (
-        <div className="mt-5">
+        {failed ? (
           <ErrorState
             title={t('sla.loadError', 'SLA compliance')}
             error={sla.error ?? list.error}
@@ -190,128 +191,130 @@ export default function SlaCompliancePage() {
               void list.mutate()
             }}
           />
-        </div>
-      ) : null}
+        ) : null}
 
-      <MetricStrip className="mt-5" loading={sla.isLoading} items={items} />
+        <MetricStrip loading={sla.isLoading} items={items} />
 
-      <section className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>{t('sla.severity.title', 'Past due by severity')}</CardTitle>
-            <CardDescription>
-              {t('sla.severity.description', 'Open findings past their SLA deadline.')}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {sla.isLoading ? (
-              <Skeleton className="h-24 w-full" />
-            ) : sla.error ? (
-              <p className="text-sm text-muted-foreground">—</p>
-            ) : breachBySeverity.length === 0 ? (
-              <EmptyState
-                card={false}
-                className="py-6"
-                icon={CheckCircle2}
-                title={t('sla.severity.empty', 'Nothing is past due')}
-              />
-            ) : (
-              <div className="space-y-3">
-                {breachBySeverity.map(({ sev, count }) => (
-                  <Link
-                    key={sev}
-                    href={findingsHref(tileFilter('pastDue'), { severity: sev })}
-                    className="flex items-center justify-between rounded-sm hover:underline"
-                  >
-                    <span className="flex items-center gap-2">
-                      <span
-                        className={cn(
-                          'h-2.5 w-2.5 rounded-full',
-                          SEVERITY_DOT_COLORS[sev as SeverityLevel]
-                        )}
-                      />
-                      <span className="text-sm">{t(`severity.${sev}`, sev)}</span>
-                    </span>
-                    <span className="text-sm font-medium tabular-nums">{count}</span>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>{t('sla.aging.title', 'How long past due')}</CardTitle>
-            <CardDescription>
-              {t('sla.aging.description', 'Past due findings by time since their deadline.')}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {sla.isLoading ? (
-              <Skeleton className="h-24 w-full" />
-            ) : (
-              <div className="space-y-3">
-                {AGING_BUCKET_KEYS.map((key) => (
-                  <div key={key} className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">{agingLabel[key]}</span>
-                    <span className="text-sm font-medium tabular-nums">
-                      {sla.aging[key] ?? '—'}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </section>
-
-      <section className="mt-5 space-y-3">
-        <div className="flex flex-wrap items-end justify-between gap-2">
-          <div>
-            <h2 className="text-base font-semibold">{t('sla.list.title', 'Past due findings')}</h2>
-            <p className="text-sm text-muted-foreground">
-              {t(
-                'sla.list.description',
-                '{n, plural, one {# finding} other {# findings}} past the SLA deadline, oldest deadline first.',
-                { n: list.data?.total ?? pastDueTotal }
+        <section className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>{t('sla.severity.title', 'Past due by severity')}</CardTitle>
+              <CardDescription>
+                {t('sla.severity.description', 'Open findings past their SLA deadline.')}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {sla.isLoading ? (
+                <Skeleton className="h-24 w-full" />
+              ) : sla.error ? (
+                <p className="text-sm text-muted-foreground">—</p>
+              ) : breachBySeverity.length === 0 ? (
+                <EmptyState
+                  card={false}
+                  className="py-6"
+                  icon={CheckCircle2}
+                  title={t('sla.severity.empty', 'Nothing is past due')}
+                />
+              ) : (
+                <div className="space-y-3">
+                  {breachBySeverity.map(({ sev, count }) => (
+                    <Link
+                      key={sev}
+                      href={findingsHref(tileFilter('pastDue'), { severity: sev })}
+                      className="flex items-center justify-between rounded-sm hover:underline"
+                    >
+                      <span className="flex items-center gap-2">
+                        <span
+                          className={cn(
+                            'h-2.5 w-2.5 rounded-full',
+                            SEVERITY_DOT_COLORS[sev as SeverityLevel]
+                          )}
+                        />
+                        <span className="text-sm">{t(`severity.${sev}`, sev)}</span>
+                      </span>
+                      <span className="text-sm font-medium tabular-nums">{count}</span>
+                    </Link>
+                  ))}
+                </div>
               )}
-            </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>{t('sla.aging.title', 'How long past due')}</CardTitle>
+              <CardDescription>
+                {t('sla.aging.description', 'Past due findings by time since their deadline.')}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {sla.isLoading ? (
+                <Skeleton className="h-24 w-full" />
+              ) : (
+                <div className="space-y-3">
+                  {AGING_BUCKET_KEYS.map((key) => (
+                    <div key={key} className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">{agingLabel[key]}</span>
+                      <span className="text-sm font-medium tabular-nums">
+                        {sla.aging[key] ?? '—'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </section>
+
+        <section className="space-y-3">
+          <div className="flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <h2 className="text-base font-semibold">
+                {t('sla.list.title', 'Past due findings')}
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                {t(
+                  'sla.list.description',
+                  '{n, plural, one {# finding} other {# findings}} past the SLA deadline, oldest deadline first.',
+                  { n: list.data?.total ?? pastDueTotal }
+                )}
+              </p>
+            </div>
+            <Link
+              href={findingsHref(tileFilter('pastDue'))}
+              className="text-sm font-medium text-primary hover:underline"
+            >
+              {t('sla.list.openInFindings', 'Open in Findings')}
+            </Link>
           </div>
-          <Link
-            href={findingsHref(tileFilter('pastDue'))}
-            className="text-sm font-medium text-primary hover:underline"
-          >
-            {t('sla.list.openInFindings', 'Open in Findings')}
-          </Link>
-        </div>
-        {list.isLoading && !list.data ? (
-          <Skeleton className="h-64 w-full" />
-        ) : list.error ? null : (list.data?.total ?? 0) === 0 ? (
-          <EmptyState
-            icon={Timer}
-            title={t('sla.list.emptyTitle', 'Nothing is past due')}
-            description={t(
-              'sla.list.emptyDescription',
-              'No open finding in your scope is past its remediation deadline.'
-            )}
-          />
-        ) : (
-          <DataTable
-            columns={columns}
-            data={list.data?.data ?? []}
-            getRowId={(f) => f.id}
-            showSearch={false}
-            showColumnToggle={false}
-            manualPagination
-            rowCount={list.data?.total ?? 0}
-            pagination={pagination}
-            onPaginationChange={setPagination}
-            pageSizeOptions={PAGE_SIZES}
-            onRowClick={(row) => router.push(`/findings/${row.id}`)}
-          />
-        )}
-      </section>
+          {list.isLoading && !list.data ? (
+            <Skeleton className="h-64 w-full" />
+          ) : list.error ? null : (list.data?.total ?? 0) === 0 ? (
+            <EmptyState
+              icon={Timer}
+              title={t('sla.list.emptyTitle', 'Nothing is past due')}
+              description={t(
+                'sla.list.emptyDescription',
+                'No open finding in your scope is past its remediation deadline.'
+              )}
+            />
+          ) : (
+            <DataTable
+              columns={columns}
+              data={list.data?.data ?? []}
+              getRowId={(f) => f.id}
+              showSearch={false}
+              showColumnToggle={false}
+              manualPagination
+              rowCount={list.data?.total ?? 0}
+              pagination={pagination}
+              onPaginationChange={setPagination}
+              pageSizeOptions={PAGE_SIZES}
+              onRowClick={(row) => router.push(`/findings/${row.id}`)}
+            />
+          )}
+        </section>
+      </PageStack>
     </Main>
   )
 }

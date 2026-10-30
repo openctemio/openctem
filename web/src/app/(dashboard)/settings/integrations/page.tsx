@@ -1,6 +1,7 @@
 'use client'
 
-import { useMemo } from 'react'
+import { IntegrationHealth } from '@/features/integrations/components/integration-health'
+import { useMemo, useState } from 'react'
 import Link from '@/components/link'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
@@ -14,12 +15,13 @@ import {
   RelativeTime,
   StackedCell,
   type MetricStripItem,
+  PageStack,
 } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Puzzle, CheckCircle, XCircle, RefreshCw, AlertTriangle, ArrowRight } from 'lucide-react'
+import { Puzzle, ArrowRight } from 'lucide-react'
 import { INTEGRATION_CATEGORIES as integrationCategories } from '@/features/integrations/config/integration-categories'
 import { Can, Permission } from '@/lib/permissions'
 import { useSCMConnections } from '@/features/repositories/hooks/use-repositories'
@@ -49,28 +51,6 @@ const CATEGORY_LABELS: Record<IntegrationCategory, [string, string]> = {
 
 // Status badge for every IntegrationStatus the API can return. Only a problem
 // (error / expired) is coloured; everything else stays neutral.
-const statusConfig: Record<
-  string,
-  {
-    variant: 'default' | 'secondary' | 'destructive' | 'outline'
-    icon: typeof CheckCircle
-    key: string
-    fallback: string
-  }
-> = {
-  connected: { variant: 'default', icon: CheckCircle, key: 'connected', fallback: 'Connected' },
-  disconnected: {
-    variant: 'secondary',
-    icon: XCircle,
-    key: 'disconnected',
-    fallback: 'Disconnected',
-  },
-  error: { variant: 'destructive', icon: XCircle, key: 'error', fallback: 'Error' },
-  pending: { variant: 'outline', icon: RefreshCw, key: 'pending', fallback: 'Pending' },
-  expired: { variant: 'destructive', icon: AlertTriangle, key: 'expired', fallback: 'Expired' },
-  disabled: { variant: 'secondary', icon: XCircle, key: 'disabled', fallback: 'Disabled' },
-}
-
 function buildColumns(t: TFn): ColumnDef<Integration>[] {
   return [
     {
@@ -104,13 +84,7 @@ function buildColumns(t: TFn): ColumnDef<Integration>[] {
       accessorKey: 'status',
       header: t('integrationsHub.columns.status', 'Status'),
       cell: ({ row }) => {
-        const s = statusConfig[row.original.status] ?? statusConfig.disconnected
-        return (
-          <Badge variant={s.variant} className="gap-1">
-            <s.icon className="h-3 w-3" />
-            {t(`integrationsHub.status.${s.key}`, s.fallback)}
-          </Badge>
-        )
+        return <IntegrationHealth status={row.original.status} />
       },
     },
     {
@@ -158,63 +132,79 @@ export default function IntegrationsPage() {
     (i) => i.status === 'pending' || i.status === 'disconnected'
   ).length
 
+  // The strip filters the list: one status group at a time, click again to clear.
+  const [statusGroup, setStatusGroup] = useState<'connected' | 'attention' | 'pending' | null>(null)
+  const inGroup = (i: Integration, g: 'connected' | 'attention' | 'pending') =>
+    g === 'connected'
+      ? i.status === 'connected'
+      : g === 'attention'
+        ? i.status === 'error' || i.status === 'expired'
+        : i.status === 'pending' || i.status === 'disconnected'
+  const visible = statusGroup ? integrations.filter((i) => inGroup(i, statusGroup)) : integrations
+
+  const toggle = (g: 'connected' | 'attention' | 'pending') => ({
+    active: statusGroup === g,
+    onClick: () => setStatusGroup(statusGroup === g ? null : g),
+  })
   const metrics: MetricStripItem[] = [
-    {
-      key: 'total',
-      label: t('integrationsHub.metrics.total', 'Total integrations'),
-      value: integrations.length,
-    },
     {
       key: 'connected',
       label: t('integrationsHub.metrics.connected', 'Connected'),
       value: connectedCount,
+      ...toggle('connected'),
     },
     {
       key: 'attention',
       label: t('integrationsHub.metrics.attention', 'Needs attention'),
       value: needsAttentionCount,
       tone: 'danger',
+      ...toggle('attention'),
     },
-    { key: 'pending', label: t('integrationsHub.metrics.pending', 'Pending'), value: pendingCount },
+    {
+      key: 'pending',
+      label: t('integrationsHub.metrics.pending', 'Pending'),
+      value: pendingCount,
+      ...toggle('pending'),
+    },
   ]
 
   return (
     <Main>
-      <PageHeader
-        title={t('integrationsHub.title', 'Integrations')}
-        description={t(
-          'integrationsHub.description',
-          'Connect third-party tools and services to your security workflows.'
-        )}
-      />
+      <PageStack>
+        <PageHeader
+          title={t('integrationsHub.title', 'Integrations')}
+          description={t(
+            'integrationsHub.description',
+            'Connect third-party tools and services to your security workflows.'
+          )}
+        />
 
-      {/* Categories — navigation to the pages that own each connect flow */}
-      <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {integrationCategories.map((category) => (
-          <LinkCard
-            key={category.id}
-            href={category.href}
-            icon={category.icon}
-            title={t(`integrationsHub.categories.${category.id}.title`, category.title)}
-            description={t(
-              `integrationsHub.categories.${category.id}.description`,
-              category.description
-            )}
-            badge={category.badge ? t('integrationsHub.badge.soon', category.badge) : undefined}
-            aside={
-              category.id === 'scm' && scmConnections.length > 0 ? (
-                <Badge variant="secondary" className="tabular-nums">
-                  {scmConnectedCount}/{scmConnections.length}
-                </Badge>
-              ) : undefined
-            }
-          />
-        ))}
-      </div>
+        {/* Categories — navigation to the pages that own each connect flow */}
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {integrationCategories.map((category) => (
+            <LinkCard
+              key={category.id}
+              href={category.href}
+              icon={category.icon}
+              title={t(`integrationsHub.categories.${category.id}.title`, category.title)}
+              description={t(
+                `integrationsHub.categories.${category.id}.description`,
+                category.description
+              )}
+              badge={category.badge ? t('integrationsHub.badge.soon', category.badge) : undefined}
+              aside={
+                category.id === 'scm' && scmConnections.length > 0 ? (
+                  <Badge variant="secondary" className="tabular-nums">
+                    {scmConnectedCount}/{scmConnections.length}
+                  </Badge>
+                ) : undefined
+              }
+            />
+          ))}
+        </div>
 
-      <MetricStrip className="mt-5" loading={isLoading} items={metrics} />
+        <MetricStrip loading={isLoading} items={metrics} />
 
-      <div className="mt-5">
         {error ? (
           <ErrorState
             title={t('integrationsHub.errorTitle', 'integrations')}
@@ -238,13 +228,13 @@ export default function IntegrationsPage() {
         ) : (
           <DataTable
             columns={columns}
-            data={integrations}
+            data={visible}
             getRowId={(i) => i.id}
-            searchPlaceholder={t('integrationsHub.searchPlaceholder', 'Search integrations...')}
+            searchPlaceholder={t('integrationsHub.searchPlaceholder', 'Search integrations…')}
             showSelectionCount={false}
           />
         )}
-      </div>
+      </PageStack>
     </Main>
   )
 }

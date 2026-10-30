@@ -25,7 +25,7 @@ agent), [sdk-go](https://github.com/openctemio/sdk-go),
   `make generate` at the root to refresh them locally; Web CI type-checks the web
   against the fresh contract and posts the contract diff on the pull request.
 - **Release**: one `vX.Y.Z` tag on `main` releases API + web together (`ghcr.io/openctemio/openctem-api`,
-  `openctem-web`, `openctem-console`, all-in-one `openctem`, `openctem-gateway`, `migrations`, `seed`, `admin-cli`).
+  `openctem-web`, `openctem-console`, all-in-one `openctem`, `openctem-gateway`, `migrations`, `seed`).
 
 ---
 
@@ -596,10 +596,11 @@ POST /api/v1/invitations/accept-with-refresh   {"token": "..."}
 | Term | Meaning in this code base |
 |---|---|
 | **Sensor** | Customer-side software that authenticates *to* the platform with its own key (`octs_…`; legacy `rda_…`) and heartbeat. Umbrella term; one row in `sensors`. |
-| Scanner / Agent / Collector | Sensor **roles** (RFC-023 D18). *Agent* now means only the endpoint role. |
+| Scanner / Collector / AI worker / Endpoint | Sensor **roles** (RFC-023 D18; endpoint is planned and was called *agent* there). The word *agent* is retired for sensors. |
 | `type` | Legacy v1 value (`worker`, `scanner`, `sensor`, `collector`, `runner`), kept as input and storage. |
 | Shared sensor | `scope = 'instance'`, `tenant_id` NULL (RFC-100): a sensor of the instance, run by its administrator. Never one of a tenant's sensors: every tenant route answers 404 for it, it never gets a tenant context, and tenants see only the aggregated platform scanning service. An organization sensor is `scope = 'organization'`. |
-| AI agent | The `ai_triage.agent` module (an LLM agent, not a sensor); the `agent` AI mode is removed. |
+| AI agent | The retired `ai_triage.agent` sub-module (an LLM agent, not a sensor); the `agent` AI mode is removed. |
+| AI agent | An AI principal with a role (analyst, remediator, reporter, hunter, router); data `ai_agent`, code `aiagent`/`AIAgent`. Not a sensor. Names: `docs/glossary.md`. |
 | Protocol v1 | `/api/v1/agent/*`: retired 2026-10-05. Sensors speak protocol v2 (`/api/v2/sensor/*`) only; a sensor older than v0.9.0 must be upgraded. |
 
 The rename is complete (RFC-023 §9.5, migration 000230): packages, types,
@@ -668,6 +669,10 @@ apierror.Unauthorized("bootstrap token is not usable: " + err.Error())
 apierror.Unauthorized("Invalid or expired token").WriteJSON(w)
 h.logger.Warn("token validation failed", "reason", err.Error())
 ```
+
+New errors use a registered code: `apierror.FromCode(apierror.CodeX).WithParams(apierror.Params{"name": n})`.
+Never put `err.Error()`, a lower error's text or an entity id into a message, a stored status or an
+audit message; `tools/lint/errleak` fails CI on a new one (`docs/architecture/error-responses.md`).
 
 | BAD Message | Attack Vector |
 |-------------|---------------|
@@ -901,12 +906,13 @@ no counts that go stale:
   one file per change; never edit `CHANGELOG.md` directly), `CHANGELOG.md`, and the RFC index
   (`docs/rfcs/README.md`, generated from each RFC's H1 and Status by
   `python3 scripts/rfc_index.py`; implementation PRs are listed in each RFC).
-- **Migrations:** the numbers are not contiguous (renumbering leaves gaps), so
-  do not count them. The newest is
-  `ls migrations/*.up.sql | sort | tail -1`. A new migration takes the next
-  number above the highest on `develop` and in open PRs. Tests look a migration up by
-  name (`testdb.MigrationVersion`), never by number, so the merge queue can
-  renumber it.
+- **Migrations:** `openctem-migrate` applies every migration a database has
+  not applied, so versions only have to be unique (RFC-130). New migrations
+  take a UTC timestamp version: `make migration-new name=<snake_case>`; never
+  pick or change a version by hand. `make migration-renumber` moves a branch's
+  migration when its version clashes (or is a legacy sequential number). A
+  merged migration never changes: fix it with a new one. Tests look a
+  migration up by name (`testdb.MigrationVersion`), never by version.
 
 ## Local builds: `GOWORK=off`
 

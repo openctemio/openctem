@@ -1,12 +1,12 @@
 {
   "criticality.critical": "Trọng yếu",
-  "criticality.high": "Cao",
-  "criticality.medium": "Trung bình",
-  "criticality.low": "Thấp",
-  "criticality.none": "Chưa đánh giá",
   "criticality.critical.hint": "Tài sản trọng yếu, thiết yếu cho hoạt động kinh doanh",
+  "criticality.high": "Cao",
   "criticality.high.hint": "Tài sản quan trọng, ảnh hưởng lớn đến kinh doanh",
-  "criticality.medium.hint": "Tài sản thông thường, ảnh hưởng vừa phải",
+  "criticality.low": "Thấp",
   "criticality.low.hint": "Tài sản không trọng yếu, ảnh hưởng nhỏ",
+  "criticality.medium": "Trung bình",
+  "criticality.medium.hint": "Tài sản thông thường, ảnh hưởng vừa phải",
+  "criticality.none": "Chưa đánh giá",
   "criticality.none.hint": "Chưa đánh giá: rủi ro được tính như tài sản mức trung bình cho đến khi được đánh giá"
 }

@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from '@/components/link'
-import { AlertCircle, ShieldHalf } from 'lucide-react'
+import { ShieldHalf } from 'lucide-react'
 import { toast } from 'sonner'
 import { Main } from '@/components/layout'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { PageHeader, ReadOnlyNotice, SettingsSaveBar } from '@/features/shared'
+import { PageHeader, PageStack, ReadOnlyNotice, SettingsSaveBar } from '@/features/shared'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import {
@@ -36,7 +36,7 @@ import { LastChanged } from './last-changed'
 import { PersonalAccountsCard } from './personal-accounts-card'
 import { SettingsLoadError, SettingsLoading } from './settings-load-state'
 
-type EmailVerificationMode = 'auto' | 'always' | 'never'
+type EmailVerificationMode = 'auto' | 'always'
 
 /** The sign-in part of the security section: what this page edits. */
 export interface SignInForm {
@@ -75,7 +75,7 @@ export function signInFormFrom(settings: TenantSettings | undefined): SignInForm
     mfa_required_for_admins: s?.mfa_required_for_admins ?? false,
     ip_whitelist: (s?.ip_whitelist ?? []).join('\n'),
     allowed_domains: (s?.allowed_domains ?? []).join('\n'),
-    email_verification_mode: (s?.email_verification_mode as EmailVerificationMode) || 'auto',
+    email_verification_mode: s?.email_verification_mode === 'always' ? 'always' : 'auto',
     personal_accounts: s?.personal_accounts ?? 'allowed',
     invitees: s?.invitees ?? 'any',
     external_access_end_required: s?.external_access_end_required ?? false,
@@ -123,9 +123,6 @@ export function looseningsOf(saved: SignInForm, next: SignInForm): string[] {
   if (dBefore.length > 0 && (dAfter.length === 0 || dAfter.some((x) => !dBefore.includes(x)))) {
     out.push('domainsWidened')
   }
-  if (saved.email_verification_mode !== 'never' && next.email_verification_mode === 'never') {
-    out.push('emailNever')
-  }
   if (PERSONAL_ORDER[next.personal_accounts] > PERSONAL_ORDER[saved.personal_accounts]) {
     out.push('personalLooser')
   }
@@ -147,7 +144,6 @@ const LOOSENING_TEXT: Record<string, string> = {
   ipEmptied: 'The IP allowlist is emptied: every network may connect.',
   ipWidened: 'The IP allowlist allows more networks.',
   domainsWidened: 'More email domains may join.',
-  emailNever: 'Email addresses are no longer verified.',
   personalLooser: 'Personal accounts get more access.',
   jitOff: 'New SSO members get access without approval.',
   ssoMfaProofOff: 'Your identity provider no longer has to confirm a second factor.',
@@ -183,6 +179,10 @@ export function AuthenticationSettings() {
   useEffect(() => {
     reset()
   }, [reset])
+
+  const platformFloor = settings?.security?.platform_mfa_floor ?? 'none'
+  const floorEveryone = platformFloor === 'everyone'
+  const floorAdmins = platformFloor === 'admins' || floorEveryone
 
   const dirty = normalized(form) !== normalized(saved)
   const patchForm = (p: Partial<SignInForm>) => setForm((f) => ({ ...f, ...p }))
@@ -230,9 +230,7 @@ export function AuthenticationSettings() {
   )
   if (isLoading) return <SettingsLoading header={header} />
   if (isError)
-    return (
-      <SettingsLoadError header={header} message={error?.message} onRetry={() => void mutate()} />
-    )
+    return <SettingsLoadError header={header} error={error} onRetry={() => void mutate()} />
 
   const disabled = !canEdit
   const emailModes: { value: EmailVerificationMode; label: string; hint: string }[] = [
@@ -249,225 +247,224 @@ export function AuthenticationSettings() {
         'Require verification (the platform must be able to send email)'
       ),
     },
-    {
-      value: 'never',
-      label: t('org.auth.email.never', 'Never require'),
-      hint: t(
-        'org.auth.email.neverHint',
-        'Accounts count as verified at registration: closed deployments only'
-      ),
-    },
   ]
 
   return (
     <Main>
-      {header}
-      <div className="mt-2">
+      <PageStack>
+        {header}
         <LastChanged resourceType="tenant" resourceId={tenantId} fields={SIGN_IN_FIELDS} />
-      </div>
-      {disabled && (
-        <ReadOnlyNotice
-          className="mt-4"
-          reason={t('org.auth.ownerOnly', 'Only the organization owner can change these settings.')}
-        />
-      )}
+        {disabled && (
+          <ReadOnlyNotice
+            reason={t(
+              'org.auth.ownerOnly',
+              'Only the organization owner can change these settings.'
+            )}
+          />
+        )}
 
-      <div className="mt-5 space-y-5">
-        <Card id="two-factor">
-          <CardHeader>
-            <CardTitle>{t('org.auth.mfa.title', 'Two-factor authentication')}</CardTitle>
-            <CardDescription>
-              {t(
-                'org.auth.mfa.desc',
-                "Members who sign in through SSO use your identity provider's two-factor settings."
-              )}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <ToggleRow
-              id="tenant-mfa-required"
-              label={t('org.auth.mfa.all', 'Require for everyone')}
-              hint={t(
-                'org.auth.mfa.allHint',
-                'Members who sign in with a password set up an authenticator app at their next sign-in.'
-              )}
-              checked={form.mfa_required}
-              onChange={(v) => patchForm({ mfa_required: v })}
-              disabled={disabled}
-            />
-            <ToggleRow
-              id="tenant-mfa-admins"
-              label={t('org.auth.mfa.admins', 'Require for owners and administrators')}
-              hint={t(
-                'org.auth.mfa.adminsHint',
-                'They can change the organization, so they use an authenticator app even when other members do not. On for new organizations.'
-              )}
-              checked={form.mfa_required || form.mfa_required_for_admins}
-              onChange={(v) => patchForm({ mfa_required_for_admins: v })}
-              disabled={disabled || form.mfa_required}
-            />
-            <ToggleRow
-              id="tenant-sso-mfa-proof"
-              label={t('org.auth.mfa.ssoProof', 'SSO must prove two-factor')}
-              hint={t(
-                'org.auth.mfa.ssoProofHint',
-                'For members who must use two-factor, a sign-in through your identity provider counts only when the provider confirms a second factor in the signed sign-in response. Turn on multi-factor authentication in your identity provider first.'
-              )}
-              checked={form.sso_require_mfa_evidence}
-              onChange={(v) => patchForm({ sso_require_mfa_evidence: v })}
-              disabled={disabled}
-            />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>{t('org.auth.newMembers.title', 'New members')}</CardTitle>
-            <CardDescription>
-              {t('org.auth.newMembers.desc', 'What happens when someone joins for the first time.')}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div id="sso-member-approval">
-              <ToggleRow
-                id="tenant-jit-approval"
-                label={t('org.auth.jit', 'Approve new SSO members')}
-                hint={t(
-                  'org.auth.jitHint',
-                  'People your SSO admits for the first time wait, with no access, until an administrator approves them in Members.'
-                )}
-                checked={form.jit_requires_approval}
-                onChange={(v) => patchForm({ jit_requires_approval: v })}
-                disabled={disabled}
-              />
-            </div>
-            <Separator />
-            <div id="email-verification" className="space-y-2">
-              <Label htmlFor="email-verification-mode">
-                {t('org.auth.email.title', 'Email verification')}
-              </Label>
-              <p className="text-sm text-muted-foreground" id="email-verification-desc">
+        <PageStack>
+          <Card id="two-factor">
+            <CardHeader>
+              <CardTitle>{t('org.auth.mfa.title', 'Two-factor authentication')}</CardTitle>
+              <CardDescription>
                 {t(
-                  'org.auth.email.desc',
-                  'Whether new accounts must verify their email address before signing in.'
+                  'org.auth.mfa.desc',
+                  "Members who sign in through SSO use your identity provider's two-factor settings."
                 )}
-              </p>
-              <Select
-                value={form.email_verification_mode}
-                onValueChange={(v) =>
-                  patchForm({ email_verification_mode: v as EmailVerificationMode })
-                }
-                disabled={disabled}
-              >
-                <SelectTrigger
-                  id="email-verification-mode"
-                  aria-describedby="email-verification-desc"
-                  className="w-full max-w-md"
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {emailModes.map((m) => (
-                    <SelectItem key={m.value} value={m.value}>
-                      <div className="flex flex-col items-start">
-                        <span className="font-medium">{m.label}</span>
-                        <span className="text-xs text-muted-foreground">{m.hint}</span>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {form.email_verification_mode === 'never' && (
-                <p className="mt-2 flex items-start gap-2 text-sm text-destructive" role="alert">
-                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-                  <span>
-                    {t(
-                      'org.auth.email.neverWarning',
-                      'Anyone can register with any email address, which allows account takeover through spoofed addresses. Use it only where registration is restricted by other means.'
-                    )}
-                  </span>
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {floorAdmins && (
+                <p className="text-sm text-muted-foreground" data-testid="mfa-platform-floor">
+                  {floorEveryone
+                    ? t(
+                        'org.auth.mfa.platformFloorEveryone',
+                        'The platform requires two-factor authentication for every member. You cannot turn it off for your organization.'
+                      )
+                    : t(
+                        'org.auth.mfa.platformFloorAdmins',
+                        'The platform requires two-factor authentication for owners, administrators and members with a privileged role. You can require it for everyone, not less.'
+                      )}
                 </p>
               )}
-            </div>
-          </CardContent>
-        </Card>
+              <ToggleRow
+                id="tenant-mfa-required"
+                label={t('org.auth.mfa.all', 'Require for everyone')}
+                hint={t(
+                  'org.auth.mfa.allHint',
+                  'Members who sign in with a password set up an authenticator app at their next sign-in.'
+                )}
+                checked={form.mfa_required}
+                onChange={(v) => patchForm({ mfa_required: v })}
+                disabled={disabled || floorEveryone}
+              />
+              <ToggleRow
+                id="tenant-mfa-admins"
+                label={t('org.auth.mfa.admins', 'Require for owners and administrators')}
+                hint={t(
+                  'org.auth.mfa.adminsHint',
+                  'They can change the organization, so they use an authenticator app even when other members do not. On for new organizations.'
+                )}
+                checked={form.mfa_required || form.mfa_required_for_admins}
+                onChange={(v) => patchForm({ mfa_required_for_admins: v })}
+                disabled={disabled || form.mfa_required || floorAdmins}
+              />
+              <ToggleRow
+                id="tenant-sso-mfa-proof"
+                label={t('org.auth.mfa.ssoProof', 'SSO must prove two-factor')}
+                hint={t(
+                  'org.auth.mfa.ssoProofHint',
+                  'For members who must use two-factor, a sign-in through your identity provider counts only when the provider confirms a second factor in the signed sign-in response. Turn on multi-factor authentication in your identity provider first.'
+                )}
+                checked={form.sso_require_mfa_evidence}
+                onChange={(v) => patchForm({ sso_require_mfa_evidence: v })}
+                disabled={disabled}
+              />
+            </CardContent>
+          </Card>
 
-        <AccessRestrictionsCard
-          ipAllowlist={form.ip_whitelist}
-          allowedDomains={form.allowed_domains}
-          onIpAllowlistChange={(v) => {
-            setIpError(null)
-            patchForm({ ip_whitelist: v })
-          }}
-          onAllowedDomainsChange={(v) => patchForm({ allowed_domains: v })}
-          currentIp={settings?.security?.current_ip}
-          ipAllowlistError={ipError}
-          disabled={disabled}
-        />
-        <div id="invitations">
-          <InvitationPolicyCard
-            invitees={form.invitees}
-            onInviteesChange={(p) => patchForm({ invitees: p })}
-            endRequired={form.external_access_end_required}
-            onEndRequiredChange={(v) => patchForm({ external_access_end_required: v })}
-            hasAllowedDomains={parseLines(form.allowed_domains).length > 0}
+          <Card>
+            <CardHeader>
+              <CardTitle>{t('org.auth.newMembers.title', 'New members')}</CardTitle>
+              <CardDescription>
+                {t(
+                  'org.auth.newMembers.desc',
+                  'What happens when someone joins for the first time.'
+                )}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div id="sso-member-approval">
+                <ToggleRow
+                  id="tenant-jit-approval"
+                  label={t('org.auth.jit', 'Approve new SSO members')}
+                  hint={t(
+                    'org.auth.jitHint',
+                    'People your SSO admits for the first time wait, with no access, until an administrator approves them in Members.'
+                  )}
+                  checked={form.jit_requires_approval}
+                  onChange={(v) => patchForm({ jit_requires_approval: v })}
+                  disabled={disabled}
+                />
+              </div>
+              <Separator />
+              <div id="email-verification" className="space-y-2">
+                <Label htmlFor="email-verification-mode">
+                  {t('org.auth.email.title', 'Email verification')}
+                </Label>
+                <p className="text-sm text-muted-foreground" id="email-verification-desc">
+                  {t(
+                    'org.auth.email.desc',
+                    'Whether new accounts must verify their email address before signing in.'
+                  )}
+                </p>
+                <Select
+                  value={form.email_verification_mode}
+                  onValueChange={(v) =>
+                    patchForm({ email_verification_mode: v as EmailVerificationMode })
+                  }
+                  disabled={disabled}
+                >
+                  <SelectTrigger
+                    id="email-verification-mode"
+                    aria-describedby="email-verification-desc"
+                    className="w-full max-w-md"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {emailModes.map((m) => (
+                      <SelectItem key={m.value} value={m.value}>
+                        <div className="flex flex-col items-start">
+                          <span className="font-medium">{m.label}</span>
+                          <span className="text-xs text-muted-foreground">{m.hint}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardContent>
+          </Card>
+
+          <AccessRestrictionsCard
+            ipAllowlist={form.ip_whitelist}
+            allowedDomains={form.allowed_domains}
+            onIpAllowlistChange={(v) => {
+              setIpError(null)
+              patchForm({ ip_whitelist: v })
+            }}
+            onAllowedDomainsChange={(v) => patchForm({ allowed_domains: v })}
+            currentIp={settings?.security?.current_ip}
+            ipAllowlistError={ipError}
             disabled={disabled}
           />
-        </div>
-        <div id="personal-accounts">
-          <PersonalAccountsCard
-            tenantSlug={tenantId}
-            policy={form.personal_accounts}
-            onPolicyChange={(p) => patchForm({ personal_accounts: p })}
-            exceptions={form.sso_exceptions}
-            onExceptionsChange={(e) => patchForm({ sso_exceptions: e })}
-            ssoEnforced={!!settings?.security?.sso_enforced}
-            disabled={disabled}
-          />
-        </div>
-        <SsoManagedNotice />
-
-        <p className="flex items-center gap-2 text-sm text-muted-foreground">
-          <ShieldHalf className="size-4 shrink-0" aria-hidden />
-          <span>
-            {t('org.auth.sensorMoved', 'What scan jobs may do on your sensors is set in')}{' '}
-            <Link
-              href="/settings/scanning/sensor-safety"
-              className="font-medium underline-offset-2 hover:underline"
-            >
-              {t('settings.item.sensor-safety', 'Sensor job safety')}
-            </Link>
-            .
-          </span>
-        </p>
-      </div>
-
-      <SettingsSaveBar dirty={dirty} saving={isUpdating} onSave={handleSave} onDiscard={reset} />
-
-      <ConfirmDialog
-        open={confirm !== null}
-        onOpenChange={(open) => !open && setConfirm(null)}
-        destructive
-        title={t('org.auth.loosen.title', 'Weaken sign-in security?')}
-        desc={
-          <div className="space-y-2">
-            <p>
-              {t(
-                'org.auth.loosen.desc',
-                'These changes make the organization easier to get into. The owner and administrators are told, and the change is recorded in the audit log.'
-              )}
-            </p>
-            <ul className="list-disc space-y-1 ps-5">
-              {(confirm ?? []).map((k) => (
-                <li key={k}>{t(`org.auth.loosen.${k}`, LOOSENING_TEXT[k] ?? k)}</li>
-              ))}
-            </ul>
+          <div id="invitations">
+            <InvitationPolicyCard
+              invitees={form.invitees}
+              onInviteesChange={(p) => patchForm({ invitees: p })}
+              endRequired={form.external_access_end_required}
+              onEndRequiredChange={(v) => patchForm({ external_access_end_required: v })}
+              hasAllowedDomains={parseLines(form.allowed_domains).length > 0}
+              disabled={disabled}
+            />
           </div>
-        }
-        confirmText={t('org.auth.loosen.confirm', 'Save anyway')}
-        isLoading={isUpdating}
-        handleConfirm={() => void doSave()}
-      />
+          <div id="personal-accounts">
+            <PersonalAccountsCard
+              tenantSlug={tenantId}
+              policy={form.personal_accounts}
+              onPolicyChange={(p) => patchForm({ personal_accounts: p })}
+              exceptions={form.sso_exceptions}
+              onExceptionsChange={(e) => patchForm({ sso_exceptions: e })}
+              ssoEnforced={!!settings?.security?.sso_enforced}
+              disabled={disabled}
+            />
+          </div>
+          <SsoManagedNotice />
+
+          <p className="flex items-center gap-2 text-sm text-muted-foreground">
+            <ShieldHalf className="size-4 shrink-0" aria-hidden />
+            <span>
+              {t('org.auth.sensorMoved', 'What scan jobs may do on your sensors is set in')}{' '}
+              <Link
+                href="/settings/scanning/sensor-safety"
+                className="font-medium underline-offset-2 hover:underline"
+              >
+                {t('settings.item.sensor-safety', 'Sensor job safety')}
+              </Link>
+              .
+            </span>
+          </p>
+        </PageStack>
+
+        <SettingsSaveBar dirty={dirty} saving={isUpdating} onSave={handleSave} onDiscard={reset} />
+
+        <ConfirmDialog
+          open={confirm !== null}
+          onOpenChange={(open) => !open && setConfirm(null)}
+          destructive
+          title={t('org.auth.loosen.title', 'Weaken sign-in security?')}
+          desc={
+            <div className="space-y-2">
+              <p>
+                {t(
+                  'org.auth.loosen.desc',
+                  'These changes make the organization easier to get into. The owner and administrators are told, and the change is recorded in the audit log.'
+                )}
+              </p>
+              <ul className="list-disc space-y-1 ps-5">
+                {(confirm ?? []).map((k) => (
+                  <li key={k}>{t(`org.auth.loosen.${k}`, LOOSENING_TEXT[k] ?? k)}</li>
+                ))}
+              </ul>
+            </div>
+          }
+          confirmText={t('org.auth.loosen.confirm', 'Save anyway')}
+          isLoading={isUpdating}
+          handleConfirm={() => void doSave()}
+        />
+      </PageStack>
     </Main>
   )
 }

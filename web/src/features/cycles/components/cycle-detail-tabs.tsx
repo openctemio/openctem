@@ -163,8 +163,7 @@ export function CycleCharterTab({ cycle, onEdit }: { cycle: CtemCycle; onEdit: (
                     {c.name || t('scoping.cycleTabs.untitled', 'Untitled')}
                   </span>
                   <span className="text-muted-foreground">
-                    {' '}
-                    ·{' '}
+                    ,{' '}
                     {t('scoping.cycleTabs.metricTarget', '{metric}: {target}', {
                       metric: c.metric || t('scoping.cycleTabs.noMetric', 'no metric'),
                       target: c.target || t('scoping.cycleTabs.noTarget', 'no target'),
@@ -314,7 +313,7 @@ export function CycleScopeTab({ cycle }: { cycle: CtemCycle }) {
     <DataTable
       columns={scopeColumns}
       data={data}
-      searchPlaceholder={t('scoping.cycleTabs.scopeSearch', 'Search assets in scope')}
+      searchPlaceholder={t('scoping.cycleTabs.scopeSearch', 'Search assets in scope…')}
       emptyMessage={t('scoping.cycleTabs.scopeEmpty', 'Nothing was frozen into scope')}
       emptyDescription={t(
         'scoping.cycleTabs.scopeEmptyHint',
@@ -420,7 +419,7 @@ export function CycleProfilesTab({ cycle }: { cycle: CtemCycle }) {
               </p>
               <p className="text-xs text-muted-foreground">
                 {profileTypeLabel(p.profile_type, t)}
-                {p.description ? ` · ${p.description}` : ''}
+                {p.description ? `, ${p.description}` : ''}
               </p>
             </li>
           ))}

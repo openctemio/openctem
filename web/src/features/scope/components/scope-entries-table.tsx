@@ -12,10 +12,12 @@
  * are no longer required a leftover pending entry can be put in effect.
  */
 
+import { StatusLozenge } from '@/components/ui/status-lozenge'
 import { useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { useRouter } from 'next/navigation'
 import {
+  Ban,
   CalendarClock,
   GitBranch,
   Inbox,
@@ -23,13 +25,11 @@ import {
   Pencil,
   Power,
   PowerOff,
-  Search as SearchIcon,
   Trash2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from '@/components/link'
 
-import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -40,13 +40,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
-import {
-  ActorChip,
-  DataTable,
-  DataTableRowActions,
-  TonePill,
-  type RowAction,
-} from '@/features/shared'
+import { ActorChip, DataTable, DataTableRowActions, type RowAction } from '@/features/shared'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import {
   invalidateScopeCache,
@@ -58,6 +52,7 @@ import {
 } from '../api/use-scope-api'
 import type { ApiScopeTarget } from '../api/scope-api.types'
 import { scopeErrorMessage } from '../lib/scope-codes'
+import { noLongerOursPattern } from '../lib/exclusion-kind'
 import {
   coversText,
   entryStatus,
@@ -117,6 +112,13 @@ interface ScopeEntriesTableProps {
   onPagination: (p: { pageIndex: number; pageSize: number }) => void
   /** Shown when nothing is in scope yet (onboarding). */
   emptyAction?: React.ReactNode
+  /** Controls the page puts first in the toolbar (which scope list is shown). */
+  leading?: React.ReactNode
+  /**
+   * "No longer ours" on an entry (research/320): the page opens the
+   * exclusion dialog prefilled for it.
+   */
+  onNoLongerOurs?: (entry: ApiScopeTarget) => void
 }
 
 export function ScopeEntriesTable({
@@ -127,6 +129,8 @@ export function ScopeEntriesTable({
   onStatusChange,
   onPagination,
   emptyAction,
+  leading,
+  onNoLongerOurs,
 }: ScopeEntriesTableProps) {
   const { t } = useTranslation()
   const canApprove = useHasPermission(Permission.ScopeApprove)
@@ -262,6 +266,14 @@ export function ScopeEntriesTable({
         ),
       })
     }
+    if (onNoLongerOurs && noLongerOursPattern(e)) {
+      out.push({
+        label: t('scope.entries.act.noLongerOurs', 'No longer ours'),
+        icon: Ban,
+        onClick: () => onNoLongerOurs(e),
+        permission: Permission.ScopeWrite,
+      })
+    }
     if (e.target_type === 'repository') {
       out.push({
         label: t('scope.ciTrust.setUp', 'Set up CI for these repositories'),
@@ -317,13 +329,20 @@ export function ScopeEntriesTable({
         const e = row.original
         const st = entryStatus(e)
         return (
-          <TonePill
-            tone={SCOPE_ENTRY_STATUS_TONE[st]}
-            label={t(`scope.entry.status.${st}.label`, SCOPE_ENTRY_STATUS_LABEL[st])}
+          <span
+            className="inline-flex flex-wrap items-center gap-x-2 gap-y-1"
             title={t(`scope.entry.status.${st}.hint`, SCOPE_ENTRY_STATUS_HINT[st])}
-            detail={e.expires_at ? expiryText(e.expires_at) : undefined}
-            state={st}
-          />
+          >
+            <StatusLozenge
+              tone={SCOPE_ENTRY_STATUS_TONE[st].tone}
+              icon={SCOPE_ENTRY_STATUS_TONE[st].icon}
+              label={t(`scope.entry.status.${st}.label`, SCOPE_ENTRY_STATUS_LABEL[st])}
+              value={st}
+            />
+            {e.expires_at && (
+              <span className="text-xs text-muted-foreground">{expiryText(e.expires_at)}</span>
+            )}
+          </span>
         )
       },
     },
@@ -385,16 +404,7 @@ export function ScopeEntriesTable({
 
   const toolbarStart = (
     <>
-      <div className="relative min-w-0 flex-1 sm:max-w-sm">
-        <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder={t('scope.entries.search', 'Search entries…')}
-          aria-label={t('scope.entries.searchLabel', 'Search scope entries')}
-          value={searchInput}
-          onChange={(e) => onSearchInput(e.target.value)}
-          className="h-9 ps-9"
-        />
-      </div>
+      {leading}
       <ScopeTargetTypeSelect
         value={kind ?? 'all'}
         onValueChange={onKindChange}
@@ -446,6 +456,12 @@ export function ScopeEntriesTable({
             data={entries}
             getRowId={(r) => r.id ?? r.pattern ?? ''}
             showSearch={false}
+            search={{
+              value: searchInput,
+              onChange: onSearchInput,
+              placeholder: t('scope.entries.search', 'Search entries…'),
+              label: t('scope.entries.searchLabel', 'Search scope entries'),
+            }}
             toolbarStart={toolbarStart}
             manualPagination
             rowCount={data?.total ?? 0}
@@ -523,7 +539,7 @@ function ManagedByCITrust({ entry }: { entry: ApiScopeTarget }) {
     <p className="text-xs text-muted-foreground" data-testid="scope-managed-by">
       {trusts.map((m, i) => (
         <span key={m.trust_config_id ?? i}>
-          {i > 0 && ' · '}
+          {i > 0 && ', '}
           {t('scope.ciTrust.managedBy', 'Managed by the CI trust {name}', {
             name: m.trust_name ?? '',
           })}

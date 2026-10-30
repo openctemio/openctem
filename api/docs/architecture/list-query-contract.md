@@ -61,13 +61,20 @@ list's built-in views in display order, each with the caller's count and the
 
 | Key | `params` |
 |---|---|
-| `active` | `state=open` |
-| `needs_triage` | `status=new` |
-| `my_queue` | `state=open&related_to=me` |
-| `sla_breached` | `state=open&sla_status=overdue,exceeded` (the stats `sla_breached` rule) |
+| `active` | `state=open` (+ `&informational=false`, see below) |
+| `needs_triage` | `status=new&informational=false` |
+| `my_queue` | `state=open&related_to=me` (+ `&informational=false`) |
+| `sla_breached` | `state=open&sla_status=overdue,exceeded` (the stats `sla_breached` rule; + `&informational=false`) |
 | `pending_approval` | `pending_approval=true` |
 | `accepted_expiring` | `status=accepted&acceptance_expires_at_lte=P30D` |
 | `closed` | `state=closed` (fixed and dispositioned) |
+
+The work views (`active`, `my_queue`, `sla_breached`) leave informational
+findings out unless the caller's preference, else the organization's default,
+includes them; `needs_triage` always leaves them out, the response's
+`include_informational` says which applied, and such a view carries
+`informational_hidden` (how many it leaves out)
+([findings-work-views.md](findings-work-views.md)).
 
 The definitions live in one place (`vulnerability.FindingQuickViews`). Each
 view's params are parsed with the strict registry and compiled with
@@ -91,6 +98,22 @@ and the `closed` value of `state`.
 | `filterspec.SystemActor(tenantID, reason)` | background jobs that produce admin-only output | tenant only; call sites are allowlisted |
 
 There is no constructor without a tenant.
+
+## Certificates (`GET /attack-surface/certificates`)
+
+The Certificates view of the external attack surface reads certificate assets
+through the `certificates` registry (`pkg/domain/certificate`), with no new
+storage: every column is a property of the asset (`subject_cn`, `issuer_cn`,
+`issuer_org`, `not_before`, `not_after`, `fingerprint_sha256`). The data scope
+applies to the certificate asset itself, so a certificate is listed exactly
+when its asset is visible; soft-deleted assets and other asset types are never
+listed. `status` (`expired`, `expiring_soon`, `ok`, `unknown`) is computed at
+read time from `not_after` (`expiring_soon` is under 30 days left; a missing or
+unparsable date is `unknown`, never `ok`), is filterable and sortable, and is
+returned on every row with `days_to_expiry`. `GET /attack-surface/certificates/stats`
+counts the same filtered set by status. Both need `assets:read`. Subjects and
+issuers are chosen by whoever issued the certificate: clients render them as
+text.
 
 ## Errors
 
@@ -154,7 +177,7 @@ characters per value (`q` 255), 32 KB POST body.
   and `X-Export-Rows` trailers say whether rows were left out. Larger exports are
   not offered yet: they need the background operations resource (research 230
   D10), and until then the caller narrows the filter.
-- **Fields**: the `FindingExportRow` allowlist (40 columns, the same for CSV and
+- **Fields**: the `FindingExportRow` allowlist (41 columns, the same for CSV and
   NDJSON): identity, classification, scores, exploitation, SLA, asset id/name/type,
   location (file, lines, port, service), assignee, observation, validation and
   dates. Evidence (snippets, scanner output, stack traces, attachments, data

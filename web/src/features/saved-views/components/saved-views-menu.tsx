@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Bookmark, Copy, Trash2, Users } from 'lucide-react'
+import { Bookmark, Building2, Copy, Pin, PinOff, Trash2, Users } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -34,6 +34,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useMyGroups } from '@/features/access-control/api/use-groups'
+import { useNavPins } from '@/features/nav-pins/api/use-nav-pins'
+import { Permission, usePermissions } from '@/lib/permissions'
 import type { ViewChange } from '../lib/view-changes'
 
 import {
@@ -68,6 +70,8 @@ interface SavedViewsMenuProps {
 }
 
 const PERSONAL = 'personal'
+/** The share option for the whole organization (findings:views:share). */
+const ORGANIZATION = 'organization'
 
 /** "2 filters added, columns changed": what the unsaved dot stands for. */
 export function summarizeChanges(
@@ -120,11 +124,16 @@ export function SavedViewsMenu({
   // is the button's label) — not with every page load.
   const [wanted, setWanted] = useState(false)
   const { views, mutate } = useSavedViews(page, wanted || !!activeId)
+  // Findings views can be pinned to the top of the sidebar.
+  const navPins = useNavPins()
+  const pinnable = page === 'findings'
   const [saveOpen, setSaveOpen] = useState(false)
   // Only the save dialog's "share with" picker needs the caller's groups.
   const { groups } = useMyGroups(saveOpen)
   const [name, setName] = useState('')
   const [share, setShare] = useState(PERSONAL)
+  const { can } = usePermissions()
+  const canShareOrg = can(Permission.FindingsViewsShare)
   const [saving, setSaving] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<SavedView | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -142,7 +151,8 @@ export function SavedViewsMenu({
         page,
         name: name.trim(),
         query: viewQueryFromSearch(window.location.search),
-        group_id: share === PERSONAL ? undefined : share,
+        group_id: share === PERSONAL || share === ORGANIZATION ? undefined : share,
+        ...(share === ORGANIZATION ? { share_with_org: true } : {}),
         group_by: groupBy || undefined,
         columns,
         density,
@@ -177,6 +187,7 @@ export function SavedViewsMenu({
         // URL's filters on top, as the list runs it.
         query: viewQueryFromSearch(window.location.search),
         group_id: active.group_id,
+        ...(active.shared_with_org ? { share_with_org: true } : {}),
         group_by: groupBy || undefined,
         columns,
         density,
@@ -233,6 +244,12 @@ export function SavedViewsMenu({
       onSelect={() => onSelect(view)}
     >
       <span className="flex-1 truncate">{view.name}</span>
+      {view.shared_with_org && (
+        <Building2
+          className="h-3 w-3 text-muted-foreground"
+          aria-label={t('confirm.savedView.sharedWithOrg', 'Shared with the organization')}
+        />
+      )}
       {view.group_name && (
         <Users
           className="h-3 w-3 text-muted-foreground"
@@ -240,6 +257,29 @@ export function SavedViewsMenu({
             group: view.group_name,
           })}
         />
+      )}
+      {pinnable && (
+        <button
+          type="button"
+          className="rounded-sm p-0.5 hover:bg-muted"
+          aria-pressed={navPins.isPinned({ kind: 'saved_view', ref: view.id })}
+          aria-label={
+            navPins.isPinned({ kind: 'saved_view', ref: view.id })
+              ? t('nav.pins.unpin', 'Unpin {name}', { name: view.name })
+              : t('nav.pins.pin', 'Pin {name} to the top', { name: view.name })
+          }
+          onClick={(e) => {
+            e.stopPropagation()
+            e.preventDefault()
+            void navPins.toggle({ kind: 'saved_view', ref: view.id })
+          }}
+        >
+          {navPins.isPinned({ kind: 'saved_view', ref: view.id }) ? (
+            <PinOff className="h-3 w-3" aria-hidden />
+          ) : (
+            <Pin className="h-3 w-3" aria-hidden />
+          )}
+        </button>
       )}
       {view.is_owner ? (
         <button
@@ -399,6 +439,11 @@ export function SavedViewsMenu({
                     <SelectItem value={PERSONAL}>
                       {t('confirm.savedView.onlyMe', 'Only me')}
                     </SelectItem>
+                    {canShareOrg && (
+                      <SelectItem value={ORGANIZATION}>
+                        {t('confirm.savedView.everyone', 'Everyone in the organization')}
+                      </SelectItem>
+                    )}
                     {groups.map((g) => (
                       <SelectItem key={g.id} value={g.id}>
                         {g.name}

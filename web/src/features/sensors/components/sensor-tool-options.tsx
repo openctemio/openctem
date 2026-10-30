@@ -3,6 +3,7 @@
 import { useMemo } from 'react'
 
 import { useTranslation } from '@/context/i18n-provider'
+import { MetaItem, MetaLine } from '@/features/shared'
 
 import { SensorTag } from './sensor-cells'
 import { boundsText, toolOptions, type OptionSafety, type ToolOption } from '../lib/tool-options'
@@ -34,40 +35,35 @@ function OptionRow({ tool, o }: { tool: string; o: ToolOption }) {
         )}
       </div>
       {o.description && <p className="text-muted-foreground">{o.description}</p>}
-      <dl className="flex flex-wrap gap-x-4 gap-y-0.5 text-muted-foreground">
-        {o.defaultValue !== undefined && (
-          <div className="flex gap-1">
-            <dt>{t('sensors.toolOptions.default', 'Default')}</dt>
-            <dd className="font-mono text-foreground">{o.defaultValue}</dd>
-          </div>
-        )}
-        {bounds && (
-          <div className="flex gap-1">
-            <dt>{t('sensors.toolOptions.bounds', 'Range')}</dt>
-            <dd className="tabular-nums text-foreground">{bounds}</dd>
-          </div>
-        )}
-        {o.values && (
-          <div className="flex gap-1">
-            <dt>{t('sensors.toolOptions.values', 'Values')}</dt>
-            <dd className="text-foreground">{o.values.join(', ')}</dd>
-          </div>
-        )}
-        <div className="flex gap-1">
-          <dt>{t('sensors.toolOptions.setBy', 'Set by')}</dt>
-          <dd className="text-foreground">
+      <MetaLine
+        items={[
+          o.defaultValue !== undefined && (
+            <MetaItem key="default" label={t('sensors.toolOptions.default', 'Default')}>
+              <span className="font-mono">{o.defaultValue}</span>
+            </MetaItem>
+          ),
+          bounds && (
+            <MetaItem key="bounds" label={t('sensors.toolOptions.bounds', 'Range')}>
+              <span className="tabular-nums">{bounds}</span>
+            </MetaItem>
+          ),
+          o.values && (
+            <MetaItem key="values" label={t('sensors.toolOptions.values', 'Values')}>
+              {o.values.join(', ')}
+            </MetaItem>
+          ),
+          <MetaItem key="scope" label={t('sensors.toolOptions.setBy', 'Set by')}>
             {o.scope === 'scan'
               ? t('sensors.toolOptions.scope.scan', 'Sensor configuration or a scan')
               : t('sensors.toolOptions.scope.sensor', 'Sensor configuration only')}
-          </dd>
-        </div>
-        {o.flag && (
-          <div className="flex gap-1">
-            <dt>{t('sensors.toolOptions.flag', 'Native flag')}</dt>
-            <dd className="font-mono text-foreground">{o.flag}</dd>
-          </div>
-        )}
-      </dl>
+          </MetaItem>,
+          o.flag && (
+            <MetaItem key="flag" label={t('sensors.toolOptions.flag', 'Native flag')}>
+              <span className="font-mono">{o.flag}</span>
+            </MetaItem>
+          ),
+        ]}
+      />
     </li>
   )
 }

@@ -99,10 +99,10 @@ func TestDrillHref(t *testing.T) {
 		f    dashboard.WidgetFilter
 		want string
 	}{
-		{dashboard.WidgetFilter{}, "/findings?state=open"},
+		{dashboard.WidgetFilter{}, "/findings?informational=true&state=open"},
 		{dashboard.WidgetFilter{Severity: []string{"critical", "high"}, KEV: &yes}, "/findings?is_in_kev=true&severity=critical,high&state=open"},
 		{dashboard.WidgetFilter{SLAState: []string{"breached"}}, "/findings?sla_status=overdue,exceeded&state=open"},
-		{dashboard.WidgetFilter{AssetGroupIDs: []string{"6f0b9c56-1c1c-4c3d-9f21-6b1d4a3b2c10"}}, "/findings?asset_group_id=6f0b9c56-1c1c-4c3d-9f21-6b1d4a3b2c10&state=open"},
+		{dashboard.WidgetFilter{AssetGroupIDs: []string{"6f0b9c56-1c1c-4c3d-9f21-6b1d4a3b2c10"}}, "/findings?asset_group_id=6f0b9c56-1c1c-4c3d-9f21-6b1d4a3b2c10&informational=true&state=open"},
 		// Filters the list cannot express exactly give no link.
 		{dashboard.WidgetFilter{AgeBand: []string{"90+"}}, ""},
 		{dashboard.WidgetFilter{SLAState: []string{"none"}}, ""},

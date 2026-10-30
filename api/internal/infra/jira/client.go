@@ -490,7 +490,7 @@ func (c *Client) TestConnection(ctx context.Context) error {
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("jira authentication failed (status %d)", resp.StatusCode)
+		return httpsec.NewUpstreamStatusError(ctx, "jira", resp.StatusCode, nil)
 	}
 	return nil
 }

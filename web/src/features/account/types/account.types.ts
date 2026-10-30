@@ -38,6 +38,8 @@ export interface ChangePasswordInput {
   current_password: string
   new_password: string
   confirm_password: string
+  /** Also revoke every API key the person owns (connected apps always go). */
+  revoke_api_keys?: boolean
 }
 
 /** GET /api/v1/users/me/2fa */
@@ -49,6 +51,11 @@ export interface TwoFactorStatus {
   recovery_codes_remaining: number
   /** an organization the user belongs to requires 2FA */
   required_by_organization: boolean
+  /**
+   * The platform's two-factor floor covers the user but their grace period
+   * has not ended: the date from which sign-in is gated. They can set up now.
+   */
+  grace_due_at?: string
 }
 
 /** POST /api/v1/users/me/2fa/setup — nothing changes until it is confirmed */
@@ -90,6 +97,8 @@ export interface Session {
 
 export interface SessionListResponse {
   sessions: Session[]
+  /** API keys the person owns, in every organization. */
+  active_api_keys?: number
 }
 
 // ============================================
@@ -99,6 +108,8 @@ export interface SessionListResponse {
 export interface UserPreferences {
   theme: 'light' | 'dark' | 'system'
   language: string
+  /** Server-stored; absent from an older API (read as default). */
+  findings_informational?: FindingsInformationalPreference
   timezone: string
   date_format: string
   time_format: '12h' | '24h'
@@ -109,12 +120,16 @@ export interface UserPreferences {
   desktop_notifications?: boolean
 }
 
+/** Whether the findings work views show informational findings: default = the organization's. */
+export type FindingsInformationalPreference = 'default' | 'include' | 'exclude'
+
 export interface UpdatePreferencesInput {
   theme?: 'light' | 'dark' | 'system'
   language?: string
   timezone?: string
   date_format?: string
   time_format?: '12h' | '24h'
+  findings_informational?: FindingsInformationalPreference
 }
 
 // ============================================
@@ -172,23 +187,4 @@ export const SUPPORTED_LANGUAGES = [
   { value: 'ja', label: '日本語' },
   { value: 'ko', label: '한국어' },
   { value: 'zh', label: '中文' },
-] as const
-
-export const SUPPORTED_TIMEZONES = [
-  { value: 'UTC', label: 'UTC' },
-  { value: 'Asia/Ho_Chi_Minh', label: 'Asia/Ho Chi Minh (UTC+7)' },
-  { value: 'Asia/Tokyo', label: 'Asia/Tokyo (UTC+9)' },
-  { value: 'Asia/Seoul', label: 'Asia/Seoul (UTC+9)' },
-  { value: 'Asia/Shanghai', label: 'Asia/Shanghai (UTC+8)' },
-  { value: 'Asia/Singapore', label: 'Asia/Singapore (UTC+8)' },
-  { value: 'America/New_York', label: 'America/New York (UTC-5)' },
-  { value: 'America/Los_Angeles', label: 'America/Los Angeles (UTC-8)' },
-  { value: 'Europe/London', label: 'Europe/London (UTC+0)' },
-  { value: 'Europe/Paris', label: 'Europe/Paris (UTC+1)' },
-] as const
-
-export const DATE_FORMATS = [
-  { value: 'DD/MM/YYYY', label: 'DD/MM/YYYY (31/12/2024)' },
-  { value: 'MM/DD/YYYY', label: 'MM/DD/YYYY (12/31/2024)' },
-  { value: 'YYYY-MM-DD', label: 'YYYY-MM-DD (2024-12-31)' },
 ] as const

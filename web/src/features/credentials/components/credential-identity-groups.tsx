@@ -11,7 +11,12 @@ import * as React from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Mail, User } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { DataTable, SeverityBadge, type DataTableRowGroups } from '@/features/shared'
+import {
+  DataTable,
+  SeverityBadge,
+  type DataTableRowGroups,
+  type DataTableSearch,
+} from '@/features/shared'
 import type { Severity } from '@/features/shared/types'
 import type { CredentialLeakRow } from '@/features/credentials/lib'
 import { useLazyGroupRows } from '@/hooks/use-lazy-group-rows'
@@ -54,7 +59,7 @@ function IdentityTitle({ identity }: { identity: ApiIdentityExposure }) {
       <span className="max-w-[28rem] truncate text-sm font-medium text-foreground">
         {identity.identity}
       </span>
-      <span className="tabular-nums">· {facts.join(' · ')}</span>
+      <span className="tabular-nums">, {facts.join(', ')}</span>
     </span>
   )
 }
@@ -99,6 +104,7 @@ interface CredentialIdentityGroupsProps {
   isLoading?: boolean
   columns: ColumnDef<CredentialLeakRow>[]
   onRowClick?: (row: CredentialLeakRow) => void
+  search?: DataTableSearch
   toolbarStart?: React.ReactNode
   toolbarEnd?: React.ReactNode
   /** Drops loaded leaks when the search or status changes. */
@@ -112,6 +118,7 @@ export function CredentialIdentityGroups({
   isLoading,
   columns,
   onRowClick,
+  search,
   toolbarStart,
   toolbarEnd,
   resetKey,
@@ -241,6 +248,7 @@ export function CredentialIdentityGroups({
       columns={columns}
       data={rows}
       showSearch={false}
+      search={search}
       toolbarStart={toolbarStart}
       toolbarEnd={toolbarEnd}
       getRowId={(r) => r.id}

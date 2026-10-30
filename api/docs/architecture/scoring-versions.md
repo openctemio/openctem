@@ -102,7 +102,9 @@ Rows are written by:
 The **finding-priority** worker (`internal/app/reclassify`, every 10 s) claims
 up to 200 assets per pass, at most 50 of one tenant, so one tenant's large
 backlog cannot starve the others. For each asset it lists the **open**
-findings only, re-reads EPSS and KEV from the trusted catalogs, classifies
+findings only, re-reads EPSS and KEV from the trusted catalogs (the KEV flag
+follows the catalog both ways: a CVE that left it, or a finding whose CVE
+changed, loses the flag; a failed lookup keeps the stored flag), classifies
 them, recomputes the SLA deadline, writes the findings that changed and stamps
 every computed finding with the version. A failed tenant pass is queued again.
 
@@ -142,6 +144,11 @@ automatic recomputes only tighten:
 | SLA policy lengthened | kept; new findings use the new policy |
 | finding closed | kept as it was when closed |
 | analyst severity downgrade the approval policy allowed | `first_detected_at + SLA(new class)` when that is later: the one explicit extension, never counted from now ([severity override](finding-severity-override.md)) |
+
+A tenant with no SLA policy gets the platform default windows. A policy that
+cannot be read (a database error) is not "no policy": the computation fails
+for that finding and the next pass retries, because a default deadline or KEV
+cap written on a transient error would stick (deadlines only tighten).
 
 ### The default SLA policy
 
@@ -188,8 +195,43 @@ and a first deadline are not guarded.
 
 Every tightening of an open finding writes a `sla_deadline_tightened`
 timeline entry (database trigger, whatever wrote the deadline) with both
-deadlines, both classes and the reason (`priority_raised` or
-`sla_policy_changed`).
+deadlines, both classes and the reason (`priority_raised`,
+`sla_policy_changed` or `kev_cap`).
+
+### Known exploited deadline cap
+
+A finding whose CVE is in CISA KEV is exploited in the wild, so the
+organization's deadline for it is bounded whatever its class or severity.
+Each SLA policy has `kev_cap_days` (default 14, 0 = off, 0..365; console:
+Settings, SLA policies, "Known exploited (KEV) deadline cap"). The applier
+takes `min(class deadline, start + cap)` for a KEV finding, with the same
+start as the class window: first detection for a first deadline, now on a
+recompute. So:
+
+| Case | Deadline |
+|---|---|
+| new finding already in KEV | `first_detected_at + min(SLA(class), cap)` |
+| KEV enrichment arrives later (KEV refresh, then the priority pass) | `min(old, now + cap)`: the pass that first sees the KEV flag is the first sighting |
+| later passes, a longer cap, cap turned off | kept (tighten only) |
+| informational finding under a policy with info days = 0 | no deadline: the cap tightens a deadline, it never creates one |
+| analyst severity downgrade | never relaxed past `first_detected_at + cap` |
+
+Why the priority path alone is not enough: the exploitation floor raises a
+KEV finding to at least P1 (5 days by default), but P1 days are configurable
+up to 365, the attribution cap holds an unconfirmed asset at P2 (15 days by
+default, also configurable), and a manual priority override can set any
+class. The cap bounds all of them with one setting.
+
+A deadline the cap decided is marked (`findings.sla_kev_capped`), so the
+finding says "Shortened because it is in CISA KEV". The flag follows the
+deadline: the ingest upsert and `SavePriorities` keep it with the deadline
+they keep, and the guard trigger keeps the old flag when it keeps the old
+deadline. A new clock (regression restart, expired acceptance, a false
+positive reopened by a material change) clears it; it counts the class
+window, and the next priority pass applies the cap again.
+
+A change to the cap is audited with the policy (before/after); a longer cap
+or turning it off is High severity.
 
 ## Preview before apply
 
@@ -343,7 +385,8 @@ Planned: the "why this priority / score" panels showing the version and
 - `internal/app/reclassify/reclassifier.go`, `queue.go`
 - `internal/infra/controller/priority_reclassify.go`
 - `internal/app/asset/risk_freshness.go` (risk version stamp)
-- `internal/app/sla/applier.go`, `migrations/*_sla_deadline_tighten_only.up.sql`
+- `internal/app/sla/applier.go`, `migrations/*_sla_deadline_tighten_only.up.sql`,
+  `migrations/*_sla_kev_deadline_cap.up.sql`, `tests/integration/sla_kev_cap_test.go`
 - `internal/app/asset/risk_preview.go`, `internal/app/finding/priority_preview.go`
 - `internal/infra/controller/risk_snapshot.go`, `internal/infra/postgres/dashboard_repository.go` (trend markers)
 - `web/src/features/organization/components/scoring-impact-dialog.tsx`

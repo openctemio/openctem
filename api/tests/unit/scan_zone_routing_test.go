@@ -113,8 +113,8 @@ func newZonedScanService(dir *fakeZoneDir, res tableResolver, excl valueExclusio
 		opts = append(opts, scanservice.WithScopeExclusionFilter(excl))
 	}
 	svc := scanservice.NewService(deps.scanRepo, deps.templateRepo, deps.assetGroupRepo, deps.runRepo,
-		deps.stepRepo, &mockStepRunRepo{}, deps.commandRepo, &mockScannerTemplateRepo{}, &mockTemplateSourceRepo{},
-		deps.toolRepo, &mockTemplateSyncer{}, deps.sensorSelector, deps.secValidator, logger.NewNop(), allowAllTargetChecks(append(opts, extra...)...)...)
+		deps.stepRepo, &mockStepRunRepo{}, deps.commandRepo, &mockScannerTemplateRepo{},
+		deps.toolRepo, deps.sensorSelector, deps.secValidator, logger.NewNop(), allowAllTargetChecks(append(opts, extra...)...)...)
 	deps.toolRepo.tools["nuclei"] = &tool.Tool{ID: shared.NewID(), Name: "nuclei", IsActive: true, SupportedTargets: []string{"url", "domain", "ip"}}
 	deps.toolRepo.tools["betterleaks"] = &tool.Tool{ID: shared.NewID(), Name: "betterleaks", IsActive: true, SupportedTargets: []string{"file", "repository"}}
 	return svc, deps

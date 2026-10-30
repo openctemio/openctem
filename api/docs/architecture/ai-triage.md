@@ -8,6 +8,12 @@ it never changes the finding on its own.
 Status: shipped. Planned work is listed at the end. Design and decisions:
 [RFC-119](../rfcs/RFC-119-ai-triage-governance.md).
 
+> The sub-modules `ai_triage.bulk`, `.auto`, `.workflow`, `.byok`, `.agent` and
+> `.custom_prompts` were removed (migration 20261028153739). The feature is gated by
+> the `ai_triage` module and the `ai_triage:*` permissions only. Model output is
+> a suggestion stored on the triage result; the service never writes a
+> finding's severity or priority (guarded by `no_human_free_change_test.go`).
+
 ## Who turns it on
 
 - **Platform administrator**: sets up the platform AI provider in the
@@ -117,6 +123,15 @@ so a campaign whose TLP was raised after the request is still kept back. A
 refused request answers `403 AI_POLICY_RESTRICTED`; a refused queued job
 fails with `ai_policy_restricted`; auto-triage simply does not queue it.
 
+Every AI context bundle is also **masked**: hosts, addresses, e-mail
+addresses, names and ticket ids become typed placeholders and secrets are
+removed for good, and the platform turns the model's answer back into real
+values. See [AI context masking](ai-context-masking.md).
+
+## What an AI reviewer may see
+
+Any AI that reviews or approves something (triage today, a draft reviewer or a check of an outside agent's proposal later) receives the object under review and input a person wrote, and nothing else. It never receives the requesting agent's transcript or free-text justification as instructions. A justification an agent supplies is shown to the person who decides, fenced as untrusted text, and is never offered to the reviewing model as authority. Content that came from scanners, tested systems or outside agents sits inside a per-request fence the model is told to treat as data, and a model verdict stays advisory: it can add a warning or a proposal, and a person decides.
+
 ## Errors
 
 The API answers a refused request with a distinct code, never with "no
@@ -166,6 +181,9 @@ verdict never changes the priority class. A result with validation warnings
 (coerced output, prompt-injection markers in the finding, a proposed
 severity change) is flagged `needs_review`, audited, and side-effect
 workflows skip it.
+
+AI agents (service accounts that triage like a person, with accountable
+owners) are described in [AI agents](ai-analysis.md).
 
 ## Providers
 

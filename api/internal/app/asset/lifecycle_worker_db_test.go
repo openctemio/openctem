@@ -198,3 +198,34 @@ func TestLifecycleWorker_ExcludedSourceTypes(t *testing.T) {
 		t.Errorf("manual asset with no exclusions: status %q, want stale", got)
 	}
 }
+
+// The stale clock is the last sighting. A background write (a risk rescore,
+// the scoring version stamp) moves updated_at through the table's trigger
+// and used to restart the countdown, so an asset with open findings never
+// went stale. A person's reactivation (lifecycle_paused_until) still holds.
+func TestLifecycleWorker_SystemWritesDoNotResetTheStaleClock(t *testing.T) {
+	h := newLifecycleHarness(t)
+	if h == nil {
+		return
+	}
+	ctx := context.Background()
+	tenantID := h.tenant("")
+	rescored := h.asset(tenantID, "rescored.sensor.example", "sensor", 30)
+	snoozed := h.asset(tenantID, "snoozed.sensor.example", "sensor", 30)
+	h.exec(`UPDATE assets SET risk_score = 77 WHERE id = $1`, rescored.String())
+	h.exec(`UPDATE assets SET lifecycle_paused_until = NOW() + interval '7 days' WHERE id = $1`, snoozed.String())
+
+	rep, err := h.w.Run(ctx, tenantID, false)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if rep.TransitionedToStale != 1 {
+		t.Fatalf("transitioned %d, want 1", rep.TransitionedToStale)
+	}
+	if got := h.status(rescored); got != "stale" {
+		t.Errorf("rescored but unseen for 30 days: status %q, want stale", got)
+	}
+	if got := h.status(snoozed); got != "active" {
+		t.Errorf("reactivated by a person: status %q, want active", got)
+	}
+}

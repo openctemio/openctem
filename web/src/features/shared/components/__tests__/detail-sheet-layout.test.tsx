@@ -73,9 +73,16 @@ describe('DetailSheet + DetailHeader', () => {
     expect(title.className).not.toContain('truncate')
   })
 
-  it('joins the meta parts with a middle dot and skips empty ones', () => {
-    renderSheet({ meta: ['Scanner · long-running', null, '', '10.0.0.5'] })
-    expect(screen.getByText('Scanner · long-running · 10.0.0.5')).toBeInTheDocument()
+  it('lays the meta parts out without a separator glyph and skips empty ones', () => {
+    renderSheet({ meta: ['Scanner', 'Long-running', null, '', '10.0.0.5'] })
+    const line = document.querySelector('[data-slot="meta-line"]') as HTMLElement
+    // The dialog is described by the line; the parts are separate elements
+    // and the only text between them is a visually hidden comma.
+    expect(line.id).not.toBe('')
+    expect(screen.getByRole('dialog').getAttribute('aria-describedby')).toBe(line.id)
+    expect(line.textContent).toBe('Scanner, Long-running, 10.0.0.5')
+    expect(line.textContent).not.toMatch(/[\u00b7\u2022]/)
+    expect(line.className).not.toContain('truncate')
   })
 
   it('renders the action row', () => {

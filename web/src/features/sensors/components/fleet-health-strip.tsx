@@ -100,7 +100,7 @@ export interface FleetHealthStripProps {
  * what needs attention, version drift, zone coverage and job slots. The
  * clickable metrics filter (or group) the table below: Fleet health to the
  * sensors that are not connected, Needs attention, Updates, Zones (grouping)
- * and protocol v1. Jobs stays a number: no subset of sensors answers it.
+ * and protocol v1. Running jobs and slots are not a tile: no subset of sensors answers them.
  */
 export function FleetHealthStrip({
   summary,
@@ -207,16 +207,5 @@ export function FleetHealthStrip({
       active: protocolV1Active,
     })
   }
-  items.push({
-    key: 'jobs',
-    label: t('sensors.health.jobs'),
-    value: summary.jobsRunning,
-    hint: t('sensors.health.slots', undefined, { count: summary.jobSlots }),
-    detail: t(
-      summary.canTakeJobs === 1 ? 'sensors.health.onSensors.one' : 'sensors.health.onSensors.other',
-      undefined,
-      { count: summary.canTakeJobs }
-    ),
-  })
   return <MetricStrip className={className} loading={loading} items={items} />
 }

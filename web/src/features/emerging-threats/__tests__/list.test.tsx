@@ -81,7 +81,7 @@ describe('EmergingThreatsList', () => {
     expect(screen.getAllByText('Ransomware').length).toBeGreaterThan(0)
     expect(screen.getAllByText('EPSS 50.0%').length).toBeGreaterThan(0)
     expect(
-      screen.getAllByText(/3 confirmed · 2 possible · 1 internet-facing/).length
+      screen.getAllByText(/3 confirmed, 2 possible, 1 internet-facing/).length
     ).toBeGreaterThan(0)
     expect(api.get).toHaveBeenCalledWith('/api/v1/emerging-threats?state=open&page=1&per_page=25')
   })
@@ -115,6 +115,24 @@ describe('EmergingThreatsList', () => {
     await waitFor(() =>
       expect(api.get).toHaveBeenCalledWith(
         '/api/v1/emerging-threats?level=immediate&state=open&page=1&per_page=25'
+      )
+    )
+  })
+
+  it('the digest and listed tiles filter by level and the strip has five tiles', async () => {
+    renderList()
+    await screen.findByText('CVE-2026-1000')
+    expect(document.querySelectorAll('[data-slot="metric-strip"] > *')).toHaveLength(5)
+    await userEvent.click(screen.getByRole('button', { name: /Digest/ }))
+    await waitFor(() =>
+      expect(api.get).toHaveBeenCalledWith(
+        '/api/v1/emerging-threats?level=digest&state=open&page=1&per_page=25'
+      )
+    )
+    await userEvent.click(screen.getByRole('button', { name: /Listed/ }))
+    await waitFor(() =>
+      expect(api.get).toHaveBeenCalledWith(
+        '/api/v1/emerging-threats?level=listed&state=open&page=1&per_page=25'
       )
     )
   })

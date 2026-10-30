@@ -234,6 +234,11 @@ describe('TenableScanNowButton', () => {
     mockScanNow.mockResolvedValue({ id: 'run-1', status: 'running' })
     render(<TenableScanNowButton assetIds={['a1']} label="Scan with Tenable.sc" />)
     fireEvent.click(screen.getByRole('button', { name: 'Scan with Tenable.sc' }))
+    // It sends scan traffic now: the user confirms first.
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('Scan this asset with Tenable.sc c1?')
+    expect(mockScanNow).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Scan asset' }))
     await waitFor(() =>
       expect(mockScanNow).toHaveBeenCalledWith({ integrationId: 'c1', assetIds: ['a1'] })
     )
@@ -243,11 +248,21 @@ describe('TenableScanNowButton', () => {
     expect(mockPush).toHaveBeenCalledWith('/scans/runs?run=run-1')
   })
 
+  it('Cancel on the scan question starts no scan', async () => {
+    state.integrations = [connector('c1')]
+    render(<TenableScanNowButton assetIds={['a1', 'a2']} label="Scan" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Scan' }))
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent('Scan 2 assets with')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(mockScanNow).not.toHaveBeenCalled()
+  })
+
   it("an API refusal is shown with the API's message", async () => {
     state.integrations = [connector('c1')]
     mockScanNow.mockRejectedValue(new Error('the connector sensor is not active'))
     render(<TenableScanNowButton assetIds={['a1']} label="Scan" />)
     fireEvent.click(screen.getByRole('button', { name: 'Scan' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Scan asset' }))
     await waitFor(() => expect(toastError).toHaveBeenCalled())
   })
 
@@ -257,6 +272,7 @@ describe('TenableScanNowButton', () => {
     render(<TenableScanNowButton assetIds={['a1']} label="Scan" />)
     await userEvent.click(screen.getByRole('button', { name: 'Scan' }))
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Tenable.sc c2' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Scan asset' }))
     await waitFor(() =>
       expect(mockScanNow).toHaveBeenCalledWith({ integrationId: 'c2', assetIds: ['a1'] })
     )

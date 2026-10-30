@@ -9,6 +9,7 @@ import { scheduleTypeName } from '../lib/labels'
 import { enTranslate, type Translate } from '../lib/translate'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import { hasSchedule, scheduleOn } from '../lib/scan-status'
+import { ScheduleOnConfirm } from './schedule-on-confirm'
 
 /** "in 2 days", "in 3 hours", "Soon", "Overdue"; null without a date. */
 export function formatNextRun(
@@ -58,6 +59,7 @@ export function ScheduleCell({
   const canWrite = useHasPermission(Permission.ScansWrite)
   const [saving, setSaving] = React.useState(false)
   const [on, setOn] = React.useState(scheduleOn(config))
+  const [confirmOn, setConfirmOn] = React.useState(false)
   React.useEffect(() => setOn(scheduleOn(config)), [config])
 
   if (!hasSchedule(config)) {
@@ -81,10 +83,17 @@ export function ScheduleCell({
 
   return (
     <div className="flex items-center gap-2">
+      <ScheduleOnConfirm
+        name={config.name}
+        open={confirmOn}
+        onOpenChange={setConfirmOn}
+        onConfirm={() => toggle(true)}
+      />
       <div className="relative">
         <Switch
           checked={on}
-          onCheckedChange={toggle}
+          // Turning the schedule on starts scans: ask first. Off is one click.
+          onCheckedChange={(checked) => (checked ? setConfirmOn(true) : void toggle(false))}
           disabled={disabled || saving || !canWrite}
           aria-label={on ? t('scans.cell.scheduleOffAria') : t('scans.cell.scheduleOnAria')}
         />

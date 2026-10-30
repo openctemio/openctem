@@ -38,9 +38,10 @@ func TestDecide(t *testing.T) {
 		{"no match, endpoint answered 404 → confirmed fixed", noMatch(attempt(matchedAt, 404)), missing, OutcomeConfirmedFixed, ReasonNotMatched},
 		// The owner's case (2026-10-07): the re-run requested the path twice.
 		{"no match at another path → endpoint mismatch", noMatch(attempt(matchedAt+"/wp-admin/js/theme.js", 404)), reachable, OutcomeInconclusive, ReasonEndpointMismatch},
-		{"no match, 403 → blocked", noMatch(attempt(matchedAt, 403)), reachable, OutcomeInconclusive, ReasonBlocked},
+		{"no match, origin 403, unknown class → access denied", noMatch(attempt(matchedAt, 403)), reachable, OutcomeInconclusive, ReasonAccessDenied},
 		{"no match, 429 → blocked", noMatch(attempt(matchedAt, 429)), reachable, OutcomeInconclusive, ReasonBlocked},
-		{"no match, 401 → auth changed", noMatch(attempt(matchedAt, 401)), reachable, OutcomeInconclusive, ReasonAuthChanged},
+		{"no match, origin 401, unknown class → access denied", noMatch(attempt(matchedAt, 401)), reachable, OutcomeInconclusive, ReasonAccessDenied},
+		{"no match, 407 → auth changed", noMatch(attempt(matchedAt, 407)), reachable, OutcomeInconclusive, ReasonAuthChanged},
 		{"no match, 503 → server error", noMatch(attempt(matchedAt, 503)), reachable, OutcomeInconclusive, ReasonServerError},
 		{"no match, no response → unreachable", noMatch(attempt(matchedAt, 0)), reachable, OutcomeInconclusive, ReasonUnreachable},
 		// A bare "not detected" on a host that answers a TCP probe proves nothing.

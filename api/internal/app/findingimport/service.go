@@ -159,8 +159,21 @@ type FileResult struct {
 	Stats    importer.Stats   `json:"stats"`
 	Issues   []importer.Issue `json:"issues,omitempty"`
 	Unmapped []string         `json:"unmapped,omitempty"`
-	VEX      *VEXSummary      `json:"vex,omitempty"`
-	Ingest   *ingest.Output   `json:"ingest,omitempty"`
+	// UnmappedTotal is the number of unmapped paths before the list was
+	// cut at MaxUnmappedListed.
+	UnmappedTotal int `json:"unmapped_total,omitempty"`
+	// Layout of a multi-file bundle ("v3", "v4" for a recon directory).
+	Layout string `json:"layout,omitempty"`
+	// SkippedByPolicy are the files of a bundle that were deliberately not
+	// opened (people and credential data, images), each with its reason.
+	// SkippedByPolicyTotal counts them before the list was cut.
+	SkippedByPolicy      []importer.SkippedPath `json:"skipped_by_policy,omitempty"`
+	SkippedByPolicyTotal int                    `json:"skipped_by_policy_total,omitempty"`
+	// Candidates are the imported hosts the organization's scope does not
+	// cover: they wait for review and are never scanned.
+	Candidates int            `json:"candidates,omitempty"`
+	VEX        *VEXSummary    `json:"vex,omitempty"`
+	Ingest     *ingest.Output `json:"ingest,omitempty"`
 }
 
 // Service imports uploaded files.
@@ -184,6 +197,9 @@ type Service struct {
 	perms PermissionReader
 	// mappings resolves the import mapping version a committed upload pinned.
 	mappings MappingResolver
+	// cover answers which imported hosts the organization's scope covers
+	// (bundle.go); nil: none is, and every host of a bundle is a candidate.
+	cover ScopeCover
 }
 
 // SetTempDir sets where the worker spools an uploaded archive ("" is the
@@ -262,7 +278,9 @@ func (s *Service) FinishUpload(ctx context.Context, req Request, results []FileR
 		ok++
 		res.Components += fr.Stats.Components
 		res.Statements += fr.Stats.Statements
-		res.Skipped += fr.Stats.Skipped
+		// Records the parser skipped, and the files of a bundle that were
+		// not read on purpose: both are input the upload did not import.
+		res.Skipped += fr.Stats.Skipped + fr.SkippedByPolicyTotal
 		if v := fr.VEX; v != nil {
 			res.VEXStored += v.Stored
 			res.VEXRequested += v.Requested
@@ -297,6 +315,9 @@ func (s *Service) ImportUpload(ctx context.Context, req Request, up Upload) (res
 	up.Format = req.Format
 	up.Mapping = req.Mapping
 	up.MinSeverity = req.MinSeverity
+	// A bundle is partial coverage by nature; a request that declares full
+	// coverage is refused for it rather than closing findings.
+	up.NoBundle = req.Coverage.Full
 	if up.ReportIDPrefix == "" {
 		up.ReportIDPrefix = req.SessionID
 	}
@@ -355,7 +376,17 @@ func (s *Service) store(ctx context.Context, req Request, c Converted) FileResul
 	fr.Issues = res.Issues
 	fr.Unmapped = res.Unmapped
 	if len(fr.Unmapped) > MaxUnmappedListed {
+		fr.UnmappedTotal = len(fr.Unmapped)
 		fr.Unmapped = fr.Unmapped[:MaxUnmappedListed]
+	}
+	if res.Layout != "" {
+		fr.Layout = res.Layout
+		fr.SkippedByPolicy = res.Skipped
+		fr.SkippedByPolicyTotal = len(res.Skipped)
+		if len(fr.SkippedByPolicy) > MaxUnmappedListed {
+			fr.SkippedByPolicy = fr.SkippedByPolicy[:MaxUnmappedListed]
+		}
+		fr.Candidates = s.judgeScope(ctx, req.TenantID, res)
 	}
 
 	if !req.DryRun {
@@ -370,7 +401,7 @@ func (s *Service) store(ctx context.Context, req Request, c Converted) FileResul
 	}
 
 	if !req.DryRun && hasContent(res.Report) {
-		out, err := s.ingestReport(ctx, req, res.Report)
+		out, err := s.ingestReport(ctx, req, res.Report, res.Format)
 		if err != nil {
 			fr.Error = &FileError{Message: err.Error(), Kind: KindFailed}
 			return fr
@@ -432,13 +463,13 @@ func (s *Service) writtenAssets(ctx context.Context, req Request, assetMap map[s
 }
 
 func hasContent(r *ctis.Report) bool {
-	return r != nil && (len(r.Assets) > 0 || len(r.Findings) > 0 || len(r.Dependencies) > 0)
+	return r != nil && (len(r.Assets) > 0 || len(r.Findings) > 0 || len(r.Dependencies) > 0 || len(r.Endpoints) > 0)
 }
 
 // ingestReport runs the report through ingest with the uploader's rights.
 // An upload never auto-resolves: its coverage is partial whatever the file
 // says.
-func (s *Service) ingestReport(ctx context.Context, req Request, report *ctis.Report) (*ingest.Output, error) {
+func (s *Service) ingestReport(ctx context.Context, req Request, report *ctis.Report, format importer.Format) (*ingest.Output, error) {
 	report.Metadata.CoverageType = string(ingest.CoverageTypePartial)
 	report.Metadata.Branch = nil
 	in := ingest.Input{Report: report, CoverageType: ingest.CoverageTypePartial}
@@ -446,6 +477,10 @@ func (s *Service) ingestReport(ctx context.Context, req Request, report *ctis.Re
 	in.Options.Receipt = &ingestreceipt.Source{Kind: ingestreceipt.SourceUpload, Ref: req.ReceiptID.String()}
 	// A person's file: an import for attribute reconciliation (RFC-069).
 	in.Options.SourceKind, in.Options.SourceName = asset.SourceKindImport, importSourceName(req.Format)
+	if bundleFormat(format) {
+		// A recon directory names its own source.
+		in.Options.SourceName = "import:" + string(format)
+	}
 	if req.Mapping != nil {
 		in.Options.SourceName = req.Mapping.SourceName()
 	}

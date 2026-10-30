@@ -283,7 +283,19 @@ For each target, in order:
    scope. The dry run (`POST /scope/check`) answers the same codes for typed
    targets and for inventory assets (`asset_ids`, checked by name); an asset
    the caller may not see, or that is not the tenant's, answers
-   `out_of_data_scope` by its id only, whichever it is. The state is also
+   `out_of_data_scope` by its id only, whichever it is. Each refused result
+   of the dry run also carries `remedies`, the ranked choices a scan form
+   offers for it, best first: `run_on_tenant_sensor` (only for
+   `proof_required` and `program_platform`, when one of the organization's
+   own sensors could take the job and the scan is not already on them),
+   `verify_domain` (only when the caller may verify, from the filtered
+   fixes), `lower_intensity` with the tier (only for an explicit request
+   tier, a workflow's intensity, and only when the same gate allows the
+   target at that lower tier: the handler re-runs the dry run for the
+   caller's tenant at each lower tier for `tier_exceeds` and `low_impact`
+   refusals) and `remove`, always last. Remedies grant nothing: every one
+   goes through its normal route and the scan is checked again on save and
+   at dispatch. The state is also
    logged (`active scan target refused`) with the path. A request refused as
    a whole (scan create, clone, import, quick scan, `POST /commands`) is also
    **audited** as `scan.target_refused` (medium, result `failure`) in the
@@ -432,6 +444,18 @@ organization. A scope entry covering the repository does not change this.
 | Validation and retest | `validation/gate.go` `CheckTarget` | A probe of a repository (by asset type or by form) is refused before the gate is asked; the retest service also refuses assets that are not network addressable. |
 | Re-check at claim | `scan/path_target_gate.go` `refusePathTargets` | A job whose tool or capability the catalog places on a network stage loses every path target (`invalid_target`). A job the catalog cannot place was decided when it was built. |
 
+## Where ownership confirmation applies
+
+Confirmation of discovered assets and the wildcard-only restriction apply
+only to a job on platform sensors of the hosted service
+(`MANAGED_SERVICE`); on a tenant's own sensors and on self-hosted installs
+the scope entries are the authority and unclassified assets are treated as
+`full`. The placement reaches `ActiveGate` through the context
+(`attribution.WithPlacement`); see
+[scan-targets.md](scan-targets.md#where-ownership-confirmation-applies) for
+how each path decides it. Rejections, exclusions, the deny list and the
+guardrails apply on every placement.
+
 ## Re-check at claim
 
 A probing job (scan, validate, retest, connector scan) can wait in the
@@ -476,14 +500,39 @@ repository is dispatched by its asset name, which the validator refuses); an
 internal address still needs a scan zone. A target that now routes to
 another zone than the command's `scan_zone_id` (or into or out of every
 zone) is refused as `zone_changed`. The re-check never asks more than the
-dispatch did, so a job is refused only for a change.
+dispatch did, so a job is refused only for a change: a single-scanner run
+the trigger did not route over zones (a passive coverage run of public
+names) records `no_zone_routing`, so the claim does not route it either.
+
+**Lookup-only jobs and names with no DNS answer.** A job that only looks
+names up (`scopedom.JobShape.LookupOnly`: every stage of its tool, and the
+capability it names, is passive and reaches resolvers, third-party sources
+or a vendor API, never the target hosts; today `dnsx` for `resolve.dns` and
+`subfinder` for `discover.subdomains`) runs on a hostname that does not
+resolve: finding that out is its work (coverage S5 re-checks names that
+stopped resolving). Zone routing then places such a name as a public target
+(the default zone, else unzoned: `scanzone.Router.LookupOnly`) instead of
+refusing it as `unresolved`. It is one rule, applied wherever targets are
+routed: the dispatch gate (the claim passes the job; dispatch paths pass
+`Tool`/`Capability`), the scan trigger's own routing (`routeForScan`) and
+coverage. Every other check still applies: scope entries, exclusions,
+rejected names, the deny list, private or internal addresses, domain proof
+and the tier, and the sensor's egress guard still checks every address
+before it connects. A job of any other tool, an unknown tool, or a caller
+that names neither is refused `unresolved` as before (fail closed).
 
 **Outcome.** Refused targets are taken out of the job before it is handed
-out: out of `targets`, `target` and `context.targets`, in the response and in
-the stored payload (a conditional write on the pending command), so result
+out: out of `targets`, `target` and `context.targets`, and out of the target
+lists of the tool settings (`config`, `scanner_config` and
+`context.scanner_config`, where a quick scan carries its targets too), in
+the response and in the stored payload (a conditional write on the pending command), so result
 binding narrows too. A job left with no target is not handed out: it is
 failed with `SCOPE_CHANGED: <target> (<code>); ...` (a conditional write on
-the pending command, so a second or concurrent claim records nothing), and
+the pending command, so a second or concurrent claim records nothing), or,
+when every refusal is `unresolved` (the names stopped resolving while the
+job was queued, nothing about the scope changed), with
+`NO_RESOLVING_TARGETS: ...` (failure class `target`, a fact about the
+targets, not retried), and
 what waits on it is settled as on a sensor's failure
 (`CommandHandler.OnCommandFailed`, the `command.FailureObserver`): its scan
 step fails with `SCOPE_CHANGED` (failure class `scope`, not retried), a

@@ -58,14 +58,14 @@ type VerifiedDomainResponse struct {
 	Status string `json:"status"`
 	// Purpose: sso (admits SSO JIT and SCIM users) or easm (the organization
 	// verified it itself for attack-surface management; admits nobody).
-	// Adding an easm domain here makes it sso (research/22 E6).
+	// Adding an easm domain here makes it sso.
 	Purpose string `json:"purpose"`
 	// ClaimConflict: another organization also held this domain verified for
 	// SSO when domain claims became exclusive. Both keep working until a
 	// platform administrator removes one of the claims.
 	ClaimConflict bool                   `json:"claim_conflict"`
 	Instructions  domainverify.TXTRecord `json:"instructions"`
-	// JITEnabled: SSO admits new people on this domain (RFC-058).
+	// JITEnabled: SSO admits new people on this domain.
 	JITEnabled bool `json:"jit_enabled"`
 	// JITRole: the role they get (viewer or member); empty uses the
 	// identity provider's default.
@@ -79,7 +79,7 @@ type VerifiedDomainResponse struct {
 // AddDomain adds a domain and returns the DNS TXT record to publish.
 // POST /api/v1/settings/verified-domains
 // @Summary Add a domain to verify for an organization
-// @Description Platform admin console (RFC-022): runs against the organization in the path.
+// @Description Platform admin console: runs against the organization in the path.
 // @Tags Admin Organization SSO
 // @Produce json
 // @Param tenantId path string true "Organization ID"
@@ -118,7 +118,7 @@ func (h *VerifiedDomainHandler) AddDomain(w http.ResponseWriter, r *http.Request
 // List lists the tenant's verified domains.
 // GET /api/v1/settings/verified-domains
 // @Summary List an organization's verified domains
-// @Description Platform admin console (RFC-022): runs against the organization in the path.
+// @Description Platform admin console: runs against the organization in the path.
 // @Tags Admin Organization SSO
 // @Produce json
 // @Param tenantId path string true "Organization ID"
@@ -149,7 +149,7 @@ func (h *VerifiedDomainHandler) List(w http.ResponseWriter, r *http.Request) {
 // Verify runs verification for a domain now.
 // POST /api/v1/settings/verified-domains/{id}/verify
 // @Summary Verify an organization's domain via DNS
-// @Description Platform admin console (RFC-022): runs against the organization in the path.
+// @Description Platform admin console: runs against the organization in the path.
 // @Tags Admin Organization SSO
 // @Produce json
 // @Param tenantId path string true "Organization ID"
@@ -186,7 +186,7 @@ func (h *VerifiedDomainHandler) Verify(w http.ResponseWriter, r *http.Request) {
 // Delete removes a verified domain.
 // DELETE /api/v1/settings/verified-domains/{id}
 // @Summary Delete an organization's verified domain
-// @Description Platform admin console (RFC-022): runs against the organization in the path.
+// @Description Platform admin console: runs against the organization in the path.
 // @Tags Admin Organization SSO
 // @Produce json
 // @Param tenantId path string true "Organization ID"
@@ -309,7 +309,7 @@ type UpdateDomainJITRequest struct {
 // UpdateJIT sets whether SSO admits new people on the domain and with which
 // role (viewer or member; administrators are never provisioned).
 // @Summary Set a verified domain's just-in-time provisioning
-// @Description Platform admin console (RFC-022, RFC-058): per-domain JIT for an organization with several SSO domains.
+// @Description Platform admin console: per-domain JIT for an organization with several SSO domains.
 // @Tags Admin Organization SSO
 // @Accept json
 // @Produce json

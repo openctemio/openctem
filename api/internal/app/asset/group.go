@@ -2,6 +2,7 @@ package asset
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/mail"
@@ -27,6 +28,14 @@ type AssetGroupService struct {
 
 	// Layer 2 data scope for group contents (nil = unrestricted).
 	dataScope *datascope.Enforcer
+
+	// Smart groups (group_rule.go); all nil in a service without rules.
+	ruleStore   assetgroupdom.RuleStore
+	ruleAssets  RuleAssetSource
+	guard       GroupAccessGuard
+	paste       PasteAssets
+	ownerCheck  func(ctx context.Context, tenantID, userID shared.ID) (bool, error)
+	capOverride int
 }
 
 // SetDataScope wires the Layer 2 data-scope enforcer: a restricted member
@@ -61,6 +70,9 @@ type CreateAssetGroupInput struct {
 	OwnerEmail   string   `validate:"omitempty,email,max=255"`
 	Tags         []string `validate:"max=20,dive,max=50"`
 	AssetIDs     []string `validate:"max=1000,dive,uuid"`
+	// Rule is an optional group rule document (assetgroupdom.Rule): the
+	// group then fills itself.
+	Rule json.RawMessage
 }
 
 // UpdateAssetGroupInput represents input for updating an asset group.
@@ -120,6 +132,18 @@ func (s *AssetGroupService) CreateAssetGroup(ctx context.Context, input CreateAs
 		return nil, fmt.Errorf("%w: invalid criticality", shared.ErrValidation)
 	}
 
+	// A rule is checked before the group exists, so a refused rule never
+	// leaves a group behind.
+	hasRule := len(strings.TrimSpace(string(input.Rule))) > 0 && strings.TrimSpace(string(input.Rule)) != "null"
+	if hasRule {
+		if s.ruleStore == nil {
+			return nil, errRulesUnavailable
+		}
+		if _, err := parseRuleInput(input.Rule); err != nil {
+			return nil, err
+		}
+	}
+
 	// Check for duplicate name
 	exists, err := s.repo.ExistsByName(ctx, tenantID, input.Name)
 	if err != nil {
@@ -161,6 +185,19 @@ func (s *AssetGroupService) CreateAssetGroup(ctx context.Context, input CreateAs
 			s.logger.Error("failed to recalculate counts", "group_id", group.ID(), "error", err)
 		}
 		// Refresh group from database
+		if refreshed, err := s.repo.GetByTenantAndID(ctx, tenantID, group.ID()); err == nil && refreshed != nil {
+			group = refreshed
+		}
+	}
+
+	if hasRule {
+		if _, err := s.ChangeGroupRule(ctx, input.TenantID, group.ID(), input.Rule); err != nil {
+			// The group was made for this rule: do not leave it empty.
+			if derr := s.repo.Delete(ctx, tenantID, group.ID()); derr != nil {
+				s.logger.Error("failed to remove a group whose rule was refused", "id", group.ID(), "error", derr)
+			}
+			return nil, err
+		}
 		if refreshed, err := s.repo.GetByTenantAndID(ctx, tenantID, group.ID()); err == nil && refreshed != nil {
 			group = refreshed
 		}
@@ -582,15 +619,25 @@ func (s *AssetGroupService) AddAssetsToGroup(ctx context.Context, tenantID strin
 	if len(ids) == 0 {
 		return nil
 	}
-
-	matched, err := s.repo.AddAssets(ctx, groupID, ids)
-	if err != nil {
+	if err := s.requireChangeAllowed(ctx, tid, groupID); err != nil {
 		return err
 	}
-	if matched != len(ids) {
-		// The repository admits only the group's tenant; a mismatch here
-		// means an asset moved or vanished since the check above.
-		return errAssetsNotFound
+
+	if s.ruleStore != nil {
+		editor, _ := s.callerUser(ctx)
+		if _, err := s.ruleStore.AddMembers(ctx, tid, groupID, ids, assetgroupdom.SourceManual, idPtr(editor)); err != nil {
+			return err
+		}
+	} else {
+		matched, err := s.repo.AddAssets(ctx, groupID, ids)
+		if err != nil {
+			return err
+		}
+		if matched != len(ids) {
+			// The repository admits only the group's tenant; a mismatch here
+			// means an asset moved or vanished since the check above.
+			return errAssetsNotFound
+		}
 	}
 
 	// Recalculate counts
@@ -641,8 +688,22 @@ func (s *AssetGroupService) RemoveAssetsFromGroup(ctx context.Context, tenantID 
 	if len(ids) == 0 {
 		return nil
 	}
+	if err := s.requireChangeAllowed(ctx, tid, groupID); err != nil {
+		return err
+	}
 
-	if err := s.repo.RemoveAssets(ctx, groupID, ids); err != nil {
+	if s.ruleStore != nil {
+		// In a group that has a rule, taking an asset out keeps it out: the
+		// rule would bring it back otherwise.
+		st, err := s.ruleStore.GetRuleState(ctx, tid, groupID)
+		if err != nil {
+			return err
+		}
+		editor, _ := s.callerUser(ctx)
+		if _, err := s.ruleStore.RemoveMembers(ctx, tid, groupID, ids, st.Rule != nil, idPtr(editor)); err != nil {
+			return err
+		}
+	} else if err := s.repo.RemoveAssets(ctx, groupID, ids); err != nil {
 		return err
 	}
 

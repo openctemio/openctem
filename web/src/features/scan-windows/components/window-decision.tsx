@@ -65,8 +65,8 @@ export function WindowBlockingList({
         <li key={`${b.source_id ?? i}`} className="break-words">
           {windowRefLabel(b, t)}
           {b.until
-            ? ` · ${t('scanWindows.block.until', 'until {at}', { at: formatInZone(b.until) })}`
-            : ` · ${t('scanWindows.block.never', 'does not open')}`}
+            ? `, ${t('scanWindows.block.until', 'until {at}', { at: formatInZone(b.until) })}`
+            : `, ${t('scanWindows.block.never', 'does not open')}`}
         </li>
       ))}
     </ul>
@@ -91,7 +91,7 @@ export function WindowGoverningList({
       {governing.map((g, i) => (
         <li key={`${g.source_id ?? i}`} className="break-words">
           {windowRefLabel(g, t)}
-          {' · '}
+          {', '}
           {g.kind === 'blackout'
             ? t('scanWindows.kind.blackout', 'Blackout')
             : t('scanWindows.kind.allow', 'Allow')}

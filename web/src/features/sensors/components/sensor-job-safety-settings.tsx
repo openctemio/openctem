@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Main } from '@/components/layout'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { PageHeader, ReadOnlyNotice, SettingsSaveBar } from '@/features/shared'
+import { PageHeader, PageStack, ReadOnlyNotice, SettingsSaveBar } from '@/features/shared'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
@@ -142,144 +142,144 @@ export function SensorJobSafetySettings() {
   )
   if (isLoading) return <SettingsLoading header={header} />
   if (isError)
-    return (
-      <SettingsLoadError header={header} message={error?.message} onRetry={() => void mutate()} />
-    )
+    return <SettingsLoadError header={header} error={error} onRetry={() => void mutate()} />
   const disabled = !canEdit
 
   return (
     <Main>
-      {header}
-      <div className="mt-2">
+      <PageStack>
+        {header}
         <LastChanged resourceType="tenant" resourceId={tenantId} fields={SENSOR_JOB_FIELDS} />
-      </div>
-      {disabled && (
-        <ReadOnlyNotice
-          className="mt-4"
-          reason={t('org.auth.ownerOnly', 'Only the organization owner can change these settings.')}
-        />
-      )}
-      <div className="mt-5 space-y-5">
-        <Card>
-          <CardHeader>
-            <CardTitle>{t('sensors.jobSafety.jobs', 'Scan jobs')}</CardTitle>
-            <CardDescription>
-              {t(
-                'sensors.jobSafety.jobsDesc',
-                'Sent with every scan job. Saved together with Save changes.'
-              )}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div id="private-targets" className="flex items-center justify-between gap-4">
-              <div className="space-y-0.5">
-                <Label htmlFor="tenant-private-targets-local-policy">
-                  {t(
-                    'sensors.jobSafety.privateTargets',
-                    'Private targets need a sensor-local policy'
-                  )}
-                </Label>
-                <p
-                  className="text-sm text-muted-foreground"
-                  id="tenant-private-targets-local-policy-desc"
-                >
-                  {t(
-                    'sensors.jobSafety.privateTargetsHint',
-                    'Jobs that scan private addresses (RFC 1918, internal domains) go only to sensors whose network owner installed a local policy. Other sensors leave them for one that has it.'
-                  )}
-                </p>
+        {disabled && (
+          <ReadOnlyNotice
+            reason={t(
+              'org.auth.ownerOnly',
+              'Only the organization owner can change these settings.'
+            )}
+          />
+        )}
+        <PageStack>
+          <Card>
+            <CardHeader>
+              <CardTitle>{t('sensors.jobSafety.jobs', 'Scan jobs')}</CardTitle>
+              <CardDescription>
+                {t(
+                  'sensors.jobSafety.jobsDesc',
+                  'Sent with every scan job. Saved together with Save changes.'
+                )}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div id="private-targets" className="flex items-center justify-between gap-4">
+                <div className="space-y-0.5">
+                  <Label htmlFor="tenant-private-targets-local-policy">
+                    {t(
+                      'sensors.jobSafety.privateTargets',
+                      'Private targets need a sensor-local policy'
+                    )}
+                  </Label>
+                  <p
+                    className="text-sm text-muted-foreground"
+                    id="tenant-private-targets-local-policy-desc"
+                  >
+                    {t(
+                      'sensors.jobSafety.privateTargetsHint',
+                      'Jobs that scan private addresses (RFC 1918, internal domains) go only to sensors whose network owner installed a local policy. Other sensors leave them for one that has it.'
+                    )}
+                  </p>
+                </div>
+                <Switch
+                  id="tenant-private-targets-local-policy"
+                  aria-describedby="tenant-private-targets-local-policy-desc"
+                  checked={form.require_sensor_local_policy_for_private_targets}
+                  onCheckedChange={(v) =>
+                    setForm((f) => ({ ...f, require_sensor_local_policy_for_private_targets: v }))
+                  }
+                  disabled={disabled}
+                />
               </div>
-              <Switch
-                id="tenant-private-targets-local-policy"
-                aria-describedby="tenant-private-targets-local-policy-desc"
-                checked={form.require_sensor_local_policy_for_private_targets}
-                onCheckedChange={(v) =>
-                  setForm((f) => ({ ...f, require_sensor_local_policy_for_private_targets: v }))
-                }
-                disabled={disabled}
-              />
-            </div>
-            <Separator />
-            <div id="opt-ins">
-              <SensorOptInSwitches
-                value={{
-                  allow_sensor_interactsh: form.allow_sensor_interactsh,
-                  allow_sensor_custom_templates: form.allow_sensor_custom_templates,
-                }}
-                onChange={(next) => setForm((f) => ({ ...f, ...next }))}
-                disabled={disabled}
-              />
-            </div>
-            <Separator />
-            <div id="tool-http">
-              <ToolHTTPPolicyFields
-                value={{
-                  tool_http_user_agent: form.tool_http_user_agent,
-                  forbid_tool_insecure_tls: form.forbid_tool_insecure_tls,
-                }}
-                onChange={(next) => setForm((f) => ({ ...f, ...next }))}
-                disabled={disabled}
-              />
-            </div>
-          </CardContent>
-        </Card>
+              <Separator />
+              <div id="opt-ins">
+                <SensorOptInSwitches
+                  value={{
+                    allow_sensor_interactsh: form.allow_sensor_interactsh,
+                    allow_sensor_custom_templates: form.allow_sensor_custom_templates,
+                  }}
+                  onChange={(next) => setForm((f) => ({ ...f, ...next }))}
+                  disabled={disabled}
+                />
+              </div>
+              <Separator />
+              <div id="tool-http">
+                <ToolHTTPPolicyFields
+                  value={{
+                    tool_http_user_agent: form.tool_http_user_agent,
+                    forbid_tool_insecure_tls: form.forbid_tool_insecure_tls,
+                  }}
+                  onChange={(next) => setForm((f) => ({ ...f, ...next }))}
+                  disabled={disabled}
+                />
+              </div>
+            </CardContent>
+          </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>
-              {t('sensors.jobSafety.immediate', 'Sensor keys and shared sensors')}
-            </CardTitle>
-            <CardDescription>
-              {t(
-                'sensors.jobSafety.immediateDesc',
-                'Each switch here applies as soon as you change it.'
-              )}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div id="sensor-policies" className="space-y-6">
-              <SensorIdentityPolicySwitch />
-              <SensorKeyBindPolicySwitch />
-            </div>
-            <Separator />
-            <div id="shared-sensors">
-              <SharedSensorsOptOutSwitch />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+          <Card>
+            <CardHeader>
+              <CardTitle>
+                {t('sensors.jobSafety.immediate', 'Sensor keys and shared sensors')}
+              </CardTitle>
+              <CardDescription>
+                {t(
+                  'sensors.jobSafety.immediateDesc',
+                  'Each switch here applies as soon as you change it.'
+                )}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div id="sensor-policies" className="space-y-6">
+                <SensorIdentityPolicySwitch />
+                <SensorKeyBindPolicySwitch />
+              </div>
+              <Separator />
+              <div id="shared-sensors">
+                <SharedSensorsOptOutSwitch />
+              </div>
+            </CardContent>
+          </Card>
+        </PageStack>
 
-      <SettingsSaveBar
-        dirty={dirty}
-        saving={isUpdating}
-        onSave={handleSave}
-        onDiscard={reset}
-        saveDisabled={!!uaError}
-      />
-      <ConfirmDialog
-        open={confirm !== null}
-        onOpenChange={(open) => !open && setConfirm(null)}
-        destructive
-        title={t('sensors.jobSafety.loosen.title', 'Let scan jobs do more?')}
-        desc={
-          <div className="space-y-2">
-            <p>
-              {t(
-                'sensors.jobSafety.loosen.desc',
-                'These changes widen what scan jobs may do on your sensors. They are recorded in the audit log at high severity.'
-              )}
-            </p>
-            <ul className="list-disc space-y-1 ps-5">
-              {(confirm ?? []).map((k) => (
-                <li key={k}>{t(`sensors.jobSafety.loosen.${k}`, LOOSENING_TEXT[k] ?? k)}</li>
-              ))}
-            </ul>
-          </div>
-        }
-        confirmText={t('org.auth.loosen.confirm', 'Save anyway')}
-        isLoading={isUpdating}
-        handleConfirm={() => void doSave()}
-      />
+        <SettingsSaveBar
+          dirty={dirty}
+          saving={isUpdating}
+          onSave={handleSave}
+          onDiscard={reset}
+          saveDisabled={!!uaError}
+        />
+        <ConfirmDialog
+          open={confirm !== null}
+          onOpenChange={(open) => !open && setConfirm(null)}
+          destructive
+          title={t('sensors.jobSafety.loosen.title', 'Let scan jobs do more?')}
+          desc={
+            <div className="space-y-2">
+              <p>
+                {t(
+                  'sensors.jobSafety.loosen.desc',
+                  'These changes widen what scan jobs may do on your sensors. They are recorded in the audit log at high severity.'
+                )}
+              </p>
+              <ul className="list-disc space-y-1 ps-5">
+                {(confirm ?? []).map((k) => (
+                  <li key={k}>{t(`sensors.jobSafety.loosen.${k}`, LOOSENING_TEXT[k] ?? k)}</li>
+                ))}
+              </ul>
+            </div>
+          }
+          confirmText={t('org.auth.loosen.confirm', 'Save anyway')}
+          isLoading={isUpdating}
+          handleConfirm={() => void doSave()}
+        />
+      </PageStack>
     </Main>
   )
 }

@@ -65,7 +65,15 @@ regexes = [
 ]
 
 # Allow specific commits (use sparingly)
-commits = []
+commits = [
+    # api/tests/authzmatrix/ci: the first commit of the nightly authz matrix
+    # suite wrote the migrate/app URLs with a shell variable reference
+    # (user:$MATRIX_DB_PASSWORD@host). The password is generated per run and
+    # no secret is in the commit; later commits assemble the URLs from parts.
+    # History cannot be rewritten on a reviewed PR, so that one commit is
+    # named here and nothing else is.
+    "699b17fb19838426b079baaec61bb3e8691d72a4",
+]
 
 # Additional rules
 [[rules]]

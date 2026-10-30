@@ -25,10 +25,14 @@ type Policy struct {
 	// (P0..P3), these take precedence over severity-based days. They are
 	// persisted in sla_policies.p0_days..p3_days; NULL there means
 	// "inherit DefaultPriorityDays".
-	p0Days              int
-	p1Days              int
-	p2Days              int
-	p3Days              int
+	p0Days int
+	p1Days int
+	p2Days int
+	p3Days int
+	// kevCapDays caps the deadline of a known exploited (CISA KEV) finding:
+	// at most this many days after the platform first sees it as KEV.
+	// 0 = off.
+	kevCapDays          int
 	warningThresholdPct int
 	escalationEnabled   bool
 	escalationConfig    map[string]any
@@ -70,6 +74,11 @@ var DefaultPriorityDays = map[string]int{
 	"P3": 30, // Everything else.
 }
 
+// DefaultKEVCapDays is the default known exploited deadline cap: a finding
+// whose CVE is in CISA KEV is due within 14 days of the platform first
+// seeing it as known exploited, whatever its priority class or severity.
+const DefaultKEVCapDays = 14
+
 // MaxSLADays is the longest remediation window a policy may set.
 const MaxSLADays = 365
 
@@ -100,6 +109,7 @@ func NewPolicy(
 		p1Days:              DefaultPriorityDays["P1"],
 		p2Days:              DefaultPriorityDays["P2"],
 		p3Days:              DefaultPriorityDays["P3"],
+		kevCapDays:          DefaultKEVCapDays,
 		warningThresholdPct: 80,
 		// Escalation (approaching/breached notifications) is on by default:
 		// a new policy must not silently stop the alerts a tenant without a
@@ -165,6 +175,7 @@ func Reconstitute(
 		p1Days:              DefaultPriorityDays["P1"],
 		p2Days:              DefaultPriorityDays["P2"],
 		p3Days:              DefaultPriorityDays["P3"],
+		kevCapDays:          DefaultKEVCapDays,
 		warningThresholdPct: warningThresholdPct,
 		escalationEnabled:   escalationEnabled,
 		escalationConfig:    escalationConfig,
@@ -190,6 +201,15 @@ func (p *Policy) WithPriorityDays(p0, p1, p2, p3 int) *Policy {
 	}
 	if p3 > 0 {
 		p.p3Days = p3
+	}
+	return p
+}
+
+// WithKEVCapDays attaches the persisted known exploited deadline cap to a
+// reconstituted Policy (0 = off; the column is NOT NULL, default 14).
+func (p *Policy) WithKEVCapDays(days int) *Policy {
+	if days >= 0 && days <= MaxSLADays {
+		p.kevCapDays = days
 	}
 	return p
 }
@@ -232,6 +252,9 @@ func (p *Policy) P2Days() int { return p.p2Days }
 
 // P3Days returns the priority-class P3 SLA days.
 func (p *Policy) P3Days() int { return p.p3Days }
+
+// KEVCapDays returns the known exploited deadline cap in days (0 = off).
+func (p *Policy) KEVCapDays() int { return p.kevCapDays }
 
 // GetDaysForSeverity returns the remediation days for a given severity.
 func (p *Policy) GetDaysForSeverity(severity string) int {
@@ -365,6 +388,17 @@ func (p *Policy) UpdatePriorityDays(p0, p1, p2, p3 int) error {
 	p.p1Days = p1
 	p.p2Days = p2
 	p.p3Days = p3
+	p.updatedAt = time.Now().UTC()
+	return nil
+}
+
+// UpdateKEVCapDays sets the known exploited deadline cap: 0 (off) to
+// MaxSLADays.
+func (p *Policy) UpdateKEVCapDays(days int) error {
+	if days < 0 || days > MaxSLADays {
+		return fmt.Errorf("%w: known exploited deadline cap must be between 0 (off) and %d days", shared.ErrValidation, MaxSLADays)
+	}
+	p.kevCapDays = days
 	p.updatedAt = time.Now().UTC()
 	return nil
 }

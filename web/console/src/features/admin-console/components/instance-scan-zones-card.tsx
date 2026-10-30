@@ -25,6 +25,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -151,6 +152,7 @@ function ZoneDialog({
   const [reason, setReason] = useState('')
   const [code, setCode] = useState('')
   const [busy, setBusy] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const ready =
@@ -175,6 +177,7 @@ function ZoneDialog({
       if (e instanceof AdminApiError && e.status === 401) setCode('')
     } finally {
       setBusy(false)
+      setConfirmDelete(false)
     }
   }
 
@@ -203,8 +206,8 @@ function ZoneDialog({
   }
 
   const remove = () => {
-    if (!zone) return
-    void run(() =>
+    if (!zone) return undefined
+    return run(() =>
       deleteInstanceScanZone(zone.id, { reason: reason.trim(), totp_code: code.trim() })
     )
   }
@@ -290,8 +293,9 @@ function ZoneDialog({
               <Button
                 type="button"
                 variant="destructive"
+                className="me-auto"
                 disabled={busy || reason.trim() === '' || code.trim().length < 6}
-                onClick={remove}
+                onClick={() => setConfirmDelete(true)}
               >
                 {t('admin.instanceZones.delete')}
               </Button>
@@ -306,6 +310,23 @@ function ZoneDialog({
           </DialogFooter>
         </DialogForm>
       </DialogContent>
+      {zone && (
+        <ConfirmDialog
+          open={confirmDelete}
+          onOpenChange={setConfirmDelete}
+          destructive
+          title={t('admin.instanceZones.deleteTitle', 'Delete the scan zone {name}?', {
+            name: zone.name,
+          })}
+          desc={t(
+            'admin.instanceZones.deleteDesc',
+            'Organizations assigned to this zone can no longer send internal targets to shared sensors through it. Its ranges and sensor and organization assignments are removed. You can create the zone again.'
+          )}
+          confirmText={t('admin.instanceZones.deleteButton', 'Delete scan zone')}
+          typeToConfirm={zone.name.trim() && zone.name.length <= 64 ? zone.name : zone.id}
+          handleConfirm={remove}
+        />
+      )}
     </Dialog>
   )
 }

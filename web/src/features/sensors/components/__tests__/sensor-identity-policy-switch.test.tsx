@@ -63,4 +63,22 @@ describe('SensorIdentityPolicySwitch', () => {
       screen.getByRole('switch', { name: /require key-bound sensor identity/i })
     ).toBeDisabled()
   })
+
+  it('allowing API keys again asks first, then saves; Cancel saves nothing', async () => {
+    perms.granted = new Set(['sensors:read', 'sensors:grant:widen'])
+    api.policy = { bearer_keys_allowed: false }
+    api.set.mockResolvedValue({ bearer_keys_allowed: true })
+    const user = userEvent.setup()
+    render(<SensorIdentityPolicySwitch />)
+    const sw = screen.getByRole('switch', { name: /require key-bound sensor identity/i })
+    await user.click(sw)
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('Allow sensor API keys again?')
+    expect(api.set).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(api.set).not.toHaveBeenCalled()
+    await user.click(sw)
+    await user.click(await screen.findByRole('button', { name: 'Allow API keys' }))
+    await waitFor(() => expect(api.set).toHaveBeenCalledWith({ bearer_keys_allowed: true }))
+  })
 })

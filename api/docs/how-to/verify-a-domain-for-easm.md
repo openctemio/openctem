@@ -33,7 +33,7 @@ organization with the Attack surface module. Removing a domain needs
 
 Proof does not authorize scanning by itself: scope entries do (a root domain
 to discover from is a scope entry such as `*.example.com` with discovery on).
-Proof is what platform sensors and intrusive checks require, and it marks the
+Proof is what platform sensors require (your own sensors need none), and it marks the
 scope entries at or under the domain as verified.
 
 ## Keep the record in place

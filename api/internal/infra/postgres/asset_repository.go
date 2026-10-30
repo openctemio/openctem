@@ -184,7 +184,8 @@ func (r *AssetRepository) GetDisplayInfoByIDs(ctx context.Context, tenantID shar
 	}
 
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT id, name, asset_type FROM assets WHERE deleted_at IS NULL AND tenant_id = $1 AND id = ANY($2::uuid[])`,
+		`SELECT a.id, a.name, a.asset_type, COALESCE(a.is_crown_jewel, false), `+asset.InternetFacingSQL("a")+`
+		 FROM assets a WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.id = ANY($2::uuid[])`,
 		tenantID.String(), pq.Array(idStrs))
 	if err != nil {
 		return nil, fmt.Errorf("failed to batch get asset display info: %w", err)
@@ -194,15 +195,16 @@ func (r *AssetRepository) GetDisplayInfoByIDs(ctx context.Context, tenantID shar
 	for rows.Next() {
 		var (
 			idStr, name, assetType string
+			crown, internet        bool
 		)
-		if err := rows.Scan(&idStr, &name, &assetType); err != nil {
+		if err := rows.Scan(&idStr, &name, &assetType, &crown, &internet); err != nil {
 			return nil, fmt.Errorf("failed to scan asset display info: %w", err)
 		}
 		id, err := shared.IDFromString(idStr)
 		if err != nil {
 			return nil, fmt.Errorf("invalid asset id %q: %w", idStr, err)
 		}
-		result[id] = asset.DisplayInfo{ID: id, Name: name, Type: asset.AssetType(assetType)}
+		result[id] = asset.DisplayInfo{ID: id, Name: name, Type: asset.AssetType(assetType), CrownJewel: crown, InternetFacing: internet}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("failed to iterate asset display info: %w", err)
@@ -509,7 +511,7 @@ func (r *AssetRepository) selectQuery() string {
 			   a.impact_confidentiality, a.impact_integrity, a.impact_availability,
 			   a.is_crown_jewel,
 			   a.risk_scored_at,
-			   EXISTS (SELECT 1 FROM asset_risk_queue q WHERE q.asset_id = a.id) AS risk_score_pending
+			   EXISTS (SELECT 1 FROM asset_risk_queue q WHERE q.asset_id = a.id AND q.enqueued_at <= now()) AS risk_score_pending
 		FROM assets a
 		-- LATERAL correlates the finding aggregate to each selected asset (and its
 		-- tenant), so it runs indexed per-row via idx_findings_tenant_asset_status
@@ -770,6 +772,79 @@ func (r *AssetRepository) ListAfterID(ctx context.Context, filter asset.Filter, 
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("failed to iterate assets: %w", err)
+	}
+	return out, nil
+}
+
+// IDsByNames returns the ids of the tenant's live assets by exact name (a
+// pasted list is matched with it). Names are unique per tenant.
+func (r *AssetRepository) IDsByNames(ctx context.Context, tenantID shared.ID, names []string) (map[string]shared.ID, error) {
+	out := make(map[string]shared.ID, len(names))
+	if len(names) == 0 {
+		return out, nil
+	}
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT a.name, a.id FROM assets a WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.name = ANY($2)`,
+		tenantID.String(), pq.Array(names))
+	if err != nil {
+		return nil, fmt.Errorf("failed to query asset ids by name: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		var id shared.ID
+		if err := rows.Scan(&name, &id); err != nil {
+			return nil, fmt.Errorf("failed to scan asset id: %w", err)
+		}
+		out[name] = id
+	}
+	return out, rows.Err()
+}
+
+// MatchingIDs returns up to limit ids of the assets matching filter with an
+// id above afterID, in id order. The group rule evaluator pages with it: the
+// ids are all it needs, so no asset row is built.
+func (r *AssetRepository) MatchingIDs(ctx context.Context, filter asset.Filter, afterID string, limit int) ([]shared.ID, error) {
+	if filter.TenantID == nil || *filter.TenantID == "" {
+		return nil, fmt.Errorf("%w: tenant is required", shared.ErrValidation)
+	}
+	if limit <= 0 || limit > 5000 {
+		limit = 1000
+	}
+	whereClause, args := r.buildWhereClause(filter)
+	if afterID != "" {
+		args = append(args, afterID)
+		cond := fmt.Sprintf("a.id > $%d", len(args))
+		if whereClause != "" {
+			whereClause += " AND " + cond
+		} else {
+			whereClause = cond
+		}
+	}
+	query := `SELECT a.id FROM assets a`
+	if whereClause != "" {
+		query += " WHERE " + whereClause
+	}
+	query += fmt.Sprintf(" ORDER BY a.id LIMIT %d", limit)
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query asset ids: %w", err)
+	}
+	defer rows.Close()
+	var out []shared.ID
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, fmt.Errorf("failed to scan asset id: %w", err)
+		}
+		id, err := shared.IDFromString(s)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate asset ids: %w", err)
 	}
 	return out, nil
 }
@@ -1262,6 +1337,9 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 	if cond := assetFreshnessCondition(filter.Freshness); cond != "" {
 		conditions = append(conditions, cond)
 	}
+	if cond := assetResolutionCondition(filter.Resolution); cond != "" {
+		conditions = append(conditions, cond)
+	}
 
 	// Coverage ledger (the dashboard's Discovery stage counts with the same
 	// predicate, so its figure equals this list).
@@ -1397,6 +1475,25 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 			parts = append(parts, fmt.Sprintf("(a.name = $%d OR a.name ILIKE $%d ESCAPE '\\')", argIndex, argIndex+1))
 			args = append(args, d, "%."+escapeLikePattern(d))
 			argIndex += 2
+		}
+		conditions = append(conditions, "("+strings.Join(parts, " OR ")+")")
+	}
+
+	// Domain conditions: the name itself, and with Subdomains every name
+	// below it on a label boundary (".<name>" suffix), so evilexample.com
+	// never matches example.com. The LIKE pattern is escaped.
+	if len(filter.DomainNames) > 0 {
+		parts := make([]string, 0, len(filter.DomainNames))
+		for _, d := range filter.DomainNames {
+			if d.Subdomains {
+				parts = append(parts, fmt.Sprintf("(a.name = $%d OR a.name LIKE $%d ESCAPE '\\')", argIndex, argIndex+1))
+				args = append(args, d.Name, "%."+escapeLikePattern(d.Name))
+				argIndex += 2
+				continue
+			}
+			parts = append(parts, fmt.Sprintf("a.name = $%d", argIndex))
+			args = append(args, d.Name)
+			argIndex++
 		}
 		conditions = append(conditions, "("+strings.Join(parts, " OR ")+")")
 	}
@@ -2534,9 +2631,13 @@ WITH filtered AS (
   %s
 ),
 finding_counts AS (
+  -- Open findings only (vulnerability.OpenStatusSQL): the same set as each
+  -- row's finding_count and the has_findings filter, so "N with findings"
+  -- and the findings total agree with the list.
   SELECT f.asset_id, COUNT(*)::bigint AS cnt
   FROM findings f
   WHERE f.asset_id IN (SELECT id FROM filtered) AND NOT f.branch_only
+    AND `+vulnerability.OpenStatusSQL("f.status")+`
   GROUP BY f.asset_id
 )
 SELECT category, key, value FROM (

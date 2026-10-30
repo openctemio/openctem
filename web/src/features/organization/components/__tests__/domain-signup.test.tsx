@@ -52,12 +52,32 @@ describe('DomainSignupPolicies', () => {
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
     await user.click(screen.getByLabelText('Anyone, after an administrator approves'))
     await user.click(screen.getByRole('button', { name: 'Save' }))
+    // Opening joining loosens the rules: the save waits for the confirmation.
+    expect(await screen.findByText(/Loosen the sign-up rules/)).toBeInTheDocument()
+    expect(api.saveDomainSignupPolicy).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Save weaker rules' }))
     await waitFor(() =>
       expect(api.saveDomainSignupPolicy).toHaveBeenCalledWith(
         'd1',
         expect.objectContaining({ join_policy: 'approval', join_role: 'viewer' })
       )
     )
+  })
+
+  it('saves a tightening change without asking', async () => {
+    vi.mocked(api.useDomainSignupPolicies).mockReturnValue({
+      domains: [{ ...domain, join_policy: 'approval' }],
+      error: undefined,
+      isLoading: false,
+      mutate: vi.fn(),
+    } as never)
+    vi.mocked(api.saveDomainSignupPolicy).mockResolvedValue(domain)
+    const user = userEvent.setup()
+    render(<DomainSignupPolicies canRead isOwner />)
+    await user.click(screen.getByLabelText('Only people we invite'))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.saveDomainSignupPolicy).toHaveBeenCalled())
+    expect(screen.queryByText(/Loosen the sign-up rules/)).toBeNull()
   })
 
   it('an admin reads but cannot change', () => {
@@ -111,6 +131,12 @@ describe('JoinRequestsCard', () => {
     render(<JoinRequestsCard canManage />)
     expect(screen.getByText('Requests to join (1)')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Approve' }))
+    // Approving gives a person access: the dialog names who and as what.
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('Let Bob join?')
+    expect(dialog).toHaveTextContent('as viewer')
+    expect(api.approveJoinRequest).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Approve request' }))
     await waitFor(() => expect(api.approveJoinRequest).toHaveBeenCalledWith('r1', 'viewer'))
 
     vi.mocked(api.useJoinRequests).mockReturnValue({

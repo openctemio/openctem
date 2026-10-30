@@ -57,9 +57,11 @@ const (
 // Source is where a pack came from.
 type Source string
 
-// Sources. Only uploads exist today; the others are RFC-061 §3.6 sources.
+// Sources: an upload, or a snapshot of a git rule source
+// (docs/architecture/content-sources.md).
 const (
 	SourceUpload Source = "upload"
+	SourceGit    Source = "git"
 )
 
 // Known kinds: the ones the platform lints. Any other plain kind is refused;
@@ -224,6 +226,10 @@ type Filter struct {
 	Kind   string
 	Name   string
 	Status Status
+	// Deliverable keeps a rule source snapshot's pack only while that
+	// snapshot is its source's current one: candidates, rejected,
+	// superseded and orphaned packs are never delivered to sensors.
+	Deliverable bool
 }
 
 // Repository stores packs and blobs. Every method is tenant-scoped; a pack
@@ -239,6 +245,13 @@ type Repository interface {
 	List(ctx context.Context, tenantID shared.ID, f Filter, limit, offset int) ([]*Pack, int, error)
 	// Revoke revokes an active pack; ErrNotActive when it is revoked.
 	Revoke(ctx context.Context, tenantID, id shared.ID, by *shared.ID, reason string, at time.Time) error
-	// Usage is the tenant's pack count and stored bytes.
+	// Usage is the tenant's uploaded pack count and all its stored bytes
+	// (rule source snapshots count toward the byte quota, not the pack
+	// count; the content_storage_mb limit caps them separately).
 	Usage(ctx context.Context, tenantID shared.ID) (packs int, bytes int64, err error)
+	// DeleteSourcePack deletes a rule source snapshot's pack (never an
+	// upload) that no snapshot references any more, and its blob when no
+	// other pack uses the digest; storageKey is the blob's object to delete
+	// ("" when the blob stays).
+	DeleteSourcePack(ctx context.Context, tenantID, id shared.ID) (storageKey string, err error)
 }

@@ -29,7 +29,7 @@ export function LegalDocument({
     <div className="min-h-svh bg-background px-4 py-10 text-foreground">
       <article className="mx-auto max-w-2xl space-y-6">
         <Link href="/login" aria-label="Sign in" className="inline-block">
-          <BrandLogoFull className="h-10 w-auto" />
+          <BrandLogoFull className="h-7 w-auto" />
         </Link>
         <header className="space-y-1">
           <h1 className="text-3xl font-semibold tracking-tight">{title}</h1>

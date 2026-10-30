@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { SearchIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useSearch } from '@/context/search-provider'
@@ -13,7 +14,13 @@ type SearchProps = {
 export function Search({ className = '', placeholder }: SearchProps) {
   const { setOpen } = useSearch()
   const { t } = useTranslation()
-  const label = placeholder ?? t('nav.header.search', 'Search')
+  const label = placeholder ?? t('nav.header.searchOrGo', 'Search or go to')
+  // The shortcut as this platform writes it (read after mount: the server
+  // does not know the platform).
+  const [mac, setMac] = useState(false)
+  useEffect(() => {
+    setMac(/Mac|iPhone|iPad/.test(navigator.platform))
+  }, [])
   return (
     <Button
       variant="outline"
@@ -36,8 +43,8 @@ export function Search({ className = '', placeholder }: SearchProps) {
         size={16}
       />
       <span className="ms-4 hidden truncate sm:inline">{label}</span>
-      <kbd className="bg-muted group-hover:bg-accent pointer-events-none absolute end-[0.3rem] top-[0.3rem] hidden h-5 items-center gap-1 rounded border px-1.5 font-mono text-[10px] font-medium opacity-100 select-none sm:flex">
-        <span className="text-xs">⌘</span>K
+      <kbd className="bg-muted group-hover:bg-accent pointer-events-none absolute end-[0.3rem] top-[0.3rem] hidden h-5 items-center gap-1 rounded border px-1.5 font-mono text-xs font-medium opacity-100 select-none sm:flex">
+        {mac ? <span className="text-xs">⌘</span> : <span>Ctrl</span>}K
       </kbd>
     </Button>
   )

@@ -1,6 +1,6 @@
 package postgres
 
-// Analyst severity decisions and severity requests
+// AI agent severity decisions and severity requests
 // (docs/architecture/finding-severity-override.md). Every statement carries
 // the tenant; a decision applies only while the finding's effective
 // severity is still the one the caller decided from (no lost update).
@@ -11,6 +11,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/openctemio/openctem/api/pkg/domain/aianalysis"
 
 	"github.com/lib/pq"
 
@@ -42,6 +44,7 @@ const severityDecisionSQL = `
 		epss_score = $12, epss_percentile = $13, is_in_kev = $14, kev_due_date = $15,
 		sla_deadline = COALESCE($16::timestamptz, sla_deadline),
 		sla_status = CASE WHEN $16::timestamptz IS NULL THEN sla_status ELSE $17 END,
+		sla_kev_capped = CASE WHEN $16::timestamptz IS NULL THEN sla_kev_capped ELSE $20 END,
 		updated_at = now()
 	WHERE tenant_id = $1 AND id = $2 AND severity = $18
 	  AND ($19::bigint IS NULL OR row_version = $19)
@@ -68,7 +71,7 @@ func saveSeverityDecision(ctx context.Context, x severityExecer, f *vulnerabilit
 		f.IsReachable(), f.ReachableFromCount(),
 		nullFloat64(f.EPSSScore()), nullFloat64(f.EPSSPercentile()), f.IsInKEV(), nullTime(f.KEVDueDate()),
 		nullTime(f.SLADeadline()), string(f.SLAStatus()),
-		expected.String(), wantVersion).Scan(&newVersion)
+		expected.String(), wantVersion, f.SLAKEVCapped()).Scan(&newVersion)
 	if errors.Is(err, sql.ErrNoRows) {
 		if wantVersion.Valid {
 			return &vulnerability.FindingConflictError{FindingID: f.ID()}
@@ -86,6 +89,9 @@ func saveSeverityDecision(ctx context.Context, x severityExecer, f *vulnerabilit
 // extendSLA the write runs in a transaction marked as an explicit SLA
 // decision (openctem.sla_restart), the one way past the tighten-only guard.
 func (r *FindingRepository) SaveSeverityDecision(ctx context.Context, f *vulnerability.Finding, expected vulnerability.Severity, extendSLA bool) error {
+	if err := aianalysis.RefuseAssist(ctx); err != nil {
+		return err
+	}
 	if !extendSLA {
 		return saveSeverityDecision(ctx, r.db, f, expected)
 	}
@@ -160,6 +166,10 @@ func scanSeverityRequest(row severityRequestScanner) (*vulnerability.SeverityReq
 
 // Create implements vulnerability.SeverityRequestRepository.
 func (r *SeverityRequestRepository) Create(ctx context.Context, req *vulnerability.SeverityRequest) error {
+	// Read-only AI assistance never writes (docs/architecture/ai-analysis.md).
+	if err := aianalysis.RefuseAssist(ctx); err != nil {
+		return err
+	}
 	return r.db.Transaction(ctx, func(tx *sql.Tx) error {
 		// A pending request nobody decided in time stops blocking a new one.
 		if _, err := tx.ExecContext(ctx, `UPDATE finding_severity_requests SET status = 'expired'

@@ -58,7 +58,7 @@ describe('RunStatusBadge is a HealthStatus', () => {
     ['timeout', 'warn', 'Timed out'],
     ['canceled', 'off', 'Canceled'],
     ['cancelled', 'off', 'Canceled'],
-    ['blocked', 'down', 'Blocked'],
+    ['blocked', 'paused', 'Blocked'],
   ]
   it.each(CASES)('%s is the %s state reading "%s", static', (status, state, word) => {
     const { container } = render(<RunStatusBadge status={status} />)
@@ -139,13 +139,14 @@ describe('FactChip tones', () => {
     const { container } = render(<FactChip tone={tone}>fact</FactChip>)
     expectCalm(container)
   })
-  it('maps status tones to the workflow categories', () => {
+  it('maps status tones to the attention tones (research/266)', () => {
     const cls = (tone: FactChipTone) =>
       render(<FactChip tone={tone}>x</FactChip>).container.firstElementChild?.className ?? ''
     expect(cls('success')).toContain('bg-st-resolved-bg')
     expect(cls('info')).toContain('bg-st-progress-bg')
-    expect(cls('warning')).toContain('bg-st-waiting-bg')
-    expect(cls('destructive')).toContain('text-destructive')
+    expect(cls('warning')).toContain('bg-st-accepted-bg')
+    expect(cls('destructive')).toContain('bg-tone-danger-bg')
+    expect(cls('destructive')).toContain('text-tone-danger-fg')
   })
 })
 

@@ -1,0 +1,7 @@
+### Security: support sessions expire on time under the console database role
+
+- With the console database role (`DB_ADMIN_USER`, the least-privilege production model) the API's app role cannot read `admin_sessions`, yet the support-access queries did: the every-minute sweep that ends stale support sessions failed with `permission denied for table admin_sessions`, and every support grant read (the organization's support access page, the console's grant list, opening and using a support session) failed the same way. Support access was unusable (it failed closed) and nothing ended stale sessions.
+- The queries now ask one narrow question through `admin_session_live` (migration `20261029202804_admin_session_live`): a read-only `SECURITY DEFINER` function that returns whether one console session is alive. The app role still has no privilege on `admin_sessions`.
+- A support session unused for 30 minutes is now refused when it is next used, before the sweep ends it; a read no longer revives it.
+- Removing a console passkey no longer row-locks `admin_users` (which the app role may not do): it serializes on a per-administrator advisory lock instead.
+- A guard test fails the build when SQL on the app pool touches a console identity table, reading the grants from `deploy/postgres/least-privilege-roles.sql`, and an integration test runs the support and passkey statements as the app role on a database bootstrapped with the console role.

@@ -21,6 +21,15 @@ const dayField = z
 
 /** Info days: 0 = no SLA for informational findings. */
 export const NO_SLA = 0
+/** Default known exploited (KEV) deadline cap, the API's DefaultKEVCapDays. */
+export const DEFAULT_KEV_CAP_DAYS = 14
+
+const kevCapField = z
+  .number()
+  .int('Whole days only')
+  .min(0, '0 (off) or more')
+  .max(365, 'At most 365 days')
+
 const infoDayField = z
   .number()
   .int('Whole days only')
@@ -63,6 +72,7 @@ export const slaPolicySchema = z
     medium_days: dayField,
     low_days: dayField,
     info_days: infoDayField,
+    kev_cap_days: kevCapField,
     warning_threshold_pct: z
       .number()
       .int('Whole percent only')
@@ -96,12 +106,16 @@ export interface SlaPolicyFormData {
   medium_days: number
   low_days: number
   info_days: number
+  kev_cap_days: number
   warning_threshold_pct: number
   escalation_enabled: boolean
 }
 
 /** The windows a new-policy form starts from (read from the API, never constants). */
-export type SlaFormWindows = Omit<SlaPolicyFormData, 'name' | 'description' | 'is_default'>
+export type SlaFormWindows = Omit<
+  SlaPolicyFormData,
+  'name' | 'description' | 'is_default' | 'kev_cap_days'
+> & { kev_cap_days?: number }
 
 /**
  * A new policy starts from the organization's effective windows as the API
@@ -122,6 +136,7 @@ export function newSlaPolicyForm(base: SlaFormWindows): SlaPolicyFormData {
     medium_days: base.medium_days,
     low_days: base.low_days,
     info_days: base.info_days,
+    kev_cap_days: base.kev_cap_days ?? DEFAULT_KEV_CAP_DAYS,
     warning_threshold_pct: base.warning_threshold_pct,
     escalation_enabled: base.escalation_enabled,
   }

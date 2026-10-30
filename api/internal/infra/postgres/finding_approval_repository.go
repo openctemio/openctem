@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 
+	"github.com/openctemio/openctem/api/pkg/domain/aianalysis"
+
 	"fmt"
 	"time"
 
@@ -31,12 +33,16 @@ func NewFindingApprovalRepository(db *DB) *FindingApprovalRepository {
 
 // Create persists a new approval request.
 func (r *FindingApprovalRepository) Create(ctx context.Context, a *vulnerability.Approval) error {
+	// Read-only AI assistance never writes (docs/architecture/ai-analysis.md).
+	if err := aianalysis.RefuseAssist(ctx); err != nil {
+		return err
+	}
 	query := `
 		INSERT INTO finding_status_approvals (
 			id, tenant_id, finding_id, requested_status, requested_by,
 			justification, status, expires_at, version, created_at, requested_by_actor, decide_by, closure_reason,
-			tier, risk_class, required_approvals, policy_eval
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+			tier, risk_class, required_approvals, policy_eval, requested_via
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 	`
 
 	var requestedBy any
@@ -49,6 +55,7 @@ func (r *FindingApprovalRepository) Create(ctx context.Context, a *vulnerability
 		a.Justification, string(a.Status), a.ExpiresAt, a.Version, a.CreatedAt,
 		nullString(a.RequestedByActor), a.DecideBy, nullString(a.ClosureReason.String()),
 		nullString(a.Tier), nullString(a.RiskClass), nullRequired(a), nullJSON(a.PolicyEval),
+		nullString(a.RequestedVia),
 	)
 	if err != nil {
 		var pqErr *pq.Error
@@ -119,6 +126,28 @@ func (r *FindingApprovalRepository) List(ctx context.Context, tenantID shared.ID
 			  AND (m.role <> 'client' OR f.status NOT IN ('draft', 'in_review')))))`, len(args))
 	}
 
+	var queueCounts map[vulnerability.ApprovalQueue]int64
+	if filter.Queue != "" {
+		if filter.CallerID == nil {
+			return vulnerability.ApprovalPage{}, fmt.Errorf("%w: a personal queue needs the caller", shared.ErrValidation)
+		}
+		args = append(args, filter.CallerID.String())
+		callerArg := len(args)
+		review := approvalQueueCond(vulnerability.ApprovalQueueReview, callerArg, filter.CallerCanApprove)
+		requested := approvalQueueCond(vulnerability.ApprovalQueueRequested, callerArg, filter.CallerCanApprove)
+		var nReview, nRequested int64
+		if err := r.db.QueryRowContext(ctx,
+			"SELECT COUNT(*) FILTER (WHERE "+review+"), COUNT(*) FILTER (WHERE a.status = 'pending' AND "+requested+
+				") FROM finding_status_approvals a WHERE "+where, args...).Scan(&nReview, &nRequested); err != nil {
+			return vulnerability.ApprovalPage{}, fmt.Errorf("failed to count approval queues: %w", err)
+		}
+		queueCounts = map[vulnerability.ApprovalQueue]int64{
+			vulnerability.ApprovalQueueReview:    nReview,
+			vulnerability.ApprovalQueueRequested: nRequested,
+		}
+		where += " AND " + approvalQueueCond(filter.Queue, callerArg, filter.CallerCanApprove)
+	}
+
 	counts := make(map[vulnerability.ApprovalStatus]int64, len(vulnerability.ApprovalStatuses))
 	countRows, err := r.db.QueryContext(ctx,
 		"SELECT a.status, COUNT(*) FROM finding_status_approvals a WHERE "+where+" GROUP BY a.status", args...)
@@ -174,7 +203,37 @@ func (r *FindingApprovalRepository) List(ctx context.Context, tenantID shared.ID
 	return vulnerability.ApprovalPage{
 		Result:       pagination.NewResult(approvals, total, page),
 		StatusCounts: counts,
+		QueueCounts:  queueCounts,
 	}, nil
+}
+
+// approvalQueueCond is the condition of one personal queue for the caller
+// bound at $callerArg ($1 is the tenant). Review mirrors who the approval
+// policy lets sign: not the requester, not someone who signed already, not
+// an owner of the finding's asset; a group exception's request and one past
+// its decide-by time cannot be decided alone, so they are left out. Without
+// the approve permission the caller reviews nothing.
+func approvalQueueCond(q vulnerability.ApprovalQueue, callerArg int, canApprove bool) string {
+	caller := fmt.Sprintf("$%d::uuid", callerArg)
+	switch q {
+	case vulnerability.ApprovalQueueReview:
+		if !canApprove {
+			// Still names the caller's parameter: the statement binds it.
+			return "(FALSE AND a.requested_by = " + caller + ")"
+		}
+		return `(a.status = 'pending' AND a.batch_id IS NULL
+			AND (a.decide_by IS NULL OR a.decide_by > now())
+			AND a.requested_by IS DISTINCT FROM ` + caller + `
+			AND NOT EXISTS (SELECT 1 FROM approval_signoffs s
+				WHERE s.tenant_id = a.tenant_id AND s.subject_type = 'finding_approval'
+				  AND s.subject_id = a.id AND s.user_id = ` + caller + `)
+			AND NOT EXISTS (SELECT 1 FROM findings fo
+				WHERE fo.tenant_id = $1 AND fo.id = a.finding_id AND fo.asset_id IS NOT NULL
+				  AND ` + caller + ` IN (` + fmt.Sprintf(assetOwnersSQL, "fo.asset_id") + `)))`
+	case vulnerability.ApprovalQueueRequested:
+		return "(a.requested_by = " + caller + ")"
+	}
+	return "FALSE"
 }
 
 // Update updates an approval.
@@ -270,7 +329,7 @@ func (r *FindingApprovalRepository) selectQuery() string {
 			COALESCE(tier, ''), COALESCE(risk_class, ''), COALESCE(required_approvals, -1), policy_eval, decision_facts,
 			(SELECT COUNT(*) FROM approval_signoffs s
 			 WHERE s.tenant_id = a.tenant_id AND s.subject_type = 'finding_approval' AND s.subject_id = a.id),
-			a.batch_id
+			a.batch_id, COALESCE(a.requested_via, '')
 		FROM finding_status_approvals a
 	`
 }
@@ -306,6 +365,7 @@ func (r *FindingApprovalRepository) scanApprovalRow(scanner approvalScanner) (*v
 		&rejectionReason, &status, &expiresAt, &a.CreatedAt, &a.Version, &actor, &decideBy, &closureReason,
 		&a.SelfApproved, &a.SelfApprovalReason, &a.SinglePerson,
 		&a.Tier, &a.RiskClass, &required, &a.PolicyEval, &a.DecisionFacts, &a.ApprovalsCollected, &batchID,
+		&a.RequestedVia,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -403,6 +463,10 @@ func (r *FindingApprovalRepository) ApproveAndApply(ctx context.Context, a *vuln
 // timeline entry. The one-pending-request index still applies to pending
 // rows only, so an earlier pending request of another person is left as is.
 func (r *FindingApprovalRepository) CreateApplied(ctx context.Context, a *vulnerability.Approval, entry *vulnerability.FindingActivity) error {
+	// Read-only AI assistance never writes (docs/architecture/ai-analysis.md).
+	if err := aianalysis.RefuseAssist(ctx); err != nil {
+		return err
+	}
 	if a == nil || a.Status != vulnerability.ApprovalStatusApproved || a.ApprovedBy == nil || !a.SinglePerson {
 		return fmt.Errorf("%w: only a single-person decision is created applied", shared.ErrValidation)
 	}

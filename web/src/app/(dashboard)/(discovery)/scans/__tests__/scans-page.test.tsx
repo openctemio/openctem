@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { configure, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import ScansPage from '../page'
@@ -10,6 +10,8 @@ import ScansPage from '../page'
 const configCalls: Array<Record<string, unknown> | undefined> = []
 let configsResponse: unknown
 const bulkDisable = vi.hoisted(() => vi.fn())
+const bulkActivate = vi.hoisted(() => vi.fn())
+const bulkPause = vi.hoisted(() => vi.fn())
 const bulkDelete = vi.hoisted(() => vi.fn())
 
 vi.mock('@/lib/api/scan-hooks', () => ({
@@ -21,8 +23,8 @@ vi.mock('@/lib/api/scan-hooks', () => ({
     data: { total: 57, active: 50, paused: 5, disabled: 2 },
     isLoading: false,
   }),
-  useBulkActivateScanConfigs: () => ({ trigger: vi.fn(), isMutating: false }),
-  useBulkPauseScanConfigs: () => ({ trigger: vi.fn(), isMutating: false }),
+  useBulkActivateScanConfigs: () => ({ trigger: bulkActivate, isMutating: false }),
+  useBulkPauseScanConfigs: () => ({ trigger: bulkPause, isMutating: false }),
   useBulkDisableScanConfigs: () => ({ trigger: bulkDisable, isMutating: false }),
   useBulkDeleteScanConfigs: () => ({ trigger: bulkDelete, isMutating: false }),
   invalidateScanConfigsCache: vi.fn(),
@@ -32,6 +34,9 @@ vi.mock('@/features/scans/components', () => ({
   CloneScanDialog: () => null,
   EditScanDialog: () => null,
   QuickScanDialog: () => null,
+}))
+vi.mock('@/features/scans/components/managed-scans-section', () => ({
+  ManagedScansSection: () => null,
 }))
 vi.mock('@/features/scans/components/scan-config-detail-sheet', () => ({
   ScanConfigDetailSheet: () => null,
@@ -70,6 +75,14 @@ const urlState = new Proxy({} as Record<string, string | undefined>, {
   },
 })
 const resetUrl = () => window.history.replaceState(null, '', '/scans')
+
+// Every interaction re-renders the whole 25-row table (row menus, run strips,
+// checkboxes): about one second per render under coverage on a 4-core runner.
+// The file takes ~26 s for 14 tests on a hosted runner, so a test with five
+// interactions has no headroom left under the 5 s default and times out on a
+// busier self-hosted runner. The tests are slow, not hung.
+configure({ asyncUtilTimeout: 10_000 })
+vi.setConfig({ testTimeout: 30_000 })
 
 globalThis.ResizeObserver ??= class {
   observe() {}
@@ -145,23 +158,79 @@ describe('Scans › Configurations', () => {
     expect(bulkDisable).not.toHaveBeenCalled()
     const dialog = await screen.findByRole('alertdialog')
     expect(dialog).toHaveTextContent('Disable 1 scan?')
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Disable' }))
+    expect(within(dialog).getByText('Scan 26')).toBeInTheDocument()
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Disable 1 scan' }))
     await waitFor(() => expect(bulkDisable).toHaveBeenCalledTimes(1))
     expect(bulkDisable.mock.calls[0][0].scan_ids).toHaveLength(1)
   })
 
-  it('a bulk delete of ten or more scans asks to type the count', async () => {
+  it('a bulk delete asks to type the count, lists names, and has a counted destructive button', async () => {
     bulkDelete.mockReset()
+    bulkDelete.mockResolvedValue({ message: 'ok' })
     render(<ScansPage />)
     await userEvent.click(screen.getAllByRole('checkbox')[0])
     await userEvent.click(screen.getByRole('button', { name: 'Delete' }))
     const dialog = await screen.findByRole('alertdialog')
     expect(dialog).toHaveTextContent('Delete 25 scans?')
-    const confirm = within(dialog).getByRole('button', { name: 'Delete' })
+    expect(within(dialog).getByText('Scan 26')).toBeInTheDocument()
+    expect(dialog).toHaveTextContent('and 20 more')
+    const confirm = within(dialog).getByRole('button', { name: 'Delete 25 scans' })
     expect(confirm).toBeDisabled()
     await userEvent.type(within(dialog).getByRole('textbox'), '25')
     expect(confirm).toBeEnabled()
     expect(bulkDelete).not.toHaveBeenCalled()
+    await userEvent.click(confirm)
+    await waitFor(() => expect(bulkDelete).toHaveBeenCalledTimes(1))
+  })
+
+  it('a bulk delete of one scan asks for its name (not only at ten)', async () => {
+    bulkDelete.mockReset()
+    render(<ScansPage />)
+    await userEvent.click(screen.getAllByRole('checkbox')[1])
+    await userEvent.click(screen.getByRole('button', { name: 'Delete' }))
+    const dialog = await screen.findByRole('alertdialog')
+    const confirm = within(dialog).getByRole('button', { name: 'Delete 1 scan' })
+    expect(confirm).toBeDisabled()
+    await userEvent.type(within(dialog).getByRole('textbox'), 'Scan 26')
+    expect(confirm).toBeEnabled()
+  })
+
+  it('a single scan delete from the row menu asks for the scan name', async () => {
+    render(<ScansPage />)
+    await userEvent.click(screen.getAllByRole('button', { name: 'Row actions' })[0])
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Delete' }))
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('Delete scan "Scan 26"?')
+    const confirm = within(dialog).getByRole('button', { name: 'Delete scan' })
+    expect(confirm).toBeDisabled()
+    await userEvent.type(within(dialog).getByRole('textbox'), 'Scan 26')
+    expect(confirm).toBeEnabled()
+  })
+
+  it('Bulk Activate asks with the count and names, then activates', async () => {
+    bulkActivate.mockReset()
+    bulkActivate.mockResolvedValue({ message: 'ok' })
+    render(<ScansPage />)
+    await userEvent.click(screen.getAllByRole('checkbox')[0])
+    await userEvent.click(screen.getByRole('button', { name: 'Activate' }))
+    expect(bulkActivate).not.toHaveBeenCalled()
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('Activate 25 scans?')
+    expect(dialog).toHaveTextContent('Scan 26')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Activate 25 scans' }))
+    await waitFor(() => expect(bulkActivate).toHaveBeenCalledTimes(1))
+    expect(bulkActivate.mock.calls[0][0].scan_ids).toHaveLength(25)
+  })
+
+  it('Bulk Pause asks with the count, and Cancel pauses nothing', async () => {
+    bulkPause.mockReset()
+    render(<ScansPage />)
+    await userEvent.click(screen.getAllByRole('checkbox')[1])
+    await userEvent.click(screen.getByRole('button', { name: 'Pause' }))
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('Pause 1 scan?')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    expect(bulkPause).not.toHaveBeenCalled()
   })
 
   // The platform's managed scans (continuous coverage) are listed apart from
@@ -183,16 +252,66 @@ describe('Scans › Configurations', () => {
     expect(configCalls.at(-1)).toMatchObject({ origin: 'system' })
   })
 
-  it('labels the success rate through the dictionary', () => {
+  it('shows the recent runs and a success rate that does not count coverage gaps as failures', () => {
+    const at = '2026-10-20T10:00:00Z'
     configsResponse = {
-      data: [{ ...scan(1), successful_runs: 1, failed_runs: 1, total_runs: 2 }],
+      data: [
+        {
+          ...scan(1),
+          successful_runs: 1,
+          partial_runs: 2,
+          failed_runs: 1,
+          blocked_runs: 1,
+          total_runs: 5,
+          recent_runs: [
+            {
+              id: 'r5',
+              status: 'blocked',
+              refusal_code: 'ALL_TARGETS_UNCONFIRMED',
+              created_at: at,
+            },
+            { id: 'r4', status: 'partial', created_at: at },
+            { id: 'r3', status: 'partial', created_at: at },
+            { id: 'r2', status: 'failed', created_at: at },
+            { id: 'r1', status: 'completed', created_at: at },
+          ],
+        },
+      ],
       total: 1,
       page: 1,
       per_page: 25,
       total_pages: 1,
     }
     render(<ScansPage />)
-    expect(screen.getByRole('columnheader', { name: /Success rate/ })).toBeInTheDocument()
-    expect(screen.getByTitle('1 of 2 finished runs succeeded')).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: /Recent runs/ })).toBeInTheDocument()
+    // 1 completed + 2 partial of 4 that ran: 75%; the blocked run is not counted.
+    const history = screen.getByRole('img', { name: /Success rate 75%/ })
+    expect(history.getAttribute('aria-label')).toContain('Blocked before starting: 1, not counted')
+    expect(history.getAttribute('aria-label')).toContain('Completed with coverage gaps: 2')
+  })
+
+  it('has no success rate below three finished runs', () => {
+    configsResponse = {
+      data: [
+        {
+          ...scan(1),
+          successful_runs: 1,
+          failed_runs: 1,
+          total_runs: 2,
+          recent_runs: [
+            { id: 'r2', status: 'failed', created_at: '2026-10-20T10:00:00Z' },
+            { id: 'r1', status: 'completed', created_at: '2026-10-19T10:00:00Z' },
+          ],
+        },
+      ],
+      total: 1,
+      page: 1,
+      per_page: 25,
+      total_pages: 1,
+    }
+    render(<ScansPage />)
+    expect(
+      screen.getByRole('img', { name: /No success rate until 3 runs have finished/ })
+    ).toBeInTheDocument()
   })
 })

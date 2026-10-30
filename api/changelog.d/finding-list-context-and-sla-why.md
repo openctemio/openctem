@@ -1,0 +1,5 @@
+### Added: finding page list context, previous and next, and "why this date" for the SLA
+
+- A finding opened from the findings list shows that list above it ("Findings, Open P0 and P1, 31"), its position ("3 of 31") and previous and next buttons (also the j and k keys). Back keeps the list's filters. The list context is the list's query and the ids of the page shown, kept in the browser tab; neighbouring pages are read through `GET /findings`, so the caller's tenant and data scope apply on every read, and the return link only ever goes to the findings list.
+- The SLA row has a "Why this date" popover: the window in days and what set it (priority class or severity), the governing policy (asset, organization or the platform defaults), when the clock started or restarted (first detection, a regression found by a scan or retest, or a priority rise), the CISA KEV cap, and why the date can be earlier than the window.
+- `GET /findings/{id}` carries `sla_basis` with those facts, computed with the same rule that sets the deadline. It rides on the single-finding read, so its permission and data-scope check apply; there is no new route.

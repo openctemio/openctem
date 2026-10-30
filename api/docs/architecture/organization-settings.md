@@ -27,6 +27,28 @@ decode), `internal/app/tenant/settings_write.go` (the write path),
   plaintext `webhook_secret`) was never read by anything. `PATCH
   /settings/api` is removed and migration 001052 deletes the stored key.
 
+## Entry requirements on every organization route
+
+An organization's access requirements (SSO enforcement, required two-factor,
+personal-account policy, outside-member privilege rule) gate **entry to that
+organization**. Token issuance evaluates them for the organization the token is
+minted for. The `/api/v1/tenants/{tenant}/...` routes take the organization
+from the URL and accept a token minted for another organization the caller
+belongs to, so they carry one more check: `EntryGate`
+(`middleware/entry_gate.go`, `AuthService.CheckEntry`). On every request it
+
+- refuses a token bound to no organization (`403 ACCOUNT_TOKEN_NOT_ALLOWED`):
+  the tenantless token that social and SSO sign-in return proves a sign-in, not
+  entry to any organization; exchange it for an organization token first;
+- re-applies the URL organization's requirements to the token's own session
+  (`MFA_ENROLLMENT_REQUIRED`, `PERSONAL_ACCOUNTS_BLOCKED`, SSO required, with
+  the second factor an SSO exception needs), exactly as at token issuance.
+
+A pass is cached for 15 seconds per (session, organization), so a tightened
+requirement applies within that window; a refusal or a failure to decide is
+never cached and fails closed. A requirement of organization A never affects
+the person's access to organization B (research/310).
+
 ## Organization slug
 
 The slug keys the SAML/SSO sign-in and ACS URLs. Renaming it is owner-only
@@ -116,7 +138,7 @@ Severity follows what the change does, not which endpoint it came through:
 | Change | Severity |
 |---|---|
 | security: 2FA requirement off, SSO enforcement off, IP allowlist emptied | Critical |
-| security: IP allowlist widened (an entry outside every previous range), allowed domains widened or removed, email verification `never`, private-target local policy off, session timeout longer | High |
+| security: IP allowlist widened (an entry outside every previous range), allowed domains widened or removed, email verification `never`, private-target local policy off | High |
 | security: any other change (tightening, neutral) | Medium |
 | organization slug renamed (SAML/SSO URLs depend on it) | High |
 | organization name, description, logo | Low |
@@ -172,10 +194,26 @@ decisions B5, B6). These are hidden in the web console, and
 
 - organization session timeout (until per-organization session policy is
   enforced; the stored value is no longer sent on save);
-- organization industry, timezone and default language;
+- organization industry and default language;
 - the second language picker on Preferences (the user menu picks the language);
+- the personal time zone, date format and time format on Preferences (saved
+  in the browser only; no date formatter read them). They come back when one
+  shared date formatter honours them;
 - the e-mail digest and desktop notifications (no sender yet);
 - the asset-lifecycle "manual reactivation grace".
+
+**Organization time zone** (`general.timezone`, Settings > General): the
+organization's clock. Emerging-threat quiet hours and the digest hour
+(`app/threatalert/planner.go`) and scan approval hours (`app/scangov`) use it;
+any IANA zone is accepted (the zone database is embedded in the binary).
+Dates on screen use the viewer's browser zone.
+
+**Precedence.** A value comes from the most specific layer that sets it:
+platform default (env or console), then organization, then user. A platform
+ceiling (env or console) bounds what an organization may choose, and an
+organization security floor (MFA, SSO, IP allowlist) cannot be loosened by a
+user. The time zone is split by purpose: the organization's for schedules,
+the viewer's for display.
 
 The `/settings/integrations/saml` and `/verified-domains` explainer pages
 redirect (308) to Authentication, which carries the same "SSO is configured by

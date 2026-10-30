@@ -79,3 +79,28 @@ describe('RunStatusBadge', () => {
     expect(screen.getByText('Blocked')).toBeInTheDocument()
   })
 })
+
+describe('BlockedRunHint', () => {
+  it('says why a blocked run was refused and links to the fix, without hovering', async () => {
+    const { BlockedRunHint } = await import('../last-run-cell')
+    render(<BlockedRunHint run={{ status: 'blocked', refusal_code: 'ALL_TARGETS_UNCONFIRMED' }} />)
+    expect(screen.getByText(/No target is authorized for active scanning/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Review scope' })).toHaveAttribute(
+      'href',
+      '/scope?tab=in'
+    )
+  })
+
+  it('reads a generic line for a code without a translation, with no link', async () => {
+    const { BlockedRunHint } = await import('../last-run-cell')
+    render(<BlockedRunHint run={{ status: 'blocked', refusal_code: 'SOMETHING_NEW' }} />)
+    expect(screen.getByText(/Refused before it started/)).toBeInTheDocument()
+    expect(screen.queryByRole('link')).toBeNull()
+  })
+
+  it('renders nothing for a run that was not blocked', async () => {
+    const { BlockedRunHint } = await import('../last-run-cell')
+    const { container } = render(<BlockedRunHint run={{ status: 'failed' }} />)
+    expect(container).toBeEmptyDOMElement()
+  })
+})

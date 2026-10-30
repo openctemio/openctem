@@ -83,7 +83,7 @@ type UpdateScanPolicyOrganizationRequest struct {
 
 // GetDefault returns the platform default.
 // @Summary      Scan approval policy (platform default)
-// @Description  Scan approval for organizations without an override (RFC-073 §5): tenant_controlled (default: the organization's owner chooses), off, on (at least) or strict. Any administrator.
+// @Description  Scan approval for organizations without an override: tenant_controlled (default: the organization's owner chooses), off, on (at least) or strict. Any administrator.
 // @Tags         Admin System
 // @Produce      json
 // @Success      200  {object}  ScanPolicyDefaultResponse

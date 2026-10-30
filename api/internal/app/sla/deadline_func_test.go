@@ -154,11 +154,11 @@ type batchCalc struct {
 	fnCalls int
 }
 
-func (b *batchCalc) SLADeadlineFunc(_ context.Context, _ string) (DeadlineFunc, error) {
+func (b *batchCalc) SLABatchFuncs(_ context.Context, _ string) (DeadlineFunc, KEVCapFunc, error) {
 	b.fnCalls++
 	return func(_, _ string, _ vulnerability.Severity, at time.Time) (time.Time, error) {
 		return at.Add(24 * time.Hour), nil
-	}, nil
+	}, func(string) int { return 0 }, nil
 }
 
 // The applier loads policies once per batch when the calculator can.

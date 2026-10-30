@@ -344,7 +344,7 @@ export function SensorInstallFlow({
           {zones.map((z) => (
             <SelectItem key={z.id} value={z.id}>
               {z.name}
-              {z.ranges.length ? ` · ${z.ranges[0]}` : ''}
+              {z.ranges.length ? `, ${z.ranges[0]}` : ''}
             </SelectItem>
           ))}
         </SelectContent>

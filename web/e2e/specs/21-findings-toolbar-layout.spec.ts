@@ -24,7 +24,7 @@ async function checkToolbar(page: Page, label: string) {
   await expect(primary).toBeVisible()
   await expect(toolbar).toBeVisible()
 
-  const search = toolbar.getByRole('textbox', { name: /search findings/i })
+  const search = toolbar.getByRole('searchbox', { name: /search findings/i })
   const filter = toolbar.locator('[data-slot="filter-button"]:visible').first()
   const s = await search.boundingBox()
   const f = await filter.boundingBox()
@@ -66,26 +66,28 @@ async function checkToolbar(page: Page, label: string) {
 }
 
 for (const width of WIDTHS) {
-  test(`Findings toolbar keeps search beside the filter button (${width}px)`, async ({
-    page,
-  }, info) => {
-    await page.setViewportSize({ width, height: 900 })
-    await page.goto('/findings')
-    await expect(page.getByTestId('findings-view-title')).toBeVisible({
-      timeout: 20_000,
-    })
-    await page.waitForLoadState('networkidle')
-    await shot(page, info, `${width}-panel-closed`)
-    await checkToolbar(page, `${width}px panel closed`)
+  test(
+    `Findings toolbar keeps search beside the filter button (${width}px)`,
+    { tag: ['@findings'] },
+    async ({ page }, info) => {
+      await page.setViewportSize({ width, height: 900 })
+      await page.goto('/findings')
+      await expect(page.getByTestId('findings-view-title')).toBeVisible({
+        timeout: 20_000,
+      })
+      await page.waitForLoadState('networkidle')
+      await shot(page, info, `${width}-panel-closed`)
+      await checkToolbar(page, `${width}px panel closed`)
 
-    if (width >= 1024) {
-      const toggle = page.locator('[data-slot="filter-button"][aria-controls]').first()
-      if ((await toggle.getAttribute('aria-pressed')) !== 'true') await toggle.click()
-      await expect(page.locator('#finding-filters')).toBeVisible()
-      // Let the panel's width transition finish before measuring.
-      await page.waitForTimeout(400)
-      await shot(page, info, `${width}-panel-open`)
-      await checkToolbar(page, `${width}px panel open`)
+      if (width >= 1024) {
+        const toggle = page.locator('[data-slot="filter-button"][aria-pressed]').first()
+        if ((await toggle.getAttribute('aria-pressed')) !== 'true') await toggle.click()
+        await expect(page.locator('#finding-filters')).toBeVisible()
+        // Let the panel's width transition finish before measuring.
+        await page.waitForTimeout(400)
+        await shot(page, info, `${width}-panel-open`)
+        await checkToolbar(page, `${width}px panel open`)
+      }
     }
-  })
+  )
 }

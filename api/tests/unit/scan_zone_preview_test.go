@@ -73,7 +73,7 @@ func TestScanZonePreview_RoutesLikeTheTriggerAndCreatesNothing(t *testing.T) {
 	if got := by["db.corp.example"]; got.ZoneName != "dc-a" || len(got.Addresses) != 1 || got.Addresses[0] != "10.1.0.9" {
 		t.Errorf("hostname = %+v, want dc-a via 10.1.0.9", got)
 	}
-	if got := by["nope.corp.example"]; got.Status != scanservice.PreviewStatusUncovered || !strings.Contains(got.Reason, "did not resolve") {
+	if got := by["nope.corp.example"]; got.Status != scanservice.PreviewStatusUncovered || !strings.Contains(got.Reason, "does not resolve in DNS") {
 		t.Errorf("unresolvable = %+v", got)
 	}
 	if _, listed := by["10.1.0.2"]; listed {

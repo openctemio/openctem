@@ -200,6 +200,11 @@ export function CaptchaSettingsForm({ settings, canEdit, onSaved }: CaptchaSetti
           'admin.captcha.confirmDesc',
           'Applies at once to sign-up, request access and sign-in on every server. Recorded in the admin audit log (never the secret) and sent to every administrator.'
         )}
+        confirmText={
+          turningOff
+            ? t('admin.captcha.confirmOffButton', 'Turn CAPTCHA off')
+            : t('admin.captcha.confirmButton', 'Change CAPTCHA keys')
+        }
         onConfirm={save}
       />
     </>

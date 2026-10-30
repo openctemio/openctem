@@ -36,13 +36,13 @@ var (
 	// UnknownParamRequests counts ignored unknown params (warn mode).
 	UnknownParamRequests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "filter_unknown_param_total",
-		Help: "Query params a migrated list endpoint ignored because its field registry does not know them (RFC-048 warn mode)",
+		Help: "Query params a migrated list endpoint ignored because its field registry does not know them (warn mode)",
 	}, []string{"route", "param"})
 
 	// DeprecatedParamRequests counts uses of old param names.
 	DeprecatedParamRequests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "deprecated_query_param_requests_total",
-		Help: "Requests that used a deprecated query param name (RFC-048 aliases), by route, param and kind of caller",
+		Help: "Requests that used a deprecated query param name, by route, param and kind of caller",
 	}, []string{"route", "param", "client"})
 )
 

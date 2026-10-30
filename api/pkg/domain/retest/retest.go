@@ -62,34 +62,84 @@ const (
 	// OutcomeInconclusive: no conclusion; ReasonCode says why. The finding
 	// does not move.
 	OutcomeInconclusive Outcome = "inconclusive"
+	// OutcomeStillExposedElsewhere: the check no longer matches the finding's
+	// own endpoint (or never requested it) but matches at another path of
+	// the same target. Nothing is proven fixed and nothing is reopened: the
+	// finding stays as it is, and the other paths are named in the reason.
+	OutcomeStillExposedElsewhere Outcome = "still_exposed_elsewhere"
 )
 
 // ReasonCode classifies a retest's outcome.
 type ReasonCode string
 
 const (
-	ReasonMatched          ReasonCode = "matched"
-	ReasonNotMatched       ReasonCode = "not_matched"
-	ReasonNoEndpointProof  ReasonCode = "no_endpoint_proof"
-	ReasonUnreachable      ReasonCode = "unreachable"
-	ReasonBlocked          ReasonCode = "blocked"
+	ReasonMatched         ReasonCode = "matched"
+	ReasonNotMatched      ReasonCode = "not_matched"
+	ReasonNoEndpointProof ReasonCode = "no_endpoint_proof"
+	ReasonUnreachable     ReasonCode = "unreachable"
+	ReasonBlocked         ReasonCode = "blocked"
+	// ReasonEdgeBlocked: a CDN or WAF answered in place of the service
+	// (challenge or block page): nothing is known about the service.
+	ReasonEdgeBlocked ReasonCode = "edge_blocked"
+	// ReasonAccessDenied: the service itself answered 401 or 403. For an
+	// exposure check seen twice that is the fix; otherwise inconclusive.
+	ReasonAccessDenied     ReasonCode = "access_denied"
 	ReasonAuthChanged      ReasonCode = "auth_changed"
 	ReasonServerError      ReasonCode = "server_error"
 	ReasonEndpointMismatch ReasonCode = "endpoint_mismatch"
+	// ReasonMatchedElsewhere: the check matched at another path than the
+	// finding's endpoint.
+	ReasonMatchedElsewhere ReasonCode = "matched_elsewhere"
 	ReasonTemplateChanged  ReasonCode = "template_changed"
-	ReasonNoResult         ReasonCode = "no_result"
-	ReasonError            ReasonCode = "error"
+	// ReasonSeenAfterCheck: a scan sighted the finding after the check ran,
+	// so the check's no-match cannot show it fixed.
+	ReasonSeenAfterCheck ReasonCode = "seen_after_check"
+	ReasonNoResult       ReasonCode = "no_result"
+	ReasonError          ReasonCode = "error"
+	// ReasonTemplateNotFound: the sensor's template set does not hold the
+	// finding's template.
+	ReasonTemplateNotFound ReasonCode = "template_not_found"
+	// ReasonExcludedByPolicy: the template is installed, but the sensor's
+	// safety policy never runs it for a re-check (a destructive, intrusive
+	// or brute-force class).
+	ReasonExcludedByPolicy ReasonCode = "excluded_by_policy"
+	// ReasonNoVerdict: the tool ended without judging the item (it stopped
+	// early or never reached the target).
+	ReasonNoVerdict ReasonCode = "no_verdict"
 	// ReasonCheckUncalibrated: a custom retest check did not match, but this
 	// version of the check never matched the finding, so the no-match does
 	// not prove a fix (docs/architecture/finding-retest-checks.md).
 	ReasonCheckUncalibrated ReasonCode = "check_uncalibrated"
+	// ReasonVersionNotObserved: the fingerprint ran but did not report the
+	// product at the finding's location, so nothing is known about its
+	// version (a hidden version is not a fixed one).
+	ReasonVersionNotObserved ReasonCode = "version_not_observed"
+	// ReasonVersionStillAffected: the version seen is still in the CVE's
+	// affected range (the same version, or another one also affected).
+	ReasonVersionStillAffected ReasonCode = "version_still_affected"
+	// ReasonVersionNotAffected: the version seen is outside every affected
+	// range of the CVE.
+	ReasonVersionNotAffected ReasonCode = "version_not_affected"
 )
+
+// ToolUnable reports whether the code says the tool could not run the check
+// (a gap of the tool or its template set, not a finding about the target).
+func (c ReasonCode) ToolUnable() bool {
+	switch c {
+	case ReasonError, ReasonTemplateNotFound, ReasonExcludedByPolicy, ReasonNoVerdict:
+		return true
+	}
+	return false
+}
 
 // Verdict is a decided outcome with its reason code and a human reason.
 type Verdict struct {
 	Outcome Outcome
 	Code    ReasonCode
 	Reason  string
+	// OtherPaths are the other URLs the check matched at (display form, a
+	// few), set with OutcomeStillExposedElsewhere.
+	OtherPaths []string
 }
 
 // inconclusive is a Verdict without a conclusion.
@@ -99,6 +149,12 @@ func inconclusive(code ReasonCode, reason string) Verdict {
 
 // Inconclusive is an inconclusive Verdict (for the service's own failures).
 func Inconclusive(code ReasonCode, reason string) Verdict { return inconclusive(code, reason) }
+
+// matchedSomewhere: the outcome says the check matched, at the finding's
+// endpoint or at another path.
+func (o Outcome) matchedSomewhere() bool {
+	return o == OutcomeStillVulnerable || o == OutcomeStillExposedElsewhere
+}
 
 // Conclusive reports whether the outcome says something about the finding.
 func (o Outcome) Conclusive() bool { return o == OutcomeConfirmedFixed || o == OutcomeStillVulnerable }
@@ -121,6 +177,10 @@ var (
 	// ErrNoCheckSensor: the finding has a custom retest check, and no online
 	// sensor of the tenant can run delivered templates in a retest.
 	ErrNoCheckSensor = fmt.Errorf("%w: no online sensor of this organization can run custom retest checks (a sensor update adds it)", shared.ErrValidation)
+	// ErrNoTemplateSensor: sensors that can retest are online, but every one
+	// reports an older template release than the one the finding was found
+	// with, so the template may not be installed on any of them.
+	ErrNoTemplateSensor = fmt.Errorf("%w: no online sensor of this organization has the template release this finding was found with (update the sensor's templates)", shared.ErrValidation)
 )
 
 // Retest is one retest attempt of one finding.
@@ -141,8 +201,9 @@ type Retest struct {
 	// finding's rule id for a tool retest.
 	TemplateID string
 	Target     string
-	// Method is how the retest re-checks (MethodTool, MethodValidate). Not
-	// stored: it follows from the check command's type.
+	// Method is how the retest re-checks (MethodTool, MethodValidate,
+	// MethodVersion). Stored since migration 003529; older rows leave it
+	// empty and it follows from the check command's type.
 	Method         string
 	CheckCommandID *shared.ID
 	ReachCommandID *shared.ID
@@ -176,6 +237,8 @@ type CheckResult struct {
 	// Evidence is what the re-run reported it sent and received
 	// (evidence_items in the result), normalized but not masked.
 	Evidence []evidence.Item
+	// Requests is one line per request the re-run made (newer sensors).
+	Requests []RequestResult
 }
 
 const (
@@ -193,9 +256,17 @@ const (
 // target it is inconclusive. nuclei prints nothing and exits 0 when a host
 // does not answer, and a template run with the wrong input never requests the
 // endpoint, so a bare "not detected" proves nothing.
-func Decide(check, reach CheckResult, matchedAt string) Verdict {
+func Decide(check, reach CheckResult, matchedAt string, cls ...Class) Verdict {
 	if check.Missing {
 		return inconclusive(ReasonNoResult, "no result from the template re-run")
+	}
+	switch check.Outcome {
+	case checkDetected, checkNotDetected:
+		// A check that probes several paths reports each request: the
+		// finding's own endpoint decides, not whichever exchange came first.
+		if v, ok := DecideByRequests(check.Requests, matchedAt, check.Evidence, firstClass(cls)); ok {
+			return v
+		}
 	}
 	switch check.Outcome {
 	case checkDetected:
@@ -207,7 +278,7 @@ func Decide(check, reach CheckResult, matchedAt string) Verdict {
 		if !reach.Missing {
 			detail = nonEmpty(evidence.RedactText(reach.Summary), "the reachability probe did not connect")
 		}
-		return decideNotMatched(AnalyzeAttempt(check.Evidence, matchedAt), matchedAt, reached, detail)
+		return decideNotMatched(AnalyzeAttempt(check.Evidence, matchedAt), matchedAt, reached, detail, firstClass(cls))
 	default:
 		return inconclusive(ReasonError, nonEmpty(evidence.RedactText(check.Summary), "the template re-run was inconclusive"))
 	}
@@ -381,6 +452,11 @@ type SettleInput struct {
 	SensorID   *shared.ID
 	ResolvedBy *shared.ID // stamped when the finding is resolved
 	TemplateID string
+	// CheckedAt is when the check's result was reported. A finding sighted
+	// after it (last_seen_at later) was seen again by a scan since the
+	// check ran, so a confirmed fix is not applied (SettleResult.Stale).
+	// Zero skips the test.
+	CheckedAt time.Time
 	// Decide maps the finding's current status to the status the outcome
 	// leads to. It runs inside the transaction, with the finding row locked.
 	Decide func(current vulnerability.FindingStatus) SettleDecision
@@ -396,7 +472,17 @@ type SettleResult struct {
 	Moved        bool
 	PriorStatus  vulnerability.FindingStatus
 	ResultStatus vulnerability.FindingStatus
+	// Stale: the outcome was confirmed_fixed but the finding was sighted
+	// after the check ran; it was recorded inconclusive and nothing moved.
+	Stale bool
 }
+
+// StaleFixReason is the reason of a fix that a later sighting overrides.
+const StaleFixReason = "the finding was sighted again after the check ran, so the check's no-match does not show it fixed; retest again"
+
+// StaleFixVerdict is the verdict recorded in place of a confirmed fix that a
+// later sighting overrides.
+func StaleFixVerdict() Verdict { return inconclusive(ReasonSeenAfterCheck, StaleFixReason) }
 
 // AutoTenant is a tenant with auto-retest on, as the scheduler lists it.
 type AutoTenant struct {

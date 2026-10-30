@@ -138,6 +138,11 @@ type BootstrapResponse struct {
 	// TenantCreationMode is the installation's organization policy
 	// ("self_service" or "admin_only"), as GET /auth/providers reports it.
 	TenantCreationMode string `json:"tenant_creation_mode,omitempty"`
+	// EmailDelivery reports whether this server can send email, as GET
+	// /auth/providers reports it (an installation capability, no tenant
+	// data). Sent as an explicit true or false so pages that switch to the
+	// copy-the-link flows need no extra request; absent when not wired.
+	EmailDelivery *bool `json:"email_delivery,omitempty"`
 	// Badges are the sidebar and header counts.
 	Badges *BootstrapBadges `json:"badges,omitempty"`
 	// Announcements are the platform notices shown now, as GET
@@ -147,6 +152,20 @@ type BootstrapResponse struct {
 	// and admins only; the settings rail lists Usage & limits then). Absent
 	// otherwise.
 	LimitsApply bool `json:"limits_apply,omitempty"`
+	// Pins is the GET /me/pins body (the sidebar's Pinned section, with its
+	// live counts), so the sidebar sends no request of its own per page.
+	Pins *NavPinsResponse `json:"pins,omitempty"`
+	// SupportAccess is the active platform support grants, as GET
+	// /organization/support-access/active returns them (the banner). Only for
+	// callers with team:read, like that endpoint.
+	SupportAccess *SupportActiveResponse `json:"support_access,omitempty"`
+	// AIConfig is the AI setup summary, as GET /findings/ai-triage/config
+	// returns it (mode, provider, model, availability; never a secret). Only
+	// with findings:read and ai_triage:read and the ai_triage module on.
+	AIConfig any `json:"ai_config,omitempty"`
+	// SLA is the windows that govern the organization's assets, so no page asks
+	// for them per asset. Only with assets:read.
+	SLA *BootstrapSLA `json:"sla,omitempty"`
 }
 
 // BootstrapBadges are the counts the app shell shows on every page. A count
@@ -183,12 +202,26 @@ type BootstrapSession struct {
 	// TenantCreationMode reports the current organization policy (the sign-up
 	// policy when it is configured, else the configured mode).
 	TenantCreationMode func(ctx context.Context) string
+	// EmailDelivery reports whether this server can send email (the same
+	// source as GET /auth/providers email_delivery).
+	EmailDelivery func() bool
 	// Announcements is AnnouncementHandler.ActiveResponses (the
 	// /announcements body).
 	Announcements func(ctx context.Context) ([]AnnouncementResponse, error)
 	// LimitsApply reports whether a limit or deny applies to the
 	// organization (entitlement.Service.Applies; no usage is counted).
 	LimitsApply func(ctx context.Context, tenantID shared.ID) (bool, error)
+	// Pins is NavPinHandler.Response (the /me/pins body for the request's
+	// own caller, counts computed in the caller's data scope).
+	Pins func(r *http.Request) (*NavPinsResponse, error)
+	// SupportAccess is SupportAccessHandler.ActiveResponse; nil when support
+	// access is not wired.
+	SupportAccess func(ctx context.Context, tenantID shared.ID) (*SupportActiveResponse, error)
+	// AIConfig is the body of GET /findings/ai-triage/config for the tenant
+	// (AITriageService.GetAIConfig); nil when AI triage is not wired.
+	AIConfig func(ctx context.Context, tenantID shared.ID) (any, error)
+	// SLA is SLAHandler.BootstrapPart; nil when SLA is not wired.
+	SLA func(ctx context.Context, tenantID shared.ID) (*BootstrapSLA, error)
 }
 
 // BootstrapPermissions contains user permissions and version.
@@ -447,6 +480,10 @@ func (h *BootstrapHandler) addSession(r *http.Request, resp *BootstrapResponse, 
 	if h.session.TenantCreationMode != nil {
 		resp.TenantCreationMode = h.session.TenantCreationMode(ctx)
 	}
+	if h.session.EmailDelivery != nil {
+		v := h.session.EmailDelivery()
+		resp.EmailDelivery = &v
+	}
 	tenantID, terr := shared.IDFromString(tenantIDStr)
 	userID, uerr := shared.IDFromString(userIDStr)
 	if terr != nil || uerr != nil {
@@ -551,6 +588,49 @@ func (h *BootstrapHandler) addSession(r *http.Request, resp *BootstrapResponse, 
 			mu.Unlock()
 		})
 	}
+	// The same gates as GET /organization/support-access/active (team:read).
+	if h.session.SupportAccess != nil && middleware.HasPermission(ctx, permission.TeamRead.String()) {
+		run(func() {
+			out, err := h.session.SupportAccess(ctx, tenantID)
+			if err != nil {
+				h.logger.Warn("bootstrap: support access unavailable", "error", logger.SanitizeError(err))
+				return
+			}
+			mu.Lock()
+			resp.SupportAccess = out
+			mu.Unlock()
+		})
+	}
+	// The same gates as GET /findings/ai-triage/config: findings:read and
+	// ai_triage:read, and the ai_triage module on for the tenant.
+	if h.session.AIConfig != nil &&
+		middleware.HasPermission(ctx, permission.FindingsRead.String()) &&
+		middleware.HasPermission(ctx, permission.AITriageRead.String()) &&
+		resp.Modules != nil && slices.Contains(resp.Modules.ModuleIDs, module.ModuleAITriage) {
+		run(func() {
+			cfg, err := h.session.AIConfig(ctx, tenantID)
+			if err != nil {
+				h.logger.Warn("bootstrap: AI setup unavailable", "error", logger.SanitizeError(err))
+				return
+			}
+			mu.Lock()
+			resp.AIConfig = cfg
+			mu.Unlock()
+		})
+	}
+	// The same gate as GET /assets/{id}/sla-policy: assets:read.
+	if h.session.SLA != nil && middleware.HasPermission(ctx, permission.AssetsRead.String()) {
+		run(func() {
+			out, err := h.session.SLA(ctx, tenantID)
+			if err != nil {
+				h.logger.Warn("bootstrap: SLA windows unavailable", "error", logger.SanitizeError(err))
+				return
+			}
+			mu.Lock()
+			resp.SLA = out
+			mu.Unlock()
+		})
+	}
 	if h.session.Announcements != nil {
 		run(func() {
 			list, err := h.session.Announcements(ctx)
@@ -560,6 +640,18 @@ func (h *BootstrapHandler) addSession(r *http.Request, resp *BootstrapResponse, 
 			}
 			mu.Lock()
 			resp.Announcements = &list
+			mu.Unlock()
+		})
+	}
+	if h.session.Pins != nil {
+		run(func() {
+			pins, err := h.session.Pins(r)
+			if err != nil {
+				h.logger.Warn("bootstrap: pins unavailable", "error", logger.SanitizeError(err))
+				return
+			}
+			mu.Lock()
+			resp.Pins = pins
 			mu.Unlock()
 		})
 	}

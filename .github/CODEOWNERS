@@ -132,8 +132,10 @@
 # ci-release
 /.github/workflows/** @0xmanhnv
 /.github/actions/** @0xmanhnv
+/.github/codeql/** @0xmanhnv
 /.github/scripts/** @0xmanhnv
 /.github/security-paths.yml @0xmanhnv
+/.github/quarantine.yml @0xmanhnv
 /.github/CODEOWNERS @0xmanhnv
 /.githooks/** @0xmanhnv
 /api/scripts/release-branch.sh @0xmanhnv

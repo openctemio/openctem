@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useCallback, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog, ConfirmSample } from '@/components/confirm-dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
@@ -245,8 +246,19 @@ export function EditRoleSheet({ role, open, onOpenChange, onSuccess }: EditRoleS
     return nameChanged || descChanged || accessChanged || permsChanged
   }, [role, form])
 
+  // Widening a role (permissions added, or full data access turned on) reaches
+  // everyone who holds it at once, so it asks first. Narrowing saves directly.
+  const [confirmWiden, setConfirmWiden] = useState(false)
+  const addedPermissions = useMemo(
+    () => (role ? form.permissions.filter((p) => !role.permissions.includes(p)) : []),
+    [role, form.permissions]
+  )
+  const gainsFullData = !!role && form.hasFullDataAccess && !role.has_full_data_access
+  const widens = addedPermissions.length > 0 || gainsFullData
+
   // Handle update
   const handleUpdate = async () => {
+    setConfirmWiden(false)
     if (!role) return
 
     if (!form.name.trim()) {
@@ -667,7 +679,10 @@ export function EditRoleSheet({ role, open, onOpenChange, onSuccess }: EditRoleS
           <Button variant="ghost" onClick={() => handleOpenChange(false)}>
             {t('common.cancel', 'Cancel')}
           </Button>
-          <Button onClick={handleUpdate} disabled={isUpdating || !form.name.trim() || !hasChanges}>
+          <Button
+            onClick={() => (widens ? setConfirmWiden(true) : void handleUpdate())}
+            disabled={isUpdating || !form.name.trim() || !hasChanges}
+          >
             {isUpdating ? (
               <Loader2 className="me-2 h-4 w-4 animate-spin" />
             ) : (
@@ -677,6 +692,38 @@ export function EditRoleSheet({ role, open, onOpenChange, onSuccess }: EditRoleS
           </Button>
         </SheetFooter>
       </SheetContent>
+      <ConfirmDialog
+        open={confirmWiden}
+        onOpenChange={setConfirmWiden}
+        title={t('confirm.role.widenTitle', 'Give everyone with {name} more access?', {
+          name: role?.name ?? '',
+        })}
+        desc={
+          <>
+            {addedPermissions.length > 0 &&
+              t(
+                'confirm.role.widenPermissions',
+                'This role gains {count} permissions. Everyone who holds it has them as soon as you save.',
+                { count: addedPermissions.length }
+              )}{' '}
+            {gainsFullData &&
+              t(
+                'confirm.role.widenFullData',
+                'It also gives them access to every asset, not only their own scope.'
+              )}{' '}
+            {t(
+              'confirm.role.widenNote',
+              'The change is recorded in the audit log. You can narrow the role again later.'
+            )}
+          </>
+        }
+        confirmText={t('confirm.role.widenConfirm', 'Save and widen role')}
+        handleConfirm={handleUpdate}
+      >
+        {addedPermissions.length > 0 && (
+          <ConfirmSample names={addedPermissions} total={addedPermissions.length} />
+        )}
+      </ConfirmDialog>
     </Sheet>
   )
 }

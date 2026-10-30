@@ -165,9 +165,28 @@ describe('CycleLifecycleAction', () => {
     wrap(<CycleLifecycleAction cycle={{ ...CYCLE, status: 'planning' }} onDone={onDone} />)
     await userEvent.click(screen.getByRole('button', { name: 'Activate' }))
     const dialog = await screen.findByRole('alertdialog')
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Activate' }))
+    // Activating freezes the scope: the cycle's name is typed first.
+    const confirm = within(dialog).getByRole('button', { name: 'Activate' })
+    expect(confirm).toBeDisabled()
+    await userEvent.type(within(dialog).getByRole('textbox'), 'Q4 external')
+    await userEvent.click(confirm)
     await waitFor(() => expect(api.post).toHaveBeenCalledWith('/api/v1/ctem-cycles/c1/activate'))
     expect(onDone).toHaveBeenCalled()
+  })
+
+  it('asks for the cycle name before closing it, but not to start the review', async () => {
+    wrap(<CycleLifecycleAction cycle={{ ...CYCLE, status: 'review' }} onDone={vi.fn()} />)
+    await userEvent.click(screen.getByRole('button', { name: /close/i }))
+    const dialog = await screen.findByRole('alertdialog')
+    expect(within(dialog).getByRole('textbox')).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: /close/i })).toBeDisabled()
+  })
+
+  it('starts the review without a typed name', async () => {
+    wrap(<CycleLifecycleAction cycle={{ ...CYCLE, status: 'active' }} onDone={vi.fn()} />)
+    await userEvent.click(screen.getAllByRole('button')[0])
+    const dialog = await screen.findByRole('alertdialog')
+    expect(within(dialog).queryByRole('textbox')).toBeNull()
   })
 
   it('offers nothing on a closed cycle', () => {

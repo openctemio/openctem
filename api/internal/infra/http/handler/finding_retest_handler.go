@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"sort"
 	"time"
@@ -60,7 +61,9 @@ type FindingRetestResponse struct {
 	Status       string `json:"status"`
 	// Outcome: confirmed_fixed (the endpoint answered and the check did not
 	// match), not_reproduced (no match, endpoint not proven checked),
-	// still_vulnerable, inconclusive (reason_code says why).
+	// still_vulnerable, still_exposed_elsewhere (the finding's own endpoint did
+	// not match but another path did; the reason names it), inconclusive
+	// (reason_code says why).
 	Outcome      string `json:"outcome,omitempty"`
 	ReasonCode   string `json:"reason_code,omitempty"`
 	Reason       string `json:"reason,omitempty"`
@@ -92,6 +95,42 @@ type FindingRetestListResponse struct {
 	// target gates pass, an online sensor can re-check it). The console
 	// offers "Retest now" from it.
 	CanRetest bool `json:"can_retest"`
+	// Reason is the stable code of why a retest would be refused (empty
+	// when CanRetest).
+	Reason string `json:"reason,omitempty"`
+	// Strategy says how the finding is re-checked: template (its rule is
+	// re-run), custom_check, version_recheck (the fingerprint that read the
+	// software version runs again and the version is evaluated) or none.
+	Strategy *FindingRetestStrategy `json:"strategy,omitempty"`
+	// ActiveCheck, for a version-based finding, is an installed template
+	// named after its CVE that can run as an optional active check.
+	ActiveCheck *FindingRetestActiveCheck `json:"active_check,omitempty"`
+}
+
+// FindingRetestStrategy is how a finding is re-checked.
+type FindingRetestStrategy struct {
+	// Kind: template, custom_check, version_recheck or none.
+	Kind string `json:"kind"`
+	// Rule: the template or rule re-run, or the CVE a version re-check evaluates.
+	Rule string `json:"rule,omitempty"`
+	// Tool: the tool that re-checks (the fingerprint tool for version_recheck).
+	Tool    string `json:"tool,omitempty"`
+	Product string `json:"product,omitempty"`
+	Version string `json:"version,omitempty"`
+}
+
+// FindingRetestActiveCheck is the optional template run of a version-based finding.
+type FindingRetestActiveCheck struct {
+	Template  string `json:"template"`
+	Available bool   `json:"available"`
+	Reason    string `json:"reason,omitempty"`
+}
+
+// FindingRetestRequest is the optional body of "Retest now".
+type FindingRetestRequest struct {
+	// Mode: empty (the finding's strategy) or active_check (a version-based
+	// finding's installed CVE template instead of the version re-check).
+	Mode string `json:"mode,omitempty" validate:"omitempty,oneof=active_check"`
 }
 
 func toFindingRetestResponse(rt *retestdom.Retest) FindingRetestResponse {
@@ -149,10 +188,11 @@ func manualRetestResponse(rt *pentest.Retest) FindingRetestResponse {
 
 // Request handles POST /api/v1/findings/{id}/retests.
 // @Summary      Retest a finding now
-// @Description  Re-runs the check that produced the finding against the origin of its matched-at URL (RFC-039, RFC-057). Applied asynchronously: confirmed_fixed (the re-run reached the finding's endpoint, got an answer that is not a block, an auth failure or a server error, and did not match) moves the finding to validated_fixed, or resolves it when the tenant enabled retest.auto_resolve; still_vulnerable keeps it (or reopens a resolved one); not_reproduced and inconclusive change nothing. The attempt's request and response are kept as finding evidence. Requires findings:verify; out-of-scope findings are 404.
+// @Description  Re-runs the check that produced the finding against the origin of its matched-at URL. Applied asynchronously: confirmed_fixed (the re-run reached the finding's endpoint, got an answer that is not a block, an auth failure or a server error, and did not match) moves the finding to validated_fixed, or resolves it when the tenant enabled retest.auto_resolve; still_vulnerable keeps it (or reopens a resolved one); not_reproduced, still_exposed_elsewhere and inconclusive change nothing. The attempt's request and response are kept as finding evidence. Requires findings:verify; out-of-scope findings are 404.
 // @Tags         Findings
 // @Produce      json
 // @Param        id   path      string  true  "Finding ID"
+// @Param        body body      FindingRetestRequest  false  "Optional mode"
 // @Success      202  {object}  FindingRetestResponse
 // @Failure      400  {object}  apierror.Error
 // @Failure      403  {object}  apierror.Error
@@ -172,8 +212,19 @@ func (h *FindingRetestHandler) Request(w http.ResponseWriter, r *http.Request) {
 		apierror.NotFound("Finding").WriteJSON(w)
 		return
 	}
+	var body FindingRetestRequest
+	if r.ContentLength != 0 {
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+			apierror.BadRequest("invalid request body").WriteJSON(w)
+			return
+		}
+	}
+	if body.Mode != retestapp.ModeDefault && body.Mode != retestapp.ModeActiveCheck {
+		apierror.BadRequest("mode must be empty or active_check").WriteJSON(w)
+		return
+	}
 	in := retestapp.RequestInput{
-		TenantID: tenantID, FindingID: findingID, Trigger: retestdom.TriggerManual,
+		TenantID: tenantID, FindingID: findingID, Trigger: retestdom.TriggerManual, Mode: body.Mode,
 		Audit: auditapp.AuditContext{
 			TenantID: tenantID.String(), ActorID: middleware.GetUserID(r.Context()),
 			ActorEmail: auditActorEmail(r.Context()), ActorIP: getClientIP(r),
@@ -197,7 +248,7 @@ func (h *FindingRetestHandler) Request(w http.ResponseWriter, r *http.Request) {
 
 // List handles GET /api/v1/findings/{id}/retests.
 // @Summary      A finding's retests
-// @Description  The finding's retest history, newest first (RFC-039).
+// @Description  The finding's retest history, newest first.
 // @Tags         Findings
 // @Produce      json
 // @Param        id     path      string  true   "Finding ID"
@@ -252,17 +303,31 @@ func (h *FindingRetestHandler) List(w http.ResponseWriter, r *http.Request) {
 	if limit > 0 && len(out.Data) > limit {
 		out.Data = out.Data[:limit]
 	}
-	can, err := h.service.CanRetest(r.Context(), tenantID, findingID)
+	offer, err := h.service.Offer(r.Context(), tenantID, findingID)
 	if err != nil {
 		h.logger.Warn("retest availability check failed", "finding_id", findingID.String(), "error", err)
+	} else {
+		out.CanRetest, out.Reason = offer.Available, offer.Reason
+		st := offer.Strategy
+		out.Strategy = &FindingRetestStrategy{Kind: st.Kind, Rule: st.Rule, Tool: st.Tool, Product: st.Product, Version: st.Version}
+		if ac := offer.ActiveCheck; ac != nil {
+			out.ActiveCheck = &FindingRetestActiveCheck{Template: ac.Template, Available: ac.Available, Reason: ac.Reason}
+		}
 	}
-	out.CanRetest = can
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)
 }
 
 func (h *FindingRetestHandler) writeError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, retestdom.ErrNoTemplateSensor):
+		apierror.FromCode(apierror.CodeRetestNoTemplateSensor).WithDetails(map[string]any{"reason": retestapp.ReasonNoTemplateSensor}).WriteJSON(w)
+	case errors.Is(err, retestdom.ErrNoCheckSensor):
+		apierror.FromCode(apierror.CodeRetestNoCheckSensor).WithDetails(map[string]any{"reason": retestapp.ReasonNoCheckSensor}).WriteJSON(w)
+	case errors.Is(err, retestdom.ErrNoSensor):
+		apierror.FromCode(apierror.CodeRetestNoSensor).WithDetails(map[string]any{"reason": retestapp.ReasonNoSensor}).WriteJSON(w)
+	case errors.Is(err, retestdom.ErrNotEligible):
+		apierror.FromCode(apierror.CodeRetestNotAvailable).WithDetails(map[string]any{"reason": retestapp.IneligibleReason(err)}).WriteJSON(w)
 	case errors.Is(err, retestdom.ErrRateLimited):
 		apierror.TooManyRequests(err.Error()).WriteJSON(w)
 	case errors.Is(err, shared.ErrNotFound):

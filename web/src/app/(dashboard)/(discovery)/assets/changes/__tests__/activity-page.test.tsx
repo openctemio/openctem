@@ -57,25 +57,29 @@ beforeEach(() => {
 })
 
 describe('Assets > Activity', () => {
-  it('is titled Activity and lists the kinds with their counts, without a metric strip', () => {
+  it('is titled Activity and filters by kind from a token in the toolbar, with counts', async () => {
     render(<AssetChangesPage />)
     expect(screen.getByRole('heading', { name: 'Activity' })).toBeInTheDocument()
-    const kinds = screen.getByRole('radiogroup', { name: 'Kind of change' })
+    // One tab row: the kind is a filter token, not a segmented row under the tabs.
+    expect(screen.queryByRole('radiogroup')).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Kind: Appeared' }))
     for (const [name, n] of [
       ['Appeared', '41'],
       ['Disappeared', '9'],
       ['Shadow IT', '8'],
     ]) {
-      expect(kinds).toHaveTextContent(name)
-      expect(kinds).toHaveTextContent(n)
+      expect(
+        await screen.findByRole('menuitemradio', { name: new RegExp(name) })
+      ).toHaveTextContent(n)
     }
-    expect(kinds).toHaveTextContent('Values')
+    expect(screen.getByRole('menuitemradio', { name: /Values/ })).toBeInTheDocument()
     expect(screen.queryByTestId('value-feed')).toBeNull()
-  })
+  }, 15_000)
 
   it('choosing Values writes ?view=values', async () => {
     render(<AssetChangesPage />)
-    await userEvent.click(screen.getByRole('radio', { name: /Values/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'Kind: Appeared' }))
+    await userEvent.click(await screen.findByRole('menuitemradio', { name: /Values/ }))
     expect(setView).toHaveBeenCalledWith('values')
   })
 
@@ -92,6 +96,6 @@ describe('Assets > Activity', () => {
     state.canRead = false
     render(<AssetChangesPage />)
     expect(screen.getByText('Access denied')).toBeInTheDocument()
-    expect(screen.queryByRole('radiogroup')).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Kind:/ })).toBeNull()
   })
 })

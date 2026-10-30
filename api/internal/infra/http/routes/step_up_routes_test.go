@@ -21,6 +21,7 @@ import (
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/pkg/domain/pentest"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
@@ -109,12 +110,18 @@ var stepUpRoutes = []string{
 	"DELETE /api/v1/secret-store/{id}",
 	// Turning AI triage on lets finding content go to the AI provider.
 	"PUT /api/v1/organization/settings/ai",
+	// The AI masking policy decides what of a finding a model sees unmasked.
+	"PUT /api/v1/organization/settings/ai/masking",
 	"POST /api/v1/tenants/acme/settings/sso/changes/{id}/approve",
 	// A domain's sign-up policy decides who may join and who must use SSO.
 	"PUT /api/v1/organization/settings/domains/{id}/signup-policy",
 	"DELETE /api/v1/tenants/acme",
 	// Deleting one's own account (RFC-104).
 	"DELETE /api/v1/me/account",
+	// Linking or unlinking a sign-in provider changes how the account is
+	// signed into.
+	"POST /api/v1/me/sign-in-method-links/google/start",
+	"DELETE /api/v1/me/sign-in-methods/{id}",
 	"POST /api/v1/organization/leave",
 	"DELETE /api/v1/organization/members/{id}/mfa",
 	"POST /api/v1/organization/members/{id}/offboard",
@@ -173,6 +180,8 @@ var stepUpRoutes = []string{
 	// Approving an intrusive retest check of a finding.
 	"POST /api/v1/findings/{id}/retest-check/approve",
 	"POST /api/v1/sensors",
+	// An enrollment token is a pre-approval of every sensor that uses it.
+	"POST /api/v1/sensor-pairings/enrollment-tokens",
 	"POST /api/v1/sensors/{id}/regenerate-key",
 	"POST /api/v1/credentials/{id}/reveal",
 	// A published finding lifecycle decides which status moves need what
@@ -201,6 +210,27 @@ var stepUpRoutes = []string{
 	// The finding approval settings: lowering the false-positive or risk
 	// acceptance level lets one person close risk.
 	"PATCH /api/v1/organization/settings/finding-approvals",
+	// Deletes that cannot be undone and end credentials or history, and the
+	// exports and reveals that put personal data or a secret in clear text
+	// (research/213 tier T3). Revoking a sensor stays without step-up: it
+	// only narrows access and is the fast path in an incident.
+	"DELETE /api/v1/sensors/{id}",
+	"DELETE /api/v1/service-accounts/{id}",
+	"GET /api/v1/audit-logs/export",
+	"POST /api/v1/scan-approvals/{id}/approve",
+	"POST /api/v1/pentest/campaigns/{id}/secrets/{id}/reveal",
+	"DELETE /api/v1/pentest/campaigns/{id}/secrets/{id}",
+}
+
+// leadCampaignRoles answers every campaign as existing with the caller as its
+// lead, so the campaign-scoped routes reach their own gates.
+type leadCampaignRoles struct{}
+
+func (leadCampaignRoles) GetUserRole(context.Context, string, string, string) (pentest.CampaignRole, error) {
+	return pentest.CampaignRoleLead, nil
+}
+func (leadCampaignRoles) CampaignExists(context.Context, string, string) (bool, error) {
+	return true, nil
 }
 
 func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
@@ -261,8 +291,9 @@ func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
 			registerSCMAppRoutes(router, &handler.SCMAppHandler{}, auth, nil, chain(), logger.NewNop())
 			registerTenantRoutes(router, &handler.TenantHandler{}, chain(auth, setUser), nil, routeTenantRepo{t: tn}, routeMembers{m: m}, nil, &handler.SSOChangeHandler{})
 			registerOrganizationMemberRoutes(router, &handler.LocalAuthHandler{}, &handler.TenantHandler{}, auth, nil)
-			registerAISettingsRoutes(router, &handler.AISettingsHandler{}, auth, nil)
+			registerAISettingsRoutes(router, &handler.AISettingsHandler{}, &handler.AIMaskingHandler{}, auth, nil)
 			registerUserRoutes(router, &handler.UserHandler{}, nil, auth, nil, config.AuthProviderLocal)
+			registerIdentityLinkRoutes(router, &handler.OAuthHandler{}, auth, nil)
 			registerIntegrationRoutes(router, &handler.IntegrationHandler{}, nil, nil, auth, nil, chain(), nil, nil, &handler.TicketMappingHandler{})
 			registerAttachmentRoutes(router, &handler.AttachmentHandler{}, auth, nil)
 			registerImportMappingRoutes(router, &handler.ImportMappingHandler{}, auth, nil)
@@ -274,6 +305,7 @@ func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
 			registerVulnerabilityRoutes(router, vulnH, nil, nil, nil, auth, nil)
 			registerFindingRetestCheckRoutes(router, &handler.FindingRetestCheckHandler{}, auth, nil)
 			registerSensorManagementRoutes(router, &handler.SensorHandler{}, nil, nil, auth, nil)
+			registerSensorPairingRoutes(router, &handler.SensorPairingHandler{}, auth, nil, logger.NewNop())
 			registerCredentialRoutes(router, &handler.CredentialImportHandler{}, auth, nil, chain())
 			registerFindingLifecycleRoutes(router, &handler.FindingLifecycleHandler{}, auth, nil)
 			registerScanGovernanceRoutes(router, &handler.ScanGovernanceHandler{}, auth, nil)
@@ -282,6 +314,9 @@ func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
 			scanH := &handler.ScanHandler{}
 			scanH.SetApprovals(&handler.ScanApprovalHandler{})
 			registerScanRoutes(router, scanH, auth, nil, nil)
+			registerServiceAccountRoutes(router, &handler.ServiceAccountHandler{}, auth, nil)
+			registerScanApprovalRoutes(router, &handler.ScanApprovalHandler{}, auth, nil)
+			registerPentestRoutes(router, &handler.PentestHandler{}, nil, auth, nil, leadCampaignRoles{}, chain())
 			mux := router.(interface{ Handler() http.Handler }).Handler()
 
 			for _, route := range stepUpRoutes {
