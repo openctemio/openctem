@@ -170,7 +170,7 @@ func TestAssetCoverage_PlannerDispatchesAndSettles(t *testing.T) {
 				t.Errorf("www probe.http after run = %+v", r)
 			}
 		case "scan.ports":
-			if r.State != "failed" || r.FailStreak != 1 || r.LastError != "sensor unreachable" || r.NextDueAt == nil {
+			if r.State != "failed" || r.FailStreak != 0 || r.PlatformFailStreak != 1 || r.LastError != "sensor unreachable" || r.NextDueAt == nil {
 				t.Errorf("www scan.ports after failed run = %+v", r)
 			}
 		}
