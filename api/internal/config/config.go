@@ -379,6 +379,9 @@ type IngestConfig struct {
 	// MaxPendingPerTenant bounds a tenant's queue depth; further submissions get
 	// 429 + Retry-After. 0 disables the check.
 	MaxPendingPerTenant int
+	// EvidenceDailyCap bounds new finding-evidence records per tenant per 24 h
+	// (EVIDENCE_DAILY_CAP; 0 = the built-in default).
+	EvidenceDailyCap int
 	// Workers is how many ingest jobs one server processes at once
 	// (INGEST_WORKERS, default 4).
 	Workers int
@@ -1844,6 +1847,7 @@ func Load() (*Config, error) {
 		Ingest: IngestConfig{
 			Mode:                  getEnv("INGEST_MODE", "sync"),
 			MaxPendingPerTenant:   getEnvInt("INGEST_MAX_PENDING_PER_TENANT", 100),
+			EvidenceDailyCap:      getEnvInt("EVIDENCE_DAILY_CAP", 0),
 			Workers:               getEnvInt("INGEST_WORKERS", 4),
 			MaxRunningPerTenant:   getEnvInt("INGEST_MAX_RUNNING_PER_TENANT", 2),
 			MaxJobDuration:        getEnvDuration("INGEST_MAX_JOB_DURATION", 30*time.Minute),
