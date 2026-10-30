@@ -613,6 +613,37 @@ and the Weekly digest switch on the monitoring card.
   the inventory's external columns (attribution, last seen, certificate
   expiry, CDN).
 
+## 4m. Edge labels (built)
+
+A CDN or edge address, a SaaS-hosting address and a cloud provider's shared
+front end belong to the provider and serve many organizations. The platform
+labels them and never refuses to scan them by itself (owner decision
+2026-10-30): the organization decides by adding the address to out of scope,
+and from then on the dispatch gate leaves it out of every job
+(`internal/app/scan/edge_exclusion_dispatch_test.go` pins every path and tool).
+
+- **One classifier:** `pkg/domain/edgeaddr` (published edge ranges, provider
+  network names, provider host suffixes; versioned built-in dataset). The
+  suggestion cards, review rules and guardrails read the same classifier.
+- **On read, not stored:** `GET /assets` and `GET /assets/{id}` carry
+  `edge {class, provider, address?}` computed from the asset's own properties
+  (an address: its range, its `cdn` record, its network holder; a name: its own
+  suffix or a CNAME target under a provider suffix, else every address it
+  resolves to inside a published range; a service: its `cdn` record or CNAME).
+  `GET /scope/targets` carries the same label on an address, range or CIDR entry
+  wholly inside a published range, and on a name entry under a provider suffix.
+  `address` is set only when the asset or entry is itself the provider's
+  address: the pattern an exclusion takes. A cloud static address inside a
+  provider's network (class `dedicated`) is not labeled.
+- **No new request, no new data:** the label is a pure function of data the
+  response already holds; it adds no query and no tenant data leaves the
+  platform.
+- **Excluding an address also excludes the names that resolve to it** (the
+  exclusion match reads an asset's addresses, section 2 of the how-to): an
+  exclusion of a shared edge address stops scanning every name served from it.
+  The web console says so, with the names the preview matches, before the
+  exclusion is added.
+
 ## 5. Data model (planned)
 
 - **Graph.** Reuse `assets` + `asset_relationships`. Add asset types `asn` and
