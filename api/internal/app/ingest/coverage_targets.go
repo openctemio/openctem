@@ -129,37 +129,69 @@ func targetKey(t string) string {
 	return h + p
 }
 
-// coveredRunAssets returns the assets a run proves covered: the assets its
-// reports touched plus the assets with open findings of the tool last seen by
-// a command aimed at one of the covered targets, all filtered to the covered
-// targets. The second set is what lets a scan that found nothing on a host
-// close what it no longer sees there; it is bounded by the repository query.
+// coveredRunAssets returns the assets a run proves covered.
+//
+// Without per-target outcomes (an older sensor) it is what it always was: the
+// assets the reports touched, within the command's scope. With outcomes:
+//   - the touched assets within the scope of the covered targets;
+//   - plus the assets with open findings of the tool last seen by a command
+//     aimed at a covered target, when the asset is that target's own host
+//     (no subdomain of a domain target, no address inside a range target:
+//     the run says nothing about hosts it did not name). This is what lets a
+//     scan that found nothing on a host close what it no longer sees there;
+//   - minus every asset whose host or address the result names as uncovered
+//     (a gap, unreached or refused entry), whichever target it falls under.
 func (s *Service) coveredRunAssets(ctx context.Context, tenantID, commandID shared.ID, tool string, result json.RawMessage, touched []shared.ID) []shared.ID {
+	if _, perTarget := resultTargetOutcomes(result); !perTarget {
+		return s.coveredByCommand(ctx, tenantID, &commandID, touched)
+	}
 	b := s.bindingFromCommandID(ctx, tenantID, &commandID)
-	if b.Kind != BindingCommand || len(b.Targets) == 0 {
+	if b.Kind != BindingCommand || len(b.Targets) == 0 || s.assetRepo == nil {
 		return nil
 	}
 	b.Targets = coveredTargets(b.Targets, result)
-	if len(b.Targets) == 0 {
+	uncovered, ok := resultUncoveredHosts(result)
+	if len(b.Targets) == 0 || !ok {
 		return nil
 	}
-	candidates := append([]shared.ID(nil), touched...)
-	if repo, ok := s.findingRepo.(coverageCandidateAssetRepo); ok {
-		more, err := repo.CoverageCandidateAssets(ctx, tenantID, tool, b.Targets)
-		if err != nil {
-			// Fewer candidates only means fewer closes.
-			s.logger.Warn("coverage auto-resolve: candidate assets lookup failed", "command_id", commandID.String(), "error", logger.SanitizeError(err))
-		}
-		seen := make(map[shared.ID]bool, len(candidates)+len(more))
-		for _, id := range candidates {
-			seen[id] = true
-		}
-		for _, id := range more {
-			if !seen[id] {
-				seen[id] = true
-				candidates = append(candidates, id)
-			}
+	ownHosts := make(map[string]bool, len(b.Targets))
+	for _, t := range b.Targets {
+		if h, _ := parseLocator(t); h != "" {
+			ownHosts[h] = true
 		}
 	}
-	return s.coveredByScope(ctx, tenantID, newAlterScope(b), candidates)
+	var more []shared.ID
+	if repo, ok := s.findingRepo.(coverageCandidateAssetRepo); ok {
+		var err error
+		if more, err = repo.CoverageCandidateAssets(ctx, tenantID, tool, b.Targets); err != nil {
+			// Fewer candidates only means fewer closes.
+			s.logger.Warn("coverage auto-resolve: candidate assets lookup failed", "command_id", commandID.String(), "error", logger.SanitizeError(err))
+			more = nil
+		}
+	}
+	scope := newAlterScope(b)
+	out := make([]shared.ID, 0, len(touched)+len(more))
+	seen := make(map[shared.ID]bool, len(touched)+len(more))
+	keep := func(id shared.ID, ownHostOnly bool) {
+		if seen[id] {
+			return
+		}
+		seen[id] = true
+		a, err := s.assetRepo.GetByID(ctx, tenantID, id)
+		if err != nil || a == nil || !scope.mayAlter(a) {
+			return
+		}
+		h, _ := parseLocator(a.Name())
+		if h == "" || uncovered[h] || (ownHostOnly && !ownHosts[h]) {
+			return
+		}
+		out = append(out, id)
+	}
+	for _, id := range touched {
+		keep(id, false)
+	}
+	for _, id := range more {
+		keep(id, true)
+	}
+	return out
 }

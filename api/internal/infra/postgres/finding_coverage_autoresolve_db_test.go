@@ -330,3 +330,38 @@ func TestCoverageCandidateAssets(t *testing.T) {
 		t.Fatalf("no target, no candidate: %v, %v", got, err)
 	}
 }
+
+// TestTemplateDriftedFindings_FailsClosed: a finding last seen with another
+// template release is drifted, and so is one that recorded no release when
+// the run reports one (nothing proves the same check looked again). A run
+// that reports no release keeps a finding without one resolvable (tools
+// without template content).
+func TestTemplateDriftedFindings_FailsClosed(t *testing.T) {
+	f := newCoverageFixture(t)
+	repo := NewFindingRepository(&DB{DB: f.db})
+	ctx := context.Background()
+	same := f.finding(t, f.host, "nuclei", "s1", nil)
+	other := f.finding(t, f.host, "nuclei", "s2", nil)
+	none := f.finding(t, f.host, "nuclei", "s3", nil)
+	f.exec(t, `UPDATE findings SET templates_digest = 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' WHERE id = $1`, same)
+	f.exec(t, `UPDATE findings SET templates_digest = 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' WHERE id = $1`, other)
+	ids := []shared.ID{same, other, none}
+
+	got, err := repo.TemplateDriftedFindings(ctx, f.tenant, ids, "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := idStrings([]shared.ID{other, none}); len(got) != 2 || idStrings(got)[0] != want[0] || idStrings(got)[1] != want[1] {
+		t.Fatalf("drifted = %v, want the other release and the unknown one %v", idStrings(got), want)
+	}
+	got, err = repo.TemplateDriftedFindings(ctx, f.tenant, ids, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := idStrings([]shared.ID{same, other}); len(got) != 2 || idStrings(got)[0] != want[0] || idStrings(got)[1] != want[1] {
+		t.Fatalf("run without a release: drifted = %v, want the ones with a release %v", idStrings(got), want)
+	}
+	if got, err := repo.TemplateDriftedFindings(ctx, shared.NewID(), ids, "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"); err != nil || len(got) != 0 {
+		t.Fatalf("another tenant must see nothing: %v, %v", got, err)
+	}
+}
