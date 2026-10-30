@@ -45,13 +45,13 @@ func (q *stubQueue) ClaimBatch(_ context.Context, _ string, _ int) ([]*ingestjob
 	q.claimIdx++
 	return b, nil
 }
-func (q *stubQueue) Complete(_ context.Context, id ingestjob.ID, _ int, result []byte) error {
+func (q *stubQueue) Complete(_ context.Context, _ shared.ID, id ingestjob.ID, _ int, result []byte) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	q.completes = append(q.completes, completeCall{id, result})
 	return q.completeErr
 }
-func (q *stubQueue) Fail(_ context.Context, id ingestjob.ID, _ int, msg, public string, _ time.Time, dead bool) error {
+func (q *stubQueue) Fail(_ context.Context, _ shared.ID, id ingestjob.ID, _ int, msg, public string, _ time.Time, dead bool) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	q.fails = append(q.fails, failCall{id, msg, public, dead})

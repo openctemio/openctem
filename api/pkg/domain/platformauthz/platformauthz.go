@@ -62,6 +62,10 @@ const (
 	SettingsLimitsWrite  Permission = "platform.settings.limits.write"
 	SettingsGeneralWrite Permission = "platform.settings.general.write"
 	SettingsAIWrite      Permission = "platform.settings.ai.write"
+	// SettingsMFAWrite: the two-factor floor every organization is held to.
+	// Owner only, apart from the CAPTCHA, quota and region settings a role may be
+	// given with SettingsGeneralWrite.
+	SettingsMFAWrite Permission = "platform.settings.mfa"
 
 	AnnouncementsWrite Permission = "platform.announcements.write"
 
@@ -115,6 +119,7 @@ var catalog = []Definition{
 	{SettingsLegalWrite, false, "Legal pages"},
 	{SettingsLimitsWrite, false, "Default limits of self-service organizations"},
 	{SettingsGeneralWrite, false, "CAPTCHA, region, alerts, storage quota and the version check"},
+	{SettingsMFAWrite, false, "The platform two-factor floor every organization is held to"},
 	{SettingsAIWrite, false, "Platform AI and the organizations' AI policy"},
 	{AnnouncementsWrite, false, "Publish or end an announcement"},
 	{SensorsRead, true, "Shared sensors, scan zones, the job queue and the scanning settings"},

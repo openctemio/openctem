@@ -181,7 +181,7 @@ func TestSensorV2_SealedSegmentRetryThenEmptiedOnComplete(t *testing.T) {
 		}
 	}
 	claim(1)
-	if err := h.jobs.Fail(ctx, jobID, 1, "worker crashed", "", time.Now(), false); err != nil {
+	if err := h.jobs.Fail(ctx, shared.MustIDFromString(h.tenantID), jobID, 1, "worker crashed", "", time.Now(), false); err != nil {
 		t.Fatal(err)
 	}
 	if r := h.segmentRow(id, 0); !bytes.Equal(r.payload, row.payload) {
@@ -197,7 +197,7 @@ func TestSensorV2_SealedSegmentRetryThenEmptiedOnComplete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("retry: %v", err)
 	}
-	if err := h.jobs.Complete(ctx, jobID, 2, result); err != nil {
+	if err := h.jobs.Complete(ctx, shared.MustIDFromString(h.tenantID), jobID, 2, result); err != nil {
 		t.Fatal(err)
 	}
 	r := h.segmentRow(id, 0)

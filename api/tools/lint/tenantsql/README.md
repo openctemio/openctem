@@ -31,8 +31,14 @@ with `:=`/`=`/`+=`, and `fmt.Sprintf` formats), and flags a statement when
 4. it has no tenant predicate (`tenant_id = …`, `tenant_id IN …`,
    `tenant_id IS NULL`, `… = x.tenant_id`).
 
+The predicate must be in the statement's own WHERE (or its own join
+conditions). The check judges each scope on its own text: the top-level
+statement and every parenthesised subquery or CTE body. A `tenant_id` inside a
+subquery does not protect the outer statement, and a subquery that reads a
+tenant table by id needs its own predicate.
+
 The check is deliberately syntactic. It will not see SQL assembled at run time
-from values it cannot fold, and a join condition on `tenant_id` counts as a
+from values it cannot fold, and a join condition on `tenant_id` in the same scope counts as a
 tenant predicate. It catches the common shape, the one this code base had
 about 150 of.
 

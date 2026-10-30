@@ -66,11 +66,11 @@ func TestUpdateStatus_TerminalRunIsFinal(t *testing.T) {
 	tenantID, scanID := seedCounterScan(ctx, t, db)
 	run := seedCounterRun(ctx, t, runs, tenantID, scanID)
 
-	if err := runs.UpdateStatus(ctx, run.ID, scanrun.RunStatusCompleted, ""); err != nil {
+	if err := runs.UpdateStatus(ctx, tenantID, run.ID, scanrun.RunStatusCompleted, ""); err != nil {
 		t.Fatalf("first terminal transition: %v", err)
 	}
 	// A cancel (or a second parallel final step) arriving afterwards.
-	err := runs.UpdateStatus(ctx, run.ID, scanrun.RunStatusCanceled, "Canceled by user")
+	err := runs.UpdateStatus(ctx, tenantID, run.ID, scanrun.RunStatusCanceled, "Canceled by user")
 	if !errors.Is(err, scanrun.ErrRunAlreadyFinished) {
 		t.Fatalf("second terminal transition: err=%v, want ErrRunAlreadyFinished", err)
 	}
@@ -92,7 +92,7 @@ func TestUpdateStatus_TerminalRunIsFinal(t *testing.T) {
 		t.Fatalf("status after stale Update=%s, want completed", got.Status)
 	}
 
-	if err := runs.UpdateStatus(ctx, shared.NewID(), scanrun.RunStatusFailed, ""); !errors.Is(err, shared.ErrNotFound) {
+	if err := runs.UpdateStatus(ctx, tenantID, shared.NewID(), scanrun.RunStatusFailed, ""); !errors.Is(err, shared.ErrNotFound) {
 		t.Fatalf("missing run: err=%v, want ErrNotFound", err)
 	}
 }

@@ -50,7 +50,18 @@ func TestAssetGroupRecalculateCounts_ByStoredClass_DB(t *testing.T) {
 	add(other, "https://foreign.example.org", asset.AssetTypeApplication, "website")
 
 	repo := NewAssetGroupRepository(&DB{DB: db})
-	if err := repo.RecalculateCounts(ctx, group); err != nil {
+	// Another tenant's id leaves the group's counters alone.
+	if err := repo.RecalculateCounts(ctx, other, group); err != nil {
+		t.Fatal(err)
+	}
+	var untouched int
+	if err := db.QueryRowContext(ctx, `SELECT asset_count FROM asset_groups WHERE id = $1`, group.String()).Scan(&untouched); err != nil {
+		t.Fatal(err)
+	}
+	if untouched != 0 {
+		t.Fatalf("asset_count = %d after a cross-tenant recalculation, want 0", untouched)
+	}
+	if err := repo.RecalculateCounts(ctx, tenant, group); err != nil {
 		t.Fatal(err)
 	}
 	var total, domains, websites, services, repos, cloud, creds int

@@ -103,7 +103,8 @@ class BackendError extends Error {
     message: string,
     readonly code?: string,
     /** The pending-link secret the API set as a cookie on a 409. */
-    readonly pendingLink?: string
+    readonly pendingLink?: string,
+    readonly status?: number
   ) {
     super(message)
     this.name = 'BackendError'
@@ -163,7 +164,8 @@ async function backendFetch<T>(endpoint: string, options: RequestInit = {}): Pro
     throw new BackendError(
       errorData.message || errorData.error || `HTTP ${response.status}`,
       typeof errorData.code === 'string' ? errorData.code : undefined,
-      pendingLinkFromSetCookie(response)
+      pendingLinkFromSetCookie(response),
+      response.status
     )
   }
 
@@ -411,30 +413,59 @@ export async function getAvailableProviders(): Promise<
 // LINK A PROVIDER TO THE SIGNED-IN ACCOUNT
 // ============================================
 
+/** The result of starting a link: where to send the browser, or the API code on a refusal. */
+export type LinkStartResult =
+  { success: true; authorizationUrl: string } | { success: false; code?: string; status?: number }
+
 /**
- * Keep the state of a link the browser started (Account > Security) for the
- * callback: the same state and browser-binding cookies a sign-in uses, plus
- * the link intent. The state came from POST /me/sign-in-method-links/{provider}/start,
- * which already checked the code or password typed for it; the API accepts it only for this
- * account and this session, once, and only with this browser's binding.
+ * Start linking a provider (Account > Security). The proof typed in the confirm
+ * dialog goes to POST /me/sign-in-method-links/{provider}/start from here, on
+ * the server, with the session cookie. The API's one-time browser binding
+ * never reaches page JavaScript: it is set in an HttpOnly cookie together with
+ * the state and the link intent, and only the provider's authorization URL
+ * (which carries the state, not the binding) goes back to the browser. The API
+ * accepts the callback only for this account and session, once, and only with
+ * this browser's binding.
  */
-export async function rememberLinkState(
+export async function startLinkAction(
   provider: SocialProvider,
-  state: string,
-  browserBinding: string
-): Promise<{ success: boolean }> {
+  proof: LinkProof
+): Promise<LinkStartResult> {
   if (!isAllowedValue(SOCIAL_PROVIDERS, provider)) return { success: false }
-  if (typeof state !== 'string' || state.length === 0 || state.length > 4096) {
-    return { success: false }
+  const stepUp = linkProofBody(proof)
+  // A malformed proof is never sent; the dialog shows the generic refusal.
+  if (!stepUp) return { success: false, code: 'LINK_PROOF_REQUIRED' }
+  const cookieStore = await cookies()
+  const accessToken = cookieStore.get(env.auth.cookieName)?.value
+  if (!accessToken) return { success: false, code: 'SESSION_EXPIRED', status: 401 }
+  let data: OAuthAuthorizationResponse
+  try {
+    data = await backendFetch<OAuthAuthorizationResponse>(userEndpoints.identityLink(provider), {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({
+        redirect_uri: `${env.app.url}/auth/callback/${provider}`,
+        ...JSON.parse(stepUp),
+      }),
+    })
+  } catch (error) {
+    console.error('OAuth link start error:', sanitizeLogValue(provider), error)
+    return error instanceof BackendError
+      ? { success: false, code: error.code, status: error.status }
+      : { success: false }
   }
   if (
-    typeof browserBinding !== 'string' ||
-    browserBinding.length === 0 ||
-    browserBinding.length > 256
+    typeof data?.state !== 'string' ||
+    data.state.length === 0 ||
+    data.state.length > 4096 ||
+    typeof data.browser_binding !== 'string' ||
+    data.browser_binding.length === 0 ||
+    data.browser_binding.length > 256 ||
+    typeof data.authorization_url !== 'string' ||
+    data.authorization_url.length === 0
   ) {
     return { success: false }
   }
-  const cookieStore = await cookies()
   const opts = {
     httpOnly: true,
     secure: process.env.SECURE_COOKIES !== 'false',
@@ -442,12 +473,11 @@ export async function rememberLinkState(
     maxAge: 600,
     path: '/',
   }
-  cookieStore.set('oauth_state', state, opts)
+  cookieStore.set('oauth_state', data.state, opts)
   cookieStore.set(OAUTH_LINK_INTENT_COOKIE, provider, opts)
-  // Browser binding: the API refuses the link callback without this secret.
-  cookieStore.set(bindingCookieName('oauth'), browserBinding, bindingCookieOptions())
+  cookieStore.set(bindingCookieName('oauth'), data.browser_binding, bindingCookieOptions())
   cookieStore.delete('oauth_redirect')
-  return { success: true }
+  return { success: true, authorizationUrl: data.authorization_url }
 }
 
 /** The result of a link callback: the API code on a refusal. */
