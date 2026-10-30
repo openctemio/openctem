@@ -17,3 +17,17 @@ export const OAUTH_LINK_INTENT_COOKIE = 'oauth_link_intent'
 
 /** The second steps the sign-in page knows; anything else is ignored. */
 export const MFA_PURPOSES = ['verify', 'enroll'] as const
+
+/**
+ * The pending link a refused social sign-in left (409 OAUTH_ACCOUNT_EXISTS):
+ * a secret the API stored only the hash of, for 10 minutes. HttpOnly, never
+ * read by script; the `__Host-` prefix pins it to this origin so no subdomain
+ * can plant one. After the person signs in to the account, the app asks them
+ * to confirm the link; the API accepts it only for that account.
+ */
+export function pendingLinkCookieName(): string {
+  return process.env.SECURE_COOKIES !== 'false' ? '__Host-oauth_pending_link' : 'oauth_pending_link'
+}
+
+/** Longest pending-link secret accepted from the API or a cookie. */
+export const MAX_PENDING_LINK_LENGTH = 128

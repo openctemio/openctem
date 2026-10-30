@@ -320,6 +320,18 @@ func registerIdentityLinkRoutes(router Router, h *handler.OAuthHandler, authMidd
 		r.POST("/{provider}/start", h.StartLink, withCSRF(linkRL, requireStepUp())...)
 		r.POST("/{provider}/complete", h.CompleteLink, linkRL)
 	}, middlewares...)
+	// A social sign-in refused because its address has an account leaves a
+	// pending link (auth/pending_link.go); the person signs in to that
+	// account and confirms it here. The secret is read from its HttpOnly
+	// cookie only; the record is bound to this account and single use. All
+	// three carry the CSRF check; confirming changes how the account is
+	// signed into and also needs a fresh step-up (the sign-in that just
+	// happened counts).
+	router.Group("/api/v1/me/pending-sign-in-link", func(r Router) {
+		r.POST("/describe", h.DescribePendingLink, withCSRF(linkRL)...)
+		r.POST("/complete", h.ConfirmPendingLink, withCSRF(linkRL, requireStepUp())...)
+		r.POST("/cancel", h.CancelPendingLink, withCSRF(linkRL)...)
+	}, middlewares...)
 }
 
 // tenantCreationModeOf is the organization policy reported when the console
