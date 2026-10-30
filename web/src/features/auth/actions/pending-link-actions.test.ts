@@ -100,6 +100,28 @@ describe('pending link of a refused social sign-in', () => {
     expect(init.body).toBeUndefined()
   })
 
+  it('passes on the provider account handle, name and picture, dropping malformed ones', async () => {
+    jar.set(PENDING, { value: 'secret-1' })
+    jar.set(env.auth.cookieName, { value: 'access' })
+    fetchMock.mockResolvedValue(
+      json({
+        provider: 'github',
+        email: 'p@corp.example',
+        proof: 'totp',
+        login: 'octo',
+        name: 'x'.repeat(500),
+        avatar_url: 'https://avatars.githubusercontent.com/u/1',
+      })
+    )
+    expect(await getPendingLinkAction()).toEqual({
+      provider: 'github',
+      email: 'p@corp.example',
+      proof: 'totp',
+      login: 'octo',
+      avatarUrl: 'https://avatars.githubusercontent.com/u/1',
+    })
+  })
+
   it('forgets a pending link the API refuses (another account, expired)', async () => {
     jar.set(PENDING, { value: 'secret-1' })
     jar.set(env.auth.cookieName, { value: 'access' })

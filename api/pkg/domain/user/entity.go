@@ -3,6 +3,7 @@ package user
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -147,8 +148,17 @@ type User struct {
 	lockedUntil                *time.Time
 }
 
+// NormalizeEmail is the one spelling of an address an account is stored and
+// found under: trimmed and lower-cased. Addresses differing only in case name
+// the same mailbox here (users.email is unique on lower(email)), so every
+// constructor and UpdateEmail store it this way and lookups compare on it.
+func NormalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
+}
+
 // NewFromKeycloak creates a new User from Keycloak claims.
 func NewFromKeycloak(keycloakID, email, name string) (*User, error) {
+	email = NormalizeEmail(email)
 	if keycloakID == "" {
 		return nil, fmt.Errorf("%w: keycloakID is required", shared.ErrValidation)
 	}
@@ -175,6 +185,7 @@ func NewFromKeycloak(keycloakID, email, name string) (*User, error) {
 // New creates a new User without Keycloak (for future standalone auth).
 // Deprecated: Use NewLocalUser for local authentication.
 func New(email, name string) (*User, error) {
+	email = NormalizeEmail(email)
 	if email == "" {
 		return nil, fmt.Errorf("%w: email is required", shared.ErrValidation)
 	}
@@ -195,6 +206,7 @@ func New(email, name string) (*User, error) {
 
 // NewLocalUser creates a new local user with email/password authentication.
 func NewLocalUser(email, name, passwordHash string) (*User, error) {
+	email = NormalizeEmail(email)
 	if email == "" {
 		return nil, fmt.Errorf("%w: email is required", shared.ErrValidation)
 	}
@@ -223,6 +235,7 @@ func NewLocalUser(email, name, passwordHash string) (*User, error) {
 // and the email marked verified on the administrator's word. Until the
 // password is set the account cannot sign in with a password.
 func NewProvisionedLocalUser(email, name string) (*User, error) {
+	email = NormalizeEmail(email)
 	if email == "" {
 		return nil, fmt.Errorf("%w: email is required", shared.ErrValidation)
 	}
@@ -243,6 +256,7 @@ func NewProvisionedLocalUser(email, name string) (*User, error) {
 // NewLocalUserWithID creates a new local user with a specific ID (for syncing from JWT tokens).
 // This is used when the user ID already exists in the JWT but not in the database.
 func NewLocalUserWithID(id shared.ID, email, name string) (*User, error) {
+	email = NormalizeEmail(email)
 	if email == "" {
 		return nil, fmt.Errorf("%w: email is required", shared.ErrValidation)
 	}
@@ -265,6 +279,7 @@ func NewLocalUserWithID(id shared.ID, email, name string) (*User, error) {
 
 // NewOAuthUser creates a new user from OAuth provider (Google, GitHub, Microsoft).
 func NewOAuthUser(email, name, avatarURL string, provider AuthProvider) (*User, error) {
+	email = NormalizeEmail(email)
 	if email == "" {
 		return nil, fmt.Errorf("%w: email is required", shared.ErrValidation)
 	}
@@ -295,6 +310,7 @@ func NewOAuthUser(email, name, avatarURL string, provider AuthProvider) (*User, 
 // account-creation path fail for Okta and generic-OIDC IdPs (mapAuthProvider
 // maps both to AuthProviderOIDC). The SSO create path must use this instead.
 func NewFederatedUser(email, name, avatarURL string, provider AuthProvider) (*User, error) {
+	email = NormalizeEmail(email)
 	if email == "" {
 		return nil, fmt.Errorf("%w: email is required", shared.ErrValidation)
 	}
@@ -428,6 +444,7 @@ func (u *User) UpdateProfile(name, phone, avatarURL string) {
 
 // UpdateEmail updates the user email.
 func (u *User) UpdateEmail(email string) error {
+	email = NormalizeEmail(email)
 	if email == "" {
 		return fmt.Errorf("%w: email is required", shared.ErrValidation)
 	}
@@ -451,6 +468,7 @@ func (u *User) UpdateLastLogin() {
 
 // SyncFromKeycloak updates user info from Keycloak claims.
 func (u *User) SyncFromKeycloak(email, name string) {
+	email = NormalizeEmail(email)
 	if email != "" && email != u.email {
 		u.email = email
 	}

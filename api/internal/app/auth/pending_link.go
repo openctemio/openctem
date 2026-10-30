@@ -75,7 +75,12 @@ type pendingLink struct {
 	Subject       string        `json:"subject"`
 	LegacySubject string        `json:"legacy_subject,omitempty"`
 	Email         string        `json:"email"`
-	CreatedAt     time.Time     `json:"created_at"`
+	// Login, Name and AvatarURL describe the provider account in the confirm
+	// dialog, so the person sees which account they link (display only).
+	Login     string    `json:"login,omitempty"`
+	Name      string    `json:"name,omitempty"`
+	AvatarURL string    `json:"avatar_url,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 func (p *pendingLink) expiresAt() time.Time { return p.CreatedAt.Add(pendingLinkTTL) }
@@ -85,7 +90,13 @@ type PendingLinkInfo struct {
 	Provider string `json:"provider"`
 	// Email is the provider account's address (the account's own address:
 	// the pending link was made because they are the same).
-	Email     string    `json:"email"`
+	Email string `json:"email"`
+	// Login is the provider account's handle (GitHub), Name its display name
+	// and AvatarURL its picture (an https URL on a known avatar host, or
+	// empty): what the person checks before confirming. Display only.
+	Login     string    `json:"login,omitempty"`
+	Name      string    `json:"name,omitempty"`
+	AvatarURL string    `json:"avatar_url,omitempty"`
 	ExpiresAt time.Time `json:"expires_at"`
 	// Proof is what confirming asks for: totp, password, or "" when the
 	// account has neither (it must turn on two-factor authentication first).
@@ -116,6 +127,7 @@ func (s *OAuthService) offerPendingLink(ctx context.Context, u *userdom.User, in
 		UserID: u.ID().String(), Provider: provider,
 		Issuer: key.Issuer, Subject: key.Subject, LegacySubject: info.LegacySubject,
 		Email: strings.TrimSpace(info.Email), CreatedAt: time.Now().UTC(),
+		Login: clipDisplay(info.Login), Name: clipDisplay(info.Name), AvatarURL: userdom.SanitizeAvatarURL(info.AvatarURL),
 	}
 	raw, err := json.Marshal(rec)
 	if err != nil {
@@ -175,7 +187,24 @@ func (s *OAuthService) DescribePendingLink(ctx context.Context, userID, token st
 			return nil, fmt.Errorf("keep pending link: %w", err)
 		}
 	}
-	return &PendingLinkInfo{Provider: string(rec.Provider), Email: rec.Email, ExpiresAt: rec.expiresAt(), Proof: s.linkProofMethod(ctx, userID)}, nil
+	return &PendingLinkInfo{
+		Provider: string(rec.Provider), Email: rec.Email,
+		Login: rec.Login, Name: rec.Name, AvatarURL: userdom.SanitizeAvatarURL(rec.AvatarURL),
+		ExpiresAt: rec.expiresAt(), Proof: s.linkProofMethod(ctx, userID),
+	}, nil
+}
+
+// maxDisplayRunes bounds a provider-supplied handle or name kept with a
+// pending link.
+const maxDisplayRunes = 100
+
+// clipDisplay trims a provider-supplied display string and bounds its length.
+func clipDisplay(v string) string {
+	v = strings.TrimSpace(v)
+	if r := []rune(v); len(r) > maxDisplayRunes {
+		return string(r[:maxDisplayRunes])
+	}
+	return v
 }
 
 // CancelPendingLink drops a pending link ("not now"). Always succeeds.

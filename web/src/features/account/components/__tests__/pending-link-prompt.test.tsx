@@ -47,12 +47,28 @@ describe('PendingLinkPrompt', () => {
     const user = userEvent.setup()
     render(<PendingLinkPrompt />)
     expect(await screen.findByText('Link Google to your account?')).toBeInTheDocument()
-    expect(screen.getByText(/p@gmail\.com/)).toBeInTheDocument()
+    expect(screen.getAllByText(/p@gmail\.com/).length).toBeGreaterThan(0)
     expect(screen.getByText(/Enter the code from your authenticator app/)).toBeInTheDocument()
     expect(confirmPendingLinkAction).not.toHaveBeenCalled()
     await user.type(screen.getByRole('textbox'), '123456')
     await waitFor(() => expect(confirmPendingLinkAction).toHaveBeenCalledWith({ totp: '123456' }))
     expect(toast.success).toHaveBeenCalled()
+  })
+
+  it('shows the provider account: name, username and a picture from a known host only', async () => {
+    getPendingLinkAction.mockResolvedValue({
+      provider: 'github',
+      email: 'p@corp.example',
+      proof: 'totp',
+      login: 'octo',
+      name: 'Octo <b>Cat</b>',
+      avatarUrl: 'https://tracker.example/pixel.png',
+    })
+    render(<PendingLinkPrompt />)
+    expect(await screen.findByText('Octo <b>Cat</b>')).toBeInTheDocument()
+    expect(screen.getByText('Username: octo')).toBeInTheDocument()
+    expect(screen.getByLabelText('GitHub account to link')).toBeInTheDocument()
+    expect(document.querySelector('img[src*="tracker.example"]')).toBeNull()
   })
 
   it('a password account confirms with its password', async () => {
