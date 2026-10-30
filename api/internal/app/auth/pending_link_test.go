@@ -362,3 +362,24 @@ func TestPendingLink_NeedsProof(t *testing.T) {
 		}
 	}
 }
+
+// Fail closed: when the other sessions cannot be revoked nothing is linked,
+// so a session someone else holds never outlives the change.
+func TestPendingLink_RevokeFailureLinksNothing(t *testing.T) {
+	acct := verifiedPasswordAccount(t, "p@gmail.com")
+	f, _ := newPendingFixture(t, acct)
+	pending := collide(t, f, googleInfo("p@gmail.com", "g-1", ""), OAuthProviderGoogle)
+	f.revoker.err = errors.New("redis down")
+	_, err := f.svc.ConfirmPendingLink(context.Background(), ConfirmPendingLinkInput{
+		UserID: acct.ID().String(), SessionID: newSessionID(), Token: pending.Token, Proof: goodProof,
+	})
+	if err == nil {
+		t.Fatal("link confirmed although the other sessions were not revoked")
+	}
+	if n := len(f.idents.keysOf(acct.ID())); n != 0 {
+		t.Fatalf("identity linked after a failed revoke: %d", n)
+	}
+	if len(f.notifier.linked) != 0 {
+		t.Fatal("mailbox told of a link that did not happen")
+	}
+}

@@ -243,3 +243,28 @@ func TestAdminCSRFTokenDerivation(t *testing.T) {
 		t.Fatal("another secret must derive another key")
 	}
 }
+
+// The two-factor floor is its own permission: a role given the CAPTCHA, quota
+// and region settings (SettingsGeneralWrite) cannot change every
+// organization's floor.
+func TestRequirePlatform_MFAFloorNeedsItsOwnPermission(t *testing.T) {
+	m := middleware.NewAdminAuthMiddleware(nil, logger.NewNop())
+	stub := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	guarded := m.RequirePlatform(platformauthz.SettingsMFAWrite)(stub)
+	call := func(held platformauthz.Set) int {
+		now := time.Now()
+		a := admin.Reconstitute(shared.NewID(), "r@example.com", "R", admin.AdminRoleReadonly, true, nil, nil, "", 0, nil, nil, "", now, nil, now)
+		a.SetPlatformAccess(nil, held)
+		req := httptest.NewRequest(http.MethodPut, "/", nil)
+		req = req.WithContext(context.WithValue(req.Context(), middleware.AdminUserKey, a))
+		rec := httptest.NewRecorder()
+		guarded.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	if got := call(platformauthz.NewSet(platformauthz.SettingsGeneralWrite, platformauthz.SettingsRead)); got != http.StatusForbidden {
+		t.Fatalf("a role with SettingsGeneralWrite: %d, want 403", got)
+	}
+	if got := call(platformauthz.NewSet(platformauthz.SettingsMFAWrite)); got != http.StatusNoContent {
+		t.Fatalf("a role with the MFA permission: %d, want 204", got)
+	}
+}

@@ -2684,6 +2684,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Ownership of every actively scanned target (RFC-036 §6.3): confirmed,
 		// or unrecorded inside a scope target / under a seed; never rejected.
 		scan.WithAttributionGate(s.ActiveGate),
+		// An exclusion of a dedicated address reaches the names resolving to it.
+		scan.WithNameAddresses(repos.Attribution),
 		// A scan refused only because pending scope entries cover its
 		// targets may be saved to start once they are approved (RFC-054 §7).
 		scan.WithScopeWaits(postgres.NewScanScopeWaitRepository(&postgres.DB{DB: deps.DB}), s.Scope),

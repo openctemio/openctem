@@ -288,6 +288,22 @@ func NewJob(tenantID shared.ID, sensorID *shared.ID, reportID, sourceType string
 	}
 }
 
+// SealRun is the outcome of one in-place sealing step of queued sensor
+// payloads: the rows it picked, the rows it sealed and the rows it could not
+// seal (marked and skipped).
+type SealRun struct {
+	Picked, Sealed int
+	Failed         []SealFailure
+}
+
+// SealFailure is a row that could not be sealed. Err never carries payload
+// content.
+type SealFailure struct {
+	JobID    ID
+	TenantID shared.ID
+	Err      error
+}
+
 // DefaultMaxAttempts is the retry ceiling before a job is marked dead.
 const DefaultMaxAttempts = 5
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/openctemio/ctis"
@@ -98,5 +99,58 @@ func TestJobProcessor_Process_IngestError(t *testing.T) {
 	job := ingestjob.NewJob(shared.NewID(), &sensorID, "scan-1", "trivy", []byte(`{"version":"1.0"}`))
 	if _, err := p.Process(context.Background(), job); err == nil {
 		t.Fatal("expected ingest error to propagate")
+	}
+}
+
+// The worker reads both a legacy plaintext v1 job and a sealed one; a sealed
+// job it cannot open waits (no sealer) or fails for good (wrong key).
+func TestJobProcessor_Process_ReadsSealedAndLegacyV1Jobs(t *testing.T) {
+	tenantID, sensorID := shared.NewID(), shared.NewID()
+	body := []byte(`{"version":"1.0","metadata":{"id":"x"}}`)
+	sealer := segSealer(t, 1)
+
+	newJob := func() *ingestjob.Job { return ingestjob.NewJob(tenantID, &sensorID, "scan-1", "trivy", body) }
+	sealed := newJob()
+	if err := sealSegment(sealer, sealed); err != nil {
+		t.Fatal(err)
+	}
+
+	for name, tc := range map[string]struct {
+		job    *ingestjob.Job
+		sealer *struct{ k byte }
+		err    string
+	}{
+		"legacy plaintext":       {job: newJob(), sealer: &struct{ k byte }{1}},
+		"legacy, no sealer":      {job: newJob()},
+		"sealed":                 {job: sealed, sealer: &struct{ k byte }{1}},
+		"sealed, no sealer":      {job: sealed, err: "no segment sealer"},
+		"sealed under other key": {job: sealed, sealer: &struct{ k byte }{9}, err: "does not open"},
+	} {
+		ing := &stubIngester{out: &Output{ReportID: "scan-1"}}
+		p := &JobProcessor{service: ing, sensors: activeSensors{}}
+		if tc.sealer != nil {
+			p.sealer = segSealer(t, tc.sealer.k)
+		}
+		_, err := p.Process(context.Background(), tc.job)
+		if tc.err == "" {
+			if err != nil || !ing.called || ing.gotReport.Version != "1.0" {
+				t.Errorf("%s: err=%v called=%v", name, err, ing.called)
+			}
+			continue
+		}
+		if err == nil || !strings.Contains(err.Error(), tc.err) || ing.called {
+			t.Errorf("%s: err=%v called=%v, want %q", name, err, ing.called, tc.err)
+		}
+	}
+	// The key problem is permanent (never retried); a missing sealer is not.
+	p := &JobProcessor{service: &stubIngester{}, sensors: activeSensors{}, sealer: segSealer(t, 9)}
+	_, err := p.Process(context.Background(), sealed)
+	var perm *ingestjob.PermanentError
+	if !errors.As(err, &perm) {
+		t.Fatalf("wrong key: %v, want a permanent error", err)
+	}
+	p.sealer = nil
+	if _, err := p.Process(context.Background(), sealed); errors.As(err, &perm) {
+		t.Fatalf("no sealer: %v must be retried", err)
 	}
 }
