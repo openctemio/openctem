@@ -130,6 +130,7 @@ failure_breakers
 finding_activities
 finding_approval_digest_sent
 finding_branch_occurrences
+finding_closure_proposals
 finding_comments
 finding_correlations
 finding_decision_reviews
