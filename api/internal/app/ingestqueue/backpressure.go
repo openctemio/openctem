@@ -61,6 +61,24 @@ func Admit(ctx context.Context, depth DepthReader, tenantID shared.ID, limit int
 	return &ErrQueueFull{RetryAfter: retryAfter(unfinished-limit+1, finished)}
 }
 
+// unreadableError is ErrDepthUnknown with the reader's error kept for the
+// log: its text is the fixed sentence of ErrDepthUnknown, never the lower
+// error's.
+type unreadableError struct{ cause error }
+
+func (unreadableError) Error() string          { return ErrDepthUnknown.Error() }
+func (e unreadableError) Is(target error) bool { return target == ErrDepthUnknown }
+
+// Cause returns the error that made a queue reading fail (nil when err is not
+// one of the unreadable-queue errors), for the server log only.
+func Cause(err error) error {
+	var u unreadableError
+	if errors.As(err, &u) {
+		return u.cause
+	}
+	return nil
+}
+
 // BytesReader reads the bytes a tenant has queued.
 type BytesReader interface {
 	// TenantQueuedBytes is the decoded size of the payloads of the tenant's
@@ -85,14 +103,14 @@ func AdmitBytes(ctx context.Context, depth DepthReader, queued BytesReader, tena
 	}
 	n, err := queued.TenantQueuedBytes(ctx, tenantID)
 	if err != nil {
-		return fmt.Errorf("%w: %w", ErrDepthUnknown, err)
+		return unreadableError{cause: err}
 	}
 	if n+incoming <= limit {
 		return nil
 	}
 	_, finished, err := depth.TenantDepth(ctx, tenantID, now.Add(-drainWindow))
 	if err != nil {
-		return fmt.Errorf("%w: %w", ErrDepthUnknown, err)
+		return unreadableError{cause: err}
 	}
 	return &ErrQueueFull{RetryAfter: retryAfter(1, finished)}
 }
