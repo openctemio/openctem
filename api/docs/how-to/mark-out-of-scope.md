@@ -134,11 +134,16 @@ does not refuse them by itself.
   address (audited; in the Strict scan approval mode it waits for an
   exclusion approver). From then on no scan, retest or coverage run reaches
   it.
-- **Names behind the address:** an exclusion of an address also leaves out
-  the names that resolve to it, because a scan of the name reaches the
-  address (section 2). Excluding a shared edge address therefore stops
-  scanning your names served from it. Re-include the address on Scoping >
-  Out of scope to scan them again.
+- **Names behind the address:** excluding a shared edge address excludes
+  only that address. Names served through it keep being scanned (web ports
+  only), because a scan of the name reaches your origin through the
+  provider, not the provider's own address. The confirm dialog checks this
+  for the address before you confirm. Names that have a dedicated address
+  inside an excluded range or CIDR do stop being scanned, and the dialog
+  lists how many and a sample.
+- **Provider ports:** the ports an IP asset on a provider's edge address
+  shows are labelled *Provider ports*: they belong to the provider's
+  network, not to your open ports. They stay visible.
 
 ## 6. Check what was left out
 
