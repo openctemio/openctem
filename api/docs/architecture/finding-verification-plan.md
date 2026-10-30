@@ -81,25 +81,42 @@ mode or method never closes.
 
 **Platform ceiling.** `INGEST_COVERAGE_AUTO_RESOLVE` stays the operator's switch:
 `off` and `dry_run` (default) close nothing, whatever the organization chose; `enforce`
-(alias `tenant`) applies the closing mode. Today the rule runs in front of coverage
-auto-resolve (`internal/app/ingest/closure_mode.go`): the evaluator reads the
-organization's policy once per run, the tiers of the stale findings in one tenant-scoped
-query (`FindingRiskTiers`), resolves only `close`, and records `propose` on the ingest
-receipt (`coverage.note = review`) and in an `ingest.coverage_auto_resolve_dry_run`
-audit entry with `decision = review`. The verification plan names the organization's mode: `coverage_critical_review`
+(alias `tenant`) applies the closing mode to coverage auto-resolve of non-repository
+findings. The ceiling does not govern the other automatic closes below, which always
+apply the organization's mode.
+
+**Every automatic close goes through the rule** (shared implementation in
+`internal/app/closuremode`): the writer reads the organization's policy once per run, the
+tiers of the findings in one tenant-scoped query (`FindingRiskTiers`), closes only
+`close`, and records `propose` as Ready to close proposals. `off` keeps every finding
+open and records nothing; `review` proposes every close; `auto` closes per the tier rule.
+
+| Automatic close | Method | Where |
+|---|---|---|
+| coverage auto-resolve of a covered scan | `covered_scan` | `ingest/closure_mode.go`, `coverage_autoresolve.go` (receipt `coverage.note = review`, audit `decision = review`) |
+| a clean full default-branch scan (repository findings) | `ci_default_branch` | `evaluateRepoCoverage` |
+| a full-coverage upload (`coverage=full`) | `covered_scan` | `findingimport/coverage.go` (receipt `coverage.note = proposed` when it only proposed) |
+| the software matcher sees another installed version (`version_changed`) | `source_reported` | `vulnmatch/service.go` |
+
+The matcher's other kinds are not fix claims and stay outside the rule: `not_observed`
+only marks a finding stale, and `advisory_updated` reclassifies a finding as a detection
+error (false positive). The verification plan names the organization's mode: `coverage_critical_review`
 (critical waits in auto), `coverage_org_review`, `coverage_org_off`; the
-`coverage_auto_resolve_*` reasons stay for the platform ceiling. A held run (blinding guard), template drift and
-secrets behave as before: a held run never closes. When the policy or the tiers cannot
-be read, nothing closes (review; tiers read as critical). The verification plan's
-`covered_scan` method uses the same rule.
+`coverage_auto_resolve_*` reasons stay for the platform ceiling. A held run (blinding
+guard), template drift and secrets behave as before: a held run never closes, and (except
+under `off`) its findings are proposed for a person to decide. When the policy or the
+tiers cannot be read, nothing closes (review; tiers read as critical). The verification
+plan's `covered_scan` method uses the same rule. Confirming a `ci_default_branch` proposal
+records verification `covered_scan`; a `source_reported` one records `source_reported`.
 
 ## Ready to close
 
 A `propose` decision is stored in `finding_closure_proposals` (tenant-scoped, one
 `pending` row per finding by a partial unique index, row security policy like
-`findings`). The coverage evaluator writes it in `enforce` only: for each finding the
-closing mode or the tier rule proposes, and for every candidate of a run the blinding
-guard holds (a held run closes nothing; a person decides). A second qualified look
+`findings`). The writers above record it: for each finding the closing mode or the tier
+rule proposes, and for every candidate of a run the blinding guard holds (a held run
+closes nothing; a person decides). Coverage auto-resolve records proposals in `enforce`
+only. A second qualified look
 refreshes the pending row's `evidence` and `evidence_at`. The evidence is the look:
 command, tool, profile, template release digest, reporting sensors, whether the run was
 held, bounded to 4 KiB. A proposal is never a status: the finding stays open.

@@ -22,6 +22,7 @@ import (
 	"github.com/openctemio/ctis"
 	"github.com/openctemio/ctis/importer"
 
+	"github.com/openctemio/openctem/api/internal/app/closuremode"
 	appimportmapping "github.com/openctemio/openctem/api/internal/app/importmapping"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/metrics"
@@ -183,6 +184,8 @@ type Service struct {
 	receipts ReceiptStore
 	vexMode  ingest.VEXMode
 	logger   *logger.Logger
+	// closure reads the organization's closing mode (nil: review).
+	closure closuremode.SettingsReader
 
 	// queue, resolveScope and audit carry committed uploads to the ingest
 	// worker (queued.go); tempDir is where an archive is spooled.

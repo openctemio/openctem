@@ -11,6 +11,8 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -21,6 +23,10 @@ type coverageFake struct {
 	open     int
 	resolved []shared.ID
 	recorded []ingestreceipt.Delta
+	// tiers: absent is standard. The proposals written are kept.
+	tiers     map[shared.ID]vulnerability.RiskTier
+	proposals []vulnerability.ClosureProposalRecord
+	vulnerability.ClosureProposalRepository
 	// candErr is what ImportCoverageCandidates returns (a truncated receipt).
 	candErr error
 }
@@ -88,6 +94,7 @@ func TestCloseUncovered(t *testing.T) {
 				repo.stale = append(repo.stale, shared.NewID())
 			}
 			svc := NewService(&fakeIngester{}, repo, repo, ingest.SourceResolveDryRun, logger.NewNop())
+			svc.SetClosureSettings(fixedClosing{Mode: tenant.ClosingModeAuto})
 			svc.FinishUpload(context.Background(), coverageReq(), c.results, c.complete)
 			if len(repo.resolved) != c.closed || len(repo.finished) != 1 {
 				t.Fatalf("closed %d, want %d", len(repo.resolved), c.closed)
@@ -194,3 +201,86 @@ func TestCloseUncoveredNeedsVerify(t *testing.T) {
 		t.Fatalf("receipt coverage %q note %q", f.Coverage, f.CoverageNote)
 	}
 }
+
+type fixedClosing tenant.ClosureSettings
+
+func (f fixedClosing) GetClosureSettings(context.Context, string) (*tenant.ClosureSettings, error) {
+	cs := tenant.ClosureSettings(f)
+	return &cs, nil
+}
+
+func (c *coverageFake) FindingRiskTiers(_ context.Context, _ shared.ID, ids []shared.ID) (map[shared.ID]vulnerability.RiskTier, error) {
+	out := make(map[shared.ID]vulnerability.RiskTier, len(ids))
+	for _, id := range ids {
+		if t, ok := c.tiers[id]; ok {
+			out[id] = t
+		} else {
+			out[id] = vulnerability.RiskTierStandard
+		}
+	}
+	return out, nil
+}
+
+func (c *coverageFake) RecordClosureProposals(_ context.Context, _ shared.ID, recs []vulnerability.ClosureProposalRecord) (int, error) {
+	c.proposals = append(c.proposals, recs...)
+	return len(recs), nil
+}
+
+// A full-coverage upload closes under the organization's closing mode: off
+// keeps the findings and proposes nothing, review (also unset, unwired)
+// proposes them, auto closes them except a critical one, which is proposed.
+func TestCloseUncoveredClosingMode(t *testing.T) {
+	cases := []struct {
+		name      string
+		settings  ClosureSettingsFixture
+		closed    int
+		proposed  int
+		wantNote  string
+		unwired   bool
+		heldStale int
+	}{
+		{name: "off", settings: ClosureSettingsFixture{Mode: tenant.ClosingModeOff}, wantNote: "resolved"},
+		{name: "review", settings: ClosureSettingsFixture{Mode: tenant.ClosingModeReview}, proposed: 2, wantNote: noteProposed},
+		{name: "unset is review", proposed: 2, wantNote: noteProposed},
+		{name: "unwired is review", unwired: true, proposed: 2, wantNote: noteProposed},
+		{name: "auto: the critical is proposed", settings: ClosureSettingsFixture{Mode: tenant.ClosingModeAuto}, closed: 1, proposed: 1, wantNote: "resolved"},
+		{name: "auto with critical opt-in", settings: ClosureSettingsFixture{Mode: tenant.ClosingModeAuto, CriticalAutoClose: true}, closed: 2, wantNote: "resolved"},
+		{name: "held run proposes, closes nothing", settings: ClosureSettingsFixture{Mode: tenant.ClosingModeAuto, CriticalAutoClose: true}, proposed: 150, wantNote: "held", heldStale: 150},
+		{name: "held run under off proposes nothing", settings: ClosureSettingsFixture{Mode: tenant.ClosingModeOff}, wantNote: "held", heldStale: 150},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			critical, medium := shared.NewID(), shared.NewID()
+			repo := &coverageFake{assets: 1, open: 10, stale: []shared.ID{critical, medium},
+				tiers: map[shared.ID]vulnerability.RiskTier{critical: vulnerability.RiskTierCritical}}
+			if c.heldStale > 0 {
+				repo.stale, repo.open = nil, c.heldStale+10
+				for range c.heldStale {
+					repo.stale = append(repo.stale, shared.NewID())
+				}
+			}
+			svc := NewService(&fakeIngester{}, repo, repo, ingest.SourceResolveDryRun, logger.NewNop())
+			if !c.unwired {
+				svc.SetClosureSettings(fixedClosing(c.settings))
+			}
+			svc.FinishUpload(context.Background(), coverageReq(), []FileResult{{Tool: "nessus", Ingest: &ingest.Output{}}}, true)
+			if len(repo.resolved) != c.closed || len(repo.proposals) != c.proposed {
+				t.Fatalf("closed %d proposed %d, want %d / %d", len(repo.resolved), len(repo.proposals), c.closed, c.proposed)
+			}
+			for _, p := range repo.proposals {
+				if p.Method != vulnerability.ClosureMethodCoveredScan {
+					t.Fatalf("method %q", p.Method)
+				}
+			}
+			if c.name == "auto: the critical is proposed" && (repo.resolved[0] != medium || repo.proposals[0].FindingID != critical) {
+				t.Fatalf("closed %v proposed %v", repo.resolved, repo.proposals)
+			}
+			if f := repo.finished[0]; f.CoverageNote != c.wantNote {
+				t.Fatalf("receipt note %q, want %q", f.CoverageNote, c.wantNote)
+			}
+		})
+	}
+}
+
+// ClosureSettingsFixture is tenant.ClosureSettings, spelled short for the table.
+type ClosureSettingsFixture = tenant.ClosureSettings
