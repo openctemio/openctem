@@ -149,8 +149,13 @@ func (s *Service) StartCoverage(ctx context.Context, in CoverageInput) (*Coverag
 	// One command per chunk of the stage's size (list tools are efficient
 	// with lists), not one per target.
 	perJob := coverageChunk(st, tool)
-	if err := sc.SetSingleScanner(tool, map[string]any{"targets": res.Kept}, perJob); err != nil {
+	if err := sc.SetSingleScanner(tool, coverageScannerConfig(st, res.Kept), perJob); err != nil {
 		return nil, fmt.Errorf("failed to set scanner: %w", err)
+	}
+	// Standard depth: it picks the small wordlist pack for a tool that reads
+	// one (enumerate.subdomains), never the larger lists a deep scan may.
+	if err := sc.SetDepth(string(scanworkflow.DepthStandard)); err != nil {
+		return nil, err
 	}
 	if err := s.applyIntensity(ctx, sc, string(intensity)); err != nil {
 		return nil, err
@@ -227,6 +232,17 @@ func (s *Service) coverageScan(ctx context.Context, tenantID shared.ID, capabili
 		}
 	}
 	return nil, fmt.Errorf("failed to create coverage scan: %w", createErr)
+}
+
+// coverageScannerConfig is the scanner config of a coverage run of the
+// stage on targets. Subdomain enumeration runs as a brute force over the
+// label list its job asks for (the only method its tool has).
+func coverageScannerConfig(st stage.Stage, targets []string) map[string]any {
+	cfg := map[string]any{"targets": targets}
+	if st.Key == stage.EnumerateSubdomains {
+		cfg["method"] = "bruteforce"
+	}
+	return cfg
 }
 
 // coverageChunk is how many targets one task of a coverage run of the stage

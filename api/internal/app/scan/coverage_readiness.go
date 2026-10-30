@@ -94,6 +94,26 @@ func (s *Service) toolReadiness(ctx context.Context, tenantID shared.ID, tool st
 			return covdom.ReadyNoEligibleSensor
 		}
 	}
+	return s.contentReadiness(ctx, tenantID, tool)
+}
+
+// contentReadiness is ReadyContentMissing when the tool reads a list the
+// platform supplies and the platform has none yet ("" otherwise, and when
+// the answer cannot be read: the claim-time pin still refuses the job).
+func (s *Service) contentReadiness(ctx context.Context, tenantID shared.ID, tool string) string {
+	reqs := stage.ToolWordlists(tool)
+	if len(reqs) == 0 || s.coverageContent == nil {
+		return ""
+	}
+	ok, err := s.coverageContent.CoverageContentReady(ctx, reqs)
+	if err != nil {
+		s.logger.Warn("coverage readiness: platform content unreadable; checked again at claim",
+			"tenant_id", tenantID.String(), "tool", tool, "error", err)
+		return ""
+	}
+	if !ok {
+		return covdom.ReadyContentMissing
+	}
 	return ""
 }
 
