@@ -25,18 +25,22 @@ func NewSensorHeartbeatHistoryRepository(db *DB) *SensorHeartbeatHistoryReposito
 // RecordHeartbeat adds one heartbeat to its bucket (one upsert).
 func (r *SensorHeartbeatHistoryRepository) RecordHeartbeat(ctx context.Context, s sensor.HeartbeatSample) error {
 	s = s.Clamped()
-	gapBeats := 0
+	gapBeats, prevBeats := 0, 0
 	if s.Gap > 0 {
+		prevBeats = 1
+	}
+	if s.LateGap() {
 		gapBeats = 1
 	}
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO sensor_heartbeat_history AS h
-		    (sensor_id, tenant_id, bucket_start, beats, gap_beats, sum_gap_seconds,
+		    (sensor_id, tenant_id, bucket_start, beats, gap_beats, prev_beats, sum_gap_seconds,
 		     max_gap_seconds, max_interval_seconds, max_lag_ms, failures)
-		VALUES ($1, $2, $3, 1, $4, $5, $5, $6, $7, $8)
+		VALUES ($1, $2, $3, 1, $4, $9, $5, $5, $6, $7, $8)
 		ON CONFLICT (sensor_id, bucket_start) DO UPDATE SET
 		    beats = h.beats + 1,
 		    gap_beats = h.gap_beats + EXCLUDED.gap_beats,
+		    prev_beats = h.prev_beats + EXCLUDED.prev_beats,
 		    sum_gap_seconds = h.sum_gap_seconds + EXCLUDED.sum_gap_seconds,
 		    max_gap_seconds = GREATEST(h.max_gap_seconds, EXCLUDED.max_gap_seconds),
 		    max_interval_seconds = GREATEST(h.max_interval_seconds, EXCLUDED.max_interval_seconds),
@@ -44,7 +48,7 @@ func (r *SensorHeartbeatHistoryRepository) RecordHeartbeat(ctx context.Context, 
 		    failures = h.failures + EXCLUDED.failures
 		WHERE h.tenant_id = EXCLUDED.tenant_id`,
 		s.SensorID.String(), s.TenantID.String(), sensor.HeartbeatBucketStart(s.At),
-		gapBeats, s.Gap.Seconds(), s.Interval.Seconds(), s.LagMillis, s.Failures)
+		gapBeats, s.Gap.Seconds(), s.Interval.Seconds(), s.LagMillis, s.Failures, prevBeats)
 	if err != nil {
 		return fmt.Errorf("failed to record heartbeat history: %w", err)
 	}
@@ -55,7 +59,7 @@ func (r *SensorHeartbeatHistoryRepository) RecordHeartbeat(ctx context.Context, 
 // first.
 func (r *SensorHeartbeatHistoryRepository) HeartbeatHistory(ctx context.Context, tenantID, sensorID shared.ID, since time.Time) ([]sensor.HeartbeatBucket, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT bucket_start, beats, gap_beats, sum_gap_seconds, max_gap_seconds,
+		SELECT bucket_start, beats, gap_beats, prev_beats, sum_gap_seconds, max_gap_seconds,
 		       max_interval_seconds, max_lag_ms, failures
 		FROM sensor_heartbeat_history
 		WHERE tenant_id = $1 AND sensor_id = $2 AND bucket_start >= $3
@@ -69,14 +73,15 @@ func (r *SensorHeartbeatHistoryRepository) HeartbeatHistory(ctx context.Context,
 	out := make([]sensor.HeartbeatBucket, 0, 96)
 	for rows.Next() {
 		var b sensor.HeartbeatBucket
-		var gapBeats int
+		var gapBeats, prevBeats int
 		var sumGap float64
-		if err := rows.Scan(&b.Start, &b.Beats, &gapBeats, &sumGap, &b.MaxGapSeconds,
+		if err := rows.Scan(&b.Start, &b.Beats, &gapBeats, &prevBeats, &sumGap, &b.MaxGapSeconds,
 			&b.IntervalSeconds, &b.MaxLagMillis, &b.Failures); err != nil {
 			return nil, fmt.Errorf("failed to scan heartbeat history: %w", err)
 		}
-		if gapBeats > 0 {
-			b.AvgGapSeconds = sumGap / float64(gapBeats)
+		b.GapBeats = gapBeats
+		if prevBeats > 0 {
+			b.AvgGapSeconds = sumGap / float64(prevBeats)
 		}
 		b.Start = b.Start.UTC()
 		out = append(out, b)

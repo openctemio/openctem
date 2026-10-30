@@ -86,17 +86,23 @@ func TestSensorHeartbeatHistoryAndRecovery_DB(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var beats int
+	var beats, gapBeats int
 	var maxGap float64
 	var failures, lag int64
 	for _, b := range buckets {
 		beats += b.Beats
+		gapBeats += b.GapBeats
 		maxGap = max(maxGap, b.MaxGapSeconds)
 		failures += b.Failures
 		lag = max(lag, b.MaxLagMillis)
 	}
 	if beats != 3 || maxGap < 75 || maxGap > 90 || failures != 6 || lag != 120 {
 		t.Fatalf("history %+v: beats %d max gap %.1f failures %d lag %d", buckets, beats, maxGap, failures, lag)
+	}
+
+	// Only the 80 s heartbeat was late; the 25 s one was on time.
+	if gapBeats != 1 {
+		t.Fatalf("gap_beats %d, want 1 (history %+v)", gapBeats, buckets)
 	}
 
 	// Another tenant cannot read it.
