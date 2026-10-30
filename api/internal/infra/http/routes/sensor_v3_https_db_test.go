@@ -109,6 +109,7 @@ func newV3HarnessWith(t *testing.T, opts []command.Option, recheck ...time.Durat
 	ctl := handler.NewSensorControlV2Handler(ih, ch, sh, nil, log)
 	receiver := ingest.NewV2Receiver(postgres.NewIngestReportRepository(db), parkedJobs{postgres.NewIngestJobRepository(db)},
 		postgres.NewIngestJobRepository(db), cmdRepo, protov2.DefaultLimits(), 100, log)
+	receiver.SetPayloadSealer(testSegmentSealer(t))
 	results := handler.NewSensorResultsV2Handler(receiver, sensorSvc, log)
 
 	cfg := sensortransport.Config{GRPCEndpoint: "sensors.test:443", Keepalive: time.Second}

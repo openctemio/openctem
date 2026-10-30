@@ -54,6 +54,18 @@ Each organization chooses how the platform closes findings without a person
 `critical_auto_close` (default false) lets a plain covered scan close critical, P0 and
 KEV findings in `auto` mode.
 
+**Loosening waits 24 hours.** A change that lets the platform close more alone (off to
+review or auto, review to auto, `critical_auto_close` on) needs a recent
+re-authentication, is audited high, tells every owner and administrator, and takes
+effect `tenant.ClosureRelaxationDelay` (24 h) later: the stored policy is the stricter of
+the old and the new one, field by field, and the new one waits in `pending_mode`,
+`pending_critical_auto_close`, `pending_at` (written only by the platform; a request's
+values are ignored). Readers (the evaluator, the verification plan, `GET`) use the
+policy in force at the time of the read (`ClosureSettings.EffectiveAt`), so no job flips
+it. Any tightening choice applies at once and drops the waiting change;
+`DELETE /api/v1/organization/settings/closure/pending` (owner or administrator, audited)
+cancels it. The settings live on Settings > Finding lifecycle, section Closing findings.
+
 One pure rule, `vulnerability.DecideClosure(mode, tier, method, flaky, criticalAutoClose)`
 (`pkg/domain/vulnerability/closure_decision.go`), returns `close`, `propose` or `keep`.
 In `auto`:
@@ -74,7 +86,9 @@ auto-resolve (`internal/app/ingest/closure_mode.go`): the evaluator reads the
 organization's policy once per run, the tiers of the stale findings in one tenant-scoped
 query (`FindingRiskTiers`), resolves only `close`, and records `propose` on the ingest
 receipt (`coverage.note = review`) and in an `ingest.coverage_auto_resolve_dry_run`
-audit entry with `decision = review`. A held run (blinding guard), template drift and
+audit entry with `decision = review`. The verification plan names the organization's mode: `coverage_critical_review`
+(critical waits in auto), `coverage_org_review`, `coverage_org_off`; the
+`coverage_auto_resolve_*` reasons stay for the platform ceiling. A held run (blinding guard), template drift and
 secrets behave as before: a held run never closes. When the policy or the tiers cannot
 be read, nothing closes (review; tiers read as critical). The verification plan's
 `covered_scan` method uses the same rule.
@@ -93,9 +107,9 @@ held, bounded to 4 KiB. A proposal is never a status: the finding stays open.
 | Endpoint | Gate | Does |
 |---|---|---|
 | `GET /api/v1/findings/closure/proposals` | `findings:read` | pending, eligible proposals in the caller's data scope, critical first then oldest |
-| `POST /api/v1/findings/closure/proposals/decide` | `findings:verify`; confirming more than one needs a recent re-authentication | `confirm` closes each finding as `fixed`, verification = the proposal's method, `resolved_by` = the person, one transaction with the proposal row and the timeline entry; `dismiss` keeps it open with a reason (`still_present_manual_check`, `scan_not_trustworthy`, `wrong_asset`, `other` + note). At most 200 ids |
+| `POST /api/v1/findings/closure/proposals/decide` | `findings:verify`; every confirm (single or bulk) needs a recent re-authentication, dismissal does not | `confirm` closes each finding as `fixed`, verification = the proposal's method, `resolved_by` = the person, one transaction with the proposal row and the timeline entry; `dismiss` keeps it open with a reason (`still_present_manual_check`, `scan_not_trustworthy`, `wrong_asset`, `other` + note). At most 200 ids |
 | `GET /api/v1/findings/closure/auto-closed` | `findings:read` | findings the platform closed by itself in the last 7 days and still closed, with the evidence of the close |
-| `POST /api/v1/findings/{id}/reopen-not-fixed` | `findings:status` | reopens such a finding as `confirmed`: the close was wrong. Not counted as a regression |
+| `POST /api/v1/findings/{id}/reopen` | `findings:status` | reopens such a finding as `confirmed`: the close was wrong. Not counted as a regression |
 
 **Eligibility** is re-checked inside the confirm statement: the finding is still in a
 status a platform close starts from, not a secret or a protected source, and not seen
@@ -137,7 +151,7 @@ at the normal severity.
   `internal/infra/postgres/finding_closure_proposal_repository_db_test.go` (one pending
   row, cross-tenant and out-of-scope list, confirm, reopen; seen again; dismiss),
   `internal/app/ingest/closure_proposals_test.go` (auto, held run, dry run),
-  `internal/infra/http/routes/step_up_routes_test.go` `TestClosureDecisionStepUp_BulkConfirmOnly`.
+  `internal/infra/http/routes/step_up_routes_test.go` `TestClosureDecisionStepUp_EveryConfirm`.
 - Tests: `internal/app/finding/verification_plan_test.go` (per source, type, asset,
   availability and tier), `internal/app/retest` `TestRetestDB_AvailabilityReasons`,
   `internal/infra/http/routes/finding_verification_plan_db_test.go` (secret plan,

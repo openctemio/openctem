@@ -81,13 +81,16 @@ const coverageProtectedSources = `('pentest', 'manual', 'bug_bounty', 'red_team'
 // queued it, and every v2 report filed under it.
 func (r *FindingRepository) CommandCoverage(ctx context.Context, tenantID, commandID shared.ID) (*ingestreport.CommandCoverage, error) {
 	c := &ingestreport.CommandCoverage{}
-	var result []byte
+	var (
+		result    []byte
+		completed sql.NullTime
+	)
 	err := r.db.QueryRowContext(ctx, `
-		SELECT c.type, COALESCE(c.status, ''), c.result, COALESCE(s.profile_id::text, '')
+		SELECT c.type, COALESCE(c.status, ''), c.result, COALESCE(s.profile_id::text, ''), c.completed_at
 		FROM commands c
 		LEFT JOIN scans s ON s.tenant_id = c.tenant_id AND s.id::text = c.payload->>'scan_id'
 		WHERE c.tenant_id = $1 AND c.id = $2`, tenantID.String(), commandID.String(),
-	).Scan(&c.CommandType, &c.CommandStatus, &result, &c.ProfileID)
+	).Scan(&c.CommandType, &c.CommandStatus, &result, &c.ProfileID, &completed)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, shared.ErrNotFound
 	}
@@ -95,9 +98,13 @@ func (r *FindingRepository) CommandCoverage(ctx context.Context, tenantID, comma
 		return nil, fmt.Errorf("load command coverage: %w", err)
 	}
 	c.Result = result
+	if completed.Valid {
+		c.CompletedAt = completed.Time
+	}
 
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT report_id::text, sensor_id, state, tool_name, header, segment_outcomes, touched_asset_ids
+		SELECT report_id::text, sensor_id, state, tool_name, header, segment_outcomes, touched_asset_ids,
+			COALESCE(integrity, '')
 		FROM ingest_reports
 		WHERE tenant_id = $1 AND command_id = $2
 		ORDER BY received_at`, tenantID.String(), commandID.String())
@@ -112,7 +119,7 @@ func (r *FindingRepository) CommandCoverage(ctx context.Context, tenantID, comma
 			header, outcomes []byte
 			touched          []string
 		)
-		if err := rows.Scan(&rep.ReportID, &sensorID, &state, &rep.ToolName, &header, &outcomes, pq.Array(&touched)); err != nil {
+		if err := rows.Scan(&rep.ReportID, &sensorID, &state, &rep.ToolName, &header, &outcomes, pq.Array(&touched), &rep.Integrity); err != nil {
 			return nil, fmt.Errorf("scan command report: %w", err)
 		}
 		if rep.SensorID, err = shared.IDFromString(sensorID); err != nil {

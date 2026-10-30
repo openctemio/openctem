@@ -90,6 +90,11 @@ const REASON: Record<string, string> = {
   source_not_scanned: 'No scanner re-runs a finding reported by a person',
   coverage_auto_resolve_review: 'Automatic closing by scan is in review mode on this platform',
   coverage_auto_resolve_off: 'Automatic closing by scan is off on this platform',
+  coverage_critical_review:
+    'Critical findings wait for review in auto mode: when a covered scan no longer finds it, a person confirms the close in Ready to close',
+  coverage_org_review:
+    'Your organization reviews every automatic close: a covered scan that no longer finds it proposes the close in Ready to close',
+  coverage_org_off: 'Automatic closing is off for your organization: a person closes the finding',
   not_for_secrets: 'Reachability says nothing about a leaked secret',
   finding_closed: 'The finding is closed',
 }

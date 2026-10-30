@@ -77,6 +77,39 @@ describe('AssetCoverageSection', () => {
     expect(screen.getByText(/no sensor took its last runs/)).toBeInTheDocument()
   })
 
+  it('shows a platform-side failure as not checked, never as the asset failing', async () => {
+    api.get.mockResolvedValue({
+      asset_id: 'a1',
+      gaps: 0,
+      entries: [
+        {
+          capability: 'scan.ports',
+          state: 'failed',
+          gap: false,
+          last_outcome: 'not_dispatched',
+          last_error: 'no task of the run carried this target',
+          platform_side: true,
+        },
+        {
+          capability: 'probe.http',
+          state: 'failed',
+          gap: false,
+          last_outcome: 'edge_blocked',
+          last_error: 'blocked by the edge',
+        },
+      ],
+    } as AssetCoverage)
+    wrap(<AssetCoverageSection assetId="a1" />)
+    expect(await screen.findByText('Not checked')).toBeInTheDocument()
+    expect(screen.getByText(/says nothing about the asset/)).toBeInTheDocument()
+    expect(screen.getByText('no task of the run carried this target')).not.toHaveClass(
+      'text-destructive'
+    )
+    // An observation of the target still reads as failed.
+    expect(screen.getByText('Failed')).toBeInTheDocument()
+    expect(screen.getByText('blocked by the edge')).toHaveClass('text-destructive')
+  })
+
   it('says a silent target is unreachable from your sensors, naming your own zone when sent', async () => {
     api.get.mockResolvedValue({
       asset_id: 'a1',

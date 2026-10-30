@@ -192,6 +192,9 @@ func (s *Service) settleRun(ctx context.Context, tenantID shared.ID, rs covdom.R
 	}
 	k, err := s.planner.SettleFailed(ctx, tenantID, rs.RunID, rs.Capability, failed, rule.Every)
 	n += k
+	if err == nil {
+		countPlatformFailures(rs.Capability, failed)
+	}
 	if err != nil {
 		return n, 0, err
 	}

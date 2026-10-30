@@ -55,25 +55,26 @@ func TestFindingStatusSQL_IllegalListPanics(t *testing.T) {
 // that writes findings.status fails this test: give it a lifecycle guard and
 // add it here.
 var findingStatusWriters = map[string]int{
-	"asset_merge_findings.go":              2, // identity merge: survivor inherits, tombstone -> duplicate
-	"ci_coverage_repository.go":            1, // sourceRetiredFromSQL (going stale is observation_state, not a status)
-	"finding_acceptance_expiry.go":         1, // accepted -> confirmed when the acceptance ended (guarded by status under lock)
-	"finding_decision_review.go":           1, // ReopenResolved: resolved -> confirmed, guarded by fixedReopenFromSQL
-	"finding_correlation_repository.go":    2, // correlate: open -> duplicate (isOpenStatus checked under lock); release: duplicate -> prior open status
-	"finding_coverage_autoresolve.go":      2, // autoResolveFromSQL
-	"finding_import_coverage.go":           1, // autoResolveFromSQL (full-coverage upload)
-	"finding_group_repository.go":          1, // UserFromStatuses($6)
-	"finding_material_change.go":           1, // false_positive -> confirmed when the approved fields changed (guarded by status under lock)
-	"finding_pentest_duplicate.go":         2, // pentest duplicate: draft/in_review -> duplicate, duplicate -> draft (guarded by status)
-	"finding_repo_coverage_autoresolve.go": 1, // autoResolveFromSQL
-	"finding_repository.go":                3, // entity Update; UpdateStatusBatch ($7); scan reopen batch
-	"finding_retest_repository.go":         2, // moveFindingInTx checks the lifecycle
-	"scope_effects_repository.go":          2, // out-of-scope close (scopeEffectsOpenStatuses: published, still needing action) and the reopen back in scope (resolved -> the status it had; guarded by closure_reason); both record a transition
-	"softwarematch_repository.go":          1, // regressionReopenFromSQL (reopen); the matcher close builds its SET from autoResolveFromSQL, vexFalsePositiveFromSQL (stale is observation_state)
-	"suppression_apply.go":                 1, // suppressionApplyFrom (SuppressionApplyFromStatuses)
-	"suppression_repository.go":            2, // suppressionRelinkFromSQL, suppressionLiftFromSQL
-	"license_policy_repository.go":         2, // autoResolveFromSQL (policy no longer flags), fixedReopenFromSQL (flags again)
-	"vex_statement_repository.go":          1, // per-row move decided by vex.Decide (lifecycle edges, TestDecideFollowsLifecycle), guarded by the old status
+	"asset_merge_findings.go":                2, // identity merge: survivor inherits, tombstone -> duplicate
+	"ci_coverage_repository.go":              1, // sourceRetiredFromSQL (going stale is observation_state, not a status)
+	"finding_acceptance_expiry.go":           1, // accepted -> confirmed when the acceptance ended (guarded by status under lock)
+	"finding_decision_review.go":             1, // ReopenResolved: resolved -> confirmed, guarded by fixedReopenFromSQL
+	"finding_correlation_repository.go":      2, // correlate: open -> duplicate (isOpenStatus checked under lock); release: duplicate -> prior open status
+	"finding_coverage_autoresolve.go":        2, // autoResolveFromSQL
+	"finding_closure_proposal_repository.go": 2, // confirm: open -> resolved (proposalEligibleSQL, under lock); reopen of an auto-closed finding (auto_fixed only)
+	"finding_import_coverage.go":             1, // autoResolveFromSQL (full-coverage upload)
+	"finding_group_repository.go":            1, // UserFromStatuses($6)
+	"finding_material_change.go":             1, // false_positive -> confirmed when the approved fields changed (guarded by status under lock)
+	"finding_pentest_duplicate.go":           2, // pentest duplicate: draft/in_review -> duplicate, duplicate -> draft (guarded by status)
+	"finding_repo_coverage_autoresolve.go":   1, // autoResolveFromSQL
+	"finding_repository.go":                  3, // entity Update; UpdateStatusBatch ($7); scan reopen batch
+	"finding_retest_repository.go":           2, // moveFindingInTx checks the lifecycle
+	"scope_effects_repository.go":            2, // out-of-scope close (scopeEffectsOpenStatuses: published, still needing action) and the reopen back in scope (resolved -> the status it had; guarded by closure_reason); both record a transition
+	"softwarematch_repository.go":            1, // regressionReopenFromSQL (reopen); the matcher close builds its SET from autoResolveFromSQL, vexFalsePositiveFromSQL (stale is observation_state)
+	"suppression_apply.go":                   1, // suppressionApplyFrom (SuppressionApplyFromStatuses)
+	"suppression_repository.go":              2, // suppressionRelinkFromSQL, suppressionLiftFromSQL
+	"license_policy_repository.go":           2, // autoResolveFromSQL (policy no longer flags), fixedReopenFromSQL (flags again)
+	"vex_statement_repository.go":            1, // per-row move decided by vex.Decide (lifecycle edges, TestDecideFollowsLifecycle), guarded by the old status
 }
 
 var (

@@ -15,7 +15,6 @@ import { Globe, KeyRound, Package, ScrollText, Settings2, Wallet } from 'lucide-
 import { useTranslation } from '@/context/i18n-provider'
 import { Badge } from '@/components/ui/badge'
 import {
-  DetailDisclosure,
   DetailField,
   DetailFieldGrid,
   DetailSection,
@@ -224,9 +223,9 @@ function WebRequestSection({ finding }: { finding: FindingDetail }) {
   const endpoint = meta(finding, 'endpoint', 'url', 'matched_at')
   const method = meta(finding, 'method', 'http_method').toUpperCase()
   const param = meta(finding, 'parameter', 'param')
-  const request = meta(finding, 'request', 'http_request')
-  const response = meta(finding, 'response', 'http_response')
-  if (!endpoint && !request && !response) return null
+  // The request and response are never read from metadata here: they are
+  // finding evidence, masked server-side and shown by the evidence component.
+  if (!endpoint) return null
   return (
     <DetailSection
       title={t('findings.typeDetails.affectedEndpoint', 'Affected endpoint')}
@@ -245,25 +244,6 @@ function WebRequestSection({ finding }: { finding: FindingDetail }) {
           {param ? <Mono>{param}</Mono> : null}
         </DetailField>
       </DetailFieldGrid>
-      {(request || response) && (
-        <DetailDisclosure summary={t('findings.typeDetails.reqResp', 'Request and response')}>
-          <div className="mt-2 grid gap-2 lg:grid-cols-2">
-            {[
-              [t('findings.typeDetails.request', 'Request'), request],
-              [t('findings.typeDetails.response', 'Response'), response],
-            ]
-              .filter(([, v]) => v)
-              .map(([label, v]) => (
-                <div key={label} className="min-w-0">
-                  <div className="mb-1 text-xs text-muted-foreground">{label}</div>
-                  <pre className="max-h-72 overflow-auto rounded-md border bg-muted/50 p-2.5 font-mono text-xs whitespace-pre-wrap">
-                    {v}
-                  </pre>
-                </div>
-              ))}
-          </div>
-        </DetailDisclosure>
-      )}
     </DetailSection>
   )
 }
@@ -374,6 +354,6 @@ export function hasTypeDetails(f: FindingDetail): boolean {
     f.web3Details ||
     f.metadata?.endpoint ||
     f.metadata?.url ||
-    f.metadata?.request
+    f.metadata?.matched_at
   )
 }

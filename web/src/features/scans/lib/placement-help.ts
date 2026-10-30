@@ -181,7 +181,7 @@ export function placementHelp(code: string, t: Translate = enTranslate): CodeHel
 }
 
 /** Coverage-gap reasons the API accepts (api pkg/domain/scanrun GapReasons). */
-export const GAP_REASONS = ['breaker_open', 'rate_floor', 'blocked'] as const
+export const GAP_REASONS = ['breaker_open', 'rate_floor', 'blocked', 'proxy_unavailable'] as const
 
 /** Step codes whose message is the sensor's or the tool's own text. */
 export const SENSOR_TEXT_CODES = new Set([

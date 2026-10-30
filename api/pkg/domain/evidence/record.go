@@ -20,6 +20,10 @@ const (
 	OriginDetection Origin = "detection"
 	// OriginRetest: a retest attempt of the finding.
 	OriginRetest Origin = "retest"
+	// OriginManual: a request/response a person recorded on the finding (a
+	// pentest write-up, an import, a drafted finding). Kept with the finding:
+	// the age retention does not delete it.
+	OriginManual Origin = "manual"
 )
 
 // Retention and volume bounds (server-side).
@@ -48,6 +52,12 @@ var (
 	// ErrSecretUnreadable: a stored value cannot be opened (wrong key or a
 	// value bound to another tenant or item).
 	ErrSecretUnreadable = errors.New("evidence secret cannot be decrypted")
+	// ErrTooManyManual: the finding would hold more than MaxManualPerFinding
+	// recorded request/response items.
+	ErrTooManyManual = fmt.Errorf("%w: a finding holds at most %d request/response items", shared.ErrValidation, MaxManualPerFinding)
+	// ErrMaskedResent: a request/response holds evidence placeholders (a
+	// masked item sent back); its secret values are not in it.
+	ErrMaskedResent = fmt.Errorf("%w: a request/response holds masked values; record the original exchange or keep the stored item", shared.ErrValidation)
 )
 
 // Role says what an evidence item shows to the reader of a finding.
@@ -142,6 +152,21 @@ type Repository interface {
 	// InsertForFinding stores records for one finding (retest attempts) and
 	// prunes the finding's retest records to MaxRetestPerFinding.
 	InsertForFinding(ctx context.Context, tenantID, findingID shared.ID, recs []NewRecord) error
+	// InsertManual stores recorded (manual) records for one finding, skipping
+	// a record whose content hash the finding's manual records already hold.
+	// More than MaxManualPerFinding manual records is ErrTooManyManual and
+	// stores nothing; a finding of another tenant is ErrNotFound. It returns
+	// how many records were stored.
+	InsertManual(ctx context.Context, tenantID, findingID shared.ID, recs []NewRecord) (int, error)
+	// MoveLegacyRequestResponses moves request/response entries still kept in
+	// findings.metadata (key request_responses, written before they went
+	// through the evidence service) into manual records: it locks up to batch
+	// such findings, lets convert build the masked records, stores them and
+	// removes the key, in one transaction per batch and one savepoint per
+	// finding (a finding that fails is skipped, not retried in the run).
+	// after is the last id of the previous batch ("" = from the start); an
+	// empty result (Moved+Skipped == 0) means none is left.
+	MoveLegacyRequestResponses(ctx context.Context, batch int, after string, convert LegacyConverter) (LegacyMoveResult, error)
 	// List returns a finding's records in reader order (position, then
 	// newest first); retestID filters to one retest attempt.
 	List(ctx context.Context, tenantID, findingID shared.ID, retestID *shared.ID, limit int) ([]*Record, error)
@@ -168,6 +193,17 @@ type Repository interface {
 	// retention. It returns how many of each were deleted.
 	DeleteExpired(ctx context.Context, now time.Time, retention time.Duration) (secrets, records int64, err error)
 }
+
+// LegacyMoveResult is one batch of the legacy request/response move.
+type LegacyMoveResult struct {
+	Moved   int    // findings moved
+	Skipped int    // findings that failed and were left as they were
+	Last    string // id of the last finding looked at (the next cursor)
+}
+
+// LegacyConverter turns a finding's legacy request/response entries into
+// masked records ready to store.
+type LegacyConverter func(ctx context.Context, tenantID, findingID shared.ID, entries []map[string]any) []NewRecord
 
 // Hash is the platform's content hash of a normalized item.
 func Hash(it Item) string {

@@ -192,13 +192,15 @@ func (s *VulnerabilityService) auditClosureDecision(ctx context.Context, tid sha
 	if s.auditService == nil || len(res.Applied) == 0 {
 		return
 	}
-	const maxListed = 50
-	listed := make([]string, 0, min(len(res.Findings), maxListed))
-	for i, id := range res.Findings {
-		if i == maxListed {
-			break
-		}
+	// One request decides at most MaxClosureDecisionBatch (200) proposals, so every
+	// id fits: the row names all findings and proposals it moved.
+	listed := make([]string, 0, len(res.Findings))
+	for _, id := range res.Findings {
 		listed = append(listed, id.String())
+	}
+	proposals := make([]string, 0, len(res.Applied))
+	for _, id := range res.Applied {
+		proposals = append(proposals, id.String())
 	}
 	severity := auditdom.SeverityMedium
 	if in.Decision == ClosureDecisionConfirm {
@@ -209,7 +211,8 @@ func (s *VulnerabilityService) auditClosureDecision(ctx context.Context, tid sha
 		WithMetadata("count", len(res.Applied)).
 		WithMetadata("skipped", len(res.Skipped)).
 		WithMetadata("finding_ids", listed).
-		WithMetadata("finding_ids_truncated", len(res.Findings) > maxListed).
+		WithMetadata("proposal_ids", proposals).
+		WithMetadata("methods", res.Methods).
 		WithSeverity(severity)
 	if in.Decision == ClosureDecisionDismiss {
 		event = event.WithMetadata("reason", in.Reason)

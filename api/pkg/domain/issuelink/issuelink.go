@@ -27,6 +27,7 @@ const (
 	RuleSecretValue = "secret_value"
 	RuleVulnAlias   = "vuln_alias"
 	RuleVulnAsset   = "vuln_asset"
+	RuleDASTScheme  = "dast_scheme"
 )
 
 // Key kinds.
@@ -34,6 +35,7 @@ const (
 	KindSASTCWE     = "sast_cwe"
 	KindSecretValue = "secret_value"
 	KindVulnAsset   = "vuln_asset"
+	KindDASTPoint   = "dast_point"
 )
 
 // HostLocator is the locator of a finding that is about the whole host.
@@ -65,6 +67,8 @@ func Basis(rule string) []string {
 		return []string{"asset", "vuln"}
 	case RuleVulnAsset:
 		return []string{"asset", "vuln", "port"}
+	case RuleDASTScheme:
+		return []string{"asset", "rule", "method", "url", "params"}
 	}
 	return nil
 }
@@ -85,8 +89,14 @@ type Finding struct {
 	// identity key names it (aliases are resolved from the signed feed before
 	// the key is built); "" when the key names no CVE. Locator is "port/proto"
 	// or HostLocator.
-	CVE       string
-	Locator   string
+	CVE     string
+	Locator string
+	// Method, URL and Params are a DAST finding's identity fields: the
+	// upper-case method, the URL template and the comma-joined parameter
+	// names, as its identity key names them.
+	Method    string
+	URL       string
+	Params    string
 	CreatedAt time.Time
 }
 
@@ -152,9 +162,10 @@ func lineRange(f Finding) (int, int) {
 }
 
 // Keys returns the candidate keys of f: per CWE for a SAST finding with a
-// path and a line, one for a secret with a keyed hash of its raw value. A
-// secret known only by its mask has no key: masks are shared by unrelated
-// secrets.
+// path and a line, one for a secret with a keyed hash of its raw value, the
+// vuln_asset key of a finding with a CVE, and the scheme-free point of a
+// DAST finding on a default port. A secret known only by its mask has no
+// key: masks are shared by unrelated secrets.
 func Keys(f Finding) []Key {
 	switch f.Kind {
 	case "sast":
@@ -171,13 +182,14 @@ func Keys(f Finding) []Key {
 			out = append(out, Key{Kind: KindSASTCWE, Key: hashKey(KindSASTCWE, f.AssetID, f.Path, c), StartLine: start, EndLine: end})
 		}
 		return out
-	case "network", "dast", "sca":
-		cve := strings.ToUpper(strings.TrimSpace(f.CVE))
-		loc := strings.TrimSpace(f.Locator)
-		if f.AssetID == "" || !cveID.MatchString(cve) || loc == "" {
-			return nil
+	case "network", "sca":
+		return vulnAssetKeys(f)
+	case "dast":
+		out := vulnAssetKeys(f)
+		if k, ok := dastPointKey(f); ok {
+			out = append(out, k)
 		}
-		return []Key{{Kind: KindVulnAsset, Key: hashKey(KindVulnAsset, f.AssetID, cve), Locator: loc}}
+		return out
 	case "secret":
 		h := strings.TrimSpace(f.SecretHMAC)
 		if h == "" {
@@ -186,6 +198,40 @@ func Keys(f Finding) []Key {
 		return []Key{{Kind: KindSecretValue, Key: hashKey(KindSecretValue, h)}}
 	}
 	return nil
+}
+
+// vulnAssetKeys is the vuln_asset key of a network, dast or sca finding with
+// a CVE and a locator.
+func vulnAssetKeys(f Finding) []Key {
+	cve := strings.ToUpper(strings.TrimSpace(f.CVE))
+	loc := strings.TrimSpace(f.Locator)
+	if f.AssetID == "" || !cveID.MatchString(cve) || loc == "" {
+		return nil
+	}
+	return []Key{{Kind: KindVulnAsset, Key: hashKey(KindVulnAsset, f.AssetID, cve), Locator: loc}}
+}
+
+// dastPointKey is the scheme-free key of a DAST finding whose URL template
+// is http or https on the scheme's default port: the same check (rule and
+// method) at the same host, path and parameter names. Its locator is the
+// scheme, so the http and https views of one page share the key and differ
+// in the locator. A URL with an explicit port has no such key: another port
+// is another service, not the other scheme of the same page.
+func dastPointKey(f Finding) (Key, bool) {
+	rule := strings.TrimSpace(f.Rule)
+	if f.AssetID == "" || rule == "" {
+		return Key{}, false
+	}
+	u, err := url.Parse(strings.TrimSpace(f.URL))
+	if err != nil || u.Host == "" || u.Port() != "" {
+		return Key{}, false
+	}
+	scheme := strings.ToLower(u.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return Key{}, false
+	}
+	point := strings.ToLower(u.Host) + u.EscapedPath()
+	return Key{Kind: KindDASTPoint, Key: hashKey(KindDASTPoint, f.AssetID, rule, strings.ToUpper(strings.TrimSpace(f.Method)), point, strings.TrimSpace(f.Params)), Locator: scheme}, true
 }
 
 // Holder is a stored finding that holds a key.
@@ -256,7 +302,9 @@ type edge struct {
 //
 //   - sast_overlap: two SAST findings sharing a key (same asset, path and CWE)
 //     with different rules and overlapping line ranges;
-//   - secret_value: two secret findings sharing the keyed hash of the value.
+//   - secret_value: two secret findings sharing the keyed hash of the value;
+//   - vuln_asset: the same CVE on the same asset through another technique;
+//   - dast_scheme: the same DAST check at the same page over http and https.
 //
 // A group is a star: a finding joins the group of the finding it matches
 // (the existing primary stays), or two ungrouped findings form one with the
@@ -360,6 +408,13 @@ func ruleOf(kind string, a, b Holder) string {
 		// second view of the issue.
 		if LocatorsAgree(a.Locator, b.Locator) && (a.Kind != b.Kind || a.Locator != b.Locator) {
 			return RuleVulnAsset
+		}
+	case KindDASTPoint:
+		// The same check at the same page over http and over https. Each
+		// scheme is its own finding (another origin, port and transport);
+		// two holders with the same scheme hold one identity, never a pair.
+		if a.Locator != "" && b.Locator != "" && a.Locator != b.Locator {
+			return RuleDASTScheme
 		}
 	}
 	return ""

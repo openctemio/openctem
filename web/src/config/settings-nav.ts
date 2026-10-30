@@ -480,6 +480,13 @@ export const settingsNav: SettingsNavGroup[] = [
         permission: Permission.FindingsRead,
         module: 'findings',
         keywords: ['sub-status', 'status', 'transition', 'move', 'lifecycle', 'publish'],
+        anchors: [
+          {
+            id: 'closing-mode',
+            title: 'Closing findings',
+            keywords: ['auto close', 'auto-resolve', 'ready to close', 'review', 'critical'],
+          },
+        ],
       },
       {
         id: 'finding-approvals',
