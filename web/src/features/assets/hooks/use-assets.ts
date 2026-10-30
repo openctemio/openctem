@@ -1,9 +1,10 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useCallback, useMemo, useRef } from 'react'
 import useSWR from 'swr'
 import { get, post, put, del } from '@/lib/api/client'
 import { endpoints } from '@/lib/api/endpoints'
+import { primeView, type ViewResponse } from '@/lib/api/view-prime'
 import { useTenant } from '@/context/tenant-provider'
 import { usePermissions, Permission } from '@/lib/permissions'
 import type { RiskRequest } from '../lib/risk-impact'
@@ -632,6 +633,54 @@ export function useAsset(assetId: string | null) {
     }
   )
 
+  return {
+    asset: data ? transformAsset(data) : null,
+    isLoading: shouldFetch ? isLoading : false,
+    error,
+    mutate,
+  }
+}
+
+/** The asset page's view: the asset and its panels' reads in one response. */
+export function assetViewEndpoint(assetId: string): string {
+  return `${endpoints.assets.get(assetId)}/view`
+}
+
+/**
+ * The asset page's asset (research/335). The first load of each asset the
+ * page shows asks GET /assets/{id}/view, which answers the asset and the
+ * reads of the page's panels in one response, and primes those answers
+ * (src/lib/api/view-prime.ts): the asset and every panel then read their own
+ * URL as before and get the view's answer without another request. Later
+ * reads (a refresh after a save) go to their endpoints. When the view fails,
+ * the page loads as it did before it.
+ */
+export function useAssetPage(assetId: string | null) {
+  const { currentTenant } = useTenant()
+  const { can } = usePermissions()
+  const shouldFetch = assetId && currentTenant && can(Permission.AssetsRead)
+  // Assets this page already loaded through the view.
+  const viewed = useRef(new Set<string>())
+  const fetcher = useCallback(
+    async (url: string): Promise<BackendAsset> => {
+      if (assetId && !viewed.current.has(assetId)) {
+        viewed.current.add(assetId)
+        try {
+          primeView(await get<ViewResponse>(assetViewEndpoint(assetId)))
+        } catch {
+          // The asset and its panels are read one by one, as without a view.
+        }
+      }
+      return get<BackendAsset>(url)
+    },
+    [assetId]
+  )
+  const { data, error, isLoading, mutate } = useSWR<BackendAsset>(
+    // The endpoint URL, so a mutate() of the asset URL reaches this cache.
+    shouldFetch ? endpoints.assets.get(assetId!) : null,
+    fetcher,
+    { revalidateOnFocus: false }
+  )
   return {
     asset: data ? transformAsset(data) : null,
     isLoading: shouldFetch ? isLoading : false,
