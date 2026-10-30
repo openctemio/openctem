@@ -107,6 +107,7 @@
   "errors.auth.OAUTH_NO_EMAIL": "The provider did not share your email address. Allow it there, then try again.",
   "errors.auth.OAUTH_PROVIDER_DISABLED": "This social sign-in provider is not available.",
   "errors.auth.OAUTH_USERINFO_FAILED": "The provider did not return your profile. Try again.",
+  "errors.auth.OAUTH_USE_ORG_SSO": "This account signs in through your organization. Use your organization's sign-in.",
   "errors.auth.ORGANIZATION_ACCESS_DENIED": "You do not have access to this organization.",
   "errors.auth.ORGANIZATION_CREATION_DISABLED": "Organizations are created by the application administrator.",
   "errors.auth.ORGANIZATION_REQUIRED": "Choose an organization to continue.",
