@@ -28,4 +28,24 @@ var (
 		},
 		[]string{"kind", "capability"},
 	)
+	// AssetCoveragePlatformFailuresTotal counts coverage pairs settled as
+	// failed on the platform side (the check did not run: no task carried
+	// the target, the run stalled, the task, tool, sensor network or proxy
+	// failed), by capability and outcome. Never a target's failure.
+	AssetCoveragePlatformFailuresTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "openctem_asset_coverage_platform_failures_total",
+			Help: "Coverage pairs settled as failed on the platform or sensor side (the check did not run), by capability and outcome",
+		},
+		[]string{"capability", "outcome"},
+	)
+	// AssetCoveragePlatformFailingPairs is the number of pairs with three
+	// or more platform-side failures in a row, all organizations.
+	AssetCoveragePlatformFailingPairs = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "openctem_asset_coverage_platform_failing_pairs",
+			Help: "Coverage pairs failing 3 or more times in a row on the platform or sensor side, all organizations",
+		},
+		[]string{"capability", "outcome"},
+	)
 )
