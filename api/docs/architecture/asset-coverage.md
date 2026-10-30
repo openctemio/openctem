@@ -67,12 +67,38 @@ Each pass, per tenant, after reconciling:
    widening wait, goes on only while the same zone or sensor sees the target
    silent again (or either key is unknown); when another zone or sensor
    observes it, the streak starts over at 1, so a different vantage gets the
-   short recheck. A success, or a sensor-side failure, clears the key. A
+   short recheck. A success or another observation of the target clears
+   the key. A
    paused target-side pair never counts as "keeps failing" and is not a plain
    gap: it counts as **unreachable** and raises its own alert (below), so
    the same pairs never raise two alerts. The asset's coverage entry names
    the observer (`unreached_from`) only when it is the organization's own
    scan zone or sensor; a platform sensor is never named.
+
+   **Platform-side failures.** A failure counts against the target only
+   when it is an observation of the target (`unreachable`, `timeout`,
+   `edge_blocked`, `edge_challenged`, `rate_limited`). Every other outcome
+   is **platform side**: the check did not run, so it says nothing about the
+   target (`not_dispatched`, `stalled`, `failed` (the task failed, or every
+   target of it failed the same way), `unfinished`, `tool_error`,
+   `egress_refused`, `sensor_network_fault`). The rule fails closed: an
+   outcome not in the observation list is platform side
+   (`coverage.IsPlatformSide`). A platform-side failure grows only
+   `platform_fail_streak` (its own back-off: 1 h doubled per failure, at
+   most the cadence and a day) and keeps `fail_streak`, `unreached_from`
+   and the target-side streak as they were; any observation of the target
+   resets `platform_fail_streak`. So `fail_streak` counts only observations
+   of the target, a platform failure between two target-side observations
+   from the same observer neither breaks nor grows that streak, and the
+   organization's `failing` count reads only pairs whose last outcome is an
+   observation. The asset's coverage entry marks such a pair
+   `platform_side`, and the asset page shows it as **Not checked** ("the
+   scan could not run on the scanner side, so this says nothing about the
+   asset"), never as failed. Platform-side failures are the operator's
+   signal instead (see Gap detection). The migration that added the column
+   moved the streak of pairs whose last outcome was a known platform-side
+   failure into it (`dns.*` and the connector capability keep their own
+   rules).
 2. **Plan**, when the organization has automatic coverage on (Scoping >
    Settings, `auto_coverage`; default on, except while the scan approval
    mode in force is Strict, until the organization turns it on): for
@@ -317,7 +343,7 @@ and without the expected output. It raises:
 |---|---|
 | `gap` | any gap |
 | `output_drop` | no expected output over at least 20 settled inputs in 24 h (a broken or blocked tool) |
-| `failing` | a pair failed 3 or more times in a row (not for platform checks `dns.*`: a single asset's answer is shown on that asset) |
+| `failing` | a pair's last 3 or more observations of the target failed and its last outcome is one (never a platform-side failure; not for platform checks `dns.*`: a single asset's answer is shown on that asset) |
 | `readiness` | pairs are paused for a readiness reason (the reason is part of the key) |
 | `unreachable` | pairs are paused because their target did not answer from the organization's sensors (counts and the capability only, never the targets) |
 
@@ -343,6 +369,22 @@ repeat it, and a send that fails is logged, not retried every pass. The
 operator sees fleet-wide aggregates with no tenant label:
 `openctem_asset_coverage_gap_pairs{capability}` and
 `openctem_asset_coverage_alerts_total{kind,capability}`.
+
+**Platform-side failures** reach the operator, never the organization's
+`failing` alert: every settled one is counted in
+`openctem_asset_coverage_platform_failures_total{capability,outcome}`, and
+at most every 15 minutes the loop reads the fleet-wide count of pairs with 3
+or more platform-side failures in a row
+(`openctem_asset_coverage_platform_failing_pairs{capability,outcome}`; an
+outcome outside the known list is labelled `other`). A capability whose
+count appears, or gets clearly worse by the same rule as the organization
+alerts (doubles and grows by 5, at most once a day), goes to the platform
+administrators' alert channel (e-mail to active platform administrators and
+the console's alert webhook) with a warning log line
+(`alert=coverage_platform_failures`). The message carries the capability,
+counts per outcome and the number of organizations, never a tenant, asset
+or target. This aggregate is the one read across organizations, on purpose
+and counts only; the state is held by the loop's single replica.
 
 ## Other writers
 

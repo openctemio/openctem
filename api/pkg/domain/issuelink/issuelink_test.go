@@ -349,3 +349,109 @@ func TestBasisOfVulnAsset(t *testing.T) {
 		t.Errorf("basis = %s", got)
 	}
 }
+
+func dast(id, rule, method, rawURL, params string) Finding {
+	return Finding{ID: id, AssetID: "asset-1", Kind: "dast", Rule: rule, Method: method, URL: rawURL, Params: params}
+}
+
+func dastPoint(t *testing.T, f Finding) (Key, bool) {
+	t.Helper()
+	for _, k := range Keys(f) {
+		if k.Kind == KindDASTPoint {
+			return k, true
+		}
+	}
+	return Key{}, false
+}
+
+func TestKeys_DASTPointIsSchemeFreeOnDefaultPortsOnly(t *testing.T) {
+	h, ok1 := dastPoint(t, dast("a", "wp-user-enum", "GET", "http://shop.example.com/wp-json/wp/v2/users", ""))
+	s, ok2 := dastPoint(t, dast("b", "wp-user-enum", "GET", "https://shop.example.com/wp-json/wp/v2/users", ""))
+	if !ok1 || !ok2 || h.Key != s.Key || h.Locator != "http" || s.Locator != "https" {
+		t.Fatalf("the http and https views of one page share the key: %+v %+v", h, s)
+	}
+	for name, f := range map[string]Finding{
+		"explicit port":     dast("c", "wp-user-enum", "GET", "https://shop.example.com:8443/wp-json/wp/v2/users", ""),
+		"no rule":           dast("c", "", "GET", "https://shop.example.com/x", ""),
+		"no asset":          {ID: "c", Kind: "dast", Rule: "r", Method: "GET", URL: "https://shop.example.com/x"},
+		"not a web URL":     dast("c", "r", "GET", "ftp://shop.example.com/x", ""),
+		"no URL":            dast("c", "r", "GET", "", ""),
+		"host:port, no URL": dast("c", "r", "GET", "shop.example.com:443", ""),
+	} {
+		if k, ok := dastPoint(t, f); ok {
+			t.Errorf("%s: want no dast_point key, got %+v", name, k)
+		}
+	}
+	base := dast("x", "r", "GET", "https://shop.example.com/p", "id")
+	bk, _ := dastPoint(t, base)
+	for name, f := range map[string]Finding{
+		"other asset":  {ID: "x", AssetID: "asset-2", Kind: "dast", Rule: "r", Method: "GET", URL: "https://shop.example.com/p", Params: "id"},
+		"other rule":   dast("x", "r2", "GET", "https://shop.example.com/p", "id"),
+		"other method": dast("x", "r", "POST", "https://shop.example.com/p", "id"),
+		"other host":   dast("x", "r", "GET", "https://www.example.com/p", "id"),
+		"other path":   dast("x", "r", "GET", "https://shop.example.com/q", "id"),
+		"other params": dast("x", "r", "GET", "https://shop.example.com/p", "id,q"),
+	} {
+		if k, _ := dastPoint(t, f); k.Key == bk.Key {
+			t.Errorf("%s must be part of the dast_point key", name)
+		}
+	}
+}
+
+func TestKeys_CVETemplateHasBothKeys(t *testing.T) {
+	f := dast("a", "CVE-2023-44487", "GET", "https://shop.example.com/", "")
+	f.CVE, f.Locator = "CVE-2023-44487", "443/tcp"
+	kinds := map[string]bool{}
+	for _, k := range Keys(f) {
+		kinds[k.Kind] = true
+	}
+	if !kinds[KindVulnAsset] || !kinds[KindDASTPoint] {
+		t.Fatalf("a CVE template finding holds a vuln_asset and a dast_point key, got %v", kinds)
+	}
+}
+
+func TestPlan_DASTSchemeTwinsLink(t *testing.T) {
+	https := dast("a", "wordpress-click2shell", "GET", "https://shop.example.com", "")
+	http := dast("b", "wordpress-click2shell", "GET", "http://shop.example.com", "")
+	p := plan([]Finding{http}, []Finding{https}, nil)
+	if len(p.Make) != 1 || p.Make[0].PrimaryID != "a" || p.Make[0].MemberID != "b" || p.Make[0].Rule != RuleDASTScheme {
+		t.Fatalf("want a<-b dast_scheme, got %+v", p.Make)
+	}
+}
+
+func TestPlan_DASTSchemeRefusals(t *testing.T) {
+	cases := map[string][2]Finding{
+		"same scheme (one identity, never a pair)": {
+			dast("a", "r", "GET", "https://shop.example.com/p", ""), dast("b", "r", "GET", "https://shop.example.com/p", ""),
+		},
+		"different template": {
+			dast("a", "r1", "GET", "https://shop.example.com/p", ""), dast("b", "r2", "GET", "http://shop.example.com/p", ""),
+		},
+		"different path": {
+			dast("a", "r", "GET", "https://shop.example.com/p", ""), dast("b", "r", "GET", "http://shop.example.com/q", ""),
+		},
+		"non-default port": {
+			dast("a", "r", "GET", "https://shop.example.com:8443/p", ""), dast("b", "r", "GET", "http://shop.example.com:8443/p", ""),
+		},
+	}
+	for name, c := range cases {
+		if p := plan([]Finding{c[1]}, []Finding{c[0]}, nil); len(p.Make) != 0 {
+			t.Errorf("%s: linked %+v", name, p.Make)
+		}
+	}
+	a, b := dast("a", "r", "GET", "https://shop.example.com/p", ""), dast("b", "r", "GET", "http://shop.example.com/p", "")
+	b.AssetID = "asset-2"
+	if p := plan([]Finding{b}, []Finding{a}, nil); len(p.Make) != 0 {
+		t.Errorf("twins on two assets must not link: %+v", p.Make)
+	}
+	b.AssetID = "asset-1"
+	if p := plan([]Finding{b}, []Finding{a}, []Link{{PrimaryID: "a", MemberID: "b", Rule: RuleDASTScheme, State: StateUnlinked}}); len(p.Make) != 0 {
+		t.Errorf("a pair a person unlinked is never linked again: %+v", p.Make)
+	}
+}
+
+func TestBasisOfDASTScheme(t *testing.T) {
+	if got := strings.Join(Basis(RuleDASTScheme), ","); got != "asset,rule,method,url,params" {
+		t.Fatalf("basis = %s", got)
+	}
+}

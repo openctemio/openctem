@@ -1263,7 +1263,9 @@ the report's tool is one the sensor reported installed (`422
 tool-not-permitted`; a sensor that reported no tool may report no result,
 reserved names such as `pentest` never), at most 8 open reports per sensor
 (`429 too-many-open-reports`), the tenant's queue depth
-(`INGEST_MAX_PENDING_PER_TENANT`, `429 queue-full`), and at most 100,000
+(`INGEST_MAX_PENDING_PER_TENANT`, `429 queue-full` with a jittered
+`Retry-After` from the tenant's drain rate; further segments of a report
+already admitted pass up to twice the limit), and at most 100,000
 assets and findings per report, reserved in one conditional `UPDATE` so
 parallel segments cannot overshoot (`413 report-too-large`). The commit
 must list exactly the received segments with their digests
@@ -1345,8 +1347,10 @@ Each segment runs through the v1 pipeline with the v2 options:
   guard applies. `INGEST_COVERAGE_AUTO_RESOLVE` = `dry_run` (default: log,
   `findings_coverage_auto_resolve_total{mode,result}` and an
   `ingest.coverage_auto_resolve_dry_run` audit entry listing the findings, no
-  state change), `enforce` (closes them as `auto_fixed`, `fixed` / `covered_scan`,
-  audited as `ingest.coverage_auto_resolved`) or `off`.
+  state change), `enforce` or its alias `tenant` (applies each organization's
+  [closing mode](finding-verification-plan.md#closing-mode): closes the findings
+  the tier rule allows as `auto_fixed`, `fixed` / `covered_scan`, audited as
+  `ingest.coverage_auto_resolved`, and records the rest as proposals) or `off`.
 - An uncommitted report expires 60 minutes after its last segment; its
   upserts stay and it never resolves anything. A segment's outcome is stored
   under its number, so a retried segment is never counted twice. Payloads
@@ -1376,7 +1380,7 @@ v2 responses carry `OpenCTEM-Protocol: 2`.
 | `SENSOR_PROTOCOL_V2_RESULTS` | `true` | Mount `/api/v2/sensor`, process v2 jobs, advertise on the heartbeat. `false` unmounts it; v2 jobs already queued wait until it is on again. |
 | `SENSOR_V2_BLINDING_RATIO` | `0.5` | Blinding guard ratio. |
 | `SENSOR_V2_BLINDING_MIN_FINDINGS` | `100` | Blinding guard floor. |
-| `INGEST_COVERAGE_AUTO_RESOLVE` | `dry_run` | Coverage-scoped auto-resolve of non-repository findings: `off`, `dry_run` or `enforce`. Keep `dry_run`: enforcement is postponed until the closure evaluator ships (decision D-22); this path cannot see template, port or authentication coverage. |
+| `INGEST_COVERAGE_AUTO_RESOLVE` | `dry_run` | Platform ceiling of coverage-scoped auto-resolve of non-repository findings: `off`, `dry_run` or `enforce` (alias `tenant`: each organization's closing mode decides). Keep `dry_run`: enforcement is postponed until the closure evaluator ships (decision D-22); this path cannot see template, port or authentication coverage. |
 | `INGEST_MAX_PENDING_PER_TENANT` | `100` | Queue depth per tenant. |
 
 Migrations 000237 (`ingest_reports`, v2 columns on `ingest_jobs`) and 000239

@@ -382,7 +382,11 @@ func (s *Service) CommitV2Report(ctx context.Context, prov Provenance, header V2
 // coveredByCommand keeps the assets among ids that the bound command's
 // targets cover (RFC-040 §5.3): the scope of a bound report's auto-resolve.
 func (s *Service) coveredByCommand(ctx context.Context, tenantID shared.ID, commandID *shared.ID, ids []shared.ID) []shared.ID {
-	scope := newAlterScope(s.bindingFromCommandID(ctx, tenantID, commandID))
+	return s.coveredByScope(ctx, tenantID, newAlterScope(s.bindingFromCommandID(ctx, tenantID, commandID)), ids)
+}
+
+// coveredByScope returns the ids of the existing assets scope may alter.
+func (s *Service) coveredByScope(ctx context.Context, tenantID shared.ID, scope *alterScope, ids []shared.ID) []shared.ID {
 	if s.assetRepo == nil {
 		return nil
 	}

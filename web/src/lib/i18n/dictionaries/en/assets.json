@@ -384,6 +384,7 @@
   "assets.facts.notCollectedTitle": "Not collected",
   "assets.facts.port": "Port",
   "assets.facts.ports": "ports",
+  "assets.facts.providerPorts": "Provider ports",
   "assets.facts.technologies": "technologies",
   "assets.facts.title": "Service facts",
   "assets.filters.add": "Add filter",

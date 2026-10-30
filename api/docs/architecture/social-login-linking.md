@@ -20,8 +20,9 @@ signs in another way (a password account, or an account of another provider)
 and whose provider identity is not linked to it changes nothing on that
 account and signs nobody in. It is refused with `409 OAUTH_ACCOUNT_EXISTS`.
 Linking always needs the person to prove the account too: from Account >
-Security, or by signing in to it right away and confirming (below). Automatic
-linking is off unless the platform turns it on.
+Security, or by signing in to it right away and confirming (below). There is
+no automatic linking and no setting that turns it on: the provider's word about
+an address is not proof that the person owns the account.
 
 ### Confirming the link after signing in
 
@@ -163,30 +164,14 @@ identities are managed by the organization (`409 IDENTITY_MANAGED_BY_ORGANIZATIO
 Each link and unlink writes `auth.identity_linked` / `auth.identity_unlinked`
 (security, high) and e-mails the account's address.
 
-## Automatic linking (off by default)
+## No automatic linking
 
-The platform can let a social sign-in link itself to an existing password
-account with the same address, instead of answering `OAUTH_ACCOUNT_EXISTS`.
-It is off unless an operator turns it on in Console > Settings > Sign-up,
-"Link Google and Microsoft sign-in to existing accounts" (`social_auto_link`;
-absent or unreadable is off; the change is audited and the other
-administrators are told). Even then it applies only when all hold:
-
-| Condition | Why |
-|---|---|
-| The operator turned it on | Mailbox control alone then signs into the account (subject to its second factor); an operator whose accounts were ever created without proof of the address, or whose domains may change hands, keeps it off |
-| The provider is authoritative for the address: Google on `gmail.com`/`googlemail.com`, or a Workspace account whose `hd` claim equals the address domain; Microsoft with the domain-owner-verified claim; never GitHub | The provider must run the mailbox, not merely have seen the address once ([Social sign-in and the e-mail it can prove](user-onboarding.md#social-sign-in-and-the-e-mail-it-can-prove)) |
-| The provider marked the address verified (Google `email_verified`, Microsoft `xms_edov`) | Required by the sign-in itself |
-| The account has a password and its address is verified | Mitigates pre-hijacking, below; an account made by another provider is never linked automatically |
-| The account is active and has no other identity of that provider | A second subject from one issuer is a different person |
-
-On an automatic link every session of the account is revoked, a pending
-password reset link is cancelled, the link is audited (`how=automatic`) and the
-account's mailbox is told.
-
-A stored `social_auto_link` from before the default changed is dropped by the
-migration `signup_policy_social_auto_link_off` (the console sent the old
-default back with every save, so it did not show a choice).
+A social sign-in never links itself to an existing account, whichever provider
+vouches for the address. The sign-up policy has no value for it (a
+`social_auto_link` stored by an earlier build is dropped by the migration
+`signup_policy_drop_social_auto_link`), and the audit value `how=automatic`
+is no longer written; older `auth.identity_linked` rows that carry it stay
+readable.
 
 ## The provider changes its address
 
@@ -200,8 +185,7 @@ never changes its address.
 
 ## Second factor after the provider
 
-A password account signed into through a linked provider (explicit or
-automatic) takes exactly the second step its password sign-in takes: with an
+A password account signed into through a linked provider  takes exactly the second step its password sign-in takes: with an
 authenticator on, the callback answers the same challenge as the password
 sign-in (`mfa_required`, `mfa_token`) and no session; with an organization that
 requires two-factor and no factor yet, the enrollment challenge. The web keeps
@@ -231,9 +215,9 @@ Organization policies apply to the session exactly as before:
 
 | Threat | Mitigation |
 |---|---|
-| Account takeover with a provider account carrying the victim's address the provider does not own (consumer Google account on a company address, GitHub address) | Automatic linking needs an authoritative provider; GitHub never links automatically; otherwise `OAUTH_ACCOUNT_EXISTS` |
+| Account takeover with a provider account carrying the victim's address the provider does not own (consumer Google account on a company address, GitHub address) | Nothing links by itself: the sign-in is refused with `OAUTH_ACCOUNT_EXISTS` and a link needs a typed proof |
 | Unverified provider address | Google and Microsoft sign-in already refuse an unverified address; GitHub reads only its primary verified address |
-| Pre-hijacking: an attacker registers the victim's Gmail address with a password before the victim arrives through Google | Automatic linking needs the account's address verified (the attacker cannot click the link sent to the victim's mailbox); on a link every session is revoked and a pending reset link cancelled, and the mailbox (the victim) is told. Residual: an address marked verified without mailbox proof (an administrator-provisioned account with a temporary password, or a deployment that ran without mail delivery); the administrator turns automatic linking off for such deployments |
+| Pre-hijacking: an attacker registers the victim's Gmail address with a password before the victim arrives through Google | Nothing links by itself: a link needs the account's own proof (password and second factor), which the attacker does not have for the victim's account; on a confirmed link every other session is revoked and the mailbox is told |
 | Second-factor bypass through a provider | The linked password account gets the same second step as its password sign-in |
 | Link CSRF (an attacker's provider account linked to the victim's session) | The link start needs a proof typed for it and the CSRF token; the state is signed, single use, expires, and bound to the account and session that started it; the callback also checks the state cookie of the browser |
 | Cross-browser completion (the attacker's code and state, or the victim's leaked callback URL, finished in another browser) | The PKCE verifier is released only with the browser-binding secret held in an HttpOnly cookie of the browser that started the link; a wrong or missing secret spends the record, so the starting browser cannot be raced either |

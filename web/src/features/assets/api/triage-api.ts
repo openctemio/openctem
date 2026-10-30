@@ -20,6 +20,12 @@ export interface ExclusionPreviewItem extends ExclusionItem {
   open_findings?: number
   /** Limited data access and not an exact hostname or IP: a closing rule needs full data access. */
   closing_needs_full_access?: boolean
+  /** Address, range or CIDR: names resolving to a dedicated address inside it that it also stops scanning. */
+  resolving_names?: number
+  resolving_sample?: string[]
+  /** A provider's shared front end: only the address is excluded and names served through it keep being scanned. */
+  edge?: { class: string; provider: string; address?: string }
+  names_unaffected?: boolean
   /** Set when the item would be refused. */
   code?: string
   message?: string
