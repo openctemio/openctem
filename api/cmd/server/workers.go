@@ -1288,6 +1288,10 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			// Gaps, output drops and repeated failures alert the tenant's
 			// administrators (in-app and integrations) at most once a day.
 			svc.AssetCoverage.EnableAlerts(repos.AssetCoverage, repos.MemberLifecycle, svc.Notification, svc.Outbox)
+			// Platform-side failures (the check did not run) are the
+			// operator's signal: a metric and the platform administrators'
+			// alert channel, never the organization's "keeps failing" alert.
+			svc.AssetCoverage.EnableOperatorAlerts(repos.AssetCoverage, newAdminNotifier(cfg, repos, svc, log))
 		}
 		w.ControllerManager.Register(controller.NewAssetCoverageController(svc.AssetCoverage, cfg.Worker.AssetCoverageInterval))
 	}

@@ -110,6 +110,9 @@ type Row struct {
 	LastTool      string
 	LastRunID     *shared.ID
 	FailStreak    int
+	// PlatformFailStreak counts the pair's platform-side failures in a row
+	// (IsPlatformSide); FailStreak never counts them.
+	PlatformFailStreak int
 	// UnreachedFromName is the name of the organization's scan zone or
 	// sensor recorded as the observer of a target-side outcome; filled by
 	// the asset read only, "" for a platform sensor or none.

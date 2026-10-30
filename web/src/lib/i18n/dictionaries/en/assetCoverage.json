@@ -19,6 +19,7 @@
   "assetCoverage.noAnswer": "the name has no DNS answer; checked again later",
   "assetCoverage.noOutput": "found nothing",
   "assetCoverage.none": "Nothing is scanned automatically for this kind of asset.",
+  "assetCoverage.platformSide": "the scan could not run on the scanner side, so this says nothing about the asset; tried again later",
   "assetCoverage.reason.content_missing": "the platform has no wordlist pack for its tool yet; an instance administrator imports it",
   "assetCoverage.reason.credentials_missing": "an API key it needs is not configured",
   "assetCoverage.reason.excluded": "excluded from scope",
@@ -51,6 +52,7 @@
   "assetCoverage.state.due": "Due",
   "assetCoverage.state.failed": "Failed",
   "assetCoverage.state.not_applicable": "Not applicable",
+  "assetCoverage.state.not_checked": "Not checked",
   "assetCoverage.state.paused": "Paused",
   "assetCoverage.state.queued": "Running",
   "assetCoverage.title": "Coverage"

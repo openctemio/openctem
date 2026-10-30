@@ -66,7 +66,9 @@ func TestAssetCoverage_GapAlerts(t *testing.T) {
 	}
 
 	// 20 open web ports whose probe ran today and found no origin: a broken
-	// probe. One address whose port scan failed 3 times. One address never
+	// probe. One address whose port scan failed 3 times on an observation of
+	// the target (an edge answered), and one whose port scan failed 5 times on
+	// the platform side (never the organization's alert). One address never
 	// port-scanned since its row was planned 20 days ago.
 	for i := 0; i < 20; i++ {
 		id := g.asset(a, fmt.Sprintf("198.51.100.%d:443:tcp", i+1), "service", "open_port", `{"port": 443}`)
@@ -74,8 +76,11 @@ func TestAssetCoverage_GapAlerts(t *testing.T) {
 			VALUES ($1, $2, 'probe.http', 'covered', 'no_output', now() - interval '1 hour', now() - interval '1 hour')`, a.tenant, id)
 	}
 	sub := g.asset(a, "198.51.100.150", "ip_address", "", "")
-	g.exec(`INSERT INTO asset_coverage (tenant_id, asset_id, capability, state, fail_streak, last_success_at)
-		VALUES ($1, $2, 'scan.ports', 'failed', 3, now())`, a.tenant, sub)
+	g.exec(`INSERT INTO asset_coverage (tenant_id, asset_id, capability, state, fail_streak, last_outcome, last_success_at)
+		VALUES ($1, $2, 'scan.ports', 'failed', 3, 'edge_blocked', now())`, a.tenant, sub)
+	plat := g.asset(a, "198.51.100.151", "ip_address", "", "")
+	g.exec(`INSERT INTO asset_coverage (tenant_id, asset_id, capability, state, platform_fail_streak, last_outcome, last_success_at)
+		VALUES ($1, $2, 'scan.ports', 'failed', 5, 'not_dispatched', now())`, a.tenant, plat)
 	ip := g.asset(a, "198.51.100.200", "ip_address", "", "")
 	g.exec(`INSERT INTO asset_coverage (tenant_id, asset_id, capability, state, created_at)
 		VALUES ($1, $2, 'lookup.asn', 'due', now() - interval '20 days')`, a.tenant, ip)
@@ -105,6 +110,9 @@ func TestAssetCoverage_GapAlerts(t *testing.T) {
 		conds, _ := e.Metadata["conditions"].([]map[string]any)
 		for _, c := range conds {
 			kinds[fmt.Sprint(c["capability"], "/", c["kind"])] = true
+			if c["capability"] == "scan.ports" && c["kind"] == "failing" && fmt.Sprint(c["count"]) != "1" {
+				t.Errorf("scan.ports failing count %v, want 1 (the platform-side pair is not the target's)", c["count"])
+			}
 		}
 	}
 	if len(rec.events) != 1 {

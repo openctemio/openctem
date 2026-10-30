@@ -10,12 +10,18 @@ export type AssetCoverage =
   components['schemas']['internal_infra_http_handler.AssetCoverageResponse']
 export type CoverageEntry = NonNullable<AssetCoverage['entries']>[number]
 
-/** Badge variant per ledger state. */
+/**
+ * Badge variant per ledger state. A pair that failed on the platform side
+ * (the scan did not run) is not the asset failing: it reads as not checked.
+ */
 export function coverageBadge(
   state: string | undefined,
-  gap: boolean | undefined
+  gap: boolean | undefined,
+  platformSide?: boolean
 ): 'default' | 'secondary' | 'destructive' | 'outline' {
-  if (gap || state === 'failed') return 'destructive'
+  if (gap) return 'destructive'
+  if (state === 'failed' && platformSide) return 'secondary'
+  if (state === 'failed') return 'destructive'
   switch (state) {
     case 'covered':
       return 'default'
