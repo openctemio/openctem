@@ -93,7 +93,7 @@ func (s *Service) StartCoverage(ctx context.Context, in CoverageInput) (*Coverag
 		// Only this function's own trigger below reads the marker.
 		ctx = withoutZoneRouting(ctx)
 	}
-	gated, err := s.ResolveDispatchTargets(ctx, DispatchTargetsInput{
+	gateIn := DispatchTargetsInput{
 		TenantID: in.TenantID,
 		Targets:  targets,
 		// The policy's explicit system authority: scope entries and the
@@ -113,7 +113,8 @@ func (s *Service) StartCoverage(ctx context.Context, in CoverageInput) (*Coverag
 		// (a lookup-only capability such as resolve.dns runs on it).
 		Tool:       tool,
 		Capability: in.Capability,
-	})
+	}
+	gated, err := s.ResolveDispatchTargets(ctx, gateIn)
 	if err != nil {
 		return nil, fmt.Errorf("coverage targets not checked, nothing dispatched: %w", err)
 	}
@@ -133,6 +134,12 @@ func (s *Service) StartCoverage(ctx context.Context, in CoverageInput) (*Coverag
 	if len(res.Kept) == 0 {
 		return res, nil
 	}
+	// The HTTP probe of a kept name also tries "<name>:<port>" for the other
+	// open ports of its addresses (coverage_named_ports.go). They pass the
+	// same gate and only the allowed ones run. They carry no coverage pair
+	// of their own, so the planner settles nothing on them. Any failure
+	// leaves the batch as it was.
+	res.Kept = s.withNamedPorts(ctx, in, gateIn, res.Kept)
 
 	sc, err := s.coverageScan(ctx, in.TenantID, in.Capability)
 	if err != nil {
