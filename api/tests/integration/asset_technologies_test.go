@@ -225,3 +225,34 @@ func TestAssetTechnologies_StoredCapPerAsset(t *testing.T) {
 		t.Fatalf("stored %d technologies, want 1..%d", n, assettech.MaxPerAsset)
 	}
 }
+
+// A probe's CPE is kept as the technology's vendor and CPE; a later report
+// without one keeps them; another tenant cannot set them.
+func TestAssetTechnologies_VendorAndCPE(t *testing.T) {
+	g := newTechRig(t)
+	const name = "vendor.tech.example.com"
+	send := func(at time.Time, cpe string) {
+		t.Helper()
+		g.send(g.tn, "httpx", at, "", ctis.Asset{ID: "d", Type: ctis.AssetTypeDomain, Value: name,
+			Technologies: []ctis.Technology{{Name: "nginx", Version: "1.18.0", CPE: cpe}}})
+	}
+	now := time.Now().UTC()
+	send(now.Add(-20*time.Minute), "cpe:2.3:a:f5:nginx:1.18.0:*:*:*:*:*:*:*")
+	got := g.technologies(g.tn, name)["nginx"]
+	if got.Vendor != "f5" || got.CPE != "cpe:2.3:a:f5:nginx:1.18.0:*:*:*:*:*:*:*" {
+		t.Fatalf("nginx = %+v", got)
+	}
+	send(now.Add(-10*time.Minute), "")
+	if got := g.technologies(g.tn, name)["nginx"]; got.Vendor != "f5" || got.CPE == "" {
+		t.Fatalf("a report without a CPE dropped it: %+v", got)
+	}
+	other := g.r.newTenant("httpx")
+	tech, _ := assettech.Observation(g.assetID(g.tn, name), "nginx", "", nil, 0, "evil", time.Now())
+	repo := postgres.NewAssetTechnologyRepository(&postgres.DB{DB: g.r.db})
+	if err := repo.Enrich(context.Background(), other.tenant, []assettech.Technology{tech.WithCPE("cpe:2.3:a:evil:nginx:*:*:*:*:*:*:*:*")}); err != nil {
+		t.Fatal(err)
+	}
+	if got := g.technologies(g.tn, name)["nginx"]; got.Vendor != "f5" {
+		t.Fatalf("another tenant changed the vendor: %+v", got)
+	}
+}

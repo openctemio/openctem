@@ -67,7 +67,7 @@ func (s *Service) recordTechnologies(ctx context.Context, tenantID shared.ID, sc
 }
 
 // technologyObservations reads the technologies a CTIS asset states: the
-// typed list (with the tool's categories and confidence) and the loose
+// typed list (with the tool's categories, confidence and CPE) and the loose
 // report properties.technologies strings ("Name:version"), at most
 // assettech.MaxPerAsset, each sanitized and classified.
 func technologyObservations(id shared.ID, a *ctis.Asset, source string, seen time.Time) []assettech.Technology {
@@ -79,7 +79,8 @@ func technologyObservations(id shared.ID, a *ctis.Asset, source string, seen tim
 		return len(out) < assettech.MaxPerAsset
 	}
 	for _, t := range a.Technologies {
-		if !add(assettech.Observation(id, t.Name, t.Version, t.Categories, t.Confidence, source, seen)) {
+		tech, ok := assettech.Observation(id, t.Name, t.Version, t.Categories, t.Confidence, source, seen)
+		if !add(tech.WithCPE(t.CPE), ok) {
 			return out
 		}
 	}
