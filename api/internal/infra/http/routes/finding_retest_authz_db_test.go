@@ -108,6 +108,7 @@ func newRetestAuthzHarness(t *testing.T) *rtHarness {
 	registerFindingRetestCheckRoutes(router, handler.NewFindingRetestCheckHandler(checks, log), Middleware(h.auth), nil)
 	tenantSvc := tenantapp.NewTenantService(postgres.NewTenantRepository(pg), log)
 	registerRetestSettingsRoutes(router, handler.NewTenantHandler(tenantSvc, validator.New(), log), Middleware(h.auth), nil)
+	registerClosureSettingsRoutes(router, handler.NewTenantHandler(tenantSvc, validator.New(), log), Middleware(h.auth), nil)
 	h.srv = httptest.NewServer(router.(interface{ Handler() http.Handler }).Handler())
 	t.Cleanup(h.srv.Close)
 	return h

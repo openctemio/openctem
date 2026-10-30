@@ -181,7 +181,13 @@ func (r *v2Rig) process(rep *ingestreport.Report, seq int) {
 func (r *v2Rig) commit(tn v2Tenant, rep *ingestreport.Report, n int) bool {
 	r.t.Helper()
 	ctx := context.Background()
-	ok, err := r.reports.Commit(ctx, rep.ID, n, false, time.Now())
+	// The rig commits through the repository, past the receiver's manifest
+	// check, so it records the integrity a verified commit would.
+	integrity := protov2.IntegrityManifest
+	if n == 1 {
+		integrity = protov2.IntegritySingle
+	}
+	ok, err := r.reports.Commit(ctx, rep.ID, ingestreport.CommitFacts{SegmentCount: n, Integrity: integrity}, time.Now())
 	if err != nil {
 		r.t.Fatal(err)
 	}

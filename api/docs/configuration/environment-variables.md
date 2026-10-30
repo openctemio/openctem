@@ -316,7 +316,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 
 | Variable | Type | Default | Required | Secret | Description |
 |---|---|---|---|---|---|
-| `INGEST_COVERAGE_AUTO_RESOLVE` | string | `dry_run` |  |  | Coverage-scoped auto-resolve of non-repository findings: `off`, `dry_run` (log, metric and audit entry only) or `enforce`. |
+| `INGEST_COVERAGE_AUTO_RESOLVE` | string | `dry_run` |  |  | Platform ceiling of coverage-scoped auto-resolve of non-repository findings: `off` and `dry_run` (log, metric and audit entry only) never close anything; `enforce` (alias `tenant`) acts per each organization's closing mode (auto, review, off) and the tier rule: in auto a covered scan closes standard and high findings and proposes critical, P0 and KEV ones; review proposes every close. |
 | `INGEST_MAX_PENDING_PER_TENANT` | int | `100` |  |  | Unfinished ingest jobs per organization (CI uploads, imports, sensor report segments); a further upload gets `429` with a `Retry-After` computed from how fast the organization's jobs drain. A segment of a sensor report that was already admitted is accepted up to twice this number, so a started report can finish. A depth that cannot be read refuses the upload (`503`). `0` turns the check off. |
 | `INGEST_MAX_RUNNING_PER_TENANT` | int | `2` |  |  | Ingest jobs of one organization processing at once, across servers, so one organization cannot hold every worker. Keep it below `INGEST_WORKERS` times the number of servers. |
 | `INGEST_MAX_JOB_DURATION` | duration | `30m` |  |  | Hard cap on how long one ingest job may run. The worker renews a running job's five-minute lease, so a long import succeeds; a job past this cap is cancelled and retried. |

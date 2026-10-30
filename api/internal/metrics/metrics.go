@@ -271,6 +271,14 @@ var (
 
 	// IngestQueueDepth is the number of not-yet-terminal (pending+processing)
 	// jobs, refreshed each worker cycle. The key backpressure signal.
+	IngestV2CommitIntegrityTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "openctem_ingest_v2_commit_integrity_total",
+			Help: "Sensor report commits by integrity: single, manifest, digest_only, or the refusal code (hash_mismatch, size_mismatch, count_mismatch, report_hash_mismatch, manifest_invalid)",
+		},
+		[]string{"result"},
+	)
+
 	IngestQueueDepth = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "ingest_queue_depth",

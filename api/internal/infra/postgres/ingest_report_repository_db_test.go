@@ -149,11 +149,11 @@ func TestIngestReportRepository_Lifecycle(t *testing.T) {
 	if _, ok, err := repo.ClaimFinalize(ctx, rep.ID); ok || err != nil {
 		t.Fatalf("claim before commit: %v %v", ok, err)
 	}
-	ok, err := repo.Commit(ctx, rep.ID, 2, false, now)
+	ok, err := repo.Commit(ctx, rep.ID, ingestreport.CommitFacts{SegmentCount: 2, Integrity: protov2.IntegrityManifest}, now)
 	if err != nil || !ok {
 		t.Fatalf("commit: %v %v", ok, err)
 	}
-	if ok, _ := repo.Commit(ctx, rep.ID, 2, false, now); ok {
+	if ok, _ := repo.Commit(ctx, rep.ID, ingestreport.CommitFacts{SegmentCount: 2, Integrity: protov2.IntegrityManifest}, now); ok {
 		t.Fatal("second commit succeeded")
 	}
 
@@ -221,7 +221,7 @@ func TestIngestReportRepository_ExpireAndReopen(t *testing.T) {
 	if err != nil || n < 1 {
 		t.Fatalf("expire: %d %v", n, err)
 	}
-	if ok, _ := repo.Commit(ctx, stale.ID, 1, false, now); ok {
+	if ok, _ := repo.Commit(ctx, stale.ID, ingestreport.CommitFacts{SegmentCount: 1, Integrity: protov2.IntegritySingle}, now); ok {
 		t.Fatal("committed an expired report")
 	}
 
