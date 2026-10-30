@@ -175,6 +175,31 @@ the next batch. Only the coverage run's own trigger can skip zone routing
 (an unexported context marker), and every other gate check still applies.
 Without zones, or for an active capability, nothing changes.
 
+**Subdomain enumeration (`enumerate.subdomains`).** A `domain` asset gets
+`enumerate.subdomains` every 7 days, next to the daily passive
+`discover.subdomains`. It is an active stage (T1): every candidate is a DNS
+query for `<label>.<root>`, so the rule requires a scope entry, the run goes
+through the full dispatch gate (exclusions, the system act scope, the
+active-scan ceiling and attribution) and the claim-time re-check, and it is
+not on the low-impact list (an unclassified asset never gets it). Its tool
+is `dnsx-enum`, one root per task. The coverage run sets the scanner method
+`bruteforce` and runs at standard depth; the command payload asks for
+`wordlists: [{slot: labels, purpose: dns-labels}]` (`stage.ToolWordlists`)
+and carries `context.depth: standard`. When the job is signed,
+`contentpin` pins the small platform pack (`wordlists-s`) and an inline list
+of the labels learned from the organization's own names under that root
+(for example `charts` and `uat` from `charts-uat.example.com`). The learned
+list is read for the job's own tenant only and sealed into the signed job;
+it is never stored.
+
+The tool has no list of its own, so without a stable `wordlists-s` pack the
+job would be refused at claim. Coverage readiness checks this first: while
+the platform has no such pack, the capability is paused with readiness
+reason `content_missing` and its alert asks an instance administrator to
+import the pack (see [wordlists.md](wordlists.md)). Coverage resumes on its
+own once the pack is imported. An error reading the pack store does not
+pause it; the claim-time pin still refuses the job.
+
 **Dead names.** A name that does not resolve is an answer, not a failure.
 A sensor reports it per target: in the result's `refused_targets` with
 reason `unresolvable` and the DNS kind (`name_gone` for NXDOMAIN or NODATA,

@@ -358,6 +358,7 @@ func StepCommandPayload(run *scanrun.Run, step *scanworkflow.Step, toolName, ste
 	// the stall window.
 	payload[PayloadKeyBudget] = toolbudget.ForTask(toolName, payloadTargetCount(payload["targets"]))
 	withRunDeadline(payload, run)
+	withWordlistRequests(payload, toolName)
 	if run.AssetID != nil {
 		payload["asset_id"] = run.AssetID.String()
 	}
@@ -408,6 +409,23 @@ const PayloadKeyBudget = "budget"
 // before it, so what the tool settled is reported before the run is
 // settled without it. It can only shorten a job on the sensor.
 const PayloadKeyDeadline = "deadline"
+
+// PayloadKeyWordlists is the command payload key a job names the wordlists
+// its tool reads in (contentpin.PayloadKeyWordlists): the platform pins the
+// pack the run's depth selects and the labels learned from the
+// organization's own names when the job is signed.
+const PayloadKeyWordlists = "wordlists"
+
+// withWordlistRequests asks for the wordlists the tool reads
+// (stage.ToolWordlists). It is a request only: what the sensor trusts is
+// the content the platform pins and signs into the job.
+func withWordlistRequests(payload map[string]any, tool string) {
+	if reqs := stage.ToolWordlists(tool); len(reqs) > 0 {
+		payload[PayloadKeyWordlists] = reqs
+	} else {
+		delete(payload, PayloadKeyWordlists)
+	}
+}
 
 // withRunDeadline puts the run's deadline in payload (nothing for a run
 // whose deadline is not fixed yet).
