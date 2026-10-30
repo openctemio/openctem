@@ -6,6 +6,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
@@ -98,12 +99,45 @@ func TestBuildVerificationPlan_Methods(t *testing.T) {
 
 	t.Run("network finding with coverage enforce", func(t *testing.T) {
 		p := buildVerificationPlan(verificationPlanInput{Status: "confirmed", Source: "dast", Severity: vulnerability.SeverityLow,
-			AssetType: host, AssetActive: true, RetestKnown: true, RetestReason: "no_sensor", CoverageMode: "enforce"})
+			AssetType: host, AssetActive: true, RetestKnown: true, RetestReason: "no_sensor", CoverageMode: "enforce",
+			Closure: tenantdom.ClosureSettings{Mode: tenantdom.ClosingModeAuto}})
 		if m := planMethod(t, p, VerifyMethodCoveredScan); !m.Available || !m.Recommended {
 			t.Errorf("covered scan with enforce = %+v", m)
 		}
 		if p.Requirement != VerifyRequireNote || !p.ProofPresent {
 			t.Errorf("standard tier = %s proof=%v", p.Requirement, p.ProofPresent)
+		}
+	})
+
+	t.Run("covered scan follows the organization's closing mode under enforce", func(t *testing.T) {
+		auto := tenantdom.ClosureSettings{Mode: tenantdom.ClosingModeAuto}
+		for _, c := range []struct {
+			name    string
+			sev     vulnerability.Severity
+			kev     bool
+			closure tenantdom.ClosureSettings
+			avail   bool
+			reason  string
+		}{
+			{"review (unset)", vulnerability.SeverityLow, false, tenantdom.ClosureSettings{}, false, VerifyReasonCoverageReviewOnly},
+			{"off", vulnerability.SeverityLow, false, tenantdom.ClosureSettings{Mode: tenantdom.ClosingModeOff}, false, VerifyReasonCoverageOff},
+			{"auto, high", vulnerability.SeverityHigh, false, auto, true, ""},
+			{"auto, critical", vulnerability.SeverityCritical, false, auto, false, VerifyReasonCoverageReviewOnly},
+			{"auto, KEV", vulnerability.SeverityLow, true, auto, false, VerifyReasonCoverageReviewOnly},
+			{"auto, critical, owner opted in", vulnerability.SeverityCritical, false,
+				tenantdom.ClosureSettings{Mode: tenantdom.ClosingModeAuto, CriticalAutoClose: true}, true, ""},
+		} {
+			p := buildVerificationPlan(verificationPlanInput{Status: "confirmed", Source: "dast", Severity: c.sev, IsKEV: c.kev,
+				AssetType: host, AssetActive: true, CoverageMode: "enforce", Closure: c.closure})
+			if m := planMethod(t, p, VerifyMethodCoveredScan); m.Available != c.avail || m.Reason != c.reason {
+				t.Errorf("%s: covered scan = %+v", c.name, m)
+			}
+		}
+		// dry_run ceiling: review whatever the organization chose.
+		p := buildVerificationPlan(verificationPlanInput{Status: "confirmed", Source: "dast", Severity: vulnerability.SeverityLow,
+			AssetType: host, AssetActive: true, CoverageMode: "dry_run", Closure: auto})
+		if m := planMethod(t, p, VerifyMethodCoveredScan); m.Available || m.Reason != VerifyReasonCoverageReviewOnly {
+			t.Errorf("dry_run ceiling: covered scan = %+v", m)
 		}
 	})
 

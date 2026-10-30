@@ -726,6 +726,7 @@ func Register(
 	registerFindingRetestRoutes(router, h.FindingRetest, authMiddleware, userSync)
 	registerFindingRetestCheckRoutes(router, h.FindingRetestCheck, authMiddleware, userSync)
 	registerRetestSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
+	registerClosureSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerVulnMatchingSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerEmergingThreatSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerAISettingsRoutes(router, h.AISettings, h.AIMasking, authMiddleware, userSync)

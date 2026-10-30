@@ -29,6 +29,9 @@ const (
 	// ActionTenantRetestUpdated records a change to the tenant's auto-retest
 	// settings (RFC-039).
 	ActionTenantRetestUpdated Action = "tenant.retest_updated"
+	// ActionTenantClosureUpdated records a change to the organization's
+	// closing mode (which findings the platform closes without a person).
+	ActionTenantClosureUpdated Action = "tenant.closure_updated"
 	// ActionTenantVulnMatchingUpdated records a change to the organization's
 	// vulnerability matching policy (RFC-066).
 	ActionTenantVulnMatchingUpdated Action = "tenant.vuln_matching_updated"
@@ -829,7 +832,7 @@ func (a Action) IsValid() bool {
 		ActionUserLogin, ActionUserLogout,
 		ActionTenantCreated, ActionTenantUpdated, ActionTenantDeleted, ActionTenantSettingsUpdated, ActionTenantModulesUpdated,
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated, ActionTenantAssetSourceUpdated,
-		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated, ActionTenantEvidenceUpdated, ActionTenantVulnMatchingUpdated, ActionTenantCyclePolicyUpdated,
+		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated, ActionTenantClosureUpdated, ActionTenantEvidenceUpdated, ActionTenantVulnMatchingUpdated, ActionTenantCyclePolicyUpdated,
 		ActionTenantSharedSensorsUpdated,
 		ActionTenantIdleReminded, ActionTenantIdleReadOnly, ActionTenantIdleFinalWarning,
 		ActionTenantIdleDeletionDue, ActionTenantIdleReactivated, ActionTenantIdlePolicyChanged,
@@ -1330,7 +1333,7 @@ func SeverityForAction(a Action) Severity {
 		ActionAuthStepUp,
 		ActionTenantCreated, ActionTenantUpdated, ActionTenantModulesUpdated,
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated, ActionTenantAssetSourceUpdated,
-		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated, ActionTenantEvidenceUpdated, ActionTenantVulnMatchingUpdated, ActionTenantCyclePolicyUpdated,
+		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated, ActionTenantClosureUpdated, ActionTenantEvidenceUpdated, ActionTenantVulnMatchingUpdated, ActionTenantCyclePolicyUpdated,
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
 		ActionAssetAttributionAutoConfirmed, ActionAssetAttributionChildrenLinked,
