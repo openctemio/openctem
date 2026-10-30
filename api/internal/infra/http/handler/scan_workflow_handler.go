@@ -431,7 +431,8 @@ type RunTaskResponse struct {
 
 // RunTaskCoverageGap is one host a sensor could not fully cover, and why:
 // reason is breaker_open (the host stopped answering), rate_floor (it kept
-// pushing back at the lowest rate) or blocked (it blocked the scan).
+// pushing back at the lowest rate), blocked (it blocked the scan) or
+// proxy_unavailable (the scan's proxy failed).
 type RunTaskCoverageGap struct {
 	Host   string `json:"host"`
 	Reason string `json:"reason"`
