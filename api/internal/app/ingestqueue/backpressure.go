@@ -61,6 +61,42 @@ func Admit(ctx context.Context, depth DepthReader, tenantID shared.ID, limit int
 	return &ErrQueueFull{RetryAfter: retryAfter(unfinished-limit+1, finished)}
 }
 
+// BytesReader reads the bytes a tenant has queued.
+type BytesReader interface {
+	// TenantQueuedBytes is the decoded size of the payloads of the tenant's
+	// unfinished sensor jobs (ingest_jobs.payload_bytes).
+	TenantQueuedBytes(ctx context.Context, tenantID shared.ID) (int64, error)
+}
+
+// AdmitBytes checks, before a payload of incoming bytes is stored, that the
+// tenant's queued bytes plus it stay within limit: a tenant over it is
+// answered like one at its job limit (ErrQueueFull, Retry-After from its
+// recent drain), so the byte ceiling and the job ceiling look the same to a
+// sender. limit <= 0 disables the check; bytes that cannot be read refuse
+// the payload (fail closed).
+func AdmitBytes(ctx context.Context, depth DepthReader, queued BytesReader, tenantID shared.ID,
+	incoming, limit int64, now time.Time,
+) error {
+	if limit <= 0 {
+		return nil
+	}
+	if queued == nil || depth == nil {
+		return ErrDepthUnknown
+	}
+	n, err := queued.TenantQueuedBytes(ctx, tenantID)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrDepthUnknown, err)
+	}
+	if n+incoming <= limit {
+		return nil
+	}
+	_, finished, err := depth.TenantDepth(ctx, tenantID, now.Add(-drainWindow))
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrDepthUnknown, err)
+	}
+	return &ErrQueueFull{RetryAfter: retryAfter(1, finished)}
+}
+
 // retryAfter is how long until `over` jobs drained at the tenant's recent
 // rate (finished jobs in the drain window), bounded.
 func retryAfter(over, finished int) time.Duration {

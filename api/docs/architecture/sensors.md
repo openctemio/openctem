@@ -1265,7 +1265,8 @@ reserved names such as `pentest` never), at most 8 open reports per sensor
 (`429 too-many-open-reports`), the tenant's queue depth
 (`INGEST_MAX_PENDING_PER_TENANT`, `429 queue-full` with a jittered
 `Retry-After` from the tenant's drain rate; further segments of a report
-already admitted pass up to twice the limit), and at most 100,000
+already admitted pass up to twice the limit), the tenant's queued bytes
+(`INGEST_MAX_QUEUED_BYTES_PER_TENANT`, same answer and ceiling rule), and at most 100,000
 assets and findings per report, reserved in one conditional `UPDATE` so
 parallel segments cannot overshoot (`413 report-too-large`). The commit
 must list exactly the received segments with their digests
@@ -1406,12 +1407,19 @@ secrets in it are masked. It is stored **sealed**, never in plaintext
   commit check. A failed attempt keeps it for the retry; a dead job keeps it
   sealed until the staging purge (7 days) so a re-sent failed report can
   re-run.
-- Segments queued in plaintext by an earlier release are sealed in place by
-  the worker every 10 minutes (`SealPlaintextV2Payloads`: batches of 100,
-  `FOR UPDATE SKIP LOCKED`, writes only rows still plaintext, so it is
-  idempotent and safe on several replicas); rows queued in the last 5 minutes
-  wait for the next run. The upgrade migration empties the payloads of jobs
-  already applied. A plaintext row is still read until it is sealed.
+- Payloads queued in plaintext by an earlier release are sealed in place by
+  the worker every 10 minutes (`SealPlaintextSensorPayloads`: batches of at
+  most 100 rows and 64 MiB of stored payloads, `FOR UPDATE SKIP LOCKED`,
+  writes only rows still plaintext, so it is idempotent and safe on several
+  replicas); rows queued in the last 5 minutes wait for the next run. This
+  covers legacy protocol v1 jobs too (sealed under a binding of tenant, job
+  and content hash, opened by the same worker, emptied when applied), so no
+  tenant data waits in plaintext in `ingest_jobs`. A row that cannot be
+  sealed is logged (job and tenant ids and the error, never content), marked
+  (`payload_seal_failed_at`) and skipped: the rows behind it are still
+  sealed, and it is tried again after a day. The upgrade migrations empty
+  the payloads of jobs already applied. A plaintext row is still read until
+  it is sealed.
 - Key rotation: a segment sealed under a key listed in
   `APP_ENCRYPTION_KEY_PREVIOUS` still opens; see
   [encryption key rotation](../deployment/encryption-key-rotation.md).
@@ -1433,6 +1441,7 @@ compose and single-replica installs do.
 | `SENSOR_V2_BLINDING_MIN_FINDINGS` | `100` | Blinding guard floor. |
 | `INGEST_COVERAGE_AUTO_RESOLVE` | `dry_run` | Platform ceiling of coverage-scoped auto-resolve of non-repository findings: `off`, `dry_run` or `enforce` (alias `tenant`: each organization's closing mode decides). Keep `dry_run`: enforcement is postponed until the closure evaluator ships (decision D-22); this path cannot see template, port or authentication coverage. |
 | `INGEST_MAX_PENDING_PER_TENANT` | `100` | Queue depth per tenant. |
+| `INGEST_MAX_QUEUED_BYTES_PER_TENANT` | `1073741824` | Decoded payload bytes (`payload_bytes`) of a tenant's unfinished sensor jobs; a segment that would pass it gets `429 queue-full` with a drain-based `Retry-After` (a started report may go to twice it). Unreadable: `503`. `0` disables. |
 
 Migrations 000237 (`ingest_reports`, v2 columns on `ingest_jobs`) and 000239
 (per-report item totals). Metrics: `ingest_v2_requests_total{route,method,outcome,problem}`,
