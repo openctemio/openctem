@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
@@ -76,8 +77,13 @@ func TestClosureSettings_LooseningNeedsStepUpAndIsAuditedHigh(t *testing.T) {
 	// Inside the step-up window the admin may loosen to auto: audited high.
 	gate.err = nil
 	cs, err := svc.UpdateClosureSettings(ctx, id, tenant.ClosureSettings{Mode: tenant.ClosingModeAuto}, actx)
-	if err != nil || cs.Mode != tenant.ClosingModeAuto {
+	// The loosening waits 24 hours: off stays in force, auto is pending.
+	if err != nil || cs.EffectiveMode() != tenant.ClosingModeOff || cs.PendingMode != tenant.ClosingModeAuto ||
+		cs.PendingAt == nil || time.Until(*cs.PendingAt) < 23*time.Hour {
 		t.Fatalf("loosen inside the window: %+v, %v", cs, err)
+	}
+	if got, _ := svc.GetClosureSettings(ctx, id); got.EffectiveMode() != tenant.ClosingModeOff || got.PendingMode != tenant.ClosingModeAuto {
+		t.Fatalf("read after loosening: %+v", got)
 	}
 	got = closureEntries(auditRepo)
 	high := 0
@@ -124,15 +130,62 @@ func TestClosureSettings_CriticalAutoCloseIsOwnerOnly(t *testing.T) {
 		t.Fatalf("owner audit: %+v", got)
 	}
 
-	// Putting critical findings back in review is tightening: any admin,
-	// no step-up.
+	// The owner's loosening waits; until then review stays in force.
+	if cs, _ := svc.GetClosureSettings(ctx, id); cs.CriticalAutoClose || cs.PendingCriticalAutoClose == nil || !*cs.PendingCriticalAutoClose {
+		t.Fatalf("critical auto-close must wait 24 hours: %+v", cs)
+	}
+	// Keeping the policy in force (review, critical in review) is not a
+	// loosening: any admin, no step-up, and it drops the waiting change.
 	gate.err = middleware.ErrStepUpRequired
-	if _, err := svc.UpdateClosureSettings(ctx, id, tenant.ClosureSettings{Mode: tenant.ClosingModeAuto},
-		auditsvc.AuditContext{ActorID: admin.String(), TenantID: id}); err != nil {
-		t.Fatalf("admin putting critical back in review: %v", err)
+	cs, err := svc.UpdateClosureSettings(ctx, id, tenant.ClosureSettings{Mode: tenant.ClosingModeReview},
+		auditsvc.AuditContext{ActorID: admin.String(), TenantID: id})
+	if err != nil || cs.PendingAt != nil || cs.CriticalAutoClose {
+		t.Fatalf("admin putting critical back in review: %+v, %v", cs, err)
 	}
 	if _, err := svc.UpdateClosureSettings(ctx, id, tenant.ClosureSettings{Mode: "sometimes"},
 		auditsvc.AuditContext{ActorID: admin.String(), TenantID: id}); !errors.Is(err, shared.ErrValidation) {
 		t.Fatalf("bad mode: %v", err)
+	}
+}
+
+// A waiting loosening is canceled by any tightening choice and by the
+// cancel call (audited); a request cannot set the pending fields itself.
+func TestClosureSettings_PendingLooseningCancel(t *testing.T) {
+	ctx := context.Background()
+	svc, tn, _, admin, gate, auditRepo := closureSettingsCase(t)
+	id := tn.ID().String()
+	actx := auditsvc.AuditContext{ActorID: admin.String(), TenantID: id}
+	gate.err = nil
+
+	// A forged pending value in the request is ignored (off is a tightening).
+	soon := time.Now().Add(-time.Hour)
+	forged := tenant.ClosureSettings{Mode: tenant.ClosingModeOff, PendingMode: tenant.ClosingModeAuto, PendingAt: &soon}
+	cs, err := svc.UpdateClosureSettings(ctx, id, forged, actx)
+	if err != nil || cs.PendingAt != nil || cs.EffectiveMode() != tenant.ClosingModeOff {
+		t.Fatalf("forged pending: %+v, %v", cs, err)
+	}
+
+	if cs, err = svc.UpdateClosureSettings(ctx, id, tenant.ClosureSettings{Mode: tenant.ClosingModeAuto}, actx); err != nil || cs.PendingAt == nil {
+		t.Fatalf("loosen: %+v, %v", cs, err)
+	}
+	before := len(closureEntries(auditRepo))
+	cs, err = svc.CancelPendingClosureSettings(ctx, id, actx)
+	if err != nil || cs.PendingAt != nil || cs.EffectiveMode() != tenant.ClosingModeOff {
+		t.Fatalf("cancel: %+v, %v", cs, err)
+	}
+	if len(closureEntries(auditRepo)) != before+1 {
+		t.Fatal("cancel not audited")
+	}
+	// Nothing waits: cancel is a no-op, not audited.
+	if _, err := svc.CancelPendingClosureSettings(ctx, id, actx); err != nil || len(closureEntries(auditRepo)) != before+1 {
+		t.Fatalf("second cancel: %v", err)
+	}
+
+	// A tightening choice also drops the waiting loosening.
+	if _, err := svc.UpdateClosureSettings(ctx, id, tenant.ClosureSettings{Mode: tenant.ClosingModeReview}, actx); err != nil {
+		t.Fatal(err)
+	}
+	if cs, err = svc.UpdateClosureSettings(ctx, id, tenant.ClosureSettings{Mode: tenant.ClosingModeOff}, actx); err != nil || cs.PendingAt != nil {
+		t.Fatalf("tighten after loosen: %+v, %v", cs, err)
 	}
 }

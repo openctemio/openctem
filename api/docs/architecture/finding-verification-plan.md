@@ -54,6 +54,18 @@ Each organization chooses how the platform closes findings without a person
 `critical_auto_close` (default false) lets a plain covered scan close critical, P0 and
 KEV findings in `auto` mode.
 
+**Loosening waits 24 hours.** A change that lets the platform close more alone (off to
+review or auto, review to auto, `critical_auto_close` on) needs a recent
+re-authentication, is audited high, tells every owner and administrator, and takes
+effect `tenant.ClosureRelaxationDelay` (24 h) later: the stored policy is the stricter of
+the old and the new one, field by field, and the new one waits in `pending_mode`,
+`pending_critical_auto_close`, `pending_at` (written only by the platform; a request's
+values are ignored). Readers (the evaluator, the verification plan, `GET`) use the
+policy in force at the time of the read (`ClosureSettings.EffectiveAt`), so no job flips
+it. Any tightening choice applies at once and drops the waiting change;
+`DELETE /api/v1/organization/settings/closure/pending` (owner or administrator, audited)
+cancels it. The settings live on Settings > Finding lifecycle, section Closing findings.
+
 One pure rule, `vulnerability.DecideClosure(mode, tier, method, flaky, criticalAutoClose)`
 (`pkg/domain/vulnerability/closure_decision.go`), returns `close`, `propose` or `keep`.
 In `auto`:
@@ -74,7 +86,9 @@ auto-resolve (`internal/app/ingest/closure_mode.go`): the evaluator reads the
 organization's policy once per run, the tiers of the stale findings in one tenant-scoped
 query (`FindingRiskTiers`), resolves only `close`, and records `propose` on the ingest
 receipt (`coverage.note = review`) and in an `ingest.coverage_auto_resolve_dry_run`
-audit entry with `decision = review`. A held run (blinding guard), template drift and
+audit entry with `decision = review`. The verification plan names the organization's mode: `coverage_critical_review`
+(critical waits in auto), `coverage_org_review`, `coverage_org_off`; the
+`coverage_auto_resolve_*` reasons stay for the platform ceiling. A held run (blinding guard), template drift and
 secrets behave as before: a held run never closes. When the policy or the tiers cannot
 be read, nothing closes (review; tiers read as critical). The verification plan's
 `covered_scan` method uses the same rule. A store of proposals with a review queue
