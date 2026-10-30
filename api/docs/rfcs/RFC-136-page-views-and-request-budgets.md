@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-10-29). The finding page view and the budget for pages with an id shipped; other pages follow one by one |
+| Status | Accepted (2026-10-29). The finding and asset page views and the budget for pages with an id shipped; other pages follow one by one |
 | Scope | api (view endpoints on one shared part dispatcher), web (primed answers for a page's own reads, the request budget gate, one toast per error code), docs |
 | Architecture | [page-views.md](../architecture/page-views.md) |
 | Related | RFC-115 (query language, the read layer), RFC-045 (WebSocket), [dashboards.md](../architecture/dashboards.md) (`GET /dashboard/overview`, the first view) |

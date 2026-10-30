@@ -357,10 +357,15 @@ type ScopeTargetResponse struct {
 	Ports    string `json:"ports,omitempty"`
 	Protocol string `json:"protocol,omitempty"`
 	// Covers: name, domain_and_subdomains, addresses or pattern.
-	Covers      string `json:"covers"`
-	Description string `json:"description,omitempty"`
-	Reason      string `json:"reason,omitempty"`
-	Priority    int    `json:"priority"`
+	Covers string `json:"covers"`
+	// Edge: the entry is a provider's shared address space (wholly inside a
+	// published CDN or edge range) or a name under a provider's host suffix.
+	// A label only: the entry still authorizes what it covers until the
+	// organization adds it to out of scope.
+	Edge        *EdgeLabel `json:"edge,omitempty"`
+	Description string     `json:"description,omitempty"`
+	Reason      string     `json:"reason,omitempty"`
+	Priority    int        `json:"priority"`
 	// Status: active, pending, inactive, rejected or expired.
 	Status string `json:"status"`
 	// InEffect: the entry authorizes probes now (active, not expired).
@@ -601,6 +606,7 @@ func toScopeTargetResponse(t *scopedom.Target) ScopeTargetResponse {
 		Ports:               t.Constraint().Ports,
 		Protocol:            t.Constraint().Protocol,
 		Covers:              t.Covers(),
+		Edge:                scopeEntryEdgeLabel(t.TargetType(), t.Pattern()),
 		Description:         t.Description(),
 		Reason:              t.Reason(),
 		Priority:            t.Priority(),

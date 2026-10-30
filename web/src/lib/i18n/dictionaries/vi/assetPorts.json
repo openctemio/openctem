@@ -1,0 +1,13 @@
+{
+  "assetPorts.col.address": "Địa chỉ",
+  "assetPorts.col.lastSeen": "Thấy lần cuối",
+  "assetPorts.col.port": "Cổng",
+  "assetPorts.col.service": "Dịch vụ",
+  "assetPorts.emptyHint": "Chưa lần quét cổng nào tìm thấy cổng mở trên các địa chỉ mà tên này phân giải tới.",
+  "assetPorts.emptyTitle": "Chưa ghi nhận cổng mở",
+  "assetPorts.hidden": "Còn {count} cổng nằm trên địa chỉ hoặc cổng ngoài phạm vi dữ liệu của bạn.",
+  "assetPorts.hint": "Các cổng mở của những địa chỉ mà tên này phân giải tới. Lần quét cổng của tên ghi nhận mỗi cổng trên địa chỉ nơi tìm thấy nó.",
+  "assetPorts.title": "Cổng trên các địa chỉ phân giải",
+  "assetPorts.truncated": "Đang hiển thị {count} cổng đầu tiên.",
+  "assetPorts.unknownService": "Chưa xác định"
+}

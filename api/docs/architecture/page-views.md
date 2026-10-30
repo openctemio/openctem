@@ -9,9 +9,10 @@ and every page has a **request budget** that the e2e gate enforces.
 |---|---|
 | Shared part dispatcher (`handler/view_parts.go`), used by `GET /dashboard/overview` | **Shipped** |
 | `GET /api/v1/findings/{id}/view` and the finding page on it | **Shipped** |
+| `GET /api/v1/assets/{id}/view` and the asset page on it | **Shipped** |
 | Primed answers in the browser (`web/src/lib/api/view-prime.ts`) | **Shipped** |
 | Request budget for pages with an id in their path (`dynamicRoutes`) | **Shipped** |
-| Views or on-demand panels for the other heavy pages (asset, scan, remediation task, campaign) | Planned, one page at a time |
+| Views or on-demand panels for the other heavy pages (scan, remediation task, campaign) | Planned, one page at a time |
 
 ## How a view answers
 
@@ -36,6 +37,15 @@ its status and no body, and is logged without ids.
 
 `GET /dashboard/overview` uses the same dispatcher with a 15-second per-caller reuse and four parts at a
 time per tenant; it keeps no error bodies.
+
+## The asset view
+
+`GET /api/v1/assets/{id}/view` (permission `assets:read`) works the same way: the asset,
+`GET /api/v1/assets/{id}`, is read first and a refusal ends the view; the parts are the asset page's
+panels (attribution, attribute sources, freshness, coverage, identifiers, renames, the change timeline,
+web evidence and the ports on a name's resolved addresses), listed in `AssetViewParts`. The view costs
+3 read tokens. `useAssetPage` (in `features/assets/hooks/use-assets.ts`) primes it on the page's first
+load of each asset. The scan window card asks with a `POST` and is not a part.
 
 ## How the web uses a view
 
@@ -86,6 +96,8 @@ click, tenant configuration from the bootstrap or the cache). A burst of refused
 
 - `api/internal/infra/http/handler/view_parts.go`: the dispatcher.
 - `api/internal/infra/http/handler/finding_view_handler.go`: the finding view and its parts.
+- `api/internal/infra/http/handler/asset_view_handler.go`: the asset view and its parts.
+- `api/internal/infra/http/routes/asset_resolved_ports_db_test.go`: asset view parts, resolved ports scope and tenant.
 - `api/internal/infra/http/handler/dashboard_overview_handler.go`: the dashboard overview.
 - `api/internal/infra/http/routes/finding_view_scope_db_test.go`: parts equal the direct reads, scope and tenant.
 - `web/src/lib/api/view-prime.ts`: primed answers.

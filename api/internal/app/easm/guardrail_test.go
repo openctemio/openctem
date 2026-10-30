@@ -440,3 +440,45 @@ func TestPublicBareName(t *testing.T) {
 		}
 	}
 }
+
+// SECURITY (owner decision 2026-10-30): an exclusion of a shared front end
+// address no longer excludes the names behind it, so a port scan of such a
+// name must never reach the provider's other ports: it is capped to the web
+// ports even when a scope entry covers the edge address and unclassified
+// scans are full. A name on a dedicated covered address is not capped.
+func TestActiveGate_NameBehindSharedFrontEndWebPortsOnly(t *testing.T) {
+	f, g, _ := unclassifiedFixture(t, unclassifiedFull)
+	ctx := context.Background()
+	edgeRange, err := scopedom.NewTarget(f.tenant, scopedom.TargetTypeCIDR, "104.16.1.0/24", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.targets = append(f.targets, edgeRange)
+	f.add(t, "shop.scoped.com", asset.AssetTypeSubdomain)
+	f.resolves["shop.scoped.com"] = []string{"104.16.1.1"}
+	f.add(t, "mixed.scoped.com", asset.AssetTypeSubdomain)
+	f.resolves["mixed.scoped.com"] = []string{"198.51.100.7", "104.16.1.2"}
+	f.add(t, "a.scoped.com", asset.AssetTypeSubdomain)
+	f.resolves["a.scoped.com"] = []string{"198.51.100.7"}
+	targets := []string{"shop.scoped.com", "mixed.scoped.com", "a.scoped.com"}
+	for _, job := range []scopedom.JobShape{
+		{Tool: "naabu", Ports: "1-65535"},
+		{Tool: "naabu", Ports: "22"},
+		{Tool: "naabu", TopPorts: true},
+		{Tool: "portscan-x", Capability: "scan.ports@1", Ports: "3306"},
+	} {
+		got, err := g.ConstraintRefused(ctx, f.tenant, targets, scopedom.TierActive, job)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got["shop.scoped.com"] != scopedom.RefusalWebPortsOnly || got["mixed.scoped.com"] != scopedom.RefusalWebPortsOnly {
+			t.Fatalf("%+v: names behind an edge address not capped to the web ports: %v", job, got)
+		}
+		if _, no := got["a.scoped.com"]; no {
+			t.Fatalf("%+v: a name on a covered dedicated address was capped: %v", job, got)
+		}
+	}
+	if got, _ := g.ConstraintRefused(ctx, f.tenant, targets, scopedom.TierActive, scopedom.JobShape{Tool: "naabu", Ports: "80,443"}); len(got) != 0 {
+		t.Fatalf("web ports refused: %v", got)
+	}
+}
