@@ -46,6 +46,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/assetfreshness"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
+	"github.com/openctemio/openctem/api/pkg/domain/edgeaddr"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/jobsign"
@@ -458,7 +459,8 @@ func (g *ActiveGate) ConstraintRefused(ctx context.Context, tenantID shared.ID, 
 // ports while any address it resolves to may not be probed on its own (a
 // guardrail or a decision holds it) or nothing is known about its
 // addresses; the low-impact ports while one is only an unclassified address
-// in low_impact mode. An address a scope entry covers, or an unclassified
+// in low_impact mode; the web ports too when one is a shared front end
+// (edgeaddr.SharedFrontEnd). An address a scope entry covers, or an unclassified
 // one in full mode, lends the name every port. Addresses are never
 // authorized by the name: this only narrows.
 func (g *ActiveGate) namePortCaps(ctx context.Context, tenantID shared.ID, auth *scopeauth.Authority, targets []string, mode string) (map[string]string, error) {
@@ -507,6 +509,15 @@ func (g *ActiveGate) namePortCaps(ctx context.Context, tenantID shared.ID, auth 
 			cap = scopedom.WebPorts
 		}
 		for _, a := range addrs {
+			if _, shared := edgeaddr.Default().SharedFrontEnd(a); shared {
+				// The provider's front end: only its web ports serve the
+				// name, the rest are the provider's. Capped even when an
+				// entry covers the address, and when the organization
+				// excluded it (that exclusion stays on the address and does
+				// not exclude the name, scope.PropagatingAddresses).
+				cap = scopedom.WebPorts
+				break
+			}
 			if _, ok := auth.Covers(a); ok {
 				continue
 			}
