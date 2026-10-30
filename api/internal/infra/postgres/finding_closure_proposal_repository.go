@@ -261,7 +261,7 @@ func (r *FindingRepository) ConfirmClosureProposals(ctx context.Context, tenantI
 			), closed AS (
 				UPDATE findings f
 				SET status = 'resolved', resolution = 'fixed', closure_reason = 'fixed',
-					verification = CASE WHEN chosen.method IN ('covered_scan', 'source_reported') THEN chosen.method ELSE 'unknown' END, resolved_at = NOW(), resolved_by = $3::uuid, updated_at = NOW()
+					verification = CASE WHEN chosen.method IN ('covered_scan', 'source_reported') THEN chosen.method WHEN chosen.method = 'ci_default_branch' THEN 'covered_scan' ELSE 'unknown' END, resolved_at = NOW(), resolved_by = $3::uuid, updated_at = NOW()
 				FROM chosen
 				WHERE f.tenant_id = $1 AND f.id = chosen.finding_id
 				RETURNING f.id

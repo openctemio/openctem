@@ -2,7 +2,7 @@
 export interface ClosureProposal {
   id: string
   finding_id: string
-  /** covered_scan today; obsolete_asset and others later. */
+  /** covered_scan, ci_default_branch, source_reported, obsolete_asset... */
   method: string
   evidence: ClosureEvidence
   proposed_at: string

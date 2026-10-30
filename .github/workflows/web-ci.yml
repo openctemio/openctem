@@ -713,6 +713,9 @@ jobs:
         run: |
           sh scripts/check-tenant-bundle.test.sh
           sh scripts/check-tenant-bundle.sh .next/server
+      # First-load JS per route stays within scripts/route-js-budget.json.
+      - name: Route JavaScript budget
+        run: node scripts/route-js-budget.mjs --top 20
       - name: Fail fast
         if: failure()
         uses: ./.github/actions/fail-fast

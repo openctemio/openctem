@@ -13,6 +13,16 @@ import (
 )
 
 // Origin says what produced a record.
+// DailyCap is a tenant's evidence budget over a window: at most Limit
+// records created since Since. A zero Limit means no cap.
+type DailyCap struct {
+	Limit int
+	Since time.Time
+}
+
+// ErrDailyCapReached: the tenant stored its daily evidence budget.
+var ErrDailyCapReached = fmt.Errorf("%w: the organization reached its daily evidence limit; try again later", shared.ErrValidation)
+
 type Origin string
 
 const (
@@ -155,9 +165,12 @@ type Repository interface {
 	// InsertManual stores recorded (manual) records for one finding, skipping
 	// a record whose content hash the finding's manual records already hold.
 	// More than MaxManualPerFinding manual records is ErrTooManyManual and
-	// stores nothing; a finding of another tenant is ErrNotFound. It returns
-	// how many records were stored.
-	InsertManual(ctx context.Context, tenantID, findingID shared.ID, recs []NewRecord) (int, error)
+	// stores nothing; a finding of another tenant is ErrNotFound. With a cap,
+	// the tenant's records since cap.Since are counted inside the insert
+	// transaction under a per-tenant lock, and a write that would pass
+	// cap.Limit is ErrDailyCapReached and stores nothing (so concurrent writes
+	// cannot exceed it). It returns how many records were stored.
+	InsertManual(ctx context.Context, tenantID, findingID shared.ID, recs []NewRecord, cap DailyCap) (int, error)
 	// MoveLegacyRequestResponses moves request/response entries still kept in
 	// findings.metadata (key request_responses, written before they went
 	// through the evidence service) into manual records: it locks up to batch
