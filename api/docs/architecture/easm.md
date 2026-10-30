@@ -641,8 +641,10 @@ and from then on the dispatch gate leaves it out of every job
 - **Excluding an address also excludes the names that resolve to it** (the
   exclusion match reads an asset's addresses, section 2 of the how-to): an
   exclusion of a shared edge address stops scanning every name served from it.
-  The web console says so, with the names the preview matches, before the
-  exclusion is added.
+  The web console says so before the exclusion is added. The bulk exclusion
+  preview (`POST /scope/exclusions/bulk/preview`) counts assets by their own
+  name or address only, not by the addresses they resolve to, so it cannot
+  list those names yet.
 
 ## 5. Data model (planned)
 
