@@ -12,6 +12,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
@@ -183,6 +184,7 @@ func TestParseCoverageAutoResolveMode(t *testing.T) {
 type coverageFindingRepo struct {
 	vulnerability.FindingRepository
 	cov      *ingestreport.CommandCoverage
+	tiers    map[shared.ID]vulnerability.RiskTier // absent: standard
 	stale    []shared.ID
 	open     int
 	query    ingestreport.CoverageQuery
@@ -252,6 +254,7 @@ func coverageService(t *testing.T, mode CoverageAutoResolveMode, declared []stri
 		Payload: json.RawMessage(`{"scanner":"nuclei","targets":["a.example.com"]}`),
 	}})
 	svc.SetCoverageAutoResolve(mode, DefaultBlindingGuard())
+	svc.SetClosureSettings(fixedClosure{Mode: tenant.ClosingModeAuto})
 	return svc, repo
 }
 

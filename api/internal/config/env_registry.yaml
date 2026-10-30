@@ -1306,7 +1306,7 @@ vars:
     group: "Ingest"
     type: string
     default: "dry_run"
-    description: "Coverage-scoped auto-resolve of non-repository findings: `off`, `dry_run` (log, metric and audit entry only) or `enforce`."
+    description: "Platform ceiling of coverage-scoped auto-resolve of non-repository findings: `off` and `dry_run` (log, metric and audit entry only) never close anything; `enforce` (alias `tenant`) acts per each organization's closing mode (auto, review, off) and the tier rule: in auto a covered scan closes standard and high findings and proposes critical, P0 and KEV ones; review proposes every close."
   - name: INGEST_MAX_PENDING_PER_TENANT
     component: api
     group: "Ingest"
