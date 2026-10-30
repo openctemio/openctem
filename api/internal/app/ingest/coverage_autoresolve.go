@@ -104,6 +104,10 @@ const (
 type coverageDecision struct {
 	reason string
 	query  ingestreport.CoverageQuery
+	// perTarget: the run is not clean on every target, but its result
+	// accounts for each one (target_outcomes), so coverage is decided per
+	// target (coverage_targets.go).
+	perTarget bool
 }
 
 func (d coverageDecision) eligible() bool { return d.reason == coverageEligible }
@@ -140,7 +144,12 @@ func decideRunCoverage(c *ingestreport.CommandCoverage, repo bool) coverageDecis
 	if len(c.Result) > 0 && json.Unmarshal(c.Result, &result) == nil && result.ExitCode != nil && *result.ExitCode != 0 {
 		return coverageDecision{reason: coverageNonZeroExit}
 	}
-	if resultLeftTargetsUncovered(c.Result) {
+	// A run that left some targets uncovered still proves the others when
+	// its result says how every target ended (not for repository runs,
+	// which cover one branch as a whole).
+	_, perTarget := resultTargetOutcomes(c.Result)
+	perTarget = perTarget && !repo
+	if !perTarget && resultLeftTargetsUncovered(c.Result) {
 		return coverageDecision{reason: coverageUncoveredTargets}
 	}
 	// A result cut short (deadline, disk, cap) cannot prove that what it
@@ -194,6 +203,10 @@ func decideRunCoverage(c *ingestreport.CommandCoverage, repo bool) coverageDecis
 		case string(CoverageTypeFull):
 		case "":
 			return coverageDecision{reason: coverageUndeclared}
+		case string(CoverageTypePartial):
+			if !perTarget {
+				return coverageDecision{reason: coveragePartial}
+			}
 		default:
 			return coverageDecision{reason: coveragePartial}
 		}
@@ -227,11 +240,14 @@ func decideRunCoverage(c *ingestreport.CommandCoverage, repo bool) coverageDecis
 	if _, reserved := reservedAutoResolveTools[strings.ToLower(q.ToolName)]; reserved {
 		return coverageDecision{reason: coverageReservedTool}
 	}
-	if len(q.AssetIDs) == 0 {
+	// A repository run must name its repository. A network run that found
+	// nothing names no asset: the evaluator takes the covered assets from the
+	// command's targets (coveredRunAssets).
+	if repo && len(q.AssetIDs) == 0 {
 		return coverageDecision{reason: coverageNoCoveredAssets}
 	}
 	q.TemplatesDigest = templates
-	return coverageDecision{reason: coverageEligible, query: q}
+	return coverageDecision{reason: coverageEligible, query: q, perTarget: perTarget}
 }
 
 // resultLeftTargetsUncovered reports whether a command result says the
@@ -436,7 +452,11 @@ func (s *Service) EvaluateCommandCoverage(ctx context.Context, tenantID, command
 		// command does not cover (they are only marked seen). Absence of a
 		// finding proves something only on the assets the command was sent to
 		// scan, so a sensor cannot close findings elsewhere by naming them.
-		d.query.AssetIDs = s.coveredByCommand(ctx, tenantID, &commandID, d.query.AssetIDs)
+		//
+		// The assets with open findings of the tool that a covered target
+		// reaches count too, also when this run reported nothing on them:
+		// that is what "the same check looked again and found nothing" is.
+		d.query.AssetIDs = s.coveredRunAssets(ctx, tenantID, commandID, d.query.ToolName, cov.Result, d.query.AssetIDs)
 		if len(d.query.AssetIDs) == 0 {
 			out.Reason = coverageNoCoveredAssets
 		}
@@ -547,7 +567,11 @@ func (s *Service) evaluateRepoCoverage(ctx context.Context, tenantID, commandID 
 		out.Reason = coverageToolMismatch
 	}
 	if out.Reason == coverageEligible {
-		d.query.AssetIDs = s.coveredByCommand(ctx, tenantID, &commandID, d.query.AssetIDs)
+		//
+		// The assets with open findings of the tool that a covered target
+		// reaches count too, also when this run reported nothing on them:
+		// that is what "the same check looked again and found nothing" is.
+		d.query.AssetIDs = s.coveredRunAssets(ctx, tenantID, commandID, d.query.ToolName, cov.Result, d.query.AssetIDs)
 		if len(d.query.AssetIDs) == 0 {
 			out.Reason = coverageNoCoveredAssets
 		}

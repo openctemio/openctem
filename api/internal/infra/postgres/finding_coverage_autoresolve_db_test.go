@@ -283,3 +283,50 @@ func TestCoverageAbsence_ReceiptDecides(t *testing.T) {
 		t.Fatalf("truncated receipt: stale = %v, err = %v; want none and ErrReceiptIncomplete", stale, err)
 	}
 }
+
+// TestCoverageCandidateAssets: the assets a covered target reaches are the
+// ones whose open findings of the tool were last seen by a command aimed at
+// that target. Another tool, another target, another tenant, a closed or a
+// protected finding never makes an asset a candidate.
+func TestCoverageCandidateAssets(t *testing.T) {
+	f := newCoverageFixture(t)
+	repo := NewFindingRepository(&DB{DB: f.db})
+	ctx := context.Background()
+
+	aimed := func(target string) string {
+		cmd, report := shared.NewID(), shared.NewID().String()
+		f.exec(t, `INSERT INTO commands (id, tenant_id, sensor_id, type, status, payload, result)
+			VALUES ($1, $2, $3, 'scan', 'completed', jsonb_build_object('scanner', 'nuclei', 'targets', jsonb_build_array($4::text)), '{"exit_code":0}')`,
+			cmd, f.tenant, f.sensor, target)
+		f.exec(t, `INSERT INTO ingest_reports (id, tenant_id, sensor_id, report_id, command_id, state, media_type,
+				header_digest, header, tool_name, segment_outcomes, expires_at, committed_at)
+			VALUES ($1, $2, $3, $4, $5, 'completed', 'application/vnd.ctis+json', 'd', '{"tool":{"name":"nuclei"}}',
+				'nuclei', '{}', NOW() + interval '1 hour', NOW())`, shared.NewID(), f.tenant, f.sensor, report, cmd)
+		return report
+	}
+	onTarget := aimed("a.example.com")
+	elsewhere := aimed("z.example.com")
+
+	f.finding(t, f.host, "nuclei", onTarget, nil)
+	f.finding(t, f.otherHost, "nuclei", elsewhere, nil)
+	closed := f.finding(t, f.repoAsset, "nuclei", onTarget, nil)
+	f.exec(t, `UPDATE findings SET status = 'resolved' WHERE id = $1`, closed)
+	other := f.finding(t, f.repoAsset, "httpx", onTarget, nil)
+	_ = other
+	pentest := f.finding(t, f.repoAsset, "nuclei", onTarget, nil)
+	f.exec(t, `UPDATE findings SET source = 'pentest' WHERE id = $1`, pentest)
+
+	got, err := repo.CoverageCandidateAssets(ctx, f.tenant, "nuclei", []string{"a.example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := idStrings([]shared.ID{f.host}); len(got) != 1 || idStrings(got)[0] != want[0] {
+		t.Fatalf("candidates = %v, want only the host last seen on a.example.com", idStrings(got))
+	}
+	if got, err := repo.CoverageCandidateAssets(ctx, shared.NewID(), "nuclei", []string{"a.example.com"}); err != nil || len(got) != 0 {
+		t.Fatalf("another tenant must see nothing: %v, %v", got, err)
+	}
+	if got, err := repo.CoverageCandidateAssets(ctx, f.tenant, "nuclei", nil); err != nil || len(got) != 0 {
+		t.Fatalf("no target, no candidate: %v, %v", got, err)
+	}
+}
