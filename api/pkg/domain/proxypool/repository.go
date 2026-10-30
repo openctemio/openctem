@@ -45,6 +45,29 @@ type Repository interface {
 	// the schema and reported as ErrSensorNotFound / ErrPoolNotFound.
 	SetAssignment(ctx context.Context, tenantID shared.ID, a Assignment, by *shared.ID) error
 	DeleteAssignment(ctx context.Context, tenantID, sensorID shared.ID) error
+
+	// RecordCommandEgress stores the pool and endpoints the platform handed
+	// a claimed command under one lease epoch (a repeat of the claim
+	// replaces the endpoints). The pool must be the tenant's.
+	RecordCommandEgress(ctx context.Context, rec CommandEgress) error
+	// CloseCommandEgress sets the verdict of a command's recorded egress for
+	// the sensor and lease epoch it was handed under, once; nil when there
+	// is no open record (a direct job, another sensor or epoch, a repeat).
+	CloseCommandEgress(ctx context.Context, tenantID, commandID, sensorID shared.ID, leaseEpoch int, v TaskVerdict, at time.Time) (*CommandEgress, error)
+	// TaskSamples returns the verdicts on a pool's jobs since a time.
+	TaskSamples(ctx context.Context, tenantID, poolID shared.ID, since time.Time) ([]TaskSample, error)
+}
+
+// CommandEgress is the proxy path the platform handed one command.
+type CommandEgress struct {
+	TenantID    shared.ID
+	CommandID   shared.ID
+	SensorID    shared.ID
+	LeaseEpoch  int
+	PoolID      shared.ID
+	Revision    int
+	AppliesTo   string
+	EndpointIDs []string
 }
 
 // JobEgress is the "egress" member of a scan command a sensor receives: the

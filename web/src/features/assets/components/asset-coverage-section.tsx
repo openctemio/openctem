@@ -79,6 +79,8 @@ export function AssetCoverageSection({ assetId }: { assetId: string }) {
                     `, ${t('assetCoverage.noOutput', 'found nothing')}`}
                   {e.last_outcome === 'no_answer' &&
                     `, ${t('assetCoverage.noAnswer', 'the name has no DNS answer; checked again later')}`}
+                  {e.platform_side &&
+                    `, ${t('assetCoverage.platformSide', 'the scan could not run on the scanner side, so this says nothing about the asset; tried again later')}`}
                   {e.reason && `, ${coverageReasonText(e, t)}`}
                   {e.next_due_at && e.state !== 'not_applicable' && (
                     <>
@@ -89,15 +91,20 @@ export function AssetCoverageSection({ assetId }: { assetId: string }) {
                   )}
                 </div>
                 {e.last_error && (
-                  <div className="truncate text-xs text-destructive" title={e.last_error}>
+                  <div
+                    className={`truncate text-xs ${e.platform_side ? 'text-muted-foreground' : 'text-destructive'}`}
+                    title={e.last_error}
+                  >
                     {e.last_error}
                   </div>
                 )}
               </div>
-              <Badge variant={coverageBadge(e.state, e.gap)}>
+              <Badge variant={coverageBadge(e.state, e.gap, e.platform_side)}>
                 {e.gap
                   ? t('assetCoverage.gap', 'Gap')
-                  : t(`assetCoverage.state.${e.state}`, e.state ?? '')}
+                  : e.state === 'failed' && e.platform_side
+                    ? t('assetCoverage.state.not_checked', 'Not checked')
+                    : t(`assetCoverage.state.${e.state}`, e.state ?? '')}
               </Badge>
             </li>
           ))}

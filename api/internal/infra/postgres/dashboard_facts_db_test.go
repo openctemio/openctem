@@ -792,7 +792,7 @@ func TestDashboardFactTablesMigration_DB(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Down from the head to this migration: a later one may build on it.
-	testdb.Migrate(t, db, dir, v, math.MaxInt32, true)
+	testdb.Migrate(t, db, dir, v, math.MaxInt, true)
 	if tb, fn, tr := count(); tb != 0 || fn != 0 || tr != 0 {
 		t.Fatalf("after down: %d relations, %d functions, %d triggers left", tb, fn, tr)
 	}
@@ -800,7 +800,7 @@ func TestDashboardFactTablesMigration_DB(t *testing.T) {
 	if _, err := db.Exec(`UPDATE findings SET status = 'confirmed' WHERE tenant_id = $1`, tenant.String()); err != nil {
 		t.Fatalf("write after down: %v", err)
 	}
-	testdb.Migrate(t, db, dir, v, math.MaxInt32, false)
+	testdb.Migrate(t, db, dir, v, math.MaxInt, false)
 	if _, tr := func() (int, int) { _, _, tr := count(); return 0, tr }(); tr != 14 {
 		t.Fatalf("after up again: %d triggers", tr)
 	}
