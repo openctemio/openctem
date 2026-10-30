@@ -261,6 +261,11 @@ function EvidenceItemCard({
               {t('findings.evidenceItems.retest', 'Retest attempt')}
             </Badge>
           )}
+          {record.origin === 'manual' && (
+            <Badge variant="outline" className="text-xs">
+              {t('findings.evidenceItems.recorded', 'Recorded')}
+            </Badge>
+          )}
           {record.truncated && (
             <Badge
               variant="outline"
