@@ -199,6 +199,21 @@ of its addresses has an open port on record). A name whose port scan found
 no web port is `not_applicable` until one appears; reconcile then makes it
 due again.
 
+**Named ports in an HTTP probe batch.** The probe of a bare name tries the
+scheme's default ports only, and a probe of `<address>:<port>` misses a
+virtual host, CDN or load balancer that routes by name (TLS SNI, the Host
+header). So a coverage batch of `probe.http` also probes `<name>:<port>`
+for each other open TCP port (not 80 or 443) of the live addresses each kept
+name resolves to (`resolves_to`, then `exposes`; a tenant-scoped lookup,
+`AttributionRepository.OpenPortsOfNames`), at most 20 per name and the batch
+cap in all (`scan/coverage_named_ports.go`). Only names the batch already
+kept are used. Each `<name>:<port>` goes through the same gate call as the
+batch (exclusions in host:port form, name ownership, scope entries and tier,
+zones) and only the allowed ones run; they carry no coverage pair of their
+own. A failed lookup or a refusal of the derived set as a whole leaves the
+batch as it was. Workflows apply the same rule after a port scan
+([scan stages](./scan-stages.md), "Open ports by name").
+
 **Template scans on web services.** A web service reached by an IPv4
 address (`https://203.0.113.10:8443`) is `not_applicable` for
 `vuln.templates` with reason `no_named_twin` when an active web service
