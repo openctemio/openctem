@@ -217,6 +217,11 @@ const (
 	ActionFindingUnassigned    Action = "finding.unassigned"
 	ActionFindingCommented     Action = "finding.commented"
 	ActionFindingBulkUpdated   Action = "finding.bulk_updated"
+	// Ready to close: a person confirmed or dismissed proposed closes, or
+	// reopened a finding the platform closed by itself ("not fixed").
+	ActionFindingClosureConfirmed  Action = "finding.closure_confirmed"
+	ActionFindingClosureDismissed  Action = "finding.closure_dismissed"
+	ActionFindingAutoCloseReopened Action = "finding.auto_close_reopened"
 	// ActionFindingEvidenceAdded records a manually-attached piece of evidence
 	// (note/file) on a generic (non-pentest) finding.
 	ActionFindingEvidenceAdded Action = "finding.evidence_added"
@@ -866,6 +871,7 @@ func (a Action) IsValid() bool {
 		ActionVulnerabilityCreated, ActionVulnerabilityUpdated, ActionVulnerabilityDeleted,
 		ActionFindingCreated, ActionFindingUpdated, ActionFindingDeleted, ActionFindingStatusChanged,
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
+		ActionFindingClosureConfirmed, ActionFindingClosureDismissed, ActionFindingAutoCloseReopened,
 		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingEvidenceUpdated, ActionFindingProofOverridden, ActionFindingRemediationStepAdded,
 		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
 		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingVerificationChecklistUpdated, ActionFindingClassified,
@@ -1008,6 +1014,7 @@ func (a Action) Category() string {
 		return "vulnerability"
 	case ActionFindingCreated, ActionFindingUpdated, ActionFindingDeleted, ActionFindingStatusChanged,
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
+		ActionFindingClosureConfirmed, ActionFindingClosureDismissed, ActionFindingAutoCloseReopened,
 		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingEvidenceUpdated, ActionFindingProofOverridden, ActionFindingRemediationStepAdded,
 		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
 		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingVerificationChecklistUpdated, ActionFindingClassified, ActionFindingCommentReactionRemoved, ActionFindingCommentEdited, ActionFindingCommentDeleted, ActionFindingDuplicateMarked, ActionFindingIssueUnlinked, ActionFindingBountyReportChanged,
