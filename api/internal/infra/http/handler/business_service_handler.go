@@ -16,6 +16,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/filterspec"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -26,6 +27,7 @@ import (
 // Customer Login) that spans multiple assets and is distinct from a
 // business unit (which is an organizational grouping).
 type BusinessServiceHandler struct {
+	configAuditor
 	db        *sql.DB
 	dataScope *datascope.Enforcer
 	logger    *logger.Logger
@@ -416,20 +418,23 @@ func (h *BusinessServiceHandler) Delete(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	res, err := h.db.ExecContext(r.Context(),
-		"DELETE FROM business_services WHERE tenant_id = $1 AND id = $2",
+	// RETURNING gives the stored name of the row this tenant owned.
+	var name string
+	err := h.db.QueryRowContext(r.Context(),
+		"DELETE FROM business_services WHERE tenant_id = $1 AND id = $2 RETURNING name",
 		tenantID, id,
-	)
+	).Scan(&name)
+	if errors.Is(err, sql.ErrNoRows) {
+		apierror.NotFound("business service").WriteJSON(w)
+		return
+	}
 	if err != nil {
 		h.logger.Error("business service delete", "error", err)
 		apierror.InternalServerError("internal error").WriteJSON(w)
 		return
 	}
-	n, _ := res.RowsAffected()
-	if n == 0 {
-		apierror.NotFound("business service").WriteJSON(w)
-		return
-	}
+	h.recordDeleted(r, h.logger, auditdom.ActionBusinessServiceDeleted, auditdom.ResourceTypeBusinessService,
+		id, name, "Business service deleted")
 	w.WriteHeader(http.StatusNoContent)
 }
 

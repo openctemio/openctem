@@ -744,7 +744,7 @@ func TestDeleteAssetGroup(t *testing.T) {
 
 		existing := seedAssetGroup(repo, tenantID, "To Delete", assetgroup.EnvironmentTesting, assetgroup.CriticalityLow)
 
-		err := svc.DeleteAssetGroup(context.Background(), tenantID.String(), existing.ID())
+		_, err := svc.DeleteAssetGroup(context.Background(), tenantID.String(), existing.ID())
 		if err != nil {
 			t.Fatalf("DeleteAssetGroup failed: %v", err)
 		}
@@ -763,7 +763,7 @@ func TestDeleteAssetGroup(t *testing.T) {
 		repo := newMockAssetGroupServiceRepo()
 		svc := newTestAssetGroupService(repo)
 
-		err := svc.DeleteAssetGroup(context.Background(), shared.NewID().String(), shared.NewID())
+		_, err := svc.DeleteAssetGroup(context.Background(), shared.NewID().String(), shared.NewID())
 		if err == nil {
 			t.Fatal("expected error for non-existent group")
 		}
@@ -780,7 +780,7 @@ func TestDeleteAssetGroup(t *testing.T) {
 
 		existing := seedAssetGroup(repo, tenantID, "Error Delete", assetgroup.EnvironmentProduction, assetgroup.CriticalityHigh)
 
-		err := svc.DeleteAssetGroup(context.Background(), tenantID.String(), existing.ID())
+		_, err := svc.DeleteAssetGroup(context.Background(), tenantID.String(), existing.ID())
 		if err == nil {
 			t.Fatal("expected error from repo")
 		}
