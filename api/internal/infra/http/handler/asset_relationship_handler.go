@@ -12,6 +12,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/validator"
@@ -19,6 +20,7 @@ import (
 
 // AssetRelationshipHandler handles asset relationship HTTP requests.
 type AssetRelationshipHandler struct {
+	configAuditor
 	service   *assetapp.AssetRelationshipService
 	validator *validator.Validator
 	logger    *logger.Logger
@@ -294,10 +296,13 @@ func (h *AssetRelationshipHandler) Delete(w http.ResponseWriter, r *http.Request
 	tenantID := middleware.MustGetTenantID(r.Context())
 	relationshipID := chi.URLParam(r, "relationshipId")
 
-	if err := h.service.DeleteRelationship(r.Context(), tenantID, relationshipID); err != nil {
+	label, err := h.service.DeleteRelationshipDescribed(r.Context(), tenantID, relationshipID)
+	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	h.recordDeleted(r, h.logger, auditdom.ActionAssetRelationshipDeleted, auditdom.ResourceTypeAssetRelationship,
+		relationshipID, label, "Asset relationship deleted")
 
 	w.WriteHeader(http.StatusNoContent)
 }
