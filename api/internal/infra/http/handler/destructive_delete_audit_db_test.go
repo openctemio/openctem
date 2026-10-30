@@ -114,6 +114,9 @@ func (f *deleteAuditFixture) entries(t *testing.T, tenant string, action auditdo
 		}
 		out = append(out, r)
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("read audit rows: %v", err)
+	}
 	return out
 }
 
