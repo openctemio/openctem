@@ -283,6 +283,20 @@ func (v *V2Receiver) Put(ctx context.Context, t V2Target, seq int, whole bool, b
 		return nil, err
 	}
 	if !ok {
+		// Refused for size, or the report closed since the read above
+		// (committed, expired or failed): the answer differs.
+		cur, gerr := v.reports.GetByID(ctx, rep.ID)
+		switch {
+		case gerr != nil:
+			return nil, gerr
+		case cur.Committed():
+			return nil, problem(protov2.ProblemReportCommitted)
+		case cur.State != protov2.StateReceiving:
+			if cur.State == protov2.StateExpired || cur.Expired(now) {
+				return nil, problem(protov2.ProblemReportExpired)
+			}
+			return nil, problem(protov2.ProblemReportCommitted)
+		}
 		return nil, &V2ReportError{Problem: protov2.ProblemReportTooLarge}
 	}
 
@@ -376,6 +390,11 @@ func (v *V2Receiver) replay(ctx context.Context, rep *ingestreport.Report, exist
 	}
 	created := false
 	if rep.State == protov2.StateFailed {
+		// A reopen puts jobs back on the queue: admit it as a continuation
+		// like any other segment, so replay cannot skip the tenant ceiling.
+		if err := v.admit(ctx, rep.TenantID, true, 0, now); err != nil {
+			return nil, err
+		}
 		if _, err := v.jobs.RequeueDeadV2(ctx, rep.ID); err != nil {
 			return nil, err
 		}
@@ -473,7 +492,17 @@ func (v *V2Receiver) commit(ctx context.Context, rep *ingestreport.Report, facts
 		return err
 	}
 	if !ok {
-		return problem(protov2.ProblemReportCommitted)
+		// Closed by another request, or a segment arrived after the set was
+		// verified (the commit refuses a count that moved): only the first
+		// is "committed"; the second is retryable against the fresh set.
+		cur, gerr := v.reports.GetByID(ctx, rep.ID)
+		if gerr != nil {
+			return gerr
+		}
+		if cur.Committed() || cur.State != protov2.StateReceiving {
+			return problem(protov2.ProblemReportCommitted)
+		}
+		return problem(protov2.ProblemUnavailable)
 	}
 	job := ingestjob.NewV2Job(rep.TenantID, &rep.SensorID, rep.ReportID, ingestjob.V2Segment{ReportRef: rep.ID}, nil)
 	if _, _, err := v.jobs.EnqueueV2(ctx, job); err != nil {
