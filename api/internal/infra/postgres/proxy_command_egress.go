@@ -79,7 +79,7 @@ func (r *ProxyPoolRepository) CloseCommandEgress(ctx context.Context, tenantID, 
 // first, at most maxTaskSamples.
 func (r *ProxyPoolRepository) TaskSamples(ctx context.Context, tenantID, poolID shared.ID, since time.Time) ([]proxypool.TaskSample, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT endpoint_ids::text[], verdict = $4, verdict_at FROM proxy_command_egress
+		SELECT sensor_id::text, endpoint_ids::text[], verdict = $4, verdict_at FROM proxy_command_egress
 		 WHERE tenant_id = $1 AND pool_id = $2 AND verdict IS NOT NULL AND verdict_at >= $3
 		 ORDER BY verdict_at DESC LIMIT `+fmt.Sprint(maxTaskSamples),
 		tenantID.String(), poolID.String(), since, proxypool.VerdictProxyFault)
@@ -90,7 +90,7 @@ func (r *ProxyPoolRepository) TaskSamples(ctx context.Context, tenantID, poolID 
 	out := []proxypool.TaskSample{}
 	for rows.Next() {
 		var s proxypool.TaskSample
-		if err := rows.Scan(pq.Array(&s.EndpointIDs), &s.Fault, &s.At); err != nil {
+		if err := rows.Scan(&s.SensorID, pq.Array(&s.EndpointIDs), &s.Fault, &s.At); err != nil {
 			return nil, fmt.Errorf("scan proxy task sample: %w", err)
 		}
 		out = append(out, s)

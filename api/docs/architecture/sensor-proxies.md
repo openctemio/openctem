@@ -258,6 +258,12 @@ which it always receives:
   faulted job quarantines it again (doubled back-off). The score is capped at
   the share of clean jobs. Task verdicts never promote an endpoint; only the
   per-connection report does.
+- **Shared endpoints.** When jobs of more than one sensor went through an
+  endpoint in the window, faults from a single sensor never quarantine it:
+  at least two distinct sensors must have reported faults (this also holds
+  for the first faulted job after a back-off). An endpoint only one sensor
+  uses keeps the rule above, so one sensor's own network problem cannot take
+  a shared endpoint away from the others.
 - **Alert.** A quarantine from task reports writes the audit event
   `proxy_pool.endpoint_quarantined` (severity high, `source: task_reports`,
   the faulted and total job counts, the command and reporting sensor) and a

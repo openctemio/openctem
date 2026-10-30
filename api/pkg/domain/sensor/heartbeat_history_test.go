@@ -58,3 +58,34 @@ func TestHeartbeatHistory_BucketsAndClamping(t *testing.T) {
 		t.Fatalf("clamped %+v", s)
 	}
 }
+
+func TestHeartbeatAggregate_GapBeatsCountLateBeatsOnly(t *testing.T) {
+	at := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+	iv := 30 * time.Second
+	run := func(gaps ...time.Duration) HeartbeatAggregate {
+		var a HeartbeatAggregate
+		for i, g := range gaps {
+			a.Add(HeartbeatSample{At: at.Add(time.Duration(i) * time.Minute), Gap: g, Interval: iv})
+		}
+		return a
+	}
+	// A regular series: the first beat has no previous one, the rest 30 s.
+	reg := run(0, iv, iv+2*time.Second, iv, iv)
+	if reg.Beats != 5 || reg.PrevBeats != 4 || reg.GapBeats != 0 {
+		t.Fatalf("regular: %+v", reg)
+	}
+	// One real gap (3 intervals) among regular beats.
+	gap := run(0, iv, iv, 3*iv, iv)
+	if gap.Beats != 5 || gap.PrevBeats != 4 || gap.GapBeats != 1 || gap.MaxGapSeconds != 90 {
+		t.Fatalf("one gap: %+v", gap)
+	}
+	// Exactly 1.5 intervals is not late; no known interval is never late.
+	if run(0, iv*3/2).GapBeats != 0 {
+		t.Fatal("1.5 intervals counted as late")
+	}
+	var a HeartbeatAggregate
+	a.Add(HeartbeatSample{Gap: time.Hour})
+	if a.GapBeats != 0 || a.PrevBeats != 1 {
+		t.Fatalf("no interval: %+v", a)
+	}
+}

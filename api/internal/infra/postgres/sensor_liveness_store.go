@@ -214,27 +214,29 @@ func (r *SensorHeartbeatHistoryRepository) RecordHeartbeatBatch(ctx context.Cont
 	n := len(rows)
 	ids, tenants := make([]string, 0, n), make([]string, 0, n)
 	buckets := make([]time.Time, 0, n)
-	beats, gapBeats := make([]int64, 0, n), make([]int64, 0, n)
+	beats, gapBeats, prevBeats := make([]int64, 0, n), make([]int64, 0, n), make([]int64, 0, n)
 	sumGap, maxGap, maxIv := make([]float64, 0, n), make([]float64, 0, n), make([]float64, 0, n)
 	maxLag, failures := make([]int64, 0, n), make([]int64, 0, n)
 	for _, a := range rows {
 		ids, tenants = append(ids, a.SensorID.String()), append(tenants, a.TenantID.String())
 		buckets = append(buckets, a.BucketStart.UTC())
 		beats, gapBeats = append(beats, a.Beats), append(gapBeats, a.GapBeats)
+		prevBeats = append(prevBeats, a.PrevBeats)
 		sumGap, maxGap, maxIv = append(sumGap, a.SumGapSeconds), append(maxGap, a.MaxGapSeconds), append(maxIv, a.MaxIntervalSeconds)
 		maxLag, failures = append(maxLag, a.MaxLagMillis), append(failures, a.Failures)
 	}
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO sensor_heartbeat_history AS h
-		    (sensor_id, tenant_id, bucket_start, beats, gap_beats, sum_gap_seconds,
+		    (sensor_id, tenant_id, bucket_start, beats, gap_beats, prev_beats, sum_gap_seconds,
 		     max_gap_seconds, max_interval_seconds, max_lag_ms, failures)
-		SELECT v.sid, v.tid, v.bucket, v.beats, v.gaps, v.sum_gap, v.max_gap, v.max_iv, v.max_lag, v.failures
+		SELECT v.sid, v.tid, v.bucket, v.beats, v.gaps, v.prev, v.sum_gap, v.max_gap, v.max_iv, v.max_lag, v.failures
 		FROM unnest($1::uuid[], $2::uuid[], $3::timestamptz[], $4::bigint[], $5::bigint[],
-		            $6::float8[], $7::float8[], $8::float8[], $9::bigint[], $10::bigint[])
-		     AS v(sid, tid, bucket, beats, gaps, sum_gap, max_gap, max_iv, max_lag, failures)
+		            $6::float8[], $7::float8[], $8::float8[], $9::bigint[], $10::bigint[], $11::bigint[])
+		     AS v(sid, tid, bucket, beats, gaps, sum_gap, max_gap, max_iv, max_lag, failures, prev)
 		ON CONFLICT (sensor_id, bucket_start) DO UPDATE SET
 		    beats = h.beats + EXCLUDED.beats,
 		    gap_beats = h.gap_beats + EXCLUDED.gap_beats,
+		    prev_beats = h.prev_beats + EXCLUDED.prev_beats,
 		    sum_gap_seconds = h.sum_gap_seconds + EXCLUDED.sum_gap_seconds,
 		    max_gap_seconds = GREATEST(h.max_gap_seconds, EXCLUDED.max_gap_seconds),
 		    max_interval_seconds = GREATEST(h.max_interval_seconds, EXCLUDED.max_interval_seconds),
@@ -242,7 +244,7 @@ func (r *SensorHeartbeatHistoryRepository) RecordHeartbeatBatch(ctx context.Cont
 		    failures = h.failures + EXCLUDED.failures
 		WHERE h.tenant_id = EXCLUDED.tenant_id`,
 		pq.Array(ids), pq.Array(tenants), pq.Array(buckets), pq.Array(beats), pq.Array(gapBeats),
-		pq.Array(sumGap), pq.Array(maxGap), pq.Array(maxIv), pq.Array(maxLag), pq.Array(failures))
+		pq.Array(sumGap), pq.Array(maxGap), pq.Array(maxIv), pq.Array(maxLag), pq.Array(failures), pq.Array(prevBeats))
 	if err != nil {
 		return fmt.Errorf("failed to record heartbeat history batch: %w", err)
 	}
