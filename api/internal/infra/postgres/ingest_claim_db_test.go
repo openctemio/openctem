@@ -61,7 +61,7 @@ func TestIngestClaim_OneRunningJobPerScope_DB(t *testing.T) {
 	if n := len(mine(got, tenant)); n != 0 {
 		t.Fatalf("claimed %d jobs of a scope that has one running", n)
 	}
-	if err := repo.Complete(ctx, first[0].ID(), processing(t, db, first[0].ID()), []byte(`{}`)); err != nil {
+	if err := repo.Complete(ctx, first[0].TenantID(), first[0].ID(), processing(t, db, first[0].ID()), []byte(`{}`)); err != nil {
 		t.Fatal(err)
 	}
 	got, _ = repo.ClaimBatch(ctx, "w3", 100)
@@ -234,7 +234,7 @@ func TestIngestClaim_TenantDepth_DB(t *testing.T) {
 	repo := NewIngestJobRepository(&DB{DB: db})
 	j1 := enqueueRouted(t, repo, tenant, "d1", ingestjob.LaneBulk, "")
 	enqueueRouted(t, repo, tenant, "d2", ingestjob.LaneBulk, "")
-	if err := repo.Complete(ctx, j1.ID(), processing(t, db, j1.ID()), []byte(`{}`)); err != nil {
+	if err := repo.Complete(ctx, j1.TenantID(), j1.ID(), processing(t, db, j1.ID()), []byte(`{}`)); err != nil {
 		t.Fatal(err)
 	}
 	unfinished, finished, err := repo.TenantDepth(ctx, tenant, time.Now().Add(-time.Minute))

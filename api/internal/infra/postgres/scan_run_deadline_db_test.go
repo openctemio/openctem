@@ -335,7 +335,7 @@ func TestRunRollover_LatestScheduledPartialOnlyAndTenantScoped(t *testing.T) {
 
 	// Once a later run settles, the leftovers are its business.
 	later, _ := f.newRun(t, scanworkflow.TriggerTypeSchedule, 0)
-	if err := f.runs.UpdateStatus(f.ctx, later.ID, scanrun.RunStatusCompleted, ""); err != nil {
+	if err := f.runs.UpdateStatus(f.ctx, later.TenantID, later.ID, scanrun.RunStatusCompleted, ""); err != nil {
 		t.Fatalf("complete later run: %v", err)
 	}
 	if ro, err := f.runs.LatestRollover(f.ctx, f.tenant, f.scan); err != nil || ro != nil {

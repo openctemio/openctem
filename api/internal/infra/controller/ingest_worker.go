@@ -16,8 +16,8 @@ import (
 // IngestJobQueue is the slice of the ingest-job repository the worker needs.
 type IngestJobQueue interface {
 	ClaimBatch(ctx context.Context, workerID string, limit int) ([]*ingestjob.Job, error)
-	Complete(ctx context.Context, id ingestjob.ID, attempts int, result []byte) error
-	Fail(ctx context.Context, id ingestjob.ID, attempts int, errMsg, publicErr string, availableAt time.Time, dead bool) error
+	Complete(ctx context.Context, tenantID shared.ID, id ingestjob.ID, attempts int, result []byte) error
+	Fail(ctx context.Context, tenantID shared.ID, id ingestjob.ID, attempts int, errMsg, publicErr string, availableAt time.Time, dead bool) error
 	Renew(ctx context.Context, tenantID shared.ID, id ingestjob.ID, attempts int) error
 	ReleaseStale(ctx context.Context, olderThan time.Duration) (int, []*ingestjob.Job, error)
 	CountPending(ctx context.Context) (int, error)
@@ -230,7 +230,7 @@ func (c *IngestWorkerController) processOne(ctx context.Context, job *ingestjob.
 			publicErr = ingestjob.ErrorApplyFailed
 		}
 		retryAt := time.Now().Add(ingestjob.BackoffFor(job.Kind(), job.Attempts()))
-		failErr := c.queue.Fail(ctx, job.ID(), job.Attempts(), err.Error(), publicErr, retryAt, dead)
+		failErr := c.queue.Fail(ctx, job.TenantID(), job.ID(), job.Attempts(), err.Error(), publicErr, retryAt, dead)
 		if errors.Is(failErr, ingestjob.ErrLeaseLost) {
 			c.leaseLost(job)
 			return
@@ -251,7 +251,7 @@ func (c *IngestWorkerController) processOne(ctx context.Context, job *ingestjob.
 		metrics.IngestJobsProcessedTotal.WithLabelValues(outcome).Inc()
 		return
 	}
-	if err := c.queue.Complete(ctx, job.ID(), job.Attempts(), result); err != nil {
+	if err := c.queue.Complete(ctx, job.TenantID(), job.ID(), job.Attempts(), result); err != nil {
 		if errors.Is(err, ingestjob.ErrLeaseLost) {
 			c.leaseLost(job)
 			return

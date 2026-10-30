@@ -58,7 +58,7 @@ func TestScanRunSummary_RunningRunCountsAtOnce(t *testing.T) {
 		t.Fatalf("after start: %+v, want total 1, last run %s running", got, run.ID)
 	}
 
-	if err := runs.UpdateStatus(ctx, run.ID, scanrun.RunStatusCompleted, ""); err != nil {
+	if err := runs.UpdateStatus(ctx, tenantID, run.ID, scanrun.RunStatusCompleted, ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := scans.RefreshRunSummary(ctx, tenantID, scanID); err != nil {
@@ -87,7 +87,7 @@ func TestScanRunSummary_LateOlderRunDoesNotRelabelNewerRun(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := runs.UpdateStatus(ctx, older.ID, scanrun.RunStatusFailed, "boom"); err != nil {
+	if err := runs.UpdateStatus(ctx, tenantID, older.ID, scanrun.RunStatusFailed, "boom"); err != nil {
 		t.Fatal(err)
 	}
 	if err := scans.RefreshRunSummary(ctx, tenantID, scanID); err != nil {
@@ -136,7 +136,7 @@ func TestScanRunSummary_BlockedRunIsCountedAndRead(t *testing.T) {
 		t.Fatalf("a blocked run never starts: started=%v deadline=%v completed=%v", got.StartedAt, got.DeadlineAt, got.CompletedAt)
 	}
 	// Terminal: nothing moves it again.
-	if err := runs.UpdateStatus(ctx, run.ID, scanrun.RunStatusRunning, ""); err == nil {
+	if err := runs.UpdateStatus(ctx, tenantID, run.ID, scanrun.RunStatusRunning, ""); err == nil {
 		t.Fatal("a blocked run was moved to running")
 	}
 
