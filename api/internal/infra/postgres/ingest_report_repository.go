@@ -31,6 +31,7 @@ const ingestReportColumns = `
 	id, tenant_id, sensor_id, report_id, command_id, scan_zone_id, state,
 	media_type, sensor_type, user_agent, header_digest, header, tool_name,
 	implicit_commit, segment_count, segments_received, assets_received, findings_received, committed_at,
+	COALESCE(integrity, ''), content_sha256,
 	segment_outcomes, touched_asset_ids, auto_resolved, auto_resolve,
 	expires_at, received_at, updated_at`
 
@@ -136,13 +137,14 @@ func (r *IngestReportRepository) Abandon(ctx context.Context, id shared.ID) (boo
 }
 
 // Commit closes a receiving report.
-func (r *IngestReportRepository) Commit(ctx context.Context, id shared.ID, segmentCount int, implicit bool, at time.Time) (bool, error) {
+func (r *IngestReportRepository) Commit(ctx context.Context, id shared.ID, c ingestreport.CommitFacts, at time.Time) (bool, error) {
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE ingest_reports
 		SET committed_at = $2, segment_count = $3, implicit_commit = $4,
+			integrity = $5, content_sha256 = $6,
 			state = 'queued', updated_at = NOW()
 		WHERE id = $1 AND committed_at IS NULL AND state = 'receiving'`,
-		id.String(), at, segmentCount, implicit)
+		id.String(), at, c.SegmentCount, c.Implicit, c.Integrity, c.ContentSHA256)
 	if err != nil {
 		return false, fmt.Errorf("commit ingest report: %w", err)
 	}
@@ -308,6 +310,7 @@ func scanIngestReport(row rowScanner) (*ingestreport.Report, error) {
 		&id, &tenant, &sensor, &reportID, &commandID, &zoneID, &state,
 		&rep.MediaType, &rep.SensorType, &rep.UserAgent, &rep.HeaderDigest, &header, &rep.ToolName,
 		&rep.ImplicitCommit, &segmentCount, &rep.SegmentsReceived, &rep.AssetsReceived, &rep.FindingsReceived, &committedAt,
+		&rep.Integrity, &rep.ContentSHA256,
 		&outcomes, pq.Array(&touched), &rep.AutoResolved, &autoResolve,
 		&rep.ExpiresAt, &rep.ReceivedAt, &rep.UpdatedAt,
 	)

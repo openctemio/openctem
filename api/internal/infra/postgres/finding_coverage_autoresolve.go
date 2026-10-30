@@ -97,7 +97,8 @@ func (r *FindingRepository) CommandCoverage(ctx context.Context, tenantID, comma
 	c.Result = result
 
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT report_id::text, sensor_id, state, tool_name, header, segment_outcomes, touched_asset_ids
+		SELECT report_id::text, sensor_id, state, tool_name, header, segment_outcomes, touched_asset_ids,
+			COALESCE(integrity, '')
 		FROM ingest_reports
 		WHERE tenant_id = $1 AND command_id = $2
 		ORDER BY received_at`, tenantID.String(), commandID.String())
@@ -112,7 +113,7 @@ func (r *FindingRepository) CommandCoverage(ctx context.Context, tenantID, comma
 			header, outcomes []byte
 			touched          []string
 		)
-		if err := rows.Scan(&rep.ReportID, &sensorID, &state, &rep.ToolName, &header, &outcomes, pq.Array(&touched)); err != nil {
+		if err := rows.Scan(&rep.ReportID, &sensorID, &state, &rep.ToolName, &header, &outcomes, pq.Array(&touched), &rep.Integrity); err != nil {
 			return nil, fmt.Errorf("scan command report: %w", err)
 		}
 		if rep.SensorID, err = shared.IDFromString(sensorID); err != nil {

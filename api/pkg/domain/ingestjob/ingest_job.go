@@ -461,6 +461,9 @@ type V2Repository interface {
 	GetV2Segment(ctx context.Context, reportRef shared.ID, seq int) (*Job, error)
 	// V2SegmentDigests returns the stored digest of every segment of a report.
 	V2SegmentDigests(ctx context.Context, reportRef shared.ID) (map[int]string, error)
+	// V2SegmentContents returns the decoded SHA-256 and size of every
+	// segment of a report, by segment number.
+	V2SegmentContents(ctx context.Context, reportRef shared.ID) (map[int]V2SegmentContent, error)
 	// RequeueDeadV2 returns a report's dead jobs to pending with a fresh
 	// retry budget, for a sensor that re-sends a failed report.
 	RequeueDeadV2(ctx context.Context, reportRef shared.ID) (int, error)
@@ -468,4 +471,11 @@ type V2Repository interface {
 	// segments: the digests stay for replay checks, the bytes are not needed.
 	// The processor never re-runs a segment of a completed report.
 	ClearV2Payloads(ctx context.Context, reportRef shared.ID) error
+}
+
+// V2SegmentContent is what the server stored of one segment: the SHA-256 of
+// its decoded bytes and their size.
+type V2SegmentContent struct {
+	SHA256 []byte
+	Bytes  int64
 }
