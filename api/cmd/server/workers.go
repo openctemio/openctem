@@ -1369,10 +1369,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		// Protocol v2 results jobs (RFC-026) run on the same queue whatever
 		// INGEST_MODE is, whenever v2 results are enabled.
 		if cfg.Ingest.V2Results && repos.IngestReport != nil {
-			jobs.SetV2(ingest.NewV2JobProcessor(svc.Ingest, repos.IngestReport, repos.IngestJob,
+			v2 := ingest.NewV2JobProcessor(svc.Ingest, repos.IngestReport, repos.IngestJob,
 				protov2.DefaultLimits(), ingest.BlindingGuard{
 					Ratio: cfg.Ingest.V2BlindingRatio, MinFindings: cfg.Ingest.V2BlindingMinFindings,
-				}, log))
+				}, log)
+			v2.SetPayloadSealer(svc.IngestQueue.Sealer())
+			jobs.SetV2(v2)
 		}
 		// CI results and file imports accepted with 202 (RFC-122).
 		if ciSvc := newCIRunService(cfg, repos, svc, log); ciSvc != nil {
