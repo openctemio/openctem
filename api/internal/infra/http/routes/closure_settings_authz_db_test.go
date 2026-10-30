@@ -15,8 +15,11 @@ import (
 func TestClosureSettingsAuthz_AdminOnlyOwnerForCritical(t *testing.T) {
 	h := newRetestAuthzHarness(t)
 	call := func(method, body string, admin bool) (int, string) {
-		req, _ := http.NewRequestWithContext(context.Background(), method, h.srv.URL+"/api/v1/organization/settings/closure",
-			strings.NewReader(body))
+		url := h.srv.URL + "/api/v1/organization/settings/closure"
+		if method == http.MethodDelete {
+			url += "/pending"
+		}
+		req, _ := http.NewRequestWithContext(context.Background(), method, url, strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Test-User", h.verifier.String())
 		req.Header.Set("X-Test-Perms", "findings:read,findings:verify")
@@ -50,6 +53,13 @@ func TestClosureSettingsAuthz_AdminOnlyOwnerForCritical(t *testing.T) {
 	}
 	if status, body := call(http.MethodGet, "", true); status != http.StatusOK || !strings.Contains(body, `"mode":"off"`) {
 		t.Fatalf("admin GET closure = %d (%s)", status, body)
+	}
+	// Canceling a waiting loosening is for owners and administrators too.
+	if status, body := call(http.MethodDelete, "", false); status != http.StatusForbidden {
+		t.Fatalf("member cancel = %d, want 403 (%s)", status, body)
+	}
+	if status, body := call(http.MethodDelete, "", true); status != http.StatusOK || !strings.Contains(body, `"mode":"off"`) {
+		t.Fatalf("admin cancel = %d (%s)", status, body)
 	}
 	var modeA, modeB sql.NullString
 	_ = h.db.QueryRow(`SELECT settings->'closure'->>'mode' FROM tenants WHERE id = $1`, h.tenantA.String()).Scan(&modeA)
