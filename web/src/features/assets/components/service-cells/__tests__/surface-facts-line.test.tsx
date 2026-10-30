@@ -22,6 +22,7 @@ const edge = {
     cdn: 'Cloudflare',
     ip_addresses: ['162.159.140.229', '172.66.0.227'],
   },
+  edge: { class: 'edge', provider: 'Cloudflare' },
   technologies: [{ name: 'nginx', version: '1.25.3', category: 'web_server' }],
 } as unknown as Asset
 

@@ -110,7 +110,31 @@ scope for a full port scan.
 
 Exclusions and "Not ours" always win over all of this.
 
-## 5. Check what was left out
+## 5. CDN, edge and shared-hosting addresses
+
+An address that belongs to a CDN or edge provider (Cloudflare, Fastly, Akamai,
+CloudFront and others), a hosting platform or a cloud provider's shared front
+end serves many organizations. Scanning it tests the provider's network, not
+yours. The platform labels these addresses and leaves the decision to you; it
+does not refuse them by itself.
+
+- **Labels:** a name or service served through a provider shows
+  **Behind <provider>** in the inventory and the asset drawer. An address in a
+  provider's published range shows **<provider> edge** (or *hosting*,
+  *shared*), on IP assets and on Scoping > In scope entries. Hover the label
+  for the reason.
+- **Add to out of scope:** with scope write, click the label on an address.
+  A confirm dialog explains why, then adds a *Do not scan* exclusion of that
+  address (audited; in the Strict scan approval mode it waits for an
+  exclusion approver). From then on no scan, retest or coverage run reaches
+  it.
+- **Names behind the address:** an exclusion of an address also leaves out
+  the names that resolve to it, because a scan of the name reaches the
+  address (section 2). Excluding a shared edge address therefore stops
+  scanning your names served from it. Re-include the address on Scoping >
+  Out of scope to scan them again.
+
+## 6. Check what was left out
 
 - **Before a scan starts**: the scan preview lists the targets exclusions
   would leave out, with the matching rule.
@@ -121,11 +145,12 @@ Exclusions and "Not ours" always win over all of this.
   dialog's check (`POST /scope/check`) say whether a target may be scanned,
   and why not.
 
-## 6. Troubleshooting
+## 7. Troubleshooting
 
 | Symptom | Cause | Fix |
 |---|---|---|
 | The exclusion shows "Pending" | Strict scan approval: exclusions need an approver other than you | Ask an exclusion approver, or decide on Scoping > Approvals |
 | A range scan skipped an address you did not exclude | The platform deny list (loopback, metadata, link-local ranges) | Nothing to fix: those are never scanned |
 | A port scan of a name found only web ports | An address behind the name is not in scope (section 4) | Add the address or its prefix to scope |
+| A name behind a CDN is no longer scanned | Its edge address was added to out of scope (section 5) | Re-include the address, or keep it excluded and accept that the names behind it are not scanned |
 | A scan refuses a target as `guardrailed` | A platform guardrail holds it (section 4) | Add its exact scope entry, if it is yours (the refusal offers it) |

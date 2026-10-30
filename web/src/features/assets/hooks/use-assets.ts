@@ -23,6 +23,7 @@ import type {
   UpdateRepositoryExtensionInput,
   RepoVisibility,
   AssetTechnologyBrief,
+  AssetEdge,
 } from '../types'
 
 /**
@@ -155,6 +156,7 @@ interface BackendAsset {
   pending_risk_request?: RiskRequest // a lowering of risk inputs waiting for approval
   system_tags?: string[] // derived from bug-bounty program links; never editable
   program_only?: boolean // came with a program; no own scope covers it
+  edge?: AssetEdge // a provider's shared address, or served through one
   triage?: {
     attribution_state: string
     confidence: number
@@ -220,6 +222,7 @@ function transformAsset(backend: BackendAsset): Asset {
     isCrownJewel: backend.is_crown_jewel ?? undefined,
     systemTags: backend.system_tags,
     programOnly: backend.program_only ?? undefined,
+    edge: backend.edge,
     triage: backend.triage
       ? {
           attributionState: backend.triage.attribution_state,

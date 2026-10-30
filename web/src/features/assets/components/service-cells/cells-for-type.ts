@@ -38,7 +38,7 @@ export type SurfaceCell =
   | 'tls'
   /** Expiry of a certificate asset. */
   | 'cert'
-  /** The CDN or edge provider a web service is served through. */
+  /** The CDN or edge provider an address belongs to, or a name or service is served through (API `edge`). */
   | 'edge'
 
 const WEB: readonly SurfaceCell[] = ['status', 'edge', 'ip', 'cname', 'tech', 'tls']
@@ -54,8 +54,8 @@ const HTTP_SERVICE: readonly SurfaceCell[] = [
 const SERVICE: readonly SurfaceCell[] = ['port', 'product', 'status', 'ip', 'tech', 'tls']
 const OPEN_PORT: readonly SurfaceCell[] = ['port', 'product']
 const DISCOVERED_URL: readonly SurfaceCell[] = ['status']
-const DNS_NAME: readonly SurfaceCell[] = ['dns']
-const IP: readonly SurfaceCell[] = ['asn', 'ports']
+const DNS_NAME: readonly SurfaceCell[] = ['edge', 'dns']
+const IP: readonly SurfaceCell[] = ['edge', 'asn', 'ports']
 const CERTIFICATE: readonly SurfaceCell[] = ['cert']
 const API: readonly SurfaceCell[] = ['status', 'edge', 'tech', 'tls']
 
