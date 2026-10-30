@@ -567,11 +567,7 @@ func (s *Service) evaluateRepoCoverage(ctx context.Context, tenantID, commandID 
 		out.Reason = coverageToolMismatch
 	}
 	if out.Reason == coverageEligible {
-		//
-		// The assets with open findings of the tool that a covered target
-		// reaches count too, also when this run reported nothing on them:
-		// that is what "the same check looked again and found nothing" is.
-		d.query.AssetIDs = s.coveredRunAssets(ctx, tenantID, commandID, d.query.ToolName, cov.Result, d.query.AssetIDs)
+		d.query.AssetIDs = s.coveredByCommand(ctx, tenantID, &commandID, d.query.AssetIDs)
 		if len(d.query.AssetIDs) == 0 {
 			out.Reason = coverageNoCoveredAssets
 		}

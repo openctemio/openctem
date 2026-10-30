@@ -27,17 +27,24 @@ A completed scan command is evaluated once its reports are committed
    metadata makes the target (or the run) not covered. A result without
    outcomes (an older sensor) proves coverage only when it is `full` and lists
    no gap, unreached or refused target.
-3. **Covered assets.** The assets the reports touched, plus the assets with
-   open findings of the same tool whose last sighting came from a command aimed
-   at a covered target (same target string), filtered to the assets the covered
-   targets reach (`coversLocated`). A scan that found nothing pushes an empty,
-   command-bound report, so such a run is evaluated too.
+3. **Covered assets.** Without per-target outcomes: the assets the reports
+   touched, within the command's scope (unchanged). With outcomes: the touched
+   assets within the scope of the covered targets, plus the assets with open
+   findings of the same tool whose last sighting came from a command aimed at
+   a covered target (same target string) **and** that are that target's own
+   host (never a subdomain of a domain target or an address inside a range
+   target the run did not name), minus every asset whose host or address the
+   result names in a gap, unreached or refused entry. A scan that found
+   nothing pushes an empty, command-bound report, so such a run is evaluated
+   too. Repository runs keep their own rule (the touched repository within
+   the command's scope).
 4. **Candidates.** Open, non-repository findings of the tool on those assets,
    last seen by a report of the same tool under the same scan profile, not
    reported by this run (its receipt decides), not from a protected source
    (pentest, manual, bug bounty, red team). Secrets are marked not observed,
-   never resolved. A candidate whose last sighting ran another template release
-   is marked stale, not resolved.
+   never resolved. A candidate whose last sighting ran another template
+   release, or recorded none while the run reports one, is marked stale, not
+   resolved.
 5. **Guard and mode.** The blinding guard holds a run that would close too
    many of the open findings at once. `INGEST_COVERAGE_AUTO_RESOLVE` decides
    what happens: `off`, `dry_run` (default: logged, receipt and audit only) or
