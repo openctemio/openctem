@@ -84,8 +84,8 @@ type RunRepository interface {
 	// UpdateStats updates run statistics.
 	UpdateStats(ctx context.Context, tenantID, id shared.ID, completed, failed, skipped, findings int) error
 
-	// UpdateStatus updates run status.
-	UpdateStatus(ctx context.Context, id shared.ID, status RunStatus, errorMessage string) error
+	// UpdateStatus updates the status of a run of the tenant (another tenant's run is not touched).
+	UpdateStatus(ctx context.Context, tenantID, id shared.ID, status RunStatus, errorMessage string) error
 
 	// GetStatsByTenant returns aggregated run statistics for a tenant in a single query.
 	// This is optimized to avoid N+1 queries when fetching stats.
@@ -109,7 +109,7 @@ type RunRepository interface {
 	// failed without creating a run, and spends the attempt (retry_attempt+1),
 	// so a dispatch that keeps failing runs out of budget instead of retrying
 	// every backoff interval forever.
-	ReleaseFailedRetryDispatch(ctx context.Context, runID shared.ID) error
+	ReleaseFailedRetryDispatch(ctx context.Context, tenantID, runID shared.ID) error
 }
 
 // RetryCandidate represents a failed scan run eligible for retry.

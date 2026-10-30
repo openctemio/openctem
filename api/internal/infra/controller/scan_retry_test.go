@@ -34,7 +34,7 @@ func (r *fakeRetryRepo) ListPendingRetries(_ context.Context, _ int) ([]scanrun.
 	return []scanrun.RetryCandidate{r.cand}, nil
 }
 
-func (r *fakeRetryRepo) ReleaseFailedRetryDispatch(_ context.Context, runID shared.ID) error {
+func (r *fakeRetryRepo) ReleaseFailedRetryDispatch(_ context.Context, _, runID shared.ID) error {
 	r.resetCall++
 	r.resetID = runID
 	r.claimed = false // claim released → eligible again next tick

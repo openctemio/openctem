@@ -36,9 +36,6 @@ scan_run_repository.go:ScanRunRepository.CreateRunIfUnderLimit:scan_workflows  D
 scan_run_repository.go:ScanRunRepository.CreateRunIfUnderLimit:scans  D-11 baseline: add the tenant predicate
 scan_run_repository.go:ScanRunRepository.Delete:scan_runs  D-11 baseline: add the tenant predicate
 scan_run_repository.go:ScanRunRepository.GetByID:scan_runs  D-11 baseline: add the tenant predicate
-scan_run_repository.go:ScanRunRepository.notUpdatedError:scan_runs  D-11 baseline: add the tenant predicate
-scan_run_repository.go:ScanRunRepository.ReleaseFailedRetryDispatch:scan_runs  D-11 baseline: add the tenant predicate
-scan_run_repository.go:ScanRunRepository.UpdateStatus:scan_runs  D-11 baseline: add the tenant predicate
 scanner_template_repository.go:ScannerTemplateRepository.Update:scanner_templates  D-11 baseline: add the tenant predicate
 sensor_apikey_repository.go:lockSensorKeys:sensors  D-11 baseline: add the tenant predicate
 sensor_repository.go:retireInlineKey:sensors  D-11 baseline: add the tenant predicate
@@ -73,3 +70,6 @@ automation_run_repository.go:AutomationRunRepository.Update:automation_runs  D-1
 mcp_oauth_repository.go:MCPOAuthRepository.GetRequest:mcp_oauth_requests  pre-tenant OAuth authorization request (RFC-062): no organization is chosen until approval; the row is found by a random id and bound to the claiming user
 mcp_oauth_repository.go:MCPOAuthRepository.ClaimRequest:mcp_oauth_requests  pre-tenant OAuth authorization request (RFC-062): no organization is chosen until approval; the row is found by a random id and bound to the claiming user
 mcp_oauth_repository.go:MCPOAuthRepository.DenyRequest:mcp_oauth_requests  pre-tenant OAuth authorization request (RFC-062): no organization is chosen until approval; the row is found by a random id and bound to the claiming user
+command_shared_claim.go:CommandRepository.ClaimManyShared:commands  Permanent: claims platform jobs (is_platform_job = TRUE) for an instance-scope sensor; the queue is cross-tenant by design and each claimed row carries its own tenant
+scan_workflow_lineage.go:ScanWorkflowRepository.SetLineage:scan_workflows  Permanent: the written row is tenant-scoped in the top-level WHERE; the subquery only checks that the source id is a global system template (is_system_template), which has no owning tenant
+support_access_repository.go:SupportAccessRepository.GetGrantForAdmin:support_grants  Permanent: a platform admin reads a support grant naming themselves (admin_id = $2); the grant itself defines the tenant, and no tenant user reaches this method
