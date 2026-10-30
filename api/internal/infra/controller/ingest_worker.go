@@ -156,6 +156,7 @@ func (c *IngestWorkerController) Reconcile(ctx context.Context) (int, error) {
 	if depth, err := c.queue.CountPending(ctx); err == nil {
 		metrics.IngestQueueDepth.Set(float64(depth))
 	}
+	c.refreshLag(ctx)
 
 	start := time.Now()
 	var (
@@ -291,4 +292,25 @@ func (c *IngestWorkerController) leaseLost(job *ingestjob.Job) {
 	c.logger.Warn("ingest: lease lost; the job is not written by this attempt",
 		"job_id", job.ID().String(), "attempts", job.Attempts())
 	metrics.IngestJobsProcessedTotal.WithLabelValues("lease_lost").Inc()
+}
+
+// laggingQueue is implemented by the postgres queue; a queue without it (tests)
+// leaves the lag gauge alone.
+type laggingQueue interface {
+	OldestClaimableByLane(ctx context.Context) (map[ingestjob.Lane]time.Duration, error)
+}
+
+// refreshLag sets the import lag gauge of every lane (0 when nothing waits).
+func (c *IngestWorkerController) refreshLag(ctx context.Context) {
+	q, ok := c.queue.(laggingQueue)
+	if !ok {
+		return
+	}
+	oldest, err := q.OldestClaimableByLane(ctx)
+	if err != nil {
+		return
+	}
+	for _, lane := range []ingestjob.Lane{ingestjob.LaneUrgent, ingestjob.LaneInteractive, ingestjob.LaneBulk} {
+		metrics.IngestQueueOldestSeconds.WithLabelValues(lane.String()).Set(oldest[lane].Seconds())
+	}
 }

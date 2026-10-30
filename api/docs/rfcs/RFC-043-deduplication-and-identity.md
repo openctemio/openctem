@@ -611,6 +611,7 @@ weakening identity.
 | `secret_value` | the same per-tenant keyed hash of the raw secret, in another file or repository of the tenant | a secret known only by its mask (masks are shared by unrelated secrets); across tenants (the key is per tenant). A CI job's producer key is per repository, so secrets a CI job hashed link within one repository only |
 | `vuln_alias` | a re-key collision after an alias change (§17.2) | — |
 | `vuln_asset` | the same canonical CVE on the same asset through different techniques (§18) | across assets; a different port; two findings of one technique at one place |
+| `dast_scheme` | the same DAST check at the same page over http and https (§19) | across assets; a non-default port; another rule, method, path or parameter names |
 
 Candidates come only from server-computed keys stored in `finding_link_keys`
 (one indexed lookup per ingest batch, no scan of a tenant's findings). A key
@@ -664,6 +665,7 @@ a pair whose signal no longer holds (the code moved) is released.
 | Identity explanation (recipe and field names, reporting tools, merged duplicates) | in progress (P0) |
 | Alias canonicalisation, multi-CVE SCA split, `vuln_alias` links, `refingerprint -vuln-aliases` | implemented on the platform; the alias map fills once the feed publishes it (collector change in the feed repository) |
 | Technique links `vuln_asset` on one asset (§18): link, confirmation, notification rule, `refingerprint -links` | implemented |
+| Scheme links `dast_scheme` (§19): http and https views of one page, notification rule, `refingerprint -links` | implemented |
 | Manual link and unlink-by-reason, one finding-page panel for merged, linked and possible duplicates, group follows its primary into a remediation task, related-asset suggestions (§18.6) | planned |
 | CWE parent/child, SAST source-to-sink via data flow, code-to-image, IaC policy equivalence, group severity/SLA/ticket offers | planned |
 
@@ -749,3 +751,44 @@ into links are separate changes.
 
 `refingerprint -links [-tenant <id>] [-apply]` also derives `vuln_asset` keys
 and links, and records confirmations when applied; dry run by default.
+
+## 19. Scheme links (amendment 2026-10-30)
+
+A template check that runs against both `http://host/page` and
+`https://host/page` reports the same check twice. The scheme stays in the DAST
+identity (§4): another scheme is another origin, port and transport, and a
+page served in plaintext can be a risk of its own. The two findings are one
+issue for the person triaging them, so they are linked with the §17 model.
+
+### 19.1 Rule
+
+`dast_scheme`: the same tenant and asset, the same DAST rule (the CVE for a
+CVE template) and method, the same host, path template and parameter names,
+and different schemes, both URLs on the scheme's default port.
+
+- Key: `finding_link_keys` kind `dast_point`, a hash of (asset, rule, method,
+  host and path template, parameter names); the locator is the scheme. Two
+  holders link only when their schemes differ: two holders with one scheme
+  hold one identity.
+- Never: an explicit port (another port is another service), another asset or
+  tenant (the key includes the asset), another rule, method, path or
+  parameter names, a pentest finding, a tombstone, a pair a person unlinked.
+- Every version-2 DAST finding is linkable (not only those with a CVE); a CVE
+  template holds both its `vuln_asset` and its `dast_point` key, and a finding
+  is in at most one group.
+- The planner, caps, release and dashboard count are those of §17. A member
+  that joins the group of an open original raises no "new finding"
+  notification unless it is more severe than the rest of the group (§18.4).
+
+### 19.2 Threat model
+
+| Threat | Mitigation |
+|---|---|
+| A report forges a twin to pull a finding into a group or silence its alert | the key comes from the server-computed identity key of the same tenant and asset; a link changes no status; only the member's own notification is suppressed, and only while the original is open; a higher severity still notifies |
+| Cross-tenant link | keys, holders and links filter on the tenant; the key includes the asset |
+| Out-of-scope oracle | both findings are on one asset, so both are inside or both outside a caller's data scope |
+
+### 19.3 Backfill
+
+`refingerprint -links [-tenant <id>] [-apply]` derives `dast_point` keys and
+`dast_scheme` links for stored findings; dry run by default.

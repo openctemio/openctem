@@ -65,9 +65,6 @@ export function SignupPolicyForm({ policy, canEdit, onSaved }: SignupPolicyFormP
   const [mode, setMode] = useState<Mode>((policy.mode as Mode) ?? 'admin_only')
   const [accounts, setAccounts] = useState<Accounts>(storedAccounts)
   const [requestAccess, setRequestAccess] = useState(!!policy.request_access)
-  // Absent (an older API) reads as on, the platform default.
-  const storedAutoLink = policy.social_auto_link ?? false
-  const [socialAutoLink, setSocialAutoLink] = useState(storedAutoLink)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [code, setCode] = useState('')
   const codeOptional = useStepUpCodeOptional()
@@ -79,8 +76,7 @@ export function SignupPolicyForm({ policy, canEdit, onSaved }: SignupPolicyFormP
     setMode((policy.mode as Mode) ?? 'admin_only')
     setAccounts((policy.accounts as Accounts) ?? 'closed')
     setRequestAccess(!!policy.request_access)
-    setSocialAutoLink(policy.social_auto_link ?? false)
-  }, [policy.mode, policy.accounts, policy.request_access, policy.social_auto_link, policy.version])
+  }, [policy.mode, policy.accounts, policy.request_access, policy.version])
 
   // Organization self-service needs open account sign-up.
   const chooseAccounts = (a: Accounts) => {
@@ -89,10 +85,7 @@ export function SignupPolicyForm({ policy, canEdit, onSaved }: SignupPolicyFormP
   }
 
   const dirty =
-    mode !== policy.mode ||
-    accounts !== storedAccounts ||
-    requestAccess !== !!policy.request_access ||
-    socialAutoLink !== storedAutoLink
+    mode !== policy.mode || accounts !== storedAccounts || requestAccess !== !!policy.request_access
 
   const openConfirm = () => {
     setCode('')
@@ -108,7 +101,6 @@ export function SignupPolicyForm({ policy, canEdit, onSaved }: SignupPolicyFormP
         mode,
         accounts,
         request_access: requestAccess,
-        social_auto_link: socialAutoLink,
         version: policy.version ?? 0,
         totp_code: code.trim(),
       })
@@ -238,21 +230,6 @@ export function SignupPolicyForm({ policy, canEdit, onSaved }: SignupPolicyFormP
             />
           </div>
 
-          <div className="flex items-start justify-between gap-4 rounded-lg border p-4">
-            <Label htmlFor={`${codeId}-al`} className="grid gap-1 font-normal">
-              <span className="font-medium">{t('admin.signup.socialAutoLink')}</span>
-              <span className="text-sm text-muted-foreground">
-                {t('admin.signup.socialAutoLinkHint')}
-              </span>
-            </Label>
-            <Switch
-              id={`${codeId}-al`}
-              checked={socialAutoLink}
-              onCheckedChange={setSocialAutoLink}
-              disabled={!canEdit}
-            />
-          </div>
-
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-xs text-muted-foreground">
               {t('admin.signup.current', undefined, {
@@ -303,11 +280,6 @@ export function SignupPolicyForm({ policy, canEdit, onSaved }: SignupPolicyFormP
             <p>
               {t('admin.signup.confirmAccounts', undefined, {
                 accounts: t(`admin.signup.accounts.${accounts}`),
-              })}
-            </p>
-            <p>
-              {t('admin.signup.confirmSocialAutoLink', undefined, {
-                state: socialAutoLink ? t('admin.signup.on') : t('admin.signup.off'),
               })}
             </p>
             {((mode === 'self_service' && policy.mode !== 'self_service') ||

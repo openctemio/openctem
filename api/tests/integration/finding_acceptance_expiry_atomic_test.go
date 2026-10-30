@@ -224,6 +224,13 @@ func TestAcceptanceExpiry_MigrationGivesMissingEnds(t *testing.T) {
 	}
 	type row struct{ tenant, finding shared.ID }
 	var noEnd []row
+	// The rows this backfill fixes cannot be written any more (a later
+	// migration gives every accepted row an end): write them as an older
+	// writer did, with that trigger off for this private database.
+	exec(`DO $$ BEGIN
+		IF EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_findings_default_acceptance_end') THEN
+			ALTER TABLE findings DISABLE TRIGGER trg_findings_default_acceptance_end;
+		END IF; END $$`)
 	kept := time.Now().Add(10 * 24 * time.Hour).UTC().Truncate(time.Second)
 	var withEnd shared.ID
 	for i, name := range []string{"acc-mig-a", "acc-mig-b"} {

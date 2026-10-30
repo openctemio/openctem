@@ -104,7 +104,7 @@ type RunMapOutcome struct {
 }
 
 // RunMapCoverageGap is one host and why it was not fully covered
-// (breaker_open, rate_floor or blocked).
+// (breaker_open, rate_floor, blocked or proxy_unavailable).
 type RunMapCoverageGap struct {
 	Host   string `json:"host"`
 	Reason string `json:"reason"`

@@ -344,6 +344,34 @@ func (r *IngestJobRepository) CountPending(ctx context.Context) (int, error) {
 	return n, nil
 }
 
+// OldestClaimableByLane returns, per lane, how long the oldest job a worker
+// could claim now has been waiting (since it became claimable). A lane with
+// nothing claimable is absent. Platform-wide by design: it feeds the lag
+// gauge and reads no tenant data.
+func (r *IngestJobRepository) OldestClaimableByLane(ctx context.Context) (map[ingestjob.Lane]time.Duration, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT lane, EXTRACT(EPOCH FROM NOW() - MIN(available_at))::float8
+		FROM ingest_jobs
+		WHERE status = 'pending' AND available_at <= NOW() AND attempts < max_attempts
+		GROUP BY lane`)
+	if err != nil {
+		return nil, fmt.Errorf("oldest claimable ingest job: %w", err)
+	}
+	defer rows.Close()
+	out := map[ingestjob.Lane]time.Duration{}
+	for rows.Next() {
+		var (
+			lane int
+			secs float64
+		)
+		if err := rows.Scan(&lane, &secs); err != nil {
+			return nil, fmt.Errorf("scan oldest claimable ingest job: %w", err)
+		}
+		out[ingestjob.Lane(lane)] = time.Duration(max(secs, 0) * float64(time.Second))
+	}
+	return out, rows.Err()
+}
+
 // ReleaseStale resets jobs stuck in processing past the lease back to
 // pending; a job with no attempts left (its lease expiry was its last
 // attempt) is marked dead with apply_failed and returned in dead.

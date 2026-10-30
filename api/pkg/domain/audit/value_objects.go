@@ -333,8 +333,9 @@ const (
 	ActionAuthSessionRevoked              Action = "auth.session_revoked"
 	ActionAuthPasswordChanged             Action = "auth.password_changed"
 	// A social sign-in identity (Google, GitHub, Microsoft) was linked to or
-	// unlinked from the account: by the person from Account > Security, or
-	// automatically on a sign-in that met the auto-link rules.
+	// unlinked from the account: by the person from Account > Security or
+	// after signing in to the account. Older rows may carry how=automatic from a
+	// removed feature.
 	ActionAuthIdentityLinked   Action = "auth.identity_linked"
 	ActionAuthIdentityUnlinked Action = "auth.identity_unlinked"
 	// Step-up re-authentication: the signed-in user proved their identity

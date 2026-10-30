@@ -384,6 +384,7 @@
   "assets.facts.notCollectedTitle": "Chưa thu thập",
   "assets.facts.port": "Cổng",
   "assets.facts.ports": "cổng",
+  "assets.facts.providerPorts": "Cổng của nhà cung cấp",
   "assets.facts.technologies": "công nghệ",
   "assets.facts.title": "Thông tin dịch vụ",
   "assets.filters.add": "Thêm bộ lọc",
