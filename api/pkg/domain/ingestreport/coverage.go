@@ -3,6 +3,7 @@ package ingestreport
 import (
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -16,6 +17,8 @@ type CommandCoverage struct {
 	// Result is the command's completion result as the sensor sent it (may
 	// carry exit_code).
 	Result json.RawMessage
+	// CompletedAt is when the command completed (zero when unknown).
+	CompletedAt time.Time
 	// ProfileID is the scan profile of the scan configuration that queued the
 	// command, "" when there is none (ad-hoc and workflow-step commands).
 	ProfileID string

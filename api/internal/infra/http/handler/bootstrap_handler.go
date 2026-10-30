@@ -181,6 +181,10 @@ type BootstrapBadges struct {
 	// decision under the caller's data scope, as GET /approvals reports in
 	// `status_counts.pending`. Only for approvers (findings:approve).
 	PendingApprovals *int `json:"pending_approvals,omitempty"`
+	// ReadyToClose is the Ready to close queue (pending closure proposals
+	// under the caller's data scope), as GET /findings/closure/proposals
+	// reports in `total`. Only for verifiers (findings:verify).
+	ReadyToClose *int `json:"ready_to_close,omitempty"`
 }
 
 // BootstrapSession supplies the session parts of the bootstrap. Each source
@@ -199,6 +203,9 @@ type BootstrapSession struct {
 	// request's caller (data scope from ctx); nil when approvals are not
 	// wired.
 	PendingApprovalCount func(ctx context.Context, tenantID shared.ID) (int, error)
+	// ReadyToCloseCount is the total of GET /findings/closure/proposals for
+	// the request's caller (data scope from ctx); nil when not wired.
+	ReadyToCloseCount func(ctx context.Context, tenantID shared.ID) (int, error)
 	// TenantCreationMode reports the current organization policy (the sign-up
 	// policy when it is configured, else the configured mode).
 	TenantCreationMode func(ctx context.Context) string
@@ -584,6 +591,23 @@ func (h *BootstrapHandler) addSession(r *http.Request, resp *BootstrapResponse, 
 			}
 			mu.Lock()
 			badges.PendingApprovals = &n
+			hasBadg = true
+			mu.Unlock()
+		})
+	}
+	// The Ready to close badge: verifiers only, findings module on, counted
+	// in the caller's data scope like the queue itself.
+	if h.session.ReadyToCloseCount != nil &&
+		middleware.HasPermission(ctx, permission.FindingsVerify.String()) &&
+		resp.Modules != nil && slices.Contains(resp.Modules.ModuleIDs, module.ModuleFindings) {
+		run(func() {
+			n, err := h.session.ReadyToCloseCount(ctx, tenantID)
+			if err != nil {
+				h.logger.Warn("bootstrap: ready to close count unavailable", "error", err)
+				return
+			}
+			mu.Lock()
+			badges.ReadyToClose = &n
 			hasBadg = true
 			mu.Unlock()
 		})

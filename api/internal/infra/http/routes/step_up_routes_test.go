@@ -465,3 +465,41 @@ func TestFindingDecisionStepUp_BulkAndRejectCancel(t *testing.T) {
 		}
 	}
 }
+
+// Ready to close: every confirm, single or bulk, needs step-up; a dismissal
+// does not. A body the gate cannot read is gated.
+func TestClosureDecisionStepUp_EveryConfirm(t *testing.T) {
+	stale := steppedUpAt(time.Now().Add(-11 * time.Minute))
+	call := func(t *testing.T, checker middleware.RecentAuthChecker, body string) (code int, reached bool) {
+		t.Helper()
+		withStepUpChecker(t, checker)
+		h := requireStepUpWhenConfirming()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			reached = true
+			b := make([]byte, len(body))
+			n, _ := r.Body.Read(b)
+			if string(b[:n]) != body {
+				t.Errorf("body not restored: %q", b[:n])
+			}
+			w.WriteHeader(http.StatusOK)
+		}))
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+		req = req.WithContext(context.WithValue(context.WithValue(req.Context(), middleware.UserIDKey, "u1"), middleware.SessionIDKey, "s1"))
+		h.ServeHTTP(rec, req)
+		return rec.Code, reached
+	}
+	for _, body := range []string{`{"decision":"dismiss","proposal_ids":["a"],"reason":"wrong_asset"}`, `{"decision":"dismiss","proposal_ids":["a","b"],"reason":"wrong_asset"}`} {
+		if _, reached := call(t, stale, body); !reached {
+			t.Errorf("%s must not need step-up", body)
+		}
+	}
+	for _, body := range []string{`{"decision":"confirm","proposal_ids":["a"]}`, `{"decision":"confirm","proposal_ids":["a","b"]}`, `{"decision":"CONFIRM","proposal_ids":["a"]}`,
+		`{"decision":"confirm","proposal_ids":["a"]`, `{"decision":5}`, `{"proposal_ids":["a"],"proposal_ids":["a","b"],"decision":"confirm"}`} {
+		if code, reached := call(t, stale, body); reached || code != http.StatusForbidden {
+			t.Errorf("%s with a stale session: got %d reached=%v, want 403", body, code, reached)
+		}
+	}
+	if _, reached := call(t, alwaysSteppedUp{}, `{"decision":"confirm","proposal_ids":["a"]}`); !reached {
+		t.Error("a bulk confirm with a fresh session must reach the handler")
+	}
+}

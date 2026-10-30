@@ -1948,6 +1948,9 @@ func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) hand
 			}
 			return int(page.StatusCounts[vulnerability.ApprovalStatusPending]), nil
 		}
+		boot.ReadyToCloseCount = func(ctx context.Context, tenantID shared.ID) (int, error) {
+			return vulns.CountClosureProposals(ctx, tenantID.String())
+		}
 	}
 	mode := string(signupdom.Default().Mode)
 	if cfg.Auth.SignupOpen() {

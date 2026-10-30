@@ -494,6 +494,7 @@ func (s *Service) EvaluateCommandCoverage(ctx context.Context, tenantID, command
 	}
 	if mode == CoverageAutoResolveEnforce {
 		out.NotObserved = append(out.NotObserved, s.markSecretsNotObserved(ctx, tenantID, commandID, d.query, false)...)
+		s.cancelStaleProposals(ctx, tenantID)
 	}
 	if len(stale) == 0 {
 		s.recordCoverageReceipt(ctx, tenantID, commandID, d.query, out, false)
@@ -517,6 +518,10 @@ func (s *Service) EvaluateCommandCoverage(ctx context.Context, tenantID, command
 	case out.Held:
 		metrics.FindingsCoverageAutoResolve.WithLabelValues(string(mode), "held").Add(float64(len(stale)))
 		s.logger.Warn("coverage auto-resolve held for review (blinding guard)", logArgs...)
+		if mode == CoverageAutoResolveEnforce {
+			// A held run closes nothing; a person decides in Ready to close.
+			out.Proposed = s.proposeClosures(ctx, tenantID, commandID, cov, d.query, stale, true)
+		}
 	case mode == CoverageAutoResolveDryRun:
 		metrics.FindingsCoverageAutoResolve.WithLabelValues(string(mode), "would_resolve").Add(float64(len(stale)))
 		s.logger.Info("coverage auto-resolve (dry run): would resolve findings", logArgs...)
@@ -536,7 +541,9 @@ func (s *Service) EvaluateCommandCoverage(ctx context.Context, tenantID, command
 		}
 		// The organization's closing mode and the tier rule decide per
 		// finding: close, propose to a person, or keep.
-		stale, out.Proposed, _ = s.splitByClosureDecision(ctx, tenantID, stale)
+		var proposed []shared.ID
+		stale, proposed, _ = s.splitByClosureDecision(ctx, tenantID, stale)
+		out.Proposed = s.proposeClosures(ctx, tenantID, commandID, cov, d.query, proposed, false)
 		if len(out.Proposed) > 0 {
 			metrics.FindingsCoverageAutoResolve.WithLabelValues(string(mode), "proposed").Add(float64(len(out.Proposed)))
 		}

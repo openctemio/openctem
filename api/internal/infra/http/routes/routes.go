@@ -1414,6 +1414,34 @@ func requireStepUpWhenClosing() Middleware {
 	}
 }
 
+// requireStepUpWhenConfirming gates every Ready to close confirm, single or
+// bulk, behind a recent re-authentication (a stolen session cannot close
+// findings one by one either; the step-up window lets one proof cover a short
+// burst). Only a dismissal, which keeps findings open, passes.
+func requireStepUpWhenConfirming() Middleware {
+	gate := requireStepUp()
+	return func(next http.Handler) http.Handler {
+		gated := gate(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 64<<10))
+			if err != nil {
+				apierror.BadRequest("Invalid request body").WriteJSON(w)
+				return
+			}
+			r.Body = io.NopCloser(bytes.NewReader(body))
+			var req struct {
+				Decision string `json:"decision"`
+			}
+			if json.NewDecoder(bytes.NewReader(body)).Decode(&req) == nil &&
+				req.Decision == "dismiss" {
+				next.ServeHTTP(w, r)
+				return
+			}
+			gated.ServeHTTP(w, r)
+		})
+	}
+}
+
 // tenantSecurityPolicyAdapter adapts tenant.Repository to
 // middleware.TenantSecurityPolicyProvider (the organization's security
 // settings). Cross-tenant by design: it answers a per-organization policy
