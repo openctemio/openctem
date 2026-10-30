@@ -392,7 +392,7 @@ func (v *V2Receiver) replay(ctx context.Context, rep *ingestreport.Report, exist
 	if rep.State == protov2.StateFailed {
 		// A reopen puts jobs back on the queue: admit it as a continuation
 		// like any other segment, so replay cannot skip the tenant ceiling.
-		if err := v.admit(ctx, rep.TenantID, true, now); err != nil {
+		if err := v.admit(ctx, rep.TenantID, true, 0, now); err != nil {
 			return nil, err
 		}
 		if _, err := v.jobs.RequeueDeadV2(ctx, rep.ID); err != nil {
