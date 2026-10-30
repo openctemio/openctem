@@ -19,6 +19,7 @@
   "assetCoverage.noAnswer": "tên miền không có bản ghi DNS; sẽ kiểm tra lại sau",
   "assetCoverage.noOutput": "không tìm thấy gì",
   "assetCoverage.none": "Không có kiểm tra tự động nào cho loại tài sản này.",
+  "assetCoverage.platformSide": "bản quét không chạy được do phía máy quét, nên điều này không nói gì về tài sản; sẽ thử lại sau",
   "assetCoverage.reason.content_missing": "nền tảng chưa có gói danh sách từ cho công cụ này; quản trị viên hệ thống cần nhập gói",
   "assetCoverage.reason.credentials_missing": "chưa cấu hình khóa API cần thiết",
   "assetCoverage.reason.excluded": "bị loại khỏi phạm vi",
@@ -51,6 +52,7 @@
   "assetCoverage.state.due": "Đến hạn",
   "assetCoverage.state.failed": "Thất bại",
   "assetCoverage.state.not_applicable": "Không áp dụng",
+  "assetCoverage.state.not_checked": "Chưa kiểm tra",
   "assetCoverage.state.paused": "Tạm dừng",
   "assetCoverage.state.queued": "Đang chạy",
   "assetCoverage.title": "Mức bao phủ"

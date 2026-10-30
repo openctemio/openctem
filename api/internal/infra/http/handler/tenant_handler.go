@@ -2871,7 +2871,7 @@ func (h *TenantHandler) UpdateClosureSettings(w http.ResponseWriter, r *http.Req
 		return
 	}
 	if err := req.Validate(); err != nil {
-		apierror.BadRequest(err.Error()).WriteJSON(w)
+		apierror.BadRequest("Closing mode must be auto, review or off").WriteJSON(w)
 		return
 	}
 	cs, err := h.service.UpdateClosureSettings(settingsWriteCtx(r), tenantID.String(), req, h.buildAuditContext(r))

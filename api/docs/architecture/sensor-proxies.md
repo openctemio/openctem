@@ -222,6 +222,48 @@ proxy. The platform never probes a proxy itself (it cannot reach internal
 proxies and would become an SSRF tool). The numbers are internal defaults,
 not settings. Quarantining is audited (`proxy_pool.endpoint_quarantined`).
 
+### Task-reported proxy faults
+
+The per-connection report above is a separate, best-effort call; if it never
+arrives (an older sensor, a transport that does not carry it, a report sent
+after the 15-minute grace), a dead proxy would stay healthy while every job
+through it ends partial. So the platform also reads the jobs' own results,
+which it always receives:
+
+- **What the platform handed the job.** When an organization sensor claims a
+  scan, retest or validate job carrying a pool (claim-N, a claim by id and its
+  repeat), the platform records, per command and lease epoch, the pool, its
+  revision, `applies_to` and the endpoint ids it stamped on the delivered
+  payload (`proxy_command_egress`, migration `proxy_command_egress`). The
+  command's scan zone is `commands.scan_zone_id`. The record names only a
+  command of the tenant held by that sensor and only endpoints of that pool.
+- **The job's verdict.** When the job ends, its verdict closes the record
+  once (for the same sensor and lease epoch): `proxy_fault` when a completed
+  job lists coverage gaps with the reason `proxy_unavailable` (or, without a
+  gap list, target outcomes `failed / sensor_network_fault / proxy_unavailable`),
+  or a failed job has the class `infra.egress.pool_exhausted`; `ok` for any
+  other completed job. A gap whose detail says `(target_refused)` (the proxy
+  answered but its rules refused the destination) is not a fault: the proxy is
+  up. Target-side reasons (`blocked`, `breaker_open`, `rate_floor`, timeouts,
+  unreachable, edge answers) never count, and a job that failed for another
+  reason is not counted at all.
+- **Attribution.** A verdict charges exactly the endpoints the platform
+  recorded for that job. Nothing in a result can name an endpoint: a sensor
+  that names another endpoint, or another pool, moves nothing. The pool is
+  read under the command's tenant, so another tenant's jobs never reach it.
+- **Rule** (per endpoint, over the verdicts of the last 30 minutes, counted
+  from no earlier than its current state began, or from the end of its
+  quarantine's back-off): **5 faulted jobs, or more than half of at least 5
+  jobs**, quarantine it with the usual back-off. After a back-off, the first
+  faulted job quarantines it again (doubled back-off). The score is capped at
+  the share of clean jobs. Task verdicts never promote an endpoint; only the
+  per-connection report does.
+- **Alert.** A quarantine from task reports writes the audit event
+  `proxy_pool.endpoint_quarantined` (severity high, `source: task_reports`,
+  the faulted and total job counts, the command and reporting sensor) and a
+  warning log, and counts `openctem_proxy_endpoint_quarantines_total{source="task_reports"}`;
+  every verdict counts `openctem_proxy_task_verdicts_total{verdict}`.
+
 ## Threat model
 
 | Threat | Control |
@@ -234,6 +276,7 @@ not settings. Quarantining is audited (`proxy_pool.endpoint_quarantined`).
 | Malicious or intercepting proxy | TLS to an `https://` proxy is verified; target TLS is unchanged (the tool decides). Third-party trust marking is later work. |
 | Silent change | Audit on pool create/update/delete, endpoint list and credential changes, endpoint enable/disable/reset, sensor network path, quarantine. |
 | Unconfined sensor goes direct | Pool jobs only to sensors reporting `egress.upstream@1` and `net.confined@1`. |
+| Task verdicts poisoning another pool or endpoint | A job's verdict only charges the endpoints the platform recorded when it handed that job out (never an id from the result), once per lease epoch, for the sensor holding it; the record joins the command and the pool on the command's tenant. |
 | Score poisoning by a hostile sensor | A report counts only from the sensor holding the job's lease, only for the pool that sensor's jobs use now, and only up to 15 minutes after the job ended; it can never touch another organization's pool or another pool of its own organization; a sensor never uses an endpoint the platform quarantined. |
 
 ## Not built yet
