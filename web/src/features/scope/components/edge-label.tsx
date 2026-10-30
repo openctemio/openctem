@@ -189,7 +189,7 @@ export function EdgeExcludeDialog({
       })
       const r = res.results?.[0]
       if (r?.result === 'refused') {
-        toast.error(r.message || t('scope.edge.refused', 'The exclusion was refused'))
+        toast.error(t('scope.edge.refused', 'The exclusion was refused'))
         return
       }
       if (r?.result === 'exists') {
