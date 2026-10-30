@@ -312,7 +312,12 @@ How each figure is computed (`internal/app/dashboard/widgets`,
   (exact for up to 10 rows; only the asset group filter, which does not cut
   into the rank order); list fields are read from `findings` by id inside
   the tenant, and a finding no longer open is left out. A row carries the finding's EPSS probability (`epss`, 0 to 1) read from
-  the same `findings` row; it is omitted when the feed has no score.
+  the same `findings` row; it is omitted when the feed has no score. The `items` value of
+  Fix next also carries `total`: the open count of the list the widget opens
+  (priority P0 to P2 plus the widget's asset group filter), read with the same
+  filter and the same server-built read scope as the rows, so it equals the
+  total of the opened Findings list. SLA at risk opens no list of that count
+  and sends no `total`.
 
 ### CTEM metrics
 
@@ -1047,6 +1052,7 @@ figure means not measured and is never drawn as 0.
 | `LoopViz` | stages | the CTEM loop as an ordered list (`<ol>`); each stage's figure and second figure link to their lists, its state is an icon and words in a pill (never a coloured stripe; cards keep one neutral border), unmeasured stages show "—" with the reason; the focus stage is `aria-current="step"` and marked "Act here" with the brand accent (`--brand`, the only use of it) |
 | `PathsViz` | paths | reachable crown jewels (linked to the attack paths) and the top ones with the entry points reaching them; "none designated" and "none reachable" are different states |
 | `ItemsViz` | items | rows with priority, KEV, asset and due time, and "View all" |
+| `ItemsTable` | items (`viz: table`) | the embedded findings table: Priority, Finding (title link, asset line, KEV chip), Severity and SLA columns (Severity and SLA hidden at phone width, the table scrolls sideways), a read-only chip row with the list's filter, the count in the caption, and a footer "Top n of total" with "Open in Findings" |
 | `ExposureFlowViz` | flow | sources (with health in words and line style), received to new or reopened to actionable, a labelled ring of actionable findings by priority class (at most four arcs, each a focusable link with a sentence, the largest centred at the bottom, a minimum arc so P0 stays visible; the centre is the count the arcs sum to), the five stages (the focus stage filled with the accent), outcomes (open with its severity split, past SLA, in progress, closed in the period); wires are SVG paths between measured rows, width by volume; below the large breakpoint the columns stack and the wires are dropped |
 | `IntakeViz` | intake | the connector panel (each source's icon, tool, receipts, health, count, wired into one summary that shows the hovered source), the noise bar (new or reopened, merged, suppressed, not stored; each legend value opens the receipts), the false-positive row, and the per-source table |
 

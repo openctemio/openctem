@@ -15,7 +15,13 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
 import { errorDetails } from '@/lib/api/access-state'
 import { describePermissionDenied } from '@/lib/api/permission-denied'
-import { ageMs, formatAbsoluteTime, formatDuration, formatRelativeTime } from '@/lib/format-metric'
+import {
+  ageMs,
+  formatAbsoluteTime,
+  formatCount,
+  formatDuration,
+  formatRelativeTime,
+} from '@/lib/format-metric'
 import { safeInternalHref } from '@/lib/safe-href'
 import { cn } from '@/lib/utils'
 import type { SkeletonKind, WidgetState } from './types'
@@ -40,6 +46,8 @@ export interface WidgetFrameProps {
   /** no_data_yet: what will appear here, and the next step. */
   emptyMessage?: string
   emptyAction?: { label: string; href: string }
+  /** The list's real count, shown next to the title ("Findings 791"). */
+  count?: number | null
   /** not_measured: why there is no figure ("Fewer than 5 fixed findings in 30 days"). */
   notMeasuredReason?: string
   /** no_access / module_off: the API error, whose details name the missing grant. */
@@ -340,7 +348,7 @@ export class WidgetErrorBoundary extends Component<BoundaryProps, { failed: bool
 }
 
 export function WidgetFrame(props: WidgetFrameProps) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const titleId = useId()
   const { title, definition, asOf, state, actions, className, onRetry } = props
   const showsFigures = state === 'ready' || state === 'stale' || state === 'partial'
@@ -360,6 +368,14 @@ export function WidgetFrame(props: WidgetFrameProps) {
           className="min-w-0 flex-1 text-sm font-medium line-clamp-2 sm:line-clamp-1"
         >
           {title}
+          {props.count != null && (
+            <span
+              className="ms-1.5 font-normal tabular-nums text-muted-foreground"
+              data-testid="widget-count"
+            >
+              {formatCount(props.count, locale)}
+            </span>
+          )}
         </h3>
         {definition && (
           <Popover>
