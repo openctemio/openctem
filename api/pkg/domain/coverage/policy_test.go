@@ -108,3 +108,16 @@ func TestHealthAlerts(t *testing.T) {
 		}
 	}
 }
+
+func TestIsWebPlausiblePort(t *testing.T) {
+	for _, p := range []int{80, 443, 2083, 8765, 8000, 8999, 10443, 9443} {
+		if !IsWebPlausiblePort(p) {
+			t.Errorf("port %d should be plausible", p)
+		}
+	}
+	for _, p := range []int{22, 25, 3306, 7999, 11000, 0} {
+		if IsWebPlausiblePort(p) {
+			t.Errorf("port %d should not be plausible", p)
+		}
+	}
+}

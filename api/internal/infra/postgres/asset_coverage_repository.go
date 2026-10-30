@@ -158,7 +158,7 @@ func coveragePredicateSQL(p string) string {
 			JOIN assets p ON p.tenant_id = rp.tenant_id AND p.id = rp.target_asset_id
 			WHERE rp.tenant_id = a.tenant_id AND rp.relationship_type = 'exposes' AND rp.source_asset_id IN (` + addrs + `)
 			  AND p.deleted_at IS NULL AND p.status = 'active'
-			  AND COALESCE(p.properties->>'port', '') IN (` + webPortsSQL() + `))
+			  AND (` + webPlausibleSQL("p") + `))
 		OR EXISTS (SELECT 1 FROM assets o
 			WHERE o.tenant_id = a.tenant_id AND o.name IN ('https://' || a.name, 'http://' || a.name)
 			  AND o.asset_type = 'service' AND o.sub_type = 'http' AND o.deleted_at IS NULL)
@@ -187,6 +187,25 @@ func coveragePredicateSQL(p string) string {
 			  AND ` + dnsScopeMatch("st.pattern") + `)`
 	}
 	return "false"
+}
+
+// webPlausibleSQL is the condition that the open port asset "alias" may
+// carry a web service: its port is one of WebPorts, WebAltPorts or the
+// alternate range, or its detected service is a web one. Closed set, no
+// caller input.
+func webPlausibleSQL(alias string) string {
+	list := make([]int, 0, len(coverage.WebPorts)+len(coverage.WebAltPorts))
+	list = append(list, coverage.WebPorts...)
+	list = append(list, coverage.WebAltPorts...)
+	lits := make([]string, len(list))
+	for i, n := range list {
+		lits[i] = "'" + strconv.Itoa(n) + "'"
+	}
+	port := "COALESCE(" + alias + ".properties->>'port', '')"
+	return port + " IN (" + strings.Join(lits, ", ") + ")" +
+		" OR " + port + " ~ '^" + strconv.Itoa(coverage.WebAltRangeFrom/1000) + "[0-9]{3}$'" +
+		" OR (jsonb_typeof(" + alias + ".properties->'service') = 'string' AND lower(" + alias +
+		".properties->>'service') ~ '" + coverage.WebServiceNamePattern + "')"
 }
 
 // webPortsSQL is coverage.WebPorts as a list of quoted literals.
