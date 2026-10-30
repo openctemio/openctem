@@ -385,8 +385,9 @@ function AutoMobileCard<TData>({
               </dt>
               {/* Cells are written for a wide table row: whatever they keep on
                   one line (whitespace-nowrap) may wrap here, as in the title,
-                  so a value never runs into the next column. */}
-              <dd className="mt-0.5 min-w-0 text-sm break-words [&_.whitespace-nowrap]:whitespace-normal [&_[data-slot=badge]]:max-w-full [&_[data-slot=badge]]:whitespace-normal [&_[data-slot=badge]]:break-words">
+                  so a value never runs into the next column. A truncated cell
+                  (ellipsis, one line) wraps too: the card has the room. */}
+              <dd className="mt-0.5 min-w-0 text-sm break-words [&_.truncate]:whitespace-normal [&_.whitespace-nowrap]:whitespace-normal [&_[data-slot=badge]]:max-w-full [&_[data-slot=badge]]:whitespace-normal [&_[data-slot=badge]]:break-words">
                 {flexRender(cell.column.columnDef.cell, cell.getContext())}
               </dd>
             </div>
