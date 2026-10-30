@@ -25,6 +25,10 @@ import (
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
 
+// maxManifestSegments is a hard ceiling on the segment count a manifest may
+// claim, independent of the configured per-report limit.
+const maxManifestSegments = 4096
+
 // Manifest item error codes.
 const (
 	manifestCodeShape    = "manifest_invalid"
@@ -37,7 +41,13 @@ const (
 // commitFacts decides what a commit records: the report hash over the stored
 // segments and the integrity level, verifying the manifest when one is sent.
 func (v *V2Receiver) commitFacts(rep *ingestreport.Report, req protov2.CommitRequest, stored map[int]ingestjob.V2SegmentContent) (ingestreport.CommitFacts, error) {
+	// The claimed count sizes the allocation, so it is bounded by what the
+	// server itself stored (itself capped by the per-report segment limit at
+	// upload) before any make().
 	n := req.SegmentCount
+	if n < 1 || n > len(stored) || n > maxManifestSegments {
+		return ingestreport.CommitFacts{}, problem(protov2.ProblemSegmentSetMismatch)
+	}
 	hashes := make([][]byte, n)
 	for seq := range n {
 		c, ok := stored[seq]
@@ -77,6 +87,10 @@ func verifyManifest(req protov2.CommitRequest, stored map[int]ingestjob.V2Segmen
 	}
 	if len(req.Segments) != req.SegmentCount || req.Totals == nil || req.ReportSHA256 == "" {
 		add("", manifestCodeShape, "the manifest must list every segment, the totals and the report hash")
+		return errs
+	}
+	if req.SegmentCount < 1 || req.SegmentCount > len(stored) || req.SegmentCount > maxManifestSegments {
+		add("", manifestCodeShape, "segment_count is outside the range of segments received")
 		return errs
 	}
 	seen := make([]bool, req.SegmentCount)
