@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/metrics"
@@ -29,13 +30,11 @@ type V2JobProcessor struct {
 	guard   BlindingGuard
 	logger  *logger.Logger
 	now     func() time.Time
-	// sealer opens sealed segments (and seals the plaintext ones left from
-	// before); nil leaves sealed segments waiting (retried).
+	// sealer opens sealed segments; nil leaves sealed segments waiting
+	// (retried).
 	sealer *ingestpayload.Sealer
-	// lastPurge is when Housekeep last purged the staging tables;
-	// lastSeal when it last sealed plaintext segments.
+	// lastPurge is when Housekeep last purged the staging tables.
 	lastPurge time.Time
-	lastSeal  time.Time
 }
 
 // SetPayloadSealer sets the sealer of queued segments (the CI upload
@@ -62,13 +61,17 @@ var (
 // (a worker is likely applying it right now); the next run seals it.
 var (
 	sealPlaintextBatch = 100
-	sealPlaintextSteps = 20
-	sealPlaintextAge   = 5 * time.Minute
+	// sealPlaintextBytes bounds the stored payload bytes one step holds in
+	// memory (a segment may be 64 MiB; a row over it is sealed alone).
+	sealPlaintextBytes int64 = 64 << 20
+	sealPlaintextSteps       = 20
+	sealPlaintextAge         = 5 * time.Minute
 )
 
 // PlaintextSealer is implemented by the postgres job repository.
 type PlaintextSealer interface {
-	SealPlaintextV2Payloads(ctx context.Context, olderThan time.Time, batch int, seal func(*ingestjob.Job) error) (int, error)
+	SealPlaintextSensorPayloadsForPlatform(ctx context.Context, olderThan time.Time, batch int, maxBytes int64,
+		seal func(*ingestjob.Job) error) (ingestjob.SealRun, error)
 }
 
 // stagingPurger is implemented by the postgres report repository.
@@ -277,46 +280,52 @@ func (p *V2JobProcessor) Housekeep(ctx context.Context) {
 		p.logger.Info("v2: expired uncommitted reports", "count", n)
 	}
 	p.purgeStaging(ctx)
-	p.sealPlaintext(ctx)
 }
 
-// sealPlaintext seals in place, every stagingPurgeEvery, the segments
-// queued in plaintext (before segments were sealed, or by a replica of the
-// previous release during a rolling upgrade). Batched, idempotent and safe
-// on several replicas (SealPlaintextV2Payloads).
-func (p *V2JobProcessor) sealPlaintext(ctx context.Context) {
-	sealer, ok := p.jobs.(PlaintextSealer)
-	now := p.now()
-	if !ok || p.sealer == nil || (!p.lastSeal.IsZero() && now.Sub(p.lastSeal) < stagingPurgeEvery) {
-		return
-	}
-	p.lastSeal = now
-	total, err := p.SealPlaintextSegments(ctx, sealer, now.Add(-sealPlaintextAge))
-	if err != nil {
-		p.logger.Warn("v2: sealing plaintext segments failed", "error", err)
-	}
-	if total > 0 {
-		p.logger.Info("v2: sealed plaintext queued segments", "count", total)
-	}
-}
-
-// SealPlaintextSegments seals in place the plaintext segments queued before
-// olderThan, in batches, and returns how many it sealed.
+// SealPlaintextSegments seals in place the plaintext sensor payloads queued
+// before olderThan, in batches bounded by rows and by bytes, and returns how
+// many it sealed. A payload it cannot seal is logged (job and tenant ids and
+// the error, never content) and skipped.
 func (p *V2JobProcessor) SealPlaintextSegments(ctx context.Context, repo PlaintextSealer, olderThan time.Time) (int, error) {
-	if p.sealer == nil {
+	return sealPlaintextSensorPayloads(ctx, p.sealer, repo, olderThan, p.logger)
+}
+
+func sealPlaintextSensorPayloads(ctx context.Context, sealer *ingestpayload.Sealer, repo PlaintextSealer,
+	olderThan time.Time, log *logger.Logger,
+) (int, error) {
+	if sealer == nil {
 		return 0, errNoSegmentSealer
 	}
 	total := 0
 	for range sealPlaintextSteps {
-		n, err := repo.SealPlaintextV2Payloads(ctx, olderThan, sealPlaintextBatch, func(j *ingestjob.Job) error {
-			return sealSegment(p.sealer, j)
-		})
-		total += n
-		if err != nil || n < sealPlaintextBatch {
+		run, err := repo.SealPlaintextSensorPayloadsForPlatform(ctx, olderThan, sealPlaintextBatch, sealPlaintextBytes,
+			func(j *ingestjob.Job) error { return sealSegment(sealer, j) })
+		total += run.Sealed
+		for _, f := range run.Failed {
+			log.Error("ingest: a queued sensor payload could not be sealed and is left as is",
+				"job_id", f.JobID.String(), "tenant_id", f.TenantID.String(), "error", sanitizeSealError(f.Err))
+		}
+		if err != nil || run.Picked == 0 {
 			return total, err
 		}
 	}
 	return total, nil
+}
+
+// sanitizeSealError is the error text of a failed seal, bounded; the sealer's
+// errors carry no payload content.
+func sanitizeSealError(err error) string {
+	const maxLen = 200
+	msg := strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return ' '
+		}
+		return r
+	}, err.Error())
+	if len(msg) > maxLen {
+		msg = msg[:maxLen]
+	}
+	return msg
 }
 
 // purgeStaging bounds the staging tables: without it, every segment of a

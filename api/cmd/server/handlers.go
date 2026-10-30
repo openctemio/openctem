@@ -1524,6 +1524,7 @@ func newSensorResultsV2Handler(cfg *config.Config, repos *Repositories, svc *Ser
 	}
 	receiver := ingest.NewV2Receiver(repos.IngestReport, repos.IngestJob, repos.IngestJob, repos.Command,
 		protov2.DefaultLimits(), cfg.Ingest.MaxPendingPerTenant, log)
+	receiver.SetMaxQueuedBytes(cfg.Ingest.MaxQueuedBytesPerTenant)
 	// Queued segments are sealed like CI uploads; without the sealer every
 	// segment is refused (never stored in plaintext).
 	receiver.SetPayloadSealer(svc.IngestQueue.Sealer())

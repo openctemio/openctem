@@ -149,6 +149,14 @@ func SensorSegmentBinding(reportRef shared.ID, seq int, sha256Sum []byte) string
 	return fmt.Sprintf("sensor-v2/%s/%d/%s", reportRef, seq, hex.EncodeToString(sha256Sum))
 }
 
+// SensorJobBinding is the binding of one queued protocol v1 sensor job: the
+// SHA-256 of its decoded report. A sealed job paired with another content
+// hash does not open (the tenant and job id are already in the additional
+// data).
+func SensorJobBinding(sha256Sum []byte) string {
+	return "sensor-v1/" + hex.EncodeToString(sha256Sum)
+}
+
 // Seal compresses and encrypts plaintext as part number part of the job.
 func (s *Sealer) Seal(tenantID, jobID shared.ID, part int, name string, plaintext []byte) (*Part, error) {
 	return s.SealBound(tenantID, jobID, part, name, "", plaintext)
