@@ -119,6 +119,7 @@ func newCtlHarnessWith(t *testing.T, egress bool, opts ...command.Option) *ctlHa
 	}
 	receiver := ingest.NewV2Receiver(postgres.NewIngestReportRepository(db), postgres.NewIngestJobRepository(db),
 		postgres.NewIngestJobRepository(db), cmdRepo, protov2.DefaultLimits(), 100, log)
+	receiver.SetPayloadSealer(testSegmentSealer(t))
 
 	gen := jwt.NewGenerator(jwt.TokenConfig{Secret: "v2-control-test-secret-0123456789abcdef", Issuer: "test",
 		AccessTokenDuration: time.Hour, RefreshTokenDuration: time.Hour})

@@ -183,6 +183,15 @@ encrypted with the key while a sign-in is in flight. A sign-in that started
 before the restart in step 6 and finishes after it still works while the
 previous key is listed.
 
+Queued ingest payloads are not re-encrypted either: CI results and file
+imports waiting in `ingest_payloads`, and sensor report segments waiting in
+`ingest_jobs.payload`, are sealed under a key derived per tenant from the key
+and tagged with its key id. They open under a key listed in
+`APP_ENCRYPTION_KEY_PREVIOUS`, and they are deleted once applied. Keep the
+previous key until the ingest queue has drained (no pending, failed or dead
+ingest job older than the restart); a queued item whose key was removed is
+not applied and the sender re-sends it.
+
 ## Legacy secret fingerprints
 
 Secret findings created before the fingerprint was keyed with a server secret
