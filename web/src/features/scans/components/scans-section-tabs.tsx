@@ -10,8 +10,7 @@ import { GatedSectionTabs, PageHeader } from '@/features/shared'
 import { Can, Permission } from '@/lib/permissions'
 import { usePermissions } from '@/lib/permissions/hooks'
 import { useOpenForm } from '@/hooks/use-open-form'
-import { NewScanDialog } from './new-scan/new-scan-dialog'
-import { QuickScanDialog } from './quick-scan-dialog'
+import { LazyNewScanDialog, LazyQuickScanDialog } from './lazy-dialogs'
 
 /**
  * Scans · Runs · Workflows, the route tabs of Discovery > Scans. One table per
@@ -50,8 +49,8 @@ export function ScanCreateActions() {
   useOpenForm('scan', can(Permission.ScansWrite), openNewScan)
   return (
     <>
-      <NewScanDialog open={dialogOpen} onOpenChange={setDialogOpen} />
-      <QuickScanDialog open={quickScanOpen} onOpenChange={setQuickScanOpen} />
+      <LazyNewScanDialog open={dialogOpen} onOpenChange={setDialogOpen} />
+      <LazyQuickScanDialog open={quickScanOpen} onOpenChange={setQuickScanOpen} />
       {/* A quick scan creates and starts a run: scans:write and scans:execute. */}
       <Can permission={[Permission.ScansWrite, Permission.ScansExecute]} requireAll mode="disable">
         <Button variant="outline" size="sm" onClick={() => setQuickScanOpen(true)}>

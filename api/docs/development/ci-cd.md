@@ -399,8 +399,8 @@ What a single-kind change runs (pull request and merge queue):
 
 Web E2E still builds its images for an e2e-only change until the images are
 shared by content key (then the develop-built images are reused).
-`vitest related` is not used for catalogs: `dictionaries/index.ts` imports
-every catalog, so the module graph relates nearly every UI test to any one
+`vitest related` is not used for catalogs: `dictionaries/index.ts` (and the
+test setup) imports every catalog, so the module graph relates nearly every UI test to any one
 catalog (measured: one `vi` catalog pulled in the bulk of the suite). Tests:
 `.github/scripts/scope.test.sh` (run by Workflow Lint).
 

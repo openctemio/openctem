@@ -114,6 +114,13 @@ export function ReceiptSummary({
               'The close was held for review: it would have closed too large a share of the open findings.'
             )
           : ''}
+        {!running && full && receipt.coverage?.note === 'proposed'
+          ? ' ' +
+            t(
+              'findings.receipts.proposed',
+              'The close waits in Ready to close: the organization’s closing mode asks a person to confirm it.'
+            )
+          : ''}
         {!full && receipt.coverage?.note === 'incomplete'
           ? ' ' +
             t(
