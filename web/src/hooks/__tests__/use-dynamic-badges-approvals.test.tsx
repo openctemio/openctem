@@ -34,12 +34,21 @@ vi.mock('@/features/attack-surface/hooks/use-easm-suggestions', () => ({
   useEASMSuggestionCount: () => undefined,
 }))
 
-import { PENDING_APPROVALS_COUNT_URL, seedSessionCache } from '@/context/bootstrap-session'
+import {
+  PENDING_APPROVALS_COUNT_URL,
+  READY_TO_CLOSE_COUNT_URL,
+  seedSessionCache,
+} from '@/context/bootstrap-session'
 import { refreshPendingApprovalCount, useDynamicBadges } from '../use-dynamic-badges'
 
 function Probe() {
   const badges = useDynamicBadges()
-  return <span data-testid="approvals">{badges['/findings/approvals'] ?? ''}</span>
+  return (
+    <>
+      <span data-testid="approvals">{badges['/findings/approvals'] ?? ''}</span>
+      <span data-testid="ready">{badges['/findings/ready-to-close'] ?? ''}</span>
+    </>
+  )
 }
 
 describe('Approvals badge', () => {
@@ -51,7 +60,7 @@ describe('Approvals badge', () => {
   })
 
   it('reads the seeded count without a request, and refreshes on demand', async () => {
-    await seedSessionCache({ badges: { pending_approvals: 3 } })
+    await seedSessionCache({ badges: { pending_approvals: 3, ready_to_close: 0 } })
     const { getByTestId } = render(<Probe />)
     await waitFor(() => expect(getByTestId('approvals').textContent).toBe('3'))
     expect(get).not.toHaveBeenCalled()
@@ -60,5 +69,12 @@ describe('Approvals badge', () => {
     await refreshPendingApprovalCount()
     expect(get).toHaveBeenCalledWith(PENDING_APPROVALS_COUNT_URL)
     await waitFor(() => expect(getByTestId('approvals').textContent).toBe('2'))
+  })
+
+  it('reads the seeded Ready to close count without a request', async () => {
+    await seedSessionCache({ badges: { pending_approvals: 0, ready_to_close: 7 } })
+    const { getByTestId } = render(<Probe />)
+    await waitFor(() => expect(getByTestId('ready').textContent).toBe('7'))
+    expect(get).not.toHaveBeenCalledWith(READY_TO_CLOSE_COUNT_URL)
   })
 })
