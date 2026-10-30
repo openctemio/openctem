@@ -8,6 +8,13 @@
 import '@testing-library/jest-dom'
 import { cleanup } from '@testing-library/react'
 import { afterEach, vi } from 'vitest'
+import { registerDictionary } from '@/lib/i18n'
+import { en as enCatalog, vi as viCatalog } from '@/lib/i18n/dictionaries'
+
+// The browser loads one catalog on demand (src/lib/i18n.ts); tests get both
+// up front so components render their text synchronously.
+registerDictionary('en', enCatalog)
+registerDictionary('vi', viCatalog)
 
 // ============================================
 // CLEANUP

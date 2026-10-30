@@ -72,7 +72,8 @@ import {
   SurfaceFacts,
 } from '@/features/assets/components/service-cells'
 import { useExposures } from '@/features/exposures/hooks'
-import { ScanAssetsDialog, type ScanCandidate } from '@/features/scans/components'
+import type { ScanCandidate } from '@/features/scans/components/scan-assets-dialog'
+import { LazyScanAssetsDialog } from '@/features/scans/components/lazy-dialogs'
 import { useTenant } from '@/context/tenant-provider'
 import { useRiskThresholds } from '@/context/risk-scoring-provider'
 import { useSearchQuery } from '@/hooks/use-search-query'
@@ -880,7 +881,7 @@ export default function ExternalSurfacePage() {
         onConfirm={handleDelete}
       />
 
-      <ScanAssetsDialog
+      <LazyScanAssetsDialog
         open={scanDialogOpen}
         onOpenChange={setScanDialogOpen}
         candidates={scanCandidates}

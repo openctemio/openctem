@@ -3,7 +3,8 @@
 # lines: two branches adding a namespace each keep both imports.
 web/src/lib/i18n/dictionaries/en/*.json merge=i18n-json
 web/src/lib/i18n/dictionaries/vi/*.json merge=i18n-json
-web/src/lib/i18n/dictionaries/index.ts merge=union
+web/src/lib/i18n/dictionaries/en.ts merge=union
+web/src/lib/i18n/dictionaries/vi.ts merge=union
 
 # The e2e spec table: parallel PRs each add a row; keep both (spec number
 # prefixes only order the files and need not be unique).

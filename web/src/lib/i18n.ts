@@ -1,4 +1,3 @@
-import { en, vi } from './i18n/dictionaries'
 import { DEFAULT_BRAND } from './brand'
 
 export const rtlLocales = new Set(['ar', 'he', 'fa', 'ur'])
@@ -27,21 +26,72 @@ export function isSupportedLocale(value: unknown): value is SupportedLocale {
 export type Dictionary = Record<string, string>
 export type TranslateVars = Record<string, string | number>
 
-// Static catalogs. `ar` intentionally falls back to English until translated —
-// its RTL direction is already handled by getDirFromLocale.
-const enDict: Dictionary = en
-const dictionaries: Record<string, Dictionary> = { en: enDict, vi }
+// Catalogs are loaded on demand, one locale per page: each locale's catalog
+// is its own chunk (./i18n/dictionaries/en.ts, vi.ts), so a page downloads
+// only the language it renders instead of every catalog (about 400 KB
+// gzipped each). The locale is fixed for the life of a page (switching
+// reloads, see language-switcher.tsx), so one catalog is enough.
+// I18nProvider waits for it before rendering; plain helpers read what is
+// loaded through getDictionary().
+const loaders: Record<SupportedLocale, () => Promise<Dictionary>> = {
+  en: () => import('./i18n/dictionaries/en').then((m) => m.en),
+  vi: () => import('./i18n/dictionaries/vi').then((m) => m.vi),
+}
+const loaded: Partial<Record<SupportedLocale, Dictionary>> = {}
+const pending = new Map<SupportedLocale, Promise<Dictionary>>()
+const EMPTY: Dictionary = Object.freeze({}) as Dictionary
 
-/** Returns the message catalog for a locale, falling back to English. */
-export function getDictionary(locale?: string): Dictionary {
+/** The supported locale for a tag ("vi-VN" -> "vi"), English when unknown. */
+export function catalogLocale(locale?: string): SupportedLocale {
   const code = (locale ?? defaultLocale).split('-')[0]
-  return dictionaries[code] ?? dictionaries[defaultLocale] ?? enDict
+  return isSupportedLocale(code) ? code : defaultLocale
+}
+
+/**
+ * Loads a locale's catalog once (same promise for every caller, so React's
+ * `use()` can wait on it). A failed chunk load is forgotten so the next call
+ * retries.
+ */
+export function loadDictionary(locale?: string): Promise<Dictionary> {
+  const code = catalogLocale(locale)
+  let p = pending.get(code)
+  if (!p) {
+    p = loaders[code]().then((dict) => {
+      loaded[code] = dict
+      return dict
+    })
+    p.catch(() => pending.delete(code))
+    pending.set(code, p)
+  }
+  return p
+}
+
+/** Makes a catalog available synchronously (tests, and callers that already hold one). */
+export function registerDictionary(locale: string, dict: Dictionary): void {
+  const code = catalogLocale(locale)
+  loaded[code] = dict
+  pending.set(code, Promise.resolve(dict))
+}
+
+/** The catalog for a locale if it is loaded, else null. */
+export function loadedDictionary(locale?: string): Dictionary | null {
+  return loaded[catalogLocale(locale)] ?? null
+}
+
+/**
+ * Returns the message catalog for a locale: the locale's own when loaded,
+ * else English, else whichever catalog the page loaded, else an empty one
+ * (keys then resolve to their fallback text).
+ */
+export function getDictionary(locale?: string): Dictionary {
+  return loaded[catalogLocale(locale)] ?? loaded[defaultLocale] ?? Object.values(loaded)[0] ?? EMPTY
 }
 
 /**
  * Resolves a message key against a catalog with `{var}` interpolation.
- * Resolution order: catalog[key] → English catalog[key] → `fallback` → `key`.
- * The English fallback means a key missing only from a non-English catalog
+ * Resolution order: catalog[key] → English catalog[key] (when loaded) →
+ * `fallback` → `key`. en and vi hold the same keys (dictionaries.test.ts), so a
+ * page that loaded only vi still finds every key. The English fallback means a key missing only from a non-English catalog
  * still renders sensible text, so translation can be filled in incrementally.
  */
 export function translate(
@@ -50,7 +100,7 @@ export function translate(
   fallback?: string,
   vars?: TranslateVars
 ): string {
-  let str = dict[key] ?? enDict[key] ?? fallback ?? key
+  let str = dict[key] ?? loaded.en?.[key] ?? fallback ?? key
   // The brand variables default to the OpenCTEM brand; I18nProvider passes
   // the instance brand (src/context/i18n-provider.tsx).
   const all = { product: DEFAULT_BRAND.name, productShort: DEFAULT_BRAND.shortName, ...vars }

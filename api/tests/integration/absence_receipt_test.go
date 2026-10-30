@@ -32,6 +32,8 @@ func newAbsenceRun(t *testing.T) *repoRun {
 		svc.SetCommandReader(postgres.NewCommandRepository(db))
 		svc.SetCoverageAutoResolve(ingest.CoverageAutoResolveDryRun, ingest.DefaultBlindingGuard())
 		svc.SetReceiptRecorder(postgres.NewIngestReceiptRepository(db))
+		// Closing mode auto: these tests are about what a default-branch run closes.
+		svc.SetClosureSettings(autoClosing{})
 	})
 	return &repoRun{r: r, tn: r.newTenant("semgrep"), results: results}
 }

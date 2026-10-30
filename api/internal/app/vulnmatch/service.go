@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/closuremode"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/softwarematch"
@@ -72,6 +73,8 @@ type Service struct {
 	alerts     AlertQueue
 	vex        VEXApplier
 	issueLinks IssueLinker
+	// closure reads the organization's closing mode (nil: review).
+	closure closuremode.SettingsReader
 	// maxRows bounds one pass's read of a tenant's matches (memory).
 	maxRows int
 }
@@ -121,6 +124,10 @@ func (s *Service) SetIssueLinker(l IssueLinker) { s.issueLinks = l }
 func NewService(store softwarematch.Store, policy PolicyReader, findings FindingWriter, log *logger.Logger) *Service {
 	return &Service{store: store, policy: policy, findings: findings, logger: log, now: time.Now, maxRows: maxTenantRows}
 }
+
+// SetClosureSettings wires the organization closing policy. Without it every
+// organization is in review: a version-change close is proposed, not made.
+func (s *Service) SetClosureSettings(r closuremode.SettingsReader) { s.closure = r }
 
 // SetEnrichment wires the optional pre-insert enrichment.
 func (s *Service) SetEnrichment(classifier Classifier, sla SLAApplier, assets AssetGetter) {
@@ -634,6 +641,12 @@ func (s *Service) close(ctx context.Context, tenantID shared.ID, existing []soft
 		}
 	}
 	for kind, ids := range toClose {
+		if kind == softwarematch.CloseVersionChanged {
+			// A fixed close (the inventory reports another version) goes
+			// through the organization's closing mode: close, propose to a
+			// person, or keep. The other kinds do not claim a fix.
+			ids = s.applyClosingMode(ctx, tenantID, ids, kind)
+		}
 		done, err := s.store.CloseFindings(ctx, tenantID, ids, kind)
 		if err != nil {
 			return err
@@ -641,6 +654,25 @@ func (s *Service) close(ctx context.Context, tenantID shared.ID, existing []soft
 		st.Closed += len(done)
 	}
 	return nil
+}
+
+// applyClosingMode sorts the findings the matcher would close as fixed:
+// those the organization's mode lets close are returned, those it asks a
+// person to confirm are recorded as Ready to close proposals (method
+// source_reported), the rest stay open.
+func (s *Service) applyClosingMode(ctx context.Context, tenantID shared.ID, ids []shared.ID, kind softwarematch.CloseKind) []shared.ID {
+	d := closuremode.Decider{Settings: s.closure, Repo: s.findings, Log: s.logger}
+	closeIDs, propose, _ := d.Split(ctx, tenantID, ids, vulnerability.ClosureMethodSourceReported)
+	if len(propose) > 0 {
+		at := s.now().UTC()
+		evidence := map[string]any{"source": "software_inventory", "kind": string(kind), "observed_at": at.Format(time.RFC3339)}
+		recs := make([]vulnerability.ClosureProposalRecord, len(propose))
+		for i, id := range propose {
+			recs[i] = vulnerability.ClosureProposalRecord{FindingID: id, Method: vulnerability.ClosureMethodSourceReported, Evidence: evidence, EvidenceAt: at}
+		}
+		d.Record(ctx, tenantID, recs)
+	}
+	return closeIDs
 }
 
 func isOpen(status string) bool {

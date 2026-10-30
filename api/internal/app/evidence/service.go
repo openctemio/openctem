@@ -214,6 +214,15 @@ func (s *Service) StoreRetest(ctx context.Context, tenantID, findingID, retestID
 	}
 }
 
+// dailyCapWindow is the cap and window dailyBudget counts against.
+func (s *Service) dailyCapWindow() evidencedom.DailyCap {
+	limit := s.dailyCap
+	if limit <= 0 {
+		limit = evidencedom.DefaultTenantDailyItems
+	}
+	return evidencedom.DailyCap{Limit: limit, Since: s.now().Add(-24 * time.Hour)}
+}
+
 func (s *Service) dailyBudget(ctx context.Context, tenantID shared.ID) (int, bool) {
 	limit := s.dailyCap
 	if limit <= 0 {

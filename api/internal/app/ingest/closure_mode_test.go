@@ -133,7 +133,7 @@ func TestSplitByClosureDecision_UnknownIDKept(t *testing.T) {
 	svc, repo := coverageService(t, CoverageAutoResolveEnforce, []string{"nuclei"})
 	known, unknown := shared.NewID(), shared.NewID()
 	svc.findingRepo = &partialTierRepo{coverageFindingRepo: repo, known: known}
-	closeIDs, propose, keep := svc.splitByClosureDecision(context.Background(), shared.NewID(), []shared.ID{known, unknown})
+	closeIDs, propose, keep := svc.splitByClosureDecision(context.Background(), shared.NewID(), []shared.ID{known, unknown}, vulnerability.ClosureMethodCoveredScan)
 	if len(closeIDs) != 1 || closeIDs[0] != known || len(propose) != 0 || len(keep) != 1 || keep[0] != unknown {
 		t.Fatalf("close %v propose %v keep %v", closeIDs, propose, keep)
 	}

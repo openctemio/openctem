@@ -520,7 +520,7 @@ func (s *Service) EvaluateCommandCoverage(ctx context.Context, tenantID, command
 		s.logger.Warn("coverage auto-resolve held for review (blinding guard)", logArgs...)
 		if mode == CoverageAutoResolveEnforce {
 			// A held run closes nothing; a person decides in Ready to close.
-			out.Proposed = s.proposeClosures(ctx, tenantID, commandID, cov, d.query, stale, true)
+			out.Proposed = s.proposeClosures(ctx, tenantID, commandID, cov, d.query, stale, true, vulnerability.ClosureMethodCoveredScan)
 		}
 	case mode == CoverageAutoResolveDryRun:
 		metrics.FindingsCoverageAutoResolve.WithLabelValues(string(mode), "would_resolve").Add(float64(len(stale)))
@@ -542,8 +542,8 @@ func (s *Service) EvaluateCommandCoverage(ctx context.Context, tenantID, command
 		// The organization's closing mode and the tier rule decide per
 		// finding: close, propose to a person, or keep.
 		var proposed []shared.ID
-		stale, proposed, _ = s.splitByClosureDecision(ctx, tenantID, stale)
-		out.Proposed = s.proposeClosures(ctx, tenantID, commandID, cov, d.query, proposed, false)
+		stale, proposed, _ = s.splitByClosureDecision(ctx, tenantID, stale, vulnerability.ClosureMethodCoveredScan)
+		out.Proposed = s.proposeClosures(ctx, tenantID, commandID, cov, d.query, proposed, false, vulnerability.ClosureMethodCoveredScan)
 		if len(out.Proposed) > 0 {
 			metrics.FindingsCoverageAutoResolve.WithLabelValues(string(mode), "proposed").Add(float64(len(out.Proposed)))
 		}
@@ -580,7 +580,8 @@ type repoCoverageRepo interface {
 //   - the blinding guard.
 //
 // It always enforces (the coverage mode governs non-repository findings
-// only). Safe to run repeatedly: the UPDATE re-checks every condition.
+// only), but the organization's closing mode still decides per finding:
+// close, propose (method ci_default_branch) or keep. Safe to run repeatedly: the UPDATE re-checks every condition.
 func (s *Service) evaluateRepoCoverage(ctx context.Context, tenantID, commandID shared.ID, cov *ingestreport.CommandCoverage, guard BlindingGuard) CoverageOutcome {
 	out := CoverageOutcome{Mode: CoverageAutoResolveEnforce}
 	repo, ok := s.findingRepo.(repoCoverageRepo)
@@ -617,6 +618,7 @@ func (s *Service) evaluateRepoCoverage(ctx context.Context, tenantID, commandID 
 		return out
 	}
 	out.NotObserved = append(out.NotObserved, s.markSecretsNotObserved(ctx, tenantID, commandID, d.query, true)...)
+	s.cancelStaleProposals(ctx, tenantID)
 	if len(stale) == 0 {
 		s.recordCoverageReceipt(ctx, tenantID, commandID, d.query, out, true)
 		return out
@@ -628,10 +630,23 @@ func (s *Service) evaluateRepoCoverage(ctx context.Context, tenantID, commandID 
 		"profile_id", d.query.ProfileID, "covered_assets", len(d.query.AssetIDs),
 		"would_resolve", len(stale), "open", open, "held", out.Held,
 	}
+	// The organization's closing mode decides per finding: close, propose
+	// to a person, or keep (off keeps and proposes nothing).
+	var proposed []shared.ID
+	stale, proposed, _ = s.splitByClosureDecision(ctx, tenantID, stale, vulnerability.ClosureMethodCIDefaultBranch)
 	if out.Held {
-		metrics.FindingsCoverageAutoResolve.WithLabelValues("repository", "held").Add(float64(len(stale)))
+		// A held run closes nothing; a person decides in Ready to close.
+		proposed = append(proposed, stale...)
+		stale = nil
+	}
+	out.Proposed = s.proposeClosures(ctx, tenantID, commandID, cov, d.query, proposed, out.Held, vulnerability.ClosureMethodCIDefaultBranch)
+	if out.Held {
+		metrics.FindingsCoverageAutoResolve.WithLabelValues("repository", "held").Add(float64(len(out.WouldResolve)))
 		s.logger.Warn("repository auto-resolve held for review (blinding guard)", logArgs...)
 	} else {
+		if len(out.Proposed) > 0 {
+			metrics.FindingsCoverageAutoResolve.WithLabelValues("repository", "proposed").Add(float64(len(out.Proposed)))
+		}
 		resolved, err := repo.ResolveRepoCoverageStale(ctx, tenantID, stale)
 		if err != nil {
 			s.logger.Warn("repository auto-resolve failed", append(logArgs, "error", err)...)

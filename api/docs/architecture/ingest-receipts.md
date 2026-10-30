@@ -186,7 +186,13 @@ member may write to but not see. When the request has read every part,
   and whose latest sighting (newest action row) came from an upload, so a
   finding a platform sensor saw last stays open. A concurrent upload of the same tool
   overwrites `scan_id`, so `scan_id` alone does not prove absence;
-- the blinding guard holds a mass close (`held`, nothing closed);
+- the blinding guard holds a mass close (`held`, nothing closed; the findings are
+  proposed in Ready to close unless the organization's closing mode is `off`);
+- the organization's closing mode decides each finding (see "Closing mode" in
+  [finding-verification-plan.md](finding-verification-plan.md)): `off` keeps it and
+  proposes nothing, `review` records a Ready to close proposal (method `covered_scan`;
+  the receipt note is `proposed` when nothing closed), `auto` closes it, except a
+  critical one that waits unless the owner opted in;
 - otherwise closes them (`resolved`, verification `covered_scan`, timeline
   "An upload that declared full coverage ... no longer reported it"),
   records them as `closed` actions, and stores what is left open in the

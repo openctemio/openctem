@@ -253,7 +253,9 @@ func (w *fakeWriter) CreateBatchWithResult(_ context.Context, fs []*vulnerabilit
 
 func newSvc(store *fakeStore, enabled bool) (*Service, *fakeWriter) {
 	w := &fakeWriter{}
-	return NewService(store, fakePolicy{tenant.VulnMatchingSettings{Enabled: enabled}}, w, logger.NewNop()), w
+	svc := NewService(store, fakePolicy{tenant.VulnMatchingSettings{Enabled: enabled}}, w, logger.NewNop())
+	svc.SetClosureSettings(fixedClosing{Mode: tenant.ClosingModeAuto})
+	return svc, w
 }
 
 func fp(m softwarematch.Match) string {
