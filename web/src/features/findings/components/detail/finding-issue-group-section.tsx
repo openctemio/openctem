@@ -41,6 +41,14 @@ const RULE_KEYS: Record<string, [string, string]> = {
     'findings.issueGroup.rule.vulnAlias',
     'Same vulnerability under another identifier, same asset',
   ],
+  vuln_asset: [
+    'findings.issueGroup.rule.vulnAsset',
+    'Same vulnerability on the same asset, found by another technique',
+  ],
+  dast_scheme: [
+    'findings.issueGroup.rule.dastScheme',
+    'Same check on the same page, over HTTP and HTTPS',
+  ],
 }
 
 export function FindingIssueGroupSection({ findingId }: { findingId: string }) {
