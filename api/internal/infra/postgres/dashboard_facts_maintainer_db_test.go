@@ -513,14 +513,14 @@ func TestDashboardFactsMaintainerMigration_DB(t *testing.T) {
 	if !secdef || !strings.Contains(cfg, "search_path=pg_catalog, pg_temp") || publicExec {
 		t.Fatalf("dash_asset_day_maintain: secdef %v, config %q, PUBLIC execute %v", secdef, cfg, publicExec)
 	}
-	testdb.Migrate(t, db, dir, v, math.MaxInt32, true)
+	testdb.Migrate(t, db, dir, v, math.MaxInt, true)
 	var cols int
 	_ = db.QueryRow(`SELECT count(*) FROM information_schema.columns WHERE table_name = 'dash_fact_status'
 		AND column_name IN ('rebuild_requested_at', 'run_kind', 'run_cursor', 'reconciled_at', 'last_drift')`).Scan(&cols)
 	if n := funcs(); n != 0 || cols != 0 {
 		t.Fatalf("after down: %d functions, %d columns left", n, cols)
 	}
-	testdb.Migrate(t, db, dir, v, math.MaxInt32, false)
+	testdb.Migrate(t, db, dir, v, math.MaxInt, false)
 	if n := funcs(); n != 4 {
 		t.Fatalf("after up again: %d functions", n)
 	}
