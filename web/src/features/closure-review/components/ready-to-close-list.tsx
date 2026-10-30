@@ -233,6 +233,7 @@ export function ReadyToCloseList({
         columns={columns}
         data={rows}
         manualPagination
+        showSearch={false}
         pageCount={data.total_pages}
         rowCount={data.total}
         pagination={pagination}
