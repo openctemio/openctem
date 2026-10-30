@@ -111,7 +111,7 @@ func (r *UserRepository) GetByKeycloakID(ctx context.Context, keycloakID string)
 
 // GetByEmail retrieves a user by email.
 func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*user.User, error) {
-	query := fmt.Sprintf(`SELECT %s FROM users WHERE email = $1`, userColumns)
+	query := fmt.Sprintf(`SELECT %s FROM users WHERE lower(email) = lower($1)`, userColumns)
 
 	row := r.db.QueryRowContext(ctx, query, email)
 	u, err := r.scanUser(row)
@@ -127,7 +127,7 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*user.Us
 
 // GetByEmailForAuth retrieves a local user by email for authentication.
 func (r *UserRepository) GetByEmailForAuth(ctx context.Context, email string) (*user.User, error) {
-	query := fmt.Sprintf(`SELECT %s FROM users WHERE email = $1 AND auth_provider = 'local'`, userColumns)
+	query := fmt.Sprintf(`SELECT %s FROM users WHERE lower(email) = lower($1) AND auth_provider = 'local'`, userColumns)
 
 	row := r.db.QueryRowContext(ctx, query, email)
 	u, err := r.scanUser(row)
@@ -355,7 +355,7 @@ func (r *UserRepository) Delete(ctx context.Context, id shared.ID) error {
 
 // ExistsByEmail checks if a user with the given email exists.
 func (r *UserRepository) ExistsByEmail(ctx context.Context, email string) (bool, error) {
-	query := `SELECT EXISTS(SELECT 1 FROM users WHERE email = $1)`
+	query := `SELECT EXISTS(SELECT 1 FROM users WHERE lower(email) = lower($1))`
 
 	var exists bool
 	err := r.db.QueryRowContext(ctx, query, email).Scan(&exists)
@@ -387,10 +387,10 @@ func (r *UserRepository) UpsertFromKeycloak(ctx context.Context, keycloakID, ema
 	query := fmt.Sprintf(`
 		INSERT INTO users (id, keycloak_id, email, name, status, preferences, last_login_at, created_at, updated_at,
 			auth_provider, email_verified, failed_login_attempts)
-		VALUES (gen_random_uuid(), $1, $2, $3, 'active', '{}', NOW(), NOW(), NOW(), 'oidc', true, 0)
+		VALUES (gen_random_uuid(), $1, lower(btrim($2)), $3, 'active', '{}', NOW(), NOW(), NOW(), 'oidc', true, 0)
 		ON CONFLICT (keycloak_id) DO UPDATE SET
 			email = CASE
-				WHEN NOT EXISTS (SELECT 1 FROM users WHERE email = EXCLUDED.email AND keycloak_id != $1)
+				WHEN NOT EXISTS (SELECT 1 FROM users WHERE lower(email) = lower(EXCLUDED.email) AND keycloak_id != $1)
 				THEN EXCLUDED.email
 				ELSE users.email
 			END,
