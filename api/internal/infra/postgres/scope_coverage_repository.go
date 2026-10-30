@@ -23,10 +23,14 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"net/netip"
+	"strings"
 
 	"github.com/lib/pq"
 
 	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/edgeaddr"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -248,5 +252,104 @@ func (r *ScopeCoverageRepository) ExclusionMatches(ctx context.Context, tenantID
 			out[ord-1] = scopeapp.ExclusionMatch{Matched: n, OpenFindings: open, Sample: sample}
 		}
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := r.resolvingNames(ctx, tenantID, ds, kinds, patterns, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// addressExclusionKinds are the exclusion kinds that reach the names
+// resolving into them.
+var addressExclusionKinds = map[string]bool{
+	string(scopedom.ExclusionTypeIPAddress): true, string(scopedom.ExclusionTypeIPRange): true,
+	string(scopedom.ExclusionTypeCIDR): true,
+}
+
+// resolvingNames fills, for each address, range or CIDR item, the names
+// (assets whose host is not an address) that resolve to an address inside
+// it, within the data scope: the exclusion matches them too
+// (scope.AssetExclusionValues). Addresses inside a published shared front
+// end range (edgeaddr.SharedFrontEnd: a shared prefix holds it and no
+// dedicated one does) never count (scope.PropagatingAddresses). One
+// statement; nothing runs without an address item.
+func (r *ScopeCoverageRepository) resolvingNames(ctx context.Context, tenantID shared.ID, ds *shared.DataScope, kinds, patterns []string, out []scopeapp.ExclusionMatch) error {
+	hasAddress := false
+	for _, k := range kinds {
+		if addressExclusionKinds[k] {
+			hasAddress = true
+			break
+		}
+	}
+	if !hasAddress {
+		return nil
+	}
+	c := edgeaddr.Default()
+	sharedPfx := prefixStrings(c.SharedFrontEndPrefixes())
+	dedicatedPfx := prefixStrings(c.DedicatedPrefixes())
+	args := []any{tenantID.String(), pq.Array(kinds), pq.Array(patterns), pq.Array(asset.AddressPropertyKeys())}
+	sc, args := scopeClause("a.id", ds, args)
+	sharedAt, dedicatedAt := len(args)+1, len(args)+2
+	args = append(args, pq.Array(sharedPfx), pq.Array(dedicatedPfx))
+	//nolint:gosec // G202: the match, address and scope clauses are fixed SQL with numbered placeholders
+	rows, err := r.db.QueryContext(ctx, `
+		WITH items AS (
+			SELECT i.kind, i.pattern, i.ord FROM unnest($2::text[], $3::text[]) WITH ORDINALITY AS i(kind, pattern, ord)
+			WHERE i.kind IN ('ip_address', 'ip_range', 'cidr')
+		), inv AS (
+			SELECT a.id, a.name, a.properties
+			FROM assets a CROSS JOIN LATERAL (SELECT `+assetHostSQL("a")+` AS host) hh
+			WHERE a.tenant_id = $1 AND a.deleted_at IS NULL AND a.properties ?| $4::text[]
+			  AND NOT pg_input_is_valid(hh.host, 'inet')`+sc+`
+		)
+		SELECT items.ord, count(inv.id), COALESCE((array_agg(inv.name ORDER BY inv.name))[1:`+fmt.Sprint(maxExclusionSample)+`], '{}')
+		FROM items JOIN inv ON EXISTS (
+			SELECT 1 FROM (`+resolvedAddressesSQL("inv")+`) ra
+			WHERE NOT (ra.addr <<= ANY($`+fmt.Sprint(sharedAt)+`::inet[]) AND NOT ra.addr <<= ANY($`+fmt.Sprint(dedicatedAt)+`::inet[]))
+			  AND `+scopePatternMatchSQL("items.kind", "items.pattern", "''", "ra.addr", "''")+`)
+		GROUP BY items.ord`, args...)
+	if err != nil {
+		return fmt.Errorf("preview names resolving into exclusions: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var ord, n int
+		var sample []string
+		if err := rows.Scan(&ord, &n, pq.Array(&sample)); err != nil {
+			return err
+		}
+		if ord >= 1 && ord <= len(out) {
+			out[ord-1].Names, out[ord-1].NameSample = n, sample
+		}
+	}
+	return rows.Err()
+}
+
+// resolvedAddressesSQL selects (column addr, inet) the addresses an alias
+// with a properties column records under ip_addresses and every synonym of
+// it, read as asset.IPAddresses reads them: a string holding one address or
+// a list split on commas, spaces or semicolons, an object holding
+// "address", or an array of those. The keys come from the generated
+// registry, never from input.
+func resolvedAddressesSQL(a string) string {
+	keys := asset.AddressPropertyKeys()
+	vals := make([]string, len(keys))
+	for i, k := range keys {
+		vals[i] = fmt.Sprintf("%s.properties->'%s'", a, k)
+	}
+	return `SELECT trim(s.part)::inet AS addr
+		FROM unnest(ARRAY[` + strings.Join(vals, ", ") + `]::jsonb[]) v(val)
+		CROSS JOIN LATERAL jsonb_array_elements(CASE jsonb_typeof(v.val) WHEN 'array' THEN v.val ELSE jsonb_build_array(v.val) END) e(el)
+		CROSS JOIN LATERAL regexp_split_to_table(CASE jsonb_typeof(e.el) WHEN 'string' THEN e.el #>> '{}' WHEN 'object' THEN e.el->>'address' END, '[,; ]+') s(part)
+		WHERE v.val IS NOT NULL AND trim(s.part) !~ '/' AND pg_input_is_valid(trim(s.part), 'inet')`
+}
+
+func prefixStrings(ps []netip.Prefix) []string {
+	out := make([]string, len(ps))
+	for i, p := range ps {
+		out[i] = p.String()
+	}
+	return out
 }

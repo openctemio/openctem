@@ -654,13 +654,37 @@ and from then on the dispatch gate leaves it out of every job
 - **No new request, no new data:** the label is a pure function of data the
   response already holds; it adds no query and no tenant data leaves the
   platform.
-- **Excluding an address also excludes the names that resolve to it** (the
-  exclusion match reads an asset's addresses, section 2 of the how-to): an
-  exclusion of a shared edge address stops scanning every name served from it.
-  The web console says so before the exclusion is added. The bulk exclusion
-  preview (`POST /scope/exclusions/bulk/preview`) counts assets by their own
-  name or address only, not by the addresses they resolve to, so it cannot
-  list those names yet.
+- **An exclusion of a shared front end stays on the address** (owner decision
+  2026-10-30). An exclusion of an address normally also excludes every name
+  that resolves to it (a scan of the name reaches that address:
+  `scope.AssetExclusionValues`). For a shared front end it does not: the
+  address serves every customer of the provider, and one click on a CDN edge
+  must not stop scanning every name the organization serves through that CDN.
+  - **Shared front end, precisely:** `edgeaddr.SharedFrontEnd`, an address
+    inside a range a provider publishes for a shared front end (class `edge`,
+    `saas_hosting` or `cloud_shared`) and inside no published `dedicated`
+    range. An address labeled an edge only by its `cdn` record or its network
+    holder's name, a cloud static address (class `dedicated`), an unparsable
+    or unknown address is treated as dedicated: the exclusion propagates to
+    its names (fail closed). The label on an IP asset can therefore say
+    "edge" (network holder) while the exclusion still reaches its names; the
+    preview below is the authority.
+  - **What the exclusion still blocks:** the address itself, its `host:port`
+    and URL forms, and the address inside any range target (cut around it),
+    on every dispatch path and at the claim re-check
+    (`internal/app/scan/edge_exclusion_dispatch_test.go`).
+  - **Names behind it** keep dispatching through the edge. A port scan of such
+    a name is capped to the web ports (`RefusalWebPortsOnly`, the active-scan
+    gate's `namePortCaps`) whatever the scope entries or the unclassified mode
+    say: the provider's other ports are not the organization's. A job that
+    mixes a range holding the excluded address with such a name may still
+    skip the name on sensors that pass the exclusions to naabu
+    (`-exclude-hosts`): that only scans less.
+  - **Preview:** `POST /scope/exclusions/bulk/preview` answers, for an address,
+    range or CIDR, `resolving_names` and `resolving_sample` (the caller's
+    visible names that resolve to a dedicated address inside it, within the
+    data scope: they are excluded too), and for a shared front end
+    `edge {class, provider, address}` with `names_unaffected: true`.
 
 ## 5. Data model (planned)
 
