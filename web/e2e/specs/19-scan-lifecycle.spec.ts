@@ -104,8 +104,12 @@ async function editOnScanPage(page: Page, scanId: string, name: string, targets:
   await expect(dialog).toBeVisible()
   await dialog.getByLabel(/scan name/i).fill(name)
   await dialog.getByRole('button', { name: /^next/i }).click()
-  await dialog.getByRole('tab', { name: /paste/i }).click()
-  await dialog.locator('#custom-targets').fill(targets.join('\n'))
+  // The targets field holds the saved targets as chips: remove them, then
+  // type the new ones (a comma adds each).
+  const field = dialog.getByTestId('target-chips-field')
+  const removeChip = field.getByRole('button', { name: /^remove /i })
+  while ((await removeChip.count()) > 0) await removeChip.first().click()
+  await field.getByRole('textbox').fill(`${targets.join(', ')}, `)
   await dialog.getByRole('button', { name: /^next/i }).click()
   await dialog
     .getByText(/advanced/i)
@@ -138,7 +142,14 @@ async function runAndOpen(page: Page, scanId: string) {
   )
   await page.getByRole('button', { name: /^run now$/i }).click()
   const confirm = page.getByRole('alertdialog')
-  if (await confirm.isVisible().catch(() => false)) {
+  // The confirm dialog renders a moment after the click; wait for it
+  // instead of checking once.
+  if (
+    await confirm.waitFor({ state: 'visible', timeout: 3000 }).then(
+      () => true,
+      () => false
+    )
+  ) {
     await confirm.getByRole('button').last().click()
   }
   const res = await triggered
@@ -155,45 +166,49 @@ async function runAndOpen(page: Page, scanId: string) {
 }
 
 for (const kind of ['single', 'workflow'] as const) {
-  test(`a ${kind} scan: create, edit, run, view the run`, async ({ page }) => {
-    test.setTimeout(240_000)
-    const stamp = `${Date.now().toString(36)}-${kind}`
-    const first = `scan-e2e-${stamp}.example.com`
-    const second = `scan-e2e-${stamp}-b.example.com`
-    await page.goto('/scans')
-    await allowHosts(page, [first, second])
+  test(
+    `a ${kind} scan: create, edit, run, view the run`,
+    { tag: ['@scans', '@smoke'] },
+    async ({ page }) => {
+      test.setTimeout(240_000)
+      const stamp = `${Date.now().toString(36)}-${kind}`
+      const first = `scan-e2e-${stamp}.example.com`
+      const second = `scan-e2e-${stamp}-b.example.com`
+      await page.goto('/scans')
+      await allowHosts(page, [first, second])
 
-    const form: Record<string, unknown> = {
-      name: `E2E ${kind} ${stamp}`,
-      intensity: 'active',
-      mode: kind,
-      targets: {
-        type: 'asset_groups',
-        assetGroupIds: [],
-        assetIds: [],
-        assetNames: {},
-        customTargets: [first],
-      },
-      schedule: {
-        runImmediately: false,
-        saveOnly: true,
-        frequency: 'weekly',
-        dayOfWeek: 1,
-        time: '02:00',
-      },
-    }
-    if (kind === 'single') {
-      form.scannerName = 'nuclei'
-    } else {
-      const workflow = (await apiWrite(page, 'POST', '/api/v1/scan-workflows/', {
-        name: `E2E workflow ${stamp}`,
-        steps: [{ step_key: 'vuln', name: 'Vulnerability templates', tool: 'nuclei', order: 1 }],
-      })) as { id: string }
-      form.workflowId = workflow.id
-    }
+      const form: Record<string, unknown> = {
+        name: `E2E ${kind} ${stamp}`,
+        intensity: 'active',
+        mode: kind,
+        targets: {
+          type: 'asset_groups',
+          assetGroupIds: [],
+          assetIds: [],
+          assetNames: {},
+          customTargets: [first],
+        },
+        schedule: {
+          runImmediately: false,
+          saveOnly: true,
+          frequency: 'weekly',
+          dayOfWeek: 1,
+          time: '02:00',
+        },
+      }
+      if (kind === 'single') {
+        form.scannerName = 'nuclei'
+      } else {
+        const workflow = (await apiWrite(page, 'POST', '/api/v1/scan-workflows/', {
+          name: `E2E workflow ${stamp}`,
+          steps: [{ step_key: 'vuln', name: 'Vulnerability templates', tool: 'nuclei', order: 1 }],
+        })) as { id: string }
+        form.workflowId = workflow.id
+      }
 
-    const scan = await createInWizard(page, form)
-    await editOnScanPage(page, scan.id, `E2E ${kind} ${stamp} edited`, [first, second])
-    await runAndOpen(page, scan.id)
-  })
+      const scan = await createInWizard(page, form)
+      await editOnScanPage(page, scan.id, `E2E ${kind} ${stamp} edited`, [first, second])
+      await runAndOpen(page, scan.id)
+    }
+  )
 }

@@ -12,7 +12,11 @@
  * code, so a new server code still reads as a sentence.
  */
 
-type Translate = (key: string, fallback?: string, vars?: Record<string, string | number>) => string
+export type Translate = (
+  key: string,
+  fallback?: string,
+  vars?: Record<string, string | number>
+) => string
 
 /** Refusal codes (§6.5), with a short label and a sentence. */
 export const SCOPE_REFUSAL_TEXT = {
@@ -136,6 +140,8 @@ export const SCOPE_REFUSAL_CODES = Object.keys(SCOPE_REFUSAL_TEXT) as ScopeRefus
 
 /** Error codes of the scope write routes (§6.1, §6.7, §8) and the scan gate. */
 export const SCOPE_ERROR_TEXT = {
+  EXCLUSION_REACHES_OUTSIDE_SCOPE:
+    'This rule also matches assets you cannot see. Ask someone with access to them, or mark only the assets you see.',
   PUBLIC_SUFFIX:
     'A public suffix (such as com.vn or azurewebsites.net) cannot be a scope entry. Enter a domain your organization registered.',
   DENY_LIST: 'The platform does not allow this target as a scope entry.',

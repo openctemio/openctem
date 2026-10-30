@@ -16,7 +16,15 @@ import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Check, Copy, KeyRound, Lock, Plus, ShieldAlert, Trash2 } from 'lucide-react'
 import Link from '@/components/link'
-import { PageHeader, EmptyState, ErrorState, GatedButton } from '@/features/shared'
+import {
+  PageHeader,
+  PageStack,
+  EmptyState,
+  ErrorState,
+  FilterSelect,
+  GatedButton,
+  ListToolbar,
+} from '@/features/shared'
 import { CIRequireOIDC } from './ci-require-oidc'
 import { CIPRFeedback } from './ci-pr-feedback'
 import { useUrlFilter } from '@/hooks/use-url-param'
@@ -45,8 +53,8 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { confirmName } from '@/lib/confirm-name'
 import { useTranslation } from '@/context/i18n-provider'
 import { useBrand } from '@/context/brand-provider'
 import { formatLocalized } from '@/lib/format-date'
@@ -117,8 +125,11 @@ export function CITrustSettings({ embedded = false }: { embedded?: boolean } = {
   const [sectionParam, setSectionParam] = useUrlFilter('section', 'trust')
   const section = setupSection(sectionParam)
   const setSection = (v: string) => setSectionParam(setupSection(v))
+  // One tab row per page (research/249 R21): on the CI/CD page these sections
+  // sit under its Trust and gate tab, so the section is a token in a toolbar,
+  // not a second row of tabs. Its value stays in the URL (?section=).
   return (
-    <div className="space-y-4">
+    <PageStack>
       {!embedded && (
         <PageHeader
           title={t('scans.ci.title', 'CI/CD integration')}
@@ -129,31 +140,32 @@ export function CITrustSettings({ embedded = false }: { embedded?: boolean } = {
         />
       )}
       <CIRequireOIDC canWrite={canWrite} />
-      <Tabs value={section} onValueChange={setSection}>
-        <TabsList>
-          <TabsTrigger value="trust">{t('scans.ci.trust.tab', 'Trust')}</TabsTrigger>
-          <TabsTrigger value="gate">{t('scans.ci.gatePolicy.tab', 'Gate policy')}</TabsTrigger>
-          <TabsTrigger value="break-glass">
-            {t('scans.ci.breakGlass.tab', 'Break-glass')}
-          </TabsTrigger>
-          <TabsTrigger value="feedback">
-            {t('scans.ci.feedback.tab', 'Pull request feedback')}
-          </TabsTrigger>
-        </TabsList>
-        <TabsContent value="trust" className="mt-4">
-          <TrustConfigsSection canWrite={canWrite} />
-        </TabsContent>
-        <TabsContent value="gate" className="mt-4">
-          <GatePolicySection canWrite={can(Permission.CIPolicy)} />
-        </TabsContent>
-        <TabsContent value="break-glass" className="mt-4">
-          <OverridesSection canOverride={canOverride} />
-        </TabsContent>
-        <TabsContent value="feedback" className="mt-4">
-          <CIPRFeedback canWrite={canWrite} />
-        </TabsContent>
-      </Tabs>
-    </div>
+      <ListToolbar
+        start={
+          <FilterSelect<SetupSection>
+            label={t('scans.ci.sectionLabel', 'Section')}
+            value={section}
+            clearable={false}
+            options={[
+              { value: 'trust', label: t('scans.ci.trust.tab', 'Trust') },
+              { value: 'gate', label: t('scans.ci.gatePolicy.tab', 'Gate policy') },
+              { value: 'break-glass', label: t('scans.ci.breakGlass.tab', 'Break-glass') },
+              { value: 'feedback', label: t('scans.ci.feedback.tab', 'Pull request feedback') },
+            ]}
+            onChange={(v) => setSection(v || 'trust')}
+          />
+        }
+      />
+      {section === 'gate' ? (
+        <GatePolicySection canWrite={can(Permission.CIPolicy)} />
+      ) : section === 'break-glass' ? (
+        <OverridesSection canOverride={canOverride} />
+      ) : section === 'feedback' ? (
+        <CIPRFeedback canWrite={canWrite} />
+      ) : (
+        <TrustConfigsSection canWrite={canWrite} />
+      )}
+    </PageStack>
   )
 }
 
@@ -171,7 +183,7 @@ function rulesSummary(c: CITrustConfig, t: TFn): string {
   add('scans.ci.trust.sumEnvironments', 'environments {list}', r.environments)
   add('scans.ci.trust.sumEvents', 'events {list}', r.events)
   add('scans.ci.trust.sumWorkflowRefs', 'pipeline definitions {list}', r.workflow_refs)
-  return parts.join(' · ')
+  return parts.join(', ')
 }
 
 function TrustConfigsSection({ canWrite }: { canWrite: boolean }) {
@@ -253,6 +265,7 @@ function TrustConfigsSection({ canWrite }: { canWrite: boolean }) {
                   reason={t('scans.ci.noWrite', NO_WRITE)}
                   variant="ghost"
                   size="sm"
+                  className="ms-3 text-destructive hover:text-destructive"
                   aria-label={t('scans.ci.trust.deleteLabel', 'Delete {name}', {
                     name: c.name ?? '',
                   })}
@@ -326,8 +339,9 @@ function TrustConfigsSection({ canWrite }: { canWrite: boolean }) {
           'confirm.ciTrust.deleteDesc',
           'Pipelines it admits can no longer send results. Tokens already issued expire within 15 minutes. The repository scope entries it added are removed. This cannot be undone.'
         )}
-        confirmText={t('confirm.delete', 'Delete')}
+        confirmText={t('confirm.ciTrust.deleteBtn')}
         destructive
+        typeToConfirm={deleting ? confirmName(deleting.name, deleting.id ?? '') : undefined}
         handleConfirm={() => {
           const target = deleting
           setDeleting(null)
@@ -1030,6 +1044,7 @@ function GatePolicySection({ canWrite }: { canWrite: boolean }) {
                   reason={t('scans.ci.noWrite', NO_WRITE)}
                   variant="ghost"
                   size="sm"
+                  className="ms-3 text-destructive hover:text-destructive"
                   aria-label={t('confirm.gatePolicy.deleteLabel', 'Delete the policy for {scope}', {
                     scope: policyScope(p, t),
                   })}
@@ -1077,7 +1092,12 @@ function GatePolicySection({ canWrite }: { canWrite: boolean }) {
           'confirm.gatePolicy.deleteDesc',
           'Pipelines in this scope fall back to the organization policy from their next run. This cannot be undone.'
         )}
-        confirmText={t('confirm.delete', 'Delete')}
+        confirmText={t('confirm.gatePolicy.deleteBtn')}
+        typeToConfirm={
+          pendingDelete
+            ? confirmName(policyScope(pendingDelete, t), pendingDelete.id ?? '')
+            : undefined
+        }
         handleConfirm={async () => {
           if (!pendingDelete) return
           try {
@@ -1624,7 +1644,7 @@ function OverridesSection({ canOverride }: { canOverride: boolean }) {
                 </div>
                 <p className="break-words">{o.reason}</p>
                 <p className="text-xs text-muted-foreground">
-                  {t('scans.ci.breakGlass.until', 'Until {time} · repository {id}', {
+                  {t('scans.ci.breakGlass.until', 'Until {time}, repository {id}', {
                     time: o.expires_at ? formatLocalized(o.expires_at, locale, { time: true }) : '',
                     id: o.repository_asset_id ?? '',
                   })}

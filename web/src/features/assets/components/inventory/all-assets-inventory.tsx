@@ -26,7 +26,7 @@
 import { AssetsSectionTabs } from '../assets-section-tabs'
 import { useCallback, useEffect, useEffectEvent, useMemo, useState, type ReactNode } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { Download, Lock, RefreshCw, Search } from 'lucide-react'
+import { Download, EyeOff, Lock, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAssetTypeRegistry } from '@/features/asset-types/api/use-asset-type-registry'
 import {
@@ -40,19 +40,30 @@ import { exportInventory } from '../../lib/inventory-export'
 import { useInventoryAssetForms } from './inventory-asset-forms'
 import { InventoryAddButton } from './inventory-add-button'
 import { Main } from '@/components/layout'
-import { PageHeader, EmptyState, FilterButton, FilterSheet } from '@/features/shared'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import {
+  PageHeader,
+  PageStack,
+  EmptyState,
+  ErrorState,
+  FilterButton,
+  FilterSheet,
+} from '@/features/shared'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { usePermissions, Permission } from '@/lib/permissions'
-import { useDebounce } from '@/hooks/use-debounce'
 import { useTranslation } from '@/context/i18n-provider'
 import { useTenant } from '@/context/tenant-provider'
 import { useLastVisit } from '../../hooks/use-last-visit'
-import { useAssets, useAssetStats, type AssetSearchFilters } from '../../hooks/use-assets'
+import { useCommittedSearch } from '../../hooks/use-committed-search'
+import {
+  buildAssetQueryParams,
+  useAssets,
+  useAssetStats,
+  type AssetSearchFilters,
+} from '../../hooks/use-assets'
+import { FilterGroupActions } from '@/features/asset-groups/components/filter-group-actions'
 import type { Asset } from '../../types/asset.types'
 import { useBusinessUnits } from '@/features/business-units/api/use-business-units'
 import {
@@ -109,6 +120,7 @@ function toSearchFilters(f: InventoryFilters): AssetSearchFilters {
     isCrownJewel: f.isCrownJewel,
     programAssets: f.programAssets,
     freshness: f.freshness,
+    resolution: f.resolution,
     coverage: f.coverage,
     technologies: f.technologies,
     technologyCategories: f.technologyCategories,
@@ -221,33 +233,31 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
     [filters, setFilters]
   )
 
-  // Local search input, debounced into the URL so we don't replace() per keystroke.
-  const [searchInput, setSearchInput] = useState(filters.search ?? '')
-  const debouncedSearch = useDebounce(searchInput, 300)
-  // Keep the box in sync when search is cleared elsewhere (clear-all, a metric).
-  useEffect(() => {
-    setSearchInput(filters.search ?? '')
-  }, [filters.search])
-  // Only the debounced input triggers a URL write. The other filters are read as
-  // an effect event (latest value, not a dependency): changing one of them must
-  // not push a stale debounced search back into the URL.
-  const commitSearch = useEffectEvent((next: string) => {
-    const current = filters.search ?? ''
-    if (next !== current) {
-      setFilters({ ...filters, search: next || undefined, page: 1 })
-    }
-  })
-  useEffect(() => {
-    commitSearch(debouncedSearch)
-  }, [debouncedSearch])
+  // The search box, settled into the URL (`q`) without a replace() per key.
+  // The other filters are read at commit time, so changing one of them never
+  // pushes a stale search back into the URL.
+  const [searchInput, setSearchInput] = useCommittedSearch(filters.search, (next) =>
+    setFilters({ ...filters, search: next || undefined, page: 1 })
+  )
 
   const [filterSheetOpen, setFilterSheetOpen] = useState(false)
 
   // Data. The headline numbers come from the tenant-wide stats endpoint.
   const searchFilters = useMemo(() => toSearchFilters(filters), [filters])
+  // The filter on screen as list parameters, for "Save filter as group" and "Add all matching".
+  const filterParams = useMemo(() => buildAssetQueryParams(searchFilters), [searchFilters])
   const { assets, total, isFirstLoad, isLoading, isError, error, mutate } =
     useAssetsKeepingPrevious(searchFilters)
   const { stats, isLoading: statsLoading, mutate: statsMutate } = useAssetStats()
+  // A page past the end (an old link, a list that shrank) shows the last page
+  // instead of an empty table under "Showing 1961 - 11 of 11".
+  const clampPage = useEffectEvent((lastPage: number) => setFilters({ ...filters, page: lastPage }))
+  useEffect(() => {
+    const size = filters.pageSize ?? DEFAULT_PAGE_SIZE
+    if (isLoading || isError || total <= 0) return
+    const lastPage = Math.max(1, Math.ceil(total / size))
+    if ((filters.page ?? 1) > lastPage) clampPage(lastPage)
+  }, [filters.page, filters.pageSize, total, isLoading, isError])
   // Business unit names label the Business unit facet and chip: asked for only
   // once something shows them (a chip, the filter sheet or the filter picker).
   const [facetsWanted, setFacetsWanted] = useState(false)
@@ -389,16 +399,18 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
   if (!canRead) {
     return (
       <Main>
-        <PageHeader title={t('assets.overview.title', 'Assets')} />
-        <EmptyState
-          className="mt-8 border-dashed"
-          icon={Lock}
-          title={t('assets.inventoryPage.noAccess', "You don't have access to assets")}
-          description={t(
-            'assets.inventoryPage.noAccessHint',
-            'Ask an administrator for the assets:read permission to view the inventory.'
-          )}
-        />
+        <PageStack>
+          <PageHeader title={t('assets.overview.title', 'Assets')} />
+          <EmptyState
+            className="border-dashed"
+            icon={Lock}
+            title={t('assets.inventoryPage.noAccess', "You don't have access to assets")}
+            description={t(
+              'assets.inventoryPage.noAccessHint',
+              'Ask an administrator for the assets:read permission to view the inventory.'
+            )}
+          />
+        </PageStack>
       </Main>
     )
   }
@@ -437,18 +449,12 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
     },
   })
 
-  const searchBox = (
-    <div className="relative min-w-0 flex-1 sm:max-w-sm">
-      <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-      <Input
-        value={searchInput}
-        onChange={(e) => setSearchInput(e.target.value)}
-        placeholder={t('assets.inventoryPage.search', 'Search name, description or alias…')}
-        aria-label={t('assets.inventoryPage.searchAria', 'Search assets')}
-        className="h-9 ps-9"
-      />
-    </div>
-  )
+  const search = {
+    value: searchInput,
+    onChange: setSearchInput,
+    placeholder: t('assets.inventoryPage.search', 'Search name, description or alias…'),
+    label: t('assets.inventoryPage.searchAria', 'Search assets'),
+  }
 
   const refreshButton = (
     <Tooltip>
@@ -471,149 +477,172 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
   const page = filters.page ?? 1
   const pageSize = filters.pageSize ?? DEFAULT_PAGE_SIZE
 
+  // The default list leaves out names awaiting review and names marked not
+  // ours (the locked chip says so). The heading counts every asset of the
+  // view; with no other filter, the difference is exactly what the chip
+  // hides, so the three numbers on the page add up.
+  const hideActive = !filters.attribution?.length
+  const viewTotal = (scopeLabel ? typeStats : stats).total
+  const onlyDefaults = isInventoryFilterEmpty({ ...filters, types: undefined, subType: undefined })
+  const hiddenCount =
+    hideActive && onlyDefaults && !isLoading && !statsLoading && !typeStatsLoading
+      ? Math.max(0, viewTotal - total)
+      : undefined
+  const showAllAttributions = () =>
+    setFilters({ ...filters, attribution: [...ATTRIBUTION_FILTER_VALUES], page: 1 })
+  // An empty list while the default hide is on is not "nothing yet": say what
+  // is left out and offer to show it.
+  const hiddenEmpty =
+    hideActive && total === 0 && viewTotal > 0 ? (
+      <EmptyState
+        icon={EyeOff}
+        title={t('assets.hidden.emptyTitle', 'No confirmed assets match')}
+        description={t(
+          'assets.hidden.emptyHint',
+          'Names awaiting review and names marked not yours are not in this list. Show them to search every asset.'
+        )}
+        action={
+          <Button variant="outline" size="sm" onClick={showAllAttributions}>
+            {t('assets.hidden.showAll', 'Show all assets')}
+          </Button>
+        }
+      />
+    ) : undefined
+
   return (
     <Main>
-      <PageHeader title={t('assets.overview.title', 'Assets')} viewSwitcher={viewSwitcher}>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => void handleExport()}
-          disabled={exporting}
-        >
-          <Download className="me-2 h-4 w-4" />
-          {exporting
-            ? t('assets.inventoryPage.exporting', 'Exporting…')
-            : t('assets.inventoryPage.export', 'Export')}
-        </Button>
-        {canWrite && (
-          <InventoryAddButton registry={registry} view={typeView} onAdd={forms.openCreate} />
-        )}
-      </PageHeader>
-      <AssetsSectionTabs />
+      <PageStack>
+        <PageHeader title={t('assets.overview.title', 'Assets')} viewSwitcher={viewSwitcher}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void handleExport()}
+            disabled={exporting}
+          >
+            <Download className="me-2 h-4 w-4" />
+            {exporting
+              ? t('assets.inventoryPage.exporting', 'Exporting…')
+              : t('assets.inventoryPage.export', 'Export')}
+          </Button>
+          {canWrite && (
+            <InventoryAddButton registry={registry} view={typeView} onAdd={forms.openCreate} />
+          )}
+        </PageHeader>
+        <AssetsSectionTabs />
 
-      <div className="mt-5 flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
-        <h2 data-testid="inventory-view-title" className="text-base font-semibold">
-          {scopeLabel ?? t('assets.quickView.all', 'All assets')}
-        </h2>
-        <span className="text-sm tabular-nums text-muted-foreground">
-          {(scopeLabel ? typeStatsLoading : statsLoading)
-            ? ''
-            : (scopeLabel ? typeStats : stats).total.toLocaleString()}
-        </span>
-        {lens?.description && (
-          <span className="text-xs text-muted-foreground">
-            {t(`assets.lensDescription.${lens.id}`, lens.description)}
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+          <h2 data-testid="inventory-view-title" className="text-base font-semibold">
+            {scopeLabel ?? t('assets.quickView.all', 'All assets')}
+          </h2>
+          <span className="text-sm tabular-nums text-muted-foreground">
+            {(scopeLabel ? typeStatsLoading : statsLoading)
+              ? ''
+              : (scopeLabel ? typeStats : stats).total.toLocaleString()}
           </span>
-        )}
-      </div>
-
-      <div className="mt-3">
-        <div className="min-w-0">
-          {isError ? (
-            <Alert variant="destructive">
-              <AlertTitle>
-                {t('assets.inventoryPage.loadFailed', 'Failed to load assets')}
-              </AlertTitle>
-              <AlertDescription>
-                <p>
-                  {error?.message ||
-                    t('assets.inventoryPage.unexpected', 'An unexpected error occurred.')}
-                </p>
-                <Button variant="outline" size="sm" className="mt-2" onClick={refresh}>
-                  <RefreshCw className="me-2 h-4 w-4" />
-                  {t('assets.inventoryPage.retry', 'Retry')}
-                </Button>
-              </AlertDescription>
-            </Alert>
-          ) : isFirstLoad ? (
-            <InventoryTableSkeleton />
-          ) : (
-            <InventoryTable
-              onAssetUpdated={() => void mutate()}
-              assets={assets}
-              total={total}
-              page={page}
-              pageSize={pageSize}
-              sort={filters.sort}
-              onPageChange={(nextPage, nextSize) =>
-                setFilters({
-                  ...filters,
-                  pageSize: nextSize,
-                  // A new page size starts from the first page.
-                  page: nextSize !== pageSize ? 1 : nextPage,
-                })
-              }
-              onSortChange={(sort) => setFilters({ ...filters, sort, page: 1 })}
-              onSelectionChange={setSelectedAssets}
-              resetSelectionKey={selectionEpoch}
-              filterTags={filters.tags}
-              onToggleTagFilter={toggleTagFilter}
-              toolbarStart={
-                <>
-                  {filterButtons}
-                  {searchBox}
-                </>
-              }
-              toolbarEnd={
-                <>
-                  <InventoryViewsMenu
-                    filters={filters}
-                    onToggle={togglePreset}
-                    extraPresets={extraPresets}
-                  />
-                  {refreshButton}
-                </>
-              }
-              toolbarBelow={
-                <InventoryFilterBar
-                  leading={
-                    !filters.attribution?.length ? (
-                      <InventoryHiddenChip
-                        onShowAll={() =>
-                          setFilters({
-                            ...filters,
-                            attribution: [...ATTRIBUTION_FILTER_VALUES],
-                            page: 1,
-                          })
-                        }
-                      />
-                    ) : undefined
-                  }
-                  chips={chips}
-                  groups={facetGroups}
-                  attributeFacets={attributeFacets}
-                  tagTypes={typeView ? [typeView.type] : undefined}
-                  filters={filters}
-                  stats={scopeLabel ? typeStats : stats}
-                  onChange={setFilters}
-                  onClearAll={clearAll}
-                  onPickerOpenChange={(open) => open && setFacetsWanted(true)}
-                  // The table (and this bar) only renders after the first load,
-                  // so the count is always known here.
-                  resultLabel={t(
-                    'assets.filters.results',
-                    '{count, plural, one {# asset} other {# assets}}',
-                    { count: total }
-                  )}
-                />
-              }
-              hasFilters={!isInventoryFilterEmpty(filters)}
-              typeView={typeView}
-              onEditAsset={forms.openEdit}
-              onDeleteAsset={forms.openDelete}
-              {...(typeView &&
-              isInventoryFilterEmpty({ ...filters, types: undefined, subType: undefined })
-                ? {
-                    emptyMessage: t('assets.inventoryPage.emptyType', 'No {type} yet', {
-                      type: inSentence(typeView.plural),
-                    }),
-                    emptyDescription: emptyHint(typeView),
-                  }
-                : {})}
-            />
+          {lens?.description && (
+            <span className="text-xs text-muted-foreground">
+              {t(`assets.lensDescription.${lens.id}`, lens.description)}
+            </span>
           )}
         </div>
-      </div>
+
+        <div>
+          <div className="min-w-0">
+            {isFirstLoad && !isError ? (
+              <InventoryTableSkeleton />
+            ) : (
+              <InventoryTable
+                // A failed read keeps the toolbar, so a bad search or filter
+                // from a shared link can still be changed.
+                errorState={
+                  isError ? (
+                    <ErrorState
+                      title={t('assets.inventoryPage.errorTitle', 'assets')}
+                      error={error}
+                      onRetry={refresh}
+                    />
+                  ) : undefined
+                }
+                emptyState={hiddenEmpty}
+                onAssetUpdated={() => void mutate()}
+                assets={assets}
+                total={total}
+                page={page}
+                pageSize={pageSize}
+                sort={filters.sort}
+                onPageChange={(nextPage, nextSize) =>
+                  setFilters({
+                    ...filters,
+                    pageSize: nextSize,
+                    // A new page size starts from the first page.
+                    page: nextSize !== pageSize ? 1 : nextPage,
+                  })
+                }
+                onSortChange={(sort) => setFilters({ ...filters, sort, page: 1 })}
+                onSelectionChange={setSelectedAssets}
+                resetSelectionKey={selectionEpoch}
+                filterTags={filters.tags}
+                onToggleTagFilter={toggleTagFilter}
+                search={search}
+                filter={filterButtons}
+                toolbarEnd={
+                  <>
+                    <InventoryViewsMenu
+                      filters={filters}
+                      onToggle={togglePreset}
+                      extraPresets={extraPresets}
+                    />
+                    {!isInventoryFilterEmpty(filters) && (
+                      <FilterGroupActions params={filterParams} total={total} />
+                    )}
+                    {refreshButton}
+                  </>
+                }
+                toolbarBelow={
+                  <InventoryFilterBar
+                    locked={
+                      !filters.attribution?.length &&
+                      hiddenCount !== undefined &&
+                      hiddenCount > 0 ? (
+                        <InventoryHiddenChip count={hiddenCount} onShowAll={showAllAttributions} />
+                      ) : undefined
+                    }
+                    chips={chips}
+                    groups={facetGroups}
+                    attributeFacets={attributeFacets}
+                    tagTypes={typeView ? [typeView.type] : undefined}
+                    filters={filters}
+                    stats={scopeLabel ? typeStats : stats}
+                    onChange={setFilters}
+                    onClearAll={clearAll}
+                    onPickerOpenChange={(open) => open && setFacetsWanted(true)}
+                    // The table (and this bar) only renders after the first load,
+                    // so the count is always known here.
+                    resultLabel={t(
+                      'assets.filters.results',
+                      '{count, plural, one {# asset} other {# assets}}',
+                      { count: total }
+                    )}
+                  />
+                }
+                hasFilters={!isInventoryFilterEmpty(filters)}
+                typeView={typeView}
+                onEditAsset={forms.openEdit}
+                onDeleteAsset={forms.openDelete}
+                {...(typeView &&
+                isInventoryFilterEmpty({ ...filters, types: undefined, subType: undefined })
+                  ? {
+                      emptyMessage: t('assets.inventoryPage.emptyType', 'No {type} yet', {
+                        type: inSentence(typeView.plural),
+                      }),
+                      emptyDescription: emptyHint(typeView),
+                    }
+                  : {})}
+              />
+            )}
+          </div>
+        </div>
+      </PageStack>
 
       <InventoryBulkBar
         selected={selectedAssets}

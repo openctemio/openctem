@@ -6,9 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 
@@ -58,9 +61,13 @@ func (r *ScanRunRepository) Create(ctx context.Context, run *scanrun.Run) error 
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22,
 		        ` + runDeadlineSQL("$15::timestamptz", "$5::uuid", "$2::uuid") + `,
 		        ` + runDeadlineReasonSQL("$15::timestamptz", "$5::uuid", "$2::uuid") + `, NULLIF($23, ''), $24, $25, NULLIF($26, 0), NULLIF($27, ''))
+		RETURNING deadline_at
 	`
 
-	_, err = r.db.ExecContext(ctx, query,
+	// The deadline the database fixed goes back on the run: its commands
+	// carry it to the sensor (scan.WithRunDeadline).
+	var deadline sql.NullTime
+	err = r.db.QueryRowContext(ctx, query,
 		run.ID.String(),
 		nullIfZeroID(run.ScanWorkflowID),
 		run.TenantID.String(),
@@ -88,7 +95,7 @@ func (r *ScanRunRepository) Create(ctx context.Context, run *scanrun.Run) error 
 		nullJSONObject(run.Subject),
 		run.ScanWorkflowVersion,
 		run.SpecDigest,
-	)
+	).Scan(&deadline)
 
 	if isOccurrenceConflict(err) {
 		return scanrun.ErrOccurrenceAlreadyRun
@@ -96,6 +103,7 @@ func (r *ScanRunRepository) Create(ctx context.Context, run *scanrun.Run) error 
 	if err != nil {
 		return fmt.Errorf("failed to create pipeline run: %w", err)
 	}
+	setRunDeadline(run, deadline)
 
 	return nil
 }
@@ -181,18 +189,21 @@ func (r *ScanRunRepository) Update(ctx context.Context, run *scanrun.Run) error 
 	query := `
 		UPDATE scan_runs
 		SET status = $2, context = $3,
-		    total_steps = $4, completed_steps = $5, failed_steps = $6, skipped_steps = $7, total_findings = $8,
+		    total_steps = $4, completed_steps = $5, failed_steps = $6, skipped_steps = $7,
+		    total_findings = GREATEST($8::int, COALESCE(` + runSightedSQL + `, 0)),
 		    started_at = $9, completed_at = $10, error_message = $11,
 		    scan_profile_id = $12, quality_gate_result = $13, retry_attempt = $14,
 		    deadline_at = COALESCE(deadline_at, ` + runDeadlineSQL("$9::timestamptz", "scan_runs.scan_id", "scan_runs.scan_workflow_id") + `),
 		    deadline_reason = CASE WHEN deadline_at IS NULL
 		        THEN ` + runDeadlineReasonSQL("$9::timestamptz", "scan_runs.scan_id", "scan_runs.scan_workflow_id") + `
 		        ELSE deadline_reason END
-		WHERE id = $1
+		WHERE id = $1 AND tenant_id = $15
 		  AND status NOT IN ` + terminalRunStatusesSQL + `
+		RETURNING deadline_at
 	`
 
-	result, err := r.db.ExecContext(ctx, query,
+	var deadline sql.NullTime
+	err = r.db.QueryRowContext(ctx, query,
 		run.ID.String(),
 		string(run.Status),
 		context,
@@ -207,16 +218,16 @@ func (r *ScanRunRepository) Update(ctx context.Context, run *scanrun.Run) error 
 		nullID(run.ScanProfileID),
 		nullBytes(qualityGateResult),
 		run.RetryAttempt,
-	)
+		run.TenantID.String(),
+	).Scan(&deadline)
 
+	if errors.Is(err, sql.ErrNoRows) {
+		return r.notUpdatedErrorFor(ctx, run.TenantID, run.ID)
+	}
 	if err != nil {
 		return fmt.Errorf("failed to update pipeline run: %w", err)
 	}
-
-	rowsAffected, _ := result.RowsAffected()
-	if rowsAffected == 0 {
-		return r.notUpdatedError(ctx, run.ID)
-	}
+	setRunDeadline(run, deadline)
 
 	return nil
 }
@@ -230,6 +241,20 @@ func (r *ScanRunRepository) notUpdatedError(ctx context.Context, id shared.ID) e
 	var exists bool
 	if err := r.db.QueryRowContext(ctx,
 		`SELECT EXISTS (SELECT 1 FROM scan_runs WHERE id = $1)`, id.String()).Scan(&exists); err != nil {
+		return fmt.Errorf("failed to check pipeline run: %w", err)
+	}
+	if !exists {
+		return shared.ErrNotFound
+	}
+	return scanrun.ErrRunAlreadyFinished
+}
+
+// notUpdatedErrorFor is notUpdatedError for a run of one tenant: another
+// tenant's run is reported as missing, never as finished.
+func (r *ScanRunRepository) notUpdatedErrorFor(ctx context.Context, tenantID, id shared.ID) error {
+	var exists bool
+	if err := r.db.QueryRowContext(ctx,
+		`SELECT EXISTS (SELECT 1 FROM scan_runs WHERE id = $1 AND tenant_id = $2)`, id.String(), tenantID.String()).Scan(&exists); err != nil {
 		return fmt.Errorf("failed to check pipeline run: %w", err)
 	}
 	if !exists {
@@ -352,14 +377,15 @@ func (r *ScanRunRepository) CountActiveByScanID(ctx context.Context, scanID shar
 	return count, nil
 }
 
-// UpdateStats updates run statistics.
-func (r *ScanRunRepository) UpdateStats(ctx context.Context, id shared.ID, completed, failed, skipped, findings int) error {
+// UpdateStats updates run statistics of a run of the tenant (another tenant's run is not touched).
+func (r *ScanRunRepository) UpdateStats(ctx context.Context, tenantID, id shared.ID, completed, failed, skipped, findings int) error {
 	query := `
 		UPDATE scan_runs
-		SET completed_steps = $2, failed_steps = $3, skipped_steps = $4, total_findings = $5
-		WHERE id = $1
+		SET completed_steps = $2, failed_steps = $3, skipped_steps = $4,
+		    total_findings = GREATEST($5::int, COALESCE(` + runSightedSQL + `, 0))
+		WHERE id = $1 AND tenant_id = $6
 	`
-	_, err := r.db.ExecContext(ctx, query, id.String(), completed, failed, skipped, findings)
+	_, err := r.db.ExecContext(ctx, query, id.String(), completed, failed, skipped, findings, tenantID.String())
 	return err
 }
 
@@ -500,9 +526,11 @@ func (r *ScanRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *scan
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22,
 		        ` + runDeadlineSQL("$15::timestamptz", "$5::uuid", "$2::uuid") + `,
 		        ` + runDeadlineReasonSQL("$15::timestamptz", "$5::uuid", "$2::uuid") + `, NULLIF($23, ''), $24, $25, NULLIF($26, 0), NULLIF($27, ''))
+		RETURNING deadline_at
 	`
 
-	_, err = tx.ExecContext(ctx, insertQuery,
+	var deadline sql.NullTime
+	err = tx.QueryRowContext(ctx, insertQuery,
 		run.ID.String(),
 		nullIfZeroID(run.ScanWorkflowID),
 		run.TenantID.String(),
@@ -530,7 +558,7 @@ func (r *ScanRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *scan
 		nullJSONObject(run.Subject),
 		run.ScanWorkflowVersion,
 		run.SpecDigest,
-	)
+	).Scan(&deadline)
 	if isOccurrenceConflict(err) {
 		return scanrun.ErrOccurrenceAlreadyRun
 	}
@@ -541,8 +569,18 @@ func (r *ScanRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *scan
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
+	setRunDeadline(run, deadline)
 
 	return nil
+}
+
+// setRunDeadline puts the deadline the database fixed for the run (NULL:
+// not started yet) on it, so the run's commands can carry it to the sensor.
+func setRunDeadline(run *scanrun.Run, deadline sql.NullTime) {
+	if deadline.Valid {
+		t := deadline.Time.UTC()
+		run.DeadlineAt = &t
+	}
 }
 
 // occurrenceIndex is the unique index that keeps one run per schedule
@@ -631,6 +669,10 @@ const MaxUnfinishedTargets = 10000
 //     'timeout' otherwise;
 //   - afterwards, each scan's run summary is recomputed from its runs.
 //
+// A run whose open commands all wait in the queue (for a busy sensor of the
+// tenant, or for their hosts; runWaitsInQueueSQL) is not settled: queue wait
+// does not count, and the claim moves its deadline (ExtendRunDeadlinesAtClaim).
+//
 // Returns the number of runs settled.
 func (r *ScanRunRepository) MarkTimedOutRuns(ctx context.Context) (int64, error) {
 	reaped, err := r.MarkTimedOutRunsReporting(ctx)
@@ -658,6 +700,9 @@ func (r *ScanRunRepository) MarkTimedOutRunsReporting(ctx context.Context) ([]sc
 			WHERE pr.status IN ('pending', 'running')
 			  AND pr.started_at IS NOT NULL
 			  AND NOW() > COALESCE(pr.deadline_at, ` + runDeadlineSQL("pr.started_at", "pr.scan_id", "pr.scan_workflow_id") + `)
+			  -- queue wait does not count (scan_run_deadline_work.go): a
+			  -- claim gives the run the time its work needs
+			  AND NOT ` + runWaitsInQueueSQL() + `
 			FOR UPDATE OF pr SKIP LOCKED
 		), open_targets AS (
 			SELECT d.id,
@@ -698,7 +743,7 @@ func (r *ScanRunRepository) MarkTimedOutRunsReporting(ctx context.Context) ([]sc
 		), closed_commands AS (
 			UPDATE commands c
 			SET status = 'failed',
-			    error_message = 'scan run reached its deadline before this command reported a result',
+			    error_message = ` + deadlineCommandMessageSQL("c") + `,
 			    completed_at = NOW(),
 			    lease_expires_at = NULL
 			FROM settled t
@@ -743,6 +788,28 @@ func (r *ScanRunRepository) MarkTimedOutRunsReporting(ctx context.Context) ([]sc
 		return reaped, fmt.Errorf("runs timed out, scan summaries not refreshed: %w", err)
 	}
 	return reaped, nil
+}
+
+// Messages of a command still open when its run reached its deadline: what
+// is known about it, never a guessed cause.
+const (
+	// DeadlineMsgNotPickedUp: no sensor claimed the command.
+	DeadlineMsgNotPickedUp = "scan run reached its deadline before a sensor picked up this command"
+	// DeadlineMsgToolFinished: the sensor reported every target finished,
+	// then nothing more.
+	DeadlineMsgToolFinished = "the tool finished scanning every target, but its result did not arrive before the scan run reached its deadline"
+	// DeadlineMsgNoResult: anything else.
+	DeadlineMsgNoResult = "scan run reached its deadline before this command reported a result"
+)
+
+// deadlineCommandMessageSQL is the error message of command alias c closed
+// at its run's deadline: not picked up, finished every target on the
+// sensor (its heartbeat progress) without a result, or no result.
+func deadlineCommandMessageSQL(c string) string {
+	return fmt.Sprintf(`CASE
+			        WHEN %[1]s.status = 'pending' THEN '%[2]s'
+			        WHEN %[1]s.progress_total > 0 AND %[1]s.progress_done >= %[1]s.progress_total THEN '%[3]s'
+			        ELSE '%[4]s' END`, c, DeadlineMsgNotPickedUp, DeadlineMsgToolFinished, DeadlineMsgNoResult)
 }
 
 // parseReapedRuns reads "tenant:run" keys.
@@ -922,15 +989,37 @@ func (r *ScanRunRepository) CloseCanceledRun(ctx context.Context, tenantID, runI
 	return out, nil
 }
 
+// withheldTextSQL is command.WithheldText of the code column col in SQL.
+func withheldTextSQL(col string) string {
+	texts := command.WithheldTexts()
+	codes := make([]string, 0, len(texts))
+	for c := range texts {
+		codes = append(codes, c)
+	}
+	sort.Strings(codes)
+	var b strings.Builder
+	b.WriteString("(CASE WHEN " + col + " LIKE " + pq.QuoteLiteral(command.PlacementGrantPrefix+"%") +
+		" THEN 'withheld by sensor permissions: ' || replace(substr(" + col + ", " +
+		strconv.Itoa(len(command.PlacementGrantPrefix)+1) + "), '_', ' ')")
+	for _, c := range codes {
+		b.WriteString(" WHEN " + col + " = " + pq.QuoteLiteral(c) + " THEN " + pq.QuoteLiteral("withheld: "+texts[c]))
+	}
+	b.WriteString(" ELSE 'withheld: ' || " + col + " END)")
+	return b.String()
+}
+
 // AbortUnclaimedRuns ends runs no sensor ever picked up (D8): every command of
 // the run is still 'pending' and was never acknowledged or started, and the
 // run is older than its threshold (4h scheduled / 1h interactive by default,
 // or the scan's own timeout when shorter). A run whose command waits for its
 // scan window, or while another task of the tenant scans its hosts, is not
-// unclaimed: no sensor may take that work yet. Such a run used to wait for the
+// unclaimed: no sensor may take that work yet; nor is a run whose command waits
+// for a busy sensor of the tenant that could take it (queueWaitSQL). Such a run used to wait for the
 // generic run timeout and end as "timeout" with no hint that nobody claimed
 // the work; it was then even retried. Here the run fails with the reason, its
-// open steps fail with NO_SENSOR (a code the retry controller never retries),
+// open steps fail with NO_SENSOR (a code the retry controller never retries;
+// the message names the dispatch gate's refusal when a sensor withheld the
+// work, e.g. "withheld by sensor permissions: credentials"),
 // its commands are failed so no sensor picks them up late, and the scan
 // summary is recomputed from its runs.
 func (r *ScanRunRepository) AbortUnclaimedRuns(ctx context.Context, scheduledAfter, interactiveAfter time.Duration) (int64, error) {
@@ -941,13 +1030,19 @@ func (r *ScanRunRepository) AbortUnclaimedRuns(ctx context.Context, scheduledAft
 // AbortUnclaimedRunsReporting is AbortUnclaimedRuns, reporting the runs it
 // ended (scanrun.ReapedRunReporter).
 func (r *ScanRunRepository) AbortUnclaimedRunsReporting(ctx context.Context, scheduledAfter, interactiveAfter time.Duration) ([]scanrun.ReapedRun, error) {
-	const query = `
+	query := `
 		WITH candidates AS (
 			SELECT pr.id,
 			       LEAST(
 			         CASE WHEN pr.trigger_type = 'schedule' THEN $1::bigint ELSE $2::bigint END,
 			         COALESCE((SELECT NULLIF(s.timeout_seconds, 0) FROM scans s WHERE s.id = pr.scan_id), $3::bigint)
-			       ) AS after_seconds
+			       ) AS after_seconds,
+			       -- why a sensor's dispatch gate last withheld the run's work
+			       -- (withheld.go): named in the message instead of a guess
+			       (SELECT c.withheld_reason FROM commands c
+			         WHERE c.tenant_id = pr.tenant_id AND c.payload->>'scan_run_id' = pr.id::text
+			           AND c.withheld_reason IS NOT NULL
+			         ORDER BY c.withheld_at DESC NULLS LAST LIMIT 1) AS withheld
 			FROM scan_runs pr
 			WHERE pr.status IN ('pending', 'running')
 			  AND pr.started_at IS NOT NULL
@@ -961,12 +1056,16 @@ func (r *ScanRunRepository) AbortUnclaimedRunsReporting(ctx context.Context, sch
 			               -- a lease-lost requeue clears the timestamps but not the attempts
 			               OR c.dispatch_attempts > 0
 			               -- waiting for its scan window is not "no sensor picked it up";
-			               -- the run's deadline moved with the wait (RFC-067)
+			               -- the run's deadline moved with the wait
 			               OR c.window_hold IS NOT NULL
 			               -- nor is waiting while another task of the tenant scans
-			               -- its hosts (research/130): no sensor may take it yet
+			               -- its hosts: no sensor may take it yet
 			               OR (c.host_keys IS NOT NULL AND EXISTS (
-			                     SELECT 1 FROM commands WHERE commands.id = c.id AND NOT ` + hostFreePredicate + `))))
+			                     SELECT 1 FROM commands WHERE commands.id = c.id AND NOT ` + hostFreePredicate + `))
+			               -- nor is waiting for a busy sensor of the tenant that
+			               -- could take it: the work queues behind other runs
+			               OR EXISTS (
+			                     SELECT 1 FROM commands WHERE commands.id = c.id AND ` + queueWaitSQL(false) + `)))
 		), unclaimed AS (
 			UPDATE scan_runs pr
 			SET status = 'failed',
@@ -974,7 +1073,9 @@ func (r *ScanRunRepository) AbortUnclaimedRunsReporting(ctx context.Context, sch
 			    error_message = 'no sensor picked up this run''s work within '
 			        || CASE WHEN k.after_seconds % 3600 = 0 THEN (k.after_seconds / 3600)::text || 'h'
 			                ELSE (k.after_seconds / 60)::text || 'm' END
-			        || ' — check that a sensor with this scanner is online (and in the right zone)'
+			        || CASE WHEN k.withheld IS NULL
+			                THEN ' — check that a sensor with this scanner is online (and in the right zone)'
+			                ELSE ' — ' || ` + withheldTextSQL("k.withheld") + ` END
 			FROM candidates k
 			WHERE pr.id = k.id
 			  AND pr.status IN ('pending', 'running')
@@ -1047,10 +1148,10 @@ func (r *ScanRunRepository) ListPendingRetries(ctx context.Context, limit int) (
 			  AND pr.completed_at IS NOT NULL
 			  AND s.max_retries > 0
 			  -- A timeout (the sensor died, or never reported) is retried at
-			  -- most twice; other failures use the scan's own budget (D7).
+			  -- most twice; other failures use the scan's own budget.
 			  AND pr.retry_attempt < CASE WHEN pr.status = 'timeout' THEN LEAST(s.max_retries, 2) ELSE s.max_retries END
 			  -- A failure a retry cannot fix is never retried: no such scanner on
-			  -- the sensor, target refused, nothing to scan, no sensor (D7).
+			  -- the sensor, target refused, nothing to scan, no sensor.
 			  AND NOT EXISTS (
 			        SELECT 1 FROM scan_run_steps sr
 			        WHERE sr.scan_run_id = pr.id
@@ -1210,6 +1311,38 @@ func (r *ScanRunRepository) ScanNames(ctx context.Context, tenantID shared.ID, s
 	return out, rows.Err()
 }
 
+// ScanManagers names the platform policy that owns each of the scans
+// (managed_by); a scan a person owns, or another tenant's, has no entry.
+func (r *ScanRunRepository) ScanManagers(ctx context.Context, tenantID shared.ID, scanIDs []shared.ID) (map[shared.ID]string, error) {
+	out := make(map[shared.ID]string)
+	if len(scanIDs) == 0 {
+		return out, nil
+	}
+	ids := make([]string, len(scanIDs))
+	for i, id := range scanIDs {
+		ids[i] = id.String()
+	}
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id, managed_by FROM scans WHERE tenant_id = $1 AND id = ANY($2::uuid[]) AND managed_by IS NOT NULL`,
+		tenantID.String(), pq.Array(ids))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read run scan managers: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, by string
+		if err := rows.Scan(&id, &by); err != nil {
+			return nil, fmt.Errorf("failed to scan run scan manager: %w", err)
+		}
+		if sid, err := shared.IDFromString(id); err == nil {
+			out[sid] = by
+		}
+	}
+	return out, rows.Err()
+}
+
+var _ scanrun.RunScanManagerReader = (*ScanRunRepository)(nil)
+
 func (r *ScanRunRepository) buildWhereClause(filter scanrun.RunFilter) (string, []any) {
 	var conditions []string
 	var args []any
@@ -1246,6 +1379,14 @@ func (r *ScanRunRepository) buildWhereClause(filter scanrun.RunFilter) (string, 
 		}
 		args = append(args, pq.Array(kinds))
 		conditions = append(conditions, fmt.Sprintf("NOT (kind = ANY($%d::text[]))", len(args)))
+	}
+
+	const managedScan = `EXISTS (SELECT 1 FROM scans ms WHERE ms.id = scan_runs.scan_id AND ms.tenant_id = scan_runs.tenant_id AND ms.managed_by IS NOT NULL)`
+	switch filter.Origin {
+	case scanrun.RunOriginSystem:
+		conditions = append(conditions, managedScan)
+	case scanrun.RunOriginUser:
+		conditions = append(conditions, "NOT "+managedScan)
 	}
 
 	if filter.AssetID != nil {

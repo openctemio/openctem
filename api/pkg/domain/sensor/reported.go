@@ -55,6 +55,13 @@ const CapabilityValidate = "validate"
 // retest). It is kept only for a known tool.
 const CapabilityRetest = "retest"
 
+// CapabilityRetestTemplates prefixes the capability of a tool whose retest
+// handler also runs the templates delivered with a retest command:
+// "retest-templates:<tool>" (a finding's custom retest check). Kept only for a
+// known tool, like "retest:<tool>"; a retest with a custom check requires it,
+// so dropping it from the report left such a retest without a sensor.
+const CapabilityRetestTemplates = "retest-templates"
+
 // CapabilityScopeLimits is the capability of a sensor that enforces the
 // port and path limits of a signed job's targets (jobsign.Limit) in its
 // task sandbox; only such a sensor gets crawlers, template scanners and
@@ -74,6 +81,27 @@ const CapabilityNetConfined = "net.confined@1"
 // gets scan and retest jobs only when it reported this and
 // CapabilityNetConfined; what an administrator declares never counts.
 const CapabilityEgressUpstream = "egress.upstream@1"
+
+// CapabilityEgressValidate is the capability of a sensor whose validate
+// jobs run their probes through the job's proxy pool (the "egress" member,
+// as on a scan job) and never directly. A sensor whose jobs use a pool
+// gets validate jobs only when it reported this, CapabilityEgressUpstream
+// and CapabilityNetConfined: an older sensor would run them from its own
+// address.
+const CapabilityEgressValidate = "egress.validate@1"
+
+// CapabilityEgressHostDirect marks a sensor whose owner set
+// SENSOR_SCAN_EGRESS=direct-only (sdk-go core.CapabilityEgressHostDirect):
+// it takes no pool and runs its scans direct. The platform treats it as a
+// sensor with a Direct path set on the host, not as one to upgrade, unless
+// the organization requires a proxy.
+const CapabilityEgressHostDirect = "egress.host-direct@1"
+
+// CapabilityProxyTest is the capability of a sensor that serves proxy_test
+// commands (sdk-go core.CapabilityProxyTest): the Test button of a proxy
+// pool asks such sensors to test each endpoint. The platform itself never
+// connects to a proxy.
+const CapabilityProxyTest = "proxy.test@1"
 
 // CapabilityHTTPIdentity is the capability of a sensor whose tools send the
 // job's http_policy User-Agent and headers on every request (sdk-go
@@ -117,6 +145,9 @@ var sensorWideCapabilities = []string{
 	CapabilityScopeLimits,
 	CapabilityNetConfined,
 	CapabilityEgressUpstream,
+	CapabilityEgressValidate,
+	CapabilityEgressHostDirect,
+	CapabilityProxyTest,
 	CapabilityHTTPIdentity,
 	CapabilityReachProbe,
 	CapabilityRuleSources,
@@ -139,8 +170,7 @@ type ReportedTool struct {
 	// "validate:nuclei"), known names only; nil when the sensor did not say
 	// (sdk-go before v0.13 reports only the sensor's flat list).
 	Capabilities []string `json:"capabilities,omitempty"`
-	// Content is the scanner content the tool scans with (RFC-031,
-	// content.go); nil when the sensor reported none for it.
+	// Content is the scanner content the tool scans with. Nil when the sensor reported none for it.
 	Content []ReportedContent `json:"content,omitempty"`
 }
 
@@ -339,6 +369,9 @@ func (in CapabilityReportInput) CatalogCandidates() (tools, capabilities []strin
 		if t, ok := strings.CutPrefix(c, CapabilityRetest+":"); ok {
 			addTool(t)
 		}
+		if t, ok := strings.CutPrefix(c, CapabilityRetestTemplates+":"); ok {
+			addTool(t)
+		}
 	}
 	for i, c := range in.Capabilities {
 		if i >= MaxReportedCapabilities {
@@ -478,6 +511,9 @@ func knownCapability(c string, knownTools, knownCaps map[string]bool) bool {
 		return knownTools[t]
 	}
 	if t, ok := strings.CutPrefix(c, CapabilityRetest+":"); ok {
+		return knownTools[t]
+	}
+	if t, ok := strings.CutPrefix(c, CapabilityRetestTemplates+":"); ok {
 		return knownTools[t]
 	}
 	return false

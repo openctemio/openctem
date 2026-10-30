@@ -2,9 +2,12 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/feedstatus"
 	"github.com/openctemio/openctem/api/internal/app/threat"
+	"github.com/openctemio/openctem/api/pkg/domain/threatintel"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -42,44 +45,35 @@ const (
 // tenant; the KEV refresh then reconciles the is_in_kev flag of findings with
 // the catalog. Both report material changes to the vulnerability event log.
 type ThreatIntelRefreshController struct {
-	service   *threat.IntelService
-	escalator threat.KEVEscalator
-	// intelQueue is optional: nil disables the recompute (no panic).
-	intelQueue IntelChangeQueue
-	events     IntelEventEmitter
-	feed       string
-	logger     *logger.Logger
-	// lastSweep is when the findings were last compared with the catalogs
-	// (recompute queue, KEV escalation); see sweepDue.
-	lastSweep time.Time
-}
-
-// findingSweepEvery: the comparison of open findings with the catalogs runs
-// after every changed sync and at least this often even when the source
-// answered 304 or failed, so findings created since (or a sweep that failed)
-// are still reconciled.
-const findingSweepEvery = 24 * time.Hour
-
-// sweepDue reports whether the open findings are compared with the catalogs
-// on this run: after a sync that changed something, or when the last sweep
-// is findingSweepEvery old.
-func sweepDue(changed bool, lastSweep, now time.Time) bool {
-	return changed || lastSweep.IsZero() || now.Sub(lastSweep) >= findingSweepEvery
+	service *threat.IntelService
+	feed    string
+	logger  *logger.Logger
+	// sweeper does the work after the feed changed, whichever path
+	// delivered it (see IntelSweeper).
+	sweeper *IntelSweeper
 }
 
 // NewThreatIntelRefreshController creates the daily EPSS refresh. queue may
 // be nil.
 func NewThreatIntelRefreshController(service *threat.IntelService, queue IntelChangeQueue, log *logger.Logger) *ThreatIntelRefreshController {
-	return &ThreatIntelRefreshController{service: service, intelQueue: queue, feed: intelFeedEPSS, logger: log}
+	return &ThreatIntelRefreshController{service: service, feed: intelFeedEPSS, logger: log,
+		sweeper: NewIntelSweeper(nil, queue, log)}
 }
 
 // NewKEVRefreshController creates the hourly KEV refresh. queue may be nil.
 func NewKEVRefreshController(service *threat.IntelService, escalator threat.KEVEscalator, queue IntelChangeQueue, log *logger.Logger) *ThreatIntelRefreshController {
-	return &ThreatIntelRefreshController{service: service, escalator: escalator, intelQueue: queue, feed: intelFeedKEV, logger: log}
+	return &ThreatIntelRefreshController{service: service, feed: intelFeedKEV, logger: log,
+		sweeper: NewIntelSweeper(escalator, queue, log)}
 }
 
 // SetEventEmitter wires the vulnerability event log (nil: no events).
-func (c *ThreatIntelRefreshController) SetEventEmitter(e IntelEventEmitter) { c.events = e }
+func (c *ThreatIntelRefreshController) SetEventEmitter(e IntelEventEmitter) {
+	c.sweeper.SetEventEmitter(e)
+}
+
+// Sweeper is the post-sync work of this feed, for the importer to run after
+// it applied the same feed from a signed release.
+func (c *ThreatIntelRefreshController) Sweeper() *IntelSweeper { return c.sweeper }
 
 // Name returns the controller name.
 func (c *ThreatIntelRefreshController) Name() string {
@@ -92,22 +86,34 @@ func (c *ThreatIntelRefreshController) Name() string {
 // Interval: hourly for KEV, daily for EPSS.
 func (c *ThreatIntelRefreshController) Interval() time.Duration {
 	if c.feed == intelFeedKEV {
-		return time.Hour
+		return feedstatus.IntervalKEV
 	}
-	return 24 * time.Hour
+	return feedstatus.IntervalEPSS
 }
 
 // Reconcile fetches and persists the feed, queues the findings whose intel
 // moved, reconciles KEV flags and reports material changes.
 func (c *ThreatIntelRefreshController) Reconcile(ctx context.Context) (int, error) {
 	var r threat.IntelSyncResult
-	if c.feed == intelFeedKEV {
+	// The signed release carries the feed too: the direct fetch is the
+	// supplier or a fallback depending on the platform setting.
+	if d := c.service.ShouldFetchDirect(ctx, c.feed); !d.Run {
+		r = threat.IntelSyncResult{Source: c.feed, Skipped: true, SkipReason: d.Reason}
+	} else if c.feed == intelFeedKEV {
 		r = c.service.SyncKEV(ctx)
 	} else {
 		r = c.service.SyncEPSS(ctx)
 	}
+	if r.Skipped && errors.Is(r.Error, threatintel.ErrSyncAlreadyRunning) {
+		// An operator's run (or another replica's) holds the feed; its own
+		// pass compares the findings with the catalogs.
+		c.logger.Debug("threat intel sync already running", "source", r.Source)
+		return 0, nil
+	}
 	processed := 0
 	switch {
+	case r.Skipped:
+		c.logger.Debug("threat intel direct fetch not needed", "source", r.Source, "reason", r.SkipReason)
 	case r.Error != nil:
 		c.logger.Warn("threat intel sync failed", "source", r.Source, "error", r.Error)
 	case r.NotModified:
@@ -116,70 +122,7 @@ func (c *ThreatIntelRefreshController) Reconcile(ctx context.Context) (int, erro
 		processed += r.RecordsSynced
 		c.logger.Info("threat intel synced", "source", r.Source, "records", r.RecordsSynced, "duration_ms", r.DurationMs)
 	}
-	sweep := sweepDue(r.Error == nil && !r.NotModified, c.lastSweep, time.Now())
-	sweepOK := true
-
-	// Before the escalator writes is_in_kev: compare each open finding with
-	// the fresh catalogs. A failed enqueue must not fail the sync.
-	if sweep && c.intelQueue != nil {
-		n, err := c.intelQueue.EnqueueIntelChanges(ctx)
-		if err != nil {
-			// The crossings are found by comparing the stored EPSS with the
-			// catalog: refreshing the stored values now would lose them, so
-			// the refresh waits for the next run.
-			c.logger.Warn("queue findings with changed intel failed; stored EPSS not refreshed", "error", err)
-			sweepOK = false
-		} else {
-			if n > 0 {
-				c.logger.Info("findings with changed intel queued for a priority recompute", "assets", n)
-			}
-			// Every changed CVE, not only threshold crossings: the CI gate
-			// judges the stored score against any threshold a policy sets.
-			if c.feed == intelFeedEPSS {
-				if m, rerr := c.intelQueue.RefreshFindingEPSS(ctx); rerr != nil {
-					c.logger.Warn("refresh stored EPSS on open findings failed", "error", rerr)
-				} else if m > 0 {
-					c.logger.Info("stored EPSS refreshed on open findings", "findings", m)
-				}
-			}
-		}
-	}
-
-	// After KEV sync, flag (and unflag) findings by KEV membership. The
-	// affected assets were queued above (EnqueueIntelChanges); severity is
-	// never rewritten, the exploitation floor carries KEV into priority.
-	if sweep && c.escalator != nil {
-		res, err := c.escalator.EscalateKEVFindings(ctx)
-		if err != nil {
-			c.logger.Warn("KEV auto-escalation failed", "error", err)
-			sweepOK = false
-		} else if res.Flagged > 0 || res.Unflagged > 0 {
-			c.logger.Info("KEV reconciliation completed",
-				"findings_flagged", res.Flagged,
-				"findings_unflagged", res.Unflagged,
-				"tenants_touched", len(res.Tenants),
-			)
-			processed += res.Flagged + res.Unflagged
-		}
-	}
-
-	if sweep && sweepOK {
-		c.lastSweep = time.Now()
-	}
-
-	// The event log compares the stored catalog with what it saw before,
-	// so it also picks up a sync an operator ran by hand.
-	if c.events != nil && r.Error == nil {
-		var err error
-		if c.feed == intelFeedKEV {
-			_, err = c.events.EmitKEV(ctx)
-		} else {
-			_, err = c.events.EmitEPSS(ctx)
-		}
-		if err != nil {
-			c.logger.Warn("vulnerability events not emitted", "source", r.Source, "error", err)
-		}
-	}
+	processed += c.sweeper.Run(ctx, c.feed, r.Error == nil && !r.NotModified && !r.Skipped, r.Error == nil)
 
 	return processed, nil
 }

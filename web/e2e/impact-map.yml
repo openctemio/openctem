@@ -1,0 +1,265 @@
+# Which e2e specs a change needs (research/295). Read by ci/select.mjs.
+#
+# A changed path is looked up in this order:
+#   1. `all`     a shared or unknown-impact file: the whole suite runs. A glob
+#                starting with `!` carves its matches out of the list (unit
+#                tests and the English catalogs, which fall through to 2-4).
+#   2. `areas`   the tags of the specs that exercise that area run.
+#   3. `ignore`  cannot change what a browser sees (docs, unit tests): no spec.
+#   4. none of the above: the whole suite runs. A path nobody mapped is not
+#      assumed safe.
+# The `@smoke` specs run with every selection, so a broken app never passes on
+# a narrow one. `@budget` selects the every-page request budget job.
+#
+# Globs: `*` stays inside one path segment, `**` crosses segments.
+# `node web/e2e/ci/select.mjs check` fails when a spec has no area tag, a tag
+# is not listed here, a listed tag is used by no spec, or an area names an
+# unknown tag.
+
+smoke: '@smoke'
+
+# Every area tag a spec may carry (plus @smoke and @serial, which are not areas).
+tags:
+  - '@assets'
+  - '@attack-surface'
+  - '@auth'
+  - '@budget'
+  - '@dashboard'
+  - '@findings'
+  - '@my-work'
+  - '@pentest'
+  - '@remediation'
+  - '@scans'
+  - '@sensors'
+  - '@settings'
+  - '@shell'
+  - '@ticketing'
+  - '@validation'
+  - '@vulnerabilities'
+
+all:
+  # The suite, its stack and its tooling.
+  - web/e2e/impact-map.yml
+  - web/e2e/ci/**
+  - web/e2e/fixtures/**
+  - web/e2e/helpers/**
+  - web/playwright*.ts
+  - .github/workflows/web-e2e.yml
+  - .github/actions/**
+  # Dependencies and build inputs.
+  - web/package.json
+  - web/package-lock.json
+  - web/next.config.*
+  - web/Dockerfile*
+  - web/tsconfig*.json
+  - api/go.mod
+  - api/go.sum
+  - api/Dockerfile*
+  # Shared web code: every page uses it.
+  - web/src/components/**
+  - web/src/lib/**
+  - web/src/context/**
+  - web/src/hooks/**
+  - web/src/stores/**
+  - web/src/styles/**
+  - web/src/config/**
+  - web/src/proxy.ts
+  - web/src/instrumentation-client.ts
+  - web/src/features/shared/**
+  - web/src/features/components/**
+  - web/src/features/organization/**
+  - web/src/features/tenant/**
+  - web/src/features/platform/**
+  - web/src/features/access-control/**
+  - web/src/features/account/**
+  - web/src/features/notifications/**
+  - web/src/features/command-palette/**
+  - web/src/features/saved-views/**
+  - web/src/app/layout.tsx
+  - web/src/app/providers.tsx
+  - web/src/app/error.tsx
+  - web/src/app/loading.tsx
+  - web/src/app/not-found.tsx
+  - web/src/app/globals.css
+  - web/src/app/(dashboard)/layout.tsx
+  - web/src/app/api/**
+  - web/public/**
+  # API behaviour every page depends on.
+  - api/migrations/**
+  - api/internal/infra/http/middleware/**
+  - api/internal/infra/http/routes/**
+  - api/internal/infra/http/*.go
+  - api/internal/infra/http/handler/auth*
+  - api/internal/infra/http/handler/tenant*
+  - api/internal/infra/http/handler/role*
+  - api/internal/infra/postgres/migrat*
+  - api/internal/config/**
+  - api/cmd/**
+  - api/pkg/**
+  - api/configs/**
+  - docker-compose*.yml
+  - Makefile
+  # Carved out: unit tests and catalogs are judged by `areas` and `ignore`.
+  - '!**/*.test.ts'
+  - '!**/*.test.tsx'
+  - '!**/__tests__/**'
+  - '!**/*_test.go'
+  - '!web/src/lib/i18n/dictionaries/**'
+
+ignore:
+  - '**/*.md'
+  - docs/**
+  - api/docs/**
+  - api/changelog.d/**
+  - research/**
+  - '**/*_test.go'
+  - '**/*.test.ts'
+  - '**/*.test.tsx'
+  - '**/__tests__/**'
+  # The e2e run uses the English catalogs only.
+  - web/src/lib/i18n/dictionaries/vi/**
+  # Workflows other than the e2e one do not change what the stack serves.
+  - .github/workflows/**
+  - .github/scripts/**
+  - .github/ISSUE_TEMPLATE/**
+  - .github/CODEOWNERS
+  - .github/*.yml
+
+areas:
+  '@findings':
+    - web/src/features/findings/**
+    - web/src/features/exposures/**
+    - web/src/app/(dashboard)/findings/**
+    - web/src/lib/i18n/dictionaries/en/findings.json
+    - web/src/lib/i18n/dictionaries/en/findingApprovals.json
+    - web/src/lib/i18n/dictionaries/en/findingLifecycle.json
+    - api/internal/app/finding/**
+    - api/internal/app/findinglifecycle/**
+    - api/internal/domain/finding/**
+    - api/internal/infra/http/handler/finding_*
+    - api/internal/infra/postgres/finding_*
+  '@assets':
+    - web/src/features/assets/**
+    - web/src/features/asset-*/**
+    - web/src/features/relationships/**
+    - web/src/features/repositories/**
+    - web/src/app/(dashboard)/(discovery)/assets/**
+    - web/src/lib/i18n/dictionaries/en/asset*.json
+    - web/src/lib/i18n/dictionaries/en/assets.json
+    - api/internal/app/asset/**
+    - api/internal/domain/asset/**
+    - api/internal/infra/http/handler/asset_*
+    - api/internal/infra/postgres/asset_*
+  '@scans':
+    - web/src/features/scans/**
+    - web/src/features/scan-*/**
+    - web/src/features/scanner-templates/**
+    - web/src/features/tools/**
+    - web/src/features/workflows/**
+    - web/src/app/(dashboard)/(discovery)/scans/**
+    - web/src/lib/i18n/dictionaries/en/scan*.json
+    - api/internal/app/scan/**
+    - api/internal/app/scanrun/**
+    - api/internal/app/scangov/**
+    - api/internal/domain/scan/**
+    - api/internal/infra/http/handler/scan*
+    - api/internal/infra/postgres/scan*
+  '@sensors':
+    - web/src/features/sensors/**
+    - web/src/features/proxy-pools/**
+    - web/src/features/ci-runners/**
+    - web/src/app/(dashboard)/(scoping)/sensors/**
+    - web/src/lib/i18n/dictionaries/en/sensors.json
+    - web/src/lib/i18n/dictionaries/en/proxyPools.json
+    - api/internal/app/sensor/**
+    - api/internal/app/sensorpairing/**
+    - api/internal/domain/sensor/**
+    - api/internal/infra/http/handler/sensor_*
+    - api/internal/infra/postgres/sensor_*
+  '@settings':
+    - web/src/app/(dashboard)/settings/**
+    - web/src/features/api-keys/**
+    - web/src/features/sso/**
+    - web/src/features/sso-approvals/**
+    - web/src/features/scim-tokens/**
+    - web/src/features/service-accounts/**
+    - web/src/features/limits/**
+    - web/src/features/license-policy/**
+    - web/src/features/scan-windows/**
+    - web/src/features/sla/**
+    - web/src/lib/i18n/dictionaries/en/settings.json
+  '@dashboard':
+    - web/src/features/dashboard/**
+    - web/src/features/dashboards/**
+    - web/src/features/security-overview/**
+    - web/src/features/ctem-maturity/**
+    - web/src/app/(dashboard)/dashboards/**
+    - web/src/app/(dashboard)/page.tsx
+    - web/src/lib/i18n/dictionaries/en/dashboard*.json
+    - web/src/lib/i18n/dictionaries/en/dashboards.json
+    - api/internal/app/dashboard/**
+    - api/internal/infra/http/handler/dashboard_*
+  '@remediation':
+    - web/src/features/remediation/**
+    - web/src/features/remediation-hub/**
+    - web/src/features/exceptions/**
+    - web/src/app/(dashboard)/(mobilization)/remediation/**
+    - web/src/lib/i18n/dictionaries/en/remediation*.json
+    - api/internal/app/remediation/**
+    - api/internal/domain/remediation/**
+    - api/internal/infra/http/handler/remediation_*
+    - api/internal/infra/postgres/remediation_*
+  '@attack-surface':
+    - web/src/features/attack-surface/**
+    - web/src/features/web-surface/**
+    - web/src/app/(dashboard)/(scoping)/attack-surface/**
+    - web/src/app/(dashboard)/(prioritization)/attack-paths/**
+    - web/src/lib/i18n/dictionaries/en/attackSurface.json
+    - web/src/lib/i18n/dictionaries/en/easmReview.json
+    - api/internal/app/easm*/**
+    - api/internal/infra/http/handler/easm_*
+    - api/internal/infra/http/handler/attack_surface_*
+  '@pentest':
+    - web/src/features/pentest/**
+    - web/src/app/(dashboard)/(validation)/pentest/**
+    - web/src/lib/i18n/dictionaries/en/pentest*.json
+    - api/internal/infra/http/handler/pentest_*
+    - api/internal/infra/postgres/pentest_*
+  '@validation':
+    - web/src/features/validation/**
+    - web/src/app/(dashboard)/(validation)/validation/**
+    - web/src/lib/i18n/dictionaries/en/validation.json
+    - api/internal/app/validation/**
+    - api/internal/infra/http/handler/validation_*
+  '@vulnerabilities':
+    - web/src/features/vulnerabilities/**
+    - web/src/features/vuln-matching/**
+    - web/src/app/(dashboard)/(prioritization)/vulnerabilities/**
+    - web/src/lib/i18n/dictionaries/en/vulnPage.json
+    - api/internal/infra/http/handler/vulnerability_*
+  '@ticketing':
+    - web/src/features/integrations/**
+    - web/src/features/ticket-mapping/**
+    - web/src/lib/i18n/dictionaries/en/ticket*.json
+    - web/src/lib/i18n/dictionaries/en/ticketingIntegration.json
+    - api/internal/app/ticketing/**
+    - api/internal/app/ticketbridge/**
+    - api/internal/infra/http/handler/ticket_*
+  '@my-work':
+    - web/src/features/my-work/**
+    - web/src/app/(dashboard)/my-work/**
+    - web/src/lib/i18n/dictionaries/en/myWork.json
+  '@auth':
+    - web/src/features/auth/**
+    - web/src/app/(auth)/**
+    - web/src/app/auth/**
+    - web/src/app/invitations/**
+    - web/src/lib/i18n/dictionaries/en/auth.json
+  # The every-page request budget: any change to how a page loads its data.
+  '@budget':
+    - web/e2e/request-budget.json
+    - web/src/features/*/hooks/**
+    - web/src/features/*/api/**
+    - web/src/app/**
+    - web/src/features/**/api/**
+    - web/src/lib/api/**

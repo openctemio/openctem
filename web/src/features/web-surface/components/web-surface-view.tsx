@@ -12,16 +12,15 @@ import {
   MetricStrip,
   PageHeader,
   RelativeTime,
-  SegmentedLens,
+  FilterSelect,
+  PageStack,
   StackedCell,
   type MetricStripItem,
 } from '@/features/shared'
 import { AttackSurfaceSectionTabs } from '@/features/attack-surface'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import {
   Select,
@@ -34,8 +33,6 @@ import { useUrlFilter } from '@/hooks/use-url-param'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import { useTranslation } from '@/context/i18n-provider'
 import type {
-  WebEndpointEventResponse,
-  WebEndpointResponse,
   WebOriginResponse,
   WebPathCatalogEntry,
   WebPathPatternResponse,
@@ -49,8 +46,10 @@ import {
   useWebPathPatterns,
 } from '../api/use-web-surface'
 import { isWebSurfaceTab, type EndpointFilters, type WebSurfaceTab } from '../lib/web-surface-url'
-import { AuthPill, CatalogBadge, ExcludedBadge, MethodBadge, PathText } from './web-surface-badges'
+import { CatalogBadge, PathText } from './web-surface-badges'
+import { EVENT_KINDS, num, useEndpointColumns, useEventColumns } from './web-surface-columns'
 import { EndpointSheet } from './endpoint-sheet'
+import { useSearchQuery } from '@/hooks/use-search-query'
 
 const PAGE_SIZES = [20, 50, 100]
 
@@ -61,31 +60,8 @@ const TAB_LABEL: Record<WebSurfaceTab, string> = {
   changes: 'Changes',
 }
 
-const EVENT_LABEL: Record<string, string> = {
-  appeared: 'Appeared',
-  returned: 'Seen again',
-  gone: 'Gone',
-  status_changed: 'Status changed',
-  auth_changed: 'Auth changed',
-  param_added: 'New parameter',
-}
-
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS', 'ANY']
 const KINDS = ['page', 'api', 'form', 'script', 'graphql', 'websocket', 'other']
-
-function num(v: number | undefined): number {
-  return v ?? 0
-}
-
-/** Detail of a change event in words (status codes and auth states only). */
-export function eventDetail(e: WebEndpointEventResponse): string {
-  const d = (e.detail ?? {}) as Record<string, unknown>
-  if (e.kind === 'status_changed' || e.kind === 'auth_changed') {
-    return `${String(d.from ?? '?')} → ${String(d.to ?? '?')}`
-  }
-  if (e.kind === 'param_added') return `${String(d.count ?? 1)} new`
-  return ''
-}
 
 function usePaging(prefix: string) {
   const [pageParam, setPageParam] = useUrlFilter(`${prefix}page`, '1')
@@ -112,16 +88,6 @@ function usePaging(prefix: string) {
   return { pagination, setPagination, page, reset }
 }
 
-function TableSkeleton() {
-  return (
-    <div className="space-y-2">
-      {Array.from({ length: 8 }).map((_, i) => (
-        <Skeleton key={i} className="h-12 w-full" />
-      ))}
-    </div>
-  )
-}
-
 /**
  * Web surface (RFC-056): the origins (http_service assets), the endpoints
  * (method + path template) they serve, the same path across origins, and what
@@ -136,6 +102,7 @@ export function WebSurfaceView() {
   const tab: WebSurfaceTab = isWebSurfaceTab(tabParam) ? tabParam : 'origins'
 
   const [q, setQ] = useUrlFilter('q', '')
+  const searchTerm = useSearchQuery(q).term
   const [origin, setOrigin] = useUrlFilter('origin', '')
   const [pathHash, setPathHash] = useUrlFilter('path_hash', '')
   const [method, setMethod] = useUrlFilter('method', '')
@@ -149,7 +116,7 @@ export function WebSurfaceView() {
 
   const filters: EndpointFilters = useMemo(
     () => ({
-      q,
+      q: searchTerm,
       originAssetId: origin || undefined,
       pathHash: pathHash || undefined,
       method: method || undefined,
@@ -157,7 +124,7 @@ export function WebSurfaceView() {
       excludedOnly: excluded === 'true',
       sensitiveOnly: sensitive === 'true',
     }),
-    [q, origin, pathHash, method, kind, excluded, sensitive]
+    [searchTerm, origin, pathHash, method, kind, excluded, sensitive]
   )
 
   const stats = useWebEndpointStats(filters, canRead)
@@ -223,6 +190,11 @@ export function WebSurfaceView() {
       value: num(s?.excluded_sensitive),
       tone: 'danger',
       hint: 'Sensitive paths behind an exclusion',
+      onClick: () => {
+        setSensitive('true')
+        setExcluded('true')
+        go('endpoints')
+      },
     },
   ]
 
@@ -308,67 +280,7 @@ export function WebSurfaceView() {
     [go]
   )
 
-  const endpointColumns = useMemo<ColumnDef<WebEndpointResponse>[]>(
-    () => [
-      {
-        id: 'endpoint',
-        header: 'Endpoint',
-        enableSorting: false,
-        cell: ({ row }) => (
-          <div className="flex min-w-0 items-start gap-2">
-            <MethodBadge method={row.original.method} />
-            <StackedCell
-              truncate
-              className="max-w-[420px]"
-              primary={<PathText path={row.original.path_template} />}
-              secondary={row.original.origin}
-            />
-          </div>
-        ),
-      },
-      {
-        id: 'status',
-        header: 'Status',
-        enableSorting: false,
-        cell: ({ row }) => <span className="tabular-nums">{row.original.last_status || '—'}</span>,
-      },
-      {
-        id: 'auth',
-        header: 'Auth',
-        enableSorting: false,
-        cell: ({ row }) => <AuthPill state={row.original.auth_state} />,
-      },
-      {
-        id: 'flags',
-        header: 'Notes',
-        enableSorting: false,
-        cell: ({ row }) => (
-          <div className="flex flex-wrap gap-1">
-            <CatalogBadge entry={row.original.catalog} />
-            {!row.original.in_scope && <ExcludedBadge exclusionId={row.original.exclusion_id} />}
-            {row.original.state === 'ignored' && (
-              <Badge variant="secondary" className="font-normal">
-                Ignored
-              </Badge>
-            )}
-          </div>
-        ),
-      },
-      {
-        id: 'params',
-        header: 'Params',
-        enableSorting: false,
-        cell: ({ row }) => <span className="tabular-nums">{num(row.original.param_count)}</span>,
-      },
-      {
-        id: 'last_seen',
-        header: 'Last seen',
-        enableSorting: false,
-        cell: ({ row }) => <RelativeTime date={row.original.last_seen_at} />,
-      },
-    ],
-    []
-  )
+  const endpointColumns = useEndpointColumns()
 
   const patternColumns = useMemo<ColumnDef<WebPathPatternResponse>[]>(
     () => [
@@ -381,7 +293,7 @@ export function WebSurfaceView() {
             truncate
             className="max-w-[420px]"
             primary={<PathText path={row.original.path_template} />}
-            secondary={(row.original.methods ?? []).join(' · ')}
+            secondary={(row.original.methods ?? []).join(', ')}
           />
         ),
       },
@@ -437,78 +349,25 @@ export function WebSurfaceView() {
     [go]
   )
 
-  const eventColumns = useMemo<ColumnDef<WebEndpointEventResponse>[]>(
-    () => [
-      {
-        id: 'at',
-        header: 'When',
-        enableSorting: false,
-        cell: ({ row }) => <RelativeTime date={row.original.at} />,
-      },
-      {
-        id: 'kind',
-        header: 'Change',
-        enableSorting: false,
-        cell: ({ row }) => (
-          <Badge
-            variant={row.original.kind === 'gone' ? 'outline' : 'secondary'}
-            className="font-normal"
-          >
-            {EVENT_LABEL[row.original.kind ?? ''] ?? row.original.kind}
-          </Badge>
-        ),
-      },
-      {
-        id: 'endpoint',
-        header: 'Endpoint',
-        enableSorting: false,
-        cell: ({ row }) => (
-          <div className="flex min-w-0 items-start gap-2">
-            <MethodBadge method={row.original.method} />
-            <StackedCell
-              truncate
-              className="max-w-[420px]"
-              primary={<PathText path={row.original.path_template} />}
-              secondary={row.original.origin}
-            />
-          </div>
-        ),
-      },
-      {
-        id: 'detail',
-        header: 'Detail',
-        enableSorting: false,
-        cell: ({ row }) => <span className="text-sm">{eventDetail(row.original) || '—'}</span>,
-      },
-      {
-        id: 'sensitive',
-        header: 'Sensitive',
-        enableSorting: false,
-        cell: ({ row }) =>
-          row.original.catalog_key ? (
-            <CatalogBadge entry={catalogByKey.get(row.original.catalog_key)} />
-          ) : null,
-      },
-    ],
-    [catalogByKey]
-  )
+  const eventColumns = useEventColumns(catalogByKey)
 
   if (!canRead) {
     return (
       <Main>
-        <PageHeader
-          title={t('attackSurface.title', 'Attack surface')}
-          description={t(
-            'attackSurface.web.shortDescription',
-            'Origins, endpoints and parameters.'
-          )}
-        />
-        <EmptyState
-          className="mt-5"
-          icon={ShieldX}
-          title="Access denied"
-          description="You don't have permission to view assets. Ask your administrator for access."
-        />
+        <PageStack>
+          <PageHeader
+            title={t('attackSurface.title', 'Attack surface')}
+            description={t(
+              'attackSurface.web.shortDescription',
+              'Origins, endpoints and parameters.'
+            )}
+          />
+          <EmptyState
+            icon={ShieldX}
+            title="Access denied"
+            description="You don't have permission to view assets. Ask your administrator for access."
+          />
+        </PageStack>
       </Main>
     )
   }
@@ -522,20 +381,42 @@ export function WebSurfaceView() {
           ? patterns
           : events
 
+  // Which rows the list shows (origins, endpoints, path patterns, changes):
+  // a token first in the toolbar, not a second row under the tabs
+  // (research/249 R21). Always one of them, so it cannot be cleared.
+  const viewSelect = (
+    <FilterSelect<WebSurfaceTab>
+      label={t('attackSurface.web.view.label', 'Show')}
+      value={tab}
+      clearable={false}
+      options={(Object.keys(TAB_LABEL) as WebSurfaceTab[]).map((k) => ({
+        value: k,
+        label: t(`attackSurface.web.view.${k}`, TAB_LABEL[k]),
+      }))}
+      onChange={(k) => go((k || 'origins') as WebSurfaceTab)}
+    />
+  )
+  const loadingRows = active.isLoading && active.rows.length === 0
+  const errorState =
+    active.error && !active.isLoading ? (
+      <ErrorState title="web surface" error={active.error} onRetry={() => active.mutate()} />
+    ) : undefined
+
+  const search =
+    tab !== 'changes'
+      ? {
+          value: q,
+          onChange: (v: string) => {
+            setQ(v)
+            paging.reset()
+          },
+          placeholder: t('attackSurface.web.search.placeholder', 'Search paths…'),
+        }
+      : undefined
+
   const toolbarStart = (
     <div className="flex flex-wrap items-center gap-2">
-      {tab !== 'changes' && (
-        <Input
-          value={q}
-          onChange={(e) => {
-            setQ(e.target.value)
-            paging.reset()
-          }}
-          placeholder="Search paths"
-          aria-label="Search paths"
-          className="h-9 w-[220px]"
-        />
-      )}
+      {viewSelect}
       {tab === 'endpoints' && (
         <>
           <Select value={method || 'all'} onValueChange={(v) => setMethod(v === 'all' ? '' : v)}>
@@ -576,9 +457,9 @@ export function WebSurfaceView() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Any change</SelectItem>
-            {Object.entries(EVENT_LABEL).map(([k, label]) => (
+            {Object.entries(EVENT_KINDS).map(([k, label]) => (
               <SelectItem key={k} value={k}>
-                {label}
+                {t(`attackSurface.web.event.${k}`, label)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -615,107 +496,110 @@ export function WebSurfaceView() {
 
   return (
     <Main>
-      <PageHeader
-        title={t('attackSurface.title', 'Attack surface')}
-        description={t(
-          'attackSurface.web.description',
-          'What your web origins serve: endpoints, their parameters (names only), the same path across origins, and what changed.'
-        )}
-      />
-      <AttackSurfaceSectionTabs />
-      <MetricStrip className="mt-5" loading={stats.isLoading && !s} items={metrics} />
-      <SegmentedLens
-        className="mt-5"
-        label="Web surface view"
-        value={tab}
-        options={(Object.keys(TAB_LABEL) as WebSurfaceTab[]).map((k) => ({
-          value: k,
-          label: TAB_LABEL[k],
-        }))}
-        onChange={(k) => go(k)}
-      />
-      <div className="mt-4">
-        {active.error && !active.isLoading ? (
-          <ErrorState title="web surface" error={active.error} onRetry={() => active.mutate()} />
-        ) : active.isLoading && active.rows.length === 0 ? (
-          <TableSkeleton />
-        ) : tab === 'origins' ? (
-          <DataTable
-            columns={originColumns}
-            data={origins.rows}
-            getRowId={(o) => o.origin_asset_id ?? o.origin ?? ''}
-            showSearch={false}
-            showColumnToggle={false}
-            toolbarStart={toolbarStart}
-            manualPagination
-            rowCount={origins.total}
-            pagination={paging.pagination}
-            onPaginationChange={paging.setPagination}
-            pageSizeOptions={PAGE_SIZES}
-            emptyMessage="No web origins yet"
-            emptyDescription="Crawl a web service (a workflow with a web crawl step) to record what it serves."
-          />
-        ) : tab === 'endpoints' ? (
-          <DataTable
-            columns={endpointColumns}
-            data={endpoints.rows}
-            getRowId={(e) => e.id ?? ''}
-            onRowClick={(e) => setSelected(e.id ?? null)}
-            showSearch={false}
-            showColumnToggle={false}
-            toolbarStart={toolbarStart}
-            manualPagination
-            rowCount={endpoints.total}
-            pagination={paging.pagination}
-            onPaginationChange={paging.setPagination}
-            pageSizeOptions={PAGE_SIZES}
-            emptyMessage="No endpoints match"
-            emptyDescription="Clear a filter, or crawl the origin again."
-          />
-        ) : tab === 'patterns' ? (
-          <DataTable
-            columns={patternColumns}
-            data={patterns.rows}
-            getRowId={(p) => p.path_hash ?? ''}
-            showSearch={false}
-            showColumnToggle={false}
-            toolbarStart={toolbarStart}
-            manualPagination
-            rowCount={patterns.total}
-            pagination={paging.pagination}
-            onPaginationChange={paging.setPagination}
-            pageSizeOptions={PAGE_SIZES}
-            emptyMessage="No path patterns"
-            emptyDescription="Paths appear here once an origin is crawled; the same path on many origins is listed once."
-          />
-        ) : (
-          <DataTable
-            columns={eventColumns}
-            data={events.rows}
-            getRowId={(e) => e.id ?? ''}
-            onRowClick={(e) => setSelected(e.endpoint_id ?? null)}
-            showSearch={false}
-            showColumnToggle={false}
-            toolbarStart={toolbarStart}
-            manualPagination
-            rowCount={events.total}
-            pagination={paging.pagination}
-            onPaginationChange={paging.setPagination}
-            pageSizeOptions={PAGE_SIZES}
-            emptyMessage="No changes"
-            emptyDescription="New, gone and changed endpoints appear here after each crawl."
-          />
-        )}
-      </div>
-      <EndpointSheet
-        endpointId={selected}
-        onClose={() => setSelected(null)}
-        onChanged={() => void endpoints.mutate()}
-      />
-      <p className="mt-4 flex items-center gap-1.5 text-xs text-muted-foreground">
-        <Globe className="h-3.5 w-3.5" aria-hidden />
-        Paths are shown as text and never opened from here.
-      </p>
+      <PageStack>
+        <PageHeader
+          title={t('attackSurface.title', 'Attack surface')}
+          description={t(
+            'attackSurface.web.description',
+            'What your web origins serve: endpoints, their parameters (names only), the same path across origins, and what changed.'
+          )}
+        />
+        <AttackSurfaceSectionTabs />
+        <MetricStrip loading={stats.isLoading && !s} items={metrics} />
+        <div>
+          {tab === 'origins' ? (
+            <DataTable
+              columns={originColumns}
+              data={origins.rows}
+              getRowId={(o) => o.origin_asset_id ?? o.origin ?? ''}
+              showSearch={false}
+              search={search}
+              showColumnToggle={false}
+              toolbarStart={toolbarStart}
+              isLoading={loadingRows}
+              errorState={errorState}
+              manualPagination
+              rowCount={origins.total}
+              pagination={paging.pagination}
+              onPaginationChange={paging.setPagination}
+              pageSizeOptions={PAGE_SIZES}
+              emptyMessage="No web origins yet"
+              emptyDescription="Crawl a web service (a workflow with a web crawl step) to record what it serves."
+            />
+          ) : tab === 'endpoints' ? (
+            <DataTable
+              columns={endpointColumns}
+              data={endpoints.rows}
+              getRowId={(e) => e.id ?? ''}
+              onRowClick={(e) => setSelected(e.id ?? null)}
+              showSearch={false}
+              search={search}
+              showColumnToggle={false}
+              toolbarStart={toolbarStart}
+              isLoading={loadingRows}
+              errorState={errorState}
+              manualPagination
+              rowCount={endpoints.total}
+              pagination={paging.pagination}
+              onPaginationChange={paging.setPagination}
+              pageSizeOptions={PAGE_SIZES}
+              emptyMessage="No endpoints match"
+              emptyDescription="Clear a filter, or crawl the origin again."
+            />
+          ) : tab === 'patterns' ? (
+            <DataTable
+              columns={patternColumns}
+              data={patterns.rows}
+              getRowId={(p) => p.path_hash ?? ''}
+              showSearch={false}
+              search={search}
+              showColumnToggle={false}
+              toolbarStart={toolbarStart}
+              isLoading={loadingRows}
+              errorState={errorState}
+              manualPagination
+              rowCount={patterns.total}
+              pagination={paging.pagination}
+              onPaginationChange={paging.setPagination}
+              pageSizeOptions={PAGE_SIZES}
+              emptyMessage="No path patterns"
+              emptyDescription="Paths appear here once an origin is crawled; the same path on many origins is listed once."
+            />
+          ) : (
+            <DataTable
+              columns={eventColumns}
+              data={events.rows}
+              getRowId={(e) => e.id ?? ''}
+              onRowClick={(e) => setSelected(e.endpoint_id ?? null)}
+              showSearch={false}
+              search={search}
+              showColumnToggle={false}
+              toolbarStart={toolbarStart}
+              isLoading={loadingRows}
+              errorState={errorState}
+              manualPagination
+              rowCount={events.total}
+              pagination={paging.pagination}
+              onPaginationChange={paging.setPagination}
+              pageSizeOptions={PAGE_SIZES}
+              emptyMessage="No changes"
+              emptyDescription="New, gone and changed endpoints appear here after each crawl."
+            />
+          )}
+        </div>
+        <EndpointSheet
+          endpointId={selected}
+          onClose={() => setSelected(null)}
+          onChanged={() => void endpoints.mutate()}
+        />
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Globe className="h-3.5 w-3.5" aria-hidden />
+          {t(
+            'attackSurface.web.pathsAsText',
+            'Paths are shown as text and never opened from here.'
+          )}
+        </p>
+      </PageStack>
     </Main>
   )
 }

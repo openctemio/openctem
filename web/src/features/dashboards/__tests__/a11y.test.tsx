@@ -121,6 +121,188 @@ function overview(): { layout: ReturnType<typeof templateLayout>; data: Dashboar
             ],
           },
         }
+      case 'exposure.flow': {
+        const fig = (value: number, drill: string) => ({ value, drill })
+        const src = (tool: string, health: 'ok' | 'stale' | 'failed') => ({
+          origin: 'sensor' as const,
+          tool,
+          receipts: 3,
+          received: 40,
+          created: 10,
+          still_detected: 25,
+          reopened: 1,
+          closed: 0,
+          suppressed: 2,
+          not_stored: 2,
+          last_at: new Date().toISOString(),
+          last_status: health === 'failed' ? 'failed' : 'completed',
+          last_receipt_id: 'r1',
+          health,
+          drill: `/findings/imports?origin=sensor&tool=${tool}`,
+        })
+        const intake = {
+          since: new Date(Date.now() - 30 * 86_400_000).toISOString(),
+          sources: [src('nuclei', 'ok'), src('cloud', 'stale'), src('trivy', 'failed')],
+          totals: { ...src('', 'ok'), received: 120, receipts: 9 },
+          noise: { received: 120, new: 27, merged: 81, suppressed: 6, not_stored: 6 },
+          failing: 1,
+          stale: 1,
+          drill: '/findings/imports',
+          false_positive: fig(4, '/findings?status=false_positive'),
+        }
+        return {
+          ...base,
+          shape: 'flow' as const,
+          flow: {
+            since: intake.since,
+            intake,
+            actionable: fig(31, '/findings?state=open&priority_class=P0,P1,P2,P3'),
+            classes: ['P0', 'P1', 'P2', 'P3'].map((k, j) => ({
+              key: k,
+              value: j + 1,
+              drill: `/findings?priority_class=${k}`,
+            })),
+            open: fig(33, '/findings?state=open'),
+            severity: [{ key: 'high', value: 33, drill: '/findings?severity=high' }],
+            past_sla: fig(2, '/findings?sla_status=overdue'),
+            in_progress: fig(3, '/findings?status=in_progress'),
+            fixed: fig(5, '/findings?status=resolved'),
+            accepted: fig(1, '/findings?status=accepted'),
+            false_positive: fig(4, '/findings?status=false_positive'),
+            stages: {
+              focus: 0,
+              stages: [
+                {
+                  key: 'scoping' as const,
+                  state: 'warn' as const,
+                  value: 0,
+                  unit: 'count' as const,
+                  drill: '/assets',
+                },
+                {
+                  key: 'validate' as const,
+                  state: 'not_measured' as const,
+                  value: null,
+                  unit: 'percent' as const,
+                },
+              ],
+            },
+          },
+        }
+      }
+      case 'exposure.levers':
+        return {
+          ...base,
+          shape: 'levers' as const,
+          levers: {
+            levers: [
+              {
+                kind: 'one_fix' as const,
+                count: 27,
+                assets: 14,
+                title: 'Upgrade openssl',
+                points: 70,
+                effect: {
+                  metric: 'exposure.priority_open',
+                  before: 31,
+                  after: 19,
+                  unit: 'count' as const,
+                },
+                drill: '/remediation/suggestions',
+              },
+              {
+                kind: 'blind_spot' as const,
+                count: 50,
+                points: 0,
+                effect: {
+                  metric: 'coverage.discovery',
+                  before: 75,
+                  after: 100,
+                  unit: 'percent' as const,
+                },
+                drill: '/assets?coverage=uncovered',
+              },
+            ],
+          },
+        }
+      case 'brief.weekly':
+        return {
+          ...base,
+          shape: 'brief' as const,
+          brief: {
+            since: '2026-10-23T00:00:00Z',
+            items: [
+              {
+                kind: 'change' as const,
+                variant: 'down' as const,
+                chips: [
+                  { key: 'opened', value: 8 },
+                  { key: 'fixed', value: 13 },
+                ],
+              },
+              {
+                kind: 'sla_due' as const,
+                chips: [
+                  { key: 'due_soon', value: 4, drill: '/findings?sla_status=warning&state=open' },
+                  { key: 'past_sla', value: 10, drill: '/findings?sla_status=overdue&state=open' },
+                ],
+              },
+            ],
+          },
+        }
+      case 'exposure.kpis':
+        return {
+          ...base,
+          shape: 'kpis' as const,
+          kpis: {
+            tiles: [
+              {
+                key: 'priority_open' as const,
+                metric: 'exposure.priority_open',
+                state: 'ready' as const,
+                value: 31,
+                previous: 43,
+                unit: 'count' as const,
+                polarity: 'lower_better' as const,
+                drill: '/findings?priority_class=P0,P1&state=open',
+              },
+              {
+                key: 'kev_open' as const,
+                metric: 'intel.kev_open',
+                state: 'ready' as const,
+                value: 9,
+                unit: 'count' as const,
+                polarity: 'lower_better' as const,
+                drill: '/findings?is_in_kev=true&state=open',
+              },
+              {
+                key: 'sla_within' as const,
+                metric: 'sla.within',
+                state: 'ready' as const,
+                value: 78,
+                unit: 'percent' as const,
+                polarity: 'higher_better' as const,
+              },
+              {
+                key: 'time_to_fix' as const,
+                metric: 'fix.time_to_fix',
+                state: 'not_measured' as const,
+                reason: 'too_few_fixed',
+                value: null,
+                unit: 'hours' as const,
+                polarity: 'lower_better' as const,
+              },
+              {
+                key: 'coverage' as const,
+                metric: 'coverage.discovery',
+                state: 'ready' as const,
+                value: 91,
+                unit: 'percent' as const,
+                polarity: 'higher_better' as const,
+              },
+            ],
+          },
+        }
       case 'findings.age_bands':
         return {
           ...base,

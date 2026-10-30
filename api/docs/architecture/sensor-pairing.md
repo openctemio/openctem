@@ -23,9 +23,13 @@ of RFC-052 §4.3:
 | Nonce store | Redis `SET NX` per keyid and nonce, TTL = window + skew; per-replica fallback | — |
 | Signer on every request | — | `sensorsig.Transport` wrapping the API client's transport; removes any bearer header |
 
-Order on a request: parse the headers (anything outside the profile is `401`
-at once) → window → key by `keyid` (active key, active sensor) → signature →
-nonce → body against `Content-Digest`. The body is read only after the
+Order on a request: parse the headers (anything outside the profile, or a
+window longer than 5 minutes, is `401` at once) → key by `keyid` (active key,
+active sensor) → signature → clock window → nonce → body against
+`Content-Digest`. A signature that verifies but lies outside the 2-minute
+clock tolerance answers `401` with the `clock-skew` problem (`server_time`,
+`clock_offset_seconds`) and a WARN log with the offset; every other refusal
+stays the generic `401`. The nonce is not spent by a refused request. The body is read only after the
 signature verified, so an unauthenticated caller cannot make the API buffer
 it.
 
@@ -38,7 +42,7 @@ it.
 | Platform pairing key | HKDF-SHA256 of `APP_ENCRYPTION_KEY`, info `openctem/sensor-pairing/platform-key/v1` (Ed25519 seed) |
 | Code storage | HMAC-SHA256 with the sensor-key pepper (`SENSOR_KEY_PEPPER`), never in clear |
 | Repository | `internal/infra/postgres/sensor_pairing_repository.go` (`sensor_pairings`) |
-| Sensor-plane routes | `internal/infra/http/routes/sensor_pairing.go`: `/api/v2/sensor/pairing*`, own group, signed by the pairing key, rate-limited |
+| Sensor-plane routes | `internal/infra/http/routes/sensor_pairing.go`: `/api/v2/sensor/pairing*`, own group, signed by the pairing key, rate-limited: an entry budget per address for every start, then (only for a verified start) a budget per address for codeless starts or per code/token plus a wider per-address cap for starts with a code or token (`pairingStartBudget`; RFC-052 §4.4) |
 | User-plane routes | `/api/v1/sensor-pairings/*` (`sensors:pair`, `sensors:approve`) |
 | Step-up | `AuthService.VerifyStepUp` (`internal/app/auth/stepup.go`): TOTP if enrolled, else password, else a session younger than 10 minutes |
 | Sensor side | `sdk-go/pkg/sensorkit` (`Pair`, identity store, auto-pair), `sensor` (`openctemio-sensor pair`) |
@@ -53,6 +57,83 @@ pending ──reveal──▶ pending (sas set) ──approve──▶ approved 
 
 Reverse mode starts as an `expecting` row with a tenant and a code but no
 key; the sensor's start request fills in the key and turns it `pending`.
+
+## Enrollment tokens (unattended installs)
+
+For fleets (Kubernetes, Terraform, many hosts) an organization administrator
+creates an enrollment token under **Sensors → Enrollment tokens**. A token is
+a pre-approval: a sensor that starts pairing with it runs the same key-bound
+exchange as every pairing (its own Ed25519 key, the platform's signed answer,
+the nonce commitment, a signed confirmation), and once it reveals its nonce
+the request is approved in the name of the token's creator with the token's
+presets. With "approve each sensor" the request waits instead, listed under
+**Waiting for approval**, and is approved with the fingerprint compare and
+step-up like any other.
+
+| Piece | Where |
+|---|---|
+| Table | `sensor_enrollment_tokens` (keyed hash, hint, max uses, use count, expiry, presets, allowed source CIDRs, revoked); `sensor_pairings.enrollment_token_id` |
+| Service | `internal/app/sensorpairing/enrollment.go` |
+| Repository | `internal/infra/postgres/enrollment_token_repository.go` |
+| Routes | `GET /api/v1/sensor-pairings/enrollment-tokens` (`sensors:read`), `POST .../enrollment-tokens` (`sensors:approve` + step-up), `POST .../enrollment-tokens/{id}/revoke` (`sensors:approve`), `GET /api/v1/sensor-pairings/pending` (`sensors:pair`) |
+| Sensor side | the start request's `enrollment_token` with `enrollment_scope: organization` (`SENSOR_ENROLLMENT_TOKEN` or `SENSOR_ENROLLMENT_TOKEN_FILE`, sdk-go sensorkit) |
+
+Rules:
+
+- **Shown once, hashed at rest.** `octe_` and 49 letters or digits (the
+  shape of an instance token); stored as HMAC-SHA256 with the sensor-key
+  pepper under its own label. The sensor says which kind it holds
+  (`enrollment_scope`), so an organization token is never used as an
+  instance token or the reverse, and a sensor configured for a shared
+  sensor never ends up in an organization.
+- **Bounded.** Expiry 1 hour to 30 days (default 24 hours); 1 to 1000 uses
+  (default 10). A use is a distinct sensor key, counted under a row lock in
+  the transaction that inserts the request, so concurrent starts never
+  exceed the cap, and a sensor that asks again with the same key (its
+  request expired while waiting) spends nothing.
+- **Refused uniformly.** Unknown, expired, used up, revoked, outside the
+  allowed source CIDRs, or created by someone who is no longer an active
+  member: the sensor gets the same `401` as for a bad instance token; the
+  reason is logged and, for a known token, audited in its organization
+  (`sensor.enrollment_refused`).
+- **Tenant from the token only.** The request's tenant comes from the token
+  row, never from the sensor; every user-plane query is scoped by the
+  session's tenant.
+- **Least privilege.** Every enrolled sensor starts at trust level New
+  (passive work only, no credentials, no push ingest) in the preset zones;
+  promotion stays an administrator's action.
+- **Audited and announced.** Created (`sensor.enrollment_token_created`,
+  high), revoked, each enrollment (`sensor.enrolled`, high, with the token,
+  fingerprint, host facts and source address), each refusal; every
+  administrator is notified of creations and enrollments.
+
+### Content keys
+
+The identity an approved pairing returns carries `content_signing`: the
+Ed25519 public keys the sensor pins to verify content packs
+([Content packs](content-packs.md)). `platform` holds the platform content key
+(every sensor); `tenant` holds the organization's own key and is present only
+for a sensor of that organization. A shared sensor gets the platform key only,
+so it can never accept an organization's pack. Each key is `{keyid,
+algorithm: "ed25519", public_key}` in the form of the job-signing keys
+(`keyid` is `SHA256:` + hex of the SHA-256 of the raw key, which the sensor
+recomputes). The sensor pins them over the pairing connection and never takes
+a key from a content route.
+
+### Onboarding (the Add sensor panel)
+
+The console has one place to add a sensor: **Sensors → Add sensor** (inline
+on the empty page). `POST /api/v1/sensors/install-templates`
+(`sensors:pair`, `internal/infra/http/handler/sensor_install_handler.go`)
+renders the docker run, Compose, Kubernetes and Linux (binary and systemd)
+commands and the local policy from the same templates as a sensor's own
+install (`configs/sensor-products/sensor/*.tmpl`), with
+`SensorTemplateData.Auth = pair`: no API key, the job-signing root as
+`SENSOR_JOB_SIGNING_ROOT`, and, when the console created a code first, the
+code as `SENSOR_PAIRING_CODE`. The code travels in the request body, never
+in a URL; the route renders text only and neither checks nor spends it. The
+panel then polls the expectation (waiting, fingerprint to compare, approved)
+and the new sensor (online). Threat model and decisions: research note 280.
 
 ## Self-binding: a bearer-key sensor becomes key-bound
 

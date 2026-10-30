@@ -4,6 +4,7 @@
  * GET /api/v1/assets/{id}/coverage.
  */
 import type { components } from '@/lib/api/generated/api.types'
+import type { TranslateVars } from '@/lib/i18n'
 
 export type AssetCoverage =
   components['schemas']['internal_infra_http_handler.AssetCoverageResponse']
@@ -24,4 +25,22 @@ export function coverageBadge(
     default:
       return 'outline'
   }
+}
+
+type Translate = (key: string, fallback?: string, vars?: TranslateVars) => string
+
+/**
+ * Why a pair was skipped or paused, translated. A target that did not answer
+ * names the organization's own scan zone or sensor that tried, when the API
+ * sends it (never a platform sensor).
+ */
+export function coverageReasonText(
+  e: Pick<CoverageEntry, 'reason' | 'unreached_from'>,
+  t: Translate
+): string {
+  const reason = e.reason ?? ''
+  if ((reason === 'unreachable' || reason === 'timeout') && e.unreached_from) {
+    return t(`assetCoverage.reasonFrom.${reason}`, undefined, { name: e.unreached_from })
+  }
+  return t(`assetCoverage.reason.${reason}`, reason)
 }

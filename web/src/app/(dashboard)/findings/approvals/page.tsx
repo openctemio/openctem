@@ -12,26 +12,17 @@ import { DataTable } from '@/features/shared/components/data-table/data-table'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger, TabsContent, TabsCount } from '@/components/ui/tabs'
-import { SegmentedLens } from '@/features/shared/components/segmented-lens'
+import { FilterSelect } from '@/features/shared/components/filter-select'
+import { PageStack } from '@/features/shared/components/page-stack'
 import { RefreshButton, TableSkeleton } from '@/components/list-page-parts'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogBody,
-} from '@/components/ui/dialog'
-import { Textarea } from '@/components/ui/textarea'
-import { cn } from '@/lib/utils'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { formatAbsoluteTime, formatRelativeTime } from '@/lib/format-metric'
 import { ErrorState } from '@/features/shared/components/error-state'
@@ -42,8 +33,6 @@ import { useDisplayUser } from '@/hooks/use-display-user'
 import { refreshPendingApprovalCount } from '@/hooks/use-dynamic-badges'
 import {
   useApprovals,
-  useApproveStatus,
-  useRejectApproval,
   useCancelApproval,
   remindApprovers,
 } from '@/features/findings/api/use-findings-api'
@@ -51,7 +40,6 @@ import type { ApiApproval, ApprovalStatus } from '@/features/findings/types'
 import { FINDING_STATUS_CONFIG, type FindingStatus } from '@/features/findings/types'
 import { FindingStatusBadge } from '@/features/findings/components/finding-status-badge'
 import { ApprovalFindingLink } from '@/features/findings/components/approval-finding-link'
-import { ApprovalFindingSummary } from '@/features/findings/components/approval-finding-summary'
 import { useListParams } from '@/hooks/use-list-params'
 import {
   approvalRequester,
@@ -60,10 +48,14 @@ import {
   isOwnApproval,
 } from '@/features/findings/lib/approvals'
 import { useTranslation } from '@/context/i18n-provider'
+import { Tag } from '@/components/ui/tag'
+import { ApprovalStatusLozenge } from '@/features/shared/components/approval-status-lozenge'
 import { AIProposalBadge } from '@/features/findings/components/ai-proposal-badge'
-import { closureReasonLabel } from '@/features/findings/lib/closure'
 import { FindingSelfApproveDialog } from '@/features/findings/components/finding-self-approve-dialog'
-import { approveErrorOutcome, approveResultOutcome } from '@/features/findings/lib/approval-policy'
+import {
+  requestedStatusLabel,
+  useApprovalDecision,
+} from '@/features/findings/components/approval-decision'
 import { ApprovalTierCell } from '@/features/findings/components/approval-tier-cell'
 import { GroupExceptionsPanel } from '@/features/findings/components/group-exceptions-panel'
 import { useApprovalBatches } from '@/features/findings/api/use-approval-batches'
@@ -71,14 +63,6 @@ import { useApprovalBatches } from '@/features/findings/api/use-approval-batches
 // ============================================
 // CONSTANTS
 // ============================================
-
-const APPROVAL_BADGE_STYLES: Record<ApprovalStatus, string> = {
-  pending: 'border-warning/40 text-warning',
-  approved: 'border-success/40 text-success',
-  rejected: 'border-destructive/40 text-destructive',
-  canceled: 'text-muted-foreground',
-  expired: 'text-muted-foreground',
-}
 
 /** English fallbacks; the localised label is findings.approvals.status.<status>. */
 const APPROVAL_STATUS_LABELS: Record<ApprovalStatus, string> = {
@@ -123,13 +107,6 @@ function RelativeTime({ value, locale }: { value: string; locale: string }) {
       {formatRelativeTime(value, locale)}
     </time>
   )
-}
-
-type Translate = ReturnType<typeof useTranslation>['t']
-
-function getRequestedStatusLabel(t: Translate, status: string): string {
-  const config = FINDING_STATUS_CONFIG[status as keyof typeof FINDING_STATUS_CONFIG]
-  return config ? t(config.labelKey, config.label) : status
 }
 
 function RequesterCell({
@@ -184,13 +161,9 @@ export default function ApprovalsPage() {
   const currentUserId = useDisplayUser()?.id
 
   // Action state
-  const [approveDialogOpen, setApproveDialogOpen] = useState(false)
-  const [rejectDialogOpen, setRejectDialogOpen] = useState(false)
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
+  const [remindTarget, setRemindTarget] = useState<ApiApproval | null>(null)
   const [selectedApproval, setSelectedApproval] = useState<ApiApproval | null>(null)
-  const [rejectionReason, setRejectionReason] = useState('')
-  // Why the last reject failed, shown under the reason so nothing typed is lost.
-  const [rejectError, setRejectError] = useState<string | null>(null)
   const [actionInProgress, setActionInProgress] = useState<string | null>(null)
   // The sole member's own approval (shown only when the API offers it).
   const [selfApproveTarget, setSelfApproveTarget] = useState<ApiApproval | null>(null)
@@ -211,13 +184,8 @@ export default function ApprovalsPage() {
     [mutateList, mutatePendingGroups]
   )
 
-  // Action hooks
-  const { trigger: triggerApprove, isMutating: isApproving } = useApproveStatus(
-    selectedApproval?.id ?? ''
-  )
-  const { trigger: triggerReject, isMutating: isRejecting } = useRejectApproval(
-    selectedApproval?.id ?? ''
-  )
+  // Approve and reject: the shared decision dialogs (also on My Work).
+  const decision = useApprovalDecision({ onDecided: mutate })
   const { trigger: triggerCancel, isMutating: isCancelling } = useCancelApproval(
     selectedApproval?.id ?? ''
   )
@@ -254,87 +222,12 @@ export default function ApprovalsPage() {
   // ACTION HANDLERS
   // ============================================
 
-  const handleApproveClick = useCallback((approval: ApiApproval) => {
-    setSelectedApproval(approval)
-    setApproveDialogOpen(true)
-  }, [])
-
-  const handleRejectClick = useCallback((approval: ApiApproval) => {
-    setSelectedApproval(approval)
-    setRejectionReason('')
-    setRejectError(null)
-    setRejectDialogOpen(true)
-  }, [])
+  const { openApprove: handleApproveClick, openReject: handleRejectClick } = decision
 
   const handleCancelClick = useCallback((approval: ApiApproval) => {
     setSelectedApproval(approval)
     setCancelDialogOpen(true)
   }, [])
-
-  const handleApproveConfirm = async () => {
-    if (!selectedApproval || actionInProgress) return
-    setActionInProgress(selectedApproval.id)
-    try {
-      // A re-authentication prompt (STEP_UP_REQUIRED) is answered by the API
-      // client, which retries once; a cancelled prompt ends up below.
-      const outcome = approveResultOutcome(await triggerApprove())
-      if (outcome.kind === 'recorded') {
-        toast.success(t('findings.approvals.toast.signed', 'Your approval is recorded'), {
-          description: t(
-            'findings.approvals.toast.signedDesc',
-            '{count} more approval(s) needed before the status changes.',
-            { count: outcome.remaining }
-          ),
-        })
-      } else {
-        toast.success(t('findings.approvals.toast.approved', 'Approval request approved'), {
-          description: t(
-            'findings.approvals.toast.approvedDesc',
-            'Finding status will be changed to {status}',
-            { status: getRequestedStatusLabel(t, selectedApproval.requested_status) }
-          ),
-        })
-      }
-      await mutate()
-    } catch (err) {
-      const outcome = approveErrorOutcome(t, err)
-      toast.error(
-        outcome.kind === 'refused'
-          ? outcome.message
-          : getErrorMessage(
-              err,
-              t('findings.approvals.toast.approveFailed', 'Failed to approve request')
-            )
-      )
-      if (outcome.kind === 'refused') await mutate()
-    } finally {
-      setActionInProgress(null)
-      setSelectedApproval(null)
-      setApproveDialogOpen(false)
-    }
-  }
-
-  const handleRejectConfirm = async () => {
-    if (!selectedApproval || actionInProgress || !rejectionReason.trim()) return
-    setActionInProgress(selectedApproval.id)
-    setRejectError(null)
-    try {
-      await triggerReject({ reason: rejectionReason.trim() })
-      toast.success(t('findings.approvals.toast.rejected', 'Approval request rejected'))
-      setRejectionReason('')
-      setSelectedApproval(null)
-      setRejectDialogOpen(false)
-      await mutate()
-    } catch (err) {
-      // The dialog stays open with the reason as typed: the approver fixes
-      // the cause (or retries) without writing it again.
-      setRejectError(
-        getErrorMessage(err, t('findings.approvals.toast.rejectFailed', 'Failed to reject request'))
-      )
-    } finally {
-      setActionInProgress(null)
-    }
-  }
 
   const handleCancelConfirm = async () => {
     if (!selectedApproval || actionInProgress) return
@@ -395,18 +288,19 @@ export default function ApprovalsPage() {
     await mutate()
   }
 
-  // The list toolbar: the status lens first, refresh at the end.
+  // The list toolbar: the status filter first, refresh at the end. The status
+  // is a filter of the rows (a filter token), not a second row of tabs; its
+  // counts are the finding requests' and are shown only on that view.
   const statusLens = (
-    <SegmentedLens<ApprovalLens>
-      label={t('findings.approvals.lens.label', 'Request status')}
-      value={lens}
-      onChange={changeLens}
-      options={APPROVAL_LENSES.map((value) => ({
+    <FilterSelect<Exclude<ApprovalLens, 'all'>>
+      label={t('findings.approvals.lens.status', 'Status')}
+      value={lens === 'all' ? '' : lens}
+      onChange={(next) => changeLens(next === '' ? 'all' : next)}
+      allCount={view === 'requests' ? counts.all : undefined}
+      options={APPROVAL_LENSES.filter((v) => v !== 'all').map((value) => ({
         value,
-        label:
-          value === 'all'
-            ? t('findings.approvals.tabAll', 'All')
-            : t(`findings.approvals.status.${value}`, APPROVAL_STATUS_LABELS[value]),
+        label: t(`findings.approvals.status.${value}`, APPROVAL_STATUS_LABELS[value]),
+        count: view === 'requests' ? counts[value] : undefined,
       }))}
     />
   )
@@ -439,7 +333,7 @@ export default function ApprovalsPage() {
       // The four-eyes rule: someone else decides your own request.
       const own = isOwnApproval(approval, currentUserId)
       const mineSelf = selfApprovalAvailable && approval.requested_by === currentUserId
-      const busy = actionInProgress === approval.id
+      const busy = actionInProgress === approval.id || decision.busyId === approval.id
       return (
         <div className="flex items-center justify-end gap-1.5">
           {/* The decision is one click from the row; the dialog shows the
@@ -507,11 +401,15 @@ export default function ApprovalsPage() {
                 )}
                 {mayCancel && (
                   <Can permission={Permission.FindingsWrite}>
-                    <DropdownMenuItem onClick={() => handleRemind(approval)}>
+                    <DropdownMenuItem onClick={() => setRemindTarget(approval)}>
                       <BellRing className="me-2 h-4 w-4" />
                       {t('findings.approvals.action.remind', 'Remind approvers')}
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleCancelClick(approval)}>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive"
+                      onClick={() => handleCancelClick(approval)}
+                    >
                       <Ban className="me-2 h-4 w-4" />
                       {t('findings.approvals.action.cancel', 'Cancel request')}
                     </DropdownMenuItem>
@@ -525,10 +423,10 @@ export default function ApprovalsPage() {
     },
     [
       actionInProgress,
+      decision.busyId,
       handleApproveClick,
       handleRejectClick,
       handleCancelClick,
-      handleRemind,
       currentUserId,
       selfApprovalAvailable,
       t,
@@ -548,32 +446,30 @@ export default function ApprovalsPage() {
           const status = row.getValue('status') as ApprovalStatus
           return (
             <div className="flex flex-wrap items-center gap-1">
-              <Badge variant="outline" className={cn('text-xs', APPROVAL_BADGE_STYLES[status])}>
-                {t(`findings.approvals.status.${status}`, APPROVAL_STATUS_LABELS[status] ?? status)}
-              </Badge>
+              <ApprovalStatusLozenge
+                status={status}
+                label={t(
+                  `findings.approvals.status.${status}`,
+                  APPROVAL_STATUS_LABELS[status] ?? status
+                )}
+              />
               {row.original.self_approved && (
-                <Badge
-                  variant="outline"
-                  className="text-xs border-warning/40 text-warning"
+                <Tag
+                  label={t('findingApprovals.selfApprove.badge', 'Self-approved')}
                   title={t(
                     'findingApprovals.selfApprove.badgeTitle',
                     "Approved by its own requester, the organization's only member"
                   )}
-                >
-                  {t('findingApprovals.selfApprove.badge', 'Self-approved')}
-                </Badge>
+                />
               )}
               {row.original.single_person && (
-                <Badge
-                  variant="outline"
-                  className="text-xs border-info/40 text-info"
+                <Tag
+                  label={t('findingApprovals.single.badge', 'Single person')}
                   title={t(
                     'findingApprovals.single.badgeTitle',
                     "Decided by one person: the organization's false-positive level did not require a second"
                   )}
-                >
-                  {t('findingApprovals.single.badge', 'Single person')}
-                </Badge>
+                />
               )}
             </div>
           )
@@ -582,6 +478,7 @@ export default function ApprovalsPage() {
       },
       {
         accessorKey: 'finding_id',
+        meta: { primary: true },
         header: t('findings.approvals.col.finding', 'Finding'),
         cell: ({ row }) => (
           <ApprovalFindingLink
@@ -601,7 +498,7 @@ export default function ApprovalsPage() {
             <FindingStatusBadge status={status as FindingStatus} />
           ) : (
             <Badge variant="outline" className="text-xs">
-              {getRequestedStatusLabel(t, status)}
+              {requestedStatusLabel(t, status)}
             </Badge>
           )
         },
@@ -688,263 +585,152 @@ export default function ApprovalsPage() {
   return (
     <>
       <Main>
-        <PageHeader
-          title={t('findings.approvals.title', 'Approval requests')}
-          description={
-            isInitialLoading
-              ? t('findings.approvals.loading', 'Loading approvals…')
-              : pendingTotal > 0
-                ? t('findings.approvals.summaryPending', '{count} waiting for a decision', {
-                    count: pendingTotal,
-                  })
-                : t('findings.approvals.summaryNone', 'Nothing is waiting for a decision')
-          }
-        />
+        <PageStack>
+          <PageHeader
+            title={t('findings.approvals.title', 'Approval requests')}
+            description={
+              isInitialLoading
+                ? t('findings.approvals.loading', 'Loading approvals…')
+                : pendingTotal > 0
+                  ? t('findings.approvals.summaryPending', '{count} waiting for a decision', {
+                      count: pendingTotal,
+                    })
+                  : t('findings.approvals.summaryNone', 'Nothing is waiting for a decision')
+            }
+          />
 
-        {/* The one tab row: the two kinds of request are different objects
+          {/* The one tab row: the two kinds of request are different objects
             with their own columns. Each tab counts only what waits for a
             decision, and shows nothing at zero. */}
-        <Tabs value={view} onValueChange={changeView} className="mt-6">
-          <TabsList aria-label={t('findingApprovals.group.viewLabel', 'Kind of request')}>
-            <TabsTrigger value="requests">
-              {t('findingApprovals.group.viewRequests', 'Finding requests')}
-              <TabsCount value={counts.pending || null} />
-            </TabsTrigger>
-            <TabsTrigger value="groups">
-              {t('findingApprovals.group.viewGroups', 'Group exceptions')}
-              <TabsCount value={pendingGroups?.total || null} />
-            </TabsTrigger>
-          </TabsList>
+          <Tabs value={view} onValueChange={changeView}>
+            <TabsList aria-label={t('findingApprovals.group.viewLabel', 'Kind of request')}>
+              <TabsTrigger value="requests">
+                {t('findingApprovals.group.viewRequests', 'Finding requests')}
+                <TabsCount value={counts.pending || null} />
+              </TabsTrigger>
+              <TabsTrigger value="groups">
+                {t('findingApprovals.group.viewGroups', 'Group exceptions')}
+                <TabsCount value={pendingGroups?.total || null} />
+              </TabsTrigger>
+            </TabsList>
 
-          {/* The tab panel: its id is what the tab triggers point at. */}
-          <TabsContent value={view} className="mt-4">
-            {isInitialLoading ? (
-              <TableSkeleton />
-            ) : view === 'requests' && error && !data ? (
-              // A failed read keeps the page, its tabs and the other view; the
-              // shared error state says what failed and offers Retry.
-              <ErrorState
-                title={t('findings.approvals.errorTitle', 'approval requests')}
-                error={error}
-                onRetry={() => void mutate()}
-              />
-            ) : view === 'groups' ? (
-              <GroupExceptionsPanel
-                status={lensStatus}
-                pagination={list.pagination}
-                onPaginationChange={list.setPagination}
-                currentUserId={currentUserId}
-                openId={openBatch}
-                onOpenChange={changeOpenBatch}
-                onDecided={mutate}
-                toolbarStart={statusLens}
-                toolbarEnd={refreshButton}
-              />
-            ) : (
-              <DataTable
-                columns={columns}
-                data={approvals}
-                manualPagination
-                pageCount={pageCount}
-                rowCount={data?.total ?? 0}
-                pagination={list.pagination}
-                onPaginationChange={list.setPagination}
-                getRowId={(row) => row.id}
-                mobileRow={(approval) => (
-                  <div className="grid gap-2 p-3" data-testid="approval-phone-card">
-                    <ApprovalFindingLink
-                      findingId={approval.finding_id}
-                      findingTitle={approval.finding_title}
-                    />
-                    <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                      <Badge
-                        variant="outline"
-                        className={cn('text-xs', APPROVAL_BADGE_STYLES[approval.status])}
-                      >
-                        {t(
-                          `findings.approvals.status.${approval.status}`,
-                          APPROVAL_STATUS_LABELS[approval.status] ?? approval.status
+            {/* The tab panel: its id is what the tab triggers point at. */}
+            <TabsContent value={view}>
+              {isInitialLoading ? (
+                <TableSkeleton />
+              ) : view === 'requests' && error && !data ? (
+                // A failed read keeps the page, its tabs and the other view; the
+                // shared error state says what failed and offers Retry.
+                <ErrorState
+                  title={t('findings.approvals.errorTitle', 'approval requests')}
+                  error={error}
+                  onRetry={() => void mutate()}
+                />
+              ) : view === 'groups' ? (
+                <GroupExceptionsPanel
+                  status={lensStatus}
+                  pagination={list.pagination}
+                  onPaginationChange={list.setPagination}
+                  currentUserId={currentUserId}
+                  openId={openBatch}
+                  onOpenChange={changeOpenBatch}
+                  onDecided={mutate}
+                  toolbarStart={statusLens}
+                  toolbarEnd={refreshButton}
+                />
+              ) : (
+                <DataTable
+                  columns={columns}
+                  data={approvals}
+                  manualPagination
+                  pageCount={pageCount}
+                  rowCount={data?.total ?? 0}
+                  pagination={list.pagination}
+                  onPaginationChange={list.setPagination}
+                  getRowId={(row) => row.id}
+                  mobileRow={(approval) => (
+                    <div className="grid gap-2 p-3" data-testid="approval-phone-card">
+                      <ApprovalFindingLink
+                        findingId={approval.finding_id}
+                        findingTitle={approval.finding_title}
+                      />
+                      <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                        <ApprovalStatusLozenge
+                          status={approval.status}
+                          label={t(
+                            `findings.approvals.status.${approval.status}`,
+                            APPROVAL_STATUS_LABELS[approval.status] ?? approval.status
+                          )}
+                        />
+                        <span>{requestedStatusLabel(t, approval.requested_status)}</span>
+                        <RequesterCell approval={approval} currentUserId={currentUserId} />
+                        {approval.decide_by && approval.status === 'pending' && (
+                          <span>
+                            {t('findings.approvals.col.decideBy', 'Decide by')}{' '}
+                            <RelativeTime value={approval.decide_by} locale={locale} />
+                          </span>
                         )}
-                      </Badge>
-                      <span>{getRequestedStatusLabel(t, approval.requested_status)}</span>
-                      <RequesterCell approval={approval} currentUserId={currentUserId} />
-                      {approval.decide_by && approval.status === 'pending' && (
-                        <span>
-                          {t('findings.approvals.col.decideBy', 'Decide by')}{' '}
-                          <RelativeTime value={approval.decide_by} locale={locale} />
-                        </span>
-                      )}
+                      </div>
+                      {actionsCell(approval)}
                     </div>
-                    {actionsCell(approval)}
-                  </div>
-                )}
-                showColumnToggle={false}
-                showSearch={false}
-                toolbarStart={statusLens}
-                toolbarEnd={refreshButton}
-                emptyMessage={
-                  lens === 'pending'
-                    ? t('findings.approvals.emptyPending', 'No pending requests')
-                    : t('findings.approvals.empty', 'No approval requests')
-                }
-                emptyDescription={
-                  lens === 'pending'
-                    ? t(
-                        'findings.approvals.emptyPendingDesc',
-                        'A false positive or risk acceptance that needs a second person appears here. Decided requests are under Approved, Rejected and All.'
-                      )
-                    : lens === 'all'
+                  )}
+                  showColumnToggle={false}
+                  showSearch={false}
+                  toolbarStart={statusLens}
+                  toolbarEnd={refreshButton}
+                  emptyMessage={
+                    lens === 'pending'
+                      ? t('findings.approvals.emptyPending', 'No pending requests')
+                      : t('findings.approvals.empty', 'No approval requests')
+                  }
+                  emptyDescription={
+                    lens === 'pending'
                       ? t(
-                          'findings.approvals.emptyAll',
-                          'There are no approval requests to review at this time.'
+                          'findings.approvals.emptyPendingDesc',
+                          'A false positive or risk acceptance that needs a second person appears here. To see decided requests, change the Status filter.'
                         )
-                      : t(
-                          'findings.approvals.emptyStatus',
-                          'No requests with the status {status}.',
-                          {
-                            status: t(
-                              `findings.approvals.status.${lens}`,
-                              APPROVAL_STATUS_LABELS[lens]
-                            ),
-                          }
-                        )
-                }
-              />
-            )}
-          </TabsContent>
-        </Tabs>
+                      : lens === 'all'
+                        ? t(
+                            'findings.approvals.emptyAll',
+                            'There are no approval requests to review at this time.'
+                          )
+                        : t(
+                            'findings.approvals.emptyStatus',
+                            'No requests with the status {status}.',
+                            {
+                              status: t(
+                                `findings.approvals.status.${lens}`,
+                                APPROVAL_STATUS_LABELS[lens]
+                              ),
+                            }
+                          )
+                  }
+                />
+              )}
+            </TabsContent>
+          </Tabs>
+        </PageStack>
       </Main>
 
-      {/* Approve Confirmation Dialog */}
-      <ConfirmDialog
-        open={approveDialogOpen}
-        onOpenChange={setApproveDialogOpen}
-        title={t('confirm.findingApproval.approveTitle', 'Approve this status change?')}
-        desc={
-          selectedApproval &&
-          (selectedApproval.approvals_required ?? 0) - (selectedApproval.approvals_collected ?? 0) >
-            1
-            ? t(
-                'confirm.findingApproval.approveDescMore',
-                'Your approval is recorded. The finding moves to the requested status once {count} more approval(s) are in.',
-                {
-                  count:
-                    (selectedApproval.approvals_required ?? 0) -
-                    (selectedApproval.approvals_collected ?? 0) -
-                    1,
-                }
-              )
-            : t(
-                'confirm.findingApproval.approveDesc',
-                'The finding moves to the requested status at once.'
-              )
-        }
-        confirmText={
-          isApproving ? (
-            <>
-              <Loader2 className="me-2 h-4 w-4 animate-spin" />
-              {t('confirm.suppression.approving', 'Approving…')}
-            </>
-          ) : (
-            t('confirm.suppression.approve', 'Approve')
-          )
-        }
-        isLoading={isApproving}
-        handleConfirm={handleApproveConfirm}
-      >
-        {selectedApproval && (
-          <div className="my-2 grid gap-3 rounded-lg border bg-muted/50 p-3">
-            <ApprovalFindingSummary
-              findingId={selectedApproval.finding_id}
-              findingTitle={selectedApproval.finding_title}
-              justification={selectedApproval.justification}
-            />
-            <p className="text-sm font-medium">
-              {t('findings.approvals.changeTo', 'Change to')}{' '}
-              <Badge variant="outline" className="ms-1 text-xs">
-                {getRequestedStatusLabel(t, selectedApproval.requested_status)}
-              </Badge>
-            </p>
-            {selectedApproval.closure_reason && (
-              <p className="text-sm">
-                {t('findings.approvalDialog.reasonLabel', 'Reason:')}{' '}
-                {closureReasonLabel(t, selectedApproval.closure_reason)}
-              </p>
-            )}
-            <AIProposalBadge approval={selectedApproval} withHint />
-          </div>
-        )}
-      </ConfirmDialog>
+      {decision.dialogs}
 
-      {/* Reject Dialog */}
-      <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
-        <DialogContent size="sm">
-          <DialogHeader>
-            <DialogTitle>{t('findings.approvals.rejectTitle', 'Reject request')}</DialogTitle>
-            <DialogDescription>
-              {t('findings.approvals.rejectDesc', 'Give a reason for rejecting this request.')}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogBody className="grid gap-4">
-            {selectedApproval && (
-              <div className="grid gap-3 rounded-lg border bg-muted/50 p-3">
-                <ApprovalFindingSummary
-                  findingId={selectedApproval.finding_id}
-                  findingTitle={selectedApproval.finding_title}
-                  justification={selectedApproval.justification}
-                />
-                <p className="text-sm font-medium">
-                  {t('findings.approvals.requestedLabel', 'Requested:')}{' '}
-                  {getRequestedStatusLabel(t, selectedApproval.requested_status)}
-                </p>
-              </div>
-            )}
-            <div className="grid gap-2">
-              <Textarea
-                placeholder={t('findings.approvals.rejectPlaceholder', 'Reason for rejection…')}
-                value={rejectionReason}
-                onChange={(e) => setRejectionReason(e.target.value)}
-                rows={3}
-                maxLength={2000}
-                aria-label={t('findings.approvals.rejectPlaceholder', 'Reason for rejection…')}
-                aria-invalid={rejectError ? true : undefined}
-                aria-describedby={rejectError ? 'approval-reject-error' : undefined}
-              />
-              {rejectError && (
-                <p id="approval-reject-error" role="alert" className="text-sm text-destructive">
-                  {rejectError}
-                </p>
-              )}
-              <p className="text-xs text-muted-foreground text-end">
-                {rejectionReason.length}/2000
-              </p>
-            </div>
-          </DialogBody>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setRejectDialogOpen(false)}
-              disabled={isRejecting}
-            >
-              {t('findings.approvals.cancel', 'Cancel')}
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleRejectConfirm}
-              disabled={isRejecting || !rejectionReason.trim()}
-            >
-              {isRejecting ? (
-                <>
-                  <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                  {t('findings.approvals.rejecting', 'Rejecting…')}
-                </>
-              ) : (
-                t('findings.approvals.action.reject', 'Reject')
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={remindTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setRemindTarget(null)
+        }}
+        title={t('confirm.findingApproval.remindTitle', 'Remind the approvers?')}
+        desc={t(
+          'confirm.findingApproval.remindDesc',
+          'Every approver who has not decided yet gets a notification now. Approvers can be reminded once an hour.'
+        )}
+        confirmText={t('confirm.findingApproval.remindButton', 'Send reminder')}
+        handleConfirm={async () => {
+          const target = remindTarget
+          setRemindTarget(null)
+          if (target) await handleRemind(target)
+        }}
+      />
 
       {/* Cancel Confirmation Dialog */}
       <ConfirmDialog
@@ -953,7 +739,7 @@ export default function ApprovalsPage() {
         title={t('confirm.findingApproval.cancelTitle', 'Cancel this approval request?')}
         desc={t(
           'confirm.findingApproval.cancelDesc',
-          'The request is withdrawn and the finding keeps its current status. This cannot be undone; ask again if needed.'
+          'The request is withdrawn and the finding keeps its current status. You can send a new request afterwards.'
         )}
         cancelBtnText={t('confirm.findingApproval.keep', 'Keep request')}
         confirmText={

@@ -110,3 +110,8 @@ rel_yaml_set() {
   cat "$tmp" >"$file"
   rm -f "$tmp"
 }
+
+# The install version of a tag's checkout: written by cut-release.sh on the
+# release branch only, read by api/deploy/setup.sh.
+# shellcheck disable=SC2034 # read by the scripts that source this file
+VERSION_FILE="api/deploy/VERSION"

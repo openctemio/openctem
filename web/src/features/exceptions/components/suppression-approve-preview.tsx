@@ -1,5 +1,7 @@
 'use client'
 
+import { FindingTitleCell } from '@/features/findings/components/cells/finding-title-cell'
+import { findingLocation } from '@/features/findings/lib/finding-location'
 import { AlertTriangle, Info, Loader2 } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { useTranslation } from '@/context/i18n-provider'
@@ -88,10 +90,17 @@ export function SuppressionApprovePreview({ ruleId }: { ruleId: string | undefin
           >
             {sample.map((f) => (
               <li key={f.id} className="px-3 py-2">
-                <div className="truncate font-medium">{f.title}</div>
-                <div className="text-muted-foreground truncate text-xs">
-                  {[f.severity, f.asset_name, f.file_path].filter(Boolean).join(' · ')}
-                </div>
+                <FindingTitleCell
+                  title={f.title}
+                  target={
+                    findingLocation({ asset: { name: f.asset_name }, file_path: f.file_path }).full
+                  }
+                  meta={
+                    f.severity && (
+                      <span className="text-muted-foreground text-xs">{f.severity}</span>
+                    )
+                  }
+                />
               </li>
             ))}
           </ul>

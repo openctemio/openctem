@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // Logger wraps slog.Logger with additional functionality.
@@ -168,6 +169,34 @@ var sensitiveKeys = map[string]bool{
 	"installation": true, // GitHub App installation tokens
 }
 
+// shortSensitiveKeyLen is the length up to which a sensitive key matches only
+// as a whole segment of an attribute key, never as a substring.
+const shortSensitiveKeyLen = 3
+
+// hasKeySegment reports whether key, split at every character that is not a
+// letter or digit ("aes_iv", "user.dob", "x-jwt"), has a segment equal to want.
+func hasKeySegment(key, want string) bool {
+	var seg []rune
+	var prev rune
+	match := func() bool { return len(seg) > 0 && strings.EqualFold(string(seg), want) }
+	for _, r := range key {
+		alnum := unicode.IsLetter(r) || unicode.IsDigit(r)
+		// A new segment starts at a separator and at a camelCase boundary
+		// ("userPwd", "aesIV"), so short keys are found in either style.
+		if !alnum || (unicode.IsUpper(r) && (unicode.IsLower(prev) || unicode.IsDigit(prev))) {
+			if match() {
+				return true
+			}
+			seg = seg[:0]
+		}
+		if alnum {
+			seg = append(seg, r)
+		}
+		prev = r
+	}
+	return match()
+}
+
 // sanitizeAttr masks sensitive values in log attributes.
 func sanitizeAttr(_ []string, a slog.Attr) slog.Attr {
 	key := strings.ToLower(a.Key)
@@ -177,8 +206,17 @@ func sanitizeAttr(_ []string, a slog.Attr) slog.Attr {
 		return slog.String(a.Key, "[REDACTED]")
 	}
 
-	// Check for partial matches (e.g., "db_password", "jwt_secret")
+	// Check for partial matches (e.g., "db_password", "jwt_secret"). A key
+	// of three letters or fewer ("iv", "pwd", "dob", "jwt") matches only as a
+	// whole segment of the key: as a substring it hides ordinary fields
+	// ("diverged", "active", "archived", "live" all contain "iv").
 	for sensitive := range sensitiveKeys {
+		if len(sensitive) <= shortSensitiveKeyLen {
+			if hasKeySegment(a.Key, sensitive) {
+				return slog.String(a.Key, "[REDACTED]")
+			}
+			continue
+		}
 		if strings.Contains(key, sensitive) {
 			return slog.String(a.Key, "[REDACTED]")
 		}

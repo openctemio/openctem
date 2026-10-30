@@ -137,6 +137,8 @@ export const Permission = {
   // Finding lifecycles (sub-statuses and schemes)
   FindingsLifecyclesWrite: 'findings:lifecycles:write',
   FindingsRetestChecksWrite: 'findings:retest_checks:write',
+  /** Share a saved list view with the whole organization. */
+  FindingsViewsShare: 'findings:views:share',
 
   // Vulnerabilities (findings:vulnerabilities:*)
   VulnerabilitiesRead: 'findings:vulnerabilities:read',
@@ -179,6 +181,7 @@ export const Permission = {
   SourcesRead: 'scans:sources:read',
   SourcesWrite: 'scans:sources:write',
   SourcesDelete: 'scans:sources:delete',
+  SourcesApprove: 'scans:sources:approve',
 
   // Tools (scans:tools:*)
   ToolsRead: 'scans:tools:read',
@@ -668,6 +671,7 @@ export const PermissionLabels: Partial<Record<PermissionString, string>> = {
   [Permission.SuppressionsApprove]: 'Approve Suppressions',
   [Permission.FindingsLifecyclesWrite]: 'Manage Finding Lifecycles',
   [Permission.FindingsRetestChecksWrite]: 'Manage Finding Retest Checks',
+  [Permission.FindingsViewsShare]: 'Share Saved Views With the Organization',
   [Permission.VulnerabilitiesRead]: 'View Vulnerabilities',
   [Permission.CredentialsRead]: 'View Credentials',
   [Permission.CredentialsWrite]: 'Manage Credentials',
@@ -882,6 +886,7 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.SuppressionsDelete,
     Permission.FindingsLifecyclesWrite,
     Permission.FindingsRetestChecksWrite,
+    Permission.FindingsViewsShare,
     Permission.SuppressionsApprove,
     Permission.VulnerabilitiesRead,
     Permission.CredentialsRead,
@@ -1056,6 +1061,7 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.SuppressionsDelete,
     Permission.FindingsLifecyclesWrite,
     Permission.FindingsRetestChecksWrite,
+    Permission.FindingsViewsShare,
     Permission.VulnerabilitiesRead,
     Permission.CredentialsRead,
     Permission.CredentialsWrite,

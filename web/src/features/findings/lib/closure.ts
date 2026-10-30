@@ -13,6 +13,7 @@ export type ClosureReason =
   | 'obsolete_asset'
   | 'obsolete_source'
   | 'obsolete_rule'
+  | 'out_of_scope'
   | 'component_not_present'
   | 'vulnerable_code_not_present'
   | 'vulnerable_code_not_in_execute_path'
@@ -59,6 +60,7 @@ const REASON_FALLBACK: Record<ClosureReason, string> = {
   obsolete_asset: 'Asset retired',
   obsolete_source: 'Source removed',
   obsolete_rule: 'Check or rule changed',
+  out_of_scope: 'Asset out of scope',
   component_not_present: 'Component not present',
   vulnerable_code_not_present: 'Vulnerable code not present',
   vulnerable_code_not_in_execute_path: 'Vulnerable code not in the execution path',

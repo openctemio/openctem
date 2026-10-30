@@ -205,6 +205,11 @@ func registerAssetGroupRoutes(
 		r.GET("/", h.List, middleware.Require(permission.AssetGroupsRead))
 		r.POST("/", h.Create, middleware.Require(permission.AssetGroupsWrite))
 
+		// Rule groups: preview a rule, an asset's group history (static
+		// paths, before /{id})
+		r.POST("/rule/preview", h.PreviewRule, middleware.Require(permission.AssetGroupsWrite))
+		r.GET("/assets/{id}/history", h.GetAssetGroupHistory, middleware.Require(permission.AssetGroupsRead))
+
 		// Bulk operations
 		r.PATCH("/bulk", h.BulkUpdate, middleware.Require(permission.AssetGroupsWrite))
 		r.DELETE("/bulk", h.BulkDelete, middleware.Require(permission.AssetGroupsDelete))
@@ -218,6 +223,13 @@ func registerAssetGroupRoutes(
 		r.GET("/{id}/assets", h.GetAssets, middleware.Require(permission.AssetGroupsRead))
 		r.POST("/{id}/assets", h.AddAssets, middleware.Require(permission.AssetGroupsWrite))
 		r.DELETE("/{id}/assets", h.RemoveAssets, middleware.Require(permission.AssetGroupsWrite))
+		r.POST("/{id}/assets/paste", h.PasteAssets, middleware.Require(permission.AssetGroupsWrite))
+		r.POST("/{id}/assets/matching", h.AddMatching, middleware.Require(permission.AssetGroupsWrite))
+
+		// Rule and membership history
+		r.GET("/{id}/rule", h.GetRule, middleware.Require(permission.AssetGroupsRead))
+		r.PUT("/{id}/rule", h.SetRule, middleware.Require(permission.AssetGroupsWrite))
+		r.GET("/{id}/history", h.GetHistory, middleware.Require(permission.AssetGroupsRead))
 
 		// Findings in group
 		r.GET("/{id}/findings", h.GetFindings, middleware.Require(permission.AssetGroupsRead))
@@ -382,6 +394,9 @@ func registerAttackSurfaceRoutes(
 		// Attack path scoring — BFS reachability analysis from public entry points.
 		// Returns top assets ranked by composite path score (reachability × risk × criticality).
 		r.GET("/attack-paths", h.GetAttackPaths, middleware.Require(permission.AssetsRead), heavyReads.Middleware())
+		// Attack paths to one asset: routes, step weights, choke points (404
+		// outside the caller's data scope).
+		r.GET("/attack-paths/{id}", h.GetAttackPathsToAsset, middleware.Require(permission.AssetsRead), heavyReads.Middleware())
 		// Exposure chains — concrete shortest paths from public entry points to
 		// assets carrying KEV/critical findings, ranked by urgency.
 		r.GET("/exposure-chains", h.GetExposureChains, middleware.Require(permission.AssetsRead), heavyReads.Middleware())
@@ -459,7 +474,7 @@ func registerEASMSettingsRoutes(
 	// panics when the same path is mounted twice.
 	router.Group("/api/v1/easm/settings", func(r Router) {
 		r.GET("/", h.Get, middleware.Require(permission.SettingsRead))
-		r.PUT("/", h.Update, middleware.Require(permission.SettingsWrite))
+		r.PUT("/", h.Update, middleware.Require(permission.SettingsWrite), middleware.RequireAdmin())
 	}, tenantMiddlewares...)
 	router.Group("/api/v1/easm/sweeps", func(r Router) {
 		r.POST("/", h.RunNow, middleware.Require(permission.ScopeWrite))
@@ -498,6 +513,17 @@ func registerBranchRoutes(
 		// Default branch management
 		r.GET("/default", h.GetDefault, middleware.Require(permission.AssetsRead))
 		r.PUT("/{branchId}/default", h.SetDefault, middleware.Require(permission.AssetsWrite))
+	}, tenantMiddlewares...)
+}
+
+// registerCertificateRoutes registers the Certificates view of the external
+// attack surface: certificate assets, scoped by their own data scope.
+func registerCertificateRoutes(router Router, h *handler.CertificateHandler, authMiddleware Middleware, userSyncMiddleware Middleware, moduleGate Middleware) {
+	// The module gate runs after tenant extraction so it can read the tenant.
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
+	router.Group("/api/v1/attack-surface/certificates", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.AssetsRead))
+		r.GET("/stats", h.Stats, middleware.Require(permission.AssetsRead))
 	}, tenantMiddlewares...)
 }
 

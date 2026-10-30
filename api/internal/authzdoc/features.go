@@ -35,7 +35,7 @@ var Features = []Feature{
 		Registers: []string{
 			"registerVulnerabilityRoutes", "registerFindingActivityRoutes", "registerFindingEvidenceItemRoutes",
 			"registerFindingImportRoutes", "registerImportMappingRoutes", "registerFindingRetestRoutes", "registerFindingRetestCheckRoutes", "registerFindingSourceRoutes", "registerFindingLifecycleRoutes", "registerVerificationChecklistRoutes",
-			"registerAITriageRoutes", "registerAttachmentRoutes", "registerSavedViewRoutes", "registerQueryRoutes",
+			"registerAITriageRoutes", "registerAIAnalysisRoutes", "registerAttachmentRoutes", "registerSavedViewRoutes", "registerNavPinRoutes", "registerQueryRoutes",
 		},
 		Prefixes: []string{"/api/v1/verification-checklists"},
 	},
@@ -54,7 +54,7 @@ var Features = []Feature{
 			"registerAssetIdentifierRoutes", "registerAssetAttributionRoutes", "registerAssetImportRoutes",
 			"registerAssetDedupRoutes", "registerAssetRelationshipRoutes", "registerRelationshipSuggestionRoutes",
 			"registerAssetServiceRoutes", "registerAssetStateHistoryRoutes", "registerAssetSoftwareRoutes", "registerAssetTechnologyRoutes", "registerComponentRoutes", "registerVEXStatementRoutes",
-			"registerBranchRoutes", "registerAPISpecRoutes", "registerWebEndpointRoutes",
+			"registerBranchRoutes", "registerAPISpecRoutes", "registerWebEndpointRoutes", "registerCertificateRoutes",
 		},
 	},
 	{
@@ -74,7 +74,7 @@ var Features = []Feature{
 	},
 	{
 		ID: "programs", Title: "Bug-bounty programs",
-		Description: "Programs the organization tests under their published rules: import with an attestation, re-import, pause, resume and end (RFC-065).",
+		Description: "Programs the organization tests under their published rules: import with an attestation, re-import, pause, resume and end.",
 		Stages:      []string{StageScoping},
 		Registers:   []string{"registerProgramRoutes"},
 	},
@@ -104,11 +104,11 @@ var Features = []Feature{
 	},
 	{
 		ID: "scans", Title: "Scans and workflows",
-		Description: "Scans, scan runs and workflows, profiles, tools, templates, content packs and the content catalog, the secret store and freeze windows.",
+		Description: "Scans, scan runs and workflows, profiles, tools, templates, rule sources, content packs and the content catalog, the secret store and freeze windows.",
 		Stages:      []string{StageDiscovery, StageValidation},
 		Registers: []string{
 			"registerScanRoutes", "registerScanGovernanceRoutes", "registerScanApprovalRoutes", "registerScanWorkflowRoutes", "registerScanProfileRoutes", "registerScanWindowRoutes",
-			"registerScannerTemplateRoutes", "registerTemplateSourceRoutes", "registerContentPackRoutes", "registerPlatformContentPackRoutes", "registerContentCatalogRoutes",
+			"registerScannerTemplateRoutes", "registerContentSourceRoutes", "registerContentSourceWebhookRoute", "registerContentPackRoutes", "registerPlatformContentPackRoutes", "registerContentCatalogRoutes",
 			"registerToolRoutes", "registerToolCategoryRoutes", "registerCapabilityRoutes", "registerSecretStoreRoutes",
 			"registerPlatformScanningRoutes", "registerCommandRoutes",
 		},
@@ -118,7 +118,7 @@ var Features = []Feature{
 		Description: "The sensor fleet: registration, pairing and grants, scan zones and the sensor protocol.",
 		Stages:      []string{StageDiscovery},
 		Registers: []string{
-			"registerSensorManagementRoutes", "registerSensorInstallRoutes", "registerSensorPairingRoutes", "registerScanZoneRoutes", "registerProxyPoolRoutes",
+			"registerSensorManagementRoutes", "registerSensorInstallRoutes", "registerSensorPairingRoutes", "registerScanZoneRoutes", "registerProxyPoolRoutes", "registerProxyTestEchoRoute",
 			"mountSensorV2",
 		},
 	},
@@ -183,6 +183,7 @@ var Features = []Feature{
 			"registerTenantRoutes", "registerAuditRoutes", "registerOrganizationLimitsRoutes", "registerOrganizationSecurityOverviewRoutes", "registerOrganizationSupportAccessRoutes",
 			"registerEvidenceSettingsRoutes", "registerRetestSettingsRoutes", "registerVulnMatchingSettingsRoutes", "registerEmergingThreatSettingsRoutes", "registerAISettingsRoutes", "registerLicensePolicySettingsRoutes",
 			"registerAssetReconciliationSettingsRoutes", "registerCycleSettingsRoutes", "registerFindingCorrelationSettingsRoutes",
+			"registerFindingViewSettingsRoutes",
 			"registerSharedSensorsSettingsRoutes",
 		},
 	},
@@ -198,7 +199,7 @@ var Features = []Feature{
 		ID: "account", Title: "Sign-in and own account",
 		Description: "Authentication, the caller's own account, notifications, platform announcements, bootstrap data and the real-time socket.",
 		Registers: []string{
-			"registerAuthRoutes", "registerUserRoutes", "registerNotificationRoutes", "registerBootstrapRoutes",
+			"registerAuthRoutes", "registerUserRoutes", "registerIdentityLinkRoutes", "registerNotificationRoutes", "registerBootstrapRoutes",
 			"registerWebSocketRoutes", "registerAnnouncementRoute",
 		},
 	},

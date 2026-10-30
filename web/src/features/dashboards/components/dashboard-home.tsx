@@ -27,18 +27,20 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
-import { PageHeader } from '@/features/shared'
+import { PageHeader, PageStack } from '@/features/shared'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { Permission, usePermissions } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import {
   DASHBOARDS_KEY,
+  addFlowPanel,
   createDashboard,
   deleteDashboard,
   duplicateOrgDashboard,
   setDashboardSchedule,
   setDefaultDashboard,
   setOrgDefaultDashboard,
+  undoFlowPanel,
   updateDashboard,
   useMyDashboards,
   useOrgDashboards,
@@ -55,6 +57,7 @@ import {
   withTemplateWidgets,
   writeLayoutHintDismissed,
 } from '../layout-hint'
+import { flowPanelEligible } from '../lib/flow-panel'
 import { metricNameKey } from '../metrics'
 import {
   DashboardFreshness,
@@ -128,6 +131,7 @@ export function DashboardHome() {
   const [chosen, setChosen] = useState<DashboardRef | null>(null)
   const [customizing, setCustomizing] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<Dashboard | null>(null)
+  const [pendingOrgDefault, setPendingOrgDefault] = useState<Dashboard | null>(null)
 
   useEffect(() => {
     if (chosen === null) setChosen(readChoice())
@@ -188,13 +192,53 @@ export function DashboardHome() {
     writeChoice(ref)
   }, [])
 
+  // The exposure flow panel is added once, at the top, to a dashboard that
+  // existed before it (flow_panel_at is null) and that this person may edit.
+  // The server makes the add idempotent; the ref keeps this page to one call
+  // per dashboard, never one per render. A viewer without edit rights triggers
+  // nothing.
+  const isOrg = active?.kind === 'organization'
+  const canCustomize = !!dashboard && (isOrg ? canOrgManage : true)
+  const flowTried = useRef(new Set<string>())
+  const [flowAdded, setFlowAdded] = useState(false)
+  const flowEligible = !!dashboard && canCustomize && flowPanelEligible(dashboard)
+  const flowKind = active?.kind
+  const flowId = dashboard?.id
+  useEffect(() => {
+    if (!flowEligible || !flowKind || !flowId || flowTried.current.has(flowId)) return
+    flowTried.current.add(flowId)
+    const kind = flowKind
+    const id = flowId
+    addFlowPanel(id, kind)
+      .then(async (res) => {
+        await Promise.all([revalidate(), mutate(dashboardDataKey(kind, id))])
+        if (!res.added || !res.widget_id) return
+        setFlowAdded(true)
+        const widgetId = res.widget_id
+        toast.success(t('dashboards.flowPanel.added', 'Exposure flow added at the top'), {
+          action: {
+            label: t('dashboards.flowPanel.undo', 'Undo'),
+            onClick: () => {
+              undoFlowPanel(id, kind, widgetId)
+                .then(() => Promise.all([revalidate(), mutate(dashboardDataKey(kind, id))]))
+                .catch((e) => toast.error(getErrorMessage(e)))
+            },
+          },
+        })
+      })
+      .catch(() => {
+        // Offered again on the next open; nothing to tell the viewer.
+      })
+  }, [flowEligible, flowKind, flowId, revalidate, mutate, t])
+
   // The offer on a personal copy of a template that has gained widgets since
-  // the copy was made. Nothing changes until the viewer chooses.
+  // the copy was made. Nothing changes until the viewer chooses. It waits for
+  // the next open while the flow panel is being added or was just added.
   const [hintDismissed, setHintDismissed] = useState(true)
   useEffect(() => setHintDismissed(readLayoutHintDismissed()), [])
   const [hintBusy, setHintBusy] = useState(false)
   const layoutHint =
-    !hintDismissed && !seeded && active?.kind === 'personal'
+    !hintDismissed && !seeded && !flowAdded && !flowEligible && active?.kind === 'personal'
       ? layoutHintFor(dashboard ? { ...dashboard, kind: 'personal' } : undefined)
       : null
   const dismissHint = () => {
@@ -319,15 +363,12 @@ export function DashboardHome() {
     }
   }
 
-  const isOrg = active?.kind === 'organization'
   const canSchedule = !!dashboard && (isOrg ? canOrgManage : true)
-  // An organization dashboard is edited only by those who may manage them.
-  const canCustomize = !!dashboard && (isOrg ? canOrgManage : true)
   const isDefault = dashboard ? (isOrg ? dashboard.is_org_default : dashboard.is_default) : false
 
   return (
     <Main>
-      <div className="flex flex-col gap-4">
+      <PageStack>
         {/* Phone: the switcher fills row 1 beside icon-only Refresh and More;
             Customize and the schedule move into More. From 640px one toolbar
             row: switcher, Customize, schedule, Refresh now, More. */}
@@ -407,7 +448,9 @@ export function DashboardHome() {
                   {!isDefault && (!isOrg || canOrgManage) && (
                     <DropdownMenuItem
                       className={ITEM}
-                      onSelect={() => setDefault(dashboard, isOrg)}
+                      onSelect={() =>
+                        isOrg ? setPendingOrgDefault(dashboard) : setDefault(dashboard, false)
+                      }
                     >
                       <Star className="me-2 h-4 w-4" aria-hidden />
                       {isOrg
@@ -495,7 +538,6 @@ export function DashboardHome() {
                 >
                   {t('dashboards.actions.customize', 'Customize')}
                 </button>{' '}
-                ·{' '}
                 <Link href="/dashboards" className="font-medium text-foreground underline">
                   {t('dashboards.view.chooseAnother', 'Choose another')}
                 </Link>
@@ -548,7 +590,24 @@ export function DashboardHome() {
             />
           </>
         )}
-      </div>
+      </PageStack>
+      <ConfirmDialog
+        open={pendingOrgDefault !== null}
+        onOpenChange={(open) => !open && setPendingOrgDefault(null)}
+        title={t('confirm.dashboard.orgDefaultTitle', 'Make "{name}" the organization default?', {
+          name: pendingOrgDefault?.name ?? '',
+        })}
+        desc={t(
+          'confirm.dashboard.orgDefaultDesc',
+          'It becomes the dashboard people see first when they have not set a default of their own. You can pick another default at any time.'
+        )}
+        confirmText={t('confirm.dashboard.orgDefaultButton', 'Set as organization default')}
+        handleConfirm={async () => {
+          const target = pendingOrgDefault
+          setPendingOrgDefault(null)
+          if (target) await setDefault(target, true)
+        }}
+      />
       <ConfirmDialog
         open={pendingDelete !== null}
         onOpenChange={(open) => !open && setPendingDelete(null)}
@@ -558,9 +617,9 @@ export function DashboardHome() {
         })}
         desc={t(
           'confirm.dashboard.deleteDescPersonal',
-          'Your dashboard and its layout are deleted. Copies you shared and your data are not affected. This cannot be undone.'
+          'Your dashboard and its layout are deleted. Copies you shared and the data behind the widgets are not affected.'
         )}
-        confirmText={t('confirm.delete', 'Delete')}
+        confirmText={t('confirm.dashboard.deleteButton', 'Delete dashboard')}
         handleConfirm={() => (pendingDelete ? remove(pendingDelete) : undefined)}
       />
     </Main>

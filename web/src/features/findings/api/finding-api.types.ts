@@ -240,7 +240,10 @@ export interface ApiFinding {
     /** Single-finding response only. */
     criticality?: string
     exposure?: string
+    /** Internet-facing (list rows and the single finding). */
     is_internet_accessible?: boolean
+    /** Crown jewel (list rows and the single finding). */
+    is_crown_jewel?: boolean
   }
   branch_id?: string
   component_id?: string
@@ -353,16 +356,23 @@ export interface ApiFinding {
   kind?: string // fail/pass/warning/note
   occurrence_count?: number // number of occurrences
   duplicate_count?: number // number of duplicates
+  /** Findings marked as duplicates of this one that the caller can read (list rows). */
+  duplicates_marked?: number
   duplicate_of?: string // the finding this one was folded into (status duplicate)
   comments_count?: number // number of comments
   sla_status?: string // on_track | warning | overdue | exceeded | not_applicable
   sla_deadline?: string // ISO timestamp of the remediation deadline (nullable)
+  sla_kev_capped?: boolean // the deadline was shortened by the policy's known exploited (KEV) cap
+  /** Why the deadline is the date it is (single-finding response only). */
+  sla_basis?: ApiSlaBasis
+  acceptance_expires_at?: string // when an accepted risk ends and the finding reopens (accepted only)
 
   // Threat Intel Enrichment (RFC-004)
   epss_score?: number // 0.0-1.0 exploitation probability
   epss_percentile?: number // 0.0-100.0
   is_in_kev?: boolean // CISA Known Exploited Vulnerabilities
   kev_due_date?: string // CISA remediation deadline
+  kev_ransomware?: boolean // CISA: used in known ransomware campaigns
 
   // Priority Classification (RFC-004)
   priority_class?: 'P0' | 'P1' | 'P2' | 'P3'
@@ -724,6 +734,8 @@ export interface FindingApiFilters {
    *  assignee, owns the asset, or is a member of an assigned group. Sent as
    *  `assigned_to_me=true`. Backs the My Work view. */
   assigned_to_me?: boolean
+  /** `my_team`: findings assigned to the caller's groups or their members (My Work). */
+  related_to?: 'my_team'
   /** SLA status filter — sent as `sla_status` (comma-separated). Backend accepts
    *  on_track | warning | overdue | exceeded | not_applicable. */
   sla_statuses?: string[]
@@ -745,6 +757,8 @@ export interface FindingApiFilters {
   extra?: Record<string, string>
   /** An approval request for the finding is pending (or, with false, is not). Sent as `pending_approval`. */
   pending_approval?: boolean
+  /** Informational findings (info and none) only, or (false) none of them. Sent as `informational`. */
+  informational?: boolean
   /** Accepted risks that lapse by then (`P30D` = 30 days ahead). Sent as `acceptance_expires_at_lte`. */
   acceptance_expires_at_lte?: string
   /** The state lens: open | fixed | dispositioned | closed | all (research 24, C2). Sent as `state`. */
@@ -798,4 +812,21 @@ export interface FindingSlaBreakdown {
   /** Past due by days past the deadline; adds up to past_due. */
   past_due_by_age: { up_to_7: number; d8_to_30: number; d31_to_90: number; over_90: number }
   past_due_by_severity: Record<string, number>
+}
+
+/** Why a finding's SLA deadline is the date it is (GET /findings/{id}). */
+export interface ApiSlaBasis {
+  policy_id?: string
+  policy_name: string
+  policy_scope: 'asset' | 'organization' | 'platform'
+  basis: 'priority' | 'severity' | 'none'
+  days: number
+  kev_cap_days: number
+  kev_capped: boolean
+  clock_started_at: string
+  clock_reason: 'first_detected' | 'reopened' | 'recalculated'
+  restarts: number
+  last_restart_trigger?: string
+  expected_deadline?: string
+  earlier?: boolean
 }

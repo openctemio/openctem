@@ -22,6 +22,12 @@ type ctemFacts struct {
 	visible           map[shared.ID]bool
 	scopes            []dashboard.ReadScope
 	priorities        [][]string
+	// The exposure flow and intake reads.
+	byClass, bySev []dashboard.CountRow
+	outcomes       dashboard.OutcomeCounts
+	intake         []dashboard.IntakeRow
+	intakeTenants  []shared.ID
+	since          time.Time
 }
 
 func (f *ctemFacts) FactsBuiltAt(context.Context, shared.ID) (*time.Time, error) {
@@ -29,7 +35,7 @@ func (f *ctemFacts) FactsBuiltAt(context.Context, shared.ID) (*time.Time, error)
 	return &t, nil
 }
 
-func (f *ctemFacts) CountOpen(_ context.Context, s dashboard.ReadScope, w dashboard.WidgetFilter, _ []dashboard.Dimension) ([]dashboard.CountRow, error) {
+func (f *ctemFacts) CountOpen(_ context.Context, s dashboard.ReadScope, w dashboard.WidgetFilter, gb []dashboard.Dimension) ([]dashboard.CountRow, error) {
 	f.scopes = append(f.scopes, s)
 	switch {
 	case len(w.PriorityClass) == 1 && w.PriorityClass[0] == "P0":
@@ -38,6 +44,10 @@ func (f *ctemFacts) CountOpen(_ context.Context, s dashboard.ReadScope, w dashbo
 		return []dashboard.CountRow{{Count: f.kev}}, nil
 	case len(w.SLAState) == 1:
 		return []dashboard.CountRow{{Count: f.breached}}, nil
+	case len(gb) == 1 && gb[0] == dashboard.DimPriorityClass:
+		return f.byClass, nil
+	case len(gb) == 1 && gb[0] == dashboard.DimSeverity:
+		return f.bySev, nil
 	}
 	return nil, nil
 }
@@ -88,6 +98,23 @@ func (f *ctemFacts) VisibleAssets(_ context.Context, s dashboard.ReadScope, ids 
 		}
 	}
 	return out, nil
+}
+
+func (f *ctemFacts) Outcomes(_ context.Context, s dashboard.ReadScope, since time.Time) (dashboard.OutcomeCounts, error) {
+	f.scopes = append(f.scopes, s)
+	f.since = since
+	return f.outcomes, nil
+}
+
+func (f *ctemFacts) OrgIntake(_ context.Context, tenantID shared.ID, since time.Time) ([]dashboard.IntakeRow, error) {
+	f.intakeTenants = append(f.intakeTenants, tenantID)
+	f.since = since
+	return f.intake, nil
+}
+
+func (f *ctemFacts) TopFix(_ context.Context, s dashboard.ReadScope) (*dashboard.FixLever, error) {
+	f.scopes = append(f.scopes, s)
+	return nil, nil
 }
 
 type fakePaths struct {

@@ -15,46 +15,51 @@ import { test, expect } from '../fixtures/authenticated-page'
 type Run = { status: string; triggered_by?: string; triggered_by_name?: string }
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
 
-test('a scan with a run in progress counts it and names who triggered it', async ({ page }) => {
-  test.setTimeout(180_000)
-  const list = page.waitForResponse(
-    (r) => new URL(r.url()).pathname === '/api/v1/scans' && r.ok(),
-    { timeout: 60_000 }
-  )
-  await page.goto('/scans')
-  const body = (await (await list).json()) as {
-    data?: Array<{ id: string }>
-    items?: Array<{ id: string }>
-  }
-  const scans = body.data ?? body.items ?? []
-
-  for (const scan of scans.slice(0, 10)) {
-    const runsRes = page.waitForResponse(
-      (r) => r.url().includes(`/api/v1/scans/${scan.id}/runs`) && r.ok(),
+test(
+  'a scan with a run in progress counts it and names who triggered it',
+  { tag: ['@scans'] },
+  async ({ page }) => {
+    test.setTimeout(180_000)
+    const list = page.waitForResponse(
+      (r) => new URL(r.url()).pathname === '/api/v1/scans' && r.ok(),
       { timeout: 60_000 }
     )
-    await page.goto(`/scans/${scan.id}`)
-    const runs = ((await (await runsRes).json()) as { data?: Run[] }).data ?? []
-    const active = runs.filter((r) => ['pending', 'queued', 'running'].includes(r.status))
-    if (active.length === 0) continue
+    await page.goto('/scans')
+    const body = (await (await list).json()) as {
+      data?: Array<{ id: string }>
+      items?: Array<{ id: string }>
+    }
+    const scans = body.data ?? body.items ?? []
 
-    // The "Runs" metric counts the in-progress runs (MetricStrip: a dt label
-    // and a dd holding the number and its hint).
-    const card = page
-      .locator('dl > div, dl > button')
-      .filter({ has: page.locator('dt', { hasText: /^Runs$/ }) })
-    await expect(card).toContainText(`${active.length} in progress`)
-    const totalText = await card.locator('dd span').first().innerText()
-    const total = Number(totalText.replace(/,/g, '').trim())
-    expect(total).toBeGreaterThanOrEqual(active.length)
+    for (const scan of scans.slice(0, 10)) {
+      const runsRes = page.waitForResponse(
+        (r) => r.url().includes(`/api/v1/scans/${scan.id}/runs`) && r.ok(),
+        { timeout: 60_000 }
+      )
+      await page.goto(`/scans/${scan.id}`)
+      const runs = ((await (await runsRes).json()) as { data?: Run[] }).data ?? []
+      const active = runs.filter((r) => ['pending', 'queued', 'running'].includes(r.status))
+      if (active.length === 0) continue
 
-    // No raw user id in the run history; a named trigger shows the name.
-    const history = page.getByRole('table')
-    await expect(history).toBeVisible()
-    await expect(history).not.toContainText(UUID)
-    const named = runs.find((r) => r.triggered_by_name)
-    if (named) await expect(history).toContainText(named.triggered_by_name!)
-    return
+      // The "Runs" metric counts the in-progress runs (MetricStrip: a label
+      // and a value holding the number and its hint). A tile is a link, a filter
+      // button or a plain cell, so find it by its slot.
+      const card = page
+        .locator('[data-slot="metric-strip"] > [data-slot="metric-tile"]')
+        .filter({ has: page.locator('[data-slot="metric-label"]', { hasText: /^Runs$/ }) })
+      await expect(card).toContainText(`${active.length} in progress`)
+      const totalText = await card.locator('[data-slot="metric-value"] span').first().innerText()
+      const total = Number(totalText.replace(/,/g, '').trim())
+      expect(total).toBeGreaterThanOrEqual(active.length)
+
+      // No raw user id in the run history; a named trigger shows the name.
+      const history = page.getByRole('table')
+      await expect(history).toBeVisible()
+      await expect(history).not.toContainText(UUID)
+      const named = runs.find((r) => r.triggered_by_name)
+      if (named) await expect(history).toContainText(named.triggered_by_name!)
+      return
+    }
+    test.skip(true, 'No scan with a run in progress')
   }
-  test.skip(true, 'No scan with a run in progress')
-})
+)

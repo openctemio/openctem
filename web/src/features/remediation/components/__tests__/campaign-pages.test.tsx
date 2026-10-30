@@ -7,6 +7,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { campaign, ownerNames } from './campaign-fixtures'
 import type { RemediationCampaign } from '../../api/use-remediation-campaigns'
 
@@ -95,7 +96,7 @@ beforeEach(() => {
 })
 
 describe('CampaignList', () => {
-  it('shows each campaign with its status, owner, tasks and a named progress bar', () => {
+  it('shows each campaign with its status, owner, tasks and a named progress bar', async () => {
     state.list = [
       campaign(),
       campaign({
@@ -127,10 +128,12 @@ describe('CampaignList', () => {
     ).toBeGreaterThan(0)
     expect(screen.getAllByText(/overdue/).length).toBeGreaterThan(0)
     expect(screen.getAllByText(/2 hidden/).length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Sam · Ops').length).toBeGreaterThan(0)
-    // Status counts come from the server, not from the page.
-    const filters = screen.getByRole('tablist', { name: 'Filter by status' })
-    expect(within(filters).getByRole('tab', { name: /Draft\s*1/ })).toBeInTheDocument()
+    expect(screen.getAllByText('Sam, Ops').length).toBeGreaterThan(0)
+    // The status is a filter token (no second tab row); its counts come from
+    // the server, not from the page.
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Status: All' }))
+    expect(await screen.findByRole('menuitemradio', { name: /Draft\s*1/ })).toBeInTheDocument()
   })
 
   it('offers "New campaign" in the empty state only with write access', () => {

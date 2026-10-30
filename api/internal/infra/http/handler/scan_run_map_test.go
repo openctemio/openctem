@@ -149,6 +149,42 @@ func TestRunMap_ComparesWithThePreviousRun(t *testing.T) {
 	}
 }
 
+// A step that did not finish its work (no sensor took it, it failed, timed
+// out or is still running) produced nothing to compare: the previous run's
+// assets are never shown as gone for it.
+func TestRunMap_UnfinishedStepsDoNotCompare(t *testing.T) {
+	prev := shared.NewID()
+	for _, st := range []scanrundom.StepRunStatus{
+		scanrundom.StepRunStatusFailed, scanrundom.StepRunStatusTimeout, scanrundom.StepRunStatusCanceled,
+		scanrundom.StepRunStatusSkipped, scanrundom.StepRunStatusRunning, scanrundom.StepRunStatusQueued,
+		scanrundom.StepRunStatusPending,
+	} {
+		step := mapStepRun("quick_scan", 1, st)
+		m := &scanrunapp.RunMap{
+			Run: &scanrundom.Run{ID: shared.NewID(), Status: scanrundom.RunStatusFailed,
+				StepRuns: []*scanrundom.StepRun{step}},
+			PreviousRunID: prev,
+			Deltas:        []scanrundom.StepOutputDelta{{StepKey: "quick_scan", Previous: 9, Gone: 9}},
+		}
+		got := toRunMapResponse(m)
+		if o := got.Nodes[0].Outputs; o.Previous != nil || o.Gone != nil || o.Added != nil {
+			t.Errorf("%s step compares with the previous run: %+v", st, o)
+		}
+		if got.PreviousRunID != prev.String() {
+			t.Errorf("%s: previous_run_id = %q", st, got.PreviousRunID)
+		}
+	}
+	partial := mapStepRun("quick_scan", 1, scanrundom.StepRunStatusPartial)
+	m := &scanrunapp.RunMap{
+		Run:           &scanrundom.Run{ID: shared.NewID(), Status: scanrundom.RunStatusPartial, StepRuns: []*scanrundom.StepRun{partial}},
+		PreviousRunID: prev,
+		Deltas:        []scanrundom.StepOutputDelta{{StepKey: "quick_scan", Previous: 9, Added: 1, Gone: 2}},
+	}
+	if o := toRunMapResponse(m).Nodes[0].Outputs; o.Gone == nil || *o.Gone != 2 {
+		t.Errorf("a partial step compares: %+v", o)
+	}
+}
+
 // The step whose outputs are listed is required, and the limit must be a
 // positive number,
 // before the run is even looked up.
@@ -160,5 +196,48 @@ func TestListRunStepOutputs_ValidatesTheQuery(t *testing.T) {
 		if rec.Code != http.StatusBadRequest {
 			t.Errorf("%q: code %d, want 400", q, rec.Code)
 		}
+	}
+}
+
+// A partial step's outcome reaches the map as values (hosts and reasons,
+// counts), read back from its JSONB output, so the console never shows the
+// English summary.
+func TestRunMap_StepOutcomeFromOutput(t *testing.T) {
+	out := stepOutcome(map[string]any{
+		"coverage_gap_count":      float64(3),
+		"coverage_gaps":           []any{map[string]any{"host": "a.example.com", "reason": "rate_floor"}, map[string]any{"reason": "blocked"}},
+		"unfinished_target_count": float64(2),
+		"skipped_target_count":    float64(1),
+	})
+	if out == nil || out.CoverageGapCount != 3 || len(out.CoverageGaps) != 1 || out.CoverageGaps[0].Host != "a.example.com" ||
+		out.Unfinished != 2 || out.Skipped != 1 {
+		t.Fatalf("outcome %+v", out)
+	}
+	if stepOutcome(map[string]any{"findings": float64(4)}) != nil {
+		t.Fatal("a step that did everything has no outcome")
+	}
+	if stepOutcome(nil) != nil {
+		t.Fatal("no output, no outcome")
+	}
+}
+
+// A retest that concluded "inconclusive" is a completed run and a succeeded
+// step carrying the result code, never a failed one with an error code.
+func TestRunMap_InconclusiveRetestIsSucceededWithResult(t *testing.T) {
+	sr := mapStepRun("retest", 1, scanrundom.StepRunStatusCompleted)
+	sr.Output = map[string]any{scanrunapp.StepOutputResultKind: "inconclusive", scanrunapp.StepOutputResultCode: "endpoint_mismatch"}
+	run := &scanrundom.Run{ID: shared.NewID(), Status: scanrundom.RunStatusCompleted, StepRuns: []*scanrundom.StepRun{sr},
+		Context: map[string]any{scanrunapp.RunContextResult: map[string]any{"kind": "inconclusive", "code": "endpoint_mismatch"}}}
+	got := toRunMapResponse(&scanrunapp.RunMap{Run: run})
+	n := got.Nodes[0]
+	if n.State != mapStateSucceeded || n.Reason != "" || n.ErrorClass != "" || n.Result == nil || n.Result.Code != "endpoint_mismatch" || n.Result.Kind != "inconclusive" {
+		t.Fatalf("node = %+v", n)
+	}
+	resp := toRunResponse(run)
+	if resp.Status != "completed" || resp.Result == nil || resp.Result.Kind != "inconclusive" {
+		t.Fatalf("run = %+v", resp)
+	}
+	if toRunResponse(&scanrundom.Run{ID: shared.NewID()}).Result != nil {
+		t.Fatal("a run without a result must not report one")
 	}
 }

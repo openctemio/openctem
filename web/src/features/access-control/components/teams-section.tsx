@@ -9,7 +9,6 @@ import {
   DataTableColumnHeader,
   DataTableRowActions,
   EmptyState,
-  MetricStrip,
 } from '@/features/shared'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -38,7 +37,10 @@ import {
 } from '@/features/access-control'
 import { GroupDetailSheet } from '@/features/access-control/components/group-detail-sheet'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { Can } from '@/lib/permissions'
+import { Can, useCanMutate, usePermissions } from '@/lib/permissions'
+import { setTeamAccess, useTeamPresetTemplates } from '../api/use-team-access'
+import { EMPTY_TEAM_ACCESS, TeamAccessFields, type TeamAccessValue } from './team-access-fields'
+import { confirmName } from '@/lib/confirm-name'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
 
@@ -65,7 +67,7 @@ export function TeamsSection({ header }: SectionProps) {
   const { mutate } = useSWRConfig()
 
   // API Hooks
-  const { groups, uniqueMemberCount, isLoading, isError, mutate: mutateGroups } = useGroups()
+  const { groups, isLoading, isError, mutate: mutateGroups } = useGroups()
   const { createGroup, isCreating } = useCreateGroup()
 
   // UI State
@@ -77,6 +79,14 @@ export function TeamsSection({ header }: SectionProps) {
     name: '',
     description: '',
   })
+  const [createAccess, setCreateAccess] = useState<TeamAccessValue>(EMPTY_TEAM_ACCESS)
+  // The Access section follows the route that sets it, so a person who cannot
+  // set access is not offered it.
+  const canSetAccess = useCanMutate('PUT /api/v1/groups/{groupId}/access')
+  const { isOwner } = usePermissions()
+  const { templates: presetTemplates, isLoading: presetsLoading } = useTeamPresetTemplates({
+    skip: !createDialogOpen || !canSetAccess,
+  })
 
   // Delete hook - need to pass groupId
   const { deleteGroup, isDeleting } = useDeleteGroup(groupToDelete?.id || null)
@@ -85,10 +95,6 @@ export function TeamsSection({ header }: SectionProps) {
   const refreshData = useCallback(() => {
     mutateGroups()
   }, [mutateGroups])
-
-  // Calculate stats
-  const totalGroups = groups.length
-  const totalAssets = groups.reduce((acc, g) => acc + (g.asset_count ?? 0), 0)
 
   // Table columns
   const columns: ColumnDef<Group>[] = [
@@ -181,7 +187,7 @@ export function TeamsSection({ header }: SectionProps) {
     }
 
     try {
-      await createGroup({
+      const created = await createGroup({
         slug: generateSlug(createForm.name),
         name: createForm.name,
         description: createForm.description || undefined,
@@ -191,6 +197,28 @@ export function TeamsSection({ header }: SectionProps) {
       setCreateDialogOpen(false)
       setCreateForm({ name: '', description: '' })
       refreshData()
+      // The team exists even if its access cannot be set: say so and leave the
+      // rest to the team's Access tab.
+      const createdId = (created as unknown as { id?: string } | undefined)?.id
+      if (createdId && (createAccess.presets.length > 0 || createAccess.scopeMode !== 'specific')) {
+        try {
+          await setTeamAccess(createdId, {
+            presets: createAccess.presets,
+            scope_mode: createAccess.scopeMode,
+          })
+        } catch (accessError) {
+          toast.error(
+            getErrorMessage(
+              accessError,
+              t(
+                'org.teams.accessFailed',
+                'The team was created but its access was not saved. Set it on the team.'
+              )
+            )
+          )
+        }
+      }
+      setCreateAccess(EMPTY_TEAM_ACCESS)
     } catch (error) {
       toast.error(getErrorMessage(error, t('org.teams.createFailed', 'Failed to create team')))
     }
@@ -230,7 +258,7 @@ export function TeamsSection({ header }: SectionProps) {
       )}
 
       {isError && !isLoading ? (
-        <Alert variant="destructive" className="mt-5">
+        <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>{t('org.teams.loadFailedTitle', 'Failed to load teams')}</AlertTitle>
           <AlertDescription>
@@ -243,25 +271,7 @@ export function TeamsSection({ header }: SectionProps) {
         </Alert>
       ) : (
         <>
-          <MetricStrip
-            className="mt-5"
-            loading={isLoading}
-            items={[
-              { key: 'teams', label: t('org.teams.metric.teams', 'Teams'), value: totalGroups },
-              {
-                key: 'members',
-                label: t('org.teams.metric.members', 'Members'),
-                value: uniqueMemberCount,
-              },
-              {
-                key: 'assets',
-                label: t('org.teams.metric.assets', 'Assigned assets'),
-                value: totalAssets,
-              },
-            ]}
-          />
-
-          <div className="mt-5">
+          <div>
             {isLoading ? (
               <div className="space-y-2">
                 <Skeleton className="h-9 w-full max-w-sm" />
@@ -291,7 +301,7 @@ export function TeamsSection({ header }: SectionProps) {
                 columns={columns}
                 data={groups}
                 getRowId={(g) => g.id}
-                searchPlaceholder={t('org.teams.searchPlaceholder', 'Search teams...')}
+                searchPlaceholder={t('org.teams.searchPlaceholder', 'Search teams…')}
                 onRowClick={(g) => setSelectedGroupId(g.id)}
                 showColumnToggle={false}
                 emptyMessage={t('org.teams.noMatch', 'No teams match your search')}
@@ -301,7 +311,7 @@ export function TeamsSection({ header }: SectionProps) {
 
           {/* Members in no team see nothing (owner decision D2); there is
               no per-organization "see everything" switch. */}
-          <p className="mt-5 text-sm text-muted-foreground" data-testid="no-team-access-note">
+          <p className="text-sm text-muted-foreground" data-testid="no-team-access-note">
             {t(
               'org.teams.noTeamNote',
               'Members who are in no team see no assets or findings until you add them to a team or grant them an asset. Owners, admins and roles with full data access see everything.'
@@ -320,7 +330,7 @@ export function TeamsSection({ header }: SectionProps) {
 
       {/* Create Group Dialog */}
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-        <DialogContent size="sm">
+        <DialogContent size="lg">
           <DialogHeader>
             <DialogTitle>{t('org.teams.createTeam', 'Create team')}</DialogTitle>
             <DialogDescription>
@@ -358,6 +368,21 @@ export function TeamsSection({ header }: SectionProps) {
                   rows={3}
                 />
               </div>
+
+              {canSetAccess && (
+                <div className="space-y-2 border-t pt-4">
+                  <h3 className="text-sm font-semibold">{t('org.teamAccess.title', 'Access')}</h3>
+                  <TeamAccessFields
+                    idPrefix="create-team"
+                    templates={presetTemplates}
+                    loading={presetsLoading}
+                    value={createAccess}
+                    onChange={setCreateAccess}
+                    canSetAllAssets={isOwner()}
+                    disabled={isCreating}
+                  />
+                </div>
+              )}
             </div>
           </DialogBody>
 
@@ -403,6 +428,9 @@ export function TeamsSection({ header }: SectionProps) {
           </>
         }
         isLoading={isDeleting}
+        typeToConfirm={
+          groupToDelete ? confirmName(groupToDelete.name, groupToDelete.id) : undefined
+        }
         handleConfirm={handleDeleteGroup}
       />
     </>

@@ -12,7 +12,7 @@ diagrams per path) is "Air-gapped installs" on https://docs.openctem.io.
 
 | Artifact | Signed by (keyless, issuer `https://token.actions.githubusercontent.com`) | Check |
 |---|---|---|
-| Images (`openctem-api`, `-web`, `-console`, `-gateway`, `migrations`, `seed`, `admin-cli`, all-in-one `openctem`) | `https://github.com/openctemio/openctem/.github/workflows/docker-publish.yml@refs/tags/<version>`, plus SLSA provenance and an SPDX SBOM attestation | `cosign verify`, `cosign verify-attestation` |
+| Images (`openctem-api`, `-web`, `-console`, `-gateway`, `migrations`, `seed`, all-in-one `openctem`) | `https://github.com/openctemio/openctem/.github/workflows/docker-publish.yml@refs/tags/<version>`, plus SLSA provenance and an SPDX SBOM attestation | `cosign verify`, `cosign verify-attestation` |
 | Release files (`checksums-sha256.txt` covers every archive and SBOM) | `.../release.yml@refs/tags/<version>`, plus SLSA provenance per archive | `cosign verify-blob`, `sha256sum -c`, `gh attestation verify` |
 | Offline image bundle list (`openctem-images-<version>.txt`) | `.../docker-publish.yml@refs/tags/<version>` | `cosign verify-blob` |
 
@@ -161,7 +161,7 @@ and `HTTPS_PROXY` is not used.
 
 | Feed | Offline path today | If absent |
 |---|---|---|
-| Vulnerability catalog (vulnfeed: CVE/NVD/OSV, emerging vulnerabilities) | signed bundles from `VULNFEED_BASE_URL`/`VULNFEED_MIRRORS` (a raw proxy) or files in `VULNFEED_BUNDLE_DIR`; needs `VULNFEED_ROOT_KEY_ID` and the source enabled | catalog and inventory matching go stale (status turns stale after 3 days) |
+| Vulnerability catalog (vulnfeed: CVE/NVD/OSV, emerging vulnerabilities) | signed bundles from `VULNFEED_BASE_URL`/`VULNFEED_MIRRORS` (a raw proxy) or files in `VULNFEED_BUNDLE_DIR`; verified against the pinned official root key id (`VULNFEED_ROOT_KEY_ID` overrides it); the source is on by default | catalog and inventory matching go stale (status turns stale after 3 days) |
 | Public program feed (programfeed) | `PROGRAMFEED_URL`/`PROGRAMFEED_MIRRORS`, or a bundle in `PROGRAMFEED_DIR` | no public program catalog |
 | Content catalog, content packs, scanner templates | admin import endpoints (content catalog needs `CONTENT_TRUST_ROOT_KEY_IDS`); template sources in internal git/S3 | |
 | Sensor scanner content (nuclei, trivy, opengrep) | sensor-side local mirror or directory | sensor health shows stale content |

@@ -3,6 +3,7 @@
 import { useState, useMemo, useCallback } from 'react'
 import type { ColumnDef, SortingState } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import {
   PageHeader,
   DataTable,
@@ -17,9 +18,9 @@ import {
   DetailSection,
   DetailSections,
   DetailSheet,
+  PageStack,
 } from '@/features/shared'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -31,7 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Search as SearchIcon, RefreshCw, AlertCircle, ShieldX, Copy, Download } from 'lucide-react'
+import { RefreshCw, AlertCircle, ShieldX, Copy, Download } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -62,7 +63,7 @@ import { humanizeIdentifier } from '@/lib/humanize-identifier'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import { useTranslation } from '@/context/i18n-provider'
 import { ApiClientError } from '@/lib/api/error-handler'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
 
@@ -150,7 +151,7 @@ export default function AuditLogPage() {
   const { pagination, setPagination, setPage } = list
   const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null)
 
-  const debouncedSearch = useDebounce(searchTerm, 300)
+  const debouncedSearch = useSearchQuery(searchTerm).term
 
   // `sort=field:dir` in the URL ↔ the table's sorting state.
   const sorting = useMemo<SortingState>(() => {
@@ -205,6 +206,8 @@ export default function AuditLogPage() {
   const { stats, isLoading: statsLoading } = useAuditStats(!needsFullData)
   // The export carries the filters the list shows; paging and sort do not apply.
   const { run: runExport, isExporting } = useAuditExport(activeFilters)
+  // The file holds members' emails and IP addresses, so a format pick asks first.
+  const [pendingExport, setPendingExport] = useState<'csv' | 'jsonl' | null>(null)
 
   const columns = useMemo<ColumnDef<AuditLog>[]>(
     () => [
@@ -291,19 +294,20 @@ export default function AuditLogPage() {
   if (!hasAuditPermission) {
     return (
       <Main>
-        <PageHeader
-          title={t('auditLog.title', 'Audit log')}
-          description={t('auditLog.description', 'Activity history and security events.')}
-        />
-        <EmptyState
-          className="mt-5"
-          icon={ShieldX}
-          title={t('auditLog.denied.title', 'Access denied')}
-          description={t(
-            'auditLog.denied.description',
-            "You don't have permission to view audit logs. Ask your administrator for access."
-          )}
-        />
+        <PageStack>
+          <PageHeader
+            title={t('auditLog.title', 'Audit log')}
+            description={t('auditLog.description', 'Activity history and security events.')}
+          />
+          <EmptyState
+            icon={ShieldX}
+            title={t('auditLog.denied.title', 'Access denied')}
+            description={t(
+              'auditLog.denied.description',
+              "You don't have permission to view audit logs. Ask your administrator for access."
+            )}
+          />
+        </PageStack>
       </Main>
     )
   }
@@ -322,19 +326,6 @@ export default function AuditLogPage() {
 
   const toolbarStart = (
     <>
-      <div className="relative min-w-0 flex-1 sm:max-w-sm">
-        <SearchIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder={t('auditLog.search.placeholder', 'Search by actor, action, resource...')}
-          value={searchTerm}
-          onChange={(e) => {
-            setSearchTerm(e.target.value)
-            setPage(1)
-          }}
-          className="ps-9"
-          aria-label={t('auditLog.search.label', 'Search audit log')}
-        />
-      </div>
       <Select
         value={resultFilter ?? 'all'}
         onValueChange={(value) => {
@@ -420,10 +411,10 @@ export default function AuditLogPage() {
                 'Exports the events that match the current filters, newest first.'
               )}
             </DropdownMenuLabel>
-            <DropdownMenuItem onSelect={() => void runExport('csv')}>
+            <DropdownMenuItem onSelect={() => setPendingExport('csv')}>
               {t('auditLog.export.csv', 'CSV')}
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => void runExport('jsonl')}>
+            <DropdownMenuItem onSelect={() => setPendingExport('jsonl')}>
               {t('auditLog.export.jsonl', 'JSON lines')}
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -444,43 +435,33 @@ export default function AuditLogPage() {
   return (
     <>
       <Main>
-        <PageHeader
-          title={t('auditLog.title', 'Audit log')}
-          description={t('auditLog.description', 'Activity history and security events.')}
-        />
-
-        {!needsFullData && (
-          <MetricStrip
-            className="mt-5"
-            loading={statsLoading}
-            items={[
-              {
-                key: 'total',
-                label: t('auditLog.stat.total', 'Events (7 days)'),
-                value: stats?.total_logs ?? 0,
-              },
-              {
-                key: 'success',
-                label: t('auditLog.stat.success', 'Successful'),
-                value: stats?.logs_by_result?.success ?? 0,
-              },
-              {
-                key: 'failure',
-                label: t('auditLog.stat.failed', 'Failed'),
-                value: stats?.logs_by_result?.failure ?? 0,
-                tone: 'danger',
-              },
-              {
-                key: 'denied',
-                label: t('auditLog.stat.denied', 'Denied'),
-                value: stats?.logs_by_result?.denied ?? 0,
-                tone: 'danger',
-              },
-            ]}
+        <PageStack>
+          <PageHeader
+            title={t('auditLog.title', 'Audit log')}
+            description={t('auditLog.description', 'Activity history and security events.')}
           />
-        )}
 
-        <div className="mt-5">
+          {!needsFullData && (
+            <MetricStrip
+              loading={statsLoading}
+              items={(['failure', 'denied'] as const).map((r) => ({
+                key: r,
+                label:
+                  r === 'failure'
+                    ? t('auditLog.stat.failed', 'Failed')
+                    : t('auditLog.stat.denied', 'Denied'),
+                value: stats?.logs_by_result?.[r] ?? 0,
+                hint: t('auditLog.stat.window', 'last 7 days'),
+                tone: 'danger' as const,
+                active: resultFilter === r,
+                onClick: () => {
+                  setResultParam(resultFilter === r ? 'all' : r)
+                  setPage(1)
+                },
+              }))}
+            />
+          )}
+
           {needsFullData ? (
             <EmptyState
               icon={ShieldX}
@@ -516,6 +497,15 @@ export default function AuditLogPage() {
               data={logs}
               getRowId={(log) => log.id}
               showSearch={false}
+              search={{
+                value: searchTerm,
+                onChange: (v) => {
+                  setSearchTerm(v)
+                  setPage(1)
+                },
+                placeholder: t('auditLog.search.placeholder', 'Search by actor, action, resource…'),
+                label: t('auditLog.search.label', 'Search audit log'),
+              }}
               showColumnToggle={false}
               toolbarStart={toolbarStart}
               toolbarEnd={toolbarEnd}
@@ -538,7 +528,7 @@ export default function AuditLogPage() {
               }
             />
           )}
-        </div>
+        </PageStack>
       </Main>
 
       {/* Audit Log Detail Sheet */}
@@ -698,6 +688,27 @@ export default function AuditLogPage() {
           </DetailSections>
         </DetailSheet>
       )}
+      <ConfirmDialog
+        open={pendingExport !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingExport(null)
+        }}
+        title={t('auditLog.export.confirmTitle', 'Export the audit log?')}
+        desc={t(
+          'auditLog.export.confirmDesc',
+          "The file lists the events that match the current filters, newest first, with members' emails and IP addresses. Keep it where only people who may see them can read it. You may be asked to verify it's you."
+        )}
+        confirmText={
+          pendingExport === 'jsonl'
+            ? t('auditLog.export.confirmJsonl', 'Export JSON lines')
+            : t('auditLog.export.confirmCsv', 'Export CSV')
+        }
+        handleConfirm={async () => {
+          const format = pendingExport
+          setPendingExport(null)
+          if (format) await runExport(format)
+        }}
+      />
     </>
   )
 }

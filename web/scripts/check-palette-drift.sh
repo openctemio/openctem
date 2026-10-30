@@ -170,7 +170,9 @@ stripe_fail=$((stripe_fail || label_fail))
 #   (f) put state text on its own tint (text-success on bg-success/10 fails AA);
 #   (g) hand-pick a hex colour (bg-[#…], style={{ color: '#…' }}, fill="#…").
 # Annotate a real exception with `label-ok: <reason>`.
-SYS_ALLOW='^(web/)?src/(components/ui/|lib/[a-z-]*-colors[.]ts$|styles/)|(__tests__/|[.]test[.]tsx?$)'
+# The generated brand artwork (src/assets/brand-data.generated.ts) is the logo's own SVG
+# drawings as strings, so their fill colours are the brand, not styling.
+SYS_ALLOW='^(web/)?src/(components/ui/|lib/[a-z-]*-colors[.]ts$|styles/|assets/brand-data[.]generated[.]ts$)|(__tests__/|[.]test[.]tsx?$)'
 SEMANTIC='(primary|secondary|accent|destructive|warning|success|info|muted|foreground|background|card|signal|brand|sev-[a-z]+|st-[a-z]+-[a-z]+|hl-[a-z]+|prio-[0-9])'
 BADGE_COLOUR="\\b(bg|text|border|ring)-(${SEMANTIC}|${PALETTE}-[0-9]{2,3})\\b"
 TAB="$(printf '\t')"

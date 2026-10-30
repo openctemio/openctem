@@ -143,6 +143,13 @@ source passed its TTL moves on with reason `ttl_expiry` without waiting for
 the next report. Events cascade with the asset (tenant deletion erases
 them) and move with it in a merge.
 
+A person's edit saves the asset row and then records the lock; the apply
+receives the value shown before the edit (`AttributeApply.Prior`), so the
+event, the history row and the rescore read the change from that value. The
+first edit of a value no source ever decided, and a second edit by the same
+person, are entries like any other. The edit path records the exposure
+history row only through this apply (once, with the person).
+
 ## Who writes observations
 
 ```

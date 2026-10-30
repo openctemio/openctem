@@ -13,6 +13,7 @@ import { useTenant } from '@/context/tenant-provider'
 import { useAccessRequests } from '@/features/mcp-oauth/api/access-requests'
 import {
   revokeOrgConnection,
+  scopeOrgConnection,
   useMcpPolicy,
   useOrgConnections,
 } from '@/features/mcp-oauth/api/connections'
@@ -24,9 +25,9 @@ import { McpPolicyCard } from '@/features/mcp-oauth/components/mcp-policy-card'
 import { McpStatusStrip } from '@/features/mcp-oauth/components/mcp-status-strip'
 import { OrgClientsCard } from '@/features/mcp-oauth/components/org-clients-card'
 import { UnverifiedAppsCard } from '@/features/mcp-oauth/components/unverified-apps-card'
-import { PageHeader } from '@/features/shared'
+import { PageHeader, PageStack } from '@/features/shared'
 import { useUrlFilter } from '@/hooks/use-url-param'
-import { Can, Permission, useHasPermission } from '@/lib/permissions'
+import { Can, Permission, useCanMutate, useHasPermission } from '@/lib/permissions'
 
 type TabId = 'connect' | 'applications' | 'connections' | 'policy'
 
@@ -44,7 +45,7 @@ export default function MCPSettingsPage() {
   const { currentTenant } = useTenant()
   const isOrgAdmin = currentTenant?.role === 'owner' || currentTenant?.role === 'admin'
   const canReadPolicy = useHasPermission(Permission.SettingsRead)
-  const canWritePolicy = useHasPermission(Permission.SettingsWrite)
+  const canWritePolicy = useCanMutate('PUT /api/v1/mcp-access/settings')
   const policy = useMcpPolicy(canReadPolicy)
   const requests = useAccessRequests(canReadPolicy)
   const orgConnections = useOrgConnections(isOrgAdmin)
@@ -81,106 +82,107 @@ export default function MCPSettingsPage() {
 
   return (
     <Main>
-      <PageHeader
-        title={t('mcp.page.title', 'AI assistants (MCP)')}
-        description={t(
-          'mcp.page.description',
-          'Let AI assistants work with this organization’s data, as the person who connects them and never beyond what that person can see.'
-        )}
-      >
-        <Can route="POST /api/v1/api-keys">
-          <Button size="sm" variant="outline" onClick={() => setKeyDialogOpen(true)}>
-            <KeyRound className="me-2 h-4 w-4" aria-hidden />
-            {t('mcp.key.generate', 'Generate key')}
-          </Button>
-        </Can>
-      </PageHeader>
+      <PageStack>
+        <PageHeader
+          title={t('mcp.page.title', 'AI assistants (MCP)')}
+          description={t(
+            'mcp.page.description',
+            'Let AI assistants work with this organization’s data, as the person who connects them and never beyond what that person can see.'
+          )}
+        >
+          <Can route="POST /api/v1/api-keys">
+            <Button size="sm" variant="outline" onClick={() => setKeyDialogOpen(true)}>
+              <KeyRound className="me-2 h-4 w-4" aria-hidden />
+              {t('mcp.key.generate', 'Generate key')}
+            </Button>
+          </Can>
+        </PageHeader>
 
-      {policy.data && (
-        <div className="mt-3">
-          <McpStatusStrip policy={policy.data} />
-        </div>
-      )}
+        {policy.data && <McpStatusStrip policy={policy.data} />}
 
-      {available.length === 1 ? (
-        <div className="mt-5">{connect}</div>
-      ) : (
-        <Tabs value={tab} onValueChange={setTab} className="mt-5">
-          <TabsList>
-            <TabsTrigger value="connect">{t('mcp.tabs.connect', 'Connect')}</TabsTrigger>
+        {available.length === 1 ? (
+          connect
+        ) : (
+          <Tabs value={tab} onValueChange={setTab}>
+            <TabsList>
+              <TabsTrigger value="connect">{t('mcp.tabs.connect', 'Connect')}</TabsTrigger>
+              {available.includes('applications') && (
+                <TabsTrigger value="applications">
+                  {t('mcp.tabs.applications', 'Applications')}
+                  {pendingCount > 0 && <TabsCount value={pendingCount} />}
+                </TabsTrigger>
+              )}
+              {available.includes('connections') && (
+                <TabsTrigger value="connections">
+                  {t('mcp.tabs.connections', 'Connections')}
+                </TabsTrigger>
+              )}
+              {available.includes('policy') && (
+                <TabsTrigger value="policy">{t('mcp.tabs.policy', 'Policy')}</TabsTrigger>
+              )}
+            </TabsList>
+
+            <TabsContent value="connect">{connect}</TabsContent>
+
             {available.includes('applications') && (
-              <TabsTrigger value="applications">
-                {t('mcp.tabs.applications', 'Applications')}
-                {pendingCount > 0 && <TabsCount value={pendingCount} />}
-              </TabsTrigger>
+              <TabsContent value="applications">
+                <PageStack>
+                  <AccessRequestsCard canEdit={canWritePolicy} />
+                  {policy.data ? (
+                    <ApprovedPublishersCard policy={policy.data} canEdit={canWritePolicy} />
+                  ) : (
+                    policyLoading
+                  )}
+                  <OrgClientsCard canEdit={canWritePolicy} />
+                  {policy.data && (
+                    <UnverifiedAppsCard policy={policy.data} canEdit={canWritePolicy} />
+                  )}
+                </PageStack>
+              </TabsContent>
             )}
+
             {available.includes('connections') && (
-              <TabsTrigger value="connections">
-                {t('mcp.tabs.connections', 'Connections')}
-              </TabsTrigger>
+              <TabsContent value="connections">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>{t('mcp.connections.orgTitle', 'Connected applications')}</CardTitle>
+                    <CardDescription>
+                      {t(
+                        'mcp.connections.orgDescription',
+                        'Every AI application a member connected. Disconnecting one ends its access at once.'
+                      )}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ConnectionsList
+                      connections={orgConnections.data?.data}
+                      isLoading={orgConnections.isLoading}
+                      showUser
+                      onRevoke={revokeOrgConnection}
+                      onScope={scopeOrgConnection}
+                      emptyTitle={t('mcp.connections.emptyTitle', 'No connected applications')}
+                      emptyDescription={t(
+                        'mcp.connections.orgEmpty',
+                        'When a member connects an AI assistant, it appears here.'
+                      )}
+                    />
+                  </CardContent>
+                </Card>
+              </TabsContent>
             )}
+
             {available.includes('policy') && (
-              <TabsTrigger value="policy">{t('mcp.tabs.policy', 'Policy')}</TabsTrigger>
+              <TabsContent value="policy">
+                {policy.data ? (
+                  <McpPolicyCard policy={policy.data} canEdit={canWritePolicy} />
+                ) : (
+                  policyLoading
+                )}
+              </TabsContent>
             )}
-          </TabsList>
-
-          <TabsContent value="connect" className="mt-5">
-            {connect}
-          </TabsContent>
-
-          {available.includes('applications') && (
-            <TabsContent value="applications" className="mt-5 space-y-5">
-              <AccessRequestsCard canEdit={canWritePolicy} />
-              {policy.data ? (
-                <ApprovedPublishersCard policy={policy.data} canEdit={canWritePolicy} />
-              ) : (
-                policyLoading
-              )}
-              <OrgClientsCard canEdit={canWritePolicy} />
-              {policy.data && <UnverifiedAppsCard policy={policy.data} canEdit={canWritePolicy} />}
-            </TabsContent>
-          )}
-
-          {available.includes('connections') && (
-            <TabsContent value="connections" className="mt-5">
-              <Card>
-                <CardHeader>
-                  <CardTitle>{t('mcp.connections.orgTitle', 'Connected applications')}</CardTitle>
-                  <CardDescription>
-                    {t(
-                      'mcp.connections.orgDescription',
-                      'Every AI application a member connected. Disconnecting one ends its access at once.'
-                    )}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <ConnectionsList
-                    connections={orgConnections.data?.data}
-                    isLoading={orgConnections.isLoading}
-                    showUser
-                    onRevoke={revokeOrgConnection}
-                    emptyTitle={t('mcp.connections.emptyTitle', 'No connected applications')}
-                    emptyDescription={t(
-                      'mcp.connections.orgEmpty',
-                      'When a member connects an AI assistant, it appears here.'
-                    )}
-                  />
-                </CardContent>
-              </Card>
-            </TabsContent>
-          )}
-
-          {available.includes('policy') && (
-            <TabsContent value="policy" className="mt-5">
-              {policy.data ? (
-                <McpPolicyCard policy={policy.data} canEdit={canWritePolicy} />
-              ) : (
-                policyLoading
-              )}
-            </TabsContent>
-          )}
-        </Tabs>
-      )}
+          </Tabs>
+        )}
+      </PageStack>
     </Main>
   )
 }

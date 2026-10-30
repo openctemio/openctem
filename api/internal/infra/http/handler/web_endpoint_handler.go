@@ -124,7 +124,7 @@ func webEndpointCaller(r *http.Request) webendpointapp.Caller {
 	ctx := r.Context()
 	return webendpointapp.Caller{
 		TenantID: middleware.MustGetTenantID(ctx), UserID: middleware.GetUserID(ctx),
-		IsAdmin: middleware.IsAdmin(ctx), APIKey: middleware.IsDelegatedCredential(ctx),
+		IsAdmin: middleware.IsAdmin(ctx), APIKey: middleware.ReadsOnOwnScope(ctx),
 	}
 }
 
@@ -168,7 +168,7 @@ func (h *WebEndpointHandler) writeList(w http.ResponseWriter, r *http.Request, s
 // List handles GET /api/v1/web-endpoints
 // @Summary      List web endpoints
 // @Description  The endpoints (method + path template) web origins serve, across the tenant's origin assets the
-// @Description  caller may see. Filters follow the list query contract (RFC-048). Values are scan output: render as text.
+// @Description  caller may see. Filters follow the list query contract. Values are scan output: render as text.
 // @Tags         Web Surface
 // @Produce      json
 // @Security     BearerAuth
@@ -186,7 +186,7 @@ func (h *WebEndpointHandler) writeList(w http.ResponseWriter, r *http.Request, s
 // @Param  state  query  []string  false  "state: any of (comma list)"  collectionFormat(csv)  Enums(active, gone, ignored)
 // @Param  state_not  query  []string  false  "state: none of (comma list)"  collectionFormat(csv)  Enums(active, gone, ignored)
 // @Param  in_scope  query  boolean  false  "in scope equals"
-// @Param  source  query  []string  false  "source: any of (comma list)"  collectionFormat(csv)  Enums(crawl, js, sitemap, robots, spec, har, archive, dast, probe)
+// @Param  source  query  []string  false  "source: any of (comma list)"  collectionFormat(csv)  Enums(crawl, js, sitemap, robots, spec, har, archive, dast, probe, import)
 // @Param  label  query  []string  false  "label: any of (comma list)"  collectionFormat(csv)
 // @Param  catalog_key  query  []string  false  "catalog key: any of (comma list)"  collectionFormat(csv)
 // @Param  catalog_key_not  query  []string  false  "catalog key: none of (comma list)"  collectionFormat(csv)
@@ -282,7 +282,7 @@ func (h *WebEndpointHandler) ListByAsset(w http.ResponseWriter, r *http.Request)
 // @Param  state  query  []string  false  "state: any of (comma list)"  collectionFormat(csv)  Enums(active, gone, ignored)
 // @Param  state_not  query  []string  false  "state: none of (comma list)"  collectionFormat(csv)  Enums(active, gone, ignored)
 // @Param  in_scope  query  boolean  false  "in scope equals"
-// @Param  source  query  []string  false  "source: any of (comma list)"  collectionFormat(csv)  Enums(crawl, js, sitemap, robots, spec, har, archive, dast, probe)
+// @Param  source  query  []string  false  "source: any of (comma list)"  collectionFormat(csv)  Enums(crawl, js, sitemap, robots, spec, har, archive, dast, probe, import)
 // @Param  label  query  []string  false  "label: any of (comma list)"  collectionFormat(csv)
 // @Param  catalog_key  query  []string  false  "catalog key: any of (comma list)"  collectionFormat(csv)
 // @Param  catalog_key_not  query  []string  false  "catalog key: none of (comma list)"  collectionFormat(csv)

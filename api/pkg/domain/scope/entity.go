@@ -239,6 +239,8 @@ type Exclusion struct {
 	// web is the path rule of a `path` exclusion (web_rule.go).
 	web    *WebRule
 	origin Origin
+	// kind is why it is out of scope (exclusion_kind.go).
+	kind ExclusionKind
 }
 
 // NewExclusion creates a new scope exclusion awaiting approval (TakeEffect
@@ -257,6 +259,11 @@ func NewExclusion(
 
 	if !exclusionType.IsValid() {
 		return nil, ErrInvalidExclusionType
+	}
+	if exclusionType != ExclusionTypePath {
+		if err := ValidateExclusionPattern(exclusionType, pattern); err != nil {
+			return nil, err
+		}
 	}
 
 	if reason == "" {

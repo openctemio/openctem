@@ -106,6 +106,10 @@ func (m *mockSLARepo) Delete(_ context.Context, tenantID, id shared.ID) error {
 	return nil
 }
 
+func (m *mockSLARepo) HasAssetOverride(_ context.Context, _ shared.ID) (bool, error) {
+	return false, nil
+}
+
 func (m *mockSLARepo) ListByTenant(_ context.Context, tenantID shared.ID) ([]*sladom.Policy, error) {
 	if m.listErr != nil {
 		return nil, m.listErr

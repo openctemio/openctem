@@ -1,5 +1,7 @@
 'use client'
 
+import { FindingTitleCell } from '@/features/findings/components/cells/finding-title-cell'
+import { findingLocation } from '@/features/findings/lib/finding-location'
 import * as React from 'react'
 import Link from '@/components/link'
 import {
@@ -27,6 +29,7 @@ import { SEVERITY_BADGE_SOFT, SEVERITY_TEXT_COLORS } from '@/lib/severity-colors
 import { SEVERITY_LEVELS, normalizeSeverity } from '@/lib/severity'
 
 import type { Asset, AssetFinding } from '../types/asset.types'
+import { assetFindingsHref } from './service-cells/open-findings-link'
 import type { FindingStatus } from '@/features/findings/types'
 import { useFindingsApi } from '@/features/findings/api/use-findings-api'
 import type { ApiFinding } from '@/features/findings/api/finding-api.types'
@@ -88,6 +91,7 @@ function mapApiFinding(f: ApiFinding): TabFinding {
     description: f.description || f.message,
     assetId: f.asset_id,
     assetName: f.asset?.name || '',
+    place: findingLocation(f).detail,
     assetType: (f.asset?.type as AssetFinding['assetType']) || 'host',
     cveId: f.cve_id,
     cvssScore: f.cvss_score,
@@ -229,10 +233,14 @@ export function AssetFindings({
                   aria-label={t(`severity.${finding.severity}`, finding.severity)}
                 />
                 <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h4 className="text-sm font-medium break-words">{finding.title}</h4>
-                    <FindingStatusBadge status={finding.status} />
-                  </div>
+                  {/* The asset is this page: the target line is the place on it. */}
+                  <FindingTitleCell
+                    className="text-sm"
+                    titleLines={2}
+                    title={finding.title}
+                    target={finding.place}
+                    chips={<FindingStatusBadge status={finding.status} />}
+                  />
                   {finding.description && finding.description !== finding.title && (
                     <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
                       {finding.description}
@@ -275,9 +283,10 @@ export function AssetFindings({
       {/* View All Link */}
       <DetailSheetFooter>
         <Button asChild variant="outline" className="w-full">
-          <Link href={`/findings?asset_id=${assetId}`}>
+          {/* The same open set as the count, so the list it opens shows that number. */}
+          <Link href={assetFindingsHref(assetId)}>
             <FileWarning className="me-2 h-4 w-4" />
-            {t('assets.findings.viewAll', 'View all findings ({count})', {
+            {t('assets.findings.viewOpen', 'View {count} open findings', {
               count: findingCount ?? response?.total ?? findings.length,
             })}
             <ChevronRight className="ms-2 h-4 w-4" />

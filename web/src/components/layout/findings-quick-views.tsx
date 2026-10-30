@@ -34,6 +34,7 @@ export function FindingsQuickViews() {
   const { data } = useFindingQuickViews(onList)
   if (!onList) return null
   const views = knownQuickViews(data?.views)
+  const include = data?.include_informational ?? false
   return (
     <NavQuickViewList
       label={t('findings.quickView.nav', 'Findings views')}
@@ -41,10 +42,11 @@ export function FindingsQuickViews() {
       views={views.map((v) => ({
         key: v.key,
         label: t(quickViewLabelKey(v.key), QUICK_VIEW_LABELS[v.key as QuickViewKey]),
-        href: quickViewHref(v.params),
+        href: quickViewHref(v.params, include),
         count: v.count,
-        active: quickViewIsActive(search, v),
+        active: quickViewIsActive(search, v, include),
         danger: v.key === 'sla_breached',
+        pin: { kind: 'quick_view' as const, ref: v.key },
       }))}
     />
   )

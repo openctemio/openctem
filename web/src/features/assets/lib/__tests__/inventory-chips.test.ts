@@ -25,6 +25,17 @@ const chipsOf = (qs: string) =>
   inventoryChips(parseInventoryFilters(new URLSearchParams(qs)), ctx())
 
 describe('inventoryChips', () => {
+  it('shows the resolution filter as a chip that clears alone', () => {
+    const chips = chipsOf('resolution=not_resolving&has_owner=false')
+    expect(chips.map((c) => c.text)).toContain('Resolution: not resolving')
+    const chip = chips.find((c) => c.key === 'resolution')!
+    const left = chip.clear(
+      parseInventoryFilters(new URLSearchParams('resolution=not_resolving&has_owner=false'))
+    )
+    expect(left.resolution).toBeUndefined()
+    expect(left.hasOwner).toBe(false)
+  })
+
   it('reads facets as sentences with their labels', () => {
     const texts = chipsOf(
       'types=subdomain,service&criticalities=critical,high&business_unit_ids=bu-1&internet_facing=true&has_owner=false'
@@ -45,7 +56,7 @@ describe('inventoryChips', () => {
     expect(texts).toEqual(
       expect.arrayContaining([
         'Crown jewels',
-        'Has findings',
+        'Has open findings',
         'Risk score at least 70',
         'No successful scan in 30 days',
         'Tag is prod, pci',

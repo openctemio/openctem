@@ -1,10 +1,14 @@
 package routes
 
 import (
+	"net/http"
+	"time"
+
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // IngestMaxConcurrentPerTenant caps in-flight report-ingest requests per
@@ -138,6 +142,9 @@ func registerSensorManagementRoutes(
 		// sensors:grant:widen (the service decides). Before /{id}.
 		r.GET("/grant-profiles", h.ListGrantProfiles, middleware.Require(permission.SensorsRead))
 		r.GET("/grant-summaries", h.ListGrantSummaries, middleware.Require(permission.SensorsRead))
+		// Install commands for a sensor that pairs (the "Add sensor" panel):
+		// no key; a pairing code, when given, travels in the body.
+		r.POST("/install-templates", h.InstallTemplates, middleware.Require(permission.SensorsPair))
 		r.GET("/{id}", h.Get, middleware.Require(permission.SensorsRead), own)
 		// Signing keys of key-bound sensors (RFC-052).
 		r.GET("/{id}/keys", h.ListSigningKeys, middleware.Require(permission.SensorsRead), own)
@@ -182,9 +189,9 @@ func registerSensorManagementRoutes(
 		// Creating a sensor and regenerating its key mint a persistent
 		// credential, so they need a recent sign-in (step-up), as an API key
 		// does. Revoking and deleting stay one click.
-		r.POST("/", h.Create, middleware.Require(permission.SensorsWrite), requireStepUp())
+		r.POST("/", h.Create, middleware.Require(permission.SensorsWrite), requireStepUp(), requireCredentialFactor())
 		r.PUT("/{id}", h.Update, middleware.Require(permission.SensorsWrite), own)
-		r.POST("/{id}/regenerate-key", h.RegenerateAPIKey, middleware.Require(permission.SensorsWrite), requireStepUp(), own)
+		r.POST("/{id}/regenerate-key", h.RegenerateAPIKey, middleware.Require(permission.SensorsWrite), requireStepUp(), requireCredentialFactor(), own)
 
 		// Status operations (admin-controlled)
 		r.POST("/{id}/activate", h.Activate, middleware.Require(permission.SensorsWrite), own)
@@ -193,7 +200,10 @@ func registerSensorManagementRoutes(
 		r.POST("/{id}/revoke", h.Revoke, middleware.RequireAny(permission.SensorsWrite, permission.SensorsRevoke), own)
 
 		// Delete operations
-		r.DELETE("/{id}", h.Delete, middleware.Require(permission.SensorsDelete), own)
+		// Deleting removes the sensor and its history and cannot be undone:
+		// a recent sign-in. Revoking (above) stays the fast way to cut a
+		// sensor off.
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.SensorsDelete), requireStepUp(), own)
 	}, tenantMiddlewares...)
 
 }
@@ -250,9 +260,26 @@ func registerProxyPoolRoutes(
 		r.PATCH("/{id}", h.Update, middleware.Require(permission.SensorEgressWrite))
 		r.PUT("/{id}/endpoints", h.ReplaceEndpoints, middleware.Require(permission.SensorEgressWrite))
 		r.PATCH("/{id}/endpoints/{endpoint_id}", h.UpdateEndpoint, middleware.Require(permission.SensorEgressWrite))
+		// The Test button: sensors test the endpoints (the platform never
+		// connects to a proxy); one test per pool per minute.
+		r.POST("/{id}/test", h.Test, middleware.Require(permission.SensorEgressWrite))
+		r.GET("/{id}/tests", h.TestResults, middleware.Require(permission.SensorEgressRead))
 
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.SensorEgressDelete))
 	}, tenantMiddlewares...)
+}
+
+// registerProxyTestEchoRoute registers the echo a proxy test connects to
+// through each proxy: no session and no sensor key (the request leaves
+// through a proxy the organization chose); the path carries the token of one
+// live proxy_test command and anything else is not found. Rate limited per
+// client address, which is the proxy's exit address.
+func registerProxyTestEchoRoute(router Router, h *handler.ProxyTestEchoHandler) {
+	cfg := middleware.DefaultAuthRateLimitConfig()
+	// A pool of 64 endpoints behind one gateway tests from one address.
+	cfg.TokenExchangeRatePerMin = 600
+	limiter := middleware.NewDistributedAuthRateLimiter(cfg, nil, authRateLimitBackend, "proxy-test-echoes")
+	router.GET("/api/v1/proxy-test-echoes/{nonce}", h.Echo, limiter.TokenExchangeMiddleware())
 }
 
 // registerScanWindowRoutes registers the scan window API (RFC-067).
@@ -671,34 +698,59 @@ func registerPlatformContentPackRoutes(
 	}, tenantMiddlewares...)
 }
 
-// registerTemplateSourceRoutes registers template source management endpoints.
-// Template sources are external sources (Git, S3, HTTP) for scanner templates.
-func registerTemplateSourceRoutes(
+// registerContentSourceRoutes registers rule sources
+// (docs/architecture/content-sources.md), gated by the template_sources
+// module. Changes to what the platform fetches, the credential, the webhook
+// and promotion need a recent sign-in: a source is code that sensors and CI
+// run. Promote, reject and roll back need scans:sources:approve.
+func registerContentSourceRoutes(
 	router Router,
-	h *handler.TemplateSourceHandler,
+	h *handler.ContentSourceHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
 	moduleGate Middleware,
 ) {
-	// Build tenant middleware chain from JWT token, gated by the template_sources module.
 	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 
-	// Template Source routes - tenant from JWT token
-	router.Group("/api/v1/template-sources", func(r Router) {
-		// Read operations
-		r.GET("/", h.List, middleware.Require(permission.TemplateSourcesRead))
-		r.GET("/{id}", h.Get, middleware.Require(permission.TemplateSourcesRead))
-
-		// Write operations
-		r.POST("/", h.Create, middleware.Require(permission.TemplateSourcesWrite))
-		r.PUT("/{id}", h.Update, middleware.Require(permission.TemplateSourcesWrite))
-		r.POST("/{id}/enable", h.Enable, middleware.Require(permission.TemplateSourcesWrite))
-		r.POST("/{id}/disable", h.Disable, middleware.Require(permission.TemplateSourcesWrite))
-		r.POST("/{id}/sync", h.Sync, middleware.Require(permission.TemplateSourcesWrite))
-
-		// Delete operations
-		r.DELETE("/{id}", h.Delete, middleware.Require(permission.TemplateSourcesDelete))
+	router.Group("/api/v1/content-sources", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.ContentSourcesRead))
+		r.POST("/", h.Create, middleware.Require(permission.ContentSourcesWrite), requireStepUp())
+		r.POST("/test", h.Test, middleware.Require(permission.ContentSourcesWrite), requireStepUp())
+		r.GET("/{id}", h.Get, middleware.Require(permission.ContentSourcesRead))
+		r.PUT("/{id}", h.Update, middleware.Require(permission.ContentSourcesWrite), requireStepUp())
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.ContentSourcesDelete), requireStepUp())
+		r.PUT("/{id}/credential", h.SetCredential, middleware.Require(permission.ContentSourcesWrite), requireStepUp())
+		r.DELETE("/{id}/credential", h.ClearCredential, middleware.Require(permission.ContentSourcesWrite))
+		r.POST("/{id}/webhook", h.RotateWebhook, middleware.Require(permission.ContentSourcesWrite), requireStepUp())
+		r.DELETE("/{id}/webhook", h.DisableWebhook, middleware.Require(permission.ContentSourcesWrite))
+		r.POST("/{id}/sync", h.Sync, middleware.Require(permission.ContentSourcesWrite))
+		r.POST("/{id}/test", h.TestExisting, middleware.Require(permission.ContentSourcesWrite), requireStepUp())
+		r.GET("/{id}/snapshots", h.ListSnapshots, middleware.Require(permission.ContentSourcesRead))
+		r.GET("/{id}/snapshots/{snapshot_id}", h.GetSnapshot, middleware.Require(permission.ContentSourcesRead))
+		r.POST("/{id}/snapshots/{snapshot_id}/approve", h.Promote, middleware.Require(permission.ContentSourcesApprove), requireStepUp())
+		r.POST("/{id}/snapshots/{snapshot_id}/reject", h.Reject, middleware.Require(permission.ContentSourcesApprove))
+		r.POST("/{id}/rollback", h.Rollback, middleware.Require(permission.ContentSourcesApprove), requireStepUp())
 	}, tenantMiddlewares...)
+}
+
+// Rule source webhook budgets: per client IP in front of the secret check,
+// and per source URL. The service also caps accepted calls per source.
+const (
+	contentSourceWebhookPerIPPerSecond     = 5
+	contentSourceWebhookPerIPBurst         = 50
+	contentSourceWebhookPerSourcePerSecond = 1
+	contentSourceWebhookPerSourceBurst     = 10
+)
+
+// registerContentSourceWebhookRoute registers the public rule source
+// webhook. The URL names one source; its own secret (header) is the
+// credential, compared in constant time; a call only queues a sync.
+func registerContentSourceWebhookRoute(router Router, h *handler.ContentSourceHandler, log *logger.Logger) {
+	perIP := middleware.NewTelemetryRateLimiter(contentSourceWebhookPerIPPerSecond, contentSourceWebhookPerIPBurst, time.Hour, log).
+		MiddlewareKeyed(middleware.ClientIPKey, "Too many webhook calls")
+	perSource := middleware.NewTelemetryRateLimiter(contentSourceWebhookPerSourcePerSecond, contentSourceWebhookPerSourceBurst, time.Hour, log).
+		MiddlewareKeyed(func(r *http.Request) string { return "content-source:" + r.URL.Path }, "Too many webhook calls")
+	router.POST("/hooks/content-sources/{id}", h.Webhook, perIP, perSource)
 }
 
 // registerSecretStoreRoutes registers secret store endpoints for template source authentication.
@@ -727,9 +779,9 @@ func registerSecretStoreRoutes(
 		// to an outside system (Git tokens, cloud keys), so every change
 		// needs a fresh step-up: a stolen session cannot plant, swap or
 		// remove one.
-		r.POST("/", h.Create, middleware.Require(permission.SecretStoreWrite), middleware.RequireAdmin(), requireStepUp())
-		r.PUT("/{id}", h.Update, middleware.Require(permission.SecretStoreWrite), middleware.RequireAdmin(), requireStepUp())
-		r.POST("/{id}/rotate", h.Rotate, middleware.Require(permission.SecretStoreWrite), middleware.RequireAdmin(), requireStepUp())
+		r.POST("/", h.Create, middleware.Require(permission.SecretStoreWrite), middleware.RequireAdmin(), requireStepUp(), requireCredentialFactor())
+		r.PUT("/{id}", h.Update, middleware.Require(permission.SecretStoreWrite), middleware.RequireAdmin(), requireStepUp(), requireCredentialFactor())
+		r.POST("/{id}/rotate", h.Rotate, middleware.Require(permission.SecretStoreWrite), middleware.RequireAdmin(), requireStepUp(), requireCredentialFactor())
 
 		// Delete operations
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.SecretStoreDelete), middleware.RequireAdmin(), requireStepUp())
@@ -848,5 +900,7 @@ func registerWorkflowRoutes(
 
 		// Write operations
 		r.POST("/{id}/cancel", h.CancelRun, middleware.Require(permission.AutomationsWrite))
+		// A run paused at its change cap continues only on a publisher's word.
+		r.POST("/{id}/approve", h.ResumeRun, middleware.Require(permission.AutomationsPublish))
 	}, tenantMiddlewares...)
 }

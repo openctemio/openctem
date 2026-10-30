@@ -41,6 +41,12 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 		WithTenantCreationMode(tenantCreationModeOf(cfg.Auth)).
 		WithRegistrationEnabled(cfg.Auth.SignupOpen()).
 		WithPasswordPolicy(cfg.Auth)
+	if h.LocalAuth != nil {
+		authProvidersHandler.WithEmailDelivery(h.LocalAuth.EmailDeliveryAvailable)
+	}
+	if h.AdminPlatformSettings != nil && h.AdminPlatformSettings.SocialLogin != nil {
+		authProvidersHandler.WithSocialSource(h.AdminPlatformSettings.SocialLogin.Offered)
+	}
 	if h.SignupPolicy != nil {
 		authProvidersHandler.WithSignupPolicy(h.SignupPolicy)
 	}
@@ -103,6 +109,13 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 			mfaEnrollConfirmHandler := ChainFunc(h.LocalAuth.ConfirmMFAEnrollment, crossSite, mfaRL)
 			r.POST("/mfa/enroll/confirm", mfaEnrollConfirmHandler.ServeHTTP)
 
+			// Second-factor challenge for a signed-in session that an
+			// organization's 2FA policy holds back (after accepting an
+			// invitation, or when a token refresh is refused). Authenticated
+			// by the refresh-token session, like accept-with-refresh.
+			mfaSessionHandler := ChainFunc(h.LocalAuth.SessionMFAChallenge, crossSite, mfaRL)
+			r.POST("/mfa/enroll/session", mfaSessionHandler.ServeHTTP)
+
 			// Token operations - separate rate limit (20/min)
 			// Token exchange requires valid refresh token, not brute-forceable
 			// Used for tenant switching which may happen frequently.
@@ -118,6 +131,11 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 			// Email verification - password rate limit
 			verifyHandler := ChainFunc(h.LocalAuth.VerifyEmail, crossSite, passwordRL)
 			r.POST("/verify-email", verifyHandler.ServeHTTP)
+
+			// New verification link (constant 202; per-IP limit here, one
+			// email per address per 2 minutes in the service).
+			resendVerifyHandler := ChainFunc(h.LocalAuth.ResendVerification, crossSite, passwordRL)
+			r.POST("/resend-verification", resendVerifyHandler.ServeHTTP)
 
 			// Password operations - very strict rate limit (3/min)
 			forgotHandler := ChainFunc(h.LocalAuth.ForgotPassword, crossSite, passwordRL)
@@ -271,6 +289,36 @@ func registerUserRoutes(
 			r.POST("/me/2fa/disable", localAuthHandler.DisableMFA, withCSRF(sensitiveRL)...)
 			r.POST("/me/2fa/recovery-codes", localAuthHandler.RegenerateRecoveryCodes, withCSRF(sensitiveRL)...)
 		}
+	}, middlewares...)
+}
+
+// registerIdentityLinkRoutes mounts Account > Security "Connected sign-in
+// methods" (auth/identity_link.go). Self-scoped: the account is the session's.
+// Linking and unlinking change how the account can be signed into, so both
+// need a fresh step-up and the CSRF check. The link callback is the second
+// half of a link already stepped up: its state is bound to this account and
+// this session, single use, expires, and is accepted only with the browser
+// binding secret the link start gave the starting browser (an HttpOnly
+// cookie); it is called by the web server with the session token.
+func registerIdentityLinkRoutes(router Router, h *handler.OAuthHandler, authMiddleware, userSyncMiddleware Middleware) {
+	middlewares := []Middleware{authMiddleware}
+	if userSyncMiddleware != nil {
+		middlewares = append(middlewares, userSyncMiddleware)
+	}
+	linkRL := newAuthRateLimiter("account-identities").PasswordMiddleware()
+	withCSRF := func(mws ...Middleware) []Middleware {
+		if csrfProtectionMiddleware != nil {
+			return append([]Middleware{csrfProtectionMiddleware}, mws...)
+		}
+		return mws
+	}
+	router.Group("/api/v1/me/sign-in-methods", func(r Router) {
+		r.GET("/", h.ListSignInMethods)
+		r.DELETE("/{id}", h.Unlink, withCSRF(linkRL, requireStepUp())...)
+	}, middlewares...)
+	router.Group("/api/v1/me/sign-in-method-links", func(r Router) {
+		r.POST("/{provider}/start", h.StartLink, withCSRF(linkRL, requireStepUp())...)
+		r.POST("/{provider}/complete", h.CompleteLink, linkRL)
 	}, middlewares...)
 }
 

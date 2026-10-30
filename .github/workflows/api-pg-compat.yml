@@ -5,11 +5,15 @@ name: API PostgreSQL Compatibility
 # workflow runs the DB-backed packages on the two other supported majors, 16 and
 # 18, so a migration or query that works only on 17 is found within a day:
 #
-#   - schedule: nightly (02:17 UTC, from the default branch's copy of this file)
-#   - push to develop: only when a migration, the role script, the PostgreSQL
-#     repositories or this file changed (the merge queue pushes often)
-#   - pull_request: only a change to this file, to prove the change works
+#   - schedule: nightly (02:17 UTC). GitHub runs the default branch's (main's)
+#     copy of this file; the checkout tests develop.
+#   - pull_request: only a change to this file or to the role script
+#     (api/deploy/postgres), to prove the change works before it lands
 #   - workflow_dispatch: any time
+#
+# No push trigger: every migration is already applied on PostgreSQL 18 by API
+# CI (`Migrations (PostgreSQL 18)`) in the merge queue, and the nightly run
+# covers the rest within a day (a push run cost 6 shards of about 15 minutes).
 #
 # Same method as the least-privilege job in API CI: roles are bootstrapped by a
 # superuser, every migration is applied as the migrator (the schema owner, not a
@@ -21,22 +25,17 @@ name: API PostgreSQL Compatibility
 on:
   schedule:
     - cron: "17 2 * * *"
-  push:
-    branches: [develop]
-    paths:
-      - api/migrations/**
-      - api/deploy/postgres/**
-      - api/internal/infra/postgres/**
-      - .github/workflows/api-pg-compat.yml
   pull_request:
     paths:
+      - api/deploy/postgres/**
       - .github/workflows/api-pg-compat.yml
   workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  # A newer push supersedes an older one; a nightly or manual run is never cancelled.
-  cancel-in-progress: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
+  # A newer push to a pull request supersedes an older one; a nightly or manual
+  # run is never cancelled.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -88,6 +87,9 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # A schedule runs the default branch's (main's) copy of this file:
+          # test develop, where changes land first.
+          ref: ${{ github.event_name == 'schedule' && 'develop' || '' }}
 
       # The CI image mirror first; its upstream (same digest) until the mirror
       # has copied the image. Trust auth on the job's throwaway database: no
@@ -139,14 +141,16 @@ jobs:
       - name: Generate the OpenAPI spec
         run: make swagger
 
-      - name: Install golang-migrate
-        run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1
+      - name: Build the migration runner
+        run: |
+          go build -o "$RUNNER_TEMP/bin/openctem-migrate" ./cmd/openctem-migrate
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
       - name: Bootstrap the roles on a fresh database
         run: psql "$SUPER_URL" -X -v ON_ERROR_STOP=1 -f deploy/postgres/least-privilege-roles.sql
 
       - name: Apply every migration as the migrator (not a superuser)
-        run: migrate -path migrations -database "$MIGRATOR_URL" up
+        run: openctem-migrate -path migrations -database "$MIGRATOR_URL" up
 
       - name: Re-run the bootstrap (idempotent; verifies grants on the migrated schema)
         run: psql "$SUPER_URL" -X -v ON_ERROR_STOP=1 -f deploy/postgres/least-privilege-roles.sql
@@ -157,7 +161,7 @@ jobs:
       # OPENCTEM_TEST_DB_REQUIRED + the skip check: a DB test that skipped for a
       # missing database fails the job instead of passing silently. The two
       # tests that need CREATEDB skip here by design and run in API CI on 17.
-      - name: Run the DB-backed packages as the app role (shard ${{ matrix.shard }}/3)
+      - name: Run the DB-backed suite as the app role (shard ${{ matrix.shard }}/3)
         id: suite
         shell: bash # -o pipefail: the pipe into tee/jq must not hide a failure
         env:
@@ -174,13 +178,7 @@ jobs:
           REDIS_HOST: localhost
           REDIS_PORT: 6379
         run: |
-          mapfile -t pk < <(bash ../.github/scripts/go-shard.sh pkgs "$SHARD" 3)
-          go test -json -timeout 40m "${pk[@]}" \
-            | tee pg-test.json \
-            | jq -Rrj '. as $l | (try fromjson catch null) as $e
-                | if $e == null then $l + "\n"
-                  elif ($e.Action == "output" or $e.Action == "build-output") then $e.Output
-                  else empty end'
+          bash ../.github/scripts/go-shard-run.sh "$SHARD" 3 pg-test.json -timeout 40m
 
       - name: No DB-backed test was skipped
         if: ${{ !cancelled() && steps.suite.outcome != 'skipped' }}

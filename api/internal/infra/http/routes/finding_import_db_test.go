@@ -48,6 +48,11 @@ func ctisImporterFixtures(t *testing.T) []string {
 		if strings.HasSuffix(b, ".golden.json") || strings.HasSuffix(b, ".result.json") || strings.HasSuffix(b, ".kb.xml") || strings.HasSuffix(b, ".options.json") || strings.HasSuffix(b, ".legacy.json") {
 			continue
 		}
+		// A directory is a recon bundle (several files), uploaded as an
+		// archive and covered by the findingimport bundle tests.
+		if st, err := os.Stat(p); err != nil || st.IsDir() {
+			continue
+		}
 		inputs = append(inputs, p)
 	}
 	if len(inputs) == 0 {

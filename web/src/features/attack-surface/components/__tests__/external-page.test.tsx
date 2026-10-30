@@ -58,7 +58,7 @@ vi.mock('@/features/assets', () => ({
 }))
 vi.mock('@/features/assets/hooks/use-assets', () => ({ fetchAllAssets: vi.fn() }))
 vi.mock('@/features/assets/components/service-cells', () => ({
-  IssuesChip: () => null,
+  OpenFindingsCell: () => null,
   LabelChips: () => null,
   SurfaceFacts: () => null,
 }))
@@ -92,8 +92,10 @@ beforeEach(() => {
 describe('external attack surface', () => {
   it('the certificates tile opens the exposures list', async () => {
     render(<Page />)
-    await userEvent.click(screen.getByText('Expiring certificates'))
-    expect(push).toHaveBeenCalledWith('/exposures?q=certificate')
+    expect(screen.getByRole('link', { name: /Expiring certificates/ })).toHaveAttribute(
+      'href',
+      '/exposures?q=certificate'
+    )
   })
 
   it('the certificates tile shows a dash, never a false 0, without exposures:read or on error', () => {

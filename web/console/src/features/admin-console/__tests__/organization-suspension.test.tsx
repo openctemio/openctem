@@ -32,6 +32,7 @@ function org(patch: Partial<AdminOrganization> = {}): AdminOrganization {
     created_at: '2026-10-01T00:00:00Z',
     active_members: 3,
     owner_emails: [],
+    owner_domains: [],
     owner_count: 1,
     saml_enabled: false,
     active_identity_providers: 0,
@@ -118,7 +119,13 @@ describe('Organization suspension', () => {
     await user.type(screen.getByLabelText(/^reason$/i), 'Legal request 2026-17 from counsel')
     await user.type(screen.getByLabelText(/code from your authenticator/i), '123456')
     const buttons = screen.getAllByRole('button', { name: 'Delete now' })
-    await user.click(buttons[buttons.length - 1])
+    const confirm = buttons[buttons.length - 1]
+    // The organization's name must be typed first; Enter in that field does nothing.
+    expect(confirm).toBeDisabled()
+    await user.type(screen.getByTestId('admin-confirm-typed'), `${org().name}{Enter}`)
+    expect(purgeOrganization).not.toHaveBeenCalled()
+    expect(confirm).toBeEnabled()
+    await user.click(confirm)
     await waitFor(() =>
       expect(purgeOrganization).toHaveBeenCalledWith(
         'o1',

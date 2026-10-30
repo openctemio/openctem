@@ -16,20 +16,19 @@ import { useMemo, useState } from 'react'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import Link from '@/components/link'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Ban, Check, Eye, Loader2, Network, Search as SearchIcon } from 'lucide-react'
+import { Ban, Check, Eye, Loader2, Network } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Input } from '@/components/ui/input'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { DataTable, ErrorState, RelativeTime } from '@/features/shared'
-import { useDebounce } from '@/hooks/use-debounce'
+import { DataTable, ErrorState, FilterSelect, RelativeTime } from '@/features/shared'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { useListParams } from '@/hooks/use-list-params'
 import type { EASMConfirmScopeResult, EASMReviewItem } from '@/lib/api/generated'
 import { del } from '@/lib/api/client'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { UNDO_TOAST_MS } from '@/lib/undo-toast'
 import { invalidateScopeCache } from '@/features/scope/api/use-scope-api'
 import { usePermissions, Permission } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
@@ -57,7 +56,11 @@ import {
 } from '@/components/ui/select'
 import { useTranslation } from '@/context/i18n-provider'
 
-/** The queue views: what is waiting, and what was rejected (for undo). */
+/**
+ * The queue views: what is waiting, and what was rejected (for undo). A
+ * State filter at the start of the toolbar (research/249 R21), never a tab
+ * row; `?tab=rejected` keeps old links working.
+ */
 export const REVIEW_VIEWS: { id: string; label: string; states: AttributionState[] }[] = [
   { id: 'review', label: 'Awaiting a decision', states: ['needs_review', 'candidate'] },
   { id: 'rejected', label: 'Not ours', states: ['rejected'] },
@@ -134,6 +137,7 @@ export function reportConfirmScope(
           count: added.length,
         }),
     {
+      duration: UNDO_TOAST_MS,
       action: !canUndo
         ? undefined
         : {
@@ -176,9 +180,15 @@ export function EASMReviewQueue() {
   // The tab is in the URL (?tab=rejected) so a view can be linked to.
   const [tabParam, setTabParam] = useUrlFilter('tab', REVIEW_VIEWS[0].id)
   const view = REVIEW_VIEWS.some((v) => v.id === tabParam) ? tabParam : REVIEW_VIEWS[0].id
-  const setView = setTabParam
+  // The Review page opens this list for ?all=1, ?tab= or ?reason=: going
+  // back to the default state clears ?tab=, so the list keeps itself open.
+  const [, setAllParam] = useUrlFilter('all', '0')
+  const setView = (v: string) => {
+    setAllParam('1')
+    setTabParam(v)
+  }
   const [searchInput, setSearchInput] = useUrlFilter('q', '')
-  const search = useDebounce(searchInput, 300)
+  const search = useSearchQuery(searchInput).term
   const { pagination, setPagination, setPage } = useListParams({ defaultPageSize: PAGE_SIZE })
   const [selected, setSelected] = useState<EASMReviewItem[]>([])
   const [resetKey, setResetKey] = useState(0)
@@ -421,23 +431,6 @@ export function EASMReviewQueue() {
 
   return (
     <div className="space-y-4">
-      <Tabs
-        value={view}
-        onValueChange={(v) => {
-          setView(v)
-          setPage(1)
-          clearSelection()
-        }}
-      >
-        <TabsList>
-          {REVIEW_VIEWS.map((v) => (
-            <TabsTrigger key={v.id} value={v.id}>
-              {t(`attackSurface.queue.view.${v.id}`, v.label)}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </Tabs>
-
       {canDecide && selected.length > 0 && (
         <div
           role="toolbar"
@@ -492,25 +485,38 @@ export function EASMReviewQueue() {
         onSelectionChange={setSelected}
         resetSelectionKey={`${view}:${search}:${reason}:${pagination.pageIndex}:${resetKey}`}
         showSearch={false}
+        search={{
+          value: searchInput,
+          onChange: (v) => {
+            setSearchInput(v)
+            setPage(1)
+          },
+          placeholder: t('attackSurface.queue.search', 'Search names…'),
+        }}
         isLoading={isLoading}
         toolbarStart={
-          <div className="flex w-full flex-wrap items-center gap-2">
-            <div className="relative w-full max-w-sm">
-              <SearchIcon
-                className="absolute start-2.5 top-2.5 h-4 w-4 text-muted-foreground"
-                aria-hidden
-              />
-              <Input
-                value={searchInput}
-                onChange={(e) => {
-                  setSearchInput(e.target.value)
-                  setPage(1)
-                }}
-                placeholder={t('attackSurface.queue.search', 'Search names')}
-                aria-label={t('attackSurface.queue.search', 'Search names')}
-                className="ps-8"
-              />
-            </div>
+          <>
+            <FilterSelect
+              label={t('attackSurface.queue.stateFilter', 'State')}
+              clearable={false}
+              value={view}
+              options={REVIEW_VIEWS.map((v) => ({
+                value: v.id,
+                label: t(`attackSurface.queue.view.${v.id}`, v.label),
+                count:
+                  v.id === 'review'
+                    ? summary
+                      ? (summary.attribution?.needs_review ?? 0) +
+                        (summary.attribution?.candidate ?? 0)
+                      : undefined
+                    : summary?.attribution?.rejected,
+              }))}
+              onChange={(v) => {
+                setView(v || REVIEW_VIEWS[0].id)
+                setPage(1)
+                clearSelection()
+              }}
+            />
             {view === 'review' && reasons.length > 0 && (
               <Select
                 value={reason ?? 'all'}
@@ -537,7 +543,7 @@ export function EASMReviewQueue() {
                 </SelectContent>
               </Select>
             )}
-          </div>
+          </>
         }
         emptyMessage={
           view === 'review'

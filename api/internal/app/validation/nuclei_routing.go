@@ -78,8 +78,9 @@ const (
 //   - cveID: the finding's CVE, used as a CVE→template candidate when the
 //     finding's original scanner was NOT nuclei (Tenable/Trivy/…). nuclei ships
 //     CVE-named templates, so `-id CVE-YYYY-NNNN` re-runs the matching template
-//     where one exists; the sensor verifies existence and returns inconclusive
-//     (never a false downgrade) when no such template is installed.
+//     where one exists. RunService sends it only when a sensor of the tenant
+//     reported that template before (signatureInstalled); otherwise the
+//     re-verify is the reachability check.
 //
 // ok is false when the finding has no re-runnable signature (→ caller falls back
 // to safe-check, "reachability only") or the signature resolves to an excluded

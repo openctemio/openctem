@@ -52,11 +52,14 @@ type SensorHandler struct {
 	// contentPolicies supplies the tenant's scanner content policy for the
 	// content view and health (RFC-031); nil uses the platform default.
 	contentPolicies ContentPolicySource
-	// zones lists the tenant's scan zones, to prefill the sensor-local
-	// policy template with the sensor's ranges; nil leaves them out.
-	zones ZoneLister
+	// policyPrefill fills the sensor-local policy template: the sensor's
+	// zones, else the organization's scope; nil sources leave parts out.
+	policyPrefill *SensorPolicyPrefill
 	// grants serves the per-sensor grant routes (RFC-052 §5); nil: 404.
-	grants    *sensorgrant.Service
+	grants *sensorgrant.Service
+	// jobRoot returns the job-signing root id the onboarding snippets pass
+	// as SENSOR_JOB_SIGNING_ROOT; nil: none.
+	jobRoot   func(ctx context.Context) string
 	now       func() time.Time
 	validator *validator.Validator
 	logger    *logger.Logger
@@ -68,10 +71,10 @@ type ZoneLister interface {
 	List(ctx context.Context, tenantID shared.ID) ([]*scanzone.Zone, error)
 }
 
-// SetZoneLister makes the install snippets prefill the sensor-local policy
-// with the ranges of the sensor's scan zones (RFC-040 §5.7).
-func (h *SensorHandler) SetZoneLister(z ZoneLister) {
-	h.zones = z
+// SetPolicyPrefill makes the install snippets prefill the sensor-local
+// policy with the sensor's scan zones, else the organization's scope.
+func (h *SensorHandler) SetPolicyPrefill(p *SensorPolicyPrefill) {
+	h.policyPrefill = p
 }
 
 // NewSensorHandler creates a new SensorHandler.
@@ -203,7 +206,7 @@ type SensorResponse struct {
 	// holds now (acknowledged or running), counted by the platform;
 	// available_slots is what dispatch may still hand it: its effective
 	// capacity minus current_jobs, and no more than the free slots of a
-	// fresh load report (RFC-030 §5.8).
+	// fresh load report.
 	MaxConcurrentJobs int     `json:"max_concurrent_jobs"`
 	CurrentJobs       int     `json:"current_jobs"`
 	AvailableSlots    int     `json:"available_slots"`
@@ -214,7 +217,7 @@ type SensorResponse struct {
 	// it).
 	Load *SensorLoadResponse `json:"load"`
 	// Control is the control-channel report of the sensor's last heartbeat
-	// that carried one (sdk-go, RFC-035 §5.5): how well its heartbeat loop
+	// that carried one (sdk-go): how well its heartbeat loop
 	// keeps time. null when it never reported one.
 	Control *SensorControlResponse `json:"control"`
 	// HeartbeatIntervalSeconds is the interval the sensor follows, stored at
@@ -223,8 +226,8 @@ type SensorResponse struct {
 	// applies). HeartbeatDueAt is when its next heartbeat is due.
 	HeartbeatIntervalSeconds *int    `json:"heartbeat_interval_seconds"`
 	HeartbeatDueAt           *string `json:"heartbeat_due_at"`
-	// HeartbeatState is where the sensor stands on the heartbeat ladder now
-	// (RFC-035 §5.6): online until its deadline plus grace, then late (still
+	// HeartbeatState is where the sensor stands on the heartbeat ladder now:
+	// online until its deadline plus grace, then late (still
 	// takes work), stale (takes no new work), offline. "" when it never
 	// connected.
 	HeartbeatState string `json:"heartbeat_state" enums:",online,late,stale,offline"`
@@ -242,8 +245,7 @@ type SensorResponse struct {
 	// results: dead_letter_count > 0, evicted_count > 0, or
 	// oldest_age_seconds > 3600. False when there is no snapshot.
 	OutboxWarning bool `json:"outbox_warning"`
-	// Protocol is what the platform last saw of the sensor's protocol
-	// (RFC-029 §5.3); null before the first heartbeat that recorded it.
+	// Protocol is what the platform last saw of the sensor's protocol; null before the first heartbeat that recorded it.
 	// deprecated is true for protocol v1: the sensor needs an upgrade.
 	Protocol *SensorProtocolResponse `json:"protocol"`
 
@@ -275,7 +277,7 @@ type SensorResponse struct {
 	KeyExpiresAt *string `json:"key_expires_at"`
 	// LegacyKey is true while the sensor's current key is a legacy rda_ key.
 	// It moves to an octs_ key on its next renewal; rda_ keys are retired 90
-	// days after enrollment and key-bound identity (RFC-032) ship.
+	// days after enrollment and key-bound identity ship.
 	LegacyKey bool `json:"legacy_key"`
 	// KeyLastUsedAt and KeyLastUsedIP are the last authenticated request with
 	// any of the sensor's keys and the client address it came from (behind a
@@ -300,8 +302,7 @@ type SensorResponse struct {
 	UptimeSeconds *int64 `json:"uptime_seconds"`
 
 	// capabilities and max_concurrent_jobs above are the administrator's
-	// settings (limits). Reported is what the sensor last reported it has
-	// (RFC-029 §4.3.1), null when it never reported; Effective is what
+	// settings (limits). Reported is what the sensor last reported it has, null when it never reported; Effective is what
 	// dispatch uses: the report narrowed by those settings (the settings
 	// alone without a report). The effective tools are the reported
 	// installed tools (none before a report); the sensor grant narrows them.
@@ -312,7 +313,7 @@ type SensorResponse struct {
 	CapabilityMismatch *sensor.CapabilityMismatch `json:"capability_mismatch,omitempty"`
 
 	// Content is the scanner content the sensor reports (trivy DB, nuclei
-	// templates, semgrep rules; RFC-031), one entry per tool and content,
+	// templates, semgrep rules), one entry per tool and content,
 	// judged against the tenant's content policy. Never null.
 	Content []SensorContentResponse `json:"content"`
 	// ContentRefreshSupported: the sensor manages content, so it accepts
@@ -331,7 +332,7 @@ type SensorResponse struct {
 	SensorCommit    string  `json:"sensor_commit"`
 	SensorBuildTime *string `json:"sensor_build_time"`
 
-	// The current manifest (RFC-033): its digest, when it became current
+	// The current manifest: its digest, when it became current
 	// and where it came from (sensor: registered; heartbeat: derived by the
 	// platform). "" / null before the first one. The document itself is
 	// GET /sensors/{id}/manifest.
@@ -339,10 +340,21 @@ type SensorResponse struct {
 	ManifestAt     *string `json:"manifest_at"`
 	ManifestSource string  `json:"manifest_source" enums:",sensor,heartbeat"`
 
-	// LocalPolicy is the sensor-local policy the sensor reports (RFC-040
-	// §5.7): enforced on the sensor, shown here. Always present; state
+	// LocalPolicy is the sensor-local policy the sensor reports: enforced on the sensor, shown here. Always present; state
 	// "unknown" when the sensor never reported one.
 	LocalPolicy SensorLocalPolicyResponse `json:"local_policy"`
+
+	// LocalStore is the sensor's local data as its latest heartbeats report
+	// it: the watermark, whether it stopped claiming new jobs and why, bytes
+	// per class, the disk level and the cleanup sweeps. Null when the sensor
+	// never reported one (an SDK without a local store) or when the stored
+	// report no longer describes it. Self-reported, display only.
+	LocalStore *SensorLocalStoreResponse `json:"local_store"`
+
+	// AuthKind is how the sensor authenticates: "bearer" (an API key, whose
+	// display prefix is api_key_prefix) or "key_bound" (its own signing key,
+	// GET /sensors/{id}/keys). Never key material.
+	AuthKind string `json:"auth_kind" enums:"bearer,key_bound"`
 
 	// Posture is the sensor's security posture: its local policy, the
 	// platform TLS pin and the tool sandbox's network confinement as the
@@ -351,7 +363,7 @@ type SensorResponse struct {
 	Posture SensorPostureResponse `json:"posture"`
 
 	// ConfigHealth is the platform's rollup of the sensor's latest config
-	// report (research/26): ok, attention, impaired or blocked; null when
+	// report: ok, attention, impaired or blocked; null when
 	// it sent none. While the report is stale it is still the last rollup;
 	// health_reasons then carry config_report_stale. The checklist is
 	// GET /sensors/{id}/config-report.
@@ -380,6 +392,40 @@ type SensorPostureResponse struct {
 func postureResponse(a *sensor.Sensor) SensorPostureResponse {
 	p := a.PostureOf()
 	return SensorPostureResponse{LocalPolicy: p.LocalPolicy, PlatformPin: p.PlatformPin, NetworkEnforced: p.NetworkEnforced, Unhardened: p.Unhardened}
+}
+
+// SensorLocalStoreResponse is a sensor's local store report as the console
+// shows it.
+type SensorLocalStoreResponse struct {
+	Level            string           `json:"level" enums:",ok,high,critical"`
+	StopClaiming     bool             `json:"stop_claiming"`
+	Reason           string           `json:"reason,omitempty"`
+	BytesByClass     map[string]int64 `json:"bytes_by_class,omitempty"`
+	TotalBytes       int64            `json:"total_bytes"`
+	QuotaBytes       int64            `json:"quota_bytes,omitempty"`
+	DiskLevel        string           `json:"disk_level" enums:",ok,low,critical,unknown"`
+	Sweeps           int64            `json:"sweeps"`
+	LastSweepAt      *string          `json:"last_sweep_at,omitempty"`
+	LastSweepRemoved int64            `json:"last_sweep_removed,omitempty"`
+	BootReset        bool             `json:"boot_reset,omitempty"`
+	Tampered         int64            `json:"tampered,omitempty"`
+	ReportedAt       *string          `json:"reported_at"`
+}
+
+// localStoreResponse is the sensor's current local store report, nil when
+// it has none.
+func localStoreResponse(a *sensor.Sensor) *SensorLocalStoreResponse {
+	r := a.CurrentLocalStore()
+	if r == nil {
+		return nil
+	}
+	return &SensorLocalStoreResponse{
+		Level: r.Level, StopClaiming: r.StopClaiming, Reason: r.Reason,
+		BytesByClass: r.BytesByClass, TotalBytes: r.TotalBytes, QuotaBytes: r.QuotaBytes,
+		DiskLevel: r.DiskLevel, Sweeps: r.Sweeps, LastSweepAt: rfc3339Ptr(r.LastSweepAt),
+		LastSweepRemoved: r.LastSweepRemoved, BootReset: r.BootReset, Tampered: r.Tampered,
+		ReportedAt: rfc3339Ptr(r.ReportedAt),
+	}
 }
 
 // SensorLocalPolicyResponse is a sensor's local policy as the console shows
@@ -493,7 +539,7 @@ type SensorProtocolResponse struct {
 	UserAgent  string `json:"user_agent"`
 	SeenAt     string `json:"seen_at"`
 	Deprecated bool   `json:"deprecated"`
-	// Binding is how the last heartbeat arrived (RFC-059): grpc (mTLS),
+	// Binding is how the last heartbeat arrived: grpc (mTLS),
 	// https (protocol v3 over HTTPS) or v2; absent before it was recorded.
 	Binding string `json:"binding,omitempty" enums:"grpc,https,v2"`
 	// FallbackReason is why the sensor is not on gRPC, as it reported it.
@@ -504,7 +550,7 @@ type SensorProtocolResponse struct {
 // stable (clients map it to their own wording and fix actions); message is a
 // plain-English fallback.
 type SensorHealthReasonResponse struct {
-	Code     string `json:"code" enums:"outbox_backlog,outbox_dead_letters,outbox_evicted,key_expired,key_expiring,identity_cloned,version_unsupported,sdk_advisory,no_tools,error_reported,content_stale,content_refresh_failed,heartbeat_late,control_slow"`
+	Code     string `json:"code" enums:"outbox_backlog,outbox_dead_letters,outbox_evicted,key_expired,key_expiring,identity_cloned,version_unsupported,sdk_advisory,no_tools,error_reported,content_stale,content_refresh_failed,heartbeat_late,control_slow,config_check_failed,config_check_warning,config_report_stale,stopped_claiming"`
 	Severity string `json:"severity" enums:"warning,critical"`
 	Message  string `json:"message"`
 }
@@ -764,7 +810,7 @@ type SensorStatsResponse struct {
 	// listed (a custom sensor) gets no version verdict.
 	Products []SensorProductResponse `json:"products"`
 	// Each sensor is judged against its own heartbeat deadline
-	// (heartbeat_due_at; RFC-035 §5.6). OnlineWindowSeconds is how long a
+	// (heartbeat_due_at). OnlineWindowSeconds is how long a
 	// sensor on the idle interval stays online after a heartbeat (interval
 	// plus grace); OfflineAfterSeconds (WORKER_HEARTBEAT_TIMEOUT) is the
 	// backstop after which an unconvicted sensor shows offline anyway.
@@ -1271,6 +1317,8 @@ func sensorResponseAt(a *sensor.Sensor, policy sensor.HealthPolicy, now time.Tim
 	resp.ManifestDigest, resp.ManifestSource = a.ManifestDigest, a.ManifestSource
 	resp.ManifestAt = rfc3339Ptr(a.ManifestAt)
 	resp.LocalPolicy = localPolicyResponse(a)
+	resp.LocalStore = localStoreResponse(a)
+	resp.AuthKind = string(a.AuthKind.OrBearer())
 	resp.Posture = postureResponse(a)
 	if a.ConfigHealth != "" {
 		h := a.ConfigHealth
@@ -1423,8 +1471,7 @@ type SensorConfigTemplatesResponse struct {
 	Compose    string `json:"compose"`
 	Kubernetes string `json:"kubernetes"`
 	Helm       string `json:"helm"`
-	// Policy is the sensor-local policy template (sensor-policy.yaml, RFC-040
-	// §5.7), prefilled with the ranges of the sensor's scan zones, for the
+	// Policy is the sensor-local policy template (sensor-policy.yaml), prefilled with the ranges of the sensor's scan zones, for the
 	// network owner to review and install read-only on the sensor host.
 	Policy string `json:"policy"`
 	// Image is the sensor image the snippets run, with its pinned tag.
@@ -1534,13 +1581,9 @@ func (h *SensorHandler) GetConfigTemplates(w http.ResponseWriter, r *http.Reques
 
 		ReleaseIdentity: product.ReleaseIdentity,
 	}
-	if h.zones != nil && a.TenantID != nil {
-		// Best effort: without zones the policy template asks for ranges.
-		if zones, zerr := h.zones.List(r.Context(), *a.TenantID); zerr == nil {
-			data.Policy = sensorapp.PolicyFromZones(zones, a.ID)
-		} else {
-			h.logger.Warn("scan zones not read for the policy template", "error", logger.SanitizeError(zerr))
-		}
+	if a.TenantID != nil {
+		// Best effort: with nothing to prefill the template asks for targets.
+		data.Policy = h.policyPrefill.For(r.Context(), *a.TenantID, a.ID)
 	}
 	rendered, err := h.templateService.Render(data)
 	if err != nil {

@@ -30,7 +30,6 @@ export const API_BASE = {
   PROXY_POOLS: '/api/v1/proxy-pools',
   SCAN_PROFILES: '/api/v1/scan-profiles',
   SCANNER_TEMPLATES: '/api/v1/scanner-templates',
-  TEMPLATE_SOURCES: '/api/v1/template-sources',
   TOOLS: '/api/v1/tools',
   TOOL_CATEGORIES: '/api/v1/tool-categories',
   CAPABILITIES: '/api/v1/capabilities',
@@ -96,6 +95,11 @@ export const authEndpoints = {
   verifyEmail: () => `${API_BASE.AUTH}/verify-email`,
 
   /**
+   * Send the email verification link again (constant 202)
+   */
+  resendVerification: () => `${API_BASE.AUTH}/resend-verification`,
+
+  /**
    * Request password reset
    */
   forgotPassword: () => `${API_BASE.AUTH}/forgot-password`,
@@ -134,6 +138,12 @@ export const authEndpoints = {
    * Required 2FA enrollment during login: confirm with a code and sign in.
    */
   mfaEnrollConfirm: () => `${API_BASE.AUTH}/mfa/enroll/confirm`,
+
+  /**
+   * Second-factor challenge for a signed-in session an organization's 2FA
+   * policy holds back (after accepting an invitation, or a refused refresh).
+   */
+  mfaEnrollSession: () => `${API_BASE.AUTH}/mfa/enroll/session`,
 
   // ============================================
   // SOCIAL/OAUTH AUTH
@@ -236,6 +246,17 @@ export const userEndpoints = {
   twoFactorEnable: () => `${API_BASE.USERS}/me/2fa/enable`,
   twoFactorDisable: () => `${API_BASE.USERS}/me/2fa/disable`,
   twoFactorRecoveryCodes: () => `${API_BASE.USERS}/me/2fa/recovery-codes`,
+
+  /**
+   * Linked sign-in methods (Account > Security). Link start and unlink need
+   * step-up; the link callback is called by the OAuth callback route.
+   */
+  identities: () => '/api/v1/me/sign-in-methods',
+  identityLink: (provider: string) =>
+    `/api/v1/me/sign-in-method-links/${encodeURIComponent(provider)}/start`,
+  identityLinkCallback: (provider: string) =>
+    `/api/v1/me/sign-in-method-links/${encodeURIComponent(provider)}/complete`,
+  identity: (id: string) => `/api/v1/me/sign-in-methods/${encodeURIComponent(id)}`,
 
   // ============================================
   // USER MANAGEMENT (Admin)
@@ -362,6 +383,19 @@ export const tenantEndpoints = {
    */
   deleteInvitation: (tenantIdOrSlug: string, invitationId: string) =>
     `${API_BASE.TENANTS}/${tenantIdOrSlug}/invitations/${invitationId}`,
+
+  /**
+   * Copy a new invitation link (POST): rotates the token, sends no email,
+   * returns the new token once.
+   */
+  invitationLink: (tenantIdOrSlug: string, invitationId: string) =>
+    `${API_BASE.TENANTS}/${tenantIdOrSlug}/invitations/${invitationId}/link`,
+
+  /**
+   * Renew an expired invitation (POST): new lifetime and token, no email.
+   */
+  renewInvitation: (tenantIdOrSlug: string, invitationId: string) =>
+    `${API_BASE.TENANTS}/${tenantIdOrSlug}/invitations/${invitationId}/renew`,
 
   /**
    * Resend invitation email (POST) — re-queues the email without
@@ -1474,6 +1508,11 @@ export const proxyPoolEndpoints = {
     `${API_BASE.PROXY_POOLS}/${poolId}/endpoints/${endpointId}`,
   assignments: () => `${API_BASE.PROXY_POOLS}/assignments`,
   assignment: (sensorId: string) => `${API_BASE.PROXY_POOLS}/assignments/${sensorId}`,
+  /** POST: ask sensors to test a pool's endpoints (the platform never connects to a proxy). */
+  test: (poolId: string) => `${API_BASE.PROXY_POOLS}/${poolId}/test`,
+  /** GET: the results of those tests, by command id. */
+  tests: (poolId: string, commandIds: string[]) =>
+    `${API_BASE.PROXY_POOLS}/${poolId}/tests?command_ids=${commandIds.map(encodeURIComponent).join(',')}`,
 } as const
 
 /**
@@ -1638,6 +1677,36 @@ export const workflowEndpoints = {
    * Trigger workflow run
    */
   trigger: (workflowId: string) => `/api/v1/workflows/${workflowId}/runs`,
+
+  /** Trigger, action and notification types the builder may offer. */
+  catalog: () => '/api/v1/workflows/catalog',
+
+  /** Published versions (newest first). */
+  versions: (workflowId: string) => `/api/v1/workflows/${workflowId}/versions`,
+
+  /** Publish the draft (go live). */
+  publish: (workflowId: string) => `/api/v1/workflows/${workflowId}/publish`,
+
+  /** A second publisher approves a pending version. */
+  approveVersion: (workflowId: string, versionId: string) =>
+    `/api/v1/workflows/${workflowId}/versions/${versionId}/approve`,
+
+  /** Republish an older version as a new one. */
+  rollbackVersion: (workflowId: string, versionId: string) =>
+    `/api/v1/workflows/${workflowId}/versions/${versionId}/rollback`,
+
+  /** Switch to simulate (live is reached only through publish). */
+  mode: (workflowId: string) => `/api/v1/workflows/${workflowId}/mode`,
+
+  /** Run the draft on recent subjects; nothing is stored. */
+  preview: (workflowId: string) => `/api/v1/workflows/${workflowId}/preview`,
+
+  /** Static check of the draft graph. */
+  validate: (workflowId: string) => `/api/v1/workflows/${workflowId}/verify`,
+
+  /** Per-step counts over recorded runs. */
+  trace: (workflowId: string, mode: 'simulate' | 'live' = 'simulate', days = 30) =>
+    `/api/v1/workflows/${workflowId}/trace?mode=${mode}&days=${days}`,
 } as const
 
 /**
@@ -1661,6 +1730,9 @@ export const workflowRunEndpoints = {
    * Cancel a running workflow
    */
   cancel: (runId: string) => `/api/v1/workflow-runs/${runId}/cancel`,
+
+  /** Continue a run paused at the change cap. */
+  resume: (runId: string) => `/api/v1/workflow-runs/${runId}/approve`,
 } as const
 
 // ============================================

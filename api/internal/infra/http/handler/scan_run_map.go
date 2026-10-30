@@ -82,6 +82,32 @@ type RunMapNode struct {
 	// handed (absent before the stage is planned).
 	Inputs  *int `json:"inputs,omitempty"`
 	Planned *int `json:"planned,omitempty"`
+	// Outcome is what the step did not do, as values the console words
+	// itself (never the English summary): hosts not fully covered with
+	// their reasons, and the unfinished, unreachable and skipped counts.
+	Outcome *RunMapOutcome `json:"outcome,omitempty"`
+	// Result is what a completed retest step concluded (inconclusive,
+	// still_exposed_elsewhere) with its reason code; the step succeeded.
+	Result *RunResult `json:"result,omitempty"`
+}
+
+// RunMapOutcome is a step's structured outcome.
+type RunMapOutcome struct {
+	// CoverageGaps are hosts the sensor could not fully cover (at most
+	// scanrun.MaxTaskCoverageGaps; a batched step lists them on its tasks),
+	// CoverageGapCount how many there were in all.
+	CoverageGaps     []RunMapCoverageGap `json:"coverage_gaps,omitempty"`
+	CoverageGapCount int                 `json:"coverage_gap_count,omitempty"`
+	Unfinished       int                 `json:"unfinished_target_count,omitempty"`
+	Unreachable      int                 `json:"unreachable_target_count,omitempty"`
+	Skipped          int                 `json:"skipped_target_count,omitempty"`
+}
+
+// RunMapCoverageGap is one host and why it was not fully covered
+// (breaker_open, rate_floor or blocked).
+type RunMapCoverageGap struct {
+	Host   string `json:"host"`
+	Reason string `json:"reason"`
 }
 
 // RunMapEdge is one dependency of the map: Count is what the upstream step
@@ -195,8 +221,16 @@ func toRunMapResponse(m *scanrunapp.RunMap) RunMapResponse {
 		for _, d := range m.Deltas {
 			deltas[d.StepKey] = d
 		}
-		// Every step compares, a step without outputs in either run as 0/0/0.
+		// Every step that finished its work compares, a step without outputs
+		// in either run as 0/0/0. A step that failed, timed out, was
+		// canceled or skipped, or has not finished produced nothing to
+		// compare: counting the previous run's assets as gone would read as
+		// assets that disappeared (a run no sensor picked up showed every
+		// asset of the last run as gone). It carries no comparison.
 		for _, sr := range run.StepRuns {
+			if !stepComparable(sr.Status) {
+				continue
+			}
 			d := deltas[sr.StepKey]
 			out := outputs[sr.StepKey]
 			out.Previous, out.Added, out.Gone = intPtr(d.Previous), intPtr(d.Added), intPtr(d.Gone)
@@ -348,6 +382,11 @@ func fillNodeFromStepRun(n *RunMapNode, sr *scanrundom.StepRun, platform bool) {
 		n.ErrorClass = stepErrorClass(sr.ErrorCode)
 		n.ErrorMessage = platformText(platform, sr.ErrorMessage)
 	}
+	n.Outcome = stepOutcome(sr.Output)
+	if kind, _ := sr.Output[scanrunapp.StepOutputResultKind].(string); kind != "" {
+		code, _ := sr.Output[scanrunapp.StepOutputResultCode].(string)
+		n.Result = &RunResult{Kind: kind, Code: code}
+	}
 	if sr.StartedAt != nil {
 		n.StartedAt = sr.StartedAt.Format("2006-01-02T15:04:05Z07:00")
 	}
@@ -382,4 +421,57 @@ func mapNodeState(status scanrundom.StepRunStatus, c RunMapChunks) string {
 	default:
 		return mapStatePending
 	}
+}
+
+// stepOutcome reads a step's structured outcome from its output (written by
+// scanrun's Partial.withNotes; numbers come back from JSONB as float64).
+// Nil when the step did all it was given.
+func stepOutcome(output map[string]any) *RunMapOutcome {
+	num := func(k string) int {
+		switch v := output[k].(type) {
+		case float64:
+			return int(v)
+		case int:
+			return v
+		}
+		return 0
+	}
+	o := RunMapOutcome{
+		CoverageGapCount: num(scanrunapp.StepOutputCoverageGapCount),
+		Unfinished:       num(scanrunapp.StepOutputUnfinished),
+		Unreachable:      num(scanrunapp.StepOutputUnreachable),
+		Skipped:          num(scanrunapp.StepOutputSkipped),
+	}
+	appendGap := func(host, reason any) {
+		h, _ := host.(string)
+		r, _ := reason.(string)
+		if h != "" && len(o.CoverageGaps) < scanrundom.MaxTaskCoverageGaps {
+			o.CoverageGaps = append(o.CoverageGaps, RunMapCoverageGap{Host: h, Reason: r})
+		}
+	}
+	switch list := output[scanrunapp.StepOutputCoverageGaps].(type) {
+	case []any:
+		for _, e := range list {
+			if m, ok := e.(map[string]any); ok {
+				appendGap(m["host"], m["reason"])
+			}
+		}
+	case []map[string]string:
+		for _, m := range list {
+			appendGap(m["host"], m["reason"])
+		}
+	}
+	if o.CoverageGapCount < len(o.CoverageGaps) {
+		o.CoverageGapCount = len(o.CoverageGaps)
+	}
+	if o.CoverageGapCount == 0 && o.Unfinished == 0 && o.Unreachable == 0 && o.Skipped == 0 {
+		return nil
+	}
+	return &o
+}
+
+// stepComparable reports whether a step run finished its work, so what it
+// produced can be compared with the previous run: completed or partial.
+func stepComparable(st scanrundom.StepRunStatus) bool {
+	return st == scanrundom.StepRunStatusCompleted || st == scanrundom.StepRunStatusPartial
 }

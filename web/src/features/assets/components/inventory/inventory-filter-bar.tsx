@@ -10,8 +10,10 @@
  */
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { ArrowLeft, Plus, X } from 'lucide-react'
+import { ArrowLeft, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { FilterChipsRow } from '@/features/shared/components/filter-chips-row'
+import { RemovableFilterChip } from '@/features/shared/components/removable-filter-chip'
 import {
   Command,
   CommandEmpty,
@@ -20,7 +22,7 @@ import {
   CommandItem,
   CommandList,
 } from '@/components/ui/command'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { ResponsivePopover } from '@/features/shared/components/responsive-popover'
 import { useTranslation } from '@/context/i18n-provider'
 import { toDisplayText } from '@/lib/untrusted-text'
 import type { AssetStatsData } from '../../hooks/use-assets'
@@ -170,8 +172,12 @@ function AddFilter({
   }, [fields])
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
+    <ResponsivePopover
+      open={open}
+      onOpenChange={setOpen}
+      title={t('assets.filters.add', 'Add filter')}
+      className="w-80"
+      trigger={
         <Button
           variant="outline"
           size="sm"
@@ -181,61 +187,56 @@ function AddFilter({
           <Plus className="size-3" aria-hidden />
           {t('assets.filters.add', 'Add filter')}
           <kbd
-            className="ms-1 rounded border px-1 font-sans text-xs text-muted-foreground"
+            className="ms-1 hidden rounded border px-1 font-sans text-xs text-muted-foreground md:inline"
             aria-hidden
           >
             f
           </kbd>
         </Button>
-      </PopoverTrigger>
-      <PopoverContent
-        align="start"
-        className="w-80 p-0"
-        aria-label={t('assets.filters.add', 'Add filter')}
-      >
-        {picked ? (
-          <div className="flex max-h-[min(28rem,70svh)] flex-col">
-            <div className="flex items-center gap-1 border-b px-1 py-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 gap-1 px-2 text-xs"
-                onClick={() => setPicked(null)}
-              >
-                <ArrowLeft className="size-3.5" aria-hidden />
-                {t('assets.filters.back', 'All filters')}
-              </Button>
-              <Button size="sm" className="ms-auto h-7 px-3 text-xs" onClick={() => setOpen(false)}>
-                {t('assets.filters.done', 'Done')}
-              </Button>
-            </div>
-            <div className="min-h-0 overflow-y-auto px-3 pb-2">
-              {picked.editor({ filters, stats, onChange })}
-            </div>
+      }
+    >
+      {picked ? (
+        <div className="flex max-h-[min(28rem,70svh)] flex-col">
+          <div className="flex items-center gap-1 border-b px-1 py-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1 px-2 text-xs"
+              onClick={() => setPicked(null)}
+            >
+              <ArrowLeft className="size-3.5" aria-hidden />
+              {t('assets.filters.back', 'All filters')}
+            </Button>
+            <Button size="sm" className="ms-auto h-7 px-3 text-xs" onClick={() => setOpen(false)}>
+              {t('assets.filters.done', 'Done')}
+            </Button>
           </div>
-        ) : (
-          <Command>
-            <CommandInput placeholder={t('assets.filters.search', 'Search filters…')} />
-            <CommandList>
-              <CommandEmpty>{t('assets.filters.noField', 'No matching filter')}</CommandEmpty>
-              {byGroup.map(([group, items]) => (
-                <CommandGroup key={group} heading={group}>
-                  {items.map((f) => (
-                    <CommandItem
-                      key={f.id}
-                      value={`${f.label} ${f.id}`}
-                      onSelect={() => setPicked(f)}
-                    >
-                      {f.label}
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              ))}
-            </CommandList>
-          </Command>
-        )}
-      </PopoverContent>
-    </Popover>
+          <div className="min-h-0 overflow-y-auto px-3 pb-2">
+            {picked.editor({ filters, stats, onChange })}
+          </div>
+        </div>
+      ) : (
+        <Command>
+          <CommandInput placeholder={t('assets.filters.search', 'Search filters…')} />
+          <CommandList>
+            <CommandEmpty>{t('assets.filters.noField', 'No matching filter')}</CommandEmpty>
+            {byGroup.map(([group, items]) => (
+              <CommandGroup key={group} heading={group}>
+                {items.map((f) => (
+                  <CommandItem
+                    key={f.id}
+                    value={`${f.label} ${f.id}`}
+                    onSelect={() => setPicked(f)}
+                  >
+                    {f.label}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            ))}
+          </CommandList>
+        </Command>
+      )}
+    </ResponsivePopover>
   )
 }
 
@@ -251,28 +252,18 @@ export function InventoryFilterChip({
   // Values can be discovered data (tags, technologies, attribute values): text only.
   const text = toDisplayText(chip.text, 120)
   return (
-    <span
+    <RemovableFilterChip
       data-testid="inventory-filter-chip"
-      className="inline-flex max-w-full items-center gap-1 rounded-full border bg-muted/50 py-0.5 ps-2.5 pe-1 text-xs"
-    >
-      <span dir="auto" className="min-w-0 truncate [unicode-bidi:isolate]" title={text}>
-        {text}
-      </span>
-      <button
-        type="button"
-        onClick={onRemove}
-        aria-label={t('assets.filters.remove', 'Remove filter {filter}', { filter: text })}
-        className="inline-flex size-5 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        <X className="size-3" aria-hidden />
-      </button>
-    </span>
+      text={text}
+      onRemove={onRemove}
+      removeLabel={t('assets.filters.remove', 'Remove filter {filter}', { filter: text })}
+    />
   )
 }
 
 export function InventoryFilterBar({
   chips,
-  leading,
+  locked,
   groups,
   attributeFacets = [],
   tagTypes,
@@ -284,8 +275,8 @@ export function InventoryFilterBar({
   resultLabel,
 }: {
   chips: InventoryChip[]
-  /** Drawn first (the hiding chip). */
-  leading?: ReactNode
+  /** What the default list hides (a `LockedChip`), first in the row. */
+  locked?: ReactNode
   groups: FacetGroup[]
   attributeFacets?: AttributeFacet[]
   tagTypes?: string[]
@@ -298,34 +289,35 @@ export function InventoryFilterBar({
   const { t } = useTranslation()
   const fields = useFilterFields(groups, attributeFacets, tagTypes)
   return (
-    <div data-testid="inventory-filter-bar" className="flex min-w-0 flex-wrap items-center gap-2">
-      {leading}
-      {chips.map((c) => (
+    <FilterChipsRow
+      data-testid="inventory-filter-bar"
+      leading={locked}
+      chips={chips.map((c) => (
         <InventoryFilterChip key={c.key} chip={c} onRemove={() => onChange(c.clear(filters))} />
       ))}
-      <AddFilter
-        className="hidden lg:inline-flex"
-        fields={fields}
-        filters={filters}
-        stats={stats}
-        onChange={onChange}
-        onOpenChange={onPickerOpenChange}
-      />
-      {chips.length > 1 && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 px-2 text-xs text-muted-foreground"
-          onClick={onClearAll}
-        >
-          {t('assets.filters.clearAll', 'Clear filters')}
-        </Button>
-      )}
-      {resultLabel && (
-        <span className="ms-auto text-xs tabular-nums text-muted-foreground" role="status">
-          {resultLabel}
-        </span>
-      )}
-    </div>
+      trailing={
+        <>
+          <AddFilter
+            className="hidden lg:inline-flex"
+            fields={fields}
+            filters={filters}
+            stats={stats}
+            onChange={onChange}
+            onOpenChange={onPickerOpenChange}
+          />
+          {chips.length > 1 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs text-muted-foreground"
+              onClick={onClearAll}
+            >
+              {t('assets.filters.clearAll', 'Clear filters')}
+            </Button>
+          )}
+        </>
+      }
+      end={resultLabel ? <span role="status">{resultLabel}</span> : undefined}
+    />
   )
 }

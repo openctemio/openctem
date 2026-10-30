@@ -119,24 +119,63 @@ type SensorTemplateData struct {
 	SeccompURL    string
 	SeccompSHA256 string
 
-	// Policy is what the sensor-local policy template (RFC-040 §5.7,
-	// policy.tmpl) is prefilled with; PolicyFromZones builds it.
+	// Policy is what the sensor-local policy template (policy.tmpl) is
+	// prefilled with: PolicyFromZones, else PolicyFromScope.
 	Policy PolicyTemplateData
+
+	// Auth is how the installed sensor gets its identity: AuthKey (the
+	// default; an API key, APIKey or $OPENCTEM_API_KEY) or AuthPair (no
+	// key: the sensor makes its own and pairs, RFC-052). Templates that
+	// predate the field render AuthKey output whatever it says.
+	Auth string
+	// PairingCode (AuthPair only) is a code the console created ("create a
+	// pairing code first"), formatted XXXX-XXXX; the snippets pass it as
+	// SENSOR_PAIRING_CODE. Empty: the sensor prints a code.
+	PairingCode string
+	// JobSigningRoot (AuthPair only) is the id of the offline root that
+	// signs the job signer's key set; the snippets pass it as
+	// SENSOR_JOB_SIGNING_ROOT. Empty: none configured.
+	JobSigningRoot string
 }
 
-// PolicyTemplateData prefills the sensor-local policy the install dialog
-// offers the network owner: the ranges of the sensor's scan zones.
+// How an installed sensor gets its identity (SensorTemplateData.Auth).
+const (
+	AuthKey  = "key"
+	AuthPair = "pair"
+)
+
+// PolicyTemplateData prefills the sensor-local policy the install commands
+// offer the network owner: the ranges of the sensor's scan zones, else the
+// organization's scope.
 type PolicyTemplateData struct {
-	// Ranges are the CIDRs of the sensor's zones (targets.allow). Empty with
-	// Open false: the sensor has no zone yet and the owner lists them.
+	// Source is PolicySourceZones, PolicySourceScope, or "" when there is
+	// nothing to prefill (the owner lists the targets).
+	Source string
+	// Ranges are CIDRs (targets.allow): the zones' ranges, or the scope's
+	// networks and addresses. Empty with Open false and no Domains: nothing
+	// to prefill.
 	Ranges []string
+	// Domains are host names and *.domain patterns (targets.allow) from the
+	// scope.
+	Domains []string
+	// Deny are the organization's active scope exclusions of a network or
+	// name type (targets.deny).
+	Deny []string
 	// Open: one of the sensor's zones is the default zone, which receives
 	// public targets no range covers, so the policy sets no allow list.
 	Open bool
 	// AllowPrivate: a range is private (RFC 1918, ULA); the policy allows
 	// private targets and the snippets set SENSOR_ALLOW_PRIVATE_TARGETS=1.
 	AllowPrivate bool
+	// Skipped counts scope entries left out because the sensor would refuse
+	// them (always-blocked addresses, malformed values); Truncated counts
+	// entries cut by MaxPolicyPrefillEntries.
+	Skipped   int
+	Truncated int
 }
+
+// HasAllow reports whether the prefill lists targets to allow.
+func (p PolicyTemplateData) HasAllow() bool { return len(p.Ranges) > 0 || len(p.Domains) > 0 }
 
 // PolicyFromZones builds the policy prefill from the tenant's zones: the
 // ranges of the zones sensorID is assigned to.
@@ -146,6 +185,7 @@ func PolicyFromZones(zones []*scanzone.Zone, sensorID shared.ID) PolicyTemplateD
 		if z == nil || !slices.Contains(z.SensorIDs, sensorID) {
 			continue
 		}
+		out.Source = PolicySourceZones
 		if z.IsDefault {
 			out.Open = true
 		}
@@ -256,6 +296,16 @@ func (s *SensorConfigTemplateService) Render(data SensorTemplateData) (*Rendered
 	}
 	if data.Sensor == nil {
 		return nil, fmt.Errorf("render sensor templates: no sensor")
+	}
+	switch data.Auth {
+	case "":
+		data.Auth = AuthKey
+	case AuthKey, AuthPair:
+	default:
+		return nil, fmt.Errorf("render sensor templates: unknown auth %q", data.Auth)
+	}
+	if data.Auth == AuthPair && data.APIKey != "" {
+		return nil, fmt.Errorf("render sensor templates: a pairing install carries no API key")
 	}
 	if data.SeccompURL == "" {
 		data.SeccompURL = strings.TrimRight(data.BaseURL, "/") + SeccompProfilePath

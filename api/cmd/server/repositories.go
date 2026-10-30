@@ -35,6 +35,7 @@ type Repositories struct {
 	AssetTechnology         *postgres.AssetTechnologyRepository         // Detected technologies (RFC-112)
 	AssetTechnologyBackfill *postgres.AssetTechnologyBackfillRepository // Technology backfill (RFC-112)
 	AssetCoverage           *postgres.AssetCoverageRepository           // Coverage ledger (RFC-093)
+	AssetResolution         *postgres.AssetResolutionRepository         // Whether host names resolve (not_resolving names are skipped by active stages)
 	AssetWildcardDNS        *postgres.AssetWildcardDNSRepository        // Names that resolve only through a wildcard (RFC-088 A4)
 	AssetEnrichmentRequests *postgres.AssetEnrichmentRequestRepository  // Automatic enrichment requests (RFC-075)
 	AssetChangeEvents       *postgres.AssetChangeEventRepository        // Asset change timeline (RFC-069)
@@ -60,6 +61,8 @@ type Repositories struct {
 	AITriage         *postgres.AITriageRepository              // AI-powered vulnerability triage
 	AITriageBudget   *postgres.AITriageBudgetRepository        // Per-tenant LLM token budget (RFC-008)
 	TenantAISettings *postgres.TenantAISettingsRepository      // Organizations' AI settings (consent, source, own provider)
+	AIAnalysis       *postgres.AIAnalysisRepository            // AI agents, their owners and runs
+	AIMaskMaps       *postgres.AIMaskMapRepository             // Per AI run masking maps (encrypted, expiring)
 	DataFlow         *postgres.DataFlowRepository              // Data flow traces for taint tracking
 	FindingSource    *postgres.FindingSourceRepository         // Finding source configuration
 	FindingSourceCat *postgres.FindingSourceCategoryRepository // Finding source categories
@@ -200,7 +203,7 @@ type Repositories struct {
 	Scan             *postgres.ScanRepository
 	ScanSelector     *postgres.ScanSelectorRepository
 	ScannerTemplate  *postgres.ScannerTemplateRepository
-	TemplateSource   *postgres.TemplateSourceRepository
+	ContentSource    *postgres.ContentSourceRepository
 	SecretStore      *postgres.SecretStoreRepository
 
 	// ScanRuns
@@ -273,11 +276,14 @@ type Repositories struct {
 	SecurityOverview *postgres.SecurityOverviewRepository
 	AdminOrg         *postgres.AdminOrganizationRepository
 	AdminConsole     *postgres.AdminConsoleRepository
-	// AdminFactor stores console security keys and recovery codes (RFC-078).
+	// AdminFactor stores console security keys and recovery codes (RFC-078),
+	// on the console pool (UseAdminDB).
 	AdminFactor *postgres.AdminFactorRepository
 	PlatformIdP *postgres.PlatformIdPRepository
 	// AdminDB is the pool of the console's identity tables (UseAdminDB).
 	AdminDB *postgres.DB
+	// SSOEnforcement backs the Require SSO guard (preconditions, revoke at enable).
+	SSOEnforcement *postgres.SSOEnforcementRepository
 
 	// Target Mappings (scanner target type -> asset type)
 	TargetMapping *postgres.TargetMappingRepository
@@ -354,6 +360,7 @@ type Repositories struct {
 	FindingRetestCheck      *postgres.FindingRetestCheckRepository
 	FindingEvidence         *postgres.FindingEvidenceRepository
 	FindingSLARestart       *postgres.FindingSLARestartRepository
+	NavPin                  *postgres.NavPinRepository
 	FindingAcceptanceExpiry *postgres.FindingAcceptanceExpiryRepository
 	// FindingMaterialChange: standing decisions for the material-change
 	// controller (RFC-111).
@@ -415,6 +422,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		AssetTechnology:         postgres.NewAssetTechnologyRepository(db),
 		AssetTechnologyBackfill: postgres.NewAssetTechnologyBackfillRepository(db),
 		AssetCoverage:           postgres.NewAssetCoverageRepository(db),
+		AssetResolution:         postgres.NewAssetResolutionRepository(db),
 		AssetWildcardDNS:        postgres.NewAssetWildcardDNSRepository(db),
 		AssetEnrichmentRequests: postgres.NewAssetEnrichmentRequestRepository(db),
 		AssetChangeEvents:       postgres.NewAssetChangeEventRepository(db),
@@ -440,6 +448,8 @@ func newRepositories(db *postgres.DB) *Repositories {
 		AITriage:         postgres.NewAITriageRepository(db),       // AI-powered vulnerability triage
 		AITriageBudget:   postgres.NewAITriageBudgetRepository(db), // RFC-008 monthly LLM token budget
 		TenantAISettings: postgres.NewTenantAISettingsRepository(db),
+		AIAnalysis:       postgres.NewAIAnalysisRepository(db),
+		AIMaskMaps:       postgres.NewAIMaskMapRepository(db),
 		DataFlow:         postgres.NewDataFlowRepository(db),              // Data flow traces
 		FindingSource:    postgres.NewFindingSourceRepository(db),         // Finding source configuration
 		FindingSourceCat: postgres.NewFindingSourceCategoryRepository(db), // Finding source categories
@@ -555,7 +565,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		Scan:             postgres.NewScanRepository(db),
 		ScanSelector:     postgres.NewScanSelectorRepository(db),
 		ScannerTemplate:  postgres.NewScannerTemplateRepository(db),
-		TemplateSource:   postgres.NewTemplateSourceRepository(db),
+		ContentSource:    postgres.NewContentSourceRepository(db),
 		SecretStore:      postgres.NewSecretStoreRepository(db),
 
 		// ScanRuns
@@ -585,6 +595,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		AccessControl:     postgres.NewAccessControlRepository(db),
 		DataScope:         postgres.NewDataScopeRepository(db),
 		MemberLifecycle:   postgres.NewMemberLifecycleRepository(db),
+		SSOEnforcement:    postgres.NewSSOEnforcementRepository(db),
 		OwnershipTransfer: postgres.NewOwnershipTransferRepository(db),
 		Role:              postgres.NewRoleRepository(db),
 		RolePermission:    postgres.NewPermissionRepository(db),
@@ -673,6 +684,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		FindingRetestCheck:      postgres.NewFindingRetestCheckRepository(db),
 		FindingEvidence:         postgres.NewFindingEvidenceRepository(db),
 		FindingSLARestart:       postgres.NewFindingSLARestartRepository(db),
+		NavPin:                  postgres.NewNavPinRepository(db),
 		FindingAcceptanceExpiry: postgres.NewFindingAcceptanceExpiryRepository(db),
 		FindingMaterialChange:   postgres.NewFindingMaterialChangeRepository(db),
 
@@ -702,13 +714,15 @@ func (r *Repositories) InitIntegrationExtensions(db *postgres.DB) {
 
 // UseAdminDB moves the repositories of the platform console's identity tables
 // (admin_users, admin_credentials, admin_sessions, the platform identity
-// provider and its login states) to adminDB, the DB_ADMIN_USER pool. With one
-// pool it is the same database handle.
+// provider and its login states, the console's passkeys and recovery codes) to
+// adminDB, the DB_ADMIN_USER pool. With one pool it is the same database
+// handle.
 func (r *Repositories) UseAdminDB(adminDB *postgres.DB) {
 	r.AdminDB = adminDB
 	r.Admin = postgres.NewAdminRepository(adminDB)
 	r.AdminConsole = postgres.NewAdminConsoleRepository(adminDB)
 	r.PlatformIdP = postgres.NewPlatformIdPRepository(adminDB)
+	r.AdminFactor = postgres.NewAdminFactorRepository(adminDB)
 }
 
 // adminDBOf is the console identity pool, or db when none was set up.

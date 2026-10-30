@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -53,10 +54,14 @@ type SLAPolicyResponse struct {
 	// P0Days..P3Days are the remediation windows per CTEM priority class.
 	// They take precedence over the severity windows for every finding that
 	// has a priority class.
-	P0Days              int  `json:"p0_days"`
-	P1Days              int  `json:"p1_days"`
-	P2Days              int  `json:"p2_days"`
-	P3Days              int  `json:"p3_days"`
+	P0Days int `json:"p0_days"`
+	P1Days int `json:"p1_days"`
+	P2Days int `json:"p2_days"`
+	P3Days int `json:"p3_days"`
+	// KEVCapDays is the known exploited deadline cap: a finding whose CVE is
+	// in CISA KEV is due at most this many days after it is first seen as
+	// known exploited. 0 = off.
+	KEVCapDays          int  `json:"kev_cap_days"`
 	WarningThresholdPct int  `json:"warning_threshold_pct"`
 	EscalationEnabled   bool `json:"escalation_enabled"`
 	IsActive            bool `json:"is_active"`
@@ -84,6 +89,7 @@ func toSLAPolicyResponse(p *sladom.Policy) SLAPolicyResponse {
 		P1Days:              p.P1Days(),
 		P2Days:              p.P2Days(),
 		P3Days:              p.P3Days(),
+		KEVCapDays:          p.KEVCapDays(),
 		WarningThresholdPct: p.WarningThresholdPct(),
 		EscalationEnabled:   p.EscalationEnabled(),
 		IsActive:            p.IsActive(),
@@ -108,10 +114,12 @@ type CreateSLAPolicyRequest struct {
 	LowDays      int    `json:"low_days" validate:"required,min=1,max=365"`
 	InfoDays     int    `json:"info_days" validate:"min=0,max=365"` // 0 = no SLA for informational findings
 	// P0Days..P3Days are optional; an omitted class keeps its default window.
-	P0Days              *int  `json:"p0_days" validate:"omitempty,min=1,max=365"`
-	P1Days              *int  `json:"p1_days" validate:"omitempty,min=1,max=365"`
-	P2Days              *int  `json:"p2_days" validate:"omitempty,min=1,max=365"`
-	P3Days              *int  `json:"p3_days" validate:"omitempty,min=1,max=365"`
+	P0Days *int `json:"p0_days" validate:"omitempty,min=1,max=365"`
+	P1Days *int `json:"p1_days" validate:"omitempty,min=1,max=365"`
+	P2Days *int `json:"p2_days" validate:"omitempty,min=1,max=365"`
+	P3Days *int `json:"p3_days" validate:"omitempty,min=1,max=365"`
+	// KEVCapDays is optional (omitted = 14); 0 turns the cap off.
+	KEVCapDays          *int  `json:"kev_cap_days" validate:"omitempty,min=0,max=365"`
 	WarningThresholdPct int   `json:"warning_threshold_pct" validate:"min=0,max=100"`
 	EscalationEnabled   *bool `json:"escalation_enabled"`
 }
@@ -130,6 +138,7 @@ type UpdateSLAPolicyRequest struct {
 	P1Days              *int    `json:"p1_days" validate:"omitempty,min=1,max=365"`
 	P2Days              *int    `json:"p2_days" validate:"omitempty,min=1,max=365"`
 	P3Days              *int    `json:"p3_days" validate:"omitempty,min=1,max=365"`
+	KEVCapDays          *int    `json:"kev_cap_days" validate:"omitempty,min=0,max=365"`
 	WarningThresholdPct *int    `json:"warning_threshold_pct" validate:"omitempty,min=0,max=100"`
 	EscalationEnabled   *bool   `json:"escalation_enabled"`
 	IsActive            *bool   `json:"is_active"`
@@ -250,6 +259,7 @@ func (h *SLAHandler) Create(w http.ResponseWriter, r *http.Request) {
 		P1Days:              req.P1Days,
 		P2Days:              req.P2Days,
 		P3Days:              req.P3Days,
+		KEVCapDays:          req.KEVCapDays,
 	}
 
 	p, err := h.service.CreateSLAPolicy(r.Context(), input)
@@ -347,6 +357,7 @@ func (h *SLAHandler) Update(w http.ResponseWriter, r *http.Request) {
 		P1Days:              req.P1Days,
 		P2Days:              req.P2Days,
 		P3Days:              req.P3Days,
+		KEVCapDays:          req.KEVCapDays,
 	}
 
 	var before any
@@ -422,6 +433,15 @@ func (h *SLAHandler) GetDefault(w http.ResponseWriter, r *http.Request) {
 // writeEffectivePolicy writes a governing policy, or the platform default
 // windows (no id, is_platform_default) when the tenant has configured none.
 func writeEffectivePolicy(w http.ResponseWriter, ep *sla.EffectivePolicy) {
+	resp := effectivePolicyResponse(ep)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// effectivePolicyResponse is the body of the effective-policy reads: the
+// policy, or the platform default windows when the tenant has none.
+func effectivePolicyResponse(ep *sla.EffectivePolicy) SLAPolicyResponse {
 	resp := toSLAPolicyResponse(ep.Policy)
 	if ep.PlatformDefault {
 		resp = SLAPolicyResponse{
@@ -437,15 +457,38 @@ func writeEffectivePolicy(w http.ResponseWriter, ep *sla.EffectivePolicy) {
 			P1Days:              resp.P1Days,
 			P2Days:              resp.P2Days,
 			P3Days:              resp.P3Days,
+			KEVCapDays:          resp.KEVCapDays,
 			WarningThresholdPct: resp.WarningThresholdPct,
 			EscalationEnabled:   resp.EscalationEnabled,
 			IsActive:            true,
 			IsPlatformDefault:   true,
 		}
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(resp)
+	return resp
+}
+
+// BootstrapSLA is the SLA part of GET /me/bootstrap: the windows that govern
+// every asset of the organization, so the console resolves an asset's windows
+// without a request per asset. AssetOverrides is true when some asset has a
+// policy of its own; the console then asks per asset as before.
+type BootstrapSLA struct {
+	Policy         SLAPolicyResponse `json:"policy"`
+	AssetOverrides bool              `json:"asset_overrides"`
+}
+
+// BootstrapPart answers the SLA part of the bootstrap for the caller's own
+// tenant: the same effective policy GET /assets/{id}/sla-policy returns when
+// no asset has an override.
+func (h *SLAHandler) BootstrapPart(ctx context.Context, tenantID shared.ID) (*BootstrapSLA, error) {
+	ep, err := h.service.GetEffectiveTenantPolicy(ctx, tenantID.String())
+	if err != nil {
+		return nil, err
+	}
+	overrides, err := h.service.HasAssetOverride(ctx, tenantID.String())
+	if err != nil {
+		return nil, err
+	}
+	return &BootstrapSLA{Policy: effectivePolicyResponse(ep), AssetOverrides: overrides}, nil
 }
 
 // GetByAsset handles GET /api/v1/assets/{id}/sla-policy
@@ -476,7 +519,8 @@ func (h *SLAHandler) GetByAsset(w http.ResponseWriter, r *http.Request) {
 }
 
 // slaChangeSeverity is High when any remediation window got longer (findings
-// may stay open longer before they breach), Medium otherwise.
+// may stay open longer before they breach), including the known exploited
+// cap turned off, Medium otherwise.
 func slaChangeSeverity(before any, after SLAPolicyResponse) auditdom.Severity {
 	changes := auditapp.DiffChanges(before, after)
 	if changes == nil {
@@ -493,6 +537,10 @@ func slaChangeSeverity(before any, after SLAPolicyResponse) auditdom.Severity {
 		bf, bok := b.(float64)
 		af, aok := changes.After[k].(float64)
 		if bok && aok && af > bf {
+			return auditdom.SeverityHigh
+		}
+		// The known exploited cap off (0) removes a bound on deadlines.
+		if k == "kev_cap_days" && bok && aok && af == 0 && bf > 0 {
 			return auditdom.SeverityHigh
 		}
 	}

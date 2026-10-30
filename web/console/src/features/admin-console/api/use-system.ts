@@ -30,14 +30,35 @@ export function cancelAnnouncement(id: string, reason: string) {
   })
 }
 
-/** The EPSS and CISA KEV feed sync states (any admin). */
-export function useThreatIntelFeeds() {
-  return useSWR<ThreatIntelFeed[]>('/threat-intel/sync', adminFetcher)
+/**
+ * The platform-wide feed states (any admin). While a feed runs, or right after
+ * a sync was requested (`fast`), the list refreshes every 2 seconds.
+ */
+export function useThreatIntelFeeds(fast = false) {
+  return useSWR<ThreatIntelFeed[]>('/threat-intel/sync', adminFetcher, {
+    refreshInterval: (latest) =>
+      fast || latest?.some((f) => f.state === 'running') ? 2000 : 60000,
+  })
 }
 
-/** Syncs one feed (or all) now (ops admin and up; audited). */
+/** What a sync request did for one feed. */
+export interface ThreatIntelTriggerResult {
+  source: string
+  status: 'queued' | 'already_running' | 'skipped'
+  /** Why a feed was skipped: disabled, not_configured or rate_limited. */
+  reason?: string
+}
+
+/**
+ * Asks for a sync of one feed (or all) now (ops admin and up; audited). The
+ * server queues the work and answers 202 at once; the outcome shows in the
+ * feed's state.
+ */
 export function syncThreatIntel(source: string) {
-  return adminFetch<unknown>('/threat-intel/sync', { method: 'POST', body: { source } })
+  return adminFetch<{ results?: ThreatIntelTriggerResult[] }>('/threat-intel/sync', {
+    method: 'POST',
+    body: { source },
+  })
 }
 
 /** Turns a feed's scheduled sync on or off (ops admin and up; audited). */

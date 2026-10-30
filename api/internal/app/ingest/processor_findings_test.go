@@ -1311,7 +1311,7 @@ func (s *stubFindingRepository) CreateBatchWithResult(_ context.Context, finding
 	return &vulnerability.BatchCreateResult{Created: len(findings)}, nil
 }
 
-func (s *stubFindingRepository) AutoReopenByFingerprintsBatch(_ context.Context, _ shared.ID, _ []string) (map[string]vulnerability.ReopenedFinding, error) {
+func (s *stubFindingRepository) AutoReopenByFingerprintsBatch(_ context.Context, _ shared.ID, _ []string, _ time.Time) (map[string]vulnerability.ReopenedFinding, error) {
 	return map[string]vulnerability.ReopenedFinding{}, nil
 }
 
@@ -1347,12 +1347,6 @@ func (s *stubFindingRepository) ListByComponentID(_ context.Context, _, _ shared
 }
 func (s *stubFindingRepository) ListAffectedAssetsByVulnerabilityID(_ context.Context, _, _ shared.ID, _ bool, _ pagination.Pagination, _ *shared.DataScope) (pagination.Result[vulnerability.VulnerabilityAffectedAsset], error) {
 	return pagination.Result[vulnerability.VulnerabilityAffectedAsset]{}, nil
-}
-func (s *stubFindingRepository) ListActiveCVEsByTenant(_ context.Context, _ shared.ID, _ vulnerability.ActiveCVEFilter, _ pagination.Pagination) (pagination.Result[vulnerability.ActiveCVE], error) {
-	return pagination.Result[vulnerability.ActiveCVE]{}, nil
-}
-func (s *stubFindingRepository) GetActiveCVEStats(_ context.Context, _ shared.ID, _ bool, _ *shared.DataScope) (*vulnerability.ActiveCVEStats, error) {
-	return &vulnerability.ActiveCVEStats{BySeverity: map[string]int{}}, nil
 }
 func (s *stubFindingRepository) Count(_ context.Context, _ vulnerability.FindingFilter) (int64, error) {
 	return 0, nil
@@ -1612,9 +1606,13 @@ func TestRedactSecretSnippet_KeepsAMaskedLine(t *testing.T) {
 type defaultBranchStubRepo struct {
 	defaultBranch *branch.Branch
 	setCalls      []shared.ID
+	getErr        error
 }
 
 func (s *defaultBranchStubRepo) GetDefaultBranch(_ context.Context, _ shared.ID) (*branch.Branch, error) {
+	if s.getErr != nil {
+		return nil, s.getErr
+	}
 	if s.defaultBranch == nil {
 		return nil, shared.ErrNotFound
 	}

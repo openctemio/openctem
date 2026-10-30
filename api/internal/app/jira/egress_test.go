@@ -194,8 +194,8 @@ func TestTicketDescription_ContentRules(t *testing.T) {
 		t.Fatal(err)
 	}
 	desc = ticketDescription(pii)
-	if strings.Contains(desc, "@example.com") || strings.Contains(ticketSummary(pii), "@example.com") {
-		t.Fatalf("data exposure ticket carries free text:\n%s\n%s", ticketSummary(pii), desc)
+	if strings.Contains(desc, "@example.com") || strings.Contains(ticketSummary(pii, ""), "@example.com") {
+		t.Fatalf("data exposure ticket carries free text:\n%s\n%s", ticketSummary(pii, ""), desc)
 	}
 	if !strings.Contains(desc, "customers.csv") {
 		t.Fatalf("data exposure ticket should keep the location:\n%s", desc)

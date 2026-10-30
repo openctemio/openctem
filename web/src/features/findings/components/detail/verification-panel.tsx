@@ -76,6 +76,15 @@ const REASON: Record<string, string> = {
   target_refused: 'The target may not be probed (scope or deny list)',
   no_sensor: 'No sensor of your organization can re-check it',
   no_check_sensor: 'No sensor of your organization can run custom retest checks',
+  no_template_sensor:
+    "No online sensor has the template release this finding was found with. Update the sensor's templates.",
+  no_automatic_retest:
+    'A person reported this finding, so nothing re-checks it automatically. Attach a retest check to retest it.',
+  imported_no_retest: 'Imported from a tool that no sensor of your organization runs',
+  version_evidence_missing: 'The software version this finding was matched on is no longer known',
+  version_source_not_rescannable:
+    'The version came from a package list or the operating system, which no network scan reads again',
+  active_check_unavailable: 'No installed check for this CVE is known on an online sensor',
   not_eligible: 'Not eligible for a retest',
   absence_not_proof_for_secrets: 'A secret stays valid after it is removed from code',
   source_not_scanned: 'No scanner re-runs a finding reported by a person',
@@ -146,7 +155,7 @@ function EvidenceSummary({ plan, t }: { plan: VerificationPlan; t: Translate }) 
           </span>
           {retest.completed_at && (
             <>
-              {' · '}
+              {', '}
               <RelativeTime date={retest.completed_at} className="text-sm" />
             </>
           )}
@@ -174,7 +183,7 @@ function EvidenceSummary({ plan, t }: { plan: VerificationPlan; t: Translate }) 
         </span>
         {checklist.completed_at && (
           <>
-            {' · '}
+            {', '}
             <RelativeTime date={checklist.completed_at} className="text-sm" />
           </>
         )}

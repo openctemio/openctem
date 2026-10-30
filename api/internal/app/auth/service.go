@@ -3,7 +3,6 @@ package auth
 
 import (
 	"context"
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"strings"
@@ -46,6 +45,11 @@ var (
 	// ErrSignupSSORequired: the address is on a domain whose organization
 	// requires its SSO; nothing was written and the person signs in there.
 	ErrSignupSSORequired = errors.New("sign-up for this address goes through the organization's single sign-on")
+	// ErrEmailNotAuthoritative: a social sign-in presented an e-mail address the
+	// provider does not vouch for (a personal Google account on a company
+	// address, a GitHub address) and the account is not bound to that provider
+	// identity yet. Nothing was written.
+	ErrEmailNotAuthoritative = errors.New("EMAIL_NOT_AUTHORITATIVE: this provider cannot prove ownership of this email address; sign in with your password (or ask an administrator) and link the provider afterwards")
 	// ErrTeamURLNotAvailable: the organization URL (slug) cannot be used,
 	// whether another organization has it or it is reserved.
 	ErrTeamURLNotAvailable = fmt.Errorf("%w: this team URL is not available; choose another", shared.ErrValidation)
@@ -110,9 +114,9 @@ type AuthService struct {
 	selfServiceLimits SelfServiceLimits
 	// onSignIn runs after a sign-in created a session (signin_hook.go).
 	onSignIn SignInHook
-	// onSessionsRevoked runs after the account's sessions were revoked for a
+	// sessionsRevoked runs after the account's sessions were revoked for a
 	// credential change (sessions_revoked_hook.go).
-	onSessionsRevoked SessionsRevokedHook
+	sessionsRevoked SessionsRevokedHooks
 	// signupPolicy decides who may create an organization (the console
 	// sign-up setting). Nil: SIGNUP_MODE from the config.
 	signupPolicy signupdom.PolicySource
@@ -120,11 +124,19 @@ type AuthService struct {
 	// domain (sso_required, joinable, block new organizations). Nil: none.
 	signupDomains signupdom.DomainPolicySource
 
+	// addressHolder tells whether the inviting organization holds the invitee
+	// address's domain; nil means no organization does.
+	addressHolder AddressHolder
+
 	userRepo         userdom.Repository
 	sessionRepo      sessiondom.Repository
 	refreshTokenRepo sessiondom.RefreshTokenRepository
 	tenantRepo       tenantdom.Repository
-	passwordHasher   *password.Hasher
+	// mfaFloor is the platform two-factor floor and privilege resolves who
+	// is an administrator by effective grants (SetMFAFloor).
+	mfaFloor       MFAFloorSource
+	privilege      PrivilegeSource
+	passwordHasher *password.Hasher
 	// dummyHash is a hash of a random secret, made once with passwordHasher
 	// (same algorithm and cost as real passwords), for the constant-time
 	// paths: see dummyPasswordHash.
@@ -133,10 +145,14 @@ type AuthService struct {
 	tokenGenerator *jwt.Generator
 	config         config.AuthConfig
 	logger         *logger.Logger
-	platformAdmins PlatformAdminGate
+	breakGlassGate BreakGlassGate
 	auditService   *auditapp.AuditService
 	roleService    *accesscontrol.RoleService // Optional: for database-driven role permissions
-	smtpChecker    SMTPAvailabilityCheck      // Optional: enables smart email verification
+	// grants overrides roleService for the effective-privilege checks (tests).
+	grants interface {
+		HoldsAboveMember(ctx context.Context, tenantID, userID string) (bool, error)
+	}
+	smtpChecker SMTPAvailabilityCheck // Optional: enables smart email verification
 	// permVersionSvc, when set, stamps issued tenant-scoped access tokens with
 	// the user's current permission version so the permission-sync middleware
 	// can reject stale tokens after a role revocation/demotion (AUTHZ-3).
@@ -148,6 +164,8 @@ type AuthService struct {
 	mfaIssuer        string
 	recoveryHasher   *password.Hasher
 	securityNotifier SecurityNotifier
+	// breakGlass is told when an owner uses break-glass (nil: audit only).
+	breakGlass BreakGlassNotifier
 	// revocations records revoked session ids so their access tokens stop
 	// working immediately (nil = they expire naturally).
 	revocations SessionRevocationStore
@@ -267,15 +285,13 @@ func (s *AuthService) SetSMTPChecker(checker SMTPAvailabilityCheck) {
 	s.smtpChecker = checker
 }
 
-// shouldRequireEmailVerificationForUser is the login-time variant. It looks
-// at ALL tenants the user belongs to and applies the strictest setting:
-//
-//   - "always" anywhere → require verification (deny login if unverified)
-//   - "never" anywhere (without "always") → skip verification (allow login)
-//   - "auto" everywhere → fall back to SMTP availability check
-//
-// If the user has no memberships at all (e.g., self-registered, not yet
-// invited), fall back to global SMTP detection.
+// shouldRequireEmailVerificationForUser is the login-time variant. Whether an
+// address is verified is a property of the account, not of one organization,
+// so the answer here is the platform rule alone: an organization setting can
+// neither lower it (an unverified account would walk into every other
+// organization it belongs to) nor raise it for the other organizations the
+// account belongs to. An organization that wants verified members enforces it
+// at its own entry (enforceEmailVerificationPolicy).
 func (s *AuthService) shouldRequireEmailVerificationForUser(ctx context.Context, userID shared.ID) bool {
 	if s.tenantRepo == nil {
 		return s.shouldRequireEmailVerification(ctx, "")
@@ -284,42 +300,30 @@ func (s *AuthService) shouldRequireEmailVerificationForUser(ctx context.Context,
 	if err != nil || len(memberships) == 0 {
 		return s.shouldRequireEmailVerification(ctx, "")
 	}
-	hasAlways := false
-	hasNever := false
-	for _, m := range memberships {
-		mode := s.getTenantVerificationMode(ctx, m.TenantID)
-		switch mode {
-		case tenantdom.EmailVerificationAlways:
-			hasAlways = true
-		case tenantdom.EmailVerificationNever:
-			hasNever = true
-		}
-	}
-	if hasAlways {
-		return true
-	}
-	if hasNever {
-		return false
-	}
-	// All tenants are "auto" → fall back to SMTP check using the first tenant
-	return s.shouldRequireEmailVerification(ctx, memberships[0].TenantID)
+	// SMTP availability may depend on the organization (its own mail relay),
+	// so the first membership still decides that part; its verification
+	// mode is not read.
+	return s.shouldRequireEmailVerificationPlatform(ctx, memberships[0].TenantID)
 }
 
-// getTenantVerificationMode reads a tenant's EmailVerificationMode setting.
-// Returns empty string if tenant lookup fails (caller treats as auto).
-func (s *AuthService) getTenantVerificationMode(ctx context.Context, tenantIDStr string) tenantdom.EmailVerificationMode {
-	if tenantIDStr == "" || s.tenantRepo == nil {
-		return ""
+// enforceEmailVerificationPolicy refuses to mint a token for an organization
+// that requires verified email ("always") while the account's address is not
+// verified. The requirement applies to entering that organization only.
+func (s *AuthService) enforceEmailVerificationPolicy(ctx context.Context, u *userdom.User, tenantID string) error {
+	if u.EmailVerified() {
+		return nil
 	}
-	tid, err := shared.IDFromString(tenantIDStr)
-	if err != nil {
-		return ""
+	if s.tenantRepo == nil {
+		return nil
 	}
-	t, err := s.tenantRepo.GetByID(ctx, tid)
-	if err != nil || t == nil {
-		return ""
+	// Fail closed: an unverified account whose organization cannot be read
+	// (bad id, lookup error) gets no token, rather than being let in because
+	// the "always" requirement could not be seen.
+	mode, ok := s.lookupTenantVerificationMode(ctx, tenantID)
+	if !ok || mode == tenantdom.EmailVerificationAlways {
+		return ErrEmailNotVerified
 	}
-	return t.TypedSettings().Security.EmailVerificationMode
+	return nil
 }
 
 // shouldRequireEmailVerification returns true if a newly registered user in
@@ -340,16 +344,20 @@ func (s *AuthService) shouldRequireEmailVerification(ctx context.Context, tenant
 	// 1. Per-tenant override (highest priority)
 	if tenantID != "" && s.tenantRepo != nil {
 		if mode, ok := s.lookupTenantVerificationMode(ctx, tenantID); ok {
-			switch mode {
-			case tenantdom.EmailVerificationAlways:
+			if mode == tenantdom.EmailVerificationAlways {
 				return true
-			case tenantdom.EmailVerificationNever:
-				return false
 			}
-			// EmailVerificationAuto / empty → fall through to SMTP check
+			// Auto, empty and the retired "never" fall through to the SMTP
+			// check: no organization setting skips verification.
 		}
 	}
 
+	return s.shouldRequireEmailVerificationPlatform(ctx, tenantID)
+}
+
+// shouldRequireEmailVerificationPlatform is the platform rule alone (the
+// organization's own mail relay counts, its verification mode does not).
+func (s *AuthService) shouldRequireEmailVerificationPlatform(ctx context.Context, tenantID string) bool {
 	// 2. A deployment that allows public sign-up (SIGNUP_MODE=domain or open)
 	// verifies every account that is not tied to an organization: missing
 	// SMTP never skips it there (start-up refuses that configuration, and
@@ -474,8 +482,10 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 	if err := s.passwordHasher.Validate(input.Password); err != nil {
 		return nil, fmt.Errorf("password validation failed: %w", err)
 	}
-	requireVerification := false
-	if !invited {
+	var requireVerification bool
+	if invited {
+		requireVerification = s.invitedMustVerify(ctx, invitationTenantID, email)
+	} else {
 		requireVerification = s.selfRegistrationMustVerify(ctx, invitationTenantID)
 	}
 
@@ -516,11 +526,11 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
 
-	// Email verification: an invitation sent to this exact address already
-	// proves the address, so an invited registration is verified. Otherwise
-	// the rule is resolved from the invitation's tenant when a (non-matching)
-	// token was supplied, else the platform default (single-tenant heuristic /
-	// SMTP check / global env). The token is NOT consumed here; acceptance is a
+	// Email verification: an invitation token proves only that its holder may
+	// join the inviting organization. The inviter sees the raw token, so it is
+	// never proof of the mailbox: an invited registration is verified at once
+	// only when the inviting organization holds the address's domain (see
+	// invitedMustVerify). The token is NOT consumed here; acceptance is a
 	// separate POST /invitations/{token}/accept. requireVerification was
 	// decided above.
 
@@ -567,6 +577,39 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 		VerificationToken:    verificationToken,
 		RequiresVerification: requireVerification,
 	}, nil
+}
+
+// AddressHolder answers whether an organization has verified the domain of an
+// e-mail address (the rule that lets an organization create accounts directly).
+type AddressHolder interface {
+	HeldBy(ctx context.Context, tenantID shared.ID, email string) (bool, error)
+}
+
+// SetAddressHolder wires the domain-holder check used to decide whether an
+// invitation may vouch for the address it names.
+func (s *AuthService) SetAddressHolder(h AddressHolder) { s.addressHolder = h }
+
+// invitedMustVerify decides verification for an account registered with an
+// invitation token. The token is held by the inviter (the create response and
+// the organization's mail relay both carry it), so it never proves the
+// mailbox: another organization's pending invitation for the same address
+// would otherwise be offered to an account its inviter created. Only an
+// organization that verified the address's domain may vouch for the address;
+// every other invited registration is verified by a mail link sent by the
+// platform, whatever the inviting organization's own verification setting.
+// The one exception is a platform that cannot deliver mail at all.
+func (s *AuthService) invitedMustVerify(ctx context.Context, invitationTenantID, email string) bool {
+	if s.addressHolder != nil {
+		if tid, err := shared.IDFromString(invitationTenantID); err == nil {
+			if held, herr := s.addressHolder.HeldBy(ctx, tid, email); herr == nil && held {
+				return false
+			}
+		}
+	}
+	if mode, ok := s.lookupTenantVerificationMode(ctx, invitationTenantID); ok && mode == tenantdom.EmailVerificationAlways {
+		return true
+	}
+	return s.selfRegistrationMustVerify(ctx, "")
 }
 
 // pendingInvitationFor resolves an invitation token supplied at registration.
@@ -749,10 +792,10 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (result *Logi
 		return nil, err
 	}
 
-	// A platform administrator signs in on the admin console only. The answer
-	// is the wrong-password one, given before any other account state (email
+	// A break-glass account signs in on the admin console only. The answer is
+	// the wrong-password one, given before any other account state (email
 	// verification, second factor) can tell the account apart.
-	if refusePlatformAdmin(ctx, s.platformAdmins, s.logger, u, "password") {
+	if refuseBreakGlass(ctx, s.breakGlassGate, s.logger, u, "password") {
 		return nil, ErrInvalidCredentials
 	}
 
@@ -801,8 +844,8 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (result *Logi
 // password plus second factor) and returns the global refresh token and the
 // user's memberships.
 func (s *AuthService) completeLogin(ctx context.Context, u *userdom.User, ipAddress, userAgent string) (*LoginResult, error) {
-	// Backstop for the second-factor steps: no session for an administrator.
-	if refusePlatformAdmin(ctx, s.platformAdmins, s.logger, u, "login_completion") {
+	// Backstop for the second-factor steps: no session for a break-glass account.
+	if refuseBreakGlass(ctx, s.breakGlassGate, s.logger, u, "login_completion") {
 		return nil, ErrInvalidCredentials
 	}
 	// Check session limit
@@ -971,9 +1014,9 @@ type ExchangeTokenResult struct {
 // pass (break-glass); any other non-owner session — password, social OAuth, or
 // another organization's IdP — is refused when the tenant enforces SSO.
 func (s *AuthService) enforceSSOPolicy(ctx context.Context, sess *sessiondom.Session, tenantID, role string) error {
-	// Cheap exits: this tenant's own SSO sessions and owners never trip
-	// enforcement, so skip the tenant lookup entirely for them.
-	if sess.FederatedFor(tenantID) || role == string(tenantdom.RoleOwner) {
+	// Cheap exit: this tenant's own SSO sessions never trip enforcement, so
+	// skip the tenant lookup entirely for them.
+	if sess.FederatedFor(tenantID) {
 		return nil
 	}
 	tid, err := shared.IDFromString(tenantID)
@@ -989,8 +1032,14 @@ func (s *AuthService) enforceSSOPolicy(ctx context.Context, sess *sessiondom.Ses
 		// Fail closed: an unreadable security section never admits a session.
 		return fmt.Errorf("failed to read SSO enforcement policy: %w", err)
 	}
-	if ssoEnforcementDenied(s.authMethodAt(ctx, sess, sess.UserID(), tenantID), role, sec.SSOEnforced) &&
-		!s.ssoExceptionAllows(ctx, sess, sec) {
+	method := s.authMethodAt(ctx, sess, sess.UserID(), tenantID)
+	if !sec.SSOEnforced || method.IsFederated() {
+		return nil
+	}
+	if role == string(tenantdom.RoleOwner) {
+		return s.admitBreakGlassOwner(ctx, sess, t)
+	}
+	if ssoEnforcementDenied(method, role, sec.SSOEnforced) && !s.ssoExceptionAllows(ctx, sess, sec) {
 		// Log the parsed tenant id (a CodeQL-recognized barrier) + the parsed
 		// user id; omit the raw role string to keep no user-derived value in the
 		// log entry (CWE-117). The blocked event is fully identified by tenant+user.
@@ -1001,47 +1050,109 @@ func (s *AuthService) enforceSSOPolicy(ctx context.Context, sess *sessiondom.Ses
 	return nil
 }
 
-// ProvisionedAccount is a user account prepared for a platform administrator.
-type ProvisionedAccount struct {
-	User *userdom.User
-	// TemporaryPassword is set only when the account was created here; it is
-	// shown once to the administrator who created it.
-	TemporaryPassword string
+// ErrSSOBreakGlassNeedsMFA: the owner's password is not enough to enter an
+// organization that requires SSO; the owner's second factor must have been
+// verified at sign-in too.
+var ErrSSOBreakGlassNeedsMFA = fmt.Errorf("%w: owner break-glass needs the owner's second factor", ErrSSORequired)
+
+// BreakGlassNotifier tells an organization's administrators about an owner
+// break-glass sign-in (TenantService.NotifyAdmins).
+type BreakGlassNotifier interface {
+	NotifyAdmins(ctx context.Context, tenantID shared.ID, title, body, severity string)
 }
 
-// CreateLocalAccount creates a verified local account with a temporary
-// password for a new platform administrator (RFC-022). It refuses an email
-// that already has an account (ErrEmailAlreadyExists): with self-registration
-// an attacker can pre-register an administrator's email, so linking an
-// existing account would hand them the administrator.
-func (s *AuthService) CreateLocalAccount(ctx context.Context, email, name string) (*ProvisionedAccount, error) {
+// SetBreakGlassNotifier wires the notice sent when an owner uses break-glass.
+func (s *AuthService) SetBreakGlassNotifier(n BreakGlassNotifier) { s.breakGlass = n }
+
+// admitBreakGlassOwner admits an owner's non-SSO session to an organization
+// that requires SSO, only when the session proved the owner's second factor
+// (password AND factor), and records it: an audit entry and a notice to the
+// organization's administrators. An owner without a factor is refused: a
+// phished password alone must not open an organization whose point is "IdP
+// only". Enabling Require SSO needs an owner with a factor, so a correctly
+// configured organization always has a way in.
+func (s *AuthService) admitBreakGlassOwner(ctx context.Context, sess *sessiondom.Session, t *tenantdom.Tenant) error {
+	proven, err := s.secondFactorProven(ctx, sess, sess.UserID())
+	if err != nil {
+		return fmt.Errorf("failed to verify owner second factor: %w", err)
+	}
+	if !proven {
+		s.logger.Warn("refused owner break-glass without a second factor",
+			"tenant_id", t.ID().String(), "user_id", sess.UserID().String())
+		return ErrSSOBreakGlassNeedsMFA
+	}
+	s.recordBreakGlass(ctx, sess, t)
+	return nil
+}
+
+func (s *AuthService) recordBreakGlass(ctx context.Context, sess *sessiondom.Session, t *tenantdom.Tenant) {
+	ci := clientInfoFrom(ctx)
+	if s.auditService != nil {
+		ev := auditapp.NewSuccessEvent(auditdom.ActionSSOBreakGlassUsed, auditdom.ResourceTypeUser, sess.UserID().String()).
+			WithMessage("Owner signed in with password and second factor to an organization that requires SSO").
+			WithSeverity(auditdom.SeverityHigh)
+		actx := auditapp.AuditContext{
+			TenantID: t.ID().String(), ActorID: sess.UserID().String(),
+			ActorIP: ci.IP, UserAgent: ci.UserAgent, SessionID: sess.ID().String(),
+		}
+		if err := s.auditService.LogEvent(ctx, actx, ev); err != nil {
+			s.logger.Warn("audit event was not recorded", "action", "sso.break_glass_used", "error", logger.SanitizeError(err))
+		}
+	}
+	if s.breakGlass != nil {
+		s.breakGlass.NotifyAdmins(ctx, t.ID(), "Owner break-glass sign-in",
+			"An owner signed in with a password and second factor although this organization requires SSO. If this was not expected, review the audit log and the owners' credentials.",
+			"high")
+	}
+}
+
+// InvitedAccount is a user account prepared for a platform administrator who
+// has not chosen a password yet.
+type InvitedAccount struct {
+	User *userdom.User
+	// SetupToken is the raw single-use set-password token; only its hash is
+	// stored. The caller delivers it to the new administrator's mailbox.
+	SetupToken string
+	// ExpiresAt is when the token stops working.
+	ExpiresAt time.Time
+}
+
+// CreateInvitedAccount creates a verified local account with no password for a
+// new platform administrator (RFC-022) and a single-use set-password token
+// valid for ttl. Nobody learns a password for the account: the administrator
+// chooses one with the emailed link. It refuses an email that already has an
+// account (ErrEmailAlreadyExists): with self-registration an attacker can
+// pre-register an administrator's email, so linking an existing account would
+// hand them the administrator.
+func (s *AuthService) CreateInvitedAccount(ctx context.Context, email, name string, ttl time.Duration) (*InvitedAccount, error) {
 	email = strings.TrimSpace(strings.ToLower(email))
 	if _, err := s.userRepo.GetByEmail(ctx, email); err == nil {
 		return nil, ErrEmailAlreadyExists
 	} else if !shared.IsNotFound(err) {
 		return nil, fmt.Errorf("look up user: %w", err)
 	}
-
-	temp, err := temporaryPassword()
-	if err != nil {
-		return nil, err
-	}
-	hash, err := s.passwordHasher.Hash(temp)
-	if err != nil {
-		return nil, fmt.Errorf("hash temporary password: %w", err)
-	}
 	if strings.TrimSpace(name) == "" {
 		name = email
 	}
-	u, err := userdom.NewLocalUser(email, name, hash)
+	u, err := userdom.NewProvisionedLocalUser(email, name)
 	if err != nil {
 		return nil, err
 	}
-	u.VerifyEmail()
+	token, err := password.GenerateResetToken()
+	if err != nil {
+		return nil, fmt.Errorf("generate setup token: %w", err)
+	}
+	expiresAt := time.Now().Add(ttl)
+	// Only the hash is stored; the raw token is emailed.
+	u.SetPasswordResetToken(crypto.HashToken(token), expiresAt)
 	if err := s.userRepo.Create(ctx, u); err != nil {
 		return nil, fmt.Errorf("create user: %w", err)
 	}
-	return &ProvisionedAccount{User: u, TemporaryPassword: temp}, nil
+	// Create may not persist the token columns: store it explicitly.
+	if err := s.userRepo.Update(ctx, u); err != nil {
+		return nil, fmt.Errorf("store setup token: %w", err)
+	}
+	return &InvitedAccount{User: u, SetupToken: token, ExpiresAt: expiresAt}, nil
 }
 
 // AccountActive reports whether the user can still sign in (active and not
@@ -1055,21 +1166,6 @@ func (s *AuthService) AccountActive(ctx context.Context, userID shared.ID) (bool
 		return false, err
 	}
 	return u.CanLogin(), nil
-}
-
-// temporaryPassword returns 20 random characters that satisfy any password
-// policy the platform supports (upper, lower, digit and a symbol).
-func temporaryPassword() (string, error) {
-	const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
-	buf := make([]byte, 16)
-	if _, err := rand.Read(buf); err != nil {
-		return "", fmt.Errorf("generate temporary password: %w", err)
-	}
-	out := make([]byte, len(buf))
-	for i, b := range buf {
-		out[i] = alphabet[int(b)%len(alphabet)]
-	}
-	return "Oc" + string(out) + "7!", nil
 }
 
 // RefreshSessionIdentity is the signed-in user behind a refresh token and how
@@ -1180,8 +1276,13 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
 
-	if refusePlatformAdmin(ctx, s.platformAdmins, s.logger, u, "token_exchange") {
+	if refuseBreakGlass(ctx, s.breakGlassGate, s.logger, u, "token_exchange") {
 		return nil, sessiondom.ErrRefreshTokenRevoked
+	}
+	// A blocked or suspended account mints nothing, whatever way its session
+	// was opened (a federated sign-in does not pass the password checks).
+	if !u.IsActive() {
+		return nil, ErrAccountSuspended
 	}
 
 	// Verify user has access to the requested tenant
@@ -1211,6 +1312,9 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 	// Per-tenant 2FA requirement: a password session whose user has not
 	// enrolled cannot mint a token for a tenant that requires 2FA.
 	if err := s.enforceMFAPolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
+		return nil, err
+	}
+	if err := s.enforceEmailVerificationPolicy(ctx, u, input.TenantID); err != nil {
 		return nil, err
 	}
 	if err := s.enforcePersonalPolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
@@ -1497,21 +1601,18 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
 
-	// A platform administrator holds no main-site session (one issued before
-	// the account became an administrator stops here too).
-	if refusePlatformAdmin(ctx, s.platformAdmins, s.logger, u, "refresh_token") {
+	// A break-glass account holds no main-site session.
+	if refuseBreakGlass(ctx, s.breakGlassGate, s.logger, u, "refresh_token") {
 		return nil, sessiondom.ErrRefreshTokenRevoked
+	}
+	if !u.IsActive() {
+		return nil, ErrAccountSuspended
 	}
 
 	// A suspended organization is refused before the refresh token is
 	// spent: the session stays usable for the member's other
 	// organizations.
 	if err := s.organizationOpen(ctx, input.TenantID); err != nil {
-		return nil, err
-	}
-
-	// Mark old token as used (token rotation)
-	if err := s.spendRefreshToken(ctx, storedToken); err != nil {
 		return nil, err
 	}
 
@@ -1545,10 +1646,20 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 	if err := s.enforceMFAPolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
 		return nil, err
 	}
+	if err := s.enforceEmailVerificationPolicy(ctx, u, input.TenantID); err != nil {
+		return nil, err
+	}
 	if err := s.enforcePersonalPolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
 		return nil, err
 	}
 	if err := s.enforceOutsidePrivilegePolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
+		return nil, err
+	}
+
+	// Mark old token as used (token rotation). Every refusal above happens
+	// first, so a person held back by a policy (for example 2FA they still
+	// have to set up) keeps a usable session to meet it.
+	if err := s.spendRefreshToken(ctx, storedToken); err != nil {
 		return nil, err
 	}
 
@@ -1720,10 +1831,13 @@ func (s *AuthService) ForgotPassword(ctx context.Context, input ForgotPasswordIn
 
 // ResetPasswordInput represents the input for password reset.
 type ResetPasswordInput struct {
-	Token       string `json:"token" validate:"required"`
-	NewPassword string `json:"new_password" validate:"required,min=8,max=128"`
-	IPAddress   string `json:"-"`
-	UserAgent   string `json:"-"`
+	// RevokeAPIKeys also revokes every API key the person owns, in every
+	// organization. Connected applications (MCP grants) are always revoked.
+	RevokeAPIKeys bool   `json:"-"`
+	Token         string `json:"token" validate:"required"`
+	NewPassword   string `json:"new_password" validate:"required,min=8,max=128"`
+	IPAddress     string `json:"-"`
+	UserAgent     string `json:"-"`
 }
 
 // ResetPassword resets a user's password using the reset token.
@@ -1760,6 +1874,19 @@ func (s *AuthService) ResetPassword(ctx context.Context, input ResetPasswordInpu
 	// Security: Clear reset token FIRST to prevent race condition reuse (CWE-640).
 	// If two concurrent requests use the same token, the first clears it and
 	// the second will fail at GetByPasswordResetToken (token no longer exists).
+	// The clear is one conditional UPDATE on the stored hash: of two
+	// concurrent submits of the same link exactly one proceeds.
+	storedHash := ""
+	if t := u.PasswordResetToken(); t != nil {
+		storedHash = *t
+	}
+	consumed, err := s.userRepo.ConsumePasswordResetToken(ctx, u.ID(), storedHash)
+	if err != nil {
+		return fmt.Errorf("failed to clear reset token: %w", err)
+	}
+	if !consumed {
+		return ErrInvalidResetToken
+	}
 	u.ClearPasswordResetToken()
 	// The link reached this mailbox, which proves the address: an account
 	// still waiting for its verification email is verified by it.
@@ -1781,6 +1908,7 @@ func (s *AuthService) ResetPassword(ctx context.Context, input ResetPasswordInpu
 
 	// Revoke all sessions (and their refresh tokens) for security
 	s.revokeUserSessions(ctx, u.ID(), shared.ID{})
+	s.sessionsRevoked.RevokeAPIKeysIf(ctx, input.RevokeAPIKeys, u.ID())
 
 	if err := s.userRepo.UpdatePasswordHash(ctx, u.ID(), passwordHash); err != nil {
 		return fmt.Errorf("failed to update user: %w", err)
@@ -1829,8 +1957,10 @@ type ChangePasswordInput struct {
 	// CurrentSessionID, when set, is the session making the change: it stays
 	// signed in while every other session is revoked. Empty revokes all.
 	CurrentSessionID string `json:"-"`
-	IPAddress        string `json:"-"`
-	UserAgent        string `json:"-"`
+	// RevokeAPIKeys also revokes every API key the person owns.
+	RevokeAPIKeys bool   `json:"-"`
+	IPAddress     string `json:"-"`
+	UserAgent     string `json:"-"`
 }
 
 // ChangePassword changes a user's password (requires authentication).
@@ -1892,6 +2022,7 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID string, input C
 	// everything is revoked, like ResetPassword.
 	except, _ := shared.IDFromString(input.CurrentSessionID)
 	s.revokeUserSessions(ctx, u.ID(), except)
+	s.sessionsRevoked.RevokeAPIKeysIf(ctx, input.RevokeAPIKeys, u.ID())
 
 	s.audit(ctx, auditapp.AuditContext{
 		ActorID: u.ID().String(), ActorEmail: u.Email(), ActorIP: input.IPAddress,
@@ -2292,6 +2423,12 @@ func (s *AuthService) AcceptInvitationWithRefreshToken(ctx context.Context, inpu
 	// a privileged outside member. When one refuses, the person has joined but
 	// gets no token yet; they meet the requirement (for example set up 2FA)
 	// and sign in to the organization.
+	// An invitation token is not mailbox proof (its holder can be anyone who
+	// saw the link), so an organization that requires verified e-mail still
+	// refuses the token until the address is verified.
+	if err := s.enforceEmailVerificationPolicy(ctx, u, t.ID().String()); err != nil {
+		return nil, err
+	}
 	if err := s.enforceSSOPolicy(ctx, sess, t.ID().String(), membership.Role().String()); err != nil {
 		return nil, err
 	}

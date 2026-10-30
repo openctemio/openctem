@@ -150,7 +150,7 @@ func (r *ScanWorkflowRepository) List(ctx context.Context, filter scanworkflow.F
 			       ui_position_x, ui_position_y,
 			       tool, tool_id, capabilities, config, timeout_seconds,
 			       depends_on, condition_type, condition_value,
-			       max_retries, retry_delay_seconds, created_at, prefer_tools
+			       max_retries, retry_delay_seconds, created_at, prefer_tools, run_policy
 			FROM scan_workflow_steps
 			WHERE scan_workflow_id = ANY($1)
 			ORDER BY scan_workflow_id, step_order ASC
@@ -328,7 +328,7 @@ func (r *ScanWorkflowRepository) GetWithSteps(ctx context.Context, id shared.ID)
 		       ui_position_x, ui_position_y,
 		       tool, tool_id, capabilities, config, timeout_seconds,
 		       depends_on, condition_type, condition_value,
-		       max_retries, retry_delay_seconds, created_at, prefer_tools
+		       max_retries, retry_delay_seconds, created_at, prefer_tools, run_policy
 		FROM scan_workflow_steps
 		WHERE scan_workflow_id = $1
 		ORDER BY step_order ASC
@@ -377,6 +377,11 @@ func (r *ScanWorkflowRepository) ListWithSystemTemplates(ctx context.Context, te
 	// Core condition: tenant templates OR system templates
 	args = append(args, tenantID.String())
 	conditions = append(conditions, fmt.Sprintf("(tenant_id = $%d OR is_system_template = true)", len(args)), "retired_at IS NULL")
+
+	// A retired system workflow (inactive on purpose) is listed only on request.
+	if !filter.IncludeRetired {
+		conditions = append(conditions, "NOT (is_system_template AND NOT is_active)")
+	}
 
 	// Additional filters
 	if filter.IsActive != nil {
@@ -433,7 +438,7 @@ func (r *ScanWorkflowRepository) ListWithSystemTemplates(ctx context.Context, te
 			       ui_position_x, ui_position_y,
 			       tool, tool_id, capabilities, config, timeout_seconds,
 			       depends_on, condition_type, condition_value,
-			       max_retries, retry_delay_seconds, created_at, prefer_tools
+			       max_retries, retry_delay_seconds, created_at, prefer_tools, run_policy
 			FROM scan_workflow_steps
 			WHERE scan_workflow_id = ANY($1)
 			ORDER BY scan_workflow_id, step_order ASC
@@ -474,7 +479,9 @@ func (r *ScanWorkflowRepository) selectQuery() string {
 		SELECT id, tenant_id, name, description, version,
 		       settings, is_active, is_system_template,
 		       tags, ui_start_position, ui_end_position,
-		       created_by, created_at, updated_at, retired_at
+		       created_by, created_at, updated_at, retired_at,
+		       superseded_by,
+		       (SELECT sup.name FROM scan_workflows sup WHERE sup.id = scan_workflows.superseded_by)
 		FROM scan_workflows
 	`
 }
@@ -522,6 +529,8 @@ func (r *ScanWorkflowRepository) scanTemplate(row *sql.Row) (*scanworkflow.Workf
 		uiEndPos   []byte
 		createdBy  sql.NullString
 		retiredAt  sql.NullTime
+		supersede  sql.NullString
+		supName    sql.NullString
 	)
 
 	err := row.Scan(
@@ -540,6 +549,8 @@ func (r *ScanWorkflowRepository) scanTemplate(row *sql.Row) (*scanworkflow.Workf
 		&t.CreatedAt,
 		&t.UpdatedAt,
 		&retiredAt,
+		&supersede,
+		&supName,
 	)
 
 	if err != nil {
@@ -554,6 +565,12 @@ func (r *ScanWorkflowRepository) scanTemplate(row *sql.Row) (*scanworkflow.Workf
 	t.Tags = tags
 	if retiredAt.Valid {
 		t.RetiredAt = &retiredAt.Time
+	}
+	if supersede.Valid {
+		if sid, err := shared.IDFromString(supersede.String); err == nil {
+			t.SupersededBy = &sid
+			t.SupersededByName = supName.String
+		}
 	}
 
 	if createdBy.Valid {
@@ -591,6 +608,8 @@ func (r *ScanWorkflowRepository) scanTemplateFromRows(rows *sql.Rows) (*scanwork
 		uiEndPos   []byte
 		createdBy  sql.NullString
 		retiredAt  sql.NullTime
+		supersede  sql.NullString
+		supName    sql.NullString
 	)
 
 	err := rows.Scan(
@@ -609,6 +628,8 @@ func (r *ScanWorkflowRepository) scanTemplateFromRows(rows *sql.Rows) (*scanwork
 		&t.CreatedAt,
 		&t.UpdatedAt,
 		&retiredAt,
+		&supersede,
+		&supName,
 	)
 
 	if err != nil {
@@ -620,6 +641,12 @@ func (r *ScanWorkflowRepository) scanTemplateFromRows(rows *sql.Rows) (*scanwork
 	t.Tags = tags
 	if retiredAt.Valid {
 		t.RetiredAt = &retiredAt.Time
+	}
+	if supersede.Valid {
+		if sid, err := shared.IDFromString(supersede.String); err == nil {
+			t.SupersededBy = &sid
+			t.SupersededByName = supName.String
+		}
 	}
 
 	if createdBy.Valid {
@@ -662,6 +689,7 @@ func scanStep(rows *sql.Rows) (*scanworkflow.Step, error) {
 		uiPosY         sql.NullFloat64
 		description    sql.NullString
 		preferTools    pq.StringArray
+		runPolicy      []byte
 	)
 
 	err := rows.Scan(
@@ -685,12 +713,16 @@ func scanStep(rows *sql.Rows) (*scanworkflow.Step, error) {
 		&s.RetryDelaySeconds,
 		&s.CreatedAt,
 		&preferTools,
+		&runPolicy,
 	)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan scan workflow step: %w", err)
 	}
 	s.PreferTools = preferTools
+	if s.RunPolicy, err = scanworkflow.UnmarshalPolicy(runPolicy); err != nil {
+		return nil, fmt.Errorf("failed to read scan workflow step: %w", err)
+	}
 	s.Description = description.String
 
 	s.ID, _ = shared.IDFromString(id)
@@ -762,7 +794,7 @@ func (r *ScanWorkflowStepRepository) CreateBatch(ctx context.Context, steps []*s
 	}
 
 	// Build batch INSERT query
-	const numCols = 20
+	const numCols = 21
 	valueStrings := make([]string, 0, len(steps))
 	valueArgs := make([]any, 0, len(steps)*numCols)
 
@@ -770,6 +802,10 @@ func (r *ScanWorkflowStepRepository) CreateBatch(ctx context.Context, steps []*s
 		config, err := json.Marshal(s.Config)
 		if err != nil {
 			return fmt.Errorf("failed to marshal config for step %d: %w", i, err)
+		}
+		policy, err := scanworkflow.MarshalPolicy(s.RunPolicy)
+		if err != nil {
+			return fmt.Errorf("failed to marshal run policy for step %d: %w", i, err)
 		}
 
 		baseIdx := i * numCols
@@ -800,6 +836,7 @@ func (r *ScanWorkflowStepRepository) CreateBatch(ctx context.Context, steps []*s
 			s.RetryDelaySeconds,
 			s.CreatedAt,
 			pq.Array(nonNilStrings(s.PreferTools)),
+			policy,
 		)
 	}
 
@@ -809,7 +846,7 @@ func (r *ScanWorkflowStepRepository) CreateBatch(ctx context.Context, steps []*s
 			ui_position_x, ui_position_y,
 			tool, tool_id, capabilities, config, timeout_seconds,
 			depends_on, condition_type, condition_value,
-			max_retries, retry_delay_seconds, created_at, prefer_tools
+			max_retries, retry_delay_seconds, created_at, prefer_tools, run_policy
 		)
 		VALUES %s
 	`, strings.Join(valueStrings, ", "))
@@ -832,7 +869,7 @@ func (r *ScanWorkflowStepRepository) GetByID(ctx context.Context, id shared.ID) 
 		       ui_position_x, ui_position_y,
 		       tool, tool_id, capabilities, config, timeout_seconds,
 		       depends_on, condition_type, condition_value,
-		       max_retries, retry_delay_seconds, created_at, prefer_tools
+		       max_retries, retry_delay_seconds, created_at, prefer_tools, run_policy
 		FROM scan_workflow_steps
 		WHERE id = $1
 	`
@@ -857,7 +894,7 @@ func (r *ScanWorkflowStepRepository) GetByScanWorkflowID(ctx context.Context, sc
 		       ui_position_x, ui_position_y,
 		       tool, tool_id, capabilities, config, timeout_seconds,
 		       depends_on, condition_type, condition_value,
-		       max_retries, retry_delay_seconds, created_at, prefer_tools
+		       max_retries, retry_delay_seconds, created_at, prefer_tools, run_policy
 		FROM scan_workflow_steps
 		WHERE scan_workflow_id = $1
 		ORDER BY step_order ASC
@@ -891,7 +928,7 @@ func (r *ScanWorkflowStepRepository) GetByKey(ctx context.Context, scanWorkflowI
 		       ui_position_x, ui_position_y,
 		       tool, tool_id, capabilities, config, timeout_seconds,
 		       depends_on, condition_type, condition_value,
-		       max_retries, retry_delay_seconds, created_at, prefer_tools
+		       max_retries, retry_delay_seconds, created_at, prefer_tools, run_policy
 		FROM scan_workflow_steps
 		WHERE scan_workflow_id = $1 AND step_key = $2
 	`
@@ -915,6 +952,10 @@ func (r *ScanWorkflowStepRepository) Update(ctx context.Context, s *scanworkflow
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
+	policy, err := scanworkflow.MarshalPolicy(s.RunPolicy)
+	if err != nil {
+		return fmt.Errorf("failed to marshal run policy: %w", err)
+	}
 
 	query := `
 		UPDATE scan_workflow_steps
@@ -922,7 +963,7 @@ func (r *ScanWorkflowStepRepository) Update(ctx context.Context, s *scanworkflow
 		    ui_position_x = $5, ui_position_y = $6,
 		    tool = $7, tool_id = $8, capabilities = $9, config = $10, timeout_seconds = $11,
 		    depends_on = $12, condition_type = $13, condition_value = $14,
-		    max_retries = $15, retry_delay_seconds = $16, prefer_tools = $17
+		    max_retries = $15, retry_delay_seconds = $16, prefer_tools = $17, run_policy = $18
 		WHERE id = $1
 	`
 
@@ -944,6 +985,7 @@ func (r *ScanWorkflowStepRepository) Update(ctx context.Context, s *scanworkflow
 		s.MaxRetries,
 		s.RetryDelaySeconds,
 		pq.Array(nonNilStrings(s.PreferTools)),
+		policy,
 	)
 
 	if err != nil {

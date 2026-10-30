@@ -80,9 +80,25 @@ func (g *ActiveGate) SetUnclassified(policy UnclassifiedPolicy, names GuardrailN
 	g.resolving = names
 }
 
-// unclassifiedMode is the tenant's mode; anything unreadable is off.
+// UnclassifiedMode is the tenant's unclassified-scans mode as the gate
+// applies it (off, low_impact or full; anything unreadable is off).
+func (g *ActiveGate) UnclassifiedMode(ctx context.Context, tenantID shared.ID) (string, error) {
+	return g.unclassifiedMode(ctx, tenantID), nil
+}
+
+// unclassifiedMode is the tenant's mode; anything unreadable is off. Where
+// ownership confirmation does not apply (confirmationRequired) an
+// unclassified asset is fully authorized, like the full mode: the scope
+// entries are the authority, and the guardrails still apply. The
+// organization's own choice still holds there: its "off" setting, or the
+// Strict scan approval mode (read as off), keeps every unclassified asset
+// passive on every placement.
 func (g *ActiveGate) unclassifiedMode(ctx context.Context, tenantID shared.ID) string {
+	required := g.confirmationRequired(ctx)
 	if g.unclassified == nil {
+		if !required {
+			return unclassifiedFull
+		}
 		return unclassifiedOff
 	}
 	m, err := g.unclassified(ctx, tenantID)
@@ -91,6 +107,9 @@ func (g *ActiveGate) unclassifiedMode(ctx context.Context, tenantID shared.ID) s
 	}
 	switch m {
 	case unclassifiedLowImpact, unclassifiedFull:
+		if !required {
+			return unclassifiedFull
+		}
 		return m
 	}
 	return unclassifiedOff

@@ -73,13 +73,13 @@ build:
     entrypoint: [""]
   parallel:
     matrix:
-      - IMAGE: [api, migrations, seed, admin-cli, gateway, web, console]
+      - IMAGE: [api, migrations, seed, gateway, web, console]
         ARCH: [amd64, arm64]
   script:
     - *registry-login
     - |
       case "$IMAGE" in
-        api|admin-cli) base="${BASE_REGISTRY_PREFIX}/gcr.io/distroless/static-debian13:nonroot@sha256:e2e927ec666bae08560abb3c55d0659eceabb657f56b6782ab500a9fc7f555e3" ;;
+        api) base="${BASE_REGISTRY_PREFIX}/gcr.io/distroless/static-debian13:nonroot@sha256:e2e927ec666bae08560abb3c55d0659eceabb657f56b6782ab500a9fc7f555e3" ;;
         web|console) base="${BASE_REGISTRY_PREFIX}/gcr.io/distroless/nodejs26-debian13:nonroot@sha256:bf14c9d80c1cc1430416fc164f7eb4b7b7a754259010530feac065dccd98035c" ;;
         seed) base="${BASE_REGISTRY_PREFIX}/library/postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873" ;;
         *) base="${BASE_REGISTRY_PREFIX}/library/alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6" ;;
@@ -108,7 +108,7 @@ index:
     - *registry-login
     - |
       : > staging.txt
-      for name in openctem-api migrations seed admin-cli openctem-gateway openctem-web openctem-console; do
+      for name in openctem-api migrations seed openctem-gateway openctem-web openctem-console; do
         ref="${DEST_STAGING}/${name}:${OPENCTEM_VERSION}"
         crane index append -t "$ref" \
           -m "${DEST_STAGING}/${name}@$(awk -v n="$name" '$1==n && $2=="amd64" {print $3}' built-*.txt)" \

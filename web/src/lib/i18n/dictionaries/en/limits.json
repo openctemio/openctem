@@ -2,6 +2,7 @@
   "limits.access.unavailableBody": "This feature is not available for this organization.",
   "limits.access.unavailableHelp": "Contact the administrator of this installation to make it available.",
   "limits.access.unavailableTitle": "Not available for this organization",
+  "limits.accountPortal": "Manage your service account",
   "limits.banner.readOnlyBody": "This feature is no longer available for this organization. You can still view and export its data; changes are turned off. Contact the administrator of this installation to keep it.",
   "limits.banner.readOnlyUntil": "Read-only until {date}.",
   "limits.col.item": "Limit",
@@ -52,6 +53,11 @@
   "limits.key.api_keys": "API keys",
   "limits.key.assets": "Assets",
   "limits.key.ci_trusts": "CI trust configurations",
+  "limits.key.content_snapshot_max_mb": "Largest rule snapshot (MiB)",
+  "limits.key.content_sources": "Rule sources",
+  "limits.key.content_storage_mb": "Rule snapshot storage (MiB)",
+  "limits.key.content_sync_floor_minutes": "Rule source sync floor (minutes)",
+  "limits.key.dashboard_refresh_floor_minutes": "Dashboard refresh floor (minutes)",
   "limits.key.findings": "Findings",
   "limits.key.invites_per_day": "Invitations a day",
   "limits.key.lifecycle_schemes": "Finding lifecycles",
@@ -61,6 +67,7 @@
   "limits.key.platform_scans_per_day": "Platform scans a day",
   "limits.key.seats": "Seats",
   "limits.key.sensors": "Sensors",
+  "limits.key.storage_mb": "Storage (MiB)",
   "limits.loadError": "the limits",
   "limits.moduleLock.readOnlyHint": "This module is no longer available for this organization. Its data can be viewed and exported until then; changes are turned off.",
   "limits.moduleLock.readOnlyUntil": "Read-only until {date}",
@@ -78,8 +85,5 @@
   "limits.unlimited": "Unlimited",
   "limits.until": "until {date}",
   "limits.usage.description": "What this organization may add. To change a limit, contact the administrator of this installation.",
-  "limits.usage.title": "Limits",
-  "limits.accountPortal": "Manage your service account",
-  "limits.key.storage_mb": "Storage (MiB)",
-  "limits.key.dashboard_refresh_floor_minutes": "Dashboard refresh floor (minutes)"
+  "limits.usage.title": "Limits"
 }

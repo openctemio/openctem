@@ -1,13 +1,13 @@
 'use client'
 
 /**
- * Retest section (RFC-039) — one component for the finding page rail and the
+ * Retest section (RFC-039), one component for the finding page rail and the
  * finding drawer, on the shared detail frame (DetailSection).
  *
  *   Retest                                   [Retest now]
- *   ● Verified fixed — awaiting confirmation · 3 min ago   View evidence
+ *   ● Verified fixed, awaiting confirmation, 3 min ago   View evidence
  *     https://h/admin answered 404 and the check did not match
- *   Earlier: Still present · 2 d ago, Unknown · 9 d ago
+ *   Earlier attempts: one line each, outcome chip, reason, time
  *
  * "Retest now" re-runs the check that produced the finding against the origin
  * of its matched-at URL. A verified fix (the endpoint answered and the check
@@ -26,6 +26,7 @@ import { toast } from 'sonner'
 import { Loader2, RefreshCw } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { DetailSection } from '@/features/shared/components/detail-sheet'
 import { RelativeTime } from '@/features/shared/components/relative-time'
 import { SEVERITY_BADGE_SOFT } from '@/lib/severity-colors'
@@ -37,14 +38,15 @@ import { safeHref } from '@/lib/safe-href'
 import { usePermissions } from '@/context/permission-provider'
 import { useTranslation } from '@/context/i18n-provider'
 import {
-  hasRetestHistory,
-  isRetestable,
   RETESTABLE_STATUSES,
   useFindingRetests,
   useRequestRetest,
   type FindingRetest,
   type FindingRetestWithCheck,
+  type RetestMode,
+  type RetestStrategy,
 } from '../../api/use-finding-retests'
+import { methodReason } from './verification-panel'
 import {
   shortDigest,
   useFindingRetestCheck,
@@ -72,12 +74,71 @@ const englishOnly: Translate = (_key, fallback, vars) =>
 const INCONCLUSIVE_TEXT: Record<string, string> = {
   unreachable: 'target unreachable',
   blocked: 'blocked',
+  edge_blocked: 'blocked by edge protection',
+  access_denied: 'access denied',
   auth_changed: 'authentication required',
   server_error: 'server error',
-  endpoint_mismatch: 'another endpoint was checked',
+  endpoint_mismatch: "the check did not request this finding's endpoint",
+  no_endpoint_proof: "no proof the finding's endpoint was requested",
   template_changed: 'template changed',
+  seen_after_check: 'seen again after the check',
   no_result: 'no result',
   error: 'error',
+  template_not_found: 'check not installed on the sensor',
+  version_not_observed: 'version not detected',
+  excluded_by_policy: 'check not allowed by the sensor policy',
+  no_verdict: 'the tool gave no verdict',
+}
+
+/**
+ * What an inconclusive retest means and what to do next, for the reasons the
+ * tool gives (ids; translated at render). The finding is unchanged in each.
+ */
+const INCONCLUSIVE_HELP: Record<string, { text: string; fix: string }> = {
+  seen_after_check: {
+    text: 'A scan sighted the finding again after the check ran, so the check does not show the current state.',
+    fix: 'The finding stays open. Retest again once the fix is deployed.',
+  },
+  endpoint_mismatch: {
+    text: "The check ran but did not request this finding's own endpoint, so it proves nothing about it.",
+    fix: 'The finding is unchanged. Add a retest check pinned to the exact URL of the finding.',
+  },
+  no_endpoint_proof: {
+    text: "The check ran, but nothing shows it requested this finding's endpoint, so a missing match proves nothing.",
+    fix: 'The finding is unchanged. Add a retest check pinned to the exact URL of the finding.',
+  },
+  matched_elsewhere: {
+    text: "The finding's own endpoint no longer matches, but the check matched at another path of the same target.",
+    fix: 'The finding stays open as it is. The reason lists the other paths; consider reporting them as their own finding.',
+  },
+  error: {
+    text: 'The tool could not run this check.',
+    fix: 'The finding is unchanged. Verify it by hand, or retest after the sensor is updated.',
+  },
+  template_not_found: {
+    text: "The sensor's template set does not include this check, so it could not be run.",
+    fix: "Update the sensor's templates (or the sensor itself), then retest. If the template was removed or renamed upstream, verify the finding by hand.",
+  },
+  version_not_observed: {
+    text: 'The fingerprint scan did not read the software version on the asset, or read one that cannot be compared. A version that is no longer shown is not proof of a fix.',
+    fix: 'The finding is unchanged. Check that the service still answers, or verify the installed version by hand.',
+  },
+  excluded_by_policy: {
+    text: "The check is installed, but the sensor's safety policy never runs checks of its class (destructive, intrusive, brute-force or default-login) for a retest.",
+    fix: 'The finding is unchanged. Verify it by hand or in a planned test window.',
+  },
+  edge_blocked: {
+    text: 'A CDN or WAF answered in place of the service, so the check could not see the issue.',
+    fix: 'Allow the scanner at the edge (see the edge protection guidance on the asset), then retest. The finding is unchanged.',
+  },
+  access_denied: {
+    text: 'The server now refuses the exposed page (401 or 403) with no CDN or WAF in front. One refusal is not proof of a fix.',
+    fix: 'A second refusal at least an hour later, with no sighting of the finding in between, marks it fixed. Retest again after an hour, or verify it by hand.',
+  },
+  no_verdict: {
+    text: 'The tool ended without a verdict for this finding (it stopped early or never reached the target).',
+    fix: 'Retest again. If it repeats, check the sensor and the run log, and update the sensor.',
+  },
 }
 
 /**
@@ -96,29 +157,31 @@ export function retestMeta(rt: FindingRetest, t: Translate = englishOnly): Retes
     case 'confirmed_fixed':
       return rt.result_status === 'resolved'
         ? {
-            label: t('findings.retestPanel.fixedResolved', 'Fixed — verified and resolved'),
+            label: t('findings.retestPanel.fixedResolved', 'Fixed: verified and resolved'),
             className: SUCCESS_SOFT,
           }
         : {
-            label: t(
-              'findings.retestPanel.verifiedFixed',
-              'Verified fixed — awaiting confirmation'
-            ),
+            label: t('findings.retestPanel.verifiedFixed', 'Verified fixed, awaiting confirmation'),
             className: SUCCESS_SOFT,
           }
     case 'still_vulnerable':
       return rt.prior_status === 'resolved' && rt.result_status !== 'resolved'
         ? {
-            label: t('findings.retestPanel.regression', 'Regression — reopened'),
+            label: t('findings.retestPanel.regression', 'Regression: reopened'),
             className: SEVERITY_BADGE_SOFT.high,
           }
         : {
             label: t('findings.retestPanel.stillVulnerable', 'Still vulnerable'),
             className: SEVERITY_BADGE_SOFT.medium,
           }
+    case 'still_exposed_elsewhere':
+      return {
+        label: t('findings.retestPanel.stillExposedElsewhere', 'Still exposed at another path'),
+        className: SEVERITY_BADGE_SOFT.medium,
+      }
     case 'not_reproduced':
       return {
-        label: t('findings.retestPanel.notReproduced', 'Not reproduced — not confirmed'),
+        label: t('findings.retestPanel.notReproduced', 'Not reproduced, not confirmed'),
         className: 'bg-muted text-muted-foreground',
       }
     default: {
@@ -178,6 +241,48 @@ interface FindingRetestSectionProps {
   className?: string
 }
 
+/** What the retest button and its tooltip say, from the server's strategy. */
+export function retestButtonText(
+  t: Translate,
+  strategy: RetestStrategy | undefined,
+  checkName: string | undefined,
+  fallbackRule: string | undefined
+): { label: string; title: string } {
+  switch (strategy?.kind) {
+    case 'version_recheck':
+      return {
+        label: t('findings.retestPanel.recheckVersion', 'Re-check version'),
+        title: t(
+          'findings.retestPanel.recheckVersionTitle',
+          'Re-check the detected version: {tool} reads the {product} version on the asset again and it is compared with the affected range of {rule}',
+          {
+            tool: strategy.tool ?? '',
+            product: strategy.product || t('findings.retestPanel.theSoftware', 'software'),
+            rule: strategy.rule ?? '',
+          }
+        ),
+      }
+    case 'custom_check':
+      return {
+        label: t('findings.retestPanel.now', 'Retest now'),
+        title: t('findings.retestPanel.runCheckTitle', 'Run the retest check {name}', {
+          name: checkName ?? strategy.rule ?? '',
+        }),
+      }
+    default:
+      return {
+        label: t('findings.retestPanel.now', 'Retest now'),
+        title: t(
+          'findings.retestPanel.runTemplateTitle',
+          'Run the check {rule} against the target',
+          {
+            rule: strategy?.rule || fallbackRule || '',
+          }
+        ),
+      }
+  }
+}
+
 export function FindingRetestSection({ finding, className }: FindingRetestSectionProps) {
   const { hasPermission } = usePermissions()
   const { t } = useTranslation()
@@ -186,21 +291,27 @@ export function FindingRetestSection({ finding, className }: FindingRetestSectio
   // with no tool rule (manual, pentest, bug bounty).
   const { data: checkData } = useFindingRetestCheck(finding.id)
   const check = checkData?.check ?? null
-  const mayRetest =
-    isRetestable(finding) || (!!check && RETESTABLE_STATUSES.has(finding.status ?? ''))
-  // History is shown for any finding of a tool rule, also one no longer
-  // retestable (e.g. false positive), for pentest findings, whose testers
-  // retest by hand, and for findings with a retest check. Whether "Retest
-  // now" is offered comes from the API (can_retest), which knows what the
-  // organization's sensors can re-check.
-  const { data } = useFindingRetests(
-    hasRetestHistory(finding) || finding.source === 'pentest' || !!check ? finding.id : null
-  )
-  const retestable = mayRetest && data?.can_retest === true
+  // The server says how the finding is re-checked (strategy), whether a
+  // retest would run now (can_retest) and why not (reason), from what raised
+  // the finding and what the organization's sensors can run.
+  const { data } = useFindingRetests(finding.id)
+  const retestable = data?.can_retest === true
+  const strategy = data?.strategy
+  const reason = data?.reason
+  const activeCheck = data?.active_check
   const { trigger, isMutating } = useRequestRetest(finding.id)
   const list = data?.data ?? []
   const latest = list[0]
   const running = latest?.status === 'pending'
+  const [confirmMode, setConfirmMode] = useState<RetestMode | 'default' | null>(null)
+  // An open finding that cannot be retested says why (a person reported it,
+  // no sensor has the template), instead of offering a retest that fails.
+  // Pentest findings are retested by their testers.
+  const explain =
+    !retestable &&
+    !!reason &&
+    finding.source !== 'pentest' &&
+    RETESTABLE_STATUSES.has(finding.status ?? '')
 
   // When the running retest settles, the finding may have moved: refresh it
   // (status, resolution) and its activity trail.
@@ -220,24 +331,42 @@ export function FindingRetestSection({ finding, className }: FindingRetestSectio
     }
   }, [running, latest?.id, finding.id, mutate])
 
-  if (!retestable && list.length === 0) return null
+  if (!retestable && list.length === 0 && !explain) return null
 
-  const canRetest = retestable && hasPermission('findings:verify')
+  const mayVerify = hasPermission('findings:verify')
+  const canRetest = retestable && mayVerify
+  const canActiveCheck = activeCheck?.available === true && mayVerify
+  const button = retestButtonText(t, strategy, check?.template_name, finding.ruleId)
+  const reasonText = methodReason(t, reason)
 
-  const retestNow = async () => {
+  const retestNow = async (mode: RetestMode | 'default') => {
+    setConfirmMode(null)
     try {
-      await trigger()
-      toast.success(t('findings.retestPanel.started', 'Retest started'), {
-        description: check
-          ? t(
-              'findings.retestPanel.startedDescCheck',
-              "The finding's retest check is running against its target."
-            )
-          : t(
-              'findings.retestPanel.startedDesc',
-              'The template that found this issue is running again against its target.'
-            ),
-      })
+      await trigger(mode === 'default' ? undefined : mode)
+      let description: string
+      if (mode === 'active_check') {
+        description = t(
+          'findings.retestPanel.startedDescActive',
+          'The installed check {template} is running against the target.',
+          { template: activeCheck?.template ?? '' }
+        )
+      } else if (strategy?.kind === 'version_recheck') {
+        description = t(
+          'findings.retestPanel.startedDescVersion',
+          'A fingerprint scan is reading the software version again. The version it reads decides the result.'
+        )
+      } else if (check) {
+        description = t(
+          'findings.retestPanel.startedDescCheck',
+          "The finding's retest check is running against its target."
+        )
+      } else {
+        description = t(
+          'findings.retestPanel.startedDesc',
+          'The template that found this issue is running again against its target.'
+        )
+      }
+      toast.success(t('findings.retestPanel.started', 'Retest started'), { description })
     } catch (error) {
       toast.error(
         getErrorMessage(error, t('findings.retestPanel.startFailed', 'Could not start the retest'))
@@ -245,42 +374,111 @@ export function FindingRetestSection({ finding, className }: FindingRetestSectio
     }
   }
 
+  const busy = isMutating || running
+  const actions =
+    canRetest || canActiveCheck || (explain && mayVerify) ? (
+      <div className="flex flex-wrap items-center gap-2">
+        {canActiveCheck && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7"
+            onClick={() => setConfirmMode('active_check')}
+            disabled={busy}
+            title={t(
+              'findings.retestPanel.activeCheckTitle',
+              'Optional: run the installed check {template} against the target',
+              { template: activeCheck?.template ?? '' }
+            )}
+            data-slot="retest-active-check"
+          >
+            {t('findings.retestPanel.activeCheck', 'Active check')}
+          </Button>
+        )}
+        {canRetest ? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7"
+            onClick={() => setConfirmMode('default')}
+            disabled={busy}
+            title={button.title}
+            data-slot="retest-now"
+          >
+            {busy ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <RefreshCw className="h-3.5 w-3.5" />
+            )}
+            {button.label}
+          </Button>
+        ) : (
+          explain &&
+          mayVerify && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7"
+              disabled
+              title={reasonText}
+              aria-label={`${button.label}: ${reasonText}`}
+              data-slot="retest-now"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              {button.label}
+            </Button>
+          )
+        )}
+      </div>
+    ) : undefined
+
   return (
     <DetailSection
       title={t('findings.retestPanel.title', 'Retest')}
       icon={RefreshCw}
       className={className}
-      actions={
-        canRetest ? (
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7"
-            onClick={() => void retestNow()}
-            disabled={isMutating || running}
-            title={t(
-              'findings.retestPanel.rerunTitle',
-              'Re-run the check that found this issue against its target'
-            )}
-          >
-            {isMutating || running ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <RefreshCw className="h-3.5 w-3.5" />
-            )}
-            {t('findings.retestPanel.now', 'Retest now')}
-          </Button>
-        ) : undefined
-      }
+      actions={actions}
     >
+      <ConfirmDialog
+        open={confirmMode !== null}
+        onOpenChange={(open) => !open && setConfirmMode(null)}
+        title={
+          confirmMode === 'active_check'
+            ? t('findings.retestPanel.confirmActiveTitle', 'Run the active check now?')
+            : t('findings.retestPanel.confirmTitle', 'Retest this finding now?')
+        }
+        desc={t(
+          'findings.retestPanel.confirmDesc',
+          "This sends scan traffic to the finding's target now. The result is added to the retest history, and a verified fix can move the finding."
+        )}
+        confirmText={t('findings.retestPanel.confirmButton', 'Send retest')}
+        handleConfirm={() => retestNow(confirmMode ?? 'default')}
+      />
+      {explain && (
+        <p className="text-sm text-muted-foreground" data-slot="retest-unavailable">
+          {reasonText}
+        </p>
+      )}
       {latest ? (
         <RetestLine retest={latest} findingId={finding.id} check={check} />
-      ) : check ? (
+      ) : explain ? null : check ? (
         <p className="text-sm text-muted-foreground">
           {t(
             'findings.retestPanel.notYetCheck',
             "Not retested yet. A retest runs the custom check {name} against this finding's target.",
             { name: toDisplayText(check.template_name, 200) }
+          )}
+        </p>
+      ) : strategy?.kind === 'version_recheck' ? (
+        <p className="text-sm text-muted-foreground">
+          {t(
+            'findings.retestPanel.notYetVersion',
+            'Not retested yet. A retest runs {tool} on the asset again to read the {product} version and compares it with the affected range of {rule}.',
+            {
+              tool: strategy.tool ?? '',
+              product: strategy.product || t('findings.retestPanel.theSoftware', 'software'),
+              rule: strategy.rule ?? '',
+            }
           )}
         </p>
       ) : (
@@ -289,27 +487,47 @@ export function FindingRetestSection({ finding, className }: FindingRetestSectio
             'findings.retestPanel.notYet',
             "Not retested yet. A retest re-runs template {rule} against this finding's target.",
             {
-              rule: finding.ruleId ?? '',
+              rule: strategy?.rule || finding.ruleId || '',
             }
           )}
         </p>
       )}
       {list.length > 1 && (
-        <p className="text-xs text-muted-foreground">
-          {t('findings.retestPanel.earlier', 'Earlier:')}{' '}
-          {list.slice(1, 4).map((rt, i) => (
-            <span key={rt.id}>
-              {i > 0 && ', '}
-              {metaFor(rt, t).label} <RelativeTime date={rt.created_at} className="text-xs" />
-              {(rt as FindingRetestWithCheck).check_digest && (
-                <span className="font-mono" title={(rt as FindingRetestWithCheck).check_digest}>
-                  {' '}
-                  ({shortDigest((rt as FindingRetestWithCheck).check_digest)})
-                </span>
-              )}
-            </span>
-          ))}
-        </p>
+        <div className="space-y-1" data-slot="retest-history">
+          <p className="text-xs font-medium text-muted-foreground">
+            {t('findings.retestPanel.earlier', 'Earlier attempts')}
+          </p>
+          <ul className="space-y-1">
+            {list.slice(1, 6).map((rt) => {
+              const meta = metaFor(rt, t)
+              const digest = (rt as FindingRetestWithCheck).check_digest
+              return (
+                <li key={rt.id} className="flex min-w-0 items-center gap-2 text-xs">
+                  <Badge variant="secondary" className={cn('shrink-0 font-medium', meta.className)}>
+                    {meta.label}
+                  </Badge>
+                  {rt.reason && (
+                    <span
+                      className="min-w-0 flex-1 truncate text-muted-foreground"
+                      title={toDisplayText(rt.reason, 600)}
+                    >
+                      {toDisplayText(rt.reason, 160)}
+                    </span>
+                  )}
+                  {digest && (
+                    <span className="shrink-0 font-mono text-muted-foreground" title={digest}>
+                      {shortDigest(digest)}
+                    </span>
+                  )}
+                  <RelativeTime
+                    date={rt.completed_at ?? rt.created_at}
+                    className="ml-auto shrink-0 text-xs text-muted-foreground"
+                  />
+                </li>
+              )
+            })}
+          </ul>
+        </div>
       )}
     </DetailSection>
   )
@@ -374,7 +592,7 @@ function RetestLine({
         <RelativeTime date={retest.completed_at ?? retest.created_at} className="text-xs" />
         {retest.trigger === 'auto' && (
           <span className="text-xs text-muted-foreground">
-            · {t('findings.retestPanel.auto', 'auto')}
+            {t('findings.retestPanel.auto', 'auto')}
           </span>
         )}
         {retest.status === 'completed' && !manual && (
@@ -401,6 +619,19 @@ function RetestLine({
       {retest.reason && (
         <p className="text-xs text-muted-foreground">{toDisplayText(retest.reason, 600)}</p>
       )}
+      {(retest.outcome === 'inconclusive' || retest.outcome === 'still_exposed_elsewhere') &&
+        INCONCLUSIVE_HELP[retest.reason_code ?? ''] && (
+          <p className="text-xs text-muted-foreground" data-slot="retest-inconclusive-help">
+            {t(
+              `findings.retestPanel.help.${retest.reason_code}.text`,
+              INCONCLUSIVE_HELP[retest.reason_code ?? ''].text
+            )}{' '}
+            {t(
+              `findings.retestPanel.help.${retest.reason_code}.fix`,
+              INCONCLUSIVE_HELP[retest.reason_code ?? ''].fix
+            )}
+          </p>
+        )}
       <RetestCheckProvenance retest={retest} check={check} />
       {manual && retest.notes && (
         <p className="text-xs text-muted-foreground whitespace-pre-line">

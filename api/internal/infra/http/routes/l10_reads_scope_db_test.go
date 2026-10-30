@@ -281,21 +281,6 @@ func TestCredentials_DataScope_DB(t *testing.T) {
 	}
 }
 
-func TestActiveCVEs_DataScope_DB(t *testing.T) {
-	h := newL10Harness(t)
-	body := h.get(h.scoped, false, "/api/v1/vulnerabilities/active?per_page=100")
-	if strings.Contains(body, h.cveOut) || !strings.Contains(body, h.cveIn) {
-		t.Errorf("active CVEs for the member: %.400s, want only %s", body, h.cveIn)
-	}
-	if body := h.get(h.scoped, false, "/api/v1/vulnerabilities/active/stats"); !strings.Contains(body, `"total":1`) {
-		t.Errorf("active CVE stats for the member: %s, want total 1", body)
-	}
-	body = h.get(h.admin, true, "/api/v1/vulnerabilities/active?per_page=100")
-	if !strings.Contains(body, h.cveOut) || !strings.Contains(body, h.cveIn) {
-		t.Errorf("active CVEs for the admin miss one: %.400s", body)
-	}
-}
-
 func TestGroupAssets_DataScope_DB(t *testing.T) {
 	h := newL10Harness(t)
 	body := h.get(h.scoped, false, "/api/v1/groups/"+h.groupA+"/assets")

@@ -19,8 +19,7 @@
 
 import { useMemo, useState } from 'react'
 import { Main } from '@/components/layout'
-import { useRouter } from 'next/navigation'
-import { PageHeader, EmptyState, MetricStrip } from '@/features/shared'
+import { PageHeader, PageStack, EmptyState } from '@/features/shared'
 import { useTenant } from '@/context/tenant-provider'
 import { usePermissions, Permission } from '@/lib/permissions'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -46,7 +45,6 @@ import {
 import { WidgetError } from './widget-error'
 import { PERIOD_OPTIONS, formatPct, formatTickDate, formatCount, type Period } from '../lib/format'
 import { OWNER_COVERAGE_TARGET_PCT } from '../lib/data-quality'
-import { DRILL } from '../lib/drill'
 import { ProgramMetricsSection } from './program-metrics-section'
 import {
   type MetricStatus,
@@ -195,7 +193,6 @@ function ScorecardSkeleton() {
 
 export function ProgramHealthView() {
   const { t, locale } = useTranslation()
-  const router = useRouter()
   const { currentTenant } = useTenant()
   const { can } = usePermissions()
   const [period, setPeriod] = useState<Period>('90')
@@ -293,7 +290,7 @@ export function ProgramHealthView() {
       },
       {
         id: 'remediation-time',
-        label: t('dashboardMetrics.program.p0MeanTime', 'Mean time to fix · P0'),
+        label: t('dashboardMetrics.program.p0MeanTime', 'Mean time to fix, P0'),
         measures: t(
           'dashboardMetrics.program.p0MeanTimeMeasures',
           'Mean time from discovery to fix for P0 findings fixed in the last 90 days'
@@ -391,19 +388,20 @@ export function ProgramHealthView() {
   if (!canRead) {
     return (
       <Main>
-        <PageHeader title={t('insights.programHealth.title', 'Program health')} />
-        <EmptyState
-          className="mt-5"
-          icon={Lock}
-          title={t(
-            'insights.programHealth.noAccessTitle',
-            'You don’t have access to program metrics.'
-          )}
-          description={t(
-            'insights.programHealth.noAccessDescription',
-            'Dashboard read permission is required to view program health.'
-          )}
-        />
+        <PageStack>
+          <PageHeader title={t('insights.programHealth.title', 'Program health')} />
+          <EmptyState
+            icon={Lock}
+            title={t(
+              'insights.programHealth.noAccessTitle',
+              'You don’t have access to program metrics.'
+            )}
+            description={t(
+              'insights.programHealth.noAccessDescription',
+              'Dashboard read permission is required to view program health.'
+            )}
+          />
+        </PageStack>
       </Main>
     )
   }
@@ -420,31 +418,31 @@ export function ProgramHealthView() {
 
   return (
     <Main>
-      <PageHeader
-        title={t('insights.programHealth.title', 'Program health')}
-        description={t(
-          'insights.programHealth.description',
-          'Whether risk is being retired: urgent fixes on time, inventory owned, exposure falling.'
-        )}
-      >
-        <Select value={period} onValueChange={(v) => setPeriod(v as Period)}>
-          <SelectTrigger
-            className="h-9 w-[150px]"
-            aria-label={t('insights.period.label', 'Period')}
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {PERIOD_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {t(opt.labelKey, opt.fallback)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </PageHeader>
+      <PageStack>
+        <PageHeader
+          title={t('insights.programHealth.title', 'Program health')}
+          description={t(
+            'insights.programHealth.description',
+            'Whether risk is being retired: urgent fixes on time, inventory owned, exposure falling.'
+          )}
+        >
+          <Select value={period} onValueChange={(v) => setPeriod(v as Period)}>
+            <SelectTrigger
+              className="h-9 w-[150px]"
+              aria-label={t('insights.period.label', 'Period')}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PERIOD_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {t(opt.labelKey, opt.fallback)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </PageHeader>
 
-      <div className="mt-5">
         {loading ? (
           <ScorecardSkeleton />
         ) : allFailed ? (
@@ -469,7 +467,7 @@ export function ProgramHealthView() {
             <ProgramMetricsSection tenantId={tenantId} days={Number(period)} />
 
             {/* Exposure-count trend chart (the guide's day-60 down-slope). */}
-            <Card className="mt-5">
+            <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium">
                   {t('insights.programHealth.chartTitle', 'Exposure over time')}
@@ -562,47 +560,9 @@ export function ProgramHealthView() {
                 )}
               </CardContent>
             </Card>
-
-            {/* Activity metrics: deliberately de-emphasised, context rather than goals. */}
-            {summary && (
-              <section className="mt-5 space-y-3">
-                <div>
-                  <h2 className="text-base font-semibold">
-                    {t('insights.programHealth.activityTitle', 'Activity (context, not goals)')}
-                  </h2>
-                  <p className="text-sm text-muted-foreground">
-                    {t(
-                      'insights.programHealth.activityDescription',
-                      'Volume numbers are useful for context, but not what the program is judged on.'
-                    )}
-                  </p>
-                </div>
-                <MetricStrip
-                  items={[
-                    {
-                      key: 'open',
-                      label: t('insights.programHealth.totalOpen', 'Total open findings'),
-                      value: summary.findings_total,
-                      // The open-findings list total is this figure.
-                      onClick: () => router.push(DRILL.open),
-                    },
-                    {
-                      key: 'new',
-                      label: t('insights.programHealth.newPeriod', 'New this period'),
-                      value: summary.findings_new_period ?? 0,
-                    },
-                    {
-                      key: 'resolved',
-                      label: t('insights.programHealth.resolvedPeriod', 'Resolved this period'),
-                      value: summary.findings_resolved_period,
-                    },
-                  ]}
-                />
-              </section>
-            )}
           </>
         )}
-      </div>
+      </PageStack>
     </Main>
   )
 }

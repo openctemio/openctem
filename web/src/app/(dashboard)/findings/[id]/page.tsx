@@ -37,7 +37,7 @@ import { Tabs, TabsContent, TabsCount, TabsList, TabsTrigger } from '@/component
 import { DetailCallout } from '@/features/shared/components/detail-sheet'
 import { useDetailTab } from '@/features/shared/components/detail-sheet-layout'
 import { getTriageCacheKey } from '@/features/ai-triage/api'
-import { useFindingApi } from '@/features/findings/api/use-findings-api'
+import { useFindingPageApi } from '@/features/findings/api/use-findings-api'
 import { useFindingActivityFeed } from '@/features/findings/hooks/use-finding-activity-feed'
 import { useFindingTriage } from '@/features/findings/hooks/use-finding-triage'
 import { useFindingEvidenceCount } from '@/features/findings/hooks/use-finding-evidence-count'
@@ -62,6 +62,7 @@ import {
   VerificationPanel,
 } from '@/features/findings/components/detail'
 import { FromTaskCrumb } from '@/features/remediation-hub/components/from-task-crumb'
+import { FindingListCrumb } from '@/features/findings/components/detail/finding-list-crumb'
 import { FindingTaskBand } from '@/features/remediation-hub/components/finding-task-band'
 import { isLoadFailure } from '@/features/findings/components/detail/section-load-error'
 import { PentestDetailsTab } from '@/features/findings/components/detail/pentest-details-tab'
@@ -135,7 +136,7 @@ export default function FindingDetailPage() {
     error,
     isLoading,
     mutate: mutateFinding,
-  } = useFindingApi(id, { onError: () => {} })
+  } = useFindingPageApi(id, { onError: () => {} })
 
   const handleTriageCompleted = () => {
     if (id) mutate(getTriageCacheKey(id))
@@ -246,6 +247,7 @@ export default function FindingDetailPage() {
   return (
     <Main>
       <FromTaskCrumb />
+      <FindingListCrumb findingId={finding.id} />
       <div className="grid gap-x-8 gap-y-5 lg:grid-cols-[minmax(0,1fr)_19rem] lg:grid-rows-[auto_auto_auto_1fr]">
         <div className="min-w-0 lg:col-start-1">
           <FindingHeader
@@ -288,7 +290,7 @@ export default function FindingDetailPage() {
         </aside>
 
         <div className="min-w-0 space-y-4 lg:col-start-1">
-          <FindingApprovalBand findingId={finding.id} />
+          <FindingApprovalBand findingId={finding.id} onDecided={() => mutateFinding()} />
           {slaLate && (
             <DetailCallout
               tone="destructive"

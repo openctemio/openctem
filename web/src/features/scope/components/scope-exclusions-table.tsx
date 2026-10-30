@@ -16,18 +16,8 @@
 import { useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { useRouter } from 'next/navigation'
-import {
-  Ban,
-  FlaskConical,
-  Inbox,
-  Power,
-  PowerOff,
-  Route,
-  Search as SearchIcon,
-  Trash2,
-} from 'lucide-react'
+import { Ban, FlaskConical, Inbox, Power, PowerOff, Route, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Select,
@@ -55,6 +45,7 @@ import {
   useScopeSettingsApi,
 } from '../api/use-scope-api'
 import type { ApiScopeExclusion } from '../api/scope-api.types'
+import { scopeExclusionKindLabel } from '../lib/exclusion-kind'
 import { scopeErrorMessage } from '../lib/scope-codes'
 import { coversText, expiryText } from '../lib/scope-entry'
 import {
@@ -105,6 +96,8 @@ interface ScopeExclusionsTableProps {
   onKindChange: (v: string) => void
   onStatusChange: (v: string) => void
   onPagination: (p: { pageIndex: number; pageSize: number }) => void
+  /** Controls the page puts first in the toolbar (which scope list is shown). */
+  leading?: React.ReactNode
 }
 
 export function ScopeExclusionsTable({
@@ -114,6 +107,7 @@ export function ScopeExclusionsTable({
   onKindChange,
   onStatusChange,
   onPagination,
+  leading,
 }: ScopeExclusionsTableProps) {
   const { t } = useTranslation()
   const canApproveExclusions = useHasPermission(Permission.ScopeExclusionsApprove)
@@ -291,6 +285,15 @@ export function ScopeExclusionsTable({
       ),
     },
     {
+      id: 'why',
+      header: t('scope.col.why', 'Why'),
+      cell: ({ row }) => (
+        <span className="text-sm" data-testid="exclusion-why">
+          {scopeExclusionKindLabel(t, (row.original as { kind?: string }).kind)}
+        </span>
+      ),
+    },
+    {
       accessorKey: 'status',
       header: t('scope.col.status', 'Status'),
       cell: ({ row }) => {
@@ -370,18 +373,15 @@ export function ScopeExclusionsTable({
           data={rows}
           getRowId={(r) => r.id ?? r.pattern ?? ''}
           showSearch={false}
+          search={{
+            value: searchInput,
+            onChange: onSearchInput,
+            placeholder: t('scope.exclusion.search', 'Search exclusions…'),
+            label: t('scope.exclusion.searchLabel', 'Search exclusions'),
+          }}
           toolbarStart={
             <>
-              <div className="relative min-w-0 flex-1 sm:max-w-sm">
-                <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder={t('scope.exclusion.search', 'Search exclusions…')}
-                  aria-label={t('scope.exclusion.searchLabel', 'Search exclusions')}
-                  value={searchInput}
-                  onChange={(e) => onSearchInput(e.target.value)}
-                  className="h-9 ps-9"
-                />
-              </div>
+              {leading}
               <ScopeTargetTypeSelect
                 value={kind ?? 'all'}
                 onValueChange={onKindChange}

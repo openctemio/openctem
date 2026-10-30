@@ -11,6 +11,7 @@ import {
   DataTableRowActions,
   ErrorState,
   PageHeader,
+  PageStack,
   RelativeTime,
   StackedCell,
 } from '@/features/shared'
@@ -28,9 +29,9 @@ import {
   CreateAdminDialog,
 } from '@console/features/admin-console/components/create-admin-dialog'
 import {
-  adminCan,
   type AdminRole,
   type AdminUserRecord,
+  adminHas,
 } from '@console/features/admin-console/types'
 import { useTranslation } from '@/context/i18n-provider'
 import { RoleRequiredNotice } from '@console/features/admin-console/components/role-required-notice'
@@ -104,7 +105,7 @@ function BreakGlassTested({ a }: { a: AdminUserRecord }) {
 export default function AdministratorsPage() {
   const { t } = useTranslation()
   const me = useAdmin()
-  const isSuper = adminCan(me.role, 'super_admin')
+  const isSuper = adminHas(me, 'platform.admins.read')
   const { data, error, isLoading, mutate } = useAdminUsers(1, isSuper)
   const [pending, setPending] = useState<Pending | null>(null)
   const [busy, setBusy] = useState(false)
@@ -291,6 +292,7 @@ export default function AdministratorsPage() {
                           'Remove identity provider binding'
                         ),
                         onClick: () => setPending({ kind: 'unbind', admin: a }),
+                        destructive: true,
                       },
                     ]
                   : []),
@@ -301,6 +303,7 @@ export default function AdministratorsPage() {
                   ),
                   onClick: () => setPending({ kind: 'reset', admin: a }),
                   separatorBefore: true,
+                  destructive: true,
                 },
                 {
                   label: a.is_active
@@ -321,8 +324,10 @@ export default function AdministratorsPage() {
   if (!isSuper) {
     return (
       <Main>
-        <PageHeader title={t('admin.nav.administrators', 'Administrators')} />
-        <RoleRequiredNotice needed="super_admin" variant="page" />
+        <PageStack>
+          <PageHeader title={t('admin.nav.administrators', 'Administrators')} />
+          <RoleRequiredNotice needed="super_admin" variant="page" />
+        </PageStack>
       </Main>
     )
   }
@@ -418,16 +423,16 @@ export default function AdministratorsPage() {
 
   return (
     <Main>
-      <PageHeader
-        title={t('admin.securityAdministratorsPage.administrators', 'Administrators')}
-        description={t(
-          'admin.securityAdministratorsPage.peopleWhoAdministerThisInstallation',
-          'People who administer this installation. Separate from organization accounts.'
-        )}
-      >
-        <CreateAdminDialog onCreated={() => void mutate()} />
-      </PageHeader>
-      <div className="mt-5">
+      <PageStack>
+        <PageHeader
+          title={t('admin.securityAdministratorsPage.administrators', 'Administrators')}
+          description={t(
+            'admin.securityAdministratorsPage.peopleWhoAdministerThisInstallation',
+            'People who administer this installation. Separate from organization accounts.'
+          )}
+        >
+          <CreateAdminDialog onCreated={() => void mutate()} />
+        </PageHeader>
         {error ? (
           <ErrorState
             title={t('admin.securityAdministratorsPage.administrators2', 'administrators')}
@@ -442,25 +447,28 @@ export default function AdministratorsPage() {
             isLoading={isLoading}
             showColumnToggle={false}
             showSelectionCount={false}
-            searchPlaceholder="Search administrators..."
+            searchPlaceholder={t(
+              'admin.securityAdministratorsPage.searchPlaceholder',
+              'Search administrators…'
+            )}
             mobileCards
           />
         )}
-      </div>
-      <ConfirmDialog
-        open={pending !== null}
-        onOpenChange={(open) => !open && setPending(null)}
-        title={copy.title}
-        desc={copy.desc}
-        confirmText={copy.confirm}
-        destructive={
-          pending?.kind === 'reset' ||
-          pending?.kind === 'unbind' ||
-          (pending?.kind === 'toggle' && pending.admin.is_active)
-        }
-        isLoading={busy}
-        handleConfirm={() => void confirm()}
-      />
+        <ConfirmDialog
+          open={pending !== null}
+          onOpenChange={(open) => !open && setPending(null)}
+          title={copy.title}
+          desc={copy.desc}
+          confirmText={copy.confirm}
+          destructive={
+            pending?.kind === 'reset' ||
+            pending?.kind === 'unbind' ||
+            (pending?.kind === 'toggle' && pending.admin.is_active)
+          }
+          isLoading={busy}
+          handleConfirm={() => void confirm()}
+        />
+      </PageStack>
     </Main>
   )
 }

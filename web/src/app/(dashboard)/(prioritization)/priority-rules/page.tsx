@@ -11,6 +11,7 @@ import useSWR from 'swr'
 import { Main } from '@/components/layout'
 import {
   PageHeader,
+  PageStack,
   DataTable,
   DataTableColumnHeader,
   DataTableRowActions,
@@ -34,6 +35,7 @@ import {
   DialogBody,
 } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { confirmName } from '@/lib/confirm-name'
 import {
   Select,
   SelectContent,
@@ -188,6 +190,8 @@ export default function PriorityRulesPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingRule, setEditingRule] = useState<PriorityRule | null>(null)
   const [deletingRule, setDeletingRule] = useState<PriorityRule | null>(null)
+  // Switching a rule on reprioritizes findings across the organization: ask first.
+  const [activatingRule, setActivatingRule] = useState<PriorityRule | null>(null)
   const [form, setForm] = useState<FormState>(emptyForm)
   const [isSaving, setIsSaving] = useState(false)
   const [dryRunRule, setDryRunRule] = useState<DryRunRule | null>(null)
@@ -466,7 +470,9 @@ export default function PriorityRulesPage() {
               name: row.original.name,
             })}
             checked={row.original.is_active}
-            onCheckedChange={(checked) => toggleActive(row.original, checked)}
+            onCheckedChange={(checked) =>
+              checked ? setActivatingRule(row.original) : void toggleActive(row.original, false)
+            }
           />
         ),
       },
@@ -596,42 +602,42 @@ export default function PriorityRulesPage() {
 
   return (
     <Main>
-      <PageHeader
-        title={t('prioritization.rules.title', 'Priority rules')}
-        description={t(
-          'prioritization.rules.description',
-          'Define rules that override the calculated finding priority based on conditions.'
-        )}
-      >
-        {/* The other lever: how the underlying risk score is weighted. */}
-        {canSeeRiskScoring && (
-          <Button variant="outline" size="sm" asChild>
-            <Link href="/settings/risk-scoring">
-              <Scale className="h-4 w-4" />
-              {t('prioritization.rules.tune', 'Tune risk scoring')}
-            </Link>
-          </Button>
-        )}
-        <Can permission={Permission.PriorityRulesWrite}>
-          <Button size="sm" onClick={openCreate}>
-            <Plus className="h-4 w-4" />
-            {t('prioritization.rules.create', 'Create rule')}
-          </Button>
-        </Can>
-      </PageHeader>
-
-      <Alert className="mt-5">
-        <Info className="h-4 w-4" />
-        <AlertTitle>{t('prioritization.rules.how.title', 'How evaluation works')}</AlertTitle>
-        <AlertDescription>
-          {t(
-            'prioritization.rules.how.body',
-            "Rules are evaluated from the highest evaluation order down (higher wins). The first active rule whose conditions all match sets the finding's priority class. Inactive rules are skipped."
+      <PageStack>
+        <PageHeader
+          title={t('prioritization.rules.title', 'Priority rules')}
+          description={t(
+            'prioritization.rules.description',
+            'Define rules that override the calculated finding priority based on conditions.'
           )}
-        </AlertDescription>
-      </Alert>
+        >
+          {/* The other lever: how the underlying risk score is weighted. */}
+          {canSeeRiskScoring && (
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/settings/risk-scoring">
+                <Scale className="h-4 w-4" />
+                {t('prioritization.rules.tune', 'Tune risk scoring')}
+              </Link>
+            </Button>
+          )}
+          <Can permission={Permission.PriorityRulesWrite}>
+            <Button size="sm" onClick={openCreate}>
+              <Plus className="h-4 w-4" />
+              {t('prioritization.rules.create', 'Create rule')}
+            </Button>
+          </Can>
+        </PageHeader>
 
-      <div className="mt-5">
+        <Alert>
+          <Info className="h-4 w-4" />
+          <AlertTitle>{t('prioritization.rules.how.title', 'How evaluation works')}</AlertTitle>
+          <AlertDescription>
+            {t(
+              'prioritization.rules.how.body',
+              "Rules are evaluated from the highest evaluation order down (higher wins). The first active rule whose conditions all match sets the finding's priority class. Inactive rules are skipped."
+            )}
+          </AlertDescription>
+        </Alert>
+
         {error ? (
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
@@ -667,7 +673,7 @@ export default function PriorityRulesPage() {
             )}
           />
         )}
-      </div>
+      </PageStack>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent size="lg">
@@ -917,6 +923,21 @@ export default function PriorityRulesPage() {
       />
 
       <ConfirmDialog
+        open={!!activatingRule}
+        onOpenChange={(open) => !open && setActivatingRule(null)}
+        title={t('confirm.priorityRule.activateTitle', undefined, {
+          name: activatingRule?.name ?? '',
+        })}
+        desc={t('confirm.priorityRule.activateDesc')}
+        confirmText={t('confirm.priorityRule.activateBtn')}
+        handleConfirm={async () => {
+          const rule = activatingRule
+          setActivatingRule(null)
+          if (rule) await toggleActive(rule, true)
+        }}
+      />
+
+      <ConfirmDialog
         open={!!deletingRule}
         onOpenChange={(open) => !open && setDeletingRule(null)}
         title={t('confirm.priorityRule.deleteTitle', 'Delete the priority rule "{name}"?', {
@@ -926,8 +947,9 @@ export default function PriorityRulesPage() {
           'confirm.priorityRule.deleteDesc',
           'Findings it matched are no longer prioritized by it; the other rules still apply. This cannot be undone.'
         )}
-        confirmText={t('confirm.delete', 'Delete')}
+        confirmText={t('confirm.priorityRule.deleteBtn')}
         destructive
+        typeToConfirm={deletingRule ? confirmName(deletingRule.name, deletingRule.id) : undefined}
         handleConfirm={() => void handleDelete()}
       />
     </Main>

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
@@ -21,7 +22,25 @@ type SSOHandler struct {
 	ssoService *auth.SSOService
 	audit      *auditsvc.AuditService
 	changes    *auth.SSOChangeService
+	appURL     string
 	logger     *logger.Logger
+}
+
+// SetAppURL sets the public address of the tenant web app (the origin of
+// APP_URL). The provider list returns it so the admin console can show the
+// redirect URI to register at the identity provider.
+func (h *SSOHandler) SetAppURL(u string) {
+	h.appURL = publicOrigin(u)
+}
+
+// publicOrigin reduces a URL to scheme://host[:port]; anything that is not an
+// http(s) URL without credentials gives "".
+func publicOrigin(raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Host == "" || u.User != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
 }
 
 // SetChangeApproval routes identity-provider creates and updates made from
@@ -148,7 +167,9 @@ func (h *SSOHandler) Authorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The result carries the browser-binding secret: never cache it.
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
 	json.NewEncoder(w).Encode(result)
 }
 
@@ -157,10 +178,19 @@ type SSOCallbackRequest struct {
 	Code        string `json:"code" validate:"required"`
 	State       string `json:"state" validate:"required"`
 	RedirectURI string `json:"redirect_uri" validate:"required"`
+	// BrowserBinding is the secret the authorize response gave the browser
+	// that started the flow; without it the state is refused.
+	BrowserBinding string `json:"browser_binding" validate:"required"`
 }
 
 // Callback handles the SSO OAuth callback.
 // POST /api/v1/auth/sso/{provider}/callback
+//
+// A refusal carries a stable `code` from the auth error table
+// (auth_error_codes.go): SSO_AWAITING_APPROVAL, SSO_NOT_A_MEMBER, LIMIT_REACHED,
+// SSO_DOMAIN_NOT_ALLOWED, ACCOUNT_LINK_REQUIRED, SSO_DIFFERENT_METHOD,
+// EMAIL_UNVERIFIED_AT_IDP, USE_ADMIN_CONSOLE and the others. They are 4xx, not
+// server errors.
 func (h *SSOHandler) Callback(w http.ResponseWriter, r *http.Request) {
 	provider := r.PathValue("provider")
 	if provider == "" {
@@ -175,8 +205,8 @@ func (h *SSOHandler) Callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Code == "" || req.State == "" {
-		apierror.BadRequest("code and state are required").WriteJSON(w)
+	if req.Code == "" || req.State == "" || req.BrowserBinding == "" {
+		apierror.BadRequest("code, state and browser_binding are required").WriteJSON(w)
 		return
 	}
 
@@ -185,6 +215,8 @@ func (h *SSOHandler) Callback(w http.ResponseWriter, r *http.Request) {
 		Code:        req.Code,
 		State:       req.State,
 		RedirectURI: req.RedirectURI,
+
+		BrowserBinding: req.BrowserBinding,
 	})
 	if err != nil {
 		h.handlePublicError(w, err)
@@ -249,35 +281,7 @@ func (h *SSOHandler) handlePublicError(w http.ResponseWriter, err error) {
 		// Just-in-time sign-up into an organization with no free seat. No
 		// usage numbers: the person is not a member yet.
 		apierror.New(http.StatusForbidden, codeLimitReached, "This organization has no free seat for you. Contact your administrator.").WriteJSON(w)
-	// Anti-enumeration: an unknown organization answers exactly like an
-	// organization without that provider.
-	case errors.Is(err, auth.ErrSSOTenantNotFound),
-		errors.Is(err, auth.ErrSSONoActiveProviders),
-		errors.Is(err, auth.ErrSSOProviderNotFound):
-		apierror.NotFound("SSO provider not configured").WriteJSON(w)
-	case errors.Is(err, auth.ErrSSOProviderInactive):
-		apierror.BadRequest("SSO provider is not active").WriteJSON(w)
-	case errors.Is(err, auth.ErrSSOInvalidState):
-		apierror.BadRequest("Invalid or expired state token").WriteJSON(w)
-	case errors.Is(err, auth.ErrSSOInvalidRedirectURI):
-		apierror.BadRequest("Invalid redirect URI").WriteJSON(w)
-	case errors.Is(err, auth.ErrSSOExchangeFailed):
-		apierror.BadRequest("Failed to complete SSO authentication").WriteJSON(w)
-	case errors.Is(err, auth.ErrSSOUserInfoFailed):
-		apierror.BadRequest("Failed to retrieve user information").WriteJSON(w)
-	case errors.Is(err, auth.ErrSSODomainNotAllowed):
-		apierror.Forbidden("Your email domain is not allowed for this organization").WriteJSON(w)
-	case errors.Is(err, auth.ErrSSOAwaitingApproval):
-		apierror.Forbidden("Your access to this organization is waiting for an administrator's approval.").WriteJSON(w)
-	case errors.Is(err, auth.ErrSSONotAMember):
-		// Not admitted by the organization's SSO (not a member and not eligible
-		// for just-in-time provisioning). Generic: says nothing about why.
-		apierror.Forbidden("You do not have access to this organization. Contact your administrator.").WriteJSON(w)
-	case errors.Is(err, auth.ErrAccountLinkRequiresVerification):
-		// Proof-before-link: an account with this email already exists and was not
-		// proven to belong to this federated login. Tell the user to sign in with
-		// their existing credentials first, then link the identity provider.
-		apierror.Forbidden("An account with this email already exists. Sign in with your existing credentials first, then link this identity provider.").WriteJSON(w)
+	case writeAuthTableError(w, err):
 	default:
 		h.logger.Error("SSO error", "error", err)
 		apierror.InternalError(err).WriteJSON(w)
@@ -303,7 +307,7 @@ type CreateProviderRequest struct {
 // CreateProvider creates a new identity provider configuration.
 // POST /api/v1/settings/identity-providers
 // @Summary Create an identity provider for an organization
-// @Description Platform admin console (RFC-022): runs against the organization in the path. When the organization has an owner, the provider is stored as a pending change (202, SSOChangeResponse) and is created only after an owner approves it; an organization without an owner yet gets it created directly (201).
+// @Description Platform admin console: runs against the organization in the path. When the organization has an owner, the provider is stored as a pending change (202, SSOChangeResponse) and is created only after an owner approves it; an organization without an owner yet gets it created directly (201).
 // @Tags Admin Organization SSO
 // @Produce json
 // @Param tenantId path string true "Organization ID"
@@ -385,7 +389,7 @@ func (h *SSOHandler) writeProviderCreated(w http.ResponseWriter, r *http.Request
 // ListProviders lists all identity provider configurations for the tenant.
 // GET /api/v1/settings/identity-providers
 // @Summary List an organization's identity providers
-// @Description Platform admin console (RFC-022): runs against the organization in the path.
+// @Description Platform admin console: runs against the organization in the path.
 // @Tags Admin Organization SSO
 // @Produce json
 // @Param tenantId path string true "Organization ID"
@@ -408,13 +412,14 @@ func (h *SSOHandler) ListProviders(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"providers": result,
+		"app_url":   h.appURL,
 	})
 }
 
 // GetProvider retrieves a single identity provider configuration.
 // GET /api/v1/settings/identity-providers/{id}
 // @Summary Get an organization's identity provider
-// @Description Platform admin console (RFC-022): runs against the organization in the path.
+// @Description Platform admin console: runs against the organization in the path.
 // @Tags Admin Organization SSO
 // @Produce json
 // @Param tenantId path string true "Organization ID"
@@ -457,7 +462,7 @@ type UpdateProviderRequest struct {
 // UpdateProvider updates an identity provider configuration.
 // PUT /api/v1/settings/identity-providers/{id}
 // @Summary Update an organization's identity provider
-// @Description Platform admin console (RFC-022): runs against the organization in the path. When the organization has an owner, the update is stored as a pending change (202, SSOChangeResponse) and is applied only after an owner approves it; an organization without an owner yet gets it applied directly (200).
+// @Description Platform admin console: runs against the organization in the path. When the organization has an owner, the update is stored as a pending change (202, SSOChangeResponse) and is applied only after an owner approves it; an organization without an owner yet gets it applied directly (200).
 // @Tags Admin Organization SSO
 // @Produce json
 // @Param tenantId path string true "Organization ID"
@@ -530,7 +535,7 @@ func (h *SSOHandler) UpdateProvider(w http.ResponseWriter, r *http.Request) {
 // DeleteProvider deletes an identity provider configuration.
 // DELETE /api/v1/settings/identity-providers/{id}
 // @Summary Delete an organization's identity provider
-// @Description Platform admin console (RFC-022): runs against the organization in the path.
+// @Description Platform admin console: runs against the organization in the path.
 // @Tags Admin Organization SSO
 // @Produce json
 // @Param tenantId path string true "Organization ID"
@@ -627,7 +632,7 @@ func (h *SSOHandler) handleAdminError(w http.ResponseWriter, err error) {
 		h.logger.Warn("invalid provider configuration", "error", err)
 		apierror.BadRequest("Invalid identity provider configuration. Please verify all required fields.").WriteJSON(w)
 	case errors.Is(err, auth.ErrSSOInvalidDefaultRole):
-		apierror.BadRequest("Invalid default role. Must be admin, member, or viewer").WriteJSON(w)
+		apierror.BadRequest("Invalid default role. Must be member or viewer").WriteJSON(w)
 	default:
 		h.logger.Error("identity provider error", "error", err)
 		apierror.InternalServerError("An internal error occurred").WriteJSON(w)

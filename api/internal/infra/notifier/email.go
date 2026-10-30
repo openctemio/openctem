@@ -51,6 +51,9 @@ func NewEmailClient(config Config) (*EmailClient, error) {
 	if emailConfig.SMTPPort == 0 {
 		return nil, fmt.Errorf("SMTP port is required")
 	}
+	if err := validateRelay(emailConfig); err != nil {
+		return nil, err
+	}
 	if emailConfig.FromEmail == "" {
 		return nil, fmt.Errorf("sender email is required")
 	}
@@ -144,6 +147,28 @@ func (c *EmailClient) TestConnection(ctx context.Context) (*SendResult, error) {
 	return c.Send(ctx, testMsg)
 }
 
+// smtpSessionTimeout bounds one SMTP session of an organization's relay.
+var smtpSessionTimeout = 2 * time.Minute
+
+// resolveSMTPHost and dialSMTP are the network seams of sendSMTP; tests
+// replace them to reach a local relay. dialSMTP connects to an address that
+// resolveSMTPHost already vetted (an IP literal) and honors ctx.
+var (
+	resolveSMTPHost = httpsec.ResolveSafeHost
+	dialSMTP        = func(ctx context.Context, addr string) (net.Conn, error) {
+		var d net.Dialer
+		return d.DialContext(ctx, "tcp", addr)
+	}
+)
+
+// validateRelay applies the transport rule for an organization's relay (the
+// port always; on a managed service also AUTH and TLS). It runs when the
+// client is built and again before every send, because a stored
+// configuration may predate the rule.
+func validateRelay(c *EmailConfig) error {
+	return emailpkg.ValidateTenantRelay(c.SMTPPort, c.UseTLS, c.UseSTARTTLS, c.Username, c.Password)
+}
+
 // sendSMTP sends an email via SMTP.
 func (c *EmailClient) sendSMTP(ctx context.Context, message []byte) error {
 	// SSRF guard: a tenant controls SMTPHost, so block loopback / link-local
@@ -153,7 +178,12 @@ func (c *EmailClient) sendSMTP(ctx context.Context, message []byte) error {
 	// hostname would re-resolve DNS, reopening a rebinding TOCTOU where the
 	// second lookup could return an internal IP. TLS still uses the hostname
 	// as ServerName so certificate validation is unaffected.
-	safeIP, err := httpsec.ResolveSafeHost(ctx, c.config.SMTPHost)
+	// The port is checked again here: a stored configuration may predate
+	// the rule.
+	if err := validateRelay(&c.config); err != nil {
+		return err
+	}
+	safeIP, err := resolveSMTPHost(ctx, c.config.SMTPHost)
 	if err != nil {
 		return fmt.Errorf("smtp host rejected: %w", err)
 	}
@@ -164,24 +194,34 @@ func (c *EmailClient) sendSMTP(ctx context.Context, message []byte) error {
 	// (RFC-049 F-5). A stored legacy skip_verify flag is ignored.
 	tlsConfig := emailpkg.TLSConfig(c.config.SMTPHost, false)
 
-	var conn net.Conn
+	// One budget for the whole session (connect, TLS, greeting, AUTH,
+	// MAIL/RCPT/DATA, QUIT), bounded by the caller's deadline: a relay that
+	// accepts the connection and then never answers, or answers one byte at
+	// a time, must not hold a delivery worker or a connection test.
+	deadline := time.Now().Add(smtpSessionTimeout)
+	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
+		deadline = d
+	}
+	dctx, cancel := context.WithDeadline(ctx, deadline)
+	defer cancel()
 
-	// Connect based on TLS settings
-	if c.config.UseTLS {
-		// Direct TLS connection (port 465)
-		dialer := &net.Dialer{Timeout: 30 * time.Second}
-		conn, err = tls.DialWithDialer(dialer, "tcp", addr, tlsConfig)
-		if err != nil {
-			return fmt.Errorf("TLS dial: %w", err)
-		}
-	} else {
-		// Plain connection (will upgrade with STARTTLS if needed)
-		conn, err = net.DialTimeout("tcp", addr, 30*time.Second)
-		if err != nil {
-			return fmt.Errorf("dial: %w", err)
-		}
+	conn, err := dialSMTP(dctx, addr)
+	if err != nil {
+		return fmt.Errorf("dial: %w", err)
 	}
 	defer func() { _ = conn.Close() }()
+	if err := conn.SetDeadline(deadline); err != nil {
+		return fmt.Errorf("set deadline: %w", err)
+	}
+
+	// Direct TLS (port 465); otherwise plain, upgraded with STARTTLS below.
+	if c.config.UseTLS {
+		tc := tls.Client(conn, tlsConfig)
+		if err := tc.HandshakeContext(dctx); err != nil {
+			return fmt.Errorf("TLS handshake: %w", err)
+		}
+		conn = tc
+	}
 
 	// Create SMTP client
 	client, err := smtp.NewClient(conn, c.config.SMTPHost)

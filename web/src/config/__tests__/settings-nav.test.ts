@@ -270,6 +270,14 @@ describe('settings shell', () => {
   })
 })
 
+describe('rule sources', () => {
+  it('has no nav entry or page until the rule sources screen exists', () => {
+    // The old Template sources API is gone; its page would only show errors.
+    expect(settingsNavItems.filter((i) => i.url.includes('template-sources'))).toEqual([])
+    expect(findPageFile('/settings/scanning/template-sources')).toBeNull()
+  })
+})
+
 describe('nothing left the command palette', () => {
   // Every destination of the old sidebar "Settings" group and the user menus.
   const FORMER_SETTINGS_URLS = [
@@ -279,7 +287,6 @@ describe('nothing left the command palette', () => {
     '/secret-store',
     '/scan-profiles',
     '/scanner-templates',
-    '/template-sources',
     '/settings/tenant',
     '/settings/users',
     '/settings/roles',

@@ -1,9 +1,14 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { KeyFactsSection, factValue, hasKeyFacts } from '../key-facts'
 import { PropertiesSection } from '../asset-overview-sections'
 import { technologies } from '../../lib/service-facts'
 import type { Asset } from '../../types/asset.types'
+
+let servedCertificate: Asset | null = null
+vi.mock('../../hooks/use-served-certificate', () => ({
+  useServedCertificate: () => servedCertificate,
+}))
 
 function asset(type: string, metadata: Record<string, unknown>, subType?: string): Asset {
   return {
@@ -46,6 +51,37 @@ const SUBDOMAIN = {
   ],
 } as Asset
 
+describe('KeyFactsSection served certificate', () => {
+  const SERVICE = asset(
+    'service',
+    { port: 443, protocol: 'https', scheme: 'https', tls_fingerprint: 'ab:cd' },
+    'http'
+  )
+  const CERT = asset('certificate', {
+    subject_cn: 'shop.example.com',
+    sans: ['shop.example.com'],
+    issuer_org: 'Example CA',
+    not_after: new Date(Date.now() + 200 * 24 * 60 * 60 * 1000).toISOString(),
+  })
+
+  beforeEach(() => {
+    servedCertificate = null
+  })
+
+  it('reads the linked certificate instead of saying it was not collected', () => {
+    servedCertificate = CERT
+    render(<KeyFactsSection asset={SERVICE} />)
+    expect(screen.queryByText(/Not collected yet.*TLS/)).not.toBeInTheDocument()
+    expect(screen.getAllByText(/Example CA/).length).toBeGreaterThan(0)
+  })
+
+  it('still says so when no certificate is linked', () => {
+    const bare = asset('service', { port: 8443 }, 'http')
+    render(<KeyFactsSection asset={bare} />)
+    expect(screen.getByText(/Not collected yet/)).toHaveTextContent(/TLS/)
+  })
+})
+
 describe('KeyFactsSection', () => {
   it('a subdomain: resolves to (every address), CNAME, hosting, TLS, stack, DNS table', () => {
     render(<KeyFactsSection asset={SUBDOMAIN} />)
@@ -55,7 +91,7 @@ describe('KeyFactsSection', () => {
       expect(screen.getAllByText(ip).length).toBeGreaterThan(0)
     }
     expect(screen.getByText('lb.edge.example.net', { selector: 'dd' })).toBeInTheDocument()
-    expect(screen.getByText('AS64500 · Example Hosting Ltd')).toBeInTheDocument()
+    expect(screen.getByText('AS64500, Example Hosting Ltd')).toBeInTheDocument()
     expect(screen.getByText('TLS 1.2')).toBeInTheDocument()
     // Technologies have their own section, not a key fact row.
     expect(screen.queryByText('nginx')).not.toBeInTheDocument()
@@ -84,7 +120,7 @@ describe('KeyFactsSection', () => {
     )
     expect(screen.getByText('Subject CN')).toBeInTheDocument()
     expect(container.textContent).toContain('m.portal.example.com')
-    expect(screen.getByText('Example CA · Example Trust')).toBeInTheDocument()
+    expect(screen.getByText('Example CA, Example Trust')).toBeInTheDocument()
     expect(screen.getByText('Valid until')).toBeInTheDocument()
     expect(screen.getByText('RSA 2048')).toBeInTheDocument()
   })
@@ -119,7 +155,7 @@ describe('KeyFactsSection', () => {
       />
     )
     expect(screen.getByText('Ubuntu 22.04')).toBeInTheDocument()
-    expect(screen.getByText('8 CPU · 32 GB · x86_64')).toBeInTheDocument()
+    expect(screen.getByText('8 CPU, 32 GB, x86_64')).toBeInTheDocument()
   })
 
   it('renders nothing for an asset with no key fact and nothing missing', () => {

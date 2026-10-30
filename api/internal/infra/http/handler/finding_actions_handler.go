@@ -80,7 +80,7 @@ func (h *FindingActionsHandler) findingGroupsRoute() filterquery.Route {
 // ListFindingGroups handles GET /api/v1/findings/groups
 // @Summary      Group findings
 // @Description  Findings grouped by one dimension, with per-group counts. Takes every filter param of GET /findings
-// @Description  (RFC-048), so a grouped view counts exactly the rows the list shows.
+// @Description , so a grouped view counts exactly the rows the list shows.
 // @Tags         Findings
 // @Produce      json
 // @Security     BearerAuth
@@ -100,6 +100,7 @@ func (h *FindingActionsHandler) findingGroupsRoute() filterquery.Route {
 // @Param  vulnerability_id_not  query  []string  false  "vulnerability id: none of (comma list)"  collectionFormat(csv)
 // @Param  severity  query  []string  false  "severity: any of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low, info, none)
 // @Param  severity_not  query  []string  false  "severity: none of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low, info, none)
+// @Param  informational  query  boolean  false  "informational equals"
 // @Param  status  query  []string  false  "status: any of (comma list)"  collectionFormat(csv)  Enums(new, confirmed, in_progress, fix_applied, resolved, false_positive, accepted, duplicate, draft, in_review)
 // @Param  status_not  query  []string  false  "status: none of (comma list)"  collectionFormat(csv)  Enums(new, confirmed, in_progress, fix_applied, resolved, false_positive, accepted, duplicate, draft, in_review)
 // @Param  observation  query  []string  false  "observation: any of (comma list)"  collectionFormat(csv)  Enums(present, stale)
@@ -121,6 +122,7 @@ func (h *FindingActionsHandler) findingGroupsRoute() filterquery.Route {
 // @Param  finding_type  query  []string  false  "finding type: any of (comma list)"  collectionFormat(csv)  Enums(vulnerability, secret, misconfiguration, compliance, web3, license)
 // @Param  finding_type_not  query  []string  false  "finding type: none of (comma list)"  collectionFormat(csv)  Enums(vulnerability, secret, misconfiguration, compliance, web3, license)
 // @Param  is_in_kev  query  boolean  false  "is in kev equals"
+// @Param  kev_ransomware  query  boolean  false  "kev ransomware equals"
 // @Param  is_reachable  query  boolean  false  "is reachable equals"
 // @Param  epss_score_gte  query  number  false  "epss score at least"
 // @Param  epss_score_lte  query  number  false  "epss score at most"
@@ -139,7 +141,7 @@ func (h *FindingActionsHandler) findingGroupsRoute() filterquery.Route {
 // @Param  asset_tag  query  []string  false  "asset tag: any of (comma list)"  collectionFormat(csv)
 // @Param  asset_tag_not  query  []string  false  "asset tag: none of (comma list)"  collectionFormat(csv)
 // @Param  asset_group_id  query  []string  false  "asset group id: any of (comma list)"  collectionFormat(csv)
-// @Param  related_to  query  string  false  "related to equals"  Enums(me)
+// @Param  related_to  query  string  false  "related to equals"  Enums(me, my_team)
 // @Param  cvss_score_gte  query  number  false  "cvss score at least"
 // @Param  cvss_score_lte  query  number  false  "cvss score at most"
 // @Param  cvss_score_gt  query  number  false  "cvss score greater than"
@@ -248,7 +250,7 @@ func (h *FindingActionsHandler) ListFindingGroups(w http.ResponseWriter, r *http
 // GetRelatedCVEs handles GET /api/v1/findings/related-cves/{cveId}
 // @Summary      Related CVEs
 // @Description  CVEs sharing a component with the given CVE, among the open findings the filter selects
-// @Description  (the params of GET /findings, RFC-048). The source CVE's components come only from findings
+// @Description  (the params of GET /findings). The source CVE's components come only from findings
 // @Description  the caller may see.
 // @Tags         Findings
 // @Produce      json
@@ -269,6 +271,7 @@ func (h *FindingActionsHandler) ListFindingGroups(w http.ResponseWriter, r *http
 // @Param  vulnerability_id_not  query  []string  false  "vulnerability id: none of (comma list)"  collectionFormat(csv)
 // @Param  severity  query  []string  false  "severity: any of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low, info, none)
 // @Param  severity_not  query  []string  false  "severity: none of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low, info, none)
+// @Param  informational  query  boolean  false  "informational equals"
 // @Param  status  query  []string  false  "status: any of (comma list)"  collectionFormat(csv)  Enums(new, confirmed, in_progress, fix_applied, resolved, false_positive, accepted, duplicate, draft, in_review)
 // @Param  status_not  query  []string  false  "status: none of (comma list)"  collectionFormat(csv)  Enums(new, confirmed, in_progress, fix_applied, resolved, false_positive, accepted, duplicate, draft, in_review)
 // @Param  observation  query  []string  false  "observation: any of (comma list)"  collectionFormat(csv)  Enums(present, stale)
@@ -290,6 +293,7 @@ func (h *FindingActionsHandler) ListFindingGroups(w http.ResponseWriter, r *http
 // @Param  finding_type  query  []string  false  "finding type: any of (comma list)"  collectionFormat(csv)  Enums(vulnerability, secret, misconfiguration, compliance, web3, license)
 // @Param  finding_type_not  query  []string  false  "finding type: none of (comma list)"  collectionFormat(csv)  Enums(vulnerability, secret, misconfiguration, compliance, web3, license)
 // @Param  is_in_kev  query  boolean  false  "is in kev equals"
+// @Param  kev_ransomware  query  boolean  false  "kev ransomware equals"
 // @Param  is_reachable  query  boolean  false  "is reachable equals"
 // @Param  epss_score_gte  query  number  false  "epss score at least"
 // @Param  epss_score_lte  query  number  false  "epss score at most"
@@ -308,7 +312,7 @@ func (h *FindingActionsHandler) ListFindingGroups(w http.ResponseWriter, r *http
 // @Param  asset_tag  query  []string  false  "asset tag: any of (comma list)"  collectionFormat(csv)
 // @Param  asset_tag_not  query  []string  false  "asset tag: none of (comma list)"  collectionFormat(csv)
 // @Param  asset_group_id  query  []string  false  "asset group id: any of (comma list)"  collectionFormat(csv)
-// @Param  related_to  query  string  false  "related to equals"  Enums(me)
+// @Param  related_to  query  string  false  "related to equals"  Enums(me, my_team)
 // @Param  cvss_score_gte  query  number  false  "cvss score at least"
 // @Param  cvss_score_lte  query  number  false  "cvss score at most"
 // @Param  cvss_score_gt  query  number  false  "cvss score greater than"

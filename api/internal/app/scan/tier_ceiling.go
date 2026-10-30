@@ -34,15 +34,18 @@ func ProbeTier(tool string) scopedom.Tier {
 // the claim-time re-check: the scanner's tier, the run actor's act scope (the
 // person who triggered it, else the scan's owner), and the loose ownership
 // rule of a passive or takeover-only probe. It never asks more than the
-// trigger checked (resolveScanTargets).
-func scanDispatchGate(sc *scan.Scan, run *scanrun.Run) *command.DispatchGate {
+// trigger checked (resolveScanTargets): a run the trigger did not route over
+// the scan zones (a passive coverage run of public names) is not routed at
+// the claim either.
+func scanDispatchGate(ctx context.Context, sc *scan.Scan, run *scanrun.Run) *command.DispatchGate {
 	tier := ProbeTier(sc.ScannerName)
 	g := &command.DispatchGate{
 		Tier:     int(tier),
 		Passive:  tier <= scopedom.TierPassive || IsTakeoverOnlyProbe(sc.ScannerName, sc.ScannerConfig),
 		ActScope: true,
 		// The claim refuses the job above the scan's intensity (RFC-071).
-		Intensity: string(sc.EffectiveIntensity()),
+		Intensity:     string(sc.EffectiveIntensity()),
+		NoZoneRouting: zoneRoutingSkipped(ctx),
 	}
 	// A managed scan's runs act with their policy's system authority and
 	// have no actor.
@@ -103,10 +106,11 @@ func (s *Service) refuseTargetsOverTier(ctx context.Context, tenantID shared.ID,
 }
 
 // stepScopeFilter leaves out of one workflow step the targets its tool may
-// not probe: those covered only below the tool's tier and, for an intrusive
-// (t2) tool, those not at or under a verified domain (proof is checked per
-// step: a workflow scan may mix passive, active and intrusive steps). It
-// returns the kept targets and a reason naming what was left out.
+// not probe: those covered only below the tool's tier (a workflow scan may
+// mix passive, active and intrusive steps). Proof is not checked here: it
+// applies to jobs on platform sensors, and a step queued for them is checked
+// at that dispatch (PlatformTargetRefusal). It returns the kept targets and a
+// reason naming what was left out.
 func (s *Service) stepScopeFilter(ctx context.Context, tenantID shared.ID, tool string, targets []string) ([]string, int, string, error) {
 	if tool == "" || len(targets) == 0 {
 		return targets, 0, "", nil
@@ -119,43 +123,20 @@ func (s *Service) stepScopeFilter(ctx context.Context, tenantID shared.ID, tool 
 	if err != nil {
 		return nil, 0, "", fmt.Errorf("tier check failed, step not dispatched: %w", err)
 	}
-	unproven := map[string]bool{}
-	if tier >= scopedom.TierIntrusive && s.platformNeedsProof(ctx) {
-		missing, err := s.unverified(ctx, tenantID, targets)
-		if err != nil {
-			return nil, 0, "", fmt.Errorf("proof check failed, step not dispatched: %w", err)
-		}
-		for _, m := range missing {
-			unproven[m] = true
-		}
-	}
-	if len(over) == 0 && len(unproven) == 0 {
+	if len(over) == 0 {
 		return targets, 0, "", nil
 	}
 	kept := make([]string, 0, len(targets))
-	var tierOut, proofOut []string
+	var tierOut []string
 	for _, t := range targets {
 		if _, no := over[t]; no {
 			tierOut = append(tierOut, t)
 			continue
 		}
-		if unproven[t] {
-			proofOut = append(proofOut, t)
-			continue
-		}
 		kept = append(kept, t)
 	}
-	var reason string
-	if len(tierOut) > 0 {
-		reason = fmt.Sprintf("%d target(s) covered only below %s by their scope entries (%s)", len(tierOut), tier, listed(tierOut))
-	}
-	if len(proofOut) > 0 {
-		if reason != "" {
-			reason += "; "
-		}
-		reason += fmt.Sprintf("%d target(s) not under a verified domain, which intrusive probes need (%s)", len(proofOut), listed(proofOut))
-	}
-	return kept, len(tierOut) + len(proofOut), reason, nil
+	reason := fmt.Sprintf("%d target(s) covered only below %s by their scope entries (%s)", len(tierOut), tier, listed(tierOut))
+	return kept, len(tierOut), reason, nil
 }
 
 // listed names up to maxListedRefusals targets, sorted.

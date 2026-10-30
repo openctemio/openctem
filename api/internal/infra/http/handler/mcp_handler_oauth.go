@@ -61,4 +61,5 @@ func oauthAuditMetadata(r *http.Request, md map[string]any) {
 	md["grant_id"] = p.GrantID
 	md["client_id"] = p.ClientID
 	md["client_name"] = p.ClientName
+	md["full_data"] = p.FullData
 }

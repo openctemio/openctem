@@ -7,7 +7,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useTranslation } from '@/context/i18n-provider'
-import { DetailSection } from '@/features/shared'
+import { DetailSection, KeyValueList, type KeyValueItem } from '@/features/shared'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { refreshSensorContent } from '@/lib/api/sensor-content-hooks'
 import type { Sensor, SensorContent } from '@/lib/api/sensor-types'
@@ -141,7 +141,6 @@ function ContentRow({ c, now }: { c: SensorContent; now: number }) {
           <ContentVersion c={c} now={now} />
           {age && (
             <>
-              <span aria-hidden>·</span>
               <span
                 className={cn(
                   'inline-flex items-center gap-1.5',
@@ -149,20 +148,18 @@ function ContentRow({ c, now }: { c: SensorContent; now: number }) {
                 )}
               >
                 {age}
-                {limit ? ` · ${t('sensors.contentSection.limit', undefined, { limit })}` : ''}
+                {limit ? `, ${t('sensors.contentSection.limit', undefined, { limit })}` : ''}
                 <AgeMeter c={c} now={now} />
               </span>
             </>
           )}
           {checked && (
             <>
-              <span aria-hidden>·</span>
               <span>{checked}</span>
             </>
           )}
           {c.pinned_version && (
             <>
-              <span aria-hidden>·</span>
               <span className={cn(c.pin_mismatch && 'text-warning')}>
                 {t('sensors.contentSection.pinned')}{' '}
                 <span className="text-foreground">{c.pinned_version}</span>
@@ -189,36 +186,45 @@ function ContentRow({ c, now }: { c: SensorContent; now: number }) {
             />
             {t('sensors.contentSection.details')}
           </summary>
-          <dl className="mt-1.5 grid grid-cols-[4.5rem_minmax(0,1fr)] gap-x-2 gap-y-1 ps-4">
-            {c.version && (
-              <>
-                <dt>{t('sensors.contentSection.version')}</dt>
-                <dd className="font-mono break-all text-foreground">{c.version}</dd>
-              </>
-            )}
-            {c.digest && (
-              <>
-                <dt>{t('sensors.contentSection.digest')}</dt>
-                <dd className="min-w-0">
-                  <DigestButton digest={c.digest} />
-                </dd>
-              </>
-            )}
-            {c.source && (
-              <>
-                <dt>{t('sensors.contentSection.source')}</dt>
-                <dd className="font-mono break-all">{redactUrlQueries(c.source)}</dd>
-              </>
-            )}
-            {c.error && (
-              <>
-                <dt>{t('sensors.contentSection.error')}</dt>
-                <dd className="font-mono break-all text-destructive">
-                  {redactUrlQueries(c.error)}
-                </dd>
-              </>
-            )}
-          </dl>
+          <KeyValueList
+            size="meta"
+            className="mt-1.5 ps-4"
+            items={(
+              [
+                c.version
+                  ? {
+                      key: 'version',
+                      label: t('sensors.contentSection.version'),
+                      value: <span className="text-foreground">{c.version}</span>,
+                      token: true,
+                    }
+                  : null,
+                c.digest
+                  ? {
+                      key: 'digest',
+                      label: t('sensors.contentSection.digest'),
+                      value: <DigestButton digest={c.digest} />,
+                    }
+                  : null,
+                c.source
+                  ? {
+                      key: 'source',
+                      label: t('sensors.contentSection.source'),
+                      value: redactUrlQueries(c.source),
+                      token: true,
+                    }
+                  : null,
+                c.error
+                  ? {
+                      key: 'error',
+                      label: t('sensors.contentSection.error'),
+                      value: <span className="text-destructive">{redactUrlQueries(c.error)}</span>,
+                      token: true,
+                    }
+                  : null,
+              ] as (KeyValueItem | null)[]
+            ).filter((i): i is KeyValueItem => i !== null)}
+          />
         </details>
       )}
     </li>

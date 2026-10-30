@@ -86,6 +86,8 @@ export interface AssetSearchFilters {
   programAssets?: string
   /** stale: a class past its freshness window; never: a passive class never observed (RFC-075). */
   freshness?: string
+  /** not_resolving: the platform knows the host name does not resolve in DNS; resolving: it does. */
+  resolution?: string
   /** covered / uncovered by the coverage ledger: a successful scan in the last 30 days or not. */
   coverage?: 'covered' | 'uncovered'
   /** Assets using any of these technologies (normalised names, RFC-112). */
@@ -490,6 +492,8 @@ export function buildAssetQueryParams(filters?: AssetSearchFilters): Record<stri
   if (filters.programAssets) params.program_assets = filters.programAssets
   if (filters.freshness === 'stale' || filters.freshness === 'never')
     params.freshness = filters.freshness
+  if (filters.resolution === 'not_resolving' || filters.resolution === 'resolving')
+    params.resolution = filters.resolution
   if (filters.coverage === 'covered' || filters.coverage === 'uncovered')
     params.coverage = filters.coverage
   if (filters.technologies?.length) params.technology = filters.technologies.join(',')

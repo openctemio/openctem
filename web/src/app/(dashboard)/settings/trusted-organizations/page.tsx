@@ -1,7 +1,7 @@
 'use client'
 
 import { Main } from '@/components/layout'
-import { PageHeader } from '@/features/shared'
+import { PageHeader, PageStack } from '@/features/shared'
 import { TrustedOrganizations } from '@/features/organization/components/trusted-organizations'
 import { usePermissions } from '@/lib/permissions'
 import { useTranslation } from '@/context/i18n-provider'
@@ -16,16 +16,16 @@ export default function TrustedOrganizationsPage() {
   const { isOwner, isAtLeast, isLoading } = usePermissions()
   return (
     <Main>
-      <PageHeader
-        title={t('settings.trust.title', 'Trusted organizations')}
-        description={t(
-          'settings.trust.description',
-          "Partner organizations whose people sign in here with their own company's SSO. A trust applies once both owners agree."
-        )}
-      />
-      <div className="mt-5">
+      <PageStack>
+        <PageHeader
+          title={t('settings.trust.title', 'Trusted organizations')}
+          description={t(
+            'settings.trust.description',
+            "Partner organizations whose people sign in here with their own company's SSO. A trust applies once both owners agree."
+          )}
+        />
         {!isLoading && <TrustedOrganizations canRead={isAtLeast('admin')} isOwner={isOwner()} />}
-      </div>
+      </PageStack>
     </Main>
   )
 }

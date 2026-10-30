@@ -22,6 +22,7 @@ vi.mock('@/lib/permissions', () => ({
     SettingsWrite: 'settings:write',
   },
   useHasPermission: (p: string) => perms.has(p),
+  useCanMutate: () => perms.has('settings:write'),
 }))
 vi.mock('@/context/tenant-provider', () => ({
   useTenant: () => ({ currentTenant: { id: 't1', name: 'Acme', slug: 'acme', role } }),
@@ -46,6 +47,7 @@ vi.mock('@/features/mcp-oauth/api/connections', () => ({
   useMcpPolicy: (on: boolean) => ({ data: on ? { any_client: false } : undefined }),
   useOrgConnections: () => ({ data: undefined, isLoading: false }),
   revokeOrgConnection: vi.fn(),
+  scopeOrgConnection: vi.fn(),
 }))
 
 describe('AI assistants settings page', () => {

@@ -2,8 +2,8 @@
  * The Findings list's saved-view state and its primary action: columns and
  * density live in the URL and are saved with a view, Priority is always shown,
  * Severity starts hidden in the Active view, the unsaved-changes dot compares
- * the list with the open view, and Triage opens the Needs triage view and then
- * the first finding.
+ * the list with the open view, and Triage opens triage mode on the Needs
+ * triage queue (or, with nothing to triage, the Needs triage view).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { act, render, screen, fireEvent } from '@testing-library/react'
@@ -34,6 +34,7 @@ vi.mock('swr', () => ({
 }))
 
 vi.mock('@/features/findings/api/use-findings-api', () => ({
+  buildFindingsEndpoint: () => '/api/v1/findings',
   useFindingApi: () => ({ data: undefined }),
   useFindingsApi: (filters: Record<string, unknown>) => {
     listCalls.push(filters)
@@ -106,6 +107,10 @@ const denied = new Set<string>()
 vi.mock('@/context/permission-provider', () => ({
   usePermissions: () => ({ hasPermission: (p: string) => !denied.has(p) }),
 }))
+vi.mock('@/lib/permissions', async (orig) => ({
+  ...(await orig<typeof import('@/lib/permissions')>()),
+  usePermissions: () => ({ can: () => false }),
+}))
 vi.mock('@/features/integrations/api/use-tenant-modules', () => ({
   useModuleEnabled: () => true,
 }))
@@ -157,6 +162,8 @@ beforeEach(() => {
   listState.rows = []
   savedViews.views = []
   contractState.asked.length = 0
+  routerPush.mockClear()
+  sessionStorage.clear()
 })
 
 const VIEW_ID = '019feab9-1111-7222-8333-444455556666'
@@ -232,14 +239,14 @@ describe('Findings columns', () => {
     expect(headers()).not.toContain('Source')
   })
 
-  it('hiding a column through the View menu writes it to the URL; back to the default clears it', async () => {
+  it('hiding a column through the Display menu writes it to the URL; back to the default clears it', async () => {
     listState.rows = [row('1')]
     openAt('?status=new&state=all')
     render(<FindingsPage />)
-    await userEvent.click(screen.getByRole('button', { name: /table view/i }))
+    await userEvent.click(screen.getByRole('button', { name: /^display: density/i }))
     await userEvent.click(await screen.findByRole('menuitemcheckbox', { name: 'Severity' }))
-    expect(params().get('columns')).toBe('asset,status,slaStatus')
-    await userEvent.click(screen.getByRole('button', { name: /table view/i }))
+    expect(params().get('columns')).toBe('status,slaStatus')
+    await userEvent.click(screen.getByRole('button', { name: /^display: density/i }))
     await userEvent.click(await screen.findByRole('menuitemcheckbox', { name: 'Severity' }))
     expect(params().has('columns')).toBe(false)
   })
@@ -311,13 +318,29 @@ describe('Findings Triage', () => {
     expect(button.className).not.toMatch(/bg-primary /)
   })
 
-  it('opens the Needs triage view', () => {
+  it('opens triage mode on the Needs triage queue and remembers the list', () => {
     quickViewsState.views = [{ key: 'needs_triage', count: 3, params: 'status=new' }]
-    openAt('')
+    openAt('?severity=critical')
     render(<FindingsPage />)
     act(() => {
       fireEvent.click(screen.getByRole('button', { name: /^Triage/ }))
     })
+    expect(routerPush).toHaveBeenCalledWith('/findings/triage?status=new')
+    const stored = JSON.parse(sessionStorage.getItem('openctem.findings.triage') ?? '{}')
+    expect(stored.query).toBe('status=new')
+    expect(stored.returnTo).toBe('/findings?severity=critical')
+    expect(stored.fromList).toBe(true)
+    expect(stored.viewKey).toBe('needs_triage')
+  })
+
+  it('opens the Needs triage view when nothing waits', () => {
+    quickViewsState.views = [{ key: 'needs_triage', count: 0, params: 'status=new' }]
+    openAt('')
+    render(<FindingsPage />)
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: /Triage view/ }))
+    })
+    expect(routerPush).not.toHaveBeenCalledWith(expect.stringContaining('/findings/triage'))
     expect(params().get('status')).toBe('new')
     expect(params().get('state')).toBe('all')
   })
@@ -326,15 +349,15 @@ describe('Findings Triage', () => {
     quickViewsState.views = [{ key: 'needs_triage', count: 3, params: 'status=new' }]
     openAt('')
     render(<FindingsPage />)
-    const search = screen.getByRole('textbox', { name: /search findings/i })
+    const search = screen.getByRole('searchbox', { name: /search findings/i })
     search.focus()
     fireEvent.keyDown(search, { key: 't' })
-    expect(params().has('status')).toBe(false)
+    expect(routerPush).not.toHaveBeenCalledWith('/findings/triage?status=new')
     search.blur()
     act(() => {
       fireEvent.keyDown(document.body, { key: 't' })
     })
-    expect(params().get('status')).toBe('new')
+    expect(routerPush).toHaveBeenCalledWith('/findings/triage?status=new')
   })
 
   it('Add is a menu of Add finding and Import results', async () => {

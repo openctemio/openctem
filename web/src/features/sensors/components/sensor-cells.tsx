@@ -7,12 +7,13 @@ import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
 import { HealthStatus } from '@/components/ui/health-status'
 import { Tag } from '@/components/ui/tag'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { DetailChipList } from '@/features/shared/components/detail-sheet'
 import type { Sensor, SensorSdkStatus, SensorVersionStatus } from '@/lib/api/sensor-types'
 
 import { configHealthMeta, configHealthNeedsAttention } from '../lib/config-report'
 import { capacityLabel, sensorCapacity, type SensorToolRow } from '../lib/capabilities'
-import { formatDurationShort, keyExpiry } from '../lib/format'
+import { formatDurationShort, keyExpiry, type Tr } from '../lib/format'
 import { postureIssues } from '../lib/posture'
 import { isOneShotSensor } from '../lib/sensor-state'
 import type { ReleaseChannel } from '../lib/fleet'
@@ -20,6 +21,7 @@ import {
   normalizeSensorVersion,
   releaseLineOf,
   sensorSdkStatus,
+  parsePseudoVersion,
   sensorSdkVersion,
   sensorVersionStatus,
 } from '../lib/sensor-version'
@@ -80,18 +82,57 @@ export function ConfigHealthTag({
  * as unhardened; the title lists the fixes. Nothing for a hardened sensor or
  * an API without the posture.
  */
-export function SensorPostureTag({ sensor }: { sensor: Pick<Sensor, 'posture'> }) {
+export function SensorPostureTag({
+  sensor,
+  onOpen,
+}: {
+  sensor: Pick<Sensor, 'posture'>
+  /**
+   * Show the posture section (the drawer). The tag is then a button whose
+   * tooltip names each gap, so "Unhardened" never stands unexplained.
+   */
+  onOpen?: () => void
+}) {
   const { t } = useTranslation()
   const issues = postureIssues(sensor)
   if (issues.length === 0) return null
-  const title = issues.map((i) => t(i.fixKey, i.fix)).join('\n')
-  return (
-    <SensorTag tone="warning" title={title}>
+  const tag = (
+    <SensorTag
+      tone="warning"
+      title={onOpen ? undefined : issues.map((i) => t(i.fixKey, i.fix)).join('\n')}
+    >
       <span data-slot="sensor-posture-tag" className="inline-flex items-center gap-1">
         <ShieldAlert className="h-3 w-3" aria-hidden />
         {t('sensors.posture.tag', 'Unhardened')}
       </span>
     </SensorTag>
+  )
+  if (!onOpen) return tag
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          onClick={onOpen}
+          data-testid="sensor-posture-tag-button"
+          aria-label={t(
+            issues.length === 1 ? 'sensors.posture.tagOpen.one' : 'sensors.posture.tagOpen.other',
+            undefined,
+            { count: issues.length }
+          )}
+          className="rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        >
+          {tag}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-xs">
+        <ul className="space-y-0.5">
+          {issues.map((i) => (
+            <li key={i.reason}>{t(i.labelKey, i.label)}</li>
+          ))}
+        </ul>
+      </TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -193,7 +234,7 @@ export function ProtocolTag({ sensor }: { sensor: Pick<Sensor, 'protocol'> }) {
         date: PROTOCOL_V1_SUNSET,
       })}
     >
-      v{sensor.protocol.version} · {t('sensors.edit.about.deprecated')}
+      v{sensor.protocol.version}, {t('sensors.edit.about.deprecated')}
     </SensorTag>
   )
 }
@@ -286,16 +327,48 @@ export function sensorBuildTooltip(
  * the tooltip. The table, the phone cards and the drawer all show the version
  * through this.
  */
+/**
+ * An SDK version as an operator reads it: a release as is, a pseudo-version
+ * (a build of an unreleased commit, 40 characters) as "v0.37.1 pre-release".
+ * The full string stays in the title and in the drawer's details.
+ */
+export function sdkLabel(sdk: string, t: Tr): string {
+  const pseudo = parsePseudoVersion(sdk)
+  return pseudo
+    ? t('sensors.version.prerelease', '{version} pre-release', { version: pseudo.base })
+    : sdk
+}
+
+/** The SDK in the drawer's details: the readable form, then the exact string and commit. */
+export function SensorSdkValue({ sensor }: { sensor: SensorVersionFields }) {
+  const { t } = useTranslation()
+  const sdk = sensorSdkVersion(sensor)
+  if (!sdk) return null
+  const pseudo = parsePseudoVersion(sdk)
+  return (
+    <span className="flex min-w-0 flex-col gap-0.5">
+      <span className="tabular-nums">{sdkLabel(sdk, t)}</span>
+      {pseudo && <span className="font-mono text-xs break-all text-muted-foreground">{sdk}</span>}
+    </span>
+  )
+}
+
 export function SensorVersionCell({
   sensor,
   channel,
   showChannelTag = true,
+  showSdk = true,
 }: {
   sensor: SensorVersionFields
   /** The product catalog and SDK entries from GET /sensors/stats. */
   channel?: ReleaseChannel
   /** The latest / update / unsupported tag for the sensor release. */
   showChannelTag?: boolean
+  /**
+   * The SDK line. The drawer leaves it out (it shows the SDK in its details,
+   * see SensorSdkValue) unless the SDK needs attention.
+   */
+  showSdk?: boolean | 'when-flagged'
 }) {
   const { t, locale } = useTranslation()
   const v = normalizeSensorVersion(sensor.version)
@@ -335,10 +408,13 @@ export function SensorVersionCell({
             : t('sensors.version.sdkOutdatedHint', 'A newer SDK is available')
           : undefined
   const build = sensorBuildTooltip(sensor, t, locale)
+  const sdkShown = showSdk === 'when-flagged' ? !!sdkTag : showSdk
   // Two short lines instead of one long one: the sensor release with its
-  // channel tag, then the SDK (smaller, muted) with its warning.
+  // channel tag, then the SDK (smaller, muted) with its warning. min-w-0 and
+  // max-w-full keep a long value inside its column (a grid cell or a table
+  // cell), never drawn over the next one.
   return (
-    <span className="inline-flex flex-col gap-0.5" title={build || undefined}>
+    <span className="inline-flex max-w-full min-w-0 flex-col gap-0.5" title={build || undefined}>
       {v && (
         <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
           <span className="whitespace-nowrap text-sm tabular-nums" data-slot="sensor-version">
@@ -351,13 +427,14 @@ export function SensorVersionCell({
           )}
         </span>
       )}
-      {sdk && (
-        <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+      {sdk && sdkShown && (
+        <span className="inline-flex max-w-full min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5">
           <span
-            className={cn('whitespace-nowrap text-xs tabular-nums', muted)}
+            className={cn('max-w-full truncate text-xs tabular-nums', muted)}
             data-slot="sdk-version"
+            title={sdk}
           >
-            {t('sensors.version.sdk', 'SDK')} {sdk}
+            {t('sensors.version.sdk', 'SDK')} {sdkLabel(sdk, t)}
           </span>
           {sdkTag && (
             <SensorTag tone={sdkTag.tone} title={sdkTitle}>
@@ -585,7 +662,7 @@ export function SensorToolList({ rows }: { rows: SensorToolRow[] }) {
                     list: r.capabilities.join(', '),
                   })}
                 >
-                  {r.capabilities.join(' · ')}
+                  {r.capabilities.join(', ')}
                 </span>
               )}
             </>

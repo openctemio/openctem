@@ -5,7 +5,10 @@ package findingimport
 // the asset ids it names, for the tool of each of its files. Then the open
 // findings of that scope the upload did not report are closed through the
 // same guards as a covered scan (human sources, leaked secrets and branch
-// occurrences never; the blinding guard holds a mass close). Nothing closes
+// occurrences never; the blinding guard holds a mass close), and further:
+// the uploader must hold findings:verify, a critical or known-exploited
+// finding stays open, and only a finding whose latest sighting was itself an
+// upload closes (a platform sensor's sighting is not overruled by a file). Nothing closes
 // when any file failed or a finding could not be stored: an incomplete
 // upload proves nothing about what it left out.
 
@@ -29,6 +32,10 @@ type Coverage struct {
 	// of its files. False (the default) never closes anything.
 	Full     bool
 	AssetIDs []shared.ID
+	// CanVerify: the uploader holds findings:verify. Closing a finding as
+	// fixed is a verification, so an upload without it still imports but
+	// closes nothing (noteNeedsVerify).
+	CanVerify bool
 }
 
 // Errors of a coverage declaration (the handler answers 400 or 403).
@@ -52,6 +59,8 @@ type coverageRepo interface {
 const (
 	noteIncomplete   = "incomplete"
 	noteScopeChanged = "scope_changed"
+	// noteNeedsVerify: the uploader may not verify a fix, so nothing closed.
+	noteNeedsVerify = "needs_verify"
 )
 
 // receiptRecorder records the findings an upload closed on its receipt.
@@ -122,10 +131,23 @@ func (s *Service) closeUncovered(ctx context.Context, req Request, results []Fil
 	if req.Mapping != nil {
 		return noteIncomplete, nil
 	}
+	// A recon directory is partial by nature: a host missing from it says
+	// nothing about whether it still exists.
+	for _, fr := range results {
+		if bundleFormat(fr.Format) {
+			return noteIncomplete, nil
+		}
+	}
 	repo, ok := s.repo.(coverageRepo)
 	rec, rok := s.receipts.(receiptRecorder)
 	if !ok || !rok {
 		return "", nil
+	}
+	// Closing by absence is a verification of a fix, as POST
+	// /findings/{id}/verify: it needs findings:verify, else the upload is
+	// ingested and closes nothing.
+	if !req.Coverage.CanVerify {
+		return noteNeedsVerify, nil
 	}
 	tools := map[string]bool{}
 	for _, fr := range results {

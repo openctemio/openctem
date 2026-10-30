@@ -4,8 +4,20 @@
 # configs/sensor-products/sensor/compose.tmpl on the API host to change it.
 #
 # In an empty directory on the host that should scan:
+{{- if eq .Auth "pair"}}
+#   1. Nothing secret to store: the sensor makes its own key on first start
+{{- if .PairingCode}}
+#      and attaches to pairing code {{.PairingCode}} (single use, valid 10
+#      minutes); approve it in the console when the fingerprints match.
+{{- else}}
+#      and prints a pairing code (docker compose logs sensor); enter it under
+#      Sensors > Add sensor and approve when the fingerprints match.
+{{- end}}
+{{- else}}
 #   1. Put the sensor's API key in .env (kept out of this file):
-{{- if .APIKey}}
+{{- end}}
+{{- if eq .Auth "pair"}}
+{{- else if .APIKey}}
 #        printf '%s\n' 'OPENCTEM_API_KEY={{.APIKey}}' > .env && chmod 600 .env
 {{- else}}
 #        printf '%s\n' 'OPENCTEM_API_KEY=octs_...' > .env && chmod 600 .env
@@ -59,7 +71,16 @@ services:
 {{- end}}
     environment:
       SENSOR_API_URL: {{yamlQuote .BaseURL}}
+{{- if eq .Auth "pair"}}
+{{- if .PairingCode}}
+      SENSOR_PAIRING_CODE: {{yamlQuote .PairingCode}}
+{{- end}}
+{{- if .JobSigningRoot}}
+      SENSOR_JOB_SIGNING_ROOT: {{yamlQuote .JobSigningRoot}}
+{{- end}}
+{{- else}}
       SENSOR_API_KEY: ${OPENCTEM_API_KEY:?set OPENCTEM_API_KEY in .env}
+{{- end}}
 {{- if isDaemon .Sensor}}
       SENSOR_LOCAL_POLICY: /etc/openctem/policy/sensor-policy.yaml
       SENSOR_KILL_SWITCH_FILE: /etc/openctem/policy/STOP
@@ -74,6 +95,9 @@ services:
 {{- end}}
     volumes:
       # One data volume: state/, outbox/ and content/ (see below).
+      # Keep it a named volume: Docker creates it with the sensor's owner. A host
+      # directory here must first be given to the sensor's user (sudo chown -R
+      # 999:999 <dir>). Guide: https://docs.openctem.io/sensors/run-the-sensor/
       - data:/var/lib/openctem
 {{- if isDaemon .Sensor}}
       # The sensor-local policy and the kill switch, read-only.

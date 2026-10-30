@@ -1,5 +1,7 @@
 'use client'
 
+import { Tag } from '@/components/ui/tag'
+import { StatusLozenge } from '@/components/ui/status-lozenge'
 import { useState, useCallback, useEffect, useMemo } from 'react'
 import {
   Dialog,
@@ -10,9 +12,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { Save, Cloud, Server, Loader2, AlertTriangle } from 'lucide-react'
+import { Save, Cloud, Server, Loader2, AlertTriangle, Clock } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { WorkflowBuilder, type AvailableTool } from './workflow-builder'
@@ -249,13 +250,9 @@ export function VisualBuilderDialog({
             className="border-b"
             actions={
               <>
-                {isReadOnly && (
-                  <Badge className="bg-info/15 text-info border-0 text-xs">System Template</Badge>
-                )}
+                {isReadOnly && <Tag variant="plain" icon={Cloud} label="System Template" />}
                 {hasChanges && !isReadOnly && (
-                  <Badge variant="outline" className="text-warning border-warning text-xs">
-                    Unsaved
-                  </Badge>
+                  <StatusLozenge tone="waiting" icon={Clock} label="Unsaved" />
                 )}
                 {!isReadOnly && (
                   <Button size="sm" onClick={handleSave} disabled={!hasChanges || isSaving}>
@@ -272,7 +269,7 @@ export function VisualBuilderDialog({
           >
             <div className="flex items-center gap-3 min-w-0">
               {workflow?.is_system_template ? (
-                <Cloud className="h-5 w-5 text-blue-500 shrink-0" />
+                <Cloud className="h-5 w-5 text-muted-foreground shrink-0" />
               ) : (
                 <Server className="h-5 w-5 text-muted-foreground shrink-0" />
               )}
@@ -283,7 +280,7 @@ export function VisualBuilderDialog({
                 <DialogDescription className="text-xs text-muted-foreground whitespace-nowrap">
                   {isReadOnly
                     ? 'Read-only view - Clone to edit'
-                    : 'Drag nodes from palette • Connect nodes • Click to edit'}
+                    : 'Drag nodes from the palette, connect them, click one to edit'}
                 </DialogDescription>
               </div>
             </div>

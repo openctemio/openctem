@@ -22,7 +22,6 @@ import (
 type UserHandler struct {
 	service       *tenant.UserService
 	tenantService *tenant.TenantService
-	platformAdmin PlatformAdminChecker
 	validator     *validator.Validator
 	logger        *logger.Logger
 	// accountDeletion serves DELETE /users/me (account_deletion_handler.go).
@@ -30,11 +29,10 @@ type UserHandler struct {
 }
 
 // NewUserHandler creates a new user handler.
-func NewUserHandler(svc *tenant.UserService, tenantSvc *tenant.TenantService, platformAdmin PlatformAdminChecker, v *validator.Validator, log *logger.Logger) *UserHandler {
+func NewUserHandler(svc *tenant.UserService, tenantSvc *tenant.TenantService, v *validator.Validator, log *logger.Logger) *UserHandler {
 	return &UserHandler{
 		service:       svc,
 		tenantService: tenantSvc,
-		platformAdmin: platformAdmin,
 		validator:     v,
 		logger:        log,
 	}
@@ -57,10 +55,6 @@ type UserResponse struct {
 	LastLoginAt   *time.Time     `json:"last_login_at,omitempty"`
 	CreatedAt     time.Time      `json:"created_at"`
 	UpdatedAt     time.Time      `json:"updated_at"`
-	// IsPlatformAdmin marks an account linked to an active platform
-	// administrator (RFC-022). The UI uses it to offer the admin console. Set
-	// on the /users/me response only, not in every toUserResponse.
-	IsPlatformAdmin bool `json:"is_platform_admin"`
 }
 
 // PreferencesDTO represents user preferences in API responses.
@@ -68,6 +62,10 @@ type PreferencesDTO struct {
 	Theme         string `json:"theme,omitempty"`
 	Language      string `json:"language,omitempty"`
 	Notifications bool   `json:"notifications"`
+	// FindingsInformational is whether the findings work views show
+	// informational findings: default (the organization's default),
+	// include or exclude.
+	FindingsInformational string `json:"findings_informational" enums:"default,include,exclude"`
 }
 
 // UpdateProfileRequest represents the request to update a user profile.
@@ -82,6 +80,8 @@ type UpdatePreferencesRequest struct {
 	Theme         *string `json:"theme" validate:"omitempty,oneof=light dark system"`
 	Language      *string `json:"language" validate:"omitempty,oneof=en vi"`
 	Notifications *bool   `json:"notifications"`
+	// FindingsInformational: default, include or exclude; absent = unchanged.
+	FindingsInformational *string `json:"findings_informational" validate:"omitempty,oneof=default include exclude"`
 }
 
 // toUserResponse converts a domain user to API response.
@@ -130,13 +130,11 @@ func (h *UserHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 }
 
 // MeResponse is the caller's own profile as GET /users/me returns it; the
-// session bootstrap embeds the same value.
-func (h *UserHandler) MeResponse(ctx context.Context, u *user.User) UserResponse {
-	response := toUserResponse(u)
-	if h.platformAdmin != nil {
-		response.IsPlatformAdmin = h.platformAdmin.IsPlatformAdmin(ctx, u.ID())
-	}
-	return response
+// session bootstrap embeds the same value. It never says whether the account
+// holds a platform role: that attribute exists only on the console plane
+// (RFC-134).
+func (h *UserHandler) MeResponse(_ context.Context, u *user.User) UserResponse {
+	return toUserResponse(u)
 }
 
 // UpdateMe updates the current authenticated user's profile.
@@ -247,9 +245,10 @@ func (h *UserHandler) UpdatePreferences(w http.ResponseWriter, r *http.Request) 
 	// Build preferences from current + updates
 	currentPrefs := localUser.Preferences()
 	newPrefs := user.Preferences{
-		Theme:         currentPrefs.Theme,
-		Language:      currentPrefs.Language,
-		Notifications: currentPrefs.Notifications,
+		Theme:                        currentPrefs.Theme,
+		Language:                     currentPrefs.Language,
+		Notifications:                currentPrefs.Notifications,
+		FindingsIncludeInformational: currentPrefs.FindingsIncludeInformational,
 	}
 
 	if req.Theme != nil {
@@ -260,6 +259,9 @@ func (h *UserHandler) UpdatePreferences(w http.ResponseWriter, r *http.Request) 
 	}
 	if req.Notifications != nil {
 		newPrefs.Notifications = *req.Notifications
+	}
+	if req.FindingsInformational != nil {
+		newPrefs = newPrefs.WithFindingsInformational(*req.FindingsInformational)
 	}
 
 	updatedUser, err := h.service.UpdatePreferences(r.Context(), localUser.ID().String(), newPrefs)
@@ -281,9 +283,10 @@ func (h *UserHandler) UpdatePreferences(w http.ResponseWriter, r *http.Request) 
 // GET and PUT /users/me/preferences.
 func toPreferencesDTO(p user.Preferences) PreferencesDTO {
 	return PreferencesDTO{
-		Theme:         p.Theme,
-		Language:      p.Language,
-		Notifications: p.Notifications,
+		Theme:                 p.Theme,
+		Language:              p.Language,
+		Notifications:         p.Notifications,
+		FindingsInformational: p.FindingsInformational(),
 	}
 }
 
@@ -333,7 +336,7 @@ type TenantMembershipResponse struct {
 	Role        string    `json:"role"`
 	JoinedAt    time.Time `json:"joined_at"`
 	CreatedAt   time.Time `json:"created_at"`
-	// The user's own membership (RFC-058), for the organization switcher.
+	// The user's own membership, for the organization switcher.
 	// Kind is "internal" or "external"; AccessExpiresAt is when an external
 	// membership ends; BlockedReason, when set, says why the organization
 	// cannot be opened (suspended, expired, home_access_ended,

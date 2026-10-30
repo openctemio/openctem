@@ -7,6 +7,7 @@
 import useSWR, { useSWRConfig } from 'swr'
 import useSWRMutation from 'swr/mutation'
 import { tenantEndpoints } from '@/lib/api/endpoints'
+import { SWR_REFERENCE } from '@/lib/swr-config'
 import { fetcher, fetcherWithOptions } from '@/lib/api/client'
 import { usePermissions, Permission } from '@/lib/permissions'
 import type {
@@ -88,8 +89,9 @@ export function useTenantSettings(tenantIdOrSlug: string | undefined) {
     shouldFetch ? tenantEndpoints.settings(tenantIdOrSlug) : null,
     fetcher,
     {
+      // Organization settings change by an admin action that calls mutate.
+      ...SWR_REFERENCE,
       revalidateOnFocus: false,
-      dedupingInterval: 30000, // Cache for 30 seconds
     }
   )
 

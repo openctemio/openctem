@@ -15,6 +15,7 @@ import { CheckCheck, ChevronDown, ChevronRight, ShieldCheck } from 'lucide-react
 import { toast } from 'sonner'
 import { StepUpDialog } from '@/components/security'
 import { Badge } from '@/components/ui/badge'
+import { ApprovalStatusLozenge } from '@/features/shared/components/approval-status-lozenge'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -88,7 +89,7 @@ function RequestDetails({ req }: { req: ScanApprovalRequest }) {
           {req.definition.scanner_name ||
             (req.definition.workflow_steps ?? []).join(', ') ||
             req.definition.scan_type}
-          {' · '}
+          {', '}
           {t('scans.approval.schedule', 'schedule: {value}', {
             value: req.definition.schedule_type ?? '—',
           })}
@@ -149,8 +150,7 @@ function StatusBadge({ status }: { status: ScanApprovalRequest['status'] }) {
     superseded: t('scans.approval.statusSuperseded', 'Superseded'),
     canceled: t('scans.approval.statusCanceled', 'Withdrawn'),
   }
-  const variant = status === 'pending' ? 'secondary' : status === 'approved' ? 'default' : 'outline'
-  return <Badge variant={variant}>{label[status]}</Badge>
+  return <ApprovalStatusLozenge status={status} label={label[status]} />
 }
 
 export function ScanApprovalsInbox() {
@@ -291,12 +291,12 @@ export function ScanApprovalsInbox() {
                           name: req.requested_by?.name ?? '—',
                           when: formatRelative(req.requested_at),
                         })}
-                        {' · '}
+                        {', '}
                         {(req.evaluation.matched ?? []).map((r) => r.name).join(', ')}
                       </p>
                       {pending && (
                         <p className="text-xs text-muted-foreground">
-                          {t('scans.approval.remaining', '{count} approval(s) left · {who}', {
+                          {t('scans.approval.remaining', '{count} approval(s) left, {who}', {
                             count: req.remaining,
                             who: approversText(t, req.evaluation),
                           })}

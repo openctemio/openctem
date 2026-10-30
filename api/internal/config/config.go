@@ -477,6 +477,11 @@ type AppConfig struct {
 	// administrator stores a value in the console
 	// (docs/rfcs/RFC-100-shared-sensors.md §6).
 	ManagedService bool
+	// OrgEmailRelayMode (ORG_EMAIL_RELAY_MODE: off, verified_sender or on) is
+	// the default of the platform setting email.tenant_relay until a super
+	// admin stores a value in the console. Empty: verified_sender when
+	// ManagedService, else on.
+	OrgEmailRelayMode string
 	// Region is DEPLOYMENT_REGION: the data region of this deployment, given
 	// to every organization created here and never changed (empty: not
 	// named).
@@ -500,6 +505,16 @@ type SensorConfigConfig struct {
 	// PublicAPIURL is the URL sensors will connect to (embedded in templates).
 	// If empty, falls back to App.URL.
 	PublicAPIURL string
+	// ProxyTestEchoURL is the https base URL of the platform that a proxy
+	// test connects to through each proxy (the echo page, which answers the
+	// address a request came from): PROXY_TEST_ECHO_URL. It must be reachable
+	// on a public port by the proxies being tested, which is not the sensor
+	// mTLS port. Empty: PublicAPIURL, else App.URL.
+	ProxyTestEchoURL string
+	// ProxyTestAltPort is the echo host's second port a test tries, to tell
+	// a proxy that only allows CONNECT to 443 from one that allows other
+	// ports: PROXY_TEST_ALT_PORT, default 80; 0 skips that check.
+	ProxyTestAltPort int
 	// KeyTTL is how long a self-renewed sensor API key stays valid before it
 	// must be renewed again (RFC-014 Phase 1b, RFC-032 Phase 0):
 	// SENSOR_KEY_TTL, default DefaultSensorKeyTTL (90 days). "0" disables
@@ -848,6 +863,10 @@ func (c AuthConfig) PublicSignup() bool {
 
 // AuthConfig holds authentication configuration.
 type AuthConfig struct {
+	// MFAFloor (AUTH_MFA_FLOOR: none, admins or everyone) is the default of
+	// the platform two-factor floor until a super admin stores a value in
+	// the console. Empty: admins.
+	MFAFloor string
 	// SignupMode is the deployment's sign-up ceiling: SignupModeDisabled
 	// (default), SignupModeDomain or SignupModeOpen. No API can change it.
 	// The platform administrator creates organizations in every mode.
@@ -1097,6 +1116,29 @@ func (c *Config) SensorPublicHost() string {
 	return net.JoinHostPort(host, port)
 }
 
+// ProxyTestEchoBase is the https origin a proxy test connects to
+// (PROXY_TEST_ECHO_URL, else SENSOR_PUBLIC_API_URL, else APP_URL); "" when
+// none is an https URL with a host name or address.
+func (c *Config) ProxyTestEchoBase() string {
+	for _, raw := range []string{c.SensorConfig.ProxyTestEchoURL, c.SensorConfig.PublicAPIURL, c.App.URL} {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		u, err := url.Parse(raw)
+		if err != nil || !strings.EqualFold(u.Scheme, "https") || u.Hostname() == "" {
+			// An explicit setting that is not usable is not replaced by a
+			// guess from another one.
+			if raw == strings.TrimSpace(c.SensorConfig.ProxyTestEchoURL) {
+				return ""
+			}
+			continue
+		}
+		return "https://" + u.Host
+	}
+	return ""
+}
+
 // Sensor protocol v3 modes (SENSOR_TRANSPORT_V3).
 const (
 	TransportV3Auto = "auto"
@@ -1139,6 +1181,12 @@ type SensorTransportV3Config struct {
 	MTLSTrustedProxies []string
 }
 
+// VulnFeedOfficialRootKeyID is the root key id of the official vulnerability
+// bundles (openctemio/vulnfeed keys/root-keyid.txt, first key ceremony
+// 2026-10-25). Pinned so the import works with no setup; VULNFEED_ROOT_KEY_ID
+// overrides it for a private collector.
+const VulnFeedOfficialRootKeyID = "SHA256:cb881872776e9b00fa699ccdc809af71243728279083f7bcdf6dd171e5a246c2"
+
 // SensorConfig holds sensor management configuration.
 type SensorConfig struct {
 	// HeartbeatTimeout is the duration after which a sensor is marked as inactive
@@ -1158,7 +1206,8 @@ type SensorConfig struct {
 	CTEMIDFeedURL string
 
 	// Vulnerability bundles (RFC-066 §5.5): the pinned root key id
-	// (VULNFEED_ROOT_KEY_ID; empty = no import), the release base URL
+	// (VULNFEED_ROOT_KEY_ID; defaults to VulnFeedOfficialRootKeyID, the root
+	// of the official openctemio/vulnfeed-bundles releases), the release base URL
 	// (VULNFEED_BASE_URL) and, for air-gapped platforms, a local directory
 	// holding a release's files (VULNFEED_BUNDLE_DIR). VulnFeedMirrors
 	// (VULNFEED_MIRRORS, comma separated, https) are tried after the
@@ -1430,6 +1479,8 @@ type AITriageConfig struct {
 	DefaultAutoTriageEnabled    bool
 	DefaultAutoTriageSeverities []string
 	DefaultAutoTriageDelay      time.Duration
+	// MaskMapTTL is how long a run's AI masking map is kept (AI_MASK_MAP_TTL).
+	MaskMapTTL time.Duration
 
 	// Stuck Job Recovery Settings
 	RecoveryEnabled       bool          // Enable background recovery for stuck jobs
@@ -1519,7 +1570,8 @@ func Load() (*Config, error) {
 			URL:    getEnv("APP_URL", ""),
 			Region: strings.ToLower(strings.TrimSpace(getEnv("DEPLOYMENT_REGION", ""))),
 
-			ManagedService: getEnvBool("MANAGED_SERVICE", false),
+			ManagedService:    getEnvBool("MANAGED_SERVICE", false),
+			OrgEmailRelayMode: getEnv("ORG_EMAIL_RELAY_MODE", ""),
 		},
 		SensorConfig: SensorConfigConfig{
 			TransportV3: SensorTransportV3Config{
@@ -1536,6 +1588,8 @@ func Load() (*Config, error) {
 			TemplatesDir:      getEnv("SENSOR_CONFIG_TEMPLATES_DIR", DefaultSensorConfigTemplatesDir),
 			ProductsFile:      getEnv("SENSOR_PRODUCTS_FILE", ""),
 			PublicAPIURL:      getEnv("SENSOR_PUBLIC_API_URL", ""),
+			ProxyTestEchoURL:  getEnv("PROXY_TEST_ECHO_URL", ""),
+			ProxyTestAltPort:  getEnvInt("PROXY_TEST_ALT_PORT", 80),
 			KeyTTL:            getEnvDuration("SENSOR_KEY_TTL", DefaultSensorKeyTTL),
 			KeyRenewGrace:     getEnvDuration("SENSOR_KEY_RENEW_GRACE", DefaultSensorKeyRenewGrace),
 			KeyPepper:         getEnv("SENSOR_KEY_PEPPER", ""),
@@ -1583,7 +1637,7 @@ func Load() (*Config, error) {
 			Host:                  getEnv("SERVER_HOST", "0.0.0.0"),
 			Port:                  getEnvInt("SERVER_PORT", 8080),
 			ReadTimeout:           getEnvDuration("SERVER_READ_TIMEOUT", 15*time.Second),
-			WriteTimeout:          getEnvDuration("SERVER_WRITE_TIMEOUT", 15*time.Second),
+			WriteTimeout:          getEnvDuration("SERVER_WRITE_TIMEOUT", defaultWriteTimeout(getEnvDuration("SERVER_REQUEST_TIMEOUT", 30*time.Second))),
 			RequestTimeout:        getEnvDuration("SERVER_REQUEST_TIMEOUT", 30*time.Second), // Per-request timeout
 			ShutdownTimeout:       getEnvDuration("SERVER_SHUTDOWN_TIMEOUT", 30*time.Second),
 			MaxBodySize:           getEnvInt64("SERVER_MAX_BODY_SIZE", 10<<20), // 10MB default
@@ -1654,6 +1708,7 @@ func Load() (*Config, error) {
 			MaxLoginAttempts:          getEnvInt("AUTH_MAX_LOGIN_ATTEMPTS", 5),
 			LockoutDuration:           getEnvDuration("AUTH_LOCKOUT_DURATION", 15*time.Minute),
 			MaxActiveSessions:         getEnvInt("AUTH_MAX_ACTIVE_SESSIONS", 10),
+			MFAFloor:                  getEnv("AUTH_MFA_FLOOR", ""),
 			RequireEmailVerification:  getEnvBool("AUTH_REQUIRE_EMAIL_VERIFICATION", true),
 			CaptchaTurnstileSecret:    getEnv("CAPTCHA_TURNSTILE_SECRET", ""),
 			CaptchaTurnstileSiteKey:   getEnv("CAPTCHA_TURNSTILE_SITE_KEY", ""),
@@ -1738,8 +1793,8 @@ func Load() (*Config, error) {
 			HeartbeatTimeout:                  getEnvDuration("WORKER_HEARTBEAT_TIMEOUT", 5*time.Minute),
 			SCMSyncInterval:                   getEnvDuration("SCM_SYNC_INTERVAL", 0),
 			CTEMIDFeedURL:                     getEnv("CTEM_ID_FEED_URL", "https://ctem.org/source.json"),
-			VulnFeedRootKeyID:                 getEnv("VULNFEED_ROOT_KEY_ID", ""),
-			VulnFeedBaseURL:                   getEnv("VULNFEED_BASE_URL", "https://github.com/openctemio/vulnfeed/releases"),
+			VulnFeedRootKeyID:                 getEnv("VULNFEED_ROOT_KEY_ID", VulnFeedOfficialRootKeyID),
+			VulnFeedBaseURL:                   getEnv("VULNFEED_BASE_URL", "https://github.com/openctemio/vulnfeed-bundles/releases"),
 			VulnFeedBundleDir:                 getEnv("VULNFEED_BUNDLE_DIR", ""),
 			VulnFeedMirrors:                   feedURLs("", getEnv("VULNFEED_MIRRORS", "")),
 			VersionCheckEnabled:               getEnvBool("VERSION_CHECK_ENABLED", true),
@@ -1891,6 +1946,7 @@ func Load() (*Config, error) {
 			DefaultAutoTriageEnabled:    getEnvBool("AI_AUTO_TRIAGE_DEFAULT_ENABLED", false),
 			DefaultAutoTriageSeverities: getEnvSlice("AI_AUTO_TRIAGE_DEFAULT_SEVERITIES", []string{"critical", "high"}),
 			DefaultAutoTriageDelay:      getEnvDuration("AI_AUTO_TRIAGE_DELAY", 60*time.Second),
+			MaskMapTTL:                  getEnvDuration("AI_MASK_MAP_TTL", 7*24*time.Hour),
 			RecoveryEnabled:             getEnvBool("AI_TRIAGE_RECOVERY_ENABLED", true),
 			RecoveryInterval:            getEnvDuration("AI_TRIAGE_RECOVERY_INTERVAL", 5*time.Minute),
 			RecoveryStuckDuration:       getEnvDuration("AI_TRIAGE_RECOVERY_STUCK_DURATION", 15*time.Minute),
@@ -2066,6 +2122,12 @@ func (c *Config) validateBasic() error {
 	if err := httpsec.ValidatePrivateEgress(c.App.Env,
 		os.Getenv(httpsec.EnvAllowPrivate), os.Getenv(httpsec.EnvAllowPrivateCIDRs)); err != nil {
 		return err
+	}
+	// The opened ranges are reachable by every organization's integrations.
+	// Where anyone may create an organization, that hands the operator's
+	// private network to strangers, so the two settings are not combined.
+	if c.Auth.SignupMode == SignupModeOpen && strings.TrimSpace(os.Getenv(httpsec.EnvAllowPrivateCIDRs)) != "" {
+		return fmt.Errorf("%s opens private ranges to every organization's integrations and cannot be combined with SIGNUP_MODE=open, where anyone can create an organization; unset it, or use SIGNUP_MODE=disabled or domain", httpsec.EnvAllowPrivateCIDRs)
 	}
 	if c.Server.Port < 1 || c.Server.Port > 65535 {
 		return fmt.Errorf("invalid server port: %d", c.Server.Port)
@@ -2975,3 +3037,21 @@ func feedURLs(primary, mirrors string) []string {
 // deploymentRegionRE is the shape of DEPLOYMENT_REGION (the tenants.region
 // check in the database is the same).
 var deploymentRegionRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
+
+// writeTimeoutMargin is how long the connection stays writable after the
+// per-request timeout fires, so the 503 timeout body can still be sent.
+const writeTimeoutMargin = 5 * time.Second
+
+// defaultWriteTimeout is the HTTP write timeout used when SERVER_WRITE_TIMEOUT
+// is not set: the request timeout plus a margin. A write timeout at or below
+// the request timeout closes the connection before the timeout answer is
+// written, and the client sees EOF instead of a 503.
+func defaultWriteTimeout(request time.Duration) time.Duration {
+	return request + writeTimeoutMargin
+}
+
+// WriteTimeoutBelowRequest reports whether the write timeout would cut the
+// connection before the request timeout answer can be written.
+func (s ServerConfig) WriteTimeoutBelowRequest() bool {
+	return s.RequestTimeout > 0 && s.WriteTimeout > 0 && s.WriteTimeout <= s.RequestTimeout
+}

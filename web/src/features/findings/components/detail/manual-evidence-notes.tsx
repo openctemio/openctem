@@ -18,6 +18,7 @@ import {
 } from '../../api/use-finding-evidence'
 import { SafeExternalLink } from '@/components/safe-external-link'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { confirmName } from '@/lib/confirm-name'
 import { useTranslation } from '@/context/i18n-provider'
 
 interface ManualEvidenceNotesSectionProps {
@@ -288,8 +289,11 @@ export function ManualEvidenceNotesSection({ findingId }: ManualEvidenceNotesSec
         title={t('confirm.evidenceNote.deleteTitle', 'Delete this evidence note?')}
         desc={t(
           'confirm.evidenceNote.deleteDesc',
-          'The note is permanently removed from the finding. This cannot be undone.'
+          "The note and its link are permanently removed from the finding's evidence. The finding itself is not changed."
         )}
+        typeToConfirm={
+          noteToDelete ? confirmName(noteToDelete.description, noteToDelete.id) : undefined
+        }
         confirmText={
           isDeleting ? (
             <>
@@ -297,7 +301,7 @@ export function ManualEvidenceNotesSection({ findingId }: ManualEvidenceNotesSec
               {t('confirm.deleting', 'Deleting…')}
             </>
           ) : (
-            t('confirm.delete', 'Delete')
+            t('confirm.evidenceNote.deleteButton', 'Delete note')
           )
         }
         isLoading={isDeleting}

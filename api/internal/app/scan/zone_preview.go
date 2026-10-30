@@ -12,6 +12,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/stage"
 	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
@@ -67,7 +68,9 @@ func (s *Service) resolveSelectedZone(ctx context.Context, tenantID shared.ID, r
 
 // ZoneRoutingPreviewInput is what a scan would be created with.
 type ZoneRoutingPreviewInput struct {
-	TenantID      string
+	TenantID string
+	// UserID is the caller: the act scope of the preview is theirs.
+	UserID        string
 	Targets       []string
 	AssetGroupIDs []string
 	ScanType      string // single (default) or workflow
@@ -77,16 +80,20 @@ type ZoneRoutingPreviewInput struct {
 	// Tier is the probe tier the scan windows are evaluated at; nil: the
 	// scanner's tier (single), or active (workflow).
 	Tier *int
+	// TargetOptions: how the run resolves the scan's selectors.
+	TargetOptions scan.TargetOptions
 }
 
 // PreviewTarget is where one target would go.
 type PreviewTarget struct {
-	Target    string   `json:"target"`
-	Status    string   `json:"status"` // zone | unzoned | uncovered
-	ZoneID    string   `json:"zone_id,omitempty"`
-	ZoneName  string   `json:"zone_name,omitempty"`
-	SensorID  string   `json:"sensor_id,omitempty"` // the sensor its job would be pinned to
-	Reason    string   `json:"reason,omitempty"`
+	Target   string `json:"target"`
+	Status   string `json:"status"` // zone | unzoned | uncovered
+	ZoneID   string `json:"zone_id,omitempty"`
+	ZoneName string `json:"zone_name,omitempty"`
+	SensorID string `json:"sensor_id,omitempty"` // the sensor its job would be pinned to
+	Reason   string `json:"reason,omitempty"`
+	// Kind is the skip reason of an uncovered target (SkipGroup.Reason).
+	Kind      string   `json:"kind,omitempty"`
 	Addresses []string `json:"addresses,omitempty"` // what a hostname resolved to
 }
 
@@ -130,6 +137,11 @@ type ZoneRoutingPreview struct {
 	// Windows: what the scan windows mean for the targets now (nil: none
 	// applies).
 	Windows *WindowPreview `json:"windows,omitempty"`
+	// WillScan is how many targets a run would dispatch; Skipped groups
+	// every other target by reason (largest first), SkippedTotal sums them.
+	WillScan     int         `json:"will_scan"`
+	Skipped      []SkipGroup `json:"skipped"`
+	SkippedTotal int         `json:"skipped_total"`
 }
 
 // PreviewZoneRouting shows, for a scan about to be created, which targets go
@@ -159,12 +171,17 @@ func (s *Service) PreviewZoneRouting(ctx context.Context, in ZoneRoutingPreviewI
 	if err != nil {
 		return nil, err
 	}
+	if err := in.TargetOptions.Validate(); err != nil {
+		return nil, err
+	}
 	sc := &scan.Scan{
 		TenantID:      tenantID,
 		Name:          previewScanName,
 		ScanType:      scanType,
 		ScannerName:   in.ScannerName,
 		TargetsPerJob: in.TargetsPerJob,
+		TargetOptions: in.TargetOptions,
+		CreatedBy:     userIDPtr(in.UserID),
 	}
 	if strings.TrimSpace(in.ScanZoneID) != "" {
 		zid, err := shared.IDFromString(strings.TrimSpace(in.ScanZoneID))
@@ -190,6 +207,7 @@ func (s *Service) PreviewZoneRouting(ctx context.Context, in ZoneRoutingPreviewI
 		Targets:      []PreviewTarget{},
 		Zones:        []PreviewZone{},
 		Warnings:     []string{},
+		Skipped:      []SkipGroup{},
 	}
 	if sc.ScanZoneID != nil {
 		out.SelectedZoneID = sc.ScanZoneID.String()
@@ -203,9 +221,23 @@ func (s *Service) PreviewZoneRouting(ctx context.Context, in ZoneRoutingPreviewI
 	}
 	sc.Targets = accepted
 
-	resolved, err := s.resolveScanTargets(ctx, sc)
+	// The inventory names the caller may not act on are dropped before
+	// anything is counted: a preview never reveals how many names exist
+	// beyond the caller's data scope.
+	resolved, err := s.resolveScanTargets(context.WithValue(ctx, hideOutOfDataScopeKey{}, true), sc)
 	if err != nil {
 		return nil, err
+	}
+	// Resolve before active, as the trigger does.
+	if scanType == scan.ScanTypeSingle && stage.ProbeTier(sc.ScannerName) > stage.TierPassive {
+		if err := s.dropStaleRunNames(ctx, sc, resolved, map[string]any{}); err != nil {
+			var de *shared.DomainError
+			if !errors.As(err, &de) {
+				return nil, err
+			}
+			resolved.Targets = nil
+			out.Error = previewError(err)
+		}
 	}
 	out.ResolvedTargets = len(resolved.Targets)
 	out.ExcludedTargets = resolved.Excluded
@@ -234,9 +266,15 @@ func (s *Service) PreviewZoneRouting(ctx context.Context, in ZoneRoutingPreviewI
 		}
 	}
 
-	out.Targets = previewTargets(resolved.Targets, plan, rejected)
+	out.Targets = previewTargets(resolved.Targets, plan, rejected, resolved.NotResolving)
 	sortByInputOrder(out.Targets, in.Targets)
 	out.UncoveredTargets = len(rejected)
+	out.Skipped = skipGroups(maxSkipSamples, rejected, resolved, resolved.NotResolving, plan)
+	out.SkippedTotal = skipTotal(out.Skipped)
+	out.WillScan = len(resolved.Targets)
+	if plan != nil {
+		out.WillScan -= len(plan.Uncovered)
+	}
 	if err := s.previewWindows(ctx, sc, in, resolved.Targets, plan, out); err != nil {
 		return nil, err
 	}
@@ -281,7 +319,7 @@ func (s *Service) previewPlan(ctx context.Context, sc *scan.Scan, zones []*scanz
 		return &zonePlan{Uncovered: routing.Uncovered, Routing: routing, Warnings: uncoveredWarnings(routing.Uncovered)}, nil
 	}
 	if len(targets) > 0 {
-		if err := recordZonePlan(sc, plan, map[string]any{}); err != nil && out.Error == nil {
+		if err := recordZonePlan(plan, map[string]any{}); err != nil && out.Error == nil {
 			out.Error = previewError(err)
 		}
 	}
@@ -291,6 +329,9 @@ func (s *Service) previewPlan(ctx context.Context, sc *scan.Scan, zones []*scanz
 type rejectedTarget struct {
 	Target string
 	Reason string
+	// ActScope: refused by the act-scope check (the caller may not scan
+	// it), not by target validation.
+	ActScope bool
 }
 
 // previewValidateTargets applies scan creation's target validation, including
@@ -322,7 +363,7 @@ func (s *Service) previewValidateTargets(ctx context.Context, tenantID string, t
 	kept := accepted[:0:0]
 	for _, t := range accepted {
 		if reason, refused := d.RefusedTargets[t]; refused {
-			rejected = append(rejected, rejectedTarget{Target: t, Reason: reason})
+			rejected = append(rejected, rejectedTarget{Target: t, Reason: reason, ActScope: true})
 			continue
 		}
 		kept = append(kept, t)
@@ -393,7 +434,7 @@ func sortByInputOrder(rows []PreviewTarget, input []string) {
 
 // previewTargets lists each target's outcome: routed targets in order, then
 // the ones scan creation would refuse.
-func previewTargets(targets []string, plan *zonePlan, rejected []rejectedTarget) []PreviewTarget {
+func previewTargets(targets []string, plan *zonePlan, rejected []rejectedTarget, notResolving []string) []PreviewTarget {
 	out := make([]PreviewTarget, 0, min(len(targets)+len(rejected), maxPreviewTargets))
 	add := func(t PreviewTarget) {
 		if len(out) < maxPreviewTargets {
@@ -416,14 +457,16 @@ func previewTargets(targets []string, plan *zonePlan, rejected []rejectedTarget)
 		}
 		// Uncovered after routing (zone without sensors) overrides the zone.
 		uncovered := map[string]string{}
+		uncoveredKind := map[string]string{}
 		for _, u := range plan.Uncovered {
 			uncovered[u.Target] = u.Reason
+			uncoveredKind[u.Target] = u.Kind
 		}
 		for _, rt := range plan.Routing.Routes {
 			pt := PreviewTarget{Target: rt.Target, Addresses: shownAddresses(rt)}
 			switch {
 			case uncovered[rt.Target] != "":
-				pt.Status, pt.Reason = PreviewStatusUncovered, uncovered[rt.Target]
+				pt.Status, pt.Reason, pt.Kind = PreviewStatusUncovered, uncovered[rt.Target], uncoveredKind[rt.Target]
 				if rt.Zone != nil {
 					pt.ZoneID, pt.ZoneName = rt.Zone.ID.String(), rt.Zone.Name
 				}
@@ -433,13 +476,17 @@ func previewTargets(targets []string, plan *zonePlan, rejected []rejectedTarget)
 			case rt.Unzoned:
 				pt.Status = PreviewStatusUnzoned
 			default:
-				pt.Status, pt.Reason = PreviewStatusUncovered, rt.Reason
+				pt.Status, pt.Reason, pt.Kind = PreviewStatusUncovered, rt.Reason, rt.Kind
 			}
 			add(pt)
 		}
 	}
+	for _, n := range notResolving {
+		add(PreviewTarget{Target: n, Status: PreviewStatusUncovered, Kind: SkipNotResolving,
+			Reason: "no proof it resolved in DNS in the last week; coverage checks its DNS again"})
+	}
 	for _, r := range rejected {
-		add(PreviewTarget{Target: r.Target, Status: PreviewStatusUncovered, Reason: "not accepted by scan creation: " + r.Reason})
+		add(PreviewTarget{Target: r.Target, Status: PreviewStatusUncovered, Kind: rejectedReason(r), Reason: "not accepted by scan creation: " + r.Reason})
 	}
 	return out
 }

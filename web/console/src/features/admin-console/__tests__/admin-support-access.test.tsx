@@ -125,7 +125,7 @@ describe('Console support access', () => {
       method: 'POST',
       body: { reason: 'Check TLS findings' },
     })
-    expect(frame).toHaveTextContent('Support session — read-only — ends')
+    expect(frame).toHaveTextContent('Support session, read-only, ends')
     expect(window.location.search).toContain('session=s1')
     expect(await within(frame).findByText('12')).toBeInTheDocument()
 
@@ -137,7 +137,7 @@ describe('Console support access', () => {
 
     // The owner revokes: the next read is refused and the view closes.
     revoked = true
-    await user.type(screen.getByRole('textbox', { name: /search by name/i }), 'tls')
+    await user.type(screen.getByRole('searchbox', { name: /search by name/i }), 'tls')
     expect(await screen.findByTestId('support-access-ended')).toHaveTextContent('Access ended')
     expect(screen.queryByTestId('support-session-frame')).not.toBeInTheDocument()
     expect(window.location.search).not.toContain('session=')

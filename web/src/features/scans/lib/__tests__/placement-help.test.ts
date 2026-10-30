@@ -48,6 +48,16 @@ function hasKey(d: unknown, key: string): boolean {
   return typeof (d as Record<string, unknown>)[key] === 'string'
 }
 
+describe('host pressure placement help', () => {
+  it('explains sensor_overloaded in both languages', () => {
+    const h = placementHelp('sensor_overloaded')
+    expect(h.text).toContain("sensor's host is overloaded")
+    expect(h.href).toBe('/sensors')
+    const viT = (k: string) => (vi as Record<string, string>)[k] ?? k
+    expect(placementHelp('sensor_overloaded', viT).text).toContain('quá tải')
+  })
+})
+
 describe('every code the API sends has help', () => {
   it('step failure codes', () => {
     const codes = failureCodes()
@@ -72,6 +82,60 @@ describe('every code the API sends has help', () => {
         expect(hasKey(vi, `scans.placement.${key}.${part}`), `vi ${key}.${part}`).toBe(true)
       }
     }
+  })
+})
+
+function goConsts(file: string, prefix: string): string[] {
+  const src = readFileSync(resolve(api, file), 'utf8')
+  const re = new RegExp(`^\\s*${prefix}\\w*\\s+(?:\\w+\\s+)?=\\s*"([a-z_]+)"`, 'gm')
+  return [...src.matchAll(re)].map((m) => m[1])
+}
+
+describe('every outcome reason the API keeps has words', () => {
+  it('coverage-gap reasons (label and why)', () => {
+    const reasons = goConsts('pkg/domain/scanrun/coverage_gaps.go', 'GapReason')
+    expect(reasons).toEqual(expect.arrayContaining(['breaker_open', 'rate_floor', 'blocked']))
+    for (const r of [...reasons, 'other']) {
+      for (const d of [en, vi]) {
+        expect(hasKey(d, `scans.tasks.gap.${r}`), `gap.${r}`).toBe(true)
+        expect(hasKey(d, `scans.tasks.gapHelp.${r}`), `gapHelp.${r}`).toBe(true)
+      }
+    }
+  })
+  it('skipped-target reasons', () => {
+    const reasons = goConsts('pkg/domain/scanrun/skipped_targets.go', 'SkipReason')
+    expect(reasons.length).toBeGreaterThanOrEqual(5)
+    for (const r of reasons) {
+      expect(hasKey(en, `scans.tasks.skip.${r}`), `en skip.${r}`).toBe(true)
+      expect(hasKey(vi, `scans.tasks.skip.${r}`), `vi skip.${r}`).toBe(true)
+    }
+  })
+  it('unreached reach classes', () => {
+    const src = readFileSync(resolve(api, 'pkg/domain/scanrun/reach.go'), 'utf8')
+    const fn = src.slice(src.indexOf('func unreachedClass'))
+    const names = [...fn.slice(0, fn.indexOf('\n}\n')).matchAll(/Reach\w+/g)].map((m) => m[0])
+    const values = new Map(
+      [...src.matchAll(/^\s*(Reach\w+)\s*=\s*"([a-z_]+)"/gm)].map((m) => [m[1], m[2]])
+    )
+    expect(names.length).toBeGreaterThanOrEqual(4)
+    for (const n of names) {
+      const c = values.get(n)
+      expect(c, n).toBeTruthy()
+      expect(hasKey(en, `scans.reach.${c}`), `en reach.${c}`).toBe(true)
+      expect(hasKey(vi, `scans.reach.${c}`), `vi reach.${c}`).toBe(true)
+    }
+  })
+  it('failure classes', () => {
+    const classes = goConsts('pkg/domain/scanrun/failure.go', 'FailureClass')
+    expect(classes).toContain('partial')
+    for (const c of classes) {
+      expect(hasKey(en, `scans.failureClass.${c}`), `en failureClass.${c}`).toBe(true)
+      expect(hasKey(vi, `scans.failureClass.${c}`), `vi failureClass.${c}`).toBe(true)
+    }
+  })
+  it('COVERAGE_GAPS is a described step code', () => {
+    expect(failureCodes()).toContain('COVERAGE_GAPS')
+    expect(failureHelp('COVERAGE_GAPS', 'partial').text).not.toContain('does not describe')
   })
 })
 
@@ -113,6 +177,23 @@ describe('rule_sources_unsupported', () => {
       const dict = getDictionary(lang) as Record<string, string>
       expect(dict['scans.placement.rule_sources_unsupported.text']).toBeTruthy()
       expect(dict['scans.placement.rule_sources_unsupported.fix']).toBeTruthy()
+    }
+  })
+})
+
+describe('egress holds', () => {
+  it('have text and a fix in en and vi', () => {
+    for (const code of [
+      'egress_unsupported',
+      'egress_validate_unsupported',
+      'egress_host_direct',
+    ]) {
+      expect(PLACEMENT_FIX[code]).toBe('sensors')
+      for (const d of [en, vi]) {
+        expect(hasKey(d, `scans.placement.${code}.text`), code).toBe(true)
+        expect(hasKey(d, `scans.placement.${code}.fix`), code).toBe(true)
+      }
+      expect(placementHelp(code).href).toBe('/sensors')
     }
   })
 })

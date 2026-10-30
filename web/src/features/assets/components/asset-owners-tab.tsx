@@ -9,10 +9,9 @@ import {
   Building2,
   User,
   Pencil,
+  MoreHorizontal,
   Check,
   ChevronsUpDown,
-  Search,
-  X,
   UserCheck,
   Eye,
   Bell,
@@ -21,7 +20,6 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -47,6 +45,13 @@ import {
   CommandItem,
   CommandList,
 } from '@/components/ui/command'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
@@ -55,10 +60,10 @@ import useSWR from 'swr'
 import { useTenant } from '@/context/tenant-provider'
 import { get } from '@/lib/api/client'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { useGroups } from '@/features/access-control/api/use-groups'
 import { useTranslation } from '@/context/i18n-provider'
-import { ErrorState } from '@/features/shared'
+import { ErrorState, ListToolbar } from '@/features/shared'
 
 // Backend response shape for GET /tenants/{slug}/members?include=user
 // (defined inline because the typed lib hook doesn't support include param yet)
@@ -217,23 +222,37 @@ function OwnerCard({
           )}
         </div>
       </div>
-      <div className="flex items-center gap-1">
-        {canEdit && (
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onEdit(owner)}>
-            <Pencil className="h-3.5 w-3.5" />
-          </Button>
-        )}
-        {canDelete && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 text-destructive hover:text-destructive"
-            onClick={() => onRemove(owner)}
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
-        )}
-      </div>
+      {(canEdit || canDelete) && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              aria-label={t('assets.ownersTab.actionsFor', 'Actions for {name}', {
+                name: name || t('assets.ownersTab.unknown', 'Unknown'),
+              })}
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {canEdit && (
+              <DropdownMenuItem onClick={() => onEdit(owner)}>
+                <Pencil className="me-2 h-4 w-4" />
+                {t('assets.ownersTab.edit', 'Edit')}
+              </DropdownMenuItem>
+            )}
+            {canEdit && canDelete && <DropdownMenuSeparator />}
+            {canDelete && (
+              <DropdownMenuItem className="text-destructive" onClick={() => onRemove(owner)}>
+                <Trash2 className="me-2 h-4 w-4" />
+                {t('assets.ownersTab.remove', 'Remove')}
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
     </div>
   )
 }
@@ -282,7 +301,7 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
   // query parameter on /tenants/{slug}/members and /groups, so this scales
   // to tenants with thousands of members.
   const [searchValue, setSearchValue] = useState('')
-  const debouncedSearch = useDebounce(searchValue, 250)
+  const debouncedSearch = useSearchQuery(searchValue).term
 
   // Edit owner state
   const [editOwnershipType, setEditOwnershipType] = useState<OwnershipType>('primary')
@@ -580,28 +599,16 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
           */}
           {owners.length > SEARCH_THRESHOLD && (
             <div className="space-y-1">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                <Input
-                  value={ownerSearch}
-                  onChange={(e) => setOwnerSearch(e.target.value)}
-                  placeholder={t(
+              <ListToolbar
+                search={{
+                  value: ownerSearch,
+                  onChange: setOwnerSearch,
+                  placeholder: t(
                     'assets.ownersTab.search',
                     'Search owners by name, email, or group…'
-                  )}
-                  className="ps-8 h-8 text-sm"
-                />
-                {ownerSearch && (
-                  <button
-                    type="button"
-                    onClick={() => setOwnerSearch('')}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    aria-label={t('assets.ownersTab.clearSearch', 'Clear search')}
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                )}
-              </div>
+                  ),
+                }}
+              />
               {ownerSearch && (
                 <p className="text-xs text-muted-foreground">
                   {t('assets.ownersTab.showing', 'Showing {shown} of {total}', {

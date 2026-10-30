@@ -25,6 +25,11 @@ const (
 	MethodTool = "tool"
 	// MethodValidate: the nuclei template re-run plus the reachability probe.
 	MethodValidate = "validate"
+	// MethodVersion: a version-match finding re-checked by re-running the
+	// fingerprint that read the software version on the asset, then
+	// evaluating the version seen against the CVE's affected ranges
+	// (docs/architecture/finding-retest-strategy.md).
+	MethodVersion = "version"
 )
 
 // maxVerdictDetail caps the tool's detail kept in the retest reason.
@@ -37,8 +42,10 @@ type toolVerdict struct {
 	Ref            string          `json:"ref"`
 	Verdict        string          `json:"verdict"`
 	Detail         string          `json:"detail"`
+	Code           string          `json:"code"`
 	Evidence       json.RawMessage `json:"evidence"`
 	TemplateDigest string          `json:"template_digest"`
+	Requests       json.RawMessage `json:"requests"`
 }
 
 type toolRetestResult struct {
@@ -65,7 +72,7 @@ type ToolResult struct {
 // or "unverifiable". A "fixed" verdict is only a confirmed fix when its
 // evidence proves the finding's endpoint was requested and answered
 // (decideNotMatched); a bare "fixed" is "not reproduced".
-func DecideToolVerdict(raw json.RawMessage, findingID, matchedAt string) ToolResult {
+func DecideToolVerdict(raw json.RawMessage, findingID, matchedAt string, cls ...Class) ToolResult {
 	if len(raw) == 0 {
 		return ToolResult{Verdict: inconclusive(ReasonNoResult, "the tool reported no result")}
 	}
@@ -98,22 +105,56 @@ func DecideToolVerdict(raw json.RawMessage, findingID, matchedAt string) ToolRes
 		}
 		detail := evidence.RedactText(CleanDetail(v.Detail))
 		switch strings.ToLower(strings.TrimSpace(v.Verdict)) {
-		case VerdictStillPresent:
+		case VerdictStillPresent, VerdictFixed:
+			// Per-request results (a check that probes several paths) say
+			// what the finding's own endpoint did.
+			if rv, ok := DecideByRequests(DecodeRequests(v.Requests), matchedAt, normalized(out.Evidence), firstClass(cls)); ok {
+				if strings.EqualFold(strings.TrimSpace(v.Verdict), VerdictStillPresent) && !rv.Outcome.matchedSomewhere() {
+					// A tool that says it saw the issue while no request
+					// line matched contradicts itself: never a fix.
+					rv = inconclusive(ReasonError, "the tool reported a match, but none of its requests matched")
+				}
+				out.Verdict = rv
+				break
+			}
+			if strings.EqualFold(strings.TrimSpace(v.Verdict), VerdictFixed) {
+				out.Verdict = decideNotMatched(AnalyzeAttempt(normalized(out.Evidence), matchedAt), matchedAt, true, "", firstClass(cls))
+				break
+			}
 			out.Verdict = Verdict{Outcome: OutcomeStillVulnerable, Code: ReasonMatched,
 				Reason: nonEmpty(detail, "the tool's check found the issue again")}
-		case VerdictFixed:
-			out.Verdict = decideNotMatched(AnalyzeAttempt(normalized(out.Evidence), matchedAt), matchedAt, true, "")
 		case VerdictUnverifiable:
 			// The tool could not run the check (template not available,
 			// tool error, target not connectable): a gap of the tool, not
 			// a finding about the target, so never "unreachable".
-			out.Verdict = inconclusive(ReasonError, "the tool could not run this check: "+nonEmpty(detail, "no reason given"))
+			out.Verdict = unverifiableVerdict(v.Code, detail)
 		default:
 			out.Verdict = inconclusive(ReasonError, "the tool reported an unknown verdict")
 		}
 		return out
 	}
 	return ToolResult{Verdict: inconclusive(ReasonNoResult, "the tool reported no verdict for this finding")}
+}
+
+// unverifiableVerdict maps the reason code a sensor gives an unverifiable
+// item (sdk-go tool.VerdictCode) to the retest's reason code. The sensor's
+// code is a closed set and never decides anything beyond the label: an
+// unknown or missing code (an older sensor) is a plain tool error, and the
+// verdict stays inconclusive whatever the code says.
+func unverifiableVerdict(code, detail string) Verdict {
+	switch strings.ToLower(strings.TrimSpace(code)) {
+	case "template_not_found":
+		return inconclusive(ReasonTemplateNotFound, nonEmpty(detail, "the check is not installed on the sensor"))
+	case "excluded_by_policy":
+		return inconclusive(ReasonExcludedByPolicy, nonEmpty(detail, "the sensor's safety policy does not run this check"))
+	case "no_verdict":
+		return inconclusive(ReasonNoVerdict, nonEmpty(detail, "the tool ended without a verdict for this item"))
+	case "target_unreachable":
+		return inconclusive(ReasonUnreachable, nonEmpty(detail, "the sensor could not connect to the target"))
+	case "egress_refused":
+		return inconclusive(ReasonBlocked, nonEmpty(detail, "the sensor's network confinement refused the target"))
+	}
+	return inconclusive(ReasonError, "the tool could not run this check: "+nonEmpty(detail, "no reason given"))
 }
 
 // normalized applies the evidence caps before the items are read.

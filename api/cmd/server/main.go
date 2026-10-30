@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	nethttp "net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -25,6 +26,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/websocket"
 	"github.com/openctemio/openctem/api/internal/versions"
 	"github.com/openctemio/openctem/api/pkg/brand"
+	emailpkg "github.com/openctemio/openctem/api/pkg/email"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/keycloak"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -55,7 +57,7 @@ import (
 // @securityDefinitions.apikey CIRunToken
 // @in header
 // @name Authorization
-// @description CI run upload token from POST /ci/oidc/exchange (RFC-051): "Bearer octci_...", 15 minutes, one run on one repository.
+// @description CI run upload token from POST /ci/oidc/exchange: "Bearer octci_...", 15 minutes, one run on one repository.
 
 // @externalDocs.description  OpenAPI
 // @externalDocs.url          https://swagger.io/resources/open-api/
@@ -82,7 +84,7 @@ var (
 
 	signerLedgerExport = flag.String("signer-ledger-export", "",
 		"Write every organization's scope in effect as a job-signer ledger snapshot to this new file (0600), then exit; "+
-			"the operator imports it with `openctem-signer ledger import` (RFC-040 P2)")
+			"the operator imports it with `openctem-signer ledger import`")
 )
 
 func main() {
@@ -118,6 +120,9 @@ func run() int {
 	}
 
 	brand.SetInstance(cfg.Brand)
+	// A hosted service holds organization mail relays to the managed rules
+	// (submission port, AUTH, TLS).
+	emailpkg.SetManagedTenantRelay(cfg.App.ManagedService)
 	log := initLogger(cfg)
 	log.Info("starting application", "app", cfg.App.Name, "env", cfg.App.Env)
 	for _, w := range cfg.EnvWarnings {
@@ -291,6 +296,20 @@ func run() int {
 	if services.Auth != nil && services.Email != nil {
 		services.Auth.SetSecurityNotifier(services.Email)
 	}
+	// A social sign-in method linked or unlinked is told to the account's
+	// mailbox.
+	if services.OAuth != nil && services.Email != nil {
+		services.OAuth.SetIdentityNotifier(services.Email)
+	}
+
+	// Owners of an organization whose e-mail channel was stopped by the
+	// managed service rules are told in-app and through the system SMTP.
+	if services.Integration != nil {
+		services.Integration.SetRelayPolicyNotices(repos.Tenant, services.Notification)
+		if services.Email != nil {
+			services.Integration.SetRelayPolicyMailer(services.Email)
+		}
+	}
 
 	// Owners are emailed about an SSO change that waits for their approval.
 	if services.SSOChange != nil && services.Email != nil {
@@ -307,12 +326,21 @@ func run() int {
 		services.Auth.SetSMTPChecker(services.Email)
 	}
 
-	// Wire the per-tenant SMTP resolver so a tenant that configured an email
-	// notification integration sends from its own SMTP server instead of the
-	// system default. The SetTenantSMTPResolver seam was never called, so
-	// per-tenant SMTP was silently dead and every tenant fell back to system SMTP.
+	// An organization's own mail relay (its e-mail notification channel with
+	// "organization mail" ticked) carries its invitation notices
+	// and reports when the platform mode email.tenant_relay allows it. Account
+	// security mail never uses it. Without the mode setting the relay stays
+	// off.
 	if services.Email != nil {
-		services.Email.SetTenantSMTPResolver(auth.NewIntegrationSMTPResolver(repos.Integration, log))
+		var mode auth.RelayModeSource
+		if services.OrgRelay != nil {
+			mode = services.OrgRelay
+		}
+		var domains auth.SenderDomains
+		if repos.VerifiedDomain != nil {
+			domains = repos.VerifiedDomain
+		}
+		services.Email.SetTenantSMTPResolver(auth.NewIntegrationSMTPResolver(repos.Integration, services.Encryptor.DecryptString, mode, domains, log))
 	}
 
 	// ==========================================================================
@@ -369,6 +397,7 @@ func run() int {
 			tenant.NewOrganizationCreator(services.Tenant, services.UserProvisioning, repos.User, log),
 			accessRequestMailer{email: services.Email, appName: cfg.Brand.DisplayName(), log: log},
 			captcha, cfg.SMTP.BaseURL, log)
+		services.AccessRequest.SetUserLookup(repos.User)
 	}
 	wireSignupEvents(services, repos, redisClient, cfg, log)
 
@@ -566,9 +595,14 @@ func run() int {
 	// ==========================================================================
 	// Start Server
 	// ==========================================================================
+	// A listener that cannot start (port in use, bad TLS material) ends the
+	// process with a non-zero exit so the orchestrator restarts it, instead of
+	// leaving a replica that runs controllers but serves no HTTP.
+	serverFailed := make(chan error, 1)
 	go func() {
-		if err := server.Start(); err != nil {
+		if err := server.Start(); fatalListenerError(err) {
 			log.Error("server error", "error", err)
+			serverFailed <- err
 		}
 	}()
 	if handlers.SensorV3 != nil && servesTenant {
@@ -588,7 +622,12 @@ func run() int {
 	// ==========================================================================
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
+	exitCode := 0
+	select {
+	case <-quit:
+	case <-serverFailed:
+		exitCode = 1
+	}
 
 	log.Info("shutting down...")
 
@@ -628,7 +667,13 @@ func run() int {
 	}
 
 	log.Info("application stopped")
-	return 0
+	return exitCode
+}
+
+// fatalListenerError reports whether an error from the HTTP server's Start
+// means it is not serving: any error except a normal close.
+func fatalListenerError(err error) bool {
+	return err != nil && !errors.Is(err, nethttp.ErrServerClosed)
 }
 
 // =============================================================================

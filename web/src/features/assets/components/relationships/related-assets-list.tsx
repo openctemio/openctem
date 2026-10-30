@@ -16,22 +16,23 @@
  */
 
 import * as React from 'react'
-import { ChevronDown, ChevronRight, Lock, MoreHorizontal, Network, Search } from 'lucide-react'
+import { ChevronDown, ChevronRight, Lock, MoreHorizontal, Network } from 'lucide-react'
 import { mutate as globalMutate } from 'swr'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useTranslation } from '@/context/i18n-provider'
 import { EmptyState } from '@/features/shared/components/empty-state'
 import { ErrorState } from '@/features/shared/components/error-state'
+import { ListToolbar } from '@/features/shared/components/list-toolbar'
 import { AssetStatusBadge } from '@/features/asset-lifecycle/components/asset-status-badge'
 import { endpoints } from '@/lib/api/endpoints'
 import { cn } from '@/lib/utils'
@@ -50,6 +51,7 @@ import {
 } from '../../hooks/use-related-assets'
 import { CriticalityBadge } from '../classification-badges'
 import type { Criticality } from '../../types'
+import { useSearchQuery } from '@/hooks/use-search-query'
 
 const PAGE_SIZE = 25
 /** Rows per group before "Show all" in the full view. */
@@ -210,10 +212,9 @@ function SummaryRow({
         <GroupVerb group={group} />
       </dt>
       <dd className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-        {shown.map((it, i) => (
+        {shown.map((it) => (
           <React.Fragment key={it.relationship_id}>
             <AssetName item={it} onNavigateToAsset={onNavigateToAsset} />
-            {i < shown.length - 1 && <span className="text-muted-foreground">·</span>}
           </React.Fragment>
         ))}
         {rest > 0 &&
@@ -329,18 +330,15 @@ function GroupPager({
 }) {
   const { t } = useTranslation()
   const [query, setQuery] = React.useState('')
-  const [debounced, setDebounced] = React.useState('')
+  const debounced = useSearchQuery(query).term
   const [page, setPage] = React.useState(0)
   // A new search starts at its first page; the initial (empty) query does
   // not reset a page the reader has already moved to.
-  React.useEffect(() => {
-    if (query === debounced) return
-    const id = setTimeout(() => {
-      setDebounced(query)
-      setPage(0)
-    }, 250)
-    return () => clearTimeout(id)
-  }, [query, debounced])
+  const [pageQuery, setPageQuery] = React.useState(debounced)
+  if (pageQuery !== debounced) {
+    setPageQuery(debounced)
+    setPage(0)
+  }
 
   const { groups, isLoading, error, mutate } = useRelatedAssets(assetId, {
     type: group.type,
@@ -360,17 +358,14 @@ function GroupPager({
   return (
     <div>
       {group.total > PAGE_SIZE && (
-        <div className="relative border-b px-3 py-2">
-          <Search
-            className="pointer-events-none absolute left-5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-            aria-hidden
-          />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={t('assets.related.search', 'Search by name')}
-            aria-label={t('assets.related.searchIn', 'Search {verb}', { verb })}
-            className="h-8 pl-8"
+        <div className="border-b px-3 py-2">
+          <ListToolbar
+            search={{
+              value: query,
+              onChange: setQuery,
+              placeholder: t('assets.related.search', 'Search by name…'),
+              label: t('assets.related.searchIn', 'Search {verb}', { verb }),
+            }}
           />
         </div>
       )}
@@ -519,6 +514,7 @@ function RelatedRow({
                 {t('assets.related.edit', 'Edit relationship')}
               </DropdownMenuItem>
             )}
+            {onRemove && onEdit && <DropdownMenuSeparator />}
             {onRemove && (
               <DropdownMenuItem className="text-destructive" onClick={() => onRemove(item)}>
                 {t('assets.related.remove', 'Remove relationship')}
@@ -564,9 +560,9 @@ function EdgeFacts({ item }: { item: RelatedAssetItem }) {
         >
           {t(`assets.related.source.${source}`, sourceFallback[source])}
           {item.confidence === 'low' && (
-            <> · {t('assets.related.lowConfidence', 'low confidence')}</>
+            <>, {t('assets.related.lowConfidence', 'low confidence')}</>
           )}
-          <> · {when}</>
+          <>, {when}</>
         </span>
       </TooltipTrigger>
       <TooltipContent side="top" className="max-w-xs text-xs">

@@ -14,16 +14,21 @@ import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/context/i18n-provider'
 import { useTenant } from '@/context/tenant-provider'
 import { AISourceCard } from '@/features/ai-triage/components/ai-source-card'
+import { AIMaskingSection } from '@/features/ai-triage/components/ai-masking-section'
+import { AIAgentsSection } from '@/features/ai-triage/components/ai-agents-section'
 import { useAIConfig } from '@/features/ai-triage/api/use-ai-triage-api'
 import { updateAISettings, useAISettings } from '@/features/ai-triage/api/use-ai-settings'
-import { PageHeader, ReadOnlyNotice } from '@/features/shared'
+import { PageHeader, ReadOnlyNotice, PageStack } from '@/features/shared'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { formatDateSafe } from '@/lib/format-date'
 import { useCanMutate } from '@/lib/permissions'
 
 /**
- * Settings > AI: the organization's consent to AI triage and where the AI
- * comes from (API docs: architecture/ai-triage.md). Until an owner or administrator turns it on, no
+ * Settings > AI: the organization's consent to AI triage, where the AI
+ * comes from (API docs: architecture/ai-triage.md) and the AI agents
+ * (architecture/ai-analysis.md) and the masking of what is sent
+ * (architecture/ai-context-masking.md). Each part is its own section
+ * component, so a section is added without touching the others. Until an owner or administrator turns it on, no
  * finding content is sent to an AI provider. Turning it on needs a recent
  * sign-in (the shared client asks for it) and is audited.
  */
@@ -32,7 +37,8 @@ export default function AISettingsPage() {
   const { currentTenant } = useTenant()
   const canEdit = useCanMutate('PUT /api/v1/organization/settings/ai')
   const settings = useAISettings(true)
-  const config = useAIConfig()
+  // Usage is live data: read it on mount, not from the bootstrap's copy.
+  const config = useAIConfig({ revalidateIfStale: true, dedupingInterval: 2000 })
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [saving, setSaving] = useState(false)
 
@@ -81,146 +87,155 @@ export default function AISettingsPage() {
 
   return (
     <Main>
-      <PageHeader
-        title={t('settings.ai.title', 'AI')}
-        description={t(
-          'settings.ai.description',
-          'Decide whether this organization’s findings may be sent to an AI provider for triage.'
-        )}
-      />
+      <PageStack>
+        <PageHeader
+          title={t('settings.ai.title', 'AI')}
+          description={t(
+            'settings.ai.description',
+            'Decide whether this organization’s findings may be sent to an AI provider for triage.'
+          )}
+        />
 
-      <div className="mt-5 space-y-5">
-        {!canEdit && (
-          <ReadOnlyNotice
-            reason={t(
-              'settings.ai.readOnly',
-              'Only owners and administrators can change this setting.'
-            )}
-          />
-        )}
-
-        {platformMissing && (
-          <Alert role="status">
-            <AlertTriangle className="h-4 w-4" />
-            <AlertTitle>
-              {t('settings.ai.platformMissingTitle', 'No AI provider is set up yet')}
-            </AlertTitle>
-            <AlertDescription>
-              {t(
-                'settings.ai.platformMissing',
-                'A platform administrator sets up the AI provider in the console (System > AI provider). You can turn AI triage on now; it works once a provider is set up.'
+        <PageStack>
+          {!canEdit && (
+            <ReadOnlyNotice
+              reason={t(
+                'settings.ai.readOnly',
+                'Only owners and administrators can change this setting.'
               )}
-            </AlertDescription>
-          </Alert>
-        )}
+            />
+          )}
 
-        <Card id="ai-triage">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4" aria-hidden />
-              {t('settings.ai.triageTitle', 'AI triage')}
-            </CardTitle>
-            <CardDescription>
-              {t(
-                'settings.ai.triageDescription',
-                'Members can ask AI for a severity assessment, exploitability, false-positive likelihood and remediation steps on a finding. The result is a suggestion: nothing on a finding changes without a person.'
-              )}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {settings.isLoading ? (
-              <Skeleton className="h-6 w-1/2" />
-            ) : settings.error ? (
-              <p className="text-sm text-destructive">{getErrorMessage(settings.error)}</p>
-            ) : (
-              <div className="flex items-start gap-3">
-                <Switch
-                  id="ai-triage-enabled"
-                  checked={enabled}
-                  disabled={!canEdit || saving}
-                  onCheckedChange={onToggle}
-                />
-                <div className="space-y-1">
-                  <Label htmlFor="ai-triage-enabled">
-                    {t('settings.ai.toggle', 'Turn on AI triage for this organization')}
-                  </Label>
-                  <p className="text-sm text-muted-foreground">
-                    {enabled
-                      ? since
-                      : t('settings.ai.off', 'Off: no finding content is sent to an AI provider.')}
-                  </p>
+          {platformMissing && (
+            <Alert role="status">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>
+                {t('settings.ai.platformMissingTitle', 'No AI provider is set up yet')}
+              </AlertTitle>
+              <AlertDescription>
+                {t(
+                  'settings.ai.platformMissing',
+                  'A platform administrator sets up the AI provider in the console (System > AI provider). You can turn AI triage on now; it works once a provider is set up.'
+                )}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          <Card id="ai-triage">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4" aria-hidden />
+                {t('settings.ai.triageTitle', 'AI triage')}
+              </CardTitle>
+              <CardDescription>
+                {t(
+                  'settings.ai.triageDescription',
+                  'Members can ask AI for a severity assessment, exploitability, false-positive likelihood and remediation steps on a finding. The result is a suggestion: nothing on a finding changes without a person.'
+                )}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {settings.isLoading ? (
+                <Skeleton className="h-6 w-1/2" />
+              ) : settings.error ? (
+                <p className="text-sm text-destructive">{getErrorMessage(settings.error)}</p>
+              ) : (
+                <div className="flex items-start gap-3">
+                  <Switch
+                    id="ai-triage-enabled"
+                    checked={enabled}
+                    disabled={!canEdit || saving}
+                    onCheckedChange={onToggle}
+                  />
+                  <div className="space-y-1">
+                    <Label htmlFor="ai-triage-enabled">
+                      {t('settings.ai.toggle', 'Turn on AI triage for this organization')}
+                    </Label>
+                    <p className="text-sm text-muted-foreground">
+                      {enabled
+                        ? since
+                        : t(
+                            'settings.ai.off',
+                            'Off: no finding content is sent to an AI provider.'
+                          )}
+                    </p>
+                  </div>
                 </div>
+              )}
+
+              <div className="rounded-md border bg-muted/40 p-3 text-sm">
+                <p className="font-medium">{t('settings.ai.dataTitle', 'What is sent')}</p>
+                <p className="mt-1 text-muted-foreground">
+                  {t(
+                    'settings.ai.dataSent',
+                    'For each analysis: the finding’s title, description, severity and score, source and tool, file path and code snippet, CVE, CWE and OWASP ids, and whether the asset is internet-facing. Detected secrets are masked before they are stored.'
+                  )}
+                </p>
+                <p className="mt-2 text-muted-foreground">
+                  {t(
+                    'settings.ai.dataPolicy',
+                    'Pentest findings follow your AI data policy: a campaign above your TLP limit for AI (Settings > AI assistants (MCP), Policy), or with AI turned off by its lead, is never sent.'
+                  )}
+                </p>
               </div>
-            )}
 
-            <div className="rounded-md border bg-muted/40 p-3 text-sm">
-              <p className="font-medium">{t('settings.ai.dataTitle', 'What is sent')}</p>
-              <p className="mt-1 text-muted-foreground">
-                {t(
-                  'settings.ai.dataSent',
-                  'For each analysis: the finding’s title, description, severity and score, source and tool, file path and code snippet, CVE, CWE and OWASP ids, and whether the asset is internet-facing. Detected secrets are masked before they are stored.'
-                )}
-              </p>
-              <p className="mt-2 text-muted-foreground">
-                {t(
-                  'settings.ai.dataPolicy',
-                  'Pentest findings follow your AI data policy: a campaign above your TLP limit for AI (Settings > AI assistants (MCP), Policy), or with AI turned off by its lead, is never sent.'
-                )}
-              </p>
-            </div>
+              {config.data?.provider && !platformMissing && (
+                <p className="text-sm text-muted-foreground">
+                  {t('settings.ai.provider', 'Provider: {provider}, model {model}.', {
+                    provider: config.data.provider,
+                    model: config.data.model || '—',
+                  })}
+                </p>
+              )}
+              {limit > 0 && (
+                <p className="text-sm text-muted-foreground">
+                  {t('settings.ai.usage', 'This month: {used} of {limit} tokens used.', {
+                    used: used.toLocaleString(),
+                    limit: limit.toLocaleString(),
+                  })}
+                </p>
+              )}
+            </CardContent>
+          </Card>
 
-            {config.data?.provider && !platformMissing && (
-              <p className="text-sm text-muted-foreground">
-                {t('settings.ai.provider', 'Provider: {provider}, model {model}.', {
-                  provider: config.data.provider,
-                  model: config.data.model || '—',
-                })}
-              </p>
-            )}
-            {limit > 0 && (
-              <p className="text-sm text-muted-foreground">
-                {t('settings.ai.usage', 'This month: {used} of {limit} tokens used.', {
-                  used: used.toLocaleString(),
-                  limit: limit.toLocaleString(),
-                })}
-              </p>
-            )}
-          </CardContent>
-        </Card>
+          {settings.data && (
+            <AISourceCard
+              settings={settings.data}
+              canEdit={canEdit}
+              onSaved={async (next) => {
+                await settings.mutate(next, { revalidate: false })
+                await config.mutate()
+              }}
+            />
+          )}
 
-        {settings.data && (
-          <AISourceCard
-            settings={settings.data}
-            canEdit={canEdit}
-            onSaved={async (next) => {
-              await settings.mutate(next, { revalidate: false })
-              await config.mutate()
-            }}
-          />
-        )}
-      </div>
+          <AIAgentsSection />
 
-      <ConfirmDialog
-        open={confirmOpen}
-        onOpenChange={setConfirmOpen}
-        title={t('settings.ai.confirmTitle', 'Turn on AI triage?')}
-        desc={
-          settings.data?.source === 'own'
-            ? t(
-                'settings.ai.confirmDescOwn',
-                'Finding content (see "What is sent") will be sent to the AI provider your organization set up, each time a member asks for an analysis. You can turn it off at any time.'
-              )
-            : t(
-                'settings.ai.confirmDesc',
-                'Finding content (see "What is sent") will be sent to the AI provider your platform administrator set up, each time a member asks for an analysis. You can turn it off at any time.'
-              )
-        }
-        confirmText={t('settings.ai.confirm', 'Turn on')}
-        handleConfirm={async () => {
-          await save(true)
-          setConfirmOpen(false)
-        }}
-      />
+          <AIMaskingSection canEdit={canEdit} />
+        </PageStack>
+
+        <ConfirmDialog
+          open={confirmOpen}
+          onOpenChange={setConfirmOpen}
+          title={t('settings.ai.confirmTitle', 'Turn on AI triage?')}
+          desc={
+            settings.data?.source === 'own'
+              ? t(
+                  'settings.ai.confirmDescOwn',
+                  'Finding content (see "What is sent") will be sent to the AI provider your organization set up, each time a member asks for an analysis. You can turn it off at any time.'
+                )
+              : t(
+                  'settings.ai.confirmDesc',
+                  'Finding content (see "What is sent") will be sent to the AI provider your platform administrator set up, each time a member asks for an analysis. You can turn it off at any time.'
+                )
+          }
+          confirmText={t('settings.ai.confirm', 'Turn on')}
+          handleConfirm={async () => {
+            await save(true)
+            setConfirmOpen(false)
+          }}
+        />
+      </PageStack>
     </Main>
   )
 }

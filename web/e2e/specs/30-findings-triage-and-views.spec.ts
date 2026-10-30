@@ -1,19 +1,24 @@
 import { test, expect } from '../fixtures/authenticated-page'
 
 /**
- * Findings: Triage is the primary action, Priority and Finding are always
+ * Findings: Triage is the primary action (it opens triage mode), Priority and Finding are always
  * columns, columns and density are kept in the URL (and saved with a view), and
  * a view with changes shows the unsaved-changes dot. Needs no particular data.
  */
 
-test.describe('Findings triage and view state', () => {
-  test('Triage is the one primary button and opens the Needs triage view', async ({ page }) => {
-    await page.goto('/findings')
+test.describe('Findings triage and view state', { tag: ['@findings'] }, () => {
+  test('Triage is the one primary button and opens triage mode; Esc comes back', async ({
+    page,
+  }) => {
+    await page.goto('/findings?severity=critical')
     const triage = page.getByRole('button', { name: /^Triage/ })
     await expect(triage).toBeVisible({ timeout: 20_000 })
     await triage.click()
-    await expect(page).toHaveURL(/status=new/)
-    await expect(page.getByTestId('findings-view-title')).toHaveText('Needs triage')
+    await expect(page).toHaveURL(/\/findings\/triage\?status=new/)
+    await expect(page.getByTestId('triage-top-bar')).toContainText('Needs triage')
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+    await page.keyboard.press('Escape')
+    await expect(page).toHaveURL(/\/findings\?severity=critical$/)
   })
 
   test('Priority and Finding stay when other columns are hidden', async ({ page }) => {
@@ -29,7 +34,7 @@ test.describe('Findings triage and view state', () => {
   }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.goto('/findings?status=new&state=all')
-    await page.getByRole('button', { name: /table view/i }).click()
+    await page.getByRole('button', { name: /^display: density/i }).click()
     await page.getByRole('menuitemcheckbox', { name: 'Severity' }).click()
     await expect(page).toHaveURL(/columns=/)
     await page.keyboard.press('Escape')

@@ -7,6 +7,7 @@ import { describeSensorActivity } from '../activity'
 import {
   concurrencyText,
   diffManifests,
+  ignoredLooksNewer,
   ignoredReasonLabel,
   isEmptyDiff,
   manifestDiffLines,
@@ -133,10 +134,10 @@ describe('manifest text', () => {
   it('words resources and concurrency', () => {
     expect(
       resourcesText({ ...next, resources: { cpu_cores: 4, mem_total_bytes: 8 * 1024 ** 3 } })
-    ).toMatch(/^4 CPU cores · .+ memory$/)
+    ).toMatch(/^4 CPU cores, .+ memory$/)
     expect(resourcesText(next)).toBeNull()
-    expect(concurrencyText(next)).toBe('operator cap 4 · slots sized from CPU and memory')
-    expect(concurrencyText(prev)).toBe('no operator cap · slots sized from CPU and memory')
+    expect(concurrencyText(next)).toBe('operator cap 4, slots sized from CPU and memory')
+    expect(concurrencyText(prev)).toBe('no operator cap, slots sized from CPU and memory')
   })
 
   it('translates through the catalog and keeps unknown values raw', () => {
@@ -144,7 +145,7 @@ describe('manifest text', () => {
     const t = (key: string, fallback?: string, vars?: TranslateVars) =>
       translate(vi, key, fallback, vars)
     expect(concurrencyText(next, t)).toBe(
-      'giới hạn của người vận hành 4 · số slot tính theo CPU và bộ nhớ'
+      'giới hạn của người vận hành 4, số slot tính theo CPU và bộ nhớ'
     )
     expect(manifestSourceLabel('heartbeat', t)).toBe('suy ra từ heartbeat')
     expect(ignoredReasonLabel('limit', t)).toBe('vượt quá giới hạn')
@@ -170,5 +171,16 @@ describe('manifest_changed in the activity timeline', () => {
     )
     expect(view.title).toBe('Manifest changed')
     expect(view.details).toEqual(['nuclei v3.11.1 → v3.12.0'])
+  })
+})
+
+describe('ignoredLooksNewer', () => {
+  it('is true only when every ignored item is unknown to the platform', () => {
+    expect(ignoredLooksNewer([])).toBe(false)
+    expect(ignoredLooksNewer([{ reason: 'unknown-tool' }, { reason: 'unknown-capability' }])).toBe(
+      true
+    )
+    expect(ignoredLooksNewer([{ reason: 'unknown-tool' }, { reason: 'invalid-name' }])).toBe(false)
+    expect(ignoredLooksNewer([{ reason: 'limit' }])).toBe(false)
   })
 })

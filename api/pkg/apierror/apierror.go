@@ -41,6 +41,9 @@ const (
 	// tenant requires two-factor authentication and the user has not set it
 	// up. The client signs the user in again, which leads to enrollment.
 	CodeMFAEnrollmentRequired Code = "MFA_ENROLLMENT_REQUIRED"
+	// CodeReauthRequired is a 403 when an action needs a recent password
+	// sign-in (starting two-factor enrollment from an old session).
+	CodeReauthRequired Code = "REAUTH_REQUIRED"
 	// CodeApprovalRequired is a 403 for a change that only an approver may
 	// make (e.g. marking a finding false positive). Distinct from
 	// CodeForbidden so the UI can explain the approval workflow instead of
@@ -111,10 +114,12 @@ func (e *Error) MarshalJSON() ([]byte, error) {
 	type alias Error
 	return json.Marshal(&struct {
 		*alias
-		Error string `json:"error"`
+		Message string `json:"message"`
+		Error   string `json:"error"`
 	}{
-		alias: (*alias)(e),
-		Error: string(e.Code),
+		alias:   (*alias)(e),
+		Message: e.publicMessage(""),
+		Error:   string(e.Code),
 	})
 }
 
@@ -127,14 +132,10 @@ type Response struct {
 	RequestID string `json:"request_id,omitempty"`
 }
 
-// ToResponse converts the error to a response structure.
+// ToResponse converts the error to a response structure. The message is
+// the public one (safe.go): never an id or internal error text.
 func (e *Error) ToResponse() Response {
-	return Response{
-		Error:   string(e.Code),
-		Code:    e.Code,
-		Message: e.Message,
-		Details: e.Details,
-	}
+	return e.ToResponseWithRequestID("")
 }
 
 // ToResponseWithRequestID converts the error to a response with request ID.
@@ -142,7 +143,7 @@ func (e *Error) ToResponseWithRequestID(requestID string) Response {
 	return Response{
 		Error:     string(e.Code),
 		Code:      e.Code,
-		Message:   e.Message,
+		Message:   e.publicMessage(requestID),
 		Details:   e.Details,
 		RequestID: requestID,
 	}

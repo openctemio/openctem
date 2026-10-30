@@ -9,6 +9,7 @@ import type { ApiError } from './types'
 import { devLog } from '@/lib/logger'
 import { IP_NOT_ALLOWED_CODE, IP_NOT_ALLOWED_MESSAGE, notifyIpNotAllowed } from './ip-not-allowed'
 import { describePermissionDenied } from './permission-denied'
+import { apiErrorMessage, toastError } from './error-message'
 
 // ============================================
 // ERROR CLASSES
@@ -234,6 +235,10 @@ export function handleApiError(
   // IP allowlist blocks share one de-duplicated toast with the API client.
   if (showToast && apiError.code === IP_NOT_ALLOWED_CODE) {
     notifyIpNotAllowed()
+  } else if (showToast && apiError.statusCode === 429) {
+    // A rate-limited page fails several reads at once: one toast, which each
+    // further 429 replaces, instead of one per panel.
+    toastError(apiError)
   } else if (showToast && isReadOnlyModuleError(apiError)) {
     // Unlike a module that is off (its pages are hidden), a module in
     // read-only grace shows its pages, so a refused save must say why.
@@ -286,103 +291,19 @@ export function handleApiError(
 // ============================================
 
 /**
- * Get user-friendly error message
+ * Get user-friendly error message: a caller's message for the code first,
+ * then the shared mapper (error-message.ts).
  */
 function getUserFriendlyMessage(
   error: ApiClientError,
   customMessages: Record<string, string>,
   fallback: string
 ): string {
-  // Check custom messages first
   if (customMessages[error.code]) {
     return customMessages[error.code]
   }
-
-  // An approval-required refusal carries an actionable server message (which
-  // permission the approver needs, and to submit a request instead); the
-  // generic 403 text below would hide it.
-  if (error.code === APPROVAL_REQUIRED_CODE && error.message) {
-    return error.message
-  }
-
-  // A write to a module in read-only grace: the server says why.
-  if (isReadOnlyModuleError(error) && error.message) {
-    return error.message
-  }
-
-  // A refused permission names what was missing (details); say it, so the
-  // person knows exactly what to ask an administrator for.
-  if (error.code === 'FORBIDDEN') {
-    const why = describePermissionDenied(error.details)
-    if (why) return why
-  }
-
-  // Built-in messages by error code
-  const builtInMessages: Record<string, string> = {
-    // Auth errors
-    UNAUTHORIZED: 'You need to log in to access this resource',
-    TOKEN_EXPIRED: 'Your session has expired. Please log in again',
-    INVALID_TOKEN: 'Invalid authentication token',
-    FORBIDDEN: 'You do not have permission to access this resource',
-    [IP_NOT_ALLOWED_CODE]: IP_NOT_ALLOWED_MESSAGE,
-
-    // Validation errors
-    VALIDATION_ERROR: 'Please check your input and try again',
-    INVALID_INPUT: 'The provided data is invalid',
-    REQUIRED_FIELD: 'Please fill in all required fields',
-
-    // Not found
-    NOT_FOUND: 'The requested resource was not found',
-    USER_NOT_FOUND: 'User not found',
-    POST_NOT_FOUND: 'Post not found',
-
-    // Server errors
-    INTERNAL_SERVER_ERROR: 'Something went wrong on our end. Please try again later',
-    SERVICE_UNAVAILABLE: 'Service temporarily unavailable. Please try again later',
-    TIMEOUT: 'Request timed out. Please try again',
-
-    // Network errors
-    NETWORK_ERROR: 'Network error. Please check your internet connection',
-    CONNECTION_REFUSED: 'Could not connect to server',
-
-    // Rate limiting
-    RATE_LIMIT_EXCEEDED: 'Too many requests. Please try again later',
-
-    // Generic
-    UNKNOWN_ERROR: 'An unexpected error occurred',
-  }
-
-  if (builtInMessages[error.code]) {
-    return builtInMessages[error.code]
-  }
-
-  // Check by status code
-  const statusMessages: Record<number, string> = {
-    400: 'Bad request. Please check your input',
-    401: 'Please log in to continue',
-    403: 'You do not have permission to perform this action',
-    404: 'Resource not found',
-    408: 'Request timeout. Please try again',
-    409: 'Conflict. The resource already exists',
-    422: 'Validation error. Please check your input',
-    429: 'Too many requests. Please slow down',
-    500: 'Internal server error. Please try again later',
-    502: 'Bad gateway. Please try again later',
-    503: 'Service unavailable. Please try again later',
-    504: 'Gateway timeout. Please try again later',
-  }
-
-  if (statusMessages[error.statusCode]) {
-    return statusMessages[error.statusCode]
-  }
-
-  // Use error message if it's user-friendly (not a stack trace)
-  if (error.message && !error.message.includes('Error:') && error.message.length < 100) {
-    return error.message
-  }
-
-  // Fallback
-  return fallback
+  if (error.code === IP_NOT_ALLOWED_CODE) return IP_NOT_ALLOWED_MESSAGE
+  return apiErrorMessage(error, fallback)
 }
 
 // ============================================
@@ -518,87 +439,12 @@ export function extractValidationErrors(error: ApiClientError): Record<string, s
 // ============================================
 
 /**
- * Extract user-friendly error message from any error type
- *
- * Use this in catch blocks to get a displayable error message
- *
- * @param error - Error from API call or any other source
- * @param fallback - Fallback message if error message cannot be extracted
- * @returns User-friendly error message
- *
- * @example
- * ```typescript
- * try {
- *   await updateScanWorkflow(data)
- *   toast.success('Workflow updated')
- * } catch (error) {
- *   toast.error(getErrorMessage(error, 'Failed to update workflow'))
- * }
- * ```
+ * The sentence to show for any thrown value: the console's words for a known
+ * API code, a safe server sentence for a generic one, else `fallback` (the
+ * caller's "Could not …") with a request reference on unexpected failures.
+ * Never an id, a stack or the raw text of a JavaScript error
+ * (`error-message.ts`).
  */
-export function getErrorMessage(
-  error: unknown,
-  fallback: string = 'An unexpected error occurred'
-): string {
-  // Handle ApiClientError
-  if (error instanceof ApiClientError) {
-    // A refused permission names what was missing.
-    if (error.code === 'FORBIDDEN') {
-      const why = describePermissionDenied(error.details)
-      if (why) return why
-    }
-
-    // A validation failure carries its reasons as [{ field, message }]; the
-    // message itself is only "Validation failed".
-    if (Array.isArray(error.details)) {
-      const reasons = (error.details as { field?: unknown; message?: unknown }[])
-        .filter((d) => d && typeof d.message === 'string')
-        .map((d) =>
-          typeof d.field === 'string' && d.field ? `${d.field} ${d.message}` : d.message
-        )
-      if (reasons.length > 0) return reasons.join('. ')
-    }
-    // If message is technical/long, try to get a friendlier version
-    if (error.message && error.message.length < 200 && !error.message.includes('Error:')) {
-      return error.message
-    }
-
-    // Check for validation errors in details
-    if (error.details && typeof error.details === 'object') {
-      // Handle { errors: [{ field, message }] } format
-      if (Array.isArray((error.details as Record<string, unknown>).errors)) {
-        const errors = (error.details as { errors: { field: string; message: string }[] }).errors
-        if (errors.length > 0) {
-          return errors.map((e) => e.message).join('. ')
-        }
-      }
-
-      // Handle { message: string } format in details
-      if ((error.details as Record<string, unknown>).message) {
-        return (error.details as { message: string }).message
-      }
-    }
-
-    return error.message || fallback
-  }
-
-  // Handle standard Error
-  if (error instanceof Error) {
-    return error.message || fallback
-  }
-
-  // Handle string errors
-  if (typeof error === 'string') {
-    return error
-  }
-
-  // Handle object with message property
-  if (error && typeof error === 'object' && 'message' in error) {
-    const msg = (error as { message: unknown }).message
-    if (typeof msg === 'string') {
-      return msg
-    }
-  }
-
-  return fallback
+export function getErrorMessage(error: unknown, fallback?: string): string {
+  return apiErrorMessage(error, fallback)
 }

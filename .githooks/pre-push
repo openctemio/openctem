@@ -1,0 +1,11 @@
+#!/bin/sh
+# Monorepo pre-push (enabled by `make hooks`): refuses a branch that is behind
+# the branch its pull request targets, then runs the lint and static checks
+# CI gates on. It never changes the branch: `make precheck` syncs and checks.
+# git exports GIT_DIR (absolute, pointing into .git/worktrees/<name>) to hooks
+# of a linked worktree. Left set, every git call made by the tools below (the
+# `git diff` behind golangci-lint --new-from-rev runs in api/) treats its own
+# directory as the work tree, finds no base diff and lints the whole tree.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX
+top=$(git rev-parse --show-toplevel)
+exec bash "$top/scripts/precheck.sh" --verify

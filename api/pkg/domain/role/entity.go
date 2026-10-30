@@ -78,6 +78,10 @@ type Role struct {
 	// template had at that version. The role's own permissions may differ
 	// (the role is the organization's to edit).
 	template *TemplateOrigin
+	// managedGroupID is the team that owns a managed role (team access
+	// presets): created, upgraded and deleted only through the team's access
+	// settings. Nil for a role managed by hand.
+	managedGroupID *ID
 }
 
 // TemplateOrigin records which version of a role template a custom role was
@@ -99,6 +103,29 @@ func (r *Role) Template() *TemplateOrigin {
 	t := *r.template
 	t.Permissions = append([]string(nil), r.template.Permissions...)
 	return &t
+}
+
+// ManagedGroupID returns the team that owns the role when it is a managed
+// role, or nil.
+func (r *Role) ManagedGroupID() *ID {
+	if r.managedGroupID == nil {
+		return nil
+	}
+	g := *r.managedGroupID
+	return &g
+}
+
+// IsManaged reports whether the role is owned by a team's access settings.
+func (r *Role) IsManaged() bool { return r.managedGroupID != nil }
+
+// SetManagedGroup marks the role as owned by team g (nil clears it).
+func (r *Role) SetManagedGroup(g *ID) {
+	if g == nil {
+		r.managedGroupID = nil
+		return
+	}
+	c := *g
+	r.managedGroupID = &c
 }
 
 // SetTemplate records the template origin (create from a template, apply a

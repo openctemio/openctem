@@ -1,7 +1,9 @@
 'use client'
 
 import { Main } from '@/components/layout'
-import { PageHeader, StatsCard, EmptyState, ErrorState } from '@/features/shared'
+import { PageHeader, PageStack, EmptyState, ErrorState, ViewSwitcher } from '@/features/shared'
+import Link from '@/components/link'
+import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
 import { useDashboardStats } from '@/features/dashboard/hooks/use-dashboard-stats'
 import { useFindingTypeStats } from '@/features/exposures/hooks'
@@ -9,7 +11,6 @@ import {
   ChartCard,
   OverviewSkeleton,
   OVERVIEW_CHARTS_GRID,
-  OVERVIEW_STATS_GRID,
   SeverityDonut,
   SeverityTrend,
   StatusBars,
@@ -18,14 +19,13 @@ import {
   ViewFindingsButton,
 } from '@/features/exposures/components'
 import { useTenant } from '@/context/tenant-provider'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useUrlFilter } from '@/hooks/use-url-param'
-import { Bug, AlertTriangle, Clock, Shield, LayoutGrid, Database, ShieldAlert } from 'lucide-react'
-import { ActiveCVEsTab, VulnerabilityCatalogTab } from '@/features/vulnerabilities'
+import { Bug, LayoutGrid, List } from 'lucide-react'
+import { VulnerabilityCatalogTab } from '@/features/vulnerabilities'
 import { usePermissions, Permission } from '@/lib/permissions'
 import { VULNERABILITY_SOURCES } from '@/features/exposures/lib/type-sources'
 
-const TABS = ['overview', 'active', 'catalog'] as const
+const TABS = ['overview', 'catalog'] as const
 
 function OverviewTab() {
   const { t } = useTranslation()
@@ -76,49 +76,8 @@ function OverviewTab() {
       />
     )
 
-  const criticalCount = typeStats.bySeverity.critical || 0
-  const highCount = typeStats.bySeverity.high || 0
-  const openCount = typeStats.openCount
-
   return (
-    <div className="space-y-5">
-      <div className={OVERVIEW_STATS_GRID}>
-        <StatsCard
-          title={t('exposures.vulnerabilities.total', 'Total vulnerabilities')}
-          value={typeStats.total}
-          icon={Bug}
-        />
-        <StatsCard // anatomy-ok: existing type-page tile, only its neighbours changed
-          title={t('exposures.type.critical', 'Critical')}
-          value={criticalCount}
-          valueClassName={criticalCount > 0 ? 'text-destructive' : undefined}
-          description={
-            criticalCount > 0
-              ? t('exposures.vulnerabilities.criticalAction', 'Immediate action required')
-              : t('exposures.vulnerabilities.criticalNone', 'No critical issues')
-          }
-          icon={AlertTriangle}
-        />
-        <StatsCard
-          title={t('exposures.type.high', 'High')}
-          value={highCount}
-          description={t('exposures.type.shareOfTotal', '{percent}% of total', {
-            percent: ((highCount / typeStats.total) * 100).toFixed(0),
-          })}
-          icon={Shield}
-        />
-        <StatsCard
-          title={t('exposures.type.open', 'Open')}
-          value={openCount}
-          description={
-            openCount > 0
-              ? t('exposures.type.openAction', 'Awaiting remediation')
-              : t('exposures.type.openNone', 'None open')
-          }
-          icon={Clock}
-        />
-      </div>
-
+    <PageStack>
       <div className={OVERVIEW_CHARTS_GRID}>
         <ChartCard
           title={t('exposures.type.severityDistribution', 'Severity distribution')}
@@ -157,7 +116,7 @@ function OverviewTab() {
           )}
         />
       </ChartCard>
-    </div>
+    </PageStack>
   )
 }
 
@@ -171,71 +130,68 @@ export default function VulnerabilitiesPage() {
   )
   const { can } = usePermissions()
   const canReadCatalog = can(Permission.VulnerabilitiesRead)
-  // Summary (?tab=overview) is the dashboard landing — visible to everyone with findings:read.
-  // Active CVEs and CVE catalog are deeper exploration tabs to its right. The
-  // tab lives in the URL so a view can be linked to.
+  // Summary (?tab=overview) is the dashboard landing, visible to everyone with
+  // findings:read; the CVE catalog is the deeper exploration view. The
+  // vulnerabilities affecting the caller's assets are the /vulnerabilities
+  // list (one list per pattern), linked from the header. The tab lives in the
+  // URL so a view can be linked to.
   const [tabParam, setTab] = useUrlFilter('tab', 'overview')
   const tab =
     (TABS as readonly string[]).includes(tabParam) && (tabParam === 'overview' || canReadCatalog)
       ? tabParam
       : 'overview'
+  const canOpenList = canReadCatalog && can(Permission.FindingsRead)
 
   return (
     <Main>
-      <PageHeader
-        title={t('exposures.vulnerabilities.title', 'Vulnerabilities')}
-        description={t(
-          'exposures.vulnerabilities.description',
-          'Vulnerability findings across your assets, the CVEs behind them, and the CVE catalog.'
-        )}
-      >
-        <ViewFindingsButton
-          stats={typeStats}
-          sources={VULNERABILITY_SOURCES}
-          isLoading={typeLoading}
-        />
-      </PageHeader>
-
-      <ExposuresTabs />
-
-      <Tabs value={tab} onValueChange={setTab} className="mt-4">
-        <TabsList>
-          <TabsTrigger value="overview" className="gap-2">
-            <LayoutGrid className="h-4 w-4" />
-            {/* "Summary", not "Overview": the Exposures section tabs above
-                already have an Overview (/exposures). */}
-            {t('exposures.vulnerabilities.summaryTab', 'Summary')}
-          </TabsTrigger>
-          {canReadCatalog && (
-            <TabsTrigger value="active" className="gap-2">
-              <ShieldAlert className="h-4 w-4" />
-              {t('exposures.vulnerabilities.activeTab', 'Active CVEs')}
-            </TabsTrigger>
+      <PageStack>
+        <PageHeader
+          title={t('exposures.vulnerabilities.title', 'Vulnerabilities')}
+          description={t(
+            'exposures.vulnerabilities.description',
+            'Vulnerability findings across your assets, the CVEs behind them, and the CVE catalog.'
           )}
-          {canReadCatalog && (
-            <TabsTrigger value="catalog" className="gap-2">
-              <Database className="h-4 w-4" />
-              {t('exposures.vulnerabilities.catalogTab', 'CVE catalog')}
-            </TabsTrigger>
-          )}
-        </TabsList>
+          viewSwitcher={
+            canReadCatalog ? (
+              <ViewSwitcher
+                options={[
+                  {
+                    value: 'summary',
+                    label: t('exposures.vulnerabilities.summaryView', 'Summary'),
+                    icon: LayoutGrid,
+                  },
+                  {
+                    value: 'catalog',
+                    label: t('exposures.vulnerabilities.catalogView', 'CVE catalog'),
+                    icon: List,
+                  },
+                ]}
+                value={tab === 'catalog' ? 'catalog' : 'summary'}
+                onChange={(v) => setTab(v === 'catalog' ? 'catalog' : '')}
+              />
+            ) : undefined
+          }
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            {canOpenList && (
+              <Button asChild variant="outline" size="sm">
+                <Link href="/vulnerabilities">
+                  {t('exposures.vulnerabilities.openList', 'Vulnerabilities on my assets')}
+                </Link>
+              </Button>
+            )}
+            <ViewFindingsButton
+              stats={typeStats}
+              sources={VULNERABILITY_SOURCES}
+              isLoading={typeLoading}
+            />
+          </div>
+        </PageHeader>
 
-        <TabsContent value="overview" className="mt-5">
-          <OverviewTab />
-        </TabsContent>
+        <ExposuresTabs />
 
-        {canReadCatalog && (
-          <TabsContent value="active" className="mt-5">
-            <ActiveCVEsTab />
-          </TabsContent>
-        )}
-
-        {canReadCatalog && (
-          <TabsContent value="catalog" className="mt-5">
-            <VulnerabilityCatalogTab />
-          </TabsContent>
-        )}
-      </Tabs>
+        {tab === 'catalog' ? <VulnerabilityCatalogTab /> : <OverviewTab />}
+      </PageStack>
     </Main>
   )
 }

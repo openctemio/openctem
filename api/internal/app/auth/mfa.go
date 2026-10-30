@@ -42,6 +42,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/mfa"
 	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
 	"github.com/openctemio/openctem/api/pkg/password"
 	"github.com/openctemio/openctem/api/pkg/totp"
@@ -87,7 +88,23 @@ var (
 	ErrSSOMFAEvidenceRequired = fmt.Errorf("%w: the identity provider did not confirm a second factor", ErrMFAEnrollmentRequired)
 	// ErrMFAUnavailable: the server was started without 2FA storage.
 	ErrMFAUnavailable = errors.New("two-factor authentication is not available")
+	// ErrMFAFederatedSession: a session from a social or identity-provider
+	// sign-in cannot start our own second-factor step from an invitation.
+	ErrMFAFederatedSession = errors.New("this session was started through an identity provider; sign in with your password to set up two-factor authentication")
+	// ErrReauthRequired: an enrollment challenge was asked for with a session
+	// that was not signed in recently. Binding a first authenticator is
+	// account takeover if a stolen refresh token alone could do it, so the
+	// person signs in again with the password (as EnableMFA requires).
+	ErrReauthRequired = errors.New("sign in again to set up two-factor authentication")
 )
+
+// sessionEnrollFreshness is how recently a session must have been signed in
+// for its refresh token alone to start an enrollment challenge
+// (SessionMFAChallenge). It covers sign-up or sign-in followed straight by
+// accepting an invitation; an older session has to repeat the password login,
+// like the self-service enable flow (current password plus a code). Verify
+// challenges need no such window: completing one takes the authenticator.
+const sessionEnrollFreshness = 15 * time.Minute
 
 // SecurityNotifier tells a user about security-relevant changes to their
 // account. Implementations must not block: calls happen after the change is
@@ -111,6 +128,9 @@ type MFAChallengeInfo struct {
 	Token     string
 	Purpose   mfa.Purpose
 	ExpiresAt time.Time
+	// Organizations names the organizations that require the second factor
+	// from this user (set for enrollment challenges).
+	Organizations []string
 }
 
 // MFAStatus describes a user's 2FA state for their account page.
@@ -123,6 +143,11 @@ type MFAStatus struct {
 	// RequiredByOrganization is true when any organization the user belongs
 	// to requires 2FA.
 	RequiredByOrganization bool `json:"required_by_organization"`
+	// GraceDueAt is set while the platform's two-factor floor covers the
+	// user but their grace period has not ended: the date from which they
+	// are gated at sign-in. They can set up 2FA now; creating credentials
+	// already needs it.
+	GraceDueAt *time.Time `json:"grace_due_at,omitempty"`
 }
 
 // MFASetup is a freshly generated secret awaiting confirmation.
@@ -190,10 +215,21 @@ func (s *AuthService) loginMFAChallenge(ctx context.Context, u *userdom.User, ip
 	if f != nil && f.Enabled {
 		return s.issueMFAChallenge(ctx, u.ID(), mfa.PurposeVerify, ip, ua)
 	}
-	if s.mfaRequiredByAnyOrganization(ctx, u.ID()) {
-		return s.issueMFAChallenge(ctx, u.ID(), mfa.PurposeEnroll, ip, ua)
+	if orgs := s.mfaRequiringOrganizations(ctx, u.ID()); len(orgs) > 0 {
+		return s.issueEnrollChallenge(ctx, u.ID(), orgs, ip, ua)
 	}
 	return nil, nil
+}
+
+// issueEnrollChallenge issues an enrollment challenge that names the
+// organizations requiring it.
+func (s *AuthService) issueEnrollChallenge(ctx context.Context, userID shared.ID, orgs []string, ip, ua string) (*MFAChallengeInfo, error) {
+	info, err := s.issueMFAChallenge(ctx, userID, mfa.PurposeEnroll, ip, ua)
+	if err != nil {
+		return nil, err
+	}
+	info.Organizations = orgs
+	return info, nil
 }
 
 func (s *AuthService) issueMFAChallenge(ctx context.Context, userID shared.ID, purpose mfa.Purpose, ip, ua string) (*MFAChallengeInfo, error) {
@@ -388,7 +424,12 @@ func (s *AuthService) GetMFAStatus(ctx context.Context, userID string) (*MFAStat
 		st.Supported = false
 		return st, nil
 	}
-	st.RequiredByOrganization = s.mfaRequiredByAnyOrganization(ctx, u.ID())
+	names, graceDue := s.mfaRequirements(ctx, u.ID())
+	required := len(names) > 0
+	st.RequiredByOrganization = required
+	if !required && !graceDue.IsZero() {
+		st.GraceDueAt = &graceDue
+	}
 	f, err := s.mfaRepo.GetFactor(ctx, u.ID())
 	if err != nil && !errors.Is(err, mfa.ErrFactorNotFound) {
 		return nil, err
@@ -561,20 +602,45 @@ func (s *AuthService) LogSessionRevoked(ctx context.Context, actx auditapp.Audit
 // ---------------------------------------------------------------------------
 
 // mfaRequiredByAnyOrganization reports whether any organization the user is
-// an active member of requires 2FA. Lookup failures are treated as "not
-// required" here because the token-mint gate (enforceMFAPolicy) re-checks
-// per tenant and fails closed.
+// a member of needs a second factor from them now (see mfaRequirements).
 func (s *AuthService) mfaRequiredByAnyOrganization(ctx context.Context, userID shared.ID) bool {
+	return len(s.mfaRequiringOrganizations(ctx, userID)) > 0
+}
+
+// mfaRequiringOrganizations names the organizations that need a second factor
+// from the user now (see mfaRequirements).
+func (s *AuthService) mfaRequiringOrganizations(ctx context.Context, userID shared.ID) []string {
+	names, _ := s.mfaRequirements(ctx, userID)
+	return names
+}
+
+// mfaRequirements names the organizations that need a second factor from the
+// user NOW under any of the policies the token-mint gate applies: the
+// organization's own 2FA (everyone, or administrators by effective
+// privilege), the platform floor once its grace period has ended,
+// allowed_with_mfa for a personal-address member (enforcePersonalPolicy), and
+// a privileged outside member (enforceOutsidePrivilegePolicy). The login uses
+// it to offer enrollment, so it must name an organization whenever the mint
+// would refuse with ErrMFAEnrollmentRequired, or the person loops on sign-in
+// forever.
+//
+// graceDue is the earliest due date of a requirement that comes only from the
+// platform floor and is still in its grace period (zero: none).
+//
+// A tenant that cannot be read at all is skipped here: the mint gate
+// re-checks per tenant and fails closed. An unreadable security section or a
+// failed membership, grants or floor lookup counts as "required".
+func (s *AuthService) mfaRequirements(ctx context.Context, userID shared.ID) (names []string, graceDue time.Time) {
 	if s.tenantRepo == nil {
-		return false
+		return nil, time.Time{}
 	}
 	memberships, err := s.tenantRepo.GetUserMemberships(ctx, userID)
 	if err != nil {
 		s.logger.Warn("mfa policy: failed to load memberships", "user_id", userID.String(), "error", err)
-		return false
+		return nil, time.Time{}
 	}
-	for _, m := range memberships {
-		tid, err := shared.IDFromString(m.TenantID)
+	for _, um := range memberships {
+		tid, err := shared.IDFromString(um.TenantID)
 		if err != nil {
 			continue
 		}
@@ -582,13 +648,120 @@ func (s *AuthService) mfaRequiredByAnyOrganization(ctx context.Context, userID s
 		if err != nil || t == nil {
 			continue
 		}
-		sec, serr := t.SecuritySettingsStrict()
-		if serr != nil || sec.MFARequiredFor(m.Role) {
-			// An unreadable security section counts as "2FA required".
-			return true
+		needs, due := s.tenantNeedsSecondFactor(ctx, t, tid, userID, um.Role)
+		if needs {
+			names = append(names, t.Name())
+		} else if !due.IsZero() && (graceDue.IsZero() || due.Before(graceDue)) {
+			graceDue = due
 		}
 	}
-	return false
+	return names, graceDue
+}
+
+// tenantNeedsSecondFactor says whether the tenant gates the user on 2FA now,
+// and otherwise the due date of a floor-only requirement still in grace.
+func (s *AuthService) tenantNeedsSecondFactor(ctx context.Context, t *tenantdom.Tenant, tid, userID shared.ID, baseRole string) (bool, time.Time) {
+	sec, serr := t.SecuritySettingsStrict()
+	if serr != nil {
+		return true, time.Time{} // an unreadable security section counts as "2FA required"
+	}
+	var due time.Time
+	req, rerr := s.mfaRequirementForRole(ctx, userID, tid, baseRole, sec)
+	if rerr != nil {
+		return true, time.Time{} // an unreadable floor or privilege lookup counts as required
+	}
+	if req.Required {
+		if req.ByOrganization || !time.Now().Before(req.DueAt) {
+			return true, time.Time{}
+		}
+		due = req.DueAt
+	}
+	m, merr := s.tenantRepo.GetMembership(ctx, userID, tid)
+	if merr != nil && !errors.Is(merr, shared.ErrNotFound) {
+		s.logger.Warn("mfa policy: failed to load membership", "user_id", userID.String(), "tenant_id", tid.String(), "error", merr)
+		return true, time.Time{}
+	}
+	if merr != nil || m == nil {
+		return false, due // no membership: the mint refuses it elsewhere, as for the personal and outside policies
+	}
+	if tenantdom.IsPersonalMember(m) && sec.PersonalAccounts.Effective() == tenantdom.PersonalAccountsAllowedWithMFA {
+		return true, time.Time{}
+	}
+	if m.IsExternal() {
+		privileged, perr := s.outsideMemberPrivileged(ctx, m, tid, userID)
+		if perr != nil || privileged {
+			return true, time.Time{}
+		}
+	}
+	return false, due
+}
+
+// SessionMFAChallenge issues the second-factor challenge for a signed-in
+// person whose session cannot open an organization (ErrMFAEnrollmentRequired),
+// for example right after accepting an invitation or when a token refresh is
+// refused. The caller proves the session with its refresh token, exactly as
+// AcceptInvitationWithRefreshToken does; the token is not spent. A user without an enabled factor gets an enrollment challenge, a
+// user who has one gets a verify challenge. Enrollment needs a recent sign-in (sessionEnrollFreshness, else ErrReauthRequired); a verify challenge does not. Federated sessions are refused:
+// they cannot complete our second step here.
+func (s *AuthService) SessionMFAChallenge(ctx context.Context, refreshToken, ip, ua string) (*MFAChallengeInfo, error) {
+	if !s.mfaEnabled() {
+		return nil, ErrMFAUnavailable
+	}
+	claims, err := s.tokenGenerator.ValidateRefreshToken(refreshToken)
+	if err != nil {
+		return nil, fmt.Errorf("invalid refresh token: %w", err)
+	}
+	stored, err := s.refreshTokenRepo.GetByTokenHash(ctx, sessiondom.HashToken(refreshToken))
+	if err != nil {
+		if errors.Is(err, sessiondom.ErrRefreshTokenNotFound) {
+			return nil, sessiondom.ErrRefreshTokenNotFound
+		}
+		return nil, fmt.Errorf("failed to get refresh token: %w", err)
+	}
+	if stored.IsUsed() {
+		s.onRefreshTokenReuse(ctx, stored)
+		return nil, sessiondom.ErrRefreshTokenRevoked
+	}
+	if !stored.IsValid() {
+		return nil, sessiondom.ErrRefreshTokenRevoked
+	}
+	sess, err := s.sessionRepo.GetByID(ctx, stored.SessionID())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get session: %w", err)
+	}
+	if !sess.IsActive() {
+		return nil, sessiondom.ErrSessionExpired
+	}
+	if sess.AuthMethod().IsFederated() {
+		return nil, ErrMFAFederatedSession
+	}
+	userID, err := shared.IDFromString(claims.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid user id in token: %w", err)
+	}
+	u, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user: %w", err)
+	}
+	if u.IsLocked() {
+		return nil, ErrAccountLocked
+	}
+	if !u.IsActive() {
+		return nil, ErrAccountSuspended
+	}
+	f, err := s.mfaRepo.GetFactor(ctx, u.ID())
+	if err != nil && !errors.Is(err, mfa.ErrFactorNotFound) {
+		return nil, fmt.Errorf("load mfa factor: %w", err)
+	}
+	if f != nil && f.Enabled {
+		return s.issueMFAChallenge(ctx, u.ID(), mfa.PurposeVerify, ip, ua)
+	}
+	// Enrollment from the session alone only right after the sign-in: a
+	// stolen refresh token must not bind an attacker's authenticator.
+	if time.Since(sess.CreatedAt()) > sessionEnrollFreshness {
+		return nil, ErrReauthRequired
+	}
+	return s.issueEnrollChallenge(ctx, u.ID(), s.mfaRequiringOrganizations(ctx, u.ID()), ip, ua)
 }
 
 // enforceMFAPolicy is the per-tenant 2FA gate at token mint (ExchangeToken and
@@ -610,7 +783,6 @@ func (s *AuthService) enforceMFAPolicy(ctx context.Context, sess *sessiondom.Ses
 	if !s.mfaEnabled() {
 		return nil
 	}
-	ownIdP := sess.FederatedFor(tenantID)
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
@@ -624,19 +796,26 @@ func (s *AuthService) enforceMFAPolicy(ctx context.Context, sess *sessiondom.Ses
 		// Fail closed: never mint a token on an unreadable 2FA policy.
 		return fmt.Errorf("failed to read 2FA policy: %w", err)
 	}
-	if !sec.MFARequired {
-		if !sec.MFARequiredForAdmins {
-			return nil
-		}
-		// Owners and administrators only: look the role up (fail closed).
-		m, merr := s.tenantRepo.GetMembership(ctx, userID, tid)
-		if merr != nil || m == nil {
-			return fmt.Errorf("failed to load membership for 2FA policy: %w", merr)
-		}
-		if !sec.MFARequiredFor(m.Role().String()) {
-			return nil
-		}
+	req, err := s.mfaRequirementFor(ctx, userID, tid, sec)
+	if err != nil {
+		return err
 	}
+	if !req.Required {
+		return nil
+	}
+	// Grace: a person covered only by the platform floor is not gated until
+	// their due date (the organization's own requirement has no grace).
+	if !req.ByOrganization && time.Now().Before(req.DueAt) {
+		return nil
+	}
+	return s.mfaSatisfied(ctx, sess, userID, tid, sec)
+}
+
+// mfaSatisfied reports, as an error, whether the session proves what a 2FA
+// requirement asks for in the organization.
+func (s *AuthService) mfaSatisfied(ctx context.Context, sess *sessiondom.Session, userID, tid shared.ID, sec tenantdom.SecuritySettings) error {
+	tenantID := tid.String()
+	ownIdP := sess.FederatedFor(tenantID)
 	if ownIdP {
 		if !sec.SSORequireMFAEvidence || sess.MFAEvidence() {
 			return nil

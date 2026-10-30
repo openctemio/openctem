@@ -18,11 +18,13 @@
 |---|---|
 | **Sensor** | Software on the customer side that authenticates *to* the platform with its own key and heartbeat. The umbrella term; every row of the `sensors` table. |
 | **Scanner** (role) | A sensor that assesses other hosts; routed by scan zone. What every existing sensor is today. |
-| **Agent** (role) | A sensor installed on an endpoint that reports only about its own host. Since RFC-023 the word *agent* means this role only. |
+| **Endpoint** (role, planned) | A sensor installed on an endpoint that reports only about its own host. RFC-023 called this role *agent*; the word is retired for sensors (see the [glossary](../glossary.md)). |
+| **AI worker** (role) | A sensor that runs AI agents (`openctemio/ai-worker`, sdk-go `pkg/harness`). |
 | **Collector** (role) | A sensor that pushes data from systems inside the customer network. |
 | **Integration** | An external system the *platform* calls (Jira, Slack, Splunk out, …); no software of ours runs for it. |
 | `type` | The legacy v1 classification (`worker`, `scanner`, `sensor`, `collector`, `runner`). Kept as input and storage until role + deployment replace it (RFC-023 §9.1). |
-| AI agent | The `ai_triage.agent` module (an LLM agent, unrelated to sensors); the `agent` AI mode is removed. |
+| AI agent | The retired `ai_triage.agent` sub-module (an LLM agent, unrelated to sensors); the `agent` AI mode is removed. |
+| AI agent | An AI principal with a role (analyst, remediator, reporter, hunter, router) that works under its own identity; data `ai_agent`, code `aiagent`. Unrelated to sensors; never a bare "agent". |
 
 Until 2026-10 the code, database and API called sensors "agents". The rename
 is complete in the API: packages, types, tables, columns, permissions
@@ -127,6 +129,7 @@ claim predicate and claim semantics stay in one place.
 | `next_heartbeat_seconds` | int | Advised interval. 5 s while work is waiting or while a command the sensor claimed was canceled within the last lease period (so it hears `cancel_command_ids` within seconds), 30 s idle, the maximum interval when the doorbell query itself took ≥ 250 ms (platform under load). Clamped to `[SENSOR_HEARTBEAT_MIN_INTERVAL, SENSOR_HEARTBEAT_MAX_INTERVAL]` and never more than the derived maximum `min(offline distance / 2, SENSOR_COMMAND_LEASE / 3)` (45 s with the defaults: half the ladder's 90 s floor, or of `WORKER_HEARTBEAT_TIMEOUT` when shorter, RFC-035 D2; and a third of the lease, so a sensor holding a command renews its lease at least twice before it runs out, RFC-074). The heartbeat stores the advice as the sensor's deadline ("Fleet health"), so a sensor that follows it is never marked offline. |
 | `actions` | []string | Typed directives from a closed set: `pause`, `resume`, `drain`, `rotate_key`, `update`. Rung today: `pause` (sensor disabled by an admin), `rotate_key` (the presented key expires within `SENSOR_KEY_RENEW_BEFORE`, default half of `SENSOR_KEY_TTL`). `resume`, `drain`, `update` are reserved. There is no free-form or shell verb (RFC-023 §10.4 R-4); a sensor ignores a value it does not know. |
 | `config_version` | string | 16 hex chars, opaque. A digest of what the platform governs about the sensor: capabilities, tools, max concurrent jobs, execution mode, operator config, the presented key's expiry and the assigned scan zones with each zone's last change. Heartbeat metrics and `last_seen_at` are not part of it (both rewrite `sensors.updated_at` on every heartbeat, which is why `updated_at` cannot be the source). |
+| `content_version` | string | Opaque, at most 128 characters: the ETag of the sensor's content desired set (`GET /api/v2/sensor/content/desired`). An organization sensor's set is its active packs plus the platform's stable packs; a shared sensor's is the platform's stable packs only. It changes when a pack is promoted, revoked or added to the set and only then, so a sensor refreshes its content at once instead of waiting for its schedule. Absent when the platform serves no content or the sensor is paused. Over the gRPC binding the hint is not carried yet; those sensors refresh on their schedule. |
 
 ### Who gets what
 
@@ -279,6 +282,78 @@ Code: `pkg/domain/sensor/outbox.go` (`OutboxStats`, `Clamp`, `Warning`),
 `internal/infra/http/handler/ingest_handler.go` (`HeartbeatOutbox`),
 `internal/infra/postgres/sensor_repository.go` (`UpdateHeartbeat`),
 `internal/infra/http/handler/sensor_handler.go` (`SensorOutboxResponse`).
+
+## Local store on the heartbeat
+
+A sensor built on sdk-go with a local store (sealed outbox, journal,
+workspaces, content packs, logs) runs one cleanup janitor over that data and
+stops claiming new jobs when it fills up: storage over its quota, the disk
+under the data directory low, or the outbox full of results the platform has
+not acknowledged. Results it already holds still upload; new work waits until
+the store recovers. To a platform whose hello lists the protocol v2 feature
+`local_store`, the heartbeat carries the state of that store:
+
+```json
+"local_store": {
+  "level": "high", "stop_claiming": true,
+  "reason": "9 % of the volume free, below 10 %",
+  "bytes_by_class": {"outbox": 1048576, "workspace": 52428800},
+  "total_bytes": 53477376, "quota_bytes": 1073741824, "disk_level": "low",
+  "sweeps": 12, "last_sweep_at": "2026-10-25T08:00:00Z", "last_sweep_removed": 3,
+  "boot": 4, "boot_reset": false, "tampered": 0
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `level` | The store's watermark: `ok`, `high`, `critical`. |
+| `stop_claiming` | The sensor claims no new jobs until the store recovers. |
+| `reason` | Why, in the sensor's words. |
+| `bytes_by_class` | Bytes per class: `outbox`, `dead_letter`, `journal`, `workspace`, `content_pack`, `log`, `state`. |
+| `total_bytes`, `quota_bytes` | The store's size and its quota (0: none). |
+| `disk_level` | The data volume: `ok`, `low`, `critical`, `unknown`. |
+| `sweeps`, `last_sweep_at`, `last_sweep_removed` | Cleanup sweeps since start and the latest one. |
+| `boot_reset`, `tampered` | The store's boot record went back (an old copy may have been restored); records that failed authentication since start. |
+| `content` | The content packs held ([Content packs](content-packs.md#jobs-that-pin-content)): `held` (sorted `sha256:` digests, at most 200), `held_count`, `held_set_sha256`, `bytes`, `hits`, `misses`, `bytes_downloaded`, `bytes_saved`, `verify_failures` and `desired_version`. A digest that is not a `sha256:` digest is dropped. Display and drift detection only. |
+
+**Untrusted, read leniently.** A member of the wrong type is ignored, an
+enum outside its set is dropped, a class outside the list is dropped, sizes
+are clamped (negative to 0, at most 2^50 bytes), and the reason is reduced to
+one line of printable text of at most 240 characters (control, format and
+bidi characters become spaces). Display, health and placement explanations
+only: the platform never dispatches more or less because of it; the sensor
+itself decides to claim.
+
+**Stored.** `sensors.reported_local_store` (JSONB) and
+`sensors.local_store_reported_at`. A heartbeat without the member leaves them
+as they are. With the heartbeat soft state in Redis, a steady sensor's report
+reaches Postgres with the liveness checkpoint (every 10 minutes); a change of
+`stop_claiming`, `level` or `disk_level` is part of the heartbeat state digest
+and is written at once. A stored report counts as current while it is at most
+15 minutes (or three heartbeat intervals, when longer) older than the
+sensor's latest request; an older one was left behind by an SDK that no
+longer sends it and is ignored.
+
+**Shown.** `GET /api/v1/sensors` and `GET /api/v1/sensors/{id}` return the
+current report as `local_store` (with `reported_at`), `null` without one. A
+sensor that stopped claiming gets the critical health reason
+`stopped_claiming` (state `degraded` while it heartbeats), whose message says
+why and what to do. The response also carries `auth_kind` (`bearer` or
+`key_bound`), so the console can tell a key-bound sensor (no API key prefix)
+from a bearer key.
+
+**Placement.** `GET /api/v1/scan-runs/{id}/tasks/{task_id}/placement`
+gives such a sensor the reason `stopped_claiming` when every platform check
+would hand it the job, instead of counting it eligible: a queued task that
+waits only on sensors that stopped claiming says so. The per-sensor verdicts
+are shown only with `sensors:read`, as for every other reason.
+
+Code: `pkg/domain/sensor/local_store.go` (`ParseLocalStoreReport`,
+`CurrentLocalStore`, `StoppedClaiming`), `internal/infra/postgres/sensor_repository.go`
+(`UpdateHeartbeat`), `internal/infra/postgres/sensor_liveness_store.go`
+(`CheckpointLiveness`), `internal/app/command/placement.go`
+(`sensorPlacement`), `internal/infra/http/handler/sensor_handler.go`
+(`SensorLocalStoreResponse`); migration `sensor_local_store`.
 
 ## Fleet health (Sensors page)
 
@@ -1103,7 +1178,12 @@ replaces bearer keys.
   `high_entropy`) for values that look like credentials
   (`pkg/domain/scan/config_secrets.go`). The config travels to the sensor in
   clear inside every command; the warning never blocks a save and never
-  echoes the value.
+  echoes the value. Host names, addresses and ranges are never
+  `high_entropy`, and a `target`/`targets` list is checked for credential
+  formats only (a URL with a user and password): the same detector decides
+  whether a job carries credentials for the sensor grant, and a long host
+  name in a quick scan's target list must not keep the job from every
+  sensor.
   Callers without `scans:write` (viewers, custom read-only roles) get exactly
   the warned values replaced by `********` (`scan.RedactConfigSecrets`,
   `pkg/domain/scan/config_redact.go`) in every user-facing response that
@@ -1801,6 +1881,22 @@ hosts must be free in its organization: the same host keys, advisory locks
 and settled-host rule as the organization's own sensors, so a shared job and
 an organization sensor's job never take one host at once.
 
+**Hosts across organizations** ([RFC-129](../rfcs/RFC-129-shared-fleet-scheduling.md) §5).
+A shared job's traffic leaves through the platform's egress, whichever
+organization asked, so on the shared fleet a target is also protected across
+organizations: a shared job starts only while fewer than its limit of shared
+jobs, of any organizations, hold a key it conflicts with unsettled (the same
+host keys and bucket rule). The limit is 2, and 1 for a job queued at the
+intrusive tier or intensity (`command.SharedFleetHostLimitFor`). The claim
+takes a `shost|<key>` advisory lock on every candidate's keys, in key order
+and before any organization's lock, re-checks the rule, and counts its own
+batch, so one claim never puts more shared jobs on a host than the limit. A
+waiting organization sees only that its job waits for its hosts: the host
+wait names only its own tasks, never who else scans the host. Organization
+sensors keep per-organization keys: other organizations' shared jobs never
+hold an organization's own job, and its own jobs never count toward the
+shared fleet's limit.
+
 **Order.** Rounds of five jobs per organization (each organization's own
 jobs in class and age order), so one organization's deep or old queue never
 fills the candidate window or a poll, and an organization the claim skips
@@ -1810,6 +1906,21 @@ priority, research/191 W-3), then priority class (one class up per 30
 minutes waited, never into critical), then queue priority and age. One job
 per organization and round may jump the fair-share order: its first job of
 the round when it is a verification (critical) job.
+
+**Cost of a poll** ([RFC-129](../rfcs/RFC-129-shared-fleet-scheduling.md)).
+A poll's work is bounded by the organizations with pending shared work, not
+by their queues or by finished shared jobs. It lists those organizations by a
+skip scan of `idx_commands_shared_pending` (pending shared jobs by
+organization, priority and age), orders them (a pending verification job
+first, then fewest shared jobs in flight, counted through
+`idx_commands_shared_inflight`, which holds no finished job), and keeps the
+first 200 that have a job this sensor may claim now (organizations whose
+work it cannot run do not count). From each it reads its first round (five
+jobs) in class and age order straight from the index, the gates running only
+on the rows read; an organization with a full first round reads further whole
+rounds only when the poll still has room after the first round. The order is
+the same as ranking every job. The read runs with JIT off: its estimated cost
+passes the JIT threshold while it reads a few thousand index rows at most.
 
 **Withheld candidates.** The checks after the query (grant, local policy,
 scope re-check, scan windows, program rules, tool settings, the
@@ -1885,6 +1996,18 @@ fresh (≤ 3 min) `capacity.slots_free`. The command poll (v1 and v2) never
 offers more scan commands than that; selection skips sensors with no free
 slot and prefers the most free slots, then the highest reported throughput
 for the tool. `sensors.current_jobs` (never written) is no longer read.
+
+**Host pressure** (optional `resources.pressure`, plus `capacity.launches_held`,
+`tools_running` and `transient` counters): the sensor says how stalled its host
+is (kernel CPU, memory and I/O stall averages, load per CPU, descriptor use,
+CPU taken by other programs, `noisy_neighbor`) and a `level` of `ok`,
+`elevated` or `overloaded`. While the report is fresh, `overloaded` gives the
+sensor no free slot when it holds a command (one when idle) and `elevated` at
+most one, in `FreeSlots` and the same SQL rule; selection adds 25 or 100 to its
+load score; the placement explainer says `sensor_overloaded` instead of a plain
+busy. Values are clamped, `level` and `reasons` are closed sets, and an old
+sensor that sends none behaves as before. The sensor page shows a Host
+pressure section and, for `noisy_neighbor`, a warning.
 
 The poll orders commands fairly (RFC-046 §11): by priority class, a command
 moving up one class per 30 minutes waited (never into `critical`), then
@@ -2202,8 +2325,20 @@ and narrows dispatch:
 - **Install dialog.** `GET /sensors/{id}/config-templates` returns `policy`, a
   sensor-policy/v1 template (`configs/sensor-products/sensor/policy.tmpl`)
   prefilled with the ranges of the sensor's scan zones (none for a sensor in
-  the default zone, which scans public targets), tools from the sensor, and
-  custom templates and interactsh off. The docker, Compose and Kubernetes
+  the default zone, which scans public targets); a sensor in no zone gets the
+  organization's active scope instead (`sensorapp.PolicyFromScope`: CIDRs,
+  addresses and ranges as networks, domains and URL hosts as names, a
+  wildcard entry as both the name and `*.name`; entries the sensor would
+  refuse to load, such as loopback or metadata addresses, are left out and
+  counted). Active network and name exclusions become `targets.deny` in both
+  cases. The scope part is read only for a caller with
+  `attack_surface:scope:read` (`handler.SensorPolicyPrefill`); others get the
+  zones. Tools come from the sensor; custom templates and interactsh are off.
+  The prefill is text a person reviews: the host writes the file and the
+  platform cannot change it afterwards. A sensor without a policy shows the
+  same text in its drawer (Local policy, "Suggested local policy") as one
+  host command that writes `/etc/openctem/sensor-policy.yaml`, reloaded on
+  SIGHUP. The docker, Compose and Kubernetes
   snippets mount it read-only and require it (`SENSOR_LOCAL_POLICY`), set
   `SENSOR_ALLOW_PRIVATE_TARGETS=1` when a zone range is private, and run the
   sensor hardened (read-only root filesystem, all capabilities dropped, no

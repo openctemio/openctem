@@ -25,7 +25,7 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
-import { ConfirmDialog } from '@/components/confirm-dialog'
+import { ConfirmDialog, ConfirmSample } from '@/components/confirm-dialog'
 import { ActorChip, EmptyState, RelativeTime, TonePill } from '@/features/shared'
 import { useDisplayUser } from '@/hooks/use-display-user'
 import { Permission, useHasPermission } from '@/lib/permissions'
@@ -183,6 +183,8 @@ export function ScopeApprovals() {
   const [busy, setBusy] = useState(false)
   // A rejection answers someone's request, so it asks first.
   const [pendingReject, setPendingReject] = useState<PendingChange | null>(null)
+  // An approval widens (or narrows) what scans may reach, so it asks first.
+  const [pendingApprove, setPendingApprove] = useState<PendingChange[] | null>(null)
 
   const decide = async (list: PendingChange[], approve: boolean) => {
     setBusy(true)
@@ -196,16 +198,25 @@ export function ScopeApprovals() {
         }
         done += 1
       } catch (err) {
-        toast.error(`${c.item.pattern}: ${scopeErrorMessage(t, err, 'not saved')}`)
+        toast.error(
+          `${c.item.pattern}: ${scopeErrorMessage(t, err, t('scope.approvals.notSaved', 'not saved'))}`
+        )
       }
     }
     await invalidateScopeCache()
     setSelected(new Set())
     setPendingReject(null)
+    setPendingApprove(null)
     setBusy(false)
     if (done > 0)
       toast.success(
-        `${done} ${done === 1 ? 'change' : 'changes'} ${approve ? 'approved' : 'rejected'}`
+        approve
+          ? done === 1
+            ? t('scope.approvals.approvedOne', '1 change approved')
+            : t('scope.approvals.approvedMany', '{count} changes approved', { count: done })
+          : done === 1
+            ? t('scope.approvals.rejectedOne', '1 change rejected')
+            : t('scope.approvals.rejectedMany', '{count} changes rejected', { count: done })
       )
   }
 
@@ -278,21 +289,30 @@ export function ScopeApprovals() {
             onCheckedChange={(v) =>
               setSelected(v ? new Set(decidable.map((c) => `${c.kind}:${c.id}`)) : new Set())
             }
-            aria-label="Select every change you may approve"
+            aria-label={t('scope.approvals.selectEvery', 'Select every change you may approve')}
           />
-          <label htmlFor="approve-all">Select all you may approve ({decidable.length})</label>
+          <label htmlFor="approve-all">
+            {t('scope.approvals.selectAll', 'Select all you may approve ({count})', {
+              count: decidable.length,
+            })}
+          </label>
           <Button
             size="sm"
             className="ms-auto"
             disabled={busy || chosen.length === 0}
-            onClick={() => void decide(chosen, true)}
+            onClick={() => setPendingApprove(chosen)}
           >
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-            Approve selected ({chosen.length})
+            {t('scope.approvals.approveSelected', 'Approve selected ({count})', {
+              count: chosen.length,
+            })}
           </Button>
         </div>
       )}
-      <ul className="space-y-3" aria-label="Changes waiting for approval">
+      <ul
+        className="space-y-3"
+        aria-label={t('scope.approvals.listLabel', 'Changes waiting for approval')}
+      >
         {changes.map((c) => {
           const key = `${c.kind}:${c.id}`
           const blocker = approveBlocker(c, user?.id, perms)
@@ -327,8 +347,8 @@ export function ScopeApprovals() {
                   </div>
                   <p className="text-sm text-muted-foreground">
                     {isEntry
-                      ? `Covers ${coversText(c.item)} · ${scopeTargetTypeLabel(c.item.target_type ?? '')} · ${TIER_LABEL[c.item.max_tier ?? 't1'] ?? ''} · ${c.item.expires_at ? expiryText(c.item.expires_at) : 'permanent'}`
-                      : `Scans would never touch ${coversText({ pattern: c.item.pattern, target_type: c.item.exclusion_type })}${c.item.expires_at ? ` · ${expiryText(c.item.expires_at).toLowerCase()}` : ''}`}
+                      ? `Covers ${coversText(c.item)}, ${scopeTargetTypeLabel(c.item.target_type ?? '')}, ${TIER_LABEL[c.item.max_tier ?? 't1'] ?? ''}, ${c.item.expires_at ? expiryText(c.item.expires_at) : 'permanent'}`
+                      : `Scans would never touch ${coversText({ pattern: c.item.pattern, target_type: c.item.exclusion_type })}${c.item.expires_at ? `, ${expiryText(c.item.expires_at).toLowerCase()}` : ''}`}
                   </p>
                   {e.reason && <p className="text-sm">&ldquo;{e.reason}&rdquo;</p>}
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
@@ -370,11 +390,11 @@ export function ScopeApprovals() {
                       <Button
                         size="sm"
                         disabled={busy || !!blocker}
-                        onClick={() => void decide([c], true)}
+                        onClick={() => setPendingApprove([c])}
                         aria-describedby={blocker ? `${key}-why` : undefined}
                       >
                         <Check className="h-4 w-4" />
-                        Approve
+                        {t('scope.approvals.approve', 'Approve')}
                       </Button>
                       <Button
                         size="sm"
@@ -383,7 +403,7 @@ export function ScopeApprovals() {
                         onClick={() => setPendingReject(c)}
                       >
                         <X className="h-4 w-4" />
-                        Reject
+                        {t('scope.approvals.reject', 'Reject')}
                       </Button>
                     </div>
                     {blocker && (
@@ -412,6 +432,39 @@ export function ScopeApprovals() {
       {selfApprove && (
         <ScopeSelfApproveDialog entry={selfApprove} onOpenChange={() => setSelfApprove(null)} />
       )}
+      <ConfirmDialog
+        open={pendingApprove !== null}
+        onOpenChange={(o) => !o && setPendingApprove(null)}
+        title={
+          pendingApprove?.length === 1
+            ? t('confirm.scopeChange.approveTitle', 'Approve the change to {pattern}?', {
+                pattern: pendingApprove[0].item.pattern ?? '',
+              })
+            : t('confirm.scopeChange.approveManyTitle', 'Approve {count} scope changes?', {
+                count: pendingApprove?.length ?? 0,
+              })
+        }
+        desc={t(
+          'confirm.scopeChange.approveDesc',
+          'The requested change is applied to your scope, so scans may start reaching new targets or stop reaching excluded ones. The change stays in the audit log, and you can remove the entry afterwards.'
+        )}
+        confirmText={
+          pendingApprove?.length === 1
+            ? t('confirm.scopeChange.approveButton', 'Approve change')
+            : t('confirm.scopeChange.approveManyButton', 'Approve {count} changes', {
+                count: pendingApprove?.length ?? 0,
+              })
+        }
+        isLoading={busy}
+        handleConfirm={() => (pendingApprove ? decide(pendingApprove, true) : undefined)}
+      >
+        {pendingApprove && pendingApprove.length > 1 && (
+          <ConfirmSample
+            names={pendingApprove.map((c) => c.item.pattern ?? '')}
+            total={pendingApprove.length}
+          />
+        )}
+      </ConfirmDialog>
       <ConfirmDialog
         open={pendingReject !== null}
         onOpenChange={(o) => !o && setPendingReject(null)}

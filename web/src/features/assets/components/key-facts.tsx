@@ -23,7 +23,8 @@ import {
   propertyLabel,
 } from '@/features/asset-types/lib/property-schema'
 import type { AssetClass } from '@/features/asset-types/registry.generated'
-import { tlsFacts } from '../lib/service-facts'
+import { tlsFacts, withServedCertificate } from '../lib/service-facts'
+import { useServedCertificate } from '../hooks/use-served-certificate'
 import type { Asset } from '../types/asset.types'
 import { PropertyValue, hasPropertyValue, isWideValue } from './property-value'
 import { TlsSummary } from './service-cells/tls-summary'
@@ -61,7 +62,7 @@ type Row =
       wide?: boolean
     }
 
-const joined = (asset: Asset, keys: string[], sep = ' · ') =>
+const joined = (asset: Asset, keys: string[], sep = ', ') =>
   keys
     .map((k) => factValue(asset.metadata, k))
     .filter((v) => hasPropertyValue(v))
@@ -173,7 +174,7 @@ const HARDWARE: Row = {
       hasPropertyValue(v('architecture')) && String(v('architecture')),
     ]
       .filter(Boolean)
-      .join(' · ')
+      .join(', ')
   },
 }
 
@@ -194,7 +195,7 @@ const ENCRYPTION: Row = {
     return (
       <>
         <PropertyValue value={on} />
-        {hasPropertyValue(kind) && <span className="text-muted-foreground"> · {String(kind)}</span>}
+        {hasPropertyValue(kind) && <span className="text-muted-foreground">, {String(kind)}</span>}
       </>
     )
   },
@@ -322,10 +323,14 @@ export function KeyFactsGrid({ facts }: { facts: KeyFact[] }) {
  * The drawer's "Key facts" section: the facts, then, for an external-surface
  * type, one muted "Not collected yet: …" line naming what no scan recorded.
  */
-export function KeyFactsSection({ asset }: { asset: Asset }) {
+export function KeyFactsSection({ asset: recorded }: { asset: Asset }) {
   const { t } = useTranslation()
+  const isSurface = !!cellsForType(recorded.type, recorded.subType)
+  // The certificate lives on its own asset, linked by `serves_certificate`.
+  const served = useServedCertificate(recorded, isSurface)
+  const asset = React.useMemo(() => withServedCertificate(recorded, served), [recorded, served])
   const facts = useKeyFacts(asset)
-  const missing = cellsForType(asset.type, asset.subType) ? missingSurfaceFacts(asset) : []
+  const missing = isSurface ? missingSurfaceFacts(asset) : []
   if (facts.length === 0 && missing.length === 0) return null
   return (
     <DetailSection title={t('assets.keyFacts.title', 'Key facts')} icon={Radar}>

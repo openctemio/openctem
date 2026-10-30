@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/limits"
@@ -312,8 +313,8 @@ func (s *Service) holdShared(ctx context.Context, subj gateSubject, sensorID sha
 			continue
 		}
 		group := groups[tenantID]
-		group = s.gateWith(ctx, tenantID, subj, group).accepted(group)
-		group = s.recheckScope(ctx, tenantID, &sensorID, group)
+		group = s.keepAccepted(ctx, tenantID, sensorID, s.gateWith(ctx, tenantID, subj, group), group)
+		group = s.recheckScope(attribution.WithPlacement(ctx, attribution.PlacementPlatform), tenantID, &sensorID, group)
 		group, rates := s.windowHold(ctx, tenantID, group)
 		group, r := s.programHold(ctx, tenantID, &sensorID, group)
 		group, l := s.settingsHold(ctx, tenantID, &sensorID, group)

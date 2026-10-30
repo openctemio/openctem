@@ -3,6 +3,7 @@
 import { useId, useState } from 'react'
 import { AlertTriangle, CheckCircle2, Loader2, RefreshCw, ShieldAlert } from 'lucide-react'
 import { toast } from 'sonner'
+import { safeText } from '@/lib/api/error-message'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -25,6 +26,7 @@ import {
   DetailStatGrid,
   ErrorState,
   RelativeTime,
+  PageStack,
 } from '@/features/shared'
 import type {
   AdminAuditChainRebaselineResponse,
@@ -159,7 +161,15 @@ export function OrganizationAuditChainPanel({
       } else {
         void mutate()
       }
-      toast.error(e.message)
+      toast.error(
+        safeText(
+          e.message,
+          t(
+            'admin.organizationAuditChainPanel.couldNotRebaselineTheAudit',
+            'Could not rebaseline the audit chain'
+          )
+        )
+      )
     } finally {
       setBusy(false)
     }
@@ -190,7 +200,7 @@ export function OrganizationAuditChainPanel({
     disabledReason = 'Every entry verifies: there is nothing to rebaseline.'
 
   return (
-    <div className="space-y-5">
+    <PageStack>
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
           <div className="space-y-1.5">
@@ -499,6 +509,6 @@ export function OrganizationAuditChainPanel({
           )}
         />
       </ConfirmDialog>
-    </div>
+    </PageStack>
   )
 }

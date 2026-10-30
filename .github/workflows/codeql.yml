@@ -14,9 +14,18 @@ name: CodeQL
 #   merge_group    none: the PR head was already analysed and gated, so a
 #                  second analysis of the same code in the queue would cost a
 #                  runner for no gate. `CodeQL OK` passes with the matrix skipped.
-#   push, weekly   ALWAYS both: code scanning compares each PR against the
-#                  latest analysis of every category on the base branch, so
-#                  develop/main need a fresh baseline for both languages.
+#   push develop   only the side that changed, by the pull request rules.
+#                  Code scanning compares each PR against the latest analysis
+#                  of every category on the base branch; a language whose code
+#                  did not change keeps its last analysis, which still matches
+#                  that code. Query versions change only with the pinned action
+#                  or .github/codeql/ (CI files, which select both languages).
+#   push main      ALWAYS both (main moves only on releases).
+#   schedule       daily 03:00 UTC, ALWAYS both, on develop: GitHub runs the
+#                  default branch's (main's) copy of this file, so the analyze
+#                  job checks out develop and uploads for refs/heads/develop
+#                  (the action's ref/sha inputs). develop's baseline is then
+#                  never older than a day for either language.
 #
 # Gate: CodeQL never fails a run on findings, so on pull_request `CodeQL OK`
 # fails when the PR introduces open alerts of severity medium or higher that
@@ -33,7 +42,7 @@ on:
   merge_group:
     types: [checks_requested]
   schedule:
-    - cron: '0 0 * * 1'
+    - cron: '0 3 * * *'
 
 permissions:
   contents: read
@@ -48,32 +57,51 @@ jobs:
     # merge_group analyses nothing (see the header), so do not even spend a
     # runner on detection; `CodeQL OK` passes with everything skipped.
     if: github.event_name != 'merge_group'
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read # the PR's commits and labels (changed.sh)
+      checks: read # green-base.sh and release-provenance.sh read a commit's check runs
     outputs:
+      pool: ${{ steps.pool.outputs.pool }}
       languages: ${{ steps.lang.outputs.languages }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
+      - uses: ./.github/actions/setup-gh
+      - id: pool
+        uses: ./.github/actions/ci-pool
+        with:
+          share: ${{ vars.CI_SELFHOSTED_SHARE }}
       - id: f
         env:
           EVENT_BEFORE: ${{ github.event.before }}
           MG_BASE: ${{ github.event.merge_group.base_sha }}
           MG_HEAD: ${{ github.event.merge_group.head_sha }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: bash .github/scripts/changed.sh
+      # Which part of the side changed (.github/scripts/scope.sh): only narrows
+      # what changed.sh selected, e.g. a change to web/e2e/ alone runs no web
+      # unit tests and builds no image, a CI file only the workflows that use it.
+      - id: scope
+        env:
+          EVENT_BEFORE: ${{ github.event.before }}
+          MG_BASE: ${{ github.event.merge_group.base_sha }}
+          MG_HEAD: ${{ github.event.merge_group.head_sha }}
+        run: bash .github/scripts/scope.sh
       - id: lang
         env:
           EVENT: ${{ github.event_name }}
-          API: ${{ steps.f.outputs.api }}
-          WEB: ${{ steps.f.outputs.web }}
-        run: |
-          if [[ "$EVENT" == push || "$EVENT" == schedule ]]; then API=true WEB=true; fi
-          langs=()
-          [[ "$API" == true ]] && langs+=('"go"')
-          [[ "$WEB" == true ]] && langs+=('"javascript-typescript"')
-          languages="[$(IFS=,; echo "${langs[*]}")]"
-          echo "languages=$languages" | tee -a "$GITHUB_OUTPUT"
+          REF: ${{ github.ref }}
+          # Shipped code only: the e2e suite and the catalogs are not analysed again.
+          API: ${{ steps.f.outputs.api == 'true' && (steps.scope.outputs.api_code == 'true' || steps.scope.outputs.ci_self == 'true') }}
+          WEB: ${{ steps.f.outputs.web == 'true' && (steps.scope.outputs.web_app == 'true' || steps.scope.outputs.ci_self == 'true') }}
+        run: bash .github/scripts/codeql-languages.sh
 
   analyze:
     name: CodeQL (${{ matrix.language }})
@@ -83,7 +111,8 @@ jobs:
       contents: read
       security-events: write
       actions: read
-    runs-on: ubuntu-latest
+    runs-on: ${{ ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_CODEQL) || (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || needs.changes.outputs.pool || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (vars.CI_RUNNER_HEAVY || needs.changes.outputs.pool)) || 'ubuntu-latest' }}
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
@@ -92,6 +121,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # The daily schedule analyses develop (see the header).
+          ref: ${{ github.event_name == 'schedule' && 'develop' || '' }}
+      - id: target
+        if: github.event_name == 'schedule'
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - if: matrix.language == 'go'
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -104,13 +138,19 @@ jobs:
         with:
           languages: go
           build-mode: manual
-          queries: security-and-quality
+          config-file: ./.github/codeql/codeql-config-go.yml # go/log-injection replaced, see the file
       - name: Build (go)
         if: matrix.language == 'go'
         working-directory: api
         env:
           GOWORK: "off"
         run: go build ./...
+      # The TypeScript extractor needs node on PATH. GitHub-hosted images ship
+      # one; the self-hosted runner image does not.
+      - if: matrix.language == 'javascript-typescript'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: web/.nvmrc
       - name: Initialize CodeQL (javascript-typescript)
         if: matrix.language == 'javascript-typescript'
         uses: github/codeql-action/init@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
@@ -128,12 +168,16 @@ jobs:
         uses: github/codeql-action/analyze@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         with:
           category: /language:${{ matrix.language }}
+          # Empty (every event but the schedule): the event's own ref and sha.
+          ref: ${{ github.event_name == 'schedule' && 'refs/heads/develop' || '' }}
+          sha: ${{ steps.target.outputs.sha }}
 
   codeql-ok:
     name: CodeQL OK
     if: always()
     needs: [changes, analyze]
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
+    timeout-minutes: 5
     permissions:
       contents: read
       security-events: read
@@ -149,6 +193,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - if: github.event_name == 'pull_request' && needs.analyze.result == 'success'
+        uses: ./.github/actions/setup-gh
       - name: No new medium-or-higher alerts
         if: github.event_name == 'pull_request' && needs.analyze.result == 'success'
         env:
@@ -156,4 +202,36 @@ jobs:
           REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
-        run: bash .github/scripts/codeql-new-alerts.sh
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        # A release pull request is compared with develop (the script decides).
+        # The head branch name is attacker-chosen text: read it from the
+        # runner's GITHUB_HEAD_REF, never interpolated into the workflow.
+        run: HEAD_REF="$GITHUB_HEAD_REF" bash .github/scripts/codeql-new-alerts.sh
+
+  # Early warning (develop only): once the push analysis of both languages is
+  # in, list the high or critical alerts develop has and main does not, in one
+  # issue labelled `security`, so they are fixed before a release instead of at
+  # release time (.github/scripts/early-warning.sh; api/docs/development/ci-cd.md,
+  # "Early warning"). Never a gate: a failure here changes no required check.
+  early-warning:
+    name: Early warning (develop)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop' && needs.analyze.result == 'success'
+    needs: [analyze]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    permissions:
+      contents: read
+      security-events: read
+      issues: write # open, update and close the one early-warning issue
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+      - name: High or critical alerts on develop that main does not have
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: bash .github/scripts/early-warning.sh code

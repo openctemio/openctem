@@ -45,6 +45,13 @@ func (f *fakeStatus) GetEnabled(context.Context) ([]*threatintel.SyncStatus, err
 func (f *fakeStatus) GetDueForSync(context.Context) ([]*threatintel.SyncStatus, error) {
 	return nil, nil
 }
+func (f *fakeStatus) TryStart(_ context.Context, _ string, _ time.Duration) (bool, error) {
+	if f.st.LastSyncStatus() == threatintel.SyncStateRunning {
+		return false, nil
+	}
+	f.st.MarkSyncStarted()
+	return true, nil
+}
 func (f *fakeStatus) Update(_ context.Context, st *threatintel.SyncStatus) error {
 	f.st = st
 	return nil
@@ -241,5 +248,11 @@ func TestNewImporterRefusesBadBaseURL(t *testing.T) {
 		if _, err := NewImporter(Config{RootKeyID: "x", BaseURL: u}, &fakeCorpus{}, &fakeStatus{}, fakeCatalog{}, logger.NewNop()); err == nil {
 			t.Errorf("%s accepted", u)
 		}
+	}
+}
+
+func TestDefaultBaseURLIsTheBundlesRepo(t *testing.T) {
+	if DefaultBaseURL != "https://github.com/openctemio/vulnfeed-bundles/releases" {
+		t.Fatalf("DefaultBaseURL = %q", DefaultBaseURL)
 	}
 }

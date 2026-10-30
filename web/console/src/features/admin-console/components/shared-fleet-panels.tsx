@@ -47,8 +47,12 @@ import {
   type SharedSensorAction,
 } from '@console/features/admin-console/api/use-shared-fleet'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
+import {
+  TypedAdminConfirmDialog,
+  nameToType,
+} from '@console/features/admin-console/components/type-to-confirm-field'
 import { AdminConfirmDialog } from '@console/features/admin-console/components/admin-confirm-dialog'
-import { adminCan } from '@console/features/admin-console/types'
+import { adminHas } from '@console/features/admin-console/types'
 
 const JOB_STATUSES = [
   'pending',
@@ -64,7 +68,7 @@ const ALL = 'all'
 export function SharedFleetPanel() {
   const { t } = useTranslation()
   const me = useAdmin()
-  const isSuper = adminCan(me.role, 'super_admin')
+  const isSuper = adminHas(me, 'platform.sensors.manage')
   const fleet = useSharedFleet()
   const [acting, setActing] = useState<{
     sensor: SharedFleetSensor
@@ -171,7 +175,8 @@ export function SharedFleetPanel() {
               )}
               <Button
                 size="sm"
-                variant="outline"
+                variant="destructive"
+                className="ms-2"
                 onClick={() => setActing({ sensor: s, action: 'retire' })}
               >
                 <Power className="me-1 size-4" aria-hidden />
@@ -204,7 +209,7 @@ export function SharedFleetPanel() {
     retire: {
       title: 'admin.sharedFleet.retireTitle',
       desc: 'admin.sharedFleet.retireDesc',
-      confirm: 'admin.sharedFleet.retire',
+      confirm: 'admin.sharedFleet.retireButton',
       done: 'admin.sharedFleet.retired',
     },
   }
@@ -241,7 +246,12 @@ export function SharedFleetPanel() {
       </Card>
 
       {acting && (
-        <AdminConfirmDialog
+        <TypedAdminConfirmDialog
+          typeToConfirm={
+            acting.action === 'retire'
+              ? nameToType(acting.sensor.name, acting.sensor.id)
+              : undefined
+          }
           open
           onOpenChange={(open) => !open && setActing(null)}
           title={t(actionText[acting.action].title, undefined, { name: acting.sensor.name })}
@@ -266,7 +276,7 @@ export function SharedFleetPanel() {
 export function SharedQueuePanel() {
   const { t } = useTranslation()
   const me = useAdmin()
-  const canView = adminCan(me.role, 'ops_admin')
+  const canView = adminHas(me, 'platform.sensors.jobs.read')
   const queue = useSharedQueue()
   const list = useListParams({ pageSizes: [20], defaultPageSize: 20, filters: { status: '' } })
   const status = list.filters.status

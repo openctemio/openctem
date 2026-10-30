@@ -137,7 +137,7 @@ checklist: the `web-change` skill in the repository root `.claude/skills/`.
 
 - Locales: `en`, `vi` (`supportedLocales`) | RTL (direction only, none shipped): `ar`, `he`, `fa`, `ur`
 - Client: `const { t } = useTranslation()` from `@/context/i18n-provider`
-- Every new key goes into both `src/lib/i18n/dictionaries/en/<namespace>.json` and `vi/<namespace>.json` in the same PR (namespace = the key's first segment; a new namespace is imported in `dictionaries/index.ts`)
+- Every new key goes into both `src/lib/i18n/dictionaries/en/<namespace>.json` and `vi/<namespace>.json` in the same PR (namespace = the key's first segment; a new namespace is imported in `dictionaries/index.ts`); keys stay sorted (`node web/scripts/i18n-json.mjs sort`), and the catalogs merge key by key (driver enabled by `make hooks` / `npm ci`)
 - Server: `(await headers()).get('x-locale') || 'en'`
 - See [i18n.md](.claude/i18n.md) for complete guide
 
@@ -146,6 +146,11 @@ checklist: the `web-change` skill in the repository root `.claude/skills/`.
 - Server Components for reads (default), Server Actions for mutations
 - SWR for client-side fetching, `mutate()` to invalidate after mutations
 - Always paginate list endpoints (`page` + `per_page` on most lists; check the endpoint)
+- Typed search (search boxes, pickers, filter-as-you-type) reaches a request only as
+  `useSearchQuery(input).term` (`src/hooks/use-search-query.ts`: 300 ms debounce, 2-char
+  minimum, IME composition, hidden tab, 429 Retry-After) or through `useListParams`
+  (`apiParams.q` / `searchTerm`). `search-query-guard.test.ts` fails on raw input state in a
+  request and on `useDebounce` for a search value.
 
 ### Validation
 

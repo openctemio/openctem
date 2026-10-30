@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { FindingRetestCheckSection } from '../finding-retest-check'
 import { RetestCheckProvenance } from '../finding-retest'
@@ -19,6 +19,7 @@ import { ApiClientError } from '@/lib/api/error-handler'
 
 let mockCheck: RetestCheck | null = null
 let mockPerms = new Set<string>()
+let mockRetests: Array<{ reason_code?: string }> = []
 const mockValidate = vi.fn()
 const mockSave = vi.fn()
 const mockRemove = vi.fn()
@@ -43,7 +44,7 @@ vi.mock('../../../api/use-finding-retest-check', async (importOriginal) => {
 
 vi.mock('../../../api/use-finding-retests', async (importOriginal) => {
   const real = await importOriginal<typeof import('../../../api/use-finding-retests')>()
-  return { ...real, useFindingRetests: () => ({ data: { data: [] } }) }
+  return { ...real, useFindingRetests: () => ({ data: { data: mockRetests } }) }
 })
 
 vi.mock('@/lib/api/scanner-template-hooks', () => ({
@@ -105,8 +106,50 @@ describe('FindingRetestCheckSection', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockCheck = null
+    mockRetests = []
     mockPerms = new Set()
     mockSave.mockResolvedValue(check())
+  })
+
+  const urlFinding = {
+    id: 'f-1',
+    metadata: { matched_at: 'https://shop.example.com/admin/login?next=%2F' },
+  }
+
+  it.each(['endpoint_mismatch', 'matched_elsewhere'])(
+    'hints to pin the check to the finding URL after %s and opens a prefilled editor',
+    async (code) => {
+      mockPerms = new Set([WRITE])
+      mockRetests = [{ reason_code: code }]
+      const user = userEvent.setup()
+      render(<FindingRetestCheckSection finding={urlFinding} />)
+      expect(
+        screen.getByText(
+          'This template probes several paths. Add an HTTP assertion check pinned to https://shop.example.com/admin/login?next=%2F.'
+        )
+      ).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Add a pinned check' }))
+      expect(screen.getByLabelText('Path')).toHaveValue('/admin/login?next=%2F')
+    },
+    20_000
+  )
+
+  it.each([[], [{ reason_code: 'unreachable' }], [{ reason_code: 'matched' }]])(
+    'shows no pin hint for %j',
+    (...rows) => {
+      mockPerms = new Set([WRITE])
+      mockRetests = rows.flat() as Array<{ reason_code?: string }>
+      render(<FindingRetestCheckSection finding={urlFinding} />)
+      expect(screen.queryByText(/probes several paths/)).toBeNull()
+    }
+  )
+
+  it('shows the hint without the button to a reader', () => {
+    mockCheck = check()
+    mockRetests = [{ reason_code: 'endpoint_mismatch' }]
+    render(<FindingRetestCheckSection finding={urlFinding} />)
+    expect(screen.getByText(/probes several paths/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add a pinned check' })).toBeNull()
   })
 
   it('renders nothing without a check and without the write permission', () => {
@@ -146,7 +189,7 @@ describe('FindingRetestCheckSection', () => {
         }),
       })
     )
-    expect(screen.getByText('T0 · passive')).toBeInTheDocument()
+    expect(screen.getByText('T0, passive')).toBeInTheDocument()
 
     // Changing the input after validating requires a new validation.
     await user.type(path, 'x')
@@ -191,7 +234,7 @@ describe('FindingRetestCheckSection', () => {
     render(<FindingRetestCheckSection finding={finding} />)
     expect(screen.getByText('Reflected XSS on /search')).toBeInTheDocument()
     expect(screen.getByText(/sha256:abcdef123456/)).toBeInTheDocument()
-    expect(screen.getByText('T1 · active')).toBeInTheDocument()
+    expect(screen.getByText('T1, active')).toBeInTheDocument()
     expect(screen.getByText('Not calibrated yet')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Edit check' })).not.toBeInTheDocument()
   })
@@ -224,6 +267,10 @@ describe('FindingRetestCheckSection', () => {
     const user = userEvent.setup()
     render(<FindingRetestCheckSection finding={finding} />)
     await user.click(screen.getByRole('button', { name: 'Approve' }))
+    expect(mockApprove).not.toHaveBeenCalled()
+    await user.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Approve check' })
+    )
     await waitFor(() =>
       expect(mockToastError).toHaveBeenCalledWith(
         'You cannot approve this version of the check',

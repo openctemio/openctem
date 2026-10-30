@@ -150,8 +150,8 @@ export function inventoryChips(filters: InventoryFilters, ctx: ChipContext): Inv
     chips.push({
       key: 'hasFindings',
       text: filters.hasFindings
-        ? t('assets.facetPanel.hasFindings', 'Has findings')
-        : t('assets.facetPanel.noFindings', 'No findings'),
+        ? t('assets.facetPanel.hasFindings', 'Has open findings')
+        : t('assets.facetPanel.noFindings', 'No open findings'),
       clear: without('hasFindings'),
     })
   }
@@ -182,6 +182,16 @@ export function inventoryChips(filters: InventoryFilters, ctx: ChipContext): Inv
           ? t('assetFreshness.filter.never', 'Never enriched')
           : t('assetFreshness.filter.stale', 'Stale data'),
       clear: without('freshness'),
+    })
+  }
+  if (filters.resolution) {
+    chips.push({
+      key: 'resolution',
+      text:
+        filters.resolution === 'resolving'
+          ? t('assets.facetPanel.resolving', 'Resolution: resolving')
+          : t('assets.facetPanel.notResolving', 'Resolution: not resolving'),
+      clear: without('resolution'),
     })
   }
   if (filters.programAssets) {

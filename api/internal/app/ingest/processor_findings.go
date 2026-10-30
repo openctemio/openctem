@@ -579,14 +579,26 @@ func (p *FindingProcessor) processBatch(
 	// downgraded by validation (regressions).
 	// PERFORMANCE: Single query instead of N queries per existing finding
 	existingFingerprints = p.withoutHumanResolved(ctx, tenantID, existingFingerprints, guardedFingerprints, output)
+	// Only a default-branch run may reopen what was resolved on the default
+	// branch: a feature or pull-request sighting is recorded as a branch
+	// occurrence (step 6) and leaves the status alone.
+	branchSightings := make([]branchSighting, 0, len(validFindings))
+	for _, fm := range validFindings {
+		branchSightings = append(branchSightings, branchSighting{fingerprint: fm.fingerprint, assetID: fm.assetID, branchID: fm.branchID})
+	}
+	existingFingerprints = p.withoutDefaultBranchResolved(ctx, tenantID, existingFingerprints, p.offDefaultBranchFingerprints(ctx, report, branchSightings), output)
 	if len(existingFingerprints) > 0 {
 		scanner := ""
 		if report.Tool != nil {
 			scanner = report.Tool.Name
 		}
+		// A duplicate seen again is a sighting of the finding it was folded
+		// into: that one is not auto-resolved (marked seen here) and reopens
+		// below if it was closed. The duplicate itself is never reopened.
+		p.sightDuplicateTargets(ctx, tenantID, existingFingerprints, report.Metadata.ID, scanner)
 		// Each reopen writes its timeline entry with the scan behind it.
 		reopenCtx := vulnerability.WithTransitionEvidence(ctx, map[string]any{"scanner": scanner, "scan_id": report.Metadata.ID})
-		reopenedMap, err := p.repo.AutoReopenByFingerprintsBatch(reopenCtx, tenantID, existingFingerprints)
+		reopenedMap, err := p.repo.AutoReopenByFingerprintsBatch(reopenCtx, tenantID, existingFingerprints, reportObservedAt(report, time.Now()))
 		if err != nil {
 			p.logger.Warn("failed to batch auto-reopen findings", "error", err)
 		} else if len(reopenedMap) > 0 {
@@ -818,7 +830,9 @@ func (p *FindingProcessor) processBatch(
 			p.logger.Info("backfilled finding branches", "count", n)
 		}
 		if err := p.repo.UpsertBranchOccurrences(ctx, tenantID, occurrences); err != nil {
-			p.logger.Warn("failed to record branch occurrences", "error", err, "count", len(occurrences))
+			p.logger.Error("failed to record branch occurrences", "error", err, "count", len(occurrences))
+			addError(output, fmt.Sprintf("record branch occurrences of %d findings failed: %v", len(occurrences), err))
+			output.BranchOccurrencesFailed = true
 		} else {
 			p.promoteBranchOnly(ctx, tenantID, occurrences)
 		}
@@ -881,7 +895,7 @@ func (p *FindingProcessor) processBatch(
 	// finding's status, and a baseline only narrows what later proves a fix.
 	sightings := make([]vulnerability.TemplateSighting, 0, len(validFindings))
 	for _, fm := range validFindings {
-		if prov := findingTemplateProvenance(&fm.finding, report.Tool); !prov.Empty() {
+		if prov := sightingProvenance(&fm.finding, report.Tool, scope); !prov.Empty() {
 			sightings = append(sightings, vulnerability.TemplateSighting{Fingerprint: fm.fingerprint, Provenance: prov})
 		}
 	}
@@ -2636,7 +2650,7 @@ func (p *FindingProcessor) afterCreate(
 	// created findings. A branch-only finding is not exposure yet: its
 	// workflows run when a counting branch sees it (promoteBranchOnly).
 	if p.findingCreatedCallback != nil || p.sideEffects != nil {
-		if counting := p.withoutBranchOnly(ctx, tenantID, withoutDecided(created)); len(counting) > 0 {
+		if counting := p.withoutReported(ctx, tenantID, p.withoutBranchOnly(ctx, tenantID, withoutDecided(created))); len(counting) > 0 {
 			switch {
 			case p.sideEffects != nil:
 				p.enqueueCreated(ctx, tenantID, counting)
@@ -2702,4 +2716,122 @@ func addItem(output *Output, report *ctis.Report, f *ctis.Finding, disp ingestre
 		Disposition: disp, ReasonCode: reason, AssetID: assetID, Tool: tool, Title: f.Title,
 		Severity: string(f.Severity), Policy: policy, PolicyVersion: version,
 	})
+}
+
+// duplicateTargetMarker is the repository's way to mark what duplicates were
+// folded into as seen (optional: a repository without it has no such sightings).
+type duplicateTargetMarker interface {
+	MarkDuplicateTargetsSeen(ctx context.Context, tenantID shared.ID, fingerprints []string, scanID, tool string) (int64, error)
+}
+
+// sightDuplicateTargets records the scan as the latest sighting of the
+// findings that fingerprints (duplicates seen again) were folded into. Best
+// effort: a failure only means the target is not touched by this scan.
+func (p *FindingProcessor) sightDuplicateTargets(ctx context.Context, tenantID shared.ID, fingerprints []string, scanID, tool string) {
+	marker, ok := p.repo.(duplicateTargetMarker)
+	if !ok {
+		return
+	}
+	if _, err := marker.MarkDuplicateTargetsSeen(ctx, tenantID, fingerprints, scanID, tool); err != nil {
+		p.logger.Warn("duplicate targets not marked seen", "error", err)
+	}
+}
+
+// defaultBranchResolvedLookup finds which fingerprints belong to findings
+// closed as fixed that count on the default branch (not branch-only).
+type defaultBranchResolvedLookup interface {
+	DefaultBranchResolvedFingerprints(ctx context.Context, tenantID shared.ID, fingerprints []string) (map[string]bool, error)
+}
+
+// branchSighting is one finding of a report with the branch it was sighted on.
+type branchSighting struct {
+	fingerprint string
+	assetID     shared.ID
+	branchID    *shared.ID
+}
+
+// offDefaultBranchFingerprints returns the fingerprints this report sighted on
+// a branch that is not its repository's default branch. The default is the
+// stored one (a report cannot re-point it, see maybeSetDefaultBranch); when
+// the repository has none yet (not found), the report's own claim decides; any
+// other lookup error treats the branch as off-default. A report
+// without branch information is not a branch sighting.
+func (p *FindingProcessor) offDefaultBranchFingerprints(ctx context.Context, report *ctis.Report, findings []branchSighting) map[string]bool {
+	if p.branchRepo == nil || report.Metadata.Branch == nil {
+		return nil
+	}
+	off := make(map[string]bool)
+	isOff := make(map[shared.ID]bool)
+	for _, fm := range findings {
+		if fm.branchID == nil {
+			continue
+		}
+		v, ok := isOff[fm.assetID]
+		if !ok {
+			def, err := p.branchRepo.GetDefaultBranch(ctx, fm.assetID)
+			switch {
+			case err == nil && def != nil:
+				v = def.ID() != *fm.branchID
+			case err == nil || errors.Is(err, shared.ErrNotFound):
+				// No stored default yet: the report's claim decides.
+				v = !report.Metadata.Branch.IsDefaultBranch
+			default:
+				// The lookup failed: do not trust the report's claim (it is
+				// what a hostile upload would forge); treat the branch as
+				// off-default, which only withholds reopens.
+				p.logger.Warn("could not read the default branch; treating the sighted branch as off-default", "error", err)
+				v = true
+			}
+			isOff[fm.assetID] = v
+		}
+		if v {
+			off[fm.fingerprint] = true
+		}
+	}
+	return off
+}
+
+// withoutDefaultBranchResolved drops from fingerprints the ones sighted only
+// off the default branch (offDefault) whose finding is closed as fixed on the
+// default branch. A finding that exists only on branches (branch-only) still
+// reopens on its branch. When the lookup is unavailable or fails, every
+// off-default fingerprint is withheld: a missed reopen is repaired by the next
+// default-branch run, a wrongful one flips a person's decision.
+func (p *FindingProcessor) withoutDefaultBranchResolved(ctx context.Context, tenantID shared.ID, fingerprints []string, offDefault map[string]bool, output *Output) []string {
+	if len(offDefault) == 0 {
+		return fingerprints
+	}
+	candidates := make([]string, 0, len(offDefault))
+	for _, fp := range fingerprints {
+		if offDefault[fp] {
+			candidates = append(candidates, fp)
+		}
+	}
+	if len(candidates) == 0 {
+		return fingerprints
+	}
+	var resolved map[string]bool
+	if lookup, ok := p.repo.(defaultBranchResolvedLookup); ok {
+		r, err := lookup.DefaultBranchResolvedFingerprints(ctx, tenantID, candidates)
+		if err != nil {
+			p.logger.Warn("could not tell default-branch findings apart; off-default sightings reopen none", "error", err)
+		} else {
+			resolved = r
+		}
+	}
+	if resolved == nil {
+		resolved = make(map[string]bool, len(candidates))
+		for _, fp := range candidates {
+			resolved[fp] = true
+		}
+	}
+	kept := make([]string, 0, len(fingerprints))
+	for _, fp := range fingerprints {
+		if offDefault[fp] && resolved[fp] {
+			output.ReopensWithheld++
+			continue
+		}
+		kept = append(kept, fp)
+	}
+	return kept
 }

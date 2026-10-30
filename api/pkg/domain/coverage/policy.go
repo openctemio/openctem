@@ -17,8 +17,22 @@ const (
 	RequiresResolves = "resolves"
 	// RequiresWebPort: the open port is one of WebPorts.
 	RequiresWebPort = "web_port"
+	// RequiresWebPortOrUnscanned: a name is worth an HTTP probe: an
+	// address it resolves to has an open port in WebPorts, a web origin of
+	// the name was seen, or its ports are unknown (no port scan of the name
+	// or its addresses has succeeded and none of its addresses has an open
+	// port on record). A name whose port scan found no web port is not
+	// probed until one appears.
+	RequiresWebPortOrUnscanned = "web_port_or_unscanned"
 	// RequiresScopeEntry: an active scope entry covers the name.
 	RequiresScopeEntry = "scope_entry"
+	// RequiresNoNamedTwin: a web service is not only the address form of a
+	// named one: its URL host is an IP address, and no active web service
+	// reached by a host name serves that address on the same port. A named
+	// virtual host or a CDN-fronted application answers its bare address
+	// with a default page, so template checks run on the named service and
+	// the address twin would only repeat them on the wrong page.
+	RequiresNoNamedTwin = "no_named_twin"
 )
 
 // WebPorts are the ports an HTTP probe takes from an open port. A web
@@ -100,6 +114,10 @@ type Entry struct {
 	LastError     string     `json:"last_error,omitempty"`
 	LastTool      string     `json:"last_tool,omitempty"`
 	FailStreak    int        `json:"fail_streak,omitempty"`
+	// UnreachedFrom names the organization's own scan zone or sensor whose
+	// tasks found the target silent, for a pair paused for that (never a
+	// platform sensor: "" then, and for any other pair).
+	UnreachedFrom string `json:"unreached_from,omitempty"`
 	// Gap: the pair applies and has gone without a success for more than
 	// twice its cadence (or never succeeded since it was planned that
 	// long ago).
@@ -124,6 +142,11 @@ func IsGap(r Rule, row *Row, now time.Time) bool {
 	}
 	switch row.State {
 	case StateBlocked, StatePaused, StateNotApplicable:
+		return false
+	}
+	if row.LastOutcome == OutcomeNoAnswer {
+		// A name with no address is answered, and parked on its own
+		// recheck schedule (also while a recheck runs).
 		return false
 	}
 	since := row.CreatedAt
@@ -173,6 +196,9 @@ func fill(e *Entry, row *Row) {
 	e.State, e.Reason = row.State, row.Reason
 	e.NextDueAt, e.LastAttemptAt, e.LastSuccessAt = row.NextDueAt, row.LastAttemptAt, row.LastSuccessAt
 	e.LastOutcome, e.LastError, e.LastTool, e.FailStreak = row.LastOutcome, row.LastError, row.LastTool, row.FailStreak
+	if row.State == StatePaused && IsTargetSide(row.Reason) {
+		e.UnreachedFrom = row.UnreachedFromName
+	}
 }
 
 // Repository is the ledger as the coverage service needs it. Every method
@@ -196,6 +222,9 @@ type DueTarget struct {
 	Type       asset.AssetType
 	SubType    string
 	FailStreak int
+	// Waited is how long the pair has been due (DueBatch; zero for a pair
+	// taken within the lookahead, very long for one never scheduled).
+	Waited time.Duration
 }
 
 // Target is the scan target of an asset: its name, or "host:port" for an
@@ -221,6 +250,9 @@ type RunState struct {
 	// Unfinished are the targets the run did not finish.
 	Unfinished []string
 	QueuedAt   time.Time
+	// NoSensor: a step of the run ended NO_SENSOR (no sensor took its
+	// work before the run's deadline).
+	NoSensor bool
 }
 
 // Run outcomes recorded on settled pairs.
@@ -250,14 +282,30 @@ type FailedPair struct {
 	AssetID shared.ID
 	Outcome string
 	Error   string
+	// Observer is who saw a target-side outcome (ObserverKey); "" unknown.
+	Observer string
 }
 
 // Planner is the ledger as the planner needs it. Every method is scoped to
 // one tenant.
 type Planner interface {
-	// DueBatch returns up to limit due or failed pairs of a capability whose
-	// time has come, highest priority and oldest first, on active assets.
-	DueBatch(ctx context.Context, tenantID shared.ID, capability string, limit int) ([]DueTarget, error)
+	// DueBatch returns up to limit pairs of a capability whose time has
+	// come (due, failed after its back-off, covered past its cadence,
+	// blocked past its recheck), highest priority and oldest first, on
+	// active assets. When one of them is due now it also takes pairs due
+	// within lookahead; when none is due now it returns nothing.
+	DueBatch(ctx context.Context, tenantID shared.ID, capability string, limit int, lookahead time.Duration) ([]DueTarget, error)
+	// HasScopeEntries reports whether the tenant has an active scope entry.
+	HasScopeEntries(ctx context.Context, tenantID shared.ID) (bool, error)
+	// PausedForReadiness returns, per capability, the readiness reason its
+	// paused pairs carry.
+	PausedForReadiness(ctx context.Context, tenantID shared.ID) (map[string]string, error)
+	// PauseForReadiness pauses the capability's pairs whose time has come
+	// with a readiness reason; they may resume after retryAfter.
+	PauseForReadiness(ctx context.Context, tenantID shared.ID, capability, reason string, retryAfter time.Duration) (int, error)
+	// ResumeFromReadiness makes pairs paused for a readiness reason due
+	// again once their retry time has passed.
+	ResumeFromReadiness(ctx context.Context, tenantID shared.ID, capability string) (int, error)
 	// MarkQueued records that the pairs were handed to a run.
 	MarkQueued(ctx context.Context, tenantID shared.ID, capability string, assetIDs []shared.ID, runID shared.ID, tool string) error
 	// MarkBlocked records that the gate refused the pairs, with its code;
@@ -275,11 +323,44 @@ type Planner interface {
 	// SettleFailed settles queued pairs of a run as failed, each with its
 	// outcome and error, due again after a back-off bounded by every.
 	SettleFailed(ctx context.Context, tenantID, runID shared.ID, capability string, failed []FailedPair, every time.Duration) (int, error)
+	// SettleTargetSide settles queued pairs of a run whose target did not
+	// answer: paused with the outcome as the reason, the streak counted and
+	// rechecked on the TargetSideRecheck schedule.
+	SettleTargetSide(ctx context.Context, tenantID, runID shared.ID, capability string, pairs []FailedPair) (int, error)
+	// SettleNoAnswer settles queued resolve.dns pairs of a run whose name
+	// has no address: covered with OutcomeNoAnswer (the name is parked),
+	// the consecutive no-answer streak counted, and rechecked on the
+	// DeadNameRechecks schedule.
+	SettleNoAnswer(ctx context.Context, tenantID, runID shared.ID, capability string, assetIDs []shared.ID) (int, error)
+	// SettleUnresolved settles queued pairs of a run whose target the sensor
+	// could not resolve: blocked with the pair's Outcome as the reason
+	// (ReasonUnresolvable or ReasonResolverFailed), the streak counted and
+	// rechecked on the DeadNameRechecks schedule. Never a failure.
+	SettleUnresolved(ctx context.Context, tenantID, runID shared.ID, capability string, pairs []FailedPair) (int, error)
 	// QueuedTargets returns the queued pairs a run holds.
 	QueuedTargets(ctx context.Context, tenantID, runID shared.ID, capability string) ([]DueTarget, error)
 	// AttemptsSince counts the pairs of the tenant attempted since t (the
 	// daily budget).
 	AttemptsSince(ctx context.Context, tenantID shared.ID, t time.Time) (int, error)
+	// RecordRunClaim counts a finished run of the capability: unclaimed
+	// (no sensor took it) adds one to the hold's streak, any other run
+	// resets it. It returns the new streak.
+	RecordRunClaim(ctx context.Context, tenantID shared.ID, capability string, unclaimed bool) (int, error)
+	// Holds returns the tenant's holds with a streak, by capability.
+	Holds(ctx context.Context, tenantID shared.ID) (map[string]Hold, error)
+	// HoldCapability records the hold's fingerprint and probe time and
+	// pauses the capability with ReadyNotClaimed until probeAt: its pairs
+	// whose time has come, its failed pairs, and pairs paused for another
+	// readiness reason.
+	HoldCapability(ctx context.Context, tenantID shared.ID, capability, fingerprint string, probeAt time.Time) (int, error)
+	// ResumeNow makes the capability's pairs paused for a readiness reason
+	// due now, whatever their retry time.
+	ResumeNow(ctx context.Context, tenantID shared.ID, capability string) (int, error)
+	// FleetFingerprint is a hash of what decides whether the tenant's
+	// work can be claimed: its sensors (state, tools, capabilities, local
+	// policy), their grants, its zone assignments, its shared-fleet access
+	// and the platform sensors' state and tools. Server-side only.
+	FleetFingerprint(ctx context.Context, tenantID shared.ID) (string, error)
 }
 
 // CapabilityHealth is one tenant's coverage of one capability.
@@ -295,6 +376,14 @@ type CapabilityHealth struct {
 	// OK and NoOutput: pairs settled in the last 24 h with and without the
 	// expected output.
 	OK, NoOutput int
+	// Paused: pairs paused for a readiness reason; PausedReason is that
+	// reason (the planner keeps one per capability).
+	Paused       int
+	PausedReason string
+	// Unreachable: pairs paused because their target did not answer
+	// (unreachable, timeout) from the sensors that tried; rechecked on the
+	// TargetSideRecheck schedule. They are not counted in Gaps.
+	Unreachable int
 }
 
 // Alert kinds.
@@ -302,6 +391,9 @@ const (
 	AlertGap        = "gap"
 	AlertOutputDrop = "output_drop"
 	AlertFailing    = "failing"
+	// AlertUnreachable: targets of the capability did not answer from the
+	// organization's sensors (counts only, never the targets).
+	AlertUnreachable = "unreachable"
 )
 
 // Output-drop and failing thresholds (owner decision D4).
@@ -324,6 +416,9 @@ func (h CapabilityHealth) Alerts() []string {
 	if h.Failing > 0 {
 		out = append(out, AlertFailing)
 	}
+	if h.Unreachable > 0 {
+		out = append(out, AlertUnreachable)
+	}
 	return out
 }
 
@@ -332,7 +427,8 @@ type HealthReader interface {
 	// Health returns one entry per capability of the tenant's ledger;
 	// cadence gives the cadence of each capability (a missing one is a day).
 	Health(ctx context.Context, tenantID shared.ID, cadence map[string]time.Duration) ([]CapabilityHealth, error)
-	// ClaimAlert claims the right to send one alert key for ttl (at most
-	// once per ttl across replicas and restarts).
-	ClaimAlert(ctx context.Context, key string, ttl time.Duration) (bool, error)
+	// AlertStates returns the tenant's stored alert states.
+	AlertStates(ctx context.Context, tenantID shared.ID) ([]AlertState, error)
+	// SaveAlertStates upserts alert states of the tenant.
+	SaveAlertStates(ctx context.Context, tenantID shared.ID, states []AlertState) error
 }

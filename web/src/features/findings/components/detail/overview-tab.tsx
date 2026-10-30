@@ -20,16 +20,15 @@
  * them.
  */
 
+import { CveLink } from '@/features/vulnerabilities/components/cve-link'
+import { isCveId } from '@/features/vulnerabilities/lib/vuln-page'
 import { FindingLastSeenIn } from '../receipt-summary'
-import { useCallback, useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import Link from '@/components/link'
 import {
   ArrowUpRight,
   Bot,
-  Check,
-  Copy,
   ExternalLink,
-  FileCode2,
   FileText,
   Fingerprint,
   Terminal,
@@ -46,9 +45,9 @@ import {
   DetailSection,
   DetailSections,
 } from '@/features/shared/components/detail-sheet'
-import { copyToClipboard } from '@/lib/clipboard'
 import { UntrustedTextBlock } from '@/features/shared/components/untrusted-text-block'
 import { useTriageResult } from '@/features/ai-triage/api'
+import { AIBadge } from '@/features/shared/components/ai-badge'
 import { useRelatedCVEs } from '../../api/use-finding-groups'
 import { formatEpssPercentile } from '@/lib/epss'
 import { EpssChip } from '@/components/ui/epss-chip'
@@ -56,7 +55,6 @@ import { KevBadge } from '@/components/ui/kev-badge'
 import { cn, sanitizeExternalUrl } from '@/lib/utils'
 import type { FindingDetail } from '../../types'
 import { FINDING_TYPE_CONFIG } from '../../types'
-import { CodeHighlighter } from './code-highlighter'
 import { MetadataViewer } from './source-panels/metadata-viewer'
 import { SourceDataSection } from './source-data-section'
 import { VersionMatchPanel } from '@/features/vuln-matching/components/version-match-panel'
@@ -65,7 +63,7 @@ import { findingTypeSections } from './finding-type-details'
 import { assetDetailHref, isLinkableAssetId } from '../../lib/asset-link'
 import { findingAssetTypeLabel } from '../../lib/finding-asset-type'
 import { HUMAN_SOURCES, findingDescription } from '../../lib/finding-detail'
-import { buildRepositoryCodeUrl } from '../../lib/repository-url'
+import { FindingCodeLocation, codeLocationOf } from './finding-code-location'
 import { FindingIssueGroupSection } from './finding-issue-group-section'
 import { FindingIdentitySection } from './finding-identity-section'
 
@@ -151,7 +149,7 @@ export function OverviewTab({ finding }: OverviewTabProps) {
       {findingTypeSections(finding)}
 
       {(finding.filePath || finding.snippet || finding.contextSnippet) && (
-        <CodeLocationSection finding={finding} />
+        <FindingCodeLocation location={codeLocationOf(finding)} />
       )}
 
       <FindingIssueGroupSection findingId={finding.id} />
@@ -303,24 +301,6 @@ export function OverviewTab({ finding }: OverviewTabProps) {
   )
 }
 
-const CVE_RE = /^CVE-\d{4}-\d{4,}$/
-
-/** A CVE id as an NVD link, or as text when it is not a well-formed CVE id. */
-function CveLink({ id }: { id: string }) {
-  if (!CVE_RE.test(id)) return <Mono>{id}</Mono>
-  return (
-    <a
-      href={`https://nvd.nist.gov/vuln/detail/${encodeURIComponent(id)}`}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="inline-flex items-center gap-1 font-mono text-[13px] text-primary hover:underline"
-    >
-      {id}
-      <ExternalLink className="h-3 w-3" aria-hidden />
-    </a>
-  )
-}
-
 function formatDay(iso: string, locale: string): string {
   return new Date(iso).toLocaleDateString(locale, {
     month: 'short',
@@ -345,14 +325,13 @@ function ScannerOutputSection({ output }: { output: NonNullable<FindingDetail['s
         {t('findings.overviewTab.printedProof', 'What the scanner printed as its proof')}
         {output.updatedAt && (
           <>
-            {' '}
-            ·{' '}
+            ,{' '}
             {t('findings.overviewTab.fromSighting', 'from the sighting of {date}', {
               date: formatDay(output.updatedAt, locale),
             })}
           </>
         )}
-        {output.truncated && <> · {t('findings.overviewTab.cutAt', 'cut at 64 KiB')}</>}.{' '}
+        {output.truncated && <>, {t('findings.overviewTab.cutAt', 'cut at 64 KiB')}</>}.{' '}
         {t('findings.overviewTab.shownPlain', 'Shown as plain text.')}
       </p>
       <DetailDisclosure summary={t('findings.overviewTab.showOutput', 'Show output')}>
@@ -374,7 +353,7 @@ function IdentifiersSection({ finding }: { finding: FindingDetail }) {
   const allCves = Array.from(
     new Set([...(finding.cve ? [finding.cve] : []), ...(sf?.cveIds ?? [])])
   )
-  const primaryCve = finding.cve && CVE_RE.test(finding.cve) ? finding.cve : null
+  const primaryCve = finding.cve && isCveId(finding.cve) ? finding.cve : null
   const { data: related } = useRelatedCVEs(primaryCve)
   const relatedCves = (related?.related_cves ?? []).filter((r) => !allCves.includes(r.cve_id))
   const v3 =
@@ -384,7 +363,7 @@ function IdentifiersSection({ finding }: { finding: FindingDetail }) {
     (finding.cvssVector && !finding.cvssVector.startsWith('CVSS:') ? finding.cvssVector : undefined)
   const otherVector = finding.cvssVector && finding.cvssVector !== v3 && finding.cvssVector !== v2
   const port = sf?.networkPort
-    ? `${sf.networkPort}${sf.networkTransport ? `/${sf.networkTransport}` : ''}${sf.networkService ? ` · ${sf.networkService}` : ''}`
+    ? `${sf.networkPort}${sf.networkTransport ? `/${sf.networkTransport}` : ''}${sf.networkService ? `, ${sf.networkService}` : ''}`
     : sf?.networkService
   const show =
     finding.cvss !== undefined ||
@@ -410,7 +389,7 @@ function IdentifiersSection({ finding }: { finding: FindingDetail }) {
             <span className="tabular-nums">
               {finding.cvss.toFixed(1)}
               {sf?.cvssVersion && (
-                <span className="text-muted-foreground"> · v{sf.cvssVersion}</span>
+                <span className="text-muted-foreground">, v{sf.cvssVersion}</span>
               )}
             </span>
           ) : null}
@@ -425,8 +404,7 @@ function IdentifiersSection({ finding }: { finding: FindingDetail }) {
               />
               {finding.epssPercentile !== undefined && (
                 <span className="text-muted-foreground">
-                  {' '}
-                  ·{' '}
+                  ,{' '}
                   {t('findings.overviewTab.percentile', '{value} percentile', {
                     value: formatEpssPercentile(finding.epssPercentile, 0),
                   })}
@@ -447,7 +425,7 @@ function IdentifiersSection({ finding }: { finding: FindingDetail }) {
               {sf.vprScore.toFixed(1)}
               <span className="text-muted-foreground">
                 {' '}
-                · {t('findings.overviewTab.notUsedForPriority', 'not used for priority')}
+                , {t('findings.overviewTab.notUsedForPriority', 'not used for priority')}
               </span>
             </span>
           ) : null}
@@ -534,7 +512,7 @@ function IdentifiersSection({ finding }: { finding: FindingDetail }) {
                 ransomware={adv.kev.ransomwareUse === 'Known'}
               />
               <span>
-                {t('findings.overviewTab.kevListed', 'Added {added} · due {due}', {
+                {t('findings.overviewTab.kevListed', 'Added {added}, due {due}', {
                   added: adv.kev.dateAdded.slice(0, 10),
                   due: adv.kev.dueDate.slice(0, 10),
                 })}
@@ -569,105 +547,6 @@ function IdentifiersSection({ finding }: { finding: FindingDetail }) {
 }
 
 /** File, lines and the code around them. */
-function CodeLocationSection({ finding }: { finding: FindingDetail }) {
-  const { t } = useTranslation()
-  const [copied, setCopied] = useState(false)
-  const code = finding.contextSnippet || finding.snippet
-  const startLine = finding.contextSnippet ? finding.contextStartLine || 1 : finding.startLine || 1
-  const lines =
-    finding.startLine !== undefined && finding.startLine > 0
-      ? `${finding.startLine}${finding.endLine && finding.endLine !== finding.startLine ? `–${finding.endLine}` : ''}`
-      : ''
-  const repoUrl = buildRepositoryCodeUrl({
-    repositoryUrl: finding.repositoryUrl || finding.assets[0]?.url,
-    filePath: finding.filePath,
-    startLine: finding.startLine,
-    endLine: finding.endLine,
-    branch: finding.branch,
-    commitSha: finding.commitSha,
-  })
-
-  const copy = useCallback(async () => {
-    if (code && (await copyToClipboard(code))) {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
-    }
-  }, [code])
-
-  return (
-    <DetailSection
-      title={t('findings.overviewTab.codeLocation', 'Code location')}
-      icon={FileCode2}
-      actions={
-        repoUrl ? (
-          <a
-            href={sanitizeExternalUrl(repoUrl)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-          >
-            {t('findings.overviewTab.viewInRepo', 'View in repository')}
-            <ExternalLink className="h-3 w-3" aria-hidden />
-          </a>
-        ) : undefined
-      }
-    >
-      {finding.filePath && (
-        <p className="font-mono text-[13px] break-all">
-          {finding.filePath}
-          {lines && <span className="text-muted-foreground">:{lines}</span>}
-        </p>
-      )}
-      {(finding.branch || finding.commitSha) && (
-        <p className="text-xs text-muted-foreground">
-          {finding.branch && (
-            <>
-              {t('findings.overviewTab.branch', 'Branch')}{' '}
-              <span className="font-mono">{finding.branch}</span>
-            </>
-          )}
-          {finding.branch && finding.commitSha && ' · '}
-          {finding.commitSha && (
-            <>
-              {t('findings.overviewTab.commit', 'Commit')}{' '}
-              <span className="font-mono">{finding.commitSha.slice(0, 10)}</span>
-            </>
-          )}
-        </p>
-      )}
-      {code && (
-        <div className="overflow-hidden rounded-lg border bg-muted/30">
-          <div className="flex items-center justify-between border-b bg-muted/50 px-3 py-1.5">
-            <span className="text-xs text-muted-foreground">
-              {finding.contextSnippet
-                ? t('findings.overviewTab.snippetCtx', 'Snippet with context')
-                : t('findings.overviewTab.snippet', 'Snippet')}
-            </span>
-            <button
-              type="button"
-              onClick={() => void copy()}
-              className="rounded-sm p-1 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-              aria-label={t('findings.overviewTab.copyCode', 'Copy code')}
-            >
-              {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-            </button>
-          </div>
-          <div className="overflow-x-auto p-3">
-            <CodeHighlighter
-              code={code}
-              filePath={finding.filePath}
-              className="bg-transparent"
-              showLineNumbers
-              startLine={startLine}
-              highlightLine={finding.startLine}
-            />
-          </div>
-        </div>
-      )}
-    </DetailSection>
-  )
-}
-
 /** How likely the model thinks the finding is a false positive (a suggestion). */
 function AIFalsePositiveLikelihood({ data }: { data: AITriageSummaryData }) {
   if (data.falsePositiveLikelihood === undefined) return null
@@ -682,7 +561,8 @@ function AITriageSummary({ data }: { data: AITriageSummaryData }) {
       title={t('findings.overviewTab.aiAnalysis', 'AI analysis')}
       icon={Bot}
       actions={
-        <span className="text-xs text-muted-foreground">
+        <span className="flex items-center gap-2 text-xs text-muted-foreground">
+          <AIBadge source="ai_builtin" />
           {new Date(data.createdAt).toLocaleDateString(locale, {
             month: 'short',
             day: 'numeric',

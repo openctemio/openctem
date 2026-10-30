@@ -110,12 +110,12 @@ type TypeDefinition struct {
 	Sections       []string              `json:"sections"`
 	Relationships  TypeRelationships     `json:"relationships"`
 	// ScannableBy lists the tool target types (supported_targets) that can
-	// scan the type (RFC-042 §6.3.8 R5).
+	// scan the type.
 	ScannableBy []string `json:"scannable_by"`
 	// ExposureDefault is the exposure the type has by nature ("" = none).
 	ExposureDefault string `json:"exposure_default,omitempty"`
 	// Coverage lists the capabilities an asset of the type needs and how
-	// often (RFC-093). An alias has its own list or none.
+	// often. An alias has its own list or none.
 	Coverage []CoverageRule `json:"coverage,omitempty"`
 }
 
@@ -128,8 +128,11 @@ type CoverageRule struct {
 	EverySeconds int `json:"every_seconds"`
 	// Requires are predicates over stored facts that must hold for the
 	// rule to apply: "resolves" (the name has an address), "web_port" (an
-	// open port in the web port set), "scope_entry" (an active scope entry
-	// covers the asset).
+	// open port in the web port set), "web_port_or_unscanned" (a web port
+	// or web origin was seen on the name, or no port scan has finished on
+	// it or its addresses yet), "scope_entry" (an active scope entry covers
+	// the asset), "no_named_twin" (a web service reached by IP is not also
+	// served, same address and port, by a service reached by a host name).
 	Requires []string `json:"requires,omitempty"`
 	// Expects names the type a successful run must produce for the asset
 	// ("" = no output is expected): the output check of the coverage gap

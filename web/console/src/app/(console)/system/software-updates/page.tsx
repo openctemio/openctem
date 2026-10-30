@@ -3,11 +3,11 @@
 import { Main } from '@/components/layout'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
-import { ErrorState, PageHeader } from '@/features/shared'
+import { ErrorState, PageHeader, PageStack } from '@/features/shared'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { useVersionCheck } from '@console/features/admin-console/api/use-version-check'
 import { SoftwareUpdatesPanel } from '@console/features/admin-console/components/software-updates-panel'
-import { adminCan } from '@console/features/admin-console/types'
+import { adminHas } from '@console/features/admin-console/types'
 
 /**
  * System -> Software updates: newer releases and the security advisories
@@ -21,14 +21,14 @@ export default function SoftwareUpdatesPage() {
 
   return (
     <Main>
-      <PageHeader
-        title={t('admin.nav.softwareUpdates', 'Software updates')}
-        description={t(
-          'admin.versionCheck.pageDescription',
-          'Newer releases and security advisories for this instance, from the signed release feed.'
-        )}
-      />
-      <div className="mt-5">
+      <PageStack>
+        <PageHeader
+          title={t('admin.nav.softwareUpdates', 'Software updates')}
+          description={t(
+            'admin.versionCheck.pageDescription',
+            'Newer releases and security advisories for this instance, from the signed release feed.'
+          )}
+        />
         {error ? (
           <ErrorState
             title={t('admin.versionCheck.errorSubject', 'the release information')}
@@ -40,11 +40,11 @@ export default function SoftwareUpdatesPage() {
         ) : (
           <SoftwareUpdatesPanel
             status={data}
-            canImport={adminCan(me.role, 'super_admin')}
+            canImport={adminHas(me, 'platform.settings.general.write')}
             onChanged={() => void mutate()}
           />
         )}
-      </div>
+      </PageStack>
     </Main>
   )
 }

@@ -2,6 +2,7 @@ package admin
 
 import (
 	"encoding/json"
+	"net/url"
 	"strings"
 	"time"
 
@@ -294,6 +295,8 @@ func redactFields(data map[string]interface{}, sensitiveFields []string) {
 		// Check if this key should be redacted
 		if isSensitiveKey(key, sensitiveFields) {
 			data[key] = "[REDACTED]"
+		} else if str, ok := value.(string); ok && isURLKey(key) {
+			data[key] = redactURL(str)
 		}
 
 		// Recurse into nested maps
@@ -308,6 +311,31 @@ func redactFields(data map[string]interface{}, sensitiveFields []string) {
 			}
 		}
 	}
+}
+
+// isURLKey matches request fields that carry an address (url, webhook_url,
+// issuer_url, base_url...). A webhook address works as a bearer secret (its
+// path or query is the credential), so only its origin is recorded.
+func isURLKey(key string) bool {
+	lower := strings.ToLower(key)
+	return lower == "url" || strings.HasSuffix(lower, "_url") || strings.HasSuffix(lower, "url") || strings.Contains(lower, "webhook")
+}
+
+// redactURL keeps the scheme and host of an address and drops the user
+// information, path, query and fragment, which can hold a credential.
+func redactURL(raw string) string {
+	if strings.TrimSpace(raw) == "" {
+		return raw
+	}
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Host == "" {
+		return "[REDACTED]"
+	}
+	out := u.Scheme + "://" + u.Host
+	if (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
+		out += "/[REDACTED]"
+	}
+	return out
 }
 
 // =============================================================================

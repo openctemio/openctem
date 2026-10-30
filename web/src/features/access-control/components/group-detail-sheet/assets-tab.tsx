@@ -1,12 +1,11 @@
+import { useTranslation } from '@/context/i18n-provider'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Input } from '@/components/ui/input'
 import {
   Box,
   Plus,
   Trash2,
-  Search,
   Globe,
   Database,
   Server,
@@ -18,6 +17,7 @@ import {
 import { DataTableRowActions, EmptyState } from '@/features/shared'
 import { type GroupAsset } from '@/features/access-control'
 import { useState, useEffect } from 'react'
+import { ListSearch } from '@/features/shared/components/list-search'
 
 interface AssetsTabProps {
   assets: GroupAsset[]
@@ -44,6 +44,7 @@ export function AssetsTab({
   onBulkAddAssets,
   onRemoveAsset,
 }: AssetsTabProps) {
+  const { t } = useTranslation()
   const [searchQuery, setSearchQuery] = useState('')
 
   // Reset to first page when search query changes
@@ -99,15 +100,12 @@ export function AssetsTab({
         </div>
       </div>
 
-      <div className="relative mb-4">
-        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-        <Input
-          placeholder="Search assets..."
-          className="ps-9"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-        />
-      </div>
+      <ListSearch
+        className="mb-4"
+        value={searchQuery}
+        onChange={setSearchQuery}
+        placeholder={t('org.teamAssets.search', 'Search assets…')}
+      />
 
       {isLoading ? (
         <div className="space-y-3">
@@ -143,7 +141,6 @@ export function AssetsTab({
                   </div>
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <span className="capitalize">{item.asset?.type || 'Unknown Type'}</span>
-                    <span>•</span>
                     <span className="capitalize">{item.asset?.status || 'Unknown Status'}</span>
                   </div>
                 </div>
@@ -153,7 +150,7 @@ export function AssetsTab({
                   <DataTableRowActions
                     actions={[
                       {
-                        label: 'Remove',
+                        label: t('org.teamAssets.remove', 'Remove'),
                         icon: Trash2,
                         destructive: true,
                         onClick: () => onRemoveAsset(item.asset_id, item.asset?.name || 'Asset'),

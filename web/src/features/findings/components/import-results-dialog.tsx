@@ -11,6 +11,7 @@
 import { useTranslation } from '@/context/i18n-provider'
 import { useState } from 'react'
 import { toast } from 'sonner'
+import { safeText } from '@/lib/api/error-message'
 import { AlertTriangle, FileUp, Loader2 } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
@@ -27,6 +28,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 
 import {
   FindingImportError,
@@ -45,6 +47,7 @@ import {
 import { MappingFormatField } from './mapping-format-field'
 import { ReceiptSummary, RecentImports } from './receipt-summary'
 
+const ACCEPT_RECON = '.zip,application/zip'
 const ACCEPT = '.nessus,.xml,.json,.zip,application/xml,text/xml,application/json,application/zip'
 /** A saved import mapping reads CSV, JSON, JSON Lines or XML. */
 const ACCEPT_MAPPED =
@@ -70,6 +73,9 @@ export function ImportResultsDialog({
   const [kb, setKb] = useState<File | null>(null)
   // A saved import mapping as the format; empty: detect it from the file.
   const [format, setFormat] = useState('')
+  // 'tool': another tool's export (detected). 'recon': a reconFTW results
+  // directory as a ZIP; the server detects it from the layout.
+  const [source, setSource] = useState<'tool' | 'recon'>('tool')
   const [busy, setBusy] = useState<'preview' | 'import' | null>(null)
   const [preview, setPreview] = useState<FindingImportResponse | null>(null)
   const [result, setResult] = useState<FindingImportResponse | null>(null)
@@ -79,6 +85,7 @@ export function ImportResultsDialog({
     setFile(null)
     setKb(null)
     setFormat('')
+    setSource('tool')
     setPreview(null)
     setResult(null)
     setError(null)
@@ -91,10 +98,10 @@ export function ImportResultsDialog({
     try {
       const resp = await importFindings({
         file,
-        knowledgeBase: format ? null : kb,
+        knowledgeBase: format || source === 'recon' ? null : kb,
         dryRun,
         minSeverity,
-        format: format || undefined,
+        format: source === 'recon' ? undefined : format || undefined,
       })
       if (dryRun) {
         setPreview(resp)
@@ -121,7 +128,10 @@ export function ImportResultsDialog({
           ),
         })
       } else if (e instanceof FindingImportError) {
-        setError({ message: e.message, file: e.file })
+        setError({
+          message: safeText(e.message, t('findings.importResults.failed', 'The import failed')),
+          file: e.file,
+        })
       } else {
         setError({ message: t('findings.importResults.failed', 'The import failed') })
       }
@@ -156,20 +166,54 @@ export function ImportResultsDialog({
         <DialogBody className="grid gap-4">
           {!result && (
             <div className="space-y-3">
-              <MappingFormatField
-                value={format}
-                onChange={(v) => {
-                  setFormat(v)
+              <RadioGroup
+                value={source}
+                onValueChange={(v) => {
+                  setSource(v as 'tool' | 'recon')
+                  setFormat('')
+                  setFile(null)
                   setPreview(null)
                   setError(null)
                 }}
-              />
+                aria-label={t('findings.importResults.sourceLabel', 'What you are importing')}
+              >
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem value="tool" id="import-source-tool" />
+                  <Label htmlFor="import-source-tool">
+                    {t('findings.importResults.sourceTool', 'Results from a security tool')}
+                  </Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem value="recon" id="import-source-recon" />
+                  <Label htmlFor="import-source-recon">
+                    {t('findings.importResults.sourceRecon', 'Recon results (reconFTW directory)')}
+                  </Label>
+                </div>
+              </RadioGroup>
+              {source === 'recon' && (
+                <p className="text-muted-foreground text-xs" data-testid="recon-hint">
+                  {t(
+                    'findings.importResults.reconHint',
+                    'Upload the results directory of a reconFTW run as one ZIP. Preview first: it lists the hosts outside your scope, which wait for review and are never scanned, the files skipped on purpose (people and credential data) and the files that are not recognized. A recon import never closes findings.'
+                  )}
+                </p>
+              )}
+              {source === 'tool' && (
+                <MappingFormatField
+                  value={format}
+                  onChange={(v) => {
+                    setFormat(v)
+                    setPreview(null)
+                    setError(null)
+                  }}
+                />
+              )}
               <div className="space-y-1">
                 <Label htmlFor="import-file">{t('findings.importResults.file', 'File')}</Label>
                 <Input
                   id="import-file"
                   type="file"
-                  accept={format ? ACCEPT_MAPPED : ACCEPT}
+                  accept={source === 'recon' ? ACCEPT_RECON : format ? ACCEPT_MAPPED : ACCEPT}
                   onChange={(e) => {
                     setFile(e.target.files?.[0] ?? null)
                     setPreview(null)
@@ -177,7 +221,7 @@ export function ImportResultsDialog({
                   }}
                 />
               </div>
-              {!format && (
+              {!format && source === 'tool' && (
                 <div className="space-y-1">
                   <Label htmlFor="import-kb">
                     {t('findings.importResults.qualysKb', 'Qualys KnowledgeBase')}{' '}
@@ -298,7 +342,7 @@ function IssueList({ issues }: { issues: NonNullable<ImportFileResponse['issues'
 function Count({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-md border px-2 py-1">
-      <div className="text-muted-foreground text-[11px]">{label}</div>
+      <div className="text-muted-foreground text-xs">{label}</div>
       <div className="font-medium tabular-nums">{value}</div>
     </div>
   )
@@ -347,6 +391,7 @@ function FileSummary({ file, dryRun }: { file: ImportFileResponse; dryRun: boole
               ))}
             </div>
           )}
+          {file.layout && <ReconSummary file={file} />}
           {(stats?.skipped ?? 0) > 0 && (
             <p className="text-muted-foreground text-xs">
               {t('findings.importResults.skipped', '{count} records skipped.', {
@@ -418,22 +463,97 @@ function FileSummary({ file, dryRun }: { file: ImportFileResponse; dryRun: boole
         </div>
       )}
       {file.unmapped && file.unmapped.length > 0 && (
-        <Collapsible>
-          <CollapsibleTrigger className="text-muted-foreground text-xs underline">
-            {t('findings.importResults.unmapped', '{count} source fields not recognized', {
-              count: file.unmapped.length,
+        <PathList
+          paths={file.unmapped.map((p) => ({ path: p }))}
+          total={file.unmapped_total ?? file.unmapped.length}
+          label={
+            file.layout
+              ? t('findings.importResults.unmappedFiles', '{count} files not recognized', {
+                  count: file.unmapped_total ?? file.unmapped.length,
+                })
+              : t('findings.importResults.unmapped', '{count} source fields not recognized', {
+                  count: file.unmapped.length,
+                })
+          }
+        />
+      )}
+    </div>
+  )
+}
+
+/** A collapsible list of paths from an uploaded file, each with an optional reason. */
+function PathList({
+  paths,
+  total,
+  label,
+}: {
+  paths: { path: string; reason?: string }[]
+  total: number
+  label: string
+}) {
+  const { t } = useTranslation()
+  return (
+    <Collapsible>
+      <CollapsibleTrigger className="text-muted-foreground text-xs underline">
+        {label}
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <ul className="mt-1 max-h-32 overflow-y-auto font-mono text-xs">
+          {paths.map((p) => (
+            <li key={p.path} className="break-all">
+              {p.path}
+              {p.reason ? (
+                <span className="text-muted-foreground font-sans"> ({p.reason})</span>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+        {total > paths.length && (
+          <p className="text-muted-foreground mt-1 text-xs">
+            {t('findings.importResults.listCut', 'Showing {shown} of {total}.', {
+              shown: paths.length,
+              total,
             })}
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            <ul className="mt-1 max-h-32 overflow-y-auto font-mono text-[11px]">
-              {file.unmapped.map((p) => (
-                <li key={p} className="break-all">
-                  {p}
-                </li>
-              ))}
-            </ul>
-          </CollapsibleContent>
-        </Collapsible>
+          </p>
+        )}
+      </CollapsibleContent>
+    </Collapsible>
+  )
+}
+
+/** What a recon directory import adds to the summary: layout, endpoints, candidates, skipped files. */
+function ReconSummary({ file }: { file: ImportFileResponse }) {
+  const { t } = useTranslation()
+  const skipped = file.skipped_by_policy ?? []
+  return (
+    <div className="space-y-2" data-testid="recon-summary">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <Count
+          label={t('findings.importResults.endpoints', 'Endpoints')}
+          value={file.stats?.endpoints ?? 0}
+        />
+        <Count
+          label={t('findings.importResults.candidates', 'Hosts outside your scope')}
+          value={file.candidates ?? 0}
+        />
+      </div>
+      {(file.candidates ?? 0) > 0 && (
+        <p className="text-xs" data-testid="recon-candidates">
+          {t(
+            'findings.importResults.candidatesNote',
+            '{count} hosts are outside your scope. They wait for review, are never scanned, and their findings are tagged candidate.',
+            { count: file.candidates ?? 0 }
+          )}
+        </p>
+      )}
+      {skipped.length > 0 && (
+        <PathList
+          paths={skipped.map((p) => ({ path: p.path ?? '', reason: p.reason }))}
+          total={file.skipped_by_policy_total ?? skipped.length}
+          label={t('findings.importResults.skippedByPolicy', '{count} files skipped on purpose', {
+            count: file.skipped_by_policy_total ?? skipped.length,
+          })}
+        />
       )}
     </div>
   )

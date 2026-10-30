@@ -94,6 +94,7 @@ func bsHandler(calls *bsCalls, failing bool) *BootstrapHandler {
 			return 4, nil
 		},
 		TenantCreationMode: func(context.Context) string { return "admin_only" },
+		EmailDelivery:      func() bool { return true },
 		Announcements: func(context.Context) ([]AnnouncementResponse, error) {
 			if failing {
 				return nil, fail
@@ -132,6 +133,9 @@ func TestBootstrapSession_FillsTheCallersOwnData(t *testing.T) {
 	}
 	if resp.TenantCreationMode != "admin_only" {
 		t.Fatalf("tenant_creation_mode = %q", resp.TenantCreationMode)
+	}
+	if resp.EmailDelivery == nil || !*resp.EmailDelivery {
+		t.Fatalf("email_delivery = %v, want true", resp.EmailDelivery)
 	}
 	if resp.Announcements == nil || len(*resp.Announcements) != 1 || (*resp.Announcements)[0].ID != "a1" {
 		t.Fatalf("announcements = %+v, want the active notices", resp.Announcements)
@@ -265,5 +269,73 @@ func TestBootstrapSession_NothingWithoutAValidIdentity(t *testing.T) {
 
 	if resp.User != nil || resp.Tenants != nil || resp.Badges != nil {
 		t.Fatalf("session parts filled without a valid tenant: %+v", resp)
+	}
+}
+
+// A server that cannot send email says so explicitly: "false" must reach the
+// client (the members page and the auth forms switch to the copy-the-link
+// flows from it without asking GET /auth/providers), and an unwired source
+// leaves the field out so the client falls back to that endpoint.
+func TestBootstrapSession_EmailDeliveryFalseIsSent(t *testing.T) {
+	h := (&BootstrapHandler{logger: logger.NewNop()}).WithSession(BootstrapSession{
+		EmailDelivery: func() bool { return false },
+	})
+	resp := withModules()
+	h.addSession(bsRequest(t, bsUserEntity(t, bsUser), nil, false), resp, bsTenant, bsUser)
+	body, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), `"email_delivery":false`) {
+		t.Fatalf("body = %s, want an explicit email_delivery false", body)
+	}
+
+	unwired := (&BootstrapHandler{logger: logger.NewNop()}).WithSession(BootstrapSession{})
+	resp = withModules()
+	unwired.addSession(bsRequest(t, bsUserEntity(t, bsUser), nil, false), resp, bsTenant, bsUser)
+	body, err = json.Marshal(resp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(body), "email_delivery") {
+		t.Fatalf("body = %s, want no email_delivery when the source is not wired", body)
+	}
+}
+
+// The sidebar pins ride in the bootstrap, read for the bootstrap request's own
+// caller (the same request, so the same token, tenant and data scope).
+func TestBootstrapSession_PinsAreTheCallersOwn(t *testing.T) {
+	var seen *http.Request
+	n := int64(4)
+	h := (&BootstrapHandler{logger: logger.NewNop()}).WithSession(BootstrapSession{
+		Pins: func(r *http.Request) (*NavPinsResponse, error) {
+			seen = r
+			return &NavPinsResponse{Data: []NavPinResponse{{Kind: "quick_view", Ref: "needs_triage", Count: &n}}, Max: 12}, nil
+		},
+	})
+	req := bsRequest(t, bsUserEntity(t, bsUser), nil, false)
+	resp := withModules()
+	h.addSession(req, resp, bsTenant, bsUser)
+	if seen != req {
+		t.Fatal("pins were not read for the bootstrap request's own caller")
+	}
+	if resp.Pins == nil || len(resp.Pins.Data) != 1 || *resp.Pins.Data[0].Count != 4 {
+		t.Fatalf("pins = %+v", resp.Pins)
+	}
+}
+
+// A failed pins read is left out, so the client asks GET /me/pins itself.
+func TestBootstrapSession_FailingPinsAreLeftOut(t *testing.T) {
+	h := (&BootstrapHandler{logger: logger.NewNop()}).WithSession(BootstrapSession{
+		Pins: func(*http.Request) (*NavPinsResponse, error) { return nil, errors.New("down") },
+	})
+	resp := withModules()
+	h.addSession(bsRequest(t, bsUserEntity(t, bsUser), nil, false), resp, bsTenant, bsUser)
+	if resp.Pins != nil {
+		t.Fatalf("pins = %+v, want omitted after a failure", resp.Pins)
+	}
+	body, _ := json.Marshal(resp)
+	if strings.Contains(string(body), `"pins"`) {
+		t.Fatalf("body = %s, want no pins field", body)
 	}
 }

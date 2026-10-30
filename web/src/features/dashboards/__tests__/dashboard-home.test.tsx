@@ -30,6 +30,8 @@ const api = vi.hoisted(() => ({
   orgError: undefined as Error | undefined,
   create: vi.fn(),
   update: vi.fn(),
+  addFlow: vi.fn(),
+  undoFlow: vi.fn(),
 }))
 vi.mock('../api/use-dashboards-api', () => ({
   useMyDashboards: () => ({ data: { data: api.mine }, isLoading: false }),
@@ -41,6 +43,8 @@ vi.mock('../api/use-dashboards-api', () => ({
   useRevalidateAllDashboards: () => async () => {},
   DASHBOARDS_KEY: '/api/v1/me/dashboards',
   createDashboard: api.create,
+  addFlowPanel: api.addFlow,
+  undoFlowPanel: api.undoFlow,
   updateDashboard: api.update,
   setDefaultDashboard: vi.fn(),
   setOrgDefaultDashboard: vi.fn(),
@@ -154,8 +158,11 @@ describe('DashboardHome', () => {
     const metrics = input.layout.map(
       (w) => (w as unknown as { config: { data: { metric: string } } }).config.data.metric
     )
-    // The CTEM story leads: active exposure, then the loop, fix next and attack paths.
-    expect(metrics.indexOf('ctem.loop')).toBe(4)
+    // The CTEM story leads: the levers, the exposure flow (with the five
+    // stages) and the key figures, then the brief, fix next and attack paths.
+    expect(metrics.slice(0, 3)).toEqual(['exposure.levers', 'exposure.flow', 'exposure.kpis'])
+    expect(metrics).toContain('brief.weekly')
+    expect(metrics).toContain('ingest.intake')
     expect(metrics).toContain('fix.next')
     expect(metrics).toContain('attack_paths.to_crown_jewels')
     rerender(
@@ -260,7 +267,9 @@ describe('DashboardHome', () => {
     await userEvent.click(screen.getByRole('button', { name: 'More dashboard actions' }))
     await userEvent.click(screen.getByRole('menuitem', { name: 'Delete' }))
     const dialog = await screen.findByRole('alertdialog')
-    expect(dialog).toHaveTextContent('Copies you shared and your data are not affected')
+    expect(dialog).toHaveTextContent(
+      'Copies you shared and the data behind the widgets are not affected'
+    )
     expect(dialog).not.toHaveTextContent('for everyone')
   })
 
@@ -348,7 +357,7 @@ describe('DashboardHome', () => {
     data.byKey['personal:p1'] = snapshot('personal', 5)
     renderHome('vi')
     expect(screen.getByText('Phạm vi của bạn')).toBeInTheDocument()
-    expect(screen.getByText('Finding đang mở')).toBeInTheDocument()
+    expect(screen.getByText('Phát hiện đang mở')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Làm mới ngay' })).toBeInTheDocument()
   })
 })
@@ -381,7 +390,7 @@ describe('DashboardHome new layout hint', () => {
     api.mine = [overviewCopy('d1')]
     renderHome()
     const hint = await screen.findByTestId('layout-hint')
-    expect(hint).toHaveTextContent('New on the Overview layout: Time to fix')
+    expect(hint).toHaveTextContent('New on the Overview layout: What would cut exposure most')
     expect(within(hint).getByRole('button', { name: 'Add them to this dashboard' })).toBeVisible()
     expect(within(hint).getByRole('button', { name: 'Switch to the new layout' })).toBeVisible()
     expect(api.update).not.toHaveBeenCalled()
@@ -401,17 +410,19 @@ describe('DashboardHome new layout hint', () => {
     expect(id).toBe('d1')
     expect(input.name).toBe('Overview')
     expect(input.layout.map((w) => w.config.data.metric)).toEqual([
+      // The copy's own figures keep their place.
       'exposure.priority_open',
       'intel.kev_open',
       'sla.within',
-      'fix.time_to_fix',
-      'coverage.discovery',
+      'exposure.levers',
+      'exposure.flow',
+      'exposure.kpis',
+      'brief.weekly',
+      'attack_paths.to_crown_jewels',
       'exposure.open_by_priority',
-      'ctem.loop',
       'flow.new_vs_fixed',
       'findings.age_bands',
       'fix.next',
-      'attack_paths.to_crown_jewels',
       // The person's own extra widget stays.
       'sla.at_risk',
     ])
@@ -468,5 +479,96 @@ describe('DashboardHome new layout hint', () => {
     renderHome()
     expect(await screen.findByTestId('dashboard-freshness')).toBeInTheDocument()
     expect(screen.queryByTestId('layout-hint')).toBeNull()
+  })
+})
+
+describe('DashboardHome exposure flow panel', () => {
+  const eligible = (id: string, extra: Partial<Dashboard> = {}): Dashboard =>
+    dash(id, 'Mine', { kind: 'personal', is_default: true, flow_panel_at: null, ...extra })
+  const flowWidget = {
+    ...stat('w_flow', 'exposure.flow'),
+    config: {
+      v: 2,
+      id: 'w_flow',
+      data: { kind: 'metric', metric: 'exposure.flow', filter: {}, time: {} },
+      viz: { type: 'flow', options: {} },
+    },
+  }
+
+  beforeEach(() => {
+    window.localStorage.clear()
+    perms.list = []
+    api.mine = []
+    api.org = []
+    api.orgError = undefined
+    data.byKey = {}
+    vi.clearAllMocks()
+    api.addFlow.mockResolvedValue({ added: true, widget_id: 'w_flow', dashboard: eligible('d1') })
+    api.undoFlow.mockResolvedValue(eligible('d1'))
+  })
+
+  it('adds the panel once to an eligible personal dashboard and offers Undo', async () => {
+    api.mine = [eligible('d1')]
+    const view = renderHome()
+    await waitFor(() => expect(api.addFlow).toHaveBeenCalledTimes(1))
+    expect(api.addFlow).toHaveBeenCalledWith('d1', 'personal')
+    await waitFor(() => expect(toast.success).toHaveBeenCalled())
+    const [message, opts] = toast.success.mock.calls[0] as [
+      string,
+      { action: { label: string; onClick: () => void } },
+    ]
+    expect(message).toBe('Exposure flow added at the top')
+    expect(opts.action.label).toBe('Undo')
+    // Re-rendering never asks again.
+    view.rerender(
+      <I18nProvider locale="en">
+        <DashboardHome />
+      </I18nProvider>
+    )
+    expect(api.addFlow).toHaveBeenCalledTimes(1)
+    // No layout hint on the open that added the panel.
+    expect(screen.queryByTestId('layout-hint')).toBeNull()
+
+    opts.action.onClick()
+    await waitFor(() => expect(api.undoFlow).toHaveBeenCalledWith('d1', 'personal', 'w_flow'))
+  })
+
+  it('does nothing when flow_panel_at is set, the layout already has the flow or is empty', async () => {
+    api.mine = [
+      eligible('d1', { flow_panel_at: '2026-10-01T00:00:00Z' }),
+      eligible('d2', { is_default: false, layout: [flowWidget] }),
+      eligible('d3', { is_default: false, layout: [] }),
+    ]
+    renderHome()
+    await screen.findByRole('heading', { name: 'Mine' })
+    expect(api.addFlow).not.toHaveBeenCalled()
+    // An older server without the field is not "never offered".
+    api.mine = [dash('d4', 'Old', { kind: 'personal', is_default: true })]
+    renderHome()
+    expect(api.addFlow).not.toHaveBeenCalled()
+  })
+
+  it('never touches an organization dashboard the person cannot manage', async () => {
+    perms.list = ['dashboards:org:view']
+    api.org = [eligible('o1', { kind: 'organization', is_org_default: true, is_default: false })]
+    renderHome()
+    await screen.findByRole('heading', { name: 'Mine' })
+    expect(api.addFlow).not.toHaveBeenCalled()
+  })
+
+  it('offers an organization dashboard to a manager once', async () => {
+    perms.list = ['dashboards:org:view', 'dashboards:org:manage']
+    api.org = [eligible('o1', { kind: 'organization', is_org_default: true, is_default: false })]
+    renderHome()
+    await waitFor(() => expect(api.addFlow).toHaveBeenCalledWith('o1', 'organization'))
+    expect(api.addFlow).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows no toast when the panel was already offered elsewhere', async () => {
+    api.addFlow.mockResolvedValue({ added: false, dashboard: eligible('d1') })
+    api.mine = [eligible('d1')]
+    renderHome()
+    await waitFor(() => expect(api.addFlow).toHaveBeenCalledTimes(1))
+    expect(toast.success).not.toHaveBeenCalled()
   })
 })

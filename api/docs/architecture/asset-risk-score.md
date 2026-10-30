@@ -66,7 +66,10 @@ score into critical, high, medium, low and minimal (1 to the low bound);
 The weighted models (`multiply`, `amplify_headroom`: weighted sum of exposure,
 criticality, findings and data-context points, times an exposure multiplier)
 remain available to an organization that chooses them; the industry presets
-use them.
+use them. They obey the same rule: an asset without an open, non-informational
+finding scores 0 whatever its weights, so no configuration can make exposure,
+criticality or data context alone read as risk. With findings, the weighted
+formula applies unchanged.
 
 **Roll-ups.** Business units and asset groups show the average score of their
 assets, and a unit its open and critical finding counts; they are refreshed
@@ -172,7 +175,14 @@ score.
 
 - `risk_scored_at`: when the stored score was last computed. Absent means the
   asset was never scored, so `risk_score` is not a real 0.
-- `risk_score_pending`: an input changed and the rescore is queued.
+- `risk_score_pending`: an input changed and the rescore is queued: a queue row
+  that is due now (`enqueued_at <= now()`, the rows the worker claims). The
+  reconcile's rows, queued 10 minutes ahead, are housekeeping and do not make
+  a score pending; a real change pulls the row forward and does. The console
+  shows a clock next to a pending score.
+
+`risk_scored_at` moves only when the stored score changes (an unchanged
+rescore writes nothing), so the console labels it "Score last changed".
 
 ## Metrics
 

@@ -2,10 +2,8 @@
 
 import { useMemo } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Search } from 'lucide-react'
 import type { ContentPackageListItem } from '@/lib/api/generated'
 import { Badge } from '@/components/ui/badge'
-import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -15,7 +13,6 @@ import {
 } from '@/components/ui/select'
 import { DataTable, ErrorState, StackedCell } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
-import { useDebounce } from '@/hooks/use-debounce'
 import { useListParams } from '@/hooks/use-list-params'
 import { useContentPackages } from '../api'
 import { CONTENT_TYPES } from '../lib'
@@ -25,7 +22,7 @@ const ANY = 'any'
 export function CatalogTab({ onOpen }: { onOpen: (packageId: string) => void }) {
   const { t } = useTranslation()
   const list = useListParams({ defaultPageSize: 20, filters: { type: '', installed: '' } })
-  const q = useDebounce(list.q, 300)
+  const q = list.searchTerm
   const type = (CONTENT_TYPES as readonly string[]).includes(list.filters.type)
     ? list.filters.type
     : ''
@@ -135,22 +132,14 @@ export function CatalogTab({ onOpen }: { onOpen: (packageId: string) => void }) 
       rowCount={packages.data?.total ?? 0}
       pagination={list.pagination}
       onPaginationChange={list.setPagination}
+      search={{
+        value: list.q,
+        onChange: list.setSearch,
+        placeholder: t('contentCatalog.search', 'Search packages…'),
+        inputProps: { maxLength: 100 },
+      }}
       toolbarStart={
-        <div className="flex w-full flex-col gap-2 sm:flex-row">
-          <div className="relative w-full sm:max-w-xs">
-            <Search
-              className="absolute start-2.5 top-2.5 size-4 text-muted-foreground"
-              aria-hidden
-            />
-            <Input
-              value={list.q}
-              maxLength={100}
-              onChange={(e) => list.setSearch(e.target.value)}
-              placeholder={t('contentCatalog.search', 'Search packages')}
-              aria-label={t('contentCatalog.search', 'Search packages')}
-              className="ps-8"
-            />
-          </div>
+        <>
           <Select
             value={type || ANY}
             onValueChange={(v) => list.setFilter('type', v === ANY ? '' : v)}
@@ -187,7 +176,7 @@ export function CatalogTab({ onOpen }: { onOpen: (packageId: string) => void }) 
               </SelectItem>
             </SelectContent>
           </Select>
-        </div>
+        </>
       }
     />
   )

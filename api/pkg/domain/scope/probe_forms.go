@@ -68,8 +68,35 @@ func NeedsAuthority(t string) bool {
 	if _, err := netip.ParsePrefix(h); err == nil {
 		return true
 	}
-	_, err := netip.ParseAddr(asset.HostOf(t))
-	return err == nil
+	host := strings.Trim(asset.HostOf(t), "[]")
+	if _, err := netip.ParseAddr(host); err == nil {
+		return true
+	}
+	// A dotless all-numeric or hex host ("2852039166", "0xa9fea9fe") is an
+	// address in another notation that resolvers and HTTP clients accept.
+	// No scope entry is written that way, so asking for one refuses it.
+	return numericHost(host)
+}
+
+// numericHost reports whether h is made only of digits, dots and hex
+// notation: an IPv4 address in decimal, octal or hex form.
+func numericHost(h string) bool {
+	h = strings.ToLower(strings.TrimSpace(h))
+	if h == "" {
+		return false
+	}
+	digit := false
+	for i := 0; i < len(h); i++ {
+		c := h[i]
+		switch {
+		case c >= '0' && c <= '9':
+			digit = true
+		case c == '.' || c == 'x' || (c >= 'a' && c <= 'f'):
+		default:
+			return false
+		}
+	}
+	return digit && strings.IndexFunc(h, func(r rune) bool { return r >= '0' && r <= '9' }) == 0
 }
 
 // InternalName reports whether a name is a private, loopback, link-local
@@ -77,7 +104,7 @@ func NeedsAuthority(t string) bool {
 // .internal, .lan).
 func InternalName(name string) bool {
 	if p, err := netip.ParsePrefix(strings.TrimSpace(name)); err == nil {
-		return internalAddr(p.Addr())
+		return internalPrefix(p)
 	}
 	h := asset.HostOf(name)
 	if a, err := netip.ParseAddr(h); err == nil {
@@ -89,6 +116,40 @@ func InternalName(name string) bool {
 }
 
 var cgnat = netip.MustParsePrefix("100.64.0.0/10")
+
+// internalBlocks are the internal networks a prefix must sit inside as a
+// whole to count as internal: checking only its first address read
+// "0.0.0.0/0" or "10.0.0.0/1" as internal.
+var internalBlocks = []netip.Prefix{
+	netip.MustParsePrefix("10.0.0.0/8"),
+	netip.MustParsePrefix("172.16.0.0/12"),
+	netip.MustParsePrefix("192.168.0.0/16"),
+	netip.MustParsePrefix("127.0.0.0/8"),
+	netip.MustParsePrefix("169.254.0.0/16"),
+	cgnat,
+	netip.MustParsePrefix("fc00::/7"),
+	netip.MustParsePrefix("fe80::/10"),
+	netip.MustParsePrefix("::1/128"),
+}
+
+// internalPrefix reports whether every address of p is internal.
+func internalPrefix(p netip.Prefix) bool {
+	p = p.Masked()
+	a := p.Addr()
+	bits := p.Bits()
+	if a.Is4In6() {
+		if bits < 96 {
+			return false
+		}
+		a, bits = a.Unmap(), bits-96
+	}
+	for _, b := range internalBlocks {
+		if b.Addr().Is4() == a.Is4() && b.Bits() <= bits && b.Contains(a) {
+			return true
+		}
+	}
+	return false
+}
 
 func internalAddr(a netip.Addr) bool {
 	a = a.Unmap()

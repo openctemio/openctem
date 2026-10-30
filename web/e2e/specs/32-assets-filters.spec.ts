@@ -6,7 +6,7 @@ import { test, expect } from '../fixtures/authenticated-page'
  * tag list or business units until something shows them.
  */
 
-test.describe('Asset filters', () => {
+test.describe('Asset filters', { tag: ['@assets'] }, () => {
   test('Add filter applies a facet as a chip, and the chip removes it', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.goto('/assets')

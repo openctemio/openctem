@@ -64,7 +64,7 @@ describe('Access requests', () => {
     render(<AccessRequestsCard canEdit />)
     expect(screen.getByText('Desk Assistant')).toBeInTheDocument()
     expect(screen.getByText('Published by desk.example.net')).toBeInTheDocument()
-    expect(screen.getByText(/Requested by Mark Member · 2 request\(s\)/)).toBeInTheDocument()
+    expect(screen.getByText(/Requested by Mark Member, 2 request\(s\)/)).toBeInTheDocument()
     expect(screen.getByText('Findings')).toBeInTheDocument()
     expect(screen.getByText('Assets')).toBeInTheDocument()
   })
@@ -130,6 +130,10 @@ describe('Approved publishers', () => {
       target: { value: 'https://Desk.Example.net/oauth/client.json' },
     })
     fireEvent.click(screen.getByRole('button', { name: 'Approve' }))
+    // Approving lets every member connect its applications: it asks first.
+    expect(await screen.findByText('Approve desk.example.net as a publisher?')).toBeInTheDocument()
+    expect(patch).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Approve desk.example.net' }))
     await waitFor(() => expect(patch).toHaveBeenCalled())
     expect(patch.mock.calls[0][1]).toEqual({
       client_hosts: ['assistant.example.com', 'desk.example.net'],

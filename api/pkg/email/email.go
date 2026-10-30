@@ -3,13 +3,18 @@ package email
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
 	"net/smtp"
+	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/httpsec"
@@ -26,15 +31,17 @@ var (
 
 // Config holds SMTP configuration.
 type Config struct {
-	Host       string
-	Port       int
-	User       string
-	Password   string
-	From       string
-	FromName   string
-	TLS        bool
-	SkipVerify bool
-	Timeout    time.Duration
+	Host     string
+	Port     int
+	User     string
+	Password string
+	From     string
+	FromName string
+	TLS      bool // STARTTLS after the greeting
+	// ImplicitTLS wraps the connection in TLS before the greeting (port 465).
+	ImplicitTLS bool
+	SkipVerify  bool
+	Timeout     time.Duration
 }
 
 // Message represents an email message.
@@ -45,6 +52,9 @@ type Message struct {
 	IsHTML  bool
 	ReplyTo string
 	Headers map[string]string
+	// Inline images the HTML body references as cid:<CID>; sent as a
+	// multipart/related message.
+	Inline []InlineImage
 }
 
 // Sender defines the interface for sending emails.
@@ -108,12 +118,16 @@ func (s *SMTPSender) SendTemplate(ctx context.Context, to string, template Templ
 		return fmt.Errorf("email: failed to render template: %w", err)
 	}
 
-	return s.Send(ctx, &Message{
+	msg := &Message{
 		To:      []string{to},
 		Subject: subject,
 		Body:    body,
 		IsHTML:  true,
-	})
+	}
+	if usesLogo(body) {
+		msg.Inline = []InlineImage{{CID: logoCID, ContentType: "image/png", Data: logoPNG}}
+	}
+	return s.Send(ctx, msg)
 }
 
 // SanitizeHeaderValue strips CR and LF from a value that will be
@@ -182,6 +196,10 @@ func (s *SMTPSender) buildMessage(msg *Message) []byte {
 
 	// MIME headers
 	builder.WriteString("MIME-Version: 1.0\r\n")
+	if msg.IsHTML && len(msg.Inline) > 0 {
+		writeRelated(&builder, msg)
+		return []byte(builder.String())
+	}
 	if msg.IsHTML {
 		builder.WriteString("Content-Type: text/html; charset=UTF-8\r\n")
 	} else {
@@ -228,6 +246,15 @@ func (s *SMTPSender) sendSMTP(ctx context.Context, to []string, content []byte) 
 	}
 	if err := conn.SetDeadline(deadline); err != nil {
 		return fmt.Errorf("failed to set deadline: %w", err)
+	}
+
+	// Implicit TLS (port 465): the handshake comes before the greeting.
+	if s.config.ImplicitTLS {
+		tc := tls.Client(conn, TLSConfig(s.config.Host, s.config.SkipVerify))
+		if err := tc.HandshakeContext(ctx); err != nil {
+			return fmt.Errorf("failed to complete TLS handshake: %w", err)
+		}
+		conn = tc
 	}
 
 	// Create SMTP client
@@ -397,7 +424,9 @@ func (s *LoggingSender) SendTemplate(ctx context.Context, to string, template Te
 		s.logger.Info("templated email send failed",
 			"to", safeTo,
 			"template", template,
-			"error", err,
+			// Logger is an interface here, so the escaping of the slog
+			// handler behind it is not visible to the log-injection query.
+			"error", SanitizeHeaderValue(err.Error()),
 		)
 	} else {
 		s.logger.Info("templated email sent successfully",
@@ -419,4 +448,103 @@ func TLSConfig(host string, skipVerify bool) *tls.Config {
 		MinVersion:         tls.VersionTLS12,
 		InsecureSkipVerify: skipVerify, //nolint:gosec // G402: explicit operator opt-in for self-signed relays
 	}
+}
+
+// TenantSMTPPorts are the ports an organization's SMTP relay may use: SMTP
+// (25), submission with implicit TLS (465), submission (587) and the common
+// alternative submission port (2525). An organization chooses the relay host,
+// so any other port would let it point the platform's SMTP client at a
+// service that is not a mail relay (a datastore, an admin interface) on a
+// reachable host. The platform's own relay, set by the operator, is not
+// restricted.
+var TenantSMTPPorts = []int{25, 465, 587, 2525}
+
+// TenantPortAllowed reports whether an organization's SMTP relay may use port.
+func TenantPortAllowed(port int) bool {
+	return slices.Contains(TenantSMTPPorts, port)
+}
+
+// ErrTenantPortNotAllowed refuses an organization's relay on another port.
+var ErrTenantPortNotAllowed = errors.New("the SMTP port must be 25, 465, 587 or 2525")
+
+// writeRelated writes an HTML body with its inline images as one
+// multipart/related message. The boundary is derived from the content, so it
+// cannot occur in the base64 parts, and the Content-IDs come from constants.
+func writeRelated(b *strings.Builder, msg *Message) {
+	sum := sha256.Sum256([]byte(msg.Body))
+	boundary := "oc-" + hex.EncodeToString(sum[:12])
+	b.WriteString("Content-Type: multipart/related; boundary=\"" + boundary + "\"\r\n\r\n")
+	b.WriteString("--" + boundary + "\r\n")
+	b.WriteString("Content-Type: text/html; charset=UTF-8\r\n")
+	b.WriteString("Content-Transfer-Encoding: 8bit\r\n\r\n")
+	b.WriteString(msg.Body + "\r\n")
+	for _, img := range msg.Inline {
+		cid := SanitizeHeaderValue(img.CID)
+		b.WriteString("--" + boundary + "\r\n")
+		b.WriteString("Content-Type: " + SanitizeHeaderValue(img.ContentType) + "\r\n")
+		b.WriteString("Content-Transfer-Encoding: base64\r\n")
+		b.WriteString("Content-ID: <" + cid + ">\r\n")
+		b.WriteString("Content-Disposition: inline; filename=\"" + cid + ".png\"\r\n\r\n")
+		enc := base64.StdEncoding.EncodeToString(img.Data)
+		for len(enc) > 76 {
+			b.WriteString(enc[:76] + "\r\n")
+			enc = enc[76:]
+		}
+		b.WriteString(enc + "\r\n")
+	}
+	b.WriteString("--" + boundary + "--\r\n")
+}
+
+// ManagedSubmissionPorts are the ports an organization's relay may use on a
+// managed (hosted, multi-tenant) service: submission with implicit TLS (465)
+// and submission (587, 2525). Port 25 is server-to-server delivery: from the
+// platform's egress it would be direct-to-MX mail with a sender the
+// organization chose, carrying the platform's address reputation.
+var ManagedSubmissionPorts = []int{465, 587, 2525}
+
+// ErrTenantRelayPolicy is wrapped by every refusal of a relay by the managed
+// service rules, so callers can tell a policy refusal from a network failure.
+var ErrTenantRelayPolicy = errors.New("this organization relay does not meet the managed service rules")
+
+var (
+	// ErrTenantRelayPort25 refuses port 25 on a managed service.
+	ErrTenantRelayPort25 = fmt.Errorf("%w: the SMTP port must be 465, 587 or 2525 (port 25 is not allowed)", ErrTenantRelayPolicy)
+	// ErrTenantRelayNeedsAuth refuses a relay without a username and password.
+	ErrTenantRelayNeedsAuth = fmt.Errorf("%w: a username and password are required", ErrTenantRelayPolicy)
+	// ErrTenantRelayNeedsTLS refuses a relay that is not encrypted.
+	ErrTenantRelayNeedsTLS = fmt.Errorf("%w: TLS or STARTTLS is required", ErrTenantRelayPolicy)
+)
+
+var managedTenantRelay atomic.Bool
+
+// SetManagedTenantRelay turns the managed service rules for organization
+// relays on or off. The server sets it once at start-up from MANAGED_SERVICE.
+func SetManagedTenantRelay(on bool) { managedTenantRelay.Store(on) }
+
+// ManagedTenantRelay reports whether the managed service rules apply.
+func ManagedTenantRelay() bool { return managedTenantRelay.Load() }
+
+// ValidateTenantRelay is the one transport rule for an organization's SMTP
+// relay, used when it is saved, tested and every time mail is sent. On every
+// install the port must be one of TenantSMTPPorts. On a managed service it
+// must also be a submission port, authenticated (username and password) and
+// encrypted (implicit TLS or STARTTLS), so the platform never speaks
+// unauthenticated or clear-text SMTP to a host an organization chose.
+func ValidateTenantRelay(port int, useTLS, useSTARTTLS bool, username, password string) error {
+	if !TenantPortAllowed(port) {
+		return ErrTenantPortNotAllowed
+	}
+	if !ManagedTenantRelay() {
+		return nil
+	}
+	if !slices.Contains(ManagedSubmissionPorts, port) {
+		return ErrTenantRelayPort25
+	}
+	if username == "" || password == "" {
+		return ErrTenantRelayNeedsAuth
+	}
+	if !useTLS && !useSTARTTLS {
+		return ErrTenantRelayNeedsTLS
+	}
+	return nil
 }

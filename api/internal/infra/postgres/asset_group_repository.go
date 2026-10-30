@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/lib/pq"
 
@@ -29,9 +30,10 @@ func NewAssetGroupRepository(db *DB) *AssetGroupRepository {
 	return &AssetGroupRepository{db: db}
 }
 
-// assetGroupSelectQuery uses LEFT JOIN with pre-aggregated findings count
-// to avoid N+1 correlated subquery execution when listing multiple groups.
-// OPTIMIZED: Changed from correlated subquery to LEFT JOIN for better performance.
+// assetGroupColumns reads finding_count from groupReadSource's per-group
+// LATERAL count: it touches only the listed groups' members. A derived table
+// grouped by asset_group_id cannot take the outer tenant filter, so it
+// counted the open findings of every group of every tenant on each read.
 const assetGroupColumns = `
 	SELECT
 		ag.id, ag.tenant_id, ag.name, ag.description, ag.environment, ag.criticality,
@@ -83,14 +85,13 @@ const (
 func groupReadSource(scope *shared.DataScope, args []any) (string, []any) {
 	if scope == nil {
 		return `asset_groups ag
-	LEFT JOIN (
-		SELECT agm.asset_group_id, COUNT(f.id) as finding_count
+	LEFT JOIN LATERAL (
+		SELECT COUNT(f.id) AS finding_count
 		FROM asset_group_members agm
-		INNER JOIN asset_groups fg ON fg.id = agm.asset_group_id
-		INNER JOIN findings f ON f.asset_id = agm.asset_id AND f.tenant_id = fg.tenant_id AND NOT f.branch_only
+		INNER JOIN findings f ON f.asset_id = agm.asset_id AND f.tenant_id = ag.tenant_id AND NOT f.branch_only
 			AND ` + vulnerability.OpenStatusSQL("f.status") + `
-		GROUP BY agm.asset_group_id
-	) fc ON fc.asset_group_id = ag.id`, args
+		WHERE agm.asset_group_id = ag.id
+	) fc ON TRUE`, args
 	}
 	at := len(args) + 1
 	memberCond, scopeArgs := dataScopeCondAt("a.id", scope, at)
@@ -129,15 +130,13 @@ func groupReadSource(scope *shared.DataScope, args []any) (string, []any) {
 		) sc ON TRUE
 		WHERE ` + visible + `
 	) ag
-	LEFT JOIN (
-		SELECT agm.asset_group_id, COUNT(f.id) as finding_count
+	LEFT JOIN LATERAL (
+		SELECT COUNT(f.id) AS finding_count
 		FROM asset_group_members agm
-		INNER JOIN asset_groups fg ON fg.id = agm.asset_group_id
-		INNER JOIN findings f ON f.asset_id = agm.asset_id AND f.tenant_id = fg.tenant_id AND NOT f.branch_only
+		INNER JOIN findings f ON f.asset_id = agm.asset_id AND f.tenant_id = ag.tenant_id AND NOT f.branch_only
 			AND ` + vulnerability.OpenStatusSQL("f.status") + `
-		WHERE ` + findingCond + `
-		GROUP BY agm.asset_group_id
-	) fc ON fc.asset_group_id = ag.id`
+		WHERE agm.asset_group_id = ag.id AND ` + findingCond + `
+	) fc ON TRUE`
 	return src, append(args, scopeArgs...)
 }
 
@@ -728,10 +727,9 @@ func (r *AssetGroupRepository) GetGroupAssets(ctx context.Context, groupID share
 	//nolint:gosec // G202: scopeCond is built from fixed SQL and numbered placeholders
 	query := `
 		SELECT a.id, a.name, a.asset_type, a.status, a.risk_score,
-			   COALESCE(fc.finding_count, 0) as finding_count,
-			   a.last_seen
+			   (SELECT COUNT(*) FROM findings f WHERE f.asset_id = a.id AND NOT f.branch_only) AS finding_count,
+			   a.last_seen, agm.source, agm.added_at
 		FROM ` + groupMembersFrom + `
-		LEFT JOIN (SELECT asset_id, COUNT(*) as finding_count FROM findings WHERE NOT branch_only GROUP BY asset_id) fc ON fc.asset_id = a.id
 		WHERE agm.asset_group_id = $1 AND ` + scopeCond + `
 		ORDER BY a.name
 		LIMIT $` + strconv.Itoa(n+1) + ` OFFSET $` + strconv.Itoa(n+2)
@@ -752,9 +750,11 @@ func (r *AssetGroupRepository) GetGroupAssets(ctx context.Context, groupID share
 			riskScore    int
 			findingCount int
 			lastSeen     sql.NullTime
+			source       string
+			addedAt      time.Time
 		)
 
-		if err := rows.Scan(&id, &name, &assetType, &status, &riskScore, &findingCount, &lastSeen); err != nil {
+		if err := rows.Scan(&id, &name, &assetType, &status, &riskScore, &findingCount, &lastSeen, &source, &addedAt); err != nil {
 			continue
 		}
 
@@ -772,6 +772,8 @@ func (r *AssetGroupRepository) GetGroupAssets(ctx context.Context, groupID share
 			RiskScore:    riskScore,
 			FindingCount: findingCount,
 			LastSeen:     ls,
+			Source:       source,
+			AddedAt:      addedAt,
 		})
 	}
 

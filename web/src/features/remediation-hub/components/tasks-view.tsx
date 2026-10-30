@@ -26,8 +26,9 @@ import Link from '@/components/link'
 import { useTranslation } from '@/context/i18n-provider'
 import { usePermissions } from '@/context/permission-provider'
 import { Permission } from '@/lib/permissions'
+import { useOpenForm } from '@/hooks/use-open-form'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import {
   Select,
   SelectContent,
@@ -35,7 +36,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { DataTable } from '@/features/shared'
+import { DataTable, FilterSelect, ListToolbar, PageStack, ViewSwitcher } from '@/features/shared'
 import { EmptyState } from '@/features/shared/components/empty-state'
 import { ErrorState } from '@/features/shared/components/error-state'
 import { cn } from '@/lib/utils'
@@ -51,6 +52,7 @@ import { CreateTaskFromQueryDialog } from './create-task-from-query-dialog'
 import { apiMessage } from './suggestions-inbox'
 import { DeadlinePill, TaskProgress, TaskStatePill } from './task-bits'
 import { VIEW_FILTERS, type TaskView } from './task-views'
+import { useSearchQuery } from '@/hooks/use-search-query'
 
 export type { TaskView }
 
@@ -65,16 +67,24 @@ export function TasksView({ defaultView = 'open' }: { defaultView?: TaskView }) 
   // Creating a task from a query runs the query: findings read too.
   const canQueryCreate = canWrite && hasPermission(Permission.FindingsRead)
   const [queryOpen, setQueryOpen] = useState(false)
+  const openTaskForm = useCallback(() => setQueryOpen(true), [])
+  useOpenForm('task', canQueryCreate, openTaskForm)
+  // A card dropped on On hold or back to work waits here for a confirmation.
+  const [pendingHold, setPendingHold] = useState<{
+    task: RemediationTask
+    hold: boolean
+  } | null>(null)
   const owners = useOwnerNames()
   const revalidate = useRevalidateHub()
   const view = (params.get('view') as TaskView) || defaultView
   const layout = params.get('layout') === 'board' ? 'board' : 'table'
   const [search, setSearch] = useState('')
+  const searchTerm = useSearchQuery(search).term
   const [sort, setSort] = useState<TaskListFilters['sort']>('deadline')
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 25 })
   const filters: TaskListFilters = {
     ...(VIEW_FILTERS[view] ?? VIEW_FILTERS.open),
-    search,
+    search: searchTerm,
     sort,
     page: layout === 'board' ? 1 : pagination.pageIndex + 1,
     perPage: layout === 'board' ? 100 : pagination.pageSize,
@@ -182,88 +192,83 @@ export function TasksView({ defaultView = 'open' }: { defaultView?: TaskView }) 
         toast.info(t('remediationHub.tasks.derivedOnly'))
         return
       }
-      try {
-        await hubApi.updateTask(task.id, { version: task.version, hold })
-        toast.success(hold ? t('remediationHub.toast.held') : t('remediationHub.toast.resumed'))
-        await Promise.all([mutate(), revalidate()])
-      } catch (err) {
-        toast.error(apiMessage(err, t('remediationHub.toast.failed')))
-      }
+      setPendingHold({ task, hold })
     },
-    [mutate, revalidate, t, tasks]
+    [t, tasks]
   )
+
+  const applyHold = useCallback(async () => {
+    if (!pendingHold) return
+    const { task, hold } = pendingHold
+    try {
+      await hubApi.updateTask(task.id, { version: task.version, hold })
+      toast.success(hold ? t('remediationHub.toast.held') : t('remediationHub.toast.resumed'))
+      setPendingHold(null)
+      await Promise.all([mutate(), revalidate()])
+    } catch (err) {
+      setPendingHold(null)
+      toast.error(apiMessage(err, t('remediationHub.toast.failed')))
+    }
+  }, [mutate, revalidate, pendingHold, t])
 
   const viewLabels: TaskView[] = ['open', 'mine', 'verifying', 'on_hold', 'closed', 'all']
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <div
-          role="tablist"
-          aria-label={t('remediationHub.tasks.views')}
-          className="flex flex-wrap gap-1"
-        >
-          {viewLabels.map((v) => (
-            <Button
-              key={v}
-              role="tab"
-              aria-selected={view === v}
-              size="sm"
-              variant={view === v ? 'secondary' : 'ghost'}
-              onClick={() => setParam('view', v)}
-            >
-              {t(`remediationHub.tasks.view.${v}`)}
-            </Button>
-          ))}
-        </div>
-        <div className="ms-auto flex flex-wrap items-center gap-2">
-          <Input
-            className="w-full sm:w-56"
-            placeholder={t('remediationHub.tasks.search')}
-            aria-label={t('remediationHub.tasks.search')}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <Select value={sort} onValueChange={(v) => setSort(v as TaskListFilters['sort'])}>
-            <SelectTrigger className="w-40" aria-label={t('remediationHub.tasks.sort')}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {(['deadline', 'risk', 'updated', 'created'] as const).map((s) => (
-                <SelectItem key={s} value={s}>
-                  {t(`remediationHub.tasks.sortBy.${s}`)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <div className="flex rounded-md border">
-            <Button
-              size="icon"
-              variant={layout === 'table' ? 'secondary' : 'ghost'}
-              aria-pressed={layout === 'table'}
-              aria-label={t('remediationHub.tasks.table')}
-              onClick={() => setParam('layout', 'table')}
-            >
-              <Table2 className="size-4" aria-hidden />
-            </Button>
-            <Button
-              size="icon"
-              variant={layout === 'board' ? 'secondary' : 'ghost'}
-              aria-pressed={layout === 'board'}
-              aria-label={t('remediationHub.tasks.board')}
-              onClick={() => setParam('layout', 'board')}
-            >
-              <LayoutGrid className="size-4" aria-hidden />
-            </Button>
-          </div>
-          {canQueryCreate && (
-            <Button size="sm" onClick={() => setQueryOpen(true)}>
-              <SquareCode className="size-4" aria-hidden />
-              {t('remediationQuery.create.entry')}
-            </Button>
-          )}
-        </div>
-      </div>
+    <PageStack>
+      {/* One toolbar row: which tasks (a filter token, not a second row of
+          tabs under the section tabs), search; then sort, the table/board
+          view switch and the create action at the end. */}
+      <ListToolbar
+        search={{
+          value: search,
+          onChange: setSearch,
+          placeholder: t('remediationHub.tasks.search'),
+        }}
+        start={
+          <>
+            <FilterSelect<TaskView>
+              label={t('remediationHub.tasks.showLabel', 'Show')}
+              value={view}
+              clearable={false}
+              options={viewLabels.map((v) => ({
+                value: v,
+                label: t(`remediationHub.tasks.view.${v}`),
+              }))}
+              onChange={(v) => setParam('view', v || 'open')}
+            />
+          </>
+        }
+        end={
+          <>
+            <Select value={sort} onValueChange={(v) => setSort(v as TaskListFilters['sort'])}>
+              <SelectTrigger className="h-9 w-40" aria-label={t('remediationHub.tasks.sort')}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(['deadline', 'risk', 'updated', 'created'] as const).map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {t(`remediationHub.tasks.sortBy.${s}`)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <ViewSwitcher
+              options={[
+                { value: 'table', label: t('remediationHub.tasks.table'), icon: Table2 },
+                { value: 'board', label: t('remediationHub.tasks.board'), icon: LayoutGrid },
+              ]}
+              value={layout === 'board' ? 'board' : 'table'}
+              onChange={(v) => setParam('layout', v)}
+            />
+            {canQueryCreate && (
+              <Button size="sm" className="h-9" onClick={() => setQueryOpen(true)}>
+                <SquareCode className="size-4" aria-hidden />
+                {t('remediationQuery.create.entry')}
+              </Button>
+            )}
+          </>
+        }
+      />
       {canQueryCreate && <CreateTaskFromQueryDialog open={queryOpen} onOpenChange={setQueryOpen} />}
 
       {error ? (
@@ -320,7 +325,39 @@ export function TasksView({ defaultView = 'open' }: { defaultView?: TaskView }) 
           </div>
         </DndContext>
       )}
-    </div>
+      <ConfirmDialog
+        open={pendingHold !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingHold(null)
+        }}
+        title={
+          pendingHold?.hold
+            ? t('remediationHub.tasks.holdTitle', 'Put "{title}" on hold?', {
+                title: pendingHold.task.title,
+              })
+            : t('remediationHub.tasks.resumeTitle', 'Resume "{title}"?', {
+                title: pendingHold?.task.title ?? '',
+              })
+        }
+        desc={
+          pendingHold?.hold
+            ? t(
+                'remediationHub.tasks.holdDesc',
+                'The task shows as On hold until someone resumes it. Its findings stay in it.'
+              )
+            : t(
+                'remediationHub.tasks.resumeDesc',
+                'The task leaves On hold and its state follows its findings again.'
+              )
+        }
+        confirmText={
+          pendingHold?.hold
+            ? t('remediationHub.tasks.holdButton', 'Put task on hold')
+            : t('remediationHub.tasks.resumeButton', 'Resume task')
+        }
+        handleConfirm={applyHold}
+      />
+    </PageStack>
   )
 }
 

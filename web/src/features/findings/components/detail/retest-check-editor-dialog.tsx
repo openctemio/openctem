@@ -189,6 +189,11 @@ export interface RetestCheckEditorDialogProps {
   onOpenChange: (open: boolean) => void
   /** The current check, to edit; null to attach a new one. */
   initial: RetestCheck | null
+  /**
+   * For a new check: start as an HTTP assertion for this path of the
+   * finding's target (starts with "/"). Ignored when editing a check.
+   */
+  suggestedPath?: string
 }
 
 export function RetestCheckEditorDialog(props: RetestCheckEditorDialogProps) {
@@ -197,7 +202,13 @@ export function RetestCheckEditorDialog(props: RetestCheckEditorDialogProps) {
   return <EditorDialog {...props} />
 }
 
-function EditorDialog({ findingId, open, onOpenChange, initial }: RetestCheckEditorDialogProps) {
+function EditorDialog({
+  findingId,
+  open,
+  onOpenChange,
+  initial,
+  suggestedPath,
+}: RetestCheckEditorDialogProps) {
   const { t } = useTranslation()
   const { hasPermission } = usePermissions()
   const canReadLibrary = hasPermission(Permission.ScannerTemplatesRead)
@@ -206,7 +217,9 @@ function EditorDialog({ findingId, open, onOpenChange, initial }: RetestCheckEdi
   const [kind, setKind] = useState<RetestCheckKind>(initial?.kind ?? 'http_assertion')
   const [name, setName] = useState(initial?.template_name ?? '')
   const [method, setMethod] = useState<HTTPAssertionMethod>(initialAssertion?.method ?? 'GET')
-  const [path, setPath] = useState(initialAssertion?.path ?? '/')
+  const [path, setPath] = useState(
+    initialAssertion?.path ?? (!initial && suggestedPath ? suggestedPath : '/')
+  )
   const [headers, setHeaders] = useState<HeaderRow[]>(() =>
     Object.entries(initialAssertion?.headers ?? {}).map(([n, v]) => ({
       key: nextKey(),

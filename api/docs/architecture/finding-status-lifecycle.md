@@ -147,6 +147,20 @@ a list filter; it never maps one to another.
   statuses plus `draft` and `in_review` (`confirmed -> in_progress ->
   fix_applied -> resolved`, regression `resolved -> in_progress`); campaign roles
   gate each move (`pentest.PentestStatusTransitionRoles`).
+- **Proof basis at confirm.** A move of a pentest finding to `confirmed` needs
+  its proof basis: `executed_live`, `executed_lab` or `static_unexecuted`
+  (inferred from code or configuration). It comes with the move
+  (`proof_basis` on `PATCH /pentest/findings/{id}/status` or on the edit that
+  carries the status), or is already on the finding. Without one the move is
+  refused with 422 `PROOF_BASIS_REQUIRED` and nothing changes. A reviewer can
+  still confirm by sending `proof_override_reason` (10 to 500 characters): the
+  finding keeps the reason with who and when (`proof_override`), the audit log
+  records `finding.proof_basis_overridden`, and the timeline shows it. There is
+  no hard block beyond that. An edit of the write-up keeps the basis and the
+  override. The review dialog also lists checks that advise but never block:
+  steps to reproduce written, at least one evidence item with the proof role,
+  the impact stated, an affected target named. The basis is stored in the
+  finding's `source_metadata`, so there is no migration.
 
 ## Enforcement on every write path
 
@@ -834,6 +848,13 @@ from the day it runs, with a timeline note (reason `acceptance_end_default`).
 ## AI false-positive proposals
 
 AI triage may **propose** a false positive; it never decides one.
+
+An AI application a person connected over MCP may propose a false positive
+or an accepted risk too (`propose_finding_status`, RFC-062 §10a). Unlike AI
+triage, that request has a person as requester (the one who connected the
+application) and `requested_via` names the application: it is an
+automation's request (never decided alone), and the four-eyes rule refuses
+that person as approver, the solo self-approval included.
 
 - When a triage completes with a false-positive likelihood of at least 0.9
   on a **medium or low** finding, the finding service creates a **pending**

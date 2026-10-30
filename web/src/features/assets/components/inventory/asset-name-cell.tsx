@@ -35,9 +35,16 @@ export function AssetNameCell({
   asset,
   href,
   onOpen,
+  subtitle,
 }: {
   asset: Asset
   href: string
+  /**
+   * A muted second line under the name: the type, in a list of every type
+   * (research/266), so the Type column can go and the name gets its width.
+   * A certificate's mono asset-name line takes precedence.
+   */
+  subtitle?: string
   /** Plain click opens the drawer; the link still works for new tabs. */
   onOpen: (e: MouseEvent<HTMLAnchorElement>) => void
 }) {
@@ -49,6 +56,7 @@ export function AssetNameCell({
   // A certificate whose name is its subject needs no second line.
   const title = subject && subject !== asset.name ? toDisplayText(subject) : name
   const subLine = title !== name ? name : undefined
+  const typeLine = !subLine ? subtitle : undefined
 
   const copy = async (e: MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation()
@@ -63,7 +71,10 @@ export function AssetNameCell({
   const days = isCert ? certDaysLeft(asset) : null
 
   return (
-    <div className="group/name flex min-w-0 items-center gap-2" data-testid="asset-name-cell">
+    <div
+      className="group/name flex min-w-[min(18rem,60vw)] items-center gap-2"
+      data-testid="asset-name-cell"
+    >
       <AssetTypeIcon type={asset.type} className="h-4 w-4 shrink-0 text-muted-foreground" />
       <Tooltip>
         <TooltipTrigger asChild>
@@ -83,6 +94,11 @@ export function AssetNameCell({
                 className="truncate font-mono text-xs text-muted-foreground [unicode-bidi:isolate]"
               >
                 {middleEllipsis(subLine, NAME_MAX)}
+              </span>
+            )}
+            {typeLine && (
+              <span data-slot="asset-type-line" className="truncate text-xs text-muted-foreground">
+                {typeLine}
               </span>
             )}
           </div>

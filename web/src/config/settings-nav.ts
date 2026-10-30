@@ -46,7 +46,6 @@ import {
   FileCode2,
   FileSpreadsheet,
   FileSliders,
-  FolderGit2,
   FolderKey,
   Gauge,
   GitBranch,
@@ -155,10 +154,10 @@ export const settingsNav: SettingsNavGroup[] = [
       {
         id: 'preferences',
         title: 'Preferences',
-        description: 'Theme, language, time zone and date format.',
+        description: 'Theme and how your findings lists open.',
         url: '/account/preferences',
         icon: Settings2,
-        keywords: ['theme', 'dark mode', 'language', 'timezone'],
+        keywords: ['theme', 'dark mode', 'informational findings'],
       },
       {
         id: 'my-notifications',
@@ -212,6 +211,11 @@ export const settingsNav: SettingsNavGroup[] = [
             id: 'org-profile',
             title: 'Organization name and URL',
             keywords: ['name', 'slug', 'logo', 'website'],
+          },
+          {
+            id: 'org-timezone-setting',
+            title: 'Organization time zone',
+            keywords: ['timezone', 'time zone', 'quiet hours', 'digest hour', 'clock'],
           },
           {
             id: 'danger-zone',
@@ -348,10 +352,22 @@ export const settingsNav: SettingsNavGroup[] = [
         description: 'Whether findings may be sent to an AI provider for triage.',
         url: '/settings/ai',
         icon: Sparkles,
-        permission: Permission.SettingsRead,
+        permission: Permission.TeamUpdate,
         module: 'ai_triage',
         keywords: ['ai', 'llm', 'triage', 'consent', 'opt in', 'provider', 'data', 'privacy'],
-        anchors: [{ id: 'ai-triage', title: 'AI triage', keywords: ['turn on', 'enable'] }],
+        anchors: [
+          { id: 'ai-triage', title: 'AI triage', keywords: ['turn on', 'enable'] },
+          {
+            id: 'ai-agents',
+            title: 'AI agents',
+            keywords: ['service account', 'owner', 'attest', 'pause', 'preset', 'triage'],
+          },
+          {
+            id: 'ai-masking',
+            title: 'AI data masking',
+            keywords: ['mask', 'placeholder', 'pseudonymise', 'redact', 'terms', 'preview'],
+          },
+        ],
       },
       {
         id: 'audit-log',
@@ -758,16 +774,6 @@ export const settingsNav: SettingsNavGroup[] = [
         permission: Permission.ScannerTemplatesRead,
         module: 'scanner_templates',
         keywords: ['nuclei', 'semgrep', 'betterleaks', 'gitleaks', 'rules'],
-      },
-      {
-        id: 'template-sources',
-        title: 'Template sources',
-        description: 'Git, S3 and HTTP sources that keep templates in sync.',
-        url: '/settings/scanning/template-sources',
-        icon: FolderGit2,
-        permission: Permission.TemplateSourcesRead,
-        module: 'template_sources',
-        keywords: ['git', 's3', 'sync'],
       },
       {
         id: 'source-credentials',

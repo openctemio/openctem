@@ -6,6 +6,10 @@ Openctem-Protocol: 2
 Content-Type: application/problem+json
 Openctem-Protocol: 2
 {"type":"https://openctem.io/problems/sensor/ci-oidc-required","title":"OIDC required for CI","status":403,"detail":"This organization accepts CI results only with the CI job's OIDC identity, not a sensor key: set OPENCTEM_TENANT_ID and add a CI trust configuration.","retryable":false}
+## clock-skew
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/sensor/clock-skew","title":"Clock skew","status":401,"detail":"The request signature was made outside the accepted time window: the sensor's clock or the server's clock is wrong. Synchronize both with NTP; clock_offset_seconds is the signature time minus server_time.","retryable":false}
 ## command-claimed
 Content-Type: application/problem+json
 Openctem-Protocol: 2
@@ -184,3 +188,5 @@ Openctem-Protocol: 2
 {"type":"https://openctem.io/problems/ingest/schema-invalid","title":"Schema invalid","status":422,"detail":"The report does not satisfy the CTIS schema or the v2 rules; see errors.","errors":[{"segment":1,"pointer":"/findings/17/severity","code":"invalid_value","detail":"the value is not allowed here"}],"retryable":false}
 ## content-too-large with limit
 {"type":"https://openctem.io/problems/ingest/content-too-large","title":"Content too large","status":413,"detail":"The content exceeds the request limit; split the report into more segments.","limit":16777216,"retryable":false}
+## clock-skew with clock
+{"type":"https://openctem.io/problems/sensor/clock-skew","title":"Clock skew","status":401,"detail":"The request signature was made outside the accepted time window: the sensor's clock or the server's clock is wrong. Synchronize both with NTP; clock_offset_seconds is the signature time minus server_time.","server_time":"2026-10-25T14:00:00Z","clock_offset_seconds":-15006,"retryable":false}

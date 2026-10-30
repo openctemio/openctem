@@ -40,6 +40,7 @@ describe('PageStack', () => {
     )
     const stack = screen.getByTestId('stack')
     expect(stack.className).toContain('[&>[data-slot=page-header]+[data-slot=page-tabs]]:-mt-1!')
+    expect(stack.className).toContain('[&>[data-slot=page-header]+[data-slot=tabs]]:-mt-1!')
     const header = stack.firstElementChild as HTMLElement
     const tabs = screen.getByRole('navigation', { name: 'Scans sections' })
     expect(header).toHaveAttribute('data-slot', 'page-header')
@@ -54,11 +55,11 @@ describe('PageStack', () => {
 })
 
 describe('ListToolbar', () => {
-  it('renders start, search and end in that order, end pushed to the far side', () => {
+  it('renders search, filter tokens and end in that order, end pushed to the far side', () => {
     render(
       <ListToolbar
-        start={<button type="button">Filters</button>}
-        search={<input aria-label="Search" />}
+        search={{ value: '', onChange: () => {}, placeholder: 'Search…', label: 'Search' }}
+        start={<button type="button">Status</button>}
         end={<button type="button">View</button>}
       />
     )
@@ -67,12 +68,12 @@ describe('ListToolbar', () => {
     const order = [...bar.querySelectorAll('button, input')].map(
       (el) => el.textContent || el.getAttribute('aria-label')
     )
-    expect(order).toEqual(['Filters', 'Search', 'View'])
+    expect(order).toEqual(['Search', 'Status', 'View'])
     expect(screen.getByText('View').parentElement).toHaveClass('ms-auto')
   })
 
   it('renders no empty groups', () => {
-    render(<ListToolbar search={<input aria-label="Search" />} />)
+    render(<ListToolbar search={{ value: '', onChange: () => {}, placeholder: 'Search…' }} />)
     const bar = screen.getByTestId('data-table-toolbar')
     expect(bar.children).toHaveLength(1)
   })
@@ -92,9 +93,10 @@ describe('MetricStrip anatomy', () => {
       />
     )
     const dl = document.querySelector('[data-slot=metric-strip]') as HTMLElement
-    expect(dl).toHaveClass('grid', 'grid-cols-2')
+    // Phone: a six-track grid, three tiles in thirds, one row.
+    expect(dl).toHaveClass('grid', 'grid-cols-6')
     expect(dl.className).not.toMatch(/overflow-x-auto|snap-x/)
-    expect(dl.className).toContain('[&>*:last-child:nth-child(odd)]:col-span-2')
+    for (const tile of Array.from(dl.children)) expect(tile).toHaveClass('col-span-2')
   })
 
   it('makes an href tile a link that marks the current list', () => {
@@ -143,6 +145,6 @@ describe('MetricStrip anatomy', () => {
       onClick: () => {},
     }))
     render(<MetricStrip items={items} />)
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('research/244'))
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('the page anatomy allows'))
   })
 })

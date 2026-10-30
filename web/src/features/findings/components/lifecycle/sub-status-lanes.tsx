@@ -32,6 +32,7 @@ import {
 import { closureReasonLabel } from '../../lib/closure'
 import type { FindingStatus } from '../../types'
 import { SubStatusDialog } from './sub-status-dialog'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { SubStatusPill } from './sub-status-pill'
 
 interface SubStatusLanesProps {
@@ -60,6 +61,7 @@ export function SubStatusLanes({
     null
   )
   const [busy, setBusy] = useState<string | null>(null)
+  const [archiving, setArchiving] = useState<LifecycleSubStatus | null>(null)
 
   const byStatus = useMemo(() => {
     const m = new Map<FindingStatus, LifecycleSubStatus[]>()
@@ -148,7 +150,7 @@ export function SubStatusLanes({
                       </div>
                       <div className="truncate font-mono text-xs text-muted-foreground">
                         {s.key}
-                        {s.closure_reason ? ` · ${closureReasonLabel(t, s.closure_reason)}` : ''}
+                        {s.closure_reason ? `, ${closureReasonLabel(t, s.closure_reason)}` : ''}
                       </div>
                     </div>
                     {canWrite && (
@@ -191,18 +193,7 @@ export function SubStatusLanes({
                                 <ArrowDown className="mr-2 size-3.5" />
                                 {t('findingLifecycle.subStatus.moveDownShort', 'Move down')}
                               </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() =>
-                                  void run(
-                                    s.id,
-                                    () => archiveSubStatus(s.id),
-                                    t(
-                                      'findingLifecycle.subStatus.archivedToast',
-                                      'Sub-status archived'
-                                    )
-                                  )
-                                }
-                              >
+                              <DropdownMenuItem onClick={() => setArchiving(s)}>
                                 <Archive className="mr-2 size-3.5" />
                                 {t('findingLifecycle.subStatus.archiveShort', 'Archive')}
                               </DropdownMenuItem>
@@ -251,6 +242,29 @@ export function SubStatusLanes({
           </section>
         )
       })}
+      <ConfirmDialog
+        open={archiving !== null}
+        onOpenChange={(o) => !o && setArchiving(null)}
+        title={t('findingLifecycle.subStatus.archiveTitle', 'Archive the sub-status "{name}"?', {
+          name: archiving?.name ?? '',
+        })}
+        desc={t(
+          'findingLifecycle.subStatus.archiveDesc',
+          'It can no longer be picked for findings. You can reactivate it later from its lane.'
+        )}
+        confirmText={t('findingLifecycle.subStatus.archiveButton', 'Archive sub-status')}
+        destructive
+        handleConfirm={async () => {
+          const target = archiving
+          setArchiving(null)
+          if (!target) return
+          await run(
+            target.id,
+            () => archiveSubStatus(target.id),
+            t('findingLifecycle.subStatus.archivedToast', 'Sub-status archived')
+          )
+        }}
+      />
       <SubStatusDialog
         open={!!dialog}
         onOpenChange={(o) => !o && setDialog(null)}

@@ -17,12 +17,12 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { useSearch } from '@/context/search-provider'
 import { useTranslation } from '@/context/i18n-provider'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { commandFilter } from '@/lib/command-filter'
 import { adminFetcher } from '@console/lib/admin-api/client'
 import { visibleAdminNav } from '../lib/admin-nav-visibility'
 import { useAdmin } from './admin-console-shell'
-import { adminCan } from '../types'
+import { adminHas } from '../types'
 import { PLATFORM_USER_SEARCH_MIN } from '../api/use-platform-users'
 import type { AdminOrganizationList, PlatformUserList } from '../types'
 
@@ -42,7 +42,7 @@ export function AdminCommandMenu() {
   const { t } = useTranslation()
   const admin = useAdmin()
   const [query, setQuery] = React.useState('')
-  const q = useDebounce(query.trim(), 200)
+  const q = useSearchQuery(query).term
 
   const orgPath =
     open && q.length >= ORG_SEARCH_MIN
@@ -52,7 +52,7 @@ export function AdminCommandMenu() {
   // Accounts across organizations (Console > Users); the API needs 3+ characters.
   // Read-only administrators may not search people (the API refuses it).
   const userPath =
-    open && q.length >= PLATFORM_USER_SEARCH_MIN && admin && adminCan(admin.role, 'ops_admin')
+    open && q.length >= PLATFORM_USER_SEARCH_MIN && admin && adminHas(admin, 'platform.users.read')
       ? `/platform-users?${new URLSearchParams({ q, page: '1', per_page: String(ORG_SEARCH_LIMIT) })}`
       : null
   const users = useSWR<PlatformUserList>(userPath, adminFetcher, { keepPreviousData: true })
@@ -66,7 +66,7 @@ export function AdminCommandMenu() {
     [setOpen]
   )
 
-  const sections = visibleAdminNav(admin.max_role ?? admin.role)
+  const sections = visibleAdminNav(admin)
   const orgResults = orgPath ? (orgs.data?.data ?? []) : []
   const userResults = userPath ? (users.data?.data ?? []) : []
 

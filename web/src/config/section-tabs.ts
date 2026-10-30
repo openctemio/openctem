@@ -5,9 +5,9 @@
  * shows ONE row per section (at most two nav levels: group, then item).
  */
 import {
-  AlertTriangle,
+  AppWindow,
+  Briefcase,
   Bug,
-  Building,
   Building2,
   ClipboardCheck,
   Copy,
@@ -21,10 +21,14 @@ import {
   FolderKanban,
   GitBranch,
   Globe,
+  GlobeLock,
   History,
+  LayoutDashboard,
   Link2,
   ListChecks,
+  Network,
   Radar,
+  FileBadge,
   ShieldCheck,
   Swords,
   Trophy,
@@ -41,13 +45,28 @@ import { Permission } from '@/lib/permissions'
  * findings by type. URLs predate the tabs and are unchanged.
  */
 export const EXPOSURES_SECTION_TABS: readonly SectionTab[] = [
-  { label: 'Overview', href: '/exposures', icon: AlertTriangle },
-  { label: 'Vulnerabilities', href: '/exposures/vulnerabilities', icon: Bug },
+  { label: 'Overview', labelKey: 'nav.tab.overview', href: '/exposures', icon: LayoutDashboard },
+  {
+    label: 'Vulnerabilities',
+    labelKey: 'nav.tab.vulnerabilities',
+    href: '/exposures/vulnerabilities',
+    icon: Bug,
+  },
   // FileKey, not KeyRound: KeyRound reads as the separate Credential leaks
   // module (leaked accounts), while this tab is secrets committed to code.
-  { label: 'Secrets', href: '/exposures/secrets', icon: FileKey },
-  { label: 'Code weaknesses', href: '/exposures/code', icon: FileWarning },
-  { label: 'Misconfigurations', href: '/exposures/misconfigurations', icon: Wrench },
+  { label: 'Secrets', labelKey: 'nav.tab.secrets', href: '/exposures/secrets', icon: FileKey },
+  {
+    label: 'Code weaknesses',
+    labelKey: 'nav.tab.codeWeaknesses',
+    href: '/exposures/code',
+    icon: FileWarning,
+  },
+  {
+    label: 'Misconfigurations',
+    labelKey: 'nav.tab.misconfigurations',
+    href: '/exposures/misconfigurations',
+    icon: Wrench,
+  },
 ]
 
 /**
@@ -71,13 +90,32 @@ export const REMEDIATION_SECTION_TABS: readonly SectionTab[] = [
 export const SCOPE_SECTION_TABS: readonly SectionTab[] = [
   {
     label: 'Scope',
+    labelKey: 'nav.tab.scope',
     href: '/scope',
     icon: Fence,
     module: 'scope_config',
     permission: Permission.ScopeRead,
   },
   {
+    // Domains proved by DNS; its own page so Scope keeps one tab row.
+    label: 'Domain proof',
+    labelKey: 'scope.tabs.proof',
+    href: '/scope/domain-proof',
+    icon: GlobeLock,
+    module: 'attack_surface',
+    permission: Permission.ScopeRead,
+  },
+  {
+    label: 'Networks',
+    labelKey: 'networkSeeds.tab',
+    href: '/scope/networks',
+    icon: Network,
+    module: 'attack_surface',
+    permission: Permission.ScopeRead,
+  },
+  {
     label: 'Programs',
+    labelKey: 'nav.tab.programs',
     href: '/programs',
     icon: Trophy,
     module: 'scope_config',
@@ -85,6 +123,7 @@ export const SCOPE_SECTION_TABS: readonly SectionTab[] = [
   },
   {
     label: 'Letters',
+    labelKey: 'nav.tab.letters',
     href: '/scope/letters',
     icon: FileSignature,
     module: 'scope_config',
@@ -101,6 +140,7 @@ export const SCOPE_SECTION_TABS: readonly SectionTab[] = [
 export const BUSINESS_CONTEXT_SECTION_TABS: readonly SectionTab[] = [
   {
     label: 'Crown jewels',
+    labelKey: 'nav.tab.crownJewels',
     href: '/crown-jewels',
     icon: Crown,
     module: 'crown_jewels',
@@ -108,13 +148,15 @@ export const BUSINESS_CONTEXT_SECTION_TABS: readonly SectionTab[] = [
   },
   {
     label: 'Services',
+    labelKey: 'nav.tab.services',
     href: '/business-services',
-    icon: Building,
+    icon: Briefcase,
     module: 'business_services',
     permission: Permission.BusinessServicesRead,
   },
   {
     label: 'Units',
+    labelKey: 'nav.tab.units',
     href: '/business-units',
     icon: Building2,
     module: 'business_units',
@@ -129,6 +171,7 @@ export const BUSINESS_CONTEXT_SECTION_TABS: readonly SectionTab[] = [
 export const THREAT_MODEL_SECTION_TABS: readonly SectionTab[] = [
   {
     label: 'Threats',
+    labelKey: 'nav.tab.threats',
     href: '/threat-model',
     icon: Crosshair,
     module: 'threat_model',
@@ -136,6 +179,7 @@ export const THREAT_MODEL_SECTION_TABS: readonly SectionTab[] = [
   },
   {
     label: 'Attacker profiles',
+    labelKey: 'nav.tab.attackerProfiles',
     href: '/attacker-profiles',
     icon: Swords,
     module: 'attacker_profiles',
@@ -152,6 +196,7 @@ export const THREAT_MODEL_SECTION_TABS: readonly SectionTab[] = [
 export const SCANS_SECTION_TABS: readonly SectionTab[] = [
   {
     label: 'Scans',
+    labelKey: 'nav.tab.scans',
     href: '/scans',
     icon: Radar,
     module: 'scans',
@@ -159,6 +204,7 @@ export const SCANS_SECTION_TABS: readonly SectionTab[] = [
   },
   {
     label: 'Runs',
+    labelKey: 'nav.tab.runs',
     href: '/scans/runs',
     icon: ListChecks,
     module: 'scans',
@@ -166,6 +212,7 @@ export const SCANS_SECTION_TABS: readonly SectionTab[] = [
   },
   {
     label: 'Workflows',
+    labelKey: 'nav.tab.workflows',
     href: '/scans/workflows',
     icon: GitBranch,
     module: 'scan_workflows',
@@ -174,6 +221,7 @@ export const SCANS_SECTION_TABS: readonly SectionTab[] = [
   },
   {
     label: 'Approvals',
+    labelKey: 'nav.tab.approvals',
     href: '/scans/approvals',
     icon: ShieldCheck,
     module: 'scans',
@@ -191,6 +239,7 @@ export const SCANS_SECTION_TABS: readonly SectionTab[] = [
 export const ASSETS_SECTION_TABS: readonly SectionTab[] = [
   {
     label: 'Inventory',
+    labelKey: 'nav.tab.inventory',
     href: '/assets',
     icon: Container,
     module: 'assets',
@@ -201,6 +250,7 @@ export const ASSETS_SECTION_TABS: readonly SectionTab[] = [
     // owner, a criticality or a recent scan, relationship suggestions and
     // possible duplicates. Relationships and duplicates keep their own URLs.
     label: 'Needs attention',
+    labelKey: 'nav.tab.needsAttention',
     href: '/assets/attention',
     matchPrefix: ['/assets/suggestions', '/assets/duplicates'],
     icon: ListChecks,
@@ -209,6 +259,7 @@ export const ASSETS_SECTION_TABS: readonly SectionTab[] = [
   },
   {
     label: 'Groups',
+    labelKey: 'nav.tab.groups',
     href: '/assets/groups',
     icon: FolderKanban,
     module: 'assets',
@@ -219,6 +270,7 @@ export const ASSETS_SECTION_TABS: readonly SectionTab[] = [
     // exposure changes, shadow IT, and value changes (RFC-069, `?view=values`).
     // It keeps the URL the change digest links to.
     label: 'Activity',
+    labelKey: 'nav.tab.activity',
     href: '/assets/changes',
     icon: History,
     module: 'assets',
@@ -332,6 +384,7 @@ export const ASSET_ATTENTION_REASONS: readonly AttentionReasonDef[] = [
 export const ATTACK_SURFACE_SECTION_TABS: readonly SectionTab[] = [
   {
     label: 'Overview',
+    labelKey: 'nav.tab.overview',
     href: '/attack-surface',
     icon: Globe,
     module: 'attack_surface',
@@ -339,6 +392,7 @@ export const ATTACK_SURFACE_SECTION_TABS: readonly SectionTab[] = [
   },
   {
     label: 'Review',
+    labelKey: 'nav.tab.review',
     href: '/attack-surface/review',
     icon: ClipboardCheck,
     module: 'attack_surface',
@@ -346,6 +400,7 @@ export const ATTACK_SURFACE_SECTION_TABS: readonly SectionTab[] = [
   },
   {
     label: 'Lookalikes',
+    labelKey: 'nav.tab.lookalikes',
     href: '/attack-surface/lookalikes',
     icon: Copy,
     module: 'attack_surface',
@@ -353,6 +408,7 @@ export const ATTACK_SURFACE_SECTION_TABS: readonly SectionTab[] = [
   },
   {
     label: 'Changes',
+    labelKey: 'nav.tab.changes',
     href: '/attack-surface/changes',
     icon: History,
     module: 'attack_surface',
@@ -364,8 +420,19 @@ export const ATTACK_SURFACE_SECTION_TABS: readonly SectionTab[] = [
     // so it sits with the external surface work rather than as an asset lens
     // (research/242 D4). The data is the assets module's.
     label: 'Web surface',
+    labelKey: 'nav.tab.webSurface',
     href: '/attack-surface/web',
-    icon: Globe,
+    icon: AppWindow,
+    module: 'assets',
+    permission: Permission.AssetsRead,
+  },
+  {
+    // The certificate assets of the external surface with their expiry
+    // status (research/333 D5). Read from the assets module's data.
+    label: 'Certificates',
+    labelKey: 'nav.tab.certificates',
+    href: '/attack-surface/certificates',
+    icon: FileBadge,
     module: 'assets',
     permission: Permission.AssetsRead,
   },

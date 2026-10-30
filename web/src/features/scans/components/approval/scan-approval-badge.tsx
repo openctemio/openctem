@@ -1,7 +1,6 @@
 'use client'
 
-import { ShieldCheck } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
+import { ApprovalStatusLozenge } from '@/features/shared/components/approval-status-lozenge'
 import { useTranslation } from '@/context/i18n-provider'
 
 /**
@@ -12,17 +11,22 @@ export function ScanApprovalBadge({ status }: { status?: string | null }) {
   const { t } = useTranslation()
   if (status === 'pending') {
     return (
-      <Badge variant="secondary" className="gap-1" data-testid="scan-approval-badge">
-        <ShieldCheck className="size-3" aria-hidden />
-        {t('scans.approval.statusPending', 'Awaiting approval')}
-      </Badge>
+      <span data-testid="scan-approval-badge" className="inline-flex">
+        <ApprovalStatusLozenge
+          status="pending"
+          label={t('scans.approval.statusPending', 'Awaiting approval')}
+        />
+      </span>
     )
   }
   if (status === 'rejected') {
     return (
-      <Badge variant="outline" data-testid="scan-approval-badge">
-        {t('scans.approval.statusRejected', 'Rejected')}
-      </Badge>
+      <span data-testid="scan-approval-badge" className="inline-flex">
+        <ApprovalStatusLozenge
+          status="rejected"
+          label={t('scans.approval.statusRejected', 'Rejected')}
+        />
+      </span>
     )
   }
   return null

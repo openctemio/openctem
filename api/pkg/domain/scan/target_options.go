@@ -52,8 +52,13 @@ type TargetOptions struct {
 	// attribution was confirmed since then, or they were first seen since
 	// then without an attribution record (the dispatch gate still decides
 	// each). The first run takes every such asset. Never a typed host
-	// (RFC-071, continuous discovery).
+	// (continuous discovery).
 	NewSinceLastRun bool `json:"new_since_last_run,omitempty"`
+	// IncludeUnresolved hands an active scanner the names a selector or an
+	// asset group adds even without proof that they resolve. By default
+	// such a name is taken only when a DNS answer or a tool reached it in
+	// the last week; a passive tool takes every name either way.
+	IncludeUnresolved bool `json:"include_unresolved,omitempty"`
 }
 
 // Validate refuses an unknown CIDR mode or an out-of-range window.
@@ -80,7 +85,7 @@ func (o TargetOptions) EffectiveCIDRMode() CIDRMode {
 // IsZero reports whether every option is the default (no CIDR mode
 // chosen).
 func (o TargetOptions) IsZero() bool {
-	return o.CIDRMode == "" && o.SeenWithinDays == 0 && !o.IncludeStale && !o.NewSinceLastRun
+	return o.CIDRMode == "" && o.SeenWithinDays == 0 && !o.IncludeStale && !o.NewSinceLastRun && !o.IncludeUnresolved
 }
 
 // SetTargetOptions sets the options after validating them.

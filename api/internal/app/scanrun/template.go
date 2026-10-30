@@ -106,6 +106,9 @@ func (s *Service) CloneSystemTemplate(ctx context.Context, input CloneSystemTemp
 	if !systemTemplate.IsSystemTemplate {
 		return nil, fmt.Errorf("%w: template is not a system template", shared.ErrValidation)
 	}
+	if err := scanworkflow.RetiredUseError(systemTemplate); err != nil {
+		return nil, err
+	}
 
 	// Determine new name
 	newName := input.NewName
@@ -200,8 +203,10 @@ type ListTemplatesInput struct {
 	IsActive *bool    `json:"is_active"`
 	Tags     []string `json:"tags"`
 	Search   string   `json:"search" validate:"max=255"`
-	Page     int      `json:"page"`
-	PerPage  int      `json:"per_page"`
+	// IncludeRetired also lists retired system workflows.
+	IncludeRetired bool `json:"include_retired"`
+	Page           int  `json:"page"`
+	PerPage        int  `json:"per_page"`
 }
 
 // ListTemplates lists templates with filters.
@@ -216,6 +221,8 @@ func (s *Service) ListTemplates(ctx context.Context, input ListTemplatesInput) (
 		IsActive: input.IsActive,
 		Tags:     input.Tags,
 		Search:   input.Search,
+
+		IncludeRetired: input.IncludeRetired,
 	}
 
 	page := pagination.New(input.Page, input.PerPage)
@@ -235,6 +242,11 @@ type UpdateTemplateInput struct {
 	IsActive        *bool                    `json:"is_active"`
 	UIStartPosition *scanworkflow.UIPosition `json:"ui_start_position"`
 	UIEndPosition   *scanworkflow.UIPosition `json:"ui_end_position"`
+	// DeltaGating and ContinueOnFailedDependency set the workflow's run
+	// rules; nil keeps the stored value (a client that does not know them
+	// never turns them off by saving its settings).
+	DeltaGating                *bool `json:"delta_gating"`
+	ContinueOnFailedDependency *bool `json:"continue_on_failed_dependency"`
 }
 
 // UpdateTemplate updates a template.
@@ -263,7 +275,15 @@ func (s *Service) UpdateTemplate(ctx context.Context, input UpdateTemplateInput)
 	}
 
 	if input.Settings != nil {
+		prev := t.Settings
 		t.Settings = *input.Settings
+		t.Settings.DeltaGating, t.Settings.ContinueOnFailedDependency = prev.DeltaGating, prev.ContinueOnFailedDependency
+	}
+	if input.DeltaGating != nil {
+		t.Settings.DeltaGating = *input.DeltaGating
+	}
+	if input.ContinueOnFailedDependency != nil {
+		t.Settings.ContinueOnFailedDependency = *input.ContinueOnFailedDependency
 	}
 
 	if len(input.Tags) > 0 {
@@ -458,6 +478,8 @@ func (s *Service) CloneTemplate(ctx context.Context, input CloneTemplateInput) (
 			_ = step.SetCondition(scanworkflow.AlwaysCondition())
 		}
 		step.SetRetry(originalStep.MaxRetries, originalStep.RetryDelaySeconds)
+		step.PreferTools = append([]string(nil), originalStep.PreferTools...)
+		step.RunPolicy = originalStep.RunPolicy.Clone()
 
 		if err := s.stepRepo.Create(ctx, step); err != nil {
 			return nil, err

@@ -71,7 +71,11 @@ failing closed, as in api#555).
      *unzoned* and dispatched as before zones (any tenant sensor);
    - private (RFC 1918, CGNAT, ULA) and in no range, a CIDR only partly inside
      a zone, an address in the deny list, a hostname resolving to such an
-     address, or a hostname that does not resolve → **uncovered**.
+     address, or a hostname that does not resolve → **uncovered**. For a
+     scan whose tool only looks names up (`dnsx`, `subfinder`) a hostname
+     that does not resolve is routed as a public target instead: finding out
+     whether it resolves is the job (`active-probe-gate.md`, "Lookup-only
+     jobs and names with no DNS answer").
 4. Targets of a zone are batched: `targets_per_job` per command for scanners
    that read a target list (nuclei, tenable, nessus), one per command for every
    other scanner. At most 1000 commands per run.
@@ -87,7 +91,7 @@ failing closed, as in api#555).
    pre-zone platform/tenant rules.
 8. Every uncovered target is listed in the run's `dispatch_warnings` (with its
    reason) and `uncovered_targets`; `zone_routing` summarises the routing. If no
-   target is left, the trigger fails with `NO_ZONE_COVERAGE`. A run that leaves targets uncovered ends **`partial`**, never `completed`, even when every job succeeded (it fires only the `scan_completed` automations whose `status_filter` includes `partial`).
+   target is left, the trigger is refused and the refusal names each reason with its targets and the next step, grouped by kind (`uncovered_targets[].kind`: `unresolved`, `outside_zones`, `partly_covered`, `outside_selected_zone`, `zone_no_sensor`, `sensor_policy`, `deny_list`, `invalid`), with every target in `details.refused` (code `unresolved`, `zone_none`, `zone_no_sensor`, `deny_list`, `invalid_target`). When every target is a name that does not resolve in DNS the code is `NO_RESOLVING_TARGETS` and the message says only that (a fact about the names, no zone wording); otherwise `NO_ZONE_COVERAGE` (or `SENSOR_POLICY_REFUSED` when sensor policy is the only reason). The message never carries the scan's name or an id. A run that leaves targets uncovered ends **`partial`**, never `completed`, even when every job succeeded (it fires only the `scan_completed` automations whose `status_filter` includes `partial`).
 
 Each batch payload carries only its own targets: `targets`/`target`, a
 `scanner_config` whose `targets`/`target` keys are rewritten to the batch

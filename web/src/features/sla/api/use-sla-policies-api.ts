@@ -16,9 +16,15 @@
 import useSWR, { type SWRConfiguration } from 'swr'
 import useSWRMutation from 'swr/mutation'
 import { get, post, put, del } from '@/lib/api/client'
+import { SWR_REFERENCE } from '@/lib/swr-config'
 import { handleApiError } from '@/lib/api/error-handler'
 import { useTenant } from '@/context/tenant-provider'
 import { usePermissions, Permission } from '@/lib/permissions'
+import {
+  invalidateBootstrapSla,
+  SLA_BOOTSTRAP_KEY,
+  type BootstrapSla,
+} from '@/context/bootstrap-session'
 
 const BASE_URL = '/api/v1/sla-policies'
 
@@ -43,6 +49,11 @@ export interface SlaPolicy {
   p1_days: number
   p2_days: number
   p3_days: number
+  /**
+   * Known exploited (CISA KEV) deadline cap in days: a KEV finding is due at
+   * most this long after it is first seen as known exploited. 0 = off.
+   */
+  kev_cap_days?: number
   warning_threshold_pct: number
   escalation_enabled: boolean
   is_active: boolean
@@ -76,6 +87,8 @@ export interface CreateSlaPolicyInput {
   p1_days?: number
   p2_days?: number
   p3_days?: number
+  /** Known exploited deadline cap, 0..365 (0 = off); omitted = 14. */
+  kev_cap_days?: number
   warning_threshold_pct: number
   escalation_enabled?: boolean
   /** Optional per-asset override; omit for a tenant-level policy. */
@@ -162,16 +175,26 @@ export function assetSlaPolicyUrl(assetId: string): string {
 export function useEffectiveSlaPolicy(assetId?: string | null) {
   const { currentTenant } = useTenant()
   const { can } = usePermissions()
+  // The session bootstrap carries the organization's windows. While no asset
+  // has a policy of its own they are every asset's windows, so the per-asset
+  // read is skipped (cache only: this key has no fetcher).
+  const { data: boot } = useSWR<BootstrapSla | null>(SLA_BOOTSTRAP_KEY, null, {
+    revalidateOnFocus: false,
+    revalidateIfStale: false,
+  })
+  const fromBootstrap = assetId && boot && !boot.asset_overrides ? boot.policy : undefined
   let key: string | null = null
-  if (currentTenant) {
+  if (currentTenant && !fromBootstrap) {
     if (assetId) key = assetSlaPolicyUrl(assetId)
     else if (can(Permission.SLARead)) key = `${BASE_URL}/default`
   }
-  return useSWR<SlaPolicy>(key, (url: string) => get<SlaPolicy>(url), {
+  const read = useSWR<SlaPolicy>(key, (url: string) => get<SlaPolicy>(url), {
     ...defaultConfig,
+    ...SWR_REFERENCE,
     onError: () => {},
     shouldRetryOnError: false,
   })
+  return fromBootstrap ? { ...read, data: fromBootstrap } : read
 }
 
 /** Get a single SLA policy by id. */
@@ -224,6 +247,11 @@ export function useDeleteSlaPolicy() {
 export async function invalidateSlaPoliciesCache() {
   const { mutate } = await import('swr')
   await mutate((key) => typeof key === 'string' && key.includes('/sla-policies'), undefined, {
+    revalidate: true,
+  })
+  // The windows the bootstrap carried, and the per-asset reads, may be stale.
+  await invalidateBootstrapSla()
+  await mutate((key) => typeof key === 'string' && key.endsWith('/sla-policy'), undefined, {
     revalidate: true,
   })
 }

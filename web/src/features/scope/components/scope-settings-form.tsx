@@ -29,7 +29,7 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/context/i18n-provider'
-import { SettingsSection } from '@/features/shared'
+import { SettingsSection, PageStack } from '@/features/shared'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import { updateScopeSettings } from '../api/use-scope-api'
 import type {
@@ -210,7 +210,7 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
   const disabled = !canEdit || saving
 
   return (
-    <div className="space-y-8">
+    <PageStack>
       <SettingsSection
         title={t('scope.settings.inEffect', 'In effect now')}
         description={t(
@@ -441,7 +441,7 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
                   unclassifiedEffective(saved) === 'off' && form.unclassified_scans !== 'off'
                     ? ` ${t('scope.settings.unclassifiedStrict', 'Strict scan approval is in force, so this is Off for now.')}`
                     : ''
-                }`}
+                } ${t('scope.settings.unclassifiedPlatformOnly', 'Applies to platform sensors of the hosted service. Your own sensors scan unclassified assets in full.')}`}
               >
                 <Select
                   value={form.unclassified_scans}
@@ -534,7 +534,7 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
           setForm(settingsToInput(out))
         }}
       />
-    </div>
+    </PageStack>
   )
 }
 
