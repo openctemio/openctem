@@ -415,7 +415,7 @@ export async function getAvailableProviders(): Promise<
  * Keep the state of a link the browser started (Account > Security) for the
  * callback: the same state and browser-binding cookies a sign-in uses, plus
  * the link intent. The state came from POST /me/sign-in-method-links/{provider}/start,
- * which already required a fresh step-up; the API accepts it only for this
+ * which already checked the code or password typed for it; the API accepts it only for this
  * account and this session, once, and only with this browser's binding.
  */
 export async function rememberLinkState(
@@ -499,8 +499,39 @@ export async function completeLinkCallback(
 // PENDING LINK (confirmed after signing in)
 // ============================================
 
+/**
+ * What confirming a sign-in method change asks for: the authenticator code,
+ * the password, or nothing usable (the account must turn on two-factor
+ * authentication first).
+ */
+export type LinkProofKind = 'totp' | 'password' | ''
+
+/** The proof typed in the confirm dialog, sent as `step_up`. */
+export type LinkProof = { totp: string } | { password: string }
+
 /** The provider account waiting to be linked to the signed-in account. */
-export type PendingLink = { provider: SocialProvider; email: string }
+export type PendingLink = { provider: SocialProvider; email: string; proof: LinkProofKind }
+
+/** Codes after which the same pending link may be confirmed again. */
+const PENDING_LINK_RETRY_CODES = new Set(['LINK_PROOF_REQUIRED', 'LINK_PROOF_FAILED'])
+
+const MAX_PROOF_LENGTH = 1024
+
+/** The proof as the API reads it; anything malformed is sent as no proof. */
+function linkProofBody(proof?: LinkProof): string | undefined {
+  if (!proof) return undefined
+  if ('totp' in proof && typeof proof.totp === 'string' && proof.totp.length <= MAX_PROOF_LENGTH) {
+    return JSON.stringify({ step_up: { totp: proof.totp } })
+  }
+  if (
+    'password' in proof &&
+    typeof proof.password === 'string' &&
+    proof.password.length <= MAX_PROOF_LENGTH
+  ) {
+    return JSON.stringify({ step_up: { password: proof.password } })
+  }
+  return undefined
+}
 
 /** The result of confirming a pending link: the API code on a refusal. */
 export type PendingLinkResult = { success: true } | { success: false; code?: string }
@@ -512,7 +543,8 @@ const pendingLinkPath = {
 } as const
 
 async function pendingLinkCall<T>(
-  action: 'describe' | 'confirm' | 'cancel'
+  action: 'describe' | 'confirm' | 'cancel',
+  body?: string
 ): Promise<{ ok: true; data: T } | { ok: false; code?: string } | null> {
   const cookieStore = await cookies()
   const name = pendingLinkCookieName()
@@ -536,6 +568,7 @@ async function pendingLinkCall<T>(
         // own Secure setting picks, so both are sent).
         Cookie: `__Host-oauth_pending_link=${token}; oauth_pending_link=${token}`,
       },
+      body,
     })
     if (!response.ok) {
       const body = await response.json().catch(() => ({}))
@@ -555,25 +588,28 @@ async function pendingLinkCall<T>(
  * forgotten.
  */
 export async function getPendingLinkAction(): Promise<PendingLink | null> {
-  const res = await pendingLinkCall<{ provider: string; email: string }>('describe')
+  const res = await pendingLinkCall<{ provider: string; email: string; proof?: string }>('describe')
   if (!res) return null
   if (!res.ok) {
     if (res.code !== 'SESSION_EXPIRED') (await cookies()).delete(pendingLinkCookieName())
     return null
   }
   if (!isAllowedValue(SOCIAL_PROVIDERS, res.data.provider)) return null
-  return { provider: res.data.provider, email: res.data.email }
+  const proof: LinkProofKind =
+    res.data.proof === 'totp' || res.data.proof === 'password' ? res.data.proof : ''
+  return { provider: res.data.provider, email: res.data.email, proof }
 }
 
 /**
- * Link the pending provider account to the signed-in account. The API needs a
- * recent sign-in (STEP_UP_REQUIRED otherwise) made after the refused sign-in.
- * The cookie stays only when a step-up would let the person retry.
+ * Link the pending provider account to the signed-in account with the proof
+ * typed in the confirm dialog (the authenticator code, else the password; the
+ * sign-in that just happened does not count). The cookie stays only when the
+ * proof was missing or wrong, so the person can type it again.
  */
-export async function confirmPendingLinkAction(): Promise<PendingLinkResult> {
-  const res = await pendingLinkCall<unknown>('confirm')
+export async function confirmPendingLinkAction(proof?: LinkProof): Promise<PendingLinkResult> {
+  const res = await pendingLinkCall<unknown>('confirm', linkProofBody(proof))
   if (!res) return { success: false, code: 'PENDING_LINK_INVALID' }
-  if (res.ok || res.code !== 'STEP_UP_REQUIRED') {
+  if (res.ok || !PENDING_LINK_RETRY_CODES.has(res.code ?? '')) {
     ;(await cookies()).delete(pendingLinkCookieName())
   }
   return res.ok ? { success: true } : { success: false, code: res.code }

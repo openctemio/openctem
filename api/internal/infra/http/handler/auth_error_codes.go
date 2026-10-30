@@ -99,6 +99,9 @@ const (
 	codeIdentityNotFound        apierror.Code = "IDENTITY_NOT_FOUND"
 	codePendingLinkInvalid      apierror.Code = "PENDING_LINK_INVALID"
 	codePendingLinkNeedsSignIn  apierror.Code = "PENDING_LINK_SIGN_IN_REQUIRED"
+	codeLinkProofRequired       apierror.Code = "LINK_PROOF_REQUIRED"
+	codeLinkProofFailed         apierror.Code = "LINK_PROOF_FAILED"
+	codeLinkProofUnavailable    apierror.Code = "LINK_PROOF_UNAVAILABLE"
 	codeInvitationAlreadyMember apierror.Code = "INVITATION_ALREADY_MEMBER"
 	codeInvitationSuspended     apierror.Code = "INVITATION_MEMBERSHIP_SUSPENDED"
 	codeMembershipReactivate    apierror.Code = "MEMBERSHIP_SUSPENDED_REACTIVATE"
@@ -217,6 +220,11 @@ var authErrorTable = []authErrorEntry{
 	{e(auth.ErrIdentityNotFound), http.StatusNotFound, codeIdentityNotFound, "Sign-in method not found.", ""},
 	{e(auth.ErrPendingLinkInvalid), http.StatusNotFound, codePendingLinkInvalid, "There is no sign-in method waiting to be linked to this account. Sign in with it again, or link it in Account > Security.", ""},
 	{e(auth.ErrPendingLinkNeedsSignIn), http.StatusForbidden, codePendingLinkNeedsSignIn, "Sign in to your account again to link this sign-in method.", ""},
+	// The proof typed to link or unlink (auth/link_proof.go). A wrong code
+	// or password also counts towards the account lockout.
+	{e(auth.ErrLinkProofRequired), http.StatusForbidden, codeLinkProofRequired, "Enter the code from your authenticator app, or your password if two-factor authentication is off, to change sign-in methods.", ""},
+	{e(auth.ErrLinkProofFailed), http.StatusForbidden, codeLinkProofFailed, "The code or password is not correct.", ""},
+	{e(auth.ErrLinkProofUnavailable), http.StatusForbidden, codeLinkProofUnavailable, "Turn on two-factor authentication before you change sign-in methods.", ""},
 
 	// Invitations.
 	{e(tenantapp.ErrInvitationAlreadyMember), http.StatusBadRequest, codeInvitationAlreadyMember, "This person is already a member of this organization.", ""},

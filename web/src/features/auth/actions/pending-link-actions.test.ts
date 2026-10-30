@@ -87,8 +87,12 @@ describe('pending link of a refused social sign-in', () => {
   it('describes the pending link with the secret in its cookie and the session token', async () => {
     jar.set(PENDING, { value: 'secret-1' })
     jar.set(env.auth.cookieName, { value: 'access' })
-    fetchMock.mockResolvedValue(json({ provider: 'google', email: 'p@gmail.com' }))
-    expect(await getPendingLinkAction()).toEqual({ provider: 'google', email: 'p@gmail.com' })
+    fetchMock.mockResolvedValue(json({ provider: 'google', email: 'p@gmail.com', proof: 'totp' }))
+    expect(await getPendingLinkAction()).toEqual({
+      provider: 'google',
+      email: 'p@gmail.com',
+      proof: 'totp',
+    })
     const [url, init] = fetchMock.mock.calls[0]
     expect(String(url)).toContain('/api/v1/me/pending-sign-in-link/describe')
     expect(init.headers.Authorization).toBe('Bearer access')
@@ -111,21 +115,40 @@ describe('pending link of a refused social sign-in', () => {
     expect(await getPendingLinkAction()).toBeNull()
   })
 
-  it('confirms once and forgets the cookie', async () => {
+  it('confirms once with the typed proof and forgets the cookie', async () => {
     jar.set(PENDING, { value: 'secret-1' })
     jar.set(env.auth.cookieName, { value: 'access' })
     fetchMock.mockResolvedValue(json({ id: 'i', provider: 'google' }))
-    expect(await confirmPendingLinkAction()).toEqual({ success: true })
-    expect(String(fetchMock.mock.calls[0][0])).toContain('/pending-sign-in-link/complete')
+    expect(await confirmPendingLinkAction({ totp: '123456' })).toEqual({ success: true })
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(String(url)).toContain('/pending-sign-in-link/complete')
+    expect(JSON.parse(init.body)).toEqual({ step_up: { totp: '123456' } })
     expect(jar.has(PENDING)).toBe(false)
   })
 
-  it('keeps the cookie only when a step-up lets the person retry', async () => {
+  it('sends the password of an account without two-factor, and no proof when none is given', async () => {
     jar.set(PENDING, { value: 'secret-1' })
     jar.set(env.auth.cookieName, { value: 'access' })
+    fetchMock.mockResolvedValue(json({ code: 'LINK_PROOF_REQUIRED' }, 403))
+    await confirmPendingLinkAction({ password: 'pw-1' })
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ step_up: { password: 'pw-1' } })
+    await confirmPendingLinkAction()
+    expect(fetchMock.mock.calls[1][1].body).toBeUndefined()
+  })
+
+  it('keeps the cookie only when a missing or wrong proof lets the person retry', async () => {
+    jar.set(PENDING, { value: 'secret-1' })
+    jar.set(env.auth.cookieName, { value: 'access' })
+    for (const code of ['LINK_PROOF_REQUIRED', 'LINK_PROOF_FAILED']) {
+      fetchMock.mockResolvedValue(json({ code }, 403))
+      expect(await confirmPendingLinkAction({ totp: '000000' })).toEqual({ success: false, code })
+      expect(jar.has(PENDING)).toBe(true)
+    }
+    // A step-up window is not a proof here: nothing to retry with.
     fetchMock.mockResolvedValue(json({ code: 'STEP_UP_REQUIRED' }, 403))
-    expect(await confirmPendingLinkAction()).toEqual({ success: false, code: 'STEP_UP_REQUIRED' })
-    expect(jar.has(PENDING)).toBe(true)
+    await confirmPendingLinkAction({ totp: '123456' })
+    expect(jar.has(PENDING)).toBe(false)
+    jar.set(PENDING, { value: 'secret-1' })
     fetchMock.mockResolvedValue(json({ code: 'PENDING_LINK_SIGN_IN_REQUIRED' }, 403))
     expect(await confirmPendingLinkAction()).toEqual({
       success: false,
