@@ -90,7 +90,11 @@ func (r *IngestReportRepository) CountOpen(ctx context.Context, sensorID shared.
 	return n, nil
 }
 
-// ReserveSegment counts a segment and its items, refusing past the limits.
+// ReserveSegment counts a segment and its items, refusing past the limits and
+// on a report that is no longer receiving (committed, expired or failed): the
+// caller's earlier read of the report may be stale, and a segment stored after
+// the commit would never be part of the verified set. A false answer is
+// either "too large" or "closed"; the caller re-reads the report to tell.
 func (r *IngestReportRepository) ReserveSegment(ctx context.Context, id shared.ID, assets, findings, maxAssets, maxFindings int, expiresAt time.Time) (bool, error) {
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE ingest_reports
@@ -99,6 +103,7 @@ func (r *IngestReportRepository) ReserveSegment(ctx context.Context, id shared.I
 			findings_received = findings_received + $3,
 			expires_at = GREATEST(expires_at, $6), updated_at = NOW()
 		WHERE id = $1
+		  AND state = 'receiving' AND committed_at IS NULL
 		  AND assets_received + $2 <= $4
 		  AND findings_received + $3 <= $5`,
 		id.String(), assets, findings, maxAssets, maxFindings, expiresAt)
@@ -136,14 +141,18 @@ func (r *IngestReportRepository) Abandon(ctx context.Context, id shared.ID) (boo
 	return n == 1, nil
 }
 
-// Commit closes a receiving report.
+// Commit closes a receiving report. It succeeds only while the number of
+// reserved segments equals the committed segment count, so a segment reserved
+// after the caller verified the segment set makes the commit fail (false)
+// and the sensor retries against the fresh set.
 func (r *IngestReportRepository) Commit(ctx context.Context, id shared.ID, c ingestreport.CommitFacts, at time.Time) (bool, error) {
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE ingest_reports
 		SET committed_at = $2, segment_count = $3, implicit_commit = $4,
 			integrity = $5, content_sha256 = $6,
 			state = 'queued', updated_at = NOW()
-		WHERE id = $1 AND committed_at IS NULL AND state = 'receiving'`,
+		WHERE id = $1 AND committed_at IS NULL AND state = 'receiving'
+		  AND segments_received = $3`,
 		id.String(), at, c.SegmentCount, c.Implicit, c.Integrity, c.ContentSHA256)
 	if err != nil {
 		return false, fmt.Errorf("commit ingest report: %w", err)
@@ -187,7 +196,8 @@ func (r *IngestReportRepository) ClaimFinalize(ctx context.Context, id shared.ID
 		WHERE id = $1
 		  AND committed_at IS NOT NULL
 		  AND state = 'queued'
-		  AND (SELECT COUNT(*) FROM jsonb_object_keys(segment_outcomes)) >= segment_count
+		  AND (SELECT COUNT(*) FROM jsonb_object_keys(segment_outcomes) AS k
+		       WHERE k ~ '^[0-9]{1,9}$' AND k::int < segment_count) >= segment_count
 		RETURNING `+ingestReportColumns, id.String())
 	rep, err := scanIngestReport(row)
 	if errors.Is(err, ingestreport.ErrNotFound) {
