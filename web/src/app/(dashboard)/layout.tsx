@@ -16,6 +16,7 @@ import { StepUpDialogHost } from '@/components/step-up-dialog'
 import { SettingsAnchorHighlighter } from '@/components/layout/settings-anchor-highlighter'
 import { PlatformAnnouncementBanner } from '@/features/announcements/components/platform-announcement-banner'
 import { SupportAccessBanner } from '@/features/support-access/components/support-access-banner'
+import { ShellBannerSlot } from '@/components/layout/shell-banner-slot'
 import { PendingLinkPrompt } from '@/features/account/components/pending-link-prompt'
 import { pendingLinkCookieName } from '@/features/auth/lib/oauth-cookies'
 
@@ -56,10 +57,12 @@ export default async function SiteLayout({ children }: SiteLayoutProps) {
                 <RouteGuard>
                   {/* Global header that handles per-route visibility */}
                   <DashboardHeader />
-                  {/* The platform operator's notices (maintenance, warnings). */}
-                  <PlatformAnnouncementBanner />
-                  {/* Platform support can read this organization's data now (RFC-063). */}
-                  <SupportAccessBanner />
+                  <ShellBannerSlot>
+                    {/* The platform operator's notices (maintenance, warnings). */}
+                    <PlatformAnnouncementBanner />
+                    {/* Platform support can read this organization's data now (RFC-063). */}
+                    <SupportAccessBanner />
+                  </ShellBannerSlot>
                   {/*
                     `flex flex-1 flex-col` propagates the flex context
                     from SidebarInset (which is `flex flex-col flex-1`)
