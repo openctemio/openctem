@@ -77,14 +77,14 @@ func TestSocialSignIn_DefaultNeverLinksAutomatically(t *testing.T) {
 	}
 }
 
-// With automatic linking turned on, an account that has no password (made by
-// another provider) is never linked automatically: it gets the pending link.
-func TestAutoLink_OnlyPasswordAccounts(t *testing.T) {
+// An account that has no password (made by another provider) is never linked
+// by a sign-in: it gets the pending link.
+func TestCollision_ProviderAccountNeverLinks(t *testing.T) {
 	acct, err := userdom.NewOAuthUser("a@acme.example", "A", "", userdom.AuthProviderGoogle)
 	if err != nil {
 		t.Fatal(err)
 	}
-	f := newLinkFixture(t, acct) // automatic linking on
+	f := newLinkFixture(t, acct)
 	info := &OAuthUserInfo{Email: "a@acme.example", Issuer: "https://login.microsoftonline.com/tid-1/v2.0", Subject: "oid-1"}
 	collide(t, f, info, OAuthProviderMicrosoft)
 	if n := len(f.idents.keysOf(acct.ID())); n != 0 {
@@ -125,8 +125,8 @@ func TestPendingLink_ConfirmAfterSignIn(t *testing.T) {
 			if len(f.revoker.revoked) != 1 || f.revoker.except[0] != sid {
 				t.Fatalf("other sessions not revoked (keeping this one): %v %v", f.revoker.revoked, f.revoker.except)
 			}
-			if len(f.notifier.linked) != 1 || f.notifier.automatic[0] {
-				t.Fatalf("mailbox not told of a confirmed link: %v %v", f.notifier.linked, f.notifier.automatic)
+			if len(f.notifier.linked) != 1 {
+				t.Fatalf("mailbox not told of a confirmed link: %v", f.notifier.linked)
 			}
 			if _, err := f.svc.ConfirmPendingLink(ctx, ConfirmPendingLinkInput{UserID: acct.ID().String(), SessionID: sid, Token: pending.Token, Proof: goodProof}); !errors.Is(err, ErrPendingLinkInvalid) {
 				t.Fatalf("a pending link must be single use, got %v", err)

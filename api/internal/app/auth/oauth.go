@@ -1067,16 +1067,6 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUser
 			if claimableLocal && !s.claimVouched(ctx, existingUser, userInfo.Email) {
 				return nil, ErrOAuthAccountExists
 			}
-			if !claimableLocal && key.Valid() && s.autoLinkAllowed(ctx, existingUser, userInfo, provider) {
-				if lerr := s.autoLink(ctx, existingUser, key, provider); lerr != nil {
-					return nil, lerr
-				}
-				existingUser.UpdateLastLogin()
-				if uerr := s.userRepo.Update(ctx, existingUser); uerr != nil {
-					s.logger.Warn("failed to update last login", "error", uerr)
-				}
-				return existingUser, nil
-			}
 			if !claimableLocal {
 				s.logger.Warn("OAuth login blocked: email registered with a different auth provider",
 					"email", userInfo.Email,

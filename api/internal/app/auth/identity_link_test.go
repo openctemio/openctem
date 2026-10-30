@@ -11,7 +11,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/mfa"
 	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
 	"github.com/openctemio/openctem/api/pkg/domain/useridentity"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -32,12 +31,10 @@ func (f *fakeRevoker) RevokeAllSessions(_ context.Context, userID, except string
 
 type fakeNotifier struct {
 	linked, unlinked []string
-	automatic        []bool
 }
 
-func (f *fakeNotifier) NotifyIdentityLinked(_ context.Context, email, _, _, provider string, automatic bool) {
+func (f *fakeNotifier) NotifyIdentityLinked(_ context.Context, email, _, _, provider string) {
 	f.linked = append(f.linked, email+"|"+provider)
-	f.automatic = append(f.automatic, automatic)
 }
 
 func (f *fakeNotifier) NotifyIdentityUnlinked(_ context.Context, email, _, _, provider string) {
@@ -126,8 +123,6 @@ func newLinkFixture(t *testing.T, existing *userdom.User) *linkFixture {
 	f.svc.SetSessionRevoker(f.revoker)
 	f.svc.SetIdentityNotifier(f.notifier)
 	f.svc.SetLinkProofVerifier(f.proof)
-	on := true
-	f.svc.SetSignupPolicy(signupdom.Static{Mode: signupdom.ModeAdminOnly, SocialAutoLink: &on})
 	return f
 }
 
@@ -148,127 +143,37 @@ func googleInfo(email, sub, hd string) *OAuthUserInfo {
 	return &OAuthUserInfo{Email: email, Issuer: googleIssuer, Subject: sub, HD: hd}
 }
 
-// --- automatic linking -------------------------------------------------------
+// --- a collision never links ---------------------------------------------------
 
-// The prod case: a password account on a Gmail address signs in with Google.
-// Google runs the mailbox, the account's address is verified: the identity is
-// linked, every session of the account is revoked, a pending reset link is
-// canceled, and the mailbox is told.
-func TestAutoLink_GmailToVerifiedPasswordAccount(t *testing.T) {
-	acct := verifiedPasswordAccount(t, "person@gmail.com")
-	f := newLinkFixture(t, acct)
-
-	got, err := f.svc.findOrCreateUser(context.Background(), googleInfo("person@gmail.com", "g-1", ""), OAuthProviderGoogle)
-	if err != nil {
-		t.Fatalf("auto-link refused: %v", err)
-	}
-	if got.ID() != acct.ID() {
-		t.Fatal("signed into another account")
-	}
-	if keys := f.idents.keysOf(acct.ID()); len(keys) != 1 || keys[0].Issuer != googleIssuer || keys[0].Subject != "g-1" {
-		t.Fatalf("identity not bound: %+v", keys)
-	}
-	if len(f.revoker.revoked) != 1 || f.revoker.revoked[0] != acct.ID().String() || f.revoker.except[0] != "" {
-		t.Fatalf("every session not revoked: %v %v", f.revoker.revoked, f.revoker.except)
-	}
-	if acct.PasswordResetToken() != nil {
-		t.Fatal("pending reset link not canceled")
-	}
-	if len(f.notifier.linked) != 1 || !f.notifier.automatic[0] {
-		t.Fatalf("mailbox not told of an automatic link: %v %v", f.notifier.linked, f.notifier.automatic)
-	}
-	if f.users.created != nil {
-		t.Fatal("a second account was created")
-	}
-}
-
-// A Workspace account whose hosted domain is the address's domain is
-// authoritative too, and so is Microsoft (domain-owner-verified address).
-func TestAutoLink_WorkspaceAndMicrosoft(t *testing.T) {
-	t.Run("workspace hd", func(t *testing.T) {
-		acct := verifiedPasswordAccount(t, "a@acme.example")
-		f := newLinkFixture(t, acct)
-		if _, err := f.svc.findOrCreateUser(context.Background(), googleInfo("a@acme.example", "g-2", "acme.example"), OAuthProviderGoogle); err != nil {
-			t.Fatalf("workspace auto-link refused: %v", err)
-		}
-	})
-	t.Run("microsoft", func(t *testing.T) {
-		acct := verifiedPasswordAccount(t, "a@contoso.example")
-		f := newLinkFixture(t, acct)
-		info := &OAuthUserInfo{Email: "a@contoso.example", Issuer: "https://login.microsoftonline.com/tid-1/v2.0", Subject: "oid-1"}
-		if _, err := f.svc.findOrCreateUser(context.Background(), info, OAuthProviderMicrosoft); err != nil {
-			t.Fatalf("microsoft auto-link refused: %v", err)
-		}
-	})
-}
-
-// Every refusal answers OAUTH_ACCOUNT_EXISTS and writes nothing: no identity,
-// no revoked session, no mail, no account.
-func TestAutoLink_Refusals(t *testing.T) {
+// A sign-in whose address belongs to a verified password account never links
+// itself, whatever the provider vouches for: Gmail, a Workspace domain,
+// Microsoft. There is no setting that turns it on. The answer is the pending
+// link, and nothing is written: no identity, no revoked session, no mail, no
+// new account, the pending reset link stays.
+func TestCollision_NeverLinksAPasswordAccount(t *testing.T) {
 	cases := map[string]struct {
 		email    string
 		info     *OAuthUserInfo
 		provider OAuthProvider
-		setup    func(f *linkFixture, acct *userdom.User)
-		account  func(t *testing.T) *userdom.User
 	}{
-		"platform turned it off": {
-			email: "p@gmail.com", info: googleInfo("p@gmail.com", "g", ""), provider: OAuthProviderGoogle,
-			setup: func(f *linkFixture, _ *userdom.User) {
-				off := false
-				f.svc.SetSignupPolicy(signupdom.Static{Mode: signupdom.ModeAdminOnly, SocialAutoLink: &off})
-			},
-		},
-		"unreadable policy (fail closed)": {
-			email: "p@gmail.com", info: googleInfo("p@gmail.com", "g", ""), provider: OAuthProviderGoogle,
-			setup: func(f *linkFixture, _ *userdom.User) { f.svc.SetSignupPolicy(signupdom.Static(signupdom.Default())) },
-		},
-		"local address never verified (pre-hijack)": {
-			email: "p@gmail.com", info: googleInfo("p@gmail.com", "g", ""), provider: OAuthProviderGoogle,
-			account: func(t *testing.T) *userdom.User {
-				u, _ := userdom.NewLocalUser("p@gmail.com", "Attacker", "$2a$10$hash")
-				return u
-			},
-		},
-		"consumer Google on a company address": {
-			email: "p@acme.example", info: googleInfo("p@acme.example", "g", ""), provider: OAuthProviderGoogle,
-		},
-		"Workspace of another domain": {
-			email: "p@acme.example", info: googleInfo("p@acme.example", "g", "other.example"), provider: OAuthProviderGoogle,
-		},
-		"GitHub is never authoritative": {
-			email: "p@gmail.com", info: &OAuthUserInfo{Email: "p@gmail.com", Issuer: githubIssuer, Subject: "42"}, provider: OAuthProviderGitHub,
-		},
-		"another Google account already linked": {
-			email: "p@gmail.com", info: googleInfo("p@gmail.com", "g-new", ""), provider: OAuthProviderGoogle,
-			setup: func(f *linkFixture, acct *userdom.User) { f.idents.bindTo(acct, googleIssuer, "g-old") },
-		},
-		"session revocation not wired": {
-			email: "p@gmail.com", info: googleInfo("p@gmail.com", "g", ""), provider: OAuthProviderGoogle,
-			setup: func(f *linkFixture, _ *userdom.User) { f.svc.SetSessionRevoker(nil) },
-		},
+		"gmail":        {"person@gmail.com", googleInfo("person@gmail.com", "g-1", ""), OAuthProviderGoogle},
+		"workspace hd": {"a@acme.example", googleInfo("a@acme.example", "g-2", "acme.example"), OAuthProviderGoogle},
+		"microsoft": {"a@contoso.example", &OAuthUserInfo{Email: "a@contoso.example",
+			Issuer: "https://login.microsoftonline.com/tid-1/v2.0", Subject: "oid-1"}, OAuthProviderMicrosoft},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			acct := verifiedPasswordAccount(t, tc.email)
-			if tc.account != nil {
-				acct = tc.account(t)
-			}
 			f := newLinkFixture(t, acct)
-			before := len(f.idents.keysOf(acct.ID()))
-			if tc.setup != nil {
-				tc.setup(f, acct)
-				before = len(f.idents.keysOf(acct.ID()))
-			}
-			got, err := f.svc.findOrCreateUser(context.Background(), tc.info, tc.provider)
-			if !errors.Is(err, ErrOAuthAccountExists) {
-				t.Fatalf("want ErrOAuthAccountExists, got %v (user %v)", err, got)
-			}
-			if n := len(f.idents.keysOf(acct.ID())); n != before {
-				t.Fatalf("identity written on a refusal: %d -> %d", before, n)
+			collide(t, f, tc.info, tc.provider)
+			if n := len(f.idents.keysOf(acct.ID())); n != 0 {
+				t.Fatalf("identity linked without a proof: %d", n)
 			}
 			if len(f.revoker.revoked) != 0 || len(f.notifier.linked) != 0 || f.users.created != nil {
-				t.Fatal("a refusal revoked sessions, sent mail or created an account")
+				t.Fatal("a collision revoked sessions, sent mail or created an account")
+			}
+			if acct.PasswordResetToken() == nil {
+				t.Fatal("a collision changed the account")
 			}
 		})
 	}
@@ -313,17 +218,6 @@ func TestSignIn_LinkedPasswordAccountStillNeedsSecondFactor(t *testing.T) {
 	}
 	if len(gate.asked) != 1 || gate.asked[0] != acct.ID() {
 		t.Fatalf("gate asked about %v", gate.asked)
-	}
-}
-
-// The automatic link of a sign-in goes through the same second step.
-func TestSignIn_AutoLinkedAccountStillNeedsSecondFactor(t *testing.T) {
-	acct := verifiedPasswordAccount(t, "p@gmail.com")
-	f := newLinkFixture(t, acct)
-	f.svc.SetSecondFactorGate(&fakeGate{challenge: &MFAChallengeInfo{Token: "c", Purpose: mfa.PurposeVerify, ExpiresAt: time.Now().Add(time.Minute)}})
-	res, err := f.svc.signIn(context.Background(), googleInfo("p@gmail.com", "g-1", ""), OAuthProviderGoogle, "/")
-	if err != nil || res.MFAChallenge == nil || f.sessions.created != 0 {
-		t.Fatalf("auto-linked sign-in skipped the second factor: %+v %v", res, err)
 	}
 }
 
@@ -410,7 +304,7 @@ func TestLinkIdentity(t *testing.T) {
 		if err != nil || m.Provider != "google" {
 			t.Fatalf("link: %+v %v", m, err)
 		}
-		if len(f.notifier.linked) != 1 || f.notifier.automatic[0] {
+		if len(f.notifier.linked) != 1 {
 			t.Fatal("manual link not told")
 		}
 		if len(f.revoker.revoked) != 0 {
