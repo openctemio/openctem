@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/url"
 	"strings"
@@ -220,6 +221,17 @@ func (h *OAuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 
 // handleOAuthError handles OAuth errors and returns appropriate HTTP responses.
 func (h *OAuthHandler) handleOAuthError(w http.ResponseWriter, err error) {
+	// The address has an account: the same 409 OAUTH_ACCOUNT_EXISTS, with the
+	// pending link the web server keeps for this browser (HttpOnly cookie)
+	// until the person signs in and confirms it.
+	var pending *auth.PendingLinkError
+	if errors.As(err, &pending) {
+		en, _ := lookupAuthError(auth.ErrOAuthAccountExists)
+		apierror.New(en.Status, en.Code, en.Message).
+			WithDetails(PendingLinkDetails{PendingLink: pending.Token, Provider: string(pending.Provider)}).
+			WriteJSON(w)
+		return
+	}
 	if writeAuthTableError(w, err) {
 		return
 	}

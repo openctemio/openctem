@@ -127,7 +127,7 @@ offboarding without step-up and is removed.
 | `POST /api/v1/tenants/{tenant}/settings/sso/changes/{id}/approve` | Installs who can sign in to the organization. |
 | `DELETE /api/v1/tenants/{tenant}` | Deletes the organization. |
 | `DELETE /api/v1/organization/members/{id}/mfa` | Removes a member's second factor. |
-| `POST /api/v1/me/sign-in-method-links/{provider}/start`, `DELETE /api/v1/me/sign-in-methods/{id}` | Adds or removes a way to sign in to the account ([linking social sign-in](social-login-linking.md)). |
+| `POST /api/v1/me/sign-in-method-links/{provider}/start`, `POST /api/v1/me/pending-sign-in-link/confirm`, `DELETE /api/v1/me/sign-in-methods/{id}` | Adds or removes a way to sign in to the account ([linking social sign-in](social-login-linking.md)). |
 | `POST /api/v1/organization/members/{id}/offboard`, `.../erase` | Removes a person's access; erases their personal data. Disabling (`POST /api/v1/tenants/{tenant}/members/{id}/suspend`) and re-enabling stay one click: they are reversible and keep everything the member holds. |
 | `POST /api/v1/ci/gate-overrides` | Break-glass past the CI security gate. |
 | `POST /api/v1/integrations/{id}/jira-webhook/secret/rotate`, `PUT …/{id}/jira-webhook/secret`, `POST …/{id}/github-webhook/secret/rotate` | Whoever holds the secret can forge inbound webhook events (issue sync, push events) for that integration. |
