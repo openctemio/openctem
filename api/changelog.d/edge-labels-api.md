@@ -1,0 +1,4 @@
+### Added: assets and scope entries say when an address is a CDN or edge provider's
+
+- `GET /assets` and `GET /assets/{id}` carry `edge {class, provider, address?}` when the asset is a CDN, edge, SaaS-hosting or cloud-shared address, or a name or service served through one; `GET /scope/targets` carries it on an address, range or CIDR entry wholly inside a published edge range and on a name entry under a provider's host suffix. Computed on read by the one address classifier (`pkg/domain/edgeaddr`); no query and no stored copy.
+- The platform does not refuse these addresses by itself: the organization adds the address to out of scope, and a test now pins that every dispatch path (scan trigger, scan runs and workflow hops, coverage, enrichment, web verify, retests and validation, connector coverage, the claim-time re-check and `POST /commands`) leaves an excluded edge address out for port scans, httpx and nuclei, in every target form, and cuts it out of a range.
