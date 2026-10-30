@@ -260,7 +260,7 @@ the detail of a tenant copy made from it carries `based_on_retired`.
 |---|---|---|---|---|
 | Passive discovery | subdomains ∥ rdap → dns → asn | every step (all T0), no announced ranges | + announced ranges | + every DNS record type |
 | Subdomains | subdomains → dns → http ∥ takeover (optional) | discovery and resolution | + web probe | + every DNS record type |
-| Standard recon | subdomains → dns → http ∥ ports ∥ asn → screenshots (optional) ∥ crawl ∥ services (optional) → templates (after http and crawl) | discovery, resolution, ASN | top-100 ports (cap 1 000), templates critical/high/medium (cap 500), no crawl | top-1 000 ports (cap 5 000), crawl (cap 200), templates down to low (cap 2 000) |
+| Standard recon | subdomains → dns → http ∥ ports ∥ asn → screenshots (optional) ∥ crawl ∥ services (optional) → templates (after http and crawl) | discovery, resolution, ASN | top-1 000 ports (cap 1 000), templates critical/high/medium (cap 500), no crawl | same ports (cap 5 000), crawl (cap 200), templates down to low (cap 2 000) |
 | Web | http → screenshots (optional) ∥ crawl → templates | refused at save (no first step runs) | templates critical/high/medium, no crawl | + crawl, templates down to low |
 | Deep recon | Standard recon + rdap + takeover (optional), crawl from Standard, higher caps | T0 steps | as drawn | deepest params and caps |
 
