@@ -1408,7 +1408,7 @@ secrets in it are masked. It is stored **sealed**, never in plaintext
   sealed until the staging purge (7 days) so a re-sent failed report can
   re-run.
 - Payloads queued in plaintext by an earlier release are sealed in place by
-  the worker every 10 minutes (`SealPlaintextSensorPayloads`: batches of at
+  the worker every 10 minutes (`SealPlaintextSensorPayloadsForPlatform`: batches of at
   most 100 rows and 64 MiB of stored payloads, `FOR UPDATE SKIP LOCKED`,
   writes only rows still plaintext, so it is idempotent and safe on several
   replicas); rows queued in the last 5 minutes wait for the next run. This

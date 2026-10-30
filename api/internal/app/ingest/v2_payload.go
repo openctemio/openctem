@@ -71,7 +71,7 @@ func sealSegment(s *ingestpayload.Sealer, job *ingestjob.Job) error {
 
 // openSegment returns the decoded payload of a sensor job. A payload stored
 // before payloads were sealed is returned as stored (the worker also seals
-// those in place, SealPlaintextSensorPayloads).
+// those in place, SealPlaintextSensorPayloadsForPlatform).
 func openSegment(s *ingestpayload.Sealer, job *ingestjob.Job) ([]byte, error) {
 	if !job.PayloadSealed() {
 		return job.Payload(), nil

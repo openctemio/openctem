@@ -74,7 +74,7 @@ func sealState(t *testing.T, db *sql.DB, id ingestjob.ID) (sealed bool, failed b
 // A row that cannot be sealed is reported and marked, the rows around it are
 // sealed in the same step, and the marked row is not picked again until its
 // mark expires.
-func TestSealPlaintextSensorPayloads_UnsealableRowIsSkipped(t *testing.T) {
+func TestSealPlaintextSensorPayloadsForPlatform_UnsealableRowIsSkipped(t *testing.T) {
 	repo, db, tenant := sealTestRepo(t)
 	ctx := context.Background()
 	ids := queuePlainV1(t, repo, db, tenant, 3, 100)
@@ -86,7 +86,7 @@ func TestSealPlaintextSensorPayloads_UnsealableRowIsSkipped(t *testing.T) {
 		}
 		return fakeSeal(j)
 	}
-	run, err := repo.SealPlaintextSensorPayloads(ctx, time.Now(), 10, 1<<20, seal)
+	run, err := repo.SealPlaintextSensorPayloadsForPlatform(ctx, time.Now(), 10, 1<<20, seal)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestSealPlaintextSensorPayloads_UnsealableRowIsSkipped(t *testing.T) {
 	}
 
 	// Not picked again.
-	run, err = repo.SealPlaintextSensorPayloads(ctx, time.Now(), 10, 1<<20, seal)
+	run, err = repo.SealPlaintextSensorPayloadsForPlatform(ctx, time.Now(), 10, 1<<20, seal)
 	if err != nil || run.Picked != 0 || len(run.Failed) != 0 {
 		t.Fatalf("second run %+v err %v", run, err)
 	}
@@ -112,7 +112,7 @@ func TestSealPlaintextSensorPayloads_UnsealableRowIsSkipped(t *testing.T) {
 	if _, err := db.Exec(`UPDATE ingest_jobs SET payload_seal_failed_at = NOW() - interval '2 days' WHERE id = $1`, bad.String()); err != nil {
 		t.Fatal(err)
 	}
-	run, err = repo.SealPlaintextSensorPayloads(ctx, time.Now(), 10, 1<<20, fakeSeal)
+	run, err = repo.SealPlaintextSensorPayloadsForPlatform(ctx, time.Now(), 10, 1<<20, fakeSeal)
 	if err != nil || run.Picked != 1 || run.Sealed != 1 {
 		t.Fatalf("retry run %+v err %v", run, err)
 	}
@@ -120,22 +120,22 @@ func TestSealPlaintextSensorPayloads_UnsealableRowIsSkipped(t *testing.T) {
 
 // A step holds at most maxBytes of payloads (a first row over it goes alone),
 // and the rows left are taken by the next step.
-func TestSealPlaintextSensorPayloads_BatchIsCappedByBytes(t *testing.T) {
+func TestSealPlaintextSensorPayloadsForPlatform_BatchIsCappedByBytes(t *testing.T) {
 	repo, db, tenant := sealTestRepo(t)
 	ctx := context.Background()
 	queuePlainV1(t, repo, db, tenant, 4, 1000)
 
 	loaded := 0
 	count := func(j *ingestjob.Job) error { loaded++; return fakeSeal(j) }
-	run, err := repo.SealPlaintextSensorPayloads(ctx, time.Now(), 100, 2500, count)
+	run, err := repo.SealPlaintextSensorPayloadsForPlatform(ctx, time.Now(), 100, 2500, count)
 	if err != nil || run.Picked != 2 || run.Sealed != 2 || loaded != 2 {
 		t.Fatalf("capped step %+v loaded=%d err %v", run, loaded, err)
 	}
-	run, err = repo.SealPlaintextSensorPayloads(ctx, time.Now(), 100, 10, count)
+	run, err = repo.SealPlaintextSensorPayloadsForPlatform(ctx, time.Now(), 100, 10, count)
 	if err != nil || run.Picked != 1 || run.Sealed != 1 {
 		t.Fatalf("a row over the cap must go alone: %+v err %v", run, err)
 	}
-	run, err = repo.SealPlaintextSensorPayloads(ctx, time.Now(), 100, 1<<20, count)
+	run, err = repo.SealPlaintextSensorPayloadsForPlatform(ctx, time.Now(), 100, 1<<20, count)
 	if err != nil || run.Picked != 1 || run.Sealed != 1 {
 		t.Fatalf("last step %+v err %v", run, err)
 	}
@@ -148,7 +148,7 @@ func TestSensorV1Jobs_SealedThenEmptiedOnComplete(t *testing.T) {
 	ctx := context.Background()
 	ids := queuePlainV1(t, repo, db, tenant, 1, 50)
 
-	if run, err := repo.SealPlaintextSensorPayloads(ctx, time.Now(), 10, 1<<20, fakeSeal); err != nil || run.Sealed != 1 {
+	if run, err := repo.SealPlaintextSensorPayloadsForPlatform(ctx, time.Now(), 10, 1<<20, fakeSeal); err != nil || run.Sealed != 1 {
 		t.Fatalf("v1 job not sealed: %+v %v", run, err)
 	}
 	var key sql.NullString
@@ -190,7 +190,7 @@ func TestTenantQueuedBytes(t *testing.T) {
 		t.Fatalf("queued bytes %d err %v, want 600 (another tenant's must not count)", n, err)
 	}
 	// A sealed row counts its decoded size, not the ciphertext's.
-	if _, err := repo.SealPlaintextSensorPayloads(ctx, time.Now(), 10, 1<<20, fakeSeal); err != nil {
+	if _, err := repo.SealPlaintextSensorPayloadsForPlatform(ctx, time.Now(), 10, 1<<20, fakeSeal); err != nil {
 		t.Fatal(err)
 	}
 	if n, _ := repo.TenantQueuedBytes(ctx, tenant); n != 600 {
