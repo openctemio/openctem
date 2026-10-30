@@ -1657,7 +1657,9 @@ would close findings they cannot see. Exclusions that only stop scanning keep th
 
 `kind` on `POST /scope/exclusions`, `PUT /scope/exclusions/{id}`, `POST /scope/exclusions/bulk` (with
 `expires_at`) and in every exclusion response. `POST /scope/exclusions/bulk/preview` returns `open_findings`
-per item: what a permanent closing exclusion would close. `POST /scope/exclusions/bulk/delete` takes 200 ids,
+per item: what a permanent closing exclusion would close, and for an address, range or CIDR `resolving_names`
+(names it also excludes through a dedicated address they resolve to) or, for a CDN or hosting shared front end,
+`names_unaffected` (architecture/easm.md section 4m). `POST /scope/exclusions/bulk/delete` takes 200 ids,
 as many as one bulk create adds, so the inventory's Undo is one call.
 
 ### 20.5 Threats
