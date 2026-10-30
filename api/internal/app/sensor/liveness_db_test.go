@@ -291,7 +291,7 @@ func TestLiveness_HistoryBatchAdditive_DB(t *testing.T) {
 	id := h.sensor(tid)
 	bucket := sensordom.HeartbeatBucketStart(time.Now())
 	agg := func(beats int64) sensordom.HeartbeatAggregate {
-		return sensordom.HeartbeatAggregate{TenantID: tid, SensorID: id, BucketStart: bucket, Beats: beats, GapBeats: beats, SumGapSeconds: float64(beats) * 30, MaxGapSeconds: 31}
+		return sensordom.HeartbeatAggregate{TenantID: tid, SensorID: id, BucketStart: bucket, Beats: beats, GapBeats: 0, PrevBeats: beats, SumGapSeconds: float64(beats) * 30, MaxGapSeconds: 31}
 	}
 	for _, n := range []int64{10, 7} {
 		if err := hist.RecordHeartbeatBatch(ctx, []sensordom.HeartbeatAggregate{agg(n)}); err != nil {
