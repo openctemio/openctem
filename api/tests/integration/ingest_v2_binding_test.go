@@ -18,8 +18,16 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
 	"github.com/openctemio/openctem/api/pkg/domain/sensorresult"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
+
+// autoClosing is an organization in closing mode auto.
+type autoClosing struct{}
+
+func (autoClosing) GetClosureSettings(context.Context, string) (*tenant.ClosureSettings, error) {
+	return &tenant.ClosureSettings{Mode: tenant.ClosingModeAuto}, nil
+}
 
 func newBindingV2Rig(t *testing.T) (*v2Rig, *postgres.SensorResultRepository) {
 	t.Helper()
@@ -36,6 +44,9 @@ func newBindingV2RigGuard(t *testing.T, guard ingest.BlindingGuard) (*v2Rig, *po
 		// One blinding guard for the commit and the command-completion
 		// evaluation, as in production.
 		svc.SetCoverageAutoResolve(ingest.CoverageAutoResolveDryRun, guard)
+		// The organization's closing mode is auto (a default-branch close
+		// goes through it like every automatic close).
+		svc.SetClosureSettings(autoClosing{})
 	})
 	return r, results
 }

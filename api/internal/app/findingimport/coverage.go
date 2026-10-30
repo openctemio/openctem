@@ -16,11 +16,14 @@ import (
 	"context"
 	"errors"
 	"sort"
+	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/closuremode"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
 // MaxCoverageAssets bounds the asset ids one full-coverage upload names.
@@ -61,6 +64,9 @@ const (
 	noteScopeChanged = "scope_changed"
 	// noteNeedsVerify: the uploader may not verify a fix, so nothing closed.
 	noteNeedsVerify = "needs_verify"
+	// noteProposed: the organization's closing mode asked a person to confirm
+	// the closes (Ready to close); the upload closed nothing itself.
+	noteProposed = "proposed"
 )
 
 // receiptRecorder records the findings an upload closed on its receipt.
@@ -181,7 +187,7 @@ func (s *Service) closeUncovered(ctx context.Context, req Request, results []Fil
 	}
 	assets := uniqueIDs(req.Coverage.AssetIDs)
 	note = "resolved"
-	total := 0
+	total, proposals, resolvedAny := 0, 0, false
 	for _, tool := range names {
 		stale, open, err := repo.ImportCoverageCandidates(ctx, req.TenantID, assets, tool, req.ReceiptID)
 		if errors.Is(err, ingestreport.ErrReceiptIncomplete) {
@@ -193,14 +199,28 @@ func (s *Service) closeUncovered(ctx context.Context, req Request, results []Fil
 			s.logger.Warn("finding import: coverage candidates", "tenant_id", req.TenantID.String(), "error", err)
 			return "error", nil
 		}
-		if len(stale) > 0 && ingest.DefaultBlindingGuard().Holds(len(stale), open) {
+		var proposed []shared.ID
+		// The organization's closing mode decides per finding: close,
+		// propose to a person, or keep (off keeps and proposes nothing).
+		toClose, proposed, _ := s.closureDecider().Split(ctx, req.TenantID, stale, vulnerability.ClosureMethodCoveredScan)
+		held := len(stale) > 0 && ingest.DefaultBlindingGuard().Holds(len(stale), open)
+		if held {
+			// A held run closes nothing; a person decides in Ready to close.
+			proposed = append(proposed, toClose...)
+			toClose = nil
 			note = "held"
-		} else if len(stale) > 0 {
-			closed, err := repo.ResolveImportCoverage(ctx, req.TenantID, assets, stale, tool, req.ReceiptID)
+		}
+		if len(proposed) > 0 {
+			s.proposeClosures(ctx, req, tool, proposed)
+			proposals += len(proposed)
+		}
+		if len(toClose) > 0 {
+			closed, err := repo.ResolveImportCoverage(ctx, req.TenantID, assets, toClose, tool, req.ReceiptID)
 			if err != nil {
 				s.logger.Warn("finding import: coverage resolve", "tenant_id", req.TenantID.String(), "error", err)
 				return "error", nil
 			}
+			resolvedAny = resolvedAny || len(closed) > 0
 			if len(closed) > 0 {
 				if _, err := rec.Record(ctx, &ingestreceipt.Delta{TenantID: req.TenantID, Tool: tool, Closed: closed,
 					Source: ingestreceipt.Source{Kind: ingestreceipt.SourceUpload, Ref: req.ReceiptID.String()}}); err != nil {
@@ -215,7 +235,36 @@ func (s *Service) closeUncovered(ctx context.Context, req Request, results []Fil
 		}
 		total += n
 	}
+	if note == "resolved" && proposals > 0 && !resolvedAny {
+		note = noteProposed
+	}
 	return note, &total
+}
+
+// closureDecider is the shared closing-mode rule over this service's
+// settings reader and finding repository.
+func (s *Service) closureDecider() closuremode.Decider {
+	return closuremode.Decider{Settings: s.closure, Repo: s.repo, Log: s.logger}
+}
+
+// SetClosureSettings wires the organization closing policy. Without it every
+// organization is in review: a full-coverage upload proposes and closes
+// nothing.
+func (s *Service) SetClosureSettings(r closuremode.SettingsReader) { s.closure = r }
+
+// proposeClosures records a Ready to close proposal (method covered_scan)
+// for each finding the upload did not report, with the upload as evidence.
+func (s *Service) proposeClosures(ctx context.Context, req Request, tool string, ids []shared.ID) {
+	at := time.Now().UTC()
+	evidence := map[string]any{
+		"source": "full_coverage_upload", "receipt_id": req.ReceiptID.String(), "tool": tool,
+		"covered_assets": len(uniqueIDs(req.Coverage.AssetIDs)), "observed_at": at.Format(time.RFC3339),
+	}
+	recs := make([]vulnerability.ClosureProposalRecord, len(ids))
+	for i, id := range ids {
+		recs[i] = vulnerability.ClosureProposalRecord{FindingID: id, Method: vulnerability.ClosureMethodCoveredScan, Evidence: evidence, EvidenceAt: at}
+	}
+	s.closureDecider().Record(ctx, req.TenantID, recs)
 }
 
 func uniqueIDs(in []shared.ID) []shared.ID {

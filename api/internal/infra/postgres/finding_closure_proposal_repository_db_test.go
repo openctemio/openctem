@@ -297,3 +297,43 @@ func TestRecentlyAutoClosed_Reopen_DB(t *testing.T) {
 		t.Fatalf("regression_count = %d, want 0 (a wrong close is not a regression)", regressions)
 	}
 }
+
+// A proposal of the default-branch and source-reported methods is recorded
+// (the table accepts them) and, confirmed, closes the finding verified by the
+// scan (ci_default_branch) or the source (source_reported).
+func TestClosureProposals_NewMethodsConfirm_DB(t *testing.T) {
+	f := newCoverageFixture(t)
+	repo := NewFindingRepository(&DB{DB: f.db})
+	ctx := context.Background()
+	reviewer := f.user(t)
+	ci := f.finding(t, f.host, "semgrep", "", nil)
+	src := f.finding(t, f.host, "nuclei", "", nil)
+	recs := []vulnerability.ClosureProposalRecord{
+		{FindingID: ci, Method: vulnerability.ClosureMethodCIDefaultBranch, CommandID: shared.NewID(), Evidence: map[string]any{"tool": "semgrep"}},
+		{FindingID: src, Method: vulnerability.ClosureMethodSourceReported, Evidence: map[string]any{"source": "software_inventory"}},
+	}
+	if n, err := repo.RecordClosureProposals(ctx, f.tenant, recs); err != nil || n != 2 {
+		t.Fatalf("record = %d, %v", n, err)
+	}
+	items, err := repo.ListClosureProposals(ctx, f.tenant, nil, pagination.New(1, 50))
+	if err != nil || len(items.Data) != 2 {
+		t.Fatalf("list = %+v, %v", items, err)
+	}
+	ids := make([]shared.ID, 0, 2)
+	for _, it := range items.Data {
+		ids = append(ids, it.ID)
+	}
+	res, err := repo.ConfirmClosureProposals(ctx, f.tenant, nil, ids, reviewer, "Lan", "")
+	if err != nil || len(res.Applied) != 2 {
+		t.Fatalf("confirm = %+v, %v", res, err)
+	}
+	for id, want := range map[shared.ID]string{ci: "covered_scan", src: "source_reported"} {
+		var status, verification string
+		if err := f.db.QueryRowContext(ctx, `SELECT status, verification FROM findings WHERE id = $1`, id.String()).Scan(&status, &verification); err != nil {
+			t.Fatal(err)
+		}
+		if status != "resolved" || verification != want {
+			t.Fatalf("finding %s = %s/%s, want resolved/%s", id, status, verification, want)
+		}
+	}
+}
