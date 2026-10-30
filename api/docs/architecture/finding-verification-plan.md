@@ -77,8 +77,37 @@ receipt (`coverage.note = review`) and in an `ingest.coverage_auto_resolve_dry_r
 audit entry with `decision = review`. A held run (blinding guard), template drift and
 secrets behave as before: a held run never closes. When the policy or the tiers cannot
 be read, nothing closes (review; tiers read as critical). The verification plan's
-`covered_scan` method uses the same rule. A store of proposals with a review queue
-comes next; until then a proposal is only recorded.
+`covered_scan` method uses the same rule.
+
+## Ready to close
+
+A `propose` decision is stored in `finding_closure_proposals` (tenant-scoped, one
+`pending` row per finding by a partial unique index, row security policy like
+`findings`). The coverage evaluator writes it in `enforce` only: for each finding the
+closing mode or the tier rule proposes, and for every candidate of a run the blinding
+guard holds (a held run closes nothing; a person decides). A second qualified look
+refreshes the pending row's `evidence` and `evidence_at`. The evidence is the look:
+command, tool, profile, template release digest, reporting sensors, whether the run was
+held, bounded to 4 KiB. A proposal is never a status: the finding stays open.
+
+| Endpoint | Gate | Does |
+|---|---|---|
+| `GET /api/v1/findings/closure/proposals` | `findings:read` | pending, eligible proposals in the caller's data scope, critical first then oldest |
+| `POST /api/v1/findings/closure/proposals/decide` | `findings:verify`; confirming more than one needs a recent re-authentication | `confirm` closes each finding as `fixed`, verification = the proposal's method, `resolved_by` = the person, one transaction with the proposal row and the timeline entry; `dismiss` keeps it open with a reason (`still_present_manual_check`, `scan_not_trustworthy`, `wrong_asset`, `other` + note). At most 200 ids |
+| `GET /api/v1/findings/closure/auto-closed` | `findings:read` | findings the platform closed by itself in the last 7 days and still closed, with the evidence of the close |
+| `POST /api/v1/findings/{id}/reopen-not-fixed` | `findings:status` | reopens such a finding as `confirmed`: the close was wrong. Not counted as a regression |
+
+**Eligibility** is re-checked inside the confirm statement: the finding is still in a
+status a platform close starts from, not a secret or a protected source, and not seen
+after `evidence_at`. Anything else is skipped as `not_eligible`; a proposal outside the
+caller's scope, another tenant's or no longer pending is `not_found`. Each evaluation in
+`enforce` also cancels the tenant's pending proposals whose finding was seen again
+(`seen_again`) or left the open statuses (`status_changed`).
+
+**Counts** ride the bootstrap: `badges.ready_to_close` (only with `findings:verify` and
+the findings module, counted in the caller's data scope), so no page sends a request
+for it. Decisions are audited (`finding.closure_confirmed` high,
+`finding.closure_dismissed`, `finding.auto_close_reopened`).
 
 **Who may change it.** Owner or administrator (`RequireAdmin`). A change that loosens
 the policy (`off` to `review` or `auto`, `review` to `auto`, `critical_auto_close` on)
@@ -100,6 +129,15 @@ at the normal severity.
   `internal/app/ingest/closure_mode_test.go` (review, auto, off, dry_run ceiling, held run,
   unknown id), `tests/unit/closure_settings_service_test.go` (step-up, owner-only, audit
   severity), `internal/infra/postgres/finding_closure_tiers_db_test.go` (cross-tenant).
+- Ready to close: reads and decisions take the caller's data scope (asset scope or the
+  finding's assignee, `filterspec.AssigneeScopeSQL`) and the tenant in every predicate.
+  Threats: a stolen session confirming a queue (step-up above one confirm, bulk cap
+  200), a stale proposal closing a finding that came back (eligibility re-check, sweep),
+  a sensor blinding a run (held runs only propose). Tests:
+  `internal/infra/postgres/finding_closure_proposal_repository_db_test.go` (one pending
+  row, cross-tenant and out-of-scope list, confirm, reopen; seen again; dismiss),
+  `internal/app/ingest/closure_proposals_test.go` (auto, held run, dry run),
+  `internal/infra/http/routes/step_up_routes_test.go` `TestClosureDecisionStepUp_BulkConfirmOnly`.
 - Tests: `internal/app/finding/verification_plan_test.go` (per source, type, asset,
   availability and tier), `internal/app/retest` `TestRetestDB_AvailabilityReasons`,
   `internal/infra/http/routes/finding_verification_plan_db_test.go` (secret plan,
