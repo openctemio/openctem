@@ -95,7 +95,7 @@ held, bounded to 4 KiB. A proposal is never a status: the finding stays open.
 | `GET /api/v1/findings/closure/proposals` | `findings:read` | pending, eligible proposals in the caller's data scope, critical first then oldest |
 | `POST /api/v1/findings/closure/proposals/decide` | `findings:verify`; every confirm (single or bulk) needs a recent re-authentication, dismissal does not | `confirm` closes each finding as `fixed`, verification = the proposal's method, `resolved_by` = the person, one transaction with the proposal row and the timeline entry; `dismiss` keeps it open with a reason (`still_present_manual_check`, `scan_not_trustworthy`, `wrong_asset`, `other` + note). At most 200 ids |
 | `GET /api/v1/findings/closure/auto-closed` | `findings:read` | findings the platform closed by itself in the last 7 days and still closed, with the evidence of the close |
-| `POST /api/v1/findings/{id}/reopen-not-fixed` | `findings:status` | reopens such a finding as `confirmed`: the close was wrong. Not counted as a regression |
+| `POST /api/v1/findings/{id}/reopen` | `findings:status` | reopens such a finding as `confirmed`: the close was wrong. Not counted as a regression |
 
 **Eligibility** is re-checked inside the confirm statement: the finding is still in a
 status a platform close starts from, not a secret or a protected source, and not seen
