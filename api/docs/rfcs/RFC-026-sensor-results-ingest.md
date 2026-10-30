@@ -201,7 +201,10 @@ Order matters; each step is cheaper than the next and runs before it.
    (D21); platform sensors only on the command-bound form.
 3. **Rate limit and concurrency**, per sensor and per tenant (existing
    `TelemetryRateLimiter` + `TenantConcurrencyLimiter`) → `429` +
-   `Retry-After`. Queue backpressure (existing `maxPendingPerTenant`) →
+   `Retry-After`. Queue backpressure (existing `maxPendingPerTenant`; a
+   continuation segment of an admitted report up to twice that, so a
+   started report can finish; `Retry-After` from the tenant's drain rate,
+   jittered) →
    `429` + `Retry-After`.
 4. **Header gates**: `Content-Type` (415), `Content-Encoding` (415),
    `Content-Length` (411/413), `Content-Digest` present (400), path ids

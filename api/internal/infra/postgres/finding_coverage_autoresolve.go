@@ -245,6 +245,52 @@ func (r *FindingRepository) coverageStale(ctx context.Context, tenantID shared.I
 	return stale, open, nil
 }
 
+// coverageCandidateAssetsLimit bounds CoverageCandidateAssets: a run covers
+// at most a few thousand targets; the blinding guard holds anything larger.
+const coverageCandidateAssetsLimit = 5000
+
+// CoverageCandidateAssets returns the assets of the tenant that hold open,
+// non-repository findings of tool whose last sighting came from a command
+// aimed at one of targets (the same target string). A later run of the same
+// tool that covered that target, and reported nothing there, makes them
+// candidates for closing; CoverageStaleFindings then applies every other
+// condition (same profile, not reported by this run, open, not protected).
+func (r *FindingRepository) CoverageCandidateAssets(ctx context.Context, tenantID shared.ID, tool string, targets []string) ([]shared.ID, error) {
+	if tool == "" || len(targets) == 0 {
+		return nil, nil
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT DISTINCT f.asset_id::text
+		FROM findings f
+		JOIN ingest_reports ir ON ir.tenant_id = f.tenant_id AND ir.report_id::text = f.scan_id
+		JOIN commands pc ON pc.tenant_id = ir.tenant_id AND pc.id = ir.command_id
+		WHERE f.tenant_id = $1
+			AND f.tool_name = $2
+			AND f.asset_id IS NOT NULL
+			AND f.branch_id IS NULL
+			AND f.status IN `+autoResolveFromSQL+`
+			AND f.source NOT IN `+coverageProtectedSources+`
+			AND ir.tool_name = $2
+			AND (pc.payload->'targets' ?| $3::text[] OR pc.payload->>'target' = ANY($3::text[]))
+		LIMIT `+fmt.Sprint(coverageCandidateAssetsLimit),
+		tenantID.String(), tool, pq.Array(targets))
+	if err != nil {
+		return nil, fmt.Errorf("coverage candidate assets: %w", err)
+	}
+	defer rows.Close()
+	var out []shared.ID
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, fmt.Errorf("scan coverage candidate asset: %w", err)
+		}
+		if id, err := shared.IDFromString(s); err == nil {
+			out = append(out, id)
+		}
+	}
+	return out, rows.Err()
+}
+
 // ResolveCoverageStale closes the given findings as verified by a scan. It
 // re-checks status and branch in the UPDATE itself, so a finding someone
 // triaged since the candidates were read is left alone.

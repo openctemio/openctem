@@ -1263,7 +1263,9 @@ the report's tool is one the sensor reported installed (`422
 tool-not-permitted`; a sensor that reported no tool may report no result,
 reserved names such as `pentest` never), at most 8 open reports per sensor
 (`429 too-many-open-reports`), the tenant's queue depth
-(`INGEST_MAX_PENDING_PER_TENANT`, `429 queue-full`), and at most 100,000
+(`INGEST_MAX_PENDING_PER_TENANT`, `429 queue-full` with a jittered
+`Retry-After` from the tenant's drain rate; further segments of a report
+already admitted pass up to twice the limit), and at most 100,000
 assets and findings per report, reserved in one conditional `UPDATE` so
 parallel segments cannot overshoot (`413 report-too-large`). The commit
 must list exactly the received segments with their digests
