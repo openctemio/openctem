@@ -166,3 +166,17 @@ type HopRepository interface {
 	// in the tenant (shared.ErrNotFound when it has none).
 	StepRunOfCommand(ctx context.Context, tenantID, commandID shared.ID) (runID shared.ID, stepKey string, err error)
 }
+
+// DeltaBaseline decides which candidates of a heavy chained stage are done
+// since the previous run of the same scan (delta gating). Implemented by
+// the hop repository; every read is scoped to the tenant.
+type DeltaBaseline interface {
+	// UnchangedSince returns, of assetIDs, the assets that are done: first
+	// seen before the previous run started, with no change event since,
+	// and either planned by that run for the same step while its step
+	// completed within maxAge, or covered for the capability by the
+	// coverage ledger and not due yet. A partial, failed or skipped step
+	// of the previous run is never done.
+	UnchangedSince(ctx context.Context, tenantID, previousRunID shared.ID, stepKey, capability string,
+		assetIDs []shared.ID, maxAge time.Duration) (map[shared.ID]bool, error)
+}
