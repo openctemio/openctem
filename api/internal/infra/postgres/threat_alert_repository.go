@@ -99,20 +99,39 @@ func (r *ThreatAlertRepository) EventsAfter(ctx context.Context, id int64, limit
 
 // TenantsAffectedBy (see threatalert.PlannerStore). Platform-wide by
 // design: it answers which organizations to plan, and its result never
-// leaves the planner.
-func (r *ThreatAlertRepository) TenantsAffectedBy(ctx context.Context, vulnID string) ([]shared.ID, error) {
+// leaves the planner. One statement for a page of vulnerabilities, so the
+// fan-out of a large feed import costs one query per page, not per event.
+func (r *ThreatAlertRepository) TenantsAffectedBy(ctx context.Context, vulnIDs []string) (map[string][]shared.ID, error) {
+	out := map[string][]shared.ID{}
+	if len(vulnIDs) == 0 {
+		return out, nil
+	}
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT DISTINCT f.tenant_id FROM findings f
-		WHERE f.cve_id = $1 AND `+vulnerability.OpenStatusSQL("f.status")+`
+		WITH ids AS (SELECT DISTINCT unnest($1::text[]) AS vuln_id)
+		SELECT f.cve_id, f.tenant_id FROM findings f
+		JOIN ids ON ids.vuln_id = f.cve_id
+		WHERE `+vulnerability.OpenStatusSQL("f.status")+`
 		UNION
-		SELECT DISTINCT s.tenant_id FROM asset_software s
+		SELECT va.cve_id, s.tenant_id FROM ids
+		JOIN vulnerability_affected va ON va.cve_id = ids.vuln_id
+		JOIN asset_software s ON s.product_id = va.product_id AND s.superseded_at IS NULL
 		JOIN software_versions v ON v.id = s.software_version_id
-		WHERE s.superseded_at IS NULL AND (v.normalized IS NULL OR v.raw = '')
-		  AND s.product_id IN (SELECT product_id FROM vulnerability_affected WHERE cve_id = $1)`, vulnID)
+		WHERE v.normalized IS NULL OR v.raw = ''
+		ORDER BY 1, 2`, pq.Array(vulnIDs))
 	if err != nil {
 		return nil, fmt.Errorf("tenants affected: %w", err)
 	}
-	return scanIDs(rows)
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var vuln, tenant string
+		if err := rows.Scan(&vuln, &tenant); err != nil {
+			return nil, fmt.Errorf("tenants affected: %w", err)
+		}
+		if id, err := shared.IDFromString(tenant); err == nil {
+			out[vuln] = append(out[vuln], id)
+		}
+	}
+	return out, rows.Err()
 }
 
 // Enqueue (see threatalert.PlannerStore).
