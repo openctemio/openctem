@@ -66,6 +66,8 @@ type v2HarnessOpts struct {
 	ciKeys handler.CIRunnerKeyPolicy
 	// depth, when set, replaces the queue depth reader.
 	depth brokenDepth
+	// noSealer leaves the receiver without a segment sealer.
+	noSealer bool
 }
 
 // brokenDepth is a queue depth that cannot be read.
@@ -110,7 +112,11 @@ func newV2Harness(t *testing.T, opts v2HarnessOpts) *v2Harness {
 	if opts.depth.on {
 		receiver = ingest.NewV2Receiver(h.reports, parked, opts.depth, postgres.NewCommandRepository(db), limits, opts.maxPending, log)
 	}
+	if !opts.noSealer {
+		receiver.SetPayloadSealer(testSegmentSealer(t))
+	}
 	h.proc = ingest.NewV2JobProcessor(ingestSvc, h.reports, h.jobs, limits, ingest.DefaultBlindingGuard(), log)
+	h.proc.SetPayloadSealer(testSegmentSealer(t))
 
 	// A user route behind the real JWT authenticator, for route isolation.
 	gen := jwt.NewGenerator(jwt.TokenConfig{Secret: "v2-route-test-secret-0123456789abcdef", Issuer: "test",

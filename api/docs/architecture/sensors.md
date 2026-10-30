@@ -1383,6 +1383,47 @@ must not resend it. A `failed` report may be sent again under the same id.
 
 v2 responses carry `OpenCTEM-Protocol: 2`.
 
+### Queued segments at rest
+
+A segment waits in `ingest_jobs.payload` until the worker applies it, before
+secrets in it are masked. It is stored **sealed**, never in plaintext
+(`internal/app/ingest/v2_payload.go`):
+
+- The receiver seals the decoded segment with the same sealer as queued CI
+  results and file imports (`ingestpayload.Sealer`): gzip, then AES-256-GCM
+  under a key derived per tenant from `APP_ENCRYPTION_KEY` (HKDF, the tenant
+  id in the info string). The additional data binds the ciphertext to its
+  tenant, job, report, segment number and the SHA-256 of the decoded bytes
+  (`payload_sha`): a row moved to another tenant, report, segment or job, or
+  given another hash, does not open. `payload_key_id` names the key and
+  `payload_bytes` the decoded size. A server without the sealer refuses
+  segments (`503 unavailable`); it never stores them in clear.
+- Only the ingest worker opens a segment. A segment that does not open (key
+  removed, row altered) is recorded as a rejected segment
+  (`processing_failed`); it is not retried. Payloads are never logged.
+- The payload is emptied when its segment job completes (and, as before,
+  when its report finishes); `payload_sha` and `payload_bytes` stay for the
+  commit check. A failed attempt keeps it for the retry; a dead job keeps it
+  sealed until the staging purge (7 days) so a re-sent failed report can
+  re-run.
+- Segments queued in plaintext by an earlier release are sealed in place by
+  the worker every 10 minutes (`SealPlaintextV2Payloads`: batches of 100,
+  `FOR UPDATE SKIP LOCKED`, writes only rows still plaintext, so it is
+  idempotent and safe on several replicas); rows queued in the last 5 minutes
+  wait for the next run. The upgrade migration empties the payloads of jobs
+  already applied. A plaintext row is still read until it is sealed.
+- Key rotation: a segment sealed under a key listed in
+  `APP_ENCRYPTION_KEY_PREVIOUS` still opens; see
+  [encryption key rotation](../deployment/encryption-key-rotation.md).
+- Cost: sealing a 256 KiB segment takes about 1.4 ms and opening it 1.3 ms
+  (64 MiB, the decoded maximum: 0.23 s and 0.28 s); the stored bytes are
+  about a tenth of the decoded size.
+
+Upgrading: do not run workers of the previous release next to this one (a
+rolling update with both): an older worker cannot open a sealed segment and
+records it as rejected. Stop the old API before the new one starts, as the
+compose and single-replica installs do.
+
 ### Configuration and metrics
 
 | Setting | Default | Meaning |

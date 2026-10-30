@@ -18,6 +18,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/ingestqueue"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestpayload"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -44,8 +45,10 @@ type V2Receiver struct {
 	commands   v2CommandReader
 	limits     protov2.Limits
 	maxPending int
-	logger     *logger.Logger
-	now        func() time.Time
+	// sealer seals queued segments; nil refuses every new segment.
+	sealer *ingestpayload.Sealer
+	logger *logger.Logger
+	now    func() time.Time
 }
 
 // NewV2Receiver wires the receiver. maxPendingPerTenant bounds a tenant's
@@ -59,6 +62,11 @@ func NewV2Receiver(reports ingestreport.Repository, jobs ingestjob.V2Repository,
 	return &V2Receiver{reports: reports, jobs: jobs, queue: queue, commands: commands, limits: limits,
 		maxPending: maxPendingPerTenant, logger: log.With("component", "ingest-v2"), now: time.Now}
 }
+
+// SetPayloadSealer sets the sealer queued segments are stored under (the
+// CI upload sealer). Without one every new segment is refused: a segment is
+// never stored in plaintext.
+func (v *V2Receiver) SetPayloadSealer(s *ingestpayload.Sealer) { v.sealer = s }
 
 // Limits are the limits the receiver enforces (published on hello).
 func (v *V2Receiver) Limits() protov2.Limits { return v.limits }
@@ -243,6 +251,11 @@ func (v *V2Receiver) Put(ctx context.Context, t V2Target, seq int, whole bool, b
 		return nil, problem(protov2.ProblemSegmentHeaderMismatch)
 	}
 
+	if v.sealer == nil {
+		v.logger.Error("v2: no segment sealer configured; refusing the segment")
+		return nil, problem(protov2.ProblemUnavailable)
+	}
+
 	if err := v.admit(ctx, tenantID, rep != nil, now); err != nil {
 		return nil, err
 	}
@@ -266,6 +279,10 @@ func (v *V2Receiver) Put(ctx context.Context, t V2Target, seq int, whole bool, b
 	job := ingestjob.NewV2Job(tenantID, &t.Sensor.ID, t.ReportID, ingestjob.V2Segment{
 		ReportRef: rep.ID, Seq: &s, ContentDigest: body.Digest, MediaType: protov2.MediaTypeCTIS,
 	}, body.Decoded)
+	if err := sealSegment(v.sealer, job); err != nil {
+		_ = v.reports.ReleaseSegment(ctx, rep.ID, len(report.Assets), len(report.Findings))
+		return nil, fmt.Errorf("v2: seal segment: %w", err)
+	}
 	stored, created, err := v.jobs.EnqueueV2(ctx, job)
 	if err != nil {
 		_ = v.reports.ReleaseSegment(ctx, rep.ID, len(report.Assets), len(report.Findings))

@@ -64,6 +64,15 @@ func New(jobs Jobs, payloads ingestpayload.Repository, sealer *ingestpayload.Sea
 	return &Queue{jobs: jobs, payloads: payloads, sealer: sealer, now: time.Now}
 }
 
+// Sealer is the sealer uploads are stored under; queued protocol v2 sensor
+// segments use the same one. Nil when the queue is not configured.
+func (q *Queue) Sealer() *ingestpayload.Sealer {
+	if q == nil {
+		return nil
+	}
+	return q.sealer
+}
+
 // ErrUnavailable: the queue is not configured; the upload is refused.
 var ErrUnavailable = errors.New("the ingest queue is not available")
 
