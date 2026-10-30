@@ -235,6 +235,52 @@ func (s Stage) ChunkAddressBudget() int {
 // sends them with every host discovery job; a sensor never picks its own.
 const HostProbePorts = "80,443,22,3389,8080,8443"
 
+// DefaultTopPorts is the "top N" port list a port scan runs when its
+// settings name no ports: the platform decides the port set, never a
+// default a sensor picks (a sensor's own default is the top 100, which
+// leaves most services of an address unseen). The whole range runs only
+// when a scan sets it; it needs port-range chunking to fit a task budget.
+const DefaultTopPorts = 1000
+
+// WithDefaultPortSet returns config with the platform's port set added
+// when s is the port scan stage and config names no ports: keyOf maps a
+// standard param to the tool's config key (Stage.ToolParamKey for a
+// catalog tool, the descriptor's params for a declared tool). It returns
+// nil when nothing changes: another stage, a tool that takes no top_n, or
+// a config that already sets ports or top_n. config itself is not changed.
+//
+// The scope clamps still apply after it: a job on names whose addresses
+// are not in scope is cut to the web ports at claim, and one on
+// unclassified assets to the low-impact list (scope.LowImpactClamp).
+func WithDefaultPortSet(s Stage, keyOf func(param string) (string, bool), config map[string]any) map[string]any {
+	if s.Key != ScanPorts || keyOf == nil {
+		return nil
+	}
+	topKey, ok := keyOf("top_n")
+	if !ok || topKey == "" {
+		return nil
+	}
+	if v, set := config[topKey]; set && v != nil {
+		return nil
+	}
+	if portsKey, ok := keyOf("ports"); ok && portsKey != "" {
+		if v, set := config[portsKey]; set && v != nil {
+			return nil
+		}
+	}
+	out := make(map[string]any, len(config)+1)
+	for k, v := range config {
+		out[k] = v
+	}
+	out[topKey] = DefaultTopPorts
+	return out
+}
+
+// DefaultPortSet is WithDefaultPortSet for a catalog tool.
+func (s Stage) DefaultPortSet(tool string, config map[string]any) map[string]any {
+	return WithDefaultPortSet(s, func(p string) (string, bool) { return s.ToolParamKey(tool, p) }, config)
+}
+
 // ToolParamKey is the tool's config key of a standard param of the stage
 // (false when the tool does not take it).
 func (s Stage) ToolParamKey(tool, param string) (string, bool) {

@@ -52,3 +52,31 @@ func TestClampPayload(t *testing.T) {
 		t.Fatal("clampable")
 	}
 }
+
+// The platform's default port set (top_ports) is cut like any port list:
+// to the web ports for names whose addresses are not in scope, to the
+// low-impact list for unclassified assets.
+func TestClampPayload_DefaultTopPorts(t *testing.T) {
+	raw := json.RawMessage(`{"targets":["a.example.org"],"config":{"top_ports":1000},"scanner_config":{"top_ports":1000}}`)
+	for _, c := range []struct {
+		lowImpact, web bool
+		want           string
+	}{{false, true, scopedom.WebPorts}, {true, false, scopedom.LowImpactPorts}} {
+		out, ok := clampPayload(raw, "naabu", c.lowImpact, c.web)
+		if !ok {
+			t.Fatalf("lowImpact=%v web=%v: not clamped", c.lowImpact, c.web)
+		}
+		var p struct {
+			Config        map[string]any `json:"config"`
+			ScannerConfig map[string]any `json:"scanner_config"`
+		}
+		if err := json.Unmarshal(out, &p); err != nil {
+			t.Fatal(err)
+		}
+		for _, cfg := range []map[string]any{p.Config, p.ScannerConfig} {
+			if _, top := cfg["top_ports"]; top || cfg["ports"] != c.want {
+				t.Errorf("lowImpact=%v web=%v: clamped to %s", c.lowImpact, c.web, out)
+			}
+		}
+	}
+}

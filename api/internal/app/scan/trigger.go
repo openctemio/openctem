@@ -884,6 +884,13 @@ func (s *Service) scannerPayload(
 	} else {
 		scannerConfig = withoutTargetKeys(scannerConfig)
 	}
+	// The platform decides the port set of a single-tool port scan that
+	// names none (coverage runs included): stage.DefaultTopPorts.
+	if stg, ok := stage.ForStep(sc.ScannerName, nil); ok {
+		if c := stg.DefaultPortSet(sc.ScannerName, scannerConfig); c != nil {
+			scannerConfig = c
+		}
+	}
 	payloadMap := map[string]any{
 		"run_id":          run.ID.String(),
 		"scan_id":         sc.ID.String(),
