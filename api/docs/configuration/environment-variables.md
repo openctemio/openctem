@@ -318,6 +318,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 |---|---|---|---|---|---|
 | `INGEST_COVERAGE_AUTO_RESOLVE` | string | `dry_run` |  |  | Coverage-scoped auto-resolve of non-repository findings: `off`, `dry_run` (log, metric and audit entry only) or `enforce`. |
 | `INGEST_MAX_PENDING_PER_TENANT` | int | `100` |  |  | Unfinished ingest jobs per organization (CI uploads, imports, sensor report segments); a further upload gets `429` with a `Retry-After` computed from how fast the organization's jobs drain. A depth that cannot be read refuses the upload (`503`). `0` turns the check off. |
+| `EVIDENCE_DAILY_CAP` | int | `0` |  |  | New finding-evidence records an organization may store per 24 hours (retest and pentest evidence); records over the budget are dropped and a manual add is refused. `0` uses the built-in default. |
 | `INGEST_MAX_RUNNING_PER_TENANT` | int | `2` |  |  | Ingest jobs of one organization processing at once, across servers, so one organization cannot hold every worker. Keep it below `INGEST_WORKERS` times the number of servers. |
 | `INGEST_MAX_JOB_DURATION` | duration | `30m` |  |  | Hard cap on how long one ingest job may run. The worker renews a running job's five-minute lease, so a long import succeeds; a job past this cap is cancelled and retried. |
 | `INGEST_MODE` | string | `sync` |  |  | `sync`: scan results are processed in the request. `async`: results are stored, answered with `202` and processed by the ingest worker. |
