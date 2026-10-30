@@ -21,12 +21,13 @@ import (
 type fakeRevoker struct {
 	revoked []string
 	except  []string
+	err     error
 }
 
 func (f *fakeRevoker) RevokeAllSessions(_ context.Context, userID, except string) error {
 	f.revoked = append(f.revoked, userID)
 	f.except = append(f.except, except)
-	return nil
+	return f.err
 }
 
 type fakeNotifier struct {
