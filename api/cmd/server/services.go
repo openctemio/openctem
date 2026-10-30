@@ -3583,6 +3583,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		// the account's sessions (identity_link.go).
 		s.OAuth.SetSecondFactorGate(s.Auth)
 		s.OAuth.SetSessionRevoker(s.Session)
+		// Linking or unlinking a sign-in method needs a code or password
+		// typed for it (auth/link_proof.go).
+		s.OAuth.SetLinkProofVerifier(s.Auth)
 		if redisClient != nil {
 			s.OAuth.SetPKCEStore(redisClient)
 		} else {

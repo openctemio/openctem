@@ -45,6 +45,7 @@ describe('SignInMethodsCard', () => {
         password: true,
         identities: [{ id: 'g1', provider: 'google', created_at: at, unlinkable: true }],
         available: ['google', 'github'],
+        proof: 'totp',
       },
       isLoading: false,
       isError: false,
@@ -60,9 +61,9 @@ describe('SignInMethodsCard', () => {
     expect(screen.queryByTestId('sign-in-method-microsoft')).not.toBeInTheDocument()
   })
 
-  it('starts the provider round trip when linking', async () => {
+  it('asks for the authenticator code before the provider round trip', async () => {
     methods.mockReturnValue({
-      methods: { password: true, identities: [], available: ['google'] },
+      methods: { password: true, identities: [], available: ['google'], proof: 'totp' },
       isLoading: false,
       isError: false,
     })
@@ -70,7 +71,60 @@ describe('SignInMethodsCard', () => {
     const user = userEvent.setup()
     render(<SignInMethodsCard />)
     await user.click(screen.getByRole('button', { name: 'Link Google' }))
-    expect(link).toHaveBeenCalledWith('google')
+    expect(link).not.toHaveBeenCalled()
+    expect(screen.getByText(/Enter the code from your authenticator app/)).toBeInTheDocument()
+    // No recovery codes for a sign-in method change.
+    expect(screen.queryByRole('button', { name: /recovery code/i })).not.toBeInTheDocument()
+    await user.type(screen.getByRole('textbox'), '123456')
+    await waitFor(() => expect(link).toHaveBeenCalledWith('google', { totp: '123456' }))
+  })
+
+  it('asks a password account without two-factor for its password', async () => {
+    methods.mockReturnValue({
+      methods: { password: true, identities: [], available: ['google'], proof: 'password' },
+      isLoading: false,
+      isError: false,
+    })
+    link.mockResolvedValue(undefined)
+    const user = userEvent.setup()
+    render(<SignInMethodsCard />)
+    await user.click(screen.getByRole('button', { name: 'Link Google' }))
+    await user.type(screen.getByLabelText('Password'), 'pw-1')
+    await user.click(screen.getAllByRole('button', { name: 'Link' }).at(-1)!)
+    expect(link).toHaveBeenCalledWith('google', { password: 'pw-1' })
+  })
+
+  it('shows a refused code in the dialog and asks again', async () => {
+    methods.mockReturnValue({
+      methods: { password: true, identities: [], available: ['google'], proof: 'totp' },
+      isLoading: false,
+      isError: false,
+    })
+    link.mockRejectedValue(Object.assign(new Error('x'), { code: 'LINK_PROOF_FAILED' }))
+    const user = userEvent.setup()
+    render(<SignInMethodsCard />)
+    await user.click(screen.getByRole('button', { name: 'Link Google' }))
+    await user.type(screen.getByRole('textbox'), '000000')
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'The code or password is not correct.'
+    )
+    expect(screen.getByRole('textbox')).toHaveValue('')
+  })
+
+  it('tells an account with neither factor to turn on two-factor first', async () => {
+    methods.mockReturnValue({
+      methods: { password: false, identities: [], available: ['google'], proof: '' },
+      isLoading: false,
+      isError: false,
+    })
+    const user = userEvent.setup()
+    render(<SignInMethodsCard />)
+    await user.click(screen.getByRole('button', { name: 'Link Google' }))
+    expect(
+      screen.getByText(/Turn on two-factor authentication on this page first/)
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    expect(link).not.toHaveBeenCalled()
   })
 
   it('unlinks after confirmation and refreshes the list', async () => {
@@ -79,6 +133,7 @@ describe('SignInMethodsCard', () => {
         password: true,
         identities: [{ id: 'g1', provider: 'google', created_at: at, unlinkable: true }],
         available: ['google'],
+        proof: 'totp',
       },
       isLoading: false,
       isError: false,
@@ -87,8 +142,9 @@ describe('SignInMethodsCard', () => {
     const user = userEvent.setup()
     render(<SignInMethodsCard />)
     await user.click(screen.getByRole('button', { name: 'Unlink Google' }))
-    await user.click(screen.getAllByRole('button', { name: 'Unlink' }).at(-1)!)
-    expect(unlink).toHaveBeenCalledWith('g1')
+    expect(unlink).not.toHaveBeenCalled()
+    await user.type(screen.getByRole('textbox'), '123456')
+    await waitFor(() => expect(unlink).toHaveBeenCalledWith('g1', { totp: '123456' }))
     await waitFor(() => expect(mutate).toHaveBeenCalled())
   })
 
@@ -98,6 +154,7 @@ describe('SignInMethodsCard', () => {
         password: false,
         identities: [{ id: 'g1', provider: 'google', created_at: at, unlinkable: false }],
         available: ['google'],
+        proof: 'totp',
       },
       isLoading: false,
       isError: false,
@@ -118,6 +175,7 @@ describe('SignInMethodsCard', () => {
           { id: 'h1', provider: 'github', created_at: at, unlinkable: true },
         ],
         available: ['google', 'github'],
+        proof: 'totp',
       },
       isLoading: false,
       isError: false,
@@ -126,17 +184,15 @@ describe('SignInMethodsCard', () => {
     const user = userEvent.setup()
     render(<SignInMethodsCard />)
     await user.click(screen.getByRole('button', { name: 'Unlink Google' }))
-    await user.click(screen.getAllByRole('button', { name: 'Unlink' }).at(-1)!)
-    await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith(
-        'This is your only way to sign in, so it cannot be removed.'
-      )
+    await user.type(screen.getByRole('textbox'), '123456')
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'This is your only way to sign in, so it cannot be removed.'
     )
   })
 
   it('shows the result of the link round trip', () => {
     methods.mockReturnValue({
-      methods: { password: true, identities: [], available: ['google'] },
+      methods: { password: true, identities: [], available: ['google'], proof: 'totp' },
       isLoading: false,
       isError: false,
     })
@@ -149,7 +205,7 @@ describe('SignInMethodsCard', () => {
 
   it('never shows text from the address', () => {
     methods.mockReturnValue({
-      methods: { password: true, identities: [], available: ['google'] },
+      methods: { password: true, identities: [], available: ['google'], proof: 'totp' },
       isLoading: false,
       isError: false,
     })

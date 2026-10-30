@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/pkg/domain/mfa"
 	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
@@ -75,6 +76,35 @@ type linkFixture struct {
 	revoker  *fakeRevoker
 	notifier *fakeNotifier
 	sessions *nopSessions
+	proof    *fakeLinkProof
+}
+
+// fakeLinkProof stands in for AuthService.VerifyLinkProof (tested in
+// tests/unit/auth_link_proof_test.go): goodProof passes, an empty proof is
+// missing, anything else is wrong.
+type fakeLinkProof struct {
+	purposes []string
+	method   StepUpMethod
+}
+
+// goodProof is the proof fakeLinkProof accepts.
+var goodProof = StepUpProof{TOTP: "135790"}
+
+func (f *fakeLinkProof) LinkProofMethod(context.Context, string) (StepUpMethod, error) {
+	return f.method, nil
+}
+
+func (f *fakeLinkProof) VerifyLinkProof(_ context.Context, _ auditapp.AuditContext, _, sessionID string, p StepUpProof, purpose string) (StepUpMethod, error) {
+	f.purposes = append(f.purposes, purpose)
+	switch {
+	case sessionID == "":
+		return "", ErrLinkProofUnavailable
+	case p == StepUpProof{}:
+		return f.method, ErrLinkProofRequired
+	case p != goodProof:
+		return f.method, ErrLinkProofFailed
+	}
+	return f.method, nil
 }
 
 func newLinkFixture(t *testing.T, existing *userdom.User) *linkFixture {
@@ -85,6 +115,7 @@ func newLinkFixture(t *testing.T, existing *userdom.User) *linkFixture {
 		revoker:  &fakeRevoker{},
 		notifier: &fakeNotifier{},
 		sessions: &nopSessions{},
+		proof:    &fakeLinkProof{method: StepUpTOTP},
 	}
 	f.svc = NewOAuthService(f.users, f.sessions, nopRefresh{},
 		config.OAuthConfig{Enabled: true, Google: config.OAuthProviderConfig{Enabled: true, ClientID: "c", ClientSecret: "s"}},
@@ -94,6 +125,7 @@ func newLinkFixture(t *testing.T, existing *userdom.User) *linkFixture {
 	f.svc.SetIdentityRepo(f.idents)
 	f.svc.SetSessionRevoker(f.revoker)
 	f.svc.SetIdentityNotifier(f.notifier)
+	f.svc.SetLinkProofVerifier(f.proof)
 	on := true
 	f.svc.SetSignupPolicy(signupdom.Static{Mode: signupdom.ModeAdminOnly, SocialAutoLink: &on})
 	return f
@@ -374,7 +406,7 @@ func TestLinkIdentity(t *testing.T) {
 	t.Run("links a provider account with another address", func(t *testing.T) {
 		acct := verifiedPasswordAccount(t, "p@acme.example")
 		f := newLinkFixture(t, acct)
-		m, err := f.svc.linkIdentity(ctx, acct.ID().String(), &OAuthUserInfo{Email: "someone@gmail.com", Issuer: googleIssuer, Subject: "g-1"}, OAuthProviderGoogle, linkHowManual)
+		m, err := f.svc.linkIdentity(ctx, acct.ID().String(), &OAuthUserInfo{Email: "someone@gmail.com", Issuer: googleIssuer, Subject: "g-1"}, OAuthProviderGoogle, linkHowManual, StepUpTOTP)
 		if err != nil || m.Provider != "google" {
 			t.Fatalf("link: %+v %v", m, err)
 		}
@@ -391,7 +423,7 @@ func TestLinkIdentity(t *testing.T) {
 		f := newLinkFixture(t, acct)
 		f.users.created = other // GetByID finds both
 		f.idents.bindTo(other, googleIssuer, "g-1")
-		if _, err := f.svc.linkIdentity(ctx, acct.ID().String(), googleInfo("x@gmail.com", "g-1", ""), OAuthProviderGoogle, linkHowManual); !errors.Is(err, ErrIdentityLinkedElsewhere) {
+		if _, err := f.svc.linkIdentity(ctx, acct.ID().String(), googleInfo("x@gmail.com", "g-1", ""), OAuthProviderGoogle, linkHowManual, StepUpTOTP); !errors.Is(err, ErrIdentityLinkedElsewhere) {
 			t.Fatalf("want ErrIdentityLinkedElsewhere, got %v", err)
 		}
 		if len(f.idents.keysOf(acct.ID())) != 0 {
@@ -403,7 +435,7 @@ func TestLinkIdentity(t *testing.T) {
 		f := newLinkFixture(t, acct)
 		f.idents.bindTo(acct, "https://login.microsoftonline.com/tid-a/v2.0", "oid-a")
 		info := &OAuthUserInfo{Email: "p@acme.example", Issuer: "https://login.microsoftonline.com/tid-b/v2.0", Subject: "oid-b"}
-		if _, err := f.svc.linkIdentity(ctx, acct.ID().String(), info, OAuthProviderMicrosoft, linkHowManual); !errors.Is(err, ErrProviderAlreadyLinked) {
+		if _, err := f.svc.linkIdentity(ctx, acct.ID().String(), info, OAuthProviderMicrosoft, linkHowManual, StepUpTOTP); !errors.Is(err, ErrProviderAlreadyLinked) {
 			t.Fatalf("want ErrProviderAlreadyLinked, got %v", err)
 		}
 	})
@@ -411,7 +443,7 @@ func TestLinkIdentity(t *testing.T) {
 		acct := verifiedPasswordAccount(t, "p@acme.example")
 		f := newLinkFixture(t, acct)
 		f.idents.bindTo(acct, googleIssuer, "g-1")
-		if _, err := f.svc.linkIdentity(ctx, acct.ID().String(), googleInfo("p@gmail.com", "g-1", ""), OAuthProviderGoogle, linkHowManual); err != nil {
+		if _, err := f.svc.linkIdentity(ctx, acct.ID().String(), googleInfo("p@gmail.com", "g-1", ""), OAuthProviderGoogle, linkHowManual, StepUpTOTP); err != nil {
 			t.Fatalf("relink: %v", err)
 		}
 		if len(f.idents.keysOf(acct.ID())) != 1 {
@@ -438,7 +470,7 @@ func TestUnlink(t *testing.T) {
 		acct := verifiedPasswordAccount(t, "p@gmail.com")
 		f := newLinkFixture(t, acct)
 		f.idents.bindTo(acct, googleIssuer, "g-1")
-		if err := f.svc.Unlink(ctx, acct.ID().String(), idOf(f, acct, googleIssuer)); err != nil {
+		if err := f.svc.Unlink(ctx, UnlinkInput{UserID: acct.ID().String(), SessionID: newSessionID(), IdentityID: idOf(f, acct, googleIssuer), Proof: goodProof}); err != nil {
 			t.Fatalf("unlink: %v", err)
 		}
 		if len(f.idents.keysOf(acct.ID())) != 0 || len(f.notifier.unlinked) != 1 {
@@ -449,7 +481,7 @@ func TestUnlink(t *testing.T) {
 		acct, _ := userdom.NewOAuthUser("g@gmail.com", "G", "", userdom.AuthProviderGoogle)
 		f := newLinkFixture(t, acct)
 		f.idents.bindTo(acct, googleIssuer, "g-1")
-		if err := f.svc.Unlink(ctx, acct.ID().String(), idOf(f, acct, googleIssuer)); !errors.Is(err, ErrLastSignInMethod) {
+		if err := f.svc.Unlink(ctx, UnlinkInput{UserID: acct.ID().String(), SessionID: newSessionID(), IdentityID: idOf(f, acct, googleIssuer), Proof: goodProof}); !errors.Is(err, ErrLastSignInMethod) {
 			t.Fatalf("want ErrLastSignInMethod, got %v", err)
 		}
 		if len(f.idents.keysOf(acct.ID())) != 1 {
@@ -461,7 +493,7 @@ func TestUnlink(t *testing.T) {
 		f := newLinkFixture(t, acct)
 		f.idents.bindTo(acct, googleIssuer, "g-1")
 		f.idents.bindTo(acct, githubIssuer, "42")
-		if err := f.svc.Unlink(ctx, acct.ID().String(), idOf(f, acct, googleIssuer)); err != nil {
+		if err := f.svc.Unlink(ctx, UnlinkInput{UserID: acct.ID().String(), SessionID: newSessionID(), IdentityID: idOf(f, acct, googleIssuer), Proof: goodProof}); err != nil {
 			t.Fatalf("unlink: %v", err)
 		}
 	})
@@ -471,7 +503,7 @@ func TestUnlink(t *testing.T) {
 		f := newLinkFixture(t, acct)
 		f.users.created = other
 		f.idents.bindTo(other, googleIssuer, "g-o")
-		if err := f.svc.Unlink(ctx, acct.ID().String(), idOf(f, other, googleIssuer)); !errors.Is(err, ErrIdentityNotFound) {
+		if err := f.svc.Unlink(ctx, UnlinkInput{UserID: acct.ID().String(), SessionID: newSessionID(), IdentityID: idOf(f, other, googleIssuer), Proof: goodProof}); !errors.Is(err, ErrIdentityNotFound) {
 			t.Fatalf("want ErrIdentityNotFound, got %v", err)
 		}
 		if len(f.idents.keysOf(other.ID())) != 1 {
@@ -482,7 +514,7 @@ func TestUnlink(t *testing.T) {
 		acct := verifiedPasswordAccount(t, "p@acme.example")
 		f := newLinkFixture(t, acct)
 		f.idents.bindTo(acct, "https://idp.acme.example", "sub")
-		if err := f.svc.Unlink(ctx, acct.ID().String(), idOf(f, acct, "https://idp.acme.example")); !errors.Is(err, ErrIdentityNotUnlinkable) {
+		if err := f.svc.Unlink(ctx, UnlinkInput{UserID: acct.ID().String(), SessionID: newSessionID(), IdentityID: idOf(f, acct, "https://idp.acme.example"), Proof: goodProof}); !errors.Is(err, ErrIdentityNotUnlinkable) {
 			t.Fatalf("want ErrIdentityNotUnlinkable, got %v", err)
 		}
 	})
@@ -520,4 +552,50 @@ func TestListSignInMethods(t *testing.T) {
 	if len(got.Available) != 1 || got.Available[0] != "google" {
 		t.Fatalf("available %v", got.Available)
 	}
+}
+
+// Unlinking needs the proof typed for it; a refused proof removes nothing and
+// sends no notice.
+func TestUnlink_NeedsProof(t *testing.T) {
+	ctx := context.Background()
+	for name, tc := range map[string]struct {
+		sid   string
+		proof StepUpProof
+		nilV  bool
+		want  error
+	}{
+		"no proof (a fresh sign-in alone)": {newSessionID(), StepUpProof{}, false, ErrLinkProofRequired},
+		"wrong proof":                      {newSessionID(), StepUpProof{TOTP: "000000"}, false, ErrLinkProofFailed},
+		"no session":                       {"", goodProof, false, ErrLinkProofUnavailable},
+		"no verifier wired (fail closed)":  {newSessionID(), goodProof, true, ErrLinkProofUnavailable},
+	} {
+		t.Run(name, func(t *testing.T) {
+			acct := verifiedPasswordAccount(t, "p@gmail.com")
+			f := newLinkFixture(t, acct)
+			if tc.nilV {
+				f.svc.SetLinkProofVerifier(nil)
+			}
+			f.idents.bindTo(acct, googleIssuer, "g-1")
+			list, _ := f.idents.ListByUser(ctx, acct.ID())
+			err := f.svc.Unlink(ctx, UnlinkInput{UserID: acct.ID().String(), SessionID: tc.sid, IdentityID: list[0].ID.String(), Proof: tc.proof})
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("want %v, got %v", tc.want, err)
+			}
+			if len(f.idents.keysOf(acct.ID())) != 1 || len(f.notifier.unlinked) != 0 {
+				t.Fatal("unlinked without a proof")
+			}
+		})
+	}
+	t.Run("proof is checked for unlink", func(t *testing.T) {
+		acct := verifiedPasswordAccount(t, "p@gmail.com")
+		f := newLinkFixture(t, acct)
+		f.idents.bindTo(acct, googleIssuer, "g-1")
+		list, _ := f.idents.ListByUser(ctx, acct.ID())
+		if err := f.svc.Unlink(ctx, UnlinkInput{UserID: acct.ID().String(), SessionID: newSessionID(), IdentityID: list[0].ID.String(), Proof: goodProof}); err != nil {
+			t.Fatal(err)
+		}
+		if got := f.proof.purposes; len(got) != 1 || got[0] != LinkProofUnlink {
+			t.Fatalf("purposes %v", got)
+		}
+	})
 }
