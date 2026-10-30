@@ -15,11 +15,12 @@ func TestParseCoverageGaps(t *testing.T) {
 		{"host": "evil\n\x1b[31mhost" + strings.Repeat("y", 400), "reason": GapReasonBlocked, "detail": "a\nb"},
 		{"host": "", "reason": GapReasonBlocked},
 		{"host": "x", "reason": "unknown"},
+		{"host": "p.example.com", "reason": GapReasonProxyUnavailable},
 		{"host": 7, "reason": GapReasonBlocked},
 	}, list...)
 	raw, _ := json.Marshal(list)
 	gaps, total := ParseCoverageGaps(raw, 3)
-	if len(gaps) != MaxTaskCoverageGaps || total != MaxTaskCoverageGaps+6 {
+	if len(gaps) != MaxTaskCoverageGaps || total != MaxTaskCoverageGaps+7 {
 		t.Fatalf("%d gaps, total %d", len(gaps), total)
 	}
 	first := gaps[0]
