@@ -33,8 +33,23 @@ const { TooltipProvider } = await import('@/components/ui/tooltip')
 
 const wrap = (ui: React.ReactNode) => render(<TooltipProvider>{ui}</TooltipProvider>)
 
+const previewOf = (over: Record<string, unknown>) => ({
+  items: [
+    {
+      exclusion_type: 'ip_address',
+      pattern: '104.16.1.1',
+      matched: 0,
+      sample: [],
+      resolving_names: 0,
+      resolving_sample: [],
+      ...over,
+    },
+  ],
+})
+
 beforeEach(() => {
   api.post.mockReset()
+  api.post.mockResolvedValue(previewOf({ names_unaffected: true }))
   toast.success.mockReset()
   toast.error.mockReset()
   perms.write = true
@@ -48,7 +63,7 @@ describe('EdgeLabel', () => {
   })
 
   it('an edge address adds a Do not scan exclusion after the confirm dialog', async () => {
-    api.post.mockResolvedValue({
+    api.post.mockResolvedValueOnce(previewOf({ names_unaffected: true })).mockResolvedValue({
       results: [
         {
           exclusion_type: 'ip_address',
@@ -79,10 +94,16 @@ describe('EdgeLabel', () => {
     expect(rowClick).not.toHaveBeenCalled()
     expect(screen.getByText('Add 104.16.1.1 to out of scope?')).toBeInTheDocument()
     expect(screen.getByText(/Scanning it tests Cloudflare, not your systems/)).toBeInTheDocument()
-    expect(screen.getByTestId('edge-exclude-names')).toHaveTextContent(
-      /Names that resolve to this address are left out of scans as well/
+    expect(api.post).toHaveBeenCalledTimes(1)
+    expect(api.post).toHaveBeenCalledWith('/api/v1/scope/exclusions/bulk/preview', {
+      items: [{ exclusion_type: 'ip_address', pattern: '104.16.1.1' }],
+    })
+    await waitFor(() =>
+      expect(screen.getByTestId('edge-exclude-names')).toHaveTextContent(
+        'Names served through it keep being scanned (web ports only).'
+      )
     )
-    expect(api.post).not.toHaveBeenCalled()
+    api.post.mockClear()
     await userEvent.click(screen.getByRole('button', { name: 'Add to out of scope' }))
     await waitFor(() => expect(onExcluded).toHaveBeenCalled())
     expect(api.post).toHaveBeenCalledTimes(1)
@@ -94,15 +115,49 @@ describe('EdgeLabel', () => {
     expect(toast.success).toHaveBeenCalledWith('104.16.1.1 is out of scope: no scan will reach it')
   })
 
+  it('decides from the preview: a dedicated-address range lists the names it also stops', async () => {
+    api.post.mockResolvedValue(
+      previewOf({
+        resolving_names: 12,
+        resolving_sample: ['a.example.com', 'b.example.com', 'c.example.com'],
+      })
+    )
+    wrap(<EdgeLabel edge={{ class: 'edge', provider: 'Cloudflare', address: '104.16.1.1' }} />)
+    await userEvent.click(screen.getByRole('button', { name: /add to out of scope/ }))
+    await waitFor(() =>
+      expect(screen.getByTestId('edge-exclude-names')).toHaveTextContent(
+        'Also stops scanning 12 names: a.example.com, b.example.com, c.example.com...'
+      )
+    )
+    expect(screen.queryByText(/keep being scanned/)).toBeNull()
+  })
+
+  it('shows loading, then an error that does not block the exclusion', async () => {
+    api.post.mockRejectedValueOnce(new Error('boom'))
+    wrap(<EdgeLabel edge={{ class: 'edge', provider: 'Cloudflare', address: '104.16.1.1' }} />)
+    await userEvent.click(screen.getByRole('button', { name: /add to out of scope/ }))
+    await waitFor(() =>
+      expect(screen.getByTestId('edge-exclude-names')).toHaveTextContent(
+        /Could not check which names this affects/
+      )
+    )
+    expect(screen.getByRole('button', { name: 'Add to out of scope' })).toBeEnabled()
+  })
+
+  it('sends no preview until the dialog opens', () => {
+    wrap(<EdgeLabel edge={{ class: 'edge', provider: 'Cloudflare', address: '104.16.1.1' }} />)
+    expect(api.post).not.toHaveBeenCalled()
+  })
+
   it('cancel sends nothing', async () => {
     wrap(<EdgeLabel edge={{ class: 'edge', provider: 'Fastly', address: '151.101.1.1' }} />)
     await userEvent.click(screen.getByRole('button', { name: 'Fastly edge: add to out of scope' }))
     await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
-    expect(api.post).not.toHaveBeenCalled()
+    expect(api.post).not.toHaveBeenCalledWith('/api/v1/scope/exclusions/bulk', expect.anything())
   })
 
   it('a pending exclusion (Strict approval) says it waits', async () => {
-    api.post.mockResolvedValue({
+    api.post.mockResolvedValueOnce(previewOf({ names_unaffected: true })).mockResolvedValue({
       results: [
         {
           exclusion_type: 'ip_address',
