@@ -50,6 +50,19 @@ func (c *configAuditor) recordChange(r *http.Request, log *logger.Logger, action
 			WithMessage(message))
 }
 
+// recordDeleted records the deletion of one object that was loaded in the
+// caller's tenant: name is the stored name, never a value from the request.
+// The severity is the action's default. Call it only after the delete
+// succeeded.
+func (c *configAuditor) recordDeleted(r *http.Request, log *logger.Logger, action auditdom.Action, rtype auditdom.ResourceType,
+	id, name, message string) {
+	recordConfigAudit(r.Context(), c.audit, log, configAuditContext(r),
+		auditapp.NewSuccessEvent(action, rtype, id).
+			WithResourceName(name).
+			WithSeverity(auditdom.SeverityForAction(action)).
+			WithMessage(message))
+}
+
 // recordConfigAudit writes a configuration-change event. A nil service is a
 // no-op (tests and deployments without audit); a write failure is logged, not
 // returned, because the change itself already succeeded.

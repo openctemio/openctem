@@ -209,6 +209,66 @@ func (c *Classifier) Address(addr, cdn, org string) Result {
 	return Result{Class: Dedicated}
 }
 
+// SharedFrontEnd reports whether addr lies inside a range a provider
+// publishes for a front end many organizations share (class edge,
+// saas_hosting or cloud_shared). Only that basis is read: a CDN record or a
+// network holder's name is not proof that the address is shared (a cloud
+// static address sits in the same networks), so an address known only that
+// way, an unparsable one or one no range holds answers false. Callers treat
+// false as "may be dedicated" (fail closed).
+//
+// A scope exclusion of such an address stays on the address: names that
+// resolve to it are not excluded with it, because the address serves every
+// customer of the provider (owner decision 2026-10-30).
+func (c *Classifier) SharedFrontEnd(addr string) (Result, bool) {
+	a, err := netip.ParseAddr(strings.Trim(strings.TrimSpace(addr), "[]"))
+	if err != nil || a.Zone() != "" {
+		return Result{Class: Dedicated}, false
+	}
+	a = a.Unmap()
+	var hit Result
+	for _, r := range c.ranges {
+		if !r.p.Contains(a) {
+			continue
+		}
+		if r.class == Dedicated {
+			return Result{Class: Dedicated}, false // any doubt: not shared
+		}
+		if hit.Class == "" {
+			hit = Result{Class: r.class, Provider: r.provider, Basis: BasisRange}
+		}
+	}
+	if hit.Class == "" {
+		return Result{Class: Dedicated}, false
+	}
+	return hit, true
+}
+
+// SharedFrontEndPrefixes are the published shared prefixes, and
+// DedicatedPrefixes the published dedicated ones: an address is a shared
+// front end (SharedFrontEnd) when a shared prefix holds it and no dedicated
+// prefix does. For a database query that must leave those addresses out.
+func (c *Classifier) SharedFrontEndPrefixes() []netip.Prefix {
+	out := make([]netip.Prefix, 0, len(c.ranges))
+	for _, r := range c.ranges {
+		if r.class != Dedicated {
+			out = append(out, r.p)
+		}
+	}
+	return out
+}
+
+// DedicatedPrefixes: see SharedFrontEndPrefixes.
+func (c *Classifier) DedicatedPrefixes() []netip.Prefix {
+	var out []netip.Prefix
+	for _, r := range c.ranges {
+		if r.class == Dedicated {
+			out = append(out, r.p)
+		}
+	}
+	return out
+}
+
 func (c *Classifier) org(name string) Result {
 	l := strings.ToLower(strings.TrimSpace(name))
 	if l == "" {

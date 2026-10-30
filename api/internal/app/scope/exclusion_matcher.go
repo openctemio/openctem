@@ -47,13 +47,12 @@ func (m *ExclusionMatcher) Excluded(values ...string) bool {
 
 // ExcludedAsset reports whether an asset matches an exclusion by its name,
 // by its repository URLs, or by an address it is known to have (its IP
-// properties and the addresses it resolved to). A hostname whose address is
-// in an excluded range is excluded too.
+// properties and the addresses it resolved to; AssetExclusionValues). A
+// hostname whose dedicated address is in an excluded range is excluded too;
+// one whose address is a shared front end is not (PropagatingAddresses).
 func (m *ExclusionMatcher) ExcludedAsset(a *asset.Asset) bool {
 	if m.Empty() || a == nil {
 		return false
 	}
-	values := m.s.getAssetValues(a)
-	values = append(values, asset.IPAddresses(a.Properties())...)
-	return m.Excluded(values...)
+	return m.Excluded(AssetExclusionValues(a.Type().String(), a.Name(), a.Properties())...)
 }

@@ -110,6 +110,8 @@ type AssetService struct {
 	// Freshness of attribute classes. Optional: nil serves no observation.
 	freshness  freshdom.Repository
 	coverage   covdom.Repository
+	// The open ports of the addresses a name resolves to. Optional.
+	resolvedPorts assetdom.ResolvedPortReader
 	enrichReqs freshdom.RequestRepository
 	resolution assetresolution.Store
 	// createdHook requests enrichment of assets a person created.
