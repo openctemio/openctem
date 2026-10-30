@@ -1,4 +1,4 @@
--- The in-place sealing of queued sensor payloads (SealPlaintextSensorPayloads)
+-- The in-place sealing of queued sensor payloads (SealPlaintextSensorPayloadsForPlatform)
 -- marks a row it could not seal, so that one unsealable row neither stalls
 -- the rows behind it nor is picked again at every run. The mark expires: the
 -- row is tried again a day later (for instance after a key was fixed).

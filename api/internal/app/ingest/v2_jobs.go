@@ -70,7 +70,7 @@ var (
 
 // PlaintextSealer is implemented by the postgres job repository.
 type PlaintextSealer interface {
-	SealPlaintextSensorPayloads(ctx context.Context, olderThan time.Time, batch int, maxBytes int64,
+	SealPlaintextSensorPayloadsForPlatform(ctx context.Context, olderThan time.Time, batch int, maxBytes int64,
 		seal func(*ingestjob.Job) error) (ingestjob.SealRun, error)
 }
 
@@ -298,7 +298,7 @@ func sealPlaintextSensorPayloads(ctx context.Context, sealer *ingestpayload.Seal
 	}
 	total := 0
 	for range sealPlaintextSteps {
-		run, err := repo.SealPlaintextSensorPayloads(ctx, olderThan, sealPlaintextBatch, sealPlaintextBytes,
+		run, err := repo.SealPlaintextSensorPayloadsForPlatform(ctx, olderThan, sealPlaintextBatch, sealPlaintextBytes,
 			func(j *ingestjob.Job) error { return sealSegment(sealer, j) })
 		total += run.Sealed
 		for _, f := range run.Failed {

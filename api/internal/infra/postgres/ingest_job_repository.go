@@ -713,7 +713,7 @@ func (r *IngestJobRepository) ClearV2Payloads(ctx context.Context, reportRef sha
 // before the next attempt.
 const sealRetryAfter = "1 day"
 
-// SealPlaintextSensorPayloads seals, in place, the sensor job payloads
+// SealPlaintextSensorPayloadsForPlatform seals, in place, the sensor job payloads
 // (protocol v2 segments and protocol v1 jobs) stored in plaintext before
 // olderThan (queued before payloads were sealed, or by a replica of the
 // previous release). It takes at most batch rows and, except for the first
@@ -721,13 +721,16 @@ const sealRetryAfter = "1 day"
 // never holds more than about maxBytes of payloads in memory. seal replaces
 // the job's payload with its sealed form (Job.SetSealedPayload).
 //
+// Platform housekeeping: the id-picking SELECTs span all tenants; every
+// UPDATE is scoped by the row's own tenant_id.
+//
 // A row seal cannot seal is marked (payload_seal_failed_at) and reported in
 // the result, then skipped: the rows behind it are still sealed, and the
 // row is not picked again for a day. Safe on many replicas at once: rows
 // are locked with SKIP LOCKED and the update only writes a row that is still
 // plaintext, so a run is idempotent and a row a worker is emptying is never
 // resurrected.
-func (r *IngestJobRepository) SealPlaintextSensorPayloads(ctx context.Context, olderThan time.Time, batch int,
+func (r *IngestJobRepository) SealPlaintextSensorPayloadsForPlatform(ctx context.Context, olderThan time.Time, batch int,
 	maxBytes int64, seal func(*ingestjob.Job) error,
 ) (ingestjob.SealRun, error) {
 	var run ingestjob.SealRun
