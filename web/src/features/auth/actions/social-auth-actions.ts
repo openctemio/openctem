@@ -540,7 +540,24 @@ export type LinkProofKind = 'totp' | 'password' | ''
 export type LinkProof = { totp: string } | { password: string }
 
 /** The provider account waiting to be linked to the signed-in account. */
-export type PendingLink = { provider: SocialProvider; email: string; proof: LinkProofKind }
+export type PendingLink = {
+  provider: SocialProvider
+  email: string
+  proof: LinkProofKind
+  /** The provider account's handle (GitHub), display name and picture: display only. */
+  login?: string
+  name?: string
+  avatarUrl?: string
+}
+
+const MAX_PENDING_LINK_DISPLAY = 200
+
+/** A provider-supplied display string, or undefined when absent or oversized. */
+function displayString(v: unknown): string | undefined {
+  if (typeof v !== 'string') return undefined
+  const s = v.trim()
+  return s && s.length <= MAX_PENDING_LINK_DISPLAY ? s : undefined
+}
 
 /** Codes after which the same pending link may be confirmed again. */
 const PENDING_LINK_RETRY_CODES = new Set(['LINK_PROOF_REQUIRED', 'LINK_PROOF_FAILED'])
@@ -618,7 +635,14 @@ async function pendingLinkCall<T>(
  * forgotten.
  */
 export async function getPendingLinkAction(): Promise<PendingLink | null> {
-  const res = await pendingLinkCall<{ provider: string; email: string; proof?: string }>('describe')
+  const res = await pendingLinkCall<{
+    provider: string
+    email: string
+    proof?: string
+    login?: string
+    name?: string
+    avatar_url?: string
+  }>('describe')
   if (!res) return null
   if (!res.ok) {
     if (res.code !== 'SESSION_EXPIRED') (await cookies()).delete(pendingLinkCookieName())
@@ -627,7 +651,14 @@ export async function getPendingLinkAction(): Promise<PendingLink | null> {
   if (!isAllowedValue(SOCIAL_PROVIDERS, res.data.provider)) return null
   const proof: LinkProofKind =
     res.data.proof === 'totp' || res.data.proof === 'password' ? res.data.proof : ''
-  return { provider: res.data.provider, email: res.data.email, proof }
+  return {
+    provider: res.data.provider,
+    email: res.data.email,
+    proof,
+    login: displayString(res.data.login),
+    name: displayString(res.data.name),
+    avatarUrl: displayString(res.data.avatar_url),
+  }
 }
 
 /**
