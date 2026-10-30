@@ -230,7 +230,7 @@ func (r *IngestJobRepository) ClaimBatch(ctx context.Context, workerID string, l
 // It only writes while the job is still processing the claimed attempt:
 // a worker whose lease expired (the job was released, or claimed again)
 // gets ingestjob.ErrLeaseLost and writes nothing.
-func (r *IngestJobRepository) Complete(ctx context.Context, id ingestjob.ID, attempts int, result []byte) error {
+func (r *IngestJobRepository) Complete(ctx context.Context, tenantID shared.ID, id ingestjob.ID, attempts int, result []byte) error {
 	// An upload's envelope (who uploaded, from where) is not kept once it
 	// is applied, and its stored report is deleted in the same statement:
 	// the parts outlive the apply until the job is recorded completed, so
@@ -246,7 +246,7 @@ func (r *IngestJobRepository) Complete(ctx context.Context, id ingestjob.ID, att
 				payload = CASE WHEN kind <> 'sensor' THEN convert_to('{}', 'UTF8')
 					ELSE ''::bytea END,
 				locked_by = NULL, locked_at = NULL, updated_at = NOW()
-			WHERE id = $1 AND status = 'processing' AND attempts = $3
+			WHERE id = $1 AND tenant_id = $4 AND status = 'processing' AND attempts = $3
 			RETURNING id, tenant_id, kind
 		), del AS (
 			DELETE FROM ingest_payloads p
@@ -255,7 +255,7 @@ func (r *IngestJobRepository) Complete(ctx context.Context, id ingestjob.ID, att
 		)
 		SELECT count(*) FROM done`
 	var n int
-	if err := r.db.QueryRowContext(ctx, query, id.String(), result, attempts).Scan(&n); err != nil {
+	if err := r.db.QueryRowContext(ctx, query, id.String(), result, attempts, tenantID.String()).Scan(&n); err != nil {
 		return fmt.Errorf("complete ingest job: %w", err)
 	}
 	if n == 0 {
@@ -280,7 +280,7 @@ func (r *IngestJobRepository) Renew(ctx context.Context, tenantID shared.ID, id 
 
 // Fail reschedules a job for retry (status pending, gated by availableAt) or
 // marks it dead when retries are exhausted.
-func (r *IngestJobRepository) Fail(ctx context.Context, id ingestjob.ID, attempts int, errMsg, publicErr string, availableAt time.Time, dead bool) error {
+func (r *IngestJobRepository) Fail(ctx context.Context, tenantID shared.ID, id ingestjob.ID, attempts int, errMsg, publicErr string, availableAt time.Time, dead bool) error {
 	status := ingestjob.StatusPending
 	if dead {
 		status = ingestjob.StatusDead
@@ -295,7 +295,7 @@ func (r *IngestJobRepository) Fail(ctx context.Context, id ingestjob.ID, attempt
 			UPDATE ingest_jobs
 			SET status = $2, error = $3, available_at = $4, public_error = NULLIF($5, ''),
 				locked_by = NULL, locked_at = NULL, updated_at = NOW()
-			WHERE id = $1 AND status = 'processing' AND attempts = $6
+			WHERE id = $1 AND tenant_id = $7 AND status = 'processing' AND attempts = $6
 			RETURNING id, tenant_id, kind
 		), del AS (
 			DELETE FROM ingest_payloads p
@@ -305,7 +305,7 @@ func (r *IngestJobRepository) Fail(ctx context.Context, id ingestjob.ID, attempt
 		)
 		SELECT count(*) FROM failed`
 	var n int
-	if err := r.db.QueryRowContext(ctx, query, id.String(), status.String(), errMsg, availableAt, publicErr, attempts).Scan(&n); err != nil {
+	if err := r.db.QueryRowContext(ctx, query, id.String(), status.String(), errMsg, availableAt, publicErr, attempts, tenantID.String()).Scan(&n); err != nil {
 		return fmt.Errorf("fail ingest job: %w", err)
 	}
 	if n == 0 {

@@ -181,7 +181,7 @@ func (s *AssetGroupService) CreateAssetGroup(ctx context.Context, input CreateAs
 			s.logger.Error("failed to add assets to group", "group_id", group.ID(), "error", err)
 		}
 		// Recalculate counts
-		if err := s.repo.RecalculateCounts(ctx, group.ID()); err != nil {
+		if err := s.repo.RecalculateCounts(ctx, group.TenantID(), group.ID()); err != nil {
 			s.logger.Error("failed to recalculate counts", "group_id", group.ID(), "error", err)
 		}
 		// Refresh group from database
@@ -641,7 +641,7 @@ func (s *AssetGroupService) AddAssetsToGroup(ctx context.Context, tenantID strin
 	}
 
 	// Recalculate counts
-	if err := s.repo.RecalculateCounts(ctx, groupID); err != nil {
+	if err := s.repo.RecalculateCounts(ctx, tid, groupID); err != nil {
 		return err
 	}
 
@@ -708,7 +708,7 @@ func (s *AssetGroupService) RemoveAssetsFromGroup(ctx context.Context, tenantID 
 	}
 
 	// Recalculate counts
-	if err := s.repo.RecalculateCounts(ctx, groupID); err != nil {
+	if err := s.repo.RecalculateCounts(ctx, tid, groupID); err != nil {
 		return err
 	}
 

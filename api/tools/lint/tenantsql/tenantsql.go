@@ -175,11 +175,23 @@ func scanFunc(fset *token.FileSet, file string, fd *ast.FuncDecl, globals, funcs
 }
 
 // tenantless returns the tenant-scoped tables that sql reads or writes by id
-// alone.
+// alone. Every statement scope is judged on its own text: the top-level
+// statement and each parenthesised subquery or CTE body. A tenant predicate
+// inside a subquery does not protect the outer statement, and the outer
+// statement's predicate does not protect a subquery.
 func tenantless(sql string, tenantTables map[string]bool) []string {
-	if !reVerbs.MatchString(sql) || reTenantID.MatchString(sql) {
-		return nil
+	var hits []string
+	for _, scope := range splitScopes(sql) {
+		if !reVerbs.MatchString(scope) || reTenantID.MatchString(scope) {
+			continue
+		}
+		hits = append(hits, scopeHits(scope, tenantTables)...)
 	}
+	return hits
+}
+
+// scopeHits returns the tenant tables a single scope reads or writes by id.
+func scopeHits(sql string, tenantTables map[string]bool) []string {
 	preds := reIDPred.FindAllStringSubmatch(sql, -1)
 	if len(preds) == 0 {
 		return nil
@@ -208,6 +220,84 @@ func tenantless(sql string, tenantTables map[string]bool) []string {
 		}
 	}
 	return hits
+}
+
+var reSubqueryStart = regexp.MustCompile(`(?is)^\s*(?:select|with|update|delete|insert)\b`)
+
+// splitScopes returns the statement's own text (subqueries removed) followed
+// by the own text of every parenthesised subquery, each with its nested
+// subqueries removed. String literals are blanked first so a parenthesis or a
+// keyword inside one cannot change the structure. Parentheses that are not a
+// subquery (function calls, ANY($1), IN (...)) stay in the text.
+func splitScopes(sql string) []string {
+	sql = blankLiterals(sql)
+	type frame struct {
+		sub bool
+		b   strings.Builder
+	}
+	stack := []*frame{{}}
+	var scopes []string
+	for i := 0; i < len(sql); i++ {
+		c := sql[i]
+		top := stack[len(stack)-1]
+		switch c {
+		case '(':
+			stack = append(stack, &frame{sub: reSubqueryStart.MatchString(sql[i+1:])})
+		case ')':
+			if len(stack) == 1 {
+				top.b.WriteByte(c)
+				continue
+			}
+			stack = stack[:len(stack)-1]
+			parent := stack[len(stack)-1]
+			if top.sub {
+				scopes = append(scopes, top.b.String())
+				parent.b.WriteByte(' ')
+			} else {
+				parent.b.WriteByte('(')
+				parent.b.WriteString(top.b.String())
+				parent.b.WriteByte(')')
+			}
+		default:
+			top.b.WriteByte(c)
+		}
+	}
+	// Unbalanced input: fold whatever is left into the output.
+	for len(stack) > 1 {
+		top := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if top.sub {
+			scopes = append(scopes, top.b.String())
+		} else {
+			stack[len(stack)-1].b.WriteString(top.b.String())
+		}
+	}
+	return append([]string{stack[0].b.String()}, scopes...)
+}
+
+// blankLiterals replaces the content of '...' string literals (with ” as an
+// escaped quote) by nothing.
+func blankLiterals(s string) string {
+	var b strings.Builder
+	in := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c == '\'' {
+			if in && i+1 < len(s) && s[i+1] == '\'' {
+				i++
+				continue
+			}
+			if !in {
+				b.WriteString("''")
+			}
+			in = !in
+			continue
+		}
+		if !in {
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
 }
 
 func funcName(fd *ast.FuncDecl) string {
