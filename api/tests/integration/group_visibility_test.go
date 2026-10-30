@@ -419,7 +419,7 @@ func TestVisibility_WritesFollowVisibility(t *testing.T) {
 
 	_, err := f.groupSvc.UpdateAssetGroup(ctx, tenant.String(), f.groups["Corporate IT"], assetapp.UpdateAssetGroupInput{Name: &name})
 	assertVisible(t, "ck updates Corporate IT group", false, err)
-	if err := f.groupSvc.DeleteAssetGroup(ctx, tenant.String(), f.groups["Corporate IT"]); !errors.Is(err, shared.ErrNotFound) {
+	if _, err := f.groupSvc.DeleteAssetGroup(ctx, tenant.String(), f.groups["Corporate IT"]); !errors.Is(err, shared.ErrNotFound) {
 		t.Errorf("ck deletes Corporate IT group: %v, want not found", err)
 	}
 	if _, err := f.groupSvc.UpdateAssetGroup(ctx, tenant.String(), f.groups["Fresh"], assetapp.UpdateAssetGroupInput{Name: &name}); err != nil {
@@ -479,7 +479,7 @@ func TestVisibility_UnitWithAssetsBelowIsNotWritable(t *testing.T) {
 	if err := f.unitSvc.AddAsset(ctx, tenant.String(), retail, firstAsset(t, f, "w")); !errors.Is(err, shared.ErrNotFound) {
 		t.Errorf("it adds w to Retail: %v, want not found", err)
 	}
-	if err := f.unitSvc.Delete(ctx, tenant.String(), retail); !errors.Is(err, shared.ErrNotFound) {
+	if _, err := f.unitSvc.Delete(ctx, tenant.String(), retail); !errors.Is(err, shared.ErrNotFound) {
 		t.Errorf("it deletes Retail: %v, want not found", err)
 	}
 	var crit string

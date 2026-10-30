@@ -221,6 +221,7 @@ type Service struct {
 	zoneResolver        scanzone.Resolver                                                 // resolves hostname targets for zone routing
 	windows             WindowLoader                                                      // optional; nil = no trigger-time scan window check (windows.go)
 	actScope            ActScopeChecker                                                   // optional; nil = act scope not enforced (research/15 L-06)
+	namePorts           NamePortReader                                                    // optional; nil = a coverage probe of a name tries its default ports only (coverage_named_ports.go)
 	// revealResolved lets a refusal show what a hostname resolved to
 	// (WithRevealResolved).
 	revealResolved bool

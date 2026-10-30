@@ -13,8 +13,10 @@ import (
 	"encoding/json"
 	"net/netip"
 	"slices"
+	"strings"
 	"testing"
 
+	"github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/edgeaddr"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
@@ -143,5 +145,107 @@ func TestEdgeAddressNotRefusedWithoutExclusion(t *testing.T) {
 	if !slices.Equal(got.Allowed, []string{edgeAddr}) {
 		t.Fatalf("allowed = %v excluded = %v refused = %v; the edge address must not be refused without an exclusion",
 			got.Allowed, got.Excluded, got.Refused)
+	}
+}
+
+// An exclusion of a shared front end address stays on the address (owner
+// decision 2026-10-30): a name the organization serves through that CDN
+// still dispatches on every path, for every tool, while the address itself
+// never does. An exclusion of a dedicated address still excludes the names
+// that resolve to it, and so does one of an address only a network holder's
+// name calls an edge (not proven shared: fail closed).
+func TestEdgeExclusionDoesNotReachNamesBehindIt(t *testing.T) {
+	const (
+		dedicatedAddr = "203.0.113.10"
+		heldAddr      = "198.51.100.20" // an edge only by its network holder's name
+		behindEdge    = "shop.example.com"
+		onDedicated   = "vpn.example.com"
+		onHeld        = "media.example.com"
+	)
+	if _, shared := edgeaddr.Default().SharedFrontEnd(edgeAddr); !shared {
+		t.Fatalf("fixture %s is not a shared front end", edgeAddr)
+	}
+	if r := edgeaddr.Default().Address(heldAddr, "", "Akamai International B.V."); r.Class != edgeaddr.Edge || r.Basis != edgeaddr.BasisNetwork {
+		t.Fatalf("fixture %s is not an edge by its network holder: %+v", heldAddr, r)
+	}
+	if _, shared := edgeaddr.Default().SharedFrontEnd(heldAddr); shared {
+		t.Fatalf("an address known only by its network holder must not count as shared")
+	}
+	tenant := shared.NewID()
+	repo := &tenantExclusionRepo{byTenant: map[shared.ID][]*scopedom.Exclusion{tenant: {
+		approvedExclusion(t, tenant, scopedom.ExclusionTypeIPAddress, edgeAddr),
+		approvedExclusion(t, tenant, scopedom.ExclusionTypeIPAddress, dedicatedAddr),
+		approvedExclusion(t, tenant, scopedom.ExclusionTypeCIDR, "198.51.100.16/28"),
+	}}}
+	svc := splitGate(repo, nil)
+	svc.actScope = &stubActScope{} // the platform policies (coverage, enrichment, web verify) ask for it
+	// The values each path matches a name by (scope.AssetExclusionValues,
+	// as the trigger, the group members, the dry run and the triage read them).
+	resolved := map[string][]string{
+		behindEdge:  {edgeAddr, "104.16.2.2"},
+		onDedicated: {dedicatedAddr},
+		onHeld:      {heldAddr},
+	}
+	assets := map[string]DispatchAsset{}
+	for name, ips := range resolved {
+		vals := scope.AssetExclusionValues("subdomain", name, map[string]any{"ip_addresses": ips})
+		assets[name] = DispatchAsset{AlsoMatch: vals} // typed: names only, as a URL on the asset
+	}
+	tier := scopedom.TierActive
+	paths := map[string]func(targets []string) DispatchTargetsInput{
+		"scan trigger": func(ts []string) DispatchTargetsInput { return triggerInput(tenant, ts...) },
+		"scan run and workflow hops": func(ts []string) DispatchTargetsInput {
+			return DispatchTargetsInput{TenantID: tenant, Targets: ts, SplitRanges: true, Path: "scan_run"}
+		},
+		"coverage run": func(ts []string) DispatchTargetsInput {
+			return DispatchTargetsInput{TenantID: tenant, Targets: ts, SystemPolicy: string(scan.ManagedByCoverage),
+				Tier: &tier, SkipZoneRouting: true, Path: "auto_coverage"}
+		},
+		"enrichment": func(ts []string) DispatchTargetsInput {
+			return DispatchTargetsInput{TenantID: tenant, Targets: ts, SystemPolicy: string(scan.ManagedByEnrichment),
+				SkipZoneRouting: true, Path: "auto_enrichment"}
+		},
+		"web verify": func(ts []string) DispatchTargetsInput {
+			return DispatchTargetsInput{TenantID: tenant, Targets: ts, SystemPolicy: string(scan.ManagedByWebVerify),
+				SkipZoneRouting: true, Path: "web_verify"}
+		},
+		"retest and validation": func(ts []string) DispatchTargetsInput {
+			return DispatchTargetsInput{TenantID: tenant, Targets: ts, Placement: attribution.PlacementTenant}
+		},
+	}
+	targets := []string{
+		behindEdge, "https://" + behindEdge + "/login", behindEdge + ":443",
+		onDedicated, onHeld,
+		edgeAddr, edgeAddr + ":443", "https://" + edgeAddr + "/",
+	}
+	wantAllowed := []string{behindEdge, "https://" + behindEdge + "/login", behindEdge + ":443"}
+	wantExcluded := []string{onDedicated, onHeld, edgeAddr, edgeAddr + ":443", "https://" + edgeAddr + "/"}
+	for name, build := range paths {
+		for _, tool := range []string{"naabu", "httpx", "nuclei"} {
+			in := build(targets)
+			in.Tool = tool
+			in.Assets = map[string]DispatchAsset{}
+			for _, tg := range targets {
+				for n, a := range assets {
+					if strings.Contains(tg, n) {
+						in.Assets[tg] = a
+					}
+				}
+			}
+			got, err := svc.ResolveDispatchTargets(context.Background(), in)
+			if err != nil {
+				t.Fatalf("%s/%s: %v", name, tool, err)
+			}
+			for _, w := range wantAllowed {
+				if !slices.Contains(got.Allowed, w) {
+					t.Errorf("%s/%s: %q behind the excluded edge address not dispatched (excluded %v)", name, tool, w, got.Excluded)
+				}
+			}
+			for _, w := range wantExcluded {
+				if slices.Contains(got.Allowed, w) || !slices.Contains(got.Excluded, w) {
+					t.Errorf("%s/%s: %q must be excluded (allowed %v excluded %v)", name, tool, w, got.Allowed, got.Excluded)
+				}
+			}
+		}
 	}
 }

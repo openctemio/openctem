@@ -11,6 +11,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/businessunit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -19,6 +20,7 @@ import (
 
 // BusinessUnitHandler handles business unit endpoints.
 type BusinessUnitHandler struct {
+	configAuditor
 	service *asset.BusinessUnitService
 	logger  *logger.Logger
 }
@@ -111,10 +113,14 @@ func (h *BusinessUnitHandler) Update(w http.ResponseWriter, r *http.Request) {
 // Delete deletes a business unit.
 func (h *BusinessUnitHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
-	if err := h.service.Delete(r.Context(), tenantID, chi.URLParam(r, "id")); err != nil {
+	id := chi.URLParam(r, "id")
+	name, err := h.service.Delete(r.Context(), tenantID, id)
+	if err != nil {
 		h.handleError(w, err)
 		return
 	}
+	h.recordDeleted(r, h.logger, auditdom.ActionBusinessUnitDeleted, auditdom.ResourceTypeBusinessUnit,
+		id, name, "Business unit deleted")
 	w.WriteHeader(http.StatusNoContent)
 }
 
