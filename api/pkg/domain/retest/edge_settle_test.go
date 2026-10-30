@@ -105,3 +105,34 @@ func TestExposureTemplateTags(t *testing.T) {
 		}
 	}
 }
+
+func TestRedirectToAnotherPathIsNotAFix(t *testing.T) {
+	loc := func(l string) []evidence.Item {
+		return answer(swaggerAt, 302, "", evidence.Header{Name: "Location", Value: l})
+	}
+	cases := []struct {
+		name string
+		ev   []evidence.Item
+		cls  Class
+		want Outcome
+	}{
+		{"to a login page", loc("/login?next=/webjars"), Class{}, OutcomeInconclusive},
+		{"no recorded target", answer(swaggerAt, 301, ""), Class{}, OutcomeInconclusive},
+		{"same path on another scheme", loc("http://api.example.com/webjars/swagger-ui/index.html"), Class{}, OutcomeConfirmedFixed},
+		{"exposure class keeps its rule", loc("/login"), Class{Exposure: true}, OutcomeConfirmedFixed},
+	}
+	for _, c := range cases {
+		v := Decide(nm(c.ev), probeUp, swaggerAt, c.cls)
+		if v.Outcome != c.want {
+			t.Errorf("%s: %s/%s (%s), want %s", c.name, v.Outcome, v.Code, v.Reason, c.want)
+		}
+		if c.want == OutcomeInconclusive && v.Code != ReasonAuthChanged {
+			t.Errorf("%s: code %s", c.name, v.Code)
+		}
+	}
+	// The same through request lines, the target read from the evidence.
+	v := Decide(CheckResult{Outcome: "not_detected", Evidence: loc("/login"), Requests: []RequestResult{rq(swaggerAt, 302, false)}}, probeUp, swaggerAt, Class{})
+	if v.Outcome != OutcomeInconclusive || v.Code != ReasonAuthChanged {
+		t.Errorf("request lines: %s/%s", v.Outcome, v.Code)
+	}
+}

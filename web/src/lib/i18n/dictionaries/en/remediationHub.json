@@ -253,7 +253,7 @@
   "remediationHub.plan.loadError": "the fix plan",
   "remediationHub.plan.mine": "My tasks",
   "remediationHub.plan.openTasks": "Open tasks",
-  "remediationHub.plan.row": "{findings, plural, one {# finding} other {# findings}} · {risk, plural, one {# risk point} other {# risk points}}",
+  "remediationHub.plan.row": "{findings, plural, one {# finding} other {# findings}}, {risk, plural, one {# risk point} other {# risk points}}",
   "remediationHub.plan.suggested": "Suggested",
   "remediationHub.plan.title": "Remediation",
   "remediationHub.plan.toReview": "Suggestions to review",

@@ -70,7 +70,7 @@ function CycleCard({ summary }: { summary: ScopingSummary }) {
           <CardDescription>
             {cycleTimeline(c, t, locale).value}
             {c.status !== 'planning' &&
-              ` · ${t(
+              `, ${t(
                 'scoping.overview.assetsInScope',
                 '{n, plural, one {# asset} other {# assets}} in scope',
                 { n: c.scope_assets }
@@ -85,7 +85,7 @@ function CycleCard({ summary }: { summary: ScopingSummary }) {
       </CardHeader>
       <CardContent>
         <p className="text-sm text-muted-foreground">
-          {t('scoping.overview.charter', 'Charter: {summary}', { summary: parts.join(' · ') })}
+          {t('scoping.overview.charter', 'Charter: {summary}', { summary: parts.join(', ') })}
         </p>
       </CardContent>
     </Card>

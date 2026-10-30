@@ -105,9 +105,11 @@
     "manifest",
     "local_policy",
     "command_progress",
+    "local_store",
     "posture",
     "capacity",
     "refusal",
+    "failure_class",
     "config_report",
     "logs"
   ],

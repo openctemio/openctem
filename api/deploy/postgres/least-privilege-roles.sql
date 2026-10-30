@@ -143,10 +143,16 @@ SELECT format('ALTER SCHEMA %I OWNER TO %I', nspname, :'migrator_user') FROM app
 SELECT format('GRANT USAGE ON SCHEMA %I TO %I', nspname, :'app_user') FROM app_schemas \gexec
 SELECT format('REVOKE CREATE ON SCHEMA %I FROM %I', nspname, :'app_user') FROM app_schemas \gexec
 
--- golang-migrate's tracker, created ahead of the first migration on a fresh
--- database (same definition migrate uses) so it is the migrator's and the app
--- only ever gets SELECT on it (section 5).
+-- The migration runner's two tables (api/internal/migrate), created ahead of
+-- the first migration on a fresh database (same definitions the runner uses)
+-- so they are the migrator's and the app only ever gets SELECT on them
+-- (section 5): a role that could write them could make the next migration run
+-- skip a migration, or run one again.
 CREATE TABLE IF NOT EXISTS public.schema_migrations (version bigint NOT NULL PRIMARY KEY, dirty boolean NOT NULL);
+CREATE TABLE IF NOT EXISTS public.schema_migrations_applied (
+    version bigint NOT NULL PRIMARY KEY,
+    name text NOT NULL,
+    applied_at timestamptz NOT NULL DEFAULT clock_timestamp());
 
 -- -----------------------------------------------------------------------------
 -- 4. Ownership: every object in those schemas that is not part of an
@@ -203,8 +209,10 @@ WHERE n.oid IN (SELECT oid FROM app_schemas)
 -- -----------------------------------------------------------------------------
 SELECT format('REVOKE ALL ON ALL TABLES IN SCHEMA %I FROM %I', nspname, :'app_user') FROM app_schemas \gexec
 SELECT format('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA %I TO %I', nspname, :'app_user') FROM app_schemas \gexec
--- The migration tracker is read (the startup schema check), never written.
+-- The migration tracking tables are read (the startup schema check, the
+-- console), never written.
 SELECT format('REVOKE INSERT, UPDATE, DELETE ON public.schema_migrations FROM %I', :'app_user') \gexec
+SELECT format('REVOKE INSERT, UPDATE, DELETE ON public.schema_migrations_applied FROM %I', :'app_user') \gexec
 -- The administrators' audit log is append-only: insert and read only. Its
 -- retention anchors are written by admin_audit_prune (the owner) alone.
 SELECT format('REVOKE UPDATE, DELETE, TRUNCATE ON public.admin_audit_logs FROM %I', :'app_user')
@@ -267,7 +275,7 @@ BEGIN
     FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.oid IN (SELECT oid FROM app_schemas) AND c.relkind IN ('r', 'p')
       AND NOT has_table_privilege(app, c.oid, 'SELECT, INSERT, UPDATE, DELETE')
-      AND c.relname <> 'schema_migrations';
+      AND c.relname NOT IN ('schema_migrations', 'schema_migrations_applied');
     IF bad IS NOT NULL THEN
         RAISE EXCEPTION 'role % is missing DML on: %', app, bad;
     END IF;
@@ -293,7 +301,8 @@ $$;
 --    platform identity provider, and the app role keeps no write on those
 --    tables (and no read but of admin_users, which the membership trigger and
 --    the platform-admin checks need). A SQL injection anywhere in the tenant
---    plane then cannot add an administrator or a console session.
+--    plane then cannot add an administrator or a console session, nor plant a
+--    console passkey or a known recovery code for an administrator.
 -- -----------------------------------------------------------------------------
 \if :{?admin_user}
 \if :{?admin_password}
@@ -322,14 +331,14 @@ SELECT format('GRANT USAGE ON SCHEMA %I TO %I', nspname, :'admin_user') FROM app
 SELECT format('REVOKE CREATE ON SCHEMA %I FROM %I', nspname, :'admin_user') FROM app_schemas \gexec
 -- The console role starts from no table privilege (an earlier release granted
 -- it the app's row access) and gets exactly what the console's repositories
--- touch: full DML on its own identity tables, append and read of its audit
+-- touch: full DML on its own identity tables (second factors included), append and read of its audit
 -- log, read of the audit chain anchors, link/unlink of an administrator to a
 -- users row (SELECT, UPDATE on users) and the membership check that refuses
 -- linking an account that belongs to an organization (SELECT on tenant_members).
 -- Tenant data (findings, assets, ...) is not readable or writable by it.
 SELECT format('REVOKE ALL ON ALL TABLES IN SCHEMA %I FROM %I', nspname, :'admin_user') FROM app_schemas \gexec
 SELECT format('GRANT SELECT, INSERT, UPDATE, DELETE ON public.%I TO %I', t, :'admin_user')
-FROM unnest(ARRAY['admin_users', 'admin_credentials', 'admin_sessions', 'platform_identity_provider', 'admin_idp_login_states', 'admin_approvals']) AS t
+FROM unnest(ARRAY['admin_users', 'admin_credentials', 'admin_sessions', 'platform_identity_provider', 'admin_idp_login_states', 'admin_approvals', 'platform_roles', 'platform_role_permissions', 'platform_role_assignments', 'admin_webauthn_credentials', 'admin_recovery_codes', 'admin_webauthn_ceremonies']) AS t
 WHERE to_regclass('public.' || t) IS NOT NULL \gexec
 SELECT format('GRANT SELECT, INSERT ON public.%I TO %I', t, :'admin_user')
 FROM unnest(ARRAY['admin_audit_logs']) AS t
@@ -351,12 +360,15 @@ SELECT format('ALTER DEFAULT PRIVILEGES FOR ROLE %I GRANT USAGE, SELECT, UPDATE 
 SELECT format('ALTER DEFAULT PRIVILEGES FOR ROLE %I GRANT EXECUTE ON FUNCTIONS TO %I', :'migrator_user', :'admin_user') \gexec
 
 -- The app keeps reading admin_users, nothing else of the console's identity
--- (four-eyes approvals included: a tenant-plane injection cannot forge one).
+-- (four-eyes approvals included: a tenant-plane injection cannot forge one;
+-- platform roles included: the tenant plane neither reads nor grants them;
+-- the console's second factors included: passkeys, recovery codes and the
+-- passkey ceremonies, so it cannot plant a factor for an administrator).
 SELECT format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON public.%I FROM %I', t, :'app_user')
-FROM unnest(ARRAY['admin_users', 'admin_credentials', 'admin_sessions', 'platform_identity_provider', 'admin_idp_login_states', 'admin_approvals']) AS t
+FROM unnest(ARRAY['admin_users', 'admin_credentials', 'admin_sessions', 'platform_identity_provider', 'admin_idp_login_states', 'admin_approvals', 'platform_roles', 'platform_role_permissions', 'platform_role_assignments', 'admin_webauthn_credentials', 'admin_recovery_codes', 'admin_webauthn_ceremonies']) AS t
 WHERE to_regclass('public.' || t) IS NOT NULL \gexec
 SELECT format('REVOKE SELECT ON public.%I FROM %I', t, :'app_user')
-FROM unnest(ARRAY['admin_credentials', 'admin_sessions', 'platform_identity_provider', 'admin_idp_login_states', 'admin_approvals']) AS t
+FROM unnest(ARRAY['admin_credentials', 'admin_sessions', 'platform_identity_provider', 'admin_idp_login_states', 'admin_approvals', 'platform_roles', 'platform_role_permissions', 'platform_role_assignments', 'admin_webauthn_credentials', 'admin_recovery_codes', 'admin_webauthn_ceremonies']) AS t
 WHERE to_regclass('public.' || t) IS NOT NULL \gexec
 
 DO $$
@@ -364,6 +376,7 @@ DECLARE
     adm text := current_setting('openctem.admin_user');
     app text := current_setting('openctem.app_user');
     r record;
+    bad text;
 BEGIN
     FOR r IN SELECT rolsuper, rolcreatedb, rolcreaterole, rolreplication, rolbypassrls FROM pg_roles WHERE rolname = adm LOOP
         IF r.rolsuper OR r.rolcreatedb OR r.rolcreaterole OR r.rolreplication OR r.rolbypassrls THEN
@@ -375,6 +388,16 @@ BEGIN
         OR has_table_privilege(app, 'public.admin_users', 'DELETE')
         OR NOT has_table_privilege(adm, 'public.admin_users', 'INSERT')) THEN
         RAISE EXCEPTION 'admin_users is not written by % alone', adm;
+    END IF;
+    SELECT string_agg(t, ', ') INTO bad
+    FROM unnest(ARRAY['admin_webauthn_credentials', 'admin_recovery_codes', 'admin_webauthn_ceremonies']) AS t
+    WHERE to_regclass('public.' || t) IS NOT NULL
+      -- A privilege list is true when ANY of them is held.
+      AND (has_table_privilege(app, 'public.' || t, 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE')
+           OR NOT (has_table_privilege(adm, 'public.' || t, 'SELECT') AND has_table_privilege(adm, 'public.' || t, 'INSERT')
+                   AND has_table_privilege(adm, 'public.' || t, 'UPDATE') AND has_table_privilege(adm, 'public.' || t, 'DELETE')));
+    IF bad IS NOT NULL THEN
+        RAISE EXCEPTION 'console second factors are not % alone: %', adm, bad;
     END IF;
     IF to_regprocedure('public.dash_asset_day_maintain()') IS NOT NULL
        AND has_function_privilege(adm, 'public.dash_asset_day_maintain()', 'EXECUTE') THEN

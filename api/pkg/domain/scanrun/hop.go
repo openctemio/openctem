@@ -37,8 +37,12 @@ const (
 	// or excluded (a name not confirmed yet may still be resolved).
 	ReasonPassiveAllowed = "passive_allowed"
 
-	ReasonExcluded     = "excluded"      // an active scope exclusion
-	ReasonUnconfirmed  = "unconfirmed"   // the ownership gate refused it (needs_review, rejected, unattributed, ...)
+	ReasonExcluded    = "excluded"    // an active scope exclusion
+	ReasonUnconfirmed = "unconfirmed" // the ownership gate refused it (needs_review, rejected, unattributed, ...)
+	// ReasonWildcardOnly: a derived name that resolves only through a
+	// wildcard DNS record, which a job on platform sensors of the hosted
+	// service keeps passive (or one no scope entry covers).
+	ReasonWildcardOnly = "wildcard_only"
 	ReasonRefused      = "refused"       // the target validator or act scope refused it
 	ReasonOtherZone    = "other_zone"    // it routes to another scan zone than the run
 	ReasonHopLimit     = "hop_limit"     // more discovery hops from the seeds than allowed

@@ -143,8 +143,8 @@ describe('fix plan', () => {
   it('uses singular and plural units', () => {
     render(<FixPlan />)
     const one = screen.getAllByRole('listitem').find((li) => within(li).queryByText('Task a'))!
-    expect(one.textContent).toContain('1 finding · 4 risk points')
+    expect(one.textContent).toContain('1 finding, 4 risk points')
     const many = screen.getAllByRole('listitem').find((li) => within(li).queryByText('Task b'))!
-    expect(many.textContent).toContain('5 findings · 20 risk points')
+    expect(many.textContent).toContain('5 findings, 20 risk points')
   })
 })

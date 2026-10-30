@@ -27,6 +27,7 @@ import (
 	"strings"
 
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
+	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	scanrundom "github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
@@ -108,12 +109,22 @@ type recheckJob struct {
 	// job is the command's tool and port settings, checked against port-
 	// and path-limited scope entries.
 	job scopedom.JobShape
+	// platform: the job is for platform sensors (ownership confirmation
+	// applies on the hosted service, attribution.Placement).
+	platform bool
 }
 
 // recheckKey groups jobs the gate can decide in one call.
 type recheckKey struct {
-	gate commanddom.DispatchGate
-	job  scopedom.JobShape
+	gate     commanddom.DispatchGate
+	job      scopedom.JobShape
+	platform bool
+}
+
+// platformJob reports whether c runs on platform sensors: a job queued for
+// them, or any job a shared sensor claims (the caller marks the context).
+func platformJob(ctx context.Context, c *commanddom.Command) bool {
+	return c.IsPlatformJob || attribution.PlacementOf(ctx) == attribution.PlacementPlatform
 }
 
 // jobShapeOf reads a command's tool and port settings as the sensor's
@@ -225,7 +236,7 @@ func (s *Service) recheck(ctx context.Context, tenantID shared.ID, sensorID *sha
 		}
 		shape := jobShapeOf(c)
 		shape.LimitsEnforced = enforced
-		jobs = append(jobs, recheckJob{cmd: c, targets: targets, gate: gate, job: shape})
+		jobs = append(jobs, recheckJob{cmd: c, targets: targets, gate: gate, job: shape, platform: platformJob(ctx, c)})
 	}
 	for _, batch := range recheckBatches(jobs) {
 		s.recheckBatch(ctx, tenantID, sensorID, batch, outcomes, replaced)
@@ -276,7 +287,7 @@ func recheckBatches(jobs []recheckJob) [][]recheckJob {
 	var groups [][]recheckJob
 	sizes := []int{}
 	for _, j := range jobs {
-		key := recheckKey{gate: j.gate, job: j.job}
+		key := recheckKey{gate: j.gate, job: j.job, platform: j.platform}
 		i, ok := index[key]
 		if !ok || sizes[i]+len(j.targets) > maxRecheckTargets {
 			groups = append(groups, nil)
@@ -301,6 +312,10 @@ func (s *Service) recheckBatch(ctx context.Context, tenantID shared.ID, sensorID
 		AllowNonNetworkTargets: !g.Validated, SkipZoneRouting: g.NoZoneRouting,
 		Tier: &tier, PassiveOnly: g.Passive, ActScope: g.ActScope,
 		SystemPolicy: g.SystemPolicy,
+		Placement:    attribution.PlacementTenant,
+	}
+	if jobs[0].platform {
+		in.Placement = attribution.PlacementPlatform
 	}
 	if g.ActScope && g.Actor == "" && g.SystemPolicy == "" {
 		s.withholdAll(jobs, outcomes, "the job has no recorded actor and no system authority", nil)
@@ -579,9 +594,17 @@ func payloadTargets(payload json.RawMessage) []string {
 	if len(payload) == 0 {
 		return nil
 	}
-	var p struct {
+	// The targets at the top level and in "context" (the run context a
+	// step carries, which narrowPayload narrows too): a job that names its
+	// targets only in the context is checked like any other, never handed
+	// out unchecked.
+	type targetFields struct {
 		Targets []any `json:"targets"`
 		Target  any   `json:"target"`
+	}
+	var p struct {
+		targetFields
+		Context *targetFields `json:"context"`
 	}
 	if json.Unmarshal(payload, &p) != nil {
 		return nil
@@ -607,13 +630,22 @@ func payloadTargets(payload json.RawMessage) []string {
 		add(t)
 	}
 	add(p.Target)
+	if p.Context != nil {
+		for _, t := range p.Context.Targets {
+			add(t)
+		}
+		add(p.Context.Target)
+	}
 	return out
 }
 
 // narrowPayload keeps only the kept targets in a payload: in "targets" and
-// "target" at the top level and in "context" (the run context a step
-// carries). "target" stays only when it is kept, or becomes the one target
-// left. Everything else is unchanged (numbers keep their exact text).
+// "target" at the top level, in "context" (the run context a step carries)
+// and in the tool settings ("config", "scanner_config", and the context's
+// "scanner_config"), where a quick scan carries its target list too: a
+// narrowed job never names a target it no longer runs on. "target" stays
+// only when it is kept, or becomes the one target left. Everything else is
+// unchanged (numbers keep their exact text).
 func narrowPayload(payload json.RawMessage, kept []string) (json.RawMessage, error) {
 	keep := make(map[string]bool, len(kept))
 	for _, t := range kept {
@@ -626,10 +658,22 @@ func narrowPayload(payload json.RawMessage, kept []string) (json.RawMessage, err
 		return nil, fmt.Errorf("decode command payload: %w", err)
 	}
 	narrowTargets(fields, keep)
+	narrowSettingsTargets(fields, keep)
 	if ctxFields, ok := fields["context"].(map[string]any); ok {
 		narrowTargets(ctxFields, keep)
+		narrowSettingsTargets(ctxFields, keep)
 	}
 	return json.Marshal(fields)
+}
+
+// narrowSettingsTargets narrows the target lists of the tool settings in
+// fields ("config", "scanner_config").
+func narrowSettingsTargets(fields map[string]any, keep map[string]bool) {
+	for _, k := range []string{"config", "scanner_config"} {
+		if cfg, ok := fields[k].(map[string]any); ok {
+			narrowTargets(cfg, keep)
+		}
+	}
 }
 
 func narrowTargets(fields map[string]any, keep map[string]bool) {

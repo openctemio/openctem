@@ -165,3 +165,47 @@ func TestApprovalQueues_ChangedSinceRequest_DB(t *testing.T) {
 		t.Fatalf("review rows = %+v", page.Data)
 	}
 }
+
+// The finding page's own list (GET /findings/{id}/approvals) says what
+// changed since a pending request with the same rule as the review queue, so
+// an approver deciding there sees it too; another organization gets nothing.
+func TestFindingApprovals_ChangedSinceRequestOnTheFinding_DB(t *testing.T) {
+	h := newFindingApprovalHarness(t)
+	org, other := h.tenantWithFindings(), h.tenantWithFindings()
+	owner, requester := h.member(org, "owner"), h.member(org, "admin")
+	outsider := h.member(other, "owner")
+	fid := h.newFinding(org, "medium")
+	req := h.requestStatus(requester, fid, "accepted")
+	h.exec(`UPDATE findings SET is_in_kev = TRUE WHERE id = $1`, fid)
+
+	var rows []struct {
+		ID                  string   `json:"id"`
+		Status              string   `json:"status"`
+		ChangedSinceRequest []string `json:"changed_since_request"`
+	}
+	if err := json.Unmarshal([]byte(h.expect(owner, http.MethodGet, "/api/v1/findings/"+fid+"/approvals/", "", http.StatusOK)), &rows); err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].ID != req || !slices.Equal(rows[0].ChangedSinceRequest, []string{"kev"}) {
+		t.Fatalf("finding approvals = %+v, want the request with [kev]", rows)
+	}
+	// Another organization's owner reads nothing of this finding.
+	if code, body := h.do(outsider, http.MethodGet, "/api/v1/findings/"+fid+"/approvals/", ""); code == http.StatusOK && containsID(body, req) {
+		t.Errorf("another organization read the request: %.200s", body)
+	}
+}
+
+func containsID(body, id string) bool {
+	var rows []struct {
+		ID string `json:"id"`
+	}
+	if json.Unmarshal([]byte(body), &rows) != nil {
+		return false
+	}
+	for _, r := range rows {
+		if r.ID == id {
+			return true
+		}
+	}
+	return false
+}

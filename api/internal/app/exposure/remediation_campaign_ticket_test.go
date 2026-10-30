@@ -226,6 +226,9 @@ func TestHandleEpicStatusChange_DoneClaimsTasksFixedNeverCompletes(t *testing.T)
 	if len(tasks.claimed) != 2 || !strings.Contains(tasks.lastNote, "SEC-7") {
 		t.Fatalf("claimed %v note %q, want both live tasks claimed fixed", tasks.claimed, tasks.lastNote)
 	}
+	if tasks.lastAccount != "acct-1" {
+		t.Fatalf("external account passed to the claim = %q, want acct-1", tasks.lastAccount)
+	}
 	if c.Status() != remediation.CampaignStatusActive {
 		t.Fatalf("campaign status = %s, want still active", c.Status())
 	}

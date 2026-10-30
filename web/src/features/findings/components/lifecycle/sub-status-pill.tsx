@@ -34,7 +34,6 @@ export function SubStatusPill({ subStatus, showStatus, className }: SubStatusPil
       <span className="truncate">{subStatusName(subStatus, locale)}</span>
       {showStatus && (
         <span className="text-muted-foreground">
-          {'· '}
           {t(`findings.status.${subStatus.canonical_status}`, subStatus.canonical_status)}
         </span>
       )}

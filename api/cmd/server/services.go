@@ -29,6 +29,9 @@ import (
 	webevidenceapp "github.com/openctemio/openctem/api/internal/app/webevidence"
 
 	"github.com/openctemio/openctem/api/internal/app/activity"
+	"github.com/openctemio/openctem/api/internal/app/aianalysis"
+	"github.com/openctemio/openctem/api/internal/app/aibundle"
+	"github.com/openctemio/openctem/api/internal/app/aimaskmap"
 	"github.com/openctemio/openctem/api/internal/app/aipolicy"
 	"github.com/openctemio/openctem/api/internal/app/aitriage"
 	"github.com/openctemio/openctem/api/internal/app/asset"
@@ -41,6 +44,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/internal/app/module"
+	"github.com/openctemio/openctem/api/internal/app/orgrelay"
 	"github.com/openctemio/openctem/api/internal/app/sensorgrant"
 	"github.com/openctemio/openctem/api/internal/app/sensorpairing"
 	"github.com/openctemio/openctem/api/internal/app/ticketbridge"
@@ -82,6 +86,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/consolesetting"
 	catalogapp "github.com/openctemio/openctem/api/internal/app/contentcatalog"
 	contentpackapp "github.com/openctemio/openctem/api/internal/app/contentpack"
+	"github.com/openctemio/openctem/api/internal/app/contentpin"
 	contentsourceapp "github.com/openctemio/openctem/api/internal/app/contentsource"
 	coverageapp "github.com/openctemio/openctem/api/internal/app/coverage"
 	ctemidapp "github.com/openctemio/openctem/api/internal/app/ctemid"
@@ -104,6 +109,8 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/platformalert"
 	"github.com/openctemio/openctem/api/internal/app/platformcaptcha"
 	"github.com/openctemio/openctem/api/internal/app/platformemail"
+	"github.com/openctemio/openctem/api/internal/app/platformmfa"
+	"github.com/openctemio/openctem/api/internal/app/platformsociallogin"
 	programfeedapp "github.com/openctemio/openctem/api/internal/app/programfeed"
 	"github.com/openctemio/openctem/api/internal/app/programtarget"
 	proxypoolapp "github.com/openctemio/openctem/api/internal/app/proxypool"
@@ -121,6 +128,7 @@ import (
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/app/tenantai"
 	"github.com/openctemio/openctem/api/internal/app/threatmodel"
+	"github.com/openctemio/openctem/api/internal/app/threatsource"
 	"github.com/openctemio/openctem/api/internal/app/ticketing"
 	appticketmap "github.com/openctemio/openctem/api/internal/app/ticketmap"
 	"github.com/openctemio/openctem/api/internal/app/validation"
@@ -255,6 +263,46 @@ func (v validationSensorAvailability) HasRetestTemplatesSensor(ctx context.Conte
 	return len(sensors) > 0, nil
 }
 
+// RetestSensors lists the tenant's online sensors, with capacity, that have
+// every capability, with the template release each reports: a template
+// retest is addressed to one that has the finding's template.
+func (v validationSensorAvailability) RetestSensors(ctx context.Context, tenantID shared.ID, capabilities []string) ([]retestapp.SensorCandidate, error) {
+	sensors, err := v.sensors.FindAvailableWithCapacity(ctx, tenantID, capabilities, "")
+	if err != nil {
+		return nil, err
+	}
+	return retestapp.CandidatesOf(sensors), nil
+}
+
+// HasToolSensor reports whether an online sensor of the tenant, with
+// capacity, runs the tool (the fingerprint tool of a version re-check).
+func (v validationSensorAvailability) HasToolSensor(ctx context.Context, tenantID shared.ID, tool string) (bool, error) {
+	sensors, err := v.sensors.FindAvailableWithCapacity(ctx, tenantID, nil, tool)
+	if err != nil {
+		return false, err
+	}
+	return len(sensors) > 0, nil
+}
+
+// retestFingerprinter starts the fingerprint scan of a version re-check as an
+// ad-hoc quick scan of one target with one tool, so every scan target gate
+// (validation, act scope, tier, ownership) applies.
+type retestFingerprinter struct {
+	scans *scan.Service
+}
+
+func (f retestFingerprinter) StartFingerprint(ctx context.Context, tenantID shared.ID, tool, target string, requestedBy *shared.ID) (shared.ID, error) {
+	in := scan.QuickScanInput{TenantID: tenantID.String(), Targets: []string{target}, ScannerName: tool, Tags: []string{"retest"}}
+	if requestedBy != nil {
+		in.CreatedBy = requestedBy.String()
+	}
+	res, err := f.scans.QuickScan(ctx, in)
+	if err != nil {
+		return shared.ID{}, err
+	}
+	return shared.IDFromString(res.ScanRunID)
+}
+
 // RetestTools lists the tools whose findings an online sensor of the tenant,
 // with capacity, can re-check now (validation.RetestToolsOf over their
 // capabilities).
@@ -347,7 +395,7 @@ func httpDataScopeCaller(ctx context.Context) datascope.Caller {
 		UserID:  middleware.GetUserID(ctx),
 		IsAdmin: middleware.IsAdmin(ctx),
 		IsOwner: middleware.IsOwner(ctx),
-		APIKey:  middleware.IsDelegatedCredential(ctx),
+		APIKey:  middleware.ReadsOnOwnScope(ctx),
 	}
 }
 
@@ -628,6 +676,9 @@ type Services struct {
 	BountyProgram *bountyprogramapp.Service
 	// ScopeSnapshots stores the scope each scan run relied on (RFC-065 §9).
 	ScopeSnapshots *postgres.ScopeSnapshotRepository
+	// ScopeEffects closes and reopens findings as assets go out of scope
+	// for good and come back (research/320).
+	ScopeEffects *scope.Effects
 	// ProgramAssigner keeps program group assignments current (the
 	// periodic pass, RFC-065 §7).
 	ProgramAssigner controller.ProgramAssignments
@@ -665,6 +716,8 @@ type Services struct {
 	CertMonitor  *certmonitorapp.Service
 	// ActiveGate decides what an active scan may touch (RFC-036 §6.3).
 	ActiveGate *easmapp.ActiveGate
+	// AssetGroupRules evaluates rule groups after asset changes (debounced).
+	AssetGroupRules *asset.GroupRuleScheduler
 	// ScopeJoin confirms discovered names a permanent scope target or seed
 	// covers (RFC-054 §4.3).
 	ScopeJoin *easmapp.ScopeJoin
@@ -744,6 +797,9 @@ type Services struct {
 	ContentPacks *contentpackapp.Service
 	// PlatformContentPacks are the platform's packs and channels (RFC-061).
 	PlatformContentPacks *contentpackapp.PlatformService
+	// ContentDelivery serves packs to sensors and answers which digests an
+	// organization's jobs may pin (RFC-061 §3.7).
+	ContentDelivery *contentpackapp.Delivery
 	// ContentCatalog is the content catalog (RFC-099).
 	ContentCatalog *catalogapp.Service
 
@@ -876,6 +932,11 @@ type Services struct {
 
 	// AI Triage
 	AITriage *aitriage.AITriageService
+	// AIAnalysis manages AI agents (service accounts that triage like a
+	// person, with accountable owners) and their runs.
+	AIAnalysis *aianalysis.Service
+	// AIExecutor runs single-shot AI kinds in the API process.
+	AIExecutor *aianalysis.BuiltinExecutor
 
 	// WebSocket
 	WebSocketHub *websocket.Hub
@@ -931,14 +992,24 @@ type Services struct {
 	// CAPTCHA keys, the one-time deployment region, the default storage
 	// quota, the alert webhook and the platform AI provider. SettingRecorder
 	// writes their audit rows and notices.
-	SettingRecorder  *consolesetting.Recorder
-	PlatformCaptcha  *platformcaptcha.Service
-	DeploymentRegion *deploymentregion.Service
-	StorageQuota     *storagequota.Service
-	PlatformAlert    *platformalert.Service
-	PlatformAI       *platformai.Service
+	SettingRecorder *consolesetting.Recorder
+	PlatformCaptcha *platformcaptcha.Service
+	// PlatformSocialLogin is the console's social login setting; nil without
+	// the settings store.
+	PlatformSocialLogin *platformsociallogin.Service
+	DeploymentRegion    *deploymentregion.Service
+	StorageQuota        *storagequota.Service
+	ThreatSource        *threatsource.Service
+	PlatformAlert       *platformalert.Service
+	PlatformAI          *platformai.Service
+	OrgRelay            *orgrelay.Service
+	PlatformMFA         *platformmfa.Service
 	// TenantAI is the organizations' AI settings (consent, source, own provider).
 	TenantAI *tenantai.Service
+	// AIMasking is the organization's AI masking policy and its preview.
+	AIMasking *tenantai.MaskingService
+	// AIMaskMaps keeps each AI run's placeholder map, encrypted, until it expires.
+	AIMaskMaps *aimaskmap.Store
 	// ScanPolicy is the platform policy for scan approval (RFC-073)
 	// (wired in wireScopeApprovers, after the email service exists).
 	ScanPolicy *scanpolicy.Service
@@ -1068,6 +1139,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	if repos.PlatformSetting != nil {
 		s.StorageQuota = storagequota.NewService(repos.PlatformSetting, s.Entitlement, s.SettingRecorder, cfg.Storage.TenantQuotaMB)
 	}
+	if repos.PlatformSetting != nil {
+		s.PlatformMFA = platformmfa.NewService(repos.PlatformSetting, s.SettingRecorder, cfg.App.ManagedService, cfg.Auth.MFAFloor)
+		s.OrgRelay = orgrelay.NewService(repos.PlatformSetting, s.SettingRecorder, cfg.App.ManagedService, cfg.App.OrgEmailRelayMode, log)
+	}
 	s.IdleWorkspaces = lifecycleapp.NewService(repos.IdleLifecycle, s.Audit, repos.AdminAuditLog, repos.Admin, nil, log)
 	// Suspended organizations: one access gate every credential path asks,
 	// in front of a shared Redis cache so a change reaches every replica on
@@ -1134,6 +1209,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Which source decides an asset attribute (RFC-069).
 	s.Asset.SetAttributeSources(repos.AssetAttributeSources, repos.Tenant)
 	s.Asset.SetFreshness(repos.AssetFreshness)
+	s.Asset.SetResolution(repos.AssetResolution)
 	s.Asset.SetCoverage(repos.AssetCoverage)
 	s.AssetCoverage = coverageapp.NewService(repos.AssetCoverage, log)
 	s.Asset.SetChangeTimeline(repos.AssetChangeEvents)
@@ -1152,6 +1228,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	s.AssetGroup = asset.NewAssetGroupService(repos.AssetGroup, log)
 	s.AssetGroup.SetDataScope(s.DataScope)
+	// Groups that fill themselves: rules, member sources and history. Asset
+	// changes ask for the tenant's rule groups to be evaluated again
+	// (debounced); the periodic controller is the safety net.
+	s.AssetGroup.SetRuleStore(repos.AssetGroup, repos.Asset)
+	s.AssetGroup.SetOwnerCheck(datascope.MembershipOwnerLookup(repos.Tenant))
+	s.AssetGroupRules = asset.NewGroupRuleScheduler(s.AssetGroup, 0, log)
+	s.Asset.SetGroupRuleNotifier(s.AssetGroupRules)
 	s.AssetType = asset.NewAssetTypeService(repos.AssetType, repos.AssetTypeCat, log)
 	s.Scope = scope.NewService(repos.ScopeTarget, repos.ScopeExcl, repos.Asset, log)
 	// Every web job carries the path exclusions of its hosts, whatever path
@@ -1172,6 +1255,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Scope.SetCoverage(scopeCoverage, s.DataScope)
 	s.Scope.SetCITrustLinks(postgres.NewScopeCITrustLinkRepository(&postgres.DB{DB: deps.DB})) // CI trusts manage repository entries
 	s.Scope.SetExclusionMatches(scopeCoverage)                                                 // bulk exclusion preview (research/124)
+	// Out of scope for good closes the findings, back in scope reopens
+	// them (research/320); every exclusion change kicks a pass.
+	s.ScopeEffects = scope.NewEffects(postgres.NewScopeEffectsRepository(&postgres.DB{DB: deps.DB}), s.Audit, log)
+	s.Scope.SetEffects(s.ScopeEffects)
 	// Program entries (RFC-065) cover nothing a program lists as out of
 	// scope: the authority check reads the program exclusions.
 	programRepo := postgres.NewBountyProgramRepository(&postgres.DB{DB: deps.DB})
@@ -1285,6 +1372,15 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 			GroupBy:    vulnerability.FindingGroupDimensions(),
 			Extra:      []string{"branch_status"},
 		},
+		// The vulnerabilities list: the findings filter plus the list's own
+		// params (kev, epss_gte, q, sort...). The /views routes need
+		// findings:read; this page also needs vulnerabilities:read.
+		savedview.PageVulnerabilities: {
+			Registry:   vulnerability.FindingFields,
+			Permission: permission.VulnerabilitiesRead.String(),
+			Extra:      append([]string{"branch_status"}, vulnerability.CVEListParams...),
+			Params:     vulnerability.CVEListPageParams,
+		},
 	}, log)
 	s.SavedView.SetAuditService(s.Audit)
 	s.Branch = asset.NewBranchService(repos.Branch, log)
@@ -1298,6 +1394,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Vulnerability.SetDataFlowRepository(repos.DataFlow)        // Wire data flow loading
 	s.Vulnerability.SetIssueLinkStore(repos.FindingIssueLinks)   // same-issue groups
 	s.Vulnerability.SetApprovalRepository(repos.FindingApproval) // Wire approval workflow
+	// An AI agent never lowers risk alone, whatever the organization's levels.
+	s.Vulnerability.SetAIAgentChecker(repos.AIAnalysis)
 	s.Vulnerability.SetSeverityRequestRepository(repos.SeverityRequest)
 	s.Vulnerability.SetAccessControlRepository(repos.AccessControl)
 	s.Vulnerability.SetAssigneeProfileReader(repos.AccessControl) // list rows carry the assignee name
@@ -1315,8 +1413,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Note: WebSocket broadcaster is wired later after WebSocketHub is initialized
 
 	// Wire activity service dependencies
-	s.Vulnerability.SetActivityService(s.FindingActivity) // Wire activity tracking
-	s.Vulnerability.SetUserRepository(repos.User)         // Wire user lookup for activity records
+	s.Vulnerability.SetActivityService(s.FindingActivity)    // Wire activity tracking
+	s.Vulnerability.SetTaskRecomputer(repos.RemediationTask) // a delete re-derives the tasks that held the findings
+	s.Vulnerability.SetUserRepository(repos.User)            // Wire user lookup for activity records
 
 	// Note: AITriage is wired to VulnerabilityService later after AITriage initialization
 
@@ -1352,6 +1451,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		postgres.NewExposureDispositionRepository(&postgres.DB{DB: deps.DB}), s.Audit, log)
 	s.Exposure.SetDispositionGate(exposureDispositions)
 	s.ThreatIntel = threat.NewIntelService(repos.ThreatIntel, log)
+	if repos.PlatformSetting != nil {
+		// Where KEV and EPSS come from (console setting, default: the
+		// platform's own fetch).
+		s.ThreatSource = threatsource.NewService(repos.PlatformSetting, s.SettingRecorder)
+		s.ThreatIntel.SetSourcePolicy(s.ThreatSource)
+	}
 	s.CTEMID = ctemidapp.NewService(repos.CTEMID, cfg.Worker.CTEMIDFeedURL, log)
 	s.VersionCheck = versioncheck.New(postgres.NewVersionCheckRepository(&postgres.DB{DB: deps.DB}), versioncheck.Config{
 		Enabled: cfg.Worker.VersionCheckEnabled, URL: cfg.Worker.VersionCheckURL,
@@ -1377,6 +1482,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	easmAlerts := postgres.NewEASMAlerter(easmDB)
 	easmExposures := postgres.NewEASMExposureWriter(easmDB, easmAlerts)
 	repos.EASMDNS.WithAlerts(easmAlerts)
+	// Immediate alerts of web endpoint changes share the exposure alerts'
+	// outbox, hourly budget and attribution rules.
+	repos.WebEndpoint.SetAlerter(postgres.NewWebAlerter(easmAlerts))
 	s.CertMonitor = certmonitorapp.NewService(repos.Asset, easmExposures, cfg.Worker.CertMonitorFeedBaseURL, log)
 	s.CertMonitor.SetDomainSources(repos.VerifiedDomain, repos.ScopeTarget)
 	// Stored CT exposures follow their host to its own asset (research/22 P0-9).
@@ -1538,6 +1646,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		repos.Finding, repos.Asset, s.PriorityClassification, log,
 	)
 	s.Reclassifier.SetQueue(s.Scoring, s.Scoring)
+	repos.FindingIssueLinks.SetPriorityQueue(s.Scoring) // a confirmed version match is scored again
 	s.Reclassifier.SetWriter(s.Scoring)
 	s.Tenant.SetScoringVersions(s.Scoring)
 	// Recompute the SLA deadline when a sweep escalates a finding's priority
@@ -1739,6 +1848,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// sensor this gate returns false and routing is byte-for-byte Phase 2a
 	// (safe-check only). Reuses the same sensor-registry capability query.
 	s.ValidationRun.SetNucleiAvailability(validationSensorAvailability{sensors: repos.Sensor})
+	// A cross-scanner finding re-runs the template named after its CVE only
+	// when that template ran on one of the tenant's sensors before.
+	s.ValidationRun.SetTemplateEvidence(repos.Finding)
 	// RFC-012 Phase 1b: real safe-check dispatch. An eligible simulation
 	// (network-addressable target + safe-checkable technique) runs for real via
 	// the validation dispatcher; the command-completion hook finalizes the run.
@@ -1773,6 +1885,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// are sealed with the platform key (re-keyed by cmd/rekey).
 	s.Evidence = evidenceapp.NewService(repos.FindingEvidence, s.Encryptor, s.Tenant, repos.FindingActivity, s.Audit, log)
 	s.Retest.SetEvidenceStore(s.Evidence)
+	if s.Pentest != nil {
+		s.Pentest.SetEvidenceState(s.Evidence) // a write-up records the evidence version it was written against
+	}
 	// The finding verification plan asks the retest service whether a
 	// retest would run and why not.
 	s.Vulnerability.SetRetestAvailability(s.Retest)
@@ -1866,7 +1981,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// The organization's AI data-egress policy, shared with MCP: pentest
 		// findings above the TLP limit for AI, or of a campaign with AI off,
 		// never reach the model.
-		s.AITriage.SetEgressPolicy(aipolicy.New(mcpPolicyReader{tenants: s.Tenant}, repos.PentestCampaign))
+		aiEgress := aipolicy.New(mcpPolicyReader{tenants: s.Tenant}, repos.PentestCampaign)
+		s.AITriage.SetEgressPolicy(aiEgress)
+		// What of a finding an AI model sees unmasked, and the run maps that
+		// turn its answers back into real values
+		// (docs/architecture/ai-context-masking.md).
+		s.AIMasking = tenantai.NewMaskingService(repos.TenantAISettings, s.Vulnerability, repos.Asset, repos.Tenant,
+			aibundle.NewBuilder(aiEgress), s.Audit, log)
+		s.AIMaskMaps = aimaskmap.NewStore(repos.AIMaskMaps, s.Encryptor, cfg.AITriage.MaskMapTTL)
 		// A confident false-positive verdict on a medium or low finding is
 		// recorded as a pending approval for a person; never applied.
 		s.AITriage.SetFalsePositiveProposer(s.Vulnerability)
@@ -1884,6 +2006,19 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 			}, log,
 		)
 		s.AITriage.SetBudgetService(budgetSvc)
+
+		// The built-in executor: single-shot kinds in the API process,
+		// through the analyze contract and masking, acting as an AI agent
+		// through the finding commands.
+		s.AIExecutor = aianalysis.NewBuiltinExecutor(repos.Finding, finding.AIAgentCommands{Findings: s.Vulnerability},
+			repos.TenantAISettings, llmFactory, s.AIMasking,
+			aibundle.NewBuilder(aiEgress), s.AIMaskMaps, aianalysis.ExecutorConfig{
+				MaxTokens: cfg.AITriage.MaxTokens, Temperature: cfg.AITriage.Temperature,
+			}, log)
+		s.AIExecutor.SetBudget(budgetSvc)
+		if s.PlatformAI != nil {
+			s.AIExecutor.SetOwnProviderPolicy(s.PlatformAI.OrgProviderAllowed)
+		}
 		log.Info("AI triage service initialized",
 			"budget_enabled", cfg.AITriage.BudgetEnabled,
 			"budget_strict", cfg.AITriage.BudgetStrict,
@@ -1996,6 +2131,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// GitHub Issues as a 2nd finding-ticket provider (selected per create-ticket
 	// request); resolves the tenant's GitHub integration credentials on demand.
 	s.GitHubTicket = ticketing.NewGitHubTicketService(repos.Finding, repos.Integration, s.Encryptor, log)
+	s.GitHubTicket.SetAssetNames(infrajira.NewAssetRouteResolver(repos.Asset))
 	// Inbound issue events take the same finding service path as Jira:
 	// transition map, data scope, pentest and approval gates, "mark fixed"
 	// with the integration as the actor, for every finding linked to the
@@ -2031,6 +2167,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// channels (RFC-065 §15.4): one rule for every integration provider.
 	s.Outbox.SetDeliveryResolver(postgres.NewProgramDeliveryRepository(&postgres.DB{DB: deps.DB}))
 	s.Outbox.SetBrand(cfg.Brand)
+	// An e-mail channel whose relay the managed service rules refuse is
+	// stopped with a visible status and its owners are told.
+	s.Outbox.SetRelayRefusedHandler(s.Integration)
 
 	// Wire outbox notification to vulnerability and exposure services
 	s.Vulnerability.SetOutboxService(deps.DB, s.Outbox)
@@ -2098,6 +2237,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.SensorPairing.SetEvents(s.Sensor)
 		// Shared sensor enrollment (RFC-100) has no tenant: console audit.
 		s.SensorPairing.SetAdminAudit(repos.AdminAuditLog)
+		s.SensorPairing.SetEnrollmentTokens(repos.SensorPairing)
 	}
 	// Per-sensor grants (RFC-052 §5): enforced on poll, claim, results
 	// without a job and heartbeat actions; a pairing approval sets the
@@ -2172,6 +2312,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Platform packs: their own storage namespace (not a tenant id, so an
 	// organization's erasure never reaches it) and the platform content key.
 	s.PlatformContentPacks = contentpackapp.NewPlatformService(repos.PlatformContentPack, fileStorage, contentSigner, log)
+	if contentSigner != nil && s.SensorPairing != nil {
+		// A sensor pins the content keys at pairing (RFC-061 §3.7).
+		s.SensorPairing.SetContentKeys(contentSigner)
+	}
+	s.ContentDelivery = contentpackapp.NewDelivery(s.ContentPacks, s.PlatformContentPacks)
 	s.ContentCatalog = initContentCatalog(cfg, repos.ContentCatalog, s.Audit, repos.AdminAuditLog, log)
 	s.ContentCatalog.SetPublishing(contentPublishing(s.ContentPacks, s.PlatformContentPacks, contentSigner,
 		func(ctx context.Context, id shared.ID) (string, error) {
@@ -2184,9 +2329,18 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Proxy pools for scan traffic: credentials encrypted with the
 	// credentials key, never stored in clear.
 	s.ProxyPool = proxypoolapp.NewService(repos.ProxyPool, s.Encryptor, s.Audit, log)
+	// The Test button: sensors test the endpoints, the platform never
+	// connects to a proxy. Disabled when no https address is known for the
+	// echo (PROXY_TEST_ECHO_URL, SENSOR_PUBLIC_API_URL or APP_URL).
+	s.ProxyPool.EnableTest(repos.Sensor, repos.Command, proxypoolapp.TestConfig{
+		EchoBase: cfg.ProxyTestEchoBase(), AltPort: cfg.SensorConfig.ProxyTestAltPort})
+	contentPlanner := contentpin.New(s.ContentDelivery, postgres.NewKnownNamesRepository(&postgres.DB{DB: deps.DB}), nil)
 	cmdOpts := []command.Option{command.WithSensorLookup(repos.Sensor),
 		// Each scan and retest job carries the claiming sensor's proxy pool.
 		command.WithEgress(s.ProxyPool),
+		// RFC-061 §3.7: each scan job pins the content it reads by digest;
+		// the planner also checks every digest before the signer is asked.
+		command.WithContent(contentPlanner, contentPlanner),
 		// RFC-040 §5.7: jobs a sensor refused under its local policy reach its
 		// timeline and the audit log (A11); a tenant can keep private targets
 		// from sensors without a policy.
@@ -2278,6 +2432,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Policies are applied from a per-tenant snapshot, reloaded when their
 	// version changes.
 	s.Ingest.SetPolicyVersions(repos.IngestPolicyVersions)
+	s.Ingest.SetAssetChangeNotifier(s.AssetGroupRules)
 	// DefectDojo co-existence sync (RFC-013): pull a tenant's DefectDojo findings
 	// and ingest them as CTIS (one-way; OpenCTEM is the system of record).
 	s.DefectDojoSync = defectdojo.NewSyncService(repos.Integration, s.Ingest, s.Encryptor, log)
@@ -2304,6 +2459,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		stamper.SetScopeJoin(s.ScopeJoin)
 		stamper.SetProgramAssigner(programRepo)
 		s.Ingest.SetScanAttributionStamper(stamper)
+		s.Ingest.SetImportCandidateHolder(stamper)
 	}
 	// A nuclei takeover-template match from a tenant scan confirms an open
 	// dangling_cname as subdomain_takeover (RFC-036 P1).
@@ -2338,6 +2494,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// priority and SLA enrichment as ingested ones.
 	s.VulnMatch = vulnmatch.NewService(repos.SoftwareMatch, vulnmatch.TenantPolicy(repos.Tenant), repos.Finding, log.With("component", "vulnmatch"))
 	s.VulnMatch.SetEnrichment(s.PriorityClassification, sla.NewApplier(s.SLA), repos.Asset)
+	s.VulnMatch.SetIssueLinker(repos.FindingIssueLinks)
 	s.VulnMatch.SetLinkReader(repos.Software)
 	s.VulnMatch.SetRemediationKeyApplier(remediationKeys)
 	s.VulnMatch.SetVEXApplier(s.VEX) // The organization's VEX statements cover matched findings too
@@ -2389,6 +2546,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// tenant's policy.
 	s.Ingest.SetCommandReader(repos.Command)
 	s.Ingest.SetWildcardDNS(repos.AssetWildcardDNS)
+	// A name the resolver left out is told apart (no DNS answer, or a probed
+	// wildcard record) by asking DNS through the scan-zone resolver.
+	s.Ingest.SetNameResolution(ingest.NewDNSNameProber(zoneResolver(cfg.Scope.ZoneResolver)), repos.AssetResolution)
 	s.Ingest.SetResultQuarantine(repos.SensorResult, sensorresult.DefaultLimits())
 	// RFC-052 §5.3: results without a job need push ingest in the sensor's
 	// effective grant (off by default, always off while New).
@@ -2468,7 +2628,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		WithTakeoverEvidence(repos.EASMDNS).
 		WithPlatformPolicy(s.ScopeGuardrails)
 	s.ActiveGate.SetWildcardDNS(repos.AssetWildcardDNS)
+	// Ownership confirmation applies only to jobs on platform sensors of the
+	// hosted service (MANAGED_SERVICE).
+	s.ActiveGate.SetManagedService(deps.Config.App.ManagedService)
 	s.ActiveGate.SetCertificates(repos.AssetRelationship)
+	// A pasted list may create the assets it names that do not exist: the
+	// scope check decides which join the inventory and which wait for review
+	// as candidates (the same hold an import gets).
+	s.AssetGroup.SetPasteAssets(newPasteAssets(s.Asset, s.ActiveGate, easmapp.NewScanStamper(repos.Attribution, repos.VerifiedNames)))
 	// RFC-065 §16.8: signed jobs for sensors that enforce scope limits carry
 	// the limits of port- and path-limited targets.
 	s.Command.SetScopeLimits(s.ActiveGate)
@@ -2665,6 +2832,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Every retest is a scan run (kind retest): Runs lists it with its tasks and logs.
 	if s.Retest != nil {
 		s.Retest.SetRunRecorder(s.ScanRun)
+		// Retest by provenance: a version-match finding is re-checked by
+		// re-running its fingerprint (a quick scan) and evaluating the
+		// version seen; template sightings pick the sensor that has a template.
+		s.Retest.SetVersionRecheck(repos.SoftwareMatch, retestFingerprinter{scans: s.Scan}, repos.ScanRun)
+		s.Retest.SetTemplateEvidence(repos.Finding)
 	}
 	// Every finding validation is a run too (kind validation).
 	if s.ValidationRun != nil {
@@ -2856,6 +3028,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Wire scope rule hooks for real-time evaluation
 	s.Asset.SetScopeRuleEvaluator(s.ScopeRule.EvaluateAsset)
 	s.AssetGroup.SetScopeRuleReconciler(s.ScopeRule.ReconcileByAssetGroup)
+	// A group that a privileged team's scope rules use is changed only by
+	// the owner after a recent sign-in.
+	s.AssetGroup.SetAccessGuard(s.Group)
 
 	// Initialize assignment engine and wire to vulnerability service for auto-routing
 	assignmentEngine := assignment.NewEngine(repos.AccessControl, log)
@@ -2953,6 +3128,16 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		gateHolder := apikey.NewHolderPermissions(repos.Tenant, rolePermissionSource{repos.Role})
 		s.ServiceKeyGate = apikey.NewServiceKeyGate(repos.ServiceAccount, gateMembers, gateHolder)
 		s.APIKey.SetServiceKeyGate(s.ServiceKeyGate)
+	}
+
+	// AI agents: service accounts that triage like a person. What they may
+	// do is read from the role tables (no cache) at every run start, bounded
+	// by what their accountable owners hold.
+	s.AIAnalysis = aianalysis.New(repos.AIAnalysis, repos.AIAnalysis,
+		apikey.NewHolderPermissions(repos.Tenant, rolePermissionSource{repos.Role}), s.DataScope,
+		aianalysis.SettingsConsent{Repo: repos.TenantAISettings}, s.Audit, log)
+	if s.AIExecutor != nil {
+		s.AIExecutor.SetAIAgents(s.AIAnalysis)
 	}
 
 	// Wire permission services to tenant service
@@ -3080,6 +3265,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// because it needs both the workflow dispatcher and the in-app
 	// notification service, which is only built above.
 	s.AssetDiscoveryNotifier = assetdiscovery.NewNotifier(s.Outbox, s.Notification, assetdiscovery.DefaultWindow, log)
+	s.AssetDiscoveryNotifier.SetRunResolver(stepRunResolver{steps: repos.StepRun, runs: repos.ScanRun})
 	// Automatic passive enrichment of every new asset, whatever created it
 	// (docs/architecture/asset-freshness.md): ingest, manual create, CSV import.
 	s.AssetEnricher = assetfreshnessapp.NewEnricher(repos.AssetEnrichmentRequests, repos.Asset, s.Tenant, s.Scan,
@@ -3100,6 +3286,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		staleRefresher = s.AssetEnricher
 	}
 	s.Scan.SetResolveEvidence(repos.AssetFreshness, staleRefresher)
+	s.Scan.SetResolutionStore(repos.AssetResolution)
 	s.AssetImport.SetCreatedAssetsHook(requestNew)
 	s.Asset.SetEnrichmentRequests(repos.AssetEnrichmentRequests)
 	s.Ingest.SetAssetsDiscoveredCallback(func(ctx context.Context, tenantID shared.ID, assets []*assetdom.Asset) {
@@ -3112,7 +3299,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetAssetsExposedCallback(s.AssetDiscoveryNotifier.AssetsExposed)
 	// Every asset an ingest wrote moves the freshness clock of the attribute
 	// classes the report's tool observes (docs/architecture/asset-freshness.md).
-	s.Ingest.SetAssetsObservedCallback(assetfreshnessapp.NewRecorder(repos.AssetFreshness, log).AssetsObserved)
+	freshnessRecorder := assetfreshnessapp.NewRecorder(repos.AssetFreshness, log)
+	freshnessRecorder.SetResolution(repos.AssetResolution)
+	s.Ingest.SetAssetsObservedCallback(freshnessRecorder.AssetsObserved)
 	// Network seeds (RFC-082): expanded from RIPEstat through the SSRF guard.
 	s.EASMNetworkSeeds = easmapp.NewNetworkSeedService(repos.EASMNetworkSeed, easmapp.NewRIPEstat(), s.ScopeGuardrails, log.With("service", "easm-network-seeds"))
 	s.EASMNetworkSeeds.SetSettings(s.Tenant) // per-organization opt-out of RIPEstat lookups
@@ -3171,8 +3360,8 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	s.AccountDeletion = accountdeletionapp.NewService(repos.AccountDeletion, s.Tenant, s.Session,
 		s.Audit, tenantapp.ErasedUserLabel, log)
 	s.Auth.SetSignInHook(s.AccountDeletion.CancelOnSignIn)
-	// Platform administrators sign in on the admin console only.
-	s.Auth.SetPlatformAdminGate(platformAdminChecker{admins: repos.Admin})
+	// Break-glass accounts sign in on the admin console only.
+	s.Auth.SetBreakGlassGate(breakGlassChecker{admins: repos.Admin})
 	// Stamp the current permission version onto issued access tokens so the
 	// permission-sync middleware can reject stale tokens after a role change
 	// (AUTHZ-3). Without this the JWT carries pv=0 and the stale check is inert.
@@ -3182,6 +3371,18 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// AES-GCM key as integration credentials.
 	s.Auth.SetMFA(repos.UserMFA, s.Encryptor, cfg.Brand.DisplayName())
 	s.Session.SetMFAChallengeCleanup(repos.UserMFA)
+	// The platform two-factor floor (setting auth.mfa) and the lookup that
+	// tells an administrator by effective grants. Without the settings store
+	// only the organizations' own requirements apply.
+	var floorSource auth.MFAFloorSource
+	if s.PlatformMFA != nil {
+		floorSource = s.PlatformMFA
+	}
+	var privilegeSource auth.PrivilegeSource
+	if s.Role != nil {
+		privilegeSource = s.Role
+	}
+	s.Auth.SetMFAFloor(floorSource, privilegeSource)
 
 	// Immediate session revocation: signing a session out (logout, "sign out
 	// this device", password change, enabling 2FA, suspension) records its id
@@ -3233,11 +3434,17 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	s.SSO.SetTenantMemberRepo(repos.Tenant)
 	s.SSO.SetIdentityRepo(repos.UserIdentity)
 	s.SSO.SetAuditService(s.Audit)
-	s.SSO.SetPlatformAdminGate(platformAdminChecker{admins: repos.Admin})
+	s.SSO.SetBreakGlassGate(breakGlassChecker{admins: repos.Admin})
 	if s.AccountDeletion != nil {
 		s.SSO.SetSignInHook(s.AccountDeletion.CancelOnSignIn)
 	}
 	s.SSO.SetSessionRevocationStore(sessionRevocations, revocationTTL)
+	if redisClient != nil {
+		// SSO state is single use across replicas only through a shared store.
+		s.SSO.SetStateStore(redisClient)
+	} else {
+		log.Warn("sso: no Redis client; sign-in state kept in process (single-replica only)")
+	}
 	// Configuring SSO connections needs sso.connections for the organization; sign-in
 	// through a configured connection is never gated.
 	s.SSO.SetFeatureGate(s.Entitlement)
@@ -3288,6 +3495,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// Per-domain sign-up policy (RFC-104): sso_required, join by domain and
 	// blocking new organizations for accounts on a claimed domain.
 	s.Auth.SetSignupDomainPolicy(s.DomainVerify)
+	// An invitation vouches for its address only when the inviting
+	// organization holds the address's domain.
+	s.Auth.SetAddressHolder(s.AddressClassifier)
 	s.Onboarding = onboardingapp.NewService(repos.Tenant, repos.Tenant, onboardingTenants{s.Tenant}, s.DomainVerify,
 		s.Signup, repos.JoinRequest, s.Audit, deriveKey(cfg.Auth.JWTSecret, "openctem/onboarding-offer/v1"), log)
 	sso := s.SSO
@@ -3299,6 +3509,10 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		return sso.HasUsableSSOPath(ctx, t.Slug())
 	})
 	s.SSO.SetJITApprovalNotifier(s.Tenant)
+	s.Auth.SetBreakGlassNotifier(s.Tenant)
+	ssoEnforcement := repos.SSOEnforcement
+	s.SSO.SetSSOSignInRecorder(ssoEnforcement)
+	s.Tenant.SetSSOEnforcementStore(ssoEnforcement)
 	s.Role.SetPrivilegeNotifier(s.Tenant)
 	s.Auth.SetInvitationAcceptor(s.Tenant)
 
@@ -3321,7 +3535,11 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// Social OAuth (Google / GitHub / Microsoft). Built only when at least one
 	// provider actually has credentials, so the login surface the API advertises
 	// on /auth/providers matches the routes it registers — see registerAuthRoutes.
-	if cfg.OAuth.Enabled && cfg.OAuth.HasAnyProvider() {
+	// With the console setting store the service is built even when no provider
+	// is configured yet: an administrator can turn one on in the console and it
+	// applies without a restart. /auth/providers still reports only providers
+	// that are on.
+	if cfg.OAuth.Enabled && (cfg.OAuth.HasAnyProvider() || s.PlatformSocialLogin != nil) {
 		s.OAuth = auth.NewOAuthService(
 			repos.User,
 			repos.Session,
@@ -3330,6 +3548,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 			cfg.Auth,
 			log,
 		)
+		if s.PlatformSocialLogin != nil {
+			s.OAuth.SetProviderSource(s.PlatformSocialLogin)
+		}
 		// PKCE verifiers live in Redis keyed by state (TTL = state lifetime,
 		// GETDEL = single use) so a login can finish on any replica. Without
 		// Redis the service keeps them in process.
@@ -3348,9 +3569,14 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		if s.DomainVerify != nil {
 			s.OAuth.SetClaimGuard(repos.Tenant, s.DomainVerify)
 		}
-		s.OAuth.SetPlatformAdminGate(platformAdminChecker{admins: repos.Admin})
+		s.OAuth.SetBreakGlassGate(breakGlassChecker{admins: repos.Admin})
 		s.OAuth.SetIdentityRepo(repos.UserIdentity)
 		s.OAuth.SetAuditService(s.Audit)
+		// A linked password account signs in through its provider only with
+		// the second step of its password sign-in; an automatic link revokes
+		// the account's sessions (identity_link.go).
+		s.OAuth.SetSecondFactorGate(s.Auth)
+		s.OAuth.SetSessionRevoker(s.Session)
 		if redisClient != nil {
 			s.OAuth.SetPKCEStore(redisClient)
 		} else {
@@ -3382,6 +3608,11 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// when the tenant has no usable SSO login path. main.go rebuilds s.Tenant, so
 	// this is re-applied there too.
 	s.Tenant.SetSSOPathChecker(s.SSO)
+	// An organization's 2FA settings may tighten the platform floor, not
+	// loosen below it.
+	if s.PlatformMFA != nil {
+		s.Tenant.SetMFAFloorSource(s.PlatformMFA)
+	}
 	s.Tenant.SetSessionReader(repos.Session)
 
 	// Member lifecycle (RFC-050): disable / re-enable / offboard / erase run

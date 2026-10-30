@@ -2,7 +2,9 @@ package unit
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -360,6 +362,23 @@ func (m *threatIntelMockSyncStatusRepo) GetDueForSync(_ context.Context) ([]*thr
 		}
 	}
 	return result, nil
+}
+
+// TryStart mirrors the repository claim: a missing source cannot be claimed,
+// and a row that is already running is refused.
+func (m *threatIntelMockSyncStatusRepo) TryStart(_ context.Context, source string, _ time.Duration) (bool, error) {
+	if m.updateErr != nil {
+		return false, m.updateErr
+	}
+	st, ok := m.statuses[source]
+	if !ok {
+		return false, nil
+	}
+	if st.LastSyncStatus() == threatintel.SyncStateRunning {
+		return false, nil
+	}
+	st.MarkSyncStarted()
+	return true, nil
 }
 
 func (m *threatIntelMockSyncStatusRepo) Update(_ context.Context, status *threatintel.SyncStatus) error {
@@ -1215,9 +1234,6 @@ func TestThreatIntelService_GetThreatIntelStats_SyncStatusDTOFields(t *testing.T
 	if dto.NextSyncAt == nil {
 		t.Error("expected NextSyncAt to be set")
 	}
-	if dto.LastError != nil {
-		t.Error("expected LastError to be nil on success")
-	}
 }
 
 func TestThreatIntelService_GetThreatIntelStats_SyncStatusWithError(t *testing.T) {
@@ -1244,11 +1260,9 @@ func TestThreatIntelService_GetThreatIntelStats_SyncStatusWithError(t *testing.T
 	if dto.LastSyncStatus != "failed" {
 		t.Errorf("expected status 'failed', got %q", dto.LastSyncStatus)
 	}
-	if dto.LastError == nil {
-		t.Fatal("expected LastError to be set on failure")
-	}
-	if *dto.LastError != "connection timeout" {
-		t.Errorf("expected error 'connection timeout', got %q", *dto.LastError)
+	// The organization view carries the status only, never the raw sync error.
+	if b, _ := json.Marshal(dto); strings.Contains(string(b), "connection timeout") {
+		t.Errorf("organization sync DTO leaked the raw sync error: %s", b)
 	}
 }
 

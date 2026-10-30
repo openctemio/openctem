@@ -151,6 +151,9 @@ type WidgetValue struct {
 	Paths    *PathsValue    `json:"paths,omitempty"`
 	Flow     *FlowValue     `json:"flow,omitempty"`
 	Intake   *IntakeValue   `json:"intake,omitempty"`
+	Levers   *LeversValue   `json:"levers,omitempty"`
+	Brief    *BriefValue    `json:"brief,omitempty"`
+	KPIs     *KPIsValue     `json:"kpis,omitempty"`
 }
 
 // ScalarValue is one count, with the previous period and a sparkline when
@@ -230,6 +233,9 @@ type ItemRow struct {
 	AssetName     string     `json:"asset_name,omitempty"`
 	SLADeadline   *time.Time `json:"sla_deadline,omitempty"`
 	KEV           bool       `json:"kev"`
+	// EPSS is the exploitation probability (0 to 1); absent when the feed
+	// has no score. Snapshots stored before it existed simply lack it.
+	EPSS *float64 `json:"epss,omitempty"`
 	// Pentest and CampaignID are kept in stored snapshots so the viewer's
 	// campaign membership can be applied on read; forViewer clears them
 	// from every response.
@@ -240,6 +246,10 @@ type ItemRow struct {
 // ItemsValue is a ranked list.
 type ItemsValue struct {
 	Rows []ItemRow `json:"rows"`
+	// Total is the open count of the list the widget opens (the drill-down),
+	// read with the same filter and scope as the rows; nil when the widget
+	// opens no list of that count (the SLA list).
+	Total *int64 `json:"total,omitempty"`
 }
 
 // PersonalData returns every widget of the caller's own dashboard, for the
@@ -447,6 +457,7 @@ func (s *Service) widget(ctx context.Context, i int, w dashboard.Widget, factsRe
 		v.State, v.Reason = StateError, reason
 		v.Scalar, v.Ratio, v.Duration, v.Category, v.Series, v.Matrix, v.Items = nil, nil, nil, nil, nil, nil, nil
 		v.Stages, v.Paths, v.Flow, v.Intake = nil, nil, nil, nil
+		v.Levers, v.Brief, v.KPIs = nil, nil, nil
 	}
 	return v
 }
@@ -511,7 +522,7 @@ func (s *Service) metric(ctx context.Context, v *WidgetValue, m dashboard.Metric
 		out := &ItemsValue{Rows: make([]ItemRow, 0, len(items))}
 		for _, it := range items {
 			r := ItemRow{ID: it.FindingID.String(), Title: it.Title, Severity: it.Severity, PriorityClass: it.PriorityClass,
-				AssetName: it.AssetName, SLADeadline: it.SLADeadline, KEV: it.KEV, Pentest: it.Pentest}
+				AssetName: it.AssetName, SLADeadline: it.SLADeadline, KEV: it.KEV, EPSS: it.EPSS, Pentest: it.Pentest}
 			if it.Pentest {
 				r.CampaignID = it.CampaignID.String()
 			}
@@ -524,6 +535,17 @@ func (s *Service) metric(ctx context.Context, v *WidgetValue, m dashboard.Metric
 		lf := f
 		lf.PriorityClass = []string{"P0", "P1", "P2"}
 		v.Drill = drillHref(lf)
+		if m.ID == "fix.next" {
+			counts, err := s.facts.CountOpen(ctx, agg, lf, nil)
+			if err != nil {
+				return err
+			}
+			var n int64
+			for _, c := range counts {
+				n += c.Count
+			}
+			out.Total = &n
+		}
 		return nil
 	case dashboard.MetricKindAssetCount:
 		return s.crownJewelsExposed(ctx, v, f, agg)
@@ -537,6 +559,13 @@ func (s *Service) metric(ctx context.Context, v *WidgetValue, m dashboard.Metric
 	case dashboard.MetricKindIntake:
 		v.Window = &win
 		return s.intakeMetric(ctx, v, win, agg)
+	case dashboard.MetricKindLevers:
+		return s.leversMetric(ctx, v, agg)
+	case dashboard.MetricKindBrief:
+		return s.briefMetric(ctx, v, agg)
+	case dashboard.MetricKindKPIs:
+		v.Window = &win
+		return s.kpisMetric(ctx, v, win, compare, agg)
 	}
 	return fmt.Errorf("unknown metric kind %q", m.Kind)
 }

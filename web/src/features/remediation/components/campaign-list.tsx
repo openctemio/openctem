@@ -209,7 +209,7 @@ export function CampaignList() {
                   <StatusChip domain="remediationCampaign" value={c.status} />
                 </div>
                 <div className="text-muted-foreground text-xs">
-                  {ownerOf(c)} · <CampaignDue campaign={c} />
+                  {ownerOf(c)}, <CampaignDue campaign={c} />
                 </div>
                 <div>
                   <CampaignTasksCell summary={c.summary} />

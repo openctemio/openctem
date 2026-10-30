@@ -141,8 +141,8 @@ export function DedupReviewPage() {
                 ? t('assets.dedup.assetOne', '1 asset')
                 : t('assets.dedup.assetMany', '{count} assets', {
                     count: row.original.merge_asset_ids.length,
-                  })}{' '}
-              ·{' '}
+                  })}
+              ,{' '}
               {row.original.merge_finding_count === 1
                 ? t('assets.dedup.findingOne', '1 finding')
                 : t('assets.dedup.findingMany', '{count} findings', {

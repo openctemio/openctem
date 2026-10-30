@@ -3,8 +3,9 @@ name: API Upgrade Test
 # The previous release's database, upgraded to this tree: build the schema of
 # the last release tag (its own migrations, as the non-superuser migrator),
 # load representative rows (api/scripts/upgrade-test/seed.sql), apply this
-# tree's migrations, and assert the version and dirty flag, that no key table
-# lost a row, and that the API built from this tree starts against the result.
+# tree's migrations with this tree's openctem-migrate, and assert that nothing
+# is pending or dirty, that no key table lost a row, that the schema equals a
+# fresh install's, and that the API built from this tree starts against it.
 # The steps and what they prove: .github/scripts/upgrade-test.sh.
 #
 #   - schedule: nightly (03:30 UTC, from the default branch's copy of this file)
@@ -62,7 +63,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U postgres -d upgrade_test"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -90,6 +91,9 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
           persist-credentials: false
+          # A schedule runs the default branch's (main's) copy of this file:
+          # test develop, where changes land first.
+          ref: ${{ github.event_name == 'schedule' && 'develop' || '' }}
 
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -99,9 +103,18 @@ jobs:
           # poisoned cache could reach the release build.
           cache: false
 
+      # The previous release's migration tool, for a release before
+      # openctem-migrate (upgrade-test.sh builds a newer release's own runner
+      # from its tag).
       - name: Install golang-migrate
         working-directory: api
         run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1
+
+      - name: Build this tree's migration runner
+        working-directory: api
+        run: |
+          go build -o "$RUNNER_TEMP/bin/openctem-migrate" ./cmd/openctem-migrate
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
       - name: Build the API from this tree
         working-directory: api

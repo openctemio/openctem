@@ -333,6 +333,19 @@ func batchSettlement(cmd *command.Command) scancoverage.BatchSettlement {
 		} `json:"metadata"`
 	}
 	_ = json.Unmarshal(cmd.Result, &res)
+	if command.ResultTruncated(cmd.Result) {
+		// Cut short: nothing it reports as done is trusted.
+		res.Metadata.Coverage = ""
+		if res.Outcomes != nil {
+			kept := make([]outcome.Target, 0, len(*res.Outcomes))
+			for _, o := range *res.Outcomes {
+				if o.State != outcome.Done {
+					kept = append(kept, o)
+				}
+			}
+			res.Outcomes = &kept
+		}
+	}
 	if res.Outcomes == nil {
 		if res.Metadata.Coverage == "full" {
 			b.Done = targets

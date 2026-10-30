@@ -35,16 +35,23 @@ func (c CampaignTasks) CampaignTaskIDs(ctx context.Context, tenantID, campaignID
 	return c.s.repo.LiveTaskIDsByCampaign(ctx, tenantID, campaignID)
 }
 
+// EpicClaimSource is the audit source of a fix claim a campaign's Jira epic
+// made.
+const EpicClaimSource = "jira_epic"
+
 // ClaimTaskFixed marks a task fixed as the platform (the campaign's epic
 // moved to done): each open finding gets a fix claim it then verifies on its
-// own. A task with nothing left to claim is no refusal.
-func (c CampaignTasks) ClaimTaskFixed(ctx context.Context, tenantID, taskID shared.ID, note string) ([]string, error) {
+// own. A task with nothing left to claim is no refusal. The audit event
+// names the source (the Jira epic) and the external account that moved it,
+// when the tracker said which.
+func (c CampaignTasks) ClaimTaskFixed(ctx context.Context, tenantID, taskID shared.ID, note, externalAccount string) ([]string, error) {
 	t, err := c.s.repo.GetTask(ctx, tenantID, taskID)
 	if err != nil {
 		return nil, err
 	}
 	res, err := c.s.MarkFixed(ctx, MarkFixedInput{
 		TenantID: tenantID, TaskID: taskID, Version: t.Version, Note: note, HasFixApplyPermission: true,
+		Source: EpicClaimSource, ExternalAccount: externalAccount,
 	}, auditapp.AuditContext{TenantID: tenantID.String(), ActorEmail: "system"})
 	if errors.Is(err, remediationdom.ErrTaskTerminal) {
 		return nil, nil

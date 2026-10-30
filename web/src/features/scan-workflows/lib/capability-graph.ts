@@ -272,7 +272,7 @@ export function describeEdge(
     case 'data': {
       const { shown, more } = compactEdgeTypes(flow.types)
       const label =
-        shown.join(' · ') +
+        shown.join(', ') +
         (more > 0 ? ` ${t('workflowStages.edge.more', '+{n}', { n: more })}` : '')
       const types = flow.types.map((p) => portTypeLabel(table, p, t)).join(', ')
       return {

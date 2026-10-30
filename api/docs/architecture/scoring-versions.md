@@ -102,7 +102,9 @@ Rows are written by:
 The **finding-priority** worker (`internal/app/reclassify`, every 10 s) claims
 up to 200 assets per pass, at most 50 of one tenant, so one tenant's large
 backlog cannot starve the others. For each asset it lists the **open**
-findings only, re-reads EPSS and KEV from the trusted catalogs, classifies
+findings only, re-reads EPSS and KEV from the trusted catalogs (the KEV flag
+follows the catalog both ways: a CVE that left it, or a finding whose CVE
+changed, loses the flag; a failed lookup keeps the stored flag), classifies
 them, recomputes the SLA deadline, writes the findings that changed and stamps
 every computed finding with the version. A failed tenant pass is queued again.
 
@@ -142,6 +144,11 @@ automatic recomputes only tighten:
 | SLA policy lengthened | kept; new findings use the new policy |
 | finding closed | kept as it was when closed |
 | analyst severity downgrade the approval policy allowed | `first_detected_at + SLA(new class)` when that is later: the one explicit extension, never counted from now ([severity override](finding-severity-override.md)) |
+
+A tenant with no SLA policy gets the platform default windows. A policy that
+cannot be read (a database error) is not "no policy": the computation fails
+for that finding and the next pass retries, because a default deadline or KEV
+cap written on a transient error would stick (deadlines only tighten).
 
 ### The default SLA policy
 

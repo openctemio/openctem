@@ -105,14 +105,14 @@ function ScoreRow({ score }: { score: FindingSourceScore }) {
         <span className="font-medium">{name}</span>
         {value && <span className="tabular-nums">{value}</span>}
         {score.label && score.value !== undefined && (
-          <span className="text-muted-foreground">· {score.label}</span>
+          <span className="text-muted-foreground">{score.label}</span>
         )}
         {score.source && (
           <span className="text-xs text-muted-foreground">
             {t('findings.sourceData.from', 'from {source}', { source: score.source })}
           </span>
         )}
-        {when && <span className="text-xs text-muted-foreground">· {when}</span>}
+        {when && <span className="text-xs text-muted-foreground">{when}</span>}
       </div>
       {score.vector && (
         <div className="text-muted-foreground">
@@ -282,7 +282,7 @@ export function SourceDataSection({
                   <span className="block text-sm">
                     {[n?.vulnId, ruleName && ruleName !== n?.vulnId ? ruleName : undefined]
                       .filter(Boolean)
-                      .join(' · ')}
+                      .join(', ')}
                   </span>
                   {data.rule?.source && (
                     <Badge variant="outline" className="text-xs" data-testid="source-rule-source">

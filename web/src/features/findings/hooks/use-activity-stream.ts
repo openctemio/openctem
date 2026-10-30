@@ -31,6 +31,8 @@ interface WSActivityEvent {
     actor_name?: string
     actor_email?: string
     changes?: Record<string, unknown>
+    /** Provenance; an AI agent's activity carries `ai` here. */
+    source_metadata?: Record<string, unknown>
     created_at: string
   }
 }
@@ -108,6 +110,7 @@ function mapWSActivity(event: WSActivityEvent): Activity {
 
   // Merge all changes into metadata
   const metadata = {
+    ...api.source_metadata,
     ...changes,
     activityType: api.activity_type,
     actorType: api.actor_type,

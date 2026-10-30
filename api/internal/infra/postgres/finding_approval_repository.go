@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 
+	"github.com/openctemio/openctem/api/pkg/domain/aianalysis"
+
 	"fmt"
 	"time"
 
@@ -31,12 +33,16 @@ func NewFindingApprovalRepository(db *DB) *FindingApprovalRepository {
 
 // Create persists a new approval request.
 func (r *FindingApprovalRepository) Create(ctx context.Context, a *vulnerability.Approval) error {
+	// Read-only AI assistance never writes (docs/architecture/ai-analysis.md).
+	if err := aianalysis.RefuseAssist(ctx); err != nil {
+		return err
+	}
 	query := `
 		INSERT INTO finding_status_approvals (
 			id, tenant_id, finding_id, requested_status, requested_by,
 			justification, status, expires_at, version, created_at, requested_by_actor, decide_by, closure_reason,
-			tier, risk_class, required_approvals, policy_eval
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+			tier, risk_class, required_approvals, policy_eval, requested_via
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 	`
 
 	var requestedBy any
@@ -49,6 +55,7 @@ func (r *FindingApprovalRepository) Create(ctx context.Context, a *vulnerability
 		a.Justification, string(a.Status), a.ExpiresAt, a.Version, a.CreatedAt,
 		nullString(a.RequestedByActor), a.DecideBy, nullString(a.ClosureReason.String()),
 		nullString(a.Tier), nullString(a.RiskClass), nullRequired(a), nullJSON(a.PolicyEval),
+		nullString(a.RequestedVia),
 	)
 	if err != nil {
 		var pqErr *pq.Error
@@ -322,7 +329,7 @@ func (r *FindingApprovalRepository) selectQuery() string {
 			COALESCE(tier, ''), COALESCE(risk_class, ''), COALESCE(required_approvals, -1), policy_eval, decision_facts,
 			(SELECT COUNT(*) FROM approval_signoffs s
 			 WHERE s.tenant_id = a.tenant_id AND s.subject_type = 'finding_approval' AND s.subject_id = a.id),
-			a.batch_id
+			a.batch_id, COALESCE(a.requested_via, '')
 		FROM finding_status_approvals a
 	`
 }
@@ -358,6 +365,7 @@ func (r *FindingApprovalRepository) scanApprovalRow(scanner approvalScanner) (*v
 		&rejectionReason, &status, &expiresAt, &a.CreatedAt, &a.Version, &actor, &decideBy, &closureReason,
 		&a.SelfApproved, &a.SelfApprovalReason, &a.SinglePerson,
 		&a.Tier, &a.RiskClass, &required, &a.PolicyEval, &a.DecisionFacts, &a.ApprovalsCollected, &batchID,
+		&a.RequestedVia,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -455,6 +463,10 @@ func (r *FindingApprovalRepository) ApproveAndApply(ctx context.Context, a *vuln
 // timeline entry. The one-pending-request index still applies to pending
 // rows only, so an earlier pending request of another person is left as is.
 func (r *FindingApprovalRepository) CreateApplied(ctx context.Context, a *vulnerability.Approval, entry *vulnerability.FindingActivity) error {
+	// Read-only AI assistance never writes (docs/architecture/ai-analysis.md).
+	if err := aianalysis.RefuseAssist(ctx); err != nil {
+		return err
+	}
 	if a == nil || a.Status != vulnerability.ApprovalStatusApproved || a.ApprovedBy == nil || !a.SinglePerson {
 		return fmt.Errorf("%w: only a single-person decision is created applied", shared.ErrValidation)
 	}

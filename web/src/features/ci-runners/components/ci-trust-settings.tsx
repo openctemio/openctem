@@ -183,7 +183,7 @@ function rulesSummary(c: CITrustConfig, t: TFn): string {
   add('scans.ci.trust.sumEnvironments', 'environments {list}', r.environments)
   add('scans.ci.trust.sumEvents', 'events {list}', r.events)
   add('scans.ci.trust.sumWorkflowRefs', 'pipeline definitions {list}', r.workflow_refs)
-  return parts.join(' · ')
+  return parts.join(', ')
 }
 
 function TrustConfigsSection({ canWrite }: { canWrite: boolean }) {
@@ -1644,7 +1644,7 @@ function OverridesSection({ canOverride }: { canOverride: boolean }) {
                 </div>
                 <p className="break-words">{o.reason}</p>
                 <p className="text-xs text-muted-foreground">
-                  {t('scans.ci.breakGlass.until', 'Until {time} · repository {id}', {
+                  {t('scans.ci.breakGlass.until', 'Until {time}, repository {id}', {
                     time: o.expires_at ? formatLocalized(o.expires_at, locale, { time: true }) : '',
                     id: o.repository_asset_id ?? '',
                   })}

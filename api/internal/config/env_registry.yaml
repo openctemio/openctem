@@ -48,7 +48,12 @@ vars:
     group: "Application"
     type: bool
     default: "false"
-    description: "Set to true only on a hosted, multi-tenant service run by an operator for organizations it does not control. It changes defaults only, never features: until an administrator stores a value in the console, platform sensors need a verified domain before they scan a target (Console > Scanning > Platform scanning). A value saved in the console always wins. Read at start-up; never tenant data."
+    description: "Set to true only on a hosted, multi-tenant service run by an operator for organizations it does not control. It changes defaults only, never features: until an administrator stores a value in the console, platform sensors need a verified domain before they scan a target (Console > Scanning > Platform scanning). A value saved in the console always wins. It also holds an organization's own mail server (the e-mail notification channel) to submission ports 465, 587 and 2525 with a username, a password and TLS or STARTTLS; port 25 is refused. Read at start-up; never tenant data."
+  - name: ORG_EMAIL_RELAY_MODE
+    component: api
+    group: "Application"
+    type: string
+    description: "Default of the console setting email.tenant_relay until a super admin stores a value: whether an organization's own mail relay (its e-mail notification channel with \"organization mail\" ticked) carries its invitation notices and scheduled reports. `off`, `verified_sender` (the sender address must be on a verified domain of the organization) or `on`. Unset: `verified_sender` with `MANAGED_SERVICE=true`, else `on`. Account security mail (set-password links, verification, password reset, MFA and sign-in notices) never uses an organization relay."
   - name: DEPLOYMENT_REGION
     component: api
     group: "Application"
@@ -481,12 +486,12 @@ vars:
     component: api
     group: "Encryption keys"
     type: list
-    description: "Extra content catalog roots (comma-separated key ids, `SHA256:<hex>`) trusted beside the roots pinned in the release, for an operator's own catalog source (RFC-099). Setting it writes a high-severity admin audit row at startup. Unset: only the pinned roots; with none, bundle imports are refused."
+    description: "Extra content catalog roots (comma-separated key ids, `SHA256:<hex>`) trusted beside the roots pinned in the release, for an operator's own catalog source. Setting it writes a high-severity admin audit row at startup. Unset: only the pinned roots; with none, bundle imports are refused."
   - name: CONTENT_SIGSTORE_TRUSTED_ROOT
     component: api
     group: "Encryption keys"
     type: path
-    description: "Path of a Sigstore trusted root (JSON) that replaces the one embedded in the release for verifying publisher signatures of content packages (RFC-099). Setting it writes a high-severity admin audit row with the file's SHA-256 at startup. Unset: the embedded trusted root."
+    description: "Path of a Sigstore trusted root (JSON) that replaces the one embedded in the release for verifying publisher signatures of content packages. Setting it writes a high-severity admin audit row with the file's SHA-256 at startup. Unset: the embedded trusted root."
   - name: AUTH_ACCESS_TOKEN_DURATION
     component: api
     group: "Authentication"
@@ -542,6 +547,11 @@ vars:
     type: int
     default: "10"
     description: "Concurrent sessions per user."
+  - name: AUTH_MFA_FLOOR
+    component: api
+    group: "Authentication"
+    type: string
+    description: "Default of the console setting auth.mfa (the lowest two-factor requirement of every organization, which an organization may only raise) until a super admin stores a value: `none`, `admins` (owners, administrators and members holding a privileged role) or `everyone`. Unset: `admins`. An installation that already had users when this setting shipped keeps `none` until its operator raises it (a seeded row); a managed service (`MANAGED_SERVICE=true`) ignores that seed. People get 14 days (existing members) or 7 days (new accounts) before sign-in is gated; creating API keys, sensor tokens and integration secrets needs a second factor from the start."
   - name: AUTH_MAX_LOGIN_ATTEMPTS
     component: api
     group: "Authentication"
@@ -688,7 +698,7 @@ vars:
     type: bool
     default: "true"
     example: "false"
-    description: "Master switch for social login (Google, GitHub, Microsoft). A provider is offered only when its own `*_ENABLED`, client ID and secret are set."
+    description: "Master switch for social login (Google, GitHub, Microsoft). The console (Settings > Social login) is the place to set up the providers; this stays a server-side kill switch, and `false` turns every provider off whatever the console says."
   - name: OAUTH_FRONTEND_CALLBACK_URL
     component: api
     group: "Single sign-on and social login"
@@ -700,71 +710,71 @@ vars:
     component: api
     group: "Single sign-on and social login"
     type: string
-    description: "GitHub OAuth client ID."
+    description: "GitHub OAuth client ID. Optional override: set the client in the console (Settings > Social login) instead. Used only together with `OAUTH_GITHUB_CLIENT_SECRET`."
   - name: OAUTH_GITHUB_CLIENT_SECRET
     component: api
     group: "Single sign-on and social login"
     type: string
     secret: true
-    description: "GitHub OAuth client secret."
+    description: "GitHub OAuth client secret. Optional override: while it is set, this provider is pinned to the server environment and the console shows it read-only. Leave unset to manage the provider in the console (Settings > Social login), where the secret is stored encrypted and write-only."
   - name: OAUTH_GITHUB_ENABLED
     component: api
     group: "Single sign-on and social login"
     type: bool
     default: "false"
-    description: "Offer GitHub sign-in."
+    description: "Offer GitHub sign-in. Used only while `OAUTH_GITHUB_CLIENT_SECRET` pins the provider; otherwise the switch in the console decides."
   - name: OAUTH_GITHUB_SCOPES
     component: api
     group: "Single sign-on and social login"
     type: list
     default: "read:user,user:email"
-    description: "Requested scopes."
+    description: "Requested scopes. Used only while the provider is pinned by its client secret variable; otherwise set in the console."
   - name: OAUTH_GOOGLE_CLIENT_ID
     component: api
     group: "Single sign-on and social login"
     type: string
-    description: "Google OAuth client ID."
+    description: "Google OAuth client ID. Optional override: set the client in the console (Settings > Social login) instead. Used only together with `OAUTH_GOOGLE_CLIENT_SECRET`."
   - name: OAUTH_GOOGLE_CLIENT_SECRET
     component: api
     group: "Single sign-on and social login"
     type: string
     secret: true
-    description: "Google OAuth client secret."
+    description: "Google OAuth client secret. Optional override: while it is set, this provider is pinned to the server environment and the console shows it read-only. Leave unset to manage the provider in the console (Settings > Social login), where the secret is stored encrypted and write-only."
   - name: OAUTH_GOOGLE_ENABLED
     component: api
     group: "Single sign-on and social login"
     type: bool
     default: "false"
-    description: "Offer Google sign-in."
+    description: "Offer Google sign-in. Used only while `OAUTH_GOOGLE_CLIENT_SECRET` pins the provider; otherwise the switch in the console decides."
   - name: OAUTH_GOOGLE_SCOPES
     component: api
     group: "Single sign-on and social login"
     type: list
     default: "openid,email,profile"
-    description: "Requested scopes."
+    description: "Requested scopes. Used only while the provider is pinned by its client secret variable; otherwise set in the console."
   - name: OAUTH_MICROSOFT_CLIENT_ID
     component: api
     group: "Single sign-on and social login"
     type: string
-    description: "Microsoft OAuth client ID."
+    description: "Microsoft OAuth client ID. Optional override: set the client in the console (Settings > Social login) instead. Used only together with `OAUTH_MICROSOFT_CLIENT_SECRET`."
   - name: OAUTH_MICROSOFT_CLIENT_SECRET
     component: api
     group: "Single sign-on and social login"
     type: string
     secret: true
-    description: "Microsoft OAuth client secret."
+    description: "Microsoft OAuth client secret. Optional override: while it is set, this provider is pinned to the server environment and the console shows it read-only. Leave unset to manage the provider in the console (Settings > Social login), where the secret is stored encrypted and write-only."
   - name: OAUTH_MICROSOFT_ENABLED
     component: api
     group: "Single sign-on and social login"
     type: bool
     default: "false"
-    description: "Offer Microsoft sign-in."
+    description: "Offer Microsoft sign-in. Used only while `OAUTH_MICROSOFT_CLIENT_SECRET` pins the provider; otherwise the switch in the console decides."
   - name: OAUTH_MICROSOFT_SCOPES
     component: api
     group: "Single sign-on and social login"
     type: list
     default: "openid,email,profile,User.Read"
-    description: "Requested scopes."
+    description: "Requested scopes. Used only while the provider is pinned by its client secret variable; otherwise set in the console."
   - name: OAUTH_STATE_DURATION
     component: api
     group: "Single sign-on and social login"
@@ -776,7 +786,7 @@ vars:
     group: "Single sign-on and social login"
     type: string
     secret: true
-    description: "Secret that signs the OAuth `state` parameter. Unset: derived from the session secret under its own label."
+    description: "Secret that signs the OAuth `state` parameter. Unset: derived from the session secret under its own label. A bootstrap secret that is never a console setting, so a console change cannot weaken the CSRF binding of a sign-in."
   - name: SSO_ALLOWED_REDIRECT_URIS
     component: api
     group: "Single sign-on and social login"
@@ -1183,6 +1193,17 @@ vars:
     group: "Sensors"
     type: string
     description: "URL sensors connect to, embedded in the install snippets and configuration templates. Unset: `APP_URL`."
+  - name: PROXY_TEST_ECHO_URL
+    component: api
+    group: "Sensors"
+    type: string
+    description: "https origin a proxy test connects to through each proxy of a pool (the Test button of Settings, Scanning, Proxies). It must answer on a public port the proxies can reach: not the sensor mTLS port. Unset: `SENSOR_PUBLIC_API_URL`, else `APP_URL`. The platform never connects to a proxy itself; sensors do."
+  - name: PROXY_TEST_ALT_PORT
+    component: api
+    group: "Sensors"
+    type: int
+    default: "80"
+    description: "A second port of the proxy test's echo host. A proxy that carries 443 and refuses this port is shown as port-restricted. `0` skips that check."
   - name: SENSOR_SLIM_HEARTBEAT
     component: api
     group: "Sensors"
@@ -1446,7 +1467,7 @@ vars:
     group: "Discovery feeds and background jobs"
     type: bool
     default: "true"
-    description: "The asset coverage loop, platform-wide: every asset gets the capabilities its type needs (RFC-093)."
+    description: "The asset coverage loop, platform-wide: every asset gets the capabilities its type needs."
   - name: ASSET_COVERAGE_DAILY_BUDGET
     component: api
     group: "Discovery feeds and background jobs"
@@ -1494,7 +1515,7 @@ vars:
     component: api
     group: "Discovery feeds and background jobs"
     type: url
-    default: "https://github.com/openctemio/vulnfeed/releases"
+    default: "https://github.com/openctemio/vulnfeed-bundles/releases"
     description: "Release base URL of the signed vulnerability bundles."
   - name: VULNFEED_BUNDLE_DIR
     component: api
@@ -1511,12 +1532,12 @@ vars:
     group: "Discovery feeds and background jobs"
     type: string
     default: "official root"
-    description: "Pinned root key id of the vulnerability bundles. Defaults to the root of the official openctemio/vulnfeed releases; set it only for a private collector."
+    description: "Pinned root key id of the vulnerability bundles. Defaults to the root of the official feed (openctemio/vulnfeed-bundles releases); set it only for a private collector."
   - name: GITHUB_APP_ID
     component: api
     group: "Integrations"
     type: int
-    description: "The GitHub App's numeric id (RFC-077). With the slug, client id and secret, private key and webhook secret it turns on the gate check and pull request comments; a partial configuration leaves the app off and is logged."
+    description: "The GitHub App's numeric id. With the slug, client id and secret, private key and webhook secret it turns on the gate check and pull request comments; a partial configuration leaves the app off and is logged."
   - name: GITHUB_APP_SLUG
     component: api
     group: "Integrations"
@@ -1654,7 +1675,7 @@ vars:
     type: enum
     values: [all, tenant, admin]
     default: "all"
-    description: "What this API process serves (RFC-022 revision 21). `all` (default, self-host): everything in one process. `tenant`: never registers the console routes, refuses `ADMIN_LISTEN_ADDR` and console database credentials, and runs the background work. `admin`: its main listener serves only the console API and `/health`, needs the console database role (`DB_ADMIN_USER`) and a loopback or private listen address (or `ADMIN_LISTEN_ALLOW_ALL_INTERFACES=true`), and runs no background work and no sensor binding. A hosted deployment runs the same image twice, as `tenant` and as `admin`."
+    description: "What this API process serves. `all` (default, self-host): everything in one process. `tenant`: never registers the console routes, refuses `ADMIN_LISTEN_ADDR` and console database credentials, and runs the background work. `admin`: its main listener serves only the console API and `/health`, needs the console database role (`DB_ADMIN_USER`) and a loopback or private listen address (or `ADMIN_LISTEN_ALLOW_ALL_INTERFACES=true`), and runs no background work and no sensor binding. A hosted deployment runs the same image twice, as `tenant` and as `admin`."
   - name: ADMIN_LISTEN_ALLOW_ALL_INTERFACES
     component: api
     group: "Admin console"
@@ -1784,6 +1805,12 @@ vars:
     type: duration
     default: "60s"
     description: "Delay before an automatic triage job runs."
+  - name: AI_MASK_MAP_TTL
+    component: api
+    group: "AI triage"
+    type: duration
+    default: "168h"
+    description: "How long the platform keeps a run's AI masking map (placeholder to real value, encrypted) so it can turn the model's output back into real values; expired maps are purged."
   - name: AI_MAX_TOKENS
     component: api
     group: "AI triage"

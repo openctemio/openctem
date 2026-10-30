@@ -8,6 +8,8 @@ let perms: string[] = []
 const cancel = vi.fn()
 const mutate = vi.fn()
 const lastKey = vi.fn()
+const approve = vi.fn()
+const reject = vi.fn()
 
 vi.mock('@/context/i18n-provider', () => ({
   useTranslation: () => ({
@@ -36,6 +38,9 @@ vi.mock('../../../api/use-findings-api', () => ({
     return { data: approvals, mutate }
   },
   useCancelApproval: () => ({ trigger: cancel, isMutating: false }),
+  useFindingApi: () => ({ data: undefined }),
+  useApproveStatus: () => ({ trigger: approve, isMutating: false }),
+  useRejectApproval: () => ({ trigger: reject, isMutating: false }),
 }))
 
 const pending = {
@@ -73,7 +78,8 @@ describe('FindingApprovalBand', () => {
     cancel.mockResolvedValue({})
     render(<FindingApprovalBand findingId="f1" />)
     expect(screen.getByText(/Requested by You/)).toBeInTheDocument()
-    expect(screen.queryByTestId('finding-approval-decide-link')).toBeNull()
+    // Never offered to decide their own request.
+    expect(screen.queryByRole('button', { name: /Approve/ })).toBeNull()
     fireEvent.click(screen.getByTestId('finding-approval-cancel'))
     expect(cancel).not.toHaveBeenCalled()
     fireEvent.click(
@@ -85,24 +91,46 @@ describe('FindingApprovalBand', () => {
     await waitFor(() => expect(mutate).toHaveBeenCalled())
   })
 
-  it('gives an approver the facts and the inbox link, but no cancel', () => {
+  it('lets an approver decide in place, with what changed since the request', async () => {
     userId = 'approver'
-    render(<FindingApprovalBand findingId="f1" />)
+    approvals = [{ ...pending, changed_since_request: ['kev'] }]
+    approve.mockResolvedValue({ status: 'approved' })
+    const onDecided = vi.fn()
+    render(<FindingApprovalBand findingId="f1" onDecided={onDecided} />)
     expect(screen.getByText(/Requested by An Nguyen/)).toBeInTheDocument()
-    expect(screen.getByText(/test-only route/)).toBeInTheDocument()
+    expect(screen.getByText('Changed since the request: now in CISA KEV')).toBeInTheDocument()
     expect(screen.queryByTestId('finding-approval-cancel')).toBeNull()
-    expect(screen.getByTestId('finding-approval-decide-link')).toHaveAttribute(
-      'href',
-      '/findings/approvals'
-    )
+    fireEvent.click(screen.getByRole('button', { name: /Approve/ }))
+    // A confirmation first (the API then asks for the sign-in again).
+    expect(approve).not.toHaveBeenCalled()
+    const dialog = await screen.findByRole('alertdialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: /Approve/ }))
+    await waitFor(() => expect(approve).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(onDecided).toHaveBeenCalled())
+    expect(mutate).toHaveBeenCalled()
   })
 
-  it('is read-only for another viewer: no cancel, no decision link', () => {
+  it('rejects only with a reason', async () => {
+    userId = 'approver'
+    reject.mockResolvedValue({})
+    render(<FindingApprovalBand findingId="f1" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Reject' }))
+    const dialog = await screen.findByRole('dialog')
+    const submit = within(dialog).getByRole('button', { name: 'Reject' })
+    expect(submit).toBeDisabled()
+    fireEvent.change(within(dialog).getByRole('textbox'), {
+      target: { value: 'WAF rule not deployed' },
+    })
+    fireEvent.click(submit)
+    await waitFor(() => expect(reject).toHaveBeenCalledWith({ reason: 'WAF rule not deployed' }))
+  })
+
+  it('is read-only for another viewer: no cancel, no decision', () => {
     userId = 'other'
     perms = ['findings:write']
     render(<FindingApprovalBand findingId="f1" />)
     expect(screen.getByTestId('finding-approval-band')).toBeInTheDocument()
     expect(screen.queryByTestId('finding-approval-cancel')).toBeNull()
-    expect(screen.queryByTestId('finding-approval-decide-link')).toBeNull()
+    expect(screen.queryByRole('button', { name: /Approve/ })).toBeNull()
   })
 })

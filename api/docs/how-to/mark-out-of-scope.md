@@ -17,6 +17,22 @@
 | Stop scanning something that is in scope | Remove or deactivate its **scope entry** (Scoping > In scope) | scope delete / approve | Unclassified assets may still get low-impact checks (section 4); add an exclusion to stop those too. |
 | Keep an asset in the inventory but out of sight | **Archive** (inventory) | assets write | Hides it from the default list; it does not change scanning. |
 
+Every exclusion has a **kind**: *Do not scan* (the default: yours, but must
+not be scanned; its findings stay open), *Not ours* or *Retired*. A
+permanent Not ours or Retired exclusion closes the open findings of what it
+matches as **Asset out of scope** (never counted as fixed), and their tasks,
+tickets and SLA clocks follow; removing it, giving it an end date or changing
+it to Do not scan reopens them. "Not ours" on an asset does the same for
+that asset. An exclusion with an end date only pauses scanning.
+
+Only decisions made after the feature went live close findings: an asset
+already marked "Not ours" before then stays unscanned and keeps its findings
+open until someone decides again. With limited data access (no full data
+access) you can close findings only with an exact rule (one hostname or IP
+address, no wildcard, network or range), because a broader rule is matched
+again on every pass and would also reach assets you cannot see; ask someone
+with full data access for those.
+
 Every action in the inventory answers with an Undo toast. Undoing an
 exclusion widens scope, so it asks you to re-authenticate.
 

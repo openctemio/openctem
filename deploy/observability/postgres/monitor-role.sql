@@ -2,13 +2,16 @@
 -- (api/docs/operations/monitoring.md, "Postgres exporter role").
 --
 -- pg_monitor reads the statistics views and settings only: it cannot read
--- or change any table. Run once as a superuser (or the database owner with
--- CREATEROLE), with the password from OBS_PG_MONITOR_PASSWORD:
+-- or change any table. The postgres-monitor-role service of
+-- deploy/observability/docker-compose.yml runs it on every `up` with the
+-- password from OBS_PG_MONITOR_PASSWORD. By hand (as a superuser, or the
+-- database owner with CREATEROLE):
 --
 --   docker compose exec -T postgres psql -U openctem -d openctem \
 --     -v pw="$OBS_PG_MONITOR_PASSWORD" -f - < deploy/observability/postgres/monitor-role.sql
 --
--- Idempotent: re-running it updates the password.
+-- Idempotent: re-running it creates the role only when missing and otherwise
+-- just resets the password and attributes.
 
 SELECT format('CREATE ROLE openctem_monitor LOGIN PASSWORD %L', :'pw')
 WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'openctem_monitor')

@@ -80,7 +80,7 @@ func (h *FindingActionsHandler) findingGroupsRoute() filterquery.Route {
 // ListFindingGroups handles GET /api/v1/findings/groups
 // @Summary      Group findings
 // @Description  Findings grouped by one dimension, with per-group counts. Takes every filter param of GET /findings
-// @Description  (RFC-048), so a grouped view counts exactly the rows the list shows.
+// @Description , so a grouped view counts exactly the rows the list shows.
 // @Tags         Findings
 // @Produce      json
 // @Security     BearerAuth
@@ -250,7 +250,7 @@ func (h *FindingActionsHandler) ListFindingGroups(w http.ResponseWriter, r *http
 // GetRelatedCVEs handles GET /api/v1/findings/related-cves/{cveId}
 // @Summary      Related CVEs
 // @Description  CVEs sharing a component with the given CVE, among the open findings the filter selects
-// @Description  (the params of GET /findings, RFC-048). The source CVE's components come only from findings
+// @Description  (the params of GET /findings). The source CVE's components come only from findings
 // @Description  the caller may see.
 // @Tags         Findings
 // @Produce      json

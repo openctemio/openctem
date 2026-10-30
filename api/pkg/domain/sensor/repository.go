@@ -88,6 +88,9 @@ type HeartbeatUpdate struct {
 	// Control is the clamped control-channel report (control.go); nil leaves
 	// the stored one untouched.
 	Control *ControlReport
+	// LocalStore is the sanitized local store report (local_store.go); nil
+	// leaves the stored one as it is.
+	LocalStore *LocalStoreReport
 	// LocalPolicy is the sanitized local policy report (local_policy.go),
 	// merged with the stored one; nil leaves the stored one untouched.
 	LocalPolicy *LocalPolicyReport

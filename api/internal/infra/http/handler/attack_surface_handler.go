@@ -84,7 +84,7 @@ type AssetChangeResponse struct {
 	// AttributionState: confirmed, discovered, needs_review, candidate, dependency,
 	// monitor_only, rejected, or empty for an asset with no record (legacy,
 	// confirmed). InInventory is false for the review queue and rejected
-	// assets, so the UI shows "Added · needs review" (RFC-054 §4.4).
+	// assets, so the UI shows "Added · needs review".
 	AttributionState string `json:"attribution_state,omitempty" example:"needs_review"`
 	InInventory      bool   `json:"in_inventory"`
 }

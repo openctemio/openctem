@@ -211,3 +211,58 @@ func TestStoredWildcardRowsAuthorizeNothing(t *testing.T) {
 		}
 	}
 }
+
+// Label-boundary vectors at the API gate: a name is covered only when it is
+// the entry's own name or a whole label below it, in every spelling.
+func TestCovers_LabelBoundary(t *testing.T) {
+	f := newSources(t)
+	a, err := Load(context.Background(), f.tenant, f, f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []string{"app.scoped.com", "APP.Scoped.COM.", "scoped.com", "scoped.com.", "app.scoped.com:8443",
+		"https://app.scoped.com./x", "http://scoped.com:80"} {
+		if _, ok := a.Covers(n); !ok {
+			t.Errorf("Covers(%q) = false, want covered", n)
+		}
+	}
+	for _, n := range []string{"notscoped.com", "notscoped.com:443", "https://notscoped.com/", "scoped.com.evil.test",
+		"https://scoped.com.evil.test:8443/", "scoped.com@evil.test", "https://scoped.com@evil.test/",
+		"evil-scoped.com", "scoped.co", "com", "https://evil.test/?h=app.scoped.com"} {
+		if via, ok := a.Covers(n); ok {
+			t.Errorf("Covers(%q) = %+v, want not covered", n, via)
+		}
+	}
+}
+
+// Two tenants with entries on different roots: each gate answers only for
+// its own entries, whatever the spelling.
+func TestCovers_TenantsDoNotShareEntries(t *testing.T) {
+	a1, a2 := newSources(t), newSources(t)
+	other, err := scopedom.NewTarget(a2.tenant, scopedom.TargetTypeDomain, "*.other.example", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a2.targets = []*scopedom.Target{other}
+	auth1, err := Load(context.Background(), a1.tenant, a1, a1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auth2, err := Load(context.Background(), a2.tenant, a2, a2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []string{"app.other.example", "app.other.example:443", "https://APP.other.example./"} {
+		if _, ok := auth1.Covers(n); ok {
+			t.Errorf("tenant 1 covered tenant 2's name %q", n)
+		}
+		if _, ok := auth2.Covers(n); !ok {
+			t.Errorf("tenant 2 does not cover its own name %q", n)
+		}
+	}
+	for _, n := range []string{"app.scoped.com", "app.scoped.com:443"} {
+		if _, ok := auth2.Covers(n); ok {
+			t.Errorf("tenant 2 covered tenant 1's name %q", n)
+		}
+	}
+}

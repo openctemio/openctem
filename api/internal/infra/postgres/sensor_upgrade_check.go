@@ -29,27 +29,28 @@ type upgradeProbe struct {
 }
 
 // The probes name the pre-rename vocabulary on purpose: they look for it.
+// "ai_agent" (the AI principal) is a different word and is not a leftover.
 var sensorRenameProbes = []upgradeProbe{
 	{area: "schema", what: "tables, views or indexes still named agent*", query: `
 		SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-		WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p', 'v', 'm', 'i') AND c.relname LIKE '%agent%'`},
+		WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p', 'v', 'm', 'i') AND replace(c.relname, 'ai_agent', '') LIKE '%agent%'`},
 	{area: "schema", what: "columns still named *agent* (HTTP user_agent / actor_agent excluded)", query: `
 		SELECT count(*) FROM information_schema.columns
-		WHERE table_schema = 'public' AND column_name LIKE '%agent%'
+		WHERE table_schema = 'public' AND replace(column_name, 'ai_agent', '') LIKE '%agent%'
 		  AND column_name NOT IN ('user_agent', 'actor_agent')`},
 	{area: "schema", what: "constraints still named *agent*", query: `
 		SELECT count(*) FROM pg_constraint
-		WHERE connamespace = 'public'::regnamespace AND conname LIKE '%agent%'
+		WHERE connamespace = 'public'::regnamespace AND replace(conname, 'ai_agent', '') LIKE '%agent%'
 		  AND contype <> 'n'`}, // PostgreSQL 18 names a column's NOT NULL <table>_<column>_not_null
 	{area: "schema", what: "triggers or RLS policies still named *agent*", query: `
 		SELECT (SELECT count(*) FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
 		        JOIN pg_namespace n ON n.oid = c.relnamespace
-		        WHERE NOT t.tgisinternal AND n.nspname = 'public' AND t.tgname LIKE '%agent%')
-		     + (SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND policyname LIKE '%agent%')`},
+		        WHERE NOT t.tgisinternal AND n.nspname = 'public' AND replace(t.tgname, 'ai_agent', '') LIKE '%agent%')
+		     + (SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND replace(policyname, 'ai_agent', '') LIKE '%agent%')`},
 	{area: "schema", what: "functions whose body still names agent columns", query: `
 		SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
 		WHERE n.nspname = 'public'
-		  AND (p.proname LIKE '%agent%' OR p.prosrc ~ '\m(agent_id|platform_agent_id|agents|agent_api_keys)\M')`},
+		  AND (replace(p.proname, 'ai_agent', '') LIKE '%agent%' OR p.prosrc ~ '\m(agent_id|platform_agent_id|agents|agent_api_keys)\M')`},
 
 	{area: "data", what: "permission catalog ids agents:*", query: `
 		SELECT count(*) FROM permissions WHERE id LIKE 'agents:%'`},

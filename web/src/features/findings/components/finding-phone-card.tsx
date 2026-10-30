@@ -14,8 +14,11 @@ import { BranchOnlyBadge } from '@/features/findings/components/branch-only-badg
 import { MetaLine } from '@/features/shared/components/text-layout'
 import { useTranslation } from '@/context/i18n-provider'
 import { toDisplayText } from '@/lib/untrusted-text'
-import { middleEllipsis } from '@/lib/middle-ellipsis'
 import { cn } from '@/lib/utils'
+import { findingRowTone } from '@/features/findings/lib/row-tone'
+import { AssetMarkers } from '@/features/findings/components/cells/asset-markers'
+import { DuplicatesChip } from '@/features/findings/components/cells/duplicates-chip'
+import { FindingTitleCell } from '@/features/findings/components/cells/finding-title-cell'
 
 interface FindingPhoneCardProps {
   finding: Finding
@@ -33,11 +36,11 @@ interface FindingPhoneCardProps {
  */
 export function FindingPhoneCard({ finding: f, selection, onOpen, menu }: FindingPhoneCardProps) {
   const { t } = useTranslation()
-  const title = toDisplayText(f.title, 500)
   return (
     <div
       data-testid="finding-phone-card"
       data-state={selection.selected ? 'selected' : undefined}
+      data-tone={findingRowTone(f)}
       className={cn(
         'flex w-full items-start gap-1 ps-3 pe-1 transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted'
       )}
@@ -61,28 +64,26 @@ export function FindingPhoneCard({ finding: f, selection, onOpen, menu }: Findin
         {/* Priority is the queue order, so it leads the card (left slot). */}
         <PriorityClassBadge priorityClass={f.priorityClass} className="mt-0.5" />
         <div className="min-w-0 flex-1">
-          <p dir="auto" className="line-clamp-2 text-sm font-medium [unicode-bidi:isolate]">
-            {title}
-          </p>
-          {(f.cve || f.scanner) && (
-            <MetaLine
-              className="mt-0.5"
-              items={[f.cve && <span className="font-mono">{f.cve}</span>, f.scanner]}
-            />
-          )}
-          {f.location?.asset && (
-            <p dir="auto" className="mt-0.5 truncate text-xs [unicode-bidi:isolate]">
-              {toDisplayText(f.location.asset, 500)}
-            </p>
-          )}
-          {f.location?.detail && (
-            <p
-              dir="auto"
-              className="truncate font-mono text-xs text-muted-foreground [unicode-bidi:isolate]"
-            >
-              {middleEllipsis(toDisplayText(f.location.detail, 2000), 28)}
-            </p>
-          )}
+          <FindingTitleCell
+            className="gap-0.5 text-sm"
+            titleLines={2}
+            title={f.title}
+            target={f.location?.full}
+            markers={
+              <AssetMarkers
+                interactive={false}
+                internetFacing={f.assets[0]?.isInternetAccessible}
+                crownJewel={f.assets[0]?.isCrownJewel}
+              />
+            }
+            meta={
+              (f.cve || f.scanner) && (
+                <MetaLine
+                  items={[f.cve && <span className="font-mono">{f.cve}</span>, f.scanner]}
+                />
+              )
+            }
+          />
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
             <SeverityBadge severity={f.severity} />
             <FindingStatusBadge status={f.status} />
@@ -96,6 +97,7 @@ export function FindingPhoneCard({ finding: f, selection, onOpen, menu }: Findin
               kevRansomware={f.kevRansomware}
               epssScore={f.epssScore}
             />
+            <DuplicatesChip count={f.duplicatesMarked} interactive={false} />
           </div>
         </div>
         <ChevronRight

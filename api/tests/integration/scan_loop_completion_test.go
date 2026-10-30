@@ -118,7 +118,7 @@ func TestScanLoop_CompletedCommandCompletesTheRun(t *testing.T) {
 	p := routingFromCommand(ctx, t, db, tenantID.String())
 
 	// Exactly what CommandHandler.Complete does with a finished command.
-	if err := pipeSvc.OnStepCompleted(ctx, p.ScanRunID, p.StepKey, 3,
+	if err := pipeSvc.OnStepCompleted(ctx, tenantID, p.ScanRunID, p.StepKey, 3,
 		map[string]any{"probe": true}); err != nil {
 		t.Fatalf("OnStepCompleted: %v", err)
 	}
@@ -158,7 +158,7 @@ func TestScanLoop_FailedCommandSurfacesTheRealError(t *testing.T) {
 
 	// The exact error five production runs actually hit.
 	const realErr = "scanner not found: nuclei"
-	if err := pipeSvc.OnStepFailed(ctx, p.ScanRunID, p.StepKey, realErr, "COMMAND_FAILED"); err != nil {
+	if err := pipeSvc.OnStepFailed(ctx, tenantID, p.ScanRunID, p.StepKey, realErr, "COMMAND_FAILED"); err != nil {
 		t.Fatalf("OnStepFailed: %v", err)
 	}
 
@@ -220,7 +220,7 @@ func TestScanLoop_RunFindingsCountIsNotDoubled(t *testing.T) {
 	p := routingFromCommand(ctx, t, db, tenantID.String())
 
 	const reported = 2
-	if err := pipeSvc.OnStepCompleted(ctx, p.ScanRunID, p.StepKey, reported, nil); err != nil {
+	if err := pipeSvc.OnStepCompleted(ctx, tenantID, p.ScanRunID, p.StepKey, reported, nil); err != nil {
 		t.Fatalf("OnStepCompleted: %v", err)
 	}
 

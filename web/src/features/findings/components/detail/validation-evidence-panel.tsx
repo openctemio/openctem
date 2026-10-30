@@ -160,7 +160,7 @@ function EvidenceRow({ item }: { item: ValidationEvidenceItem }) {
         <DetectionBadge item={item} />
         <span className="text-muted-foreground text-xs">{item.executor_kind}</span>
         {item.technique ? (
-          <span className="text-muted-foreground text-xs">· {item.technique}</span>
+          <span className="text-muted-foreground text-xs">, {item.technique}</span>
         ) : null}
         <span className="text-muted-foreground ms-auto text-xs">
           {formatTimestamp(item.created_at, locale)}

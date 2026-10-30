@@ -50,6 +50,11 @@ type MarkFixedInput struct {
 	HasFixApplyPermission bool
 	// Approved lets an over-ceiling bulk through the abuse guard.
 	Approved bool
+	// Source and ExternalAccount say where a platform-made claim came from (an
+	// inbound tracker event, no person): they go on the audit event, which
+	// would otherwise show only the system actor.
+	Source          string
+	ExternalAccount string
 }
 
 // MarkFixedResult is the outcome per finding, and the task after it.
@@ -134,6 +139,12 @@ func (s *TaskService) MarkFixed(ctx context.Context, in MarkFixedInput, actx aud
 		WithMessage(fmt.Sprintf("Remediation task %q marked fixed: %d finding(s) claimed fixed, %d already claimed, %d refused, %d re-check(s) queued",
 			t.Title, out.Updated, out.Skipped, out.Failed, out.ValidationsQueued)).
 		WithMetadata("updated", out.Updated).WithMetadata("failed", out.Failed).WithMetadata("validations_queued", out.ValidationsQueued)
+	if in.Source != "" {
+		ev = ev.WithMetadata("source", in.Source)
+	}
+	if in.ExternalAccount != "" {
+		ev = ev.WithMetadata("external_account", in.ExternalAccount)
+	}
 	if out.Failed > 0 {
 		ev = ev.WithSeverity(auditdom.SeverityMedium)
 	}

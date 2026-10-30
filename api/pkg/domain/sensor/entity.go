@@ -207,7 +207,7 @@ type Sensor struct {
 	ManifestSource string
 
 	// LocalPolicy is the sensor-local policy the sensor last reported
-	// (RFC-040 §5.7, local_policy.go), and LocalPolicyReportedAt when. nil
+	// (local_policy.go), and LocalPolicyReportedAt when. nil
 	// when it never reported one (an SDK before RFC-040, protocol v1).
 	// Display and dispatch-narrowing data only: enforcement is the sensor's.
 	LocalPolicy           *LocalPolicyReport
@@ -248,7 +248,7 @@ type Sensor struct {
 	LoadScore        float64 // Computed weighted load score (lower is better)
 	MetricsUpdatedAt *time.Time
 	ActiveJobs       int
-	// CurrentJobs is the number of commands the sensor holds (acknowledged
+	// CurrentJobs is the number of scan commands the sensor holds (acknowledged
 	// or running), counted by the server from the commands table when the
 	// sensor is read: the capacity truth (RFC-030 D5). It is never taken
 	// from the sensor.
@@ -282,6 +282,10 @@ type Sensor struct {
 	// Control is the control-channel report of its last heartbeat that
 	// carried one (control.go); nil when it never did.
 	Control *ControlReport
+	// LocalStore is the local store report of its last heartbeat that
+	// carried one (local_store.go), with ReportedAt set; nil when it never
+	// reported one. Read it through CurrentLocalStore.
+	LocalStore *LocalStoreReport
 
 	// Statistics
 	LastSeenAt    *time.Time // Last heartbeat timestamp - effectively "last online time"

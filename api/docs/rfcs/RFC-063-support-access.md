@@ -264,6 +264,33 @@ each for a stated reason.
   private programs and their findings stay hidden (support is no program
   member).
 
+**Session lifecycle.** A support session ends when the console session that
+opened it ends, not only through End, a newer session or a revoke:
+
+- Signing out of the console ends its support sessions at once.
+- A sweeper (`support-session-sweep`, every minute) ends the open sessions
+  whose console session is gone (expired, or idle past the console's 15
+  minutes), whose grant was revoked or expired, or that were not used for 30
+  minutes (`end_reason` `console_session_ended`, `grant_expired`, `idle`).
+- Each ended session writes `support.session_ended` to the organization's audit
+  log and the admin audit log and emails the owners with the cause.
+- The tenant's `open_session` signal (the "support is viewing now" banner) is
+  true only while a session is open **and** its console session is alive and
+  not idle, so it drops at once even before the sweeper runs.
+- The sweeper is clean-up and notification, not the enforcement: a support
+  session unused for 30 minutes, or whose grant ended, is refused on its next
+  use even when the sweeper has not ended it yet, and that use does not
+  revive it.
+- The sweeper and the signal run on the app pool, which cannot read
+  `admin_sessions` under the console database role; they ask
+  `admin_session_live(session, at, idle_seconds)`, a read-only `SECURITY
+  DEFINER` function that returns one boolean
+  (`docs/deployment/database-roles.md`).
+- The console's own identity, second factors included (passkeys, recovery
+  codes), is written only by the console role: support access never needs
+  them, and a tenant-plane injection cannot plant a factor to reach the
+  console that opens support sessions.
+
 ### 11.2 Differences from the proposal
 
 | Proposal | Built | Reason |

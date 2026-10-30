@@ -70,6 +70,7 @@ import { sensorToolExclusions } from '@/features/tools/lib/availability'
 import { SensorRecentActivity } from './sensor-activity'
 import type { EntityActivityHandle } from '@/features/activity/components/entity-activity'
 import { requestSensorContentRefresh, SensorContentSection } from './sensor-content-section'
+import { HostPressureSection } from './host-pressure-section'
 import { SensorControlSection, hasHeartbeatHistory } from './sensor-control-section'
 import { SensorLocalPolicySection } from './sensor-local-policy-section'
 import { SENSOR_POSTURE_SECTION_ID, SensorPostureSection } from './sensor-posture'
@@ -1195,10 +1196,16 @@ export function SensorDetailSheet({
             {(sensor.control || hasHeartbeatHistory(heartbeatHistory)) && (
               <SensorControlSection sensor={sensor} now={now} history={heartbeatHistory} />
             )}
+            {sensor.load?.resources?.pressure && <HostPressureSection sensor={sensor} />}
             {sensor.posture && <SensorPostureSection sensor={sensor} />}
             {sensor.local_policy && <SensorLocalPolicySection sensor={sensor} />}
             <SensorGrantSection sensorId={sensor.id} sensorType={sensor.type} />
-            {!oneShot && <SensorNetworkPathSection sensorId={sensor.id} />}
+            {!oneShot && (
+              <SensorNetworkPathSection
+                sensorId={sensor.id}
+                capabilities={sensor.reported?.capabilities ?? null}
+              />
+            )}
             <SensorRecentActivity ref={activityRef} sensorId={sensor.id} sensorName={sensor.name} />
             <ConnectionAndIdentity
               sensor={sensor}

@@ -43,6 +43,8 @@ func registerUserDashboardRoutes(
 		r.POST("/{id}/default", h.SetDefault)
 		r.PUT("/{id}/schedule", h.SetSchedule)
 		r.POST("/{id}/share", h.Share)
+		r.POST("/{id}/flow-panels", h.AddFlowPanel)
+		r.DELETE("/{id}/flow-panels/{widget_id}", h.UndoFlowPanel)
 	}, tenantMiddlewares...)
 
 	view := middleware.RequireAny(permission.DashboardsOrgView, permission.DashboardsOrgManage)
@@ -59,6 +61,8 @@ func registerUserDashboardRoutes(
 		r.POST("/{id}/default", h.SetOrgDefault, manage)
 		r.PUT("/{id}/audience", h.SetOrgAudience, manage)
 		r.PUT("/{id}/schedule", h.SetOrgSchedule, manage)
+		r.POST("/{id}/flow-panels", h.AddOrgFlowPanel, manage)
+		r.DELETE("/{id}/flow-panels/{widget_id}", h.UndoOrgFlowPanel, manage)
 	}, tenantMiddlewares...)
 
 	router.Group("/api/v1/organization/settings/dashboards", func(r Router) {

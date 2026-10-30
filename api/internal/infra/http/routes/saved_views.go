@@ -20,3 +20,14 @@ func registerSavedViewRoutes(router Router, h *handler.SavedViewHandler, authMid
 		r.DELETE("/{id}", h.Delete, read)
 	}, tenantMiddlewares...)
 }
+
+// registerNavPinRoutes mounts /api/v1/me/pins: the caller's own sidebar pins
+// in the current organization. Any member; view pins need findings:read,
+// checked by the service, and every count is computed as the caller.
+func registerNavPinRoutes(router Router, h *handler.NavPinHandler, authMiddleware, userSyncMiddleware Middleware) {
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	router.Group("/api/v1/me/pins", func(r Router) {
+		r.GET("/", h.List)
+		r.PUT("/", h.Replace)
+	}, tenantMiddlewares...)
+}

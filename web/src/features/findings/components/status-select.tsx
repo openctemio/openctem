@@ -199,7 +199,7 @@ export function StatusSelect({
                             <span className="block text-xs text-muted-foreground">
                               {[sub ? t(config.labelKey, config.label) : '', needs]
                                 .filter(Boolean)
-                                .join(' · ')}
+                                .join(', ')}
                             </span>
                           )}
                           {reason && (

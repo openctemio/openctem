@@ -285,6 +285,16 @@ func TestBatchSettlement_OlderSensorAndFailures(t *testing.T) {
 	if b := batchSettlement(mk(command.CommandStatusCompleted, map[string]any{"metadata": map[string]any{"coverage": "partial"}}, "")); len(b.Unfinished) != 2 {
 		t.Fatalf("older sensor, partial: %+v", b)
 	}
+	// A truncated result covers nothing, whatever it says it finished.
+	if b := batchSettlement(mk(command.CommandStatusCompleted, map[string]any{"metadata": map[string]any{"coverage": "full", "truncated": true}}, "")); len(b.Done) != 0 || len(b.Unfinished) != 2 {
+		t.Fatalf("truncated, full: %+v", b)
+	}
+	if b := batchSettlement(mk(command.CommandStatusCompleted, map[string]any{
+		"metadata":        map[string]any{"truncated": true},
+		"target_outcomes": []map[string]any{{"target": "10.0.0.1", "state": "done"}, {"target": "10.0.0.2", "state": "failed", "class": "unreachable"}},
+	}, "")); len(b.Done) != 0 || len(b.Unfinished) != 1 || len(b.Unreachable) != 1 {
+		t.Fatalf("truncated with outcomes: %+v", b)
+	}
 	if b := batchSettlement(mk(command.CommandStatusFailed, nil, "boom")); len(b.Failed) != 2 || b.Error != "boom" {
 		t.Fatalf("failed: %+v", b)
 	}

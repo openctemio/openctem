@@ -44,7 +44,7 @@ async function stub(page: Page) {
   )
 }
 
-test.describe('Ticketing connection errors', () => {
+test.describe('Ticketing connection errors', { tag: ['@ticketing'] }, () => {
   test('a connection without a token says so, offers the fix and never shows the id', async ({
     page,
   }) => {

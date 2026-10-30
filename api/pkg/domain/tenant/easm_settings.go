@@ -2,6 +2,7 @@ package tenant
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -11,6 +12,12 @@ import (
 const (
 	MinEASMIntervalHours = 6
 	MaxEASMIntervalHours = 168
+
+	// DefaultReappearAfterDays is how long an active exposure must go unseen
+	// before its next sighting is announced again as "reappeared".
+	DefaultReappearAfterDays = 30
+	MinReappearAfterDays     = 7
+	MaxReappearAfterDays     = 365
 )
 
 // EASMSettings is the organization's attack-surface monitoring (research/22
@@ -51,6 +58,19 @@ type EASMSettings struct {
 	// DigestWeekday is the UTC weekday the digest goes out: 0 for the
 	// default (Monday), else 1..7 = Monday..Sunday (ISO 8601).
 	DigestWeekday int `json:"digest_weekday,omitempty"`
+	// ReappearAfterDays is the alert fingerprint's lifetime: an exposure
+	// not seen for this long and then seen again is announced as
+	// "reappeared". 0 is the default (30 days), else 7..365.
+	ReappearAfterDays int `json:"reappear_after_days,omitempty"`
+}
+
+// ReappearAfter is the effective alert fingerprint lifetime.
+func (s EASMSettings) ReappearAfter() time.Duration {
+	d := s.ReappearAfterDays
+	if d == 0 {
+		d = DefaultReappearAfterDays
+	}
+	return time.Duration(d) * 24 * time.Hour
 }
 
 // Validate checks the floors: an interval is 0 (default) or 6..168 hours.
@@ -64,6 +84,10 @@ func (s EASMSettings) Validate() error {
 	if s.DigestWeekday < 0 || s.DigestWeekday > 7 {
 		return fmt.Errorf("%w: digest_weekday must be between 1 (Monday) and 7 (Sunday), or 0 for the default",
 			shared.ErrValidation)
+	}
+	if s.ReappearAfterDays != 0 && (s.ReappearAfterDays < MinReappearAfterDays || s.ReappearAfterDays > MaxReappearAfterDays) {
+		return fmt.Errorf("%w: reappear_after_days must be between %d and %d (or 0 for the default of %d)",
+			shared.ErrValidation, MinReappearAfterDays, MaxReappearAfterDays, DefaultReappearAfterDays)
 	}
 	return nil
 }

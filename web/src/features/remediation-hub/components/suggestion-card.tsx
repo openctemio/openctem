@@ -71,7 +71,7 @@ export const SuggestionCard = forwardRef<HTMLDivElement, SuggestionCardProps>(
     const ownerLabel = (p: RemediationSuggestion['partitions'][number]) => {
       if (p.owner_rule === 'default_queue') return t('remediationHub.owner.defaultQueue')
       const names = [owners.user(p.owner_user_id), owners.group(p.owner_group_id)].filter(Boolean)
-      return names.length ? names.join(' · ') : t('remediationHub.owner.assetOwner')
+      return names.length ? names.join(', ') : t('remediationHub.owner.assetOwner')
     }
 
     return (
@@ -139,11 +139,11 @@ export const SuggestionCard = forwardRef<HTMLDivElement, SuggestionCardProps>(
             </h3>
             <p className="text-muted-foreground mt-1 text-sm">
               {t('remediationHub.suggestions.findingsCount', undefined, { n: s.member_count })}
-              {' · '}
+              {', '}
               {t('remediationHub.suggestions.assetsCount', undefined, {
                 n: s.risk_parts?.assets ?? 0,
               })}
-              {' · '}
+              {', '}
               <RiskPoints suggestion={s} />
             </p>
             {s.partitions.length > 0 && (
@@ -153,7 +153,7 @@ export const SuggestionCard = forwardRef<HTMLDivElement, SuggestionCardProps>(
               >
                 {s.partitions.map((p, i) => (
                   <li key={i} className="bg-muted rounded-md px-2 py-1">
-                    {ownerLabel(p)} ·{' '}
+                    {ownerLabel(p)},{' '}
                     {t('remediationHub.suggestions.findingsCount', undefined, {
                       n: p.finding_ids.length,
                     })}

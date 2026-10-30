@@ -353,8 +353,8 @@ func insertMembership(ctx context.Context, db membershipExecer, m *tenant.Member
 		m.JoinedAt(),
 	}, append(memberAccessArgs(m), string(m.Status()), nullTime(m.SuspendedAt()), nullString(m.SuspendedReason()))...)...)
 	if err != nil {
-		if isCheckViolation(err) {
-			return tenant.ErrPlatformAdminMembership
+		if isConstraintViolation(err, breakGlassConsoleOnly) {
+			return tenant.ErrBreakGlassMembership
 		}
 		return fmt.Errorf("failed to create membership: %w", err)
 	}
@@ -467,8 +467,8 @@ func (r *TenantRepository) CreateWithOwner(ctx context.Context, t *tenant.Tenant
 		m.ID().String(), m.UserID().String(), m.TenantID().String(),
 		m.Role().String(), invitedBy, m.JoinedAt(),
 	); err != nil {
-		if isCheckViolation(err) {
-			return tenant.ErrPlatformAdminMembership
+		if isConstraintViolation(err, breakGlassConsoleOnly) {
+			return tenant.ErrBreakGlassMembership
 		}
 		return fmt.Errorf("failed to create membership: %w", err)
 	}
@@ -1501,13 +1501,14 @@ func (r *TenantRepository) GetInvitationByID(ctx context.Context, tenantID, id s
 	return r.scanInvitation(r.db.QueryRowContext(ctx, query, id.String(), tenantID.String()))
 }
 
-// UpdateInvitation updates an invitation's mutable fields (accepted_at and the
-// stored token hash — the latter changes when an invitation is resent, which
-// rotates the token).
+// UpdateInvitation updates an invitation's mutable fields (accepted_at, the
+// stored token hash, which changes when an invitation is resent or its link
+// is copied anew, and expires_at, which changes when an expired invitation is
+// renewed).
 func (r *TenantRepository) UpdateInvitation(ctx context.Context, inv *tenant.Invitation) error {
 	query := `
 		UPDATE tenant_invitations
-		SET accepted_at = $2, token = $3, last_sent_at = $5, resend_count = $6
+		SET accepted_at = $2, token = $3, last_sent_at = $5, resend_count = $6, expires_at = $8
 		WHERE id = $1 AND tenant_id = $4 AND revoked_at IS NULL AND resend_count = $7
 	`
 
@@ -1518,7 +1519,7 @@ func (r *TenantRepository) UpdateInvitation(ctx context.Context, inv *tenant.Inv
 	err := r.db.Transaction(ctx, func(tx *sql.Tx) error {
 		var execErr error
 		result, execErr = tx.ExecContext(ctx, query, inv.ID().String(), inv.AcceptedAt(), inv.Token(), inv.TenantID().String(),
-			inv.LastSentAt(), inv.ResendCount(), inv.LoadedResendCount())
+			inv.LastSentAt(), inv.ResendCount(), inv.LoadedResendCount(), inv.ExpiresAt())
 		if execErr != nil {
 			return execErr
 		}
@@ -1759,8 +1760,8 @@ func (r *TenantRepository) AcceptInvitationTx(ctx context.Context, inv *tenant.I
 			m.JoinedAt(),
 		}, memberAccessArgs(m)...)...)
 		if err != nil {
-			if isCheckViolation(err) {
-				return tenant.ErrPlatformAdminMembership
+			if isConstraintViolation(err, breakGlassConsoleOnly) {
+				return tenant.ErrBreakGlassMembership
 			}
 			return fmt.Errorf("failed to create membership: %w", err)
 		}

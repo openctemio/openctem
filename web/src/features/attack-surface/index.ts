@@ -7,12 +7,13 @@ export type {
   AssetChange,
 } from './hooks/use-attack-surface'
 
-export { useAttackPathScoring } from './hooks/use-attack-path-scoring'
+export { useAttackPathDetail } from './hooks/use-attack-path-detail'
 export type {
-  AttackPathScoring,
-  AttackPathScore,
-  AttackPathSummary,
-} from './hooks/use-attack-path-scoring'
+  AttackPathDetail,
+  AttackPath,
+  PathNode,
+  PathEdge,
+} from './hooks/use-attack-path-detail'
 
 // Components
 export { PathGraph, EASMOverview } from './components'
@@ -22,6 +23,7 @@ export { EASMDecidePanel } from './components/easm-decide-panel'
 export { EASMLookalikes } from './components/easm-lookalikes'
 export { AssetWebEvidenceCard } from './components/asset-web-evidence-card'
 export { EASMChanges } from './components/easm-changes'
+export { EASMCertificates } from './components/easm-certificates'
 export { AttackSurfaceSectionTabs } from './components/attack-surface-section-tabs'
 export { useEASMReviewQueue, useDecideReviewBatch } from './hooks/use-easm-review'
 export type { PathGraphNode, PathGraphPath, PathNodeRole } from './components'

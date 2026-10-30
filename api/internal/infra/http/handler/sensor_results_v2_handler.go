@@ -115,8 +115,11 @@ func (h *SensorResultsV2Handler) Authenticate(next http.Handler) http.Handler {
 		if err == nil && id.Paused && !isV2HeartbeatRequest(r) && !isV2HelloRequest(r) {
 			err = errSensorPaused
 		}
+		if writeClockSkew(w, r, err, h.logger) {
+			return
+		}
 		if err != nil || id.Sensor == nil {
-			h.logger.Debug("v2 authentication failed", "error", err)
+			h.logger.Debug("v2 authentication failed", "reason", sensorAuthFailureReason(err))
 			protov2.NewProblem(protov2.ProblemUnauthenticated).Write(w)
 			return
 		}

@@ -568,9 +568,9 @@ function TrustRow({
             <StatusBadge trust={trust} />
           </div>
           <p className="text-xs text-muted-foreground">
-            {facts.join(' · ')}
+            {facts.join(', ')}
             {trust.accepted_at
-              ? ` · ${t('settings.trust.fact.since', 'since {date}', {
+              ? `, ${t('settings.trust.fact.since', 'since {date}', {
                   date: formatShortDate(trust.accepted_at),
                 })}`
               : ''}

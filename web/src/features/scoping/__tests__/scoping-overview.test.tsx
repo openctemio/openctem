@@ -89,7 +89,7 @@ describe('readinessRows', () => {
     expect(row('business_units')).toMatchObject({ ready: false, value: '0 of 69', href: '/assets' })
     expect(row('boundary')).toMatchObject({
       ready: true,
-      value: '5 entries in effect · 3 exclusions · 2 waiting for approval',
+      value: '5 entries in effect, 3 exclusions, 2 waiting for approval',
     })
     expect(row('attacker_profiles')).toMatchObject({
       ready: false,

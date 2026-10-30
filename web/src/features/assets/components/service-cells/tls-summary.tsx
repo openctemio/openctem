@@ -42,7 +42,7 @@ export function CertExpiryChip({
     case 'valid':
       return (
         <FactChip tone="success" title={title}>
-          {t('assets.tls.validLeft', 'Valid · {days} left', { days: days(cert.daysLeft ?? 0) })}
+          {t('assets.tls.validLeft', 'Valid, {days} left', { days: days(cert.daysLeft ?? 0) })}
         </FactChip>
       )
     default:

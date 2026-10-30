@@ -146,6 +146,11 @@ type HeartbeatResponse struct {
 	NextHeartbeatSeconds int      `json:"next_heartbeat_seconds"`
 	Actions              []string `json:"actions"`
 	ConfigVersion        string   `json:"config_version"`
+	// ContentVersion is the version (the ETag) of the content the platform
+	// wants this sensor to hold: it differs from the last one seen when a
+	// pack was promoted, revoked or added, and the sensor then refreshes its
+	// content at once. Absent when the platform serves no content.
+	ContentVersion string `json:"content_version,omitempty"`
 	// CancelCommandIDs are commands the sensor listed as running that it
 	// must stop: canceled, closed by the platform (a run timeout), re-queued
 	// after the lease ran out, or held by another sensor. Stop and release
@@ -256,7 +261,9 @@ type FailRequest struct {
 	ErrorMessage string `json:"error_message"`
 	// ErrorCode, when set, names the failure in the platform's vocabulary
 	// (SCANNER_NOT_FOUND, TARGET_REFUSED, TARGET_UNREACHABLE, NO_TARGETS,
-	// POLICY_REFUSED, TOOL_EXIT, PARSE_ERROR, TIMEOUT). Optional: without it the platform
+	// POLICY_REFUSED, TOOL_EXIT, PARSE_ERROR, TIMEOUT, and the infrastructure
+	// codes TOOL_UNAVAILABLE, TOOL_CRASHED, RESOURCE_MEMORY, RESOURCE_DISK,
+	// CONTENT_UNAVAILABLE, SENSOR_NETWORK, DNS_RESOLVER). Optional: without it the platform
 	// classifies the message. A code outside that list is recorded as
 	// COMMAND_FAILED.
 	ErrorCode string `json:"error_code,omitempty"`
@@ -265,6 +272,33 @@ type FailRequest struct {
 	// work to another eligible sensor and excludes this one. Optional:
 	// without it a reason starting "refused by local policy: " counts too.
 	Refusal *Refusal `json:"refusal,omitempty"`
+	// Failure, when set, says what kind of failure it was (research/302):
+	// a class from the closed set (infra.tool_unavailable,
+	// infra.tool_crashed, infra.resource.memory, infra.resource.disk,
+	// infra.content_unavailable, infra.sensor_network, infra.dns_resolver,
+	// target.*) with bounded evidence. The platform decides where the work
+	// goes next; a sensor never names a destination. Optional: without it
+	// the platform reads ErrorCode, then the message.
+	Failure *Failure `json:"failure,omitempty"`
+}
+
+// Failure is the sensor's class of a failure, with bounded evidence. Every
+// member of Evidence is optional; the platform keeps only short tokens.
+type Failure struct {
+	Class    string          `json:"class"`
+	Evidence FailureEvidence `json:"evidence,omitempty"`
+}
+
+// FailureEvidence is the evidence of a Failure: the tool and content
+// versions (the fleet stop rule keys on them), the stage, and how the tool
+// ended.
+type FailureEvidence struct {
+	Tool          string `json:"tool,omitempty"`
+	ToolDigest    string `json:"tool_digest,omitempty"`
+	ContentDigest string `json:"content_digest,omitempty"`
+	Stage         string `json:"stage,omitempty"`
+	ExitCode      *int   `json:"exit_code,omitempty"`
+	Signal        string `json:"signal,omitempty"`
 }
 
 // Refusal is a structured policy refusal: the layer (builtin, local,

@@ -95,6 +95,11 @@ export const authEndpoints = {
   verifyEmail: () => `${API_BASE.AUTH}/verify-email`,
 
   /**
+   * Send the email verification link again (constant 202)
+   */
+  resendVerification: () => `${API_BASE.AUTH}/resend-verification`,
+
+  /**
    * Request password reset
    */
   forgotPassword: () => `${API_BASE.AUTH}/forgot-password`,
@@ -133,6 +138,12 @@ export const authEndpoints = {
    * Required 2FA enrollment during login: confirm with a code and sign in.
    */
   mfaEnrollConfirm: () => `${API_BASE.AUTH}/mfa/enroll/confirm`,
+
+  /**
+   * Second-factor challenge for a signed-in session an organization's 2FA
+   * policy holds back (after accepting an invitation, or a refused refresh).
+   */
+  mfaEnrollSession: () => `${API_BASE.AUTH}/mfa/enroll/session`,
 
   // ============================================
   // SOCIAL/OAUTH AUTH
@@ -235,6 +246,17 @@ export const userEndpoints = {
   twoFactorEnable: () => `${API_BASE.USERS}/me/2fa/enable`,
   twoFactorDisable: () => `${API_BASE.USERS}/me/2fa/disable`,
   twoFactorRecoveryCodes: () => `${API_BASE.USERS}/me/2fa/recovery-codes`,
+
+  /**
+   * Linked sign-in methods (Account > Security). Link start and unlink need
+   * step-up; the link callback is called by the OAuth callback route.
+   */
+  identities: () => '/api/v1/me/sign-in-methods',
+  identityLink: (provider: string) =>
+    `/api/v1/me/sign-in-method-links/${encodeURIComponent(provider)}/start`,
+  identityLinkCallback: (provider: string) =>
+    `/api/v1/me/sign-in-method-links/${encodeURIComponent(provider)}/complete`,
+  identity: (id: string) => `/api/v1/me/sign-in-methods/${encodeURIComponent(id)}`,
 
   // ============================================
   // USER MANAGEMENT (Admin)
@@ -361,6 +383,19 @@ export const tenantEndpoints = {
    */
   deleteInvitation: (tenantIdOrSlug: string, invitationId: string) =>
     `${API_BASE.TENANTS}/${tenantIdOrSlug}/invitations/${invitationId}`,
+
+  /**
+   * Copy a new invitation link (POST): rotates the token, sends no email,
+   * returns the new token once.
+   */
+  invitationLink: (tenantIdOrSlug: string, invitationId: string) =>
+    `${API_BASE.TENANTS}/${tenantIdOrSlug}/invitations/${invitationId}/link`,
+
+  /**
+   * Renew an expired invitation (POST): new lifetime and token, no email.
+   */
+  renewInvitation: (tenantIdOrSlug: string, invitationId: string) =>
+    `${API_BASE.TENANTS}/${tenantIdOrSlug}/invitations/${invitationId}/renew`,
 
   /**
    * Resend invitation email (POST) — re-queues the email without
@@ -1473,6 +1508,11 @@ export const proxyPoolEndpoints = {
     `${API_BASE.PROXY_POOLS}/${poolId}/endpoints/${endpointId}`,
   assignments: () => `${API_BASE.PROXY_POOLS}/assignments`,
   assignment: (sensorId: string) => `${API_BASE.PROXY_POOLS}/assignments/${sensorId}`,
+  /** POST: ask sensors to test a pool's endpoints (the platform never connects to a proxy). */
+  test: (poolId: string) => `${API_BASE.PROXY_POOLS}/${poolId}/test`,
+  /** GET: the results of those tests, by command id. */
+  tests: (poolId: string, commandIds: string[]) =>
+    `${API_BASE.PROXY_POOLS}/${poolId}/tests?command_ids=${commandIds.map(encodeURIComponent).join(',')}`,
 } as const
 
 /**

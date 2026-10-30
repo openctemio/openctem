@@ -45,6 +45,9 @@ const (
 	MaxTargetBytes = 1024
 	// MaxTemplates caps the custom templates of one statement.
 	MaxTemplates = 256
+	// MaxContent caps the content packs of one statement (the sensor's
+	// own cap on a payload).
+	MaxContent = 8
 	// MaxTTL caps expires_at - issued_at.
 	MaxTTL = time.Hour
 	// MaxClockSkew is how far issued_at may be from the signer's clock.
@@ -93,6 +96,14 @@ type Statement struct {
 	// signer signs only digests in its ledger, and a sensor that verified
 	// the statement trusts exactly these template bytes.
 	Templates []string `json:"templates,omitempty"`
+	// Content are the content packs the payload's "content" members name,
+	// as the platform approved them as deliverable to the job's
+	// organization (RFC-061 §3.7): the slot and the pack's "sha256:<hex>"
+	// digest of each, in the payload's order. A sensor mounts only packs
+	// listed here. Absent when the payload names none. A verifier that
+	// predates the field refuses the statement (unknown field), so a job
+	// that pins content never runs on a sensor that cannot check the pins.
+	Content []ContentRef `json:"content,omitempty"`
 	// Limits are the port, protocol and path limits of the targets only
 	// limited scope entries cover (limits.go), for a sensor that enforces
 	// them (CapabilityScopeLimits). The signer signs a limit only when an
@@ -107,6 +118,34 @@ type Statement struct {
 	Seq    uint64     `json:"seq"`
 	Nonce  string     `json:"nonce"`
 	Signer *SignerRef `json:"signer"`
+}
+
+// ContentRef is one content pack a signed job pins: the tool slot it is for
+// and the pack's digest.
+type ContentRef struct {
+	Slot   string `json:"slot"`
+	Digest string `json:"digest"`
+}
+
+// PayloadContentRefs are the content packs a command payload names, as the
+// statement lists them: for each element of "content", in order and
+// duplicates kept, its slot and digest. Nil when the payload carries none
+// or is not an object.
+func PayloadContentRefs(payload []byte) []ContentRef {
+	var p struct {
+		Content []struct {
+			Slot   string `json:"slot"`
+			Digest string `json:"digest"`
+		} `json:"content"`
+	}
+	if len(payload) == 0 || json.Unmarshal(payload, &p) != nil || len(p.Content) == 0 {
+		return nil
+	}
+	out := make([]ContentRef, len(p.Content))
+	for i, c := range p.Content {
+		out[i] = ContentRef{Slot: c.Slot, Digest: c.Digest}
+	}
+	return out
 }
 
 // SignerRef names the key that signed a statement.

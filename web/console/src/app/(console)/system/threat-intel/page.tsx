@@ -1,15 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { Main } from '@/components/layout'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Switch } from '@/components/ui/switch'
-import { ErrorState, PageHeader, PageStack, RelativeTime } from '@/features/shared'
-import { TonePill } from '@/features/shared/components/tone-pill'
+import { ErrorState, PageHeader, PageStack } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import {
@@ -17,27 +14,100 @@ import {
   syncThreatIntel,
   useThreatIntelFeeds,
 } from '@console/features/admin-console/api/use-system'
+import { ThreatSourceCard } from '@console/features/admin-console/components/threat-source-card'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
-import { adminCan, type ThreatIntelFeed } from '@console/features/admin-console/types'
-
-const FEED_NAMES: Record<string, string> = {
-  epss: 'EPSS (exploit prediction scores)',
-  kev: 'CISA KEV (known exploited vulnerabilities)',
-}
-
-function statusTone(f: ThreatIntelFeed) {
-  if (!f.enabled) return 'muted' as const
-  if (f.last_sync_status === 'failed' || f.last_error) return 'destructive' as const
-  if (f.last_sync_status === 'success') return 'success' as const
-  return 'info' as const
-}
+import { adminHas } from '@console/features/admin-console/types'
+import { BundleDetail } from '@console/features/admin-console/components/bundle-detail'
+import { FeedCard } from '@console/features/admin-console/components/feed-card'
+import { feedName, feedProblem } from '@console/features/admin-console/lib/feed-status'
 
 export default function ThreatIntelFeedsPage() {
   const admin = useAdmin()
   const { t } = useTranslation()
-  const canWrite = adminCan(admin.role, 'ops_admin')
-  const { data, error, isLoading, mutate } = useThreatIntelFeeds()
+  const canWrite = adminHas(admin, 'platform.feeds.manage')
+  const [watching, setWatching] = useState<Record<string, string | null>>({})
+  const { data, error, isLoading, mutate } = useThreatIntelFeeds(Object.keys(watching).length > 0)
   const [busy, setBusy] = useState<string | null>(null)
+
+  // Sync requests the server queued: source -> the attempt time seen when it
+  // was requested. A feed settles when it is no longer running and has a newer
+  // attempt; the toast then reports the real outcome.
+  const watchedSources = Object.keys(watching)
+
+  const reason = (r: string | undefined) => {
+    switch (r) {
+      case 'disabled':
+        return t('admin.ti.skip.disabled', 'its scheduled sync is off')
+      case 'not_configured':
+        return t('admin.ti.skip.not_configured', 'bundle import is not configured')
+      case 'rate_limited':
+        return t('admin.ti.skip.rate_limited', 'it was just started')
+      default:
+        return t('admin.ti.skip.other', 'it cannot run now')
+    }
+  }
+
+  const runSync = async (key: string, source: string) => {
+    setBusy(key)
+    try {
+      const res = await syncThreatIntel(source)
+      const queued: Record<string, string | null> = {}
+      for (const r of res?.results ?? []) {
+        if (r.status === 'skipped') {
+          toast.error(
+            t('admin.ti.notStarted', '{feed} was not started: {reason}.', {
+              feed: feedName(r.source, t),
+              reason: reason(r.reason),
+            })
+          )
+        } else {
+          queued[r.source] = data?.find((f) => f.source === r.source)?.last_attempt_at ?? null
+        }
+      }
+      if (Object.keys(queued).length > 0) {
+        toast.success(t('admin.ti.started', 'Sync started. The result shows on the card.'))
+        setWatching((w) => ({ ...w, ...queued }))
+      }
+      await mutate()
+    } catch (err) {
+      toast.error(
+        err instanceof AdminApiError
+          ? err.message
+          : t('admin.confirm.failed', 'The action failed. Try again.')
+      )
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  // Report the outcome of each requested sync once it settles; stop watching
+  // after two minutes whatever happened.
+  useEffect(() => {
+    if (!data || watchedSources.length === 0) return
+    const settled: string[] = []
+    for (const source of watchedSources) {
+      const f = data.find((x) => x.source === source)
+      if (!f || f.state === 'running' || f.last_attempt_at === watching[source]) continue
+      settled.push(source)
+      const problem = feedProblem(f, t)
+      if (problem) {
+        toast.error(`${feedName(source, t)}: ${problem.message}`)
+      } else {
+        toast.success(t('admin.ti.syncedFeed', '{feed} synced.', { feed: feedName(source, t) }))
+      }
+    }
+    if (settled.length > 0) {
+      setWatching((w) =>
+        Object.fromEntries(Object.entries(w).filter(([k]) => !settled.includes(k)))
+      )
+    }
+  }, [data, watching, watchedSources, t])
+
+  useEffect(() => {
+    if (watchedSources.length === 0) return
+    const timer = setTimeout(() => setWatching({}), 120_000)
+    return () => clearTimeout(timer)
+  }, [watchedSources.length])
 
   const act = async (key: string, fn: () => Promise<unknown>, done: string) => {
     setBusy(key)
@@ -71,9 +141,7 @@ export default function ThreatIntelFeedsPage() {
               size="sm"
               variant="outline"
               disabled={busy !== null}
-              onClick={() =>
-                act('all', () => syncThreatIntel('all'), t('admin.ti.synced', 'Sync finished.'))
-              }
+              onClick={() => void runSync('all', 'all')}
             >
               <RefreshCw className="me-2 size-4" />
               {t('admin.ti.syncAll', 'Sync all now')}
@@ -93,71 +161,32 @@ export default function ThreatIntelFeedsPage() {
           <Skeleton className="h-40 w-full" />
         ) : (
           <div className="grid gap-4 lg:grid-cols-2">
-            {data.map((f) => (
-              <Card key={f.source}>
-                <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
-                  <div className="space-y-1">
-                    <CardTitle className="text-base">{FEED_NAMES[f.source] ?? f.source}</CardTitle>
-                    <TonePill
-                      tone={statusTone(f)}
-                      label={
-                        f.enabled
-                          ? f.last_sync_status || t('admin.ti.never', 'Never synced')
-                          : t('admin.ti.off', 'Scheduled sync off')
-                      }
-                    />
-                  </div>
-                  <Switch
-                    checked={f.enabled}
-                    disabled={!canWrite || busy !== null}
-                    aria-label={t('admin.ti.toggle', 'Scheduled sync for {feed}', {
-                      feed: f.source,
-                    })}
-                    onCheckedChange={(on) =>
-                      act(
-                        f.source,
-                        () => setThreatIntelEnabled(f.source, on),
-                        on
-                          ? t('admin.ti.enabled', 'Scheduled sync on.')
-                          : t('admin.ti.disabled', 'Scheduled sync off.')
-                      )
-                    }
-                  />
-                </CardHeader>
-                <CardContent className="space-y-2 text-sm">
-                  <dl className="grid grid-cols-2 gap-y-1">
-                    <dt className="text-muted-foreground">{t('admin.ti.last', 'Last sync')}</dt>
-                    <dd>{f.last_sync_at ? <RelativeTime date={f.last_sync_at} /> : '-'}</dd>
-                    <dt className="text-muted-foreground">{t('admin.ti.records', 'Records')}</dt>
-                    <dd className="tabular-nums">{f.records_synced.toLocaleString()}</dd>
-                    <dt className="text-muted-foreground">{t('admin.ti.next', 'Next sync')}</dt>
-                    <dd>{f.next_sync_at ? <RelativeTime date={f.next_sync_at} /> : '-'}</dd>
-                  </dl>
-                  {f.last_error && (
-                    <p className="text-sm break-words text-destructive">{f.last_error}</p>
-                  )}
-                  {canWrite && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={busy !== null}
-                      onClick={() =>
-                        act(
-                          f.source,
-                          () => syncThreatIntel(f.source),
-                          t('admin.ti.synced', 'Sync finished.')
-                        )
-                      }
-                    >
-                      <RefreshCw className="me-2 size-4" />
-                      {t('admin.ti.syncOne', 'Sync now')}
-                    </Button>
-                  )}
-                </CardContent>
-              </Card>
-            ))}
+            {[...data]
+              .sort((x, y) => (x.source === 'vulnfeed' ? -1 : y.source === 'vulnfeed' ? 1 : 0))
+              .map((f) => (
+                <FeedCard
+                  key={f.source}
+                  feed={f}
+                  canWrite={canWrite}
+                  busy={busy !== null}
+                  className={f.source === 'vulnfeed' ? 'lg:col-span-2' : undefined}
+                  onSync={() => void runSync(f.source, f.source)}
+                  onToggle={(on) =>
+                    act(
+                      f.source,
+                      () => setThreatIntelEnabled(f.source, on),
+                      on
+                        ? t('admin.ti.enabled', 'Scheduled sync on.')
+                        : t('admin.ti.disabled', 'Scheduled sync off.')
+                    )
+                  }
+                >
+                  <BundleDetail feed={f} />
+                </FeedCard>
+              ))}
           </div>
         )}
+        <ThreatSourceCard canEdit={adminHas(admin, 'platform.settings.general.write')} />
       </PageStack>
     </Main>
   )

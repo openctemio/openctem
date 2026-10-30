@@ -177,7 +177,7 @@ var (
 	IngestV2RequestsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "ingest_v2_requests_total",
-			Help: "Sensor protocol v2 requests (results and, since RFC-029, the control plane), by route, method, outcome and problem type",
+			Help: "Sensor protocol v2 requests (results and the control plane), by route, method, outcome and problem type",
 		},
 		[]string{"route", "method", "outcome", "problem"},
 	)

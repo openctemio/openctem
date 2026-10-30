@@ -125,6 +125,20 @@ type AccessRequestListResponse struct {
 	Page       int                     `json:"page"`
 	PerPage    int                     `json:"per_page"`
 	TotalPages int                     `json:"total_pages"`
+	// Redacted: a read-only administrator sees each requester's address
+	// masked and no note (personal data); the rest of the row is intact.
+	Redacted bool `json:"redacted,omitempty"`
+}
+
+// maskEmail hides the local part of an address except its first character
+// ("a***@acme.com"); the domain is already a separate column.
+func maskEmail(email string) string {
+	local, domain, ok := strings.Cut(email, "@")
+	if !ok || local == "" {
+		return "***"
+	}
+	r := []rune(local)
+	return string(r[0]) + "***@" + domain
 }
 
 func toAccessRequestResponse(a *ardom.Request) AccessRequestResponse {
@@ -139,7 +153,7 @@ func toAccessRequestResponse(a *ardom.Request) AccessRequestResponse {
 	return resp
 }
 
-// List lists requests (any admin).
+// List lists requests (any admin; a read-only administrator gets masked addresses and no notes).
 // @Summary      List access requests
 // @Description  Open requests (pending and unconfirmed) by default; status=pending|unconfirmed|approved|rejected filters.
 // @Tags         Admin Organizations
@@ -170,8 +184,14 @@ func (h *AccessRequestHandler) List(w http.ResponseWriter, r *http.Request) {
 		Data:  make([]AccessRequestResponse, 0, len(items)),
 		Total: result.Total, Page: result.Page, PerPage: result.PerPage, TotalPages: result.TotalPages,
 	}
+	personal := adminSeesPersonalData(r)
+	resp.Redacted = !personal
 	for _, a := range items {
-		resp.Data = append(resp.Data, toAccessRequestResponse(a))
+		item := toAccessRequestResponse(a)
+		if !personal {
+			item.Email, item.Note = maskEmail(item.Email), ""
+		}
+		resp.Data = append(resp.Data, item)
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -230,8 +250,12 @@ func (h *AccessRequestHandler) Approve(w http.ResponseWriter, r *http.Request) {
 			apierror.NotFound("Access request not found").WriteJSON(w)
 		case errors.Is(err, ardom.ErrNotDecidable):
 			apierror.Conflict("Only a confirmed request that is still pending can be approved").WriteJSON(w)
-		case errors.Is(err, tenant.ErrPlatformAdminMembership):
-			apierror.Conflict("The requester is a platform administrator and cannot own an organization.").WriteJSON(w)
+		case errors.Is(err, tenant.ErrBreakGlassMembership):
+			apierror.Conflict("The requester's account cannot own an organization.").WriteJSON(w)
+		case errors.Is(err, ardom.ErrSelfApproval):
+			apierror.Forbidden("You cannot approve an access request made with your own e-mail; another administrator decides it.").WriteJSON(w)
+		case errors.Is(err, tenantapp.ErrOwnerAccountExists):
+			apierror.Conflict("This email already has an account and the requester has not confirmed the address, so the organization was not created. Ask them to create it after signing in.").WriteJSON(w)
 		case errors.Is(err, tenantapp.ErrAccountExists):
 			apierror.Conflict("An account with this email was just created. Try again.").WriteJSON(w)
 		case shared.IsValidation(err):

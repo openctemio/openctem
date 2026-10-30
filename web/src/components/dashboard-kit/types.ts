@@ -124,6 +124,8 @@ export interface ItemRow {
   asset?: string | null
   due_at?: string | null
   kev?: boolean
+  /** EPSS probability, 0 to 1; absent or null draws the empty bar. */
+  epss?: number | null
   /** Same-origin path the row opens. */
   href?: string | null
 }
@@ -186,6 +188,146 @@ export interface PathsResult {
   as_of?: string
 }
 
+/** One figure and the same-origin list it counts (null: no list, plain text). */
+export interface FlowFigure {
+  key?: string
+  value: number
+  drill?: string | null
+}
+
+export type SourceHealth = 'ok' | 'stale' | 'failed'
+
+/** What one source sent in the window, from its receipts, and its health. */
+export interface IntakeSourceRow {
+  /** Stable key: origin and tool. */
+  id: string
+  origin: string
+  /** The tool as reported (attacker-influenced text: shown through toDisplayText). */
+  tool: string
+  receipts: number
+  received: number
+  created: number
+  still_detected: number
+  reopened: number
+  closed: number
+  suppressed: number
+  not_stored: number
+  last_at: string | null
+  last_status: string
+  health: SourceHealth
+  expected_every_seconds: number | null
+  drill: string | null
+}
+
+/** Received split into parts that sum to it. */
+export interface IntakeNoise {
+  received: number
+  new: number
+  merged: number
+  suppressed: number
+  not_stored: number
+}
+
+export interface IntakeData {
+  since: string
+  /** Length of the window in days. */
+  days: number
+  sources: IntakeSourceRow[]
+  totals: IntakeSourceRow
+  noise: IntakeNoise
+  failing: number
+  stale: number
+  drill: string | null
+  false_positive: FlowFigure
+}
+
+export interface IntakeResult {
+  shape: 'intake'
+  intake: IntakeData
+  as_of?: string
+}
+
+/** The exposure flow: sources, received to actionable, classes, stages, outcomes. */
+export interface FlowResult {
+  shape: 'flow'
+  since: string
+  /** Length of the window in days. */
+  days: number
+  /** Null when the read has a data scope (the intake is an organization figure). */
+  intake: IntakeData | null
+  /** Message key of why the sources are not shown. */
+  intake_reason_key?: string
+  actionable: FlowFigure
+  classes: FlowFigure[]
+  open: FlowFigure
+  severity: FlowFigure[]
+  past_sla: FlowFigure
+  in_progress: FlowFigure
+  fixed: FlowFigure
+  accepted: FlowFigure
+  false_positive: FlowFigure
+  stages: StagesResult | null
+  as_of?: string
+}
+
+/** One lever: the action, the list it acts on and its exact effect. */
+export interface LeverRow {
+  kind: 'kev_open' | 'sla_breached' | 'one_fix' | 'blind_spot'
+  count: number
+  assets?: number
+  title?: string
+  effect: { metric: string; before: number; after: number; unit: 'count' | 'percent' }
+  href: string | null
+}
+
+/** The actions that would most reduce exposure. */
+export interface LeversResult {
+  shape: 'levers'
+  levers: LeverRow[]
+  as_of?: string
+}
+
+/** One figure of a brief sentence. */
+export interface BriefChip {
+  key: string
+  value: number
+  href: string | null
+}
+
+/** The weekly brief: sentence templates with their figures. */
+export interface BriefResult {
+  shape: 'brief'
+  since: string
+  items: Array<{
+    kind: 'change' | 'lever' | 'sla_due' | 'kev' | 'quiet'
+    variant?: 'down' | 'up' | 'flat'
+    chips: BriefChip[]
+    lever?: LeverRow
+  }>
+  as_of?: string
+}
+
+/** One figure of the KPI strip. */
+export interface KpiTile {
+  key: string
+  metric: string
+  /** Not measured (or not readable by this viewer): value is null and reason_key says why. */
+  measured: boolean
+  reason_key?: string
+  value: number | null
+  previous: number | null
+  unit: 'count' | 'percent' | 'hours'
+  polarity: Polarity
+  href: string | null
+}
+
+/** Five key figures in one divided strip. */
+export interface KpisResult {
+  shape: 'kpis'
+  tiles: KpiTile[]
+  as_of?: string
+}
+
 export type WidgetResult =
   | ScalarResult
   | RatioResult
@@ -196,6 +338,11 @@ export type WidgetResult =
   | ItemsResult
   | StagesResult
   | PathsResult
+  | FlowResult
+  | IntakeResult
+  | LeversResult
+  | BriefResult
+  | KpisResult
 
 export type ResultShape = WidgetResult['shape']
 

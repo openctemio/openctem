@@ -36,17 +36,19 @@ import (
 
 // Audit actions written to admin_audit_logs.
 const (
-	ActionLogin            = "console.login"
-	ActionSessionEvicted   = "console.session_evicted"
-	ActionLoginFailed      = "console.login_failed"
-	ActionMFAEnrolled      = "console.mfa_enrolled"
-	ActionMFAFailed        = "console.mfa_failed"
-	ActionLogout           = "console.logout"
-	ActionAdminProvisioned = "console.admin_provisioned"
-	ActionPasswordChanged  = "console.password_changed"
-	ActionCredentialsReset = "console.credentials_reset"
-	ActionStepUp           = "console.step_up"
-	ActionStepUpFailed     = "console.step_up_failed"
+	ActionLogin          = "console.login"
+	ActionSessionEvicted = "console.session_evicted"
+	ActionLoginFailed    = "console.login_failed"
+	// ActionInvitationLinkDisclosed: the console showed an invitation link to the provisioner (no e-mail).
+	ActionInvitationLinkDisclosed = "admin.invitation_link_disclosed"
+	ActionMFAEnrolled             = "console.mfa_enrolled"
+	ActionMFAFailed               = "console.mfa_failed"
+	ActionLogout                  = "console.logout"
+	ActionAdminProvisioned        = "console.admin_provisioned"
+	ActionPasswordChanged         = "console.password_changed"
+	ActionCredentialsReset        = "console.credentials_reset"
+	ActionStepUp                  = "console.step_up"
+	ActionStepUpFailed            = "console.step_up_failed"
 	// ActionSessionsEndedByAccount: the linked account's credentials changed
 	// outside the console (password reset, two-step reset), which ended every
 	// console session of the administrator.
@@ -101,6 +103,12 @@ type Service struct {
 	log       *logger.Logger
 	accounts  AccountDirectory
 	now       func() time.Time
+	// invites delivers a new administrator's set-password link (invitation.go).
+	invites InvitationMailer
+
+	// supportSessions ends a console session's support sessions at sign-out;
+	// nil when support access is not wired.
+	supportSessions SupportSessionEnder
 
 	// Platform identity provider (RFC-022 revision 4); nil when not wired.
 	idps admin.PlatformIdPRepository
@@ -154,12 +162,13 @@ type AccountDirectory interface {
 	// (the organization requires the identity provider), so the refusal can
 	// neither clear nor dodge the lockout.
 	RecordPasswordFailure(ctx context.Context, userID shared.ID)
-	// CreateAccount creates a new local account with a temporary password. It
+	// CreateInvitedAccount creates a new local account with no password and a
+	// single-use set-password token valid for ttl (see invitation.go). It
 	// returns admin.ErrEmailHasAccount when the email already has an account:
 	// an existing account is never linked, because whoever registered it (with
 	// self-registration, possibly an attacker who guessed the email) owns its
 	// password and would become the administrator.
-	CreateAccount(ctx context.Context, email, name string) (userID shared.ID, temporaryPassword string, err error)
+	CreateInvitedAccount(ctx context.Context, email, name string, ttl time.Duration) (userID shared.ID, inv Invitation, err error)
 	// AccountActive reports whether the linked account can still sign in.
 	AccountActive(ctx context.Context, userID shared.ID) (bool, error)
 	// ChangePassword changes the account's password after checking the current
@@ -247,6 +256,11 @@ func (s *Service) Start(ctx context.Context, email, password string, client Clie
 			// and never clears it.
 			s.accounts.RecordPasswordFailure(ctx, u.UserID)
 			s.record(ctx, a, ActionLoginFailed, client, "identity provider sign-in required")
+			// The caller sees the same answer as a wrong password: a distinct
+			// refusal would tell a guesser the password was right. The sign-in
+			// page learns that the identity provider is required from the
+			// public policy endpoint, not from this response.
+			return nil, admin.ErrInvalidCredentials
 		}
 		return nil, err
 	}
@@ -442,6 +456,9 @@ func (s *Service) ConfirmProtected(ctx context.Context, a *admin.AdminUser, sess
 				return err
 			}
 			if ok {
+				if admin.FreshStepUpOpensWindow(ctx) {
+					s.openStepUpWindow(ctx, sess, now)
+				}
 				return nil
 			}
 			return admin.ErrStepUpRequired
@@ -455,14 +472,24 @@ func (s *Service) ConfirmProtected(ctx context.Context, a *admin.AdminUser, sess
 		return err
 	}
 	if fresh {
-		return nil // a code is fresh by itself; it opens no window
+		// A code is fresh by itself and opens no window, except for the
+		// action that is the gateway to the others (elevation).
+		if admin.FreshStepUpOpensWindow(ctx) {
+			s.openStepUpWindow(ctx, sess, now)
+		}
+		return nil
 	}
+	s.openStepUpWindow(ctx, sess, now)
+	return nil
+}
+
+// openStepUpWindow restarts the session's step-up window. A failure is not
+// fatal: the code was valid and is spent, this action goes ahead and the next
+// one asks again.
+func (s *Service) openStepUpWindow(ctx context.Context, sess *admin.Session, now time.Time) {
 	if err := s.console.MarkSessionStepUp(ctx, sess.ID, now); err != nil {
-		// The code was valid and is spent: this action goes ahead, the next
-		// one asks again.
 		s.log.Warn("record console step-up window", "error", err)
 	}
-	return nil
 }
 
 // openVerifiedSession issues a verified console session and records the
@@ -479,6 +506,12 @@ func (s *Service) openVerifiedSession(ctx context.Context, a *admin.AdminUser, a
 	} else if n > 0 {
 		s.recordNote(ctx, a, ActionSessionEvicted, client,
 			fmt.Sprintf("ended %d older session(s): at most %d verified sessions per administrator", n, admin.MaxVerifiedSessions))
+	}
+	// The first sign-in of an invited administrator is told to the others, so
+	// an account nobody expected to be used is noticed at once.
+	if a.LastUsedAt() == nil {
+		s.NotifyRosterChange(ctx, a, RosterAdminFirstSignIn,
+			fmt.Sprintf("signed in to the console for the first time as %s", roleLabel(a.Role())), client)
 	}
 	// Compared with the last address before RecordUsage replaces it.
 	s.noteSignInNetwork(ctx, a, client)
@@ -617,20 +650,15 @@ func (s *Service) Logout(ctx context.Context, token string, client ClientInfo) e
 	if err := s.console.DeleteSession(ctx, sess.ID); err != nil {
 		return err
 	}
+	// A support session lives only as long as the console session that opened
+	// it: signing out ends it now, with the audit rows and the owners' notice.
+	if s.supportSessions != nil {
+		s.supportSessions.EndForConsoleSession(ctx, sess.ID)
+	}
 	if a, err := s.admins.GetByID(ctx, sess.AdminID); err == nil {
 		s.record(ctx, a, ActionLogout, client, "")
 	}
 	return nil
-}
-
-// ProvisionAdmin makes a new platform administrator (super admin action). A
-// new local account is created for the email and its temporary password
-// returned once; an email that already has an account is refused
-// (admin.ErrEmailHasAccount), see AccountDirectory.CreateAccount. The
-// administrator then signs in on the normal /login page and enrolls TOTP when
-// opening the console.
-func (s *Service) ProvisionAdmin(ctx context.Context, actor *admin.AdminUser, email, name string, role admin.AdminRole, client ClientInfo) (*admin.AdminUser, string, error) {
-	return s.Provision(ctx, actor, ProvisionInput{Email: email, Name: name, Role: role}, client)
 }
 
 // ProvisionInput describes a new administrator.
@@ -640,17 +668,31 @@ type ProvisionInput struct {
 	Role  admin.AdminRole
 	// BreakGlass makes a local emergency-access administrator (super_admin only).
 	BreakGlass bool
+	// ApprovalsActive says four-eyes approvals are in force (another super
+	// admin approved this change). While they are, a super admin is invited by
+	// e-mail only.
+	ApprovalsActive bool
 }
 
-// Provision is ProvisionAdmin with options. The account gets a temporary
-// password, so the administrator must change it after the first sign-in.
-func (s *Service) Provision(ctx context.Context, actor *admin.AdminUser, in ProvisionInput, client ClientInfo) (*admin.AdminUser, string, error) {
+// Provision makes a new platform administrator by invitation (super admin
+// action). The account has no password: a single-use set-password link is
+// emailed to the new address, and the administrator then signs in on the
+// console, sets up the second factor and is welcomed by a notice to the
+// other administrators on the first sign-in. The link is returned to the
+// caller only when the platform cannot send mail and the role may be handed
+// it (see Provisioned.SetupLink); an email that already has an account is
+// refused (admin.ErrEmailHasAccount).
+func (s *Service) Provision(ctx context.Context, actor *admin.AdminUser, in ProvisionInput, client ClientInfo) (*Provisioned, error) {
 	email, name, role := in.Email, in.Name, in.Role
 	if in.BreakGlass && role != admin.AdminRoleSuperAdmin {
-		return nil, "", shared.NewDomainError("VALIDATION", "a break-glass administrator must be a super admin", shared.ErrValidation)
+		return nil, shared.NewDomainError("VALIDATION", "a break-glass administrator must be a super admin", shared.ErrValidation)
+	}
+	canMail := s.CanSendInvitation(ctx)
+	if !canMail && role == admin.AdminRoleSuperAdmin && in.ApprovalsActive {
+		return nil, ErrInvitationNeedsEmail
 	}
 	if _, err := s.admins.GetByEmail(ctx, email); err == nil {
-		return nil, "", admin.ErrAdminAlreadyExists
+		return nil, admin.ErrAdminAlreadyExists
 	}
 	var creatorID *shared.ID
 	if actor != nil {
@@ -659,36 +701,63 @@ func (s *Service) Provision(ctx context.Context, actor *admin.AdminUser, in Prov
 	}
 	a, err := admin.NewAdminUser(email, name, role, creatorID)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
-	a.RequirePasswordChange()
 	if in.BreakGlass {
 		if err := a.SetBreakGlass(true); err != nil {
-			return nil, "", err
+			return nil, err
 		}
 	}
-	userID, temp, err := s.accounts.CreateAccount(ctx, a.Email(), a.Name())
+	userID, inv, err := s.accounts.CreateInvitedAccount(ctx, a.Email(), a.Name(), AdminInvitationTTL)
 	if err != nil {
-		return nil, "", fmt.Errorf("create sign-in account: %w", err)
+		return nil, fmt.Errorf("create sign-in account: %w", err)
 	}
 	if err := s.admins.Create(ctx, a); err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	if err := s.admins.LinkUser(ctx, a.ID(), userID); err != nil {
 		// Compensate: do not leave an unlinked administrator behind.
 		if derr := s.admins.Delete(ctx, a.ID()); derr != nil {
 			s.log.Error("remove unlinked administrator", "error", derr)
 		}
-		return nil, "", err
+		return nil, err
 	}
+
+	out := &Provisioned{Admin: a, ExpiresAt: inv.ExpiresAt}
+	switch {
+	case canMail:
+		if err := s.invites.SendAdminInvitation(ctx, a.Email(), a.Name(), inv.Token, AdminInvitationTTL); err != nil {
+			s.log.Error("administrator invitation email failed; no link is returned", "admin_id", a.ID().String())
+			out.EmailFailed = true
+		} else {
+			out.Emailed = true
+		}
+	case s.invites != nil:
+		out.SetupLink = s.invites.SetupURL(inv.Token)
+	}
+
 	if s.audit != nil && actor != nil {
+		meta := map[string]interface{}{
+			"invitation_emailed":  out.Emailed,
+			"setup_link_returned": out.SetupLink != "",
+		}
 		b := admin.NewAuditLogBuilder(actor, ActionAdminProvisioned).
 			Resource("admin_user", ptr(a.ID()), a.Email()).
 			Context(client.IP, client.UserAgent)
-		if a.IsBreakGlass() {
-			b = b.High().Request("", "", map[string]interface{}{"break_glass": true})
+		if out.SetupLink != "" {
+			// The link reached the provisioner: a critical row of its own.
+			disc := admin.NewAuditLogBuilder(actor, ActionInvitationLinkDisclosed).
+				Resource("admin_user", ptr(a.ID()), a.Email()).
+				Context(client.IP, client.UserAgent).Critical().Build()
+			if err := s.audit.Create(ctx, disc); err != nil {
+				s.log.Warn("audit invitation link disclosure", "error", err)
+			}
 		}
-		entry := b.Build()
+		if a.IsBreakGlass() {
+			meta["break_glass"] = true
+			b = b.High()
+		}
+		entry := b.Request("", "", meta).Build()
 		if err := s.audit.Create(ctx, entry); err != nil {
 			s.log.Warn("audit admin provisioning", "error", err)
 		}
@@ -698,7 +767,7 @@ func (s *Service) Provision(ctx context.Context, actor *admin.AdminUser, in Prov
 		summary += " (break-glass)"
 	}
 	s.NotifyRosterChange(ctx, actor, RosterAdminAdded, summary, client)
-	return a, temp, nil
+	return out, nil
 }
 
 // ResetCredentials removes another administrator's second factor and ends

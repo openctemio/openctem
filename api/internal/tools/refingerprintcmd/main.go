@@ -116,7 +116,7 @@ func Main() {
 	asJSON := flag.Bool("json", false, "print reports as JSON")
 	timeout := flag.Duration("timeout", 2*time.Hour, "overall time limit")
 	dastRepair := flag.Bool("dast-repair", false, "repair forked DAST findings instead of re-keying older versions")
-	correlate := flag.Bool("correlate", false, "correlate existing DAST findings across rules (research/134 section 12)")
+	correlate := flag.Bool("correlate", false, "correlate existing DAST findings across rules")
 	links := flag.Bool("links", false, "derive same-issue links of stored SAST and secret findings")
 	vulnAliases := flag.Bool("vuln-aliases", false, "re-key stored findings whose advisory id the feed aliases to a CVE")
 	remediationKeys := flag.Bool("remediation-keys", false, "re-derive remediation group keys instead of re-keying identities")

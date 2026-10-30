@@ -391,7 +391,7 @@ export function WorkflowMapper({
                   </label>
                   {iss.length > 0 && (
                     <p className="text-xs text-destructive md:col-span-5">
-                      {iss.map((i) => i.message).join(' · ')}
+                      {iss.map((i) => i.message).join(', ')}
                     </p>
                   )}
                 </li>

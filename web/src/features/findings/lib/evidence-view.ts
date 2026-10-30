@@ -167,3 +167,62 @@ export function kindLabel(kind: string): string {
       return kind
   }
 }
+
+/** The fields of a stored evidence record the grouping helpers read. */
+export interface EvidenceRecordLike {
+  kind?: string
+  origin?: string
+  retest_id?: string
+  curl?: string
+  created_at?: string
+}
+
+/** Records stored by one ingest of one detection or retest are this close. */
+const SAME_CAPTURE_MS = 5_000
+
+function sameCapture(a: EvidenceRecordLike, b: EvidenceRecordLike): boolean {
+  if ((a.origin ?? '') !== (b.origin ?? '') || (a.retest_id ?? '') !== (b.retest_id ?? ''))
+    return false
+  const ta = Date.parse(a.created_at ?? '')
+  const tb = Date.parse(b.created_at ?? '')
+  if (Number.isNaN(ta) || Number.isNaN(tb)) return false
+  return Math.abs(ta - tb) <= SAME_CAPTURE_MS
+}
+
+/**
+ * Drops a tool's own reproduction command when the HTTP exchange of the same
+ * capture is present: the exchange already offers "Copy curl" (derived from
+ * its masked request), so the separate item only repeated it and, being
+ * stored last, sorted first and hid the request and response. A curl item with
+ * no exchange beside it is kept. Order is preserved (newest first).
+ */
+export function foldEvidence<T extends EvidenceRecordLike>(items: readonly T[]): T[] {
+  const exchanges = items.filter((r) => r.kind === 'http_exchange' && r.curl)
+  return items.filter((r) => r.kind !== 'curl' || !exchanges.some((x) => sameCapture(r, x)))
+}
+
+/** How much a kind tells a reader at a glance; lower is shown first. */
+const KIND_RANK: Record<string, number> = {
+  http_exchange: 0,
+  file_excerpt: 1,
+  command_output: 2,
+  raw_text: 3,
+  screenshot: 4,
+  curl: 6,
+}
+
+/**
+ * The one item a compact view (the finding drawer) shows: from the newest
+ * capture (detections before retest attempts, since the drawer explains why
+ * the finding exists), the most telling kind.
+ */
+export function primaryEvidence<T extends EvidenceRecordLike>(items: readonly T[]): T | undefined {
+  const folded = foldEvidence(items)
+  if (folded.length === 0) return undefined
+  const detections = folded.filter((r) => r.origin !== 'retest')
+  const pool = detections.length > 0 ? detections : folded
+  const newest = pool[0]
+  const capture = pool.filter((r) => sameCapture(r, newest))
+  const rank = (r: T) => KIND_RANK[r.kind ?? ''] ?? 5
+  return [...capture].sort((a, b) => rank(a) - rank(b))[0] ?? newest
+}

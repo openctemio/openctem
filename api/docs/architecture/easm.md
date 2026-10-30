@@ -364,7 +364,13 @@ exposures through `postgres.EASMExposureWriter`; the DNS checks' reopen goes
 through `EASMDNSRepository.ReopenAuto`. Both enqueue in **the same
 transaction** as the exposure write, and only for rows that were **inserted**
 (`xmax = 0` on the upsert) or **reopened** by the check. A re-sighting
-announces nothing; a rollback leaves neither row.
+announces nothing, with one exception: an **active** exposure that was not
+seen for longer than the tenant's alert fingerprint lifetime
+(`reappear_after_days` in the EASM settings, 7..365, default 30) and is seen
+again goes out as **reappeared**, so a host that disappears and returns
+alerts again. The prior `last_seen_at` is read in the same transaction before
+the upsert moves it, per tenant. Resolved or accepted exposures stay quiet.
+A rollback leaves neither row.
 
 | Exposure | Alert |
 |---|---|
@@ -384,7 +390,7 @@ their severity filter applies.
 
 Payload metadata: `channel` `easm`, `exposure_id`, `event_type`, `severity`,
 `source` (`cert_transparency`, `easm_dns`), `attribution` (state or label),
-`reason` (`new`/`reopened`), `asset_id`/`asset_name`, `fingerprint`.
+`reason` (`new`/`reopened`/`reappeared`), `asset_id`/`asset_name`, `fingerprint`.
 
 **Tenant isolation.** The alerter loads exposures with the tenant id in the
 query, so ids of another tenant announce nothing; the throttle counter

@@ -113,6 +113,7 @@ if printf '%s\n' "$changed" | grep -qE '^web/(src/|e2e/|scripts/|package(-lock)?
     fi
     npm run -s type-check
     bash scripts/check-separators.sh "$base"
+    node scripts/check-copy.mjs "$base"
     node scripts/i18n-json.mjs sort --check
   ) || fail=1
 fi

@@ -1,7 +1,8 @@
 package routes
 
 // The sensor plane of pairing through the real routes (RFC-052 §4.3–4.4):
-// signatures by the key in the body, replay, per-address cap, uniform 404
+// signatures by the key in the body, replay, clock skew, the start budgets
+// (per address, per code), uniform 404
 // for a foreign key, and the user plane behind authentication.
 
 import (
@@ -16,6 +17,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 
@@ -54,6 +56,10 @@ func TestSensorPairingRoutes_DB(t *testing.T) {
 	deny := func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusUnauthorized) })
 	}
+	// The entry budget (every start per address) is lifted so this test
+	// reaches the budgets of verified starts.
+	defer func(b int) { pairingStartPerIPBurst = b }(pairingStartPerIPBurst)
+	pairingStartPerIPBurst = 50
 	router := infrahttp.NewChiRouter()
 	registerSensorPairingRoutes(router, handler.NewSensorPairingHandler(svc, sensors, log), deny, deny, log)
 	srv := httptest.NewServer(router.(interface{ Handler() http.Handler }).Handler())
@@ -112,24 +118,68 @@ func TestSensorPairingRoutes_DB(t *testing.T) {
 	if started.UserCode == "" || started.PairingID == "" {
 		t.Fatalf("start answer %+v", started)
 	}
-	// Replay of the same signed request: 401 (nonce spent). The per-address
-	// budget (burst 3) is now used up to 3 attempts that reached the limiter.
+	// Replay of the same signed request: 401 (nonce spent).
 	replay, _ := http.NewRequestWithContext(context.Background(), "POST", srv.URL+"/api/v2/sensor/pairings", bytes.NewReader(startBody(a)))
 	replay.Header = req.Header.Clone()
 	rres, err := http.DefaultClient.Do(replay)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c := code(rres); c != http.StatusUnauthorized && c != http.StatusTooManyRequests {
+	if c := code(rres); c != http.StatusUnauthorized {
 		t.Fatalf("replayed start: %d", c)
 	}
-	// Per-address cap: the next start from this address is 429.
-	if c := code(func() *http.Response {
-		r, _ := send("POST", "/api/v2/sensor/pairings", startBody(newKey(3)), newKey(3).signer)
-		return r
-	}()); c != http.StatusTooManyRequests {
-		t.Fatalf("start beyond the per-address burst: %d", c)
+	created := []string{started.PairingID}
+	startWith := func(pairingCode string) (int, string) {
+		k := newKey(0)
+		b, _ := json.Marshal(pairing.StartRequest{Protocol: pairing.Version, PublicKey: pairing.Encode(k.signer.PublicKey()),
+			Commitment: pairing.Encode(pairing.Commit(bytes.Repeat([]byte{7}, 32))), Code: pairingCode, Host: pairing.HostFacts{Hostname: "h"}})
+		res, _ := send("POST", "/api/v2/sensor/pairings", b, k.signer)
+		var sr pairing.StartResponse
+		raw, _ := io.ReadAll(res.Body)
+		_ = res.Body.Close()
+		if json.Unmarshal(raw, &sr) == nil && sr.PairingID != "" {
+			created = append(created, sr.PairingID)
+		}
+		return res.StatusCode, string(raw)
 	}
+	// The three refused starts above (unsigned, wrong key, replay) did not
+	// spend the per-address budget of verified starts (burst 3): two more
+	// codeless starts are accepted, the next one is 429.
+	for i := range 2 {
+		if c, body := startWith(""); c != http.StatusCreated {
+			t.Fatalf("codeless start %d after refused ones: %d %s", i+2, c, body)
+		}
+	}
+	if c, _ := startWith(""); c != http.StatusTooManyRequests {
+		t.Fatalf("codeless start beyond the per-address burst: %d", c)
+	}
+	// A start with a code is budgeted by the code: accepted from the same
+	// address, with the same answer whether or not the code is open, up to
+	// the per-code bound.
+	for i := range 3 {
+		if c, body := startWith("K7QM-4ZTD"); c != http.StatusCreated {
+			t.Fatalf("start %d with a code after the codeless budget: %d %s", i+1, c, body)
+		}
+	}
+	if c, _ := startWith("K7QM-4ZTD"); c != http.StatusTooManyRequests {
+		t.Fatalf("start beyond the per-code bound: %d", c)
+	}
+	// A start on a clock 4 h ahead, signed by the key in its body, is the
+	// clock-skew problem with the server time and the offset.
+	sk := newKey(0)
+	sk.signer.Now = func() time.Time { return time.Now().Add(4 * time.Hour) }
+	res, _ = send("POST", "/api/v2/sensor/pairings", startBody(sk), sk.signer)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusUnauthorized || !strings.Contains(string(raw), "/clock-skew") ||
+		!strings.Contains(string(raw), `"server_time"`) || !strings.Contains(string(raw), `"clock_offset_seconds":14`) {
+		t.Fatalf("skewed start: %d %s", res.StatusCode, raw)
+	}
+	defer func() {
+		for _, id := range created {
+			_, _ = sqldb.ExecContext(context.Background(), `DELETE FROM sensor_pairings WHERE id = $1`, id)
+		}
+	}()
 
 	// A foreign key gets the same 404 as an unknown id (threat 9).
 	path := "/api/v2/sensor/pairings/" + started.PairingID
@@ -161,5 +211,4 @@ func TestSensorPairingRoutes_DB(t *testing.T) {
 	}()); c != http.StatusUnauthorized {
 		t.Fatalf("unauthenticated lookup: %d", c)
 	}
-	_, _ = sqldb.ExecContext(context.Background(), `DELETE FROM sensor_pairings WHERE id = $1`, started.PairingID)
 }

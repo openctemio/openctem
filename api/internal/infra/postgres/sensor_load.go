@@ -15,13 +15,18 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// sensorActiveCommandsSQL is the number of commands the sensor aliased alias
-// holds right now (acknowledged or running): the capacity truth (RFC-030 D5).
+// sensorActiveCommandsSQL is the number of scan commands the sensor aliased
+// alias holds right now (acknowledged or running): the capacity truth
+// (RFC-030 D5), the "jobs" the console shows against the job limit, and the
+// same count the claim caps (CountHeldScans, capToFreeSlots). Commands that
+// take no scan slot (a content refresh, a key rotation) are not counted: a
+// sensor running five scans and a content refresh shows 5 of 5, not 6 of 5.
 // sensors.current_jobs was never written (B1) and is no longer read.
 // idx_commands_sensor bounds it to the sensor's own commands.
 func sensorActiveCommandsSQL(alias string) string {
 	return `(SELECT count(*) FROM commands ac
-		WHERE ac.sensor_id = ` + alias + `.id AND ac.status IN ('acknowledged', 'running'))::int`
+		WHERE ac.sensor_id = ` + alias + `.id AND ac.type = 'scan'
+		  AND ac.status IN ('acknowledged', 'running'))::int`
 }
 
 // loadReportFreshSQL is true when the alias's load report is recent enough
@@ -33,16 +38,23 @@ func loadReportFreshSQL(alias string) string {
 
 // sensorFreeSlotsSQL is how many more jobs dispatch may hand the sensor:
 // effective capacity minus the commands it holds, and no more than the free
-// slots a fresh load report gives. The same rule as Sensor.FreeSlots; the
-// report can only lower it. A sensor without a capacity limit counts one.
+// slots a fresh load report gives, then narrowed by the host pressure level
+// it carries. The same rule as Sensor.FreeSlots; the report can only lower it. A sensor without a capacity limit counts one.
 func sensorFreeSlotsSQL(alias string) string {
+	level := `(CASE WHEN ` + loadReportFreshSQL(alias) + `
+		      THEN ` + alias + `.reported_resources->'pressure'->>'level' END)`
+	held := sensorActiveCommandsSQL(alias)
 	return `(CASE WHEN COALESCE(` + alias + `.effective_max_jobs, 0) <= 0 THEN 1 ELSE GREATEST(0, LEAST(
-		` + alias + `.effective_max_jobs - ` + sensorActiveCommandsSQL(alias) + `,
+		` + alias + `.effective_max_jobs - ` + held + `,
 		CASE WHEN ` + loadReportFreshSQL(alias) + `
 		      AND jsonb_typeof(` + alias + `.reported_capacity->'slots_total') = 'number'
 		      AND (` + alias + `.reported_capacity->>'slots_total')::int > 0
 		      AND jsonb_typeof(` + alias + `.reported_capacity->'slots_free') = 'number'
 		     THEN (` + alias + `.reported_capacity->>'slots_free')::int
+		     ELSE ` + alias + `.effective_max_jobs END,
+		CASE ` + level + `
+		     WHEN 'overloaded' THEN (CASE WHEN ` + held + ` >= 1 THEN 0 ELSE 1 END)
+		     WHEN 'elevated' THEN 1
 		     ELSE ` + alias + `.effective_max_jobs END)) END)`
 }
 

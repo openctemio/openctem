@@ -33,7 +33,7 @@ func docsMux(t *testing.T, production bool) http.Handler {
 		t.Fatal(err)
 	}
 	router := infrahttp.NewChiRouter()
-	registerDocsRoutes(router, handler.NewDocsHandler(spec), production, gate("X-User"), gate("X-Console"))
+	registerDocsRoutes(router, handler.NewDocsHandler(spec), production, gate("X-User"), gate("X-Console"), nil)
 	return router.(interface{ Handler() http.Handler }).Handler()
 }
 

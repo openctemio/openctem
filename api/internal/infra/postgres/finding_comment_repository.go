@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/aianalysis"
+
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
@@ -23,6 +25,10 @@ func NewFindingCommentRepository(db *DB) *FindingCommentRepository {
 
 // Create persists a new finding comment.
 func (r *FindingCommentRepository) Create(ctx context.Context, comment *vulnerability.FindingComment) error {
+	// Read-only AI assistance never writes (docs/architecture/ai-analysis.md).
+	if err := aianalysis.RefuseAssist(ctx); err != nil {
+		return err
+	}
 	query := `
 		INSERT INTO finding_comments (
 			id, tenant_id, finding_id, author_id, content,
@@ -123,11 +129,12 @@ func (r *FindingCommentRepository) Delete(ctx context.Context, tenantID, id shar
 	return nil
 }
 
-// ListByFinding returns all comments for a finding.
-func (r *FindingCommentRepository) ListByFinding(ctx context.Context, findingID shared.ID) ([]*vulnerability.FindingComment, error) {
-	query := r.selectQuery() + " WHERE fc.finding_id = $1 ORDER BY fc.created_at ASC, fc.id ASC"
+// ListByFinding returns all comments for a finding, scoped to the tenant: a
+// finding id of another tenant returns no rows.
+func (r *FindingCommentRepository) ListByFinding(ctx context.Context, tenantID, findingID shared.ID) ([]*vulnerability.FindingComment, error) {
+	query := r.selectQuery() + " WHERE fc.finding_id = $1 AND fc.tenant_id = $2 ORDER BY fc.created_at ASC, fc.id ASC"
 
-	rows, err := r.db.QueryContext(ctx, query, findingID.String())
+	rows, err := r.db.QueryContext(ctx, query, findingID.String(), tenantID.String())
 	if err != nil {
 		return nil, fmt.Errorf("failed to query finding comments: %w", err)
 	}
@@ -145,12 +152,12 @@ func (r *FindingCommentRepository) ListByFinding(ctx context.Context, findingID 
 	return comments, nil
 }
 
-// CountByFinding returns the comment count for a finding.
-func (r *FindingCommentRepository) CountByFinding(ctx context.Context, findingID shared.ID) (int, error) {
-	query := `SELECT COUNT(*) FROM finding_comments WHERE finding_id = $1`
+// CountByFinding returns the comment count for a finding, scoped to the tenant.
+func (r *FindingCommentRepository) CountByFinding(ctx context.Context, tenantID, findingID shared.ID) (int, error) {
+	query := `SELECT COUNT(*) FROM finding_comments WHERE finding_id = $1 AND tenant_id = $2`
 
 	var count int
-	err := r.db.QueryRowContext(ctx, query, findingID.String()).Scan(&count)
+	err := r.db.QueryRowContext(ctx, query, findingID.String(), tenantID.String()).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count comments: %w", err)
 	}

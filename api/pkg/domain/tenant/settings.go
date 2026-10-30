@@ -334,9 +334,9 @@ const (
 	// If SMTP is not configured, registered users will be unable to verify and
 	// thus unable to log in — operator must configure SMTP first.
 	EmailVerificationAlways EmailVerificationMode = "always"
-	// EmailVerificationNever skips verification for all users in this tenant.
-	// Use only for closed/internal deployments. Opens the door to account
-	// hijacking via email spoofing.
+	// EmailVerificationNever is retired and no longer accepted on write.
+	// Verification belongs to the account, so one organization cannot skip it
+	// for the others the account belongs to; a stored "never" is read as auto.
 	EmailVerificationNever EmailVerificationMode = "never"
 )
 
@@ -668,6 +668,12 @@ func (s *RiskScoringSettings) Validate() error {
 		if w < 0 || w > 100 {
 			return fmt.Errorf("%w: weight '%s' must be 0-100, got %d", shared.ErrValidation, name, w)
 		}
+	}
+	// With CTEM points off the CTEM weight is shared out over the other three
+	// components; when they all weigh 0 there is nothing to share it with and
+	// every asset would score 0.
+	if !s.CTEMPoints.Enabled && s.Weights.Exposure+s.Weights.Criticality+s.Weights.Findings == 0 {
+		return fmt.Errorf("%w: enable CTEM points or give exposure, criticality or findings a weight", shared.ErrValidation)
 	}
 	for name, v := range map[string]int{
 		"public": s.ExposureScores.Public, "restricted": s.ExposureScores.Restricted,

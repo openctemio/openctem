@@ -22,6 +22,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/api/pkg/domain/platformauthz"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -65,6 +66,8 @@ type Handlers struct {
 	MCPSettings *handler.MCPSettingsHandler
 	// AISettings is the organization's AI settings (consent, source, own provider).
 	AISettings *handler.AISettingsHandler
+	// AIMasking is the organization's AI masking policy and its preview.
+	AIMasking *handler.AIMaskingHandler
 	// MCPConnections is the connected applications (RFC-062 §12), tenant
 	// and platform console; nil without the authorization server.
 	MCPConnections *handler.MCPConnectionsHandler
@@ -77,12 +80,14 @@ type Handlers struct {
 	FindingActivity *handler.FindingActivityHandler // nil if not initialized (no database)
 	// Note: Real-time updates moved to WebSocket (see WebSocket field below)
 	AITriage      *handler.AITriageHandler      // Always initialized - handles nil service gracefully
+	AIAnalysis    *handler.AIAnalysisHandler    // AI agents and runs; nil = not wired
 	Dashboard     *handler.DashboardHandler     // nil if not initialized (no database)
 	UserDashboard *handler.UserDashboardHandler // nil if not initialized - per-user customizable dashboards (RFC-021)
 	// DashboardFacts serves "Rebuild dashboard data" (organization and
 	// console); nil if not initialized.
 	DashboardFacts *handler.DashboardFactsHandler
 	SavedView      *handler.SavedViewHandler   // nil if not initialized - saved list views (D15, RFC-048)
+	NavPin         *handler.NavPinHandler      // nil if not initialized - the caller's sidebar pins
 	Audit          *handler.AuditHandler       // nil if not initialized (no database)
 	Branch         *handler.BranchHandler      // nil if not initialized (no database)
 	SLA            *handler.SLAHandler         // nil if not initialized (no database)
@@ -175,6 +180,7 @@ type Handlers struct {
 
 	// CTEM Discovery handlers
 	AssetService           *handler.AssetServiceHandler           // nil if not initialized (no database)
+	Certificate            *handler.CertificateHandler            // Certificates view; nil without a database
 	WebEndpoint            *handler.WebEndpointHandler            // Web surface (RFC-056); nil without a database
 	Query                  *handler.QueryHandler                  // Custom queries; nil without a database
 	APISpec                *handler.APISpecHandler                // API descriptions of web origins (RFC-056)
@@ -282,13 +288,17 @@ type Handlers struct {
 	AdminPlatformUser *handler.AdminPlatformUserHandler
 	AdminSession      *handler.AdminSessionHandler
 	AdminApproval     *handler.AdminApprovalHandler
+	AdminPlatformRole *handler.AdminPlatformRoleHandler // platform roles (RFC-134); nil if not wired
 	AdminOperations   *handler.AdminOperationsHandler
 	AdminSystem       *handler.AdminSystemHandler
 	Announcement      *handler.AnnouncementHandler
 	// AdminSupportRateLimiter caps console support actions per administrator.
 	AdminSupportRateLimiter *middleware.AdminMappingRateLimiter
-	AdminConsole            *handler.AdminConsoleHandler
-	AdminAuditChain         *handler.AdminAuditChainHandler
+	// AdminDirectoryReadLimiter caps reads of the cross-organization user
+	// directory per administrator (bulk harvesting of accounts).
+	AdminDirectoryReadLimiter *middleware.AdminMappingRateLimiter
+	AdminConsole              *handler.AdminConsoleHandler
+	AdminAuditChain           *handler.AdminAuditChainHandler
 	// AccessRequest: the request-access queue (public form + console).
 	AccessRequest *handler.AccessRequestHandler
 	// Limits: per-organization limits and feature denies (console
@@ -302,6 +312,9 @@ type Handlers struct {
 	// IdleReadOnly refuses changes to an idle Free organization (read-only
 	// after 90 days without a sign-in).
 	IdleReadOnly middleware.IdleReadOnlyChecker
+	// EntryChecker applies the URL organization's entry requirements on
+	// /api/v1/tenants/{tenant}/... routes (AuthService.CheckEntry).
+	EntryChecker middleware.EntryChecker
 	// OrganizationGate refuses every credential of a suspended organization
 	// (docs/architecture/organization-suspension.md).
 	OrganizationGate tenant.AccessGate
@@ -461,6 +474,10 @@ func Register(
 	if stepUpChecker == nil && h.LocalAuth != nil {
 		stepUpChecker = h.LocalAuth.RecentAuthChecker()
 	}
+	credentialFactorChecker = nil
+	if h.LocalAuth != nil {
+		credentialFactorChecker = h.LocalAuth.CredentialFactorChecker()
+	}
 	apiKeyOrJWT = nil
 	if h.APIKeyAuth != nil {
 		apiKeyOrJWT = h.APIKeyAuth.OrJWT
@@ -541,6 +558,13 @@ func Register(
 		).Enforce
 	}
 
+	// Entry requirements of the organization in the URL of
+	// /api/v1/tenants/{tenant}/... routes. Reset on every Register.
+	entryGateMiddleware = nil
+	if h.EntryChecker != nil {
+		entryGateMiddleware = middleware.NewEntryGate(h.EntryChecker, 15*time.Second, log).Enforce
+	}
+
 	// Suspended organizations (docs/architecture/organization-suspension.md):
 	// every request whose credential carries a suspended organization is
 	// refused. Appended to buildBaseMiddlewares right after authentication
@@ -593,7 +617,11 @@ func Register(
 		if h.AdminAuthMiddleware != nil {
 			consoleAuth = h.AdminAuthMiddleware.Authenticate
 		}
-		registerDocsRoutes(router, h.Docs, cfg.IsProduction(), authMiddleware, consoleAuth)
+		var consoleGuard func(platformauthz.Permission) Middleware
+		if h.AdminAuthMiddleware != nil {
+			consoleGuard = func(p platformauthz.Permission) Middleware { return h.AdminAuthMiddleware.RequirePlatform(p) }
+		}
+		registerDocsRoutes(router, h.Docs, cfg.IsProduction(), authMiddleware, consoleAuth, consoleGuard)
 	}
 	if h.Announcement != nil {
 		registerAnnouncementRoute(router, h.Announcement, authMiddleware)
@@ -602,6 +630,10 @@ func Register(
 	// User routes (protected with user sync for OIDC)
 	if h.User != nil {
 		registerUserRoutes(router, h.User, h.LocalAuth, authMiddleware, userSync, authCfg.Provider)
+	}
+	// Linked sign-in methods exist only where social sign-in is configured.
+	if h.OAuth != nil {
+		registerIdentityLinkRoutes(router, h.OAuth, authMiddleware, userSync)
 	}
 
 	// Tenant routes (protected with user sync)
@@ -639,6 +671,10 @@ func Register(
 	// Asset Service routes (CTEM Discovery - network services on assets)
 	if h.AssetService != nil {
 		registerAssetServiceRoutes(router, h.AssetService, authMiddleware, userSync)
+	}
+
+	if h.Certificate != nil {
+		registerCertificateRoutes(router, h.Certificate, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
 	}
 
 	// Web surface: endpoints under their origin asset (RFC-056)
@@ -692,7 +728,7 @@ func Register(
 	registerRetestSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerVulnMatchingSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerEmergingThreatSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
-	registerAISettingsRoutes(router, h.AISettings, authMiddleware, userSync)
+	registerAISettingsRoutes(router, h.AISettings, h.AIMasking, authMiddleware, userSync)
 	registerEmergingThreatRoutes(router, h.EmergingThreat, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleThreatIntel))
 	registerLicensePolicySettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerScanGovernanceRoutes(router, h.ScanGovernance, authMiddleware, userSync)
@@ -750,6 +786,8 @@ func Register(
 	// Always registered - handler handles nil service gracefully (returns 503)
 	registerAITriageRoutes(router, h.AITriage, authMiddleware, userSync, aiTriageRateLimiter,
 		h.ModuleGate.RequireModule(moduledom.ModuleAITriage))
+	registerAIAnalysisRoutes(router, h.AIAnalysis, authMiddleware, userSync,
+		h.ModuleGate.RequireModule(moduledom.ModuleAITriage), aiTriageRateLimiter)
 
 	// Dashboard routes (global and tenant from JWT token)
 	if h.Dashboard != nil {
@@ -1013,6 +1051,7 @@ func Register(
 	}
 	if h.ProxyPool != nil {
 		registerProxyPoolRoutes(router, h.ProxyPool, authMiddleware, userSync)
+		registerProxyTestEchoRoute(router, handler.NewProxyTestEchoHandler(h.ProxyPool.Service()))
 	}
 	if h.ScanWindow != nil {
 		registerScanWindowRoutes(router, h.ScanWindow, authMiddleware, userSync)
@@ -1125,6 +1164,9 @@ func Register(
 	}
 	if h.SavedView != nil {
 		registerSavedViewRoutes(router, h.SavedView, authMiddleware, userSync)
+	}
+	if h.NavPin != nil {
+		registerNavPinRoutes(router, h.NavPin, authMiddleware, userSync)
 	}
 
 	// Permission Sync routes (real-time permission sync with ETag support)
@@ -1291,6 +1333,9 @@ var dataScopeGuardMiddleware Middleware //nolint:gochecknoglobals // set once du
 // available; nil leaves only the mint-time gate.
 var ssoEnforcementMiddleware Middleware //nolint:gochecknoglobals // set once during init
 
+// entryGateMiddleware is the entry check of the /api/v1/tenants/{tenant} chain.
+var entryGateMiddleware Middleware //nolint:gochecknoglobals // set once during init
+
 // idleReadOnlyMiddleware refuses changes to an idle Free organization.
 var idleReadOnlyMiddleware Middleware //nolint:gochecknoglobals // set once during init
 
@@ -1312,6 +1357,20 @@ var ipAllowlistMiddleware Middleware //nolint:gochecknoglobals // set once durin
 // docs/architecture/step-up-reauth.md). Set once during Register from the
 // local auth handler; nil makes every step-up route refuse (fail closed).
 var stepUpChecker middleware.RecentAuthChecker //nolint:gochecknoglobals // set once during init
+
+// credentialFactorChecker answers RequireCredentialFactor (two-factor before
+// creating a credential). Set once during Register from the local auth
+// handler; nil lets requests through (tests without the auth service).
+var credentialFactorChecker middleware.CredentialFactorChecker //nolint:gochecknoglobals // set once during init
+
+// requireCredentialFactor is the middleware for a route that creates a
+// credential (API key, sensor enrolment, integration secret): the caller
+// needs a second factor when the organization or the platform floor covers
+// them, even during their sign-in grace period. Mount it after
+// requireStepUp.
+func requireCredentialFactor() Middleware {
+	return middleware.RequireCredentialFactor(credentialFactorChecker)
+}
 
 // requireStepUp is the middleware for a sensitive route: the caller's session
 // must have signed in or stepped up within authapp.StepUpWindow, otherwise

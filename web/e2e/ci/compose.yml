@@ -10,8 +10,8 @@
 # from the environment (web/e2e/ci/.env.example lists the names). Compose reads
 # web/e2e/ci/.env on its own; the workflow sets the same names per run.
 #
-# The images are the production targets of api/Dockerfile, web/Dockerfile and
-# api/Dockerfile.admin-cli. Postgres keeps its data in tmpfs: every run starts
+# The images are the production targets of api/Dockerfile and web/Dockerfile
+# (the seed runs /app/bootstrap-admin from the API image). Postgres keeps its data in tmpfs: every run starts
 # from an empty database.
 name: octe2e-ci
 
@@ -38,11 +38,14 @@ services:
       interval: 2s
       retries: 30
 
+  # The migration runner and the migrations the API image ships
+  # (/app/openctem-migrate, /app/migrations): the tree under test.
   migrate:
-    image: ghcr.io/openctemio/mirror/migrate:v4.18.1
-    volumes: ['../../../api/migrations:/migrations:ro']
+    image: ${API_IMAGE:?set API_IMAGE}
+    entrypoint: ['/app/openctem-migrate']
     # The URL is assembled from E2E_DB_PASSWORD by make-env.sh / the workflow.
-    command: ['-path=/migrations', '-database', '${E2E_DATABASE_URL:?set E2E_DATABASE_URL}', 'up']
+    command:
+      ['-path=/app/migrations', '-database', '${E2E_DATABASE_URL:?set E2E_DATABASE_URL}', 'up']
     depends_on:
       postgres: { condition: service_healthy }
     restart: 'no'
@@ -73,6 +76,9 @@ services:
       APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?set APP_ENCRYPTION_KEY (64 hex characters)}
       FINGERPRINT_KEY: ${FINGERPRINT_KEY:?set FINGERPRINT_KEY (32+ characters; required outside development)}
       AUTH_REQUIRE_EMAIL_VERIFICATION: 'false'
+      # The seeded owner has no second factor, and the seed creates sensors; the
+      # platform two-factor floor (default admins) would refuse that.
+      AUTH_MFA_FLOOR: none
       # Self-service sign-up needs starting limits; the e2e stack chooses none.
       SELF_SERVICE_START_LIMITS: unlimited
       # One account drives every test; at the default 120 reads a minute per

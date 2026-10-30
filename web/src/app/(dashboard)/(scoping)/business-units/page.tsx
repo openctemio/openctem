@@ -493,7 +493,7 @@ export default function BusinessUnitsPage() {
             : '',
         ]
           .filter(Boolean)
-          .join(' · ')
+          .join(', ')
         return (
           <div className="flex min-w-0 items-center gap-2.5">
             <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />

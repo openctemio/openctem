@@ -62,7 +62,7 @@ read tools `readOnlyHint: true, idempotentHint: true`, the write tool
 | `list_findings` | `findings:read` | findings (severity/status/source/search filters), caller's data scope |
 | `get_finding` (`finding_id`) | `findings:read` | one finding |
 | `finding_stats` | `findings:read` | totals by severity/status + KEV/EPSS/SLA rollups |
-| `list_active_cves` | `findings:read` | KEV/EPSS-prioritized CVEs |
+| `list_active_cves` | `findings:read` | CVEs of open findings in scope, riskiest first (the vulnerabilities list read) |
 | `explain_finding_priority` (`finding_id`) | `findings:read` | priority explanation (KEV/EPSS/reachability) |
 | `get_exposure_chains` | `assets:read` | shortest attack paths to KEV/crown-jewel assets |
 | `list_remediation_groups` | `findings:read` | solution families |
@@ -77,6 +77,8 @@ read tools `readOnlyHint: true, idempotentHint: true`, the write tool
 | `list_finding_templates` | `pentest:templates:read` | the finding template library |
 | `campaign_report_stats` | `pentest:campaigns:read` | working counts (drafts and findings under review included) |
 | `add_finding_comment` (write) | `findings:comment` | a comment, after the person confirms it ([RFC-062 §10](../rfcs/RFC-062-mcp-authorization.md)) |
+| `draft_pentest_finding` (proposal) | `pentest:findings:write` | a pentest finding saved as a draft in a campaign the person may add to; another campaign member confirms it ([RFC-062 §10a](../rfcs/RFC-062-mcp-authorization.md)) |
+| `propose_finding_status` (proposal) | `findings:write` | a false-positive or accepted-risk request in the person's name, which another person decides ([RFC-062 §10a](../rfcs/RFC-062-mcp-authorization.md)) |
 
 Tools that took `id` take `campaign_id` or `finding_id` like the others; `id`
 is still accepted.

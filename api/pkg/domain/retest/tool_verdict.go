@@ -25,6 +25,11 @@ const (
 	MethodTool = "tool"
 	// MethodValidate: the nuclei template re-run plus the reachability probe.
 	MethodValidate = "validate"
+	// MethodVersion: a version-match finding re-checked by re-running the
+	// fingerprint that read the software version on the asset, then
+	// evaluating the version seen against the CVE's affected ranges
+	// (docs/architecture/finding-retest-strategy.md).
+	MethodVersion = "version"
 )
 
 // maxVerdictDetail caps the tool's detail kept in the retest reason.
@@ -103,7 +108,7 @@ func DecideToolVerdict(raw json.RawMessage, findingID, matchedAt string, cls ...
 		case VerdictStillPresent, VerdictFixed:
 			// Per-request results (a check that probes several paths) say
 			// what the finding's own endpoint did.
-			if rv, ok := DecideByRequests(DecodeRequests(v.Requests), matchedAt, firstClass(cls)); ok {
+			if rv, ok := DecideByRequests(DecodeRequests(v.Requests), matchedAt, normalized(out.Evidence), firstClass(cls)); ok {
 				if strings.EqualFold(strings.TrimSpace(v.Verdict), VerdictStillPresent) && !rv.Outcome.matchedSomewhere() {
 					// A tool that says it saw the issue while no request
 					// line matched contradicts itself: never a fix.

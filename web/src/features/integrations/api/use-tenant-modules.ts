@@ -85,14 +85,13 @@ export interface TenantModulesResponse {
 // ============================================
 
 const defaultConfig: SWRConfiguration = {
-  // Revalidate on focus = true so the admin returning to the tab picks
-  // up toggles made elsewhere. For cross-client realtime, the
-  // WebSocket "module.updated" event calls mutate() directly and
-  // bypasses this dedup window entirely.
-  revalidateOnFocus: true,
+  // No refetch on focus: the WebSocket "module.updated" event calls
+  // mutate() directly and bypasses this dedup window, and a page load reads
+  // the modules from the session bootstrap.
+  revalidateOnFocus: false,
   revalidateOnReconnect: true,
   // 5-min dedup — module state is low-frequency config, not live data.
-  // Bounded by WebSocket push + revalidateOnFocus for freshness.
+  // Bounded by the WebSocket push for freshness.
   dedupingInterval: 5 * 60 * 1000,
   onError: (error) => {
     // Don't log 404 errors: expected when the API has no modules endpoint

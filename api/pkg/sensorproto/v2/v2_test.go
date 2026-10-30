@@ -225,6 +225,9 @@ func TestProblemGolden(t *testing.T) {
 	rec = httptest.NewRecorder()
 	NewProblem(ProblemContentTooLarge).WithLimit(DefaultMaxContentBytes).Write(rec)
 	buf.WriteString("## content-too-large with limit\n" + rec.Body.String())
+	rec = httptest.NewRecorder()
+	NewProblem(ProblemClockSkew).WithClock(time.Date(2026, 10, 25, 14, 0, 0, 500, time.UTC), -(4*time.Hour + 10*time.Minute + 6*time.Second)).Write(rec)
+	buf.WriteString("## clock-skew with clock\n" + rec.Body.String())
 	golden(t, "problems.golden", buf.Bytes())
 }
 

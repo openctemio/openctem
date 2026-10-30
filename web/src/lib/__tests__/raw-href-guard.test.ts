@@ -69,6 +69,10 @@ const SAFE_TAGS = new Set(['SafeExternalLink'])
  * route builder or a constant.
  */
 const REVIEWED = new Set([
+  // Exception batch source link: batchSourceHref() is a fixed same-origin path (/vulnerabilities or
+  // /remediation/tasks) with the id or CVE ids passed through encodeURIComponent.
+  'features/findings/components/group-exceptions-panel.tsx|Link|href={batchSourceHref(row.original)}',
+  'features/findings/components/group-exceptions-panel.tsx|Link|href={batchSourceHref(batch)}',
   // Asset group page: findingsHref() is a fixed same-origin /findings prefix with the group id encoded and a severity from a fixed list.
   'app/(dashboard)/(discovery)/assets/groups/[id]/page.tsx|NextLink|href={findingsHref(severity)}',
   // StatsCard href only receives the callers' own constant routes (attack surface tiles).
@@ -93,6 +97,7 @@ const REVIEWED = new Set([
   'components/layout/grouped-nav.tsx|SidebarLink|href={item.url}',
   'components/layout/nav-group.tsx|SidebarLink|href={item.url}',
   'components/layout/nav-group.tsx|SidebarLink|href={url}',
+  'components/layout/nav-pinned.tsx|SidebarLink|href={r.href}',
   'components/layout/top-nav.tsx|Link|href={href}',
   'components/layout/breadcrumb-nav.tsx|Link|href={item.path}',
   'components/layout/settings-sidebar-nav.tsx|SidebarLink|href={backHref}',
@@ -122,6 +127,14 @@ const REVIEWED = new Set([
   'features/assets/components/linked-assets-panel.tsx|Link|href={viewAllHref}',
   'features/attack-surface/components/path-graph.tsx|Link|href={node.href}',
   'features/auth/components/password-token-form.tsx|Link|href={copy.newLink.href}',
+  // dataUri() wraps our own generated brand SVG constants (src/assets/brand-data.generated.ts) as a
+  // base64 image/svg+xml data URI for the icon routes; no request data reaches it.
+  'lib/brand-icons.tsx|img|src={dataUri(svg)}',
+  'lib/brand-icons.tsx|img|src={dataUri(OG_IMAGE_SVG)}',
+  // COVERAGE_SETTINGS_HREF is the string constant '/settings/scope' exported by managed-scan-banner.tsx.
+  'features/scans/components/managed-scans-section.tsx|Link|href={COVERAGE_SETTINGS_HREF}',
+  // Same constant internal route, shown in the runs tab's coverage summary.
+  'features/scans/components/scan-runs-tab.tsx|Link|href={COVERAGE_SETTINGS_HREF}',
   // Prop passthroughs: every caller passes a literal or route builder.
   'features/shared/components/link-card.tsx|Link|href={href}',
   'features/dashboard/components/activity-item.tsx|Link|href={href}',

@@ -701,6 +701,9 @@ func (s *PriorityClassificationService) enrichAndContextualize(
 	// Batch lookup EPSS + KEV.
 	var epssMap map[string]EPSSData
 	var kevMap map[string]KEVData
+	// kevKnown is false only when the KEV lookup failed: the stored flag is
+	// then kept (fail-sticky) instead of being cleared on a transient error.
+	kevKnown := true
 	if len(cveIDs) > 0 {
 		var err error
 		epssMap, err = s.epssRepo.GetByCVEIDs(ctx, cveIDs)
@@ -712,6 +715,7 @@ func (s *PriorityClassificationService) enrichAndContextualize(
 		if err != nil {
 			s.logger.Warn("failed to batch lookup KEV", "error", err)
 			kevMap = make(map[string]KEVData)
+			kevKnown = false
 		}
 	}
 
@@ -783,11 +787,17 @@ func (s *PriorityClassificationService) enrichAndContextualize(
 			f.SetEPSSPercentile(epss.Percentile)
 		}
 		// Enrich with KEV.
+		// The flag follows the catalog both ways: a CVE that left KEV, or a
+		// finding whose CVE changed, loses it. Otherwise the finding keeps its
+		// KEV floor and deadline cap forever and the intel queue (which compares
+		// the flag with the catalog) requeues its asset on every refresh.
 		if kev, ok := kevMap[f.CVEID()]; ok {
 			f.SetIsInKEV(true)
 			if kev.DueDate != nil {
 				f.SetKEVDueDate(*kev.DueDate)
 			}
+		} else if kevKnown && f.IsInKEV() {
+			f.ClearKEV()
 		}
 
 		a := assets[f.AssetID()]

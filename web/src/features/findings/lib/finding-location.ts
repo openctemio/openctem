@@ -82,7 +82,7 @@ export function findingLocation(f: FindingLocationInput): FindingLocation {
     asset && detail
       ? detail.startsWith('/') || detail.startsWith(':')
         ? `${asset}${detail}`
-        : `${asset} · ${detail}`
+        : `${asset}, ${detail}`
       : asset || detail
   return { asset, detail, full }
 }

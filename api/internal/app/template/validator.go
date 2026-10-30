@@ -670,6 +670,8 @@ func (v *SemgrepValidator) Validate(content []byte) *ValidationResult {
 		}
 	}
 
+	validateOpengrepRegexes(content, result)
+
 	result.RuleCount = len(rules)
 	result.Metadata["rule_ids"] = ruleIDs
 	result.Metadata["rule_count"] = len(rules)

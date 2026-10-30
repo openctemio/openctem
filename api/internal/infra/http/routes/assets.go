@@ -205,6 +205,11 @@ func registerAssetGroupRoutes(
 		r.GET("/", h.List, middleware.Require(permission.AssetGroupsRead))
 		r.POST("/", h.Create, middleware.Require(permission.AssetGroupsWrite))
 
+		// Rule groups: preview a rule, an asset's group history (static
+		// paths, before /{id})
+		r.POST("/rule/preview", h.PreviewRule, middleware.Require(permission.AssetGroupsWrite))
+		r.GET("/assets/{id}/history", h.GetAssetGroupHistory, middleware.Require(permission.AssetGroupsRead))
+
 		// Bulk operations
 		r.PATCH("/bulk", h.BulkUpdate, middleware.Require(permission.AssetGroupsWrite))
 		r.DELETE("/bulk", h.BulkDelete, middleware.Require(permission.AssetGroupsDelete))
@@ -218,6 +223,13 @@ func registerAssetGroupRoutes(
 		r.GET("/{id}/assets", h.GetAssets, middleware.Require(permission.AssetGroupsRead))
 		r.POST("/{id}/assets", h.AddAssets, middleware.Require(permission.AssetGroupsWrite))
 		r.DELETE("/{id}/assets", h.RemoveAssets, middleware.Require(permission.AssetGroupsWrite))
+		r.POST("/{id}/assets/paste", h.PasteAssets, middleware.Require(permission.AssetGroupsWrite))
+		r.POST("/{id}/assets/matching", h.AddMatching, middleware.Require(permission.AssetGroupsWrite))
+
+		// Rule and membership history
+		r.GET("/{id}/rule", h.GetRule, middleware.Require(permission.AssetGroupsRead))
+		r.PUT("/{id}/rule", h.SetRule, middleware.Require(permission.AssetGroupsWrite))
+		r.GET("/{id}/history", h.GetHistory, middleware.Require(permission.AssetGroupsRead))
 
 		// Findings in group
 		r.GET("/{id}/findings", h.GetFindings, middleware.Require(permission.AssetGroupsRead))
@@ -501,6 +513,17 @@ func registerBranchRoutes(
 		// Default branch management
 		r.GET("/default", h.GetDefault, middleware.Require(permission.AssetsRead))
 		r.PUT("/{branchId}/default", h.SetDefault, middleware.Require(permission.AssetsWrite))
+	}, tenantMiddlewares...)
+}
+
+// registerCertificateRoutes registers the Certificates view of the external
+// attack surface: certificate assets, scoped by their own data scope.
+func registerCertificateRoutes(router Router, h *handler.CertificateHandler, authMiddleware Middleware, userSyncMiddleware Middleware, moduleGate Middleware) {
+	// The module gate runs after tenant extraction so it can read the tenant.
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
+	router.Group("/api/v1/attack-surface/certificates", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.AssetsRead))
+		r.GET("/stats", h.Stats, middleware.Require(permission.AssetsRead))
 	}, tenantMiddlewares...)
 }
 

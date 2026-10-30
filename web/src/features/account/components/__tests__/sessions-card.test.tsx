@@ -5,6 +5,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { SessionsCard } from '../sessions-card'
 import type { Session } from '../../types/account.types'
 
+vi.stubGlobal(
+  'ResizeObserver',
+  class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+)
+
 const revokeSession = vi.fn()
 const revokeAllSessions = vi.fn()
 vi.mock('../../api/use-sessions', () => ({
@@ -66,7 +75,21 @@ describe('SessionsCard', () => {
     render(<SessionsCard sessions={sessions} isLoading={false} onChanged={vi.fn()} />)
     await user.click(screen.getByRole('button', { name: /sign out all others/i }))
     await user.click(screen.getAllByRole('button', { name: /sign out all others/i }).at(-1)!)
-    expect(revokeAllSessions).toHaveBeenCalled()
+    expect(revokeAllSessions).toHaveBeenCalledWith(true)
+  })
+
+  it('offers to revoke API keys, ticked, with their number', async () => {
+    revokeAllSessions.mockResolvedValue(true)
+    const user = userEvent.setup()
+    render(
+      <SessionsCard sessions={sessions} isLoading={false} onChanged={vi.fn()} activeApiKeys={3} />
+    )
+    await user.click(screen.getByRole('button', { name: /sign out all others/i }))
+    const box = screen.getByRole('checkbox', { name: /also revoke api keys \(3\)/i })
+    expect(box).toBeChecked()
+    await user.click(box)
+    await user.click(screen.getAllByRole('button', { name: /sign out all others/i }).at(-1)!)
+    expect(revokeAllSessions).toHaveBeenCalledWith(false)
   })
 
   it('hides "sign out all others" when this is the only session', () => {

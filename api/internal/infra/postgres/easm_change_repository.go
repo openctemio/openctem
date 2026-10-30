@@ -17,6 +17,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/easmchange"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/webendpoint"
 )
 
 // EASMChangeRepository reads typed changes and claims weekly digests.
@@ -36,6 +37,10 @@ var easmChangeSkippedExposureTypes = []string{
 	"port_open", "port_closed", "service_detected", "subdomain_discovered", "subdomain_removed",
 	"bucket_private", "repo_private", "api_removed",
 }
+
+// webChangeHighKeys and webChangeCriticalKeys are the catalog keys whose
+// severity is high or critical, for the web change kinds.
+var webChangeHighKeys, webChangeCriticalKeys = webendpoint.KeysBySeverity()
 
 // changeAssetFilter keeps an asset that is part of the external surface (a
 // surface type, or anything internet-facing), not deleted, and in the
@@ -97,7 +102,45 @@ func changeUnion(ctx context.Context) string {
 	LEFT JOIN assets a ON a.id = x.asset_id AND a.tenant_id = x.tenant_id
 	WHERE x.tenant_id = $1 AND x.first_seen_at >= $2 AND x.first_seen_at < $3
 	  AND x.state <> 'false_positive' AND NOT (x.event_type = ANY($5))
-	  AND (x.asset_id IS NULL OR (a.id IS NOT NULL AND a.deleted_at IS NULL))` + notRejectedFor("x.asset_id")
+	  AND (x.asset_id IS NULL OR (a.id IS NOT NULL AND a.deleted_at IS NULL))` + notRejectedFor("x.asset_id") + `
+	UNION ALL` + webChangeBranches(ctx)
+}
+
+// webChangeBranches reads the web endpoint feed (web_endpoint_events) as
+// three kinds. $6 holds the catalog keys of severity high or critical, $7
+// the critical ones. Only in-scope, active endpoints count: an endpoint
+// under a path exclusion is stored for visibility and never reported as a
+// change. The origin asset is joined tenant-scoped and passes the same
+// surface filter as every other branch.
+func webChangeBranches(ctx context.Context) string {
+	surface := changeAssetFilter(ctx, "a")
+	const base = `
+	FROM web_endpoint_events ev
+	JOIN web_endpoints we ON we.tenant_id = ev.tenant_id AND we.id = ev.endpoint_id
+	JOIN assets a ON a.id = ev.origin_asset_id AND a.tenant_id = ev.tenant_id
+	WHERE ev.tenant_id = $1 AND ev.at >= $2 AND ev.at < $3
+	  AND we.in_scope AND we.state = 'active'`
+	return `
+	SELECT ev.id::text, ev.at, ev.origin_asset_id, a.name, a.asset_type, 'web_sensitive_new',
+	       we.method || ' ' || we.path_template, '', we.path_template, NULL::text[], NULL::text[],
+	       CASE WHEN we.catalog_key = ANY($7) THEN 'critical' WHEN we.catalog_key = ANY($6) THEN 'high' ELSE 'medium' END,
+	       NULL::uuid` + base + `
+	  AND ev.kind IN ('appeared', 'returned')
+	  AND (we.catalog_key = ANY($6) OR EXISTS (SELECT 1 FROM unnest(we.labels) l WHERE l LIKE 'panel:%'))` + surface + `
+	UNION ALL
+	SELECT ev.id::text, ev.at, ev.origin_asset_id, a.name, a.asset_type, 'web_auth_lost',
+	       we.method || ' ' || we.path_template, ev.detail->>'from', ev.detail->>'to', NULL::text[], NULL::text[],
+	       'high', NULL::uuid` + base + `
+	  AND ev.kind = 'auth_changed' AND ev.detail->>'to' = 'none' AND ev.detail->>'from' IN ('required', 'redirect_login')
+	  AND (we.catalog_key IS NOT NULL OR we.kind IN ('api', 'graphql'))` + surface + `
+	UNION ALL
+	SELECT ev.id::text, ev.at, ev.origin_asset_id, a.name, a.asset_type, 'web_param_added_sensitive',
+	       we.method || ' ' || we.path_template, '', we.path_template, NULL::text[], NULL::text[],
+	       CASE WHEN we.catalog_key = ANY($7) THEN 'high' ELSE 'medium' END, NULL::uuid` + base + `
+	  AND ev.kind = 'param_added'
+	  AND (we.catalog_key = ANY($6) OR EXISTS (SELECT 1 FROM web_endpoint_params p
+	         WHERE p.tenant_id = ev.tenant_id AND p.endpoint_id = ev.endpoint_id AND p.sensitive = 'credential'
+	           AND p.first_seen_at BETWEEN ev.at - interval '1 second' AND ev.at + interval '1 second'))` + surface
 }
 
 // changeCursor is the keyset position of the last row of a page.
@@ -122,7 +165,8 @@ func decodeChangeCursor(s string) (changeCursor, error) {
 }
 
 func (r *EASMChangeRepository) baseArgs(tenantID shared.ID, q easmchange.Query) []any {
-	return []any{tenantID.String(), q.From, q.To, pq.Array(EASMSurfaceTypes), pq.Array(easmChangeSkippedExposureTypes)}
+	return []any{tenantID.String(), q.From, q.To, pq.Array(EASMSurfaceTypes), pq.Array(easmChangeSkippedExposureTypes),
+		pq.Array(webChangeHighKeys), pq.Array(webChangeCriticalKeys)}
 }
 
 // ListChanges returns one page of typed changes in [q.From, q.To), newest

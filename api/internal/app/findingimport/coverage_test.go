@@ -47,7 +47,7 @@ func (c *coverageFake) Record(_ context.Context, d *ingestreceipt.Delta) (shared
 }
 
 func coverageReq() Request {
-	return Request{TenantID: shared.NewID(), ReceiptID: shared.NewID(), Coverage: Coverage{Full: true, AssetIDs: []shared.ID{shared.NewID()}}}
+	return Request{TenantID: shared.NewID(), ReceiptID: shared.NewID(), Coverage: Coverage{Full: true, CanVerify: true, AssetIDs: []shared.ID{shared.NewID()}}}
 }
 
 // A full-coverage upload closes only when it is complete: a failed file or a
@@ -176,5 +176,21 @@ func TestCheckCoverage(t *testing.T) {
 	plain := NewService(&fakeIngester{}, &fakeRepo{}, &fakeRepo{}, ingest.SourceResolveDryRun, logger.NewNop())
 	if err := plain.CheckCoverage(context.Background(), Request{Coverage: Coverage{Full: true, AssetIDs: []shared.ID{a}}}); !errors.Is(err, ErrCoverageUnsupported) {
 		t.Fatalf("a repository without coverage support accepted full coverage: %v", err)
+	}
+}
+
+// Closing by absence is a verification: without findings:verify the upload
+// closes nothing and the receipt says why.
+func TestCloseUncoveredNeedsVerify(t *testing.T) {
+	repo := &coverageFake{assets: 1, open: 2, stale: []shared.ID{shared.NewID()}}
+	svc := NewService(&fakeIngester{}, repo, repo, ingest.SourceResolveDryRun, logger.NewNop())
+	req := coverageReq()
+	req.Coverage.CanVerify = false
+	svc.FinishUpload(context.Background(), req, []FileResult{{Tool: "nessus", Ingest: &ingest.Output{}}}, true)
+	if len(repo.resolved) != 0 || len(repo.finished) != 1 {
+		t.Fatalf("closed %d without findings:verify", len(repo.resolved))
+	}
+	if f := repo.finished[0]; f.CoverageNote != "needs_verify" || f.Coverage != ingestreceipt.CoveragePartial {
+		t.Fatalf("receipt coverage %q note %q", f.Coverage, f.CoverageNote)
 	}
 }

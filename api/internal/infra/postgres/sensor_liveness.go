@@ -65,6 +65,24 @@ func scanControl(id shared.ID, raw []byte, at sql.NullTime) *sensor.ControlRepor
 	return &c
 }
 
+// scanLocalStore builds the stored local store report; a report that does
+// not decode is dropped (logged), never fatal to reading the sensor.
+func scanLocalStore(id shared.ID, raw []byte, at sql.NullTime) *sensor.LocalStoreReport {
+	if len(raw) == 0 {
+		return nil
+	}
+	var r sensor.LocalStoreReport
+	if err := json.Unmarshal(raw, &r); err != nil {
+		log.Printf("[DEBUG] failed to unmarshal sensor local store report (id=%s): %v", id, err)
+		return nil
+	}
+	if at.Valid {
+		t := at.Time
+		r.ReportedAt = &t
+	}
+	return &r
+}
+
 // ListLivenessCandidates returns every sensor the health controller watches
 // (health online, late or stale) with its deadline, and the database's now.
 func (r *SensorRepository) ListLivenessCandidates(ctx context.Context) (time.Time, []sensor.LivenessCandidate, error) {

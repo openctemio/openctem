@@ -33,7 +33,7 @@ export function writeFindingHash(id: string | null) {
   window.history.replaceState(window.history.state, '', `${pathname}${search}${hash}`)
 }
 
-const TYPING =
+export const TYPING_TARGETS =
   'input, textarea, select, [contenteditable="true"], [role="combobox"], [role="listbox"], [role="menu"], [role="menuitem"]'
 
 /** The neighbour of `currentId` in `items` for a j/k key, or undefined. */
@@ -65,7 +65,7 @@ export function useDrawerKeyboardNav<T extends { id: string }>({
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey || (e.key !== 'j' && e.key !== 'k')) return
       const el = e.target as HTMLElement | null
-      if (el?.closest?.(TYPING)) return
+      if (el?.closest?.(TYPING_TARGETS)) return
       const next = neighbour(items, currentId, e.key)
       if (next) {
         e.preventDefault()

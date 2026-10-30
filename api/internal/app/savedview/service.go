@@ -2,9 +2,10 @@
 // research 17 R3, docs/rfcs/RFC-048-list-query-contract.md §3.6).
 //
 // Rules (owner decisions A1 and A5):
-//   - a view is personal, or shared with one access group (a team) its owner
-//     belongs to; members use it, only the owner edits or deletes it, others
-//     duplicate it;
+//   - a view is personal, shared with one access group (a team) its owner
+//     belongs to, or shared with the whole organization by a holder of
+//     findings:views:share; members use it, only the owner edits or deletes
+//     it, others duplicate it;
 //   - a view stores an RFC-048 FilterDocument, validated against the page's
 //     field registry on save and again every time it runs; never SQL, never
 //     results;
@@ -27,6 +28,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/audit"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/savedview"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/filterspec"
@@ -48,7 +50,14 @@ type PageConfig struct {
 	GroupBy map[string]bool
 	// Extra are the page's own query params a saved query may carry.
 	Extra []string
+	// Params, when set, reads the page's own params that a view stores
+	// beside the filter (PageParams): it validates them and returns the ones
+	// to keep. It is called on save and again on every run.
+	Params func(q url.Values) (map[string]string, error)
 }
+
+// sharePermission is the permission to share a view with the organization.
+var sharePermission = permission.FindingsViewsShare.String()
 
 // Caller is the request's caller.
 type Caller struct {
@@ -68,9 +77,15 @@ type Input struct {
 	Filter      []byte
 	Query       string
 	GroupID     *shared.ID
-	GroupBy     string
-	Columns     []string
-	Density     string
+	// ShareWithOrg shares the view with every member of the organization
+	// (findings:views:share).
+	ShareWithOrg bool
+	GroupBy      string
+	Columns      []string
+	Density      string
+	// baseFilter is a stored FilterDocument the Query is laid over (a
+	// duplicated view with page params).
+	baseFilter []byte
 }
 
 // Service manages saved views.
@@ -145,6 +160,13 @@ func (s *Service) Spec(ctx context.Context, c Caller, id shared.ID, page string)
 	spec, err := filterspec.ParseDocument(v.Filter, cfg.Registry, filterspec.Options{Unknown: filterspec.UnknownStrict})
 	if err != nil {
 		return nil, nil, fmt.Errorf("the saved view's filter is no longer valid: %w", err)
+	}
+	if cfg.Params != nil && len(v.PageParams) > 0 {
+		if v.PageParams, err = cfg.Params(paramValues(v.PageParams)); err != nil {
+			return nil, nil, fmt.Errorf("the saved view's filter is no longer valid: %w", err)
+		}
+	} else if cfg.Params == nil {
+		v.PageParams = nil
 	}
 	return spec, v, nil
 }
@@ -227,8 +249,15 @@ func (s *Service) Duplicate(ctx context.Context, c Caller, id shared.ID, name st
 	if r := []rune(name); len(r) > savedview.MaxNameLen {
 		name = string(r[:savedview.MaxNameLen])
 	}
-	return s.Create(ctx, c, Input{Page: v.Page, Name: name, Description: v.Description, Filter: v.Filter,
-		GroupBy: v.GroupBy, Columns: v.Columns, Density: v.Density})
+	in := Input{Page: v.Page, Name: name, Description: v.Description, Filter: v.Filter,
+		GroupBy: v.GroupBy, Columns: v.Columns, Density: v.Density}
+	if len(v.PageParams) > 0 {
+		// The filter goes as a document; the page params ride on a query of
+		// their own, validated again.
+		in.Filter, in.Query = nil, paramValues(v.PageParams).Encode()
+		in.baseFilter = v.Filter
+	}
+	return s.Create(ctx, c, in)
 }
 
 // apply validates in and writes it onto v.
@@ -241,7 +270,7 @@ func (s *Service) apply(ctx context.Context, c Caller, cfg PageConfig, v *savedv
 	if utf8.RuneCountInString(desc) > savedview.MaxDescriptionLen || strings.ContainsFunc(desc, func(r rune) bool { return r != '\n' && unicode.IsControl(r) }) {
 		return fmt.Errorf("%w: description must be at most %d characters", savedview.ErrInvalid, savedview.MaxDescriptionLen)
 	}
-	doc, err := s.document(ctx, c, in.Page, cfg, in)
+	doc, params, err := s.document(ctx, c, in.Page, cfg, in)
 	if err != nil {
 		return err
 	}
@@ -259,55 +288,82 @@ func (s *Service) apply(ctx context.Context, c Caller, cfg PageConfig, v *savedv
 	if in.Density != "" && !densityRE.MatchString(in.Density) {
 		return fmt.Errorf("%w: invalid density", savedview.ErrInvalid)
 	}
+	if in.ShareWithOrg {
+		if in.GroupID != nil {
+			return fmt.Errorf("%w: share with a group or with the organization, not both", savedview.ErrInvalid)
+		}
+		if err := s.checkOrgShare(ctx, c, v); err != nil {
+			return err
+		}
+	}
 	if in.GroupID != nil {
 		if err := s.checkShare(ctx, c, *in.GroupID, v); err != nil {
 			return err
 		}
 	}
-	v.Name, v.Description, v.Filter = name, desc, doc
+	v.Name, v.Description, v.Filter, v.PageParams = name, desc, doc, params
 	v.GroupID, v.GroupBy, v.Columns, v.Density = in.GroupID, in.GroupBy, in.Columns, in.Density
+	v.SharedWithOrg = in.ShareWithOrg
 	return nil
 }
 
 // document validates the filter (document or flat query) against the page
-// registry and returns the FilterDocument to store. A query that names a
-// saved view the caller may see (view=<id>) saves that view's filter with the
-// query's params on top, as the list would run it.
-func (s *Service) document(ctx context.Context, c Caller, page string, cfg PageConfig, in Input) ([]byte, error) {
+// registry and returns the FilterDocument to store, with the page's own
+// params (PageParams) read from a query. A query that names a saved view the
+// caller may see (view=<id>) saves that view's filter and page params with
+// the query's params on top, as the list would run it.
+func (s *Service) document(ctx context.Context, c Caller, page string, cfg PageConfig, in Input) ([]byte, map[string]string, error) {
 	opts := filterspec.Options{Unknown: filterspec.UnknownStrict, Extra: append([]string{"view"}, cfg.Extra...)}
 	switch {
 	case len(in.Filter) > 0 && in.Query != "":
-		return nil, fmt.Errorf("%w: send filter or query, not both", savedview.ErrInvalid)
+		return nil, nil, fmt.Errorf("%w: send filter or query, not both", savedview.ErrInvalid)
 	case in.Query != "":
 		if len(in.Query) > filterspec.MaxBodyBytes {
-			return nil, fmt.Errorf("%w: query too long", savedview.ErrInvalid)
+			return nil, nil, fmt.Errorf("%w: query too long", savedview.ErrInvalid)
 		}
 		q, err := url.ParseQuery(in.Query)
 		if err != nil {
-			return nil, fmt.Errorf("%w: query is not a URL query string", savedview.ErrInvalid)
+			return nil, nil, fmt.Errorf("%w: query is not a URL query string", savedview.ErrInvalid)
 		}
 		base := q.Get("view")
 		for _, p := range []string{"page", "per_page", "view", "cursor"} {
 			q.Del(p)
 		}
+		var params map[string]string
+		if cfg.Params != nil {
+			if params, err = cfg.Params(q); err != nil {
+				return nil, nil, err
+			}
+		}
 		spec, err := filterspec.ParseValues(q, cfg.Registry, opts)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
+		}
+		if len(in.baseFilter) > 0 {
+			stored, err := filterspec.ParseDocument(in.baseFilter, cfg.Registry, filterspec.Options{Unknown: filterspec.UnknownStrict})
+			if err != nil {
+				return nil, nil, err
+			}
+			if spec, err = filterspec.Overlay(stored, spec); err != nil {
+				return nil, nil, err
+			}
 		}
 		if base != "" {
 			id, err := shared.IDFromString(base)
 			if err != nil {
-				return nil, savedview.ErrNotFound
+				return nil, nil, savedview.ErrNotFound
 			}
-			stored, _, err := s.Spec(ctx, c, id, page)
+			stored, view, err := s.Spec(ctx, c, id, page)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			if spec, err = filterspec.Overlay(stored, spec); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
+			params = MergeParams(view.PageParams, params)
 		}
-		return spec.DocumentJSON()
+		doc, err := spec.DocumentJSON()
+		return doc, params, err
 	default:
 		raw := in.Filter
 		if len(raw) == 0 {
@@ -315,10 +371,53 @@ func (s *Service) document(ctx context.Context, c Caller, page string, cfg PageC
 		}
 		spec, err := filterspec.ParseDocument(raw, cfg.Registry, opts)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		return spec.DocumentJSON()
+		doc, err := spec.DocumentJSON()
+		return doc, nil, err
 	}
+}
+
+// MergeParams is a view's page params with the request's on top, key by key.
+func MergeParams(stored, request map[string]string) map[string]string {
+	if len(stored) == 0 {
+		return request
+	}
+	out := make(map[string]string, len(stored)+len(request))
+	for k, v := range stored {
+		out[k] = v
+	}
+	for k, v := range request {
+		out[k] = v
+	}
+	return out
+}
+
+func paramValues(p map[string]string) url.Values {
+	q := make(url.Values, len(p))
+	for k, v := range p {
+		q.Set(k, v)
+	}
+	return q
+}
+
+// checkOrgShare allows sharing with the whole organization to a holder of
+// findings:views:share, up to MaxSharedWithOrg views per organization.
+func (s *Service) checkOrgShare(ctx context.Context, c Caller, v *savedview.View) error {
+	if c.Has == nil || !c.Has(sharePermission) {
+		return savedview.ErrShareForbidden
+	}
+	if v.SharedWithOrg {
+		return nil // already shared
+	}
+	n, err := s.repo.CountSharedWithOrg(ctx, c.TenantID)
+	if err != nil {
+		return err
+	}
+	if n >= savedview.MaxSharedWithOrg {
+		return fmt.Errorf("%w: at most %d views shared with the organization", savedview.ErrLimit, savedview.MaxSharedWithOrg)
+	}
+	return nil
 }
 
 // checkShare allows sharing with an active group of the tenant that the
@@ -352,7 +451,8 @@ func (s *Service) log(ctx context.Context, c Caller, action auditdom.Action, v *
 	ev := audit.NewSuccessEvent(action, auditdom.ResourceTypeSavedView, v.ID.String()).
 		WithResourceName(v.Name).
 		WithMetadata("page", v.Page).
-		WithMetadata("shared", v.GroupID != nil).
+		WithMetadata("shared", v.GroupID != nil || v.SharedWithOrg).
+		WithMetadata("shared_with_org", v.SharedWithOrg).
 		WithSeverity(auditdom.SeverityLow)
 	if v.GroupID != nil {
 		ev = ev.WithMetadata("group_id", v.GroupID.String())

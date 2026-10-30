@@ -18,6 +18,7 @@ import (
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
+	findingapp "github.com/openctemio/openctem/api/internal/app/finding"
 	remediationapp "github.com/openctemio/openctem/api/internal/app/remediation"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/testdb"
@@ -472,4 +473,64 @@ func TestRemediationTasks_OverdueFilter(t *testing.T) {
 	require.EqualValues(t, 1, res.Total, "a restricted member counts only tasks they can see")
 	assert.Equal(t, late.ID, res.Data[0].ID)
 	assert.NotEqual(t, lateB.ID, res.Data[0].ID)
+}
+
+// A deleted finding takes its member row with it (cascade) and changes no
+// remaining finding. Both the delete path (which re-derives the task at once)
+// and the background reconcile (which picks a task whose stored counts differ
+// from its live members) must settle the task: done on the remaining verified
+// member, one member, no stale SLA deadline.
+func TestRemediationTasks_DeletedMemberRecomputes(t *testing.T) {
+	setup := func(t *testing.T) (*rtRig, shared.ID, shared.ID, shared.ID) {
+		r := newRTRig(t)
+		past := time.Now().Add(-48 * time.Hour)
+		a := r.finding(r.assetA, "new", &past)
+		b := r.finding(r.assetA, "new", nil)
+		task, err := r.svc.CreateTask(r.adminCtx(), remediationapp.CreateTaskInput{TenantID: r.tenant, ActorID: &r.admin,
+			Title: "Stale", FindingIDs: []shared.ID{a, b}}, auditapp.AuditContext{})
+		require.NoError(t, err)
+		r.setStatus(b, "resolved", "covered_scan")
+		_, err = r.svc.Reconcile(context.Background())
+		require.NoError(t, err)
+		return r, task.ID, a, b
+	}
+	check := func(t *testing.T, r *rtRig, taskID shared.ID) {
+		got, err := r.svc.GetTask(r.adminCtx(), r.tenant, taskID)
+		require.NoError(t, err)
+		assert.Equal(t, remediation.TaskStateDone, got.State)
+		assert.EqualValues(t, 1, got.Counts.Total)
+		assert.EqualValues(t, 0, got.Counts.Open)
+		assert.Nil(t, got.Deadline, "no deadline of a deleted member")
+	}
+
+	t.Run("reconcile alone", func(t *testing.T) {
+		r, taskID, a, _ := setup(t)
+		r.exec(`DELETE FROM findings WHERE tenant_id = $1 AND id = $2`, r.tenant.String(), a.String())
+		_, err := r.svc.Reconcile(context.Background())
+		require.NoError(t, err)
+		check(t, r, taskID)
+	})
+	t.Run("DeleteFinding", func(t *testing.T) {
+		r, taskID, a, _ := setup(t)
+		vsvc := findingapp.NewVulnerabilityService(nil, postgres.NewFindingRepository(&postgres.DB{DB: r.db}), logger.NewNop())
+		vsvc.SetTaskRecomputer(r.repo)
+		require.NoError(t, vsvc.DeleteFinding(context.Background(), a.String(), r.tenant.String(), auditapp.AuditContext{}))
+		check(t, r, taskID) // no reconcile in between
+	})
+	t.Run("DeleteAssetFindings", func(t *testing.T) {
+		r := newRTRig(t)
+		past := time.Now().Add(-48 * time.Hour)
+		a := r.finding(r.assetA, "new", &past)
+		b := r.finding(r.assetB, "new", nil)
+		task, err := r.svc.CreateTask(r.adminCtx(), remediationapp.CreateTaskInput{TenantID: r.tenant, ActorID: &r.admin,
+			Title: "Two assets", FindingIDs: []shared.ID{a, b}}, auditapp.AuditContext{})
+		require.NoError(t, err)
+		r.setStatus(b, "resolved", "covered_scan")
+		_, err = r.svc.Reconcile(context.Background())
+		require.NoError(t, err)
+		vsvc := findingapp.NewVulnerabilityService(nil, postgres.NewFindingRepository(&postgres.DB{DB: r.db}), logger.NewNop())
+		vsvc.SetTaskRecomputer(r.repo)
+		require.NoError(t, vsvc.DeleteAssetFindings(context.Background(), r.tenant.String(), r.assetA.String()))
+		check(t, r, task.ID)
+	})
 }

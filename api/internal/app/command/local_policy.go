@@ -279,20 +279,6 @@ func (g *dispatchGate) intensityRefusal(c *commanddom.Command) *sensordom.Dispat
 	return nil
 }
 
-// accepted keeps the commands the gate does not withhold, in order.
-func (g *dispatchGate) accepted(cmds []*commanddom.Command) []*commanddom.Command {
-	if g == nil {
-		return cmds
-	}
-	out := cmds[:0:0]
-	for _, c := range cmds {
-		if g.refusal(c) == nil {
-			out = append(out, c)
-		}
-	}
-	return out
-}
-
 // claimError is the error a claim by id of c gets from a sensor the gate
 // refuses: ErrLocalPolicyRequired for the private-target switch, else
 // ErrSensorPolicyRefuses. nil when the sensor may claim it.

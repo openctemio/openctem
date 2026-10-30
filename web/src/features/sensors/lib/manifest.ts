@@ -169,7 +169,7 @@ export function resourcesText(m: SensorManifestDocument, t: Translate = plain): 
       t('sensors.manifest.memory', '{size} memory', { size: formatBytes(r.mem_total_bytes) })
     )
   }
-  return parts.length ? parts.join(' · ') : null
+  return parts.length ? parts.join(', ') : null
 }
 
 /** "operator cap 8 · slots sized from CPU and memory". */
@@ -181,8 +181,8 @@ export function concurrencyText(m: SensorManifestDocument, t: Translate = plain)
       ? t('sensors.manifest.operatorCap', 'operator cap {n}', { n: c.ceiling })
       : t('sensors.manifest.noOperatorCap', 'no operator cap')
   if (c.model === 'dynamic')
-    return `${cap} · ${t('sensors.manifest.slotsDynamic', 'slots sized from CPU and memory')}`
-  if (c.model === 'fixed') return `${cap} · ${t('sensors.manifest.slotsFixed', 'fixed slots')}`
+    return `${cap}, ${t('sensors.manifest.slotsDynamic', 'slots sized from CPU and memory')}`
+  if (c.model === 'fixed') return `${cap}, ${t('sensors.manifest.slotsFixed', 'fixed slots')}`
   return cap
 }
 
@@ -200,6 +200,20 @@ export const IGNORED_REASON_LABEL: Record<string, string> = {
   'unknown-capability': 'not a known capability',
   'invalid-contract': 'not a valid tool contract',
   limit: 'over the limit',
+}
+
+/**
+ * True when every ignored item is one the platform does not know yet (a tool
+ * missing from its catalog, a capability it has no word for) and none is
+ * malformed: the usual sign of a sensor newer than the platform, whose items
+ * are used once the platform is updated. A malformed or over-limit item never
+ * counts, so one of those keeps the warning as "invalid".
+ */
+export function ignoredLooksNewer(ignored: { reason: string }[]): boolean {
+  return (
+    ignored.length > 0 &&
+    ignored.every((i) => i.reason === 'unknown-tool' || i.reason === 'unknown-capability')
+  )
 }
 
 /** How the platform got a manifest version, translated (the raw value when unknown). */
@@ -222,5 +236,5 @@ export function contractSummary(c: SensorToolContract, t: Translate = plain): st
     c.network ? t('sensors.manifest.network', 'network: {network}', { network: c.network }) : null,
   ]
     .filter(Boolean)
-    .join(' · ')
+    .join(', ')
 }

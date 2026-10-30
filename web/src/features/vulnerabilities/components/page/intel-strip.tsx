@@ -1,5 +1,6 @@
 'use client'
 
+import { DetailStat, DetailStatGrid } from '@/features/shared/components/detail-sheet'
 import { useTranslation } from '@/context/i18n-provider'
 import { epssTopPercent, formatEpssScore } from '@/lib/epss'
 import { cn } from '@/lib/utils'
@@ -7,6 +8,7 @@ import { RelativeTime } from '@/features/shared/components/relative-time'
 import type { Vulnerability } from '../../types'
 import type { CveExposure } from '../../types/exposure'
 import { cvssWords, exploitSignals, feedStale } from '../../lib/vuln-page'
+import { formatDateOnly } from '@/lib/date-only'
 
 /** The share of CVEs at or above a percentile, as the number before "%". */
 function topShare(percentile: number): string {
@@ -28,19 +30,13 @@ function Cell({
   className?: string
 }) {
   return (
-    <div
-      data-slot="intel-cell"
-      className={cn(
-        '-ms-px -mt-px grid min-w-0 content-start gap-1 border-s border-t px-4 py-3',
-        className
-      )}
-    >
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      {value !== undefined && (
-        <dd className="text-xl font-semibold tabular-nums tracking-tight">{value}</dd>
-      )}
-      {children && <dd className="min-w-0 text-xs text-muted-foreground">{children}</dd>}
-    </div>
+    <DetailStat
+      label={label}
+      value={value ?? ''}
+      caption={children}
+      wrapCaption
+      className={cn('content-start', className)}
+    />
   )
 }
 
@@ -66,7 +62,7 @@ export function IntelStrip({
 
   return (
     <section aria-label={t('vulnPage.intel.label', 'Threat intelligence')}>
-      <dl className="grid grid-cols-1 overflow-hidden rounded-lg border bg-card sm:grid-cols-2 lg:grid-cols-5">
+      <DetailStatGrid>
         <Cell
           label={t('vulnPage.intel.kev', 'Known exploited (KEV)')}
           value={
@@ -78,7 +74,7 @@ export function IntelStrip({
           {kev ? (
             <>
               {t('vulnPage.intel.kevAdded', 'Added {date}', {
-                date: new Date(kev.date_added).toLocaleDateString(locale),
+                date: formatDateOnly(kev.date_added, locale, { dateStyle: 'medium' }),
               })}
               <br />
               {kev.ransomware_use?.toLowerCase() === 'known'
@@ -133,7 +129,7 @@ export function IntelStrip({
               ? t('vulnPage.intel.seeRemediation', 'See the remediation below')
               : null}
         </Cell>
-      </dl>
+      </DetailStatGrid>
       <Freshness exposure={exposure} />
     </section>
   )

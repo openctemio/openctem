@@ -56,6 +56,12 @@
 > organization's audit chain need a second super admin (see
 > [Revision 24](#revision-24-four-eyes-approvals)).
 
+> **Revision 25** (2026-10-28): one identity: an administrator's account may be
+> an ordinary member of organizations and signs in to the app; the platform
+> role counts only on the console; break-glass accounts stay console-only;
+> platform roles replace the three tiers (see
+> [Revision 25](#revision-25-one-identity-and-platform-roles) and RFC-134).
+
 > Scope: api + ui. Separates *application (platform) administration* from
 > *organization (tenant) administration*: the system administrator is an account
 > with a system-level role and a different menu (Organizations, Users, Scanning,
@@ -142,9 +148,14 @@ Cookie-authenticated state-changing requests must pass the double-submit CSRF
 check. Every `/admin/*` route and role guard works from a browser unchanged.
 
 **Provisioning**: `POST /api/v1/admin/administrators {email, name, role}`
-(super admin, audited) links the account with that email, or creates a local
-account and returns its temporary password once. `bootstrap-admin` does the same
-for the first administrator, and `bootstrap-admin -link` links an administrator
+(super admin, audited) creates a local account for that email with no
+password and emails the new administrator a single-use set-password link (24
+hours); no password is ever returned. Without platform e-mail the link is shown
+once, and only for a non-super role or while four-eyes approvals are off; a new
+super admin is refused while approvals are on and e-mail cannot be sent. The
+first console sign-in of an invited administrator is announced to every other
+administrator. `bootstrap-admin` creates the first administrator with a
+temporary password printed once (it runs with host access), and `bootstrap-admin -link` links an administrator
 created before revision 2 (keeping its role and authenticator, and reactivating
 it: migration 000227 deactivated every administrator without an account, which
 is every v0.8 administrator). Without `-link`, such an administrator is refused
@@ -718,7 +729,12 @@ do. Every protected action takes a route-level step-up
 same console session (`admin_sessions.step_up_at`, migration 002472); another
 session, another administrator or a pending session never rides it. Without
 a code or window the API answers `401 ADMIN_STEP_UP_REQUIRED`; the console's
-one step-up dialog asks for the code and retries the same request. A wrong
+one step-up dialog asks for the code and retries the same request. A form
+that asks for its own code (`totp_code`) sends it in the header too; when the
+route refuses that code (wrong or already used) the refusal goes back to the
+form, which shows it under its field, and the step-up dialog stays closed. It
+asks again only for a code it asked for itself, so it never opens over the
+form's own dialog. A wrong
 code counts toward the sign-in lockout; each confirmation is audited
 (`console.step_up`, with the action as its purpose).
 
@@ -1121,6 +1137,32 @@ Key files: `api/internal/app/adminapproval/service.go`,
 `api/internal/infra/http/handler/admin_approval_handler.go`, migration
 `002914_admin_approvals`, `web/console/src/app/(console)/security/approvals/page.tsx`,
 `web/console/src/features/admin-console/components/admin-approval-prompt.tsx`.
+
+## Revision 25: one identity and platform roles
+
+Owner decision 2026-10-28, designed in RFC-134. It supersedes the parts of
+revisions 2 and 23 that kept an administrator's account out of every
+organization and off the main site:
+
+- The `tenant_members` trigger that refused any administrator's membership is
+  dropped (migration `20261029050639`). An administrator's account is an ordinary
+  member of the organizations that invite it, signs in on the main site and
+  acts there with its tenant role only; the main site never reads the platform
+  role, and `/users/me` no longer reports it.
+- A break-glass administrator stays console-only: new triggers refuse its
+  membership, and refuse to mark (or link) an account that is a member as
+  break-glass (`break_glass_console_only`).
+- The console is unchanged: its own sign-in and second factor even while an app
+  session is live, its own opaque session (the tenant JWT never authenticates
+  it, and its token never authenticates a tenant route), step-up, elevation,
+  four-eyes and the audit log.
+- Console paths that create a membership still never reuse an existing
+  account; an administrator cannot approve an access request made with their
+  own e-mail. `bootstrap-admin` may name the installing administrator as the
+  first organization's owner (host access is full trust); not the break-glass
+  account.
+- Platform roles and permissions replacing the three tiers, and staff
+  governance for the hosted service, are specified in RFC-134.
 
 ## Later phases
 

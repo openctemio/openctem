@@ -157,7 +157,7 @@ func writeOrgTrust(w http.ResponseWriter, status int, v any) {
 
 // List handles GET /api/v1/organization/trusts
 // @Summary      List trusted organizations
-// @Description  Trusts this organization asked for (outgoing) and was asked for (incoming), with the other organization's name only (RFC-058).
+// @Description  Trusts this organization asked for (outgoing) and was asked for (incoming), with the other organization's name only.
 // @Tags         Organization
 // @Produce      json
 // @Success      200  {object}  OrgTrustListResponse

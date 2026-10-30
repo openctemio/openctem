@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/feedstatus"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/threatintel"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
@@ -44,7 +45,7 @@ const (
 
 	// maxDecompressedFeedBytes bounds the decompressed stream so a malicious
 	// gzip (decompression bomb) cannot exhaust memory. The real EPSS feed is
-	// well under this; the bound is defence-in-depth.
+	// well under this; the bound is defense in depth.
 	maxDecompressedFeedBytes = 1 << 30 // 1 GiB
 
 	// epssHighThreshold is the EPSS probability at or above which a CVE is
@@ -100,6 +101,12 @@ type IntelService struct {
 	epssCounts *epssCatalogCounts
 	kevCounts  *kevCatalogCounts
 	now        func() time.Time
+
+	// afterBundle runs after KEV or EPSS was applied from a release (nil:
+	// nothing), see intel_bundle.go.
+	afterBundle func(ctx context.Context, source string)
+	// policy is the platform setting for the source of KEV and EPSS.
+	policy SourcePolicy
 }
 
 // NewIntelService creates a new IntelService.
@@ -219,7 +226,13 @@ type IntelSyncResult struct {
 	// NotModified: the source answered 304 to the conditional request, so
 	// nothing was rewritten.
 	NotModified bool
-	Error       error
+	// Skipped: no direct fetch ran. Either the platform setting leaves the
+	// feed to the signed release (SkipReason is the code of FetchDecision), or
+	// another run of the same feed holds it (Error is ErrSyncAlreadyRunning,
+	// which is not a failure of the feed).
+	Skipped    bool
+	SkipReason string
+	Error      error
 }
 
 // SyncAll syncs all enabled threat intel sources.
@@ -242,6 +255,11 @@ func (s *IntelService) SyncEPSS(ctx context.Context) IntelSyncResult {
 	result := IntelSyncResult{Source: "epss"}
 	startTime := time.Now()
 
+	if !s.sourcePolicy(ctx).DirectAllowed {
+		result.Error = ErrDirectFetchOff
+		return result
+	}
+
 	// Get sync status
 	status, err := s.repo.SyncStatus().GetBySource(ctx, "epss")
 	if err != nil {
@@ -254,11 +272,17 @@ func (s *IntelService) SyncEPSS(ctx context.Context) IntelSyncResult {
 		return result
 	}
 
-	// Mark sync as started
-	status.MarkSyncStarted()
-	if err := s.repo.SyncStatus().Update(ctx, status); err != nil {
-		s.logger.Error("failed to update sync status", "error", err)
+	// Claim the run: one at a time per feed, across replicas and between the
+	// scheduled run and an operator's request.
+	if ok, cerr := s.repo.SyncStatus().TryStart(ctx, "epss", feedstatus.RunningTimeout); cerr != nil {
+		result.Error = fmt.Errorf("failed to start sync: %w", cerr)
+		return result
+	} else if !ok {
+		result.Skipped = true
+		result.Error = threatintel.ErrSyncAlreadyRunning
+		return result
 	}
+	status.MarkSyncStarted()
 
 	s.logger.Info("starting EPSS sync")
 
@@ -266,7 +290,16 @@ func (s *IntelService) SyncEPSS(ctx context.Context) IntelSyncResult {
 	scores, err := s.fetchEPSSData(ctx)
 	if err != nil {
 		result.Error = err
-		status.MarkSyncFailed(err.Error())
+		markFailed(status, err)
+		if updateErr := s.repo.SyncStatus().Update(ctx, status); updateErr != nil {
+			s.logger.Error("failed to update sync status after error", "error", updateErr)
+		}
+		return result
+	}
+
+	if gerr := s.guardEPSSShrink(ctx, len(scores)); gerr != nil {
+		result.Error = gerr
+		markFailed(status, gerr)
 		if updateErr := s.repo.SyncStatus().Update(ctx, status); updateErr != nil {
 			s.logger.Error("failed to update sync status after error", "error", updateErr)
 		}
@@ -276,7 +309,7 @@ func (s *IntelService) SyncEPSS(ctx context.Context) IntelSyncResult {
 	// Batch upsert scores
 	if err := s.repo.EPSS().UpsertBatch(ctx, scores); err != nil {
 		result.Error = fmt.Errorf("failed to upsert EPSS scores: %w", err)
-		status.MarkSyncFailed(err.Error())
+		markFailed(status, err)
 		if updateErr := s.repo.SyncStatus().Update(ctx, status); updateErr != nil {
 			s.logger.Error("failed to update sync status after error", "error", updateErr)
 		}
@@ -288,6 +321,13 @@ func (s *IntelService) SyncEPSS(ctx context.Context) IntelSyncResult {
 	result.DurationMs = duration.Milliseconds()
 
 	// Mark sync as successful
+	if len(scores) > 0 {
+		meta := status.Metadata()
+		markDirect(meta, scores[0].ScoreDate())
+		// The date of the data the feed holds.
+		meta[feedstatus.MetaDataAsOf] = scores[0].ScoreDate().UTC().Format("2006-01-02")
+		status.SetMetadata(meta)
+	}
 	status.MarkSyncSuccess(len(scores), int(duration.Milliseconds()))
 	if err := s.repo.SyncStatus().Update(ctx, status); err != nil {
 		s.logger.Error("failed to update sync status", "error", err)
@@ -321,6 +361,11 @@ func (s *IntelService) SyncKEV(ctx context.Context) IntelSyncResult {
 	result := IntelSyncResult{Source: "kev"}
 	startTime := time.Now()
 
+	if !s.sourcePolicy(ctx).DirectAllowed {
+		result.Error = ErrDirectFetchOff
+		return result
+	}
+
 	// Get sync status
 	status, err := s.repo.SyncStatus().GetBySource(ctx, "kev")
 	if err != nil {
@@ -333,11 +378,17 @@ func (s *IntelService) SyncKEV(ctx context.Context) IntelSyncResult {
 		return result
 	}
 
-	// Mark sync as started
-	status.MarkSyncStarted()
-	if err := s.repo.SyncStatus().Update(ctx, status); err != nil {
-		s.logger.Error("failed to update sync status", "error", err)
+	// Claim the run: one at a time per feed, across replicas and between the
+	// scheduled run and an operator's request.
+	if ok, cerr := s.repo.SyncStatus().TryStart(ctx, "kev", feedstatus.RunningTimeout); cerr != nil {
+		result.Error = fmt.Errorf("failed to start sync: %w", cerr)
+		return result
+	} else if !ok {
+		result.Skipped = true
+		result.Error = threatintel.ErrSyncAlreadyRunning
+		return result
 	}
+	status.MarkSyncStarted()
 
 	s.logger.Info("starting KEV sync")
 
@@ -348,7 +399,11 @@ func (s *IntelService) SyncKEV(ctx context.Context) IntelSyncResult {
 	if errors.Is(err, errKEVNotModified) {
 		result.NotModified = true
 		result.DurationMs = time.Since(startTime).Milliseconds()
-		status.MarkSyncSuccess(0, int(result.DurationMs))
+		stored, cerr := s.repo.KEV().Count(ctx)
+		if cerr != nil {
+			stored = 0
+		}
+		status.MarkSyncUnchanged(int(result.DurationMs), int(stored))
 		if uerr := s.repo.SyncStatus().Update(ctx, status); uerr != nil {
 			s.logger.Error("failed to update sync status", "error", uerr)
 		}
@@ -356,7 +411,16 @@ func (s *IntelService) SyncKEV(ctx context.Context) IntelSyncResult {
 	}
 	if err != nil {
 		result.Error = err
-		status.MarkSyncFailed(err.Error())
+		markFailed(status, err)
+		if updateErr := s.repo.SyncStatus().Update(ctx, status); updateErr != nil {
+			s.logger.Error("failed to update sync status after error", "error", updateErr)
+		}
+		return result
+	}
+
+	if gerr := s.guardKEVShrink(ctx, len(entries)); gerr != nil {
+		result.Error = gerr
+		markFailed(status, gerr)
 		if updateErr := s.repo.SyncStatus().Update(ctx, status); updateErr != nil {
 			s.logger.Error("failed to update sync status after error", "error", updateErr)
 		}
@@ -373,7 +437,7 @@ func (s *IntelService) SyncKEV(ctx context.Context) IntelSyncResult {
 		chunk := entries[i:end]
 		if err := s.repo.KEV().UpsertBatch(ctx, chunk); err != nil {
 			result.Error = fmt.Errorf("failed to upsert KEV entries: %w", err)
-			status.MarkSyncFailed(err.Error())
+			markFailed(status, err)
 			if updateErr := s.repo.SyncStatus().Update(ctx, status); updateErr != nil {
 				s.logger.Error("failed to update sync status after error", "error", updateErr)
 			}
@@ -389,6 +453,13 @@ func (s *IntelService) SyncKEV(ctx context.Context) IntelSyncResult {
 
 	// Mark sync as successful; keep the validators for the next request.
 	meta[kevValidatorsKey] = validators
+	var released time.Time
+	for _, v := range validators {
+		if t, err := time.Parse(time.RFC3339Nano, v.Released); err == nil {
+			released = t
+		}
+	}
+	markDirect(meta, released)
 	status.SetMetadata(meta)
 	status.MarkSyncSuccess(len(entries), int(duration.Milliseconds()))
 	if err := s.repo.SyncStatus().Update(ctx, status); err != nil {
@@ -404,6 +475,48 @@ func (s *IntelService) SyncKEV(ctx context.Context) IntelSyncResult {
 	)
 
 	return result
+}
+
+// minSnapshotShare: a snapshot smaller than this share of the stored
+// catalog is refused (a truncated or wrong download, not a real change).
+const minSnapshotShare = 0.9
+
+// The feed errors, classified for display by package feedstatus.
+var (
+	ErrFeedEmpty  = feedstatus.ErrFeedEmpty
+	ErrFeedShrunk = feedstatus.ErrFeedShrunk
+)
+
+// markFailed records a failed sync with its classification.
+func markFailed(status *threatintel.SyncStatus, err error) {
+	c := feedstatus.Classify(err)
+	status.MarkSyncFailedWith(err.Error(), c.Code, c.Params)
+}
+
+func shrinkGuard(source string, got int, stored int64) error {
+	if min := int64(minSnapshotShare * float64(stored)); stored > 0 && int64(got) < min {
+		return &feedstatus.GuardError{
+			Base: ErrFeedShrunk, Kind: feedstatus.GuardSnapshot, N: int64(got), Limit: min,
+			Msg: fmt.Sprintf("%s (%s: %d entries, %d stored, minimum %d)", ErrFeedShrunk, source, got, stored, min),
+		}
+	}
+	return nil
+}
+
+func (s *IntelService) guardKEVShrink(ctx context.Context, got int) error {
+	stored, err := s.repo.KEV().Count(ctx)
+	if err != nil {
+		return fmt.Errorf("kev count: %w", err)
+	}
+	return shrinkGuard("kev", got, stored)
+}
+
+func (s *IntelService) guardEPSSShrink(ctx context.Context, got int) error {
+	stored, err := s.repo.EPSS().Count(ctx)
+	if err != nil {
+		return fmt.Errorf("epss count: %w", err)
+	}
+	return shrinkGuard("epss", got, stored)
 }
 
 // maxKEVRemovalsPerSync bounds how many CVEs one sync may remove from the KEV
@@ -477,7 +590,7 @@ func (s *IntelService) fetchEPSSData(ctx context.Context) ([]*threatintel.EPSSSc
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return nil, &feedstatus.HTTPError{Op: "epss fetch", Host: req.URL.Host, Status: resp.StatusCode}
 	}
 
 	// Decompress gzip. Bound both the compressed input and the decompressed
@@ -490,7 +603,27 @@ func (s *IntelService) fetchEPSSData(ctx context.Context) ([]*threatintel.EPSSSc
 
 	// The scores CSV is parsed by a pure helper so the format handling is
 	// unit-testable without the SSRF-guarded HTTP client (which refuses loopback).
-	return parseEPSSCSV(httpsec.NewLimitedReader(gzReader, maxDecompressedFeedBytes))
+	scores, err := parseEPSSCSV(httpsec.NewLimitedReader(gzReader, maxDecompressedFeedBytes))
+	if err != nil {
+		return nil, err
+	}
+	if len(scores) == 0 {
+		return nil, fmt.Errorf("epss %w", ErrFeedEmpty)
+	}
+	return scores, nil
+}
+
+// parseEPSSScoreDate reads the feed's score date: FIRST publishes a full
+// timestamp ("2026-10-26T12:03:22Z"); older files carry a plain date. Zero
+// when neither parses.
+func parseEPSSScoreDate(v string) time.Time {
+	v = strings.TrimSpace(v)
+	for _, layout := range []string{time.RFC3339, "2006-01-02"} {
+		if t, err := time.Parse(layout, v); err == nil {
+			return t.UTC()
+		}
+	}
+	return time.Time{}
 }
 
 // parseEPSSCSV parses the (already-decompressed) EPSS scores CSV. The feed opens
@@ -513,7 +646,9 @@ func parseEPSSCSV(r io.Reader) ([]*threatintel.EPSSScore, error) {
 	var modelVersion string
 	var scoreDate time.Time
 	if len(firstLine) > 0 && strings.HasPrefix(firstLine[0], "#") {
-		metadata := strings.TrimPrefix(firstLine[0], "#")
+		// The csv reader already split the comment line at its comma:
+		// score_date is in the second field, so the fields are joined back.
+		metadata := strings.TrimPrefix(strings.Join(firstLine, ","), "#")
 		for part := range strings.SplitSeq(metadata, ",") {
 			kv := strings.SplitN(part, ":", 2)
 			if len(kv) == 2 {
@@ -521,7 +656,7 @@ func parseEPSSCSV(r io.Reader) ([]*threatintel.EPSSScore, error) {
 				case "model_version":
 					modelVersion = kv[1]
 				case "score_date":
-					scoreDate, _ = time.Parse("2006-01-02", kv[1])
+					scoreDate = parseEPSSScoreDate(kv[1])
 				}
 			}
 		}
@@ -608,6 +743,9 @@ const kevValidatorsKey = "validators"
 type kevValidator struct {
 	ETag         string `json:"etag,omitempty"`
 	LastModified string `json:"modified,omitempty"`
+	// Released is the catalog's own release time (dateReleased): the data
+	// date of what this response carried.
+	Released string `json:"released,omitempty"`
 }
 
 // readKEVValidators reads the stored validators (any shape a JSON round
@@ -631,7 +769,8 @@ func readKEVValidators(meta map[string]any) map[string]kevValidator {
 		if len(et) > 256 || len(lm) > 64 {
 			continue
 		}
-		out[u] = kevValidator{ETag: et, LastModified: lm}
+		rel, _ := m["released"].(string)
+		out[u] = kevValidator{ETag: et, LastModified: lm, Released: rel}
 	}
 	return out
 }
@@ -661,7 +800,7 @@ func (s *IntelService) fetchKEVFrom(ctx context.Context, url string, prev kevVal
 		return nil, prev, errKEVNotModified
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, prev, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return nil, prev, &feedstatus.HTTPError{Op: "kev fetch", Host: req.URL.Host, Status: resp.StatusCode}
 	}
 
 	// Parse JSON (bounded to guard against an oversized upstream body)
@@ -669,7 +808,14 @@ func (s *IntelService) fetchKEVFrom(ctx context.Context, url string, prev kevVal
 	if err := json.NewDecoder(httpsec.NewLimitedReader(resp.Body, maxDecompressedFeedBytes)).Decode(&kevCatalog); err != nil {
 		return nil, prev, fmt.Errorf("failed to parse KEV JSON: %w", err)
 	}
-	next := kevValidator{ETag: resp.Header.Get("ETag"), LastModified: resp.Header.Get("Last-Modified")}
+	// A 200 without entries (a renamed or empty "vulnerabilities" array) is a
+	// failed fetch: its validators are not stored, so the next run fetches
+	// again instead of getting a 304 for the bad copy.
+	if len(kevCatalog.Vulnerabilities) == 0 {
+		return nil, prev, fmt.Errorf("kev %w", ErrFeedEmpty)
+	}
+	next := kevValidator{ETag: resp.Header.Get("ETag"), LastModified: resp.Header.Get("Last-Modified"),
+		Released: kevCatalog.releasedAt()}
 	if len(next.ETag) > 256 {
 		next.ETag = ""
 	}
@@ -924,11 +1070,6 @@ func (s *IntelService) GetThreatIntelStats(ctx context.Context, tenantID shared.
 				dto.LastSyncAt = &t
 			}
 
-			if status.LastSyncError() != "" {
-				e := status.LastSyncError()
-				dto.LastError = &e
-			}
-
 			if status.NextSyncAt() != nil {
 				t := status.NextSyncAt().Format("2006-01-02T15:04:05Z")
 				dto.NextSyncAt = &t
@@ -979,7 +1120,6 @@ type ThreatIntelSyncDTO struct {
 	LastSyncAt     *string `json:"last_sync_at,omitempty"`
 	LastSyncStatus string  `json:"last_sync_status"`
 	RecordsSynced  int     `json:"records_synced"`
-	LastError      *string `json:"last_error,omitempty"`
 	NextSyncAt     *string `json:"next_sync_at,omitempty"`
 }
 
@@ -990,6 +1130,17 @@ type kevCatalogResponse struct {
 	DateReleased    string             `json:"dateReleased"`
 	Count           int                `json:"count"`
 	Vulnerabilities []kevVulnerability `json:"vulnerabilities"`
+}
+
+// releasedAt is the catalog's release time as RFC 3339 ("" when absent or
+// unparseable).
+func (c kevCatalogResponse) releasedAt() string {
+	for _, layout := range []string{time.RFC3339Nano, "2006-01-02T15:04:05", "2006-01-02"} {
+		if t, err := time.Parse(layout, c.DateReleased); err == nil {
+			return t.UTC().Format(time.RFC3339)
+		}
+	}
+	return ""
 }
 
 type kevVulnerability struct {
@@ -1006,4 +1157,60 @@ type kevVulnerability struct {
 	// `string` typing here silently worked only while the feed fetch was failing
 	// upstream, then broke the moment the fetch was repaired.
 	CWEs []string `json:"cwes,omitempty"`
+}
+
+// FeedEnabled reports whether a feed's scheduled sync is on
+// (threatintel.ErrSyncStatusNotFound when the source is unknown).
+func (s *IntelService) FeedEnabled(ctx context.Context, source string) (bool, error) {
+	rows, err := s.repo.SyncStatus().GetAll(ctx)
+	if err != nil {
+		return false, err
+	}
+	for _, st := range rows {
+		if st.SourceName() == source {
+			return st.IsEnabled(), nil
+		}
+	}
+	return false, threatintel.ErrSyncStatusNotFound
+}
+
+// FeedView returns the view of one feed (threatintel.ErrSyncStatusNotFound
+// when the source is unknown).
+func (s *IntelService) FeedView(ctx context.Context, source string) (feedstatus.View, error) {
+	views, err := s.FeedViews(ctx)
+	if err != nil {
+		return feedstatus.View{}, err
+	}
+	for _, v := range views {
+		if v.Source == source {
+			return v, nil
+		}
+	}
+	return feedstatus.View{}, threatintel.ErrSyncStatusNotFound
+}
+
+// FeedViews returns the status of every feed as the platform admin console
+// shows it: one state, an error code, honest times and catalog sizes.
+func (s *IntelService) FeedViews(ctx context.Context) ([]feedstatus.View, error) {
+	rows, err := s.repo.SyncStatus().GetAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+	now := s.now().UTC()
+	out := make([]feedstatus.View, 0, len(rows))
+	for _, st := range rows {
+		var catalog int64
+		switch st.SourceName() {
+		case feedstatus.SourceEPSS:
+			if c, cerr := s.getEPSSCatalogCounts(ctx); cerr == nil {
+				catalog = c.total
+			}
+		case feedstatus.SourceKEV:
+			if c, cerr := s.getKEVCatalogCounts(ctx); cerr == nil {
+				catalog = c.total
+			}
+		}
+		out = append(out, feedstatus.Build(st, catalog, now))
+	}
+	return out, nil
 }

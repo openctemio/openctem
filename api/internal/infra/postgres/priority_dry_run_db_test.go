@@ -154,14 +154,16 @@ func TestDryRunRule_FloorKeepsKEVAboveRule(t *testing.T) {
 	tenantID := seedTestTenant(ctx, t, db)
 	assetID := seedPublicAsset(ctx, t, db, tenantID)
 	kevID := seedFinding(ctx, t, db, tenantID, assetID, "sca", "critical", "new")
-	if _, err := db.ExecContext(ctx, `UPDATE findings SET is_in_kev = TRUE WHERE id = $1`, kevID.String()); err != nil {
+	// The KEV flag follows the catalog, so the finding carries a CVE the
+	// (fake) catalog holds.
+	if _, err := db.ExecContext(ctx, `UPDATE findings SET is_in_kev = TRUE, cve_id = 'CVE-2024-3094' WHERE id = $1`, kevID.String()); err != nil {
 		t.Fatal(err)
 	}
 	seedFinding(ctx, t, db, tenantID, assetID, "sca", "critical", "new")
 
 	classifier := finding.NewPriorityClassificationService(
 		NewFindingRepository(&DB{DB: db}), NewAssetRepository(&DB{DB: db}),
-		fakeEPSSRepo{}, fakeKEVRepo{}, fakeRuleRepo{}, fakeAuditRepo{}, logger.NewNop())
+		fakeEPSSRepo{}, kevCatalogOf{"CVE-2024-3094"}, fakeRuleRepo{}, fakeAuditRepo{}, logger.NewNop())
 	classifier.SetDataScope(datascope.New(NewDataScopeRepository(&DB{DB: db}), nil, logger.NewNop()))
 	draft, err := vulnerability.NewPriorityOverrideRule(tenantID, "dry-run", vulnerability.PriorityP3,
 		[]vulnerability.RuleCondition{{Field: "severity", Operator: "eq", Value: "critical"}}, shared.NewID())

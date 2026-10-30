@@ -37,6 +37,8 @@ import (
 	retestdom "github.com/openctemio/openctem/api/pkg/domain/retest"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/softwarematch"
+	tooldom "github.com/openctemio/openctem/api/pkg/domain/tool"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -58,6 +60,12 @@ const (
 	ResolvedLookback = 90 * 24 * time.Hour
 	// checkTimeoutSeconds bounds one check on the sensor.
 	checkTimeoutSeconds = 120
+	// VersionDeadline is how long a version re-check may wait for its
+	// fingerprint scan and the inventory update it brings.
+	VersionDeadline = 2 * time.Hour
+	// ingestGrace is how long after its fingerprint run ended a version
+	// re-check that saw nothing waits for the run's report to be ingested.
+	ingestGrace = 5 * time.Minute
 )
 
 // Store is the persistence the service needs (*postgres.FindingRetestRepository).
@@ -213,6 +221,10 @@ type Service struct {
 	evidence      EvidenceStore
 	runs          RunRecorder
 	checks        CheckSource
+	versions      VersionEvidence
+	fingerprinter Fingerprinter
+	runReader     RunReader
+	templates     TemplateEvidence
 	now           func() time.Time
 	logger        *logger.Logger
 }
@@ -260,6 +272,8 @@ type RequestInput struct {
 	Trigger     retestdom.Trigger
 	RequestedBy *shared.ID            // the user, for a manual retest
 	Audit       auditapp.AuditContext // request context, for a manual retest
+	// Mode is ModeDefault (the finding's strategy) or ModeActiveCheck.
+	Mode string
 }
 
 // Request validates and queues one retest. The tenant comes from the caller's
@@ -271,16 +285,20 @@ func (s *Service) Request(ctx context.Context, in RequestInput) (*retestdom.Rete
 	if in.Trigger != retestdom.TriggerManual && !in.Trigger.IsSystem() {
 		return nil, fmt.Errorf("%w: unknown retest trigger", shared.ErrValidation)
 	}
+	if in.Mode != ModeDefault && in.Mode != ModeActiveCheck {
+		return nil, fmt.Errorf("%w: unknown retest mode", shared.ErrValidation)
+	}
 
-	f, a, templateID, target, chk, err := s.eligible(ctx, in.TenantID, in.FindingID)
+	c, err := s.eligible(ctx, in.TenantID, in.FindingID, in.Mode)
 	if err != nil {
 		return nil, err
 	}
+	f, a := c.f, c.a
 
 	if err := s.checkLimits(ctx, in.TenantID, f.ID(), a.ID(), in.Trigger); err != nil {
 		return nil, err
 	}
-	method, err := s.methodFor(ctx, in.TenantID, f, chk)
+	method, err := s.methodFor(ctx, in.TenantID, c)
 	if err != nil {
 		return nil, err
 	}
@@ -289,15 +307,19 @@ func (s *Service) Request(ctx context.Context, in RequestInput) (*retestdom.Rete
 	rt := &retestdom.Retest{
 		ID: shared.NewID(), TenantID: in.TenantID, FindingID: f.ID(), AssetID: a.ID(),
 		Trigger: in.Trigger, RequestedBy: in.RequestedBy, Status: retestdom.StatusPending,
-		PriorStatus: f.Status(), TemplateID: templateID, Target: target, Method: method,
+		PriorStatus: f.Status(), TemplateID: c.rule, Target: c.target, Method: method,
 		DeadlineAt: now.Add(Deadline), CreatedAt: now,
+	}
+	if method == retestdom.MethodVersion {
+		// A fingerprint scan is a whole scan run: it gets a longer deadline.
+		rt.DeadlineAt = now.Add(VersionDeadline)
 	}
 	if in.Trigger.IsSystem() {
 		rt.RequestedBy = nil
 	}
-	if chk != nil {
-		id := chk.CheckID
-		rt.CheckID, rt.CheckDigest, rt.CheckPath = &id, chk.Digest, chk.Path
+	if c.chk != nil {
+		id := c.chk.CheckID
+		rt.CheckID, rt.CheckDigest, rt.CheckPath = &id, c.chk.Digest, c.chk.Path
 	}
 	// The pending row claims the finding's single retest slot before anything
 	// is sent to a sensor.
@@ -305,13 +327,16 @@ func (s *Service) Request(ctx context.Context, in RequestInput) (*retestdom.Rete
 		return nil, err
 	}
 
-	ref := s.startRun(ctx, rt)
-
 	var checkID, reachID *shared.ID
 	var dispatchErr error
-	if method == retestdom.MethodTool {
-		checkID, dispatchErr = s.dispatchTool(ctx, rt, a, toolFor(f, chk), f.Fingerprint(), chk, ref)
-	} else {
+	switch method {
+	case retestdom.MethodVersion:
+		dispatchErr = s.dispatchVersion(ctx, rt, c)
+	case retestdom.MethodTool:
+		ref := s.startRun(ctx, rt)
+		checkID, dispatchErr = s.dispatchTool(ctx, rt, a, c, ref)
+	default:
+		ref := s.startRun(ctx, rt)
 		checkID, reachID, dispatchErr = s.dispatch(ctx, rt, a, ref)
 	}
 	if checkID != nil || reachID != nil {
@@ -323,7 +348,7 @@ func (s *Service) Request(ctx context.Context, in RequestInput) (*retestdom.Rete
 	if dispatchErr != nil {
 		s.logger.Warn("retest dispatch failed; settling as unknown",
 			"retest_id", rt.ID.String(), "finding_id", rt.FindingID.String(), "error", dispatchErr)
-		if _, err := s.settle(ctx, rt, retestdom.Inconclusive(retestdom.ReasonError, "dispatch failed: the checks could not be queued")); err != nil {
+		if _, err := s.settle(ctx, rt, retestdom.Inconclusive(retestdom.ReasonError, "dispatch failed: the checks could not be queued"), s.now()); err != nil {
 			s.logger.Error("failed to settle undispatched retest", "retest_id", rt.ID.String(), "error", err)
 		}
 		return nil, fmt.Errorf("queue retest: %w", dispatchErr)
@@ -336,7 +361,8 @@ func (s *Service) Request(ctx context.Context, in RequestInput) (*retestdom.Rete
 		s.auditRequest(ctx, in.Audit, rt)
 	}
 	s.logger.Info("retest queued", "tenant_id", rt.TenantID.String(), "finding_id", rt.FindingID.String(),
-		"retest_id", rt.ID.String(), "trigger", string(rt.Trigger), "template_id", templateID, "method", method)
+		"retest_id", rt.ID.String(), "trigger", string(rt.Trigger), "template_id", c.rule, "method", method,
+		"strategy", c.strategy.Kind)
 	return rt, nil
 }
 
@@ -391,107 +417,311 @@ func (s *Service) chooseMethod(ctx context.Context, tenantID shared.ID, tool str
 	return "", retestdom.ErrNoSensor
 }
 
-// methodFor picks how a finding is re-checked: a finding with a custom
-// check needs a sensor whose nuclei retest handler runs delivered templates
-// (always the tool method); any other finding follows chooseMethod.
-func (s *Service) methodFor(ctx context.Context, tenantID shared.ID, f *vulnerability.Finding, chk *CustomCheck) (string, error) {
-	if chk == nil {
-		return s.chooseMethod(ctx, tenantID, findingTool(f))
-	}
-	if s.sensors == nil {
+// methodFor picks how a finding is re-checked and, for a template re-run,
+// the sensor it is addressed to (c.pin):
+//   - a custom check needs a sensor whose nuclei retest handler runs
+//     delivered templates (always the tool method);
+//   - a version re-check needs an online sensor with the fingerprint tool;
+//   - an active check goes to a sensor that ran the template before;
+//   - a nuclei template re-run goes to a sensor that has the template
+//     (PickTemplateSensor), or is refused with ErrNoTemplateSensor;
+//   - anything else follows chooseMethod.
+func (s *Service) methodFor(ctx context.Context, tenantID shared.ID, c *candidate) (string, error) {
+	switch {
+	case c.chk != nil:
+		if s.sensors == nil {
+			return retestdom.MethodTool, nil
+		}
+		ok, err := s.sensors.HasRetestTemplatesSensor(ctx, tenantID, nucleiTool)
+		if err != nil {
+			return "", fmt.Errorf("sensor availability: %w", err)
+		}
+		if !ok {
+			return "", retestdom.ErrNoCheckSensor
+		}
 		return retestdom.MethodTool, nil
+	case c.activeCheck:
+		pin, err := s.activeCheckSensor(ctx, tenantID, c.rule)
+		if err != nil {
+			return "", err
+		}
+		if pin == nil {
+			return "", retestdom.ErrNoTemplateSensor
+		}
+		c.pin = pin
+		return retestdom.MethodTool, nil
+	case c.strategy.Kind == StrategyVersionRecheck:
+		if sc, ok := s.sensors.(SensorCandidates); ok {
+			has, err := sc.HasToolSensor(ctx, tenantID, c.tool)
+			if err != nil {
+				return "", fmt.Errorf("sensor availability: %w", err)
+			}
+			if !has {
+				return "", retestdom.ErrNoSensor
+			}
+		}
+		return retestdom.MethodVersion, nil
 	}
-	ok, err := s.sensors.HasRetestTemplatesSensor(ctx, tenantID, nucleiTool)
+	method, err := s.chooseMethod(ctx, tenantID, c.tool)
 	if err != nil {
-		return "", fmt.Errorf("sensor availability: %w", err)
+		return "", err
 	}
-	if !ok {
-		return "", retestdom.ErrNoCheckSensor
+	if method == retestdom.MethodTool && c.tool == nucleiTool {
+		pin, ok, err := s.templateSensor(ctx, tenantID, c.f)
+		if err != nil {
+			return "", err
+		}
+		if !ok {
+			return "", retestdom.ErrNoTemplateSensor
+		}
+		c.pin = pin
 	}
-	return retestdom.MethodTool, nil
+	return method, nil
 }
 
-// toolFor is the tool that re-checks the finding: nuclei for a custom
-// check, else the finding's own tool.
-func toolFor(f *vulnerability.Finding, chk *CustomCheck) string {
-	if chk != nil {
-		return nucleiTool
+// templateSensor picks the sensor a nuclei template re-run is addressed to
+// (PickTemplateSensor over the online sensors with the retest capability).
+// Without a candidate list (the availability does not offer one) any capable
+// sensor may run it.
+func (s *Service) templateSensor(ctx context.Context, tenantID shared.ID, f *vulnerability.Finding) (*shared.ID, bool, error) {
+	sc, ok := s.sensors.(SensorCandidates)
+	if !ok {
+		return nil, true, nil
 	}
-	return findingTool(f)
+	cands, err := sc.RetestSensors(ctx, tenantID, []string{validation.RetestCapability(nucleiTool)})
+	if err != nil {
+		return nil, false, fmt.Errorf("sensor availability: %w", err)
+	}
+	release := ""
+	if store, ok := s.findings.(vulnerability.TemplateProvenanceStore); ok {
+		if p, err := store.TemplateBaseline(ctx, tenantID, f.ID()); err == nil {
+			release = p.TemplatesVersion
+		}
+	}
+	pin, ok := PickTemplateSensor(cands, f.SensorID(), release)
+	return pin, ok, nil
+}
+
+// activeCheckSensor is an online sensor of the tenant, with the nuclei
+// retest capability, that reported a finding of the template before (so it
+// has it installed); nil when none.
+func (s *Service) activeCheckSensor(ctx context.Context, tenantID shared.ID, templateID string) (*shared.ID, error) {
+	if s.templates == nil {
+		return nil, nil
+	}
+	sc, ok := s.sensors.(SensorCandidates)
+	if !ok {
+		return nil, nil
+	}
+	seen, err := s.templates.TemplateSightingSensors(ctx, tenantID, nucleiTool, templateID, 10)
+	if err != nil {
+		return nil, fmt.Errorf("template sightings: %w", err)
+	}
+	if len(seen) == 0 {
+		return nil, nil
+	}
+	cands, err := sc.RetestSensors(ctx, tenantID, []string{validation.RetestCapability(nucleiTool)})
+	if err != nil {
+		return nil, fmt.Errorf("sensor availability: %w", err)
+	}
+	for _, id := range seen {
+		for _, c := range cands {
+			if c.ID == id {
+				pin := c.ID
+				return &pin, nil
+			}
+		}
+	}
+	return nil, nil
 }
 
 // nucleiTool is the tool of the template re-verify rung.
 const nucleiTool = validation.ReverifyTool
 
-// eligible loads the finding and its asset and checks that a deterministic
-// re-check can run: an eligible status, a rule of the finding's tool (for
-// nuclei, a template that passes the template guard), an active,
-// network-addressable asset that passes every target gate. Returns the
-// finding, the asset, the rule (template) id and the re-run target.
+// candidate is a finding that passed the eligibility checks, with how it is
+// re-checked.
+type candidate struct {
+	f        *vulnerability.Finding
+	a        *asset.Asset
+	strategy Strategy
+	// rule is the template or rule id re-run (the CVE for a version re-check).
+	rule string
+	// target is the re-run target (an origin for a template, the host or
+	// host:port the fingerprint scans for a version re-check).
+	target string
+	// tool re-checks: nuclei, the finding's tool, or the fingerprint tool.
+	tool string
+	chk  *CustomCheck
+	link *softwarematch.FindingLink
+	// activeCheck: the version-match finding's CVE template runs instead of
+	// the version re-check.
+	activeCheck bool
+	// pin is the sensor the retest command is addressed to (methodFor).
+	pin *shared.ID
+}
+
+// strategyOf says how a finding would be re-checked, before any asset or
+// sensor check: the strategy, or a reason code when there is none.
+func strategyOf(f *vulnerability.Finding, chk *CustomCheck) (Strategy, string) {
+	switch {
+	case chk != nil:
+		return Strategy{Kind: StrategyCustomCheck, Rule: chk.NucleiID, Tool: nucleiTool}, ""
+	case f.FindingType() == vulnerability.FindingTypeSecret || f.Source() == vulnerability.FindingSourceSecret:
+		return Strategy{Kind: StrategyNone}, ReasonSecretNeedsRotation
+	case isVersionMatch(f):
+		return Strategy{Kind: StrategyVersionRecheck, Rule: strings.TrimSpace(f.RuleID())}, ""
+	case isHumanFinding(f):
+		return Strategy{Kind: StrategyNone}, ReasonNoAutomaticRetest
+	}
+	return Strategy{Kind: StrategyTemplate, Rule: strings.TrimSpace(f.RuleID()), Tool: recheckTool(f)}, ""
+}
+
+// eligible loads the finding and its asset and checks that a re-check can
+// run. On a refusal the candidate is still returned once the finding is
+// read (its strategy says how it would be re-checked); callers check the
+// error first. The checks: an eligible status, a strategy (see strategyOf), the strategy's own
+// rules (a template that passes the template guard; a version re-check's
+// software link and a source a fingerprint re-reads), an active,
+// network-addressable asset that passes every target gate.
 //
 // A finding with a custom retest check is re-checked by that check (its
 // template id is the rule), whatever tool and rule it was reported with; a
-// check that cannot run refuses the retest with its reason.
-func (s *Service) eligible(ctx context.Context, tenantID, findingID shared.ID) (*vulnerability.Finding, *asset.Asset, string, string, *CustomCheck, error) {
+// check that cannot run refuses the retest with its reason. ModeActiveCheck
+// runs the template named after a version-match finding's CVE.
+func (s *Service) eligible(ctx context.Context, tenantID, findingID shared.ID, mode string) (*candidate, error) {
+	c := &candidate{}
 	f, err := s.findings.GetByID(ctx, tenantID, findingID)
 	if err != nil {
-		return nil, nil, "", "", nil, err
+		return nil, err
 	}
+	c.f = f
 	if !retestdom.EligibleStatus(f.Status()) {
-		return nil, nil, "", "", nil, ineligible(ReasonStatusNotEligible, fmt.Errorf("%w: a %s finding is not retested", retestdom.ErrNotEligible, f.Status()))
+		return c, ineligible(ReasonStatusNotEligible, fmt.Errorf("%w: a %s finding is not retested", retestdom.ErrNotEligible, f.Status()))
 	}
 	var chk *CustomCheck
 	if s.checks != nil {
 		if chk, err = s.checks.RunnableCheck(ctx, tenantID, findingID); err != nil {
 			if errors.Is(err, shared.ErrValidation) {
-				return nil, nil, "", "", nil, ineligible(ReasonCheckCannotRun, fmt.Errorf("%w: the retest check cannot run: %w", retestdom.ErrNotEligible, err))
+				return c, ineligible(ReasonCheckCannotRun, fmt.Errorf("%w: the retest check cannot run: %w", retestdom.ErrNotEligible, err))
 			}
-			return nil, nil, "", "", nil, fmt.Errorf("retest check: %w", err)
+			return c, fmt.Errorf("retest check: %w", err)
 		}
 	}
-	// A leaked secret is not fixed by a check that stops matching it: only
-	// rotation or revocation is, and a person verifies that.
-	if f.FindingType() == vulnerability.FindingTypeSecret || f.Source() == vulnerability.FindingSourceSecret {
-		return nil, nil, "", "", nil, ineligible(ReasonSecretNeedsRotation, fmt.Errorf("%w: a leaked secret is verified by rotating it, not by a re-check", retestdom.ErrNotEligible))
+	c.chk = chk
+	st, reason := strategyOf(f, chk)
+	c.strategy = st
+	switch reason {
+	case "":
+	case ReasonSecretNeedsRotation:
+		// A leaked secret is not fixed by a check that stops matching it: only
+		// rotation or revocation is, and a person verifies that.
+		return c, ineligible(reason, fmt.Errorf("%w: a leaked secret is verified by rotating it, not by a re-check", retestdom.ErrNotEligible))
+	default:
+		return c, ineligible(reason, fmt.Errorf("%w: a finding a person reported has no automatic retest (attach a retest check)", retestdom.ErrNotEligible))
 	}
-	templateID := strings.TrimSpace(f.RuleID())
-	tool := findingTool(f)
+	if mode == ModeActiveCheck {
+		if st.Kind != StrategyVersionRecheck {
+			return c, fmt.Errorf("%w: an active check is offered only for a version-based finding", shared.ErrValidation)
+		}
+		c.activeCheck = true
+	}
+	c.rule = st.Rule
+	c.tool = st.Tool
 	switch {
 	case chk != nil:
-		templateID = chk.NucleiID
-		if !validRuleID(templateID) {
-			return nil, nil, "", "", nil, ineligible(ReasonCheckCannotRun, fmt.Errorf("%w: the retest check's template id is not valid", retestdom.ErrNotEligible))
+		if !validRuleID(c.rule) {
+			return c, ineligible(ReasonCheckCannotRun, fmt.Errorf("%w: the retest check's template id is not valid", retestdom.ErrNotEligible))
 		}
-	case !validation.ValidRetestTool(tool) || !validRuleID(templateID):
-		return nil, nil, "", "", nil, ineligible(ReasonNoToolRule, fmt.Errorf("%w: only findings with a tool and a rule id can be retested", retestdom.ErrNotEligible))
-	case tool == nucleiTool && !validation.TemplateSignatureAllowed(templateID):
-		return nil, nil, "", "", nil, ineligible(ReasonTemplateNotRerun, fmt.Errorf("%w: this nuclei template is not re-run by a retest", retestdom.ErrNotEligible))
+	case c.activeCheck:
+		c.tool = nucleiTool
+		if !validRuleID(c.rule) || !validation.TemplateSignatureAllowed(c.rule) {
+			return c, ineligible(ReasonTemplateNotRerun, fmt.Errorf("%w: this template is not run by a retest", retestdom.ErrNotEligible))
+		}
+	case st.Kind == StrategyVersionRecheck:
+		rerun, err := s.versionEligible(ctx, tenantID, c)
+		if err != nil {
+			return c, err
+		}
+		if rerun {
+			if err := templateRuleCheck(c); err != nil {
+				return c, err
+			}
+		}
+	default:
+		if err := templateRuleCheck(c); err != nil {
+			return c, err
+		}
 	}
 	if f.AssetID().IsZero() {
-		return nil, nil, "", "", nil, ineligible(ReasonNoAsset, fmt.Errorf("%w: the finding has no asset", retestdom.ErrNotEligible))
+		return c, ineligible(ReasonNoAsset, fmt.Errorf("%w: the finding has no asset", retestdom.ErrNotEligible))
 	}
 	a, err := s.assets.GetByID(ctx, tenantID, f.AssetID())
 	if err != nil {
-		return nil, nil, "", "", nil, fmt.Errorf("asset lookup: %w", err)
+		return c, fmt.Errorf("asset lookup: %w", err)
 	}
+	c.a = a
 	if a.Status() != asset.StatusActive {
-		return nil, nil, "", "", nil, ineligible(ReasonAssetInactive, fmt.Errorf("%w: the asset is %s", retestdom.ErrNotEligible, a.Status()))
+		return c, ineligible(ReasonAssetInactive, fmt.Errorf("%w: the asset is %s", retestdom.ErrNotEligible, a.Status()))
 	}
 	if !validation.IsNetworkAddressable(a.Type()) {
-		return nil, nil, "", "", nil, ineligible(ReasonAssetNotNetworkAddressable, fmt.Errorf("%w: a %s asset has no network address to retest", retestdom.ErrNotEligible, a.Type()))
+		return c, ineligible(ReasonAssetNotNetworkAddressable, fmt.Errorf("%w: a %s asset has no network address to retest", retestdom.ErrNotEligible, a.Type()))
 	}
-	target := ResolveTarget(f.FilePath(), a.Name())
-	if target == "" {
-		return nil, nil, "", "", nil, ineligible(ReasonAssetNoAddress, fmt.Errorf("%w: the asset has no address", retestdom.ErrNotEligible))
+	if c.strategy.Kind == StrategyVersionRecheck && !c.activeCheck {
+		c.target = fingerprintTarget(a.Name(), c.link)
+	} else {
+		c.target = ResolveTarget(f.FilePath(), a.Name())
+	}
+	if c.target == "" {
+		return c, ineligible(ReasonAssetNoAddress, fmt.Errorf("%w: the asset has no address", retestdom.ErrNotEligible))
 	}
 	// A gate refusal is policy, not ineligibility: it wraps
 	// validation.ErrTargetRefused (never ErrNotEligible), so proof-of-fix
 	// stops instead of falling back to another probe of the same target.
-	if err := s.dispatcher.Preflight(ctx, tenantID, probeTarget(a, target)); err != nil {
-		return nil, nil, "", "", nil, err
+	if err := s.dispatcher.Preflight(ctx, tenantID, probeTarget(a, c.target)); err != nil {
+		return c, err
 	}
+	return c, nil
+}
 
-	return f, a, templateID, target, chk, nil
+// templateRuleCheck: a template re-run needs a well-formed tool and rule,
+// and a nuclei template that passes the template guard.
+func templateRuleCheck(c *candidate) error {
+	switch {
+	case !validation.ValidRetestTool(c.tool) || !validRuleID(c.rule):
+		return ineligible(ReasonNoToolRule, fmt.Errorf("%w: only findings with a tool and a rule id can be retested", retestdom.ErrNotEligible))
+	case c.tool == nucleiTool && !validation.TemplateSignatureAllowed(c.rule):
+		return ineligible(ReasonTemplateNotRerun, fmt.Errorf("%w: this nuclei template is not re-run by a retest", retestdom.ErrNotEligible))
+	}
+	return nil
+}
+
+// versionEligible reads a version-match finding's software link and picks
+// the fingerprint tool that re-reads its version. When a scanner has
+// reported the finding since, that scanner re-runs its own rule instead:
+// rerun is true and the candidate becomes a template re-run.
+func (s *Service) versionEligible(ctx context.Context, tenantID shared.ID, c *candidate) (rerun bool, err error) {
+	if s.versions == nil || s.fingerprinter == nil {
+		return false, ineligible(ReasonVersionEvidenceMissing, fmt.Errorf("%w: the version re-check is not available", retestdom.ErrNotEligible))
+	}
+	link, err := s.versions.FindingLink(ctx, tenantID, c.f.ID())
+	if err != nil {
+		return false, fmt.Errorf("version evidence: %w", err)
+	}
+	if link != nil && link.LastSeenTool != "" && !tooldom.SameTool(link.LastSeenTool, softwarematch.ToolName) {
+		c.tool = strings.ToLower(strings.TrimSpace(link.LastSeenTool))
+		c.strategy = Strategy{Kind: StrategyTemplate, Rule: c.rule, Tool: c.tool}
+		return true, nil
+	}
+	if link == nil || link.Source == "" || link.ProductID.IsZero() || link.VersionID.IsZero() || !validRuleID(c.rule) {
+		return false, ineligible(ReasonVersionEvidenceMissing, fmt.Errorf("%w: the software this finding was matched on is no longer known", retestdom.ErrNotEligible))
+	}
+	tool := fingerprintToolFor(link)
+	if tool == "" {
+		return false, ineligible(ReasonVersionSourceNotRescannable, fmt.Errorf("%w: the version came from a source no network fingerprint re-reads", retestdom.ErrNotEligible))
+	}
+	c.link, c.tool = link, tool
+	c.strategy.Tool, c.strategy.Product, c.strategy.Version = tool, link.Product, link.Version
+	return false, nil
 }
 
 // CanRetest reports whether a retest of the finding would be accepted now
@@ -506,25 +736,96 @@ func (s *Service) CanRetest(ctx context.Context, tenantID, findingID shared.ID) 
 // Availability is CanRetest with the reason code when a retest would be
 // refused (one of the Reason* constants). It records nothing.
 func (s *Service) Availability(ctx context.Context, tenantID, findingID shared.ID) (bool, string, error) {
-	f, _, _, _, chk, err := s.eligible(ctx, tenantID, findingID)
+	o, err := s.Offer(ctx, tenantID, findingID)
+	if err != nil {
+		return false, "", err
+	}
+	return o.Available, o.Reason, nil
+}
+
+// Offer says how the finding would be re-checked, whether a retest would be
+// accepted now (and why not) and, for a version-match finding, whether an
+// installed template can run as an optional active check. It records
+// nothing.
+func (s *Service) Offer(ctx context.Context, tenantID, findingID shared.ID) (Offer, error) {
+	var o Offer
+	c, err := s.eligible(ctx, tenantID, findingID, ModeDefault)
 	switch {
+	case c != nil && c.strategy.Kind != "":
+		o.Strategy = c.strategy
+	case c != nil:
+		o.Strategy, _ = strategyOf(c.f, c.chk)
+	}
+	if reason, done, err := availabilityReason(err); done {
+		o.Reason = reason
+		if err != nil {
+			return Offer{}, err
+		}
+		o.ActiveCheck = s.offerActiveCheck(ctx, tenantID, findingID, o.Strategy)
+		return o, nil
+	}
+	_, err = s.methodFor(ctx, tenantID, c)
+	if reason, done, err := availabilityReason(err); done {
+		o.Reason = reason
+		if err != nil {
+			return Offer{}, err
+		}
+		if reason == ReasonNoSensor && c.strategy.Kind == StrategyTemplate && isImported(c.f) {
+			// An imported finding whose tool no sensor of the organization runs.
+			o.Reason = ReasonImportedNoRetest
+		}
+	} else {
+		o.Available = true
+	}
+	o.ActiveCheck = s.offerActiveCheck(ctx, tenantID, findingID, o.Strategy)
+	return o, nil
+}
+
+// availabilityReason maps an eligibility or method error to a reason code.
+// done is false for nil; err is returned for an unexpected error.
+func availabilityReason(err error) (reason string, done bool, out error) {
+	switch {
+	case err == nil:
+		return "", false, nil
 	case errors.Is(err, validation.ErrTargetRefused):
-		return false, ReasonTargetRefused, nil
+		return ReasonTargetRefused, true, nil
 	case errors.Is(err, retestdom.ErrNotEligible):
-		return false, IneligibleReason(err), nil
-	case err != nil:
-		return false, "", err
-	}
-	_, err = s.methodFor(ctx, tenantID, f, chk)
-	switch {
+		return IneligibleReason(err), true, nil
 	case errors.Is(err, retestdom.ErrNoSensor):
-		return false, ReasonNoSensor, nil
+		return ReasonNoSensor, true, nil
 	case errors.Is(err, retestdom.ErrNoCheckSensor):
-		return false, ReasonNoCheckSensor, nil
-	case err != nil:
-		return false, "", err
+		return ReasonNoCheckSensor, true, nil
+	case errors.Is(err, retestdom.ErrNoTemplateSensor):
+		return ReasonNoTemplateSensor, true, nil
 	}
-	return true, "", nil
+	return "", true, err
+}
+
+// offerActiveCheck is the optional active check of a version-match finding:
+// offered when a template named after its CVE ran on a sensor of the
+// organization before; available when that sensor is online now. nil for
+// other strategies and when no such template is known.
+func (s *Service) offerActiveCheck(ctx context.Context, tenantID, findingID shared.ID, st Strategy) *ActiveCheck {
+	if st.Kind != StrategyVersionRecheck || s.templates == nil || !validRuleID(st.Rule) || !validation.TemplateSignatureAllowed(st.Rule) {
+		return nil
+	}
+	seen, err := s.templates.TemplateSightingSensors(ctx, tenantID, nucleiTool, st.Rule, 1)
+	if err != nil || len(seen) == 0 {
+		return nil
+	}
+	ac := &ActiveCheck{Template: st.Rule}
+	c, err := s.eligible(ctx, tenantID, findingID, ModeActiveCheck)
+	if reason, done, _ := availabilityReason(err); done {
+		ac.Reason = nonEmptyStr(reason, ReasonNotEligible)
+		return ac
+	}
+	if _, err := s.methodFor(ctx, tenantID, c); err != nil {
+		reason, _, _ := availabilityReason(err)
+		ac.Reason = nonEmptyStr(reason, ReasonActiveCheckUnavailable)
+		return ac
+	}
+	ac.Available = true
+	return ac
 }
 
 // checkLimits applies the per-finding cooldown and the in-flight caps.
@@ -588,17 +889,24 @@ func (s *Service) dispatch(ctx context.Context, rt *retestdom.Retest, a *asset.A
 	return &checkID, &reachID, nil
 }
 
-// dispatchTool queues the one retest command for the finding's own tool.
-// A custom check travels with the command as its one custom template.
-func (s *Service) dispatchTool(ctx context.Context, rt *retestdom.Retest, a *asset.Asset, tool, fingerprint string, chk *CustomCheck, ref runRef) (*shared.ID, error) {
+// dispatchTool queues the one retest command for the finding's own tool
+// (nuclei for a custom check or an active check). A custom check travels with
+// the command as its one custom template; a sensor picked for the template
+// (c.pin) gets the command addressed to it.
+func (s *Service) dispatchTool(ctx context.Context, rt *retestdom.Retest, a *asset.Asset, c *candidate, ref runRef) (*shared.ID, error) {
+	tool := c.tool
+	if c.chk != nil {
+		tool = nucleiTool
+	}
 	job := validation.ToolRetestJob{
 		TenantID: rt.TenantID, FindingID: rt.FindingID, RetestID: rt.ID, Tool: tool,
-		Target: probeTarget(a, rt.Target), RuleID: rt.TemplateID, Fingerprint: fingerprint,
+		Target: probeTarget(a, rt.Target), RuleID: rt.TemplateID, Fingerprint: c.f.Fingerprint(),
 		TimeoutSeconds: checkTimeoutSeconds,
 		ScanRunID:      ref.run, ScanRunStepID: ref.step,
+		SensorID: c.pin,
 	}
-	if chk != nil {
-		job.Template = &validation.RetestTemplate{ID: chk.TemplateID.String(), Name: chk.TemplateName, Content: chk.Content}
+	if c.chk != nil {
+		job.Template = &validation.RetestTemplate{ID: c.chk.TemplateID.String(), Name: c.chk.TemplateName, Content: c.chk.Content}
 	}
 	id, err := s.dispatcher.DispatchToolRetest(ctx, job)
 	if err != nil {
@@ -676,8 +984,12 @@ func (s *Service) Sweep(ctx context.Context, limit int) (int, error) {
 // trySettle reads both checks; when both are terminal (or force — the deadline
 // passed), it decides and settles. Returns whether it settled.
 func (s *Service) trySettle(ctx context.Context, rt *retestdom.Retest, force bool) (bool, error) {
+	if rt.Method == retestdom.MethodVersion {
+		return s.trySettleVersion(ctx, rt, force)
+	}
 	matchedAt := s.matchedAt(ctx, rt)
-	cls := s.settleClass(ctx, rt)
+	checkedAt := s.checkCompletedAt(ctx, rt)
+	cls := s.settleClass(ctx, rt, checkedAt)
 	if rt.CheckID != nil {
 		// A custom check proves the endpoint it requests, not the one the
 		// finding was reported at.
@@ -709,7 +1021,7 @@ func (s *Service) trySettle(ctx context.Context, rt *retestdom.Retest, force boo
 		if cmd != nil {
 			rt.SensorID = cmd.SensorID
 		}
-		return s.settle(ctx, rt, v)
+		return s.settle(ctx, rt, v, checkedAt)
 	}
 	rt.Method = retestdom.MethodValidate
 	check, checkDone := s.readCheck(ctx, rt.TenantID, rt.CheckCommandID)
@@ -724,7 +1036,19 @@ func (s *Service) trySettle(ctx context.Context, rt *retestdom.Retest, force boo
 	v = s.applyDrift(ctx, rt, v, check.TemplateDigest, true)
 	s.storeAttempt(ctx, rt, check.Evidence, check.TemplateDigest)
 	rt.SensorID = s.checkSensor(ctx, rt)
-	return s.settle(ctx, rt, v)
+	return s.settle(ctx, rt, v, checkedAt)
+}
+
+// checkCompletedAt is when the retest's check command finished: the moment
+// its result was seen, whatever time the settlement runs at. The current time
+// stands in when the command has no completion time (never ran, or gone).
+func (s *Service) checkCompletedAt(ctx context.Context, rt *retestdom.Retest) time.Time {
+	if rt.CheckCommandID != nil {
+		if c, err := s.commands.GetByTenantAndID(ctx, rt.TenantID, *rt.CheckCommandID); err == nil && c != nil && c.CompletedAt != nil {
+			return *c.CompletedAt
+		}
+	}
+	return s.now()
 }
 
 // checkSensor is the sensor that claimed the retest's check command (nil when
@@ -801,7 +1125,7 @@ func (s *Service) matchedAt(ctx context.Context, rt *retestdom.Retest) string {
 // retest, at least MinDenialGap and at most MaxDenialAge ago and after the finding's last
 // sighting or reopening, was an origin refusal of the same check.
 // Anything unreadable gives the careful answer.
-func (s *Service) settleClass(ctx context.Context, rt *retestdom.Retest) retestdom.Class {
+func (s *Service) settleClass(ctx context.Context, rt *retestdom.Retest, checkedAt time.Time) retestdom.Class {
 	var cls retestdom.Class
 	if rt.CheckID != nil {
 		return cls
@@ -826,11 +1150,11 @@ func (s *Service) settleClass(ctx context.Context, rt *retestdom.Retest) retestd
 		}
 		cls.PriorAccessDenied = p.Outcome == retestdom.OutcomeInconclusive &&
 			p.ReasonCode == retestdom.ReasonAccessDenied && p.TemplateID == rt.TemplateID && p.Target == rt.Target &&
-			p.CompletedAt != nil && s.now().Sub(*p.CompletedAt) >= retestdom.MinDenialGap &&
+			p.CompletedAt != nil && checkedAt.Sub(*p.CompletedAt) >= retestdom.MinDenialGap &&
 			// A denial counts only when it is recent and the finding was not
 			// seen or reopened since: a sighting after it shows the page was
 			// reachable, so the refusal is no longer the first of a pair.
-			s.now().Sub(*p.CompletedAt) <= retestdom.MaxDenialAge && p.CompletedAt.After(sightedAt)
+			checkedAt.Sub(*p.CompletedAt) <= retestdom.MaxDenialAge && p.CompletedAt.After(sightedAt)
 		break
 	}
 	return cls
@@ -974,7 +1298,7 @@ func (s *Service) templateBaseline(ctx context.Context, rt *retestdom.Retest) (s
 // settle completes the retest: the finding moves per the outcome (decided under
 // the row lock from its current status) and the completion is written with the
 // actor "system: retest".
-func (s *Service) settle(ctx context.Context, rt *retestdom.Retest, v retestdom.Verdict) (bool, error) {
+func (s *Service) settle(ctx context.Context, rt *retestdom.Retest, v retestdom.Verdict, checkedAt time.Time) (bool, error) {
 	outcome, reason := v.Outcome, evidence.RedactText(v.Reason)
 	autoResolve := s.policy != nil && s.policy.AutoResolve(ctx, rt.TenantID)
 	var resolvedBy *shared.ID
@@ -1019,7 +1343,7 @@ func (s *Service) settle(ctx context.Context, rt *retestdom.Retest, v retestdom.
 	var regression bool
 	res, err := s.store.Settle(ctx, retestdom.SettleInput{
 		TenantID: rt.TenantID, RetestID: rt.ID, FindingID: rt.FindingID,
-		Outcome: outcome, ReasonCode: v.Code, Reason: reason, SensorID: rt.SensorID, ResolvedBy: resolvedBy, TemplateID: rt.TemplateID,
+		Outcome: outcome, ReasonCode: v.Code, Reason: reason, SensorID: rt.SensorID, ResolvedBy: resolvedBy, TemplateID: rt.TemplateID, CheckedAt: checkedAt,
 		Decide: func(current vulnerability.FindingStatus) retestdom.SettleDecision {
 			next, change := retestdom.NextStatus(current, outcome, autoResolve)
 			regression = change && retestdom.IsRegression(current, next)
@@ -1033,6 +1357,12 @@ func (s *Service) settle(ctx context.Context, rt *retestdom.Retest, v retestdom.
 	})
 	if err != nil {
 		return false, err
+	}
+	if res.Stale {
+		// A scan sighted the finding after the check ran: the repository
+		// recorded the attempt as inconclusive and moved nothing.
+		v = retestdom.StaleFixVerdict()
+		outcome = v.Outcome
 	}
 	if res.Applied {
 		s.finishRun(ctx, rt, v)
@@ -1075,6 +1405,9 @@ func (s *Service) followUp(ctx context.Context, rt *retestdom.Retest, res retest
 	}
 	if rt.CheckID != nil {
 		detail = fmt.Sprintf("Retest with the custom check %s (%s) against %s: %s.", rt.TemplateID, rt.CheckDigest, rt.Target, reason)
+	}
+	if rt.Method == retestdom.MethodVersion {
+		detail = fmt.Sprintf("Version re-check of %s on %s: %s.", rt.TemplateID, rt.Target, reason)
 	}
 	s.announcer.Announce(ctx, Change{
 		TenantID: rt.TenantID, FindingID: rt.FindingID, Kind: kind, Source: "retest",
@@ -1155,7 +1488,9 @@ func (s *Service) startRun(ctx context.Context, rt *retestdom.Retest) runRef {
 // result). A tool that could not run the check blocks it; a retest that
 // produced no result, or whose target did not answer, fails it with the reason.
 func (s *Service) finishRun(ctx context.Context, rt *retestdom.Retest, v retestdom.Verdict) {
-	if s.runs == nil || rt.RunID == nil {
+	// A version re-check's run is its fingerprint scan, which the scan run
+	// service settles itself.
+	if s.runs == nil || rt.RunID == nil || rt.Method == retestdom.MethodVersion {
 		return
 	}
 	succeeded := v.Outcome != retestdom.OutcomeInconclusive

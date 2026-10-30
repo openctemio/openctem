@@ -67,7 +67,7 @@ func TestFindingImport_FullCoverageCloses_DB(t *testing.T) {
 	ih.h.SetReceiptStores(receipts, postgres.NewIdempotencyKeyRepository(pdb))
 	write := []string{permission.FindingsWrite.String(), permission.AssetsWrite.String(), permission.AssetsImport.String()}
 	statusOnly := append(append([]string{}, write...), permission.FindingsStatus.String())
-	withStatus := append(append([]string{}, statusOnly...), permission.FindingsBulkUpdate.String())
+	withStatus := append(append([]string{}, statusOnly...), permission.FindingsBulkUpdate.String(), permission.FindingsVerify.String())
 
 	if rec, _ := ih.uploadAs(t, "", write, receiptNessusFull); rec.Code != http.StatusAccepted {
 		t.Fatalf("baseline %d %s", rec.Code, rec.Body.String())
@@ -171,7 +171,7 @@ func TestFindingImport_FullCoverageHiddenAsset_DB(t *testing.T) {
 		_, _ = ih.db.Exec(`DELETE FROM bounty_programs WHERE tenant_id = $1`, ih.tenantID)
 	})
 	perms := []string{permission.FindingsWrite.String(), permission.AssetsWrite.String(), permission.AssetsImport.String(),
-		permission.FindingsStatus.String(), permission.FindingsBulkUpdate.String()}
+		permission.FindingsStatus.String(), permission.FindingsBulkUpdate.String(), permission.FindingsVerify.String()}
 
 	rec, _ := ih.uploadAs(t, "?coverage=full&asset_id="+hidden, perms, receiptNessusSubset)
 	if rec.Code != http.StatusBadRequest {
@@ -192,7 +192,7 @@ func TestFindingImport_FullCoverageConcurrentUploads_DB(t *testing.T) {
 	pdb := &postgres.DB{DB: ih.db}
 	ih.h.SetReceiptStores(postgres.NewIngestReceiptRepository(pdb), postgres.NewIdempotencyKeyRepository(pdb))
 	perms := []string{permission.FindingsWrite.String(), permission.AssetsWrite.String(), permission.AssetsImport.String(),
-		permission.FindingsStatus.String(), permission.FindingsBulkUpdate.String()}
+		permission.FindingsStatus.String(), permission.FindingsBulkUpdate.String(), permission.FindingsVerify.String()}
 
 	if rec, _ := ih.uploadAs(t, "", perms, receiptNessusFull); rec.Code != http.StatusAccepted {
 		t.Fatalf("baseline %d %s", rec.Code, rec.Body.String())
@@ -260,4 +260,90 @@ func TestFindingImport_FullCoverageConcurrentUploads_DB(t *testing.T) {
 	if _, _, err := repo.ImportCoverageCandidates(ctx, shared.NewID(), []shared.ID{asset}, tool, receipt); !errors.Is(err, ingestreport.ErrReceiptIncomplete) {
 		t.Fatalf("cross-tenant receipt: err %v, want ErrReceiptIncomplete", err)
 	}
+}
+
+// Closing by absence is a verification of a fix: an uploader without
+// findings:verify has the file imported and closes nothing (receipt note
+// needs_verify), a critical or known-exploited finding stays open, and a
+// finding whose latest sighting came from a platform sensor stays open. The
+// last case closes once none of those holds.
+func TestFindingImport_FullCoverageClosureGuards_DB(t *testing.T) {
+	ih := newImportHarness(t, ingest.SourceResolveDryRun)
+	pdb := &postgres.DB{DB: ih.db}
+	ih.h.SetReceiptStores(postgres.NewIngestReceiptRepository(pdb), postgres.NewIdempotencyKeyRepository(pdb))
+	write := []string{permission.FindingsWrite.String(), permission.AssetsWrite.String(), permission.AssetsImport.String(),
+		permission.FindingsStatus.String(), permission.FindingsBulkUpdate.String()}
+	withVerify := append(append([]string{}, write...), permission.FindingsVerify.String())
+
+	if rec, _ := ih.uploadAs(t, "", write, receiptNessusFull); rec.Code != http.StatusAccepted {
+		t.Fatalf("baseline %d %s", rec.Code, rec.Body.String())
+	}
+	var assetID string
+	if err := ih.db.QueryRow(`SELECT asset_id::text FROM findings WHERE tenant_id = $1 LIMIT 1`, ih.tenantID).Scan(&assetID); err != nil {
+		t.Fatal(err)
+	}
+	full := "?coverage=full&asset_id=" + assetID
+	// The subset reports plugin 1001; 1002 is the one an upload may close.
+	attempt := func(perms []string) handler.FindingImportResponse {
+		t.Helper()
+		rec, resp := ih.uploadAs(t, full, perms, receiptNessusSubset)
+		if rec.Code != http.StatusAccepted || resp.Receipt == nil {
+			t.Fatalf("upload %d %s", rec.Code, rec.Body.String())
+		}
+		return resp
+	}
+	closed := func() int {
+		return ih.count(t, `SELECT count(*) FROM findings WHERE tenant_id = $1 AND rule_id = '1002' AND status = 'resolved'`, ih.tenantID)
+	}
+	reopen := func() {
+		if _, err := ih.db.Exec(`UPDATE findings SET status = 'new', resolved_at = NULL, resolution = NULL, closure_reason = NULL, verification = NULL
+			WHERE tenant_id = $1 AND rule_id = '1002'`, ih.tenantID); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// No findings:verify: imported, nothing closed, the receipt says why.
+	resp := attempt(write)
+	if resp.Receipt.Coverage.Note != "needs_verify" || resp.Receipt.Coverage.Type != "partial" || closed() != 0 {
+		t.Fatalf("without findings:verify: receipt %+v, closed %d", resp.Receipt.Coverage, closed())
+	}
+	if n := ih.count(t, `SELECT count(*) FROM finding_ingest_actions a JOIN findings f ON f.id = a.finding_id
+		WHERE a.receipt_id = $1 AND f.rule_id = '1001'`, resp.Receipt.ID); n != 1 {
+		t.Fatalf("the file was not imported: %d action rows for the reported finding", n)
+	}
+
+	// Critical and known-exploited findings stay open.
+	for _, set := range []string{`severity = 'critical'`, `is_in_kev = true`} {
+		if _, err := ih.db.Exec(`UPDATE findings SET `+set+` WHERE tenant_id = $1 AND rule_id = '1002'`, ih.tenantID); err != nil {
+			t.Fatal(err)
+		}
+		if attempt(withVerify); closed() != 0 {
+			t.Fatalf("a finding with %s was closed by an upload", set)
+		}
+	}
+	if _, err := ih.db.Exec(`UPDATE findings SET severity = 'medium', is_in_kev = false WHERE tenant_id = $1 AND rule_id = '1002'`, ih.tenantID); err != nil {
+		t.Fatal(err)
+	}
+
+	// A finding a sensor sighted after the last upload stays open.
+	receipt := shared.NewID().String()
+	if _, err := ih.db.Exec(`INSERT INTO ingest_receipts (id, tenant_id, source_kind, source_ref) VALUES ($1::uuid, $2, 'command', $1::text)`, receipt, ih.tenantID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ih.db.Exec(`INSERT INTO finding_ingest_actions (tenant_id, receipt_id, finding_id, action)
+		SELECT tenant_id, $1, id, 'still_detected' FROM findings WHERE tenant_id = $2 AND rule_id = '1002'`, receipt, ih.tenantID); err != nil {
+		t.Fatal(err)
+	}
+	if attempt(withVerify); closed() != 0 {
+		t.Fatal("a finding last sighted by a platform sensor was closed by an upload")
+	}
+	if _, err := ih.db.Exec(`DELETE FROM ingest_receipts WHERE id = $1`, receipt); err != nil {
+		t.Fatal(err)
+	}
+
+	// None of the guards applies: it closes.
+	if resp := attempt(withVerify); resp.Receipt.Coverage.Note != "resolved" || closed() != 1 {
+		t.Fatalf("control: receipt %+v, closed %d", resp.Receipt.Coverage, closed())
+	}
+	reopen()
 }

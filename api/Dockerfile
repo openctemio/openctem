@@ -6,7 +6,7 @@
 # -----------------------------------------------------------------------------
 # Development stage - Standalone, no deps copy needed (uses volumes)
 # -----------------------------------------------------------------------------
-FROM golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS development
+FROM golang:1.27.3-alpine@sha256:b8c9b82affbbb82a020bbcf998dad2ba9516944ac7e883524642a481a9505e9c AS development
 
 WORKDIR /app
 
@@ -15,9 +15,9 @@ RUN apk add --no-cache git ca-certificates tzdata curl postgresql-client
 
 # Install dev tools (pinned versions for reproducibility)
 # hadolint ignore=DL3059
+# (The entrypoint migrates with this tree's own runner: go run ./cmd/openctem-migrate.)
 RUN go install github.com/air-verse/air@v1.64.0 && \
-    go install github.com/go-delve/delve/cmd/dlv@v1.24.2 && \
-    go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1
+    go install github.com/go-delve/delve/cmd/dlv@v1.24.2
 
 # Copy entrypoint script
 COPY scripts/dev-entrypoint.sh /usr/local/bin/dev-entrypoint.sh
@@ -41,7 +41,7 @@ CMD ["/usr/local/bin/dev-entrypoint.sh"]
 # SDK is fetched from GitHub as a released module (not local)
 # Build context: api/ folder (not parent)
 # -----------------------------------------------------------------------------
-FROM golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS base
+FROM golang:1.27.3-alpine@sha256:b8c9b82affbbb82a020bbcf998dad2ba9516944ac7e883524642a481a9505e9c AS base
 
 WORKDIR /app
 
@@ -65,7 +65,7 @@ RUN go mod download
 # /app/api/openapi/swagger.yaml. It is the same on every architecture, so it
 # runs on the build platform (no emulation). Same swag version and flags as
 # `make swagger` (SWAG_VERSION there and in scripts/check-openapi.sh).
-FROM --platform=$BUILDPLATFORM golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS openapi
+FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine@sha256:b8c9b82affbbb82a020bbcf998dad2ba9516944ac7e883524642a481a9505e9c AS openapi
 ARG SWAG_VERSION=v1.16.4
 WORKDIR /app
 ENV GOWORK=off
@@ -120,6 +120,8 @@ ARG BUILD_TIME=""
 #                    from this image, see deploy/docker-compose.job-signer.yml.
 #                    A binary of its own: it holds the signing key and links
 #                    none of the API.
+#   openctem-migrate the migration runner (cmd/openctem-migrate), for the
+#                    all-in-one image and for operators (status, force).
 RUN --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 \
     GOOS=${TARGETOS:-linux} \
@@ -128,7 +130,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
       -X github.com/openctemio/openctem/api/pkg/version.Version=${VERSION} \
       -X github.com/openctemio/openctem/api/pkg/version.Commit=${COMMIT} \
       -X github.com/openctemio/openctem/api/pkg/version.BuildTime=${BUILD_TIME}" \
-    -o /app/bin/ ./cmd/server ./cmd/signer \
+    -o /app/bin/ ./cmd/server ./cmd/signer ./cmd/openctem-migrate \
  && mv /app/bin/signer /app/bin/openctem-signer
 
 
@@ -136,7 +138,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 # Runtime filesystem additions: the users and the writable directories, made
 # here because the production image has no shell to make them with.
 # -----------------------------------------------------------------------------
-FROM gcr.io/distroless/static-debian13:nonroot@sha256:e2e927ec666bae08560abb3c55d0659eceabb657f56b6782ab500a9fc7f555e3 AS runtime-base
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99 AS runtime-base
 
 FROM base AS runtime-fs
 COPY --from=runtime-base /etc/passwd /etc/group /out/etc/
@@ -168,7 +170,7 @@ COPY --from=runtime-fs /out/etc/passwd /out/etc/group /etc/
 
 # Everything below is owned by root and read-only to the runtime users: the API
 # cannot rewrite its own binaries, spec, migrations or configs.
-COPY --from=builder /app/bin/server /app/bin/openctem-signer ./
+COPY --from=builder /app/bin/server /app/bin/openctem-signer /app/bin/openctem-migrate ./
 # The operator commands: /app/<command> -> server (see the builder stage).
 COPY --from=runtime-fs /out/tool-links/ ./
 
@@ -177,9 +179,6 @@ COPY --from=runtime-fs /out/tool-links/ ./
 COPY --from=openapi /app/api/openapi/swagger.yaml ./api/openapi/swagger.yaml
 
 COPY --from=builder /app/migrations ./migrations
-# The migrate wrapper of the migrations image, for the all-in-one image (a
-# file here; this image never runs it).
-COPY --from=builder /app/scripts/migrate-entrypoint.sh ./migrate-entrypoint.sh
 
 # Copy sensor config templates (editable without rebuild — operators can
 # mount a configmap/host volume on /app/configs to override)

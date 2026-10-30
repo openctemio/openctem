@@ -7,7 +7,7 @@ import { test, expect } from '../fixtures/authenticated-page'
  * checks they reach the page and that a view is a plain link.
  */
 
-test.describe('Findings quick views', () => {
+test.describe('Findings quick views', { tag: ['@findings'] }, () => {
   test('the sidebar lists the views under Findings, and a view is a link to the list', async ({
     page,
   }) => {
@@ -21,7 +21,7 @@ test.describe('Findings quick views', () => {
       'My queue',
       'SLA breached',
       'Pending approval',
-      'Accepted · expiring',
+      'Accepted, expiring soon',
       'Closed',
     ]) {
       await expect(nav.getByRole('link', { name: new RegExp(`^${name}`) })).toBeVisible()

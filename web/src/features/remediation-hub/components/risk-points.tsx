@@ -35,7 +35,7 @@ export function RiskPoints({
         {parts.length > 0 && (
           <p>
             {t('remediationHub.risk.parts', undefined, {
-              parts: parts.map((p) => `${p.label} ×${p.count}`).join(' · '),
+              parts: parts.map((p) => `${p.label} ×${p.count}`).join(', '),
             })}
           </p>
         )}

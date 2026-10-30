@@ -1,10 +1,12 @@
 'use client'
 
+import type { ReactNode } from 'react'
 import { Flame, ListChecks, Wrench } from 'lucide-react'
 import Link from '@/components/link'
 import { Badge } from '@/components/ui/badge'
 import { PageHeader } from '@/features/shared/components/page-header'
 import { Button } from '@/components/ui/button'
+import { DisabledReason } from '@/components/ui/disabled-reason'
 import { KevBadge } from '@/components/ui/kev-badge'
 import { PriorityBadge } from '@/components/ui/priority-badge'
 import { SignalChip } from '@/components/ui/signal-chip'
@@ -14,6 +16,7 @@ import { SafeExternalLink } from '@/components/safe-external-link'
 import type { Vulnerability } from '../../types'
 import type { CveExposure } from '../../types/exposure'
 import { cveFindingsHref } from '../../lib/vuln-page'
+import { formatDateOnly } from '@/lib/date-only'
 
 export interface VulnHeaderProps {
   cve: string
@@ -22,6 +25,11 @@ export interface VulnHeaderProps {
   fix?: string
   /** Opens "Create remediation task"; undefined when the caller may not create one. */
   onCreateTask?: () => void
+  /**
+   * More actions (exception, retest, export), after "Create remediation
+   * task"; given why the actions on open findings are off, if they are.
+   */
+  actions?: (blocker: string | undefined) => ReactNode
 }
 
 /**
@@ -29,12 +37,24 @@ export interface VulnHeaderProps {
  * signal chips (KEV, emerging threat, worst priority, fix available) and the
  * actions. anatomy-ok: inside a PageStack (vulnerability-page.tsx renders it first). Every action works inside the caller's scope.
  */
-export function VulnHeader({ cve, vuln, exposure, fix, onCreateTask }: VulnHeaderProps) {
-  const { t } = useTranslation()
+export function VulnHeader({ cve, vuln, exposure, fix, onCreateTask, actions }: VulnHeaderProps) {
+  const { t, locale } = useTranslation()
   const title = vuln?.title && vuln.title !== cve ? vuln.title : undefined
   const { findings, intel } = exposure
   const kev = vuln?.cisa_kev
   const ransomware = kev?.ransomware_use?.toLowerCase() === 'known'
+  // Why Create task is off, in the order a reader would ask: nothing in scope,
+  // nothing still open, everything already in a task.
+  const createTaskBlocker =
+    findings.total === 0
+      ? t('vulnPage.header.noFindings', 'No finding of this vulnerability in your scope')
+      : findings.active === 0
+        ? t('vulnPage.header.noActive', 'Every finding of this vulnerability is closed')
+        : findings.not_in_task === 0
+          ? t('vulnPage.header.allInTasks', 'Every active finding is already in a remediation task')
+          : undefined
+  // The other actions work on open findings, in a task or not.
+  const openBlocker = findings.total === 0 || findings.active === 0 ? createTaskBlocker : undefined
 
   return (
     <PageHeader
@@ -59,7 +79,7 @@ export function VulnHeader({ cve, vuln, exposure, fix, onCreateTask }: VulnHeade
               'Linked by the signed {source} feed, synced {date}',
               {
                 source: a.source.toUpperCase(),
-                date: new Date(a.synced_at).toLocaleDateString(),
+                date: formatDateOnly(a.synced_at, locale, { dateStyle: 'medium' }),
               }
             )
             return (
@@ -116,31 +136,24 @@ export function VulnHeader({ cve, vuln, exposure, fix, onCreateTask }: VulnHeade
       }
     >
       <div className="flex flex-wrap items-center gap-2">
-        <Button asChild variant="outline" size="sm">
-          <Link href={cveFindingsHref(cve, { state: 'all' })}>
-            <ListChecks className="me-1.5 h-4 w-4" aria-hidden />
-            {t('vulnPage.header.openFindings', 'Open {count} findings', {
-              count: findings.total.toLocaleString(),
-            })}
-          </Link>
-        </Button>
-        {onCreateTask && (
-          <Button
-            size="sm"
-            onClick={onCreateTask}
-            disabled={findings.not_in_task === 0}
-            title={
-              findings.not_in_task === 0
-                ? t(
-                    'vulnPage.header.allInTasks',
-                    'Every active finding is already in a remediation task'
-                  )
-                : undefined
-            }
-          >
-            {t('vulnPage.header.createTask', 'Create remediation task')}
+        {findings.total > 0 && (
+          <Button asChild variant="outline" size="sm">
+            <Link href={cveFindingsHref(cve, { state: 'all' })}>
+              <ListChecks className="me-1.5 h-4 w-4" aria-hidden />
+              {t('vulnPage.header.openFindings', 'Open {count} findings', {
+                count: findings.total.toLocaleString(),
+              })}
+            </Link>
           </Button>
         )}
+        {onCreateTask && (
+          <DisabledReason reason={createTaskBlocker}>
+            <Button size="sm" onClick={onCreateTask} disabled={createTaskBlocker !== undefined}>
+              {t('vulnPage.header.createTask', 'Create remediation task')}
+            </Button>
+          </DisabledReason>
+        )}
+        {actions?.(openBlocker)}
       </div>
     </PageHeader>
   )

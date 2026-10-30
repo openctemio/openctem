@@ -29,9 +29,9 @@ import {
   CreateAdminDialog,
 } from '@console/features/admin-console/components/create-admin-dialog'
 import {
-  adminCan,
   type AdminRole,
   type AdminUserRecord,
+  adminHas,
 } from '@console/features/admin-console/types'
 import { useTranslation } from '@/context/i18n-provider'
 import { RoleRequiredNotice } from '@console/features/admin-console/components/role-required-notice'
@@ -105,7 +105,7 @@ function BreakGlassTested({ a }: { a: AdminUserRecord }) {
 export default function AdministratorsPage() {
   const { t } = useTranslation()
   const me = useAdmin()
-  const isSuper = adminCan(me.role, 'super_admin')
+  const isSuper = adminHas(me, 'platform.admins.read')
   const { data, error, isLoading, mutate } = useAdminUsers(1, isSuper)
   const [pending, setPending] = useState<Pending | null>(null)
   const [busy, setBusy] = useState(false)

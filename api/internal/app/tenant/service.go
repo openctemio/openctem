@@ -16,6 +16,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/entitlement"
+	"github.com/openctemio/openctem/api/internal/app/platformmfa"
 
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -111,6 +112,8 @@ type TenantService struct {
 	// warning is logged): the never-lock-out guarantee still holds because the
 	// owner is always break-glass exempt at the enforcement gate.
 	ssoPathChecker SSOPathChecker
+	// mfaFloor is the platform two-factor floor (SetMFAFloorSource).
+	mfaFloor MFAFloorSource
 	// features gates sso.enforcement by the organization's limits; enforced
 	// lists the organizations that enforce SSO (the post-grace sweep).
 	features SSOFeatureGate
@@ -118,6 +121,9 @@ type TenantService struct {
 	// ssoDomains reports whether a tenant holds a domain verified for SSO
 	// (requiring SSO needs one). Nil: requiring SSO is refused.
 	ssoDomains SSODomainChecker
+	// ssoStore backs the Require SSO preconditions and the credential
+	// revocation at enable. Nil: requiring SSO is refused (fail closed).
+	ssoStore SSOEnforcementStore
 
 	// sessions reads the acting owner's session for the "SSO must prove
 	// two-factor" lockout guard. Optional: when nil the guard is skipped.
@@ -182,7 +188,30 @@ type SSODomainChecker interface {
 
 // ErrSSOEnforceNeedsVerifiedDomain refuses turning SSO enforcement on for an
 // organization without a domain verified for SSO.
-var ErrSSOEnforceNeedsVerifiedDomain = fmt.Errorf("%w: cannot enforce SSO — verify at least one of the organization's domains for SSO first", shared.ErrValidation)
+var ErrSSOEnforceNeedsVerifiedDomain = fmt.Errorf("%w: cannot enforce SSO until at least one of the organization's domains is verified for SSO", shared.ErrValidation)
+
+// Invitation refusals. Each is a sentinel so the handler gives it a stable
+// code the console translates; the text is the English fallback for API
+// clients.
+var (
+	// ErrInvitationAlreadyMember: the invited person is already an active member.
+	ErrInvitationAlreadyMember = fmt.Errorf("%w: this person is already a member of this organization", shared.ErrValidation)
+	// ErrMembershipSuspendedReactivate: an administrator tried to add or invite
+	// someone whose membership is suspended; it is reactivated in Members.
+	ErrMembershipSuspendedReactivate = fmt.Errorf("%w: this person's membership is suspended; reactivate it in Members instead", shared.ErrValidation)
+	// ErrInvitationMembershipSuspended: the invitee's own membership is suspended.
+	ErrInvitationMembershipSuspended = fmt.Errorf("%w: your access to this organization is suspended; contact an administrator to be reactivated", shared.ErrValidation)
+)
+
+// SSOEnforcementStore is what Require SSO needs to know and do beyond the
+// settings themselves (sso_enforcement.go). Implemented by
+// postgres.SSOEnforcementRepository.
+type SSOEnforcementStore interface {
+	HasAdminSSOSignIn(ctx context.Context, tenantID shared.ID) (bool, error)
+	HasOwnerWithSecondFactor(ctx context.Context, tenantID shared.ID) (bool, error)
+	CountCredentials(ctx context.Context, tenantID shared.ID) (keys, grants int, err error)
+	RevokeCredentials(ctx context.Context, tenantID, actorID shared.ID) (keys, grants int, err error)
+}
 
 // SessionReader loads a sign-in session by id (the "SSO must prove
 // two-factor" lockout guard).
@@ -812,12 +841,9 @@ func (s *TenantService) addMember(ctx context.Context, tenantID string, input Ad
 	existing, err := s.repo.GetMembership(ctx, input.UserID, parsedTenantID)
 	if err == nil && !existing.IsOffboarded() {
 		if existing.IsSuspended() {
-			return nil, fmt.Errorf(
-				"%w: this user has a suspended membership in this tenant — reactivate them via the Members page instead",
-				shared.ErrValidation,
-			)
+			return nil, ErrMembershipSuspendedReactivate
 		}
-		return nil, fmt.Errorf("%w: user is already a member", shared.ErrValidation)
+		return nil, ErrInvitationAlreadyMember
 	}
 	if err != nil && !errors.Is(err, shared.ErrNotFound) {
 		return nil, fmt.Errorf("failed to check membership: %w", err)
@@ -1454,12 +1480,9 @@ func (s *TenantService) CreateInvitation(ctx context.Context, tenantID string, i
 	existingMember, err := s.repo.GetMemberByEmail(ctx, parsedID, input.Email)
 	if err == nil && existingMember != nil && existingMember.Status != string(tenantdom.MemberStatusOffboarded) {
 		if existingMember.Status == string(tenantdom.MemberStatusSuspended) {
-			return nil, fmt.Errorf(
-				"%w: this user has a suspended membership in this tenant — reactivate them via the Members page instead of sending a new invitation",
-				shared.ErrValidation,
-			)
+			return nil, ErrMembershipSuspendedReactivate
 		}
-		return nil, fmt.Errorf("%w: user with this email is already a member of this team", shared.ErrValidation)
+		return nil, ErrInvitationAlreadyMember
 	}
 	if err != nil && !errors.Is(err, shared.ErrNotFound) {
 		return nil, fmt.Errorf("failed to check existing member: %w", err)
@@ -1662,12 +1685,9 @@ func (s *TenantService) acceptInvitation(ctx context.Context, invitation *tenant
 	existingMembership, err := s.repo.GetMembership(ctx, userID, invitation.TenantID())
 	if err == nil && !existingMembership.IsOffboarded() {
 		if existingMembership.IsSuspended() {
-			return nil, fmt.Errorf(
-				"%w: your access to this team is suspended — please contact an administrator to be reactivated",
-				shared.ErrValidation,
-			)
+			return nil, ErrInvitationMembershipSuspended
 		}
-		return nil, fmt.Errorf("%w: you are already a member of this team", shared.ErrValidation)
+		return nil, ErrInvitationAlreadyMember
 	}
 	if err != nil && !errors.Is(err, shared.ErrNotFound) {
 		return nil, fmt.Errorf("failed to check membership: %w", err)
@@ -1832,7 +1852,7 @@ func (s *TenantService) ResendInvitation(ctx context.Context, tenantID, invitati
 		return fmt.Errorf("%w: invitation has already been accepted", shared.ErrValidation)
 	}
 	if inv.IsExpired() {
-		return fmt.Errorf("%w: invitation has expired — create a new one", shared.ErrValidation)
+		return fmt.Errorf("%w: invitation has expired; renew it", shared.ErrValidation)
 	}
 
 	if s.emailEnqueuer == nil {
@@ -1991,6 +2011,38 @@ func (s *TenantService) UpdateGeneralSettings(ctx context.Context, tenantID stri
 	return &result, nil
 }
 
+// MFAFloorSource gives the platform two-factor floor (platformmfa.Service).
+type MFAFloorSource interface {
+	Policy(ctx context.Context) (platformmfa.Policy, error)
+}
+
+// ErrMFABelowPlatformFloor refuses saving 2FA settings that ask for less than
+// the platform's two-factor floor: an organization may require more, never
+// less.
+var ErrMFABelowPlatformFloor = fmt.Errorf("%w: the platform requires two-factor authentication at least for administrators; an organization can require more, not less", shared.ErrValidation)
+
+// SetMFAFloorSource wires the platform two-factor floor. Without it no
+// floor applies.
+func (s *TenantService) SetMFAFloorSource(src MFAFloorSource) { s.mfaFloor = src }
+
+// ApplyMFAFloor returns a copy of the settings as they apply under the
+// platform floor (the floor raises the two 2FA flags on read; stored rows
+// are never rewritten) and the floor. An unreadable floor returns the
+// settings unchanged and none; the mint gate fails closed on its own.
+func (s *TenantService) ApplyMFAFloor(ctx context.Context, in *tenantdom.Settings) (*tenantdom.Settings, tenantdom.MFAFloor) {
+	if in == nil || s.mfaFloor == nil {
+		return in, tenantdom.MFAFloorNone
+	}
+	p, err := s.mfaFloor.Policy(ctx)
+	if err != nil {
+		s.logger.Warn("platform two-factor floor unreadable", "error", err)
+		return in, tenantdom.MFAFloorNone
+	}
+	out := *in
+	out.Security = in.Security.ClampToMFAFloor(p.Floor)
+	return &out, p.Floor
+}
+
 // UpdateSecuritySettingsInput is a partial-update payload. Scalar fields are
 // pointers (nil == "not provided — keep existing"); slice fields rely on the
 // nil-vs-non-nil distinction JSON decoding already gives us (absent key => nil
@@ -2001,12 +2053,16 @@ type UpdateSecuritySettingsInput struct {
 	// by the platform administrator (RFC-022); the tenant-facing handler refuses
 	// it, so an organization cannot turn enforcement on or off for itself.
 	SSOEnforced *bool `json:"sso_enforced"`
-	MFARequired *bool `json:"mfa_required"`
+	// RevokeCredentialsOnSSOEnforce: when turning SSOEnforced on, revoke the
+	// user API keys and connector grants that exist at that moment. Nil means
+	// yes: keys and grants made from a later SSO session keep working.
+	RevokeCredentialsOnSSOEnforce *bool `json:"revoke_credentials_on_sso_enforce"`
+	MFARequired                   *bool `json:"mfa_required"`
 	// MFARequiredForAdmins: see tenantdom.SecuritySettings.
 	MFARequiredForAdmins  *bool    `json:"mfa_required_for_admins"`
 	IPWhitelist           []string `json:"ip_whitelist"`
 	AllowedDomains        []string `json:"allowed_domains"`
-	EmailVerificationMode *string  `json:"email_verification_mode" validate:"omitempty,oneof=auto always never"`
+	EmailVerificationMode *string  `json:"email_verification_mode" validate:"omitempty,oneof=auto always"`
 	// RequireSensorLocalPolicyForPrivateTargets: see
 	// tenantdom.SecuritySettings.
 	RequireSensorLocalPolicyForPrivateTargets *bool `json:"require_sensor_local_policy_for_private_targets"`
@@ -2111,8 +2167,10 @@ func (s *TenantService) guardSSOMFAProofLockout(ctx context.Context, tenantID, s
 // UpdateSecuritySettings updates only the security settings.
 func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID string, input UpdateSecuritySettingsInput, actx auditapp.AuditContext) (*tenantdom.Settings, error) {
 	var before tenantdom.SecuritySettings
+	enforcedNow := false
 	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionSecurity, func(t *tenantdom.Tenant) error {
 		before = t.TypedSettings().Security
+		enforcedNow = false
 		// Partial merge: start from the persisted section and overlay only the
 		// fields the client actually sent. Omitted fields are preserved.
 		security := t.TypedSettings().Security
@@ -2171,6 +2229,20 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 			security.SSOExceptions = *input.SSOExceptions
 		}
 
+		// An organization may tighten the platform's two-factor floor, never
+		// loosen below it: a request that sets a 2FA flag so the result asks
+		// for less than the floor is refused (a stored value from before the
+		// floor was raised is left alone and clamped on read).
+		if (input.MFARequired != nil || input.MFARequiredForAdmins != nil) && s.mfaFloor != nil {
+			p, ferr := s.mfaFloor.Policy(ctx)
+			if ferr != nil {
+				return fmt.Errorf("failed to read the platform two-factor floor: %w", ferr)
+			}
+			if security.BelowMFAFloor(p.Floor) {
+				return ErrMFABelowPlatformFloor
+			}
+		}
+
 		// Can't-enable guard: refuse to turn sso_enforced ON unless the tenant has a
 		// usable SSO path (an active identity provider or the opted-in env fallback).
 		// Without this a tenant could enforce SSO with no way for members to sign in.
@@ -2193,7 +2265,7 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 					return fmt.Errorf("failed to verify SSO configuration: %w", perr)
 				}
 				if !usable {
-					return fmt.Errorf("%w: cannot enforce SSO — configure an active SSO identity provider first", shared.ErrValidation)
+					return fmt.Errorf("%w: cannot enforce SSO until an active SSO identity provider is configured", shared.ErrValidation)
 				}
 			}
 		}
@@ -2215,6 +2287,12 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 			if !ok {
 				return ErrSSOEnforceNeedsVerifiedDomain
 			}
+			// The IdP path is proven and an owner can break-glass, so an
+			// organization that enforces SSO can always still be entered.
+			if err := s.requireSSOEnforcePreconditions(ctx, t.ID()); err != nil {
+				return err
+			}
+			enforcedNow = true
 		}
 
 		// Lockout guard: an administrator may not save an IP allowlist that would
@@ -2247,6 +2325,9 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 	s.auditSensorOptIn(ctx, actx, "allow_sensor_interactsh", before.AllowSensorInteractsh, after.AllowSensorInteractsh)
 	s.auditSensorOptIn(ctx, actx, "allow_sensor_custom_templates", before.AllowSensorCustomTemplates, after.AllowSensorCustomTemplates)
 	s.notifySecurityLoosened(ctx, tenantID, actx, before, after)
+	if enforcedNow {
+		s.revokeCredentialsAtSSOEnforce(ctx, t.ID(), actx, input.RevokeCredentialsOnSSOEnforce)
+	}
 
 	result := t.TypedSettings()
 	return &result, nil

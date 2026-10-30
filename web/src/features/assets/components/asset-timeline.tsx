@@ -116,9 +116,9 @@ function ChangeEntry({
           <span key="by">
             {t('assetTimeline.decidedBy', 'Decided by {source}', { source: sourceLabel })}
             {change.source.run
-              ? ` · ${t('assetTimeline.run', 'run {run}', { run: change.source.run })}`
+              ? `, ${t('assetTimeline.run', 'run {run}', { run: change.source.run })}`
               : ''}
-            {change.actor_id ? ` · ${t('assetTimeline.byPerson', 'by a person')}` : ''}
+            {change.actor_id ? `, ${t('assetTimeline.byPerson', 'by a person')}` : ''}
           </span>,
           onWhy ? (
             <button

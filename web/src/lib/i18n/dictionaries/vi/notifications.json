@@ -7,7 +7,7 @@
   "notifications.bell.viewAll": "Xem tất cả thông báo",
   "notifications.filters.severity": "Lọc theo mức độ nghiêm trọng",
   "notifications.filters.severityAll": "Mọi mức độ",
-  "notifications.filters.severityPlaceholder": "Mức độ",
+  "notifications.filters.severityPlaceholder": "Mức độ nghiêm trọng",
   "notifications.filters.status": "Lọc theo trạng thái đọc",
   "notifications.filters.statusAll": "Tất cả",
   "notifications.filters.statusPlaceholder": "Trạng thái",
@@ -26,8 +26,6 @@
   "notifications.pagination.next": "Sau",
   "notifications.pagination.page": "Trang {page} / {pages} (tổng {total})",
   "notifications.pagination.previous": "Trước",
-  "notifications.row.label": "{title}, {type}, {severity}",
-  "notifications.row.labelUnread": "Chưa đọc: {title}, {type}, {severity}",
   "notifications.settings": "Cài đặt",
   "notifications.unread": "Chưa đọc",
   "notifications.unreadCount": "{n} chưa đọc"

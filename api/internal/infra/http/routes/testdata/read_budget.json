@@ -8,9 +8,9 @@
     "memberA /api/v1/attack-surface/stats": 11,
     "memberA /api/v1/dashboard/stats": 6,
     "memberA /api/v1/findings/stats": 3,
-    "memberA /api/v1/findings?per_page=20": 4,
-    "memberA /api/v1/findings?per_page=20&q=host": 4,
-    "memberA /api/v1/findings?per_page=20&severity=critical,high&sort=-severity": 4,
+    "memberA /api/v1/findings?per_page=20": 5,
+    "memberA /api/v1/findings?per_page=20&q=host": 5,
+    "memberA /api/v1/findings?per_page=20&severity=critical,high&sort=-severity": 5,
     "memberA /api/v1/notifications/unread-count": 2,
     "owner /api/v1/asset-groups": 3,
     "owner /api/v1/assets/stats": 2,
@@ -19,9 +19,9 @@
     "owner /api/v1/attack-surface/stats": 11,
     "owner /api/v1/dashboard/stats": 5,
     "owner /api/v1/findings/stats": 3,
-    "owner /api/v1/findings?per_page=20": 4,
-    "owner /api/v1/findings?per_page=20&q=host": 4,
-    "owner /api/v1/findings?per_page=20&severity=critical,high&sort=-severity": 4,
+    "owner /api/v1/findings?per_page=20": 5,
+    "owner /api/v1/findings?per_page=20&q=host": 5,
+    "owner /api/v1/findings?per_page=20&severity=critical,high&sort=-severity": 5,
     "owner /api/v1/notifications/unread-count": 2
   }
 }

@@ -405,8 +405,7 @@ export function CharterEditorSheet({
                             </span>
                             {(c.metric || c.target) && (
                               <span className="text-muted-foreground">
-                                {' '}
-                                ·{' '}
+                                ,{' '}
                                 {t('scoping.charter.metricTarget', '{metric}: {target}', {
                                   metric: c.metric || t('scoping.charter.noMetric', 'no metric'),
                                   target: c.target || t('scoping.charter.noTarget', 'no target'),

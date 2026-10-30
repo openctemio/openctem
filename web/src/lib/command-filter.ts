@@ -3,7 +3,7 @@
  *
  * cmdk's default is a fuzzy subsequence score over the value plus keywords, so
  * with ~90 entries almost every short query matches dozens of them ("siem"
- * matched "Business Impact", "audit" ranked Preferences above Audit log). Here
+ * matched "Business impact", "audit" ranked Preferences above Audit log). Here
  * every word of the query must occur in the entry, and entries rank by where:
  *
  *   1    the label starts with the query

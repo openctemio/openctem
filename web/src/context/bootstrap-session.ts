@@ -5,7 +5,7 @@
  * Every page of the app shell used to ask, on each load, for the caller's
  * profile (/users/me), their organizations (/users/me/tenants), the unread
  * notification count, the review-queue and approvals badges, the organization policy
- * (/auth/providers) and the platform announcements. The bootstrap now returns all of them in one response
+ * (/auth/providers), the platform announcements and the sidebar pins. The bootstrap now returns all of them in one response
  * (research/81). Seeding the cache keeps every existing consumer (`useProfile`,
  * `useMyTenants`, the bell, the sidebar badge) working unchanged: they read
  * the seeded value, and those hooks do not revalidate a cached value on mount
@@ -17,9 +17,14 @@
  */
 import { mutate } from 'swr'
 
-import { notificationEndpoints, userEndpoints } from '@/lib/api/endpoints'
+import { notificationEndpoints, tenantEndpoints, userEndpoints } from '@/lib/api/endpoints'
 import type { TenantMembership } from '@/lib/api/user-tenant-types'
 import type { UserProfile } from '@/features/account/types/account.types'
+import type { NavPinsResponse } from '@/features/nav-pins/api/use-nav-pins'
+import type { SupportActiveList } from '@/lib/api/generated'
+import { AI_CONFIG_ENDPOINT, transformAIConfig } from '@/features/ai-triage/lib/ai-config'
+import type { ApiAIConfigResponse } from '@/features/ai-triage/api/ai-triage-api.types'
+import type { SlaPolicy } from '@/features/sla/api/use-sla-policies-api'
 
 export interface BootstrapBadges {
   unread_notifications?: number
@@ -40,10 +45,40 @@ export interface BootstrapSessionData {
   user?: UserProfile
   tenants?: TenantMembership[]
   tenant_creation_mode?: string
+  /** Whether this server can send email, as GET /auth/providers reports it. */
+  email_delivery?: boolean
   badges?: BootstrapBadges
   announcements?: PlatformAnnouncement[]
   /** A limit or module deny applies to the organization (owners and admins). */
   limits_apply?: boolean
+  /** The caller's sidebar pins with their live counts (GET /me/pins). */
+  pins?: NavPinsResponse
+  /** The active platform support grants (GET /organization/support-access/active). */
+  support_access?: SupportActiveList
+  /** The AI setup summary (GET /findings/ai-triage/config). */
+  ai_config?: ApiAIConfigResponse
+  /** The windows that govern the organization's assets. */
+  sla?: BootstrapSla
+}
+
+/** The SLA part of the bootstrap: tenant windows, and whether any asset has its own policy. */
+export interface BootstrapSla {
+  policy: SlaPolicy
+  asset_overrides: boolean
+}
+
+/**
+ * SWR key of the bootstrap's SLA windows: read from the cache only. While it
+ * holds a value with `asset_overrides` false, every asset's windows are the
+ * organization's, so `GET /assets/{id}/sla-policy` is not asked. A change to
+ * an SLA policy clears it (`invalidateBootstrapSla`) and the per-asset reads
+ * take over until the next page load.
+ */
+export const SLA_BOOTSTRAP_KEY = 'bootstrap:sla'
+
+/** Drops the bootstrap SLA windows after an SLA policy changed. */
+export function invalidateBootstrapSla(): Promise<unknown> {
+  return mutate(SLA_BOOTSTRAP_KEY, null, { revalidate: false })
 }
 
 /**
@@ -68,6 +103,9 @@ export const EASM_SUGGESTIONS_COUNT_URL = '/api/v1/easm/suggestions?view=count'
  */
 export const PENDING_APPROVALS_COUNT_URL = '/api/v1/approvals?status=pending&page=1&per_page=1'
 
+/** The caller's sidebar pins in the current organization. */
+export const NAV_PINS_URL = '/api/v1/me/pins'
+
 /** Writes the session parts into the SWR cache, without revalidating them. */
 export async function seedSessionCache(data: BootstrapSessionData): Promise<void> {
   const writes: Promise<unknown>[] = []
@@ -89,7 +127,12 @@ export async function seedSessionCache(data: BootstrapSessionData): Promise<void
       status_counts: { pending: data.badges.pending_approvals },
     })
   if (Array.isArray(data.announcements)) seed(ANNOUNCEMENTS_URL, { data: data.announcements })
+  if (Array.isArray(data.pins?.data)) seed(NAV_PINS_URL, data.pins)
   seed(LIMITS_APPLY_KEY, data.limits_apply === true)
+  if (data.support_access && Array.isArray(data.support_access.data))
+    seed(tenantEndpoints.supportAccessActive(), data.support_access)
+  if (data.ai_config) seed(AI_CONFIG_ENDPOINT, transformAIConfig(data.ai_config))
+  seed(SLA_BOOTSTRAP_KEY, data.sla ?? null)
 
   await Promise.all(writes)
 }

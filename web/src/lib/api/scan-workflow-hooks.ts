@@ -106,12 +106,17 @@ async function fetchScanManagementStats(url: string): Promise<ScanManagementOver
 // ============================================
 
 /**
- * Fetch workflows list
+ * Fetch workflows list. `undefined` filters list every workflow; `null` sends
+ * no request (a caller that needs the list only in some state, e.g. an open
+ * dialog, passes null otherwise).
  */
-export function useScanWorkflows(filters?: ScanWorkflowListFilters, config?: SWRConfiguration) {
+export function useScanWorkflows(
+  filters?: ScanWorkflowListFilters | null,
+  config?: SWRConfiguration
+) {
   const { currentTenant } = useTenant()
 
-  const key = currentTenant ? scanWorkflowEndpoints.list(filters) : null
+  const key = currentTenant && filters !== null ? scanWorkflowEndpoints.list(filters) : null
 
   return useSWR<ScanWorkflowListResponse>(key, fetchWorkflows, {
     ...defaultConfig,
@@ -272,12 +277,12 @@ export function useDeleteStep(workflowId: string, stepId: string) {
 // ============================================
 
 /**
- * Fetch workflow runs list
+ * Fetch workflow runs list; `null` filters fetch nothing (a list not shown).
  */
-export function useScanRuns(filters?: ScanRunListFilters, config?: SWRConfiguration) {
+export function useScanRuns(filters?: ScanRunListFilters | null, config?: SWRConfiguration) {
   const { currentTenant } = useTenant()
 
-  const key = currentTenant ? scanRunEndpoints.list(filters) : null
+  const key = currentTenant && filters !== null ? scanRunEndpoints.list(filters) : null
 
   return useSWR<ScanRunListResponse>(key, fetchWorkflowRuns, {
     ...defaultConfig,
