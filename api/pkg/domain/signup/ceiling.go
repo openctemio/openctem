@@ -112,8 +112,6 @@ func (c Ceiling) SeedPolicy() Policy {
 	case CeilingDomain:
 		return Policy{Mode: ModeAdminOnly, Accounts: AccountsDomain}
 	default:
-		// Not Default(): that is the fail-closed answer for an unreadable
-		// policy, and also turns social auto-link off.
 		return Policy{Mode: ModeAdminOnly, Accounts: AccountsClosed}
 	}
 }

@@ -1,7 +1,7 @@
 package integration
 
-// Migration signup_policy_social_auto_link_off: a stored social_auto_link is
-// dropped from the sign-up policy (absent reads as off), the version moves on,
+// Migration signup_policy_drop_social_auto_link: a stored social_auto_link is
+// dropped from the sign-up policy (the setting no longer exists), the version moves on,
 // and the rest of the policy is kept. Runs on a private database: everything
 // up to the migration before, seed, up, down, up.
 
@@ -11,10 +11,10 @@ import (
 	"github.com/openctemio/openctem/api/internal/testdb"
 )
 
-func TestMigrationSignupSocialAutoLinkOff(t *testing.T) {
+func TestMigrationSignupDropSocialAutoLink(t *testing.T) {
 	const dir = "../../migrations"
-	v := testdb.MigrationVersion(t, dir, "signup_policy_social_auto_link_off")
-	db := testdb.PrivateDatabase(t, "migautolink", dir)
+	v := testdb.MigrationVersion(t, dir, "signup_policy_drop_social_auto_link")
+	db := testdb.PrivateDatabase(t, "migdropautolink", dir)
 	testdb.Migrate(t, db, dir, v, v, true)
 
 	if _, err := db.Exec(`DELETE FROM platform_settings WHERE key = 'signup_policy'`); err != nil {
