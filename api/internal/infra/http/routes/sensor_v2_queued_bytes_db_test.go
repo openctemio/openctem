@@ -124,7 +124,7 @@ func TestSensorV1_QueuedJobSealedReadAndEmptied(t *testing.T) {
 	if _, err := h.db.Exec(`UPDATE ingest_jobs SET status = 'processing', attempts = 1 WHERE id = $1`, stored.ID().String()); err != nil {
 		t.Fatal(err)
 	}
-	if err := h.jobs.Complete(ctx, stored.ID(), 1, []byte(`{}`)); err != nil {
+	if err := h.jobs.Complete(ctx, tenantID, stored.ID(), 1, []byte(`{}`)); err != nil {
 		t.Fatal(err)
 	}
 	read()
