@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -636,6 +637,7 @@ func (h *AssetHandler) handleServiceError(w http.ResponseWriter, err error) {
 // @Param        freshness     query     string  false  "stale: an attribute class is past its freshness TTL; never: a passive class that applies was never observed"
 // @Param        resolution    query     string  false  "not_resolving: the platform knows the host name does not resolve in DNS; resolving: it does"
 // @Param        technology    query     string  false  "Assets using any of these technologies (comma-separated names, case-insensitive, at most 20)"
+// @Param        technology_version query string false "With technology: only that exact version; present and empty = the version is unknown (at most 64 characters)"
 // @Param        technology_category query string false "Assets with a technology in any of these categories (comma-separated): web_server, framework, language, js_library, cdn, hosting, waf, analytics, security_header, other"
 // @Param        is_crown_jewel query    bool    false  "Filter crown-jewel assets"
 // @Param        sub_type      query     string  false  "Filter by sub_type"
@@ -730,6 +732,7 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		Coverage:             query.Get("coverage"),
 		Technologies:         assettech.ParseFilterValues(query.Get("technology")),
 		TechnologyCategories: technologyCategoryStrings(query.Get("technology_category")),
+		TechnologyVersion:    technologyVersionParam(query),
 		Sort:                 query.Get("sort"),
 		Page:                 paging.Page,
 		PerPage:              paging.PerPage,
@@ -828,6 +831,17 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(response)
+}
+
+// technologyVersionParam reads technology_version: nil when absent, the
+// trimmed value otherwise ("" selects a version the tools could not tell).
+func technologyVersionParam(q url.Values) *string {
+	vs, ok := q["technology_version"]
+	if !ok || len(vs) == 0 {
+		return nil
+	}
+	v := strings.TrimSpace(vs[0])
+	return &v
 }
 
 // technologyCategoryStrings parses a technology_category filter, keeping

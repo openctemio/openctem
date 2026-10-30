@@ -534,6 +534,17 @@ func registerCertificateRoutes(router Router, h *handler.CertificateHandler, aut
 	}, tenantMiddlewares...)
 }
 
+// registerTechnologyRoutes registers the Technologies view of the external
+// attack surface: technologies grouped by version, scoped per asset.
+func registerTechnologyRoutes(router Router, h *handler.TechnologyHandler, authMiddleware Middleware, userSyncMiddleware Middleware, moduleGate Middleware) {
+	// The module gate runs after tenant extraction so it can read the tenant.
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
+	router.Group("/api/v1/attack-surface/technologies", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.AssetsRead))
+		r.GET("/stats", h.Stats, middleware.Require(permission.AssetsRead))
+	}, tenantMiddlewares...)
+}
+
 // registerWebEndpointRoutes registers the web surface sub-inventory
 // (RFC-056): endpoints under their origin asset, scoped by the origin's data
 // scope.
