@@ -35,6 +35,14 @@ type CampaignAsserter interface {
 	AssertFindingCampaign(ctx context.Context, tenantID, findingID shared.ID) error
 }
 
+// RequestMemoInstaller is the optional extra of an asserter: it returns a
+// context that memoizes the request's data-scope answers (the guard's check
+// and the same checks the services repeat). The memo belongs to one request
+// only and is keyed by tenant and caller.
+type RequestMemoInstaller interface {
+	WithRequestMemo(ctx context.Context) context.Context
+}
+
 // dataScopeKind is the kind of object a guarded path names.
 type dataScopeKind int
 
@@ -73,6 +81,9 @@ var dataScopePrefixes = []struct {
 func DataScopeGuard(a DataScopeAsserter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if mi, ok := a.(RequestMemoInstaller); ok {
+				r = r.WithContext(mi.WithRequestMemo(r.Context()))
+			}
 			kind, id, ok := dataScopeTarget(r.URL.Path)
 			if !ok || a == nil {
 				next.ServeHTTP(w, r)

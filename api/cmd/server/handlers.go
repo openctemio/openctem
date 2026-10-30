@@ -2106,6 +2106,13 @@ func (g findingAccessGuard) AssertFindingForFixWork(ctx context.Context, tenantI
 	return g.findings.AssertFindingForFixWork(ctx, tenantID, findingID)
 }
 
+// WithRequestMemo installs the data-scope request memo, so the guard's
+// check and the same checks the services repeat cost their queries once per
+// request (middleware.RequestMemoInstaller).
+func (g findingAccessGuard) WithRequestMemo(ctx context.Context) context.Context {
+	return datascope.WithRequestMemo(ctx)
+}
+
 // byIDGuardAsserter is the asserter of the by-id data-scope guard (nil
 // without a data-scope enforcer: no guard).
 func byIDGuardAsserter(svc *Services) middleware.DataScopeAsserter {
