@@ -211,6 +211,7 @@ type Service struct {
 	securityValidator   SecurityValidator
 	auditService        AuditService
 	scopeExclusions     ScopeExclusionFilter // optional; nil = no exclusions configured
+	nameAddresses       NameAddressReader    // optional; resolution relations for the exclusion match (dispatch_gate.go)
 	attributionGate     AttributionGate      // optional in tests; production always wires it (nil = not checked on a run, refused by the dispatch gate)
 	scopeWaits          ScopeWaitStore       // start_when_scope_approved (nil = refused like any other out-of-scope target)
 	pendingScope        PendingScope

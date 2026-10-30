@@ -124,6 +124,46 @@ func TestSegmentSealerMissing(t *testing.T) {
 	}
 }
 
+// A protocol v1 job (no report, no segment) seals under its own binding: it
+// opens for its tenant, job and content hash only, and is never mistaken for
+// a segment.
+func TestSealedV1JobRoundTripAndBinding(t *testing.T) {
+	s := segSealer(t, 1)
+	tenant := shared.NewID()
+	plain := []byte(`{"version":"1.0","findings":[{"title":"token ghp_EXAMPLESECRET"}]}`)
+	job := ingestjob.NewJob(tenant, nil, "v1-report", "scanner", plain)
+	if err := sealSegment(s, job); err != nil {
+		t.Fatal(err)
+	}
+	if !job.PayloadSealed() || bytes.Contains(job.Payload(), []byte("ghp_EXAMPLESECRET")) {
+		t.Fatal("v1 job stored in plaintext")
+	}
+	got, err := openSegment(s, job)
+	if err != nil || !bytes.Equal(got, plain) {
+		t.Fatalf("open: %v", err)
+	}
+	moved := ingestjob.FromRow(job.ID(), shared.NewID(), nil, "v1-report", "", job.Payload(), job.PayloadSHA(),
+		ingestjob.StatusPending, 0, 5, 0, nil, "", "", nil, job.AvailableAt(), job.CreatedAt(), job.UpdatedAt())
+	moved.SetSealedPayload(job.PayloadKeyID(), job.Payload(), job.PayloadBytes())
+	if _, err := openSegment(s, moved); !errors.Is(err, ingestpayload.ErrOpen) {
+		t.Fatalf("other tenant: %v, want ErrOpen", err)
+	}
+	// A v1 payload does not open as a v2 segment.
+	seg := ingestjob.FromRow(job.ID(), tenant, nil, "v1-report", "", job.Payload(), job.PayloadSHA(),
+		ingestjob.StatusPending, 0, 5, 0, nil, "", "", nil, job.AvailableAt(), job.CreatedAt(), job.UpdatedAt())
+	seg.SetSealedPayload(job.PayloadKeyID(), job.Payload(), job.PayloadBytes())
+	n := 0
+	seg.SetV2(&ingestjob.V2Segment{ReportRef: shared.NewID(), Seq: &n})
+	if _, err := openSegment(s, seg); !errors.Is(err, ingestpayload.ErrOpen) {
+		t.Fatalf("as a segment: %v, want ErrOpen", err)
+	}
+	// An upload job is not a sensor payload.
+	up := ingestjob.NewUploadJob(shared.NewID(), tenant, ingestjob.KindCIResults, "r", "u", "rep", []byte("{}"), make([]byte, 32))
+	if err := sealSegment(s, up); err == nil {
+		t.Fatal("an upload job must not be sealed as a sensor payload")
+	}
+}
+
 // BenchmarkSealOpenSegment measures what sealing adds to accept (seal) and
 // to the import (open) for a typical and a large segment.
 func BenchmarkSealOpenSegment(b *testing.B) {
