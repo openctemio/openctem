@@ -199,7 +199,7 @@ func (h *VulnerabilityHandler) ListRecentlyAutoClosed(w http.ResponseWriter, r *
 	})
 }
 
-// ReopenAutoClosedNotFixed handles POST /api/v1/findings/{id}/reopen-not-fixed.
+// ReopenAutoClosedNotFixed handles POST /api/v1/findings/{id}/reopen.
 // @Summary      Reopen a finding closed automatically: not fixed
 // @Description  Reopens (as confirmed) a finding the platform closed by itself in the last seven days, recording that the close was wrong. Not counted as a regression. 404 when the finding is not such a finding in the caller's data scope. Audited.
 // @Tags         Findings
@@ -209,7 +209,7 @@ func (h *VulnerabilityHandler) ListRecentlyAutoClosed(w http.ResponseWriter, r *
 // @Success      204
 // @Failure      404  {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /findings/{id}/reopen-not-fixed [post]
+// @Router       /findings/{id}/reopen [post]
 func (h *VulnerabilityHandler) ReopenAutoClosedNotFixed(w http.ResponseWriter, r *http.Request) {
 	var req ReopenNotFixedRequest
 	if r.ContentLength != 0 {

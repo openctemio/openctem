@@ -312,7 +312,7 @@ func registerVulnerabilityRoutes(
 		// Write operations
 		r.POST("/", h.CreateFinding, middleware.Require(permission.FindingsWrite))
 		r.PATCH("/{id}/status", h.UpdateFindingStatus, middleware.Require(permission.FindingsStatus), handler.FindingIfMatch)
-		r.POST("/{id}/reopen-not-fixed", h.ReopenAutoClosedNotFixed, middleware.Require(permission.FindingsStatus))
+		r.POST("/{id}/reopen", h.ReopenAutoClosedNotFixed, middleware.Require(permission.FindingsStatus))
 		// The transition engine: the caller's allowed moves of one finding,
 		// and a bulk dry run. Reading them needs only findings:read; each
 		// decision states what the move itself would need.
