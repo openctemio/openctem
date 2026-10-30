@@ -11,6 +11,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sync"
 	"testing"
@@ -306,5 +307,34 @@ func TestSensorV2_PlaintextSegmentsSealedInPlace(t *testing.T) {
 		if st := h.reportState(id); st.State != protov2.StateCompleted || st.Accepted.Findings != 2 {
 			t.Fatalf("report %s: %+v", id, st)
 		}
+	}
+}
+
+// A manifest commit measures sealed segments by their decoded size
+// (payload_bytes), not by the longer ciphertext stored in payload; segments
+// still stored in plaintext (no payload_bytes) are measured by their stored
+// length.
+func TestSensorV2_ManifestCommitOnSealedAndPlaintextSegments(t *testing.T) {
+	h := newV2Harness(t, v2HarnessOpts{})
+	segs := [][]byte{v2Segment("semgrep", "1.0", "a", "b"), v2Segment("semgrep", "1.0", "c")}
+	id := newReportID()
+	base := "/api/v2/sensor/results/" + id
+	for seq, s := range segs {
+		resp, raw := h.do(http.MethodPut, fmt.Sprintf("%s/segments/%d", base, seq), s)
+		h.expect(resp, raw, 202, "")
+	}
+	sealedRow := h.segmentRow(id, 0)
+	if sealedRow.keyID == nil || int64(len(sealedRow.payload)) == int64(len(segs[0])) {
+		t.Fatal("test needs a sealed segment whose stored size differs from its decoded size")
+	}
+	// Segment 1 as an older release stored it: plaintext, no payload_bytes.
+	if _, err := h.db.Exec(`UPDATE ingest_jobs SET payload = $2, payload_key_id = NULL, payload_bytes = NULL WHERE id = $1`,
+		h.segmentRow(id, 1).id, segs[1]); err != nil {
+		t.Fatal(err)
+	}
+	resp, raw := h.commit(base, manifestFor(segs, []int{2, 1}))
+	h.expect(resp, raw, 202, "")
+	if in, _, committed := h.reportIntegrity(id); !committed || in != protov2.IntegrityManifest {
+		t.Fatalf("committed=%v integrity=%q, want a manifest commit", committed, in)
 	}
 }

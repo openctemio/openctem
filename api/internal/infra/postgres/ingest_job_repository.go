@@ -633,11 +633,13 @@ func (r *IngestJobRepository) V2SegmentDigests(ctx context.Context, reportRef sh
 }
 
 // V2SegmentContents returns the decoded SHA-256 and size of every segment of
-// a report. Read before the report is committed: payloads are emptied only
+// a report. A sealed segment stores its plaintext size in payload_bytes (the
+// stored payload is the longer ciphertext); a row without it is plaintext, so
+// its stored length is its size. Read before the report is committed: payloads are emptied only
 // once it finished.
 func (r *IngestJobRepository) V2SegmentContents(ctx context.Context, reportRef shared.ID) (map[int]ingestjob.V2SegmentContent, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT segment_seq, payload_sha, octet_length(payload) FROM ingest_jobs
+		SELECT segment_seq, payload_sha, COALESCE(payload_bytes, octet_length(payload)) FROM ingest_jobs
 		WHERE ingest_report_id = $1 AND segment_seq IS NOT NULL`, reportRef.String())
 	if err != nil {
 		return nil, fmt.Errorf("list v2 segment contents: %w", err)
@@ -740,8 +742,8 @@ func (r *IngestJobRepository) SealPlaintextV2Payloads(ctx context.Context, older
 		}
 		res, err := tx.ExecContext(ctx, `
 			UPDATE ingest_jobs SET payload = $2, payload_key_id = $3, payload_bytes = $4
-			WHERE id = $1 AND payload_key_id IS NULL AND octet_length(payload) > 0`,
-			j.ID().String(), j.Payload(), j.PayloadKeyID(), j.PayloadBytes())
+			WHERE id = $1 AND tenant_id = $5 AND payload_key_id IS NULL AND octet_length(payload) > 0`,
+			j.ID().String(), j.Payload(), j.PayloadKeyID(), j.PayloadBytes(), j.TenantID().String())
 		if err != nil {
 			return 0, fmt.Errorf("seal v2 payloads: update: %w", err)
 		}
