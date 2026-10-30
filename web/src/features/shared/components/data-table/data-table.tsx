@@ -335,6 +335,7 @@ function AutoMobileCard<TData>({
   const fields = rest.slice(0, MOBILE_CARD_FIELDS)
   return (
     <div
+      data-slot="mobile-card"
       data-state={row.getIsSelected() ? 'selected' : undefined}
       className={cn(
         'px-3 py-3 data-[state=selected]:bg-muted',
@@ -378,11 +379,14 @@ function AutoMobileCard<TData>({
           )}
         >
           {fields.map((cell) => (
-            <div key={cell.id} className="min-w-0">
+            <div key={cell.id} data-slot="mobile-card-field" className="min-w-0">
               <dt className="truncate text-xs text-muted-foreground">
                 {labels.get(cell.column.id)}
               </dt>
-              <dd className="mt-0.5 min-w-0 text-sm break-words [&_[data-slot=badge]]:max-w-full [&_[data-slot=badge]]:whitespace-normal [&_[data-slot=badge]]:break-words">
+              {/* Cells are written for a wide table row: whatever they keep on
+                  one line (whitespace-nowrap) may wrap here, as in the title,
+                  so a value never runs into the next column. */}
+              <dd className="mt-0.5 min-w-0 text-sm break-words [&_.whitespace-nowrap]:whitespace-normal [&_[data-slot=badge]]:max-w-full [&_[data-slot=badge]]:whitespace-normal [&_[data-slot=badge]]:break-words">
                 {flexRender(cell.column.columnDef.cell, cell.getContext())}
               </dd>
             </div>

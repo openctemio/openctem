@@ -142,7 +142,12 @@ export function ListToolbar({
         </div>
       ) : null}
       {end ? (
-        <div data-slot="list-toolbar-end" className="ms-auto flex shrink-0 items-center gap-2">
+        // Never wider than the toolbar: on a phone its controls wrap onto a
+        // second line instead of running past the edge.
+        <div
+          data-slot="list-toolbar-end"
+          className="ms-auto flex max-w-full shrink-0 flex-wrap items-center justify-end gap-2"
+        >
           {end}
         </div>
       ) : null}
