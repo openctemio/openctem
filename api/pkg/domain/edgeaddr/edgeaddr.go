@@ -233,3 +233,47 @@ func (c *Classifier) Host(name string) Result {
 	}
 	return Result{Class: Dedicated}
 }
+
+// Range classifies an inclusive address range (an address, a CIDR or an
+// "a-b" range, read by the caller): the provider's only when the whole range
+// lies inside one published range. A range that only overlaps one is
+// Dedicated with no provider: part of it may be the organization's.
+func (c *Classifier) Range(lo, hi netip.Addr) Result {
+	lo, hi = lo.Unmap(), hi.Unmap()
+	if !lo.IsValid() || !hi.IsValid() || hi.Less(lo) {
+		return Result{Class: Dedicated}
+	}
+	for _, r := range c.ranges {
+		if r.p.Contains(lo) && r.p.Contains(hi) {
+			return Result{Class: r.class, Provider: r.provider, Basis: BasisRange}
+		}
+	}
+	return Result{Class: Dedicated}
+}
+
+// Name classifies a DNS name by what it is served through: the name itself
+// or one of its CNAME targets under a provider's host suffix, else every
+// address it resolves to inside a provider's published ranges. A name with
+// one address that no provider publishes is served directly (Dedicated):
+// part of its traffic reaches an address that may be the organization's.
+func (c *Classifier) Name(name string, cnames, addrs []string) Result {
+	for _, h := range append([]string{name}, cnames...) {
+		if r := c.Host(h); r.Shared() {
+			return r
+		}
+	}
+	var first Result
+	for _, a := range addrs {
+		r := c.Address(a, "", "")
+		if r.Basis != BasisRange || !r.Shared() {
+			return Result{Class: Dedicated}
+		}
+		if first.Class == "" {
+			first = r
+		}
+	}
+	if first.Class == "" {
+		return Result{Class: Dedicated}
+	}
+	return first
+}
