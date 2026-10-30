@@ -45,6 +45,9 @@ type V2Receiver struct {
 	commands   v2CommandReader
 	limits     protov2.Limits
 	maxPending int
+	// maxQueuedBytes bounds a tenant's queued payload bytes (0: unbounded);
+	// maxPending's continuation allowance applies to it too.
+	maxQueuedBytes int64
 	// sealer seals queued segments; nil refuses every new segment.
 	sealer *ingestpayload.Sealer
 	logger *logger.Logger
@@ -62,6 +65,14 @@ func NewV2Receiver(reports ingestreport.Repository, jobs ingestjob.V2Repository,
 	return &V2Receiver{reports: reports, jobs: jobs, queue: queue, commands: commands, limits: limits,
 		maxPending: maxPendingPerTenant, logger: log.With("component", "ingest-v2"), now: time.Now}
 }
+
+// SetMaxQueuedBytes bounds the decoded payload bytes one tenant may have
+// queued (INGEST_MAX_QUEUED_BYTES_PER_TENANT; 0 disables the check). A new
+// report is refused at the limit, a continuation of an open report at twice
+// it, with a Retry-After like the job limit gives. The queue must also read
+// bytes (ingestqueue.BytesReader), else every segment is refused (fail
+// closed).
+func (v *V2Receiver) SetMaxQueuedBytes(n int64) { v.maxQueuedBytes = n }
 
 // SetPayloadSealer sets the sealer queued segments are stored under (the
 // CI upload sealer). Without one every new segment is refused: a segment is
@@ -256,7 +267,7 @@ func (v *V2Receiver) Put(ctx context.Context, t V2Target, seq int, whole bool, b
 		return nil, problem(protov2.ProblemUnavailable)
 	}
 
-	if err := v.admit(ctx, tenantID, rep != nil, now); err != nil {
+	if err := v.admit(ctx, tenantID, rep != nil, int64(len(body.Decoded)), now); err != nil {
 		return nil, err
 	}
 
@@ -484,15 +495,23 @@ const continuationFactor = 2
 // (continuationFactor). Fail closed: a depth that cannot be read refuses the
 // segment (503, the sensor retries after the advised delay), it never waves
 // it in. A refusal carries a Retry-After from the tenant's recent drain.
-func (v *V2Receiver) admit(ctx context.Context, tenantID shared.ID, continuation bool, now time.Time) error {
-	if v.maxPending <= 0 {
+func (v *V2Receiver) admit(ctx context.Context, tenantID shared.ID, continuation bool, incoming int64, now time.Time) error {
+	if v.maxPending <= 0 && v.maxQueuedBytes <= 0 {
 		return nil
 	}
-	limit := v.maxPending
+	limit, byteLimit := v.maxPending, v.maxQueuedBytes
 	if continuation {
 		limit *= continuationFactor
+		byteLimit *= continuationFactor
 	}
 	err := ingestqueue.Admit(ctx, v.queue, tenantID, limit, now)
+	if err == nil {
+		var queued ingestqueue.BytesReader
+		if q, ok := v.queue.(ingestqueue.BytesReader); ok {
+			queued = q
+		}
+		err = ingestqueue.AdmitBytes(ctx, v.queue, queued, tenantID, incoming, byteLimit, now)
+	}
 	if err == nil {
 		return nil
 	}
@@ -500,7 +519,11 @@ func (v *V2Receiver) admit(ctx context.Context, tenantID shared.ID, continuation
 	if errors.As(err, &full) {
 		return &V2ReportError{Problem: protov2.ProblemQueueFull, RetryAfter: full.RetryAfter}
 	}
-	v.logger.Warn("v2 ingest: queue depth unreadable; segment refused", "error", err)
+	cause := ingestqueue.Cause(err)
+	if cause == nil {
+		cause = err
+	}
+	v.logger.Warn("v2 ingest: queue depth unreadable; segment refused", "error", cause)
 	return problem(protov2.ProblemUnavailable)
 }
 

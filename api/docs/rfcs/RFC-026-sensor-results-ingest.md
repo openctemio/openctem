@@ -276,8 +276,10 @@ resume byte streams.
 are masked, so the server stores it sealed with the per-tenant ingest payload
 key (the CI upload sealer), bound to tenant, job, report, segment number and
 decoded SHA-256, opens it only in the ingest worker, and empties it once the
-segment is applied. Details: `docs/architecture/sensors.md`, "Queued segments
-at rest".
+segment is applied. Legacy protocol v1 jobs still queued are sealed the same
+way. A tenant's queued payload bytes are capped like its queued jobs (429
+`queue-full`). Details: `docs/architecture/sensors.md`, "Queued segments at
+rest".
 
 Why not tus or the IETF resumable-upload draft: they resume one byte stream
 whose bytes mean nothing until reassembled. That requires server-side

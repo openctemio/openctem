@@ -1,0 +1,5 @@
+### Security: queued sensor payloads are all sealed, and queued bytes are capped
+
+- The in-place sealing of payloads queued in plaintext no longer stalls on a row it cannot seal: the row is logged (job and organization ids, never content), marked and skipped, the rows behind it are sealed, and it is retried after a day. Each sealing step is also capped by stored bytes (64 MiB), not only by row count.
+- Legacy protocol v1 sensor jobs still queued in plaintext are sealed the same way, the worker reads sealed and legacy rows, and a finished v1 job now empties its payload (migration `20261030164211_ingest_jobs_seal_failed_mark` empties those already applied and adds `payload_seal_failed_at`).
+- New `INGEST_MAX_QUEUED_BYTES_PER_TENANT` (default 1 GiB): an organization whose unfinished sensor segments hold that many decoded bytes gets `429 queue-full` with `Retry-After` for a new report (a started report may go to twice it), so a few organizations cannot fill the database disk. `0` turns it off.

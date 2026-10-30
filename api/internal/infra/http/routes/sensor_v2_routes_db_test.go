@@ -58,10 +58,12 @@ type v2Harness struct {
 }
 
 type v2HarnessOpts struct {
-	limits        protov2.Limits
-	maxPending    int
-	tenantLimiter *middleware.TelemetryRateLimiter
-	control       *handler.SensorControlV2Handler
+	limits     protov2.Limits
+	maxPending int
+	// maxQueuedBytes is the tenant's queued-bytes ceiling (0: none).
+	maxQueuedBytes int64
+	tenantLimiter  *middleware.TelemetryRateLimiter
+	control        *handler.SensorControlV2Handler
 	// ciKeys, when set, is the "OIDC required for CI" policy.
 	ciKeys handler.CIRunnerKeyPolicy
 	// depth, when set, replaces the queue depth reader.
@@ -112,6 +114,7 @@ func newV2Harness(t *testing.T, opts v2HarnessOpts) *v2Harness {
 	if opts.depth.on {
 		receiver = ingest.NewV2Receiver(h.reports, parked, opts.depth, postgres.NewCommandRepository(db), limits, opts.maxPending, log)
 	}
+	receiver.SetMaxQueuedBytes(opts.maxQueuedBytes)
 	if !opts.noSealer {
 		receiver.SetPayloadSealer(testSegmentSealer(t))
 	}
