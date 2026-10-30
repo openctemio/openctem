@@ -8,13 +8,14 @@
  * address or range scope entry) a person with scope write can add it to out
  * of scope from the chip: a confirm dialog explains why and shows what the
  * exclusion also stops, then the ordinary bulk exclusion (scope write,
- * audited, the Strict approval rule) adds it. An exclusion of an address
- * also leaves out the names that resolve to it (the dispatch gate matches an
- * asset's addresses), and the dialog says so. The API computes the label
+ * audited, the Strict approval rule) adds it. What it also stops comes from
+ * the bulk preview of the item, fetched when the dialog opens (never from
+ * the label): names served through a shared edge address keep being
+ * scanned; names with a dedicated address inside the excluded range do not. The API computes the label
  * (`edge` on assets and scope entries); this only shows it.
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
@@ -31,7 +32,12 @@ import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
-import { createExclusions, type ExclusionItem } from '@/features/assets/api/triage-api'
+import {
+  createExclusions,
+  previewExclusions,
+  type ExclusionItem,
+  type ExclusionPreviewItem,
+} from '@/features/assets/api/triage-api'
 import { FactChip, factChipBase } from '@/features/assets/components/service-cells/fact-chip'
 import type { AssetEdge } from '@/features/assets/types/asset.types'
 
@@ -174,6 +180,28 @@ export function EdgeExcludeDialog({
 }: DialogProps) {
   const { t } = useTranslation()
   const [busy, setBusy] = useState(false)
+  const [preview, setPreview] = useState<ExclusionPreviewItem | null>(null)
+  const [previewState, setPreviewState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  // One preview per open: the page load sends no extra request.
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    setPreview(null)
+    setPreviewState('loading')
+    previewExclusions([edgeExclusionItem(address)])
+      .then((res) => {
+        if (cancelled) return
+        setPreview(res.items?.[0] ?? null)
+        setPreviewState('ready')
+      })
+      .catch(() => {
+        if (!cancelled) setPreviewState('error')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [open, address])
+  const names = preview?.resolving_names ?? 0
   const submit = async () => {
     setBusy(true)
     try {
@@ -239,10 +267,27 @@ export function EdgeExcludeDialog({
             )}
           </p>
           <p className="text-muted-foreground" data-testid="edge-exclude-names">
-            {t(
-              'scope.edge.alsoNames',
-              'Names that resolve to this address are left out of scans as well while they resolve to it: a scan of the name would reach the address. Re-include the address to scan them again.'
-            )}
+            {previewState === 'loading' &&
+              t('scope.edge.namesLoading', 'Checking which names this affects...')}
+            {previewState === 'error' &&
+              t(
+                'scope.edge.namesError',
+                'Could not check which names this affects. The exclusion itself still works.'
+              )}
+            {previewState === 'ready' &&
+              (preview?.names_unaffected
+                ? t(
+                    'scope.edge.namesKept',
+                    'Names served through it keep being scanned (web ports only).'
+                  )
+                : names > 0
+                  ? t('scope.edge.namesStopped', 'Also stops scanning {count} names: {sample}', {
+                      count: names,
+                      sample:
+                        (preview?.resolving_sample ?? []).join(', ') +
+                        (names > (preview?.resolving_sample?.length ?? 0) ? '...' : ''),
+                    })
+                  : t('scope.edge.namesNone', 'No names resolve to a dedicated address in it.'))}
           </p>
         </DialogBody>
         <DialogFooter>

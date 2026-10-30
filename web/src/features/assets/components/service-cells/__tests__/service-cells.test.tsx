@@ -371,6 +371,18 @@ describe('cellsForType', () => {
     expect(screen.getByText('22/tcp')).toBeInTheDocument()
   })
 
+  it('ports on a provider address are labelled "Provider ports", data kept', () => {
+    const edgeIp = {
+      ...sensorIpWithPorts,
+      edge: { class: 'edge', provider: 'Cloudflare', address: '104.16.1.1' },
+    } as Asset
+    const { rerender } = render(<OpenPortChips asset={edgeIp} />)
+    expect(screen.getByText('Provider ports')).toBeInTheDocument()
+    expect(screen.getByText('22/tcp')).toBeInTheDocument()
+    rerender(<OpenPortChips asset={sensorIpWithPorts} />)
+    expect(screen.queryByText('Provider ports')).toBeNull()
+  })
+
   it('OpenPortChips hides "not scanned" and shows "none open"', () => {
     const { container, rerender } = render(<OpenPortChips asset={bareService} />)
     expect(container).toBeEmptyDOMElement()
