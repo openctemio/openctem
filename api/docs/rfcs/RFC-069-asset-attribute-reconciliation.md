@@ -407,7 +407,7 @@ Each observation states what it looked at:
 |---|---|---|
 | `full` | every element of the source | DNS resolvers (dnsx, massdns, puredns, shuffledns) for IP addresses; fingerprinting probes (httpx, wappalyzer, webanalyze, whatweb) for technologies |
 | `ranges` | TCP ports in the scanned ranges, plus elements seen under the same key | a port scan with an explicit list (`ports: 80,443,8000-8100`) or `full` |
-| `keyed` | elements the same source last saw under the same key | a port scan with `top_ports`, `top-N` or no setting (`ports:top-100`, `ports:default`): it cannot name its ports, so it removes only what an earlier scan with the same setting found |
+| `keyed` | elements the same source last saw under the same key | a port scan with `top_ports`, `top-N` or no setting (`ports:top-100`, `ports:default`): it cannot name its ports, so it removes only what an earlier scan with the same setting found, or with a shorter top list (a top-1 000 scan also covers `ports:top-100` and `ports:default`, the scanner's default top 100) |
 | `sightings` | nothing (TTL only) | every other report: imports, integrations, feeds, a web probe reporting the one address it connected to, a truncated list |
 
 The coverage comes from the bound command's port settings (`config.ports`,
