@@ -1895,6 +1895,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// retest would run and why not.
 	s.Vulnerability.SetRetestAvailability(s.Retest)
 	s.Vulnerability.SetCoverageAutoResolveMode(string(ingest.ParseCoverageAutoResolveMode(cfg.Ingest.CoverageAutoResolve)))
+	s.Vulnerability.SetClosureSettings(s.Tenant)
 
 	s.ThreatActor = threat.NewActorService(repos.ThreatActor, log)
 	s.RemediationCampaign = exposure.NewRemediationCampaignService(repos.RemediationCampaign, log)
@@ -2522,6 +2523,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetCoverageAutoResolve(ingest.ParseCoverageAutoResolveMode(cfg.Ingest.CoverageAutoResolve), ingest.BlindingGuard{
 		Ratio: cfg.Ingest.V2BlindingRatio, MinFindings: cfg.Ingest.V2BlindingMinFindings,
 	})
+	// Under enforce (or tenant) each organization's closing mode decides.
+	s.Ingest.SetClosureSettings(s.Tenant)
 	// Source-asserted resolve (Tenable.sc mitigated rows, RFC-047; default dry_run).
 	s.Ingest.SetSourceResolveMode(ingest.ParseSourceResolveMode(cfg.Ingest.SourceResolve))
 	s.Ingest.SetVEXMode(ingest.ParseVEXMode(cfg.Ingest.VEX))

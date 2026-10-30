@@ -191,11 +191,17 @@ func TestFindingAcceptance_SuppressionRuleEnd(t *testing.T) {
 	}
 	repo := postgres.NewSuppressionRepository(f.pdb)
 
+	// The accepted row already has the default end (an accepted risk always
+	// ends); another tenant's rule must not change it.
+	_, before := f.state(t)
+	if before == nil {
+		t.Fatal("an accepted finding has no end")
+	}
 	if err := repo.RecordSuppression(ctx, f.findingID, newRule(f.other), "system"); err != nil {
 		t.Fatalf("record (other tenant): %v", err)
 	}
-	if _, e := f.state(t); e != nil {
-		t.Fatalf("another tenant's rule set the acceptance end: %v", e)
+	if _, e := f.state(t); e == nil || !e.Equal(*before) {
+		t.Fatalf("another tenant's rule set the acceptance end: %v, want %v", e, before)
 	}
 	if err := repo.RecordSuppression(ctx, f.findingID, newRule(f.tenant), "system"); err != nil {
 		t.Fatalf("record: %v", err)

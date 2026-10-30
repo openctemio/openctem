@@ -17,8 +17,10 @@ package ingest
 // AND every report filed under it is completed — so it is evaluated from both
 // ends (command completion, report finalize); whichever comes second decides.
 //
-// Mode (INGEST_COVERAGE_AUTO_RESOLVE): off, dry_run (the default: log, metric
-// and a "would resolve" audit entry, no state change) or enforce.
+// Mode (INGEST_COVERAGE_AUTO_RESOLVE) is the platform ceiling: off, dry_run
+// (the default: log, metric and a "would resolve" audit entry, no state
+// change) or enforce (alias tenant): act per the organization's closing mode
+// and the tier rule (closure_mode.go).
 
 import (
 	"context"
@@ -45,14 +47,15 @@ const (
 	CoverageAutoResolveEnforce CoverageAutoResolveMode = "enforce"
 )
 
-// ParseCoverageAutoResolveMode reads the configured mode. Anything that is not
-// "off" or "enforce" is dry_run: an unknown value must never start closing
+// ParseCoverageAutoResolveMode reads the configured mode. "tenant" is an
+// alias of "enforce" (follow the organization's closing mode). Anything else
+// that is not "off" is dry_run: an unknown value must never start closing
 // findings.
 func ParseCoverageAutoResolveMode(v string) CoverageAutoResolveMode {
 	switch CoverageAutoResolveMode(strings.ToLower(strings.TrimSpace(v))) {
 	case CoverageAutoResolveOff:
 		return CoverageAutoResolveOff
-	case CoverageAutoResolveEnforce:
+	case CoverageAutoResolveEnforce, "tenant":
 		return CoverageAutoResolveEnforce
 	default:
 		return CoverageAutoResolveDryRun
@@ -104,6 +107,10 @@ const (
 type coverageDecision struct {
 	reason string
 	query  ingestreport.CoverageQuery
+	// perTarget: the run is not clean on every target, but its result
+	// accounts for each one (target_outcomes), so coverage is decided per
+	// target (coverage_targets.go).
+	perTarget bool
 }
 
 func (d coverageDecision) eligible() bool { return d.reason == coverageEligible }
@@ -140,7 +147,12 @@ func decideRunCoverage(c *ingestreport.CommandCoverage, repo bool) coverageDecis
 	if len(c.Result) > 0 && json.Unmarshal(c.Result, &result) == nil && result.ExitCode != nil && *result.ExitCode != 0 {
 		return coverageDecision{reason: coverageNonZeroExit}
 	}
-	if resultLeftTargetsUncovered(c.Result) {
+	// A run that left some targets uncovered still proves the others when
+	// its result says how every target ended (not for repository runs,
+	// which cover one branch as a whole).
+	_, perTarget := resultTargetOutcomes(c.Result)
+	perTarget = perTarget && !repo
+	if !perTarget && resultLeftTargetsUncovered(c.Result) {
 		return coverageDecision{reason: coverageUncoveredTargets}
 	}
 	// A result cut short (deadline, disk, cap) cannot prove that what it
@@ -194,6 +206,10 @@ func decideRunCoverage(c *ingestreport.CommandCoverage, repo bool) coverageDecis
 		case string(CoverageTypeFull):
 		case "":
 			return coverageDecision{reason: coverageUndeclared}
+		case string(CoverageTypePartial):
+			if !perTarget {
+				return coverageDecision{reason: coveragePartial}
+			}
 		default:
 			return coverageDecision{reason: coveragePartial}
 		}
@@ -227,11 +243,14 @@ func decideRunCoverage(c *ingestreport.CommandCoverage, repo bool) coverageDecis
 	if _, reserved := reservedAutoResolveTools[strings.ToLower(q.ToolName)]; reserved {
 		return coverageDecision{reason: coverageReservedTool}
 	}
-	if len(q.AssetIDs) == 0 {
+	// A repository run must name its repository. A network run that found
+	// nothing names no asset: the evaluator takes the covered assets from the
+	// command's targets (coveredRunAssets).
+	if repo && len(q.AssetIDs) == 0 {
 		return coverageDecision{reason: coverageNoCoveredAssets}
 	}
 	q.TemplatesDigest = templates
-	return coverageDecision{reason: coverageEligible, query: q}
+	return coverageDecision{reason: coverageEligible, query: q, perTarget: perTarget}
 }
 
 // resultLeftTargetsUncovered reports whether a command result says the
@@ -297,7 +316,10 @@ type CoverageOutcome struct {
 	// marked stale (NotObserved, observation_state) in enforce mode.
 	TemplateDrift []shared.ID
 	NotObserved   []shared.ID
-	Held          bool
+	// Proposed are the candidates the organization's closing mode and the
+	// tier rule send to a person instead of closing (enforce only).
+	Proposed []shared.ID
+	Held     bool
 }
 
 // templateDriftRepo is implemented by the postgres finding repository.
@@ -436,7 +458,11 @@ func (s *Service) EvaluateCommandCoverage(ctx context.Context, tenantID, command
 		// command does not cover (they are only marked seen). Absence of a
 		// finding proves something only on the assets the command was sent to
 		// scan, so a sensor cannot close findings elsewhere by naming them.
-		d.query.AssetIDs = s.coveredByCommand(ctx, tenantID, &commandID, d.query.AssetIDs)
+		//
+		// The assets with open findings of the tool that a covered target
+		// reaches count too, also when this run reported nothing on them:
+		// that is what "the same check looked again and found nothing" is.
+		d.query.AssetIDs = s.coveredRunAssets(ctx, tenantID, commandID, d.query.ToolName, cov.Result, d.query.AssetIDs)
 		if len(d.query.AssetIDs) == 0 {
 			out.Reason = coverageNoCoveredAssets
 		}
@@ -500,6 +526,12 @@ func (s *Service) EvaluateCommandCoverage(ctx context.Context, tenantID, command
 				}
 			}
 		}
+		// The organization's closing mode and the tier rule decide per
+		// finding: close, propose to a person, or keep.
+		stale, out.Proposed, _ = s.splitByClosureDecision(ctx, tenantID, stale)
+		if len(out.Proposed) > 0 {
+			metrics.FindingsCoverageAutoResolve.WithLabelValues(string(mode), "proposed").Add(float64(len(out.Proposed)))
+		}
 		resolved, err := repo.ResolveCoverageStale(ctx, tenantID, stale)
 		if err != nil {
 			s.logger.Warn("coverage auto-resolve failed", append(logArgs, "error", err)...)
@@ -507,7 +539,7 @@ func (s *Service) EvaluateCommandCoverage(ctx context.Context, tenantID, command
 		}
 		out.Resolved = resolved
 		metrics.FindingsCoverageAutoResolve.WithLabelValues(string(mode), "resolved").Add(float64(len(resolved)))
-		s.logger.Info("coverage auto-resolve: resolved findings", append(logArgs, "resolved", len(resolved))...)
+		s.logger.Info("coverage auto-resolve: resolved findings", append(logArgs, "resolved", len(resolved), "proposed", len(out.Proposed))...)
 	}
 	s.auditCoverageAutoResolve(ctx, tenantID, commandID, d.query, out, open)
 	s.recordCoverageReceipt(ctx, tenantID, commandID, d.query, out, false)
@@ -631,10 +663,24 @@ func (s *Service) auditCoverageAutoResolve(ctx context.Context, tenantID, comman
 	}
 	action := audit.ActionIngestCoverageAutoResolved
 	ids := out.Resolved
-	if out.Mode != CoverageAutoResolveEnforce || out.Held {
+	decision := "resolved"
+	switch {
+	case out.Mode != CoverageAutoResolveEnforce || out.Held:
 		action = audit.ActionIngestCoverageAutoResolveDryRun
 		ids = out.WouldResolve
+		decision = "dry_run"
+	case len(out.Proposed) > 0:
+		// The proposals are recorded like a dry run, in their own entry.
+		s.writeCoverageAudit(ctx, tenantID, commandID, q, out, open, audit.ActionIngestCoverageAutoResolveDryRun, out.Proposed, "review")
+		if len(ids) == 0 {
+			return
+		}
 	}
+	s.writeCoverageAudit(ctx, tenantID, commandID, q, out, open, action, ids, decision)
+}
+
+func (s *Service) writeCoverageAudit(ctx context.Context, tenantID, commandID shared.ID, q ingestreport.CoverageQuery, out CoverageOutcome, open int,
+	action audit.Action, ids []shared.ID, decision string) {
 	listed := make([]string, 0, min(len(ids), maxAuditedFindingIDs))
 	for i, id := range ids {
 		if i == maxAuditedFindingIDs {
@@ -646,9 +692,9 @@ func (s *Service) auditCoverageAutoResolve(ctx context.Context, tenantID, comman
 	event.ResourceName = q.ToolName
 	event.Message = "coverage-scoped auto-resolve"
 	event.Metadata = map[string]any{
-		"mode": string(out.Mode), "held": out.Held, "tool_name": q.ToolName, "profile_id": q.ProfileID,
+		"mode": string(out.Mode), "decision": decision, "held": out.Held, "tool_name": q.ToolName, "profile_id": q.ProfileID,
 		"covered_assets": len(q.AssetIDs), "open": open, "count": len(ids),
-		"template_drift": len(out.TemplateDrift), "not_observed": len(out.NotObserved),
+		"template_drift": len(out.TemplateDrift), "not_observed": len(out.NotObserved), "proposed": len(out.Proposed),
 		"finding_ids": listed, "finding_ids_truncated": len(ids) > maxAuditedFindingIDs,
 	}
 	if err := s.writeIngestAuditLog(ctx, auditapp.AuditContext{TenantID: tenantID.String()}, event); err != nil {

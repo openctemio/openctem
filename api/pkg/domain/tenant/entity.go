@@ -55,6 +55,9 @@ func NewTenant(name, slug, createdBy string) (*Tenant, error) {
 	initial.Security.PersonalAccounts = PersonalAccountsAllowedWithMFA
 	// Owners and admins of a new organization use a second factor.
 	initial.Security.MFARequiredForAdmins = true
+	// A new organization lets the platform close findings per the tier rule;
+	// organizations created before stay in review (an absent mode).
+	initial.Closure.Mode = ClosingModeAuto
 	return &Tenant{
 		id:        shared.NewID(),
 		name:      name,

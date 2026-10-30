@@ -30,6 +30,8 @@ type Settings struct {
 	AssetIdentity  AssetIdentitySettings  `json:"asset_identity"`
 	AssetLifecycle AssetLifecycleSettings `json:"asset_lifecycle"`
 	Retest         RetestSettings         `json:"retest"`
+	// Closure is the closing policy (closure_settings.go).
+	Closure ClosureSettings `json:"closure,omitempty"`
 	// Evidence is finding evidence retention (docs/architecture/finding-evidence.md).
 	Evidence EvidenceSettings `json:"evidence,omitempty"`
 	// EASM is attack-surface monitoring (research/22 P0-11).
@@ -833,6 +835,9 @@ func (s *Settings) Validate() error {
 	}
 	if err := s.Retest.Validate(); err != nil {
 		return fmt.Errorf("retest settings: %w", err)
+	}
+	if err := s.Closure.Validate(); err != nil {
+		return fmt.Errorf("closure settings: %w", err)
 	}
 	if err := s.LicensePolicy.Normalize(); err != nil {
 		return fmt.Errorf("%w: %s", shared.ErrValidation, err.Error())

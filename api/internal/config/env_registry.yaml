@@ -1306,13 +1306,13 @@ vars:
     group: "Ingest"
     type: string
     default: "dry_run"
-    description: "Coverage-scoped auto-resolve of non-repository findings: `off`, `dry_run` (log, metric and audit entry only) or `enforce`."
+    description: "Platform ceiling of coverage-scoped auto-resolve of non-repository findings: `off` and `dry_run` (log, metric and audit entry only) never close anything; `enforce` (alias `tenant`) acts per each organization's closing mode (auto, review, off) and the tier rule: in auto a covered scan closes standard and high findings and proposes critical, P0 and KEV ones; review proposes every close."
   - name: INGEST_MAX_PENDING_PER_TENANT
     component: api
     group: "Ingest"
     type: int
     default: "100"
-    description: "Unfinished ingest jobs per organization (CI uploads, imports, sensor report segments); a further upload gets `429` with a `Retry-After` computed from how fast the organization's jobs drain. A depth that cannot be read refuses the upload (`503`). `0` turns the check off."
+    description: "Unfinished ingest jobs per organization (CI uploads, imports, sensor report segments); a further upload gets `429` with a `Retry-After` computed from how fast the organization's jobs drain. A segment of a sensor report that was already admitted is accepted up to twice this number, so a started report can finish. A depth that cannot be read refuses the upload (`503`). `0` turns the check off."
   - name: EVIDENCE_DAILY_CAP
     component: api
     group: "Ingest"

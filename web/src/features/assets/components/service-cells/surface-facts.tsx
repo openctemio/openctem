@@ -65,8 +65,15 @@ export function OpenPortChips({
   if (ports.length === 0)
     return <FactChip tone="muted">{t('assets.facts.noOpenPorts', 'No open ports')}</FactChip>
   const shown = ports.slice(0, max)
+  // On a provider's shared address the ports are the provider's, not the tenant's.
+  const provider = asset.edge?.address ? (
+    <span className="text-xs text-muted-foreground" data-slot="provider-ports">
+      {t('assets.facts.providerPorts', 'Provider ports')}
+    </span>
+  ) : null
   return (
     <>
+      {provider}
       {shown.map((p) => (
         <FactChip key={formatPort(p)} tone="muted" title={p.service}>
           <ChipMono>{formatPort(p)}</ChipMono>

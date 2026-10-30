@@ -137,8 +137,9 @@ func (r *FindingRepository) TemplateBaseline(ctx context.Context, tenantID, find
 
 // TemplateDriftedFindings returns those of ids whose last sighting
 // recorded a template release digest other than runDigest (or any digest,
-// when the run reported none): a covered run with different template
-// content cannot prove them fixed (research/18 O6).
+// when the run reported none), and, when the run reported one, those whose
+// last sighting recorded none: a covered run with different or unknown
+// template content cannot prove them fixed (research/18 O6).
 func (r *FindingRepository) TemplateDriftedFindings(ctx context.Context, tenantID shared.ID, ids []shared.ID, runDigest string) ([]shared.ID, error) {
 	if len(ids) == 0 {
 		return nil, nil
@@ -150,8 +151,13 @@ func (r *FindingRepository) TemplateDriftedFindings(ctx context.Context, tenantI
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id::text FROM findings
 		WHERE tenant_id = $1 AND id = ANY($2::uuid[])
-		  AND templates_digest IS NOT NULL
-		  AND templates_digest IS DISTINCT FROM NULLIF($3, '')`,
+		  AND (
+			-- Last seen with another template release.
+			(templates_digest IS NOT NULL AND templates_digest IS DISTINCT FROM NULLIF($3, ''))
+			-- The run knows its release but the finding never recorded one:
+			-- nothing proves the same check looked again (fail closed).
+			OR (templates_digest IS NULL AND NULLIF($3, '') IS NOT NULL)
+		  )`,
 		tenantID.String(), pq.Array(idStrs), runDigest)
 	if err != nil {
 		return nil, fmt.Errorf("template-drifted findings: %w", err)
