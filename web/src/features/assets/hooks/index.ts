@@ -6,6 +6,8 @@ export {
   // Basic CRUD hooks
   useAssets,
   useAsset,
+  useAssetPage,
+  assetViewEndpoint,
   useAssetsByType,
   useAssetStats,
   getAsset,
