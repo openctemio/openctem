@@ -150,4 +150,28 @@ func (m *memIdentities) MarkUsed(_ context.Context, id shared.ID, at time.Time) 
 	return nil
 }
 
+func (m *memIdentities) MarkSSO(_ context.Context, id shared.ID) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, r := range m.rows {
+		if r.ID == id {
+			r.Source = useridentity.SourceSSO
+		}
+	}
+	return nil
+}
+
+// bindSSO binds a platform-wide identity an organization's single sign-on
+// asserted, for test setup.
+func (m *memIdentities) bindSSO(u *userdom.User, issuer, subject string) {
+	ident, err := useridentity.New(u.ID(), useridentity.Key{Issuer: issuer, Subject: subject})
+	if err != nil {
+		panic(err)
+	}
+	ident.Source = useridentity.SourceSSO
+	if err := m.Create(context.Background(), ident); err != nil {
+		panic(err)
+	}
+}
+
 var _ useridentity.Repository = (*memIdentities)(nil)

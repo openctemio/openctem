@@ -87,8 +87,9 @@ type IdentityNotifier interface {
 // Without it a password account is never signed in through a provider.
 func (s *OAuthService) SetSecondFactorGate(g SecondFactorGate) { s.secondFactor = g }
 
-// SetSessionRevoker wires the session revocation a confirmed link needs
-// (pending_link.go): the account's other sessions end.
+// SetSessionRevoker wires the session revocation every link and unlink
+// needs: the account's other sessions end. Without it CompleteLink and Unlink
+// are refused.
 func (s *OAuthService) SetSessionRevoker(r SessionRevoker) { s.sessions = r }
 
 // SetLinkProofVerifier wires the proof every link and unlink needs
@@ -161,6 +162,18 @@ func providerOfKey(k useridentity.Key) OAuthProvider {
 	return ""
 }
 
+// socialProviderOf names the social provider of an identity the person may
+// manage from Account > Security, or "" for one an organization's single
+// sign-on manages. An organization's Entra ID or Google Workspace sign-on
+// stores the same unscoped issuer as the social button, so the issuer alone
+// does not tell them apart: the identity's source does.
+func socialProviderOf(ident *useridentity.Identity) OAuthProvider {
+	if ident == nil || ident.ManagedBySSO() {
+		return ""
+	}
+	return providerOfKey(ident.Key)
+}
+
 // checkLinkable refuses a key bound to another account and a second identity
 // of the same provider on u. nil means bind may proceed (or key is already
 // u's, which bind accepts).
@@ -181,7 +194,7 @@ func (s *OAuthService) checkLinkable(ctx context.Context, u *userdom.User, key u
 		return fmt.Errorf("list identities: %w", err)
 	}
 	for _, ident := range idents {
-		if providerOfKey(ident.Key) == provider && ident.Key.Subject != key.Subject {
+		if !ident.ManagedBySSO() && providerOfKey(ident.Key) == provider && ident.Key.Subject != key.Subject {
 			return ErrProviderAlreadyLinked
 		}
 	}
@@ -286,7 +299,7 @@ func (s *OAuthService) ListSignInMethods(ctx context.Context, userID string) (*S
 		total++
 	}
 	for _, ident := range idents {
-		p := providerOfKey(ident.Key)
+		p := socialProviderOf(ident)
 		m := SignInMethod{ID: ident.ID.String(), Provider: string(p), CreatedAt: ident.CreatedAt, LastUsedAt: ident.LastUsedAt}
 		if p == "" {
 			m.Provider = "organization"
@@ -419,7 +432,33 @@ func (s *OAuthService) CompleteLink(ctx context.Context, in LinkCompleteInput) (
 		s.logger.Error("link: failed to get user info", "provider", in.Provider, "error", err)
 		return nil, ErrOAuthUserInfoFailed
 	}
+	// The account's other sessions end before the new sign-in method exists;
+	// the session that proved the link keeps going. Fail closed: when the
+	// revoke fails nothing is linked.
+	if err := s.revokeOtherSessions(ctx, in.UserID, in.SessionID, "link"); err != nil {
+		return nil, err
+	}
 	return s.linkIdentity(ctx, in.UserID, info, in.Provider, linkHowManual, factor)
+}
+
+// errSessionRevokerMissing refuses a change of sign-in methods when the
+// session revocation it needs is not wired.
+var errSessionRevokerMissing = errors.New("session revocation not configured")
+
+// revokeOtherSessions ends every session of userID but keepSessionID, before
+// a change of the account's sign-in methods. An error means the change must
+// not happen.
+func (s *OAuthService) revokeOtherSessions(ctx context.Context, userID, keepSessionID, change string) error {
+	if s.sessions == nil {
+		s.logger.Error("sign-in method change refused: session revocation not wired", "change", change, "user_id", userID)
+		return errSessionRevokerMissing
+	}
+	if err := s.sessions.RevokeAllSessions(ctx, userID, keepSessionID); err != nil {
+		s.logger.Error("sign-in method change refused: revoking the account's other sessions failed",
+			"change", change, "user_id", userID, "error", err)
+		return fmt.Errorf("revoke other sessions before the %s: %w", change, err)
+	}
+	return nil
 }
 
 // linkFactorKey is where StartLink keeps the factor that proved a link start,
@@ -508,7 +547,7 @@ func (s *OAuthService) Unlink(ctx context.Context, in UnlinkInput) error {
 	if target == nil {
 		return ErrIdentityNotFound
 	}
-	provider := providerOfKey(target.Key)
+	provider := socialProviderOf(target)
 	if provider == "" {
 		return ErrIdentityNotUnlinkable
 	}
@@ -518,6 +557,14 @@ func (s *OAuthService) Unlink(ctx context.Context, in UnlinkInput) error {
 	}
 	factor, err := s.verifyLinkProof(ctx, u, in.SessionID, in.Proof, LinkProofUnlink)
 	if err != nil {
+		return err
+	}
+	// A session opened through the provider (perhaps by whoever made the
+	// person unlink it) must not outlive the unlink. Revoke first and fail
+	// closed: when the revoke fails the identity stays, so the person sees
+	// the failure and can retry; a revoke followed by a failed delete only
+	// signs the account's other devices out.
+	if err := s.revokeOtherSessions(ctx, u.ID().String(), in.SessionID, "unlink"); err != nil {
 		return err
 	}
 	if err := s.identities.DeleteForUser(ctx, u.ID(), target.ID, !hasPassword); err != nil {

@@ -1,0 +1,7 @@
+### Security: social sign-in matches addresses in any case, ends sessions on link and unlink, and keeps organization sign-on identities managed by the organization
+
+- A provider sending an existing account's address in another case (`Alice@Corp.example` for `alice@corp.example`) now reaches that account (its refusal or pending link) instead of creating a second account. Addresses are trimmed and lower-cased on every write, lookups compare case-insensitively, and `users.email` is unique on `lower(email)` (migration `20261030181143_users_email_case_insensitive_unique`).
+- Unlinking a social provider and completing an explicit link revoke every other session of the account first (keeping the session that proved the change); when the revoke fails nothing changes.
+- An organization's Entra ID or Google Workspace sign-on identity is no longer shown or unlinked as a social Microsoft or Google link: identities record their source (migration `20261030181144_user_identities_source`, backfilled from the organizations' configured sign-on), the organization's sign-on marks the identities it asserts, and a social sign-in through such an identity never changes the account's address.
+- The pending-link confirm dialog shows the provider account's name, handle and picture.
+- **Upgrade note:** migration `20261030181143` stops with a clear message, changing nothing, when two accounts already hold the same address in different case; resolve them (`SELECT lower(email), count(*) FROM users GROUP BY 1 HAVING count(*) > 1`) and rerun.

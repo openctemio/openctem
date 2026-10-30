@@ -56,21 +56,47 @@ func sameScope(a, b *shared.ID) bool {
 	return *a == *b
 }
 
+// Source says which sign-in path bound an identity. A platform-wide key can
+// be reached from both: an organization's Entra ID or Google Workspace single
+// sign-on and the social Microsoft or Google button verify the same issuer
+// and the same subject.
+type Source string
+
+const (
+	// SourceSocial: bound by a social sign-in or an explicit link from
+	// Account > Security. The person may unlink it.
+	SourceSocial Source = "social"
+	// SourceSSO: bound or used by an organization's single sign-on. The
+	// organization manages it: it is never unlinked from Account > Security,
+	// and a social sign-in through it never changes the account.
+	SourceSSO Source = "sso"
+)
+
+// Valid reports whether s is a known source.
+func (s Source) Valid() bool { return s == SourceSocial || s == SourceSSO }
+
 // Identity is one (issuer, subject) bound to an account.
 type Identity struct {
 	ID         shared.ID
 	UserID     shared.ID
 	Key        Key
+	Source     Source
 	CreatedAt  time.Time
 	LastUsedAt *time.Time
 }
 
-// New builds an identity for userID.
+// New builds a social identity for userID (an SSO path sets Source).
 func New(userID shared.ID, key Key) (*Identity, error) {
 	if !key.Valid() {
 		return nil, ErrInvalid
 	}
-	return &Identity{ID: shared.NewID(), UserID: userID, Key: key, CreatedAt: time.Now().UTC()}, nil
+	return &Identity{ID: shared.NewID(), UserID: userID, Key: key, Source: SourceSocial, CreatedAt: time.Now().UTC()}, nil
+}
+
+// ManagedBySSO reports whether an organization's single sign-on manages the
+// identity: an SSO source, or a key scoped to an organization (SAML).
+func (i *Identity) ManagedBySSO() bool {
+	return i.Source == SourceSSO || i.Key.ScopeTenantID != nil
 }
 
 // Repository stores federated identities. The table is global (users are
@@ -88,6 +114,9 @@ type Repository interface {
 	ChangeSubject(ctx context.Context, id shared.ID, subject string) error
 	// MarkUsed records a sign-in with the identity.
 	MarkUsed(ctx context.Context, id shared.ID, at time.Time) error
+	// MarkSSO records that an organization's single sign-on asserted the
+	// identity (Source becomes SourceSSO; it never goes back).
+	MarkSSO(ctx context.Context, id shared.ID) error
 	// DeleteForUser removes one identity of one account (unlinking a sign-in
 	// method). ErrNotFound when the account has no identity with that id, so
 	// another account's identity can never be removed through it. keepOne

@@ -14,6 +14,7 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { StepUpDialog, stepUpProofErrorMessage, type StepUpProofInput } from '@/components/security'
 import { useTranslation } from '@/context/i18n-provider'
@@ -24,6 +25,8 @@ import {
   type PendingLink,
 } from '@/features/auth/actions/social-auth-actions'
 import { describeAuthCode } from '@/features/auth/lib/auth-error-codes'
+import { initials } from '@/lib/initials'
+import { safeAvatarSrc } from '@/lib/safe-href'
 
 import { linkProofFrom, LinkProofRefused } from '../lib/link-proof'
 
@@ -31,6 +34,38 @@ const PROVIDER_NAME: Record<PendingLink['provider'], string> = {
   google: 'Google',
   github: 'GitHub',
   microsoft: 'Microsoft',
+}
+
+/**
+ * The provider account waiting to be linked, so the person checks it is
+ * theirs before typing the proof: picture (known avatar hosts only, no
+ * referrer), name, handle and address. Every value is rendered as text.
+ */
+function ProviderAccount({ pending, provider }: { pending: PendingLink; provider: string }) {
+  const { t } = useTranslation()
+  const label = pending.name ?? pending.login ?? pending.email
+  return (
+    <div
+      className="bg-muted/40 flex items-center gap-3 rounded-md border p-3"
+      aria-label={t('account.pendingLink.accountLabel', undefined, { provider })}
+    >
+      <Avatar className="size-10">
+        <AvatarImage src={safeAvatarSrc(pending.avatarUrl)} alt="" referrerPolicy="no-referrer" />
+        <AvatarFallback className="text-foreground text-xs font-medium">
+          {initials(label)}
+        </AvatarFallback>
+      </Avatar>
+      <div className="min-w-0 text-sm">
+        <p className="truncate font-medium">{label}</p>
+        {pending.login && (
+          <p className="text-muted-foreground truncate">
+            {t('account.pendingLink.login', undefined, { login: pending.login })}
+          </p>
+        )}
+        <p className="text-muted-foreground truncate">{pending.email}</p>
+      </div>
+    </div>
+  )
 }
 
 export function PendingLinkPrompt() {
@@ -99,7 +134,12 @@ export function PendingLinkPrompt() {
         pending.proof
           ? undefined
           : {
-              body: <p className="text-sm">{t('account.signInMethods.proofUnavailable')}</p>,
+              body: (
+                <>
+                  <ProviderAccount pending={pending} provider={provider} />
+                  <p className="text-sm">{t('account.signInMethods.proofUnavailable')}</p>
+                </>
+              ),
               actions: (
                 <Button type="button" variant="outline" onClick={() => void dismiss()}>
                   {t('account.pendingLink.notNow')}
@@ -107,6 +147,8 @@ export function PendingLinkPrompt() {
               ),
             }
       }
-    />
+    >
+      <ProviderAccount pending={pending} provider={provider} />
+    </StepUpDialog>
   )
 }
