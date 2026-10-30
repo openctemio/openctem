@@ -45,6 +45,7 @@ import { PasswordPolicyHint } from './password-policy-hint'
 import { registerAction } from '../actions/local-auth-actions'
 import { TurnstileWidget } from './turnstile-widget'
 import { initiateSocialLogin, type SocialProvider } from '../actions/social-auth-actions'
+import { isHttpsUrl } from '@/lib/redirect'
 import { useAuthProviders } from '../api/use-auth-providers'
 import { invitationTokenFromReturnTo } from '../lib/self-register'
 import { identityProviderLabel } from '@/lib/identity-provider-label'
@@ -218,8 +219,10 @@ export function RegisterForm({
   async function handleSocialLogin(provider: SocialProvider) {
     setLoadingProvider(provider)
     try {
-      // This will redirect to the OAuth provider
-      await initiateSocialLogin(provider, socialRedirectTo)
+      const res = await initiateSocialLogin(provider, socialRedirectTo)
+      if (!res.ok || !isHttpsUrl(res.url)) throw new Error('start_failed')
+      // Keep the loading state: the page is leaving for the provider.
+      window.location.assign(res.url)
     } catch (error) {
       setLoadingProvider(null)
       console.error(`Social login error (${provider}):`, error)

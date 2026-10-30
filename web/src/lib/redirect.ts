@@ -151,6 +151,19 @@ export function getSafeLogoutUrl(returnUrl?: string | null): string {
  * @param url - URL to check
  * @returns true if internal, false if external
  */
+/**
+ * True only for an absolute https URL. Used before sending the browser to an
+ * identity provider with a URL a server action returned.
+ */
+export function isHttpsUrl(url: unknown): url is string {
+  if (typeof url !== 'string') return false
+  try {
+    return new URL(url).protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
 export function isInternalUrl(url: string): boolean {
   try {
     // Internal paths always start with /
