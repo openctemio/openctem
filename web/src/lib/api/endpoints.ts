@@ -248,8 +248,9 @@ export const userEndpoints = {
   twoFactorRecoveryCodes: () => `${API_BASE.USERS}/me/2fa/recovery-codes`,
 
   /**
-   * Linked sign-in methods (Account > Security). Link start and unlink need
-   * step-up; the link callback is called by the OAuth callback route.
+   * Linked sign-in methods (Account > Security). Link start and unlink carry
+   * the code or password typed for them (step_up in the body); the link
+   * callback is called by the OAuth callback route.
    */
   identities: () => '/api/v1/me/sign-in-methods',
   identityLink: (provider: string) =>
@@ -259,7 +260,7 @@ export const userEndpoints = {
   identity: (id: string) => `/api/v1/me/sign-in-methods/${encodeURIComponent(id)}`,
   /**
    * The pending link a refused social sign-in left, confirmed after signing
-   * in (describe, confirm with step-up, cancel). Called by server actions
+   * in (describe, confirm with the typed code or password, cancel). Called by server actions
    * with the HttpOnly pending-link cookie.
    */
   pendingLinkDescribe: () => '/api/v1/me/pending-sign-in-link/describe',

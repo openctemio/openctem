@@ -44,15 +44,19 @@ identity of that provider), the refusal leaves a pending link:
    replaces that sign-in.
 4. In the app, the web server (forwarding the cookie) describes the pending link
    (`POST /api/v1/me/pending-sign-in-link/describe`) and asks "Link Google
-   account x to your account?". "Link" confirms
+   account x to your account?" with the authenticator code (or the password)
+   field in the same dialog. "Link" confirms with that proof
    (`POST /api/v1/me/pending-sign-in-link/complete`), "Not now" drops it
-   (`POST /api/v1/me/pending-sign-in-link/cancel`); either way the cookie is
-   deleted. The routes read the secret from the cookie only, never from the
+   (`POST /api/v1/me/pending-sign-in-link/cancel`). The cookie is deleted
+   either way, except after a missing or wrong proof (`LINK_PROOF_REQUIRED`,
+   `LINK_PROOF_FAILED`), when the person can type it again. The routes read the secret from the cookie only, never from the
    body or the URL.
-5. The confirm is accepted only from the account the pending link was made
-   for, only from a session that signed in or stepped up after the pending
-   link was made (the session's own server-side record) and inside the
-   step-up window, only with the secret, once, before it expires, and only
+5. The confirm is accepted only with a proof typed for it (see
+   [Proof at the moment of the change](#proof-at-the-moment-of-the-change);
+   the sign-in that just happened does not count), only from the account the
+   pending link was made for, only from a session that signed in or stepped
+   up after the pending link was made (the session's own server-side
+   record), only with the secret, once, before it expires, and only
    while the account's address is still the provider's. A pending link
    presented by another account is spent. The link itself follows the
    explicit-link rules (identity linked elsewhere, second identity of the
@@ -62,14 +66,47 @@ identity of that provider), the refusal leaves a pending link:
 | Route | Gate |
 |---|---|
 | `POST /api/v1/me/pending-sign-in-link/describe` | signed in, CSRF, rate limit; the pending link must be this account's |
-| `POST /api/v1/me/pending-sign-in-link/complete` | step-up (the sign-in that just happened counts), CSRF, rate limit; authenticated after the pending link |
+| `POST /api/v1/me/pending-sign-in-link/complete` | proof typed for it (the sign-in that just happened does not count), CSRF, rate limit; authenticated after the pending link |
 | `POST /api/v1/me/pending-sign-in-link/cancel` | signed in, CSRF, rate limit |
 
 Refusals: `404 PENDING_LINK_INVALID` (none for this account: expired, used,
 made for another account or never made; one answer for all; `400` with the
 same code when the request has no pending-link cookie),
 `403 PENDING_LINK_SIGN_IN_REQUIRED` (the session authenticated before the
-pending link), `409 IDENTITY_LINKED_ELSEWHERE` / `PROVIDER_ALREADY_LINKED`.
+pending link), `403 LINK_PROOF_*` (the proof), `409 IDENTITY_LINKED_ELSEWHERE` /
+`PROVIDER_ALREADY_LINKED`.
+
+## Proof at the moment of the change
+
+Every change of an account's sign-in methods (starting an explicit link,
+confirming a pending link, unlinking) needs a proof typed into its confirm
+dialog and sent with that one request as `step_up` (`auth/link_proof.go`):
+
+| The account has | Proof |
+|---|---|
+| TOTP | A current authenticator code. Never a recovery code; a code from an already used time step is refused, so the code that signed the person in a moment ago cannot be replayed here. A password is not accepted instead. |
+| A password, no TOTP | The password. |
+| Neither (signs in only through a provider) | None possible: `403 LINK_PROOF_UNAVAILABLE`. The person turns on two-factor authentication first. |
+
+A recent sign-in or an open [step-up window](step-up-reauth.md) does not count,
+so these routes are not behind `requireStepUp`: the service checks the proof
+itself, and a closed window does not ask for a second, separate proof first.
+The proof authorizes only its request; it never opens a window on the session.
+Passkeys exist only for platform administrators (the admin console), so a
+tenant account never presents one here.
+
+Refusals: `403 LINK_PROOF_REQUIRED` (no proof of the kind the account needs),
+`403 LINK_PROOF_FAILED` (wrong, reused or recovery code, wrong password),
+`403 LINK_PROOF_UNAVAILABLE`, `403 ACCOUNT_LOCKED`. A wrong proof counts towards
+the account lockout exactly like a failed sign-in, on top of the routes' rate
+limit. Every attempt writes `auth.step_up` / `auth.step_up_failed` with
+`method` (`totp` or `password`) and `purpose` (`link_start`, `pending_link`,
+`unlink`); the link and unlink events themselves carry `factor`. For an
+explicit link, the factor that proved the start is kept server side with the
+link's PKCE record and taken at the callback: a link whose start was never
+proved does not complete. `GET /api/v1/me/sign-in-methods` and the pending-link
+describe return `proof` (`totp`, `password` or empty) so the dialog asks for
+the right field.
 
 ## Explicit linking (Account > Security)
 
@@ -79,15 +116,15 @@ linked providers and the organization SSO identities (read only).
 | Route | Gate |
 |---|---|
 | `GET /api/v1/me/sign-in-methods` | signed in |
-| `POST /api/v1/me/sign-in-method-links/{provider}/start` | step-up, CSRF, rate limit |
+| `POST /api/v1/me/sign-in-method-links/{provider}/start` | proof typed for it, CSRF, rate limit |
 | `POST /api/v1/me/sign-in-method-links/{provider}/complete` | signed in, rate limit; state bound to account, session and browser, single use, expires |
-| `DELETE /api/v1/me/sign-in-methods/{id}` | step-up, CSRF, rate limit |
+| `DELETE /api/v1/me/sign-in-methods/{id}` | proof typed for it, CSRF, rate limit |
 
 Link flow:
 
-1. The browser calls the link start through the API client. A session that has
-   not re-authenticated in the step-up window gets `403 STEP_UP_REQUIRED` and
-   the dialog asks for the authenticator code or password first.
+1. "Link" opens a dialog that asks for the authenticator code (or the
+   password); the browser calls the link start with it through the API
+   client. A refused proof is shown in the dialog.
 2. The API returns the provider's authorization URL. Its signed state carries
    `purpose=link`, the account id, the session id and an expiry; the PKCE
    verifier is kept server side under the state, single use, for the state's
@@ -198,7 +235,7 @@ Organization policies apply to the session exactly as before:
 | Unverified provider address | Google and Microsoft sign-in already refuse an unverified address; GitHub reads only its primary verified address |
 | Pre-hijacking: an attacker registers the victim's Gmail address with a password before the victim arrives through Google | Automatic linking needs the account's address verified (the attacker cannot click the link sent to the victim's mailbox); on a link every session is revoked and a pending reset link cancelled, and the mailbox (the victim) is told. Residual: an address marked verified without mailbox proof (an administrator-provisioned account with a temporary password, or a deployment that ran without mail delivery); the administrator turns automatic linking off for such deployments |
 | Second-factor bypass through a provider | The linked password account gets the same second step as its password sign-in |
-| Link CSRF (an attacker's provider account linked to the victim's session) | The link start needs step-up and the CSRF token; the state is signed, single use, expires, and bound to the account and session that started it; the callback also checks the state cookie of the browser |
+| Link CSRF (an attacker's provider account linked to the victim's session) | The link start needs a proof typed for it and the CSRF token; the state is signed, single use, expires, and bound to the account and session that started it; the callback also checks the state cookie of the browser |
 | Cross-browser completion (the attacker's code and state, or the victim's leaked callback URL, finished in another browser) | The PKCE verifier is released only with the browser-binding secret held in an HttpOnly cookie of the browser that started the link; a wrong or missing secret spends the record, so the starting browser cannot be raced either |
 | State replay (a used state and code from a log or Referer) | The PKCE record is deleted on first read; a replay is refused before any code exchange |
 | Using a link state to sign in, or a sign-in state to link | The sign-in callback refuses a state with a purpose; the link callback accepts only `purpose=link` |
@@ -207,7 +244,9 @@ Organization policies apply to the session exactly as before:
 | Account enumeration | `OAUTH_ACCOUNT_EXISTS` and `IDENTITY_LINKED_ELSEWHERE` are answered only after the provider proved the person holds that address or provider account; the pending-link refusals have one answer for every reason |
 | Linking by mailbox control alone (a recycled or transferred mailbox or domain, a compromised provider account) | Off by default: a social sign-in never changes an existing account; the person must sign in to the account and confirm |
 | Planting or stealing a pending link | The secret is never in a response body or URL, only in an HttpOnly `__Host-` cookie (no subdomain or script can read or set it); the record is bound to the account it collided with, so another account cannot confirm or even read it, and presenting it spends it |
-| Confirming with a session someone already held (stolen session, shared computer) | The session must have signed in or stepped up after the pending link was made, inside the step-up window; on confirm every other session is revoked and the mailbox is told |
+| Confirming with a session someone already held (stolen session, shared computer) | The confirm needs the authenticator code (or the password) typed for it, and a session that signed in or stepped up after the pending link was made; on confirm every other session is revoked and the mailbox is told |
+| Linking or unlinking from a stolen or unattended session | Every change needs a proof typed for that request; a recent sign-in or step-up window does not count; wrong proofs count towards the lockout |
+| Replaying the sign-in's code to confirm | TOTP time steps are single use (`mfa_factors.last_used_step`); recovery codes are refused |
 | Replay of a pending link | Single use (GETDEL), 10 minutes, hash-only storage |
 | A provider's later address counted as proven | The new address is verified only where the provider is authoritative |
 | Organization SSO enforcement or two-factor floor bypassed through social sign-in | A social session is stamped `sso` with no issuing organization: enforcement and the two-factor requirement treat it as a password session without our second factor (`Session.FederatedFor`), so it is refused at token mint |
