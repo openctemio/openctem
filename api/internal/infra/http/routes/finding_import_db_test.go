@@ -126,6 +126,9 @@ func newImportHarness(t *testing.T, mode ingest.VEXMode) *importHarness {
 		_, _ = v2.db.ExecContext(context.Background(), `DELETE FROM dash_ingest_day WHERE tenant_id = $1`, v2.tenantID)
 	})
 	svc := findingimport.NewService(v2.ingest, postgres.NewFindingRepository(pdb), receipts, mode, logger.NewNop())
+	// Closing mode auto: these tests are about what an upload closes (the
+	// mode itself is tested in the findingimport package).
+	svc.SetClosureSettings(importAutoClosing{})
 	h := handler.NewFindingImportHandler(svc, nil, nil, logger.NewNop())
 	h.SetActorResolver(func(context.Context, shared.ID) (ingest.ActorScope, error) { return nil, nil })
 	h.SetReceiptStores(receipts, postgres.NewIdempotencyKeyRepository(pdb))

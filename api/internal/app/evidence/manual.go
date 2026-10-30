@@ -13,7 +13,7 @@ import (
 const legacyBatch = 50
 
 // ErrDailyCapReached: the tenant stored its daily evidence budget.
-var ErrDailyCapReached = fmt.Errorf("%w: the organization reached its daily evidence limit; try again later", shared.ErrValidation)
+var ErrDailyCapReached = evidencedom.ErrDailyCapReached
 
 // StoreManual stores the request/responses a person recorded on a finding (a
 // pentest write-up, an import, a drafted finding) as manual evidence: each
@@ -27,7 +27,9 @@ func (s *Service) StoreManual(ctx context.Context, tenantID, findingID shared.ID
 		return 0, err
 	}
 	recs := s.prepare(ctx, tenantID, findingID, nil, evidencedom.OriginManual, items, meta)
-	n, err := s.repo.InsertManual(ctx, tenantID, findingID, recs)
+	// The check above is the early refusal; the insert counts again under a
+	// per-tenant lock, so concurrent writes cannot pass the cap together.
+	n, err := s.repo.InsertManual(ctx, tenantID, findingID, recs, s.dailyCapWindow())
 	if err != nil {
 		return 0, err
 	}

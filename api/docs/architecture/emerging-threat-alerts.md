@@ -65,9 +65,11 @@ Planner (`internal/app/threatalert.Planner`, controller
    younger than two minutes is waited for (a transaction may still commit).
    Each event queues the organizations with an open finding for the
    vulnerability or a possibly affected asset (`asset_software` whose
-   version did not parse or is unknown, on a product the CVE names). A
+   version did not parse or is unknown, on a product the CVE names). The
+   organizations of a whole page of events (500) come from one query, so a
+   large feed import costs one lookup per page, not one per event. A
    `rejected` event resolves every open alert of the CVE
-   (`rejected_upstream`).
+   (`rejected_upstream`), after the events before it are queued.
 2. **Baseline.** Organizations never planned (all of them when the feature
    ships, every new one later) get the alerts of the active window (an event
    in the last 30 days, a KEV addition in the last 90) with nothing sent at

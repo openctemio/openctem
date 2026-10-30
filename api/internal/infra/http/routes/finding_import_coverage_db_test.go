@@ -20,6 +20,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -148,6 +149,9 @@ func TestFindingImport_FullCoverageHiddenAsset_DB(t *testing.T) {
 		return datascope.Caller{UserID: admin, IsAdmin: true}
 	}, logger.NewNop())
 	svc := findingimport.NewService(ih.ingest, postgres.NewFindingRepository(pdb), receipts, ingest.SourceResolveDryRun, logger.NewNop())
+	// The organization closes automatically: these tests are about what a
+	// full-coverage upload closes, not about proposals.
+	svc.SetClosureSettings(importAutoClosing{})
 	ih.h = handler.NewFindingImportHandler(svc, enforcer, nil, logger.NewNop())
 	ih.h.SetReceiptStores(receipts, postgres.NewIdempotencyKeyRepository(pdb))
 	ih.wire(svc, findingimport.DataScopeResolver(enforcer))
@@ -346,4 +350,11 @@ func TestFindingImport_FullCoverageClosureGuards_DB(t *testing.T) {
 		t.Fatalf("control: receipt %+v, closed %d", resp.Receipt.Coverage, closed())
 	}
 	reopen()
+}
+
+// importAutoClosing is an organization in closing mode auto.
+type importAutoClosing struct{}
+
+func (importAutoClosing) GetClosureSettings(context.Context, string) (*tenant.ClosureSettings, error) {
+	return &tenant.ClosureSettings{Mode: tenant.ClosingModeAuto}, nil
 }

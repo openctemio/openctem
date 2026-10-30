@@ -57,9 +57,12 @@ vi.mock('@/features/scans/components/run-detail-sheet', () => ({
     runId ? <div data-testid="run-sheet">{runId}</div> : null,
 }))
 const breadcrumbTitles = vi.hoisted(() => [] as (string | null | undefined)[])
-vi.mock('@/features/scans/components', () => ({
+// The page loads these on first open (features/scans/components/lazy-dialogs).
+vi.mock('@/features/scans/components/edit-scan-dialog', () => ({
   EditScanDialog: ({ open, scanConfig }: { open: boolean; scanConfig: { name: string } }) =>
     open ? <div role="dialog">Editing {scanConfig.name}</div> : null,
+}))
+vi.mock('@/features/scans/components/clone-scan-dialog', () => ({
   CloneScanDialog: ({ open, scan }: { open: boolean; scan: { name: string } }) =>
     open ? <div role="dialog">Cloning {scan.name}</div> : null,
 }))
@@ -325,13 +328,13 @@ describe('Scan page', () => {
   it('edits and clones the scan from its page', async () => {
     render(<ScanDetailPage />)
     await userEvent.click(screen.getByRole('button', { name: 'Edit' }))
-    expect(screen.getByRole('dialog')).toHaveTextContent('Editing Nightly recon')
+    expect(await screen.findByRole('dialog')).toHaveTextContent('Editing Nightly recon')
   })
 
   it('clones the scan from its page', async () => {
     render(<ScanDetailPage />)
     await userEvent.click(screen.getByRole('button', { name: 'Clone' }))
-    expect(screen.getByRole('dialog')).toHaveTextContent('Cloning Nightly recon')
+    expect(await screen.findByRole('dialog')).toHaveTextContent('Cloning Nightly recon')
   })
 
   // A scan a platform policy owns (continuous coverage): a banner in place of
@@ -395,7 +398,7 @@ describe('Scan page', () => {
       render(<ScanDetailPage />)
       expect(screen.getByText('System')).toBeInTheDocument()
       await userEvent.click(screen.getByRole('button', { name: 'Clone as my scan' }))
-      expect(screen.getByRole('dialog')).toHaveTextContent(
+      expect(await screen.findByRole('dialog')).toHaveTextContent(
         'Cloning Continuous coverage: probe.http'
       )
     })
