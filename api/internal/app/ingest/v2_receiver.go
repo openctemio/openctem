@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/ingestqueue"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
@@ -28,11 +29,10 @@ type v2CommandReader interface {
 	GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*command.Command, error)
 }
 
-// v2QueueDepth is the slice of the v1 ingest queue the receiver needs for
-// per-tenant backpressure.
-type v2QueueDepth interface {
-	CountPendingByTenant(ctx context.Context, tenantID shared.ID) (int, error)
-}
+// v2QueueDepth is the slice of the ingest queue the receiver needs for
+// per-tenant backpressure: the tenant's unfinished jobs and its recent drain
+// (the Retry-After is computed from it).
+type v2QueueDepth = ingestqueue.DepthReader
 
 // V2Receiver accepts v2 segments and commits.
 type V2Receiver struct {
@@ -241,16 +241,8 @@ func (v *V2Receiver) Put(ctx context.Context, t V2Target, seq int, whole bool, b
 		return nil, problem(protov2.ProblemSegmentHeaderMismatch)
 	}
 
-	if v.maxPending > 0 {
-		// Fail closed: a depth that cannot be read refuses the segment (the
-		// sensor retries after the advised delay), it never waves it in.
-		n, err := v.queue.CountPendingByTenant(ctx, tenantID)
-		if err != nil {
-			return nil, problem(protov2.ProblemUnavailable)
-		}
-		if n >= v.maxPending {
-			return nil, problem(protov2.ProblemQueueFull)
-		}
+	if err := v.admit(ctx, tenantID, rep != nil, now); err != nil {
+		return nil, err
 	}
 
 	if rep == nil {
@@ -446,6 +438,39 @@ func (v *V2Receiver) commit(ctx context.Context, rep *ingestreport.Report, count
 		return fmt.Errorf("enqueue v2 commit: %w", err)
 	}
 	return nil
+}
+
+// continuationFactor is how far past the tenant's queue limit a segment of a
+// report that was already admitted may still be accepted. Admission is per
+// report: refusing segment 7 of a report whose segment 0 was accepted leaves
+// a report that expires and never counts, so a started report is let finish
+// up to this hard ceiling, which keeps the worst case bounded (open reports
+// per sensor are capped as well).
+const continuationFactor = 2
+
+// admit is the queue back-pressure for one segment. A new report is refused
+// at the tenant's limit, a continuation of an open report at the ceiling
+// (continuationFactor). Fail closed: a depth that cannot be read refuses the
+// segment (503, the sensor retries after the advised delay), it never waves
+// it in. A refusal carries a Retry-After from the tenant's recent drain.
+func (v *V2Receiver) admit(ctx context.Context, tenantID shared.ID, continuation bool, now time.Time) error {
+	if v.maxPending <= 0 {
+		return nil
+	}
+	limit := v.maxPending
+	if continuation {
+		limit *= continuationFactor
+	}
+	err := ingestqueue.Admit(ctx, v.queue, tenantID, limit, now)
+	if err == nil {
+		return nil
+	}
+	var full *ingestqueue.ErrQueueFull
+	if errors.As(err, &full) {
+		return &V2ReportError{Problem: protov2.ProblemQueueFull, RetryAfter: full.RetryAfter}
+	}
+	v.logger.Warn("v2 ingest: queue depth unreadable; segment refused", "error", err)
+	return problem(protov2.ProblemUnavailable)
 }
 
 // Status returns the status resource of a report the sensor owns.
