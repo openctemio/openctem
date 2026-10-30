@@ -266,3 +266,70 @@ func (s *Service) egressOne(ctx context.Context, sensorID string, cmd *commanddo
 	}
 	return out[0], nil
 }
+
+// EgressLedger records the proxy path a claimed job was handed and charges
+// the job's own proxy verdict to it when the job ends (the proxy pool
+// service; docs/architecture/sensor-proxies.md, "Task-reported proxy
+// faults"). An EgressSource that implements it gets both calls.
+type EgressLedger interface {
+	RecordJobEgress(ctx context.Context, tenantID, commandID, sensorID shared.ID, leaseEpoch int, eg *proxypool.JobEgress) error
+	ObserveJobVerdict(ctx context.Context, tenantID, commandID, sensorID shared.ID, leaseEpoch int, v proxypool.TaskVerdict) error
+}
+
+func (s *Service) egressLedger() EgressLedger {
+	l, _ := s.egress.(EgressLedger)
+	return l
+}
+
+// recordEgress records the egress member the platform stamped on each
+// claimed job it hands out (the member always comes from stamp, which
+// replaces whatever a command's creator put there, never from a sensor). A
+// failure is logged and never fails the delivery: the job's proxy faults
+// then go uncharged, the job itself is unaffected.
+func (s *Service) recordEgress(ctx context.Context, cmds []*commanddom.Command) {
+	ledger := s.egressLedger()
+	if ledger == nil {
+		return
+	}
+	for _, c := range cmds {
+		if c == nil || c.SensorID == nil || !egressBound(c.Type) {
+			continue
+		}
+		eg, ok := stampedEgress(c.Payload)
+		if !ok {
+			continue
+		}
+		if err := ledger.RecordJobEgress(ctx, c.TenantID, c.ID, *c.SensorID, c.LeaseEpoch, eg); err != nil {
+			s.logger.Error("failed to record the proxy path of a job", "command_id", c.ID.String(), "error", err)
+		}
+	}
+}
+
+// stampedEgress reads the egress member of a payload stamp produced.
+func stampedEgress(payload json.RawMessage) (*proxypool.JobEgress, bool) {
+	var fields map[string]json.RawMessage
+	if len(payload) == 0 || json.Unmarshal(payload, &fields) != nil {
+		return nil, false
+	}
+	raw, ok := fields[PayloadKeyEgress]
+	if !ok {
+		return nil, false
+	}
+	var eg proxypool.JobEgress
+	if json.Unmarshal(raw, &eg) != nil || eg.Mode != proxypool.ModePool {
+		return nil, false
+	}
+	return &eg, true
+}
+
+// observeEgressVerdict charges an ended job's proxy verdict to the path it
+// was handed. Logged on failure; the job's own transition stands.
+func (s *Service) observeEgressVerdict(ctx context.Context, cmd *commanddom.Command, v proxypool.TaskVerdict) {
+	ledger := s.egressLedger()
+	if ledger == nil || cmd == nil || cmd.SensorID == nil || !egressBound(cmd.Type) {
+		return
+	}
+	if err := ledger.ObserveJobVerdict(ctx, cmd.TenantID, cmd.ID, *cmd.SensorID, cmd.LeaseEpoch, v); err != nil {
+		s.logger.Error("failed to charge a job's proxy verdict", "command_id", cmd.ID.String(), "error", err)
+	}
+}
