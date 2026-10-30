@@ -251,7 +251,7 @@ func (h *OAuthHandler) DescribePendingLink(w http.ResponseWriter, r *http.Reques
 // @Tags         Account
 // @Produce      json
 // @Success      200  {object}  auth.SignInMethod
-// @Router       /me/pending-sign-in-link/confirm [post]
+// @Router       /me/pending-sign-in-link/complete [post]
 func (h *OAuthHandler) ConfirmPendingLink(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	sessionID := middleware.GetSessionID(r.Context())

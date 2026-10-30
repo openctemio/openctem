@@ -116,7 +116,7 @@ describe('pending link of a refused social sign-in', () => {
     jar.set(env.auth.cookieName, { value: 'access' })
     fetchMock.mockResolvedValue(json({ id: 'i', provider: 'google' }))
     expect(await confirmPendingLinkAction()).toEqual({ success: true })
-    expect(String(fetchMock.mock.calls[0][0])).toContain('/pending-sign-in-link/confirm')
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/pending-sign-in-link/complete')
     expect(jar.has(PENDING)).toBe(false)
   })
 
