@@ -166,6 +166,7 @@ Besides the Go runtime and process metrics:
 | `openctem_ops_collector_up` | | 1 when the platform-wide counts above were read. They are read with a few aggregate queries at most every 30 s, whatever the scrape rate. |
 | `go_sql_*` | db_name | API connection pool. |
 | `ingest_queue_depth`, `ingest_jobs_processed_total`, `ingest_v2_requests_total` | outcome … | Result ingestion. |
+| `openctem_ingest_v2_commit_integrity_total` | `result` (`single`, `manifest`, `digest_only`, or a refusal code) | How sensor reports proved completeness at commit. A rise in `count_mismatch`, `hash_mismatch` or `report_hash_mismatch` means a broken or hostile sensor (or a middlebox altering bodies): find it in the sensor's reports. |
 | `openctem_controller_reconcile_errors_total`, `openctem_controller_last_reconcile_timestamp_seconds` | controller | Background controllers. |
 | `openctem_security_audit_chain_breaks_total` | reason | New breaks of the audit log hash chain. |
 | `openctem_signer_refusals_total` | reason (`out_of_ledger`, `tier_exceeds_ledger`, `target_excluded`, rate limits, malformed statements) | Job statements the job signer refused (RFC-040 §5.11 A10). |

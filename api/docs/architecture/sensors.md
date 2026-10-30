@@ -1221,7 +1221,7 @@ disabled sensor is refused on every v2 route.
 | `GET /hello` | Protocol, features, media types, encodings, digests and the limits the SDK sizes segments from. |
 | `PUT /results/{report_id}` | A whole report: segment 0 plus an implicit commit. |
 | `PUT /results/{report_id}/segments/{seq}` | One segment, `seq` 0–255, any order. |
-| `POST /results/{report_id}/commit` | `{"segment_count":n,"segment_digests":["sha-256=:…:",…]}`. |
+| `POST /results/{report_id}/commit` | `{"segment_count":n,"segment_digests":["sha-256=:…:",…]}`, plus the optional manifest `segments[]` (`seq`, decoded `sha256`, `bytes`, `assets`, `findings`), `totals` and `report_sha256` (RFC-026 §3.5a). |
 | `GET /results/{report_id}` | The status resource. |
 | `DELETE /results/{report_id}` | Abandon an uncommitted report (it becomes `expired`). |
 | `PUT/POST /commands/{command_id}/results/…` | The same, bound to a command this sensor claimed (open, or finished under 15 minutes ago). Its tool is the only tool the report may name. |
@@ -1267,7 +1267,17 @@ reserved names such as `pentest` never), at most 8 open reports per sensor
 assets and findings per report, reserved in one conditional `UPDATE` so
 parallel segments cannot overshoot (`413 report-too-large`). The commit
 must list exactly the received segments with their digests
-(`409 segment-set-mismatch`). Stored: one `ingest_reports` row per report
+(`409 segment-set-mismatch`); when it carries the manifest (hello feature
+`results_manifest`), every segment's decoded hash and size, the counts and
+the report hash must match what the server stored, or the report stays
+uncommitted (`409 segment-set-mismatch` naming `hash_mismatch`,
+`size_mismatch`, `count_mismatch` or `report_hash_mismatch`). The report
+records its integrity: `single` (one segment), `manifest` (verified) or
+`digest_only` (segmented, no manifest: never proof for coverage
+auto-close), and `content_sha256`, one hash for its content. `GET
+/results/{report_id}` of an uncommitted report lists the held segment
+numbers (`segments.held`) so a sensor resuming an upload sends only the
+missing ones. Stored: one `ingest_reports` row per report
 with the server-stamped provenance (tenant from the key, sensor, command,
 zone from the command, protocol, media type, user agent, receive time), and
 one RFC-005 `ingest_jobs` row per segment plus one for the commit.

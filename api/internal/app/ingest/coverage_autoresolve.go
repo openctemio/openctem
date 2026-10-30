@@ -8,7 +8,8 @@ package ingest
 // This closes that gap, conservatively: a finding is closed only when a scan
 // command that ran the same tool (and the same scan profile) COMPLETED with
 // full coverage of the finding's asset and did not report it. A failed,
-// canceled, expired or partial run, a report that does not declare
+// canceled, expired or partial run, a segmented report committed without a
+// verified manifest, a report that does not declare
 // coverage_type "full" (an absent value is not full), a report with rejected items, an asset the
 // run never reached, or a finding whose last sighting cannot be tied to a run
 // of the same profile: none of them close anything.
@@ -86,6 +87,7 @@ const (
 	coverageNonZeroExit         = "nonzero_exit"
 	coverageNoReports           = "no_reports"
 	coverageReportsPending      = "reports_pending"
+	coverageIntegrity           = "integrity_unverified"
 	coverageReportNotCompleted  = "report_failed"
 	coverageRejectedItems       = "report_rejected_items"
 	coveragePartial             = "partial_coverage"
@@ -162,6 +164,12 @@ func decideRunCoverage(c *ingestreport.CommandCoverage, repo bool) coverageDecis
 			return coverageDecision{reason: coverageReportNotCompleted}
 		default:
 			return coverageDecision{reason: coverageReportsPending}
+		}
+		// A segmented report committed without a verified manifest (older
+		// SDKs) is not proof that nothing is missing; one segment is
+		// complete by construction.
+		if r.Integrity != protov2.IntegritySingle && r.Integrity != protov2.IntegrityManifest {
+			return coverageDecision{reason: coverageIntegrity}
 		}
 		for _, o := range r.SegmentOutcomes {
 			if o.RejectedFindings > 0 || o.QuarantinedFindings > 0 || o.RejectedAssets > 0 ||

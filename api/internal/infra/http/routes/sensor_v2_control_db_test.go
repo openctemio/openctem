@@ -249,7 +249,7 @@ func TestSensorV2Control_HelloListsEveryFeature(t *testing.T) {
 	resp, raw := h.call(s.key, http.MethodGet, "/api/v2/sensor/hello", nil)
 	h.want(resp, raw, 200, "")
 	hello := decodeAs[protov2.Hello](t, raw)
-	want := append([]string{protov2.FeatureResults}, protov2.ControlFeatures()...)
+	want := append([]string{protov2.FeatureResults, protov2.FeatureResultsManifest}, protov2.ControlFeatures()...)
 	if strings.Join(hello.Features, ",") != strings.Join(want, ",") {
 		t.Fatalf("features %v, want %v", hello.Features, want)
 	}
