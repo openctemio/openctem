@@ -139,6 +139,16 @@ export const sidebarData: SidebarData = {
           permission: Permission.FindingsRead,
           module: 'findings',
         },
+        {
+          // Closes waiting for a person (the closing mode or the tier rule
+          // sent them to review) and the platform's own closes of the last 7
+          // days. The count badge comes from the bootstrap, for verifiers.
+          title: 'Ready to close',
+          url: '/findings/ready-to-close',
+          icon: ListChecks,
+          permission: Permission.FindingsRead,
+          module: 'findings',
+        },
       ],
     },
 

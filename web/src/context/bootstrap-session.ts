@@ -30,6 +30,7 @@ export interface BootstrapBadges {
   unread_notifications?: number
   easm_review?: number
   pending_approvals?: number
+  ready_to_close?: number
 }
 
 /** One platform announcement (GET /api/v1/announcements). */
@@ -103,6 +104,12 @@ export const EASM_SUGGESTIONS_COUNT_URL = '/api/v1/easm/suggestions?view=count'
  */
 export const PENDING_APPROVALS_COUNT_URL = '/api/v1/approvals?status=pending&page=1&per_page=1'
 
+/**
+ * The Ready to close queue (pending closure proposals under the caller's data
+ * scope): `total` of the proposals list. Mirrors closure-review's key.
+ */
+export const READY_TO_CLOSE_COUNT_URL = '/api/v1/findings/closure/proposals?page=1&per_page=1'
+
 /** The caller's sidebar pins in the current organization. */
 export const NAV_PINS_URL = '/api/v1/me/pins'
 
@@ -125,6 +132,14 @@ export async function seedSessionCache(data: BootstrapSessionData): Promise<void
       page: 1,
       per_page: 1,
       status_counts: { pending: data.badges.pending_approvals },
+    })
+  if (typeof data.badges?.ready_to_close === 'number')
+    seed(READY_TO_CLOSE_COUNT_URL, {
+      data: [],
+      total: data.badges.ready_to_close,
+      page: 1,
+      per_page: 1,
+      total_pages: 0,
     })
   if (Array.isArray(data.announcements)) seed(ANNOUNCEMENTS_URL, { data: data.announcements })
   if (Array.isArray(data.pins?.data)) seed(NAV_PINS_URL, data.pins)
