@@ -1,9 +1,9 @@
 import { useId, type ReactNode } from 'react'
+import { EdgeLabel } from '@/features/scope/components/edge-label'
 import { useTranslation } from '@/context/i18n-provider'
 import type { Asset } from '../../types'
 import {
   asnInfo,
-  cdnName,
   cnames,
   formatPort,
   httpStatusCode,
@@ -21,7 +21,6 @@ import {
   tlsFacts,
 } from '../../lib/service-facts'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useFitCount } from '@/hooks/use-fit-count'
 import { cellsForType, type SurfaceCell } from './cells-for-type'
 import { ChipMono, ChipRow, FactChip } from './fact-chip'
@@ -95,29 +94,14 @@ export function ProductChip({ asset }: { asset: Asset }) {
 }
 
 /**
- * "Behind Cloudflare": the service is served through a CDN or edge provider,
- * so the addresses it resolves to are the provider's (research/259).
+ * The edge label: "Behind Cloudflare" on a name or service served through a
+ * provider, "Cloudflare edge" on the provider's own address (with "Add to out
+ * of scope"). The API computes `edge` (research/259); one shared component
+ * for assets and scope entries.
  */
-export function EdgeChip({ provider }: { provider: string }) {
-  const { t } = useTranslation()
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <FactChip tone="muted" data-slot="edge-chip">
-          <span className="max-w-[8rem] truncate">
-            {t('assets.facts.behind', 'Behind {provider}', { provider })}
-          </span>
-        </FactChip>
-      </TooltipTrigger>
-      <TooltipContent side="top" className="max-w-xs">
-        {t(
-          'assets.facts.behindHint',
-          "Served through {provider}'s edge: its addresses belong to {provider}, not to this service.",
-          { provider }
-        )}
-      </TooltipContent>
-    </Tooltip>
-  )
+export function EdgeChip({ asset }: { asset: Pick<Asset, 'edge' | 'triage'> }) {
+  if (!asset.edge) return null
+  return <EdgeLabel edge={asset.edge} excluded={asset.triage?.scanBlockedBy === 'excluded'} />
 }
 
 interface CellSpec {
@@ -139,11 +123,8 @@ const SPECS: Record<SurfaceCell, CellSpec> = {
     missing: (a) => (httpStatusCode(a) === null ? 'HTTP status' : null),
   },
   edge: {
-    known: (a) => !!cdnName(a),
-    render: (a) => {
-      const provider = cdnName(a)
-      return provider ? <EdgeChip provider={provider} /> : null
-    },
+    known: (a) => !!a.edge,
+    render: (a) => <EdgeChip asset={a} />,
   },
   port: {
     known: (a) => servicePort(a) !== null,
