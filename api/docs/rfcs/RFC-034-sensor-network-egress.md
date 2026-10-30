@@ -69,6 +69,12 @@ target's answer never moves traffic to another path. What ships first:
   5 minutes doubling to 2 hours: the re-probe is the next job's real traffic.
   Target errors never count against a proxy. Thresholds are internal
   defaults, not settings.
+  The jobs' own results also count: the platform records the pool and
+  endpoints it hands each pooled job, and a job that reports hosts its pool
+  could not carry (`proxy_unavailable`) or fails with
+  `infra.egress.pool_exhausted` charges those endpoints only; 5 faulted jobs
+  in 30 minutes, or more than half of at least 5, quarantine an endpoint
+  (architecture: "Task-reported proxy faults").
 - **In the sensor.** sdk-go's per-task forwarder dials the target through the
   pool after its scope check (sticky weighted selection per target host, or
   priority order; failover only when the proxy itself is down; a local

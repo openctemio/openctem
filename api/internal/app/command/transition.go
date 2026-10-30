@@ -122,6 +122,7 @@ func (s *Service) Transition(ctx context.Context, t Transition, in TransitionInp
 			if delivered, err = s.egressOne(ctx, in.SensorID, delivered); err != nil {
 				return nil, err
 			}
+			s.recordEgress(ctx, []*commanddom.Command{delivered})
 			cmd = delivered
 			if s.jobs != nil {
 				signed, err := s.signJob(ctx, in.SensorID, cmd, s.enforcesLimitsFor(ctx, cmd.TenantID, in.SensorID))
@@ -168,6 +169,9 @@ func (s *Service) Transition(ctx context.Context, t Transition, in TransitionInp
 			// The proxy pool reference rides the delivered payload like the
 			// one a poll hands out (egress.go).
 			out, err = s.egressOne(ctx, in.SensorID, out)
+		}
+		if err == nil {
+			s.recordEgress(ctx, []*commanddom.Command{out})
 		}
 		if err == nil && s.jobs != nil {
 			out, err = s.signJob(ctx, in.SensorID, out, s.enforcesLimitsFor(ctx, stored.TenantID, in.SensorID))
