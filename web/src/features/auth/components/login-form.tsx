@@ -173,9 +173,11 @@ export function LoginForm({
   // A social sign-in found an account that signs in another way: the notice
   // stays on the page with what to do, instead of a toast that fades.
   const accountExists = errorParam === 'account_exists'
+  // A social sign-in hit an identity the organization's single sign-on manages.
+  const useOrgSso = errorParam === 'use_org_sso'
   useEffect(() => {
-    if (errorMessage && !accountExists) toast.error(errorMessage)
-  }, [errorMessage, accountExists])
+    if (errorMessage && !accountExists && !useOrgSso) toast.error(errorMessage)
+  }, [errorMessage, accountExists, useOrgSso])
 
   // Sent when a session ended because an organization requires two-factor
   // authentication and the session could not set it up. Only the known value
@@ -403,6 +405,16 @@ export function LoginForm({
               <Link href="/forgot-password" className="font-medium underline underline-offset-4">
                 {t('auth.accountExists.resetPassword')}
               </Link>
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {useOrgSso && (
+          <Alert role="alert" data-testid="login-use-org-sso">
+            <AlertTitle>{t('auth.useOrgSso.title')}</AlertTitle>
+            <AlertDescription>
+              <p>{errorMessage}</p>
+              <p>{t('auth.useOrgSso.hint')}</p>
             </AlertDescription>
           </Alert>
         )}
