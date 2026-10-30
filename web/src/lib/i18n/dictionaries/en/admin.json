@@ -1646,7 +1646,7 @@
   "admin.signup.saved": "Sign-up policy saved",
   "admin.signup.saving": "Saving",
   "admin.signup.socialAutoLink": "Link Google and Microsoft sign-in to existing accounts",
-  "admin.signup.socialAutoLinkHint": "When someone signs in with Google or Microsoft using the verified address of an existing password account, link the provider to that account instead of refusing. Only where the provider runs the address (Gmail, the Google Workspace or Microsoft domain of the address), never GitHub. Two-factor authentication is still asked, and the account's other sessions are signed out. Turn it off if accounts on this platform were ever created without a verified address.",
+  "admin.signup.socialAutoLinkHint": "Off by default. When on, someone who signs in with Google or Microsoft using the verified address of an existing password account is linked to that account without signing in to it first. Only where the provider runs the address (Gmail, the Google Workspace or Microsoft domain of the address), never GitHub; two-factor authentication is still asked and the account's other sessions are signed out. Warning: whoever controls the mailbox then reaches the account (a reassigned mailbox, a domain that changed hands, a compromised provider account). Leave it off unless every account here has a verified address you trust. With it off, people sign in to their account and confirm the link.",
   "admin.signup.source.console": "set in this console",
   "admin.signup.source.default": "not stored yet: the safe default applies",
   "admin.signup.source.environment": "set from the server configuration at install",

@@ -23,9 +23,11 @@ import { bindingCookieName, bindingCookieOptions } from '@/features/auth/lib/bro
 import { setServerCookie } from '@/lib/cookies-server'
 import { authEndpoints, userEndpoints } from '@/lib/api/endpoints'
 import {
+  MAX_PENDING_LINK_LENGTH,
   MFA_CHALLENGE_COOKIE,
   MFA_PURPOSES,
   OAUTH_LINK_INTENT_COOKIE,
+  pendingLinkCookieName,
 } from '@/features/auth/lib/oauth-cookies'
 import { validateRedirectUrl } from '@/lib/redirect'
 import { isAllowedValue, sanitizeLogValue } from '@/lib/log-sanitize'
@@ -99,11 +101,49 @@ export interface OAuthMfaPending {
 class BackendError extends Error {
   constructor(
     message: string,
-    readonly code?: string
+    readonly code?: string,
+    /** The pending-link secret the API set as a cookie on a 409. */
+    readonly pendingLink?: string
   ) {
     super(message)
     this.name = 'BackendError'
   }
+}
+
+/**
+ * The pending-link secret from the API's Set-Cookie (it is never in the
+ * body), whichever cookie name the API uses.
+ */
+function pendingLinkFromSetCookie(response: Response): string | undefined {
+  const headers = response.headers as Headers & { getSetCookie?: () => string[] }
+  const all = typeof headers.getSetCookie === 'function' ? headers.getSetCookie() : []
+  for (const raw of all) {
+    const m = /^(?:__Host-)?oauth_pending_link=([^;]*)/.exec(raw.trim())
+    if (m && m[1]) return m[1]
+  }
+  return undefined
+}
+
+/**
+ * Keep the pending link of a refused social sign-in (409
+ * OAUTH_ACCOUNT_EXISTS) for this browser in an HttpOnly cookie, so the app
+ * can ask to confirm the link once the person has signed in. The secret never
+ * reaches page script.
+ */
+async function rememberPendingLink(error: unknown): Promise<void> {
+  if (!(error instanceof BackendError) || error.code !== 'OAUTH_ACCOUNT_EXISTS') return
+  const token = error.pendingLink
+  if (!token || token.length > MAX_PENDING_LINK_LENGTH || !/^[A-Za-z0-9_-]+$/.test(token)) {
+    return
+  }
+  const cookieStore = await cookies()
+  cookieStore.set(pendingLinkCookieName(), token, {
+    httpOnly: true,
+    secure: process.env.SECURE_COOKIES !== 'false',
+    sameSite: 'lax',
+    maxAge: 600, // the API keeps the pending link 10 minutes
+    path: '/',
+  })
 }
 
 async function backendFetch<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
@@ -122,7 +162,8 @@ async function backendFetch<T>(endpoint: string, options: RequestInit = {}): Pro
     const errorData = await response.json().catch(() => ({ message: response.statusText }))
     throw new BackendError(
       errorData.message || errorData.error || `HTTP ${response.status}`,
-      typeof errorData.code === 'string' ? errorData.code : undefined
+      typeof errorData.code === 'string' ? errorData.code : undefined,
+      pendingLinkFromSetCookie(response)
     )
   }
 
@@ -300,6 +341,7 @@ export async function handleOAuthCallback(
     }
   } catch (error) {
     console.error('OAuth callback error:', sanitizeLogValue(provider), error)
+    await rememberPendingLink(error)
     return {
       success: false,
       error: error instanceof Error ? error.message : 'OAuth authentication failed',
@@ -451,4 +493,88 @@ export async function completeLinkCallback(
     console.error('OAuth link callback error:', sanitizeLogValue(provider), error)
     return { success: false, code: error instanceof BackendError ? error.code : undefined }
   }
+}
+
+// ============================================
+// PENDING LINK (confirmed after signing in)
+// ============================================
+
+/** The provider account waiting to be linked to the signed-in account. */
+export type PendingLink = { provider: SocialProvider; email: string }
+
+/** The result of confirming a pending link: the API code on a refusal. */
+export type PendingLinkResult = { success: true } | { success: false; code?: string }
+
+async function pendingLinkCall<T>(
+  action: 'describe' | 'confirm' | 'cancel'
+): Promise<{ ok: true; data: T } | { ok: false; code?: string } | null> {
+  const cookieStore = await cookies()
+  const name = pendingLinkCookieName()
+  const token = cookieStore.get(name)?.value
+  if (!token) return null
+  if (token.length > MAX_PENDING_LINK_LENGTH || !/^[A-Za-z0-9_-]+$/.test(token)) {
+    cookieStore.delete(name)
+    return null
+  }
+  const accessToken = cookieStore.get(env.auth.cookieName)?.value
+  if (!accessToken) return { ok: false, code: 'SESSION_EXPIRED' }
+  try {
+    const url = `${env.api.url}${userEndpoints.pendingLink(action)}`
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+        ...(await browserContextHeaders()),
+        // The API reads the secret from its cookie only (under the name its
+        // own Secure setting picks, so both are sent).
+        Cookie: `__Host-oauth_pending_link=${token}; oauth_pending_link=${token}`,
+      },
+    })
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      return { ok: false, code: typeof body.code === 'string' ? body.code : undefined }
+    }
+    const data = response.status === 204 ? (undefined as T) : ((await response.json()) as T)
+    return { ok: true, data }
+  } catch (error) {
+    console.error('Pending link call failed:', action, error)
+    return { ok: false }
+  }
+}
+
+/**
+ * The pending link of this browser, when it belongs to the signed-in account.
+ * A pending link the API refuses (expired, used, another account's) is
+ * forgotten.
+ */
+export async function getPendingLinkAction(): Promise<PendingLink | null> {
+  const res = await pendingLinkCall<{ provider: string; email: string }>('describe')
+  if (!res) return null
+  if (!res.ok) {
+    if (res.code !== 'SESSION_EXPIRED') (await cookies()).delete(pendingLinkCookieName())
+    return null
+  }
+  if (!isAllowedValue(SOCIAL_PROVIDERS, res.data.provider)) return null
+  return { provider: res.data.provider, email: res.data.email }
+}
+
+/**
+ * Link the pending provider account to the signed-in account. The API needs a
+ * recent sign-in (STEP_UP_REQUIRED otherwise) made after the refused sign-in.
+ * The cookie stays only when a step-up would let the person retry.
+ */
+export async function confirmPendingLinkAction(): Promise<PendingLinkResult> {
+  const res = await pendingLinkCall<unknown>('confirm')
+  if (!res) return { success: false, code: 'PENDING_LINK_INVALID' }
+  if (res.ok || res.code !== 'STEP_UP_REQUIRED') {
+    ;(await cookies()).delete(pendingLinkCookieName())
+  }
+  return res.ok ? { success: true } : { success: false, code: res.code }
+}
+
+/** "Not now": drop the pending link here and at the API. */
+export async function dismissPendingLinkAction(): Promise<void> {
+  await pendingLinkCall<unknown>('cancel')
+  ;(await cookies()).delete(pendingLinkCookieName())
 }

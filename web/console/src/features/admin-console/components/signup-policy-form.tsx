@@ -66,7 +66,7 @@ export function SignupPolicyForm({ policy, canEdit, onSaved }: SignupPolicyFormP
   const [accounts, setAccounts] = useState<Accounts>(storedAccounts)
   const [requestAccess, setRequestAccess] = useState(!!policy.request_access)
   // Absent (an older API) reads as on, the platform default.
-  const storedAutoLink = policy.social_auto_link ?? true
+  const storedAutoLink = policy.social_auto_link ?? false
   const [socialAutoLink, setSocialAutoLink] = useState(storedAutoLink)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [code, setCode] = useState('')
@@ -79,7 +79,7 @@ export function SignupPolicyForm({ policy, canEdit, onSaved }: SignupPolicyFormP
     setMode((policy.mode as Mode) ?? 'admin_only')
     setAccounts((policy.accounts as Accounts) ?? 'closed')
     setRequestAccess(!!policy.request_access)
-    setSocialAutoLink(policy.social_auto_link ?? true)
+    setSocialAutoLink(policy.social_auto_link ?? false)
   }, [policy.mode, policy.accounts, policy.request_access, policy.social_auto_link, policy.version])
 
   // Organization self-service needs open account sign-up.
