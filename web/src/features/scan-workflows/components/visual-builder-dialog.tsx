@@ -277,7 +277,7 @@ export function VisualBuilderDialog({
                 <DialogTitle className="text-base font-semibold truncate">
                   {workflow?.name || 'Visual Builder'}
                 </DialogTitle>
-                <DialogDescription className="text-xs text-muted-foreground whitespace-nowrap">
+                <DialogDescription className="truncate text-xs text-muted-foreground">
                   {isReadOnly
                     ? 'Read-only view - Clone to edit'
                     : 'Drag nodes from the palette, connect them, click one to edit'}

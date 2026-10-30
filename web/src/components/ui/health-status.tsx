@@ -11,7 +11,8 @@ interface HealthStatusBase {
   state: HealthState
   /**
    * The muted tail after the state ("42%", "4 s ago", "3 unreachable"). Several
-   * parts render as separate spans with a gap, never joined by a glyph.
+   * parts render as separate spans with a gap, never joined by a glyph. The
+   * tail is outside the state chip and wraps under it when the box is narrow.
    */
   detail?: string | string[]
   /** The raw domain value, written to `data-state` for tests and styling hooks. */
@@ -56,7 +57,7 @@ export function HealthStatus({
   const textString = typeof text === 'string' ? text : undefined
   const parts = (Array.isArray(detail) ? detail : detail ? [detail] : []).filter(Boolean)
   const full = [textString, ...parts].filter(Boolean).join(', ')
-  return (
+  const chip = (
     <span
       data-slot="health-status"
       data-health={state}
@@ -65,23 +66,34 @@ export function HealthStatus({
       aria-label={iconOnly ? full : undefined}
       role={iconOnly ? 'img' : undefined}
       className={cn(
-        'inline-flex w-fit shrink-0 items-center gap-1.5 whitespace-nowrap text-xs font-medium',
+        'inline-flex w-fit max-w-full shrink-0 items-center gap-1.5 whitespace-nowrap text-xs font-medium',
         HEALTH_TEXT_CLASS[state],
         className
       )}
     >
       <HealthGlyph state={state} className={HEALTH_ICON_CLASS[state]} />
       {!iconOnly && (
-        <span className="max-w-[200px] truncate" title={title ?? textString}>
+        <span className="max-w-[200px] min-w-0 truncate" title={title ?? textString}>
           {text}
         </span>
       )}
-      {!iconOnly &&
-        parts.map((part) => (
-          <span key={part} className="font-normal text-muted-foreground">
-            {part}
-          </span>
-        ))}
+    </span>
+  )
+  if (iconOnly || parts.length === 0) return chip
+  // The detail sits beside the chip, not in it: the state stays one line, and
+  // in a narrow box (a phone card column, a drawer) the detail drops under it
+  // and wraps instead of running into the next column.
+  return (
+    <span
+      data-slot="health-status-line"
+      className="inline-flex max-w-full shrink-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs"
+    >
+      {chip}
+      {parts.map((part) => (
+        <span key={part} className="min-w-0 break-words text-muted-foreground">
+          {part}
+        </span>
+      ))}
     </span>
   )
 }

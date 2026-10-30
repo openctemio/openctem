@@ -196,9 +196,8 @@ Otherwise (for example a personal Google account created on a company address):
 A sign-in whose verified address belongs to an account that signs in another
 way answers `409 OAUTH_ACCOUNT_EXISTS` and changes nothing on that account. The
 person signs in to the account and confirms the link, or links the provider
-from Account > Security. Automatic linking (authoritative provider, verified
-password account) applies only where the platform turned it on (off by
-default): [linking Google, GitHub and Microsoft sign-in](social-login-linking.md).
+from Account > Security. Nothing links by itself:
+[linking Google, GitHub and Microsoft sign-in](social-login-linking.md).
 
 ### Domain sign-up policy (Settings > Domains, owner only)
 
