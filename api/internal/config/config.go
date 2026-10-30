@@ -379,6 +379,10 @@ type IngestConfig struct {
 	// MaxPendingPerTenant bounds a tenant's queue depth; further submissions get
 	// 429 + Retry-After. 0 disables the check.
 	MaxPendingPerTenant int
+	// MaxQueuedBytesPerTenant bounds the decoded payload bytes of a tenant's
+	// queued sensor report segments; further segments get 429 + Retry-After.
+	// 0 disables the check.
+	MaxQueuedBytesPerTenant int64
 	// EvidenceDailyCap bounds new finding-evidence records per tenant per 24 h
 	// (EVIDENCE_DAILY_CAP; 0 = the built-in default).
 	EvidenceDailyCap int
@@ -1845,18 +1849,19 @@ func Load() (*Config, error) {
 			ContentSigstoreTrustedRoot: getEnv("CONTENT_SIGSTORE_TRUSTED_ROOT", ""),
 		},
 		Ingest: IngestConfig{
-			Mode:                  getEnv("INGEST_MODE", "sync"),
-			MaxPendingPerTenant:   getEnvInt("INGEST_MAX_PENDING_PER_TENANT", 100),
-			EvidenceDailyCap:      getEnvInt("EVIDENCE_DAILY_CAP", 0),
-			Workers:               getEnvInt("INGEST_WORKERS", 4),
-			MaxRunningPerTenant:   getEnvInt("INGEST_MAX_RUNNING_PER_TENANT", 2),
-			MaxJobDuration:        getEnvDuration("INGEST_MAX_JOB_DURATION", 30*time.Minute),
-			V2Results:             getEnvBool("SENSOR_PROTOCOL_V2_RESULTS", true),
-			V2BlindingRatio:       getEnvFloat("SENSOR_V2_BLINDING_RATIO", 0.5),
-			V2BlindingMinFindings: getEnvInt("SENSOR_V2_BLINDING_MIN_FINDINGS", 100),
-			CoverageAutoResolve:   getEnv("INGEST_COVERAGE_AUTO_RESOLVE", "dry_run"),
-			SourceResolve:         getEnv("INGEST_SOURCE_RESOLVE", "dry_run"),
-			VEX:                   getEnv("INGEST_VEX", "dry_run"),
+			Mode:                    getEnv("INGEST_MODE", "sync"),
+			MaxPendingPerTenant:     getEnvInt("INGEST_MAX_PENDING_PER_TENANT", 100),
+			MaxQueuedBytesPerTenant: int64(getEnvInt("INGEST_MAX_QUEUED_BYTES_PER_TENANT", 1<<30)),
+			EvidenceDailyCap:        getEnvInt("EVIDENCE_DAILY_CAP", 0),
+			Workers:                 getEnvInt("INGEST_WORKERS", 4),
+			MaxRunningPerTenant:     getEnvInt("INGEST_MAX_RUNNING_PER_TENANT", 2),
+			MaxJobDuration:          getEnvDuration("INGEST_MAX_JOB_DURATION", 30*time.Minute),
+			V2Results:               getEnvBool("SENSOR_PROTOCOL_V2_RESULTS", true),
+			V2BlindingRatio:         getEnvFloat("SENSOR_V2_BLINDING_RATIO", 0.5),
+			V2BlindingMinFindings:   getEnvInt("SENSOR_V2_BLINDING_MIN_FINDINGS", 100),
+			CoverageAutoResolve:     getEnv("INGEST_COVERAGE_AUTO_RESOLVE", "dry_run"),
+			SourceResolve:           getEnv("INGEST_SOURCE_RESOLVE", "dry_run"),
+			VEX:                     getEnv("INGEST_VEX", "dry_run"),
 		},
 		AccountPortalURL: getEnv("ACCOUNT_PORTAL_URL", ""),
 		InternalAPI: InternalAPIConfig{
