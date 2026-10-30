@@ -33,8 +33,12 @@ import {
   AssetAttributionSection,
   AssetIdentitySections,
   AssetTimeline,
-  useAsset,
+  useAssetPage,
 } from '@/features/assets'
+import {
+  ResolvedPortsSection,
+  hasResolvedPorts,
+} from '@/features/assets/components/resolved-ports-section'
 import { ClassificationBadges } from '@/features/assets/components/classification-badges'
 import { getAssetTypeLabel } from '@/features/assets/lib/asset-type-icon'
 import { AssetStatusBadge } from '@/features/asset-lifecycle'
@@ -54,10 +58,10 @@ export default function AssetDetailPage() {
   const { t } = useTranslation()
   const { can } = usePermissions()
   const { isLoading: tenantLoading } = useTenant()
-  const { asset, isLoading, error, mutate } = useAsset(assetId)
+  const { asset, isLoading, error, mutate } = useAssetPage(assetId)
   useBreadcrumbTitle(asset?.name)
 
-  // useAsset sends nothing until the tenant is known, so wait for it instead
+  // useAssetPage sends nothing until the tenant is known, so wait for it instead
   // of reading the empty answer as "not found".
   if (tenantLoading || isLoading) {
     return (
@@ -248,6 +252,8 @@ export default function AssetDetailPage() {
             />
           </CardContent>
         </Card>
+        {/* Open ports of the addresses a domain or subdomain resolves to. */}
+        {hasResolvedPorts(asset.type) && <ResolvedPortsSection assetId={asset.id} />}
         {/* What a sensor saw when it fetched the asset (RFC-081); hidden when none. */}
         <AssetWebEvidenceCard assetId={asset.id} />
         {/* Header posture, endpoints, parameters and changes of a web origin (research/292). */}

@@ -26,7 +26,7 @@ vi.mock('@/lib/permissions', async (orig) => ({
   usePermissions: () => ({ can: () => state.canRead }),
 }))
 vi.mock('@/features/assets', () => ({
-  useAsset: () => ({
+  useAssetPage: () => ({
     asset: state.asset,
     isLoading: state.assetLoading,
     error: state.error,
@@ -41,6 +41,10 @@ vi.mock('@/features/assets', () => ({
 }))
 vi.mock('@/features/assets/components/classification-badges', () => ({
   ClassificationBadges: () => null,
+}))
+vi.mock('@/features/assets/components/resolved-ports-section', () => ({
+  hasResolvedPorts: (type: string) => type === 'domain' || type === 'subdomain',
+  ResolvedPortsSection: () => <section>resolved-ports</section>,
 }))
 vi.mock('@/features/asset-lifecycle', () => ({ AssetStatusBadge: () => null }))
 vi.mock('@/features/scan-windows', () => ({ AssetScanWindowCard: () => null }))
@@ -107,5 +111,27 @@ describe('/assets/[id]', () => {
     expect(screen.queryByText(/0\/100/)).toBeNull()
     expect(screen.queryByText(/http_service/)).toBeNull()
     expect(screen.getByText(/Not yet scored/i)).toBeInTheDocument()
+  })
+
+  it('a domain shows the ports of its resolved addresses; an address does not', () => {
+    const base = {
+      id: 'a1',
+      name: 'www.example.com',
+      status: 'active',
+      riskScore: 0,
+      riskScored: false,
+      findingCount: 0,
+      scope: 'external',
+      exposure: 'public',
+      criticality: 'high',
+      tags: [],
+    }
+    state.asset = { ...base, type: 'subdomain' }
+    const { unmount } = render(<AssetDetailPage />)
+    expect(screen.getByText('resolved-ports')).toBeInTheDocument()
+    unmount()
+    state.asset = { ...base, name: '203.0.113.10', type: 'ip_address' }
+    render(<AssetDetailPage />)
+    expect(screen.queryByText('resolved-ports')).toBeNull()
   })
 })

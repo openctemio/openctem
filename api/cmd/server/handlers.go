@@ -942,6 +942,13 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	handlers.AssetOwner.SetAuditService(svc.Audit)
 	handlers.AssetOwner.SetAttributeLocker(svc.Asset)
 	handlers.ScannerTemplate.SetAuditService(svc.Audit)
+	// Destructive deletes leave one audit entry per deleted object.
+	handlers.AssetGroup.SetAuditService(svc.Audit)
+	handlers.BusinessUnit.SetAuditService(svc.Audit)
+	handlers.BusinessService.SetAuditService(svc.Audit)
+	handlers.AttackerProfile.SetAuditService(svc.Audit)
+	handlers.AssetRelationship.SetAuditService(svc.Audit)
+	handlers.AdminDedup.SetAuditService(svc.Audit)
 
 	if svc.SSO != nil {
 		handlers.SSO = handler.NewSSOHandler(svc.SSO, log)

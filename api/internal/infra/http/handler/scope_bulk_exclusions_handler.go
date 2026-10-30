@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/scope"
@@ -137,6 +138,17 @@ type ScopeExclusionPreviewItem struct {
 	// and this is not an exact hostname or IP: as a not_ours or retired rule
 	// it needs full data access.
 	ClosingNeedsFullAccess bool `json:"closing_needs_full_access,omitempty"`
+	// ResolvingNames is, for an address, range or CIDR, how many of the
+	// caller's visible names resolve to a dedicated address inside it: the
+	// exclusion stops scanning them too. ResolvingSample lists up to ten.
+	ResolvingNames  int      `json:"resolving_names"`
+	ResolvingSample []string `json:"resolving_sample"`
+	// Edge is set when the pattern is a provider's shared front end (an
+	// address, or a range wholly inside a published CDN, edge, hosting or
+	// shared cloud range): only the address is excluded, and names served
+	// through it stay in scans (NamesUnaffected).
+	Edge            *EdgeLabel `json:"edge,omitempty"`
+	NamesUnaffected bool       `json:"names_unaffected,omitempty"`
 	// Code and Message say why the item would be refused.
 	Code    string `json:"code,omitempty"`
 	Message string `json:"message,omitempty"`
@@ -149,7 +161,7 @@ type PreviewScopeExclusionsResponse struct {
 
 // PreviewBulkExclusions handles POST /api/v1/scope/exclusions/bulk/preview
 // @Summary      Preview marking assets out of scope
-// @Description  For each candidate exclusion, how many of the caller's visible inventory assets it would match (data scope applies) and up to ten of their names, or why it would be refused. Nothing is written.
+// @Description  For each candidate exclusion, how many of the caller's visible inventory assets it would match (data scope applies) and up to ten of their names, or why it would be refused. For an address, range or CIDR it also counts the names that resolve to a dedicated address inside it (they are excluded too), or marks a provider's shared front end, whose names stay in scans. Nothing is written.
 // @Tags         Scope
 // @Accept       json
 // @Produce      json
@@ -176,19 +188,32 @@ func (h *ScopeHandler) PreviewBulkExclusions(w http.ResponseWriter, r *http.Requ
 	}
 	out := PreviewScopeExclusionsResponse{Items: make([]ScopeExclusionPreviewItem, 0, len(previews))}
 	for _, p := range previews {
-		item := ScopeExclusionPreviewItem{ExclusionType: p.Item.ExclusionType, Pattern: p.Item.Pattern,
-			Matched: p.Match.Matched, Sample: p.Match.Sample, OpenFindings: p.Match.OpenFindings,
-			ClosingNeedsFullAccess: p.ClosingNeedsFullAccess}
-		if item.Sample == nil {
-			item.Sample = []string{}
-		}
-		if p.Err != nil {
-			item.Code, item.Message = bulkItemRefusal(p.Err)
-		}
-		out.Items = append(out.Items, item)
+		out.Items = append(out.Items, previewItem(p))
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)
+}
+
+// previewItem is the answer for one previewed exclusion.
+func previewItem(p scope.ExclusionPreview) ScopeExclusionPreviewItem {
+	item := ScopeExclusionPreviewItem{ExclusionType: p.Item.ExclusionType, Pattern: p.Item.Pattern,
+		Matched: p.Match.Matched, Sample: p.Match.Sample, OpenFindings: p.Match.OpenFindings,
+		ClosingNeedsFullAccess: p.ClosingNeedsFullAccess}
+	if item.Sample == nil {
+		item.Sample = []string{}
+	}
+	item.ResolvingNames, item.ResolvingSample = p.Match.Names, p.Match.NameSample
+	if item.ResolvingSample == nil {
+		item.ResolvingSample = []string{}
+	}
+	if p.Edge != nil {
+		item.Edge = &EdgeLabel{Class: string(p.Edge.Class), Provider: p.Edge.Provider, Address: strings.TrimSpace(p.Item.Pattern)}
+		item.NamesUnaffected = true
+	}
+	if p.Err != nil {
+		item.Code, item.Message = bulkItemRefusal(p.Err)
+	}
+	return item
 }
 
 func bulkExclusionItems(in []BulkScopeExclusionItem) []scope.BulkExclusionItem {

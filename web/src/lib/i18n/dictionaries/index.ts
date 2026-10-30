@@ -15,6 +15,7 @@ import en_admin from './en/admin.json'
 import en_announcements from './en/announcements.json'
 import en_assetFreshness from './en/assetFreshness.json'
 import en_assetCoverage from './en/assetCoverage.json'
+import en_assetPorts from './en/assetPorts.json'
 import en_assetSources from './en/assetSources.json'
 import en_assets from './en/assets.json'
 import en_assetDetail from './en/assetDetail.json'
@@ -108,6 +109,7 @@ import vi_admin from './vi/admin.json'
 import vi_announcements from './vi/announcements.json'
 import vi_assetFreshness from './vi/assetFreshness.json'
 import vi_assetCoverage from './vi/assetCoverage.json'
+import vi_assetPorts from './vi/assetPorts.json'
 import vi_assetSources from './vi/assetSources.json'
 import vi_assets from './vi/assets.json'
 import vi_assetDetail from './vi/assetDetail.json'
@@ -206,6 +208,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   announcements: en_announcements,
   assetFreshness: en_assetFreshness,
   assetCoverage: en_assetCoverage,
+  assetPorts: en_assetPorts,
   assetSources: en_assetSources,
   assets: en_assets,
   assetDetail: en_assetDetail,
@@ -302,6 +305,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   announcements: vi_announcements,
   assetFreshness: vi_assetFreshness,
   assetCoverage: vi_assetCoverage,
+  assetPorts: vi_assetPorts,
   assetSources: vi_assetSources,
   assets: vi_assets,
   assetDetail: vi_assetDetail,
