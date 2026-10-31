@@ -162,7 +162,10 @@ type PairingRepository interface {
 	CreateExpectation(ctx context.Context, p *Pairing) error
 	GetForTenant(ctx context.Context, tenantID, id shared.ID) (*Pairing, error)
 	Approve(ctx context.Context, a PairingApproval, repair *shared.ID) (*PairingApprovalResult, error)
-	Deny(ctx context.Context, tenantID, id, actor shared.ID, now time.Time) (*Pairing, error)
+	// Deny refuses an open request of the tenant, or a tenantless
+	// default-mode request whose code hash is codeHash (never with an empty
+	// hash).
+	Deny(ctx context.Context, tenantID, id, actor shared.ID, codeHash string, now time.Time) (*Pairing, error)
 	ConfirmUnscoped(ctx context.Context, id shared.ID, thumbprint string, now time.Time) (*Pairing, error)
 	// ExpireForPlatform marks requests past their expiry expired and purges
 	// rows older than purgeBefore; it revokes the pending key of an approval

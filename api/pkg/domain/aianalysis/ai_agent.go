@@ -208,7 +208,7 @@ var deniedExact = map[string]bool{
 
 var deniedPrefixes = []string{
 	"settings:", "team:", "integrations:", "audit:", "sensors:", "service_accounts:",
-	"findings:suppressions:", "scans:",
+	"findings:suppressions:", "scans:", "ai_knowledge:",
 }
 
 var deniedSuffixes = []string{":approve", ":delete", ":export", ":reveal"}

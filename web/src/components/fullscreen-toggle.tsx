@@ -10,7 +10,8 @@ import { useTranslation } from '@/context/i18n-provider'
  * Hides browser chrome (URL/tab bar) for an immersive dashboard.
  *
  * Renders nothing where the Fullscreen API isn't available (e.g. iOS Safari,
- * which doesn't expose it for arbitrary elements) so there's no dead button.
+ * which doesn't expose it for arbitrary elements) so there's no dead button,
+ * and is hidden below the md breakpoint (phones).
  */
 export function FullscreenToggle() {
   const { t } = useTranslation()
@@ -43,7 +44,9 @@ export function FullscreenToggle() {
     <Button
       variant="ghost"
       size="icon"
-      className="relative scale-95 rounded-full"
+      // Not on a phone: the top bar is full there, and a phone browser either
+      // has no Fullscreen API for pages or hides its chrome on scroll anyway.
+      className="relative hidden scale-95 rounded-full md:inline-flex"
       onClick={toggle}
       aria-label={label}
       title={label}

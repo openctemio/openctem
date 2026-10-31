@@ -186,6 +186,9 @@ type Service struct {
 	// tombstones lets promotion skip rejected names (nil: no check).
 	tombstones TombstoneChecker
 	scopeJoin  ScopeJoiner
+	// nameAddresses lets certificate SAN promotion apply an exclusion of
+	// a dedicated address to the names resolving to it (nil: not read).
+	nameAddresses NameAddressReader
 	// tenantSettings carries the per-tenant switch and interval.
 	tenantSettings TenantSettingsReader
 	// relinker moves stored CT exposures onto their host's asset.
@@ -418,7 +421,7 @@ func (s *Service) MonitorTenant(ctx context.Context, tenantID shared.ID) (int, e
 	}
 
 	// Promote first, so a new name's exposures link to its own asset.
-	promoted, err := s.promote(ctx, tenantID, promotions)
+	promoted, err := s.promote(ctx, tenantID, promotions, ctKind)
 	if err != nil {
 		// Exposures are still written; promotion retries on the next run.
 		s.logger.Warn("ct promotion failed", "tenant_id", tenantID.String(), "error", err)

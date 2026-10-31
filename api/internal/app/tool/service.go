@@ -1108,7 +1108,7 @@ func (s *Service) DeleteTenantToolConfig(ctx context.Context, tenantID, toolID s
 		return err
 	}
 
-	return s.configRepo.Delete(ctx, config.ID)
+	return s.configRepo.Delete(ctx, config.TenantID, config.ID)
 }
 
 // EnableToolForTenant enables a tool for a tenant.

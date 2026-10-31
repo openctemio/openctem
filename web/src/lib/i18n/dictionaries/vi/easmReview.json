@@ -42,6 +42,7 @@
   "easmReview.overview.total": "Tên miền, tên miền con, IP, chứng chỉ",
   "easmReview.overview.waiting": "Đã phát hiện, chưa quyết định",
   "easmReview.reason.assertedRoot": "Thuộc tên miền bạn đã liệt kê, chưa xác minh",
+  "easmReview.reason.certificateSan": "Có tên trong một chứng chỉ TLS",
   "easmReview.reason.matchesScope": "Được một mục phạm vi bao phủ",
   "easmReview.reason.scanDiscovered": "Được tìm thấy bởi một lần quét của bạn",
   "easmReview.reason.scanned": "Mục tiêu mà tổ chức của bạn đã quét",

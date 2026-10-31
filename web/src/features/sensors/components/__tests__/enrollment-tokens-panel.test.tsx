@@ -129,7 +129,25 @@ describe('EnrollmentTokensPanel', () => {
     api.revoke.mockResolvedValue(token({ state: 'revoked' }))
     const user = userEvent.setup()
     render(<EnrollmentTokensPanel />)
-    await user.click(screen.getByRole('button', { name: 'Revoke' }))
+    await user.click(within(screen.getByRole('table')).getByRole('button', { name: 'Revoke' }))
+    await user.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Revoke' })
+    )
+    await waitFor(() => expect(api.revoke).toHaveBeenCalledWith('t1'))
+  })
+
+  it('gives a phone one card per token with its state, uses and Revoke', async () => {
+    api.revoke.mockResolvedValue(token({ state: 'revoked' }))
+    const user = userEvent.setup()
+    const { container } = render(<EnrollmentTokensPanel />)
+    const cards = container.querySelector('[data-slot="enrollment-token-cards"]') as HTMLElement
+    // The cards show below sm, the table from sm.
+    expect(cards).toHaveClass('sm:hidden')
+    expect(screen.getByRole('table').closest('.sm\\:block')).toHaveClass('hidden')
+    const card = within(cards).getAllByRole('listitem')[0]
+    expect(within(card).getByText('3 of 20')).toBeInTheDocument()
+    expect(within(card).getByText('ends with ab12')).toBeInTheDocument()
+    await user.click(within(card).getByRole('button', { name: 'Revoke' }))
     await user.click(
       within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Revoke' })
     )

@@ -40,6 +40,46 @@ func scanProfileAuditEvent(action audit.Action, p *scanprofile.ScanProfile, mess
 		WithMessage(message)
 }
 
+// scanProfileChangeEvent is scanProfileAuditEvent with a field-level
+// before/after diff, so the audit log says what an update, a quality-gate
+// change or a new default changed, not only that it happened. before is the
+// profile as it was; nil (it could not be read) leaves the diff out.
+func scanProfileChangeEvent(action audit.Action, before, after *scanprofile.ScanProfile, message string) auditsvc.AuditEvent {
+	ev := scanProfileAuditEvent(action, after, message)
+	if before != nil {
+		ev = ev.WithChanges(auditsvc.DiffChanges(scanProfileAuditView(before), scanProfileAuditView(after)))
+	}
+	return ev
+}
+
+// scanProfileAuditFields is the part of a profile an audit diff compares.
+type scanProfileAuditFields struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	IsDefault   bool     `json:"is_default"`
+	Tags        []string `json:"tags"`
+	RuleSources string   `json:"rule_sources"`
+	QualityGate any      `json:"quality_gate"`
+}
+
+func scanProfileAuditView(p *scanprofile.ScanProfile) scanProfileAuditFields {
+	return scanProfileAuditFields{
+		Name: p.Name, Description: p.Description, IsDefault: p.IsDefault, Tags: p.Tags,
+		RuleSources: string(p.RuleSources), QualityGate: p.QualityGate,
+	}
+}
+
+// profileBefore reads the profile as it is now, for the audit diff of a change
+// about to be made. A failed read only drops the diff: the change itself is
+// authorized and tenant-checked by the service.
+func (h *ScanProfileHandler) profileBefore(r *http.Request, tenantID, profileID string) *scanprofile.ScanProfile {
+	p, err := h.service.GetOwnScanProfile(r.Context(), tenantID, profileID)
+	if err != nil {
+		return nil
+	}
+	return p
+}
+
 // NewScanProfileHandler creates a new ScanProfileHandler.
 func NewScanProfileHandler(service *scan.ScanProfileService, v *validator.Validator, log *logger.Logger) *ScanProfileHandler {
 	return &ScanProfileHandler{
@@ -421,12 +461,13 @@ func (h *ScanProfileHandler) Update(w http.ResponseWriter, r *http.Request) {
 		CallerIsAdmin: middleware.IsAdmin(r.Context()),
 	}
 
+	before := h.profileBefore(r, tenantID, profileID)
 	profile, err := h.service.UpdateScanProfile(r.Context(), input)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
-	logRequestChange(h.audit, h.logger, r, scanProfileAuditEvent(audit.ActionScanProfileUpdated, profile,
+	logRequestChange(h.audit, h.logger, r, scanProfileChangeEvent(audit.ActionScanProfileUpdated, before, profile,
 		"Scan profile "+profile.Name+" updated"))
 
 	w.Header().Set("Content-Type", "application/json")
@@ -478,12 +519,13 @@ func (h *ScanProfileHandler) SetDefault(w http.ResponseWriter, r *http.Request) 
 	profileID := chi.URLParam(r, "id")
 	tenantID := middleware.GetTenantID(r.Context())
 
+	before := h.profileBefore(r, tenantID, profileID)
 	profile, err := h.service.SetDefaultScanProfile(r.Context(), tenantID, profileID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
-	logRequestChange(h.audit, h.logger, r, scanProfileAuditEvent(audit.ActionScanProfileDefaultSet, profile,
+	logRequestChange(h.audit, h.logger, r, scanProfileChangeEvent(audit.ActionScanProfileDefaultSet, before, profile,
 		"Scan profile "+profile.Name+" set as the default"))
 
 	w.Header().Set("Content-Type", "application/json")
@@ -582,12 +624,13 @@ func (h *ScanProfileHandler) UpdateQualityGate(w http.ResponseWriter, r *http.Re
 		},
 	}
 
+	before := h.profileBefore(r, tenantID, profileID)
 	profile, err := h.service.UpdateQualityGate(r.Context(), input)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
-	logRequestChange(h.audit, h.logger, r, scanProfileAuditEvent(audit.ActionScanProfileQualityGateUpdated, profile,
+	logRequestChange(h.audit, h.logger, r, scanProfileChangeEvent(audit.ActionScanProfileQualityGateUpdated, before, profile,
 		"Quality gate of scan profile "+profile.Name+" updated"))
 
 	w.Header().Set("Content-Type", "application/json")

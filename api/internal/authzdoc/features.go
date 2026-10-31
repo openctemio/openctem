@@ -35,7 +35,7 @@ var Features = []Feature{
 		Registers: []string{
 			"registerVulnerabilityRoutes", "registerFindingActivityRoutes", "registerFindingEvidenceItemRoutes",
 			"registerFindingImportRoutes", "registerImportMappingRoutes", "registerFindingRetestRoutes", "registerFindingRetestCheckRoutes", "registerFindingSourceRoutes", "registerFindingLifecycleRoutes", "registerVerificationChecklistRoutes",
-			"registerAITriageRoutes", "registerAIAnalysisRoutes", "registerAttachmentRoutes", "registerSavedViewRoutes", "registerNavPinRoutes", "registerQueryRoutes",
+			"registerAITriageRoutes", "registerAIAnalysisRoutes", "registerAIKnowledgeRoutes", "registerAttachmentRoutes", "registerSavedViewRoutes", "registerNavPinRoutes", "registerQueryRoutes",
 		},
 		Prefixes: []string{"/api/v1/verification-checklists"},
 	},
@@ -163,7 +163,7 @@ var Features = []Feature{
 		Description: "Ticketing, SCM, SIEM and notification integrations, inbound webhooks, the notification outbox and API keys.",
 		Stages:      []string{StageMobilization},
 		Registers: []string{
-			"registerIntegrationRoutes", "registerIncomingWebhookRoutes", "registerGitHubWebhookRoute", "registerOutboxRoutes", "registerAPIKeyRoutes",
+			"registerIntegrationRoutes", "registerIncomingWebhookRoutes", "registerGitHubWebhookRoute", "registerOutboxRoutes", "registerAPIKeyRoutes", "registerAPIKeySettingsRoutes",
 		},
 		Prefixes: []string{"/api/v1/webhooks/incoming"},
 	},
