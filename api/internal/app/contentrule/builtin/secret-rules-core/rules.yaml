@@ -1,0 +1,182 @@
+# Sensitive-information rules, core pack. Written for this project from the
+# formats each provider documents for its own keys and tokens, and from the
+# shapes of private keys, credentials in URLs, internal host names and debug
+# pages. A match is stored masked: a keyed fingerprint, a preview of at most
+# four characters at each end, the length and where it was found; never the
+# value. Format: docs/architecture/rule-packs.md.
+schema: 1
+rules:
+  - id: aws-access-key-id
+    name: AWS access key ID
+    secret: {category: credential, severity: high}
+    matchers:
+      - location: body
+        keywords: [akia, asia]
+        pattern: '\b(?P<secret>(?:AKIA|ASIA)[0-9A-Z]{16})\b'
+  - id: azure-storage-account-key
+    name: Azure storage account key
+    secret: {category: credential, severity: critical}
+    matchers:
+      - location: body
+        keywords: [accountkey=]
+        pattern: '(?i)accountkey=(?P<secret>[A-Za-z0-9+/]{86}==)'
+  - id: github-token
+    name: GitHub token
+    secret: {category: token, severity: high}
+    matchers:
+      - location: body
+        keywords: [ghp_, gho_, ghu_, ghs_, ghr_]
+        pattern: '\b(?P<secret>gh[pousr]_[A-Za-z0-9]{36})\b'
+  - id: github-fine-grained-token
+    name: GitHub fine-grained token
+    secret: {category: token, severity: high}
+    matchers:
+      - location: body
+        keywords: [github_pat_]
+        pattern: '\b(?P<secret>github_pat_[A-Za-z0-9_]{82})\b'
+  - id: gitlab-token
+    name: GitLab personal access token
+    secret: {category: token, severity: high}
+    matchers:
+      - location: body
+        keywords: [glpat-]
+        pattern: '\b(?P<secret>glpat-[A-Za-z0-9_-]{20})\b'
+  - id: slack-token
+    name: Slack token
+    secret: {category: token, severity: high}
+    matchers:
+      - location: body
+        keywords: [xoxb-, xoxp-, xoxa-, xoxr-, xoxs-]
+        pattern: '\b(?P<secret>xox[baprs]-[A-Za-z0-9-]{10,72})\b'
+  - id: slack-webhook
+    name: Slack incoming webhook
+    secret: {category: token, severity: medium}
+    matchers:
+      - location: body
+        keywords: [hooks.slack.com]
+        pattern: 'https://hooks\.slack\.com/services/(?P<secret>T[A-Z0-9]{8,12}/B[A-Z0-9]{8,12}/[A-Za-z0-9]{24})'
+  - id: discord-webhook
+    name: Discord webhook
+    secret: {category: token, severity: medium}
+    matchers:
+      - location: body
+        keywords: [/api/webhooks/]
+        pattern: 'https://(?:canary\.|ptb\.)?discord(?:app)?\.com/api/webhooks/(?P<secret>[0-9]{17,20}/[A-Za-z0-9_-]{60,68})'
+  - id: telegram-bot-token
+    name: Telegram bot token
+    secret: {category: token, severity: high}
+    matchers:
+      - location: body
+        keywords: [":aa"]
+        pattern: '\b(?P<secret>[0-9]{8,10}:AA[0-9A-Za-z_-]{33})\b'
+  - id: google-api-key
+    name: Google API key
+    secret: {category: credential, severity: medium}
+    matchers:
+      - location: body
+        keywords: [aiza]
+        pattern: '\b(?P<secret>AIza[0-9A-Za-z_-]{35})\b'
+      - location: url
+        keywords: [aiza]
+        pattern: '\b(?P<secret>AIza[0-9A-Za-z_-]{35})\b'
+  - id: stripe-live-secret-key
+    name: Stripe live secret key
+    secret: {category: credential, severity: critical}
+    matchers:
+      - location: body
+        keywords: [sk_live_, rk_live_]
+        pattern: '\b(?P<secret>[sr]k_live_[0-9A-Za-z]{24,99})\b'
+  - id: sendgrid-api-key
+    name: SendGrid API key
+    secret: {category: credential, severity: high}
+    matchers:
+      - location: body
+        keywords: [sg.]
+        pattern: '\b(?P<secret>SG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43})\b'
+  - id: mailgun-api-key
+    name: Mailgun API key
+    secret: {category: credential, severity: high}
+    matchers:
+      - location: body
+        keywords: [key-]
+        pattern: '\b(?P<secret>key-[0-9a-f]{32})\b'
+  - id: npm-token
+    name: npm access token
+    secret: {category: token, severity: high}
+    matchers:
+      - location: body
+        keywords: [npm_]
+        pattern: '\b(?P<secret>npm_[A-Za-z0-9]{36})\b'
+  - id: shopify-token
+    name: Shopify access token
+    secret: {category: token, severity: high}
+    matchers:
+      - location: body
+        keywords: [shpat_, shpca_, shppa_, shpss_]
+        pattern: '\b(?P<secret>shp(?:at|ca|pa|ss)_[a-fA-F0-9]{32})\b'
+  - id: private-key
+    name: Private key
+    secret: {category: private_key, severity: critical}
+    matchers:
+      - location: body
+        keywords: [private key-----]
+        pattern: '-----BEGIN [A-Z ]{0,20}PRIVATE KEY-----\s{0,4}(?P<secret>[A-Za-z0-9+/=]{40,200})'
+  - id: jwt
+    name: JSON Web Token
+    secret: {category: token, severity: medium}
+    matchers:
+      - location: body
+        keywords: [eyj]
+        pattern: '\b(?P<secret>eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})'
+  - id: credentials-in-url
+    name: Credentials in a URL
+    secret: {category: credential, severity: high}
+    matchers:
+      - location: body
+        keywords: ["://"]
+        pattern: '(?i)\b[a-z][a-z0-9+.-]{1,20}://[^\s:/@"''<>]{1,64}:(?P<secret>[^\s:/@"''<>]{3,64})@[a-z0-9.-]{3,253}'
+      - location: url
+        keywords: ["://"]
+        pattern: '(?i)\b[a-z][a-z0-9+.-]{1,20}://[^\s:/@"''<>]{1,64}:(?P<secret>[^\s:/@"''<>]{3,64})@[a-z0-9.-]{3,253}'
+  - id: internal-hostname
+    name: Internal host name
+    secret: {category: internal_host, severity: low}
+    matchers:
+      - location: body
+        keywords: [.internal, .corp, .intranet, .localdomain, .lan]
+        pattern: '(?i)\b(?P<secret>[a-z0-9-]{1,63}(?:\.[a-z0-9-]{1,63}){0,4}\.(?:internal|corp|intranet|localdomain|lan))\b'
+  - id: private-ip-address
+    name: Private IP address
+    secret: {category: internal_host, severity: low}
+    matchers:
+      - location: body
+        keywords: ["10.", "192.168.", "172."]
+        pattern: '(?:^|[^0-9.])(?P<secret>10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(?:[^0-9.]|$)'
+  - id: python-traceback
+    name: Python traceback
+    secret: {category: debug, severity: low}
+    matchers:
+      - location: body
+        keywords: [traceback (most recent call last)]
+        pattern: 'Traceback \(most recent call last\):\s{0,4}(?P<secret>File "[^"\n]{1,200}")'
+  - id: framework-debug-page
+    name: Framework debug page
+    secret: {category: debug, severity: medium}
+    matchers:
+      - location: body
+        keywords: [debug = true, whoops!]
+        pattern: '(?P<secret>you(?:''|&#39;)re seeing this error because you have <code>DEBUG = True</code>|Whoops! There was an error)'
+  - id: php-error
+    name: PHP error message
+    secret: {category: debug, severity: low}
+    matchers:
+      - location: body
+        keywords: [fatal error, parse error]
+        pattern: '<b>(?:Fatal|Parse) error</b>:\s{0,4}(?P<secret>[^<\n]{1,200}) in <b>'
+  - id: environment-dump
+    name: Application environment dump
+    secret: {category: debug, severity: high}
+    matchers:
+      - location: body
+        keywords: [activeprofiles]
+        pattern: '"(?P<secret>activeProfiles)"\s{0,4}:\s{0,4}\['

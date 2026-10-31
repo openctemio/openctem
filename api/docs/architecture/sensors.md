@@ -12,6 +12,10 @@
 > other, current gaps): [sensor-platform-trust.md](sensor-platform-trust.md),
 > [RFC-040](../rfcs/RFC-040-platform-sensor-mutual-distrust.md) (proposed).
 
+The end-to-end flow (install to decommission, with every failure path) is in
+[sensor and platform workflow](sensor-platform-workflow.md); this page is the
+reference for each part.
+
 ## Glossary
 
 | Term | Meaning |
@@ -1195,8 +1199,17 @@ replaces bearer keys.
   (critical), one `identity_cloned` event and one `sensor.identity_cloned`
   audit entry (severity high). Steady-state heartbeats cost nothing (the
   instance is compared with the row already read); a change is applied under
-  a row lock. Regenerating the key clears the flag. The sensor is not
-  quarantined automatically in Phase 0.
+  a row lock. Regenerating a bearer key or re-pairing the sensor clears the
+  flag.
+- **A cloned identity gets no new work.** The platform cannot tell which host
+  is the real one, so while `identity_cloned_at` is set every path that grants
+  a lease (the poll, claim-N, claim by id, the shared claim) and the heartbeat
+  doorbell withhold new work from the sensor
+  (`postgres/command_cloned_identity.go`, `identityNotClonedPredicate`).
+  Work it already holds runs to its end; its lease epoch fences the results.
+  The placement explainer names the reason `identity_cloned`, so a waiting
+  task says why. Shared sensors are not observed for clones (they have no
+  tenant), so the shared claim's check is a guard only.
 - **Key-hash pepper.** Keys are stored as HMAC-SHA256 under
   `SENSOR_KEY_PEPPER`, or, when unset, a pepper derived from
   `APP_ENCRYPTION_KEY` with HKDF-SHA256 (label
