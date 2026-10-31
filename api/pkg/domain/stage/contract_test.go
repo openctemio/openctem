@@ -52,7 +52,7 @@ func TestContracts_PortsMatchStoredTypes(t *testing.T) {
 		if s.Version != ContractVersion || s.ID() != string(s.Key)+"@1" {
 			t.Fatalf("%s: version %d id %s", s.Key, s.Version, s.ID())
 		}
-		if len(s.InPorts) == 0 || len(s.OutPorts) == 0 {
+		if len(s.InPorts) == 0 || (len(s.OutPorts) == 0 && !annotatesInputs[s.Key]) {
 			t.Fatalf("%s: a routed capability needs in and out ports", s.Key)
 		}
 		for _, p := range append(slices.Clone(s.InPorts), s.OutPorts...) {
@@ -180,9 +180,10 @@ func TestTaxonomy_PlannedAreNeverRouted(t *testing.T) {
 	all := Taxonomy()
 	// 17 routed + 12 planned: the 22 of taxonomy v1 plus discover.cloud,
 	// sbom.generate and import.file (RFC-055), lookup.rdap and lookup.asn
-	// (RFC-071), discover.hosts (RFC-088), enumerate.subdomains (RFC-036).
-	if len(all) != 29 {
-		t.Fatalf("taxonomy v1: %d capabilities, want 29", len(all))
+	// (RFC-071), discover.hosts (RFC-088), enumerate.subdomains (RFC-036),
+	// monitor.web_content (RFC-138).
+	if len(all) != 30 {
+		t.Fatalf("taxonomy v1: %d capabilities, want 30", len(all))
 	}
 	ids := map[string]bool{}
 	for _, s := range all {
@@ -212,8 +213,11 @@ func TestTaxonomy_PlannedAreNeverRouted(t *testing.T) {
 	}
 	// Adding the planned contracts changed no tool's routing: a step that
 	// pins the tool without a capability runs its own stage.
-	if st, ok := ForStep("nuclei", nil); !ok || st.Key != VulnTemplates || len(ForTool("httpx")) != 1 {
-		t.Fatal("a planned capability changed how nuclei or httpx steps route")
+	if st, ok := ForStep("nuclei", nil); !ok || st.Key != VulnTemplates {
+		t.Fatal("a planned capability changed how nuclei steps route")
+	}
+	if st, ok := ForStep("httpx", nil); !ok || st.Key != ProbeHTTP {
+		t.Fatal("a capability changed how a pinned httpx step routes")
 	}
 }
 
