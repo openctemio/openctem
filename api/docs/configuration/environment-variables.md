@@ -158,6 +158,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `AUTH_REFRESH_TOKEN_DURATION` | duration | `168h` |  |  | Refresh token lifetime (7 days). |
 | `AUTH_REQUIRE_EMAIL_VERIFICATION` | bool | `true` |  |  | Require a verified email address. Production refuses `false` with `local` or `hybrid`. |
 | `AUTH_SESSION_DURATION` | duration | `720h` |  |  | Session lifetime (30 days). |
+| `AUTH_REFRESH_REUSE_GRACE` | duration | `30s` |  |  | How long after a refresh-token rotation the same client may present the replaced token again (parallel requests) and receive the successor already issued instead of ending the session. 0 disables; capped at 2m. Any other reuse still ends the session. |
 
 ### Organizations and scope guardrails
 
