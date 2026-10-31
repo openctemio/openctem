@@ -10,6 +10,8 @@ const setupTwoFactor = vi.fn()
 const enableTwoFactor = vi.fn()
 const disableTwoFactor = vi.fn()
 const regenerateRecoveryCodes = vi.fn()
+const startReplace = vi.fn()
+const confirmReplace = vi.fn()
 
 vi.mock('../../api/use-security', () => ({
   useTwoFactorStatus: () => status(),
@@ -17,6 +19,12 @@ vi.mock('../../api/use-security', () => ({
   useEnableTwoFactor: () => ({ enableTwoFactor, isEnabling: false }),
   useDisableTwoFactor: () => ({ disableTwoFactor, isDisabling: false }),
   useRegenerateRecoveryCodes: () => ({ regenerateRecoveryCodes, isRegenerating: false }),
+  useReplaceTwoFactor: () => ({
+    startReplace,
+    confirmReplace,
+    isStarting: false,
+    isConfirming: false,
+  }),
 }))
 
 const base: TwoFactorStatus = {
@@ -131,6 +139,95 @@ describe('TwoFactorCard', () => {
     await waitFor(() =>
       expect(disableTwoFactor).toHaveBeenCalledWith({ password: 'Secret-123', code: '123456' })
     )
+  })
+
+  it('turning off says other sessions end and refreshes the session list', async () => {
+    status.mockReturnValue({
+      status: { ...base, enabled: true, recovery_codes_remaining: 5, can_turn_off: true },
+      isLoading: false,
+      mutate,
+    })
+    disableTwoFactor.mockResolvedValue({ message: 'ok', other_sessions_ended: true })
+    const signedOut = vi.fn()
+    const user = userEvent.setup()
+    render(<TwoFactorCard onOtherSessionsSignedOut={signedOut} />)
+    await user.click(screen.getByRole('button', { name: 'Turn off' }))
+    expect(screen.getByText(/other sessions are signed out/i)).toBeInTheDocument()
+    await user.type(screen.getByLabelText('Current password'), 'Secret-123')
+    await user.type(screen.getByLabelText('Code from your authenticator app'), '123456')
+    await waitFor(() => expect(signedOut).toHaveBeenCalled())
+  })
+
+  it('while required: no Turn off, names who requires it, offers Replace', () => {
+    status.mockReturnValue({
+      status: {
+        ...base,
+        enabled: true,
+        recovery_codes_remaining: 5,
+        required_by_organization: true,
+        required_by: { organizations: ['Acme', 'Beta'], platform: true },
+        can_turn_off: false,
+      },
+      isLoading: false,
+      mutate,
+    })
+    render(<TwoFactorCard />)
+    expect(screen.queryByRole('button', { name: 'Turn off' })).not.toBeInTheDocument()
+    expect(screen.getByText('Required by Acme, Beta and the platform')).toBeInTheDocument()
+    expect(screen.getByText(/stays on while required/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Replace authenticator' })).toBeInTheDocument()
+  })
+
+  it('names the platform alone when only the floor requires it', () => {
+    status.mockReturnValue({
+      status: {
+        ...base,
+        enabled: true,
+        recovery_codes_remaining: 5,
+        required_by: { organizations: [], platform: true },
+        can_turn_off: false,
+      },
+      isLoading: false,
+      mutate,
+    })
+    render(<TwoFactorCard />)
+    expect(screen.getByText('Required by the platform')).toBeInTheDocument()
+  })
+
+  it('replaces the authenticator: recovery code, then the new app, then new codes', async () => {
+    status.mockReturnValue({
+      status: {
+        ...base,
+        enabled: true,
+        recovery_codes_remaining: 5,
+        required_by: { organizations: ['Acme'], platform: false },
+        can_turn_off: false,
+      },
+      isLoading: false,
+      mutate,
+    })
+    startReplace.mockResolvedValue({
+      secret: 'JBSWY3DPEHPK3PXP',
+      otpauth_uri: 'otpauth://totp/x?secret=JBSWY3DPEHPK3PXP',
+    })
+    confirmReplace.mockResolvedValue(['nnnnn-mmmmm'])
+    const signedOut = vi.fn()
+    const user = userEvent.setup()
+    render(<TwoFactorCard email="a@acme.io" onOtherSessionsSignedOut={signedOut} />)
+
+    await user.click(screen.getByRole('button', { name: 'Replace authenticator' }))
+    await user.type(screen.getByLabelText('Current password'), 'Secret-123')
+    await user.click(screen.getByRole('button', { name: 'Use a recovery code instead' }))
+    await user.type(screen.getByLabelText('Recovery code'), 'abcde-fghjk')
+    await waitFor(() =>
+      expect(startReplace).toHaveBeenCalledWith({ password: 'Secret-123', code: 'abcdefghjk' })
+    )
+    expect(await screen.findByRole('img', { name: /qr code/i })).toBeInTheDocument()
+    await user.type(screen.getByLabelText('Code from the new app'), '654321')
+    await waitFor(() => expect(confirmReplace).toHaveBeenCalledWith('654321'))
+    expect(await screen.findByText('nnnnn-mmmmm')).toBeInTheDocument()
+    expect(signedOut).toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Done' })).toBeDisabled()
   })
 
   it('turning off accepts a recovery code instead', async () => {
