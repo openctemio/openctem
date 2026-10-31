@@ -90,6 +90,14 @@ Openctem-Protocol: 2
 Content-Type: application/problem+json
 Openctem-Protocol: 2
 {"type":"https://openctem.io/problems/sensor/manifest-schema-unsupported","title":"Manifest schema unsupported","status":422,"detail":"The manifest's schema version is not one this server reads; send schema 1.","retryable":false}
+## pairing-key-busy
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/sensor/pairing-key-busy","title":"Pairing key busy","status":409,"detail":"Another open pairing request holds this key; retry after the advised delay.","retryable":true}
+## pairing-key-registered
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/sensor/pairing-key-registered","title":"Pairing key already registered","status":409,"detail":"This key is already registered to a sensor and cannot pair again: restore the sensor's identity, or remove its key so it generates a new one, then pair with a new code.","retryable":false}
 ## pairing-not-found
 Content-Type: application/problem+json
 Openctem-Protocol: 2
