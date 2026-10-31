@@ -763,13 +763,19 @@ export function InventoryTable({
           )
         }}
         emptyMessage={
-          emptyMessage ?? t('assets.inv.emptyFiltered', 'No assets match these filters')
+          emptyMessage ??
+          (hasFilters
+            ? t('assets.inv.emptyFiltered', 'No assets match these filters')
+            : t('assets.inv.emptyNoneTitle', 'No assets in this organization yet'))
         }
         emptyDescription={
           emptyDescription ??
           (hasFilters
             ? t('assets.inv.emptyFilteredHint', 'Try removing a filter or clearing them all.')
-            : t('assets.inv.emptyNone', 'No assets yet.'))
+            : t(
+                'assets.inv.emptyNoneHint',
+                'Add an asset, or set up discovery to find the names, addresses and services your organization exposes.'
+              ))
         }
       />
 

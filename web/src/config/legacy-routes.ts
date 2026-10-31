@@ -36,12 +36,6 @@ export const LEGACY_SETTINGS_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
   // Personal notification settings moved to the user's own area.
   { source: '/settings/notifications', destination: '/account/notifications', permanent: true },
   // Access group: identity and machine access, out of Integrations.
-  { source: '/settings/users/:path*', destination: '/settings/members/:path*', permanent: true },
-  {
-    source: '/settings/access-control/groups/:path*',
-    destination: '/settings/teams/:path*',
-    permanent: true,
-  },
   {
     source: '/settings/access-control/assignment-rules',
     destination: '/settings/teams?tab=assignment-rules',
@@ -94,11 +88,6 @@ export const LEGACY_SETTINGS_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
   {
     source: '/scan-profiles/:path*',
     destination: '/settings/scanning/profiles/:path*',
-    permanent: true,
-  },
-  {
-    source: '/scanner-templates/:path*',
-    destination: '/settings/scanning/templates/:path*',
     permanent: true,
   },
   {
