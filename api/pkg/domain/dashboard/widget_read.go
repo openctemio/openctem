@@ -129,6 +129,46 @@ type FactReader interface {
 	// rule, data scope, campaign rule), pentest findings left out; nil when no
 	// suggestion has such a member.
 	TopFix(ctx context.Context, scope ReadScope) (*FixLever, error)
+
+	// NewAssets counts the assets in scope added to the inventory
+	// (created_at) since from, and between prevFrom and from, by asset type.
+	NewAssets(ctx context.Context, scope ReadScope, from, prevFrom time.Time) ([]NewAssetRow, error)
+	// CertificateExpiry counts the certificates in scope by how soon they
+	// expire, measured from now.
+	CertificateExpiry(ctx context.Context, scope ReadScope, now time.Time) (CertificateExpiryCounts, error)
+	// AcceptanceExpiry counts the accepted findings in scope (campaign rule
+	// applied) by how soon their risk acceptance ends, measured from now.
+	AcceptanceExpiry(ctx context.Context, scope ReadScope, now time.Time) (AcceptanceExpiryCounts, error)
+}
+
+// NewAssetRow is one asset type's additions: in the window and in the
+// window before it.
+type NewAssetRow struct {
+	AssetType string
+	Current   int64
+	Previous  int64
+}
+
+// CertificateExpiryCounts are the certificates of a scope by expiry band.
+// The bands use the asset list's expiry filters (expires_after is strictly
+// after, expires_before strictly before), so each band equals its list.
+type CertificateExpiryCounts struct {
+	// Total is every certificate in scope, with or without a known expiry.
+	Total int64
+	// Expired: expiry before now. Within7d: after now, before now + 7 days.
+	// Within30d: after now + 7 days, before now + 30 days. Within90d: after
+	// now + 30 days, before now + 90 days.
+	Expired, Within7d, Within30d, Within90d int64
+}
+
+// AcceptanceExpiryCounts are the accepted findings of a scope by when their
+// acceptance ends.
+type AcceptanceExpiryCounts struct {
+	// Accepted is every accepted finding in scope.
+	Accepted int64
+	// Within7d: ends at or before now + 7 days. Within30d: after now + 7
+	// days, at or before now + 30 days. Later: after now + 30 days.
+	Within7d, Within30d, Later int64
 }
 
 // FixLever is one remediation suggestion re-counted in a read's scope:

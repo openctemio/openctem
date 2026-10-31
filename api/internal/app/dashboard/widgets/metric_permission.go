@@ -13,6 +13,8 @@ func metricPermission(m dashboard.Metric) permission.Permission {
 	switch {
 	case m.Kind == dashboard.MetricKindAssetCount, m.Kind == dashboard.MetricKindPaths, m.ID == "coverage.discovery":
 		return permission.AssetsRead
+	case assetBreakdowns[m.ID]:
+		return permission.AssetsRead
 	default:
 		return permission.FindingsRead
 	}
@@ -77,3 +79,6 @@ func maskAssetParts(w *WidgetValue, c dashboardapp.Caller) {
 		b.Items = kept
 	}
 }
+
+// assetBreakdowns are the breakdowns that count assets.
+var assetBreakdowns = map[string]bool{"surface.new_assets": true, "certificates.expiry": true}
