@@ -2859,6 +2859,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Chained steps take what their predecessors produced, through the
 		// per-hop gate (hop_router.go).
 		scanrun.WithHopStore(scanHops),
+		// ... and take them task by task while the predecessor still runs
+		// (stage streaming, RFC-137; SCAN_STAGE_STREAMING).
+		scanrun.WithStageStreaming(cfg.Scope.StageStreaming),
 		// A run executes the workflow version it started with (research/62 P0-10).
 		scanrun.WithVersionStore(repos.ScanWorkflow),
 		// Incremental web scanning: new or changed endpoints only (RFC-056).

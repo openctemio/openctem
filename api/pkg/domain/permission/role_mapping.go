@@ -228,7 +228,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		RolesRead,
 		// Integrations (read + limited write)
 		IntegrationsRead,
-		SCMConnectionsRead, SCMConnectionsWrite,
+		SCMConnectionsRead,
 		NotificationsRead,
 		APIKeysRead,
 		ScanWorkflowsRead, ScanWorkflowsWrite,
