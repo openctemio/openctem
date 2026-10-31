@@ -479,6 +479,16 @@ export const ATTACK_SURFACE_SECTION_TABS: readonly SectionTab[] = [
     permission: Permission.AssetsRead,
   },
   {
+    // Every exposure of the external surface with the asset it is on
+    // (research/333 D1): open work on monitored assets first.
+    label: 'Exposure items',
+    labelKey: 'nav.tab.exposureItems',
+    href: '/attack-surface/exposures',
+    icon: FileWarning,
+    module: 'attack_surface',
+    permission: Permission.ExposuresRead,
+  },
+  {
     // The certificate assets of the external surface with their expiry
     // status (research/333 D5). Read from the assets module's data.
     label: 'Certificates',

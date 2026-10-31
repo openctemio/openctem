@@ -212,6 +212,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 
 	// --- partial -------------------------------------------------------------------
 	"/api/v1/asset-groups":                             {classScoped, "a restricted reader sees only the groups holding an asset in their scope or named by their team's scope rule (research/233 D4): list, search, stats and totals; any other id 404s, members and findings too; counts, risk and finding_count follow the reader (L-18); owner email full-data only"},
+	"/api/v1/attack-surface/exposures":                 {classScoped, "Exposure Items view: filterspec.Compile adds the tenant and the asset data scope; exposures without an asset reach unrestricted callers only (TestExposureItems_DataScopeAndTenant_DB)"},
 	"/api/v1/attack-surface":                           {classPartial, "chains dropped unless every hop is in scope; stats counts, breakdown and average risk and the chain summary follow the scope; the attack-path summary stays an organization-wide count with no ids"},
 	"/api/v1/easm":                                     {classPartial, "summary scoped; candidates are tenant discovery output"},
 	"/api/v1/business-services":                        {classScoped, "a restricted reader sees only the services linking an asset in their scope (research/233 D4): list and total; any other id 404s, reads and writes; asset links scoped (L-10); update and delete need every linked asset in scope (403); asset_count counts only in-scope links; owner email full-data only"},
