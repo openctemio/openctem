@@ -97,7 +97,7 @@ for (const vp of [
       await page.goto(PAGES)
       const tabs = page.getByRole('navigation', { name: 'Attack surface sections' })
       await expect(tabs).toBeVisible({ timeout: 30_000 })
-      await expect(page.getByRole('heading', { name: 'Watched pages' })).toBeVisible()
+      await expect(page.getByText('Watched pages', { exact: true })).toBeVisible()
       await expect(page.getByTestId('page-watch')).toHaveCount(1)
       // No sideways scroll at this width.
       const overflow = await page.evaluate(
