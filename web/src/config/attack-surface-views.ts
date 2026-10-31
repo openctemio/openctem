@@ -12,8 +12,8 @@
  * labels live there). A view groups routes: the top strip shows the five
  * views, and a view with more than one visible route shows them as a
  * segmented lens under the strip. The strip has no icons (research/244
- * anatomy), so five labels fit on a phone with at most one in the More menu. A route listed here that is not (yet) a
- * section tab is skipped, so a new tab only has to be listed in one group
+ * anatomy): at 1440 px the five views fit without a More menu. A route
+ * listed here that is not (yet) a section tab is skipped, so a new tab only has to be listed in one group
  * (`route-links: ignore` marks those not built yet: they show once their tab exists).
  */
 export interface AttackSurfaceView {
