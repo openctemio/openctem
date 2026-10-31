@@ -31,6 +31,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/activity"
 	"github.com/openctemio/openctem/api/internal/app/aianalysis"
 	"github.com/openctemio/openctem/api/internal/app/aibundle"
+	"github.com/openctemio/openctem/api/internal/app/aiknowledge"
 	"github.com/openctemio/openctem/api/internal/app/aimaskmap"
 	"github.com/openctemio/openctem/api/internal/app/aipolicy"
 	"github.com/openctemio/openctem/api/internal/app/aitriage"
@@ -940,6 +941,9 @@ type Services struct {
 	// AIAnalysis manages AI agents (service accounts that triage like a
 	// person, with accountable owners) and their runs.
 	AIAnalysis *aianalysis.Service
+	// AIKnowledge manages the knowledge organizations give their AI agents
+	// and retrieves it for runs.
+	AIKnowledge *aiknowledge.Service
 	// AIExecutor runs single-shot AI kinds in the API process.
 	AIExecutor *aianalysis.BuiltinExecutor
 
@@ -3191,8 +3195,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.AIAnalysis = aianalysis.New(repos.AIAnalysis, repos.AIAnalysis,
 		apikey.NewHolderPermissions(repos.Tenant, rolePermissionSource{repos.Role}), s.DataScope,
 		aianalysis.SettingsConsent{Repo: repos.TenantAISettings}, s.Audit, log)
+	s.AIKnowledge = aiknowledge.New(repos.AIKnowledge, repos.AIAnalysis, s.Audit, log)
 	if s.AIExecutor != nil {
 		s.AIExecutor.SetAIAgents(s.AIAnalysis)
+		s.AIExecutor.SetKnowledge(s.AIKnowledge)
 	}
 
 	// Wire permission services to tenant service
