@@ -14,6 +14,7 @@
 import { ArrowDown, EyeOff, Route } from 'lucide-react'
 import Link from '@/components/link'
 import { Badge } from '@/components/ui/badge'
+import { SignalChip } from '@/components/ui/signal-chip'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
 import { DetailSection, ErrorState, KeyValueList, RelativeTime } from '@/features/shared'
@@ -43,11 +44,7 @@ function MethodChips({ node }: { node: AssetLineageNode }) {
           {discoverySourceLabel(t, node.discovery_source)}
         </Badge>
       )}
-      {node.discovery_tool && (
-        <Badge variant="outline" className="font-mono text-xs font-normal">
-          {node.discovery_tool}
-        </Badge>
-      )}
+      {node.discovery_tool && <SignalChip>{node.discovery_tool}</SignalChip>}
     </span>
   )
 }
