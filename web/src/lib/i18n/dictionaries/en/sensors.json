@@ -854,6 +854,7 @@
   "sensors.localPolicy.sum.rate": "Rate: at most {n} requests/s",
   "sensors.localPolicy.sum.refused": "refused",
   "sensors.localPolicy.sum.targets": "Targets: {allow} allowed, {deny} denied",
+  "sensors.localPolicy.sum.targetsAll": "Targets: allows everything the platform signs",
   "sensors.localPolicy.sum.targetsAny.one": "Targets: any outside {deny} denied entry",
   "sensors.localPolicy.sum.targetsAny.other": "Targets: any outside {deny} denied entries",
   "sensors.localPolicy.sum.templates": "Custom templates: {value}",
