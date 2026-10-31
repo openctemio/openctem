@@ -44,7 +44,7 @@ function defaultNotify(): void {
   const text = translate(
     {},
     'errors.APP_UPDATED_RELOADING',
-    'OpenCTEM was updated. Reloading to the latest version.'
+    '{product} was updated. Reloading to the latest version.'
   )
   toast.info(text, { id: TOAST_ID, duration: RELOAD_DELAY_MS * 3 })
 }
