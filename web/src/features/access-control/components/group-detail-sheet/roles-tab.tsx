@@ -55,6 +55,7 @@ export function RolesTab({
   onShowOutside,
   onCreateTeam,
   onChanged,
+  noticeShownAbove = false,
 }: {
   groupId: string
   canBind: boolean
@@ -66,6 +67,8 @@ export function RolesTab({
   onShowOutside?: () => void
   onCreateTeam?: () => void
   onChanged?: () => void
+  /** The outside-member notice is already on screen above: keep only the direct-grant action. */
+  noticeShownAbove?: boolean
 }) {
   const { t } = useTranslation()
   const { roles: bound, error, isLoading, mutate } = useGroupRoles(groupId)
@@ -142,6 +145,29 @@ export function RolesTab({
       />
     )
 
+  // Full-data roles go to chosen people directly (per-person grant with its own step-up).
+  const grantAction =
+    fullDataCandidates.length === 1 ? (
+      <Button size="sm" variant="outline" onClick={() => setGrantRole(fullDataCandidates[0])}>
+        {t('org.teamOutside.grantDirect', 'Give the role to a person')}
+      </Button>
+    ) : (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button size="sm" variant="outline">
+            {t('org.teamOutside.grantDirect', 'Give the role to a person')}
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start">
+          {fullDataCandidates.map((r) => (
+            <DropdownMenuItem key={r.id} onSelect={() => setGrantRole(r)}>
+              {r.name}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    )
+
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
@@ -151,39 +177,19 @@ export function RolesTab({
         )}
       </p>
 
-      {canBind && fullDataBlocked && fullDataCandidates.length > 0 && (
-        <OutsideMembersNotice
-          members={outside}
-          onShowMembers={onShowOutside}
-          onCreateTeam={onCreateTeam}
-          grantAction={
-            fullDataCandidates.length === 1 ? (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setGrantRole(fullDataCandidates[0])}
-              >
-                {t('org.teamOutside.grantDirect', 'Give the role to a person')}
-              </Button>
-            ) : (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button size="sm" variant="outline">
-                    {t('org.teamOutside.grantDirect', 'Give the role to a person')}
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start">
-                  {fullDataCandidates.map((r) => (
-                    <DropdownMenuItem key={r.id} onSelect={() => setGrantRole(r)}>
-                      {r.name}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )
-          }
-        />
-      )}
+      {canBind &&
+        fullDataBlocked &&
+        fullDataCandidates.length > 0 &&
+        (noticeShownAbove ? (
+          <div className="flex flex-wrap items-center gap-2">{grantAction}</div>
+        ) : (
+          <OutsideMembersNotice
+            members={outside}
+            onShowMembers={onShowOutside}
+            onCreateTeam={onCreateTeam}
+            grantAction={grantAction}
+          />
+        ))}
 
       {canBind && (
         <div className="flex flex-wrap items-center gap-2">
