@@ -32,6 +32,7 @@ import {
   AssetCoverageSection,
   AssetAttributionSection,
   AssetIdentitySections,
+  AssetLineageSection,
   AssetTimeline,
   useAssetPage,
 } from '@/features/assets'
@@ -225,6 +226,7 @@ export default function AssetDetailPage() {
                 assetName={asset.name}
                 assetType={asset.type}
               />
+              <AssetLineageSection assetId={asset.id} />
               <AssetAttributeSourcesSection assetId={asset.id} />
               <AssetFreshnessSection assetId={asset.id} />
               <AssetCoverageSection assetId={asset.id} />
