@@ -98,7 +98,7 @@ export function CIGitHubCallback() {
       <CardContent>
         <Button asChild size="sm" variant="outline">
           <Link href="/ci-cd?tab=setup&section=feedback">
-            {t('scans.ci.callback.back', 'Back to CI trust and gate')}
+            {t('scans.ci.callback.back', 'Back to CI/CD settings')}
           </Link>
         </Button>
       </CardContent>

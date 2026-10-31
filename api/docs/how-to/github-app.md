@@ -3,7 +3,7 @@
 The GitHub App lets OpenCTEM post the **OpenCTEM gate** check and pull request
 comments for CI runs (RFC-077). One app serves one deployment; each
 organization installs it on its own GitHub organization from the console
-(**CI/CD > Trust and gate > Pull request feedback**).
+(**CI/CD > Settings > Pull request feedback**).
 
 The app asks for the least it needs:
 

@@ -163,7 +163,8 @@ tests that cover the console's most user-visible flows.
 | `43-new-scan-review-coverage.spec.ts`       | New Scan review: skipped targets by reason, neutral, searchable, 1440/390px, axe         |
 | `44-scan-targets-step.spec.ts`              | Targets step at 390/1440px: one footer row, Next gated with its reason, ranked fixes     |
 | `44-sidebar-phone-drawer.spec.ts`           | Phone sidebar drawer: one scroller, one filled row, rows hold still, footer never clips  |
-| `50-shell-banner-no-shift.spec.ts`           | A platform notice does not push the page down on reload (390px)                          |
+| `50-shell-banner-no-shift.spec.ts`          | A platform notice does not push the page down on reload (390px)                          |
+| `51-cicd-settings.spec.ts`                  | CI/CD Settings: every section on one page, `?section=` scrolls, 1440/390px, axe, budget  |
 
 Each spec is designed to:
 
