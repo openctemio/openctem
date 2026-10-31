@@ -126,6 +126,28 @@ An organization sensor never posts results for a shared job, even one of its
 own tenant (`OpenCommand` refuses `is_platform_job`), and never receives one
 (the tenant claim predicate).
 
+## Late results
+
+A run the platform took back (lease expired, released, stalled, re-routed)
+and handed out again is a new run with a new lease epoch. Results of the old
+run never bind to the new one, for organization and shared sensors alike:
+
+- **At accept.** An organization sensor that sends `X-OpenCTEM-Lease-Epoch`
+  must send the command's current `lease_epoch`; an old epoch is
+  `404 command-not-found` and nothing is stored (`OpenCommand`). A shared
+  sensor must always send it (above). Older SDKs that send no epoch are
+  checked at processing only.
+- **At processing.** Each report records the lease epoch of its command when
+  it was accepted (`ingest_reports.command_lease_epoch`, migration
+  `ingest_reports_command_lease_epoch`). The ingest worker processes a queued
+  report only while the command still exists in the tenant, the sensor still
+  holds it, and its epoch is the recorded one (`QueuedWorkSensor`,
+  `heldRun`); a finished command keeps its holder, so a report of a run that
+  completed is still applied. Otherwise the report fails (the sensor sees it)
+  and the drop is audited (`ingest.failed`, denied, with the reason). Reports
+  accepted before the migration have no recorded epoch: only the holder is
+  checked.
+
 ## How a report names its command
 
 | Path | Carries the command id | Who sends it today |
