@@ -346,6 +346,9 @@ export function RunTasksTable({
   const hasMore = !!nextCursor && (!started || !lastPage || !!lastPage.next_cursor)
   const loading = started && isValidating && (data?.length ?? 0) < size
   const remaining = Math.max(0, total - rows.length)
+  // The open dialog gets the task's current state (the run read refreshes
+  // the rows), so it knows when a live task settles.
+  const logsTask = logsOf ? (rows.find((r) => r.id === logsOf.id) ?? logsOf) : null
 
   return (
     <div className="space-y-2">
@@ -510,12 +513,12 @@ export function RunTasksTable({
           {error && <span className="text-destructive">{t('scans.tasks.loadFailed')}</span>}
         </div>
       )}
-      {logsOf?.id && (
+      {logsTask?.id && (
         <RunTaskLogsDialog
           runId={runId}
-          taskId={logsOf.id}
-          tool={logsOf.tool}
-          task={logsOf}
+          taskId={logsTask.id}
+          tool={logsTask.tool}
+          task={logsTask}
           open
           onOpenChange={(o) => {
             if (!o) setLogsOf(null)
