@@ -34,6 +34,11 @@ type TargetRepository interface {
 	// Count returns the total number of scope targets matching the filter.
 	Count(ctx context.Context, filter TargetFilter) (int64, error)
 
+	// CountByStatus counts the tenant's targets per stored status (a status
+	// with no target is absent). It honors the tenant and ExcludeProgramIDs
+	// of the filter and nothing else.
+	CountByStatus(ctx context.Context, filter TargetFilter) (map[Status]int64, error)
+
 	// FindByPattern returns the tenant's entry with this type and pattern
 	// and no port or protocol limit (its effective status: an active entry
 	// past its expiry is expired), or nil when there is none.
@@ -79,6 +84,10 @@ type ExclusionRepository interface {
 
 	// Count returns the total number of scope exclusions matching the filter.
 	Count(ctx context.Context, filter ExclusionFilter) (int64, error)
+
+	// CountByStatus counts the tenant's exclusions per stored status (a status
+	// with no exclusion is absent). It honors the tenant of the filter only.
+	CountByStatus(ctx context.Context, filter ExclusionFilter) (map[Status]int64, error)
 
 	// ExpireOld marks expired exclusions as expired.
 	ExpireOld(ctx context.Context) error

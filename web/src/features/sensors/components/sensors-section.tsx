@@ -323,8 +323,10 @@ export function SensorsSection({
     [sensors, selectedSensorSnapshot]
   )
 
-  // Ladder thresholds and the release channel the API uses.
-  const { data: tenantSensorStats } = useTenantSensorStats()
+  // Ladder thresholds and the release channel the API uses: the stats come
+  // with the fleet poll; an API without poll mode is asked separately.
+  const { data: polledStats } = useTenantSensorStats(undefined, !isLoading && !sensorsData?.stats)
+  const tenantSensorStats = sensorsData?.stats ?? polledStats
   const thresholds = useMemo<FleetThresholds>(
     () => ({
       onlineWindowSeconds:
