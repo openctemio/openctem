@@ -30,7 +30,8 @@ var _ assettech.Repository = (*AssetTechnologyRepository)(nil)
 
 // Enrich adds what a report knew about technologies the assets already
 // show: the tool's category (never replacing a known one with other), its
-// confidence, the source and the last sighting. It updates existing rows
+// confidence, the source, the vendor and CPE it reported and the last
+// sighting. It updates existing rows
 // only, matched on the tenant, so it can neither add a technology nor
 // touch another tenant's rows.
 func (r *AssetTechnologyRepository) Enrich(ctx context.Context, tenantID shared.ID, techs []assettech.Technology) error {
@@ -40,6 +41,7 @@ func (r *AssetTechnologyRepository) Enrich(ctx context.Context, tenantID shared.
 	}
 	n := len(techs)
 	ids, keys, cats, sources := make([]string, 0, n), make([]string, 0, n), make([]string, 0, n), make([]string, 0, n)
+	vendors, cpes := make([]string, 0, n), make([]string, 0, n)
 	confs := make([]int64, 0, n)
 	lasts := make([]time.Time, 0, n)
 	for _, t := range techs {
@@ -48,6 +50,8 @@ func (r *AssetTechnologyRepository) Enrich(ctx context.Context, tenantID shared.
 		cats = append(cats, string(t.Category))
 		confs = append(confs, int64(t.Confidence))
 		sources = append(sources, t.Source)
+		vendors = append(vendors, t.Vendor)
+		cpes = append(cpes, t.CPE)
 		lasts = append(lasts, t.LastSeen.UTC())
 	}
 	_, err := r.db.ExecContext(ctx, `
@@ -55,12 +59,15 @@ func (r *AssetTechnologyRepository) Enrich(ctx context.Context, tenantID shared.
 		       category   = CASE WHEN v.category <> 'other' THEN v.category ELSE t.category END,
 		       confidence = CASE WHEN v.confidence > 0 THEN v.confidence ELSE t.confidence END,
 		       source     = CASE WHEN v.source <> '' THEN v.source ELSE t.source END,
+		       vendor     = COALESCE(NULLIF(v.vendor, ''), t.vendor),
+		       cpe        = COALESCE(NULLIF(v.cpe, ''), t.cpe),
 		       last_seen  = GREATEST(t.last_seen, v.last_seen),
 		       updated_at = now()
-		  FROM unnest($2::uuid[], $3::text[], $4::text[], $5::int[], $6::text[], $7::timestamptz[])
-		       AS v(asset_id, name_key, category, confidence, source, last_seen)
+		  FROM unnest($2::uuid[], $3::text[], $4::text[], $5::int[], $6::text[], $7::timestamptz[], $8::text[], $9::text[])
+		       AS v(asset_id, name_key, category, confidence, source, last_seen, vendor, cpe)
 		 WHERE t.tenant_id = $1 AND t.asset_id = v.asset_id AND t.name_key = v.name_key`,
-		tenantID.String(), pq.Array(ids), pq.Array(keys), pq.Array(cats), pq.Array(confs), pq.Array(sources), pq.Array(lasts))
+		tenantID.String(), pq.Array(ids), pq.Array(keys), pq.Array(cats), pq.Array(confs), pq.Array(sources), pq.Array(lasts),
+		pq.Array(vendors), pq.Array(cpes))
 	if err != nil {
 		return fmt.Errorf("enrich asset technologies: %w", err)
 	}
@@ -70,7 +77,7 @@ func (r *AssetTechnologyRepository) Enrich(ctx context.Context, tenantID shared.
 // ListByAsset returns the asset's technologies, tenant-scoped.
 func (r *AssetTechnologyRepository) ListByAsset(ctx context.Context, tenantID, assetID shared.ID) ([]assettech.Technology, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT name_key, name, version, category, confidence, source, first_seen, last_seen
+		SELECT name_key, name, version, category, confidence, source, COALESCE(vendor, ''), COALESCE(cpe, ''), first_seen, last_seen
 		  FROM asset_technologies
 		 WHERE tenant_id = $1 AND asset_id = $2
 		 ORDER BY category, name_key
@@ -83,7 +90,7 @@ func (r *AssetTechnologyRepository) ListByAsset(ctx context.Context, tenantID, a
 	for rows.Next() {
 		t := assettech.Technology{AssetID: assetID}
 		var cat string
-		if err := rows.Scan(&t.Key, &t.Name, &t.Version, &cat, &t.Confidence, &t.Source, &t.FirstSeen, &t.LastSeen); err != nil {
+		if err := rows.Scan(&t.Key, &t.Name, &t.Version, &cat, &t.Confidence, &t.Source, &t.Vendor, &t.CPE, &t.FirstSeen, &t.LastSeen); err != nil {
 			return nil, fmt.Errorf("scan asset technology: %w", err)
 		}
 		t.Category = assettech.Category(cat)
@@ -187,7 +194,7 @@ func writeAssetTechnologiesTx(ctx context.Context, tx *sql.Tx, tenantID, assetID
 
 // dedupTechnologies keeps one technology per (asset, key), so one
 // statement never meets the same key twice: the latest sighting wins, a
-// known category and the highest confidence are kept.
+// known category, a reported CPE and the highest confidence are kept.
 func dedupTechnologies(in []assettech.Technology) []assettech.Technology {
 	type k struct {
 		asset shared.ID
@@ -212,6 +219,9 @@ func dedupTechnologies(in []assettech.Technology) []assettech.Technology {
 		}
 		if t.Confidence < prev.Confidence {
 			t.Confidence = prev.Confidence
+		}
+		if t.CPE == "" {
+			t.Vendor, t.CPE = prev.Vendor, prev.CPE
 		}
 		if prev.LastSeen.After(t.LastSeen) {
 			t.LastSeen = prev.LastSeen

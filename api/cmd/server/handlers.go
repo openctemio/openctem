@@ -29,6 +29,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/platformlegal"
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
 	"github.com/openctemio/openctem/api/internal/app/securityoverview"
+	technologyapp "github.com/openctemio/openctem/api/internal/app/technology"
 	webendpointapp "github.com/openctemio/openctem/api/internal/app/webendpoint"
 
 	"github.com/openctemio/openctem/api/internal/app/adminapproval"
@@ -607,6 +608,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// CTEM Discovery - Network Services, State History & Relationships
 		AssetService:           handler.NewAssetServiceHandler(repos.AssetService, repos.Asset, v, log).SetDataScope(svc.DataScope),
 		Certificate:            handler.NewCertificateHandler(certificateapp.NewService(postgres.NewCertificateReadRepository(deps.DB), svc.DataScope), log),
+		Technology:             handler.NewTechnologyHandler(technologyapp.NewService(postgres.NewTechnologyReadRepository(deps.DB), svc.DataScope), log),
 		WebEndpoint:            handler.NewWebEndpointHandler(webendpointapp.NewService(repos.WebEndpoint, svc.DataScope), svc.Audit, log),
 		Query:                  newQueryHandler(deps.DB, svc, log),
 		APISpec:                handler.NewAPISpecHandler(apispecapp.NewService(repos.APISpec, repos.Asset, svc.DataScope), svc.Audit, log),
