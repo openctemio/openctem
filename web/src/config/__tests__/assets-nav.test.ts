@@ -228,6 +228,7 @@ describe('Attack surface tabs', () => {
       ['Overview', '/attack-surface', 'attack_surface'],
       ['Review', '/attack-surface/review', 'attack_surface'],
       ['Lookalikes', '/attack-surface/lookalikes', 'attack_surface'],
+      ['Page changes', '/attack-surface/pages', 'attack_surface'],
       ['Changes', '/attack-surface/changes', 'attack_surface'],
       ['Web surface', '/attack-surface/web', 'assets'],
       ['Technologies', '/attack-surface/technologies', 'assets'],

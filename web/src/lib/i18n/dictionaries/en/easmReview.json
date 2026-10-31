@@ -9,6 +9,7 @@
   "easmReview.exposure.serviceDetected": "Exposed service",
   "easmReview.exposure.subdomainDiscovered": "Subdomain seen in CT",
   "easmReview.exposure.subdomainTakeover": "Subdomain takeover",
+  "easmReview.exposure.thirdPartyScript": "New third-party script",
   "easmReview.hint.asn": "Network {value}",
   "easmReview.hint.certOrg": "Certificates issued to {value}",
   "easmReview.hint.discovering": "Found from {value}",

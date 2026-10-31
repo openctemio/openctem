@@ -153,6 +153,12 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.ScopeRead,
     module: Module.AttackSurface,
   },
+  // Web page monitoring (RFC-138): reads need assets:read (narrowed to the
+  // data scope by the API); watch changes need scans:write.
+  '/attack-surface/pages': {
+    permission: Permission.AssetsRead,
+    module: Module.AttackSurface,
+  },
   // Typed attack-surface changes (RFC-080), narrowed to the data scope by the API.
   // Web surface reads the assets module's web endpoints (RFC-056).
   '/attack-surface/web': {
