@@ -5,26 +5,12 @@ import { MetricStrip, type MetricStripItem } from '@/features/shared'
 import { cn } from '@/lib/utils'
 
 import {
+  ATTENTION_WORDS,
   scanningSensorLine,
-  type AttentionKind,
   type FleetSummary,
   type ReleaseChannel,
 } from '../lib/fleet'
 import { PROTOCOL_V1_SUNSET, PROTOCOL_V2_SENSOR_VERSION } from './sensor-cells'
-
-const ATTENTION_WORDS: Record<AttentionKind, string> = {
-  offline: 'sensors.health.attention.offline',
-  backlog: 'sensors.health.attention.backlog',
-  key: 'sensors.health.attention.key',
-  version: 'sensors.health.attention.version',
-  sdk: 'sensors.health.attention.sdk',
-  heartbeat: 'sensors.health.attention.heartbeat',
-  tools: 'sensors.health.attention.tools',
-  content: 'sensors.health.attention.content',
-  preflight: 'sensors.health.attention.preflight',
-  posture: 'sensors.health.attention.posture',
-  error: 'sensors.health.attention.error',
-}
 
 /** The fleet's state mix as one small bar, with a legend (no colour-only meaning). */
 function FleetBar({ summary }: { summary: FleetSummary }) {
@@ -67,8 +53,9 @@ function FleetBar({ summary }: { summary: FleetSummary }) {
       </span>
       <span className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5" aria-hidden>
         {parts.map((p) => (
-          <span key={p.key} className="inline-flex items-center gap-1 whitespace-nowrap">
-            <span className={cn('size-2 rounded-sm', p.className)} />
+          // A label wraps inside its own item rather than running past the tile.
+          <span key={p.key} className="inline-flex min-w-0 items-center gap-1">
+            <span className={cn('size-2 shrink-0 rounded-sm', p.className)} />
             {p.label} <span className="font-medium tabular-nums text-foreground">{p.n}</span>
           </span>
         ))}

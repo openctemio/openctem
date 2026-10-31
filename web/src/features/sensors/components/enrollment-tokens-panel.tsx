@@ -48,6 +48,7 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
 import { EmptyState, OneTimeSecretField } from '@/features/shared'
+import { DetailField, DetailFieldGrid } from '@/features/shared/components/detail-sheet'
 import { StatusChip } from '@/features/shared/components/status-chip'
 import { useNow } from '@/hooks/use-now'
 import { useScanZones } from '@/lib/api/scan-zone-hooks'
@@ -141,7 +142,56 @@ function TokenList({ canRevoke }: { canRevoke: boolean }) {
   }
   return (
     <>
-      <div className="overflow-x-auto">
+      {/* A phone gets one card per token: seven columns in a sideways
+          scrolling table hid the state and the Revoke button off screen. */}
+      <ul className="divide-y sm:hidden" data-slot="enrollment-token-cards">
+        {items.map((tok) => (
+          <li key={tok.id} className="space-y-2 py-3 first:pt-0 last:pb-0">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <span className="block truncate font-medium">{tok.name}</span>
+                <span className="block font-mono text-xs text-muted-foreground">
+                  {t('sensors.tokens.endsWith', undefined, { hint: tok.token_hint })}
+                </span>
+              </div>
+              <StatusChip domain="enrollmentToken" value={tok.state} />
+            </div>
+            <DetailFieldGrid className="grid-cols-2 gap-x-3 gap-y-1">
+              <DetailField label={t('sensors.tokens.col.uses')}>
+                <span className="tabular-nums">
+                  {t('sensors.tokens.usesOf', undefined, {
+                    used: tok.use_count,
+                    max: tok.max_uses,
+                  })}
+                </span>
+              </DetailField>
+              <DetailField label={t('sensors.tokens.col.expires')}>
+                <span title={exactTime(tok.expires_at)}>
+                  {new Date(tok.expires_at).toLocaleString()}
+                </span>
+              </DetailField>
+              <DetailField label={t('sensors.tokens.col.lastUsed')}>
+                <span title={exactTime(tok.last_used_at)}>
+                  {tok.last_used_at
+                    ? agoShort(tok.last_used_at, now, t)
+                    : t('sensors.tokens.never')}
+                </span>
+              </DetailField>
+              <DetailField label={t('sensors.tokens.col.approval')}>
+                {tok.require_approval
+                  ? t('sensors.tokens.approval.required')
+                  : t('sensors.tokens.approval.automatic')}
+              </DetailField>
+            </DetailFieldGrid>
+            {canRevoke && tok.state !== 'revoked' && (
+              <Button variant="outline" size="sm" onClick={() => setRevoking(tok)}>
+                {t('sensors.tokens.revoke')}
+              </Button>
+            )}
+          </li>
+        ))}
+      </ul>
+      <div className="hidden overflow-x-auto sm:block">
         <Table>
           <TableHeader>
             <TableRow>
