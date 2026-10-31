@@ -14,6 +14,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/stage"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
@@ -81,15 +82,11 @@ func TestSystemWorkflows_ReadyOnStandardSensor(t *testing.T) {
 		t.Fatalf("readiness: %v (nil %v)", err, readiness == nil)
 	}
 
-	// The EASM recon set and the steps each one leaves out until a tool
-	// implements their capability.
-	recon := map[string][]string{
-		"Subdomains":     {"takeover"},
-		"Web":            {"screenshots"},
-		"Standard recon": {"screenshots", "services"},
-		"Deep recon":     {"screenshots", "services", "takeover"},
-	}
+	// The EASM recon set. Each one leaves out exactly its optional steps
+	// whose capability is planned (no tool implements it yet).
+	recon := map[string]bool{"Subdomains": true, "Web": true, "Standard recon": true, "Deep recon": true}
 	seen := map[string]bool{}
+	skippedTotal := 0
 	for _, w := range workflows {
 		r := readiness[w.ID]
 		if r == nil {
@@ -98,9 +95,14 @@ func TestSystemWorkflows_ReadyOnStandardSensor(t *testing.T) {
 		if r.State == scanapp.ReadinessBlocked {
 			t.Errorf("%s is blocked on the standard sensor: %+v", w.Name, r.Steps)
 		}
-		want, isRecon := recon[w.Name]
-		if !isRecon {
+		if !recon[w.Name] {
 			continue
+		}
+		var want []string
+		for _, st := range w.Steps {
+			if st.RunPolicy.Optional && len(st.Capabilities) == 1 && stage.IsPlanned(stage.Key(st.Capabilities[0])) {
+				want = append(want, st.StepKey)
+			}
 		}
 		seen[w.Name] = true
 		if r.State != scanapp.ReadinessReady {
@@ -119,9 +121,14 @@ func TestSystemWorkflows_ReadyOnStandardSensor(t *testing.T) {
 				t.Errorf("%s/%s: state %s (%s)", w.Name, st.StepKey, st.State, st.Reason)
 			}
 		}
+		skippedTotal += len(skipped)
 		if !sameSet(skipped, want) {
 			t.Errorf("%s: skipped %v, want %v", w.Name, skipped, want)
 		}
+	}
+	// Screenshots have no tool yet: the set must exercise a skipped step.
+	if stage.IsPlanned("capture.screenshot") && skippedTotal == 0 {
+		t.Error("no recon workflow reported a skipped optional step")
 	}
 	for name := range recon {
 		if !seen[name] {
