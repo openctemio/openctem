@@ -62,7 +62,7 @@ export function EpssTrendCard({ points }: { points: EpssPoint[] | undefined }) {
             )}
           </p>
         ) : (
-          <AreaLineViz result={result} unit="percent" mode="line" />
+          <AreaLineViz result={result} unit="percent" polarity="down_good" mode="line" />
         )}
       </CardContent>
     </Card>

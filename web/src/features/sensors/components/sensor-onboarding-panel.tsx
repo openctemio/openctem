@@ -250,6 +250,15 @@ function InstallCommands({
 // Create a pairing code first
 // ---------------------------------------------------------------------------
 
+/**
+ * Poll the approved sensor until its first heartbeat. Module scope: SWR
+ * restarts its timer whenever `refreshInterval` changes identity, and this
+ * panel re-renders every second (the code's countdown).
+ */
+function sensorSeenInterval(s?: Sensor): number {
+  return s?.last_seen_at ? 0 : FIRST_HEARTBEAT_POLL_MS
+}
+
 function CodeFirst({
   platform,
   onOpenSensor,
@@ -264,15 +273,16 @@ function CodeFirst({
   const [approved, setApproved] = useState<SensorPairingView | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const { data: polled, error: pollError } = usePairingExpectation(
-    approved ? null : (created?.id ?? null)
-  )
+  const {
+    data: polled,
+    error: pollError,
+    isValidating: checking,
+    mutate: checkNow,
+  } = usePairingExpectation(approved ? null : (created?.id ?? null))
   const view = polled ?? created
   const now = useNow(1000)
   const sensorId = approved?.sensor_id ?? null
-  const { data: sensor } = useSensor(sensorId, {
-    refreshInterval: (s?: Sensor) => (s?.last_seen_at ? 0 : FIRST_HEARTBEAT_POLL_MS),
-  })
+  const { data: sensor } = useSensor(sensorId, { refreshInterval: sensorSeenInterval })
   const stage = onboardingStage(view, {
     approvedSensorId: sensorId,
     sensorSeen: !!sensor?.last_seen_at,
@@ -334,10 +344,26 @@ function CodeFirst({
       <OnboardingStatus stage={stage} />
 
       {(stage === 'waiting' || stage === 'compare') && view && <PairingRefusalNotice view={view} />}
-      {stage === 'waiting' && pollError && (
-        <p className="text-sm text-muted-foreground" aria-live="polite">
-          {t('sensors.onboard.pollFailed')}
-        </p>
+      {stage === 'waiting' && (
+        <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+          {pollError ? (
+            <span role="alert" className="text-destructive">
+              {pairingErrorMessage(pollError, t('sensors.onboard.code.pollFailed'), t)}
+            </span>
+          ) : (
+            <span />
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void checkNow()}
+            disabled={checking}
+            aria-busy={checking}
+          >
+            <RefreshCw className={cn('h-4 w-4', checking && 'animate-spin')} />
+            {t('sensors.onboard.code.checkNow')}
+          </Button>
+        </div>
       )}
 
       {stage === 'compare' && view && (
