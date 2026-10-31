@@ -1,6 +1,6 @@
 package handler
 
-// Web page monitoring (docs/rfcs/RFC-137-web-page-monitoring.md).
+// Web page monitoring (docs/rfcs/RFC-138-web-page-monitoring.md).
 
 import (
 	"context"

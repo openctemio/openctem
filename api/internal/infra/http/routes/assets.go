@@ -799,7 +799,7 @@ func registerEASMLookalikeRoutes(
 	}, tenantMiddlewares...)
 }
 
-// registerPageMonitorRoutes registers web page monitoring (RFC-137): reads
+// registerPageMonitorRoutes registers web page monitoring (RFC-138): reads
 // take assets:read plus the data scope of the watch's web service (checked in
 // the service, 404); watch changes schedule active fetches and take
 // scans:write. Behind the attack_surface module.

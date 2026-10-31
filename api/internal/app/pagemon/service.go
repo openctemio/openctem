@@ -1,7 +1,7 @@
 // Package pagemon runs web page monitoring: watch management, the dispatch
 // of due fetches through the coverage path, server-side change detection
 // on fetch results, and alerts.
-// Design: docs/rfcs/RFC-137-web-page-monitoring.md.
+// Design: docs/rfcs/RFC-138-web-page-monitoring.md.
 package pagemon
 
 import (

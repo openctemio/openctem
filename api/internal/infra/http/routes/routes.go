@@ -110,7 +110,7 @@ type Handlers struct {
 	EASMSettings *handler.EASMSettingsHandler
 	// EASMLookalike manages passive lookalike-domain monitoring (RFC-083)
 	EASMLookalike *handler.EASMLookalikeHandler
-	// PageMonitor serves web page monitoring (RFC-137)
+	// PageMonitor serves web page monitoring (RFC-138)
 	PageMonitor *handler.PageMonitorHandler
 	// EASMNetworkSeed manages AS number and organization seeds (RFC-082)
 	EASMNetworkSeed *handler.EASMNetworkSeedHandler
