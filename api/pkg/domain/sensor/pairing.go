@@ -189,6 +189,13 @@ type PairingRepository interface {
 	// AttachToExpectationUnscoped fills an open expectation whose code hash
 	// matches with the sensor's key and nonces; false when none matches.
 	AttachToExpectationUnscoped(ctx context.Context, codeHash string, p *Pairing, now time.Time) (bool, error)
+	// KeyRegisteredUnscoped reports whether the key was ever registered to
+	// a sensor (sensor_keys, any status or tenant).
+	KeyRegisteredUnscoped(ctx context.Context, thumbprint string) (bool, error)
+	// SupersedeForKeyUnscoped closes the key's open, unapproved requests
+	// (expired) except its own reverse-mode request under keepCodeHash that
+	// is still open, and returns the closed ones.
+	SupersedeForKeyUnscoped(ctx context.Context, thumbprint, keepCodeHash string, now time.Time) ([]*Pairing, error)
 	GetForKeyUnscoped(ctx context.Context, id shared.ID, thumbprint string) (*Pairing, error)
 	RevealUnscoped(ctx context.Context, id shared.ID, thumbprint string, sensorNonce []byte, sas string, now time.Time) (bool, error)
 	// FindOpenByCodeHash returns the open, revealed default-mode request

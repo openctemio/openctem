@@ -105,6 +105,9 @@ const POLLING_BASELINE: Record<string, number> = {
   'features/proxy-pools/api/use-proxy-pool-test.ts': 1,
   'features/scan-windows/api/use-scan-windows.ts': 1,
   'features/scans/components/run-detail-sheet.tsx': 1,
+  // The log of a task that is still running or waiting, re-read every 3 s only while
+  // the dialog is open on a live task (no event streams log lines); 0 once it settles.
+  'features/scans/components/run-task-logs-dialog.tsx': 1,
   // The support-access banner (RFC-063): a console session opening or a grant
   // running out is not pushed as an event; one small read a minute tells
   // every member while platform support can read the organization's data.
