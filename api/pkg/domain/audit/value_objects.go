@@ -616,6 +616,8 @@ const (
 	ActionExposureDispositionRejected     Action = "exposure.disposition_rejected"
 	// A refused own approval of a disposition, at High.
 	ActionExposureDispositionSelfApprovalRefused Action = "exposure.disposition_self_approval_refused"
+	// An analyst set or removed the severity override of an exposure.
+	ActionExposureSeverityChanged Action = "exposure.severity_changed"
 
 	// Report schedule actions: a schedule mails organization posture to its
 	// recipients (members or the allowed domains, D12).
@@ -937,7 +939,7 @@ func (a Action) IsValid() bool {
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
 		ActionScopeEffectsApplied,
 		ActionExposureDispositionRequested, ActionExposureDispositionApproved, ActionExposureDispositionSelfApproved, ActionExposureDispositionRejected,
-		ActionExposureDispositionSelfApprovalRefused,
+		ActionExposureDispositionSelfApprovalRefused, ActionExposureSeverityChanged,
 		ActionSuppressionRuleApproved, ActionSuppressionRuleSelfApproved, ActionSuppressionRuleSelfApprovalRefused,
 		ActionSuppressionRuleReviewed, ActionSuppressionRuleSigned, ActionSuppressionRuleApprovalRefused, ActionSuppressionRuleDeleted,
 		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted, ActionReportScheduleDeactivated,
@@ -1091,7 +1093,7 @@ func (a Action) Category() string {
 	case ActionSuppressionRuleReviewed, ActionSuppressionRuleSigned, ActionSuppressionRuleApprovalRefused, ActionSuppressionRuleDeleted:
 		return "suppression"
 	case ActionExposureDispositionRequested, ActionExposureDispositionApproved, ActionExposureDispositionSelfApproved, ActionExposureDispositionRejected,
-		ActionExposureDispositionSelfApprovalRefused:
+		ActionExposureDispositionSelfApprovalRefused, ActionExposureSeverityChanged:
 		return "exposure"
 	case ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted, ActionReportScheduleDeactivated:
 		return "report_schedule"
@@ -1375,7 +1377,7 @@ func SeverityForAction(a Action) Severity {
 		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionActivated,
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
 		ActionSuppressionRuleApproved,
-		ActionExposureDispositionApproved, ActionExposureDispositionRejected,
+		ActionExposureDispositionApproved, ActionExposureDispositionRejected, ActionExposureSeverityChanged,
 		ActionSuppressionRuleReviewed, ActionSuppressionRuleSigned, ActionSuppressionRuleApprovalRefused, ActionSuppressionRuleDeleted,
 		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted, ActionReportScheduleDeactivated,
 		ActionEASMSeedUpdated, ActionEASMSeedDeleted,
