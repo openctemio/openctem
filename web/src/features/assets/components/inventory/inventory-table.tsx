@@ -88,7 +88,7 @@ const PAGE_SIZES = [10, 20, 30, 50, 100]
  * columns instead of scrolling the table sideways. Name, risk, scope and
  * service facts always show (with the checkbox and the row menu they take
  * about 860px); then open findings, criticality, exposure, owner and last
- * seen join in that order (research/242 D9). Each value is the running sum of the columns'
+ * seen join in that order (research/242 D9), with the monitoring state just before last seen. Each value is the running sum of the columns'
  * measured widths in the every-type list, plus a few pixels of slack. A
  * column turned on or off under Columns keeps that choice.
  */
@@ -97,7 +97,8 @@ const COLUMN_ROOM = {
   criticality: 1140,
   exposure: 1255,
   owner: 1355,
-  last_seen: 1475,
+  monitoring_state: 1475,
+  last_seen: 1595,
 } as const
 
 /** A one-type list shows "Service facts" only when its own columns do not already. */
@@ -371,6 +372,7 @@ export function InventoryTable({
       {
         // The one derived lifecycle state (monitored, pending decision, ...).
         id: 'monitoring_state',
+        meta: { hideBelow: COLUMN_ROOM.monitoring_state },
         enableSorting: false,
         header: ({ column }) => (
           <DataTableColumnHeader

@@ -13,17 +13,12 @@ import {
   type ExposureSeverity,
   type ExposureState,
 } from '@/lib/api/exposure-types'
+import { SEVERITY_LEVELS } from '@/lib/severity'
 import { isMonitoringState, type MonitoringState } from '@/features/assets/lib/monitoring-state'
 
 export const EXPOSURE_ITEMS_URL = '/api/v1/attack-surface/exposures'
 
-export const ITEM_SEVERITIES: readonly ExposureSeverity[] = [
-  'critical',
-  'high',
-  'medium',
-  'low',
-  'info',
-]
+export const ITEM_SEVERITIES: readonly ExposureSeverity[] = SEVERITY_LEVELS
 export const ITEM_STATES: readonly ExposureState[] = [
   'active',
   'in_progress',
