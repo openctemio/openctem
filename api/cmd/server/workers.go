@@ -646,6 +646,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			log.With("controller", "member-access-expiry")))
 	}
 
+	// API keys that expire within a week: their holder is told once.
+	if svc.APIKey != nil {
+		w.ControllerManager.Register(controller.NewAPIKeyExpiryNoticeController(svc.APIKey, time.Hour, 200,
+			log.With("controller", "api-key-expiry-notice")))
+	}
+
 	// Team memberships with an end date (RFC-050 W22): removed within a minute.
 	if svc.Group != nil {
 		w.ControllerManager.Register(controller.NewTeamMembershipExpiryController(svc.Group, time.Minute, 200,

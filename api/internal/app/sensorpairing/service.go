@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"strings"
 	"sync"
 	"time"
@@ -26,9 +27,11 @@ import (
 	authapp "github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/edgeaddr"
 	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/jobsign"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/sensorproto/pairing"
@@ -65,14 +68,22 @@ var (
 	ErrInvalid             = errors.New("invalid pairing request")
 	ErrFingerprintRequired = errors.New("the fingerprint must be confirmed")
 	ErrLookupLocked        = errors.New("too many failed lookups")
-	ErrStepUpRequired      = authapp.ErrStepUpRequired
-	ErrStepUpFailed        = authapp.ErrStepUpFailed
+	// ErrOrganizationMismatch: the approval names another organization than
+	// the session's (the approver switched organization after the review).
+	ErrOrganizationMismatch = errors.New("the approval names another organization")
+	ErrStepUpRequired       = authapp.ErrStepUpRequired
+	ErrStepUpFailed         = authapp.ErrStepUpFailed
 )
 
 // StepUpVerifier re-authenticates the approving user (auth.AuthService).
 type StepUpVerifier interface {
 	VerifyStepUp(ctx context.Context, userID, sessionID string, proof authapp.StepUpProof) error
 	StepUpMethodFor(ctx context.Context, userID string) (authapp.StepUpMethod, error)
+}
+
+// TenantDirectory reads an organization's name for the approval screen.
+type TenantDirectory interface {
+	GetByID(ctx context.Context, id shared.ID) (*tenantdom.Tenant, error)
 }
 
 // AdminDirectory lists a tenant's active owners and administrators.
@@ -133,6 +144,8 @@ type Service struct {
 	adminAudit AdminAuditWriter
 	// tokens stores organization enrollment tokens (nil: none).
 	tokens sensordom.EnrollmentTokenRepository
+	// tenants names the organization an approval binds to (nil: id only).
+	tenants TenantDirectory
 
 	platformKey ed25519.PrivateKey
 	codeKey     []byte
@@ -172,6 +185,7 @@ func (s *Service) SetNotifications(d AdminDirectory, n InAppNotifier) {
 func (s *Service) SetEvents(e EventRecorder)      { s.events = e }
 func (s *Service) SetApprovalHook(h ApprovalHook) { s.hook = h }
 func (s *Service) SetMaxOpen(n int)               { s.maxOpen = n }
+func (s *Service) SetTenants(t TenantDirectory)   { s.tenants = t }
 func (s *Service) SetClock(now func() time.Time)  { s.now = now }
 func (s *Service) PlatformPublicKey() ed25519.PublicKey {
 	pub, _ := s.platformKey.Public().(ed25519.PublicKey)
@@ -487,12 +501,27 @@ type View struct {
 	KeyFingerprint string                     `json:"key_fingerprint,omitempty"`
 	HostFacts      sensordom.PairingHostFacts `json:"host_facts"`
 	SourceIP       string                     `json:"source_ip,omitempty"`
-	RepairSensorID string                     `json:"repair_sensor_id,omitempty"`
-	RepairSensor   string                     `json:"repair_sensor_name,omitempty"`
-	SensorID       string                     `json:"sensor_id,omitempty"`
-	Code           string                     `json:"code,omitempty"`
-	CreatedAt      time.Time                  `json:"created_at"`
-	ExpiresAt      time.Time                  `json:"expires_at"`
+	// SourceNetwork classifies SourceIP: "private" (a private, loopback or
+	// link-local address: an internal network, or a proxy that hid the
+	// sensor's address) or "public".
+	SourceNetwork string `json:"source_network,omitempty"`
+	// SourceProvider is the edge or hosting provider SourceIP belongs to,
+	// when the address classifier knows it.
+	SourceProvider string `json:"source_provider,omitempty"`
+	// ApproverIP is the address the viewer's own request came from, shown
+	// next to SourceIP.
+	ApproverIP string `json:"approver_ip,omitempty"`
+	// OrganizationID and OrganizationName are the organization an approval
+	// binds the sensor to: the session's. The approval must name the same
+	// id, so a switch of organization after the review is refused.
+	OrganizationID   string    `json:"organization_id"`
+	OrganizationName string    `json:"organization_name,omitempty"`
+	RepairSensorID   string    `json:"repair_sensor_id,omitempty"`
+	RepairSensor     string    `json:"repair_sensor_name,omitempty"`
+	SensorID         string    `json:"sensor_id,omitempty"`
+	Code             string    `json:"code,omitempty"`
+	CreatedAt        time.Time `json:"created_at"`
+	ExpiresAt        time.Time `json:"expires_at"`
 	// StepUp is what the viewer must present to approve ("totp",
 	// "password" or "fresh_sign_in").
 	StepUp string `json:"step_up,omitempty"`
@@ -548,12 +577,19 @@ func (s *Service) SetJobSigningRoot(f func(ctx context.Context) string) { s.jobR
 
 func (s *Service) view(ctx context.Context, actor Actor, p *sensordom.Pairing) *View {
 	v := &View{ID: p.ID.String(), Mode: string(p.Mode), Status: string(p.Status), SAS: p.SAS,
-		HostFacts: p.HostFacts, CreatedAt: p.CreatedAt, ExpiresAt: p.ExpiresAt}
+		HostFacts: p.HostFacts, CreatedAt: p.CreatedAt, ExpiresAt: p.ExpiresAt,
+		ApproverIP: actor.IP, OrganizationID: actor.TenantID.String()}
 	if p.Thumbprint != "" {
 		v.KeyFingerprint = pairing.KeyFingerprint(p.Thumbprint)
 	}
 	if p.SourceIP != nil {
 		v.SourceIP = p.SourceIP.String()
+		v.SourceNetwork, v.SourceProvider = classifySource(p.SourceIP)
+	}
+	if s.tenants != nil {
+		if t, err := s.tenants.GetByID(ctx, actor.TenantID); err == nil && t != nil {
+			v.OrganizationName = t.Name()
+		}
 	}
 	if p.SensorID != nil {
 		v.SensorID = p.SensorID.String()
@@ -585,16 +621,16 @@ func (s *Service) Lookup(ctx context.Context, actor Actor, code string) (*View, 
 	}
 	norm, err := pairing.NormalizeCode(code)
 	if err != nil {
-		s.lookupFailed(actor.UserID)
+		s.lookupMissed(ctx, actor)
 		return nil, ErrNotFound
 	}
 	p, err := s.repo.FindOpenByCodeHash(ctx, s.codeHash(norm), s.now())
 	if err != nil {
-		s.lookupFailed(actor.UserID)
+		s.lookupMissed(ctx, actor)
 		return nil, ErrNotFound
 	}
 	if p.RepairSensorID != nil && !s.sensorInTenant(ctx, actor.TenantID, *p.RepairSensorID) {
-		s.lookupFailed(actor.UserID)
+		s.lookupMissed(ctx, actor)
 		return nil, ErrNotFound
 	}
 	return s.view(ctx, actor, p), nil
@@ -664,20 +700,30 @@ type ApproveInput struct {
 	// it, so knowing a request id alone never lets anyone claim it.
 	Code                 string
 	FingerprintConfirmed bool
-	StepUp               authapp.StepUpProof
-	Name                 string
-	Type                 sensordom.SensorType
-	ZoneIDs              []shared.ID
-	Profile              string
+	// OrganizationID is the organization the approver saw on the review;
+	// it must be the session's.
+	OrganizationID string
+	StepUp         authapp.StepUpProof
+	Name           string
+	Type           sensordom.SensorType
+	ZoneIDs        []shared.ID
+	Profile        string
 }
 
 // Approve binds the request's key to the actor's tenant (a new sensor, or
 // the re-paired one). Order of checks: the confirmation box, step-up, then
 // the request itself (so an attacker with a stolen session learns nothing
-// about codes without the second factor).
+// about codes without the second factor). The organization check comes
+// before step-up, so a refused approval spends no second factor.
 func (s *Service) Approve(ctx context.Context, actor Actor, id shared.ID, in ApproveInput) (*View, error) {
 	if !in.FingerprintConfirmed {
 		return nil, ErrFingerprintRequired
+	}
+	if in.OrganizationID != actor.TenantID.String() {
+		s.logAudit(ctx, s.auditContext(actor), auditapp.NewFailureEvent(auditdom.ActionSensorPairingApproved, auditdom.ResourceTypeSensor, id.String(), ErrOrganizationMismatch).
+			WithMessage("Sensor pairing approval refused: it named another organization than the session's").
+			WithSeverity(auditdom.SeverityMedium).WithMetadata("named_organization_id", truncate(in.OrganizationID, 64)))
+		return nil, ErrOrganizationMismatch
 	}
 	if s.stepUp == nil {
 		return nil, ErrStepUpRequired
@@ -798,9 +844,15 @@ func (s *Service) onApproved(ctx context.Context, actor Actor, res *sensordom.Pa
 	s.notifyAdmins(ctx, actor.TenantID, "Sensor "+verb+": "+name, msg, "high")
 }
 
-// Deny refuses an open request.
-func (s *Service) Deny(ctx context.Context, actor Actor, id shared.ID) error {
-	p, err := s.repo.Deny(ctx, actor.TenantID, id, actor.UserID, s.now())
+// Deny refuses an open request: one of the actor's organization, or a
+// tenantless default-mode request whose code the actor entered (like an
+// approval, the id alone is never enough).
+func (s *Service) Deny(ctx context.Context, actor Actor, id shared.ID, code string) error {
+	codeHash := ""
+	if norm, err := pairing.NormalizeCode(code); err == nil {
+		codeHash = s.codeHash(norm)
+	}
+	p, err := s.repo.Deny(ctx, actor.TenantID, id, actor.UserID, codeHash, s.now())
 	if err != nil {
 		return ErrNotFound
 	}
@@ -892,10 +944,24 @@ func (s *Service) lookupLocked(user shared.ID) bool {
 	return len(kept) >= LookupFailureLimit
 }
 
-func (s *Service) lookupFailed(user shared.ID) {
+// lookupFailed counts a failed lookup and reports whether this one locked
+// the user's lookups.
+func (s *Service) lookupFailed(user shared.ID) bool {
 	s.lookupMu.Lock()
 	defer s.lookupMu.Unlock()
 	s.lookupFailures[user] = append(s.lookupFailures[user], s.now())
+	return len(s.lookupFailures[user]) == LookupFailureLimit
+}
+
+// lookupMissed counts a failed lookup; the one that locks the user's
+// lookups is audited (code guessing, or codes sent by someone else).
+func (s *Service) lookupMissed(ctx context.Context, actor Actor) {
+	if !s.lookupFailed(actor.UserID) {
+		return
+	}
+	s.logAudit(ctx, s.auditContext(actor), auditapp.NewFailureEvent(auditdom.ActionSensorPairingLookupLocked, auditdom.ResourceTypeSensor, actor.UserID.String(), ErrLookupLocked).
+		WithMessage(fmt.Sprintf("Pairing code lookups locked for this user after %d failed lookups within %s", LookupFailureLimit, LookupFailureWindow)).
+		WithSeverity(auditdom.SeverityHigh))
 }
 
 // sanitizeHostFacts bounds and cleans the claims a sensor sent.
@@ -926,6 +992,27 @@ func sanitizeName(s string) string {
 	s = cleanFact(s)
 	if len(s) > maxNameLen {
 		s = s[:maxNameLen]
+	}
+	return s
+}
+
+// classifySource says whether a request came from a private or a public
+// address, and from which known edge or hosting provider.
+func classifySource(ip net.IP) (network, provider string) {
+	a, ok := netip.AddrFromSlice(ip)
+	if !ok {
+		return "", ""
+	}
+	a = a.Unmap()
+	if a.IsPrivate() || a.IsLoopback() || a.IsLinkLocalUnicast() || a.IsUnspecified() {
+		return "private", ""
+	}
+	return "public", edgeaddr.Default().Address(a.String(), "", "").Provider
+}
+
+func truncate(s string, n int) string {
+	if len(s) > n {
+		return s[:n]
 	}
 	return s
 }

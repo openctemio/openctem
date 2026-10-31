@@ -85,6 +85,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		ThreatIntelRead, ThreatIntelWrite,
 		// AI Triage
 		AITriageRead, AITriageTrigger,
+		AIKnowledgeRead, AIKnowledgeManage,
 		// CTEM (RFC-004 + RFC-005)
 		CTEMCyclesRead, CTEMCyclesWrite,
 		AttackerProfilesRead, AttackerProfilesWrite,
@@ -167,6 +168,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		ThreatIntelRead, ThreatIntelWrite,
 		// AI Triage
 		AITriageRead, AITriageTrigger,
+		AIKnowledgeRead, AIKnowledgeManage,
 		// CTEM (RFC-004 + RFC-005)
 		CTEMCyclesRead, CTEMCyclesWrite,
 		AttackerProfilesRead, AttackerProfilesWrite,

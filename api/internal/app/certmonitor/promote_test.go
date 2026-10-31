@@ -23,6 +23,9 @@ type fakeInventory struct {
 	ingests int
 	tenants []shared.ID
 	reports [][]string
+	// source is the discovery_source every ingested asset must carry ("" =
+	// cert_transparency).
+	source string
 }
 
 func newFakeInventory() *fakeInventory { return &fakeInventory{byName: map[string]*assetdom.Asset{}} }
@@ -43,7 +46,11 @@ func (f *fakeInventory) Ingest(_ context.Context, agt *sensor.Sensor, in ingest.
 	out := &ingest.Output{AssetMap: map[string]shared.ID{}}
 	var names []string
 	for _, a := range in.Report.Assets {
-		if a.Properties[assetdom.PropKeyDiscoverySource] != assetdom.DiscoverySourceCertTransparency {
+		want := f.source
+		if want == "" {
+			want = assetdom.DiscoverySourceCertTransparency
+		}
+		if a.Properties[assetdom.PropKeyDiscoverySource] != want {
 			return nil, fmt.Errorf("discovery source not stamped on %s", a.Value)
 		}
 		as, err := assetdom.NewAssetWithTenant(*agt.TenantID, a.Value, assetdom.AssetTypeSubdomain, assetdom.CriticalityMedium)
