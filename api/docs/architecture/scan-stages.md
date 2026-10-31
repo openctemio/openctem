@@ -337,6 +337,19 @@ runs <capability> is installed", never failed and never silent; the trigger
 does not refuse a run for it. A tool that exists but has no online sensor
 refuses the run like any step.
 
+Workflow readiness (`GET /scan-workflows?include=readiness`, the New Scan
+picker and the server-side refusal `WORKFLOW_NOT_RUNNABLE`) follows the
+same rule: an optional step that no installed and enabled tool implements
+is reported with step state `skipped` and its reason, and does not count
+toward the workflow's state, so the workflow stays `ready` or `waiting`. An
+optional step whose tool is installed keeps its sensor state (the run
+dispatches it). A workflow whose every step is skipped is `blocked`. Each
+step carries a stable reason `code` (`sensor_offline`, `no_sensor_yet`,
+`ci_only`, `no_tool`, `tool_disabled`, `tool_not_installed`,
+`no_sensor`) and the `tools` it names, which the web app renders in the
+reader's language; the workflow list badge opens the steps, their reasons
+and the fix link.
+
 **Run rules** (workflow settings, both off for existing workflows; omitted on
 an update means unchanged):
 
