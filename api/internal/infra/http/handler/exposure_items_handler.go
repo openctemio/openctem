@@ -63,15 +63,7 @@ type ExposureAssetGroupResponse struct {
 func (h *ExposureHandler) SetItemsView(policy AssetUnclassifiedPolicy) { h.unclassified = policy }
 
 func (h *ExposureHandler) itemsScanned(r *http.Request, tenantID string) bool {
-	if h.unclassified == nil {
-		return false
-	}
-	tid, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return false
-	}
-	mode, err := h.unclassified.UnclassifiedMode(r.Context(), tid)
-	return err == nil && mode != "" && mode != "off"
+	return unclassifiedScannedBy(r, h.unclassified, tenantID)
 }
 
 func exposureItemsCaller(r *http.Request) exposuresvc.ItemsCaller {
