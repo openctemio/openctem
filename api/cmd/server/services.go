@@ -2564,6 +2564,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.VulnMatch.SetEnrichment(s.PriorityClassification, sla.NewApplier(s.SLA), repos.Asset)
 	s.VulnMatch.SetClosureSettings(s.Tenant) // Each organization's closing mode decides (version-change closes)
 	s.VulnMatch.SetIssueLinker(repos.FindingIssueLinks)
+	s.VulnMatch.SetReceiptRecorder(repos.IngestReceipt) // Matched findings are booked on the platform's own receipt
 	s.VulnMatch.SetLinkReader(repos.Software)
 	s.VulnMatch.SetRemediationKeyApplier(remediationKeys)
 	s.VulnMatch.SetVEXApplier(s.VEX) // The organization's VEX statements cover matched findings too

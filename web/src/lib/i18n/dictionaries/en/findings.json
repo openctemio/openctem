@@ -1306,6 +1306,7 @@
   "findings.receipts.kindCiRun": "CI run",
   "findings.receipts.kindCommand": "Scan task",
   "findings.receipts.kindConnector": "Connector sync",
+  "findings.receipts.kindPlatform": "Platform match",
   "findings.receipts.kindScanRun": "Scan run",
   "findings.receipts.kindSensor": "Sensor report",
   "findings.receipts.kindUpload": "Import",

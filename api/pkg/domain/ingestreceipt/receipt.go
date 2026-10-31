@@ -28,11 +28,14 @@ const (
 	SourceConnector SourceKind = "connector"
 	// SourceSensor is a report a sensor pushed without a command.
 	SourceSensor SourceKind = "sensor"
+	// SourcePlatform is what the platform derived itself (the inventory
+	// version matcher's findings): its own receipt, never a sensor's.
+	SourcePlatform SourceKind = "platform"
 )
 
 // AllSourceKinds lists the kinds a list filter accepts.
 func AllSourceKinds() []SourceKind {
-	return []SourceKind{SourceUpload, SourceScanRun, SourceCommand, SourceCIRun, SourceConnector, SourceSensor}
+	return []SourceKind{SourceUpload, SourceScanRun, SourceCommand, SourceCIRun, SourceConnector, SourceSensor, SourcePlatform}
 }
 
 // IsValid reports whether k is a known kind.
@@ -54,6 +57,8 @@ func (k SourceKind) FactKind() string {
 		return "ci"
 	case SourceConnector:
 		return "connector"
+	case SourcePlatform:
+		return "platform"
 	default:
 		return "sensor"
 	}
@@ -286,6 +291,10 @@ type Delta struct {
 	TenantID shared.ID
 	Source   Source
 	Tool     string
+	// Instance is what sent the report (a sensor, a CI repository, a
+	// connector, the platform); empty for a coverage decision, which adds to
+	// the receipt's own counts only.
+	Instance Instance
 	// Reports is 1 for an ingest, 0 for a coverage decision.
 	Reports       int
 	Received      int
@@ -315,6 +324,34 @@ type Delta struct {
 
 	Errors []ErrorEntry
 	At     time.Time
+}
+
+// Instance kinds: what sent a report.
+const (
+	InstanceSensor    = "sensor"
+	InstanceCI        = "ci"
+	InstanceConnector = "connector"
+	InstancePlatform  = "platform"
+	InstanceImport    = "import"
+)
+
+// IsInstanceKind reports whether k is one of the Instance* kinds.
+func IsInstanceKind(k string) bool {
+	switch k {
+	case InstanceSensor, InstanceCI, InstanceConnector, InstancePlatform, InstanceImport:
+		return true
+	}
+	return false
+}
+
+// Instance is the sender of a report: Kind is one of the Instance* kinds, ID
+// its key (a sensor id, a CI repository, a connector source name,
+// "platform", "import"), Name a display name when the ID is not one
+// (untrusted text, clipped by the repository).
+type Instance struct {
+	Kind string
+	ID   string
+	Name string
 }
 
 // Empty reports whether the delta changes nothing.
@@ -379,7 +416,7 @@ const UnknownTool = "unknown"
 
 // Origins lists the source groups a list filter and the dashboards accept
 // (the FactKind of every source kind).
-func Origins() []string { return []string{"sensor", "import", "connector", "ci"} }
+func Origins() []string { return []string{"sensor", "import", "connector", "ci", "platform"} }
 
 // IsOrigin reports whether o is a known source group.
 func IsOrigin(o string) bool {

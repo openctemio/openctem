@@ -296,6 +296,29 @@ type IntakeRow struct {
 	LastStatus    string
 	LastReceiptID shared.ID
 	MedianGap     *time.Duration
+	// Assets is the assets the source's reports created or updated.
+	Assets int64
+	// Instances are the senders of the source's reports (sensors, CI
+	// repositories, connectors), busiest first; their figures sum to the
+	// row's.
+	Instances []IntakeInstanceRow
+}
+
+// IntakeInstanceRow is what one sender of a source sent in the window.
+// Name is the sender's display name (a tenant sensor's current name, a CI
+// repository, a connector source); Owned is true for a sensor of the
+// tenant, the only kind with a page to open.
+type IntakeInstanceRow struct {
+	Kind       string
+	ID         string
+	Name       string
+	Owned      bool
+	Receipts   int64
+	Received   int64
+	Assets     int64
+	LastAt     time.Time
+	LastStatus string
+	MedianGap  *time.Duration
 }
 
 // CrownJewelCounts are the crown jewels of a scope.
