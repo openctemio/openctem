@@ -113,3 +113,18 @@ func TestTechnologiesOf_Typed(t *testing.T) {
 		t.Fatalf("got %v %v", got, ok)
 	}
 }
+
+// A typed detection's CPE gives the technology its vendor and CPE; a value
+// that is not a CPE gives nothing.
+func TestTechnologyObservations_CPE(t *testing.T) {
+	id := shared.NewID()
+	a := &ctis.Asset{Technologies: []ctis.Technology{
+		{Name: "nginx", Version: "1.18.0", CPE: "cpe:2.3:a:f5:nginx:1.18.0:*:*:*:*:*:*:*"},
+		{Name: "Acme", CPE: "not a cpe"},
+	}}
+	got := technologyObservations(id, a, "httpx", time.Now())
+	if len(got) != 2 || got[0].Vendor != "f5" || got[0].CPE != "cpe:2.3:a:f5:nginx:1.18.0:*:*:*:*:*:*:*" ||
+		got[1].Vendor != "" || got[1].CPE != "" {
+		t.Fatalf("observations = %+v", got)
+	}
+}

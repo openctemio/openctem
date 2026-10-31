@@ -232,6 +232,8 @@
   "assets.chip.tagsAll": "Tags include all of {values}",
   "assets.chip.technology": "Technology",
   "assets.chip.technologyCategory": "Technology category",
+  "assets.chip.technologyVersion": "Version is {version}",
+  "assets.chip.technologyVersionUnknown": "Version unknown",
   "assets.cia.availability": "Availability",
   "assets.cia.availability.consequence": "Business impact if loss of access or uptime occurred.",
   "assets.cia.confidentiality": "Confidentiality",

@@ -42,6 +42,7 @@ import type { WidgetValue } from '../api/widget-data'
 import type { VizType, WidgetSpec } from '../api/widget-spec'
 import { reasonKeyOf, specOf, unitOf, widgetModel, type WidgetModel } from '../api/widget-adapter'
 import {
+  defaultWidgetTitle,
   kitPolarity,
   metricDefinitionKey,
   metricEmptyAction,
@@ -205,7 +206,7 @@ export function WidgetView({
     (spec?.data.kind === 'note'
       ? t('dashboards.widget.note', 'Note')
       : metric
-        ? t(metricNameKey(metric), metric)
+        ? (defaultWidgetTitle(spec, t) ?? t(metricNameKey(metric), metric))
         : t('dashboards.widget.legacy', 'Earlier tile'))
 
   if (spec?.data.kind === 'note') {

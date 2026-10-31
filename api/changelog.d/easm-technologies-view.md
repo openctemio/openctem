@@ -1,0 +1,6 @@
+### Added: Technologies view of the external attack surface
+
+- `GET /api/v1/attack-surface/technologies` lists the technologies detected on the tenant's assets, one row per technology and version, with the vendor, category, detecting tools, the number of assets running it, the CVEs the corpus knows for that version (count, top CVE and its CVSS), a known-exploited and public-exploit flag and the open emerging-threat alerts about those CVEs. `GET /api/v1/attack-surface/technologies/stats` counts the same set. Both follow the list query contract (filters, sort, search, pagination), apply the caller's data scope to every asset before counting and need `assets:read`.
+- The External Attack Surface section has a Technologies tab: version rows, a count strip (with CVEs, known exploited, version unknown) that filters the table, category and version filters, server-side sort and a CSV export. The asset count opens the asset inventory filtered to that exact version.
+- `GET /api/v1/assets` takes `technology_version` (with `technology`): only assets running that exact version; present and empty selects a version the tools could not tell.
+- Migration `20261030200208_asset_technologies_vendor_cpe` adds the nullable `vendor` and `cpe` columns to `asset_technologies` (catalog-only change, no backfill); a probe's CPE 2.3 name now fills them.
