@@ -669,6 +669,7 @@ var Registry = []Definition{
 		Category:    "settings", DisplayOrder: 66, Release: ReleaseStatusReleased,
 		Core:       true,
 		Permission: "integrations:api_keys:read",
+		Jobs:       []string{"APIKeyExpiryNoticeController"},
 	},
 	{
 		ID: ModuleNotificationSettings, Slug: "notification_settings", Name: "Notifications",

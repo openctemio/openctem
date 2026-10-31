@@ -4,7 +4,7 @@ import { useMemo } from 'react'
 import { useTranslation } from '@/context/i18n-provider'
 import { enTranslate, type Translate } from '../lib/translate'
 import useSWR from 'swr'
-import { ArrowRight, Link2 } from 'lucide-react'
+import { ArrowRight, Link2, Waves } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -13,6 +13,7 @@ import { get } from '@/lib/api/client'
 import { scanRunEndpoints } from '@/lib/api/endpoints'
 import type { RunStage, RunStageList } from '@/lib/api/generated'
 import { useCapabilityTable } from '@/features/scan-workflows/lib/use-capability-table'
+import { formatDurationShort } from '@/features/sensors/lib/format'
 
 /** Why the hop router left targets out (scan_run_targets reasons) have labels under scans.stage.skip. */
 const SKIP_REASONS = new Set([
@@ -47,6 +48,32 @@ export function chunkSummary(c?: RunStage['chunks'], t: Translate = enTranslate)
   return parts.join(', ')
 }
 
+/** A step's start and finish, as the run's step list serves them. */
+export interface StepSpan {
+  step_key?: string
+  started_at?: string
+  completed_at?: string
+}
+
+/**
+ * Seconds a streamed stage started before the step that fed it finished.
+ * The stage API does not name the feeder, so it is the one other step that
+ * was running when this stage first dispatched and finished after it. With
+ * none, or several candidates, there is no honest figure: null.
+ */
+export function streamSavedSeconds(lane: RunStage, steps?: StepSpan[]): number | null {
+  if (!lane.streamed || !lane.first_dispatch_at || !steps) return null
+  const first = Date.parse(lane.first_dispatch_at)
+  if (Number.isNaN(first)) return null
+  const feeders = steps.filter((st) => {
+    if (st.step_key === lane.stage_key || !st.started_at || !st.completed_at) return false
+    return Date.parse(st.started_at) <= first && Date.parse(st.completed_at) > first
+  })
+  if (feeders.length !== 1) return null
+  const saved = (Date.parse(feeders[0].completed_at!) - first) / 1000
+  return saved >= 1 ? saved : null
+}
+
 export function stageLabel(
   stage?: string,
   names?: Record<string, string>,
@@ -77,11 +104,14 @@ export function RunStageLanes({
   runId,
   refreshInterval,
   settled = false,
+  steps,
 }: {
   runId: string
   refreshInterval?: number
   /** The run has finished: an empty list means it never had a stage plan. */
   settled?: boolean
+  /** The run's steps, to show how much earlier a streamed stage started. */
+  steps?: StepSpan[]
 }) {
   const { t } = useTranslation()
   const { table } = useCapabilityTable()
@@ -107,16 +137,25 @@ export function RunStageLanes({
   return (
     <ol className="space-y-2" aria-label={t('scans.stage.listLabel')}>
       {lanes.map((lane) => (
-        <StageLane key={lane.stage_key} lane={lane} names={names} />
+        <StageLane key={lane.stage_key} lane={lane} names={names} steps={steps} />
       ))}
     </ol>
   )
 }
 
-function StageLane({ lane, names }: { lane: RunStage; names: Record<string, string> }) {
+function StageLane({
+  lane,
+  names,
+  steps,
+}: {
+  lane: RunStage
+  names: Record<string, string>
+  steps?: StepSpan[]
+}) {
   const { t } = useTranslation()
   const reasons = skippedReasons(lane.skipped)
   const tier = lane.tier ?? 'T0'
+  const saved = streamSavedSeconds(lane, steps)
   return (
     <li className="rounded-md border p-3" data-testid="stage-lane">
       <div className="flex flex-wrap items-center gap-2">
@@ -136,6 +175,19 @@ function StageLane({ lane, names }: { lane: RunStage; names: Record<string, stri
           <Badge variant="outline" className="gap-1">
             <Link2 className="h-3 w-3" aria-hidden="true" />
             {t('scans.stage.chained')}
+          </Badge>
+        )}
+        {lane.streamed && (
+          <Badge
+            variant={lane.stream_open ? 'secondary' : 'outline'}
+            className="gap-1"
+            title={t('scans.stage.streamTitle')}
+            data-testid="stage-stream-badge"
+          >
+            <Waves className="h-3 w-3" aria-hidden="true" />
+            {lane.stream_open
+              ? t('scans.stage.streaming')
+              : t('scans.stage.streamedWaves', undefined, { count: lane.waves ?? 0 })}
           </Badge>
         )}
         <span className="ms-auto text-xs text-muted-foreground">
@@ -161,6 +213,11 @@ function StageLane({ lane, names }: { lane: RunStage; names: Record<string, stri
           </span>
         )}
       </div>
+      {saved !== null && (
+        <p className="mt-2 text-xs tabular-nums text-muted-foreground" data-testid="stage-saved">
+          {t('scans.stage.streamSaved', undefined, { time: formatDurationShort(saved) })}
+        </p>
+      )}
       {chunkSummary(lane.chunks, t) && (
         <div className="mt-2 text-xs" data-testid="stage-chunks">
           <p className="tabular-nums text-muted-foreground">{chunkSummary(lane.chunks, t)}</p>

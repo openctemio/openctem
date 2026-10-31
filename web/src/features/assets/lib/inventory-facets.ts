@@ -165,6 +165,7 @@ const DISCOVERED_BY_FALLBACK: Record<string, string> = {
   tenant_scanned: 'A scan target',
   tenant_scan_discovered: 'Found by a scan',
   matches_scope_target: 'Under a scope entry',
+  certificate_san: 'Named in a TLS certificate',
 }
 
 /** The asset types the Type facet offers (the open lens's, or all) with labels and counts. */
