@@ -89,6 +89,13 @@ export function SensorOnboardingPanel({
   const { t } = useTranslation()
   const ids = { where: useId(), run: useId() }
   const [platform, setPlatform] = useState<OnboardingPlatform>('docker')
+  const [stage, setStage] = useState<OnboardingStage>('start')
+  const runTitle =
+    stage === 'compare'
+      ? t('sensors.onboard.approve.title')
+      : stage === 'approved' || stage === 'online'
+        ? t('sensors.onboard.paired.title')
+        : t('sensors.onboard.run.title')
 
   return (
     <div className={cn('space-y-6', className)} data-testid="sensor-onboarding">
@@ -115,10 +122,11 @@ export function SensorOnboardingPanel({
         </RadioGroup>
       </PanelStep>
 
-      <PanelStep n={2} id={ids.run} title={t('sensors.onboard.run.title')}>
+      <PanelStep n={2} id={ids.run} title={runTitle}>
         <InstallSession
           platform={platform}
           autoStart={autoStart}
+          onStage={setStage}
           onOpenSensor={onOpenSensor}
           onDone={onDone}
         />
@@ -261,11 +269,14 @@ function sensorSeenInterval(s?: Sensor): number {
 function InstallSession({
   platform,
   autoStart,
+  onStage,
   onOpenSensor,
   onDone,
 }: {
   platform: OnboardingPlatform
   autoStart: boolean
+  /** Where the pairing stands, for the step's heading. */
+  onStage?: (s: OnboardingStage) => void
   onOpenSensor?: (s: Sensor) => void
   onDone?: () => void
 }) {
@@ -289,6 +300,10 @@ function InstallSession({
     sensorSeen: !!sensor?.last_seen_at,
     now,
   })
+
+  useEffect(() => {
+    onStage?.(stage)
+  }, [stage, onStage])
 
   const create = async () => {
     setError(null)

@@ -247,6 +247,9 @@ function sourceLabel(view: SensorPairingView, t: (key: string) => string): strin
     view.source_network ? t(`sensors.pair.fact.network.${view.source_network}`) : '',
     view.source_provider ?? '',
   ].filter(Boolean)
+  if (view.approver_ip && view.approver_ip === view.source_ip) {
+    notes.push(t('sensors.pair.fact.sameAsYou'))
+  }
   return notes.length ? `${view.source_ip} (${notes.join(', ')})` : view.source_ip
 }
 
@@ -348,6 +351,12 @@ export function PairingReview({
   const facts = view.host_facts ?? {}
   const org = useApprovalOrganization(view)
   const ready = !!view.sas && view.status === 'pending' && left > 0 && !org.mismatch
+  // The pick sits first, under the warnings: "the host shows X, pick X" is
+  // the one thing every approver must do; the facts below it are the check.
+  const [pick, setPick] = useState('')
+  // A wrong pick closed the request on the server: nothing more to submit.
+  const [closed, setClosed] = useState(false)
+  const choices = view.fingerprint_choices ?? []
 
   return (
     <div className="space-y-4">
@@ -361,6 +370,10 @@ export function PairingReview({
           </AlertTitle>
           <AlertDescription>{t('sensors.pair.repairBody')}</AlertDescription>
         </Alert>
+      )}
+
+      {ready && choices.length > 0 && (
+        <FingerprintPicker choices={choices} value={pick} onChange={setPick} disabled={closed} />
       )}
 
       {!view.sas && (
@@ -419,7 +432,15 @@ export function PairingReview({
       </p>
 
       {ready ? (
-        <ApprovalForm view={view} code={code} onApproved={onApproved} onRejected={onDone} />
+        <ApprovalForm
+          view={view}
+          code={code}
+          pick={pick}
+          closed={closed}
+          onClosed={() => setClosed(true)}
+          onApproved={onApproved}
+          onRejected={onDone}
+        />
       ) : (
         left === 0 && (
           <p role="alert" className="text-sm text-destructive">
@@ -434,11 +455,18 @@ export function PairingReview({
 function ApprovalForm({
   view,
   code,
+  pick,
+  closed,
+  onClosed,
   onApproved,
   onRejected,
 }: {
   view: SensorPairingView
   code?: string
+  /** The fingerprint picked above the facts ("" before a pick). */
+  pick: string
+  closed: boolean
+  onClosed: () => void
   onApproved: (v: SensorPairingView) => void
   onRejected: () => void
 }) {
@@ -462,9 +490,6 @@ function ApprovalForm({
   const [zoneIds, setZoneIds] = useState<string[]>([])
   const [profile, setProfile] = useState(DEFAULT_GRANT_PROFILE)
   const [integration, setIntegration] = useState('')
-  const [pick, setPick] = useState('')
-  // A wrong pick closed the request on the server: nothing more to submit.
-  const [closed, setClosed] = useState(false)
   const [secret, setSecret] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<'approve' | 'reject' | null>(null)
@@ -515,7 +540,7 @@ function ApprovalForm({
       setSecret('')
       setError(pairingErrorMessage(err, t('sensors.pair.err.approve'), t))
       if ((err as { code?: string } | null)?.code === 'FINGERPRINT_MISMATCH') {
-        setClosed(true)
+        onClosed()
         await invalidateSensorsCache()
       } else {
         secretRef.current?.focus()
@@ -551,15 +576,6 @@ function ApprovalForm({
         if (canSubmit) void approve()
       }}
     >
-      {view.fingerprint_choices && view.fingerprint_choices.length > 0 && (
-        <FingerprintPicker
-          choices={view.fingerprint_choices}
-          value={pick}
-          onChange={setPick}
-          disabled={closed || busy !== null}
-        />
-      )}
-
       <div className="space-y-1.5">
         <Label htmlFor={ids.name}>{t('sensors.pair.name')}</Label>
         <Input
