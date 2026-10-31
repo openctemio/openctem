@@ -193,9 +193,10 @@ func TestOrganizationSignOnIdentity_IsNotSocial(t *testing.T) {
 }
 
 // A social Microsoft sign-in through an identity an organization's sign-on
-// manages signs in to that account but never moves its address: the
-// organization changes it only for a domain it proved.
-func TestSocialSignIn_ThroughOrganizationIdentityKeepsTheAddress(t *testing.T) {
+// manages is refused (OAUTH_USE_ORG_SSO) and never moves its address: the
+// organization changes it only for a domain it proved. A social identity
+// still signs in and follows the provider's address.
+func TestSocialSignIn_RefusedOnOrganizationIdentityKeepsTheAddress(t *testing.T) {
 	acct, err := userdom.NewFederatedUser("p@contoso.example", "P", "", userdom.AuthProviderMicrosoft)
 	if err != nil {
 		t.Fatal(err)
@@ -205,8 +206,8 @@ func TestSocialSignIn_ThroughOrganizationIdentityKeepsTheAddress(t *testing.T) {
 	f.idents.bindSSO(acct, entraIssuer, "oid-p")
 	got, err := f.svc.findOrCreateUser(context.Background(),
 		&OAuthUserInfo{Email: "p@unproved.example", Issuer: entraIssuer, Subject: "oid-p"}, OAuthProviderMicrosoft)
-	if err != nil || got.ID() != acct.ID() {
-		t.Fatalf("sign-in: %v", err)
+	if !errors.Is(err, ErrOAuthUseOrgSSO) || got != nil {
+		t.Fatalf("sign-in must be refused, got %v / %v", got, err)
 	}
 	if acct.Email() != "p@contoso.example" {
 		t.Fatalf("address moved to %q through the social button", acct.Email())
