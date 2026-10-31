@@ -125,6 +125,9 @@ being created.
 | The sensor keeps waiting after you created an expectation | The code typed on the sensor was wrong; run `pair` again with the code from the console. |
 | `certificate chain does not contain the pinned CA` | `SENSOR_CA_FINGERPRINT` does not match the certificate authority your platform presents, or a TLS-inspecting proxy sits in between. |
 | `identity directory permissions` at start | Run the `chmod`/`chown` the sensor printed. |
+| The sensor was stopped before you approved it, or you made a new code | Start it again with the new code (`./sensors.sh pair NAME --pairing-code XXXX-XXXX` in the multi-sensor kit). The sensor keeps its key; the new start closes its earlier request that nobody approved, and you approve the new one. Started again with the same code, it re-uses that request: compare the fingerprint again after it reappears. |
+| The sensor says its key is already registered (`pairing-key-registered`) | That key was approved once (even if the sensor never finished, or the key was revoked later); a key never pairs twice. Restore the sensor's identity directory, or remove its key so it generates a new one, then pair with a new code. |
+| The sensor is rate limited (`429`) after a few failed starts | The start budget per code is 5 per hour (burst 3); wait for the `Retry-After` it was given, or make a new code. |
 
 ## Many sensors: enrollment tokens
 
