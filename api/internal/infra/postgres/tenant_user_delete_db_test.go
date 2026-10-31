@@ -528,6 +528,11 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	"tenant_wordlists": func(*schemaSeeder) map[string]any {
 		return map[string]any{"name": "words", "purpose": "dns-labels", "lines": "1", "sha256": strings.Repeat("ab", 32)}
 	},
+	// An organization detection rule: a closed kind, a rule id, a content
+	// hash and an object body (CHECKs).
+	"tenant_content_rules": func(*schemaSeeder) map[string]any {
+		return map[string]any{"kind": "secret-rules", "rule_id": "r1", "sha256": strings.Repeat("ab", 32), "body": "{}"}
+	},
 	// A CI gate policy names its repository or business unit only for that
 	// scope (chk_ci_gate_policies_scope).
 	"ci_gate_policies": func(*schemaSeeder) map[string]any {

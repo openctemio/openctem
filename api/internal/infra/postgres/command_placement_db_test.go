@@ -494,3 +494,24 @@ type SensorPlacementViewBusy struct {
 	Busy     bool
 	Reasons  []string
 }
+
+// A sensor flagged as a cloned identity is named with identity_cloned: the
+// claim withholds every new job from it, so it never reads as eligible.
+func TestPlacement_NamesAClonedIdentity(t *testing.T) {
+	f := newPlacementFixture(t)
+	setIdentityCloned(f.ctx, t, f.sensRep.db.DB, f.sensors[1], true)
+	p, err := f.svc.ExplainPlacement(f.ctx, f.tenant, f.cmds["unzoned"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, sp := range p.Sensors {
+		if sp.SensorID != f.sensors[1] {
+			continue
+		}
+		if sp.Eligible || !slices.Contains(sp.Reasons, command.PlacementIdentityCloned) {
+			t.Fatalf("cloned sensor: eligible %v, reasons %v; want identity_cloned", sp.Eligible, sp.Reasons)
+		}
+		return
+	}
+	t.Fatal("sensor not explained")
+}

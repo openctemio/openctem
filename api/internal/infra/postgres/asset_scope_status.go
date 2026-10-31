@@ -12,8 +12,14 @@ package postgres
 // answer per row. Every subquery is pinned to the asset's tenant.
 
 import (
+	"context"
 	"fmt"
 	"strings"
+
+	"github.com/lib/pq"
+
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // Scope statuses of the asset list filter (?scope_status=).
@@ -106,4 +112,59 @@ func assetScopeStatusSQL(a string) string {
 		ELSE 'not_covered' END
 	FROM (SELECT hh.host, CASE WHEN pg_input_is_valid(hh.host, 'inet') THEN hh.host::inet END AS ip
 	      FROM (SELECT ` + assetHostSQL(a) + ` AS host) hh) sh)`
+}
+
+// assetMonitoringStateSQL is the monitoring state of an assets alias
+// (asset.MonitoringStateOf in SQL; the precedence is the same). scanned is
+// a SQL boolean expression (a bound placeholder): the tenant scans assets no
+// scope entry covers. Every subquery is pinned to the asset's tenant.
+func assetMonitoringStateSQL(a, scanned string) string {
+	h, i, n := "sh.host", "sh.ip", "lower("+a+".name)"
+	excl := func(kinds string) string {
+		return `EXISTS (SELECT 1 FROM scope_exclusions se
+		             WHERE se.tenant_id = ` + a + `.tenant_id AND se.status = 'active' AND se.approved_at IS NOT NULL
+		               AND (se.expires_at IS NULL OR se.expires_at > now())
+		               AND se.exclusion_type NOT IN ('finding_type', 'scanner', 'path')
+		               AND se.kind IN ` + kinds + `
+		               AND ` + scopePatternMatchSQL("se.exclusion_type", "se.pattern", h, i, n) + `)`
+	}
+	return `(SELECT CASE
+		WHEN att.state = 'rejected' OR ` + excl("('not_ours')") + ` THEN 'irrelevant'
+		WHEN ` + excl("('do_not_scan', 'retired')") + ` THEN 'out_of_scope'
+		WHEN ` + a + `.status IN ('inactive', 'archived') THEN 'inactive'
+		WHEN att.state = 'needs_review' THEN 'pending_decision'
+		WHEN att.state = 'candidate' OR (att.state = 'discovered' AND att.confidence < ` +
+		fmt.Sprint(asset.MonitoringConfirmThreshold) + `) THEN 'unvalidated'
+		WHEN att.state = 'monitor_only' THEN 'not_monitored'
+		WHEN NOT (` + scanned + `) AND ` + assetScopeStatusSQL(a) + ` = 'not_covered' THEN 'not_monitored'
+		ELSE 'monitored' END
+	FROM (SELECT hh.host, CASE WHEN pg_input_is_valid(hh.host, 'inet') THEN hh.host::inet END AS ip
+	      FROM (SELECT ` + assetHostSQL(a) + ` AS host) hh) sh
+	LEFT JOIN LATERAL (SELECT x.state, x.confidence FROM asset_attributions x
+	                   WHERE x.asset_id = ` + a + `.id AND x.tenant_id = ` + a + `.tenant_id) att ON true)`
+}
+
+// MonitoringStates returns the derived monitoring state of each of the
+// tenant's assets among ids (at most a list page), by id. An id that is not
+// the tenant's live asset is absent.
+func (r *AssetRepository) MonitoringStates(ctx context.Context, tenantID shared.ID, ids []string, unclassifiedScanned bool) (map[string]string, error) {
+	out := make(map[string]string, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	rows, err := r.db.QueryContext(ctx, `SELECT a.id, `+assetMonitoringStateSQL("a", "$3::boolean")+`
+		FROM assets a WHERE a.tenant_id = $1 AND a.id = ANY($2::uuid[]) AND a.deleted_at IS NULL`,
+		tenantID.String(), pq.Array(ids), unclassifiedScanned)
+	if err != nil {
+		return nil, fmt.Errorf("asset monitoring states: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var id, state string
+		if err := rows.Scan(&id, &state); err != nil {
+			return nil, fmt.Errorf("scan asset monitoring state: %w", err)
+		}
+		out[id] = state
+	}
+	return out, rows.Err()
 }
