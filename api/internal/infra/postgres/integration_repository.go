@@ -225,11 +225,12 @@ func (r *IntegrationRepository) Update(ctx context.Context, i *integration.Integ
 	return nil
 }
 
-// Delete deletes an integration by ID.
-func (r *IntegrationRepository) Delete(ctx context.Context, id integration.ID) error {
-	query := `DELETE FROM integrations WHERE id = $1`
+// Delete deletes an integration of the tenant by ID; another tenant's
+// integration is not found.
+func (r *IntegrationRepository) Delete(ctx context.Context, tenantID, id integration.ID) error {
+	query := `DELETE FROM integrations WHERE id = $1 AND tenant_id = $2`
 
-	result, err := r.db.ExecContext(ctx, query, id.String())
+	result, err := r.db.ExecContext(ctx, query, id.String(), tenantID.String())
 	if err != nil {
 		return fmt.Errorf("delete integration: %w", err)
 	}
