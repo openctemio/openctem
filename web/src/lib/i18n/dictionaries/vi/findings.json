@@ -1500,7 +1500,7 @@
   "findings.retestPanel.fixedResolved": "Đã sửa: đã xác minh và giải quyết",
   "findings.retestPanel.help.access_denied.fix": "Lần từ chối thứ hai cách ít nhất một giờ, và lỗ hổng không bị phát hiện lại trong khoảng đó, sẽ đánh dấu đã khắc phục. Hãy kiểm tra lại sau một giờ hoặc xác minh thủ công.",
   "findings.retestPanel.help.access_denied.text": "Máy chủ hiện từ chối trang bị lộ (401 hoặc 403) và không có CDN hay WAF đứng trước. Một lần từ chối chưa đủ để chứng minh đã khắc phục.",
-  "findings.retestPanel.help.edge_blocked.fix": "Hãy cho phép bộ quét ở lớp biên (xem hướng dẫn bảo vệ biên trên tài sản), rồi kiểm tra lại. Phát hiện giữ nguyên.",
+  "findings.retestPanel.help.edge_blocked.fix": "Đề nghị chủ sở hữu mục tiêu đưa địa chỉ máy quét của chúng tôi vào danh sách cho phép ở lớp bảo vệ biên (Cài đặt, Quét, Proxy, Địa chỉ máy quét), rồi kiểm tra lại. Phát hiện không thay đổi.",
   "findings.retestPanel.help.edge_blocked.text": "Một CDN hoặc WAF đã trả lời thay cho dịch vụ nên phép kiểm tra không thấy được lỗi.",
   "findings.retestPanel.help.endpoint_mismatch.fix": "Phát hiện giữ nguyên. Thêm một kiểm tra retest gắn đúng URL của phát hiện.",
   "findings.retestPanel.help.endpoint_mismatch.text": "Kiểm tra đã chạy nhưng không gọi đúng endpoint của phát hiện này, nên không chứng minh được gì về nó.",

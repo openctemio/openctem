@@ -25,6 +25,10 @@ library, CDN, hosting, WAF or security service, analytics, security header, othe
 5. `recordSoftware` (`internal/app/ingest/software.go`) turns a technology into a software component
    only when `assettech.IsSoftwareCandidate` holds: software kind and a version or CPE.
 
+Detection rules ([rule-packs.md](rule-packs.md)) add technologies from what a report states about a web
+service (`Server` header, title, cookie names, favicon hash, script paths); their source is
+`rules:<pack>@<version>` or `rules:organization`, and a tool's own report of the same technology wins.
+
 ## Categories and kinds
 
 | Category | Kind |
