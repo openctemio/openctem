@@ -145,6 +145,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-134](RFC-134-platform-administration.md) | Platform administration (one identity, platform roles, staff governance) | Accepted (2026-10-28). |
 | [RFC-135](RFC-135-custom-ai-agents.md) | AI agents that organizations build (revisions, lifecycle, registry, console) | Accepted (2026-10-28). |
 | [RFC-136](RFC-136-page-views-and-request-budgets.md) | Page views and request budgets | Accepted (2026-10-29). |
+| [RFC-137](RFC-137-stage-streaming.md) | Stage streaming | Accepted (2026-10-31). |
 | [RFC-138](RFC-138-web-page-monitoring.md) | Web page monitoring (JS-only by default) | Partially implemented (2026-10-31): data model, ingest of fetch results, server-side change detection and diff, alerts, watch management API and the Attack surface › Page changes page. |
 <!-- END RFC INDEX -->
 
