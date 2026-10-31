@@ -84,7 +84,7 @@ func (s *Service) SetInstanceZoneSource(z InstanceZoneSource) { s.instanceZones 
 func (s *Service) signJob(ctx context.Context, sensorID string, c *commanddom.Command, limits bool) (*commanddom.Command, error) {
 	// The packs and generated lists the job pins join the payload first, so
 	// the signature covers them (content_pin.go).
-	pinned, err := s.pinContent(ctx, c)
+	pinned, pins, err := s.pinContent(ctx, c)
 	if err != nil {
 		return nil, s.contentNotSigned(c, sensorID, err)
 	}
@@ -173,6 +173,7 @@ func (s *Service) signJob(ctx context.Context, sensorID string, c *commanddom.Co
 		return nil, fmt.Errorf("%w: %w", ErrJobNotSigned, err)
 	}
 	metrics.JobSigningTotal.WithLabelValues("signed").Inc()
+	s.recordPins(ctx, c, pins)
 	cp := *c
 	cp.Payload = payload
 	cp.SignedJob = env
