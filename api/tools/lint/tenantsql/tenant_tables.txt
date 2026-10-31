@@ -275,6 +275,7 @@ support_grants
 support_sessions
 suppression_rules
 tenant_ai_settings
+tenant_content_rules
 tenant_feature_denies
 tenant_identity_providers
 tenant_idle_lifecycle

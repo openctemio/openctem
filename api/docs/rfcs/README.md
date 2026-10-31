@@ -146,6 +146,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-135](RFC-135-custom-ai-agents.md) | AI agents that organizations build (revisions, lifecycle, registry, console) | Accepted (2026-10-28). |
 | [RFC-136](RFC-136-page-views-and-request-budgets.md) | Page views and request budgets | Accepted (2026-10-29). |
 | [RFC-137](RFC-137-stage-streaming.md) | Stage streaming | Accepted (2026-10-31). |
+| [RFC-140](RFC-140-rule-packs.md) | Detection rule packs (web fingerprints and sensitive information) | Accepted (2026-10-31). |
 <!-- END RFC INDEX -->
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.

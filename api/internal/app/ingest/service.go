@@ -73,6 +73,7 @@ type Service struct {
 	attributes   AttributeReconciler
 	sets         SetReconciler
 	techs        assettech.Repository
+	rules        DetectionRules
 	webRules     WebRuleSource
 	sensorRepo   sensor.Repository
 	branchRepo   branch.Repository
@@ -512,6 +513,9 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	}
 	// Web endpoints (and legacy discovered_url assets) go to the web surface
 	// sub-inventory under their origin asset, never one asset per URL.
+	// Detection rules read the web services before anything is stored
+	// (fingerprints join the assets' technologies).
+	report, detections := s.matchDetectionRules(ctx, tenantID, report)
 	report, endpoints := s.planEndpoints(report, binding, output)
 
 	// Load tenant settings once for both asset processing and finding processing
@@ -587,6 +591,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// What each asset was fingerprinted with (RFC-112), after the sets
 	// decided which technologies the asset shows.
 	s.recordTechnologies(ctx, tenantID, scope, src, observedAt, report, assetMap)
+	s.recordDetectionRules(ctx, tenantID, scope, binding, detections, assetMap, observedAt)
 	if binding.Kind == BindingTrusted && sourceKind == asset.SourceKindImport {
 		s.holdImportCandidates(ctx, tenantID, scope, report, assetMap, output)
 	}
