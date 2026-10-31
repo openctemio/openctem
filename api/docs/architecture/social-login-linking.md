@@ -210,21 +210,23 @@ authoritative for it (as at account creation), otherwise the account's address
 becomes unverified and cannot claim invitations or join an organization by
 domain until verified another way. A provider linked to a password account
 never changes its address, and a social sign-in through an identity an
-organization's sign-on manages (source `sso`) never changes it either: the
-organization moves the address only to a domain it proved, and the social
-button does not skip that proof.
+organization's sign-on manages (source `sso`) is refused outright (below), so
+it cannot change it: the organization moves the address only to a domain it
+proved.
 
 ## Social sign-in through an organization's identity
 
-A person whose account an organization's Entra ID sign-on created can press
-the social Microsoft button: the identity key is the same, so the sign-in
-reaches that account. It gets nothing from the organization: the session is a
-social one with no issuing organization (`Session.IDPTenantID` empty), so an
-organization that enforces its SSO refuses it at token mint (an owner falls to
-the break-glass rule, which needs the owner's own second factor), an
-organization two-factor requirement asks for our own second factor, a
-membership waiting for approval stays suspended, and the directory is the one
-the issuer names. It also changes nothing on the account (above).
+A person whose account an organization's Entra ID or Google Workspace sign-on
+created (identity source `sso`) can press the social Microsoft or Google
+button: the identity key is the same. The social sign-in is refused with
+`409 OAUTH_USE_ORG_SSO` ("This account signs in through your organization. Use
+your organization's sign-in."). Nothing is written, no session opens, and the
+refusal is audited (`auth.failed`, denied, reason `social_sign_in_on_sso_identity`,
+user id and provider only). The person never confirmed the social route for
+that identity, and a sign-in route is one the person explicitly linked or
+confirmed. The login page keeps the message and asks for the work email, which
+offers the organization's sign-in. A social identity (source `social`) signs in
+as before, and the organization's own sign-on is unaffected.
 
 ## Second factor after the provider
 
@@ -277,7 +279,7 @@ Organization policies apply to the session exactly as before:
 | Replay of a pending link | Single use (GETDEL), 10 minutes, hash-only storage |
 | A provider's later address counted as proven | The new address is verified only where the provider is authoritative |
 | Organization SSO enforcement or two-factor floor bypassed through social sign-in | A social session is stamped `sso` with no issuing organization: enforcement and the two-factor requirement treat it as a password session without our second factor (`Session.FederatedFor`), so it is refused at token mint |
-| Social sign-in through an organization's Entra ID or Google Workspace identity used to skip the organization's sign-on | The session carries no issuing organization, so the organization's enforcement, two-factor requirement and approval hold; the account's address is not changed through it; the identity cannot be unlinked by the person |
+| Social sign-in through an organization's Entra ID or Google Workspace identity used to skip the organization's sign-on, or a route the person never confirmed | Refused with `OAUTH_USE_ORG_SSO` before any account change or session; audited; the identity cannot be unlinked by the person |
 | A second account for the same mailbox through a different case | Addresses are lower-cased on every write and compared case-insensitively; the database refuses two accounts whose addresses differ only in case |
 | A session opened through a provider outliving its unlink, or a session held before a link outliving it | Unlink and every link revoke the account's other sessions first and fail closed |
 | Confirming a pending link for a provider account that is not the person's | The confirm dialog shows the provider account's name, handle (GitHub), address and picture (https on a known avatar host only, no referrer) |

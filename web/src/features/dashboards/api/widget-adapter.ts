@@ -64,6 +64,7 @@ export function reasonKeyOf(reason: string | undefined): string {
     case 'pending':
     case 'organization_only':
     case 'no_receipts':
+    case 'no_certificates':
       return `dashboards.reason.${reason}`
     default:
       return 'dashboards.reason.failed'
@@ -192,17 +193,21 @@ function toResult(v: WidgetValue, spec: WidgetSpec | undefined): WidgetResult | 
       const c = v.category
       if (!c) return undefined
       const dim = groupBy[0]
+      // A breakdown (no group-by) names its keys with its own prefix.
+      const meta = dim ? undefined : metricMeta(v.metric)
       const out: CategoryResult = {
         shape: 'category',
         rows: c.rows.map((r) => ({
           key: r.key,
-          label_key: dimensionValueKey(dim, r.key),
+          label_key: meta?.keyPrefix
+            ? `${meta.keyPrefix}.${r.key.replace(/[^a-zA-Z0-9_]/g, '_')}`
+            : dimensionValueKey(dim, r.key),
           label: r.key,
           value: r.value,
           previous: r.previous ?? null,
         })),
         total: c.total,
-        ordinal: dim ? ORDINAL_DIMENSIONS.has(dim) : false,
+        ordinal: dim ? ORDINAL_DIMENSIONS.has(dim) : (meta?.ordinal ?? false),
       }
       return out
     }

@@ -159,6 +159,10 @@ const (
 	// MetricKindKPIs is the KPI strip: the counts, ratio and duration of the
 	// single-figure metrics, computed the same way.
 	MetricKindKPIs MetricKind = "kpis"
+	// MetricKindBreakdown is a fixed set of bands or kinds read from one
+	// source (assets, certificates, accepted findings): a category, each
+	// key with the list it counts.
+	MetricKindBreakdown MetricKind = "breakdown"
 )
 
 // Metric is one catalog entry.
@@ -243,6 +247,14 @@ var catalog = []Metric{
 	// Five key figures in one strip: P0-P1 open, KEV open, within SLA, median
 	// time to fix and discovery coverage.
 	{ID: "exposure.kpis", Group: "exposure", Kind: MetricKindKPIs, Polarity: PolarityNeutral, Timed: true},
+	// Assets added to the inventory in the window, by asset type, with the
+	// window before it: how the attack surface changed.
+	{ID: "surface.new_assets", Group: "attack_surface", Kind: MetricKindBreakdown, Polarity: PolarityNeutral, Timed: true},
+	// Certificates by how soon they expire: expired, 7, 30 and 90 days.
+	{ID: "certificates.expiry", Group: "attack_surface", Kind: MetricKindBreakdown, Polarity: PolarityLowerBetter},
+	// Accepted risks by when the acceptance ends: within 7 days, within 30
+	// days, later.
+	{ID: "exceptions.expiring", Group: "remediation", Kind: MetricKindBreakdown, Polarity: PolarityNeutral},
 }
 
 var catalogByID = func() map[string]Metric {
@@ -298,6 +310,8 @@ func (m Metric) ShapeFor(groupBy []Dimension) Shape {
 		return ShapeBrief
 	case MetricKindKPIs:
 		return ShapeKPIs
+	case MetricKindBreakdown:
+		return ShapeCategory
 	default: // count
 		switch len(groupBy) {
 		case 0:
@@ -338,6 +352,10 @@ func (m Metric) Current() bool {
 	switch m.Kind {
 	case MetricKindItems, MetricKindAssetCount, MetricKindStages, MetricKindPaths, MetricKindLevers, MetricKindBrief:
 		return true
+	case MetricKindBreakdown:
+		// A breakdown with a window (assets added) reads a range; the
+		// others (expiry bands) are counted from now.
+		return !m.Timed
 	}
 	return false
 }
