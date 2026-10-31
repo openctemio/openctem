@@ -374,6 +374,7 @@ function InstallSession({
 
       <OnboardingStatus stage={stage} />
 
+      {(stage === 'waiting' || stage === 'compare') && view && <PairingRefusalNotice view={view} />}
       {stage === 'waiting' && (
         <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
           <span
@@ -436,6 +437,50 @@ function InstallSession({
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+/** A refused attempt on a code (sensorpairing.RefusalView). */
+export interface PairingRefusal {
+  reason: 'clock_skew' | 'rate_limited' | 'code_taken' | 'key_busy' | 'key_registered' | string
+  at: string
+  key_fingerprint?: string
+  source_ip?: string
+  clock_offset_seconds?: number
+  retry_after_seconds?: number
+}
+
+const REFUSAL_REASONS = ['clock_skew', 'rate_limited', 'code_taken', 'key_busy', 'key_registered']
+
+/**
+ * Why no sensor arrived on this code yet: the last attempt the platform
+ * refused, in plain words with the next step. Every refusal the sensor got
+ * reaches the waiting step here, not only the sensor's log.
+ */
+export function PairingRefusalNotice({ view }: { view: SensorPairingView }) {
+  const { t } = useTranslation()
+  const refusal = (view as SensorPairingView & { last_refusal?: PairingRefusal }).last_refusal
+  if (!refusal || !REFUSAL_REASONS.includes(refusal.reason)) return null
+  const offset = refusal.clock_offset_seconds ?? 0
+  const params = {
+    seconds: Math.abs(offset),
+    direction: t(offset >= 0 ? 'sensors.onboard.refusal.ahead' : 'sensors.onboard.refusal.behind'),
+    fingerprint: refusal.key_fingerprint ?? '',
+    address: refusal.source_ip ?? '',
+  }
+  return (
+    <div
+      role="status"
+      className="space-y-1 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm"
+      data-testid="pairing-refusal"
+    >
+      <p className="font-medium">
+        {t(`sensors.onboard.refusal.${refusal.reason}.title`, undefined, params)}
+      </p>
+      <p className="text-muted-foreground">
+        {t(`sensors.onboard.refusal.${refusal.reason}.fix`, undefined, params)}
+      </p>
     </div>
   )
 }

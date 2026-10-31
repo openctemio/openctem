@@ -1930,6 +1930,13 @@ func (s *SensorService) DisableSensor(ctx context.Context, tenantID, sensorID, r
 		return nil, err
 	}
 
+	// Revoked is final: disabling a revoked sensor would make it "paused",
+	// and ActivateSensor would then bring it and its old credentials back
+	// (UpdateSensor refuses the same move).
+	if a.Status == sensordom.SensorStatusRevoked {
+		return nil, shared.NewDomainError("FORBIDDEN", "cannot disable a revoked sensor", shared.ErrForbidden)
+	}
+
 	if reason == "" {
 		reason = "Disabled by administrator"
 	}

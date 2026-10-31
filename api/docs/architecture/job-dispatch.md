@@ -1,5 +1,7 @@
 # Job dispatch: how a sensor receives, holds and finishes a job
 
+Part of the [sensor and platform workflow](sensor-platform-workflow.md).
+
 > One page for the whole path of a job, from the trigger that queues it to the
 > result that settles it. Details live in the linked documents; this page
 > says how they fit together, which table, log line or metric shows each
@@ -276,6 +278,9 @@ sequenceDiagram
   API->>DB: ClaimManyForSensor: lock host keys, drop shared hosts,<br/>UPDATE … WHERE id IN (… FOR UPDATE SKIP LOCKED)<br/>→ acknowledged, sensor_id, lease_epoch + 1, lease
   DB-->>API: ids won (others were taken by another sensor)
   API->>API: deliver: organization HTTP policy, program rules, tool settings, template signatures
+  opt re-read, proxy stamp or delivery fails
+    API->>DB: unclaim every claimed command (pending again, pin kept if it was pinned)
+  end
   loop each claimed command, in order
     API->>SG: sign statement
     alt signed
@@ -384,7 +389,7 @@ Reference: [command leases](sensors.md#command-leases-rfc-035-d6).
 ```mermaid
 flowchart TD
   T[Every 60 s: job recovery controller] --> L{Lease expired?}
-  L -- yes --> RQ[Back to pending, unpinned, zone kept,<br/>attempt + 1, event requeued<br/>'lease expired']
+  L -- yes --> RQ[Back to pending, zone kept, unpinned<br/>unless addressed to one sensor,<br/>attempt + 1, event requeued<br/>'lease expired']
   T --> ST{Running, no target finished<br/>within its stall window,<br/>or far past its budget?}
   ST -- yes --> STOP[Ask the holder to stop and hand back<br/>what it finished: stop_command_ids]
   STOP -->|no answer in time| RQ2[Re-queue, attempt + 1]
@@ -404,6 +409,19 @@ flowchart TD
   run; it never overwrites a row that moved since it was read.
 - **Release** (`POST /commands/{id}/release`) hands work back at once (draining
   sensor, no free slot, hosts busy on the sensor).
+- **A failure after the claim that is the platform's** (the claimed rows
+  cannot be read back, the proxy stamp fails, or the delivery cannot read the
+  organization's HTTP policy, program rules or tool settings) hands every
+  claimed command back at once, on claim-N and on the shared claim, as an
+  unsigned claim is: pending, the pin kept as it was, no lease. It never waits
+  for the lease to expire, which would count an attempt, record the sensor as
+  offline and exclude a healthy sensor (`command/service.go:Claim`,
+  `shared_claim.go`).
+- **Late results.** A report is accepted only for a command the sensor holds;
+  when the sensor states its lease epoch, it must be the current one. The
+  report records the epoch it was accepted under, and the ingest worker
+  applies it only while the sensor still holds the command under that epoch
+  ([result binding](sensor-result-binding.md#late-results)).
 - **Refusal** by a sensor's local policy adds it to `refused_by`; routed work
   goes to another eligible sensor, otherwise it fails with the reason.
 - **Infrastructure failure:** a sensor can fail a command for a reason that is

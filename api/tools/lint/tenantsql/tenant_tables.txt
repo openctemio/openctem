@@ -207,6 +207,8 @@ pentest_retests
 priority_class_audit_log
 priority_override_rules
 proxy_command_egress
+proxy_echo_observations
+proxy_endpoint_exits
 proxy_endpoints
 proxy_pools
 proxy_sensor_assignments
@@ -280,6 +282,7 @@ support_grants
 support_sessions
 suppression_rules
 tenant_ai_settings
+tenant_content_rules
 tenant_feature_denies
 tenant_identity_providers
 tenant_idle_lifecycle
