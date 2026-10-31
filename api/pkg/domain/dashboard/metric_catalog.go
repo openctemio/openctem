@@ -191,6 +191,8 @@ type Metric struct {
 	// Flow marks a series of flows (opened, fixed): columns or diverging
 	// bars, never a stacked area that reads as a stock.
 	Flow bool `json:"flow,omitempty"`
+	// NoPrevious marks a timed metric with no previous-period figure.
+	NoPrevious bool `json:"-"`
 }
 
 var f1Dims = []Dimension{DimSeverity, DimPriorityClass, DimSource, DimSLAState, DimAgeBand, DimKEV, DimReachable, DimAssetGroup}
@@ -255,6 +257,17 @@ var catalog = []Metric{
 	// Accepted risks by when the acceptance ends: within 7 days, within 30
 	// days, later.
 	{ID: "exceptions.expiring", Group: "remediation", Kind: MetricKindBreakdown, Polarity: PolarityNeutral},
+	// How closes held in the window: findings fixed by a person, fixed by the
+	// platform on its own (no person recorded), fixed findings that came back
+	// (regressions, last_reopened_at), and the Ready to close proposals that
+	// wait for a person now.
+	{ID: "findings.closure_quality", Group: "remediation", Kind: MetricKindBreakdown, Polarity: PolarityNeutral, Timed: true},
+	// Active remediation campaigns, the latest first: the share of each
+	// campaign's tasks that are done, over the reader's view of it.
+	{ID: "remediation.campaign_progress", Group: "remediation", Kind: MetricKindBreakdown, Polarity: PolarityHigherBetter},
+	// Findings closed as false positive in the window as a share of the
+	// findings closed in the window, by tool; organization dashboards only.
+	{ID: "detection.fp_rate_by_tool", Group: "ctem", Kind: MetricKindBreakdown, Polarity: PolarityLowerBetter, Timed: true, NoPrevious: true},
 }
 
 var catalogByID = func() map[string]Metric {
@@ -361,8 +374,12 @@ func (m Metric) Current() bool {
 }
 
 // Comparable reports a metric that can show a previous period. The exposure
-// flow and the intake read one window with no previous figure.
+// flow, the intake and a NoPrevious metric read one window with no previous
+// figure.
 func (m Metric) Comparable() bool {
+	if m.NoPrevious {
+		return false
+	}
 	switch m.Kind {
 	case MetricKindExposureFlow, MetricKindIntake:
 		return false

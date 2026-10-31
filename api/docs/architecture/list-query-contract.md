@@ -90,6 +90,11 @@ Fields added for the views: `pending_approval` (an approval request for the
 finding is pending), `acceptance_expires_at` (ranges; unset unless accepted)
 and the `closed` value of `state`.
 
+Fields added for the dashboard's closure quality widget
+([dashboards](dashboards.md#closure-quality-campaigns-and-detection-quality)):
+`resolved_by` (`is_null` only: whether a person closed the finding, never
+who) and `last_reopened_at` (ranges; when a fixed finding last came back).
+
 ## Actors
 
 | Constructor | When | Effect |
