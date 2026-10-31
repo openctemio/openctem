@@ -433,3 +433,62 @@ func (h *ProxyPoolHandler) handleError(w http.ResponseWriter, err error) {
 		apierror.InternalError(err).WriteJSON(w)
 	}
 }
+
+// Scanner addresses (docs/architecture/sensor-proxies.md, "Scanner
+// addresses"): only addresses the platform observed itself; never a proxy
+// credential, never an endpoint's host or port.
+
+// ScannerAddressResponse is one address the organization's scans leave from.
+type ScannerAddressResponse struct {
+	// Address is an IP address, or a CIDR for a published platform range.
+	Address string `json:"address"`
+	// CIDR is the address as a prefix (/32 or /128 for one address).
+	CIDR string `json:"cidr"`
+	// Kind is proxy_exit (a proxy endpoint's exit as the platform's echo saw
+	// it), sensor (the address the platform saw one of your sensors connect
+	// from) or platform (the published egress of shared sensors).
+	Kind          string     `json:"kind" enums:"proxy_exit,sensor,platform"`
+	Private       bool       `json:"private"`
+	PoolID        string     `json:"pool_id,omitempty"`
+	PoolName      string     `json:"pool_name,omitempty"`
+	EndpointID    string     `json:"endpoint_id,omitempty"`
+	EndpointLabel string     `json:"endpoint_label,omitempty"`
+	SensorID      string     `json:"sensor_id,omitempty"`
+	SensorName    string     `json:"sensor_name,omitempty"`
+	Region        string     `json:"region,omitempty"`
+	LastSeenAt    *time.Time `json:"last_seen_at,omitempty"`
+}
+
+// ScannerAddressesResponse is the organization's scanner addresses and the
+// unique prefixes to allowlist.
+type ScannerAddressesResponse struct {
+	Items []ScannerAddressResponse `json:"items"`
+	CIDRs []string                 `json:"cidrs"`
+}
+
+// ScannerAddresses handles GET /api/v1/proxy-pools/scanner-addresses
+// @Summary      Scanner addresses
+// @Description  The addresses the organization's scans leave from, to allowlist at a WAF or edge protection: each proxy endpoint's exit address as the platform's own test echo saw it (run a proxy test to learn it), the addresses the platform saw your sensors connect from (last 30 days), and the published egress of shared sensors when the organization may use them. A value reported only by a sensor is never listed. No credentials.
+// @Tags         Proxy Pools
+// @Produce      json
+// @Success      200  {object}  ScannerAddressesResponse
+// @Failure      401  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /proxy-pools/scanner-addresses [get]
+func (h *ProxyPoolHandler) ScannerAddresses(w http.ResponseWriter, r *http.Request) {
+	actx := buildScanZoneAuditContext(r)
+	v, err := h.service.ScannerAddresses(r.Context(), actx.TenantID)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+	out := ScannerAddressesResponse{Items: make([]ScannerAddressResponse, 0, len(v.Items)), CIDRs: v.CIDRs}
+	for _, a := range v.Items {
+		out.Items = append(out.Items, ScannerAddressResponse{Address: a.Address, CIDR: a.CIDR, Kind: a.Kind, Private: a.Private,
+			PoolID: a.PoolID, PoolName: a.PoolName, EndpointID: a.EndpointID, EndpointLabel: a.EndpointLabel,
+			SensorID: a.SensorID, SensorName: a.SensorName, Region: a.Region, LastSeenAt: a.LastSeenAt})
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeScanZoneJSON(w, http.StatusOK, out)
+}

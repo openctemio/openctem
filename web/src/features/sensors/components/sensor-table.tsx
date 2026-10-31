@@ -6,10 +6,10 @@ import { useMemo } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Progress } from '@/components/ui/progress'
-import { Eye, Settings, KeyRound, Trash2, Power, PowerOff } from 'lucide-react'
+import { Eye, Settings, KeyRound, Trash2, Power, PowerOff, Ban } from 'lucide-react'
 import { useTranslation } from '@/context/i18n-provider'
-import { Permission, useHasPermission } from '@/lib/permissions'
 import { sensorActions } from '../lib/sensor-actions'
+import { useSensorActionPerms } from '../lib/use-sensor-action-perms'
 import {
   DataTable,
   DataTableColumnHeader,
@@ -38,6 +38,8 @@ import { worstContentState } from '../lib/content'
 import { normalizeSensorVersion } from '../lib/sensor-version'
 import { sensorState, SENSOR_STATES, type FleetThresholds } from '../lib/sensor-state'
 import { sensorPolicyOf, type ReleaseChannel } from '../lib/fleet'
+import { sensorFacts, sensorReason, VERSION_FACT_KEYS } from '../lib/sensor-facts'
+import { cn } from '@/lib/utils'
 import { SensorLocalPolicyBadge } from './sensor-local-policy-section'
 
 interface SensorTableProps {
@@ -48,6 +50,8 @@ interface SensorTableProps {
   onDeactivateSensor: (sensor: Sensor) => void
   onDeleteSensor: (sensor: Sensor) => void
   onRegenerateKey: (sensor: Sensor) => void
+  /** Revoke for good (the same action as the drawer's menu). */
+  onRevokeSensor?: (sensor: Sensor) => void
   /** Selected rows, for the page's bulk-action bar. */
   onSelectionChange?: (sensors: Sensor[]) => void
   /** Bump to clear the selection (e.g. after a bulk delete). */
@@ -82,11 +86,23 @@ function UsageCell({ percent }: { percent: number }) {
 }
 
 /**
- * Off by default, available under Columns: metrics most sensors do not report
- * yet (CPU, memory, region; showing 0% and an invented "local" for every
- * sensor said nothing) and the role, which the Role filter and grouping carry.
+ * Off by default, available under Display: the outbox, key, local policy and
+ * content columns (most rows read "not reported" or "never expires"; a
+ * problem in any of them is the row's reason under Status instead), metrics
+ * most sensors do not report yet (CPU, memory, region) and the role, which
+ * the Role filter and grouping carry. Five columns fit 1440px without a
+ * sideways scroll.
  */
-const HIDDEN_BY_DEFAULT = { type: false, cpuUsage: false, memoryUsage: false, region: false }
+const HIDDEN_BY_DEFAULT = {
+  outbox: false,
+  key: false,
+  policy: false,
+  content: false,
+  type: false,
+  cpuUsage: false,
+  memoryUsage: false,
+  region: false,
+}
 
 const STATE_RANK = new Map(SENSOR_STATES.map((s, i) => [s, i]))
 
@@ -98,6 +114,7 @@ export function SensorTable({
   onDeactivateSensor,
   onDeleteSensor,
   onRegenerateKey,
+  onRevokeSensor,
   onSelectionChange,
   resetSelectionKey,
   search,
@@ -113,12 +130,12 @@ export function SensorTable({
   grants,
 }: SensorTableProps) {
   const { t } = useTranslation()
-  const canWrite = useHasPermission(Permission.SensorsWrite)
-  const canRevoke = useHasPermission(Permission.SensorsRevoke)
-  const canDelete = useHasPermission(Permission.SensorsDelete)
+  const actionPerms = useSensorActionPerms()
+  // Rows are selectable for the bulk actions: Disable (sensors:write) and Delete.
+  const canSelect = actionPerms.delete || actionPerms.write
   const columns = useMemo<ColumnDef<Sensor>[]>(
     () => [
-      ...(canDelete
+      ...(canSelect
         ? ([
             {
               id: 'select',
@@ -167,14 +184,35 @@ export function SensorTable({
         ),
         cell: ({ row }) => {
           const reasons = row.original.health_reasons ?? []
+          // The reason in plain words, under the state: the same facts the
+          // phone card lists (outbox, key, policy, version, content) so the
+          // columns that hold them can stay hidden until they matter.
+          const reason = sensorReason(
+            sensorFacts(row.original, { now, thresholds, channel }, t),
+            VERSION_FACT_KEYS
+          )
           return (
-            <span title={reasons.length ? reasons.map((r) => r.message).join('\n') : undefined}>
+            <span
+              className="flex min-w-0 flex-col items-start gap-0.5"
+              title={reasons.length ? reasons.map((r) => r.message).join('\n') : undefined}
+            >
               <SensorStateBadge
                 sensor={row.original}
                 now={now}
                 thresholds={thresholds}
                 withLastSeen
               />
+              {reason && (
+                <span
+                  data-slot="sensor-reason"
+                  className={cn(
+                    'line-clamp-2 max-w-56 text-xs',
+                    reason.tone === 'destructive' ? 'text-destructive' : 'text-warning'
+                  )}
+                >
+                  {reason.text}
+                </span>
+              )}
             </span>
           )
         },
@@ -302,11 +340,7 @@ export function SensorTable({
           const sensor = row.original
           // Editing, keys and lifecycle are admin actions (sensors:write /
           // sensors:delete, admins and owners only since api#669).
-          const can = sensorActions(sensor, {
-            write: canWrite,
-            revoke: canRevoke,
-            delete: canDelete,
-          })
+          const can = sensorActions(sensor, actionPerms)
           const actions: RowAction[] = [
             {
               label: t('sensors.table.action.viewDetails'),
@@ -340,6 +374,14 @@ export function SensorTable({
               onClick: () => onDeactivateSensor(sensor),
               separatorBefore: true,
             })
+          if (can.revoke && onRevokeSensor)
+            actions.push({
+              label: t('sensors.table.action.revoke'),
+              icon: Ban,
+              onClick: () => onRevokeSensor(sensor),
+              destructive: true,
+              separatorBefore: !can.disable && !can.enable,
+            })
           if (can.delete)
             actions.push({
               label: t('sensors.table.action.delete'),
@@ -359,9 +401,9 @@ export function SensorTable({
       onDeactivateSensor,
       onDeleteSensor,
       onRegenerateKey,
-      canWrite,
-      canRevoke,
-      canDelete,
+      onRevokeSensor,
+      actionPerms,
+      canSelect,
       thresholds,
       now,
       channel,

@@ -126,6 +126,8 @@ export interface AssetSearchFilters {
   // Triage (research/124): scope status (in_scope, not_covered, excluded,
   // internal), the attribution rules behind the asset, first seen since.
   scopeStatus?: string[]
+  /** The derived monitoring state (monitored, not_monitored, pending_decision, ...). */
+  monitoringState?: string[]
   discoveredBy?: string[]
   firstSeenAfter?: string
   /** Ask each row's triage (attribution and the scan gate's answer). */
@@ -174,6 +176,8 @@ interface BackendAsset {
     scan_blocked_by?: string
     scan_refusal_code?: string
   }
+  /** The derived monitoring state (with_triage only). */
+  monitoring_state?: string
   risk_score: number // 0-100
   technologies?: { name: string; version?: string; category: string }[]
   risk_scored_at?: string // absent = never scored (with risk_score_pending present)
@@ -232,6 +236,7 @@ function transformAsset(backend: BackendAsset): Asset {
     systemTags: backend.system_tags,
     programOnly: backend.program_only ?? undefined,
     edge: backend.edge,
+    monitoringState: backend.monitoring_state || undefined,
     triage: backend.triage
       ? {
           attributionState: backend.triage.attribution_state,
@@ -532,6 +537,7 @@ export function buildAssetQueryParams(filters?: AssetSearchFilters): Record<stri
   if (filters.expiresBefore) params.expires_before = filters.expiresBefore
   if (filters.attribution?.length) params.attribution = filters.attribution.join(',')
   if (filters.scopeStatus?.length) params.scope_status = filters.scopeStatus.join(',')
+  if (filters.monitoringState?.length) params.monitoring_state = filters.monitoringState.join(',')
   if (filters.discoveredBy?.length) params.discovered_by = filters.discoveredBy.join(',')
   if (filters.firstSeenAfter) params.first_seen_after = filters.firstSeenAfter
   if (filters.withTriage) params.with_triage = 'true'

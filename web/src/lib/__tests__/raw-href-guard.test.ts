@@ -75,6 +75,8 @@ const REVIEWED = new Set([
   'features/findings/components/group-exceptions-panel.tsx|Link|href={batchSourceHref(batch)}',
   // Asset group page: findingsHref() is a fixed same-origin /findings prefix with the group id encoded and a severity from a fixed list.
   'app/(dashboard)/(discovery)/assets/groups/[id]/page.tsx|NextLink|href={findingsHref(severity)}',
+  // Attack surface asset-type rows: typeHref() is a fixed same-origin /assets prefix with the type passed through encodeURIComponent.
+  'app/(dashboard)/(scoping)/attack-surface/page.tsx|Link|href={typeHref(item.type)}',
   // StatsCard href only receives the callers' own constant routes (attack surface tiles).
   'features/shared/components/stats-card.tsx|Link|href={href}',
   // LEGAL_DOCS paths are constants in src/lib/legal.ts (/terms, /privacy, ...).

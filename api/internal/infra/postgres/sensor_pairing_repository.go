@@ -37,7 +37,7 @@ const sensorPairingColumns = `id, mode, status, tenant_id, COALESCE(code_hash, '
 	host_facts, host(source_ip), repair_sensor_id, sensor_id,
 	COALESCE(requested_name, ''), requested_zone_ids, COALESCE(requested_profile, ''),
 	created_by, approved_by, approved_at, denied_by, denied_at, confirmed_at, created_at, expires_at,
-	instance_token_id, enrollment_token_id`
+	instance_token_id, enrollment_token_id, last_refusal, last_refusal_at, last_refusal_details`
 
 func scanPairing(row interface{ Scan(...any) error }) (*sensordom.Pairing, error) {
 	var (
@@ -50,13 +50,16 @@ func scanPairing(row interface{ Scan(...any) error }) (*sensordom.Pairing, error
 		sourceIP, instanceToken           sql.NullString
 		enrollmentToken                   sql.NullString
 		zones                             pq.StringArray
+		refusal                           sql.NullString
+		refusalAt                         sql.NullTime
+		refusalDetails                    []byte
 	)
 	if err := row.Scan(&id, &mode, &status, &tenantID, &p.CodeHash,
 		&p.PublicKey, &p.Thumbprint, &p.Commitment, &p.SensorNonce, &p.PlatformNonce, &p.SAS,
 		&hostFacts, &sourceIP, &repairID, &sensorID,
 		&p.RequestedName, &zones, &p.RequestedProfile,
 		&createdBy, &approvedBy, &approvedAt, &deniedBy, &deniedAt, &confirmedAt, &p.CreatedAt, &p.ExpiresAt,
-		&instanceToken, &enrollmentToken); err != nil {
+		&instanceToken, &enrollmentToken, &refusal, &refusalAt, &refusalDetails); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, sensordom.ErrPairingNotFound
 		}
@@ -76,6 +79,10 @@ func scanPairing(row interface{ Scan(...any) error }) (*sensordom.Pairing, error
 	}
 	if sourceIP.Valid {
 		p.SourceIP = net.ParseIP(sourceIP.String)
+	}
+	if refusal.Valid && refusalAt.Valid {
+		p.LastRefusal = &sensordom.PairingRefusal{Reason: refusal.String, At: refusalAt.Time}
+		_ = json.Unmarshal(refusalDetails, &p.LastRefusal.Details)
 	}
 	for _, z := range zones {
 		if zid, err := shared.IDFromString(z); err == nil {
@@ -134,7 +141,10 @@ func (r *SensorPairingRepository) CreateForward(ctx context.Context, p *sensordo
 }
 
 // AttachToExpectationUnscoped fills the open expectation with this code.
-// The expectation keeps its id, tenant and requested settings.
+// The expectation keeps its id, tenant and requested settings. The same key
+// starting again with the same code (a restarted sensor) re-arms its own
+// request with the new nonces; a code another key already holds matches
+// nothing.
 func (r *SensorPairingRepository) AttachToExpectationUnscoped(ctx context.Context, codeHash string, p *sensordom.Pairing, now time.Time) (bool, error) {
 	facts, err := json.Marshal(p.HostFacts)
 	if err != nil {
@@ -145,8 +155,10 @@ func (r *SensorPairingRepository) AttachToExpectationUnscoped(ctx context.Contex
 	err = r.db.QueryRowContext(ctx, `UPDATE sensor_pairings
 		SET status = 'pending', public_key = $2, thumbprint = $3, commitment = $4, platform_nonce = $5,
 		    host_facts = $6, source_ip = $7::inet,
-		    repair_sensor_id = COALESCE(repair_sensor_id, $8)
-		WHERE code_hash = $1 AND status = 'expecting' AND mode = 'reverse' AND expires_at > $9
+		    repair_sensor_id = COALESCE(repair_sensor_id, $8),
+		    sensor_nonce = NULL, sas = NULL
+		WHERE code_hash = $1 AND mode = 'reverse' AND expires_at > $9
+		  AND (status = 'expecting' OR (status = 'pending' AND thumbprint = $3))
 		RETURNING id, tenant_id`,
 		codeHash, p.PublicKey, p.Thumbprint, p.Commitment, p.PlatformNonce, facts, heartbeatIP(p.SourceIP),
 		idOrNull(p.RepairSensorID), now).Scan(&id, &tenant)
@@ -164,6 +176,47 @@ func (r *SensorPairingRepository) AttachToExpectationUnscoped(ctx context.Contex
 	}
 	p.Mode, p.Status, p.TenantID = sensordom.PairingReverse, sensordom.PairingPending, optionalID(tenant)
 	return true, nil
+}
+
+// KeyRegisteredUnscoped reports whether a key with this thumbprint was ever
+// registered to a sensor (an approval inserts it; a thumbprint is never
+// reused, whatever the key's status or tenant).
+func (r *SensorPairingRepository) KeyRegisteredUnscoped(ctx context.Context, thumbprint string) (bool, error) {
+	var ok bool
+	if err := r.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM sensor_keys WHERE thumbprint = $1)`,
+		thumbprint).Scan(&ok); err != nil {
+		return false, fmt.Errorf("check sensor key: %w", err)
+	}
+	return ok, nil
+}
+
+// SupersedeForKeyUnscoped closes the open, unapproved requests of the key
+// with thumbprint (status pending, whatever their deadline) so the key can
+// start a new one, and returns them. The key's own reverse-mode request
+// under keepCodeHash that is still within its deadline is kept: the start
+// re-arms it. Approved and finished requests are never touched.
+func (r *SensorPairingRepository) SupersedeForKeyUnscoped(ctx context.Context, thumbprint, keepCodeHash string, now time.Time) ([]*sensordom.Pairing, error) {
+	rows, err := r.db.QueryContext(ctx, `UPDATE sensor_pairings
+		SET status = 'expired', expires_at = LEAST(expires_at, $3)
+		WHERE thumbprint = $1 AND status = 'pending'
+		  AND NOT ($2 <> '' AND mode = 'reverse' AND code_hash = $2 AND expires_at > $3)
+		RETURNING `+sensorPairingColumns, thumbprint, keepCodeHash, now)
+	if err != nil {
+		return nil, fmt.Errorf("supersede pairings: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []*sensordom.Pairing
+	for rows.Next() {
+		p, err := scanPairing(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("supersede pairings: %w", err)
+	}
+	return out, nil
 }
 
 // GetForKeyUnscoped returns the request id bound to the key with
@@ -396,6 +449,70 @@ func (r *SensorPairingRepository) ConfirmUnscoped(ctx context.Context, id shared
 	at := now
 	p.Status, p.ConfirmedAt = sensordom.PairingCompleted, &at
 	return p, nil
+}
+
+// refusalThrottle is the least time between two refusals noted on one
+// expectation: a sensor in a retry loop writes at most this often.
+const refusalThrottle = 5 * time.Second
+
+// RecordRefusalUnscoped notes a refused attempt on the open expectation with
+// this code hash. It runs only for a start whose signature verified; a code
+// that matches no open expectation writes nothing (the sensor's answer does
+// not depend on it either).
+func (r *SensorPairingRepository) RecordRefusalUnscoped(ctx context.Context, codeHash, thumbprint, reason string, details map[string]any, now time.Time) error {
+	if codeHash == "" {
+		return nil
+	}
+	raw, err := json.Marshal(details)
+	if err != nil {
+		return err
+	}
+	_, err = r.db.ExecContext(ctx, `UPDATE sensor_pairings
+		SET last_refusal = CASE WHEN $3 = 'code_taken' AND (status = 'expecting' OR thumbprint = $2) THEN 'key_busy' ELSE $3 END,
+		    last_refusal_at = $5, last_refusal_details = $4
+		WHERE code_hash = $1 AND mode = 'reverse' AND status IN ('expecting', 'pending') AND expires_at > $5
+		  AND (last_refusal_at IS NULL OR last_refusal_at <= $6)`,
+		codeHash, thumbprint, reason, raw, now, now.Add(-refusalThrottle))
+	if err != nil {
+		return fmt.Errorf("record pairing refusal: %w", err)
+	}
+	return nil
+}
+
+// RemoveUnconfirmedSensors deletes the sensors created by an approval whose
+// pairing expired before the sensor confirmed it (the sweep revoked its only
+// key): such a sensor never had a working key, never called in and holds no
+// command. A re-pair's registration is never removed.
+func (r *SensorPairingRepository) RemoveUnconfirmedSensors(ctx context.Context) ([]sensordom.RemovedSensor, error) {
+	rows, err := r.db.QueryContext(ctx, `DELETE FROM sensors s
+		USING sensor_pairings p
+		WHERE p.status = 'expired' AND p.approved_at IS NOT NULL AND p.confirmed_at IS NULL
+		  AND p.repair_sensor_id IS NULL AND p.instance_token_id IS NULL
+		  AND p.tenant_id = s.tenant_id AND p.sensor_id = s.id
+		  AND s.last_seen_at IS NULL AND s.scope = 'organization'
+		  AND NOT EXISTS (SELECT 1 FROM sensor_keys k WHERE k.tenant_id = s.tenant_id AND k.sensor_id = s.id
+		                  AND NOT (k.status = 'revoked' AND k.revoked_reason = $1))
+		  AND NOT EXISTS (SELECT 1 FROM sensor_api_keys a WHERE a.sensor_id = s.id)
+		  AND NOT EXISTS (SELECT 1 FROM commands c WHERE c.tenant_id = s.tenant_id AND c.sensor_id = s.id)
+		RETURNING s.tenant_id, s.id, s.name`, sensordom.KeyRevokedUnconfirmed)
+	if err != nil {
+		return nil, fmt.Errorf("remove unconfirmed sensors: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []sensordom.RemovedSensor
+	for rows.Next() {
+		var tid, id, name string
+		if err := rows.Scan(&tid, &id, &name); err != nil {
+			return nil, fmt.Errorf("remove unconfirmed sensors: %w", err)
+		}
+		t, err1 := shared.IDFromString(tid)
+		s, err2 := shared.IDFromString(id)
+		if err1 != nil || err2 != nil {
+			continue
+		}
+		out = append(out, sensordom.RemovedSensor{TenantID: t, ID: s, Name: name})
+	}
+	return out, rows.Err()
 }
 
 // ExpireForPlatform expires requests past their deadline, revokes the

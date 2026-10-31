@@ -422,6 +422,10 @@ func (p *AssetProcessor) processBatch(
 		}
 	}
 
+	// The addresses the report's in-bound assets vouch for (job_bound.go),
+	// read before any asset is dropped.
+	scope.primeJobBound(report)
+
 	// Junk names from passive sources (a domain that is not a host name, the
 	// remnant of a percent-encoded delimiter) never become assets.
 	if err := p.dropJunkHostnames(ctx, tenantID, report, output); err != nil {
@@ -533,6 +537,13 @@ func (p *AssetProcessor) processBatch(
 		// with its findings (RFC-088 output binding).
 		if scope.outsideAddressChunk(normalizedName, ctisAsset.Properties) {
 			skipOutsideChunk(output, ctisAsset.ID)
+			continue
+		}
+		// A hostname-scoped command reports only at or under its target
+		// names, its target addresses and the addresses those names state:
+		// anything else is dropped with its findings (job_bound.go).
+		if scope.outsideJobTargets(normalizedName, coreType) {
+			skipOutsideJob(output, ctisAsset.ID)
 			continue
 		}
 

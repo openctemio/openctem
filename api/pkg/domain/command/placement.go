@@ -54,6 +54,10 @@ const (
 	PlacementInactive = "inactive"
 	// PlacementOffline: the sensor has not checked in recently.
 	PlacementOffline = "offline"
+	// PlacementIdentityCloned: the sensor's identity was seen running on
+	// two hosts at once (sensor identity_cloned_at), so it gets no new work
+	// until an administrator resets the flag or re-pairs it.
+	PlacementIdentityCloned = "identity_cloned"
 	// PlacementPinnedElsewhere: the command is reserved for another sensor.
 	PlacementPinnedElsewhere = "pinned_elsewhere"
 	// PlacementRefusedEarlier: the sensor already refused this command.

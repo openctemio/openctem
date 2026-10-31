@@ -1,5 +1,6 @@
 {
   "errors.APPROVAL_REQUIRED": "Thay đổi này cần người phê duyệt. Hãy gửi yêu cầu phê duyệt.",
+  "errors.APP_UPDATED_RELOADING": "{product} vừa được cập nhật. Đang tải lại phiên bản mới nhất.",
   "errors.BAD_REQUEST": "Yêu cầu không hợp lệ. Kiểm tra các giá trị rồi thử lại.",
   "errors.BULK_NOT_ALLOWED": "Không thể thay đổi hàng loạt. Thay đổi từng mục.",
   "errors.BULK_TOO_LARGE": "Quá nhiều mục cho một lần thay đổi hàng loạt. Thu hẹp lựa chọn.",

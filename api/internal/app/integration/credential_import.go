@@ -384,7 +384,7 @@ func (s *CredentialImportService) handleExistingCredential(
 			ID:         existing.ID().String(),
 		}, false, nil
 
-	case exposure.StateActive, exposure.StateAccepted:
+	case exposure.StateActive, exposure.StateInProgress, exposure.StateAccepted:
 		// Update based on strategy
 		return s.updateExistingCredential(ctx, existing, cred, options, index)
 

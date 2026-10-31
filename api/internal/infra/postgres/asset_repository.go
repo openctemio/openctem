@@ -1614,6 +1614,12 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		args = append(args, pq.Array(filter.ScopeStatuses))
 		argIndex++
 	}
+	if len(filter.MonitoringStates) > 0 {
+		conditions = append(conditions, fmt.Sprintf("%s = ANY($%d)",
+			assetMonitoringStateSQL("a", fmt.Sprintf("$%d::boolean", argIndex+1)), argIndex))
+		args = append(args, pq.Array(filter.MonitoringStates), filter.UnclassifiedScanned)
+		argIndex += 2
+	}
 	if len(filter.DiscoveredBy) > 0 {
 		conditions = append(conditions, fmt.Sprintf(
 			"EXISTS (SELECT 1 FROM easm_evidence dbe WHERE dbe.asset_id = a.id AND dbe.tenant_id = a.tenant_id AND dbe.rule = ANY($%d))", argIndex))
