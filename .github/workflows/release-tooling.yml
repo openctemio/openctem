@@ -148,9 +148,11 @@ jobs:
           echo "seccomp profile = sensor $TAG docker/seccomp/sensor.json"
       - name: Has the release the install-guide test
         id: guides
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
         run: |
           if [ -f .sensor-release/install_guides_test.go ]; then echo "present=true" >> "$GITHUB_OUTPUT"
-          else echo "::notice::sensor ${{ steps.release.outputs.tag }} has no install_guides_test.go yet; settings and flags not checked"; echo "present=false" >> "$GITHUB_OUTPUT"; fi
+          else echo "::notice::sensor $TAG has no install_guides_test.go yet; settings and flags not checked"; echo "present=false" >> "$GITHUB_OUTPUT"; fi
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         if: steps.guides.outputs.present == 'true'
         with:
