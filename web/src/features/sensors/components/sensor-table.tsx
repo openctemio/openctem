@@ -6,10 +6,10 @@ import { useMemo } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Progress } from '@/components/ui/progress'
-import { Eye, Settings, KeyRound, Trash2, Power, PowerOff } from 'lucide-react'
+import { Eye, Settings, KeyRound, Trash2, Power, PowerOff, Ban } from 'lucide-react'
 import { useTranslation } from '@/context/i18n-provider'
-import { Permission, useHasPermission } from '@/lib/permissions'
 import { sensorActions } from '../lib/sensor-actions'
+import { useSensorActionPerms } from '../lib/use-sensor-action-perms'
 import {
   DataTable,
   DataTableColumnHeader,
@@ -48,6 +48,8 @@ interface SensorTableProps {
   onDeactivateSensor: (sensor: Sensor) => void
   onDeleteSensor: (sensor: Sensor) => void
   onRegenerateKey: (sensor: Sensor) => void
+  /** Revoke for good (the same action as the drawer's menu). */
+  onRevokeSensor?: (sensor: Sensor) => void
   /** Selected rows, for the page's bulk-action bar. */
   onSelectionChange?: (sensors: Sensor[]) => void
   /** Bump to clear the selection (e.g. after a bulk delete). */
@@ -98,6 +100,7 @@ export function SensorTable({
   onDeactivateSensor,
   onDeleteSensor,
   onRegenerateKey,
+  onRevokeSensor,
   onSelectionChange,
   resetSelectionKey,
   search,
@@ -113,9 +116,8 @@ export function SensorTable({
   grants,
 }: SensorTableProps) {
   const { t } = useTranslation()
-  const canWrite = useHasPermission(Permission.SensorsWrite)
-  const canRevoke = useHasPermission(Permission.SensorsRevoke)
-  const canDelete = useHasPermission(Permission.SensorsDelete)
+  const actionPerms = useSensorActionPerms()
+  const canDelete = actionPerms.delete
   const columns = useMemo<ColumnDef<Sensor>[]>(
     () => [
       ...(canDelete
@@ -302,11 +304,7 @@ export function SensorTable({
           const sensor = row.original
           // Editing, keys and lifecycle are admin actions (sensors:write /
           // sensors:delete, admins and owners only since api#669).
-          const can = sensorActions(sensor, {
-            write: canWrite,
-            revoke: canRevoke,
-            delete: canDelete,
-          })
+          const can = sensorActions(sensor, actionPerms)
           const actions: RowAction[] = [
             {
               label: t('sensors.table.action.viewDetails'),
@@ -340,6 +338,14 @@ export function SensorTable({
               onClick: () => onDeactivateSensor(sensor),
               separatorBefore: true,
             })
+          if (can.revoke && onRevokeSensor)
+            actions.push({
+              label: t('sensors.table.action.revoke'),
+              icon: Ban,
+              onClick: () => onRevokeSensor(sensor),
+              destructive: true,
+              separatorBefore: !can.disable && !can.enable,
+            })
           if (can.delete)
             actions.push({
               label: t('sensors.table.action.delete'),
@@ -359,8 +365,8 @@ export function SensorTable({
       onDeactivateSensor,
       onDeleteSensor,
       onRegenerateKey,
-      canWrite,
-      canRevoke,
+      onRevokeSensor,
+      actionPerms,
       canDelete,
       thresholds,
       now,

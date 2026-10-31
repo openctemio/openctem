@@ -700,6 +700,7 @@ export function SensorsSection({
         onDeactivateSensor={requestDeactivateSensor}
         onDeleteSensor={handleDeleteClick}
         onRegenerateKey={handleRegenerateKey}
+        onRevokeSensor={handleRevokeSensor}
         onSelectionChange={(rows) => setSelectedIds(rows.map((a) => a.id))}
         resetSelectionKey={selectionEpoch}
         thresholds={thresholds}
