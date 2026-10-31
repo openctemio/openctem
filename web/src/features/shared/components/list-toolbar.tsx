@@ -34,7 +34,10 @@ import { FilterPanelToggle, type FilterPanelToggleProps } from './filter-button'
  * 28rem of toolbar width (a phone) the start group always takes the whole
  * first line, so the end buttons never cut the search placeholder short. The
  * row is a size container: controls switch their labels to icons by the
- * toolbar's own width (`@xl/toolbar:`).
+ * toolbar's own width (`@xl/toolbar:`). With a chips row, below 28rem the
+ * end group joins that row instead of taking a line of its own: the search
+ * on the first line, then Add filter and the chips at the start and the end
+ * group at the end of the second.
  *
  * Keyboard (the first toolbar on the page answers): `/` focuses the search;
  * `f` opens the filters (the filter trigger) on a list without "Add filter",
@@ -73,7 +76,9 @@ function isVisible(el: Element | null): el is HTMLElement {
 /** The first visible toolbar on the page owns the list shortcuts. */
 function isFirstToolbar(el: HTMLElement): boolean {
   const all = Array.from(document.querySelectorAll('[data-slot="list-toolbar"]'))
-  return all.find((t) => isVisible(t)) === el
+  // On a phone a toolbar with a chips row is `display: contents` (no box of
+  // its own): its region tells whether it shows.
+  return all.find((t) => isVisible(t.closest('[data-slot="list-toolbar-region"]') ?? t)) === el
 }
 
 function useListShortcuts(ref: React.RefObject<HTMLDivElement | null>) {
@@ -128,7 +133,15 @@ export function ListToolbar({
       ref={ref}
       data-testid="data-table-toolbar"
       data-slot="list-toolbar"
-      className={cn('@container/toolbar flex flex-wrap items-center gap-2', className)}
+      className={cn(
+        'flex flex-wrap items-center gap-2',
+        // The size container: the toolbar itself, or with a chips row the
+        // region around it (same width). Below 28rem (a phone) that toolbar
+        // lends its controls to the region: the search keeps the first line
+        // and the end group joins the chips row, one row fewer before the data.
+        below ? 'min-w-0 basis-full @max-md/toolbar:contents' : '@container/toolbar',
+        className
+      )}
     >
       {lead || start ? (
         // No min-w-0: the group must not shrink below its widest control, or a
@@ -146,7 +159,10 @@ export function ListToolbar({
         // second line instead of running past the edge.
         <div
           data-slot="list-toolbar-end"
-          className="ms-auto flex max-w-full shrink-0 flex-wrap items-center justify-end gap-2"
+          className={cn(
+            'ms-auto flex max-w-full shrink-0 flex-wrap items-center justify-end gap-2',
+            below && '@max-md/toolbar:order-last'
+          )}
         >
           {end}
         </div>
@@ -156,12 +172,17 @@ export function ListToolbar({
 
   if (!below) return toolbar
   return (
-    <div data-slot="list-toolbar-region" className="flex min-w-0 flex-col gap-2">
+    // The region is a size container under the same name, so the toolbar's
+    // controls answer by the same width when the toolbar box is lent out.
+    <div
+      data-slot="list-toolbar-region"
+      className="@container/toolbar flex min-w-0 flex-wrap items-center gap-2"
+    >
       {toolbar}
       <div
         data-testid="data-table-toolbar-below"
         data-slot="list-toolbar-below"
-        className="flex min-w-0 flex-wrap items-center gap-2"
+        className="flex min-w-0 basis-full flex-wrap items-center gap-2 @max-md/toolbar:flex-[1_1_0%] @max-md/toolbar:basis-auto"
       >
         {below}
       </div>
