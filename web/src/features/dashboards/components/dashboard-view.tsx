@@ -32,6 +32,14 @@ export interface DashboardViewProps {
   onRetry?: () => void
 }
 
+/**
+ * A widget of a module that is off for the organization carries no figure
+ * and is not shown at all: an empty card would read as "nothing to see".
+ */
+function hiddenByModule(value: WidgetValue | undefined): boolean {
+  return value?.state === 'unsupported' && value.reason === 'module_off'
+}
+
 /** The result of the widget at `index` of the layout. */
 function valueAt(data: DashboardData | undefined, index: number): WidgetValue | undefined {
   return data?.widgets.find((w) => w.index === index)
@@ -63,6 +71,7 @@ export function DashboardView({ dashboard, data, loading, failed, onRetry }: Das
       data-columns={cols}
     >
       {layout.map((w, i) => {
+        if (!failed && hiddenByModule(valueAt(data, i))) return null
         const spec = w.config as { id?: string } | undefined
         const title = t('dashboards.widget.failed', 'This widget could not be shown')
         return (

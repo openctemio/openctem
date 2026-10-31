@@ -69,6 +69,11 @@ export interface WidgetConfigPanelProps {
   initialValue?: WidgetValue
   onCancel: () => void
   onApply: (spec: WidgetSpec, preview?: WidgetValue) => void
+  /**
+   * Called when the closed panel would hand focus back; return true when the
+   * caller moved focus itself (the editor focuses a widget just added).
+   */
+  onCloseFocus?: () => boolean
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -129,6 +134,7 @@ export function WidgetConfigPanel({
   initialValue,
   onCancel,
   onApply,
+  onCloseFocus,
 }: WidgetConfigPanelProps) {
   const { t } = useTranslation()
   const catalog = useWidgetCatalog()
@@ -210,7 +216,13 @@ export function WidgetConfigPanel({
 
   return (
     <Sheet open={open} onOpenChange={(o) => !o && onCancel()}>
-      <SheetContent side="right" className="w-full sm:max-w-[32rem]">
+      <SheetContent
+        side="right"
+        className="w-full sm:max-w-[32rem]"
+        onCloseAutoFocus={(e) => {
+          if (onCloseFocus?.()) e.preventDefault()
+        }}
+      >
         <SheetHeader>
           <SheetTitle>
             {isNote

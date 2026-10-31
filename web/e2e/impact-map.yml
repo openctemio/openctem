@@ -168,6 +168,7 @@ areas:
     - web/src/features/sensors/**
     - web/src/features/proxy-pools/**
     - web/src/features/ci-runners/**
+    - web/src/app/(dashboard)/(discovery)/ci-cd/**
     - web/src/app/(dashboard)/(scoping)/sensors/**
     - web/src/lib/i18n/dictionaries/en/sensors.json
     - web/src/lib/i18n/dictionaries/en/proxyPools.json

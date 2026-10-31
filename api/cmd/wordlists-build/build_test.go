@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/openctemio/openctem/api/internal/app/contentpack"
+	"github.com/openctemio/openctem/api/internal/app/contentpin/builtin"
 	dom "github.com/openctemio/openctem/api/pkg/domain/contentpack"
 )
 
@@ -180,5 +181,28 @@ func TestEmbeddedSourcesAreValid(t *testing.T) {
 	}
 	if len(s.Excluded) == 0 {
 		t.Error("the excluded list must not be empty")
+	}
+}
+
+// The packs the API embeds are of the release sources.yaml names: a change
+// to the pins raises `release` and must rebuild the embedded packs
+// (go run ./cmd/wordlists-build -out internal/app/contentpin/builtin); the
+// release workflow then checks the published assets are those bytes.
+func TestBuiltinPacksMatchTheRelease(t *testing.T) {
+	s, err := ParseSources(embeddedSources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	packs, err := builtin.Packs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(packs) == 0 {
+		t.Fatal("no built-in packs")
+	}
+	for _, p := range packs {
+		if p.Release != s.Release {
+			t.Errorf("built-in %s is release %s, sources.yaml names %s: rebuild the built-in packs", p.Name, p.Release, s.Release)
+		}
 	}
 }
