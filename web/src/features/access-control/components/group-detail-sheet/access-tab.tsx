@@ -41,6 +41,7 @@ export function AccessTab({
   onShowOutside,
   onCreateTeam,
   onChanged,
+  onOutsideNoticeChange,
 }: {
   groupId: string
   canEdit: boolean
@@ -50,6 +51,8 @@ export function AccessTab({
   onShowOutside?: () => void
   onCreateTeam?: () => void
   onChanged?: () => void
+  /** Whether this tab shows the outside-member notice (so the roles below do not repeat it). */
+  onOutsideNoticeChange?: (shown: boolean) => void
 }) {
   const { t } = useTranslation()
   const { isOwner } = usePermissions()
@@ -70,6 +73,13 @@ export function AccessTab({
     [access]
   )
   useEffect(() => setValue(saved), [saved])
+
+  const showNotice =
+    canEdit &&
+    !(access?.privileged ?? false) &&
+    templates.some((tpl) => tpl.has_full_data_access) &&
+    outside.length > 0
+  useEffect(() => onOutsideNoticeChange?.(showNotice), [showNotice, onOutsideNoticeChange])
 
   const dirty =
     value.scopeMode !== saved.scopeMode ||
@@ -142,16 +152,6 @@ export function AccessTab({
         {access?.privileged && <ElevatedBadge />}
       </div>
 
-      {access && access.other_roles > 0 && (
-        <p className="text-xs text-muted-foreground">
-          {t(
-            'org.teamAccess.otherRoles',
-            'This team also carries {count} role(s) added by hand, listed on the Roles tab.',
-            { count: access.other_roles }
-          )}
-        </p>
-      )}
-
       {updates.map((p) => (
         <div
           key={p.template_id}
@@ -181,15 +181,13 @@ export function AccessTab({
         </div>
       ))}
 
-      {canEdit &&
-        !(access?.privileged ?? false) &&
-        templates.some((tpl) => tpl.has_full_data_access) && (
-          <OutsideMembersNotice
-            members={outside}
-            onShowMembers={onShowOutside}
-            onCreateTeam={onCreateTeam}
-          />
-        )}
+      {showNotice && (
+        <OutsideMembersNotice
+          members={outside}
+          onShowMembers={onShowOutside}
+          onCreateTeam={onCreateTeam}
+        />
+      )}
 
       <TeamAccessFields
         idPrefix={`team-${groupId}`}
