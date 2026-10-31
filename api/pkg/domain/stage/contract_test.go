@@ -210,8 +210,9 @@ func TestTaxonomy_PlannedAreNeverRouted(t *testing.T) {
 			}
 		}
 	}
-	// Adding the planned contracts changed no tool's routing.
-	if len(ForTool("nuclei")) != 1 || len(ForTool("httpx")) != 1 {
+	// Adding the planned contracts changed no tool's routing: a step that
+	// pins the tool without a capability runs its own stage.
+	if st, ok := ForStep("nuclei", nil); !ok || st.Key != VulnTemplates || len(ForTool("httpx")) != 1 {
 		t.Fatal("a planned capability changed how nuclei or httpx steps route")
 	}
 }
