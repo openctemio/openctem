@@ -86,6 +86,10 @@ type ScanWorkflowSettingsRequest struct {
 	// skipped or timed out still runs on the seeds and on what its other
 	// predecessors produced. Omitted on update: unchanged.
 	ContinueOnFailedDependency *bool `json:"continue_on_failed_dependency,omitempty"`
+	// StageBarrier: every chained step waits for its predecessors to
+	// finish instead of taking their results task by task (stage
+	// streaming). Omitted on update: unchanged.
+	StageBarrier *bool `json:"stage_barrier,omitempty"`
 }
 
 // UIPositionRequest represents a visual position in the workflow builder.
@@ -190,6 +194,9 @@ type ScanWorkflowSettingsResponse struct {
 	DeltaGating bool `json:"delta_gating"`
 	// ContinueOnFailedDependency: dependents of a failed step still run.
 	ContinueOnFailedDependency bool `json:"continue_on_failed_dependency"`
+	// StageBarrier: chained steps wait for their predecessors to finish
+	// (no stage streaming).
+	StageBarrier bool `json:"stage_barrier"`
 }
 
 // UIPositionResponse represents a visual position in the workflow builder response.
@@ -874,6 +881,7 @@ func (h *ScanWorkflowHandler) UpdateTemplate(w http.ResponseWriter, r *http.Requ
 	if req.Settings != nil {
 		input.DeltaGating = req.Settings.DeltaGating
 		input.ContinueOnFailedDependency = req.Settings.ContinueOnFailedDependency
+		input.StageBarrier = req.Settings.StageBarrier
 	}
 
 	template, err := h.service.UpdateTemplate(scanWorkflowAuditCtx(r), input)
@@ -1431,6 +1439,9 @@ func toSettings(settings *ScanWorkflowSettingsRequest) *scanworkflow.Settings {
 	if settings.ContinueOnFailedDependency != nil {
 		s.ContinueOnFailedDependency = *settings.ContinueOnFailedDependency
 	}
+	if settings.StageBarrier != nil {
+		s.StageBarrier = *settings.StageBarrier
+	}
 	if settings.SensorPreference != "" {
 		s.SensorPreference = scanworkflow.SensorPreference(settings.SensorPreference)
 	}
@@ -1478,6 +1489,7 @@ func toTemplateResponse(t *scanworkflow.Workflow) *TemplateResponse {
 			SensorPreference:           string(t.Settings.SensorPreference),
 			DeltaGating:                t.Settings.DeltaGating,
 			ContinueOnFailedDependency: t.Settings.ContinueOnFailedDependency,
+			StageBarrier:               t.Settings.StageBarrier,
 		},
 		Tags:      t.Tags,
 		Steps:     steps,

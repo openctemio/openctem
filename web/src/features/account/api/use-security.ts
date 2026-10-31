@@ -12,6 +12,8 @@ import type {
   RecoveryCodesResponse,
   TwoFactorDisableInput,
   TwoFactorEnableInput,
+  TwoFactorReplaceConfirmResponse,
+  TwoFactorReplaceInput,
   TwoFactorStatus,
   TwoFactorSetupResponse,
 } from '../types/account.types'
@@ -104,7 +106,12 @@ const startSetup = () => post<TwoFactorSetupResponse>(userEndpoints.twoFactorSet
 const enable = async (input: TwoFactorEnableInput) =>
   (await post<RecoveryCodesResponse>(userEndpoints.twoFactorEnable(), input)).recovery_codes
 const disable = (input: TwoFactorDisableInput) =>
-  post<{ message: string }>(userEndpoints.twoFactorDisable(), input)
+  post<{ message: string; other_sessions_ended: boolean }>(userEndpoints.twoFactorDisable(), input)
+const startReplace = (input: TwoFactorReplaceInput) =>
+  post<TwoFactorSetupResponse>(userEndpoints.twoFactorReplaceStart(), input)
+const confirmReplace = async (code: string) =>
+  (await post<TwoFactorReplaceConfirmResponse>(userEndpoints.twoFactorReplaceComplete(), { code }))
+    .recovery_codes
 const regenerate = async (code: string) =>
   (await post<RecoveryCodesResponse>(userEndpoints.twoFactorRecoveryCodes(), { code }))
     .recovery_codes
@@ -136,4 +143,21 @@ export function useDisableTwoFactor() {
 export function useRegenerateRecoveryCodes() {
   const { mutate, isPending } = useTwoFactorMutation(regenerate)
   return { regenerateRecoveryCodes: mutate, isRegenerating: isPending }
+}
+
+/**
+ * Move 2FA to a new authenticator: start with the password and a current (or
+ * recovery) code, then confirm with a code from the new app. The old app keeps
+ * working until the confirm; the confirm returns new recovery codes and signs
+ * out every other session.
+ */
+export function useReplaceTwoFactor() {
+  const start = useTwoFactorMutation(startReplace)
+  const confirm = useTwoFactorMutation(confirmReplace)
+  return {
+    startReplace: start.mutate,
+    confirmReplace: confirm.mutate,
+    isStarting: start.isPending,
+    isConfirming: confirm.isPending,
+  }
 }

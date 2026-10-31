@@ -27,7 +27,7 @@ import { ScopingDecisionCards } from '../attention/attention-reasons'
 import { AssetsSectionTabs } from '../assets-section-tabs'
 import { useCallback, useEffect, useEffectEvent, useMemo, useState, type ReactNode } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { Download, EyeOff, Lock, RefreshCw } from 'lucide-react'
+import { Boxes, Download, EyeOff, Lock, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAssetTypeRegistry } from '@/features/asset-types/api/use-asset-type-registry'
 import {
@@ -40,6 +40,7 @@ import { propertyLabel } from '@/features/asset-types/lib/property-schema'
 import { exportInventory } from '../../lib/inventory-export'
 import { useInventoryAssetForms } from './inventory-asset-forms'
 import { InventoryAddButton } from './inventory-add-button'
+import Link from '@/components/link'
 import { Main } from '@/components/layout'
 import {
   PageHeader,
@@ -512,6 +513,37 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
         }
       />
     ) : undefined
+  // Nothing in the view at all, and no filter or search: the organization
+  // has no such assets yet. Say so (not "no match") and offer the ways in.
+  const noneEmpty =
+    !hiddenEmpty &&
+    total === 0 &&
+    viewTotal === 0 &&
+    onlyDefaults &&
+    !isLoading &&
+    !statsLoading &&
+    !typeStatsLoading ? (
+      <EmptyState
+        icon={Boxes}
+        title={t('assets.inv.emptyNoneTitle', 'No assets in this organization yet')}
+        description={t(
+          'assets.inv.emptyNoneHint',
+          'Add an asset, or set up discovery to find the names, addresses and services your organization exposes.'
+        )}
+        action={
+          <div className="flex flex-wrap justify-center gap-2">
+            {canWrite && (
+              <InventoryAddButton registry={registry} view={typeView} onAdd={forms.openCreate} />
+            )}
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/attack-surface">
+                {t('assets.inv.setUpDiscovery', 'Set up discovery')}
+              </Link>
+            </Button>
+          </div>
+        }
+      />
+    ) : undefined
 
   return (
     <Main>
@@ -570,7 +602,7 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
                     />
                   ) : undefined
                 }
-                emptyState={hiddenEmpty}
+                emptyState={hiddenEmpty ?? noneEmpty}
                 onAssetUpdated={() => void mutate()}
                 assets={assets}
                 total={total}

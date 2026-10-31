@@ -64,6 +64,8 @@ type Settings struct {
 	EmergingThreats EmergingThreatSettings `json:"emerging_threats,omitempty"`
 	// FindingViews are the findings work-view defaults.
 	FindingViews FindingViewSettings `json:"finding_views,omitempty"`
+	// APIKeys is the API key policy (maximum lifetime of a new key).
+	APIKeys APIKeySettings `json:"api_keys,omitempty"`
 }
 
 // FindingCorrelationSettings are the per-organization kill switches of
@@ -843,6 +845,9 @@ func (s *Settings) Validate() error {
 		return fmt.Errorf("%w: %s", shared.ErrValidation, err.Error())
 	}
 	if err := s.EmergingThreats.Validate(); err != nil {
+		return err
+	}
+	if err := s.APIKeys.Validate(); err != nil {
 		return err
 	}
 	if err := s.VulnMatching.Validate(); err != nil {

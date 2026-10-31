@@ -33,7 +33,10 @@ export function SettingsSection({
   return (
     <section aria-labelledby={id} className={cn('space-y-3', className)}>
       <div className="flex min-w-0 flex-wrap items-end justify-between gap-x-4 gap-y-2">
-        <div className="min-w-0 flex-1">
+        {/* At least 20rem for the title and description: on a phone the
+            actions wrap under them instead of squeezing the text into a
+            narrow column beside the Save button. */}
+        <div className="min-w-0 flex-[1_1_20rem]">
           <h2 id={id} className="text-base font-semibold">
             {title}
           </h2>

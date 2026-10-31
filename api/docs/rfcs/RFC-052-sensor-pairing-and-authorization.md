@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (decisions SA-1..SA-6 and the secure defaults D-1..D-7, 2026-10-05); SP1 and SP2 implemented; self-binding of bearer-key sensors (§4.8, owner 2026-10-11) implemented |
+| Status | Accepted (decisions SA-1..SA-6 and the secure defaults D-1..D-7, 2026-10-05); SP1 and SP2 implemented; self-binding of bearer-key sensors (§4.8, owner 2026-10-11) implemented; approval context and organization binding (§4.5, threats 22-25) implemented |
 | Scope | api, web, sdk-go (`pkg/sensorsig`, `pkg/sensorproto/pairing`, `pkg/sensorkit`, `pkg/httpsec`), sensor |
 | Builds on | [RFC-032](RFC-032-sensor-enrollment-and-identity.md) (sensor-held Ed25519 key, RFC 9421 signatures, enrollment, `octs_`/`octe_`), [RFC-040](RFC-040-platform-sensor-mutual-distrust.md) (result binding, signed jobs, local ceiling), [RFC-023](RFC-023-scan-zones-and-scanners.md) (zones), [RFC-046](RFC-046-scans-redesign.md) and the stage catalog (tiers T0/T1/T2) |
 | Architecture | [sensor-pairing.md](../architecture/sensor-pairing.md), [sensor-platform-trust.md](../architecture/sensor-platform-trust.md), [authorization-matrix.md](../architecture/authorization-matrix.md) |
@@ -243,6 +243,7 @@ Uniformity:
 ```json
 {
   "fingerprint_confirmed": true,
+  "organization_id": "…",                   // the organization the review showed
   "step_up": { "totp": "123456" },          // or { "password": "…" }
   "name": "dmz-scanner-01",
   "type": "worker",
@@ -253,6 +254,20 @@ Uniformity:
 
 - `sensors:approve`; the pairing must be revealed (SAS known), open and not
   expired. The first claim wins (compare-and-set on the row).
+- The review (lookup, expectation) states the organization the approval binds
+  the sensor to (`organization_id`, `organization_name`: the session's), the
+  request's address with its class (`source_network`: `private` or `public`;
+  `source_provider` when the address classifier knows the edge or hosting
+  provider), the approver's own address (`approver_ip`), the product and SDK
+  version the sensor reported, and when the request was made. The console
+  warns on the path where the sensor showed the code: approve only a sensor
+  you or your team started, never a code someone sent you.
+- `organization_id` must equal the session's organization, else
+  `409 ORGANIZATION_MISMATCH`, checked before step-up so no second factor is
+  spent, and audited (`sensor.pairing_approved`, failure, medium). It only
+  confirms what the reviewer saw: the tenant always comes from the session.
+  The console also refuses to approve when the organization it shows differs
+  from the review's.
 - Step-up (D-2): the platform has TOTP for tenant users (RFC-024). An
   administrator with TOTP must give a current code; one without TOTP but with
   a password gives the password; an SSO-only account without TOTP must have
@@ -270,6 +285,14 @@ Uniformity:
 
 `confirm` activates the key (`sensor.pairing_completed`). An approval not
 confirmed within 10 minutes expires and its key is revoked.
+
+`POST /api/v1/sensor-pairings/{id}/reject` (`sensors:pair`) refuses an
+expectation of the organization, or a request no organization claimed yet
+with its code in the body (`{"code": "K7QM-4ZTD"}`): like an approval, the id
+alone is never enough.
+
+The failed lookup that locks a user's lookups (20 within an hour) is audited
+`sensor.pairing_lookup_locked` (high).
 
 ### 4.6 Re-pair
 
@@ -454,6 +477,10 @@ Each line is a test in the implementation PRs.
 | 19 | Two binds race, or a bind is replayed | Compare-and-set on `auth_kind`; thumbprints unique; the API key is retired in the same transaction | concurrent binds: exactly one `201`, one active key; the old API key `401` after the bind |
 | 20 | Stolen API key binds an attacker's key | Audit `sensor.key_bound` (high) and timeline with fingerprint and address; the legitimate sensor's API key stops working (loud failure); policy `key_bind_requires_approval` for organizations that want approval | bind audited; approval policy refuses `403` and the API key keeps working |
 | 21 | Bind without the private key, or a stale proof | Ed25519 proof over context, thumbprint and a timestamp within 5 minutes | forged, stale, future and malformed proofs `409`, nothing changed |
+| 22 | An approver of several organizations switches organization after the review, or is talked into approving in the wrong one | The review names the organization; the approval must echo its id (`409 ORGANIZATION_MISMATCH` before step-up, audited); the console blocks on a mismatch | approval naming another organization, none or a malformed id refused before step-up, nothing written; refusals audited |
+| 23 | A code sent by someone else (device-code phishing) | Warning on the code path, the request's address and class next to the approver's own, product, SDK version and age shown, plus threat 2's controls | view carries `organization_id`, `approver_ip`, `source_network` (public and private cases) |
+| 24 | A user of another organization rejects a request by its id | Reject of an unclaimed request needs its code | reject with no, a wrong or a malformed code `404` and the request stays open; with the code: rejected; another organization cannot reject an expectation even with its code |
+| 25 | Code guessing goes unnoticed | The lookup lock is audited at high severity, once per lock | audited exactly once after the limit |
 | — | Cross-tenant access | Every query tenant-scoped; approval binds to the approver's tenant; grants and pairings of another tenant answer `404` | cross-tenant grant read/update `404`; re-pair of another tenant's sensor `404` |
 
 ## 7. Data and migrations

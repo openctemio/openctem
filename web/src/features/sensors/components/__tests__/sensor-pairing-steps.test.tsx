@@ -24,6 +24,18 @@ const api = vi.hoisted(() => ({
   expectationIds: [] as (string | null)[],
 }))
 
+const tenant = vi.hoisted(() => ({
+  current: { id: 'org-1', slug: 'acme', name: 'Acme', role: 'owner' } as {
+    id: string
+    slug: string
+    name?: string
+    role: string
+  } | null,
+}))
+vi.mock('@/context/tenant-provider', () => ({
+  useTenant: () => ({ currentTenant: tenant.current }),
+}))
+
 vi.mock('@/lib/permissions', () => ({
   Permission: {
     SensorsPair: 'sensors:pair',
@@ -73,6 +85,11 @@ function pendingView(over: Record<string, unknown> = {}) {
     key_fingerprint: 'SHA256:abc',
     host_facts: { hostname: 'dmz-01', os: 'linux', arch: 'amd64', sensor_version: '0.9.0' },
     source_ip: '203.0.113.7',
+    source_network: 'public',
+    approver_ip: '198.51.100.20',
+    organization_id: 'org-1',
+    organization_name: 'Acme',
+    created_at: new Date(Date.now() - 3 * 60_000).toISOString(),
     expires_at: future(),
     step_up: 'totp',
     ...over,
@@ -90,6 +107,7 @@ describe('EnterCodePanel', () => {
     perms.granted = new Set(['sensors:pair', 'sensors:approve', 'zones:read'])
     api.expectation = { data: undefined, error: undefined }
     api.expectationIds = []
+    tenant.current = { id: 'org-1', slug: 'acme', name: 'Acme', role: 'owner' }
   })
 
   it('looks up the normalised code and shows the fingerprint, host facts and source address', async () => {
@@ -102,7 +120,9 @@ describe('EnterCodePanel', () => {
       '512, tiger, violet, anchor'
     )
     expect(screen.getByText('dmz-01')).toBeInTheDocument()
-    expect(screen.getByText('203.0.113.7')).toBeInTheDocument()
+    expect(screen.getByText('203.0.113.7 (public internet)')).toBeInTheDocument()
+    expect(screen.getByText('198.51.100.20')).toBeInTheDocument()
+    expect(screen.getByText('3 min ago')).toBeInTheDocument()
     expect(screen.getByText('SHA256:abc')).toBeInTheDocument()
   })
 
@@ -136,7 +156,7 @@ describe('EnterCodePanel', () => {
     const user = userEvent.setup()
     render(panel())
     await findByCode(user)
-    const approve = await screen.findByRole('button', { name: /^approve$/i })
+    const approve = await screen.findByRole('button', { name: /^approve into acme$/i })
     expect(approve).toBeDisabled()
     await user.type(screen.getByLabelText('Authenticator code'), '123456')
     expect(approve).toBeDisabled()
@@ -153,11 +173,12 @@ describe('EnterCodePanel', () => {
     await user.click(await screen.findByRole('button', { name: 'dmz' }))
     await user.click(screen.getByLabelText(/fingerprint shown on the sensor console matches/i))
     await user.type(screen.getByLabelText('Authenticator code'), '123456')
-    await user.click(screen.getByRole('button', { name: /^approve$/i }))
+    await user.click(screen.getByRole('button', { name: /^approve into acme$/i }))
     await waitFor(() => expect(api.approve).toHaveBeenCalledTimes(1))
     expect(api.approve).toHaveBeenCalledWith('p1', {
       code: 'K7QM4ZTD',
       fingerprint_confirmed: true,
+      organization_id: 'org-1',
       step_up: { totp: '123456' },
       name: 'dmz-01',
       type: 'worker',
@@ -179,7 +200,7 @@ describe('EnterCodePanel', () => {
       await screen.findByLabelText(/fingerprint shown on the sensor console matches/i)
     )
     await user.type(screen.getByLabelText('Your password'), 'hunter2')
-    await user.click(screen.getByRole('button', { name: /^approve$/i }))
+    await user.click(screen.getByRole('button', { name: /^approve into acme$/i }))
     expect(api.approve.mock.calls[0][1].step_up).toEqual({ password: 'hunter2' })
     expect(await screen.findByRole('alert')).toHaveTextContent(/re-authentication failed/i)
     expect(screen.getByLabelText('Your password')).toHaveValue('')
@@ -205,7 +226,7 @@ describe('EnterCodePanel', () => {
       await screen.findByLabelText(/fingerprint shown on the sensor console matches/i)
     )
     await user.type(screen.getByLabelText('Authenticator code'), '123456')
-    expect(screen.getByRole('button', { name: /^approve$/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /^approve into acme$/i })).toBeDisabled()
     expect(screen.getByText(/permission to approve sensors/i)).toBeInTheDocument()
   })
 
@@ -215,7 +236,58 @@ describe('EnterCodePanel', () => {
     render(panel())
     await findByCode(user)
     expect(await screen.findByText(/has not finished its handshake/i)).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /^approve$/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^approve into acme$/i })).not.toBeInTheDocument()
+  })
+
+  it('names the organization the sensor joins and warns against codes sent by others', async () => {
+    api.lookup.mockResolvedValue(pendingView())
+    const user = userEvent.setup()
+    render(panel())
+    expect(screen.getByTestId('pairing-phishing-warning')).toHaveTextContent(
+      /never approve a code someone sent you/i
+    )
+    await findByCode(user)
+    expect(await screen.findByTestId('pairing-organization')).toHaveTextContent(
+      'The sensor joins Acme'
+    )
+    expect(screen.getByTestId('pairing-phishing-warning')).toBeInTheDocument()
+  })
+
+  it('refuses to approve once the page shows another organization than the review', async () => {
+    api.lookup.mockResolvedValue(
+      pendingView({ organization_id: 'org-2', organization_name: 'Other' })
+    )
+    const user = userEvent.setup()
+    render(panel())
+    await findByCode(user)
+    expect(await screen.findByTestId('pairing-org-mismatch')).toHaveTextContent(
+      /organization changed/i
+    )
+    expect(screen.queryByRole('button', { name: /^approve/i })).not.toBeInTheDocument()
+  })
+
+  it('explains an approval the API refused after a switch of organization', async () => {
+    api.lookup.mockResolvedValue(pendingView())
+    api.approve.mockRejectedValue(new ApiClientError('changed', 'ORGANIZATION_MISMATCH', 409))
+    const user = userEvent.setup()
+    render(panel())
+    await findByCode(user)
+    await user.click(
+      await screen.findByLabelText(/fingerprint shown on the sensor console matches/i)
+    )
+    await user.type(screen.getByLabelText('Authenticator code'), '123456')
+    await user.click(screen.getByRole('button', { name: /^approve into acme$/i }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/organization changed since/i)
+  })
+
+  it('marks a request from a private address and its provider', async () => {
+    api.lookup.mockResolvedValue(
+      pendingView({ source_ip: '10.1.2.3', source_network: 'private', source_provider: '' })
+    )
+    const user = userEvent.setup()
+    render(panel())
+    await findByCode(user)
+    expect(await screen.findByText('10.1.2.3 (private network)')).toBeInTheDocument()
   })
 
   it('rejects a request', async () => {
@@ -225,7 +297,7 @@ describe('EnterCodePanel', () => {
     render(panel())
     await findByCode(user)
     await user.click(await screen.findByRole('button', { name: /^reject$/i }))
-    expect(api.reject).toHaveBeenCalledWith('p1')
+    expect(api.reject).toHaveBeenCalledWith('p1', 'K7QM4ZTD')
     await waitFor(() => expect(onClose).toHaveBeenCalled())
   })
 })

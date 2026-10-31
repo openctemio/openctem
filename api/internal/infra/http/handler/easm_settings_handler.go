@@ -303,6 +303,9 @@ func (h *EASMSettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	saved, err := h.store.UpdateEASMSettings(r.Context(), tenantID.String(), es, h.actx(r))
 	if err != nil {
+		if writeStepUpError(w, err) {
+			return
+		}
 		switch {
 		case errors.Is(err, shared.ErrValidation):
 			apierror.BadRequest(easmValidationMessage(err)).WriteJSON(w)
