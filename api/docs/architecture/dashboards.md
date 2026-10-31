@@ -430,9 +430,9 @@ kind's group) and the tool (`unknown` when the source named none).
   the hero funnel and the source tooltip all use it.
 - Funnel: received and new or reopened are the period's flow (received is
   at least new or reopened); actionable is a stock (open findings of
-  classes P0 to P3 now), so the hero shows it apart from the flow with the
-  caption "open now", never as a third step that can be larger than the
-  first.
+  classes P0 to P3 now), so the hero shows it once, apart from the flow
+  (the ring centre on a wide card, the headline on a phone), never as a
+  third step that can be larger than the first.
 - False positive: the findings closed as false positive in the window, the
   same figure as the flow's.
 - Each source figure opens the receipt list with the same filter
@@ -456,6 +456,19 @@ findings figure equals the findings list; personal reads: a scoped member,
 a member without scope rows and the owner, the out-of-scope false positive
 never counts, receipts only for the owner; receipt list filters refuse
 malformed values), `internal/app/dashboard/widgets/flow_test.go`.
+
+Display (web `components/dashboard-kit/exposure-flow-viz.tsx`): the layout
+follows the widget's own width. Below 660 px (a phone) the answer comes
+first: actionable now with its priority split as one bar and four figures,
+the outcomes as a grid, the stages as a list (each figure names what it
+measures, the state is an icon and words from one shared set, "Act here" is a
+separate pill), then the sources. Sources are a ranked bar list
+(`ranked-bars.tsx`) by findings or by assets and by tool or by source
+instance, healthy sources with nothing folded into one line, unhealthy ones
+always shown; a refresh that changes the order moves rows (no motion under
+reduced motion) and marks the change. Every figure is a link of at least
+44 px on a phone. Part-to-whole bars are `stacked-bar.tsx`; a test keeps
+the kit to one component per pattern (`shared-patterns.test.ts`).
 
 ### Story widgets: levers, weekly brief, KPI strip
 
