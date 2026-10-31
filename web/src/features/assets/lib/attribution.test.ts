@@ -62,6 +62,17 @@ describe('describeEvidence scan rules', () => {
       /^Found by a scan/
     )
   })
+  it('names the certificate a SAN came from', () => {
+    expect(
+      describeEvidence(t, {
+        ...base,
+        rule: 'certificate_san',
+        technique: 'certificate',
+        source: 'certificate_san',
+        observed: { root: 'acme.com' },
+      })
+    ).toMatch(/^Named in a TLS certificate, under acme\.com — seen in a TLS certificate/)
+  })
 })
 
 describe('scanStanding', () => {
