@@ -148,9 +148,59 @@ type FactReader interface {
 	// AcceptanceExpiry counts the accepted findings in scope (campaign rule
 	// applied) by how soon their risk acceptance ends, measured from now.
 	AcceptanceExpiry(ctx context.Context, scope ReadScope, now time.Time) (AcceptanceExpiryCounts, error)
+
+	// ClosureQuality counts, for the findings in scope (campaign rule
+	// applied), the fixes by a person and by the platform and the fixed
+	// findings that came back, since from and between prevFrom and from, and
+	// the pending Ready to close proposals in the scope of the Ready to close
+	// list.
+	ClosureQuality(ctx context.Context, scope ReadScope, from, prevFrom time.Time) (ClosureQualityCounts, error)
+	// ActiveCampaigns returns the active remediation campaigns the reader of
+	// the scope may see, each with its task summary over the reader's view
+	// (the campaign list's visibility and summary rules).
+	ActiveCampaigns(ctx context.Context, scope ReadScope) ([]CampaignProgressRow, error)
+	// ClosedByTool counts, per tool, the findings in scope closed since from
+	// and those of them closed as false positive.
+	ClosedByTool(ctx context.Context, scope ReadScope, from time.Time) ([]ToolClosedRow, error)
 	// EmergingThreats counts the emerging-threat alerts with at least one
 	// asset in scope, with the alert list's own summary statement.
 	EmergingThreats(ctx context.Context, scope ReadScope) (EmergingThreatCounts, error)
+}
+
+// ClosureQualityCounts are the closure figures of a scope. Current is the
+// window, Previous the window before it (same comparisons).
+type ClosureQualityCounts struct {
+	Current, Previous ClosureWindowCounts
+	// ReadyToClose is the pending, eligible proposals now (not windowed).
+	ReadyToClose int64
+}
+
+// ClosureWindowCounts are the closes and reopens of one window.
+type ClosureWindowCounts struct {
+	// ByPerson: status resolved, resolved_at in the window, resolved_by set.
+	// Automatic: the same with no person recorded (resolved_by empty).
+	ByPerson, Automatic int64
+	// Reopened: a fixed finding came back (last_reopened_at in the window).
+	Reopened int64
+}
+
+// CampaignProgressRow is one active campaign with its task summary over the
+// reader's view.
+type CampaignProgressRow struct {
+	ID      shared.ID
+	Name    string
+	DueDate *time.Time
+	// Tasks are the tasks the reader sees, Done those done, Overdue the live
+	// ones past their deadline.
+	Tasks, Done, Overdue int64
+}
+
+// ToolClosedRow is one tool's closes in a window.
+type ToolClosedRow struct {
+	Tool string
+	// Closed: closed statuses with resolved_at in the window. FalsePositive:
+	// of them, closed as false positive.
+	Closed, FalsePositive int64
 }
 
 // EmergingThreatCounts are the emerging-threat alerts of a scope: Seen is

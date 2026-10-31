@@ -66,6 +66,9 @@ export function reasonKeyOf(reason: string | undefined): string {
     case 'no_receipts':
     case 'no_certificates':
     case 'no_findings':
+    case 'no_closures':
+    case 'no_active_campaigns':
+    case 'too_few_closed':
     case 'no_threat_alerts':
     case 'module_off':
       return `dashboards.reason.${reason}`
@@ -204,10 +207,13 @@ function toResult(v: WidgetValue, spec: WidgetSpec | undefined): WidgetResult | 
         shape: 'category',
         rows: c.rows.map((r) => ({
           key: r.key,
-          label_key: meta?.keyPrefix
-            ? `${meta.keyPrefix}.${r.key.replace(/[^a-zA-Z0-9_]/g, '_')}`
-            : dimensionValueKey(dim, r.key),
-          label: r.key,
+          // A server-given label (a campaign name) is shown as is.
+          label_key: r.label
+            ? undefined
+            : meta?.keyPrefix
+              ? `${meta.keyPrefix}.${r.key.replace(/[^a-zA-Z0-9_]/g, '_')}`
+              : dimensionValueKey(dim, r.key),
+          label: r.label || r.key,
           value: r.value,
           previous: r.previous ?? null,
         })),

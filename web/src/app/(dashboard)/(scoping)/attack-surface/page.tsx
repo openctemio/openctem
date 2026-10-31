@@ -32,6 +32,7 @@ import {
 import { STATS_ATTRIBUTION } from '@/features/attack-surface/lib/external-filters'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { SettleGroup, SettleSignal } from '@/features/shared/components/settle-group'
 import { assetDetailHref, isLinkableAssetId } from '@/features/findings/lib/asset-link'
 import { useTranslation } from '@/context/i18n-provider'
 
@@ -119,6 +120,20 @@ function ListRowsSkeleton({ rows }: { rows: number }) {
   )
 }
 
+/** The overview's shape while its blocks load: the strip, then two card rows. */
+function OverviewSkeleton() {
+  return (
+    <div className="space-y-5" aria-busy data-testid="attack-surface-skeleton">
+      <Skeleton className="h-[92px] w-full rounded-lg" />
+      <Skeleton className="h-5 w-72 max-w-full" />
+      <div className="grid gap-5 lg:grid-cols-3">
+        <Skeleton className="h-80 w-full rounded-lg lg:col-span-2" />
+        <Skeleton className="h-80 w-full rounded-lg" />
+      </div>
+    </div>
+  )
+}
+
 export default function AttackSurfacePage() {
   const { t } = useTranslation()
   const { stats, isLoading, error } = useAttackSurfaceStats()
@@ -160,149 +175,237 @@ export default function AttackSurfacePage() {
         />
         <AttackSurfaceSectionTabs />
 
-        <EASMDecidePanel compact />
+        {/* The blocks below load on their own: show them together, so the
+            numbers, the suggestions and the external surface arriving one
+            after the other do not push the page around. */}
+        <SettleGroup fallback={<OverviewSkeleton />}>
+          <SettleSignal pending={isLoading} />
+          <EASMDecidePanel compact />
 
-        {error && (
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>
-              {t('attackSurface.overview.errorTitle', 'Failed to load attack surface data')}
-            </AlertTitle>
-            <AlertDescription>
-              {t('attackSurface.overview.errorDescription', 'Reload the page to try again.')}
-            </AlertDescription>
-          </Alert>
-        )}
+          {error && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>
+                {t('attackSurface.overview.errorTitle', 'Failed to load attack surface data')}
+              </AlertTitle>
+              <AlertDescription>
+                {t('attackSurface.overview.errorDescription', 'Reload the page to try again.')}
+              </AlertDescription>
+            </Alert>
+          )}
 
-        <MetricStrip
-          loading={isLoading}
-          items={[
-            {
-              key: 'total',
-              href: TOTAL_ASSETS_HREF,
-              label: t('attackSurface.overview.totalAssets', 'Total assets'),
-              value: stats?.totalAssets || 0,
-              detail: t(
-                'attackSurface.overview.newInWindow',
-                '{count} new in the last {days} days',
-                { count: stats?.totalAssetsChange ?? 0, days }
-              ),
-            },
-            {
-              key: 'internet',
-              href: INTERNET_FACING_HREF,
-              label: t('attackSurface.overview.internetFacing', 'Internet-facing assets'),
-              value: stats?.internetFacingAssets || 0,
-              detail: t(
-                'attackSurface.overview.newlyExposed',
-                '{count} newly exposed in the last {days} days',
-                { count: stats?.newlyExposed ?? 0, days }
-              ),
-              description: t(
-                'attackSurface.overview.internetFacingInfo',
-                'Assets whose exposure is public or that a source reported reachable from the internet. Newly exposed counts the same changes as Assets › Activity.'
-              ),
-            },
-            {
-              key: 'critical',
-              href: CRITICAL_INTERNET_FACING_HREF,
-              label: t(
-                'attackSurface.overview.criticalInternetFacing',
-                'Critical internet-facing assets'
-              ),
-              value: stats?.criticalInternetFacingAssets || 0,
-              description: t(
-                'attackSurface.overview.criticalInternetFacingInfo',
-                'Internet-facing assets with critical or high criticality. A population to watch, not open risks: open exposures are listed below.'
-              ),
-            },
-          ]}
-        />
+          <MetricStrip
+            loading={isLoading}
+            items={[
+              {
+                key: 'total',
+                href: TOTAL_ASSETS_HREF,
+                label: t('attackSurface.overview.totalAssets', 'Total assets'),
+                value: stats?.totalAssets || 0,
+                detail: t(
+                  'attackSurface.overview.newInWindow',
+                  '{count} new in the last {days} days',
+                  { count: stats?.totalAssetsChange ?? 0, days }
+                ),
+              },
+              {
+                key: 'internet',
+                href: INTERNET_FACING_HREF,
+                label: t('attackSurface.overview.internetFacing', 'Internet-facing assets'),
+                value: stats?.internetFacingAssets || 0,
+                detail: t(
+                  'attackSurface.overview.newlyExposed',
+                  '{count} newly exposed in the last {days} days',
+                  { count: stats?.newlyExposed ?? 0, days }
+                ),
+                description: t(
+                  'attackSurface.overview.internetFacingInfo',
+                  'Assets whose exposure is public or that a source reported reachable from the internet. Newly exposed counts the same changes as Assets › Activity.'
+                ),
+              },
+              {
+                key: 'critical',
+                href: CRITICAL_INTERNET_FACING_HREF,
+                label: t(
+                  'attackSurface.overview.criticalInternetFacing',
+                  'Critical internet-facing assets'
+                ),
+                value: stats?.criticalInternetFacingAssets || 0,
+                description: t(
+                  'attackSurface.overview.criticalInternetFacingInfo',
+                  'Internet-facing assets with critical or high criticality. A population to watch, not open risks: open exposures are listed below.'
+                ),
+              },
+            ]}
+          />
 
-        {!isLoading && !error && (
-          <p className="text-sm text-muted-foreground">
-            <Link
-              href={NEWLY_EXPOSED_HREF}
-              className="underline underline-offset-2 hover:text-foreground"
-            >
-              {t(
-                'attackSurface.overview.seeNewlyExposed',
-                'See what became internet-facing this week'
-              )}
-            </Link>
-          </p>
-        )}
-
-        <EASMOverview />
-
-        <div className="grid gap-5 lg:grid-cols-3">
-          <Card className="lg:col-span-1">
-            <CardHeader>
-              <CardTitle className="text-base">
-                {t('attackSurface.overview.breakdownTitle', 'Asset breakdown')}
-              </CardTitle>
-              <CardDescription>
+          {/* A fixed link: shown while loading too, so it does not push the
+            sections below when the numbers arrive. */}
+          {!error && (
+            <p className="text-sm text-muted-foreground">
+              <Link
+                href={NEWLY_EXPOSED_HREF}
+                className="underline underline-offset-2 hover:text-foreground"
+              >
                 {t(
-                  'attackSurface.overview.breakdownDescription',
-                  'Assets by type, with how many are exposed'
+                  'attackSurface.overview.seeNewlyExposed',
+                  'See what became internet-facing this week'
                 )}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {isLoading ? (
-                <ListRowsSkeleton rows={6} />
-              ) : breakdown.length === 0 ? (
-                <EmptyState
-                  icon={Layers}
-                  title={t('attackSurface.overview.noAssetsTitle', 'No assets yet')}
-                  description={t(
-                    'attackSurface.overview.noAssetsDescription',
-                    'Assets appear here once discovery or an import adds them.'
-                  )}
-                  card={false}
-                  className="py-8"
-                />
-              ) : (
-                <div className="divide-y">
-                  {breakdown.map((item) => {
-                    const TypeIcon = assetTypeIcons[item.type] || Server
-                    return (
-                      <div key={item.type} className="flex items-center justify-between py-2.5">
-                        <div className="flex min-w-0 items-center gap-3">
-                          <TypeIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-medium">{typeName(item.type)}</p>
-                            <p className="text-xs text-muted-foreground tabular-nums">
-                              {t('attackSurface.overview.exposedCount', '{count} exposed', {
-                                count: item.exposed,
-                              })}
-                            </p>
-                          </div>
-                        </div>
-                        <span className="text-sm font-medium tabular-nums">{item.total}</span>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+              </Link>
+            </p>
+          )}
 
-          <Card className="lg:col-span-2">
-            <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
-              <div className="space-y-1.5">
+          <EASMOverview />
+
+          <div className="grid gap-5 lg:grid-cols-3">
+            <Card className="lg:col-span-1">
+              <CardHeader>
                 <CardTitle className="text-base">
-                  {t('attackSurface.overview.exposedTitle', 'Exposed assets')}
+                  {t('attackSurface.overview.breakdownTitle', 'Asset breakdown')}
                 </CardTitle>
                 <CardDescription>
                   {t(
-                    'attackSurface.overview.exposedDescription',
-                    'Internet-facing assets with the highest risk'
+                    'attackSurface.overview.breakdownDescription',
+                    'Assets by type, with how many are exposed'
+                  )}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {isLoading ? (
+                  <ListRowsSkeleton rows={6} />
+                ) : breakdown.length === 0 ? (
+                  <EmptyState
+                    icon={Layers}
+                    title={t('attackSurface.overview.noAssetsTitle', 'No assets yet')}
+                    description={t(
+                      'attackSurface.overview.noAssetsDescription',
+                      'Assets appear here once discovery or an import adds them.'
+                    )}
+                    card={false}
+                    className="py-8"
+                  />
+                ) : (
+                  <div className="divide-y">
+                    {breakdown.map((item) => {
+                      const TypeIcon = assetTypeIcons[item.type] || Server
+                      return (
+                        <div key={item.type} className="flex items-center justify-between py-2.5">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <TypeIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium">{typeName(item.type)}</p>
+                              <p className="text-xs text-muted-foreground tabular-nums">
+                                {t('attackSurface.overview.exposedCount', '{count} exposed', {
+                                  count: item.exposed,
+                                })}
+                              </p>
+                            </div>
+                          </div>
+                          <span className="text-sm font-medium tabular-nums">{item.total}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="lg:col-span-2">
+              <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
+                <div className="space-y-1.5">
+                  <CardTitle className="text-base">
+                    {t('attackSurface.overview.exposedTitle', 'Exposed assets')}
+                  </CardTitle>
+                  <CardDescription>
+                    {t(
+                      'attackSurface.overview.exposedDescription',
+                      'Internet-facing assets with the highest risk'
+                    )}
+                  </CardDescription>
+                </div>
+                <Button size="sm" variant="outline" asChild>
+                  <Link href="/attack-surface/external">
+                    {t('attackSurface.overview.viewAll', 'View all')}
+                  </Link>
+                </Button>
+              </CardHeader>
+              <CardContent>
+                {isLoading ? (
+                  <ListRowsSkeleton rows={5} />
+                ) : exposed.length === 0 ? (
+                  <EmptyState
+                    icon={Network}
+                    title={t('attackSurface.overview.noExposedTitle', 'No exposed assets')}
+                    description={t(
+                      'attackSurface.overview.noExposedDescription',
+                      'No asset is marked public yet.'
+                    )}
+                    card={false}
+                    className="py-8"
+                  />
+                ) : (
+                  <div className="divide-y">
+                    {exposed.map((service) => (
+                      <div
+                        key={service.id}
+                        className="flex items-center justify-between gap-3 py-2.5"
+                      >
+                        <div className="flex min-w-0 items-center gap-3">
+                          <Server className="h-4 w-4 shrink-0 text-muted-foreground" />
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <AssetName id={service.id} name={service.name} />
+                            </div>
+                            <p className="flex flex-wrap gap-x-2 text-xs text-muted-foreground">
+                              <span>{typeName(service.type, true)}</span>
+                              <RelativeTime date={service.lastSeen} />
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <span
+                            className={cn(
+                              'text-xs tabular-nums',
+                              service.findingCount > 0
+                                ? 'font-medium text-destructive'
+                                : 'text-muted-foreground'
+                            )}
+                          >
+                            {service.findingCount === 1
+                              ? t('attackSurface.overview.findings.one', '1 finding', { count: 1 })
+                              : t('attackSurface.overview.findings.other', '{count} findings', {
+                                  count: service.findingCount,
+                                })}
+                          </span>
+                          <Badge
+                            variant={service.exposure === 'public' ? 'destructive' : 'secondary'}
+                          >
+                            {exposureName(service.exposure)}
+                          </Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
+              <div className="space-y-1.5">
+                <CardTitle className="text-base">
+                  {t('attackSurface.overview.recentTitle', 'Recent changes')}
+                </CardTitle>
+                <CardDescription>
+                  {t(
+                    'attackSurface.overview.recentDescription',
+                    'Assets added, removed or changed'
                   )}
                 </CardDescription>
               </div>
               <Button size="sm" variant="outline" asChild>
-                <Link href="/attack-surface/external">
+                <Link href="/assets/changes">
                   {t('attackSurface.overview.viewAll', 'View all')}
                 </Link>
               </Button>
@@ -310,118 +413,43 @@ export default function AttackSurfacePage() {
             <CardContent>
               {isLoading ? (
                 <ListRowsSkeleton rows={5} />
-              ) : exposed.length === 0 ? (
+              ) : changes.length === 0 ? (
                 <EmptyState
-                  icon={Network}
-                  title={t('attackSurface.overview.noExposedTitle', 'No exposed assets')}
+                  icon={History}
+                  title={t('attackSurface.overview.noChangesTitle', 'No recent changes')}
                   description={t(
-                    'attackSurface.overview.noExposedDescription',
-                    'No asset is marked public yet.'
+                    'attackSurface.overview.noChangesDescription',
+                    'The attack surface has not changed recently.'
                   )}
                   card={false}
                   className="py-8"
                 />
               ) : (
                 <div className="divide-y">
-                  {exposed.map((service) => (
+                  {changes.map((change) => (
                     <div
-                      key={service.id}
+                      key={`${change.assetId ?? change.assetName}-${change.type}-${change.timestamp}`}
                       className="flex items-center justify-between gap-3 py-2.5"
                     >
                       <div className="flex min-w-0 items-center gap-3">
-                        <Server className="h-4 w-4 shrink-0 text-muted-foreground" />
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <AssetName id={service.id} name={service.name} />
-                          </div>
-                          <p className="flex flex-wrap gap-x-2 text-xs text-muted-foreground">
-                            <span>{typeName(service.type, true)}</span>
-                            <RelativeTime date={service.lastSeen} />
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        <span
-                          className={cn(
-                            'text-xs tabular-nums',
-                            service.findingCount > 0
-                              ? 'font-medium text-destructive'
-                              : 'text-muted-foreground'
-                          )}
-                        >
-                          {service.findingCount === 1
-                            ? t('attackSurface.overview.findings.one', '1 finding', { count: 1 })
-                            : t('attackSurface.overview.findings.other', '{count} findings', {
-                                count: service.findingCount,
-                              })}
-                        </span>
                         <Badge
-                          variant={service.exposure === 'public' ? 'destructive' : 'secondary'}
+                          variant={change.type === 'added' ? 'secondary' : 'outline'}
+                          className="w-20 justify-center"
                         >
-                          {exposureName(service.exposure)}
+                          {changeName(change.type)}
                         </Badge>
+                        <AssetName id={change.assetId} name={change.assetName} />
                       </div>
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        <RelativeTime date={change.timestamp} />
+                      </span>
                     </div>
                   ))}
                 </div>
               )}
             </CardContent>
           </Card>
-        </div>
-
-        <Card>
-          <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
-            <div className="space-y-1.5">
-              <CardTitle className="text-base">
-                {t('attackSurface.overview.recentTitle', 'Recent changes')}
-              </CardTitle>
-              <CardDescription>
-                {t('attackSurface.overview.recentDescription', 'Assets added, removed or changed')}
-              </CardDescription>
-            </div>
-            <Button size="sm" variant="outline" asChild>
-              <Link href="/assets/changes">{t('attackSurface.overview.viewAll', 'View all')}</Link>
-            </Button>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <ListRowsSkeleton rows={5} />
-            ) : changes.length === 0 ? (
-              <EmptyState
-                icon={History}
-                title={t('attackSurface.overview.noChangesTitle', 'No recent changes')}
-                description={t(
-                  'attackSurface.overview.noChangesDescription',
-                  'The attack surface has not changed recently.'
-                )}
-                card={false}
-                className="py-8"
-              />
-            ) : (
-              <div className="divide-y">
-                {changes.map((change) => (
-                  <div
-                    key={`${change.assetId ?? change.assetName}-${change.type}-${change.timestamp}`}
-                    className="flex items-center justify-between gap-3 py-2.5"
-                  >
-                    <div className="flex min-w-0 items-center gap-3">
-                      <Badge
-                        variant={change.type === 'added' ? 'secondary' : 'outline'}
-                        className="w-20 justify-center"
-                      >
-                        {changeName(change.type)}
-                      </Badge>
-                      <AssetName id={change.assetId} name={change.assetName} />
-                    </div>
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      <RelativeTime date={change.timestamp} />
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        </SettleGroup>
       </PageStack>
     </Main>
   )

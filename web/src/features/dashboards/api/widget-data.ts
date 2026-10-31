@@ -191,6 +191,8 @@ export interface WidgetValue {
   category?: {
     rows: Array<{
       key: string
+      /** The name of a key that is an id (a campaign), shown as is. */
+      label?: string
       value: number
       previous?: number
       p90?: number

@@ -13,10 +13,16 @@
  * Approval binds the sensor's key to this organization. It needs the
  * "fingerprint matches" tick (the API refuses an approval without it) and
  * step-up re-authentication; the new sensor starts at trust level New.
+ *
+ * Against approving someone else's sensor (a code sent by email or chat),
+ * the review names the organization the sensor joins and sends its id with
+ * the approval (the API refuses it after a switch of organization), warns
+ * on the path where the sensor showed the code, and shows the request's
+ * address next to the approver's own.
  */
 
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, Check, Loader2 } from 'lucide-react'
+import { AlertTriangle, Building2, Check, Loader2, ShieldAlert } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { TOTP_CODE_LENGTH, VerificationCodeInput } from '@/components/security'
@@ -34,6 +40,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useTranslation } from '@/context/i18n-provider'
+import { useTenant } from '@/context/tenant-provider'
 import { useNow } from '@/hooks/use-now'
 import { useScanZones } from '@/lib/api/scan-zone-hooks'
 import { invalidateSensorsCache } from '@/lib/api/sensor-hooks'
@@ -52,6 +59,7 @@ import {
   PAIRING_CODE_LENGTH,
   PARAMETERISED_PROFILES,
   formatCountdown,
+  formatRequestAge,
   grantProfileValue,
   normalizePairingCode,
   pairingErrorMessage,
@@ -138,6 +146,7 @@ export function EnterCodePanel({
         void find()
       }}
     >
+      <PhishingWarning />
       <p className="text-sm text-muted-foreground">
         {t('sensors.pair.codeHelpBefore')} <code className="font-mono">openctemio-sensor pair</code>
         {t('sensors.pair.codeHelpAfter')}
@@ -168,6 +177,65 @@ export function EnterCodePanel({
 // ---------------------------------------------------------------------------
 // Review and approve
 // ---------------------------------------------------------------------------
+
+/** Approve only a sensor you started: the code path a phisher can use. */
+function PhishingWarning() {
+  const { t } = useTranslation()
+  return (
+    <Alert role="note" data-testid="pairing-phishing-warning">
+      <ShieldAlert className="h-4 w-4" />
+      <AlertTitle>{t('sensors.pair.phish.title')}</AlertTitle>
+      <AlertDescription>{t('sensors.pair.phish.body')}</AlertDescription>
+    </Alert>
+  )
+}
+
+/**
+ * The organization an approval binds the sensor to, as the API states it;
+ * null when the page now shows another organization (the approval would be
+ * refused).
+ */
+function useApprovalOrganization(view: SensorPairingView) {
+  const { currentTenant } = useTenant()
+  const id = view.organization_id ?? ''
+  const mismatch = !!id && !!currentTenant && currentTenant.id !== id
+  const name = view.organization_name || (currentTenant?.id === id ? currentTenant?.name : '') || ''
+  return { id, name, mismatch }
+}
+
+function OrganizationBanner({ view }: { view: SensorPairingView }) {
+  const { t } = useTranslation()
+  const org = useApprovalOrganization(view)
+  if (!org.id) return null
+  if (org.mismatch) {
+    return (
+      <Alert variant="destructive" data-testid="pairing-org-mismatch">
+        <AlertTriangle className="h-4 w-4" />
+        <AlertTitle>{t('sensors.pair.org.mismatchTitle')}</AlertTitle>
+        <AlertDescription>{t('sensors.pair.org.mismatchBody')}</AlertDescription>
+      </Alert>
+    )
+  }
+  return (
+    <Alert role="note" data-testid="pairing-organization">
+      <Building2 className="h-4 w-4" />
+      <AlertTitle>
+        {t('sensors.pair.org.title', undefined, { name: org.name || org.id })}
+      </AlertTitle>
+      <AlertDescription>{t('sensors.pair.org.body')}</AlertDescription>
+    </Alert>
+  )
+}
+
+/** The request's address with its network class and known provider. */
+function sourceLabel(view: SensorPairingView, t: (key: string) => string): string | undefined {
+  if (!view.source_ip) return undefined
+  const notes = [
+    view.source_network ? t(`sensors.pair.fact.network.${view.source_network}`) : '',
+    view.source_provider ?? '',
+  ].filter(Boolean)
+  return notes.length ? `${view.source_ip} (${notes.join(', ')})` : view.source_ip
+}
 
 export function PairingFingerprint({ sas }: { sas?: string }) {
   const { t } = useTranslation()
@@ -208,10 +276,13 @@ export function PairingReview({
   const now = useNow(1000)
   const left = secondsUntil(view.expires_at, now)
   const facts = view.host_facts ?? {}
-  const ready = !!view.sas && view.status === 'pending' && left > 0
+  const org = useApprovalOrganization(view)
+  const ready = !!view.sas && view.status === 'pending' && left > 0 && !org.mismatch
 
   return (
     <div className="space-y-4">
+      <OrganizationBanner view={view} />
+      {view.mode === 'forward' && <PhishingWarning />}
       {view.repair_sensor_name && (
         <Alert variant="destructive">
           <AlertTriangle className="h-4 w-4" />
@@ -243,8 +314,24 @@ export function PairingReview({
             label: t('sensors.pair.fact.system'),
             value: [facts.os, facts.arch].filter(Boolean).join(' / '),
           },
+          { key: 'product', label: t('sensors.pair.fact.product'), value: facts.product },
           { key: 'version', label: t('sensors.pair.fact.version'), value: facts.sensor_version },
-          { key: 'from', label: t('sensors.pair.fact.requestedFrom'), value: view.source_ip },
+          { key: 'sdk', label: t('sensors.pair.fact.sdkVersion'), value: facts.sdk_version },
+          {
+            key: 'from',
+            label: t('sensors.pair.fact.requestedFrom'),
+            value: sourceLabel(view, t),
+          },
+          {
+            key: 'approver',
+            label: t('sensors.pair.fact.yourAddress'),
+            value: view.approver_ip,
+          },
+          {
+            key: 'requested',
+            label: t('sensors.pair.fact.requested'),
+            value: view.created_at ? formatRequestAge(view.created_at, now, t) : undefined,
+          },
           {
             key: 'key',
             label: t('sensors.pair.fact.keyFingerprint'),
@@ -298,6 +385,7 @@ function ApprovalForm({
   const { data: zonesData } = useScanZones(canReadZones)
   const zones = useMemo(() => zonesData?.data ?? [], [zonesData?.data])
   const stepUp = stepUpMethodOf(view.step_up)
+  const org = useApprovalOrganization(view)
 
   const [name, setName] = useState(view.host_facts?.name || view.host_facts?.hostname || '')
   const [type, setType] = useState<SensorType>('worker')
@@ -317,6 +405,8 @@ function ApprovalForm({
   const integrationOk = validIntegrationName(integration)
   const canSubmit =
     canApprove &&
+    !!org.id &&
+    !org.mismatch &&
     matches &&
     name.trim() !== '' &&
     integrationOk &&
@@ -332,6 +422,7 @@ function ApprovalForm({
       const res = await approvePairing(view.id, {
         code,
         fingerprint_confirmed: matches,
+        organization_id: org.id,
         step_up:
           stepUp === 'totp'
             ? { totp: secret.trim() }
@@ -361,7 +452,7 @@ function ApprovalForm({
     setError(null)
     setBusy('reject')
     try {
-      await rejectPairing(view.id)
+      await rejectPairing(view.id, code)
       toast.success(t('sensors.pair.rejectedToast'))
       onRejected()
     } catch (err) {
@@ -536,7 +627,9 @@ function ApprovalForm({
           ) : (
             <Check className="h-4 w-4" />
           )}
-          {t('sensors.pair.approve')}
+          {org.name
+            ? t('sensors.pair.approveInto', undefined, { name: org.name })
+            : t('sensors.pair.approve')}
         </Button>
       </div>
     </form>

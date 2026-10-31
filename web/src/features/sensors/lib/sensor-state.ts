@@ -27,6 +27,7 @@ type StateInput = Pick<
   | 'state'
   | 'health_reasons'
   | 'outbox_warning'
+  | 'local_store'
 >
 
 /** A one-shot (CI) sensor connects only while it runs. */
@@ -87,7 +88,22 @@ export function canTakeJobs(
   thresholds: FleetThresholds = DEFAULT_FLEET_THRESHOLDS
 ): boolean {
   if (isOneShotSensor(sensor)) return false
+  if (sensorStoppedClaiming(sensor)) return false
   return stateTakesJobs(sensorState(sensor, now, thresholds))
+}
+
+/**
+ * The sensor said it claims no new jobs because its local storage is full
+ * (api reason `stopped_claiming`). It still heartbeats, so its state is
+ * degraded, but the platform places no work on it until it has room.
+ */
+export function sensorStoppedClaiming(
+  sensor: Pick<Sensor, 'health_reasons' | 'local_store'>
+): boolean {
+  return (
+    !!sensor.local_store?.stop_claiming ||
+    !!sensor.health_reasons?.some((r) => r.code === 'stopped_claiming')
+  )
 }
 
 export type SensorStateTone = 'success' | 'warning' | 'destructive' | 'info' | 'muted'

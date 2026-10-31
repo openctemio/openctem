@@ -28,6 +28,7 @@ export const API_BASE = {
   COMMANDS: '/api/v1/commands',
   SCAN_ZONES: '/api/v1/scan-zones',
   PROXY_POOLS: '/api/v1/proxy-pools',
+  WORDLISTS: '/api/v1/wordlists',
   SCAN_PROFILES: '/api/v1/scan-profiles',
   SCANNER_TEMPLATES: '/api/v1/scanner-templates',
   TOOLS: '/api/v1/tools',
@@ -246,6 +247,8 @@ export const userEndpoints = {
   twoFactorEnable: () => `${API_BASE.USERS}/me/2fa/enable`,
   twoFactorDisable: () => `${API_BASE.USERS}/me/2fa/disable`,
   twoFactorRecoveryCodes: () => `${API_BASE.USERS}/me/2fa/recovery-codes`,
+  twoFactorReplaceStart: () => '/api/v1/me/2fa/replacement/start',
+  twoFactorReplaceComplete: () => '/api/v1/me/2fa/replacement/complete',
 
   /**
    * Linked sign-in methods (Account > Security). Link start and unlink carry
@@ -1522,6 +1525,21 @@ export const proxyPoolEndpoints = {
   /** GET: the results of those tests, by command id. */
   tests: (poolId: string, commandIds: string[]) =>
     `${API_BASE.PROXY_POOLS}/${poolId}/tests?command_ids=${commandIds.map(encodeURIComponent).join(',')}`,
+} as const
+
+/**
+ * Organization wordlists (api docs/architecture/wordlists.md): tenant from
+ * the JWT.
+ */
+export const wordlistEndpoints = {
+  list: () => API_BASE.WORDLISTS,
+  create: () => API_BASE.WORDLISTS,
+  get: (id: string) => `${API_BASE.WORDLISTS}/${id}`,
+  update: (id: string) => `${API_BASE.WORDLISTS}/${id}`,
+  delete: (id: string) => `${API_BASE.WORDLISTS}/${id}`,
+  /** GET: counts of the label list an enumeration job of root would carry. */
+  preview: (root: string, depth: 'standard' | 'deep' = 'standard') =>
+    `${API_BASE.WORDLISTS}/preview?root=${encodeURIComponent(root)}&depth=${depth}`,
 } as const
 
 /**

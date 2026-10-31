@@ -392,6 +392,13 @@ export const settingsNav: SettingsNavGroup[] = [
         icon: Users,
         permission: Permission.MembersRead,
         keywords: ['users', 'invite', 'people'],
+        anchors: [
+          {
+            id: 'pending-invitations',
+            title: 'Pending invitations',
+            keywords: ['invite', 'invitation', 'resend'],
+          },
+        ],
       },
       {
         id: 'teams',
@@ -418,6 +425,13 @@ export const settingsNav: SettingsNavGroup[] = [
         icon: Key,
         permission: Permission.RolesRead,
         keywords: ['rbac', 'permissions'],
+        anchors: [
+          {
+            id: 'create-role',
+            title: 'Create a role',
+            keywords: ['custom role', 'permissions', 'new role'],
+          },
+        ],
       },
       {
         id: 'scim',
@@ -427,6 +441,13 @@ export const settingsNav: SettingsNavGroup[] = [
         icon: UserCog,
         permission: Permission.MembersRead,
         keywords: ['scim', 'provisioning', 'okta', 'entra', 'azure ad', 'directory'],
+        anchors: [
+          {
+            id: 'scim-endpoint',
+            title: 'SCIM endpoint and token',
+            keywords: ['token', 'url', 'provisioning'],
+          },
+        ],
       },
       {
         id: 'api-keys',
@@ -504,6 +525,13 @@ export const settingsNav: SettingsNavGroup[] = [
           'risk acceptance',
           'backup contact',
         ],
+        anchors: [
+          {
+            id: 'approval-tiers',
+            title: 'Approval tiers and approvers',
+            keywords: ['four-eyes', 'approvers', 'decision lasts'],
+          },
+        ],
       },
       {
         id: 'risk-scoring',
@@ -514,6 +542,18 @@ export const settingsNav: SettingsNavGroup[] = [
         permission: Permission.TeamUpdate,
         module: 'risk_scoring',
         keywords: ['score', 'weights', 'presets'],
+        anchors: [
+          {
+            id: 'floor-unowned-toggle',
+            title: 'Unowned findings at P2',
+            keywords: ['owner', 'floor', 'unowned'],
+          },
+          {
+            id: 'ctem-toggle',
+            title: 'CTEM bonus points',
+            keywords: ['bonus', 'exposure', 'pii'],
+          },
+        ],
       },
       {
         id: 'sla-policies',
@@ -607,6 +647,13 @@ export const settingsNav: SettingsNavGroup[] = [
         permission: Permission.ScopeRead,
         module: 'scope_config',
         keywords: ['scope', 'approvals', 'one-off', 'exception', 'tier', 'auto-join', 'proof'],
+        anchors: [
+          {
+            id: 'scope-approval-policy',
+            title: 'Scope approval policy',
+            keywords: ['approvers', 'who widens scope', 'one-off', 'auto-join'],
+          },
+        ],
       },
       {
         id: 'scan-approval',
@@ -801,6 +848,25 @@ export const settingsNav: SettingsNavGroup[] = [
         permission: Permission.SensorsRead,
         module: 'sensors',
         keywords: ['trivy db', 'nuclei templates', 'semgrep rules', 'staleness', 'pin', 'update'],
+      },
+      {
+        // Organization wordlists (api docs/architecture/wordlists.md): read
+        // with scans:content:read; changes need scans:content:write.
+        id: 'wordlists',
+        title: 'Wordlists',
+        description: 'Words subdomain discovery tries under your domains.',
+        url: '/settings/scanning/wordlists',
+        icon: ListChecks,
+        permission: Permission.ContentPacksRead,
+        keywords: [
+          'wordlist',
+          'subdomain',
+          'brute force',
+          'enumeration',
+          'dns',
+          'labels',
+          'discovery',
+        ],
       },
     ],
   },

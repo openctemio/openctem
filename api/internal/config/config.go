@@ -184,6 +184,11 @@ type ScopeConfig struct {
 	// Unset: a public resolver when organizations are self-service (SaaS),
 	// otherwise system.
 	ZoneResolver string
+	// StageStreaming hands a chained workflow step its predecessor's
+	// results task by task instead of after the whole predecessor
+	// (SCAN_STAGE_STREAMING, default true; RFC-137). Off: every chained
+	// step waits for its predecessors, as before.
+	StageStreaming bool
 	// ProgramFeedDir is a directory holding the newest signed public
 	// program feed bundle (PROGRAMFEED_DIR: a mirror or an upload,
 	// RFC-065 §16); ProgramFeedRootKeyID pins the feed's offline root
@@ -1905,6 +1910,7 @@ func Load() (*Config, error) {
 		},
 		Scope: ScopeConfig{
 			ZoneResolver:         getEnv("SCAN_ZONE_RESOLVER", ""),
+			StageStreaming:       getEnvBool("SCAN_STAGE_STREAMING", true),
 			MaxPublicCIDRv4:      getEnvInt("SCOPE_MAX_PUBLIC_CIDR_V4", 16),
 			MaxPublicCIDRv6:      getEnvInt("SCOPE_MAX_PUBLIC_CIDR_V6", 32),
 			DenyExtra:            getEnvSlice("SCOPE_DENY_EXTRA", nil),

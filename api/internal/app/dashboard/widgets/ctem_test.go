@@ -37,6 +37,11 @@ type ctemFacts struct {
 	// The coverage causes, and a scope with no finding at all.
 	causes     []dashboard.CauseRow
 	noFindings bool
+	// The quality breakdowns.
+	closure      dashboard.ClosureQualityCounts
+	campaigns    []dashboard.CampaignProgressRow
+	toolClosed   []dashboard.ToolClosedRow
+	qualityCalls int
 	// The emerging-threats breakdown.
 	threats dashboard.EmergingThreatCounts
 }
@@ -154,6 +159,26 @@ func (f *ctemFacts) AcceptanceExpiry(_ context.Context, s dashboard.ReadScope, n
 	f.scopes = append(f.scopes, s)
 	f.breakdownNow = now
 	return f.accepted, nil
+}
+
+func (f *ctemFacts) ClosureQuality(_ context.Context, s dashboard.ReadScope, from, prevFrom time.Time) (dashboard.ClosureQualityCounts, error) {
+	f.scopes = append(f.scopes, s)
+	f.newFrom = [2]time.Time{from, prevFrom}
+	f.qualityCalls++
+	return f.closure, nil
+}
+
+func (f *ctemFacts) ActiveCampaigns(_ context.Context, s dashboard.ReadScope) ([]dashboard.CampaignProgressRow, error) {
+	f.scopes = append(f.scopes, s)
+	f.qualityCalls++
+	return f.campaigns, nil
+}
+
+func (f *ctemFacts) ClosedByTool(_ context.Context, s dashboard.ReadScope, from time.Time) ([]dashboard.ToolClosedRow, error) {
+	f.scopes = append(f.scopes, s)
+	f.since = from
+	f.qualityCalls++
+	return f.toolClosed, nil
 }
 
 func (f *ctemFacts) EmergingThreats(_ context.Context, s dashboard.ReadScope) (dashboard.EmergingThreatCounts, error) {
