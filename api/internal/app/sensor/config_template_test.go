@@ -244,7 +244,7 @@ func TestTemplates_ComposeIsValid(t *testing.T) {
 			t.Errorf("[%s] volumes = %v, want the data volume and the read-only policy", dir, s.Volumes)
 		}
 		// Hardened; the local policy is optional (narrow only), the kill
-		// switch always honoured.
+		// switch always honored.
 		if !s.ReadOnly || len(s.CapDrop) != 1 || s.CapDrop[0] != "ALL" || len(s.SecurityOpt) != 2 ||
 			s.SecurityOpt[0] != "no-new-privileges:true" || s.SecurityOpt[1] != "seccomp=./sensor-seccomp.json" || len(s.Tmpfs) != 1 || s.Tmpfs[0] != "/tmp" ||
 			s.Environment["XDG_CONFIG_HOME"] != "/tmp/.config" || s.Environment["XDG_CACHE_HOME"] != "/tmp/.cache" ||
