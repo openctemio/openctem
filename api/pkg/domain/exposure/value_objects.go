@@ -42,6 +42,16 @@ const (
 	// organization's root domains, found by passive checks (RFC-083).
 	EventTypeLookalikeDomain EventType = "lookalike_domain"
 
+	// EventTypeWebInterfaceExposed: an administration or login interface
+	// reachable from the internet (docs/architecture/exposure-taxonomy.md).
+	EventTypeWebInterfaceExposed EventType = "web_interface_exposed"
+	// EventTypeMCPServerExposed: a Model Context Protocol server reachable
+	// from the internet.
+	EventTypeMCPServerExposed EventType = "mcp_server_exposed"
+	// EventTypeMailServerBlocklisted: a mail server address listed on a DNS
+	// blocklist.
+	EventTypeMailServerBlocklisted EventType = "mail_server_blocklisted"
+
 	// Identity exposures (CTEM Discovery "exposure ≠ vulnerability" — the
 	// identity attack surface). Emitted by the EntraID/IdP identity-exposure
 	// discovery source (see docs/rfcs/RFC-018). These are posture weaknesses on
@@ -86,6 +96,9 @@ func AllEventTypes() []EventType {
 		EventTypeEmailSecurityWeak,
 		EventTypeSubdomainTakeover,
 		EventTypeLookalikeDomain,
+		EventTypeWebInterfaceExposed,
+		EventTypeMCPServerExposed,
+		EventTypeMailServerBlocklisted,
 		EventTypeCustom,
 	}
 }
@@ -120,7 +133,8 @@ func (t EventType) IsPositiveExposure() bool {
 		EventTypeIdentityMFAGap, EventTypeIdentityStalePrincipal,
 		EventTypeIdentityOverprivileged,
 		EventTypeDanglingCNAME, EventTypeDanglingNS, EventTypeEmailSecurityWeak,
-		EventTypeSubdomainTakeover, EventTypeLookalikeDomain:
+		EventTypeSubdomainTakeover, EventTypeLookalikeDomain,
+		EventTypeWebInterfaceExposed, EventTypeMCPServerExposed, EventTypeMailServerBlocklisted:
 		return true
 	default:
 		return false
@@ -190,7 +204,9 @@ func ParseSeverity(str string) (Severity, error) {
 type State string
 
 const (
-	StateActive        State = "active"
+	StateActive State = "active"
+	// StateInProgress: someone is working on the exposure. It is still open.
+	StateInProgress    State = "in_progress"
 	StateResolved      State = "resolved"
 	StateAccepted      State = "accepted"
 	StateFalsePositive State = "false_positive"
@@ -200,11 +216,19 @@ const (
 func AllStates() []State {
 	return []State{
 		StateActive,
+		StateInProgress,
 		StateResolved,
 		StateAccepted,
 		StateFalsePositive,
 	}
 }
+
+// OpenStates are the states of an exposure that still needs work.
+func OpenStates() []State { return []State{StateActive, StateInProgress} }
+
+// OpenStatesSQL is OpenStates as a SQL list, for queries on
+// exposure_events.state.
+const OpenStatesSQL = "('active', 'in_progress')"
 
 // IsValid checks if the state is valid.
 func (s State) IsValid() bool {
@@ -225,21 +249,23 @@ func ParseState(str string) (State, error) {
 	return s, nil
 }
 
-// IsOpen returns true if the state is active.
+// IsOpen returns true if the state still needs work (active or in progress).
 func (s State) IsOpen() bool {
-	return s == StateActive
+	return s == StateActive || s == StateInProgress
 }
 
-// IsClosed returns true if the state is not active.
+// IsClosed returns true if the state is not open.
 func (s State) IsClosed() bool {
-	return s != StateActive
+	return !s.IsOpen()
 }
 
 // CanTransitionTo checks if a state transition is valid.
 func (s State) CanTransitionTo(target State) bool {
 	switch s {
 	case StateActive:
-		return target == StateResolved || target == StateAccepted || target == StateFalsePositive
+		return target == StateInProgress || target == StateResolved || target == StateAccepted || target == StateFalsePositive
+	case StateInProgress:
+		return target == StateActive || target == StateResolved || target == StateAccepted || target == StateFalsePositive
 	case StateResolved:
 		return target == StateActive
 	case StateAccepted:
