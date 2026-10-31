@@ -129,6 +129,9 @@ const (
 	ReasonOutsideScope  = "outside_uploader_scope"
 	ReasonNoTargetAsset = "no_target_asset"
 	ReasonNoCommand     = "no_command"
+	// ReasonOutsideJob: the item's asset lies outside the targets of the
+	// command the report is bound to.
+	ReasonOutsideJob = "outside_job_targets"
 )
 
 // Item is one item a receipt did not turn into a finding. Key is a stable

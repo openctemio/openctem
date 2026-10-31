@@ -185,6 +185,7 @@ export type AuditAction =
   | 'exposure.disposition_approved'
   | 'exposure.disposition_self_approved'
   | 'exposure.disposition_rejected'
+  | 'exposure.severity_changed'
   | 'easm_seed.created'
   | 'easm_seed.updated'
   | 'easm_seed.deleted'
@@ -353,6 +354,7 @@ const ACTION_LABEL_OVERRIDES: Record<string, string> = {
   'exposure.disposition_approved': 'Exposure disposition approved by a second approver',
   'exposure.disposition_self_approved': 'Exposure disposition self-approved by owner',
   'exposure.disposition_rejected': 'Exposure disposition rejected',
+  'exposure.severity_changed': 'Exposure severity changed',
   'easm_seed.created': 'EASM seed added',
   'easm_seed.updated': 'EASM seed changed',
   'easm_seed.deleted': 'EASM seed removed',
