@@ -34,7 +34,10 @@ type fakeStarter struct {
 	fail   map[string]error // capability -> refusal of the whole batch
 	// never: targets whose scan windows never open; a batch holding one is
 	// refused with the error that lists them.
-	never   map[string]bool
+	never map[string]bool
+	// depths records the depth of each call per capability (nil: not
+	// recorded).
+	depths  map[string][]string
 	execRun func(id shared.ID)
 	// execTask records the run's one task (command) with its targets.
 	execTask func(id shared.ID, targets []string)
@@ -47,6 +50,9 @@ func (f *fakeStarter) StartCoverage(_ context.Context, in scanapp.CoverageInput)
 		return nil, scanapp.ErrCoverageBusy
 	}
 	f.calls[in.Capability] = append(f.calls[in.Capability], in.Targets...)
+	if f.depths != nil {
+		f.depths[in.Capability] = append(f.depths[in.Capability], in.Depth)
+	}
 	if err, ok := f.fail[in.Capability]; ok {
 		return nil, err
 	}

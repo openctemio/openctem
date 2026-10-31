@@ -250,6 +250,21 @@ func registerUserRoutes(
 		r.GET("/deletion", h.GetMyDeletion)
 	}, middlewares...)
 
+	// Moving two-factor to a new authenticator (My account > Security). New
+	// self routes live under /api/v1/me; the older /users/me/2fa calls stay
+	// where they are. Same CSRF check and code rate limits as those.
+	if provider.SupportsLocal() && localAuthHandler != nil {
+		router.Group("/api/v1/me/2fa/replacement", func(r Router) {
+			replaceRL := newAuthRateLimiter("account-2fa-replacement")
+			var csrf []Middleware
+			if csrfProtectionMiddleware != nil {
+				csrf = append(csrf, csrfProtectionMiddleware)
+			}
+			r.POST("/start", localAuthHandler.ReplaceMFA, append(csrf, replaceRL.PasswordMiddleware())...)
+			r.POST("/complete", localAuthHandler.ConfirmReplaceMFA, append(append([]Middleware{}, csrf...), replaceRL.LoginMiddleware())...)
+		}, middlewares...)
+	}
+
 	router.Group("/api/v1/users", func(r Router) {
 		// Current user profile
 		r.GET("/me", h.GetMe)
