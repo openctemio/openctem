@@ -815,6 +815,25 @@ export const settingsNav: SettingsNavGroup[] = [
         module: 'sensors',
         keywords: ['trivy db', 'nuclei templates', 'semgrep rules', 'staleness', 'pin', 'update'],
       },
+      {
+        // Organization wordlists (api docs/architecture/wordlists.md): read
+        // with scans:content:read; changes need scans:content:write.
+        id: 'wordlists',
+        title: 'Wordlists',
+        description: 'Words subdomain discovery tries under your domains.',
+        url: '/settings/scanning/wordlists',
+        icon: ListChecks,
+        permission: Permission.ContentPacksRead,
+        keywords: [
+          'wordlist',
+          'subdomain',
+          'brute force',
+          'enumeration',
+          'dns',
+          'labels',
+          'discovery',
+        ],
+      },
     ],
   },
   {

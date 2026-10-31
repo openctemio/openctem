@@ -115,6 +115,7 @@ import {
   isDeactivated,
 } from '@/features/organization'
 import { PendingSetupBadge } from '@/features/shared'
+import { FilterSelect } from '@/features/shared/components/filter-select'
 import { useUserRoles, useRoles, useSetUserRoles, type Role } from '@/features/access-control'
 import { createContext, useContext } from 'react'
 
@@ -1418,53 +1419,41 @@ export default function UsersPage() {
   const toggleStatus = (next: StatusFilter) =>
     setStatusFilter(statusFilter === next ? 'current' : next)
 
+  // The list filters are the shared filter token (research/249 R21): it
+  // reads "Status: Current members" at its natural width instead of a
+  // fixed-width select that cuts the value off.
   const toolbarStart = (
     <>
-      <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v)}>
-        <SelectTrigger
-          className="h-9 w-[140px]"
-          aria-label={t('org.membersPage.filter.statusLabel', 'Filter by status')}
-        >
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {statusFilters.map((f) => (
-            <SelectItem key={f.value} value={f.value}>
-              {t(f.key, f.en)}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <Select value={kindFilter} onValueChange={(v) => setKindFilter(v)}>
-        <SelectTrigger
-          className="h-9 w-[130px]"
-          aria-label={t('org.membersPage.filter.kindLabel', 'Filter by internal or external')}
-        >
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {kindFilters.map((f) => (
-            <SelectItem key={f.value} value={f.value}>
-              {t(f.key, f.en)}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <Select value={roleFilter} onValueChange={(v) => setRoleFilter(v)}>
-        <SelectTrigger
-          className="h-9 w-[130px]"
-          aria-label={t('org.membersPage.filter.roleLabel', 'Filter by membership role')}
-        >
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {roleFilters.map((f) => (
-            <SelectItem key={f.value} value={f.value}>
-              {t(f.key, f.en)}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      <FilterSelect
+        label={t('org.membersPage.filter.status', 'Status')}
+        value={statusFilter}
+        allValue="current"
+        allLabel={t('org.membersPage.filter.current', 'Current members')}
+        options={statusFilters
+          .filter((f) => f.value !== 'current')
+          .map((f) => ({ value: f.value, label: t(f.key, f.en) }))}
+        onChange={(v) => setStatusFilter(v || 'current')}
+      />
+      <FilterSelect
+        label={t('org.membersPage.filter.kind', 'Membership')}
+        value={kindFilter}
+        allValue="all"
+        allLabel={t('org.membersPage.filter.everyone', 'Everyone')}
+        options={kindFilters
+          .filter((f) => f.value !== 'all')
+          .map((f) => ({ value: f.value, label: t(f.key, f.en) }))}
+        onChange={(v) => setKindFilter(v || 'all')}
+      />
+      <FilterSelect
+        label={t('org.membersPage.filter.role', 'Role')}
+        value={roleFilter}
+        allValue="all"
+        allLabel={t('org.membersPage.filter.allRoles', 'All roles')}
+        options={roleFilters
+          .filter((f) => f.value !== 'all')
+          .map((f) => ({ value: f.value, label: t(f.key, f.en) }))}
+        onChange={(v) => setRoleFilter(v || 'all')}
+      />
     </>
   )
 

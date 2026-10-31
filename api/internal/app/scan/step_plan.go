@@ -370,6 +370,10 @@ func StepCommandPayload(run *scanrun.Run, step *scanworkflow.Step, toolName, ste
 			config = c
 			payload[scanworkflow.PayloadKeyConfig] = config
 		}
+		// Settings the tool always runs this capability with (nuclei on a
+		// takeover check: only its takeover templates), over the step's.
+		config = stg.WithStageToolConfig(toolName, config)
+		payload[scanworkflow.PayloadKeyConfig] = config
 	}
 	// A capability job (RFC-055): the sensor checks that the tool implements
 	// the capability, checks the output against its contract and stamps it

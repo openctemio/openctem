@@ -160,6 +160,7 @@ type Handlers struct {
 	ContentSource       *handler.ContentSourceHandler       // nil if not initialized (no database)
 	ContentPack         *handler.ContentPackHandler         // nil if not initialized (no database)
 	PlatformContentPack *handler.PlatformContentPackHandler // nil if not initialized (no database)
+	Wordlist            *handler.WordlistHandler            // nil if not initialized (no database)
 	ContentCatalog      *handler.ContentCatalogHandler      // nil if not initialized (no database)
 	AdminContentCatalog *handler.AdminContentCatalogHandler // nil if not initialized (no database)
 	SensorContentV2     *handler.SensorContentV2Handler     // content delivery to sensors; nil if not initialized
@@ -1113,6 +1114,9 @@ func Register(
 	}
 	if h.ContentCatalog != nil {
 		registerContentCatalogRoutes(router, h.ContentCatalog, authMiddleware, userSync)
+	}
+	if h.Wordlist != nil {
+		registerWordlistRoutes(router, h.Wordlist, authMiddleware, userSync)
 	}
 	if h.PlatformContentPack != nil {
 		registerPlatformContentPackRoutes(router, h.PlatformContentPack, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleScannerTemplates))
